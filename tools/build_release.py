@@ -57,6 +57,25 @@ def verified_components(launcher):
     return components
 
 
+def verify_addon_manifest(companion):
+    """The game only gets new add-on files when manifest.txt's set is higher and its md5s match (LauncherSetup).
+    A changed add-on file with a stale manifest ships nothing to the game (13 Oct batch tests): refuse to build."""
+    root = companion / "app/src/main/assets/companion"
+    lines = (root / "manifest.txt").read_text(encoding="ascii").splitlines()
+    if not lines or not re.fullmatch(r"set \d+", lines[0]):
+        raise ValueError("manifest.txt must start with 'set N'")
+    listed = {}
+    for line in lines[1:]:
+        md5, path = line.split("  ", 1)
+        listed[path] = md5
+    addons = root / "addons"
+    actual = {p.relative_to(addons).as_posix(): hashlib.md5(p.read_bytes()).hexdigest()
+              for p in addons.rglob("*") if p.is_file()}
+    if actual != listed:
+        changed = sorted(set(actual.items()) ^ set(listed.items()))
+        raise ValueError("Add-on manifest.txt is stale; regenerate it and bump the set: " + ", ".join(p for p, _ in changed[:8]))
+
+
 def verify_packaged_components(archive, components):
     names = [name for name in archive.namelist() if name.startswith(COMPONENT_PREFIX)]
     expected = {COMPONENT_PREFIX + name for name in COMPONENT_NAMES}
@@ -110,6 +129,7 @@ def main():
             continue
         raise ValueError("Frozen APK output must be outside the source checkouts")
     components = verified_components(launcher)
+    verify_addon_manifest(companion)
     wanted = {"WC_KEYSTORE", "WC_KEYSTORE_PASS", "WC_KEY_ALIAS", "WC_KEY_PASS"}
     settings = {key: os.environ[key] for key in wanted if os.environ.get(key)}
     if settings.keys() != wanted:
