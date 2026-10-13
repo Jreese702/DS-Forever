@@ -122,6 +122,26 @@ local function setBlobs(alpha)
 end
 WC.minimapBlobsOff = false
 
+-- KEEPING THEM OFF (b-quest-area-minimap, the user 2026-10-13: Game UI Off, "quest-area shapes still draw on the top screen where
+-- the minimap was"). The hub hides the minimap ONCE (Hub.lua's apply: the element already says hidden, so it never asks again),
+-- but the engine can put the shading and the markers back on its own (a loading screen, a quest's area changing, a tracking
+-- switch: there are no getters to tell). So while the hub's hide stands (not the death peek, not in combat), the same two
+-- setters are said again on the quest / zone / tracking events and every REASSERT_S on the probe's frame. Setting a value it
+-- already has costs nine pcalls. In WC (Map.lua's main chunk is at Lua 5.1's 200-local limit).
+WC.mmHide = { REASSERT_S = 2.0, at = -1000, n = 0 }
+function WC.mmHide.reassert(force)
+    local H = WC.mmHide
+    if not hiddenFrame or peek then return false end
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then return false end
+    local t = (type(GetTime) == "function") and GetTime() or 0
+    if not force and t - H.at < H.REASSERT_S then return false end
+    H.at = t
+    WC.minimapIconsOff = setIcons(ICONS_OFF)
+    H.n = setBlobs(0)
+    WC.minimapBlobsOff = H.n > 0
+    return true
+end
+
 function WC.hideMinimap()
     if InCombatLockdown() then return false, "in combat" end
     local fr, name = minimapFrame()
@@ -986,6 +1006,8 @@ function WC.collectMap()
     end
 
     out.track = trackingState()          -- Find Herbs / Minerals / Treasure on or off (see trackingState)
+    -- the hidden minimap's quest shading: how many of its nine alpha setters took 0 at the last re-assert (WC.mmHide; nil = shown)
+    if hiddenFrame and not peek then out.mmb = WC.mmHide.n end
 
     out.ok = true
     fullMap = plainId                   -- the map this snapshot carries (see zoneSnapshotDue)
@@ -1434,6 +1456,8 @@ local QUEST_MARKER_EVENTS = {
 }
 
 local function onQuestMarkerEvent(_, event, a1)
+    -- the engine may have drawn the hidden minimap's quest shading again: off again (throttled; at once on a world / zone entry)
+    pcall(WC.mmHide.reassert, event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA")
     if event == "QUEST_LOG_UPDATE" then
         onQuestLog()                -- the hot one: a flag test until a check is due
         if mapExplSwept then mapQuestsSoon() end    -- every zone's quests: coalesced, at most every MQ_EVERY s
@@ -2415,6 +2439,7 @@ end
 
 function WC.mmp.tick(elapsed)
     local P = WC.mmp
+    pcall(WC.mmHide.reassert, false)                               -- the hidden minimap's shading stays off (see WC.mmHide)
     if P.opt % 2 == 0 then return end                              -- the probe is off (the auto-switch rides its scans)
     if P.scan then return P.step() end
     P.wait = P.wait - (type(elapsed) == "number" and elapsed or 0)
