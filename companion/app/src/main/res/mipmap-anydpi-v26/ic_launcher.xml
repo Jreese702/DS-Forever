@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the two screens of the handheld, the lower one lit (UI Art's own drawing; user pick 2026-09-29) -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_ground" />
+    <foreground android:drawable="@mipmap/ic_launcher_full" />
+</adaptive-icon>

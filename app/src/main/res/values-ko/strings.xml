@@ -1,0 +1,692 @@
+﻿<resources>
+    <string name="app_name">GameNative</string>
+    <string name="home">홈</string>
+    <string name="download">다운로드</string>
+    <string name="install">설치</string>
+    <string name="yes">예</string>
+    <string name="no">아니오</string>
+    <string name="cancel">취소</string>
+
+
+    <!-- Library Tabs -->
+
+    <!-- Custom Games -->
+
+    <!--Winlator-->
+    <string name="disabled">비활성화</string>
+    <string name="copy">복사</string>
+    <string name="stability">안정성</string>
+    <string name="compatibility">호환성</string>
+    <string name="intermediate">중간</string>
+    <string name="performance">성능</string>
+    <string name="denuvo">Denuvo</string>
+    <string name="extreme">극한</string>
+    <string name="unity">Unity</string>
+    <string name="unity_mono_bleeding_edge">Unity Mono Bleeding Edge</string>
+
+    <!-- Winlator: Win Components -->
+    <string name="direct3d">Direct3D</string>
+    <string name="directsound">DirectSound</string>
+    <string name="directinput8">DirectInput 8</string>
+    <string name="directinput">DirectInput</string>
+    <string name="wmdecoder">Windows Media Decoder</string>
+    <string name="opengl">OpenGL</string>
+    <string name="edit">편집</string>
+    <string name="remove">제거</string>
+    <string name="add">추가</string>
+    <string name="delete">삭제</string>
+    <string name="copy_from">복사 위치</string>
+    <string name="ok">확인</string>
+    <string name="game_executable_not_found_title">실행할 수 없음</string>
+    <string name="game_executable_not_found">실행 파일을 자동으로 선택할 수 없습니다. 컨테이너 설정에서 실행 파일 경로를 지정하세요.</string>
+    <string name="save">저장</string>
+    <string name="discard">버리기</string>
+    <string name="contents">내용</string>
+    <string name="task_manager">작업 관리자</string>
+    <string name="tools_wine_processes_running_hint">%1$d개 실행 중, 프로세스를 탭/클릭해 종료</string>
+    <string name="exit_game">종료</string>
+    <string name="exit">게임 종료</string>
+    <string name="keyboard">키보드</string>
+    <string name="resume_game">게임 재개</string>
+    <string name="extra">추가</string>
+    <string name="clear_search">검색 지우기</string>
+    <string name="face_buttons_category">페이스 버튼</string>
+    <string name="shoulder_buttons_category">숄더 버튼</string>
+    <string name="menu_buttons_category">메뉴 버튼</string>
+    <string name="thumbstick_buttons_category">썸스틱 버튼</string>
+    <string name="left_stick">왼쪽 스틱</string>
+    <string name="right_stick">오른쪽 스틱</string>
+    <string name="dpad_category">십자 버튼</string>
+    <string name="dpad_up">십자 버튼 위</string>
+    <string name="dpad_down">십자 버튼 아래</string>
+    <string name="dpad_left">십자 버튼 왼쪽</string>
+    <string name="dpad_right">십자 버튼 오른쪽</string>
+    <string name="input_controls">화면 컨트롤러</string>
+    <string name="edit_controls">화면 컨트롤러 편집</string>
+    <string name="edit_physical_controller">물리 컨트롤러 편집</string>
+    <string name="quick_menu_title">빠른 메뉴</string>
+    <string name="quick_menu_back">뒤로</string>
+    <string name="display_brightness">디스플레이 밝기</string>
+    <string name="screen_effects">화면 효과</string>
+    <string name="screen_effects_live_preview">변경 사항이 현재 게임에 즉시 적용됩니다.</string>
+    <string name="screen_effects_color_adjustments">색상 조정</string>
+    <string name="screen_effects_shader_toggles">셰이더 효과</string>
+    <string name="screen_effects_brightness">밝기</string>
+    <string name="screen_effects_contrast">대비</string>
+    <string name="screen_effects_gamma">감마</string>
+    <string name="screen_effects_toon">툰 외곽선</string>
+    <string name="screen_effects_toon_description">셀 셰이딩 느낌을 위해 어두운 외곽선을 추가합니다.</string>
+    <string name="screen_effects_fxaa">FXAA</string>
+    <string name="screen_effects_fxaa_description">가벼운 후처리 안티앨리어싱으로 계단 현상을 완화합니다.</string>
+    <string name="screen_effects_vivid">생동감</string>
+    <string name="screen_effects_vivid_description">더 선명한 화면을 위해 bloom과 대비를 강화합니다.</string>
+    <string name="screen_effects_crt">CRT</string>
+    <string name="screen_effects_crt_description">주사선과 은은한 색수차를 추가합니다.</string>
+    <string name="screen_effects_ntsc">NTSC</string>
+    <string name="screen_effects_ntsc_description">복고풍 컴포지트 TV 왜곡, 색 번짐, 주사선을 추가합니다.</string>
+    <string name="screen_effects_reset">재설정</string>
+    <string name="screen_effects_close">닫기</string>
+    <string name="quick_menu_tab_controller">컨트롤러</string>
+    <string name="performance_hud">성능 HUD</string>
+    <string name="performance_hud_description">게임 내 오버레이를 표시하거나 숨깁니다.</string>
+    <string name="performance_hud_fps_limiter">FPS 제한기</string>
+    <string name="performance_hud_fps_limiter_target">목표 FPS</string>
+    <string name="performance_hud_fps_limiter_value">%1$d FPS</string>
+    <string name="performance_hud_fps_limiter_lsfg_base">기본 프레임 레이트를 제한합니다. 화면 표시 레이트는 제한 × LSFG 배수입니다.</string>
+    <string name="performance_hud_presets">프리셋</string>
+    <string name="performance_hud_preset_fps_only">1</string>
+    <string name="performance_hud_preset_essential">2</string>
+    <string name="performance_hud_preset_battery">3</string>
+    <string name="performance_hud_preset_full">4</string>
+    <string name="performance_hud_appearance">모양</string>
+    <string name="performance_hud_size">크기</string>
+    <string name="performance_hud_size_small">S</string>
+    <string name="performance_hud_size_medium">M</string>
+    <string name="performance_hud_size_large">L</string>
+    <string name="performance_hud_background_opacity">배경 불투명도</string>
+    <string name="performance_hud_color_intensity">색상 강도</string>
+    <string name="performance_hud_text_outline">텍스트 윤곽선</string>
+    <string name="performance_hud_percentage_value">%1$d%%</string>
+    <string name="performance_hud_metrics">표시할 지표</string>
+    <string name="performance_hud_frame_rate">프레임 속도</string>
+    <string name="performance_hud_frame_rate_graph">FPS 그래프</string>
+    <string name="performance_hud_cpu_usage">CPU 사용량</string>
+    <string name="performance_hud_cpu_usage_graph">CPU 그래프</string>
+    <string name="performance_hud_gpu_usage">GPU 사용량</string>
+    <string name="performance_hud_gpu_usage_graph">GPU 그래프</string>
+    <string name="performance_hud_ram_usage">RAM 사용량</string>
+    <string name="performance_hud_battery_level">배터리 잔량</string>
+    <string name="performance_hud_power_draw">전력 소모</string>
+    <string name="performance_hud_runtime_left">남은 시간</string>
+    <string name="performance_hud_clock_time">시계</string>
+    <string name="performance_hud_cpu_temperature">CPU 온도</string>
+    <string name="performance_hud_gpu_temperature">GPU 온도</string>
+
+    <!-- Controller Binding Dialog -->
+    <string name="bind_button">바인딩: %1$s</string>
+    <string name="current_binding">현재: %1$s</string>
+    <string name="search_placeholder">검색…</string>
+    <string name="search">검색</string>
+    <string name="category">카테고리</string>
+    <string name="mouse">마우스</string>
+    <string name="gamepad">게임패드</string>
+    <string name="binding_none">없음</string>
+    <string name="clear_binding">바인딩 지우기</string>
+    <string name="no_bindings_found">바인딩을 찾을 수 없습니다</string>
+
+    <!-- Element Editor Dialog -->
+    <string name="edit_element">%1$s 편집</string>
+    <string name="element_position_size">위치: (%1$d, %2$d) • 크기: %3$.2fx</string>
+    <string name="appearance">외관</string>
+    <string name="size_subtitle">%.2f배</string>
+    <string name="label_text">레이블 텍스트</string>
+    <string name="label_text_subtitle">이 버튼의 사용자 지정 텍스트</string>
+    <string name="element_type">요소 유형</string>
+    <string name="element_type_subtitle">이 컨트롤의 유형 변경</string>
+    <string name="shape">모양</string>
+    <string name="shape_subtitle">시각적 외관</string>
+    <string name="shape_restricted">%1$s은(는) %2$s 모양으로 제한됩니다</string>
+    <string name="bindings">바인딩</string>
+    <string name="bindings_auto_generated">바인딩 (자동 생성)</string>
+    <string name="bindings_auto_generated_subtitle">범위 버튼 바인딩은 자동으로 생성됩니다</string>
+    <string name="primary_action">기본 동작</string>
+    <string name="secondary_action">보조 동작</string>
+    <string name="direction_up">위</string>
+    <string name="direction_right">오른쪽</string>
+    <string name="direction_down">아래</string>
+    <string name="direction_left">왼쪽</string>
+    <string name="mouse_suffix"> (마우스)</string>
+    <string name="slot_number">슬롯 %1$d</string>
+    <string name="button_slots_help">버튼은 최대 2개의 바인딩을 지원합니다: 기본 (누르기) 및 보조 (길게 누르기)</string>
+    <string name="properties">속성</string>
+    <string name="position">위치</string>
+    <string name="position_value">X: %1$d, Y: %2$d</string>
+    <string name="unsaved_changes">저장되지 않은 변경사항</string>
+    <string name="unsaved_changes_message">저장되지 않은 변경사항이 있습니다. 저장하시겠습니까, 아니면 취소하시겠습니까?</string>
+    <string name="adjust_size">크기 조정</string>
+    <string name="reset">초기화</string>
+    <string name="done">완료</string>
+    <string name="copy_size_from_element">요소에서 크기 복사</string>
+    <string name="toast_no_elements_to_copy">크기를 복사할 다른 요소가 없습니다</string>
+    <string name="toast_copied_size">복사된 크기: %.2fx</string>
+    <string name="quick_presets">빠른 프리셋</string>
+    <string name="preset_wasd">WASD</string>
+    <string name="preset_arrows">화살표</string>
+    <string name="preset_mouse">마우스</string>
+    <string name="preset_dpad">십자 버튼</string>
+    <string name="preset_left_stick">왼쪽 스틱</string>
+    <string name="preset_right_stick">오른쪽 스틱</string>
+
+    <!-- Physical Controller Config -->
+    <string name="physical_controller_config">물리 컨트롤러 바인딩 편집기</string>
+    <string name="face_buttons">페이스 버튼</string>
+    <string name="button_a">A 버튼</string>
+    <string name="button_b">B 버튼</string>
+    <string name="button_x">X 버튼</string>
+    <string name="button_y">Y 버튼</string>
+    <string name="shoulder_buttons">숄더 버튼</string>
+    <string name="button_l1">LB</string>
+    <string name="button_r1">RB</string>
+    <string name="button_l2">LT</string>
+    <string name="button_r2">RT</string>
+    <string name="menu_buttons">메뉴 버튼</string>
+    <string name="button_start">Start / Options</string>
+    <string name="button_select">Select / View / Share</string>
+    <string name="thumbstick_buttons">썸스틱 버튼</string>
+    <string name="button_l3">L3 (왼쪽 스틱 클릭)</string>
+    <string name="button_r3">R3 (오른쪽 스틱 클릭)</string>
+    <string name="left_stick_up">왼쪽 스틱 위</string>
+    <string name="left_stick_down">왼쪽 스틱 아래</string>
+    <string name="left_stick_left">왼쪽 스틱 왼쪽</string>
+    <string name="left_stick_right">왼쪽 스틱 오른쪽</string>
+    <string name="right_stick_up">오른쪽 스틱 위</string>
+    <string name="right_stick_down">오른쪽 스틱 아래</string>
+    <string name="right_stick_left">오른쪽 스틱 왼쪽</string>
+    <string name="right_stick_right">오른쪽 스틱 오른쪽</string>
+    <string name="button_home">Home / Guide / PS</string>
+    <string name="not_set">설정 안 됨</string>
+
+    <!-- Toast -->
+    <string name="toast_controls_reset">컨트롤 재설정됨</string>
+
+    <!-- Settings -->
+
+
+
+    <!-- Library & Game Management -->
+    <string name="label">레이블</string>
+    <string name="status">상태</string>
+    <string name="size">크기</string>
+    <string name="installing">설치 중</string>
+
+
+    <!-- App Filter -->
+
+    <!-- Login & Connection -->
+
+
+    <!--Game Feedback Dialog -->
+
+
+    <!-- Profile & Menu -->
+    <string name="close">닫기</string>
+
+    <!-- System menu platform actions -->
+
+    <!-- Container Configuration: General -->
+    <string name="name">이름</string>
+    <string name="container_variant">컨테이너 변형</string>
+    <string name="wine_version">Wine 버전</string>
+    <string name="language">언어</string>
+    <string name="screen_size">화면 크기</string>
+    <string name="audio_driver">오디오 드라이버</string>
+    <string name="pulseaudio_low_latency">PulseAudio 저지연 모드</string>
+    <string name="show_fps">FPS 표시</string>
+    <string name="portrait_mode">세로 모드</string>
+    <string name="portrait_below_cutout">카메라 홀 아래에 표시</string>
+
+
+    <!-- Container Configuration: Graphics -->
+    <string name="graphics_driver">그래픽 드라이버</string>
+    <string name="graphics_driver_version">그래픽 드라이버 버전</string>
+    <string name="sf_compat_mode">호환 모드</string>
+    <string name="use_legacy_renderer">레거시 렌더러 사용</string>
+    <string name="sharpness_effect">선명도 향상</string>
+    <string name="sharpness_level">선명도 수준</string>
+    <string name="sharpness_denoise">선명도 노이즈 제거</string>
+
+    <!-- Container Configuration: Emulation -->
+    <string name="fexcore_version">FEXCore 버전</string>
+    <string name="fexcore_preset">FEXCore 프리셋</string>
+    <string name="box64_version">Box64 버전</string>
+    <string name="box64_preset">Box64 프리셋</string>
+
+    <!-- Container Configuration: Input -->
+    <string name="show_controller_debug_menu">컨트롤러 디버그 메뉴 표시</string>
+    <string name="disable_mouse_input">마우스 입력 비활성화</string>
+    <string name="touchscreen_mode">터치스크린 모드</string>
+    <string name="shooter_mode_toggle">슈터 모드</string>
+    <string name="shooter_mode_on">마우스 활성화</string>
+    <string name="shooter_mode_off">스틱 활성화</string>
+
+    <!-- Gesture Settings Dialog -->
+    <string name="gesture_settings_title">터치 제스처 설정</string>
+    <string name="gesture_tap">탭</string>
+    <string name="gesture_drag">드래그</string>
+    <string name="gesture_hold_mouse_button_while_touching">터치하는 동안 마우스 버튼 누르기 유지</string>
+    <string name="gesture_mouse_button_label">마우스 버튼</string>
+    <string name="gesture_long_press">길게 누르기</string>
+    <string name="gesture_long_press_delay">길게 누르기 지연 (ms)</string>
+    <string name="gesture_double_tap">더블 탭</string>
+    <string name="gesture_double_tap_subtitle">더블 왼쪽 클릭</string>
+    <string name="gesture_double_tap_delay">더블 탭 지연 (ms)</string>
+    <string name="gesture_two_finger_drag">두 손가락 드래그</string>
+    <string name="gesture_pinch">핀치</string>
+    <string name="gesture_two_finger_tap">두 손가락 탭</string>
+    <string name="gesture_action_left_click">왼쪽 클릭</string>
+    <string name="gesture_action_right_click">오른쪽 클릭</string>
+    <string name="gesture_action_middle_click">가운데 클릭</string>
+    <string name="gesture_pan_middle_mouse">가운데 버튼 패닝</string>
+    <string name="gesture_pan_inverted_middle_mouse">반전 가운데 버튼 패닝</string>
+    <string name="gesture_pan_wasd">WASD</string>
+    <string name="gesture_pan_inverted_wasd">반전 WASD</string>
+    <string name="gesture_pan_arrow_keys">화살표 키</string>
+    <string name="gesture_pan_inverted_arrow_keys">반전 화살표 키</string>
+    <string name="gesture_zoom_scroll_wheel">스크롤 휠</string>
+    <string name="gesture_zoom_plus_minus">+/- 키</string>
+    <string name="gesture_zoom_page_up_down">페이지 위/아래</string>
+    <string name="gesture_action_label">동작</string>
+    <string name="gesture_section_single_finger">한 손가락</string>
+    <string name="gesture_section_two_finger">두 손가락</string>
+    <string name="gesture_section_three_finger">세 손가락</string>
+    <string name="gesture_section_other">기타</string>
+    <string name="gesture_pan_left_click_drag">왼쪽 클릭 드래그</string>
+    <string name="gesture_pan_right_click_drag">오른쪽 클릭 드래그</string>
+    <string name="gesture_action_show_keyboard">키보드 표시</string>
+    <string name="gesture_mouse_behavior_label">마우스 동작</string>
+    <string name="gesture_mouse_behavior_click">클릭</string>
+    <string name="gesture_mouse_behavior_hold">누른 상태 유지</string>
+    <string name="gesture_header_special">특수</string>
+    <string name="gesture_header_mouse">마우스</string>
+    <string name="gesture_header_common_game">일반 게임 키</string>
+    <string name="gesture_header_navigation_editing">탐색 / 편집</string>
+    <string name="gesture_header_symbols">기호</string>
+    <string name="gesture_header_letters">문자 A-Z</string>
+    <string name="gesture_header_numbers">숫자 0-9</string>
+    <string name="gesture_header_numpad">숫자 키패드</string>
+    <string name="gesture_header_function_keys">기능 키</string>
+    <string name="gesture_header_modifiers_locks">보조키 / 잠금</string>
+    <string name="gesture_two_finger_hold">두 손가락 길게 누르기</string>
+    <string name="gesture_two_finger_hold_delay">두 손가락 길게 누르기 지연 (ms)</string>
+    <string name="gesture_three_finger_tap">세 손가락 탭</string>
+    <string name="gesture_three_finger_drag">세 손가락 드래그</string>
+    <string name="gesture_three_finger_hold">세 손가락 길게 누르기</string>
+    <string name="gesture_three_finger_hold_delay">세 손가락 길게 누르기 지연 (ms)</string>
+    <string name="gesture_threshold">제스처 임계값 (px)</string>
+    <string name="gesture_mouse_drag_movement">드래그 시 마우스 이동</string>
+    <string name="gesture_mouse_drag_movement_subtitle">대부분의 게임에서는 직접 모드가 작동합니다. 드래그 시 카메라나 커서 문제가 있으면 상대 모드를 사용하세요</string>
+    <string name="gesture_mouse_drag_movement_direct">직접</string>
+    <string name="gesture_mouse_drag_movement_relative">상대</string>
+    <string name="gesture_show_click_highlight">클릭 강조 표시</string>
+    <string name="gesture_show_click_highlight_subtitle">탭 위치에 원 표시</string>
+    <string name="gesture_show_debug_overlay">제스처 디버그 오버레이 표시</string>
+    <string name="gesture_show_debug_overlay_subtitle">상단 중앙에 임시 제스처 레이블 표시</string>
+    <string name="gesture_show_cursor_touchscreen_mode">터치스크린 모드에서 커서 표시</string>
+    <string name="gesture_show_cursor_touchscreen_mode_subtitle">터치스크린 제스처가 활성화된 동안 마우스 커서를 계속 표시</string>
+
+    <!-- Shooter Mode -->
+    <string name="shooter_mode_settings">동적 조이스틱 설정</string>
+    <string name="movement_type">이동 유형</string>
+    <string name="movement_type_subtitle">왼쪽 이동용 조이스틱 출력</string>
+    <string name="look_sensitivity">시선 감도</string>
+    <string name="look_sensitivity_subtitle">마우스 시선 감도 배율</string>
+    <string name="joystick_size">조이스틱 크기</string>
+    <string name="joystick_size_subtitle">동적 조이스틱 크기 배율</string>
+    <string name="movement_wasd">WASD</string>
+    <string name="movement_arrow_keys">화살표 키</string>
+    <string name="movement_gamepad_left_stick">게임패드 왼쪽 스틱</string>
+    <string name="look_type">시선 유형</string>
+    <string name="look_type_subtitle">슈터 모드에서 오른쪽 동작</string>
+    <string name="look_type_mouse">마우스</string>
+    <string name="look_type_gamepad_right_stick">게임패드 오른쪽 스틱</string>
+
+    <string name="range_button_settings">범위 버튼 설정</string>
+    <string name="range_type">키 범위</string>
+    <string name="range_type_subtitle">순환할 키 세트</string>
+    <string name="range_orientation">방향</string>
+    <string name="range_orientation_subtitle">범위 버튼 레이아웃 방향</string>
+    <string name="range_orientation_horizontal">가로</string>
+    <string name="range_orientation_vertical">세로</string>
+    <string name="range_visible_segments">표시 세그먼트</string>
+    <string name="range_visible_segments_subtitle">한 번에 표시되는 키 세그먼트 수: %1$d</string>
+    <string name="range_a_to_z">A – Z</string>
+    <string name="range_1_to_0">1 – 0</string>
+    <string name="range_f1_to_f12">F1 – F12</string>
+    <string name="range_lock_scrolling">스크롤 잠금</string>
+    <string name="range_lock_scrolling_subtitle">범위 스크롤 방지</string>
+    <string name="button_toggleable">토글</string>
+    <string name="button_toggleable_subtitle">탭하여 활성화, 다시 탭하여 비활성화</string>
+
+
+    <string name="external_display_swap">외부 디스플레이에 게임 표시</string>
+
+    <!-- Container Configuration: Rendering -->
+    <string name="renderer">렌더러</string>
+
+    <!-- Container Configuration: Management -->
+    <string name="startup_selection">시작 선택</string>
+
+    <!-- Dialogs -->
+
+    <!-- Driver Manager -->
+
+    <!-- Contents Manager -->
+
+    <!-- Settings -->
+
+    <!-- Settings: Performance Group -->
+
+    <!-- Settings: Emulation Group -->
+
+    <!-- Settings: Debug Group -->
+
+    <!-- Settings: Info Group -->
+
+    <!-- Settings: Interface Group -->
+
+    <!-- Settings: Downloads Group -->
+
+    <!-- Login Screen -->
+
+    <!-- Generic/Reusable strings -->
+
+
+    <!-- Connecting to Servers Screen -->
+
+    <!-- LibraryAppScreen: Dialogs -->
+
+    <!-- LibraryAppScreen: Toast Messages -->
+
+    <!-- LibraryAppScreen: UI Labels -->
+
+    <!-- PluviaMain: Update & App Info -->
+
+
+    <!-- PluviaMain: Game Launch -->
+    <string name="main_installing_glibc">glibc 구성 요소 설치 중...</string>
+    <string name="main_installing_bionic">Bionic 구성 요소 설치 중...</string>
+    <string name="main_loading">로딩 중...</string>
+
+    <!-- PluviaMain: Session Conflicts -->
+
+    <!-- PluviaMain: Save Conflicts -->
+
+    <!-- PluviaMain: Sync Errors -->
+
+    <!-- PluviaMain: Pending Operations -->
+
+    <!-- Container Config Dialog -->
+
+    <!-- Libraries Dialog -->
+
+
+    <!-- Chat Screen -->
+
+    <!-- Library Components -->
+
+    <!-- Best Config Compatibility Messages -->
+
+    <!-- Best Config Toast Messages -->
+    <plurals name="community_config_result_count">
+        <item quantity="other">구성 %1$d개</item>
+    </plurals>
+    <string name="back">뒤로</string>
+
+    <!-- Options Panel -->
+
+    <!-- Game Options Panel -->
+
+    <!-- System Menu -->
+    <string name="menu">메뉴</string>
+
+    <!-- Gamepad Actions -->
+
+    <!-- Search -->
+
+    <!-- Two Factor Auth -->
+
+    <!-- Contents Manager -->
+
+    <!-- Driver Manager -->
+
+    <!-- Settings Interface -->
+
+    <!-- Settings Screen -->
+
+    <!-- Contents Install Finish -->
+
+    <!-- Library Status -->
+    <!-- Wine/Proton Manager -->
+
+    <!-- Wine/Proton Manager - Status Messages -->
+
+
+
+    <!-- Amazon Games Integration -->
+
+    <!-- Library: source not logged in splash -->
+    <string name="download_failed_title">다운로드 실패</string>
+    <string name="download_failed_message">필수 파일을 다운로드할 수 없습니다. 네트워크 연결을 확인하고 다시 시도해 주세요.</string>
+    <string name="install_failed_title">설치 실패</string>
+    <string name="install_failed_message">시스템 파일을 설치할 수 없습니다. 다시 시도해 주세요. 문제가 지속되면 다른 네트워크를 사용하거나 VPN을 사용해 보세요.</string>
+
+    <!-- Workshop -->
+
+    <!-- Recommendations -->
+    <!-- HLTB (How Long To Beat) -->
+
+    <!-- LSFG-VK frame generation -->
+    <string name="lsfg_tab_title">LSFG-VK</string>
+    <string name="lsfg_multiplier">프레임 배율</string>
+    <string name="lsfg_flow_scale">플로우 스케일</string>
+    <string name="lsfg_flow_scale_desc">낮을수록 더 안정적이고, 높을수록 더 부드럽지만 아티팩트가 생길 수 있습니다.</string>
+    <string name="lsfg_performance_mode">성능 모드</string>
+    <string name="lsfg_present_mode">프레젠트 모드</string>
+    <string name="lsfg_present_mode_desc">Mailbox를 권장합니다. FIFO는 출력 프레임 레이트(fps 제한 × 배수)가 화면 주사율과 일치할 때도 사용할 수 있지만, 주사율보다 낮으면 화면이 흔들려 보일 수 있습니다.</string>
+    <string name="lsfg_backend">백엔드</string>
+    <string name="lsfg_backend_desc">Legacy는 게임 내부에서 lsfg-vk 레이어를 실행하고, Native는 WoW Forever 렌더러에서 프레임 생성을 실행합니다.</string>
+    <string name="lsfg_backend_legacy">Legacy(레이어)</string>
+    <string name="lsfg_backend_native">Native(렌더러)</string>
+    <string name="lsfg_performance_mode_desc">처리량 향상을 위해 품질 감소</string>
+    <!-- Game Launch Tips -->
+
+    <!-- Frontend Sync Settings -->
+    <string name="screen_effects_scaling">스케일링</string>
+    <string name="screen_effects_upscaling">업스케일링</string>
+    <string name="screen_effects_basic_scaling">기본 스케일링</string>
+    <string name="screen_effects_scaling_mode">스케일링 모드</string>
+    <string name="screen_effects_scaling_mode_none">스케일링 없음</string>
+    <string name="screen_effects_scaling_mode_none_desc">스케일링 없음.</string>
+    <string name="screen_effects_scaling_mode_nearest">최근접</string>
+    <string name="screen_effects_scaling_mode_nearest_desc">선명한 픽셀(레트로).</string>
+    <string name="screen_effects_scaling_mode_linear">선형</string>
+    <string name="screen_effects_scaling_mode_linear_desc">부드러운 스케일링.</string>
+    <string name="screen_effects_scaling_mode_fill">채우기</string>
+    <string name="screen_effects_scaling_mode_fill_desc">화면을 채우고 가장자리를 자릅니다.</string>
+    <string name="screen_effects_scaling_mode_stretch">늘이기</string>
+    <string name="screen_effects_scaling_mode_stretch_desc">화면비를 무시하고 화면을 채웁니다.</string>
+    <string name="screen_effects_scaling_mode_fsr">FSR</string>
+    <string name="screen_effects_scaling_mode_fsr_desc">선명한 초해상도 업스케일.</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect">FSR Fit</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect_desc">FSR, 화면비 유지.</string>
+    <string name="screen_effects_scaling_mode_dls">DLS</string>
+    <string name="screen_effects_scaling_mode_dls_desc">샤픈/선명도 패스.</string>
+    <string name="screen_effects_scaling_mode_natural">자연</string>
+    <string name="screen_effects_scaling_mode_natural_desc">더 따뜻한 색조.</string>
+    <string name="screen_effects_fsr">FSR 1.0</string>
+    <string name="screen_effects_fsr_sharpness">FSR 선명도</string>
+    <string name="screen_effects_fsr_sharpness_value">%1$d/5</string>
+    <string name="tools_wine_processes_empty">실행 중인 EXE가 감지되지 않았습니다.</string>
+    <string name="performance_hud_battery_temperature">배터리 온도</string>
+    <string name="transcoder">트랜스코더</string>
+
+    <!-- Shooter Mode Improvements -->
+    <string name="shooter_mode_settings_title">슈터 모드 설정</string>
+    <string name="reset_shooter_settings">슈터 설정 초기화</string>
+    <string name="shooter_section_input">입력</string>
+    <string name="shooter_section_runtime">게임 중 컨트롤</string>
+    <string name="shooter_section_mouse_look">마우스 시선</string>
+    <string name="shooter_section_joysticks">조이스틱</string>
+    <string name="shooter_section_movement_joystick">이동 조이스틱</string>
+    <string name="shooter_section_right_joystick">오른쪽 스틱 시선 조이스틱</string>
+    <string name="shooter_section_movement">이동</string>
+    <string name="look_sensitivity_x">가로 감도</string>
+    <string name="look_sensitivity_x_subtitle">오른쪽 가로 마우스 시선 배율</string>
+    <string name="look_sensitivity_y">세로 감도</string>
+    <string name="look_sensitivity_y_subtitle">오른쪽 세로 마우스 시선 배율</string>
+    <string name="invert_look_y">세로 시선 반전</string>
+    <string name="invert_look_y_subtitle">마우스 시선의 위아래 이동을 반전합니다</string>
+    <string name="look_smoothing">시선 스무딩</string>
+    <string name="look_smoothing_subtitle">터치 샘플 사이의 시선 이동을 부드럽게 합니다</string>
+    <string name="look_deadzone">시선 데드존</string>
+    <string name="look_deadzone_subtitle">오른쪽의 작은 시선 이동을 무시합니다</string>
+    <string name="mouse_look_acceleration">마우스 시선 가속</string>
+    <string name="mouse_look_acceleration_subtitle">터치 이동이 빨라질수록 마우스 시선 속도를 높입니다</string>
+    <string name="mouse_acceleration_strength">가속 강도</string>
+    <string name="mouse_acceleration_strength_subtitle">빠른 드래그가 추가 마우스 속도를 더하는 정도</string>
+    <string name="mouse_acceleration_max">최대 가속</string>
+    <string name="mouse_acceleration_max_subtitle">빠른 마우스 시선 드래그 중 적용되는 최대 배율</string>
+    <string name="win32_relative_mouse_input">상대 마우스 입력</string>
+    <string name="win32_relative_mouse_input_subtitle">움직임을 상대 마우스 입력으로 Wine에 직접 전송합니다. 게임 내에서 마우스가 작동하지 않을 때 사용해 보세요.</string>
+    <string name="joystick_opacity">조이스틱 불투명도</string>
+    <string name="joystick_opacity_subtitle">동적 조이스틱 링과 손잡이의 불투명도</string>
+    <string name="show_shooter_runtime_toggle">게임 중 버튼 표시</string>
+    <string name="show_shooter_runtime_toggle_subtitle">슈터 모드가 활성화된 동안 마우스 활성화 / 스틱 활성화 버튼을 표시합니다</string>
+    <string name="movement_joystick_size">이동 조이스틱 크기</string>
+    <string name="movement_joystick_size_subtitle">왼쪽 동적 조이스틱의 크기 배율</string>
+    <string name="movement_joystick_deadzone">이동 데드존</string>
+    <string name="movement_joystick_deadzone_subtitle">왼쪽 이동 조이스틱의 작은 입력을 무시합니다</string>
+    <string name="movement_stick_sensitivity">이동 스틱 감도</string>
+    <string name="movement_stick_sensitivity_subtitle">가상 왼쪽 스틱이 최대 출력에 도달하는 속도를 변경합니다</string>
+    <string name="movement_joystick_behavior">이동 조이스틱 동작</string>
+    <string name="movement_joystick_behavior_subtitle">긴 드래그 중 왼쪽 조이스틱 중심의 동작 방식</string>
+    <string name="look_joystick_size">오른쪽 스틱 조이스틱 크기</string>
+    <string name="look_joystick_size_subtitle">시선 유형이 게임패드 오른쪽 스틱 출력일 때의 크기 배율</string>
+    <string name="look_joystick_deadzone">오른쪽 스틱 데드존</string>
+    <string name="look_joystick_deadzone_subtitle">게임패드 오른쪽 스틱 시선의 작은 입력을 무시합니다</string>
+    <string name="look_stick_sensitivity">오른쪽 스틱 감도</string>
+    <string name="look_stick_sensitivity_subtitle">가상 오른쪽 스틱이 최대 출력에 도달하는 속도를 변경합니다</string>
+    <string name="look_joystick_behavior">오른쪽 스틱 조이스틱 동작</string>
+    <string name="look_joystick_behavior_subtitle">시선 유형이 게임패드 오른쪽 스틱일 때 오른쪽 조이스틱 중심의 동작 방식</string>
+    <string name="shooter_movement_zone_width">이동 영역 너비</string>
+    <string name="shooter_movement_zone_width_subtitle">왼쪽 이동 터치에 예약된 화면 너비</string>
+    <string name="button_drag_look">버튼 드래그 시선</string>
+    <string name="button_drag_look_subtitle">화면 버튼에서 드래그하여 조준하거나 이동할 수 있게 합니다</string>
+    <string name="button_drag_threshold">버튼 드래그 임계값 (px)</string>
+    <string name="joystick_behavior">조이스틱 동작</string>
+    <string name="joystick_behavior_anchored">고정</string>
+    <string name="joystick_behavior_floating">플로팅</string>
+    <string name="outer_ring_sprint">외곽 링 스프린트</string>
+    <string name="outer_ring_sprint_subtitle">이동 조이스틱이 가장자리에 가까울 때 스프린트 입력을 사용합니다</string>
+    <string name="outer_ring_sprint_threshold">스프린트 임계값</string>
+    <string name="outer_ring_sprint_threshold_subtitle">스프린트를 활성화하는 데 필요한 조이스틱 거리</string>
+    <string name="outer_ring_sprint_press_mode">스프린트 입력 누르기</string>
+    <string name="outer_ring_sprint_press_mode_subtitle">스프린트 링에 들어갈 때 길게 누르는 대신 스프린트 입력을 한 번 탭합니다</string>
+    <string name="sprint_binding">스프린트 입력</string>
+    <string name="gesture_header_gamepad">게임패드</string>
+    <string name="control_appearance">컨트롤 모양</string>
+    <string name="button_color">컨트롤 색상</string>
+    <string name="button_color_subtitle">컨트롤 윤곽선, 아이콘, 텍스트의 16진수 색상</string>
+    <string name="button_active_color">누름 색상</string>
+    <string name="button_active_color_subtitle">누르거나 활성 상태일 때의 색상</string>
+    <string name="button_opacity">컨트롤 불투명도</string>
+    <string name="button_opacity_value">%1$d%%</string>
+    <string name="button_opacity_inherited">%1$d%% (전역 기본값)</string>
+    <string name="control_stroke_width">선 두께</string>
+    <string name="control_stroke_width_subtitle">컨트롤 윤곽선과 구분선 두께 조정</string>
+    <string name="control_stroke_width_thin">얇게</string>
+    <string name="control_stroke_width_default">기본</string>
+    <string name="control_stroke_width_thick">두껍게</string>
+    <string name="control_stroke_width_extra_thick">매우 두껍게</string>
+    <string name="button_look_through">드래그 입력 통과</string>
+    <string name="button_look_through_subtitle">이 버튼을 누른 채 드래그하여 이동이나 카메라 시점도 조작합니다. 터치스크린 모드에서는 사용할 수 없습니다.</string>
+    <string name="preview">미리보기</string>
+    <string name="active">활성</string>
+    <string name="apply_all">모두 적용</string>
+    <string name="copy_appearance_from_button">컨트롤에서 모양 복사</string>
+    <string name="toast_no_buttons_to_copy_appearance">모양을 복사할 다른 컨트롤이 없습니다</string>
+    <string name="toast_copied_button_appearance">컨트롤 모양을 복사했습니다</string>
+    <string name="toast_applied_button_appearance">모든 컨트롤에 모양을 적용했습니다</string>
+
+    <!-- Sponsorship (featured slot) -->
+    <plurals name="achievements_hidden_remaining">
+        <item quantity="other">숨겨진 도전 과제 %1$d개 남음</item>
+    </plurals>
+    <plurals name="local_mod_file_count">
+        <item quantity="other">파일 %1$d개</item>
+    </plurals>
+    <plurals name="local_mod_folder_count">
+        <item quantity="other">폴더 %1$d개</item>
+    </plurals>
+    <!-- Bionic FG (AI) Frame Generation -->
+    <string name="radial_menu">방사형 메뉴</string>
+    <string name="radial_menu_settings_title">방사형 메뉴</string>
+    <string name="radial_menu_cancel">취소</string>
+    <string name="radial_menu_slot_count">슬롯</string>
+    <string name="radial_menu_slot_count_subtitle">%1$d개 슬롯 활성화됨</string>
+    <string name="radial_menu_decrease_slots">슬롯 줄이기</string>
+    <string name="radial_menu_increase_slots">슬롯 늘리기</string>
+    <string name="radial_menu_slots">휠 슬롯</string>
+    <string name="radial_menu_slot_title">슬롯 %1$d</string>
+    <string name="radial_menu_slot_label_hint">레이블</string>
+    <string name="radial_menu_slot_binding">슬롯 %1$d 바인딩</string>
+    <string name="radial_menu_slot_binding_summary">바인딩: %1$s</string>
+    <string name="radial_menu_preset_common">일반</string>
+    <string name="radial_menu_preset_weapons">무기</string>
+    <string name="gesture_action_open_radial_menu">방사형 메뉴 열기</string>
+
+    <!-- Power Control -->
+    <string name="binding_mode_simultaneous">동시</string>
+    <string name="binding_mode_sequence">순차</string>
+    <string name="binding_sequence_delay_ms">순차 지연 (ms)</string>
+    <string name="binding_sequence_current_format">%1$s (%2$d ms)</string>
+    <string name="gyro_aiming">자이로 조준</string>
+    <string name="gyro_settings_title">자이로 설정</string>
+    <string name="gyro_section_output">출력 및 모션</string>
+    <string name="gyro_section_activation">활성화</string>
+    <string name="gyro_section_response">반응</string>
+    <string name="gyro_output">출력</string>
+    <string name="gyro_output_subtitle">기기 움직임으로 제어할 대상을 선택합니다.</string>
+    <string name="gyro_tilt_steering">기울기 조향</string>
+    <string name="gyro_tilt_steering_subtitle">기기를 기울인 상태로 유지하면 스틱의 수평 입력이 지속됩니다. 자이로가 활성화될 때마다 현재 위치를 중앙으로 설정합니다.</string>
+    <string name="gyro_tilt_unavailable">이 기기는 기울기 조향에 필요한 방향 센서를 제공하지 않습니다.</string>
+    <string name="gyro_activation">활성화 방식</string>
+    <string name="gyro_activation_help">길게 누르기, 전환 및 래칫은 자이로에 할당된 컨트롤을 사용합니다.</string>
+    <string name="gyro_activation_always">항상</string>
+    <string name="gyro_activation_hold">길게 누르기</string>
+    <string name="gyro_activation_toggle">전환</string>
+    <string name="gyro_activation_ratchet">래칫</string>
+    <string name="gyro_control_not_assigned">자이로: 할당되지 않음</string>
+    <string name="gyro_assign_in_controls_editor">컨트롤 편집기에서 할당</string>
+    <string name="gyro_sensitivity">감도</string>
+    <string name="gyro_sensitivity_subtitle">기기 회전이 선택한 출력에 미치는 강도를 조절합니다.</string>
+    <string name="gyro_tilt_full_scale">최대 조향 각도</string>
+    <string name="gyro_tilt_full_scale_subtitle">스틱을 왼쪽이나 오른쪽으로 최대로 입력하는 데 필요한 중앙 기준 기기 기울기입니다.</string>
+    <string name="gyro_tilt_deadzone">기울기 데드존</string>
+    <string name="gyro_tilt_deadzone_subtitle">중앙 위치 주변의 작은 기울기를 무시합니다.</string>
+    <string name="gyro_vertical_scale">수직 감도</string>
+    <string name="gyro_vertical_scale_subtitle">수평 움직임을 기준으로 수직 움직임을 조절합니다.</string>
+    <string name="gyro_steadying">안정화 임계값</string>
+    <string name="gyro_steadying_subtitle">감도를 적용하기 전에 매우 작은 의도하지 않은 움직임을 무시합니다.</string>
+    <string name="gyro_smoothing">부드럽게</string>
+    <string name="gyro_smoothing_subtitle">약간의 조준 지연을 감수하고 센서 떨림을 줄입니다.</string>
+    <string name="gyro_stick_anti_deadzone">스틱 안티 데드존</string>
+    <string name="gyro_stick_anti_deadzone_subtitle">게임의 내부 스틱 데드존을 보정합니다.</string>
+    <string name="gyro_invert_horizontal">수평 자이로 반전</string>
+    <string name="gyro_invert_vertical">수직 자이로 반전</string>
+    <string name="gyro_percent_value">%1$d%%</string>
+    <string name="gyro_degrees_value">%1$d°</string>
+    <string name="gyro_degrees_per_second_value">%1$.1f°/초</string>
+    <string name="gyro_milliseconds_value">%1$d ms</string>
+    <string name="reset_gyro_settings">자이로 설정 초기화</string>
+</resources>

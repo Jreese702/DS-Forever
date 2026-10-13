@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "Turnip-WoW-scheduler-test",
+  "description": "LOCAL TEST: Mesa fe067b17d9 with IR3 scheduler fix and diagnostic/ICD patches. GameNative validation pending.",
+  "author": "Mesa contributors; local WoW test patches",
+  "packageVersion": "1",
+  "vendor": "Mesa",
+  "driverVersion": "26.1.99-fe067b17d9-wow-test",
+  "minApi": 29,
+  "libraryName": "libvulkan_freedreno.so"
+}

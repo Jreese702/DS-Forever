@@ -1,0 +1,13 @@
+## Interface: 16001
+## Title: DS Forever: Quests
+## IconTexture: Interface\AddOns\WowCompanion\Media\ds_forever_icon
+## Category: DS Forever
+## Group: WowCompanion
+## Notes: Feeds the Quests room on the Thor's bottom screen
+## Author: DS Forever
+## Version: Set 105
+## DefaultState: enabled
+## Dependencies: WowCompanion
+## OptionalDeps: QuestieDB
+Quests.lua
+Tracker.lua

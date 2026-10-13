@@ -1,0 +1,12 @@
+## Interface: 16001
+## Title: DS Forever: Character
+## IconTexture: Interface\AddOns\WowCompanion\Media\ds_forever_icon
+## Category: DS Forever
+## Group: WowCompanion
+## Notes: Feeds the Character room, the bottom bar's XP bar and Home's buffs / debuffs on the Thor (read-only)
+## Author: DS Forever
+## Version: Set 105
+## DefaultState: enabled
+## Dependencies: WowCompanion
+Character.lua
+Auras.lua

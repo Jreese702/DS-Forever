@@ -1,0 +1,17 @@
+# Portable scripts; frozen payloads/notices must retain exact bytes.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.webp binary
+*.jpg binary
+*.tga binary
+*.ttf binary
+*.so binary
+*.tzst binary
+*.jar binary
+companion/app/src/main/assets/companion/** -text
+app/src/main/assets/notices/** -text
+licenses/** -text
+tools/fetch_components.sh -text
+tools/components.sha256 -text

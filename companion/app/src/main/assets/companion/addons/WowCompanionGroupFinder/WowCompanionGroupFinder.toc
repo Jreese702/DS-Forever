@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: DS Forever: Group Finder
+## IconTexture: Interface\AddOns\WowCompanion\Media\ds_forever_icon
+## Category: DS Forever
+## Group: WowCompanion
+## Notes: Feeds the Group Finder room on the Thor's bottom screen
+## Author: DS Forever
+## Version: Set 105
+## DefaultState: enabled
+## Dependencies: WowCompanion
+GroupFinder.lua

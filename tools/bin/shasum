@@ -1,0 +1,32 @@
+#!/usr/bin/env python
+"""Small SHA-256 check-mode shim for the unchanged fetch_components.sh on Windows."""
+import argparse
+import hashlib
+from pathlib import Path
+import re
+import sys
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('-a', choices=['256'], required=True)
+parser.add_argument('-c', type=Path, required=True)
+args = parser.parse_args()
+failed = False
+rows = args.c.read_text(encoding='ascii').splitlines()
+if not rows:
+    raise SystemExit('Empty checksum manifest')
+for line in rows:
+    match = re.fullmatch(r'([0-9a-fA-F]{64}) [ *]([^/\\\s]+)', line)
+    if not match:
+        raise SystemExit('Invalid SHA-256 manifest row')
+    name = match[2]
+    try:
+        digest = hashlib.sha256()
+        with open(name, 'rb') as source:
+            for block in iter(lambda: source.read(1024 * 1024), b''):
+                digest.update(block)
+        ok = digest.hexdigest() == match[1].lower()
+    except OSError:
+        ok = False
+    print(name + ': ' + ('OK' if ok else 'FAILED'))
+    failed |= not ok
+sys.exit(1 if failed else 0)

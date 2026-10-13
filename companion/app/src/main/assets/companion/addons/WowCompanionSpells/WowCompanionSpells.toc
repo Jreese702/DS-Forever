@@ -1,0 +1,18 @@
+## Interface: 16001
+## Title: DS Forever: Spells
+## IconTexture: Interface\AddOns\WowCompanion\Media\ds_forever_icon
+## Category: DS Forever
+## Group: WowCompanion
+## Notes: Feeds the Spellbook and Talents rooms on the Thor's bottom screen
+## Author: DS Forever
+## Version: Set 105
+## DefaultState: enabled
+## Dependencies: WowCompanion
+## SavedVariables: WowCompanionSpellsDB
+Spells.lua
+Book.lua
+Talents.lua
+TalentsCtl.lua
+PadMap.lua
+PadTabCtl.lua
+Radial.lua

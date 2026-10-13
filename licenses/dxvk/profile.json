@@ -1,0 +1,16 @@
+{
+  "type": "DXVK",
+  "versionName": "2.4.1-wow-aarch64-test",
+  "versionCode": 1,
+  "description": "LOCAL TEST: plain Windows ARM64 DXGI/D3D11 for WoW ARM64. Not an ARM64EC/x64 replacement. GameNative validation pending.",
+  "files": [
+    {
+      "source": "system32/dxgi.dll",
+      "target": "${system32}/dxgi.dll"
+    },
+    {
+      "source": "system32/d3d11.dll",
+      "target": "${system32}/d3d11.dll"
+    }
+  ]
+}

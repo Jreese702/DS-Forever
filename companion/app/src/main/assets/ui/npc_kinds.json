@@ -1,0 +1,171 @@
+{
+  "about": "Which pin an NPC wears (NpcKind.kt). User 2026-09-29: 'a general supplies shows an arrow, just make it a bag, or the bartender shows a chicken' -- the pin used to pick by npcflag bit, and the old data flags general-goods vendors AMMO and bartenders FOOD. Now the NPC's SUBTITLE decides first. Each rule is [regex, key]; the regex is matched case-insensitively against the subtitle, whole words; the first match wins. The key names UI Art's picture ui/kit/mm_<key>.png (its minimap SPEC, AGENT_LOG bbb36d8), and this table is UI Art's measured proposal (SPEC section 3) adopted by the map session, which owns keyword -> kind and the order. Checked on poi_0/1.json by tools/check_npc_kinds.py (addon repo).",
+  "trainerOther": [
+    [
+      "\\bpet trainer\\b",
+      "pet"
+    ],
+    [
+      "\\briding trainer\\b|\\bpilot\\b",
+      "mount"
+    ],
+    [
+      "\\bweapon master\\b",
+      "weapons"
+    ]
+  ],
+  "class": [
+    [
+      "\\bdruid\\b",
+      "class_druid"
+    ],
+    [
+      "\\bhunter\\b",
+      "class_hunter"
+    ],
+    [
+      "\\bmage\\b|\\bportal trainer\\b",
+      "class_mage"
+    ],
+    [
+      "\\bpaladin\\b",
+      "class_paladin"
+    ],
+    [
+      "\\bpriest\\b",
+      "class_priest"
+    ],
+    [
+      "\\brogue\\b",
+      "class_rogue"
+    ],
+    [
+      "\\bshaman\\b",
+      "class_shaman"
+    ],
+    [
+      "\\bwarlock\\b",
+      "class_warlock"
+    ],
+    [
+      "\\bwarrior\\b",
+      "class_warrior"
+    ]
+  ],
+  "prof": [
+    [
+      "\\b(alchemy|alchemist)\\b",
+      "prof_alchemy"
+    ],
+    [
+      "\\b(blacksmithing|blacksmith|armorsmith|weaponsmith)\\b",
+      "prof_blacksmithing"
+    ],
+    [
+      "\\b(cooking|cook|butcher)\\b",
+      "prof_cooking"
+    ],
+    [
+      "\\b(enchanting|enchanter)\\b",
+      "prof_enchanting"
+    ],
+    [
+      "\\b(engineering|engineer)\\b",
+      "prof_engineering"
+    ],
+    [
+      "\\b(first aid|physician)\\b",
+      "prof_firstaid"
+    ],
+    [
+      "\\bfishing\\b",
+      "prof_fishing"
+    ],
+    [
+      "\\b(herbalism|herbalist)\\b",
+      "prof_herbalism"
+    ],
+    [
+      "\\b(inscription|scribe)\\b",
+      "prof_inscription"
+    ],
+    [
+      "\\b(jewelcrafting|jewelcrafter)\\b",
+      "prof_jewelcrafting"
+    ],
+    [
+      "\\b(leatherworking|leatherworker)\\b",
+      "prof_leatherworking"
+    ],
+    [
+      "\\b(mining|miner)\\b",
+      "prof_mining"
+    ],
+    [
+      "\\b(skinning|skinner)\\b",
+      "prof_skinning"
+    ],
+    [
+      "\\b(tailoring|tailor|shadoweave)\\b",
+      "prof_tailoring"
+    ]
+  ],
+  "vendor": [
+    [
+      "\\binnkeeper\\b",
+      "innkeeper"
+    ],
+    [
+      "\\b(food|baker|bread|butcher|meat|fruit|mushrooms?|fungus|cheese|fish vendor|fish merchant|fisherman|cook|pies?|sausages?|treats|sweets?|pilgrim's bounty|smokywood pastures)\\b",
+      "food"
+    ],
+    [
+      "\\b(bartender|barmaid|waitress|wine|ale|drinks?|brew|distillery|merlot|vintner|beverages?)\\b",
+      "drink"
+    ],
+    [
+      "\\b(general goods|general supplies|bags?|odds & ends|specialty goods|speciality goods|rare goods)\\b",
+      "goods"
+    ],
+    [
+      "\\b(trade supplies|trade goods|tradesman|tradeswoman)\\b",
+      "tradegoods"
+    ],
+    [
+      "\\b(bows?|guns?|rifles?|bowyer|gunsmith)\\b",
+      "ranged"
+    ],
+    [
+      "\\b(fletcher|ammunition|arrows?)\\b",
+      "ammo"
+    ],
+    [
+      "\\b(weapons?|weaponsmith|blades?|axes?|maces?|staff|staves|swords?|wands?|two handed|thrown|macecrafter|axecrafter)\\b",
+      "weapons"
+    ],
+    [
+      "\\b(armor|armorer|armorsmith|shields?|clothier|robes?|hatter|cobbler|mail|plate)\\b",
+      "armour"
+    ],
+    [
+      "\\breagents?\\b",
+      "reagents"
+    ],
+    [
+      "\\b(poisons?|shady)\\b",
+      "poisons"
+    ],
+    [
+      "\\btabard\\b",
+      "tabard"
+    ],
+    [
+      "\\b(horse|ram|breeder|mount|mechanostrider|raptor handler|war harness)\\b",
+      "mount"
+    ],
+    [
+      "\\b(pets?|kittens?|cat lady|cockroach|snake vendor|parrots?)\\b",
+      "pet"
+    ]
+  ]
+}

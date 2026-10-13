@@ -1,0 +1,12 @@
+{
+  "type": "Proton",
+  "versionName": "proton-11.0-90624-arm64ec",
+  "versionCode": 1,
+  "description": "LOCAL TEST: Wine 11.0 with WoW ARM64 copied-syscall and NLS fixes. GameHub-tested; GameNative validation pending. Build label 90624 is local, not an upstream Proton release.",
+  "files": [],
+  "wine": {
+    "binPath": "bin",
+    "libPath": "lib",
+    "prefixPack": "prefixPack.txz"
+  }
+}

@@ -1,0 +1,249 @@
+{
+ "about": "the map's NPC icons, one 64 px cell per key (tools/harvest/map_recipes.py; NpcIcons.kt maps a pin to its key)",
+ "cell": 64,
+ "objectIcons": "Interface\\Minimap\\ObjectIcons.blp",
+ "trainerBook": "Interface\\Minimap\\Tracking\\Class.blp",
+ "cells": [
+  {
+   "key": "vendor",
+   "src": "icon",
+   "path": "Interface\\Icons\\INV_Misc_Bag_10.blp"
+  },
+  {
+   "key": "repair",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\Repair.blp"
+  },
+  {
+   "key": "food",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\Food.blp"
+  },
+  {
+   "key": "reagents",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\Reagents.blp"
+  },
+  {
+   "key": "poisons",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\Poisons.blp"
+  },
+  {
+   "key": "ammo",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\Ammunition.blp"
+  },
+  {
+   "key": "innkeeper",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\Innkeeper.blp"
+  },
+  {
+   "key": "flightmaster",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\FlightMaster.blp"
+  },
+  {
+   "key": "banker",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\Banker.blp"
+  },
+  {
+   "key": "auctioneer",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\Auctioneer.blp"
+  },
+  {
+   "key": "mailbox",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\Mailbox.blp"
+  },
+  {
+   "key": "stablemaster",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\StableMaster.blp"
+  },
+  {
+   "key": "battlemaster",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\BattleMaster.blp"
+  },
+  {
+   "key": "spirit",
+   "src": "oi",
+   "row": 6,
+   "col": 3
+  },
+  {
+   "key": "guild",
+   "src": "icon",
+   "path": "Interface\\Icons\\INV_Shirt_GuildTabard_01.blp"
+  },
+  {
+   "key": "generic",
+   "src": "oi",
+   "row": 0,
+   "col": 3,
+   "scale": 0.75
+  },
+  {
+   "key": "trainer",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\Class.blp"
+  },
+  {
+   "key": "profession",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "forge",
+   "src": "icon",
+   "path": "Interface\\Icons\\Spell_Fire_Fire.blp"
+  },
+  {
+   "key": "anvil",
+   "src": "track",
+   "path": "Interface\\Minimap\\Tracking\\Repair.blp"
+  },
+  {
+   "key": "class_warrior",
+   "src": "classbook",
+   "path": "Interface\\Icons\\ClassIcon_Warrior.blp",
+   "or": "Interface\\Minimap\\Tracking\\Class.blp"
+  },
+  {
+   "key": "class_paladin",
+   "src": "classbook",
+   "path": "Interface\\Icons\\ClassIcon_Paladin.blp",
+   "or": "Interface\\Minimap\\Tracking\\Class.blp"
+  },
+  {
+   "key": "class_hunter",
+   "src": "classbook",
+   "path": "Interface\\Icons\\ClassIcon_Hunter.blp",
+   "or": "Interface\\Minimap\\Tracking\\Class.blp"
+  },
+  {
+   "key": "class_rogue",
+   "src": "classbook",
+   "path": "Interface\\Icons\\ClassIcon_Rogue.blp",
+   "or": "Interface\\Minimap\\Tracking\\Class.blp"
+  },
+  {
+   "key": "class_priest",
+   "src": "classbook",
+   "path": "Interface\\Icons\\ClassIcon_Priest.blp",
+   "or": "Interface\\Minimap\\Tracking\\Class.blp"
+  },
+  {
+   "key": "class_shaman",
+   "src": "classbook",
+   "path": "Interface\\Icons\\ClassIcon_Shaman.blp",
+   "or": "Interface\\Minimap\\Tracking\\Class.blp"
+  },
+  {
+   "key": "class_mage",
+   "src": "classbook",
+   "path": "Interface\\Icons\\ClassIcon_Mage.blp",
+   "or": "Interface\\Minimap\\Tracking\\Class.blp"
+  },
+  {
+   "key": "class_warlock",
+   "src": "classbook",
+   "path": "Interface\\Icons\\ClassIcon_Warlock.blp",
+   "or": "Interface\\Minimap\\Tracking\\Class.blp"
+  },
+  {
+   "key": "class_druid",
+   "src": "classbook",
+   "path": "Interface\\Icons\\ClassIcon_Druid.blp",
+   "or": "Interface\\Minimap\\Tracking\\Class.blp"
+  },
+  {
+   "key": "prof_alchemy",
+   "src": "icon",
+   "path": "Interface\\Icons\\Trade_Alchemy.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_blacksmithing",
+   "src": "icon",
+   "path": "Interface\\Icons\\Trade_BlackSmithing.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_cooking",
+   "src": "icon",
+   "path": "Interface\\Icons\\INV_Misc_Food_15.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_enchanting",
+   "src": "icon",
+   "path": "Interface\\Icons\\Trade_Engraving.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_engineering",
+   "src": "icon",
+   "path": "Interface\\Icons\\Trade_Engineering.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_firstaid",
+   "src": "icon",
+   "path": "Interface\\Icons\\Spell_Holy_SealOfSacrifice.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_fishing",
+   "src": "icon",
+   "path": "Interface\\Icons\\Trade_Fishing.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_herbalism",
+   "src": "icon",
+   "path": "Interface\\Icons\\Trade_Herbalism.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_inscription",
+   "src": "icon",
+   "path": "Interface\\Icons\\INV_Inscription_Tradeskill01.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_jewelcrafting",
+   "src": "icon",
+   "path": "Interface\\Icons\\INV_Misc_Gem_01.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_leatherworking",
+   "src": "icon",
+   "path": "Interface\\Icons\\Trade_LeatherWorking.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_mining",
+   "src": "icon",
+   "path": "Interface\\Icons\\Trade_Mining.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_skinning",
+   "src": "icon",
+   "path": "Interface\\Icons\\INV_Misc_Pelt_Wolf_01.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  },
+  {
+   "key": "prof_tailoring",
+   "src": "icon",
+   "path": "Interface\\Icons\\Trade_Tailoring.blp",
+   "or": "Interface\\Minimap\\Tracking\\Profession.blp"
+  }
+ ]
+}

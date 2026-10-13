@@ -1,0 +1,684 @@
+﻿<resources>
+    <string name="app_name">GameNative</string>
+    <string name="home">ホーム</string>
+    <string name="download">ダウンロード</string>
+    <string name="install">インストール</string>
+    <string name="yes">はい</string>
+    <string name="no">いいえ</string>
+    <string name="cancel">キャンセル</string>
+    <string name="delete">削除</string>
+
+    <!-- Library Tabs -->
+
+    <!-- Custom Games -->
+
+    <!--Winlator-->
+    <string name="disabled">無効</string>
+    <string name="copy">コピー</string>
+    <string name="stability">安定性</string>
+    <string name="compatibility">互換性</string>
+    <string name="intermediate">中級</string>
+    <string name="performance">パフォーマンス</string>
+    <string name="denuvo">Denuvo</string>
+    <string name="extreme">過激</string>
+    <string name="unity">Unity</string>
+    <string name="unity_mono_bleeding_edge">Unity Mono Bleeding Edge</string>
+
+    <!-- Winlator: Win Components -->
+    <string name="direct3d">Direct3D</string>
+    <string name="directsound">DirectSound</string>
+    <string name="wmdecoder">Windows メディア デコーダ</string>
+    <string name="opengl">OpenGL</string>
+    <string name="edit">編集</string>
+    <string name="remove">取り除く</string>
+    <string name="add">追加</string>
+    <string name="copy_from">コピー元</string>
+    <string name="ok">わかりました</string>
+    <string name="game_executable_not_found_title">起動できない</string>
+    <string name="game_executable_not_found">実行ファイルを自動選択できませんでした。コンテナ設定で実行ファイルのパスを指定してください。</string>
+    <string name="save">保存</string>
+    <string name="discard">破棄</string>
+    <string name="contents">コンテンツ</string>
+    <string name="task_manager">タスクマネージャー</string>
+    <string name="exit_game">出口</string>
+    <string name="exit">ゲームを終了する</string>
+    <string name="keyboard">キーボード</string>
+    <string name="resume_game">ゲームを再開する</string>
+    <string name="extra">余分な</string>
+    <string name="clear_search">検索をクリア</string>
+    <string name="face_buttons_category">フェイスボタン</string>
+    <string name="shoulder_buttons_category">肩ボタン</string>
+    <string name="menu_buttons_category">メニューボタン</string>
+    <string name="thumbstick_buttons_category">サムスティックボタン</string>
+    <string name="left_stick">左スティック</string>
+    <string name="right_stick">右スティック</string>
+    <string name="dpad_category">十字キー</string>
+    <string name="dpad_up">十字キー上</string>
+    <string name="dpad_down">十字キー下</string>
+    <string name="dpad_left">十字キー左</string>
+    <string name="dpad_right">十字キー右</string>
+    <string name="input_controls">オンスクリーンコントローラー</string>
+    <string name="edit_controls">オンスクリーンコントローラーの編集</string>
+    <string name="edit_physical_controller">物理コントローラーの編集</string>
+    <string name="quick_menu_title">クイックメニュー</string>
+    <string name="quick_menu_back">戻る</string>
+    <string name="display_brightness">ディスプレイの明るさ</string>
+    <string name="screen_effects">画面効果</string>
+    <string name="screen_effects_live_preview">変更は現在のゲームに即座に適用されます。</string>
+    <string name="screen_effects_scaling">スケーリング</string>
+    <string name="screen_effects_upscaling">アップスケーリング</string>
+    <string name="screen_effects_basic_scaling">基本スケーリング</string>
+    <string name="screen_effects_scaling_mode_none_desc">スケーリングなし。</string>
+    <string name="screen_effects_scaling_mode_nearest_desc">くっきりしたピクセル（レトロ向け）。</string>
+    <string name="screen_effects_scaling_mode_linear_desc">滑らかなスケーリング。</string>
+    <string name="screen_effects_scaling_mode_fill_desc">画面いっぱいに表示し、端を切り取ります。</string>
+    <string name="screen_effects_scaling_mode_stretch_desc">縦横比を無視して画面いっぱいに引き伸ばします。</string>
+    <string name="screen_effects_scaling_mode_fsr_desc">くっきりした超解像アップスケール。</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect_desc">FSR（縦横比を維持）。</string>
+    <string name="screen_effects_scaling_mode_dls_desc">シャープ化／クラリティ処理。</string>
+    <string name="screen_effects_scaling_mode_natural_desc">暖かみのある色合い。</string>
+    <string name="screen_effects_color_adjustments">色の調整</string>
+    <string name="screen_effects_shader_toggles">シェーダーエフェクト</string>
+    <string name="screen_effects_scaling_mode">スケーリングモード</string>
+    <string name="screen_effects_scaling_mode_none">スケーリングなし</string>
+    <string name="screen_effects_scaling_mode_nearest">最寄りの</string>
+    <string name="screen_effects_scaling_mode_linear">リニア</string>
+    <string name="screen_effects_scaling_mode_fill">埋める</string>
+    <string name="screen_effects_scaling_mode_stretch">ストレッチ</string>
+    <string name="screen_effects_scaling_mode_fsr">FSR</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect">FSRフィット</string>
+    <string name="screen_effects_scaling_mode_dls">DLS</string>
+    <string name="screen_effects_scaling_mode_natural">自然</string>
+    <string name="screen_effects_fsr">FSR1.0</string>
+    <string name="screen_effects_fsr_sharpness">FSRのシャープネス</string>
+    <string name="screen_effects_fsr_sharpness_value">%1$d/5</string>
+    <string name="screen_effects_brightness">輝度</string>
+    <string name="screen_effects_contrast">対比</string>
+    <string name="screen_effects_gamma">ガンマ</string>
+    <string name="screen_effects_toon">トゥーンアウトライン</string>
+    <string name="screen_effects_toon_description">セルシェーディングの外観に暗い輪郭を追加します。</string>
+    <string name="screen_effects_fxaa">FXAA</string>
+    <string name="screen_effects_fxaa_description">ポストプロセスの軽いアンチエイリアシング パスでギザギザのエッジを滑らかにします。</string>
+    <string name="screen_effects_vivid">鮮やかな</string>
+    <string name="screen_effects_vivid_description">ブルームとコントラストブーストを追加して、パンチのある画像を実現します。</string>
+    <string name="screen_effects_crt">ブラウン管</string>
+    <string name="screen_effects_crt_description">走査線と微妙な色収差を追加します。</string>
+    <string name="screen_effects_ntsc">NTSC</string>
+    <string name="screen_effects_ntsc_description">レトロなコンポジット TV のワーピング、ブリード、スキャンラインを追加します。</string>
+    <string name="screen_effects_reset">リセット</string>
+    <string name="screen_effects_close">近い</string>
+    <string name="quick_menu_tab_controller">コントローラ</string>
+    <string name="tools_wine_processes_running_hint">%1$d が実行中です。プロセスをタップ/クリックして閉じます</string>
+    <string name="tools_wine_processes_empty">実行中のEXEは検出されませんでした。</string>
+    <string name="performance_hud">パフォーマンス HUD</string>
+    <string name="performance_hud_description">ゲーム内のオーバーレイを表示または非表示にします。</string>
+    <string name="performance_hud_fps_limiter">FPSリミッター</string>
+    <string name="performance_hud_fps_limiter_target">ターゲットFPS</string>
+    <string name="performance_hud_fps_limiter_value">%1$d FPS</string>
+    <string name="performance_hud_fps_limiter_lsfg_base">ベースフレームレートを制限します。画面上のレートは上限×LSFG倍率です。</string>
+    <string name="performance_hud_presets">プリセット</string>
+    <string name="performance_hud_preset_fps_only">1</string>
+    <string name="performance_hud_preset_essential">2</string>
+    <string name="performance_hud_preset_battery">3</string>
+    <string name="performance_hud_preset_full">4</string>
+    <string name="performance_hud_appearance">外観</string>
+    <string name="performance_hud_size">サイズ</string>
+    <string name="performance_hud_size_small">S</string>
+    <string name="performance_hud_size_medium">M</string>
+    <string name="performance_hud_size_large">L</string>
+    <string name="performance_hud_background_opacity">背景の不透明度</string>
+    <string name="performance_hud_color_intensity">色の濃さ</string>
+    <string name="performance_hud_text_outline">テキストのアウトライン</string>
+    <string name="performance_hud_percentage_value">%1$d%%</string>
+    <string name="performance_hud_metrics">表示されるメトリクス</string>
+    <string name="performance_hud_frame_rate">フレームレート</string>
+    <string name="performance_hud_frame_rate_graph">FPSグラフ</string>
+    <string name="performance_hud_cpu_usage">CPU使用率</string>
+    <string name="performance_hud_cpu_usage_graph">CPUグラフ</string>
+    <string name="performance_hud_gpu_usage">GPU使用率</string>
+    <string name="performance_hud_gpu_usage_graph">GPUグラフ</string>
+    <string name="performance_hud_ram_usage">RAMの使用量</string>
+    <string name="performance_hud_battery_level">バッテリー残量</string>
+    <string name="performance_hud_power_draw">消費電力</string>
+    <string name="performance_hud_runtime_left">残りランタイム</string>
+    <string name="performance_hud_battery_temperature">バッテリー温度</string>
+    <string name="performance_hud_clock_time">時計の時間</string>
+    <string name="performance_hud_cpu_temperature">CPU温度</string>
+    <string name="performance_hud_gpu_temperature">GPU温度</string>
+
+    <!-- Controller Binding Dialog -->
+    <string name="bind_button">バインド: %1$s</string>
+    <string name="current_binding">現在: %1$s</string>
+    <string name="search_placeholder">検索…</string>
+    <string name="search">検索</string>
+    <string name="category">カテゴリ</string>
+    <string name="mouse">ねずみ</string>
+    <string name="gamepad">ゲームパッド</string>
+    <string name="binding_none">なし</string>
+    <string name="clear_binding">クリアバインディング</string>
+    <string name="no_bindings_found">バインディングが見つかりません</string>
+
+    <!-- Element Editor Dialog -->
+    <string name="edit_element">%1$sを編集</string>
+    <string name="element_position_size">位置: (%1$d、%2$d) • サイズ: %3$.2fx</string>
+    <string name="appearance">外観</string>
+    <string name="size_subtitle">%.2fx</string>
+    <string name="label_text">ラベルのテキスト</string>
+    <string name="label_text_subtitle">このボタンのカスタムテキスト</string>
+    <string name="element_type">要素の種類</string>
+    <string name="element_type_subtitle">このコントロールのタイプを変更します</string>
+    <string name="shape">形</string>
+    <string name="shape_subtitle">外観</string>
+    <string name="shape_restricted">%1$s は %2$s 形状に限定されます</string>
+    <string name="bindings">バインディング</string>
+    <string name="bindings_auto_generated">バインディング (自動生成)</string>
+    <string name="bindings_auto_generated_subtitle">範囲ボタンのバインディングは自動的に生成されます</string>
+    <string name="range_button_settings">レンジボタンの設定</string>
+    <string name="range_type">キーレンジ</string>
+    <string name="range_type_subtitle">どのキーのセットを循環させるか</string>
+    <string name="range_orientation">向き</string>
+    <string name="range_orientation_subtitle">レンジボタンの配置方向</string>
+    <string name="range_orientation_horizontal">水平</string>
+    <string name="range_orientation_vertical">垂直</string>
+    <string name="range_visible_segments">可視セグメント</string>
+    <string name="range_visible_segments_subtitle">一度に表示されるキーセグメントの数: %1$d</string>
+    <string name="range_a_to_z">A～Z</string>
+    <string name="range_1_to_0">1 – 0</string>
+    <string name="range_f1_to_f12">F1～F12</string>
+    <string name="range_lock_scrolling">スクロールをロックする</string>
+    <string name="range_lock_scrolling_subtitle">範囲をスクロールできないようにする</string>
+    <string name="button_toggleable">切り替え可能</string>
+    <string name="button_toggleable_subtitle">タップして有効化し、もう一度タップして無効化します</string>
+    <string name="primary_action">主なアクション</string>
+    <string name="secondary_action">二次アクション</string>
+    <string name="direction_up">上</string>
+    <string name="direction_right">右</string>
+    <string name="direction_down">下</string>
+    <string name="direction_left">左</string>
+    <string name="mouse_suffix">（ねずみ）</string>
+    <string name="slot_number">スロット %1$d</string>
+    <string name="button_slots_help">ボタンは最大 2 つのバインディングをサポートします: プライマリ (押す) とセカンダリ (長押し)</string>
+    <string name="properties">プロパティ</string>
+    <string name="position">位置</string>
+    <string name="position_value">X:%1$d、Y:%2$d</string>
+    <string name="unsaved_changes">未保存の変更</string>
+    <string name="unsaved_changes_message">未保存の変更があります。保存しますか、それとも破棄しますか?</string>
+    <string name="adjust_size">サイズを調整する</string>
+    <string name="reset">リセット</string>
+    <string name="done">終わり</string>
+    <string name="copy_size_from_element">要素からサイズをコピー</string>
+    <string name="toast_no_elements_to_copy">サイズをコピーできる要素が他にありません</string>
+    <string name="toast_copied_size">コピーサイズ：%.2fx</string>
+    <string name="quick_presets">クイックプリセット</string>
+    <string name="preset_wasd">WASD</string>
+    <string name="preset_arrows">矢</string>
+    <string name="preset_mouse">ねずみ</string>
+    <string name="preset_dpad">十字キー</string>
+    <string name="preset_left_stick">左スティック</string>
+    <string name="preset_right_stick">右スティック</string>
+
+    <!-- Shooter Mode -->
+    <string name="shooter_mode_settings">ダイナミックジョイスティック設定</string>
+    <string name="movement_type">移動タイプ</string>
+    <string name="movement_type_subtitle">左側移動用のジョイスティック出力</string>
+    <string name="look_sensitivity">見た目の感度</string>
+    <string name="look_sensitivity_subtitle">マウスの見た目の感度乗数</string>
+    <string name="joystick_size">ジョイスティックのサイズ</string>
+    <string name="joystick_size_subtitle">動的ジョイスティック サイズ乗数</string>
+    <string name="movement_wasd">WASD</string>
+    <string name="movement_arrow_keys">矢印キー</string>
+    <string name="movement_gamepad_left_stick">ゲームパッドの左スティック</string>
+    <string name="look_type">見た目のタイプ</string>
+    <string name="look_type_subtitle">シューティングモードでの右側の動作</string>
+    <string name="look_type_mouse">ねずみ</string>
+    <string name="look_type_gamepad_right_stick">ゲームパッドの右スティック</string>
+
+    <!-- Physical Controller Config -->
+    <string name="physical_controller_config">物理コントローラー バインディング エディター</string>
+    <string name="face_buttons">フェイスボタン</string>
+    <string name="button_a">ボタン</string>
+    <string name="button_b">Bボタン</string>
+    <string name="button_x">×ボタン</string>
+    <string name="button_y">Yボタン</string>
+    <string name="shoulder_buttons">肩ボタン</string>
+    <string name="button_l1">LB</string>
+    <string name="button_r1">RB</string>
+    <string name="button_l2">LT</string>
+    <string name="button_r2">RT</string>
+    <string name="menu_buttons">メニューボタン</string>
+    <string name="button_start">スタート/オプション</string>
+    <string name="button_select">選択/表示/共有</string>
+    <string name="thumbstick_buttons">サムスティックボタン</string>
+    <string name="button_l3">L3 (左スティッククリック)</string>
+    <string name="button_r3">R3 (右スティッククリック)</string>
+    <string name="left_stick_up">左スティックアップ</string>
+    <string name="left_stick_down">左スティック下</string>
+    <string name="left_stick_left">左スティック左</string>
+    <string name="left_stick_right">左スティック右</string>
+    <string name="right_stick_up">右スティックアップ</string>
+    <string name="right_stick_down">右スティック下</string>
+    <string name="right_stick_left">右スティック左</string>
+    <string name="right_stick_right">右スティック右</string>
+    <string name="button_home">ホーム / ガイド / PS</string>
+    <string name="not_set">未設定</string>
+
+    <!-- Toast -->
+    <string name="toast_controls_reset">コントロールのリセット</string>
+
+    <!-- Settings -->
+
+
+    <!-- Library & Game Management -->
+    <string name="label">ラベル</string>
+    <string name="status">状態</string>
+    <string name="size">サイズ</string>
+    <string name="installing">インストール中</string>
+
+
+    <!-- App Filter -->
+
+    <!-- Login & Connection -->
+
+
+    <!--Game Feedback Dialog -->
+
+
+    <!-- Profile & Menu -->
+    <string name="close">近い</string>
+
+    <!-- System menu platform actions -->
+
+    <!-- Container Configuration: General -->
+    <string name="name">名前</string>
+    <string name="container_variant">コンテナのバリアント</string>
+    <string name="wine_version">Wineバージョン</string>
+    <string name="language">言語</string>
+    <string name="screen_size">画面サイズ</string>
+    <string name="audio_driver">オーディオドライバー</string>
+    <string name="pulseaudio_low_latency">PulseAudio 低レイテンシーモード</string>
+    <string name="show_fps">FPS を表示</string>
+    <string name="portrait_mode">ポートレートモード</string>
+    <string name="portrait_below_cutout">カメラホールの下に表示</string>
+
+
+    <!-- Container Configuration: Graphics -->
+    <string name="graphics_driver">グラフィックドライバー</string>
+    <string name="graphics_driver_version">グラフィックスドライバーのバージョン</string>
+    <string name="sf_compat_mode">互換モード</string>
+    <string name="use_legacy_renderer">レガシーレンダラーを使用する</string>
+    <string name="sharpness_effect">シャープネスブースト</string>
+    <string name="sharpness_level">シャープネスレベル</string>
+    <string name="sharpness_denoise">シャープネスノイズ除去</string>
+
+    <!-- Container Configuration: Emulation -->
+    <string name="fexcore_version">FEXコアのバージョン</string>
+    <string name="fexcore_preset">FEXコアプリセット</string>
+    <string name="box64_version">Box64 バージョン</string>
+    <string name="box64_preset">Box64 プリセット</string>
+
+    <!-- Container Configuration: Input -->
+    <string name="show_controller_debug_menu">コントローラー デバッグ メニューを表示</string>
+    <string name="disable_mouse_input">マウス入力を無効にする</string>
+    <string name="touchscreen_mode">タッチスクリーンモード</string>
+    <string name="shooter_mode_toggle">シューターモード</string>
+    <string name="shooter_mode_on">マウスを有効にする</string>
+    <string name="shooter_mode_off">スティックを有効にする</string>
+    <!-- Gesture Settings Dialog -->
+    <string name="gesture_settings_title">タッチジェスチャー設定</string>
+    <string name="gesture_section_single_finger">一本の指</string>
+    <string name="gesture_section_two_finger">ツーフィンガー</string>
+    <string name="gesture_section_three_finger">スリーフィンガー</string>
+    <string name="gesture_section_other">他の</string>
+    <string name="gesture_tap">タップ</string>
+    <string name="gesture_drag">指をドラッグ</string>
+    <string name="gesture_hold_mouse_button_while_touching">タッチ中にマウスボタンを保持</string>
+    <string name="gesture_mouse_button_label">マウスボタン</string>
+    <string name="gesture_long_press">長押し</string>
+    <string name="gesture_long_press_delay">長押し遅延 (ミリ秒)</string>
+    <string name="gesture_double_tap">ダブルタップ</string>
+    <string name="gesture_double_tap_subtitle">左ダブルクリック</string>
+    <string name="gesture_double_tap_delay">ダブルタップ遅延 (ミリ秒)</string>
+    <string name="gesture_two_finger_drag">2本指でドラッグ</string>
+    <string name="gesture_pinch">ピンチイン/ピンチアウト</string>
+    <string name="gesture_two_finger_tap">2本指タップ</string>
+    <string name="gesture_action_left_click">左クリック</string>
+    <string name="gesture_action_right_click">右クリック</string>
+    <string name="gesture_action_middle_click">中クリック</string>
+    <string name="gesture_pan_middle_mouse">中マウスパン</string>
+    <string name="gesture_pan_inverted_middle_mouse">反転中マウスパン</string>
+    <string name="gesture_pan_wasd">WASD</string>
+    <string name="gesture_pan_inverted_wasd">反転WASD</string>
+    <string name="gesture_pan_arrow_keys">矢印キー</string>
+    <string name="gesture_pan_inverted_arrow_keys">反転矢印キー</string>
+    <string name="gesture_pan_left_click_drag">左クリックでドラッグ</string>
+    <string name="gesture_pan_right_click_drag">右クリックしてドラッグ</string>
+    <string name="gesture_zoom_scroll_wheel">スクロールホイール</string>
+    <string name="gesture_zoom_plus_minus">+/- キー</string>
+    <string name="gesture_zoom_page_up_down">ページアップ/ページダウン</string>
+    <string name="gesture_action_label">アクション</string>
+    <string name="gesture_action_show_keyboard">キーボードを表示</string>
+    <string name="gesture_mouse_behavior_label">マウス動作</string>
+    <string name="gesture_mouse_behavior_click">クリック</string>
+    <string name="gesture_mouse_behavior_hold">ホールド</string>
+    <string name="gesture_header_special">特別</string>
+    <string name="gesture_header_mouse">ねずみ</string>
+    <string name="gesture_header_common_game">共通のゲームキー</string>
+    <string name="gesture_header_navigation_editing">ナビゲーション / 編集</string>
+    <string name="gesture_header_symbols">記号</string>
+    <string name="gesture_header_letters">文字A\u2013Z</string>
+    <string name="gesture_header_numbers">数字0\u20139</string>
+    <string name="gesture_header_numpad">テンキー</string>
+    <string name="gesture_header_function_keys">ファンクションキー</string>
+    <string name="gesture_header_modifiers_locks">修飾キー / ロック</string>
+    <string name="gesture_two_finger_hold">2本指ホールド</string>
+    <string name="gesture_two_finger_hold_delay">2 本指ホールド遅延 (ミリ秒)</string>
+    <string name="gesture_three_finger_tap">3本指タップ</string>
+    <string name="gesture_three_finger_drag">3本指でドラッグ</string>
+    <string name="gesture_three_finger_hold">3本指ホールド</string>
+    <string name="gesture_three_finger_hold_delay">3 本指ホールド遅延 (ミリ秒)</string>
+    <string name="gesture_threshold">ジェスチャーのしきい値 (px)</string>
+    <string name="gesture_mouse_drag_movement">ドラッグ時のマウス移動</string>
+    <string name="gesture_mouse_drag_movement_subtitle">ほとんどのゲームではダイレクトが動作します。ドラッグでカメラやカーソルに問題が出る場合は相対を使用してください</string>
+    <string name="gesture_mouse_drag_movement_direct">ダイレクト</string>
+    <string name="gesture_mouse_drag_movement_relative">相対</string>
+    <string name="gesture_show_click_highlight">クリックハイライトを表示</string>
+    <string name="gesture_show_click_highlight_subtitle">タップした位置に円を表示</string>
+    <string name="gesture_show_debug_overlay">ジェスチャ デバッグ オーバーレイを表示</string>
+    <string name="gesture_show_debug_overlay_subtitle">上部中央に一時的なジェスチャ ラベルを表示する</string>
+    <string name="gesture_show_cursor_touchscreen_mode">タッチスクリーンモードでカーソルを表示</string>
+    <string name="gesture_show_cursor_touchscreen_mode_subtitle">タッチスクリーンジェスチャーが有効な間、マウスカーソルを表示したままにします</string>
+
+    <string name="external_display_swap">外部ディスプレイにゲームを表示</string>
+
+    <!-- Container Configuration: Rendering -->
+    <string name="renderer">レンダラー</string>
+
+    <!-- Container Configuration: Management -->
+    <string name="startup_selection">スタートアップの選択</string>
+
+    <!-- Dialogs -->
+
+    <!-- Driver Manager -->
+
+    <!-- Contents Manager -->
+
+    <!-- Settings -->
+
+    <!-- Settings: Performance Group -->
+
+    <!-- Settings: Emulation Group -->
+
+    <!-- Settings: Debug Group -->
+
+    <!-- Settings: Info Group -->
+
+    <!-- Settings: Interface Group -->
+
+    <!-- Settings: Downloads Group -->
+
+    <!-- Settings: Storage Manager -->
+
+    <!-- Login Screen -->
+
+    <!-- Generic/Reusable strings -->
+
+
+    <!-- Connecting to Servers Screen -->
+
+    <!-- LibraryAppScreen: Dialogs -->
+
+    <!-- LibraryAppScreen: Toast Messages -->
+
+    <!-- LibraryAppScreen: UI Labels -->
+
+
+    <!-- PluviaMain: Update & App Info -->
+
+
+    <!-- PluviaMain: Game Launch -->
+
+    <string name="main_installing_glibc">glibc コンポーネントをインストールしています...</string>
+    <string name="main_installing_bionic">Bionic コンポーネントをインストールしています...</string>
+    <string name="main_loading">読み込み中...</string>
+    <string name="download_failed_title">ダウンロードに失敗しました</string>
+    <string name="download_failed_message">必要なファイルをダウンロードできませんでした。ネットワーク接続を確認して、もう一度試してください。</string>
+    <string name="install_failed_title">インストールに失敗しました</string>
+    <string name="install_failed_message">システムファイルをインストールできませんでした。もう一度試してください。問題が解決しない場合は、別のネットワークを試すか、VPN を使用してください。</string>
+
+    <!-- PluviaMain: Session Conflicts -->
+
+    <!-- PluviaMain: Save Conflicts -->
+
+    <!-- PluviaMain: Sync Errors -->
+
+    <!-- PluviaMain: Pending Operations -->
+
+    <!-- Container Config Dialog -->
+
+    <!-- Libraries Dialog -->
+
+
+    <!-- Chat Screen -->
+
+    <!-- Library Components -->
+
+    <!-- Best Config Compatibility Messages -->
+
+    <!-- Best Config Toast Messages -->
+    <plurals name="community_config_result_count">
+        <item quantity="other">%1$d 件の設定</item>
+    </plurals>
+    <string name="back">戻る</string>
+
+    <!-- Options Panel -->
+
+    <!-- Game Options Panel -->
+
+    <!-- System Menu -->
+    <string name="menu">メニュー</string>
+
+    <!-- Gamepad Actions -->
+
+    <!-- Search -->
+
+    <!-- Two Factor Auth -->
+
+    <!-- Contents Manager -->
+
+    <!-- Driver Manager -->
+
+    <!-- Settings Interface -->
+
+    <!-- Settings Screen -->
+
+    <!-- Contents Install Finish -->
+
+    <!-- Library Status -->
+    <!-- Wine/Proton Manager -->
+
+    <!-- Wine/Proton Manager - Status Messages -->
+
+
+
+    <!-- Amazon Games Integration -->
+
+    <!-- Workshop -->
+
+    <!-- App option menu labels -->
+    <!-- Recommendations -->
+    <!-- LSFG Frame Generation -->
+    <string name="lsfg_tab_title">LSFG-VK</string>
+    <string name="lsfg_multiplier">フレーム乗数</string>
+    <string name="lsfg_flow_scale">流量スケール</string>
+    <string name="lsfg_flow_scale_desc">低いほど安定します。高いほどスムーズになりますが、アーティファクトが発生する可能性があります。</string>
+    <string name="lsfg_performance_mode">パフォーマンスモード</string>
+    <string name="lsfg_present_mode">プレゼントモード</string>
+    <string name="lsfg_present_mode_desc">Mailbox を推奨します。FIFO は出力フレームレート（fps上限×倍率）が画面のリフレッシュレートと一致する場合にも使えますが、リフレッシュレートを下回ると揺れて見えることがあります。</string>
+    <string name="lsfg_backend">バックエンド</string>
+    <string name="lsfg_backend_desc">Legacy はゲーム内で lsfg-vk レイヤーを実行します。Native は WoW Forever のレンダラーでフレーム生成を実行します。</string>
+    <string name="lsfg_backend_legacy">Legacy（レイヤー）</string>
+    <string name="lsfg_backend_native">Native（レンダラー）</string>
+    <string name="lsfg_performance_mode_desc">スループットを上げるために品質を下げる</string>
+    <!-- Game Launch Tips -->
+    <string name="transcoder">トランスコーダー</string>
+
+    <!-- Shooter Mode Improvements -->
+    <string name="shooter_mode_settings_title">シューターモード設定</string>
+    <string name="reset_shooter_settings">シューター設定をリセット</string>
+    <string name="shooter_section_input">入力</string>
+    <string name="shooter_section_runtime">ゲーム中の操作</string>
+    <string name="shooter_section_mouse_look">マウス視点</string>
+    <string name="shooter_section_joysticks">ジョイスティック</string>
+    <string name="shooter_section_movement_joystick">移動ジョイスティック</string>
+    <string name="shooter_section_right_joystick">右スティック視点ジョイスティック</string>
+    <string name="shooter_section_movement">移動</string>
+    <string name="look_sensitivity_x">水平感度</string>
+    <string name="look_sensitivity_x_subtitle">右側の水平マウス視点の倍率</string>
+    <string name="look_sensitivity_y">垂直感度</string>
+    <string name="look_sensitivity_y_subtitle">右側の垂直マウス視点の倍率</string>
+    <string name="invert_look_y">垂直視点を反転</string>
+    <string name="invert_look_y_subtitle">マウス視点の上下移動を反転します</string>
+    <string name="look_smoothing">視点スムージング</string>
+    <string name="look_smoothing_subtitle">タッチサンプル間の視点移動を滑らかにします</string>
+    <string name="look_deadzone">視点デッドゾーン</string>
+    <string name="look_deadzone_subtitle">右側の小さな視点移動を無視します</string>
+    <string name="mouse_look_acceleration">マウス視点加速</string>
+    <string name="mouse_look_acceleration_subtitle">タッチ移動が速くなるほどマウス視点速度を上げます</string>
+    <string name="mouse_acceleration_strength">加速の強さ</string>
+    <string name="mouse_acceleration_strength_subtitle">速いドラッグで追加されるマウス速度の強さ</string>
+    <string name="mouse_acceleration_max">最大加速</string>
+    <string name="mouse_acceleration_max_subtitle">高速なマウス視点ドラッグ中に適用される上限倍率</string>
+    <string name="win32_relative_mouse_input">相対マウス入力</string>
+    <string name="win32_relative_mouse_input_subtitle">マウスの移動を相対入力として Wine に直接送信します。ゲーム内でマウスが動作しない場合にお試しください。</string>
+    <string name="joystick_opacity">ジョイスティックの不透明度</string>
+    <string name="joystick_opacity_subtitle">動的ジョイスティックのリングとつまみの不透明度</string>
+    <string name="show_shooter_runtime_toggle">ゲーム中ボタンを表示</string>
+    <string name="show_shooter_runtime_toggle_subtitle">シューターモード中に マウスを有効 / スティックを有効 ボタンを表示します</string>
+    <string name="movement_joystick_size">移動ジョイスティックサイズ</string>
+    <string name="movement_joystick_size_subtitle">左側の動的ジョイスティックのサイズ倍率</string>
+    <string name="movement_joystick_deadzone">移動デッドゾーン</string>
+    <string name="movement_joystick_deadzone_subtitle">左側の移動ジョイスティックの小さな入力を無視します</string>
+    <string name="movement_stick_sensitivity">移動スティック感度</string>
+    <string name="movement_stick_sensitivity_subtitle">仮想左スティックが最大出力に達する速さを変更します</string>
+    <string name="movement_joystick_behavior">移動ジョイスティック動作</string>
+    <string name="movement_joystick_behavior_subtitle">長いドラッグ中の左側ジョイスティック中心の動作</string>
+    <string name="look_joystick_size">右スティックジョイスティックサイズ</string>
+    <string name="look_joystick_size_subtitle">視点タイプがゲームパッド右スティック出力のときのサイズ倍率</string>
+    <string name="look_joystick_deadzone">右スティックデッドゾーン</string>
+    <string name="look_joystick_deadzone_subtitle">ゲームパッド右スティック視点の小さな入力を無視します</string>
+    <string name="look_stick_sensitivity">右スティック感度</string>
+    <string name="look_stick_sensitivity_subtitle">仮想右スティックが最大出力に達する速さを変更します</string>
+    <string name="look_joystick_behavior">右スティックジョイスティック動作</string>
+    <string name="look_joystick_behavior_subtitle">視点タイプがゲームパッド右スティックのときの右側ジョイスティック中心の動作</string>
+    <string name="shooter_movement_zone_width">移動ゾーン幅</string>
+    <string name="shooter_movement_zone_width_subtitle">左側の移動タッチに使う画面幅</string>
+    <string name="button_drag_look">ボタンドラッグ視点</string>
+    <string name="button_drag_look_subtitle">画面ボタンからドラッグして照準や移動を行えるようにします</string>
+    <string name="button_drag_threshold">ボタンドラッグしきい値 (px)</string>
+    <string name="joystick_behavior">ジョイスティック動作</string>
+    <string name="joystick_behavior_anchored">固定</string>
+    <string name="joystick_behavior_floating">フローティング</string>
+    <string name="outer_ring_sprint">外側リングでスプリント</string>
+    <string name="outer_ring_sprint_subtitle">移動ジョイスティックが端に近いときにスプリント入力を使います</string>
+    <string name="outer_ring_sprint_threshold">スプリントしきい値</string>
+    <string name="outer_ring_sprint_threshold_subtitle">スプリントを有効にするために必要なジョイスティック距離</string>
+    <string name="outer_ring_sprint_press_mode">スプリント入力を押す</string>
+    <string name="outer_ring_sprint_press_mode_subtitle">スプリントリングに入ったとき、長押しではなく一度だけスプリント入力をタップします</string>
+    <string name="sprint_binding">スプリント入力</string>
+    <string name="gesture_header_gamepad">ゲームパッド</string>
+    <string name="control_appearance">コントロールの外観</string>
+    <string name="button_color">コントロールの色</string>
+    <string name="button_color_subtitle">コントロールの枠線、アイコン、テキストの16進カラー</string>
+    <string name="button_active_color">押下時の色</string>
+    <string name="button_active_color_subtitle">押下中またはアクティブ時の色</string>
+    <string name="button_opacity">コントロールの不透明度</string>
+    <string name="button_opacity_value">%1$d%%</string>
+    <string name="button_opacity_inherited">%1$d%%（グローバル既定値）</string>
+    <string name="control_stroke_width">線の太さ</string>
+    <string name="control_stroke_width_subtitle">コントロールの枠線と区切り線の太さを調整</string>
+    <string name="control_stroke_width_thin">細い</string>
+    <string name="control_stroke_width_default">既定</string>
+    <string name="control_stroke_width_thick">太い</string>
+    <string name="control_stroke_width_extra_thick">極太</string>
+    <string name="button_look_through">ドラッグ中の移動・視点操作</string>
+    <string name="button_look_through_subtitle">このボタンを押したままドラッグして、移動やカメラ操作も行います。タッチスクリーンモードでは使用できません。</string>
+    <string name="preview">プレビュー</string>
+    <string name="active">アクティブ</string>
+    <string name="apply_all">すべてに適用</string>
+    <string name="copy_appearance_from_button">コントロールから外観をコピー</string>
+    <string name="toast_no_buttons_to_copy_appearance">外観をコピーできる他のコントロールがありません</string>
+    <string name="toast_copied_button_appearance">コントロールの外観をコピーしました</string>
+    <string name="toast_applied_button_appearance">すべてのコントロールに外観を適用しました</string>
+
+    <!-- Sponsorship (featured slot) -->
+    <plurals name="achievements_hidden_remaining">
+        <item quantity="other">隠し実績 残り%1$d個</item>
+    </plurals>
+    <plurals name="local_mod_file_count">
+        <item quantity="other">%1$d ファイル</item>
+    </plurals>
+    <plurals name="local_mod_folder_count">
+        <item quantity="other">%1$d フォルダー</item>
+    </plurals>
+    <!-- Bionic FG (AI) Frame Generation -->
+    <string name="radial_menu">ラジアルメニュー</string>
+    <string name="radial_menu_settings_title">ラジアルメニュー</string>
+    <string name="radial_menu_cancel">キャンセル</string>
+    <string name="radial_menu_slot_count">スロット</string>
+    <string name="radial_menu_slot_count_subtitle">%1$d 個のスロットが有効</string>
+    <string name="radial_menu_decrease_slots">スロットを減らす</string>
+    <string name="radial_menu_increase_slots">スロットを増やす</string>
+    <string name="radial_menu_slots">ホイールスロット</string>
+    <string name="radial_menu_slot_title">スロット %1$d</string>
+    <string name="radial_menu_slot_label_hint">ラベル</string>
+    <string name="radial_menu_slot_binding">スロット %1$d の割り当て</string>
+    <string name="radial_menu_slot_binding_summary">割り当て: %1$s</string>
+    <string name="radial_menu_preset_common">一般</string>
+    <string name="radial_menu_preset_weapons">武器</string>
+    <string name="gesture_action_open_radial_menu">ラジアルメニューを開く</string>
+
+    <!-- Power Control -->
+    <string name="binding_mode_simultaneous">同時</string>
+    <string name="binding_mode_sequence">シーケンス</string>
+    <string name="binding_sequence_delay_ms">シーケンス遅延 (ミリ秒)</string>
+    <string name="binding_sequence_current_format">%1$s（%2$d ミリ秒）</string>
+    <string name="gyro_aiming">ジャイロエイム</string>
+    <string name="gyro_settings_title">ジャイロ設定</string>
+    <string name="gyro_section_output">出力とモーション</string>
+    <string name="gyro_section_activation">有効化</string>
+    <string name="gyro_section_response">応答</string>
+    <string name="gyro_output">出力</string>
+    <string name="gyro_output_subtitle">端末の動きで操作する対象を選択します。</string>
+    <string name="gyro_tilt_steering">傾きステアリング</string>
+    <string name="gyro_tilt_steering_subtitle">端末を傾けたままにすると、スティックの左右入力が維持されます。ジャイロが有効になるたびに現在の位置が中央として設定されます。</string>
+    <string name="gyro_tilt_unavailable">傾きステアリングに必要な方向センサーがこの端末にありません。</string>
+    <string name="gyro_activation">有効化方式</string>
+    <string name="gyro_activation_help">長押し、切り替え、ラチェットでは、ジャイロに割り当てた操作を使用します。</string>
+    <string name="gyro_activation_always">常時</string>
+    <string name="gyro_activation_hold">長押し</string>
+    <string name="gyro_activation_toggle">切り替え</string>
+    <string name="gyro_activation_ratchet">ラチェット</string>
+    <string name="gyro_control_not_assigned">ジャイロ：未割り当て</string>
+    <string name="gyro_assign_in_controls_editor">コントロールエディターで割り当て</string>
+    <string name="gyro_sensitivity">感度</string>
+    <string name="gyro_sensitivity_subtitle">端末の回転が選択した出力に与える強さを調整します。</string>
+    <string name="gyro_tilt_full_scale">最大ステアリング角度</string>
+    <string name="gyro_tilt_full_scale_subtitle">スティックを左右最大まで入力するために必要な、中央からの端末の傾きです。</string>
+    <string name="gyro_tilt_deadzone">傾きデッドゾーン</string>
+    <string name="gyro_tilt_deadzone_subtitle">中央位置付近の小さな傾きを無視します。</string>
+    <string name="gyro_vertical_scale">垂直感度</string>
+    <string name="gyro_vertical_scale_subtitle">左右の動きに対する上下の動きを調整します。</string>
+    <string name="gyro_steadying">安定化しきい値</string>
+    <string name="gyro_steadying_subtitle">感度を適用する前に、ごく小さな意図しない動きを無視します。</string>
+    <string name="gyro_smoothing">スムージング</string>
+    <string name="gyro_smoothing_subtitle">わずかな照準遅延と引き換えにセンサーの揺れを軽減します。</string>
+    <string name="gyro_stick_anti_deadzone">スティックのアンチデッドゾーン</string>
+    <string name="gyro_stick_anti_deadzone_subtitle">ゲーム内のスティック内部デッドゾーンを補正します。</string>
+    <string name="gyro_invert_horizontal">ジャイロの左右を反転</string>
+    <string name="gyro_invert_vertical">ジャイロの上下を反転</string>
+    <string name="gyro_percent_value">%1$d%%</string>
+    <string name="gyro_degrees_value">%1$d°</string>
+    <string name="gyro_degrees_per_second_value">%1$.1f°/秒</string>
+    <string name="gyro_milliseconds_value">%1$d ミリ秒</string>
+    <string name="reset_gyro_settings">ジャイロ設定をリセット</string>
+</resources>

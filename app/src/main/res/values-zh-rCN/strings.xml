@@ -1,0 +1,710 @@
+﻿<resources>
+    <string name="app_name">GameNative</string>
+    <string name="home">主页</string>
+    <string name="download">下载</string>
+    <string name="install">安装</string>
+    <string name="yes">确定</string>
+    <string name="no">取消</string>
+    <string name="cancel">取消</string>
+
+    <!-- Library Tabs -->
+
+    <!-- 自定义游戏 -->
+
+    <!-- Winlator -->
+    <string name="disabled">已禁用</string>
+    <string name="copy">复制</string>
+    <string name="stability">稳定</string>
+    <string name="compatibility">兼容性</string>
+    <string name="intermediate">平衡</string>
+    <string name="performance">高性能</string>
+    <string name="denuvo">Denuvo</string>
+    <string name="extreme">极致</string>
+    <string name="unity">Unity</string>
+    <string name="unity_mono_bleeding_edge">Unity Mono Bleeding Edge</string>
+
+    <!-- Winlator: Win 组件 -->
+    <string name="direct3d">Direct3D</string>
+    <string name="directsound">DirectSound</string>
+    <string name="directinput8">DirectInput 8</string>
+    <string name="directinput">DirectInput</string>
+    <string name="wmdecoder">Windows Media Decoder</string>
+    <string name="opengl">OpenGL</string>
+    <string name="edit">编辑</string>
+    <string name="remove">移除</string>
+    <string name="add">添加</string>
+    <string name="delete">删除</string>
+    <string name="copy_from">从…复制</string>
+    <string name="ok">确认</string>
+    <string name="game_executable_not_found_title">无法启动</string>
+    <string name="game_executable_not_found">无法自动选择可执行文件。请在容器设置中指定可执行文件路径。</string>
+    <string name="save">保存</string>
+    <string name="discard">放弃更改</string>
+    <string name="contents">内容</string>
+    <string name="task_manager">任务管理器</string>
+    <string name="tools_wine_processes_running_hint">%1$d 个正在运行，点按/点击某个进程以关闭</string>
+    <string name="exit_game">退出</string>
+    <string name="exit">退出游戏</string>
+    <string name="keyboard">键盘</string>
+    <string name="resume_game">恢复游戏</string>
+    <string name="extra">额外</string>
+    <string name="clear_search">清除搜索</string>
+    <string name="face_buttons_category">正面按钮</string>
+    <string name="shoulder_buttons_category">肩部按钮</string>
+    <string name="menu_buttons_category">菜单按钮</string>
+    <string name="thumbstick_buttons_category">摇杆按钮</string>
+    <string name="left_stick">左摇杆</string>
+    <string name="right_stick">右摇杆</string>
+    <string name="dpad_category">方向键</string>
+    <string name="dpad_up">方向键 上</string>
+    <string name="dpad_down">方向键 下</string>
+    <string name="dpad_left">方向键 左</string>
+    <string name="dpad_right">方向键 右</string>
+    <string name="input_controls">屏幕控制器</string>
+    <string name="edit_controls">编辑屏幕控制器</string>
+    <string name="edit_physical_controller">编辑实体控制器</string>
+    <string name="quick_menu_title">快捷菜单</string>
+    <string name="quick_menu_back">返回</string>
+    <string name="display_brightness">显示亮度</string>
+    <string name="screen_effects">屏幕效果</string>
+    <string name="screen_effects_live_preview">更改会立即应用到当前游戏。</string>
+    <string name="screen_effects_color_adjustments">颜色调整</string>
+    <string name="screen_effects_shader_toggles">着色器效果</string>
+    <string name="screen_effects_brightness">亮度</string>
+    <string name="screen_effects_contrast">对比度</string>
+    <string name="screen_effects_gamma">伽马</string>
+    <string name="screen_effects_toon">卡通描边</string>
+    <string name="screen_effects_toon_description">添加深色描边，呈现 cel-shading 风格外观。</string>
+    <string name="screen_effects_fxaa">FXAA</string>
+    <string name="screen_effects_fxaa_description">通过轻量级后处理抗锯齿平滑锯齿边缘。</string>
+    <string name="screen_effects_vivid">鲜艳</string>
+    <string name="screen_effects_vivid_description">增加泛光和对比度增强，让画面更有冲击力。</string>
+    <string name="screen_effects_crt">CRT</string>
+    <string name="screen_effects_crt_description">添加扫描线和轻微色差效果。</string>
+    <string name="screen_effects_ntsc">NTSC</string>
+    <string name="screen_effects_ntsc_description">添加复古复合电视扭曲、色彩渗色和扫描线。</string>
+    <string name="screen_effects_reset">重置</string>
+    <string name="screen_effects_close">关闭</string>
+    <string name="quick_menu_tab_controller">控制器</string>
+    <string name="performance_hud">性能 HUD</string>
+    <string name="performance_hud_description">显示或隐藏游戏内叠加层。</string>
+    <string name="performance_hud_fps_limiter">FPS 限制器</string>
+    <string name="performance_hud_fps_limiter_target">目标 FPS</string>
+    <string name="performance_hud_fps_limiter_value">%1$d FPS</string>
+    <string name="performance_hud_fps_limiter_lsfg_base">限制基础帧率。屏幕帧率为上限乘以 LSFG 倍数。</string>
+    <string name="performance_hud_presets">预设</string>
+    <string name="performance_hud_preset_fps_only">1</string>
+    <string name="performance_hud_preset_essential">2</string>
+    <string name="performance_hud_preset_battery">3</string>
+    <string name="performance_hud_preset_full">4</string>
+    <string name="performance_hud_appearance">外观</string>
+    <string name="performance_hud_size">大小</string>
+    <string name="performance_hud_size_small">S</string>
+    <string name="performance_hud_size_medium">M</string>
+    <string name="performance_hud_size_large">L</string>
+    <string name="performance_hud_background_opacity">背景不透明度</string>
+    <string name="performance_hud_color_intensity">颜色强度</string>
+    <string name="performance_hud_text_outline">文字描边</string>
+    <string name="performance_hud_percentage_value">%1$d%%</string>
+    <string name="performance_hud_metrics">显示的指标</string>
+    <string name="performance_hud_frame_rate">帧率</string>
+    <string name="performance_hud_frame_rate_graph">FPS 图表</string>
+    <string name="performance_hud_cpu_usage">CPU 使用率</string>
+    <string name="performance_hud_cpu_usage_graph">CPU 图表</string>
+    <string name="performance_hud_gpu_usage">GPU 使用率</string>
+    <string name="performance_hud_gpu_usage_graph">GPU 图表</string>
+    <string name="performance_hud_ram_usage">RAM 使用量</string>
+    <string name="performance_hud_battery_level">电池电量</string>
+    <string name="performance_hud_power_draw">功耗</string>
+    <string name="performance_hud_runtime_left">剩余时间</string>
+    <string name="performance_hud_clock_time">时间</string>
+    <string name="performance_hud_cpu_temperature">CPU 温度</string>
+    <string name="performance_hud_gpu_temperature">GPU 温度</string>
+
+    <!-- 控制器绑定对话框 -->
+    <string name="bind_button">绑定：%1$s</string>
+    <string name="current_binding">当前：%1$s</string>
+    <string name="search_placeholder">搜索…</string>
+    <string name="search">搜索</string>
+    <string name="category">类别</string>
+    <string name="mouse">鼠标</string>
+    <string name="gamepad">游戏手柄</string>
+    <string name="binding_none">无</string>
+    <string name="clear_binding">清除绑定</string>
+    <string name="no_bindings_found">找不到绑定</string>
+
+    <!-- 元素编辑对话框 -->
+    <string name="edit_element">编辑 %1$s</string>
+    <string name="element_position_size">位置：（%1$d, %2$d）• 大小：%3$.2fx</string>
+    <string name="appearance">外观</string>
+    <string name="size_subtitle">%.2fx</string>
+    <string name="label_text">标签文字</string>
+    <string name="label_text_subtitle">此按钮的自定义文字</string>
+    <string name="element_type">元素类型</string>
+    <string name="element_type_subtitle">更改此控件的类型</string>
+    <string name="shape">形状</string>
+    <string name="shape_subtitle">视觉外观</string>
+    <string name="shape_restricted">%1$s 仅限于 %2$s 形状</string>
+    <string name="bindings">绑定</string>
+    <string name="bindings_auto_generated">绑定（自动生成）</string>
+    <string name="bindings_auto_generated_subtitle">范围按钮绑定会自动生成</string>
+    <string name="primary_action">主要动作</string>
+    <string name="secondary_action">次要动作</string>
+    <string name="direction_up">上</string>
+    <string name="direction_right">右</string>
+    <string name="direction_down">下</string>
+    <string name="direction_left">左</string>
+    <string name="mouse_suffix">（鼠标）</string>
+    <string name="slot_number">槽位 %1$d</string>
+    <string name="button_slots_help">按钮最多支持 2 个绑定：主要（按压）和次要（长按）</string>
+    <string name="properties">属性</string>
+    <string name="position">位置</string>
+    <string name="position_value">X：%1$d，Y：%2$d</string>
+    <string name="unsaved_changes">未保存的更改</string>
+    <string name="unsaved_changes_message">您有未保存的更改。要保存还是放弃它们？</string>
+    <string name="adjust_size">调整大小</string>
+    <string name="reset">重置</string>
+    <string name="done">完成</string>
+    <string name="copy_size_from_element">从元素复制大小</string>
+    <string name="toast_no_elements_to_copy">没有其他可用元素可复制大小</string>
+    <string name="toast_copied_size">已复制大小：%.2fx</string>
+    <string name="quick_presets">快速预设</string>
+    <string name="preset_wasd">WASD</string>
+    <string name="preset_arrows">方向键</string>
+    <string name="preset_mouse">鼠标</string>
+    <string name="preset_dpad">方向键</string>
+    <string name="preset_left_stick">左摇杆</string>
+    <string name="preset_right_stick">右摇杆</string>
+
+    <!-- 实体控制器配置 -->
+    <string name="physical_controller_config">实体控制器绑定编辑器</string>
+    <string name="face_buttons">正面按钮</string>
+    <string name="button_a">A 按钮</string>
+    <string name="button_b">B 按钮</string>
+    <string name="button_x">X 按钮</string>
+    <string name="button_y">Y 按钮</string>
+    <string name="shoulder_buttons">肩部按钮</string>
+    <string name="button_l1">LB</string>
+    <string name="button_r1">RB</string>
+    <string name="button_l2">LT</string>
+    <string name="button_r2">RT</string>
+    <string name="menu_buttons">菜单按钮</string>
+    <string name="button_start">Start / Options</string>
+    <string name="button_select">Select / View / Share</string>
+    <string name="thumbstick_buttons">摇杆按钮</string>
+    <string name="button_l3">L3（左摇杆按下）</string>
+    <string name="button_r3">R3（右摇杆按下）</string>
+    <string name="left_stick_up">左摇杆 上</string>
+    <string name="left_stick_down">左摇杆 下</string>
+    <string name="left_stick_left">左摇杆 左</string>
+    <string name="left_stick_right">左摇杆 右</string>
+    <string name="right_stick_up">右摇杆 上</string>
+    <string name="right_stick_down">右摇杆 下</string>
+    <string name="right_stick_left">右摇杆 左</string>
+    <string name="right_stick_right">右摇杆 右</string>
+    <string name="button_home">Home / Guide / PS</string>
+    <string name="not_set">未设置</string>
+
+    <!-- 提示消息 -->
+    <string name="toast_controls_reset">控制器已重置</string>
+
+    <!-- 设置 -->
+
+
+    <!-- 库与游戏管理 -->
+    <string name="label">标签</string>
+    <string name="status">状态</string>
+    <string name="size">大小</string>
+    <string name="installing">安装中</string>
+
+    <!-- 应用过滤器 -->
+
+    <!-- 登录与连接 -->
+
+    <!-- 游戏反馈对话框 -->
+
+    <!-- 个人资料与菜单 -->
+    <string name="close">关闭</string>
+
+    <!-- System menu platform actions -->
+
+    <!-- 容器配置：通用 -->
+    <string name="name">名称</string>
+    <string name="container_variant">容器变体</string>
+    <string name="wine_version">Wine版本</string>
+    <string name="language">语言</string>
+    <string name="screen_size">屏幕大小</string>
+    <string name="audio_driver">音频驱动程序</string>
+    <string name="pulseaudio_low_latency">PulseAudio 低延迟模式</string>
+    <string name="show_fps">显示帧率</string>
+    <string name="portrait_mode">竖屏模式</string>
+    <string name="portrait_below_cutout">显示在摄像头挖孔下方</string>
+
+
+    <!-- 容器配置：图形 -->
+    <string name="graphics_driver">图形驱动程序</string>
+    <string name="graphics_driver_version">图形驱动程序版本</string>
+    <string name="sf_compat_mode">兼容模式</string>
+    <string name="use_legacy_renderer">使用旧版渲染器</string>
+    <string name="sharpness_effect">锐度增强</string>
+    <string name="sharpness_level">锐度等级</string>
+    <string name="sharpness_denoise">锐度去噪</string>
+
+    <!-- 容器配置：模拟 -->
+    <string name="fexcore_version">FEXCore 版本</string>
+    <string name="fexcore_preset">FEXCore 预设</string>
+    <string name="box64_version">Box64 版本</string>
+    <string name="box64_preset">Box64 预设集</string>
+
+    <!-- 容器配置：输入 -->
+    <string name="show_controller_debug_menu">显示控制器调试菜单</string>
+    <string name="disable_mouse_input">禁用鼠标输入</string>
+    <string name="touchscreen_mode">触屏模式</string>
+    <string name="shooter_mode_toggle">射击模式</string>
+    <string name="shooter_mode_on">启用鼠标</string>
+    <string name="shooter_mode_off">启用摇杆</string>
+
+    <!-- Gesture Settings Dialog -->
+    <string name="gesture_settings_title">触控手势设置</string>
+    <string name="gesture_tap">点击</string>
+    <string name="gesture_drag">拖动</string>
+    <string name="gesture_hold_mouse_button_while_touching">触摸时按住鼠标按钮</string>
+    <string name="gesture_mouse_button_label">鼠标按钮</string>
+    <string name="gesture_long_press">长按</string>
+    <string name="gesture_long_press_delay">长按延迟（毫秒）</string>
+    <string name="gesture_double_tap">双击</string>
+    <string name="gesture_double_tap_subtitle">左键双击</string>
+    <string name="gesture_double_tap_delay">双击延迟（毫秒）</string>
+    <string name="gesture_two_finger_drag">双指拖动</string>
+    <string name="gesture_pinch">捏合</string>
+    <string name="gesture_two_finger_tap">双指点击</string>
+    <string name="gesture_action_left_click">左键单击</string>
+    <string name="gesture_action_right_click">右键单击</string>
+    <string name="gesture_action_middle_click">中键单击</string>
+    <string name="gesture_pan_middle_mouse">中键平移</string>
+    <string name="gesture_pan_inverted_middle_mouse">反向中键平移</string>
+    <string name="gesture_pan_wasd">WASD</string>
+    <string name="gesture_pan_inverted_wasd">反向 WASD</string>
+    <string name="gesture_pan_arrow_keys">方向键</string>
+    <string name="gesture_pan_inverted_arrow_keys">反向方向键</string>
+    <string name="gesture_zoom_scroll_wheel">滚轮</string>
+    <string name="gesture_zoom_plus_minus">+/- 键</string>
+    <string name="gesture_zoom_page_up_down">Page Up/Down</string>
+    <string name="gesture_action_label">操作</string>
+    <string name="gesture_section_single_finger">单指</string>
+    <string name="gesture_section_two_finger">双指</string>
+    <string name="gesture_section_three_finger">三指</string>
+    <string name="gesture_section_other">其他</string>
+    <string name="gesture_pan_left_click_drag">左键拖动</string>
+    <string name="gesture_pan_right_click_drag">右键拖动</string>
+    <string name="gesture_action_show_keyboard">显示键盘</string>
+    <string name="gesture_mouse_behavior_label">鼠标行为</string>
+    <string name="gesture_mouse_behavior_click">单击</string>
+    <string name="gesture_mouse_behavior_hold">按住</string>
+    <string name="gesture_header_special">特殊</string>
+    <string name="gesture_header_mouse">鼠标</string>
+    <string name="gesture_header_common_game">常用游戏按键</string>
+    <string name="gesture_header_navigation_editing">导航 / 编辑</string>
+    <string name="gesture_header_symbols">符号</string>
+    <string name="gesture_header_letters">字母 A-Z</string>
+    <string name="gesture_header_numbers">数字 0-9</string>
+    <string name="gesture_header_numpad">数字键盘</string>
+    <string name="gesture_header_function_keys">功能键</string>
+    <string name="gesture_header_modifiers_locks">修饰键 / 锁定键</string>
+    <string name="gesture_two_finger_hold">双指长按</string>
+    <string name="gesture_two_finger_hold_delay">双指长按延迟 (ms)</string>
+    <string name="gesture_three_finger_tap">三指点按</string>
+    <string name="gesture_three_finger_drag">三指拖动</string>
+    <string name="gesture_three_finger_hold">三指长按</string>
+    <string name="gesture_three_finger_hold_delay">三指长按延迟 (ms)</string>
+    <string name="gesture_threshold">手势阈值 (px)</string>
+    <string name="gesture_mouse_drag_movement">拖动时的鼠标移动</string>
+    <string name="gesture_mouse_drag_movement_subtitle">直接模式适用于大多数游戏。如果拖动导致镜头或光标问题，请使用相对模式</string>
+    <string name="gesture_mouse_drag_movement_direct">直接</string>
+    <string name="gesture_mouse_drag_movement_relative">相对</string>
+    <string name="gesture_show_click_highlight">显示点击高亮</string>
+    <string name="gesture_show_click_highlight_subtitle">在点击位置显示圆圈</string>
+    <string name="gesture_show_debug_overlay">显示手势调试叠加层</string>
+    <string name="gesture_show_debug_overlay_subtitle">在顶部中央显示临时手势标签</string>
+    <string name="gesture_show_cursor_touchscreen_mode">在触屏模式下显示光标</string>
+    <string name="gesture_show_cursor_touchscreen_mode_subtitle">触屏手势处于活动状态时保持鼠标光标可见</string>
+
+    <!-- Shooter Mode -->
+    <string name="shooter_mode_settings">动态摇杆设置</string>
+    <string name="movement_type">移动类型</string>
+    <string name="movement_type_subtitle">左侧移动的摇杆输出</string>
+    <string name="look_sensitivity">视角灵敏度</string>
+    <string name="look_sensitivity_subtitle">鼠标视角灵敏度倍数</string>
+    <string name="joystick_size">摇杆大小</string>
+    <string name="joystick_size_subtitle">动态摇杆大小倍数</string>
+    <string name="movement_wasd">WASD</string>
+    <string name="movement_arrow_keys">方向键</string>
+    <string name="movement_gamepad_left_stick">手柄左摇杆</string>
+    <string name="look_type">视角类型</string>
+    <string name="look_type_subtitle">射击模式下右侧行为</string>
+    <string name="look_type_mouse">鼠标</string>
+    <string name="look_type_gamepad_right_stick">手柄右摇杆</string>
+
+    <string name="range_button_settings">范围按钮设置</string>
+    <string name="range_type">按键范围</string>
+    <string name="range_type_subtitle">循环使用的按键组</string>
+    <string name="range_orientation">方向</string>
+    <string name="range_orientation_subtitle">范围按钮的布局方向</string>
+    <string name="range_orientation_horizontal">水平</string>
+    <string name="range_orientation_vertical">垂直</string>
+    <string name="range_visible_segments">可见分段</string>
+    <string name="range_visible_segments_subtitle">一次显示的按键分段数量：%1$d</string>
+    <string name="range_a_to_z">A – Z</string>
+    <string name="range_1_to_0">1 – 0</string>
+    <string name="range_f1_to_f12">F1 – F12</string>
+    <string name="range_lock_scrolling">锁定滚动</string>
+    <string name="range_lock_scrolling_subtitle">防止在范围内滚动</string>
+    <string name="button_toggleable">可切换</string>
+    <string name="button_toggleable_subtitle">点击激活，再次点击停用</string>
+
+
+    <string name="external_display_swap">在外接显示器上显示游戏</string>
+
+    <!-- 容器配置：渲染 -->
+    <string name="renderer">渲染器</string>
+
+    <!-- 容器配置：管理 -->
+    <string name="startup_selection">启动选项</string>
+
+    <!-- 对话框 -->
+
+    <!-- 驱动程序管理器 -->
+
+    <!-- 内容管理器 -->
+
+    <!-- 设置 -->
+
+    <!-- 设置：性能组 -->
+
+    <!-- 设置：模拟组 -->
+
+    <!-- 设置：调试组 -->
+
+    <!-- 设置：信息组 -->
+
+    <!-- 设置：界面组 -->
+
+    <!-- 设置：下载组 -->
+
+    <!-- 登录界面 -->
+
+    <!-- 通用/可复用字符串 -->
+
+    <!-- 连接至服务器界面 -->
+
+    <!-- 库应用界面：对话框 -->
+
+    <!-- 库应用界面：提示消息 -->
+
+    <!-- 库应用界面：UI标签 -->
+
+    <!-- 主界面：更新与应用信息 -->
+
+    <!-- 主界面：崩溃与支持 -->
+
+    <!-- 主界面：游戏启动 -->
+    <string name="main_installing_glibc">安装 glibc 组件...</string>
+    <string name="main_installing_bionic">安装Bionic组件中...</string>
+    <string name="main_loading">加载中...</string>
+
+    <!-- 主界面：会话冲突 -->
+
+    <!-- 主界面：存档冲突 -->
+
+    <!-- 主界面：同步错误 -->
+
+    <!-- 主界面：待处理操作 -->
+
+    <!-- 容器配置对话框 -->
+
+    <!-- 使用的库对话框 -->
+
+    <!-- 支持者对话框 -->
+
+    <!-- 聊天界面 -->
+
+    <!-- 库组件 -->
+
+    <!-- 最佳配置兼容性消息 -->
+
+    <!-- 最佳配置提示消息 -->
+    <plurals name="community_config_result_count">
+        <item quantity="other">%1$d 个配置</item>
+    </plurals>
+
+    <string name="back">返回</string>
+
+    <!-- Options Panel -->
+
+    <!-- Game Options Panel -->
+
+    <!-- System Menu -->
+    <string name="menu">菜单</string>
+
+    <!-- Gamepad Actions -->
+
+    <!-- Search -->
+
+    <!-- 双重验证 -->
+
+    <!-- 内容管理器 -->
+
+    <!-- 驱动程序管理器 -->
+
+    <!-- 设置界面 -->
+
+    <!-- 设置界面 -->
+
+    <!-- 内容安装完成 -->
+
+    <!-- 库状态 -->
+
+    <!-- Wine/Proton 管理器 -->
+
+    <!-- Wine/Proton 管理器 - 状态消息 -->
+
+
+
+    <!-- Amazon Games Integration -->
+
+    <!-- Library: source not logged in splash -->
+    <string name="download_failed_title">下载失败</string>
+    <string name="download_failed_message">无法下载所需文件。请检查您的网络连接后重试。</string>
+    <string name="install_failed_title">安装失败</string>
+    <string name="install_failed_message">无法安装系统文件。请重试。如果问题持续存在，请尝试使用其他网络或使用 VPN。</string>
+
+    <!-- Workshop -->
+
+    <!-- Recommendations -->
+
+    <!-- 容器配置：自定义分辨率 -->
+
+
+    <!-- 下载网络提示 -->
+
+    <!-- 库兼容性 -->
+
+
+    <!-- 主界面：下载条目 -->
+
+    <!-- 应用选项菜单 -->
+
+    <!-- 性能 HUD -->
+    <string name="performance_hud_battery_temperature">电池温度</string>
+
+    <!-- 屏幕效果 -->
+    <string name="screen_effects_scaling">缩放</string>
+    <string name="screen_effects_upscaling">超分辨率</string>
+    <string name="screen_effects_basic_scaling">基础缩放</string>
+    <string name="screen_effects_scaling_mode_none_desc">不缩放。</string>
+    <string name="screen_effects_scaling_mode_nearest_desc">清晰像素（复古）。</string>
+    <string name="screen_effects_scaling_mode_linear_desc">平滑缩放。</string>
+    <string name="screen_effects_scaling_mode_fill_desc">填满屏幕，裁剪边缘。</string>
+    <string name="screen_effects_scaling_mode_stretch_desc">拉伸填满屏幕，忽略宽高比。</string>
+    <string name="screen_effects_scaling_mode_fsr_desc">清晰的超分辨率放大。</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect_desc">FSR，保持宽高比。</string>
+    <string name="screen_effects_scaling_mode_dls_desc">锐化／清晰度处理。</string>
+    <string name="screen_effects_scaling_mode_natural_desc">更暖的色调。</string>
+    <string name="screen_effects_scaling_mode">缩放模式</string>
+    <string name="screen_effects_scaling_mode_none">不缩放</string>
+    <string name="screen_effects_scaling_mode_nearest">最近邻</string>
+    <string name="screen_effects_scaling_mode_linear">线性</string>
+    <string name="screen_effects_scaling_mode_fill">填充</string>
+    <string name="screen_effects_scaling_mode_stretch">拉伸</string>
+    <string name="screen_effects_scaling_mode_fsr">FSR</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect">FSR 适配</string>
+    <string name="screen_effects_scaling_mode_dls">DLS</string>
+    <string name="screen_effects_scaling_mode_natural">自然</string>
+    <string name="screen_effects_fsr">FSR 1.0</string>
+    <string name="screen_effects_fsr_sharpness">FSR 锐度</string>
+    <string name="screen_effects_fsr_sharpness_value">%1$d/5</string>
+
+    <!-- 设置：界面组 -->
+
+    <!-- 工具：Wine 进程 -->
+    <string name="tools_wine_processes_empty">未检测到正在运行的EXE。</string>
+    <!-- HLTB (How Long To Beat) -->
+
+    <!-- LSFG-VK frame generation -->
+    <string name="lsfg_tab_title">LSFG-VK</string>
+    <string name="lsfg_multiplier">帧倍率</string>
+    <string name="lsfg_flow_scale">光流缩放</string>
+    <string name="lsfg_flow_scale_desc">数值越低越稳定；越高越流畅，但可能出现伪影。</string>
+    <string name="lsfg_performance_mode">性能模式</string>
+    <string name="lsfg_present_mode">呈现模式</string>
+    <string name="lsfg_present_mode_desc">推荐使用 Mailbox。当输出帧率（fps 上限 × 倍数）与屏幕刷新率一致时也可使用 FIFO；低于刷新率时 FIFO 可能出现抖动。</string>
+    <string name="lsfg_backend">后端</string>
+    <string name="lsfg_backend_desc">Legacy 在游戏内运行 lsfg-vk 层；Native 在 WoW Forever 渲染器中运行帧生成。</string>
+    <string name="lsfg_backend_legacy">Legacy（层）</string>
+    <string name="lsfg_backend_native">Native（渲染器）</string>
+    <string name="lsfg_performance_mode_desc">降低画质以提升吞吐量</string>
+    <!-- Game Launch Tips -->
+
+    <!-- Frontend Sync Settings -->
+    <string name="transcoder">转码器</string>
+
+    <!-- Shooter Mode Improvements -->
+    <string name="shooter_mode_settings_title">射击模式设置</string>
+    <string name="reset_shooter_settings">重置射击模式设置</string>
+    <string name="shooter_section_input">输入</string>
+    <string name="shooter_section_runtime">游戏内控制</string>
+    <string name="shooter_section_mouse_look">鼠标视角</string>
+    <string name="shooter_section_joysticks">摇杆</string>
+    <string name="shooter_section_movement_joystick">移动摇杆</string>
+    <string name="shooter_section_right_joystick">右摇杆视角</string>
+    <string name="shooter_section_movement">移动</string>
+    <string name="look_sensitivity_x">水平灵敏度</string>
+    <string name="look_sensitivity_x_subtitle">右侧水平鼠标视角倍率</string>
+    <string name="look_sensitivity_y">垂直灵敏度</string>
+    <string name="look_sensitivity_y_subtitle">右侧垂直鼠标视角倍率</string>
+    <string name="invert_look_y">反转垂直视角</string>
+    <string name="invert_look_y_subtitle">反转鼠标视角的上下移动</string>
+    <string name="look_smoothing">视角平滑</string>
+    <string name="look_smoothing_subtitle">在触摸采样之间平滑视角移动</string>
+    <string name="look_deadzone">视角死区</string>
+    <string name="look_deadzone_subtitle">忽略右侧细微视角移动</string>
+    <string name="mouse_look_acceleration">鼠标视角加速</string>
+    <string name="mouse_look_acceleration_subtitle">触摸移动越快，鼠标视角速度越高</string>
+    <string name="mouse_acceleration_strength">加速强度</string>
+    <string name="mouse_acceleration_strength_subtitle">更快拖动增加额外鼠标速度的速度</string>
+    <string name="mouse_acceleration_max">最大加速</string>
+    <string name="mouse_acceleration_max_subtitle">快速鼠标视角拖动时应用的最高倍率</string>
+    <string name="win32_relative_mouse_input">相对鼠标输入</string>
+    <string name="win32_relative_mouse_input_subtitle">将移动作为相对鼠标输入直接发送到 Wine。游戏内鼠标无法正常工作时可尝试启用此选项。</string>
+    <string name="joystick_opacity">摇杆不透明度</string>
+    <string name="joystick_opacity_subtitle">动态摇杆圆环和拇指点的不透明度</string>
+    <string name="show_shooter_runtime_toggle">显示游戏内按钮</string>
+    <string name="show_shooter_runtime_toggle_subtitle">射击模式启用时显示启用鼠标 / 启用摇杆按钮</string>
+    <string name="movement_joystick_size">移动摇杆大小</string>
+    <string name="movement_joystick_size_subtitle">左侧动态摇杆的大小倍率</string>
+    <string name="movement_joystick_deadzone">移动死区</string>
+    <string name="movement_joystick_deadzone_subtitle">忽略左侧移动摇杆的小输入</string>
+    <string name="movement_stick_sensitivity">移动摇杆灵敏度</string>
+    <string name="movement_stick_sensitivity_subtitle">更改虚拟左摇杆达到最大输出的速度</string>
+    <string name="movement_joystick_behavior">移动摇杆行为</string>
+    <string name="movement_joystick_behavior_subtitle">长时间拖动时左侧摇杆中心的行为</string>
+    <string name="look_joystick_size">右摇杆视角大小</string>
+    <string name="look_joystick_size_subtitle">视角类型输出游戏手柄右摇杆时的大小倍率</string>
+    <string name="look_joystick_deadzone">右摇杆死区</string>
+    <string name="look_joystick_deadzone_subtitle">忽略游戏手柄右摇杆的细微视角输入</string>
+    <string name="look_stick_sensitivity">右摇杆灵敏度</string>
+    <string name="look_stick_sensitivity_subtitle">更改虚拟右摇杆达到最大输出的速度</string>
+    <string name="look_joystick_behavior">右摇杆行为</string>
+    <string name="look_joystick_behavior_subtitle">视角类型为游戏手柄右摇杆时右侧摇杆中心的行为</string>
+    <string name="shooter_movement_zone_width">移动区域宽度</string>
+    <string name="shooter_movement_zone_width_subtitle">为左侧移动触摸保留的屏幕宽度</string>
+    <string name="button_drag_look">按钮拖动视角</string>
+    <string name="button_drag_look_subtitle">允许从屏幕按钮拖动来瞄准或移动</string>
+    <string name="button_drag_threshold">按钮拖动阈值 (px)</string>
+    <string name="joystick_behavior">摇杆行为</string>
+    <string name="joystick_behavior_anchored">固定</string>
+    <string name="joystick_behavior_floating">浮动</string>
+    <string name="outer_ring_sprint">外环冲刺</string>
+    <string name="outer_ring_sprint_subtitle">移动摇杆接近边缘时使用冲刺输入</string>
+    <string name="outer_ring_sprint_threshold">冲刺阈值</string>
+    <string name="outer_ring_sprint_threshold_subtitle">激活冲刺所需的摇杆距离</string>
+    <string name="outer_ring_sprint_press_mode">点按冲刺绑定</string>
+    <string name="outer_ring_sprint_press_mode_subtitle">进入冲刺环时点按一次冲刺输入，而不是按住</string>
+    <string name="sprint_binding">冲刺绑定</string>
+    <string name="gesture_header_gamepad">游戏手柄</string>
+    <string name="control_appearance">控件外观</string>
+    <string name="button_color">控件颜色</string>
+    <string name="button_color_subtitle">控件轮廓、图标和文本的十六进制颜色</string>
+    <string name="button_active_color">按下颜色</string>
+    <string name="button_active_color_subtitle">按下或激活时的颜色</string>
+    <string name="button_opacity">控件不透明度</string>
+    <string name="button_opacity_value">%1$d%%</string>
+    <string name="button_opacity_inherited">%1$d%%（全局默认）</string>
+    <string name="control_stroke_width">线条粗细</string>
+    <string name="control_stroke_width_subtitle">调整控件轮廓和分隔线粗细</string>
+    <string name="control_stroke_width_thin">细</string>
+    <string name="control_stroke_width_default">默认</string>
+    <string name="control_stroke_width_thick">粗</string>
+    <string name="control_stroke_width_extra_thick">特粗</string>
+    <string name="button_look_through">拖动穿透</string>
+    <string name="button_look_through_subtitle">按住此按钮并拖动，也可控制移动或镜头视角。触摸屏模式下不可用。</string>
+    <string name="preview">预览</string>
+    <string name="active">激活</string>
+    <string name="apply_all">全部应用</string>
+    <string name="copy_appearance_from_button">从控件复制外观</string>
+    <string name="toast_no_buttons_to_copy_appearance">没有其他可复制外观的控件</string>
+    <string name="toast_copied_button_appearance">已复制控件外观</string>
+    <string name="toast_applied_button_appearance">已将外观应用到所有控件</string>
+
+    <!-- Sponsorship (featured slot) -->
+    <plurals name="achievements_hidden_remaining">
+        <item quantity="other">还有 %1$d 个隐藏成就</item>
+    </plurals>
+    <plurals name="local_mod_file_count">
+        <item quantity="other">%1$d 个文件</item>
+    </plurals>
+    <plurals name="local_mod_folder_count">
+        <item quantity="other">%1$d 个文件夹</item>
+    </plurals>
+    <!-- Bionic FG (AI) Frame Generation -->
+    <string name="radial_menu">径向菜单</string>
+    <string name="radial_menu_settings_title">径向菜单</string>
+    <string name="radial_menu_cancel">取消</string>
+    <string name="radial_menu_slot_count">槽位</string>
+    <string name="radial_menu_slot_count_subtitle">已启用 %1$d 个槽位</string>
+    <string name="radial_menu_decrease_slots">减少槽位</string>
+    <string name="radial_menu_increase_slots">增加槽位</string>
+    <string name="radial_menu_slots">转盘槽位</string>
+    <string name="radial_menu_slot_title">槽位 %1$d</string>
+    <string name="radial_menu_slot_label_hint">标签</string>
+    <string name="radial_menu_slot_binding">槽位 %1$d 绑定</string>
+    <string name="radial_menu_slot_binding_summary">绑定：%1$s</string>
+    <string name="radial_menu_preset_common">常用</string>
+    <string name="radial_menu_preset_weapons">武器</string>
+    <string name="gesture_action_open_radial_menu">打开径向菜单</string>
+
+    <!-- Power Control -->
+    <string name="binding_mode_simultaneous">同时</string>
+    <string name="binding_mode_sequence">顺序</string>
+    <string name="binding_sequence_delay_ms">顺序延迟（毫秒）</string>
+    <string name="binding_sequence_current_format">%1$s（%2$d 毫秒）</string>
+    <string name="gyro_aiming">陀螺仪瞄准</string>
+    <string name="gyro_settings_title">陀螺仪设置</string>
+    <string name="gyro_section_output">输出和动作</string>
+    <string name="gyro_section_activation">激活</string>
+    <string name="gyro_section_response">响应</string>
+    <string name="gyro_output">输出</string>
+    <string name="gyro_output_subtitle">选择设备动作所控制的输出。</string>
+    <string name="gyro_tilt_steering">倾斜转向</string>
+    <string name="gyro_tilt_steering_subtitle">保持设备倾斜可持续产生摇杆水平输入。每次激活陀螺仪时，当前位置都会被设为中心。</string>
+    <string name="gyro_tilt_unavailable">此设备不提供倾斜转向所需的方向传感器。</string>
+    <string name="gyro_activation">激活方式</string>
+    <string name="gyro_activation_help">按住、切换和棘轮模式使用分配给陀螺仪的控制。</string>
+    <string name="gyro_activation_always">始终</string>
+    <string name="gyro_activation_hold">按住</string>
+    <string name="gyro_activation_toggle">切换</string>
+    <string name="gyro_activation_ratchet">棘轮</string>
+    <string name="gyro_control_not_assigned">陀螺仪：未分配</string>
+    <string name="gyro_assign_in_controls_editor">在控制编辑器中分配</string>
+    <string name="gyro_sensitivity">灵敏度</string>
+    <string name="gyro_sensitivity_subtitle">控制设备旋转影响所选输出的强度。</string>
+    <string name="gyro_tilt_full_scale">最大转向角度</string>
+    <string name="gyro_tilt_full_scale_subtitle">从中心位置达到摇杆最左或最右输入所需的设备倾斜角度。</string>
+    <string name="gyro_tilt_deadzone">倾斜死区</string>
+    <string name="gyro_tilt_deadzone_subtitle">忽略中心位置附近的小幅倾斜。</string>
+    <string name="gyro_vertical_scale">垂直灵敏度</string>
+    <string name="gyro_vertical_scale_subtitle">调整垂直动作相对于水平动作的比例。</string>
+    <string name="gyro_steadying">稳定阈值</string>
+    <string name="gyro_steadying_subtitle">应用灵敏度前忽略非常细微的非主动移动。</string>
+    <string name="gyro_smoothing">平滑</string>
+    <string name="gyro_smoothing_subtitle">减少传感器抖动，但会增加少量瞄准延迟。</string>
+    <string name="gyro_stick_anti_deadzone">摇杆反死区</string>
+    <string name="gyro_stick_anti_deadzone_subtitle">补偿游戏的摇杆内部死区。</string>
+    <string name="gyro_invert_horizontal">反转水平陀螺仪</string>
+    <string name="gyro_invert_vertical">反转垂直陀螺仪</string>
+    <string name="gyro_percent_value">%1$d%%</string>
+    <string name="gyro_degrees_value">%1$d°</string>
+    <string name="gyro_degrees_per_second_value">%1$.1f°/秒</string>
+    <string name="gyro_milliseconds_value">%1$d 毫秒</string>
+    <string name="reset_gyro_settings">重置陀螺仪设置</string>
+</resources>

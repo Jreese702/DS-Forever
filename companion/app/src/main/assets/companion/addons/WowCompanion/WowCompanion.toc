@@ -1,0 +1,21 @@
+## Interface: 16001
+## Title: DS Forever
+## IconTexture: Interface\AddOns\WowCompanion\Media\ds_forever_icon
+## Category: DS Forever
+## Notes: Bottom-screen companion bridge for the AYN Thor
+## Author: DS Forever
+## Version: Set 105
+## DefaultState: enabled
+## SavedVariables: WowCompanionDB
+Safety.lua
+Sink.lua
+TapPad.lua
+Harvest.lua
+ActionBar.lua
+Coords.lua
+Map.lua
+Trail.lua
+MapArt.lua
+Chat.lua
+Bags.lua
+Core.lua

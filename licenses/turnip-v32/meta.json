@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "Turnip-V32-RP6sched",
+  "description": "whitebelyash turnip/gen8 9c7e022 plus RP6 ir3 scheduler barycentric-block skip and vk_icd* ICD exports.",
+  "author": "whitebelyash; Mesa; RP6 patch",
+  "packageVersion": "1",
+  "vendor": "Mesa",
+  "driverVersion": "26.3.0-devel-9c7e022+rp6sched",
+  "minApi": 28,
+  "libraryName": "libvulkan_freedreno.so"
+}

@@ -1,0 +1,664 @@
+﻿<resources>
+    <string name="app_name">GameNative</string>
+    <string name="home">Hjem</string>
+    <string name="yes">Ja</string>
+    <string name="no">Nej</string>
+    <string name="cancel">Annullér</string>
+
+
+    <!-- Library Tabs -->
+
+    <!-- Winlator -->
+    <string name="disabled">Deaktiveret</string>
+    <string name="copy">Kopiér</string>
+    <string name="stability">Stabilitet</string>
+    <string name="compatibility">Kompatibilitet</string>
+    <string name="intermediate">Mellemtrin</string>
+    <string name="performance">Ydelse</string>
+    <string name="denuvo">Denuvo</string>
+    <string name="extreme">Extreme</string>
+    <string name="unity">Unity</string>
+    <string name="unity_mono_bleeding_edge">Unity Mono Bleeding Edge</string>
+
+    <!-- Winlator: Win Components -->
+    <string name="direct3d">Direct3D</string>
+    <string name="directsound">DirectSound</string>
+    <string name="directinput8">DirectInput 8</string>
+    <string name="directinput">DirectInput</string>
+    <string name="wmdecoder">Windows Media Decoder</string>
+    <string name="opengl">OpenGL</string>
+    <string name="edit">Redigér</string>
+    <string name="remove">Fjern</string>
+    <string name="add">Tilføj</string>
+    <string name="delete">Slet</string>
+    <string name="copy_from">Kopiér fra</string>
+    <string name="ok">Ok</string>
+    <string name="game_executable_not_found_title">Kan ikke starte</string>
+    <string name="game_executable_not_found">Den eksekverbare fil kunne ikke vælges automatisk. Angiv stien til den eksekverbare fil i containerindstillinger.</string>
+    <string name="save">Gem</string>
+    <string name="discard">Forkast</string>
+    <string name="contents">Indhold</string>
+    <string name="task_manager">Jobliste</string>
+    <string name="tools_wine_processes_running_hint">%1$d kører, tryk/klik på en proces for at lukke den</string>
+    <string name="tools_wine_processes_empty">Ingen kørende EXE-filer fundet.</string>
+    <string name="exit_game">Afslut</string>
+    <string name="exit">Afslut spil</string>
+    <string name="keyboard">Tastatur</string>
+    <string name="resume_game">Genoptag spil</string>
+    <string name="extra">Ekstra</string>
+    <string name="clear_search">Ryd søgning</string>
+    <string name="face_buttons_category">Ansigtsknapper</string>
+    <string name="shoulder_buttons_category">Skulderknapper</string>
+    <string name="menu_buttons_category">Menuknapper</string>
+    <string name="thumbstick_buttons_category">Tommelfingerknapper</string>
+    <string name="left_stick">Venstre stick</string>
+    <string name="right_stick">Højre stick</string>
+    <string name="dpad_category">D-Pad</string>
+    <string name="dpad_up">D-Pad op</string>
+    <string name="dpad_down">D-Pad ned</string>
+    <string name="dpad_left">D-Pad venstre</string>
+    <string name="dpad_right">D-Pad højre</string>
+    <string name="input_controls">On-screen-controller</string>
+    <string name="edit_controls">Redigér on-screen-controller</string>
+    <string name="edit_physical_controller">Redigér fysisk controller</string>
+    <string name="quick_menu_title">Hurtig menu</string>
+    <string name="quick_menu_back">Tilbage</string>
+    <string name="display_brightness">Skærmens lysstyrke</string>
+    <string name="screen_effects">Skærmeffekter</string>
+    <string name="screen_effects_live_preview">Ændringer anvendes straks på det aktuelle spil.</string>
+    <string name="screen_effects_color_adjustments">Farvejusteringer</string>
+    <string name="screen_effects_shader_toggles">Shader-effekter</string>
+    <string name="screen_effects_scaling_mode">Skaleringstilstand</string>
+    <string name="screen_effects_brightness">Lysstyrke</string>
+    <string name="screen_effects_contrast">Kontrast</string>
+    <string name="screen_effects_gamma">Gamma</string>
+    <string name="screen_effects_toon">Tegneserie-kontur</string>
+    <string name="screen_effects_toon_description">Tilføjer mørke konturer for et cel-shadet udseende.</string>
+    <string name="screen_effects_fxaa">FXAA</string>
+    <string name="screen_effects_fxaa_description">Udglatter takkede kanter med en let efterbehandlet anti-aliasing-effekt.</string>
+    <string name="screen_effects_vivid">Vivid</string>
+    <string name="screen_effects_vivid_description">Tilføjer bloom og øget kontrast for et mere slagkraftigt billede.</string>
+    <string name="screen_effects_crt">CRT</string>
+    <string name="screen_effects_crt_description">Tilføjer scanlines og let kromatisk aberration.</string>
+    <string name="screen_effects_ntsc">NTSC</string>
+    <string name="screen_effects_ntsc_description">Tilføjer retro komposit-tv-forvrængning, blødning og scanlines.</string>
+    <string name="screen_effects_reset">Nulstil</string>
+    <string name="screen_effects_close">Luk</string>
+    <string name="quick_menu_tab_controller">Controller</string>
+    <string name="performance_hud">Ydelses-HUD</string>
+    <string name="performance_hud_description">Vis eller skjul overlayet i spillet.</string>
+    <string name="performance_hud_fps_limiter">FPS-begrænser</string>
+    <string name="performance_hud_fps_limiter_target">Mål-FPS</string>
+    <string name="performance_hud_fps_limiter_value">%1$d FPS</string>
+    <string name="performance_hud_fps_limiter_lsfg_base">Begrænser basisframeraten. Skærmraten er grænsen gange LSFG-multiplikatoren.</string>
+    <string name="performance_hud_presets">Forudindstillinger</string>
+    <string name="performance_hud_preset_fps_only">1</string>
+    <string name="performance_hud_preset_essential">2</string>
+    <string name="performance_hud_preset_battery">3</string>
+    <string name="performance_hud_preset_full">4</string>
+    <string name="performance_hud_appearance">Udseende</string>
+    <string name="performance_hud_size">Størrelse</string>
+    <string name="performance_hud_size_small">S</string>
+    <string name="performance_hud_size_medium">M</string>
+    <string name="performance_hud_size_large">L</string>
+    <string name="performance_hud_background_opacity">Baggrundsopacitet</string>
+    <string name="performance_hud_color_intensity">Farveintensitet</string>
+    <string name="performance_hud_text_outline">Tekstkontur</string>
+    <string name="performance_hud_percentage_value">%1$d%%</string>
+    <string name="performance_hud_metrics">Viste målinger</string>
+    <string name="performance_hud_frame_rate">Billedhastighed</string>
+    <string name="performance_hud_frame_rate_graph">FPS-graf</string>
+    <string name="performance_hud_cpu_usage">CPU-forbrug</string>
+    <string name="performance_hud_cpu_usage_graph">CPU-graf</string>
+    <string name="performance_hud_gpu_usage">GPU-forbrug</string>
+    <string name="performance_hud_gpu_usage_graph">GPU-graf</string>
+    <string name="performance_hud_ram_usage">RAM-forbrug</string>
+    <string name="performance_hud_battery_level">Batteriniveau</string>
+    <string name="performance_hud_power_draw">Strømforbrug</string>
+    <string name="performance_hud_runtime_left">Resterende tid</string>
+    <string name="performance_hud_battery_temperature">Batteritemperatur</string>
+    <string name="performance_hud_clock_time">Klokkeslæt</string>
+    <string name="performance_hud_cpu_temperature">CPU-temperatur</string>
+    <string name="performance_hud_gpu_temperature">GPU-temperatur</string>
+
+    <!-- Controller Binding Dialog -->
+    <string name="bind_button">Bind: %1$s</string>
+    <string name="current_binding">Nuværende: %1$s</string>
+    <string name="search_placeholder">Søg…</string>
+    <string name="search">Søg</string>
+    <string name="category">Kategori</string>
+    <string name="mouse">Mus</string>
+    <string name="gamepad">Gamepad</string>
+    <string name="binding_none">Ingen</string>
+    <string name="clear_binding">Ryd binding</string>
+    <string name="no_bindings_found">Ingen bindings fundet</string>
+
+    <!-- Element Editor Dialog -->
+    <string name="edit_element">Redigér %1$s</string>
+    <string name="element_position_size">Position: (%1$d, %2$d) • Størrelse: %3$.2fx</string>
+    <string name="appearance">Udseende</string>
+    <string name="size_subtitle">%.2fx</string>
+    <string name="label_text">Etikettekst</string>
+    <string name="label_text_subtitle">Tilpasset tekst til denne knap</string>
+    <string name="element_type">Elementtype</string>
+    <string name="element_type_subtitle">Skift typen af denne kontrol</string>
+    <string name="shape">Form</string>
+    <string name="shape_subtitle">Visuelt udseende</string>
+    <string name="shape_restricted">%1$s er begrænset til %2$s form</string>
+    <string name="bindings">Bindings</string>
+    <string name="bindings_auto_generated">Bindings (Auto-genereret)</string>
+    <string name="bindings_auto_generated_subtitle">Range-knap-bindings genereres automatisk</string>
+    <string name="primary_action">Primær handling</string>
+    <string name="secondary_action">Sekundær handling</string>
+    <string name="direction_up">Op</string>
+    <string name="direction_right">Højre</string>
+    <string name="direction_down">Ned</string>
+    <string name="direction_left">Venstre</string>
+    <string name="mouse_suffix"> (Mus)</string>
+    <string name="slot_number">Slot %1$d</string>
+    <string name="button_slots_help">Knapper understøtter op til 2 bindings: primær (tryk) og sekundær (langt tryk)</string>
+    <string name="properties">Egenskaber</string>
+    <string name="position">Position</string>
+    <string name="position_value">X: %1$d, Y: %2$d</string>
+    <string name="unsaved_changes">Ikke-gemte ændringer</string>
+    <string name="unsaved_changes_message">Du har ikke-gemte ændringer. Vil du gemme eller forkaste dem?</string>
+    <string name="adjust_size">Juster størrelse</string>
+    <string name="reset">Nulstil</string>
+    <string name="done">Færdig</string>
+    <string name="copy_size_from_element">Kopiér størrelse fra element</string>
+    <string name="toast_no_elements_to_copy">Ingen andre elementer tilgængelige til at kopiere størrelse fra</string>
+    <string name="toast_copied_size">Kopieret størrelse: %.2fx</string>
+    <string name="quick_presets">Hurtige forudindstillinger</string>
+    <string name="preset_wasd">WASD</string>
+    <string name="preset_arrows">Pile</string>
+    <string name="preset_mouse">Mus</string>
+    <string name="preset_dpad">D-Pad</string>
+    <string name="preset_left_stick">Venstre stick</string>
+    <string name="preset_right_stick">Højre stick</string>
+
+    <!-- Physical Controller Config -->
+    <string name="physical_controller_config">Fysisk Controller Bindings Editor</string>
+    <string name="face_buttons">Ansigtsknapper</string>
+    <string name="button_a">A-knap</string>
+    <string name="button_b">B-knap</string>
+    <string name="button_x">X-knap</string>
+    <string name="button_y">Y-knap</string>
+    <string name="shoulder_buttons">Skulderknapper</string>
+    <string name="button_l1">LB</string>
+    <string name="button_r1">RB</string>
+    <string name="button_l2">LT</string>
+    <string name="button_r2">RT</string>
+    <string name="menu_buttons">Menuknapper</string>
+    <string name="button_start">Start / Options</string>
+    <string name="button_select">Select / View / Share</string>
+    <string name="thumbstick_buttons">Tommelfingerknapper</string>
+    <string name="button_l3">L3 (Venstre Stick Klik)</string>
+    <string name="button_r3">R3 (Højre Stick Klik)</string>
+    <string name="left_stick_up">Venstre Stick Op</string>
+    <string name="left_stick_down">Venstre Stick Ned</string>
+    <string name="left_stick_left">Venstre Stick Venstre</string>
+    <string name="left_stick_right">Venstre Stick Højre</string>
+    <string name="right_stick_up">Højre Stick Op</string>
+    <string name="right_stick_down">Højre Stick Ned</string>
+    <string name="right_stick_left">Højre Stick Venstre</string>
+    <string name="right_stick_right">Højre Stick Højre</string>
+    <string name="button_home">Home / Guide / PS</string>
+    <string name="not_set">Ikke sat</string>
+
+
+
+    <!-- Library & Game Management -->
+    <string name="label">Etiket</string>
+    <string name="status">Status</string>
+    <string name="size">Størrelse</string>
+    <string name="installing">Installerer</string>
+
+    <!-- Login & Connection -->
+
+    <!-- Profile & Menu -->
+    <string name="close">Luk</string>
+
+    <!-- System menu platform actions -->
+
+    <!-- Container Configuration: General -->
+    <string name="name">Navn</string>
+    <string name="container_variant">Container-variant</string>
+    <string name="wine_version">Wine-version</string>
+    <string name="language">Sprog</string>
+    <string name="screen_size">Skærmstørrelse</string>
+    <string name="audio_driver">Lyd-driver</string>
+    <string name="pulseaudio_low_latency">PulseAudio lav latenstilstand</string>
+    <string name="show_fps">Vis FPS</string>
+    <string name="portrait_mode">Portrættilstand</string>
+    <string name="portrait_below_cutout">Hold under kamerahullet</string>
+
+
+    <!-- Container Configuration: Graphics -->
+    <string name="graphics_driver">Grafikdriver</string>
+    <string name="graphics_driver_version">Grafikdriverversion</string>
+    <string name="sf_compat_mode">Kompatibilitetstilstand</string>
+    <string name="use_legacy_renderer">Brug ældre renderer</string>
+
+    <!-- Container Configuration: Emulation -->
+    <string name="fexcore_version">FEXCore-version</string>
+    <string name="box64_version">Box64-version</string>
+    <string name="box64_preset">Box64-forudindstilling</string>
+
+    <!-- Container Configuration: Input -->
+    <string name="show_controller_debug_menu">Vis controller-fejlfindingsmenu</string>
+    <string name="disable_mouse_input">Deaktivér musinput</string>
+    <string name="touchscreen_mode">Touchskærmstilstand</string>
+    <string name="shooter_mode_toggle">Shooter-tilstand</string>
+    <string name="shooter_mode_on">Aktiver mus</string>
+    <string name="shooter_mode_off">Aktiver sticks</string>
+
+    <!-- Gesture Settings Dialog -->
+    <string name="gesture_settings_title">Touch-gestusindstillinger</string>
+    <string name="gesture_tap">Tryk</string>
+    <string name="gesture_drag">Træk finger</string>
+    <string name="gesture_hold_mouse_button_while_touching">Hold museknap nede under berøring</string>
+    <string name="gesture_mouse_button_label">Museknap</string>
+    <string name="gesture_long_press">Langt tryk</string>
+    <string name="gesture_long_press_delay">Forsinkelse langt tryk (ms)</string>
+    <string name="gesture_double_tap">Dobbelt tryk</string>
+    <string name="gesture_double_tap_subtitle">Dobbelt venstreklik</string>
+    <string name="gesture_double_tap_delay">Forsinkelse dobbelt tryk (ms)</string>
+    <string name="gesture_two_finger_drag">Træk med to fingre</string>
+    <string name="gesture_pinch">Knib</string>
+    <string name="gesture_two_finger_tap">Tryk med to fingre</string>
+    <string name="gesture_action_left_click">Venstreklik</string>
+    <string name="gesture_action_right_click">Højreklik</string>
+    <string name="gesture_action_middle_click">Mellemklik</string>
+    <string name="gesture_pan_middle_mouse">Pan med midterknap</string>
+    <string name="gesture_pan_inverted_middle_mouse">Omvendt pan med midterknap</string>
+    <string name="gesture_pan_wasd">WASD</string>
+    <string name="gesture_pan_inverted_wasd">Omvendt WASD</string>
+    <string name="gesture_pan_arrow_keys">Piletaster</string>
+    <string name="gesture_pan_inverted_arrow_keys">Omvendte piletaster</string>
+    <string name="gesture_zoom_scroll_wheel">Rullehjul</string>
+    <string name="gesture_zoom_plus_minus">+/- taster</string>
+    <string name="gesture_zoom_page_up_down">Side op/ned</string>
+    <string name="gesture_action_label">Handling</string>
+    <string name="gesture_section_single_finger">En finger</string>
+    <string name="gesture_section_two_finger">To fingre</string>
+    <string name="gesture_section_three_finger">Tre fingre</string>
+    <string name="gesture_section_other">Andet</string>
+    <string name="gesture_pan_left_click_drag">Træk med venstreklik</string>
+    <string name="gesture_pan_right_click_drag">Træk med højreklik</string>
+    <string name="gesture_action_show_keyboard">Vis tastatur</string>
+    <string name="gesture_mouse_behavior_label">Museadfærd</string>
+    <string name="gesture_mouse_behavior_click">Klik</string>
+    <string name="gesture_mouse_behavior_hold">Hold</string>
+    <string name="gesture_header_special">Særlige</string>
+    <string name="gesture_header_mouse">Mus</string>
+    <string name="gesture_header_common_game">Almindelige spiltaster</string>
+    <string name="gesture_header_navigation_editing">Navigation / redigering</string>
+    <string name="gesture_header_symbols">Symboler</string>
+    <string name="gesture_header_letters">Bogstaver A-Z</string>
+    <string name="gesture_header_numbers">Tal 0-9</string>
+    <string name="gesture_header_numpad">Numerisk tastatur</string>
+    <string name="gesture_header_function_keys">Funktionstaster</string>
+    <string name="gesture_header_modifiers_locks">Modifikatortaster / låsetaster</string>
+    <string name="gesture_two_finger_hold">Hold med to fingre</string>
+    <string name="gesture_two_finger_hold_delay">Forsinkelse for hold med to fingre (ms)</string>
+    <string name="gesture_three_finger_tap">Tryk med tre fingre</string>
+    <string name="gesture_three_finger_drag">Træk med tre fingre</string>
+    <string name="gesture_three_finger_hold">Hold med tre fingre</string>
+    <string name="gesture_three_finger_hold_delay">Forsinkelse for hold med tre fingre (ms)</string>
+    <string name="gesture_threshold">Gestus-tærskel (px)</string>
+    <string name="gesture_mouse_drag_movement">Musebevægelse ved træk</string>
+    <string name="gesture_mouse_drag_movement_subtitle">Direkte virker for de fleste spil. Brug Relativ, hvis træk giver kamera- eller markørproblemer</string>
+    <string name="gesture_mouse_drag_movement_direct">Direkte</string>
+    <string name="gesture_mouse_drag_movement_relative">Relativ</string>
+    <string name="gesture_show_click_highlight">Vis klikfremhævning</string>
+    <string name="gesture_show_click_highlight_subtitle">Vis en cirkel ved trykplacering</string>
+    <string name="gesture_show_debug_overlay">Vis fejlfindings-overlay for gestus</string>
+    <string name="gesture_show_debug_overlay_subtitle">Vis midlertidige gestusetiketter øverst i midten</string>
+    <string name="gesture_show_cursor_touchscreen_mode">Vis markør i touchskærmstilstand</string>
+    <string name="gesture_show_cursor_touchscreen_mode_subtitle">Hold musemarkøren synlig, mens touchskærmsgestus er aktive</string>
+
+    <!-- Shooter Mode -->
+    <string name="shooter_mode_settings">Indstillinger for dynamiske joysticks</string>
+    <string name="movement_type">Bevægelsestype</string>
+    <string name="movement_type_subtitle">Joystick-output til venstre bevægelse</string>
+    <string name="look_sensitivity">Kig-følsomhed</string>
+    <string name="look_sensitivity_subtitle">Mus-kig-følsomhedsmultiplikator</string>
+    <string name="joystick_size">Joystick-størrelse</string>
+    <string name="joystick_size_subtitle">Dynamisk joystick-størrelsesmultiplikator</string>
+    <string name="movement_wasd">WASD</string>
+    <string name="movement_arrow_keys">Piletaster</string>
+    <string name="movement_gamepad_left_stick">Gamepad venstre stick</string>
+    <string name="look_type">Kig-type</string>
+    <string name="look_type_subtitle">Højre side adfærd i shooter-tilstand</string>
+    <string name="look_type_mouse">Mus</string>
+    <string name="look_type_gamepad_right_stick">Gamepad højre stick</string>
+
+    <string name="range_button_settings">Indstillinger for intervalknap</string>
+    <string name="range_type">Tastinterval</string>
+    <string name="range_type_subtitle">Hvilket sæt taster der gennemgås</string>
+    <string name="range_orientation">Orientering</string>
+    <string name="range_orientation_subtitle">Layout-retning for intervalknap</string>
+    <string name="range_orientation_horizontal">Vandret</string>
+    <string name="range_orientation_vertical">Lodret</string>
+    <string name="range_visible_segments">Synlige segmenter</string>
+    <string name="range_visible_segments_subtitle">Antal tastsegmenter vist ad gangen: %1$d</string>
+    <string name="range_a_to_z">A – Z</string>
+    <string name="range_1_to_0">1 – 0</string>
+    <string name="range_f1_to_f12">F1 – F12</string>
+    <string name="range_lock_scrolling">Lås rulning</string>
+    <string name="range_lock_scrolling_subtitle">Forhindre rulning gennem intervallet</string>
+    <string name="button_toggleable">Tilskiftelig</string>
+    <string name="button_toggleable_subtitle">Tryk for at aktivere, tryk igen for at deaktivere</string>
+
+
+    <string name="external_display_swap">Vis spil på ekstern skærm</string>
+
+    <!-- Container Configuration: Rendering -->
+    <string name="renderer">Renderer</string>
+
+    <!-- Container Configuration: Management -->
+    <string name="startup_selection">Opstartsvalg</string>
+
+    <!-- Dialogs -->
+
+    <!-- Driver Manager -->
+
+    <!-- Contents Manager -->
+
+
+    <!-- Settings: Performance Group -->
+
+    <!-- Settings: Emulation Group -->
+
+    <!-- Settings: Debug Group -->
+
+    <!-- Settings: Info Group -->
+
+    <!-- Settings: Interface Group -->
+
+    <!-- Settings: Downloads Group -->
+
+
+    <string name="download">Download</string>
+    <string name="install">Installér</string>
+
+
+
+
+
+
+
+    <string name="main_installing_glibc">Installerer glibc-komponenter...</string>
+    <string name="main_installing_bionic">Installerer Bionic-komponenter...</string>
+    <string name="main_loading">Indlæser...</string>
+
+
+
+
+
+
+
+
+
+
+    <!-- Best Config Compatibility Messages -->
+
+    <!-- Best Config Toast Messages -->
+    <plurals name="community_config_result_count">
+        <item quantity="one">%1$d konfiguration</item>
+        <item quantity="other">%1$d konfigurationer</item>
+    </plurals>
+
+    <string name="back">Tilbage</string>
+
+    <!-- Options Panel -->
+
+    <!-- Game Options Panel -->
+
+    <!-- System Menu -->
+    <string name="menu">Menu</string>
+
+    <!-- Gamepad Actions -->
+
+    <!-- Search -->
+
+
+
+
+
+
+
+
+
+
+
+
+    <!-- Custom Games -->
+
+    <!-- Toast -->
+    <string name="toast_controls_reset">Kontroller nulstillet</string>
+
+    <!-- Settings additions -->
+
+    <!-- Misc additions -->
+
+
+
+    <!-- Amazon Games Integration -->
+
+    <!-- Library: source not logged in splash -->
+    <string name="download_failed_title">Download mislykkedes</string>
+    <string name="download_failed_message">En nødvendig fil kunne ikke downloades. Kontrollér din netværksforbindelse, og prøv igen.</string>
+    <string name="install_failed_title">Installation mislykkedes</string>
+    <string name="install_failed_message">Systemfiler kunne ikke installeres. Prøv igen. Hvis problemet fortsætter, prøv et andet netværk eller brug en VPN.</string>
+
+    <!-- Workshop -->
+
+    <!-- Recommendations -->
+    <!-- HLTB (How Long To Beat) -->
+
+    <!-- LSFG-VK frame generation -->
+    <string name="lsfg_tab_title">LSFG-VK</string>
+    <string name="lsfg_multiplier">Billedmultiplikator</string>
+    <string name="lsfg_flow_scale">Flow-skala</string>
+    <string name="lsfg_flow_scale_desc">Lavere er mere stabilt; højere er mere flydende men kan give artefakter.</string>
+    <string name="lsfg_performance_mode">Ydelsestilstand</string>
+    <string name="lsfg_present_mode">Præsentationstilstand</string>
+    <string name="lsfg_present_mode_desc">Mailbox anbefales. FIFO fungerer også, når outputbilledraten (fps-grænse × multiplikator) matcher skærmens opdateringshastighed; under opdateringshastigheden kan FIFO se hakkende ud.</string>
+    <string name="lsfg_backend">Backend</string>
+    <string name="lsfg_backend_desc">Legacy kører lsfg-vk-laget inde i spillet; Native kører billedgenerering i WoW Forever-rendereren</string>
+    <string name="lsfg_backend_legacy">Legacy (lag)</string>
+    <string name="lsfg_backend_native">Native (renderer)</string>
+    <string name="lsfg_performance_mode_desc">Reducerer kvalitet for højere gennemstrømning</string>
+    <!-- Game Launch Tips -->
+
+    <!-- Frontend Sync Settings -->
+    <string name="screen_effects_scaling">Skalering</string>
+    <string name="screen_effects_upscaling">Opskalering</string>
+    <string name="screen_effects_basic_scaling">Grundlæggende skalering</string>
+    <string name="screen_effects_scaling_mode_none">Ingen skalering</string>
+    <string name="screen_effects_scaling_mode_none_desc">Ingen skalering.</string>
+    <string name="screen_effects_scaling_mode_nearest">Nærmeste</string>
+    <string name="screen_effects_scaling_mode_nearest_desc">Skarpe pixels (retro).</string>
+    <string name="screen_effects_scaling_mode_linear">Lineær</string>
+    <string name="screen_effects_scaling_mode_linear_desc">Blød skalering.</string>
+    <string name="screen_effects_scaling_mode_fill">Udfyld</string>
+    <string name="screen_effects_scaling_mode_fill_desc">Fylder skærmen, beskærer kanterne.</string>
+    <string name="screen_effects_scaling_mode_stretch">Stræk</string>
+    <string name="screen_effects_scaling_mode_stretch_desc">Fylder skærmen, ignorerer billedformat.</string>
+    <string name="screen_effects_scaling_mode_fsr">FSR</string>
+    <string name="screen_effects_scaling_mode_fsr_desc">Skarp superopløsnings-opskalering.</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect">FSR Fit</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect_desc">FSR, bevarer billedformat.</string>
+    <string name="screen_effects_scaling_mode_dls">DLS</string>
+    <string name="screen_effects_scaling_mode_dls_desc">Skarphed / klarhed.</string>
+    <string name="screen_effects_scaling_mode_natural">Naturlig</string>
+    <string name="screen_effects_scaling_mode_natural_desc">Varmere farvetone.</string>
+    <string name="screen_effects_fsr">FSR 1.0</string>
+    <string name="screen_effects_fsr_sharpness">FSR-skarphed</string>
+    <string name="screen_effects_fsr_sharpness_value">%1$d/5</string>
+    <string name="transcoder">Transcoder</string>
+
+    <!-- Shooter Mode Improvements -->
+    <string name="shooter_mode_settings_title">Shooter-tilstandsindstillinger</string>
+    <string name="reset_shooter_settings">Nulstil shooter-indstillinger</string>
+    <string name="shooter_section_input">Input</string>
+    <string name="shooter_section_runtime">Kontroller under kørsel</string>
+    <string name="shooter_section_mouse_look">Musekig</string>
+    <string name="shooter_section_joysticks">Joysticks</string>
+    <string name="shooter_section_movement_joystick">Bevægelsesjoystick</string>
+    <string name="shooter_section_right_joystick">Højre stick-kigjoystick</string>
+    <string name="shooter_section_movement">Bevægelse</string>
+    <string name="look_sensitivity_x">Vandret følsomhed</string>
+    <string name="look_sensitivity_x_subtitle">Multiplikator for vandret musekig i højre side</string>
+    <string name="look_sensitivity_y">Lodret følsomhed</string>
+    <string name="look_sensitivity_y_subtitle">Multiplikator for lodret musekig i højre side</string>
+    <string name="invert_look_y">Invertér lodret kig</string>
+    <string name="invert_look_y_subtitle">Vend op og ned for musekig</string>
+    <string name="look_smoothing">Udjævning af kig</string>
+    <string name="look_smoothing_subtitle">Udjævn kigbevægelse mellem berøringsprøver</string>
+    <string name="look_deadzone">Dødzone for kig</string>
+    <string name="look_deadzone_subtitle">Ignorer meget små kigbevægelser i højre side</string>
+    <string name="mouse_look_acceleration">Acceleration for musekig</string>
+    <string name="mouse_look_acceleration_subtitle">Øg musekighastigheden, når berøringsbevægelsen bliver hurtigere</string>
+    <string name="mouse_acceleration_strength">Accelerationsstyrke</string>
+    <string name="mouse_acceleration_strength_subtitle">Hvor hurtigt hurtigere træk giver ekstra musehastighed</string>
+    <string name="mouse_acceleration_max">Maks. acceleration</string>
+    <string name="mouse_acceleration_max_subtitle">Øvre multiplikator ved hurtige musekig-træk</string>
+    <string name="win32_relative_mouse_input">Relativt museinput</string>
+    <string name="win32_relative_mouse_input_subtitle">Send bevægelse direkte til Wine som relativt museinput. Prøv dette, når musen ikke virker i spillet.</string>
+    <string name="joystick_opacity">Joystick-gennemsigtighed</string>
+    <string name="joystick_opacity_subtitle">Gennemsigtighed for dynamiske joystick-ringe og knapper</string>
+    <string name="show_shooter_runtime_toggle">Vis knap i spillet</string>
+    <string name="show_shooter_runtime_toggle_subtitle">Vis knappen Aktiver mus / Aktiver sticks, mens shooter-tilstand er aktiv</string>
+    <string name="movement_joystick_size">Størrelse på bevægelsesjoystick</string>
+    <string name="movement_joystick_size_subtitle">Størrelsesmultiplikator for dynamisk joystick i venstre side</string>
+    <string name="movement_joystick_deadzone">Dødzone for bevægelse</string>
+    <string name="movement_joystick_deadzone_subtitle">Ignorer små input fra bevægelsesjoysticket i venstre side</string>
+    <string name="movement_stick_sensitivity">Følsomhed for bevægelsesstick</string>
+    <string name="movement_stick_sensitivity_subtitle">Ændrer hvor hurtigt den virtuelle venstre stick når fuldt output</string>
+    <string name="movement_joystick_behavior">Adfærd for bevægelsesjoystick</string>
+    <string name="movement_joystick_behavior_subtitle">Hvordan midten af joysticket i venstre side opfører sig ved lange træk</string>
+    <string name="look_joystick_size">Størrelse på højre stick-joystick</string>
+    <string name="look_joystick_size_subtitle">Størrelsesmultiplikator når kigtypen udsender gamepad højre stick</string>
+    <string name="look_joystick_deadzone">Dødzone for højre stick</string>
+    <string name="look_joystick_deadzone_subtitle">Ignorer små input fra gamepadens højre stick til kig</string>
+    <string name="look_stick_sensitivity">Følsomhed for højre stick</string>
+    <string name="look_stick_sensitivity_subtitle">Ændrer hvor hurtigt den virtuelle højre stick når fuldt output</string>
+    <string name="look_joystick_behavior">Adfærd for højre stick-joystick</string>
+    <string name="look_joystick_behavior_subtitle">Hvordan midten af joysticket i højre side opfører sig, når kigtypen er gamepad højre stick</string>
+    <string name="shooter_movement_zone_width">Bredde på bevægelseszone</string>
+    <string name="shooter_movement_zone_width_subtitle">Skærmbredde reserveret til bevægelsesberøringer i venstre side</string>
+    <string name="button_drag_look">Kig ved knaptræk</string>
+    <string name="button_drag_look_subtitle">Tillad træk fra skærmknapper for at sigte eller bevæge</string>
+    <string name="button_drag_threshold">Tærskel for knaptræk (px)</string>
+    <string name="joystick_behavior">Joystick-adfærd</string>
+    <string name="joystick_behavior_anchored">Fastgjort</string>
+    <string name="joystick_behavior_floating">Flydende</string>
+    <string name="outer_ring_sprint">Sprint i yderringen</string>
+    <string name="outer_ring_sprint_subtitle">Brug sprint-input, når bevægelsesjoysticket er tæt på kanten</string>
+    <string name="outer_ring_sprint_threshold">Sprinttærskel</string>
+    <string name="outer_ring_sprint_threshold_subtitle">Joystick-afstand nødvendig for at aktivere sprint</string>
+    <string name="outer_ring_sprint_press_mode">Tryk på sprintbinding</string>
+    <string name="outer_ring_sprint_press_mode_subtitle">Tryk sprint-input én gang, når sprint-ringen nås, i stedet for at holde det nede</string>
+    <string name="sprint_binding">Sprintbinding</string>
+    <string name="gesture_header_gamepad">Gamepad</string>
+    <string name="control_appearance">Kontroludseende</string>
+    <string name="button_color">Kontrolfarve</string>
+    <string name="button_color_subtitle">Hexfarve for kontrollens omrids, ikon og tekst</string>
+    <string name="button_active_color">Trykket farve</string>
+    <string name="button_active_color_subtitle">Farve mens den trykkes eller er aktiv</string>
+    <string name="button_opacity">Kontrolopacitet</string>
+    <string name="button_opacity_value">%1$d%%</string>
+    <string name="button_opacity_inherited">%1$d%% (global standard)</string>
+    <string name="control_stroke_width">Linjetykkelse</string>
+    <string name="control_stroke_width_subtitle">Juster tykkelsen på kontrollens omrids og opdelere</string>
+    <string name="control_stroke_width_thin">Tynd</string>
+    <string name="control_stroke_width_default">Standard</string>
+    <string name="control_stroke_width_thick">Tyk</string>
+    <string name="control_stroke_width_extra_thick">Ekstra tyk</string>
+    <string name="button_look_through">Gennemkig</string>
+    <string name="button_look_through_subtitle">Tryk på og træk fra denne knap for også at styre bevægelse eller kameravisningen. Ikke tilgængelig i touchscreen-tilstand.</string>
+    <string name="preview">Forhåndsvisning</string>
+    <string name="active">Aktiv</string>
+    <string name="apply_all">Anvend alle</string>
+    <string name="copy_appearance_from_button">Kopiér udseende fra kontrol</string>
+    <string name="toast_no_buttons_to_copy_appearance">Ingen andre kontroller at kopiere udseende fra</string>
+    <string name="toast_copied_button_appearance">Kontroludseende kopieret</string>
+    <string name="toast_applied_button_appearance">Udseende anvendt på alle kontroller</string>
+
+    <!-- Sponsorship (featured slot) -->
+    <plurals name="achievements_hidden_remaining">
+        <item quantity="one">%1$d skjult præstation tilbage</item>
+        <item quantity="other">%1$d skjulte præstationer tilbage</item>
+    </plurals>
+    <plurals name="local_mod_file_count">
+        <item quantity="one">%1$d fil</item>
+        <item quantity="other">%1$d filer</item>
+    </plurals>
+    <plurals name="local_mod_folder_count">
+        <item quantity="one">%1$d mappe</item>
+        <item quantity="other">%1$d mapper</item>
+    </plurals>
+    <!-- Bionic FG (AI) Frame Generation -->
+    <string name="radial_menu">Radialmenu</string>
+    <string name="radial_menu_settings_title">Radialmenu</string>
+    <string name="radial_menu_cancel">Annuller</string>
+    <string name="radial_menu_slot_count">Pladser</string>
+    <string name="radial_menu_slot_count_subtitle">%1$d pladser aktiveret</string>
+    <string name="radial_menu_decrease_slots">Reducer pladser</string>
+    <string name="radial_menu_increase_slots">Forøg pladser</string>
+    <string name="radial_menu_slots">Hjulpladser</string>
+    <string name="radial_menu_slot_title">Plads %1$d</string>
+    <string name="radial_menu_slot_label_hint">Etiket</string>
+    <string name="radial_menu_slot_binding">Tilknytning for plads %1$d</string>
+    <string name="radial_menu_slot_binding_summary">Tilknytning: %1$s</string>
+    <string name="radial_menu_preset_common">Almindelige</string>
+    <string name="radial_menu_preset_weapons">Våben</string>
+    <string name="gesture_action_open_radial_menu">Åbn radialmenu</string>
+
+    <!-- Power Control -->
+    <string name="binding_mode_simultaneous">Samtidig</string>
+    <string name="binding_mode_sequence">Sekvens</string>
+    <string name="binding_sequence_delay_ms">Sekvensforsinkelse (ms)</string>
+    <string name="binding_sequence_current_format">%1$s (%2$d ms)</string>
+    <string name="gyro_aiming">Gyrosigte</string>
+    <string name="gyro_settings_title">Gyroindstillinger</string>
+    <string name="gyro_section_output">Output og bevægelse</string>
+    <string name="gyro_section_activation">Aktivering</string>
+    <string name="gyro_section_response">Respons</string>
+    <string name="gyro_output">Output</string>
+    <string name="gyro_output_subtitle">Vælg, hvad enhedens bevægelse styrer.</string>
+    <string name="gyro_tilt_steering">Vippestyring</string>
+    <string name="gyro_tilt_steering_subtitle">Hold enheden i en vinkel for at opretholde vandret stick-input. Den aktuelle position centreres, hver gang gyro aktiveres.</string>
+    <string name="gyro_tilt_unavailable">Denne enhed leverer ikke den orienteringssensor, som vippestyring kræver.</string>
+    <string name="gyro_activation">Aktivering</string>
+    <string name="gyro_activation_help">Hold, Skift og Skralde bruger en kontrol, der er tildelt Gyro.</string>
+    <string name="gyro_activation_always">Altid</string>
+    <string name="gyro_activation_hold">Hold</string>
+    <string name="gyro_activation_toggle">Skift</string>
+    <string name="gyro_activation_ratchet">Skralde</string>
+    <string name="gyro_control_not_assigned">Gyro: Ikke tildelt</string>
+    <string name="gyro_assign_in_controls_editor">Tildel i controller-editoren</string>
+    <string name="gyro_sensitivity">Følsomhed</string>
+    <string name="gyro_sensitivity_subtitle">Styrer, hvor kraftigt enhedens rotation påvirker det valgte output.</string>
+    <string name="gyro_tilt_full_scale">Fuld styrevinkel</string>
+    <string name="gyro_tilt_full_scale_subtitle">Enhedens hældning fra midten, der kræves for fuldt venstre eller højre stick-input.</string>
+    <string name="gyro_tilt_deadzone">Dødzone for hældning</string>
+    <string name="gyro_tilt_deadzone_subtitle">Ignorerer små hældninger omkring den centrerede position.</string>
+    <string name="gyro_vertical_scale">Lodret følsomhed</string>
+    <string name="gyro_vertical_scale_subtitle">Justerer lodret bevægelse i forhold til vandret bevægelse.</string>
+    <string name="gyro_steadying">Stabiliseringstærskel</string>
+    <string name="gyro_steadying_subtitle">Ignorerer meget små utilsigtede bevægelser, før følsomheden anvendes.</string>
+    <string name="gyro_smoothing">Udjævning</string>
+    <string name="gyro_smoothing_subtitle">Reducerer sensoruro på bekostning af en smule sigteforsinkelse.</string>
+    <string name="gyro_stick_anti_deadzone">Stick-anti-dødzone</string>
+    <string name="gyro_stick_anti_deadzone_subtitle">Kompenserer for spillets indre stick-dødzone.</string>
+    <string name="gyro_invert_horizontal">Inverter vandret gyro</string>
+    <string name="gyro_invert_vertical">Inverter lodret gyro</string>
+    <string name="gyro_percent_value">%1$d%%</string>
+    <string name="gyro_degrees_value">%1$d°</string>
+    <string name="gyro_degrees_per_second_value">%1$.1f°/s</string>
+    <string name="gyro_milliseconds_value">%1$d ms</string>
+    <string name="reset_gyro_settings">Nulstil gyroindstillinger</string>
+</resources>

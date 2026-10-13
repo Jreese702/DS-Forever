@@ -1,0 +1,695 @@
+﻿<resources>
+    <string name="app_name">GameNative</string>
+    <string name="home">Acasă</string>
+    <string name="download">Descărcare</string>
+    <string name="install">Instalare</string>
+    <string name="yes">Da</string>
+    <string name="no">Nu</string>
+    <string name="cancel">Anulează</string>
+
+
+    <!-- Library Tabs -->
+
+    <!-- Custom Games -->
+    <!--Winlator-->
+    <string name="disabled">Dezactivat</string>
+    <string name="copy">Copiază</string>
+    <string name="stability">Stabilitate</string>
+    <string name="compatibility">Compatibilitate</string>
+    <string name="intermediate">Intermediar</string>
+    <string name="performance">Performanță</string>
+    <string name="unity">Unity</string>
+    <string name="unity_mono_bleeding_edge">Unity Mono Bleeding Edge</string>
+    <string name="denuvo">Denuvo</string>
+    <string name="extreme">Extreme</string>
+    <!-- Winlator: Win Components -->
+    <string name="direct3d">Direct3D</string>
+    <string name="directsound">DirectSound</string>
+    <string name="directinput8">DirectInput 8</string>
+    <string name="directinput">DirectInput</string>
+    <string name="wmdecoder">Windows Media Decoder</string>
+    <string name="opengl">OpenGL</string>
+    <string name="edit">Editează</string>
+    <string name="remove">Elimină</string>
+    <string name="add">Adaugă</string>
+    <string name="delete">Șterge</string>
+    <string name="copy_from">Copiază din</string>
+    <string name="ok">OK</string>
+    <string name="game_executable_not_found_title">Nu se poate porni</string>
+    <string name="game_executable_not_found">Executabilul nu a putut fi selectat automat. Setează calea executabilului în setările containerului.</string>
+    <string name="save">Salvează</string>
+    <string name="discard">Renunță</string>
+    <string name="contents">Conținut</string>
+    <string name="task_manager">Manager de activități</string>
+    <string name="tools_wine_processes_running_hint">%1$d în execuție, atinge/clic pe un proces pentru a-l închide</string>
+    <string name="tools_wine_processes_empty">Niciun EXE în execuție detectat.</string>
+    <string name="exit_game">Ieșire</string>
+    <string name="exit">Ieșire din joc</string>
+    <string name="keyboard">Tastatură</string>
+    <string name="resume_game">Reia jocul</string>
+    <string name="extra">Extra</string>
+    <string name="clear_search">Șterge căutarea</string>
+    <string name="face_buttons_category">Butoane frontale</string>
+    <string name="shoulder_buttons_category">Butoane shoulder</string>
+    <string name="menu_buttons_category">Butoane meniu</string>
+    <string name="thumbstick_buttons_category">Butoane thumbstick</string>
+    <string name="left_stick">Stick stânga</string>
+    <string name="right_stick">Stick dreapta</string>
+    <string name="dpad_category">D‑Pad</string>
+    <string name="dpad_up">D‑Pad Sus</string>
+    <string name="dpad_down">D‑Pad Jos</string>
+    <string name="dpad_left">D‑Pad Stânga</string>
+    <string name="dpad_right">D‑Pad Dreapta</string>
+    <string name="input_controls">Controller pe ecran</string>
+    <string name="edit_controls">Editează controllerul pe ecran</string>
+    <string name="edit_physical_controller">Editează controllerul fizic</string>
+    <string name="quick_menu_title">Meniu rapid</string>
+    <string name="quick_menu_back">Înapoi</string>
+    <string name="display_brightness">Luminozitatea ecranului</string>
+    <string name="screen_effects">Efecte de ecran</string>
+    <string name="screen_effects_live_preview">Modificările se aplică instantaneu jocului curent.</string>
+    <string name="screen_effects_color_adjustments">Ajustări de culoare</string>
+    <string name="screen_effects_shader_toggles">Efecte shader</string>
+    <string name="screen_effects_scaling_mode">Mod de scalare</string>
+    <string name="screen_effects_brightness">Luminozitate</string>
+    <string name="screen_effects_contrast">Contrast</string>
+    <string name="screen_effects_gamma">Gamma</string>
+    <string name="screen_effects_toon">Contur toon</string>
+    <string name="screen_effects_toon_description">Adaugă contururi întunecate pentru un aspect cel-shading.</string>
+    <string name="screen_effects_fxaa">FXAA</string>
+    <string name="screen_effects_fxaa_description">Netezește marginile zimțate cu un efect ușor de anti-aliasing post-procesare.</string>
+    <string name="screen_effects_vivid">Vivid</string>
+    <string name="screen_effects_vivid_description">Adaugă bloom și un plus de contrast pentru o imagine mai puternică.</string>
+    <string name="screen_effects_crt">CRT</string>
+    <string name="screen_effects_crt_description">Adaugă linii de scanare și o ușoară aberație cromatică.</string>
+    <string name="screen_effects_ntsc">NTSC</string>
+    <string name="screen_effects_ntsc_description">Adaugă distorsiune retro de televizor compozit, scurgere de culoare și linii de scanare.</string>
+    <string name="screen_effects_reset">Resetează</string>
+    <string name="screen_effects_close">Închide</string>
+    <string name="quick_menu_tab_controller">Controller</string>
+    <string name="performance_hud">HUD de performanță</string>
+    <string name="performance_hud_description">Afișează sau ascunde suprapunerea din joc.</string>
+    <string name="performance_hud_fps_limiter">Limitator FPS</string>
+    <string name="performance_hud_fps_limiter_target">FPS țintă</string>
+    <string name="performance_hud_fps_limiter_value">%1$d FPS</string>
+    <string name="performance_hud_fps_limiter_lsfg_base">Limitează rata de bază. Rata de pe ecran este limita înmulțită cu multiplicatorul LSFG.</string>
+    <string name="performance_hud_presets">Presetări</string>
+    <string name="performance_hud_preset_fps_only">1</string>
+    <string name="performance_hud_preset_essential">2</string>
+    <string name="performance_hud_preset_battery">3</string>
+    <string name="performance_hud_preset_full">4</string>
+    <string name="performance_hud_appearance">Aspect</string>
+    <string name="performance_hud_size">Dimensiune</string>
+    <string name="performance_hud_size_small">S</string>
+    <string name="performance_hud_size_medium">M</string>
+    <string name="performance_hud_size_large">L</string>
+    <string name="performance_hud_background_opacity">Opacitatea fundalului</string>
+    <string name="performance_hud_color_intensity">Intensitatea culorii</string>
+    <string name="performance_hud_text_outline">Conturul textului</string>
+    <string name="performance_hud_percentage_value">%1$d%%</string>
+    <string name="performance_hud_metrics">Metrici afișați</string>
+    <string name="performance_hud_frame_rate">Rată de cadre</string>
+    <string name="performance_hud_frame_rate_graph">Grafic FPS</string>
+    <string name="performance_hud_cpu_usage">Utilizare CPU</string>
+    <string name="performance_hud_cpu_usage_graph">Grafic CPU</string>
+    <string name="performance_hud_gpu_usage">Utilizare GPU</string>
+    <string name="performance_hud_gpu_usage_graph">Grafic GPU</string>
+    <string name="performance_hud_ram_usage">Utilizare RAM</string>
+    <string name="performance_hud_battery_level">Nivel baterie</string>
+    <string name="performance_hud_power_draw">Consum de energie</string>
+    <string name="performance_hud_runtime_left">Timp rămas</string>
+    <string name="performance_hud_battery_temperature">Temperatura bateriei</string>
+    <string name="performance_hud_clock_time">Ora</string>
+    <string name="performance_hud_cpu_temperature">Temperatura CPU</string>
+    <string name="performance_hud_gpu_temperature">Temperatura GPU</string>
+
+    <!-- Controller Binding Dialog -->
+    <string name="bind_button">Asociere: %1$s</string>
+    <string name="current_binding">Curent: %1$s</string>
+    <string name="search_placeholder">Caută…</string>
+    <string name="search">Căutare</string>
+    <string name="category">Categorie</string>
+    <string name="mouse">Mouse</string>
+    <string name="gamepad">Gamepad</string>
+    <string name="binding_none">Nimic</string>
+    <string name="clear_binding">Șterge asocierea</string>
+    <string name="no_bindings_found">Nicio asociere găsită</string>
+
+    <!-- Element Editor Dialog -->
+    <string name="edit_element">Editează %1$s</string>
+    <string name="element_position_size">Poziție: (%1$d, %2$d) • Mărime: %3$.2fx</string>
+    <string name="appearance">Aspect</string>
+    <string name="size_subtitle">%.2fx</string>
+    <string name="label_text">Text etichetă</string>
+    <string name="label_text_subtitle">Text personalizat pentru acest buton</string>
+    <string name="element_type">Tip element</string>
+    <string name="element_type_subtitle">Schimbă tipul acestui control</string>
+    <string name="shape">Formă</string>
+    <string name="shape_subtitle">Aspect vizual</string>
+    <string name="shape_restricted">%1$s este limitat la forma %2$s</string>
+    <string name="bindings">Asocieri</string>
+    <string name="bindings_auto_generated">Asocieri (generate automat)</string>
+    <string name="bindings_auto_generated_subtitle">Asocierile pentru butoanele de tip „range” sunt generate automat</string>
+    <string name="primary_action">Acțiune principală</string>
+    <string name="secondary_action">Acțiune secundară</string>
+    <string name="direction_up">Sus</string>
+    <string name="direction_right">Dreapta</string>
+    <string name="direction_down">Jos</string>
+    <string name="direction_left">Stânga</string>
+    <string name="mouse_suffix"> (Mouse)</string>
+    <string name="slot_number">Slot %1$d</string>
+    <string name="button_slots_help">Butoanele suportă până la 2 asocieri: principală (apăsare) și secundară (apăsare lungă)</string>
+    <string name="properties">Proprietăți</string>
+    <string name="position">Poziție</string>
+    <string name="position_value">X: %1$d, Y: %2$d</string>
+    <string name="unsaved_changes">Modificări nesalvate</string>
+    <string name="unsaved_changes_message">Ai modificări nesalvate. Vrei să le salvezi sau să renunți la ele?</string>
+    <string name="adjust_size">Ajustează mărimea</string>
+    <string name="reset">Resetează</string>
+    <string name="done">Gata</string>
+    <string name="copy_size_from_element">Copiază mărimea de la element</string>
+    <string name="toast_no_elements_to_copy">Nu există alte elemente de la care să copiezi mărimea</string>
+    <string name="toast_copied_size">Mărime copiată: %.2fx</string>
+    <string name="quick_presets">Presetări rapide</string>
+    <string name="preset_wasd">WASD</string>
+    <string name="preset_arrows">Săgeți</string>
+    <string name="preset_mouse">Mouse</string>
+    <string name="preset_dpad">D‑Pad</string>
+    <string name="preset_left_stick">Stick stânga</string>
+    <string name="preset_right_stick">Stick dreapta</string>
+
+    <!-- Physical Controller Config -->
+    <string name="physical_controller_config">Editor asocieri controller fizic</string>
+    <string name="face_buttons">Butoane frontale</string>
+    <string name="button_a">Buton A</string>
+    <string name="button_b">Buton B</string>
+    <string name="button_x">Buton X</string>
+    <string name="button_y">Buton Y</string>
+    <string name="shoulder_buttons">Butoane shoulder</string>
+    <string name="button_l1">LB</string>
+    <string name="button_r1">RB</string>
+    <string name="button_l2">LT</string>
+    <string name="button_r2">RT</string>
+    <string name="menu_buttons">Butoane meniu</string>
+    <string name="button_start">Start / Options</string>
+    <string name="button_select">Select / View / Share</string>
+    <string name="thumbstick_buttons">Butoane thumbstick</string>
+    <string name="button_l3">L3 (Click stick stânga)</string>
+    <string name="button_r3">R3 (Click stick dreapta)</string>
+    <string name="left_stick_up">Stick stânga sus</string>
+    <string name="left_stick_down">Stick stânga jos</string>
+    <string name="left_stick_left">Stick stânga stânga</string>
+    <string name="left_stick_right">Stick stânga dreapta</string>
+    <string name="right_stick_up">Stick dreapta sus</string>
+    <string name="right_stick_down">Stick dreapta jos</string>
+    <string name="right_stick_left">Stick dreapta stânga</string>
+    <string name="right_stick_right">Stick dreapta dreapta</string>
+    <string name="button_home">Home / Guide / PS</string>
+    <string name="not_set">Nesetat</string>
+
+    <!-- Toast -->
+    <string name="toast_controls_reset">Controalele au fost resetate</string>
+
+    <!-- Settings -->
+
+    <!-- Library & Game Management -->
+    <string name="label">Etichetă</string>
+    <string name="status">Stare</string>
+    <string name="size">Dimensiune</string>
+    <string name="installing">Se instalează</string>
+
+
+    <!-- App Filter -->
+
+    <!-- Login & Connection -->
+
+    <!--Game Feedback Dialog -->
+
+
+    <!-- Profile & Menu -->
+	<string name="close">Închide</string>
+
+    <!-- System menu platform actions -->
+
+    <!-- Container Configuration: General -->
+	<string name="name">Nume</string>
+	<string name="container_variant">Variantă container</string>
+	<string name="wine_version">Versiune Wine</string>
+	<string name="language">Limbă</string>
+	<string name="screen_size">Dimensiune ecran</string>
+	<string name="audio_driver">Driver audio</string>
+	<string name="pulseaudio_low_latency">Mod latență redusă PulseAudio</string>
+	<string name="show_fps">Afișează FPS</string>
+	<string name="portrait_mode">Mod portret</string>
+	<string name="portrait_below_cutout">Păstrează sub decupajul camerei</string>
+
+
+    <!-- Container Configuration: Graphics -->
+	<string name="graphics_driver">Driver grafic</string>
+	<string name="graphics_driver_version">Versiune driver grafic</string>
+    <string name="sf_compat_mode">Mod de compatibilitate</string>
+	<string name="use_legacy_renderer">Folosește redarea veche</string>
+	<string name="sharpness_effect">Boost claritate</string>
+	<string name="sharpness_level">Nivel claritate</string>
+	<string name="sharpness_denoise">Reducere zgomot claritate</string>
+
+    <!-- Container Configuration: Emulation -->
+	<string name="fexcore_version">Versiune FEXCore</string>
+	<string name="fexcore_preset">Presetare FEXCore</string>
+	<string name="box64_version">Versiune Box64</string>
+	<string name="box64_preset">Presetare Box64</string>
+
+    	<!-- Container Configuration: Input -->
+	<string name="show_controller_debug_menu">Afișează meniul de depanare pentru controllere</string>
+	<string name="disable_mouse_input">Dezactivează input-ul de mouse</string>
+	<string name="touchscreen_mode">Mod touchscreen</string>
+	<string name="shooter_mode_toggle">Mod shooter</string>
+	<string name="shooter_mode_on">Activează mouse-ul</string>
+	<string name="shooter_mode_off">Activează stick-urile</string>
+
+	<!-- Gesture Settings Dialog -->
+	<string name="gesture_settings_title">Setări gesturi touch</string>
+	<string name="gesture_tap">Atingere</string>
+	<string name="gesture_drag">Trage cu degetul</string>
+	<string name="gesture_hold_mouse_button_while_touching">Menține butonul mouse-ului apăsat în timpul atingerii</string>
+	<string name="gesture_mouse_button_label">Buton mouse</string>
+	<string name="gesture_long_press">Apăsare lungă</string>
+	<string name="gesture_long_press_delay">Întârziere apăsare lungă (ms)</string>
+	<string name="gesture_double_tap">Atingere dublă</string>
+	<string name="gesture_double_tap_subtitle">Dublu clic stânga</string>
+	<string name="gesture_double_tap_delay">Întârziere atingere dublă (ms)</string>
+	<string name="gesture_two_finger_drag">Trage cu două degete</string>
+	<string name="gesture_pinch">Pinch</string>
+	<string name="gesture_two_finger_tap">Atingere două degete</string>
+	<string name="gesture_action_left_click">Clic stânga</string>
+	<string name="gesture_action_right_click">Clic dreapta</string>
+	<string name="gesture_action_middle_click">Clic mijloc</string>
+	<string name="gesture_pan_middle_mouse">Pan mouse mijloc</string>
+	<string name="gesture_pan_inverted_middle_mouse">Pan inversat cu butonul din mijloc</string>
+	<string name="gesture_pan_wasd">WASD</string>
+	<string name="gesture_pan_inverted_wasd">WASD inversat</string>
+	<string name="gesture_pan_arrow_keys">Taste săgeți</string>
+	<string name="gesture_pan_inverted_arrow_keys">Taste săgeți inversate</string>
+	<string name="gesture_zoom_scroll_wheel">Roată scroll</string>
+	<string name="gesture_zoom_plus_minus">Taste +/-</string>
+	<string name="gesture_zoom_page_up_down">PgSus/PgJos</string>
+	<string name="gesture_action_label">Acțiune</string>
+    <string name="gesture_section_single_finger">Un deget</string>
+    <string name="gesture_section_two_finger">Două degete</string>
+    <string name="gesture_section_three_finger">Trei degete</string>
+    <string name="gesture_section_other">Altul</string>
+    <string name="gesture_pan_left_click_drag">Tragere cu clic stânga</string>
+    <string name="gesture_pan_right_click_drag">Tragere cu clic dreapta</string>
+    <string name="gesture_action_show_keyboard">Afișează tastatura</string>
+    <string name="gesture_mouse_behavior_label">Comportament mouse</string>
+    <string name="gesture_mouse_behavior_click">Clic</string>
+    <string name="gesture_mouse_behavior_hold">Menținere</string>
+    <string name="gesture_header_special">Special</string>
+    <string name="gesture_header_mouse">Mouse</string>
+    <string name="gesture_header_common_game">Taste comune de joc</string>
+    <string name="gesture_header_navigation_editing">Navigare / editare</string>
+    <string name="gesture_header_symbols">Simboluri</string>
+    <string name="gesture_header_letters">Litere A-Z</string>
+    <string name="gesture_header_numbers">Numere 0-9</string>
+    <string name="gesture_header_numpad">Tastatură numerică</string>
+    <string name="gesture_header_function_keys">Taste funcționale</string>
+    <string name="gesture_header_modifiers_locks">Modificatori / blocări</string>
+    <string name="gesture_two_finger_hold">Menținere cu două degete</string>
+    <string name="gesture_two_finger_hold_delay">Întârziere menținere cu două degete (ms)</string>
+    <string name="gesture_three_finger_tap">Atingere cu trei degete</string>
+    <string name="gesture_three_finger_drag">Tragere cu trei degete</string>
+    <string name="gesture_three_finger_hold">Menținere cu trei degete</string>
+    <string name="gesture_three_finger_hold_delay">Întârziere menținere cu trei degete (ms)</string>
+    <string name="gesture_threshold">Prag gest (px)</string>
+    <string name="gesture_mouse_drag_movement">Mișcarea mouse-ului la glisare</string>
+    <string name="gesture_mouse_drag_movement_subtitle">Direct funcționează în majoritatea jocurilor. Folosește Relativ dacă glisarea provoacă probleme cu camera sau cursorul</string>
+    <string name="gesture_mouse_drag_movement_direct">Direct</string>
+    <string name="gesture_mouse_drag_movement_relative">Relativ</string>
+    <string name="gesture_show_click_highlight">Afișează evidențierea clicului</string>
+    <string name="gesture_show_click_highlight_subtitle">Afișează un cerc la locația atingerii</string>
+    <string name="gesture_show_debug_overlay">Afișează suprapunerea de depanare a gesturilor</string>
+    <string name="gesture_show_debug_overlay_subtitle">Afișează etichete temporare de gesturi în partea de sus, centru</string>
+    <string name="gesture_show_cursor_touchscreen_mode">Afișează cursorul în modul touchscreen</string>
+    <string name="gesture_show_cursor_touchscreen_mode_subtitle">Menține cursorul mouse-ului vizibil cât timp gesturile touchscreen sunt active</string>
+
+	<!-- Shooter Mode -->
+	<string name="shooter_mode_settings">Setări joystick-uri dinamice</string>
+	<string name="movement_type">Tip mișcare</string>
+	<string name="movement_type_subtitle">Ieșire joystick pentru mișcare stânga</string>
+	<string name="look_sensitivity">Sensibilitate privire</string>
+	<string name="look_sensitivity_subtitle">Multiplicator sensibilitate mouse</string>
+	<string name="joystick_size">Dimensiune joystick</string>
+	<string name="joystick_size_subtitle">Multiplicator dimensiune joystick dinamic</string>
+	<string name="movement_wasd">WASD</string>
+	<string name="movement_arrow_keys">Taste săgeți</string>
+	<string name="movement_gamepad_left_stick">Stick stânga gamepad</string>
+	<string name="look_type">Tip privire</string>
+	<string name="look_type_subtitle">Comportament partea dreaptă în mod shooter</string>
+	<string name="look_type_mouse">Mouse</string>
+	<string name="look_type_gamepad_right_stick">Stick dreapta gamepad</string>
+
+	<string name="range_button_settings">Setări buton interval</string>
+	<string name="range_type">Interval taste</string>
+	<string name="range_type_subtitle">Ce set de taste parcurge</string>
+	<string name="range_orientation">Orientare</string>
+	<string name="range_orientation_subtitle">Direcție layout buton interval</string>
+	<string name="range_orientation_horizontal">Orizontal</string>
+	<string name="range_orientation_vertical">Vertical</string>
+	<string name="range_visible_segments">Segmente vizibile</string>
+	<string name="range_visible_segments_subtitle">Număr segmente taste afișate: %1$d</string>
+	<string name="range_a_to_z">A – Z</string>
+	<string name="range_1_to_0">1 – 0</string>
+	<string name="range_f1_to_f12">F1 – F12</string>
+	<string name="range_lock_scrolling">Blochează scroll</string>
+	<string name="range_lock_scrolling_subtitle">Împiedică parcurgerea intervalului</string>
+	<string name="button_toggleable">Comutabil</string>
+	<string name="button_toggleable_subtitle">Atinge pentru activare, atinge din nou pentru dezactivare</string>
+
+
+	<string name="external_display_swap">Afișează jocul pe afișajul extern</string>
+
+	<!-- Container Configuration: Rendering -->
+	<string name="renderer">Renderer</string>
+
+	<!-- Container Configuration: Management -->
+	<string name="startup_selection">Selecție la pornire</string>
+
+	<!-- Dialogs -->
+
+	<!-- Driver Manager -->
+
+	<!-- Contents Manager -->
+
+	<!-- Settings -->
+
+	<!-- Settings: Performance Group -->
+
+	<!-- Settings: Emulation Group -->
+
+	<!-- Settings: Debug Group -->
+
+	<!-- Settings: Info Group -->
+
+	<!-- Settings: Interface Group -->
+
+	<!-- Settings: Downloads Group -->
+
+	<!-- Login Screen -->
+
+	<!-- Generic/Reusable strings -->
+
+	<!-- Connecting to Servers Screen -->
+
+	<!-- LibraryAppScreen: Dialogs -->
+
+	<!-- LibraryAppScreen: Toast Messages -->
+
+	<!-- LibraryAppScreen: UI Labels -->
+
+	<!-- PluviaMain: Update & App Info -->
+
+
+	<!-- PluviaMain: Game Launch -->
+	<string name="main_installing_glibc">Se instalează componente glibc...</string>
+	<string name="main_installing_bionic">Se instalează componente Bionic...</string>
+	<string name="main_loading">Se încarcă...</string>
+
+	<!-- PluviaMain: Session Conflicts -->
+
+	<!-- PluviaMain: Save Conflicts -->
+
+	<!-- PluviaMain: Sync Errors -->
+
+	<!-- PluviaMain: Pending Operations -->
+
+	<!-- Container Config Dialog -->
+
+	<!-- Libraries Dialog -->
+
+
+	<!-- Chat Screen -->
+
+	<!-- Library Components -->
+
+	<!-- Best Config Compatibility Messages -->
+
+	<!-- Best Config Toast Messages -->
+    <plurals name="community_config_result_count">
+        <item quantity="one">%1$d configurație</item>
+        <item quantity="few">%1$d configurații</item>
+        <item quantity="other">%1$d de configurații</item>
+    </plurals>
+	<string name="back">Înapoi</string>
+
+	<!-- Options Panel -->
+
+	<!-- Game Options Panel -->
+
+	<!-- System Menu -->
+	<string name="menu">Meniu</string>
+
+	<!-- Gamepad Actions -->
+
+	<!-- Search -->
+
+	<!-- Two Factor Auth -->
+
+	<!-- Contents Manager -->
+
+	<!-- Driver Manager -->
+
+	<!-- Settings Interface -->
+
+	<!-- Settings Screen -->
+
+	<!-- Contents Install Finish -->
+
+	<!-- Library Status -->
+
+	<!-- Wine/Proton Manager -->
+
+	<!-- Wine/Proton Manager - Status Messages -->
+
+
+
+	<!-- Amazon Games Integration -->
+
+    <!-- Library: source not logged in splash -->
+    <string name="download_failed_title">Descărcarea a eșuat</string>
+    <string name="download_failed_message">Un fișier necesar nu a putut fi descărcat. Verifică conexiunea la rețea și încearcă din nou.</string>
+    <string name="install_failed_title">Instalarea a eșuat</string>
+    <string name="install_failed_message">Fișierele de sistem nu au putut fi instalate. Încearcă din nou. Dacă problema persistă, încearcă o altă rețea sau folosește un VPN.</string>
+
+    <!-- Workshop -->
+
+    <!-- Recommendations -->
+    <!-- HLTB (How Long To Beat) -->
+
+    <!-- LSFG-VK frame generation -->
+    <string name="lsfg_tab_title">LSFG-VK</string>
+    <string name="lsfg_multiplier">Multiplicator cadre</string>
+    <string name="lsfg_flow_scale">Scară flux</string>
+    <string name="lsfg_flow_scale_desc">Mai mic este mai stabil; mai mare este mai fluid, dar poate produce artefacte.</string>
+    <string name="lsfg_performance_mode">Mod performanță</string>
+    <string name="lsfg_present_mode">Mod de prezentare</string>
+    <string name="lsfg_present_mode_desc">Mailbox este recomandat. FIFO funcționează și când rata de cadre de ieșire (limita fps × multiplicator) corespunde ratei de reîmprospătare a ecranului; sub aceasta, FIFO poate părea instabil.</string>
+    <string name="lsfg_backend">Backend</string>
+    <string name="lsfg_backend_desc">Legacy rulează stratul lsfg-vk în joc; Nativ rulează generarea de cadre în randorul WoW Forever</string>
+    <string name="lsfg_backend_legacy">Legacy (strat)</string>
+    <string name="lsfg_backend_native">Nativ (randor)</string>
+	<string name="lsfg_performance_mode_desc">Reduce calitatea pentru un debit mai mare</string>
+	<!-- Game Launch Tips -->
+
+    <!-- Frontend Sync Settings -->
+    <string name="screen_effects_scaling">Scalare</string>
+    <string name="screen_effects_upscaling">Scalare superioară</string>
+    <string name="screen_effects_basic_scaling">Scalare de bază</string>
+    <string name="screen_effects_scaling_mode_none">Fără scalare</string>
+    <string name="screen_effects_scaling_mode_none_desc">Fără scalare.</string>
+    <string name="screen_effects_scaling_mode_nearest">Cel mai apropiat</string>
+    <string name="screen_effects_scaling_mode_nearest_desc">Pixeli clari (retro).</string>
+    <string name="screen_effects_scaling_mode_linear">Liniară</string>
+    <string name="screen_effects_scaling_mode_linear_desc">Scalare lină.</string>
+    <string name="screen_effects_scaling_mode_fill">Umplere</string>
+    <string name="screen_effects_scaling_mode_fill_desc">Umple ecranul, decupează marginile.</string>
+    <string name="screen_effects_scaling_mode_stretch">Întindere</string>
+    <string name="screen_effects_scaling_mode_stretch_desc">Umple ecranul, ignoră raportul de aspect.</string>
+    <string name="screen_effects_scaling_mode_fsr">FSR</string>
+    <string name="screen_effects_scaling_mode_fsr_desc">Scalare clară la super-rezoluție.</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect">FSR Fit</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect_desc">FSR, păstrează raportul de aspect.</string>
+    <string name="screen_effects_scaling_mode_dls">DLS</string>
+    <string name="screen_effects_scaling_mode_dls_desc">Trecere de claritate.</string>
+    <string name="screen_effects_scaling_mode_natural">Natural</string>
+    <string name="screen_effects_scaling_mode_natural_desc">Ton de culoare mai cald.</string>
+    <string name="screen_effects_fsr">FSR 1.0</string>
+    <string name="screen_effects_fsr_sharpness">Claritate FSR</string>
+    <string name="screen_effects_fsr_sharpness_value">%1$d/5</string>
+    <string name="transcoder">Transcodor</string>
+
+    <!-- Shooter Mode Improvements -->
+    <string name="shooter_mode_settings_title">Setări mod shooter</string>
+    <string name="reset_shooter_settings">Resetează setările shooter</string>
+    <string name="shooter_section_input">Input</string>
+    <string name="shooter_section_runtime">Controale în joc</string>
+    <string name="shooter_section_mouse_look">Privire cu mouse</string>
+    <string name="shooter_section_joysticks">Joystick-uri</string>
+    <string name="shooter_section_movement_joystick">Joystick de mișcare</string>
+    <string name="shooter_section_right_joystick">Joystick privire stick dreapta</string>
+    <string name="shooter_section_movement">Mișcare</string>
+    <string name="look_sensitivity_x">Sensibilitate orizontală</string>
+    <string name="look_sensitivity_x_subtitle">Multiplicator pentru privirea orizontală cu mouse pe partea dreaptă</string>
+    <string name="look_sensitivity_y">Sensibilitate verticală</string>
+    <string name="look_sensitivity_y_subtitle">Multiplicator pentru privirea verticală cu mouse pe partea dreaptă</string>
+    <string name="invert_look_y">Inversează privirea verticală</string>
+    <string name="invert_look_y_subtitle">Inversează mișcarea sus-jos a privirii cu mouse</string>
+    <string name="look_smoothing">Netezire privire</string>
+    <string name="look_smoothing_subtitle">Netezește mișcarea privirii între eșantioanele de atingere</string>
+    <string name="look_deadzone">Zonă moartă privire</string>
+    <string name="look_deadzone_subtitle">Ignoră mișcările mici de privire de pe partea dreaptă</string>
+    <string name="mouse_look_acceleration">Accelerație privire cu mouse</string>
+    <string name="mouse_look_acceleration_subtitle">Crește viteza privirii cu mouse când mișcarea tactilă devine mai rapidă</string>
+    <string name="mouse_acceleration_strength">Forță accelerație</string>
+    <string name="mouse_acceleration_strength_subtitle">Cât de rapid adaugă glisările rapide viteză suplimentară mouse-ului</string>
+    <string name="mouse_acceleration_max">Accelerație maximă</string>
+    <string name="mouse_acceleration_max_subtitle">Multiplicatorul maxim aplicat în timpul glisărilor rapide pentru privirea cu mouse</string>
+    <string name="win32_relative_mouse_input">Intrare relativă a mouse-ului</string>
+    <string name="win32_relative_mouse_input_subtitle">Trimite mișcarea direct către Wine ca intrare relativă a mouse-ului. Încearcă această opțiune când mouse-ul nu funcționează în joc.</string>
+    <string name="joystick_opacity">Opacitate joystick</string>
+    <string name="joystick_opacity_subtitle">Opacitatea inelelor și butoanelor joystick-urilor dinamice</string>
+    <string name="show_shooter_runtime_toggle">Afișează butonul în joc</string>
+    <string name="show_shooter_runtime_toggle_subtitle">Afișează butonul Activează mouse / Activează stick-uri cât timp modul shooter este activ</string>
+    <string name="movement_joystick_size">Dimensiune joystick de mișcare</string>
+    <string name="movement_joystick_size_subtitle">Multiplicator de dimensiune pentru joystick-ul dinamic din partea stângă</string>
+    <string name="movement_joystick_deadzone">Zonă moartă mișcare</string>
+    <string name="movement_joystick_deadzone_subtitle">Ignoră input-urile mici ale joystick-ului de mișcare din partea stângă</string>
+    <string name="movement_stick_sensitivity">Sensibilitate stick mișcare</string>
+    <string name="movement_stick_sensitivity_subtitle">Schimbă cât de rapid ajunge stick-ul virtual stânga la ieșire maximă</string>
+    <string name="movement_joystick_behavior">Comportament joystick de mișcare</string>
+    <string name="movement_joystick_behavior_subtitle">Cum se comportă centrul joystick-ului stânga în timpul glisărilor lungi</string>
+    <string name="look_joystick_size">Dimensiune joystick stick dreapta</string>
+    <string name="look_joystick_size_subtitle">Multiplicator de dimensiune când tipul de privire folosește stick-ul dreapta al gamepad-ului</string>
+    <string name="look_joystick_deadzone">Zonă moartă stick dreapta</string>
+    <string name="look_joystick_deadzone_subtitle">Ignoră input-urile mici de privire ale stick-ului dreapta de pe gamepad</string>
+    <string name="look_stick_sensitivity">Sensibilitate stick dreapta</string>
+    <string name="look_stick_sensitivity_subtitle">Schimbă cât de rapid ajunge stick-ul virtual dreapta la ieșire maximă</string>
+    <string name="look_joystick_behavior">Comportament joystick stick dreapta</string>
+    <string name="look_joystick_behavior_subtitle">Cum se comportă centrul joystick-ului dreapta când tipul de privire este stick dreapta gamepad</string>
+    <string name="shooter_movement_zone_width">Lățime zonă mișcare</string>
+    <string name="shooter_movement_zone_width_subtitle">Lățimea ecranului rezervată atingerilor de mișcare din partea stângă</string>
+    <string name="button_drag_look">Privire prin glisare de pe buton</string>
+    <string name="button_drag_look_subtitle">Permite glisarea de pe butoanele de pe ecran pentru țintire sau mișcare</string>
+    <string name="button_drag_threshold">Prag glisare buton (px)</string>
+    <string name="joystick_behavior">Comportament joystick</string>
+    <string name="joystick_behavior_anchored">Ancorat</string>
+    <string name="joystick_behavior_floating">Plutitor</string>
+    <string name="outer_ring_sprint">Sprint pe inelul exterior</string>
+    <string name="outer_ring_sprint_subtitle">Folosește un input de sprint când joystick-ul de mișcare este aproape de margine</string>
+    <string name="outer_ring_sprint_threshold">Prag sprint</string>
+    <string name="outer_ring_sprint_threshold_subtitle">Distanța joystick-ului necesară pentru activarea sprintului</string>
+    <string name="outer_ring_sprint_press_mode">Apasă acțiunea sprint</string>
+    <string name="outer_ring_sprint_press_mode_subtitle">Atinge input-ul de sprint o dată la intrarea în inelul de sprint în loc să îl menții apăsat</string>
+    <string name="sprint_binding">Acțiune sprint</string>
+    <string name="gesture_header_gamepad">Gamepad</string>
+    <string name="control_appearance">Aspect control</string>
+    <string name="button_color">Culoare control</string>
+    <string name="button_color_subtitle">Culoare hex pentru conturul, pictograma și textul controlului</string>
+    <string name="button_active_color">Culoare la apăsare</string>
+    <string name="button_active_color_subtitle">Culoare când este apăsat sau activ</string>
+    <string name="button_opacity">Opacitate control</string>
+    <string name="button_opacity_value">%1$d%%</string>
+    <string name="button_opacity_inherited">%1$d%% (implicit global)</string>
+    <string name="control_stroke_width">Grosime linie</string>
+    <string name="control_stroke_width_subtitle">Ajustează grosimea conturului și separatorilor controlului</string>
+    <string name="control_stroke_width_thin">Subțire</string>
+    <string name="control_stroke_width_default">Implicit</string>
+    <string name="control_stroke_width_thick">Gros</string>
+    <string name="control_stroke_width_extra_thick">Foarte gros</string>
+    <string name="button_look_through">Control prin glisare</string>
+    <string name="button_look_through_subtitle">Apasă și glisează de la acest buton pentru a controla și mișcarea sau camera. Indisponibil în modul ecran tactil.</string>
+    <string name="preview">Previzualizare</string>
+    <string name="active">Activ</string>
+    <string name="apply_all">Aplică tuturor</string>
+    <string name="copy_appearance_from_button">Copiază aspectul de la control</string>
+    <string name="toast_no_buttons_to_copy_appearance">Nu există alte controale de la care să copiezi aspectul</string>
+    <string name="toast_copied_button_appearance">Aspectul controlului a fost copiat</string>
+    <string name="toast_applied_button_appearance">Aspectul a fost aplicat tuturor controalelor</string>
+
+    <!-- Sponsorship (featured slot) -->
+    <plurals name="achievements_hidden_remaining">
+        <item quantity="one">%1$d realizare ascunsă rămasă</item>
+        <item quantity="few">%1$d realizări ascunse rămase</item>
+        <item quantity="other">%1$d de realizări ascunse rămase</item>
+    </plurals>
+    <plurals name="local_mod_file_count">
+        <item quantity="one">%1$d fișier</item>
+        <item quantity="few">%1$d fișiere</item>
+        <item quantity="other">%1$d de fișiere</item>
+    </plurals>
+    <plurals name="local_mod_folder_count">
+        <item quantity="one">%1$d folder</item>
+        <item quantity="few">%1$d foldere</item>
+        <item quantity="other">%1$d de foldere</item>
+    </plurals>
+    <!-- Bionic FG (AI) Frame Generation -->
+    <string name="radial_menu">Meniu radial</string>
+    <string name="radial_menu_settings_title">Meniu radial</string>
+    <string name="radial_menu_cancel">Anulează</string>
+    <string name="radial_menu_slot_count">Sloturi</string>
+    <string name="radial_menu_slot_count_subtitle">%1$d sloturi activate</string>
+    <string name="radial_menu_decrease_slots">Scade numărul de sloturi</string>
+    <string name="radial_menu_increase_slots">Crește numărul de sloturi</string>
+    <string name="radial_menu_slots">Sloturi ale roții</string>
+    <string name="radial_menu_slot_title">Slot %1$d</string>
+    <string name="radial_menu_slot_label_hint">Etichetă</string>
+    <string name="radial_menu_slot_binding">Asociere slot %1$d</string>
+    <string name="radial_menu_slot_binding_summary">Asociere: %1$s</string>
+    <string name="radial_menu_preset_common">Comune</string>
+    <string name="radial_menu_preset_weapons">Arme</string>
+    <string name="gesture_action_open_radial_menu">Deschide meniul radial</string>
+
+    <!-- Power Control -->
+    <string name="binding_mode_simultaneous">Simultan</string>
+    <string name="binding_mode_sequence">Secvență</string>
+    <string name="binding_sequence_delay_ms">Întârziere secvență (ms)</string>
+    <string name="binding_sequence_current_format">%1$s (%2$d ms)</string>
+    <string name="gyro_aiming">Țintire giroscopică</string>
+    <string name="gyro_settings_title">Setări giroscop</string>
+    <string name="gyro_section_output">Ieșire și mișcare</string>
+    <string name="gyro_section_activation">Activare</string>
+    <string name="gyro_section_response">Răspuns</string>
+    <string name="gyro_output">Ieșire</string>
+    <string name="gyro_output_subtitle">Alege ce controlează mișcarea dispozitivului.</string>
+    <string name="gyro_tilt_steering">Direcție prin înclinare</string>
+    <string name="gyro_tilt_steering_subtitle">Ține dispozitivul înclinat pentru a menține intrarea orizontală a stickului. Poziția curentă este centrată la fiecare activare a giroscopului.</string>
+    <string name="gyro_tilt_unavailable">Acest dispozitiv nu oferă senzorul de orientare necesar pentru direcția prin înclinare.</string>
+    <string name="gyro_activation">Activare</string>
+    <string name="gyro_activation_help">Menținere, Comutare și Clichet folosesc un control atribuit Giroscopului.</string>
+    <string name="gyro_activation_always">Întotdeauna</string>
+    <string name="gyro_activation_hold">Menținere</string>
+    <string name="gyro_activation_toggle">Comutare</string>
+    <string name="gyro_activation_ratchet">Clichet</string>
+    <string name="gyro_control_not_assigned">Giroscop: Neatribuit</string>
+    <string name="gyro_assign_in_controls_editor">Atribuie în editorul de comenzi</string>
+    <string name="gyro_sensitivity">Sensibilitate</string>
+    <string name="gyro_sensitivity_subtitle">Controlează cât de mult influențează rotația dispozitivului ieșirea selectată.</string>
+    <string name="gyro_tilt_full_scale">Unghi maxim de direcție</string>
+    <string name="gyro_tilt_full_scale_subtitle">Înclinarea dispozitivului față de centru necesară pentru intrarea completă a stickului la stânga sau la dreapta.</string>
+    <string name="gyro_tilt_deadzone">Zonă moartă de înclinare</string>
+    <string name="gyro_tilt_deadzone_subtitle">Ignoră înclinările mici din jurul poziției centrate.</string>
+    <string name="gyro_vertical_scale">Sensibilitate verticală</string>
+    <string name="gyro_vertical_scale_subtitle">Reglează mișcarea verticală în raport cu cea orizontală.</string>
+    <string name="gyro_steadying">Prag de stabilizare</string>
+    <string name="gyro_steadying_subtitle">Ignoră mișcările neintenționate foarte mici înainte de aplicarea sensibilității.</string>
+    <string name="gyro_smoothing">Netezire</string>
+    <string name="gyro_smoothing_subtitle">Reduce tremurul senzorului cu prețul unei mici latențe la țintire.</string>
+    <string name="gyro_stick_anti_deadzone">Anti-zonă moartă pentru stick</string>
+    <string name="gyro_stick_anti_deadzone_subtitle">Compensează zona moartă internă a stickului din joc.</string>
+    <string name="gyro_invert_horizontal">Inversează giroscopul orizontal</string>
+    <string name="gyro_invert_vertical">Inversează giroscopul vertical</string>
+    <string name="gyro_percent_value">%1$d%%</string>
+    <string name="gyro_degrees_value">%1$d°</string>
+    <string name="gyro_degrees_per_second_value">%1$.1f°/s</string>
+    <string name="gyro_milliseconds_value">%1$d ms</string>
+    <string name="reset_gyro_settings">Resetează setările giroscopului</string>
+</resources>

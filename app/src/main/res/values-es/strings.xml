@@ -1,0 +1,694 @@
+﻿<resources>
+    <string name="app_name">GameNative</string>
+    <string name="home">Inicio</string>
+    <string name="download">Descargar</string>
+    <string name="install">Instalar</string>
+    <string name="yes">Sí</string>
+    <string name="no">No</string>
+    <string name="cancel">Cancelar</string>
+
+
+    <!-- Library Tabs -->
+
+    <!-- Custom Games -->
+
+    <!--Winlator-->
+    <string name="disabled">Desactivado</string>
+    <string name="copy">Copiar</string>
+    <string name="stability">Estabilidad</string>
+    <string name="compatibility">Compatibilidad</string>
+    <string name="intermediate">Intermedio</string>
+    <string name="performance">Rendimiento</string>
+    <string name="denuvo">Denuvo</string>
+    <string name="extreme">Extremo</string>
+    <string name="unity">Unity</string>
+    <string name="unity_mono_bleeding_edge">Unity Mono (Bleeding Edge)</string>
+
+    <!-- Winlator: Win Components -->
+    <string name="direct3d">Direct3D</string>
+    <string name="directsound">DirectSound</string>
+    <string name="directinput8">DirectInput 8</string>
+    <string name="directinput">DirectInput</string>
+    <string name="wmdecoder">Windows Media Decoder</string>
+    <string name="opengl">OpenGL</string>
+    <string name="edit">Editar</string>
+    <string name="remove">Eliminar</string>
+    <string name="add">Añadir</string>
+    <string name="delete">Borrar</string>
+    <string name="copy_from">Copiar de</string>
+    <string name="ok">Aceptar</string>
+    <string name="game_executable_not_found_title">No se puede iniciar</string>
+    <string name="game_executable_not_found">No se pudo seleccionar automáticamente el ejecutable. Establece la ruta en los ajustes del contenedor.</string>
+    <string name="save">Guardar</string>
+    <string name="discard">Descartar</string>
+    <string name="contents">Contenidos</string>
+    <string name="task_manager">Administrador de tareas</string>
+    <string name="tools_wine_processes_running_hint">%1$d en ejecución, toca/haz clic en un proceso para cerrarlo</string>
+    <string name="tools_wine_processes_empty">No se detectaron EXE en ejecución.</string>
+    <string name="exit_game">Salir</string>
+    <string name="exit">Salir del juego</string>
+    <string name="keyboard">Teclado</string>
+    <string name="resume_game">Reanudar juego</string>
+    <string name="extra">Extra</string>
+    <string name="clear_search">Limpiar búsqueda</string>
+    <string name="face_buttons_category">Botones frontales</string>
+    <string name="shoulder_buttons_category">Botones superiores</string>
+    <string name="menu_buttons_category">Botones de menú</string>
+    <string name="thumbstick_buttons_category">Botones de stick analógico</string>
+    <string name="left_stick">Stick izquierdo</string>
+    <string name="right_stick">Stick derecho</string>
+    <string name="dpad_category">Cruceta</string>
+    <string name="dpad_up">Cruceta arriba</string>
+    <string name="dpad_down">Cruceta abajo</string>
+    <string name="dpad_left">Cruceta izquierda</string>
+    <string name="dpad_right">Cruceta derecha</string>
+    <string name="input_controls">Controles en pantalla</string>
+    <string name="edit_controls">Editar controles en pantalla</string>
+    <string name="edit_physical_controller">Editar mando físico</string>
+    <string name="quick_menu_title">Menú rápido</string>
+    <string name="quick_menu_back">Atrás</string>
+    <string name="display_brightness">Brillo de pantalla</string>
+    <string name="screen_effects">Efectos de pantalla</string>
+    <string name="screen_effects_live_preview">Los cambios se aplican al instante al juego actual.</string>
+    <string name="screen_effects_color_adjustments">Ajustes de color</string>
+    <string name="screen_effects_shader_toggles">Efectos de shader</string>
+    <string name="screen_effects_scaling_mode">Modo de escalado</string>
+    <string name="screen_effects_brightness">Brillo</string>
+    <string name="screen_effects_contrast">Contraste</string>
+    <string name="screen_effects_gamma">Gamma</string>
+    <string name="screen_effects_toon">Contorno toon</string>
+    <string name="screen_effects_toon_description">Añade contornos oscuros para un aspecto cel shading.</string>
+    <string name="screen_effects_fxaa">FXAA</string>
+    <string name="screen_effects_fxaa_description">Suaviza los bordes dentados con un ligero efecto de antialiasing en posprocesado.</string>
+    <string name="screen_effects_vivid">Vívido</string>
+    <string name="screen_effects_vivid_description">Añade bloom y un aumento de contraste para una imagen más intensa.</string>
+    <string name="screen_effects_crt">CRT</string>
+    <string name="screen_effects_crt_description">Añade líneas de exploración y una sutil aberración cromática.</string>
+    <string name="screen_effects_ntsc">NTSC</string>
+    <string name="screen_effects_ntsc_description">Añade distorsión retro de TV compuesta, sangrado y líneas de exploración.</string>
+    <string name="screen_effects_reset">Restablecer</string>
+    <string name="screen_effects_close">Cerrar</string>
+    <string name="quick_menu_tab_controller">Controles</string>
+    <string name="performance_hud">HUD de rendimiento</string>
+    <string name="performance_hud_description">Mostrar u ocultar la superposición en el juego.</string>
+    <string name="performance_hud_fps_limiter">Limitador de FPS</string>
+    <string name="performance_hud_fps_limiter_target">FPS objetivo</string>
+    <string name="performance_hud_fps_limiter_value">%1$d FPS</string>
+    <string name="performance_hud_fps_limiter_lsfg_base">Limita la tasa base. La tasa en pantalla es el límite multiplicado por el multiplicador de LSFG.</string>
+    <string name="performance_hud_presets">Preajustes</string>
+    <string name="performance_hud_preset_fps_only">1</string>
+    <string name="performance_hud_preset_essential">2</string>
+    <string name="performance_hud_preset_battery">3</string>
+    <string name="performance_hud_preset_full">4</string>
+    <string name="performance_hud_appearance">Apariencia</string>
+    <string name="performance_hud_size">Tamaño</string>
+    <string name="performance_hud_size_small">S</string>
+    <string name="performance_hud_size_medium">M</string>
+    <string name="performance_hud_size_large">L</string>
+    <string name="performance_hud_background_opacity">Opacidad del fondo</string>
+    <string name="performance_hud_color_intensity">Intensidad del color</string>
+    <string name="performance_hud_text_outline">Contorno del texto</string>
+    <string name="performance_hud_percentage_value">%1$d%%</string>
+    <string name="performance_hud_metrics">Métricas mostradas</string>
+    <string name="performance_hud_frame_rate">Velocidad de fotogramas</string>
+    <string name="performance_hud_frame_rate_graph">Gráfico de FPS</string>
+    <string name="performance_hud_cpu_usage">Uso de CPU</string>
+    <string name="performance_hud_cpu_usage_graph">Gráfico de CPU</string>
+    <string name="performance_hud_gpu_usage">Uso de GPU</string>
+    <string name="performance_hud_gpu_usage_graph">Gráfico de GPU</string>
+    <string name="performance_hud_ram_usage">Uso de RAM</string>
+    <string name="performance_hud_battery_level">Nivel de batería</string>
+    <string name="performance_hud_power_draw">Consumo de energía</string>
+    <string name="performance_hud_runtime_left">Tiempo restante</string>
+    <string name="performance_hud_battery_temperature">Temperatura de la batería</string>
+    <string name="performance_hud_clock_time">Hora</string>
+    <string name="performance_hud_cpu_temperature">Temperatura de CPU</string>
+    <string name="performance_hud_gpu_temperature">Temperatura de GPU</string>
+
+    <!-- Controller Binding Dialog -->
+    <string name="bind_button">Asignar: %1$s</string>
+    <string name="current_binding">Actual: %1$s</string>
+    <string name="search_placeholder">Buscar…</string>
+    <string name="search">Buscar</string>
+    <string name="category">Categoría</string>
+    <string name="mouse">Ratón</string>
+    <string name="gamepad">Mando</string>
+    <string name="binding_none">Ninguna</string>
+    <string name="clear_binding">Borrar asignación</string>
+    <string name="no_bindings_found">No se encontraron asignaciones.</string>
+
+    <!-- Element Editor Dialog -->
+    <string name="edit_element">Editar %1$s</string>
+    <string name="element_position_size">Posición: (%1$d, %2$d) • Tamaño: %3$.2fx</string>
+    <string name="appearance">Apariencia</string>
+    <string name="size_subtitle">%.2fx</string>
+    <string name="label_text">Texto de etiqueta</string>
+    <string name="label_text_subtitle">Texto personalizado para este botón.</string>
+    <string name="element_type">Tipo de elemento</string>
+    <string name="element_type_subtitle">Cambia el tipo de este control.</string>
+    <string name="shape">Forma</string>
+    <string name="shape_subtitle">Apariencia visual.</string>
+    <string name="shape_restricted">%1$s está restringido a la forma %2$s.</string>
+    <string name="bindings">Asignaciones</string>
+    <string name="bindings_auto_generated">Asignaciones (autogeneradas)</string>
+    <string name="bindings_auto_generated_subtitle">Las asignaciones de los botones de rango se generan automáticamente.</string>
+    <string name="range_button_settings">Ajustes del botón de rango</string>
+    <string name="range_type">Rango de teclas</string>
+    <string name="range_type_subtitle">El conjunto de teclas por las que alternar.</string>
+    <string name="range_orientation">Orientación</string>
+    <string name="range_orientation_subtitle">Dirección de diseño del botón de rango.</string>
+    <string name="range_orientation_horizontal">Horizontal</string>
+    <string name="range_orientation_vertical">Vertical</string>
+    <string name="range_visible_segments">Segmentos visibles</string>
+    <string name="range_visible_segments_subtitle">Número de segmentos de teclas mostrados a la vez: %1$d.</string>
+    <string name="range_a_to_z">A – Z</string>
+    <string name="range_1_to_0">1 – 0</string>
+    <string name="range_f1_to_f12">F1 – F12</string>
+    <string name="range_lock_scrolling">Bloquear desplazamiento</string>
+    <string name="range_lock_scrolling_subtitle">Evita desplazarse por el rango.</string>
+    <string name="button_toggleable">Alternable</string>
+    <string name="button_toggleable_subtitle">Toca para activar, vuelve a tocar para desactivar.</string>
+    <string name="primary_action">Asignación principal</string>
+    <string name="secondary_action">Asignación secundaria</string>
+    <string name="direction_up">Arriba</string>
+    <string name="direction_right">Derecha</string>
+    <string name="direction_down">Abajo</string>
+    <string name="direction_left">Izquierda</string>
+    <string name="mouse_suffix"> (Ratón)</string>
+    <string name="slot_number">Ranura %1$d</string>
+    <string name="button_slots_help">Los botones admiten hasta 2 asignaciones: principal (pulsar) y secundaria (pulsación larga).</string>
+    <string name="properties">Propiedades</string>
+    <string name="position">Posición</string>
+    <string name="position_value">X: %1$d, Y: %2$d</string>
+    <string name="unsaved_changes">Cambios sin guardar</string>
+    <string name="unsaved_changes_message">Tienes cambios sin guardar. ¿Deseas guardarlos o descartarlos?</string>
+    <string name="adjust_size">Ajustar tamaño</string>
+    <string name="reset">Restablecer</string>
+    <string name="done">Hecho</string>
+    <string name="copy_size_from_element">Copiar tamaño de elemento</string>
+    <string name="toast_no_elements_to_copy">No hay otros elementos disponibles para copiar el tamaño.</string>
+    <string name="toast_copied_size">Tamaño copiado: %.2fx</string>
+    <string name="quick_presets">Ajustes rápidos</string>
+    <string name="preset_wasd">WASD</string>
+    <string name="preset_arrows">Flechas</string>
+    <string name="preset_mouse">Ratón</string>
+    <string name="preset_dpad">Cruceta</string>
+    <string name="preset_left_stick">Stick izquierdo</string>
+    <string name="preset_right_stick">Stick derecho</string>
+
+    <!-- Shooter Mode -->
+    <string name="shooter_mode_settings">Ajustes de joysticks dinámicos</string>
+    <string name="movement_type">Tipo de movimiento</string>
+    <string name="movement_type_subtitle">Salida del joystick para el movimiento lateral izquierdo.</string>
+    <string name="look_sensitivity">Sensibilidad de mirada</string>
+    <string name="look_sensitivity_subtitle">Multiplicador de sensibilidad de mirada con el ratón.</string>
+    <string name="joystick_size">Tamaño del joystick</string>
+    <string name="joystick_size_subtitle">Multiplicador de tamaño de los joysticks dinámicos.</string>
+    <string name="movement_wasd">WASD</string>
+    <string name="movement_arrow_keys">Teclas de flecha</string>
+    <string name="movement_gamepad_left_stick">Stick izquierdo del mando</string>
+    <string name="look_type">Tipo de mirada</string>
+    <string name="look_type_subtitle">Comportamiento del lado derecho en el modo shooter.</string>
+    <string name="look_type_mouse">Ratón</string>
+    <string name="look_type_gamepad_right_stick">Stick derecho del mando</string>
+
+    <!-- Physical Controller Config -->
+    <string name="physical_controller_config">Editor de asignaciones de mando físico</string>
+    <string name="face_buttons">Botones frontales</string>
+    <string name="button_a">Botón A</string>
+    <string name="button_b">Botón B</string>
+    <string name="button_x">Botón X</string>
+    <string name="button_y">Botón Y</string>
+    <string name="shoulder_buttons">Botones superiores</string>
+    <string name="button_l1">LB</string>
+    <string name="button_r1">RB</string>
+    <string name="button_l2">LT</string>
+    <string name="button_r2">RT</string>
+    <string name="menu_buttons">Botones de menú</string>
+    <string name="button_start">Start / Opciones</string>
+    <string name="button_select">Select / Ver / Compartir</string>
+    <string name="thumbstick_buttons">Botones de stick analógico</string>
+    <string name="button_l3">L3 (Pulsar stick izquierdo)</string>
+    <string name="button_r3">R3 (Pulsar stick derecho)</string>
+    <string name="left_stick_up">Stick izquierdo arriba</string>
+    <string name="left_stick_down">Stick izquierdo abajo</string>
+    <string name="left_stick_left">Stick izquierdo a la izquierda</string>
+    <string name="left_stick_right">Stick izquierdo a la derecha</string>
+    <string name="right_stick_up">Stick derecho arriba</string>
+    <string name="right_stick_down">Stick derecho abajo</string>
+    <string name="right_stick_left">Stick derecho a la izquierda</string>
+    <string name="right_stick_right">Stick derecho a la derecha</string>
+    <string name="button_home">Home / Guía / PS</string>
+    <string name="not_set">No asignado</string>
+
+    <!-- Toast -->
+    <string name="toast_controls_reset">Controles restablecidos.</string>
+
+    <!-- Settings -->
+
+
+
+    <!-- Library & Game Management -->
+    <string name="label">Etiqueta</string>
+    <string name="status">Estado</string>
+    <string name="size">Tamaño</string>
+    <string name="installing">Instalando</string>
+
+
+    <!-- App Filter -->
+
+    <!-- Login & Connection -->
+
+
+    <!--Game Feedback Dialog -->
+
+
+    <!-- Profile & Menu -->
+    <string name="close">Cerrar</string>
+
+    <!-- System menu platform actions -->
+
+    <!-- Container Configuration: General -->
+    <string name="name">Nombre</string>
+    <string name="container_variant">Variante del contenedor</string>
+    <string name="wine_version">Versión de Wine</string>
+    <string name="language">Idioma</string>
+    <string name="screen_size">Resolución de pantalla</string>
+    <string name="audio_driver">Controlador de audio</string>
+    <string name="pulseaudio_low_latency">Modo de baja latencia PulseAudio</string>
+    <string name="show_fps">Mostrar FPS</string>
+    <string name="portrait_mode">Modo vertical</string>
+    <string name="portrait_below_cutout">Mantener debajo de la cámara</string>
+
+
+    <!-- Container Configuration: Graphics -->
+    <string name="graphics_driver">Controlador gráfico</string>
+    <string name="graphics_driver_version">Versión del controlador gráfico</string>
+    <string name="sf_compat_mode">Modo de compatibilidad</string>
+    <string name="use_legacy_renderer">Usar renderizador heredado</string>
+    <string name="sharpness_effect">Mejora de nitidez</string>
+    <string name="sharpness_level">Nivel de nitidez</string>
+    <string name="sharpness_denoise">Reducción de ruido de la nitidez</string>
+
+    <!-- Container Configuration: Emulation -->
+    <string name="fexcore_version">Versión de FEXCore</string>
+    <string name="fexcore_preset">Preajuste de FEXCore</string>
+    <string name="box64_version">Versión de Box64</string>
+    <string name="box64_preset">Preajuste de Box64</string>
+
+    <!-- Container Configuration: Input -->
+    <string name="show_controller_debug_menu">Mostrar menú de depuración de mandos</string>
+    <string name="disable_mouse_input">Desactivar entrada de ratón</string>
+    <string name="touchscreen_mode">Modo de pantalla táctil</string>
+    <string name="shooter_mode_toggle">Modo tirador</string>
+    <string name="shooter_mode_on">Activar ratón</string>
+    <string name="shooter_mode_off">Activar sticks</string>
+
+    <!-- Gesture Settings Dialog -->
+    <string name="gesture_settings_title">Configuración de gestos táctiles</string>
+    <string name="gesture_tap">Toque</string>
+    <string name="gesture_drag">Arrastrar dedo</string>
+    <string name="gesture_hold_mouse_button_while_touching">Mantener botón del ratón mientras se toca</string>
+    <string name="gesture_mouse_button_label">Botón del ratón</string>
+    <string name="gesture_long_press">Pulsación larga</string>
+    <string name="gesture_long_press_delay">Retardo pulsación larga (ms)</string>
+    <string name="gesture_double_tap">Doble toque</string>
+    <string name="gesture_double_tap_subtitle">Doble clic izquierdo</string>
+    <string name="gesture_double_tap_delay">Retardo doble toque (ms)</string>
+    <string name="gesture_two_finger_drag">Arrastrar dos dedos</string>
+    <string name="gesture_pinch">Pinch</string>
+    <string name="gesture_two_finger_tap">Toque dos dedos</string>
+    <string name="gesture_action_left_click">Clic izquierdo</string>
+    <string name="gesture_action_right_click">Clic derecho</string>
+    <string name="gesture_action_middle_click">Clic central</string>
+    <string name="gesture_pan_middle_mouse">Pan ratón central</string>
+    <string name="gesture_pan_inverted_middle_mouse">Pan invertido con botón central</string>
+    <string name="gesture_pan_wasd">WASD</string>
+    <string name="gesture_pan_inverted_wasd">WASD invertido</string>
+    <string name="gesture_pan_arrow_keys">Teclas de flecha</string>
+    <string name="gesture_pan_inverted_arrow_keys">Teclas de flecha invertidas</string>
+    <string name="gesture_zoom_scroll_wheel">Rueda de desplazamiento</string>
+    <string name="gesture_zoom_plus_minus">Teclas +/-</string>
+    <string name="gesture_zoom_page_up_down">Re Pág / Av Pág</string>
+    <string name="gesture_action_label">Acción</string>
+    <string name="gesture_section_single_finger">Un dedo</string>
+    <string name="gesture_section_two_finger">Dos dedos</string>
+    <string name="gesture_section_three_finger">Tres dedos</string>
+    <string name="gesture_section_other">Otro</string>
+    <string name="gesture_pan_left_click_drag">Arrastrar con clic izquierdo</string>
+    <string name="gesture_pan_right_click_drag">Arrastrar con clic derecho</string>
+    <string name="gesture_action_show_keyboard">Mostrar teclado</string>
+    <string name="gesture_mouse_behavior_label">Comportamiento del ratón</string>
+    <string name="gesture_mouse_behavior_click">Clic</string>
+    <string name="gesture_mouse_behavior_hold">Mantener</string>
+    <string name="gesture_header_special">Especial</string>
+    <string name="gesture_header_mouse">Ratón</string>
+    <string name="gesture_header_common_game">Teclas comunes de juego</string>
+    <string name="gesture_header_navigation_editing">Navegación / edición</string>
+    <string name="gesture_header_symbols">Símbolos</string>
+    <string name="gesture_header_letters">Letras A-Z</string>
+    <string name="gesture_header_numbers">Números 0-9</string>
+    <string name="gesture_header_numpad">Teclado numérico</string>
+    <string name="gesture_header_function_keys">Teclas de función</string>
+    <string name="gesture_header_modifiers_locks">Modificadores / bloqueo</string>
+    <string name="gesture_two_finger_hold">Mantener con dos dedos</string>
+    <string name="gesture_two_finger_hold_delay">Retardo de mantener con dos dedos (ms)</string>
+    <string name="gesture_three_finger_tap">Toque con tres dedos</string>
+    <string name="gesture_three_finger_drag">Arrastre con tres dedos</string>
+    <string name="gesture_three_finger_hold">Mantener con tres dedos</string>
+    <string name="gesture_three_finger_hold_delay">Retardo de mantener con tres dedos (ms)</string>
+    <string name="gesture_threshold">Umbral de gesto (px)</string>
+    <string name="gesture_mouse_drag_movement">Movimiento del ratón al arrastrar</string>
+    <string name="gesture_mouse_drag_movement_subtitle">Directo funciona en la mayoría de juegos. Usa Relativo si arrastrar causa problemas de cámara o cursor</string>
+    <string name="gesture_mouse_drag_movement_direct">Directo</string>
+    <string name="gesture_mouse_drag_movement_relative">Relativo</string>
+    <string name="gesture_show_click_highlight">Mostrar resaltado de clic</string>
+    <string name="gesture_show_click_highlight_subtitle">Mostrar un círculo en la ubicación del toque</string>
+    <string name="gesture_show_debug_overlay">Mostrar superposición de depuración de gestos</string>
+    <string name="gesture_show_debug_overlay_subtitle">Mostrar etiquetas temporales de gestos en la parte superior central</string>
+    <string name="gesture_show_cursor_touchscreen_mode">Mostrar cursor en modo de pantalla táctil</string>
+    <string name="gesture_show_cursor_touchscreen_mode_subtitle">Mantener visible el cursor del ratón mientras los gestos táctiles están activos</string>
+
+    <string name="external_display_swap">Mostrar juego en pantalla externa</string>
+
+    <!-- Container Configuration: Rendering -->
+    <string name="renderer">Renderizador</string>
+
+    <!-- Container Configuration: Management -->
+    <string name="startup_selection">Servicios de inicio</string>
+
+    <!-- Dialogs -->
+
+    <!-- Driver Manager -->
+
+    <!-- Contents Manager -->
+
+    <!-- Settings -->
+
+    <!-- Settings: Performance Group -->
+
+    <!-- Settings: Emulation Group -->
+
+    <!-- Settings: Debug Group -->
+
+    <!-- Settings: Info Group -->
+
+    <!-- Settings: Interface Group -->
+
+    <!-- Settings: Downloads Group -->
+
+    <!-- Login Screen -->
+
+    <!-- Generic/Reusable strings -->
+
+    <!-- Connecting to Servers Screen -->
+
+    <!-- LibraryAppScreen: Dialogs -->
+
+    <!-- LibraryAppScreen: Toast Messages -->
+
+    <!-- LibraryAppScreen: UI Labels -->
+
+    <!-- PluviaMain: Update & App Info -->
+
+
+    <!-- PluviaMain: Game Launch -->
+
+    <string name="main_installing_glibc">Instalando componentes de glibc…</string>
+    <string name="main_installing_bionic">Instalando componentes de Bionic…</string>
+    <string name="main_loading">Cargando…</string>
+
+    <!-- PluviaMain: Session Conflicts -->
+
+    <!-- PluviaMain: Save Conflicts -->
+
+    <!-- PluviaMain: Sync Errors -->
+
+    <!-- PluviaMain: Pending Operations -->
+
+    <!-- Container Config Dialog -->
+
+    <!-- Libraries Dialog -->
+
+
+    <!-- Chat Screen -->
+
+    <!-- Library Components -->
+
+    <!-- Best Config Compatibility Messages -->
+
+    <!-- Best Config Toast Messages -->
+    <plurals name="community_config_result_count">
+        <item quantity="one">%1$d configuración</item>
+        <item quantity="other">%1$d configuraciones</item>
+    </plurals>
+    <string name="back">Atrás</string>
+
+    <!-- Options Panel -->
+
+    <!-- Game Options Panel -->
+
+    <!-- System Menu -->
+    <string name="menu">Menú</string>
+
+    <!-- Gamepad Actions -->
+
+    <!-- Search -->
+
+    <!-- Two Factor Auth -->
+
+    <!-- Contents Manager -->
+
+    <!-- Driver Manager -->
+
+    <!-- Settings Interface -->
+
+    <!-- Settings Screen -->
+
+    <!-- Contents Install Finish -->
+
+    <!-- Library Status -->
+    <!-- Wine/Proton Manager -->
+
+    <!-- Wine/Proton Manager - Status Messages -->
+
+
+
+    <!-- Amazon Games Integration -->
+
+    <!-- Library: source not logged in splash -->
+    <string name="download_failed_title">Error de descarga</string>
+    <string name="download_failed_message">No se pudo descargar un archivo necesario. Comprueba tu conexión de red e inténtalo de nuevo.</string>
+    <string name="install_failed_title">Error de instalación</string>
+    <string name="install_failed_message">No se pudieron instalar los archivos del sistema. Inténtalo de nuevo. Si el problema persiste, prueba con una red diferente o usa una VPN.</string>
+
+    <!-- Workshop -->
+
+    <!-- Recommendations -->
+    <!-- HLTB (How Long To Beat) -->
+
+    <!-- LSFG-VK frame generation -->
+    <string name="lsfg_tab_title">LSFG-VK</string>
+    <string name="lsfg_multiplier">Multiplicador de fotogramas</string>
+    <string name="lsfg_flow_scale">Escala de flujo</string>
+    <string name="lsfg_flow_scale_desc">Más bajo es más estable; más alto es más fluido pero puede generar artefactos.</string>
+    <string name="lsfg_performance_mode">Modo de rendimiento</string>
+    <string name="lsfg_present_mode">Modo de presentación</string>
+    <string name="lsfg_present_mode_desc">Se recomienda Mailbox. FIFO también funciona cuando la tasa de fotogramas de salida (límite de fps × multiplicador) coincide con la tasa de refresco de la pantalla; por debajo de ella, FIFO puede verse inestable.</string>
+    <string name="lsfg_backend">Backend</string>
+    <string name="lsfg_backend_desc">Legacy ejecuta la capa lsfg-vk dentro del juego; Nativo ejecuta la generación de fotogramas en el renderizador de WoW Forever</string>
+    <string name="lsfg_backend_legacy">Legacy (capa)</string>
+    <string name="lsfg_backend_native">Nativo (renderizador)</string>
+    <string name="lsfg_performance_mode_desc">Reduce calidad para mayor rendimiento</string>
+    <!-- Game Launch Tips -->
+
+    <!-- Frontend Sync Settings -->
+    <string name="screen_effects_scaling">Escalado</string>
+    <string name="screen_effects_upscaling">Superescalado</string>
+    <string name="screen_effects_basic_scaling">Escalado básico</string>
+    <string name="screen_effects_scaling_mode_none">Sin escalado</string>
+    <string name="screen_effects_scaling_mode_none_desc">Sin escalado.</string>
+    <string name="screen_effects_scaling_mode_nearest">Más cercano</string>
+    <string name="screen_effects_scaling_mode_nearest_desc">Píxeles nítidos (retro).</string>
+    <string name="screen_effects_scaling_mode_linear">Lineal</string>
+    <string name="screen_effects_scaling_mode_linear_desc">Escalado suave.</string>
+    <string name="screen_effects_scaling_mode_fill">Rellenar</string>
+    <string name="screen_effects_scaling_mode_fill_desc">Llena la pantalla y recorta los bordes.</string>
+    <string name="screen_effects_scaling_mode_stretch">Estirar</string>
+    <string name="screen_effects_scaling_mode_stretch_desc">Llena la pantalla, ignora la relación de aspecto.</string>
+    <string name="screen_effects_scaling_mode_fsr">FSR</string>
+    <string name="screen_effects_scaling_mode_fsr_desc">Reescalado nítido de superresolución.</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect">FSR Fit</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect_desc">FSR, mantiene la relación de aspecto.</string>
+    <string name="screen_effects_scaling_mode_dls">DLS</string>
+    <string name="screen_effects_scaling_mode_dls_desc">Pasada de nitidez / claridad.</string>
+    <string name="screen_effects_scaling_mode_natural">Natural</string>
+    <string name="screen_effects_scaling_mode_natural_desc">Tono de color más cálido.</string>
+    <string name="screen_effects_fsr">FSR 1.0</string>
+    <string name="screen_effects_fsr_sharpness">Nitidez de FSR</string>
+    <string name="screen_effects_fsr_sharpness_value">%1$d/5</string>
+    <string name="transcoder">Transcodificador</string>
+
+    <!-- Shooter Mode Improvements -->
+    <string name="shooter_mode_settings_title">Ajustes del modo shooter</string>
+    <string name="reset_shooter_settings">Restablecer ajustes de shooter</string>
+    <string name="shooter_section_input">Entrada</string>
+    <string name="shooter_section_runtime">Controles en juego</string>
+    <string name="shooter_section_mouse_look">Vista con ratón</string>
+    <string name="shooter_section_joysticks">Joysticks</string>
+    <string name="shooter_section_movement_joystick">Joystick de movimiento</string>
+    <string name="shooter_section_right_joystick">Joystick de vista del stick derecho</string>
+    <string name="shooter_section_movement">Movimiento</string>
+    <string name="look_sensitivity_x">Sensibilidad horizontal</string>
+    <string name="look_sensitivity_x_subtitle">Multiplicador para la vista horizontal con ratón del lado derecho</string>
+    <string name="look_sensitivity_y">Sensibilidad vertical</string>
+    <string name="look_sensitivity_y_subtitle">Multiplicador para la vista vertical con ratón del lado derecho</string>
+    <string name="invert_look_y">Invertir vista vertical</string>
+    <string name="invert_look_y_subtitle">Invierte el movimiento arriba y abajo de la vista con ratón</string>
+    <string name="look_smoothing">Suavizado de vista</string>
+    <string name="look_smoothing_subtitle">Suaviza el movimiento de vista entre muestras táctiles</string>
+    <string name="look_deadzone">Zona muerta de vista</string>
+    <string name="look_deadzone_subtitle">Ignora movimientos pequeños de vista en el lado derecho</string>
+    <string name="mouse_look_acceleration">Aceleración de vista con ratón</string>
+    <string name="mouse_look_acceleration_subtitle">Aumenta la velocidad de vista con ratón cuando el movimiento táctil es más rápido</string>
+    <string name="mouse_acceleration_strength">Fuerza de aceleración</string>
+    <string name="mouse_acceleration_strength_subtitle">Qué tan rápido los arrastres más rápidos añaden velocidad extra al ratón</string>
+    <string name="mouse_acceleration_max">Aceleración máxima</string>
+    <string name="mouse_acceleration_max_subtitle">Multiplicador máximo aplicado durante arrastres rápidos de vista con ratón</string>
+    <string name="win32_relative_mouse_input">Entrada relativa del ratón</string>
+    <string name="win32_relative_mouse_input_subtitle">Envía el movimiento directamente a Wine como entrada relativa del ratón. Prueba esta opción cuando el ratón no funcione dentro del juego.</string>
+    <string name="joystick_opacity">Opacidad del joystick</string>
+    <string name="joystick_opacity_subtitle">Opacidad de los anillos y controles de los joysticks dinámicos</string>
+    <string name="show_shooter_runtime_toggle">Mostrar botón en juego</string>
+    <string name="show_shooter_runtime_toggle_subtitle">Muestra el botón Activar ratón / Activar sticks mientras el modo shooter está activo</string>
+    <string name="movement_joystick_size">Tamaño del joystick de movimiento</string>
+    <string name="movement_joystick_size_subtitle">Multiplicador de tamaño para el joystick dinámico del lado izquierdo</string>
+    <string name="movement_joystick_deadzone">Zona muerta de movimiento</string>
+    <string name="movement_joystick_deadzone_subtitle">Ignora entradas pequeñas del joystick de movimiento del lado izquierdo</string>
+    <string name="movement_stick_sensitivity">Sensibilidad del stick de movimiento</string>
+    <string name="movement_stick_sensitivity_subtitle">Cambia qué tan rápido el stick izquierdo virtual alcanza la salida máxima</string>
+    <string name="movement_joystick_behavior">Comportamiento del joystick de movimiento</string>
+    <string name="movement_joystick_behavior_subtitle">Cómo se comporta el centro del joystick izquierdo durante arrastres largos</string>
+    <string name="look_joystick_size">Tamaño del joystick del stick derecho</string>
+    <string name="look_joystick_size_subtitle">Multiplicador de tamaño cuando el tipo de vista usa el stick derecho del gamepad</string>
+    <string name="look_joystick_deadzone">Zona muerta del stick derecho</string>
+    <string name="look_joystick_deadzone_subtitle">Ignora entradas pequeñas de vista del stick derecho del gamepad</string>
+    <string name="look_stick_sensitivity">Sensibilidad del stick derecho</string>
+    <string name="look_stick_sensitivity_subtitle">Cambia qué tan rápido el stick derecho virtual alcanza la salida máxima</string>
+    <string name="look_joystick_behavior">Comportamiento del joystick del stick derecho</string>
+    <string name="look_joystick_behavior_subtitle">Cómo se comporta el centro del joystick derecho cuando el tipo de vista es stick derecho del gamepad</string>
+    <string name="shooter_movement_zone_width">Ancho de zona de movimiento</string>
+    <string name="shooter_movement_zone_width_subtitle">Ancho de pantalla reservado para toques de movimiento del lado izquierdo</string>
+    <string name="button_drag_look">Vista al arrastrar botones</string>
+    <string name="button_drag_look_subtitle">Permite arrastrar desde botones en pantalla para apuntar o moverse</string>
+    <string name="button_drag_threshold">Umbral de arrastre de botón (px)</string>
+    <string name="joystick_behavior">Comportamiento del joystick</string>
+    <string name="joystick_behavior_anchored">Anclado</string>
+    <string name="joystick_behavior_floating">Flotante</string>
+    <string name="outer_ring_sprint">Sprint en el anillo exterior</string>
+    <string name="outer_ring_sprint_subtitle">Usa una entrada de sprint cuando el joystick de movimiento está cerca del borde</string>
+    <string name="outer_ring_sprint_threshold">Umbral de sprint</string>
+    <string name="outer_ring_sprint_threshold_subtitle">Distancia del joystick necesaria para activar sprint</string>
+    <string name="outer_ring_sprint_press_mode">Presionar acción de sprint</string>
+    <string name="outer_ring_sprint_press_mode_subtitle">Toca la entrada de sprint una vez al entrar en el anillo de sprint en vez de mantenerla presionada</string>
+    <string name="sprint_binding">Acción de sprint</string>
+    <string name="gesture_header_gamepad">Gamepad</string>
+    <string name="control_appearance">Apariencia del control</string>
+    <string name="button_color">Color del control</string>
+    <string name="button_color_subtitle">Color hexadecimal para el contorno, icono y texto del control</string>
+    <string name="button_active_color">Color al pulsar</string>
+    <string name="button_active_color_subtitle">Color mientras está pulsado o activo</string>
+    <string name="button_opacity">Opacidad del control</string>
+    <string name="button_opacity_value">%1$d%%</string>
+    <string name="button_opacity_inherited">%1$d%% (valor global predeterminado)</string>
+    <string name="control_stroke_width">Grosor de línea</string>
+    <string name="control_stroke_width_subtitle">Ajusta el grosor del contorno y los divisores del control</string>
+    <string name="control_stroke_width_thin">Fino</string>
+    <string name="control_stroke_width_default">Predeterminado</string>
+    <string name="control_stroke_width_thick">Grueso</string>
+    <string name="control_stroke_width_extra_thick">Extra grueso</string>
+    <string name="button_look_through">Control al arrastrar</string>
+    <string name="button_look_through_subtitle">Pulsa y arrastra desde este botón para controlar también el movimiento o la cámara. No disponible en el modo de pantalla táctil.</string>
+    <string name="preview">Vista previa</string>
+    <string name="active">Activo</string>
+    <string name="apply_all">Aplicar a todos</string>
+    <string name="copy_appearance_from_button">Copiar apariencia de control</string>
+    <string name="toast_no_buttons_to_copy_appearance">No hay otros controles disponibles para copiar la apariencia</string>
+    <string name="toast_copied_button_appearance">Apariencia del control copiada</string>
+    <string name="toast_applied_button_appearance">Apariencia aplicada a todos los controles</string>
+
+    <!-- Sponsorship (featured slot) -->
+    <plurals name="achievements_hidden_remaining">
+        <item quantity="one">%1$d logro oculto restante</item>
+        <item quantity="other">%1$d logros ocultos restantes</item>
+    </plurals>
+    <plurals name="local_mod_file_count">
+        <item quantity="one">%1$d archivo</item>
+        <item quantity="other">%1$d archivos</item>
+    </plurals>
+    <plurals name="local_mod_folder_count">
+        <item quantity="one">%1$d carpeta</item>
+        <item quantity="other">%1$d carpetas</item>
+    </plurals>
+    <!-- Bionic FG (AI) Frame Generation -->
+    <string name="radial_menu">Menú radial</string>
+    <string name="radial_menu_settings_title">Menú radial</string>
+    <string name="radial_menu_cancel">Cancelar</string>
+    <string name="radial_menu_slot_count">Ranuras</string>
+    <string name="radial_menu_slot_count_subtitle">%1$d ranuras activadas</string>
+    <string name="radial_menu_decrease_slots">Disminuir ranuras</string>
+    <string name="radial_menu_increase_slots">Aumentar ranuras</string>
+    <string name="radial_menu_slots">Ranuras de la rueda</string>
+    <string name="radial_menu_slot_title">Ranura %1$d</string>
+    <string name="radial_menu_slot_label_hint">Etiqueta</string>
+    <string name="radial_menu_slot_binding">Asignación de ranura %1$d</string>
+    <string name="radial_menu_slot_binding_summary">Asignación: %1$s</string>
+    <string name="radial_menu_preset_common">Común</string>
+    <string name="radial_menu_preset_weapons">Armas</string>
+    <string name="gesture_action_open_radial_menu">Abrir menú radial</string>
+
+    <!-- Power Control -->
+    <string name="binding_mode_simultaneous">Simultáneo</string>
+    <string name="binding_mode_sequence">Secuencia</string>
+    <string name="binding_sequence_delay_ms">Retraso de secuencia (ms)</string>
+    <string name="binding_sequence_current_format">%1$s (%2$d ms)</string>
+    <string name="gyro_aiming">Apuntado con giroscopio</string>
+    <string name="gyro_settings_title">Ajustes del giroscopio</string>
+    <string name="gyro_section_output">Salida y movimiento</string>
+    <string name="gyro_section_activation">Activación</string>
+    <string name="gyro_section_response">Respuesta</string>
+    <string name="gyro_output">Salida</string>
+    <string name="gyro_output_subtitle">Elige qué controla el movimiento del dispositivo.</string>
+    <string name="gyro_tilt_steering">Dirección por inclinación</string>
+    <string name="gyro_tilt_steering_subtitle">Mantén el dispositivo inclinado para sostener la entrada horizontal del stick. La posición actual se centra cada vez que se activa el giroscopio.</string>
+    <string name="gyro_tilt_unavailable">Este dispositivo no ofrece el sensor de orientación necesario para la dirección por inclinación.</string>
+    <string name="gyro_activation">Activación</string>
+    <string name="gyro_activation_help">Mantener, Alternar y Trinquete usan un control asignado a Giroscopio.</string>
+    <string name="gyro_activation_always">Siempre</string>
+    <string name="gyro_activation_hold">Mantener</string>
+    <string name="gyro_activation_toggle">Alternar</string>
+    <string name="gyro_activation_ratchet">Trinquete</string>
+    <string name="gyro_control_not_assigned">Giroscopio: Sin asignar</string>
+    <string name="gyro_assign_in_controls_editor">Asignar en el editor de controles</string>
+    <string name="gyro_sensitivity">Sensibilidad</string>
+    <string name="gyro_sensitivity_subtitle">Controla cuánto afecta la rotación del dispositivo a la salida seleccionada.</string>
+    <string name="gyro_tilt_full_scale">Ángulo de dirección máximo</string>
+    <string name="gyro_tilt_full_scale_subtitle">Inclinación desde el centro necesaria para alcanzar la entrada completa del stick a izquierda o derecha.</string>
+    <string name="gyro_tilt_deadzone">Zona muerta de inclinación</string>
+    <string name="gyro_tilt_deadzone_subtitle">Ignora pequeñas inclinaciones alrededor de la posición centrada.</string>
+    <string name="gyro_vertical_scale">Sensibilidad vertical</string>
+    <string name="gyro_vertical_scale_subtitle">Ajusta el movimiento vertical respecto al horizontal.</string>
+    <string name="gyro_steadying">Umbral de estabilización</string>
+    <string name="gyro_steadying_subtitle">Ignora movimientos involuntarios muy pequeños antes de aplicar la sensibilidad.</string>
+    <string name="gyro_smoothing">Suavizado</string>
+    <string name="gyro_smoothing_subtitle">Reduce la vibración del sensor a costa de algo de latencia al apuntar.</string>
+    <string name="gyro_stick_anti_deadzone">Antizona muerta del stick</string>
+    <string name="gyro_stick_anti_deadzone_subtitle">Compensa la zona muerta interna del stick del juego.</string>
+    <string name="gyro_invert_horizontal">Invertir giroscopio horizontal</string>
+    <string name="gyro_invert_vertical">Invertir giroscopio vertical</string>
+    <string name="gyro_percent_value">%1$d%%</string>
+    <string name="gyro_degrees_value">%1$d°</string>
+    <string name="gyro_degrees_per_second_value">%1$.1f°/s</string>
+    <string name="gyro_milliseconds_value">%1$d ms</string>
+    <string name="reset_gyro_settings">Restablecer ajustes del giroscopio</string>
+</resources>

@@ -1,0 +1,175 @@
+{
+ "about": "the map's service-icon strip, one 64 px cell per role in MapView's order (tools/harvest/map_recipes.py)",
+ "cell": 64,
+ "objectIcons": "Interface\\Minimap\\ObjectIcons.blp",
+ "cells": [
+  {
+   "src": "oi",
+   "row": 2,
+   "col": 0,
+   "name": "vendor"
+  },
+  {
+   "src": "ico",
+   "name": "Trade_BlackSmithing",
+   "note": "repair"
+  },
+  {
+   "src": "oi",
+   "row": 2,
+   "col": 3,
+   "name": "class trainer"
+  },
+  {
+   "src": "ico",
+   "name": "Trade_Engineering",
+   "note": "profession trainer"
+  },
+  {
+   "src": "oi",
+   "row": 2,
+   "col": 3,
+   "name": "trainer"
+  },
+  {
+   "src": "oi",
+   "row": 5,
+   "col": 2,
+   "name": "bank"
+  },
+  {
+   "src": "oi",
+   "row": 2,
+   "col": 1,
+   "name": "auction house"
+  },
+  {
+   "src": "oi",
+   "row": 2,
+   "col": 7,
+   "name": "mailbox"
+  },
+  {
+   "src": "ico",
+   "name": "INV_Misc_Rune_01",
+   "note": "innkeeper"
+  },
+  {
+   "src": "oi",
+   "row": 2,
+   "col": 4,
+   "name": "flight master"
+  },
+  {
+   "src": "oi",
+   "row": 4,
+   "col": 0,
+   "name": "stable master"
+  },
+  {
+   "src": "ico",
+   "name": "INV_Misc_Dust_02",
+   "note": "reagents"
+  },
+  {
+   "src": "ico",
+   "name": "INV_Misc_Food_15",
+   "note": "food & drink"
+  },
+  {
+   "src": "ico",
+   "name": "INV_Ammo_Arrow_02",
+   "note": "ammo"
+  },
+  {
+   "src": "ico",
+   "name": "INV_Potion_19",
+   "note": "poisons"
+  },
+  {
+   "src": "oi",
+   "row": 2,
+   "col": 2,
+   "name": "tabard designer"
+  },
+  {
+   "src": "ico",
+   "name": "INV_Hammer_20",
+   "note": "anvil"
+  },
+  {
+   "src": "ico",
+   "name": "Spell_Fire_Fire",
+   "note": "forge"
+  },
+  {
+   "src": "oi",
+   "row": 1,
+   "col": 1,
+   "name": "quest available"
+  },
+  {
+   "src": "oi",
+   "row": 1,
+   "col": 2,
+   "name": "quest turn-in"
+  },
+  {
+   "src": "oi",
+   "row": 1,
+   "col": 6,
+   "name": "vignette"
+  },
+  {
+   "src": "oi",
+   "row": 0,
+   "col": 3,
+   "name": "generic poi"
+  },
+  {
+   "src": "cur",
+   "name": "Mine",
+   "note": "ore"
+  },
+  {
+   "src": "cur",
+   "name": "GatherHerbs",
+   "note": "herb"
+  },
+  {
+   "src": "cur",
+   "name": "Pickup",
+   "note": "loot"
+  },
+  {
+   "src": "cur",
+   "name": "PickLock",
+   "note": "locked"
+  },
+  {
+   "src": "cur",
+   "name": "QuestInteract",
+   "note": "quest object"
+  },
+  {
+   "src": "cur",
+   "name": "Interact",
+   "note": "use"
+  },
+  {
+   "src": "cur",
+   "name": "Fishing",
+   "note": "fishing"
+  },
+  {
+   "src": "cur",
+   "name": "Skin",
+   "note": "skinning"
+  },
+  {
+   "src": "blp",
+   "name": "Interface\\Minimap\\Minimap-QuestArrow",
+   "note": "focused-quest rim arrow"
+  }
+ ]
+}

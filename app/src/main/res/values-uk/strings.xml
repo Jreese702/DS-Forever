@@ -1,0 +1,701 @@
+﻿<resources>
+    <string name="app_name">GameNative</string>
+    <string name="home">Домівка</string>
+    <string name="download">Завантажити</string>
+    <string name="install">Інсталювати</string>
+    <string name="yes">Так</string>
+    <string name="no">Ні</string>
+    <string name="cancel">Скасувати</string>
+
+    <!-- Library Tabs -->
+
+    <!-- Custom Games -->
+
+    <!--Winlator-->
+    <string name="disabled">Вимкнено</string>
+    <string name="copy">Копіювати</string>
+    <string name="stability">Стабільність</string>
+    <string name="compatibility">Сумісність</string>
+    <string name="intermediate">Збалансований</string>
+    <string name="performance">Продуктивність</string>
+    <string name="denuvo">Denuvo</string>
+    <string name="extreme">Extreme</string>
+    <string name="unity">Unity</string>
+    <string name="unity_mono_bleeding_edge">Unity Mono Bleeding Edge</string>
+
+    <!-- Winlator: Win Components -->
+    <string name="direct3d">Direct3D</string>
+    <string name="directsound">DirectSound</string>
+    <string name="directinput8">DirectInput 8</string>
+    <string name="directinput">DirectInput</string>
+    <string name="wmdecoder">Декодер Windows Media</string>
+    <string name="opengl">OpenGL</string>
+    <string name="edit">Змінити</string>
+    <string name="remove">Видалити</string>
+    <string name="add">Додати</string>
+    <string name="delete">Видалити</string>
+    <string name="copy_from">Копіювати з</string>
+    <string name="ok">ОК</string>
+    <string name="game_executable_not_found_title">Неможливо запустити</string>
+    <string name="game_executable_not_found">Виконуваний файл не вдалося вибрати автоматично. Вкажіть шлях до виконуваного файлу в налаштуваннях контейнера.</string>
+    <string name="save">Зберегти</string>
+    <string name="discard">Вийти</string>
+    <string name="contents">Вміст</string>
+    <string name="task_manager">Диспетчер завдань</string>
+    <string name="tools_wine_processes_running_hint">%1$d запущено, торкніться/клацніть процес, щоб закрити його</string>
+    <string name="tools_wine_processes_empty">Запущених EXE не виявлено.</string>
+    <string name="exit_game">Вийти з гри</string>
+    <string name="exit">Вийти</string>
+    <string name="keyboard">Клавіатура</string>
+    <string name="resume_game">Продовжити гру</string>
+    <string name="extra">Додатково</string>
+    <string name="clear_search">Очистити пошук</string>
+    <string name="face_buttons_category">Основні кнопки</string>
+    <string name="shoulder_buttons_category">Плечові кнопки</string>
+    <string name="menu_buttons_category">Кнопки меню</string>
+    <string name="thumbstick_buttons_category">Кнопки стіків</string>
+    <string name="left_stick">Лівий стік</string>
+    <string name="right_stick">Правий стік</string>
+    <string name="dpad_category">D-Pad</string>
+    <string name="dpad_up">D-Pad вгору</string>
+    <string name="dpad_down">D-Pad вниз</string>
+    <string name="dpad_left">D-Pad вліво</string>
+    <string name="dpad_right">D-Pad вправо</string>
+    <string name="input_controls">Елементи керування введенням</string>
+    <string name="edit_controls">Редагувати екранний контролер</string>
+    <string name="edit_physical_controller">Редагувати фізичний контролер</string>
+    <string name="quick_menu_title">Швидке меню</string>
+    <string name="quick_menu_back">Назад</string>
+    <string name="display_brightness">Яскравість дисплея</string>
+    <string name="screen_effects">Ефекти екрана</string>
+    <string name="screen_effects_live_preview">Зміни миттєво застосовуються до поточної гри.</string>
+    <string name="screen_effects_color_adjustments">Налаштування кольору</string>
+    <string name="screen_effects_shader_toggles">Ефекти шейдерів</string>
+    <string name="screen_effects_scaling_mode">Режим масштабування</string>
+    <string name="screen_effects_brightness">Яскравість</string>
+    <string name="screen_effects_contrast">Контрастність</string>
+    <string name="screen_effects_gamma">Гама</string>
+    <string name="screen_effects_toon">Контур toon</string>
+    <string name="screen_effects_toon_description">Додає темні контури для вигляду cel-shading.</string>
+    <string name="screen_effects_fxaa">FXAA</string>
+    <string name="screen_effects_fxaa_description">Згладжує зубчасті краї за допомогою легкого постпроцесного згладжування.</string>
+    <string name="screen_effects_vivid">Насичений</string>
+    <string name="screen_effects_vivid_description">Додає bloom і підсилює контраст для виразнішого зображення.</string>
+    <string name="screen_effects_crt">CRT</string>
+    <string name="screen_effects_crt_description">Додає рядки розгортки та легку хроматичну аберацію.</string>
+    <string name="screen_effects_ntsc">NTSC</string>
+    <string name="screen_effects_ntsc_description">Додає ретро-спотворення композитного ТВ, розтікання кольорів і рядки розгортки.</string>
+    <string name="screen_effects_reset">Скинути</string>
+    <string name="screen_effects_close">Закрити</string>
+    <string name="quick_menu_tab_controller">Контролер</string>
+    <string name="performance_hud">HUD продуктивності</string>
+    <string name="performance_hud_description">Показувати або приховувати ігрове накладання.</string>
+    <string name="performance_hud_fps_limiter">Обмежувач FPS</string>
+    <string name="performance_hud_fps_limiter_target">Цільовий FPS</string>
+    <string name="performance_hud_fps_limiter_value">%1$d FPS</string>
+    <string name="performance_hud_fps_limiter_lsfg_base">Обмежує базову частоту кадрів. Частота на екрані — це ліміт, помножений на множник LSFG.</string>
+    <string name="performance_hud_presets">Набори</string>
+    <string name="performance_hud_preset_fps_only">1</string>
+    <string name="performance_hud_preset_essential">2</string>
+    <string name="performance_hud_preset_battery">3</string>
+    <string name="performance_hud_preset_full">4</string>
+    <string name="performance_hud_appearance">Зовнішній вигляд</string>
+    <string name="performance_hud_size">Розмір</string>
+    <string name="performance_hud_size_small">S</string>
+    <string name="performance_hud_size_medium">M</string>
+    <string name="performance_hud_size_large">L</string>
+    <string name="performance_hud_background_opacity">Прозорість тла</string>
+    <string name="performance_hud_color_intensity">Інтенсивність кольору</string>
+    <string name="performance_hud_text_outline">Контур тексту</string>
+    <string name="performance_hud_percentage_value">%1$d%%</string>
+    <string name="performance_hud_metrics">Показані показники</string>
+    <string name="performance_hud_frame_rate">Частота кадрів</string>
+    <string name="performance_hud_frame_rate_graph">Графік FPS</string>
+    <string name="performance_hud_cpu_usage">Використання CPU</string>
+    <string name="performance_hud_cpu_usage_graph">Графік CPU</string>
+    <string name="performance_hud_gpu_usage">Використання GPU</string>
+    <string name="performance_hud_gpu_usage_graph">Графік GPU</string>
+    <string name="performance_hud_ram_usage">Використання ОЗП</string>
+    <string name="performance_hud_battery_level">Рівень батареї</string>
+    <string name="performance_hud_power_draw">Споживання енергії</string>
+    <string name="performance_hud_runtime_left">Залишок часу</string>
+    <string name="performance_hud_battery_temperature">Температура батареї</string>
+    <string name="performance_hud_clock_time">Час</string>
+    <string name="performance_hud_cpu_temperature">Температура CPU</string>
+    <string name="performance_hud_gpu_temperature">Температура GPU</string>
+
+    <!-- Controller Binding Dialog -->
+    <string name="bind_button">Призначити: %1$s</string>
+    <string name="current_binding">Поточне: %1$s</string>
+    <string name="search_placeholder">Пошук…</string>
+    <string name="search">Пошук</string>
+    <string name="category">Категорія</string>
+    <string name="mouse">Миша</string>
+    <string name="gamepad">Геймпад</string>
+    <string name="binding_none">Немає</string>
+    <string name="clear_binding">Очистити призначення</string>
+    <string name="no_bindings_found">Призначень не знайдено</string>
+
+    <!-- Element Editor Dialog -->
+    <string name="edit_element">Редагувати %1$s</string>
+    <string name="element_position_size">Позиція: (%1$d, %2$d) • Розмір: %3$.2fx</string>
+    <string name="appearance">Вигляд</string>
+    <string name="size_subtitle">%.2fx</string>
+    <string name="label_text">Текст підпису</string>
+    <string name="label_text_subtitle">Власний текст для цієї кнопки</string>
+    <string name="element_type">Тип елемента</string>
+    <string name="element_type_subtitle">Змінити тип цього елемента керування</string>
+    <string name="shape">Форма</string>
+    <string name="shape_subtitle">Зовнішній вигляд</string>
+    <string name="shape_restricted">%1$s обмежено формою %2$s</string>
+    <string name="bindings">Призначення</string>
+    <string name="bindings_auto_generated">Призначення (Автоматичні)</string>
+    <string name="bindings_auto_generated_subtitle">Призначення кнопок діапазону генеруються автоматично</string>
+    <string name="primary_action">Основна дія</string>
+    <string name="secondary_action">Додаткова дія</string>
+    <string name="direction_up">Вгору</string>
+    <string name="direction_right">Вправо</string>
+    <string name="direction_down">Вниз</string>
+    <string name="direction_left">Вліво</string>
+    <string name="mouse_suffix"> (Миша)</string>
+    <string name="slot_number">Слот %1$d</string>
+    <string name="button_slots_help">Кнопки підтримують до 2 призначень: основне (натискання) та додаткове (довге натискання)</string>
+    <string name="properties">Властивості</string>
+    <string name="position">Позиція</string>
+    <string name="position_value">X: %1$d, Y: %2$d</string>
+    <string name="unsaved_changes">Незбережені зміни</string>
+    <string name="unsaved_changes_message">У вас є незбережені зміни. Ви хочете зберегти чи скасувати їх?</string>
+    <string name="adjust_size">Налаштувати розмір</string>
+    <string name="reset">Скинути</string>
+    <string name="done">Готово</string>
+    <string name="copy_size_from_element">Копіювати розмір з елемента</string>
+    <string name="toast_no_elements_to_copy">Немає інших елементів для копіювання розміру</string>
+    <string name="toast_copied_size">Скопійовано розмір: %.2fx</string>
+    <string name="quick_presets">Швидкі пресети</string>
+    <string name="preset_wasd">WASD</string>
+    <string name="preset_arrows">Стрілки</string>
+    <string name="preset_mouse">Миша</string>
+    <string name="preset_dpad">D-Pad</string>
+    <string name="preset_left_stick">Лівий стік</string>
+    <string name="preset_right_stick">Правий стік</string>
+
+    <!-- Physical Controller Config -->
+    <string name="physical_controller_config">Редактор призначень фізичного контролера</string>
+    <string name="face_buttons">Основні кнопки</string>
+    <string name="button_a">Кнопка A</string>
+    <string name="button_b">Кнопка B</string>
+    <string name="button_x">Кнопка X</string>
+    <string name="button_y">Кнопка Y</string>
+    <string name="shoulder_buttons">Плечові кнопки</string>
+    <string name="button_l1">LB</string>
+    <string name="button_r1">RB</string>
+    <string name="button_l2">LT</string>
+    <string name="button_r2">RT</string>
+    <string name="menu_buttons">Кнопки меню</string>
+    <string name="button_start">Start / Options</string>
+    <string name="button_select">Select / View / Share</string>
+    <string name="thumbstick_buttons">Кнопки стіків</string>
+    <string name="button_l3">L3 (Натискання лівого стіка)</string>
+    <string name="button_r3">R3 (Натискання правого стіка)</string>
+    <string name="left_stick_up">Лівий стік вгору</string>
+    <string name="left_stick_down">Лівий стік вниз</string>
+    <string name="left_stick_left">Лівий стік вліво</string>
+    <string name="left_stick_right">Лівий стік вправо</string>
+    <string name="right_stick_up">Правий стік вгору</string>
+    <string name="right_stick_down">Правий стік вниз</string>
+    <string name="right_stick_left">Правий стік вліво</string>
+    <string name="right_stick_right">Правий стік вправо</string>
+    <string name="button_home">Home / Guide / PS</string>
+    <string name="not_set">Не задано</string>
+
+    <!-- Toast -->
+    <string name="toast_controls_reset">Елементи керування скинуто</string>
+
+    <!-- Settings -->
+
+
+
+    <!-- Library & Game Management -->
+    <string name="label">Позначка</string>
+    <string name="status">Статус</string>
+    <string name="size">Розмір</string>
+    <string name="installing">Інсталяція</string>
+
+
+    <!-- App Filter -->
+
+    <!-- Login & Connection -->
+
+    <!--Game Feedback Dialog -->
+
+
+    <!-- Profile & Menu -->
+    <string name="close">Закрити</string>
+
+    <!-- System menu platform actions -->
+
+    <!-- Container Configuration: General -->
+    <string name="name">Назва</string>
+    <string name="container_variant">Варіант контейнера</string>
+    <string name="wine_version">Версія Wine</string>
+    <string name="language">Мова</string>
+    <string name="screen_size">Розмір екрана</string>
+    <string name="audio_driver">Аудіо драйвер</string>
+    <string name="pulseaudio_low_latency">Режим низької затримки PulseAudio</string>
+    <string name="show_fps">Показати FPS</string>
+    <string name="portrait_mode">Портретний режим</string>
+    <string name="portrait_below_cutout">Тримати під вирізом камери</string>
+
+
+    <!-- Container Configuration: Graphics -->
+    <string name="graphics_driver">Графічний драйвер</string>
+    <string name="graphics_driver_version">Версія графічного драйвера</string>
+    <string name="sf_compat_mode">Режим сумісності</string>
+    <string name="use_legacy_renderer">Використовувати старий рендерер</string>
+    <string name="sharpness_effect">Підсилення чіткості</string>
+    <string name="sharpness_level">Рівень чіткості</string>
+    <string name="sharpness_denoise">Зменшення шуму</string>
+
+    <!-- Container Configuration: Emulation -->
+    <string name="fexcore_version">Версія FEXCore</string>
+    <string name="fexcore_preset">Пресет FEXCore</string>
+    <string name="box64_version">Версія Box64</string>
+    <string name="box64_preset">Пресет Box64</string>
+
+    <!-- Container Configuration: Input -->
+    <string name="show_controller_debug_menu">Показувати меню налагодження контролерів</string>
+    <string name="disable_mouse_input">Вимкнути введення мишею</string>
+    <string name="touchscreen_mode">Режим сенсорного екрану</string>
+    <string name="shooter_mode_toggle">Режим шутера</string>
+    <string name="shooter_mode_on">Увімкнути мишу</string>
+    <string name="shooter_mode_off">Увімкнути джойстики</string>
+
+    <!-- Gesture Settings Dialog -->
+    <string name="gesture_settings_title">Налаштування сенсорних жестів</string>
+    <string name="gesture_tap">Натискання</string>
+    <string name="gesture_drag">Перетягування</string>
+    <string name="gesture_hold_mouse_button_while_touching">Утримувати кнопку миші під час дотику</string>
+    <string name="gesture_mouse_button_label">Кнопка миші</string>
+    <string name="gesture_long_press">Довге натискання</string>
+    <string name="gesture_long_press_delay">Затримка довгого натискання (мс)</string>
+    <string name="gesture_double_tap">Подвійне натискання</string>
+    <string name="gesture_double_tap_subtitle">Подвійний лівий клік</string>
+    <string name="gesture_double_tap_delay">Затримка подвійного натискання (мс)</string>
+    <string name="gesture_two_finger_drag">Перетягування двома пальцями</string>
+    <string name="gesture_pinch">Щипок</string>
+    <string name="gesture_two_finger_tap">Натискання двома пальцями</string>
+    <string name="gesture_action_left_click">Лівий клік</string>
+    <string name="gesture_action_right_click">Правий клік</string>
+    <string name="gesture_action_middle_click">Середній клік</string>
+    <string name="gesture_pan_middle_mouse">Панорамування середньою кнопкою</string>
+    <string name="gesture_pan_inverted_middle_mouse">Інвертоване панорамування середньою кнопкою</string>
+    <string name="gesture_pan_wasd">WASD</string>
+    <string name="gesture_pan_inverted_wasd">Інвертоване WASD</string>
+    <string name="gesture_pan_arrow_keys">Стрілки</string>
+    <string name="gesture_pan_inverted_arrow_keys">Інвертовані стрілки</string>
+    <string name="gesture_zoom_scroll_wheel">Коліщатко прокрутки</string>
+    <string name="gesture_zoom_plus_minus">Клавіші +/-</string>
+    <string name="gesture_zoom_page_up_down">PgUp/PgDn</string>
+    <string name="gesture_action_label">Дія</string>
+    <string name="gesture_section_single_finger">Один палець</string>
+    <string name="gesture_section_two_finger">Два пальці</string>
+    <string name="gesture_section_three_finger">Три пальці</string>
+    <string name="gesture_section_other">Інше</string>
+    <string name="gesture_pan_left_click_drag">Перетягування лівою кнопкою миші</string>
+    <string name="gesture_pan_right_click_drag">Перетягування правою кнопкою миші</string>
+    <string name="gesture_action_show_keyboard">Показати клавіатуру</string>
+    <string name="gesture_mouse_behavior_label">Поведінка миші</string>
+    <string name="gesture_mouse_behavior_click">Клік</string>
+    <string name="gesture_mouse_behavior_hold">Утримання</string>
+    <string name="gesture_header_special">Спеціальні</string>
+    <string name="gesture_header_mouse">Миша</string>
+    <string name="gesture_header_common_game">Поширені ігрові клавіші</string>
+    <string name="gesture_header_navigation_editing">Навігація / редагування</string>
+    <string name="gesture_header_symbols">Символи</string>
+    <string name="gesture_header_letters">Літери A-Z</string>
+    <string name="gesture_header_numbers">Числа 0-9</string>
+    <string name="gesture_header_numpad">Цифрова клавіатура</string>
+    <string name="gesture_header_function_keys">Функціональні клавіші</string>
+    <string name="gesture_header_modifiers_locks">Модифікатори / блокування</string>
+    <string name="gesture_two_finger_hold">Утримання двома пальцями</string>
+    <string name="gesture_two_finger_hold_delay">Затримка утримання двома пальцями (мс)</string>
+    <string name="gesture_three_finger_tap">Торкання трьома пальцями</string>
+    <string name="gesture_three_finger_drag">Перетягування трьома пальцями</string>
+    <string name="gesture_three_finger_hold">Утримання трьома пальцями</string>
+    <string name="gesture_three_finger_hold_delay">Затримка утримання трьома пальцями (мс)</string>
+    <string name="gesture_threshold">Поріг жесту (px)</string>
+    <string name="gesture_mouse_drag_movement">Рух миші під час перетягування</string>
+    <string name="gesture_mouse_drag_movement_subtitle">Прямий режим працює в більшості ігор. Використовуйте відносний, якщо перетягування спричиняє проблеми з камерою або курсором</string>
+    <string name="gesture_mouse_drag_movement_direct">Прямий</string>
+    <string name="gesture_mouse_drag_movement_relative">Відносний</string>
+    <string name="gesture_show_click_highlight">Показувати підсвічування кліку</string>
+    <string name="gesture_show_click_highlight_subtitle">Показувати коло в місці торкання</string>
+    <string name="gesture_show_debug_overlay">Показувати оверлей налагодження жестів</string>
+    <string name="gesture_show_debug_overlay_subtitle">Показувати тимчасові підписи жестів угорі по центру</string>
+    <string name="gesture_show_cursor_touchscreen_mode">Показувати курсор у режимі сенсорного екрану</string>
+    <string name="gesture_show_cursor_touchscreen_mode_subtitle">Залишати курсор миші видимим, доки жести сенсорного екрану активні</string>
+
+    <!-- Shooter Mode -->
+    <string name="shooter_mode_settings">Налаштування динамічних джойстиків</string>
+    <string name="movement_type">Тип руху</string>
+    <string name="movement_type_subtitle">Вихід джойстика для руху зліва</string>
+    <string name="look_sensitivity">Чутливість огляду</string>
+    <string name="look_sensitivity_subtitle">Множник чутливості миші</string>
+    <string name="joystick_size">Розмір джойстика</string>
+    <string name="joystick_size_subtitle">Множник розміру динамічного джойстика</string>
+    <string name="movement_wasd">WASD</string>
+    <string name="movement_arrow_keys">Стрілки</string>
+    <string name="movement_gamepad_left_stick">Лівий джойстик геймпада</string>
+    <string name="look_type">Тип огляду</string>
+    <string name="look_type_subtitle">Поведінка правої сторони в режимі шутера</string>
+    <string name="look_type_mouse">Миша</string>
+    <string name="look_type_gamepad_right_stick">Правий джойстик геймпада</string>
+
+    <string name="range_button_settings">Налаштування кнопки діапазону</string>
+    <string name="range_type">Діапазон клавіш</string>
+    <string name="range_type_subtitle">Який набір клавіш перегортати</string>
+    <string name="range_orientation">Орієнтація</string>
+    <string name="range_orientation_subtitle">Напрямок кнопки діапазону</string>
+    <string name="range_orientation_horizontal">Горизонтальна</string>
+    <string name="range_orientation_vertical">Вертикальна</string>
+    <string name="range_visible_segments">Видимі сегменти</string>
+    <string name="range_visible_segments_subtitle">Кількість відображуваних сегментів: %1$d</string>
+    <string name="range_a_to_z">A – Z</string>
+    <string name="range_1_to_0">1 – 0</string>
+    <string name="range_f1_to_f12">F1 – F12</string>
+    <string name="range_lock_scrolling">Заблокувати прокрутку</string>
+    <string name="range_lock_scrolling_subtitle">Заборонити прокрутку діапазону</string>
+    <string name="button_toggleable">Перемикається</string>
+    <string name="button_toggleable_subtitle">Натисніть для вмикання, натисніть знову для вимкнення</string>
+
+
+    <string name="external_display_swap">Показувати гру на зовнішньому дисплеї</string>
+
+    <!-- Container Configuration: Rendering -->
+    <string name="renderer">Рушій візуалізації</string>
+
+    <!-- Container Configuration: Management -->
+    <string name="startup_selection">Налаштування при запуску</string>
+
+    <!-- Dialogs -->
+
+    <!-- Driver Manager -->
+
+    <!-- Contents Manager -->
+
+    <!-- Settings -->
+
+    <!-- Settings: Performance Group -->
+
+    <!-- Settings: Emulation Group -->
+
+    <!-- Settings: Debug Group -->
+
+    <!-- Settings: Info Group -->
+
+    <!-- Settings: Interface Group -->
+
+    <!-- Settings: Downloads Group -->
+
+    <!-- Login Screen -->
+
+    <!-- Generic/Reusable strings -->
+
+    <!-- Connecting to Servers Screen -->
+
+    <!-- LibraryAppScreen: Dialogs -->
+
+    <!-- LibraryAppScreen: Toast Messages -->
+
+    <!-- LibraryAppScreen: UI Labels -->
+
+    <!-- PluviaMain: Update & App Info -->
+
+
+    <!-- PluviaMain: Game Launch -->
+    <string name="main_installing_glibc">Інсталяція компонентів glibc...</string>
+    <string name="main_installing_bionic">Інсталяція компонентів Bionic...</string>
+    <string name="main_loading">Завантаження...</string>
+
+    <!-- PluviaMain: Session Conflicts -->
+
+    <!-- PluviaMain: Save Conflicts -->
+
+    <!-- PluviaMain: Sync Errors -->
+
+    <!-- PluviaMain: Pending Operations -->
+
+    <!-- Container Config Dialog -->
+
+    <!-- Libraries Dialog -->
+
+
+    <!-- Chat Screen -->
+
+    <!-- Library Components -->
+
+    <!-- Best Config Compatibility Messages -->
+
+    <!-- Best Config Toast Messages -->
+    <plurals name="community_config_result_count">
+        <item quantity="one">%1$d конфігурація</item>
+        <item quantity="few">%1$d конфігурації</item>
+        <item quantity="many">%1$d конфігурацій</item>
+        <item quantity="other">%1$d конфігурації</item>
+    </plurals>
+    <string name="back">Назад</string>
+
+    <!-- Options Panel -->
+
+    <!-- Game Options Panel -->
+
+    <!-- System Menu -->
+    <string name="menu">Меню</string>
+
+    <!-- Gamepad Actions -->
+
+    <!-- Search -->
+
+    <!-- Two Factor Auth -->
+
+    <!-- Contents Manager -->
+
+    <!-- Driver Manager -->
+
+    <!-- Settings Interface -->
+
+    <!-- Settings Screen -->
+
+    <!-- Contents Install Finish -->
+
+    <!-- Library Status -->
+    <!-- Wine/Proton Manager -->
+
+    <!-- Wine/Proton Manager - Status Messages -->
+
+
+
+    <!-- Amazon Games Integration -->
+
+    <!-- Library: source not logged in splash -->
+    <string name="download_failed_title">Помилка завантаження</string>
+    <string name="download_failed_message">Не вдалося завантажити необхідний файл. Перевірте підключення до мережі та спробуйте ще раз.</string>
+    <string name="install_failed_title">Помилка інсталяції</string>
+    <string name="install_failed_message">Не вдалося інсталювати системні файли. Спробуйте ще раз. Якщо проблема не зникає, спробуйте іншу мережу або скористайтеся VPN.</string>
+
+    <!-- Workshop -->
+
+    <!-- Recommendations -->
+    <!-- HLTB (How Long To Beat) -->
+
+    <!-- LSFG-VK frame generation -->
+    <string name="lsfg_tab_title">LSFG-VK</string>
+    <string name="lsfg_multiplier">Множник кадрів</string>
+    <string name="lsfg_flow_scale">Масштаб потоку</string>
+    <string name="lsfg_flow_scale_desc">Нижче — стабільніше; вище — плавніше, але можуть з’являтися артефакти.</string>
+    <string name="lsfg_performance_mode">Режим продуктивності</string>
+    <string name="lsfg_present_mode">Режим виводу</string>
+    <string name="lsfg_present_mode_desc">Рекомендується Mailbox. FIFO також підходить, коли вихідна частота кадрів (ліміт fps × множник) збігається з частотою оновлення екрана; нижче за неї FIFO може виглядати нерівно.</string>
+    <string name="lsfg_backend">Бекенд</string>
+    <string name="lsfg_backend_desc">Legacy запускає шар lsfg-vk усередині гри; Native виконує генерацію кадрів у рендерері WoW Forever</string>
+    <string name="lsfg_backend_legacy">Legacy (шар)</string>
+    <string name="lsfg_backend_native">Native (рендерер)</string>
+    <string name="lsfg_performance_mode_desc">Знижує якість для вищої пропускної здатності</string>
+    <!-- Game Launch Tips -->
+
+    <!-- Frontend Sync Settings -->
+    <string name="screen_effects_scaling">Масштабування</string>
+    <string name="screen_effects_upscaling">Апскейлінг</string>
+    <string name="screen_effects_basic_scaling">Базове масштабування</string>
+    <string name="screen_effects_scaling_mode_none">Без масштабування</string>
+    <string name="screen_effects_scaling_mode_none_desc">Без масштабування.</string>
+    <string name="screen_effects_scaling_mode_nearest">Найближчий</string>
+    <string name="screen_effects_scaling_mode_nearest_desc">Чіткі пікселі (ретро).</string>
+    <string name="screen_effects_scaling_mode_linear">Лінійне</string>
+    <string name="screen_effects_scaling_mode_linear_desc">Плавне масштабування.</string>
+    <string name="screen_effects_scaling_mode_fill">Заповнити</string>
+    <string name="screen_effects_scaling_mode_fill_desc">Заповнює екран, обрізаючи краї.</string>
+    <string name="screen_effects_scaling_mode_stretch">Розтягнути</string>
+    <string name="screen_effects_scaling_mode_stretch_desc">Заповнює екран, ігноруючи співвідношення сторін.</string>
+    <string name="screen_effects_scaling_mode_fsr">FSR</string>
+    <string name="screen_effects_scaling_mode_fsr_desc">Чіткий апскейл надвисокої роздільності.</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect">FSR Fit</string>
+    <string name="screen_effects_scaling_mode_fsr_aspect_desc">FSR, зберігає співвідношення сторін.</string>
+    <string name="screen_effects_scaling_mode_dls">DLS</string>
+    <string name="screen_effects_scaling_mode_dls_desc">Прохід різкості / чіткості.</string>
+    <string name="screen_effects_scaling_mode_natural">Природний</string>
+    <string name="screen_effects_scaling_mode_natural_desc">Тепліший відтінок.</string>
+    <string name="screen_effects_fsr">FSR 1.0</string>
+    <string name="screen_effects_fsr_sharpness">Чіткість FSR</string>
+    <string name="screen_effects_fsr_sharpness_value">%1$d/5</string>
+    <string name="transcoder">Транскодер</string>
+
+    <!-- Shooter Mode Improvements -->
+    <string name="shooter_mode_settings_title">Налаштування режиму шутера</string>
+    <string name="reset_shooter_settings">Скинути налаштування шутера</string>
+    <string name="shooter_section_input">Ввід</string>
+    <string name="shooter_section_runtime">Керування в грі</string>
+    <string name="shooter_section_mouse_look">Огляд мишею</string>
+    <string name="shooter_section_joysticks">Джойстики</string>
+    <string name="shooter_section_movement_joystick">Джойстик руху</string>
+    <string name="shooter_section_right_joystick">Джойстик огляду правим стіком</string>
+    <string name="shooter_section_movement">Рух</string>
+    <string name="look_sensitivity_x">Горизонтальна чутливість</string>
+    <string name="look_sensitivity_x_subtitle">Множник горизонтального огляду мишею праворуч</string>
+    <string name="look_sensitivity_y">Вертикальна чутливість</string>
+    <string name="look_sensitivity_y_subtitle">Множник вертикального огляду мишею праворуч</string>
+    <string name="invert_look_y">Інвертувати вертикальний огляд</string>
+    <string name="invert_look_y_subtitle">Змінює напрямок вгору і вниз для огляду мишею</string>
+    <string name="look_smoothing">Згладжування огляду</string>
+    <string name="look_smoothing_subtitle">Згладжує рух огляду між зразками дотику</string>
+    <string name="look_deadzone">Мертва зона огляду</string>
+    <string name="look_deadzone_subtitle">Ігнорує дуже малі рухи огляду праворуч</string>
+    <string name="mouse_look_acceleration">Прискорення огляду мишею</string>
+    <string name="mouse_look_acceleration_subtitle">Збільшує швидкість огляду мишею, коли рух дотику стає швидшим</string>
+    <string name="mouse_acceleration_strength">Сила прискорення</string>
+    <string name="mouse_acceleration_strength_subtitle">Як швидко швидші перетягування додають швидкість миші</string>
+    <string name="mouse_acceleration_max">Максимальне прискорення</string>
+    <string name="mouse_acceleration_max_subtitle">Верхній множник під час швидких перетягувань огляду мишею</string>
+    <string name="win32_relative_mouse_input">Відносне введення миші</string>
+    <string name="win32_relative_mouse_input_subtitle">Передає рух безпосередньо до Wine як відносне введення миші. Спробуйте, якщо миша не працює у грі.</string>
+    <string name="joystick_opacity">Непрозорість джойстика</string>
+    <string name="joystick_opacity_subtitle">Непрозорість кілець і ручок динамічних джойстиків</string>
+    <string name="show_shooter_runtime_toggle">Показувати кнопку в грі</string>
+    <string name="show_shooter_runtime_toggle_subtitle">Показує кнопку Увімкнути мишу / Увімкнути стіки, доки режим шутера активний</string>
+    <string name="movement_joystick_size">Розмір джойстика руху</string>
+    <string name="movement_joystick_size_subtitle">Множник розміру для динамічного джойстика ліворуч</string>
+    <string name="movement_joystick_deadzone">Мертва зона руху</string>
+    <string name="movement_joystick_deadzone_subtitle">Ігнорує малий ввід джойстика руху ліворуч</string>
+    <string name="movement_stick_sensitivity">Чутливість стіка руху</string>
+    <string name="movement_stick_sensitivity_subtitle">Змінює швидкість досягнення повного відхилення віртуального лівого стіка</string>
+    <string name="movement_joystick_behavior">Поведінка джойстика руху</string>
+    <string name="movement_joystick_behavior_subtitle">Як центр лівого джойстика поводиться під час довгих перетягувань</string>
+    <string name="look_joystick_size">Розмір джойстика правого стіка</string>
+    <string name="look_joystick_size_subtitle">Множник розміру, коли тип огляду використовує правий стік геймпада</string>
+    <string name="look_joystick_deadzone">Мертва зона правого стіка</string>
+    <string name="look_joystick_deadzone_subtitle">Ігнорує малий ввід огляду з правого стіка геймпада</string>
+    <string name="look_stick_sensitivity">Чутливість правого стіка</string>
+    <string name="look_stick_sensitivity_subtitle">Змінює швидкість досягнення повного відхилення віртуального правого стіка</string>
+    <string name="look_joystick_behavior">Поведінка джойстика правого стіка</string>
+    <string name="look_joystick_behavior_subtitle">Як центр правого джойстика поводиться, коли тип огляду — правий стік геймпада</string>
+    <string name="shooter_movement_zone_width">Ширина зони руху</string>
+    <string name="shooter_movement_zone_width_subtitle">Ширина екрана, зарезервована для дотиків руху ліворуч</string>
+    <string name="button_drag_look">Огляд перетягуванням кнопки</string>
+    <string name="button_drag_look_subtitle">Дозволяє перетягувати від екранних кнопок для прицілювання або руху</string>
+    <string name="button_drag_threshold">Поріг перетягування кнопки (px)</string>
+    <string name="joystick_behavior">Поведінка джойстика</string>
+    <string name="joystick_behavior_anchored">Закріплений</string>
+    <string name="joystick_behavior_floating">Плаваючий</string>
+    <string name="outer_ring_sprint">Спринт на зовнішньому кільці</string>
+    <string name="outer_ring_sprint_subtitle">Використовує ввід спринту, коли джойстик руху близько до краю</string>
+    <string name="outer_ring_sprint_threshold">Поріг спринту</string>
+    <string name="outer_ring_sprint_threshold_subtitle">Відстань джойстика, потрібна для активації спринту</string>
+    <string name="outer_ring_sprint_press_mode">Натиснути дію спринту</string>
+    <string name="outer_ring_sprint_press_mode_subtitle">Один раз натискає ввід спринту під час входу в кільце спринту замість утримання</string>
+    <string name="sprint_binding">Дія спринту</string>
+    <string name="gesture_header_gamepad">Геймпад</string>
+    <string name="control_appearance">Вигляд елемента</string>
+    <string name="button_color">Колір елемента</string>
+    <string name="button_color_subtitle">HEX-колір контуру, піктограми та тексту елемента</string>
+    <string name="button_active_color">Колір під час натискання</string>
+    <string name="button_active_color_subtitle">Колір, коли елемент натиснуто або активний</string>
+    <string name="button_opacity">Непрозорість елемента</string>
+    <string name="button_opacity_value">%1$d%%</string>
+    <string name="button_opacity_inherited">%1$d%% (глобально за замовчуванням)</string>
+    <string name="control_stroke_width">Товщина лінії</string>
+    <string name="control_stroke_width_subtitle">Налаштувати товщину контуру та розділювачів елемента</string>
+    <string name="control_stroke_width_thin">Тонка</string>
+    <string name="control_stroke_width_default">За замовчуванням</string>
+    <string name="control_stroke_width_thick">Товста</string>
+    <string name="control_stroke_width_extra_thick">Дуже товста</string>
+    <string name="button_look_through">Наскрізне керування</string>
+    <string name="button_look_through_subtitle">Натисніть цю кнопку й проведіть від неї, щоб також керувати рухом або камерою. Недоступно в режимі сенсорного екрана.</string>
+    <string name="preview">Попередній перегляд</string>
+    <string name="active">Активно</string>
+    <string name="apply_all">Застосувати до всіх</string>
+    <string name="copy_appearance_from_button">Копіювати вигляд з елемента</string>
+    <string name="toast_no_buttons_to_copy_appearance">Немає інших елементів для копіювання вигляду</string>
+    <string name="toast_copied_button_appearance">Вигляд елемента скопійовано</string>
+    <string name="toast_applied_button_appearance">Вигляд застосовано до всіх елементів</string>
+
+    <!-- Sponsorship (featured slot) -->
+    <plurals name="achievements_hidden_remaining">
+        <item quantity="one">Залишилося %1$d приховане досягнення</item>
+        <item quantity="few">Залишилося %1$d приховані досягнення</item>
+        <item quantity="many">Залишилося %1$d прихованих досягнень</item>
+        <item quantity="other">Залишилося %1$d прихованих досягнень</item>
+    </plurals>
+    <plurals name="local_mod_file_count">
+        <item quantity="one">%1$d файл</item>
+        <item quantity="few">%1$d файли</item>
+        <item quantity="many">%1$d файлів</item>
+        <item quantity="other">%1$d файла</item>
+    </plurals>
+    <plurals name="local_mod_folder_count">
+        <item quantity="one">%1$d папка</item>
+        <item quantity="few">%1$d папки</item>
+        <item quantity="many">%1$d папок</item>
+        <item quantity="other">%1$d папки</item>
+    </plurals>
+    <!-- Bionic FG (AI) Frame Generation -->
+    <string name="radial_menu">Радіальне меню</string>
+    <string name="radial_menu_settings_title">Радіальне меню</string>
+    <string name="radial_menu_cancel">Скасувати</string>
+    <string name="radial_menu_slot_count">Слоти</string>
+    <string name="radial_menu_slot_count_subtitle">Увімкнено слотів: %1$d</string>
+    <string name="radial_menu_decrease_slots">Зменшити кількість слотів</string>
+    <string name="radial_menu_increase_slots">Збільшити кількість слотів</string>
+    <string name="radial_menu_slots">Слоти колеса</string>
+    <string name="radial_menu_slot_title">Слот %1$d</string>
+    <string name="radial_menu_slot_label_hint">Мітка</string>
+    <string name="radial_menu_slot_binding">Призначення слота %1$d</string>
+    <string name="radial_menu_slot_binding_summary">Призначення: %1$s</string>
+    <string name="radial_menu_preset_common">Типові</string>
+    <string name="radial_menu_preset_weapons">Зброя</string>
+    <string name="gesture_action_open_radial_menu">Відкрити радіальне меню</string>
+
+    <!-- Power Control -->
+    <string name="binding_mode_simultaneous">Одночасно</string>
+    <string name="binding_mode_sequence">Послідовно</string>
+    <string name="binding_sequence_delay_ms">Затримка послідовності (мс)</string>
+    <string name="binding_sequence_current_format">%1$s (%2$d мс)</string>
+    <string name="gyro_aiming">Гіроскопічне прицілювання</string>
+    <string name="gyro_settings_title">Налаштування гіроскопа</string>
+    <string name="gyro_section_output">Вивід і рух</string>
+    <string name="gyro_section_activation">Активація</string>
+    <string name="gyro_section_response">Відгук</string>
+    <string name="gyro_output">Вивід</string>
+    <string name="gyro_output_subtitle">Виберіть, чим керує рух пристрою.</string>
+    <string name="gyro_tilt_steering">Керування нахилом</string>
+    <string name="gyro_tilt_steering_subtitle">Тримайте пристрій під кутом для постійного горизонтального введення стіка. Поточне положення центрується щоразу, коли гіроскоп активується.</string>
+    <string name="gyro_tilt_unavailable">Цей пристрій не надає датчика орієнтації, потрібного для керування нахилом.</string>
+    <string name="gyro_activation">Активація</string>
+    <string name="gyro_activation_help">Утримання, Перемикання та Тріскачка використовують керування, призначене для Гіроскопа.</string>
+    <string name="gyro_activation_always">Завжди</string>
+    <string name="gyro_activation_hold">Утримання</string>
+    <string name="gyro_activation_toggle">Перемикання</string>
+    <string name="gyro_activation_ratchet">Тріскачка</string>
+    <string name="gyro_control_not_assigned">Гіроскоп: Не призначено</string>
+    <string name="gyro_assign_in_controls_editor">Призначити в редакторі керування</string>
+    <string name="gyro_sensitivity">Чутливість</string>
+    <string name="gyro_sensitivity_subtitle">Визначає силу впливу обертання пристрою на вибраний вивід.</string>
+    <string name="gyro_tilt_full_scale">Кут повного повороту</string>
+    <string name="gyro_tilt_full_scale_subtitle">Нахил пристрою від центру, потрібний для повного відхилення стіка ліворуч або праворуч.</string>
+    <string name="gyro_tilt_deadzone">Мертва зона нахилу</string>
+    <string name="gyro_tilt_deadzone_subtitle">Ігнорує невеликі нахили навколо центрального положення.</string>
+    <string name="gyro_vertical_scale">Вертикальна чутливість</string>
+    <string name="gyro_vertical_scale_subtitle">Налаштовує вертикальний рух відносно горизонтального.</string>
+    <string name="gyro_steadying">Поріг стабілізації</string>
+    <string name="gyro_steadying_subtitle">Ігнорує дуже малі ненавмисні рухи перед застосуванням чутливості.</string>
+    <string name="gyro_smoothing">Згладжування</string>
+    <string name="gyro_smoothing_subtitle">Зменшує тремтіння датчика ціною невеликої затримки прицілювання.</string>
+    <string name="gyro_stick_anti_deadzone">Антимертва зона стіка</string>
+    <string name="gyro_stick_anti_deadzone_subtitle">Компенсує внутрішню мертву зону стіка в грі.</string>
+    <string name="gyro_invert_horizontal">Інвертувати гіроскоп по горизонталі</string>
+    <string name="gyro_invert_vertical">Інвертувати гіроскоп по вертикалі</string>
+    <string name="gyro_percent_value">%1$d%%</string>
+    <string name="gyro_degrees_value">%1$d°</string>
+    <string name="gyro_degrees_per_second_value">%1$.1f°/с</string>
+    <string name="gyro_milliseconds_value">%1$d мс</string>
+    <string name="reset_gyro_settings">Скинути налаштування гіроскопа</string>
+</resources>

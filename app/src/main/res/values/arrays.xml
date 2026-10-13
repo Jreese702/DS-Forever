@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="glibc_wine_entries">
+        <item>wine-9.2-x86_64</item>
+    </string-array>
+    <string-array name="bionic_wine_entries">
+        <item>proton-9.0-arm64ec</item>
+        <item>proton-9.0-x86_64</item>
+    </string-array>
+</resources>

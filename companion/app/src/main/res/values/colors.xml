@@ -1,0 +1,4 @@
+<resources>
+    <!-- the launcher icon's ground, behind its drawing -->
+    <color name="ic_launcher_ground">#100C08</color>
+</resources>

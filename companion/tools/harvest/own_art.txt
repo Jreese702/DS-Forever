@@ -1,0 +1,13 @@
+assets/harvest/orig/home_swirl.png
+assets/harvest/orig/home_swirl_field.png
+assets/harvest/orig/home_logo_base.png
+assets/harvest/orig/home_logo_flare.png
+assets/harvest/orig/home_live_noise.png
+assets/harvest/own/home_live_base.png
+assets/harvest/own/home_live_flare.png
+assets/harvest/own/home_live_red_base.png
+assets/harvest/own/home_live_red_flare.png
+assets/harvest/own/home_live_gold_base.png
+assets/harvest/own/home_live_gold_flare.png
+assets/harvest/own/home_stone_rough.png
+assets/harvest/own/home_stone_rough_b.png
