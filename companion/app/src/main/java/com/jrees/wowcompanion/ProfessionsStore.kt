@@ -12,6 +12,10 @@ import java.io.File
  * WHY THE APP KEEPS IT: the game hands a profession's recipes to add-ons only while that profession
  * is open, and SavedVariables do not read back on this beta, so the addon cannot keep them.
  *
+ * PER CHARACTER (b-recipes-per-char): every book is kept under its character's name-realm (the add-on's `who`, the key of every
+ * per-character store), so an alt never sees another character's recipes, not even for a moment. A book kept before the add-on
+ * said whose it was is dropped (nobody can tell whose it is).
+ *
  * NEVER STORED: a list the addon marks `foreign` (someone's linked profession, a guild view, an NPC's
  * crafting window). It is shown while it is open and forgotten when it closes.
  *
@@ -34,7 +38,12 @@ object ProfessionsStore {
         private set
 
     private class Kept(val json: JSONObject, val book: ProfessionsModel.Book, val seenAt: Long)
-    private val books = HashMap<Int, Kept>()
+    /** name-realm -> profession id -> its book as last seen */
+    private val books = HashMap<String, HashMap<Int, Kept>>()
+    /** the character now: the last `prof` document's (at a start, the stored one's) */
+    var who: String = ""
+        private set
+    private fun whoOf(p: JSONObject?): String = p?.optString("who", "") ?: ""
     /** a foreign list: shown while open, never kept */
     private var foreignBook: Kept? = null
 
@@ -55,13 +64,14 @@ object ProfessionsStore {
             val f = File(c.filesDir, FILE)
             if (f.exists()) {
                 val o = JSONObject(f.readText())
-                o.optJSONObject("overview")?.let { overviewJson = it; overview = ProfessionsModel.parseOverview(it) }
+                o.optJSONObject("overview")?.let { overviewJson = it; overview = ProfessionsModel.parseOverview(it); who = whoOf(it) }
                 val a = o.optJSONArray("books") ?: JSONArray()
                 for (i in 0 until a.length()) {
                     val k = a.optJSONObject(i) ?: continue
                     val p = k.optJSONObject("p") ?: continue
+                    val owner = whoOf(p).takeIf { it.isNotEmpty() } ?: continue      // a book from before `who`: whose is unknown
                     val b = ProfessionsModel.parseBook(p)
-                    if (b.id > 0 && !b.foreign) books[b.id] = Kept(p, b, k.optLong("seen"))
+                    if (b.id > 0 && !b.foreign) books.getOrPut(owner) { HashMap() }[b.id] = Kept(p, b, k.optLong("seen"))
                 }
             }
         } catch (t: Throwable) {
@@ -82,6 +92,8 @@ object ProfessionsStore {
         overviewAt = now
         val before = overviewJson
         overviewJson = p
+        // another character logged in: from now on only its own books are shown (an add-on without `who` keeps the last one)
+        whoOf(p).takeIf { it.isNotEmpty() }?.let { who = it }
         val wasOpen = overview?.open
         overview = ProfessionsModel.parseOverview(p)
         val open = overview?.open
@@ -103,8 +115,11 @@ object ProfessionsStore {
             foreignBook = Kept(p, b, now)
             return true
         }
-        val old = books[b.id]
-        books[b.id] = Kept(p, b, now)
+        val owner = whoOf(p).takeIf { it.isNotEmpty() } ?: who
+        who = owner                                       // only the character in the game sends its book
+        val shelf = books.getOrPut(owner) { HashMap() }
+        val old = shelf[b.id]
+        shelf[b.id] = Kept(p, b, now)
         // seen again unchanged (the heartbeat): only the time moves, and it is saved when it closes
         if (old != null && old.json.toString() == p.toString()) return true
         save()
@@ -136,11 +151,11 @@ object ProfessionsStore {
     /** the book to show for [id]: the live one while it is open, else the last one seen */
     fun book(id: Int): ProfessionsModel.Book? {
         foreignBook?.let { if (it.book.id == id) return it.book }
-        return books[id]?.book
+        return books[who]?.get(id)?.book
     }
 
     /** when [id]'s book was last seen (ms), or 0 when never */
-    fun seenAt(id: Int): Long = books[id]?.seenAt ?: 0L
+    fun seenAt(id: Int): Long = books[who]?.get(id)?.seenAt ?: 0L
 
     /** is [id]'s book the live one (open in the game, the player's own) */
     fun isLive(id: Int): Boolean = ProfessionsModel.isLive(overview, book(id))
@@ -149,7 +164,7 @@ object ProfessionsStore {
     fun pad(): JSONObject? = overviewJson?.optJSONObject("pad")
 
     /** professions whose book has ever been seen */
-    fun seenIds(): Set<Int> = books.keys.toSet()
+    fun seenIds(): Set<Int> = books[who]?.keys?.toSet() ?: emptySet()
 
     // ---------------------------------------------------------------- saving
 
@@ -157,7 +172,11 @@ object ProfessionsStore {
         val o = JSONObject()
         overviewJson?.let { o.put("overview", it) }
         val a = JSONArray()
-        for (k in books.values) a.put(JSONObject().put("seen", k.seenAt).put("p", k.json))
+        for ((owner, shelf) in books) for (k in shelf.values) {
+            // the add-on's own `who` rides in the book; one without it is filed under the character it came in for
+            val p = if (whoOf(k.json).isEmpty() && owner.isNotEmpty()) JSONObject(k.json.toString()).put("who", owner) else k.json
+            a.put(JSONObject().put("seen", k.seenAt).put("p", p))
+        }
         o.put("books", a)
         write(o.toString())
     }
