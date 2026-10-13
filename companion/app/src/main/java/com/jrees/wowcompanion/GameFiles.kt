@@ -167,6 +167,17 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             val cols = buildRow(root) ?: return false
             val hosts = cols["CDN Hosts"].orEmpty().split(' ').filter { it.isNotBlank() }
             val path = cols["CDN Path"].orEmpty().trim('/')
+            if (download(hosts, path, rel, to)) return true
+            // a game file (data/xx/yy/<encoding key>) the CDN keeps only inside an archive: find it and fetch its byte range
+            val ekey = Regex("""data/[0-9a-f]{2}/[0-9a-f]{2}/([0-9a-f]{32})""").matchEntire(rel)?.groupValues?.get(1) ?: return false
+            val log = { m: String -> android.util.Log.i("WCHARVEST", m); Unit }
+            val hit = CdnArchives.locate(root, cache, cols["CDN Key"].orEmpty(),
+                ekey.chunked(2).map { it.toInt(16).toByte() }.toByteArray(), { r, f -> download(hosts, path, r, f) }, log) ?: return false
+            return CdnArchives.fetch(hosts, path, hit, to, log)
+        }
+
+        /** one loose CDN file ([rel] under the CDN path) to [to], whole or not at all */
+        private fun download(hosts: List<String>, path: String, rel: String, to: File): Boolean {
             to.parentFile?.mkdirs()
             for (host in hosts) {
                 val ok = runCatching {
