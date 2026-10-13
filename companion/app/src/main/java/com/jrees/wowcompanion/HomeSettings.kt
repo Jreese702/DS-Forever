@@ -102,9 +102,22 @@ object HomeSettings {
             for (l in listeners) l()
         }
 
+    /**
+     * THE COMBAT SWITCH'S MOTION (r-combat-anim-off, a player's request via tracking 2026-10-13: the bottom screen's move to the In combat
+     * layout lags the game): true = animated (the default: today's 240 / 200 ms grow and shrink), false = INSTANT, no frames at all.
+     */
+    var combatAnim: Boolean
+        get() = prefs?.getBoolean(KEY_COMBAT_ANIM, true) ?: true
+        set(v) {
+            if (v == combatAnim) return
+            prefs?.edit()?.putBoolean(KEY_COMBAT_ANIM, v)?.apply()
+            for (l in listeners) l()
+        }
+
     fun onChange(l: () -> Unit) { listeners.add(l) }
 
     private const val KEY = "rest"
+    private const val KEY_COMBAT_ANIM = "combatAnim"
     private const val KEY_PAUSE_TAP = "pauseTap"
     private const val KEY_PAUSE_PICK = "pausePickA"
     private const val KEY_PICK = "radialPickA"
@@ -207,6 +220,10 @@ class HomeSettingsSection(context: Context) : View(context) {
         y = row(c, y, "Controller on Home", listOf("Out of combat. In combat the diamonds always take over."),
             listOf("Thin row", "Diamonds"), HomeRest.values().indexOf(HomeSettings.rest),
             listOf({ HomeSettings.rest = HomeRest.ROW }, { HomeSettings.rest = HomeRest.DIAMONDS }))
+        // r-combat-anim-off (a player's request, 2026-10-13): the move into / out of the In combat layout, animated (today's) or instant
+        y = row(c, y + GAP, "Combat switch", listOf("How the controller changes when a fight starts or ends."),
+            listOf("Instant", "Animated"), if (HomeSettings.combatAnim) 1 else 0,
+            listOf({ HomeSettings.combatAnim = false }, { HomeSettings.combatAnim = true }))
         // the focused quest's place (the user 2026-10-09): over the minimap (today's) or at the top of the chat
         y = row(c, y + GAP, "Focused quest", listOf("Where Home shows the quest you focus. Tap it to fold it."),
             // the user 2026-10-09: "Above Chat" first; the default stays Above Minimap

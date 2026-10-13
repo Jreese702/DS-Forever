@@ -729,7 +729,8 @@ class HomeView(
         if (w <= 0f || h <= 0f) { requestLayout(); return }       // placed at the first layout
         val to = places(s, w, h)
         for ((p, v) in views) if (to.containsKey(p)) { v.visibility = View.VISIBLE; v.alpha = 1f }
-        if (!animate || before == null) {
+        // r-combat-anim-off: the player turned the combat motion off (Settings > Home "Combat switch"): the fight's switch lands at once
+        if (!animate || before == null || (before.takeover != s.takeover && !HomeSettings.combatAnim)) {
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
             flightClip(false)
             now.clear(); for ((p, r) in to) now[p] = RectF(r)
@@ -742,10 +743,10 @@ class HomeView(
         // (the combat band hides the clock in its first 60). THE MAP'S MORPH (the user: "I want to make sure that the transition in map
         // size and place is smooth"; Map's mapView.morph): the map's own art glides with the box, the focused quest's card flies
         // between Home's quest module and the map list's top spot.
+        val combat = s.takeover != before.takeover
         val wasMap = before.full == HomeModule.MAP && !before.takeover
         val isMap = s.full == HomeModule.MAP && !s.takeover
         val morphing = lent(mapView) && wasMap != isMap && now[Part.MAP] != null && to[Part.MAP] != null
-        val combat = s.takeover != before.takeover
         val ms = when {
             combat -> if (s.takeover) Motion.COMBAT_GROW else Motion.COMBAT_SHRINK
             open && !(before.full != null && !before.takeover) -> Motion.MODULE_OPEN
@@ -786,7 +787,7 @@ class HomeView(
                 for (p in coming) views[p]?.alpha = overlayIn
                 if (cardOverMap()) auraPane.invalidate()            // b128: the buff row rides the card's move
                 if (overlayFrom != overlayTo) invalidate()
-                requestLayout()
+                placeFrame()
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(a: Animator) {
@@ -798,6 +799,7 @@ class HomeView(
                     for (p in coming) views[p]?.alpha = 1f
                     for (p in gone) { views[p]?.visibility = View.GONE; views[p]?.alpha = 1f; now.remove(p) }
                     settled = true
+                    requestLayout()                                  // one full pass where it lands
                     invalidate()
                 }
             })
@@ -858,6 +860,25 @@ class HomeView(
             val r = now[p] ?: continue
             v.measure(MeasureSpec.makeMeasureSpec(max(1, r.width().toInt()), MeasureSpec.EXACTLY),
                       MeasureSpec.makeMeasureSpec(max(1, r.height().toInt()), MeasureSpec.EXACTLY))
+        }
+    }
+
+    /**
+     * ONE FRAME OF THE MOTION (r-combat-anim-off: "it shouldn't steal frames from the game"): each part that moved is measured (only when
+     * its size changed) and placed right here. It was requestLayout() per frame, which sent a measure / layout pass through the WHOLE
+     * window (the strip, every room's view) about 15 times in a 240 ms switch; the landing frame still does one full pass.
+     */
+    private fun placeFrame() {
+        for ((p, v) in views) {
+            if (v.visibility == View.GONE) continue
+            val f = now[p] ?: continue
+            val x0 = f.left.toInt(); val y0 = f.top.toInt()
+            val x1 = max(x0 + 1, f.right.toInt()); val y1 = max(y0 + 1, f.bottom.toInt())
+            val resized = v.width != x1 - x0 || v.height != y1 - y0
+            if (!resized && v.left == x0 && v.top == y0 && !v.isLayoutRequested) continue
+            if (resized || v.isLayoutRequested)
+                v.measure(MeasureSpec.makeMeasureSpec(x1 - x0, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(y1 - y0, MeasureSpec.EXACTLY))
+            v.layout(x0, y0, x1, y1)
         }
     }
 
