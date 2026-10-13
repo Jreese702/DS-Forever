@@ -2966,6 +2966,37 @@ object UiKit {
     }
 
     /**
+     * The consumables radial in miniature (UI Art's approved v4 wheel): a dark disc in a bronze rim, eight spokes, the
+     * chosen slice lit gold (bottom-right, where the game's selection sits in the picture) and the hub. THE RADIAL'S ONE PICTURE on the
+     * DS WoW toolbar (b-radial-icon, the user 2026-10-13: "use the same icon everywhere on the toolbar"): CastView's D-pad Up and the
+     * Controller room's DS tab both draw this, never the potion icon.
+     */
+    fun miniWheel(c: Canvas, cx: Float, cy: Float, r: Float) {
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        fill.color = android.graphics.Color.rgb(20, 16, 12)
+        c.drawCircle(cx, cy, r, fill)
+        // the chosen slice
+        fill.color = android.graphics.Color.argb(150, 200, 160, 70)
+        c.drawArc(RectF(cx - r, cy - r, cx + r, cy + r), 22.5f, 45f, true, fill)
+        // the spokes
+        stroke.color = Theme.bronzeDim; stroke.strokeWidth = kotlin.math.max(1.2f, r * 0.06f)
+        for (i in 0 until 8) {
+            val a = Math.toRadians(22.5 + i * 45.0)
+            val ca = kotlin.math.cos(a).toFloat(); val sa = kotlin.math.sin(a).toFloat()
+            c.drawLine(cx + ca * r * 0.13f, cy + sa * r * 0.13f, cx + ca * r, cy + sa * r, stroke)
+        }
+        // the rim
+        stroke.color = Theme.bronze; stroke.strokeWidth = kotlin.math.max(1.5f, r * 0.1f)
+        c.drawCircle(cx, cy, r, stroke)
+        // the hub: a small dark centre in a bronze ring (user 10-06: no red swirl, "make that inner circle way smaller")
+        fill.color = android.graphics.Color.rgb(46, 34, 22)
+        c.drawCircle(cx, cy, r * 0.13f, fill)
+        stroke.color = Theme.bronze; stroke.strokeWidth = kotlin.math.max(1f, r * 0.05f)
+        c.drawCircle(cx, cy, r * 0.13f, stroke)
+    }
+
+    /**
      * A spell's icon in the book's own frame. ([x], [y]) is the ICON's top left corner and [size]
      * its side; the frame lies round it (its leaves reach 0.5 of [size] to the left and 0.4 below).
      * [onBar] = false for a known spell that is on no button: the game's gold glow. [passive] = the

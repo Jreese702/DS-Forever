@@ -164,7 +164,7 @@ class ControllerView(
         // the switches' own answers (PadMap's ops): a refusal said plainly, as the page says its own
         if (!a.ok && a.op in TOGGLE_OPS) {
             swWant.clear()                                              // the flip shown at the tap goes back at once
-            say(if (a.why == "combat") "Not in a fight: try again after it" else "The game did not take it")
+            say(when (a.why) { "combat" -> "Not in a fight: try again after it"; "paused" -> PAUSED_SAY; else -> "The game did not take it" })
         }
     }
 
@@ -179,7 +179,9 @@ class ControllerView(
         gaps.row(TAB_NAMES.size, 60f, w - 60f, 76f, 70f, 260f, PadMapModel.tabOf(tab()) - 1, this)[i]     // UI Art: four fit as words
 
     /** a switch: label, state as SHOWN (null = this addon cannot switch it yet), the column that sets the OTHER state, its key */
-    private class Sw(val label: String, val on: Boolean?, val col: Int?, val key: String)
+    private class Sw(val label: String, val on: Boolean?, val col: Int?, val key: String,
+                     /** greyed out on purpose (not an older add-on): what a tap says */
+                     val held: String? = null)
 
     /** LOCAL FIRST (the user on b116, 2026-10-07: "the button push is delayed a moment after I push it, its working but it feels slow and laggy"): a finger's flip shows AT THE TAP;
      *  the addon's map takes over when it agrees, or after [ECHO_MS] (a refusal) */
@@ -203,7 +205,9 @@ class ControllerView(
                 val sa = m?.attack
                 val saOn = sa?.let { swShown("sa", it.on) }
                 listOf(Sw("Combat controls", cc, cc?.let { if (it) m.faceCcColOff else m.faceCcColOn }, "cc"),
-                       Sw("Start attack on cast", saOn, sa?.let { if (saOn == true) it.colOff else it.colOn }, "sa"))
+                       // b-start-attack-row (the user 2026-10-13): PAUSED in the add-on (m40) = greyed out, unticked, "coming back later"
+                       if (sa?.paused == true) Sw("Start attack on cast", false, null, "sa", held = PAUSED_SAY)
+                       else Sw("Start attack on cast", saOn, sa?.let { if (saOn == true) it.colOff else it.colOn }, "sa"))
             }
             else -> emptyList()
         }
@@ -221,10 +225,11 @@ class ControllerView(
 
     // ---------------------------------------------------------------- the DS tab's places
 
-    private class DsPlace(val word: String, val art: String?, val what: String, val icon: Int = 0)
+    private class DsPlace(val word: String, val art: String?, val what: String, val wheel: Boolean = false)
     private val dsPlaces = listOf(
         DsPlace("Chat", "ricon_chat", "Opens the Chat room."),
-        DsPlace("Radial", null, "Opens the radial of the consumables in your bags.", icon = RADIAL_ICON),
+        // b-radial-icon: the toolbar's own mini wheel (CastView's D-pad Up), not a potion
+        DsPlace("Radial", null, "Opens the radial of the consumables in your bags.", wheel = true),
         DsPlace("Map", "ricon_map", "Opens Home's map."),
         DsPlace("Home bar", "home_live_base", "Puts the bar's cursor on the Home swirl: pick a room, A opens it."),
     )
@@ -333,7 +338,8 @@ class ControllerView(
             val d = dsPlaces[p - 1]
             val art = artOf(d)
             UiKit.spell(c, art, r.left, r.top, r.width(), if (on) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL)
-            if (art == null) c.drawText(d.word.take(1), r.centerX(), r.centerY() + 10f, pw)
+            if (d.wheel) UiKit.miniWheel(c, r.centerX(), r.centerY(), r.width() * 0.4f)
+            else if (art == null) c.drawText(d.word.take(1), r.centerX(), r.centerY() + 10f, pw)
             c.drawText(d.word, r.centerX(), r.bottom + 58f, pw)
         }
         if (k == null || k.focus == "dpad") UiKit.slotFocus(c, dsSquare(sel))
@@ -391,6 +397,7 @@ class ControllerView(
         // the right page: the chosen place
         val d = dsPlaces[sel - 1]
         UiKit.spell(c, artOf(d), x0 + 36f, top + 16f, 96f, if (on) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL)
+        if (d.wheel) UiKit.miniWheel(c, x0 + 36f + 48f, top + 16f + 48f, 96f * 0.4f)
         val pn = UiKit.inkPaint(40f, heading = true)
         c.drawText(d.word, x0 + 158f, top + 30f - pn.ascent() - 4f, pn)
         c.drawText("D-pad " + arrayOf("Left", "Up", "Right", "Down")[sel - 1], x0 + 160f, top + 120f, pi)
@@ -432,7 +439,7 @@ class ControllerView(
         UiKit.pad(c, glyph, x - 30f, cy, 40f)
     }
 
-    private fun artOf(d: DsPlace) = d.art?.let { UiKit.tex(it) } ?: if (d.icon != 0) Icons.get(d.icon) else null
+    private fun artOf(d: DsPlace) = d.art?.let { UiKit.tex(it) }
 
     private fun padStyle(): SpellsModel.PadStyle = when (CastSettings.buttonLayout) {
         CastSettings.ButtonLayout.XBOX -> SpellsModel.PadStyle.LTR
@@ -500,7 +507,7 @@ class ControllerView(
                     val sent = onPadCells(listOf("spells" to t.col))
                     Log.i(TAG, "switch '${t.label}' -> ${if (t.on == true) "off" else "on"}: spells ${t.col} ${if (sent) "tapped" else "not sent"}")
                     if (sent && t.on != null && map?.combat == false) { swWant[t.key] = !t.on to SystemClock.uptimeMillis() + ECHO_MS; invalidate() }
-                } else say("Update the game's add-on to switch this here")
+                } else say(t.held ?: "Update the game's add-on to switch this here")
             }
             downSw = -1; return true
         }
@@ -625,14 +632,14 @@ class ControllerView(
         private const val SPELLS_CLOSE_CELL = 1
         private const val BUSY_MS = 4000L
         private const val ECHO_MS = 1500L
+        /** b-start-attack-row: what the paused start-attack switch says (a tap, or the controller's A and the add-on's "paused") */
+        private const val PAUSED_SAY = "Start attack on cast is coming back later"
         private val TOGGLE_OPS = setOf("dpad-on", "dpad-off", "cc-on", "cc-off", "attack")
         private val PBMP = Paint(Paint.FILTER_BITMAP_FLAG)
         /** p16 the room's tabs, in PadTabCtl's order */
         private val TAB_NAMES = listOf("WoW Defaults", "DS", "In combat", "Spell radial")
         /** the tab's word, measured for the swords' room (UiKit.tab's size) */
         private val PTABW = UiKit.bodyPaint(28f, Theme.text)
-        /** the Radial's picture on the DS tab: a Minor Healing Potion's icon (UI Art's sheet: "a potion") */
-        private const val RADIAL_ICON = 134829
         /** the clean-up buttons' small lines stay this far from the Home bar's frame */
         private const val TEXT_INSET = 24f
     }

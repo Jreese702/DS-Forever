@@ -101,6 +101,10 @@ class PadTabPage(
 
     // the app's own chooser and box (touch); the controller's come from `ctl`
     private var tChooser: String? = null       // p11: "spells" / "general" / "extra"
+    /** b-bind-combat-toggle (the user 2026-10-13): a finger's chooser puts on the In combat layout (true) or the normal one; null = the tab's */
+    private var tFight: Boolean? = null
+    /** b-bind-hold-triggers (the user 2026-10-13): the set a finger's chooser was opened on (a trigger held then), kept until it is done */
+    private var tLock: Int? = null
     /** p11 the chooser's tabs, the gaps (and LB / RB) round the open one (UI Art's TabGaps) */
     private val cGaps = UiKit.TabGaps(vertical = false, gap = 46f)          // the menu is narrow: a slimmer gap, the tabs keep their words
     private var tBox: Box? = null
@@ -222,6 +226,7 @@ class PadTabPage(
         if (c.note == "move-refused") say("The game did not move it")
         if (c.note == "not-on-radial") say("The spell radial takes spells only")
         if (c.note == "paused") say(PAUSED_LINE)                            // m40 / p18
+        if (c.note == "no-fight-toggle") say("Only a fight spell goes on this button")     // p26
         host.invalidate()
     }
 
@@ -319,8 +324,23 @@ class PadTabPage(
     }
     private fun swap() = CastSettings.buttonLayout == CastSettings.ButtonLayout.NINTENDO
 
-    /** the set on show: a held trigger's (as the game's bar), else the one chosen */
-    private fun shown(): Int = when { lt && rt -> 4; lt -> 2; rt -> 3; else -> set }
+    /** the set on show: a held trigger's (as the game's bar), else the one chosen; while a chooser or its box is up, the set it opened on */
+    private fun shown(): Int = lockedSet() ?: when { lt && rt -> 4; lt -> 2; rt -> 3; else -> set }
+    /** b-bind-hold-triggers (the user 2026-10-13: "the layer should stay held until the bind completes, even if the triggers are released"):
+     *  the controller's chooser is latched by the add-on (PadTabCtl p26, its `shown`); a finger's by [tLock] */
+    private fun lockedSet(): Int? = when {
+        view == "radial" -> null
+        tChooser != null || tBox != null -> tLock
+        ctlChooser() != null || ctlBox() != null -> ctl?.shown
+        else -> null
+    }
+    /** b-bind-combat-toggle: the chooser's layout, In combat (true) or normal: a finger's own [tFight], else the controller's (PadTabCtl
+     *  p26), else the tab it was opened from */
+    private fun fight(): Boolean =
+        (if (tChooser != null || tBox != null) tFight else ctlChooser()?.fight) ?: (view == "combat")
+    /** may the chooser switch layouts (PadTabCtl p26's fightToggle): not on the radial, not in a fight, not on a base X / Y / A */
+    private fun fightToggleOk(m: PadMapModel.Map): Boolean =
+        view != "radial" && !m.combat && PadMapModel.slot(m, shown(), pos)?.kind != PadMapModel.Kind.FIXED
     private fun page(): Int {
         val want = pageWant
         return if (want != null && SystemClock.uptimeMillis() < pageUntil) want else map?.page ?: 1
@@ -389,7 +409,7 @@ class PadTabPage(
     }
 
     /** the combat view, or a combat button out of combat: spells only (the addon's rows do the same) */
-    private fun onlySpells(m: PadMapModel.Map) = view == "combat" || view == "radial" ||                  // p16: a radial casts spells
+    private fun onlySpells(m: PadMapModel.Map) = fight() || view == "radial" ||                  // p16: a radial casts spells
         PadMapModel.slot(m, shown(), pos)?.kind == PadMapModel.Kind.COMBAT
 
     /** p11 the chooser's tabs (the user 2026-10-07: "in the controller menu, when assigning a spell, the spell menu needs some tabs. start on spells, then general (including professions), then extra"); a fight spell's chooser has no Extra */
@@ -400,7 +420,7 @@ class PadTabPage(
         if (list != "extra" || onlySpells(m)) {
             val which = if (list == "extra") "spells" else list
             // the combat view leaves out the spells already on the button (the same spell in and out of a fight only spends a macro)
-            val skip = if (view == "combat") PadMapModel.onButton(PadMapModel.slot(m, shown(), pos)) else emptySet()
+            val skip = if (fight()) PadMapModel.onButton(PadMapModel.slot(m, shown(), pos)) else emptySet()
             val spells = book?.let { b -> SpellsModel.tabSpells(b, which).filter { (it.spellId ?: it.actionId) !in skip }.map { Thing.Spell(it) } }
                 ?: emptyList()
             // (m45 / p24: no "suggestion" row - the user: nothing is ever suggested; the add-on's chooser has none either, so rows line up)
@@ -426,7 +446,7 @@ class PadTabPage(
     private fun pinned(m: PadMapModel.Map): Thing? {
         if (view == "radial") return if (radId(pos) != 0) Thing.Clear else null            // p16: "Clear this slice"
         val sl = PadMapModel.slot(m, shown(), pos)
-        return if (view == "combat") when {
+        return if (fight()) when {
             sl?.kind == PadMapModel.Kind.COMBAT -> Thing.Uncombat
             PadMapModel.isFace(sl) && sl!!.fight != null -> Thing.Unface
             else -> null
@@ -498,7 +518,12 @@ class PadTabPage(
         if (single) RectF(w / 2f - 190f, r.bottom - 161f, w / 2f + 190f, r.bottom - 50f)
         else RectF(w / 2f - 14f - 380f, r.bottom - 161f, w / 2f - 14f, r.bottom - 50f)
     private fun noRect(w: Float, r: RectF) = RectF(w / 2f + 14f, r.bottom - 161f, w / 2f + 14f + 380f, r.bottom - 50f)
-    private fun listTop(box: RectF) = box.top + TABS_TOP + 100f
+    private fun listTop(box: RectF) = box.top + TABS_TOP + 100f + (if (view != "radial") FIGHT_H else 0f)
+    /** b-bind-combat-toggle: the chooser's Normal | In combat pair, under its tabs ([i] 0 Normal, 1 In combat; Y's glyph on the left) */
+    private fun fightRect(i: Int, box: RectF): RectF {
+        val t = box.top + TABS_TOP + 102f; val l = box.left + 80f; val r = box.right - 28f; val mid = (l + r) / 2f
+        return if (i == 0) RectF(l, t, mid - 4f, t + FIGHT_H - 12f) else RectF(mid + 4f, t, r, t + FIGHT_H - 12f)
+    }
     private fun clearTop(box: RectF) = box.bottom - 196f
     private fun listBottom(box: RectF, withClear: Boolean) = if (withClear) clearTop(box) - 8f else box.bottom - 112f
 
@@ -992,6 +1017,13 @@ class PadTabPage(
         }
         // p17: the cursor on the tab row: the game's gold arrows beside the open tab (D-pad Left / Right change it), no L / R glyphs
         if (ccTabs) UiKit.moveArrows(c, tr[cur], left = cur > 0, right = cur < keys.size - 1, words = false)
+        // b-bind-combat-toggle (the user 2026-10-13): where the spell goes, the normal layout or In combat; Y flips it (PadTabCtl p26)
+        if (view != "radial") {
+            val f = fight(); val ok = fightToggleOk(m)
+            UiKit.choice(c, fightRect(0, box), "Normal", !f, enabled = ok, textSize = 24f)
+            UiKit.choice(c, fightRect(1, box), "In combat", f, enabled = ok, textSize = 24f)
+            if (ok && ctl?.on == true) UiKit.pad(c, glyph(6), box.left + 50f, fightRect(0, box).centerY(), 40f)
+        }
 
         val rows = rowsOf(list, book, m)
         val pin = pinned(m)
@@ -1084,11 +1116,11 @@ class PadTabPage(
             kind == "make" -> Triple("This uses one of your General Macros (${(g?.n ?: 0) + 1} of ${g?.max ?: "?"}).", "Make ${thingName(thing)}?", "Make")
             kind == "cmake" -> Triple("This uses one of your Character Macros (${(ch?.n ?: 0) + 1} of ${ch?.max ?: "?"}).",
                 "Make ${thingName(thing)} this button's combat spell?", "Make")
-            kind == "replace" && isCombat && view == "combat" -> Triple("${sl!!.combat?.name ?: "?"} is this button's combat spell.",
+            kind == "replace" && isCombat && fight() -> Triple("${sl!!.combat?.name ?: "?"} is this button's combat spell.",
                 "Replace it with ${thingName(thing)}?", "Replace")
             kind == "replace" && isCombat -> Triple("${sl!!.otherwise?.name ?: "Nothing"} is on ${comboWord(s, pos)} out of combat.",
                 "Replace it with ${thingName(thing)}?", "Replace")
-            kind == "replace" && view == "combat" && !isCombat && !face ->
+            kind == "replace" && fight() && !isCombat && !face ->
                 Triple("$here is on ${comboWord(s, pos)}. It cannot stay with a fight spell.", "Replace it with ${thingName(thing)}?", "Replace")
             kind == "replace" -> Triple("$here is on ${comboWord(s, pos)}.", "Replace it with ${thingName(thing)}?", "Replace")
             kind == "clear" && thing == Thing.Uncombat -> Triple("${sl?.combat?.name ?: "?"} is this button's combat spell.",
@@ -1198,10 +1230,21 @@ class PadTabPage(
                 return
             }
             val inner = RectF(box.left + 20f, box.top, box.right - 20f, box.bottom)
+            // b-bind-combat-toggle: Normal | In combat; a finger takes the chooser over as the tabs do (the controller's latched set kept)
+            if (view != "radial" && y >= fightRect(0, box).top - 6f && y <= fightRect(0, box).bottom + 6f) {
+                val want = x >= fightRect(1, box).left - 4f
+                if (!fightToggleOk(m)) say(if (m.combat) COMBAT else "Only a fight spell goes on this button")
+                else if (want != fight()) {
+                    takeOver()
+                    tFight = want; scroll = 0f
+                    if (want && tChooser == "extra") tChooser = "spells"
+                }
+                return
+            }
             if (y >= box.top + TABS_TOP - 8f && y <= box.top + TABS_TOP + 92f) {    // p14: the small icon tabs
                 // p11: the tab under the finger (its rect from the last frame)
                 val keys = chooserTabs(m)
-                cGaps.rects.indexOfFirst { x >= it.left && x <= it.right }.takeIf { it in keys.indices }?.let { tChooser = keys[it]; scroll = 0f }
+                cGaps.rects.indexOfFirst { x >= it.left && x <= it.right }.takeIf { it in keys.indices }?.let { takeOver(); tChooser = keys[it]; scroll = 0f }
                 return
             }
             val pin = pinned(m)
@@ -1226,7 +1269,7 @@ class PadTabPage(
         // Move: pick it up (a pick; the addon carries the chosen button)
         if (view == "radial" && was == DOWN_MOVE && radId(pos) == 0) return                     // p16: an empty slice has no Move
         if (view == "radial" && was == DOWN_CHANGE && actRect(w, h).contains(x, y)) {
-            if (m.combat) say(COMBAT) else { tChooser = "spells"; scroll = 0f }
+            if (m.combat) say(COMBAT) else { tLock = null; tFight = null; tChooser = "spells"; scroll = 0f }
             return
         }
         if (was == DOWN_MOVE && moveRect(w, h).contains(x, y) && PadMapModel.slot(m, shown(), pos)?.kind == PadMapModel.Kind.BIND) {
@@ -1245,7 +1288,8 @@ class PadTabPage(
                 m.combat -> say(COMBAT)
                 sl.kind != PadMapModel.Kind.FIXED && sl.storage == null -> {}
                 view == "combat" && m.paused && !PadMapModel.isFace(sl) -> say(PAUSED_LINE)          // m40
-                else -> { tChooser = "spells"; scroll = 0f }
+                // b-bind-hold-triggers: the set on show NOW (a trigger held) is the one it goes on, released or not
+                else -> { tLock = shown(); tFight = null; tChooser = "spells"; scroll = 0f }
             }
         }
     }
@@ -1306,11 +1350,11 @@ class PadTabPage(
         if (t is Thing.Clear || t is Thing.Uncombat || t is Thing.Unface) return "clear"
         if (view == "radial") return if (!afterReplace && radId(pos) != 0) "replace" else null       // p16: PadTabCtl's boxFor
         val here = PadMapModel.slot(m, shown(), pos)
-        if (view == "combat" && t is Thing.Spell && PadMapModel.isFace(here)) {
+        if (fight() && t is Thing.Spell && PadMapModel.isFace(here)) {
             // a base X / Y / A: its own box the first time (it changes every fight), Replace after; no macro
             return if (here!!.fight != null) (if (!afterReplace) "replace" else null) else "cface"
         }
-        if (view == "combat" && t is Thing.Spell) {
+        if (fight() && t is Thing.Spell) {
             // m43 (PadTabCtl p22): the overlay: no macro is made and nothing leaves the button; Replace only names a fight spell there
             val k = PadMapModel.slot(m, shown(), pos)?.kind
             return if (k == PadMapModel.Kind.COMBAT && !afterReplace) "replace" else null
@@ -1334,7 +1378,7 @@ class PadTabPage(
             b.kind == "full" || b.kind == "cfull" || t == null -> closeController()
             b.kind == "replace" -> {
                 val next = boxFor(t, m, true)
-                if (next != null) { closeController(); tBox = Box(next, t) } else act(t)
+                if (next != null) { val f = fight(); val s = shown(); closeController(); tFight = f; tLock = s; tBox = Box(next, t) } else act(t)
             }
             else -> act(t)
         }
@@ -1342,7 +1386,12 @@ class PadTabPage(
 
     /** THE ONE GAME ACTION (the addon acts on its chosen button, which the picks keep equal to this one); its own box closes with it */
     private fun act(t: Thing) {
-        tBox = null; tChooser = null
+        // b-bind-hold-triggers / b-bind-combat-toggle: read before the chooser closes. A finger's latched set the add-on does not know
+        // goes first as a set pick (no action), so a released trigger cannot send it to the base set
+        val f = fight()
+        val pre = tLock?.takeIf { view != "radial" && (tChooser != null || tBox != null) && it != set }
+            ?.let { s -> pick(s, pos); listOf(PadMapModel.ROW to PadMapModel.colSet(s)) } ?: emptyList()
+        tBox = null; tChooser = null; tLock = null; tFight = null
         if (view == "radial") {                                             // p16: the slice shows it at the tap; the addon's `rad` follows
             val id = when { t is Thing.Spell && t.e.padColumn != null -> t.e.spellId ?: t.e.actionId; t == Thing.Clear -> 0; else -> null }
             if (id != null) { radWant = Triple(rpage, pos, id); radWantUntil = SystemClock.uptimeMillis() + ECHO_MS }
@@ -1352,19 +1401,27 @@ class PadTabPage(
             // in the combat view the spell's own Bind column follows the one-shot "combat layer" pick, in the same touch
             is Thing.Spell -> when {
                 t.e.padColumn == null -> say("This spell has no touch cell yet: use the controller")
-                view == "combat" -> tap(listOf(combatPick, "spells" to t.e.padColumn))
+                f -> tap(pre + listOf(combatPick, "spells" to t.e.padColumn))
+                pre.isNotEmpty() -> tap(pre + ("spells" to t.e.padColumn))
                 else -> tapSpell(t.e)
             }
             // p12: every Extra entry by the "extra" row, its page pick first (the pad owner's rule); the answer is checked (onAck)
-            is Thing.Command -> { extraSent = t.c.key; tap(PadMapModel.extraCells(t.index - 1)) }
-            is Thing.Mount -> { extraSent = t.x.id.toString(); tap(PadMapModel.extraCells(t.index)) }
-            is Thing.Item -> { extraSent = t.x.id.toString(); tap(PadMapModel.extraCells(t.index)) }
-            is Thing.Binding -> { extraSent = t.b.key; tap(PadMapModel.extraCells(t.index)) }
+            is Thing.Command -> { extraSent = t.c.key; tap(pre + PadMapModel.extraCells(t.index - 1)) }
+            is Thing.Mount -> { extraSent = t.x.id.toString(); tap(pre + PadMapModel.extraCells(t.index)) }
+            is Thing.Item -> { extraSent = t.x.id.toString(); tap(pre + PadMapModel.extraCells(t.index)) }
+            is Thing.Binding -> { extraSent = t.b.key; tap(pre + PadMapModel.extraCells(t.index)) }
             is Thing.Header -> {}
-            Thing.Clear -> tap(listOf(PadMapModel.ROW to PadMapModel.COL_CLEAR))
-            Thing.Uncombat, Thing.Unface -> tap(listOf(combatPick, PadMapModel.ROW to PadMapModel.COL_CLEAR))
+            Thing.Clear -> tap(pre + listOf(PadMapModel.ROW to PadMapModel.COL_CLEAR))
+            Thing.Uncombat, Thing.Unface -> tap(pre + listOf(combatPick, PadMapModel.ROW to PadMapModel.COL_CLEAR))
                 ?: say("Use the controller: X on A, then the first row")
         }
+    }
+
+    /** a finger takes the controller's chooser over (the tabs, the layout pair): its layout and latched set come along */
+    private fun takeOver() {
+        if (tChooser != null) return
+        val cc = ctlChooser() ?: return
+        tFight = cc.fight; tLock = ctl?.shown; tChooser = cc.list
     }
 
     /** close what the controller has open (its chooser and box): leave the tab and come back in, two no-action picks */
@@ -1379,6 +1436,8 @@ class PadTabPage(
         private const val ROW_H = 92f
         /** p17: the chooser's icon tabs from its top (the header line above them is gone) */
         private const val TABS_TOP = 30f
+        /** b-bind-combat-toggle: the depth of the chooser's Normal | In combat row */
+        private const val FIGHT_H = 70f
         /** every chooser row one size, Clear included; a long command name takes two lines (UI Art's menuRow `size`, PADTAB_SPEC 5) */
         private const val ROW_TEXT = 30f
         private const val SLOP = 18f
