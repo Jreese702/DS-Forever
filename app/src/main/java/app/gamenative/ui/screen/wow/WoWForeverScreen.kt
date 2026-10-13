@@ -431,6 +431,9 @@ fun WoWForeverScreen(
                 checkFiles()
                 versionStatus = versionStatus?.copy(isOutdated = false, localVersion = target.remoteVersion)
                 isUpdating = false
+                // a new game build needs its art built again (it is keyed by the build): start the check now, not at the next app
+                // start (13 Oct, 70338 -> 70374: Play stayed on "Game art: checking" until the app was restarted)
+                harvestArt()
                 launchGame()
             } catch (e: Exception) {
                 Timber.e(e, "Error updating game")
