@@ -101,6 +101,11 @@ object NativeLogin {
         playAt = System.currentTimeMillis(); windowArmed = false
         val root = shadowRoot(ctx).apply { mkdirs() }
         val fl = File(root, flavor).apply { mkdirs() }
+        // launch support: after a client switch (beta -> launch) the OTHER client's old shadow folder is a real folder of links into the
+        // shared one. Its links go first, so the repair below merges only what that client really wrote there (walking a link would
+        // reach, and move, the shared files themselves)
+        WowProduct.values().map { File(root, it.flavorDir) }
+            .filter { it.name != flavor && it.isDirectory && !Files.isSymbolicLink(it.toPath()) }.forEach { removeLinks(it, keep = null) }
         repairShadow(root, fl, gameRoot, flavor)                          // test22: no real game folder stays private (ShadowRepair)
         // test23 (SvKeep, the user's pick): our OWN SavedVariables from the kept copy, before the client starts, when the game has nothing newer
         runCatching {
@@ -207,7 +212,7 @@ object NativeLogin {
     fun clear(ctx: Context? = null) {
         val was = active
         main.removeCallbacks(timeout); main.removeCallbacks(afterRead)
-        val dirs = listOfNotNull(flavorDir, ctx?.let { File(shadowRoot(it), "_classic_beta_") })
+        val dirs = listOfNotNull(flavorDir) + (ctx?.let { c -> WowProduct.values().map { File(shadowRoot(c), it.flavorDir) } }.orEmpty())
         for (d in dirs) File(d, FILE).let { f ->
             if (f.exists() && !Files.isSymbolicLink(f.toPath()) && f.delete())
                 Log.i(TAG, "login.txt deleted" + (if (writtenAt > 0) " after ${System.currentTimeMillis() - writtenAt} ms" else " (left from an earlier run)"))

@@ -16,7 +16,7 @@ object BattleNetSignIn {
 
     fun removeLoginFile(gameRoot: File) {
         try {
-            val file = File(File(gameRoot, WowClientDownloader.FLAVOR_DIR), "login.txt")
+            val file = File(WowClientDownloader.flavorDir(gameRoot), "login.txt")
             if (file.exists()) file.delete()
         } catch (e: Exception) {
             Timber.e(e, "Failed to remove login.txt")

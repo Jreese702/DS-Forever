@@ -44,4 +44,6 @@ tasks.named("preBuild") { dependsOn(syncShared) }
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
+    // off-device tests of the companion's pure parts (launch support: WowProduct, GamePaths)
+    testImplementation(libs.junit)
 }
