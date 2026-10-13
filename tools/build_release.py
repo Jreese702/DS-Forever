@@ -1,4 +1,4 @@
-"""Build and gate the self-contained signed 1.0.0 APK; never install or publish."""
+"""Build and gate the self-contained signed APK (the version in app/build.gradle.kts); never install or publish."""
 import argparse
 import hashlib
 import json
@@ -117,7 +117,8 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     if any(out.iterdir()):
         raise ValueError('Use a new empty output directory; never replace frozen release bytes')
-    token = '1.0.0'
+    gradle = (launcher / 'app/build.gradle.kts').read_text(encoding='utf-8')
+    code = int(re.search(r'versionCode = (\d+)', gradle)[1]); token = re.search(r'versionName = "([^"]+)"', gradle)[1]
     log = out / ("build-" + token + ".log")
     env = dict(os.environ, **settings)
     sdk = Path(env.get('ANDROID_HOME') or env.get('ANDROID_SDK_ROOT') or '')
@@ -143,7 +144,7 @@ def main():
     candidates = list((launcher / "app/build/outputs/apk/modern/release").glob("*.apk"))
     if len(candidates) != 1:
         raise ValueError("Expected one signed modern release APK")
-    apk = out / 'DS-Forever-1.0.0.apk'
+    apk = out / ('DS-Forever-' + token + '.apk')
     shutil.copy2(candidates[0], apk)
     with zipfile.ZipFile(apk) as archive:
         verify_packaged_components(archive, components)
@@ -170,7 +171,7 @@ def main():
             print("RELEASE CALLBACK GATE FAILED; inspect", gate_log)
             return result.returncode
     badging = subprocess.run([str(aapt), 'dump', 'badging', str(apk)], capture_output=True, text=True, check=True).stdout
-    if not re.search(r"package: name='app.dsforever.companion' versionCode='1000' versionName='1.0.0'", badging):
+    if not re.search("package: name='app.dsforever.companion' versionCode='%d' versionName='%s'" % (code, re.escape(token)), badging):
         raise ValueError('Unexpected package or public version')
     (out / 'badging.txt').write_text(badging, encoding='utf-8')
     signer = sdk / 'build-tools/36.1.0/apksigner.bat'
@@ -191,7 +192,7 @@ def main():
               "signature_verified": True, "bundled_components": components,
               "apk_jni_callbacks": "PASS", "apk_callback_audit": "PASS",
               "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
-              "versionName": "1.0.0", "versionCode":1000, "release_repo":"Jreese702/DS-Forever",
+              "versionName": token, "versionCode": code, "release_repo":"Jreese702/DS-Forever",
               "status": "local release-prep artifact; not installed or published"}
     (out / 'SHA256SUMS').write_text(report['sha256'] + '  ' + apk.name + '\n', encoding='ascii')
     (out / (apk.stem + ".json")).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

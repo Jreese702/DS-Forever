@@ -22,7 +22,8 @@ object KitSteps {
         write = { rel, b -> job.writeBytes(rel, b) },
         asset = { p -> runCatching { job.ctx.assets.open(p).use { it.readBytes() } }.getOrNull() },
         progress = { done, total, what -> job.progress(done, total, what) },
-        log = { Log.i(TAG, it) })
+        log = { Log.i(TAG, it) },
+        why = { job.game.lastReadWhy })
 
     /** fonts, the kit's pictures, the map pins, the bags and the paper doll, the Home button (extract_kit / minimap_kit / extract_ui / home_kit) */
     object Kit : ArtHarvest.Step {

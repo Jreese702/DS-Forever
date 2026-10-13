@@ -33,14 +33,14 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             val need = CascNative.takeNeed() ?: break
             if (attempt == 4 || status == CascNative.ENCRYPTED) break
             if (!fetch(root, cache, File(need))) {
-                lastReadWhy = "$label: download failed (${File(need).name})"
+                lastReadWhy = "$label: not on this device, and downloading it failed (${File(need).name}): is the Thor online?"
                 return@synchronized null
             }
         }
         val error = CascNative.lastReadError()
         lastReadWhy = "$label: " + when (status) {
-            CascNative.UNKNOWN -> "not indexed in this game build"
-            CascNative.NOT_PRESENT -> "not available locally or in the download cache"
+            CascNative.UNKNOWN -> "not in this game build's index (does the folder match its .build.info?)"
+            CascNative.NOT_PRESENT -> "not on this device (is the game folder fully copied or downloaded?)"
             CascNative.ENCRYPTED -> "encrypted"
             else -> "read failed (status $status)"
         } + " (CascLib error $error)"
@@ -92,18 +92,30 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             return if (p.isNullOrEmpty()) File(Environment.getExternalStorageDirectory(), "WoW Forever") else File(p)
         }
 
-        /** the active build row of .build.info: (product, build key), or null */
-        fun activeBuild(root: File): Pair<String, String>? {
+        /** the product the launcher runs (its WowClientDownloader.TARGET_PRODUCT) */
+        const val PRODUCT = "wow_classic_beta"
+
+        /**
+         * The .build.info row the game runs, as column -> value, or null: the launcher's own order (WowClientDownloader.activeBuild).
+         * A folder copied from a PC can hold retail too (one shared Data, retail's row first, both Active, Reddit report 2026-10-13):
+         * the first active row would read retail's tables, not the beta's.
+         */
+        fun buildRow(root: File): Map<String, String>? = runCatching {
             val f = File(root, ".build.info")
             if (!f.isFile) return null
-            val lines = f.readLines().filter { it.isNotBlank() }
+            val lines = f.readLines().filter { it.isNotBlank() && !it.startsWith("#") }
             if (lines.size < 2) return null
             val head = lines[0].split('|').map { it.substringBefore('!') }
-            val rows = lines.drop(1).map { it.split('|') }
-            val ai = head.indexOf("Active"); val pi = head.indexOf("Product"); val bi = head.indexOf("Build Key")
-            val row = rows.firstOrNull { ai >= 0 && it.getOrNull(ai) == "1" } ?: rows.first()
-            val product = row.getOrNull(pi)?.takeIf { it.isNotEmpty() } ?: return null
-            return product to (row.getOrNull(bi) ?: "")
+            val rows = lines.drop(1).map { line -> line.split('|').let { cols -> head.indices.associate { head[it] to cols.getOrElse(it) { "" } } } }
+            rows.firstOrNull { it["Product"] == PRODUCT && it["Active"] == "1" } ?: rows.firstOrNull { it["Product"] == PRODUCT }
+                ?: rows.firstOrNull { it["Active"] == "1" } ?: rows.first()
+        }.getOrNull()
+
+        /** the game's build row of .build.info ([buildRow]): (product, build key), or null */
+        fun activeBuild(root: File): Pair<String, String>? {
+            val row = buildRow(root) ?: return null
+            val product = row["Product"]?.takeIf { it.isNotEmpty() } ?: return null
+            return product to (row["Build Key"] ?: "")
         }
 
         /** opens the user's game files, or null with the reason in [lastWhy] */
@@ -152,13 +164,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
         private fun fetch(root: File, cache: File, to: File): Boolean {
             val rel = to.path.removePrefix(cache.path).trimStart('/')
             if (rel == to.path || rel.isEmpty()) return false
-            val cols = runCatching {
-                val lines = File(root, ".build.info").readLines().filter { it.isNotBlank() }
-                val head = lines[0].split('|').map { it.substringBefore('!') }
-                val ai = head.indexOf("Active")
-                val row = lines.drop(1).map { it.split('|') }.let { rows -> rows.firstOrNull { ai >= 0 && it.getOrNull(ai) == "1" } ?: rows.first() }
-                head.indices.associate { head[it] to row.getOrElse(it) { "" } }
-            }.getOrNull() ?: return false
+            val cols = buildRow(root) ?: return false
             val hosts = cols["CDN Hosts"].orEmpty().split(' ').filter { it.isNotBlank() }
             val path = cols["CDN Path"].orEmpty().trim('/')
             to.parentFile?.mkdirs()
@@ -189,13 +195,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
          * .build.info's active Tags ("enUS text?"), else Config.wtf's textLocale, else enUS.
          */
         fun localeMask(root: File): Int {
-            val tags = runCatching {
-                val lines = File(root, ".build.info").readLines().filter { it.isNotBlank() }
-                val head = lines[0].split('|').map { it.substringBefore('!') }
-                val rows = lines.drop(1).map { it.split('|') }
-                val ai = head.indexOf("Active"); val ti = head.indexOf("Tags")
-                (rows.firstOrNull { ai >= 0 && it.getOrNull(ai) == "1" } ?: rows.first()).getOrNull(ti).orEmpty()
-            }.getOrDefault("")
+            val tags = buildRow(root)?.get("Tags").orEmpty()
             Regex("""([a-z]{2}[A-Z]{2}) text\?""").find(tags)?.groupValues?.get(1)?.let { LOCALES[it] }?.let { return it }
             val wtf = runCatching { File(root, "_classic_beta_/WTF/Config.wtf").readText() }.getOrDefault("")
             Regex("""SET textLocale "([a-zA-Z]{4})"""").find(wtf)?.groupValues?.get(1)?.let { LOCALES[it] }?.let { return it }

@@ -26,6 +26,8 @@ class KitBuild(
     private val asset: (String) -> ByteArray?,
     private val progress: (Int, Int, String) -> Unit = { _, _, _ -> },
     private val log: (String) -> Unit = {},
+    /** why the last [read] came back null (GameFiles.lastReadWhy), shown in the error so a player can see the cause */
+    private val why: () -> String? = { null },
 ) {
     /** Missing recipe outputs; required steps call [requireComplete] before accepting their stamp. */
     val missing = ArrayList<String>()
@@ -62,10 +64,12 @@ class KitBuild(
      */
     class Atlas(val members: Map<String, Rect>, val elements: Map<String, Rect>)
 
+    private fun because() = why()?.let { ": $it" }.orEmpty()
+
     fun atlas(db: JSONObject): Atlas {
         fun table(key: String): Db2 {
             val fid = db.optInt(key)
-            val b = read(fid) ?: error("the game's atlas table $key ($fid) did not read")
+            val b = read(fid) ?: error("the game's atlas table $key ($fid) did not read${because()}")
             return Db2(b, key)
         }
         val tex = HashMap<Int, Int>()
@@ -112,7 +116,7 @@ class KitBuild(
         val files = JSONObject()
         val atlas = atlas(recipe.optJSONObject("db2") ?: error("kit.json: db2 missing"))
         // a control that must read, so that a missing piece below means something (extract_kit.py's)
-        if (read(136048) == null) error("the control icon 136048 did not read: the game's files are not readable")
+        if (read(136048) == null) error("the control icon 136048 did not read: the game's files are not readable${because()}")
 
         val fonts = recipe.obj("fonts"); val textures = recipe.obj("textures"); val online = recipe.obj("online")
         val crops = recipe.obj("crops"); val scenes = recipe.obj("scenes"); val byId = recipe.obj("byId")
