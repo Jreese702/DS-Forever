@@ -42,7 +42,9 @@ object PadMapModel {
     data class AttackState(val on: Boolean, val n: Int, val full: Int, val user: Int, val refused: Int, val pending: Boolean,
                            val colOn: Int?, val colOff: Int?,
                            /** m14: the user chose in Settings; false = the default (ON by default, the user 2026-10-01) */
-                           val chosen: Boolean = false)
+                           val chosen: Boolean = false,
+                           /** m40: the add-on keeps the feature paused (no macros until the overlay); the row shows greyed out */
+                           val paused: Boolean = false)
     data class PadSet(val set: Int, val slots: List<Slot>)
     data class MacroCount(val n: Int, val max: Int?)
     /** [body]: the macro's one line ("/targetenemy", m3); [macroIndex]: the game's index of its made macro */
@@ -173,7 +175,8 @@ object PadMapModel {
                 val cols = a.optJSONObject("cols")
                 fun col(k: String) = cols?.let { c -> if (c.has(k)) c.optInt(k, -1).takeIf { it in 0..39 } else null }
                 AttackState(a.optBoolean("on", false), a.optInt("n", 0), a.optInt("full", 0), a.optInt("user", 0), a.optInt("refused", 0),
-                    a.optBoolean("pending", false), col("on"), col("off"), a.optBoolean("chosen", false))
+                    a.optBoolean("pending", false), col("on"), col("off"), a.optBoolean("chosen", false),
+                    a.optBoolean("paused", false))
             },
             faceGiveBackCol = m.optJSONObject("face")?.let { f -> if (f.has("gb")) f.optInt("gb", -1).takeIf { it in 0..39 } else null },
             faceArmedLayer = m.optJSONObject("face")?.optJSONObject("armed")?.let { a ->
@@ -337,7 +340,9 @@ object PadMapModel {
     /** The chooser the controller has open: [list] "spells" / "commands", [row] 1-based, [id] what the row is (a spell id as text,
      *  a command key, "clear"); the app finds the row in ITS list by [id]. */
     /** p11: [list] "spells" / "general" / "extra" (an older addon's "commands" is read as "extra"); [tabs] = the cursor on its tab row */
-    data class Chooser(val list: String, val row: Int, val id: String?, val tabs: Boolean = false)
+    data class Chooser(val list: String, val row: Int, val id: String?, val tabs: Boolean = false,
+                       /** p26 (b-bind-combat-toggle): the chooser puts on the In combat layout (true) or the normal one; null = an older add-on */
+                       val fight: Boolean? = null)
 
     /** A box the controller opened: [kind] "replace" / "make" / "clear" / "full"; [what] a spell id as text or a command key;
      *  [thing] "spell" / "command" / "clear". */
@@ -384,7 +389,8 @@ object PadMapModel {
             pos = c.optInt("pos", 1).coerceIn(1, 8),
             page = c.optInt("page", 1).coerceIn(1, 3),
             chooser = ch?.let { Chooser(it.optString("list", "spells").let { l -> if (l == "commands") "extra" else l },
-                it.optInt("row", 1).coerceAtLeast(1), textOrNull(it, "id"), it.optBoolean("tabs", false)) },
+                it.optInt("row", 1).coerceAtLeast(1), textOrNull(it, "id"), it.optBoolean("tabs", false),
+                if (it.has("fight")) it.optBoolean("fight", false) else null) },
             box = bx?.let { b -> textOrNull(b, "kind")?.let { Box(it, textOrNull(b, "what"), textOrNull(b, "thing")) } },
             swap = c.optString("lay", "swap") != "plain",
             note = textOrNull(c, "note"),

@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p25"                -- bump on every change
+local CV = "p26"                -- bump on every change
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -84,7 +84,11 @@ end
 local function tabIndex(v) for i, t in ipairs(TABS) do if t == v then return i end end return 1 end
 
 -- the set a press is in: a held trigger's (the game's active set) wins over the one chosen by touch or the set buttons
+-- p26 (b-bind-hold-triggers, the user 2026-10-13: "after choosing Bind while holding ZL / ZR, the layer should stay held until the bind
+-- completes, even if the triggers are released"): the set is LATCHED when the chooser opens (tc.lock) and kept while the chooser or its
+-- box is up; releasing the trigger no longer drops the spell onto the base set
 local function shownSet()
+    if tc.lock and (tc.chooser or tc.box) then return tc.lock end
     if type(WC.spellsActiveSet) == "function" then
         local ok, a = pcall(WC.spellsActiveSet)
         if ok and type(a) == "number" and a >= 2 and a <= 4 then return a end
@@ -93,6 +97,7 @@ local function shownSet()
 end
 
 local rows                      -- below: the chooser's rows (the report names the one under the cursor)
+local fightView, fightToggle, flipFight     -- p26 below: the chooser's Normal / In combat switch
 -- p16 the radial's page on show: its 8 slices' spell ids, 0 = empty
 local function radialPage()
     local sr = type(WC.spellRadial) == "table" and WC.spellRadial or nil
@@ -111,7 +116,8 @@ local function report(note)
         local r = rows()[tc.chooser.row]
         -- a mount / an item row is named by its key ("m:<id>" / "i:<id>"): a mount and an item may share a number
         local rid = r and ((r.kind == "mount" or r.kind == "item") and r.key or (r.id or r.key or r.kind)) or nil
-        ch = { list = tc.chooser.list, row = tc.chooser.row, id = rid, tabs = tc.chooser.tabs or nil }
+        ch = { list = tc.chooser.list, row = tc.chooser.row, id = rid, tabs = tc.chooser.tabs or nil,
+               fight = tc.view ~= "radial" and fightView() or nil, ft = fightToggle() or nil }           -- p26
     end
     WC.send(WC.encode({ type = "padtabctl", v = CV, c = {
         on = tc.on or nil, focus = tc.focus, set = tc.set, shown = shownSet(), pos = tc.pos, page = pm and pm.page() or 1,
@@ -138,7 +144,27 @@ local function changeable(slot) return slot and slot.kind ~= "fixed" and not inC
 local function isCombat(slot) return slot and slot.kind == "combat" end
 -- m32: what a combat spell keeps for outside fights (a spell, an item, nothing); anything else it replaces, and Replace names it first
 local function keeps(slot) return slot and (slot.kind == "none" or slot.kind == "spell" or slot.kind == "item") end
-local function onlySpells() return tc.view == "combat" or isCombat(here()) end
+-- p26 (b-bind-combat-toggle, the user 2026-10-13: "while binding, a toggle to choose whether the spell goes on the normal controller layout
+-- or the In combat layout"): the chooser's own choice (tc.chooser.fight, Y or a finger) wins over the tab it was opened from
+fightView = function()
+    if tc.chooser and tc.chooser.fight ~= nil then return tc.chooser.fight end
+    return tc.view == "combat"
+end
+local function onlySpells() return fightView() or isCombat(here()) end
+-- p26 may the chooser switch layouts? Not on the radial, not in a fight, and not on a base X / Y / A (they take a FIGHT spell only)
+fightToggle = function()
+    if not tc.chooser or tc.view == "radial" or inCombat() then return false end
+    local h = here()
+    return not (h and h.kind == "fixed")
+end
+-- p26 Y in the chooser (or the app's own toggle): the other layout; its rows change, so back to the first row (no Extra in a fight)
+flipFight = function()
+    if not fightToggle() then report("no-fight-toggle") return end
+    tc.chooser.fight = not fightView()
+    tc.chooser.row, tc.chooser.tabs = 1, nil
+    if tc.chooser.fight and tc.chooser.list == "extra" then tc.chooser.list = "spells" end
+    report("chooser-fight")
+end
 -- the base set's X / Y / A (PadMap m7, the user 2026-10-01 "Yes, per button"): in the combat view they take a spell for fights (no macro);
 -- B (7) stays the game's Back
 local function isFace(slot) return slot and slot.kind == "fixed" and slot.face == true end
@@ -162,11 +188,11 @@ rows = function()
     local out = {}
     local h = here()
     local spellKind = tc.view == "radial" and "rspell"
-        or tc.view == "combat" and (isFace(h) and "cface" or "combat") or (isCombat(h) and "otherwise" or "spell")
+        or fightView() and (isFace(h) and "cface" or "combat") or (isCombat(h) and "otherwise" or "spell")
     -- the combat view leaves out the spells already on the button (its own spell, its combat and its otherwise spell): the same spell
     -- in and out of combat would only spend a macro
     local skip = {}
-    if tc.view == "combat" and h then
+    if fightView() and h then
         if h.kind == "spell" and h.id then skip[h.id] = true end
         if h.c and h.c.id then skip[h.c.id] = true end
         if h.o and h.o.id and not h.o.item then skip[h.o.id] = true end
@@ -195,7 +221,7 @@ rows = function()
             else out[#out + 1] = { kind = x.kind, id = x.id, key = (x.kind == "mount" and "m:" or "i:") .. tostring(x.id), n = x.n } end
         end
     end
-    if tc.view == "combat" then
+    if fightView() then
         if isCombat(h) then out[#out + 1] = { kind = "uncombat" }
         elseif isFace(h) and h.cf then out[#out + 1] = { kind = "uncface" } end
     elseif filled(here()) then out[#out + 1] = { kind = "clear" } end
@@ -441,12 +467,12 @@ local function pressButtons(key)
         if not h then return true end
         if h.kind == "fixed" then
             if tc.view == "combat" and isFace(h) then
-                if not inCombat() then tc.chooser = { list = "spells", row = 1 }; report("chooser") else refusedCombat() end
+                if not inCombat() then tc.lock = shownSet(); tc.chooser = { list = "spells", row = 1 }; report("chooser") else refusedCombat() end
             else report(tc.view == "combat" and "stays-back" or "locked") end
             return true
         end
         -- p22 (PadMap m43): a fight spell on any button is the overlay now (no macro): the p18 "paused" stop is gone
-        if changeable(h) then tc.chooser = { list = "spells", row = 1 }; report("chooser")
+        if changeable(h) then tc.lock = shownSet(); tc.chooser = { list = "spells", row = 1 }; report("chooser")      -- p26: latched
         elseif inCombat() then refusedCombat() end                      -- Change during a fight: said, and pulsed
         return true
     end
@@ -554,6 +580,7 @@ local function pressChooser(key)
         local thing = list[tc.chooser.row]
         if thing then choose(thing) end
     elseif key == "PAD2" then tc.chooser = nil; report("chooser-closed")
+    elseif key == "PAD4" then flipFight()                   -- p26: Y = Normal / In combat
     end
     return true
 end

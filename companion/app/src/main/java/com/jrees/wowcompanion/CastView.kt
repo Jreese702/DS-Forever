@@ -712,34 +712,6 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
     private val swirlCache = HashMap<String, Bitmap>()
 
-    /**
-     * The consumables radial in miniature (UI Art's approved v4 wheel): a dark disc in a bronze rim, eight spokes, the
-     * chosen slice lit gold (bottom-right, where the game's selection sits in the picture) and the hub with its red swirl.
-     */
-    private fun drawMiniWheel(c: Canvas, cx: Float, cy: Float, r: Float) {
-        pFill.color = Color.rgb(20, 16, 12)
-        c.drawCircle(cx, cy, r, pFill)
-        // the chosen slice
-        pFill.color = Color.argb(150, 200, 160, 70)
-        rect.set(cx - r, cy - r, cx + r, cy + r)
-        c.drawArc(rect, 22.5f, 45f, true, pFill)
-        // the spokes
-        pStroke.color = Theme.bronzeDim; pStroke.strokeWidth = max(1.2f, r * 0.06f)
-        for (i in 0 until 8) {
-            val a = Math.toRadians(22.5 + i * 45.0)
-            val ca = kotlin.math.cos(a).toFloat(); val sa = sin(a).toFloat()
-            c.drawLine(cx + ca * r * 0.13f, cy + sa * r * 0.13f, cx + ca * r, cy + sa * r, pStroke)
-        }
-        // the rim
-        pStroke.color = Theme.bronze; pStroke.strokeWidth = max(1.5f, r * 0.1f)
-        c.drawCircle(cx, cy, r, pStroke)
-        // the hub: a small dark centre in a bronze ring (user 10-06: no red swirl, "make that inner circle way smaller")
-        pFill.color = Color.rgb(46, 34, 22)
-        c.drawCircle(cx, cy, r * 0.13f, pFill)
-        pStroke.color = Theme.bronze; pStroke.strokeWidth = max(1f, r * 0.05f)
-        c.drawCircle(cx, cy, r * 0.13f, pStroke)
-    }
-
     /** the companion mark on a "DS Bar" slot: a dark gold-rimmed disc with two small stacked screens in it */
     private fun drawDsMark(c: Canvas, cx: Float, cy: Float, r: Float) {
         pFill.color = Color.argb(230, 20, 16, 10)
@@ -1757,7 +1729,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
 
         // ---- the D-pad toolbar's pictures (host-driven, PadMap m29): under the ring and the glyph badge
-        if (b != null && b.wheel) drawMiniWheel(c, cx, cy, size * 0.4f)
+        if (b != null && b.wheel) UiKit.miniWheel(c, cx, cy, size * 0.4f)
         b?.kit?.let { name ->
             val bmp = if (b.kitCut) swirlCut(name) else UiKit.tex(name)
             if (bmp != null) {

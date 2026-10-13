@@ -215,9 +215,10 @@ class HomeSettingsSection(context: Context) : View(context) {
         // START ATTACK ON CAST (Spells' m13): Off / On, from the add-on's word (null = an older add-on: no row); its notes under it
         HomeAttackSwitch.state?.let { s ->
             y = row(c, y + GAP, "Start the attack when a spell is cast",
-                listOf("Harmful spells on your controller also start your attack.") + HomeAttackWords.notes(s),
-                listOf("Off", "On"), if (s.on) 1 else 0,
-                listOf({ HomeAttackSwitch.turn(context, false) }, { HomeAttackSwitch.turn(context, true) }))
+                // PAUSED (the add-on's m40; the user 2026-10-13): greyed out, nothing lit, not switchable, "coming back later"
+                if (s.paused) listOf("Coming back later.") else listOf("Harmful spells on your controller also start your attack.") + HomeAttackWords.notes(s),
+                listOf("Off", "On"), if (s.paused) -1 else if (s.on) 1 else 0,
+                if (s.paused) null else listOf({ HomeAttackSwitch.turn(context, false) }, { HomeAttackSwitch.turn(context, true) }))
         }
         // THE DS WOW TOOLBAR (Spells' place / remove; null = an older add-on: no row): Off / On, the CHOICE (want)
         dpadState()?.let { d ->
