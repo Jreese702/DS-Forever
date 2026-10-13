@@ -104,6 +104,10 @@ class InteractView(context: Context) : View(context) {
         style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
     }
     private val pArt = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    /** a quest in progress when the kit has no grey ? of the game's: its gold ? with the colour taken out */
+    private val pQuestGrey = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+    }
 
     /**
      * The preview harness sets this: every action is shown and named, and NOTHING is sent to the
@@ -515,15 +519,20 @@ class InteractView(context: Context) : View(context) {
         when (kind) {
             Kind.GOSSIP -> {
                 val g = d.optJSONObject("gossip")
-                for (q in arr(g, "active")) out.add(Entry("turnin ${q.optInt("id")}", slotOf(q), q, K_ACTIVE))
+                // b-npc-quest-order: ready to turn in, then new, then in progress (the add-on's cursor walks the same order)
+                val (ready, going) = arr(g, "active").partition { it.optBoolean("done", false) }
+                for (q in ready) out.add(Entry("turnin ${q.optInt("id")}", slotOf(q), q, K_ACTIVE))
                 for (q in arr(g, "available")) out.add(Entry("take ${q.optInt("id")}", slotOf(q), q, K_AVAIL))
+                for (q in going) out.add(Entry("turnin ${q.optInt("id")}", slotOf(q), q, K_ACTIVE))
                 for (o in arr(g, "options")) out.add(Entry("opt ${o.optInt("id")}", slotOf(o), o, K_OPTION))
             }
             Kind.QUEST -> {
                 val q = d.optJSONObject("quest")
                 if (q?.optString("stage") == "greeting") {
-                    for (e in arr(q, "active")) out.add(Entry("pick active ${e.optInt("i")}", slotOf(e), e, K_ACTIVE))
+                    val (ready, going) = arr(q, "active").partition { it.optBoolean("done", false) }
+                    for (e in ready) out.add(Entry("pick active ${e.optInt("i")}", slotOf(e), e, K_ACTIVE))
                     for (e in arr(q, "available")) out.add(Entry("pick avail ${e.optInt("i")}", slotOf(e), e, K_AVAIL))
+                    for (e in going) out.add(Entry("pick active ${e.optInt("i")}", slotOf(e), e, K_ACTIVE))
                 } else if (q?.optString("stage") == "complete") {
                     for (c in arr(q.optJSONObject("rewards"), "choices"))
                         out.add(Entry("reward ${q.optInt("id")} ${c.optInt("i")}", slotOf(c), c, K_CHOICE))
@@ -1072,10 +1081,11 @@ class InteractView(context: Context) : View(context) {
             UiKit.pixel.alpha = pArt.alpha
             when (e.kind) {
                 K_AVAIL -> UiKit.tex("icon_quests")?.let { c.drawBitmap(it, null, pic, pArt) }
-                K_ACTIVE -> UiKit.tex("icon_turnin")?.let {
-                    pArt.alpha = if (e.o.optBoolean("done", true)) 255 else 110
-                    c.drawBitmap(it, null, pic, pArt)
-                }
+                // b-npc-quest-icons: the gold ? only when it is ready to turn in; in progress, the game's grey ?
+                // (GossipFrame's IncompleteQuestIcon, fid 365195 in the kit), else the gold one with its colour taken out
+                K_ACTIVE -> if (e.o.optBoolean("done", false)) UiKit.tex("icon_turnin")?.let { c.drawBitmap(it, null, pic, pArt) }
+                    else UiKit.icon(365195)?.let { c.drawBitmap(it, null, pic, pArt) }
+                        ?: UiKit.tex("icon_turnin")?.let { pQuestGrey.alpha = pArt.alpha; c.drawBitmap(it, null, pic, pQuestGrey) }
                 else -> {
                     val id = e.o.optInt("icon", 0)
                     val big = Icons.get(id.takeIf { it > 0 })
