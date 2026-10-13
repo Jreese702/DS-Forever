@@ -1,4 +1,4 @@
-set 115
+set 116
 54dce9fecf3ab25dd3222451925d03c9  WowCompanion/ActionBar.lua
 525db8495e3ccd2e2a6886c7c1afdd18  WowCompanion/Bags.lua
 903d551228fc784f53bbd73cc7471b24  WowCompanion/Chat.lua
@@ -23,7 +23,7 @@ a3db18cc0cc8bccdfff4df1f6c67311e  WowCompanionCalendar/Calendar.lua
 0994a2438154b03832fe7c3fa289b3c4  WowCompanionHub/Hub.lua
 e3867c651d6aa5a38cf1f9098ab583fe  WowCompanionHub/WowCompanionHub.toc
 943ae97b0f4be1070b309158f54abd65  WowCompanionInteract/Dialogs.lua
-a6a6cea42a534e69bf3236a86bbd8bf2  WowCompanionInteract/Interact.lua
+b015a698e997d18fe399011685c5efb0  WowCompanionInteract/Interact.lua
 0adbfa91c572e87d0187d7f346410fdf  WowCompanionInteract/WowCompanionInteract.toc
 2fbd5a1b0595c9b7386a240a62e87884  WowCompanionProfessions/Professions.lua
 b0afb6ee5fecf07709bb39e3397b640a  WowCompanionProfessions/WowCompanionProfessions.toc
