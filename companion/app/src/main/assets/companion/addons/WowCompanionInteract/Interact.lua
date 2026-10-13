@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i108"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i109"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -195,11 +195,16 @@ local function collectQuest()
             }
         end
         for i = 1, TN(function() return GetNumActiveQuests() end) or 0 do
+            local id = TN(function() return GetActiveQuestID(i) end)
+            local r = R(function() return GetActiveTitle(i) end)
+            local done = r and PB(r[2])
+            if done == nil and id then done = TB(function() return C_QuestLog.IsComplete(id) end) end
             q.active[#q.active + 1] = {
                 i = i,
-                id = TN(function() return GetActiveQuestID(i) end),
+                id = id,
                 title = TS(function() return GetActiveTitle(i) end),
                 level = TN(function() return GetActiveLevel(i) end),
+                done = done == true,        -- b-npc-quest-icons: always sent; only true earns the gold ?
             }
         end
         return q
@@ -236,7 +241,7 @@ local function questList(list)
             title = TS(function() return e.title end),
             level = TN(function() return e.questLevel end),
             trivial = TB(function() return e.isTrivial end) or nil,
-            done = TB(function() return e.isComplete end) or nil,
+            done = TB(function() return e.isComplete end) == true,     -- always sent: the app's gold ? only on true
             repeatable = TB(function() return e.repeatable end) or nil,
             important = TB(function() return e.isImportant end) or nil,
         }
@@ -1283,8 +1288,10 @@ function N.build(doc)
         sig = "l|" .. tostring(q.npc and q.npc.name)
         local z = navZone("list", (#q.active + #q.available > 4) and 2 or 1)
         z.major = "col"
-        for _, e in ipairs(q.active) do navAdd(z, "pick active " .. e.i) end
+        -- b-npc-quest-order: ready to turn in, then new, then in progress (the app draws them in this order)
+        for _, e in ipairs(q.active) do if e.done then navAdd(z, "pick active " .. e.i) end end
         for _, e in ipairs(q.available) do navAdd(z, "pick avail " .. e.i) end
+        for _, e in ipairs(q.active) do if not e.done then navAdd(z, "pick active " .. e.i) end end
         N.zones[1] = z
         first = navFirst(z)
     elseif q and q.id then
@@ -1490,8 +1497,10 @@ function N.build(doc)
         local ids = {}
         local z = navZone("list", 1)
         z.major = "col"
-        for _, e in ipairs(g.active) do navAdd(z, "turnin " .. tostring(e.id), e.id ~= nil) end
+        -- b-npc-quest-order: ready to turn in, then new, then in progress (the app draws them in this order)
+        for _, e in ipairs(g.active) do if e.done then navAdd(z, "turnin " .. tostring(e.id), e.id ~= nil) end end
         for _, e in ipairs(g.available) do navAdd(z, "take " .. tostring(e.id), e.id ~= nil) end
+        for _, e in ipairs(g.active) do if not e.done then navAdd(z, "turnin " .. tostring(e.id), e.id ~= nil) end end
         for _, o in ipairs(g.options) do
             navAdd(z, "opt " .. tostring(o.id), o.id ~= nil and (o.status or 0) == 0)
             ids[#ids + 1] = tostring(o.id)
@@ -3204,13 +3213,23 @@ end
 -- Frames whose OWN show animation fades them in after our alpha 0 (the loot window: ScrollingFlatPanelMixin.Open plays the
 -- panel's fade-in; the user saw it on the top screen, 2026-10-01): their alpha 0 is put back at every document, as the
 -- tooltip's is, and once more when the game's fade has run.
+-- b-loot-flash (the board, 2026-10-13: "It should never appear on top"): the fade (ShowAnim, 0.1 s, setToFinalAlpha) drives
+-- the FRAME's own alpha, so between its end and our next document the window stood at 1. Its PIECES (children, regions) are
+-- dimmed as well: what is drawn is the frame's alpha times theirs, so the fade has nothing to show. Put back by N.unhide.
 local STICKY = { LootFrame = true }
+local function dimPieces(fr)
+    pcall(function() for _, ch in ipairs({ fr:GetChildren() }) do dim(ch) end end)
+    pcall(function() for _, rg in ipairs({ fr:GetRegions() }) do dim(rg) end end)
+end
 function N.hide(doc)
     for kind, names in pairs(HIDE) do
         if doc[kind] then
             for _, name in ipairs(names) do
                 dim(_G[name])
-                if STICKY[name] and hidden[_G[name]] ~= nil then pcall(function() _G[name]:SetAlpha(0) end) end
+                if STICKY[name] and hidden[_G[name]] ~= nil then
+                    pcall(function() _G[name]:SetAlpha(0) end)
+                    dimPieces(_G[name])
+                end
                 if hidden[_G[name]] ~= nil then shieldCover(_G[name], "npc") end
             end
         end
