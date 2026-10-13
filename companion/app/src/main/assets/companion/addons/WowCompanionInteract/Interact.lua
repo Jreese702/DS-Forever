@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i110"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i111"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -3806,7 +3806,11 @@ function N.sync(open, doc)
         -- the game's copy goes only once a press has come through the frame (see the header)
         if N.holding and doc and (N.frameSeen or N.trusted) then N.hide(doc) end
         -- a window's own extra keys (the trainer: + = its Settings menu, as the game's footer shows)
-        N.stickSync(true)
+        -- THE LOOT WINDOW LEAVES THE STICKS ALONE (the user on 1.0.2.9-batch2: "looting locks the walking stick, it should remain
+        -- unlocked and walking away should close the window as normal"): the grab's stick input took the left stick too while loot
+        -- held, so the character could not walk off and let the game close the window. With loot (and its Make Space) the sticks
+        -- stay the game's; the right stick's tooltip scroll is the other windows' only.
+        N.stickSync(not (doc and doc.loot))
         if N.holding and not G.holder then
             -- the trainer's Settings menu is on SELECT (the user, 2026-10-09: Start opens the pause wheel from every room and pop-up)
             local want = (doc and doc.trainer) and { PADBACK = true }
