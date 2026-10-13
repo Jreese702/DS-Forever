@@ -92,24 +92,13 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             return if (p.isNullOrEmpty()) File(Environment.getExternalStorageDirectory(), "WoW Forever") else File(p)
         }
 
-        /** the product the launcher runs (its WowClientDownloader.TARGET_PRODUCT) */
-        const val PRODUCT = "wow_classic_beta"
-
         /**
-         * The .build.info row the game runs, as column -> value, or null: the launcher's own order (WowClientDownloader.activeBuild).
-         * A folder copied from a PC can hold retail too (one shared Data, retail's row first, both Active, Reddit report 2026-10-13):
-         * the first active row would read retail's tables, not the beta's.
+         * The .build.info row the game runs, as column -> value, or null: the launcher's own order ([WowProduct.choose], which
+         * WowClientDownloader uses too). A folder copied from a PC can hold retail too (one shared Data, retail's row first, both Active,
+         * Reddit report 2026-10-13): the first active row would read retail's tables, not the game's. The beta (wow_classic_beta) and
+         * the launch client (wowf) are both the game; which one a folder runs is [WowProduct]'s choice.
          */
-        fun buildRow(root: File): Map<String, String>? = runCatching {
-            val f = File(root, ".build.info")
-            if (!f.isFile) return null
-            val lines = f.readLines().filter { it.isNotBlank() && !it.startsWith("#") }
-            if (lines.size < 2) return null
-            val head = lines[0].split('|').map { it.substringBefore('!') }
-            val rows = lines.drop(1).map { line -> line.split('|').let { cols -> head.indices.associate { head[it] to cols.getOrElse(it) { "" } } } }
-            rows.firstOrNull { it["Product"] == PRODUCT && it["Active"] == "1" } ?: rows.firstOrNull { it["Product"] == PRODUCT }
-                ?: rows.firstOrNull { it["Active"] == "1" } ?: rows.first()
-        }.getOrNull()
+        fun buildRow(root: File): Map<String, String>? = runCatching { WowProduct.choose(root)?.row }.getOrNull()
 
         /** the game's build row of .build.info ([buildRow]): (product, build key), or null */
         fun activeBuild(root: File): Pair<String, String>? {
@@ -208,7 +197,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
         fun localeMask(root: File): Int {
             val tags = buildRow(root)?.get("Tags").orEmpty()
             Regex("""([a-z]{2}[A-Z]{2}) text\?""").find(tags)?.groupValues?.get(1)?.let { LOCALES[it] }?.let { return it }
-            val wtf = runCatching { File(root, "_classic_beta_/WTF/Config.wtf").readText() }.getOrDefault("")
+            val wtf = runCatching { File(WowProduct.flavorDir(root), "WTF/Config.wtf").readText() }.getOrDefault("")
             Regex("""SET textLocale "([a-zA-Z]{4})"""").find(wtf)?.groupValues?.get(1)?.let { LOCALES[it] }?.let { return it }
             return 0x2
         }

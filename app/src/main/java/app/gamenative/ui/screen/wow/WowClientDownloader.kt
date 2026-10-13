@@ -11,16 +11,17 @@ import java.security.DigestOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import java.util.zip.Inflater
+import com.jrees.wowcompanion.WowProduct
 import timber.log.Timber
 
+/**
+ * The game client's updater. DS Forever launch support (2026-10-13): the product, its flavor folder, exe and patch URL are no longer
+ * the beta's constants but the game folder's own ([WowProduct]: the beta wow_classic_beta or the launch client wowf, from .build.info).
+ */
 object WowClientDownloader {
-    const val FLAVOR_DIR = "_classic_beta_"
-    const val EXE_NAME = "WowB-ARM64.exe"
-    const val TARGET_PRODUCT = "wow_classic_beta"
-    const val BUILD_INFO = ".build.info"
+    const val BUILD_INFO = WowProduct.BUILD_INFO
     private const val PLATFORM_ARCH = "arm64"
     private const val EXCLUDED_ARCH = "x86_64"
-    private const val PATCH_URL = "http://us.patch.battle.net:1119/$TARGET_PRODUCT"
     private const val DEFAULT_CDN_PATH = "tpr/wow"
     private val DEFAULT_CDN_HOSTS = listOf("level3.blizzard.com", "us.cdn.blizzard.com")
 
@@ -40,19 +41,31 @@ object WowClientDownloader {
         val remoteCdnConfig: String = "",
         val remoteCdnHosts: List<String> = emptyList(),
         val remoteCdnPath: String = DEFAULT_CDN_PATH,
+        /** the client this check was for (its .build.info row is the one [updateGame] rewrites) */
+        val product: WowProduct = WowProduct.BETA,
     )
 
+    /** the client the game folder [gameRoot] runs ([WowProduct.of]) */
+    fun product(gameRoot: File): WowProduct = WowProduct.of(gameRoot)
+
+    /** its flavor folder (Interface, WTF, Logs, the exe) */
+    fun flavorDir(gameRoot: File): File = File(gameRoot, product(gameRoot).flavorDir)
+
+    /** its ARM64 exe */
+    fun exe(gameRoot: File): File = product(gameRoot).exe(gameRoot)
+
+    /** the row the game runs of the game folder holding [buildInfo] */
     fun readBuildInfo(buildInfo: File): Map<String, String>? =
-        runCatching { activeBuild(buildInfo) }.getOrNull()
+        runCatching { activeBuild(buildInfo.absoluteFile.parentFile).row }.getOrNull()
 
     fun checkVersion(gameRoot: File): VersionCheckResult? {
-        val row = runCatching { activeBuild(File(gameRoot, BUILD_INFO)) }.getOrElse {
+        val choice = runCatching { activeBuild(gameRoot) }.getOrElse {
             Timber.w(it, "checkVersion: no readable $BUILD_INFO in $gameRoot")
             return null
         }
-        val product = row["Product"]?.takeIf { it.isNotBlank() } ?: TARGET_PRODUCT
-        if (product != TARGET_PRODUCT) {
-            Timber.w("checkVersion: wrong product '$product', expected '$TARGET_PRODUCT'")
+        val row = choice.row
+        val product = choice.product ?: run {
+            Timber.w("checkVersion: wrong product '${row["Product"]}', expected one of ${WowProduct.values().map { it.code }}")
             return null
         }
         val localVersion = row["Version"] ?: run {
@@ -64,14 +77,14 @@ object WowClientDownloader {
             return null
         }
 
-        val versions = runCatching { fetchText("$PATCH_URL/versions") }.getOrElse {
+        val versions = runCatching { fetchText("${product.patchUrl}/versions") }.getOrElse {
             Timber.w(it, "checkVersion: http call failed")
             return null
         } ?: run {
             Timber.w("checkVersion: response body is null or unsuccessful")
             return null
         }
-        val remoteRow = parsePsv(versions).firstOrNull()
+        val remoteRow = remoteRow(parsePsv(versions), "Region", row["Branch"])
             ?: run {
                 Timber.w("checkVersion: no remote row in $versions")
                 return null
@@ -83,11 +96,11 @@ object WowClientDownloader {
             }
         val remoteBuildKey = remoteRow["BuildConfig"].orEmpty()
 
-        val cdns = runCatching { fetchText("$PATCH_URL/cdns") }.getOrNull()?.let(::parsePsv).orEmpty()
-        val cdnsRow = cdns.firstOrNull { it["Name"] == "us" } ?: cdns.firstOrNull()
+        val cdns = runCatching { fetchText("${product.patchUrl}/cdns") }.getOrNull()?.let(::parsePsv).orEmpty()
+        val cdnsRow = remoteRow(cdns, "Name", row["Branch"])
 
         val isOutdated = localVersion != remoteVersion || (remoteBuildKey.isNotBlank() && localBuildKey != remoteBuildKey)
-        Timber.i("checkVersion: localVersion=$localVersion, remoteVersion=$remoteVersion, isOutdated=$isOutdated")
+        Timber.i("checkVersion: ${product.code} localVersion=$localVersion, remoteVersion=$remoteVersion, isOutdated=$isOutdated")
         return VersionCheckResult(
             localVersion = localVersion,
             remoteVersion = remoteVersion,
@@ -96,8 +109,14 @@ object WowClientDownloader {
             remoteCdnConfig = remoteRow["CDNConfig"].orEmpty(),
             remoteCdnHosts = (cdnsRow?.get("Hosts") ?: row["CDN Hosts"])?.let(::splitHosts) ?: DEFAULT_CDN_HOSTS,
             remoteCdnPath = cdnsRow?.get("Path") ?: row["CDN Path"] ?: DEFAULT_CDN_PATH,
+            product = product,
         )
     }
+
+    /** the patch server's row for the install's region ([key] = its region column; .build.info's Branch), else us's, else the first */
+    internal fun remoteRow(rows: List<Map<String, String>>, key: String, region: String?): Map<String, String>? =
+        rows.firstOrNull { !region.isNullOrBlank() && it[key].equals(region, ignoreCase = true) } ?: rows.firstOrNull { it[key] == "us" }
+            ?: rows.firstOrNull()
 
     fun updateGame(gameRoot: File, target: VersionCheckResult, onStatus: (String) -> Unit) {
         val cdn = Cdn(
@@ -114,6 +133,7 @@ object WowClientDownloader {
         val cdnConfig = cdnConfigRaw?.let { parseConfig(String(it)) }
         syncClient(
             gameRoot = gameRoot,
+            product = target.product,
             cdn = cdn,
             buildConfig = parseConfig(String(buildConfigRaw)),
             archives = lazy { cdnConfig?.let { ArchiveLocator(cdn, gameRoot, it.getValue("archives")) } },
@@ -126,8 +146,11 @@ object WowClientDownloader {
     }
 
     fun download(gameRoot: File, onStatus: (String) -> Unit) {
-        val row = activeBuild(File(gameRoot, BUILD_INFO))
-        check(row["Product"] == TARGET_PRODUCT) { "Incompatible game product: ${row["Product"]}. Expected $TARGET_PRODUCT." }
+        val choice = activeBuild(gameRoot)
+        val row = choice.row
+        val product = checkNotNull(choice.product) {
+            "Incompatible game product: ${row["Product"]}. Expected ${WowProduct.values().joinToString(" or ") { it.code }}."
+        }
         val latest = checkVersion(gameRoot)
         if (latest != null && latest.remoteBuildConfig.isNotBlank()) return updateGame(gameRoot, latest, onStatus)
 
@@ -135,6 +158,7 @@ object WowClientDownloader {
         onStatus("Reading build ${row["Version"].orEmpty()} manifest...")
         syncClient(
             gameRoot = gameRoot,
+            product = product,
             cdn = cdn,
             buildConfig = parseConfig(String(cdn.require("config", row.getValue("Build Key")))),
             archives = lazy {
@@ -146,6 +170,7 @@ object WowClientDownloader {
 
     private fun syncClient(
         gameRoot: File,
+        product: WowProduct,
         cdn: Cdn,
         buildConfig: Map<String, List<String>>,
         archives: Lazy<ArchiveLocator?>,
@@ -154,7 +179,7 @@ object WowClientDownloader {
         val files = parseInstall(blteDecode(cdn.require("data", buildConfig.getValue("install")[1]))).filter { it.isClientBinary() }
         check(files.isNotEmpty()) { "No Windows ARM64 client files in this build" }
 
-        val clientDir = File(gameRoot, FLAVOR_DIR)
+        val clientDir = File(gameRoot, product.flavorDir)
         val pending = files.filter { md5Hex(File(clientDir, it.relativePath)) != it.ckey }
         if (pending.isEmpty()) return
 
@@ -218,7 +243,7 @@ object WowClientDownloader {
         val updated = lines.mapIndexed { idx, line ->
             if (idx == 0 || line.isBlank()) return@mapIndexed line
             val cols = line.split("|").toMutableList()
-            val matchesProduct = productIdx < 0 || cols.getOrNull(productIdx) == TARGET_PRODUCT
+            val matchesProduct = productIdx < 0 || cols.getOrNull(productIdx) == target.product.code
             val isActive = activeIdx < 0 || cols.getOrNull(activeIdx) == "1"
             if (matchesProduct && isActive) updates.forEach { (i, value) -> if (i in cols.indices) cols[i] = value }
             cols.joinToString("|")
@@ -382,14 +407,10 @@ object WowClientDownloader {
             if (response.isSuccessful) response.body?.string() else null
         }
 
-    private fun activeBuild(buildInfo: File): Map<String, String> {
-        check(buildInfo.isFile) { "Missing $BUILD_INFO in ${buildInfo.parent}" }
-        val rows = parsePsv(buildInfo.readText())
-        return rows.firstOrNull { it["Product"] == TARGET_PRODUCT && it["Active"] == "1" }
-            ?: rows.firstOrNull { it["Product"] == TARGET_PRODUCT }
-            ?: rows.firstOrNull { it["Active"] == "1" }
-            ?: rows.firstOrNull()
-            ?: throw IllegalStateException("No build in $BUILD_INFO")
+    /** the row the game runs and its client: [WowProduct.choose], the one order the launcher and the companion share */
+    private fun activeBuild(gameRoot: File): WowProduct.Choice {
+        check(File(gameRoot, BUILD_INFO).isFile) { "Missing $BUILD_INFO in $gameRoot" }
+        return WowProduct.choose(gameRoot) ?: throw IllegalStateException("No build in $BUILD_INFO")
     }
 
     private fun parsePsv(text: String): List<Map<String, String>> {

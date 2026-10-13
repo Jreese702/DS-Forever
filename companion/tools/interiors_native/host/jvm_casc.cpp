@@ -13,14 +13,17 @@ JNIEXPORT jlong JNICALL Java_com_jrees_wowcompanion_HostCasc_open(JNIEnv* env, j
     const jchar* chars = env->GetStringChars(jpath, nullptr);
     std::wstring path(reinterpret_cast<const wchar_t*>(chars), env->GetStringLength(jpath));
     env->ReleaseStringChars(jpath, chars);
-    CASC_OPEN_STORAGE_ARGS args{};
-    args.Size = sizeof(args);
-    args.szLocalPath = path.c_str();
-    args.szCodeName = L"wow_classic_beta";
-    args.dwLocaleMask = 2;
-    HANDLE h = nullptr;
-    if (!CascOpenStorageEx(nullptr, &args, false, &h)) return 0;
-    return reinterpret_cast<jlong>(h);
+    // the launch client (wowf), else the beta (wow_classic_beta): whichever the folder's .build.info holds
+    for (const wchar_t* code : {L"wowf", L"wow_classic_beta"}) {
+        CASC_OPEN_STORAGE_ARGS args{};
+        args.Size = sizeof(args);
+        args.szLocalPath = path.c_str();
+        args.szCodeName = code;
+        args.dwLocaleMask = 2;
+        HANDLE h = nullptr;
+        if (CascOpenStorageEx(nullptr, &args, false, &h)) return reinterpret_cast<jlong>(h);
+    }
+    return 0;
 }
 
 JNIEXPORT jbyteArray JNICALL Java_com_jrees_wowcompanion_HostCasc_read(JNIEnv* env, jclass, jlong jh, jint fid) {

@@ -56,13 +56,18 @@ void operator delete[](void* ptr, size_t) noexcept { operator delete(ptr); }
 
 namespace {
 
+struct LocalBuild { std::string product, version; };
+LocalBuild localBuild(const std::wstring& wow);
+
 struct Casc {
     HANDLE h = nullptr;
     explicit Casc(const std::wstring& path) {
+        const std::string product = localBuild(path).product;
+        const std::wstring code(product.begin(), product.end());
         CASC_OPEN_STORAGE_ARGS args{};
         args.Size = sizeof(args);
         args.szLocalPath = path.c_str();
-        args.szCodeName = L"wow_classic_beta";
+        args.szCodeName = code.c_str();
         args.dwLocaleMask = 2;
         if (!CascOpenStorageEx(nullptr, &args, false, &h))
             throw std::runtime_error("CascOpenStorageEx(local) failed, error " + std::to_string(GetLastError()));
@@ -83,7 +88,12 @@ struct Casc {
     }
 };
 
-std::string activeBuild(const std::wstring& wow) {
+// The game's active local build: the launch client (wowf) or the beta (wow_classic_beta), the app's WowProduct pair. DSF_PRODUCT
+// picks one when a folder holds both; otherwise the launch client first.
+LocalBuild localBuild(const std::wstring& wow) {
+    const char* want = std::getenv("DSF_PRODUCT");
+    const std::vector<std::string> order = want && *want ? std::vector<std::string>{want}
+                                                         : std::vector<std::string>{"wowf", "wow_classic_beta"};
     std::ifstream in(std::wstring(wow + L"/.build.info"));
     std::string header, line;
     std::getline(in, header);
@@ -95,14 +105,19 @@ std::string activeBuild(const std::wstring& wow) {
         return out;
     };
     const auto fields = split(header);
+    std::map<std::string, std::string> active;  // product -> version
     while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
         const auto row = split(line);
         std::map<std::string, std::string> r;
         for (size_t i = 0; i < fields.size() && i < row.size(); ++i) r[fields[i]] = row[i];
-        if (r["Product"] == "wow_classic_beta" && r["Active"] == "1") return r["Version"];
+        if (r["Active"] == "1" && !active.count(r["Product"])) active[r["Product"]] = r["Version"];
     }
-    throw std::runtime_error("no active local wow_classic_beta build; online mode is deliberately unsupported");
+    for (const std::string& p : order) if (active.count(p)) return {p, active[p]};
+    throw std::runtime_error("no active local wowf / wow_classic_beta build; online mode is deliberately unsupported");
 }
+
+std::string activeBuild(const std::wstring& wow) { return localBuild(wow).version; }
 
 size_t peakWorkingSet() {
     PROCESS_MEMORY_COUNTERS c{};
