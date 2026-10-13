@@ -64,6 +64,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -77,6 +78,8 @@ object WoWLauncherState {
 
 private const val CONTAINER_ID = "wow_forever"
 private const val READY_STATUS = "Ready to launch"
+// how long the auto-launch waits for the app's own update check before it goes on without its answer
+private const val APP_CHECK_WAIT_MS = 5_000L
 
 @Composable
 fun WoWForeverScreen(
@@ -106,6 +109,8 @@ fun WoWForeverScreen(
     var loginSaved by remember { mutableStateOf(com.jrees.wowcompanion.HomeLoginStore.has(context)) }
     var loginSkipped by remember { mutableStateOf(false) }
     var appUpdateLater by remember { mutableStateOf(false) }
+    // an auto-start / restart / after-game-update launch held by the "DS Forever vX is out" pop-up: "Later" lets it go on
+    var launchAfterAppChoice by remember { mutableStateOf(false) }
     var addonsInstalled by remember { mutableStateOf(false) }
     /** a required-art failure's reason: the bottom's "Try again" (nothing retries by itself after a failure) */
     var artFailed by remember { mutableStateOf<String?>(null) }
@@ -222,6 +227,14 @@ fun WoWForeverScreen(
         }
         if (isLaunching || isUpdating || (isHarvesting && !artReady) || files.isWrongGame) {
             refused("launching=$isLaunching updating=$isUpdating harvesting=$isHarvesting wrongGame=${files.isWrongGame}"); return
+        }
+        // the "DS Forever vX is out" pop-up waits for Update or Later before any launch (board b-update-blocks-play). The state
+        // itself, not the composition's appUpdate val: the auto-launch calls the first composition's launchGame
+        if (appCheck is com.jrees.wowcompanion.AppUpdate.Check.Available && !appUpdateLater) {
+            refused("app update pop-up waits for Update or Later")
+            launchAfterAppChoice = true
+            PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
+            return
         }
         if (!artReady) {
             refused("art not ready")
@@ -446,10 +459,11 @@ fun WoWForeverScreen(
                 checkAppUpdate()
             }
             else -> {
-                // the app's update check never blocks (the user: "At startup, never blocks"): not awaited, and an update is a
-                // bottom-screen choice after Play, never a reason to stop the auto-launch
-                checkAppUpdate()
+                // the app's update check runs beside the client check; the auto-launch waits for it a few seconds at most (no
+                // network = no wait past that). A newer version holds the launch at its pop-up until Update or Later (launchGame)
+                val appJob = scope.launch { fetchAppUpdate() }
                 fetchVersionStatus()
+                withTimeoutOrNull(APP_CHECK_WAIT_MS) { appJob.join() }
                 Timber.i("WoWForeverScreen LaunchedEffect: isOutdated=${versionStatus?.isOutdated}")
                 WoWLauncherState.shouldAutoLaunch = false
                 if (versionStatus?.isOutdated == true) {
@@ -507,7 +521,10 @@ fun WoWForeverScreen(
             com.jrees.wowcompanion.SetupFlow.Action.RETRY_ART -> harvestArt(retry = true)
             com.jrees.wowcompanion.SetupFlow.Action.UPDATE_GAME -> performUpdate()
             com.jrees.wowcompanion.SetupFlow.Action.UPDATE_APP -> performAppUpdate()
-            com.jrees.wowcompanion.SetupFlow.Action.LATER_APP -> appUpdateLater = true
+            com.jrees.wowcompanion.SetupFlow.Action.LATER_APP -> {
+                appUpdateLater = true
+                if (launchAfterAppChoice) { launchAfterAppChoice = false; launchGame() }
+            }
             com.jrees.wowcompanion.SetupFlow.Action.PLAY -> launchGame()
             com.jrees.wowcompanion.SetupFlow.Action.RELAUNCH -> launchGame(by = "restart")
             else -> Unit          // the companion's own (the login form, the sign-in pop-ups)

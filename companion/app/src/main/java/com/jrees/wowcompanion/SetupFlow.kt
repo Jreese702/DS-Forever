@@ -74,8 +74,9 @@ object SetupFlow {
     enum class Mark { OK, WAIT, BAD, OPTIONAL }
     data class Check(val label: String, val mark: Mark)
 
+    /** the "DS Forever vX is out" pop-up holds Play until Update or Later (board b-update-blocks-play) */
     fun canPlay(i: Inputs): Boolean =
-        i.folderFound && !i.wrongGame && i.storage && i.art == Art.READY && i.busy == null && !i.gameRunning
+        i.folderFound && !i.wrongGame && i.storage && i.art == Art.READY && i.busy == null && !i.gameRunning && i.appUpdate == null
 
     fun screen(i: Inputs): Screen {
         if (i.gameRunning) return Screen(signInPrompt(i), null, "")
@@ -92,11 +93,12 @@ object SetupFlow {
                 listOf(Button("Open settings", Action.GRANT_STORAGE)))
             i.art == Art.FAILED -> Prompt("art", "The game art couldn't be built",
                 i.artWhy.ifEmpty { "The game files could not be read." }, listOf(Button("Try again", Action.RETRY_ART)))
+            // before the client's pop-up: its "Play anyway" waits for this choice (canPlay)
+            i.appUpdate != null -> Prompt("app", "DS Forever ${i.appUpdate} is out", "Update now, or later from this screen.",
+                listOf(Button("Update", Action.UPDATE_APP, i.busy == null), Button("Later", Action.LATER_APP)))
             i.gameOutdated != null -> Prompt("client", "Game update needed",
                 "The servers need build ${i.gameOutdated}. Signing in may fail with these files.",
                 listOf(Button("Update", Action.UPDATE_GAME, i.busy == null), Button("Play anyway", Action.PLAY, canPlay(i))))
-            i.appUpdate != null -> Prompt("app", "DS Forever ${i.appUpdate} is out", "Update now, or later from this screen.",
-                listOf(Button("Update", Action.UPDATE_APP, i.busy == null), Button("Later", Action.LATER_APP)))
             !i.loginSaved && !i.loginSkipped -> Prompt("login", "Your Battle.net login",
                 "Save it once and the game signs you in by itself. It stays encrypted on this device.",
                 listOf(Button("Enter login", Action.ENTER_LOGIN), Button("Play without", Action.SKIP_LOGIN)))

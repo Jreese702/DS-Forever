@@ -36,7 +36,7 @@ object AppUpdater {
 
     private fun dir(context: Context) = File(context.cacheDir, "updates")
 
-    /** the startup check (IO); never throws, never blocks anything */
+    /** the startup check (IO); never throws. The auto-launch waits for it a few seconds at most (WoWForeverScreen) */
     suspend fun check(): AppUpdate.Check = withContext(Dispatchers.IO) {
         AppUpdate.check(repo, BuildConfig.VERSION_NAME, userAgent, ::log)
     }
