@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i109"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i110"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -693,6 +693,13 @@ local LOOT_STEP = 0.15      -- Loot All: one slot, then the next this much later
 -- (the user's exception, as the loot's: one hold = the delete + the retry).
 LOOT.ms = nil           -- "quest" while Make Space serves the quest window (else the loot window)
 LOOT.retry = nil        -- the quest action to run again after the delete: { cmd, a, c, name, icon, q }
+-- r-loot-on-top (a player's request, 2026-10-13): Home > Settings "Loot window: Top screen". The game's own loot window then stays
+-- the game's: this file never collects it, never takes the controller for it and never touches LootFrame's alpha (isOpen("loot")
+-- answers false, so every loot path here is off). Kept in WowCompanionDB.lootTop, which the app keeps across updates (SvKeep,
+-- PadMap m51). Default (nil / false) = the bottom screen's pop-up, as before.
+function LOOT.top()
+    return type(WowCompanionDB) == "table" and WowCompanionDB.lootTop == true
+end
 -- is Make Space up, for whichever window it serves
 function LOOT.on()
     if not LOOT.full then return false end
@@ -931,6 +938,7 @@ local function frameShown(slot)
 end
 
 local function isOpen(slot)
+    if slot == "loot" and LOOT.top() then return false end      -- r-loot-on-top: the game keeps its loot window
     local byEvent = shownAt[slot] > hiddenAt[slot]
     local vis = frameShown(slot)
     if vis and byEvent then frameSeen[slot] = true end
@@ -1040,9 +1048,12 @@ local function assignSlots(doc)
     end
     -- capture v5: the bar's Select listener, switched on / off by the app (Home's bar selector)
     local selOn, selOff = slot("iact", "sel on"), slot("iact", "sel off")
+    -- r-loot-on-top: Home > Settings' switch (HomeLootSwitch); `top` is the add-on's word, the row shows it
+    local ltOn, ltOff = slot("iact", "loottop on"), slot("iact", "loottop off")
     if GB and trustCol then
         doc.proof = { gb = GB, cv = CAPV, boot = BOOT, col = trustCol }
         if selOn and selOff then doc.proof.selc = { on = selOn, off = selOff } end
+        if ltOn and ltOff then doc.proof.lootc = { on = ltOn, off = ltOff, top = LOOT.top() } end
     end
     if g then
         any = true
@@ -1815,7 +1826,7 @@ local ON = {
     UI_ERROR_MESSAGE = function(_, msg)
         -- the game's "Inventory is full" while its loot window is open: the make-space screen (user: "By itself")
         local full = msg ~= nil and msg == TS(function() return ERR_INV_FULL end)
-        if full and shownAt.loot > hiddenAt.loot then
+        if full and shownAt.loot > hiddenAt.loot and not LOOT.top() then
             LOOT.full, LOOT.ms = true, nil
             LOOT.want = LOOT.try            -- the item that did not fit (none known: the first item left, at the delete)
         elseif full and isOpen("quest") and N.qtry and (TN(function() return GetTime() end) or 0) - N.qtry.at <= 2 then
@@ -2047,6 +2058,22 @@ end
 function ACT.trust()
     if N.distrust then return false, "not trusted: " .. tostring(N.distrust) end
     N.trusted = true
+    return true
+end
+
+-- /wci loottop on|off   r-loot-on-top (Home > Settings): the game keeps its own loot window on the top screen. Turned on while our
+-- loot pop-up is up, every alpha we set goes back at once (the game's window shows again); the next document lets the controller go.
+function ACT.loottop(a)
+    if a ~= "on" and a ~= "off" then return false, "on or off" end
+    if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end      -- the table is everyone's: only the one key is ours
+    local was = LOOT.top()
+    WowCompanionDB.lootTop = (a == "on")
+    if WowCompanionDB.lootTop and not was then
+        LOOT.full, LOOT.bind, LOOT.running, LOOT.hold, LOOT.rare = false, false, false, nil, nil
+        if shownAt.loot > hiddenAt.loot then N.unhide() end
+    end
+    N.n = N.n + 1
+    emitSoon()
     return true
 end
 
@@ -3742,6 +3769,7 @@ end
 -- document has built the highlight for THIS window, presses are swallowed (N.stale).
 function N.early(slot)
     if WINDOWS[slot] == false then return end      -- not switched on yet: the game keeps its window
+    if slot == "loot" and LOOT.top() then return end   -- r-loot-on-top: the game keeps its loot window
     -- an NPC window opens: it comes first, whoever is in charge of it. The guest lets go.
     if G.holder then
         guestLost("npc")
