@@ -792,7 +792,7 @@ class HomeView(
             from[Part.CHAT_FULL] = RectF(chatFullBox!!)
             if (!isChat) from[Part.CHAT] = RectF(chatPaneBox!!)    // the pane the box lands on fades in where it is (no zoom)
             now[Part.CHAT_FULL] = RectF(chatFullBox)              // its one layout, at the full size, before the first frame
-            requestLayout()
+            placeFrame()
             chatSlot.clipToOutline = true
             chatGlide(if (isChat) 0f else 1f, chatPaneBox!!, chatFullBox)
             views[Part.CHAT_FULL]?.alpha = if (isChat) 0f else 1f
