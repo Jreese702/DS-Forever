@@ -252,7 +252,9 @@ class TalentsView(
                 y = text(c, "Next rank:", x0, y, x1 - x0, UiKit.bodyPaint(23f, Theme.gold)) + 4f
                 y = text(c, it, x0, y, x1 - x0, UiKit.bodyPaint(24f)) + 18f
             }
-            for (need in d.needs) y = text(c, need.text, x0, y, x1 - x0, UiKit.bodyPaint(21f, Theme.dim)) + 6f
+            // an unmet requirement in the game's red (its talent tooltip's), a met one dim
+            for (need in d.needs) y = text(c, need.text, x0, y, x1 - x0,
+                UiKit.bodyPaint(21f, if (need.met) Theme.dim else Color.rgb(255, 32, 32))) + 6f
         }
         UiKit.button(c, addRect(), "Add Point", glyph(8), press.state("add", canAdd()))
         UiKit.button(c, removeRect(), "Remove", glyph(6), press.state("remove", canRemove()))
