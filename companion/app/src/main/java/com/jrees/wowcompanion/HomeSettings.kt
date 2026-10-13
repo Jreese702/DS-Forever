@@ -152,6 +152,49 @@ object HomeAttackSwitch {
 }
 
 /**
+ * THE LOOT WINDOW ON THE TOP SCREEN (r-loot-on-top, a player's request 2026-10-13): Home > Settings' "Loot window" row. The CHOICE is
+ * the add-on's (WowCompanionInteract: WowCompanionDB.lootTop, kept across updates by SvKeep), so it holds from the login on: the
+ * state comes from every interact document (`proof.lootc`: on / off cells and `top`; absent = an older add-on: no row), and a press
+ * is one tap on the `iact` row's on / off cell, tried once more if the add-on has not said so a moment later (idempotent).
+ */
+object HomeLootSwitch {
+    data class State(val top: Boolean, val colOn: Int, val colOff: Int)
+    var state: State? = null
+        private set
+    /** the pad of the latest interact document that carried one (else Home's quests pad: the same shared grid) */
+    private var pad: JSONObject? = null
+    private val listeners = ArrayList<() -> Unit>()
+    private val main = Handler(Looper.getMainLooper())
+
+    fun onChange(l: () -> Unit) { listeners.add(l) }
+
+    /** every interact document (CompanionHost): the row follows the add-on's word */
+    fun note(msg: JSONObject) {
+        msg.optJSONObject("pad")?.let { pad = it }
+        val c = msg.optJSONObject("proof")?.optJSONObject("lootc") ?: return
+        val s = State(c.optBoolean("top", false), c.optInt("on", -1), c.optInt("off", -1))
+        if (s.colOn < 0 || s.colOff < 0 || s == state) return
+        state = s
+        for (l in listeners) l()
+    }
+
+    /** the player picked the TOP screen ([top]) or the bottom: ONE tap; true = sent */
+    fun turn(ctx: Context, top: Boolean): Boolean {
+        val sent = tap(ctx, top)
+        main.removeCallbacksAndMessages(null)
+        if (sent) main.postDelayed({ val s = state; if (s != null && s.top != top) tap(ctx, top) }, RETRY_MS)
+        return sent
+    }
+
+    private fun tap(ctx: Context, top: Boolean): Boolean {
+        val s = state ?: return false
+        return TapBridge.tap(ctx, pad ?: HomeAttackSwitch.pad, "iact", if (top) s.colOn else s.colOff) { }
+    }
+
+    private const val RETRY_MS = 450L
+}
+
+/**
  * The Settings room's HOME section: one row, "Controller on Home", with its two choices in view as the game's red buttons
  * (UiKit.choice, the chosen one lit). Stacked under the game-UI section by settingsRoom (GameUiSection.kt). Touches act on
  * RELEASE and only when the finger has not moved (the page scrolls).
@@ -181,6 +224,7 @@ class HomeSettingsSection(context: Context) : View(context) {
         HomeSettings.onChange { post { invalidate() } }
         // the attack switch appears / its words change: the section's height may change too
         HomeAttackSwitch.onChange { post { requestLayout(); invalidate() } }
+        HomeLootSwitch.onChange { post { requestLayout(); invalidate() } }
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
@@ -218,6 +262,14 @@ class HomeSettingsSection(context: Context) : View(context) {
                 listOf("Harmful spells on your controller also start your attack.") + HomeAttackWords.notes(s),
                 listOf("Off", "On"), if (s.on) 1 else 0,
                 listOf({ HomeAttackSwitch.turn(context, false) }, { HomeAttackSwitch.turn(context, true) }))
+        }
+        // THE LOOT WINDOW (r-loot-on-top): the bottom screen's pop-up (default) or the game's own on the top screen; the add-on's word
+        // (null = an older add-on: no row)
+        HomeLootSwitch.state?.let { s ->
+            y = row(c, y + GAP, "Loot window",
+                listOf(if (s.top) "The game's own loot window, on the top screen." else "The loot pop-up on this screen."),
+                listOf("Bottom", "Top screen"), if (s.top) 1 else 0,
+                listOf({ if (s.top) HomeLootSwitch.turn(context, false) }, { if (!s.top) HomeLootSwitch.turn(context, true) }))
         }
         // THE DS WOW TOOLBAR (Spells' place / remove; null = an older add-on: no row): Off / On, the CHOICE (want)
         dpadState()?.let { d ->
