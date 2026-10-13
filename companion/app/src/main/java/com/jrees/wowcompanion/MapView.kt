@@ -1147,7 +1147,10 @@ class MapView(context: Context) : View(context) {
     private var continentList: List<PoiStore.Poi>? = null
     private var rect: PoiStore.Rect? = null
     private var seed: List<PoiStore.Pin> = emptyList()
-    private var mask = PoiStore.DEFAULT_MASK
+    // the filter panel's Show switches are KEPT across app lives (b-map-filters-persist): the role bits here, Chests / Rares
+    // ([showChests], [showRares]) beside them, app-wide like the probe's three ("mapprobe") and the Map room's ("maproom")
+    private val filterPrefs by lazy { context.getSharedPreferences("mapfilters", Context.MODE_PRIVATE) }
+    private var mask = runCatching { filterPrefs.getInt("mask", PoiStore.DEFAULT_MASK) }.getOrDefault(PoiStore.DEFAULT_MASK)
     private var filterOpen = false
     private val filterHits = HashMap<Int, RectF>()
     private val filterBox = RectF()          // the open panel, as last drawn
@@ -1511,6 +1514,7 @@ class MapView(context: Context) : View(context) {
                         FILTER_SPARKLES -> setProbeOption(PROBE_SPARKLES)
                         else -> { mask = mask xor bit; recomputeSeed() }
                     }
+                    runCatching { filterPrefs.edit().putInt("mask", mask).putBoolean("chests", showChests).putBoolean("rares", showRares).apply() }
                     postInvalidate(); return true
                 }
                 // beside the rows but inside the panel: nothing. Outside the panel: it closes
@@ -2480,7 +2484,8 @@ class MapView(context: Context) : View(context) {
     // by Map's probe: counts, and places within 0.2 yd); the bundle stays the fallback for a map with no answer, and for forge /
     // anvil while ObjectDB has none. The SPAWN SPOTS draw under the service pins in UI Art's ghost family (UiKit.spawnSpot,
     // art-kit e675ef37): herbs while the game's Find Herbs tracking is on (map.track.h, Map.lua), ore while Find Minerals is (m),
-    // chests while Find Treasure is (t) or [showChests], rares while [showRares]; dots at zone zoom, the game's pictures close in.
+    // rares while [showRares]; dots at zone zoom, the game's pictures close in. CHESTS are not QuestieDB's spots (most hold nothing
+    // at a time: b-ghost-chests) but the ones the minimap probe saw (SeenChests), while [showChests].
     // Places things CAN spawn, never "it is there now" (the minimap's own blips stay unreadable).
     private val qdbPins = LinkedHashMap<Int, QdbPins.Pins>()     // by uiMap, the last QDB_MAPS
     private val qdbNodes = LinkedHashMap<Int, QdbPins.Nodes>()
@@ -2489,11 +2494,11 @@ class MapView(context: Context) : View(context) {
     private val SPAWN_PIC = 26f                  // ... and the game's picture from SPAWN_PIC_PX_PER_YD in
     private val SPAWN_PIC_PX_PER_YD = 1.7f       // a cluster's spots (~15 yd apart) stop overlapping at 26 px
     private val RARE_PX = 30f; private val RARE_ELITE_PX = 36f
-    /** chests show with Find Treasure on, or with this (the filter's) */
-    var showChests = true
+    /** the chests the probe saw (SeenChests) show with this (the filter's) */
+    var showChests = runCatching { filterPrefs.getBoolean("chests", true) }.getOrDefault(true)
         set(v) { if (field != v) { field = v; invalidate() } }
     /** rares' spawn spots */
-    var showRares = true
+    var showRares = runCatching { filterPrefs.getBoolean("rares", true) }.getOrDefault(true)
         set(v) { if (field != v) { field = v; invalidate() } }
 
     /** {"type":"qdbpins"} (MainActivity routes it): this map's service NPCs, mailboxes and rares */
@@ -4029,7 +4034,11 @@ class MapView(context: Context) : View(context) {
                 }
                 if (tr?.optInt("h") == 1) layer(n.herb, UiKit.Spawn.HERB)
                 if (tr?.optInt("m") == 1) layer(n.ore, UiKit.Spawn.ORE)
-                if (showChests || tr?.optInt("t") == 1) layer(n.chest, UiKit.Spawn.CHEST)
+            }
+            // chests: only the ones the probe SAW (SeenChests; b-ghost-chests), never QuestieDB's spawn spots
+            if (showChests) for (ch in SeenChests.on(mid, android.os.SystemClock.elapsedRealtime())) {
+                val gx = sx(ch.nx); val gy = sy(ch.ny)
+                if (onField(gx, gy)) UiKit.spawnSpot(c, gx, gy, UiKit.Spawn.CHEST, sp)
             }
             if (showRares) qdbPins[mid]?.let { p ->
                 for (rare in p.rares) {
@@ -4468,7 +4477,7 @@ class MapView(context: Context) : View(context) {
         // the game's picture, the count of spots on THIS map. Herbs and ore have no switch: they follow the game's own tracking.
         val mid = map?.optInt("mapID", Int.MIN_VALUE) ?: Int.MIN_VALUE
         val spawnCells = listOf(
-            Triple(FILTER_CHESTS, "Chests", qdbNodes[mid]?.chest?.size ?: 0),
+            Triple(FILTER_CHESTS, "Chests", SeenChests.on(mid, android.os.SystemClock.elapsedRealtime()).size),
             Triple(FILTER_RARES, "Rares", qdbPins[mid]?.rares?.size ?: 0),
             // the minimap probe's options (the user, 2026-10-12): the live dots, the Find Herbs / Minerals switch, sparkles
             Triple(FILTER_LIVE, "Live dots", if (liveMap == mid) live.size else 0),
@@ -4567,13 +4576,15 @@ class MapView(context: Context) : View(context) {
         val now = android.os.SystemClock.elapsedRealtime()
         live.clear(); liveMap = mid; liveAt = now
         var changed = false
+        val chests = ArrayList<DoubleArray>()
         val a = d.optJSONArray("d")
         if (a != null) for (i in 0 until a.length()) {
             val dot = a.optJSONObject(i) ?: continue
             val name = dot.optString("t", "")
             if (name.isEmpty()) continue
             val at = SeenNpcs.dotSpot(wx, wy, dot.optDouble("n", 0.0), dot.optDouble("w", 0.0), r.top, r.left, r.height, r.width)
-            val nk = nodeKind(name, nodes)
+            val nk = nodeKind(name, nodes) ?: if (name in SeenChests.NAMES) UiKit.Spawn.CHEST else null
+            if (nk == UiKit.Spawn.CHEST) { chests.add(at); continue }         // a chest: SeenChests keeps it (drawn by the Chests switch)
             if (nk != null) { live.add(Live(at[0], at[1], nk)); continue }
             if (rows == null) continue
             val cands = rows.filter { it.name == name && it.entry > 0 }.map { Triple(it.entry, r.nx(it.wy), r.ny(it.wx)) }
@@ -4582,6 +4593,11 @@ class MapView(context: Context) : View(context) {
             }
         }
         if (changed) { recomputeSeed(); saveSeenSoon() }
+        // the chests it named, and the kept ones it should have named and did not (only while Find Treasure is on: else it cannot)
+        val me = SeenNpcs.dotSpot(wx, wy, 0.0, 0.0, r.top, r.left, r.height, r.width)
+        val radius = if (d.has("r")) d.optDouble("r", Double.NaN).takeIf { !it.isNaN() } else null
+        SeenChests.probe(mid, chests, me[0], me[1], r.width, r.height, radius, m.optJSONObject("track")?.optInt("t") == 1,
+            android.os.SystemClock.elapsedRealtime())
         invalidate()
     }
 

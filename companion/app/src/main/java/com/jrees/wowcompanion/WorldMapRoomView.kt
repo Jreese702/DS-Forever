@@ -1084,8 +1084,10 @@ class WorldMapRoomView(context: Context) : View(context) {
             fun layer(a: List<QdbPins.Node>, kind: UiKit.Spawn) { for (q in a) UiKit.spawnSpot(c, sx(q.x.toFloat()), sy(q.y.toFloat()), kind, SPAWN_PX) }
             if (on("herb")) layer(n.herb, UiKit.Spawn.HERB)
             if (on("ore")) layer(n.ore, UiKit.Spawn.ORE)
-            if (on("chest")) layer(n.chest, UiKit.Spawn.CHEST)
         }
+        // chests: only the ones Home's minimap probe SAW (SeenChests; b-ghost-chests), never QuestieDB's spawn spots
+        if (on("chest")) for (ch in SeenChests.on(playerMap, android.os.SystemClock.elapsedRealtime()))
+            UiKit.spawnSpot(c, sx(ch.nx.toFloat()), sy(ch.ny.toFloat()), UiKit.Spawn.CHEST, SPAWN_PX)
         if (on("rare")) qdbPins?.takeIf { it.m == playerMap }?.let { p ->
             for (r in p.rares) for (q in r.pts) UiKit.spawnSpot(c, sx(q[0].toFloat()), sy(q[1].toFloat()),
                 if (r.rank == 2) UiKit.Spawn.RARE_ELITE else UiKit.Spawn.RARE, if (r.rank == 2) 44f else 38f)
