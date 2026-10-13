@@ -26,6 +26,9 @@ class TipStack(private val view: View) {
 
     private val fade = UiKit.TipFade()
 
+    /** nothing shown this frame: the next tooltip waits out the quarter second again (even the same one coming back) */
+    fun forget() { fade.alpha(null) }
+
     /** what was drawn: the main tooltip's box, the foot under its Compare hint (else the box's), this frame's fade alpha */
     class Drawn(val box: RectF, val bottom: Float, val alpha: Int)
 

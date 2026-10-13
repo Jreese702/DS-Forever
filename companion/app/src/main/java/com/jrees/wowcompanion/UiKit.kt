@@ -5473,14 +5473,15 @@ object UiKit {
      * [header] over the name when there is one (the game's grey "Currently Equipped"), the [name] in its quality colour, then
      * the lines (the game's own colours; a long left text wraps, a line with a right text keeps one line). Returns its box,
      * so a second one (the compare) can stand beside or under it. It never takes a touch: it shows what is highlighted.
+     * [scale] < 1 = the game's smaller compare tooltip (its shopping tooltip's smaller fonts, [COMPARE_SCALE]): text and padding.
      */
     fun tooltip(c: Canvas, x: Float, y: Float, w: Float, name: String, nameColour: Int, lines: List<TipLine>,
-                header: String? = null, alpha: Int = 255): RectF {
-        val pad = 22f
+                header: String? = null, alpha: Int = 255, scale: Float = 1f): RectF {
+        val pad = 22f * scale
         val tw = (w - 2f * pad).toInt()
-        val ph = bodyPaint(21f, Color.rgb(128, 128, 128))
-        val pn = TextPaint(bodyPaint(30f, nameColour))
-        val pl = TextPaint(bodyPaint(24f))
+        val ph = bodyPaint(21f * scale, Color.rgb(128, 128, 128))
+        val pn = TextPaint(bodyPaint(30f * scale, nameColour))
+        val pl = TextPaint(bodyPaint(24f * scale))
         // measure first: the box is as tall as what it holds
         val nameL = StaticLayout.Builder.obtain(name, 0, name.length, pn, tw).setLineSpacing(2f, 1f).build()
         val lays = lines.map { l ->
@@ -5489,7 +5490,8 @@ object UiKit {
             StaticLayout.Builder.obtain(l.t, 0, l.t.length, TextPaint(pl), room.coerceAtLeast(40))
                 .setMaxLines(if (l.r != null) 1 else 6).setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(2f, 1f).build()
         }
-        var h = pad + (if (header != null) 30f else 0f) + nameL.height + 8f + lays.sumOf { (it.height + 4).toDouble() }.toFloat() + pad
+        val headH = 30f * scale
+        var h = pad + (if (header != null) headH else 0f) + nameL.height + 8f + lays.sumOf { (it.height + 4).toDouble() }.toFloat() + pad
         val box = RectF(x, y, x + w, y + h)
         if (alpha <= 0) return box                          // still waiting out its quarter second ([TipFade]): nothing yet
         val layer = alpha < 255
@@ -5498,16 +5500,16 @@ object UiKit {
         c.drawRect(box.left + 4f, box.top + 4f, box.right - 4f, box.bottom - 4f, pFlat)
         border(c, box, "border_tooltip", 18f, Color.rgb(120, 120, 120))
         var ty = y + pad
-        if (header != null) { c.drawText(header, x + pad, ty + 18f - (ph.ascent() + ph.descent()) / 2f - 4f, ph); ty += 30f }
+        if (header != null) { c.drawText(header, x + pad, ty + 18f * scale - (ph.ascent() + ph.descent()) / 2f - 4f * scale, ph); ty += headH }
         c.save(); c.translate(x + pad, ty); nameL.draw(c); c.restore(); ty += nameL.height + 8f
         for ((i, l) in lines.withIndex()) {
             val lay = lays[i]
             c.save(); c.translate(x + pad, ty); lay.draw(c); c.restore()
             if (l.r != null) {
-                val pr = bodyPaint(24f, l.rc).apply { textAlign = Paint.Align.RIGHT }
+                val pr = bodyPaint(24f * scale, l.rc).apply { textAlign = Paint.Align.RIGHT }
                 c.drawText(l.r, box.right - pad, ty - pr.ascent(), pr)
             }
-            if (l.money >= 0) money(c, l.money, x + pad + pl.measureText(l.t) + 10f, ty + lay.height / 2f, 24f)
+            if (l.money >= 0) money(c, l.money, x + pad + pl.measureText(l.t) + 10f * scale, ty + lay.height / 2f, 24f * scale)
             ty += lay.height + 4f
         }
         if (layer) c.restore()
@@ -5535,6 +5537,10 @@ object UiKit {
         }
         companion object { const val DELAY = 250L; const val FADE = 160L }
     }
+
+    /** the compare ("Currently Equipped") beside an item's tooltip, as the game draws its shopping tooltip: its lines in the
+     *  game's small tooltip font (10 against the main tooltip's 12, the name 12 against 14), so about five sixths the size */
+    const val COMPARE_SCALE = 0.82f
 
     /**
      * THE HINT UNDER A TOOLTIP (the user: "if the Item is comparable, it should show a button under the tooltip saying X to compare"):

@@ -79,6 +79,13 @@ class HomeView(
     private val auraPane = AuraPane(context)
     private val barsSlot = FrameLayout(context)
     private val chatSlot = FrameLayout(context)
+    /**
+     * THE CHAT'S GLIDE (b-chat-slide; the user's pick: chat going full screen should move like the map's morph). The full chat is laid
+     * out ONCE at its full size and its box glides between the chat pane's place and the frame, as the map's does: a rounded window
+     * over it in [chatSlot]'s own px, empty = no glide (the whole slot shows). No re-layout per frame (the Controller session: a
+     * requestLayout every frame was what made the combat switch lag the game).
+     */
+    private val chatGlideBox = RectF()
     // CLOSE is added last, so it is drawn above the module it closes
     private val views: Map<Part, View> = linkedMapOf(
         Part.BARS to barsSlot, Part.QUESTS to questPane, Part.CHAT to chatPane, Part.MAP to mapSlot,
@@ -106,6 +113,13 @@ class HomeView(
         for ((_, v) in views) { addView(v); v.visibility = View.GONE }
         mapView.onCompactTap = { if (flow.tapMap()) changed() }
         mapView.onShownFocusChanged = { questPane.invalidate() }
+        chatSlot.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(v: View, o: android.graphics.Outline) {
+                val b = chatGlideBox
+                if (b.isEmpty) o.setRect(0, 0, v.width, v.height)
+                else o.setRoundRect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt(), UiKit.MODULE_R)
+            }
+        }
         questPane.translationZ = 2f                                 // the card lies over the map (b121)   // the card shows the map's shown focus (Map's default focus)
         // clipped AT REST (the default): only a morph unclips, see [flightClip]
     }
@@ -679,7 +693,8 @@ class HomeView(
             else { if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))) Log.i(TAG, "chat module: free"); chatHeld = false }
         }
         if (chatFull) { lend(chatView, chatSlot); chatView.focusInput() }
-        else giveBack(chatView)
+        // closing with the glide: the chat stays in its slot until the box lands back on the pane ([chatReturn] at the glide's end)
+        else if (!(animate && isShown && before?.full == HomeModule.CHAT && !before.takeover)) giveBack(chatView)
         // THE MAP MODULE WITH THE CONTROLLER (the user 2026-09-30: "Map room should behave the same in the map module on the home
         // screen"): the same guest "home", every press to the MapView's host keys (the Map room's rules: up / down the list, A focus,
         // X untrack, Y show, left / right pan, LB / RB zoom); its B with nothing open closes the module
@@ -726,13 +741,14 @@ class HomeView(
         watchB((s.full == HomeModule.CHAT || s.full == HomeModule.MAP) && !s.takeover && lent(mapView))
         val w = width.toFloat(); val h = height.toFloat()
         anim?.cancel()
-        if (w <= 0f || h <= 0f) { requestLayout(); return }       // placed at the first layout
+        if (w <= 0f || h <= 0f) { chatReturn(); requestLayout(); return }       // placed at the first layout
         val to = places(s, w, h)
         for ((p, v) in views) if (to.containsKey(p)) { v.visibility = View.VISIBLE; v.alpha = 1f }
         // r-combat-anim-off: the player turned the combat motion off (Settings > Home "Combat switch"): the fight's switch lands at once
         if (!animate || before == null || (before.takeover != s.takeover && !HomeSettings.combatAnim)) {
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
             flightClip(false)
+            chatReturn()
             now.clear(); for ((p, r) in to) now[p] = RectF(r)
             for ((p, v) in views) if (!to.containsKey(p)) v.visibility = View.GONE
             settled = true
@@ -764,6 +780,25 @@ class HomeView(
         val mFrom = from[Part.MAP]?.let { RectF(it) }
         val mTo = to[Part.MAP]?.let { RectF(it) }
         val card = if (morphing) morphCard(isMap, to) else null
+        // THE CHAT'S GLIDE (see [chatGlideBox]): the full chat keeps its full box all along (laid out once), a window over it
+        // glides from the chat pane's place to the frame (back on a close); the pane fades as the page does, the full chat comes in
+        // over the first FADE ms of an open and leaves over the last FADE ms of a close, as the pane comes back over it
+        val wasChat = before.full == HomeModule.CHAT && !before.takeover
+        val isChat = s.full == HomeModule.CHAT && !s.takeover
+        val chatFullBox = (to[Part.CHAT_FULL] ?: now[Part.CHAT_FULL])?.let { RectF(it) }
+        val chatPaneBox = (if (isChat) now[Part.CHAT] else to[Part.CHAT])?.let { RectF(it) }
+        val gliding = !combat && wasChat != isChat && chatFullBox != null && chatPaneBox != null && lent(chatView)
+        if (gliding) {
+            from[Part.CHAT_FULL] = RectF(chatFullBox!!)
+            if (!isChat) from[Part.CHAT] = RectF(chatPaneBox!!)    // the pane the box lands on fades in where it is (no zoom)
+            now[Part.CHAT_FULL] = RectF(chatFullBox)              // its one layout, at the full size, before the first frame
+            requestLayout()
+            chatSlot.clipToOutline = true
+            chatGlide(if (isChat) 0f else 1f, chatPaneBox!!, chatFullBox)
+            views[Part.CHAT_FULL]?.alpha = if (isChat) 0f else 1f
+        }
+        // only a part whose box changes needs a layout per frame (a fade alone does not)
+        val moving = from.any { (p, f) -> to[p]?.let { t -> t != f } == true }
         questPane.cardHidden = card != null
         // the zone band and the clock fade with the page (Map's recording: they vanished at frame 0 on open, popped back at a close's end)
         overlayFrom = overlayOf(before); overlayTo = overlayOf(s); overlayOut = 1f; overlayIn = 0f
@@ -783,16 +818,23 @@ class HomeView(
                 val t = a.animatedFraction * ms                       // the time in, linear
                 overlayOut = (1f - t / fadeMs).coerceIn(0f, 1f)
                 overlayIn = ((t - (ms - FADE_MS)) / FADE_MS).coerceIn(0f, 1f)
-                for (p in gone) views[p]?.alpha = overlayOut
-                for (p in coming) views[p]?.alpha = overlayIn
+                for (p in gone) if (!(gliding && p == Part.CHAT_FULL)) views[p]?.alpha = overlayOut
+                for (p in coming) if (!(gliding && p == Part.CHAT_FULL)) views[p]?.alpha = overlayIn
+                if (gliding) {
+                    chatGlide(if (isChat) k else 1f - k, chatPaneBox!!, chatFullBox!!)
+                    views[Part.CHAT_FULL]?.alpha = if (isChat) (t / FADE_MS).coerceIn(0f, 1f) else 1f - overlayIn
+                }
                 if (cardOverMap()) auraPane.invalidate()            // b128: the buff row rides the card's move
                 if (overlayFrom != overlayTo) invalidate()
-                placeFrame()
+                // only parts whose box moved are measured / placed (fix/controller placeFrame); a fade alone touches no layout (fix/rooms)
+                if (moving) placeFrame()
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(a: Animator) {
                     // fires on cancel too: the morph always ends (Map's safety net would after 700 ms anyway)
                     if (morphing) { mapView.morph(1f, mFrom!!, mTo!!, isMap, card); flightClip(false) }
+                    if (gliding) { chatGlideBox.setEmpty(); chatSlot.clipToOutline = false; chatSlot.invalidateOutline() }
+                    chatReturn()
                     if (morphing && !isMap && card != null) questPane.plateToRest()   // b121: landed full, eases back to see-through
                     questPane.cardHidden = false
                     overlayFrom = overlayTo; overlayOut = 1f; overlayIn = 1f
@@ -838,6 +880,16 @@ class HomeView(
     private var laidCardH = -1f
     /** where the last layout put the card (a Settings change re-lays only when it moved) */
     private var laidOverMap = true
+
+    /** the chat's glide at [k] (0 = the pane's box, 1 = the frame), as a window in the full chat's own px */
+    private fun chatGlide(k: Float, pane: RectF, full: RectF) {
+        chatGlideBox.set(lerp(pane.left, full.left, k) - full.left, lerp(pane.top, full.top, k) - full.top,
+            lerp(pane.right, full.right, k) - full.left, lerp(pane.bottom, full.bottom, k) - full.top)
+        chatSlot.invalidateOutline()
+    }
+
+    /** the chat goes back to its room once Home no longer shows it full (after a close's glide has landed) */
+    private fun chatReturn() { if (!chatWanted) giveBack(chatView) }
 
     private fun shrunk(r: RectF): RectF {
         val cx = r.centerX(); val cy = r.centerY()

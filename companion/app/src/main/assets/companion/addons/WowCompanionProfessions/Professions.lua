@@ -81,6 +81,13 @@ local function VN(v) v = V(v); if type(v) == "number" then return v end end
 local function VS(v) v = V(v); if type(v) == "string" and v ~= "" then return v end end
 local function VB(v) v = V(v); if type(v) == "boolean" then return v end end
 
+-- THE CHARACTER (b-recipes-per-char): name-realm, the key every per-character store uses (Bags' BB.charKey). The app keeps each
+-- character's books under it, so an alt never sees another character's recipes
+local function who()
+    local n, r = TS(function() return UnitName("player") end), TS(function() return GetRealmName() end)
+    return n and (n .. "-" .. (r or "?")) or nil
+end
+
 -- The game's text markup (colours, links, textures) out of prose; |n is a line break.
 local function clean(s)
     if type(s) ~= "string" then return nil end
@@ -519,6 +526,7 @@ function WC.collectRecipes()
     local mod = SN(function() return info.skillModifier end)
     return {
         v = PV,
+        who = who(),                -- whose book this is: the app keeps it per character
         id = id,                    -- the base skill line: the Overview's `id`, what open:<id> opens
         line = (lineID ~= id) and lineID or nil,
         name = TS(function() return base.professionName end),
@@ -596,6 +604,7 @@ function WC.collectProf()
         for _, e in ipairs(list) do if e.id == st.openID then openListed = true end end
     end
     local doc = {
+        who = who(),
         v = PV,
         list = list,
         open = st.open and st.openID or nil,

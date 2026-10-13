@@ -363,18 +363,20 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
          * WHERE THE TOOLTIP GOES: BY THE CURSOR (the user, 2026-10-09: "tooltip should stay by the cursor when looking at items in the
          * bag"; it was on the other half of the room, SHEET_bags_v3): beside the cursor's tile, on the side with room (right first),
          * two thirds of a half wide, level with the cursor's row; the compare ("Currently Equipped") beyond it on the same side when it
-         * fits, else on the cursor's other side. Returns (x, width, compare x).
+         * fits, else on the cursor's other side. The compare is [cmpScale] of the item's width (the game's smaller compare
+         * tooltip, [UiKit.COMPARE_SCALE]). Returns (x, width, compare x).
          */
-        private fun place(cur: RectF): Triple<Float, Float, Float> {
+        private fun place(cur: RectF, cmpScale: Float = 1f): Triple<Float, Float, Float> {
             val half = width / 2f
             val tw = (half - 30f) * 0.9f
+            val cw = tw * cmpScale
             val gap = 18f
             val right = cur.right + gap; val left = cur.left - gap - tw
             val onRight = right + tw <= width - 16f || left < 16f
             val x = (if (onRight) right else left).coerceIn(16f, maxOf(16f, width - tw - 16f))
-            val cmpX = if (onRight) { if (x + tw + 6f + tw <= width - 16f) x + tw + 6f else cur.left - gap - tw }
-                       else { if (x - 6f - tw >= 16f) x - 6f - tw else cur.right + gap }
-            return Triple(x, tw, cmpX.coerceIn(16f, maxOf(16f, width - tw - 16f)))
+            val cmpX = if (onRight) { if (x + tw + 6f + cw <= width - 16f) x + tw + 6f else cur.left - gap - cw }
+                       else { if (x - 6f - cw >= 16f) x - 6f - cw else cur.right + gap }
+            return Triple(x, tw, cmpX.coerceIn(16f, maxOf(16f, width - cw - 16f)))
         }
 
         /** an addon without Interact's WC.tipOf: the item's own name and type, so the tooltip is never empty */
@@ -426,21 +428,28 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
 
         /** the highlighted item's tooltip and its actions under it; gear also shows what it would replace, always */
         private fun tooltip(c: Canvas, gx: Float, gy: Float, top: Float, bottom: Float) {
-            val (bag, slot) = shownSlot() ?: return
-            val it = st.items[st.key(bag, slot)] ?: return
-            if (st.viewClean) return                          // the merged view: a tile is many slots, no one tooltip
-            val cur = slotBox(bag, slot, gx, gy) ?: return
+            // THE GAME'S HOVER WAIT every time (b-bag-tooltip-instant): a frame with no tooltip forgets both fades, so coming
+            // back to an item (from an empty slot, the bar, a menu, a non-gear item) waits out the quarter second again
+            if (!tooltipShown(c, gx, gy, top, bottom)) { tips.forget(); gearFade.alpha(null) }
+        }
+        private fun tooltipShown(c: Canvas, gx: Float, gy: Float, top: Float, bottom: Float): Boolean {
+            val (bag, slot) = shownSlot() ?: return false
+            val it = st.items[st.key(bag, slot)] ?: return false
+            if (st.viewClean) return false                    // the merged view: a tile is many slots, no one tooltip
+            val cur = slotBox(bag, slot, gx, gy) ?: return false
             val name = it.optString("name").takeIf { s -> real(s) } ?: "Loading…"
             val q = if (it.has("quality")) it.optInt("quality") else 1
             val key = "bag $bag $slot ${it.optInt("id")}"
             val tip = st.ctl?.optJSONObject("tip")?.takeIf { j -> st.ctlOn && j.optString("key") == key } ?: fallbackTip(key, it)
             val (acts, what) = actions(it, bag, slot)
             val cmp = tip.optJSONArray("cmp")
-            if (cmp != null && cmp.length() > 0) { gear(c, cur, name, q, tip, cmp, acts, what, gy, top, bottom); return }
+            if (cmp != null && cmp.length() > 0) { tips.forget(); gear(c, cur, name, q, tip, cmp, acts, what, gy, top, bottom); return true }
+            gearFade.alpha(null)
             val (tx, tw, cmpX) = place(cur)
             // not gear: TipStack, its own Compare hint off (Bags compares by itself); the plate's 62 px stay in the room
             val d = tips.draw(c, tx, maxOf(top, cur.top), tw, name, q, tip, top, bottom - 64f, cmpX, false, 0, hint = false)
             if (d.alpha > 0 || anyDown()) plate(c, RectF(d.box.left, d.box.top, d.box.right, d.bottom), acts, what, d.alpha)
+            return true
         }
 
         /**
@@ -453,7 +462,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
          */
         private fun gear(c: Canvas, cur: RectF, name: String, q: Int, tip: JSONObject, cmp: JSONArray,
                          acts: List<Pair<String?, String>>, what: List<Int>, gy: Float, top: Float, bottom: Float) {
-            val a = gearFade.alpha(tip.optString("key")).let { f -> if (anyDown()) 255 else f }     // a press shows at once (b116)
+            val fade = gearFade.alpha(tip.optString("key"))
             if (gearFade.animating) postInvalidateOnAnimation()
             val lines = tip.optJSONArray("lines")
             val first = lines?.optJSONObject(0)
@@ -467,18 +476,28 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             }
             // BY THE CURSOR too (the user, 2026-10-09): the item beside the cursor's tile with its cells under it, Currently Equipped
             // beside it (place's compare x), both level with the cursor's row, lifted only as far as they must to stay in the room
+            // Currently Equipped at the game's compare size (b-bag-tooltip-size: it was the item's own full size): its shopping
+            // tooltip's smaller fonts, and as much narrower
+            val sc = UiKit.COMPARE_SCALE
             val plateH = if (acts.isEmpty()) 0f else 62f
-            val (x, tw, cmpX) = place(cur)
+            val (x, tw, cmpX) = place(cur, sc)
+            val cw = tw * sc
             val itemH = UiKit.tooltip(c, 0f, -9999f, tw, name, Theme.quality(q), body, alpha = 0).height() + plateH
             val eqH = eq.sumOf { e ->
-                UiKit.tooltip(c, 0f, -9999f, tw, e.name, e.colour, e.lines, header = "Currently Equipped", alpha = 0).height().toDouble() + 6.0
+                UiKit.tooltip(c, 0f, -9999f, cw, e.name, e.colour, e.lines, header = "Currently Equipped", alpha = 0, scale = sc).height().toDouble() + 6.0
             }.toFloat()
-            if (a <= 0) return                                // the quarter second: measured, nothing shown yet
             val y0 = maxOf(top - 90f, minOf(maxOf(top, cur.top), bottom - maxOf(itemH, eqH)))   // up over the bag bar only if it must
+            // a press on the pair's OWN cells shows it at once (b116); any other press, or the finger choosing the slot, waits
+            // out the quarter second like the game's hover (it was any press at all, so a tapped gear item showed at once)
+            val probe = UiKit.tooltip(c, x, y0, tw, name, Theme.quality(q), body, alpha = 0)
+            val pressed = acts.isNotEmpty() &&
+                downIn(UiKit.tooltipActions(c, probe, acts, alpha = 0), what.map { w -> if (w == EQUIP_OFF) null else keyOf(w) }) >= 0
+            val a = if (pressed) 255 else fade
+            if (a <= 0) return                                // the quarter second: measured, nothing shown yet
             val box = UiKit.tooltip(c, x, y0, tw, name, Theme.quality(q), body, alpha = a)
             plate(c, box, acts, what, a)
             var y = y0
-            for (e in eq) y = UiKit.tooltip(c, cmpX, y, tw, e.name, e.colour, e.lines, header = "Currently Equipped", alpha = a).bottom + 6f
+            for (e in eq) y = UiKit.tooltip(c, cmpX, y, cw, e.name, e.colour, e.lines, header = "Currently Equipped", alpha = a, scale = sc).bottom + 6f
         }
 
         private val bat = IntArray(2)

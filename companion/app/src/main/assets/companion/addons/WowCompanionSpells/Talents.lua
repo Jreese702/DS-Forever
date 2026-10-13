@@ -137,6 +137,7 @@ local function readNode(cfg, nodeID, qty)
     }
     if n.cp and not affordable(cfg, nodeID, qty) then n.cp = nil end   -- t8: the game's CanPurchaseRank (CanAfford)
     n.e = TN(function() return info.activeEntry.entryID end) or TN(function() return info.entryIDs[1] end)
+    n.ne = TN(function() return info.nextEntry.entryID end)          -- the game's tooltip reads an unlearnt talent's text from it
     n.n, n.i, n.s = nameAndIcon(cfg, n.e)
     n.groups = ids(TT(function() return info.groupIDs end))
     n.conds = ids(TT(function() return info.conditionIDs end))
@@ -418,12 +419,19 @@ local function collectDetail()
     local n = last.byID[sel]
     if not n then return { none = true } end
     local d = { id = n.id, n = n.n, i = n.i, rk = n.rk, max = n.max, cp = n.cp, cr = n.cr, pend = n.pend, st = n.st }
-    if n.e then
-        local shown = math.max(1, n.rk)
-        d.d = clip(TS(function() return C_Traits.GetTraitDescription(n.e, shown) end), MAX_DESC)
-        if n.rk > 0 and n.rk < n.max then
-            d.dn = clip(TS(function() return C_Traits.GetTraitDescription(n.e, n.rk + 1) end), MAX_DESC)
-        end
+    -- A LOCKED TALENT SAYS WHAT IT DOES TOO (b-locked-talents; the game's talent tooltip shows a locked one's text, its unmet
+    -- requirements in red under it): the entry's own text; else the node's NEXT entry (what the game's tooltip reads for a talent
+    -- with no rank yet, TalentDisplayMixin:AddTooltipDescription); else the talent's spell's own description
+    local function said(s) return type(s) == "string" and s ~= "" and s or nil end
+    local function textAt(rank)
+        local t = n.e and said(TS(function() return C_Traits.GetTraitDescription(n.e, rank) end))
+        if not t and n.ne then t = said(TS(function() return C_Traits.GetTraitDescription(n.ne, rank) end)) end
+        if not t and n.s then t = said(TS(function() return C_Spell.GetSpellDescription(n.s) end)) end
+        return clip(t, MAX_DESC)
+    end
+    if n.e or n.ne or n.s then
+        d.d = textAt(math.max(1, n.rk))
+        if n.rk > 0 and n.rk < n.max then d.dn = textAt(n.rk + 1) end
     end
     local school = n.g and last.groups[n.g] and last.groups[n.g].n
     local req = requirements(last.cfg, n, school)
