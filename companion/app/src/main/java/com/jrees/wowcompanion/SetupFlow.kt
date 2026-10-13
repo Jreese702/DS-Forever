@@ -18,7 +18,7 @@ object SetupFlow {
      * login; FAILED = refused; RESTARTING = the game restarts with the updated login; RESTART = that restart did not happen; TYPING = the user types it on the
      * game screen (or no login is saved). NONE = not at the login screen.
      */
-    enum class SignIn { NONE, SIGNING, FAILED, RESTARTING, RESTART, TYPING }
+    enum class SignIn { NONE, SIGNING, FAILED, RESTARTING, RESTART, TYPING, AUTH }
 
     data class Inputs(
         val path: String,
@@ -130,6 +130,9 @@ object SetupFlow {
             SignIn.RESTARTING -> return Prompt("signin", "Restarting the game to sign in…", "", emptyList())
             SignIn.RESTART -> "The game didn't restart" to ""
             SignIn.TYPING -> "Type it on the game screen" to ""
+            // the game asks for the Battle.net Authenticator code (its log's authenticatorRequired="true"; a player's report 2026-10-13:
+            // the keyboard did not open): the keyboard opens by itself, and "Keyboard" brings it back if it is closed
+            SignIn.AUTH -> return Prompt("signin", "Enter your authenticator code", "", listOf(Button("Keyboard", Action.ENTER_ON_GAME)))
         }
         val buttons = buildList {
             if (i.signIn == SignIn.RESTART || i.restartOffered) add(Button("Restart the game to sign in", Action.RESTART_GAME))

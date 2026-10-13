@@ -1535,6 +1535,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             val noFile = !HomeLoginStore.has(this) && NativeLogin.firstReadAt == 0L &&
                 now / 1000 - LauncherHooks.gameStartSec >= NO_FILE_LOGIN_S
             // the keepalives say it got through (no burst needed): past the login screen for everything that watches it
+            // the authenticator code box (the log's authenticatorRequired="true"): no traffic verdict until the log moves on
+            signInCheck.authenticator(loginWatch.state.phase == HomeLogin.Phase.AUTH)
             if (signInCheck.signedIn && !NativeLogin.pastLogin) NativeLogin.markPastLogin("two-way keepalives after the sign-in")
             signInCheck.tick(now, NativeLogin.firstReadAt, NativeLogin.pastLogin, noFile)
         } else SetupFlow.SignIn.NONE
@@ -1542,6 +1544,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (st != SetupBridge.signIn || restart != SetupBridge.restartOffered) {
             NativeLogin.logEvent("sign-in: $st${if (restart) " (restart offered)" else ""}" +
                 if (NativeLogin.firstReadAt > 0) ", ${(now - NativeLogin.firstReadAt) / 1000} s after the read" else "")
+        }
+        // the code box: the top screen's keyboard opens by itself, once as the game asks ("Keyboard" toggles it after that)
+        if (st == SetupFlow.SignIn.AUTH && SetupBridge.signIn != SetupFlow.SignIn.AUTH) {
+            NativeLogin.logEvent("sign-in: authenticator code asked, keyboard opened"); SetupBridge.keyboard(true)
         }
         SetupBridge.signIn(st, restart)
         if (st == SetupFlow.SignIn.NONE && SetupBridge.keyboardOpen) { NativeLogin.logEvent("sign-in: keyboard closed (past the login screen)"); SetupBridge.keyboard(false) }

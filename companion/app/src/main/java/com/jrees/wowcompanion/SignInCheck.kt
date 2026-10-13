@@ -20,6 +20,9 @@ import com.jrees.wowcompanion.SetupFlow.SignIn
  * - SIGNED IN ([signedIn]) = >= [ALIVE_AFTER] seconds since the read, never failed, and >= [ALIVE_TICKS] two-way seconds in the last
  *   [ALIVE_WINDOW]. CompanionHost turns it into NativeLogin's pastLogin; the companion's in-world documents are the hard backstop.
  * - SIGNING (no buttons), RESTARTING / RESTART (after "Update login"), TYPING ("Keyboard" pressed after a failure, or no saved login).
+ * - AUTH: the game's log asked for the authenticator code ([authenticator]). The game waits with its connection alive (keepalives,
+ *   or quiet), so neither SIGNED IN nor FAILED is read from the traffic until the log moves on (a player's report 2026-10-13: the
+ *   keepalives read as signed in, the buttons went and the keyboard closed).
  */
 class SignInCheck {
     private var restartAt = 0L
@@ -40,6 +43,16 @@ class SignInCheck {
     /** the traffic says this sign-in got through (two-way keepalives after the exchange) */
     var signedIn = false
         private set
+    /** the game is waiting for the authenticator code (its log said so, this run) */
+    var authenticator = false
+        private set
+
+    /** the log's authenticator state; leaving it starts the traffic reading afresh (the wait's quiet seconds are not a refusal) */
+    fun authenticator(on: Boolean) {
+        if (on == authenticator) return
+        authenticator = on
+        zeros = 0; recent.clear(); signedIn = false
+    }
 
     fun fatal(now: Long) { fatalAt = now }
 
@@ -53,7 +66,7 @@ class SignInCheck {
     fun reset() {
         restartAt = 0L; typing = false; fatalAt = 0L; failedRead = -1L
         trafficFor = 0L; authSeen = false; zeros = 0; ticks = 0; recent.clear(); signedIn = false
-        restartOffered = false; state = SignIn.NONE
+        restartOffered = false; authenticator = false; state = SignIn.NONE
     }
 
     /** one second of the game's traffic (the launcher's loop), counted from this run's read of login.txt on */
@@ -67,7 +80,7 @@ class SignInCheck {
         zeros = if (rx == 0L && tx == 0L) zeros + 1 else 0
         recent.addLast(rx > 0L && tx > 0L)
         while (recent.size > ALIVE_WINDOW) recent.removeFirst()
-        if (failedRead != firstReadAt && ticks >= ALIVE_AFTER && zeros == 0 && recent.count { it } >= ALIVE_TICKS) signedIn = true
+        if (!authenticator && failedRead != firstReadAt && ticks >= ALIVE_AFTER && zeros == 0 && recent.count { it } >= ALIVE_TICKS) signedIn = true
     }
 
     /**
@@ -80,12 +93,13 @@ class SignInCheck {
             state = SignIn.NONE
             return state
         }
-        if (firstReadAt > 0L && failedRead != firstReadAt && refused(firstReadAt)) failedRead = firstReadAt
+        if (!authenticator && firstReadAt > 0L && failedRead != firstReadAt && refused(firstReadAt)) failedRead = firstReadAt
         val failed = firstReadAt > 0L && failedRead == firstReadAt
         state = when {
             restartAt > 0L && now - restartAt < RESTART_FAIL_MS -> SignIn.RESTARTING
             restartAt > 0L -> { restartAt = 0L; restartOffered = true; SignIn.RESTART }
             restartOffered && !typing -> SignIn.RESTART
+            authenticator -> SignIn.AUTH
             failed -> if (typing) SignIn.TYPING else SignIn.FAILED
             firstReadAt > 0L -> SignIn.SIGNING
             noFile -> SignIn.TYPING
