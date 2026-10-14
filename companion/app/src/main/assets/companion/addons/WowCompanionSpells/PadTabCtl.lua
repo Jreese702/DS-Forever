@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p26"                -- bump on every change
+local CV = "p27"                -- bump on every change
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -580,7 +580,9 @@ local function pressChooser(key)
         local thing = list[tc.chooser.row]
         if thing then choose(thing) end
     elseif key == "PAD2" then tc.chooser = nil; report("chooser-closed")
-    elseif key == "PAD4" then flipFight()                   -- p26: Y = Normal / In combat
+    -- p27 (the user on batch4: "how could this possibly ever work? Y is a selectable keybind"): SELECT (the "-") flips Normal / In
+    -- combat - never a button anything goes on, the same control as the Spellbook's Bind box (Book b39 asks the capture for it)
+    elseif key == "PADBACK" then flipFight()
     end
     return true
 end

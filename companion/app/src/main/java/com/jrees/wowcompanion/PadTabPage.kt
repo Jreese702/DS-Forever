@@ -364,6 +364,10 @@ class PadTabPage(
     /** a button's words ("LT + X"); the Controller room's clean-up box names its buttons with it */
     fun comboWord(s: Int, p: Int) = (if (s == 1) "" else setWord(s) + " + ") + buttonWord(p)
     private fun glyph(p: Int) = SpellsModel.combo(SpellsModel.PadSlot(0, 1, 1, p), style()).button
+    /** the Select ("-") button in the chosen look (SpellsOverlay's: Nintendo minus, Xbox View, PlayStation Share) */
+    private fun selectGlyph() = when (style()) {
+        SpellsModel.PadStyle.REV -> "rev_minus"; SpellsModel.PadStyle.LTR -> "ltr_view"; SpellsModel.PadStyle.SHP -> "shp_share"
+    }
 
     private fun chooserList(): String? = tChooser ?: ctl?.takeIf { it.on }?.chooser?.list
     private fun ctlChooser(): PadMapModel.Chooser? = if (tChooser != null) null else ctl?.takeIf { it.on }?.chooser
@@ -1019,12 +1023,13 @@ class PadTabPage(
         }
         // p17: the cursor on the tab row: the game's gold arrows beside the open tab (D-pad Left / Right change it), no L / R glyphs
         if (ccTabs) UiKit.moveArrows(c, tr[cur], left = cur > 0, right = cur < keys.size - 1, words = false)
-        // b-bind-combat-toggle (the user 2026-10-13): where the spell goes, the normal layout or In combat; Y flips it (PadTabCtl p26)
+        // b-bind-combat-toggle (the user 2026-10-13): where the spell goes, the normal layout or In combat; the "-" (SELECT) flips it
+        // (PadTabCtl p27; the user on batch4: Y "is a selectable keybind")
         if (view != "radial") {
             val f = fight(); val ok = fightToggleOk(m)
             UiKit.choice(c, fightRect(0, box), "Normal", !f, enabled = ok, textSize = 24f)
             UiKit.choice(c, fightRect(1, box), "In combat", f, enabled = ok, textSize = 24f)
-            if (ok && ctl?.on == true) UiKit.pad(c, glyph(6), box.left + 50f, fightRect(0, box).centerY(), 40f)
+            if (ok && ctl?.on == true) UiKit.pad(c, selectGlyph(), box.left + 50f, fightRect(0, box).centerY(), 40f)
         }
 
         val rows = rowsOf(list, book, m)
