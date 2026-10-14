@@ -61,6 +61,8 @@ class ReportPage(c: Context) : FrameLayout(c) {
     /** the host: the page closed (B or done); Record 5 minutes started (back to Settings); open GitHub with this URL on the top screen */
     var onClosed: () -> Unit = {}
     var openUrl: (String) -> Boolean = { false }
+    /** Send report: the host builds and saves it off the main thread with its notice on Home (the page closes at once) */
+    var onSend: (String) -> Unit = {}
 
     private var words = ""
     private var status = ""
@@ -203,17 +205,13 @@ class ReportPage(c: Context) : FrameLayout(c) {
     }
 
     /** Send report: the recording stops, the file is saved, GitHub's pre-filled issue opens on the top screen */
+    /** Send report (the user after batch16): the page closes at once and Home's notice follows the build ("Compiling your report…") */
     private fun send() {
         if (!ReportFlow.canSend(words)) { status = "Say what happened first."; openKeyboard(); return }
         DiagLog.stopRecording()
-        make { r ->
-            val f = ProblemReport.save(context, r)
-            if (f == null) { status = "The report could not be saved."; return@make }
-            val opened = openUrl(ProblemReport.issueUrl(r, words, ProblemReport.facts(context), f.path, Redact.names()))
-            status = ProblemReport.sentMessage(f.path, opened)
-            ReportFlow.description = ""
-            DiagLog.event("report", "sent by the player (${if (opened) "GitHub opened" else "no browser"})")
-        }
+        val w = words.trim()
+        close()
+        onSend(w)
     }
 
     private fun make(then: (ProblemReport.Report) -> Unit) {

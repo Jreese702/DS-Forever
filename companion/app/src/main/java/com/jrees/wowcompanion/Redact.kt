@@ -20,7 +20,7 @@ object Redact {
 
     /** the run's names (characters, realms, guilds, party, friends): replaced wherever they appear, whole words, any case */
     private val known = java.util.Collections.synchronizedSet(LinkedHashSet<String>())
-    private const val MAX_KNOWN = 1000
+    private const val MAX_KNOWN = 300
 
     /** a name DS Forever saw (from the add-on's documents); 2 characters or more, at most [MAX_KNOWN] kept */
     fun know(name: String?) {
@@ -34,7 +34,25 @@ object Redact {
     /** the names known this run (for a report made on another thread) */
     fun names(): List<String> = synchronized(known) { known.toList() }
 
-    fun text(s: String, names: Collection<String> = names()): String {
+    /**
+     * The names as ONE pattern (batch16: a report "stuck" at Making the report: a pattern compiled per name per line, with item and
+     * quest names learnt too, was minutes of work). Longest first, so "Arthas" goes before "Art"; whole words, any case. Cached for the
+     * same list.
+     */
+    private var cachedNames: List<String>? = null
+    private var cachedPattern: Regex? = null
+    @Synchronized fun namePattern(names: Collection<String>): Regex? {
+        val list = names.filter { it.length >= 2 }.distinct().sortedByDescending { it.length }
+        if (list.isEmpty()) return null
+        if (list == cachedNames) return cachedPattern
+        val p = Regex("(?<![\\p{L}\\p{N}])(?:" + list.joinToString("|") { Regex.escape(it) } + ")(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
+        cachedNames = list; cachedPattern = p
+        return p
+    }
+
+    fun text(s: String, names: Collection<String> = names()): String = text(s, namePattern(names))
+
+    fun text(s: String, names: Regex?): String {
         var t = s
         t = EMAIL.replace(t, "<email>")
         t = BATTLETAG.replace(t, "<battletag>")
@@ -45,10 +63,7 @@ object Redact {
         t = IPV4.replace(t, "<ip>")
         t = WIN_USER.replace(t) { m -> "${m.groupValues[1]}<user>" }
         t = NIX_USER.replace(t) { m -> "${m.groupValues[1]}<user>" }
-        // longest first, so "Arthas" goes before "Art"; whole words only (a name inside another word stays)
-        for (n in names.filter { it.length >= 2 }.sortedByDescending { it.length }) {
-            t = Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(n) + "(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE).replace(t, "<name>")
-        }
+        if (names != null) t = names.replace(t, "<name>")
         return t
     }
 }

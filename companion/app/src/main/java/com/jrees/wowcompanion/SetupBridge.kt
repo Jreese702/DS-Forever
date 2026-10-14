@@ -37,7 +37,10 @@ object SetupBridge {
     @Volatile var loginFormOpen = false
 
     /** the launcher's pad path asks before giving A to the game (p-auth-keyboard: A does nothing while the code pop-up shows) */
-    fun blockGameA(): Boolean = SignInKeyboard.blocksA(signIn, LauncherHooks.gameUp(), loginFormOpen)
+    fun blockGameA(): Boolean = SignInKeyboard.blocksA(signIn, LauncherHooks.gameUp(), loginFormOpen) || (noticeAsking && LauncherHooks.gameUp())
+
+    /** the report's notice on Home asks for a press (Open issue / OK): the game's A is held back meanwhile (board f-problem-report) */
+    @Volatile var noticeAsking = false
 
     /** "Restart the game to sign in": the launcher closes the game and starts it again (it outlives the launcher's setup screen) */
     @Volatile var restartGame: (() -> Unit)? = null
