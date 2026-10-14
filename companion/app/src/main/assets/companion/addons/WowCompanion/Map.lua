@@ -128,7 +128,64 @@ WC.minimapBlobsOff = false
 -- switch: there are no getters to tell). So while the hub's hide stands (not the death peek, not in combat), the same two
 -- setters are said again on the quest / zone / tracking events and every REASSERT_S on the probe's frame. Setting a value it
 -- already has costs nine pcalls. In WC (Map.lua's main chunk is at Lua 5.1's 200-local limit).
-WC.mmHide = { REASSERT_S = 2.0, at = -1000, n = 0 }
+-- b-quest-area-minimap, round 2 (the user on batch5: "the blue bubbles from quests is still appearing in the minimap", the new
+-- Map.lua installed, Minimap Off). Every layer the client lets an add-on reach goes off together, and the map document says which
+-- took it, so ONE log tells what is left: the icon scale (mmi), the nine blob alphas (mmb), the three blob RING SCALARS (mmr: the
+-- ring's size, 0 = none; shown again at 1.0, the same assumption as the alphas, no getters), the Minimap WIDGET's own alpha (mma:
+-- the cluster's alpha was measured not to reach the engine's layers; the widget's own is tried as well, 1 again on show) and the
+-- frame the hub hid (mmf). Once per session, the client's own Minimap methods with Blob / POI / Quest in their names go out as a
+-- {"type":"cap","what":"mmapi"} line (the API this build really has). Property setters only: no Hide / Show, no layout, no CVar.
+WC.mmHide = { REASSERT_S = 1.0, at = -1000, n = 0, r = 0, i = false, a = false,
+              RINGS = { "SetQuestBlobRingScalar", "SetTaskBlobRingScalar", "SetArchBlobRingScalar" } }
+
+-- every reachable layer of the minimap off ([off]) or back to the game's values (as far as they are known)
+function WC.mmHide.layers(off)
+    local H, mm = WC.mmHide, _G.Minimap
+    H.i = setIcons(off and ICONS_OFF or gameIconScale())
+    H.n = setBlobs(off and 0 or BLOB_SHOWN)
+    local r = 0
+    if mm then
+        for _, name in ipairs(H.RINGS) do
+            local fn = mm[name]
+            if type(fn) == "function" and pcall(fn, mm, off and 0 or 1) then r = r + 1 end
+        end
+    end
+    H.r = r
+    H.a = false
+    if mm and type(mm.SetAlpha) == "function" and hiddenFrame ~= "Minimap" then
+        H.a = pcall(mm.SetAlpha, mm, off and 0 or 1)
+    end
+    if off then
+        WC.minimapIconsOff = H.i
+        WC.minimapBlobsOff = H.n > 0
+        if not H.apiSent then H.apiSent = true; pcall(H.api) end
+    else
+        if H.i then WC.minimapIconsOff = false end
+        if H.n > 0 then WC.minimapBlobsOff = false end
+    end
+end
+
+-- the client's Minimap methods about blobs / POIs / quests, once (a read of the widget's method table)
+function WC.mmHide.api()
+    local mm = _G.Minimap
+    local mt = mm and getmetatable(mm)
+    local idx = mt and mt.__index
+    local names = {}
+    if type(idx) == "table" then
+        for k, v in pairs(idx) do
+            if type(k) == "string" and type(v) == "function" and (k:find("Blob") or k:find("POI") or k:find("Quest")) then
+                names[#names + 1] = k
+            end
+        end
+    end
+    table.sort(names)
+    WC.send(WC.encode({ type = "cap", what = "mmapi", names = table.concat(names, ",") }))
+end
+
+-- KEEPING THEM OFF (round 1, 2026-10-13): the hub hides the minimap ONCE (Hub.lua's apply never asks again while it says hidden),
+-- but the engine can put layers back on its own (a loading screen, a quest's area changing, a tracking switch: no getters to
+-- tell). While the hub's hide stands (not the death peek, not in combat) they are said again on the quest / zone / tracking / POI
+-- events and every REASSERT_S on the probe's frame. In WC (Map.lua's main chunk is at Lua 5.1's 200-local limit).
 function WC.mmHide.reassert(force)
     local H = WC.mmHide
     if not hiddenFrame or peek then return false end
@@ -136,9 +193,7 @@ function WC.mmHide.reassert(force)
     local t = (type(GetTime) == "function") and GetTime() or 0
     if not force and t - H.at < H.REASSERT_S then return false end
     H.at = t
-    WC.minimapIconsOff = setIcons(ICONS_OFF)
-    H.n = setBlobs(0)
-    WC.minimapBlobsOff = H.n > 0
+    H.layers(true)
     return true
 end
 
@@ -151,8 +206,8 @@ function WC.hideMinimap()
     local ok = pcall(function() fr:SetAlpha(0) end)
     if not ok then return false, "could not hide" end
     hiddenFrame = name
-    WC.minimapIconsOff = setIcons(ICONS_OFF)        -- the engine-drawn markers too
-    WC.minimapBlobsOff = setBlobs(0) > 0            -- and the quest-area shading
+    WC.mmHide.layers(true)                          -- the engine-drawn markers and the quest-area shading too
+    WC.mmHide.at = (type(GetTime) == "function") and GetTime() or 0
     return true, name
 end
 
@@ -165,8 +220,7 @@ function WC.showMinimap()
     local ok = pcall(function() fr:SetAlpha(1) end)
     if not ok then return false, "could not show" end
     hiddenFrame = nil
-    if setIcons(gameIconScale()) then WC.minimapIconsOff = false end
-    if setBlobs(BLOB_SHOWN) > 0 then WC.minimapBlobsOff = false end
+    WC.mmHide.layers(false)
     return true, name
 end
 
@@ -369,12 +423,10 @@ local function setPeek(on)
     if not (fr and type(fr.SetAlpha) == "function") then return true end
     if on then
         pcall(function() fr:SetAlpha(1) end)
-        if setIcons(gameIconScale()) then WC.minimapIconsOff = false end
-        if setBlobs(BLOB_SHOWN) > 0 then WC.minimapBlobsOff = false end
+        WC.mmHide.layers(false)
     else
         pcall(function() fr:SetAlpha(0) end)
-        WC.minimapIconsOff = setIcons(ICONS_OFF)
-        WC.minimapBlobsOff = setBlobs(0) > 0
+        WC.mmHide.layers(true)
     end
     return true
 end
@@ -1006,8 +1058,12 @@ function WC.collectMap()
     end
 
     out.track = trackingState()          -- Find Herbs / Minerals / Treasure on or off (see trackingState)
-    -- the hidden minimap's quest shading: how many of its nine alpha setters took 0 at the last re-assert (WC.mmHide; nil = shown)
-    if hiddenFrame and not peek then out.mmb = WC.mmHide.n end
+    -- the hidden minimap's layers at the last re-assert (WC.mmHide; absent = shown): blob alphas / ring scalars that took 0, the
+    -- icon scale and the widget's alpha taken (1 / 0), the frame the hub hid
+    if hiddenFrame and not peek then
+        local H = WC.mmHide
+        out.mmb, out.mmr, out.mmi, out.mma, out.mmf = H.n, H.r, H.i and 1 or 0, H.a and 1 or 0, hiddenFrame
+    end
 
     out.ok = true
     fullMap = plainId                   -- the map this snapshot carries (see zoneSnapshotDue)
@@ -2456,8 +2512,15 @@ function WC.mmp.init()
         f:SetScript("OnUpdate", function(_, el) pcall(WC.mmp.tick, el) end)
         f:RegisterEvent("PLAYER_REGEN_ENABLED")
         f:RegisterEvent("PLAYER_LOGOUT")
+        -- a quest's area changed: the hidden minimap's layers off again at once (WC.mmHide); a name this build lacks is skipped
+        for _, ev in ipairs({ "QUEST_POI_UPDATE", "QUEST_WATCH_LIST_CHANGED", "AREA_POIS_UPDATED", "LOADING_SCREEN_DISABLED" }) do
+            pcall(f.RegisterEvent, f, ev)
+        end
         f:SetScript("OnEvent", function(_, event)
-            if event == "PLAYER_REGEN_ENABLED" then
+            if event ~= "PLAYER_REGEN_ENABLED" and event ~= "PLAYER_LOGOUT" then
+                pcall(WC.mmHide.reassert, true)
+            elseif event == "PLAYER_REGEN_ENABLED" then
+                pcall(WC.mmHide.reassert, true)                    -- combat held the re-assert back
                 if WC.mmp.pend then WC.mmp.sparkles(WC.mmp.opt >= 4) end
             elseif event == "PLAYER_LOGOUT" then
                 -- the game as it was: a disabled add-on (or a changed option) leaves nothing behind for the next session
