@@ -6,7 +6,7 @@ import android.os.Bundle
 
 /**
  * Settings > Frame generation > "Choose": the bottom screen is a Presentation, which can't take a picker's result, so this invisible
- * activity opens Android's file picker, copies the pick into private storage (FrameGen.importDll, off the main thread) and closes.
+ * activity (started on the bottom screen's display, with the game running on the top one) opens Android's file picker, copies the pick into private storage (FrameGen.importDll, off the main thread) and closes.
  * Read access to the one picked file only: no permission is asked for.
  */
 class FrameGenPickActivity : Activity() {
@@ -26,6 +26,12 @@ class FrameGenPickActivity : Activity() {
             Thread({ FrameGen.importDll(app, uri) }, "framegen-import").start()
         }
         finish()
+    }
+
+    /** however it ends (a pick, Back, a failure): the bottom screen's window comes back */
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isFinishing) FrameGen.onPickerClosed?.invoke()
     }
 
     private companion object { const val REQ = 7101 }

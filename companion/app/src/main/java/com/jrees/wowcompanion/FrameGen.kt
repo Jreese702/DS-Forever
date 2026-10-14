@@ -31,6 +31,9 @@ object FrameGen {
     private var dir: File? = null
     private val listeners = ArrayList<() -> Unit>()
 
+    /** the picker activity closed (the bottom screen's window, hidden while it was up, comes back): set by the host, run once */
+    @Volatile var onPickerClosed: (() -> Unit)? = null
+
     /** the last pick's result for the Settings row ("" = none this run) */
     @Volatile var lastPick: String = ""
         private set

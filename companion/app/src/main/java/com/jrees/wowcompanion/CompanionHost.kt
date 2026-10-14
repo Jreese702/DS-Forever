@@ -175,6 +175,31 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  (2026-10-03, the share test on the Thor: onStart's barSelect crashed every fresh install before the unpack screen) */
     private var unpacking = false
 
+    /**
+     * Settings > Frame generation > Choose: FrameGenPickActivity on THIS context's display (the bottom screen), so the game's window on
+     * the top screen is never covered. A Presentation is a system window and stands OVER the activities of its display: while the
+     * picker is up, this window is hidden (GONE: no touches, the picker shows), and it comes back when the picker closes
+     * (FrameGen.onPickerClosed). If the bottom display refuses the launch, the picker opens where Android puts it and nothing is hidden.
+     */
+    private fun openDllPicker() {
+        val i = android.content.Intent(this, FrameGenPickActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        val displayId = runCatching {
+            (getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.displayId
+        }.getOrNull()
+        val decor = shell.hostWindow()?.decorView
+        FrameGen.onPickerClosed = { ui.post { decor?.visibility = View.VISIBLE; FrameGen.onPickerClosed = null } }
+        val onBottom = displayId != null && runCatching {
+            startActivity(i, android.app.ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle())
+        }.onFailure { android.util.Log.w("FrameGen", "picker on display $displayId: ${it.message}") }.isSuccess
+        if (onBottom) {
+            decor?.visibility = View.GONE
+            android.util.Log.i("FrameGen", "picker on display $displayId; the bottom window hidden until it closes")
+        } else {
+            FrameGen.onPickerClosed = null
+            runCatching { shell.startHostActivity(i) }.onFailure { android.util.Log.w("FrameGen", "picker: ${it.message}") }
+        }
+    }
+
     fun onCreate(savedInstanceState: Bundle?) {
         ArtHarvest.init(this)                     // the harvested art folder, before any view reads a picture (the art harvest, phase 1)
         ArtHarvest.onState(iconArtState)
@@ -241,12 +266,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // SettingsView (map session) in two parts, Home's section between them (the user's order, 2026-10-06)
         settingsView = SettingsView(this, SettingsView.Part.TOP, reload)
         val settingsRest = SettingsView(this, SettingsView.Part.REST, reload)
-        // Frame generation (board f-frame-gen): the player's own Lossless.dll through Android's picker, only with the game closed
+        // Frame generation (board f-frame-gen): the player's own Lossless.dll through Android's picker. The Settings room is open only
+        // with the game up (v1.0.4), so the picker opens HERE, on the bottom screen's display: the game's window on the top screen is never
+        // covered (the picker's task sits over this Presentation until it closes). The copy applies at the next game start
         settingsRest.gameRunning = { LauncherHooks.gameUp() }
-        settingsRest.onChooseDll = {
-            runCatching { shell.startHostActivity(android.content.Intent(this, FrameGenPickActivity::class.java)) }
-                .onFailure { android.util.Log.w("FrameGen", "picker: ${it.message}") }
-        }
+        settingsRest.onChooseDll = { openDllPicker() }
         settings = SettingsRoom(this, settingsView, settingsRest, { questsPad })
         settings.pad.onLeave = { show(Room.HOME) }
         settingsRoom = settings

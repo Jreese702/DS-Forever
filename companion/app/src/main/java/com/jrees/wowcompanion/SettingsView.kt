@@ -73,7 +73,9 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
 
     /**
      * FRAME GENERATION (board f-frame-gen): the player's own Lossless.dll and its settings (FrameGen; applied at the next game start).
-     * [onChooseDll] opens the host's file picker; [gameRunning] = the game is up (no picker over it: choose with the game closed).
+     * [onChooseDll] opens the host's file picker ON THIS (bottom) SCREEN; [gameRunning] = the game is up: the Settings room is reachable
+     * only then (v1.0.4 test: "I only have the setting with the game open"), so Choose works with it up and everything applies at
+     * the next game start.
      */
     var onChooseDll: () -> Unit = {}
     var gameRunning: () -> Boolean = { false }
@@ -220,7 +222,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
             segOpen[1].contains(x, y) -> HomeSettings.radialTap = false
             segPick[0].contains(x, y) -> HomeSettings.radialPickA = true
             segPick[1].contains(x, y) -> HomeSettings.radialPickA = false
-            btnDll.contains(x, y) -> if (!gameRunning()) onChooseDll()
+            btnDll.contains(x, y) -> onChooseDll()
             segFg[0].contains(x, y) -> FrameGen.enabled = false
             segFg[1].contains(x, y) -> if (FrameGen.hasDll()) FrameGen.enabled = true
             btnFlowMinus.contains(x, y) -> FrameGen.flowScale = FrameGen.stepFlow(FrameGen.flowScale, -1)
@@ -378,17 +380,19 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         val hasDll = FrameGen.hasDll()
         val up = gameRunning()
         btnDll = row(c, y, "Lossless.dll: ${if (hasDll) "found" else "not set"}",
-            FrameGen.lastPick.ifEmpty {
-                if (up) "Close the game to choose it." else if (hasDll) "Your own copy, kept in DS Forever's private storage."
-                else "Choose your own copy (from Lossless Scaling on your PC)."
+            when {
+                FrameGen.lastPick.isNotEmpty() -> FrameGen.lastPick + if (up && hasDll) ". Applies the next time the game starts." else ""
+                hasDll -> "Your own copy, kept in DS Forever's private storage."
+                else -> "Choose your own copy (from Lossless Scaling on your PC)."
             }, enabled = true) { box ->
             val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            UiKit.button(c, b, "Choose", if (up) UiKit.Button.DISABLED else UiKit.Button.UP)
+            UiKit.button(c, b, "Choose", UiKit.Button.UP)
             b
         }
         y += ROW_H + 10f
         val on = FrameGen.enabled && hasDll
-        row(c, y, "Frame generation", if (!hasDll) "Needs Lossless.dll first." else if (on) "On from the next game start." else "Off: the game launches as always.",
+        row(c, y, "Frame generation", if (!hasDll) "Needs Lossless.dll first." else if (on) (if (up) "On: applies the next time the game starts." else "On from the next game start.")
+            else if (up) "Off: applies the next time the game starts." else "Off: the game launches as always.",
             enabled = hasDll) { box ->
             val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             segmented(c, b, listOf("Off", "On"), if (on) 1 else 0, segFg)
