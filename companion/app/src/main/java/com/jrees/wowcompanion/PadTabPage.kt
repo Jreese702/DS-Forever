@@ -664,7 +664,7 @@ class PadTabPage(
         if (filled) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
             m.combat -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
         UiKit.button(c, act, if (filled) "Change" else "Choose", glyph(8), when {
-            m.combat -> UiKit.Button.DISABLED; isDown(DOWN_CHANGE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
+            m.combat || !changeHere() -> UiKit.Button.DISABLED; isDown(DOWN_CHANGE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
     }
 
     /** carrying a slice (the button room's Move page): what moves, from where; what goes back on a swap; A Place / Swap, B Cancel */
@@ -855,7 +855,7 @@ class PadTabPage(
         if (filled) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
             moveOff -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
         if (!fixed) UiKit.button(c, act, if (filled) "Change" else "Choose", glyph(8), when {
-            off -> UiKit.Button.DISABLED
+            off || !changeHere() -> UiKit.Button.DISABLED
             isDown(DOWN_CHANGE) -> UiKit.Button.DOWN
             else -> UiKit.Button.UP
         })
@@ -988,7 +988,7 @@ class PadTabPage(
         if (filled) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
             m.combat || sl?.storage == null -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
         if (!fixed || (face && inCombat)) UiKit.button(c, act, if (inCombat) "Change combat spell" else "Change", glyph(8), when {
-            !canChange -> UiKit.Button.DISABLED
+            !canChange || !changeHere() -> UiKit.Button.DISABLED
             isDown(DOWN_CHANGE) -> UiKit.Button.DOWN
             else -> UiKit.Button.UP
         })
@@ -1200,7 +1200,7 @@ class PadTabPage(
         }
         if (chooserList() == null) {
             val carrying = carryNow() != null
-            if (actRect(w, h).contains(x, y)) return if (carrying) DOWN_PLACE else DOWN_CHANGE
+            if (actRect(w, h).contains(x, y)) return if (carrying) DOWN_PLACE else if (changeHere()) DOWN_CHANGE else DOWN_NONE
             if (moveRect(w, h).contains(x, y)) return if (carrying) DOWN_CANCEL else DOWN_MOVE
         }
         return DOWN_NONE
@@ -1303,17 +1303,19 @@ class PadTabPage(
                 tap(listOf(PadMapModel.ROW to PadMapModel.colPage(i + 1))); host.invalidate(); return
             }
             val sl = UiKit.radialPreviewHit(WHEEL_CX, wheelCy(h), wheelD(h), x, y)
-            if (sl >= 0) { pick(set, sl + 1); tap(listOf(PadMapModel.ROW to PadMapModel.colPos(sl + 1))) }
+            if (sl >= 0) { fingerOnButton = true; pick(set, sl + 1); tap(listOf(PadMapModel.ROW to PadMapModel.colPos(sl + 1))) }
             return
         }
         // p9: ZL / ZR / ZL + ZR; the lit one again = the base set (no "None")
         for (i in 0..2) if (setRect(i).contains(x, y)) {
             val to = if (set == i + 2) 1 else i + 2
+            fingerOnButton = false
             pick(to, pos); tap(listOf(PadMapModel.ROW to PadMapModel.colSet(to))); return
         }
         for (p in 1..8) {
             val r = square(p)
             if (x >= r.left - 10f && x <= r.right + 10f && y >= r.top - 10f && y <= r.bottom + 10f) {
+                fingerOnButton = true
                 pick(set, p); tap(listOf(PadMapModel.ROW to PadMapModel.colPos(p))); return
             }
         }
@@ -1330,6 +1332,14 @@ class PadTabPage(
                 tap(listOf(PadMapModel.ROW to PadMapModel.colPage(to)))
             }
         }
+    }
+
+    /** L (the user on batch2: "the change button should only be selectable when highlighting a button to change"): Choose / Change
+     *  works only while the cursor stands on a button (or a slice): the controller's focus, or a finger's last pick of a button */
+    private var fingerOnButton = false
+    private fun changeHere(): Boolean {
+        val k = ctl?.takeIf { it.on } ?: return true                    // touch only: a button is always the chosen one
+        return k.focus == "buttons" || (fingerOnButton && SystemClock.uptimeMillis() < pickUntil)
     }
 
     private fun pick(s: Int, p: Int) {
