@@ -599,6 +599,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the Calendar room holds the controller while it shows (a guest of the shared capture): `f` on leaving, `h` on entering
         val calIn = r == Room.CALENDAR && room != Room.CALENDAR
         if (room == Room.CALENDAR && r != Room.CALENDAR) calendarView.onHidden()
+        // THE CHAT ROOM'S GLIDE (b-chat-slide): a glide still running lands at once; Home's picture is taken BEFORE it gives the map
+        // and the bars back (after that its slots are empty)
+        chatGlideEnd()
+        val chatOpening = room == Room.HOME && r == Room.CHAT && homeView.isShown
+        val chatClosing = room == Room.CHAT && r == Room.HOME && chatView.isShown
+        val openPane = if (chatOpening) homeView.chatPaneBox() else null
+        val homePicture = if (openPane != null) homeShot() else null
         // Home gives the map and the bars back BEFORE the loop below walks the rooms, and takes
         // them AFTER it: never re-parent a view while `content`'s children are being walked
         if (r != Room.HOME) { homeView.closeAuras(); homeView.giveBack() }     // an open buff list hands the controller back
@@ -656,6 +663,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the disc pressed ON Home goes back from a full-screen module; arriving from a room lands
         if (r == Room.HOME) { homeView.borrow(); if (again) homeView.homeDisc() else homeView.land() }
         if (r == Room.CHAT) chatView.focusInput()
+        if (openPane != null && homePicture != null) chatGlideStart(true, openPane, homePicture)
+        else if (chatClosing) homeView.chatPaneBox()?.let { chatGlideStart(false, it, null) }
         if (socialIn) {
             socialHold(0)
             socialView.onShown()
@@ -1743,6 +1752,96 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         val bar = UiKit.pauseOut(UiKit.PAUSE_BAR, t, android.graphics.RectF(0f, 0f, pauseView.width.toFloat(), pauseView.height.toFloat()))
         strip.translationY = bar[1]
+    }
+
+    // ---------------------------------------------------------------- THE CHAT ROOM'S GLIDE (b-chat-slide)
+    // The user's pick: chat going full screen from Home and back should move like the map's morph. Home's chat pane opens the Chat
+    // ROOM (HomeView.ChatPane's tap), a room switch that used to swap at once. Now the room's view (laid out once, full size, as it
+    // always is) shows through a rounded window that glides from the pane's box to the frame on the map's time and curve
+    // (Motion.MODULE_OPEN / MODULE_CLOSE, Motion.curve), over a picture of Home taken as it leaves (its map and bars go back to
+    // their rooms then); back Home it shrinks onto the pane while Home comes in under it. No layout during the glide: an outline
+    // and alphas only (a requestLayout per frame was what made the combat switch lag the game).
+    private var chatGlideAnim: android.animation.ValueAnimator? = null
+    private val chatGlideBox = android.graphics.RectF()
+    private var chatGlidePic: android.widget.ImageView? = null
+    private var chatGlideBmp: android.graphics.Bitmap? = null
+    private val chatGlideOutline = object : android.view.ViewOutlineProvider() {
+        override fun getOutline(v: View, o: android.graphics.Outline) {
+            val b = chatGlideBox
+            if (b.isEmpty) o.setRect(0, 0, v.width, v.height)
+            else o.setRoundRect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt(), UiKit.MODULE_R)
+        }
+    }
+
+    /** Home as it looks now, drawn into one kept bitmap (null when it cannot be) */
+    private fun homeShot(): android.graphics.Bitmap? = try {
+        val w = homeView.width; val h = homeView.height
+        if (w <= 0 || h <= 0) null else {
+            val b = chatGlideBmp?.takeIf { it.width == w && it.height == h && !it.isRecycled }
+                ?: android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888).also { chatGlideBmp = it }
+            b.eraseColor(0)
+            homeView.draw(android.graphics.Canvas(b))
+            b
+        }
+    } catch (t: Throwable) { Log.i("WCHOME", "chat glide: no picture of Home (${t.message})"); null }
+
+    /** [opening]: from the pane's box ([pane], Home's px) to the frame over Home's [picture]; else from the frame onto the pane */
+    private fun chatGlideStart(opening: Boolean, pane: android.graphics.RectF, picture: android.graphics.Bitmap?) {
+        val fw = chatView.width.toFloat(); val fh = chatView.height.toFloat()
+        if (fw <= 0f || fh <= 0f) return
+        val p = android.graphics.RectF(pane).apply { offset((homeView.left - chatView.left).toFloat(), (homeView.top - chatView.top).toFloat()) }
+        val pic = picture?.let { bmp ->
+            android.widget.ImageView(this).apply {
+                setImageBitmap(bmp); scaleType = android.widget.ImageView.ScaleType.MATRIX
+                translationX = homeView.left.toFloat(); translationY = homeView.top.toFloat()
+            }.also { content.addView(it, content.indexOfChild(chatView), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) }
+        }
+        chatGlidePic = pic
+        chatView.visibility = View.VISIBLE                         // back Home the room's view stays up, over Home, until it lands
+        chatView.outlineProvider = chatGlideOutline
+        chatView.clipToOutline = true
+        val ms = if (opening) Motion.MODULE_OPEN else Motion.MODULE_CLOSE
+        val fade = HomeView.FADE_MS
+        fun at(k: Float, t: Float) {
+            val g = if (opening) k else 1f - k
+            chatGlideBox.set(p.left + (0f - p.left) * g, p.top + (0f - p.top) * g, p.right + (fw - p.right) * g, p.bottom + (fh - p.bottom) * g)
+            chatView.invalidateOutline()
+            if (opening) {
+                // the room comes in over the first FADE ms inside its box, Home's picture fades as Home's own parts do
+                chatView.alpha = (t / fade).coerceIn(0f, 1f)
+                pic?.alpha = 1f - (t / fade).coerceIn(0f, 1f)
+            } else {
+                // the box lands on the pane: the room leaves over the last FADE ms as Home comes in under it
+                val inK = ((t - (ms - fade)) / fade).coerceIn(0f, 1f)
+                chatView.alpha = 1f - inK
+                homeView.alpha = inK
+            }
+        }
+        at(0f, 0f)
+        chatGlideAnim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = ms
+            interpolator = Motion.curve()
+            addUpdateListener { a -> at(a.animatedValue as Float, a.animatedFraction * ms) }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) { if (chatGlideAnim === a) chatGlideEnd() }
+            })
+            start()
+        }
+    }
+
+    /** the glide over: the picture goes, the room's view whole again (shown only while the Chat room is) */
+    private fun chatGlideEnd() {
+        val a = chatGlideAnim ?: return
+        chatGlideAnim = null
+        a.cancel()
+        chatGlidePic?.let { content.removeView(it) }
+        chatGlidePic = null
+        chatGlideBox.setEmpty()
+        chatView.clipToOutline = false
+        chatView.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        chatView.alpha = 1f
+        homeView.alpha = 1f
+        chatView.visibility = if (room == Room.CHAT) View.VISIBLE else View.GONE
     }
 
     private var startReadAt = 0L
