@@ -1649,7 +1649,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // TEST6: while the Update login form is open the state HOLDS (no SIGNING -> FAILED -> NONE flapping under the form); the save
         // restarts the game, a close without saving lets it move again
         if (restartOnSave && !loginPrompt.isOpen) restartOnSave = false
-        val st = if (restartOnSave) SetupBridge.signIn else if (LauncherHooks.gameUp()) {
+        val st0 = if (restartOnSave) SetupBridge.signIn else if (LauncherHooks.gameUp()) {
             // a new client run starts clean
             if (LauncherHooks.gameStartSec != signInRun) {
                 signInRun = LauncherHooks.gameStartSec; signInCheck.reset()
@@ -1666,6 +1666,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             if (signInCheck.signedIn && !NativeLogin.pastLogin) NativeLogin.markPastLogin("two-way keepalives after the sign-in")
             signInCheck.tick(now, NativeLogin.firstReadAt, NativeLogin.pastLogin, noFile)
         } else SetupFlow.SignIn.NONE
+        // p-auth-keyboard: a traffic-only FAILED in the first 25 s is "Check the game screen"; the log's AUTH / failure replaces it
+        val logFailed = loginWatch.state.phase == HomeLogin.Phase.FAILED
+        var st = SignInKeyboard.shown(st0, NativeLogin.firstReadAt, now, logFailed)
+        // the simulation (adb only: a file in the app's own external folder): the authenticator's state with the game at its login
+        // screen, through the same pop-up and the same keyboard path (no write into the game's log)
+        if (LauncherHooks.gameUp() && simulateAuth()) st = SetupFlow.SignIn.AUTH
         val restart = st != SetupFlow.SignIn.NONE && signInCheck.restartOffered
         if (st != SetupBridge.signIn || restart != SetupBridge.restartOffered) {
             NativeLogin.logEvent("sign-in: $st${if (restart) " (restart offered)" else ""}" +
@@ -1679,6 +1685,23 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (st == SetupFlow.SignIn.NONE && SetupBridge.keyboardOpen) { NativeLogin.logEvent("sign-in: keyboard closed (past the login screen)"); SetupBridge.keyboard(false) }
     }
     private val NO_FILE_LOGIN_S = 30L
+
+    /**
+     * THE AUTHENTICATOR, SIMULATED (p-auth-keyboard, for a Thor without one): while
+     * /sdcard/Android/data/<package>/files/simulate_auth exists (adb shell touch / rm; no exported entry point), the sign-in reads AUTH
+     * with the game up. Checked at most once a second (one stat).
+     */
+    private var simChecked = 0L
+    private var simOn = false
+    private fun simulateAuth(): Boolean {
+        val t = SystemClock.elapsedRealtime()
+        if (t - simChecked >= 1000L) {
+            simChecked = t
+            val on = runCatching { java.io.File(getExternalFilesDir(null), SignInKeyboard.SIMULATE_AUTH_FILE).exists() }.getOrDefault(false)
+            if (on != simOn) { simOn = on; NativeLogin.logEvent("sign-in: authenticator simulation ${if (on) "on" else "off"}") }
+        }
+        return simOn
+    }
     /** "Restarting the game to sign in…" stays readable this long before the game closes */
     private val RESTART_DELAY_MS = 1_500L
 

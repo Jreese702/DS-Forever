@@ -119,6 +119,15 @@ object HomeLogin {
         return null
     }
 
+    /**
+     * Connection.log's lines (p-auth-keyboard): the same "[Connection]" lines as General.log's, if the file writes the tag or not; only
+     * the authenticator, a refusal and the queue are taken (General.log stays the one source of the rest)
+     */
+    fun connectionEvents(text: String): List<Event> = text.split('\n').mapNotNull { raw ->
+        val line = raw.trimEnd('\r').let { if ("[Connection]" in it) it else "[Connection] $it" }
+        parse(line)?.takeIf { it is Event.Authenticator || it is Event.Failed || it is Event.Queue }
+    }
+
     /** "10/5 17:47:34.789  [N]..." -> "17:47", or "" */
     fun clock(line: String): String = Regex("""^\d+/\d+ (\d\d:\d\d)""").find(line)?.groupValues?.get(1) ?: ""
 
