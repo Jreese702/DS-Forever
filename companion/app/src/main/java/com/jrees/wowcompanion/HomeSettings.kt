@@ -152,7 +152,8 @@ object HomeAttackSwitch {
 }
 
 /**
- * THE LOOT WINDOW ON THE TOP SCREEN (r-loot-on-top, a player's request 2026-10-13): Home > Settings' "Loot window" row. The CHOICE is
+ * THE LOOT WINDOW ON THE TOP SCREEN (r-loot-on-top, a player's request 2026-10-13): the "Loot window" row of Settings' Game UI section
+ * (GameUiSection; it was Home's section until the user's batch4 word: "loot window should be moved to the UI settings"). The CHOICE is
  * the add-on's (WowCompanionInteract: WowCompanionDB.lootTop, kept across updates by SvKeep), so it holds from the login on: the
  * state comes from every interact document (`proof.lootc`: on / off cells and `top`; absent = an older add-on: no row), and a press
  * is one tap on the `iact` row's on / off cell, tried once more if the add-on has not said so a moment later (idempotent).
@@ -224,7 +225,6 @@ class HomeSettingsSection(context: Context) : View(context) {
         HomeSettings.onChange { post { invalidate() } }
         // the attack switch appears / its words change: the section's height may change too
         HomeAttackSwitch.onChange { post { requestLayout(); invalidate() } }
-        HomeLootSwitch.onChange { post { requestLayout(); invalidate() } }
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
@@ -262,14 +262,6 @@ class HomeSettingsSection(context: Context) : View(context) {
                 listOf("Harmful spells on your controller also start your attack.") + HomeAttackWords.notes(s),
                 listOf("Off", "On"), if (s.on) 1 else 0,
                 listOf({ HomeAttackSwitch.turn(context, false) }, { HomeAttackSwitch.turn(context, true) }))
-        }
-        // THE LOOT WINDOW (r-loot-on-top): the bottom screen's pop-up (default) or the game's own on the top screen; the add-on's word
-        // (null = an older add-on: no row)
-        HomeLootSwitch.state?.let { s ->
-            y = row(c, y + GAP, "Loot window",
-                listOf(if (s.top) "The game's own loot window, on the top screen." else "The loot pop-up on this screen."),
-                listOf("Bottom", "Top screen"), if (s.top) 1 else 0,
-                listOf({ if (s.top) HomeLootSwitch.turn(context, false) }, { if (!s.top) HomeLootSwitch.turn(context, true) }))
         }
         // THE DS WOW TOOLBAR (Spells' place / remove; null = an older add-on: no row): Off / On, the CHOICE (want)
         dpadState()?.let { d ->
