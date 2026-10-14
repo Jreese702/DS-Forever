@@ -126,7 +126,14 @@ async function github(env, path, payload) {
     },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
+  if (!res.ok) {
+    // GitHub's own reason (e.g. "Resource not accessible by personal access token") into the Worker log and the app's message
+    const detail = (await res.text().catch(() => "")).slice(0, 300);
+    console.log(`github ${path}: ${res.status} ${detail}`);
+    let why = "";
+    try { why = JSON.parse(detail).message || ""; } catch {}
+    throw new Error(`GitHub answered ${res.status}${why ? `: ${why}` : ""}`);
+  }
   return res.json();
 }
 
