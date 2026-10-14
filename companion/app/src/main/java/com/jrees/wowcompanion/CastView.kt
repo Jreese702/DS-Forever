@@ -1323,6 +1323,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         for (b in cmdBtns) b?.shader = null           // the host-driven faces / toolbar carry the old matrix too
         for (b in dpadFightBtns) b?.shader = null
         for (b in roomBtns) b?.shader = null
+        for (b in setFightBtns.values) b.shader = null
         resolveIcons()
     }
 
@@ -2324,8 +2325,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * state change. [set]: 1 none, 2 LT, 3 RT, 4 LT+RT. [lit]: a GAME position 1..8 (1-4 D-pad L/U/R/D,
      * 5-8 face X/Y/B/A = left/top/right/bottom) to highlight, drawn with [litIcon] in it when given.
      * Main thread. Returns false when no layout has arrived yet (the caller keeps its stand-ins).
+     * [fight] (the Bind box's In combat tab, the user on batch8: "when on the in combat tab the spells should all change to show what's
+     * bound for in combat"): GAME position 1..8 -> the icon of that button's IN COMBAT spell for [set] (null = none). Given, every slot
+     * shows that instead of the bar: the fight spell drawn as this view draws a fight face (the same Btn road), the gold crossed swords
+     * on it; a slot without one is an empty slot. Same frame, glyphs and size as the bar's own picture: only the spells change.
      */
-    fun drawSet(c: Canvas, set: Int, dpad: RectF, face: RectF, lit: Int? = null, litIcon: Bitmap? = null): Boolean {
+    fun drawSet(c: Canvas, set: Int, dpad: RectF, face: RectF, lit: Int? = null, litIcon: Bitmap? = null,
+                fight: ((Int) -> Int?)? = null): Boolean {
         val h = hud ?: return false
         if (k <= 0f) rebuildScale(BAND_K)
         val li = when (set) { 2 -> LT; 3 -> RT; 4 -> LR; else -> N }
@@ -2340,15 +2346,20 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val s = min(r.width() / wU, r.height() / 86f)       // px per unit inside this box
             for (pos in group * 4 until group * 4 + 4) {
                 val src = srcOf[pos]
-                val b = h.layers[li][src]
-                val st = if (li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else null
+                val fi = fight?.invoke(src + 1)
+                val b = if (fight != null) setFightBtn(src, fi, pos >= 4) else h.layers[li][src]
+                val st = if (fight == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else null
                 val px = r.centerX() + (POS_X[pos] - cxU) * s
                 val py = r.centerY() - POS_Y[pos] * s
                 c.save()
                 c.translate(px, py)
                 c.scale(s / k, s / k)
-                drawSlot(c, pos, 0f, 0f, pos >= 4, b, st, if (li < STATE_LAYERS) li * 8 + src else -1,
+                drawSlot(c, pos, 0f, 0f, pos >= 4, b, st, if (fight == null && li < STATE_LAYERS) li * 8 + src else -1,
                     now, false, 0f, null)
+                // the In combat mark (the Controller room's In combat tab: the game's gold crossed swords, bottom left on the slot)
+                if (b != null && fight != null) UiKit.tex("combat_swords")?.let { sw ->
+                    rect.set(-19f * k, 3f * k, -3f * k, 18f * k); c.drawBitmap(sw, null, rect, pArt)
+                }
                 c.restore()
                 if (lit != null && src == lit - 1) {
                     c.save(); c.translate(px, py); c.scale(s / k, s / k)
@@ -2361,6 +2372,19 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
         drawCollapsed = savedCollapsed
         return true
+    }
+
+    /** drawSet's In combat slots: a fight spell as a Btn (fightOverride's road), kept per position and icon */
+    private val setFightBtns = HashMap<Long, Btn>()
+    private fun setFightBtn(src: Int, icon: Int?, circle: Boolean): Btn? {
+        if (icon == null || icon <= 0) return null
+        val key = src * 1_000_000_000L + icon
+        setFightBtns[key]?.let { if (it.shader == null) resolve(it, circle); return it }
+        val b = Btn().apply { p = src + 1; k = "spell"; this.icon = icon; e = true }
+        classify(b)
+        resolve(b, circle)
+        setFightBtns[key] = b
+        return b
     }
 
     /** the highlighted slot: the bound spell's icon masked into the slot, and a gold ring */
