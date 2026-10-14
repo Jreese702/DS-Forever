@@ -96,3 +96,7 @@ releases/
 /app/release-signed/
 !tools/bin/
 !tools/bin/shasum
+
+# Frame generation: Lossless Scaling's Lossless.dll is the player's own and commercial; it never goes in git or the APK
+Lossless.dll
+*.dll

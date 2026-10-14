@@ -30,7 +30,8 @@ import kotlin.jvm.JvmStatic
  * Flow:
  * 1. At launch time: install the layer .so + manifest into the container's
  *    filesystem where the Vulkan loader discovers implicit layers.
- * 2. Copy Lossless.dll from the Steam install dir (app 993090) into the
+ * 2. Copy the player's own Lossless.dll (DS Forever: picked in Settings > Frame
+ *    generation, kept in private storage by FrameGen; never shipped) into the
  *    container's ~/.local/share/lsfg-vk/ directory.
  * 3. Write conf.toml with the DLL path, multiplier, flow scale, and
  *    performance mode. Set env vars so the layer finds its config.
@@ -98,16 +99,16 @@ object LsfgVkManager {
     fun isSupported(container: Container): Boolean =
         container.containerVariant.equals(Container.BIONIC, ignoreCase = true)
 
-    /** Whether LSFG is armed (enabled + Lossless.dll available in Steam dir) for this container. The DLL is copied into the container at launch time by ensureRuntimeInstalled(). */
+    /** Whether LSFG is armed (enabled + the player's Lossless.dll available) for this container. The DLL is copied into the container at launch time by ensureRuntimeInstalled(). */
     @JvmStatic
     fun isArmed(container: Container): Boolean =
         isSupported(container) &&
             parseBool(container.getExtra(EXTRA_ARMED, "false")) &&
             isDllAvailable()
 
-    /** Whether Lossless Scaling is installed (Lossless.dll exists in Steam dir). */
+    /** Whether the player has given their own Lossless.dll (DS Forever: FrameGen's private copy). */
     @JvmStatic
-    fun isDllAvailable(): Boolean = findSteamDll() != null
+    fun isDllAvailable(): Boolean = findPlayerDll() != null
 
     /** Get the DLL path inside the container, or null if the copy doesn't exist. */
     @JvmStatic
@@ -285,7 +286,7 @@ object LsfgVkManager {
     @JvmStatic
     @Synchronized
     fun prepareNativeCache(context: Context, container: Container): String? {
-        val dll = containerDllPath(container)?.let { File(it) } ?: findSteamDll()
+        val dll = containerDllPath(container)?.let { File(it) } ?: findPlayerDll()
         if (dll == null || !dll.isFile) return null
         val driverName = LosslessScaling.getDriverName(container)
         val cache = LosslessScaling.resolveOrBuildCache(context, dll, driverName)
@@ -414,7 +415,9 @@ object LsfgVkManager {
         }
 
         val dllFile = File(dllDir, LOSSLESS_DLL_NAME)
-        val steamDll = findSteamDll()
+        // DS Forever: copied in only while frame generation is on; Off (or the player's copy removed) leaves no copy behind
+        val steamDll = findPlayerDll()?.takeIf { parseBool(container.getExtra(EXTRA_ARMED, "false")) }
+        if (steamDll == null && dllFile.isFile) dllFile.delete()
         if (steamDll != null) {
             try {
                 if (!dllFile.isFile || dllFile.length() != steamDll.length()) {
@@ -432,7 +435,7 @@ object LsfgVkManager {
                 success = false
             }
         } else if (parseBool(container.getExtra(EXTRA_ARMED, "false"))) {
-            Timber.tag(TAG).w("LSFG enabled but Lossless.dll not found in Steam dir")
+            Timber.tag(TAG).w("LSFG enabled but the player's Lossless.dll is not set")
             success = false
         }
 
@@ -540,7 +543,33 @@ object LsfgVkManager {
 
     // ---- DLL discovery -----------------------------------------------------
 
-    private fun findSteamDll(): File? = null
+    /** DS Forever: the player's own copy (Settings > Frame generation); there is no Steam here and nothing is ever downloaded */
+    private fun findPlayerDll(): File? = com.jrees.wowcompanion.FrameGen.dllFile()?.takeIf { it.isFile }
+
+    // ---- DS Forever's settings ----------------------------------------------
+
+    /**
+     * The container extras for DS Forever's Frame generation settings. Off or no DLL: only [EXTRA_ARMED] = "false" (the launch is as
+     * without the feature; the other values are left as they are). On: armed, with the multiplier, flow scale and performance mode.
+     */
+    @JvmStatic
+    fun dsForeverExtras(settings: com.jrees.wowcompanion.FrameGen.Snapshot, dllPresent: Boolean): Map<String, String> {
+        if (!settings.enabled || !dllPresent) return mapOf(EXTRA_ARMED to "false")
+        return mapOf(
+            EXTRA_ARMED to "true",
+            EXTRA_MULTIPLIER to com.jrees.wowcompanion.FrameGen.sanitizeMultiplier(settings.multiplier).toString(),
+            EXTRA_FLOW_SCALE to formatFlowScale(com.jrees.wowcompanion.FrameGen.sanitizeFlow(settings.flowScale)),
+            EXTRA_PERFORMANCE_MODE to settings.performance.toString(),
+        )
+    }
+
+    /** Write DS Forever's Frame generation settings into [container] (the launcher, at each game start; the caller saves). */
+    @JvmStatic
+    fun applyDsForever(container: Container) {
+        val extras = dsForeverExtras(com.jrees.wowcompanion.FrameGen.snapshot(), isDllAvailable())
+        for ((k, v) in extras) container.putExtra(k, v)
+        Timber.tag(TAG).i("DS Forever frame generation: %s", extras)
+    }
 
     // ---- Helpers -----------------------------------------------------------
 
@@ -561,7 +590,7 @@ object LsfgVkManager {
         }
     }
 
-    private fun buildConfigToml(
+    internal fun buildConfigToml(
         dllPath: String?,
         enabled: Boolean,
         multiplier: Int,

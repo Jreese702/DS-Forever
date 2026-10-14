@@ -819,6 +819,9 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
         container.saveData()
     }
     check(containerManager.hasContainer(CONTAINER_ID)) { "Container creation failed. Check system storage and logs." }
+    // Frame generation (board f-frame-gen): Settings' values with the player's own Lossless.dll; Off = armed false, nothing else
+    com.jrees.wowcompanion.FrameGen.init(context)
+    containerManager.getContainerById(CONTAINER_ID)?.let { app.gamenative.utils.LsfgVkManager.applyDsForever(it); it.saveData() }
     return CONTAINER_ID
 }
 

@@ -71,6 +71,18 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     private val segPauseOpen = Array(2) { RectF() }
     private val segPausePick = Array(2) { RectF() }
 
+    /**
+     * FRAME GENERATION (board f-frame-gen): the player's own Lossless.dll and its settings (FrameGen; applied at the next game start).
+     * [onChooseDll] opens the host's file picker; [gameRunning] = the game is up (no picker over it: choose with the game closed).
+     */
+    var onChooseDll: () -> Unit = {}
+    var gameRunning: () -> Boolean = { false }
+    private var btnDll = RectF()
+    private val segFg = Array(2) { RectF() }
+    private val segMult = Array(FrameGen.MULTIPLIERS.size) { RectF() }
+    private var btnFlowMinus = RectF(); private var btnFlowPlus = RectF()
+    private val segPerf = Array(2) { RectF() }
+
     /** INERT since the rework: the D-pad row moved to Home's section ("DS WoW toolbar"). Kept so an old host's wiring compiles. */
     var dpadState: () -> PadMapModel.Dpad? = { null }
     var onDpad: (Boolean) -> Unit = {}
@@ -95,6 +107,8 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     init {
         Settings.onChange { postInvalidate() }
         HomeSettings.onChange { postInvalidate() }          // the wheels' two settings (also switched from the Controller DS tab)
+        FrameGen.init(context)
+        FrameGen.onChange { postInvalidate() }              // a pick finishes on a background thread
         CastSettings.init(context)
     }
 
@@ -123,7 +137,8 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
      */
     fun focusTargets(): List<RectF> =
         ((if (hasGame) listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) else emptyList()) +
-            (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() else emptyList()))
+            (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() +
+                listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() else emptyList()))
             .filter { !it.isEmpty }.map { RectF(it) }
 
     /** the part's height, laid out exactly as onDraw lays it out (the room's scroll asks; nothing here scrolls) */
@@ -134,7 +149,8 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     private fun layoutHeight(): Float {
         var y = if (hasGame) TITLE_END + TITLE_GAP + 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) +
             (if (part == Part.TOP) TOP_END else SECTION_GAP) else REST_TOP
-        if (hasRest) y += 16f + ROW_H + 10f + ROW_H + SECTION_GAP + 16f + ROW_H + 4f * (10f + ROW_H) + SECTION_GAP + 16f + ROW_H + BOTTOM_PAD
+        if (hasRest) y += 16f + ROW_H + 10f + ROW_H + SECTION_GAP + 16f + ROW_H + 4f * (10f + ROW_H) + SECTION_GAP + 16f + ROW_H +
+            SECTION_GAP + 16f + ROW_H + 4f * (10f + ROW_H) + BOTTOM_PAD
         return y
     }
 
@@ -204,7 +220,16 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
             segOpen[1].contains(x, y) -> HomeSettings.radialTap = false
             segPick[0].contains(x, y) -> HomeSettings.radialPickA = true
             segPick[1].contains(x, y) -> HomeSettings.radialPickA = false
+            btnDll.contains(x, y) -> if (!gameRunning()) onChooseDll()
+            segFg[0].contains(x, y) -> FrameGen.enabled = false
+            segFg[1].contains(x, y) -> if (FrameGen.hasDll()) FrameGen.enabled = true
+            btnFlowMinus.contains(x, y) -> FrameGen.flowScale = FrameGen.stepFlow(FrameGen.flowScale, -1)
+            btnFlowPlus.contains(x, y) -> FrameGen.flowScale = FrameGen.stepFlow(FrameGen.flowScale, +1)
+            segPerf[0].contains(x, y) -> FrameGen.performance = true
+            segPerf[1].contains(x, y) -> FrameGen.performance = false
             else -> {
+                val mi = segMult.indexOfFirst { it.contains(x, y) }
+                if (mi >= 0) { FrameGen.multiplier = FrameGen.MULTIPLIERS[mi]; invalidate(); return }
                 val ci = segChat.indexOfFirst { it.contains(x, y) }
                 if (ci >= 0) { if (Settings.chatDefaultInput != CHAT_INPUTS[ci]) Settings.chatDefaultInput = CHAT_INPUTS[ci] }
                 else {
@@ -343,6 +368,57 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         row(c, y, "Message input", "What opens when you go into the message", enabled = true) { box ->
             val b = RectF(box.right - 16f - chatW * CHAT_INPUTS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             segmented(c, b, CHAT_INPUT_LABELS, CHAT_INPUTS.indexOf(Settings.chatDefaultInput), segChat)
+            b
+        }
+        y += ROW_H + SECTION_GAP
+
+        // ---- FRAME GENERATION (board f-frame-gen): the player's own Lossless.dll, never shipped with the app; Off = launches as always
+        c.drawText("Frame generation", padX, y + 4f, pSection)
+        y += 16f
+        val hasDll = FrameGen.hasDll()
+        val up = gameRunning()
+        btnDll = row(c, y, "Lossless.dll: ${if (hasDll) "found" else "not set"}",
+            FrameGen.lastPick.ifEmpty {
+                if (up) "Close the game to choose it." else if (hasDll) "Your own copy, kept in DS Forever's private storage."
+                else "Choose your own copy (from Lossless Scaling on your PC)."
+            }, enabled = true) { box ->
+            val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            UiKit.button(c, b, "Choose", if (up) UiKit.Button.DISABLED else UiKit.Button.UP)
+            b
+        }
+        y += ROW_H + 10f
+        val on = FrameGen.enabled && hasDll
+        row(c, y, "Frame generation", if (!hasDll) "Needs Lossless.dll first." else if (on) "On from the next game start." else "Off: the game launches as always.",
+            enabled = hasDll) { box ->
+            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, listOf("Off", "On"), if (on) 1 else 0, segFg)
+            b
+        }
+        y += ROW_H + 10f
+        val mult = FrameGen.multiplier
+        row(c, y, "Multiplier", "Frames shown per game frame (40 fps x$mult = ${40 * mult})", enabled = on) { box ->
+            val b = RectF(box.right - 16f - segW * FrameGen.MULTIPLIERS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, FrameGen.MULTIPLIERS.map { "${it}x" }, FrameGen.MULTIPLIERS.indexOf(mult), segMult)
+            b
+        }
+        y += ROW_H + 10f
+        row(c, y, "Flow scale", "Lower is faster, higher is sharper", enabled = on) { box ->
+            val cy = box.centerY()
+            btnFlowPlus = RectF(box.right - 16f - 76f, cy - 34f, box.right - 16f, cy + 34f)
+            btnFlowMinus = RectF(btnFlowPlus.left - 150f - 76f, cy - 34f, btnFlowPlus.left - 150f, cy + 34f)
+            val f = FrameGen.flowScale
+            UiKit.square(c, "minus", btnFlowMinus.centerX(), btnFlowMinus.centerY(), 84f,
+                if (on && f > FrameGen.FLOW_MIN) UiKit.Button.UP else UiKit.Button.DISABLED)
+            UiKit.square(c, "plus", btnFlowPlus.centerX(), btnFlowPlus.centerY(), 84f,
+                if (on && f < FrameGen.FLOW_MAX) UiKit.Button.UP else UiKit.Button.DISABLED)
+            pValue.color = if (on) Theme.text else Theme.dim
+            c.drawText(FrameGen.flowLabel(f), (btnFlowMinus.right + btnFlowPlus.left) / 2f, cy + 11f, pValue)
+            btnFlowMinus
+        }
+        y += ROW_H + 10f
+        row(c, y, "Performance mode", "The lighter model: less heat, a little less smooth", enabled = on) { box ->
+            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, listOf("On", "Off"), if (FrameGen.performance) 0 else 1, segPerf)
             b
         }
         y += ROW_H + BOTTOM_PAD

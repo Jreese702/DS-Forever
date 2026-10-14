@@ -240,7 +240,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val reload = { if (GameInput.reload()) reloadStarted() }
         // SettingsView (map session) in two parts, Home's section between them (the user's order, 2026-10-06)
         settingsView = SettingsView(this, SettingsView.Part.TOP, reload)
-        settings = SettingsRoom(this, settingsView, SettingsView(this, SettingsView.Part.REST, reload), { questsPad })
+        val settingsRest = SettingsView(this, SettingsView.Part.REST, reload)
+        // Frame generation (board f-frame-gen): the player's own Lossless.dll through Android's picker, only with the game closed
+        settingsRest.gameRunning = { LauncherHooks.gameUp() }
+        settingsRest.onChooseDll = {
+            runCatching { shell.startHostActivity(android.content.Intent(this, FrameGenPickActivity::class.java)) }
+                .onFailure { android.util.Log.w("FrameGen", "picker: ${it.message}") }
+        }
+        settings = SettingsRoom(this, settingsView, settingsRest, { questsPad })
         settings.pad.onLeave = { show(Room.HOME) }
         settingsRoom = settings
         // the DS WoW toolbar's switch lives in Home's Settings section since 2026-10-06 (renamed from "D-pad room bar")
