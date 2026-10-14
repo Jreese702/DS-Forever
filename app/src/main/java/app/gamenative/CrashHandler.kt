@@ -124,6 +124,8 @@ class CrashHandler(
             }
 
             File(crashFileDir, "pluvia_crash_$timestamp.txt").writeText(crashReport)
+            // a copy the player can share (Documents/DS Forever/logs; p-casclib-1000: "the bottom screen crashed", no trace)
+            CrashLogs.save(context, "${CrashLogs.stamp(System.currentTimeMillis())}_crash.txt", crashReport)
 
             cleanupOldCrashFiles()
         } catch (e: Exception) {
