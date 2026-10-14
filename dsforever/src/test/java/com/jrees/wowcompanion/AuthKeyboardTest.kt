@@ -56,9 +56,10 @@ class AuthKeyboardTest {
 
     private val read = 1_000_000L
 
-    @Test fun aTrafficFailureIsNeutralForTheFirst25Seconds() {
+    @Test fun aTrafficFailureIsNeutralUntilTheLogCanSay() {
         assertEquals(SetupFlow.SignIn.CHECK, SignInKeyboard.shown(SetupFlow.SignIn.FAILED, read, read + 13_000, logSaysFailed = false))
-        assertEquals(SetupFlow.SignIn.FAILED, SignInKeyboard.shown(SetupFlow.SignIn.FAILED, read, read + 25_000, logSaysFailed = false))
+        assertEquals(SetupFlow.SignIn.CHECK, SignInKeyboard.shown(SetupFlow.SignIn.FAILED, read, read + 45_000, logSaysFailed = false))  // the Thor's AUTH
+        assertEquals(SetupFlow.SignIn.FAILED, SignInKeyboard.shown(SetupFlow.SignIn.FAILED, read, read + 60_000, logSaysFailed = false))
         assertEquals(SetupFlow.SignIn.FAILED, SignInKeyboard.shown(SetupFlow.SignIn.FAILED, read, read + 5_000, logSaysFailed = true))
         assertEquals(SetupFlow.SignIn.AUTH, SignInKeyboard.shown(SetupFlow.SignIn.AUTH, read, read + 13_000, logSaysFailed = false))
         assertEquals(SetupFlow.SignIn.SIGNING, SignInKeyboard.shown(SetupFlow.SignIn.SIGNING, read, read + 1_000, logSaysFailed = false))
@@ -68,9 +69,42 @@ class AuthKeyboardTest {
     @Test fun theNeutralPopUpOffersKeyboardAndUpdateLogin() {
         val p = SetupFlow.screen(SetupFlow.Inputs(path = "/g", folderFound = true, loginSaved = true, gameRunning = true,
             signIn = SetupFlow.SignIn.CHECK)).prompt!!
-        assertEquals("Check the game screen", p.title)
+        assertEquals("Type your authenticator code (or password) on the game screen", p.title)
         assertEquals(listOf(SetupFlow.Action.ENTER_ON_GAME, SetupFlow.Action.UPDATE_LOGIN), p.buttons.map { it.action })
         assertEquals("Keyboard", p.buttons.first().label)
+    }
+
+    @Test fun theKeyboardOpensAtTheTrafficsMomentAndStaysOpenAtAuth() {
+        val signing = SetupFlow.SignIn.SIGNING; val check = SetupFlow.SignIn.CHECK
+        val auth = SetupFlow.SignIn.AUTH; val failed = SetupFlow.SignIn.FAILED
+        assertTrue(SignInKeyboard.autoOpen(signing, check))     // +13 s: open now
+        assertTrue(SignInKeyboard.autoOpen(check, auth))        // +38-45 s: open again (show only)
+        assertFalse(SignInKeyboard.autoOpen(check, check))
+        assertFalse(SignInKeyboard.autoOpen(auth, auth))
+        assertFalse(SignInKeyboard.autoOpen(check, failed))
+        val ime = Ime()
+        keyboardNow(ime)                 // CHECK's auto-open
+        keyboardNow(ime)                 // the player's tap
+        keyboardNow(ime)                 // AUTH's auto-open
+        assertTrue(ime.open)
+    }
+
+    @Test fun aIsHeldBackOnlyWhileTheCodePopUpShows() {
+        val s = SetupFlow.SignIn.values()
+        for (st in s) {
+            val expect = st == SetupFlow.SignIn.CHECK || st == SetupFlow.SignIn.AUTH
+            assertEquals(st.name, expect, SignInKeyboard.blocksA(st, gameUp = true, loginFormOpen = false))
+        }
+        assertFalse(SignInKeyboard.blocksA(SetupFlow.SignIn.AUTH, gameUp = false, loginFormOpen = false))   // no game, no block
+        assertFalse(SignInKeyboard.blocksA(SetupFlow.SignIn.AUTH, gameUp = true, loginFormOpen = true))     // Update login's form open
+        assertFalse(SignInKeyboard.blocksA(SetupFlow.SignIn.NONE, gameUp = true, loginFormOpen = false))    // signed in: A is back
+    }
+
+    @Test fun thePopUpsSayIt() {
+        for (st in listOf(SetupFlow.SignIn.CHECK, SetupFlow.SignIn.AUTH)) {
+            val p = SetupFlow.screen(SetupFlow.Inputs(path = "/g", folderFound = true, gameRunning = true, signIn = st)).prompt!!
+            assertEquals("Type with Keyboard; don't press A.", p.text)
+        }
     }
 
     // ---- Connection.log: the authenticator line, with or without its tag

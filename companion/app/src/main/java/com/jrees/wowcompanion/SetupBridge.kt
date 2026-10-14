@@ -29,6 +29,12 @@ object SetupBridge {
     @Volatile var updateLogin: (() -> Unit)? = null
     /** "Report a problem" on the setup screen (board f-problem-report): the companion opens its report screen */
     @Volatile var openReport: (() -> Unit)? = null
+    /** our own login form is open (Update login / Save login): the game's A comes back meanwhile (CompanionHost sets it every second) */
+    @Volatile var loginFormOpen = false
+
+    /** the launcher's pad path asks before giving A to the game (p-auth-keyboard: A does nothing while the code pop-up shows) */
+    fun blockGameA(): Boolean = SignInKeyboard.blocksA(signIn, LauncherHooks.gameUp(), loginFormOpen)
+
     /** "Restart the game to sign in": the launcher closes the game and starts it again (it outlives the launcher's setup screen) */
     @Volatile var restartGame: (() -> Unit)? = null
     /** a restart is under way (close -> old game gone -> launcher back -> Play -> game attached): each step logs a "restart:" line */

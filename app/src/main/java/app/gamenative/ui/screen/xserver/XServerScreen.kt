@@ -1516,6 +1516,13 @@ fun XServerScreen(
                 // Let Compose focus system handle keyboard and gamepad navigation/selection while menu is visible.
                 false
             }
+        } else if (isGamepad && it.event.keyCode == KeyEvent.KEYCODE_BUTTON_A && it.event.action == KeyEvent.ACTION_DOWN &&
+            com.jrees.wowcompanion.SetupBridge.blockGameA()) {
+            // DS FOREVER, p-auth-keyboard (the user's pick "Hint now + block A"): while the code / password pop-up shows, A does nothing for
+            // the game (its gamepad cursor sits on the username behind the dialog). Only the press: a release always passes, so A can
+            // never stick down in the game. DS Forever's own copy (PadFeed, above) still gets it; B is untouched
+            if (it.event.repeatCount == 0) com.jrees.wowcompanion.SetupBridge.log?.invoke("sign-in: A held back from the game (code pop-up)")
+            true
         } else {
             var handled = false
             if (isGamepad) {
