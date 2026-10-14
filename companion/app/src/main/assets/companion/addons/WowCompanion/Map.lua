@@ -135,12 +135,41 @@ WC.minimapBlobsOff = false
 -- the cluster's alpha was measured not to reach the engine's layers; the widget's own is tried as well, 1 again on show) and the
 -- frame the hub hid (mmf). Once per session, the client's own Minimap methods with Blob / POI / Quest in their names go out as a
 -- {"type":"cap","what":"mmapi"} line (the API this build really has). Property setters only: no Hide / Show, no layout, no CVar.
-WC.mmHide = { REASSERT_S = 1.0, at = -1000, n = 0, r = 0, i = false, a = false,
-              RINGS = { "SetQuestBlobRingScalar", "SetTaskBlobRingScalar", "SetArchBlobRingScalar" } }
+-- ROUND 3 (batch7's log: mmb 9, mmr 3, mmi 1, mma 1, and the bubbles still drew: the client takes the alphas and ignores them).
+-- The blob TEXTURES go too: while hidden each of the nine is set to "" (no picture), with the alphas 0 before and after (a
+-- texture change may be what makes the engine rebuild the blobs, and so apply the alphas). Shown again, each gets the client's
+-- own minimap blob picture back by file id: the interface/minimap/ui-*blob* files (the client's listfile), which no UI code sets,
+-- so the engine's own defaults. The pictures change only on a hide / show / event, never on the 1 s tick. mmt = textures taken.
+WC.mmHide = { REASSERT_S = 1.0, at = -1000, n = 0, r = 0, t = 0, i = false, a = false,
+              RINGS = { "SetQuestBlobRingScalar", "SetTaskBlobRingScalar", "SetArchBlobRingScalar" },
+              TEX = { { "SetQuestBlobInsideTexture", 533894 }, { "SetQuestBlobOutsideTexture", 533895 },
+                      { "SetQuestBlobRingTexture", 533893 },                   -- interface/minimap/ui-questblob(minimap)-*
+                      { "SetTaskBlobInsideTexture", 1117897 }, { "SetTaskBlobOutsideTexture", 1117899 },
+                      { "SetTaskBlobRingTexture", 1117898 },                   -- interface/minimap/ui-bonusobjectiveblob-*
+                      { "SetArchBlobInsideTexture", 533891 }, { "SetArchBlobOutsideTexture", 533892 },
+                      { "SetArchBlobRingTexture", 533890 } } }                 -- interface/minimap/ui-archblob(minimap)-*
 
--- every reachable layer of the minimap off ([off]) or back to the game's values (as far as they are known)
-function WC.mmHide.layers(off)
+-- the nine blob pictures: none ([off]) or the client's own minimap ones; the count taken
+function WC.mmHide.textures(off)
     local H, mm = WC.mmHide, _G.Minimap
+    local n = 0
+    if mm then
+        for _, e in ipairs(H.TEX) do
+            local fn = mm[e[1]]
+            if type(fn) == "function" and pcall(fn, mm, off and "" or e[2]) then n = n + 1 end
+        end
+    end
+    H.t = n
+end
+
+-- every reachable layer of the minimap off ([off]) or back to the game's values (as far as they are known); [pictures]: the blob
+-- textures too (a hide, a show, an event: not the 1 s tick)
+function WC.mmHide.layers(off, pictures)
+    local H, mm = WC.mmHide, _G.Minimap
+    if pictures ~= false then
+        if off then setBlobs(0) end
+        H.textures(off)
+    end
     H.i = setIcons(off and ICONS_OFF or gameIconScale())
     H.n = setBlobs(off and 0 or BLOB_SHOWN)
     local r = 0
@@ -193,7 +222,7 @@ function WC.mmHide.reassert(force)
     local t = (type(GetTime) == "function") and GetTime() or 0
     if not force and t - H.at < H.REASSERT_S then return false end
     H.at = t
-    H.layers(true)
+    H.layers(true, force == true)
     return true
 end
 
@@ -1062,7 +1091,7 @@ function WC.collectMap()
     -- icon scale and the widget's alpha taken (1 / 0), the frame the hub hid
     if hiddenFrame and not peek then
         local H = WC.mmHide
-        out.mmb, out.mmr, out.mmi, out.mma, out.mmf = H.n, H.r, H.i and 1 or 0, H.a and 1 or 0, hiddenFrame
+        out.mmb, out.mmr, out.mmi, out.mma, out.mmf, out.mmt = H.n, H.r, H.i and 1 or 0, H.a and 1 or 0, hiddenFrame, H.t
     end
 
     out.ok = true
