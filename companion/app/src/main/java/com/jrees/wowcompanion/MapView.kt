@@ -1098,9 +1098,23 @@ class MapView(context: Context) : View(context) {
         val half = max(max(halfX, halfY), 0.5f / ZOOM_MAX)
         // the centre is the bbox midpoint, so it moves with the player by half for each side
         // of the box the player IS
-        val ax = (if (minX == cx) 0.5f else 0f) + (if (maxX == cx) 0.5f else 0f)
-        val ay = (if (minY == cy) 0.5f else 0f) + (if (maxY == cy) 0.5f else 0f)
-        return floatArrayOf((minX + maxX) / 2f, (minY + maxY) / 2f, 0.5f / half, ax, ay)
+        var ax = (if (minX == cx) 0.5f else 0f) + (if (maxX == cx) 0.5f else 0f)
+        var ay = (if (minY == cy) 0.5f else 0f) + (if (maxY == cy) 0.5f else 0f)
+        var mx = (minX + maxX) / 2f
+        var my = (minY + maxY) / 2f
+        // THE PLAYER STAYS ON SCREEN (FrameKeep, p-map-center): a CAPPED box (objectives wider apart than capYd) kept the box's
+        // middle as the centre, and the capped view could leave the player at its edge or off it. The centre slides toward the
+        // player until the player is inside FrameKeep.SHARE of the visible half (x: right of the list, which the projection
+        // centres on; y: from the field's shape, as fullMapping / onDraw solve it), and then follows the player one for one.
+        // Not at whole-zone view (half 0.5: everything shows).
+        if (half < 0.5f) {
+            val ratio = if (lastFieldW > 0f && lastFieldH > 0f) lastFieldH / lastFieldW else 2f / 3f
+            val kx = FrameKeep.keep(mx, cx, half * visible)
+            val ky = FrameKeep.keep(my, cy, half * yw / yh * ratio)
+            if (kx.second) { mx = kx.first; ax = 1f }
+            if (ky.second) { my = ky.first; ay = 1f }
+        }
+        return floatArrayOf(mx, my, 0.5f / half, ax, ay)
     }
 
     // ---- BUTTON FADE. The controls are needed for a second and then they are just three
@@ -1379,11 +1393,11 @@ class MapView(context: Context) : View(context) {
         var zT: Float; var cxT: Float; var cyT: Float
         var fr: FloatArray? = null
         if (autoZoom && followPlayer && recentreFrom == null) {
-            val keepW = lastFieldW; val keepT = lastTrackPx
-            lastFieldW = fw
+            val keepW = lastFieldW; val keepH = lastFieldH; val keepT = lastTrackPx
+            lastFieldW = fw; lastFieldH = fh
             lastTrackPx = if (showTracker && tracked.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + BTN_GAP else 0f
             fr = computeFrame(m, px, py)
-            lastFieldW = keepW; lastTrackPx = keepT
+            lastFieldW = keepW; lastFieldH = keepH; lastTrackPx = keepT
         }
         if (fr != null) { zT = fr[2].coerceIn(1f, ZOOM_MAX); cxT = fr[0]; cyT = fr[1] }
         else {
