@@ -7,5 +7,13 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!-- Settings / the setup screen > Send a problem report (ProblemReportActivity.kt): nothing leaves the device unless the player
+             chooses; the browser only opens GitHub's new-issue page -->
+        <activity
+            android:name="com.jrees.wowcompanion.ProblemReportActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
     </application>
 </manifest>

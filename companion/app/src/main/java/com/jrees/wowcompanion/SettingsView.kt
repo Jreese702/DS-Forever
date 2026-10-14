@@ -60,6 +60,9 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         set(v) { if (field != v) { field = v; requestLayout(); invalidate() } }
     var loginSaved: () -> Boolean = { false }
     var onLogin: () -> Unit = {}
+    /** "Send a problem report" (board f-problem-report): the host opens the report screen; Record 5 minutes is inside it */
+    var onReport: () -> Unit = {}
+    private var btnReport = RectF()
     private var btnMiniMinus = RectF(); private var btnMiniPlus = RectF()
     private var btnMiniInMinus = RectF(); private var btnMiniInPlus = RectF()
     private val segLayout = Array(LAYOUTS.size) { RectF() }
@@ -145,7 +148,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
      * order. Read-only: the cursor presses a button with a touch at its centre, so this view's own logic decides.
      */
     fun focusTargets(): List<RectF> =
-        ((if (hasGame) listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) else emptyList()) +
+        ((if (hasGame) listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport) else emptyList()) +
             (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segIndoor.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() +
                 listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() + listOf(btnRestart) else emptyList()))
             .filter { !it.isEmpty }.map { RectF(it) }
@@ -156,7 +159,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     }
 
     private fun layoutHeight(): Float {
-        var y = if (hasGame) TITLE_END + TITLE_GAP + 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) +
+        var y = if (hasGame) TITLE_END + TITLE_GAP + 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H +
             (if (part == Part.TOP) TOP_END else SECTION_GAP) else REST_TOP
         if (hasRest) y += 16f + ROW_H + 10f + ROW_H + 10f + ROW_H + SECTION_GAP + 16f + ROW_H + 4f * (10f + ROW_H) + SECTION_GAP + 16f + ROW_H +
             SECTION_GAP + 16f + fgHeight() + BOTTOM_PAD
@@ -217,6 +220,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         val now = SystemClock.elapsedRealtime()
         when {
             loginRow && btnLogin.contains(x, y) -> onLogin()
+            btnReport.contains(x, y) -> if (DiagLog.recording()) DiagLog.stopRecording() else onReport()
             btnReload.contains(x, y) -> {
                 if (reloadArmedAt != 0L && now - reloadArmedAt < ARM_MS) {
                     reloadArmedAt = 0L; reloadSentAt = now
@@ -312,6 +316,18 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
                 b
             }
         } else btnLogin = RectF()
+        // "Send a problem report" (board f-problem-report): Stop while Record 5 minutes runs, its time left on the row
+        y += ROW_H + 10f
+        val rec = DiagLog.recording()
+        val left = DiagLog.recordLeftMs() / 1000
+        btnReport = row(c, y, "Problem report",
+            if (rec) "Recording… %d:%02d left. Reproduce the problem.".format(left / 60, left % 60)
+            else "Say what happened; DS Forever adds its logs, without names or logins.", enabled = true) { box ->
+            val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            UiKit.button(c, b, if (rec) "Stop" else "Send", UiKit.Button.UP)
+            b
+        }
+        if (rec) postInvalidateDelayed(1000)
         y += ROW_H + (if (part == Part.TOP) TOP_END else SECTION_GAP)
         }
         // (Home's section stands here when the room stacks the two parts)

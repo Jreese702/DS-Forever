@@ -68,12 +68,14 @@ object SetupFlow {
         /** Android's App info page for DS Forever (Storage > Change: move it to internal storage) */
         OPEN_APP_SETTINGS,
         /** the restart's own Play (never a button): it launches the same way and says so in the log */
-        RELAUNCH
+        RELAUNCH,
+        /** "Report a problem" (board f-problem-report): the report screen, before Play too */
+        REPORT
     }
     data class Button(val label: String, val action: Action, val enabled: Boolean = true)
     data class Prompt(val id: String, val title: String, val text: String, val buttons: List<Button>)
-    /** [play] null = no Play (the game runs); [line] = one status line under it */
-    data class Screen(val prompt: Prompt?, val play: Button?, val line: String)
+    /** [play] null = no Play (the game runs); [line] = one status line under it; [report] = the small "Report a problem" with Play */
+    data class Screen(val prompt: Prompt?, val play: Button?, val line: String, val report: Button? = null)
 
     enum class Mark { OK, WAIT, BAD, OPTIONAL }
     data class Check(val label: String, val mark: Mark)
@@ -118,7 +120,7 @@ object SetupFlow {
             Art.IDLE -> if (i.folderFound) "Checking the game art" else ""
             else -> ""
         }
-        return Screen(prompt, play, line)
+        return Screen(prompt, play, line, Button("Report a problem", Action.REPORT))
     }
 
     /**

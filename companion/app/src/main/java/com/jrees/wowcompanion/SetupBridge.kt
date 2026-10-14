@@ -27,6 +27,8 @@ object SetupBridge {
     fun loginSaved() { launcherRefresh?.invoke() }
     /** "Update login" (M3): the form, then a fresh login.txt for the running game */
     @Volatile var updateLogin: (() -> Unit)? = null
+    /** "Report a problem" on the setup screen (board f-problem-report): the companion opens its report screen */
+    @Volatile var openReport: (() -> Unit)? = null
     /** "Restart the game to sign in": the launcher closes the game and starts it again (it outlives the launcher's setup screen) */
     @Volatile var restartGame: (() -> Unit)? = null
     /** a restart is under way (close -> old game gone -> launcher back -> Play -> game attached): each step logs a "restart:" line */
@@ -78,6 +80,7 @@ object SetupBridge {
             SetupFlow.Action.UPDATE_LOGIN -> updateLogin?.invoke()
             SetupFlow.Action.ENTER_ON_GAME -> enterOnGame?.invoke()
             SetupFlow.Action.RESTART_GAME -> { signIn(SetupFlow.SignIn.NONE); restartGame?.invoke() }
+            SetupFlow.Action.REPORT -> openReport?.invoke()
             else -> launcherActions?.invoke(a)
         }
     }
