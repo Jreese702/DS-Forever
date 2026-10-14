@@ -38,13 +38,15 @@ internal class IndoorScheduler(
         fun position(): IndoorBakeQueue.Position?
         /** the game is fighting / loading / starting: wait */
         fun busy(): Boolean
+        /** the player moved within the last few seconds (the user's "only when standing still"): wait */
+        fun moving(): Boolean = false
         /** the device is warm (thermal status or headroom) or in battery saver: wait */
         fun hot(): Boolean
         /** stop cleanly: app closing, or the game was seen and has gone */
         fun stop(): Boolean
         fun now(): Long
         fun sleep(ms: Long)
-        /** (java heap used, native heap allocated) in bytes, sampled at every gate / yield point for the stats line; null = not measured */
+        /** (java heap used, native heap allocated) in bytes, sampled at most every [MEMORY_EVERY_MS] for the stats line; null = not measured */
         fun memory(): Pair<Long, Long>? = null
     }
 
@@ -74,12 +76,23 @@ internal class IndoorScheduler(
     private var heapPeak = 0L
     private var nativePeak = 0L
 
+    private var memoryAt = Long.MIN_VALUE
+
+    /**
+     * Every yield point of the generator comes here (many per second in a big building), so it stays cheap: the memory sample at
+     * most every [MEMORY_EVERY_MS] (it boxed a pair at every point: GC churn on the Thor, b-interiors-stutter). A move pauses at
+     * the next point, mid-building; the building waits with its work so far and goes on when the player stands still again.
+     */
     private fun gate() {
-        signals.memory()?.let { (heap, native) -> heapPeak = maxOf(heapPeak, heap); nativePeak = maxOf(nativePeak, native) }
+        val t = signals.now()
+        if (t - memoryAt >= MEMORY_EVERY_MS) {
+            memoryAt = t
+            signals.memory()?.let { (heap, native) -> heapPeak = maxOf(heapPeak, heap); nativePeak = maxOf(nativePeak, native) }
+        }
         var paused = false
         while (true) {
             if (signals.stop()) throw IndoorGenerator.Stopped()
-            val why = when { signals.busy() -> "game busy"; signals.hot() -> "device warm"; else -> null } ?: break
+            val why = pauseReason(signals) ?: break
             if (!paused) { paused = true; emit(status.copy(phase = Phase.PAUSED, note = why)); log("paused: $why") }
             signals.sleep(PAUSE_POLL_MS)
         }
@@ -218,6 +231,15 @@ internal class IndoorScheduler(
     }
 
     companion object {
+        /** why the bake waits now, the cheapest test first; null = it may go on */
+        internal fun pauseReason(s: Signals): String? = when {
+            s.busy() -> "game busy"
+            s.moving() -> "player moving"
+            s.hot() -> "device warm"
+            else -> null
+        }
+
+        const val MEMORY_EVERY_MS = 1_000L
         const val PAUSE_POLL_MS = 2_000L
         const val BREATHER_MS = 250L
         const val PUBLISH_EVERY_MS = 60_000L

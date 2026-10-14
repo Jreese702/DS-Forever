@@ -59,6 +59,14 @@ object Settings {
         get() = prefs?.getString("chatDefaultInput", "keys")?.takeIf { it == "quick" || it == "keys" } ?: "keys"
         set(v) { prefs?.edit()?.putString("chatDefaultInput", if (v == "quick") "quick" else "keys")?.apply(); changed() }
 
+    /**
+     * INDOOR MAPS IN THE BACKGROUND (board b-interiors-stutter; the user's pick: "a Settings switch to turn background building off").
+     * On (the default) = built only while the player stands still and the CPU is cool; Off = no building at all (ready maps still show).
+     */
+    var indoorBuild: Boolean
+        get() = prefs?.getBoolean("indoorBuild", true) ?: true
+        set(v) { if (v != indoorBuild) { prefs?.edit()?.putBoolean("indoorBuild", v)?.apply(); changed() } }
+
     /** the next step from [cur] in direction [dir] (+1 = wider view, -1 = closer) */
     fun stepYd(cur: Int, dir: Int): Int {
         var i = ZOOM_STEPS_YD.indices.minByOrNull { kotlin.math.abs(ZOOM_STEPS_YD[it] - cur) } ?: 0
