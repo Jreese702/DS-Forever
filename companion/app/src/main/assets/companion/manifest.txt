@@ -1,4 +1,4 @@
-set 116
+set 117
 54dce9fecf3ab25dd3222451925d03c9  WowCompanion/ActionBar.lua
 525db8495e3ccd2e2a6886c7c1afdd18  WowCompanion/Bags.lua
 903d551228fc784f53bbd73cc7471b24  WowCompanion/Chat.lua
@@ -34,11 +34,11 @@ e0a74335eb4d0815f382eafb61214e2f  WowCompanionProfessions/WowCompanionProfession
 a5f1a21fe126189ca49c739a69d76e3e  WowCompanionQuests/WowCompanionQuests.toc
 b9c52f8ea4d730780580000254896c2e  WowCompanionSocial/Social.lua
 dd379a5404f5bb79449e78f03cadc41b  WowCompanionSocial/WowCompanionSocial.toc
-4eda6c1b9d37df489910404569ec9a9e  WowCompanionSpells/Book.lua
-0f28b6791f7444e215a0aaeb330da4e0  WowCompanionSpells/PadMap.lua
+373a274ebc07806c7804f73d0b00db4c  WowCompanionSpells/Book.lua
+ce657349c9009fa04e10eb20093550d7  WowCompanionSpells/PadMap.lua
 883140d30f17e503aac9e1f7ebd7f9e4  WowCompanionSpells/PadTabCtl.lua
 55b2e5974dc1abd74abf6bb328c675f0  WowCompanionSpells/Radial.lua
 59f6aaaa31a060216fb4e4630b616fea  WowCompanionSpells/Spells.lua
-c150ebaca93a1e1260ec9fee920b19b1  WowCompanionSpells/Talents.lua
+bacadedd38fb379f0bbeb11c4adfa5cd  WowCompanionSpells/Talents.lua
 a69025b1669337092d24f308f1e3c9b6  WowCompanionSpells/TalentsCtl.lua
 43953bbbc452dfa88bc5532d8a262fda  WowCompanionSpells/WowCompanionSpells.toc
