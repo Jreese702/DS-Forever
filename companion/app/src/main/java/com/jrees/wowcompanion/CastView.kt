@@ -1397,14 +1397,18 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             return
         }
 
-        val grey = stale || !h.ok
+        // p-bars-grey (a player, a druid: "action bars stay greyed out on bottom screen. They work, just always grey?"): the whole bar
+        // greys only when the stream is dead or the add-on sent no bar at all. "Not ok" alone (the game's main gamepad frame not shown,
+        // e.g. while a form's or a stance's bar stands over it) with a full layout is a working bar. And a grey band still animates: it
+        // used to stop scheduling, so the swing / cast line moved only when an input redrew it (p-swing-timer)
+        val grey = stale || (!h.ok && h.layers.all { l -> l.all { it == null || it.empty } })
         if (grey) c.saveLayer(0f, 0f, width.toFloat(), height.toFloat(), pGrey)
 
         drawCollapsed = !barsUsable
         if (layout != Layout.FULL) {
             val nb = drawBand(c, h, now)
             if (grey) c.restore()
-            schedule(if (grey) Long.MAX_VALUE else nb)
+            schedule(nb)
             return
         }
         // focus background (gamepad-actionbar-focus-bg-section, 512x160 units, alpha 0.375); a collapsed
@@ -1668,7 +1672,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val mana = st != null && st.m == 1
             val filter: ColorFilter? = when {
                 mana -> if (dim) cfManaDim else cfMana
-                !usable || !enabled -> if (dim) cfUnusableDim else cfUnusable
+                // p-bars-grey: IsEnabled says nothing about an ACTION (IsUsableAction does: `u`); a form / stance bar's buttons can read
+                // disabled while they work. Only a fixed (scripted) or empty button is darkened for it
+                !usable || (!enabled && (b.k.isEmpty() || b.k == "fixed")) -> if (dim) cfUnusableDim else cfUnusable
                 dim -> cfDim
                 else -> null
             }
@@ -2247,9 +2253,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val p = (now - swingStartMs) / swingDurMs
             if (p >= 0.0 && p <= 1.0 + SWING_GRACE) swingP = p
         }
+        // p-swing-timer: a swing whose start lies ahead (the game's clock against ours) wakes the line when it starts
+        val ahead = if (!casting && swingP < 0 && !swingStartMs.isNaN() && swingDurMs > 0.0 && now < swingStartMs)
+            (swingStartMs - now).toLong().coerceAtLeast(1L) else Long.MAX_VALUE
         if (!casting && swingP < 0 && !flashing) {
             UiKit.divider(c, 0f, height - 1.5f, w, height - 1.5f)
-            return Long.MAX_VALUE
+            return ahead
         }
         // the groove
         val groove = aBarGroove
@@ -2280,7 +2289,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             fill(aBarFill, p, greyFill, SWING_GREY)
             if (p < 0.999f) spark(w * p, greyFilter)
             c.restore()
-            next = 0L
+            // p-swing-timer: on its own clock, ~30 frames a second (a 2-3 s bar needs no more; every vsync re-drew the whole band)
+            next = SWING_FRAME_MS
         }
         if (flashing) {
             when (flashKind) {
@@ -2716,6 +2726,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private val POS_Y = floatArrayOf(0f, 23f, 0f, -23f, 0f, 23f, 0f, -23f)
         // ---- the Home page's bars band (wow-companion-design/home/SPEC.md part 5), frame px, y from the frame top
         private const val FRAME_W = 1240f
+        /** p-swing-timer: the swing line's frame time (~30 fps) */
+        private const val SWING_FRAME_MS = 33L
         private const val BAND_K = 4.05f                 // 162 px TAKEOVER square / 40 units
         private const val BAND_ROW_TOP = 8f; private const val BAND_TAKE_TOP = 10f
         private const val BAND_ROW_H = 112f; private const val BAND_TAKE_H = 354f

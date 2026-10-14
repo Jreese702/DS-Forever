@@ -579,7 +579,9 @@ local function buildHud()
     local mf, pu = mainFrame(), pageUnit()
     local hud = {
         v = 1,
-        ok = mf ~= nil and MS(mf, "IsShown") == true,
+        -- p-bars-grey (a druid: "always grey"): the controller HUD is live when its main frame shows OR its page unit has an active bar
+        -- (a form's / stance's bar can stand in for the main frame); the app greys the bar only for a dead stream or no bar at all
+        ok = (mf ~= nil and MS(mf, "IsShown") == true) or MS(pu, "GetActiveBar") ~= nil,
         -- OUR alpha-hide is APPLIED right now: the flag alone is only the intent. A SetAlpha the client
         -- blocked (ADDON_ACTION_BLOCKED, not a Lua error) or a frame that does not exist yet must read
         -- hidden=false, so the app's "re-send hide while visible" recovery fires.
@@ -1436,7 +1438,9 @@ SlashCmdList["WCHUD"] = function(arg)
     end
     local mf = mainFrame()
     local rep = {
-        ok = mf ~= nil and MS(mf, "IsShown") == true,
+        -- p-bars-grey (a druid: "always grey"): the controller HUD is live when its main frame shows OR its page unit has an active bar
+        -- (a form's / stance's bar can stand in for the main frame); the app greys the bar only for a dead stream or no bar at all
+        ok = (mf ~= nil and MS(mf, "IsShown") == true) or MS(pageUnit(), "GetActiveBar") ~= nil,
         exists = mf ~= nil,
         alpha = num(MS(mf, "GetAlpha")),
         hidden = WC.hudHidden == true,
