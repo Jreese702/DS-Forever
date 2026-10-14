@@ -436,7 +436,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // ONE controller reader at a time (home's finding): the Bind box reads the triggers only while the Cast view's is off
             otherReader = { castView.isShown },
             // the Bind box's controller picture, drawn by the Cast room as it draws its own sets (false = no layout yet: stand-ins)
-            drawSet = { c, set, dpad, face, lit, icon -> castView.drawSet(c, set, dpad, face, lit, icon) },
+            drawSet = { c, set, dpad, face, lit, icon, fight -> castView.drawSet(c, set, dpad, face, lit, icon, fight) },
             onTap = { col -> spellsTap(col) })                    // b37: the Bind box's Normal / In combat
         spellsOverlay.visibility = View.GONE
         radialView = HomeRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
