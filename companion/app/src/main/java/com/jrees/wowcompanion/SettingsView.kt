@@ -64,6 +64,8 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     private var btnMiniInMinus = RectF(); private var btnMiniInPlus = RectF()
     private val segLayout = Array(LAYOUTS.size) { RectF() }
     private val segChat = Array(CHAT_INPUTS.size) { RectF() }
+    /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
+    private val segIndoor = Array(2) { RectF() }
     /** the wheels' two settings (Home's HomeSettings.radialTap / radialPickA; the user 2026-10-09) */
     private val segOpen = Array(2) { RectF() }
     private val segPick = Array(2) { RectF() }
@@ -144,7 +146,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
      */
     fun focusTargets(): List<RectF> =
         ((if (hasGame) listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) else emptyList()) +
-            (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() +
+            (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segIndoor.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() +
                 listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() + listOf(btnRestart) else emptyList()))
             .filter { !it.isEmpty }.map { RectF(it) }
 
@@ -156,7 +158,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     private fun layoutHeight(): Float {
         var y = if (hasGame) TITLE_END + TITLE_GAP + 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) +
             (if (part == Part.TOP) TOP_END else SECTION_GAP) else REST_TOP
-        if (hasRest) y += 16f + ROW_H + 10f + ROW_H + SECTION_GAP + 16f + ROW_H + 4f * (10f + ROW_H) + SECTION_GAP + 16f + ROW_H +
+        if (hasRest) y += 16f + ROW_H + 10f + ROW_H + 10f + ROW_H + SECTION_GAP + 16f + ROW_H + 4f * (10f + ROW_H) + SECTION_GAP + 16f + ROW_H +
             SECTION_GAP + 16f + fgHeight() + BOTTOM_PAD
         return y
     }
@@ -228,6 +230,8 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
             btnMiniPlus.contains(x, y) -> Settings.minimapYd = Settings.stepYd(Settings.minimapYd, +1)
             btnMiniInMinus.contains(x, y) -> Settings.minimapIndoorYd = Settings.stepYd(Settings.minimapIndoorYd, -1)
             btnMiniInPlus.contains(x, y) -> Settings.minimapIndoorYd = Settings.stepYd(Settings.minimapIndoorYd, +1)
+            segIndoor[0].contains(x, y) -> { Settings.indoorBuild = true; IndoorSchedulerStep.settingChanged() }
+            segIndoor[1].contains(x, y) -> Settings.indoorBuild = false
             segPauseOpen[0].contains(x, y) -> HomeSettings.pauseTap = true
             segPauseOpen[1].contains(x, y) -> HomeSettings.pauseTap = false
             segPausePick[0].contains(x, y) -> HomeSettings.pausePickA = true
@@ -326,6 +330,19 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         boxes = stepperRow(c, y, "Minimap zoom indoors", "Width of the small map on Home inside buildings",
                            Settings.minimapIndoorYd, true)
         btnMiniInMinus = boxes.first; btnMiniInPlus = boxes.second
+        y += ROW_H + 10f
+        // the indoor maps' background building (the user's pick after the walking stutters: only standing still, and a switch)
+        val indoorOn = Settings.indoorBuild
+        pBtn.textSize = SEG_TEXT
+        val indoorW = maxOf(SEG_MIN_W, pBtn.measureText("Off") + SEG_PAD)
+        pBtn.textSize = 27f
+        row(c, y, "Indoor maps: build in the background",
+            if (indoorOn) "Only while you stand still and the device is cool." else "Off: nothing is built; ready maps still show.",
+            enabled = true) { box ->
+            val b = RectF(box.right - 16f - indoorW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, listOf("On", "Off"), if (indoorOn) 0 else 1, segIndoor)
+            b
+        }
         y += ROW_H + SECTION_GAP
 
         // ---- CONTROLLER (the Cast room's options; values live in CastSettings): Button layout only since the rework

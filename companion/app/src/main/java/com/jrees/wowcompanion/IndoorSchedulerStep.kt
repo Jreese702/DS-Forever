@@ -34,6 +34,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     /** busy until the first quiet position after the game starts, but no longer than this */
     private const val STARTING_MS = 5 * 60_000L
     private const val SAVE_POSITION_MS = 30_000L
+    private const val HOT_EVERY_MS = 2_000L
 
     // ------------------------------------------------------------------ status (Environment Readiness)
 
@@ -96,11 +97,18 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         if (!gameBusy) quietSince = LauncherHooks.gameStartSec
     }
 
+    /** standing still or moving (b-interiors-stutter): fed by every position, asked by the bake's gate */
+    private val motion = IndoorIdle.Motion()
+
     /** a "pos" map document: the add-on's `inst` (continent / instance map), `wx`, `wy` */
     fun notePosition(map: JSONObject) {
         if (!map.has("inst") || !map.has("wx") || !map.has("wy")) return
         val c = map.optInt("inst", -1); val x = map.optDouble("wx", Double.NaN); val y = map.optDouble("wy", Double.NaN)
-        if (c >= 0 && x.isFinite() && y.isFinite()) live = IndoorBakeQueue.Position(c, x, y)
+        if (c >= 0 && x.isFinite() && y.isFinite()) {
+            val p = IndoorBakeQueue.Position(c, x, y)
+            live = p
+            synchronized(motion) { motion.note(p, System.currentTimeMillis()) }
+        }
     }
 
     /**
@@ -114,6 +122,11 @@ object IndoorSchedulerStep : ArtHarvest.Step {
 
     // ------------------------------------------------------------------ running
 
+    @Volatile private var appCtx: Context? = null
+
+    /** Settings' "Indoor maps" switch turned back on: start again (Off stops the bake at its next yield point by itself) */
+    fun settingChanged() { if (Settings.indoorBuild) appCtx?.let { start(it) } }
+
     @Volatile private var thread: Thread? = null
     /** a start that arrived while the thread was still winding down from a stop: it runs once more */
     @Volatile private var again = false
@@ -125,6 +138,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         stopping = false
         if (thread != null) { again = true; return }
         val ctx = context.applicationContext
+        appCtx = ctx
         thread = Thread({
             try {
                 do {
@@ -142,6 +156,8 @@ object IndoorSchedulerStep : ArtHarvest.Step {
 
     private fun body(ctx: Context) {
         runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_LOWEST) }
+        Settings.init(ctx)
+        if (!Settings.indoorBuild) { offInSettings(ctx); return }
         // stamped for this game build: nothing to do (no catalogue rehash)
         if (runCatching { this !in ArtHarvest.pending(ctx, beforePlay = false) }.getOrDefault(false)) return
         val factory = factory ?: run {
@@ -163,6 +179,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
                     val scheduler = IndoorScheduler(IndoorBakeStore(root), root, g.buildKey, gen, AndroidSignals(ctx), dataDir(ctx),
                         onStatus = { publishStatus(ctx, it) }, log = { Log.i(TAG, it) }, app = app)
                     val outcome = scheduler.run()
+                    if (!Settings.indoorBuild) offInSettings(ctx)
                     Log.i(TAG, "interiors $outcome; ${scheduler.publishes} publications, max ${scheduler.maxPublishMs} ms")
                     if (outcome == IndoorScheduler.Outcome.COMPLETE) ArtHarvest.markDetachedDone(ctx, this, g.buildKey)
                 }
@@ -177,6 +194,13 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         }
     }
 
+    /** Settings' switch is Off: nothing builds; the row says so and keeps the count of what is ready */
+    private fun offInSettings(ctx: Context) {
+        val s = status(ctx)
+        publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.STOPPED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, "off in Settings"))
+        Log.i(TAG, "interiors: off in Settings")
+    }
+
     /** thermal status MODERATE+ or headroom >= 0.9 pauses; it resumes only at LIGHT or below and headroom < 0.8 (no flapping) */
     internal fun warm(was: Boolean, thermalStatus: Int, headroom: Float): Boolean =
         if (was) thermalStatus > PowerManager.THERMAL_STATUS_LIGHT || headroom >= 0.8f
@@ -187,6 +211,12 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         private val saved = File(File(ArtHarvest.root(ctx), "interiors_sched"), "position.json")
         private var savedAt = 0L
         private var warm = false
+        private var cpuHot = false
+        private val cpu = IndoorIdle.CpuThermal()
+        /** [hot] is asked at every yield point: two binder calls and a sysfs read each time were a CPU cost of their own */
+        private var hotAt = Long.MIN_VALUE
+        private var hotValue = false
+        private var hotLogged: String? = null
 
         override fun position(): IndoorBakeQueue.Position? {
             val p = live
@@ -209,13 +239,29 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             return busy || loading
         }
 
+        /** the player moved in the last few seconds while the game runs (before Play there is no player: never "moving") */
+        override fun moving(): Boolean = LauncherHooks.gameUp() && synchronized(motion) { motion.moving(now()) }
+
+        /**
+         * Battery saver, Android's thermal status / headroom, and (b-interiors-stutter) the CPU's own temperature: on the Thor the
+         * first two never fired at 86-95 C on cpuss-*, so the sysfs reading is the real cut-off. Re-read at most every [HOT_EVERY_MS];
+         * each change of the answer is logged with its inputs.
+         */
         override fun hot(): Boolean {
-            val pm = power ?: return false
-            if (pm.isPowerSaveMode) return true
-            val st = pm.currentThermalStatus
-            val head = if (android.os.Build.VERSION.SDK_INT >= 30) pm.getThermalHeadroom(10).takeIf { it.isFinite() } ?: 0f else 0f
+            val t = now()
+            if (t - hotAt < HOT_EVERY_MS) return hotValue
+            hotAt = t
+            val pm = power
+            val saver = pm?.isPowerSaveMode == true
+            val st = pm?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_NONE
+            val head = if (pm != null && android.os.Build.VERSION.SDK_INT >= 30) pm.getThermalHeadroom(10).takeIf { it.isFinite() } ?: 0f else 0f
             warm = warm(warm, st, head)
-            return warm
+            val c = cpu.maxC()
+            cpuHot = IndoorIdle.Heat.hot(cpuHot, c)
+            hotValue = saver || warm || cpuHot
+            val line = "saver=$saver status=$st headroom=$head cpu=${c ?: "unreadable"} -> ${if (hotValue) "pause" else "ok"}"
+            if (hotLogged == null || hotValue != hotLogged!!.endsWith("pause")) { hotLogged = line; Log.i(TAG, "heat: $line") }
+            return hotValue
         }
 
         override fun memory(): Pair<Long, Long> {
@@ -228,7 +274,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         override fun stop(): Boolean {
             val up = LauncherHooks.gameUp()
             if (up) sawGame = true
-            return stopping || (sawGame && !up)
+            return stopping || (sawGame && !up) || !Settings.indoorBuild      // Off in Settings: ends at the next yield point
         }
         override fun now(): Long = System.currentTimeMillis()
         override fun sleep(ms: Long) = Thread.sleep(ms)
