@@ -246,6 +246,14 @@ class SpellsOverlay(
         // removed")
         // batch5 (the user: "remove the ZR/ZL glyphs in the bottom right and the B button glyph and text when holding a trigger at all"):
         // no trigger glyphs here; B / Back only while no trigger is held (with one, B is a place for the spell)
+        // batch7 (the user: "we need to add ZL and ZR as glyphs to the bottom middle that get lit up when held like on the home screen"):
+        // Home's trigger chips (CastView's strip: UiKit.triggerChip, its glyph set and size), lit while the app's reader sees them held
+        val tset = when (CastSettings.buttonLayout) {
+            CastSettings.ButtonLayout.XBOX -> "gen"; CastSettings.ButtonLayout.PLAYSTATION -> "shp"; else -> "rev"
+        }
+        val tcy = box.bottom - 92f
+        UiKit.triggerChip(c, RectF(w / 2f - 64f - 42f, tcy - 28f, w / 2f - 64f + 42f, tcy + 28f), "${tset}_ltrigger", lt)
+        UiKit.triggerChip(c, RectF(w / 2f + 64f - 42f, tcy - 28f, w / 2f + 64f + 42f, tcy + 28f), "${tset}_rtrigger", rt)
         val back = faceGlyph(st, "b")
         if (r != null && r.ok) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Close")
         else if (!lt && !rt) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Back")
