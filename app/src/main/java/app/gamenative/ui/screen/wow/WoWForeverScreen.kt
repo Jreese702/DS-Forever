@@ -107,6 +107,14 @@ fun WoWForeverScreen(
     var loginSaved by remember { mutableStateOf(com.jrees.wowcompanion.HomeLoginStore.has(context)) }
     var loginSkipped by remember { mutableStateOf(false) }
     var appUpdateLater by remember { mutableStateOf(false) }
+    // DS Forever on the SD card / adopted storage (p-sd-card-install): the setup says so first; checked once per screen
+    val installedExternal = remember {
+        runCatching {
+            val ai = context.applicationInfo
+            val onDefault = android.os.Build.VERSION.SDK_INT < 26 || ai.storageUuid == android.os.storage.StorageManager.UUID_DEFAULT
+            com.jrees.wowcompanion.InstallCheck.external(ai.flags, onDefault, ai.sourceDir.orEmpty(), ai.dataDir.orEmpty())
+        }.getOrNull()?.also { Timber.w("DS Forever is installed on $it") } != null
+    }
     // an auto-start / restart / after-game-update launch held by the "DS Forever vX is out" pop-up: "Later" lets it go on
     var launchAfterAppChoice by remember { mutableStateOf(false) }
     var addonsInstalled by remember { mutableStateOf(false) }
@@ -504,6 +512,7 @@ fun WoWForeverScreen(
         appUpdate = appUpdate?.takeIf { !appUpdateLater }?.let { "v${it.version}" },
         appLine = AppUpdater.line(appCheck),
         // the background all-icons step (Track C, test23): ready when its stamp says so, else its count while it runs
+        installedExternal = installedExternal,
         iconsLine = com.jrees.wowcompanion.AllIcons.line(com.jrees.wowcompanion.ArtHarvest.state is com.jrees.wowcompanion.ArtHarvest.State.Ready),
         busy = when {
             isUpdating -> updateStatusText
@@ -528,6 +537,10 @@ fun WoWForeverScreen(
                 if (launchAfterAppChoice) { launchAfterAppChoice = false; launchGame() }
             }
             com.jrees.wowcompanion.SetupFlow.Action.PLAY -> launchGame()
+            com.jrees.wowcompanion.SetupFlow.Action.OPEN_APP_SETTINGS -> runCatching {
+                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:${context.packageName}")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            }.onFailure { Timber.w(it, "app settings") }
             com.jrees.wowcompanion.SetupFlow.Action.RELAUNCH -> launchGame(by = "restart")
             else -> Unit          // the companion's own (the login form, the sign-in pop-ups)
         }

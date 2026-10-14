@@ -33,7 +33,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             val need = CascNative.takeNeed() ?: break
             if (attempt == 4 || status == CascNative.ENCRYPTED) break
             if (!fetch(root, cache, File(need))) {
-                lastReadWhy = "$label: not on this device, and downloading it failed (${File(need).name}): is the Thor online?"
+                lastReadWhy = "$label: not on this device, and downloading it failed (${File(need).name}: ${lastFetchWhy ?: "no answer"})"
                 return@synchronized null
             }
         }
@@ -131,7 +131,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
                 if (h != 0L) break
                 val need = CascNative.takeNeed() ?: break
                 if (!fetch(root, cache, File(need))) {
-                    downloadFailure = "a game table could not be downloaded (${File(need).name})"
+                    downloadFailure = "a game table could not be downloaded (${File(need).name}: ${lastFetchWhy ?: "no answer"})"
                     break
                 }
             }
@@ -165,25 +165,27 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             return CdnArchives.fetch(hosts, path, hit, to, log)
         }
 
-        /** one loose CDN file ([rel] under the CDN path) to [to], whole or not at all */
+        /** why the last CDN fetch failed (HTTP 503 from <host>, timed out...): the art's message keeps the real reason */
+        @Volatile var lastFetchWhy: String? = null
+            internal set
+
+        /** one loose CDN file ([rel] under the CDN path) to [to], whole or not at all; every host, twice (CdnRetry) */
         private fun download(hosts: List<String>, path: String, rel: String, to: File): Boolean {
             to.parentFile?.mkdirs()
-            for (host in hosts) {
-                val ok = runCatching {
-                    val c = java.net.URL("https://$host/$path/$rel").openConnection() as java.net.HttpURLConnection
-                    c.connectTimeout = 15_000; c.readTimeout = 60_000
-                    try {
-                        if (c.responseCode != 200) return@runCatching false
-                        val tmp = File(to.path + ".part")
-                        c.inputStream.use { i -> tmp.outputStream().use { o -> i.copyTo(o, 1 shl 16) } }
-                        if (!tmp.renameTo(to)) { to.delete(); tmp.renameTo(to) }
-                        true
-                    } finally { c.disconnect() }
-                }.getOrDefault(false)
-                if (ok) { android.util.Log.i("WCHARVEST", "fetched $rel (${to.length()} bytes) from $host"); return true }
+            val tmp = File(to.path + ".part")
+            val why = CdnRetry.run(hosts) { host ->
+                val c = java.net.URL("https://$host/$path/$rel").openConnection() as java.net.HttpURLConnection
+                c.connectTimeout = 15_000; c.readTimeout = 60_000
+                try {
+                    if (c.responseCode != 200) return@run "HTTP ${c.responseCode}"
+                    c.inputStream.use { i -> tmp.outputStream().use { o -> i.copyTo(o, 1 shl 16) } }
+                    if (!tmp.renameTo(to)) { to.delete(); if (!tmp.renameTo(to)) return@run "could not save it" }
+                    android.util.Log.i("WCHARVEST", "fetched $rel (${to.length()} bytes) from $host")
+                    null
+                } finally { c.disconnect(); tmp.delete() }
             }
-            android.util.Log.w("WCHARVEST", "could not fetch $rel from ${hosts.joinToString()}")
-            return false
+            if (why != null) { lastFetchWhy = why; android.util.Log.w("WCHARVEST", "could not fetch $rel: $why") }
+            return why == null
         }
 
         /** CASC's locale flags (CascLib's CASC_LOCALE_*) */

@@ -158,9 +158,18 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 }
                 shell.hostWindow()?.decorView?.let { redraw(it) }
             } else if (state is ArtHarvest.State.Failed && ::startView.isInitialized) {
-                startView.line = state.why
-                startView.visibility = View.VISIBLE
-                startView.invalidate()
+                // p-build-tables-blocks-keyboard (a player, 2026-10-14: an art table error on the bottom screen at the login screen and
+                // no keyboard "by any method"): with the game up, the art's failure NEVER takes the bottom screen, its start view or
+                // its line; the sign-in and its Keyboard always stay reachable. It shows in Settings' status line and is retried at
+                // the next start. Before Play (no game) the start screen says it, as before.
+                if (LauncherHooks.gameUp()) {
+                    status.text = "Game art: ${state.why}".take(110)
+                    Log.w("WCHARVEST", "art failed with the game up (not shown over the sign-in): ${state.why}")
+                } else {
+                    startView.line = state.why
+                    startView.visibility = View.VISIBLE
+                    startView.invalidate()
+                }
             }
         }
     }
@@ -1119,8 +1128,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the interiors bake (Track C) runs while the game is there and quiet; it waits while it fights or loads
         if (current) IndoorSchedulerStep.noteAlive(homeView.inFight() || setupLoading || startView.visibility == View.VISIBLE)
         // a reload from the Settings keeps it up until the new hello (the game writes on for a moment before it reloads)
+        // (an art failure kept it up before Play only: with the game live it never holds the bottom screen; p-build-tables-blocks-keyboard)
         if (current && startView.visibility == View.VISIBLE && reloadAt == 0L && !setupLoading &&
-            ArtHarvest.state !is ArtHarvest.State.Failed) startView.visibility = View.GONE
+            (ArtHarvest.state !is ArtHarvest.State.Failed || LauncherHooks.gameUp())) startView.visibility = View.GONE
         // where the character stands chooses the scene behind every waiting screen (UI Art's Scene)
         msg.optJSONObject("map")?.let { if (it.has("inst")) Scene.note(it.optInt("inst", -1)) }
         when (msg.optString("type")) {

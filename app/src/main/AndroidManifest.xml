@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- internalOnly (p-sd-card-install, a player 2026-10-14: installed on the SD card, the container could not be made): it was the
+     default already; said out loud so an installer's "prefer external" never applies. A device's "force allow on external" still can:
+     the launcher's setup says so (InstallCheck). -->
 <manifest xmlns:tools="http://schemas.android.com/tools"
-    xmlns:android="http://schemas.android.com/apk/res/android">
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:installLocation="internalOnly">
 
     <uses-feature
         android:glEsVersion="0x00020000"
