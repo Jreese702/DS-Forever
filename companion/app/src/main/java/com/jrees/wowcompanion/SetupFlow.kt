@@ -49,6 +49,8 @@ object SetupFlow {
         val appLine: String? = null,
         /** the background all-icons step's line (AllIcons.line): optional, never gates Play */
         val iconsLine: String? = null,
+        /** DS Forever runs from the SD card / adopted storage (InstallCheck): the container can't be made there */
+        val installedExternal: Boolean = false,
         /** launching / updating / downloading: what is happening (Play waits) */
         val busy: String? = null,
         val signIn: SignIn = SignIn.NONE,
@@ -63,6 +65,8 @@ object SetupFlow {
     enum class Action {
         CHOOSE_FOLDER, GRANT_STORAGE, ENTER_LOGIN, SKIP_LOGIN, RETRY_ART, UPDATE_GAME, UPDATE_APP, LATER_APP,
         UPDATE_LOGIN, ENTER_ON_GAME, RESTART_GAME, PLAY,
+        /** Android's App info page for DS Forever (Storage > Change: move it to internal storage) */
+        OPEN_APP_SETTINGS,
         /** the restart's own Play (never a button): it launches the same way and says so in the log */
         RELAUNCH
     }
@@ -84,6 +88,9 @@ object SetupFlow {
         // (that one was refused as a duplicate). Between the close and the new game: the restart's line only, nothing to press
         if (i.restarting) return Screen(Prompt("signin", "Restarting the game to sign in…", "", emptyList()), null, "")
         val prompt = when {
+            // first: nothing else works from the SD card (p-sd-card-install); Play stays, a device may still cope
+            i.installedExternal -> Prompt("install", InstallCheck.TITLE, InstallCheck.TEXT,
+                listOf(Button("Open app settings", Action.OPEN_APP_SETTINGS)))
             !i.folderFound || i.wrongGame -> Prompt("folder", "Where is WoW Forever?",
                 if (i.wrongGame) "The folder ${i.path} holds ${i.product.ifEmpty { "another game" }}, not WoW Forever. Choose the WoW Forever folder: the one with .build.info and Data."
                 else "It isn't in ${i.path}. Choose the folder with .build.info and Data (for example Documents/WoW Forever).",
@@ -146,6 +153,7 @@ object SetupFlow {
     }
 
     fun checks(i: Inputs): List<Check> = buildList {
+        if (i.installedExternal) add(Check("DS Forever: on the SD card - move it to internal storage", Mark.BAD))
         add(when {
             !i.folderFound -> Check("Game folder: not found (${i.path})", Mark.BAD)
             i.wrongGame -> Check("Game folder: ${i.product.ifEmpty { "another game" }}, not WoW Forever", Mark.BAD)

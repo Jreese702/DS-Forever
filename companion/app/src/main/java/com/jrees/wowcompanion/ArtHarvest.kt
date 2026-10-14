@@ -248,7 +248,10 @@ object ArtHarvest {
         if (first.isEmpty() && later.isEmpty()) {
             set(State.Ready); onBeforePlayDone(true); startDetached(ctx, detached); return
         }
-        val game = GameFiles.open(ctx)
+        // a CDN hiccup while it fetches the build's tables passes: tried again (HarvestRetry) before the art says it failed
+        val game = HarvestRetry.run(onRetry = { n, d, why -> Log.w(TAG, "harvest: open failed ($why), try ${n + 1} in ${d / 1000} s") }) {
+            GameFiles.open(ctx) ?: throw java.io.IOException(GameFiles.lastWhy ?: "the game files could not be read")
+        }.getOrNull()
         if (game == null) {
             val why = GameFiles.lastWhy ?: "the game files could not be read"
             Log.w(TAG, "harvest: $why")
@@ -282,8 +285,13 @@ object ArtHarvest {
             val base = before
             set(State.Running(beforePlay, base / total, s.id))
             val t0 = System.currentTimeMillis()
-            val job = Job(ctx, g, root(ctx), s.id) { f, what -> set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
-            val result = runCatching {
+            var job = Job(ctx, g, root(ctx), s.id) { f, what -> set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
+            // a failure (often a CDN hiccup on a table) is tried again before the art says so (HarvestRetry); the last reason is shown
+            val result = HarvestRetry.run(onRetry = { n, d, why ->
+                Log.w(TAG, "harvest step ${s.id} failed ($why), try ${n + 1} in ${d / 1000} s")
+                set(State.Running(beforePlay, base / total, "${s.id}: trying again in ${d / 1000} s"))
+            }) {
+                job = Job(ctx, g, root(ctx), s.id) { f, what -> set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
                 s.run(job)
             }.onFailure { Log.w(TAG, "harvest step ${s.id} failed", it) }
             if (result.isFailure) {
