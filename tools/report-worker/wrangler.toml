@@ -11,4 +11,4 @@ GITHUB_REPO = "Jreese702/DS-Forever"
 # the rate limits' counters (README step 3 makes the namespace and puts its id here)
 [[kv_namespaces]]
 binding = "LIMITS"
-id = "PUT-THE-KV-NAMESPACE-ID-HERE"
+id = "f8b49d676d5642b9adadea3d0c9d67df"
