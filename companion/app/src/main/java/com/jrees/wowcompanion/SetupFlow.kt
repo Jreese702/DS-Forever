@@ -143,9 +143,9 @@ object SetupFlow {
             SignIn.TYPING -> "Type it on the game screen" to ""
             // the game asks for the Battle.net Authenticator code (its log's authenticatorRequired="true"; a player's report 2026-10-13:
             // the keyboard did not open): the keyboard opens by itself, and "Keyboard" brings it back if it is closed
-            SignIn.AUTH -> return Prompt("signin", "Enter your authenticator code", "", listOf(Button("Keyboard", Action.ENTER_ON_GAME)))
+            SignIn.AUTH -> return Prompt("signin", "Enter your authenticator code", SignInKeyboard.HINT, listOf(Button("Keyboard", Action.ENTER_ON_GAME)))
             // p-auth-keyboard: the traffic says "not signed in" before the log says why (a code box, or a refusal): neutral until it does
-            SignIn.CHECK -> return Prompt("signin", "Type your authenticator code (or password) on the game screen", "",
+            SignIn.CHECK -> return Prompt("signin", "Type your authenticator code (or password) on the game screen", SignInKeyboard.HINT,
                 listOf(Button("Keyboard", Action.ENTER_ON_GAME),
                 Button(if (i.loginSaved) "Update login" else "Save login", Action.UPDATE_LOGIN)))
         }

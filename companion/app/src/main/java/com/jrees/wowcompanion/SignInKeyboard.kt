@@ -38,6 +38,17 @@ object SignInKeyboard {
         if (raw == SetupFlow.SignIn.FAILED && !logSaysFailed && readAt > 0 && now - readAt < UNSURE_MS) SetupFlow.SignIn.CHECK
         else raw
 
+    /** the pop-ups' line (the user's pick: "Hint now + block A") */
+    const val HINT = "Type with Keyboard; don't press A."
+
+    /**
+     * The controller's A does nothing for the game while the code / password pop-up shows (the user's pick; on the Thor A "selects the
+     * username behind the authenticator pop up": the game's gamepad cursor stays on the field behind the dialog). Only with the game up,
+     * and not while our own login form is open (Update login); it comes back the moment the pop-up goes. B is untouched.
+     */
+    fun blocksA(signIn: SetupFlow.SignIn, gameUp: Boolean, loginFormOpen: Boolean): Boolean =
+        gameUp && !loginFormOpen && (signIn == SetupFlow.SignIn.CHECK || signIn == SetupFlow.SignIn.AUTH)
+
     /** the simulation file (adb only, no exported entry point): while it exists and the game is up, the sign-in reads AUTH */
     const val SIMULATE_AUTH_FILE = "simulate_auth"
 }

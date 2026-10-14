@@ -89,6 +89,24 @@ class AuthKeyboardTest {
         assertTrue(ime.open)
     }
 
+    @Test fun aIsHeldBackOnlyWhileTheCodePopUpShows() {
+        val s = SetupFlow.SignIn.values()
+        for (st in s) {
+            val expect = st == SetupFlow.SignIn.CHECK || st == SetupFlow.SignIn.AUTH
+            assertEquals(st.name, expect, SignInKeyboard.blocksA(st, gameUp = true, loginFormOpen = false))
+        }
+        assertFalse(SignInKeyboard.blocksA(SetupFlow.SignIn.AUTH, gameUp = false, loginFormOpen = false))   // no game, no block
+        assertFalse(SignInKeyboard.blocksA(SetupFlow.SignIn.AUTH, gameUp = true, loginFormOpen = true))     // Update login's form open
+        assertFalse(SignInKeyboard.blocksA(SetupFlow.SignIn.NONE, gameUp = true, loginFormOpen = false))    // signed in: A is back
+    }
+
+    @Test fun thePopUpsSayIt() {
+        for (st in listOf(SetupFlow.SignIn.CHECK, SetupFlow.SignIn.AUTH)) {
+            val p = SetupFlow.screen(SetupFlow.Inputs(path = "/g", folderFound = true, gameRunning = true, signIn = st)).prompt!!
+            assertEquals("Type with Keyboard; don't press A.", p.text)
+        }
+    }
+
     // ---- Connection.log: the authenticator line, with or without its tag
 
     @Test fun connectionLogLinesAreRead() {

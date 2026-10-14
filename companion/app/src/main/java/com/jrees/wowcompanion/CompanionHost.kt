@@ -1684,6 +1684,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             NativeLogin.logEvent("sign-in: ${if (st == SetupFlow.SignIn.AUTH) "authenticator code asked" else "code or password asked (traffic)"}, keyboard opened")
             SetupBridge.keyboard(true)
         }
+        SetupBridge.loginFormOpen = loginPrompt.isOpen
         SetupBridge.signIn(st, restart)
         if (st == SetupFlow.SignIn.NONE && SetupBridge.keyboardOpen) { NativeLogin.logEvent("sign-in: keyboard closed (past the login screen)"); SetupBridge.keyboard(false) }
     }
