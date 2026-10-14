@@ -1425,7 +1425,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // every padmap also to Home: Cast's fight faces (armed buttons only) and B's give-back cell (HomeView.onPadMap)
             "padmap" -> PadMapModel.parse(msg)?.let {
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
-                spellbookView.onPadMap(it); controllerView.onPadMap(it); homeView.onPadMap(it)
+                spellbookView.onPadMap(it); controllerView.onPadMap(it); homeView.onPadMap(it); spellsOverlay.onPadMap(it)
                 // the D-pad room bar (Spells' m24): the Settings row's state, and the once-per-character prompt
                 it.dpad?.let { d ->
                     // the character now: the wheels' kept lists of another character go (the per-character ruling)
