@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m51"                -- bump on every change
+local PV = "m52"                -- bump on every change
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -443,7 +443,8 @@ function WC.collectPadMap()
     for _ in pairs(a.slots) do nslots = nslots + 1 end
     -- m40 / m43: commands (m41) and fight spells on any button (m43) are the overlay now: only start attack on cast stays paused
     doc.paused = nil
-    doc.sa = { paused = PAUSED or nil, on = attackOn(), chosen = a.chosen or nil, n = nslots, full = a.full, user = a.user, refused = a.refused, pending = a.pending,
+    -- m52: start attack on cast is the ROUTER's now (no macro): never paused
+    doc.sa = { on = attackOn(), chosen = a.chosen or nil, n = nslots, full = a.full, user = a.user, refused = a.refused, pending = a.pending,
                cols = WC.spellsAttackCols }
     doc.commands = {}
     for _, c in ipairs(commandList()) do
@@ -801,13 +802,16 @@ local PRE = [=[
         -- (ControllerForever's author measured it too), so a "/click" of Forever's button that holds a macro (the start-attack "DS Attack"
         -- macros, the combat buttons, the player's own) does nothing. Its macro text, kept per action slot on the header out of combat,
         -- runs here instead: the button's slot is read live (its ID: Forever's paging sets it), so a page change is followed
-        local mt, ft = nil, nil
+        local mt, ft, sa = nil, nil, nil
         if dest and mode ~= "room" then
             local nb = self:GetFrameRef("wc-btn-" .. anchor .. "-" .. at)
             local hd = self:GetFrameRef("wc-hdr")
             if nb and hd and nb.GetID then
                 local id = nb:GetID()
-                if id and id > 0 then mt = hd:GetAttribute("wc-mt-" .. id); ft = hd:GetAttribute("wc-ft-" .. id) end   -- m43: its fight spell
+                if id and id > 0 then
+                    mt = hd:GetAttribute("wc-mt-" .. id); ft = hd:GetAttribute("wc-ft-" .. id)   -- m43: its fight spell
+                    sa = hd:GetAttribute("wc-sa-" .. id)                  -- m52: its start-attack lines (a harmful spell, the switch on)
+                end
             end
         end
         local on = self:GetAttribute("wc-state") == "fight" or self:GetAttribute("wc-pre")
@@ -887,7 +891,8 @@ local PRE = [=[
             self:SetAttribute("type", "macro")
             self:SetAttribute("typerelease", "macro")
             self:SetAttribute("pressAndHoldAction", true)
-            self:SetAttribute("macrotext", "/click " .. dest .. " " .. mb .. " 1")
+            -- m52 START ATTACK ON CAST: the attack lines run first, then the game's own button (its spell, rank, cooldown, hold)
+            self:SetAttribute("macrotext", (sa or "") .. "/click " .. dest .. " " .. mb .. " 1")
         else
             self:SetAttribute("wc-kind", "none")
             self:SetAttribute("type", nil)
@@ -1195,13 +1200,45 @@ local function routerMacros()
     for slot, body in pairs(want) do
         if R.mt[slot] ~= body then pcall(function() hdr:SetAttribute("wc-mt-" .. slot, body) end); R.mt[slot] = body; changed = true end
     end
-    -- m43: the fight spells' texts ("wc-ft-<slot>"), while Combat controls are on
+    -- m43: the fight spells' texts ("wc-ft-<slot>"), while Combat controls are on; m52: a harmful one starts the attack too (the switch on)
+    local saOn = attackOn()
     local wantF = {}
     if combatOn() then
         for slot, e in pairs(OV.ftdb()) do
-            if type(slot) == "number" and type(e) == "table" and type(e.n) == "string" and WC.isPlain(e.n) then wantF[slot] = "/cast " .. e.n end
+            if type(slot) == "number" and type(e) == "table" and type(e.n) == "string" and WC.isPlain(e.n) then
+                wantF[slot] = ((saOn and harmful(e.id or e.n)) and attackLines("") or "") .. "/cast " .. e.n
+            end
         end
     end
+    -- m52 START ATTACK ON CAST AS THE OVERLAY (f-start-attack-overlay, the user 2026-10-13: "investigated and solved for", the no-trace
+    -- ruling kept): every slot the setting covers that holds a plain HARMFUL spell -> "wc-sa-<slot>" = the attack lines; the router's
+    -- snippet runs them before its /click of the game's own button. Nothing on the bar changes: off = the attribute is gone
+    local wantS, posS = {}, {}
+    if saOn then
+        for page = 1, PAGES do
+            for set = 1, SETS do
+                for pos = 1, POSITIONS do
+                    local sl = not fixed(set, pos) and storage(page, set, pos)
+                    if sl and wantS[sl] == nil then
+                        local now = readSlot(sl)
+                        if now.kind == "spell" and now.id and harmful(now.id) then wantS[sl] = attackLines(""); posS[pos] = true end
+                    end
+                end
+            end
+        end
+    end
+    R.sa = R.sa or {}
+    for slot in pairs(R.sa) do
+        if wantS[slot] == nil then pcall(function() hdr:SetAttribute("wc-sa-" .. slot, nil) end); R.sa[slot] = nil; changed = true end
+    end
+    for slot, body in pairs(wantS) do
+        if R.sa[slot] ~= body then pcall(function() hdr:SetAttribute("wc-sa-" .. slot, body) end); R.sa[slot] = body; changed = true end
+    end
+    -- the router owns those positions' keys out of combat too (the overlay's keys, below): a change binds again
+    local was, now = R.saPos or {}, posS
+    for k in pairs(was) do if not now[k] then OV.rebind = true end end
+    for k in pairs(now) do if not was[k] then OV.rebind = true end end
+    R.saPos = posS
     for slot in pairs(R.ft) do
         if wantF[slot] == nil then pcall(function() hdr:SetAttribute("wc-ft-" .. slot, nil) end); R.ft[slot] = nil; changed = true end
     end
@@ -1295,7 +1332,9 @@ local function routerBind(why, fightStart)
     -- command for that slot, and the game's own button for every other slot under that key (as for A / X / Y)
     R.ov = {}
     if not aside then
-        for pos in pairs(OV.positions()) do
+        local own = OV.positions()
+        for pos in pairs(R.saPos or {}) do own[pos] = true end          -- m52: start attack on cast
+        for pos in pairs(own) do
             local b
             if FACE[pos] then b = face.buttons[pos]; if b then routerSetup(b, pos) end
             elseif pos == 7 then b = routerB()
@@ -2068,7 +2107,16 @@ end
 -- the setting applied (out of combat): ON converts every candidate it can, OFF puts every recorded one back
 local function attackApply()
     local a = attackDB()
-    if PAUSED then a.pending = nil; pcall(faceSetup) return true end    -- m40: no conversion, no rewrite (the clean-up undoes old ones)
+    if PAUSED then                                                     -- m40: no conversion, no rewrite (the clean-up undoes old ones)
+        -- m52: the overlay instead: the router's attack lines (routerMacros) and keys (routerBind); attributes change out of combat only
+        if inCombat() then a.pending = true return false, "combat" end
+        a.pending = nil
+        a.full, a.user, a.refused = nil, nil, nil
+        pcall(faceSetup)
+        pcall(routerMacros)
+        OV.rebind = true
+        return true
+    end
     if inCombat() then a.pending = true return false, "combat" end
     a.pending = nil
     a.full, a.user, a.refused = nil, nil, nil
@@ -2752,7 +2800,6 @@ WC.padMap = {
         local a = attackDB()
         a.on = on and true or false
         a.chosen = true
-        if PAUSED then ack("attack", false, "paused"); emit(true); WC.push() return false end   -- m40: kept, nothing done
         local ok, why = attackApply()
         ack("attack", true, not ok and why or nil)
         emit(true); WC.push()
