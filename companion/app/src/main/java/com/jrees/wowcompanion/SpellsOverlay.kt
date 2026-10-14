@@ -225,13 +225,11 @@ class SpellsOverlay(
         // the way back: B (the user on batch4: "instead of showing the - button as back when no triggers are held it should show B"; a
         // plain B backs out, Book b39); the "-" flips Normal / In combat. The triggers' glyphs stand bare ("the text on the ZL and ZR can be
         // removed")
+        // batch5 (the user: "remove the ZR/ZL glyphs in the bottom right and the B button glyph and text when holding a trigger at all"):
+        // no trigger glyphs here; B / Back only while no trigger is held (with one, B is a place for the spell)
         val back = faceGlyph(st, "b")
         if (r != null && r.ok) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Close")
-        else {
-            val left = UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Back")
-            UiKit.pad(c, "${st.prefix}_rtrigger", left - 44f, box.bottom - 92f, 48f)
-            UiKit.pad(c, "${st.prefix}_ltrigger", left - 100f, box.bottom - 92f, 48f)
-        }
+        else if (!lt && !rt) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Back")
     }
 
     /** empty slots with the glyphs, where the Cast room's drawing goes, for as long as it has none */
