@@ -1678,8 +1678,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (NativeLogin.firstReadAt > 0) ", ${(now - NativeLogin.firstReadAt) / 1000} s after the read" else "")
         }
         // the code box: the top screen's keyboard opens by itself, once as the game asks ("Keyboard" toggles it after that)
-        if (st == SetupFlow.SignIn.AUTH && SetupBridge.signIn != SetupFlow.SignIn.AUTH) {
-            NativeLogin.logEvent("sign-in: authenticator code asked, keyboard opened"); SetupBridge.keyboard(true)
+        // the keyboard opens by itself at the traffic's moment (CHECK, +13 s on the Thor) and again, harmlessly (show only), at the log's
+        // AUTH (+38-45 s): the player can type the code as soon as the game shows its box (p-auth-keyboard, the user's "SUPER late")
+        if (SignInKeyboard.autoOpen(SetupBridge.signIn, st)) {
+            NativeLogin.logEvent("sign-in: ${if (st == SetupFlow.SignIn.AUTH) "authenticator code asked" else "code or password asked (traffic)"}, keyboard opened")
+            SetupBridge.keyboard(true)
         }
         SetupBridge.signIn(st, restart)
         if (st == SetupFlow.SignIn.NONE && SetupBridge.keyboardOpen) { NativeLogin.logEvent("sign-in: keyboard closed (past the login screen)"); SetupBridge.keyboard(false) }

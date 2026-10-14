@@ -21,12 +21,17 @@ object SignInKeyboard {
     fun needToggle(result: Int?): Boolean = result == null || result == RESULT_UNCHANGED_HIDDEN || result == RESULT_HIDDEN
 
     /**
-     * The Thor with a real authenticator (the user, 2026-10-14): SIGNING at +0 s, the traffic's FAILED at +12-13 s, the log's
-     * authenticatorRequired only at +25 s. Until [UNSURE_MS] after the login was read, a FAILED only the traffic says is NOT shown as
-     * "Sign-in didn't work" but as [SetupFlow.SignIn.CHECK] ("Check the game screen": Keyboard + Update login, right for a code and for
-     * a retyped password alike); the log's AUTH or failure replaces it as soon as it is read.
+     * The Thor with a real authenticator (the user, 2026-10-14): SIGNING at +0 s, the traffic's FAILED at +13 s, the log's
+     * authenticatorRequired only at +38-45 s (General.log AND Connection.log: the game writes both late). So the traffic's moment is
+     * the one to act on: until [UNSURE_MS] after the login was read, a FAILED only the traffic says is [SetupFlow.SignIn.CHECK] (the
+     * keyboard opens by itself, "Type your authenticator code (or password) on the game screen", Keyboard + Update login); the log's
+     * AUTH or refusal replaces it as soon as it is read, and "Sign-in didn't work" only after [UNSURE_MS] with neither.
      */
-    const val UNSURE_MS = 25_000L
+    const val UNSURE_MS = 60_000L
+
+    /** the keyboard opens by itself on entering [now] from [before] (show only: a second open never closes it) */
+    fun autoOpen(before: SetupFlow.SignIn, now: SetupFlow.SignIn): Boolean =
+        now != before && (now == SetupFlow.SignIn.CHECK || now == SetupFlow.SignIn.AUTH)
 
     /** what the bottom screen shows for the sign-in check's [raw] answer ([readAt] = when the game read the login, epoch ms; 0 = not yet) */
     fun shown(raw: SetupFlow.SignIn, readAt: Long, now: Long, logSaysFailed: Boolean): SetupFlow.SignIn =

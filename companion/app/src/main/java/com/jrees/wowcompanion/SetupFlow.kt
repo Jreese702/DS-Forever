@@ -145,7 +145,8 @@ object SetupFlow {
             // the keyboard did not open): the keyboard opens by itself, and "Keyboard" brings it back if it is closed
             SignIn.AUTH -> return Prompt("signin", "Enter your authenticator code", "", listOf(Button("Keyboard", Action.ENTER_ON_GAME)))
             // p-auth-keyboard: the traffic says "not signed in" before the log says why (a code box, or a refusal): neutral until it does
-            SignIn.CHECK -> return Prompt("signin", "Check the game screen", "", listOf(Button("Keyboard", Action.ENTER_ON_GAME),
+            SignIn.CHECK -> return Prompt("signin", "Type your authenticator code (or password) on the game screen", "",
+                listOf(Button("Keyboard", Action.ENTER_ON_GAME),
                 Button(if (i.loginSaved) "Update login" else "Save login", Action.UPDATE_LOGIN)))
         }
         val buttons = buildList {

@@ -56,9 +56,10 @@ class AuthKeyboardTest {
 
     private val read = 1_000_000L
 
-    @Test fun aTrafficFailureIsNeutralForTheFirst25Seconds() {
+    @Test fun aTrafficFailureIsNeutralUntilTheLogCanSay() {
         assertEquals(SetupFlow.SignIn.CHECK, SignInKeyboard.shown(SetupFlow.SignIn.FAILED, read, read + 13_000, logSaysFailed = false))
-        assertEquals(SetupFlow.SignIn.FAILED, SignInKeyboard.shown(SetupFlow.SignIn.FAILED, read, read + 25_000, logSaysFailed = false))
+        assertEquals(SetupFlow.SignIn.CHECK, SignInKeyboard.shown(SetupFlow.SignIn.FAILED, read, read + 45_000, logSaysFailed = false))  // the Thor's AUTH
+        assertEquals(SetupFlow.SignIn.FAILED, SignInKeyboard.shown(SetupFlow.SignIn.FAILED, read, read + 60_000, logSaysFailed = false))
         assertEquals(SetupFlow.SignIn.FAILED, SignInKeyboard.shown(SetupFlow.SignIn.FAILED, read, read + 5_000, logSaysFailed = true))
         assertEquals(SetupFlow.SignIn.AUTH, SignInKeyboard.shown(SetupFlow.SignIn.AUTH, read, read + 13_000, logSaysFailed = false))
         assertEquals(SetupFlow.SignIn.SIGNING, SignInKeyboard.shown(SetupFlow.SignIn.SIGNING, read, read + 1_000, logSaysFailed = false))
@@ -68,9 +69,23 @@ class AuthKeyboardTest {
     @Test fun theNeutralPopUpOffersKeyboardAndUpdateLogin() {
         val p = SetupFlow.screen(SetupFlow.Inputs(path = "/g", folderFound = true, loginSaved = true, gameRunning = true,
             signIn = SetupFlow.SignIn.CHECK)).prompt!!
-        assertEquals("Check the game screen", p.title)
+        assertEquals("Type your authenticator code (or password) on the game screen", p.title)
         assertEquals(listOf(SetupFlow.Action.ENTER_ON_GAME, SetupFlow.Action.UPDATE_LOGIN), p.buttons.map { it.action })
         assertEquals("Keyboard", p.buttons.first().label)
+    }
+
+    @Test fun theKeyboardOpensAtTheTrafficsMomentAndStaysOpenAtAuth() {
+        val S = SetupFlow.SignIn
+        assertTrue(SignInKeyboard.autoOpen(S.SIGNING, S.CHECK))     // +13 s: open now
+        assertTrue(SignInKeyboard.autoOpen(S.CHECK, S.AUTH))        // +38-45 s: open again (show only)
+        assertFalse(SignInKeyboard.autoOpen(S.CHECK, S.CHECK))
+        assertFalse(SignInKeyboard.autoOpen(S.AUTH, S.AUTH))
+        assertFalse(SignInKeyboard.autoOpen(S.CHECK, S.FAILED))
+        val ime = Ime()
+        keyboardNow(ime)                 // CHECK's auto-open
+        keyboardNow(ime)                 // the player's tap
+        keyboardNow(ime)                 // AUTH's auto-open
+        assertTrue(ime.open)
     }
 
     // ---- Connection.log: the authenticator line, with or without its tag
