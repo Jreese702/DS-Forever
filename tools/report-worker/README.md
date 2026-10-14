@@ -17,11 +17,11 @@ You need a Cloudflare account (the free tier is enough) and Node.js 18 or later.
    npm install
    npx wrangler login
    ```
-2. **Create the GitHub bot token.** Go to GitHub > Settings > Developer settings > Fine-grained personal access tokens > Generate new token.
-   - Resource owner: Jreese702. Repository access: **Only select repositories** > `DS-Forever`.
-   - Permissions: **Issues: Read and write**. Leave everything else at No access.
-   - Expiration: your choice; note the date and repeat steps 2 and 4 before it expires.
-   - Create the label `player-report` in the repository once: Issues > Labels > New label.
+2. **Create the GitHub bot token.** Use the option that matches who owns the token.
+   - **A separate bot account (recommended).** Invite it to `Jreese702/DS-Forever` as a collaborator with the **Triage** role, so it can create issues and apply labels, but cannot push code. A fine-grained token can only cover repositories its own account owns, so on the bot account create a **classic** token: Settings > Developer settings > Personal access tokens (classic) > Generate new token, with only the **`public_repo`** scope. The bot is a collaborator on this repository alone, so in practice that is all the token reaches.
+   - **Your own account.** Settings > Developer settings > Fine-grained personal access tokens > Generate new token. Set Resource owner to Jreese702 and Repository access to **Only select repositories** > `DS-Forever`. Under Permissions choose **Issues: Read and write** and leave everything else at No access.
+   - Either way, set an expiry, note the date, and repeat steps 2 and 4 before it expires.
+   - Create the label `player-report` in the repository once: Issues > Labels > New label. The token applies the label but cannot create it.
 3. **Create the rate-limit store**, then paste the id it prints into `wrangler.toml` (`[[kv_namespaces]] id = ...`):
    ```
    npx wrangler kv namespace create LIMITS
