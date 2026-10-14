@@ -211,6 +211,114 @@ function WC.mmHide.api()
     WC.send(WC.encode({ type = "cap", what = "mmapi", names = table.concat(names, ",") }))
 end
 
+-- WHAT DRAWS IN THE CORNER (round 4, a diagnostic only; batch8: mmt 9 and every setter took, and the user's photo shows a THIN
+-- bright blue-white bent LINE with round caps at about x 1605-1680, y 190-315 of the 1920x1080 top screen, inside the hidden
+-- minimap's corner). A read of every shown frame and its regions (Line ones too) whose screen rectangle meets that box or the
+-- Minimap's own, and that would DRAW (effective alpha above SCAN_ALPHA), smallest first: debug name, object type, strata /
+-- level, effective alpha, rectangle in screen pixels (x, y from the top left, w, h). Plus the super-tracked quest, the quest POI
+-- world effects and whether the ground is drawn. A {"type":"cap","what":"mmscan"} line SCAN_AT seconds after the hide (one per
+-- session per delay). Reads only: nothing is set, hooked or shown.
+WC.mmHide.SCAN_AT = { 10, 120, 600 }
+WC.mmHide.SCAN_BOX = { 1605, 190, 1680, 315 }     -- the photo's line, screen pixels from the top left
+WC.mmHide.SCAN_PAD = 60
+WC.mmHide.SCAN_ALPHA = 0.02
+WC.mmHide.SCAN_MAX = 40
+
+function WC.mmHide.scan(tag)
+    local H = WC.mmHide
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then return end
+    local okP, pw, ph = CALL(GetPhysicalScreenSize)
+    if not okP or type(ph) ~= "number" or not WC.isPlain(ph) or ph <= 0 then pw, ph = 1920, 1080 end
+    local k = ph / 768
+    -- an object's rectangle in screen pixels (x, y from the top left), or nil
+    local function px(o)
+        local ok, l, b, w, h = pcall(o.GetRect, o)
+        local okE, e = pcall(o.GetEffectiveScale, o)
+        if not ok or not okE or type(l) ~= "number" or type(w) ~= "number" or type(e) ~= "number" then return nil end
+        if not (WC.isPlain(l) and WC.isPlain(b) and WC.isPlain(w) and WC.isPlain(h) and WC.isPlain(e)) then return nil end
+        local s = e * k
+        return l * s, ph - (b + h) * s, w * s, h * s
+    end
+    local boxes = { { H.SCAN_BOX[1] - H.SCAN_PAD, H.SCAN_BOX[2] - H.SCAN_PAD, H.SCAN_BOX[3] + H.SCAN_PAD, H.SCAN_BOX[4] + H.SCAN_PAD } }
+    local mm = _G.Minimap
+    if mm then
+        local x, y, w, h = px(mm)
+        if x then boxes[#boxes + 1] = { x, y, x + w, y + h } end
+    end
+    local function meets(x, y, w, h)
+        for _, bx in ipairs(boxes) do
+            if x < bx[3] and x + w > bx[1] and y < bx[4] and y + h > bx[2] then return true end
+        end
+        return false
+    end
+    local function plainStr(f)
+        local ok, v = pcall(f)
+        if ok and type(v) == "string" and WC.isPlain(v) then return v end
+        return "?"
+    end
+    local hits = {}
+    local function look(o, isRegion)
+        local okV, vis = pcall(o.IsVisible, o)
+        if not okV or vis ~= true then return end
+        local okA, a = pcall(o.GetEffectiveAlpha, o)
+        if not okA or type(a) ~= "number" or not WC.isPlain(a) or a <= H.SCAN_ALPHA then return end
+        local x, y, w, h = px(o)
+        if not x or w <= 0 or h <= 0 or not meets(x, y, w, h) then return end
+        local name = plainStr(function() return o:GetDebugName() end)
+        local typ = plainStr(function() return o:GetObjectType() end)
+        local strata, level = "", ""
+        if not isRegion then
+            strata = plainStr(function() return o:GetFrameStrata() end)
+            local okL, lv = pcall(o.GetFrameLevel, o)
+            if okL and type(lv) == "number" and WC.isPlain(lv) then level = tostring(lv) end
+        else
+            strata = plainStr(function() return (o:GetDrawLayer()) end)
+        end
+        hits[#hits + 1] = { area = w * h, s = string.format("%s|%s|%s%s|a%.2f|%d,%d,%d,%d", name, typ, strata,
+            level ~= "" and (":" .. level) or "", a, math.floor(x + 0.5), math.floor(y + 0.5), math.floor(w + 0.5), math.floor(h + 0.5)) }
+    end
+    local nFrames = 0
+    if type(EnumerateFrames) == "function" then
+        local okF, f = pcall(EnumerateFrames)
+        while okF and f do
+            nFrames = nFrames + 1
+            look(f, false)
+            local okR, regions = pcall(function() return { f:GetRegions() } end)
+            if okR then for _, r in ipairs(regions) do pcall(look, r, true) end end
+            okF, f = pcall(EnumerateFrames, f)
+        end
+    end
+    table.sort(hits, function(p, q) return p.area < q.area end)
+    local list = {}
+    for i = 1, math.min(#hits, H.SCAN_MAX) do list[i] = hits[i].s end
+    -- the Minimap itself, whatever its alpha (the filter above drops it: its alpha is 0 while hidden, and it is the first suspect)
+    local mmState
+    if mm then
+        local okV, vis = pcall(mm.IsVisible, mm)
+        local okA, a = pcall(mm.GetEffectiveAlpha, mm)
+        local x, y, w, h = px(mm)
+        mmState = string.format("vis=%s a=%s %s", tostring(okV and WC.isPlain(vis) and vis), (okA and type(a) == "number" and WC.isPlain(a))
+            and string.format("%.2f", a) or "?", x and string.format("%d,%d,%d,%d", x, y, w, h) or "?")
+    end
+    local okS, st = CALL(function() return C_SuperTrack.GetSuperTrackedQuestID() end)
+    local okW, fx = CALL(function() return C_Minimap.GetNumQuestPOIWorldEffects() end)
+    local okG, gr = CALL(function() return C_Minimap.GetDrawGroundTextures() end)
+    WC.send(WC.encode({ type = "cap", what = "mmscan", tag = tag, frames = nFrames, n = #hits, screen = pw .. "x" .. ph,
+        st = (okS and WC.isPlain(st)) and st or nil, fx = (okW and WC.isPlain(fx)) and fx or nil,
+        ground = (okG and WC.isPlain(gr)) and tostring(gr) or nil, hidden = hiddenFrame, mm = mmState, hits = table.concat(list, " ; ") }))
+    pcall(WC.push)
+end
+
+-- the scans after the hide (once per session per delay)
+function WC.mmHide.scanSoon()
+    local H = WC.mmHide
+    if H.scanArmed or not (C_Timer and C_Timer.After) then return end
+    H.scanArmed = true
+    for _, d in ipairs(H.SCAN_AT) do
+        pcall(C_Timer.After, d, function() if hiddenFrame then pcall(H.scan, "t" .. d) end end)
+    end
+end
+
 -- KEEPING THEM OFF (round 1, 2026-10-13): the hub hides the minimap ONCE (Hub.lua's apply never asks again while it says hidden),
 -- but the engine can put layers back on its own (a loading screen, a quest's area changing, a tracking switch: no getters to
 -- tell). While the hub's hide stands (not the death peek, not in combat) they are said again on the quest / zone / tracking / POI
@@ -237,6 +345,7 @@ function WC.hideMinimap()
     hiddenFrame = name
     WC.mmHide.layers(true)                          -- the engine-drawn markers and the quest-area shading too
     WC.mmHide.at = (type(GetTime) == "function") and GetTime() or 0
+    pcall(WC.mmHide.scanSoon)                       -- what still draws in the corner (round 4, a read)
     return true, name
 end
 
