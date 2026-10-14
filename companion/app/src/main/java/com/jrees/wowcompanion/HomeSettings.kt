@@ -115,10 +115,21 @@ object HomeSettings {
             for (l in listeners) l()
         }
 
+    /** p-swing-timer (a player: "would rather turn this off"): the swing / cast line under the controller in a fight; true = shown (the
+     *  default, today's), false = none */
+    var swingTimer: Boolean
+        get() = prefs?.getBoolean(KEY_SWING, true) ?: true
+        set(v) {
+            if (v == swingTimer) return
+            prefs?.edit()?.putBoolean(KEY_SWING, v)?.apply()
+            for (l in listeners) l()
+        }
+
     fun onChange(l: () -> Unit) { listeners.add(l) }
 
     private const val KEY = "rest"
     private const val KEY_COMBAT_GROW = "combatGrow"
+    private const val KEY_SWING = "swingTimer"
     private const val KEY_PAUSE_TAP = "pauseTap"
     private const val KEY_PAUSE_PICK = "pausePickA"
     private const val KEY_PICK = "radialPickA"
@@ -269,6 +280,10 @@ class HomeSettingsSection(context: Context) : View(context) {
         y = row(c, y + GAP, "Combat layout", listOf("In a fight the controller grows, or keeps its size."),
             listOf("Grow", "Same size"), if (HomeSettings.combatGrow) 0 else 1,
             listOf({ HomeSettings.combatGrow = true }, { HomeSettings.combatGrow = false }))
+        // p-swing-timer: the swing / cast line under the controller in a fight
+        y = row(c, y + GAP, "Swing timer", listOf("The swing and cast line under the controller in a fight."),
+            listOf("On", "Off"), if (HomeSettings.swingTimer) 0 else 1,
+            listOf({ HomeSettings.swingTimer = true }, { HomeSettings.swingTimer = false }))
         // the focused quest's place (the user 2026-10-09): over the minimap (today's) or at the top of the chat
         y = row(c, y + GAP, "Focused quest", listOf("Where Home shows the quest you focus. Tap it to fold it."),
             // the user 2026-10-09: "Above Chat" first; the default stays Above Minimap

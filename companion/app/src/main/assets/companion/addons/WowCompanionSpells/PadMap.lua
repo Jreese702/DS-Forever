@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m52"                -- bump on every change
+local PV = "m53"                -- bump on every change
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -815,7 +815,9 @@ local PRE = [=[
             end
         end
         local on = self:GetAttribute("wc-state") == "fight" or self:GetAttribute("wc-pre")
-        local bare = anchor == "top" and at == 1
+        -- m53 (p-druid-lt-lb, a druid: forms): a FORM's / stance's bar laid over the top anchor is still the no-trigger press (its
+        -- buttons are the form's own): fight spells, the D-pad toolbar and B's give-back keep working in Bear / Cat / a stance
+        local bare = anchor == "top" and (at == 1 or self:GetAttribute("wc-stance-top-" .. at) == true)
         local role = self:GetAttribute("wc-role")
         local rearmed = false
         if role == "back" then
@@ -980,6 +982,8 @@ end
 -- Forever's buttons for one bar position (1-4 the D-pad, 5-8 the faces), per anchor, plus the triggers' indexes and the key's name
 local function routerWire(b, pos, key)
     local bars = routerBars()
+    -- m53: the stance / form bar, marked where it is wired (the snippet counts it as the bare press on the top anchor)
+    local sb = T(function() local pu = _G.GamepadMainActionBarFrame.PageUnit; return pu.actionBars and pu.actionBars.stanceBar end)
     for k in pairs(ANCHORS) do
         local n = 0
         for _, bar in ipairs(bars[k] or {}) do
@@ -987,6 +991,7 @@ local function routerWire(b, pos, key)
             local name = btn and TS(function() return btn:GetName() end)
             if name and name ~= "" then
                 n = n + 1
+                b:SetAttribute("wc-stance-" .. k .. "-" .. n, (sb ~= nil and bar == sb) or nil)
                 pcall(SecureHandlerSetFrameRef, b, "wc-bar-" .. k .. "-" .. n, bar)
                 pcall(SecureHandlerSetFrameRef, b, "wc-btn-" .. k .. "-" .. n, btn)        -- m26: its live slot (GetID)
                 b:SetAttribute("wc-dest-" .. k .. "-" .. n, name)
@@ -2992,6 +2997,23 @@ end)
 local WANT = { "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "UPDATE_MACROS", "ACTIONBAR_PAGE_CHANGED", "SPELLS_CHANGED",
                "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_ENTER_COMBAT", "PLAYER_LEAVE_COMBAT",
                "START_AUTOREPEAT_SPELL", "STOP_AUTOREPEAT_SPELL", "SPELL_UPDATE_COOLDOWN" }
+-- m53 (p-druid-lt-lb): a form / stance changes which bars the anchors carry (the stance bar is parented when it first shows): every
+-- routed button is wired again, out of combat (frame refs are attributes), a moment after the change; a fight's change waits for its end
+-- (no new main-chunk locals: Lua's 200; all on R)
+function R.rewireAll()
+    R.rewireQueued = false
+    if inCombat() then return end
+    for pos, b in pairs(face.buttons) do if R.wrapped[pos] then pcall(routerWire, b, pos, R.keys[pos]) end end
+    for i = 1, 4 do if R.dbtn[i] then pcall(routerWire, R.dbtn[i], i, R.keys[i]) end end
+    if R.bbtn then pcall(routerWire, R.bbtn, 7, R.keys[7]) end
+end
+R.fs = CreateFrame("Frame")
+for _, e in ipairs({ "UPDATE_SHAPESHIFT_FORM", "UPDATE_SHAPESHIFT_FORMS", "PLAYER_REGEN_ENABLED" }) do pcall(function() R.fs:RegisterEvent(e) end) end
+R.fs:SetScript("OnEvent", function()
+    if R.rewireQueued then return end
+    R.rewireQueued = true
+    C_Timer.After(0.3, R.rewireAll)
+end)
 -- m33: the bags and the Mount Journal change the Extra tab's lists: a doc soon (no router work for these)
 local fx = CreateFrame("Frame")
 for _, e in ipairs({ "BAG_UPDATE_DELAYED", "NEW_MOUNT_ADDED", "MOUNT_JOURNAL_USABILITY_CHANGED" }) do pcall(function() fx:RegisterEvent(e) end) end
