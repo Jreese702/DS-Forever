@@ -76,6 +76,9 @@ class SettingsPad(
     /** B with nothing nearer to do, when the leave-with-B cell cannot be tapped: Home directly (MainActivity) */
     var onLeave: (() -> Unit)? = null
 
+    /** the report page over the room (board f-problem-report) takes each press while it is open: true = taken */
+    var padOverride: ((String) -> Boolean)? = null
+
     var held = false; private set
     /** b112 (the rooms audit: one hold tap, never asked again): Map's HoldAsk, asked again every 0.7 s while unanswered, 4 at most */
     private val holdAsk = HoldAsk()
@@ -148,10 +151,11 @@ class SettingsPad(
         if (n == lastPadN) return                           // the same press seen twice
         lastPadN = n
         held = true
+        val k = msg.optString("k")
+        if (padOverride?.invoke(k) == true) return
         val all = targets()
         if (all.isEmpty()) return
         val here = nearest(all, focus)
-        val k = msg.optString("k")
         if (focus == null && k.startsWith("PADD")) {
             // the cursor should already be up (shown on the hold); if a touch scrolled it away, a D-pad press brings it back first
             startTarget(all)?.let { moveTo(it) }

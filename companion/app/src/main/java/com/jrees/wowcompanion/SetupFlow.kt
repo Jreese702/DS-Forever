@@ -49,6 +49,8 @@ object SetupFlow {
         val appLine: String? = null,
         /** the background all-icons step's line (AllIcons.line): optional, never gates Play */
         val iconsLine: String? = null,
+        /** a problem report saved by itself and not opened yet (ReportFlow.noteTitle), null = none */
+        val reportSaved: String? = null,
         /** DS Forever runs from the SD card / adopted storage (InstallCheck): the container can't be made there */
         val installedExternal: Boolean = false,
         /** launching / updating / downloading: what is happening (Play waits) */
@@ -70,7 +72,9 @@ object SetupFlow {
         /** the restart's own Play (never a button): it launches the same way and says so in the log */
         RELAUNCH,
         /** "Report a problem" (board f-problem-report): the report screen, before Play too */
-        REPORT
+        REPORT,
+        /** the saved report's note: open its GitHub issue, or dismiss it */
+        REPORT_OPEN, REPORT_DISMISS
     }
     data class Button(val label: String, val action: Action, val enabled: Boolean = true)
     data class Prompt(val id: String, val title: String, val text: String, val buttons: List<Button>)
@@ -108,6 +112,9 @@ object SetupFlow {
             i.gameOutdated != null -> Prompt("client", "Game update needed",
                 "The servers need build ${i.gameOutdated}. Signing in may fail with these files.",
                 listOf(Button("Update", Action.UPDATE_GAME, i.busy == null), Button("Play anyway", Action.PLAY, canPlay(i))))
+            i.reportSaved != null && (i.loginSaved || i.loginSkipped) -> Prompt("report", i.reportSaved,
+                "It is in Documents/DS Forever/reports. Open the GitHub issue to post it.",
+                listOf(Button("Open GitHub issue", Action.REPORT_OPEN), Button("Dismiss", Action.REPORT_DISMISS)))
             !i.loginSaved && !i.loginSkipped -> Prompt("login", "Your Battle.net login",
                 "Save it once and the game signs you in by itself. It stays encrypted on this device.",
                 listOf(Button("Enter login", Action.ENTER_LOGIN), Button("Play without", Action.SKIP_LOGIN)))

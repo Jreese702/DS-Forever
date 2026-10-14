@@ -60,9 +60,12 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         set(v) { if (field != v) { field = v; requestLayout(); invalidate() } }
     var loginSaved: () -> Boolean = { false }
     var onLogin: () -> Unit = {}
-    /** "Send a problem report" (board f-problem-report): the host opens the report screen; Record 5 minutes is inside it */
+    /** "Send a problem report" (board f-problem-report): the host opens the report page; [onReportSendNow] while recording; the note */
     var onReport: () -> Unit = {}
+    var onReportSendNow: () -> Unit = {}
+    var onReportOpenSaved: () -> Unit = {}
     private var btnReport = RectF()
+    private var btnReportDismiss = RectF()
     private var btnMiniMinus = RectF(); private var btnMiniPlus = RectF()
     private var btnMiniInMinus = RectF(); private var btnMiniInPlus = RectF()
     private val segLayout = Array(LAYOUTS.size) { RectF() }
@@ -118,6 +121,8 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
 
     init {
         Settings.onChange { postInvalidate() }
+        ReportFlow.init(context)
+        ReportFlow.onChange { postInvalidate() }
         HomeSettings.onChange { postInvalidate() }          // the wheels' two settings (also switched from the Controller DS tab)
         FrameGen.init(context)
         FrameGen.onChange { post { requestLayout(); invalidate() } }   // a pick finishes on a background thread; rows may come or go
@@ -148,7 +153,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
      * order. Read-only: the cursor presses a button with a touch at its centre, so this view's own logic decides.
      */
     fun focusTargets(): List<RectF> =
-        ((if (hasGame) listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport) else emptyList()) +
+        ((if (hasGame) listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss) else emptyList()) +
             (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segIndoor.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() +
                 listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() + listOf(btnRestart) else emptyList()))
             .filter { !it.isEmpty }.map { RectF(it) }
@@ -220,7 +225,12 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         val now = SystemClock.elapsedRealtime()
         when {
             loginRow && btnLogin.contains(x, y) -> onLogin()
-            btnReport.contains(x, y) -> if (DiagLog.recording()) DiagLog.stopRecording() else onReport()
+            btnReport.contains(x, y) -> when {
+                ReportFlow.pending != null -> onReportOpenSaved()
+                DiagLog.recording() -> onReportSendNow()
+                else -> onReport()
+            }
+            btnReportDismiss.contains(x, y) -> ReportFlow.clearPending()
             btnReload.contains(x, y) -> {
                 if (reloadArmedAt != 0L && now - reloadArmedAt < ARM_MS) {
                     reloadArmedAt = 0L; reloadSentAt = now
@@ -316,17 +326,28 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
                 b
             }
         } else btnLogin = RectF()
-        // "Send a problem report" (board f-problem-report): Stop while Record 5 minutes runs, its time left on the row
+        // "Send a problem report" (board f-problem-report): "Send report" while Record 5 minutes runs (stop + send), the time left on the
+        // row; a report saved by itself shows its note with Open issue / Dismiss until one is pressed
         y += ROW_H + 10f
         val rec = DiagLog.recording()
         val left = DiagLog.recordLeftMs() / 1000
-        btnReport = row(c, y, "Problem report",
-            if (rec) "Recording… %d:%02d left. Reproduce the problem.".format(left / 60, left % 60)
-            else "Say what happened; DS Forever adds its logs, without names or logins.", enabled = true) { box ->
+        val saved = ReportFlow.pending
+        btnReportDismiss = RectF()
+        btnReport = row(c, y, saved?.let { ReportFlow.noteTitle(it) } ?: "Problem report",
+            when {
+                saved != null -> "Open the GitHub issue to post it (the file is in Documents/DS Forever/reports)."
+                rec -> "Recording… %d:%02d left. Send it when the problem happened.".format(left / 60, left % 60)
+                else -> "Say what happened; DS Forever adds its logs, without names or logins."
+            }, enabled = true) { box ->
             val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            UiKit.button(c, b, if (rec) "Stop" else "Send", UiKit.Button.UP)
-            b
+            UiKit.button(c, b, when { saved != null -> "Open issue"; rec -> "Send report"; else -> "Send" }, UiKit.Button.UP)
+            if (saved != null) {
+                btnReportDismiss = RectF(b.left - 16f - 200f, b.top, b.left - 16f, b.bottom)
+                UiKit.button(c, btnReportDismiss, "Dismiss", UiKit.Button.UP)
+                btnReportDismiss
+            } else b
         }
+        if (saved != null) { val d = btnReportDismiss; btnReport = RectF(d.right + 16f, d.top, d.right + 16f + 244f, d.bottom) }
         if (rec) postInvalidateDelayed(1000)
         y += ROW_H + (if (part == Part.TOP) TOP_END else SECTION_GAP)
         }
