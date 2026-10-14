@@ -1516,12 +1516,12 @@ fun XServerScreen(
                 // Let Compose focus system handle keyboard and gamepad navigation/selection while menu is visible.
                 false
             }
-        } else if (isGamepad && it.event.keyCode == KeyEvent.KEYCODE_BUTTON_A && it.event.action == KeyEvent.ACTION_DOWN &&
-            com.jrees.wowcompanion.SetupBridge.blockGameA()) {
-            // DS FOREVER, p-auth-keyboard (the user's pick "Hint now + block A"): while the code / password pop-up shows, A does nothing for
-            // the game (its gamepad cursor sits on the username behind the dialog). Only the press: a release always passes, so A can
-            // never stick down in the game. DS Forever's own copy (PadFeed, above) still gets it; B is untouched
-            if (it.event.repeatCount == 0) com.jrees.wowcompanion.SetupBridge.log?.invoke("sign-in: A held back from the game (code pop-up)")
+        } else if (isGamepad && com.jrees.wowcompanion.PopupHold.holdsKey(com.jrees.wowcompanion.SetupBridge.holdsGamePad(),
+                it.event.keyCode, it.event.action == KeyEvent.ACTION_DOWN)) {
+            // DS FOREVER (p-auth-keyboard, then the user before 1.0.7: "When clicking on the pop up boxes, it shouldn't send inputs to the
+            // game"): while one of our pop-ups asks (the sign-in's, the report's notice), A, B and the D-pad do nothing for the game. Only
+            // presses: a release always passes, so nothing sticks down. DS Forever's own copy (PadFeed, above) still gets them
+            if (it.event.repeatCount == 0) com.jrees.wowcompanion.SetupBridge.log?.invoke("pop-up: ${KeyEvent.keyCodeToString(it.event.keyCode)} held back from the game")
             true
         } else {
             var handled = false
@@ -1581,6 +1581,10 @@ fun XServerScreen(
         if ((showElementEditor || keepPausedForEditor || showQuickMenu || isEditMode) && isGamepad) {
             // Let Compose consume any gamepad motion while menu is visible.
             false
+        } else if (isGamepad && it.event != null && com.jrees.wowcompanion.PopupHold.holdsHat(
+                com.jrees.wowcompanion.SetupBridge.holdsGamePad(), it.event.getAxisValue(MotionEvent.AXIS_HAT_X), it.event.getAxisValue(MotionEvent.AXIS_HAT_Y))) {
+            // the D-pad as the hat axis (the Thor), held back like the keys above while a pop-up of ours asks; its centring passes
+            true
         } else {
             var handled = false
             if (isGamepad && it.event != null) {
