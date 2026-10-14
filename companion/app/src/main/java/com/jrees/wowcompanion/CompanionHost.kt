@@ -271,6 +271,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // covered (the picker's task sits over this Presentation until it closes). The copy applies at the next game start
         settingsRest.gameRunning = { LauncherHooks.gameUp() }
         settingsRest.onChooseDll = { openDllPicker() }
+        // "Restart the game" when a frame-gen setting differs from the running game's start: the sign-in's restart (close, wait, Play)
+        settingsRest.onRestart = {
+            val restart = SetupBridge.restartGame
+            SetupBridge.log?.invoke("restart: frame generation settings changed")
+            if (restart == null) android.util.Log.w("FrameGen", "restart: no launcher hook") else restart()
+        }
         settings = SettingsRoom(this, settingsView, settingsRest, { questsPad })
         settings.pad.onLeave = { show(Room.HOME) }
         settingsRoom = settings

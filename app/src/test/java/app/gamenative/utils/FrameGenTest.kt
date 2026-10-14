@@ -126,4 +126,45 @@ class FrameGenTest {
         assertTrue(toml, toml.contains("performance_mode = false"))
         assertFalse(LsfgVkManager.buildConfigToml(null, false, 1, 0.8f, false, 0, "fifo").contains("[[game]]"))
     }
+
+    // ---- which rows show, and when "Restart the game" does (the user: "hide the other settings until its chosen", "a restart button")
+
+    @Test fun onlyTheDllRowUntilOneIsSet() {
+        assertEquals(listOf(FrameGen.Row.DLL), FrameGen.rows(hasDll = false, showRestart = false))
+        assertEquals(listOf(FrameGen.Row.DLL, FrameGen.Row.ON_OFF, FrameGen.Row.MULTIPLIER, FrameGen.Row.FLOW, FrameGen.Row.PERFORMANCE),
+            FrameGen.rows(hasDll = true, showRestart = false))
+        assertEquals(FrameGen.Row.RESTART, FrameGen.rows(hasDll = true, showRestart = true).last())
+    }
+
+    private val on2 = FrameGen.Snapshot(enabled = true, multiplier = 2, flowScale = 0.8f, performance = true)
+
+    @Test fun offIsOffWhateverTheValues() {
+        assertEquals(FrameGen.OFF, FrameGen.effective(on2.copy(enabled = false), "1:1"))
+        assertEquals(FrameGen.OFF, FrameGen.effective(on2, null))                 // on without a DLL = off
+        assertEquals(FrameGen.effective(on2.copy(enabled = false, multiplier = 4), "1:1"), FrameGen.effective(on2.copy(enabled = false), "9:9"))
+    }
+
+    @Test fun restartOnlyWhenTheGameWouldChange() {
+        val started = FrameGen.effective(on2, "100:1")
+        assertFalse(FrameGen.needsRestart(started, FrameGen.effective(on2, "100:1")))           // nothing changed
+        assertTrue(FrameGen.needsRestart(started, FrameGen.effective(on2.copy(multiplier = 3), "100:1")))
+        assertTrue(FrameGen.needsRestart(started, FrameGen.effective(on2.copy(flowScale = 0.5f), "100:1")))
+        assertTrue(FrameGen.needsRestart(started, FrameGen.effective(on2.copy(performance = false), "100:1")))
+        assertTrue(FrameGen.needsRestart(started, FrameGen.effective(on2.copy(enabled = false), "100:1")))  // turned off
+        assertTrue(FrameGen.needsRestart(started, FrameGen.effective(on2, "200:2")))            // a new DLL picked while on
+        assertFalse(FrameGen.needsRestart(started, FrameGen.effective(on2.copy(flowScale = 0.81f), "100:1")))  // same grid step
+        // started off: values changed while off, or a DLL picked while off, need nothing; turning on does
+        assertFalse(FrameGen.needsRestart(FrameGen.OFF, FrameGen.effective(on2.copy(enabled = false, multiplier = 4), "100:1")))
+        assertFalse(FrameGen.needsRestart(FrameGen.OFF, FrameGen.effective(on2, null)))
+        assertTrue(FrameGen.needsRestart(FrameGen.OFF, FrameGen.effective(on2, "100:1")))
+        assertFalse(FrameGen.needsRestart(null, FrameGen.effective(on2, "100:1")))              // no game started by this run
+    }
+
+    @Test fun restartButtonOnlyWithTheGameUpAndNoRestartUnderWay() {
+        val now = FrameGen.effective(on2, "100:1")
+        assertTrue(FrameGen.showRestart(gameUp = true, restarting = false, launched = FrameGen.OFF, now = now))
+        assertFalse(FrameGen.showRestart(gameUp = false, restarting = false, launched = FrameGen.OFF, now = now))
+        assertFalse(FrameGen.showRestart(gameUp = true, restarting = true, launched = FrameGen.OFF, now = now))
+        assertFalse(FrameGen.showRestart(gameUp = true, restarting = false, launched = now, now = now))
+    }
 }

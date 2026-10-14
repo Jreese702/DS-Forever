@@ -68,6 +68,45 @@ object FrameGen {
 
     fun snapshot(): Snapshot = Snapshot(enabled, multiplier, flowScale, performance)
 
+    // ---- what the running game started with (the user: "add a restart button if thats needed")
+
+    /** what frame generation does for a game start: off (any values) or on with its values and the DLL copy's stamp */
+    data class Applied(val on: Boolean, val multiplier: Int = 0, val flowScale: Float = 0f, val performance: Boolean = false, val dll: String? = null)
+
+    val OFF = Applied(false)
+
+    /** [s] as a game start applies it: off or no DLL = [OFF] (so changes while off never ask for a restart) */
+    fun effective(s: Snapshot, dllStamp: String?): Applied =
+        if (!s.enabled || dllStamp == null) OFF
+        else Applied(true, sanitizeMultiplier(s.multiplier), sanitizeFlow(s.flowScale), s.performance, dllStamp)
+
+    /** the private copy's identity (size and time): a new pick while on asks for a restart */
+    fun dllStamp(): String? = dllFile()?.takeIf { it.isFile }?.let { "${it.length()}:${it.lastModified()}" }
+
+    fun current(): Applied = effective(snapshot(), dllStamp())
+
+    /** what the running game was started with (the launcher, at each game start); null = no game started by this run */
+    @Volatile var launched: Applied? = null
+        private set
+
+    fun markLaunched() { launched = current(); changed() }
+
+    /** a restart would change what frame generation does in the running game */
+    fun needsRestart(launched: Applied?, now: Applied): Boolean = launched != null && launched != now
+
+    /** the Frame generation section's rows: only the DLL row until one is set (the user: "hide the other settings until its chosen") */
+    enum class Row { DLL, ON_OFF, MULTIPLIER, FLOW, PERFORMANCE, RESTART }
+
+    fun rows(hasDll: Boolean, showRestart: Boolean): List<Row> = buildList {
+        add(Row.DLL)
+        if (hasDll) addAll(listOf(Row.ON_OFF, Row.MULTIPLIER, Row.FLOW, Row.PERFORMANCE))
+        if (showRestart) add(Row.RESTART)
+    }
+
+    /** the "Restart the game" row: the game runs, a restart would change something, and no restart is already under way */
+    fun showRestart(gameUp: Boolean, restarting: Boolean, launched: Applied?, now: Applied): Boolean =
+        gameUp && !restarting && needsRestart(launched, now)
+
     fun sanitizeMultiplier(m: Int): Int = m.coerceIn(MULTIPLIERS.first(), MULTIPLIERS.last())
 
     /** 0.25..1.00 on the 0.05 grid (the stepper's values) */

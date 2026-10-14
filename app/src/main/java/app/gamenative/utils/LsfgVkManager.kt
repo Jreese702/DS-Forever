@@ -568,6 +568,7 @@ object LsfgVkManager {
     fun applyDsForever(container: Container) {
         val extras = dsForeverExtras(com.jrees.wowcompanion.FrameGen.snapshot(), isDllAvailable())
         for ((k, v) in extras) container.putExtra(k, v)
+        com.jrees.wowcompanion.FrameGen.markLaunched()      // what this game start applies: Settings' "Restart the game" compares to it
         Timber.tag(TAG).i("DS Forever frame generation: %s", extras)
     }
 

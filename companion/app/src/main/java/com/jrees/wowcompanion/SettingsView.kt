@@ -79,7 +79,12 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
      */
     var onChooseDll: () -> Unit = {}
     var gameRunning: () -> Boolean = { false }
+    /** "Restart the game" (the launcher's restart: close, wait, Play again; SetupBridge.restartGame) */
+    var onRestart: () -> Unit = {}
     private var btnDll = RectF()
+    private var btnRestart = RectF()
+    /** the frame-generation rows the last measure counted ([fgRows]) */
+    private var measuredFg = -1
     private val segFg = Array(2) { RectF() }
     private val segMult = Array(FrameGen.MULTIPLIERS.size) { RectF() }
     private var btnFlowMinus = RectF(); private var btnFlowPlus = RectF()
@@ -110,7 +115,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         Settings.onChange { postInvalidate() }
         HomeSettings.onChange { postInvalidate() }          // the wheels' two settings (also switched from the Controller DS tab)
         FrameGen.init(context)
-        FrameGen.onChange { postInvalidate() }              // a pick finishes on a background thread
+        FrameGen.onChange { post { requestLayout(); invalidate() } }   // a pick finishes on a background thread; rows may come or go
         CastSettings.init(context)
     }
 
@@ -140,7 +145,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     fun focusTargets(): List<RectF> =
         ((if (hasGame) listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) else emptyList()) +
             (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() +
-                listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() else emptyList()))
+                listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() + listOf(btnRestart) else emptyList()))
             .filter { !it.isEmpty }.map { RectF(it) }
 
     /** the part's height, laid out exactly as onDraw lays it out (the room's scroll asks; nothing here scrolls) */
@@ -152,8 +157,17 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         var y = if (hasGame) TITLE_END + TITLE_GAP + 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) +
             (if (part == Part.TOP) TOP_END else SECTION_GAP) else REST_TOP
         if (hasRest) y += 16f + ROW_H + 10f + ROW_H + SECTION_GAP + 16f + ROW_H + 4f * (10f + ROW_H) + SECTION_GAP + 16f + ROW_H +
-            SECTION_GAP + 16f + ROW_H + 4f * (10f + ROW_H) + BOTTOM_PAD
+            SECTION_GAP + 16f + fgHeight() + BOTTOM_PAD
         return y
+    }
+
+    /** the Frame generation section's rows now (FrameGen.rows: the DLL row alone until one is set; Restart when it would change something) */
+    private fun fgRows(): List<FrameGen.Row> = FrameGen.rows(FrameGen.hasDll(),
+        FrameGen.showRestart(gameRunning(), SetupBridge.restarting, FrameGen.launched, FrameGen.current()))
+
+    private fun fgHeight(): Float {
+        val n = fgRows().size.also { measuredFg = it }
+        return n * ROW_H + (n - 1) * 10f
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -223,6 +237,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
             segPick[0].contains(x, y) -> HomeSettings.radialPickA = true
             segPick[1].contains(x, y) -> HomeSettings.radialPickA = false
             btnDll.contains(x, y) -> onChooseDll()
+            btnRestart.contains(x, y) -> { btnRestart = RectF(); onRestart() }
             segFg[0].contains(x, y) -> FrameGen.enabled = false
             segFg[1].contains(x, y) -> if (FrameGen.hasDll()) FrameGen.enabled = true
             btnFlowMinus.contains(x, y) -> FrameGen.flowScale = FrameGen.stepFlow(FrameGen.flowScale, -1)
@@ -374,56 +389,68 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         }
         y += ROW_H + SECTION_GAP
 
-        // ---- FRAME GENERATION (board f-frame-gen): the player's own Lossless.dll, never shipped with the app; Off = launches as always
+        // ---- FRAME GENERATION (board f-frame-gen): the player's own Lossless.dll, never shipped with the app; Off = launches as always.
+        // Only the DLL row until one is set; "Restart the game" while the running game started with other settings (the user's request)
         c.drawText("Frame generation", padX, y + 4f, pSection)
         y += 16f
         val hasDll = FrameGen.hasDll()
         val up = gameRunning()
-        btnDll = row(c, y, "Lossless.dll: ${if (hasDll) "found" else "not set"}",
-            when {
-                FrameGen.lastPick.isNotEmpty() -> FrameGen.lastPick + if (up && hasDll) ". Applies the next time the game starts." else ""
-                hasDll -> "Your own copy, kept in DS Forever's private storage."
-                else -> "Choose your own copy (from Lossless Scaling on your PC)."
-            }, enabled = true) { box ->
-            val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            UiKit.button(c, b, "Choose", UiKit.Button.UP)
-            b
-        }
-        y += ROW_H + 10f
+        val fg = fgRows()
+        if (fg.size != measuredFg) requestLayout()        // a row came or went: the room's scroll needs the new height
+        btnDll = RectF(); btnFlowMinus = RectF(); btnFlowPlus = RectF(); btnRestart = RectF()
+        for (r in segFg + segMult + segPerf) r.setEmpty()   // hidden rows press nothing
         val on = FrameGen.enabled && hasDll
-        row(c, y, "Frame generation", if (!hasDll) "Needs Lossless.dll first." else if (on) (if (up) "On: applies the next time the game starts." else "On from the next game start.")
-            else if (up) "Off: applies the next time the game starts." else "Off: the game launches as always.",
-            enabled = hasDll) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("Off", "On"), if (on) 1 else 0, segFg)
-            b
-        }
-        y += ROW_H + 10f
-        val mult = FrameGen.multiplier
-        row(c, y, "Multiplier", "Frames shown per game frame (40 fps x$mult = ${40 * mult})", enabled = on) { box ->
-            val b = RectF(box.right - 16f - segW * FrameGen.MULTIPLIERS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, FrameGen.MULTIPLIERS.map { "${it}x" }, FrameGen.MULTIPLIERS.indexOf(mult), segMult)
-            b
-        }
-        y += ROW_H + 10f
-        row(c, y, "Flow scale", "Lower is faster, higher is sharper", enabled = on) { box ->
-            val cy = box.centerY()
-            btnFlowPlus = RectF(box.right - 16f - 76f, cy - 34f, box.right - 16f, cy + 34f)
-            btnFlowMinus = RectF(btnFlowPlus.left - 150f - 76f, cy - 34f, btnFlowPlus.left - 150f, cy + 34f)
-            val f = FrameGen.flowScale
-            UiKit.square(c, "minus", btnFlowMinus.centerX(), btnFlowMinus.centerY(), 84f,
-                if (on && f > FrameGen.FLOW_MIN) UiKit.Button.UP else UiKit.Button.DISABLED)
-            UiKit.square(c, "plus", btnFlowPlus.centerX(), btnFlowPlus.centerY(), 84f,
-                if (on && f < FrameGen.FLOW_MAX) UiKit.Button.UP else UiKit.Button.DISABLED)
-            pValue.color = if (on) Theme.text else Theme.dim
-            c.drawText(FrameGen.flowLabel(f), (btnFlowMinus.right + btnFlowPlus.left) / 2f, cy + 11f, pValue)
-            btnFlowMinus
-        }
-        y += ROW_H + 10f
-        row(c, y, "Performance mode", "The lighter model: less heat, a little less smooth", enabled = on) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("On", "Off"), if (FrameGen.performance) 0 else 1, segPerf)
-            b
+        val later = if (up) "Applies when the game restarts." else "Applies at the next game start."
+        for ((i, r) in fg.withIndex()) {
+            if (i > 0) y += ROW_H + 10f
+            when (r) {
+                FrameGen.Row.DLL -> btnDll = row(c, y, "Lossless.dll: ${if (hasDll) "found" else "not set"}",
+                    when {
+                        FrameGen.lastPick.isNotEmpty() -> FrameGen.lastPick + if (up && hasDll) ". $later" else ""
+                        hasDll -> "Your own copy, kept in DS Forever's private storage."
+                        else -> "Choose your own copy (from Lossless Scaling on your PC)."
+                    }, enabled = true) { box ->
+                    val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                    UiKit.button(c, b, "Choose", UiKit.Button.UP)
+                    b
+                }
+                FrameGen.Row.ON_OFF -> row(c, y, "Frame generation", (if (on) "On. " else "Off. ") + later, enabled = true) { box ->
+                    val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                    segmented(c, b, listOf("Off", "On"), if (on) 1 else 0, segFg)
+                    b
+                }
+                FrameGen.Row.MULTIPLIER -> {
+                    val mult = FrameGen.multiplier
+                    row(c, y, "Multiplier", "Frames shown per game frame (40 fps x$mult = ${40 * mult})", enabled = on) { box ->
+                        val b = RectF(box.right - 16f - segW * FrameGen.MULTIPLIERS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                        segmented(c, b, FrameGen.MULTIPLIERS.map { "${it}x" }, FrameGen.MULTIPLIERS.indexOf(mult), segMult)
+                        b
+                    }
+                }
+                FrameGen.Row.FLOW -> row(c, y, "Flow scale", "Lower is faster, higher is sharper", enabled = on) { box ->
+                    val cy = box.centerY()
+                    btnFlowPlus = RectF(box.right - 16f - 76f, cy - 34f, box.right - 16f, cy + 34f)
+                    btnFlowMinus = RectF(btnFlowPlus.left - 150f - 76f, cy - 34f, btnFlowPlus.left - 150f, cy + 34f)
+                    val f = FrameGen.flowScale
+                    UiKit.square(c, "minus", btnFlowMinus.centerX(), btnFlowMinus.centerY(), 84f,
+                        if (on && f > FrameGen.FLOW_MIN) UiKit.Button.UP else UiKit.Button.DISABLED)
+                    UiKit.square(c, "plus", btnFlowPlus.centerX(), btnFlowPlus.centerY(), 84f,
+                        if (on && f < FrameGen.FLOW_MAX) UiKit.Button.UP else UiKit.Button.DISABLED)
+                    pValue.color = if (on) Theme.text else Theme.dim
+                    c.drawText(FrameGen.flowLabel(f), (btnFlowMinus.right + btnFlowPlus.left) / 2f, cy + 11f, pValue)
+                    btnFlowMinus
+                }
+                FrameGen.Row.PERFORMANCE -> row(c, y, "Performance mode", "The lighter model: less heat, a little less smooth", enabled = on) { box ->
+                    val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                    segmented(c, b, listOf("On", "Off"), if (FrameGen.performance) 0 else 1, segPerf)
+                    b
+                }
+                FrameGen.Row.RESTART -> btnRestart = row(c, y, "Restart the game", "To use the new frame generation settings", enabled = true) { box ->
+                    val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                    UiKit.button(c, b, "Restart", UiKit.Button.UP)
+                    b
+                }
+            }
         }
         y += ROW_H + BOTTOM_PAD
         }
