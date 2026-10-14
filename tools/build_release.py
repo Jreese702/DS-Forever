@@ -71,6 +71,11 @@ def verify_addon_manifest(companion):
     addons = root / "addons"
     actual = {p.relative_to(addons).as_posix(): hashlib.md5(p.read_bytes()).hexdigest()
               for p in addons.rglob("*") if p.is_file()}
+    want = lines[0].split()[1]
+    for toc in addons.rglob("*.toc"):
+        label = re.search(r"^## Version: Set (\d+)", toc.read_text(encoding="utf-8", errors="replace"), re.M)
+        if not label or label[1] != want:
+            raise ValueError("Add-on label in " + toc.name + " must say 'Set " + want + "' (manifest set)")
     if actual != listed:
         changed = sorted(set(actual.items()) ^ set(listed.items()))
         raise ValueError("Add-on manifest.txt is stale; regenerate it and bump the set: " + ", ".join(p for p, _ in changed[:8]))
