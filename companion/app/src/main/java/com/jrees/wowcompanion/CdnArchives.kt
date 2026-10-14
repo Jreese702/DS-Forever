@@ -25,6 +25,9 @@ object CdnArchives {
     private val indexes = HashMap<String, Index?>()
     private val lock = Any()
 
+    /** the self-heal dropped the cache (GameFiles, p-casclib-1000): the indexes read from it go too */
+    fun forget() = synchronized(lock) { indexes.clear() }
+
     private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
     private fun cdnRel(kind: String, key: String, ext: String = "") = "$kind/${key.substring(0, 2)}/${key.substring(2, 4)}/$key$ext"
 

@@ -43,6 +43,8 @@ class PluviaApp : Application() {
         }
 
         CrashHandler.initialize(this)
+        // how the last run ended, when it was a crash / native crash / ANR / low-memory kill: a report the player can share
+        Thread({ CrashLogs.recordLastExit(this) }, "crash-logs").apply { isDaemon = true; start() }
         PrefManager.init(this)
     }
 

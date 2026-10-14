@@ -38,6 +38,8 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             }
         }
         val error = CascNative.lastReadError()
+        // a damaged cached table (p-casclib-1000): the next open of the game files drops the cache first (once per run)
+        if (CascHeal.damaged(error)) { readSawDamage = true; android.util.Log.w("WCHARVEST", "$label: CascLib error $error, the cache goes at the next open") }
         lastReadWhy = "$label: " + when (status) {
             CascNative.UNKNOWN -> "not in this game build's index (does the folder match its .build.info?)"
             CascNative.NOT_PRESENT -> "not on this device (is the game folder fully copied or downloaded?)"
@@ -112,7 +114,39 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             return synchronized(accessLock) { openLocked(ctx) }
         }
 
+        /** this run dropped the download cache once already (p-casclib-1000: never a loop) */
+        @Volatile private var healed = false
+        /** a read saw a damaged file (CascLib 1000 / 1002 / 1004): the next open drops the cache first */
+        @Volatile internal var readSawDamage = false
+        private var lastOpenErr = 0
+
+        /**
+         * THE SELF-HEAL (p-casclib-1000): an open that fails on a damaged file, or one after a read that saw one, drops the app's
+         * download cache (cacheDir/casc and the archive indexes held in memory) ONCE per run and opens again; still damaged, the
+         * message says plainly what to do, with CascLib's reason.
+         */
         private fun openLocked(ctx: Context): GameFiles? {
+            if (CascHeal.shouldHeal(0, healed, readSawDamage)) heal(ctx, "a read saw a damaged file")
+            openOnce(ctx)?.let { return it }
+            if (CascHeal.shouldHeal(lastOpenErr, healed)) {
+                heal(ctx, "the open failed with CascLib error $lastOpenErr")
+                openOnce(ctx)?.let { return it }
+            }
+            if (CascHeal.damaged(lastOpenErr)) lastWhy = CascHeal.damagedMessage(lastOpenErr)
+            return null
+        }
+
+        private fun heal(ctx: Context, why: String) {
+            healed = true; readSawDamage = false
+            val cache = File(ctx.cacheDir, "casc")
+            val bytes = runCatching { cache.walkBottomUp().filter { it.isFile }.sumOf { it.length() } }.getOrDefault(0L)
+            android.util.Log.w("WCHARVEST", "self-heal: $why; dropping the download cache (${bytes / 1024} KB) and opening again")
+            cache.deleteRecursively()
+            CdnArchives.forget()
+        }
+
+        private fun openOnce(ctx: Context): GameFiles? {
+            lastOpenErr = 0
             if (!CascNative.available) { lastWhy = "this build has no file reader"; return null }
             val root = gameRoot(ctx)
             val (product, key) = activeBuild(root) ?: run { lastWhy = "no game files found in ${root.path}"; return null }
@@ -137,6 +171,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             }
             if (h == 0L) {
                 val err = CascNative.lastOpenError()
+                lastOpenErr = if (downloadFailure == null) err else 0
                 lastWhy = downloadFailure ?: "the game files could not be opened (CascLib error $err${if (err == 2) ": a file it needs is missing" else ""})"
                 android.util.Log.w("WCHARVEST", "open ${root.path} $product: error $err")
                 return null
@@ -179,6 +214,8 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
                 try {
                     if (c.responseCode != 200) return@run "HTTP ${c.responseCode}"
                     c.inputStream.use { i -> tmp.outputStream().use { o -> i.copyTo(o, 1 shl 16) } }
+                    // whole and the right kind before it is used: a short or damaged answer never lands in the cache (p-casclib-1000)
+                    CascHeal.problem(rel, tmp, c.contentLengthLong)?.let { return@run "a damaged download ($it)" }
                     if (!tmp.renameTo(to)) { to.delete(); if (!tmp.renameTo(to)) return@run "could not save it" }
                     android.util.Log.i("WCHARVEST", "fetched $rel (${to.length()} bytes) from $host")
                     null
