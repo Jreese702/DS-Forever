@@ -113,7 +113,7 @@ object SetupFlow {
                 "The servers need build ${i.gameOutdated}. Signing in may fail with these files.",
                 listOf(Button("Update", Action.UPDATE_GAME, i.busy == null), Button("Play anyway", Action.PLAY, canPlay(i))))
             i.reportSaved != null && (i.loginSaved || i.loginSkipped) -> Prompt("report", i.reportSaved,
-                "It is in Documents/DS Forever/reports. Open the GitHub issue to post it.",
+                if ("was sent" in i.reportSaved) "Open the issue to see it." else "It is in Documents/DS Forever/reports. Open the GitHub issue to post it.",
                 listOf(Button("Open GitHub issue", Action.REPORT_OPEN), Button("Dismiss", Action.REPORT_DISMISS)))
             !i.loginSaved && !i.loginSkipped -> Prompt("login", "Your Battle.net login",
                 "Save it once and the game signs you in by itself. It stays encrypted on this device.",

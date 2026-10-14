@@ -6,6 +6,7 @@ import com.jrees.wowcompanion.Redact
 import com.jrees.wowcompanion.ReportFlow
 import com.jrees.wowcompanion.ReportPage
 import com.jrees.wowcompanion.ReportNotice
+import com.jrees.wowcompanion.ReportUpload
 import android.view.KeyEvent
 import org.robolectric.RuntimeEnvironment
 import com.jrees.wowcompanion.SetupFlow
@@ -249,6 +250,63 @@ class ProblemReportTest {
         val failed = ReportNotice.card(ReportNotice.State.Failed("nothing was written to /x"))
         assertEquals("Couldn't save the report", failed.title); assertEquals("nothing was written to /x", failed.text)
         assertEquals(listOf("OK"), failed.buttons)
+    }
+
+    // ---- the in-game upload (tools/report-worker)
+
+    @Test fun theUploadRequestHoldsTheRedactedReport() {
+        val r = ProblemReport.build(0L, "Jaina's bars went blank", facts, emptyList(),
+            listOf("10-14 12:00:00.000  1  2 I WCHARVEST: x".repeat(1)) , emptyList(), true, listOf("Jaina"))
+        val o = JSONObject(ReportUpload.request(r, "Jaina's bars went blank, mail a@b.co", facts, recorded = true, names = listOf("Jaina")))
+        assertEquals("1.0.6 (106)", o.getString("version"))
+        assertEquals("set 125", o.getString("addons"))
+        assertEquals("AYN Thor, Android 13", o.getString("device"))
+        assertTrue(o.getBoolean("recorded"))
+        assertFalse(o.getString("words").contains("a@b.co"))
+        assertTrue(o.getString("report").startsWith("DS Forever problem report"))
+        assertTrue(o.getString("logs").contains("WCHARVEST"))
+        assertFalse(o.toString().contains("Jaina"))
+    }
+
+    @Test fun theUploadKeepsTheNewestLogsWithinTheReceiversLimit() {
+        val lines = (1..20_000).map { "10-14 12:00:00.000  1  2 I WCHARVEST: line number $it" }
+        val r = ProblemReport.build(0L, "lag", facts, emptyList(), lines, emptyList(), false, emptyList())
+        val o = JSONObject(ReportUpload.request(r, "lag", facts, false))
+        val logs = o.getString("logs")
+        assertTrue(logs.length <= ReportUpload.MAX_LOGS + 40)
+        assertTrue(logs.startsWith("[older lines cut]"))
+        assertTrue(logs.contains("line number 20000"))
+        assertTrue(o.toString().length <= ReportUpload.MAX_REQUEST)
+    }
+
+    @Test fun theReceiversAnswer() {
+        val ok = ReportUpload.parse(201, "{\"number\":42,\"url\":\"https://github.com/Jreese702/DS-Forever/issues/42\"}")
+        assertEquals(ReportUpload.Sent(42, "https://github.com/Jreese702/DS-Forever/issues/42"), ok.getOrThrow())
+        assertEquals("too many reports today; try again tomorrow",
+            ReportUpload.parse(429, "{\"error\":\"too many reports today; try again tomorrow\"}").exceptionOrNull()!!.message)
+        assertEquals("the receiver answered 500", ReportUpload.parse(500, "<html>").exceptionOrNull()!!.message)
+    }
+
+    @Test fun noReceiverNoUpload() {
+        val was = ReportUpload.endpoint
+        ReportUpload.endpoint = ""
+        assertFalse(ReportUpload.enabled)
+        assertEquals("no receiver in this build", ReportUpload.send("{}").exceptionOrNull()!!.message)
+        ReportUpload.endpoint = "http://plain.example/report"           // https only
+        assertFalse(ReportUpload.enabled)
+        ReportUpload.endpoint = was
+    }
+
+    @Test fun theSendNotices() {
+        assertEquals("Sending your report…", ReportNotice.card(ReportNotice.State.Sending).title)
+        val sent = ReportNotice.card(ReportNotice.State.Sent(42, "u"))
+        assertEquals("Report sent: issue #42", sent.title); assertEquals(listOf("OK"), sent.buttons)
+        val failed = ReportNotice.card(ReportNotice.State.SendFailed("no internet connection", "/x/r.zip", "u"))
+        assertEquals("Couldn't send the report", failed.title)
+        assertEquals("no internet connection. Saved to Documents/DS Forever/reports.", failed.text)
+        assertEquals(listOf("Open issue", "OK"), failed.buttons)
+        assertTrue(ReportFlow.noteTitle(ReportFlow.Saved("/x", 0L, "u", sent = 7)).contains("was sent (") )
+        assertTrue(ReportFlow.noteTitle(ReportFlow.Saved("/x", 0L, "u", sent = 7)).endsWith("issue #7)"))
     }
 
     @Test fun onlyOurTags() {

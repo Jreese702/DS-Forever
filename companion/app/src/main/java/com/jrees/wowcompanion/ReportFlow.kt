@@ -33,25 +33,28 @@ object ReportFlow {
         get() = prefs?.getString("description", "") ?: ""
         set(v) { prefs?.edit()?.putString("description", v)?.apply() }
 
-    data class Saved(val path: String, val at: Long, val url: String)
+    /** [sent] > 0: it was SENT as that issue number (Record 5 minutes ending by itself, with a receiver), [url] = the issue */
+    data class Saved(val path: String, val at: Long, val url: String, val sent: Int = 0)
 
     /** the report saved by itself and not opened or dismissed yet */
     val pending: Saved?
         get() {
             val p = prefs ?: return null
             val path = p.getString("savedPath", null) ?: return null
-            return Saved(path, p.getLong("savedAt", 0L), p.getString("savedUrl", "") ?: "")
+            return Saved(path, p.getLong("savedAt", 0L), p.getString("savedUrl", "") ?: "", p.getInt("sentNumber", 0))
         }
 
-    fun markSaved(path: String, at: Long, url: String) {
-        prefs?.edit()?.putString("savedPath", path)?.putLong("savedAt", at)?.putString("savedUrl", url)?.apply()
+    fun markSaved(path: String, at: Long, url: String, sent: Int = 0) {
+        prefs?.edit()?.putString("savedPath", path)?.putLong("savedAt", at)?.putString("savedUrl", url)?.putInt("sentNumber", sent)?.apply()
         changed()
     }
 
     /** opened or dismissed: the note goes */
-    fun clearPending() { prefs?.edit()?.remove("savedPath")?.remove("savedAt")?.remove("savedUrl")?.apply(); changed() }
+    fun clearPending() { prefs?.edit()?.remove("savedPath")?.remove("savedAt")?.remove("savedUrl")?.remove("sentNumber")?.apply(); changed() }
 
-    fun noteTitle(s: Saved): String = "Your problem report was saved (${SimpleDateFormat("HH:mm", Locale.US).format(Date(s.at))})"
+    fun noteTitle(s: Saved): String = SimpleDateFormat("HH:mm", Locale.US).format(Date(s.at)).let { t ->
+        if (s.sent > 0) "Your problem report was sent ($t, issue #${s.sent})" else "Your problem report was saved ($t)"
+    }
 
     /**
      * The 5 minutes ran out: the report (the kept words, the recording) saved to Documents/DS Forever/reports, the note left for
@@ -62,9 +65,12 @@ object ReportFlow {
         val words = description.ifBlank { "(recorded with Record 5 minutes; no description kept)" }
         val r = ProblemReport.collect(ctx, words, now)
         val f = ProblemReport.save(ctx, r) ?: return null
-        markSaved(f.path, now, ProblemReport.issueUrl(r, words, ProblemReport.facts(ctx), f.path, Redact.names()))
+        // with a receiver in this build it is SENT too, in the background (the player's own Record session ended): the note says which
+        val sent = if (ReportUpload.enabled) ReportUpload.send(ReportUpload.request(r, words, ProblemReport.facts(ctx), true)).getOrNull() else null
+        if (sent != null) markSaved(f.path, now, sent.url, sent.number)
+        else markSaved(f.path, now, ProblemReport.issueUrl(r, words, ProblemReport.facts(ctx), f.path, Redact.names()))
         description = ""
-        DiagLog.event("report", "saved by itself after the recording")
+        DiagLog.event("report", if (sent != null) "sent by itself after the recording (issue #${sent.number})" else "saved by itself after the recording")
         return f
     }
 }

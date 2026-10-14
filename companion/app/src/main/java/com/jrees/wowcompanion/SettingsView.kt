@@ -335,6 +335,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         btnReportDismiss = RectF()
         btnReport = row(c, y, saved?.let { ReportFlow.noteTitle(it) } ?: "Problem report",
             when {
+                saved != null && saved.sent > 0 -> "Open the issue to see it."
                 saved != null -> "Open the GitHub issue to post it (the file is in Documents/DS Forever/reports)."
                 rec -> "Recording… %d:%02d left. Send it when the problem happened.".format(left / 60, left % 60)
                 else -> "Say what happened; DS Forever adds its logs, without names or logins."
