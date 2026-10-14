@@ -213,6 +213,69 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             android.app.ActivityOptions.makeBasic().setLaunchDisplayId(android.view.Display.DEFAULT_DISPLAY).toBundle())
     }.onFailure { android.util.Log.w("WCREPORT", "browser: ${it.message}") }.isSuccess
 
+    /**
+     * SEND REPORT (the user after batch16: Send was "stuck" on Making the report; now it "should close this menu and take the player
+     * back home with a notice"): Home, the notice "Compiling your report…", the report built and saved OFF the main thread, then
+     * "Report ready" (Open issue / OK) or "Couldn't save the report: <why>" (OK). A watchdog ends a build that takes longer than
+     * [REPORT_TIMEOUT_MS]. The saved report also leaves Settings' note until its issue is opened or the note dismissed.
+     */
+    private lateinit var reportNotice: ReportNotice
+    private var reportGen = 0
+    private val REPORT_TIMEOUT_MS = 45_000L
+
+    private fun sendReport(words: String) {
+        if (!::reportNotice.isInitialized) return
+        val gen = ++reportGen
+        if (LauncherHooks.gameUp() && room != Room.HOME) show(Room.HOME)
+        noticeShow(ReportNotice.State.Compiling)
+        DiagLog.event("report", "send: compiling")
+        val app = applicationContext
+        Thread({
+            val res = runCatching {
+                val r = ProblemReport.collect(app, words)
+                val f = ProblemReport.saveOrWhy(app, r).getOrThrow()
+                f to ProblemReport.issueUrl(r, words, ProblemReport.facts(app), f.path, Redact.names())
+            }
+            ui.post {
+                if (gen != reportGen || shell.hostGone()) return@post
+                res.onSuccess { (f, url) ->
+                    ReportFlow.markSaved(f.path, System.currentTimeMillis(), url)
+                    ReportFlow.description = ""
+                    noticeShow(ReportNotice.State.Ready(f.path, url))
+                    DiagLog.event("report", "send: saved")
+                }.onFailure { e ->
+                    noticeShow(ReportNotice.State.Failed(e.message ?: e.javaClass.simpleName))
+                    DiagLog.event("report", "send: failed (${e.message})")
+                }
+            }
+        }, "report-send").start()
+        ui.postDelayed({
+            if (gen == reportGen && reportNotice.state == ReportNotice.State.Compiling) {
+                reportGen++
+                noticeShow(ReportNotice.State.Failed("it took more than ${REPORT_TIMEOUT_MS / 1000} s; try again, or send the files in Documents/DS Forever/logs"))
+                DiagLog.event("report", "send: timed out")
+            }
+        }, REPORT_TIMEOUT_MS)
+    }
+
+    private fun noticeShow(s: ReportNotice.State) {
+        reportNotice.show(s)
+        SetupBridge.noticeAsking = reportNotice.asking
+    }
+
+    /** Home's pad copy to the notice while it asks (A / B / left / right); true = taken */
+    private fun noticePad(down: Int): Boolean {
+        if (!::reportNotice.isInitialized || !reportNotice.asking) return false
+        val k = when {
+            PadInput.isHeld(down, PadInput.SLOT_FACE_BOTTOM) -> "PAD1"
+            PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT) -> "PAD2"
+            PadInput.isHeld(down, PadInput.SLOT_DPAD_LEFT) -> "PADDLEFT"
+            PadInput.isHeld(down, PadInput.SLOT_DPAD_RIGHT) -> "PADDRIGHT"
+            else -> return false
+        }
+        return reportNotice.padKey(k)
+    }
+
     /** the note of a report saved by itself > Open GitHub issue: the browser, then the note goes */
     private fun openSavedReport() {
         val saved = ReportFlow.pending ?: return
@@ -427,6 +490,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             val down = m and loginPadHeld.inv(); loginPadHeld = m
             // the report page has the controller through the Settings room's guest pad (or the launcher's keys before Play)
             if (::reportPage.isInitialized && reportPage.isOpen) Unit
+            else if (noticePad(down)) Unit                                  // the report's notice on Home (Open issue / OK)
             // B closes the game keyboard the sign-in opened (the game gets the same B: nothing else here takes it then)
             else if (SetupBridge.keyboardOpen && PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) {
                 NativeLogin.logEvent("sign-in: keyboard closed (B)"); SetupBridge.keyboard(false)
@@ -505,7 +569,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         setupPanel = SetupPanel(this)
         SetupBridge.openReport = { ui.post { if (!shell.hostGone()) openReport() } }
         SetupBridge.openSavedReport = { ui.post { if (!shell.hostGone()) openSavedReport() } }
-        SetupBridge.reportKey = { code, down -> ::reportPage.isInitialized && reportPage.key(code, down) }
+        SetupBridge.reportKey = { code, down ->
+            (::reportPage.isInitialized && reportPage.key(code, down)) ||
+                (::reportNotice.isInitialized && reportNotice.asking && (!down || ReportPage.Model.keyName(code)?.let { reportNotice.padKey(it) } == true))
+        }
         // the 5 minutes ran out: the report is saved by itself (no browser mid-game) and its note waits in Settings / the setup screen
         ReportFlow.init(this)
         DiagLog.onEndedByItself = {
@@ -537,7 +604,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.onLogin = { loginPrompt.open() }
         settingsView.loginRow = true
         settingsView.onReport = { openReport() }
-        settingsView.onReportSendNow = { openReport(sendNow = true) }
+        settingsView.onReportSendNow = { DiagLog.stopRecording(); sendReport(ReportFlow.description.ifBlank { "(sent from Settings while recording)" }) }
         settingsView.onReportOpenSaved = { openSavedReport() }
         settings.pad.padOverride = { k -> ::reportPage.isInitialized && reportPage.isOpen && run { reportPage.padKey(k); true } }
         if (LauncherHooks.pkg != null) {
@@ -634,6 +701,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 onClosed = { DiagLog.event("report", "report page closed") }
             }
             addView(reportPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            reportPage.onSend = { words -> sendReport(words) }
+            // Send report's notice on Home (compiling, then ready / failed)
+            reportNotice = ReportNotice(this@CompanionHost).apply {
+                onOpen = { s -> if (openUrlOnTop(s.url)) ReportFlow.clearPending() }
+                onDismiss = { SetupBridge.noticeAsking = false }
+            }
+            addView(reportNotice, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             recIndicator = android.widget.TextView(this@CompanionHost).apply {
                 textSize = 16f; setTextColor(android.graphics.Color.WHITE); setPadding(22, 10, 22, 10)
                 setBackgroundColor(android.graphics.Color.argb(220, 150, 20, 20)); visibility = View.GONE

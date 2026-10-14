@@ -45,7 +45,8 @@ object ProblemReport {
     /** the report from its parts: pure (the tests build one from strings) */
     fun build(now: Long, description: String, facts: Facts, diag: List<String>, logcat: List<String>,
               crashes: List<Pair<String, String>>, recorded: Boolean, names: Collection<String>): Report {
-        val r = { s: String -> Redact.text(s, names) }
+        val pattern = Redact.namePattern(names)                       // compiled once for the whole report
+        val r = { s: String -> Redact.text(s, pattern) }
         val head = buildString {
             appendLine("DS Forever problem report, ${stamp(now)}")
             appendLine()
@@ -148,6 +149,12 @@ object ProblemReport {
 
     /** the zip, written whole (temp + rename): the file, or null */
     fun save(ctx: Context, report: Report): File? = runCatching { writeZip(reportsDir(ctx), report) }.getOrNull()
+
+    /** the zip, or the reason it could not be written (the notice says it) */
+    fun saveOrWhy(ctx: Context, report: Report): Result<File> = runCatching {
+        val dir = reportsDir(ctx)
+        writeZip(dir, report).also { check(it.isFile && it.length() > 0) { "nothing was written to ${dir.path}" } }
+    }
 
     fun writeZip(dir: File, report: Report): File {
         dir.mkdirs()

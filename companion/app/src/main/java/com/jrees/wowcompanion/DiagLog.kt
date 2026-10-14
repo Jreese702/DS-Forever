@@ -72,7 +72,7 @@ object DiagLog {
     /** an add-on document: summarized (types and flags only), when it changed; names in it go to [Redact.know] */
     fun doc(msg: JSONObject, now: Long = System.currentTimeMillis()) {
         val type = msg.optString("type").ifEmpty { "?" }
-        learnNames(msg, 0)
+        if (type in PEOPLE_DOCS) learnNames(msg, 0, type)
         val rec = recording(now)
         val s = summarize(msg, if (rec) 2 else 1)
         synchronized(lock) {
@@ -102,16 +102,23 @@ object DiagLog {
         return parts.joinToString(" ")
     }
 
-    private val NAME_KEYS = setOf("name", "realm", "guild", "player", "char", "who", "sender", "author", "target", "leader", "friend",
-        "member", "toon", "btag", "battletag", "account", "owner", "from", "to")
+    /**
+     * Names are learnt only from the documents about PEOPLE (batch16: "name" is also every item's, quest's and spell's, which filled the
+     * list with game words and made each report minutes of work): the character, the social lists, chat, the group finder, the hello.
+     */
+    private val PEOPLE_DOCS = setOf("hello", "full", "character", "social", "chat", "gf", "home")
+    /** keys that hold a person's or a place's name wherever they appear; plain "name" only in the people's documents themselves */
+    private val NAME_KEYS = setOf("realm", "guild", "player", "char", "who", "sender", "author", "leader", "friend",
+        "member", "toon", "btag", "battletag", "account", "owner", "from")
+    private val PEOPLE_NAME_DOCS = setOf("character", "social", "gf", "hello")
 
-    private fun learnNames(o: JSONObject, depth: Int) {
+    private fun learnNames(o: JSONObject, depth: Int, type: String) {
         if (depth > 3) return
         for (k in o.keys()) {
             when (val v = o.opt(k)) {
-                is String -> if (k.lowercase() in NAME_KEYS) Redact.know(v)
-                is JSONObject -> learnNames(v, depth + 1)
-                is JSONArray -> for (i in 0 until minOf(v.length(), 50)) (v.opt(i) as? JSONObject)?.let { learnNames(it, depth + 1) }
+                is String -> { val key = k.lowercase(); if (key in NAME_KEYS || (key == "name" && type in PEOPLE_NAME_DOCS)) Redact.know(v) }
+                is JSONObject -> learnNames(v, depth + 1, type)
+                is JSONArray -> for (i in 0 until minOf(v.length(), 50)) (v.opt(i) as? JSONObject)?.let { learnNames(it, depth + 1, type) }
             }
         }
     }

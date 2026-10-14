@@ -5,6 +5,7 @@ import com.jrees.wowcompanion.ProblemReport
 import com.jrees.wowcompanion.Redact
 import com.jrees.wowcompanion.ReportFlow
 import com.jrees.wowcompanion.ReportPage
+import com.jrees.wowcompanion.ReportNotice
 import android.view.KeyEvent
 import org.robolectric.RuntimeEnvironment
 import com.jrees.wowcompanion.SetupFlow
@@ -213,6 +214,41 @@ class ProblemReportTest {
         assertEquals("Your problem report was saved (14:32)", p.title)
         assertEquals(listOf(SetupFlow.Action.REPORT_OPEN, SetupFlow.Action.REPORT_DISMISS), p.buttons.map { it.action })
         assertEquals("login", SetupFlow.screen(base.copy(loginSaved = false)).prompt!!.id)     // the login asks first
+    }
+
+    // ---- batch16: Send "stuck" at Making the report
+
+    @Test fun redactingAReportIsQuickWithManyNames() {
+        val names = (1..300).map { "Name$it" }                         // the cap: 300 names
+        val lines = (1..6000).map { "10-14 12:00:00.000  1  2 I WCHARVEST: line $it about Name${it % 300 + 1} and more words here" }
+        val t0 = System.nanoTime()
+        val r = ProblemReport.build(0L, "x", facts, emptyList(), lines, emptyList(), false, names)
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        assertTrue("redaction took $ms ms", ms < 5_000)
+        assertFalse(r.preview.contains("Name17 "))
+        assertTrue(r.preview.contains("<name>"))
+    }
+
+    @Test fun onlyPeoplesNamesAreLearnt() {
+        Redact.forget()
+        DiagLog.useDir(Files.createTempDirectory("diag").toFile())
+        DiagLog.doc(JSONObject("""{"type":"bags","items":[{"name":"Hearthstone"},{"name":"Linen Cloth"}]}"""))
+        DiagLog.doc(JSONObject("""{"type":"quests","list":[{"name":"The Defias Brotherhood"}]}"""))
+        DiagLog.doc(JSONObject("""{"type":"social","friends":[{"name":"Jaina","realm":"Stormrage"}]}"""))
+        DiagLog.doc(JSONObject("""{"type":"chat","from":"Thrall","text":"hi"}"""))
+        val known = Redact.names()
+        for (n in listOf("Jaina", "Stormrage", "Thrall")) assertTrue(n, n in known)
+        for (n in listOf("Hearthstone", "Linen Cloth", "The Defias Brotherhood")) assertFalse(n, n in known)
+        Redact.forget()
+    }
+
+    @Test fun theNoticeOnHome() {
+        assertEquals(ReportNotice.Card("Compiling your report…", "You can keep playing.", emptyList()), ReportNotice.card(ReportNotice.State.Compiling))
+        val ready = ReportNotice.card(ReportNotice.State.Ready("/x/r.zip", "https://github.com/x"))
+        assertEquals("Report ready", ready.title); assertEquals(listOf("Open issue", "OK"), ready.buttons)
+        val failed = ReportNotice.card(ReportNotice.State.Failed("nothing was written to /x"))
+        assertEquals("Couldn't save the report", failed.title); assertEquals("nothing was written to /x", failed.text)
+        assertEquals(listOf("OK"), failed.buttons)
     }
 
     @Test fun onlyOurTags() {
