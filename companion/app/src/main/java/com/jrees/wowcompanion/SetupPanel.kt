@@ -78,8 +78,17 @@ class SetupPanel(context: Context) : View(context) {
         }
         // the one pop-up, above Play
         s.prompt?.let { p -> drawPrompt(c, p, bottom) }
+        // "Report a problem" (board f-problem-report): small, in the bottom-left corner, last in the box's order
+        s.report?.let { rb ->
+            val r = RectF(MARGIN, height - MARGIN - REPORT_H, MARGIN + REPORT_W, height - MARGIN.toFloat())
+            buttons += r to rb
+        }
         // the box's order: the pop-up's buttons first, Play last (a new pop-up starts the box on its first button)
-        if (s.play != null && buttons.size > 1) buttons.add(buttons.removeAt(0))
+        if (s.play != null && buttons.size > 1) {
+            val report = buttons.lastOrNull()?.takeIf { it.second.action == SetupFlow.Action.REPORT }?.also { buttons.removeAt(buttons.size - 1) }
+            if (buttons.size > 1) buttons.add(buttons.removeAt(0))
+            report?.let { buttons.add(it) }
+        }
         // the buttons, the box under the focused one
         val live = buttons.indices.filter { buttons[it].second.enabled }
         if (live.isNotEmpty()) focus = focus.coerceIn(0, live.size - 1)
@@ -176,6 +185,8 @@ class SetupPanel(context: Context) : View(context) {
         const val BUTTON_H = 111f        // 48 dp on the Thor's bottom screen, the touch minimum (StartView's row)
         const val PLAY_W = 560f
         const val PLAY_H = 130f
+        const val REPORT_W = 300f
+        const val REPORT_H = 76f
         const val LINE_H = 52f
         private val KEYS = setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_BUTTON_A)

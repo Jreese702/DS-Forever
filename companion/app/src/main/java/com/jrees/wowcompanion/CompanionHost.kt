@@ -190,26 +190,80 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * picker is up, this window is hidden (GONE: no touches, the picker shows), and it comes back when the picker closes
      * (FrameGen.onPickerClosed). If the bottom display refuses the launch, the picker opens where Android puts it and nothing is hidden.
      */
-    private fun openDllPicker() {
-        val i = android.content.Intent(this, FrameGenPickActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    private fun openDllPicker() = openOnBottom(FrameGenPickActivity::class.java, "FrameGen") { FrameGen.onPickerClosed = it }
+
+    /** Settings / the setup screen > "Send a problem report" (board f-problem-report): its screen, on the bottom display */
+    private fun openReport() {
+        DiagLog.event("report", "report screen opened")
+        openOnBottom(ProblemReportActivity::class.java, "WCREPORT") { ProblemReport.onClosed = it }
+    }
+
+    /**
+     * One of our activities on THIS context's display (the bottom screen), so the game's window on the top screen is never covered. A
+     * Presentation is a system window over its display's activities: while the activity is up, this window is hidden (GONE), and it
+     * comes back when the activity closes ([setClosed]'s hook). Refused on the bottom display: where Android puts it, nothing hidden.
+     */
+    private fun openOnBottom(cls: Class<*>, tag: String, setClosed: ((() -> Unit)?) -> Unit) {
+        val i = android.content.Intent(this, cls).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         val displayId = runCatching {
             (getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.displayId
         }.getOrNull()
         val decor = shell.hostWindow()?.decorView
-        FrameGen.onPickerClosed = { ui.post { decor?.visibility = View.VISIBLE; FrameGen.onPickerClosed = null } }
+        setClosed { ui.post { decor?.visibility = View.VISIBLE; setClosed(null) } }
         val onBottom = displayId != null && runCatching {
             startActivity(i, android.app.ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle())
-        }.onFailure { android.util.Log.w("FrameGen", "picker on display $displayId: ${it.message}") }.isSuccess
+        }.onFailure { android.util.Log.w(tag, "${cls.simpleName} on display $displayId: ${it.message}") }.isSuccess
         if (onBottom) {
             decor?.visibility = View.GONE
-            android.util.Log.i("FrameGen", "picker on display $displayId; the bottom window hidden until it closes")
+            android.util.Log.i(tag, "${cls.simpleName} on display $displayId; the bottom window hidden until it closes")
         } else {
-            FrameGen.onPickerClosed = null
-            runCatching { shell.startHostActivity(i) }.onFailure { android.util.Log.w("FrameGen", "picker: ${it.message}") }
+            setClosed(null)
+            runCatching { shell.startHostActivity(i) }.onFailure { android.util.Log.w(tag, "${cls.simpleName}: ${it.message}") }
         }
     }
 
+    /** "● REC 3:12 · Stop" over every room while Record 5 minutes runs (board f-problem-report); a tap stops it */
+    private lateinit var recIndicator: android.widget.TextView
+    private var lastArtKind = ""
+    private val recTick = object : Runnable {
+        override fun run() {
+            if (shell.hostGone() || !::recIndicator.isInitialized) return
+            val on = DiagLog.recording()
+            if (on) {
+                val left = DiagLog.recordLeftMs() / 1000
+                recIndicator.text = "\u25CF REC %d:%02d  \u00B7  Stop".format(left / 60, left % 60)
+                if (!hitchOn) { hitchOn = true; lastFrameNs = 0L; android.view.Choreographer.getInstance().postFrameCallback(hitch) }
+            } else if (DiagLog.recordUntil != 0L) DiagLog.event("report", "recording ended by itself")
+            recIndicator.visibility = if (on) View.VISIBLE else View.GONE
+            if (::settingsView.isInitialized) settingsView.invalidate()
+            ui.postDelayed(this, 1000)
+        }
+    }
+
+    /** while recording: a bottom-screen frame later than [HITCH_MS] is logged with its time (cheap: one callback per frame, 5 minutes) */
+    private var hitchOn = false
+    private var lastFrameNs = 0L
+    private val hitch = object : android.view.Choreographer.FrameCallback {
+        override fun doFrame(t: Long) {
+            if (!DiagLog.recording()) { hitchOn = false; return }
+            if (lastFrameNs != 0L) {
+                val ms = (t - lastFrameNs) / 1_000_000
+                if (ms >= HITCH_MS) DiagLog.event("hitch", "bottom screen frame $ms ms (room ${room.name.lowercase()}, game up ${LauncherHooks.gameUp()})")
+            }
+            lastFrameNs = t
+            android.view.Choreographer.getInstance().postFrameCallback(this)
+        }
+    }
+    private val HITCH_MS = 100L
+
     fun onCreate(savedInstanceState: Bundle?) {
+        // the problem report's own log (board f-problem-report): DS Forever's events, never a login, names only to hide them
+        DiagLog.init(this)
+        DiagLog.event("app", "bottom screen up (inside the launcher: ${LauncherHooks.pkg != null})")
+        ArtHarvest.onState { s ->
+            val kind = s.javaClass.simpleName + ((s as? ArtHarvest.State.Failed)?.let { ": ${it.why}" } ?: "")
+            if (kind != lastArtKind) { lastArtKind = kind; DiagLog.event("art", kind) }
+        }
         ArtHarvest.init(this)                     // the harvested art folder, before any view reads a picture (the art harvest, phase 1)
         ArtHarvest.onState(iconArtState)
         // interiors (Track C): the optional background bake (re)starts with the companion; it waits out the game's own start
@@ -426,6 +480,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         setupPanel = SetupPanel(this)
+        SetupBridge.openReport = { ui.post { if (!shell.hostGone()) openReport() } }
+        DiagLog.onChange { ui.post { ui.removeCallbacks(recTick); recTick.run() } }
         SetupBridge.openLoginForm = { loginPrompt.open() }
         // a refused saved login (M3): "Update login" = the same form, then the game restarts by itself with it (test4 ruling)
         SetupBridge.updateLogin = { restartOnSave = true; loginPrompt.open() }
@@ -448,6 +504,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.loginSaved = { HomeLoginStore.has(this) }
         settingsView.onLogin = { loginPrompt.open() }
         settingsView.loginRow = true
+        settingsView.onReport = { openReport() }
         if (LauncherHooks.pkg != null) {
             startView.firstLabel = "Save your Battle.net login"; startView.firstW = 680f      // the longer words
             sweepTrigger()
@@ -535,6 +592,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the self-setup's prompt and progress: over the start screen too
             addView(setupView, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            // Record 5 minutes' indicator (board f-problem-report): over everything, top right; a tap stops the recording
+            recIndicator = android.widget.TextView(this@CompanionHost).apply {
+                textSize = 16f; setTextColor(android.graphics.Color.WHITE); setPadding(22, 10, 22, 10)
+                setBackgroundColor(android.graphics.Color.argb(220, 150, 20, 20)); visibility = View.GONE
+                setOnClickListener { DiagLog.stopRecording(); visibility = View.GONE }
+            }
+            addView(recIndicator, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.Gravity.TOP or android.view.Gravity.END).apply { topMargin = 8; rightMargin = 8 })
         })
         show(Room.HOME)
 
@@ -1116,6 +1181,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     private fun handleMessage(msg: JSONObject) {
+        // the problem report's log: the document summarized (types and flags, never its words; names only to hide them)
+        runCatching { DiagLog.doc(msg) }
         // first, for every document: is the game live, and is a text box open over there
         val current = GameInput.note(msg)
         docCurrent = current

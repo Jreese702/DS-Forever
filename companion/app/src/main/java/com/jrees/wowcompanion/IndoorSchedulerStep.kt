@@ -72,6 +72,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     }.getOrNull()
 
     private fun publishStatus(ctx: Context, s: IndoorScheduler.Status) {
+        if (status?.phase != s.phase || status?.note != s.note) DiagLog.event("interiors", "${s.phase} ${s.ready}/${s.total} ${s.note}".trim())
         status = s
         runCatching {
             val f = File(dataDir(ctx), "status.json"); val tmp = File(f.path + ".part")

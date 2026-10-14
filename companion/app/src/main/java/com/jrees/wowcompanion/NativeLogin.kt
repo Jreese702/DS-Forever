@@ -322,6 +322,7 @@ object NativeLogin {
      */
     fun logEvent(s: String) {
         Log.i(TAG, s)
+        DiagLog.event("signin", s)            // the sign-in's step names only (never anything typed): the problem report's log
         try {
             val f = File("/sdcard/WowCompanion/logs/login.log")
             f.appendText("${stamp(System.currentTimeMillis())} $s\n")
