@@ -75,12 +75,13 @@ class AuthKeyboardTest {
     }
 
     @Test fun theKeyboardOpensAtTheTrafficsMomentAndStaysOpenAtAuth() {
-        val S = SetupFlow.SignIn
-        assertTrue(SignInKeyboard.autoOpen(S.SIGNING, S.CHECK))     // +13 s: open now
-        assertTrue(SignInKeyboard.autoOpen(S.CHECK, S.AUTH))        // +38-45 s: open again (show only)
-        assertFalse(SignInKeyboard.autoOpen(S.CHECK, S.CHECK))
-        assertFalse(SignInKeyboard.autoOpen(S.AUTH, S.AUTH))
-        assertFalse(SignInKeyboard.autoOpen(S.CHECK, S.FAILED))
+        val signing = SetupFlow.SignIn.SIGNING; val check = SetupFlow.SignIn.CHECK
+        val auth = SetupFlow.SignIn.AUTH; val failed = SetupFlow.SignIn.FAILED
+        assertTrue(SignInKeyboard.autoOpen(signing, check))     // +13 s: open now
+        assertTrue(SignInKeyboard.autoOpen(check, auth))        // +38-45 s: open again (show only)
+        assertFalse(SignInKeyboard.autoOpen(check, check))
+        assertFalse(SignInKeyboard.autoOpen(auth, auth))
+        assertFalse(SignInKeyboard.autoOpen(check, failed))
         val ime = Ime()
         keyboardNow(ime)                 // CHECK's auto-open
         keyboardNow(ime)                 // the player's tap
