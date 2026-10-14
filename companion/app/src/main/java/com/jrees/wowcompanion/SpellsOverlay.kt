@@ -54,10 +54,31 @@ class SpellsOverlay(
         if (want == doc || SystemClock.uptimeMillis() >= fightUntil) { fightWant = null; return doc }
         return want
     }
-    /** the pair's two halves, bottom left of the box (the hints stand bottom right); [i] 0 Normal, 1 In combat */
+    /** batch5 (the user: tabs "above where it says 'no triggers held' (that text can be removed)"): the two tabs where that line stood,
+     *  side by side in the box's middle; [i] 0 Normal, 1 In combat */
     private fun fightRect(i: Int, w: Float): RectF {
-        val l = 60f + 110f + i * 218f
-        return RectF(l, 934f - 132f, l + 210f, 934f - 52f)
+        val cy = 84f + 104f + 206f
+        val l = w / 2f - 330f + i * 336f
+        return RectF(l, cy - 38f, l + 324f, cy + 38f)
+    }
+    /** LB / RB as the app's own reader sees them (on the Thor the game never hears LB: it is its emulated Ctrl): a NEW press moves the tab */
+    private var lbWas = false
+    private var rbWas = false
+    private fun bumpers(lb: Boolean, rb: Boolean) {
+        val lbNew = lb && !lbWas; val rbNew = rb && !rbWas
+        lbWas = lb; rbWas = rb
+        if (!lbNew && !rbNew) return
+        if (ctl?.mode != "bind") return
+        val want = rbNew                                               // LB = the left tab (Normal), RB = the right one (In combat)
+        if (want == fightShown()) return
+        pickFight(want)
+    }
+    /** ONE tap on the addon's column for [fight] (no-action, idempotent), shown at once */
+    private fun pickFight(fight: Boolean) {
+        val cols = fightCols() ?: return
+        onTap(if (fight) cols.first else cols.second)
+        fightWant = fight; fightUntil = SystemClock.uptimeMillis() + 1500L
+        invalidate()
     }
     /** the addon can take the pair by touch (its columns are on the row) */
     private fun fightCols(): Pair<Int, Int>? {
@@ -120,7 +141,7 @@ class SpellsOverlay(
 
     private fun startPad() {
         if (pad != null || otherReader()) return
-        pad = PadInput(onPad = { l, r, _, _ -> lt = l; rt = r; invalidate() }, onStatus = { _, _ -> }).also {
+        pad = PadInput(onPad = { l, r, lb, rb -> lt = l; rt = r; bumpers(lb, rb); invalidate() }, onStatus = { _, _ -> }).also {
             it.triggerSwap = CastSettings.triggerSwap
             it.start()
         }
@@ -200,8 +221,17 @@ class SpellsOverlay(
         // once a button took the spell, the box shows THAT set with the button lit (SPEC 4: "ZR held" in the bound picture)
         val bound = r?.takeIf { it.ok }?.pad
         val set = bound?.bar ?: when { lt && rt -> 4; rt -> 3; lt -> 2; else -> 1 }
-        val ps = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(SpellsModel.heldLine(set == 2 || set == 4, set == 3 || set == 4, st), w / 2f, cy + 206f - (ps.ascent() + ps.descent()) / 2f, ps)
+        // b-bind-combat-toggle, batch5 (the user's pick: "tabs ... instead of minus to flip make it l and r to toggle that tab left or right
+        // and have the glyphs on the outsides of the buttons still in them"): Normal | In combat where "No trigger held" stood (removed),
+        // the game's tab look, LB inside the left tab's outer edge and RB inside the right one's; LB / RB (the app's reader) or a tap. While
+        // the answer shows, the tab it went on stays lit
+        val f = if (r != null && r.ok) r.fight else fightShown()
+        UiKit.tab(c, fightRect(0, w), "Normal", !f)
+        UiKit.tab(c, fightRect(1, w), "In combat", f)
+        if (r == null || !r.ok) {
+            UiKit.pad(c, "${st.prefix}_lshoulder", fightRect(0, w).left + 40f, fightRect(0, w).centerY(), 44f)
+            UiKit.pad(c, "${st.prefix}_rshoulder", fightRect(1, w).right - 40f, fightRect(1, w).centerY(), 44f)
+        }
 
         // the D-pad's four and the face buttons' four: the Cast room's own drawing of that set; stand-ins until it has a layout
         val dpad = RectF(w / 2f - 270f - 240f, cy + 236f, w / 2f - 270f + 240f, cy + 236f + 340f)
@@ -211,27 +241,14 @@ class SpellsOverlay(
         val drawn = try { drawSet(c, set, dpad, face, lit.takeIf { it > 0 }, icon) } catch (_: Throwable) { false }
         if (!drawn) standIns(c, dpad, face, lit, icon, st)
 
-        // b37 THE LAYOUT (b-bind-combat-toggle, the user on batch2): Normal (the game's bar) or In combat (that button's fight spell);
-        // Book b39 (the user on batch4): SELECT (the "-") flips it, as in the Controller room's chooser; a finger taps a half. Only while
-        // the box waits; the answer says which it went on
-        if (r == null || !r.ok) {
-            val f = fightShown()
-            val touch = fightCols() != null
-            UiKit.choice(c, fightRect(0, w), "Normal", !f, textSize = 26f, enabled = touch || ctl?.mode == "bind")
-            UiKit.choice(c, fightRect(1, w), "In combat", f, textSize = 26f, enabled = touch || ctl?.mode == "bind")
-            UiKit.pad(c, selectGlyph(st), box.left + 70f, fightRect(0, w).centerY(), 48f)
-        }
-
         // the way back: B (the user on batch4: "instead of showing the - button as back when no triggers are held it should show B"; a
         // plain B backs out, Book b39); the "-" flips Normal / In combat. The triggers' glyphs stand bare ("the text on the ZL and ZR can be
         // removed")
+        // batch5 (the user: "remove the ZR/ZL glyphs in the bottom right and the B button glyph and text when holding a trigger at all"):
+        // no trigger glyphs here; B / Back only while no trigger is held (with one, B is a place for the spell)
         val back = faceGlyph(st, "b")
         if (r != null && r.ok) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Close")
-        else {
-            val left = UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Back")
-            UiKit.pad(c, "${st.prefix}_rtrigger", left - 44f, box.bottom - 92f, 48f)
-            UiKit.pad(c, "${st.prefix}_ltrigger", left - 100f, box.bottom - 92f, 48f)
-        }
+        else if (!lt && !rt) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Back")
     }
 
     /** empty slots with the glyphs, where the Cast room's drawing goes, for as long as it has none */
@@ -335,11 +352,7 @@ class SpellsOverlay(
                 MotionEvent.ACTION_UP -> {
                     val i = downFight; downFight = -1
                     val cols = fightCols()
-                    if (i >= 0 && fightRect(i, w).contains(ev.x, ev.y) && cols != null && ctl?.mode == "bind") {
-                        onTap(if (i == 1) cols.first else cols.second)
-                        fightWant = i == 1; fightUntil = SystemClock.uptimeMillis() + 1500L
-                        invalidate()
-                    }
+                    if (i >= 0 && fightRect(i, w).contains(ev.x, ev.y) && cols != null && ctl?.mode == "bind") pickFight(i == 1)
                 }
                 MotionEvent.ACTION_CANCEL -> downFight = -1
             }
