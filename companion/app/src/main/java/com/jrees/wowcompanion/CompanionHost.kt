@@ -1853,6 +1853,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the hand-over: the pane's picture leaves as the box nears the frame (and comes back as it nears the pane)
             val hand = ((g - HAND_FROM) / (HAND_TO - HAND_FROM)).coerceIn(0f, 1f)
             paneV?.alpha = 1f - hand * hand * (3f - 2f * hand)
+            // the room's message bar (the pane has none) slides up into place over the glide's last part, the log's lines riding up
+            // with it; back Home it slides down out of the box first, so the room's lines meet the pane's where they stand (Thor batch7)
+            val bar = ((g - BAR_FROM) / (1f - BAR_FROM)).coerceIn(0f, 1f)
+            chatView.glideBar(bar * bar * (3f - 2f * bar))
             if (opening) {
                 // Home's other parts (its picture) fade over the first FADE ms, as Home's own do; without the pane's picture the
                 // room comes in inside its box meanwhile (the old way)
@@ -1891,6 +1895,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         chatView.clipToOutline = false
         chatView.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         chatView.alpha = 1f
+        chatView.glideBar(1f)
         chatView.scaleX = 1f; chatView.scaleY = 1f
         chatView.translationX = 0f; chatView.translationY = 0f
         homeView.alpha = 1f
@@ -1900,6 +1905,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the pane's picture hands over to the room between these two points of the glide's way (0 = the pane's box, 1 = the frame) */
     private val HAND_FROM = 0.35f
     private val HAND_TO = 0.8f
+    /** the room's message bar rises into place from this point of the way to the frame (Thor batch7) */
+    private val BAR_FROM = 0.45f
 
     private var startReadAt = 0L
     /** the room's view on show (the pause wheel makes it step back) */

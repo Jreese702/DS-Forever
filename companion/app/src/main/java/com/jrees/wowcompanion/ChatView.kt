@@ -741,6 +741,20 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         post { applyInput() }
     }
 
+    /**
+     * THE MESSAGE BAR SLIDES IN with the room's glide from Home's chat pane (Thor batch7, the user: "the bottom row of text kind of
+     * glitches up when the message box appears ... the message box sliding up and into place rather than appearing"): the pane has
+     * no bar, its newest line sits at its bottom. [m] 0 = the bar just under the room's bottom edge and the log down with it (its
+     * newest line where the pane has its own), 1 = both in place; between, the bar rises and pushes the lines up. Translations
+     * only: the glide lays nothing out.
+     */
+    fun glideBar(m: Float) {
+        val d = (1f - m.coerceIn(0f, 1f)) * composer.height
+        composer.translationY = d
+        logBox.translationY = d
+        invalidate()
+    }
+
     /** what is written changed: to the add-on's buffer ([ChatStream]) and into the field */
     private fun setTyped(t: String) {
         typed = stream.clean(t)
