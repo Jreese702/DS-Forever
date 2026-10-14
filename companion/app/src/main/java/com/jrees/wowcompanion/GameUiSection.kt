@@ -73,7 +73,18 @@ class GameUiSection(context: Context) : View(context) {
         textSize = 27f; textAlign = Paint.Align.LEFT; typeface = Typeface.DEFAULT_BOLD
     }
 
-    private var rows: List<GameUi.Row> = GameUi.rows()
+    private var rows: List<GameUi.Row> = allRows()
+
+    /**
+     * THE LOOT WINDOW'S ROW (r-loot-on-top; the user, batch4: "loot window should be moved to the UI settings"): after the game's
+     * elements, in their words: On = the game keeps its loot window on the top screen, Off = hidden, the pop-up on this screen (the
+     * default). Its value is the Interact add-on's (HomeLootSwitch); null = an older add-on: no row.
+     */
+    private fun lootRow(): GameUi.Row? = HomeLootSwitch.state?.let { s ->
+        GameUi.Row(LOOT_ID, "Loot window", null, if (s.top) UiMode.ON else UiMode.OFF, true, !s.top,
+            if (s.top) "The game's own loot window" else "The loot pop-up on this screen")
+    }
+    private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(lootRow())
     private var selected: String? = null
     private val rowBoxes = ArrayList<Pair<RectF, String>>()
     private val segBoxes = ArrayList<Pair<RectF, UiMode>>()
@@ -83,12 +94,13 @@ class GameUiSection(context: Context) : View(context) {
 
     init {
         GameUi.onChange { post { refresh() } }
+        HomeLootSwitch.onChange { post { refresh() } }
         StatusLine.onChange = { post { invalidate() } }
     }
 
     private fun refresh() {
         val before = rows.size
-        rows = GameUi.rows()
+        rows = allRows()
         if (selected != null && rows.none { it.id == selected }) selected = null
         if (rows.size != before) requestLayout()
         invalidate()
@@ -131,7 +143,7 @@ class GameUiSection(context: Context) : View(context) {
             MotionEvent.ACTION_UP -> {
                 if (abs(e.x - downX) > SLOP || abs(e.y - downY) > SLOP) return true
                 for ((box, m) in segBoxes) if (box.contains(e.x, e.y)) {
-                    selected?.let { GameUi.setMode(it, m) }
+                    selected?.let { if (it == LOOT_ID) HomeLootSwitch.turn(context, m == UiMode.ON) else GameUi.setMode(it, m) }
                     refresh()
                     return true
                 }
@@ -199,7 +211,7 @@ class GameUiSection(context: Context) : View(context) {
     private fun bar(c: Canvas, r: GameUi.Row, top: Float) {
         val left = 16f; val right = width - 16f
         val gap = 10f
-        val modes = UiElements.modesFor(r.id)
+        val modes = if (r.id == LOOT_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
         val sw = (right - left - gap * (modes.size - 1)) / modes.size
         var x = left
         for (m in modes) {
@@ -227,6 +239,8 @@ class GameUiSection(context: Context) : View(context) {
     }
 
     private fun explain(r: GameUi.Row): String {
+        if (r.id == LOOT_ID) return if (r.mode == UiMode.ON) "The game's own loot window opens on the top screen, as usual."
+            else "Hidden: the loot pop-up opens on this screen."
         val room = r.home?.label?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "its"
         return when (r.mode) {
             UiMode.ON -> "The game keeps it on the top screen."
@@ -271,6 +285,12 @@ class GameUiSection(context: Context) : View(context) {
                 lineTo(X(13f), Y(4.5f)); cubicTo(X(17.5f), Y(4.5f), X(20f), Y(7f), X(20f), Y(11.5f))
                 close()
             }, p)
+            // the loot window: a small chest, its lid line and clasp
+            LOOT_ID -> {
+                c.drawRoundRect(RectF(X(3f), Y(7f), X(21f), Y(19f)), 2.5f, 2.5f, p)
+                c.drawLine(X(3f), Y(11.5f), X(21f), Y(11.5f), p)
+                c.drawRect(RectF(X(10.5f), Y(10f), X(13.5f), Y(14f)), p)
+            }
             else -> c.drawRoundRect(RectF(X(4f), Y(6f), X(20f), Y(18f)), 3f, 3f, p)
         }
     }
@@ -315,6 +335,8 @@ class GameUiSection(context: Context) : View(context) {
     }
 
     companion object {
+        /** the loot window's row: no hub element, the Interact add-on's own switch */
+        const val LOOT_ID = "loot"
         // SettingsView's own metrics: a section heading 16 px above its first row, 96 px rows
         const val HEAD_TEXT = 26f
         const val HEAD_H = 42f

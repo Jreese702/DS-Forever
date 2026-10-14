@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i111"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i112"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1605,7 +1605,12 @@ local function buildDoc()
     if WINDOWS.auction and isOpen("auction") then doc.auction = collectAuction() end
     if WINDOWS.taxi and isOpen("taxi") then doc.taxi = collectTaxi() end
     if WINDOWS.bank and isOpen("bank") then doc.bank = collectBank() end
-    if WINDOWS.loot and isOpen("loot") then doc.loot = collectLoot() end
+    if WINDOWS.loot and isOpen("loot") then
+        doc.loot = collectLoot()
+        -- b-loot-flash: which path hid the game's window first (show / play / early / doc), why not (no), how many shows were heard
+        local d = N.lootDiag
+        if d then doc.loot.hid = { by = d.by, no = d.no, shows = d.shows, hooked = N.lootHooked and true or nil } end
+    end
     -- LOOTWIN_SPEC 7: the item just looted into the freed tile, for 3 s (it outlives the window when it was the last item)
     local ld = LOOT.landing
     if ld and (TN(function() return GetTime() end) or 0) - ld.at < 3 then
@@ -1809,6 +1814,7 @@ local ON = {
     BANKFRAME_OPENED = function() BANK.page, BANK.hand, BANK.box, BANK.acct = 1, nil, false, false; mark("bank", true) end,
     BANKFRAME_CLOSED = function() BANK.hand, BANK.box = nil, false; mark("bank", false) end,
     LOOT_OPENED = function()
+        if N.lootHook then N.lootHook() end     -- a LootFrame the client made after this file loaded (the hook is once)
         LOOT.full, LOOT.bind, LOOT.running, LOOT.hold, LOOT.rare = false, false, false, nil, nil
         LOOT.try, LOOT.want = nil, nil
         mark("loot", true)
@@ -1819,6 +1825,7 @@ local ON = {
     LOOT_CLOSED = function()
         LOOT.full, LOOT.bind, LOOT.running, LOOT.hold, LOOT.rare = false, false, false, nil, nil
         LOOT.try, LOOT.want = nil, nil
+        if N.lootDiag then N.lootDiag.by, N.lootDiag.no = nil, nil end
         mark("loot", false)
     end,
     -- a bind-on-pickup item asks first (the game's dialog, mirrored): Loot All stops there
@@ -3228,10 +3235,38 @@ local function dimTip()
     end
 end
 
+-- b-loot-flash, TAKE 2: THE CLOSE. On LOOT_CLOSED the game does not hide its window at once: Close() plays the panel's fade-out
+-- (HideAnim, 0.1 s) and hides it when that ends. Our release comes a frame after LOOT_CLOSED, so putting the alpha back then showed
+-- the window fading out on the top screen at the end of EVERY loot (batch4: "for a moment before disappearing"). While the game is
+-- closing it (shown, isOpen false), the window and its pieces stay dark here; LootFrame's OnHide (N.lootHook) puts them back.
+-- A loot that opens again first takes them over as hidden (lootAdopt).
+local lootLater = {}        -- LootFrame or one of its pieces -> the alpha it gets back once the window is hidden
+local function lootPieces(lf)
+    local set = { [lf] = true }
+    pcall(function() for _, ch in ipairs({ lf:GetChildren() }) do set[ch] = true end end)
+    pcall(function() for _, rg in ipairs({ lf:GetRegions() }) do set[rg] = true end end)
+    return set
+end
+local function lootAdopt()
+    for obj, a in pairs(lootLater) do
+        if hidden[obj] == nil then hidden[obj] = a; N.hid = N.hid + 1 end
+    end
+    lootLater = {}
+end
+local function lootRestoreLater()
+    for obj, a in pairs(lootLater) do pcall(function() obj:SetAlpha(a) end) end
+    lootLater = {}
+end
+
 function N.unhide()
     shieldClearAll("npc")
+    local lf = _G.LootFrame
+    local closing = N.lootHooked and type(lf) == "table" and hidden[lf] ~= nil and lf.isOpen == false
+        and TB(function() return lf:IsShown() end) == true
+    local pieces = closing and lootPieces(lf) or nil
     for obj, a in pairs(hidden) do
-        pcall(function() obj:SetAlpha(a) end)
+        if pieces and pieces[obj] then lootLater[obj] = a
+        else pcall(function() obj:SetAlpha(a) end) end
         hidden[obj] = nil
     end
     N.hid = 0
@@ -3252,8 +3287,10 @@ function N.hide(doc)
     for kind, names in pairs(HIDE) do
         if doc[kind] then
             for _, name in ipairs(names) do
+                if STICKY[name] then lootAdopt() end
                 dim(_G[name])
                 if STICKY[name] and hidden[_G[name]] ~= nil then
+                    hidden[_G[name]] = 1        -- never a fade's value of the moment: 1 is what goes back
                     pcall(function() _G[name]:SetAlpha(0) end)
                     dimPieces(_G[name])
                 end
@@ -3275,6 +3312,55 @@ end
 local function inCombat()
     return TB(function() return InCombatLockdown() end) == true
 end
+
+-- b-loot-flash, TAKE 2 (batch4, with i111 really installed: "still shows every loot window for a moment before disappearing").
+-- The in-event hide (N.early) runs from OUR LOOT_OPENED handler; the game shows LootFrame from ITS handler, and the order of the
+-- two is the client's. So the hide also rides the window's own show: a HookScript on LootFrame's OnShow (it runs inside the very
+-- Show() call, before anything is drawn) and on its fade (ShowAnim OnPlay / OnFinished). ALPHA ONLY: no Blizzard function is
+-- called, nothing is shown or hidden, the hold and the keys stay N.early's. The same gate as N.early's hide; when the hold then
+-- fails, N.early puts the alpha back. N.lootDiag says which path hid the window (doc.loot.hid), so a Thor log can tell.
+N.lootDiag = { shows = 0 }
+function N.lootHideWanted()
+    if WINDOWS.loot == false then return false, "off" end
+    if LOOT.top() then return false, "top" end
+    if not N.mode then return false, "mode" end
+    if not (N.frameSeen or N.trusted) then return false, "proof" end
+    if inCombat() then return false, "combat" end
+    return true
+end
+function N.lootDim(by)
+    local fr = _G.LootFrame
+    if type(fr) ~= "table" then return end
+    lootAdopt()
+    -- its own alpha may be the fade's value of the moment: 1 is what goes back (N.unhide)
+    if hidden[fr] == nil then N.hid = N.hid + 1 end
+    hidden[fr] = 1
+    pcall(function() fr:SetAlpha(0) end)
+    dimPieces(fr)
+    N.lootDiag.by = N.lootDiag.by or by
+end
+local lootHooked = false
+function N.lootHook()
+    if lootHooked then return end
+    local fr = _G.LootFrame
+    if type(fr) ~= "table" or type(fr.HookScript) ~= "function" then return end
+    lootHooked = pcall(function()
+        fr:HookScript("OnHide", function() lootRestoreLater() end)     -- the game's close has run: its alpha back
+        fr:HookScript("OnShow", function(self)
+            if self.isInEditMode then return end        -- Edit Mode shows it to be placed: no loot, nothing of ours
+            N.lootDiag.shows = N.lootDiag.shows + 1
+            local ok, why = N.lootHideWanted()
+            if ok then N.lootDim("show") else N.lootDiag.no = why end
+        end)
+    end)
+    local anim = lootHooked and fr.ShowAnim
+    if type(anim) == "table" and type(anim.HookScript) == "function" then
+        pcall(function() anim:HookScript("OnPlay", function() if hidden[fr] ~= nil then N.lootDim("play") end end) end)
+        pcall(function() anim:HookScript("OnFinished", function() if hidden[fr] ~= nil then pcall(function() fr:SetAlpha(0) end) end end) end)
+    end
+    N.lootHooked = lootHooked
+end
+N.lootHook()
 
 -- CAPTURE VERSION 5: THE BAR'S SELECT LISTENER (Home, 2026-09-30, LATER 7: "press select to get a
 -- controller selector that starts on the home button"). ONLY Select (PADBACK) is bound, on an owner of
@@ -3780,7 +3866,12 @@ function N.early(slot)
         N.hold()
         N.stale = N.holding
     end
-    if N.holding then N.hide({ [slot] = true }) end
+    if N.holding then
+        if slot == "loot" then N.lootDiag.by = N.lootDiag.by or "early" end
+        N.hide({ [slot] = true })
+    elseif slot == "loot" and type(_G.LootFrame) == "table" and hidden[_G.LootFrame] ~= nil then
+        N.unhide()          -- the OnShow hook dimmed it, but the controller is not ours: the game's window must stay usable
+    end
 end
 
 -- THE WATCHDOG. Whatever says that the game may be hearing the controller while its window is
@@ -3804,7 +3895,10 @@ function N.sync(open, doc)
     if N.mode and open and not inCombat() then
         if N.holding then N.check() else N.hold() end
         -- the game's copy goes only once a press has come through the frame (see the header)
-        if N.holding and doc and (N.frameSeen or N.trusted) then N.hide(doc) end
+        if N.holding and doc and (N.frameSeen or N.trusted) then
+            if doc.loot and N.lootDiag then N.lootDiag.by = N.lootDiag.by or "doc" end
+            N.hide(doc)
+        end
         -- a window's own extra keys (the trainer: + = its Settings menu, as the game's footer shows)
         -- THE LOOT WINDOW LEAVES THE STICKS ALONE (the user on 1.0.2.9-batch2: "looting locks the walking stick, it should remain
         -- unlocked and walking away should close the window as normal"): the grab's stick input took the left stick too while loot
