@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b36"                -- bump on every change
+local BV = "b37"                -- bump on every change
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -249,6 +249,7 @@ local function report(note)
         pages = cur and pagesOf(cur) or 1,
         rk = ri, rks = e and e.ranks and #e.ranks or nil,
         sel = p and (p.id or p.a) or nil, mode = ctl.mode, bind = ctl.bind and ctl.bind.id or nil, pg = ctl.pg, ctrl = ctl.ctrlTab or nil,
+        bf = ctl.bind and ctl.bind.fight or nil,                    -- b37: the Bind box puts it on the In combat layout
         bk = extraOn and "select" or nil, croom = ctl.croom or nil,
         tn = ctl.croom and (ctl.tn or 0) or nil, pn = ctl.croom and (ctl.pn or 0) or nil, note = ctl.note } }))
     WC.push()
@@ -474,6 +475,24 @@ local function bindPress(key)
     if not pset and gameSet and probe.shift == true and (gameSet == 1 or gameSet == 3) then
         ack(false, b.id, "unsure", nil, probe) return "unsure"
     end
+    -- b37 IN COMBAT (b-bind-combat-toggle, the user on batch2: "when binding I dont see this option at all from the spell book"): the
+    -- spell becomes that button's FIGHT spell - PadMap's overlay (m43, no macro, the button itself untouched) or a base X / Y / A's fight
+    -- spell (m7); B alone stays the game's Back
+    if b.fight then
+        local pm = WC.padMap
+        if type(pm) ~= "table" then ack(false, b.id, "failed", nil, probe) return "failed" end
+        local okp, ok, fwhy
+        if set == 1 and pos >= FIRST_RESERVED then
+            if pos == 7 then ack(false, b.id, "reserved", nil, probe) return "reserved" end
+            okp, ok, fwhy = pcall(pm.putCombatFace, pos, b.slot)
+        else
+            okp, ok, fwhy = pcall(pm.putCombat, gamePage(), set, pos, b.slot)
+        end
+        if okp and ok then ack(true, b.id, nil, { pg = gamePage(), b = set, p = pos, fight = true }, probe) return nil end
+        local why = okp and fwhy or nil
+        ack(false, b.id, (why == "combat" or why == "bind" or why == "dpad bar") and why or "failed", nil, probe)
+        return why == "combat" and "combat" or "failed"
+    end
     local page = gamePage()
     -- the slot: from the game's own button when it is the set the press was made in (right in a form or stance as well); else the
     -- standard-page formula for that set (b16: the trigger held while the game still shows the base bar)
@@ -515,7 +534,7 @@ end
 local selWant = false           -- the Bind box (or its answer) wants Select
 local extraSent = nil           -- the list last asked for (a string), nil = nothing asked
 local function shoulders()
-    if not ctl.croom then return {} end
+    if not ctl.croom and ctl.mode ~= "bind" then return {} end     -- b37: the Bind box's LB / RB flip Normal / In combat
     local used = {}
     for _, cv in ipairs({ "GamePadEmulateShift", "GamePadEmulateCtrl", "GamePadEmulateAlt" }) do
         local v = TS(function() return C_CVar.GetCVar(cv) end)
@@ -716,6 +735,11 @@ onPress = function(key)
     if ctl.mode == "bind" then
         if key == backKey() or (key == "PAD2" and plainNow()) then ctl.bind, ctl.mode = nil, "book"; backFor(false); report("bind-cancel") return end
         if key == SELECT then return end                -- not one of the eight: never a place for a spell
+        if key == "PADRSHOULDER" or key == "PADLSHOULDER" then        -- b37: Normal / In combat (never a place for a spell either)
+            if ctl.bind then ctl.bind.fight = not ctl.bind.fight or nil end
+            report("bind-fight")
+            return
+        end
         local why = bindPress(key)
         if why == "reserved" or why == "unsure" then report("bind-" .. why) return end    -- the box keeps waiting (SPEC 4)
         -- placed, or refused for good: the box shows the answer for 1.5 s, then the book; B closes it at once (SPEC 4)
@@ -945,7 +969,9 @@ local colKey = {}               -- column -> key: the fixed keys, then each spel
 local fixedCols = {}
 -- b15: THE fixed keys, in claim order (claimed once, kept by WC.spellsPadColumns' retain: b14 left "suggest" out of that keep list, so the
 -- pad freed its column and a later spell could take it). "dpad-on" / "dpad-off" (b15): Home's Settings row, the D-pad home bar (PadMap m24)
-local FIXED_KEYS = { "open", "close", "giveback", "sa-on", "sa-off", "topen", "suggest", "dpad-on", "dpad-off", "croom", "cc-on", "cc-off" }
+-- b37: "bf-on" / "bf-off" the Bind box's Normal / In combat by touch (two columns, so a repeat is harmless; only while the box waits)
+local FIXED_KEYS = { "open", "close", "giveback", "sa-on", "sa-off", "topen", "suggest", "dpad-on", "dpad-off", "croom", "cc-on", "cc-off",
+                     "bf-on", "bf-off" }
 local secureRowOk = type(pad) == "table" and type(pad.secureRow) == "function"
 local onCell
 local function cellInit(btn, col)
@@ -978,7 +1004,8 @@ if type(pad) == "table" and type(pad.slotFor) == "function" and (secureRowOk or 
     -- Home's Settings room: START ATTACK ON CAST on / off (the user 2026-10-01); two columns, so a repeat is harmless (PadMap acts)
     WC.spellsAttackCols = { on = fixedCols["sa-on"], off = fixedCols["sa-off"] }
     -- the room's way in and out, for the app (SpellbookView.enterRoom / leaveRoom): the spells doc carries them as `win`
-    WC.spellsWinCols = { open = fixedCols.open, close = fixedCols.close, topen = fixedCols.topen, croom = fixedCols.croom }
+    WC.spellsWinCols = { open = fixedCols.open, close = fixedCols.close, topen = fixedCols.topen, croom = fixedCols.croom,
+                         bfon = fixedCols["bf-on"], bfoff = fixedCols["bf-off"] }
     local function handle(key)
         if key == nil then report("pad-unknown") return end
         -- OPEN (the Spellbook / Talents face): the secure click has opened the window (its OnShow took the controller as the window's);
@@ -1013,6 +1040,10 @@ if type(pad) == "table" and type(pad.slotFor) == "function" and (secureRowOk or 
             return
         end
         if key == "suggest" then return end                              -- b34: retired (nothing is ever suggested)
+        if key == "bf-on" or key == "bf-off" then                       -- b37: the Bind box's Normal / In combat by touch
+            if ctl.mode == "bind" and ctl.bind then ctl.bind.fight = (key == "bf-on") or nil; report("bind-fight") end
+            return
+        end
         if key == "giveback" then
             if type(WC.padMap) == "table" and type(WC.padMap.giveBack) == "function" then pcall(WC.padMap.giveBack) end
             return

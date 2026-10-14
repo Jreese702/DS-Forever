@@ -71,12 +71,15 @@ object SpellsModel {
         val pn: Int? = null,                // b33: presses of X there (the wheels' PICK, A / Release: the app flips that setting)
         val rank: Int? = null,              // b23: the rank on show, its place in the spell's rank family (1 = the highest); null = no family
         val ranks: Int? = null,             // b23: how many ranks the family has
+        val bindFight: Boolean = false,     // b37: the Bind box puts the spell on the In combat layout (b-bind-combat-toggle)
     ) {
         val bindOpen get() = binding != null
     }
 
     /** The answer to a Bind press (`spellsack`). [why]: "combat", "reserved", "unknown", "failed". */
-    data class BindResult(val spellId: Int, val ok: Boolean, val why: String?, val pad: PadSlot?)
+    data class BindResult(val spellId: Int, val ok: Boolean, val why: String?, val pad: PadSlot?,
+                          /** b37: it went on as that button's FIGHT spell (no game slot of its own: storage 0) */
+                          val fight: Boolean = false)
 
     fun parseCtl(msg: JSONObject): Ctl? {
         if (msg.optString("type") != "spellsctl") return null
@@ -102,6 +105,7 @@ object SpellsModel {
             pn = if (c.has("pn")) c.optInt("pn", 0) else null,
             rank = c.optInt("rk", 0).takeIf { it > 0 },
             ranks = c.optInt("rks", 0).takeIf { it > 1 },
+            bindFight = c.optBoolean("bf", false),
         )
     }
 
@@ -111,10 +115,12 @@ object SpellsModel {
         val p = msg.optJSONObject("pad")
         val pad = p?.let {
             val st = it.optInt("s", 0); val pg = it.optInt("pg", 0); val b = it.optInt("b", 0); val ps = it.optInt("p", 0)
-            if (st > 0 && pg in 1..3 && b in 1..4 && ps in 1..8) PadSlot(st, pg, b, ps) else null
+            val fight = it.optBoolean("fight", false)                       // b37: an In combat bind has no game slot
+            if ((st > 0 || fight) && pg in 1..3 && b in 1..4 && ps in 1..8) PadSlot(st, pg, b, ps) else null
         }
         val ok = msg.optBoolean("ok", false) && pad != null
-        return BindResult(id, ok, if (ok) null else msg.optString("why", "failed").ifEmpty { "failed" }, pad)
+        return BindResult(id, ok, if (ok) null else msg.optString("why", "failed").ifEmpty { "failed" }, pad,
+            p?.optBoolean("fight", false) == true)
     }
 
     /**
@@ -199,7 +205,8 @@ object SpellsModel {
             pad = s.optJSONObject("pad"),
             win = s.optJSONObject("win")?.let { w ->
                 // b17: "croom" = the Controller room's own way in (ControllerView.enterRoom); dropping it sent b47 to the old tab fallback
-                listOf("open", "close", "topen", "croom").mapNotNull { k -> if (w.has(k)) w.optInt(k, -1).takeIf { it in 0..39 }?.let { k to it } else null }.toMap()
+                // b37: "bfon" / "bfoff" the Bind box's Normal / In combat by touch
+                listOf("open", "close", "topen", "croom", "bfon", "bfoff").mapNotNull { k -> if (w.has(k)) w.optInt(k, -1).takeIf { it in 0..39 }?.let { k to it } else null }.toMap()
             } ?: emptyMap(),
         )
     }

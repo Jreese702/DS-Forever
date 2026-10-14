@@ -32,6 +32,8 @@ class SpellsOverlay(
         { _, _, _, _, _, _ -> false },
     /** another controller reader is running (the Cast view's): then this box does not start a second one (home's finding) */
     private val otherReader: () -> Boolean = { false },
+    /** b37: one tap on the `spells` row's column (the Bind box's Normal / In combat) */
+    private val onTap: (Int) -> Unit = {},
 ) : View(context) {
 
     private var book: SpellsModel.Book? = null
@@ -42,6 +44,26 @@ class SpellsOverlay(
     private var result: SpellsModel.BindResult? = null
     private var resultAt = 0L
     private var lt = false; private var rt = false
+    /** b37 (b-bind-combat-toggle): a finger's Normal / In combat, shown AT THE TAP until the addon's `bf` agrees or 1.5 s pass */
+    private var fightWant: Boolean? = null
+    private var fightUntil = 0L
+    private var downFight = -1
+    private fun fightShown(): Boolean {
+        val doc = ctl?.bindFight == true
+        val want = fightWant ?: return doc
+        if (want == doc || SystemClock.uptimeMillis() >= fightUntil) { fightWant = null; return doc }
+        return want
+    }
+    /** the pair's two halves, bottom left of the box (the hints stand bottom right); [i] 0 Normal, 1 In combat */
+    private fun fightRect(i: Int, w: Float): RectF {
+        val l = 60f + 110f + i * 218f
+        return RectF(l, 934f - 132f, l + 210f, 934f - 52f)
+    }
+    /** the addon can take the pair by touch (its columns are on the row) */
+    private fun fightCols(): Pair<Int, Int>? {
+        val win = book?.win ?: return null
+        return (win["bfon"] ?: return null) to (win["bfoff"] ?: return null)
+    }
     private var pad: PadInput? = null
 
     // the card
@@ -147,12 +169,14 @@ class SpellsOverlay(
         // the line: the instruction, or the answer
         if (r != null && r.ok && r.pad != null) {
             val p = UiKit.bodyPaint(32f, Color.rgb(30, 255, 0)).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText("Bound to", w / 2f - 60f, cy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(if (r.fight) "In combat on" else "Bound to", w / 2f - 60f, cy - (p.ascent() + p.descent()) / 2f, p)
             drawCombo(c, SpellsModel.combo(r.pad, st), w / 2f - 40f, cy, 64f, Theme.text, true)
         } else if (r != null && !r.ok) {
             val (text, colour) = when (r.why) {
                 "combat" -> "Not while in combat" to Theme.unusable
                 "reserved" -> "That button cannot be changed" to Theme.unusable
+                "bind" -> "A game key rides that button: clear it first" to Theme.unusable        // b37: In combat
+                "dpad bar" -> "The DS toolbar has the plain D-pad: hold a trigger" to Theme.unusable
                 "unsure" -> "Press it again" to Theme.warn
                 else -> "That did not work" to Theme.unusable
             }
@@ -186,6 +210,16 @@ class SpellsOverlay(
         val icon = e?.let { Icons.get(it.icon) }
         val drawn = try { drawSet(c, set, dpad, face, lit.takeIf { it > 0 }, icon) } catch (_: Throwable) { false }
         if (!drawn) standIns(c, dpad, face, lit, icon, st)
+
+        // b37 THE LAYOUT (b-bind-combat-toggle, the user on batch2): Normal (the game's bar) or In combat (that button's fight spell);
+        // RB / LB flip it (the addon's), a finger taps a half. Only while the box waits; the answer says which it went on
+        if (r == null || !r.ok) {
+            val f = fightShown()
+            val touch = fightCols() != null
+            UiKit.choice(c, fightRect(0, w), "Normal", !f, textSize = 26f, enabled = touch || ctl?.mode == "bind")
+            UiKit.choice(c, fightRect(1, w), "In combat", f, textSize = 26f, enabled = touch || ctl?.mode == "bind")
+            UiKit.pad(c, "${st.prefix}_rshoulder", box.left + 70f, fightRect(0, w).centerY(), 48f)
+        }
 
         // the way back: SELECT when the addon has it (capture v4; UI Art's glyphs, already on the device), else B
         val back = if (ctl?.backSelect == true) selectGlyph(st) else faceGlyph(st, "b")
@@ -286,7 +320,24 @@ class SpellsOverlay(
     // ---------------------------------------------------------------- touch
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
-        if (boxOpen()) return true                                  // a dialog: every touch is its
+        if (boxOpen()) {                                            // a dialog: every touch is its
+            // b37: the Normal / In combat pair, while the box waits: ONE tap on its column (no-action, idempotent)
+            val w = width.toFloat()
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> downFight = (0..1).firstOrNull { fightRect(it, w).contains(ev.x, ev.y) } ?: -1
+                MotionEvent.ACTION_UP -> {
+                    val i = downFight; downFight = -1
+                    val cols = fightCols()
+                    if (i >= 0 && fightRect(i, w).contains(ev.x, ev.y) && cols != null && ctl?.mode == "bind") {
+                        onTap(if (i == 1) cols.first else cols.second)
+                        fightWant = i == 1; fightUntil = SystemClock.uptimeMillis() + 1500L
+                        invalidate()
+                    }
+                }
+                MotionEvent.ACTION_CANCEL -> downFight = -1
+            }
+            return true
+        }
         val card = cardSpell ?: return false
         if (!cardRect.contains(ev.x, ev.y)) return false            // beside the card: the room's
         if (ev.actionMasked == MotionEvent.ACTION_UP) {
