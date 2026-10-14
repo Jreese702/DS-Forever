@@ -470,6 +470,22 @@ local function readCV(name)
     local fn = api("C_CVar", "GetCVarBool") or _G.GetCVarBool
     return S(fn, name) == true
 end
+-- f-class-radial: the two bar placements, read only (the game's GamepadStanceBarOverride / GamepadPossessBarOverride: 1 = none / the
+-- special page, 2-4 page 1 Left / Right / Bottom, 5-12 pages 2-3 Top / Left / Right / Bottom), with the game's own words
+local BAR_WORDS = { [2] = "GAMEPAD_BAR_PAGE1_LEFT", [3] = "GAMEPAD_BAR_PAGE1_RIGHT", [4] = "GAMEPAD_BAR_PAGE1_BOTTOM",
+    [5] = "GAMEPAD_BAR_PAGE2_TOP", [6] = "GAMEPAD_BAR_PAGE2_LEFT", [7] = "GAMEPAD_BAR_PAGE2_RIGHT", [8] = "GAMEPAD_BAR_PAGE2_BOTTOM",
+    [9] = "GAMEPAD_BAR_PAGE3_TOP", [10] = "GAMEPAD_BAR_PAGE3_LEFT", [11] = "GAMEPAD_BAR_PAGE3_RIGHT", [12] = "GAMEPAD_BAR_PAGE3_BOTTOM" }
+local function barPlacement()
+    local fn = api("C_CVar", "GetCVar") or _G.GetCVar
+    local function one(cv, first, title)
+        local v = num(tonumber(S(fn, cv) or ""))
+        if not v then return nil end
+        local word = realStr(rawget(_G, v == 1 and first or (BAR_WORDS[v] or "")))
+        return { v = v, n = word, t = realStr(rawget(_G, title)) }
+    end
+    return { st = one("GamepadStanceBarOverride", "GAMEPAD_STANCE_BAR_NONE", "GAMEPAD_STANCE_BAR_OVERRIDE"),
+             ps = one("GamepadPossessBarOverride", "GAMEPAD_POSSESS_BAR_SPECIAL_PAGE", "GAMEPAD_POSSESS_BAR_OVERRIDE") }
+end
 
 -- Pages 1..3 that hold any action in a bindable slot (the page chips).
 local function pagesWithActions()
@@ -525,13 +541,18 @@ local function flyoutEntries(id)
     for i = 1, numSlots do
         local r = pack(CALL(GetFlyoutSlotInfo, id, i))
         local spellID, known, name = num(r[2]), r[4] == true, realStr(r[5])
-        if r[1] and spellID and known then
+        if r[1] and spellID and known and #list < 8 then
             local okt, tex = CALL(function() return C_Spell.GetSpellTexture(spellID) end)
-            list[#list + 1] = { k = "spell", id = spellID, n = name, i = okt and num(tex) or nil, e = true }
+            -- `p`: the radial's place (1 = top, clockwise), the known spells in the flyout's order as the game lays them
+            list[#list + 1] = { k = "spell", id = spellID, n = name, i = okt and num(tex) or nil, e = true, p = #list + 1 }
         end
     end
     return list
 end
+-- f-class-radial: the game's pet COMMAND radial keeps fixed places (camelot/petclassflyouts.xml): Attack 1, Follow 2, Move To 3,
+-- (4 left empty on purpose), Passive 5, Defensive 6, Assist 7; any other command (Stay, Aggressive) is not on it
+local PET_CMD_PLACE = { PET_ACTION_ATTACK = 1, PET_ACTION_FOLLOW = 2, PET_ACTION_MOVE_TO = 3, PET_MODE_PASSIVE = 5,
+                        PET_MODE_DEFENSIVE = 6, PET_MODE_ASSIST = 7 }
 
 local function petEntries(tokens)
     local list = {}
@@ -540,8 +561,9 @@ local function petEntries(tokens)
         local r = pack(CALL(GetPetActionInfo, i))
         -- name, texture, isToken, isActive, autoCastAllowed, autoCastEnabled, spellID
         local name, tex, isToken, active = r[2], r[3], r[4] == true, r[5] == true
-        if r[1] and name ~= nil and isToken == tokens then
-            local e = { k = tokens and "petcmd" or "petspell", slot = i, act = bit01(active) }
+        local place = tokens and PET_CMD_PLACE[realStr(name) or ""] or (not tokens and #list < 8 and #list + 1) or nil
+        if r[1] and name ~= nil and isToken == tokens and place then
+            local e = { k = tokens and "petcmd" or "petspell", slot = i, act = bit01(active), p = place }
             if tokens then
                 -- a token's name and texture are GLOBAL STRING NAMES (PET_ACTION_ATTACK -> "Attack")
                 e.n = realStr(rawget(_G, realStr(name) or "")) or realStr(name)
@@ -558,6 +580,65 @@ local function petEntries(tokens)
     return list
 end
 
+-- f-class-radial (the user's pick: "Mirror the game's radials"): THE TOUCH PICK. One secure pad row "classr" (24 cells, set OUT of
+-- combat; frozen in a fight, as every secure cell): 0-7 the LEFT radial's places 1-8, 8-15 the RIGHT radial's, 16-23 the right
+-- radial's pet spells' AUTOCAST toggle (a long-press in the app). A spell is the game's own cast (type spell), a pet command / pet
+-- spell the game's pet action (type pet: CastPetAction), autocast in-memory macro text (/petautocasttoggle, never saved). Nothing is
+-- saved; the cells hold what the radial shows. Each entry carries its cell (`c`, `ac`) only while the built cells match it.
+local CR = { want = {}, frozen = {}, row = nil, sig = nil }
+local function crCellOf(side, e) return (side == "l" and 0 or 8) + e.p - 1 end
+local function crInit(btn, col)
+    local w = CR.want[col]
+    btn:SetAttribute("type", w and w.type or nil)
+    btn:SetAttribute("spell", w and w.spell or nil)
+    btn:SetAttribute("action", w and w.action or nil)
+    btn:SetAttribute("macrotext", w and w.macrotext or nil)
+    CR.frozen[col] = w and w.sig or nil
+end
+local function crClick(col)
+    WC.send(WC.encode({ type = "classuse", v = 1, col = col, fight = (S(InCombatLockdown) == true) or nil }))
+    if type(WC.flush) == "function" then pcall(WC.flush) else WC.push() end
+end
+-- the cells for the radials on show; built again only when they change, out of combat
+local function crSync(ca)
+    local want, parts = {}, {}
+    for _, side in ipairs({ "l", "r" }) do
+        local rad = ca and ca[side]
+        for _, e in ipairs(rad and rad.e or {}) do
+            local col = crCellOf(side, e)
+            local w
+            if e.k == "spell" and e.id then w = { type = "spell", spell = e.id, sig = "s" .. e.id }
+            elseif (e.k == "petcmd" or e.k == "petspell") and e.slot then w = { type = "pet", action = e.slot, sig = "p" .. e.slot } end
+            if w then want[col] = w; parts[#parts + 1] = col .. "=" .. w.sig end
+            if e.k == "petspell" and e.n and side == "r" then
+                local acol = 16 + e.p - 1
+                want[acol] = { type = "macro", macrotext = "/petautocasttoggle " .. e.n, sig = "a" .. e.n }
+                parts[#parts + 1] = acol .. "=a" .. e.n
+            end
+        end
+    end
+    local sig = table.concat(parts, ",")
+    local pad = WC.pad
+    if sig ~= CR.sig and S(InCombatLockdown) == false and type(pad) == "table" and type(pad.secureRow) == "function" then
+        CR.want = want
+        local ok, row = pcall(pad.secureRow, "classr", 24, crInit, crClick)
+        CR.row = (ok and type(row) == "number") and row or nil
+        CR.sig = CR.row and sig or nil
+        if not CR.row then CR.frozen = {} end
+    end
+    -- each entry's cells, only where the built cell is what it shows (a fight's change waits for its end)
+    for _, side in ipairs({ "l", "r" }) do
+        local rad = ca and ca[side]
+        for _, e in ipairs(rad and rad.e or {}) do
+            local col = crCellOf(side, e)
+            if want[col] and CR.frozen[col] == want[col].sig then e.c = col end
+            local acol = 16 + e.p - 1
+            if e.k == "petspell" and want[acol] and CR.frozen[acol] == want[acol].sig then e.ac = acol end
+        end
+    end
+    if ca and not CR.row then ca.nopad = 1 end
+end
+
 local function classActions()
     local okc, cls = CALL(UnitClassBase, "player")
     cls = okc and realStr(cls) or nil
@@ -572,6 +653,7 @@ local function classActions()
     else
         return nil
     end
+    pcall(crSync, ca)
     return ca
 end
 
@@ -594,6 +676,9 @@ local function buildHud()
             compact = readCV("GamepadUseCompactActionBar"),
             party = readCV("GamepadUsePartyTargeting"),
         },
+        -- f-class-radial: where the game puts the STANCE / FORM bar and the PET (possess) bar (its Controller settings; read only,
+        -- never written): the value and the game's own label for it
+        bars = barPlacement(),
         L = {},
     }
     if keysBound then hud.keys = { hide = KEY_HIDE, show = KEY_SHOW } end
@@ -1367,6 +1452,7 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
         installHooks()
         trySetupKeys()
         requestState()
+        layoutSoon()                    -- f-class-radial: a radial that changed in the fight gets its touch cells now
     elseif event == "START_AUTOREPEAT_SPELL" then
         autoRepeat = true
         requestState()
