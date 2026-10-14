@@ -1757,7 +1757,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     // ---------------------------------------------------------------- THE CHAT ROOM'S GLIDE (b-chat-slide)
     // The user's pick: chat going full screen from Home and back should move like the map's morph. Home's chat pane opens the Chat
     // ROOM (HomeView.ChatPane's tap), a room switch that used to swap at once. Now the room's view (laid out once, full size, as it
-    // always is) shows through a rounded window that glides from the pane's box to the frame on the map's time and curve
+    // always is) is DRAWN scaled down into the pane's box and grows with the box to the frame (a view transform, no layout), cut to
+    // a rounded window, on the map's time and curve
     // (Motion.MODULE_OPEN / MODULE_CLOSE, Motion.curve), over a picture of Home taken as it leaves (its map and bars go back to
     // their rooms then); back Home it shrinks onto the pane while Home comes in under it. No layout during the glide: an outline
     // and alphas only (a requestLayout per frame was what made the combat switch lag the game).
@@ -1769,7 +1770,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         override fun getOutline(v: View, o: android.graphics.Outline) {
             val b = chatGlideBox
             if (b.isEmpty) o.setRect(0, 0, v.width, v.height)
-            else o.setRoundRect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt(), UiKit.MODULE_R)
+            // the corner in the view's own px: as round on screen at every scale of the glide
+            else o.setRoundRect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt(), UiKit.MODULE_R / v.scaleX.coerceAtLeast(0.05f))
         }
     }
 
@@ -1802,9 +1804,21 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         chatView.clipToOutline = true
         val ms = if (opening) Motion.MODULE_OPEN else Motion.MODULE_CLOSE
         val fade = HomeView.FADE_MS
+        chatView.pivotX = 0f; chatView.pivotY = 0f
         fun at(k: Float, t: Float) {
             val g = if (opening) k else 1f - k
-            chatGlideBox.set(p.left + (0f - p.left) * g, p.top + (0f - p.top) * g, p.right + (fw - p.right) * g, p.bottom + (fh - p.bottom) * g)
+            // the box at g (the room's own px, unscaled: the pane's box at 0, the frame at 1)
+            val bl = p.left * (1f - g); val bt = p.top * (1f - g)
+            val br = p.right + (fw - p.right) * g; val bb = p.bottom + (fh - p.bottom) * g
+            // THE CONTENTS GROW WITH THE BOX (Thor batch4, the user: "it doesn't actually grow the contents with the transition, they
+            // kind of blip to the right place and size"): the whole room drawn smaller, ONE scale (text keeps its shape) just big
+            // enough to fill the box, its bottom-left on the box's (the type bar and the newest lines), as the map's art glides with
+            // its box; what overhangs the box is cut by the outline (in the view's own px, so the box mapped back through the scale)
+            val sc = maxOf((br - bl) / fw, (bb - bt) / fh).coerceIn(0.05f, 1f)
+            val tx = bl; val ty = bb - fh * sc
+            chatView.scaleX = sc; chatView.scaleY = sc
+            chatView.translationX = tx; chatView.translationY = ty
+            chatGlideBox.set((bl - tx) / sc, (bt - ty) / sc, (br - tx) / sc, (bb - ty) / sc)
             chatView.invalidateOutline()
             if (opening) {
                 // the room comes in over the first FADE ms inside its box, Home's picture fades as Home's own parts do
@@ -1840,6 +1854,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         chatView.clipToOutline = false
         chatView.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         chatView.alpha = 1f
+        chatView.scaleX = 1f; chatView.scaleY = 1f
+        chatView.translationX = 0f; chatView.translationY = 0f
         homeView.alpha = 1f
         chatView.visibility = if (room == Room.CHAT) View.VISIBLE else View.GONE
     }
