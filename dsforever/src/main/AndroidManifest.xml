@@ -1,2 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Settings > Frame generation: picks the player's own Lossless.dll (FrameGenPickActivity.kt) -->
+        <activity
+            android:name="com.jrees.wowcompanion.FrameGenPickActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+    </application>
+</manifest>
