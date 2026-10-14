@@ -1943,12 +1943,26 @@ fun XServerScreen(
                                 receiver?.hideKeyboard() ?: imm.hideSoftInputFromWindow(anchor.windowToken, 0)
                                 return@post
                             }
-                            receiver?.showKeyboard()          // its focus and input session (test6's first step)
-                            anchor.postDelayed({
+                            // p-auth-keyboard (the Thor's IMM log, a real authenticator): the show alone OPENED it and the toggle that
+                            // followed 300 ms later CLOSED it ("instantly opens then closes"). Now SHOW only; the toggle is the fallback
+                            // when Android answers "still hidden", or nothing within RESULT_WAIT_MS (test9's device)
+                            val log = com.jrees.wowcompanion.SetupBridge.log
+                            fun toggle(why: String) {
                                 @Suppress("DEPRECATION")
                                 imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
-                                com.jrees.wowcompanion.SetupBridge.log?.invoke("sign-in: keyboard toggled")
-                            }, 300L)
+                                log?.invoke("sign-in: keyboard toggled ($why)")
+                            }
+                            if (receiver == null) { toggle("no input receiver"); return@post }
+                            var answered = false
+                            receiver.showKeyboard { result ->
+                                if (answered) return@showKeyboard
+                                answered = true
+                                if (com.jrees.wowcompanion.SignInKeyboard.needToggle(result)) toggle("show answered $result")
+                                else log?.invoke("sign-in: keyboard shown (answer $result)")
+                            }
+                            anchor.postDelayed({
+                                if (!answered) { answered = true; toggle("no answer in ${com.jrees.wowcompanion.SignInKeyboard.RESULT_WAIT_MS} ms") }
+                            }, com.jrees.wowcompanion.SignInKeyboard.RESULT_WAIT_MS)
                         }
                     }
                 }

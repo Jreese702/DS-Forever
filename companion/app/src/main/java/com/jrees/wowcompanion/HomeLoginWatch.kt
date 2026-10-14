@@ -50,6 +50,10 @@ class HomeLoginWatch(
     private var carry = ""
     /** polls in a row that saw [HomeLogin.loggedOut] */
     private var outPolls = 0
+    /** Connection.log (p-auth-keyboard): read beside General.log until past the login screen; -1 = not placed yet this client run */
+    private var connOffset = -1L
+    private var connCarry = ""
+    private var clientStartSec = 0L
 
     fun start() {
         if (running) return
@@ -113,6 +117,7 @@ class HomeLoginWatch(
         val size = b[2]
         if (p != path || pid != client) {                  // another game, or a new run of its client (its log starts empty)
             path = p; client = pid; carry = ""; state.reset(); clientSeenAt = android.os.SystemClock.elapsedRealtime(); outPolls = 0
+            connOffset = -1L; connCarry = ""; clientStartSec = b[6]
             // A LOG OLDER THAN THIS CLIENT is the previous run's (2026-10-05 22:01, b46: the new client was seen ~5 s before it emptied
             // the log, the old in-world log was read, and "in the world" latched for the new run - no Login row): skipped, and it does
             // not count as size, until the client empties it (then everything in it is this run's)
@@ -133,6 +138,8 @@ class HomeLoginWatch(
         val screen = b[5] > 0L || android.os.SystemClock.elapsedRealtime() - clientSeenAt >= HomeLogin.LOGIN_SCREEN_FALLBACK_MS
         if (state.client(true, pkg in HomeLogin.WF_PKGS || pkg == LauncherHooks.pkg, size - runBase, b[4] > 0L, screen, age >= HomeLogin.LOGIN_AGAIN_QUIET_S))
             publish()
+        // the authenticator / a refusal, perhaps sooner from Connection.log than from the block-buffered General.log (p-auth-keyboard)
+        if (!state.inWorld && !state.pastLogin) readConnection(p)
         // in the world LogTail reads the log; nothing more to learn here until this client run ends
         if (state.inWorld) { offset = size; carry = ""; return }
         if (size <= offset) return
@@ -150,6 +157,33 @@ class HomeLoginWatch(
         var changed = false
         for (line in text.substring(0, cut).split('\n')) {
             val e = HomeLogin.parse(line) ?: continue
+            if (e is HomeLogin.Event.Authenticator && state.phase != HomeLogin.Phase.AUTH) NativeLogin.logEvent("sign-in: authenticator line read from General.log")
+            if (state.note(e)) changed = true
+        }
+        if (changed) publish()
+    }
+
+    /**
+     * CONNECTION.LOG beside General.log (p-auth-keyboard: General.log's authenticatorRequired arrived ~25 s after the read, held in the
+     * client's ~48 KiB write buffer). The same "[Connection]" lines, if this file is written sooner; only the authenticator, a refusal
+     * and the queue are taken from it (General.log stays the one source of the rest). Plain reads (the launcher has the access).
+     */
+    private fun readConnection(general: String) {
+        val f = java.io.File(general.substringBeforeLast('/') + "/Connection.log")
+        if (!f.isFile) return
+        val size = f.length()
+        if (connOffset < 0L) connOffset = if (clientStartSec > 0L && f.lastModified() / 1000 < clientStartSec) size else 0L
+        if (size < connOffset) { connOffset = 0L; connCarry = "" }
+        if (size <= connOffset) return
+        val bytes = readPlain(f.path, connOffset, minOf(size - connOffset, MAX_READ)) ?: return
+        connOffset += bytes.size
+        val text = connCarry + String(bytes, Charsets.UTF_8).replace("\u0000", "")
+        val cut = text.lastIndexOf('\n')
+        connCarry = if (cut < 0) text.takeLast(4096) else text.substring(cut + 1).takeLast(4096)
+        if (cut < 0) return
+        var changed = false
+        for (e in HomeLogin.connectionEvents(text.substring(0, cut))) {
+            if (e is HomeLogin.Event.Authenticator && state.phase != HomeLogin.Phase.AUTH) NativeLogin.logEvent("sign-in: authenticator line read from Connection.log")
             if (state.note(e)) changed = true
         }
         if (changed) publish()

@@ -220,14 +220,24 @@ class IMEInputReceiver(
         return KeyDispatch(keyCode = keyCode, requiresShift = requiresShift)
     }
 
-    fun showKeyboard() {
+    /**
+     * Focus, then show. [onResult] (DS Forever's sign-in, p-auth-keyboard) gets InputMethodManager's answer (RESULT_SHOWN, ...) or
+     * null when there is no IMM: the caller decides whether a fallback is needed, so a keyboard that opened is never toggled shut.
+     */
+    fun showKeyboard(onResult: ((Int?) -> Unit)? = null) {
         post {
             imeSessionActive = true
             isFocusable = true
             isFocusableInTouchMode = true
             requestFocus()
             val imm = displayContext.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+            if (imm == null) { onResult?.invoke(null); return@post }
+            val answer = onResult?.let { cb ->
+                object : android.os.ResultReceiver(handler) {
+                    override fun onReceiveResult(resultCode: Int, resultData: android.os.Bundle?) = cb(resultCode)
+                }
+            }
+            imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT, answer)
             Timber.d("IMEInputReceiver: Requested to show keyboard")
         }
     }
