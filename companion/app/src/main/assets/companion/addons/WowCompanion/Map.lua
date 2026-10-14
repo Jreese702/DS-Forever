@@ -98,242 +98,33 @@ local function setIcons(scale)
 end
 WC.minimapIconsOff = false     -- what the last hide / show did to the markers (for the probe line and the tests)
 
--- THE QUEST-AREA SHADING (the user after batch 6, 2026-09-30: "All the ui is hidden now except the quest area still shows where
--- the minimap used to be"). The engine draws the quest / bonus-objective / dig-site areas ("blobs") on the Minimap widget too;
--- neither the icon scale nor the cluster's alpha reaches them. Their alpha setters (MinimapFrameAPI) take them to 0 while
--- hidden. THERE ARE NO GETTERS, and the game's own UI never sets these (not in this build's Minimap.lua / Minimap.xml), so
--- the engine's own values cannot be read: showing puts back 1.0, the neutral value of an alpha multiplier -- an ASSUMPTION.
--- A /reload always restores the engine's exact values.
-local BLOB_ALPHAS = {
-    "SetQuestBlobInsideAlpha", "SetQuestBlobOutsideAlpha", "SetQuestBlobRingAlpha",
-    "SetTaskBlobInsideAlpha", "SetTaskBlobOutsideAlpha", "SetTaskBlobRingAlpha",
-    "SetArchBlobInsideAlpha", "SetArchBlobOutsideAlpha", "SetArchBlobRingAlpha",
-}
-local BLOB_SHOWN = 1.0
-local function setBlobs(alpha)
-    local mm = _G.Minimap
-    if not mm then return 0 end
-    local n = 0
-    for _, name in ipairs(BLOB_ALPHAS) do
-        local fn = mm[name]
-        if type(fn) == "function" and pcall(fn, mm, alpha) then n = n + 1 end
-    end
-    return n
-end
-WC.minimapBlobsOff = false
+-- THE QUEST-AREA LINES (b-quest-area-minimap; the user, 2026-09-30 and again 2026-10-13 with Game UI Off: "the blue bubbles from
+-- quests is still appearing in the minimap"). The engine draws the quest / bonus-objective / dig-site area borders on the Minimap
+-- widget, and neither the cluster's alpha nor the icon scale reaches them. Measured on the Thor (v1.0.4's rounds): the nine blob
+-- alpha setters, the three ring scalars, the nine blob textures and the widget's own alpha all TAKE and change nothing visible;
+-- the line the user saw is the focused quest's outline (interface/minimap/ui-questblobminimap-outsideselected, which no setter
+-- reaches). What works is the MASK, which clips everything the widget draws: while hidden it is MASK_OFF, the client's own fully
+-- transparent minimap picture (533894, ui-questblobminimap-inside: alpha 0 on every pixel); shown again it is MASK_ON, the atlas
+-- camelot's Skin.lua sets in both rotate modes. With the markers' icon scale beside it. A property setter, runtime only.
+-- KEEPING IT: the hub hides the minimap ONCE (Hub.lua's apply never asks again while it says hidden), and Skin.lua puts its own
+-- mask back on a rotateMinimap change, so while the hub's hide stands (not the death peek, not in combat) both are said again on
+-- the quest / zone / POI / loading events, at combat's end and every REASSERT_S on the probe's frame. The map document carries
+-- mmk / mmi (the mask / icon scale taken) and mmf (the frame the hub hid) while hidden. In WC (Map.lua's main chunk is at Lua
+-- 5.1's 200-local limit).
+WC.mmHide = { REASSERT_S = 1.0, at = -1000, i = false, k = false,
+              MASK_OFF = 533894, MASK_ON = "ui-hud-minimap-frame-generic-mask" }
 
--- KEEPING THEM OFF (b-quest-area-minimap, the user 2026-10-13: Game UI Off, "quest-area shapes still draw on the top screen where
--- the minimap was"). The hub hides the minimap ONCE (Hub.lua's apply: the element already says hidden, so it never asks again),
--- but the engine can put the shading and the markers back on its own (a loading screen, a quest's area changing, a tracking
--- switch: there are no getters to tell). So while the hub's hide stands (not the death peek, not in combat), the same two
--- setters are said again on the quest / zone / tracking events and every REASSERT_S on the probe's frame. Setting a value it
--- already has costs nine pcalls. In WC (Map.lua's main chunk is at Lua 5.1's 200-local limit).
--- b-quest-area-minimap, round 2 (the user on batch5: "the blue bubbles from quests is still appearing in the minimap", the new
--- Map.lua installed, Minimap Off). Every layer the client lets an add-on reach goes off together, and the map document says which
--- took it, so ONE log tells what is left: the icon scale (mmi), the nine blob alphas (mmb), the three blob RING SCALARS (mmr: the
--- ring's size, 0 = none; shown again at 1.0, the same assumption as the alphas, no getters), the Minimap WIDGET's own alpha (mma:
--- the cluster's alpha was measured not to reach the engine's layers; the widget's own is tried as well, 1 again on show) and the
--- frame the hub hid (mmf). Once per session, the client's own Minimap methods with Blob / POI / Quest in their names go out as a
--- {"type":"cap","what":"mmapi"} line (the API this build really has). Property setters only: no Hide / Show, no layout, no CVar.
--- ROUND 3 (batch7's log: mmb 9, mmr 3, mmi 1, mma 1, and the bubbles still drew: the client takes the alphas and ignores them).
--- The blob TEXTURES go too: while hidden each of the nine is set to "" (no picture), with the alphas 0 before and after (a
--- texture change may be what makes the engine rebuild the blobs, and so apply the alphas). Shown again, each gets the client's
--- own minimap blob picture back by file id: the interface/minimap/ui-*blob* files (the client's listfile), which no UI code sets,
--- so the engine's own defaults. The pictures change only on a hide / show / event, never on the 1 s tick. mmt = textures taken.
--- ROUND 5, THE MASK (batch8's photo + the client's own pictures: the line is the FOCUSED quest's area outline, drawn with
--- interface/minimap/ui-questblobminimap-outsideselected (1083696, light blue-white), which no Minimap setter reaches). The mask
--- clips everything the widget draws, that outline included: while hidden it is MASK_OFF, the client's own fully transparent
--- minimap picture (533894, ui-questblobminimap-inside: alpha 0 on every pixel); shown again it is MASK_ON, the atlas camelot's
--- Skin.lua sets in both rotate modes. Said on every pass (also the 1 s tick: Skin.lua puts its own back on a rotateMinimap
--- change). mmk = the mask taken.
-WC.mmHide = { REASSERT_S = 1.0, at = -1000, n = 0, r = 0, t = 0, i = false, a = false, k = false,
-              MASK_OFF = 533894, MASK_ON = "ui-hud-minimap-frame-generic-mask",
-              RINGS = { "SetQuestBlobRingScalar", "SetTaskBlobRingScalar", "SetArchBlobRingScalar" },
-              TEX = { { "SetQuestBlobInsideTexture", 533894 }, { "SetQuestBlobOutsideTexture", 533895 },
-                      { "SetQuestBlobRingTexture", 533893 },                   -- interface/minimap/ui-questblob(minimap)-*
-                      { "SetTaskBlobInsideTexture", 1117897 }, { "SetTaskBlobOutsideTexture", 1117899 },
-                      { "SetTaskBlobRingTexture", 1117898 },                   -- interface/minimap/ui-bonusobjectiveblob-*
-                      { "SetArchBlobInsideTexture", 533891 }, { "SetArchBlobOutsideTexture", 533892 },
-                      { "SetArchBlobRingTexture", 533890 } } }                 -- interface/minimap/ui-archblob(minimap)-*
-
--- the nine blob pictures: none ([off]) or the client's own minimap ones; the count taken
-function WC.mmHide.textures(off)
+-- the minimap's engine-drawn layers off ([off]) or back to the game's own
+function WC.mmHide.layers(off)
     local H, mm = WC.mmHide, _G.Minimap
-    local n = 0
-    if mm then
-        for _, e in ipairs(H.TEX) do
-            local fn = mm[e[1]]
-            if type(fn) == "function" and pcall(fn, mm, off and "" or e[2]) then n = n + 1 end
-        end
-    end
-    H.t = n
-end
-
--- every reachable layer of the minimap off ([off]) or back to the game's values (as far as they are known); [pictures]: the blob
--- textures too (a hide, a show, an event: not the 1 s tick)
-function WC.mmHide.layers(off, pictures)
-    local H, mm = WC.mmHide, _G.Minimap
-    if pictures ~= false then
-        if off then setBlobs(0) end
-        H.textures(off)
-    end
     H.i = setIcons(off and ICONS_OFF or gameIconScale())
-    H.n = setBlobs(off and 0 or BLOB_SHOWN)
-    local r = 0
-    if mm then
-        for _, name in ipairs(H.RINGS) do
-            local fn = mm[name]
-            if type(fn) == "function" and pcall(fn, mm, off and 0 or 1) then r = r + 1 end
-        end
-    end
-    H.r = r
     H.k = false
     if mm and type(mm.SetMaskTexture) == "function" then
         H.k = pcall(mm.SetMaskTexture, mm, off and H.MASK_OFF or H.MASK_ON)
     end
-    H.a = false
-    if mm and type(mm.SetAlpha) == "function" and hiddenFrame ~= "Minimap" then
-        H.a = pcall(mm.SetAlpha, mm, off and 0 or 1)
-    end
-    if off then
-        WC.minimapIconsOff = H.i
-        WC.minimapBlobsOff = H.n > 0
-        if not H.apiSent then H.apiSent = true; pcall(H.api) end
-    else
-        if H.i then WC.minimapIconsOff = false end
-        if H.n > 0 then WC.minimapBlobsOff = false end
-    end
+    if off then WC.minimapIconsOff = H.i elseif H.i then WC.minimapIconsOff = false end
 end
 
--- the client's Minimap methods about blobs / POIs / quests, once (a read of the widget's method table)
-function WC.mmHide.api()
-    local mm = _G.Minimap
-    local mt = mm and getmetatable(mm)
-    local idx = mt and mt.__index
-    local names = {}
-    if type(idx) == "table" then
-        for k, v in pairs(idx) do
-            if type(k) == "string" and type(v) == "function" and (k:find("Blob") or k:find("POI") or k:find("Quest")) then
-                names[#names + 1] = k
-            end
-        end
-    end
-    table.sort(names)
-    WC.send(WC.encode({ type = "cap", what = "mmapi", names = table.concat(names, ",") }))
-end
-
--- WHAT DRAWS IN THE CORNER (round 4, a diagnostic only; batch8: mmt 9 and every setter took, and the user's photo shows a THIN
--- bright blue-white bent LINE with round caps at about x 1605-1680, y 190-315 of the 1920x1080 top screen, inside the hidden
--- minimap's corner). A read of every shown frame and its regions (Line ones too) whose screen rectangle meets that box or the
--- Minimap's own, and that would DRAW (effective alpha above SCAN_ALPHA), smallest first: debug name, object type, strata /
--- level, effective alpha, rectangle in screen pixels (x, y from the top left, w, h). Plus the super-tracked quest, the quest POI
--- world effects and whether the ground is drawn. A {"type":"cap","what":"mmscan"} line SCAN_AT seconds after the hide (one per
--- session per delay). Reads only: nothing is set, hooked or shown.
-WC.mmHide.SCAN_AT = { 10, 120, 600 }
-WC.mmHide.SCAN_BOX = { 1605, 190, 1680, 315 }     -- the photo's line, screen pixels from the top left
-WC.mmHide.SCAN_PAD = 60
-WC.mmHide.SCAN_ALPHA = 0.02
-WC.mmHide.SCAN_MAX = 40
-
-function WC.mmHide.scan(tag)
-    local H = WC.mmHide
-    if type(InCombatLockdown) == "function" and InCombatLockdown() then return end
-    local okP, pw, ph = CALL(GetPhysicalScreenSize)
-    if not okP or type(ph) ~= "number" or not WC.isPlain(ph) or ph <= 0 then pw, ph = 1920, 1080 end
-    local k = ph / 768
-    -- an object's rectangle in screen pixels (x, y from the top left), or nil
-    local function px(o)
-        local ok, l, b, w, h = pcall(o.GetRect, o)
-        local okE, e = pcall(o.GetEffectiveScale, o)
-        if not ok or not okE or type(l) ~= "number" or type(w) ~= "number" or type(e) ~= "number" then return nil end
-        if not (WC.isPlain(l) and WC.isPlain(b) and WC.isPlain(w) and WC.isPlain(h) and WC.isPlain(e)) then return nil end
-        local s = e * k
-        return l * s, ph - (b + h) * s, w * s, h * s
-    end
-    local boxes = { { H.SCAN_BOX[1] - H.SCAN_PAD, H.SCAN_BOX[2] - H.SCAN_PAD, H.SCAN_BOX[3] + H.SCAN_PAD, H.SCAN_BOX[4] + H.SCAN_PAD } }
-    local mm = _G.Minimap
-    if mm then
-        local x, y, w, h = px(mm)
-        if x then boxes[#boxes + 1] = { x, y, x + w, y + h } end
-    end
-    local function meets(x, y, w, h)
-        for _, bx in ipairs(boxes) do
-            if x < bx[3] and x + w > bx[1] and y < bx[4] and y + h > bx[2] then return true end
-        end
-        return false
-    end
-    local function plainStr(f)
-        local ok, v = pcall(f)
-        if ok and type(v) == "string" and WC.isPlain(v) then return v end
-        return "?"
-    end
-    local hits = {}
-    local function look(o, isRegion)
-        local okV, vis = pcall(o.IsVisible, o)
-        if not okV or vis ~= true then return end
-        local okA, a = pcall(o.GetEffectiveAlpha, o)
-        if not okA or type(a) ~= "number" or not WC.isPlain(a) or a <= H.SCAN_ALPHA then return end
-        local x, y, w, h = px(o)
-        if not x or w <= 0 or h <= 0 or not meets(x, y, w, h) then return end
-        local name = plainStr(function() return o:GetDebugName() end)
-        local typ = plainStr(function() return o:GetObjectType() end)
-        local strata, level = "", ""
-        if not isRegion then
-            strata = plainStr(function() return o:GetFrameStrata() end)
-            local okL, lv = pcall(o.GetFrameLevel, o)
-            if okL and type(lv) == "number" and WC.isPlain(lv) then level = tostring(lv) end
-        else
-            strata = plainStr(function() return (o:GetDrawLayer()) end)
-        end
-        hits[#hits + 1] = { area = w * h, s = string.format("%s|%s|%s%s|a%.2f|%d,%d,%d,%d", name, typ, strata,
-            level ~= "" and (":" .. level) or "", a, math.floor(x + 0.5), math.floor(y + 0.5), math.floor(w + 0.5), math.floor(h + 0.5)) }
-    end
-    local nFrames = 0
-    if type(EnumerateFrames) == "function" then
-        local okF, f = pcall(EnumerateFrames)
-        while okF and f do
-            nFrames = nFrames + 1
-            look(f, false)
-            local okR, regions = pcall(function() return { f:GetRegions() } end)
-            if okR then for _, r in ipairs(regions) do pcall(look, r, true) end end
-            okF, f = pcall(EnumerateFrames, f)
-        end
-    end
-    table.sort(hits, function(p, q) return p.area < q.area end)
-    local list = {}
-    for i = 1, math.min(#hits, H.SCAN_MAX) do list[i] = hits[i].s end
-    -- the Minimap itself, whatever its alpha (the filter above drops it: its alpha is 0 while hidden, and it is the first suspect)
-    local mmState
-    if mm then
-        local okV, vis = pcall(mm.IsVisible, mm)
-        local okA, a = pcall(mm.GetEffectiveAlpha, mm)
-        local x, y, w, h = px(mm)
-        mmState = string.format("vis=%s a=%s %s", tostring(okV and WC.isPlain(vis) and vis), (okA and type(a) == "number" and WC.isPlain(a))
-            and string.format("%.2f", a) or "?", x and string.format("%d,%d,%d,%d", x, y, w, h) or "?")
-    end
-    local okS, st = CALL(function() return C_SuperTrack.GetSuperTrackedQuestID() end)
-    local okW, fx = CALL(function() return C_Minimap.GetNumQuestPOIWorldEffects() end)
-    local okG, gr = CALL(function() return C_Minimap.GetDrawGroundTextures() end)
-    WC.send(WC.encode({ type = "cap", what = "mmscan", tag = tag, frames = nFrames, n = #hits, screen = pw .. "x" .. ph,
-        st = (okS and WC.isPlain(st)) and st or nil, fx = (okW and WC.isPlain(fx)) and fx or nil,
-        ground = (okG and WC.isPlain(gr)) and tostring(gr) or nil, hidden = hiddenFrame, mm = mmState, hits = table.concat(list, " ; ") }))
-    pcall(WC.push)
-end
-
--- the scans after the hide (once per session per delay)
-function WC.mmHide.scanSoon()
-    local H = WC.mmHide
-    if H.scanArmed or not (C_Timer and C_Timer.After) then return end
-    H.scanArmed = true
-    for _, d in ipairs(H.SCAN_AT) do
-        pcall(C_Timer.After, d, function() if hiddenFrame then pcall(H.scan, "t" .. d) end end)
-    end
-end
-
--- KEEPING THEM OFF (round 1, 2026-10-13): the hub hides the minimap ONCE (Hub.lua's apply never asks again while it says hidden),
--- but the engine can put layers back on its own (a loading screen, a quest's area changing, a tracking switch: no getters to
--- tell). While the hub's hide stands (not the death peek, not in combat) they are said again on the quest / zone / tracking / POI
--- events and every REASSERT_S on the probe's frame. In WC (Map.lua's main chunk is at Lua 5.1's 200-local limit).
 function WC.mmHide.reassert(force)
     local H = WC.mmHide
     if not hiddenFrame or peek then return false end
@@ -341,7 +132,7 @@ function WC.mmHide.reassert(force)
     local t = (type(GetTime) == "function") and GetTime() or 0
     if not force and t - H.at < H.REASSERT_S then return false end
     H.at = t
-    H.layers(true, force == true)
+    H.layers(true)
     return true
 end
 
@@ -354,9 +145,8 @@ function WC.hideMinimap()
     local ok = pcall(function() fr:SetAlpha(0) end)
     if not ok then return false, "could not hide" end
     hiddenFrame = name
-    WC.mmHide.layers(true)                          -- the engine-drawn markers and the quest-area shading too
+    WC.mmHide.layers(true)                          -- the engine-drawn markers and the quest-area lines too
     WC.mmHide.at = (type(GetTime) == "function") and GetTime() or 0
-    pcall(WC.mmHide.scanSoon)                       -- what still draws in the corner (round 4, a read)
     return true, name
 end
 
@@ -1207,12 +997,9 @@ function WC.collectMap()
     end
 
     out.track = trackingState()          -- Find Herbs / Minerals / Treasure on or off (see trackingState)
-    -- the hidden minimap's layers at the last re-assert (WC.mmHide; absent = shown): blob alphas / ring scalars that took 0, the
-    -- icon scale and the widget's alpha taken (1 / 0), the frame the hub hid
+    -- the hidden minimap at the last re-assert (WC.mmHide; absent = shown): the mask and the icon scale taken (1 / 0), the frame
     if hiddenFrame and not peek then
-        local H = WC.mmHide
-        out.mmb, out.mmr, out.mmi, out.mma, out.mmf, out.mmt = H.n, H.r, H.i and 1 or 0, H.a and 1 or 0, hiddenFrame, H.t
-        out.mmk = H.k and 1 or 0
+        out.mmk, out.mmi, out.mmf = WC.mmHide.k and 1 or 0, WC.mmHide.i and 1 or 0, hiddenFrame
     end
 
     out.ok = true
@@ -1662,7 +1449,7 @@ local QUEST_MARKER_EVENTS = {
 }
 
 local function onQuestMarkerEvent(_, event, a1)
-    -- the engine may have drawn the hidden minimap's quest shading again: off again (throttled; at once on a world / zone entry)
+    -- the hidden minimap's mask may have been put back: said again (throttled; at once on a world / zone entry)
     pcall(WC.mmHide.reassert, event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA")
     if event == "QUEST_LOG_UPDATE" then
         onQuestLog()                -- the hot one: a flag test until a check is due
@@ -2645,7 +2432,7 @@ end
 
 function WC.mmp.tick(elapsed)
     local P = WC.mmp
-    pcall(WC.mmHide.reassert, false)                               -- the hidden minimap's shading stays off (see WC.mmHide)
+    pcall(WC.mmHide.reassert, false)                               -- the hidden minimap's mask stays on (see WC.mmHide)
     if P.opt % 2 == 0 then return end                              -- the probe is off (the auto-switch rides its scans)
     if P.scan then return P.step() end
     P.wait = P.wait - (type(elapsed) == "number" and elapsed or 0)
