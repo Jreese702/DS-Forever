@@ -66,12 +66,17 @@ class ReportPage(c: Context) : FrameLayout(c) {
     private var status = ""
     private var busy = false
     private var focus = Model.Target.WORDS
+    /** the keyboard's slide (0 = down, 1 = up), Chat's own motion; the words box and the buttons ride above it */
+    private var kbK = 0f
+    private var kbAnim: android.animation.ValueAnimator? = null
+    /** with the keyboard up: the cursor is on the keyboard (true) or on the buttons above it (D-pad up from its top row) */
+    private var inKeys = true
     private val boxes = HashMap<Model.Target, RectF>()
 
     init {
         setWillNotDraw(false)
         kb.text = { words }
-        kb.onText = { t -> words = t.take(MAX_WORDS); invalidate() }
+        kb.onText = { t -> words = t.take(MAX_WORDS); invalidate() }     // every key: the buttons light up as soon as the rule is met
         kb.onSend = { closeKeyboard() }
         kb.onClose = { closeKeyboard() }
         addView(preview, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply { topMargin = 110 })
@@ -94,7 +99,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
     fun close() {
         if (!isOpen) return
         isOpen = false; visibility = View.GONE
-        kb.visibility = View.GONE; preview.visibility = View.GONE
+        kbAnim?.cancel(); kbK = 0f; kb.visibility = View.GONE; preview.visibility = View.GONE
         ui.removeCallbacks(tick)
         onClosed()
     }
@@ -103,8 +108,24 @@ class ReportPage(c: Context) : FrameLayout(c) {
         override fun run() { if (!isOpen) return; invalidate(); ui.postDelayed(this, 1000) }
     }
 
-    private fun openKeyboard() { kb.open(); kb.visibility = View.VISIBLE; invalidate() }
-    private fun closeKeyboard() { kb.visibility = View.GONE; focus = if (ReportFlow.canSend(words)) Model.Target.SEND else Model.Target.WORDS; invalidate() }
+    private fun openKeyboard() { kb.open(); inKeys = true; slide(1f) }
+    private fun closeKeyboard() { slide(0f); inKeys = true; focus = if (ReportFlow.canSend(words)) Model.Target.SEND else Model.Target.WORDS; invalidate() }
+    private val kbUp get() = kb.visibility == View.VISIBLE && kbK > 0f
+
+    /** the keyboard slides up (1) or down (0) with Chat's curve; the page lays itself out above it on every frame */
+    private fun slide(to: Float) {
+        kbAnim?.cancel()
+        if (to > 0f) kb.visibility = View.VISIBLE
+        kbAnim = android.animation.ValueAnimator.ofFloat(kbK, to).apply {
+            duration = SLIDE_MS
+            interpolator = Motion.curve()
+            addUpdateListener { kbK = it.animatedValue as Float; kb.translationY = (1f - kbK) * kb.height.coerceAtLeast(1); invalidate() }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) { if (kbK == 0f) kb.visibility = View.GONE; invalidate() }
+            })
+            start()
+        }
+    }
 
     // ------------------------------------------------------------------ input
 
@@ -118,7 +139,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
     /** one controller press by the guest pad's name (PADDUP .. PAD4, the shoulders, the triggers, PADFORWARD) */
     fun padKey(k: String) {
         if (!isOpen) return
-        if (kb.visibility == View.VISIBLE) { kb.press(k); return }
+        if (kbUp) { keysWithBoard(k); return }
         if (preview.visibility == View.VISIBLE) {
             when (k) {
                 "PAD2", "PAD1" -> { preview.visibility = View.GONE; invalidate() }
@@ -134,6 +155,32 @@ class ReportPage(c: Context) : FrameLayout(c) {
             "PADDDOWN", "PADDRIGHT" -> focus = live[(i + 1) % live.size]
             "PAD1" -> press(live.getOrElse(i) { live[0] })
             "PAD2" -> close()
+        }
+        invalidate()
+    }
+
+    /**
+     * The keyboard is up: on the keyboard every key types, except D-pad up from its top row, which goes to the buttons above it
+     * (Record / Send report, or the words box while nothing is said yet); there left / right walk them, A presses, down goes back to
+     * the keyboard, B closes the keyboard.
+     */
+    private fun keysWithBoard(k: String) {
+        if (inKeys) {
+            if (k == "PADDUP" && kb.keys.row == 0) {
+                inKeys = false
+                focus = if (ReportFlow.canSend(words)) Model.Target.RECORD else Model.Target.WORDS
+                invalidate(); return
+            }
+            kb.press(k); return
+        }
+        val row = if (ReportFlow.canSend(words)) listOf(Model.Target.RECORD, Model.Target.SEND) else listOf(Model.Target.WORDS)
+        val i = row.indexOf(focus).coerceAtLeast(0)
+        when (k) {
+            "PADDLEFT" -> focus = row[(i - 1 + row.size) % row.size]
+            "PADDRIGHT" -> focus = row[(i + 1) % row.size]
+            "PADDDOWN" -> inKeys = true
+            "PAD1" -> if (focus == Model.Target.WORDS) inKeys = true else { val t = focus; closeKeyboard(); focus = t; press(t) }
+            "PAD2" -> closeKeyboard()
         }
         invalidate()
     }
@@ -184,9 +231,14 @@ class ReportPage(c: Context) : FrameLayout(c) {
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (e.actionMasked == MotionEvent.ACTION_UP && kb.visibility != View.VISIBLE && preview.visibility != View.VISIBLE) {
+        if (e.actionMasked == MotionEvent.ACTION_UP && preview.visibility != View.VISIBLE) {
             val live = Model.live(ReportFlow.canSend(words))
-            boxes.entries.firstOrNull { it.key in live && it.value.contains(e.x, e.y) }?.let { focus = it.key; press(it.key) }
+            boxes.entries.firstOrNull { it.key in live && it.value.contains(e.x, e.y) }?.key?.let { t ->
+                val up = kbUp
+                if (up && t != Model.Target.WORDS) closeKeyboard()
+                focus = t
+                if (!(up && t == Model.Target.WORDS)) press(t)
+            }
         }
         return true                                         // the page owns every touch while it is open
     }
@@ -196,8 +248,16 @@ class ReportPage(c: Context) : FrameLayout(c) {
     override fun onDraw(c: Canvas) {
         val w = width.toFloat()
         UiKit.cover(c, RectF(0f, 0f, w, height.toFloat()), 0.9f)
-        val title = UiKit.titlePaint(44f)
-        c.drawText("Send a problem report", PAD, 70f, title)
+        // the rest layout (box 110..310, buttons under it) and, with the keyboard up, the same pieces right above the board
+        val k = if (kb.visibility == View.VISIBLE) kbK else 0f
+        val boardTop = height - ChatKeyboard.fullHeight().toFloat()
+        val upButtonsTop = boardTop - 16f - BUTTON_H
+        val upBoxBottom = upButtonsTop - 20f
+        val upBoxTop = maxOf(16f, upBoxBottom - BOX_UP_H)
+        val boxTop = lerp(110f, upBoxTop, k)
+        val boxBottom = lerp(110f + BOX_H, upBoxBottom, k)
+        val buttonsTop = lerp(110f + BOX_H + 30f, upButtonsTop, k)
+        if (boxTop > 80f) c.drawText("Send a problem report", PAD, 70f, UiKit.titlePaint(44f))
         if (preview.visibility == View.VISIBLE) {
             UiKit.bodyPaint(24f, Theme.textDim).let { c.drawText("Everything the report holds. B goes back.", PAD, 100f, it) }
             return
@@ -206,18 +266,18 @@ class ReportPage(c: Context) : FrameLayout(c) {
         boxes.clear()
         // the words: the box the keyboard types into
         val body = UiKit.bodyPaint(30f)
-        val box = RectF(PAD, 110f, w - PAD, 110f + BOX_H)
+        val box = RectF(PAD, boxTop, w - PAD, boxBottom)
         boxes[Model.Target.WORDS] = box
         UiKit.border(c, box)
         val shown = words.ifEmpty { "What were you doing when it went wrong?" }
         body.color = if (words.isEmpty()) Theme.textDim else Theme.text
         var y = box.top + 46f
-        for (line in SetupPanel.wrap(shown + if (kb.visibility == View.VISIBLE) "_" else "", body, box.width() - 40f).takeLast(4)) {
+        val fits = ((box.height() - 20f) / 40f).toInt().coerceAtLeast(1)
+        for (line in SetupPanel.wrap(shown + if (k > 0f) "_" else "", body, box.width() - 40f).takeLast(fits)) {
             c.drawText(line, box.left + 20f, y, body); y += 40f
         }
-        if (kb.visibility == View.VISIBLE) { if (focus == Model.Target.WORDS) UiKit.focus(c, inset(box)); return }   // the board below
-        // Record and Send
-        var top = box.bottom + 30f
+        // Record and Send: above the keyboard while it is up (the user: "push up a bit above the keyboard")
+        var top = buttonsTop
         val half = (w - PAD * 2 - GAP) / 2f
         val rec = RectF(PAD, top, PAD + half, top + BUTTON_H)
         val send = RectF(rec.right + GAP, top, w - PAD, top + BUTTON_H)
@@ -225,6 +285,10 @@ class ReportPage(c: Context) : FrameLayout(c) {
         fun state(t: Model.Target) = if (!can || busy) UiKit.Button.DISABLED else UiKit.Button.UP
         UiKit.button(c, rec, Model.recordLabel(DiagLog.recording(), DiagLog.recordLeftMs()), state(Model.Target.RECORD))
         UiKit.button(c, send, "Send report", state(Model.Target.SEND))
+        if (k > 0f) {                                          // the board below: no link or line; the cursor only off the keys
+            if (!inKeys) boxes[focus]?.let { UiKit.focus(c, inset(it)) }
+            return
+        }
         top = rec.bottom + 46f
         // the small link
         val link = UiKit.bodyPaint(26f, Theme.gold).apply { isUnderlineText = true }
@@ -239,11 +303,16 @@ class ReportPage(c: Context) : FrameLayout(c) {
     }
 
     private fun inset(r: RectF) = RectF(r.left - 6f, r.top - 6f, r.right + 6f, r.bottom + 6f)
+    private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
 
     companion object {
         private const val PAD = 40f
         private const val GAP = 24f
         private const val BOX_H = 200f
+        /** the words box above the keyboard: three lines */
+        private const val BOX_UP_H = 150f
+        /** Chat's input slide (ChatView.INPUT_MS) */
+        private const val SLIDE_MS = 240L
         private const val BUTTON_H = 90f
         private const val MAX_WORDS = 1500
     }

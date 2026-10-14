@@ -22,10 +22,10 @@ object ReportFlow {
     fun onChange(l: () -> Unit) { listeners.add(l) }
     private fun changed() { for (l in listeners) runCatching { l() } }
 
-    /** "a few words": two words, or one long enough to say something */
+    /** something said (the Thor, batch15: "two words" kept Record grey after a short line): 3+ characters, a letter or digit among them */
     fun canSend(text: String): Boolean {
         val t = text.trim()
-        return t.split(Regex("\\s+")).count { it.any(Char::isLetterOrDigit) } >= 2 || t.length >= 12
+        return t.length >= 3 && t.any(Char::isLetterOrDigit)
     }
 
     /** the words kept with a recording (Record 5 minutes), "" = none */

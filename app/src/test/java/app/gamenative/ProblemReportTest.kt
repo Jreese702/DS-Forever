@@ -162,8 +162,8 @@ class ProblemReportTest {
     // ---- the report page and its flow (the user's rules)
 
     @Test fun theWordsAreRequired() {
-        for (t in listOf("", "   ", "bug", "  x  ")) assertFalse(t, ReportFlow.canSend(t))
-        for (t in listOf("bars blank", "  map froze  ", "crashloopingagain")) assertTrue(t, ReportFlow.canSend(t))
+        for (t in listOf("", "   ", "  x  ", "ab", "?!.")) assertFalse(t, ReportFlow.canSend(t))
+        for (t in listOf("bug", "bars blank", "  map froze  ", "lag")) assertTrue(t, ReportFlow.canSend(t))   // batch15: one short word lights Record
         assertEquals(listOf(ReportPage.Model.Target.WORDS, ReportPage.Model.Target.INCLUDED), ReportPage.Model.live(canSend = false))
         assertEquals(4, ReportPage.Model.live(canSend = true).size)
     }
