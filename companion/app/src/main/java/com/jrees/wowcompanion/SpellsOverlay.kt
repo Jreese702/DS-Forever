@@ -127,6 +127,10 @@ class SpellsOverlay(
         tick()
     }
 
+    /** batch8: the add-on's padmap (Spells' PadMap): each button's In combat spell, for the box's In combat tab */
+    private var padMap: PadMapModel.Map? = null
+    fun onPadMap(m: PadMapModel.Map) { padMap = m; if (boxOpen()) invalidate() }
+
     fun onBind(r: SpellsModel.BindResult) {
         result = r; resultAt = SystemClock.uptimeMillis()
         if (boxSpell == null) boxSpell = r.spellId
@@ -238,8 +242,15 @@ class SpellsOverlay(
         val face = RectF(w / 2f + 290f - 240f, cy + 236f, w / 2f + 290f + 240f, cy + 236f + 340f)
         val lit = r?.takeIf { it.ok }?.pad?.takeIf { it.bar == set }?.pos ?: -1
         val icon = e?.let { Icons.get(it.icon) }
-        val drawn = try { drawSet(c, set, dpad, face, lit.takeIf { it > 0 }, icon) } catch (_: Throwable) { false }
-        if (!drawn) standIns(c, dpad, face, lit, icon, st)
+        // batch8 (the user: "when on the in combat tab the spells should all change to show what's bound for in combat"): with In combat
+        // on, each button shows its IN COMBAT spell for that set (the Controller room's In combat tab: the overlay's fight spell, a base X /
+        // Y / A's; the gold swords on it; none = an empty slot), from the add-on's padmap; Normal shows the game's bar as before
+        val m = padMap
+        if (f && m != null) fightIns(c, dpad, face, lit, icon, st, set, m)
+        else {
+            val drawn = try { drawSet(c, set, dpad, face, lit.takeIf { it > 0 }, icon) } catch (_: Throwable) { false }
+            if (!drawn) standIns(c, dpad, face, lit, icon, st)
+        }
 
         // the way back: B (the user on batch4: "instead of showing the - button as back when no triggers are held it should show B"; a
         // plain B backs out, Book b39); the "-" flips Normal / In combat. The triggers' glyphs stand bare ("the text on the ZL and ZR can be
@@ -270,6 +281,23 @@ class SpellsOverlay(
         cross(c, face, positions, faceGlyphs, lit, icon)
     }
 
+    /** batch8: the In combat picture, the stand-ins' cross with each button's fight spell (PadTabPage's In combat rule) and its swords */
+    private fun fightIns(c: Canvas, dpad: RectF, face: RectF, lit: Int, litIcon: android.graphics.Bitmap?, st: SpellsModel.PadStyle,
+                         set: Int, m: PadMapModel.Map) {
+        fun fight(p: Int): Int? {
+            val sl = PadMapModel.slot(m, set, p) ?: return null
+            return when {
+                sl.kind == PadMapModel.Kind.COMBAT && sl.ov -> sl.combat?.icon
+                sl.fight != null && PadMapModel.isFace(sl) -> sl.fight.icon
+                else -> null
+            }
+        }
+        val (positions, keys) = if (CastSettings.buttonLayout == CastSettings.ButtonLayout.NINTENDO)
+            intArrayOf(6, 5, 8, 7) to arrayOf("y", "x", "a", "b") else intArrayOf(5, 6, 7, 8) to arrayOf("x", "y", "b", "a")
+        cross(c, dpad, intArrayOf(1, 2, 3, 4), arrayOf("gen_left", "gen_up", "gen_right", "gen_down"), lit, litIcon, ::fight)
+        cross(c, face, positions, Array(4) { faceGlyph(st, keys[it]) }, lit, litIcon, ::fight)
+    }
+
     /** the Select button in the chosen set's look (UI Art: Nintendo minus, Xbox View, PlayStation Share / Create) */
     private fun selectGlyph(st: SpellsModel.PadStyle) = when (st) {
         SpellsModel.PadStyle.REV -> "rev_minus"
@@ -282,7 +310,9 @@ class SpellsOverlay(
         else "${st.prefix}_$key"
 
     /** four slots as a cross: left, top, right, bottom. [positions] = the game's position of each; [lit] = the one that took the spell */
-    private fun cross(c: Canvas, r: RectF, positions: IntArray, glyphs: Array<String>, lit: Int, icon: android.graphics.Bitmap?) {
+    private fun cross(c: Canvas, r: RectF, positions: IntArray, glyphs: Array<String>, lit: Int, icon: android.graphics.Bitmap?,
+                      /** batch8: a button's In combat spell icon (null = none); with it the slot shows it and the swords */
+                      fight: ((Int) -> Int?)? = null) {
         val s = 124f
         val cx = r.centerX(); val cy = r.centerY()
         val at = arrayOf(floatArrayOf(cx - 1.5f * s - 8f, cy - s / 2f), floatArrayOf(cx - s / 2f, cy - s - 12f),
@@ -290,7 +320,10 @@ class SpellsOverlay(
         for (i in 0..3) {
             val x = at[i][0]; val y = at[i][1]
             val isLit = positions[i] == lit
-            UiKit.slot(c, if (isLit) icon else null, x, y, s)
+            val fi = fight?.invoke(positions[i])
+            UiKit.slot(c, if (isLit) icon else fi?.let { Icons.get(it) }, x, y, s)
+            if (fi != null || (isLit && fight != null))
+                UiKit.tex("combat_swords")?.let { sw -> c.drawBitmap(sw, null, RectF(x + 6f, y + s - 46f, x + 46f, y + s - 8f), null) }
             if (isLit) UiKit.glow(c, RectF(x - 10f, y - 10f, x + s + 10f, y + s + 10f), Color.rgb(60, 255, 60), 0.9f)
             UiKit.pad(c, glyphs[i], x + s - 14f, y + 14f, 50f)
         }
