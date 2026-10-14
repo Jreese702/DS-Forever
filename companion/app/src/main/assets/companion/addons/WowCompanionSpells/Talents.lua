@@ -412,6 +412,23 @@ function WC.collectTalents()
     return doc
 end
 
+-- THE TEXT THE GAME HAS NOT LOADED YET (b-locked-talents, Thor batch2: "I have to move off and then back to that talent to read it"):
+-- a talent the player never learnt has a spell whose text the client loads only when asked, so the FIRST read is empty and a later one
+-- has it (the game's own tooltip refreshes itself when the data comes). Asked here, and the detail is sent again when it lands
+-- (SPELL_DATA_LOAD_RESULT, below) and, should that event not come on this client, a few times a quarter second apart.
+local emitDetail                -- below
+local textWait = { id = nil, tries = 0 }
+local TEXT_TRIES = 6
+local function waitForText(n)
+    if textWait.id ~= n.id then textWait.id, textWait.tries = n.id, 0 end
+    if textWait.tries >= TEXT_TRIES then return end
+    textWait.tries = textWait.tries + 1
+    if n.s then pcall(function() C_Spell.RequestLoadSpellData(n.s) end) end
+    C_Timer.After(0.25, function()
+        if sel == n.id and emitDetail(false) then WC.push() end
+    end)
+end
+
 -- the selected talent's detail: this rank's text and the next one's, and what it still needs
 -- nothing selected travels as { none = true }: an empty table would be encoded as a JSON list, and the app would never see the clear
 local function collectDetail()
@@ -432,6 +449,7 @@ local function collectDetail()
     if n.e or n.ne or n.s then
         d.d = textAt(math.max(1, n.rk))
         if n.rk > 0 and n.rk < n.max then d.dn = textAt(n.rk + 1) end
+        if not d.d or (n.rk > 0 and n.rk < n.max and not d.dn) then waitForText(n) end
     end
     local school = n.g and last.groups[n.g] and last.groups[n.g].n
     local req = requirements(last.cfg, n, school)
@@ -459,7 +477,7 @@ local function emitTree(force)
     WC.send(WC.encode({ type = "talents", v = TV, t = doc }))
     return true
 end
-local function emitDetail(force)
+function emitDetail(force)          -- the local declared above (waitForText's)
     local d = collectDetail()
     local key = WC.encode(d)
     if key == lastSelKey and not force then return false end
@@ -688,6 +706,12 @@ f:SetScript("OnEvent", function(_, event, a1)
         if WC.talents.pending and (cfg == nil or cfg == WC.talents.pending) then WC.talents.pending = nil; ack("applied", true) end
     elseif event == "UNIT_PET" and a1 ~= "player" then
         return
+    elseif event == "SPELL_DATA_LOAD_RESULT" then
+        -- only the selected talent's own spell is worth a new detail (every spell anything loads fires this)
+        local n = last and sel and last.byID[sel]
+        if not (n and n.s and WC.isPlain(a1) and a1 == n.s) then return end
+        if emitDetail(false) then WC.push() end
+        return
     end
     soon()
 end)
@@ -697,7 +721,7 @@ local WANT = {
     "TRAIT_CONFIG_UPDATED", "TRAIT_CONFIG_LIST_UPDATED", "TRAIT_NODE_CHANGED", "TRAIT_NODE_CHANGED_PARTIAL",
     "TRAIT_TREE_CURRENCY_INFO_UPDATED", "CONFIG_COMMIT_FAILED", "TRAIT_COND_INFO_CHANGED",
     "ACTIVE_PLAYER_SPECIALIZATION_CHANGED", "PLAYER_TALENT_UPDATE", "UNIT_PET",
-    "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
+    "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "SPELL_DATA_LOAD_RESULT",
 }
 local missing = {}
 for _, e in ipairs(WANT) do

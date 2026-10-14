@@ -480,13 +480,21 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             // tooltip's smaller fonts, and as much narrower
             val sc = UiKit.COMPARE_SCALE
             val plateH = if (acts.isEmpty()) 0f else 62f
-            val (x, tw, cmpX) = place(cur, sc)
+            val (x, tw, _) = place(cur, sc)
             val cw = tw * sc
             val itemH = UiKit.tooltip(c, 0f, -9999f, tw, name, Theme.quality(q), body, alpha = 0).height() + plateH
             val eqH = eq.sumOf { e ->
                 UiKit.tooltip(c, 0f, -9999f, cw, e.name, e.colour, e.lines, header = "Currently Equipped", alpha = 0, scale = sc).height().toDouble() + 6.0
             }.toFloat()
-            val y0 = maxOf(top - 90f, minOf(maxOf(top, cur.top), bottom - maxOf(itemH, eqH)))   // up over the bag bar only if it must
+            // CURRENTLY EQUIPPED NEVER OVER THE CURSOR (Thor batch2, the user: "I dont want it to cover the cursor. it would be nice below
+            // or beside the text of the Item I am looking at"): beside the item's tooltip on the side AWAY from the cursor, as the game's
+            // compare stands beside its main tooltip; where that side has no room, under the item's tooltip and its cells
+            val itemRight = x >= cur.right
+            val besideX = if (itemRight) x + tw + 6f else x - 6f - cw
+            val beside = besideX >= 16f && besideX + cw <= width - 16f
+            val cmpX = if (beside) besideX else x
+            val needH = if (beside) maxOf(itemH, eqH) else itemH + 6f + eqH
+            val y0 = maxOf(top - 90f, minOf(maxOf(top, cur.top), bottom - needH))   // up over the bag bar only if it must
             // a press on the pair's OWN cells shows it at once (b116); any other press, or the finger choosing the slot, waits
             // out the quarter second like the game's hover (it was any press at all, so a tapped gear item showed at once)
             val probe = UiKit.tooltip(c, x, y0, tw, name, Theme.quality(q), body, alpha = 0)
@@ -496,7 +504,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             if (a <= 0) return                                // the quarter second: measured, nothing shown yet
             val box = UiKit.tooltip(c, x, y0, tw, name, Theme.quality(q), body, alpha = a)
             plate(c, box, acts, what, a)
-            var y = y0
+            var y = if (beside) y0 else y0 + itemH + 6f
             for (e in eq) y = UiKit.tooltip(c, cmpX, y, cw, e.name, e.colour, e.lines, header = "Currently Equipped", alpha = a, scale = sc).bottom + 6f
         }
 

@@ -894,6 +894,16 @@ class HomeView(
         chatSlot.invalidateOutline()
     }
 
+    /**
+     * The chat pane's box in Home's px for the screen Home is going to (null before the first layout, or with no pane). The CHAT ROOM's
+     * glide (CompanionHost.chatGlideStart) leaves from it when the pane's tap opens the room and lands on it when the room goes back Home.
+     */
+    fun chatPaneBox(): RectF? {
+        val w = width.toFloat(); val h = height.toFloat()
+        if (w <= 0f || h <= 0f) return null
+        return places(flow.screen, w, h)[Part.CHAT]?.let { RectF(it) }
+    }
+
     /** the chat goes back to its room once Home no longer shows it full (after a close's glide has landed) */
     private fun chatReturn() { if (!chatWanted) giveBack(chatView) }
 
