@@ -230,19 +230,38 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         noticeShow(ReportNotice.State.Compiling)
         DiagLog.event("report", "send: compiling")
         val app = applicationContext
+        val upload = ReportUpload.enabled
         Thread({
+            // always saved first (a failed send keeps it); then, with a receiver in this build, sent (the user's in-game upload)
             val res = runCatching {
                 val r = ProblemReport.collect(app, words)
                 val f = ProblemReport.saveOrWhy(app, r).getOrThrow()
-                f to ProblemReport.issueUrl(r, words, ProblemReport.facts(app), f.path, Redact.names())
+                Triple(r, f, ProblemReport.issueUrl(r, words, ProblemReport.facts(app), f.path, Redact.names()))
+            }
+            val sent = res.getOrNull()?.takeIf { upload }?.let { (r, _, _) ->
+                ui.post { if (gen == reportGen) noticeShow(ReportNotice.State.Sending) }
+                ReportUpload.send(ReportUpload.request(r, words, ProblemReport.facts(app), DiagLog.lines(ProblemReport.WINDOW_MS)
+                    .any { it.contains("report: recording started") }))
             }
             ui.post {
                 if (gen != reportGen || shell.hostGone()) return@post
-                res.onSuccess { (f, url) ->
-                    ReportFlow.markSaved(f.path, System.currentTimeMillis(), url)
+                res.onSuccess { (_, f, url) ->
                     ReportFlow.description = ""
-                    noticeShow(ReportNotice.State.Ready(f.path, url))
-                    DiagLog.event("report", "send: saved")
+                    when {
+                        sent == null -> {
+                            ReportFlow.markSaved(f.path, System.currentTimeMillis(), url)
+                            noticeShow(ReportNotice.State.Ready(f.path, url)); DiagLog.event("report", "send: saved")
+                        }
+                        sent.isSuccess -> sent.getOrThrow().let { s ->
+                            ReportFlow.clearPending()
+                            noticeShow(ReportNotice.State.Sent(s.number, s.url)); DiagLog.event("report", "send: sent as issue #${s.number}")
+                        }
+                        else -> {
+                            val why = sent.exceptionOrNull()?.message ?: "unknown reason"
+                            ReportFlow.markSaved(f.path, System.currentTimeMillis(), url)
+                            noticeShow(ReportNotice.State.SendFailed(why, f.path, url)); DiagLog.event("report", "send: not sent ($why), saved")
+                        }
+                    }
                 }.onFailure { e ->
                     noticeShow(ReportNotice.State.Failed(e.message ?: e.javaClass.simpleName))
                     DiagLog.event("report", "send: failed (${e.message})")
@@ -250,12 +269,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }, "report-send").start()
         ui.postDelayed({
-            if (gen == reportGen && reportNotice.state == ReportNotice.State.Compiling) {
+            if (gen == reportGen && (reportNotice.state == ReportNotice.State.Compiling || reportNotice.state == ReportNotice.State.Sending)) {
                 reportGen++
                 noticeShow(ReportNotice.State.Failed("it took more than ${REPORT_TIMEOUT_MS / 1000} s; try again, or send the files in Documents/DS Forever/logs"))
                 DiagLog.event("report", "send: timed out")
             }
-        }, REPORT_TIMEOUT_MS)
+        }, if (ReportUpload.enabled) REPORT_TIMEOUT_MS * 2 else REPORT_TIMEOUT_MS)
     }
 
     private fun noticeShow(s: ReportNotice.State) {
@@ -706,6 +725,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             reportNotice = ReportNotice(this@CompanionHost).apply {
                 onOpen = { s -> if (openUrlOnTop(s.url)) ReportFlow.clearPending() }
                 onDismiss = { SetupBridge.noticeAsking = false }
+                onOpenUrl = { url -> if (openUrlOnTop(url)) ReportFlow.clearPending() }
             }
             addView(reportNotice, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             recIndicator = android.widget.TextView(this@CompanionHost).apply {

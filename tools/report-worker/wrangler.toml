@@ -1,0 +1,14 @@
+# DS Forever's problem-report receiver (README.md). No secrets here: the GitHub token is a Worker SECRET
+# (`wrangler secret put GITHUB_TOKEN`), never in git and never in the APK.
+name = "ds-forever-reports"
+main = "src/worker.js"
+compatibility_date = "2024-09-23"
+
+[vars]
+GITHUB_REPO = "Jreese702/DS-Forever"
+# APP_KEY = ""   # optional: the same value as the app's dsfReportKey (it ships in the APK, so it only filters casual traffic)
+
+# the rate limits' counters (README step 3 makes the namespace and puts its id here)
+[[kv_namespaces]]
+binding = "LIMITS"
+id = "PUT-THE-KV-NAMESPACE-ID-HERE"

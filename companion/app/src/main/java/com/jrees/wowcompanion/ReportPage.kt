@@ -293,7 +293,13 @@ class ReportPage(c: Context) : FrameLayout(c) {
         c.drawText("Show what's included", PAD, top, link)
         boxes[Model.Target.INCLUDED] = RectF(PAD - 8f, top - 34f, PAD + link.measureText("Show what's included") + 8f, top + 12f)
         // the line under it: what happened, or why the buttons wait
-        val note = status.ifEmpty { if (!can) "Say what happened first (a few words)." else "Logins, names and chat are taken out. B closes." }
+        val note = status.ifEmpty {
+            when {
+                !can -> "Say what happened first (a few words)."
+                ReportUpload.enabled -> "Sends a report with names and chat removed to the DS Forever team. B closes."
+                else -> "Logins, names and chat are taken out. B closes."
+            }
+        }
         val small = UiKit.bodyPaint(24f, Theme.textDim)
         var ny = top + 54f
         for (part in note.split('\n')) for (line in SetupPanel.wrap(part, small, w - PAD * 2)) { c.drawText(line, PAD, ny, small); ny += 34f }

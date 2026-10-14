@@ -16,6 +16,9 @@ class ReportNotice(c: Context) : View(c) {
 
     sealed class State {
         object Compiling : State()
+        object Sending : State()
+        data class Sent(val number: Int, val url: String) : State()
+        data class SendFailed(val why: String, val path: String, val url: String) : State()
         data class Ready(val path: String, val url: String) : State()
         data class Failed(val why: String) : State()
     }
@@ -28,6 +31,9 @@ class ReportNotice(c: Context) : View(c) {
         const val OK = "OK"
         fun card(s: State): Card = when (s) {
             State.Compiling -> Card("Compiling your report…", "You can keep playing.", emptyList())
+            State.Sending -> Card("Sending your report…", "You can keep playing.", emptyList())
+            is State.Sent -> Card("Report sent: issue #${s.number}", "Thank you. The DS Forever team can see it now.", listOf(OK))
+            is State.SendFailed -> Card("Couldn't send the report", "${s.why}. Saved to Documents/DS Forever/reports.", listOf(OPEN, OK))
             is State.Ready -> Card("Report ready", "Saved in Documents/DS Forever/reports. Open the GitHub issue to post it.", listOf(OPEN, OK))
             is State.Failed -> Card("Couldn't save the report", s.why, listOf(OK))
         }
@@ -38,6 +44,8 @@ class ReportNotice(c: Context) : View(c) {
     /** the host: Open issue (the URL on the top screen); OK / dismiss */
     var onOpen: (State.Ready) -> Unit = {}
     var onDismiss: () -> Unit = {}
+    /** Couldn't send > Open issue: the pre-filled issue in the browser */
+    var onOpenUrl: (String) -> Unit = {}
 
     private var focus = 0
     private val boxes = ArrayList<Pair<RectF, String>>()
@@ -47,11 +55,12 @@ class ReportNotice(c: Context) : View(c) {
     fun show(s: State) { state = s; focus = 0; visibility = VISIBLE; invalidate() }
     fun hide() { state = null; visibility = GONE }
     /** it asks for a press (Ready / Failed): the game's A is held back meanwhile */
-    val asking: Boolean get() = state != null && state !is State.Compiling
+    val asking: Boolean get() = state != null && state !is State.Compiling && state !is State.Sending
 
     private fun pressed(label: String) {
         val s = state ?: return
         if (label == OPEN && s is State.Ready) onOpen(s)
+        if (label == OPEN && s is State.SendFailed) onOpenUrl(s.url)
         hide(); onDismiss()
     }
 
