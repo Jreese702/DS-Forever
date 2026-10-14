@@ -904,6 +904,19 @@ class HomeView(
         return places(flow.screen, w, h)[Part.CHAT]?.let { RectF(it) }
     }
 
+    /**
+     * The chat pane as it looks now, on Home's ink, in a bitmap [w] x [h] (its box's size), or null when the pane is not that size
+     * (not laid out yet, or caught mid-move). The Chat room's glide grows THIS from the pane's box (Thor batch5: the pane itself must
+     * grow, not a new window appear in its place) and hands over to the room only as it nears full size.
+     */
+    fun chatPanePicture(w: Int, h: Int): android.graphics.Bitmap? = try {
+        if (w <= 0 || h <= 0 || abs(chatPane.width - w) > 2 || abs(chatPane.height - h) > 2) null
+        else android.graphics.Bitmap.createBitmap(chatPane.width, chatPane.height, android.graphics.Bitmap.Config.ARGB_8888).also { b ->
+            b.eraseColor(Theme.ink)
+            chatPane.draw(Canvas(b))
+        }
+    } catch (t: Throwable) { null }
+
     /** the chat goes back to its room once Home no longer shows it full (after a close's glide has landed) */
     private fun chatReturn() { if (!chatWanted) giveBack(chatView) }
 

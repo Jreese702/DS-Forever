@@ -1769,13 +1769,32 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val chatGlideBox = android.graphics.RectF()
     private var chatGlidePic: android.widget.ImageView? = null
     private var chatGlideBmp: android.graphics.Bitmap? = null
-    private val chatGlideOutline = object : android.view.ViewOutlineProvider() {
+    /** Home's chat pane, the picture that GROWS (Thor batch5), over the room until the hand-over */
+    private var chatGlidePane: android.widget.ImageView? = null
+    private val chatGlidePaneBox = android.graphics.RectF()
+    /** a rounded window [box] in the view's own px (the corner as round on screen at every scale of the glide); empty = all of it */
+    private class GlideClip(val box: android.graphics.RectF) : android.view.ViewOutlineProvider() {
         override fun getOutline(v: View, o: android.graphics.Outline) {
-            val b = chatGlideBox
+            val b = box
             if (b.isEmpty) o.setRect(0, 0, v.width, v.height)
-            // the corner in the view's own px: as round on screen at every scale of the glide
             else o.setRoundRect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt(), UiKit.MODULE_R / v.scaleX.coerceAtLeast(0.05f))
         }
+    }
+    private val chatGlideOutline = GlideClip(chatGlideBox)
+    private val chatGlidePaneOutline = GlideClip(chatGlidePaneBox)
+
+    /**
+     * [v] ([w] x [h] of its own px, laid out at its host's 0,0 + [ox], [oy]) drawn into the box [bl]..[bb] (host px): ONE scale (text
+     * keeps its shape) just big enough to fill the box, its bottom-left on the box's; [clip] gets the box mapped back into [v]'s px
+     */
+    private fun glideInto(v: View, clip: android.graphics.RectF, w: Float, h: Float, ox: Float, oy: Float,
+                          bl: Float, bt: Float, br: Float, bb: Float) {
+        val sc = maxOf((br - bl) / w, (bb - bt) / h).coerceAtLeast(0.05f)
+        val tx = bl; val ty = bb - h * sc
+        v.scaleX = sc; v.scaleY = sc
+        v.translationX = tx - ox; v.translationY = ty - oy
+        clip.set((bl - tx) / sc, (bt - ty) / sc, (br - tx) / sc, (bb - ty) / sc)
+        v.invalidateOutline()
     }
 
     /** Home as it looks now, drawn into one kept bitmap (null when it cannot be) */
@@ -1792,9 +1811,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** [opening]: from the pane's box ([pane], Home's px) to the frame over Home's [picture]; else from the frame onto the pane */
     private fun chatGlideStart(opening: Boolean, pane: android.graphics.RectF, picture: android.graphics.Bitmap?) {
-        val fw = chatView.width.toFloat(); val fh = chatView.height.toFloat()
+        // the room's full size: its own, or (never laid out yet: the first open) the content's it fills
+        val fw = (chatView.width.takeIf { it > 0 } ?: content.width).toFloat()
+        val fh = (chatView.height.takeIf { it > 0 } ?: content.height).toFloat()
         if (fw <= 0f || fh <= 0f) return
-        val p = android.graphics.RectF(pane).apply { offset((homeView.left - chatView.left).toFloat(), (homeView.top - chatView.top).toFloat()) }
+        val cx = chatView.left.toFloat(); val cy = chatView.top.toFloat()
+        // everything below in CONTENT px: the pane's box, and the frame the room fills
+        val p = android.graphics.RectF(pane).apply { offset(homeView.left.toFloat(), homeView.top.toFloat()) }
+        val pw = pane.width().toInt(); val ph = pane.height().toInt()
+        val paneBmp = homeView.chatPanePicture(pw, ph)
         val pic = picture?.let { bmp ->
             android.widget.ImageView(this).apply {
                 setImageBitmap(bmp); scaleType = android.widget.ImageView.ScaleType.MATRIX
@@ -1802,6 +1827,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }.also { content.addView(it, content.indexOfChild(chatView), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) }
         }
         chatGlidePic = pic
+        // THE PANE ITSELF GROWS (Thor batch5, the user: "it looks like a new window is popping up and then growing instead of that chat
+        // window growing"): Home's chat pane as it looks, over the room, in the same gliding box; the room is under it from the
+        // first frame and shows only as the pane hands over, between HAND_FROM and HAND_TO of the way (back Home: the reverse)
+        val paneV = paneBmp?.let { bmp ->
+            android.widget.ImageView(this).apply {
+                setImageBitmap(bmp); scaleType = android.widget.ImageView.ScaleType.MATRIX
+                pivotX = 0f; pivotY = 0f
+                outlineProvider = chatGlidePaneOutline; clipToOutline = true
+            }.also { content.addView(it, content.indexOfChild(chatView) + 1, FrameLayout.LayoutParams(bmp.width, bmp.height)) }
+        }
+        chatGlidePane = paneV
         chatView.visibility = View.VISIBLE                         // back Home the room's view stays up, over Home, until it lands
         chatView.outlineProvider = chatGlideOutline
         chatView.clipToOutline = true
@@ -1810,25 +1846,23 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         chatView.pivotX = 0f; chatView.pivotY = 0f
         fun at(k: Float, t: Float) {
             val g = if (opening) k else 1f - k
-            // the box at g (the room's own px, unscaled: the pane's box at 0, the frame at 1)
-            val bl = p.left * (1f - g); val bt = p.top * (1f - g)
-            val br = p.right + (fw - p.right) * g; val bb = p.bottom + (fh - p.bottom) * g
-            // THE CONTENTS GROW WITH THE BOX (Thor batch4, the user: "it doesn't actually grow the contents with the transition, they
-            // kind of blip to the right place and size"): the whole room drawn smaller, ONE scale (text keeps its shape) just big
-            // enough to fill the box, its bottom-left on the box's (the type bar and the newest lines), as the map's art glides with
-            // its box; what overhangs the box is cut by the outline (in the view's own px, so the box mapped back through the scale)
-            val sc = maxOf((br - bl) / fw, (bb - bt) / fh).coerceIn(0.05f, 1f)
-            val tx = bl; val ty = bb - fh * sc
-            chatView.scaleX = sc; chatView.scaleY = sc
-            chatView.translationX = tx; chatView.translationY = ty
-            chatGlideBox.set((bl - tx) / sc, (bt - ty) / sc, (br - tx) / sc, (bb - ty) / sc)
-            chatView.invalidateOutline()
+            // the box at g, content px: the pane's box at 0, the room's frame at 1
+            val bl = p.left + (cx - p.left) * g; val bt = p.top + (cy - p.top) * g
+            val br = p.right + (cx + fw - p.right) * g; val bb = p.bottom + (cy + fh - p.bottom) * g
+            // THE CONTENTS GROW WITH THE BOX (Thor batch4): the room and the pane each drawn into the box at one scale, bottom-left
+            // on the box's (the type bar and the newest lines), cut to the box: a view transform, no layout
+            glideInto(chatView, chatGlideBox, fw, fh, cx, cy, bl, bt, br, bb)
+            if (paneV != null) glideInto(paneV, chatGlidePaneBox, pw.toFloat(), ph.toFloat(), 0f, 0f, bl, bt, br, bb)
+            // the hand-over: the pane's picture leaves as the box nears the frame (and comes back as it nears the pane)
+            val hand = ((g - HAND_FROM) / (HAND_TO - HAND_FROM)).coerceIn(0f, 1f)
+            paneV?.alpha = 1f - hand * hand * (3f - 2f * hand)
             if (opening) {
-                // the room comes in over the first FADE ms inside its box, Home's picture fades as Home's own parts do
-                chatView.alpha = (t / fade).coerceIn(0f, 1f)
+                // Home's other parts (its picture) fade over the first FADE ms, as Home's own do; without the pane's picture the
+                // room comes in inside its box meanwhile (the old way)
+                chatView.alpha = if (paneV != null) 1f else (t / fade).coerceIn(0f, 1f)
                 pic?.alpha = 1f - (t / fade).coerceIn(0f, 1f)
             } else {
-                // the box lands on the pane: the room leaves over the last FADE ms as Home comes in under it
+                // the box lands on the pane (its picture whole by then): Home comes in under it over the last FADE ms
                 val inK = ((t - (ms - fade)) / fade).coerceIn(0f, 1f)
                 chatView.alpha = 1f - inK
                 homeView.alpha = inK
@@ -1853,6 +1887,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         a.cancel()
         chatGlidePic?.let { content.removeView(it) }
         chatGlidePic = null
+        chatGlidePane?.let { content.removeView(it) }
+        chatGlidePane = null
+        chatGlidePaneBox.setEmpty()
         chatGlideBox.setEmpty()
         chatView.clipToOutline = false
         chatView.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
@@ -1862,6 +1899,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         homeView.alpha = 1f
         chatView.visibility = if (room == Room.CHAT) View.VISIBLE else View.GONE
     }
+
+    /** the pane's picture hands over to the room between these two points of the glide's way (0 = the pane's box, 1 = the frame) */
+    private val HAND_FROM = 0.35f
+    private val HAND_TO = 0.8f
 
     private var startReadAt = 0L
     /** the room's view on show (the pause wheel makes it step back) */
