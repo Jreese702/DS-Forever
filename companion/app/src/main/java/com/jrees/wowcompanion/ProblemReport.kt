@@ -19,8 +19,6 @@ import java.util.zip.ZipOutputStream
  */
 object ProblemReport {
     const val WINDOW_MS = 15 * 60_000L
-    /** the report screen closed (the bottom screen's window, hidden while it was up, comes back): set by the host, run once */
-    @Volatile var onClosed: (() -> Unit)? = null
     const val REPO = "Jreese702/DS-Forever"
     private const val MAX_DESCRIPTION_IN_URL = 1500
     private const val MAX_CRASHES = 3
@@ -85,6 +83,11 @@ object ProblemReport {
         fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
         return "https://github.com/$REPO/issues/new?title=${enc(title)}&body=${enc(body)}"
     }
+
+    /** what Send report says afterwards: the file, and whether GitHub opened (no browser: where to find the file) */
+    fun sentMessage(path: String, browserOpened: Boolean): String =
+        if (browserOpened) "Saved: $path\nGitHub's new-issue page is open: attach that file there and submit."
+        else "Saved: $path\nNo browser opened: attach that file to an issue at github.com/$REPO/issues, or send it to the developer."
 
     fun stamp(ms: Long): String = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date(ms))
 

@@ -57,10 +57,17 @@ object DiagLog {
     }
 
     /** one line: time, tag, text (redacted when the report is made, not here: the log never leaves private storage by itself) */
+    /** the 5 minutes ran out (not a Stop or a Send): the host saves the report by itself (ReportFlow.autoSave); run once per recording */
+    @Volatile var onEndedByItself: (() -> Unit)? = null
+
     fun event(tag: String, text: String, now: Long = System.currentTimeMillis()) {
-        if (recordUntil != 0L && now >= recordUntil) { recordUntil = 0L; append(now, "report", "recording ended by itself"); changed() }
+        val ended = synchronized(lock) { (recordUntil != 0L && now >= recordUntil).also { if (it) recordUntil = 0L } }
+        if (ended) { append(now, "report", "recording ended by itself"); changed(); runCatching { onEndedByItself?.invoke() } }
         append(now, tag, text)
     }
+
+    /** checks the 5 minutes (the host's once-a-second tick): ends the recording by itself when they ran out */
+    fun checkEnd(now: Long = System.currentTimeMillis()) { if (recordUntil != 0L && now >= recordUntil) event("report", "end of the 5 minutes", now) }
 
     /** an add-on document: summarized (types and flags only), when it changed; names in it go to [Redact.know] */
     fun doc(msg: JSONObject, now: Long = System.currentTimeMillis()) {

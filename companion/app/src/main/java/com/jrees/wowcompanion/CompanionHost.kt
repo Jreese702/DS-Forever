@@ -192,10 +192,31 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private fun openDllPicker() = openOnBottom(FrameGenPickActivity::class.java, "FrameGen") { FrameGen.onPickerClosed = it }
 
-    /** Settings / the setup screen > "Send a problem report" (board f-problem-report): its screen, on the bottom display */
-    private fun openReport() {
-        DiagLog.event("report", "report screen opened")
-        openOnBottom(ProblemReportActivity::class.java, "WCREPORT") { ProblemReport.onClosed = it }
+    /**
+     * Settings / the setup screen > "Send a problem report" (board f-problem-report): the report PAGE inside the bottom screen (the
+     * user: "part of the bottom app UI instead of tabbing out"), typing with Chat's keyboard. [sendNow] = Settings' "Send report" while
+     * recording. In the game the page opens over the Settings room, which holds the controller (its guest pad passes each press).
+     */
+    private lateinit var reportPage: ReportPage
+
+    private fun openReport(sendNow: Boolean = false) {
+        if (!::reportPage.isInitialized) return
+        DiagLog.event("report", if (sendNow) "send now (from Settings, recording)" else "report page opened")
+        if (LauncherHooks.gameUp() && room != Room.SETTINGS) show(Room.SETTINGS)
+        reportPage.open(sendNow)
+    }
+
+    /** GitHub's pre-filled issue in the browser, on the TOP screen (a browser on the bottom one would sit under this window) */
+    private fun openUrlOnTop(url: String): Boolean = runCatching {
+        startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            android.app.ActivityOptions.makeBasic().setLaunchDisplayId(android.view.Display.DEFAULT_DISPLAY).toBundle())
+    }.onFailure { android.util.Log.w("WCREPORT", "browser: ${it.message}") }.isSuccess
+
+    /** the note of a report saved by itself > Open GitHub issue: the browser, then the note goes */
+    private fun openSavedReport() {
+        val saved = ReportFlow.pending ?: return
+        if (openUrlOnTop(saved.url)) { ReportFlow.clearPending(); DiagLog.event("report", "saved report's issue opened") }
     }
 
     /**
@@ -233,7 +254,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val left = DiagLog.recordLeftMs() / 1000
                 recIndicator.text = "\u25CF REC %d:%02d  \u00B7  Stop".format(left / 60, left % 60)
                 if (!hitchOn) { hitchOn = true; lastFrameNs = 0L; android.view.Choreographer.getInstance().postFrameCallback(hitch) }
-            } else if (DiagLog.recordUntil != 0L) DiagLog.event("report", "recording ended by itself")
+            } else DiagLog.checkEnd()
             recIndicator.visibility = if (on) View.VISIBLE else View.GONE
             if (::settingsView.isInitialized) settingsView.invalidate()
             ui.postDelayed(this, 1000)
@@ -404,8 +425,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // our own sign-in's row on the start screen takes the pad while it shows (LATER 29); then Interact's loot ring
             // (the edge is taken on EVERY mask, whatever the route, so a press held through a route change is not swallowed later)
             val down = m and loginPadHeld.inv(); loginPadHeld = m
+            // the report page has the controller through the Settings room's guest pad (or the launcher's keys before Play)
+            if (::reportPage.isInitialized && reportPage.isOpen) Unit
             // B closes the game keyboard the sign-in opened (the game gets the same B: nothing else here takes it then)
-            if (SetupBridge.keyboardOpen && PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) {
+            else if (SetupBridge.keyboardOpen && PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) {
                 NativeLogin.logEvent("sign-in: keyboard closed (B)"); SetupBridge.keyboard(false)
             }
             else if (::setupPanel.isInitialized && !loginPrompt.isOpen && setupPanel.pad(down)) Unit      // the setup's pop-up (Track C)
@@ -481,6 +504,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         setupPanel = SetupPanel(this)
         SetupBridge.openReport = { ui.post { if (!shell.hostGone()) openReport() } }
+        SetupBridge.openSavedReport = { ui.post { if (!shell.hostGone()) openSavedReport() } }
+        SetupBridge.reportKey = { code, down -> ::reportPage.isInitialized && reportPage.key(code, down) }
+        // the 5 minutes ran out: the report is saved by itself (no browser mid-game) and its note waits in Settings / the setup screen
+        ReportFlow.init(this)
+        DiagLog.onEndedByItself = {
+            val app = applicationContext
+            Thread({ runCatching { ReportFlow.autoSave(app) }.onFailure { Log.w("WCREPORT", "auto-save failed", it) }; SetupBridge.loginSaved() },
+                "report-autosave").start()
+        }
         DiagLog.onChange { ui.post { ui.removeCallbacks(recTick); recTick.run() } }
         SetupBridge.openLoginForm = { loginPrompt.open() }
         // a refused saved login (M3): "Update login" = the same form, then the game restarts by itself with it (test4 ruling)
@@ -505,6 +537,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.onLogin = { loginPrompt.open() }
         settingsView.loginRow = true
         settingsView.onReport = { openReport() }
+        settingsView.onReportSendNow = { openReport(sendNow = true) }
+        settingsView.onReportOpenSaved = { openSavedReport() }
+        settings.pad.padOverride = { k -> ::reportPage.isInitialized && reportPage.isOpen && run { reportPage.padKey(k); true } }
         if (LauncherHooks.pkg != null) {
             startView.firstLabel = "Save your Battle.net login"; startView.firstW = 680f      // the longer words
             sweepTrigger()
@@ -593,6 +628,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             addView(setupView, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             // Record 5 minutes' indicator (board f-problem-report): over everything, top right; a tap stops the recording
+            // the report page (board f-problem-report): over the rooms and the setup, under the REC badge
+            reportPage = ReportPage(this@CompanionHost).apply {
+                openUrl = { url -> openUrlOnTop(url) }
+                onClosed = { DiagLog.event("report", "report page closed") }
+            }
+            addView(reportPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             recIndicator = android.widget.TextView(this@CompanionHost).apply {
                 textSize = 16f; setTextColor(android.graphics.Color.WHITE); setPadding(22, 10, 22, 10)
                 setBackgroundColor(android.graphics.Color.argb(220, 150, 20, 20)); visibility = View.GONE

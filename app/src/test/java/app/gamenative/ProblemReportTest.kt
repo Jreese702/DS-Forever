@@ -3,6 +3,10 @@ package app.gamenative
 import com.jrees.wowcompanion.DiagLog
 import com.jrees.wowcompanion.ProblemReport
 import com.jrees.wowcompanion.Redact
+import com.jrees.wowcompanion.ReportFlow
+import com.jrees.wowcompanion.ReportPage
+import android.view.KeyEvent
+import org.robolectric.RuntimeEnvironment
 import com.jrees.wowcompanion.SetupFlow
 import java.io.File
 import java.net.URLDecoder
@@ -145,6 +149,70 @@ class ProblemReportTest {
         assertFalse(decoded.contains("Jaina"))
         assertTrue(decoded, decoded.contains("Problem report: Bars blank for <name>"))
         assertTrue(decoded.contains("1.0.6 (106)") && decoded.contains("please attach /sdcard/Documents/DS Forever/reports/r.zip"))
+    }
+
+    @Test fun sendReportSaysWhereTheFileIs() {
+        val opened = ProblemReport.sentMessage("/sdcard/Documents/DS Forever/reports/r.zip", browserOpened = true)
+        assertTrue(opened.startsWith("Saved: /sdcard/Documents/DS Forever/reports/r.zip"))
+        assertTrue(opened.contains("attach that file"))
+        val none = ProblemReport.sentMessage("/x/r.zip", browserOpened = false)
+        assertTrue(none.contains("Saved: /x/r.zip") && none.contains("No browser opened") && none.contains("github.com/Jreese702/DS-Forever/issues"))
+    }
+
+    // ---- the report page and its flow (the user's rules)
+
+    @Test fun theWordsAreRequired() {
+        for (t in listOf("", "   ", "bug", "  x  ")) assertFalse(t, ReportFlow.canSend(t))
+        for (t in listOf("bars blank", "  map froze  ", "crashloopingagain")) assertTrue(t, ReportFlow.canSend(t))
+        assertEquals(listOf(ReportPage.Model.Target.WORDS, ReportPage.Model.Target.INCLUDED), ReportPage.Model.live(canSend = false))
+        assertEquals(4, ReportPage.Model.live(canSend = true).size)
+    }
+
+    @Test fun theLaunchersKeysAreTheGuestPadsNames() {
+        assertEquals("PAD1", ReportPage.Model.keyName(KeyEvent.KEYCODE_BUTTON_A))
+        assertEquals("PAD2", ReportPage.Model.keyName(KeyEvent.KEYCODE_BUTTON_B))
+        assertEquals("PADDUP", ReportPage.Model.keyName(KeyEvent.KEYCODE_DPAD_UP))
+        assertEquals("PADFORWARD", ReportPage.Model.keyName(KeyEvent.KEYCODE_BUTTON_START))
+        assertEquals("Recording 3:12 - Stop", ReportPage.Model.recordLabel(true, 192_000))
+        assertEquals("Record 5 minutes", ReportPage.Model.recordLabel(false, 0))
+    }
+
+    @Test fun theTimersEndSavesOnceAndLeavesANote() {
+        val ctx = RuntimeEnvironment.getApplication()
+        DiagLog.useDir(Files.createTempDirectory("diag").toFile())
+        ReportFlow.init(ctx); ReportFlow.clearPending()
+        ReportFlow.description = "bars went blank after a fight"        // kept with the recording (Record after typing)
+        var ended = 0
+        DiagLog.onEndedByItself = { ended++ }
+        val t0 = System.currentTimeMillis()
+        DiagLog.startRecording(t0)
+        DiagLog.checkEnd(t0 + 1_000)
+        assertEquals(0, ended)
+        DiagLog.checkEnd(t0 + DiagLog.RECORD_MS)
+        DiagLog.checkEnd(t0 + DiagLog.RECORD_MS + 1_000)
+        DiagLog.event("x", "later", t0 + DiagLog.RECORD_MS + 2_000)
+        assertEquals(1, ended)                                          // once
+        DiagLog.onEndedByItself = null
+        val f = ReportFlow.autoSave(ctx, t0 + DiagLog.RECORD_MS)!!
+        assertTrue(f.isFile)
+        val note = ReportFlow.pending!!
+        assertEquals(f.path, note.path)
+        assertTrue(note.url.startsWith("https://github.com/Jreese702/DS-Forever/issues/new"))
+        assertTrue(URLDecoder.decode(note.url, "UTF-8").contains("bars went blank"))
+        assertTrue(ReportFlow.noteTitle(note).startsWith("Your problem report was saved ("))
+        assertEquals("", ReportFlow.description)                        // used
+        ZipFile(f).use { z -> assertTrue(String(z.getInputStream(z.getEntry("report.txt")).readBytes()).contains("Recorded in detail: yes")) }
+        ReportFlow.clearPending()
+        assertEquals(null, ReportFlow.pending)
+    }
+
+    @Test fun theSetupScreenShowsTheSavedNote() {
+        val base = SetupFlow.Inputs(path = "/g", folderFound = true, art = SetupFlow.Art.READY, loginSaved = true,
+            reportSaved = "Your problem report was saved (14:32)")
+        val p = SetupFlow.screen(base).prompt!!
+        assertEquals("Your problem report was saved (14:32)", p.title)
+        assertEquals(listOf(SetupFlow.Action.REPORT_OPEN, SetupFlow.Action.REPORT_DISMISS), p.buttons.map { it.action })
+        assertEquals("login", SetupFlow.screen(base.copy(loginSaved = false)).prompt!!.id)     // the login asks first
     }
 
     @Test fun onlyOurTags() {

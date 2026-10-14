@@ -29,6 +29,10 @@ object SetupBridge {
     @Volatile var updateLogin: (() -> Unit)? = null
     /** "Report a problem" on the setup screen (board f-problem-report): the companion opens its report screen */
     @Volatile var openReport: (() -> Unit)? = null
+    /** the saved report's note > Open GitHub issue */
+    @Volatile var openSavedReport: (() -> Unit)? = null
+    /** the report page takes the launcher's keys while it is open (before Play) */
+    @Volatile var reportKey: ((keyCode: Int, down: Boolean) -> Boolean)? = null
     /** our own login form is open (Update login / Save login): the game's A comes back meanwhile (CompanionHost sets it every second) */
     @Volatile var loginFormOpen = false
 
@@ -73,7 +77,8 @@ object SetupBridge {
     /** what the bottom shows now; null = nothing (outside the launcher's setup) */
     fun screen(gameRunning: Boolean = LauncherHooks.gameUp()): SetupFlow.Screen? {
         val i = inputs ?: return null
-        return SetupFlow.screen(i.copy(signIn = signIn, restartOffered = restartOffered, gameRunning = gameRunning, restarting = restarting))
+        return SetupFlow.screen(i.copy(signIn = signIn, restartOffered = restartOffered, gameRunning = gameRunning, restarting = restarting,
+            reportSaved = ReportFlow.pending?.let { ReportFlow.noteTitle(it) }))
     }
 
     /** the sign-in's lean log (NativeLogin.logEvent): each sign-in button, never anything typed */
@@ -87,6 +92,8 @@ object SetupBridge {
             SetupFlow.Action.ENTER_ON_GAME -> enterOnGame?.invoke()
             SetupFlow.Action.RESTART_GAME -> { signIn(SetupFlow.SignIn.NONE); restartGame?.invoke() }
             SetupFlow.Action.REPORT -> openReport?.invoke()
+            SetupFlow.Action.REPORT_OPEN -> openSavedReport?.invoke()
+            SetupFlow.Action.REPORT_DISMISS -> { ReportFlow.clearPending(); changed() }
             else -> launcherActions?.invoke(a)
         }
     }
@@ -98,5 +105,6 @@ object SetupBridge {
     private val SIGN_IN_ACTIONS = setOf(SetupFlow.Action.UPDATE_LOGIN, SetupFlow.Action.ENTER_ON_GAME, SetupFlow.Action.RESTART_GAME)
 
     @Volatile var keyHandler: ((keyCode: Int, down: Boolean) -> Boolean)? = null
-    fun key(keyCode: Int, down: Boolean): Boolean = keyHandler?.invoke(keyCode, down) ?: false
+    fun key(keyCode: Int, down: Boolean): Boolean =
+        reportKey?.invoke(keyCode, down)?.takeIf { it } ?: (keyHandler?.invoke(keyCode, down) ?: false)
 }
