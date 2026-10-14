@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b37"                -- bump on every change
+local BV = "b38"                -- bump on every change
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -970,8 +970,18 @@ local fixedCols = {}
 -- b15: THE fixed keys, in claim order (claimed once, kept by WC.spellsPadColumns' retain: b14 left "suggest" out of that keep list, so the
 -- pad freed its column and a later spell could take it). "dpad-on" / "dpad-off" (b15): Home's Settings row, the D-pad home bar (PadMap m24)
 -- b37: "bf-on" / "bf-off" the Bind box's Normal / In combat by touch (two columns, so a repeat is harmless; only while the box waits)
+-- b38 A SPELL BY TWO TAPS (b-druid-forms-bind, a player: "they don't have the ability to bind change form as a druid"): one column per
+-- spell ran out (40 cells, 14 fixed: 26 spells, every rank counted, in book order), so a druid's Feral line - the forms - got none and
+-- its touch Bind did nothing. Now every spell has a stable NUMBER (0..V_MAX-1, kept while the spell is in the book, quarantined when it
+-- goes) and a touch is a fresh GROUP pick ("vb0".."vb12": numbers from 0 / 13 / ... / 156) then its OFFSET ("vo0".."vo12") in ONE batch,
+-- the "extra" row's rule: a lost or stale group pick (older than V_PICK_S) never puts a wrong spell
+local V_GROUPS, V_PER, V_PICK_S, V_QUARANTINE = 13, 13, 2, 10     -- 26 columns: 169 numbers
+local V_MAX = V_GROUPS * V_PER
 local FIXED_KEYS = { "open", "close", "giveback", "sa-on", "sa-off", "topen", "suggest", "dpad-on", "dpad-off", "croom", "cc-on", "cc-off",
                      "bf-on", "bf-off" }
+for g = 0, V_GROUPS - 1 do FIXED_KEYS[#FIXED_KEYS + 1] = "vb" .. g end
+for k = 0, V_PER - 1 do FIXED_KEYS[#FIXED_KEYS + 1] = "vo" .. k end
+local VIDX = { byId = {}, byIdx = {}, freedAt = {}, pick = nil }
 local secureRowOk = type(pad) == "table" and type(pad.secureRow) == "function"
 local onCell
 local function cellInit(btn, col)
@@ -1006,6 +1016,8 @@ if type(pad) == "table" and type(pad.slotFor) == "function" and (secureRowOk or 
     -- the room's way in and out, for the app (SpellbookView.enterRoom / leaveRoom): the spells doc carries them as `win`
     WC.spellsWinCols = { open = fixedCols.open, close = fixedCols.close, topen = fixedCols.topen, croom = fixedCols.croom,
                          bfon = fixedCols["bf-on"], bfoff = fixedCols["bf-off"] }
+    for g = 0, V_GROUPS - 1 do WC.spellsWinCols["vb" .. g] = fixedCols["vb" .. g] end      -- b38: the two taps' columns
+    for k = 0, V_PER - 1 do WC.spellsWinCols["vo" .. k] = fixedCols["vo" .. k] end
     local function handle(key)
         if key == nil then report("pad-unknown") return end
         -- OPEN (the Spellbook / Talents face): the secure click has opened the window (its OnShow took the controller as the window's);
@@ -1040,6 +1052,16 @@ if type(pad) == "table" and type(pad.slotFor) == "function" and (secureRowOk or 
             return
         end
         if key == "suggest" then return end                              -- b34: retired (nothing is ever suggested)
+        -- b38: a spell by two taps: the group (a pick, fresh for V_PICK_S), then the offset = the spell's number
+        if type(key) == "string" and key:match("^vb%d+$") then VIDX.pick = { g = tonumber(key:sub(3)), at = GetTime() } return end
+        if type(key) == "string" and key:match("^vo%d+$") then
+            local p = VIDX.pick
+            VIDX.pick = nil
+            if not p or GetTime() - p.at > V_PICK_S then report("pad-no-group") return end
+            local id = VIDX.byIdx[p.g * V_PER + tonumber(key:sub(3))]
+            if id == nil then report("pad-unknown") return end
+            key = id                                                     -- on as that spell's own tap
+        end
         if key == "bf-on" or key == "bf-off" then                       -- b37: the Bind box's Normal / In combat by touch
             if ctl.mode == "bind" and ctl.bind then ctl.bind.fight = (key == "bf-on") or nil; report("bind-fight") end
             return
@@ -1226,19 +1248,27 @@ WC.spellsRoom = {
     setPage = function(pg) if ctl.on then setPage(pg) end end,
 }
 
--- The feed asks for the columns of the spells it lists (Spells.lua): open and close are always kept.
-function WC.spellsPadColumns(ids)
-    if type(pad) ~= "table" or type(pad.slotFor) ~= "function" then return {} end
-    local keep = {}
-    for _, k in ipairs(FIXED_KEYS) do keep[k] = true end
-    for _, id in ipairs(ids) do keep[id] = true end
-    pcall(pad.retain, NS, keep)
+-- The feed asks for the NUMBERS of the spells it lists (Spells.lua; b38: two taps, not a column each): stable while the spell stays in
+-- the book; a number let go waits V_QUARANTINE s before another spell gets it (a document still on its way never reaches a new spell)
+function WC.spellsPadNumbers(ids)
+    local now = GetTime()
+    local present = {}
+    for _, id in ipairs(ids) do present[id] = true end
+    for id, v in pairs(VIDX.byId) do
+        if not present[id] then VIDX.byId[id] = nil; VIDX.byIdx[v] = nil; VIDX.freedAt[v] = now end
+    end
     local out = {}
-    for c in pairs(colKey) do if not fixedCols[colKey[c]] then colKey[c] = nil end end
     for _, id in ipairs(ids) do
-        local c = pad.slotFor(NS, id)
-        out[id] = c
-        if c then colKey[c] = id end
+        local v = VIDX.byId[id]
+        if v == nil then
+            for i = 0, V_MAX - 1 do
+                if VIDX.byIdx[i] == nil and (not VIDX.freedAt[i] or now - VIDX.freedAt[i] > V_QUARANTINE) then
+                    v = i; VIDX.byId[id], VIDX.byIdx[i], VIDX.freedAt[i] = i, id, nil
+                    break
+                end
+            end
+        end
+        out[id] = v
     end
     return out
 end

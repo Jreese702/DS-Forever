@@ -64,6 +64,8 @@ class PadTabPage(
     private val otherReader: () -> Boolean,
     /** the controller's cursor stands on the book's tab row (item 19: where it starts): no cursor is drawn on this page then */
     private val cursorOnTabs: () -> Boolean = { false },
+    /** b-druid-forms-bind: a spell's Bind taps on the `spells` row (Book b38: its group, then its offset); null = no touch way */
+    private val cellsOf: (SpellsModel.Entry) -> List<Pair<String, Int>>? = { e -> e.padColumn?.let { listOf("spells" to it) } },
 ) {
     private sealed class Thing {
         class Spell(val e: SpellsModel.Entry) : Thing()
@@ -1403,16 +1405,16 @@ class PadTabPage(
             ?.let { s -> pick(s, pos); listOf(PadMapModel.ROW to PadMapModel.colSet(s)) } ?: emptyList()
         tBox = null; tChooser = null; tLock = null; tFight = null
         if (view == "radial") {                                             // p16: the slice shows it at the tap; the addon's `rad` follows
-            val id = when { t is Thing.Spell && t.e.padColumn != null -> t.e.spellId ?: t.e.actionId; t == Thing.Clear -> 0; else -> null }
+            val id = when { t is Thing.Spell && cellsOf(t.e) != null -> t.e.spellId ?: t.e.actionId; t == Thing.Clear -> 0; else -> null }
             if (id != null) { radWant = Triple(rpage, pos, id); radWantUntil = SystemClock.uptimeMillis() + ECHO_MS }
         }
         val combatPick = PadMapModel.ROW_LAYOUT to PadMapModel.COL_COMBAT_LAYER
         when (t) {
             // in the combat view the spell's own Bind column follows the one-shot "combat layer" pick, in the same touch
             is Thing.Spell -> when {
-                t.e.padColumn == null -> say("This spell has no touch cell yet: use the controller")
-                f -> tap(pre + listOf(combatPick, "spells" to t.e.padColumn))
-                pre.isNotEmpty() -> tap(pre + ("spells" to t.e.padColumn))
+                cellsOf(t.e) == null -> say("This spell has no touch cell yet: use the controller")
+                f -> tap(pre + combatPick + cellsOf(t.e)!!)
+                pre.isNotEmpty() -> tap(pre + cellsOf(t.e)!!)
                 else -> tapSpell(t.e)
             }
             // p12: every Extra entry by the "extra" row, its page pick first (the pad owner's rule); the answer is checked (onAck)

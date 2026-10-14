@@ -14,8 +14,8 @@ import java.io.File
 class CombatKeepHost(
     private val ui: Handler,
     private val tap: (List<Pair<String, Int>>) -> Boolean,
-    /** a spell's Bind column on the `spells` row, from the book on show; null = none */
-    private val column: (Int) -> Int?,
+    /** a spell's Bind taps on the `spells` row (Book b38: its group, then its offset), from the book on show; null = none */
+    private val column: (Int) -> List<Pair<String, Int>>?,
     /** the book came (the columns can be looked up) */
     private val bookReady: () -> Boolean,
     private val fighting: () -> Boolean,

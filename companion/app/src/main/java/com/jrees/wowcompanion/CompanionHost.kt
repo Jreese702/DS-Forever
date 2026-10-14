@@ -332,11 +332,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         // NO DOORS between the Spellbook and Talents (the user 2026-09-30: "remove the buttons for the spells and talents in those rooms"):
         // each is reached from the bar
-        spellbookView = SpellbookView(this, onBind = { e -> spellsTap(e.padColumn) },
+        spellbookView = SpellbookView(this, onBind = { e -> spellsCells(e) },
             // the Controller tab (spells session): its cells on spells' own pad rows; it reads ZL / ZR only while no other reader runs
             onPadTab = { cells -> padTabTap(cells) }, otherReader = { castView.isShown })
         // the Controller room: the same "spells" guest on its own page (b17 croom), the same wiring as the Spellbook's tab
-        controllerView = ControllerView(this, onPadCells = { cells -> padTabTap(cells) }, onBind = { e -> spellsTap(e.padColumn) },
+        controllerView = ControllerView(this, onPadCells = { cells -> padTabTap(cells) }, onBind = { e -> spellsCells(e) },
             otherReader = { castView.isShown })
         talentsView = TalentsView(this, onTap = { row, col -> talentsTap(row, col) })
         ProfessionsStore.init(this)
@@ -389,7 +389,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         SetupBridge.log = { NativeLogin.logEvent(it) }
         combatKeep = CombatKeepHost(ui,
             tap = { cells -> TapBridge.tapsSpaced(this, talentsPad ?: spellsPad, cells, 300L) },
-            column = { id -> lastBook?.let { b -> SpellsModel.tabSpells(b).firstOrNull { (it.spellId ?: it.actionId) == id }?.padColumn } },
+            column = { id -> lastBook?.let { b -> SpellsModel.tabSpells(b).firstOrNull { (it.spellId ?: it.actionId) == id }?.let { SpellsModel.bindCells(b, it) } } },
             bookReady = { lastBook != null },
             fighting = { homeView.inFight() })
         LauncherHooks.cleanExit = { why, done -> ui.post { cleanExit(why, done) } }
@@ -2036,6 +2036,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun spellsTap(col: Int?) {
         if (col == null) return
         TapBridge.tap(this, spellsPad, "spells", col)
+    }
+
+    /** b-druid-forms-bind: a spell's Bind by touch, its taps from the book on show (Book b38's two, or an older add-on's one) in ONE batch */
+    private fun spellsCells(e: SpellsModel.Entry) {
+        val cells = lastBook?.let { SpellsModel.bindCells(it, e) } ?: return
+        TapBridge.taps(this, spellsPad, cells)
     }
 
     // ---------------------------------------------------------------- the D-pad room bar (Home, 2026-10-02; Spells' padmap m25)

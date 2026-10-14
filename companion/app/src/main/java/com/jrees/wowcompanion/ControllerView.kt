@@ -73,7 +73,8 @@ class ControllerView(
         HomeSettings.onChange { postInvalidate() }      // the radial's way (Hold / Tap) can change in Home's Settings too
     }
 
-    private val page = PadTabPage(this, { cells -> onPadCells(cells) }, { e -> onBind(e) }, otherReader, cursorOnTabs = { false })
+    private val page = PadTabPage(this, { cells -> onPadCells(cells) }, { e -> onBind(e) }, otherReader, cursorOnTabs = { false },
+        cellsOf = { e -> book?.let { SpellsModel.bindCells(it, e) } })       // b-druid-forms-bind: Book b38's two taps
 
     /** true while the addon holds the controller for THIS room */
     val held: Boolean get() = ctl?.on == true && ctl?.croom == true

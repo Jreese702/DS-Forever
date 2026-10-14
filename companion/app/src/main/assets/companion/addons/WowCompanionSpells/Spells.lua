@@ -30,7 +30,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local SV = "s5"     -- bump on every change; the app shows it, so a stale build is visible
+local SV = "s6"     -- bump on every change; the app shows it, so a stale build is visible
 
 local MAX_LINES = 24        -- skill lines read (the game has General + class + a few)
 local MAX_ITEMS = 400       -- book entries read, all lines together
@@ -425,15 +425,19 @@ function WC.collectSpells()
     end
 
     -- THE PAD COLUMNS for Bind by touch (Book.lua owns the row): one stable column per spell that can go on a button
-    if type(WC.spellsPadColumns) == "function" then
+    -- b38 (Book): every spell has a NUMBER (`pv`): a touch is two taps, its group then its offset (the columns ride `win`)
+    if type(WC.spellsPadNumbers) == "function" then
+        -- the spells as the book shows them first (each one's highest rank), then the lower ranks: the numbers run out last on those
         local ids = {}
-        for _, it in ipairs(doc.items) do
-            if it.t == T_SPELL and not it.pas and not it.fm and it.a then ids[#ids + 1] = it.a end
-        end
-        local okc, cols = pcall(WC.spellsPadColumns, ids)
-        if okc and type(cols) == "table" then
+        for pass = 1, 2 do
             for _, it in ipairs(doc.items) do
-                if it.a and cols[it.a] then it.pc = cols[it.a] end
+                if it.t == T_SPELL and not it.pas and not it.fm and it.a and (it.low and 2 or 1) == pass then ids[#ids + 1] = it.a end
+            end
+        end
+        local okc, nums = pcall(WC.spellsPadNumbers, ids)
+        if okc and type(nums) == "table" then
+            for _, it in ipairs(doc.items) do
+                if it.a and nums[it.a] then it.pv = nums[it.a] end
             end
         end
     end

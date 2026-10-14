@@ -71,19 +71,18 @@ object CombatKeep {
      *  Bind column on the `spells` row (null = no touch cell: that setting is [Plan.skipped]); [page] = the page on show, picked back last */
     data class Plan(val batches: List<List<Pair<String, Int>>>, val restored: List<Entry>, val skipped: List<Entry>)
 
-    fun plan(backup: Backup, page: Int, column: (Int) -> Int?): Plan {
+    fun plan(backup: Backup, page: Int, column: (Int) -> List<Pair<String, Int>>?): Plan {
         val enter = listOf(PadMapModel.ROW_PADTAB to COL_QUIET_ENTER)
         val batches = arrayListOf(enter)
         val done = ArrayList<Entry>(); val skipped = ArrayList<Entry>()
         for (e in backup.entries) {
-            val col = column(e.id)
-            if (col == null) { skipped += e; continue }
+            val cells = column(e.id)
+            if (cells.isNullOrEmpty()) { skipped += e; continue }
             batches += listOf(
                 PadMapModel.ROW to PadMapModel.colPage(if (e.face) page else e.page),
                 PadMapModel.ROW to PadMapModel.colSet(e.set),
                 PadMapModel.ROW to PadMapModel.colPos(e.pos),
-                PadMapModel.ROW_LAYOUT to PadMapModel.COL_COMBAT_LAYER,
-                PadMapModel.ROW_SPELLS to col)
+                PadMapModel.ROW_LAYOUT to PadMapModel.COL_COMBAT_LAYER) + cells
             done += e
         }
         batches += listOf(PadMapModel.ROW to PadMapModel.colPage(page), PadMapModel.ROW to PadMapModel.COL_LEFT)

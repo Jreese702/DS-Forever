@@ -45,8 +45,10 @@ object SpellsModel {
         val pad: List<PadSlot>,     // the same slots that are controller buttons, named
         val autoCastAllowed: Boolean,
         val autoCastOn: Boolean,
-        val padColumn: Int?,        // the tap-pad column of row `spells` that opens Bind for it; null = no column (touch-Bind unavailable)
+        val padColumn: Int?,        // an OLDER add-on's tap-pad column of row `spells` that opens Bind for it (before Book b38)
         val prof: String? = null,   // s3: a PROFESSION's spell (the game's Professions book), the profession's name; it closes the General tab
+        /** Book b38 (b-druid-forms-bind): the spell's NUMBER on the `spells` row's two taps (its group, then its offset); see [bindCells] */
+        val padNumber: Int? = null,
     )
 
     /** Who holds the controller for the Spellbook, and where the gold glow is (`spellsctl`, addon Book.lua). */
@@ -206,7 +208,9 @@ object SpellsModel {
             win = s.optJSONObject("win")?.let { w ->
                 // b17: "croom" = the Controller room's own way in (ControllerView.enterRoom); dropping it sent b47 to the old tab fallback
                 // b37: "bfon" / "bfoff" the Bind box's Normal / In combat by touch
-                listOf("open", "close", "topen", "croom", "bfon", "bfoff").mapNotNull { k -> if (w.has(k)) w.optInt(k, -1).takeIf { it in 0..39 }?.let { k to it } else null }.toMap()
+                // b38: "vb0".."vb12" / "vo0".."vo12" a spell's two taps (bindCells)
+                (listOf("open", "close", "topen", "croom", "bfon", "bfoff") + (0 until PV_GROUPS).map { "vb$it" } +
+                    (0 until PV_PER).map { "vo$it" }).mapNotNull { k -> if (w.has(k)) w.optInt(k, -1).takeIf { it in 0..39 }?.let { k to it } else null }.toMap()
             } ?: emptyMap(),
         )
     }
@@ -307,6 +311,22 @@ object SpellsModel {
 
     /** Bind is offered for a known, active spell of the player's own book. */
     fun bindable(book: Book, e: Entry): Boolean = !e.pet && e.kind == Kind.SPELL && !e.passive
+
+    /**
+     * THE TAPS THAT OPEN BIND FOR [e] by touch on the `spells` row (b-druid-forms-bind, a player: "they don't have the ability to bind
+     * change form as a druid"). Book b38: a fresh GROUP pick then the OFFSET of the spell's number, ONE batch (one column per spell ran
+     * out at 26: a druid's forms had none and the touch did nothing). An older add-on's own column still works; null = no touch way.
+     */
+    fun bindCells(book: Book, e: Entry): List<Pair<String, Int>>? {
+        e.padNumber?.let { n ->
+            val g = book.win["vb${n / PV_PER}"]; val k = book.win["vo${n % PV_PER}"]
+            if (g != null && k != null) return listOf("spells" to g, "spells" to k)
+        }
+        return e.padColumn?.let { listOf("spells" to it) }
+    }
+    /** Book b38: thirteen groups of thirteen numbers (the row's 26 free columns) */
+    private const val PV_GROUPS = 13
+    private const val PV_PER = 13
 
     /** The Controller tab's Spells list: the book's spells that can go on a button, in the book's own order, each once (the addon's
      *  `spellsBindableList` walks the same lines the same way; the controller's row is matched by spell id). */
@@ -452,6 +472,7 @@ object SpellsModel {
             autoCastAllowed = o.optBoolean("ac", false),
             autoCastOn = o.optBoolean("ae", false),
             padColumn = if (o.has("pc")) o.optInt("pc", -1).takeIf { it in 2..39 } else null,
+            padNumber = if (o.has("pv")) o.optInt("pv", -1).takeIf { it >= 0 } else null,
             reagents = need("rg"),
             tools = need("tl"),
             prof = o.optString("pf", "").takeIf { it.isNotEmpty() },
