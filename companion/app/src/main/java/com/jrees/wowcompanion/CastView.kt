@@ -343,6 +343,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
     // ---- controller (PadInput) and layer
     private var padLt = false; private var padRt = false
+    /** p-grow-glitch: ZL or ZR held now (this view's own controller reader): a B then is a layer's ability, not "shrink" */
+    fun triggerHeld(): Boolean = padLt || padRt
     private var padLb = false; private var padRb = false
     private var padOk = true
     private var layer = N

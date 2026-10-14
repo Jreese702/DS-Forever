@@ -194,7 +194,7 @@ class HomeView(
         // the takeover was already on while Home was hidden, so Home lands at its rest and the combat transition PLAYS from there
         if (flow.takeover) {
             apply(flow.screen.copy(takeover = false), animate = false)
-            post { if (flow.takeover && isShown && shown?.takeover == false) apply(flow.screen, animate = true) }
+            post { if (flow.takeover && isShown && shown?.takeover == false) { grewAt = System.currentTimeMillis(); apply(flow.screen, animate = true) } }
         } else apply(flow.screen, animate = false)
     }
 
@@ -277,6 +277,9 @@ class HomeView(
      */
     var onPadHeldAny: ((Int) -> Unit)? = null
 
+    /** p-grow-glitch: when the big controller last grew (wall clock, onB's), for B's grace */
+    private var grewAt = 0L
+
     /** the held D-pad / face buttons from whichever reader runs: B's press, once */
     private fun onPadHeld(held: Int) {
         onPadHeldAny?.invoke(held)
@@ -294,6 +297,10 @@ class HomeView(
         if (auraPane.open != null) { if (!auraPane.padHeld) { auraPane.close(); onBHome?.invoke() }; return }
         if (flow.takeover) {
             val now = System.currentTimeMillis()
+            // p-grow-glitch (a player: "they expand then return to normal after the first second"): B in a fight shrinks the big
+            // controller (the user's own design), but B is a fight button too. Not in the first GROW_B_GRACE_MS after it grew (the
+            // pull's opening presses), and never with ZL / ZR held (that B is a layer's ability)
+            if (now - grewAt < GROW_B_GRACE_MS || (lent(castView) && castView.triggerHeld())) return
             val shrank = grow.minimize(now)
             // the user's pick: out of a fight, B also gives A / X / Y back (Spells' give-back); in a fight B only shrinks
             if (HomeFightFace.giveBack(shrank, grow.fighting(now), fightArmed())) giveBackTap(retry = false)
@@ -516,7 +523,7 @@ class HomeView(
         if (quests.expire(now)) questPane.note("No answer from the game")
         if (auras.expire(now)) auraPane.note("No answer from the game")
         if (auraPane.open != null) auraPane.invalidate()                 // time left counts down
-        if (flow.combat(grow.shown(now))) changed()
+        if (flow.combat(grow.shown(now))) { if (flow.takeover) grewAt = System.currentTimeMillis(); changed() }
         val red = grow.red(now) && !flow.takeover && flow.full == null
         if (red != redShown) {
             redShown = red
@@ -1869,6 +1876,8 @@ class HomeView(
     }
 
     companion object {
+        /** p-grow-glitch: B does not shrink the big controller this soon after it grew */
+        private const val GROW_B_GRACE_MS = 2_000L
         /** the focused quest over the minimap (Settings > Home, HomeSettings.questOverMap; was the constant QUEST_ABOVE_MAP) */
         fun cardOverMap(): Boolean = HomeSettings.questOverMap
         /** logcat tag for Home's taps and refusals (`adb logcat -s WCHOME`) */
