@@ -212,19 +212,26 @@ class SpellsOverlay(
         if (!drawn) standIns(c, dpad, face, lit, icon, st)
 
         // b37 THE LAYOUT (b-bind-combat-toggle, the user on batch2): Normal (the game's bar) or In combat (that button's fight spell);
-        // RB / LB flip it (the addon's), a finger taps a half. Only while the box waits; the answer says which it went on
+        // Book b39 (the user on batch4): SELECT (the "-") flips it, as in the Controller room's chooser; a finger taps a half. Only while
+        // the box waits; the answer says which it went on
         if (r == null || !r.ok) {
             val f = fightShown()
             val touch = fightCols() != null
             UiKit.choice(c, fightRect(0, w), "Normal", !f, textSize = 26f, enabled = touch || ctl?.mode == "bind")
             UiKit.choice(c, fightRect(1, w), "In combat", f, textSize = 26f, enabled = touch || ctl?.mode == "bind")
-            UiKit.pad(c, "${st.prefix}_rshoulder", box.left + 70f, fightRect(0, w).centerY(), 48f)
+            UiKit.pad(c, selectGlyph(st), box.left + 70f, fightRect(0, w).centerY(), 48f)
         }
 
-        // the way back: SELECT when the addon has it (capture v4; UI Art's glyphs, already on the device), else B
-        val back = if (ctl?.backSelect == true) selectGlyph(st) else faceGlyph(st, "b")
+        // the way back: B (the user on batch4: "instead of showing the - button as back when no triggers are held it should show B"; a
+        // plain B backs out, Book b39); the "-" flips Normal / In combat. The triggers' glyphs stand bare ("the text on the ZL and ZR can be
+        // removed")
+        val back = faceGlyph(st, "b")
         if (r != null && r.ok) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Close")
-        else UiKit.hints(c, box.right - 80f, box.bottom - 92f, "${st.prefix}_ltrigger" to "or", "${st.prefix}_rtrigger" to "Other sets", back to "Back")
+        else {
+            val left = UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Back")
+            UiKit.pad(c, "${st.prefix}_rtrigger", left - 44f, box.bottom - 92f, 48f)
+            UiKit.pad(c, "${st.prefix}_ltrigger", left - 100f, box.bottom - 92f, 48f)
+        }
     }
 
     /** empty slots with the glyphs, where the Cast room's drawing goes, for as long as it has none */
