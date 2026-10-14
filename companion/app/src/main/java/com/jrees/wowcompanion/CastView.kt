@@ -126,9 +126,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         var caL: Radial? = null; var caR: Radial? = null
     }
 
-    /** one class radial: up to 8 places (camelot flyouts: pet commands / pet spells / a class flyout) */
+    /** one class radial: its 8 PLACES as the game lays them out (0 = top, clockwise; f-class-radial: a pet command keeps its fixed
+     *  place, 4 empty), each with the add-on's touch cell on row "classr" ([cell]) and, for a pet spell, its autocast cell ([auto]) */
     private class Radial {
-        val names = ArrayList<String>(); val icons = ArrayList<Int>(); val lit = ArrayList<Boolean>()
+        val has = BooleanArray(8); val names = arrayOfNulls<String>(8); val icons = IntArray(8); val lit = BooleanArray(8)
+        val cell = arrayOfNulls<Int>(8); val auto = arrayOfNulls<Int>(8)
     }
 
     private var hud: Hud? = null
@@ -607,6 +609,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
         o.optJSONObject("ov")?.let { ov -> for (li in 0 until STATE_LAYERS) h.ov[li] = str(ov.opt(LAYER_KEYS[li])) }
         o.optJSONObject("ca")?.let { ca -> h.caL = parseRadial(ca.optJSONObject("l")); h.caR = parseRadial(ca.optJSONObject("r")) }
+        // f-class-radial: the game's stance / pet bar placement, read only (Settings > Home shows it)
+        o.optJSONObject("bars")?.let { b -> GameBars.note(b.optJSONObject("st"), b.optJSONObject("ps")) }
 
         // a position whose action changed forgets its cooldown memory
         val old = hud
@@ -662,10 +666,14 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val r = Radial()
         for (j in 0 until min(8, arr.length())) {
             val e = arr.optJSONObject(j) ?: continue
-            r.names.add(str(e.opt("n")) ?: "")
-            r.icons.add(when (val i = e.opt("i")) { is Number -> i.toInt(); else -> 0 })
+            val i = (ji(e.opt("p"), j + 1) - 1).takeIf { it in 0..7 } ?: continue      // an older add-on: in order
+            r.has[i] = true
+            r.names[i] = str(e.opt("n")) ?: ""
+            r.icons[i] = when (val ic = e.opt("i")) { is Number -> ic.toInt(); else -> 0 }
             // a pet command whose mode is on, or a pet spell that casts itself: the gold ring (UI Art)
-            r.lit.add(ji(e.opt("act"), 0) == 1 || ji(e.opt("auto"), 0) == 1)
+            r.lit[i] = ji(e.opt("act"), 0) == 1 || ji(e.opt("auto"), 0) == 1
+            r.cell[i] = ji(e.opt("c"), -1).takeIf { it in 0..39 }
+            r.auto[i] = ji(e.opt("ac"), -1).takeIf { it in 0..39 }
         }
         return r
     }
@@ -975,6 +983,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
     private fun onPad(lt: Boolean, rt: Boolean, lb: Boolean, rb: Boolean) {
         padLt = lt; padRt = rt; padLb = lb; padRb = rb
+        noteClassRadial()                                                  // f-class-radial: Home's mirror
         noteJoin(SystemClock.elapsedRealtime())
         setLayer(computeLayer())
         invalidate()
@@ -1464,7 +1473,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (!drawCollapsed) {
             val left = padLb && padLt
             val rad = when { left -> h.caL; padRb && padRt -> h.caR; else -> null }
-            if (rad != null) drawRadial(c, rad, ox + (if (left) -75f else 70f) * k, oy)
+            if (rad != null) drawRadial(c, rad, ox + (if (left) -75f else 70f) * k, oy, width.toFloat(), height.toFloat())
         }
 
         if (grey) c.restore()
@@ -2026,17 +2035,17 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * (pet mode on / pet spell autocasting) wears a 4 px gold ring 112 px across; empty places at 45 %.
      * Display only: a touch does nothing (several of these actions are protected; tap-to-fire is parked).
      */
-    private fun drawRadial(c: Canvas, r: Radial, cx: Float, cy: Float) {
-        val sc = width / 1240f
+    private fun drawRadial(c: Canvas, r: Radial, cx: Float, cy: Float, vw: Float, vh: Float) {
+        val sc = vw / 1240f
         pFill.color = Color.argb(166, 0, 0, 0)
-        c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), pFill)
+        c.drawRect(0f, 0f, vw, vh, pFill)
         aRadBase?.let { a -> val hw = 256f * sc; drawBox(c, a, cx - hw, cy - hw, cx + hw, cy + hw) }
         val slot = 157f * sc
         for (i in 0 until 8) {
             val a = Math.toRadians(i * 45.0)
             val px = cx + (sin(a) * 168.0).toFloat() * sc
             val py = cy - (kotlin.math.cos(a) * 168.0).toFloat() * sc
-            val has = i < r.names.size
+            val has = r.has[i]
             val sel = has && i == stickSector
             aRadBack?.let { b -> val bw = slot * 82f / 112f / 2f; val bh = slot * 84f / 112f / 2f
                 drawBox(c, b, px - bw, py - bh, px + bw, py + bh, if (has) 255 else 115) }
@@ -2061,12 +2070,61 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 c.drawCircle(px, py, 56f * sc, pStroke)
             }
         }
-        if (stickSector in 0 until r.names.size) {
+        if (stickSector in 0..7 && r.has[stickSector]) {
             val p = radialName ?: UiKit.bodyPaint(30f, Color.WHITE).also { it.textAlign = Paint.Align.CENTER; radialName = it }
             p.textSize = 30f * sc
-            c.drawText(r.names[stickSector], cx, cy + p.textSize / 3f, p)
+            c.drawText(r.names[stickSector] ?: "", cx, cy + p.textSize / 3f, p)
         }
     }
+
+    // ---------------------------------------------------------------- f-class-radial: the mirror on Home (HomeView's layer)
+
+    /** the class radial the held chord opens in the game right now (LB+LT the left, RB+RT the right; not while a window has the pad) */
+    private fun chordRadial(): Radial? {
+        val h = hud ?: return null
+        if (!barsUsable) return null
+        return when { padLb && padLt -> h.caL; padRb && padRt -> h.caR; else -> null }
+    }
+    /** Home's layer: the chord opened a radial (true) or closed it (false); main thread, on change */
+    var onClassRadial: ((Boolean) -> Unit)? = null
+    private var classOpen = false
+    private fun noteClassRadial() {
+        val open = chordRadial() != null
+        if (open != classOpen) { classOpen = open; onClassRadial?.invoke(open) }
+    }
+    /** the radial's place centre in a [vw] x [vh] canvas (the same geometry [drawRadial] uses, centred) */
+    private fun placeAt(i: Int, vw: Float, vh: Float, out: FloatArray) {
+        val sc = vw / 1240f
+        val a = Math.toRadians(i * 45.0)
+        out[0] = vw / 2f + (sin(a) * 168.0).toFloat() * sc
+        out[1] = vh / 2f - (kotlin.math.cos(a) * 168.0).toFloat() * sc
+    }
+    /** draw the open class radial over a [vw] x [vh] canvas (Home's whole page); false = none open */
+    fun drawClassRadial(c: Canvas, vw: Float, vh: Float): Boolean {
+        val r = chordRadial() ?: return false
+        drawRadial(c, r, vw / 2f, vh / 2f, vw, vh)
+        return true
+    }
+    /** the place under ([x], [y]) in that canvas: 0..7, or -1 (none, or an empty place) */
+    fun classRadialHit(x: Float, y: Float, vw: Float, vh: Float): Int {
+        val r = chordRadial() ?: return -1
+        val half = 157f * (vw / 1240f) / 2f
+        val pt = FloatArray(2)
+        for (i in 0 until 8) {
+            if (!r.has[i]) continue
+            placeAt(i, vw, vh, pt)
+            if (kotlin.math.abs(x - pt[0]) <= half && kotlin.math.abs(y - pt[1]) <= half) return i
+        }
+        return -1
+    }
+    /** place [i]'s cell on the add-on's "classr" row: its cast / pet action, or with [auto] its autocast toggle; null = none */
+    fun classRadialCell(i: Int, auto: Boolean): Int? {
+        val r = chordRadial() ?: return null
+        if (i !in 0..7) return null
+        return if (auto) r.auto[i] else r.cell[i]
+    }
+    /** a class radial exists for that chord (Home's hint while a module holds the controller) */
+    fun hasClassRadial(left: Boolean): Boolean = (if (left) hud?.caL else hud?.caR) != null
     private var radialName: Paint? = null
 
     // =================================================================== the Home page's bars band

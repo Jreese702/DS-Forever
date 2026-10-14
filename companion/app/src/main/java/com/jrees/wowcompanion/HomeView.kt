@@ -190,6 +190,7 @@ class HomeView(
         lend(castView, barsSlot)
         // B through the Cast view's OWN reader while Home holds it (see [watchB]): one getevent, never two
         castView.onPadButtons = { held -> onPadHeld(held) }
+        castView.onClassRadial = { open -> classLayerShow(open) }             // f-class-radial: the mirror over Home
         // ARRIVING MID-FIGHT (the user, 2026-10-01: "going back home by what ever means, engages the combat transition at that time"):
         // the takeover was already on while Home was hidden, so Home lands at its rest and the combat transition PLAYS from there
         if (flow.takeover) {
@@ -207,6 +208,7 @@ class HomeView(
         }
         if (lent(castView)) {
             castView.layout = CastView.Layout.FULL; castView.bottomLine = false; castView.onPadButtons = null
+            castView.onClassRadial = null; classLayerShow(false)                 // the Cast room draws its own radial
             castView.groundPainter = null; castView.triggerStrip = false; redShown = false
         }
         if (lent(mapView)) mapView.rimKeepOut = emptyList()
@@ -264,8 +266,14 @@ class HomeView(
     private var bReader: PadInput? = null
     private var bWasHeld = false
     private fun watchB(on: Boolean) {
-        if (!on) { bReader?.stop(); return }
-        val p = bReader ?: PadInput({ _, _, _, _ -> }, { _, _ -> }, { held -> onPadHeld(held) }).also { bReader = it }
+        if (!on) { bReader?.stop(); if (classHint != null) { classHint = null; classLayerShow(false) }; return }
+        // f-class-radial: Home's own reader (a chat / map module holds the controller): the game's class radial cannot open; say so
+        val p = bReader ?: PadInput({ lt, rt, lb, rb ->
+            val left = lb && lt; val right = rb && rt
+            val hint = if ((left && castView.hasClassRadial(true)) || (right && castView.hasClassRadial(false)))
+                "Close the ${if (flow.full == HomeModule.MAP) "map" else "chat"} to use the class radial (B)" else null
+            if (hint != classHint) { classHint = hint; classLayerShow(hint != null) }
+        }, { _, _ -> }, { held -> onPadHeld(held) }).also { bReader = it }
         p.start()
     }
 
@@ -276,6 +284,54 @@ class HomeView(
      * reader of Home's runs there): the ring falls back to Interact's document.
      */
     var onPadHeldAny: ((Int) -> Unit)? = null
+
+    /**
+     * f-class-radial (the user's pick: "Mirror the game's radials"): while LB+LT / RB+RT holds the game's class radial open, Home shows
+     * it over the page - the same places, the right stick's place lit (CastView draws it) - and a TOUCH picks: a tap is the place's
+     * secure cell on the add-on's "classr" row (the game's own cast / pet action), a long-press on a pet spell its autocast. While
+     * Home's chat or map module holds the controller the game's radial cannot open: the layer says so instead.
+     */
+    private var classHint: String? = null
+    private val classLayer: View by lazy { object : View(context) {
+        private var downAt = -1
+        private val longPress = Runnable { val i = downAt; if (i >= 0) { downAt = -2; classTap(i, auto = true) } }
+        override fun onDraw(c: Canvas) {
+            val hint = classHint
+            if (hint != null) {
+                c.drawColor(Color.argb(166, 0, 0, 0))
+                val p = UiKit.bodyPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
+                c.drawText(hint, width / 2f, height / 2f, p)
+                return
+            }
+            if (lent(castView)) castView.drawClassRadial(c, width.toFloat(), height.toFloat())
+        }
+        override fun onTouchEvent(e: MotionEvent): Boolean {
+            if (classHint != null) return true
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downAt = castView.classRadialHit(e.x, e.y, width.toFloat(), height.toFloat())
+                    if (downAt >= 0) postDelayed(longPress, CLASS_LONG_MS)
+                }
+                MotionEvent.ACTION_UP -> {
+                    removeCallbacks(longPress)
+                    val i = downAt; downAt = -1
+                    if (i >= 0 && castView.classRadialHit(e.x, e.y, width.toFloat(), height.toFloat()) == i) classTap(i, auto = false)
+                }
+                MotionEvent.ACTION_CANCEL -> { removeCallbacks(longPress); downAt = -1 }
+            }
+            return true
+        }
+    } }
+    private fun classTap(i: Int, auto: Boolean) {
+        val col = castView.classRadialCell(i, auto) ?: return
+        val sent = TapBridge.tap(context, pad, "classr", col) { }
+        Log.i(TAG, "class radial: place ${i + 1}${if (auto) " autocast" else ""} -> classr $col ${if (sent) "tapped" else "not sent"}")
+    }
+    private fun classLayerShow(open: Boolean) {
+        if (classLayer.parent == null) { if (!open) return; addView(classLayer) }   // added on first use: over everything
+        classLayer.visibility = if (open) View.VISIBLE else View.GONE
+        classLayer.invalidate()
+    }
 
     /** p-grow-glitch: when the big controller last grew (wall clock, onB's), for B's grace */
     private var grewAt = 0L
@@ -945,6 +1001,8 @@ class HomeView(
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec))
+        classLayer.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
+                           MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(hSpec), MeasureSpec.EXACTLY))
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
             val r = now[p] ?: continue
@@ -973,6 +1031,7 @@ class HomeView(
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        classLayer.layout(0, 0, r - l, b - t)                                  // f-class-radial: the whole page
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
             val f = now[p] ?: continue
@@ -1878,6 +1937,8 @@ class HomeView(
     companion object {
         /** p-grow-glitch: B does not shrink the big controller this soon after it grew */
         private const val GROW_B_GRACE_MS = 2_000L
+        /** f-class-radial: a press this long on a pet spell's place toggles its autocast */
+        private const val CLASS_LONG_MS = 450L
         /** the focused quest over the minimap (Settings > Home, HomeSettings.questOverMap; was the constant QUEST_ABOVE_MAP) */
         fun cardOverMap(): Boolean = HomeSettings.questOverMap
         /** logcat tag for Home's taps and refusals (`adb logcat -s WCHOME`) */

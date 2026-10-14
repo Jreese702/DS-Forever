@@ -137,6 +137,28 @@ object HomeSettings {
 }
 
 /**
+ * f-class-radial: WHERE THE GAME PUTS THE STANCE / FORM BAR AND THE PET BAR (its Controller settings, GamepadStanceBarOverride /
+ * GamepadPossessBarOverride), read only: DS Forever never writes a CVar. The add-on's hud.bars carries the value and the game's own
+ * words; Settings > Home shows them with where to change them.
+ */
+object GameBars {
+    var stance: String? = null; private set
+    var stanceTitle: String? = null; private set
+    var pet: String? = null; private set
+    var petTitle: String? = null; private set
+    private val listeners = ArrayList<() -> Unit>()
+    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun note(st: JSONObject?, ps: JSONObject?) {
+        fun word(o: JSONObject?) = o?.optString("n", "")?.takeIf { it.isNotEmpty() } ?: o?.optInt("v", 0)?.takeIf { it > 0 }?.let { "Setting $it" }
+        fun title(o: JSONObject?) = o?.optString("t", "")?.takeIf { it.isNotEmpty() }
+        val a = word(st); val at = title(st); val b = word(ps); val bt = title(ps)
+        if (a == stance && at == stanceTitle && b == pet && bt == petTitle) return
+        stance = a; stanceTitle = at; pet = b; petTitle = bt
+        for (l in listeners) l()
+    }
+}
+
+/**
  * START ATTACK ON CAST (Spells' PadMap m13; the user 2026-10-01 picked "option 2": harmful spells on the controller also start the
  * attack): the SWITCH lives in Home's Settings section, its meaning in Spells' add-on. The state comes from Spells' padmap (Map.attack;
  * null = an older add-on: no switch shown); one tap on the `spells` row's colOn / colOff turns it (no-action notes, idempotent: the one
@@ -250,6 +272,7 @@ class HomeSettingsSection(context: Context) : View(context) {
         HomeSettings.onChange { post { invalidate() } }
         // the attack switch appears / its words change: the section's height may change too
         HomeAttackSwitch.onChange { post { requestLayout(); invalidate() } }
+        GameBars.onChange { post { requestLayout(); invalidate() } }               // f-class-radial: the rows appear / change
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
@@ -284,6 +307,15 @@ class HomeSettingsSection(context: Context) : View(context) {
         y = row(c, y + GAP, "Swing timer", listOf("The swing and cast line under the controller in a fight."),
             listOf("On", "Off"), if (HomeSettings.swingTimer) 0 else 1,
             listOf({ HomeSettings.swingTimer = true }, { HomeSettings.swingTimer = false }))
+        // f-class-radial: the game's own stance / pet bar placement, read only (no choices: DS Forever never changes it)
+        GameBars.stance?.let { v ->
+            y = row(c, y + GAP, GameBars.stanceTitle ?: "Stance bar", listOf("$v. Change it in the game's Controller settings."),
+                emptyList(), -1, null)
+        }
+        GameBars.pet?.let { v ->
+            y = row(c, y + GAP, GameBars.petTitle ?: "Pet bar", listOf("$v. Change it in the game's Controller settings."),
+                emptyList(), -1, null)
+        }
         // the focused quest's place (the user 2026-10-09): over the minimap (today's) or at the top of the chat
         y = row(c, y + GAP, "Focused quest", listOf("Where Home shows the quest you focus. Tap it to fold it."),
             // the user 2026-10-09: "Above Chat" first; the default stays Above Minimap
