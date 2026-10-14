@@ -61,6 +61,8 @@ class ReportNotice(c: Context) : View(c) {
         val s = state ?: return
         if (label == OPEN && s is State.Ready) onOpen(s)
         if (label == OPEN && s is State.SendFailed) onOpenUrl(s.url)
+        // the user before 1.0.7: dismissing here clears the note in Settings and on the setup screen too (ReportFlow is the one state)
+        if (s is State.Ready || s is State.Sent || s is State.SendFailed) { ReportFlow.init(context); ReportFlow.clearPending() }
         hide(); onDismiss()
     }
 
@@ -84,10 +86,12 @@ class ReportNotice(c: Context) : View(c) {
         if (state == null) return false
         val hit = boxes.firstOrNull { it.first.contains(e.x, e.y) }
         if (e.actionMasked == MotionEvent.ACTION_UP) hit?.let { pressed(it.second) }
-        return hit != null || e.y >= cardTop                   // only the card takes touches; Home stays usable above it
+        // the card takes every touch on it (never through to Home's pad cells, which act in the game); Home stays usable above it
+        return hit != null || cardRect.contains(e.x, e.y) || e.y >= cardTop
     }
 
     private var cardTop = Float.MAX_VALUE
+    private val cardRect = RectF()
 
     override fun onDraw(c: Canvas) {
         val s = state ?: return
@@ -99,6 +103,7 @@ class ReportNotice(c: Context) : View(c) {
         val bottom = height - Strip.HEIGHT - 24f
         val r = RectF(left, bottom - h, left + cw, bottom)
         cardTop = r.top
+        cardRect.set(r)
         UiKit.cover(c, r, 0.92f)
         UiKit.border(c, r)
         val title = UiKit.titlePaint(36f).apply { textAlign = android.graphics.Paint.Align.CENTER }

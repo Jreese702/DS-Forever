@@ -27,6 +27,14 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ProblemReportTest {
+    /**
+     * NEVER the network from a test: gradle.properties now names the LIVE receiver (dsfReportEndpoint), and an auto-save test once
+     * created a real GitHub issue (#4). Every test runs with no receiver; the upload's own tests set what they need.
+     */
+    private var liveEndpoint = ""
+    @org.junit.Before fun noReceiver() { liveEndpoint = ReportUpload.endpoint; ReportUpload.endpoint = "" }
+    @org.junit.After fun receiverBack() { ReportUpload.endpoint = liveEndpoint }
+
     private val names = listOf("Thrallmar", "Jaina", "Stormrage", "Knights of Azeroth")
 
     // ---- the privacy pass
@@ -288,7 +296,7 @@ class ProblemReportTest {
     }
 
     @Test fun noReceiverNoUpload() {
-        val was = ReportUpload.endpoint
+        val was = ReportUpload.endpoint           // "" here (noReceiver)
         ReportUpload.endpoint = ""
         assertFalse(ReportUpload.enabled)
         assertEquals("no receiver in this build", ReportUpload.send("{}").exceptionOrNull()!!.message)
@@ -307,6 +315,23 @@ class ProblemReportTest {
         assertEquals(listOf("Open issue", "OK"), failed.buttons)
         assertTrue(ReportFlow.noteTitle(ReportFlow.Saved("/x", 0L, "u", sent = 7)).contains("was sent (") )
         assertTrue(ReportFlow.noteTitle(ReportFlow.Saved("/x", 0L, "u", sent = 7)).endsWith("issue #7)"))
+    }
+
+    @Test fun okOrDismissOnTheNoticeClearsTheNoteEverywhere() {
+        val ctx = RuntimeEnvironment.getApplication()
+        ReportFlow.init(ctx)
+        for ((state, key) in listOf(ReportNotice.State.Ready("/x", "u") to "PAD1", ReportNotice.State.Sent(3, "u") to "PAD2",
+                ReportNotice.State.SendFailed("why", "/x", "u") to "PAD2")) {
+            ReportFlow.markSaved("/x", 0L, "u")
+            val n = ReportNotice(ctx)
+            n.show(state)
+            assertTrue(n.padKey(key))                                       // OK (A on the focused OK / Open issue, or B)
+            assertEquals(state.toString(), null, ReportFlow.pending)       // the Settings / setup-screen note goes too
+        }
+        ReportFlow.markSaved("/x", 0L, "u")
+        ReportNotice(ctx).apply { show(ReportNotice.State.Compiling) }      // compiling asks nothing: the note stays
+        assertTrue(ReportFlow.pending != null)
+        ReportFlow.clearPending()
     }
 
     @Test fun onlyOurTags() {

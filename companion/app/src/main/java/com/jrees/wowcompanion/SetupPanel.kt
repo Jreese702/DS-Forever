@@ -77,6 +77,7 @@ class SetupPanel(context: Context) : View(context) {
             bottom = r.top - GAP * 2
         }
         // the one pop-up, above Play
+        cardRect.setEmpty()
         s.prompt?.let { p -> drawPrompt(c, p, bottom) }
         // "Report a problem" (board f-problem-report): small, in the bottom-left corner, last in the box's order
         s.report?.let { rb ->
@@ -100,6 +101,9 @@ class SetupPanel(context: Context) : View(context) {
         }
     }
 
+    /** the pop-up's card as last drawn (a touch inside it is the panel's) */
+    private val cardRect = RectF()
+
     private fun drawPrompt(c: Canvas, p: SetupFlow.Prompt, bottom: Float) {
         val w = (width - MARGIN * 2).coerceAtMost(CARD_W)
         val left = (width - w) / 2f
@@ -108,6 +112,7 @@ class SetupPanel(context: Context) : View(context) {
         val lines = wrap(p.text, body, w - PAD * 2)
         val h = PAD + 52f + 16f + lines.size * 40f + GAP + p.buttons.size * (BUTTON_H + GAP) + PAD
         val card = RectF(left, (bottom - h).coerceAtLeast(MARGIN), left + w, bottom)
+        cardRect.set(card)
         pFill.color = Color.argb(235, 18, 14, 10)
         c.drawRoundRect(card, 14f, 14f, pFill)
         UiKit.border(c, card)
@@ -173,8 +178,9 @@ class SetupPanel(context: Context) : View(context) {
             }
             MotionEvent.ACTION_CANCEL -> { pressed = -1; invalidate() }
         }
-        // before Play every touch is the panel's (nothing under it is pressed by accident); in the game only the card's
-        return screen?.play != null || hit >= 0
+        // before Play every touch is the panel's (nothing under it is pressed by accident); in the game the CARD's, buttons or not (the
+        // user before 1.0.7: a tap on a pop-up must never fall through to Home, whose pad cells act in the game)
+        return screen?.play != null || hit >= 0 || (screen?.prompt != null && cardRect.contains(e.x, e.y))
     }
 
     companion object {

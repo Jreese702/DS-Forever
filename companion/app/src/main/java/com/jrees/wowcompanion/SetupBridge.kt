@@ -37,7 +37,10 @@ object SetupBridge {
     @Volatile var loginFormOpen = false
 
     /** the launcher's pad path asks before giving A to the game (p-auth-keyboard: A does nothing while the code pop-up shows) */
-    fun blockGameA(): Boolean = SignInKeyboard.blocksA(signIn, LauncherHooks.gameUp(), loginFormOpen) || (noticeAsking && LauncherHooks.gameUp())
+    fun blockGameA(): Boolean = holdsGamePad()
+
+    /** a pop-up of ours asks for a press with the game up: A, B and the D-pad are held back from the game (PopupHold) */
+    fun holdsGamePad(): Boolean = PopupHold.holds(signIn, LauncherHooks.gameUp(), loginFormOpen, noticeAsking)
 
     /** the report's notice on Home asks for a press (Open issue / OK): the game's A is held back meanwhile (board f-problem-report) */
     @Volatile var noticeAsking = false
