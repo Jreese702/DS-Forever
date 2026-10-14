@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p27"                -- bump on every change
+local CV = "p28"                -- bump on every change
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -97,7 +97,7 @@ local function shownSet()
 end
 
 local rows                      -- below: the chooser's rows (the report names the one under the cursor)
-local fightView, fightToggle, flipFight     -- p26 below: the chooser's Normal / In combat switch
+local fightView     -- p26 below: the chooser's layout (p28: the tab's own; the user's pick "No flip in the chooser")
 -- p16 the radial's page on show: its 8 slices' spell ids, 0 = empty
 local function radialPage()
     local sr = type(WC.spellRadial) == "table" and WC.spellRadial or nil
@@ -116,8 +116,7 @@ local function report(note)
         local r = rows()[tc.chooser.row]
         -- a mount / an item row is named by its key ("m:<id>" / "i:<id>"): a mount and an item may share a number
         local rid = r and ((r.kind == "mount" or r.kind == "item") and r.key or (r.id or r.key or r.kind)) or nil
-        ch = { list = tc.chooser.list, row = tc.chooser.row, id = rid, tabs = tc.chooser.tabs or nil,
-               fight = tc.view ~= "radial" and fightView() or nil, ft = fightToggle() or nil }           -- p26
+        ch = { list = tc.chooser.list, row = tc.chooser.row, id = rid, tabs = tc.chooser.tabs or nil }
     end
     WC.send(WC.encode({ type = "padtabctl", v = CV, c = {
         on = tc.on or nil, focus = tc.focus, set = tc.set, shown = shownSet(), pos = tc.pos, page = pm and pm.page() or 1,
@@ -144,27 +143,13 @@ local function changeable(slot) return slot and slot.kind ~= "fixed" and not inC
 local function isCombat(slot) return slot and slot.kind == "combat" end
 -- m32: what a combat spell keeps for outside fights (a spell, an item, nothing); anything else it replaces, and Replace names it first
 local function keeps(slot) return slot and (slot.kind == "none" or slot.kind == "spell" or slot.kind == "item") end
--- p26 (b-bind-combat-toggle, the user 2026-10-13: "while binding, a toggle to choose whether the spell goes on the normal controller layout
--- or the In combat layout"): the chooser's own choice (tc.chooser.fight, Y or a finger) wins over the tab it was opened from
+-- p26 / p28: the chooser's layout is the tab's (In combat = fight spells); p26's Y / "-" flip is gone (the user's pick on batch5: "No flip
+-- in the chooser": the room's own In combat tab makes fight spells; the Spellbook's Bind box has Normal | In combat)
 fightView = function()
     if tc.chooser and tc.chooser.fight ~= nil then return tc.chooser.fight end
     return tc.view == "combat"
 end
 local function onlySpells() return fightView() or isCombat(here()) end
--- p26 may the chooser switch layouts? Not on the radial, not in a fight, and not on a base X / Y / A (they take a FIGHT spell only)
-fightToggle = function()
-    if not tc.chooser or tc.view == "radial" or inCombat() then return false end
-    local h = here()
-    return not (h and h.kind == "fixed")
-end
--- p26 Y in the chooser (or the app's own toggle): the other layout; its rows change, so back to the first row (no Extra in a fight)
-flipFight = function()
-    if not fightToggle() then report("no-fight-toggle") return end
-    tc.chooser.fight = not fightView()
-    tc.chooser.row, tc.chooser.tabs = 1, nil
-    if tc.chooser.fight and tc.chooser.list == "extra" then tc.chooser.list = "spells" end
-    report("chooser-fight")
-end
 -- the base set's X / Y / A (PadMap m7, the user 2026-10-01 "Yes, per button"): in the combat view they take a spell for fights (no macro);
 -- B (7) stays the game's Back
 local function isFace(slot) return slot and slot.kind == "fixed" and slot.face == true end
@@ -580,9 +565,6 @@ local function pressChooser(key)
         local thing = list[tc.chooser.row]
         if thing then choose(thing) end
     elseif key == "PAD2" then tc.chooser = nil; report("chooser-closed")
-    -- p27 (the user on batch4: "how could this possibly ever work? Y is a selectable keybind"): SELECT (the "-") flips Normal / In
-    -- combat - never a button anything goes on, the same control as the Spellbook's Bind box (Book b39 asks the capture for it)
-    elseif key == "PADBACK" then flipFight()
     end
     return true
 end
