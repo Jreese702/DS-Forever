@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b39"                -- bump on every change
+local BV = "b40"                -- bump on every change
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -548,7 +548,7 @@ local function extraApply()
     local cap = capture()
     if not (ctl.on and cap and (cap.version or 0) >= 4 and type(cap.extra) == "function") then extraOn = false; extraSent = nil return end
     local list = {}
-    if selWant or ctl.croom then list[#list + 1] = SELECT end       -- b39: the Controller room's chooser flips Normal / In combat with it
+    if selWant then list[#list + 1] = SELECT end
     for _, k in ipairs(shoulders()) do list[#list + 1] = k end
     local key = table.concat(list, ",")
     if key == extraSent then return end
@@ -733,14 +733,10 @@ onPress = function(key)
         return
     end
     if ctl.mode == "bind" then
-        -- b39 (the user on batch4: LB / RB did not change it, "instead of showing the - button as back when no triggers are held it
-        -- should show B"): a plain B is the way back; SELECT (the "-") flips Normal / In combat - never a place for a spell (not one of
-        -- the eight), the same control as the Controller room's chooser (PadTabCtl p27). LB / RB are this device's emulated modifiers
-        if key == SELECT then
-            if ctl.bind then ctl.bind.fight = not ctl.bind.fight or nil end
-            report("bind-fight")
-            return
-        end
+        -- b40 (the user on batch5, their pick): Normal | In combat are TABS the APP switches with LB / RB (its own reader: the game never
+        -- hears LB here, it is the emulated Ctrl) or a tap, through the bf-on / bf-off columns. A plain B is the way back (b39: Back shows
+        -- B); neither SELECT nor a shoulder is ever a place for a spell
+        if key == SELECT or key == "PADLSHOULDER" or key == "PADRSHOULDER" then return end
         if (key == "PAD2" and plainNow()) or (key == backKey() and key ~= SELECT) then
             ctl.bind, ctl.mode = nil, "book"; backFor(false); report("bind-cancel") return
         end
