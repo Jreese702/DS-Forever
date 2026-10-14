@@ -107,6 +107,8 @@ class HomeView(
             if (flow.setRest(HomeSettings.rest)) changed()
             // the focused quest moved (Settings > Home): the parts go to their new places
             else if (laidOverMap != HomeSettings.questOverMap) shown?.let { apply(it, animate = isShown) }
+            // r-combat-anim-off: Grow / Same size changed during a fight: the band goes to its new size
+            else if (laidGrow != HomeSettings.combatGrow) { laidGrow = HomeSettings.combatGrow; shown?.let { if (it.takeover) apply(it, animate = isShown) } }
         } }
         setBackgroundColor(Theme.ink)
         setWillNotDraw(false)
@@ -645,12 +647,12 @@ class HomeView(
             // flush with the quest")
             val noCard = homeCard() == null || auraPane.open != null
             return if (noCard) mapOf(
-                Part.BARS to RectF(0f, if (s.takeover) 10f else 8f, w, barsBottom),
+                Part.BARS to RectF(0f, if (big(s)) 10f else 8f, w, barsBottom),
                 Part.CHAT to RectF(g, top, c - 4f, h - g),
                 Part.MAP to RectF(c + 4f, top, w - g, h - g),
                 Part.AURAS to RectF(c + 4f, top, w - g, h - g),
             ) else mapOf(
-                Part.BARS to RectF(0f, if (s.takeover) 10f else 8f, w, barsBottom),
+                Part.BARS to RectF(0f, if (big(s)) 10f else 8f, w, barsBottom),
                 Part.QUESTS to RectF(c + 12f, qTop, w - g - 8f, qBottom),
                 Part.CHAT to RectF(g, top, c - 4f, h - g),
                 Part.MAP to RectF(c + 4f, top, w - g, h - g),
@@ -661,13 +663,13 @@ class HomeView(
         // right column (no cover: the player and the arrows keep their places). No focused quest = no card, the chat from the top. The
         // world notice stays at the top of the chat's well, so it stands right under the card, never on it
         if (homeCard() == null) return mapOf(
-            Part.BARS to RectF(0f, if (s.takeover) 10f else 8f, w, barsBottom),
+            Part.BARS to RectF(0f, if (big(s)) 10f else 8f, w, barsBottom),
             Part.CHAT to RectF(g, top, c - 4f, h - g),
             Part.MAP to RectF(c + 4f, top, w - g, h - g),
             Part.AURAS to RectF(c + 4f, top, w - g, h - g),
         )
         return mapOf(
-            Part.BARS to RectF(0f, if (s.takeover) 10f else 8f, w, barsBottom),
+            Part.BARS to RectF(0f, if (big(s)) 10f else 8f, w, barsBottom),
             Part.QUESTS to RectF(g, top, c - 4f, cardBottom),
             Part.CHAT to RectF(g, cardBottom + g, c - 4f, h - g),
             Part.MAP to RectF(c + 4f, top, w - g, h - g),
@@ -714,7 +716,7 @@ class HomeView(
         if (lent(castView) && (s.full == null || s.takeover || s.full == HomeModule.BARS)) {
             castView.layout = when {
                 s.full == HomeModule.BARS && !s.takeover -> CastView.Layout.FULL
-                s.takeover || s.rest == HomeRest.DIAMONDS -> CastView.Layout.DIAMONDS
+                big(s) || s.rest == HomeRest.DIAMONDS -> CastView.Layout.DIAMONDS
                 else -> CastView.Layout.ROW
             }
             // the big controller's bottom edge is the SWING TIMER (Cast draws it; Home leaves its own line out, see onDraw)
@@ -744,8 +746,7 @@ class HomeView(
         if (w <= 0f || h <= 0f) { chatReturn(); requestLayout(); return }       // placed at the first layout
         val to = places(s, w, h)
         for ((p, v) in views) if (to.containsKey(p)) { v.visibility = View.VISIBLE; v.alpha = 1f }
-        // r-combat-anim-off: the player turned the combat motion off (Settings > Home "Combat switch"): the fight's switch lands at once
-        if (!animate || before == null || (before.takeover != s.takeover && !HomeSettings.combatAnim)) {
+        if (!animate || before == null) {
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
             flightClip(false)
             chatReturn()
@@ -850,8 +851,11 @@ class HomeView(
         invalidate()
     }
 
+    /** r-combat-anim-off: the fight's BIGGER band ("Combat layout: Grow", the default); "Same size" keeps the rest's place and size */
+    private fun big(s: HomeScreen) = s.takeover && HomeSettings.combatGrow
+
     private fun barsBottom(s: HomeScreen) = when {
-        s.takeover -> 10f + COMBAT_BARS
+        big(s) -> 10f + COMBAT_BARS
         s.rest == HomeRest.DIAMONDS -> 8f + REST_DIAMONDS_BARS
         else -> 120f
     }
@@ -880,6 +884,8 @@ class HomeView(
     private var laidCardH = -1f
     /** where the last layout put the card (a Settings change re-lays only when it moved) */
     private var laidOverMap = true
+    /** the Grow / Same size choice the page was last laid with (Settings > Home "Combat layout") */
+    private var laidGrow = HomeSettings.combatGrow
 
     /** the chat's glide at [k] (0 = the pane's box, 1 = the frame), as a window in the full chat's own px */
     private fun chatGlide(k: Float, pane: RectF, full: RectF) {
@@ -977,7 +983,7 @@ class HomeView(
         if (s == null) return Overlay(false, false)
         val page = s.full == null || s.takeover
         // the clock only with the small diamonds at rest: the grown controller and the thin row leave no gap there
-        return Overlay(page, page && !s.takeover && s.rest == HomeRest.DIAMONDS)
+        return Overlay(page, page && !big(s) && s.rest == HomeRest.DIAMONDS)
     }
     /** the overlay before and after the running move, and how far it is (1 = settled on [overlayTo]) */
     private var overlayFrom = Overlay(false, false)
