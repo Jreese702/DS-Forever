@@ -5,7 +5,7 @@
 ## Group: WowCompanion
 ## Notes: Feeds the Group Finder room on the Thor's bottom screen
 ## Author: DS Forever
-## Version: Set 125
+## Version: Set 126
 ## DefaultState: enabled
 ## Dependencies: WowCompanion
 GroupFinder.lua
