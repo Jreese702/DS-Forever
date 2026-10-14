@@ -140,7 +140,14 @@ WC.minimapBlobsOff = false
 -- texture change may be what makes the engine rebuild the blobs, and so apply the alphas). Shown again, each gets the client's
 -- own minimap blob picture back by file id: the interface/minimap/ui-*blob* files (the client's listfile), which no UI code sets,
 -- so the engine's own defaults. The pictures change only on a hide / show / event, never on the 1 s tick. mmt = textures taken.
-WC.mmHide = { REASSERT_S = 1.0, at = -1000, n = 0, r = 0, t = 0, i = false, a = false,
+-- ROUND 5, THE MASK (batch8's photo + the client's own pictures: the line is the FOCUSED quest's area outline, drawn with
+-- interface/minimap/ui-questblobminimap-outsideselected (1083696, light blue-white), which no Minimap setter reaches). The mask
+-- clips everything the widget draws, that outline included: while hidden it is MASK_OFF, the client's own fully transparent
+-- minimap picture (533894, ui-questblobminimap-inside: alpha 0 on every pixel); shown again it is MASK_ON, the atlas camelot's
+-- Skin.lua sets in both rotate modes. Said on every pass (also the 1 s tick: Skin.lua puts its own back on a rotateMinimap
+-- change). mmk = the mask taken.
+WC.mmHide = { REASSERT_S = 1.0, at = -1000, n = 0, r = 0, t = 0, i = false, a = false, k = false,
+              MASK_OFF = 533894, MASK_ON = "ui-hud-minimap-frame-generic-mask",
               RINGS = { "SetQuestBlobRingScalar", "SetTaskBlobRingScalar", "SetArchBlobRingScalar" },
               TEX = { { "SetQuestBlobInsideTexture", 533894 }, { "SetQuestBlobOutsideTexture", 533895 },
                       { "SetQuestBlobRingTexture", 533893 },                   -- interface/minimap/ui-questblob(minimap)-*
@@ -180,6 +187,10 @@ function WC.mmHide.layers(off, pictures)
         end
     end
     H.r = r
+    H.k = false
+    if mm and type(mm.SetMaskTexture) == "function" then
+        H.k = pcall(mm.SetMaskTexture, mm, off and H.MASK_OFF or H.MASK_ON)
+    end
     H.a = false
     if mm and type(mm.SetAlpha) == "function" and hiddenFrame ~= "Minimap" then
         H.a = pcall(mm.SetAlpha, mm, off and 0 or 1)
@@ -1201,6 +1212,7 @@ function WC.collectMap()
     if hiddenFrame and not peek then
         local H = WC.mmHide
         out.mmb, out.mmr, out.mmi, out.mma, out.mmf, out.mmt = H.n, H.r, H.i and 1 or 0, H.a and 1 or 0, hiddenFrame, H.t
+        out.mmk = H.k and 1 or 0
     end
 
     out.ok = true
