@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i113"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i114"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -608,6 +608,111 @@ end
 -- press 1 = arm with its buyout; press 2 = PlaceBid(auctionID, buyout). Anything else cancels.
 local AH_ARM, AH_ROWS, AH_RESULTS = 10, 40, 60
 local AH = { path = {}, results = nil, key = nil, qty = 1, buy = nil, owned = nil, tab = "browse", asked = nil }
+-- f-auction-house (1.0.8): THE GAME'S SEARCH BAR, FILTERS AND SORTED COLUMNS (Blizzard_AuctionHouseUI, read from the client; Forever
+-- runs the modern auction house): a search word (typed with the Chat keyboard, WC.chatField), the Filter list (a level range and
+-- the game's own checkboxes from C_AuctionHouse.GetFilterGroups, its defaults AUCTION_HOUSE_DEFAULT_FILTERS), and every sortable
+-- column header of the game: the results by Price / Name / (the category's level column), an item's listings by Buyout / Bid, your
+-- auctions by Name / Bid / Buyout / Time Left. A header pressed becomes the first sort, pressed again it turns round; two sorts at
+-- most (the game's AddSortType). All kept for the session here; the game's own saved filters and sorts are never written.
+AH.search = { text = "", min = "", max = "", filters = nil }      -- filters: Enum.AuctionHouseFilter -> on (nil until first read)
+AH.filtersOpen = false
+AH.FIELD = { text = 64, min = 3, max = 3 }
+function AH.sortEnum(name) return TN(function() return Enum.AuctionHouseSortOrder[name] end) end
+AH.sorts = {
+    browse = { { o = "Price", r = false }, { o = "Name", r = false } },
+    item = { { o = "Buyout", r = false }, { o = "Bid", r = false } },
+    owned = { { o = "Name", r = false }, { o = "Price", r = false } },
+}
+AH.SORTABLE = { browse = { Price = true, Name = true, Level = true }, item = { Buyout = true, Bid = true },
+                owned = { Name = true, Bid = true, Buyout = true, TimeRemaining = true } }
+function AH.sortList(ctx)
+    local out = {}
+    for _, st in ipairs(AH.sorts[ctx] or {}) do
+        local e = AH.sortEnum(st.o)
+        if e then out[#out + 1] = { sortOrder = e, reverseSort = st.r } end
+    end
+    return out
+end
+-- the game's AddSortType: the header pressed goes first; pressed while first it turns round; two at most
+function AH.addSort(ctx, name)
+    local list = AH.sorts[ctx]
+    local new = { o = name, r = false }
+    for i, st in ipairs(list) do
+        if st.o == name then
+            if i == 1 and st.r == new.r then new.r = not new.r end
+            table.remove(list, i)
+            break
+        end
+    end
+    table.insert(list, 1, new)
+    while #list > 2 do list[#list] = nil end
+end
+function AH.filterDefaults()
+    local out = {}
+    local def = AUCTION_HOUSE_DEFAULT_FILTERS
+    if type(def) == "table" then
+        for k, v in pairs(def) do if type(k) == "number" then out[k] = v and true or false end end
+        return out
+    end
+    for _, name in ipairs({ "PoorQuality", "CommonQuality", "UncommonQuality", "RareQuality", "EpicQuality", "LegendaryQuality", "ArtifactQuality" }) do
+        local e = TN(function() return Enum.AuctionHouseFilter[name] end)
+        if e then out[e] = true end
+    end
+    return out
+end
+function AH.filters()
+    if not AH.search.filters then AH.search.filters = AH.filterDefaults() end
+    return AH.search.filters
+end
+-- a filter's words as the game shows them (its own strings; a quality's name without the colour code: the app colours it)
+function AH.filterName(f)
+    local q
+    for name, k in pairs({ PoorQuality = 0, CommonQuality = 1, UncommonQuality = 2, RareQuality = 3, EpicQuality = 4,
+                           LegendaryQuality = 5, ArtifactQuality = 6 }) do
+        if TN(function() return Enum.AuctionHouseFilter[name] end) == f then q = k end
+    end
+    if q then return TS(function() return _G["ITEM_QUALITY" .. q .. "_DESC"] end), q end
+    local t = type(AUCTION_HOUSE_FILTER_STRINGS) == "table" and AUCTION_HOUSE_FILTER_STRINGS[f]
+    if type(t) == "string" then return (t:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")), nil end
+    return nil, nil
+end
+function AH.filterGroups()
+    local out = {}
+    local on = AH.filters()
+    local ok, groups = CALL(function() return C_AuctionHouse.GetFilterGroups() end)
+    if not (ok and type(groups) == "table") then return out end
+    local catWords = { [1] = "AUCTION_HOUSE_FILTER_CATEGORY_EQUIPMENT", [2] = "AUCTION_HOUSE_FILTER_CATEGORY_RARITY" }
+    for _, g in ipairs(groups) do
+        local cat = TN(function() return g.category end)
+        local grp = { name = cat and catWords[cat] and TS(function() return _G[catWords[cat]] end) or nil, filters = {} }
+        for _, f in ipairs(type(g.filters) == "table" and g.filters or {}) do
+            f = TN(function() return f end)
+            if f then
+                local name, q = AH.filterName(f)
+                if name then grp.filters[#grp.filters + 1] = { f = f, name = name, q = q, on = on[f] and true or false } end
+            end
+        end
+        if #grp.filters > 0 then out[#out + 1] = grp end
+    end
+    return out
+end
+-- the filters differ from the game's defaults, or a level range is set (the game's red Clear button)
+function AH.filtersDirty()
+    local def = AH.filterDefaults()
+    for k, v in pairs(AH.filters()) do if (def[k] or false) ~= (v or false) then return true end end
+    return AH.search.min ~= "" or AH.search.max ~= ""
+end
+-- the category browsed, and its level column's word (the game's GetDetailColumnStringUnsafe: weapons and armour say Item Level)
+function AH.detailColumn(path)
+    local list, word = AuctionCategories, nil
+    for _, i in ipairs(path or {}) do
+        local c = type(list) == "table" and list[i]
+        if type(c) ~= "table" then break end
+        if type(c.detailColumnString) == "string" then word = c.detailColumnString end
+        list = c.subCategories
+    end
+    return word
+end
 local function ahCategory(path)
     local list = AuctionCategories
     local cat
@@ -928,6 +1033,16 @@ local function collectAuction()
         end
     end
     walk(AuctionCategories, {}, 0)
+    -- 1.0.8: the search bar, the Filter list (its groups only while it is up), the sorts and the level column
+    ah.search = { text = AH.search.text, min = AH.search.min, max = AH.search.max, open = AH.filtersOpen or nil,
+                  dirty = AH.filtersDirty() or nil }
+    if AH.filtersOpen then ah.search.groups = AH.filterGroups() end
+    ah.sorts = {}
+    for ctx, list in pairs(AH.sorts) do
+        ah.sorts[ctx] = {}
+        for _, st in ipairs(list) do ah.sorts[ctx][#ah.sorts[ctx] + 1] = { o = st.o, r = st.r or nil } end
+    end
+    ah.levelWord = AH.detailColumn(AH.path)
     ah.nOwned = TN(function() return C_AuctionHouse.GetNumOwnedAuctions() end)
     ah.catName = cat and TS(function() return cat.name end) or nil
     -- the browse results of the last category asked for
@@ -942,7 +1057,8 @@ local function collectAuction()
                 ah.results[#ah.results + 1] = { i = i, id = key and TN(function() return key.itemID end),
                     name = info and TS(function() return info.itemName end), icon = info and TN(function() return info.iconFileID end),
                     q = info and TN(function() return info.quality end), price = TN(function() return r.minPrice end),
-                    count = TN(function() return r.totalQuantity end), commodity = info and TB(function() return info.isCommodity end) }
+                    count = TN(function() return r.totalQuantity end), commodity = info and TB(function() return info.isCommodity end),
+                    lvl = TN(function() return key.itemLevel end) }
             end
             AH.rs = rs
         end
@@ -1208,6 +1324,24 @@ local function assignSlots(doc)
                    buy = slot("iact", "ahbuy"), less = slot("iact", "ahqty less"), more = slot("iact", "ahqty more") }
         if au.tab ~= "owned" then
             for _, c in ipairs(au.cats) do c.slot = slot("ipick", "ahcat " .. c.i) end
+        end
+        -- 1.0.8: the search bar, the Filter list and the column headers (touch = the controller's A on them)
+        local a = au.act
+        a.search, a.edit_text = slot("iact", "ahsearch"), slot("iact", "ahedit text")
+        a.filters_on, a.filters_off = slot("iact", "ahfilters on"), slot("iact", "ahfilters off")
+        if au.search and au.search.open then
+            a.edit_min, a.edit_max, a.fclear = slot("iact", "ahedit min"), slot("iact", "ahedit max"), slot("iact", "ahfclear")
+            for _, g in ipairs(au.search.groups or {}) do
+                for _, f in ipairs(g.filters) do f.slot = slot("ipick", "ahfilter " .. f.f) end
+            end
+        end
+        a.sort = {}
+        local ctx = (au.tab == "owned") and "owned" or (au.item and not au.item.commodity) and "item" or (not au.item) and "browse" or nil
+        if ctx then
+            for name in pairs(AH.SORTABLE[ctx]) do
+                if name ~= "Level" or au.levelWord then a.sort[name] = slot("iact", "ahsort " .. ctx .. " " .. name) end
+            end
+            a.sortCtx = ctx
         end
         if au.item then
             for _, r in ipairs(au.item.rows) do if not au.item.commodity then r.slot = slot("ibuy", "ahrow " .. r.i) end end
@@ -1493,18 +1627,39 @@ function N.build(doc)
         navAdd(tabs, "ahtab browse"); navAdd(tabs, "ahtab owned")
         local zr = navZone("ahright", 1)
         N.ahSel = nil
-        if au.tab == "owned" then
-            -- your auctions: read only; the cursor walks them (A does nothing)
+        local function heads(ctx, order)
+            local zh = navZone("ahheads", #order)
+            for _, name in ipairs(order) do navAdd(zh, "ahsort " .. ctx .. " " .. name) end
+            return zh
+        end
+        if au.search and au.search.open then
+            -- the Filter list (the game's dropdown): the level range, every checkbox, Clear; B (or Filter again) closes it
+            sig = "ah|filters"
+            local zf = navZone("ahfilt", 1)
+            navAdd(zf, "ahedit min"); navAdd(zf, "ahedit max")
+            for _, g in ipairs(au.search.groups or {}) do
+                for _, f in ipairs(g.filters) do navAdd(zf, "ahfilter " .. f.f) end
+            end
+            navAdd(zf, "ahfclear")
+            N.zones = { zf }
+            first = navFirst(zf)
+        elseif au.tab == "owned" then
+            -- your auctions: read only; the cursor walks them (A does nothing); the headers sort them
             sig = "ah|owned"
             for _, o in ipairs(au.owned or {}) do navAdd(zr, "ahown " .. o.i) end
-            N.zones = { tabs, zr }
+            N.zones = { tabs, heads("owned", { "Name", "Bid", "Buyout", "TimeRemaining" }), zr }
             first = navFirst(zr) or "ahtab owned"
         else
+            local zs = navZone("ahbar", 3)
+            navAdd(zs, "ahedit text"); navAdd(zs, "ahfilters on"); navAdd(zs, "ahsearch")
             local zc = navZone("ahcats", 1)
             for _, c in ipairs(au.cats) do
                 navAdd(zc, "ahcat " .. c.i)
                 if c.sel then N.ahSel = "ahcat " .. c.i end
             end
+            local zh
+            if au.item and not au.item.commodity then zh = heads("item", { "Buyout", "Bid" })
+            elseif not au.item then zh = heads("browse", au.levelWord and { "Name", "Level", "Price" } or { "Name", "Price" }) end
             if au.item then
                 sig = "ah|item|" .. tostring(au.item.id)
                 if au.item.commodity then navAdd(zr, "ahbuy")          -- a commodity: A buys; X / Y the quantity
@@ -1520,7 +1675,7 @@ function N.build(doc)
                 AH.lastRes = nil
                 first = back or N.ahSel or navFirst(zc)
             end
-            N.zones = { tabs, zc, zr }
+            N.zones = zh and { tabs, zs, zc, zh, zr } or { tabs, zs, zc, zr }
         end
     elseif doc.mail and doc.mail.send then
         -- f-inbox-send: the Send Mail tab, in the game's own order (To, Subject, the letter, the money, the attachments, Send); the bag
@@ -2640,9 +2795,23 @@ function ACT.look(a, b, c, d)
 end
 
 -- ---------------------------------------------------------------- auction house actions
-local function ahSorts()
-    local o = TN(function() return Enum.AuctionHouseSortOrder.Price end) or 0
-    return { { sortOrder = o, reverseSort = false } }
+local function ahSorts() return AH.sortList("item") end
+-- the game's browse query: the word, the level range, the filters checked, plus the category's own (and its implicit filter)
+function AH.browse()
+    if TB(function() return C_AuctionHouse.IsThrottledMessageSystemReady() end) == false then return false, "the auction house is busy: one moment" end
+    local cat = (#AH.path > 0) and ahCategory(AH.path) or nil
+    if #AH.path > 0 and not cat then return false, "no such category" end
+    local filters = {}
+    for k, v in pairs(AH.filters()) do if v then filters[#filters + 1] = k end end
+    table.sort(filters)
+    if cat and cat.implicitFilter then filters[#filters + 1] = cat.implicitFilter end
+    local query = { searchString = AH.search.text, sorts = AH.sortList("browse"), filters = filters,
+                    itemClassFilters = (cat and cat.filters) or {},
+                    minLevel = tonumber(AH.search.min) or 0, maxLevel = tonumber(AH.search.max) or 0 }
+    local done, err = run(function() C_AuctionHouse.SendBrowseQuery(query) end)
+    if done then AH.results, AH.key, AH.buy = true, nil, nil end
+    AH.lastQuery = query
+    return done, err
 end
 local function ahIsOpen() return isOpen("auction") end
 -- a commodity's quantity, one step (X / Y, or a tap on - / +): never past what is listed; a change cancels an armed purchase
@@ -2672,7 +2841,7 @@ function ACT.ahtab(a)
     if a ~= "browse" and a ~= "owned" then return false, "no such tab" end
     ahCancelBuy()
     AH.tab = a
-    if a == "owned" then CALL(function() C_AuctionHouse.QueryOwnedAuctions(ahSorts()) end) end
+    if a == "owned" then CALL(function() C_AuctionHouse.QueryOwnedAuctions(AH.sortList("owned")) end) end
     emitSoon()
     return true
 end
@@ -2686,10 +2855,74 @@ function ACT.ahcat(a)
     if not cat then return false, "no such category" end
     if TB(function() return C_AuctionHouse.IsThrottledMessageSystemReady() end) == false then return false, "the auction house is busy: one moment" end
     AH.path, AH.key, AH.buy = path, nil, nil
-    local query = { searchString = "", sorts = ahSorts(), filters = {}, itemClassFilters = cat.filters or {} }
-    local done, err = run(function() C_AuctionHouse.SendBrowseQuery(query) end)
-    if done then AH.results = true end
-    return done, err
+    return AH.browse()            -- 1.0.8: with the search word, the level range and the filters, as the game's Search
+end
+-- /wci ahsearch   the game's Search button: the word, the range and the filters, in the category browsed (or all of them)
+function ACT.ahsearch()
+    if not ahIsOpen() then return false, "no auction house open" end
+    N.kbdClose()
+    AH.tab, AH.filtersOpen = "browse", false
+    return AH.browse()
+end
+-- /wci ahedit text|min|max   the search box, or the Filter list's level range: the keyboard opens on it. Done on the word searches
+-- (the game's Enter in its search box); the range waits for Search.
+function ACT.ahedit(a)
+    if not ahIsOpen() then return false, "no auction house open" end
+    local max = AH.FIELD[a]
+    if not max then return false, "no such field" end
+    return N.kbdOpen("ah" .. a, AH.search[a], max, function(t)
+        if not ahIsOpen() then return false, "the auction house closed" end
+        t = tostring(t or "")
+        if a ~= "text" then
+            t = t:gsub("%s", "")
+            if t ~= "" and not t:match("^%d+$") then return false, "numbers only" end
+            t = (t == "") and "" or tostring(tonumber(t))
+        end
+        AH.search[a] = t
+        if a == "text" then AH.tab, AH.filtersOpen = "browse", false; AH.browse() end
+        return true
+    end)
+end
+-- /wci ahfilters on|off   the game's Filter list
+function ACT.ahfilters(a)
+    if not ahIsOpen() then return false, "no auction house open" end
+    if a ~= "on" and a ~= "off" then return false, "on or off" end
+    AH.filtersOpen = (a == "on")
+    emitSoon()
+    return true
+end
+-- /wci ahfilter <Enum.AuctionHouseFilter>   one checkbox of the Filter list
+function ACT.ahfilter(a)
+    local f = tonumber(a)
+    if not (f and ahIsOpen()) then return false, "no auction house open" end
+    local on = AH.filters()
+    on[f] = not on[f]
+    emitSoon()
+    return true
+end
+-- /wci ahfclear   the game's Clear: the filters back to its defaults and no level range
+function ACT.ahfclear()
+    if not ahIsOpen() then return false, "no auction house open" end
+    AH.search.filters, AH.search.min, AH.search.max = AH.filterDefaults(), "", ""
+    emitSoon()
+    return true
+end
+-- /wci ahsort browse|item|owned <Price|Name|Level|Buyout|Bid|TimeRemaining>   a column header pressed: the game's sort, asked again
+function ACT.ahsort(ctx, name)
+    if not ahIsOpen() then return false, "no auction house open" end
+    if not (AH.SORTABLE[ctx] and AH.SORTABLE[ctx][name]) then return false, "not a sortable column" end
+    if not AH.sortEnum(name) then return false, "this build has no such sort" end
+    AH.addSort(ctx, name)
+    if ctx == "browse" and AH.results and not AH.key then return AH.browse() end
+    if ctx == "item" and AH.key then
+        ahCancelBuy()
+        return run(function() C_AuctionHouse.SendSearchQuery(AH.key, AH.sortList("item"), true) end)
+    end
+    if ctx == "owned" and AH.tab == "owned" then
+        return run(function() C_AuctionHouse.QueryOwnedAuctions(AH.sortList("owned")) end)
+    end
+    emitSoon()
+    return true
 end
 -- /wci ahres <i>   one result: ask for its listings (an item) or its price tiers (a commodity)
 function ACT.ahres(a)
@@ -4667,6 +4900,8 @@ end
 function N.back()
     if N.trMenu and isOpen("trainer") then
         N.trMenu = nil                      -- the trainer's Settings menu closes first
+    elseif isOpen("auction") and AH.filtersOpen then
+        AH.filtersOpen = false              -- the auction house: the Filter list goes first
     elseif isOpen("auction") and (AH.buy or AH.key or AH.tab == "owned" or #AH.path > 0) then
         navRun("ahback")                    -- the auction house: one level up first
     elseif MAIL.open and isOpen("mail") and MAIL.tab ~= "send" then
