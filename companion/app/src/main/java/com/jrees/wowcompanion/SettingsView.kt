@@ -8,14 +8,13 @@ import android.view.View
 import android.view.ViewConfiguration
 
 /**
- * The Settings room: game actions, map preferences and the Cast room's controller options.
+ * The Settings room's own rows: game actions, the map, the controller options, chat, frame generation and the indoor maps.
  *
- * TWO PARTS (the user's Settings rework, 2026-10-06; the order Game -> Home -> Map -> Controller -> Game UI -> Companion): Home's
- * section sits between this view's "Game" and its "Map", so the room stacks it twice -- [Part.TOP] = the "Settings" title and Game
- * (Reload), [Part.REST] = Map and Controller -- with Home's section between them. [Part.ALL] is the whole page in one (the order
- * before the rework, for a host that has not split it yet). Each part MEASURES ITS OWN HEIGHT, so the room's scroll scrolls the
- * page and nothing here scrolls. Gone in the rework: "Combat cooldowns" and "Trigger swap" (Cast fixes their values) and the
- * "D-pad room bar" (Home's section's "DS WoW toolbar" now).
+ * TABS (board f-settings-tabs, 2026-10-15): the room shows one tab at a time ([SettingsTabs]); this view draws the blocks of the
+ * current [tab] that are its own ([SettingsTabs.VIEW_BLOCKS]: Game on System, Map and Chat on Rooms, Controller on Controller,
+ * Frames and Indoor maps on Performance) and nothing else: every hit box of a block not drawn is EMPTY, so nothing off the tab can
+ * be pressed. The title and the tab row are the room's ([SettingsTabBar]). The view MEASURES ITS OWN HEIGHT, so the room's scroll
+ * scrolls the page and nothing here scrolls.
  *
  * Reload is TWO taps (tap, then "tap again" within 3 s). A reload mid-fight costs the player
  * several seconds of a frozen UI, and the bottom screen is exactly where a stray thumb lands.
@@ -26,11 +25,11 @@ import android.view.ViewConfiguration
  * it landed: a drag never presses anything. The page is drawn in screen coordinates (content y
  * minus [scroll]), so every hit box recorded by the last draw matches what the finger touches.
  */
-class SettingsView(context: Context, private val part: Part = Part.ALL, private val onReload: () -> Unit) : View(context) {
+class SettingsView(context: Context, private val onReload: () -> Unit) : View(context) {
 
-    enum class Part { ALL, TOP, REST }
-    private val hasGame get() = part != Part.REST
-    private val hasRest get() = part != Part.TOP
+    /** the tab shown (the room sets it) */
+    var tab: SettingsTabs.Tab = SettingsTabs.Tab.HOME
+        set(v) { if (field != v) { field = v; requestLayout(); invalidate() } }
 
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
@@ -183,10 +182,20 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
      * order. Read-only: the cursor presses a button with a touch at its centre, so this view's own logic decides.
      */
     fun focusTargets(): List<RectF> =
-        ((if (hasGame) listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss) else emptyList()) +
-            (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segIndoor.toList() + listOf(btnDeferred) + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() +
-                segLimit.toList() + listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() + listOf(btnRestart) else emptyList()))
+        (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss) +
+            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segChat.toList() +
+            segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
+            segLimit.toList() + listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() +
+            listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred))
             .filter { !it.isEmpty }.map { RectF(it) }
+
+    /** every hit box empty: a block not drawn on this tab presses nothing */
+    private fun clearBoxes() {
+        for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
+                         btnDeferred, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
+        for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segChat, segLimit, segFg, segMult, segPerf))
+            for (r in a) r.setEmpty()
+    }
 
     /** the part's height, laid out exactly as onDraw lays it out (the room's scroll asks; nothing here scrolls) */
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
@@ -194,11 +203,20 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     }
 
     private fun layoutHeight(): Float {
-        var y = if (hasGame) TITLE_END + TITLE_GAP + 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H +
-            (if (part == Part.TOP) TOP_END else SECTION_GAP) else REST_TOP
-        if (hasRest) y += 16f + ROW_H + 10f + ROW_H + 10f + ROW_H + 10f + ROW_H + deferredListH() + SECTION_GAP + 16f + ROW_H + 5f * (10f + ROW_H) + SECTION_GAP + 16f + ROW_H +
-            SECTION_GAP + 16f + fgHeight() + BOTTOM_PAD
-        return y
+        val blocks = SettingsTabs.viewBlocks(tab)
+        if (blocks.isEmpty()) return 0f
+        return TOP_PAD + blocks.sumOf { blockHeight(it).toDouble() }.toFloat() + SECTION_GAP * (blocks.size - 1) + BOTTOM_PAD
+    }
+
+    /** a block's height from its heading's y to its last row's bottom, laid out exactly as its draw function lays it out */
+    private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
+        SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
+        SettingsTabs.Block.MAP -> 16f + ROW_H + 10f + ROW_H
+        SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH()
+        SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 5f * (10f + ROW_H)
+        SettingsTabs.Block.CHAT -> 16f + ROW_H
+        SettingsTabs.Block.FRAMES -> 16f + fgHeight()
+        else -> 0f
     }
 
     /** the Frame generation section's rows now (FrameGen.rows: the DLL row alone until one is set; Restart when it would change something) */
@@ -323,22 +341,58 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     override fun onDraw(c: Canvas) {
         fonts()
         val w = width.toFloat()
-        val now = SystemClock.elapsedRealtime()
         scroll = clampScroll(scroll)
         drawnScroll = scroll
         c.drawColor(Theme.ink)
-        val padX = 28f
-        var y = (if (hasGame) 62f else REST_TOP) - scroll       // everything below is laid out in screen coordinates
-        if (hasGame) {
-        c.drawText("Settings", padX, y, pTitle)
-        y += 22f
-        pFill.color = Theme.bronzeDim
-        c.drawRect(0f, y, w, y + 1.5f, pFill)
+        clearBoxes()
+        var y = TOP_PAD - scroll       // everything below is laid out in screen coordinates
+        for ((i, b) in SettingsTabs.viewBlocks(tab).withIndex()) {
+            if (i > 0) y += SECTION_GAP
+            // the block's heading (its words are the tab data's), then its rows; each draw returns its last row's bottom
+            c.drawText(b.heading, PAD_X, y + 4f, pSection)
+            y += 16f
+            y = when (b) {
+                SettingsTabs.Block.GAME -> drawGame(c, y)
+                SettingsTabs.Block.MAP -> drawMap(c, y)
+                SettingsTabs.Block.INDOOR -> drawIndoor(c, y)
+                SettingsTabs.Block.CONTROLLER -> drawController(c, y)
+                SettingsTabs.Block.CHAT -> drawChat(c, y)
+                SettingsTabs.Block.FRAMES -> drawFrames(c, y)
+                else -> y
+            }
+        }
+        y += BOTTOM_PAD
 
-        // ---- GAME
-        y += TITLE_GAP
-        c.drawText("Game", padX, y + 4f, pSection)
-        y += 16f
+        val h = Math.round(y + scroll).toFloat()   // back to content coordinates (no float drift)
+        if (h != contentH) {
+            contentH = h
+            if (clampScroll(scroll) != scroll) invalidate()
+        }
+
+        // a slim thumb in the right margin, only when the page overflows the room
+        val max = maxScroll()
+        if (max > 0f) {
+            val vh = height.toFloat()
+            val th = maxOf(60f, vh * vh / contentH)
+            val ty = (vh - th) * (scroll / max)
+            pFill.color = Theme.bronze          // bronzeDim on ink measured ~1.8:1: invisible
+            c.drawRoundRect(w - 10f, ty + 6f, w - 5f, ty + th - 6f, 3f, 3f, pFill)
+        }
+    }
+
+    /** the segmented controls' common width (the longest glyph-set name) */
+    private fun segW(): Float {
+        pBtn.textSize = SEG_TEXT
+        var w = SEG_MIN_W
+        for (t in LAYOUT_LABELS) w = maxOf(w, pBtn.measureText(t) + SEG_PAD)
+        pBtn.textSize = 27f
+        return w
+    }
+
+    // ---- GAME (System): Reload, the saved login, the problem report
+    private fun drawGame(c: Canvas, top: Float): Float {
+        var y = top
+        val now = SystemClock.elapsedRealtime()
         val armed = reloadArmedAt != 0L && now - reloadArmedAt < ARM_MS
         val sent = reloadSentAt != 0L && now - reloadSentAt < 2500L
         if (sent) postInvalidateDelayed(300)
@@ -385,14 +439,12 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         }
         if (saved != null) { val d = btnReportDismiss; btnReport = RectF(d.right + 16f, d.top, d.right + 16f + 244f, d.bottom) }
         if (rec) postInvalidateDelayed(1000)
-        y += ROW_H + (if (part == Part.TOP) TOP_END else SECTION_GAP)
-        }
-        // (Home's section stands here when the room stacks the two parts)
-        if (hasRest) {
+        return y + ROW_H
+    }
 
-        // ---- MAP
-        c.drawText("Map", padX, y + 4f, pSection)
-        y += 16f
+    // ---- MAP (Rooms): the small map's two widths
+    private fun drawMap(c: Canvas, top: Float): Float {
+        var y = top
         // the map always frames itself now (the user, 2026-10-02: "remove the dynamic map toggle, as I REALLY love the way that it
         // currently works"; the greyed-out Indoor / Outdoor widths went with it); the small map's width is split in two ("split
         // the minimap default zoom toggle into an indoor and outdoor"), the +/- on the small map step the one in use
@@ -403,13 +455,18 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         boxes = stepperRow(c, y, "Minimap zoom indoors", "Width of the small map on Home inside buildings",
                            Settings.minimapIndoorYd, true)
         btnMiniInMinus = boxes.first; btnMiniInPlus = boxes.second
-        y += ROW_H + 10f
+        return y + ROW_H
+    }
+
+    // ---- INDOOR MAPS (Performance): the background building's switch and its progress
+    private fun drawIndoor(c: Canvas, top: Float): Float {
+        var y = top
         // the indoor maps' background building (the user's pick after the walking stutters: only standing still, and a switch)
         val indoorOn = Settings.indoorBuild
         pBtn.textSize = SEG_TEXT
         val indoorW = maxOf(SEG_MIN_W, pBtn.measureText("Off") + SEG_PAD)
         pBtn.textSize = 27f
-        row(c, y, "Indoor maps: build in the background",
+        row(c, y, "Build in the background",
             if (indoorOn) "Only while you stand still and the device is cool." else "Off: nothing is built; ready maps still show.",
             enabled = true) { box ->
             val b = RectF(box.right - 16f - indoorW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
@@ -421,7 +478,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         val prog = progress
         val nDef = prog?.list?.size ?: 0
         btnDeferred = RectF()
-        row(c, y, "Indoor maps: progress", IndoorProgress.line(prog, indoorOn), enabled = true) { box ->
+        row(c, y, "Progress", IndoorProgress.line(prog, indoorOn), enabled = true) { box ->
             if (nDef == 0) RectF(box.right, box.centerY(), box.right, box.centerY())
             else {
                 val label = if (deferredOpen) "Hide" else "Deferred ($nDef)"
@@ -442,16 +499,14 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
                 c.drawText(fit(pSub, line, lb.width() - 44f), lb.left + 22f, lb.top + 8f + (i + 1) * LIST_LINE - 10f, pSub)
             y += deferredListH()
         }
-        y += SECTION_GAP
+        return y
+    }
 
-        // ---- CONTROLLER (the Cast room's options; values live in CastSettings): Button layout only since the rework
-        c.drawText("Controller", padX, y + 4f, pSection)
-        y += 16f
+    // ---- CONTROLLER: ABXY location, the glyphs, the wheels
+    private fun drawController(c: Canvas, top: Float): Float {
+        var y = top
         val layout = CastSettings.buttonLayout
-        pBtn.textSize = SEG_TEXT
-        var segW = SEG_MIN_W
-        for (t in LAYOUT_LABELS) segW = maxOf(segW, pBtn.measureText(t) + SEG_PAD)
-        pBtn.textSize = 27f
+        val segW = segW()
         // f-abxy-split (the user 2026-10-15): WHERE A / B / X / Y sit (the mapping), then which PICTURES they wear; any combination
         row(c, y, "ABXY location", abxyLine(CastSettings.faceSwap),
             enabled = true) { box ->
@@ -497,11 +552,12 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
             segmented(c, b, listOf("A", "Release"), if (HomeSettings.radialPickA) 0 else 1, segPick)
             b
         }
-        y += ROW_H + SECTION_GAP
+        return y + ROW_H
+    }
 
-        // ---- CHAT (the user on b121: "a keyboard vs quick chat default in the settings"): what opens in the message first
-        c.drawText("Chat", padX, y + 4f, pSection)
-        y += 16f
+    // ---- CHAT (Rooms): what opens in the message first (the user on b121)
+    private fun drawChat(c: Canvas, top: Float): Float {
+        var y = top
         pBtn.textSize = SEG_TEXT
         var chatW = SEG_MIN_W
         for (t in CHAT_INPUT_LABELS) chatW = maxOf(chatW, pBtn.measureText(t) + SEG_PAD)
@@ -511,12 +567,17 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
             segmented(c, b, CHAT_INPUT_LABELS, CHAT_INPUTS.indexOf(Settings.chatDefaultInput), segChat)
             b
         }
-        y += ROW_H + SECTION_GAP
+        return y + ROW_H
+    }
 
+    // ---- FRAME LIMIT AND GENERATION (Performance; board f-frame-gen, n-fps-40): the player's own Lossless.dll, never shipped with
+    // the app; Off = launches as always. Only the limit and the DLL rows until one is set; "Restart the game" while the running game
+    // started with other settings (the user's request)
+    private fun drawFrames(c: Canvas, top: Float): Float {
+        var y = top
         // ---- FRAME GENERATION (board f-frame-gen): the player's own Lossless.dll, never shipped with the app; Off = launches as always.
         // Only the DLL row until one is set; "Restart the game" while the running game started with other settings (the user's request)
-        c.drawText("Frame generation", padX, y + 4f, pSection)
-        y += 16f
+        val segW = segW()
         val hasDll = FrameGen.hasDll()
         val up = gameRunning()
         val fg = fgRows()
@@ -592,24 +653,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
                 }
             }
         }
-        y += ROW_H + BOTTOM_PAD
-        }
-
-        val h = Math.round(y + scroll).toFloat()   // back to content coordinates (no float drift)
-        if (h != contentH) {
-            contentH = h
-            if (clampScroll(scroll) != scroll) invalidate()
-        }
-
-        // a slim thumb in the right margin, only when the page overflows the room
-        val max = maxScroll()
-        if (max > 0f) {
-            val vh = height.toFloat()
-            val th = maxOf(60f, vh * vh / contentH)
-            val ty = (vh - th) * (scroll / max)
-            pFill.color = Theme.bronze          // bronzeDim on ink measured ~1.8:1: invisible
-            c.drawRoundRect(w - 10f, ty + 6f, w - 5f, ty + th - 6f, 3f, 3f, pFill)
-        }
+        return y + ROW_H
     }
 
     // 96, not 104: with three sections the page came to 1024 px in a ~970 px room, and the last row
@@ -698,12 +742,8 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         // SPACING, measured against the signed-off picture on the emulator (2026-10-06): a row's bottom to the next heading's top
         // is 60 px everywhere; a heading's cap top is ~26 px above its baseline, which is drawn 4 px below the section's y
         private const val SECTION_GAP = 82f  // row bottom -> the next section's y (its heading baseline 86 below: cap top +60)
-        // The two seams with Home's section, measured on the emulator against home-settings2 48f65b09 (a row box's bottom to the next
-        // heading's BASELINE is 90 px between this view's own sections; the caps differ in height, so measure baselines, not cap tops)
-        private const val TOP_END = 39f      // TOP's end -> Home's heading: Home draws it ~51 under its top -> 90 (36 gave 87)
-        private const val REST_TOP = 66f     // REST's first heading under Home's 20 px bottom margin: 20 + 66 + 4 -> 90 (26 gave 50)
+        private const val TOP_PAD = 48f      // the page's top -> its first heading's y (the tab bar stands above the page)
+        private const val PAD_X = 28f
         private const val BOTTOM_PAD = 56f   // REST's end -> Game UI's first heading: 60 (it was 28)
-        private const val TITLE_END = 84f    // the title's rule: 62 + 22
-        private const val TITLE_GAP = 64f    // the rule -> "Game"'s baseline: its cap top 44 under the rule (the picture)
     }
 }

@@ -1667,7 +1667,8 @@ local GUESTS = { "quests", "map", "settings", "chat", "bar", "home", "radial" } 
 -- let it through (startFor). The rooms' old Start actions moved to Select (PADBACK): Home's map Filter and Chat's filter menu.
 local EXTRA = {
     quests = { "PADFORWARD" },
-    settings = { "PADFORWARD" },
+    -- the Settings room's tabs (board f-settings-tabs, the user's approved plan 2026-10-15): L / R switch them, as in every tabbed room
+    settings = { "PADLSHOULDER", "PADRSHOULDER", "PADFORWARD" },
     map = { "PADLSHOULDER", "PADRSHOULDER", "PADFORWARD" },
     bar = { "PADBACK", "PADLSHOULDER", "PADRSHOULDER", "PADLTRIGGER", "PADRTRIGGER", "PADFORWARD" },
     -- Home's chat module cycles its filters with LB / RB, as the Chat room does (the user: "I want to have LB and RB as
