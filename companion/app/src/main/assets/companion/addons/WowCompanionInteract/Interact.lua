@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i112"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i113"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -480,9 +480,94 @@ end
 -- money: the game asks first; refused here), returning, deleting, sending (needs a keyboard).
 local MAIL_MAX, ATTACH_MAX = 50, 16
 local MAIL = { open = nil }       -- the letter opened on the bottom screen
+-- f-inbox-send (1.0.8): THE GAME'S SEND MAIL TAB (Blizzard_MailFrame's SendMailFrame, read from the client): To, Subject, the letter,
+-- Send Money or C.O.D. (gold / silver / copper), up to ATTACHMENTS_MAX_SEND items, the postage, Send. The text is typed with the
+-- Chat keyboard into a field borrowed from Chat.lua (WC.chatField, chat22); the rest is the game's own calls (SetSendMailMoney,
+-- SetSendMailCOD, ClickSendMailItemButton with the item picked up from the bag, SendMail), each inside the press. Nothing of the
+-- game's own frame is touched or shown. MAIL.form lives for the session (a letter half-written survives the mailbox closing).
+-- (Send Mail's pieces hang on MAIL: the file's main chunk is at Lua's 200-local limit)
+MAIL.MAX = 12                                   -- the game's ATTACHMENTS_MAX_SEND
+MAIL.COD_GOLD = 10000                            -- the game's MAX_COD_AMOUNT
+MAIL.FIELD = { to = 48, subject = 64, body = 255, gold = 7, silver = 2, copper = 2 }
+function MAIL.blank() return { to = "", subject = "", body = "", gold = "", silver = "", copper = "", cod = false } end
+MAIL.tab = "inbox"
+MAIL.form = MAIL.blank()
+MAIL.pick = false                 -- the bag list is up (an attachment is being chosen)
+MAIL.status = nil                 -- "sending" | "sent" | "failed" | "confirm" (the game's own stranger check, on the top screen)
+MAIL.err = nil                    -- the game's reason when it refused the letter
+MAIL.CONFIRM_S = 60               -- the stranger check unanswered this long: the bottom screen takes over again
+function MAIL.copper(f)
+    local g, sv, c = tonumber(f.gold) or 0, tonumber(f.silver) or 0, tonumber(f.copper) or 0
+    return g * 10000 + sv * 100 + c
+end
+-- the attachments as the game holds them (GetSendMailItem: name, itemID, texture, count, quality)
+function MAIL.attached()
+    local out = {}
+    for k = 1, MAIL.MAX do
+        if TB(function() return HasSendMailItem(k) end) then
+            local r = R(function() return GetSendMailItem(k) end)
+            if r then out[#out + 1] = { k = k, name = PS(r[1]), id = PN(r[2]), icon = PN(r[3]), count = PN(r[4]), q = PN(r[5]) } end
+        end
+    end
+    return out
+end
+-- the game's own subject when none is typed: the first attachment's name, "(n)" for a stack (SendMailFrame_Update)
+function MAIL.autoSubject(items)
+    local it = items[1]
+    if not (it and it.name) then return nil end
+    if (it.count or 1) > 1 then return it.name .. " (" .. it.count .. ")" end
+    return it.name
+end
+-- what stops the letter, in the game's own order (SendMailFrame_CanSend, then the money): nil = it can go
+function MAIL.whyNot(f, items)
+    if f.to == "" then return "Type who it is to" end
+    if f.subject == "" and not MAIL.autoSubject(items) then return "Type a subject" end
+    local copper = MAIL.copper(f)
+    if f.cod then
+        if #items == 0 then return "C.O.D. needs an attachment" end
+        if copper <= 0 then return "Type the C.O.D. amount" end
+        if copper > MAIL.COD_GOLD * 10000 then return "C.O.D. must be less than 10000 gold" end
+    end
+    local price = TN(function() return GetSendMailPrice() end) or 0
+    local purse = TN(function() return GetMoney() end) or 0
+    if price + ((not f.cod) and copper or 0) > purse then return "Not enough money" end
+    return nil
+end
+-- the bags, for an attachment (the game's own rule: a soulbound item cannot be mailed)
+function MAIL.bags()
+    local out = {}
+    for bag = 0, 4 do
+        for sl = 1, TN(function() return C_Container.GetContainerNumSlots(bag) end) or 0 do
+            local ok, info = CALL(function() return C_Container.GetContainerItemInfo(bag, sl) end)
+            if ok and type(info) == "table" then
+                local id = TN(function() return info.itemID end)
+                if id then
+                    local link = TS(function() return info.hyperlink end)
+                    out[#out + 1] = { bag = bag, s = sl, id = id, icon = TN(function() return info.iconFileID end),
+                        n = TN(function() return info.stackCount end) or 1, q = TN(function() return info.quality end),
+                        name = link and link:match("%[(.-)%]") or nil,
+                        bound = TB(function() return info.isBound end) or nil, locked = TB(function() return info.isLocked end) or nil }
+                end
+            end
+        end
+    end
+    return out
+end
+function MAIL.collect()
+    local f = MAIL.form
+    local items = MAIL.attached()
+    local snd = { to = f.to, subject = f.subject, body = f.body, gold = f.gold, silver = f.silver, copper = f.copper,
+                  cod = f.cod or nil, money = MAIL.copper(f), items = items, max = MAIL.MAX,
+                  autoSubject = (f.subject == "") and MAIL.autoSubject(items) or nil,
+                  price = TN(function() return GetSendMailPrice() end), status = MAIL.status, err = MAIL.err }
+    snd.why = MAIL.whyNot(f, items)
+    if MAIL.pick then snd.bags = MAIL.bags() end
+    return snd
+end
 local function collectMail()
-    local ml = { mails = {} }
+    local ml = { mails = {}, tab = MAIL.tab }
     ml.money = TN(function() return GetMoney() end)
+    if MAIL.tab == "send" then ml.send = MAIL.collect() end
     local n = TN(function() return GetInboxNumItems() end) or 0
     for i = 1, math.min(n, MAIL_MAX) do
         local r = R(function() return GetInboxHeaderInfo(i) end)
@@ -1177,6 +1262,19 @@ local function assignSlots(doc)
     local ml = doc.mail
     if ml then
         any = true
+        ml.act = { inbox = slot("iact", "mailtab inbox"), send = slot("iact", "mailtab send") }
+        local sd = ml.send
+        if sd then
+            -- the Send Mail tab: every field and button is one cell (touch = the controller's A on it)
+            local a = ml.act
+            for _, f in ipairs({ "to", "subject", "body", "gold", "silver", "copper" }) do a["edit_" .. f] = slot("iact", "mailedit " .. f) end
+            a.money, a.cod = slot("iact", "mailcod off"), slot("iact", "mailcod on")
+            a.pick, a.unpick = slot("iact", "mailpick on"), slot("iact", "mailpick off")
+            a.send, a.clear = slot("iact", "mailsend"), slot("iact", "mailclear")
+            if sd.status == "confirm" then a.resume = slot("iact", "mailresume") end
+            for _, it in ipairs(sd.items) do it.slot = slot("isell", "maildetach " .. it.k) end
+            for _, b in ipairs(sd.bags or {}) do b.slot = slot("ibuy", "mailattach " .. b.bag .. " " .. b.s .. " " .. b.id) end
+        end
         for _, l in ipairs(ml.mails) do l.slot = slot("ibuy", "mail " .. l.i) end
         if ml.open then
             local o = ml.open
@@ -1185,6 +1283,8 @@ local function assignSlots(doc)
         end
     end
     if doc.petition then any = true end
+    -- 1.0.8: the keyboard's field (Send Mail, the auction-house search): its close cell
+    if doc.kbd then doc.kbd.off = slot("iact", "kbd off") end
     local st = doc.stable
     if st then
         any = true
@@ -1422,9 +1522,38 @@ function N.build(doc)
             end
             N.zones = { tabs, zc, zr }
         end
+    elseif doc.mail and doc.mail.send then
+        -- f-inbox-send: the Send Mail tab, in the game's own order (To, Subject, the letter, the money, the attachments, Send); the bag
+        -- list, when it is up, alone (B puts it away)
+        local sd = doc.mail.send
+        local tabs = navZone("tabs", 2)
+        navAdd(tabs, "mailtab inbox"); navAdd(tabs, "mailtab send")
+        if sd.bags then
+            sig = "ms|pick"
+            local zp = navZone("mpick", 6)
+            for _, b in ipairs(sd.bags) do navAdd(zp, "mailattach " .. b.bag .. " " .. b.s .. " " .. b.id, not b.bound and not b.locked) end
+            N.zones = { zp }
+            first = navFirst(zp) or "none"
+        else
+            sig = "ms|form"
+            local zf = navZone("mform", 1)
+            navAdd(zf, "mailedit to"); navAdd(zf, "mailedit subject"); navAdd(zf, "mailedit body")
+            local zm = navZone("mmoney", 5)
+            navAdd(zm, "mailcod off"); navAdd(zm, "mailcod on", #sd.items > 0)
+            navAdd(zm, "mailedit gold"); navAdd(zm, "mailedit silver"); navAdd(zm, "mailedit copper")
+            local za = navZone("msattach", 6)
+            for _, it in ipairs(sd.items) do navAdd(za, "maildetach " .. it.k) end
+            if #sd.items < MAIL.MAX then navAdd(za, "mailpick on") end
+            local zs = navZone("msend", 2)
+            navAdd(zs, "mailclear"); navAdd(zs, "mailsend", sd.why == nil)
+            N.zones = { tabs, zf, zm, za, zs }
+            first = "mailedit to"
+        end
     elseif doc.mail then
         local ml = doc.mail
         -- UI Art's MAIL_SPEC 4: the letters on the left (always); an open letter's attachments, then its money, on the right
+        local mtabs = navZone("tabs", 2)
+        navAdd(mtabs, "mailtab inbox"); navAdd(mtabs, "mailtab send")
         local z = navZone("mlist", 1)
         for _, l in ipairs(ml.mails) do navAdd(z, "mail " .. l.i) end
         local za = navZone("mattach", 4)
@@ -1442,7 +1571,7 @@ function N.build(doc)
             first = (MAIL.back and ("mail " .. MAIL.back)) or navFirst(z)
             MAIL.back = nil
         end
-        N.zones = { z, za }
+        N.zones = { mtabs, z, za }
         if first == nil then first = "none" end
     elseif doc.petition then
         local pt = doc.petition
@@ -1593,6 +1722,11 @@ local function buildDoc()
     tally.secret, tally.threw = 0, 0
     disagreed = false
     local doc = { type = "interact", iv = IV }
+    -- 1.0.8: a field is being typed with the app's Chat keyboard (N.kbdOpen): which one, and its value when it opened
+    if N.kbd then
+        if (TN(function() return GetTime() end) or 0) - (N.kbdAt or 0) > N.KBD_TTL then N.kbdClose()
+        else doc.kbd = { name = N.kbd, text = N.kbdText } end
+    end
     if isOpen("gossip") then doc.gossip = collectGossip() end
     if isOpen("quest") and questStage then doc.quest = collectQuest() end
     if doc.quest and LOOT.ms == "quest" and LOOT.full then doc.quest.space = LOOT.buildSpace() end
@@ -1802,8 +1936,26 @@ local ON = {
     PETITION_SHOW = function() mark("petition", true) end,
     PETITION_CLOSED = function() mark("petition", false) end,
     PET_STABLE_CLOSED = function() mark("stable", false) end,
-    MAIL_SHOW = function() MAIL.open = nil; mark("mail", true) end,
-    MAIL_CLOSED = function() MAIL.open = nil; mark("mail", false) end,
+    MAIL_SHOW = function() MAIL.open = nil; MAIL.tab, MAIL.pick = "inbox", false; mark("mail", true) end,
+    MAIL_CLOSED = function()
+        MAIL.open, MAIL.pick = nil, false
+        if N.kbd and N.kbd:match("^mail") then N.kbdClose() end
+        if MAIL.status == "sending" or MAIL.status == "confirm" then MAIL.status = nil end
+        mark("mail", false)
+    end,
+    -- f-inbox-send: the game's answers to SendMail
+    MAIL_SEND_SUCCESS = function()
+        MAIL.form = MAIL.blank()
+        MAIL.status, MAIL.err = "sent", nil
+    end,
+    MAIL_FAILED = function()
+        if MAIL.status == "sending" or MAIL.status == "confirm" then MAIL.status = "failed" end
+    end,
+    -- the game's own check before money / items go to a stranger (Blizzard_SecureTransferUI, the secure environment: its dialog is
+    -- the game's, on the top screen, never ours to answer)
+    SECURE_TRANSFER_CONFIRM_SEND_MAIL = function()
+        if MAIL.status == "sending" then MAIL.status, MAIL.confirmAt = "confirm", TN(function() return GetTime() end) end
+    end,
     AUCTION_HOUSE_SHOW = function() AH.path, AH.results, AH.key, AH.buy, AH.tab = {}, nil, nil, nil, "browse"; mark("auction", true) end,
     AUCTION_HOUSE_CLOSED = function() AH.buy = nil; mark("auction", false) end,
     TAXIMAP_OPENED = function() mark("taxi", true) end,
@@ -1831,6 +1983,10 @@ local ON = {
     -- a bind-on-pickup item asks first (the game's dialog, mirrored): Loot All stops there
     LOOT_BIND_CONFIRM = function() LOOT.bind = true end,
     UI_ERROR_MESSAGE = function(_, msg)
+        if MAIL.status == "sending" or MAIL.status == "failed" then
+            local m = TS(function() return msg end)
+            if m and m ~= "" then MAIL.err = m; MAIL.status = "failed" end
+        end
         -- the game's "Inventory is full" while its loot window is open: the make-space screen (user: "By itself")
         local full = msg ~= nil and msg == TS(function() return ERR_INV_FULL end)
         if full and shownAt.loot > hiddenAt.loot and not LOOT.top() then
@@ -1868,7 +2024,7 @@ local REFRESH = {
     "UPDATE_INVENTORY_DURABILITY", "PLAYER_MONEY", "GET_ITEM_INFO_RECEIVED",
     "PLAYER_INTERACTION_MANAGER_FRAME_HIDE", "TRAINER_UPDATE", "PET_STABLE_UPDATE", "MAIL_INBOX_UPDATE",
     "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED", "COMMODITY_SEARCH_RESULTS_UPDATED",
-    "PLAYERBANKSLOTS_CHANGED", "BANK_TABS_CHANGED", "LOOT_SLOT_CLEARED", "LOOT_SLOT_CHANGED",
+    "PLAYERBANKSLOTS_CHANGED", "BANK_TABS_CHANGED", "LOOT_SLOT_CLEARED", "LOOT_SLOT_CHANGED", "MAIL_SEND_INFO_UPDATE",
     "ITEM_SEARCH_RESULTS_UPDATED", "OWNED_AUCTIONS_UPDATED", "ITEM_KEY_ITEM_INFO_RECEIVED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
 }
 
@@ -2613,6 +2769,40 @@ function ACT.taxi(a)
     return run(function() TakeTaxiNode(i) end)
 end
 
+-- ---------------------------------------------------------------- the keyboard (1.0.8: Send Mail, the auction-house search)
+-- A field borrowed from Chat.lua (WC.chatField, chat22): the app's Chat keyboard types it with Chat's own rows and hash check, and
+-- its Send hands the text to [done]. Meanwhile every press is the keyboard's (padPress stands still) and doc.kbd tells the app to
+-- show it. It goes on done, on the app's "kbd off" (B / its close), when the window closes, or after KBD_TTL unused.
+N.KBD_TTL = 300
+function N.kbdClose()
+    if not N.kbd then return end
+    N.kbd, N.kbdText = nil, nil
+    if type(WC.chatField) == "table" then pcall(WC.chatField.close) end
+    emitSoon()
+end
+function N.kbdOpen(name, text, max, done)
+    local f = WC.chatField
+    if type(f) ~= "table" or type(f.open) ~= "function" then return false, "the Chat add-on is too old" end
+    local ok = f.open({ name = name, text = text or "", max = max,
+        holds = function() return N.kbd == name and N.holding == true end,
+        done = function(t)
+            local d, why = done(t)
+            if d then N.kbdClose() end
+            emitSoon()
+            return d, why
+        end })
+    if not ok then return false, "the keyboard did not open" end
+    N.kbd, N.kbdText, N.kbdAt = name, text or "", TN(function() return GetTime() end) or 0
+    emitSoon()
+    return true
+end
+-- /wci kbd off   the app's keyboard closed without Done (B, its close): the field goes, the value stays as it was
+function ACT.kbd(a)
+    if a ~= "off" then return false, "off only" end
+    N.kbdClose()
+    return true
+end
+
 -- ---------------------------------------------------------------- mail actions
 local function mailHeader(i)
     local r = R(function() return GetInboxHeaderInfo(i) end)
@@ -2633,6 +2823,127 @@ function ACT.mailback()
     MAIL.back, MAIL.open = MAIL.open, nil
     emitSoon()
     return true
+end
+
+-- ---- Send Mail (f-inbox-send)
+function MAIL.isOpen() return isOpen("mail") end
+-- /wci mailtab inbox|send   the game's two tabs
+function ACT.mailtab(a)
+    if not MAIL.isOpen() then return false, "no mailbox open" end
+    if a ~= "inbox" and a ~= "send" then return false, "no such tab" end
+    N.kbdClose()
+    MAIL.tab, MAIL.pick = a, false
+    if a == "send" then MAIL.open = nil end
+    emitSoon()
+    return true
+end
+-- /wci mailedit <field>   To, Subject, the letter, or the money's gold / silver / copper: the keyboard opens on it
+function ACT.mailedit(a)
+    if not MAIL.isOpen() or MAIL.tab ~= "send" then return false, "no Send Mail open" end
+    local max = MAIL.FIELD[a]
+    if not max then return false, "no such field" end
+    local digits = a == "gold" or a == "silver" or a == "copper"
+    return N.kbdOpen("mail" .. a, MAIL.form[a], max, function(t)
+        if not MAIL.isOpen() then return false, "the mailbox closed" end
+        t = tostring(t or "")
+        if digits then
+            t = t:gsub("%s", "")
+            if t ~= "" and not t:match("^%d+$") then return false, "numbers only" end
+            if a ~= "gold" and (tonumber(t) or 0) > 99 then return false, "0 to 99" end
+            t = (t == "") and "" or tostring(tonumber(t))
+        end
+        MAIL.form[a] = t
+        MAIL.status, MAIL.err = nil, nil
+        return true
+    end)
+end
+-- /wci mailcod on|off   the game's two radio buttons: Send Money, or C.O.D. (only with an attachment)
+function ACT.mailcod(a)
+    if not MAIL.isOpen() then return false, "no mailbox open" end
+    if a ~= "on" and a ~= "off" then return false, "on or off" end
+    if a == "on" and #MAIL.attached() == 0 then return false, "C.O.D. needs an attachment" end
+    MAIL.form.cod = (a == "on")
+    emitSoon()
+    return true
+end
+-- /wci mailpick on|off   the bag list to choose an attachment from
+function ACT.mailpick(a)
+    if not MAIL.isOpen() or MAIL.tab ~= "send" then return false, "no Send Mail open" end
+    if a == "on" and #MAIL.attached() >= MAIL.MAX then return false, "no room for more" end
+    MAIL.pick = (a == "on")
+    emitSoon()
+    return true
+end
+-- /wci mailattach <bag> <slot> <itemID>   the item goes onto the letter: picked up, then the game's own ClickSendMailItemButton
+-- (the first free attachment), inside the press; anything left in the hand goes back where it came from
+function ACT.mailattach(a, b, c)
+    local bag, sl, id = tonumber(a), tonumber(b), tonumber(c)
+    if not (bag and sl and id and MAIL.isOpen()) then return false, "no mailbox open" end
+    if TB(function() return CursorHasItem() end) then return false, "something is in your hand" end
+    local ok, info = CALL(function() return C_Container.GetContainerItemInfo(bag, sl) end)
+    if not (ok and type(info) == "table") or TN(function() return info.itemID end) ~= id then return false, "that slot changed" end
+    if TB(function() return info.isBound end) then return false, "soulbound items cannot be mailed" end
+    if #MAIL.attached() >= MAIL.MAX then return false, "no room for more" end
+    local done = run(function()
+        C_Container.PickupContainerItem(bag, sl)
+        ClickSendMailItemButton()
+    end)
+    if TB(function() return CursorHasItem() end) then
+        CALL(function() C_Container.PickupContainerItem(bag, sl) end)       -- it did not go: back into its own slot
+        CALL(function() ClearCursor() end)
+        return false, "the game did not take it"
+    end
+    MAIL.pick = false
+    emitSoon()
+    return done, (not done) and "the game did not take it" or nil
+end
+-- /wci maildetach <k>   an attachment back to the bags (the game's own right-click on it)
+function ACT.maildetach(a)
+    local k = tonumber(a)
+    if not (k and MAIL.isOpen()) then return false, "no mailbox open" end
+    if not TB(function() return HasSendMailItem(k) end) then return false, "nothing there" end
+    local done = run(function() ClickSendMailItemButton(k, true) end)
+    if #MAIL.attached() == 0 then MAIL.form.cod = false end
+    emitSoon()
+    return done
+end
+-- /wci mailresume   the stranger check answered (or cancelled) on the top screen: the bottom screen takes over again (a touch:
+-- the controller is the game's meanwhile). A letter that went says so by itself (MAIL_SEND_SUCCESS).
+function ACT.mailresume()
+    if MAIL.status ~= "confirm" then return false, "nothing to confirm" end
+    MAIL.status = nil
+    emitSoon()
+    return true
+end
+-- /wci mailclear   the letter written goes (the attachments stay on it, as in the game until it is sent)
+function ACT.mailclear()
+    if not MAIL.isOpen() then return false, "no mailbox open" end
+    N.kbdClose()
+    MAIL.form = MAIL.blank()
+    MAIL.status, MAIL.err = nil, nil
+    emitSoon()
+    return true
+end
+-- /wci mailsend   the game's Send (SendMailButtonMixin:OnClick): the money or the C.O.D. set, then SendMail, all inside this press
+function ACT.mailsend()
+    if not MAIL.isOpen() or MAIL.tab ~= "send" then return false, "no Send Mail open" end
+    if MAIL.status == "sending" or MAIL.status == "confirm" then return false, "the letter is on its way" end
+    local f = MAIL.form
+    local items = MAIL.attached()
+    local why = MAIL.whyNot(f, items)
+    if why then return false, why end
+    local subject = (f.subject ~= "") and f.subject or MAIL.autoSubject(items)
+    local copper = MAIL.copper(f)
+    MAIL.status, MAIL.err = "sending", nil
+    local done = run(function()
+        SetSendMailCOD(0)
+        SetSendMailMoney(0)
+        if f.cod then SetSendMailCOD(copper) elseif copper > 0 then SetSendMailMoney(copper) end
+        SendMail(f.to, subject, f.body)
+    end)
+    if not done then MAIL.status = "failed"; MAIL.err = "the game call failed" end
+    emitSoon()
+    return done, (not done) and MAIL.err or nil
 end
 -- /wci mailtake <i> <a>   one attachment (TakeInboxItem); never on a COD letter (it costs money)
 function ACT.mailtake(a, b)
@@ -3892,7 +4203,15 @@ end
 
 function N.sync(open, doc)
     N.stale = false
-    if N.mode and open and not inCombat() then
+    -- f-inbox-send, THE USER'S PICK (1.0.8, "Confirm on the top"): money or items to someone not a friend or guildmate stop at the
+    -- game's own secure dialog on the top screen, which no add-on may answer. Meanwhile the controller (and the game's own mail
+    -- window) are the game's; the letter sent or refused takes them back. Unanswered after MAIL.CONFIRM_S, or the player's "Done"
+    -- on the bottom screen (ACT.mailresume): back to the bottom screen, the letter as it was.
+    if MAIL.status == "confirm" and (TN(function() return GetTime() end) or 0) - (MAIL.confirmAt or 0) > MAIL.CONFIRM_S then
+        MAIL.status, MAIL.err = "failed", "Not confirmed on the top screen"
+    end
+    local letGo = MAIL.status == "confirm" and isOpen("mail")
+    if N.mode and open and not inCombat() and not letGo then
         if N.holding then N.check() else N.hold() end
         -- the game's copy goes only once a press has come through the frame (see the header)
         if N.holding and doc and (N.frameSeen or N.trusted) then
@@ -3916,7 +4235,7 @@ function N.sync(open, doc)
             N.npcExtra = want
         end
     elseif not G.holder then
-        N.release()
+        N.release(letGo and "confirm" or nil)
     end
     -- v10: an NPC / loot window opens in a fight: it waits for the ENTER tap (the app taps when its pop-up shows)
     if N.mode and open and inCombat() and not N.holding and not G.holder and not N.npcLeft then N.wantEnter("npc") end
@@ -4350,8 +4669,12 @@ function N.back()
         N.trMenu = nil                      -- the trainer's Settings menu closes first
     elseif isOpen("auction") and (AH.buy or AH.key or AH.tab == "owned" or #AH.path > 0) then
         navRun("ahback")                    -- the auction house: one level up first
-    elseif MAIL.open and isOpen("mail") then
+    elseif MAIL.open and isOpen("mail") and MAIL.tab ~= "send" then
         MAIL.back, MAIL.open = MAIL.open, nil  -- an opened letter: B goes back to the inbox first, onto it
+    elseif MAIL.pick and isOpen("mail") then
+        MAIL.pick = false                      -- Send Mail: the bag list goes first
+    elseif MAIL.tab == "send" and isOpen("mail") then
+        MAIL.tab = "inbox"                     -- then the Send Mail tab, back to the Inbox; the letter written is kept
     elseif LOOT.on() and LOOT.rare then
         LOOT.rare = nil                     -- make space: the blue / purple box says No
     elseif LOOT.on() then
@@ -4393,6 +4716,7 @@ local function padPress(key, down, via)
         N.distrustNow("bind")   -- the frame did not hear this press: it may not hear the next A
     end
     if N.stale then return end      -- taken inside the opening event; the highlight is not built yet
+    if N.kbd and not G.holder then return end      -- 1.0.8: the app's keyboard has the presses (it reads the controller itself)
     if G.holder then
         -- capture v6: a key the guest asked for on both edges (not while a chord waits)
         if G.spec.both and G.spec.both[key] and not G.chord then
