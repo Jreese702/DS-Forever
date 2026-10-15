@@ -73,3 +73,19 @@ class CastBarArtTest {
         for (k in entry.keys - bar.toSet()) assertTrue("$k stays required", !entry.getValue(k).contains("\"optional\""))
     }
 }
+
+/** b-cast-any (the user on test9: no bar for a container or the Hearthstone): at rest the line is the cast bar alone (castOnly = swing off) */
+class CastAnyTest {
+    @Test fun atRestACastStillShows() {
+        val p = SwingLine.parts(false, 1_500.0, 1_000.0, 11_000.0, 1_000.0, 2_000.0, 0.5, false, false, -1L, CastFx.FINISH_MS)
+        assertTrue(p.cast); assertEquals(-1.0, p.swing, 0.0)
+    }
+    @Test fun atRestNoSwingShows() {
+        val p = SwingLine.parts(false, 1_500.0, Double.NaN, Double.NaN, 1_000.0, 2_000.0, 0.5, false, false, -1L, CastFx.FINISH_MS)
+        assertTrue(!p.cast); assertEquals(-1.0, p.swing, 0.0)
+    }
+    @Test fun atRestTheFinishStillPlaysButNotTheSwingsFlash() {
+        assertTrue(SwingLine.parts(false, 0.0, Double.NaN, Double.NaN, Double.NaN, Double.NaN, 0.5, true, false, 100L, CastFx.FINISH_MS).flash)
+        assertTrue(!SwingLine.parts(false, 0.0, Double.NaN, Double.NaN, Double.NaN, Double.NaN, 0.5, true, true, 100L, 250L).flash)
+    }
+}

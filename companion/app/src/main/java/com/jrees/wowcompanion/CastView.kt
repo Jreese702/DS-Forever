@@ -172,6 +172,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      */
     var bottomLine = false
         set(v) { if (field != v) { field = v; invalidate() } }
+    /**
+     * b-cast-any (the user on test9: "the cast bar doesn't play when like, opening container or using the hearthstone"): out of the
+     * combat takeover the line is the CAST BAR ONLY - drawn while one of the player's casts (any: an item, an object, a profession)
+     * or its finish runs, nothing otherwise (no divider, no swing), so the band's rest look is unchanged
+     */
+    var castOnly = false
+        set(v) { if (field != v) { field = v; invalidate() } }
     /** p-swing-timer, batch 12 (the user: "swing timer also turned off cast bar, they should be seperate"): false = the bottom line shows
      *  no SWING (its fill and its restart flash); the CAST bar and its flashes stay (Settings > Home "Swing timer") */
     var swingOn = true
@@ -2483,14 +2490,14 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         var next = Long.MAX_VALUE
         val fa = now - flashAtMs
         val flashLen = when (flashKind) { FLASH_SWING -> SWING_FLASH_MS; FLASH_FAIL -> CastFx.FAIL_MS; else -> CastFx.FINISH_MS }
-        val parts = SwingLine.parts(swingOn, now.toDouble(), castStartMs, castEndMs, swingStartMs, swingDurMs, SWING_GRACE,
+        val parts = SwingLine.parts(swingOn && !castOnly, now.toDouble(), castStartMs, castEndMs, swingStartMs, swingDurMs, SWING_GRACE,
             flashKind != 0, flashKind == FLASH_SWING, fa, flashLen)
         val flashing = parts.flash
         val casting = parts.cast
         val swingP = parts.swing
         val ahead = parts.wakeMs
         if (!casting && swingP < 0 && !flashing) {
-            UiKit.divider(c, 0f, height - 1.5f, w, height - 1.5f)
+            if (!castOnly) UiKit.divider(c, 0f, height - 1.5f, w, height - 1.5f)
             return ahead
         }
         // f-cast-bar-art: the game's bar in its own units (castingbarframe.xml): the Background is 13 units tall, the fill 11 inside it
