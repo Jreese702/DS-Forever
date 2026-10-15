@@ -292,6 +292,8 @@ class ControllerView(
             if ((r.width() - PTABW.measureText(TAB_NAMES[2])) / 2f >= 64f)
                 c.drawBitmap(sw, null, RectF(r.left + 20f, r.centerY() - 16f, r.left + 56f, r.centerY() + 18f), PBMP)
         }
+        // L and R on the row's outsides, always (the user, 15 Oct); not while the chooser is open (LB / RB are its tabs then)
+        if (!page.chooserOpen()) gaps.badges(c)
         // p17: the cursor on the tab row: the game's gold arrows on both sides of its tab (no wrap: none past the ends), in the gaps
         if (k != null && k.focus == "tabs" && !page.chooserOpen())
             UiKit.moveArrows(c, tabRect(k.tcur - 1, w), left = k.tcur > 1, right = k.tcur < TAB_NAMES.size, words = false)

@@ -1815,6 +1815,9 @@ object UiKit {
             else if (chosenTab != sel) { from = current(now); to = target(n, chosenTab); t0 = now; sel = chosenTab }
             gaps = current(now)
             chosen = chosenTab
+            // a ROW keeps the room of its L / R glyphs at both ends ([tabEnds]: the user's "on the outsides, always", 15 Oct)
+            val start = if (vertical) start else start + TAB_END_W
+            val end = if (vertical) end else end - TAB_END_W
             // a tab's length is fixed for the widest case (two gaps), so the tabs never change size while the gaps move
             val spare = if (n >= 2) minOf(2, n - 1) * gap + maxOf(0, n - 3) * rest else 0f
             val len = minOf(maxLen, (end - start - spare) / n)
@@ -1853,8 +1856,12 @@ object UiKit {
             return r
         }
 
-        /** the LB / RB glyphs in the chosen tab's two gaps (none where LB / RB does not reach: [canL] / [canR]) */
+        /**
+         * The LB / RB glyphs. A ROW: on its outsides, ALWAYS ([tabEnds]: L left of the first tab, R right of the last; the user, 15 Oct),
+         * [canL] / [canR] and [width] unused. A column (none uses one today): in the chosen tab's two gaps, as before.
+         */
         fun badges(c: Canvas, canL: Boolean = chosen > 0, canR: Boolean = chosen < rects.size - 1, width: Float = 60f) {
+            if (!vertical) { if (rects.isNotEmpty()) tabEnds(c, rects.first(), rects.last()); return }
             if (chosen < 0 || chosen >= rects.size) return
             if (canL && chosen > 0) tabBadge(c, rects[chosen - 1], false, vertical, width, gaps[chosen - 1])
             if (canR && chosen < rects.size - 1) tabBadge(c, rects[chosen + 1], true, vertical, width, gaps[chosen])
@@ -1863,6 +1870,21 @@ object UiKit {
 
     /** how long the tab gaps take to close round the old chosen tab and open round the new one */
     const val TAB_GAP_MS = 160L
+
+    /**
+     * L AND R ON THE OUTSIDES OF A TAB ROW, ALWAYS (the user, 15 Oct: "Every tabbed room shows L on the far left and R on the far right,
+     * always"; first asked of the mailbox: "the L and R need to be on the outsides of both tabs always there"). The LB glyph centred
+     * in the [room] left of the row's [first] tab, the RB glyph in the [room] right of its [last], in the chosen BUTTON GLYPHS set
+     * ([pad] / [shoulderGlyph]), whether the controller holds or not. A row keeps [TAB_END_W] free at each end for them ([TabGaps]
+     * does it by itself).
+     */
+    fun tabEnds(c: Canvas, first: RectF, last: RectF, room: Float = TAB_END_W, size: Float = minOf(64f, room)) {
+        pad(c, shoulderGlyph(false), first.left - room / 2f, first.centerY() + 4f, size)
+        pad(c, shoulderGlyph(true), last.right + room / 2f, last.centerY() + 4f, size)
+    }
+
+    /** the room an L / R glyph takes beside a tab row's end ([tabEnds]) */
+    const val TAB_END_W = 64f
 
     /** the shoulder button's word in the layout the Settings chose: L / R (Nintendo), LB / RB (Xbox), L1 / R1 (PlayStation) */
     fun shoulderWord(right: Boolean): String = Glyphs.name(if (right) "rshoulder" else "lshoulder")
