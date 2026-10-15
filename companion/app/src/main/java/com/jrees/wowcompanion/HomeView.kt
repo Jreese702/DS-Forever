@@ -108,8 +108,8 @@ class HomeView(
             // the focused quest moved (Settings > Home): the parts go to their new places
             else if (laidOverMap != HomeSettings.questOverMap) shown?.let { apply(it, animate = isShown) }
             // r-combat-anim-off: Grow / Same size changed during a fight: the band goes to its new size
-            else if (lent(castView) && castView.bottomLine != (shown?.takeover == true && HomeSettings.swingTimer))
-                castView.bottomLine = shown?.takeover == true && HomeSettings.swingTimer          // p-swing-timer: switched in a fight
+            else if (lent(castView) && castView.swingOn != HomeSettings.swingTimer)
+                castView.swingOn = HomeSettings.swingTimer                                     // p-swing-timer: switched in a fight
             else if (laidGrow != HomeSettings.combatGrow) { laidGrow = HomeSettings.combatGrow; shown?.let { if (it.takeover) apply(it, animate = isShown) } }
         } }
         setBackgroundColor(Theme.ink)
@@ -785,7 +785,9 @@ class HomeView(
                 else -> CastView.Layout.ROW
             }
             // the big controller's bottom edge is the SWING TIMER (Cast draws it; Home leaves its own line out, see onDraw)
-            castView.bottomLine = s.takeover && HomeSettings.swingTimer      // p-swing-timer: Settings > Home can turn it off
+            castView.bottomLine = s.takeover
+            // p-swing-timer, batch 12 ("they should be seperate"): Settings > Home turns the SWING off; the cast bar stays
+            castView.swingOn = HomeSettings.swingTimer
             // LATER item 16 (the user: "under the controller area ... the trigger modifiers ... light them up like in the cast menu when
             // they get pressed but dimmed when they arent"): Cast's trigger strip under the diamonds (cast 197ec48, DIAMONDS only)
             castView.triggerStrip = true
