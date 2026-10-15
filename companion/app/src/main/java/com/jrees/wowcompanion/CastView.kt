@@ -155,6 +155,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var castChannel = false
     /** f-cast-bar-art: the running cast cannot be interrupted (hudS.cs.n): the game's grey "uninterruptable" fill, no pip glow */
     private var castNi = false
+    /** f-cast-name (the user's pick D, centred): the running cast's name and icon (hudS.cs.nm / .i, any player cast); kept through
+     *  its finish. [predIcon] = the pressed button's icon while a prediction runs (no name until the game's start lands) */
+    private var castName: String? = null
+    private var castIcon = 0
+    private var predIcon = 0
     /** the finish being played is a CHANNEL's (hudS.ce.h): the channel's full bar, glow and sparkles */
     private var finishChannel = false
     private var castEndSeen = Double.NaN
@@ -842,6 +847,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         else {
             castChannel = str(cs.opt("k")) == "h"; castStartMs = cs0 * 1000.0; castEndMs = cs1 * 1000.0
             castNi = ji(cs.opt("n"), 0) == 1
+            castName = str(cs.opt("nm")); castIcon = ji(cs.opt("i"), 0)
             // b-cast-bar-late: the game's start lands; the predicted bar (if any) hands over; press -> real start, logged once
             val pressAt = predPressAt
             if (pressAt > 0L) {
@@ -1089,23 +1095,25 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val src = srcOf[pos]
         val li = layer
         val fb = dpadFightOverride(li, src) ?: fightOverride(li, src)
-        val ct: Int; val usable: Boolean
+        val ct: Int; val usable: Boolean; val icon: Int
         if (fb != null) {
             val id = fightIds?.get(src + 1) ?: return
             ct = fightCt[id] ?: -1
+            icon = fb.icon
             val st = fightStates[id]
             usable = st == null || (st.u == 1 && st.m == 0)
         } else {
             val b = h.layers.getOrNull(li)?.getOrNull(src) ?: return
             if (b.k != "spell" && b.k != "macro") return
             ct = b.ct
+            icon = b.icon
             val st = if (li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else null
             usable = st == null || (st.u == 1 && st.m == 0 && st.cd == 0)
         }
         val casting = !castStartMs.isNaN() && now < castEndMs
         if (ct > 0) predPressAt = now                                     // the latency line, predicted or not
         if (!CastPredict.start(ct, casting, usable)) return
-        predOn = true; predStartMs = now.toDouble(); predEndMs = now.toDouble() + ct
+        predOn = true; predStartMs = now.toDouble(); predEndMs = now.toDouble() + ct; predIcon = icon
         invalidate()
     }
 
@@ -2478,14 +2486,74 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (predOn && !predicted && castStartMs.isNaN()) predOn = false               // never confirmed: dropped quietly
         val cStart = if (predicted) predStartMs else castStartMs
         val cEnd = if (predicted) predEndMs else castEndMs
-        if (predicted) c.saveLayerAlpha(0f, height - BAR_H * w / FRAME_W, w, height.toFloat(), CastPredict.PENDING_ALPHA)
-        val nextPred = drawCastLine(c, now, w, cStart, cEnd)
+        if (predicted) c.saveLayerAlpha(0f, height - 3f * BAR_H * w / FRAME_W, w, height.toFloat(), CastPredict.PENDING_ALPHA)
+        val nextPred = drawCastLine(c, now, w, cStart, cEnd, if (predicted) predIcon else castIcon, if (predicted) null else castName)
         if (predicted) c.restore()
         return if (predicted) 0L else nextPred
     }
 
-    private fun drawCastLine(c: Canvas, now: Long, w: Float, castStartMs: Double, castEndMs: Double): Long {
+    /**
+     * f-cast-name (the user's pick: "I like D the best, but I want the text to be centered and the left side of the gold bar should not
+     * taper into the skill Icon"): a cast (and its finish) wears the spell's ICON at the bar's left end and its NAME centred in the
+     * bar, white with the game's shadow. Beside the icon the bar starts SQUARE: its art is drawn from further left
+     * and cut straight at the start (CastFx.capPx), so no tapered cap runs into the icon; a thin edge closes it. No icon (a swing, an icon not
+     * loaded yet) = the plain full-width bar.
+     */
+    private fun drawCastLine(c: Canvas, now: Long, w: Float, castStartMs: Double, castEndMs: Double, iconId: Int, name: String?): Long {
         val bh = BAR_H * w / FRAME_W
+        val u = bh / 13f
+        val fa = now - flashAtMs
+        val castShown = (!castStartMs.isNaN() && now < castEndMs + 100.0) ||
+            ((flashKind == FLASH_CAST || flashKind == FLASH_FAIL) && fa >= 0 && fa < (if (flashKind == FLASH_FAIL) CastFx.FAIL_MS else CastFx.FINISH_MS))
+        val icon = if (castShown && iconId > 0) iconReady[iconId] ?: run { requestIcon(iconId); null } else null
+        if (icon == null && !(castShown && name != null)) return drawCastBar(c, now, w, castStartMs, castEndMs, 0f)
+        val s = w / FRAME_W
+        val side = CastFx.ICON_SIDE * s
+        val x0 = if (icon != null) CastFx.ICON_X * s + side + CastFx.ICON_GAP * s else 0f
+        val cap = if (x0 > 0f) CastFx.capPx(w - x0) else 0f
+        val y0 = height - bh; val cy = height - bh / 2f
+        // the bar: drawn from x0 - cap, cut straight at x0
+        c.save()
+        c.clipRect(x0, 0f, w, height.toFloat())
+        c.translate(x0 - cap, 0f)
+        val next = drawCastBar(c, now, w - x0 + cap, castStartMs, castEndMs, cap)
+        c.restore()
+        // the whole cast fades with the bar's finish (the game's FadeOutAnim)
+        val a = if (flashKind == FLASH_CAST || flashKind == FLASH_FAIL) {
+            if (!castStartMs.isNaN() && now < castEndMs) 1f else CastFx.barAlpha(flashKind == FLASH_FAIL, fa)
+        } else 1f
+        val ai = (a * 255f).toInt()
+        if (x0 > 0f) {                                                  // the square start's edge, the frame's metal
+            pStroke.color = withAlpha(CAST_EDGE, ai); pStroke.strokeWidth = u
+            c.drawLine(x0 + u / 2f, y0 - u, x0 + u / 2f, height.toFloat(), pStroke)
+        }
+        if (icon != null) {
+            val l = CastFx.ICON_X * s; val t = height - side
+            rect.set(l, t, l + side, height.toFloat())
+            val bw = icon.width.toFloat(); val bhh = icon.height.toFloat()
+            srcRect.set((bw * 0.07f).toInt(), (bhh * 0.07f).toInt(), (bw * 0.93f).toInt(), (bhh * 0.93f).toInt())
+            pArt.alpha = ai; c.drawBitmap(icon, srcRect, rect, pArt); pArt.alpha = 255
+            pStroke.color = withAlpha(CAST_EDGE, ai); pStroke.strokeWidth = u
+            c.drawRect(rect, pStroke)
+        }
+        if (name != null && castShown) {
+            val tp = castNamePaint ?: UiKit.bodyPaint(bh * CastFx.NAME_SIZE, Color.WHITE).apply {
+                textAlign = Paint.Align.CENTER; setShadowLayer(1.5f * u, u, u, Color.BLACK) }.also { castNamePaint = it }
+            tp.textSize = bh * CastFx.NAME_SIZE
+            tp.alpha = ai
+            val room = w - x0 - 2f * CastFx.NAME_PAD * s
+            val text = CastFx.fit(name, room) { tp.measureText(it) }
+            c.drawText(text, (x0 + w) / 2f, cy - (tp.ascent() + tp.descent()) / 2f, tp)
+        }
+        return if (castShown) min(next, if (icon == null && iconId > 0) 50L else next) else next
+    }
+    private var castNamePaint: Paint? = null
+    private fun w0() = width.toFloat()
+
+    private fun drawCastBar(c: Canvas, now: Long, w: Float, castStartMs: Double, castEndMs: Double, lead: Float): Long {
+        // the fill's own length: from [lead] (the cut-off cap beside the icon) to the end
+        fun xAt(p: Float) = lead + (w - lead) * p
+        val bh = BAR_H * w0() / FRAME_W
         val y0 = height - bh; val y1 = height.toFloat()
         var next = Long.MAX_VALUE
         val fa = now - flashAtMs
@@ -2517,7 +2585,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         else { pSwing.color = Color.rgb(24, 20, 16); pSwing.alpha = 230; c.drawRect(0f, y0, w, y1, pSwing) }
         fun fill(a: Art?, p: Float, cf: ColorFilter?, flat: Int) {
             if (p <= 0f) return
-            c.save(); c.clipRect(0f, y0, w * p, y1)
+            c.save(); c.clipRect(0f, y0, xAt(p), y1)
             if (a != null) drawBox(c, a, 0f, y0 + inset, w, y1 - inset, 255, cf)
             else { pSwing.color = flat; pSwing.alpha = 255; c.drawRect(0f, y0 + inset, w, y1 - inset, pSwing) }
             c.restore()
@@ -2532,14 +2600,14 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (casting) {
             val p = ((now - castStartMs) / (castEndMs - castStartMs)).coerceIn(0.0, 1.0).toFloat()
             if (castChannel) {
-                val x = w * (1f - p)
+                val x = xAt(1f - p)
                 fill((if (castNi) aBarNi else null) ?: aBarChan ?: aBarFill, 1f - p, null, Theme.gold)
                 // ChannelShadow: 11 x 11 units, its right edge 1 unit inside the Spark's left (not on an uninterruptible bar)
                 if (!castNi && p < 1f) aBarPipShadow?.let { sd -> barClip(c, y0, y1, w) {
                     drawBox(c, sd, x - 4f * u + u - 11f * u, cy - 5.5f * u, x - 4f * u + u, cy + 5.5f * u) } }
                 if (p < 1f) spark(x, null)
             } else {
-                val x = w * p
+                val x = xAt(p)
                 fill((if (castNi) aBarNi else null) ?: aBarFill, p, null, Theme.gold)
                 // StandardGlow (ADD): 37 x 12 units trailing the Spark, its right edge 2 units inside the Spark's left; masked to the bar
                 if (!castNi && p > 0.001f) aBarPipGlow?.let { gl -> barClip(c, y0, y1, w) {
@@ -2551,7 +2619,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val p = min(1.0, swingP).toFloat()
             c.saveLayerAlpha(0f, y0 - bh, w, y1, if (swingP > 1.0) 110 else 255)   // waiting on the next swing: faded
             fill(aBarFill, p, greyFill, SWING_GREY)
-            if (p < 0.999f) spark(w * p, greyFilter)
+            if (p < 0.999f) spark(xAt(p), greyFilter)
             c.restore()
             // p-swing-timer: on its own clock, ~30 frames a second (a 2-3 s bar needs no more; every vsync re-drew the whole band)
             next = SWING_FRAME_MS
@@ -2566,7 +2634,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                     else { pSwing.color = Theme.gold; pSwing.alpha = 255; c.drawRect(0f, y0 + inset, w, y1 - inset, pSwing) }
                     val glow = if (ch) aBarGlowChan ?: aBarGlow else aBarGlow
                     glow?.let { addBox(c, it, -u, y0, w + u, y1, (CastFx.flashAlpha(fa) * 255f).toInt()) }
-                    if (ch) drawChannelFinish(c, fa, u, y0, y1, w) else drawStandardFinish(c, fa, u, y0, y1, w)
+                    if (ch) { c.save(); c.translate(lead, 0f); drawChannelFinish(c, fa, u, y0, y1, w - lead); c.restore() }
+                    else drawStandardFinish(c, fa, u, y0, y1, w)
                 }
                 FLASH_FAIL -> {
                     // the interrupted bar, full, and the InterruptGlow fading over 1 s
@@ -3132,7 +3201,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private const val SWING_H = 4f           // px: the swing fill along the bottom edge
         private val SWING_GREY = Color.rgb(150, 146, 138)   // the swing fill (the game's grey timer bar)
         private const val FLASH_SWING = 1; private const val FLASH_CAST = 2; private const val FLASH_FAIL = 3
-        private const val SWING_FLASH_MS = 250L        // a swing restart: the glint's run back
+        private const val SWING_FLASH_MS = 250L
+        /** f-cast-name: the square start's edge and the icon's border, the frame's metal */
+        private val CAST_EDGE = Color.rgb(128, 116, 96)        // a swing restart: the glint's run back
         private const val BAR_H = 14f                  // the bar's height at 1240 wide (UI Art)
         private const val DS_MACRO_PREFIX = "DS Bar"   // Spellbook's companion macros: DS Bar Left / Open / Right
         private const val SWING_GRACE = 0.5      // swing lengths the line waits dimmed for the next swing
@@ -3264,6 +3335,23 @@ internal object CastFx {
     val FLAKE_W = floatArrayOf(109.5f, 128f, 102.5f); val FLAKE_H = floatArrayOf(23f, 37f, 17.5f)
     /** Cast_Channel_Sparkles_01 / 02 at scale 0.5 */
     val SPARKLE_W = floatArrayOf(24f, 32.5f); val SPARKLE_H = floatArrayOf(7.5f, 8.5f)
+
+    /** f-cast-name, in frame px (1240 wide): the icon's side and left, the gap to the bar; the bar's cut cap (units); the name */
+    const val ICON_SIDE = 26f; const val ICON_X = 6f; const val ICON_GAP = 6f
+    /** the bar art's tapered end is ~10 of its 422 px (Background; the Frame's corner 9 of 426, the fills 6 of 418): stretched
+     *  along the band that is ~2.4 % of the drawn width, so the cut-off start is drawn that much further left */
+    const val CAP_FRAC = 0.024f
+    /** the px the bar is drawn left of its square start, for [visible] px of bar */
+    fun capPx(visible: Float): Float = CAP_FRAC * visible / (1f - CAP_FRAC)
+    const val NAME_SIZE = 0.86f; const val NAME_PAD = 12f
+
+    /** [name] cut to [room] px with an ellipsis ([width] measures), whole when it fits */
+    fun fit(name: String, room: Float, width: (String) -> Float): String {
+        if (width(name) <= room) return name
+        var n = name.length
+        while (n > 1 && width(name.substring(0, n).trimEnd() + "\u2026") > room) n--
+        return name.substring(0, n).trimEnd() + "\u2026"
+    }
 
     /** the whole bar's alpha [t] ms into a finish ([fail]: the interrupt's hold) */
     fun barAlpha(fail: Boolean, t: Long): Float {
