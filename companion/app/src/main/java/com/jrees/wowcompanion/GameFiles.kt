@@ -191,24 +191,35 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             val cols = buildRow(root) ?: return false
             val hosts = cols["CDN Hosts"].orEmpty().split(' ').filter { it.isNotBlank() }
             val path = cols["CDN Path"].orEmpty().trim('/')
-            if (download(hosts, path, rel, to)) return true
-            // a game file (data/xx/yy/<encoding key>) the CDN keeps only inside an archive: find it and fetch its byte range
-            val ekey = Regex("""data/[0-9a-f]{2}/[0-9a-f]{2}/([0-9a-f]{32})""").matchEntire(rel)?.groupValues?.get(1) ?: return false
-            val log = { m: String -> android.util.Log.i("WCHARVEST", m); Unit }
-            val hit = CdnArchives.locate(root, cache, cols["CDN Key"].orEmpty(),
-                ekey.chunked(2).map { it.toInt(16).toByte() }.toByteArray(), { r, f -> download(hosts, path, r, f) }, log) ?: return false
-            return CdnArchives.fetch(hosts, path, hit, to, log)
+            // a game file (data/xx/yy/<encoding key>) the CDN may keep only inside an archive: find it and fetch its byte range. Once one
+            // loose game file has answered 404, the rest go to the archives first (issue #7: the loose try cost about 6 s per file)
+            val ekey = Regex("""data/[0-9a-f]{2}/[0-9a-f]{2}/([0-9a-f]{32})""").matchEntire(rel)?.groupValues?.get(1)
+                ?: return download(hosts, path, rel, to)
+            val archive = {
+                val log = { m: String -> android.util.Log.i("WCHARVEST", m); Unit }
+                CdnArchives.locate(root, cache, cols["CDN Key"].orEmpty(),
+                    ekey.chunked(2).map { it.toInt(16).toByte() }.toByteArray(), { r, f -> download(hosts, path, r, f) }, log)
+                    ?.let { CdnArchives.fetch(hosts, path, it, to, log) } ?: false
+            }
+            val archiveFirst = looseMissing
+            if (archiveFirst && archive()) return true
+            if (download(hosts, path, rel, to, missingIsFinal = true)) return true
+            if (lastFetchWhy?.startsWith("HTTP 404") == true) looseMissing = true
+            return !archiveFirst && archive()
         }
+
+        /** a loose game file has answered 404 (the CDN keeps them inside archives): the next ones try the archives first */
+        @Volatile private var looseMissing = false
 
         /** why the last CDN fetch failed (HTTP 503 from <host>, timed out...): the art's message keeps the real reason */
         @Volatile var lastFetchWhy: String? = null
             internal set
 
         /** one loose CDN file ([rel] under the CDN path) to [to], whole or not at all; every host, twice (CdnRetry) */
-        private fun download(hosts: List<String>, path: String, rel: String, to: File): Boolean {
+        private fun download(hosts: List<String>, path: String, rel: String, to: File, missingIsFinal: Boolean = false): Boolean {
             to.parentFile?.mkdirs()
             val tmp = File(to.path + ".part")
-            val why = CdnRetry.run(hosts) { host ->
+            val why = CdnRetry.run(hosts, final = { missingIsFinal && it == "HTTP 404" }) { host ->
                 val c = java.net.URL("https://$host/$path/$rel").openConnection() as java.net.HttpURLConnection
                 c.connectTimeout = 15_000; c.readTimeout = 60_000
                 try {
