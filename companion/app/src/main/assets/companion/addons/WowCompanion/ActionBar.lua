@@ -426,6 +426,15 @@ local function actionName(d)
     return realStr(S(A("GetActionText"), d.s))      -- macros (and anything else with a label)
 end
 
+-- b-cast-bar-late: a spell's cast time in ms (0 = instant), for the app's predictive cast bar; nil when the game says nothing
+local function castMs(sid)
+    if not sid then return nil end
+    local ok, si = CALL(function() return C_Spell.GetSpellInfo(sid) end)
+    if not ok or type(si) ~= "table" then return nil end
+    local ct = num(tfield(si, "castTime"))
+    return ct and ct >= 0 and math.floor(ct + 0.5) or nil
+end
+
 local function layoutButton(d)
     local b = { p = d.p, f = "", s = d.s or 0, k = d.k or "", e = d.e == true }
     local btn = d.btn
@@ -462,7 +471,7 @@ local function layoutButton(d)
         if mc and mc > 1 then b.mc = mc end
     end
     local sid = spellIdOf(d)
-    if sid then b.cs = num(S(api("C_Secrets", "GetSpellCooldownSecrecy"), sid)) end
+    if sid then b.cs = num(S(api("C_Secrets", "GetSpellCooldownSecrecy"), sid)); b.ct = castMs(sid) end   -- b-cast-bar-late: cast ms
     return b
 end
 
@@ -928,7 +937,7 @@ end
 
 -- b-combat-bar-states: one SPELL's state, by id (an In-combat spell has no bar slot): the same fields a bar slot's state carries
 local function spellState(id, hasTarget)
-    local o = { i = id }
+    local o = { i = id, ct = castMs(id) }
     local r = PCALL(api("C_Spell", "IsSpellUsable") or _G.IsUsableSpell, id)          -- isUsable, insufficientPower
     if r[1] then
         o.u = bit01(SV(r[2]) == true)
@@ -1039,6 +1048,14 @@ local function emitState(force)
 end
 
 -- Many events in one frame -> one build.
+-- b-cast-bar-late (the user on 1.0.8-test2: "The cast bar starts really delayed at like 25%"): a cast's or channel's START goes out AT
+-- ONCE, outside the 0.5 s state window (that window alone was a 2 s cast's first 25%); the bar's position is the game's own clock
+-- (UnitCastingInfo's start / end), so it is right however late it lands. At most one extra send per cast.
+local function emitCastNow()
+    lastStateAt = -1e9
+    emitState(true)
+end
+
 local function requestState()
     if stateQueued or not loggedIn then return end
     stateQueued = true
@@ -1519,7 +1536,8 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
             local hadEnd = castEnd
             local ok, err = pcall(noteCast, event)
             if not ok then noteError(err) end
-            requestState()
+            if castNow and (event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START") then emitCastNow()
+            else requestState() end
             -- the end mark (hudS.ce) lives 2 s: one more state doc then drops it
             if castEnd and castEnd ~= hadEnd then C_Timer.After(2.05, requestState) end
         end

@@ -85,6 +85,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         var art: String? = null    // "atlas:<name>" / "tex:<path>" when the icon is not a fileID
         var fx: String? = null     // interact | inspect | back | jump (scripted face buttons)
         var e = true               // button:IsEnabled()
+        var ct = -1                // b-cast-bar-late: its spell's cast time in ms (0 instant, -1 unknown)
         var key: String? = null    // legacy slots only: the keybind shown in the glyph
         var special = SP_NONE      // vector stand-in when there is no loadable icon
         var unable = false         // an "Unable..." cursor / crosshair: drawn faded
@@ -317,6 +318,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     var fightIds: Map<Int, Int>? = null
         set(v) { if (field != v) { field = v; invalidate() } }
     private val fightStates = HashMap<Int, St>()
+    private val fightCt = HashMap<Int, Int>()
     private fun fightStateOf(fb: Btn?, src: Int): St? {
         if (fb == null || fb.k != "spell") return null
         if (fb !== fightBtns.getOrNull(src) && fb !== dpadFightBtns.getOrNull(src)) return null
@@ -710,6 +712,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             is String -> if (i.startsWith("atlas:") || i.startsWith("tex:")) b.art = i else b.icon = i.toIntOrNull() ?: 0
         }
         b.fx = str(o.opt("fx"))
+        b.ct = ji(o.opt("ct"), -1)
         b.e = jb(o.opt("e"), true)
         // the companion's own D-pad commands (Spellbook places "DS Bar Left / Open / Right" in EMPTY LT+RT slots,
         // user pick 2026-10-02): marked so the player sees which buttons drive the bottom screen
@@ -798,6 +801,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 val so = arr.optJSONObject(j) ?: continue
                 val id = ji(so.opt("i"), 0).takeIf { it > 0 } ?: continue
                 fightStates[id] = St().apply { u = ji(so.opt("u"), 1); m = ji(so.opt("m"), 0); r = ji(so.opt("r"), -1); chk = ji(so.opt("chk"), 0) }
+                fightCt[id] = ji(so.opt("ct"), -1)
             }
         }
         autoAttack = jb(o.opt("aa"), false)
@@ -815,7 +819,17 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val cs0 = if (cs != null) toApp(jd(cs.opt("s"))) else Double.NaN
         val cs1 = if (cs != null) toApp(jd(cs.opt("e"))) else Double.NaN
         if (cs == null || cs0.isNaN() || cs1.isNaN()) { castStartMs = Double.NaN }
-        else { castChannel = str(cs.opt("k")) == "h"; castStartMs = cs0 * 1000.0; castEndMs = cs1 * 1000.0 }
+        else {
+            castChannel = str(cs.opt("k")) == "h"; castStartMs = cs0 * 1000.0; castEndMs = cs1 * 1000.0
+            // b-cast-bar-late: the game's start lands; the predicted bar (if any) hands over; press -> real start, logged once
+            val pressAt = predPressAt
+            if (pressAt > 0L) {
+                val now = SystemClock.elapsedRealtime()
+                runCatching { DiagLog.event("cast", "bar: press -> real start ${now - pressAt} ms (${if (predOn) "predicted at the press" else "no prediction"})") }
+                predPressAt = 0L
+            }
+            predOn = false
+        }
         o.optJSONObject("ce")?.let { ce ->
             val t = jd(ce.opt("t"))
             if (!t.isNaN() && t != castEndSeen) {
@@ -1032,9 +1046,44 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val down = mask and held.inv()
         if (down != 0) {
             val now = SystemClock.elapsedRealtime()
-            for (pos in 0 until 8) if (down and (1 shl pos) != 0) pressAtMs[pos] = now
+            for (pos in 0 until 8) if (down and (1 shl pos) != 0) { pressAtMs[pos] = now; predictCast(pos, now) }
         }
         held = mask and 0xFF
+        invalidate()
+    }
+
+    // ---------------------------------------------------------------- b-cast-bar-late: the predictive cast bar
+    /** the user on 1.0.8-test2: "The cast bar starts really delayed at like 25%, is there a way that we can like predictivly start it up
+     *  and see if it failed so that its not starting late?" A press of a button whose spell has a cast time starts the bar AT ONCE in a
+     *  pending look; the game's real start (hudS.cs) takes over; no start within [CastPredict.CONFIRM_MS] drops it quietly (a fail
+     *  shows the game's own red flash, hudS.ce). Instant spells never start one. */
+    private var predOn = false
+    private var predPressAt = 0L
+    private var predStartMs = 0.0
+    private var predEndMs = 0.0
+    private fun predictCast(pos: Int, now: Long) {
+        val h = hud ?: return
+        if (!barsUsable || !bottomLine) return
+        val src = srcOf[pos]
+        val li = layer
+        val fb = dpadFightOverride(li, src) ?: fightOverride(li, src)
+        val ct: Int; val usable: Boolean
+        if (fb != null) {
+            val id = fightIds?.get(src + 1) ?: return
+            ct = fightCt[id] ?: -1
+            val st = fightStates[id]
+            usable = st == null || (st.u == 1 && st.m == 0)
+        } else {
+            val b = h.layers.getOrNull(li)?.getOrNull(src) ?: return
+            if (b.k != "spell" && b.k != "macro") return
+            ct = b.ct
+            val st = if (li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else null
+            usable = st == null || (st.u == 1 && st.m == 0 && st.cd == 0)
+        }
+        val casting = !castStartMs.isNaN() && now < castEndMs
+        if (ct > 0) predPressAt = now                                     // the latency line, predicted or not
+        if (!CastPredict.start(ct, casting, usable)) return
+        predOn = true; predStartMs = now.toDouble(); predEndMs = now.toDouble() + ct
         invalidate()
     }
 
@@ -2350,11 +2399,22 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      */
     private fun drawSwingLine(c: Canvas, now: Long): Long {
         val w = width.toFloat()
+        // b-cast-bar-late: no real cast yet, a fresh prediction: the bar from the press, in its pending look
+        val predicted = castStartMs.isNaN() && predOn && CastPredict.alive(predPressAt, now)
+        if (predOn && !predicted && castStartMs.isNaN()) predOn = false               // never confirmed: dropped quietly
+        val cStart = if (predicted) predStartMs else castStartMs
+        val cEnd = if (predicted) predEndMs else castEndMs
+        if (predicted) c.saveLayerAlpha(0f, height - BAR_H * w / FRAME_W, w, height.toFloat(), CastPredict.PENDING_ALPHA)
+        val nextPred = drawCastLine(c, now, w, cStart, cEnd)
+        if (predicted) c.restore()
+        return if (predicted) 0L else nextPred
+    }
+
+    private fun drawCastLine(c: Canvas, now: Long, w: Float, castStartMs: Double, castEndMs: Double): Long {
         val bh = BAR_H * w / FRAME_W
         val y0 = height - bh; val y1 = height.toFloat()
         var next = Long.MAX_VALUE
         val fa = now - flashAtMs
-        // what the line shows now (SwingLine: pure, unit-tested; the swing off leaves the cast bar alone)
         val parts = SwingLine.parts(swingOn, now.toDouble(), castStartMs, castEndMs, swingStartMs, swingDurMs, SWING_GRACE,
             flashKind != 0, flashKind == FLASH_SWING, fa, if (flashKind == FLASH_SWING) SWING_FLASH_MS else BAR_FLASH_MS)
         val flashing = parts.flash
@@ -3058,4 +3118,16 @@ internal object CastDiag {
         fun b(v: Boolean) = if (v) 1 else 0
         return "castview8: g=${b(grey)} s=$staleMs o=${b(ok)} m=${b(empty)} b=${b(bu)} d=$eOff u=$uOff"
     }
+}
+
+/**
+ * b-cast-bar-late: the predictive cast bar's rule, pure. A press starts one only for a spell with a cast time ([ctMs] > 0; instant
+ * spells never), while no cast runs, and when the button is usable (no cooldown, mana enough). It lives [CONFIRM_MS] waiting for the
+ * game's real start; then it is dropped quietly.
+ */
+internal object CastPredict {
+    const val CONFIRM_MS = 500L
+    const val PENDING_ALPHA = 150
+    fun start(ctMs: Int, casting: Boolean, usable: Boolean): Boolean = ctMs > 0 && !casting && usable
+    fun alive(pressAt: Long, now: Long): Boolean = pressAt > 0L && now - pressAt in 0 until CONFIRM_MS
 }

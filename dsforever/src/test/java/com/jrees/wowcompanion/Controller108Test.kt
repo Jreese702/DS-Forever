@@ -100,3 +100,23 @@ class CastDiagReportTest {
         assertTrue(l == null || l.startsWith("castview8: g="))
     }
 }
+
+/** b-cast-bar-late (the user on 1.0.8-test2: "The cast bar starts really delayed at like 25%"): the predictive start's rule */
+class CastPredictTest {
+    @Test fun aCastTimeSpellStartsTheBarAtThePress() = assertTrue(CastPredict.start(ctMs = 2000, casting = false, usable = true))
+    @Test fun anInstantSpellNeverStartsOne() = assertFalse(CastPredict.start(ctMs = 0, casting = false, usable = true))
+    @Test fun anUnknownCastTimeNeverStartsOne() = assertFalse(CastPredict.start(ctMs = -1, casting = false, usable = true))
+    @Test fun notWhileACastRuns() = assertFalse(CastPredict.start(ctMs = 2000, casting = true, usable = true))
+    @Test fun notWhenUnusableOrOutOfMana() = assertFalse(CastPredict.start(ctMs = 2000, casting = false, usable = false))
+    @Test fun itLivesUntilTheConfirmWindowEnds() {
+        assertTrue(CastPredict.alive(pressAt = 1_000L, now = 1_000L))
+        assertTrue(CastPredict.alive(pressAt = 1_000L, now = 1_000L + CastPredict.CONFIRM_MS - 1))
+        assertFalse("never confirmed: dropped", CastPredict.alive(pressAt = 1_000L, now = 1_000L + CastPredict.CONFIRM_MS))
+        assertFalse("no press", CastPredict.alive(pressAt = 0L, now = 5_000L))
+    }
+    @Test fun thePredictedBarFillsFromThePress() {
+        // the line draws a predicted cast like a real one: at 500 ms into a 2 s cast it is a quarter full, and it IS a cast
+        val p = SwingLine.parts(true, 1_500.0, 1_000.0, 3_000.0, Double.NaN, Double.NaN, 0.5, false, false, -1L, 600L)
+        assertTrue(p.cast)
+    }
+}
