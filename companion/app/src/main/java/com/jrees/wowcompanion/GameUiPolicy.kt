@@ -78,6 +78,45 @@ data class HubState(
     val current: Boolean,    // InputGate: written by the game moments ago, not replayed
 )
 
+/**
+ * hub11 (f-top-castbar-toggle; the user, 2026-10-15: "We need to have a UI Toggle for the top screen to Show/hide the cast bar"): the
+ * GAME's cast bar, its own Show / Hide. Not a layout bit (all five are held): Hub.lua takes the row's two spare columns, [COL_SHOW] /
+ * [COL_HIDE], one absolute tap each. Like an element, Hide holds only while the companion is on the bottom screen. The same tap rules
+ * as the layout: after the loading screen settles, a reply waited for, the ask tried once more, then slowly while still silent.
+ */
+class CastBarPolicy {
+    private var tapCol = -1
+    private var tapBoot = -1L
+    private var tapN = -1
+    private var tapAt = 0L
+    private var tries = 0
+
+    fun freshLogin() { tries = 0; tapCol = -1 }
+
+    /** should the game's cast bar be hidden: the user's Hide, while the companion shows */
+    fun wantsHidden(hide: Boolean, visible: Boolean) = hide && visible
+
+    /** the column to tap now, or null. [hidden] = the hub document's cb.hidden (null: an add-on without the cast bar) */
+    fun step(hidden: Boolean?, hide: Boolean, visible: Boolean, s: HubState?, live: Boolean, now: Long, settleUntil: Long = 0L): Int? {
+        if (hidden == null || s == null || !live || !s.current || !s.hasRow) return null
+        val want = wantsHidden(hide, visible)
+        if (hidden == want) { tries = 0; tapCol = -1; return null }
+        if (now < settleUntil) return null
+        val col = if (want) COL_HIDE else COL_SHOW
+        val same = tapCol == col && tapBoot == s.boot
+        if (!same) tries = 0
+        if (same && s.n == tapN && now - tapAt < GameUiPolicy.REPLY_MS) return null
+        if (same && tries >= GameUiPolicy.MAX_TRIES && now - tapAt < GameUiPolicy.SLOW_RETRY_MS) return null
+        tapCol = col; tapBoot = s.boot; tapN = s.n; tapAt = now; tries += 1
+        return col
+    }
+
+    companion object {
+        const val COL_SHOW = 32            // Hub.lua CB_SHOW / CB_HIDE: past the 32 layouts, inside the row's 40 columns
+        const val COL_HIDE = 33
+    }
+}
+
 sealed class UiStep {
     /** send one tap on column [mask] of the pad row */
     data class Tap(val mask: Int) : UiStep()
