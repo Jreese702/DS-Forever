@@ -1416,7 +1416,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         // greys only when the stream is dead or the add-on sent no bar at all. "Not ok" alone (the game's main gamepad frame not shown,
         // e.g. while a form's or a stance's bar stands over it) with a full layout is a working bar. And a grey band still animates: it
         // used to stop scheduling, so the swing / cast line moved only when an input redrew it (p-swing-timer)
-        val grey = stale || (!h.ok && h.layers.all { l -> l.all { it == null || it.empty } })
+        val empty = h.layers.all { l -> l.all { it == null || it.empty } }
+        val grey = stale || (!h.ok && empty)
+        // p-bars-grey (1.0.8, the user's yes): what this decision saw, for a problem report (CastDiag.line)
+        CastDiag.note(grey, if (lastRxMs == 0L) -1L else now - lastRxMs, h.ok, empty, barsUsable, diagEOff(h), diagUOff())
         if (grey) c.saveLayer(0f, 0f, width.toFloat(), height.toFloat(), pGrey)
 
         drawCollapsed = !barsUsable
@@ -2079,6 +2082,21 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             p.textSize = 30f * sc
             c.drawText(r.names[stickSector] ?: "", cx, cy + p.textSize / 3f, p)
         }
+    }
+
+    /** p-bars-grey (CastDiag): the layer on show's buttons with something on them that the add-on calls not enabled */
+    private fun diagEOff(h: Hud): Int {
+        val l = h.layers.getOrNull(layer) ?: return 0
+        var n = 0
+        for (b in l) if (b != null && !b.empty && !b.e) n++
+        return n
+    }
+    /** p-bars-grey (CastDiag): the layer on show's states the add-on calls not usable (u = 0) */
+    private fun diagUOff(): Int {
+        if (!hasState || layer !in 0 until STATE_LAYERS) return 0
+        var n = 0
+        for (st in state[layer]) if (st.u == 0) n++
+        return n
     }
 
     // ---------------------------------------------------------------- f-class-radial: the mirror on Home (HomeView's layer)
@@ -2984,5 +3002,34 @@ internal object ClassChord {
         lb && lt -> LEFT
         rb && rt -> RIGHT
         else -> NONE
+    }
+}
+
+/**
+ * p-bars-grey (1.0.8; the user: "would need a user submited recording to troubleshoot further", then yes to "add that line"): what
+ * Home's bars decided at their last draw, as ONE line for the problem report's "Settings and state", e.g.
+ *     castview8: g=0 s=1200 o=1 m=0 b=1 d=0 u=3
+ * g = the whole bar greyed (1 / 0); s = ms since the last bar document (-1 none yet); o = the add-on's hud.ok; m = no button on any
+ * layer (missing); b = the bars usable (no game window owns the pad); d / u = buttons of the layer on show the add-on calls not
+ * enabled (disabled) / not usable. Nothing personal, and built so the privacy pass can never touch it: the tag carries a digit and
+ * every key is ONE letter (the pass replaces whole-word names of 2+ letters: a character, realm or guild named "Grey" or "Empty"
+ * would have eaten readable keys). Set from the draw (cheap: no string).
+ */
+internal object CastDiag {
+    @Volatile private var have = false
+    @Volatile private var grey = false; @Volatile private var staleMs = -1L; @Volatile private var ok = false
+    @Volatile private var empty = false; @Volatile private var bu = false; @Volatile private var eOff = 0; @Volatile private var uOff = 0
+
+    internal fun note(grey: Boolean, staleMs: Long, ok: Boolean, empty: Boolean, bu: Boolean, eOff: Int, uOff: Int) {
+        this.grey = grey; this.staleMs = staleMs; this.ok = ok; this.empty = empty; this.bu = bu; this.eOff = eOff; this.uOff = uOff
+        have = true
+    }
+
+    /** the report's line, or null before the bars have drawn once */
+    fun line(): String? = if (!have) null else format(grey, staleMs, ok, empty, bu, eOff, uOff)
+
+    fun format(grey: Boolean, staleMs: Long, ok: Boolean, empty: Boolean, bu: Boolean, eOff: Int, uOff: Int): String {
+        fun b(v: Boolean) = if (v) 1 else 0
+        return "castview8: g=${b(grey)} s=$staleMs o=${b(ok)} m=${b(empty)} b=${b(bu)} d=$eOff u=$uOff"
     }
 }

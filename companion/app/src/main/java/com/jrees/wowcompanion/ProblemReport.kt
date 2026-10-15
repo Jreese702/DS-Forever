@@ -136,6 +136,7 @@ object ProblemReport {
             runCatching { add(IndoorSchedulerStep.readiness(ctx).label) }
             runCatching { add("Game art: ${ArtHarvest.state.javaClass.simpleName}" + ((ArtHarvest.state as? ArtHarvest.State.Failed)?.let { " (${it.why})" } ?: "")) }
             add("Game running: ${LauncherHooks.gameUp()}")
+            CastDiag.line()?.let { add(it) }                    // p-bars-grey (1.0.8): what Home's bars decided at their last draw
         }
         return Facts(app, addons, game, device, settings)
     }

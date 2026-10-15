@@ -72,3 +72,31 @@ class Controller108Test {
         assertEquals(ClassChord.LEFT, ClassChord.side(lt = true, rt = true, lb = true, rb = true))
     }
 }
+
+/** p-bars-grey (1.0.8, the user's yes): the bars' line reaches the problem report whole, through the privacy pass. Never uploads */
+class CastDiagReportTest {
+
+    @org.junit.Before fun noLiveReceiver() { ReportUpload.endpoint = "" }      // the live receiver is never a test's (ProblemReportTest's rule)
+
+    @Test fun theLineIsNumbersOnly() {
+        assertEquals("castview8: g=1 s=25000 o=0 m=0 b=1 d=8 u=0",
+            CastDiag.format(grey = true, staleMs = 25_000L, ok = false, empty = false, bu = true, eOff = 8, uOff = 0))
+    }
+
+    @Test fun theLineIsInTheReportAndSurvivesThePrivacyPass() {
+        val line = CastDiag.format(grey = false, staleMs = 1200L, ok = true, empty = false, bu = true, eOff = 0, uOff = 3)
+        val facts = ProblemReport.Facts("1.0.8 (108)", "set 130", "WoW Forever 1.60", "AYN Thor, Android 13",
+            listOf("Game running: true", line))
+        // names the run learnt that look like the line's words (a character / realm / guild could be called that): never touched
+        val names = listOf("Tomsot", "Castview", "Grey", "Stale", "Empty", "Ok", "Bu", "True")   // (WoW names never hold a digit: the tag "castview8" is safe)
+        val report = ProblemReport.build(0L, "bars look grey", facts, emptyList(), emptyList(), emptyList(), false, names)
+        val text = report.files.first { it.first == "report.txt" }.second
+        assertTrue("the line is in Settings and state, whole:\n$text", text.contains("  $line"))
+    }
+
+    @Test fun beforeTheBarsDrawThereIsNoLine() {
+        // a fresh process: nothing noted yet (the object is shared, so only when no draw ran in this JVM)
+        val l = CastDiag.line()
+        assertTrue(l == null || l.startsWith("castview8: g="))
+    }
+}
