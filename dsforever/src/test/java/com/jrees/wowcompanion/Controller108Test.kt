@@ -121,20 +121,31 @@ class CastPredictTest {
     }
 }
 
-/** f-class-radial rework (the user: "it goes in between the map and chat, animating them ourtwards"): the wheel's slot fits */
+/** f-class-radial rework (the user: "it goes in between the map and chat, animating them ourtwards"; 1.0.8-test5: "make it look like
+ *  its sliding in from behind the chat"): the wheel's slot fits, and it starts hidden behind the chat column */
 class ClassSlotTest {
     private val w = 1240f; private val h = 1000f; private val g = 8f
+    private val chatLeft = g; private val chatRight = w / 2f - 4f                        // Home's left column at rest
+    private val maxSide = minOf(w * 0.5f, chatRight - chatLeft)
     @Test fun atRestTheWheelFillsTheMiddleUnderTheBars() {
-        val s = ClassSlot.of(w, h, barsBottom = 208f, gap = g, maxShare = 0.5f)       // the small diamonds at rest
-        assertEquals("half the width at most", 620f, s.side, 0.5f)
+        val s = ClassSlot.of(w, h, barsBottom = 208f, gap = g, maxSide = maxSide)       // the small diamonds at rest
+        assertEquals("no wider than the chat column", chatRight - chatLeft, s.side, 0.5f)
         assertEquals("centred", w / 2f, s.left + s.side / 2f, 0.5f)
         assertTrue("under the bars", s.top >= 208f + g)
         assertTrue("above the bottom", s.top + s.side <= h - g + 0.5f)
-        assertEquals("each column slides out by half the wheel and a gap", 318f, s.push, 0.5f)
+        assertEquals("each column slides out by half the wheel and a gap", s.side / 2f + g, s.push, 0.5f)
     }
     @Test fun theCombatLayoutStillFitsASmallerWheel() {
-        val s = ClassSlot.of(w, h, barsBottom = 390f, gap = g, maxShare = 0.5f)       // Grow: the bigger band
+        val s = ClassSlot.of(w, h, barsBottom = 390f, gap = g, maxSide = maxSide)       // Grow: the bigger band
         assertTrue("a usable wheel: ${s.side}", s.side >= 450f)
         assertTrue(s.top >= 390f + g && s.top + s.side <= h - g + 0.5f)
+    }
+    @Test fun itStartsHiddenBehindTheChatColumn() {
+        for (bars in listOf(208f, 390f)) {
+            val s = ClassSlot.of(w, h, bars, g, maxSide)
+            val start = s.left + ClassSlot.hiddenOffset(chatLeft, chatRight, s)        // the wheel's left edge at the start
+            assertTrue("left edge inside the chat ($start)", start >= chatLeft - 0.5f)
+            assertTrue("right edge inside the chat (${start + s.side})", start + s.side <= chatRight + 0.5f)
+        }
     }
 }
