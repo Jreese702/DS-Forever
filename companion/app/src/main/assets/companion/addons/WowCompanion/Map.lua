@@ -111,16 +111,32 @@ WC.minimapIconsOff = false     -- what the last hide / show did to the markers (
 -- the quest / zone / POI / loading events, at combat's end and every REASSERT_S on the probe's frame. The map document carries
 -- mmk / mmi (the mask / icon scale taken) and mmf (the frame the hub hid) while hidden. In WC (Map.lua's main chunk is at Lua
 -- 5.1's 200-local limit).
-WC.mmHide = { REASSERT_S = 1.0, at = -1000, i = false, k = false,
-              MASK_OFF = 533894, MASK_ON = "ui-hud-minimap-frame-generic-mask" }
+-- THE RIM ARC (b-minimap-edge-effect; the user, 1.0.8-test1, at a quest area's edge: "a subtle white, lattice-looking cloud arc"
+-- on the hidden minimap's rim). It is the blob RING, the client's interface/minimap/ui-questblob-minimapring (533893, a grey-white
+-- diamond lattice; bonus objectives 1117898, dig sites 533890), which the engine draws on the rim where an area runs past the
+-- minimap, so the mask does not clip it. While hidden each ring's picture is the client's fully transparent 533894; shown again it
+-- is the client's own again (exact: no scalar or alpha is touched). The pictures change on a hide / show / the events, not on the
+-- 1 s tick. mmg = the ring pictures taken (0..3).
+WC.mmHide = { REASSERT_S = 1.0, at = -1000, i = false, k = false, g = 0,
+              MASK_OFF = 533894, MASK_ON = "ui-hud-minimap-frame-generic-mask",
+              RINGS = { { "SetQuestBlobRingTexture", 533893 }, { "SetTaskBlobRingTexture", 1117898 },
+                        { "SetArchBlobRingTexture", 533890 } } }
 
--- the minimap's engine-drawn layers off ([off]) or back to the game's own
-function WC.mmHide.layers(off)
+-- the minimap's engine-drawn layers off ([off]) or back to the game's own; [rings]: the ring pictures too (not on the 1 s tick)
+function WC.mmHide.layers(off, rings)
     local H, mm = WC.mmHide, _G.Minimap
     H.i = setIcons(off and ICONS_OFF or gameIconScale())
     H.k = false
     if mm and type(mm.SetMaskTexture) == "function" then
         H.k = pcall(mm.SetMaskTexture, mm, off and H.MASK_OFF or H.MASK_ON)
+    end
+    if rings ~= false and mm then
+        local n = 0
+        for _, e in ipairs(H.RINGS) do
+            local fn = mm[e[1]]
+            if type(fn) == "function" and pcall(fn, mm, off and H.MASK_OFF or e[2]) then n = n + 1 end
+        end
+        H.g = n
     end
     if off then WC.minimapIconsOff = H.i elseif H.i then WC.minimapIconsOff = false end
 end
@@ -132,7 +148,7 @@ function WC.mmHide.reassert(force)
     local t = (type(GetTime) == "function") and GetTime() or 0
     if not force and t - H.at < H.REASSERT_S then return false end
     H.at = t
-    H.layers(true)
+    H.layers(true, force == true)
     return true
 end
 
@@ -999,7 +1015,7 @@ function WC.collectMap()
     out.track = trackingState()          -- Find Herbs / Minerals / Treasure on or off (see trackingState)
     -- the hidden minimap at the last re-assert (WC.mmHide; absent = shown): the mask and the icon scale taken (1 / 0), the frame
     if hiddenFrame and not peek then
-        out.mmk, out.mmi, out.mmf = WC.mmHide.k and 1 or 0, WC.mmHide.i and 1 or 0, hiddenFrame
+        out.mmk, out.mmi, out.mmf, out.mmg = WC.mmHide.k and 1 or 0, WC.mmHide.i and 1 or 0, hiddenFrame, WC.mmHide.g
     end
 
     out.ok = true
