@@ -380,8 +380,11 @@ class HomeView(
             val r = now[p] ?: continue
             val to = if (!open) 0f else if (r.centerX() < w / 2f) -push else push
             v.animate().cancel()
-            v.animate().translationX(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
-                .setInterpolator(Motion.curve()).withLayer().start()
+            val a = v.animate().translationX(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
+                .setInterpolator(Motion.curve()).withLayer()
+            // the map's well edge and zone band are Home's own paint (dispatchDraw): a redraw per frame of ITS slide (no layout)
+            if (v === mapSlot) a.setUpdateListener { invalidate() } else a.setUpdateListener(null)
+            a.start()
         }
     }
 
@@ -1197,6 +1200,11 @@ class HomeView(
         // classic minimap's own zone bar (UI Art's UiKit.zoneBand)
         // THE MAP'S WELL: the map drawn square by MapView, Home rounds it like every module (the frame's ink in the corners outside
         // MODULE_R, then the well's edge), at the page's alpha (a full map has no well: the corners fade out with the page)
+        // f-class-radial rework (the user on 1.0.8-test4: "the border and map name are not moving still on the map module"): the well's
+        // edge and the zone band are painted HERE, from the map's laid-out place, so they follow the map's slide (its translationX) too
+        val mapSlide = mapSlot.translationX
+        val slideSave = if (mapSlide != 0f) c.save() else -1
+        if (slideSave >= 0) c.translate(mapSlide, 0f)
         if (zoneA > 0.01f) now[Part.MAP]?.let { m -> mapWell(c, m, zoneA) }
         if (zoneA > 0.01f && zoneText.isNotEmpty()) now[Part.MAP]?.let { m ->
             // the name is half the bar's height (UiKit.zoneBand): a 64 px bar = 32 px text (user 09-30: "the map name is SUPER
@@ -1206,6 +1214,7 @@ class HomeView(
             UiKit.zoneBand(c, band, zoneText, Theme.zoneColour(zonePvp))
             if (save >= 0) c.restoreToCount(save)
         }
+        if (slideSave >= 0) c.restoreToCount(slideSave)
         // THE CLOCK AND THE BATTERY at the top centre, between the two diamond groups (17:30: "the time should be on display
         // at the top center between the controls, right under it, a battery Icon with my current system charge").
         // not before the controller layout has come: the Cast view's "Waiting" stands there (UI Art, seen on its emulator)
