@@ -272,7 +272,7 @@ class HomeView(
         val p = bReader ?: PadInput({ lt, rt, lb, rb ->
             val left = lb && lt; val right = rb && rt
             val hint = if ((left && castView.hasClassRadial(true)) || (right && castView.hasClassRadial(false)))
-                "Close the ${if (flow.full == HomeModule.MAP) "map" else "chat"} to use the class radial (B)" else null
+                "Close the ${if (flow.full == HomeModule.MAP) "map" else "chat"} to use the class radial (${Glyphs.name("b")})" else null
             if (hint != classHint) { classHint = hint; classLayerShow(hint != null) }
         }, { _, _ -> }, { held -> onPadHeld(held) }).also { bReader = it }
         p.start()
@@ -297,6 +297,7 @@ class HomeView(
     private var typeWanted = false
     private val typeTool: TypeToolView by lazy { TypeToolView(context) { closeTypeTool() } }
     fun openTypeTool() {
+        Log.i(TAG, "type tool: open${if (typeWanted) " (already)" else ""}")
         if (typeWanted) return
         if (typeTool.parent == null) addView(typeTool)
         typeWanted = true

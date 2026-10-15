@@ -122,6 +122,25 @@ object Glyphs {
         CastSettings.ButtonLayout.XBOX -> if (action == "select") "view" else action
         CastSettings.ButtonLayout.NINTENDO -> if (action == "select") "minus" else action
     }
+    /**
+     * f-abxy-split, WORDS FOLLOW TOO (the user 2026-10-15: "Text names match the chosen glyph set everywhere"): the name the chosen
+     * set gives an action in text - "a" "b" "x" "y", "lshoulder" "rshoulder", "ltrigger" "rtrigger", "select", "lstick" "rstick".
+     * The one choke point for button words, as UiKit.pad is for the pictures; an unknown action comes back as it is.
+     */
+    fun name(action: String, layout: CastSettings.ButtonLayout = CastSettings.buttonLayout): String =
+        (when (layout) {
+            CastSettings.ButtonLayout.NINTENDO -> NIN_NAMES
+            CastSettings.ButtonLayout.XBOX -> XBOX_NAMES
+            CastSettings.ButtonLayout.PLAYSTATION -> PS_NAMES
+        })[action] ?: action
+    private val STICKS = mapOf("lstick" to "L Stick", "rstick" to "R Stick")
+    private val NIN_NAMES = mapOf("a" to "A", "b" to "B", "x" to "X", "y" to "Y", "lshoulder" to "L", "rshoulder" to "R",
+        "ltrigger" to "ZL", "rtrigger" to "ZR", "select" to "Minus") + STICKS
+    private val XBOX_NAMES = mapOf("a" to "A", "b" to "B", "x" to "X", "y" to "Y", "lshoulder" to "LB", "rshoulder" to "RB",
+        "ltrigger" to "LT", "rtrigger" to "RT", "select" to "View") + STICKS
+    private val PS_NAMES = mapOf("a" to "Cross", "b" to "Circle", "x" to "Square", "y" to "Triangle", "lshoulder" to "L1",
+        "rshoulder" to "R1", "ltrigger" to "L2", "rtrigger" to "R2", "select" to "Share") + STICKS
+
     fun translate(name: String, layout: CastSettings.ButtonLayout): String {
         val us = name.indexOf('_')
         if (us <= 0) return name

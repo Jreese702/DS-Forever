@@ -394,9 +394,16 @@ object SpellsModel {
         return Combo(triggers, button)
     }
 
+    /** the two trigger words in a style (Glyphs.name, the one choke point for button words) */
+    fun triggerNames(style: PadStyle): Pair<String, String> {
+        val set = when (style) { PadStyle.REV -> CastSettings.ButtonLayout.NINTENDO; PadStyle.LTR -> CastSettings.ButtonLayout.XBOX
+            PadStyle.SHP -> CastSettings.ButtonLayout.PLAYSTATION }
+        return Glyphs.name("ltrigger", set) to Glyphs.name("rtrigger", set)
+    }
+
     /** The trigger names for the Bind box's "which set" line, in the chosen style (SPEC 4). */
     fun heldLine(lt: Boolean, rt: Boolean, style: PadStyle): String {
-        val (l, r) = when (style) { PadStyle.REV -> "ZL" to "ZR"; PadStyle.LTR -> "LT" to "RT"; PadStyle.SHP -> "L2" to "R2" }
+        val (l, r) = triggerNames(style)
         return when {
             lt && rt -> "$l + $r held"; lt -> "$l held"; rt -> "$r held"; else -> "No trigger held"
         }

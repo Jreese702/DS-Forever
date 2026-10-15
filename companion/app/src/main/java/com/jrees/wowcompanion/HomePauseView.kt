@@ -302,7 +302,9 @@ class HomePauseView(
             pressed(PadInput.SLOT_RSTICK) -> { flow.cancel(); invalidate() }
             pressed(PadInput.SLOT_FACE_BOTTOM) -> act(flow.a())
         }
-        for ((slot, dir) in listOf(PadInput.SLOT_DPAD_UP to 0, PadInput.SLOT_DPAD_DOWN to 2)) {
+        // 1.0.8-test7 (the user: "the Keyboard/ Trackpad button doesnt do anything"): D-pad LEFT reaches the model too (it was never
+        // passed on: only Up and Down were)
+        for ((slot, dir) in HomePauseModel.DPAD_OPTIONS) {
             if (pressed(slot)) act(flow.dpad(dir, true))
             if (released(slot)) act(flow.dpad(dir, false))
         }

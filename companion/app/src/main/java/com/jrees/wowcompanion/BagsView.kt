@@ -201,8 +201,6 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
              *  user's ruling 2026-10-09, Start opens the pause wheel from every room (Bags.lua no longer offers it) */
             val KEY_GLYPH = mapOf("PADRSHOULDER" to "rev_rshoulder", "PADRTRIGGER" to "rev_rtrigger",
                 "PADLSTICK" to "gen_lstickin", "PADRSTICK" to "gen_rstickin", "PADBACK" to "rev_minus")
-            val KEY_NAME = mapOf("PADRSHOULDER" to "R", "PADRTRIGGER" to "ZR", "PADLSTICK" to "L Stick",
-                "PADRSTICK" to "R Stick", "PADBACK" to "Minus")
             fun word(s: String) = s.lowercase().replaceFirstChar { it.uppercase() }
             const val USE = -1           // a finger's Use / Equip: the slot's own secure cell (the game's right-click)
             const val MOVE = -2          // a finger's Move: the cursor to the shown slot, then A
@@ -820,13 +818,13 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             c.drawText(it?.optString("name") ?: "", cx - 66f, 150f, UiKit.bodyPaint(38f, colourOf(it)))
             val note = ctl.optString("note").takeIf { n -> n.isNotEmpty() }
             val chord = ctl.optString("chord").takeIf { n -> n.isNotEmpty() }
-            val keyName = chord?.let { k -> KEY_NAME[k] ?: k }
+            val keyName = chord?.let { k -> bindKeyName(k) ?: k }
             val line = when (note) {
                 "bind-taken" -> "$keyName is taken by " + (ctl.optString("takenByName").takeIf { n -> n.isNotEmpty() } ?: ctl.optString("takenBy"))
                 "bind-modifier" -> "Combinations cannot be bound yet"
                 "bind-unheard" -> "That button cannot be bound"
                 "bind-notready", "bind-failed" -> "Not ready yet, press it again"
-                "bound" -> "Bound to " + (KEY_NAME[ctl.optString("bound")] ?: ctl.optString("bound"))
+                "bound" -> "Bound to " + (bindKeyName(ctl.optString("bound")) ?: ctl.optString("bound"))
                 else -> "Press the button you want for this item"
             }
             val colour = when (note) { null -> Color.WHITE; "bound" -> Theme.questGreen; else -> Theme.unusable }
@@ -1074,6 +1072,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     }
 
     companion object {
+        /** a bindable button's word in the chosen glyph set (Glyphs.name); null = not one the sheet binds */
+        private val KEY_ACTION = mapOf("PADRSHOULDER" to "rshoulder", "PADRTRIGGER" to "rtrigger", "PADLSTICK" to "lstick",
+            "PADRSTICK" to "rstick", "PADBACK" to "select")
+        fun bindKeyName(k: String): String? = KEY_ACTION[k]?.let { Glyphs.name(it) }
         private fun rule(colour: Int, c: Context) = View(c).apply { setBackgroundColor(colour) }
         const val TAKE_CHECK_MS = 1500L          // touchedIn's take, checked against bags.ctl this long after
         const val KB_REPEAT_FIRST_MS = 280L      // the search keyboard's D-pad repeat, as DirectPad's rooms (DirectPadKeys)

@@ -341,9 +341,7 @@ class PadTabPage(
         return if (want != null && SystemClock.uptimeMillis() < pageUntil) want else map?.page ?: 1
     }
 
-    private fun triggers(): Pair<String, String> = when (style()) {
-        SpellsModel.PadStyle.REV -> "ZL" to "ZR"; SpellsModel.PadStyle.LTR -> "LT" to "RT"; SpellsModel.PadStyle.SHP -> "L2" to "R2"
-    }
+    private fun triggers(): Pair<String, String> = SpellsModel.triggerNames(style())
     private fun setWord(s: Int): String = triggers().let { (l, r) -> when (s) { 2 -> l; 3 -> r; 4 -> "$l + $r"; else -> "None" } }
     private fun buttonWord(p: Int): String = when (p) {
         1 -> "D-pad Left"; 2 -> "D-pad Up"; 3 -> "D-pad Right"; 4 -> "D-pad Down"

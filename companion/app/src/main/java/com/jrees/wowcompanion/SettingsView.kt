@@ -449,7 +449,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         for (t in LAYOUT_LABELS) segW = maxOf(segW, pBtn.measureText(t) + SEG_PAD)
         pBtn.textSize = 27f
         // f-abxy-split (the user 2026-10-15): WHERE A / B / X / Y sit (the mapping), then which PICTURES they wear; any combination
-        row(c, y, "ABXY location", if (CastSettings.faceSwap) "A right, B bottom, X top, Y left" else "A bottom, B right, X left, Y top",
+        row(c, y, "ABXY location", abxyLine(CastSettings.faceSwap),
             enabled = true) { box ->
             val b = RectF(box.right - 16f - segW * LOCATIONS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             segmented(c, b, LOCATION_LABELS, LOCATIONS.indexOf(CastSettings.abxyLocation), segLocation)
@@ -473,7 +473,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
             b
         }
         y += ROW_H + 10f
-        row(c, y, "Pause wheel: pick", if (HomeSettings.pausePickA) "Aim with the stick, A picks." else "Aim, let the stick go to pick.",
+        row(c, y, "Pause wheel: pick", if (HomeSettings.pausePickA) "Aim with the stick, ${Glyphs.name("a")} picks." else "Aim, let the stick go to pick.",
             enabled = true) { box ->
             val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             segmented(c, b, listOf("A", "Release"), if (HomeSettings.pausePickA) 0 else 1, segPausePick)
@@ -487,7 +487,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
             b
         }
         y += ROW_H + 10f
-        row(c, y, "Item & spell wheels: pick", if (HomeSettings.radialPickA) "Aim with the stick, A picks." else "Aim, let the stick go to pick.",
+        row(c, y, "Item & spell wheels: pick", if (HomeSettings.radialPickA) "Aim with the stick, ${Glyphs.name("a")} picks." else "Aim, let the stick go to pick.",
             enabled = true) { box ->
             val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             segmented(c, b, listOf("A", "Release"), if (HomeSettings.radialPickA) 0 else 1, segPick)
@@ -664,6 +664,12 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         private val LAYOUT_LABELS = LAYOUTS.map { it.label }
         private val LOCATIONS = CastSettings.AbxyLocation.values().toList()
         private val LOCATION_LABELS = LOCATIONS.map { it.label }
+        /** where each face action sits, in the chosen set's words ("A right, B bottom, ..." / "Cross right, Circle bottom, ...") */
+        fun abxyLine(swap: Boolean, layout: CastSettings.ButtonLayout = CastSettings.buttonLayout): String {
+            fun n(a: String) = Glyphs.name(a, layout)
+            return if (swap) "${n("a")} right, ${n("b")} bottom, ${n("x")} top, ${n("y")} left"
+                else "${n("a")} bottom, ${n("b")} right, ${n("x")} left, ${n("y")} top"
+        }
         private val CHAT_INPUTS = listOf("quick", "keys")
         private val CHAT_INPUT_LABELS = listOf("Quick chat", "Keyboard")
         private const val SEG_TEXT = 24f

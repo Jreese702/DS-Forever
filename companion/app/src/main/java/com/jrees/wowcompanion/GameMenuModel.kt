@@ -155,7 +155,7 @@ object GameMenuModel {
         fun askLine(now: Long): String? {
             val k = asking ?: return null
             if (now - askedAt > CONFIRM_MS) { asking = null; return null }
-            return (if (k == "quit") "Exit Game?" else "Log Out?") + "  A = Yes   B = No"
+            return (if (k == "quit") "Exit Game?" else "Log Out?") + "  ${Glyphs.name("a")} = Yes   ${Glyphs.name("b")} = No"
         }
     }
 }

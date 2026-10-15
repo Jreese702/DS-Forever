@@ -1793,11 +1793,7 @@ object UiKit {
     const val TAB_GAP_MS = 160L
 
     /** the shoulder button's word in the layout the Settings chose: L / R (Nintendo), LB / RB (Xbox), L1 / R1 (PlayStation) */
-    fun shoulderWord(right: Boolean): String = when (CastSettings.buttonLayout) {
-        CastSettings.ButtonLayout.XBOX -> if (right) "RB" else "LB"
-        CastSettings.ButtonLayout.PLAYSTATION -> if (right) "R1" else "L1"
-        else -> if (right) "R" else "L"
-    }
+    fun shoulderWord(right: Boolean): String = Glyphs.name(if (right) "rshoulder" else "lshoulder")
 
     /**
      * UP / DOWN ON A LIST'S CHOSEN ROW (the map session's quest list; the user: "Put some up and down arrows on the currently
@@ -3783,10 +3779,10 @@ object UiKit {
             when {
                 choose != null -> crBand(c, g, choose.name, Theme.quality(choose.quality), choose.prompt ?: when {
                     pt < 0 || pt == plusSlot -> "Choose a slice"
-                    it == null -> "Press A to pin it here"
+                    it == null -> "Press ${Glyphs.name("a")} to pin it here"
                     // b71: the replace lands when A is LET GO after the full hold; the fill rests at 1 until then
                     choose.hold >= 1f -> "Let go to replace ${it.name}"
-                    else -> "Hold A to replace ${it.name}"
+                    else -> "Hold ${Glyphs.name("a")} to replace ${it.name}"
                 }, page, pages, selK)
                 pt >= 0 && pt == plusSlot -> crBand(c, g, "Pin an item", Theme.gold, "Let go to choose one from your bags", page, pages, selK)
                 it != null && it.ranOut -> crBand(c, g, it.name, Color.rgb(150, 150, 150),
@@ -4127,7 +4123,9 @@ object UiKit {
         val g = pauseGeo(screen)
         val cy = g.cy + 310f * g.s
         if (kotlin.math.abs(x - g.cx) > 285f * g.s) return -1
-        if (x < g.cx - 40f * g.s && kotlin.math.abs(y - cy) <= 40f * g.s) return PAUSE_OPT_LEFT          // f-trackpad-keyboard
+        // f-trackpad-keyboard: Left's words sit left of the D-pad, clear of the centred "Emotes" / "Sit / Stand" (a tap on their left half
+        // must stay theirs)
+        if (x < g.cx - 75f * g.s && kotlin.math.abs(y - cy) <= 26f * g.s) return PAUSE_OPT_LEFT
         return when (y) {
             in cy - 72f * g.s..cy - 10f * g.s -> PAUSE_OPT_UP
             in cy + 10f * g.s..cy + 72f * g.s -> PAUSE_OPT_DOWN

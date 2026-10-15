@@ -2069,7 +2069,7 @@ class InteractView(context: Context) : View(context) {
             inn.left + 20f, box.bottom - 120f, UiKit.bodyPaint(26f, Theme.quality(it.optInt("q", 1)))) }
         val off = act?.let { slotOf(it, "unpick") } ?: -1
         val cb = RectF(box.centerX() - 190f, box.bottom - 100f, box.centerX() + 190f, box.bottom - 10f)
-        stripButton(c, cb, "Close", if (off >= 0) "act:mailpick off|$off" else "why:Press B", true, false, UiKit.backGlyph(), always = true)
+        stripButton(c, cb, "Close", if (off >= 0) "act:mailpick off|$off" else "why:Press ${Glyphs.name("b")}", true, false, UiKit.backGlyph(), always = true)
     }
 
     /**
@@ -2464,7 +2464,7 @@ class InteractView(context: Context) : View(context) {
         stripButton(c, clearB, "Clear", if (cl >= 0) "act:ahfclear|$cl" else "why:The game gave this no tap cell", cl >= 0 && sr.optBoolean("dirty"),
             pendingCmd == "ahfclear", null, id = "ahfclear")
         val off = col("filters_off")
-        stripButton(c, closeB, "Close", if (off >= 0) "act:ahfilters off|$off" else "why:Press B", true, false, UiKit.backGlyph(), always = true)
+        stripButton(c, closeB, "Close", if (off >= 0) "act:ahfilters off|$off" else "why:Press ${Glyphs.name("b")}", true, false, UiKit.backGlyph(), always = true)
     }
 
     private var shownCatCur: String? = null
@@ -3502,7 +3502,7 @@ class InteractView(context: Context) : View(context) {
         val ok = buyE != null && buyE.slot >= 0
         stripButton(c, yes, "Buy Now", if (ok) "do:${buyE!!.cmd}" else "why:The game gave this no tap cell", ok, pendingCmd == buyE?.cmd, "rev_a", always = true)
         val back = act?.let { slotOf(it, "back") } ?: -1
-        stripButton(c, no, "Cancel", if (back >= 0) "act:ahback|$back" else "why:Press B", true, false, UiKit.backGlyph(), always = true)
+        stripButton(c, no, "Cancel", if (back >= 0) "act:ahback|$back" else "why:Press ${Glyphs.name("b")}", true, false, UiKit.backGlyph(), always = true)
     }
 
     // ---- a vendor: the game's frame round a scrolling list, tabs on top, rows like the game's
