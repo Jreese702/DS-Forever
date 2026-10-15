@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat22"
+local CHATV = "chat23"     -- chat23: the edit box that stands on its own hides too (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -699,7 +699,10 @@ end
 --                              read. The tabs themselves are faded by Blizzard and not touched.
 -- Blizzard reads back the alpha of everything it fades. An addon's number in there would be read
 -- by Blizzard's code on its way to the controller UI, which is how the flood of 11:06 began. So:
---   * NEVER the edit box. Not its alpha, not its focus, not a hook on it.
+--   * NEVER the edit box's focus, its text or a hook on it. Its ALPHA only in one case (b-top-chat-bar, below at `boxes`): a box
+--     that still SHOWS once its window is hidden (it stands on its own) and does not have the keyboard; its own alpha is kept and
+--     given back the moment it takes the keyboard. A box that goes with its window is never touched. (The 11:06 flood was a
+--     `/wcpad show` typed into the chat, TapPad.lua's record, not an alpha.)
 --   * never a tab, a texture, the scroll bar or the button frame.
 --   * never Hide(), SetParent() or a field written into a Blizzard table. IsShown() is what the
 --     controller's chat shortcut asks before it gives the window the focus.
@@ -779,10 +782,62 @@ local function locked(fr)
     return not ok or p ~= false
 end
 
+-- THE EDIT BOX THAT STAYS ON THE TOP SCREEN (b-top-chat-bar; players' screenshots, 15 Oct: "their message bars are still showing on
+-- the top screen", the thin dark bar at the bottom left). Everything above hides with its window, but a chat window's edit box
+-- can stand on its own: it ignores its window's alpha, or the game gave it another parent (the Edit Mode chat). Nothing is assumed
+-- about which: AFTER the windows are hidden, a box that still SHOWS (its effective alpha) and does not have the keyboard is put to
+-- alpha 0, its own alpha kept and given back the moment it takes the keyboard (the poll below shows the chat then) or the hiding
+-- ends. Alpha only: never Hide (the controller's chat shortcut asks IsShown), never its focus, its text or a hook on it; a box that
+-- already goes with its window is never touched. The game re-showing it (its own alpha) is caught by the poll. Each box's state
+-- rides the `chathide` report (`boxes`), so the device says which piece it was.
+local boxes = { saved = {} }
+function boxes.each(fn)
+    for _, n in ipairs(chatNames()) do
+        local b = _G[n .. "EditBox"]
+        if type(b) == "table" and type(b.SetAlpha) == "function" then fn(n .. "EditBox", b) end
+    end
+end
+local function boxShows(b)
+    if S(function() return b:IsShown() end) ~= true then return false end
+    local a = num(S(function() return b:GetEffectiveAlpha() end))
+    return a ~= nil and a > 0.01
+end
+local function boxFocused(b)
+    local ok, focus = pcall(GetCurrentKeyBoardFocus)
+    return ok and rawequal(focus, b)
+end
+function boxes.hide()
+    boxes.each(function(name, b)
+        if boxFocused(b) or not boxShows(b) then return end
+        if boxes.saved[name] == nil then
+            local ok, a = pcall(b.GetAlpha, b)
+            boxes.saved[name] = (ok and num(a)) and a or 1
+        end
+        pcall(b.SetAlpha, b, 0)
+    end)
+end
+function boxes.show()
+    for name, a in pairs(boxes.saved) do
+        local b = _G[name]
+        if type(b) == "table" and type(b.SetAlpha) == "function" then pcall(b.SetAlpha, b, a) end
+        boxes.saved[name] = nil
+    end
+end
+function boxes.report()
+    local out = {}
+    boxes.each(function(name, b)
+        local par = S(function() local pr = b:GetParent(); return pr and pr:GetName() end)
+        out[#out + 1] = { n = name, a = num(S(function() return b:GetEffectiveAlpha() end)),
+                          ipa = S(function() return b:IsIgnoringParentAlpha() end) == true or nil,
+                          p = (type(par) == "string" and isPlain(par)) and par or nil, z = boxes.saved[name] and true or nil }
+    end)
+    return #out > 0 and out or nil
+end
+
 local function chatReport(n, of, why)
     pcall(function()
         WC.send(WC.encode({ type = "cap", probe = "chathide", v = CHATV, hidden = chatHidden, open = chatOpen,
-                            n = n, of = of, off = hideOff or nil, why = why }))
+                            n = n, of = of, off = hideOff or nil, why = why, boxes = boxes.report() }))
     end)
 end
 
@@ -802,6 +857,8 @@ local function setChatAlpha(a)
         local ok, now = pcall(fr.GetAlpha, fr)
         if ok and num(now) and math.abs(now - a) < 0.01 then done = done + 1 end
     end
+    -- the edit boxes that do not go with their windows (see `boxes`): after the windows, the same way
+    if a == 0 then pcall(boxes.hide) else pcall(boxes.show) end
     lastCount = chatCount()
     if done == 0 then return false, "the game kept its own value", 0, #frames end
     return true, nil, done, #frames
@@ -835,6 +892,7 @@ end
 local function giveBack(why)
     if hideOff then return end
     hideOff = true
+    pcall(boxes.show)
     if not chatHidden then return end
     local ok, res, _, n, of = pcall(setChatAlpha, 1)
     if ok and res then chatHidden, chatOpen, lastTyping = false, false, nil end
@@ -855,6 +913,8 @@ local function poll()
         end
     elseif chatCount() ~= lastCount then    -- the game made a new chat window
         setChatAlpha(chatOpen and 1 or 0)
+    elseif not chatOpen then
+        boxes.hide()                        -- a box the game showed again by itself (its own alpha back)
     end
 end
 
