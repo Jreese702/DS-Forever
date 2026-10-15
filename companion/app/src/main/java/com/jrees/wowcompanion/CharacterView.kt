@@ -361,7 +361,10 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val slot = chosenSlot
         if (slot == null || slot !in layout.boxes) { chosenSlot = null; UiKit.emblem(c, middle, model.who?.clsFile ?: "") }
         else card(c, middle, slot)
-        Doll.draw(c, layout, worn(), eq?.optJSONObject("ammo"), eq?.optBoolean("relic") == true)
+        Doll.draw(c, layout, worn(), eq?.optJSONObject("ammo"), eq?.optBoolean("relic") == true,
+            alertColours = eq?.optJSONArray("alertc"))
+        // the game's durability warning (f-durability) in the doll's middle, top right, as the game keeps it by the minimap
+        Doll.warning(c, RectF(middle.right - 96f, middle.top + 6f, middle.right - 6f, middle.top + 122f), eq?.optJSONObject("durw"))
         chosenSlot?.let { layout.boxes[it]?.let { box -> UiKit.slotFocus(c, box) } }
         for ((k, box) in layout.boxes) hit(box, "slot:$k", slot = true) { chosenSlot = if (chosenSlot == k) null else k; scroll["card"] = 0f; invalidate() }
     }

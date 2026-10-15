@@ -594,6 +594,11 @@ function WC.collectBags()
                             end
                             row.ilvl = ilvlOf(link)
                             row.stats = statsOf(link)
+                            -- a piece carried in the bags wears too (f-durability): its percentage, only when it has one
+                            local okD, dc, dm = CALL(function() return C_Container.GetContainerItemDurability(bag, slot) end)
+                            if okD and WC.isPlain(dc) and WC.isPlain(dm) and type(dc) == "number" and type(dm) == "number" and dm > 0 then
+                                row.dur = math.floor(dc / dm * 100)
+                            end
                         elseif loc == "INVTYPE_BAG" or loc == "INVTYPE_QUIVER" then
                             row.equip = loc          -- right-click puts a bag in a free bag slot
                         end
@@ -706,8 +711,11 @@ end
 local bf = CreateFrame("Frame")
 -- NOT ITEM_LOCK_CHANGED: it fires on every pick-up and put-down, so moving one item would cost
 -- two extra flushes; the lock state rides along with the BAG_UPDATE_DELAYED that follows.
+-- UPDATE_INVENTORY_DURABILITY / UPDATE_INVENTORY_ALERTS (f-durability): a hit, a death or a repair changes the worn pieces'
+-- durability and the game's warning figure (DurabilityFrame listens to the same two) without any bag event
 local BAG_EVENTS = { "BAG_UPDATE_DELAYED", "GET_ITEM_INFO_RECEIVED", "PLAYER_MONEY",
-                     "PLAYER_EQUIPMENT_CHANGED", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" }
+                     "PLAYER_EQUIPMENT_CHANGED", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
+                     "UPDATE_INVENTORY_DURABILITY", "UPDATE_INVENTORY_ALERTS" }
 for e in pairs(CTX_OPEN) do BAG_EVENTS[#BAG_EVENTS + 1] = e end
 for e in pairs(CTX_CLOSE) do BAG_EVENTS[#BAG_EVENTS + 1] = e end
 local bagMissing = {}
@@ -2077,6 +2085,83 @@ local function tipLines(slot)
     return #out > 0 and out or nil
 end
 
+-- THE GAME'S DURABILITY WARNING (f-durability): the little armoured figure the game shows by the minimap when gear is damaged
+-- (yellow) or broken (red), DurabilityFrame. READ, never written: whether the game shows it, and each of its pieces as the game
+-- has drawn them (texture or atlas, crop, place and size inside the frame, the colour the game gave it). So the rooms draw the
+-- game's own figure, coloured by the game, with nothing assumed about its art. Pieces are found by walking the frame's regions
+-- (no names assumed). Nil when this client has no such frame.
+local DUR_MAX_PARTS = 24
+local function hex3(r, g, b)
+    if not (type(r) == "number" and type(g) == "number" and type(b) == "number") then return nil end
+    local function h(v) return math.max(0, math.min(255, math.floor(v * 255 + 0.5))) end
+    return string.format("%02x%02x%02x", h(r), h(g), h(b))
+end
+local function durWarning()
+    local f = _G.DurabilityFrame
+    if type(f) ~= "table" then return nil end
+    if S(function() return f:IsShown() end) ~= true then return { show = false } end
+    local fl, ft = SN(function() return f:GetLeft() end), SN(function() return f:GetTop() end)
+    local fw, fh = SN(function() return f:GetWidth() end), SN(function() return f:GetHeight() end)
+    local fsc = SN(function() return f:GetEffectiveScale() end)
+    if not (fl and ft and fw and fh and fsc and fw > 0 and fh > 0 and fsc > 0) then return { show = true } end
+    local parts = {}
+    local function take(rg)
+        if #parts >= DUR_MAX_PARTS or type(rg) ~= "table" then return end
+        if S(function() return rg:GetObjectType() end) ~= "Texture" then return end
+        if S(function() return rg:IsShown() end) ~= true then return end
+        local l, t = SN(function() return rg:GetLeft() end), SN(function() return rg:GetTop() end)
+        local w, h = SN(function() return rg:GetWidth() end), SN(function() return rg:GetHeight() end)
+        local sc = SN(function() return rg:GetEffectiveScale() end) or fsc
+        if not (l and t and w and h and w > 0 and h > 0) then return end
+        local k = sc / fsc
+        local part = { x = l * k - fl, y = ft - t * k, w = w * k, h = h * k }
+        local atlas = S(function() return rg:GetAtlas() end)
+        if type(atlas) == "string" and atlas ~= "" and atlas:byte(1) > 3 then
+            local ok, ai = CALL(function() return C_Texture.GetAtlasInfo(atlas) end)
+            if ok and type(ai) == "table" then
+                part.f = SN(function() return ai.file end)
+                part.tc = { SN(function() return ai.leftTexCoord end), SN(function() return ai.rightTexCoord end),
+                            SN(function() return ai.topTexCoord end), SN(function() return ai.bottomTexCoord end) }
+            end
+        else
+            part.f = SN(function() return rg:GetTextureFileID() end)
+            local ok, ulx, uly, llx, lly, urx, ury, lrx, lry = CALL(function() return rg:GetTexCoord() end)
+            if ok and type(ulx) == "number" and type(lry) == "number" then
+                part.tc = { math.min(ulx, llx), math.max(urx, lrx), math.min(uly, ury), math.max(lly, lry) }
+            end
+        end
+        if not part.f then return end
+        local okC, r, g, b = CALL(function() return rg:GetVertexColor() end)
+        if okC then part.c = hex3(r, g, b) end
+        parts[#parts + 1] = part
+    end
+    local function walk(fr, depth)
+        local okR, regs = CALL(function() return { fr:GetRegions() } end)
+        if okR and type(regs) == "table" then for _, rg in ipairs(regs) do take(rg) end end
+        if depth > 0 then
+            local okK, kids = CALL(function() return { fr:GetChildren() } end)
+            if okK and type(kids) == "table" then
+                for _, kid in ipairs(kids) do if S(function() return kid:IsShown() end) == true then walk(kid, depth - 1) end end
+            end
+        end
+    end
+    walk(f, 2)
+    return { show = true, w = fw, h = fh, parts = #parts > 0 and parts or nil }
+end
+-- the game's colours for a damaged / broken piece (INVENTORY_ALERT_COLORS, what its figure and its tooltips use)
+local function alertColours()
+    local t = _G.INVENTORY_ALERT_COLORS
+    if type(t) ~= "table" then return nil end
+    local out = {}
+    for i = 1, 2 do
+        local c = t[i]
+        if type(c) == "table" then
+            out[i] = hex3(SN(function() return c.r end), SN(function() return c.g end), SN(function() return c.b end))
+        end
+    end
+    return (out[1] or out[2]) and out or nil
+end
+
 function WC.collectEquipped()
     local out = {}
     for slot = 1, 19 do
@@ -2090,6 +2175,10 @@ function WC.collectEquipped()
             if okd and type(cur) == "number" and type(max) == "number" and max > 0 then
                 row.dur = math.floor(cur / max * 100)
             end
+            -- the GAME's own verdict on the piece (f-durability): 1 = damaged (yellow), 2 = broken (red), what its warning
+            -- figure and its paper doll colour by; nil when all is well
+            local alert = SN(function() return GetInventoryAlertStatus(slot) end)
+            if alert and alert > 0 then row.alert = alert end
             local okn, nm = WC.CALL(function() return C_Item.GetItemNameByID(id) end)
             if okn then row.item = S(function() return nm end) end
             local link = S(function() return GetInventoryItemLink("player", slot) end)
@@ -2136,5 +2225,7 @@ function WC.collectEquipped()
         rangedShown = flag(function() return C_PaperDollInfo.IsRangedSlotShown() end),
         ammoNeeded = flag(function() return C_PaperDollInfo.AmmoNeeded() end),
         relic = flag(function() return UnitHasRelicSlot("player") end),
+        durw = durWarning(),
+        alertc = alertColours(),
     }
 end

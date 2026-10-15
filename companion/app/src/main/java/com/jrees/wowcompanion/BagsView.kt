@@ -862,7 +862,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
      */
     fun update(bags: JSONObject, current: Boolean = true) {
         head.set(bags.optInt("free", 0), bags.optInt("total", 0),
-            if (bags.has("money")) bags.optLong("money") else null)
+            if (bags.has("money")) bags.optLong("money") else null, bags.optJSONObject("equipped")?.optJSONObject("durw"))
         // a bags section WITHOUT ctl (an older addon's heartbeat) says nothing about the controller:
         // keep the last state rather than read it as "off" (that flipped the room every 15 s)
         val c = if (current && bags.has("ctl")) bags.optJSONObject("ctl") else state.ctl
@@ -1137,6 +1137,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             if (selected) drawGlow(cv, box, p)
             val n = it?.optInt("count", 1) ?: 1
             if (n > 1) drawCount(cv, box, n, p)
+            else if (!dimmed && it != null) Doll.durability(cv, box, it)      // a worn-down piece carried in the bags (f-durability)
         }
 
         fun drawGlow(cv: Canvas, box: RectF, p: Paints) {
@@ -1368,15 +1369,16 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
 
     private class Header(c: Context) : View(c) {
         private var free = 0; private var total = 0; private var money: Long? = null
+        private var durw: JSONObject? = null
         private val pTitle = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Theme.gold; textSize = 48f; typeface = Typeface.DEFAULT_BOLD }
         private val pSub = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.textDim; textSize = 34f }
         private val pMoney = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Theme.text; textSize = 36f; textAlign = Paint.Align.RIGHT }
 
-        fun set(free: Int, total: Int, money: Long?) {
-            if (free == this.free && total == this.total && money == this.money) return
-            this.free = free; this.total = total; this.money = money; invalidate()
+        fun set(free: Int, total: Int, money: Long?, durw: JSONObject? = null) {
+            if (free == this.free && total == this.total && money == this.money && durw?.toString() == this.durw?.toString()) return
+            this.free = free; this.total = total; this.money = money; this.durw = durw; invalidate()
         }
 
         private fun fonts() {
@@ -1397,6 +1399,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             if (g > 0 || s > 0) parts.add(s to "ui-silvericon")
             parts.add(cp to "ui-coppericon")
             var x = width - 24f
+            // the game's durability warning (f-durability), at the header's right before the money, while the game shows it
+            if (Doll.warning(cv, RectF(x - 64f, 6f, x, height - 6f), durw)) x -= 64f + 24f
             for ((amt, coin) in parts.asReversed()) {
                 val bmp = Icons.ui(coin)
                 if (bmp != null) {
