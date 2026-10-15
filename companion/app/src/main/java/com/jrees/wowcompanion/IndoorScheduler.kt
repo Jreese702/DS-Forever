@@ -52,12 +52,20 @@ internal class IndoorScheduler(
 
     enum class Phase { CATALOGUE, BAKING, PAUSED, DONE, DEFERRED, STOPPED }
     enum class Outcome { COMPLETE, DEFERRED, STOPPED }
-    data class Status(val phase: Phase, val ready: Int, val total: Int, val deferred: Int = 0, val note: String = "") {
+    /**
+     * [now]: the building being built, as Settings shows it (IndoorProgress.nowText: "one 30 yd from you"; "" = none);
+     * [list]: the deferred buildings with their reasons, "key: why" (f-map-tracker, Settings > Map's progress row), at most
+     * [IndoorProgress.LIST_MAX].
+     */
+    data class Status(val phase: Phase, val ready: Int, val total: Int, val deferred: Int = 0, val note: String = "",
+                      val now: String = "", val list: List<String> = emptyList()) {
         fun toJson(): JSONObject = JSONObject().put("phase", phase.name).put("ready", ready).put("total", total)
-            .put("deferred", deferred).put("note", note)
+            .put("deferred", deferred).put("note", note).put("now", now).put("list", org.json.JSONArray(list))
         companion object {
             fun of(o: JSONObject): Status? = runCatching {
-                Status(Phase.valueOf(o.optString("phase")), o.optInt("ready"), o.optInt("total"), o.optInt("deferred"), o.optString("note"))
+                val a = o.optJSONArray("list")
+                Status(Phase.valueOf(o.optString("phase")), o.optInt("ready"), o.optInt("total"), o.optInt("deferred"), o.optString("note"),
+                    o.optString("now"), if (a == null) emptyList() else List(a.length()) { a.optString(it) })
             }.getOrNull()
         }
     }
@@ -132,10 +140,13 @@ internal class IndoorScheduler(
             if (skip.isNotEmpty() || rearmed > 0)
                 log("deferred from before: ${skip.size} skipped (same input), $rearmed tried again (the game, the generator or the app changed)")
             val queue = IndoorBakeQueue(store, build, catalogue, skip)
+            // Settings' deferred list (f-map-tracker): the deferrals on record for this catalogue, with their reasons
+            fun deferredList(): List<String> = deferrals.reasons().take(IndoorProgress.LIST_MAX).map { (k, why) -> IndoorProgress.deferredLine(k, why) }
+            var list = deferredList()
             // the sweep FIRST (a run whose publications fail still trims), then unchanged buildings are visible at once
             cleanup(catalogue)
             publish(queue, catalogue)
-            emit(Status(Phase.BAKING, queue.ready, queue.total))
+            emit(Status(Phase.BAKING, queue.ready, queue.total, queue.deferred, list = list))
             var lastPublish = signals.now()
             var unpublished = 0
             var baked = 0
@@ -144,19 +155,23 @@ internal class IndoorScheduler(
                     gate()
                     val here = signals.position()
                     val pick = queue.next(here) ?: break
+                    // Settings' "building now": how far the nearest-first pick is from the player
+                    emit(Status(Phase.BAKING, queue.ready, queue.total, queue.deferred, now = IndoorProgress.nowText(
+                        if (here == null) null else kotlin.math.sqrt(queue.distance(pick, here))), list = list))
                     val t0 = signals.now()
                     val done = runCatching { queue.runOne(here, publish = false) { w, dir -> generator.produce(w, dir, yieldPoint) } }
                     done.exceptionOrNull()?.let { e ->
                         if (e is IndoorGenerator.Stopped) throw e
                         log("deferred ${pick.key}: ${e.message}")
                         deferrals.defer(pick, e.message ?: e.javaClass.simpleName, signals.now())
+                        list = deferredList()
                     } ?: run {
-                        deferrals.clear(pick)
+                        if (deferrals.entry(pick) != null) { deferrals.clear(pick); list = deferredList() }
                         unpublished++; baked++
                         log("baked ${pick.key} in ${signals.now() - t0} ms")
                         if (baked % STATS_EVERY == 0) runCatching { stats() }
                     }
-                    emit(Status(Phase.BAKING, queue.ready, queue.total, queue.deferred))
+                    emit(Status(Phase.BAKING, queue.ready, queue.total, queue.deferred, list = list))
                     // The building the player stands at shows at once; the rest in batches.
                     val near = done.isSuccess && here != null && queue.distance(pick, here) <= NEAR_YD * NEAR_YD
                     if (unpublished > 0 && (near || signals.now() - lastPublish >= PUBLISH_EVERY_MS)) {
@@ -170,12 +185,13 @@ internal class IndoorScheduler(
             }
             cleanup(catalogue)
             val end = if (queue.deferred > 0)
-                Status(Phase.DEFERRED, queue.ready, queue.total, queue.deferred, "${queue.deferred} deferred until the game or the app is updated")
+                Status(Phase.DEFERRED, queue.ready, queue.total, queue.deferred, "${queue.deferred} deferred until the game or the app is updated",
+                    list = deferredList())
             else Status(Phase.DONE, queue.ready, queue.total)
             emit(end)
             return if (queue.deferred > 0) Outcome.DEFERRED else Outcome.COMPLETE
         } catch (e: IndoorGenerator.Stopped) {
-            emit(status.copy(phase = Phase.STOPPED, note = "resumes next start"))
+            emit(status.copy(phase = Phase.STOPPED, note = "resumes next start", now = ""))
             log("stopped")
             return Outcome.STOPPED
         }

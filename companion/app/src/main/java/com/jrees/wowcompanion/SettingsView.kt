@@ -72,6 +72,29 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     private val segChat = Array(CHAT_INPUTS.size) { RectF() }
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
     private val segIndoor = Array(2) { RectF() }
+    /**
+     * Map > Indoor maps' PROGRESS (board f-map-tracker): ready / total, the building now, the deferred count (IndoorProgress.line);
+     * "Deferred (n)" opens the list of deferred buildings and their reasons in place, under the row. [progress] = the bake's last
+     * status, re-read when the bake says it changed (IndoorSchedulerStep.onChange) and when the view is shown.
+     */
+    private var btnDeferred = RectF()
+    private var deferredOpen = false
+    private var progress: IndoorScheduler.Status? = null
+    private val LIST_LINE = 38f
+    private val progressListener: () -> Unit = {
+        val s = IndoorSchedulerStep.status(context)
+        post {
+            val grew = (progress?.list?.size ?: 0) != (s?.list?.size ?: 0)
+            progress = s
+            if (grew && deferredOpen) requestLayout()
+            invalidate()
+        }
+    }
+    /** the open deferred list's height (0 when closed or empty) */
+    private fun deferredListH(): Float {
+        val n = progress?.list?.size ?: 0
+        return if (deferredOpen && n > 0) 12f + n * LIST_LINE else 0f
+    }
     /** the wheels' two settings (Home's HomeSettings.radialTap / radialPickA; the user 2026-10-09) */
     private val segOpen = Array(2) { RectF() }
     private val segPick = Array(2) { RectF() }
@@ -132,11 +155,15 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         CastSettings.onChange(castListener)
+        IndoorSchedulerStep.onChange(progressListener)
+        progress = runCatching { IndoorSchedulerStep.status(context) }.getOrNull()
+        requestLayout()
         postInvalidate()                     // a value may have changed while detached
     }
 
     override fun onDetachedFromWindow() {
         CastSettings.removeOnChange(castListener)
+        IndoorSchedulerStep.offChange(progressListener)
         super.onDetachedFromWindow()
     }
 
@@ -154,7 +181,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
      */
     fun focusTargets(): List<RectF> =
         ((if (hasGame) listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss) else emptyList()) +
-            (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segIndoor.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() +
+            (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segIndoor.toList() + listOf(btnDeferred) + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() +
                 listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() + listOf(btnRestart) else emptyList()))
             .filter { !it.isEmpty }.map { RectF(it) }
 
@@ -166,7 +193,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     private fun layoutHeight(): Float {
         var y = if (hasGame) TITLE_END + TITLE_GAP + 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H +
             (if (part == Part.TOP) TOP_END else SECTION_GAP) else REST_TOP
-        if (hasRest) y += 16f + ROW_H + 10f + ROW_H + 10f + ROW_H + SECTION_GAP + 16f + ROW_H + 4f * (10f + ROW_H) + SECTION_GAP + 16f + ROW_H +
+        if (hasRest) y += 16f + ROW_H + 10f + ROW_H + 10f + ROW_H + 10f + ROW_H + deferredListH() + SECTION_GAP + 16f + ROW_H + 4f * (10f + ROW_H) + SECTION_GAP + 16f + ROW_H +
             SECTION_GAP + 16f + fgHeight() + BOTTOM_PAD
         return y
     }
@@ -246,6 +273,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
             btnMiniInPlus.contains(x, y) -> Settings.minimapIndoorYd = Settings.stepYd(Settings.minimapIndoorYd, +1)
             segIndoor[0].contains(x, y) -> { Settings.indoorBuild = true; IndoorSchedulerStep.settingChanged() }
             segIndoor[1].contains(x, y) -> Settings.indoorBuild = false
+            btnDeferred.contains(x, y) -> { deferredOpen = !deferredOpen; requestLayout(); invalidate() }
             segPauseOpen[0].contains(x, y) -> HomeSettings.pauseTap = true
             segPauseOpen[1].contains(x, y) -> HomeSettings.pauseTap = false
             segPausePick[0].contains(x, y) -> HomeSettings.pausePickA = true
@@ -381,7 +409,33 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
             segmented(c, b, listOf("On", "Off"), if (indoorOn) 0 else 1, segIndoor)
             b
         }
-        y += ROW_H + SECTION_GAP
+        y += ROW_H + 10f
+        // the progress (f-map-tracker): ready / total, the building now, what was deferred; the list opens in place
+        val prog = progress
+        val nDef = prog?.list?.size ?: 0
+        btnDeferred = RectF()
+        row(c, y, "Indoor maps: progress", IndoorProgress.line(prog, indoorOn), enabled = true) { box ->
+            if (nDef == 0) RectF(box.right, box.centerY(), box.right, box.centerY())
+            else {
+                val label = if (deferredOpen) "Hide" else "Deferred ($nDef)"
+                val w = maxOf(200f, pBtn.measureText(label) + 60f)
+                val b = RectF(box.right - 16f - w, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                UiKit.button(c, b, label, UiKit.Button.UP)
+                btnDeferred = b
+                b
+            }
+        }
+        y += ROW_H
+        if (deferredOpen && nDef > 0 && prog != null) {
+            val lb = RectF(16f, y + 4f, width - 16f, y + deferredListH())
+            pFill.color = Theme.raised
+            c.drawRoundRect(lb, 8f, 8f, pFill)
+            pSub.color = Theme.textDim
+            for ((i, line) in prog.list.withIndex())
+                c.drawText(fit(pSub, line, lb.width() - 44f), lb.left + 22f, lb.top + 8f + (i + 1) * LIST_LINE - 10f, pSub)
+            y += deferredListH()
+        }
+        y += SECTION_GAP
 
         // ---- CONTROLLER (the Cast room's options; values live in CastSettings): Button layout only since the rework
         c.drawText("Controller", padX, y + 4f, pSection)
