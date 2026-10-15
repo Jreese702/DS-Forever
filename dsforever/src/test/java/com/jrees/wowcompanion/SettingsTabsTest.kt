@@ -47,3 +47,32 @@ class SettingsTabsTest {
         assertEquals(T.HOME, t)
     }
 }
+
+/** f-settings-tabs phase 2: the "What it does" pictures belong to bottom-screen rows (the user's rule: none on the top screen's Show/Hide) */
+class SettingsPreviewRowsTest {
+    private val allRows = SettingsTabs.Block.values().flatMap { b -> b.rows.map { it to b.tab } }.toMap()
+
+    @Test fun everyPictureIsARowOfABottomScreenTab() {
+        for (id in SettingsPreview.ROWS.keys) {
+            val tab = allRows[id]
+            assertTrue("$id is not a Settings row", tab != null)
+            assertTrue("$id is on $tab", tab != SettingsTabs.Tab.TOP && tab != SettingsTabs.Tab.SYSTEM)
+        }
+    }
+
+    @Test fun noPictureOnTheTopScreensShowHide() =
+        assertTrue(SettingsTabs.Block.GAME_UI.rows.none { SettingsPreview.has(it) })
+
+    @Test fun everyPictureHasATitleAndWords() {
+        val s = SettingsPreview.State(startAttack = true, toolbar = true)
+        for (id in SettingsPreview.ROWS.keys) {
+            assertTrue(id, SettingsPreview.title(id, s).length in 3..40)
+            assertTrue(id, SettingsPreview.caption(id, s).isNotEmpty() && SettingsPreview.caption(id, s).all { it.length <= 46 })
+        }
+    }
+
+    @Test fun twentyRowsAndTheMovingOnes() {
+        assertEquals(20, SettingsPreview.ROWS.size)
+        assertTrue(SettingsPreview.animated("Swing timer") && SettingsPreview.animated("Frame limit") && !SettingsPreview.animated("Button glyphs"))
+    }
+}
