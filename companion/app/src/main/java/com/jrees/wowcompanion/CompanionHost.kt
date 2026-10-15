@@ -1053,7 +1053,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun pausePick(s: HomePauseModel.Slice) {
         when (s.kind) {
             HomePauseModel.Kind.ROOM -> s.room?.let { name -> runCatching { Room.valueOf(name) }.getOrNull() }?.let { r -> pickRoom(r) }
-            HomePauseModel.Kind.HOME -> if (s.key == "buffs") homeView.openAuras(debuff = false)
+            HomePauseModel.Kind.HOME -> when (s.key) {
+                "buffs" -> homeView.openAuras(debuff = false)
+                // f-trackpad-keyboard: the pause wheel's D-pad Left; on Home (from a room: Home first)
+                "typetool" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openTypeTool() } }
+            }
             else -> {}
         }
     }

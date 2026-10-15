@@ -2494,6 +2494,13 @@ fun XServerScreen(
                     xs.injectPointerButtonRelease(com.winlator.xserver.Pointer.Button.BUTTON_LEFT)
                     xs.injectPointerMove(backX, backY)
                 }
+                // f-trackpad-keyboard: the bottom screen's trackpad (relative moves) and its Left / Right click, where the pointer is
+                override fun moveBy(dx: Int, dy: Int) { xServerView.getxServer().injectPointerMoveDelta(dx, dy) }
+                override fun button(right: Boolean, down: Boolean) {
+                    val xs = xServerView.getxServer()
+                    val b = if (right) com.winlator.xserver.Pointer.Button.BUTTON_RIGHT else com.winlator.xserver.Pointer.Button.BUTTON_LEFT
+                    if (down) xs.injectPointerButtonPress(b) else xs.injectPointerButtonRelease(b)
+                }
             }
             // S5: DS Forever is already up (MainActivity); the game screen hands it this X server
             com.jrees.wowcompanion.fork.DsForeverScreen.current?.attachGame(dsSink)

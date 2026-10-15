@@ -468,7 +468,7 @@ class HomePauseView(
         val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
         val (disc, size) = discHere()
         val moving = UiKit.pauseRadial(c, screen, disc, size, slices(), flow.page, flow.pointed, flow.heldOption, tt, hubDown(), line,
-            lineAlpha = lineAlpha, pickGlyph = flow.pickA)
+            lineAlpha = lineAlpha, pickGlyph = flow.pickA, left = HomePauseModel.TOOL_WORD)
         // the open runs to its end whatever the kit says (its "moving" covers the wheel only, the panels slide too)
         if (moving || tt < UiKit.PAUSE_OPEN_MS || closingFrom >= 0f || hubPressAt != 0L || line != null) postInvalidateOnAnimation()
     }

@@ -4035,6 +4035,8 @@ object UiKit {
     /** the context band's D-pad options ([pauseRadial]'s heldOption, [pauseOptionHit]): up (Emotes), down (Sit / Stand) */
     const val PAUSE_OPT_UP = 0
     const val PAUSE_OPT_DOWN = 2
+    /** f-trackpad-keyboard: D-pad Left's option (the Keyboard & Trackpad), its word left of the D-pad */
+    const val PAUSE_OPT_LEFT = 3
 
     /** the open motion's length; closing runs it backward over [PAUSE_CLOSE_MS]: t = [pauseCloseT] */
     const val PAUSE_OPEN_MS = 600f
@@ -4123,7 +4125,8 @@ object UiKit {
     fun pauseOptionHit(screen: RectF, x: Float, y: Float): Int {
         val g = pauseGeo(screen)
         val cy = g.cy + 310f * g.s
-        if (kotlin.math.abs(x - g.cx) > 200f * g.s) return -1
+        if (kotlin.math.abs(x - g.cx) > 285f * g.s) return -1
+        if (x < g.cx - 40f * g.s && kotlin.math.abs(y - cy) <= 40f * g.s) return PAUSE_OPT_LEFT          // f-trackpad-keyboard
         return when (y) {
             in cy - 72f * g.s..cy - 10f * g.s -> PAUSE_OPT_UP
             in cy + 10f * g.s..cy + 72f * g.s -> PAUSE_OPT_DOWN
@@ -4165,7 +4168,7 @@ object UiKit {
     fun pauseRadial(c: Canvas, screen: RectF, disc: android.graphics.PointF, discSize: Float, slices: List<PauseSlice?>, page: Int,
                     pointed: Int, heldOption: Int = -1, t: Float = PAUSE_OPEN_MS, hubDown: Float = 0f, line: String? = null,
                     lineAlpha: Float = 1f, glyphs: Boolean = true, up: String? = "Emotes", down: String? = "Sit / Stand",
-                    pickGlyph: Boolean = false): Boolean {
+                    pickGlyph: Boolean = false, left: String? = null): Boolean {
         val g = pauseGeo(screen)
         val tt = t.coerceIn(0f, PAUSE_OPEN_MS)
         // the game's order from here on
@@ -4208,7 +4211,7 @@ object UiKit {
         }
         c.restoreToCount(pressSave)
         val b = pSpan(tt, 440f, 600f)
-        if (b > 0f) pauseBands(c, g, page, crEaseOut(b), 24f * g.k * (1f - crEaseOut(b)), heldOption, up, down)
+        if (b > 0f) pauseBands(c, g, page, crEaseOut(b), 24f * g.k * (1f - crEaseOut(b)), heldOption, up, down, left)
         if (line != null && lineAlpha > 0f)
             crWords(c, line, g.cx, screen.top + 26f * g.k, 28f * g.k, PAUSE_RED, 2f * g.k, (255 * lineAlpha.coerceIn(0f, 1f)).toInt(),
                 screen.width() - 40f * g.k)
@@ -4304,7 +4307,8 @@ object UiKit {
     }
 
     /** the header band (the title, the page dots between LB and RB) and the context band (the D-pad and its words), the game's anchors */
-    private fun pauseBands(c: Canvas, g: PauseGeo, page: Int, k: Float, slide: Float, held: Int, up: String?, down: String?) {
+    private fun pauseBands(c: Canvas, g: PauseGeo, page: Int, k: Float, slide: Float, held: Int, up: String?, down: String?,
+                           left: String? = null) {
         val l = c.saveLayerAlpha(null, (255 * k).toInt())
         val hb = g.cy - 310f * g.s - slide                          // the title's bottom edge
         val paging = page >= 0
@@ -4344,6 +4348,15 @@ object UiKit {
                 c.drawBitmap(it, null, RectF(g.cx - hw / 2f, y - hh / 2f, g.cx + hw / 2f, y + hh / 2f), pBmp)
             }
             crWords(c, word, g.cx, y, 21f * g.k, PAUSE_GOLD, 2f * g.k, 255, 380f * g.s)
+        }
+        // f-trackpad-keyboard: D-pad LEFT's word, left of the D-pad, held-lit as the others
+        if (left != null) {
+            val lx = g.cx - 160f * g.s
+            if (held == PAUSE_OPT_LEFT) tex("ropt_on")?.let {
+                val hw = 230f * g.s; val hh = 26f * g.s
+                c.drawBitmap(it, null, RectF(lx - hw / 2f, cy - hh / 2f, lx + hw / 2f, cy + hh / 2f), pBmp)
+            }
+            crWords(c, left, lx, cy, 18f * g.k, PAUSE_GOLD, 2f * g.k, 255, 230f * g.s)
         }
         c.restoreToCount(l)
     }
