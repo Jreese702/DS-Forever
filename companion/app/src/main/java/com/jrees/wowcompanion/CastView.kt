@@ -395,6 +395,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var nameLt = "ZL"; private var nameRt = "ZR"
     private val layerLabel = arrayOf("Base", "ZL", "ZR", "ZL+ZR", "Friendly", "Enemy", "Shortcuts")
     private var faceLetters = NINTENDO_LETTERS
+    /** f-abxy-split: the action (0 X, 1 Y, 2 B, 3 A) drawn at face position 0 left / 1 top / 2 right / 3 bottom */
+    private val faceAct = intArrayOf(1, 0, 3, 2)
     /** which Blizzard position each drawn slot shows: identity, or the Nintendo face swap */
     private var srcOf = IDENTITY
 
@@ -1122,11 +1124,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             CastSettings.ButtonLayout.PLAYSTATION -> { nameLb = "L1"; nameRb = "R1"; nameLt = "L2"; nameRt = "R2" }
             CastSettings.ButtonLayout.XBOX -> { nameLb = "LB"; nameRb = "RB"; nameLt = "LT"; nameRt = "RT" }
         }
-        faceLetters = if (preset == CastSettings.ButtonLayout.XBOX) XBOX_LETTERS else NINTENDO_LETTERS
-        // NINTENDO swaps only the PICTURES: each face action is drawn under the letter it has on an Xbox
-        // pad (Jump under A on the right, Back under B at the bottom, Interact under X on top, Inspect under
-        // Y on the left). The D-pad, the game and every binding stay exactly as they are.
-        srcOf = if (preset == CastSettings.ButtonLayout.NINTENDO) NINTENDO_FACE_SWAP else IDENTITY
+        // f-abxy-split: the ABXY LOCATION decides where each face action is drawn (the Nintendo arrangement: Jump under A on the
+        // right, Back under B at the bottom, Interact under X on top, Inspect under Y on the left); the BUTTON GLYPHS only which
+        // picture each action wears. The D-pad, the game and every binding stay exactly as they are.
+        srcOf = if (CastSettings.faceSwap) NINTENDO_FACE_SWAP else IDENTITY
+        for (i in 0 until 4) faceAct[i] = srcOf[4 + i] - 4
+        faceLetters = Array(4) { ACTION_LETTERS[faceAct[it]] }
         layerLabel[LT] = nameLt
         layerLabel[RT] = nameRt
         layerLabel[LR] = "$nameLt+$nameRt"
@@ -1197,18 +1200,17 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         loadFrame(ci, "circle")
         aFocusSection = art("frame_focus_section")
         val pk: String; val faces: Array<String>; val slots: Array<String>
+        // f-abxy-split: each face position wears the picture of the ACTION drawn there ([faceAct], from the location), in the chosen
+        // glyph set (today's Nintendo = the swapped location + Nintendo glyphs gives exactly the old arrays)
         when (preset) {
             CastSettings.ButtonLayout.NINTENDO -> {
-                pk = "nintendo"; faces = arrayOf("y", "x", "a", "b")
-                slots = arrayOf("xbox_y", "xbox_x", "xbox_a", "xbox_b")
+                pk = "nintendo"; faces = Array(4) { XBOX_NAMES[faceAct[it]] }; slots = Array(4) { "xbox_" + XBOX_NAMES[faceAct[it]] }
             }
             CastSettings.ButtonLayout.XBOX -> {
-                pk = "xbox"; faces = arrayOf("x", "y", "b", "a")
-                slots = arrayOf("xbox_x", "xbox_y", "xbox_b", "xbox_a")
+                pk = "xbox"; faces = Array(4) { XBOX_NAMES[faceAct[it]] }; slots = Array(4) { "xbox_" + XBOX_NAMES[faceAct[it]] }
             }
             CastSettings.ButtonLayout.PLAYSTATION -> {
-                pk = "playstation"; faces = arrayOf("square", "triangle", "circle", "cross")
-                slots = arrayOf("ps_square", "ps_triangle", "ps_circle", "ps_cross")
+                pk = "playstation"; faces = Array(4) { PS_NAMES[faceAct[it]] }; slots = Array(4) { "ps_" + PS_NAMES[faceAct[it]] }
             }
         }
         for (i in 0 until 4) {
@@ -1977,7 +1979,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             pStroke.color = ink
             val s = 3.4f * k
             pStroke.strokeWidth = 0.9f * k
-            when (face) {
+            when (faceAct[face]) {    // f-abxy-split: the ACTION's shape (X square, Y triangle, B circle, A cross), wherever it sits
                 0 -> c.drawRect(gx - s * 0.8f, gy - s * 0.8f, gx + s * 0.8f, gy + s * 0.8f, pStroke)   // square
                 1 -> {                                                                                // triangle
                     c.save(); c.translate(gx, gy + 0.3f * k); c.scale(s, s)
@@ -2917,7 +2919,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
         // face glyph letters (vector fallback), by position left / top / right / bottom
         private val NINTENDO_LETTERS = arrayOf("Y", "X", "A", "B")  // Nintendo = the Thor's print
-        private val XBOX_LETTERS = arrayOf("X", "Y", "B", "A")
+        /** f-abxy-split: by ACTION (Blizzard's face 5..8 = Xbox X / Y / B / A): its letter, its art name, its PlayStation shape */
+        private val ACTION_LETTERS = arrayOf("X", "Y", "B", "A")
+        private val XBOX_NAMES = arrayOf("x", "y", "b", "a")
+        private val PS_NAMES = arrayOf("square", "triangle", "circle", "cross")
         private val IDENTITY = intArrayOf(0, 1, 2, 3, 4, 5, 6, 7)
         /** slots 4..7 = face left / top / right / bottom; Blizzard's 5..8 are Xbox X / Y / B / A there */
         private val NINTENDO_FACE_SWAP = intArrayOf(0, 1, 2, 3, 5, 4, 7, 6)

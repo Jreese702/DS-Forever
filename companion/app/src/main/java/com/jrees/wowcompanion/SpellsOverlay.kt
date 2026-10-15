@@ -276,8 +276,9 @@ class SpellsOverlay(
         cross(c, dpad, intArrayOf(1, 2, 3, 4), arrayOf("gen_left", "gen_up", "gen_right", "gen_down"), lit, icon)
         // face buttons by PHYSICAL place (left, top, right, bottom), as the Cast room draws them: on a Nintendo pad the game hears the
         // button printed Y (left) as its top key, X (top) as its left key, A (right) as its bottom key, B (bottom) as its right key
-        val (positions, keys) = if (CastSettings.buttonLayout == CastSettings.ButtonLayout.NINTENDO)
-            intArrayOf(6, 5, 8, 7) to arrayOf("y", "x", "a", "b") else intArrayOf(5, 6, 7, 8) to arrayOf("x", "y", "b", "a")
+        // f-abxy-split: the places follow the ABXY LOCATION; each wears its ACTION's glyph in the chosen set (faceGlyph)
+        val positions = if (CastSettings.faceSwap) intArrayOf(6, 5, 8, 7) else intArrayOf(5, 6, 7, 8)
+        val keys = Array(4) { mapOf(5 to "x", 6 to "y", 7 to "b", 8 to "a").getValue(positions[it]) }
         val faceGlyphs = Array(4) { faceGlyph(st, keys[it]) }
         cross(c, face, positions, faceGlyphs, lit, icon)
     }

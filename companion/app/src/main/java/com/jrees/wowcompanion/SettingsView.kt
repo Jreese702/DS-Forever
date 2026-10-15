@@ -69,6 +69,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     private var btnMiniMinus = RectF(); private var btnMiniPlus = RectF()
     private var btnMiniInMinus = RectF(); private var btnMiniInPlus = RectF()
     private val segLayout = Array(LAYOUTS.size) { RectF() }
+    private val segLocation = Array(LOCATIONS.size) { RectF() }
     private val segChat = Array(CHAT_INPUTS.size) { RectF() }
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
     private val segIndoor = Array(2) { RectF() }
@@ -181,7 +182,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
      */
     fun focusTargets(): List<RectF> =
         ((if (hasGame) listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss) else emptyList()) +
-            (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segIndoor.toList() + listOf(btnDeferred) + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() +
+            (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segIndoor.toList() + listOf(btnDeferred) + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() +
                 listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() + listOf(btnRestart) else emptyList()))
             .filter { !it.isEmpty }.map { RectF(it) }
 
@@ -193,7 +194,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     private fun layoutHeight(): Float {
         var y = if (hasGame) TITLE_END + TITLE_GAP + 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H +
             (if (part == Part.TOP) TOP_END else SECTION_GAP) else REST_TOP
-        if (hasRest) y += 16f + ROW_H + 10f + ROW_H + 10f + ROW_H + 10f + ROW_H + deferredListH() + SECTION_GAP + 16f + ROW_H + 4f * (10f + ROW_H) + SECTION_GAP + 16f + ROW_H +
+        if (hasRest) y += 16f + ROW_H + 10f + ROW_H + 10f + ROW_H + 10f + ROW_H + deferredListH() + SECTION_GAP + 16f + ROW_H + 5f * (10f + ROW_H) + SECTION_GAP + 16f + ROW_H +
             SECTION_GAP + 16f + fgHeight() + BOTTOM_PAD
         return y
     }
@@ -296,6 +297,8 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
                 val ci = segChat.indexOfFirst { it.contains(x, y) }
                 if (ci >= 0) { if (Settings.chatDefaultInput != CHAT_INPUTS[ci]) Settings.chatDefaultInput = CHAT_INPUTS[ci] }
                 else {
+                    val oi = segLocation.indexOfFirst { it.contains(x, y) }
+                    if (oi >= 0) { if (CastSettings.abxyLocation != LOCATIONS[oi]) CastSettings.abxyLocation = LOCATIONS[oi]; invalidate(); return }
                     val li = segLayout.indexOfFirst { it.contains(x, y) }
                     if (li < 0) return
                     if (CastSettings.buttonLayout != LAYOUTS[li]) CastSettings.buttonLayout = LAYOUTS[li]
@@ -445,7 +448,15 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         var segW = SEG_MIN_W
         for (t in LAYOUT_LABELS) segW = maxOf(segW, pBtn.measureText(t) + SEG_PAD)
         pBtn.textSize = 27f
-        row(c, y, "Button layout", "How the Cast room names its buttons", enabled = true) { box ->
+        // f-abxy-split (the user 2026-10-15): WHERE A / B / X / Y sit (the mapping), then which PICTURES they wear; any combination
+        row(c, y, "ABXY location", if (CastSettings.faceSwap) "A right, B bottom, X top, Y left" else "A bottom, B right, X left, Y top",
+            enabled = true) { box ->
+            val b = RectF(box.right - 16f - segW * LOCATIONS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, LOCATION_LABELS, LOCATIONS.indexOf(CastSettings.abxyLocation), segLocation)
+            b
+        }
+        y += ROW_H + 10f
+        row(c, y, "Button glyphs", "The button pictures shown everywhere", enabled = true) { box ->
             val b = RectF(box.right - 16f - segW * LAYOUTS.size, box.centerY() - 34f,
                           box.right - 16f, box.centerY() + 34f)
             segmented(c, b, LAYOUT_LABELS, LAYOUTS.indexOf(layout), segLayout)
@@ -651,6 +662,8 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     companion object {
         private val LAYOUTS = CastSettings.ButtonLayout.values().toList()
         private val LAYOUT_LABELS = LAYOUTS.map { it.label }
+        private val LOCATIONS = CastSettings.AbxyLocation.values().toList()
+        private val LOCATION_LABELS = LOCATIONS.map { it.label }
         private val CHAT_INPUTS = listOf("quick", "keys")
         private val CHAT_INPUT_LABELS = listOf("Quick chat", "Keyboard")
         private const val SEG_TEXT = 24f

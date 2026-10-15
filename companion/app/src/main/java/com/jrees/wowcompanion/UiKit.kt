@@ -1901,7 +1901,8 @@ object UiKit {
      * the one it is asked for.
      */
     fun pad(c: Canvas, name: String, cx: Float, cy: Float, size: Float = 70f, alpha: Int = 255) {
-        val b = tex("pad_$name") ?: return
+        // f-abxy-split: every glyph in the chosen BUTTON GLYPHS set, whatever set a caller named (a missing picture: the named one)
+        val b = tex("pad_" + Glyphs.translate(name, CastSettings.buttonLayout)) ?: tex("pad_$name") ?: return
         pBmp.alpha = alpha
         c.drawBitmap(b, null, RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f), pBmp)
         pBmp.alpha = 255
