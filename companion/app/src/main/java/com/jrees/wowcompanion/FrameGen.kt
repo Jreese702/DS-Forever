@@ -43,6 +43,97 @@ object FrameGen {
         if (dir == null) dir = File(c.applicationContext.filesDir, "framegen")
     }
 
+    // ---- THE FRAME LIMIT (board n-fps-40; the user: "I want the 40 fps limiter to be set specifically in the game native settings,
+    // not wow"). It IS the launcher's own limiter (GameNative's quick-menu FPS limit: XServerScreen paces the renderer, the Present
+    // extension and the SHM path; with frame generation on, the lsfg-vk layer takes it as its base fps, so it limits the GAME's
+    // frames: 40 x2 = 80 shown). It lives in the container's fpsLimiterEnabled / fpsLimiterTarget extras. ONCE, at the first game start
+    // of 1.0.8, every container is set to 40, new and existing alike (the user's pick: "Set once on update"; [LimitMigration]); after
+    // that the player's own value sticks. DS Forever's Settings row shows the container's
+    // value ([noteContainer], from the launcher at each start and from the quick menu) and a pick there is written into the container
+    // at the next game start ([takeAsk]). No game CVar, nothing in the game's files.
+
+    /** Settings' choices: 40, 60, Off (0); the quick menu may hold any other value, shown as it is */
+    val LIMITS = listOf(40, 60, 0)
+    /** the one-time 1.0.8 limit, for every container */
+    const val LIMIT_MIGRATED = 40
+    /** the launcher's limit for a container that never set one (XServerScreen: on, 60) */
+    const val LIMIT_ENGINE_DEFAULT = 60
+    private const val KEY_LIMIT = "fpsLimitContainer"
+    private const val KEY_ASK = "fpsLimitAsk"
+    private const val KEY_MIGRATED = "fpsLimit108"
+    private const val KEY_NOTE = "fpsLimitNote"
+
+    /**
+     * THE ONE-TIME 1.0.8 MIGRATION: runs [write] with [LIMIT_MIGRATED] the first time only, then never again ([isDone] / [markDone]
+     * keep the flag). Pure, so the off-device test proves "exactly once".
+     */
+    class LimitMigration(private val isDone: () -> Boolean, private val markDone: () -> Unit) {
+        /** true = it ran now */
+        fun run(write: (Int) -> Unit): Boolean {
+            if (isDone()) return false
+            write(LIMIT_MIGRATED)
+            markDone()
+            return true
+        }
+    }
+
+    /** the migration on this install's flag (the launcher, at each game start); [write] puts the limit into the container */
+    fun migrateLimit(write: (Int) -> Unit): Boolean {
+        val p = prefs ?: return false
+        return LimitMigration({ p.getBoolean(KEY_MIGRATED, false) },
+            { p.edit().putBoolean(KEY_MIGRATED, true).putBoolean(KEY_NOTE, true).apply() }).run(write)
+    }
+
+    /** Settings says once why the limit is 40 (until the player picks a limit there) */
+    val limitNote: Boolean get() = prefs?.getBoolean(KEY_NOTE, false) ?: false
+
+    /** the container's limit from its extras (absent = the launcher's own default: on, 60); 0 = Off */
+    fun containerLimit(enabledExtra: String?, targetExtra: String?): Int {
+        val on = enabledExtra?.trim()?.lowercase()?.let { it == "true" || it == "1" } ?: true
+        if (!on) return 0
+        return targetExtra?.trim()?.toIntOrNull()?.takeIf { it > 0 } ?: LIMIT_ENGINE_DEFAULT
+    }
+
+    /** the limit the running game uses, or will at the next start: a pending pick, else the container's (0 = Off) */
+    val fpsLimit: Int
+        get() {
+            val ask = prefs?.getInt(KEY_ASK, -1) ?: -1
+            if (ask in LIMITS) return ask
+            return (prefs?.getInt(KEY_LIMIT, LIMIT_ENGINE_DEFAULT) ?: LIMIT_ENGINE_DEFAULT).coerceAtLeast(0)
+        }
+
+    /** Settings' pick: written into the container at the next game start */
+    fun askLimit(v: Int) {
+        if (v !in LIMITS) return
+        prefs?.edit()?.remove(KEY_NOTE)?.apply()
+        if (v == fpsLimit) { changed(); return }
+        prefs?.edit()?.putInt(KEY_ASK, v)?.apply(); changed()
+    }
+
+    /** the pending pick, taken (the launcher, at a game start); null = none */
+    fun takeAsk(): Int? {
+        val ask = prefs?.getInt(KEY_ASK, -1) ?: -1
+        prefs?.edit()?.remove(KEY_ASK)?.apply()
+        return ask.takeIf { it in LIMITS }
+    }
+
+    /** the container's limit now (the launcher at each start; the quick menu when the player changes it there: that wins) */
+    fun noteContainer(limit: Int, fromQuickMenu: Boolean = false) {
+        val e = prefs?.edit() ?: return
+        e.putInt(KEY_LIMIT, limit.coerceAtLeast(0))
+        if (fromQuickMenu) { e.remove(KEY_ASK); launchedLimit = limit.coerceAtLeast(0) }   // the quick menu applies it to the running game
+        e.apply(); changed()
+    }
+
+    fun limitLabel(v: Int): String = if (v <= 0) "Off" else "$v"
+
+    /** the limit the running game started with (the launcher, at each game start); null = no game started by this run */
+    @Volatile var launchedLimit: Int? = null
+        private set
+
+    /** a restart would change the running game's frame limit */
+    fun limitNeedsRestart(launched: Int?, now: Int): Boolean = launched != null && launched != now
+
     fun onChange(l: () -> Unit) { listeners.add(l) }
     private fun changed() { for (l in listeners.toList()) l() }
 
@@ -89,13 +180,13 @@ object FrameGen {
     @Volatile var launched: Applied? = null
         private set
 
-    fun markLaunched() { launched = current(); changed() }
+    fun markLaunched() { launched = current(); launchedLimit = fpsLimit; changed() }
 
     /** a restart would change what frame generation does in the running game */
     fun needsRestart(launched: Applied?, now: Applied): Boolean = launched != null && launched != now
 
     /** the Frame generation section's rows: only the DLL row until one is set (the user: "hide the other settings until its chosen") */
-    enum class Row { DLL, ON_OFF, MULTIPLIER, FLOW, PERFORMANCE, RESTART }
+    enum class Row { LIMIT, DLL, ON_OFF, MULTIPLIER, FLOW, PERFORMANCE, RESTART }
 
     fun rows(hasDll: Boolean, showRestart: Boolean): List<Row> = buildList {
         add(Row.DLL)

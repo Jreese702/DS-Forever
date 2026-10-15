@@ -596,6 +596,8 @@ fun XServerScreen(
         container.putExtra(FPS_LIMITER_ENABLED_EXTRA, fpsLimiterEnabled)
         container.putExtra(FPS_LIMITER_TARGET_EXTRA, fpsLimiterTarget)
         container.saveData()
+        // DS Forever's Settings shows the launcher's limit (board n-fps-40); a change here wins over a pick waiting there
+        com.jrees.wowcompanion.FrameGen.noteContainer(if (fpsLimiterEnabled) fpsLimiterTarget else 0, fromQuickMenu = true)
     }
 
     fun loadPerformanceHudConfig(): PerformanceHudConfig {
