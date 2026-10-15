@@ -1928,6 +1928,55 @@ object UiKit {
         }
     }
 
+    /**
+     * THE BAR CURSOR'S ARROWS, PART OF THE GOLD BOX (f-bar-cursor-polish; the user, 15 Oct: "remove the L and R on the arrows and try
+     * to make the arrows look like they are a little more of a part of the golden cursor. maybe even giving button feedback to pushing
+     * a direction"): a gold point grows out of the middle of each side of [focus]'s box ([box] = the element, as [focus] gets it),
+     * in [focus]'s own gold and edge, its base ON the box's gold edge so box and point read as one piece; no words. [pushLeft] /
+     * [pushRight] 1 = that direction was just pushed, easing to 0: the point presses OUT a few px and brightens, the box's edge
+     * on that side with it. [left] / [right] false = no point there (the bar's end).
+     */
+    fun cursorArrows(c: Canvas, box: RectF, left: Boolean, right: Boolean, pushLeft: Float = 0f, pushRight: Float = 0f) {
+        val edgeL = box.left - 5f; val edgeR = box.right + 5f       // [focus]'s gold edge
+        val h = (box.height() * 0.40f).coerceIn(30f, 42f)
+        val w = h * 0.55f
+        val cy = box.centerY()
+        for (toRight in booleanArrayOf(false, true)) {
+            if (if (toRight) !right else !left) continue
+            val push = (if (toRight) pushRight else pushLeft).coerceIn(0f, 1f)
+            val out = 7f * push
+            val base = if (toRight) edgeR - 1.75f + out else edgeL + 1.75f - out
+            val tip = if (toRight) base + w else base - w
+            arrowPath.reset()
+            arrowPath.moveTo(base, cy - h / 2f); arrowPath.lineTo(tip, cy); arrowPath.lineTo(base, cy + h / 2f); arrowPath.close()
+            // its own soft light, as the box's wash (brighter while pushed)
+            val glowR = RectF(minOf(base, tip) - 10f, cy - h / 2f - 10f, maxOf(base, tip) + 10f, cy + h / 2f + 10f)
+            glow(c, glowR, SOFT_GOLD, 0.30f + 0.45f * push)
+            pFlat.style = Paint.Style.FILL
+            pFlat.color = lerpColour(Theme.gold, Color.rgb(255, 240, 170), push)
+            c.drawPath(arrowPath, pFlat)
+            // the box's edge carried round the point, the same weights as [focus]'s
+            pFlat.style = Paint.Style.STROKE; pFlat.strokeJoin = Paint.Join.ROUND
+            pFlat.strokeWidth = 3.5f; pFlat.color = Color.argb(200, 120, 72, 0)
+            c.drawPath(arrowPath, pFlat)
+            pFlat.strokeJoin = Paint.Join.MITER; pFlat.style = Paint.Style.FILL
+            // the push lights the box's edge on that side too: the box and its point move as one
+            if (push > 0f) {
+                pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3.5f
+                pFlat.color = Color.argb((200 * push).toInt(), 255, 240, 170)
+                val x = if (toRight) edgeR else edgeL
+                c.drawLine(x, box.top - 5f + 8f, x, box.bottom + 5f - 8f, pFlat)
+                pFlat.style = Paint.Style.FILL
+            }
+        }
+    }
+
+    private fun lerpColour(a: Int, b: Int, k: Float): Int {
+        val t = k.coerceIn(0f, 1f)
+        fun ch(x: Int, y: Int) = (x + (y - x) * t).toInt().coerceIn(0, 255)
+        return Color.argb(ch(Color.alpha(a), Color.alpha(b)), ch(Color.red(a), Color.red(b)), ch(Color.green(a), Color.green(b)), ch(Color.blue(a), Color.blue(b)))
+    }
+
     private val pArrowWord = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER; color = Color.rgb(46, 26, 0)
     }
@@ -5717,6 +5766,120 @@ object UiKit {
         if (f > 0f) { pFlat.color = Theme.gold; pFlat.strokeWidth = 5f; c.drawArc(o, -90f, 360f * f, false, pFlat) }
         pFlat.strokeCap = Paint.Cap.BUTT; pFlat.style = Paint.Style.FILL
     }
+
+    /** the harvested cast-bar art (`ui/cast/<name>.png`, CastView's pieces), decoded once; null when it is not on the device */
+    fun castArt(name: String): Bitmap? {
+        castCache[name]?.let { return it }
+        if (name in castMissing) return null
+        val f = ArtHarvest.file("ui/cast/$name.png")
+        val bmp = if (f.canRead()) BitmapFactory.decodeFile(f.path) else null
+        if (bmp == null) castMissing.add(name) else castCache[name] = bmp
+        return bmp
+    }
+    private val castCache = HashMap<String, Bitmap>()
+    private val castMissing = HashSet<String>()
+
+    private val pHold = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val holdPos = FloatArray(2)
+    private val holdPath = android.graphics.Path()
+
+    /**
+     * THE HOLD ON AN ITEM (f-delete-hold-polish; the user, 15 Oct: "I don't love the way that the hold to delete looks right now, it
+     * could be a lot more polished"): over the item's tile [box], [f] 0..1 of the hold: a gold light sweeps round the item clockwise
+     * from the top as the game's cooldown swipe does (a radial wipe, additive gold), a gold ring round the tile follows it, and a glow
+     * round the tile builds with it.
+     */
+    fun holdTile(c: Canvas, box: RectF, f: Float) {
+        val k = f.coerceIn(0f, 1f)
+        if (k <= 0f) return
+        // the glow that builds round the tile
+        glow(c, RectF(box.left - 14f, box.top - 14f, box.right + 14f, box.bottom + 14f), SOFT_GOLD, 0.20f + 0.55f * k)
+        // the radial wipe over the item, clipped to the tile
+        val save = c.save()
+        c.clipRect(box)
+        val r = maxOf(box.width(), box.height())
+        val o = RectF(box.centerX() - r, box.centerY() - r, box.centerX() + r, box.centerY() + r)
+        holdPath.reset(); holdPath.moveTo(box.centerX(), box.centerY()); holdPath.arcTo(o, -90f, 360f * k); holdPath.close()
+        pHold.style = Paint.Style.FILL; pHold.color = Color.argb((70 + 60 * k).toInt(), 255, 200, 70)
+        pHold.xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD)
+        c.drawPath(holdPath, pHold)
+        pHold.xfermode = null
+        c.restoreToCount(save)
+        // the ring round the tile, with its bright head
+        val rr = RectF(box.left - 6f, box.top - 6f, box.right + 6f, box.bottom + 6f)
+        pHold.style = Paint.Style.STROKE; pHold.strokeCap = Paint.Cap.ROUND
+        pHold.strokeWidth = 4f; pHold.color = Color.argb(70, 255, 209, 0); c.drawRoundRect(rr, 10f, 10f, pHold)
+        // the gold runs ROUND THE TILE'S OWN EDGE, clockwise from the top middle (a circle over a square read wrong)
+        pHold.strokeWidth = 5f; pHold.color = Theme.gold
+        holdPath.reset(); holdPath.addRoundRect(rr, 10f, 10f, android.graphics.Path.Direction.CW)
+        val pm = android.graphics.PathMeasure(holdPath, true)
+        val len = pm.length
+        // where the path starts is the platform's: find its point nearest the top middle (96 samples, only while held)
+        var start = 0f; var best = Float.MAX_VALUE
+        for (i in 0 until 96) {
+            val d = len * i / 96f
+            pm.getPosTan(d, holdPos, null)
+            val dd = kotlin.math.abs(holdPos[0] - rr.centerX()) + kotlin.math.abs(holdPos[1] - rr.top) * 4f
+            if (dd < best) { best = dd; start = d }
+        }
+        val seg = android.graphics.Path()
+        val end = start + len * k
+        pm.getSegment(start, minOf(end, len), seg, true)
+        if (end > len) pm.getSegment(0f, end - len, seg, true)
+        c.drawPath(seg, pHold)
+        pHold.strokeCap = Paint.Cap.BUTT; pHold.style = Paint.Style.FILL
+    }
+
+    /**
+     * THE DELETE LANDS (f-delete-hold-polish; the user: "it kind of freezes when its full right now. it needs like a flash with sparkles
+     * complete animation"): over the tile [box], [k] 0..1 of [DELETE_BURST_MS]: a white-gold flash that fills the tile and fades, a
+     * gold ring that widens out of it, and sparkles thrown outward (the harvested cast bar's sparkles under them when the device
+     * has them; the sparks themselves are drawn here, no art needed).
+     */
+    fun deleteBurst(c: Canvas, box: RectF, k: Float) {
+        val t = k.coerceIn(0f, 1f)
+        if (t >= 1f) return
+        val cx = box.centerX(); val cy = box.centerY(); val s = box.width()
+        // the flash: full at once, gone by 60 %
+        val fa = (1f - t / 0.6f).coerceIn(0f, 1f)
+        if (fa > 0f) {
+            val g = RadialGradient(cx, cy, s * 0.9f, intArrayOf(Color.argb((235 * fa).toInt(), 255, 250, 225),
+                Color.argb((150 * fa).toInt(), 255, 205, 90), Color.argb(0, 255, 190, 60)), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+            pHold.style = Paint.Style.FILL; pHold.shader = g
+            c.drawCircle(cx, cy, s * 0.9f, pHold)
+            pHold.shader = null
+        }
+        // the ring that widens
+        val e = 1f - (1f - t) * (1f - t)
+        pHold.style = Paint.Style.STROKE; pHold.strokeWidth = 6f * (1f - t) + 1f
+        pHold.color = Color.argb((220 * (1f - t)).toInt(), 255, 220, 120)
+        c.drawCircle(cx, cy, s * (0.45f + 0.55f * e), pHold)
+        pHold.style = Paint.Style.FILL
+        // the game's sparkles (harvested), turning a little as they fade
+        castArt("castbar_sparkles1")?.let { sp ->
+            val a = (255 * (1f - t)).toInt()
+            pHold.alpha = a
+            c.save(); c.rotate(40f * t, cx, cy)
+            val h = s * (0.9f + 0.6f * e)
+            c.drawBitmap(sp, null, RectF(cx - h, cy - h, cx + h, cy + h), pHold)
+            c.restore()
+            pHold.alpha = 255
+        }
+        // the sparks thrown outward: 10 small four-point stars
+        for (i in 0 until 10) {
+            val ang = Math.toRadians((i * 36.0 + 17.0 * (i % 3)))
+            val dist = s * (0.30f + (0.55f + 0.08f * (i % 4)) * e)
+            val x = cx + (Math.cos(ang) * dist).toFloat(); val y = cy + (Math.sin(ang) * dist).toFloat()
+            val sz = s * (0.10f - 0.02f * (i % 3)) * (1f - t * 0.7f)
+            pHold.color = Color.argb((255 * (1f - t)).toInt(), 255, 236, 150)
+            holdPath.reset()
+            holdPath.moveTo(x, y - sz); holdPath.lineTo(x + sz * 0.25f, y - sz * 0.25f); holdPath.lineTo(x + sz, y)
+            holdPath.lineTo(x + sz * 0.25f, y + sz * 0.25f); holdPath.lineTo(x, y + sz); holdPath.lineTo(x - sz * 0.25f, y + sz * 0.25f)
+            holdPath.lineTo(x - sz, y); holdPath.lineTo(x - sz * 0.25f, y - sz * 0.25f); holdPath.close()
+            c.drawPath(holdPath, pHold)
+        }
+    }
+    const val DELETE_BURST_MS = 420L
 
     /**
      * MORE BELOW (a tooltip stack taller than the window, while it scrolls): over the visible stack's last [h] px above [bottom],
