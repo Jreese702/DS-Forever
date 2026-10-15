@@ -116,4 +116,21 @@ patch('common/FileStream.cpp', [
     ('''#include "../CascCommon.h"''', '''#include "../CascCommon.h"
 #include <android/log.h>'''),
 ])
+# DS Forever 1.0.8 (b-art-update-size): the DOWNLOAD manifest is OPTIONAL to CascLib (it opens without it), but its miss was recorded as
+# "the first missing file", so after a game update the app fetched it (49 MB) only to learn that ROOT was the one needed. Its miss no
+# longer counts: the file the app fetches is always one the open really needs (ENCODING, ROOT).
+patch('CascOpenStorage.cpp', [
+    ('''            dwErrCode = LoadDownloadManifest(hs);
+            dwErrCode = (dwErrCode == ERROR_FILE_NOT_FOUND) ? ERROR_SUCCESS : dwErrCode;''',
+     '''            char wcNeedBefore[1024];
+            memcpy(wcNeedBefore, g_wcNeed, sizeof(wcNeedBefore));
+            dwErrCode = LoadDownloadManifest(hs);
+            if(dwErrCode == ERROR_FILE_NOT_FOUND)
+                memcpy(g_wcNeed, wcNeedBefore, sizeof(wcNeedBefore));    // DS Forever: optional, never the file to fetch
+            dwErrCode = (dwErrCode == ERROR_FILE_NOT_FOUND) ? ERROR_SUCCESS : dwErrCode;'''),
+    ('''static DWORD LoadCascStorage(TCascStorage * hs, PCASC_OPEN_STORAGE_ARGS pArgs, LPCTSTR szMainFile, CBLD_TYPE BuildFileType, DWORD dwFeatures)''',
+     '''extern char g_wcNeed[];              // DS Forever: the file the app fetches next (casc_jni.cpp)
+
+static DWORD LoadCascStorage(TCascStorage * hs, PCASC_OPEN_STORAGE_ARGS pArgs, LPCTSTR szMainFile, CBLD_TYPE BuildFileType, DWORD dwFeatures)'''),
+])
 print('patched', src)

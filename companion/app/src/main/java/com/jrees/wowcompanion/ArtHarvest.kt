@@ -249,9 +249,13 @@ object ArtHarvest {
             set(State.Ready); onBeforePlayDone(true); startDetached(ctx, detached); return
         }
         // a CDN hiccup while it fetches the build's tables passes: tried again (HarvestRetry) before the art says it failed
-        val game = HarvestRetry.run(onRetry = { n, d, why -> Log.w(TAG, "harvest: open failed ($why), try ${n + 1} in ${d / 1000} s") }) {
-            GameFiles.open(ctx) ?: throw java.io.IOException(GameFiles.lastWhy ?: "the game files could not be read")
-        }.getOrNull()
+        // after a game update the open downloads the build's tables (about 180 MB): the launcher shows how far (b-art-progress)
+        GameFiles.onTables = { line -> set(State.Running(first.isNotEmpty(), 0f, line)) }
+        val game = try {
+            HarvestRetry.run(onRetry = { n, d, why -> Log.w(TAG, "harvest: open failed ($why), try ${n + 1} in ${d / 1000} s") }) {
+                GameFiles.open(ctx) ?: throw java.io.IOException(GameFiles.lastWhy ?: "the game files could not be read")
+            }.getOrNull()
+        } finally { GameFiles.onTables = null }
         if (game == null) {
             val why = GameFiles.lastWhy ?: "the game files could not be read"
             Log.w(TAG, "harvest: $why")

@@ -145,7 +145,17 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             CdnArchives.forget()
         }
 
+        /** the art's line while an open downloads the game's tables (ArtHarvest sets it around its open; b-art-progress) */
+        @Volatile var onTables: ((String) -> Unit)? = null
+        @Volatile private var tables: TablesProgress.Counter? = null
+
+        /** mobile data (a metered network) now: the progress line says Wi-Fi is better */
+        private fun metered(ctx: Context): Boolean = runCatching {
+            (ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager).isActiveNetworkMetered
+        }.getOrDefault(false)
+
         private fun openOnce(ctx: Context): GameFiles? {
+            tables = onTables?.let { emit -> TablesProgress.Counter(metered(ctx), emit) }
             lastOpenErr = 0
             if (!CascNative.available) { lastWhy = "this build has no file reader"; return null }
             val root = gameRoot(ctx)
@@ -224,11 +234,18 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
                 c.connectTimeout = 15_000; c.readTimeout = 60_000
                 try {
                     if (c.responseCode != 200) return@run "HTTP ${c.responseCode}"
-                    c.inputStream.use { i -> tmp.outputStream().use { o -> i.copyTo(o, 1 shl 16) } }
+                    // the big tables (ENCODING, ROOT) say how far they are (b-art-progress)
+                    val counter = tables?.takeIf { c.contentLengthLong >= TablesProgress.MIN_BYTES }
+                    counter?.start(c.contentLengthLong)
+                    c.inputStream.use { i -> tmp.outputStream().use { o ->
+                        val buf = ByteArray(1 shl 16); var n = 0L
+                        while (true) { val k = i.read(buf); if (k < 0) break; o.write(buf, 0, k); n += k; counter?.progress(n) }
+                    } }
                     // whole and the right kind before it is used: a short or damaged answer never lands in the cache (p-casclib-1000)
                     CascHeal.problem(rel, tmp, c.contentLengthLong)?.let { return@run "a damaged download ($it)" }
                     if (!tmp.renameTo(to)) { to.delete(); if (!tmp.renameTo(to)) return@run "could not save it" }
                     android.util.Log.i("WCHARVEST", "fetched $rel (${to.length()} bytes) from $host")
+                    counter?.finish()
                     null
                 } finally { c.disconnect(); tmp.delete() }
             }

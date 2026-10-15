@@ -110,7 +110,7 @@ object SetupFlow {
             i.appUpdate != null -> Prompt("app", "DS Forever ${i.appUpdate} is out", "Update now, or later from this screen.",
                 listOf(Button("Update", Action.UPDATE_APP, i.busy == null), Button("Later", Action.LATER_APP)))
             i.gameOutdated != null -> Prompt("client", "Game update needed",
-                "The servers need build ${i.gameOutdated}. Signing in may fail with these files.",
+                "The servers need build ${i.gameOutdated}. Signing in may fail with these files. Update on Wi-Fi: the game art then fetches about 180 MB of the game's tables.",
                 listOf(Button("Update", Action.UPDATE_GAME, i.busy == null), Button("Play anyway", Action.PLAY, canPlay(i))))
             i.reportSaved != null && (i.loginSaved || i.loginSkipped) -> Prompt("report", i.reportSaved,
                 if ("was sent" in i.reportSaved) "Open the issue to see it." else "It is in Documents/DS Forever/reports. Open the GitHub issue to post it.",
@@ -123,7 +123,7 @@ object SetupFlow {
         // the client prompt carries its own Play ("Play anyway"); everything else blocking hides behind a disabled Play
         val play = Button("Play", Action.PLAY, canPlay(i))
         val line = i.busy ?: when (i.art) {
-            Art.RUNNING -> "Preparing the game art: ${i.artPercent}%"
+            Art.RUNNING -> if (i.artWhat.startsWith(TablesProgress.PREFIX)) i.artWhat else "Preparing the game art: ${i.artPercent}%"
             Art.IDLE -> if (i.folderFound) "Checking the game art" else ""
             else -> ""
         }
@@ -176,7 +176,8 @@ object SetupFlow {
         add(if (i.loginSaved) Check("Battle.net login: saved", Mark.OK) else Check("Battle.net login: not saved", Mark.WAIT))
         add(when (i.art) {
             Art.IDLE -> Check(if (i.folderFound) "Game art: checking" else "Game art: waits for the game folder", Mark.WAIT)
-            Art.RUNNING -> Check("Game art: ${i.artPercent}%${if (i.artWhat.isBlank()) "" else " (${i.artWhat})"}", Mark.WAIT)
+            Art.RUNNING -> Check(if (i.artWhat.startsWith(TablesProgress.PREFIX)) "Game art: ${i.artWhat}"
+                else "Game art: ${i.artPercent}%${if (i.artWhat.isBlank()) "" else " (${i.artWhat})"}", Mark.WAIT)
             Art.READY -> Check("Game art: ready", Mark.OK)
             Art.FAILED -> Check("Game art: failed - ${i.artWhy.ifEmpty { "unknown reason" }}", Mark.BAD)
         })
