@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat21"
+local CHATV = "chat22"
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -1226,11 +1226,12 @@ end
 -- typed (clear, send, the target switches) flushes at once: the app taps "15" as a "report now" before it sends.
 local LETTER_REST = 1.5
 local letterGen = 0
+local field = nil          -- chat22: a typed field another add-on borrows (WC.chatField below)
 local function tack(op, row, col, ok, why, now)
     tn = tn + 1
     WC.send(WC.encode({ type = "chatt", v = CHATV, op = op, row = row, col = col, ok = ok and true or false, why = why,
                         len = #typed.body, h = hashOf(typed.body), tlen = #typed.tgt, th = hashOf(typed.tgt),
-                        into = typed.into, ty = qtype, top = topOn(), n = tn }))
+                        into = typed.into, ty = field and "FIELD" or qtype, field = field and field.name or nil, top = topOn(), n = tn }))
     letterGen = letterGen + 1
     if now then return WC.push() end
     local g = letterGen
@@ -1243,6 +1244,34 @@ chatHolds = function()
     local ok, st = pcall(c.state)
     return ok and type(st) == "table" and st.holder == "pad:chat"
 end
+
+-- chat22, A BORROWED FIELD (Interact's Send Mail and auction-house search, 1.0.8): the typed rows above, the same letters, deletes,
+-- report (15) and hash check, fill ONE field of another add-on while THAT add-on holds the controller, and Send (23) hands the text
+-- to it instead of the chat. The chat's own buffers are kept aside meanwhile and put back after, so a half-written message survives.
+-- No preset, type or whisper target while a field is open. The app's side is ChatStream(field = true).
+--   WC.chatField.open{ name, text, max, holds = fn() -> bool, done = fn(text) -> ok, why }   (replaces an open field)
+--   WC.chatField.close()      the field goes (done or cancelled); the chat's buffers come back
+--   WC.chatField.name()       the open field's name, or nil
+local function fieldHolds() return field ~= nil and type(field.holds) == "function" and field.holds() == true end
+WC.chatField = {
+    open = function(spec)
+        if type(spec) ~= "table" or type(spec.done) ~= "function" then return false end
+        if not field then field = { saved = { body = typed.body, tgt = typed.tgt, into = typed.into } } end
+        field.name, field.holds, field.done = spec.name or "field", spec.holds, spec.done
+        field.max = math.min(tonumber(spec.max) or TYPED_MAX, TYPED_MAX)
+        typed.body, typed.tgt, typed.into = (type(spec.text) == "string" and spec.text or ""):sub(1, field.max), "", "body"
+        tack("field", "chq", nil, true, nil, true)
+        return true
+    end,
+    close = function()
+        if not field then return end
+        local sv = field.saved
+        field = nil
+        typed.body, typed.tgt, typed.into = sv.body, sv.tgt, sv.into
+        tack("unfield", "chq", nil, true, nil, true)
+    end,
+    name = function() return field and field.name or nil end,
+}
 
 -- returns ok, why
 local function sendLine(text, kind)
@@ -1284,7 +1313,8 @@ local function typeChar(row, col)
     local ch = charOf(row, col)
     if not ch then return tack("key", row, col, false, "not a letter cell") end
     local cur = typed[typed.into]
-    if #cur >= (typed.into == "tgt" and TARGET_MAX or TYPED_MAX) then return tack("key", row, col, false, "full") end
+    local max = field and field.max or (typed.into == "tgt" and TARGET_MAX or TYPED_MAX)
+    if #cur >= max then return tack("key", row, col, false, "full") end
     typed[typed.into] = cur .. ch
     tack("key", row, col, true)
 end
@@ -1302,7 +1332,12 @@ local function typedPick(op, col)
         typed.into = op
         return tack(op, "chq", col, true, nil, true)
     end
-    -- SEND: only what THIS addon holds
+    -- SEND: only what THIS addon holds; a borrowed field's text goes to its owner (chat22)
+    if field then
+        local ok, done, why = pcall(field.done, typed.body)
+        if not ok then done, why = false, "the field's owner failed" end
+        return tack("send", "chq", col, done and true or false, why, true)
+    end
     local body = typed.body
     if not body:find("%S") then return tack("send", "chq", col, false, "nothing to send", true) end
     if body:sub(1, 1) == "/" then return tack("send", "chq", col, false, "commands cannot be sent from here", true) end
@@ -1315,6 +1350,14 @@ local function onQuick(_, col)
     if type(col) ~= "number" then return qack("?", nil, false, "no column") end
     local op = TYPED_COL[col]
     local isTyped = op ~= nil or (col >= 24 and col <= 39)
+    if field then
+        -- chat22: a borrowed field takes the typed picks only (no preset, type or target) while its owner holds the controller
+        if not fieldHolds() then return tack(op or "key", "chq", col, false, "the field is not open", true) end
+        if op == "tgt" then return tack("tgt", "chq", col, false, "no target in a field", true) end
+        if op then return typedPick(op, col) end
+        if isTyped then return typeChar("chq", col) end
+        return qack("send", col, false, "a field is open")
+    end
     if not chatHolds() then
         if isTyped then return tack(op or "key", "chq", col, false, "the chat is not open", true) end
         return qack("send", col, false, "the chat is not open")
@@ -1337,6 +1380,12 @@ end
 local function onLetters(row)
     return function(_, col)
         if type(col) ~= "number" then return tack("key", row, nil, false, "no column") end
+        if field then
+            if not fieldHolds() then return tack("key", row, col, false, "the field is not open", true) end
+            -- 36 / 39 are only the field stream's spacers here: nothing typed, the chat on the top screen left as it is
+            if row == "chs" and (col == 36 or col == 39) then return tack("key", row, col, true) end
+            return typeChar(row, col)
+        end
         if row == "chs" and col == 36 then setTop(false); return tack("topoff", row, col, true) end   -- display only, always
         if not chatHolds() then return tack("key", row, col, false, "the chat is not open", true) end
         if row == "chs" and col == 39 then setTop(true); return tack("topon", row, col, true) end

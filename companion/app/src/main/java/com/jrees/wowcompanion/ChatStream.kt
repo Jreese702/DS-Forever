@@ -20,10 +20,17 @@ package com.jrees.wowcompanion
  *
  * Pure Kotlin, tested off the device (tools/chat_test): [taps] hands cells to TapBridge (gap in ms between a batch's taps), [now]
  * is the clock, and the view feeds the add-on's answers to [heard].
+ *
+ * [field] (chat22, 1.0.8: Send Mail and the auction-house search): the same rows fill ONE field another add-on borrowed from Chat.lua
+ * (WC.chatField) while it holds the controller; Send hands the text to that add-on. No type, no target, no top-screen chat: the type
+ * is "FIELD" (what Chat.lua reports while a field is open), a resync is the body alone, and nothing here ever shows or hides the
+ * chat on the top screen. [maxLen] is the field's own limit (Chat.lua's field.max).
  */
 class ChatStream(
     private val taps: (cells: List<Pair<String, Int>>, gapMs: Long) -> Boolean,
     private val now: () -> Long = { System.currentTimeMillis() },
+    val field: Boolean = false,
+    private val maxLen: Int = MAX,
 ) {
     companion object {
         const val BACK = 12; const val CLEAR = 13; const val TGT = 14; const val BODY = 15; const val SEND = 23
@@ -76,7 +83,7 @@ class ChatStream(
     // ---- what the add-on will hold once every tap so far has landed (the optimistic mirror)
     var body = ""; private set
     var target = ""; private set
-    var type = "SAY"; private set
+    var type = if (field) "FIELD" else "SAY"; private set
     /** the chat on the top screen (the add-on's frame) is to show */
     var top = false; private set
     private var topAt = 0L
@@ -157,7 +164,7 @@ class ChatStream(
      * Returns false when a tap could not be handed over (the game not live, an add-on without the rows).
      */
     fun setBody(want0: String): Boolean {
-        val want = clean(want0)
+        val want = clean(want0, maxLen)
         if (want == body) return true
         val cells = ArrayList<Pair<String, Int>>()
         if (into != "body") { cells.add("chq" to BODY); into = "body" }
@@ -207,6 +214,11 @@ class ChatStream(
     /** everything again: the add-on's buffers cleared and refilled from the mirror (after a reload, or a lost tap) */
     fun resync(): Boolean {
         val cells = ArrayList<Pair<String, Int>>()
+        if (field) {
+            cells.add("chq" to BODY); cells.add("chq" to CLEAR); cells.addAll(letters(body))
+            into = "body"
+            return go(cells)
+        }
         cells.add("chq" to TGT); cells.add("chq" to CLEAR); cells.addAll(letters(target))
         cells.add("chq" to BODY); cells.add("chq" to CLEAR); cells.addAll(letters(body))
         cells.add("chq" to (TYPES[type] ?: 16))
@@ -256,7 +268,7 @@ class ChatStream(
         heardT = h
         if (h.op == "body") pendingBody = maxOf(0, pendingBody - 1)
         // the top screen not as asked (a lost tap, the add-on's own hide): asked again, not more often than every 2 s
-        if (h.top != null && h.top != top && now() - topAt > TOP_RETRY_MS) {
+        if (!field && h.top != null && h.top != top && now() - topAt > TOP_RETRY_MS) {
             topAt = now()
             go(listOf(if (top) TOP_ON else TOP_OFF))
         }
@@ -298,6 +310,15 @@ class ChatStream(
     }
 
     /** a new add-on (a /reload, the game restarted): its buffers are empty, so the mirror is sent again */
+    /**
+     * A field opened in the add-on with [text] already in it (Chat.lua's open copies the owner's value): the mirror starts there, so
+     * the next [setBody] sends only what the player changes. Any answer heard before is stale.
+     */
+    fun startField(text: String) {
+        body = clean(text, maxLen); target = ""; into = "body"
+        heardT = null; pendingBody = 0; step = Step.NONE; tries = 0
+    }
+
     fun addonRestarted() {
         heardT = null; heardType = null; pendingBody = 0
         val b = body; val t = target
