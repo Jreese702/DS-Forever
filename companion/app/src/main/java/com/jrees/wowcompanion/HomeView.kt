@@ -351,27 +351,38 @@ class HomeView(
         val w = width.toFloat(); val h = height.toFloat()
         val bars = now[Part.BARS] ?: RectF(0f, 0f, w, 120f)
         val g = UiKit.MODULE_GAP
-        val slot = ClassSlot.of(w, h, bars.bottom, g, CLASS_SLOT_MAX)
+        // never wider than the chat column: it starts hidden right behind it (1.0.8-test5)
+        val chatBox = now[Part.CHAT] ?: RectF(g, 0f, w / 2f - 4f, h)
+        val slot = ClassSlot.of(w, h, bars.bottom, g, minOf(w * CLASS_SLOT_MAX, chatBox.width()))
         val side = slot.side
         classRect.set(slot.left.toInt(), slot.top.toInt(), (slot.left + side).toInt(), (slot.top + side).toInt())
-        // the held triggers' corner of the bars (where ZL / ZR sit), in the slot's own coordinates: the wheel grows out of it
-        val left = !lent(castView) || castView.classRadialLeft()
-        val cornerX = if (left) bars.left + w * 0.06f else bars.right - w * 0.06f
+        // 1.0.8-test5 (the user: "instead of making it slide in from the top left, make it look like its sliding in from behind the
+        // chat"): the wheel lies UNDER the left column (chat, a card above it: raised while it shows) and slides out from behind the chat's
+        // right edge into its slot as the columns part; on close it slides back under the returning chat. Both chords alike
         val push = slot.push
+        val hidden = ClassSlot.hiddenOffset(chatBox.left, chatBox.right, slot)
+        for ((p, v) in views) if (p != Part.BARS) {
+            val r = now[p]
+            v.translationZ = if (r != null && r.centerX() < w / 2f && (open || classLayer.visibility == View.VISIBLE)) CLASS_COVER_Z else 0f
+        }
         if (open) {
             classLayer.visibility = View.VISIBLE
             classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)   // the one layout of the open
-            classLayer.pivotX = cornerX - classRect.left; classLayer.pivotY = bars.bottom - classRect.top
             classLayer.animate().cancel()
-            classLayer.alpha = 0f; classLayer.scaleX = CLASS_FROM; classLayer.scaleY = CLASS_FROM
-            classLayer.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(Motion.MODULE_OPEN).setInterpolator(Motion.curve())
+            classLayer.alpha = 1f; classLayer.scaleX = 1f; classLayer.scaleY = 1f
+            classLayer.translationX = hidden
+            classLayer.animate().translationX(0f).setDuration(Motion.MODULE_OPEN).setInterpolator(Motion.curve())
                 .withLayer().setListener(null).start()
         } else {
             classLayer.animate().cancel()
-            classLayer.animate().alpha(0f).scaleX(CLASS_FROM).scaleY(CLASS_FROM).setDuration(Motion.MODULE_CLOSE)
+            classLayer.animate().translationX(hidden).setDuration(Motion.MODULE_CLOSE)
                 .setInterpolator(Motion.curve()).withLayer()
                 .setListener(object : android.animation.AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(a: android.animation.Animator) { if (!classOpen) classLayer.visibility = View.GONE }
+                    override fun onAnimationEnd(a: android.animation.Animator) {
+                        if (classOpen) return
+                        classLayer.visibility = View.GONE
+                        for ((_, v) in views) v.translationZ = 0f                         // the chat back to the page's own order
+                    }
                 }).start()
         }
         // the columns: everything left of the middle slides left, everything right of it slides right (and back)
@@ -2043,9 +2054,10 @@ class HomeView(
         private const val GROW_B_GRACE_MS = 2_000L
         /** f-class-radial: a press this long on a pet spell's place toggles its autocast */
         private const val CLASS_LONG_MS = 450L
-        /** f-class-radial rework: the wheel's slot is at most this share of Home's width; it grows from this scale */
+        /** f-class-radial rework: the wheel's slot is at most this share of Home's width */
         private const val CLASS_SLOT_MAX = 0.5f
-        private const val CLASS_FROM = 0.15f
+        /** 1.0.8-test5: the left column's raise while the wheel shows (it slides out from under the chat) */
+        private const val CLASS_COVER_Z = 4f
         /** the focused quest over the minimap (Settings > Home, HomeSettings.questOverMap; was the constant QUEST_ABOVE_MAP) */
         fun cardOverMap(): Boolean = HomeSettings.questOverMap
         /** logcat tag for Home's taps and refusals (`adb logcat -s WCHOME`) */
@@ -2134,13 +2146,16 @@ class HomeView(
 }
 
 /** f-class-radial rework: Home's wheel slot, pure (the tests check it fits): a square centred between the columns under the bars, at
- *  most [maxShare] of the width; [push] = how far each column slides outwards to make room */
+ *  most [maxSide] (half the width, and never wider than the chat column it hides behind); [push] = how far each column slides out */
 internal object ClassSlot {
     data class Slot(val left: Float, val top: Float, val side: Float, val push: Float)
-    fun of(w: Float, h: Float, barsBottom: Float, gap: Float, maxShare: Float): Slot {
+    fun of(w: Float, h: Float, barsBottom: Float, gap: Float, maxSide: Float): Slot {
         val avail = (h - gap) - (barsBottom + gap)
-        val side = minOf(avail, w * maxShare).coerceAtLeast(1f)
+        val side = minOf(avail, maxSide).coerceAtLeast(1f)
         val top = barsBottom + gap + (avail - side) / 2f
         return Slot((w - side) / 2f, top, side, side / 2f + gap)
     }
+    /** 1.0.8-test5 ("sliding in from behind the chat"): the wheel's start offset, centred behind the chat column ([chatLeft]..
+     *  [chatRight], before the columns part): hidden under the chat */
+    fun hiddenOffset(chatLeft: Float, chatRight: Float, s: Slot): Float = (chatLeft + chatRight) / 2f - (s.left + s.side / 2f)
 }
