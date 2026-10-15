@@ -14,39 +14,67 @@ import android.widget.ScrollView
 import org.json.JSONObject
 
 /**
- * THE SETTINGS ROOM (home session; the hub session that built its Game UI section is closed): the three sections stacked in
- * one scroll - the Map / Controller settings ([SettingsView], map session), the Game UI section ([GameUiSection]) and Home's
- * own ([HomeSettingsSection]) - with [SettingsPad] drawn over them for the controller.
+ * THE SETTINGS ROOM: the title and the TAB ROW fixed at the top ([SettingsTabBar]; board f-settings-tabs, the user's approved plan
+ * 2026-10-15), and under it one tab's page in a scroll: SettingsView's own blocks of that tab, Home's section (Home), the game's
+ * elements (Top screen), the companion's status (System). Which block is on which tab is [SettingsTabs]' data. The room opens on the
+ * last tab used ([SettingsTabs.last]). [SettingsPad] is drawn over the page for the controller.
  */
-class SettingsRoom(context: Context, top: SettingsView, rest: SettingsView, padSource: () -> JSONObject?) :
-    FrameLayout(context) {
-    val gameUi = GameUiSection(context)
+class SettingsRoom(context: Context, private val view: SettingsView, padSource: () -> JSONObject?) : LinearLayout(context) {
+    val gameUi = GameUiSection(context, GameUiSection.Part.GAME_UI)
     val homeSection = HomeSettingsSection(context)
+    /** the companion's status (System); built after [gameUi] so the status line's one listener is its */
+    val companion = GameUiSection(context, GameUiSection.Part.COMPANION)
+    val tabBar = SettingsTabBar(context) { t -> show(t) }
     private val scroll = ScrollView(context).apply { setBackgroundColor(Theme.ink) }
     val pad: SettingsPad
 
+    /** the tab shown */
+    var tab: SettingsTabs.Tab = SettingsTabs.Tab.HOME
+        private set
+
     init {
+        orientation = VERTICAL
+        setBackgroundColor(Theme.ink)
+        SettingsTabs.init(context)
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            // THE ORDER (the user, 2026-10-06: "the home section should closer to the top"): the title and Game (Map's TOP part), Home,
-            // Map and Controller (Map's REST part), then Game UI and Companion. Each part measures its own height; this scroll scrolls
+            // each part measures its own height; this scroll scrolls the tab's page
             val wrap = { LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
-            addView(top, wrap())
+            addView(view, wrap())
             addView(homeSection, wrap())
-            addView(rest, wrap())
             addView(gameUi, wrap())
+            addView(companion, wrap())
         }
         scroll.addView(column)
-        addView(scroll, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        addView(tabBar, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        val page = FrameLayout(context)
+        page.addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         pad = SettingsPad(context, scroll, listOf(
-            // TOP's one button is "Reload game UI", the room's one destructive control: the cursor never STARTS there
-            SettingsPad.Section(top, { top.focusTargets() }, startSkip = 1),
+            // System's first button is "Reload game UI", the room's one destructive control: the cursor never STARTS there
+            SettingsPad.Section(view, { view.focusTargets() }, startSkip = 1),
             SettingsPad.Section(homeSection, targets = { homeSection.focusTargets() }),
-            SettingsPad.Section(rest, { rest.focusTargets() }),
             SettingsPad.Section(gameUi, targets = { gameUi.focusTargets() }),
-        ), gameUi, padSource)
-        addView(pad, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        ), gameUi, padSource, tabBar) { dir -> show(SettingsTabs.step(tab, dir)) }
+        page.addView(pad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        addView(page, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         scroll.setOnScrollChangeListener { _, _, _, _, _ -> pad.invalidate() }
+        show(SettingsTabs.last, force = true)
+    }
+
+    /** show tab [t]: only its blocks are in the page (the others GONE, so they take no room and press nothing) */
+    fun show(t: SettingsTabs.Tab, force: Boolean = false) {
+        if (t == tab && !force) return
+        tab = t
+        SettingsTabs.last = t
+        gameUi.closeSelection()
+        view.tab = t
+        view.visibility = if (SettingsTabs.viewBlocks(t).isEmpty()) View.GONE else View.VISIBLE
+        homeSection.visibility = if (SettingsTabs.Block.HOME_SECTION.tab == t) View.VISIBLE else View.GONE
+        gameUi.visibility = if (SettingsTabs.Block.GAME_UI.tab == t) View.VISIBLE else View.GONE
+        companion.visibility = if (SettingsTabs.Block.COMPANION.tab == t) View.VISIBLE else View.GONE
+        tabBar.tab = t
+        scroll.scrollTo(0, 0)
+        pad.tabChanged()
     }
 }
 
@@ -68,6 +96,10 @@ class SettingsPad(
     private val sections: List<Section>,
     private val gameUi: GameUiSection,
     private val padSource: () -> JSONObject?,
+    /** the tab row (board f-settings-tabs): the cursor lands on it */
+    private val tabBar: SettingsTabBar? = null,
+    /** L / R (and the D-pad's left / right on the tab row): the next tab (-1 / +1) */
+    private val onTabStep: (Int) -> Unit = {},
 ) : View(context) {
 
     /** one section of the room and its buttons, in its own coordinates; its first [startSkip] buttons are never where the cursor starts */
@@ -85,6 +117,13 @@ class SettingsPad(
     /** a hold went out this visit (its answer may still come): the leave frees it even before the answer */
     private var holdAsked = false
     private var focus: PointF? = null           // the cursor's button centre in the scroll's content coordinates; null = not shown
+    /**
+     * THE CURSOR ON THE TAB ROW (f-settings-tabs; the house's "tabs open on landing"): the room opens with it there; L / R or the
+     * D-pad's left / right switch the tab, A or down goes into the page, up from the page's first row and B come back here, and B
+     * here leaves the room (rows -> tabs -> Home).
+     */
+    private var onTabs = false
+        set(v) { field = v; tabBar?.cursor = v }
     private var lastPadN = -1
     private var bSaid: String? = null
 
@@ -94,6 +133,7 @@ class SettingsPad(
     private fun targets(): List<Target> {
         val out = ArrayList<Target>()
         for (s in sections) {
+            if (s.view.visibility != View.VISIBLE) continue       // another tab's: its boxes are stale
             val top = s.view.top.toFloat()
             for ((i, r) in s.targets().withIndex()) out.add(Target(RectF(r.left, r.top + top, r.right, r.bottom + top), s, r, i < s.startSkip))
         }
@@ -109,6 +149,9 @@ class SettingsPad(
     /** the room was entered by touch: hold the controller (one tap) */
     fun enter() {
         focus = null; lastPadN = -1; bSaid = null
+        // the cursor is there AT ONCE, with its A (the user, 2026-10-15: "make sure that the cursor appears with the A glyph when
+        // changing to the settings room"): on the tab row, before the hold's answer (a pending or late answer left none until a press)
+        onTabs = tabBar != null
         holdAsk.shown()
         askHold()
     }
@@ -126,7 +169,30 @@ class SettingsPad(
         holdAsk.hidden()
         // b112: a hold asked this visit is freed even if its answer has not come yet (a late hold must not keep the controller)
         if (held || holdAsked) tap(GuestPad.cells(padSource(), ID, hold = false))
-        held = false; holdAsked = false; focus = null; invalidate()
+        held = false; holdAsked = false; focus = null; onTabs = false; invalidate()
+    }
+
+    /** the room showed another tab: the cursor is on the tab row (a touch's pick or L / R) */
+    fun tabChanged() {
+        focus = null
+        if (tabBar != null && isShown) onTabs = true
+        post { syncB() }
+        invalidate()
+    }
+
+    /** the cursor onto the tab row (or, with no tab row, the page's first button) */
+    private fun toTabs() {
+        if (tabBar == null) { startTarget(targets())?.let { moveTo(it) }; return }
+        focus = null; onTabs = true
+        invalidate()
+    }
+
+    /** from the tab row into the page: its first button in view */
+    private fun intoPage() {
+        val all = targets()
+        val t = startTarget(all) ?: return          // a page with no buttons (e.g. only the status): stay on the tabs
+        onTabs = false
+        moveTo(t)
     }
 
     /** {"type":"guestack","id":"settings"} */
@@ -136,16 +202,17 @@ class SettingsPad(
             // ress buttons a few times to make the cursor appear, it should already be there"): on the first button in view
             "hold" -> { holdAsk.answered(); if (msg.optBoolean("ok")) {
                 // b112: "pending" (capture v10 / v11: queued, or a fight's pending ENTER) does not hold yet, as in the Quests room
-                held = msg.optString("why") != "pending"; bSaid = null; syncB()
-                if (focus == null) post { startTarget(targets())?.let { moveTo(it) } }
+                held = msg.optString("why") != "pending"; bSaid = null
+                // the cursor LANDS ON THE TABS (f-settings-tabs); without a tab row, on the first button in view
+                if (focus == null) post { toTabs(); syncB() } else syncB()
             } }
-            "free", "leave" -> { held = false; focus = null; invalidate() }
+            "free", "leave" -> { held = false; focus = null; onTabs = false; invalidate() }
         }
     }
 
     /** {"type":"guestpad","id":"settings"}: one press, only while the room shows and from a CURRENT document (MainActivity) */
     fun onPad(msg: JSONObject) {
-        if (msg.has("lost")) { held = false; focus = null; invalidate(); return }
+        if (msg.has("lost")) { held = false; focus = null; onTabs = false; invalidate(); return }
         holdAsk.answered()
         val n = msg.optInt("n", -1)
         if (n == lastPadN) return                           // the same press seen twice
@@ -153,18 +220,36 @@ class SettingsPad(
         held = true
         val k = msg.optString("k")
         if (padOverride?.invoke(k) == true) return
+        // L / R switch the tab from anywhere; the cursor goes to the tab row (board f-settings-tabs)
+        if (k == "PADLSHOULDER" || k == "PADRSHOULDER") {
+            if (tabBar != null) { onTabStep(if (k == "PADLSHOULDER") -1 else 1); onTabs = true }
+            post { syncB() }; invalidate(); return
+        }
+        if (onTabs) {
+            when (k) {
+                "PADDLEFT", "PADDRIGHT" -> onTabStep(if (k == "PADDLEFT") -1 else 1)
+                "PADDDOWN", "PAD1" -> intoPage()
+                "PAD2" -> if (!tap(GuestPad.leaveB(padSource()))) onLeave?.invoke()
+            }
+            post { syncB() }; invalidate(); return
+        }
         val all = targets()
-        if (all.isEmpty()) return
+        if (all.isEmpty()) { toTabs(); post { syncB() }; return }
         val here = nearest(all, focus)
         if (focus == null && k.startsWith("PADD")) {
             // the cursor should already be up (shown on the hold); if a touch scrolled it away, a D-pad press brings it back first
             startTarget(all)?.let { moveTo(it) }
         } else when (k) {
-            "PADDUP", "PADDDOWN" -> vertical(all, here, if (k == "PADDUP") -1 else 1)?.let { moveTo(it) }
+            "PADDUP", "PADDDOWN" -> {
+                val next = vertical(all, here, if (k == "PADDUP") -1 else 1)
+                if (next != null) moveTo(next) else if (k == "PADDUP" && tabBar != null) toTabs()   // up from the first row: the tabs
+            }
             "PADDLEFT", "PADDRIGHT" -> horizontal(all, here, if (k == "PADDLEFT") -1 else 1)?.let { moveTo(it) }
             "PAD1" -> if (focus != null) here?.let { press(it) } else moveTo(all.first())
             "PAD2" -> when {
                 gameUi.closeSelection() -> { post { focus = focus?.let { f -> nearest(targets(), f)?.let { centre(it.box) } }; invalidate() } }
+                // B in the page: back to the tab row (rows -> tabs -> Home); without a tab row it leaves
+                tabBar != null -> toTabs()
                 else -> if (!tap(GuestPad.leaveB(padSource()))) onLeave?.invoke()
             }
         }
@@ -220,7 +305,8 @@ class SettingsPad(
     /** tell the capture where B leads now (the Home button shows B only when it leads Home) */
     private fun syncB() {
         if (!held) return
-        val where = if (gameUi.hasSelection) "back" else "home"
+        // B leads Home only from the tab row (or with no tab row and no bar open)
+        val where = if (gameUi.hasSelection || (tabBar != null && !onTabs)) "back" else "home"
         if (where != bSaid && tap(GuestPad.bnext(padSource(), home = where == "home"))) bSaid = where
     }
 
@@ -232,11 +318,14 @@ class SettingsPad(
     // ---------------------------------------------------------------- drawing
 
     override fun onDraw(c: Canvas) {
-        if (!held) return
+        if (!held || onTabs) return                 // on the tabs: the tab row draws its own cursor
         val f = focus ?: return
         val t = nearest(targets(), f) ?: return
         val r = RectF(t.box.left, t.box.top - scroll.scrollY, t.box.right, t.box.bottom - scroll.scrollY)
         UiKit.focus(c, r)
+        // A presses the option under the cursor: its glyph on the cursor's top-left corner, half over it (the room's house mark)
+        val gs = A_GLYPH
+        UiKit.pad(c, UiKit.okGlyph(), r.left - 0.35f * gs + gs / 2f, r.top - 0.35f * gs + gs / 2f, gs)
     }
 
     @Suppress("ClickableViewAccessibility")
@@ -246,5 +335,6 @@ class SettingsPad(
         const val ID = "settings"
         const val ROW_SLOP = 12f
         const val MARGIN = 40f
+        const val A_GLYPH = 42f
     }
 }

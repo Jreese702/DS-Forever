@@ -430,9 +430,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // LATER item 11 (the user: "when reloading from the settings, the bottom screen should enter its loading menu and return
         // to home"): the key sent, the start screen covers the bottom screen until the game's new hello, then Home
         val reload = { if (GameInput.reload()) reloadStarted() }
-        // SettingsView (map session) in two parts, Home's section between them (the user's order, 2026-10-06)
-        settingsView = SettingsView(this, SettingsView.Part.TOP, reload)
-        val settingsRest = SettingsView(this, SettingsView.Part.REST, reload)
+        // SettingsView (map session): its own rows, drawn by the room's tab (board f-settings-tabs; SettingsTabs says which tab)
+        settingsView = SettingsView(this, reload)
+        val settingsRest = settingsView
         // Frame generation (board f-frame-gen): the player's own Lossless.dll through Android's picker. The Settings room is open only
         // with the game up (v1.0.4), so the picker opens HERE, on the bottom screen's display: the game's window on the top screen is never
         // covered (the picker's task sits over this Presentation until it closes). The copy applies at the next game start
@@ -444,7 +444,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             SetupBridge.log?.invoke("restart: frame generation settings changed")
             if (restart == null) android.util.Log.w("FrameGen", "restart: no launcher hook") else restart()
         }
-        settings = SettingsRoom(this, settingsView, settingsRest, { questsPad })
+        settings = SettingsRoom(this, settingsView, { questsPad })
         settings.pad.onLeave = { show(Room.HOME) }
         settingsRoom = settings
         // the DS WoW toolbar's switch lives in Home's Settings section since 2026-10-06 (renamed from "D-pad room bar")
@@ -1111,7 +1111,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val lr = setOf(DirectPadKeys.LB, DirectPadKeys.RB)
         DirectPad.register(DirectPad.Reg("quests", DirectPadKeys.EIGHT, repeat = setOf("PADDUP", "PADDDOWN"), active = live("quests")) { k, down, rp ->
             if (down) questsView.onDirect(k, rp) })
-        DirectPad.register(DirectPad.Reg("settings", DirectPadKeys.EIGHT, active = live("settings"), onKey = synth("settings") { settings.pad.onPad(it) }))
+        DirectPad.register(DirectPad.Reg("settings", DirectPadKeys.EIGHT + lr, active = live("settings"), onKey = synth("settings") { settings.pad.onPad(it) }))
         DirectPad.register(DirectPad.Reg("chat", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK"), active = live("chat"), onKey = synth("chat") { chatView.onPad(it) }))
         // the Map room: + L3 (the game's map pin) and Start (Show:), the user's context controls (Map.lua mr3 holds them too)
         DirectPad.register(DirectPad.Reg("map", DirectPadKeys.EIGHT + lr + setOf("PADLSTICK", "PADBACK"),

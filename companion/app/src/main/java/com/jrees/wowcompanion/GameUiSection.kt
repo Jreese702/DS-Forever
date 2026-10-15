@@ -56,7 +56,15 @@ fun settingsRoom(context: Context, settingsView: View): View = ScrollView(contex
  * Touches act on RELEASE, and only when the finger has not moved: the section sits in a scroll
  * container, and a drag must not pick a mode.
  */
-class GameUiSection(context: Context) : View(context) {
+class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(context) {
+
+    /**
+     * THE SETTINGS TABS (board f-settings-tabs): the game's elements are the "Top screen" tab ([Part.GAME_UI]) and the companion's
+     * status is on "System" ([Part.COMPANION]); [Part.ALL] is both, as before the tabs.
+     */
+    enum class Part { ALL, GAME_UI, COMPANION }
+    private val hasUi get() = part != Part.COMPANION
+    private val hasStatus get() = part != Part.GAME_UI
 
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -95,7 +103,7 @@ class GameUiSection(context: Context) : View(context) {
     init {
         GameUi.onChange { post { refresh() } }
         HomeLootSwitch.onChange { post { refresh() } }
-        StatusLine.onChange = { post { invalidate() } }
+        if (hasStatus) StatusLine.onChange = { post { invalidate() } }
     }
 
     private fun refresh() {
@@ -107,8 +115,8 @@ class GameUiSection(context: Context) : View(context) {
     }
 
     private fun wantedHeight(): Int {
-        var h = HEAD_H + rows.size * (ROW_H + GAP) + BOTTOM + STATUS_H
-        if (selected != null) h += BAR_H + GAP
+        var h = (if (hasUi) HEAD_H + rows.size * (ROW_H + GAP) else 0f) + BOTTOM + (if (hasStatus) STATUS_H else 0f)
+        if (hasUi && selected != null) h += BAR_H + GAP
         return h.toInt()
     }
 
@@ -174,8 +182,10 @@ class GameUiSection(context: Context) : View(context) {
         fonts()
         c.drawColor(Theme.ink)
         rowBoxes.clear(); segBoxes.clear()
+        var y = 0f
+        if (hasUi) {
         c.drawText("Game UI on the top screen", 28f, HEAD_TEXT + 4f, pSection)
-        var y = HEAD_H
+        y = HEAD_H
         for (r in rows) {
             val box = RectF(16f, y, width - 16f, y + ROW_H)
             val sel = r.id == selected
@@ -198,6 +208,8 @@ class GameUiSection(context: Context) : View(context) {
 
             if (sel) { bar(c, r, y); y += BAR_H + GAP }
         }
+        }
+        if (!hasStatus) return
 
         // ---- what the status line under the strip used to say (user, 2026-09-28: it lives here now)
         y += COMPANION_TOP                 // the page's 90 px seam above a heading (Map's measure 2026-10-06: it was 52)
