@@ -368,9 +368,21 @@ local function collectSets()
             -- name, iconFileID, setID, isEquipped, numItems, numEquipped, numInInventory, numLost
             local ok2, name, icon, _, eq, _, _, _, lost = CALL(function() return C_EquipmentSet.GetEquipmentSetInfo(id) end)
             if ok2 then
-                out[#out + 1] = { id = id, n = PS(name), icon = PN(icon), eq = PB(eq) or false, lost = PN(lost) }
+                local row = { id = id, n = PS(name), icon = PN(icon), eq = PB(eq) or false, lost = PN(lost) }
+                -- the set's two cells on the `eqset` row (f-equipment-manager): Equip and Save
+                if WC.pad and type(WC.pad.slotFor) == "function" then
+                    row.ce = WC.pad.slotFor("eqset", "equip:" .. id)
+                    row.cs = WC.pad.slotFor("eqset", "save:" .. id)
+                end
+                out[#out + 1] = row
             end
         end
+    end
+    -- a deleted set's cells go back to the row (after the pad's quarantine, so a stale tap can never reach another set)
+    if WC.pad and type(WC.pad.retain) == "function" then
+        local keep = { yes = true, no = true }
+        for _, r in ipairs(out) do keep["equip:" .. r.id] = true; keep["save:" .. r.id] = true end
+        pcall(WC.pad.retain, "eqset", keep)
     end
     return out
 end
@@ -778,6 +790,8 @@ local STRINGS = {
     "REPUTATION_TOOLTIP_ACCOUNT_WIDE_LABEL", "SKILL_DETAIL_SELECT_PROMPT", "TOKEN_DETAIL_SELECT_PROMPT",
     "UNUSED", "SHOW_ON_BACKPACK", "CURRENCY_DETAIL_TOTAL_CAP_LABEL", "CURRENCY_DETAIL_WEEKLY_CAP_LABEL",
     "ACCOUNT_LEVEL_CURRENCY",
+    -- the gear sets' buttons and question (f-equipment-manager): the game's Equipment Manager pane and its save dialog
+    "EQUIPSET_EQUIP", "SAVE", "YES", "NO", "CONFIRM_SAVE_EQUIPMENT_SET", "ERR_NOT_IN_COMBAT",
 }
 -- where the app taps to open / close the room's controller: the pad's published grid and the two fixed columns of `aurapick`
 local function collectGrid()
@@ -903,7 +917,7 @@ local EVENTS = {
     SPELL_POWER_CHANGED = STATS, PLAYER_DAMAGE_DONE_MODS = STATS, UNIT_MAXPOWER = STATS,
     UNIT_DISPLAYPOWER = STATS, PLAYER_EQUIPMENT_CHANGED = { "st", "pet", "sets" },
     SKILL_LINES_CHANGED = { "st", "sk" },
-    PLAYER_REGEN_DISABLED = { "st", "pet" }, PLAYER_REGEN_ENABLED = { "st", "pet" },
+    PLAYER_REGEN_DISABLED = { "st", "pet", "eqs" }, PLAYER_REGEN_ENABLED = { "st", "pet" },
     UNIT_PET = { "pet", "petinfo" }, PET_STATS_UPDATE = { "pet" }, PET_UI_UPDATE = { "pet", "petinfo" },
     UNIT_PET_EXPERIENCE = { "petinfo" }, UNIT_HAPPINESS = { "petinfo" }, PET_BAR_UPDATE = { "petinfo" },
     EQUIPMENT_SETS_CHANGED = { "sets" }, EQUIPMENT_SWAP_FINISHED = { "sets" },
@@ -1012,9 +1026,93 @@ local function letGo()
     note("back")
 end
 
+-- ---------------------------------------------------------------- THE GEAR SETS' BUTTONS (f-equipment-manager)
+-- The user's pick (15 Oct, "Equip + Save"): the game's Equipment Manager pane has Equip and Save under its list of sets; the room
+-- gets the same two for the sets the character already has. New / rename / delete stay in the game's own window for now.
+--   equip:<id>  C_EquipmentSet.UseEquipmentSet(id): what the game's Equip button does (EquipmentManager_EquipSet), called on the
+--               game's engine directly, never through the game's UI code (taint: TapPad's rule).
+--   save:<id>   the game ASKS first (CONFIRM_SAVE_EQUIPMENT_SET, a yes / no); so does the room: the question is ours (`eqs.ask`),
+--               the app draws it, `yes` saves (C_EquipmentSet.SaveEquipmentSet(id): the set takes the gear worn now, its icon kept),
+--               `no` or B forgets it. While it asks, B is the room's (the capture's pass is lifted), so B is one step back.
+-- Both refused in a fight, as the game refuses changing armour then (its words: ERR_NOT_IN_COMBAT). Every tap is answered
+-- (`eqs.ack`, numbered) so the app can say why nothing happened.
+local eqs = { ask = nil, ack = nil, seq = 0 }
+local function eqWords(g, fallback) local v = PS(_G[g]); return (v and v ~= "") and v or fallback end
+local function eqAck(op, id, ok, why)
+    eqs.seq = eqs.seq + 1
+    eqs.ack = { seq = eqs.seq, op = op, id = id, ok = ok and true or false, why = why }
+    dirty.eqs = true
+    soon(0)
+end
+local function setName(id)
+    local ok, name = CALL(function() return C_EquipmentSet.GetEquipmentSetInfo(id) end)
+    return ok and PS(name) or nil
+end
+-- B is ours while the question is up (capture v2+ passes it to the game while the game's window is open)
+local function passB(on)
+    local cap = capture()
+    if not (cap and type(cap.pass) == "function" and holderIsMe(cap) and ctl.via == "window") then return end
+    if (tonumber(cap.version) or 1) < 2 then return end
+    pcall(cap.pass, "character", on and { "PAD2" } or {})
+end
+local function eqForget()
+    if not eqs.ask then return false end
+    eqs.ask = nil
+    passB(true)
+    dirty.eqs = true
+    soon(0)
+    return true
+end
+local function onSetTap(key)
+    if type(key) ~= "string" then return eqAck("?", nil, false, "nothing on that cell") end
+    local op, sid = key:match("^(%a+):(%d+)$")
+    sid = tonumber(sid)
+    if key == "no" then if not eqForget() then eqAck("no", nil, false, "nothing asked") end return end
+    if inCombat() then eqForget(); return eqAck(op or key, sid, false, eqWords("ERR_NOT_IN_COMBAT", "You can't do that while in combat")) end
+    if key == "yes" then
+        local a = eqs.ask
+        if not a then return eqAck("yes", nil, false, "nothing asked") end
+        eqForget()
+        local ok, done = CALL(function() return C_EquipmentSet.SaveEquipmentSet(a.id) end)
+        dirty.sets = true
+        return eqAck("save", a.id, ok and done ~= false, (not ok) and "the game refused" or nil)
+    end
+    if not sid or not setName(sid) then return eqAck(op or key, sid, false, "no such set") end
+    if op == "equip" then
+        eqForget()
+        local ok, done = CALL(function() return C_EquipmentSet.UseEquipmentSet(sid) end)
+        dirty.sets = true
+        return eqAck("equip", sid, ok and done ~= false, (not ok) and "the game refused" or nil)
+    elseif op == "save" then
+        local name = setName(sid)
+        local fmtd = fmt(_G.CONFIRM_SAVE_EQUIPMENT_SET, name)
+        eqs.ask = { id = sid, n = name, text = fmtd and strip(fmtd) or ('Save "' .. name .. '"?') }
+        passB(false)
+        dirty.eqs = true
+        soon(0)
+        return
+    end
+    eqAck(op or key, sid, false, "unknown")
+end
+local function collectEqs()
+    local pad = WC.pad
+    if eqs.ask and inCombat() then eqs.ask = nil end        -- a fight drops the question (the game refuses the save then)
+    local row = { ask = eqs.ask or false, ack = eqs.ack }
+    if pad and type(pad.slotFor) == "function" then
+        row.row = "eqset"; row.yes = pad.slotFor("eqset", "yes"); row.no = pad.slotFor("eqset", "no")
+    end
+    return row
+end
+COLLECT.eqs = collectEqs
+if not BARS_ONLY then PARTS[#PARTS + 1] = "eqs"; dirty.eqs = true end
+if WC.pad and type(WC.pad.op) == "function" then pcall(WC.pad.op, "eqset", "eqset", onSetTap) end
+
 local function onPress(key)
     if ctl.pend then ctl.pend = nil; note("taken") end      -- a press reaches us: the app's ENTER landed
-    if key == "PAD2" then letGo(); return end
+    if key == "PAD2" then
+        if eqForget() then return end                       -- the question first: B is one step back
+        letGo(); return
+    end
     if PAD_KEYS[key] then sendPad(key) end
 end
 -- capture v8 (interact, the user's ruling: a room KEEPS the controller through a fight; leaving it gives the next press to the game):
@@ -1026,6 +1124,7 @@ end
 -- (MainActivity shows CHARACTER on a new hold by the window). The window's next show, or the app's next way in (touchOpen), clears it.
 local LEFT = { B = true, left = true, taken = true }
 local function onLost(why)
+    eqForget()
     if LEFT[why] and ctl.open then ctl.stayOff = true end
     ctl.on, ctl.via, ctl.pend = false, nil, nil
     note("lost-" .. tostring(why))
@@ -1275,7 +1374,7 @@ local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 local HEAVY_EVERY = 4
 local beats = 0
 local LIGHT = { win = true, xp = true, watch = true, who = true, st = true, pet = true, petinfo = true, sets = true,
-                tabs = true, str = true, grid = true }
+                tabs = true, str = true, grid = true, eqs = true }
 if type(WC.snapshot) == "function" then
     hooksecurefunc(WC, "snapshot", function(reason)
         if not RIDE[reason] then return end

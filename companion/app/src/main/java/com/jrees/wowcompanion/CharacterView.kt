@@ -174,6 +174,12 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             if (active) openWhenHeld()
         }
         if ("pad" in changed) model.pad?.let { key -> model.pad = null; pending.addLast(key) }
+        if ("eqs" in changed && current) model.setPad?.ack?.let { a ->
+            if (a.seq != ackShownSeq) {
+                ackShownSeq = a.seq; ackUntil = android.os.SystemClock.uptimeMillis() + 4000L
+                postInvalidateDelayed(4050L)
+            }
+        }
         if ("win" in changed) {
             val note = model.controllerNote
             if (note == "back" && lastNote != "back") { pending.clear(); onLeave?.invoke() }
@@ -222,6 +228,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             CharTab.CURRENCY -> { listTab(c, list, model.currency, "cur", Kind.CUR); curDetail(c, detail) }
             CharTab.STATISTICS -> statistics(c, RectF(0f, 68f, tabsX - 12f, h - 6f))
         }
+        setQuestion(c, w, h)
         glow(c)
         drawnTab = model.tab; drawnSide = model.side
     }
@@ -361,7 +368,10 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val slot = chosenSlot
         if (slot == null || slot !in layout.boxes) { chosenSlot = null; UiKit.emblem(c, middle, model.who?.clsFile ?: "") }
         else card(c, middle, slot)
-        Doll.draw(c, layout, worn(), eq?.optJSONObject("ammo"), eq?.optBoolean("relic") == true)
+        Doll.draw(c, layout, worn(), eq?.optJSONObject("ammo"), eq?.optBoolean("relic") == true,
+            alertColours = eq?.optJSONArray("alertc"))
+        // the game's durability warning (f-durability) in the doll's middle, top right, as the game keeps it by the minimap
+        Doll.warning(c, RectF(middle.right - 96f, middle.top + 6f, middle.right - 6f, middle.top + 122f), eq?.optJSONObject("durw"))
         chosenSlot?.let { layout.boxes[it]?.let { box -> UiKit.slotFocus(c, box) } }
         for ((k, box) in layout.boxes) hit(box, "slot:$k", slot = true) { chosenSlot = if (chosenSlot == k) null else k; scroll["card"] = 0f; invalidate() }
     }
@@ -528,21 +538,88 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         dragged(c, r, key, y - start)
     }
 
+    /**
+     * THE GEAR SETS (the game's Equipment Manager pane; f-equipment-manager, the user's pick "Equip + Save"): the character's sets, one
+     * chosen as the game's pane chooses one (the room's own view), and under the list the game's two buttons for it: Equip (the
+     * set goes on) and Save (the set takes what is worn now; the add-on asks first, as the game does, [setQuestion]). Both greyed in
+     * a fight, as the game refuses changing armour then; a refused tap says why under them. New / rename / delete: the game's window.
+     */
     private fun sets(c: Canvas, r: RectF) {
         if (model.sets.isEmpty()) {
             centred(c, r.centerX(), r.top + 220f, model.word("PAPERDOLL_EQUIPMENTMANAGER", "Equipment Manager"), 25f, Theme.dim)
             return
         }
-        val area = RectF(r.left, r.top + 112f, r.right, r.bottom)
+        if (model.sets.none { it.id == chosenSet }) chosenSet = model.sets.firstOrNull { it.equipped }?.id
+        val buttonsTop = r.bottom - 92f
+        val area = RectF(r.left, r.top + 112f, r.right, buttonsTop - 46f)
         c.save(); c.clipRect(area)
+        val oldClip = clip; val oldPane = paneKey
+        clip = area; paneKey = "sets"
         var y = area.top - (scroll["sets"] ?: 0f)
         val start = y
         for (s in model.sets) {
-            UiKit.gearSet(c, RectF(r.left, y, r.right, y + 111f), pic(s.icon), s.name, s.equipped, false)
+            val row = RectF(r.left, y, r.right, y + 111f)
+            UiKit.gearSet(c, row, pic(s.icon), s.name, s.equipped, s.id == chosenSet)
+            hit(row, "set:${s.id}") { chosenSet = s.id; invalidate() }
             y += 117f
         }
+        clip = oldClip; paneKey = oldPane
         c.restore()
         dragged(c, area, "sets", y - start)
+        // the game's two buttons for the chosen set
+        val set = model.sets.firstOrNull { it.id == chosenSet }
+        val pad = model.setPad
+        val usable = set != null && pad != null && pad.row.isNotEmpty() && !model.combat
+        val half = (r.width() - 16f) / 2f
+        val eq = RectF(r.left, buttonsTop, r.left + half, r.bottom - 6f)
+        val sv = RectF(r.right - half, buttonsTop, r.right, r.bottom - 6f)
+        UiKit.button(c, eq, model.word("EQUIPSET_EQUIP", "Equip"), if (usable && set?.equipCell != null) UiKit.Button.UP else UiKit.Button.DISABLED)
+        UiKit.button(c, sv, model.word("SAVE", "Save"), if (usable && set?.saveCell != null) UiKit.Button.UP else UiKit.Button.DISABLED)
+        hit(eq, "set:equip") { if (usable) set?.equipCell?.let { setTap("equip ${set.name}", it) } }
+        hit(sv, "set:save") { if (usable) set?.saveCell?.let { setTap("save ${set.name}", it) } }
+        // a refused tap, the game's words where it has them, for a few seconds
+        val ack = pad?.ack
+        if (ack != null && !ack.ok && ack.seq == ackShownSeq && android.os.SystemClock.uptimeMillis() < ackUntil) {
+            centred(c, r.centerX(), buttonsTop - 24f, ack.why, 22f, Color.rgb(255, 32, 32))
+        }
+    }
+
+    /** the gear set the pane has chosen (the room's own view, as the game's pane keeps one chosen) */
+    private var chosenSet: Int? = null
+    /** the add-on's last refusal shown under the buttons: its number, and until when */
+    private var ackShownSeq = -1
+    private var ackUntil = 0L
+
+    /** one tap on the add-on's `eqset` row (Equip / Save of a set, Yes / No of the question) */
+    private fun setTap(why: String, col: Int) {
+        val g = model.grid ?: return
+        val row = model.setPad?.row?.takeIf { it.isNotEmpty() } ?: return
+        val ok = TapBridge.tap(context, g.pad, row, col)
+        Log.i(TAG, "character: gear sets $why -> ${if (ok) "tapped" else "refused"} $row:$col")
+    }
+
+    /**
+     * THE GAME'S QUESTION before a set is saved (CONFIRM_SAVE_EQUIPMENT_SET, its Yes / No), over the room while the add-on asks it:
+     * only its two buttons answer then (finger and controller); B is the add-on's while it asks, and forgets it (one step back).
+     */
+    private fun setQuestion(c: Canvas, w: Float, h: Float) {
+        val pad = model.setPad ?: return
+        val ask = pad.ask ?: return
+        hits.clear(); focusables.clear(); tabCursors.clear()
+        UiKit.cover(c, RectF(0f, 0f, w, h))
+        val r = RectF((w - 980f) / 2f, 260f, (w + 980f) / 2f, 640f)
+        UiKit.dialog(c, r)
+        val pt = UiKit.bodyPaint(32f, Color.WHITE)
+        val sl = StaticLayout.Builder.obtain(ask.text, 0, ask.text.length, TextPaint(pt), (r.width() - 200f).toInt())
+            .setAlignment(Layout.Alignment.ALIGN_CENTER).setLineSpacing(6f, 1f).build()
+        c.save(); c.translate(r.left + 100f, r.top + 92f); sl.draw(c); c.restore()
+        val cx = w / 2f
+        val yes = RectF(cx - 14f - 360f, r.bottom - 160f, cx - 14f, r.bottom - 60f)
+        val no = RectF(cx + 14f, r.bottom - 160f, cx + 14f + 360f, r.bottom - 60f)
+        UiKit.button(c, yes, model.word("YES", "Yes"))
+        UiKit.button(c, no, model.word("NO", "No"))
+        hit(yes, "ask:yes") { pad.yes?.let { setTap("yes (${ask.name})", it) } }
+        hit(no, "ask:no") { pad.no?.let { setTap("no (${ask.name})", it) } }
     }
 
     /** the Pet small tab's right pane: the pet's stats, as the character's (General and Resistances, zero rows dropped) */

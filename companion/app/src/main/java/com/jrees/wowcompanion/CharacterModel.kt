@@ -88,7 +88,17 @@ data class StatRow(val key: String, val label: String, val value: String, val co
                    /** the value from before the fight, kept while the game hides it (drawn greyed) */
                    val stale: Boolean = false)
 data class StatSection(val title: String, val rows: List<StatRow>)
-data class GearSet(val id: Int, val name: String, val icon: Int, val equipped: Boolean, val lost: Int)
+data class GearSet(val id: Int, val name: String, val icon: Int, val equipped: Boolean, val lost: Int,
+                   /** its Equip / Save cells on the add-on's `eqset` row (f-equipment-manager); null = none free */
+                   val equipCell: Int? = null, val saveCell: Int? = null)
+
+/**
+ * The gear sets' buttons (f-equipment-manager, the addon's `eqs` part): the `eqset` row and its fixed Yes / No cells, the question
+ * the add-on is asking ([ask]: the game's "save this set?") and its last answer to a tap ([ack], numbered).
+ */
+data class SetAsk(val id: Int, val name: String, val text: String)
+data class SetAck(val seq: Int, val op: String, val id: Int?, val ok: Boolean, val why: String)
+data class SetPad(val row: String, val yes: Int?, val no: Int?, val ask: SetAsk?, val ack: SetAck?)
 
 /**
  * The pet page's left pane (the Character tab's third small tab in this client; user ruling: the hunter's pet page goes
@@ -199,6 +209,8 @@ class CharacterModel {
     var stats: List<StatSection> = emptyList(); private set
     var pet: List<StatSection> = emptyList(); private set
     var sets: List<GearSet> = emptyList(); private set
+    /** the gear sets' buttons and question (null until the addon has sent its `eqs` part) */
+    var setPad: SetPad? = null; private set
     /** null = no pet UI (the Pet tab is not shown, as in the game) */
     var petInfo: CharPet? = null; private set
     val reputation = CharList()
@@ -245,6 +257,14 @@ class CharacterModel {
         if (c.has("st")) { stats = holdInFight(stats, readStats(c.optJSONArray("st")), combat); changed += "st" }
         if (c.has("pet")) { pet = holdInFight(pet, readStats(c.optJSONArray("pet")), combat); changed += "pet" }
         if (c.has("sets")) { sets = readSets(c.optJSONArray("sets")); changed += "sets" }
+        c.optJSONObject("eqs")?.let { j ->
+            val ask = j.optJSONObject("ask")?.takeIf { it.has("id") }?.let { a -> SetAsk(a.optInt("id"), a.optString("n"), a.optString("text")) }
+            val ack = j.optJSONObject("ack")?.let { a ->
+                SetAck(a.optInt("seq"), a.optString("op"), if (a.has("id")) a.optInt("id") else null, a.optBoolean("ok"), a.optString("why"))
+            }
+            setPad = SetPad(j.optString("row"), if (j.has("yes")) j.optInt("yes") else null, if (j.has("no")) j.optInt("no") else null, ask, ack)
+            changed += "eqs"
+        }
         if (c.has("petinfo")) { petInfo = c.optJSONObject("petinfo")?.let { readPet(it) }; changed += "petinfo" }
         if (c.has("rep")) { reputation.set(readRep(c.optJSONArray("rep"))); changed += "rep" }
         if (c.has("sk")) { skills.set(readSkills(c.optJSONArray("sk"))); changed += "sk" }
@@ -327,7 +347,8 @@ class CharacterModel {
     }
 
     private fun readSets(a: JSONArray?): List<GearSet> = objects(a).map {
-        GearSet(it.optInt("id"), it.optString("n"), it.optInt("icon"), it.optBoolean("eq"), it.optInt("lost"))
+        GearSet(it.optInt("id"), it.optString("n"), it.optInt("icon"), it.optBoolean("eq"), it.optInt("lost"),
+            if (it.has("ce")) it.optInt("ce") else null, if (it.has("cs")) it.optInt("cs") else null)
     }
 
     private fun readPet(j: JSONObject) = CharPet(
@@ -426,6 +447,7 @@ class CharacterModel {
             "REPUTATION_TOOLTIP_ACCOUNT_WIDE_LABEL", "SKILL_DETAIL_SELECT_PROMPT", "TOKEN_DETAIL_SELECT_PROMPT",
             "UNUSED", "SHOW_ON_BACKPACK", "CURRENCY_DETAIL_TOTAL_CAP_LABEL", "CURRENCY_DETAIL_WEEKLY_CAP_LABEL",
             "ACCOUNT_LEVEL_CURRENCY",
+            "EQUIPSET_EQUIP", "SAVE", "YES", "NO", "CONFIRM_SAVE_EQUIPMENT_SET", "ERR_NOT_IN_COMBAT",
         )
         /** The addon's `tabs` part (fileDataIDs; found offline too: AGENT_LOG e8f3d1c). */
         val TAB_ICON_KEYS = listOf("rep", "skills", "pvpA", "pvpH", "cur", "stats")
