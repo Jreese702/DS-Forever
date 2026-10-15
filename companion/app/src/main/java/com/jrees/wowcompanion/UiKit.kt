@@ -5858,12 +5858,14 @@ object UiKit {
         // the game's sparkles (harvested), turning a little as they fade
         castArt("castbar_sparkles1")?.let { sp ->
             val a = (255 * (1f - t)).toInt()
-            pHold.alpha = a
+            pBurstAdd.alpha = a
             c.save(); c.rotate(40f * t, cx, cy)
-            val h = s * (0.9f + 0.6f * e)
-            c.drawBitmap(sp, null, RectF(cx - h, cy - h, cx + h, cy + h), pHold)
+            // the streak keeps its own shape (48 x 15) and is ADDED as light, as the cast bar does: stretched to a square it read as a
+            // pale block over the tile (f-loot-feedback's renders)
+            val hw = s * (0.9f + 0.6f * e); val hh = hw * sp.height / sp.width.coerceAtLeast(1)
+            c.drawBitmap(sp, null, RectF(cx - hw, cy - hh, cx + hw, cy + hh), pBurstAdd)
             c.restore()
-            pHold.alpha = 255
+            pBurstAdd.alpha = 255
         }
         // the sparks thrown outward: 10 small four-point stars
         for (i in 0 until 10) {
@@ -5880,6 +5882,7 @@ object UiKit {
         }
     }
     const val DELETE_BURST_MS = 420L
+    private val pBurstAdd = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD) }
 
     /**
      * MORE BELOW (a tooltip stack taller than the window, while it scrolls): over the visible stack's last [h] px above [bottom],

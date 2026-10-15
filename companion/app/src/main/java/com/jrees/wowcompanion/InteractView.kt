@@ -127,6 +127,7 @@ class InteractView(context: Context) : View(context) {
 
     fun update(msg: JSONObject, current: Boolean = true) {
         lastDocAt = System.currentTimeMillis()
+        if (current) takeLootGone(msg, doc?.optJSONObject("loot"))
         prevLoot = doc?.optJSONObject("loot")
         docCurrent = current
         doc = msg
@@ -487,6 +488,10 @@ class InteractView(context: Context) : View(context) {
     /** {"type":"interactack","cmd":..,"ok":..,"why":..} */
     fun ack(msg: JSONObject) {
         val cmd = msg.optString("cmd")
+        // f-loot-feedback: a loot the game refused (full bags, locked, ...) shakes its card red, fresh answers only
+        if (cmd.startsWith("loot ") && !msg.optBoolean("ok") && abs(gameNow() - msg.optLong("_gt", gameNow())) < 5_000L) {
+            shakes[cmd] = fxClock(); postInvalidateOnAnimation()
+        }
         if (msg.optBoolean("ok")) wait.answered(cmd) else wait.refused(cmd)
         if (pendingCmd == null || pendingCmd != cmd) {
             // not one the app sent: a CONTROLLER action (the addon ran it from a press). Its refusal is shown when it is FRESH
@@ -1035,7 +1040,7 @@ class InteractView(context: Context) : View(context) {
     private val pressEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 5f }
 
     override fun onDraw(c: Canvas) {
-        val now = System.currentTimeMillis()
+        val now = fxClock()
         val r = RectF(0f, 0f, width.toFloat(), height.toFloat())
         val growing = kind == Kind.LOOT && growAt > 0L && now - growAt < LOOT_GROW
         // the user, RC3: "When looting that animation freezes and makes the screen kind of flash black": after the loot window's
@@ -2653,7 +2658,7 @@ class InteractView(context: Context) : View(context) {
     private var lootRect = RectF()
     private val lootCurve = Motion.curve()
 
-    private fun lootClosing() = lootCloseAt > 0L && System.currentTimeMillis() - lootCloseAt < Motion.MODULE_CLOSE
+    private fun lootClosing() = lootCloseAt > 0L && (System.currentTimeMillis() - lootCloseAt < Motion.MODULE_CLOSE || fxBusy())
 
     // LOOTWIN_SPEC 7's beats, in ms
     private val LOOT_GROW = 320L
@@ -2676,8 +2681,9 @@ class InteractView(context: Context) : View(context) {
         val k = if (closing) 1f - lootCurve.getInterpolation(x) else lootCurve.getInterpolation(x)
         if (x < 1f) postInvalidateOnAnimation()
         UiKit.cover(c, full, 0.45f * k)
-        val items = arr(lt, "items").filter { it.optInt("i") != landHideFrom }
+        val items = arr(lt, "items").filter { it.optInt("i") != landHideFrom && vanishes.none { v -> v.i == it.optInt("i") } }
         val shownN = min(5, max(1, items.size))
+        if (lootOpenAt != fxOpenSeen) { fxOpenSeen = lootOpenAt; slides.clear() }
         val ch = 84f; val gap = 10f; val cardsTop = 150f
         // CENTERED on the bottom screen (the user, 2026-10-02: "The main loot window that pops up should be centered")
         val wl = ((full.width() - 600f) / 2f).coerceAtLeast(24f)
@@ -2697,15 +2703,19 @@ class InteractView(context: Context) : View(context) {
         var cardAt: RectF? = null; var shownItem: JSONObject? = null
         c.save(); c.clipRect(view)
         for ((i, it) in items.withIndex()) {
-            val top = r.top + cardsTop + i * (ch + gap) - scrollA
+            val top = slideTop(it.optInt("i"), r.top + cardsTop + i * (ch + gap) - scrollA, now)
             if (top + ch < view.top || top > view.bottom) continue
-            val card = RectF(inner.left + 6f, top, inner.right - 6f, top + ch)
+            val id0 = "loot ${it.optInt("i")}"
+            val sx = shakeX(id0, now)
+            val card = RectF(inner.left + 6f + sx, top, inner.right - 6f + sx, top + ch)
+            cardRects[it.optInt("i")] = RectF(card)
             // never a decode here (the pop animates): the warm-up's icon, or the empty slot for the frame until it lands
             UiKit.lootCard(c, card, iconReady[it.optInt("icon", 0)], it.optString("name", ""), it.optInt("q", 1), max(1, it.optInt("count", 1)),
                 if (it.optBoolean("quest")) 1 else 0, it.optBoolean("coin"), it.optBoolean("locked"))
             val id = "loot ${it.optInt("i")}"
             if (!closing) hits.add(RectF(card.left, max(card.top, view.top), card.right, min(card.bottom, view.bottom)) to "lt:card $id")
             if (id == shown) { UiKit.focus(c, RectF(card.left - 4f, card.top - 6f, card.right + 4f, card.bottom + 6f)); cardAt = card; shownItem = it }
+            shakeTint(c, id, card, now)
         }
         c.restore()
         // the foot: a hairline, then the glyph line (no buttons; B = the Home disc); a finger may tap each hint
@@ -2750,6 +2760,131 @@ class InteractView(context: Context) : View(context) {
             c.restoreToCount(layer)
         }
         if (!closing) resultLine(c, r.left + 20f, r.right - 20f, r.bottom + 30f, now)
+        lootFx(c, now)
+    }
+
+    // ---- f-loot-feedback (the user, 15 Oct: "I really want to have button feedback on looting things, kind of flashing the Item and
+    // sparkling away"). An item the game TOOK (its LOOT_SLOT_CLEARED: doc.lootGone, never a window closed with B) flashes bright, then
+    // dissolves into the cast bar's own flakes and sparkles (the harvested castbar_* pieces, ui/cast) rising from its icon, and the cards
+    // under it slide up into its place. A loot the game refused shakes its card with a red wash. Timings in LootFx; [fxClock] is the
+    // clock (the off-device renders set it).
+
+    private class Vanish(val i: Int, val item: JSONObject, val rect: RectF, val at: Long)
+    private val vanishes = ArrayList<Vanish>()
+    private val cardRects = HashMap<Int, RectF>()           // a slot's card as last drawn, where its sparkle starts
+    private val shakes = HashMap<String, Long>()             // "loot i" -> when the game refused it
+    private class Slide(var from: Float, var to: Float, var at: Long)
+    private val slides = HashMap<Int, Slide>()
+    private var fxOpenSeen = -1L
+    private var goneSeen = -1
+    /** the effects' clock (System.currentTimeMillis on the device) */
+    var fxClock: () -> Long = { System.currentTimeMillis() }
+
+    private fun fxBusy(): Boolean = vanishes.any { fxClock() - it.at < LootFx.VANISH_MS }
+
+    /** doc.lootGone: the slots the game cleared; each starts its sparkle once, from its card as last drawn */
+    private fun takeLootGone(msg: JSONObject, was: JSONObject?) {
+        val g = msg.optJSONObject("lootGone") ?: return
+        val n = g.optInt("n", -1)
+        if (n == goneSeen) return
+        val first = goneSeen < 0
+        goneSeen = n
+        if (first && lootOpenAt == 0L) return                     // a backlog's word, before any loot window was seen
+        val slots = g.optJSONArray("slots") ?: return
+        val now = fxClock()
+        vanishes.removeAll { now - it.at >= LootFx.VANISH_MS }
+        for (k in 0 until slots.length()) {
+            val i = slots.optInt(k, -1)
+            val item = arr(was, "items").firstOrNull { it.optInt("i") == i } ?: continue
+            val rect = cardRects[i] ?: continue
+            if (vanishes.any { it.i == i }) continue
+            vanishes.add(Vanish(i, item, RectF(rect), now))
+        }
+        postInvalidateOnAnimation()
+    }
+
+    /** a card's top, eased from where it stood when its place changed (a card above it was taken) */
+    private fun slideTop(i: Int, target: Float, now: Long): Float {
+        val sl = slides[i] ?: return target.also { slides[i] = Slide(target, target, 0L) }
+        if (abs(sl.to - target) > 0.5f) {
+            sl.from = slideNow(sl, now); sl.to = target; sl.at = now
+        }
+        return slideNow(sl, now)
+    }
+    private fun slideNow(sl: Slide, now: Long): Float {
+        if (sl.at == 0L) return sl.to
+        val k = LootFx.ease(((now - sl.at).toFloat() / LootFx.SLIDE_MS).coerceIn(0f, 1f))
+        if (k < 1f) postInvalidateOnAnimation()
+        return sl.from + (sl.to - sl.from) * k
+    }
+
+    private fun shakeX(id: String, now: Long): Float {
+        val at = shakes[id] ?: return 0f
+        val t = now - at
+        if (t >= LootFx.SHAKE_MS) { shakes.remove(id); return 0f }
+        postInvalidateOnAnimation()
+        return LootFx.shake(t)
+    }
+    private fun shakeTint(c: Canvas, id: String, card: RectF, now: Long) {
+        val at = shakes[id] ?: return
+        val a = LootFx.shakeTint(now - at)
+        if (a <= 0) return
+        pFill.color = Color.argb(a, 200, 20, 10)
+        c.drawRoundRect(card, 8f, 8f, pFill)
+    }
+
+    private val pFxAdd = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD) }
+    private val pFxFlash = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /**
+     * every sparkle playing: the card flashes white-gold and fades toward its icon; over the icon the SAME burst as Make Space's delete
+     * (UiKit.deleteBurst: Rooms' flash, ring, the game's sparkles and the thrown stars, so the two read as one family); the cast bar's
+     * own flakes (UiKit.castArt) rise from it
+     */
+    private fun lootFx(c: Canvas, now: Long) {
+        if (vanishes.isEmpty()) return
+        vanishes.removeAll { now - it.at >= LootFx.VANISH_MS }
+        for (v in vanishes) {
+            val t = now - v.at
+            val card = v.rect
+            val icon = RectF(card.left + 12f, card.top + (card.height() - 60f) / 2f, card.left + 72f, card.top + (card.height() + 60f) / 2f)
+            // the card itself: bright at once, then fading and shrinking toward its icon
+            val ca = LootFx.cardAlpha(t)
+            if (ca > 0f) {
+                val sc = LootFx.cardScale(t)
+                val l = c.saveLayerAlpha(RectF(card.left - 40f, card.top - 40f, card.right + 40f, card.bottom + 40f), (255 * ca).toInt())
+                c.scale(sc, sc, icon.centerX(), icon.centerY())
+                UiKit.lootCard(c, card, iconReady[v.item.optInt("icon", 0)], v.item.optString("name", ""), v.item.optInt("q", 1),
+                    max(1, v.item.optInt("count", 1)), if (v.item.optBoolean("quest")) 1 else 0, v.item.optBoolean("coin"), false)
+                // the flash: a white-gold wash over the card from its icon, added
+                val fa = LootFx.flashAlpha(t)
+                if (fa > 0) {
+                    pFxFlash.shader = RadialGradient(icon.centerX(), icon.centerY(), card.width() * 0.75f,
+                        intArrayOf(Color.argb(fa, 255, 250, 225), Color.argb(fa * 2 / 3, 255, 205, 90), Color.argb(0, 255, 190, 60)),
+                        floatArrayOf(0f, 0.35f, 1f), Shader.TileMode.CLAMP)
+                    pFxFlash.xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD)
+                    c.drawRoundRect(card, 8f, 8f, pFxFlash)
+                    pFxFlash.shader = null; pFxFlash.xfermode = null
+                }
+                c.restoreToCount(l)
+            }
+            // the burst over the icon: Make Space's own (one family of effects)
+            val bk = t.toFloat() / LootFx.BURST_MS
+            if (bk < 1f) UiKit.deleteBurst(c, RectF(icon.left - 14f, icon.top - 14f, icon.right + 14f, icon.bottom + 14f), bk)
+            // the cast bar's flakes rising from the icon, turning, fading
+            for (k in 0 until LootFx.N) {
+                val pt = LootFx.piece(k, v.i, t) ?: continue
+                val b = UiKit.castArt(LootFx.PIECES[k % LootFx.PIECES.size]) ?: continue
+                val cx = icon.centerX() + pt.dx; val cy = icon.centerY() + pt.dy
+                pFxAdd.alpha = pt.alpha
+                c.save(); c.rotate(pt.turn, cx, cy)
+                val hh = pt.size * b.height / b.width.coerceAtLeast(1)      // a flake keeps its own long shape (never a square)
+                c.drawBitmap(b, null, RectF(cx - pt.size, cy - hh, cx + pt.size, cy + hh), pFxAdd)
+                c.restore()
+                pFxAdd.alpha = 255
+            }
+        }
+        postInvalidateOnAnimation()
     }
 
     private fun lootWindow(c: Canvas, r: RectF, lt: JSONObject, now: Long) {

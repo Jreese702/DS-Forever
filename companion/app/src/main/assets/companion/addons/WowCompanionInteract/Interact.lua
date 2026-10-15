@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i116"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i117"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -882,6 +882,7 @@ local LOOT_STEP = 0.15      -- Loot All: one slot, then the next this much later
 -- "Inventory is full" right after OUR accept or reward on an open quest window; after the delete that action is retried once
 -- (the user's exception, as the loot's: one hold = the delete + the retry).
 LOOT.ms = nil           -- "quest" while Make Space serves the quest window (else the loot window)
+LOOT.GONE_S = 2         -- f-loot-feedback: how long a cleared slot stays in doc.lootGone
 LOOT.retry = nil        -- the quest action to run again after the delete: { cmd, a, c, name, icon, q }
 -- r-loot-on-top (a player's request, 2026-10-13): Home > Settings "Loot window: Top screen". The game's own loot window then stays
 -- the game's: this file never collects it, never takes the controller for it and never touches LootFrame's alpha (isOpen("loot")
@@ -1880,6 +1881,13 @@ local function buildDoc()
     tally.secret, tally.threw = 0, 0
     disagreed = false
     local doc = { type = "interact", iv = IV }
+    -- f-loot-feedback: the slots the game cleared in the last LOOT.GONE_S seconds (n counts them: the app plays each once)
+    if LOOT.gone and #LOOT.gone > 0 then
+        local t, keep, slots = TN(function() return GetTime() end) or 0, {}, {}
+        for _, g in ipairs(LOOT.gone) do if t - g.at <= LOOT.GONE_S then keep[#keep + 1] = g; slots[#slots + 1] = g.i end end
+        LOOT.gone = keep
+        if #slots > 0 then doc.lootGone = { n = LOOT.goneN, slots = slots } end
+    end
     -- 1.0.8: a field is being typed with the app's Chat keyboard (N.kbdOpen): which one, and its value when it opened
     if N.kbd then
         if (TN(function() return GetTime() end) or 0) - (N.kbdAt or 0) > N.KBD_TTL then N.kbdClose()
@@ -2140,6 +2148,15 @@ local ON = {
     end,
     -- a bind-on-pickup item asks first (the game's dialog, mirrored): Loot All stops there
     LOOT_BIND_CONFIRM = function() LOOT.bind = true end,
+    -- f-loot-feedback (the user, 15 Oct: "flashing the Item and sparkling away"): the game's own word that a slot was TAKEN. The app's
+    -- sparkle plays for exactly these slots (doc.lootGone), never for a window closed with B or walked away from
+    LOOT_SLOT_CLEARED = function(slot)
+        local i = TN(function() return slot end)
+        if not i then return end
+        LOOT.goneN = (LOOT.goneN or 0) + 1
+        LOOT.gone = LOOT.gone or {}
+        LOOT.gone[#LOOT.gone + 1] = { i = i, at = TN(function() return GetTime() end) or 0 }
+    end,
     UI_ERROR_MESSAGE = function(_, msg)
         if MAIL.status == "sending" or MAIL.status == "failed" then
             local m = TS(function() return msg end)
