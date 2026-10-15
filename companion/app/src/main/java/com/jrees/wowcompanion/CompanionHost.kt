@@ -866,7 +866,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val outgoing = shownView
         val roomMotion = r != room && !chatOpening && !chatClosing && outgoing != null && outgoing.isShown &&
             !(::pauseView.isInitialized && pauseView.isOpen)
-        val outPicture = if (roomMotion && r != Room.HOME) outgoing?.let { viewShot(it) } else null
+        // Home is pictured as it leaves (its map and bars go back to their rooms right below); a room keeps drawing itself
+        val outPicture = if (roomMotion && outgoing === homeView) viewShot(homeView) else null
+        val fromRoom = room
         // Home gives the map and the bars back BEFORE the loop below walks the rooms, and takes
         // them AFTER it: never re-parent a view while `content`'s children are being walked
         if (r != Room.HOME) { homeView.closeAuras(); homeView.giveBack() }     // an open buff list hands the controller back
@@ -926,7 +928,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (r == Room.CHAT) chatView.focusInput()
         if (openPane != null && homePicture != null) chatGlideStart(true, openPane, homePicture)
         else if (chatClosing) homeView.chatPaneBox()?.let { chatGlideStart(false, it, null) }
-        else if (roomMotion && outgoing != null && outgoing !== v) roomMotionStart(v, outgoing, r == Room.HOME, outPicture)
+        else if (roomMotion && outgoing != null && outgoing !== v) roomMotionStart(v, outgoing, fromRoom, r, outPicture)
         if (socialIn) {
             socialHold(0)
             socialView.onShown()
@@ -2111,41 +2113,55 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     } catch (t: Throwable) { Log.i("WCHOME", "room motion: no picture of the room left (${t.message})"); null }
 
     // ---------------------------------------------------------------- THE ROOMS' OPEN / CLOSE MOTION (f-room-animations)
-    // The user's pick, 15 Oct: "smooth, consistent animations when rooms open and close". One motion for every room, from the
-    // app's own table (Motion) and the step-back the pause wheel already gives a room (UI Art: alpha and scale 0.96 about the
-    // centre, no slide):
-    //  - a room OPENS by coming forward over a picture of where the player was: alpha 0 -> 1, scale 0.96 -> 1, MODULE_OPEN on the
-    //    one curve (the picture: Home gives its map and bars back to their rooms the moment it is left);
-    //  - a room CLOSES to Home by stepping back over Home: alpha 1 -> 0, scale 1 -> 0.96, MODULE_CLOSE, the curve for what leaves;
-    //  - room to room: the new one comes forward over the old one's picture.
-    // The chat's glide and the map's morph keep their own motion. A hardware layer for the move, an alpha and a scale only: no
-    // layout per frame. A room change meanwhile lands it at once.
+    // The user after the Thor test (15 Oct): "I want it to slide up from the bottom, and then when pressing B, the home slides back
+    // in from the top. if a room is currently selected, a new room should slide in from the side (directionally compared to where the
+    // current room is in) the sliding in/out should not slide over top the rooms but rather push them off the screen (same with the
+    // home)". So every room change is a PUSH: the two pages move together as one strip, edge to edge, no overlap, no fade:
+    //  - Home -> a room: the room rises from the bottom edge and pushes Home up off the top (Motion.MODULE_OPEN);
+    //  - a room -> Home (B, the disc): Home comes down from the top and pushes the room down off the bottom (MODULE_CLOSE);
+    //  - a room -> another: sideways, by their places on the bottom bar ([barOrder]): one to the RIGHT comes in from the right and
+    //    pushes the current one off to the left, and the other way round.
+    // One curve (Motion.curve). Home leaving is a picture of Home (its map and bars go back to their rooms the moment it is left);
+    // a room leaving draws itself. Translation only on hardware layers: no layout per frame. The chat's glide and the map's morph
+    // keep their own motion; a room change or the pause wheel lands a motion still running.
     private var roomAnim: android.animation.ValueAnimator? = null
     private var roomAnimPic: android.widget.ImageView? = null
     private var roomAnimViews: List<View> = emptyList()
-    private val ROOM_FROM_SCALE = 0.96f
 
-    private fun roomMotionStart(incoming: View, outgoing: View, toHome: Boolean, outPicture: android.graphics.Bitmap?) {
-        val moving = if (toHome) outgoing else incoming
-        if (!toHome && outPicture == null) return                  // no picture of the room left: the old swap
-        val pic = if (toHome) null else android.widget.ImageView(this).apply {
+    /** a room's place on the bottom bar, left to right (Room's order, the strip's; Home's disc between Group Finder and Character).
+     *  Chat has no place on the bar: it counts where it stands in Room's order (between Controller and Social) */
+    private fun barOrder(r: Room): Int = r.ordinal
+
+    private fun roomMotionStart(incoming: View, outgoing: View, from: Room, to: Room, outPicture: android.graphics.Bitmap?) {
+        val leavingHome = from == Room.HOME
+        if (leavingHome && outPicture == null) return              // no picture of Home: the old swap
+        val w = content.width.toFloat(); val h = content.height.toFloat()
+        if (w <= 0f || h <= 0f) return
+        // where the incoming page starts (the outgoing one ends the opposite way: they move as one strip)
+        val (sx, sy) = when {
+            leavingHome -> 0f to h                                  // up from the bottom edge
+            to == Room.HOME -> 0f to -h                             // down from the top edge
+            barOrder(to) > barOrder(from) -> w to 0f                // a room to the right: in from the right
+            else -> -w to 0f
+        }
+        val pic = if (leavingHome) android.widget.ImageView(this).apply {
             setImageBitmap(outPicture); scaleType = android.widget.ImageView.ScaleType.MATRIX
-            translationX = outgoing.left.toFloat(); translationY = outgoing.top.toFloat()
         }.also { content.addView(it, content.indexOfChild(incoming), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) }
+        else null
         roomAnimPic = pic
-        if (toHome) { outgoing.visibility = View.VISIBLE; outgoing.translationZ = 2f }      // over Home until it has stepped back
-        roomAnimViews = listOf(moving)
-        moving.pivotX = moving.width / 2f; moving.pivotY = moving.height / 2f
-        moving.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        val leaving: View = pic ?: outgoing.also { it.visibility = View.VISIBLE }     // a room leaving draws itself until it is off
+        roomAnimViews = listOfNotNull(incoming, if (pic == null) outgoing else null)
+        val baseX = if (pic != null) outgoing.left.toFloat() else 0f
+        val baseY = if (pic != null) outgoing.top.toFloat() else 0f
+        for (v in listOf(incoming, leaving)) v.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         fun at(k: Float) {
-            val s = if (toHome) 1f - (1f - ROOM_FROM_SCALE) * k else ROOM_FROM_SCALE + (1f - ROOM_FROM_SCALE) * k
-            moving.alpha = if (toHome) 1f - k else k
-            moving.scaleX = s; moving.scaleY = s
+            incoming.translationX = sx * (1f - k); incoming.translationY = sy * (1f - k)
+            leaving.translationX = baseX - sx * k; leaving.translationY = baseY - sy * k
         }
         at(0f)
         roomAnim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = if (toHome) Motion.MODULE_CLOSE else Motion.MODULE_OPEN
-            interpolator = if (toHome) Motion.curveOut() else Motion.curve()
+            duration = if (to == Room.HOME) Motion.MODULE_CLOSE else Motion.MODULE_OPEN
+            interpolator = Motion.curve()
             addUpdateListener { a -> at(a.animatedValue as Float) }
             addListener(object : android.animation.AnimatorListenerAdapter() {
                 override fun onAnimationEnd(a: android.animation.Animator) { if (roomAnim === a) roomMotionEnd() }
@@ -2162,7 +2178,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         roomAnimPic?.let { content.removeView(it) }
         roomAnimPic = null
         for (v in roomAnimViews) {
-            v.alpha = 1f; v.scaleX = 1f; v.scaleY = 1f; v.translationZ = 0f
+            v.translationX = 0f; v.translationY = 0f
             v.setLayerType(View.LAYER_TYPE_NONE, null)
             if (v !== shownView) v.visibility = View.GONE
         }
