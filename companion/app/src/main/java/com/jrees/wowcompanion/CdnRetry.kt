@@ -15,9 +15,11 @@ internal object CdnRetry {
 
     /**
      * [attempt] one host: null = done, else why not (it may throw: a network error becomes its reason). Returns null on success,
-     * else the last reason with its host.
+     * else the last reason with its host. A reason [final] accepts (a 404 for a file the CDN keeps only inside an archive) ends it at
+     * once: every host and the second pass would only say the same thing again (issue #7, "art slow": about 6 s per file).
      */
-    fun run(hosts: List<String>, passes: Int = PASSES, pause: (Long) -> Unit = { Thread.sleep(it) }, attempt: (String) -> String?): String? {
+    fun run(hosts: List<String>, passes: Int = PASSES, pause: (Long) -> Unit = { Thread.sleep(it) }, final: (String) -> Boolean = { false },
+            attempt: (String) -> String?): String? {
         if (hosts.isEmpty()) return "no CDN hosts in the game's .build.info"
         var why = "no CDN host answered"
         for (p in 0 until passes) {
@@ -26,6 +28,7 @@ internal object CdnRetry {
                 val r = try { attempt(h) } catch (e: Exception) { describe(e) }
                 if (r == null) return null
                 why = "$r from $h"
+                if (final(r)) return why
             }
         }
         return why

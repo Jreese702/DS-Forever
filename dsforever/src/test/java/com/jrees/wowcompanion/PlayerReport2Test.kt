@@ -63,6 +63,19 @@ class PlayerReport2Test {
         assertEquals("network error (reset)", CdnRetry.describe(IOException("reset")))
     }
 
+    @Test fun aFinalAnswerStopsAtOnce() {
+        // issue #7: a 404 for a game file the CDN keeps inside an archive is the same on every host; no second host, no pause
+        val tried = ArrayList<String>(); val pauses = ArrayList<Long>()
+        val why = CdnRetry.run(listOf("a", "b"), pause = { pauses.add(it) }, final = { it == "HTTP 404" }) { h -> tried.add(h); "HTTP 404" }
+        assertEquals("HTTP 404 from a", why)
+        assertEquals(listOf("a"), tried)
+        assertEquals(emptyList<Long>(), pauses)
+        // anything else still gets every host, twice
+        tried.clear()
+        CdnRetry.run(listOf("a", "b"), pause = {}, final = { it == "HTTP 404" }) { h -> tried.add(h); "HTTP 503" }
+        assertEquals(listOf("a", "b", "a", "b"), tried)
+    }
+
     @Test fun theSecondHostServesWhenTheFirstFails() {
         val tried = ArrayList<String>()
         assertNull(CdnRetry.run(listOf("a", "b"), pause = {}) { h -> tried.add(h); if (h == "a") "HTTP 500" else null })
