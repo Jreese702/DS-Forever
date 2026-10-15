@@ -2,6 +2,7 @@ package com.jrees.wowcompanion
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.RectF
 import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
@@ -456,8 +457,16 @@ class HomeBarSelect(
     private var pushedAt = -10_000L
     private val PUSH_MS = 180L
 
+    /** where the cursor was drawn last, and the glide from there (see onDraw) */
+    private var shownBox: RectF? = null
+    private var moveFrom: RectF? = null
+    private var moveAt = -10_000L
+    private val MOVE_MS = 140L
+    private val moveCurve = Motion.curve()
+
     private fun step(d: Int) {
         pushedDir = if (d < 0) -1 else 1; pushedAt = android.os.SystemClock.uptimeMillis()
+        moveFrom = shownBox?.let { RectF(it) }; moveAt = pushedAt
         val all = order()
         if (all.isEmpty()) return
         val i = all.indexOf(at)
@@ -481,16 +490,27 @@ class HomeBarSelect(
     private val there = IntArray(2)
 
     override fun onDraw(c: Canvas) {
-        if (!open && !fadingOut) return
+        if (!open && !fadingOut) { shownBox = null; return }
         // the bar's pictures are in the strip's own coordinates
         getLocationInWindow(here); strip.getLocationInWindow(there)
         val dx = (there[0] - here[0]).toFloat(); val dy = (there[1] - here[1]).toFloat()
         // on Home from Home: nothing (the skip; a command cursor that has not stepped yet); on Home from a room: Home's own disc is the
         // cursor (its gold breathing light, Strip.homeFocus) with the arrows and the A (A goes Home)
         val onHome = at == Room.HOME
-        if (onHome && !fromRoom) return
-        val box = strip.place(at) ?: return
-        box.offset(dx, dy)
+        if (onHome && !fromRoom) { shownBox = null; return }      // not drawn: the next step appears where it lands (nothing to glide from)
+        val target = strip.place(at) ?: run { shownBox = null; return }
+        target.offset(dx, dy)
+        // THE CURSOR GLIDES to its next place (the user, 15 Oct: "it needs an animated movement over, instead of an instantly appearing
+        // at the next spot"): from where it was drawn last to the new picture over MOVE_MS on the one curve; the arrows and the A ride
+        val from = moveFrom
+        val mt = android.os.SystemClock.uptimeMillis() - moveAt
+        val box = if (from != null && mt in 0 until MOVE_MS) {
+            val k = moveCurve.getInterpolation(mt.toFloat() / MOVE_MS)
+            postInvalidateOnAnimation()
+            RectF(from.left + (target.left - from.left) * k, from.top + (target.top - from.top) * k,
+                from.right + (target.right - from.right) * k, from.bottom + (target.bottom - from.bottom) * k)
+        } else { moveFrom = null; target }
+        shownBox = RectF(box)
         // the room's picture gets the kit's golden box, the gold arrows with L / R on its sides (LATER 23: "maybe just includ L and R
         // inside of the arrows"), none toward an end of the bar (the cursor does not wrap; Home's disc is jumped over)
         val all = order(); val i = all.indexOf(at)
