@@ -926,6 +926,23 @@ local function noteCast(event)
     end
 end
 
+-- b-combat-bar-states: one SPELL's state, by id (an In-combat spell has no bar slot): the same fields a bar slot's state carries
+local function spellState(id, hasTarget)
+    local o = { i = id }
+    local r = PCALL(api("C_Spell", "IsSpellUsable") or _G.IsUsableSpell, id)          -- isUsable, insufficientPower
+    if r[1] then
+        o.u = bit01(SV(r[2]) == true)
+        o.m = bit01(SV(r[3]) == true)
+    end
+    if hasTarget then
+        local v = S(api("C_Spell", "IsSpellInRange") or _G.IsSpellInRange, id, "target")
+        if v == true or v == 1 then o.r = 1 elseif v == false or v == 0 then o.r = 0 end
+    end
+    o.chk = bit01(S(api("C_Spell", "IsCurrentSpell") or _G.IsCurrentSpell, id) == true
+        or S(api("C_Spell", "IsAutoRepeatSpell") or _G.IsAutoRepeatSpell, id) == true)
+    return o
+end
+
 local function buildState()
     local combat = S(InCombatLockdown) == true
     local hasTarget = S(UnitExists, "target") == true
@@ -954,6 +971,15 @@ local function buildState()
     end
     local bu = barsUsable()
     if bu ~= nil then st.bu = bit01(bu) end   -- 0 = a window owns the pad: draw collapsed, base layer only
+    -- b-combat-bar-states (the user on 1.0.8-test2): the IN-COMBAT spells drawn over Home's bars in a fight are not bar slots, so the
+    -- game's per-slot state never covered them. hudS.fs = their state by spell id, the bars' own fields: u usable, m not enough mana
+    -- (the blue tint), r in range (with a target), chk selected for casting (waiting for a target / auto-repeat / next swing)
+    local okf, fspells = pcall(function() return type(WC.padMapFightSpells) == "function" and WC.padMapFightSpells() or nil end)
+    if okf and type(fspells) == "table" and #fspells > 0 then
+        local fs = {}
+        for _, id in ipairs(fspells) do fs[#fs + 1] = spellState(id, hasTarget) end
+        st.fs = fs
+    end
     -- hudS.F: the live look of the LIVE scripted buttons, keyed "<layer><p>" (n5, n6, fr6, fr7, ho6, ho7,
     -- sc6): e = enabled 0/1 (0 = draw it as the disabled / empty slot), i = the icon it shows now.
     local F = {}
@@ -1348,6 +1374,8 @@ local STATE_EVENTS = {
     "ACTION_RANGE_CHECK_UPDATE", "PLAYER_TARGET_CHANGED",
     "PLAYER_ENTER_COMBAT", "PLAYER_LEAVE_COMBAT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
     "BAG_UPDATE_DELAYED", "START_AUTOREPEAT_SPELL", "STOP_AUTOREPEAT_SPELL", "UPDATE_MACROS", "PLAYER_SWING",
+    -- b-combat-bar-states: a spell waiting for its target (selected for casting) and the In-combat spells' usable / mana
+    "CURRENT_SPELL_CAST_CHANGED", "SPELL_UPDATE_USABLE",
 }
 local UNIT_EVENTS = { "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_SUCCEEDED",
     "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_DELAYED",

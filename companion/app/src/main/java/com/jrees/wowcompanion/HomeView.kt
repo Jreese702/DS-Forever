@@ -395,6 +395,7 @@ class HomeView(
         val map = padMap ?: return
         val d = HomeFightFace.dpadIcons(map, fightNow)
         castView.fightDpad = d
+        castView.fightIds = HomeFightFace.ids(map, fightNow)            // b-combat-bar-states: their state by spell id
         // ONE line per change, so one approved log read proves what the toolbar's D-pad was given (Tracking's ask after test18)
         if (d != dpadSaid) { dpadSaid = d; Log.i("WCLOG", "dpad draw: fight=$fightNow dpad=$d") }
     }

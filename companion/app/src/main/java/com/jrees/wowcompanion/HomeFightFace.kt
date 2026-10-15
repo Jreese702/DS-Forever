@@ -16,6 +16,16 @@ object HomeFightFace {
      *  word under the user's delegation). The per-button armed gate still decides each picture */
     const val PROVEN = true
 
+    /** b-combat-bar-states: the base set's game position -> the spell id of its In-combat spell (X / Y / A's fight spell; in a fight the
+     *  D-pad's overlay one), for the state the add-on sends by spell id (hudS.fs) */
+    fun ids(map: PadMapModel.Map, fight: Boolean = map.fight): Map<Int, Int> {
+        val out = HashMap<Int, Int>()
+        for (pos in PadMapModel.FACES) PadMapModel.slot(map, BASE_SET, pos)?.fight?.id?.takeIf { it > 0 }?.let { out[pos] = it }
+        if (fight) for (pos in 1..4) PadMapModel.slot(map, BASE_SET, pos)?.takeIf { it.kind == PadMapModel.Kind.COMBAT && it.ov }
+            ?.combat?.id?.takeIf { it > 0 }?.let { out[pos] = it }
+        return out
+    }
+
     fun icons(map: PadMapModel.Map): Map<Int, Int> =
         PadMapModel.FACES.filter { it in map.faceArmed }.mapNotNull { pos ->
             PadMapModel.slot(map, BASE_SET, pos)?.fight?.icon?.takeIf { it != 0 }?.let { pos to it }

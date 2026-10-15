@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m53"                -- bump on every change
+local PV = "m54"                -- bump on every change
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -2522,6 +2522,17 @@ local CLEAN = (function()
     return { plan = cleanupPlan, doc = cleanupDoc, run = cleanupRun, shared = sharedState, sharedRun = sharedRun, auto = autoRun,
              autoPending = function() return autoPending end }
 end)()
+-- m54 (b-combat-bar-states, the user on 1.0.8-test2: "The combat bars are not showing when an ability does not have enough mana, or if
+-- it was selected for casting like the normal bars do"): the character's IN-COMBAT spells (X / Y / A's fight spells, the overlay's on
+-- any button), for ActionBar.lua's state document: their ids, once each. Read only. (On WC: the main chunk is at Lua's 200 locals.)
+WC.padMapFightSpells = function()
+    local out, seen = {}, {}
+    local function add(e) if type(e) == "table" and type(e.id) == "number" and not seen[e.id] then seen[e.id] = true; out[#out + 1] = e.id end end
+    for _, e in pairs(faceStore()) do add(e) end
+    if combatOn() then for _, e in pairs(OV.ftdb()) do add(e) end end
+    return out
+end
+
 WC.padMap = {
     version = 1,
     emit = function(force) if emit(force) then WC.push() end end,

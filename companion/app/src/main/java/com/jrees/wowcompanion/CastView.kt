@@ -307,6 +307,23 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         return b
     }
 
+    /**
+     * b-combat-bar-states (the user on 1.0.8-test2: "The combat bars are not showing when an ability does not have enough mana, or if it
+     * was selected for casting like the normal bars do"): base-set GAME position 1..8 -> the spell id of the In-combat spell drawn there
+     * (X / Y / A's fight spells, the D-pad's overlay ones; HomeFightFace.ids), and their state by spell id from the add-on (hudS.fs).
+     * A fight override is drawn with that state - not enough mana blue, unusable dark, out of range red, selected for casting checked -
+     * as the game's own buttons are.
+     */
+    var fightIds: Map<Int, Int>? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+    private val fightStates = HashMap<Int, St>()
+    private fun fightStateOf(fb: Btn?, src: Int): St? {
+        if (fb == null || fb.k != "spell") return null
+        if (fb !== fightBtns.getOrNull(src) && fb !== dpadFightBtns.getOrNull(src)) return null
+        val id = fightIds?.get(src + 1) ?: return null
+        return fightStates[id]
+    }
+
     /** the fight spell drawn over base-layer face slot [src] (0-based), or null to draw the game's own button */
     private fun fightOverride(li: Int, src: Int): Btn? {
         if (!fightFaceOn || li != N || src < 4 || src == 6) return null
@@ -774,6 +791,15 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private fun parseState(o: JSONObject) {
         val g = jd(o.opt("g"))
         noteGameClock(g)
+        // b-combat-bar-states: the In-combat spells' state by spell id (hudS.fs; absent = none known)
+        fightStates.clear()
+        o.optJSONArray("fs")?.let { arr ->
+            for (j in 0 until arr.length()) {
+                val so = arr.optJSONObject(j) ?: continue
+                val id = ji(so.opt("i"), 0).takeIf { it > 0 } ?: continue
+                fightStates[id] = St().apply { u = ji(so.opt("u"), 1); m = ji(so.opt("m"), 0); r = ji(so.opt("r"), -1); chk = ji(so.opt("chk"), 0) }
+            }
+        }
         autoAttack = jb(o.opt("aa"), false)
         val sw = o.optJSONObject("sw")
         val ss = if (sw != null) toApp(jd(sw.opt("s"))) else Double.NaN
@@ -1458,7 +1484,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val src = srcOf[pos]                 // drawn at slot pos, taken from Blizzard position src
             val fb = dpadFightOverride(li, src) ?: fightOverride(li, src) ?: commandOverride(li, src)
             val b = fb ?: h.layers[li][src]
-            val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else null
+            val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else fightStateOf(fb, src)
             // pushed: a touch on the replica, or the PHYSICAL button at this position held
             // A controller press lights the PICTURE of the action the game received, not a guessed
             // physical spot: the pad reports the button by its code (A/B/X/Y = the game's Xbox slot),
@@ -2200,7 +2226,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val fb = dpadFightOverride(li, src) ?: roomOverride(li, src) ?: fightOverride(li, src) ?: commandOverride(li, src)
             if (fb != null && fb.icon > 0 && fb.shader == null) resolve(fb, pos >= 4)   // built now, at this frame's scale
             val b = fb ?: h.layers[li][src]
-            val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else null
+            val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else fightStateOf(fb, src)
             val pressed = !quietPresses && ((pos == pressedPos && now < pressedUntilMs) || (held and (1 shl src)) != 0)
             val since = now - pressAtMs[src]
             val flash = if (!quietPresses && since >= 0L && since < PRESS_FLASH_MS) 1f - since.toFloat() / PRESS_FLASH_MS else 0f
