@@ -77,6 +77,10 @@ object HomePauseModel {
         )),
     )
 
+    /** the D-pad buttons the wheel passes to [Flow.dpad] (the reader's slot -> the direction): EVERY direction it acts on (1.0.8-test7:
+     *  Left was missing from the view's own list, so its option never fired) */
+    val DPAD_OPTIONS: List<Pair<Int, Int>> = listOf(PadInput.SLOT_DPAD_UP to 0, PadInput.SLOT_DPAD_DOWN to 2, PadInput.SLOT_DPAD_LEFT to 3)
+
     /** f-trackpad-keyboard (the user's pick: "D-pad Left"): the Keyboard & Trackpad tool, Home's own (HomeView.openTypeTool) */
     val TOOL = Slice("typetool", "Keyboard & Trackpad", Kind.HOME)
     /** its word on the context band */

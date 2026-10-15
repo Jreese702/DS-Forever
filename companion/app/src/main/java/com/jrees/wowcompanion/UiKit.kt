@@ -4127,7 +4127,9 @@ object UiKit {
         val g = pauseGeo(screen)
         val cy = g.cy + 310f * g.s
         if (kotlin.math.abs(x - g.cx) > 285f * g.s) return -1
-        if (x < g.cx - 40f * g.s && kotlin.math.abs(y - cy) <= 40f * g.s) return PAUSE_OPT_LEFT          // f-trackpad-keyboard
+        // f-trackpad-keyboard: Left's words sit left of the D-pad, clear of the centred "Emotes" / "Sit / Stand" (a tap on their left half
+        // must stay theirs)
+        if (x < g.cx - 75f * g.s && kotlin.math.abs(y - cy) <= 26f * g.s) return PAUSE_OPT_LEFT
         return when (y) {
             in cy - 72f * g.s..cy - 10f * g.s -> PAUSE_OPT_UP
             in cy + 10f * g.s..cy + 72f * g.s -> PAUSE_OPT_DOWN

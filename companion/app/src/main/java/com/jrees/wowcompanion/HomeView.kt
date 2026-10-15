@@ -297,6 +297,7 @@ class HomeView(
     private var typeWanted = false
     private val typeTool: TypeToolView by lazy { TypeToolView(context) { closeTypeTool() } }
     fun openTypeTool() {
+        Log.i(TAG, "type tool: open${if (typeWanted) " (already)" else ""}")
         if (typeWanted) return
         if (typeTool.parent == null) addView(typeTool)
         typeWanted = true

@@ -58,3 +58,18 @@ class TypeToolTest {
         assertEquals(HomePauseModel.Act.None, g.dpad(1, true)); assertEquals(HomePauseModel.Act.None, g.dpad(1, false))
     }
 }
+
+/** 1.0.8-test7 (the user: "the Keyboard/ Trackpad button doesnt do anything"): the wheel's view passes every option's D-pad button on */
+class PauseDpadTest {
+    @Test fun everyDirectionTheModelActsOnIsPassedOnByTheView() {
+        val passed = HomePauseModel.DPAD_OPTIONS.map { it.second }.toSet()
+        for (dir in 0..3) {
+            val f = HomePauseModel.Flow()
+            f.dpad(dir, down = true)
+            val acts = f.dpad(dir, down = false) != HomePauseModel.Act.None || f.page == HomePauseModel.EMOTE_PAGE
+            if (acts) assertTrue("direction $dir acts in the model but the view never passes it", dir in passed)
+        }
+    }
+    @Test fun leftIsTheReadersDpadLeft() =
+        assertTrue(HomePauseModel.DPAD_OPTIONS.contains(PadInput.SLOT_DPAD_LEFT to 3))
+}
