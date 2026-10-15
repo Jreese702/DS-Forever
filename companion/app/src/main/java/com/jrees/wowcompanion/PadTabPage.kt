@@ -321,7 +321,7 @@ class PadTabPage(
         CastSettings.ButtonLayout.PLAYSTATION -> SpellsModel.PadStyle.SHP
         CastSettings.ButtonLayout.NINTENDO -> SpellsModel.PadStyle.REV
     }
-    private fun swap() = CastSettings.buttonLayout == CastSettings.ButtonLayout.NINTENDO
+    private fun swap() = CastSettings.faceSwap                          // f-abxy-split: the ABXY LOCATION, not the glyphs
 
     /** the set on show: a held trigger's (as the game's bar), else the one chosen; while a chooser or its box is up, the set it opened on */
     private fun shown(): Int = lockedSet() ?: when { lt && rt -> 4; lt -> 2; rt -> 3; else -> set }
