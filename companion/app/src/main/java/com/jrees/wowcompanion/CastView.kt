@@ -167,6 +167,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      */
     var bottomLine = false
         set(v) { if (field != v) { field = v; invalidate() } }
+    /** p-swing-timer, batch 12 (the user: "swing timer also turned off cast bar, they should be seperate"): false = the bottom line shows
+     *  no SWING (its fill and its restart flash); the CAST bar and its flashes stay (Settings > Home "Swing timer") */
+    var swingOn = true
+        set(v) { if (field != v) { field = v; invalidate() } }
 
     /**
      * DIAMONDS only (Home's band; LATER 16 + 18, UI Art's HARMONY_SPEC): ZL / ZR wells low under the LB / RB plates
@@ -2083,7 +2087,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private fun chordRadial(): Radial? {
         val h = hud ?: return null
         if (!barsUsable) return null
-        return when { padLb && padLt -> h.caL; padRb && padRt -> h.caR; else -> null }
+        return when (ClassChord.side(padLt, padRt, padLb, padRb)) { ClassChord.LEFT -> h.caL; ClassChord.RIGHT -> h.caR; else -> null }
     }
     /** Home's layer: the chord opened a radial (true) or closed it (false); main thread, on change */
     var onClassRadial: ((Boolean) -> Unit)? = null
@@ -2306,16 +2310,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val y0 = height - bh; val y1 = height.toFloat()
         var next = Long.MAX_VALUE
         val fa = now - flashAtMs
-        val flashing = flashKind != 0 && fa >= 0 && fa < (if (flashKind == FLASH_SWING) SWING_FLASH_MS else BAR_FLASH_MS)
-        val casting = !castStartMs.isNaN() && now < castEndMs + 100.0 && castEndMs > castStartMs
-        var swingP = -1.0
-        if (!casting && !swingStartMs.isNaN() && swingDurMs > 0.0) {
-            val p = (now - swingStartMs) / swingDurMs
-            if (p >= 0.0 && p <= 1.0 + SWING_GRACE) swingP = p
-        }
-        // p-swing-timer: a swing whose start lies ahead (the game's clock against ours) wakes the line when it starts
-        val ahead = if (!casting && swingP < 0 && !swingStartMs.isNaN() && swingDurMs > 0.0 && now < swingStartMs)
-            (swingStartMs - now).toLong().coerceAtLeast(1L) else Long.MAX_VALUE
+        // what the line shows now (SwingLine: pure, unit-tested; the swing off leaves the cast bar alone)
+        val parts = SwingLine.parts(swingOn, now.toDouble(), castStartMs, castEndMs, swingStartMs, swingDurMs, SWING_GRACE,
+            flashKind != 0, flashKind == FLASH_SWING, fa, if (flashKind == FLASH_SWING) SWING_FLASH_MS else BAR_FLASH_MS)
+        val flashing = parts.flash
+        val casting = parts.cast
+        val swingP = parts.swing
+        val ahead = parts.wakeMs
         if (!casting && swingP < 0 && !flashing) {
             UiKit.divider(c, 0f, height - 1.5f, w, height - 1.5f)
             return ahead
@@ -2946,5 +2947,42 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
 
         private fun str(v: Any?): String? = if (v is String && !isSentinel(v)) v else null
+    }
+}
+
+/**
+ * p-swing-timer (batch 12, the user: "swing timer also turned off cast bar, they should be seperate"): what Home's bottom line shows,
+ * pure. [swingOn] false hides the SWING (its fill, its restart flash, its wake-up), never the CAST bar or a cast's flash. Times on the
+ * app's clock in ms; NaN = none. [wakeMs]: when a swing that starts ahead begins (Long.MAX_VALUE = nothing to wake for).
+ */
+internal object SwingLine {
+    data class Parts(val cast: Boolean, val swing: Double, val flash: Boolean, val wakeMs: Long)
+
+    fun parts(swingOn: Boolean, now: Double, castStart: Double, castEnd: Double, swingStart: Double, swingDur: Double, grace: Double,
+              flashKindSet: Boolean, flashIsSwing: Boolean, flashAge: Long, flashLen: Long): Parts {
+        val cast = !castStart.isNaN() && now < castEnd + 100.0 && castEnd > castStart
+        var swing = -1.0
+        if (!cast && swingOn && !swingStart.isNaN() && swingDur > 0.0) {
+            val p = (now - swingStart) / swingDur
+            if (p >= 0.0 && p <= 1.0 + grace) swing = p
+        }
+        val flash = flashKindSet && (swingOn || !flashIsSwing) && flashAge >= 0 && flashAge < flashLen
+        val wake = if (!cast && swingOn && swing < 0 && !swingStart.isNaN() && swingDur > 0.0 && now < swingStart)
+            (swingStart - now).toLong().coerceAtLeast(1L) else Long.MAX_VALUE
+        return Parts(cast, swing, flash, wake)
+    }
+}
+
+/**
+ * f-class-radial / p-druid-lt-lb: which of the game's class radials the held buttons open - LEFT = LB + LT (a druid's forms, a
+ * paladin's auras, a hunter / warlock's pet commands), RIGHT = RB + RT (a warrior's stances, the pet's spells); the game reads the RAW
+ * shoulders and triggers (blizzard_gamepadactionbars/classactionflyout.lua), so does Home's mirror. Pure.
+ */
+internal object ClassChord {
+    const val NONE = 0; const val LEFT = 1; const val RIGHT = 2
+    fun side(lt: Boolean, rt: Boolean, lb: Boolean, rb: Boolean): Int = when {
+        lb && lt -> LEFT
+        rb && rt -> RIGHT
+        else -> NONE
     }
 }

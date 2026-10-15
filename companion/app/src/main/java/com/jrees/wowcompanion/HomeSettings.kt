@@ -115,7 +115,7 @@ object HomeSettings {
             for (l in listeners) l()
         }
 
-    /** p-swing-timer (a player: "would rather turn this off"): the swing / cast line under the controller in a fight; true = shown (the
+    /** p-swing-timer (a player: "would rather turn this off"): the SWING line under the controller in a fight (batch 12: not the cast bar); true = shown (the
      *  default, today's), false = none */
     var swingTimer: Boolean
         get() = prefs?.getBoolean(KEY_SWING, true) ?: true
@@ -303,8 +303,8 @@ class HomeSettingsSection(context: Context) : View(context) {
         y = row(c, y + GAP, "Combat layout", listOf("In a fight the controller grows, or keeps its size."),
             listOf("Grow", "Same size"), if (HomeSettings.combatGrow) 0 else 1,
             listOf({ HomeSettings.combatGrow = true }, { HomeSettings.combatGrow = false }))
-        // p-swing-timer: the swing / cast line under the controller in a fight
-        y = row(c, y + GAP, "Swing timer", listOf("The swing and cast line under the controller in a fight."),
+        // p-swing-timer: the swing line under the controller in a fight (batch 12: the cast bar is not this setting)
+        y = row(c, y + GAP, "Swing timer", listOf("The swing line under the controller in a fight. The cast bar stays."),
             listOf("On", "Off"), if (HomeSettings.swingTimer) 0 else 1,
             listOf({ HomeSettings.swingTimer = true }, { HomeSettings.swingTimer = false }))
         // f-class-radial: the game's own stance / pet bar placement, read only (no choices: DS Forever never changes it)
