@@ -451,7 +451,13 @@ class HomeBarSelect(
         return order().firstOrNull { (strip.place(it)?.centerX() ?: 0f) > homeX } ?: order().lastOrNull() ?: Room.HOME
     }
 
+    /** the direction last pushed (-1 / +1) and when: its point presses out for [PUSH_MS] (f-bar-cursor-polish) */
+    private var pushedDir = 0
+    private var pushedAt = -10_000L
+    private val PUSH_MS = 180L
+
     private fun step(d: Int) {
+        pushedDir = if (d < 0) -1 else 1; pushedAt = android.os.SystemClock.uptimeMillis()
         val all = order()
         if (all.isEmpty()) return
         val i = all.indexOf(at)
@@ -493,7 +499,13 @@ class HomeBarSelect(
         // arrows, the A glyph on the selection (the user: "the A glyph should show on my current selection"), Home red with B
         // (Strip.barB), the A / B plate. A command cursor without it (refused in a fight): plain arrows (words = false), nothing else
         val ours = if (fadingOut && !open) !shotByCommand || shotHeld else !byCommand || held
-        UiKit.moveArrows(c, box, left = i > 0, right = i in 0 until all.size - 1, words = ours)
+        // f-bar-cursor-polish (the user, 15 Oct: "remove the L and R on the arrows ... a little more of a part of the golden cursor ...
+        // button feedback to pushing a direction"): the points grow out of the gold box, no words; the side just pushed presses out
+        val since = android.os.SystemClock.uptimeMillis() - pushedAt
+        val push = if (since in 0 until PUSH_MS) 1f - since.toFloat() / PUSH_MS else 0f
+        UiKit.cursorArrows(c, box, left = i > 0, right = i in 0 until all.size - 1,
+            pushLeft = if (pushedDir < 0) push else 0f, pushRight = if (pushedDir > 0) push else 0f)
+        if (push > 0f) postInvalidateOnAnimation()
         if (!ours) return
         val g = (box.height() * 0.46f).coerceIn(34f, 48f)
         UiKit.pad(c, aGlyph(), box.right - g * 0.30f, box.bottom - g * 0.30f, g)

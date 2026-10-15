@@ -1906,6 +1906,55 @@ object UiKit {
         }
     }
 
+    /**
+     * THE BAR CURSOR'S ARROWS, PART OF THE GOLD BOX (f-bar-cursor-polish; the user, 15 Oct: "remove the L and R on the arrows and try
+     * to make the arrows look like they are a little more of a part of the golden cursor. maybe even giving button feedback to pushing
+     * a direction"): a gold point grows out of the middle of each side of [focus]'s box ([box] = the element, as [focus] gets it),
+     * in [focus]'s own gold and edge, its base ON the box's gold edge so box and point read as one piece; no words. [pushLeft] /
+     * [pushRight] 1 = that direction was just pushed, easing to 0: the point presses OUT a few px and brightens, the box's edge
+     * on that side with it. [left] / [right] false = no point there (the bar's end).
+     */
+    fun cursorArrows(c: Canvas, box: RectF, left: Boolean, right: Boolean, pushLeft: Float = 0f, pushRight: Float = 0f) {
+        val edgeL = box.left - 5f; val edgeR = box.right + 5f       // [focus]'s gold edge
+        val h = (box.height() * 0.40f).coerceIn(30f, 42f)
+        val w = h * 0.55f
+        val cy = box.centerY()
+        for (toRight in booleanArrayOf(false, true)) {
+            if (if (toRight) !right else !left) continue
+            val push = (if (toRight) pushRight else pushLeft).coerceIn(0f, 1f)
+            val out = 7f * push
+            val base = if (toRight) edgeR - 1.75f + out else edgeL + 1.75f - out
+            val tip = if (toRight) base + w else base - w
+            arrowPath.reset()
+            arrowPath.moveTo(base, cy - h / 2f); arrowPath.lineTo(tip, cy); arrowPath.lineTo(base, cy + h / 2f); arrowPath.close()
+            // its own soft light, as the box's wash (brighter while pushed)
+            val glowR = RectF(minOf(base, tip) - 10f, cy - h / 2f - 10f, maxOf(base, tip) + 10f, cy + h / 2f + 10f)
+            glow(c, glowR, SOFT_GOLD, 0.30f + 0.45f * push)
+            pFlat.style = Paint.Style.FILL
+            pFlat.color = lerpColour(Theme.gold, Color.rgb(255, 240, 170), push)
+            c.drawPath(arrowPath, pFlat)
+            // the box's edge carried round the point, the same weights as [focus]'s
+            pFlat.style = Paint.Style.STROKE; pFlat.strokeJoin = Paint.Join.ROUND
+            pFlat.strokeWidth = 3.5f; pFlat.color = Color.argb(200, 120, 72, 0)
+            c.drawPath(arrowPath, pFlat)
+            pFlat.strokeJoin = Paint.Join.MITER; pFlat.style = Paint.Style.FILL
+            // the push lights the box's edge on that side too: the box and its point move as one
+            if (push > 0f) {
+                pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3.5f
+                pFlat.color = Color.argb((200 * push).toInt(), 255, 240, 170)
+                val x = if (toRight) edgeR else edgeL
+                c.drawLine(x, box.top - 5f + 8f, x, box.bottom + 5f - 8f, pFlat)
+                pFlat.style = Paint.Style.FILL
+            }
+        }
+    }
+
+    private fun lerpColour(a: Int, b: Int, k: Float): Int {
+        val t = k.coerceIn(0f, 1f)
+        fun ch(x: Int, y: Int) = (x + (y - x) * t).toInt().coerceIn(0, 255)
+        return Color.argb(ch(Color.alpha(a), Color.alpha(b)), ch(Color.red(a), Color.red(b)), ch(Color.green(a), Color.green(b)), ch(Color.blue(a), Color.blue(b)))
+    }
+
     private val pArrowWord = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER; color = Color.rgb(46, 26, 0)
     }
