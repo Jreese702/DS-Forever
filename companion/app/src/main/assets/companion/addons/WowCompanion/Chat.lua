@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat23"     -- chat23: the edit box that stands on its own hides too (b-top-chat-bar)
+local CHATV = "chat24"     -- chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -790,6 +790,11 @@ end
 -- ends. Alpha only: never Hide (the controller's chat shortcut asks IsShown), never its focus, its text or a hook on it; a box that
 -- already goes with its window is never touched. The game re-showing it (its own alpha) is caught by the poll. Each box's state
 -- rides the `chathide` report (`boxes`), so the device says which piece it was.
+-- chat24 (1.0.8-test7, a release blocker): OFF. The test build that first wrote this box's alpha also opened the game's bags over
+-- the Bags room and broke that room (the user: "the Bag room now opens the bags again and bugs out"), the pattern of a tainted
+-- controller UI, the risk this file's rule above was written for. Until the device's `blocked` reports say otherwise, the box is
+-- never written again; the `boxes` report still says which box stands on its own. true = hide it (chat23's behaviour).
+local BOX_HIDE = false
 local boxes = { saved = {} }
 function boxes.each(fn)
     for _, n in ipairs(chatNames()) do
@@ -807,6 +812,7 @@ local function boxFocused(b)
     return ok and rawequal(focus, b)
 end
 function boxes.hide()
+    if not BOX_HIDE then return end
     boxes.each(function(name, b)
         if boxFocused(b) or not boxShows(b) then return end
         if boxes.saved[name] == nil then
