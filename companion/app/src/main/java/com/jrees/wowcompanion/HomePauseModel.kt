@@ -77,6 +77,11 @@ object HomePauseModel {
         )),
     )
 
+    /** f-trackpad-keyboard (the user's pick: "D-pad Left"): the Keyboard & Trackpad tool, Home's own (HomeView.openTypeTool) */
+    val TOOL = Slice("typetool", "Keyboard & Trackpad", Kind.HOME)
+    /** its word on the context band */
+    const val TOOL_WORD = "Keyboard & Trackpad"
+
     /** D-pad UP's custom page: eight one-shot emotes (the game's order), header "Emotes" */
     val EMOTES: List<Slice?> = kitOrder(listOf("Dance", "Point", "Wave", "Kneel", "Train", "Chicken", "Angry", "Cheer")
         .map { game("emote", it, "emote_" + it.lowercase()) })
@@ -207,13 +212,13 @@ object HomePauseModel {
             return true
         }
 
-        /** a D-pad direction (0 up, 1 right, 2 down, 3 left) pressed or let go */
+        /** a D-pad direction (0 up, 1 right, 2 down, 3 left) pressed or let go; f-trackpad-keyboard: LEFT = the Keyboard & Trackpad */
         fun dpad(dir: Int, down: Boolean): Act {
-            if (dir != 0 && dir != 2) return Act.None                   // left / right: no option (the game's indicators hide)
+            if (dir != 0 && dir != 2 && dir != 3) return Act.None        // right: no option (kept free)
             if (down) { heldOption = dir; return Act.None }
             if (heldOption != dir) return Act.None                      // a release with no press seen
             heldOption = -1
-            return if (dir == 0) { page = EMOTE_PAGE; pointed = -1; Act.None } else Act.Sit
+            return when (dir) { 0 -> { page = EMOTE_PAGE; pointed = -1; Act.None }; 3 -> Act.Pick(TOOL); else -> Act.Sit }
         }
 
         /** a finger on slot [s] (the kit's hit test): a pick at once; [HUB] closes */

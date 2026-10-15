@@ -18,6 +18,42 @@ object InputSink {
         fun key(xKeycode: Int, down: Boolean)
         /** one left click at this fraction of the game's screen (0..1 each way) */
         fun tap(fx: Float, fy: Float)
+        /** f-trackpad-keyboard: the game's mouse pointer moved by (dx, dy) screen pixels (the trackpad); default: nothing */
+        fun moveBy(dx: Int, dy: Int) {}
+        /** f-trackpad-keyboard: the left / right mouse button down / up where the pointer is; default: nothing */
+        fun button(right: Boolean, down: Boolean) {}
+    }
+
+    // ---------------------------------------------------------------- f-trackpad-keyboard: the tool's ONLY ways into the game
+    /** one worker for the tool's keys and pointer (never the UI thread; in order) */
+    private val gameIo = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /** [back] Backspaces, then [type] typed: ONLY GameTyping's allowed characters reach the game (letters, digits, space) */
+    fun gameKeys(back: Int, type: String) {
+        val s = sink ?: return
+        val text = type.filter { GameTyping.allowed(it) }
+        gameIo.execute {
+            repeat(back.coerceIn(0, 200)) { s.key(GameTyping.X_BACKSPACE, true); s.key(GameTyping.X_BACKSPACE, false); Thread.sleep(CHAR_GAP_MS) }
+            if (text.isNotEmpty()) typeText(text)
+        }
+    }
+
+    /** Enter, pressed and let go (the game's text box takes the line) */
+    fun gameEnter() {
+        val s = sink ?: return
+        gameIo.execute { s.key(GameTyping.X_ENTER, true); Thread.sleep(CHAR_GAP_MS); s.key(GameTyping.X_ENTER, false) }
+    }
+
+    /** the trackpad: the pointer moved */
+    fun gameMove(dx: Int, dy: Int) {
+        val s = sink ?: return
+        gameIo.execute { s.moveBy(dx, dy) }
+    }
+
+    /** a click (left / right) where the pointer is */
+    fun gameClick(right: Boolean) {
+        val s = sink ?: return
+        gameIo.execute { s.button(right, true); Thread.sleep(30); s.button(right, false) }
     }
 
     @Volatile var sink: Sink? = null

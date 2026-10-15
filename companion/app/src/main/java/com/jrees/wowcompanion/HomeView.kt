@@ -202,6 +202,7 @@ class HomeView(
     /** another room opens: everything borrowed goes back where it came from, last lent first */
     fun giveBack() {
         watchB(false)
+        closeTypeTool()                                                   // f-trackpad-keyboard: another room: the tool closes, the guest freed
         if (lent(mapView)) {
             mapView.compact = false; mapView.compactZoomButtons = false; mapView.headerRightInset = 0f; mapView.buttonTopInset = 0f
             mapView.showHeader = true
@@ -291,6 +292,28 @@ class HomeView(
      * secure cell on the add-on's "classr" row (the game's own cast / pet action), a long-press on a pet spell its autocast. While
      * Home's chat or map module holds the controller the game's radial cannot open: the layer says so instead.
      */
+    // ---------------------------------------------------------------- f-trackpad-keyboard: the Keyboard & Trackpad tool
+    /** the tool over the whole page while open; it holds the generic guest "home" (as the chat module does) and takes its presses */
+    private var typeWanted = false
+    private val typeTool: TypeToolView by lazy { TypeToolView(context) { closeTypeTool() } }
+    fun openTypeTool() {
+        if (typeWanted) return
+        if (typeTool.parent == null) addView(typeTool)
+        typeWanted = true
+        typeTool.visibility = View.VISIBLE
+        typeTool.bringToFront()
+        typeTool.open()
+        requestLayout()
+        if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = true))) Log.i(TAG, "type tool: hold")
+    }
+    fun closeTypeTool() {
+        if (!typeWanted) return
+        typeWanted = false
+        typeTool.visibility = View.GONE
+        if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))) Log.i(TAG, "type tool: free")
+        onBHome?.invoke()
+    }
+
     private var classHint: String? = null
     private val classLayer: View by lazy { object : View(context) {
         private var downAt = -1
@@ -412,6 +435,7 @@ class HomeView(
     }
 
     private fun onB() {
+        if (typeWanted) return                                            // the tool's B comes through the guest (it closes the tool)
         // while the chat module holds the controller its B comes through the guest (the chat's own chain), not this read-only watch
         if (chatWanted && chatHeld) return
         if (mapWanted && mapHeld) return
@@ -505,6 +529,7 @@ class HomeView(
      * the ChatView while it holds, else the buff / debuff list's. The two never hold at once (the module closes the list first).
      */
     fun auraPad(msg: JSONObject) {
+        if (typeWanted) { typeTool.onPad(msg); return }                  // f-trackpad-keyboard: the tool holds the guest
         if (mapWanted) { mapPad(msg); return }
         if (!chatWanted) { auraPane.onPad(msg); return }
         if (msg.has("lost")) chatHeld = false else chatHeld = true
@@ -541,6 +566,10 @@ class HomeView(
     }
 
     fun auraGuestAck(msg: JSONObject) {
+        if (typeWanted) {
+            if (msg.optString("op") == "hold" && !msg.optBoolean("ok")) Log.i(TAG, "type tool: hold refused (${msg.optString("why")})")
+            return
+        }
         if (mapWanted) {
             when (msg.optString("op")) {
                 "hold" -> if (msg.optBoolean("ok")) { mapHeld = true; mapBSaid = null; mapView.padHints = true; mapView.hostStart(); syncMapB() }
@@ -561,7 +590,7 @@ class HomeView(
     }
 
     /** something of Home's wants the guest "home" now: the full-screen chat module, or an open buff / debuff list (MainActivity's b7b check) */
-    fun homeGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null
+    fun homeGuestWanted(): Boolean = typeWanted || chatWanted || mapWanted || auraPane.open != null
     /** the chat module is full screen (the ChatView lent, the guest "home" wanted): only then does the chat's B sign reach the game */
     val chatModuleOn: Boolean get() = chatWanted
 
@@ -1070,6 +1099,8 @@ class HomeView(
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec))
+        if (typeWanted) typeTool.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(hSpec), MeasureSpec.EXACTLY))
         val cw = if (classRect.isEmpty) MeasureSpec.getSize(wSpec) else classRect.width()
         val ch = if (classRect.isEmpty) MeasureSpec.getSize(hSpec) else classRect.height()
         classLayer.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ch, MeasureSpec.EXACTLY))
@@ -1101,6 +1132,7 @@ class HomeView(
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        if (typeWanted) typeTool.layout(0, 0, r - l, b - t)                  // f-trackpad-keyboard: the whole page
         // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint
         if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
         for ((p, v) in views) {
