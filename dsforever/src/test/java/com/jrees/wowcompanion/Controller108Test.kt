@@ -120,3 +120,21 @@ class CastPredictTest {
         assertTrue(p.cast)
     }
 }
+
+/** f-class-radial rework (the user: "it goes in between the map and chat, animating them ourtwards"): the wheel's slot fits */
+class ClassSlotTest {
+    private val w = 1240f; private val h = 1000f; private val g = 8f
+    @Test fun atRestTheWheelFillsTheMiddleUnderTheBars() {
+        val s = ClassSlot.of(w, h, barsBottom = 208f, gap = g, maxShare = 0.5f)       // the small diamonds at rest
+        assertEquals("half the width at most", 620f, s.side, 0.5f)
+        assertEquals("centred", w / 2f, s.left + s.side / 2f, 0.5f)
+        assertTrue("under the bars", s.top >= 208f + g)
+        assertTrue("above the bottom", s.top + s.side <= h - g + 0.5f)
+        assertEquals("each column slides out by half the wheel and a gap", 318f, s.push, 0.5f)
+    }
+    @Test fun theCombatLayoutStillFitsASmallerWheel() {
+        val s = ClassSlot.of(w, h, barsBottom = 390f, gap = g, maxShare = 0.5f)       // Grow: the bigger band
+        assertTrue("a usable wheel: ${s.side}", s.side >= 450f)
+        assertTrue(s.top >= 390f + g && s.top + s.side <= h - g + 0.5f)
+    }
+}

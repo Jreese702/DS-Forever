@@ -2117,10 +2117,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * (pet mode on / pet spell autocasting) wears a 4 px gold ring 112 px across; empty places at 45 %.
      * Display only: a touch does nothing (several of these actions are protected; tap-to-fire is parked).
      */
-    private fun drawRadial(c: Canvas, r: Radial, cx: Float, cy: Float, vw: Float, vh: Float) {
-        val sc = vw / 1240f
-        pFill.color = Color.argb(166, 0, 0, 0)
-        c.drawRect(0f, 0f, vw, vh, pFill)
+    private fun drawRadial(c: Canvas, r: Radial, cx: Float, cy: Float, vw: Float, vh: Float, fitSc: Float = 0f) {
+        // fitSc > 0: Home's wheel slot (f-class-radial rework): fitted to its box, no dimming of the page
+        val sc = if (fitSc > 0f) fitSc else vw / 1240f
+        if (fitSc <= 0f) {
+            pFill.color = Color.argb(166, 0, 0, 0)
+            c.drawRect(0f, 0f, vw, vh, pFill)
+        }
         aRadBase?.let { a -> val hw = 256f * sc; drawBox(c, a, cx - hw, cy - hw, cx + hw, cy + hw) }
         val slot = 157f * sc
         for (i in 0 until 8) {
@@ -2189,23 +2192,27 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val open = chordRadial() != null
         if (open != classOpen) { classOpen = open; onClassRadial?.invoke(open) }
     }
-    /** the radial's place centre in a [vw] x [vh] canvas (the same geometry [drawRadial] uses, centred) */
+    /** the scale that fits the radial (its base art 512 units; places to 168 + 157 / 2) into a [vw] x [vh] box */
+    private fun fitScale(vw: Float, vh: Float) = min(vw, vh) / 520f
+    /** the radial's place centre in a [vw] x [vh] box (the same geometry [drawRadial] uses, fitted and centred) */
     private fun placeAt(i: Int, vw: Float, vh: Float, out: FloatArray) {
-        val sc = vw / 1240f
+        val sc = fitScale(vw, vh)
         val a = Math.toRadians(i * 45.0)
         out[0] = vw / 2f + (sin(a) * 168.0).toFloat() * sc
         out[1] = vh / 2f - (kotlin.math.cos(a) * 168.0).toFloat() * sc
     }
-    /** draw the open class radial over a [vw] x [vh] canvas (Home's whole page); false = none open */
+    /** draw the open class radial fitted into a [vw] x [vh] box (Home's wheel slot); false = none open */
     fun drawClassRadial(c: Canvas, vw: Float, vh: Float): Boolean {
         val r = chordRadial() ?: return false
-        drawRadial(c, r, vw / 2f, vh / 2f, vw, vh)
+        drawRadial(c, r, vw / 2f, vh / 2f, vw, vh, fitScale(vw, vh))
         return true
     }
+    /** the chord's side now: true = LB + LT (the left radial), false = RB + RT */
+    fun classRadialLeft(): Boolean = ClassChord.side(padLt, padRt, padLb, padRb) != ClassChord.RIGHT
     /** the place under ([x], [y]) in that canvas: 0..7, or -1 (none, or an empty place) */
     fun classRadialHit(x: Float, y: Float, vw: Float, vh: Float): Int {
         val r = chordRadial() ?: return -1
-        val half = 157f * (vw / 1240f) / 2f
+        val half = 157f * fitScale(vw, vh) / 2f
         val pt = FloatArray(2)
         for (i in 0 until 8) {
             if (!r.has[i]) continue
