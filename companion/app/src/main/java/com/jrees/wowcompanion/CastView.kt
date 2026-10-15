@@ -1119,11 +1119,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         preset = CastSettings.buttonLayout
         estimate = CastSettings.combatCooldowns == CastSettings.CombatCooldowns.ESTIMATE
         pad.triggerSwap = CastSettings.triggerSwap
-        when (preset) {
-            CastSettings.ButtonLayout.NINTENDO -> { nameLb = "L"; nameRb = "R"; nameLt = "ZL"; nameRt = "ZR" }
-            CastSettings.ButtonLayout.PLAYSTATION -> { nameLb = "L1"; nameRb = "R1"; nameLt = "L2"; nameRt = "R2" }
-            CastSettings.ButtonLayout.XBOX -> { nameLb = "LB"; nameRb = "RB"; nameLt = "LT"; nameRt = "RT" }
-        }
+        nameLb = Glyphs.name("lshoulder", preset); nameRb = Glyphs.name("rshoulder", preset)
+        nameLt = Glyphs.name("ltrigger", preset); nameRt = Glyphs.name("rtrigger", preset)
         // f-abxy-split: the ABXY LOCATION decides where each face action is drawn (the Nintendo arrangement: Jump under A on the
         // right, Back under B at the bottom, Interact under X on top, Inspect under Y on the left); the BUTTON GLYPHS only which
         // picture each action wears. The D-pad, the game and every binding stay exactly as they are.

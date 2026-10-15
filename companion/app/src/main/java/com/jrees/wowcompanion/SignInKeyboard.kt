@@ -39,7 +39,7 @@ object SignInKeyboard {
         else raw
 
     /** the pop-ups' line (the user's pick: "Hint now + block A") */
-    const val HINT = "Type with Keyboard; don't press A."
+    val HINT: String get() = "Type with Keyboard; don't press ${Glyphs.name("a")}."
 
     /**
      * The controller's A does nothing for the game while the code / password pop-up shows (the user's pick; on the Thor A "selects the

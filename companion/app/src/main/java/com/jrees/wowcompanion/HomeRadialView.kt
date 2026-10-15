@@ -651,7 +651,7 @@ class HomeRadialView(
         val onAuto = choosing && flow.pointed in 0 until RadialModel.PER_PAGE && flow.pointed != RadialModel.PLUS &&
             src.getOrNull(flow.pointed)?.pinned == false
         val ch = choice?.takeIf { choosing }?.let {
-            UiKit.RadialChoice(Icons.get(it.icon), it.name, prompt = pinNote ?: if (onAuto) "Press A to pin it here" else null, hold = hold) }
+            UiKit.RadialChoice(Icons.get(it.icon), it.name, prompt = pinNote ?: if (onAuto) "Press ${Glyphs.name("a")} to pin it here" else null, hold = hold) }
         val plus = if (RadialModel.plusOn(doc) && (choosing || flow.page == 0)) UiKit.CR_PLUS else -1
         val moving = UiKit.consumableRadial(c, screen, disc, size, items, flow.pointed, if (choosing) 0 else flow.page,
             if (choosing) 1 else RadialModel.pages(doc), t, glyphs = flow.pickA, plusSlot = plus, choose = ch, hubDown = hubDown())

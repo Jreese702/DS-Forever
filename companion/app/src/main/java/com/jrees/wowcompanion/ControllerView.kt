@@ -232,7 +232,7 @@ class ControllerView(
         // b-radial-icon: the toolbar's own mini wheel (CastView's D-pad Up), not a potion
         DsPlace("Radial", null, "Opens the radial of the consumables in your bags.", wheel = true),
         DsPlace("Map", "ricon_map", "Opens Home's map."),
-        DsPlace("Home bar", "home_live_base", "Puts the bar's cursor on the Home swirl: pick a room, A opens it."),
+        DsPlace("Home bar", "home_live_base", "Puts the bar's cursor on the Home swirl: pick a room, ${Glyphs.name("a")} opens it."),
     )
     private fun dsCentre(p: Int): Pair<Float, Float> {
         val cx = SPLIT / 2f; val cy = 560f
@@ -423,7 +423,7 @@ class ControllerView(
             UiKit.choice(c, openRect(0, w, h), "Tap", tap)
             UiKit.choice(c, openRect(1, w, h), "Hold", !tap)
             c.drawText("Wheels: pick", x0 + 8f, h - 153f, pi)
-            UiKit.choice(c, pickRect(0, w, h), "Press A", pickA)                 // UI Art: a lone "A" reads as a glyph
+            UiKit.choice(c, pickRect(0, w, h), "Press ${Glyphs.name("a")}", pickA)                 // UI Art: a lone "A" reads as a glyph
             UiKit.choice(c, pickRect(1, w, h), "Release", !pickA)
             if (k != null && k.focus == "dpad") {
                 inkHint(c, x1, h - 320f, glyph(8), "Change")
