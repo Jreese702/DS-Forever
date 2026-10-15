@@ -25,6 +25,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     /** the companion's status (System); built after [gameUi] so the status line's one listener is its */
     val companion = GameUiSection(context, GameUiSection.Part.COMPANION)
     val tabBar = SettingsTabBar(context) { t -> show(t) }
+    /** "What it does" (phase 2): the row's picture, right of the page, on the tabs that have pictures */
+    val preview = SettingsPreviewView(context) { homeSection.dpadState()?.want }
     private val scroll = ScrollView(context).apply { setBackgroundColor(Theme.ink) }
     val pad: SettingsPad
 
@@ -49,14 +51,17 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         addView(tabBar, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val page = FrameLayout(context)
         page.addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        val body = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         pad = SettingsPad(context, scroll, listOf(
             // System's first button is "Reload game UI", the room's one destructive control: the cursor never STARTS there
             SettingsPad.Section(view, { view.focusTargets() }, startSkip = 1),
             SettingsPad.Section(homeSection, targets = { homeSection.focusTargets() }),
             SettingsPad.Section(gameUi, targets = { gameUi.focusTargets() }),
-        ), gameUi, padSource, tabBar) { dir -> show(SettingsTabs.step(tab, dir)) }
+        ), gameUi, padSource, tabBar, { dir -> show(SettingsTabs.step(tab, dir)) }, { v, r -> rowOf(v, r.centerX(), r.centerY()) })
         page.addView(pad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        addView(page, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        body.addView(page, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        body.addView(preview, LinearLayout.LayoutParams(PREVIEW_W, ViewGroup.LayoutParams.MATCH_PARENT))
+        addView(body, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         scroll.setOnScrollChangeListener { _, _, _, _, _ -> pad.invalidate() }
         show(SettingsTabs.last, force = true)
     }
@@ -74,7 +79,34 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         companion.visibility = if (SettingsTabs.Block.COMPANION.tab == t) View.VISIBLE else View.GONE
         tabBar.tab = t
         scroll.scrollTo(0, 0)
+        // the panel: on the tabs with pictures, starting on the tab's first row that has one
+        val rows = SettingsTabs.blocks(t).flatMap { it.rows }
+        preview.visibility = if (rows.any { SettingsPreview.has(it) }) View.VISIBLE else View.GONE
+        preview.id = rows.firstOrNull { SettingsPreview.has(it) }
         pad.tabChanged()
+    }
+
+    /** the row at ([x], [y]) of section [v] (its own coordinates) shows in the panel, when it has a picture */
+    private fun rowOf(v: View, x: Float, y: Float) {
+        val id = when (v) { view -> view.rowAt(x, y); homeSection -> homeSection.rowAt(x, y); else -> null }
+        if (SettingsPreview.has(id)) preview.id = id
+    }
+
+    /** a touch on a row: the panel shows it (the touch itself goes on to the row as always) */
+    override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        if (e.actionMasked == MotionEvent.ACTION_DOWN && preview.visibility == View.VISIBLE) {
+            val col = scroll.getChildAt(0) as? ViewGroup
+            val sx = e.x; val sy = e.y - tabBar.height + scroll.scrollY
+            if (col != null && sx < scroll.width) for (i in 0 until col.childCount) {
+                val ch = col.getChildAt(i)
+                if (ch.visibility == View.VISIBLE && sy >= ch.top && sy < ch.bottom) { rowOf(ch, sx, sy - ch.top); break }
+            }
+        }
+        return super.dispatchTouchEvent(e)
+    }
+
+    private companion object {
+        const val PREVIEW_W = 470
     }
 }
 
@@ -100,6 +132,8 @@ class SettingsPad(
     private val tabBar: SettingsTabBar? = null,
     /** L / R (and the D-pad's left / right on the tab row): the next tab (-1 / +1) */
     private val onTabStep: (Int) -> Unit = {},
+    /** the cursor moved onto a button: its section's view and the button there (the "What it does" panel follows its row) */
+    private val onFocus: (View, RectF) -> Unit = { _, _ -> },
 ) : View(context) {
 
     /** one section of the room and its buttons, in its own coordinates; its first [startSkip] buttons are never where the cursor starts */
@@ -283,6 +317,7 @@ class SettingsPad(
 
     private fun moveTo(t: Target) {
         focus = centre(t.box)
+        onFocus(t.section.view, t.local)
         // keep it in view, with a margin
         val y0 = scroll.scrollY; val vh = scroll.height
         if (t.box.top - MARGIN < y0) scroll.smoothScrollTo(0, (t.box.top - MARGIN).toInt().coerceAtLeast(0))

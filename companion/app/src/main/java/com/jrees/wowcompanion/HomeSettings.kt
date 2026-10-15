@@ -288,9 +288,16 @@ class HomeSettingsSection(context: Context) : View(context) {
         lay(c)
     }
 
+    /** the rows as last drawn, with their words (the "What it does" panel) */
+    private val rowHits = ArrayList<Pair<RectF, String>>()
+
+    /** the row at ([x], [y]) in this view, by its words; null = none */
+    fun rowAt(x: Float, y: Float): String? = rowHits.firstOrNull { it.first.contains(x, y) }?.second
+
     /** draws (or, with no canvas, only measures) the section; returns its depth */
     private fun lay(c: Canvas?): Float {
         boxes.clear()
+        if (c != null) rowHits.clear()
         // THE PAGE'S ROW LOOK (the user's signed-off picture, 2026-10-06; Map's emulator check: this section had no row boxes and
         // bigger buttons): a raised row, its label and sub-line on the left, its choices as one compact pair on the right. A row is
         // ROW tall (48 dp) and each choice's touch area spans the whole row, though the button is drawn the page's compact size
@@ -346,7 +353,7 @@ class HomeSettingsSection(context: Context) : View(context) {
                     acts: List<() -> Unit>?): Float {
         val h = maxOf(ROW, 75f + (subs.size - 1) * SUB_H + 21f)
         val box = RectF(16f, top, width - 16f, top + h)
-        if (c != null) { pRow.color = Theme.raised; c.drawRoundRect(box, 8f, 8f, pRow) }
+        if (c != null) { pRow.color = Theme.raised; c.drawRoundRect(box, 8f, 8f, pRow); rowHits.add(RectF(box) to label) }
         pBtn.textSize = SEG_TEXT
         var segW = SEG_MIN_W
         for (t in choices) segW = maxOf(segW, pBtn.measureText(t) + SEG_PAD)

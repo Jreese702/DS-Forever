@@ -189,8 +189,15 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred))
             .filter { !it.isEmpty }.map { RectF(it) }
 
+    /** the rows as last drawn, with their words (the "What it does" panel follows the row under the cursor or a touch) */
+    private val rowHits = ArrayList<Pair<RectF, String>>()
+
+    /** the row at ([x], [y]) in this view, by its words; null = none */
+    fun rowAt(x: Float, y: Float): String? = rowHits.firstOrNull { it.first.contains(x, y) }?.second
+
     /** every hit box empty: a block not drawn on this tab presses nothing */
     private fun clearBoxes() {
+        rowHits.clear()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segChat, segLimit, segFg, segMult, segPerf))
@@ -665,6 +672,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun row(c: Canvas, top: Float, label: String, sub: String, enabled: Boolean,
                     control: (RectF) -> RectF): RectF {
         val box = RectF(16f, top, width - 16f, top + ROW_H)
+        rowHits.add(RectF(box) to label)
         pFill.color = Theme.raised
         c.drawRoundRect(box, 8f, 8f, pFill)
         val hit = control(box)
