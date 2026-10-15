@@ -29,7 +29,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S = WC.S
 
-local HV = "hub9"           -- hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub10"          -- hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -141,8 +141,12 @@ end
 -- UpdateSystemSettingOpacity sets their alpha again whenever a layout applies (login, /reload, leaving Edit Mode), so a secure
 -- post-hook puts the 0 back (and keeps the opacity it set, to give back on show). A frame this client does not have is skipped and
 -- reported (els[].miss), so the first run on the device says which ones exist.
+-- hub10 (f-durability, the user 2026-10-15: "show the heads up display of broken armor from the top screen and move that to the bottom
+-- between the buffs"): the game's DURABILITY figure (DurabilityFrame) rides too. Home draws it between its buff and debuff rows from
+-- what Bags.lua reads of it; the game shows / hides it by itself (DurabilityFrame_SetAlerts), and the OnShow hook below puts the 0 back.
+-- Its IsShown is untouched (alpha only), so Bags.lua still reads when the game shows it.
 local RIDERS = { "BuffFrame", "DebuffFrame", "DeadlyDebuffFrame", "ExternalDefensivesFrame",
-                 "MainStatusTrackingBarContainer", "SecondaryStatusTrackingBarContainer" }
+                 "MainStatusTrackingBarContainer", "SecondaryStatusTrackingBarContainer", "DurabilityFrame" }
 local riders = { hidden = false, saved = {}, hooked = {} }
 
 local function riderFrame(name)
