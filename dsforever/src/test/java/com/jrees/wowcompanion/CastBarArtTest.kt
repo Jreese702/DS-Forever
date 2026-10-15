@@ -89,3 +89,14 @@ class CastAnyTest {
         assertTrue(!SwingLine.parts(false, 0.0, Double.NaN, Double.NaN, Double.NaN, Double.NaN, 0.5, true, true, 100L, 250L).flash)
     }
 }
+
+/** f-cast-name (the user's pick D, centred): the name fits the bar beside the icon */
+class CastNameTest {
+    private val w: (String) -> Float = { it.length * 10f }
+    @Test fun aNameThatFitsIsWhole() = assertEquals("Lightning Bolt", CastFx.fit("Lightning Bolt", 500f, w))
+    @Test fun aLongNameEndsInAnEllipsis() {
+        val f = CastFx.fit("Conjure Refreshment Table of the Ancients", 150f, w)
+        assertTrue(f, f.endsWith("\u2026") && w(f) <= 150f)
+    }
+    @Test fun theBarStartsAfterTheIconAndItsGap() = assertTrue(CastFx.ICON_X + CastFx.ICON_SIDE + CastFx.ICON_GAP < 60f)
+}

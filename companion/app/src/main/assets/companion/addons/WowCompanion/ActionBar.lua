@@ -904,6 +904,7 @@ end
 -- hudS.ce = { x = 1 done / 0 interrupted or failed, t = when } for 2 s after it ends.
 -- f-cast-bar-art (the game's own bar look): cs.n = 1 when the cast cannot be interrupted (UnitCastingInfo's 8th /
 -- UnitChannelInfo's 7th return, read through S() and compared after it), ce.h = 1 when a CHANNEL ended (its own finish).
+-- f-cast-name: cs.nm = the cast's name, cs.i = its icon (texture file ID), for the bar's centred name and its icon.
 local castNow, castEnd = nil, nil
 WC.hudCastSeen, WC.hudCastDropped = 0, 0
 
@@ -932,6 +933,9 @@ local function noteCast(event)
         end
         castNow = { k = ch and "h" or "c", s = math.floor(st + 0.5) / 1000, e = math.floor(en + 0.5) / 1000 }
         if S(function() return select(ch and 7 or 8, fn("player")) end) == true then castNow.n = 1 end
+        -- f-cast-name: the cast's name and icon (UnitCastingInfo / UnitChannelInfo's 1st and 3rd returns; plain for "player")
+        castNow.nm = realStr(S(function() return (fn("player")) end))
+        castNow.i = SN(function() return select(3, fn("player")) end)
         castEnd = nil
     elseif not castNow then
         return
