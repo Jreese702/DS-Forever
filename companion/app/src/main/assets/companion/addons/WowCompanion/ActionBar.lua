@@ -546,6 +546,13 @@ end
 local function flyoutEntries(id)
     local ok, _, _, numSlots = CALL(GetFlyoutInfo, id)
     local list = {}
+    -- f-chord-icons: the form / stance / aura on now (the game's shapeshift bar), so the app can show ITS icon on the chord's buttons
+    local on = {}
+    local okn, nf = CALL(GetNumShapeshiftForms)
+    for f = 1, (okn and num(nf) or 0) do
+        local fr = pack(CALL(GetShapeshiftFormInfo, f))
+        if fr[1] and fr[3] == true and num(fr[5]) then on[num(fr[5])] = true end
+    end
     numSlots = ok and num(numSlots) or 0
     for i = 1, numSlots do
         local r = pack(CALL(GetFlyoutSlotInfo, id, i))
@@ -553,7 +560,8 @@ local function flyoutEntries(id)
         if r[1] and spellID and known and #list < 8 then
             local okt, tex = CALL(function() return C_Spell.GetSpellTexture(spellID) end)
             -- `p`: the radial's place (1 = top, clockwise), the known spells in the flyout's order as the game lays them
-            list[#list + 1] = { k = "spell", id = spellID, n = name, i = okt and num(tex) or nil, e = true, p = #list + 1 }
+            list[#list + 1] = { k = "spell", id = spellID, n = name, i = okt and num(tex) or nil, e = true, p = #list + 1,
+                                act = on[spellID] and 1 or nil }
         end
     end
     return list
@@ -1401,6 +1409,7 @@ local LAYOUT_EVENTS = {
     "UPDATE_BONUS_ACTIONBAR", "GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED", "GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED",
     "PET_BAR_UPDATE", "CVAR_UPDATE", "SPELLS_CHANGED",
     "UNIT_PET", "SPELL_FLYOUT_UPDATE", "LEARNED_SPELL_IN_SKILL_LINE",   -- class-action radials (hud.ca)
+    "UPDATE_SHAPESHIFT_FORM",                                            -- f-chord-icons: the form / stance / aura on now
 }
 -- face icons (hudS.F): state, read a frame after Blizzard updates them. PLAYER_TARGET_CHANGED (registered
 -- in STATE_EVENTS) takes the same faceSoon path; it is NOT a layout trigger.
