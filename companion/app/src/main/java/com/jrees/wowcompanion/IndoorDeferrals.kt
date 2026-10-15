@@ -52,6 +52,9 @@ internal class IndoorDeferrals(private val file: File, private val build: String
 
     val size: Int get() = entries.size
 
+    /** every deferred building and its reason, oldest first (Settings' list, f-map-tracker) */
+    fun reasons(): List<Pair<String, String>> = entries.map { (k, e) -> k to e.reason }
+
     private fun save() {
         runCatching {
             val o = JSONObject()
