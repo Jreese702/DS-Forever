@@ -2228,6 +2228,34 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
     /** a class radial exists for that chord (Home's hint while a module holds the controller) */
     fun hasClassRadial(left: Boolean): Boolean = (if (left) hud?.caL else hud?.caR) != null
+
+    /** f-chord-icons: the buttons wearing the radial icon now (ClassChord.iconsOn); none while a window has the pad */
+    private fun chordIconsOn(): Int {
+        val h = hud ?: return 0
+        if (!barsUsable) return 0
+        return ClassChord.iconsOn(padLt, padRt, padLb, padRb, h.caL != null, h.caR != null)
+    }
+    /** that side's radial icon, loaded (null = none, or still loading: the normal icon shows meanwhile) */
+    private fun chordIcon(left: Boolean): Bitmap? {
+        val r = (if (left) hud?.caL else hud?.caR) ?: return null
+        val id = ClassChord.iconOf(r.has, r.icons, r.lit)
+        if (id <= 0) return null
+        return iconReady[id] ?: run { requestIcon(id); null }
+    }
+    /** the icon in a circle of radius [ir] at ([cx], [cy]) with a gold edge (the radial's own look) */
+    private fun drawChordIcon(c: Canvas, bmp: Bitmap, cx: Float, cy: Float, ir: Float, alpha: Int = 255) {
+        c.save()
+        litClip.reset(); litClip.addCircle(cx, cy, ir, Path.Direction.CW); c.clipPath(litClip)
+        val w = bmp.width.toFloat(); val hh = bmp.height.toFloat()
+        srcRect.set((w * 0.07f).toInt(), (hh * 0.07f).toInt(), (w * 0.93f).toInt(), (hh * 0.93f).toInt())
+        rect.set(cx - ir, cy - ir, cx + ir, cy + ir)
+        val a0 = pArt.alpha; pArt.alpha = alpha
+        c.drawBitmap(bmp, srcRect, rect, pArt)
+        pArt.alpha = a0
+        c.restore()
+        pStroke.color = withAlpha(Theme.gold, alpha); pStroke.strokeWidth = ir * 0.14f
+        c.drawCircle(cx, cy, ir, pStroke)
+    }
     private var radialName: Paint? = null
 
     // =================================================================== the Home page's bars band
@@ -2349,10 +2377,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         // under the bumpers (fading out while both are held)
         if (restA > 0) {
             val litL = barsUsable && padLt; val litR = barsUsable && padRt
+            val on = chordIconsOn()
             chipRect.set(TRIG_X * ps - hw, cy - hh, TRIG_X * ps + hw, cy + hh)
-            UiKit.triggerChip(c, chipRect, gl, litL, restA)
+            triggerOrIcon(c, gl, litL, restA, if ((on and ClassChord.ICON_ZL) != 0) chordIcon(true) else null)
             chipRect.set(width - TRIG_X * ps - hw, cy - hh, width - TRIG_X * ps + hw, cy + hh)
-            UiKit.triggerChip(c, chipRect, gr, litR, restA)
+            triggerOrIcon(c, gr, litR, restA, if ((on and ClassChord.ICON_ZR) != 0) chordIcon(false) else null)
         }
         // the joined pair at the bottom centre (fading in), always lit, and the "+"
         if (midA > 0) {
@@ -2363,6 +2392,18 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
         val busy = (now - joinAtMs).toFloat() < (if (joinTarget) TRIG_IN_MS else TRIG_OUT_MS)
         return if (busy) 0L else Long.MAX_VALUE
+    }
+
+    /**
+     * f-chord-icons: a trigger at rest in [chipRect]: its glyph, or (its bumper held, a radial on that side) the radial's icon with the
+     * trigger's glyph small at its lower inner corner, so the button stays named
+     */
+    private fun triggerOrIcon(c: Canvas, glyph: String, lit: Boolean, alpha: Int, icon: Bitmap?) {
+        if (icon == null) { UiKit.triggerChip(c, chipRect, glyph, lit, alpha); return }
+        val ir = chipRect.height() * 0.42f
+        drawChordIcon(c, icon, chipRect.centerX(), chipRect.centerY(), ir, alpha)
+        val gx = if (glyph.endsWith("ltrigger")) chipRect.centerX() + ir * 0.95f else chipRect.centerX() - ir * 0.95f
+        UiKit.pad(c, glyph, gx, chipRect.centerY() + ir * 0.75f, chipRect.height() * 0.42f, alpha)
     }
 
     /** the button layout's glyph set in the kit (rev_ = Nintendo names, gen_ = LT / RT / LB / RB, shp_ = PlayStation) */
@@ -2622,7 +2663,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         pBadgeFill.color = if (heldNow) BADGE_BG_HELD else BADGE_BG
         c.drawPath(if (side == 0) pathBadgeR else pathBadgeL, pBadgeFill)
         plateRing(c, side, scale, heldNow)              // the reticle / glyph drawn after it
-        drawReticle(c, 0f, -1f, if (side == 0) left else right, 255)
+        // f-chord-icons: the other half of the chord held = the radial's icon instead of the reticle
+        val ci = if ((chordIconsOn() and (if (side == 0) ClassChord.ICON_L else ClassChord.ICON_R)) != 0) chordIcon(side == 0) else null
+        if (ci != null) drawChordIcon(c, ci, 0f, -1f, 10f) else drawReticle(c, 0f, -1f, if (side == 0) left else right, 255)
         c.restore()
     }
 
@@ -2635,16 +2678,20 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             SC -> { left = SP_SHORTCUTS; right = SP_SHORTCUTS }
         }
         if (h.swapT) { val t = left; left = right; right = t }
+        val on = chordIconsOn()
         for (side in 0..1) {
             val held = if (side == 0) padLb else padRb
             val kind = if (side == 0) left else right
+            // f-chord-icons: the other half of the chord held = the radial's icon instead of the reticle
+            val ci = if ((on and (if (side == 0) ClassChord.ICON_L else ClassChord.ICON_R)) != 0) chordIcon(side == 0) else null
             val plate = if (side == 0) aBadgeBgL else aBadgeBgR
             if (plate != null) {
                 val pcx = ox + (if (side == 0) -133f else 133f) * k
                 val pcy = oy - 64.5f * k
                 drawCentered(c, plate, pcx, pcy, 50f, 45f)
                 val icon = badgeArt(kind)
-                if (icon != null) drawCentered(c, icon, pcx, pcy, 50f, 45f)
+                if (ci != null) drawChordIcon(c, ci, pcx, pcy, 12f * k)
+                else if (icon != null) drawCentered(c, icon, pcx, pcy, 50f, 45f)
                 else {
                     c.save(); c.translate(pcx, pcy); c.scale(k, k)
                     drawReticle(c, 0f, 0f, kind, 255)
@@ -2662,7 +2709,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             // sides swapped (user ruling): the plate cut at its top-LEFT sits on the left, as in the game
             c.drawPath(if (side == 0) pathBadgeR else pathBadgeL, pBadgeFill)
             plateRing(c, side, k, held)
-            drawReticle(c, 0f, -1f, kind, 255)
+            if (ci != null) drawChordIcon(c, ci, 0f, -1f, 10f) else drawReticle(c, 0f, -1f, kind, 255)
             c.restore()
         }
     }
@@ -3097,6 +3144,30 @@ internal object ClassChord {
         lb && lt -> LEFT
         rb && rt -> RIGHT
         else -> NONE
+    }
+
+    /**
+     * f-chord-icons (the user 15 Oct: "when holding the Trigger we need to change the L or R buttons Icons from those cross hair things
+     * to instead show the form/stance ... radial Icon. the invers is also true if holding L or r then the radial icon should show up on
+     * ZR or LR (if applicable on that character)"): which buttons wear the radial's icon now, as bits [ICON_L] [ICON_ZL] [ICON_R]
+     * [ICON_ZR]. A held trigger puts it on its bumper, a held bumper on its trigger - only on a side that has a radial ([hasL] /
+     * [hasR]: a Shaman has neither, so nothing changes). Raw buttons, as the game's chord reads them.
+     */
+    const val ICON_L = 1; const val ICON_ZL = 2; const val ICON_R = 4; const val ICON_ZR = 8
+    fun iconsOn(lt: Boolean, rt: Boolean, lb: Boolean, rb: Boolean, hasL: Boolean, hasR: Boolean): Int {
+        var m = 0
+        if (hasL && lt) m = m or ICON_L
+        if (hasL && lb) m = m or ICON_ZL
+        if (hasR && rt) m = m or ICON_R
+        if (hasR && rb) m = m or ICON_ZR
+        return m
+    }
+
+    /** the radial's icon for its buttons: the form / stance / aura (or pet mode) on now, else its first place's; 0 = none */
+    fun iconOf(has: BooleanArray, icons: IntArray, lit: BooleanArray): Int {
+        for (i in has.indices) if (has[i] && lit[i] && icons[i] > 0) return icons[i]
+        for (i in has.indices) if (has[i] && icons[i] > 0) return icons[i]
+        return 0
     }
 }
 
