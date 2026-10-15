@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i112"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i114"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -480,9 +480,94 @@ end
 -- money: the game asks first; refused here), returning, deleting, sending (needs a keyboard).
 local MAIL_MAX, ATTACH_MAX = 50, 16
 local MAIL = { open = nil }       -- the letter opened on the bottom screen
+-- f-inbox-send (1.0.8): THE GAME'S SEND MAIL TAB (Blizzard_MailFrame's SendMailFrame, read from the client): To, Subject, the letter,
+-- Send Money or C.O.D. (gold / silver / copper), up to ATTACHMENTS_MAX_SEND items, the postage, Send. The text is typed with the
+-- Chat keyboard into a field borrowed from Chat.lua (WC.chatField, chat22); the rest is the game's own calls (SetSendMailMoney,
+-- SetSendMailCOD, ClickSendMailItemButton with the item picked up from the bag, SendMail), each inside the press. Nothing of the
+-- game's own frame is touched or shown. MAIL.form lives for the session (a letter half-written survives the mailbox closing).
+-- (Send Mail's pieces hang on MAIL: the file's main chunk is at Lua's 200-local limit)
+MAIL.MAX = 12                                   -- the game's ATTACHMENTS_MAX_SEND
+MAIL.COD_GOLD = 10000                            -- the game's MAX_COD_AMOUNT
+MAIL.FIELD = { to = 48, subject = 64, body = 255, gold = 7, silver = 2, copper = 2 }
+function MAIL.blank() return { to = "", subject = "", body = "", gold = "", silver = "", copper = "", cod = false } end
+MAIL.tab = "inbox"
+MAIL.form = MAIL.blank()
+MAIL.pick = false                 -- the bag list is up (an attachment is being chosen)
+MAIL.status = nil                 -- "sending" | "sent" | "failed" | "confirm" (the game's own stranger check, on the top screen)
+MAIL.err = nil                    -- the game's reason when it refused the letter
+MAIL.CONFIRM_S = 60               -- the stranger check unanswered this long: the bottom screen takes over again
+function MAIL.copper(f)
+    local g, sv, c = tonumber(f.gold) or 0, tonumber(f.silver) or 0, tonumber(f.copper) or 0
+    return g * 10000 + sv * 100 + c
+end
+-- the attachments as the game holds them (GetSendMailItem: name, itemID, texture, count, quality)
+function MAIL.attached()
+    local out = {}
+    for k = 1, MAIL.MAX do
+        if TB(function() return HasSendMailItem(k) end) then
+            local r = R(function() return GetSendMailItem(k) end)
+            if r then out[#out + 1] = { k = k, name = PS(r[1]), id = PN(r[2]), icon = PN(r[3]), count = PN(r[4]), q = PN(r[5]) } end
+        end
+    end
+    return out
+end
+-- the game's own subject when none is typed: the first attachment's name, "(n)" for a stack (SendMailFrame_Update)
+function MAIL.autoSubject(items)
+    local it = items[1]
+    if not (it and it.name) then return nil end
+    if (it.count or 1) > 1 then return it.name .. " (" .. it.count .. ")" end
+    return it.name
+end
+-- what stops the letter, in the game's own order (SendMailFrame_CanSend, then the money): nil = it can go
+function MAIL.whyNot(f, items)
+    if f.to == "" then return "Type who it is to" end
+    if f.subject == "" and not MAIL.autoSubject(items) then return "Type a subject" end
+    local copper = MAIL.copper(f)
+    if f.cod then
+        if #items == 0 then return "C.O.D. needs an attachment" end
+        if copper <= 0 then return "Type the C.O.D. amount" end
+        if copper > MAIL.COD_GOLD * 10000 then return "C.O.D. must be less than 10000 gold" end
+    end
+    local price = TN(function() return GetSendMailPrice() end) or 0
+    local purse = TN(function() return GetMoney() end) or 0
+    if price + ((not f.cod) and copper or 0) > purse then return "Not enough money" end
+    return nil
+end
+-- the bags, for an attachment (the game's own rule: a soulbound item cannot be mailed)
+function MAIL.bags()
+    local out = {}
+    for bag = 0, 4 do
+        for sl = 1, TN(function() return C_Container.GetContainerNumSlots(bag) end) or 0 do
+            local ok, info = CALL(function() return C_Container.GetContainerItemInfo(bag, sl) end)
+            if ok and type(info) == "table" then
+                local id = TN(function() return info.itemID end)
+                if id then
+                    local link = TS(function() return info.hyperlink end)
+                    out[#out + 1] = { bag = bag, s = sl, id = id, icon = TN(function() return info.iconFileID end),
+                        n = TN(function() return info.stackCount end) or 1, q = TN(function() return info.quality end),
+                        name = link and link:match("%[(.-)%]") or nil,
+                        bound = TB(function() return info.isBound end) or nil, locked = TB(function() return info.isLocked end) or nil }
+                end
+            end
+        end
+    end
+    return out
+end
+function MAIL.collect()
+    local f = MAIL.form
+    local items = MAIL.attached()
+    local snd = { to = f.to, subject = f.subject, body = f.body, gold = f.gold, silver = f.silver, copper = f.copper,
+                  cod = f.cod or nil, money = MAIL.copper(f), items = items, max = MAIL.MAX,
+                  autoSubject = (f.subject == "") and MAIL.autoSubject(items) or nil,
+                  price = TN(function() return GetSendMailPrice() end), status = MAIL.status, err = MAIL.err }
+    snd.why = MAIL.whyNot(f, items)
+    if MAIL.pick then snd.bags = MAIL.bags() end
+    return snd
+end
 local function collectMail()
-    local ml = { mails = {} }
+    local ml = { mails = {}, tab = MAIL.tab }
     ml.money = TN(function() return GetMoney() end)
+    if MAIL.tab == "send" then ml.send = MAIL.collect() end
     local n = TN(function() return GetInboxNumItems() end) or 0
     for i = 1, math.min(n, MAIL_MAX) do
         local r = R(function() return GetInboxHeaderInfo(i) end)
@@ -523,6 +608,111 @@ end
 -- press 1 = arm with its buyout; press 2 = PlaceBid(auctionID, buyout). Anything else cancels.
 local AH_ARM, AH_ROWS, AH_RESULTS = 10, 40, 60
 local AH = { path = {}, results = nil, key = nil, qty = 1, buy = nil, owned = nil, tab = "browse", asked = nil }
+-- f-auction-house (1.0.8): THE GAME'S SEARCH BAR, FILTERS AND SORTED COLUMNS (Blizzard_AuctionHouseUI, read from the client; Forever
+-- runs the modern auction house): a search word (typed with the Chat keyboard, WC.chatField), the Filter list (a level range and
+-- the game's own checkboxes from C_AuctionHouse.GetFilterGroups, its defaults AUCTION_HOUSE_DEFAULT_FILTERS), and every sortable
+-- column header of the game: the results by Price / Name / (the category's level column), an item's listings by Buyout / Bid, your
+-- auctions by Name / Bid / Buyout / Time Left. A header pressed becomes the first sort, pressed again it turns round; two sorts at
+-- most (the game's AddSortType). All kept for the session here; the game's own saved filters and sorts are never written.
+AH.search = { text = "", min = "", max = "", filters = nil }      -- filters: Enum.AuctionHouseFilter -> on (nil until first read)
+AH.filtersOpen = false
+AH.FIELD = { text = 64, min = 3, max = 3 }
+function AH.sortEnum(name) return TN(function() return Enum.AuctionHouseSortOrder[name] end) end
+AH.sorts = {
+    browse = { { o = "Price", r = false }, { o = "Name", r = false } },
+    item = { { o = "Buyout", r = false }, { o = "Bid", r = false } },
+    owned = { { o = "Name", r = false }, { o = "Price", r = false } },
+}
+AH.SORTABLE = { browse = { Price = true, Name = true, Level = true }, item = { Buyout = true, Bid = true },
+                owned = { Name = true, Bid = true, Buyout = true, TimeRemaining = true } }
+function AH.sortList(ctx)
+    local out = {}
+    for _, st in ipairs(AH.sorts[ctx] or {}) do
+        local e = AH.sortEnum(st.o)
+        if e then out[#out + 1] = { sortOrder = e, reverseSort = st.r } end
+    end
+    return out
+end
+-- the game's AddSortType: the header pressed goes first; pressed while first it turns round; two at most
+function AH.addSort(ctx, name)
+    local list = AH.sorts[ctx]
+    local new = { o = name, r = false }
+    for i, st in ipairs(list) do
+        if st.o == name then
+            if i == 1 and st.r == new.r then new.r = not new.r end
+            table.remove(list, i)
+            break
+        end
+    end
+    table.insert(list, 1, new)
+    while #list > 2 do list[#list] = nil end
+end
+function AH.filterDefaults()
+    local out = {}
+    local def = AUCTION_HOUSE_DEFAULT_FILTERS
+    if type(def) == "table" then
+        for k, v in pairs(def) do if type(k) == "number" then out[k] = v and true or false end end
+        return out
+    end
+    for _, name in ipairs({ "PoorQuality", "CommonQuality", "UncommonQuality", "RareQuality", "EpicQuality", "LegendaryQuality", "ArtifactQuality" }) do
+        local e = TN(function() return Enum.AuctionHouseFilter[name] end)
+        if e then out[e] = true end
+    end
+    return out
+end
+function AH.filters()
+    if not AH.search.filters then AH.search.filters = AH.filterDefaults() end
+    return AH.search.filters
+end
+-- a filter's words as the game shows them (its own strings; a quality's name without the colour code: the app colours it)
+function AH.filterName(f)
+    local q
+    for name, k in pairs({ PoorQuality = 0, CommonQuality = 1, UncommonQuality = 2, RareQuality = 3, EpicQuality = 4,
+                           LegendaryQuality = 5, ArtifactQuality = 6 }) do
+        if TN(function() return Enum.AuctionHouseFilter[name] end) == f then q = k end
+    end
+    if q then return TS(function() return _G["ITEM_QUALITY" .. q .. "_DESC"] end), q end
+    local t = type(AUCTION_HOUSE_FILTER_STRINGS) == "table" and AUCTION_HOUSE_FILTER_STRINGS[f]
+    if type(t) == "string" then return (t:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")), nil end
+    return nil, nil
+end
+function AH.filterGroups()
+    local out = {}
+    local on = AH.filters()
+    local ok, groups = CALL(function() return C_AuctionHouse.GetFilterGroups() end)
+    if not (ok and type(groups) == "table") then return out end
+    local catWords = { [1] = "AUCTION_HOUSE_FILTER_CATEGORY_EQUIPMENT", [2] = "AUCTION_HOUSE_FILTER_CATEGORY_RARITY" }
+    for _, g in ipairs(groups) do
+        local cat = TN(function() return g.category end)
+        local grp = { name = cat and catWords[cat] and TS(function() return _G[catWords[cat]] end) or nil, filters = {} }
+        for _, f in ipairs(type(g.filters) == "table" and g.filters or {}) do
+            f = TN(function() return f end)
+            if f then
+                local name, q = AH.filterName(f)
+                if name then grp.filters[#grp.filters + 1] = { f = f, name = name, q = q, on = on[f] and true or false } end
+            end
+        end
+        if #grp.filters > 0 then out[#out + 1] = grp end
+    end
+    return out
+end
+-- the filters differ from the game's defaults, or a level range is set (the game's red Clear button)
+function AH.filtersDirty()
+    local def = AH.filterDefaults()
+    for k, v in pairs(AH.filters()) do if (def[k] or false) ~= (v or false) then return true end end
+    return AH.search.min ~= "" or AH.search.max ~= ""
+end
+-- the category browsed, and its level column's word (the game's GetDetailColumnStringUnsafe: weapons and armour say Item Level)
+function AH.detailColumn(path)
+    local list, word = AuctionCategories, nil
+    for _, i in ipairs(path or {}) do
+        local c = type(list) == "table" and list[i]
+        if type(c) ~= "table" then break end
+        if type(c.detailColumnString) == "string" then word = c.detailColumnString end
+        list = c.subCategories
+    end
+    return word
+end
 local function ahCategory(path)
     local list = AuctionCategories
     local cat
@@ -843,6 +1033,16 @@ local function collectAuction()
         end
     end
     walk(AuctionCategories, {}, 0)
+    -- 1.0.8: the search bar, the Filter list (its groups only while it is up), the sorts and the level column
+    ah.search = { text = AH.search.text, min = AH.search.min, max = AH.search.max, open = AH.filtersOpen or nil,
+                  dirty = AH.filtersDirty() or nil }
+    if AH.filtersOpen then ah.search.groups = AH.filterGroups() end
+    ah.sorts = {}
+    for ctx, list in pairs(AH.sorts) do
+        ah.sorts[ctx] = {}
+        for _, st in ipairs(list) do ah.sorts[ctx][#ah.sorts[ctx] + 1] = { o = st.o, r = st.r or nil } end
+    end
+    ah.levelWord = AH.detailColumn(AH.path)
     ah.nOwned = TN(function() return C_AuctionHouse.GetNumOwnedAuctions() end)
     ah.catName = cat and TS(function() return cat.name end) or nil
     -- the browse results of the last category asked for
@@ -857,7 +1057,8 @@ local function collectAuction()
                 ah.results[#ah.results + 1] = { i = i, id = key and TN(function() return key.itemID end),
                     name = info and TS(function() return info.itemName end), icon = info and TN(function() return info.iconFileID end),
                     q = info and TN(function() return info.quality end), price = TN(function() return r.minPrice end),
-                    count = TN(function() return r.totalQuantity end), commodity = info and TB(function() return info.isCommodity end) }
+                    count = TN(function() return r.totalQuantity end), commodity = info and TB(function() return info.isCommodity end),
+                    lvl = TN(function() return key.itemLevel end) }
             end
             AH.rs = rs
         end
@@ -1124,6 +1325,24 @@ local function assignSlots(doc)
         if au.tab ~= "owned" then
             for _, c in ipairs(au.cats) do c.slot = slot("ipick", "ahcat " .. c.i) end
         end
+        -- 1.0.8: the search bar, the Filter list and the column headers (touch = the controller's A on them)
+        local a = au.act
+        a.search, a.edit_text = slot("iact", "ahsearch"), slot("iact", "ahedit text")
+        a.filters_on, a.filters_off = slot("iact", "ahfilters on"), slot("iact", "ahfilters off")
+        if au.search and au.search.open then
+            a.edit_min, a.edit_max, a.fclear = slot("iact", "ahedit min"), slot("iact", "ahedit max"), slot("iact", "ahfclear")
+            for _, g in ipairs(au.search.groups or {}) do
+                for _, f in ipairs(g.filters) do f.slot = slot("ipick", "ahfilter " .. f.f) end
+            end
+        end
+        a.sort = {}
+        local ctx = (au.tab == "owned") and "owned" or (au.item and not au.item.commodity) and "item" or (not au.item) and "browse" or nil
+        if ctx then
+            for name in pairs(AH.SORTABLE[ctx]) do
+                if name ~= "Level" or au.levelWord then a.sort[name] = slot("iact", "ahsort " .. ctx .. " " .. name) end
+            end
+            a.sortCtx = ctx
+        end
         if au.item then
             for _, r in ipairs(au.item.rows) do if not au.item.commodity then r.slot = slot("ibuy", "ahrow " .. r.i) end end
         elseif au.results then
@@ -1177,6 +1396,19 @@ local function assignSlots(doc)
     local ml = doc.mail
     if ml then
         any = true
+        ml.act = { inbox = slot("iact", "mailtab inbox"), send = slot("iact", "mailtab send") }
+        local sd = ml.send
+        if sd then
+            -- the Send Mail tab: every field and button is one cell (touch = the controller's A on it)
+            local a = ml.act
+            for _, f in ipairs({ "to", "subject", "body", "gold", "silver", "copper" }) do a["edit_" .. f] = slot("iact", "mailedit " .. f) end
+            a.money, a.cod = slot("iact", "mailcod off"), slot("iact", "mailcod on")
+            a.pick, a.unpick = slot("iact", "mailpick on"), slot("iact", "mailpick off")
+            a.send, a.clear = slot("iact", "mailsend"), slot("iact", "mailclear")
+            if sd.status == "confirm" then a.resume = slot("iact", "mailresume") end
+            for _, it in ipairs(sd.items) do it.slot = slot("isell", "maildetach " .. it.k) end
+            for _, b in ipairs(sd.bags or {}) do b.slot = slot("ibuy", "mailattach " .. b.bag .. " " .. b.s .. " " .. b.id) end
+        end
         for _, l in ipairs(ml.mails) do l.slot = slot("ibuy", "mail " .. l.i) end
         if ml.open then
             local o = ml.open
@@ -1185,6 +1417,8 @@ local function assignSlots(doc)
         end
     end
     if doc.petition then any = true end
+    -- 1.0.8: the keyboard's field (Send Mail, the auction-house search): its close cell
+    if doc.kbd then doc.kbd.off = slot("iact", "kbd off") end
     local st = doc.stable
     if st then
         any = true
@@ -1393,18 +1627,39 @@ function N.build(doc)
         navAdd(tabs, "ahtab browse"); navAdd(tabs, "ahtab owned")
         local zr = navZone("ahright", 1)
         N.ahSel = nil
-        if au.tab == "owned" then
-            -- your auctions: read only; the cursor walks them (A does nothing)
+        local function heads(ctx, order)
+            local zh = navZone("ahheads", #order)
+            for _, name in ipairs(order) do navAdd(zh, "ahsort " .. ctx .. " " .. name) end
+            return zh
+        end
+        if au.search and au.search.open then
+            -- the Filter list (the game's dropdown): the level range, every checkbox, Clear; B (or Filter again) closes it
+            sig = "ah|filters"
+            local zf = navZone("ahfilt", 1)
+            navAdd(zf, "ahedit min"); navAdd(zf, "ahedit max")
+            for _, g in ipairs(au.search.groups or {}) do
+                for _, f in ipairs(g.filters) do navAdd(zf, "ahfilter " .. f.f) end
+            end
+            navAdd(zf, "ahfclear")
+            N.zones = { zf }
+            first = navFirst(zf)
+        elseif au.tab == "owned" then
+            -- your auctions: read only; the cursor walks them (A does nothing); the headers sort them
             sig = "ah|owned"
             for _, o in ipairs(au.owned or {}) do navAdd(zr, "ahown " .. o.i) end
-            N.zones = { tabs, zr }
+            N.zones = { tabs, heads("owned", { "Name", "Bid", "Buyout", "TimeRemaining" }), zr }
             first = navFirst(zr) or "ahtab owned"
         else
+            local zs = navZone("ahbar", 3)
+            navAdd(zs, "ahedit text"); navAdd(zs, "ahfilters on"); navAdd(zs, "ahsearch")
             local zc = navZone("ahcats", 1)
             for _, c in ipairs(au.cats) do
                 navAdd(zc, "ahcat " .. c.i)
                 if c.sel then N.ahSel = "ahcat " .. c.i end
             end
+            local zh
+            if au.item and not au.item.commodity then zh = heads("item", { "Buyout", "Bid" })
+            elseif not au.item then zh = heads("browse", au.levelWord and { "Name", "Level", "Price" } or { "Name", "Price" }) end
             if au.item then
                 sig = "ah|item|" .. tostring(au.item.id)
                 if au.item.commodity then navAdd(zr, "ahbuy")          -- a commodity: A buys; X / Y the quantity
@@ -1420,11 +1675,40 @@ function N.build(doc)
                 AH.lastRes = nil
                 first = back or N.ahSel or navFirst(zc)
             end
-            N.zones = { tabs, zc, zr }
+            N.zones = zh and { tabs, zs, zc, zh, zr } or { tabs, zs, zc, zr }
+        end
+    elseif doc.mail and doc.mail.send then
+        -- f-inbox-send: the Send Mail tab, in the game's own order (To, Subject, the letter, the money, the attachments, Send); the bag
+        -- list, when it is up, alone (B puts it away)
+        local sd = doc.mail.send
+        local tabs = navZone("tabs", 2)
+        navAdd(tabs, "mailtab inbox"); navAdd(tabs, "mailtab send")
+        if sd.bags then
+            sig = "ms|pick"
+            local zp = navZone("mpick", 6)
+            for _, b in ipairs(sd.bags) do navAdd(zp, "mailattach " .. b.bag .. " " .. b.s .. " " .. b.id, not b.bound and not b.locked) end
+            N.zones = { zp }
+            first = navFirst(zp) or "none"
+        else
+            sig = "ms|form"
+            local zf = navZone("mform", 1)
+            navAdd(zf, "mailedit to"); navAdd(zf, "mailedit subject"); navAdd(zf, "mailedit body")
+            local zm = navZone("mmoney", 5)
+            navAdd(zm, "mailcod off"); navAdd(zm, "mailcod on", #sd.items > 0)
+            navAdd(zm, "mailedit gold"); navAdd(zm, "mailedit silver"); navAdd(zm, "mailedit copper")
+            local za = navZone("msattach", 6)
+            for _, it in ipairs(sd.items) do navAdd(za, "maildetach " .. it.k) end
+            if #sd.items < MAIL.MAX then navAdd(za, "mailpick on") end
+            local zs = navZone("msend", 2)
+            navAdd(zs, "mailclear"); navAdd(zs, "mailsend", sd.why == nil)
+            N.zones = { tabs, zf, zm, za, zs }
+            first = "mailedit to"
         end
     elseif doc.mail then
         local ml = doc.mail
         -- UI Art's MAIL_SPEC 4: the letters on the left (always); an open letter's attachments, then its money, on the right
+        local mtabs = navZone("tabs", 2)
+        navAdd(mtabs, "mailtab inbox"); navAdd(mtabs, "mailtab send")
         local z = navZone("mlist", 1)
         for _, l in ipairs(ml.mails) do navAdd(z, "mail " .. l.i) end
         local za = navZone("mattach", 4)
@@ -1442,7 +1726,7 @@ function N.build(doc)
             first = (MAIL.back and ("mail " .. MAIL.back)) or navFirst(z)
             MAIL.back = nil
         end
-        N.zones = { z, za }
+        N.zones = { mtabs, z, za }
         if first == nil then first = "none" end
     elseif doc.petition then
         local pt = doc.petition
@@ -1593,6 +1877,11 @@ local function buildDoc()
     tally.secret, tally.threw = 0, 0
     disagreed = false
     local doc = { type = "interact", iv = IV }
+    -- 1.0.8: a field is being typed with the app's Chat keyboard (N.kbdOpen): which one, and its value when it opened
+    if N.kbd then
+        if (TN(function() return GetTime() end) or 0) - (N.kbdAt or 0) > N.KBD_TTL then N.kbdClose()
+        else doc.kbd = { name = N.kbd, text = N.kbdText, max = N.kbdMax } end
+    end
     if isOpen("gossip") then doc.gossip = collectGossip() end
     if isOpen("quest") and questStage then doc.quest = collectQuest() end
     if doc.quest and LOOT.ms == "quest" and LOOT.full then doc.quest.space = LOOT.buildSpace() end
@@ -1802,8 +2091,26 @@ local ON = {
     PETITION_SHOW = function() mark("petition", true) end,
     PETITION_CLOSED = function() mark("petition", false) end,
     PET_STABLE_CLOSED = function() mark("stable", false) end,
-    MAIL_SHOW = function() MAIL.open = nil; mark("mail", true) end,
-    MAIL_CLOSED = function() MAIL.open = nil; mark("mail", false) end,
+    MAIL_SHOW = function() MAIL.open = nil; MAIL.tab, MAIL.pick = "inbox", false; mark("mail", true) end,
+    MAIL_CLOSED = function()
+        MAIL.open, MAIL.pick = nil, false
+        if N.kbd and N.kbd:match("^mail") then N.kbdClose() end
+        if MAIL.status == "sending" or MAIL.status == "confirm" then MAIL.status = nil end
+        mark("mail", false)
+    end,
+    -- f-inbox-send: the game's answers to SendMail
+    MAIL_SEND_SUCCESS = function()
+        MAIL.form = MAIL.blank()
+        MAIL.status, MAIL.err = "sent", nil
+    end,
+    MAIL_FAILED = function()
+        if MAIL.status == "sending" or MAIL.status == "confirm" then MAIL.status = "failed" end
+    end,
+    -- the game's own check before money / items go to a stranger (Blizzard_SecureTransferUI, the secure environment: its dialog is
+    -- the game's, on the top screen, never ours to answer)
+    SECURE_TRANSFER_CONFIRM_SEND_MAIL = function()
+        if MAIL.status == "sending" then MAIL.status, MAIL.confirmAt = "confirm", TN(function() return GetTime() end) end
+    end,
     AUCTION_HOUSE_SHOW = function() AH.path, AH.results, AH.key, AH.buy, AH.tab = {}, nil, nil, nil, "browse"; mark("auction", true) end,
     AUCTION_HOUSE_CLOSED = function() AH.buy = nil; mark("auction", false) end,
     TAXIMAP_OPENED = function() mark("taxi", true) end,
@@ -1831,6 +2138,10 @@ local ON = {
     -- a bind-on-pickup item asks first (the game's dialog, mirrored): Loot All stops there
     LOOT_BIND_CONFIRM = function() LOOT.bind = true end,
     UI_ERROR_MESSAGE = function(_, msg)
+        if MAIL.status == "sending" or MAIL.status == "failed" then
+            local m = TS(function() return msg end)
+            if m and m ~= "" then MAIL.err = m; MAIL.status = "failed" end
+        end
         -- the game's "Inventory is full" while its loot window is open: the make-space screen (user: "By itself")
         local full = msg ~= nil and msg == TS(function() return ERR_INV_FULL end)
         if full and shownAt.loot > hiddenAt.loot and not LOOT.top() then
@@ -1868,7 +2179,7 @@ local REFRESH = {
     "UPDATE_INVENTORY_DURABILITY", "PLAYER_MONEY", "GET_ITEM_INFO_RECEIVED",
     "PLAYER_INTERACTION_MANAGER_FRAME_HIDE", "TRAINER_UPDATE", "PET_STABLE_UPDATE", "MAIL_INBOX_UPDATE",
     "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED", "COMMODITY_SEARCH_RESULTS_UPDATED",
-    "PLAYERBANKSLOTS_CHANGED", "BANK_TABS_CHANGED", "LOOT_SLOT_CLEARED", "LOOT_SLOT_CHANGED",
+    "PLAYERBANKSLOTS_CHANGED", "BANK_TABS_CHANGED", "LOOT_SLOT_CLEARED", "LOOT_SLOT_CHANGED", "MAIL_SEND_INFO_UPDATE",
     "ITEM_SEARCH_RESULTS_UPDATED", "OWNED_AUCTIONS_UPDATED", "ITEM_KEY_ITEM_INFO_RECEIVED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
 }
 
@@ -2484,9 +2795,23 @@ function ACT.look(a, b, c, d)
 end
 
 -- ---------------------------------------------------------------- auction house actions
-local function ahSorts()
-    local o = TN(function() return Enum.AuctionHouseSortOrder.Price end) or 0
-    return { { sortOrder = o, reverseSort = false } }
+local function ahSorts() return AH.sortList("item") end
+-- the game's browse query: the word, the level range, the filters checked, plus the category's own (and its implicit filter)
+function AH.browse()
+    if TB(function() return C_AuctionHouse.IsThrottledMessageSystemReady() end) == false then return false, "the auction house is busy: one moment" end
+    local cat = (#AH.path > 0) and ahCategory(AH.path) or nil
+    if #AH.path > 0 and not cat then return false, "no such category" end
+    local filters = {}
+    for k, v in pairs(AH.filters()) do if v then filters[#filters + 1] = k end end
+    table.sort(filters)
+    if cat and cat.implicitFilter then filters[#filters + 1] = cat.implicitFilter end
+    local query = { searchString = AH.search.text, sorts = AH.sortList("browse"), filters = filters,
+                    itemClassFilters = (cat and cat.filters) or {},
+                    minLevel = tonumber(AH.search.min) or 0, maxLevel = tonumber(AH.search.max) or 0 }
+    local done, err = run(function() C_AuctionHouse.SendBrowseQuery(query) end)
+    if done then AH.results, AH.key, AH.buy = true, nil, nil end
+    AH.lastQuery = query
+    return done, err
 end
 local function ahIsOpen() return isOpen("auction") end
 -- a commodity's quantity, one step (X / Y, or a tap on - / +): never past what is listed; a change cancels an armed purchase
@@ -2516,7 +2841,7 @@ function ACT.ahtab(a)
     if a ~= "browse" and a ~= "owned" then return false, "no such tab" end
     ahCancelBuy()
     AH.tab = a
-    if a == "owned" then CALL(function() C_AuctionHouse.QueryOwnedAuctions(ahSorts()) end) end
+    if a == "owned" then CALL(function() C_AuctionHouse.QueryOwnedAuctions(AH.sortList("owned")) end) end
     emitSoon()
     return true
 end
@@ -2530,10 +2855,74 @@ function ACT.ahcat(a)
     if not cat then return false, "no such category" end
     if TB(function() return C_AuctionHouse.IsThrottledMessageSystemReady() end) == false then return false, "the auction house is busy: one moment" end
     AH.path, AH.key, AH.buy = path, nil, nil
-    local query = { searchString = "", sorts = ahSorts(), filters = {}, itemClassFilters = cat.filters or {} }
-    local done, err = run(function() C_AuctionHouse.SendBrowseQuery(query) end)
-    if done then AH.results = true end
-    return done, err
+    return AH.browse()            -- 1.0.8: with the search word, the level range and the filters, as the game's Search
+end
+-- /wci ahsearch   the game's Search button: the word, the range and the filters, in the category browsed (or all of them)
+function ACT.ahsearch()
+    if not ahIsOpen() then return false, "no auction house open" end
+    N.kbdClose()
+    AH.tab, AH.filtersOpen = "browse", false
+    return AH.browse()
+end
+-- /wci ahedit text|min|max   the search box, or the Filter list's level range: the keyboard opens on it. Done on the word searches
+-- (the game's Enter in its search box); the range waits for Search.
+function ACT.ahedit(a)
+    if not ahIsOpen() then return false, "no auction house open" end
+    local max = AH.FIELD[a]
+    if not max then return false, "no such field" end
+    return N.kbdOpen("ah" .. a, AH.search[a], max, function(t)
+        if not ahIsOpen() then return false, "the auction house closed" end
+        t = tostring(t or "")
+        if a ~= "text" then
+            t = t:gsub("%s", "")
+            if t ~= "" and not t:match("^%d+$") then return false, "numbers only" end
+            t = (t == "") and "" or tostring(tonumber(t))
+        end
+        AH.search[a] = t
+        if a == "text" then AH.tab, AH.filtersOpen = "browse", false; AH.browse() end
+        return true
+    end)
+end
+-- /wci ahfilters on|off   the game's Filter list
+function ACT.ahfilters(a)
+    if not ahIsOpen() then return false, "no auction house open" end
+    if a ~= "on" and a ~= "off" then return false, "on or off" end
+    AH.filtersOpen = (a == "on")
+    emitSoon()
+    return true
+end
+-- /wci ahfilter <Enum.AuctionHouseFilter>   one checkbox of the Filter list
+function ACT.ahfilter(a)
+    local f = tonumber(a)
+    if not (f and ahIsOpen()) then return false, "no auction house open" end
+    local on = AH.filters()
+    on[f] = not on[f]
+    emitSoon()
+    return true
+end
+-- /wci ahfclear   the game's Clear: the filters back to its defaults and no level range
+function ACT.ahfclear()
+    if not ahIsOpen() then return false, "no auction house open" end
+    AH.search.filters, AH.search.min, AH.search.max = AH.filterDefaults(), "", ""
+    emitSoon()
+    return true
+end
+-- /wci ahsort browse|item|owned <Price|Name|Level|Buyout|Bid|TimeRemaining>   a column header pressed: the game's sort, asked again
+function ACT.ahsort(ctx, name)
+    if not ahIsOpen() then return false, "no auction house open" end
+    if not (AH.SORTABLE[ctx] and AH.SORTABLE[ctx][name]) then return false, "not a sortable column" end
+    if not AH.sortEnum(name) then return false, "this build has no such sort" end
+    AH.addSort(ctx, name)
+    if ctx == "browse" and AH.results and not AH.key then return AH.browse() end
+    if ctx == "item" and AH.key then
+        ahCancelBuy()
+        return run(function() C_AuctionHouse.SendSearchQuery(AH.key, AH.sortList("item"), true) end)
+    end
+    if ctx == "owned" and AH.tab == "owned" then
+        return run(function() C_AuctionHouse.QueryOwnedAuctions(AH.sortList("owned")) end)
+    end
+    emitSoon()
+    return true
 end
 -- /wci ahres <i>   one result: ask for its listings (an item) or its price tiers (a commodity)
 function ACT.ahres(a)
@@ -2613,6 +3002,40 @@ function ACT.taxi(a)
     return run(function() TakeTaxiNode(i) end)
 end
 
+-- ---------------------------------------------------------------- the keyboard (1.0.8: Send Mail, the auction-house search)
+-- A field borrowed from Chat.lua (WC.chatField, chat22): the app's Chat keyboard types it with Chat's own rows and hash check, and
+-- its Send hands the text to [done]. Meanwhile every press is the keyboard's (padPress stands still) and doc.kbd tells the app to
+-- show it. It goes on done, on the app's "kbd off" (B / its close), when the window closes, or after KBD_TTL unused.
+N.KBD_TTL = 300
+function N.kbdClose()
+    if not N.kbd then return end
+    N.kbd, N.kbdText = nil, nil
+    if type(WC.chatField) == "table" then pcall(WC.chatField.close) end
+    emitSoon()
+end
+function N.kbdOpen(name, text, max, done)
+    local f = WC.chatField
+    if type(f) ~= "table" or type(f.open) ~= "function" then return false, "the Chat add-on is too old" end
+    local ok = f.open({ name = name, text = text or "", max = max,
+        holds = function() return N.kbd == name and N.holding == true end,
+        done = function(t)
+            local d, why = done(t)
+            if d then N.kbdClose() end
+            emitSoon()
+            return d, why
+        end })
+    if not ok then return false, "the keyboard did not open" end
+    N.kbd, N.kbdText, N.kbdAt, N.kbdMax = name, text or "", TN(function() return GetTime() end) or 0, max
+    emitSoon()
+    return true
+end
+-- /wci kbd off   the app's keyboard closed without Done (B, its close): the field goes, the value stays as it was
+function ACT.kbd(a)
+    if a ~= "off" then return false, "off only" end
+    N.kbdClose()
+    return true
+end
+
 -- ---------------------------------------------------------------- mail actions
 local function mailHeader(i)
     local r = R(function() return GetInboxHeaderInfo(i) end)
@@ -2633,6 +3056,127 @@ function ACT.mailback()
     MAIL.back, MAIL.open = MAIL.open, nil
     emitSoon()
     return true
+end
+
+-- ---- Send Mail (f-inbox-send)
+function MAIL.isOpen() return isOpen("mail") end
+-- /wci mailtab inbox|send   the game's two tabs
+function ACT.mailtab(a)
+    if not MAIL.isOpen() then return false, "no mailbox open" end
+    if a ~= "inbox" and a ~= "send" then return false, "no such tab" end
+    N.kbdClose()
+    MAIL.tab, MAIL.pick = a, false
+    if a == "send" then MAIL.open = nil end
+    emitSoon()
+    return true
+end
+-- /wci mailedit <field>   To, Subject, the letter, or the money's gold / silver / copper: the keyboard opens on it
+function ACT.mailedit(a)
+    if not MAIL.isOpen() or MAIL.tab ~= "send" then return false, "no Send Mail open" end
+    local max = MAIL.FIELD[a]
+    if not max then return false, "no such field" end
+    local digits = a == "gold" or a == "silver" or a == "copper"
+    return N.kbdOpen("mail" .. a, MAIL.form[a], max, function(t)
+        if not MAIL.isOpen() then return false, "the mailbox closed" end
+        t = tostring(t or "")
+        if digits then
+            t = t:gsub("%s", "")
+            if t ~= "" and not t:match("^%d+$") then return false, "numbers only" end
+            if a ~= "gold" and (tonumber(t) or 0) > 99 then return false, "0 to 99" end
+            t = (t == "") and "" or tostring(tonumber(t))
+        end
+        MAIL.form[a] = t
+        MAIL.status, MAIL.err = nil, nil
+        return true
+    end)
+end
+-- /wci mailcod on|off   the game's two radio buttons: Send Money, or C.O.D. (only with an attachment)
+function ACT.mailcod(a)
+    if not MAIL.isOpen() then return false, "no mailbox open" end
+    if a ~= "on" and a ~= "off" then return false, "on or off" end
+    if a == "on" and #MAIL.attached() == 0 then return false, "C.O.D. needs an attachment" end
+    MAIL.form.cod = (a == "on")
+    emitSoon()
+    return true
+end
+-- /wci mailpick on|off   the bag list to choose an attachment from
+function ACT.mailpick(a)
+    if not MAIL.isOpen() or MAIL.tab ~= "send" then return false, "no Send Mail open" end
+    if a == "on" and #MAIL.attached() >= MAIL.MAX then return false, "no room for more" end
+    MAIL.pick = (a == "on")
+    emitSoon()
+    return true
+end
+-- /wci mailattach <bag> <slot> <itemID>   the item goes onto the letter: picked up, then the game's own ClickSendMailItemButton
+-- (the first free attachment), inside the press; anything left in the hand goes back where it came from
+function ACT.mailattach(a, b, c)
+    local bag, sl, id = tonumber(a), tonumber(b), tonumber(c)
+    if not (bag and sl and id and MAIL.isOpen()) then return false, "no mailbox open" end
+    if TB(function() return CursorHasItem() end) then return false, "something is in your hand" end
+    local ok, info = CALL(function() return C_Container.GetContainerItemInfo(bag, sl) end)
+    if not (ok and type(info) == "table") or TN(function() return info.itemID end) ~= id then return false, "that slot changed" end
+    if TB(function() return info.isBound end) then return false, "soulbound items cannot be mailed" end
+    if #MAIL.attached() >= MAIL.MAX then return false, "no room for more" end
+    local done = run(function()
+        C_Container.PickupContainerItem(bag, sl)
+        ClickSendMailItemButton()
+    end)
+    if TB(function() return CursorHasItem() end) then
+        CALL(function() C_Container.PickupContainerItem(bag, sl) end)       -- it did not go: back into its own slot
+        CALL(function() ClearCursor() end)
+        return false, "the game did not take it"
+    end
+    MAIL.pick = false
+    emitSoon()
+    return done, (not done) and "the game did not take it" or nil
+end
+-- /wci maildetach <k>   an attachment back to the bags (the game's own right-click on it)
+function ACT.maildetach(a)
+    local k = tonumber(a)
+    if not (k and MAIL.isOpen()) then return false, "no mailbox open" end
+    if not TB(function() return HasSendMailItem(k) end) then return false, "nothing there" end
+    local done = run(function() ClickSendMailItemButton(k, true) end)
+    if #MAIL.attached() == 0 then MAIL.form.cod = false end
+    emitSoon()
+    return done
+end
+-- /wci mailresume   the stranger check answered (or cancelled) on the top screen: the bottom screen takes over again (a touch:
+-- the controller is the game's meanwhile). A letter that went says so by itself (MAIL_SEND_SUCCESS).
+function ACT.mailresume()
+    if MAIL.status ~= "confirm" then return false, "nothing to confirm" end
+    MAIL.status = nil
+    emitSoon()
+    return true
+end
+-- /wci mailclear   the letter written goes (the attachments stay on it, as in the game until it is sent)
+function ACT.mailclear()
+    if not MAIL.isOpen() then return false, "no mailbox open" end
+    N.kbdClose()
+    MAIL.form = MAIL.blank()
+    MAIL.status, MAIL.err = nil, nil
+    emitSoon()
+    return true
+end
+-- /wci mailsend   the game's Send (SendMailButtonMixin:OnClick): the money or the C.O.D. set, then SendMail, all inside this press
+function ACT.mailsend()
+    if not MAIL.isOpen() or MAIL.tab ~= "send" then return false, "no Send Mail open" end
+    if MAIL.status == "sending" or MAIL.status == "confirm" then return false, "the letter is on its way" end
+    local f = MAIL.form
+    local items = MAIL.attached()
+    local why = MAIL.whyNot(f, items)
+    if why then return false, why end
+    local subject = (f.subject ~= "") and f.subject or MAIL.autoSubject(items)
+    local copper = MAIL.copper(f)
+    MAIL.status, MAIL.err = "sending", nil
+    local done = run(function()
+        SetSendMailCOD(0)
+        SetSendMailMoney(0)
+        if f.cod then SetSendMailCOD(copper) elseif copper > 0 then SetSendMailMoney(copper) end
+        SendMail(f.to, subject, f.body)
+    end)
+    if not done then MAIL.status = "failed"; MAIL.err = "the game call failed" end
+    emitSoon()
+    return done, (not done) and MAIL.err or nil
 end
 -- /wci mailtake <i> <a>   one attachment (TakeInboxItem); never on a COD letter (it costs money)
 function ACT.mailtake(a, b)
@@ -3892,7 +4436,15 @@ end
 
 function N.sync(open, doc)
     N.stale = false
-    if N.mode and open and not inCombat() then
+    -- f-inbox-send, THE USER'S PICK (1.0.8, "Confirm on the top"): money or items to someone not a friend or guildmate stop at the
+    -- game's own secure dialog on the top screen, which no add-on may answer. Meanwhile the controller (and the game's own mail
+    -- window) are the game's; the letter sent or refused takes them back. Unanswered after MAIL.CONFIRM_S, or the player's "Done"
+    -- on the bottom screen (ACT.mailresume): back to the bottom screen, the letter as it was.
+    if MAIL.status == "confirm" and (TN(function() return GetTime() end) or 0) - (MAIL.confirmAt or 0) > MAIL.CONFIRM_S then
+        MAIL.status, MAIL.err = "failed", "Not confirmed on the top screen"
+    end
+    local letGo = MAIL.status == "confirm" and isOpen("mail")
+    if N.mode and open and not inCombat() and not letGo then
         if N.holding then N.check() else N.hold() end
         -- the game's copy goes only once a press has come through the frame (see the header)
         if N.holding and doc and (N.frameSeen or N.trusted) then
@@ -3916,7 +4468,7 @@ function N.sync(open, doc)
             N.npcExtra = want
         end
     elseif not G.holder then
-        N.release()
+        N.release(letGo and "confirm" or nil)
     end
     -- v10: an NPC / loot window opens in a fight: it waits for the ENTER tap (the app taps when its pop-up shows)
     if N.mode and open and inCombat() and not N.holding and not G.holder and not N.npcLeft then N.wantEnter("npc") end
@@ -4348,10 +4900,16 @@ end
 function N.back()
     if N.trMenu and isOpen("trainer") then
         N.trMenu = nil                      -- the trainer's Settings menu closes first
+    elseif isOpen("auction") and AH.filtersOpen then
+        AH.filtersOpen = false              -- the auction house: the Filter list goes first
     elseif isOpen("auction") and (AH.buy or AH.key or AH.tab == "owned" or #AH.path > 0) then
         navRun("ahback")                    -- the auction house: one level up first
-    elseif MAIL.open and isOpen("mail") then
+    elseif MAIL.open and isOpen("mail") and MAIL.tab ~= "send" then
         MAIL.back, MAIL.open = MAIL.open, nil  -- an opened letter: B goes back to the inbox first, onto it
+    elseif MAIL.pick and isOpen("mail") then
+        MAIL.pick = false                      -- Send Mail: the bag list goes first
+    elseif MAIL.tab == "send" and isOpen("mail") then
+        MAIL.tab = "inbox"                     -- then the Send Mail tab, back to the Inbox; the letter written is kept
     elseif LOOT.on() and LOOT.rare then
         LOOT.rare = nil                     -- make space: the blue / purple box says No
     elseif LOOT.on() then
@@ -4393,6 +4951,7 @@ local function padPress(key, down, via)
         N.distrustNow("bind")   -- the frame did not hear this press: it may not hear the next A
     end
     if N.stale then return end      -- taken inside the opening event; the highlight is not built yet
+    if N.kbd and not G.holder then return end      -- 1.0.8: the app's keyboard has the presses (it reads the controller itself)
     if G.holder then
         -- capture v6: a key the guest asked for on both edges (not while a chord waits)
         if G.spec.both and G.spec.both[key] and not G.chord then

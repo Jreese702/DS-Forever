@@ -70,6 +70,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private lateinit var settingsView: SettingsView
     /** the interrupt layer: an open NPC window takes the whole screen, over the rooms AND the strip */
     private lateinit var interactView: InteractView
+    private lateinit var interactKb: ChatKeyboard
     /** the room's red combat cue (Home's): over the rooms only, while a room keeps the controller through a fight */
     private lateinit var roomCue: RoomCombatCue
     private lateinit var dialogView: DialogView
@@ -562,6 +563,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         content.addView(roomCue, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         interactView = InteractView(this)
+        interactKb = ChatKeyboard(this, swap = false).apply { visibility = View.GONE }
+        interactView.keyboard = interactKb
+        interactView.padSource = { questsPad }
         dialogView = DialogView(this)
         startView = StartView(this)
         // INSIDE THE ONE APP (the native login.txt sign-in; the user: "injecting the keys is not the way to go"): the row never types -
@@ -698,6 +702,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply { bottomMargin = Strip.HEIGHT })
             addView(interactView, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            // 1.0.8: the Chat keyboard for the NPC windows' fields (Send Mail, the auction-house search), along the bottom over them
+            addView(interactKb, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM))
             // the game's dialogs lie over everything, an NPC window included
             addView(dialogView, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -1111,6 +1118,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // Bags' press feedback (the user: "all other context buttons should have similar feedback"): A / B / X / Y push in the
             // drawn button at once; display only (Bags ignores other keys, and keys while it does not hold the controller)
             if (room == Room.BAGS) bagsView.onPadKey(k, down)
+            if (::interactView.isInitialized) interactView.onPadKey(k, down)     // 1.0.8: its keyboard, only while it is up
             if (k == "PADFORWARD" && down) startPressed()
             if (k == "PAD2" && down) bPressed()
             if (down && k == "PADDDOWN" && room == Room.HOME && capHolder.isEmpty() && !DirectPad.sideHeld()
@@ -1387,7 +1395,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "chat" -> msg.optJSONObject("chat")?.let { chatView.update(it); homeView.onChat(it) }
             // the game's world notice (Chat chat21: the shard transfer's countdown) over Home's chat: current only (a replayed one is old)
             "notice" -> if (current) homeView.onNotice(msg)
-            "chatt", "chatq", "chatlink" -> chatView.onDoc(msg)      // Chat's rework: typed / quick chat answers, link tooltips
+            "chatt", "chatq", "chatlink" -> {
+                chatView.onDoc(msg)      // Chat's rework: typed / quick chat answers, link tooltips
+                if (current && ::interactView.isInitialized) interactView.onChatAnswer(msg)     // 1.0.8: an NPC window's field (chat22)
+            }
             "quests" -> msg.optJSONObject("q")?.let {
                 it.optJSONObject("pad")?.let { p -> questsPad = p }
                 questsView.update(it); homeView.onQuests(it, current); mapView.onQuests(it); worldMapRoom.onQuests(it)
@@ -2006,6 +2017,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             chatView.onPad(JSONObject().put("type", "guestpad").put("id", "chat").put("k", "PADFORWARD").put("n", --directN)); return
         }
         if (room == Room.BAGS && bagsView.ownsStart()) return          // bagsView.onPadKey already had it (the unclaimed route)
+        if (::interactView.isInitialized && interactView.ownsStart()) return   // an NPC window's keyboard: its Done (onPadKey had it)
         if (lastDpad?.want != true) return                              // the toolbar off: Start is the game's own wheel
         startReadAt = SystemClock.uptimeMillis()
         openPause("Start", byStart = true)

@@ -195,6 +195,7 @@ class InteractView(context: Context) : View(context) {
         if (k == Kind.NONE) { pendingCmd = null; dismissedSig = null }
         takeNav(msg.optJSONObject("nav"), k)
         takeProof(msg)
+        takeKbd(msg)
         if (selected != null && entries().none { it.cmd == selected }) selected = null
         refresh()
     }
@@ -257,6 +258,91 @@ class InteractView(context: Context) : View(context) {
         }
         // the controller took over: a window the finger dismissed comes back
         if (cur != null && dismissedSig == sig) dismissedSig = null
+    }
+
+    // ---- THE KEYBOARD FOR A FIELD (1.0.8: Send Mail's To / Subject / letter / money, the auction house's search box and level range).
+    // The add-on opens the field (doc.kbd: its name, its value then) on a press or a tap of ours; the Chat keyboard ([keyboard], the
+    // host's, along the bottom) types it, and every letter goes at once into the field Chat.lua lent the add-on (chat22), with Chat's
+    // own rows and hash check ([fieldStream]). Done (the keyboard's Send / Start) hands the text over and the add-on takes the field
+    // down; B or its close taps the doc's "kbd off". Meanwhile the add-on stands still and the presses come from the app's own reader
+    // ([onPadKey], the host's unclaimed route), so the keyboard is driven exactly as Chat's and Bags' are.
+
+    /** the host's keyboard (a sibling over this view, along the bottom); null = none hosted */
+    var keyboard: ChatKeyboard? = null
+    /** the pad when a document brings none (the quests documents': the same shared grid) */
+    var padSource: () -> JSONObject? = { null }
+    private var kbField: String? = null
+    private var kbText = ""
+    private var kbOff = -1
+    /** the field's own limit (the add-on's: To 48, Subject 64, a money box 2 or 7, ...): more is never typed */
+    private var kbMax = ChatStream.MAX
+    private val fieldStream = ChatStream({ cells, gap ->
+        TapBridge.tapsSpaced(context, doc?.optJSONObject("pad") ?: padSource(), cells, gap) { why -> post { note(why, false) } }
+    }, field = true).apply {
+        onEvent = { e -> post { if (e is ChatStream.Event.Refused) note(e.why, false); invalidate() } }
+    }
+    private val fieldTick = object : Runnable {
+        override fun run() { fieldStream.tick(); if (fieldStream.sending) postDelayed(this, 500L) }
+    }
+
+    /** the field being typed shows this instead of its value in the document */
+    private fun typedOr(field: String, value: String): String = if (kbField == field) kbText else value
+
+    private fun takeKbd(msg: JSONObject) {
+        val k = msg.optJSONObject("kbd")
+        if (k == null) { if (docCurrent && kbField != null) hideKeyboard(); return }
+        kbOff = k.optInt("off", -1)
+        val name = k.optString("name")
+        if (!docCurrent || name.isEmpty() || name == kbField) return
+        val kb = keyboard ?: return
+        kbField = name
+        kbMax = k.optInt("max", ChatStream.MAX).coerceIn(1, ChatStream.MAX)
+        kbText = fieldStream.clean(k.optString("text", ""), kbMax)
+        fieldStream.startField(kbText)
+        kb.sendWord = if (name == "ahtext") "Search" else "Done"
+        kb.text = { kbText }
+        kb.onText = { t -> kbText = fieldStream.clean(t, kbMax); fieldStream.setBody(kbText); invalidate() }
+        kb.onSend = { if (fieldStream.send()) { removeCallbacks(fieldTick); postDelayed(fieldTick, 500L) } }
+        kb.onClose = { closeField() }
+        kb.open(); kb.visibility = VISIBLE
+    }
+
+    /** B / the keyboard's close: the add-on drops the field (the value stays as it was), the keyboard goes */
+    private fun closeField() {
+        if (kbOff >= 0 && !dryRun) TapBridge.tap(context, doc?.optJSONObject("pad") ?: padSource(), "iact", kbOff) { }
+        hideKeyboard()
+    }
+
+    private fun hideKeyboard() {
+        kbField = null; kbRepeat = null
+        removeCallbacks(kbTick); removeCallbacks(fieldTick)
+        keyboard?.visibility = GONE
+        invalidate()
+    }
+
+    /** the keyboard is up: Start is its Done (the host asks before the pause wheel takes Start) */
+    fun ownsStart(): Boolean = kbField != null && visibility == VISIBLE
+
+    private var kbRepeat: String? = null
+    private val kbTick = object : Runnable {
+        override fun run() { val k = kbRepeat ?: return; keyboard?.press(k); postDelayed(this, KB_REPEAT_MS) }
+    }
+
+    /** a controller key from the host's own reader (only while the keyboard is up; the add-on stands still meanwhile) */
+    fun onPadKey(k: String, down: Boolean) {
+        if (kbField == null || visibility != VISIBLE) return
+        val dpad = k == "PADDUP" || k == "PADDDOWN" || k == "PADDLEFT" || k == "PADDRIGHT"
+        if (!down) { if (kbRepeat == k) { kbRepeat = null; removeCallbacks(kbTick) }; return }
+        keyboard?.press(k)
+        if (dpad && kbField != null) { kbRepeat = k; removeCallbacks(kbTick); postDelayed(kbTick, KB_REPEAT_FIRST_MS) }
+    }
+
+    /** Chat.lua's answers ({"type":"chatt"}): the field's check and its hand-over */
+    fun onChatAnswer(msg: JSONObject) {
+        if (kbField == null || msg.optString("type") != "chatt") return
+        fieldStream.heard(ChatStream.Heard("chatt", msg.optString("op"), msg.optBoolean("ok"),
+            if (msg.has("why")) msg.optString("why") else null, msg.optString("ty", ""),
+            msg.optInt("len", -1), msg.optInt("h", -1), msg.optInt("tlen", -1), msg.optInt("th", -1), msg.optString("into")))
     }
 
     // ---- the remembered proof (user, 2026-09-28: "Remember the proof")
@@ -446,7 +532,7 @@ class InteractView(context: Context) : View(context) {
         Kind.TRAINER -> "t|${d.optJSONObject("trainer")!!.optJSONObject("npc")?.optString("name")}"
         Kind.STABLE -> "s|${d.optJSONObject("stable")!!.optJSONObject("npc")?.optString("name")}"
         Kind.PETITION -> "pe|${d.optJSONObject("petition")!!.optString("title")}"
-        Kind.MAIL -> "ml"
+        Kind.MAIL -> d.optJSONObject("mail")!!.let { "ml|${it.optString("tab")}|${it.optJSONObject("send")?.has("bags") == true}" }
         Kind.TAXI -> "tx|${d.optJSONObject("taxi")!!.optInt("map")}"
         Kind.BANK -> d.optJSONObject("bank")!!.let { "bk|${it.optBoolean("acct")}|${it.optInt("page")}" }
         Kind.LOOT -> if (d.optJSONObject("loot")!!.has("space")) "lts" else "lt"
@@ -479,6 +565,7 @@ class InteractView(context: Context) : View(context) {
     /** decide whether the overlay is up, and keep checking while a window is open */
     private fun refresh() {
         removeCallbacks(ticker)
+        if (kbField != null && (kind != Kind.MAIL && kind != Kind.AUCTION)) hideKeyboard()
         val now0 = System.currentTimeMillis()
         // the user, 2026-10-07: "I dont like when the context menu stays open after making a selection": an action that got no
         // document at all for PENDING_FOLD_MS (the top screen is loading) folds the window away; the next document brings it back
@@ -590,8 +677,9 @@ class InteractView(context: Context) : View(context) {
     private fun rowOf(cmd: String) = when (cmd.substringBefore(' ')) {
         "opt", "take", "turnin", "pick", "trhead", "ahcat" -> "ipick"
         "buy", "train", "pet", "mail", "ahres", "ahrow", "taxi", "bkdo", "loot" -> "ibuy"
-        "sell", "mailtake", "mailmoney", "mailall", "bkpick", "bkput", "lootdelc", "lootdelr" -> "isell"
-        "lookbag" -> "ipick"
+        "sell", "mailtake", "mailmoney", "mailall", "bkpick", "bkput", "lootdelc", "lootdelr", "maildetach" -> "isell"
+        "lookbag", "ahfilter" -> "ipick"
+        "mailattach" -> "ibuy"
         else -> "iact"
     }
 
@@ -1642,9 +1730,27 @@ class InteractView(context: Context) : View(context) {
         val open = ml.optJSONObject("open")
         val openI = open?.optInt("i") ?: -1
         val ty = r.top + 94f; val th = 108f
-        UiKit.tab(c, RectF(176f, ty + 4f, 366f, ty + th), "Inbox", true)
+        // the game's two tabs (1.0.8: Send Mail); touch = the controller's A on them (the add-on's tabs zone)
+        val sendTab = ml.optString("tab") == "send"
+        val tIn = RectF(176f, ty + 4f, 366f, ty + th); val tSend = RectF(362f, ty + 12f, 612f, ty + th)
+        UiKit.tab(c, tIn, "Inbox", !sendTab, cursor = cur == "mailtab inbox")
+        UiKit.tab(c, tSend, "Send Mail", sendTab, cursor = cur == "mailtab send")
+        ml.optJSONObject("act")?.let { a ->
+            slotOf(a, "inbox").takeIf { it >= 0 }?.let { hits.add(tIn to "act:mailtab inbox|$it") }
+            slotOf(a, "send").takeIf { it >= 0 }?.let { hits.add(tSend to "act:mailtab send|$it") }
+        }
         pFill.color = Color.rgb(96, 80, 50)
         c.drawRect(inner.left - 6f, ty + th, inner.right + 6f, ty + th + 2f, pFill)
+        if (sendTab) {
+            val pm0 = UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
+            c.drawText("Your money", inner.right - 190f, ty + th / 2f + 14f, pm0)
+            UiKit.money(c, purse, inner.right - 16f, ty + th / 2f + 6f, 30f, fromRight = true)
+            ml.optJSONObject("send")?.let { sendPage(c, r, inner, ty + th + 8f, it, ml.optJSONObject("act"), purse, now) }
+            UiKit.windowFrame(c, r, "Mailbox", UiKit.tex("mm_mailbox"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
+            ml.optJSONObject("send")?.let { sd -> if (sd.has("bags")) bagPicker(c, r, sd, ml.optJSONObject("act")) }
+            ml.optJSONObject("send")?.let { sd -> if (sd.optString("status") == "confirm") confirmOnTop(c, r, ml.optJSONObject("act")) }
+            return
+        }
         val pm = UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
         c.drawText("Your money", inner.right - 190f, ty + th / 2f + 14f, pm)
         UiKit.money(c, purse, inner.right - 16f, ty + th / 2f + 6f, 30f, fromRight = true)
@@ -1780,6 +1886,213 @@ class InteractView(context: Context) : View(context) {
         UiKit.windowFrame(c, r, "Mailbox", UiKit.tex("mm_mailbox"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
     }
 
+    // ---- SEND MAIL (f-inbox-send, 1.0.8): the game's SendMailFrame, read from the client. To and Subject on their boxes, the letter on
+    // the game's paper, the money (Send Money or C.O.D., gold / silver / copper), the postage, up to 12 attachments; Clear and Send on
+    // the strip. A box pressed (touch, or the controller's A) opens the Chat keyboard on it; what is typed shows in the box as it goes.
+
+    /** a box of the form: its words (or the hint, dim), the caret while typed; touch = the add-on's cell; the cursor's gold box */
+    private fun formBox(c: Canvas, box: RectF, value: String, hint: String, cmd: String, col: Int, field: String,
+                        size: Float = 28f, digits: Boolean = false) {
+        UiKit.inputBox(c, box)
+        val typing = kbField == field
+        val shown = typedOr(field, value)
+        val p = if (shown.isEmpty()) UiKit.bodyPaint(size, Theme.dim) else if (digits) UiKit.numberPaint(size, Color.WHITE) else UiKit.bodyPaint(size, Color.WHITE)
+        val words = if (shown.isEmpty()) hint else shown
+        val x = box.left + 18f
+        val maxW = box.width() - 36f
+        // the end of what is typed stays in view (the game's own box scrolls with the caret)
+        val drawn = if (typing && p.measureText(words) > maxW) "…" + words.takeLast(p.breakText(words.reversed(), true, maxW - 24f, null)) else fit(p, words, maxW)
+        val by = box.centerY() - (p.ascent() + p.descent()) / 2f
+        c.drawText(drawn, x, by, p)
+        if (typing) {
+            if ((System.currentTimeMillis() / 500L) % 2L == 0L) {
+                val cx = x + (if (shown.isEmpty()) 0f else p.measureText(drawn)) + 2f
+                pFill.color = Theme.gold
+                c.drawRect(cx, box.top + 14f, cx + 3f, box.bottom - 14f, pFill)
+            }
+            postInvalidateDelayed(500L)                 // the caret blinks while the box is typed
+        }
+        if (col >= 0) hits.add(box to "act:$cmd|$col")
+        if (cur == cmd || typing) UiKit.focus(c, box)
+    }
+
+    private fun sendPage(c: Canvas, r: RectF, inner: RectF, top: Float, sd: JSONObject, act: JSONObject?, purse: Long, now: Long) {
+        fun col(k: String) = act?.let { slotOf(it, k) } ?: -1
+        val strip = UiKit.strip(c, inner)
+        val cy = strip.centerY() + 2f
+        val bx = inner.right - 8f
+        val bot = inner.bottom - UiKit.STRIP - 8f
+        val lab = UiKit.bodyPaint(26f, Theme.gold)
+        // ---- left: To, Subject, the letter
+        val lx = inner.left + 16f
+        val lw = (inner.width() - 32f) * 0.6f
+        val labW = 150f
+        c.drawText("To:", lx, top + 46f, lab)
+        formBox(c, RectF(lx + labW, top + 4f, lx + lw, top + 72f), sd.optString("to"), "Name", "mailedit to", col("edit_to"), "mailto")
+        c.drawText("Subject:", lx, top + 128f, lab)
+        val auto = sd.optString("autoSubject", "")
+        formBox(c, RectF(lx + labW, top + 86f, lx + lw, top + 154f), sd.optString("subject"), auto.ifEmpty { "Subject" },
+            "mailedit subject", col("edit_subject"), "mailsubject")
+        val paper = RectF(lx, top + 170f, lx + lw, bot)
+        val w = UiKit.letterPaper(c, paper)
+        val body = typedOr("mailbody", sd.optString("body"))
+        val bp = TextPaint(UiKit.inkPaint(26f))
+        if (body.isEmpty()) c.drawText("Write your letter here", w.left, w.top + 30f, UiKit.inkPaint(26f).apply { color = Color.argb(140, 60, 40, 20) })
+        else {
+            val lay = StaticLayout.Builder.obtain(body, 0, body.length, bp, w.width().toInt()).setLineSpacing(4f, 1f).build()
+            c.save(); c.clipRect(w); drawLayout(c, lay, w.left, w.top + 4f); c.restore()
+        }
+        if (kbField == "mailbody") postInvalidateDelayed(500L)
+        col("edit_body").takeIf { it >= 0 }?.let { hits.add(paper to "act:mailedit body|$it") }
+        if (cur == "mailedit body" || kbField == "mailbody") UiKit.focus(c, paper, onPaper = true)
+
+        // ---- right: the money, the postage, the attachments
+        val rx = lx + lw + 30f
+        val rw = inner.right - 16f - rx
+        val cod = sd.optBoolean("cod")
+        val hasItems = arr(sd, "items").isNotEmpty()
+        val half = (rw - 12f) / 2f
+        val rSend = RectF(rx, top + 4f, rx + half, top + 76f); val rCod = RectF(rx + half + 12f, top + 4f, rx + rw, top + 76f)
+        UiKit.choice(c, rSend, "Send Money", !cod, textSize = 24f)
+        UiKit.choice(c, rCod, "C.O.D.", cod, enabled = hasItems, textSize = 24f)
+        col("money").takeIf { it >= 0 }?.let { hits.add(rSend to "act:mailcod off|$it") }
+        if (hasItems) col("cod").takeIf { it >= 0 }?.let { hits.add(rCod to "act:mailcod on|$it") } else hits.add(rCod to "why:C.O.D. needs an attachment")
+        if (cur == "mailcod off") UiKit.focus(c, rSend)
+        if (cur == "mailcod on") UiKit.focus(c, rCod)
+        c.drawText(if (cod) "C.O.D. Amount:" else "Amount to Send:", rx, top + 124f, lab)
+        // gold / silver / copper: the game's three boxes, each with its coin
+        val coinW = (rw - 2f * 14f) / 3f
+        val words = listOf("gold" to "g", "silver" to "s", "copper" to "c")
+        for ((i, pr) in words.withIndex()) {
+            val (f, short) = pr
+            val b = RectF(rx + i * (coinW + 14f), top + 140f, rx + i * (coinW + 14f) + coinW, top + 208f)
+            formBox(c, b, sd.optString(f), "0", "mailedit $f", col("edit_$f"), "mail$f", digits = true)
+            c.drawText(short, b.right - 30f, b.centerY() + 10f, UiKit.bodyPaint(24f, when (f) { "gold" -> Theme.gold; "silver" -> Color.rgb(200, 200, 200); else -> Color.rgb(200, 120, 60) }))
+        }
+        c.drawText("Postage:", rx, top + 262f, lab)
+        UiKit.money(c, sd.optLong("price", 0), rx + rw, top + 254f, 28f, if (sd.optLong("price", 0) + (if (cod) 0L else sd.optLong("money", 0)) > purse) Theme.unusable else Theme.text, fromRight = true)
+        // the attachments: the game's 12, six to a row
+        c.drawText("Attachments:", rx, top + 316f, lab)
+        val items = arr(sd, "items")
+        val n = max(1, sd.optInt("max", 12))
+        val per = 6
+        val sz = min(96f, (rw - (per - 1) * 16f) / per)
+        var placedPick = false
+        for (k in 0 until n) {
+            val x = rx + (k % per) * (sz + 16f)
+            val y = top + 336f + (k / per) * (sz + 26f)
+            val att = items.getOrNull(k)
+            val rr = RectF(x, y, x + sz, y + sz)
+            val pc = col("pick")
+            if (att != null) {
+                UiKit.slot(c, itemIcon(att), x, y, sz, count = att.optInt("count", 0))
+                val cmd = "maildetach ${att.optInt("k")}"
+                val sl = slotOf(att)
+                hits.add(rr to (if (sl >= 0) "act:$cmd|$sl" else "why:The game gave this no tap cell"))
+                if (cur == cmd) UiKit.focus(c, rr)
+            } else {
+                UiKit.slot(c, null, x, y, sz)
+                if (!placedPick) {
+                    placedPick = true
+                    UiKit.tex("plus")?.let { c.drawBitmap(it, null, RectF(rr.left + sz * 0.3f, rr.top + sz * 0.3f, rr.right - sz * 0.3f, rr.bottom - sz * 0.3f), pArt) }
+                        ?: c.drawText("+", rr.centerX() - 10f, rr.centerY() + 14f, UiKit.bodyPaint(40f, Theme.gold))
+                    hits.add(rr to (if (pc >= 0) "act:mailpick on|$pc" else "why:The game gave this no tap cell"))
+                    if (cur == "mailpick on") UiKit.focus(c, rr)
+                } else hits.add(rr to (if (pc >= 0) "act:mailpick on|$pc" else "why:The game gave this no tap cell"))
+            }
+        }
+        if (items.isNotEmpty()) c.drawText("Tap one to take it back", rx, top + 336f + 2 * (sz + 26f) + 10f, UiKit.bodyPaint(22f, Theme.dim))
+
+        // ---- the strip: what stops the letter (or what the game said), Clear, Send
+        val why = if (sd.has("why")) sd.optString("why") else null
+        val st = sd.optString("status", "")
+        val busy = pendingCmd != null
+        val sendB = RectF(bx - 250f, cy - 55f, bx, cy + 56f)
+        val clearB = RectF(bx - 520f, cy - 55f, bx - 270f, cy + 56f)
+        val sCol = col("send"); val cCol = col("clear")
+        val sendOk = why == null && sCol >= 0 && st != "sending" && st != "confirm"
+        stripButton(c, sendB, "Send", if (sendOk) "act:mailsend|$sCol" else "why:${why ?: "The letter is on its way"}", sendOk,
+            busy && pendingCmd == "mailsend", "rev_a", id = "mailsend")
+        stripButton(c, clearB, "Clear", if (cCol >= 0) "act:mailclear|$cCol" else "why:Nothing to clear", cCol >= 0,
+            busy && pendingCmd == "mailclear", null, id = "mailclear")
+        val shown = resultLine(c, inner.left + 24f, bx - 560f, cy, now)
+        if (!shown) {
+            val (words2, colour) = when (st) {
+                "sending" -> "Sending..." to Theme.dim
+                "sent" -> "Your letter was sent" to Theme.gold
+                "failed" -> (sd.optString("err").ifEmpty { "The game did not send it" }) to Theme.unusable
+                else -> (why ?: "") to Theme.dim
+            }
+            if (words2.isNotEmpty()) c.drawText(fit(UiKit.bodyPaint(24f, colour), words2, bx - 560f - inner.left - 24f), inner.left + 24f, cy + 8f, UiKit.bodyPaint(24f, colour))
+        }
+    }
+
+    /** the bags, to choose an attachment from: the game's soulbound items greyed (they cannot be mailed); B / Close puts it away */
+    private fun bagPicker(c: Canvas, r: RectF, sd: JSONObject, act: JSONObject?) {
+        hits.clear()
+        UiKit.cover(c, r)
+        val bags = arr(sd, "bags")
+        val per = 8; val sz = 96f; val gap = 18f
+        val rows = max(1, (bags.size + per - 1) / per)
+        val w = per * sz + (per - 1) * gap + 80f
+        val h = min(r.height() - 120f, 150f + rows * (sz + gap) + 150f)
+        val box = RectF(r.centerX() - w / 2f, r.top + 60f, r.centerX() + w / 2f, r.top + 60f + h)
+        val inn = UiKit.dialog(c, box)
+        c.drawText("Choose an attachment", inn.left + 10f, inn.top + 40f, UiKit.bodyPaint(30f, Theme.gold))
+        val gridTop = inn.top + 70f
+        val view = RectF(inn.left, gridTop, inn.right, box.bottom - 150f)
+        viewB = view; contentB = rows * (sz + gap)
+        val ci = bags.indexOfFirst { "mailattach ${it.optInt("bag")} ${it.optInt("s")} ${it.optInt("id")}" == cur }
+        if (ci >= 0) {
+            val y = (ci / per) * (sz + gap)
+            if (y < scrollB) scrollB = y else if (y + sz > scrollB + view.height()) scrollB = y + sz - view.height()
+        }
+        scrollB = scrollB.coerceIn(0f, max(0f, contentB - view.height()))
+        c.save(); c.clipRect(view)
+        for ((k, b) in bags.withIndex()) {
+            val x = inn.left + 30f + (k % per) * (sz + gap)
+            val y = gridTop + (k / per) * (sz + gap) - scrollB
+            if (y + sz < view.top || y > view.bottom) continue
+            val cmd = "mailattach ${b.optInt("bag")} ${b.optInt("s")} ${b.optInt("id")}"
+            val bound = b.optBoolean("bound") || b.optBoolean("locked")
+            UiKit.slot(c, itemIcon(b), x, y, sz, count = b.optInt("n", 0), dim = bound)
+            val rr = RectF(x, max(y, view.top), x + sz, min(y + sz, view.bottom))
+            val sl = slotOf(b)
+            hits.add(rr to when { b.optBoolean("bound") -> "why:Soulbound items cannot be mailed"; b.optBoolean("locked") -> "why:That item is locked"
+                sl >= 0 -> "act:$cmd|$sl"; else -> "why:The game gave this no tap cell" })
+            if (cur == cmd) UiKit.focus(c, RectF(x, y, x + sz, y + sz))
+        }
+        c.restore()
+        if (bags.isEmpty()) c.drawText("Your bags are empty", inn.left + 30f, gridTop + 50f, UiKit.bodyPaint(26f, Theme.dim))
+        val cur0 = bags.firstOrNull { "mailattach ${it.optInt("bag")} ${it.optInt("s")} ${it.optInt("id")}" == cur }
+        cur0?.let { c.drawText(fit(UiKit.bodyPaint(26f, Theme.quality(it.optInt("q", 1))), it.optString("name", ""), inn.width() - 40f),
+            inn.left + 20f, box.bottom - 120f, UiKit.bodyPaint(26f, Theme.quality(it.optInt("q", 1)))) }
+        val off = act?.let { slotOf(it, "unpick") } ?: -1
+        val cb = RectF(box.centerX() - 190f, box.bottom - 100f, box.centerX() + 190f, box.bottom - 10f)
+        stripButton(c, cb, "Close", if (off >= 0) "act:mailpick off|$off" else "why:Press B", true, false, UiKit.backGlyph(), always = true)
+    }
+
+    /**
+     * THE USER'S PICK (1.0.8, "Confirm on the top"): money or items to someone not a friend or guildmate stop at the game's own secure
+     * dialog on the top screen; no add-on may answer it. The controller is the game's meanwhile; Done (a touch) brings the bottom
+     * screen back if it was cancelled there. A letter that went says so by itself.
+     */
+    private fun confirmOnTop(c: Canvas, r: RectF, act: JSONObject?) {
+        hits.clear()
+        UiKit.cover(c, r)
+        val box = RectF(r.centerX() - 520f, 200f, r.centerX() + 520f, 200f + 430f)
+        val inn = UiKit.dialog(c, box)
+        val tp = UiKit.bodyPaint(34f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
+        c.drawText("Confirm on the top screen", inn.centerX(), inn.top + 50f, tp)
+        val words = "The game asks before sending money or items to someone who is not on your friends list or in your guild. " +
+            "Use the controller or touch on the top screen to confirm or cancel."
+        val lay = layout(words, UiKit.bodyPaint(26f, Color.WHITE), (inn.width() - 40f).toInt(), 4f)
+        drawLayout(c, lay, inn.left + 20f, inn.top + 90f)
+        val res = act?.let { slotOf(it, "resume") } ?: -1
+        val db = RectF(box.centerX() - 190f, box.bottom - 140f, box.centerX() + 190f, box.bottom - 30f)
+        stripButton(c, db, "Done", if (res >= 0) "act:mailresume|$res" else "why:Waiting for the game", res >= 0, false, null, always = true)
+    }
+
     // ---- the AUCTION HOUSE, step 1: browse and buy (UI Art's AUCTION_SPEC, art-kit 0c0f6cb; user 2026-09-30 "Yes, build it")
     // Categories down the left (the game's tree, the browsed path open in place); on the right the results, a commodity's
     // price tiers with its quantity, or an item's listings; the game's buy box over it all while a purchase is armed.
@@ -1816,8 +2129,8 @@ class InteractView(context: Context) : View(context) {
             // ---- your auctions, read only
             val t = RectF(inner.left + 4f, by0, inner.right - 4f, by1)
             UiKit.ahPanel(c, t, "ah_bg_auctions")
-            UiKit.ahHeader(c, t.left + 10f, t.right - 10f, t.top + 30f, listOf("Item" to t.left + 100f, "Bid" to -(t.right - 470f),
-                "Buyout" to -(t.right - 250f), "Time Left" to -(t.right - 24f)))
+            sortHeads(c, t.top + 30f, au, "owned", listOf(Head("Item", t.left + 100f, "Name"), Head("Bid", -(t.right - 470f), "Bid"),
+                Head("Buyout", -(t.right - 250f), "Buyout"), Head("Time Left", -(t.right - 24f), "TimeRemaining")))
             val rows = arr(au, "owned")
             val view = RectF(t.left, t.top + 58f, t.right, t.bottom - 4f)
             viewA = view; contentA = rows.size * 84f
@@ -1870,13 +2183,16 @@ class InteractView(context: Context) : View(context) {
         c.restore()
 
         val rx0 = cat.right + 12f; val rx1 = inner.right - 4f
+        // 1.0.8: THE GAME'S SEARCH BAR over the results (f-auction-house): the search box, Filter, Search
+        searchBar(c, RectF(rx0, by0, rx1, by0 + 84f), au, act)
+        val ry0 = by0 + 96f
         val item = au.optJSONObject("item")
         val buy = au.optJSONObject("buy")
         var box: (() -> Unit)? = null
         var tipRowY: Float? = null              // the cursor's row, for the tooltip's height
         if (item != null && item.optBoolean("commodity")) {
             // ---- a commodity: the game's CommoditiesBuyFrame and its price tiers
-            val bf = RectF(rx0, by0, rx0 + 450f, by1)
+            val bf = RectF(rx0, ry0, rx0 + 450f, by1)
             UiKit.ahPanel(c, bf, "ah_bg_commodities")
             UiKit.ahItemHeader(c, RectF(bf.left + 10f, bf.top + 10f, bf.right - 10f, bf.top + 120f), itemIcon(item),
                 item.optString("name", ""), Theme.quality(item.optInt("q", 1)))
@@ -1904,7 +2220,7 @@ class InteractView(context: Context) : View(context) {
             UiKit.money(c, unit, bf.right - 30f, qy + 100f, 28f, fromRight = true)
             c.drawText("Total Price", bf.left + 30f, qy + 180f, lp)
             UiKit.money(c, total, bf.right - 30f, qy + 170f, 32f, if (total <= purse) Theme.text else Theme.unusable, fromRight = true)
-            val mk = RectF(bf.right + 12f, by0, rx1, by1)
+            val mk = RectF(bf.right + 12f, ry0, rx1, by1)
             UiKit.ahPanel(c, mk, "ah_bg_market")
             UiKit.ahHeader(c, mk.left + 10f, mk.right - 10f, mk.top + 30f, listOf("Unit Price" to mk.left + 24f, "Available" to -(mk.right - 24f)))
             c.save(); c.clipRect(mk.left, mk.top + 58f, mk.right, mk.bottom - 4f)
@@ -1934,11 +2250,11 @@ class InteractView(context: Context) : View(context) {
                 box = { ahBox(c, r, item, buy.optInt("qty", q), buy.optLong("total", total), buy.optBoolean("waiting"), be, act) }
         } else if (item != null) {
             // ---- an item: its listings (Buyout, Bid, Time Left); yours dimmed
-            UiKit.ahItemHeader(c, RectF(rx0, by0, rx1, by0 + 110f), itemIcon(item), item.optString("name", ""), Theme.quality(item.optInt("q", 1)))
-            val list = RectF(rx0, by0 + 120f, rx1, by1)
+            UiKit.ahItemHeader(c, RectF(rx0, ry0, rx1, ry0 + 110f), itemIcon(item), item.optString("name", ""), Theme.quality(item.optInt("q", 1)))
+            val list = RectF(rx0, ry0 + 120f, rx1, by1)
             UiKit.ahPanel(c, list, "ah_bg_item_market")
-            UiKit.ahHeader(c, list.left + 10f, list.right - 10f, list.top + 30f, listOf("Buyout" to list.left + 24f,
-                "Bid" to list.left + 330f, "Time Left" to -(list.right - 24f)))
+            sortHeads(c, list.top + 30f, au, "item", listOf(Head("Buyout", list.left + 24f, "Buyout"),
+                Head("Bid", list.left + 330f, "Bid"), Head("Time Left", -(list.right - 24f), null)))
             val rows = arr(item, "rows")
             val view = RectF(list.left, list.top + 58f, list.right, list.bottom - 4f)
             viewA = view; contentA = rows.size * 70f
@@ -1980,10 +2296,13 @@ class InteractView(context: Context) : View(context) {
             }
         } else {
             // ---- the results: Name, Price, Available
-            val res = RectF(rx0, by0, rx1, by1)
+            val res = RectF(rx0, ry0, rx1, by1)
             UiKit.ahPanel(c, res, "ah_bg_index")
-            UiKit.ahHeader(c, res.left + 10f, res.right - 10f, res.top + 30f, listOf("Name" to res.left + 100f,
-                "Price" to -(res.right - 190f), "Available" to -(res.right - 24f)))
+            // the game's columns: Price, Name, the category's level column (Item Level for weapons and armour), Available
+            val lvlWord = if (au.has("levelWord")) au.optString("levelWord") else null
+            sortHeads(c, res.top + 30f, au, "browse", listOfNotNull(Head("Name", res.left + 100f, "Name"),
+                lvlWord?.let { Head(it, -(res.right - 400f), "Level") },
+                Head("Price", -(res.right - 190f), "Price"), Head("Available", -(res.right - 24f), null)))
             val rows = arr(au, "results")
             val view = RectF(res.left, res.top + 58f, res.right, res.bottom - 4f)
             viewA = view; contentA = rows.size * 84f
@@ -1997,7 +2316,11 @@ class InteractView(context: Context) : View(context) {
                 UiKit.ahRowGround(c, row, k % 2 == 1)
                 UiKit.slot(c, itemIcon(l), row.left + 14f, row.top + 10f, 58f)
                 val np = UiKit.bodyPaint(26f, Theme.quality(l.optInt("q", 1)))
-                c.drawText(fit(np, l.optString("name", ""), row.width() - 400f), row.left + 92f, row.centerY() - (np.ascent() + np.descent()) / 2f, np)
+                c.drawText(fit(np, l.optString("name", ""), row.width() - (if (lvlWord != null) 560f else 400f)), row.left + 92f, row.centerY() - (np.ascent() + np.descent()) / 2f, np)
+                if (lvlWord != null && l.optInt("lvl", 0) > 0) {
+                    val lp = UiKit.numberPaint(26f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
+                    c.drawText(l.optInt("lvl").toString(), row.right - 400f, row.centerY() - (lp.ascent() + lp.descent()) / 2f, lp)
+                }
                 UiKit.money(c, l.optLong("price", 0), row.right - 182f, row.centerY(), 25f, fromRight = true)
                 val ap = UiKit.numberPaint(26f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
                 c.drawText(l.optInt("count", 0).toString(), row.right - 16f, row.centerY() - (ap.ascent() + ap.descent()) / 2f, ap)
@@ -2006,7 +2329,8 @@ class InteractView(context: Context) : View(context) {
             }
             c.restore()
             if (rows.isEmpty()) {
-                val words = if ((au.optJSONArray("path")?.length() ?: 0) > 0) "Nothing found" else "Choose a category"
+                val searched = (au.optJSONArray("path")?.length() ?: 0) > 0 || au.optJSONObject("search")?.optString("text").orEmpty().isNotEmpty()
+                val words = if (searched) "Nothing found" else "Choose a category, or search"
                 c.drawText(words, res.left + 30f, view.top + 50f, UiKit.bodyPaint(26f, Theme.dim))
             }
             resultLine(c, inner.left + 24f, bx - 300f, cy, now)
@@ -2026,6 +2350,121 @@ class InteractView(context: Context) : View(context) {
         }
         UiKit.windowFrame(c, r, name, UiKit.tex("mm_auctioneer"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
         box?.invoke()
+        au.optJSONObject("search")?.let { sr -> if (sr.optBoolean("open")) filterList(c, r, sr, act) }
+    }
+
+    /** a column header: its words, where they stand (negative = right-aligned at -x), the game's sort it stands for (null = none) */
+    private class Head(val label: String, val x: Float, val sort: String?)
+
+    /**
+     * THE GAME'S SORTABLE HEADERS (f-auction-house): the words in gold, the sort's arrow beside a sorted column (bright for the first
+     * sort, faint for the second; up = reversed, as the game's header arrows), touch = the add-on's "ahsort" cell, the cursor's box.
+     */
+    private fun sortHeads(c: Canvas, cy: Float, au: JSONObject, ctx: String, heads: List<Head>) {
+        val p = UiKit.bodyPaint(22f, Theme.gold)
+        val sorts = au.optJSONObject("sorts")?.optJSONArray(ctx)
+        val cells = au.optJSONObject("act")?.optJSONObject("sort")
+        val mine = au.optJSONObject("act")?.optString("sortCtx") == ctx
+        for (h in heads) {
+            p.textAlign = if (h.x < 0f) Paint.Align.RIGHT else Paint.Align.LEFT
+            val ax = abs(h.x)
+            c.drawText(h.label, ax, cy + 8f, p)
+            val w = p.measureText(h.label)
+            val l = if (h.x < 0f) ax - w else ax
+            val rr = RectF(l - 14f, cy - 26f, l + w + 34f, cy + 22f)
+            val s = h.sort ?: continue
+            var rank = -1; var rev = false
+            if (sorts != null) for (i in 0 until sorts.length()) sorts.optJSONObject(i)?.let { o -> if (o.optString("o") == s) { rank = i; rev = o.optBoolean("r") } }
+            if (rank >= 0) {
+                val tx = if (h.x < 0f) l - 22f else l + w + 8f
+                val path = Path().apply {
+                    if (rev) { moveTo(tx, cy + 4f); lineTo(tx + 14f, cy + 4f); lineTo(tx + 7f, cy - 8f) }
+                    else { moveTo(tx, cy - 8f); lineTo(tx + 14f, cy - 8f); lineTo(tx + 7f, cy + 4f) }
+                    close()
+                }
+                pFill.color = if (rank == 0) Theme.gold else Color.argb(110, 255, 209, 0)
+                c.drawPath(path, pFill)
+            }
+            val col = if (mine) cells?.let { slotOf(it, s) } ?: -1 else -1
+            if (col >= 0) hits.add(rr to "act:ahsort $ctx $s|$col")
+            if (cur == "ahsort $ctx $s") UiKit.focus(c, rr)
+        }
+    }
+
+    /** the game's search bar: its search box (the Chat keyboard; Done searches), Filter (its list), Search */
+    private fun searchBar(c: Canvas, r: RectF, au: JSONObject, act: JSONObject?) {
+        val sr = au.optJSONObject("search") ?: return
+        fun col(k: String) = act?.let { slotOf(it, k) } ?: -1
+        val sb = RectF(r.right - 230f, r.top + 4f, r.right, r.bottom - 4f)
+        val fb = RectF(sb.left - 250f, r.top + 4f, sb.left - 14f, r.bottom - 4f)
+        val box = RectF(r.left, r.top + 6f, fb.left - 14f, r.bottom - 6f)
+        formBox(c, box, sr.optString("text"), "Search", "ahedit text", col("edit_text"), "ahtext")
+        val open = sr.optBoolean("open")
+        UiKit.dropDown(c, fb, if (sr.optBoolean("dirty")) "Filter *" else "Filter", open)
+        val fcol = col(if (open) "filters_off" else "filters_on")
+        if (fcol >= 0) hits.add(fb to "act:ahfilters ${if (open) "off" else "on"}|$fcol")
+        if (cur == "ahfilters on") UiKit.focus(c, fb)
+        val scol = col("search")
+        stripButton(c, sb, "Search", if (scol >= 0) "act:ahsearch|$scol" else "why:The game gave this no tap cell", scol >= 0,
+            pendingCmd == "ahsearch", null, id = "ahsearch")
+    }
+
+    /** the game's Filter list: the level range, its checkbox groups (the qualities in their colours), Clear; B or Close puts it away */
+    private fun filterList(c: Canvas, r: RectF, sr: JSONObject, act: JSONObject?) {
+        hits.clear()
+        UiKit.cover(c, r)
+        fun col(k: String) = act?.let { slotOf(it, k) } ?: -1
+        val groups = arr(sr, "groups")
+        val rowH = 64f
+        val n = groups.sumOf { arr(it, "filters").size + (if (it.optString("name").isNotEmpty()) 1 else 0) }
+        val w = 760f
+        val h = min(r.height() - 80f, 120f + 100f + n * rowH + 140f)
+        val box = RectF(r.centerX() - w / 2f, r.top + 40f, r.centerX() + w / 2f, r.top + 40f + h)
+        val inn = UiKit.dialog(c, box)
+        val lab = UiKit.bodyPaint(26f, Theme.gold)
+        c.drawText("Level Range", inn.left + 10f, inn.top + 50f, lab)
+        val bw = 140f
+        val minB = RectF(inn.left + 220f, inn.top + 8f, inn.left + 220f + bw, inn.top + 76f)
+        val maxB = RectF(minB.right + 60f, inn.top + 8f, minB.right + 60f + bw, inn.top + 76f)
+        formBox(c, minB, sr.optString("min"), "", "ahedit min", col("edit_min"), "ahmin", digits = true)
+        c.drawText("-", minB.right + 24f, minB.centerY() + 10f, UiKit.bodyPaint(28f, Color.WHITE))
+        formBox(c, maxB, sr.optString("max"), "", "ahedit max", col("edit_max"), "ahmax", digits = true)
+        val view = RectF(inn.left, inn.top + 96f, inn.right, box.bottom - 130f)
+        viewB = view
+        var y = view.top + 10f - scrollB
+        var total = 0f
+        c.save(); c.clipRect(view)
+        for (g in groups) {
+            val gn = g.optString("name")
+            if (gn.isNotEmpty()) { c.drawText(gn, inn.left + 10f, y + 40f, UiKit.bodyPaint(24f, Theme.dim)); y += rowH; total += rowH }
+            for (f in arr(g, "filters")) {
+                val row = RectF(inn.left + 10f, y, inn.right - 10f, y + rowH - 6f)
+                val on = f.optBoolean("on")
+                UiKit.check(c, row.left + 36f, row.centerY(), 52f, on)
+                val q = if (f.has("q")) f.optInt("q") else -1
+                val tp = UiKit.bodyPaint(26f, if (q >= 0) Theme.quality(q) else Color.WHITE)
+                c.drawText(f.optString("name"), row.left + 84f, row.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+                val cmd = "ahfilter ${f.optInt("f")}"
+                val sl = slotOf(f)
+                if (row.bottom > view.top && row.top < view.bottom)
+                    hits.add(RectF(row.left, max(row.top, view.top), row.right, min(row.bottom, view.bottom)) to (if (sl >= 0) "act:$cmd|$sl" else "why:The game gave this no tap cell"))
+                if (cur == cmd) {
+                    UiKit.focus(c, row)
+                    if (row.top < view.top) scrollB = max(0f, scrollB - (view.top - row.top)) else if (row.bottom > view.bottom) scrollB += row.bottom - view.bottom
+                }
+                y += rowH; total += rowH
+            }
+        }
+        c.restore()
+        contentB = total + 20f
+        scrollB = scrollB.coerceIn(0f, max(0f, contentB - view.height()))
+        val cl = col("fclear")
+        val clearB = RectF(inn.left + 10f, box.bottom - 120f, inn.centerX() - 10f, box.bottom - 20f)
+        val closeB = RectF(inn.centerX() + 10f, box.bottom - 120f, inn.right - 10f, box.bottom - 20f)
+        stripButton(c, clearB, "Clear", if (cl >= 0) "act:ahfclear|$cl" else "why:The game gave this no tap cell", cl >= 0 && sr.optBoolean("dirty"),
+            pendingCmd == "ahfclear", null, id = "ahfclear")
+        val off = col("filters_off")
+        stripButton(c, closeB, "Close", if (off >= 0) "act:ahfilters off|$off" else "why:Press B", true, false, UiKit.backGlyph(), always = true)
     }
 
     private var shownCatCur: String? = null
@@ -3282,6 +3721,9 @@ class InteractView(context: Context) : View(context) {
         const val PENDING_FOLD_MS = 1_500L    // no document at all this long after an action: the window folds away
         const val PRESS_MIN_MS = 160L         // a press stays visibly DOWN at least this long
         private val PAD_FACES = setOf("PAD1", "PAD2", "PAD3", "PAD4")
+        /** the keyboard's D-pad repeat (Bags' values) */
+        private const val KB_REPEAT_FIRST_MS = 280L
+        private const val KB_REPEAT_MS = 70L
         private val FACE_SLOTS = listOf(PadInput.SLOT_FACE_BOTTOM to "PAD1", PadInput.SLOT_FACE_RIGHT to "PAD2",
                                         PadInput.SLOT_FACE_LEFT to "PAD3", PadInput.SLOT_FACE_TOP to "PAD4")
         const val PAD_ECHO_MS = 700L          // the document's nav.last within this long of the reader's own edge is that same press
