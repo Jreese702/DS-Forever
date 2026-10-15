@@ -327,10 +327,62 @@ class HomeView(
         val sent = TapBridge.tap(context, pad, "classr", col) { }
         Log.i(TAG, "class radial: place ${i + 1}${if (auto) " autocast" else ""} -> classr $col ${if (sent) "tapped" else "not sent"}")
     }
+    /**
+     * f-class-radial REWORK (the user on 1.0.8-test2: "it should have an animation where it kind of expands in from the corner of the held
+     * triggers, and instead of being an overlay, it goes in between the map and chat, animating them ourtwards"): the wheel takes its OWN
+     * square slot between Home's left column (chat, the quest card above it) and the right column (the map, its buffs, the card over it),
+     * under the bars; the two columns slide OUTWARDS by half the wheel and back. It grows in from the held triggers' corner of the bars
+     * (LB + LT the left, RB + RT the right) and closes back into it. Rooms' motion (Motion.MODULE_OPEN / CLOSE, Motion.curve); alpha,
+     * scale and translation only, on hardware layers: one layout at the open, none per frame. The "close the chat / map" hint (a module
+     * holds the controller) stays a plain full-page note.
+     */
+    private val classRect = android.graphics.Rect()
+    private var classOpen = false
     private fun classLayerShow(open: Boolean) {
         if (classLayer.parent == null) { if (!open) return; addView(classLayer) }   // added on first use: over everything
-        classLayer.visibility = if (open) View.VISIBLE else View.GONE
-        classLayer.invalidate()
+        val hint = classHint != null
+        if (hint || !open) {
+            if (open) { classRect.set(0, 0, width, height); classLayer.animate().cancel(); classLayer.alpha = 1f
+                classLayer.scaleX = 1f; classLayer.scaleY = 1f; classLayer.visibility = View.VISIBLE; requestLayout(); classLayer.invalidate(); return }
+            if (!classOpen) { classLayer.visibility = View.GONE; return }
+        }
+        if (open == classOpen) { classLayer.invalidate(); return }
+        classOpen = open
+        val w = width.toFloat(); val h = height.toFloat()
+        val bars = now[Part.BARS] ?: RectF(0f, 0f, w, 120f)
+        val g = UiKit.MODULE_GAP
+        val slot = ClassSlot.of(w, h, bars.bottom, g, CLASS_SLOT_MAX)
+        val side = slot.side
+        classRect.set(slot.left.toInt(), slot.top.toInt(), (slot.left + side).toInt(), (slot.top + side).toInt())
+        // the held triggers' corner of the bars (where ZL / ZR sit), in the slot's own coordinates: the wheel grows out of it
+        val left = !lent(castView) || castView.classRadialLeft()
+        val cornerX = if (left) bars.left + w * 0.06f else bars.right - w * 0.06f
+        val push = slot.push
+        if (open) {
+            classLayer.visibility = View.VISIBLE
+            classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)   // the one layout of the open
+            classLayer.pivotX = cornerX - classRect.left; classLayer.pivotY = bars.bottom - classRect.top
+            classLayer.animate().cancel()
+            classLayer.alpha = 0f; classLayer.scaleX = CLASS_FROM; classLayer.scaleY = CLASS_FROM
+            classLayer.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(Motion.MODULE_OPEN).setInterpolator(Motion.curve())
+                .withLayer().setListener(null).start()
+        } else {
+            classLayer.animate().cancel()
+            classLayer.animate().alpha(0f).scaleX(CLASS_FROM).scaleY(CLASS_FROM).setDuration(Motion.MODULE_CLOSE)
+                .setInterpolator(Motion.curve()).withLayer()
+                .setListener(object : android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(a: android.animation.Animator) { if (!classOpen) classLayer.visibility = View.GONE }
+                }).start()
+        }
+        // the columns: everything left of the middle slides left, everything right of it slides right (and back)
+        for ((p, v) in views) {
+            if (p == Part.BARS || v.visibility != View.VISIBLE) continue
+            val r = now[p] ?: continue
+            val to = if (!open) 0f else if (r.centerX() < w / 2f) -push else push
+            v.animate().cancel()
+            v.animate().translationX(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
+                .setInterpolator(Motion.curve()).withLayer().start()
+        }
     }
 
     /** p-grow-glitch: when the big controller last grew (wall clock, onB's), for B's grace */
@@ -395,6 +447,7 @@ class HomeView(
         val map = padMap ?: return
         val d = HomeFightFace.dpadIcons(map, fightNow)
         castView.fightDpad = d
+        castView.fightIds = HomeFightFace.ids(map, fightNow)            // b-combat-bar-states: their state by spell id
         // ONE line per change, so one approved log read proves what the toolbar's D-pad was given (Tracking's ask after test18)
         if (d != dpadSaid) { dpadSaid = d; Log.i("WCLOG", "dpad draw: fight=$fightNow dpad=$d") }
     }
@@ -1003,8 +1056,9 @@ class HomeView(
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec))
-        classLayer.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
-                           MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(hSpec), MeasureSpec.EXACTLY))
+        val cw = if (classRect.isEmpty) MeasureSpec.getSize(wSpec) else classRect.width()
+        val ch = if (classRect.isEmpty) MeasureSpec.getSize(hSpec) else classRect.height()
+        classLayer.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ch, MeasureSpec.EXACTLY))
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
             val r = now[p] ?: continue
@@ -1033,7 +1087,8 @@ class HomeView(
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        classLayer.layout(0, 0, r - l, b - t)                                  // f-class-radial: the whole page
+        // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint
+        if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
             val f = now[p] ?: continue
@@ -1979,6 +2034,9 @@ class HomeView(
         private const val GROW_B_GRACE_MS = 2_000L
         /** f-class-radial: a press this long on a pet spell's place toggles its autocast */
         private const val CLASS_LONG_MS = 450L
+        /** f-class-radial rework: the wheel's slot is at most this share of Home's width; it grows from this scale */
+        private const val CLASS_SLOT_MAX = 0.5f
+        private const val CLASS_FROM = 0.15f
         /** the focused quest over the minimap (Settings > Home, HomeSettings.questOverMap; was the constant QUEST_ABOVE_MAP) */
         fun cardOverMap(): Boolean = HomeSettings.questOverMap
         /** logcat tag for Home's taps and refusals (`adb logcat -s WCHOME`) */
@@ -2063,5 +2121,17 @@ class HomeView(
             3 to Color.parseColor("#B6D7A8"), 4 to Color.parseColor("#9FC5E8"),
             5 to Color.parseColor("#D5A6BD"),
         )
+    }
+}
+
+/** f-class-radial rework: Home's wheel slot, pure (the tests check it fits): a square centred between the columns under the bars, at
+ *  most [maxShare] of the width; [push] = how far each column slides outwards to make room */
+internal object ClassSlot {
+    data class Slot(val left: Float, val top: Float, val side: Float, val push: Float)
+    fun of(w: Float, h: Float, barsBottom: Float, gap: Float, maxShare: Float): Slot {
+        val avail = (h - gap) - (barsBottom + gap)
+        val side = minOf(avail, w * maxShare).coerceAtLeast(1f)
+        val top = barsBottom + gap + (avail - side) / 2f
+        return Slot((w - side) / 2f, top, side, side / 2f + gap)
     }
 }

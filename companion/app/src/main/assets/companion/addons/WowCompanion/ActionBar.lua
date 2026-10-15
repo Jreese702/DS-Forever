@@ -426,6 +426,15 @@ local function actionName(d)
     return realStr(S(A("GetActionText"), d.s))      -- macros (and anything else with a label)
 end
 
+-- b-cast-bar-late: a spell's cast time in ms (0 = instant), for the app's predictive cast bar; nil when the game says nothing
+local function castMs(sid)
+    if not sid then return nil end
+    local ok, si = CALL(function() return C_Spell.GetSpellInfo(sid) end)
+    if not ok or type(si) ~= "table" then return nil end
+    local ct = num(tfield(si, "castTime"))
+    return ct and ct >= 0 and math.floor(ct + 0.5) or nil
+end
+
 local function layoutButton(d)
     local b = { p = d.p, f = "", s = d.s or 0, k = d.k or "", e = d.e == true }
     local btn = d.btn
@@ -462,7 +471,7 @@ local function layoutButton(d)
         if mc and mc > 1 then b.mc = mc end
     end
     local sid = spellIdOf(d)
-    if sid then b.cs = num(S(api("C_Secrets", "GetSpellCooldownSecrecy"), sid)) end
+    if sid then b.cs = num(S(api("C_Secrets", "GetSpellCooldownSecrecy"), sid)); b.ct = castMs(sid) end   -- b-cast-bar-late: cast ms
     return b
 end
 
@@ -926,6 +935,23 @@ local function noteCast(event)
     end
 end
 
+-- b-combat-bar-states: one SPELL's state, by id (an In-combat spell has no bar slot): the same fields a bar slot's state carries
+local function spellState(id, hasTarget)
+    local o = { i = id, ct = castMs(id) }
+    local r = PCALL(api("C_Spell", "IsSpellUsable") or _G.IsUsableSpell, id)          -- isUsable, insufficientPower
+    if r[1] then
+        o.u = bit01(SV(r[2]) == true)
+        o.m = bit01(SV(r[3]) == true)
+    end
+    if hasTarget then
+        local v = S(api("C_Spell", "IsSpellInRange") or _G.IsSpellInRange, id, "target")
+        if v == true or v == 1 then o.r = 1 elseif v == false or v == 0 then o.r = 0 end
+    end
+    o.chk = bit01(S(api("C_Spell", "IsCurrentSpell") or _G.IsCurrentSpell, id) == true
+        or S(api("C_Spell", "IsAutoRepeatSpell") or _G.IsAutoRepeatSpell, id) == true)
+    return o
+end
+
 local function buildState()
     local combat = S(InCombatLockdown) == true
     local hasTarget = S(UnitExists, "target") == true
@@ -954,6 +980,15 @@ local function buildState()
     end
     local bu = barsUsable()
     if bu ~= nil then st.bu = bit01(bu) end   -- 0 = a window owns the pad: draw collapsed, base layer only
+    -- b-combat-bar-states (the user on 1.0.8-test2): the IN-COMBAT spells drawn over Home's bars in a fight are not bar slots, so the
+    -- game's per-slot state never covered them. hudS.fs = their state by spell id, the bars' own fields: u usable, m not enough mana
+    -- (the blue tint), r in range (with a target), chk selected for casting (waiting for a target / auto-repeat / next swing)
+    local okf, fspells = pcall(function() return type(WC.padMapFightSpells) == "function" and WC.padMapFightSpells() or nil end)
+    if okf and type(fspells) == "table" and #fspells > 0 then
+        local fs = {}
+        for _, id in ipairs(fspells) do fs[#fs + 1] = spellState(id, hasTarget) end
+        st.fs = fs
+    end
     -- hudS.F: the live look of the LIVE scripted buttons, keyed "<layer><p>" (n5, n6, fr6, fr7, ho6, ho7,
     -- sc6): e = enabled 0/1 (0 = draw it as the disabled / empty slot), i = the icon it shows now.
     local F = {}
@@ -1013,6 +1048,14 @@ local function emitState(force)
 end
 
 -- Many events in one frame -> one build.
+-- b-cast-bar-late (the user on 1.0.8-test2: "The cast bar starts really delayed at like 25%"): a cast's or channel's START goes out AT
+-- ONCE, outside the 0.5 s state window (that window alone was a 2 s cast's first 25%); the bar's position is the game's own clock
+-- (UnitCastingInfo's start / end), so it is right however late it lands. At most one extra send per cast.
+local function emitCastNow()
+    lastStateAt = -1e9
+    emitState(true)
+end
+
 local function requestState()
     if stateQueued or not loggedIn then return end
     stateQueued = true
@@ -1348,6 +1391,8 @@ local STATE_EVENTS = {
     "ACTION_RANGE_CHECK_UPDATE", "PLAYER_TARGET_CHANGED",
     "PLAYER_ENTER_COMBAT", "PLAYER_LEAVE_COMBAT", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
     "BAG_UPDATE_DELAYED", "START_AUTOREPEAT_SPELL", "STOP_AUTOREPEAT_SPELL", "UPDATE_MACROS", "PLAYER_SWING",
+    -- b-combat-bar-states: a spell waiting for its target (selected for casting) and the In-combat spells' usable / mana
+    "CURRENT_SPELL_CAST_CHANGED", "SPELL_UPDATE_USABLE",
 }
 local UNIT_EVENTS = { "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_SUCCEEDED",
     "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_DELAYED",
@@ -1491,7 +1536,8 @@ ev:SetScript("OnEvent", function(_, event, a1, a2)
             local hadEnd = castEnd
             local ok, err = pcall(noteCast, event)
             if not ok then noteError(err) end
-            requestState()
+            if castNow and (event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START") then emitCastNow()
+            else requestState() end
             -- the end mark (hudS.ce) lives 2 s: one more state doc then drops it
             if castEnd and castEnd ~= hadEnd then C_Timer.After(2.05, requestState) end
         end

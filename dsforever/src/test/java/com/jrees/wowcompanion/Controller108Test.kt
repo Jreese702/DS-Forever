@@ -100,3 +100,41 @@ class CastDiagReportTest {
         assertTrue(l == null || l.startsWith("castview8: g="))
     }
 }
+
+/** b-cast-bar-late (the user on 1.0.8-test2: "The cast bar starts really delayed at like 25%"): the predictive start's rule */
+class CastPredictTest {
+    @Test fun aCastTimeSpellStartsTheBarAtThePress() = assertTrue(CastPredict.start(ctMs = 2000, casting = false, usable = true))
+    @Test fun anInstantSpellNeverStartsOne() = assertFalse(CastPredict.start(ctMs = 0, casting = false, usable = true))
+    @Test fun anUnknownCastTimeNeverStartsOne() = assertFalse(CastPredict.start(ctMs = -1, casting = false, usable = true))
+    @Test fun notWhileACastRuns() = assertFalse(CastPredict.start(ctMs = 2000, casting = true, usable = true))
+    @Test fun notWhenUnusableOrOutOfMana() = assertFalse(CastPredict.start(ctMs = 2000, casting = false, usable = false))
+    @Test fun itLivesUntilTheConfirmWindowEnds() {
+        assertTrue(CastPredict.alive(pressAt = 1_000L, now = 1_000L))
+        assertTrue(CastPredict.alive(pressAt = 1_000L, now = 1_000L + CastPredict.CONFIRM_MS - 1))
+        assertFalse("never confirmed: dropped", CastPredict.alive(pressAt = 1_000L, now = 1_000L + CastPredict.CONFIRM_MS))
+        assertFalse("no press", CastPredict.alive(pressAt = 0L, now = 5_000L))
+    }
+    @Test fun thePredictedBarFillsFromThePress() {
+        // the line draws a predicted cast like a real one: at 500 ms into a 2 s cast it is a quarter full, and it IS a cast
+        val p = SwingLine.parts(true, 1_500.0, 1_000.0, 3_000.0, Double.NaN, Double.NaN, 0.5, false, false, -1L, 600L)
+        assertTrue(p.cast)
+    }
+}
+
+/** f-class-radial rework (the user: "it goes in between the map and chat, animating them ourtwards"): the wheel's slot fits */
+class ClassSlotTest {
+    private val w = 1240f; private val h = 1000f; private val g = 8f
+    @Test fun atRestTheWheelFillsTheMiddleUnderTheBars() {
+        val s = ClassSlot.of(w, h, barsBottom = 208f, gap = g, maxShare = 0.5f)       // the small diamonds at rest
+        assertEquals("half the width at most", 620f, s.side, 0.5f)
+        assertEquals("centred", w / 2f, s.left + s.side / 2f, 0.5f)
+        assertTrue("under the bars", s.top >= 208f + g)
+        assertTrue("above the bottom", s.top + s.side <= h - g + 0.5f)
+        assertEquals("each column slides out by half the wheel and a gap", 318f, s.push, 0.5f)
+    }
+    @Test fun theCombatLayoutStillFitsASmallerWheel() {
+        val s = ClassSlot.of(w, h, barsBottom = 390f, gap = g, maxShare = 0.5f)       // Grow: the bigger band
+        assertTrue("a usable wheel: ${s.side}", s.side >= 450f)
+        assertTrue(s.top >= 390f + g && s.top + s.side <= h - g + 0.5f)
+    }
+}

@@ -85,6 +85,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         var art: String? = null    // "atlas:<name>" / "tex:<path>" when the icon is not a fileID
         var fx: String? = null     // interact | inspect | back | jump (scripted face buttons)
         var e = true               // button:IsEnabled()
+        var ct = -1                // b-cast-bar-late: its spell's cast time in ms (0 instant, -1 unknown)
         var key: String? = null    // legacy slots only: the keybind shown in the glyph
         var special = SP_NONE      // vector stand-in when there is no loadable icon
         var unable = false         // an "Unable..." cursor / crosshair: drawn faded
@@ -305,6 +306,24 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         resolve(b, src >= 4)
         cmdBtns[at] = b
         return b
+    }
+
+    /**
+     * b-combat-bar-states (the user on 1.0.8-test2: "The combat bars are not showing when an ability does not have enough mana, or if it
+     * was selected for casting like the normal bars do"): base-set GAME position 1..8 -> the spell id of the In-combat spell drawn there
+     * (X / Y / A's fight spells, the D-pad's overlay ones; HomeFightFace.ids), and their state by spell id from the add-on (hudS.fs).
+     * A fight override is drawn with that state - not enough mana blue, unusable dark, out of range red, selected for casting checked -
+     * as the game's own buttons are.
+     */
+    var fightIds: Map<Int, Int>? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+    private val fightStates = HashMap<Int, St>()
+    private val fightCt = HashMap<Int, Int>()
+    private fun fightStateOf(fb: Btn?, src: Int): St? {
+        if (fb == null || fb.k != "spell") return null
+        if (fb !== fightBtns.getOrNull(src) && fb !== dpadFightBtns.getOrNull(src)) return null
+        val id = fightIds?.get(src + 1) ?: return null
+        return fightStates[id]
     }
 
     /** the fight spell drawn over base-layer face slot [src] (0-based), or null to draw the game's own button */
@@ -693,6 +712,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             is String -> if (i.startsWith("atlas:") || i.startsWith("tex:")) b.art = i else b.icon = i.toIntOrNull() ?: 0
         }
         b.fx = str(o.opt("fx"))
+        b.ct = ji(o.opt("ct"), -1)
         b.e = jb(o.opt("e"), true)
         // the companion's own D-pad commands (Spellbook places "DS Bar Left / Open / Right" in EMPTY LT+RT slots,
         // user pick 2026-10-02): marked so the player sees which buttons drive the bottom screen
@@ -774,6 +794,16 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private fun parseState(o: JSONObject) {
         val g = jd(o.opt("g"))
         noteGameClock(g)
+        // b-combat-bar-states: the In-combat spells' state by spell id (hudS.fs; absent = none known)
+        fightStates.clear()
+        o.optJSONArray("fs")?.let { arr ->
+            for (j in 0 until arr.length()) {
+                val so = arr.optJSONObject(j) ?: continue
+                val id = ji(so.opt("i"), 0).takeIf { it > 0 } ?: continue
+                fightStates[id] = St().apply { u = ji(so.opt("u"), 1); m = ji(so.opt("m"), 0); r = ji(so.opt("r"), -1); chk = ji(so.opt("chk"), 0) }
+                fightCt[id] = ji(so.opt("ct"), -1)
+            }
+        }
         autoAttack = jb(o.opt("aa"), false)
         val sw = o.optJSONObject("sw")
         val ss = if (sw != null) toApp(jd(sw.opt("s"))) else Double.NaN
@@ -789,7 +819,17 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val cs0 = if (cs != null) toApp(jd(cs.opt("s"))) else Double.NaN
         val cs1 = if (cs != null) toApp(jd(cs.opt("e"))) else Double.NaN
         if (cs == null || cs0.isNaN() || cs1.isNaN()) { castStartMs = Double.NaN }
-        else { castChannel = str(cs.opt("k")) == "h"; castStartMs = cs0 * 1000.0; castEndMs = cs1 * 1000.0 }
+        else {
+            castChannel = str(cs.opt("k")) == "h"; castStartMs = cs0 * 1000.0; castEndMs = cs1 * 1000.0
+            // b-cast-bar-late: the game's start lands; the predicted bar (if any) hands over; press -> real start, logged once
+            val pressAt = predPressAt
+            if (pressAt > 0L) {
+                val now = SystemClock.elapsedRealtime()
+                runCatching { DiagLog.event("cast", "bar: press -> real start ${now - pressAt} ms (${if (predOn) "predicted at the press" else "no prediction"})") }
+                predPressAt = 0L
+            }
+            predOn = false
+        }
         o.optJSONObject("ce")?.let { ce ->
             val t = jd(ce.opt("t"))
             if (!t.isNaN() && t != castEndSeen) {
@@ -1006,9 +1046,44 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val down = mask and held.inv()
         if (down != 0) {
             val now = SystemClock.elapsedRealtime()
-            for (pos in 0 until 8) if (down and (1 shl pos) != 0) pressAtMs[pos] = now
+            for (pos in 0 until 8) if (down and (1 shl pos) != 0) { pressAtMs[pos] = now; predictCast(pos, now) }
         }
         held = mask and 0xFF
+        invalidate()
+    }
+
+    // ---------------------------------------------------------------- b-cast-bar-late: the predictive cast bar
+    /** the user on 1.0.8-test2: "The cast bar starts really delayed at like 25%, is there a way that we can like predictivly start it up
+     *  and see if it failed so that its not starting late?" A press of a button whose spell has a cast time starts the bar AT ONCE in a
+     *  pending look; the game's real start (hudS.cs) takes over; no start within [CastPredict.CONFIRM_MS] drops it quietly (a fail
+     *  shows the game's own red flash, hudS.ce). Instant spells never start one. */
+    private var predOn = false
+    private var predPressAt = 0L
+    private var predStartMs = 0.0
+    private var predEndMs = 0.0
+    private fun predictCast(pos: Int, now: Long) {
+        val h = hud ?: return
+        if (!barsUsable || !bottomLine) return
+        val src = srcOf[pos]
+        val li = layer
+        val fb = dpadFightOverride(li, src) ?: fightOverride(li, src)
+        val ct: Int; val usable: Boolean
+        if (fb != null) {
+            val id = fightIds?.get(src + 1) ?: return
+            ct = fightCt[id] ?: -1
+            val st = fightStates[id]
+            usable = st == null || (st.u == 1 && st.m == 0)
+        } else {
+            val b = h.layers.getOrNull(li)?.getOrNull(src) ?: return
+            if (b.k != "spell" && b.k != "macro") return
+            ct = b.ct
+            val st = if (li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else null
+            usable = st == null || (st.u == 1 && st.m == 0 && st.cd == 0)
+        }
+        val casting = !castStartMs.isNaN() && now < castEndMs
+        if (ct > 0) predPressAt = now                                     // the latency line, predicted or not
+        if (!CastPredict.start(ct, casting, usable)) return
+        predOn = true; predStartMs = now.toDouble(); predEndMs = now.toDouble() + ct
         invalidate()
     }
 
@@ -1458,7 +1533,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val src = srcOf[pos]                 // drawn at slot pos, taken from Blizzard position src
             val fb = dpadFightOverride(li, src) ?: fightOverride(li, src) ?: commandOverride(li, src)
             val b = fb ?: h.layers[li][src]
-            val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else null
+            val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else fightStateOf(fb, src)
             // pushed: a touch on the replica, or the PHYSICAL button at this position held
             // A controller press lights the PICTURE of the action the game received, not a guessed
             // physical spot: the pad reports the button by its code (A/B/X/Y = the game's Xbox slot),
@@ -2042,10 +2117,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * (pet mode on / pet spell autocasting) wears a 4 px gold ring 112 px across; empty places at 45 %.
      * Display only: a touch does nothing (several of these actions are protected; tap-to-fire is parked).
      */
-    private fun drawRadial(c: Canvas, r: Radial, cx: Float, cy: Float, vw: Float, vh: Float) {
-        val sc = vw / 1240f
-        pFill.color = Color.argb(166, 0, 0, 0)
-        c.drawRect(0f, 0f, vw, vh, pFill)
+    private fun drawRadial(c: Canvas, r: Radial, cx: Float, cy: Float, vw: Float, vh: Float, fitSc: Float = 0f) {
+        // fitSc > 0: Home's wheel slot (f-class-radial rework): fitted to its box, no dimming of the page
+        val sc = if (fitSc > 0f) fitSc else vw / 1240f
+        if (fitSc <= 0f) {
+            pFill.color = Color.argb(166, 0, 0, 0)
+            c.drawRect(0f, 0f, vw, vh, pFill)
+        }
         aRadBase?.let { a -> val hw = 256f * sc; drawBox(c, a, cx - hw, cy - hw, cx + hw, cy + hw) }
         val slot = 157f * sc
         for (i in 0 until 8) {
@@ -2114,23 +2192,27 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val open = chordRadial() != null
         if (open != classOpen) { classOpen = open; onClassRadial?.invoke(open) }
     }
-    /** the radial's place centre in a [vw] x [vh] canvas (the same geometry [drawRadial] uses, centred) */
+    /** the scale that fits the radial (its base art 512 units; places to 168 + 157 / 2) into a [vw] x [vh] box */
+    private fun fitScale(vw: Float, vh: Float) = min(vw, vh) / 520f
+    /** the radial's place centre in a [vw] x [vh] box (the same geometry [drawRadial] uses, fitted and centred) */
     private fun placeAt(i: Int, vw: Float, vh: Float, out: FloatArray) {
-        val sc = vw / 1240f
+        val sc = fitScale(vw, vh)
         val a = Math.toRadians(i * 45.0)
         out[0] = vw / 2f + (sin(a) * 168.0).toFloat() * sc
         out[1] = vh / 2f - (kotlin.math.cos(a) * 168.0).toFloat() * sc
     }
-    /** draw the open class radial over a [vw] x [vh] canvas (Home's whole page); false = none open */
+    /** draw the open class radial fitted into a [vw] x [vh] box (Home's wheel slot); false = none open */
     fun drawClassRadial(c: Canvas, vw: Float, vh: Float): Boolean {
         val r = chordRadial() ?: return false
-        drawRadial(c, r, vw / 2f, vh / 2f, vw, vh)
+        drawRadial(c, r, vw / 2f, vh / 2f, vw, vh, fitScale(vw, vh))
         return true
     }
+    /** the chord's side now: true = LB + LT (the left radial), false = RB + RT */
+    fun classRadialLeft(): Boolean = ClassChord.side(padLt, padRt, padLb, padRb) != ClassChord.RIGHT
     /** the place under ([x], [y]) in that canvas: 0..7, or -1 (none, or an empty place) */
     fun classRadialHit(x: Float, y: Float, vw: Float, vh: Float): Int {
         val r = chordRadial() ?: return -1
-        val half = 157f * (vw / 1240f) / 2f
+        val half = 157f * fitScale(vw, vh) / 2f
         val pt = FloatArray(2)
         for (i in 0 until 8) {
             if (!r.has[i]) continue
@@ -2200,7 +2282,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val fb = dpadFightOverride(li, src) ?: roomOverride(li, src) ?: fightOverride(li, src) ?: commandOverride(li, src)
             if (fb != null && fb.icon > 0 && fb.shader == null) resolve(fb, pos >= 4)   // built now, at this frame's scale
             val b = fb ?: h.layers[li][src]
-            val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else null
+            val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else fightStateOf(fb, src)
             val pressed = !quietPresses && ((pos == pressedPos && now < pressedUntilMs) || (held and (1 shl src)) != 0)
             val since = now - pressAtMs[src]
             val flash = if (!quietPresses && since >= 0L && since < PRESS_FLASH_MS) 1f - since.toFloat() / PRESS_FLASH_MS else 0f
@@ -2324,11 +2406,22 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      */
     private fun drawSwingLine(c: Canvas, now: Long): Long {
         val w = width.toFloat()
+        // b-cast-bar-late: no real cast yet, a fresh prediction: the bar from the press, in its pending look
+        val predicted = castStartMs.isNaN() && predOn && CastPredict.alive(predPressAt, now)
+        if (predOn && !predicted && castStartMs.isNaN()) predOn = false               // never confirmed: dropped quietly
+        val cStart = if (predicted) predStartMs else castStartMs
+        val cEnd = if (predicted) predEndMs else castEndMs
+        if (predicted) c.saveLayerAlpha(0f, height - BAR_H * w / FRAME_W, w, height.toFloat(), CastPredict.PENDING_ALPHA)
+        val nextPred = drawCastLine(c, now, w, cStart, cEnd)
+        if (predicted) c.restore()
+        return if (predicted) 0L else nextPred
+    }
+
+    private fun drawCastLine(c: Canvas, now: Long, w: Float, castStartMs: Double, castEndMs: Double): Long {
         val bh = BAR_H * w / FRAME_W
         val y0 = height - bh; val y1 = height.toFloat()
         var next = Long.MAX_VALUE
         val fa = now - flashAtMs
-        // what the line shows now (SwingLine: pure, unit-tested; the swing off leaves the cast bar alone)
         val parts = SwingLine.parts(swingOn, now.toDouble(), castStartMs, castEndMs, swingStartMs, swingDurMs, SWING_GRACE,
             flashKind != 0, flashKind == FLASH_SWING, fa, if (flashKind == FLASH_SWING) SWING_FLASH_MS else BAR_FLASH_MS)
         val flashing = parts.flash
@@ -3032,4 +3125,16 @@ internal object CastDiag {
         fun b(v: Boolean) = if (v) 1 else 0
         return "castview8: g=${b(grey)} s=$staleMs o=${b(ok)} m=${b(empty)} b=${b(bu)} d=$eOff u=$uOff"
     }
+}
+
+/**
+ * b-cast-bar-late: the predictive cast bar's rule, pure. A press starts one only for a spell with a cast time ([ctMs] > 0; instant
+ * spells never), while no cast runs, and when the button is usable (no cooldown, mana enough). It lives [CONFIRM_MS] waiting for the
+ * game's real start; then it is dropped quietly.
+ */
+internal object CastPredict {
+    const val CONFIRM_MS = 500L
+    const val PENDING_ALPHA = 150
+    fun start(ctMs: Int, casting: Boolean, usable: Boolean): Boolean = ctMs > 0 && !casting && usable
+    fun alive(pressAt: Long, now: Long): Boolean = pressAt > 0L && now - pressAt in 0 until CONFIRM_MS
 }
