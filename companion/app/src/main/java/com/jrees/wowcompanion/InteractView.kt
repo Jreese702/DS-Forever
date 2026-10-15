@@ -816,6 +816,8 @@ class InteractView(context: Context) : View(context) {
                 if (g != null) send(g.cmd, g.slot, if (g.kind == K_BUY) qty else 1)
                 else goWhy?.let { note(it, false) }
             }
+            hit == "mp:-" -> { mailPage = max(0, mailPage - 1); mailPageCur = cur }
+            hit == "mp:+" -> { mailPage += 1; mailPageCur = cur }
             hit == "qty:-" -> qty = max(1, qty - 1)
             hit == "qty:+" -> qty = min(qtyMost, qty + 1)
             // the number itself jumps between one and the most that can be bought
@@ -1112,6 +1114,37 @@ class InteractView(context: Context) : View(context) {
         val noX = kind == Kind.GOSSIP || kind == Kind.LOOT || (kind == Kind.QUEST && (q?.optString("stage") == "greeting" || q?.optString("stage") == "detail"))
         if (!noX) hits.add(UiKit.windowClose(r) to "x")
         if (pendingCmd != null || (noteText != null && now - noteAt < NOTE_MS)) postInvalidateDelayed(250)
+        typingLine(c, r, now)
+    }
+
+    /** the field each keyboard field types, by the add-on's name: its words over the keyboard */
+    private val fieldWords = mapOf("mailto" to "To", "mailsubject" to "Subject", "mailbody" to "Letter", "mailgold" to "Gold",
+        "mailsilver" to "Silver", "mailcopper" to "Copper", "ahtext" to "Search", "ahmin" to "Level from", "ahmax" to "Level to")
+
+    /**
+     * THE LINE OVER THE KEYBOARD (f-mailbox-look): the keyboard covers the window's lower half, where some fields stand (the money,
+     * the level range), so what is typed always shows just above it, as Chat's message bar: the field's name in gold, the text, the
+     * caret. Touches above the keyboard still reach the window.
+     */
+    private fun typingLine(c: Canvas, r: RectF, now: Long) {
+        val field = kbField ?: return
+        val kh = keyboard?.let { if (it.height > 0) it.height else ChatKeyboard.fullHeight() } ?: return
+        val box = RectF(r.left + 8f, r.bottom - kh - 86f, r.right - 8f, r.bottom - kh - 6f)
+        UiKit.menu(c, box, solid = true)
+        val lab = (fieldWords[field] ?: "Text") + ":"
+        val lp = UiKit.bodyPaint(26f, Theme.gold)
+        c.drawText(lab, box.left + 22f, box.centerY() + 9f, lp)
+        val x = box.left + 40f + lp.measureText(lab)
+        val tp = UiKit.bodyPaint(28f, Color.WHITE)
+        val maxW = box.right - 24f - x
+        val drawn = if (tp.measureText(kbText) > maxW) "…" + kbText.takeLast(tp.breakText(kbText.reversed(), true, maxW - 24f, null)) else kbText
+        c.drawText(drawn, x, box.centerY() + 10f, tp)
+        if ((now / 500L) % 2L == 0L) {
+            val cx = x + tp.measureText(drawn) + 3f
+            pFill.color = Theme.gold
+            c.drawRect(cx, box.top + 18f, cx + 3f, box.bottom - 18f, pFill)
+        }
+        postInvalidateDelayed(500L)
     }
 
     /**
@@ -1730,32 +1763,37 @@ class InteractView(context: Context) : View(context) {
         val open = ml.optJSONObject("open")
         val openI = open?.optInt("i") ?: -1
         val ty = r.top + 94f; val th = 108f
-        // the game's two tabs (1.0.8: Send Mail); touch = the controller's A on them (the add-on's tabs zone)
+        // THE GAME'S TWO TABS (f-mailbox-look): the room's tab row, the tabs open on landing (the add-on starts the cursor on the open
+        // tab): the controller's gold tab with the game's gold arrows beside it (D-pad Left / Right switch), elsewhere LB / RB in the
+        // gaps. Touch = the controller's A on them.
         val sendTab = ml.optString("tab") == "send"
-        val tIn = RectF(176f, ty + 4f, 366f, ty + th); val tSend = RectF(362f, ty + 12f, 612f, ty + th)
-        UiKit.tab(c, tIn, "Inbox", !sendTab, cursor = cur == "mailtab inbox")
-        UiKit.tab(c, tSend, "Send Mail", sendTab, cursor = cur == "mailtab send")
+        val tabs = UiKit.tabRow(2, 176f, inner.right - 420f, ty + 6f, th - 6f, 250f)
+        val names = listOf("Inbox" to "mailtab inbox", "Send Mail" to "mailtab send")
+        val openIdx = if (sendTab) 1 else 0
+        for ((k, nm) in names.withIndex()) UiKit.tab(c, tabs[k], nm.first, k == openIdx, cursor = cur == nm.second)
+        val onTabs = cur == "mailtab inbox" || cur == "mailtab send"
+        if (onTabs) { val ci = if (cur == "mailtab send") 1 else 0; UiKit.moveArrows(c, tabs[ci], left = ci > 0, right = ci < 1, words = false) }
+        else if (cur != null) { if (openIdx < 1) UiKit.tabBadge(c, tabs[1], right = true) else UiKit.tabBadge(c, tabs[0], right = false) }
         ml.optJSONObject("act")?.let { a ->
-            slotOf(a, "inbox").takeIf { it >= 0 }?.let { hits.add(tIn to "act:mailtab inbox|$it") }
-            slotOf(a, "send").takeIf { it >= 0 }?.let { hits.add(tSend to "act:mailtab send|$it") }
+            slotOf(a, "tabInbox").takeIf { it >= 0 }?.let { hits.add(tabs[0] to "act:mailtab inbox|$it") }
+            slotOf(a, "tabSend").takeIf { it >= 0 }?.let { hits.add(tabs[1] to "act:mailtab send|$it") }
         }
         pFill.color = Color.rgb(96, 80, 50)
         c.drawRect(inner.left - 6f, ty + th, inner.right + 6f, ty + th + 2f, pFill)
+        // the purse, right of the tabs (the words before the coins, never over them)
+        val mw = UiKit.moneyWidth(purse, 30f)
+        c.drawText("Your money", inner.right - 16f - mw - 14f, ty + th / 2f + 14f,
+            UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT })
+        UiKit.money(c, purse, inner.right - 16f, ty + th / 2f + 6f, 30f, fromRight = true)
         if (sendTab) {
-            val pm0 = UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText("Your money", inner.right - 190f, ty + th / 2f + 14f, pm0)
-            UiKit.money(c, purse, inner.right - 16f, ty + th / 2f + 6f, 30f, fromRight = true)
             ml.optJSONObject("send")?.let { sendPage(c, r, inner, ty + th + 8f, it, ml.optJSONObject("act"), purse, now) }
             UiKit.windowFrame(c, r, "Mailbox", UiKit.tex("mm_mailbox"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
             ml.optJSONObject("send")?.let { sd -> if (sd.has("bags")) bagPicker(c, r, sd, ml.optJSONObject("act")) }
             ml.optJSONObject("send")?.let { sd -> if (sd.optString("status") == "confirm") confirmOnTop(c, r, ml.optJSONObject("act")) }
             return
         }
-        val pm = UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-        c.drawText("Your money", inner.right - 190f, ty + th / 2f + 14f, pm)
-        UiKit.money(c, purse, inner.right - 16f, ty + th / 2f + 6f, 30f, fromRight = true)
         val ly0 = ty + th + 8f; val ly1 = inner.bottom - UiKit.STRIP - 4f
-        val cw = 560f
+        val cw = 580f
 
         // which letter the paper shows: the cursor's (or the finger's) letter, else the open one, else the first
         val pointed = (cur ?: selected)?.takeIf { it.startsWith("mail ") }?.substringAfter("mail ")?.toIntOrNull()
@@ -1763,33 +1801,48 @@ class InteractView(context: Context) : View(context) {
         val showI = when { inLetter -> openI; pointed != null -> pointed; openI > 0 -> openI; else -> letters.firstOrNull()?.optInt("i") ?: -1 }
         val hdr = letters.firstOrNull { it.optInt("i") == showI }
 
-        // ---- the inbox: one column, rows 132 apart, dragged / moved by the cursor
-        val list = RectF(inner.left - 6f, ly0, inner.left + 4f + cw + 8f, ly1)
-        viewA = list
-        contentA = letters.size * 132f + 8f
-        scrollA = scrollA.coerceIn(0f, max(0f, contentA - list.height()))
-        follow(letters.indexOfFirst { "mail ${it.optInt("i")}" == cur }, 132f, list.height() - 8f)
-        c.save(); c.clipRect(list)
-        for ((k, l) in letters.withIndex()) {
-            val y = ly0 + 4f + k * 132f - scrollA
-            if (y + 124f < ly0 || y > ly1) continue
+        // ---- THE INBOX (f-mailbox-look): the game's InboxFrame, a page of seven letters (INBOXITEMS_TO_DISPLAY) on its parchment,
+        // "Page n of m" between Prev and Next under them. The page follows the controller's letter; a finger pages with the arrows.
+        val sheet = RectF(inner.left + 4f, ly0, inner.left + 4f + cw, ly1)
+        UiKit.mailSheet(c, sheet)
+        val pages = max(1, (letters.size + PER_PAGE - 1) / PER_PAGE)
+        val ci = letters.indexOfFirst { "mail ${it.optInt("i")}" == cur || "mail ${it.optInt("i")}" == selected && cur == null }
+        if (ci >= 0 && cur != mailPageCur) { mailPageCur = cur; mailPage = ci / PER_PAGE }
+        mailPage = mailPage.coerceIn(0, pages - 1)
+        val pagerH = 78f
+        val rowH = (sheet.height() - 20f - pagerH) / PER_PAGE
+        for (k in mailPage * PER_PAGE until min(letters.size, (mailPage + 1) * PER_PAGE)) {
+            val l = letters[k]
             val i = l.optInt("i")
-            val row = RectF(inner.left + 4f, y, inner.left + 4f + cw, y + 124f)
+            val y = sheet.top + 12f + (k - mailPage * PER_PAGE) * rowH
+            val row = RectF(sheet.left + 16f, y, sheet.right - 16f, y + rowH - 6f)
             val opened = i == openI
-            UiKit.mailRow(c, row, Icons.get(l.optInt("icon", 0).takeIf { it > 0 }), l.optString("sender", ""), l.optString("subject", ""),
+            UiKit.mailItem(c, row, Icons.get(l.optInt("icon", 0).takeIf { it > 0 }), l.optString("sender", ""), l.optString("subject", ""),
                 l.optDouble("days", 0.0).toFloat(), l.optBoolean("read") || opened, l.optInt("cod", 0) > 0,
                 if (l.optInt("items", 0) > 0) l.optInt("qty1", 0) else 0, opened = opened)
-            val vis = RectF(row.left, max(row.top, ly0), row.right, min(row.bottom, ly1))
-            hits.add(vis to "sel:mail $i")
+            hits.add(row to "sel:mail $i")
             if (cur == "mail $i" || (cur == null && selected == "mail $i")) UiKit.focus(c, row)
         }
-        c.restore()
+        if (letters.isEmpty()) c.drawText("No mail", sheet.centerX(), sheet.top + 80f,
+            UiKit.bodyPaint(30f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+        // Prev / Next and the page: the game's own arrows
+        val py = sheet.bottom - pagerH / 2f - 6f
+        val prev = RectF(sheet.left + 18f, py - 32f, sheet.left + 82f, py + 32f)
+        val next = RectF(sheet.right - 82f, py - 32f, sheet.right - 18f, py + 32f)
+        UiKit.tex(if (mailPage > 0) "page_prev" else "page_prev_off")?.let { c.drawBitmap(it, null, prev, pArt) }
+        UiKit.tex(if (mailPage < pages - 1) "page_next" else "page_next_off")?.let { c.drawBitmap(it, null, next, pArt) }
+        val pp = UiKit.bodyPaint(24f, Theme.gold)
+        c.drawText("Prev", prev.right + 8f, py + 9f, pp)
+        c.drawText("Next", next.left - 8f, py + 9f, UiKit.bodyPaint(24f, Theme.gold).apply { textAlign = Paint.Align.RIGHT })
+        c.drawText("Page ${mailPage + 1} of $pages", sheet.centerX(), py + 9f, UiKit.bodyPaint(24f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+        if (mailPage > 0) hits.add(prev to "mp:-")
+        if (mailPage < pages - 1) hits.add(next to "mp:+")
         ml.optInt("more", 0).takeIf { it > 0 }?.let {
-            c.drawText("$it more in the game", inner.left + 24f, ly1 - 8f, UiKit.bodyPaint(22f, Theme.dim))
+            c.drawText("$it more in the game", sheet.centerX(), sheet.bottom - 6f, UiKit.bodyPaint(20f, Color.rgb(60, 40, 20)).apply { textAlign = Paint.Align.CENTER })
         }
 
         // ---- the letter: the game's paper beside the inbox
-        val w = UiKit.letterPaper(c, RectF(inner.left + 4f + cw + 22f, ly0 + 4f, inner.right - 6f, ly1))
+        val w = UiKit.letterPaper(c, RectF(inner.left + 4f + cw + 18f, ly0, inner.right - 6f, ly1))
         val bx = inner.right - 8f
         val strip = UiKit.strip(c, inner)
         val cy = strip.centerY() + 2f
@@ -1886,6 +1939,10 @@ class InteractView(context: Context) : View(context) {
         UiKit.windowFrame(c, r, "Mailbox", UiKit.tex("mm_mailbox"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
     }
 
+    /** the inbox's page (the game's seven a page) and the cursor it was last moved for */
+    private var mailPage = 0
+    private var mailPageCur: String? = null
+
     // ---- SEND MAIL (f-inbox-send, 1.0.8): the game's SendMailFrame, read from the client. To and Subject on their boxes, the letter on
     // the game's paper, the money (Send Money or C.O.D., gold / silver / copper), the postage, up to 12 attachments; Clear and Send on
     // the strip. A box pressed (touch, or the controller's A) opens the Chat keyboard on it; what is typed shows in the box as it goes.
@@ -1923,67 +1980,59 @@ class InteractView(context: Context) : View(context) {
         val bx = inner.right - 8f
         val bot = inner.bottom - UiKit.STRIP - 8f
         val lab = UiKit.bodyPaint(26f, Theme.gold)
-        // ---- left: To, Subject, the letter
-        val lx = inner.left + 16f
-        val lw = (inner.width() - 32f) * 0.6f
-        val labW = 150f
-        c.drawText("To:", lx, top + 46f, lab)
-        formBox(c, RectF(lx + labW, top + 4f, lx + lw, top + 72f), sd.optString("to"), "Name", "mailedit to", col("edit_to"), "mailto")
-        c.drawText("Subject:", lx, top + 128f, lab)
+        // THE GAME'S SEND MAIL TAB (f-mailbox-look; Blizzard_MailFrame's SendMailFrame, its arrangement): To with the Postage at the
+        // right, Subject under it, the letter on the game's stationery, the game's gold rule, the attachments (seven to a row, as
+        // ATTACHMENTS_PER_ROW_SEND) with the money box beside them (Send Money / C.O.D., the gold / silver / copper boxes), Cancel and
+        // Send on the strip.
+        val x0 = inner.left + 16f; val x1 = inner.right - 16f
+        val labW = 130f
+        val rowH = 62f
+        // ---- To, and the Postage
+        c.drawText("To:", x0, top + 8f + rowH / 2f + 9f, lab)
+        val toBox = RectF(x0 + labW, top + 8f, x0 + labW + 430f, top + 8f + rowH)
+        formBox(c, toBox, sd.optString("to"), "Name", "mailedit to", col("edit_to"), "mailto")
+        val price = sd.optLong("price", 0)
+        val cod = sd.optBoolean("cod")
+        val dear = price + (if (cod) 0L else sd.optLong("money", 0)) > purse
+        val pw = UiKit.moneyWidth(price, 28f)
+        UiKit.money(c, price, x1, toBox.centerY(), 28f, if (dear) Theme.unusable else Theme.text, fromRight = true)
+        c.drawText("Postage:", x1 - pw - 14f, toBox.centerY() + 9f, UiKit.bodyPaint(26f, Theme.gold).apply { textAlign = Paint.Align.RIGHT })
+        // ---- Subject
+        val sy = top + 8f + rowH + 10f
+        c.drawText("Subject:", x0, sy + rowH / 2f + 9f, lab)
         val auto = sd.optString("autoSubject", "")
-        formBox(c, RectF(lx + labW, top + 86f, lx + lw, top + 154f), sd.optString("subject"), auto.ifEmpty { "Subject" },
+        formBox(c, RectF(x0 + labW, sy, x1, sy + rowH), sd.optString("subject"), auto.ifEmpty { "Subject" },
             "mailedit subject", col("edit_subject"), "mailsubject")
-        val paper = RectF(lx, top + 170f, lx + lw, bot)
+        // ---- the attachments and the money (bottom up, so the letter takes what is left)
+        val n = max(1, sd.optInt("max", 12))
+        val per = 7
+        val sz = 78f; val gap = 12f
+        val gridRows = (n + per - 1) / per
+        val gridH = gridRows * sz + (gridRows - 1) * gap
+        val gy = bot - gridH - 4f
+        val ruleY = gy - 20f
+        // ---- the letter on the game's stationery
+        val paper = RectF(x0, sy + rowH + 14f, x1, ruleY - 10f)
         val w = UiKit.letterPaper(c, paper)
         val body = typedOr("mailbody", sd.optString("body"))
-        val bp = TextPaint(UiKit.inkPaint(26f))
         if (body.isEmpty()) c.drawText("Write your letter here", w.left, w.top + 30f, UiKit.inkPaint(26f).apply { color = Color.argb(140, 60, 40, 20) })
         else {
-            val lay = StaticLayout.Builder.obtain(body, 0, body.length, bp, w.width().toInt()).setLineSpacing(4f, 1f).build()
+            val lay = StaticLayout.Builder.obtain(body, 0, body.length, TextPaint(UiKit.inkPaint(26f)), w.width().toInt()).setLineSpacing(4f, 1f).build()
             c.save(); c.clipRect(w); drawLayout(c, lay, w.left, w.top + 4f); c.restore()
         }
         if (kbField == "mailbody") postInvalidateDelayed(500L)
         col("edit_body").takeIf { it >= 0 }?.let { hits.add(paper to "act:mailedit body|$it") }
         if (cur == "mailedit body" || kbField == "mailbody") UiKit.focus(c, paper, onPaper = true)
-
-        // ---- right: the money, the postage, the attachments
-        val rx = lx + lw + 30f
-        val rw = inner.right - 16f - rx
-        val cod = sd.optBoolean("cod")
-        val hasItems = arr(sd, "items").isNotEmpty()
-        val half = (rw - 12f) / 2f
-        val rSend = RectF(rx, top + 4f, rx + half, top + 76f); val rCod = RectF(rx + half + 12f, top + 4f, rx + rw, top + 76f)
-        UiKit.choice(c, rSend, "Send Money", !cod, textSize = 24f)
-        UiKit.choice(c, rCod, "C.O.D.", cod, enabled = hasItems, textSize = 24f)
-        col("money").takeIf { it >= 0 }?.let { hits.add(rSend to "act:mailcod off|$it") }
-        if (hasItems) col("cod").takeIf { it >= 0 }?.let { hits.add(rCod to "act:mailcod on|$it") } else hits.add(rCod to "why:C.O.D. needs an attachment")
-        if (cur == "mailcod off") UiKit.focus(c, rSend)
-        if (cur == "mailcod on") UiKit.focus(c, rCod)
-        c.drawText(if (cod) "C.O.D. Amount:" else "Amount to Send:", rx, top + 124f, lab)
-        // gold / silver / copper: the game's three boxes, each with its coin
-        val coinW = (rw - 2f * 14f) / 3f
-        val words = listOf("gold" to "g", "silver" to "s", "copper" to "c")
-        for ((i, pr) in words.withIndex()) {
-            val (f, short) = pr
-            val b = RectF(rx + i * (coinW + 14f), top + 140f, rx + i * (coinW + 14f) + coinW, top + 208f)
-            formBox(c, b, sd.optString(f), "0", "mailedit $f", col("edit_$f"), "mail$f", digits = true)
-            c.drawText(short, b.right - 30f, b.centerY() + 10f, UiKit.bodyPaint(24f, when (f) { "gold" -> Theme.gold; "silver" -> Color.rgb(200, 200, 200); else -> Color.rgb(200, 120, 60) }))
-        }
-        c.drawText("Postage:", rx, top + 262f, lab)
-        UiKit.money(c, sd.optLong("price", 0), rx + rw, top + 254f, 28f, if (sd.optLong("price", 0) + (if (cod) 0L else sd.optLong("money", 0)) > purse) Theme.unusable else Theme.text, fromRight = true)
-        // the attachments: the game's 12, six to a row
-        c.drawText("Attachments:", rx, top + 316f, lab)
+        UiKit.divider(c, x0, ruleY, x1, ruleY)
+        // the attachment slots: the game's empty slot, the item in it; the first empty one opens the bags
         val items = arr(sd, "items")
-        val n = max(1, sd.optInt("max", 12))
-        val per = 6
-        val sz = min(96f, (rw - (per - 1) * 16f) / per)
+        val pc = col("pick")
         var placedPick = false
         for (k in 0 until n) {
-            val x = rx + (k % per) * (sz + 16f)
-            val y = top + 336f + (k / per) * (sz + 26f)
+            val x = x0 + (k % per) * (sz + gap)
+            val y = gy + (k / per) * (sz + gap)
             val att = items.getOrNull(k)
             val rr = RectF(x, y, x + sz, y + sz)
-            val pc = col("pick")
             if (att != null) {
                 UiKit.slot(c, itemIcon(att), x, y, sz, count = att.optInt("count", 0))
                 val cmd = "maildetach ${att.optInt("k")}"
@@ -1992,18 +2041,38 @@ class InteractView(context: Context) : View(context) {
                 if (cur == cmd) UiKit.focus(c, rr)
             } else {
                 UiKit.slot(c, null, x, y, sz)
+                hits.add(rr to (if (pc >= 0) "act:mailpick on|$pc" else "why:The game gave this no tap cell"))
                 if (!placedPick) {
                     placedPick = true
-                    UiKit.tex("plus")?.let { c.drawBitmap(it, null, RectF(rr.left + sz * 0.3f, rr.top + sz * 0.3f, rr.right - sz * 0.3f, rr.bottom - sz * 0.3f), pArt) }
-                        ?: c.drawText("+", rr.centerX() - 10f, rr.centerY() + 14f, UiKit.bodyPaint(40f, Theme.gold))
-                    hits.add(rr to (if (pc >= 0) "act:mailpick on|$pc" else "why:The game gave this no tap cell"))
+                    c.drawText("+", rr.centerX(), rr.centerY() + 15f, UiKit.bodyPaint(44f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
                     if (cur == "mailpick on") UiKit.focus(c, rr)
-                } else hits.add(rr to (if (pc >= 0) "act:mailpick on|$pc" else "why:The game gave this no tap cell"))
+                }
             }
         }
-        if (items.isNotEmpty()) c.drawText("Tap one to take it back", rx, top + 336f + 2 * (sz + 26f) + 10f, UiKit.bodyPaint(22f, Theme.dim))
+        // ---- the money box beside the attachments: the game's two radio buttons over its gold / silver / copper boxes
+        val mx = x0 + per * (sz + gap) + 20f
+        val hasItems = items.isNotEmpty()
+        val radioY = gy + 22f
+        val rSend = RectF(mx, radioY - 26f, mx + 210f, radioY + 26f)
+        val rCod = RectF(mx + 220f, radioY - 26f, x1, radioY + 26f)
+        UiKit.radio(c, rSend.left + 22f, radioY, 40f, !cod)
+        c.drawText("Send Money", rSend.left + 50f, radioY + 9f, UiKit.bodyPaint(25f, Theme.gold))
+        UiKit.radio(c, rCod.left + 22f, radioY, 40f, cod)
+        c.drawText("C.O.D.", rCod.left + 50f, radioY + 9f, UiKit.bodyPaint(25f, if (hasItems) Theme.gold else Theme.dim))
+        col("money").takeIf { it >= 0 }?.let { hits.add(rSend to "act:mailcod off|$it") }
+        if (hasItems) col("cod").takeIf { it >= 0 }?.let { hits.add(rCod to "act:mailcod on|$it") } else hits.add(rCod to "why:C.O.D. needs an attachment")
+        if (cur == "mailcod off") UiKit.focus(c, rSend)
+        if (cur == "mailcod on") UiKit.focus(c, rCod)
+        val boxY = gy + gridH - 64f
+        c.drawText(if (cod) "C.O.D. Amount:" else "Amount to Send:", mx, boxY - 14f, UiKit.bodyPaint(24f, Theme.gold))
+        val coinW = (x1 - mx - 2f * 10f) / 3f
+        for ((i, f) in listOf("gold", "silver", "copper").withIndex()) {
+            val b = RectF(mx + i * (coinW + 10f), boxY, mx + i * (coinW + 10f) + coinW, boxY + 60f)
+            formBox(c, RectF(b.left, b.top, b.right - 38f, b.bottom), sd.optString(f), "0", "mailedit $f", col("edit_$f"), "mail$f", size = 26f, digits = true)
+            UiKit.tex("coin_$f")?.let { coin -> c.drawBitmap(coin, null, RectF(b.right - 34f, b.centerY() - 15f, b.right - 4f, b.centerY() + 15f), pArt) }
+        }
 
-        // ---- the strip: what stops the letter (or what the game said), Clear, Send
+        // ---- the strip: why the letter cannot go yet (or the game's answer), Cancel, Send
         val why = if (sd.has("why")) sd.optString("why") else null
         val st = sd.optString("status", "")
         val busy = pendingCmd != null
@@ -2013,7 +2082,7 @@ class InteractView(context: Context) : View(context) {
         val sendOk = why == null && sCol >= 0 && st != "sending" && st != "confirm"
         stripButton(c, sendB, "Send", if (sendOk) "act:mailsend|$sCol" else "why:${why ?: "The letter is on its way"}", sendOk,
             busy && pendingCmd == "mailsend", "rev_a", id = "mailsend")
-        stripButton(c, clearB, "Clear", if (cCol >= 0) "act:mailclear|$cCol" else "why:Nothing to clear", cCol >= 0,
+        stripButton(c, clearB, "Cancel", if (cCol >= 0) "act:mailclear|$cCol" else "why:Nothing to clear", cCol >= 0,
             busy && pendingCmd == "mailclear", null, id = "mailclear")
         val shown = resultLine(c, inner.left + 24f, bx - 560f, cy, now)
         if (!shown) {
@@ -3721,6 +3790,8 @@ class InteractView(context: Context) : View(context) {
         const val PENDING_FOLD_MS = 1_500L    // no document at all this long after an action: the window folds away
         const val PRESS_MIN_MS = 160L         // a press stays visibly DOWN at least this long
         private val PAD_FACES = setOf("PAD1", "PAD2", "PAD3", "PAD4")
+        /** the game's INBOXITEMS_TO_DISPLAY */
+        private const val PER_PAGE = 7
         /** the keyboard's D-pad repeat (Bags' values) */
         private const val KB_REPEAT_FIRST_MS = 280L
         private const val KB_REPEAT_MS = 70L

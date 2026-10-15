@@ -1139,6 +1139,78 @@ object UiKit {
     }
 
     /**
+     * THE GAME'S INBOX ROW (f-mailbox-look, 1.0.8; Blizzard_MailFrame's MailItemTemplate, read from the client): on the inbox's parchment
+     * the MailItemBorder's dark icon square (its 42 x 48 left piece) and its faint bar (the rest), a brown rule under the row; the
+     * letter's icon in the square (grey and dim once read, the slot's edge gold while unread); the sender in the game's gold
+     * (GameFontNormal), the subject in white under it, both grey once read; the days left at the top right (green, or red hours on
+     * the last day); "COD" over the icon of a C.O.D. letter; [opened] = the game's checked glow round the icon.
+     */
+    fun mailItem(c: Canvas, r: RectF, icon: Bitmap?, sender: String, subject: String, daysLeft: Float, read: Boolean,
+                 cod: Boolean = false, count: Int = 0, opened: Boolean = false) {
+        val k = r.height() / 48f
+        val cellW = 42f * k
+        val b = tex("mail_item_border")
+        if (b != null) {
+            c.drawBitmap(b, Rect(42, 0, 256, 48), RectF(r.left + cellW, r.top, r.right, r.bottom), pBmp)
+            c.drawBitmap(b, Rect(0, 0, 42, 48), RectF(r.left, r.top, r.left + cellW, r.bottom), pBmp)
+        } else {
+            pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(40, 14, 2)
+            c.drawRect(r.left + 2f * k, r.top + 2f * k, r.left + 40f * k, r.top + 40f * k, pFlat)
+        }
+        pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(77, 84, 41, 0)                // the game's rule: 0.33, 0.16, 0, .3
+        c.drawRect(r.left, r.bottom - 2f, r.right, r.bottom, pFlat)
+        // the icon in the square (the game's 37 px button 2.5 px in), its slot edge gold while unread
+        val ir = RectF(r.left + 2.5f * k, r.top + 2.5f * k, r.left + 39.5f * k, r.top + 39.5f * k)
+        if (icon != null) c.drawBitmap(icon, null, ir, if (read) pGrey else pBmp)
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f
+        pFlat.color = if (read) Color.argb(160, 128, 128, 128) else Color.argb(220, 255, 209, 0)
+        c.drawRect(ir, pFlat)
+        if (count > 1) {
+            val p = numberPaint(ir.height() * 0.34f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
+            c.drawText(count.toString(), ir.right - 4f, ir.bottom - 5f, p)
+        }
+        if (cod) {
+            pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(200, 120, 0, 0)
+            c.drawRect(ir.left, ir.top, ir.right, ir.top + ir.height() * 0.32f, pFlat)
+            val p = bodyPaint(ir.height() * 0.22f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
+            c.drawText("COD", ir.centerX(), ir.top + ir.height() * 0.16f - (p.ascent() + p.descent()) / 2f, p)
+        }
+        if (opened) tex("focus_gold")?.let { c.drawBitmap(it, null, RectF(ir.left - 5f, ir.top - 5f, ir.right + 5f, ir.bottom + 5f), pGlow) }
+        val tx = r.left + cellW + 12f
+        // the days left (the game's DAYS_ABBR green, or the hours in red on the last day), from the right end of the top line
+        val dl = if (daysLeft >= 1f) "${daysLeft.toInt()} " + (if (daysLeft.toInt() == 1) "Day" else "Days")
+            else { val h = (daysLeft * 24f).toInt(); if (h >= 1) "$h Hr" else "${(daysLeft * 1440f).toInt().coerceAtLeast(1)} Min" }
+        val dp = bodyPaint(r.height() * 0.24f, if (daysLeft >= 1f) Color.rgb(32, 255, 32) else Color.rgb(255, 32, 32)).apply { textAlign = Paint.Align.RIGHT }
+        val np = bodyPaint(r.height() * 0.30f, if (read) Color.rgb(191, 191, 191) else Theme.gold)
+        val base = r.top + r.height() * 0.40f
+        c.drawText(dl, r.right - 10f, base, dp)
+        val room = r.right - 10f - dp.measureText(dl) - 14f - tx
+        c.drawText(TextUtils.ellipsize(sender, np, room, TextUtils.TruncateAt.END).toString(), tx, base, np)
+        val sp = bodyPaint(r.height() * 0.26f, if (read) Color.rgb(191, 191, 191) else Color.WHITE)
+        c.drawText(TextUtils.ellipsize(subject, sp, r.right - 10f - tx, TextUtils.TruncateAt.END).toString(), tx, r.top + r.height() * 0.80f, sp)
+    }
+
+    /** the inbox's parchment (the game's UI-MailFrameBG is a darker sheet than the quest parchment the kit holds: it is toned down to
+     *  it), a thin dark edge round it */
+    fun mailSheet(c: Canvas, r: RectF) {
+        val p = tex("parchment")
+        if (p != null) c.drawBitmap(p, null, r, pSheet) else { pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(176, 132, 72); c.drawRect(r, pFlat) }
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3f; pFlat.color = Color.argb(200, 40, 24, 8)
+        c.drawRect(r, pFlat)
+    }
+    private val pSheet = Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter = LightingColorFilter(Color.rgb(206, 200, 196), 0) }
+
+    /** the game's radio button (the dropdown's radial tick, the kit's menu_radio / _on) at ([cx], [cy]), [size] across */
+    fun radio(c: Canvas, cx: Float, cy: Float, size: Float, on: Boolean) {
+        val b = tex(if (on) "menu_radio_on" else "menu_radio")
+        val r = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
+        if (b != null) { c.drawBitmap(b, null, r, pBmp); return }
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3f; pFlat.color = Theme.gold
+        c.drawCircle(cx, cy, size * 0.4f, pFlat)
+        if (on) { pFlat.style = Paint.Style.FILL; c.drawCircle(cx, cy, size * 0.2f, pFlat) }
+    }
+
+    /**
      * THE GAME'S LETTER PAPER over [r] (the default stationery: its left piece stretched across, the right piece with its torn
      * edge at the right end, both stretched to [r]'s height). Returns the writing area inside it.
      */

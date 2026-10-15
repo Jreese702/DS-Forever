@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i114"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i115"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1396,7 +1396,8 @@ local function assignSlots(doc)
     local ml = doc.mail
     if ml then
         any = true
-        ml.act = { inbox = slot("iact", "mailtab inbox"), send = slot("iact", "mailtab send") }
+        -- the tabs' cells are tabInbox / tabSend (a.send below is the Send button: one key each, never shared)
+        ml.act = { tabInbox = slot("iact", "mailtab inbox"), tabSend = slot("iact", "mailtab send") }
         local sd = ml.send
         if sd then
             -- the Send Mail tab: every field and button is one cell (touch = the controller's A on it)
@@ -1702,7 +1703,7 @@ function N.build(doc)
             local zs = navZone("msend", 2)
             navAdd(zs, "mailclear"); navAdd(zs, "mailsend", sd.why == nil)
             N.zones = { tabs, zf, zm, za, zs }
-            first = "mailedit to"
+            first = "mailtab send"          -- f-mailbox-look: the tab row first, Down into the form
         end
     elseif doc.mail then
         local ml = doc.mail
@@ -1723,7 +1724,9 @@ function N.build(doc)
         else
             sig = "ml"
             -- back from a letter: the cursor is on that letter again (LATER 19: start on what was selected)
-            first = (MAIL.back and ("mail " .. MAIL.back)) or navFirst(z)
+            -- f-mailbox-look (the user: "the controller dpad has no control inside of there to start"): the mailbox opens on its tab
+            -- row, the open tab lit with its arrows; Down goes into the letters. Back from a letter: on that letter again
+            first = (MAIL.back and ("mail " .. MAIL.back)) or "mailtab inbox"
             MAIL.back = nil
         end
         N.zones = { mtabs, z, za }
@@ -4460,7 +4463,8 @@ function N.sync(open, doc)
         if N.holding and not G.holder then
             -- the trainer's Settings menu is on SELECT (the user, 2026-10-09: Start opens the pause wheel from every room and pop-up)
             local want = (doc and doc.trainer) and { PADBACK = true }
-                or (doc and doc.bank and doc.bank.account) and { PADLSHOULDER = true, PADRSHOULDER = true } or {}
+                or (doc and doc.bank and doc.bank.account) and { PADLSHOULDER = true, PADRSHOULDER = true }
+                or (doc and doc.mail) and { PADLSHOULDER = true, PADRSHOULDER = true } or {}
             for k in pairs(N.npcExtra) do
                 if not want[k] then pcall(function() SetOverrideBinding(padOwner, true, k, nil) end) end
             end
@@ -4796,6 +4800,12 @@ function N.tabLand(id)
         if AH.tab ~= a then navRun(id) end
         return
     end
+    -- f-mailbox-look: the mailbox's Inbox / Send Mail as every room's tab row (D-pad Left / Right on it opens the tab beside)
+    local m = id:match("^mailtab (%a+)$")
+    if m then
+        if MAIL.tab ~= m then navRun(id) end
+        return
+    end
     local pg = tonumber(id:match("^bkpage (%d+)$") or "")
     if pg and not BANK.box and BANK.page ~= pg then navRun(id) end
 end
@@ -5060,6 +5070,10 @@ local function padPress(key, down, via)
             elseif key == "PADBACK" and N.npcExtra.PADBACK and isOpen("trainer") then navRun("trmenu")
             elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and isOpen("bank") then
                 navRun("bktab " .. ((key == "PADRSHOULDER") and "acct" or "char"))
+            elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and isOpen("mail") then
+                -- f-mailbox-look: LB / RB switch Inbox and Send Mail (the bag list goes with the page it stood on)
+                local want = (key == "PADRSHOULDER") and "send" or "inbox"
+                if MAIL.tab ~= want then navRun("mailtab " .. want) else return end
             else return end
         end
     end
