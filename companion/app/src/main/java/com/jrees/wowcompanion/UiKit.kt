@@ -5943,6 +5943,60 @@ object UiKit {
         }
     }
     const val ITEM_BREAK_MS = 480L
+
+    /**
+     * THE DELETE LANDS (f-delete-hold-polish; the user: "it kind of freezes when its full right now. it needs like a flash with sparkles
+     * complete animation"): over the tile [box], [k] 0..1 of [DELETE_BURST_MS]: a white-gold flash that fills the tile and fades, a
+     * gold ring that widens out of it, and sparkles thrown outward (the harvested cast bar's sparkles under them when the device
+     * has them; the sparks themselves are drawn here, no art needed).
+     */
+    fun deleteBurst(c: Canvas, box: RectF, k: Float) {
+        val t = k.coerceIn(0f, 1f)
+        if (t >= 1f) return
+        val cx = box.centerX(); val cy = box.centerY(); val s = box.width()
+        // the flash: full at once, gone by 60 %
+        val fa = (1f - t / 0.6f).coerceIn(0f, 1f)
+        if (fa > 0f) {
+            val g = RadialGradient(cx, cy, s * 0.9f, intArrayOf(Color.argb((235 * fa).toInt(), 255, 250, 225),
+                Color.argb((150 * fa).toInt(), 255, 205, 90), Color.argb(0, 255, 190, 60)), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+            pHold.style = Paint.Style.FILL; pHold.shader = g
+            c.drawCircle(cx, cy, s * 0.9f, pHold)
+            pHold.shader = null
+        }
+        // the ring that widens
+        val e = 1f - (1f - t) * (1f - t)
+        pHold.style = Paint.Style.STROKE; pHold.strokeWidth = 6f * (1f - t) + 1f
+        pHold.color = Color.argb((220 * (1f - t)).toInt(), 255, 220, 120)
+        c.drawCircle(cx, cy, s * (0.45f + 0.55f * e), pHold)
+        pHold.style = Paint.Style.FILL
+        // the game's sparkles (harvested), turning a little as they fade
+        castArt("castbar_sparkles1")?.let { sp ->
+            val a = (255 * (1f - t)).toInt()
+            pBurstAdd.alpha = a
+            c.save(); c.rotate(40f * t, cx, cy)
+            // the streak keeps its own shape (48 x 15) and is ADDED as light, as the cast bar does: stretched to a square it read as a
+            // pale block over the tile (f-loot-feedback's renders)
+            val hw = s * (0.9f + 0.6f * e); val hh = hw * sp.height / sp.width.coerceAtLeast(1)
+            c.drawBitmap(sp, null, RectF(cx - hw, cy - hh, cx + hw, cy + hh), pBurstAdd)
+            c.restore()
+            pBurstAdd.alpha = 255
+        }
+        // the sparks thrown outward: 10 small four-point stars
+        for (i in 0 until 10) {
+            val ang = Math.toRadians((i * 36.0 + 17.0 * (i % 3)))
+            val dist = s * (0.30f + (0.55f + 0.08f * (i % 4)) * e)
+            val x = cx + (Math.cos(ang) * dist).toFloat(); val y = cy + (Math.sin(ang) * dist).toFloat()
+            val sz = s * (0.10f - 0.02f * (i % 3)) * (1f - t * 0.7f)
+            pHold.color = Color.argb((255 * (1f - t)).toInt(), 255, 236, 150)
+            holdPath.reset()
+            holdPath.moveTo(x, y - sz); holdPath.lineTo(x + sz * 0.25f, y - sz * 0.25f); holdPath.lineTo(x + sz, y)
+            holdPath.lineTo(x + sz * 0.25f, y + sz * 0.25f); holdPath.lineTo(x, y + sz); holdPath.lineTo(x - sz * 0.25f, y + sz * 0.25f)
+            holdPath.lineTo(x - sz, y); holdPath.lineTo(x - sz * 0.25f, y - sz * 0.25f); holdPath.close()
+            c.drawPath(holdPath, pHold)
+        }
+    }
+    const val DELETE_BURST_MS = 420L
+    private val pBurstAdd = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD) }
     private val pBreak = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val breakPath = android.graphics.Path()
 
