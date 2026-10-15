@@ -5,7 +5,7 @@
 ## Group: WowCompanion
 ## Notes: Which of the game's own UI elements are drawn on the top screen, set by the companion with one tap
 ## Author: DS Forever
-## Version: Set 127
+## Version: Set 128
 ## DefaultState: enabled
 ## Dependencies: WowCompanion
 ## OptionalDeps: WowCompanionQuests

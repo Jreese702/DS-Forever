@@ -5,7 +5,7 @@
 ## Group: WowCompanion
 ## Notes: Feeds the Character room, the bottom bar's XP bar and Home's buffs / debuffs on the Thor (read-only)
 ## Author: DS Forever
-## Version: Set 127
+## Version: Set 128
 ## DefaultState: enabled
 ## Dependencies: WowCompanion
 Character.lua
