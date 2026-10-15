@@ -29,7 +29,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S = WC.S
 
-local HV = "hub10"          -- hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub11"          -- hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -225,6 +225,81 @@ local function ridersMissing()
 end
 hub.ridersSet = ridersSet       -- for the harness
 
+-- ---------------------------------------------------------------- the game's cast bar (hub11)
+-- f-top-castbar-toggle (the user, 2026-10-15: "We need to have a UI Toggle for the top screen to Show/hide the cast bar"): the
+-- game's own casting bar, its own Show / Hide (the app's Settings > Game UI "Cast bar"; Home's bottom bar mirrors every cast). The
+-- five layout bits are all held (minimap, hud, tracker, chat, dialogs) and the row's 40 columns carry the 32 layouts, so it takes
+-- two of the row's spare columns: CB_SHOW / CB_HIDE, one absolute tap each. ALPHA ONLY, as the riders above (never Hide / Show /
+-- SetParent, no CVar). The bar sets its own alpha back at every cast (CastingBarMixin:ApplyAlpha(1.0) at a start, and from Edit
+-- Mode): a post-hook puts the 0 back; an OnShow hook does too. Its finish fade plays only while its alpha is above 0
+-- (CastingBarMixin:PlayFadeAnim), but an interrupt's HoldFadeOutAnim plays regardless and drives the frame's alpha itself (1 for a
+-- second, then fading): while hidden that one animation is stopped as it starts, and the bar stays invisible until the next cast.
+-- Shown again: a bar that is casting gets its alpha back at once; an idle one gets it from the game's own next ApplyAlpha.
+local CASTBARS = { "PlayerCastingBarFrame", "CastingBarFrame", "PetCastingBarFrame", "OverlayPlayerCastingBarFrame" }
+local CB_SHOW, CB_HIDE = 32, 33
+local cb = { hidden = false, hooked = {}, fix = 0 }
+
+local function cbZero(fr) pcall(fr.SetAlpha, fr, 0) end
+
+local function cbHook(name, fr)
+    if cb.hooked[name] then return end
+    cb.hooked[name] = true
+    if type(fr.ApplyAlpha) == "function" then
+        hooksecurefunc(fr, "ApplyAlpha", function(self) if cb.hidden then cbZero(self) end end)
+    end
+    if type(fr.UpdateSystemSettingOpacity) == "function" then
+        hooksecurefunc(fr, "UpdateSystemSettingOpacity", function(self) if cb.hidden then cbZero(self) end end)
+    end
+    if type(fr.HookScript) == "function" then
+        pcall(fr.HookScript, fr, "OnShow", function(self) if cb.hidden then cbZero(self) end end)
+    end
+    for _, key in ipairs({ "HoldFadeOutAnim", "FadeOutAnim" }) do
+        local ag = rawget(fr, key)
+        if type(ag) == "table" and type(ag.HookScript) == "function" then
+            pcall(ag.HookScript, ag, "OnPlay", function(self)
+                if cb.hidden then pcall(self.Stop, self); cbZero(fr) end
+            end)
+        end
+    end
+end
+
+local function cbCasting(fr)
+    return rawget(fr, "casting") == true or rawget(fr, "channeling") == true or rawget(fr, "reverseChanneling") == true
+end
+
+local function cbSet(hide)
+    cb.hidden = hide
+    for _, name in ipairs(CASTBARS) do
+        local fr = riderFrame(name)
+        if fr then
+            cbHook(name, fr)
+            if hide then cbZero(fr)
+            elseif cbCasting(fr) then pcall(fr.SetAlpha, fr, 1) end
+        end
+    end
+end
+hub.cbSet = cbSet               -- for the harness
+
+-- while hidden, the heartbeat zeroes any cast bar the game made visible again (and counts it, as the riders do)
+local function cbCheck()
+    if not cb.hidden then return end
+    for _, name in ipairs(CASTBARS) do
+        local fr = riderFrame(name)
+        if fr then
+            cbHook(name, fr)
+            local ok, a = pcall(fr.GetAlpha, fr)
+            if ok and type(a) == "number" and a > 0.01 then cb.fix = cb.fix + 1; cbZero(fr) end
+        end
+    end
+end
+hub.cbCheck = cbCheck
+
+local function cbDoc()
+    local have = {}
+    for _, name in ipairs(CASTBARS) do if riderFrame(name) then have[#have + 1] = name end end
+    return { hidden = cb.hidden, have = #have > 0 and have or nil, fix = cb.fix > 0 and cb.fix or nil }
+end
+
 local function document()
     local els = {}
     for _, e in ipairs(hub.els) do
@@ -242,6 +317,7 @@ local function document()
         combat = inCombat(),
         typing = typing(),           -- a text box has the keyboard: keys would be typed into it
         els = els,
+        cb = cbDoc(),                -- hub11: the game's cast bar (Show / Hide on columns CB_SHOW / CB_HIDE)
         row = hub.row and ROW or nil,
         pad = hub.row and WC.pad and WC.pad.describe() or nil,
     }
@@ -266,6 +342,8 @@ local function onTap(_, col)
     if type(col) == "number" and col >= 0 and col < 2 ^ MAX_BITS and col == math.floor(col) then
         hub.want = col
         apply()
+    elseif col == CB_SHOW or col == CB_HIDE then
+        cbSet(col == CB_HIDE)
     end
     emitHub(true)
     WC.push()
@@ -354,7 +432,7 @@ end)
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 if type(WC.snapshot) == "function" then
     hooksecurefunc(WC, "snapshot", function(reason)
-        if RIDE[reason] then setup(); ridersCheck(); emitHub(true) end
+        if RIDE[reason] then setup(); ridersCheck(); cbCheck(); emitHub(true) end
     end)
 end
 
@@ -396,7 +474,7 @@ end
 hub.barCmd = barCmd     -- for the harness
 
 -- /wcui          print the elements and their state
--- /wcui <mask>   ask for a layout by hand, exactly as a tap would (0 = everything shown)
+-- /wcui <mask>   ask for a layout by hand, exactly as a tap would (0 = everything shown; 32 / 33 = the cast bar shown / hidden)
 SLASH_WCUI1 = "/wcui"
 SlashCmdList["WCUI"] = function(arg)
     setup()
@@ -406,6 +484,7 @@ SlashCmdList["WCUI"] = function(arg)
         say(e.id .. " (bit " .. e.bit .. ")  " .. (isHidden(e) and "hidden" or "shown") ..
             (e.why and ("  |cffff5555" .. e.why .. "|r") or ""))
     end
+    say("cast bar " .. (cb.hidden and "hidden" or "shown"))
     say("layout " .. tostring(hub.want) .. "  pad row " .. tostring(hub.row) ..
         (hub.pending and "  |cffffd100waiting for combat to end|r" or ""))
     if not n then emitHub(true); WC.push() end

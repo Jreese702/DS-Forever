@@ -23,6 +23,10 @@ object GameUi {
     private val listeners = ArrayList<() -> Unit>()
 
     private val policy = GameUiPolicy({ tracking }) { id -> mode(id) }
+    /** hub11: the game's cast bar (its own Show / Hide, not a layout bit) */
+    private val castBar = CastBarPolicy()
+    /** the hub document's cb.hidden; null = an add-on without it (no row) */
+    @Volatile private var castBarHidden: Boolean? = null
     /** LATER 25: one of the game's tracking abilities is on (the map document's track: h / m / t = 1) */
     @Volatile private var tracking = false
     /** the map document's `track` part arrived ({h, m, t}: 1 = on); a change re-checks the layout (the "While tracking" minimap) */
@@ -60,7 +64,29 @@ object GameUi {
 
     /** when the last CURRENT hello came (a login or a reload): the first hide waits for the loading screen (GameUiPolicy.SETTLE_MS) */
     @Volatile private var helloAt = 0L
-    fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin() }
+    fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin() }
+
+    /** f-top-castbar-toggle: the user's Hide for the game's cast bar (default Show: nothing changes for anyone who never picks) */
+    fun castBarHide(): Boolean = prefs?.getBoolean("castbar.hide", false) ?: false
+    /** one touch, so at most one tap follows */
+    fun setCastBar(show: Boolean) {
+        prefs?.edit()?.putBoolean("castbar.hide", !show)?.apply()
+        reconcile()
+        changed()
+    }
+    /** the Settings row; null while the game's add-on does not offer it */
+    fun castBarRow(): Row? {
+        val h = castBarHidden ?: return null
+        val hide = castBarHide()
+        val want = castBar.wantsHidden(hide, visible)
+        val note = when {
+            h == want -> if (h) "Hidden now" else "On the top screen now"
+            last is UiStep.Tap -> "Waits for the layout first"
+            else -> "Sent"
+        }
+        return Row(CASTBAR_ID, "Cast bar", null, if (hide) UiMode.OFF else UiMode.ON, true, h, note)
+    }
+    const val CASTBAR_ID = "castbar"
 
     /** a `hub` document; [current] is GameInput.note()'s answer for it */
     fun onHub(msg: JSONObject, current: Boolean) {
@@ -75,6 +101,7 @@ object GameUi {
                           if (e.has("why")) e.optString("why") else null))
         }
         pad = h.optJSONObject("pad")
+        castBarHidden = h.optJSONObject("cb")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         state = HubState(
             boot = h.optLong("boot", 0L), n = h.optInt("n", 0),
             want = if (h.has("want")) h.optInt("want") else null,
@@ -119,6 +146,11 @@ object GameUi {
             return
         }
         last = step
+        // hub11: the cast bar's own tap, never in the same moment as a layout tap (one tap at a time)
+        if (step !is UiStep.Tap) {
+            val col = castBar.step(castBarHidden, castBarHide(), visible, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
+            if (col != null) GameInput.tap(ctx, pad, ROW, col)
+        }
     }
 
     // ------------------------------------------------------------------ for the Settings section

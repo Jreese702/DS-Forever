@@ -84,7 +84,7 @@ class GameUiSection(context: Context) : View(context) {
         GameUi.Row(LOOT_ID, "Loot window", null, if (s.top) UiMode.ON else UiMode.OFF, true, !s.top,
             if (s.top) "The game's own loot window" else "The loot pop-up on this screen")
     }
-    private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(lootRow())
+    private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(GameUi.castBarRow(), lootRow())
     private var selected: String? = null
     private val rowBoxes = ArrayList<Pair<RectF, String>>()
     private val segBoxes = ArrayList<Pair<RectF, UiMode>>()
@@ -143,7 +143,13 @@ class GameUiSection(context: Context) : View(context) {
             MotionEvent.ACTION_UP -> {
                 if (abs(e.x - downX) > SLOP || abs(e.y - downY) > SLOP) return true
                 for ((box, m) in segBoxes) if (box.contains(e.x, e.y)) {
-                    selected?.let { if (it == LOOT_ID) HomeLootSwitch.turn(context, m == UiMode.ON) else GameUi.setMode(it, m) }
+                    selected?.let {
+                        when (it) {
+                            LOOT_ID -> HomeLootSwitch.turn(context, m == UiMode.ON)
+                            GameUi.CASTBAR_ID -> GameUi.setCastBar(m == UiMode.ON)
+                            else -> GameUi.setMode(it, m)
+                        }
+                    }
                     refresh()
                     return true
                 }
@@ -211,7 +217,7 @@ class GameUiSection(context: Context) : View(context) {
     private fun bar(c: Canvas, r: GameUi.Row, top: Float) {
         val left = 16f; val right = width - 16f
         val gap = 10f
-        val modes = if (r.id == LOOT_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
+        val modes = if (r.id == LOOT_ID || r.id == GameUi.CASTBAR_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
         val sw = (right - left - gap * (modes.size - 1)) / modes.size
         var x = left
         for (m in modes) {
@@ -241,6 +247,8 @@ class GameUiSection(context: Context) : View(context) {
     private fun explain(r: GameUi.Row): String {
         if (r.id == LOOT_ID) return if (r.mode == UiMode.ON) "The game's own loot window opens on the top screen, as usual."
             else "Hidden: the loot pop-up opens on this screen."
+        if (r.id == GameUi.CASTBAR_ID) return if (r.mode == UiMode.ON) "The game's own cast bar stays on the top screen."
+            else "Hidden while the companion is on this screen; Home's bar shows every cast."
         val room = r.home?.label?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "its"
         return when (r.mode) {
             UiMode.ON -> "The game keeps it on the top screen."
@@ -285,6 +293,12 @@ class GameUiSection(context: Context) : View(context) {
                 lineTo(X(13f), Y(4.5f)); cubicTo(X(17.5f), Y(4.5f), X(20f), Y(7f), X(20f), Y(11.5f))
                 close()
             }, p)
+            // the game's cast bar: a long bar, two thirds filled
+            GameUi.CASTBAR_ID -> {
+                c.drawRoundRect(RectF(X(2f), Y(9f), X(22f), Y(15f)), 3f, 3f, p)
+                pFill.color = p.color
+                c.drawRoundRect(RectF(X(3.5f), Y(10.5f), X(15f), Y(13.5f)), 1.5f, 1.5f, pFill)
+            }
             // the loot window: a small chest, its lid line and clasp
             LOOT_ID -> {
                 c.drawRoundRect(RectF(X(3f), Y(7f), X(21f), Y(19f)), 2.5f, 2.5f, p)
