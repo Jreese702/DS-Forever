@@ -333,7 +333,12 @@ class KitBuild(
             val names = o.optJSONArray("names") ?: JSONArray()
             var hit: Rect? = null
             for (i in 0 until names.length()) { hit = atlas.elements[names.optString(i).lowercase()]; if (hit != null) break }
-            if (hit == null) { missing.add("cast $fn <- " + (0 until names.length()).joinToString(" | ") { names.optString(it) }); done++; return@forEach }
+            if (hit == null) {
+                val what = "cast $fn <- " + (0 until names.length()).joinToString(" | ") { names.optString(it) }
+                // f-cast-bar-art: an OPTIONAL piece (the cast bar's art and effects) this client lacks is logged; the app draws without it
+                if (o.optBoolean("optional")) log("$what: not in this client (optional)") else missing.add(what)
+                done++; return@forEach
+            }
             val r: Rect = hit
             jobs.add(r to { piece: KitImage ->
                 png("ui/cast/$fn.png", piece)

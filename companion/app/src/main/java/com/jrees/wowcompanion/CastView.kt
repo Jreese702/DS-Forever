@@ -153,6 +153,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var castStartMs = Double.NaN
     private var castEndMs = 0.0
     private var castChannel = false
+    /** f-cast-bar-art: the running cast cannot be interrupted (hudS.cs.n): the game's grey "uninterruptable" fill, no pip glow */
+    private var castNi = false
+    /** the finish being played is a CHANNEL's (hudS.ce.h): the channel's full bar, glow and sparkles */
+    private var finishChannel = false
     private var castEndSeen = Double.NaN
     /** the bar's one-shot flash: which (FLASH_x) and when (elapsedRealtime) */
     private var flashKind = 0
@@ -497,6 +501,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var aBarGroove: Art? = null; private var aBarFill: Art? = null; private var aBarChan: Art? = null
     private var aBarPip: Art? = null; private var aBarFull: Art? = null; private var aBarGlow: Art? = null
     private var aBarFail: Art? = null
+    // f-cast-bar-art: the rest of the game's casting bar (castingbarframe.xml): its frame, the other fills, the pip's glow, the finish
+    private var aBarFrame: Art? = null; private var aBarNi: Art? = null; private var aBarFullChan: Art? = null
+    private var aBarGlowChan: Art? = null; private var aBarPipGlow: Art? = null
+    private var aBarPipShadow: Art? = null; private var aBarGlowLine: Art? = null; private var aBarWisp: Art? = null
+    private var aBarWispBase: Art? = null; private var aBarIntGlow: Art? = null
+    private val aBarFlakes = arrayOfNulls<Art>(3)
+    private val aBarSparkles = arrayOfNulls<Art>(2)
     private var aBadgeBgL: Art? = null; private var aBadgeBgR: Art? = null
     private var aBadgeHeldL: Art? = null; private var aBadgeHeldR: Art? = null
     private var aBadgeFr: Art? = null; private var aBadgeHo: Art? = null; private var aBadgeSc: Art? = null
@@ -823,6 +834,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (cs == null || cs0.isNaN() || cs1.isNaN()) { castStartMs = Double.NaN }
         else {
             castChannel = str(cs.opt("k")) == "h"; castStartMs = cs0 * 1000.0; castEndMs = cs1 * 1000.0
+            castNi = ji(cs.opt("n"), 0) == 1
             // b-cast-bar-late: the game's start lands; the predicted bar (if any) hands over; press -> real start, logged once
             val pressAt = predPressAt
             if (pressAt > 0L) {
@@ -838,6 +850,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 castEndSeen = t
                 val at = toApp(t)
                 val age = if (at.isNaN()) 0.0 else SystemClock.elapsedRealtime() - at * 1000.0
+                finishChannel = ji(ce.opt("h"), 0) == 1
                 if (age < 800.0) flash(if (ji(ce.opt("x"), 1) == 1) FLASH_CAST else FLASH_FAIL)
             }
             castStartMs = Double.NaN
@@ -1236,6 +1249,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         aBarChan = art("castbar_filling_channel"); aBarPip = art("castbar_pip")
         aBarFull = art("castbar_full_standard"); aBarGlow = art("castbar_full_glow_standard")
         aBarFail = art("castbar_interrupted")
+        aBarFrame = art("castbar_frame"); aBarNi = art("castbar_uninterruptable"); aBarFullChan = art("castbar_full_channel")
+        aBarGlowChan = art("castbar_full_glow_channel")
+        aBarPipGlow = art("castbar_pipglow_standard"); aBarPipShadow = art("castbar_pipshadow_channel")
+        aBarGlowLine = art("castbar_glowline"); aBarWisp = art("castbar_wispglow"); aBarWispBase = art("castbar_wispglow_base")
+        aBarIntGlow = art("castbar_interrupt_glow")
+        for (i in 0 until 3) aBarFlakes[i] = art("castbar_flakes${i + 1}")
+        for (i in 0 until 2) aBarSparkles[i] = art("castbar_sparkles${i + 1}")
         // The shoulder plates stay the ORIGINAL vector plates (user ruling 14:1x: Blizzard's plate art came out
         // distorted; "keep the old ones and just swap the sides"). See drawShoulders.
         aBadgeBgL = null; aBadgeBgR = null; aBadgeHeldL = null; aBadgeHeldR = null
@@ -2462,8 +2482,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val y0 = height - bh; val y1 = height.toFloat()
         var next = Long.MAX_VALUE
         val fa = now - flashAtMs
+        val flashLen = when (flashKind) { FLASH_SWING -> SWING_FLASH_MS; FLASH_FAIL -> CastFx.FAIL_MS; else -> CastFx.FINISH_MS }
         val parts = SwingLine.parts(swingOn, now.toDouble(), castStartMs, castEndMs, swingStartMs, swingDurMs, SWING_GRACE,
-            flashKind != 0, flashKind == FLASH_SWING, fa, if (flashKind == FLASH_SWING) SWING_FLASH_MS else BAR_FLASH_MS)
+            flashKind != 0, flashKind == FLASH_SWING, fa, flashLen)
         val flashing = parts.flash
         val casting = parts.cast
         val swingP = parts.swing
@@ -2472,11 +2493,21 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             UiKit.divider(c, 0f, height - 1.5f, w, height - 1.5f)
             return ahead
         }
+        // f-cast-bar-art: the game's bar in its own units (castingbarframe.xml): the Background is 13 units tall, the fill 11 inside it
+        val u = bh / 13f
+        val cy = (y0 + y1) / 2f
+        val inset = u
+        // a finish fades the WHOLE bar as the game's FadeOutAnim / HoldFadeOutAnim do; an interrupt shakes it (InterruptShakeAnim)
+        val finishing = flashing && !casting && swingP < 0 && flashKind != FLASH_SWING
+        val barA = if (finishing) CastFx.barAlpha(flashKind == FLASH_FAIL, fa) else 1f
+        val layered = barA < 1f
+        if (layered) c.saveLayerAlpha(0f, y0 - 30f * u, w, y1, (barA * 255f).toInt())
+        val shook = finishing && flashKind == FLASH_FAIL
+        if (shook) { val sh = CastFx.shake(fa); c.save(); c.translate(sh[0] * u, -sh[1] * u) }
         // the groove
         val groove = aBarGroove
         if (groove != null) drawBox(c, groove, 0f, y0, w, y1)
         else { pSwing.color = Color.rgb(24, 20, 16); pSwing.alpha = 230; c.drawRect(0f, y0, w, y1, pSwing) }
-        val inset = bh / 14f                                   // the fill sits 1 px in, as drawn
         fun fill(a: Art?, p: Float, cf: ColorFilter?, flat: Int) {
             if (p <= 0f) return
             c.save(); c.clipRect(0f, y0, w * p, y1)
@@ -2485,15 +2516,29 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             c.restore()
         }
         fun spark(x: Float, cf: ColorFilter?) {
-            val pw = 10f * w / FRAME_W; val ph = bh + 14f * w / FRAME_W
+            // Spark: 8 x 20 units centred on the fill's edge
+            val pw = 8f * u; val ph = 20f * u
             val pip = aBarPip
-            if (pip != null) drawBox(c, pip, x - pw / 2f, y0 - (ph - bh) / 2f, x + pw / 2f, y1 + (ph - bh) / 2f, 255, cf)
+            if (pip != null) drawBox(c, pip, x - pw / 2f, cy - ph / 2f, x + pw / 2f, cy + ph / 2f, 255, cf)
             else { pSwing.color = Color.WHITE; pSwing.alpha = 220; c.drawRect(x - 2f, y0 - 2f, x + 2f, y1 + 2f, pSwing) }
         }
         if (casting) {
             val p = ((now - castStartMs) / (castEndMs - castStartMs)).coerceIn(0.0, 1.0).toFloat()
-            if (castChannel) { fill(aBarChan ?: aBarFill, 1f - p, null, Theme.gold); if (p < 1f) spark(w * (1f - p), null) }
-            else { fill(aBarFill, p, null, Theme.gold); if (p > 0.001f && p < 0.999f) spark(w * p, null) }
+            if (castChannel) {
+                val x = w * (1f - p)
+                fill((if (castNi) aBarNi else null) ?: aBarChan ?: aBarFill, 1f - p, null, Theme.gold)
+                // ChannelShadow: 11 x 11 units, its right edge 1 unit inside the Spark's left (not on an uninterruptible bar)
+                if (!castNi && p < 1f) aBarPipShadow?.let { sd -> barClip(c, y0, y1, w) {
+                    drawBox(c, sd, x - 4f * u + u - 11f * u, cy - 5.5f * u, x - 4f * u + u, cy + 5.5f * u) } }
+                if (p < 1f) spark(x, null)
+            } else {
+                val x = w * p
+                fill((if (castNi) aBarNi else null) ?: aBarFill, p, null, Theme.gold)
+                // StandardGlow (ADD): 37 x 12 units trailing the Spark, its right edge 2 units inside the Spark's left; masked to the bar
+                if (!castNi && p > 0.001f) aBarPipGlow?.let { gl -> barClip(c, y0, y1, w) {
+                    addBox(c, gl, x - 2f * u - 37f * u, cy - 6f * u, x - 2f * u, cy + 6f * u, 255) } }
+                if (p > 0.001f && p < 0.999f) spark(x, null)
+            }
             next = 0L
         } else if (swingP >= 0) {
             val p = min(1.0, swingP).toFloat()
@@ -2507,24 +2552,29 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (flashing) {
             when (flashKind) {
                 FLASH_CAST -> {
-                    val k = kotlin.math.exp(-fa / BAR_FLASH_TAU_MS).toFloat()
-                    val full = aBarFull
-                    if (full != null) drawBox(c, full, 0f, y0, w, y1, (k * 255f).toInt())
-                    else { pSwing.color = Theme.gold; pSwing.alpha = (k * 255f).toInt(); c.drawRect(0f, y0, w, y1, pSwing) }
-                    val g = 8f * w / FRAME_W
-                    aBarGlow?.let { drawBox(c, it, -g, y0 - g, w + g, y1 + g, (min(1f, 1.6f * k) * 255f).toInt()) }
+                    val ch = finishChannel
+                    // the bar's FULL texture, then the Flash (the full glow, ADD) in over 0.2 s (FlashAnim)
+                    val full = if (ch) aBarFullChan ?: aBarFull else aBarFull
+                    if (full != null) drawBox(c, full, 0f, y0 + inset, w, y1 - inset)
+                    else { pSwing.color = Theme.gold; pSwing.alpha = 255; c.drawRect(0f, y0 + inset, w, y1 - inset, pSwing) }
+                    val glow = if (ch) aBarGlowChan ?: aBarGlow else aBarGlow
+                    glow?.let { addBox(c, it, -u, y0, w + u, y1, (CastFx.flashAlpha(fa) * 255f).toInt()) }
+                    if (ch) drawChannelFinish(c, fa, u, y0, y1, w) else drawStandardFinish(c, fa, u, y0, y1, w)
                 }
                 FLASH_FAIL -> {
-                    val k = kotlin.math.exp(-fa / (BAR_FLASH_TAU_MS * 1.5)).toFloat()
+                    // the interrupted bar, full, and the InterruptGlow fading over 1 s
                     val fail = aBarFail
-                    if (fail != null) drawBox(c, fail, 0f, y0 + inset, w, y1 - inset, (k * 255f).toInt())
-                    else { pSwing.color = Color.rgb(220, 40, 30); pSwing.alpha = (k * 255f).toInt(); c.drawRect(0f, y0, w, y1, pSwing) }
+                    if (fail != null) drawBox(c, fail, 0f, y0 + inset, w, y1 - inset)
+                    else { pSwing.color = Color.rgb(220, 40, 30); pSwing.alpha = 255; c.drawRect(0f, y0, w, y1, pSwing) }
+                    aBarIntGlow?.let { g ->
+                        val gw = w * CastFx.INT_GLOW_W / CastFx.BAR_W; val gh = CastFx.INT_GLOW_H * u
+                        addBox(c, g, w / 2f - gw / 2f, cy - gh / 2f, w / 2f + gw / 2f, cy + gh / 2f, (CastFx.interruptGlow(fa) * 255f).toInt())
+                    }
                 }
                 else -> {                                       // a swing restart: grey full bar fades, a glint runs back
                     val k = fa.toFloat() / SWING_FLASH_MS
                     aBarFull?.let { drawBox(c, it, 0f, y0, w, y1, ((1f - 0.8f * k) * 255f).toInt(), greyFilter) }
                     val gx = w * (1f - k)
-                    val cy = (y0 + y1) / 2f
                     val r = 60f * w / FRAME_W
                     glintPaint.shader = RadialGradient(gx, cy, r, Color.argb(150, 255, 255, 255), Color.TRANSPARENT, Shader.TileMode.CLAMP)
                     c.save(); c.scale(1f, (bh + 12f) / (2f * r), gx, cy)
@@ -2534,7 +2584,79 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             }
             next = 0L
         }
+        // the Border over everything (2 units beyond the fill: 1 beyond the Background)
+        aBarFrame?.let { drawBox(c, it, -u, y0 - u, w + u, y1 + u) }
+        if (shook) c.restore()
+        if (layered) c.restore()
         return next
+    }
+
+    /** f-cast-bar-art: draw [body] clipped to the bar (the game's BorderMask: its effects show only inside the bar) */
+    private inline fun barClip(c: Canvas, y0: Float, y1: Float, w: Float, body: () -> Unit) {
+        c.save(); c.clipRect(0f, y0, w, y1); body(); c.restore()
+    }
+    /** an ADD-blended piece (the game's alphaMode="ADD") */
+    private fun addBox(c: Canvas, a: Art, l: Float, t: Float, r: Float, b: Float, alpha: Int) {
+        if (alpha <= 0) return
+        pAdd.alpha = alpha.coerceIn(0, 255)
+        rect.set(l, t, r, b)
+        c.drawBitmap(a.bmp, null, rect, pAdd)
+    }
+    private val pAdd = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+        xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.ADD)
+    }
+
+    /**
+     * StandardFinish (REPEAT while the bar fades): the EnergyGlow line sweeps up through the bar and the three Flakes rise through it,
+     * all ADD and masked to the bar. The game's bar is [CastFx.BAR_W] units wide; this one spans the band, so the flakes repeat once per
+     * game-bar width across it (each at the game's own size), every copy on the same clock as the game's one.
+     */
+    private fun drawStandardFinish(c: Canvas, fa: Long, u: Float, y0: Float, y1: Float, w: Float) {
+        val cy = (y0 + y1) / 2f
+        barClip(c, y0, y1, w) {
+            aBarGlowLine?.let { g ->
+                val gy = cy - CastFx.standardY(CastFx.GLOW_LINE, fa) * u
+                val gh = CastFx.GLOW_LINE_H * u
+                addBox(c, g, 0f, gy - gh / 2f, w, gy + gh / 2f, 255)
+            }
+            val n = CastFx.copies(w, u)
+            for (i in 0 until 3) {
+                val f = aBarFlakes[i] ?: continue
+                val fy = cy - CastFx.standardY(CastFx.FLAKES1 + i, fa) * u
+                val fw = CastFx.FLAKE_W[i] * u; val fh = CastFx.FLAKE_H[i] * u
+                for (j in 0 until n) {
+                    val fx = (j + 0.5f) * w / n
+                    addBox(c, f, fx - fw / 2f, fy - fh / 2f, fx + fw / 2f, fy + fh / 2f, 255)
+                }
+            }
+        }
+    }
+
+    /** ChannelFinish: at the bar's LEFT end (a channel drains to it) the BaseGlow widens, the WispGlow flares, two Sparkles fly and turn */
+    private fun drawChannelFinish(c: Canvas, fa: Long, u: Float, y0: Float, y1: Float, w: Float) {
+        val cy = (y0 + y1) / 2f
+        barClip(c, y0, y1, w) {
+            aBarWispBase?.let { g ->
+                val (al, sx) = CastFx.channelBase(fa)
+                val gw = 21f * u; val gh = 11f * u
+                c.save(); c.scale(sx, 1f, gw / 2f, cy)
+                addBox(c, g, 0f, cy - gh / 2f, gw, cy + gh / 2f, (al * 255f).toInt())
+                c.restore()
+            }
+            aBarWisp?.let { g -> addBox(c, g, 25f * u, cy - 8f * u, 25f * u + 52f * u, cy + 8f * u, (CastFx.wispAlpha(fa) * 255f).toInt()) }
+            for (i in 0 until 2) {
+                val sp = aBarSparkles[i] ?: continue
+                val st = CastFx.sparkle(i, fa)
+                val sw = CastFx.SPARKLE_W[i] * u; val sh = CastFx.SPARKLE_H[i] * u
+                val scx = sw / 2f + st[0] * u
+                c.save(); c.rotate(-st[1], scx, cy)
+                rect.set(scx - sw / 2f, cy - sh / 2f, scx + sw / 2f, cy + sh / 2f)
+                pArt.alpha = (st[2] * 255f).toInt().coerceIn(0, 255)
+                c.drawBitmap(sp.bmp, null, rect, pArt)
+                pArt.alpha = 255
+                c.restore()
+            }
+        }
     }
 
     // =================================================================== the Spellbook's Bind box (read-only)
@@ -3003,8 +3125,6 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private const val SWING_H = 4f           // px: the swing fill along the bottom edge
         private val SWING_GREY = Color.rgb(150, 146, 138)   // the swing fill (the game's grey timer bar)
         private const val FLASH_SWING = 1; private const val FLASH_CAST = 2; private const val FLASH_FAIL = 3
-        private const val BAR_FLASH_MS = 600L          // a cast's finish fades over 0.6 s (exp, tau below)
-        private const val BAR_FLASH_TAU_MS = 150.0
         private const val SWING_FLASH_MS = 250L        // a swing restart: the glint's run back
         private const val BAR_H = 14f                  // the bar's height at 1240 wide (UI Art)
         private const val DS_MACRO_PREFIX = "DS Bar"   // Spellbook's companion macros: DS Bar Left / Open / Right
@@ -3115,6 +3235,79 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
  * pure. [swingOn] false hides the SWING (its fill, its restart flash, its wake-up), never the CAST bar or a cast's flash. Times on the
  * app's clock in ms; NaN = none. [wakeMs]: when a swing that starts ahead begins (Long.MAX_VALUE = nothing to wake for).
  */
+/**
+ * f-cast-bar-art (the user, 15 Oct: "The cast bar right now is boring, can we use the in game art on it with the glow and the sparkles?"):
+ * the game's own casting bar's TIMINGS and SIZES, read from blizzard_uipanels_game/mainline/castingbarframe.xml and
+ * shared/castingbarframe.lua, in the game's units (y up). Pure, so the look is checked off-device.
+ */
+internal object CastFx {
+    /** a finish: FlashAnim 0.2 s while FadeOutAnim waits 0.2 s, then fades the whole bar over 0.3 s */
+    const val FINISH_MS = 500L
+    /** an interrupt / failure: HoldFadeOutAnim holds 1.0 s, then fades over 0.3 s */
+    const val FAIL_MS = 1300L
+    /** StandardFinish loops: its longest piece (Flakes03) starts 0.25 s in and runs 0.5 s */
+    const val LOOP_MS = 750L
+    /** the game's bar width in units (the outer glow is 222 = 208 + its 7-unit halo each side) */
+    const val BAR_W = 208f
+    const val INT_GLOW_W = 222f; const val INT_GLOW_H = 25f
+    const val GLOW_LINE = 0; const val FLAKES1 = 1
+    /** Cast_Standard_GlowLine 483 x 244 at scale 0.51 */
+    const val GLOW_LINE_H = 244f * 0.51f
+    /** Cast_Standard_Flakes01-03 at scale 0.5 */
+    val FLAKE_W = floatArrayOf(109.5f, 128f, 102.5f); val FLAKE_H = floatArrayOf(23f, 37f, 17.5f)
+    /** Cast_Channel_Sparkles_01 / 02 at scale 0.5 */
+    val SPARKLE_W = floatArrayOf(24f, 32.5f); val SPARKLE_H = floatArrayOf(7.5f, 8.5f)
+
+    /** the whole bar's alpha [t] ms into a finish ([fail]: the interrupt's hold) */
+    fun barAlpha(fail: Boolean, t: Long): Float {
+        val hold = if (fail) 1000L else 200L
+        return if (t <= hold) 1f else (1f - (t - hold) / 300f).coerceIn(0f, 1f)
+    }
+    /** the Flash (the full glow) in over 0.2 s */
+    fun flashAlpha(t: Long): Float = (t / 200f).coerceIn(0f, 1f)
+    /** InterruptGlow: 1 at once, to 0 over 1 s */
+    fun interruptGlow(t: Long): Float = (1f - t / 1000f).coerceIn(0f, 1f)
+    /** InterruptShakeAnim, in units (x, y up): 0.1 s still, then a step every 0.05 s: (-1,1), (1,-2), (1,2), (-1,-1) cumulative */
+    fun shake(t: Long): FloatArray = when {
+        t < 150L -> floatArrayOf(0f, 0f)
+        t < 200L -> floatArrayOf(-1f, 1f)
+        t < 250L -> floatArrayOf(0f, -1f)
+        t < 300L -> floatArrayOf(1f, 1f)
+        else -> floatArrayOf(0f, 0f)
+    }
+
+    private fun easeIn(f: Float) = f * f
+    private fun easeOut(f: Float) = 1f - (1f - f) * (1f - f)
+    private fun easeInOut(f: Float) = if (f < 0.5f) 2f * f * f else 1f - 2f * (1f - f) * (1f - f)
+    private fun prog(t: Long, delay: Long, dur: Long) = ((t - delay).toFloat() / dur).coerceIn(0f, 1f)
+
+    /** StandardFinish: a piece's centre (units above the bar's centre) [t] ms into the finish; each holds its end until the loop restarts */
+    fun standardY(piece: Int, t: Long): Float {
+        val tl = t % LOOP_MS
+        return when (piece) {
+            GLOW_LINE -> -100f + 220f * prog(tl, 0, 500)
+            FLAKES1 -> -25f + 100f * easeIn(prog(tl, 0, 500))
+            FLAKES1 + 1 -> -45f + 90f * easeOut(prog(tl, 0, 500))
+            else -> -25f + 25f * easeIn(prog(tl, 250, 500))
+        }
+    }
+
+    /** how many game-bar widths of flakes a [w] px bar of unit [u] px holds (at least one) */
+    fun copies(w: Float, u: Float): Int = if (u <= 0f) 1 else maxOf(1, kotlin.math.round(w / (BAR_W * u)).toInt())
+
+    /** ChannelFinish's BaseGlow: (alpha, x scale): 0 -> 0.5 over 0.3 s and 1 -> 4 wide over 0.5 s, then 0.5 -> 0 over 0.2 s */
+    fun channelBase(t: Long): Pair<Float, Float> {
+        val a = if (t < 600L) 0.5f * prog(t, 0, 300) else 0.5f * (1f - prog(t, 600, 200))
+        return a to (1f + 3f * prog(t, 0, 500))
+    }
+    /** WispGlow: 1 at once, fading over 0.5 s after the first 0.6 s (the order-1 pieces' end) */
+    fun wispAlpha(t: Long): Float = 1f - prog(t, 600, 500)
+    /** Sparkles [i]: (x offset units, degrees, alpha): 01 +40 and 45 deg in 0.5 s (IN); 02 after 0.1 s +20 and -45 deg (IN_OUT) */
+    fun sparkle(i: Int, t: Long): FloatArray = if (i == 0)
+        floatArrayOf(40f * easeIn(prog(t, 0, 500)), 45f * prog(t, 0, 500), 1f - prog(t, 600, 500))
+    else floatArrayOf(20f * easeInOut(prog(t, 100, 500)), -45f * prog(t, 100, 500), 1f - prog(t, 600, 500))
+}
+
 internal object SwingLine {
     data class Parts(val cast: Boolean, val swing: Double, val flash: Boolean, val wakeMs: Long)
 

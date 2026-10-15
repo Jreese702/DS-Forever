@@ -902,6 +902,8 @@ end
 -- the first unreadable value sends ONE cap doc (hudCast first = dropped), the first good one (first = ok).
 -- hudS.cs = { k = "c" cast | "h" channel, s = start, e = end } (GetTime seconds) while it runs;
 -- hudS.ce = { x = 1 done / 0 interrupted or failed, t = when } for 2 s after it ends.
+-- f-cast-bar-art (the game's own bar look): cs.n = 1 when the cast cannot be interrupted (UnitCastingInfo's 8th /
+-- UnitChannelInfo's 7th return, read through S() and compared after it), ce.h = 1 when a CHANNEL ended (its own finish).
 local castNow, castEnd = nil, nil
 WC.hudCastSeen, WC.hudCastDropped = 0, 0
 
@@ -929,17 +931,18 @@ local function noteCast(event)
             WC.emit({ type = "cap", hudCast = { first = "ok", ev = event, d = (en - st) / 1000 } })
         end
         castNow = { k = ch and "h" or "c", s = math.floor(st + 0.5) / 1000, e = math.floor(en + 0.5) / 1000 }
+        if S(function() return select(ch and 7 or 8, fn("player")) end) == true then castNow.n = 1 end
         castEnd = nil
     elseif not castNow then
         return
     elseif event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_FAILED" then
-        castNow, castEnd = nil, { x = 0, t = now }
+        castNow, castEnd = nil, { x = 0, t = now, h = castNow.k == "h" and 1 or nil }
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" and castNow.k == "c" then
         castNow, castEnd = nil, { x = 1, t = now }
     elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_CHANNEL_STOP" then
         -- a channel ends with STOP whether it ran out or was cut; a cast's STOP after SUCCEEDED never gets here
         local done = now >= castNow.e - 0.15
-        castNow, castEnd = nil, { x = done and 1 or 0, t = now }
+        castNow, castEnd = nil, { x = done and 1 or 0, t = now, h = castNow.k == "h" and 1 or nil }
     end
 end
 
@@ -980,7 +983,7 @@ local function buildState()
     local st = { c = combat, aa = autoAttack == true, ar = autoRepeat == true, L = L }
     if castNow then st.cs = castNow
     elseif castEnd and (SN(GetTime) or 0) - castEnd.t < 2 then
-        st.ce = { x = castEnd.x, t = math.floor(castEnd.t * 1000 + 0.5) / 1000 }
+        st.ce = { x = castEnd.x, t = math.floor(castEnd.t * 1000 + 0.5) / 1000, h = castEnd.h }
     end
     if combat then
         local sk, sv = pickSwing(SN(GetTime) or 0)
