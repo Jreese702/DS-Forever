@@ -2623,16 +2623,18 @@ class InteractView(context: Context) : View(context) {
         send("lootdelc $bag", lootCells(bag)?.optInt("del", -1) ?: -1, sl)
     }
 
-    // ---- THE DELETE'S FLASH AND THE SLOT'S CHANGE (f-delete-hold-polish): the moment the hold is full, the item flashes with
-    // sparkles (UiKit.deleteBurst) and its tile shows EMPTY at once, waiting for the game's answer (the slot really empty, then the
-    // loot's own landing flies into it); a blue / purple item only flashes (the game's Yes / No comes first). No answer in
-    // DZ_WAIT_MS (refused: the strip's line says why) = the item shows again.
+    // ---- THE DELETE LANDS AND THE SLOT CHANGES (f-delete-hold-polish): the moment the hold is full, the Delete button gets the cast
+    // bar's completion glow (UiKit.buttonCastFill) and the item breaks in half over its tile, which shows EMPTY at once, waiting for the
+    // game's answer (the slot really empty, then the loot's own landing flies into it); a blue / purple item does not break (the game's
+    // Yes / No comes first). No answer in DZ_WAIT_MS (refused: the strip's line says why) = the item shows again.
     private var dzKey: String? = null
     private var dzAt = 0L
     private var dzRare = false
     private var dzBox: RectF? = null
     private var dzItem: JSONObject? = null
     private val DZ_WAIT_MS = 3000L
+    /** the Delete button's completion glow after a full hold (the cast bar's flash, a little longer to be seen) */
+    private val CAST_FINISH_MS = 450L
 
     private fun lootButtons(c: Canvas, strip: RectF, bs: List<Triple<String, String, String>>, enabled: (String) -> Boolean) {
         val bw = 300f; val bh = strip.height() - 30f
@@ -3220,18 +3222,14 @@ class InteractView(context: Context) : View(context) {
             UiKit.windowFrame(c, r, "Inventory is full.", Icons.get(133639), Color.rgb(255, 32, 32), close = false)
             return
         }
-        UiKit.button(c, del, "Hold to delete", "rev_a", if (!canDel) UiKit.Button.DISABLED else if (held > 0f) UiKit.Button.DOWN else UiKit.Button.UP)
-        val gg = min(70f, del.height() * 0.64f)
-        // f-delete-hold-polish: the fill lives on the item itself (UiKit.holdTile; the user: not on this button); the button keeps its
-        // glyph's ring, and the moment the hold is full it gets the flash with sparkles (the user, after the mock: "I do like this on the
-        // button at the bottom")
-        if (held > 0f) UiKit.holdRing(c, del.left + 22f + gg / 2f, del.centerY() - 1f, gg / 2f + 7f, held)
-        if (dzKey != null && now - dzAt < UiKit.DELETE_BURST_MS) {
-            // on the button's A glyph, where the hold's ring was (the words stay readable)
-            val hb = del.height(); val gx0 = del.left + 22f + gg / 2f
-            UiKit.deleteBurst(c, RectF(gx0 - hb / 2f, del.centerY() - hb / 2f, gx0 + hb / 2f, del.centerY() + hb / 2f),
-                (now - dzAt).toFloat() / UiKit.DELETE_BURST_MS)
-        }
+        // THE BUTTON FILLS LIKE THE GAME'S CAST BAR (the user's pick of three, 15 Oct: option 1): its plate fills left to right with the
+        // cast bar's fill and spark as the hold goes, and the moment it is full the cast bar's completion glow lights the whole button
+        // and fades (CAST_FINISH_MS); the item above breaks meanwhile (UiKit.itemBreak). The glyph and the words stay on top.
+        val finishT = if (dzKey != null) now - dzAt else -1L
+        val finish = if (finishT in 0 until CAST_FINISH_MS) finishT.toFloat() / CAST_FINISH_MS else -1f
+        UiKit.buttonCastFill(c, del, "Hold to delete", "rev_a",
+            if (!canDel) UiKit.Button.DISABLED else if (held > 0f) UiKit.Button.DOWN else UiKit.Button.UP,
+            if (finish >= 0f) 1f else held, finish)
         if (canDel) hits.add(del to "lt:hold")
         UiKit.button(c, back, if (sp.optJSONObject("want")?.optBoolean("anyway") == true) "Accept anyway" else "Back", UiKit.backGlyph(),
             kitState("act:lootback"))

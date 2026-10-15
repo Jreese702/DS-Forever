@@ -229,6 +229,68 @@ object UiKit {
         if (waiting) waitOnButton(c, r)
     }
 
+    /**
+     * A HOLD BUTTON THAT FILLS LIKE THE GAME'S CAST BAR (f-delete-hold-polish, the user's pick of three, 15 Oct: option 1, "the game's
+     * cast bar"): [button] with its glyph, the plate filling left to right with the cast bar's own fill as the hold goes ([fill] 0..1),
+     * the cast bar's spark riding the fill's edge with its trailing glow, and at the end the cast bar's full bar with its completion
+     * glow over the whole button, fading ([finish] 0..1 after the hold was full; < 0 = none). The glyph and the label stay ON TOP of the
+     * fill. The harvested cast-bar pieces (`ui/cast`, CastView's); drawn gold where the device has none.
+     */
+    fun buttonCastFill(c: Canvas, r: RectF, label: String, glyph: String, state: Button, fill: Float, finish: Float = -1f) =
+        pressed(c, r, state == Button.DOWN) {
+            buttonPlate(c, r, state)
+            castFillOn(c, r, fill, finish)
+            val g = minOf(70f, r.height() * 0.64f)
+            val gx = r.left + 22f + g / 2f
+            pad(c, glyph, gx, r.centerY() - 1f, g, if (state == Button.DISABLED) 90 else 255)
+            buttonLabel(c, r, label, state, r.height() * 0.34f, gx + g / 2f + 8f, r.right - 26f)
+        }
+
+    private val pCast = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val pCastAdd = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD) }
+    private val castClip = android.graphics.Path()
+
+    private fun castFillOn(c: Canvas, r: RectF, fill: Float, finish: Float) {
+        val f = fill.coerceIn(0f, 1f)
+        // the plate's inside (the button art's own edge stays visible round it)
+        val inner = RectF(r.left + 7f, r.top + r.height() * 0.13f, r.right - 7f, r.bottom - r.height() * 0.15f)
+        val save = c.save()
+        castClip.reset(); castClip.addRoundRect(inner, 6f, 6f, android.graphics.Path.Direction.CW)
+        c.clipPath(castClip)
+        if (finish >= 0f) {
+            // the bar full, then its completion glow fading over the whole button (as CastView's FLASH_CAST)
+            val a = (1f - finish).coerceIn(0f, 1f)
+            castArt("castbar_full_standard")?.let { c.drawBitmap(it, null, inner, pCast.apply { alpha = (255 * a).toInt() }) }
+                ?: run { pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb((235 * a).toInt(), 255, 200, 60); c.drawRect(inner, pFlat) }
+            c.restoreToCount(save)
+            val glowR = RectF(r.left - 12f, r.top - 10f, r.right + 12f, r.bottom + 10f)
+            castArt("castbar_full_glow_standard")?.let { c.drawBitmap(it, null, glowR, pCastAdd.apply { alpha = (255 * a).toInt() }) }
+                ?: glow(c, glowR, Color.rgb(255, 220, 120), 0.9f * a)
+            pCast.alpha = 255; pCastAdd.alpha = 255
+            return
+        }
+        if (f <= 0f) { c.restoreToCount(save); return }
+        val x = inner.left + inner.width() * f
+        // the fill: the cast bar's own texture across the plate, shown up to the edge
+        c.save(); c.clipRect(inner.left, inner.top, x, inner.bottom)
+        castArt("castbar_filling_standard")?.let { c.drawBitmap(it, null, inner, pCast) }
+            ?: run { pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(235, 230, 165, 30); c.drawRect(inner, pFlat) }
+        c.restore()
+        // the glow trailing the spark (37 x 12 units on the game's bar), additive
+        val gh = inner.height(); val gw = gh * 37f / 12f
+        castArt("castbar_pipglow_standard")?.let { c.drawBitmap(it, null, RectF(x - gw, inner.top, x, inner.bottom), pCastAdd) }
+        c.restoreToCount(save)
+        // the spark on the edge (it may stand a little past the plate's inside, as on the game's bar)
+        if (f < 1f) {
+            val sh = r.height() * 0.9f; val sw = sh * 0.45f
+            castArt("castbar_pip")?.let { c.drawBitmap(it, null, RectF(x - sw / 2f, r.centerY() - sh / 2f, x + sw / 2f, r.centerY() + sh / 2f), pCastAdd) }
+                ?: run {
+                    pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3f; pFlat.color = Color.rgb(255, 250, 225)
+                    c.drawLine(x, inner.top - 2f, x, inner.bottom + 2f, pFlat); pFlat.style = Paint.Style.FILL
+                }
+        }
+    }
+
     private fun buttonG(c: Canvas, r: RectF, label: String, glyph: String, state: Button, waiting: Boolean) = pressed(c, r, state == Button.DOWN || waiting) {
         buttonPlate(c, r, state)
         val g = minOf(70f, r.height() * 0.64f)
@@ -5830,56 +5892,6 @@ object UiKit {
         pHold.strokeCap = Paint.Cap.BUTT; pHold.style = Paint.Style.FILL
     }
 
-    /**
-     * THE DELETE LANDS (f-delete-hold-polish; the user: "it kind of freezes when its full right now. it needs like a flash with sparkles
-     * complete animation"): over the tile [box], [k] 0..1 of [DELETE_BURST_MS]: a white-gold flash that fills the tile and fades, a
-     * gold ring that widens out of it, and sparkles thrown outward (the harvested cast bar's sparkles under them when the device
-     * has them; the sparks themselves are drawn here, no art needed).
-     */
-    fun deleteBurst(c: Canvas, box: RectF, k: Float) {
-        val t = k.coerceIn(0f, 1f)
-        if (t >= 1f) return
-        val cx = box.centerX(); val cy = box.centerY(); val s = box.width()
-        // the flash: full at once, gone by 60 %
-        val fa = (1f - t / 0.6f).coerceIn(0f, 1f)
-        if (fa > 0f) {
-            val g = RadialGradient(cx, cy, s * 0.9f, intArrayOf(Color.argb((235 * fa).toInt(), 255, 250, 225),
-                Color.argb((150 * fa).toInt(), 255, 205, 90), Color.argb(0, 255, 190, 60)), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
-            pHold.style = Paint.Style.FILL; pHold.shader = g
-            c.drawCircle(cx, cy, s * 0.9f, pHold)
-            pHold.shader = null
-        }
-        // the ring that widens
-        val e = 1f - (1f - t) * (1f - t)
-        pHold.style = Paint.Style.STROKE; pHold.strokeWidth = 6f * (1f - t) + 1f
-        pHold.color = Color.argb((220 * (1f - t)).toInt(), 255, 220, 120)
-        c.drawCircle(cx, cy, s * (0.45f + 0.55f * e), pHold)
-        pHold.style = Paint.Style.FILL
-        // the game's sparkles (harvested), turning a little as they fade
-        castArt("castbar_sparkles1")?.let { sp ->
-            val a = (255 * (1f - t)).toInt()
-            pHold.alpha = a
-            c.save(); c.rotate(40f * t, cx, cy)
-            val h = s * (0.9f + 0.6f * e)
-            c.drawBitmap(sp, null, RectF(cx - h, cy - h, cx + h, cy + h), pHold)
-            c.restore()
-            pHold.alpha = 255
-        }
-        // the sparks thrown outward: 10 small four-point stars
-        for (i in 0 until 10) {
-            val ang = Math.toRadians((i * 36.0 + 17.0 * (i % 3)))
-            val dist = s * (0.30f + (0.55f + 0.08f * (i % 4)) * e)
-            val x = cx + (Math.cos(ang) * dist).toFloat(); val y = cy + (Math.sin(ang) * dist).toFloat()
-            val sz = s * (0.10f - 0.02f * (i % 3)) * (1f - t * 0.7f)
-            pHold.color = Color.argb((255 * (1f - t)).toInt(), 255, 236, 150)
-            holdPath.reset()
-            holdPath.moveTo(x, y - sz); holdPath.lineTo(x + sz * 0.25f, y - sz * 0.25f); holdPath.lineTo(x + sz, y)
-            holdPath.lineTo(x + sz * 0.25f, y + sz * 0.25f); holdPath.lineTo(x, y + sz); holdPath.lineTo(x - sz * 0.25f, y + sz * 0.25f)
-            holdPath.lineTo(x - sz, y); holdPath.lineTo(x - sz * 0.25f, y - sz * 0.25f); holdPath.close()
-            c.drawPath(holdPath, pHold)
-        }
-    }
-    const val DELETE_BURST_MS = 420L
 
     /**
      * THE ITEM BREAKS (f-delete-hold-polish, the user after the mock, 15 Oct: "for the Item buttons, I want them to have an almost
