@@ -882,7 +882,9 @@ class HomeView(
                 else -> CastView.Layout.ROW
             }
             // the big controller's bottom edge is the SWING TIMER (Cast draws it; Home leaves its own line out, see onDraw)
-            castView.bottomLine = s.takeover
+            castView.bottomLine = true
+            // b-cast-any: at rest the line is the cast bar alone (every player cast, in or out of a fight); in combat the full line
+            castView.castOnly = !s.takeover
             // p-swing-timer, batch 12 ("they should be seperate"): Settings > Home turns the SWING off; the cast bar stays
             castView.swingOn = HomeSettings.swingTimer
             // LATER item 16 (the user: "under the controller area ... the trigger modifiers ... light them up like in the cast menu when
