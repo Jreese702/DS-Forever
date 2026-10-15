@@ -563,11 +563,28 @@ object LsfgVkManager {
         )
     }
 
-    /** Write DS Forever's Frame generation settings into [container] (the launcher, at each game start; the caller saves). */
+    /**
+     * The container extras for DS Forever's frame limit (board n-fps-40): the launcher's own limiter, read by XServerScreen at the
+     * game's start (and, with frame generation on, by the layer as its base fps). 0 = Off: the limiter disabled.
+     */
+    @JvmStatic
+    fun dsForeverLimitExtras(limit: Int): Map<String, String> =
+        if (limit <= 0) mapOf(EXTRA_FPS_LIMITER_ENABLED to "false")
+        else mapOf(EXTRA_FPS_LIMITER_ENABLED to "true", EXTRA_FPS_LIMITER_TARGET to limit.toString())
+
+    /**
+     * Write DS Forever's Frame generation settings into [container]; the frame limit: 40 once at the first start of 1.0.8 (every
+     * container, board n-fps-40), then a limit picked in DS Forever's Settings since the last start (the container's own limit
+     * otherwise stays as it is); then tell Settings what the container holds (the launcher, at each game start; the caller saves).
+     */
     @JvmStatic
     fun applyDsForever(container: Container) {
-        val extras = dsForeverExtras(com.jrees.wowcompanion.FrameGen.snapshot(), isDllAvailable())
+        val fg = com.jrees.wowcompanion.FrameGen
+        if (fg.migrateLimit { lim -> for ((k, v) in dsForeverLimitExtras(lim)) container.putExtra(k, v) })
+            Timber.tag(TAG).i("DS Forever frame limit: set to %d once (1.0.8)", fg.LIMIT_MIGRATED)
+        val extras = dsForeverExtras(fg.snapshot(), isDllAvailable()) + (fg.takeAsk()?.let { dsForeverLimitExtras(it) } ?: emptyMap())
         for ((k, v) in extras) container.putExtra(k, v)
+        fg.noteContainer(fg.containerLimit(container.getExtra(EXTRA_FPS_LIMITER_ENABLED, null), container.getExtra(EXTRA_FPS_LIMITER_TARGET, null)))
         com.jrees.wowcompanion.FrameGen.markLaunched()      // what this game start applies: Settings' "Restart the game" compares to it
         Timber.tag(TAG).i("DS Forever frame generation: %s", extras)
     }

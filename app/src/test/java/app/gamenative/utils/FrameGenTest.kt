@@ -109,6 +109,12 @@ class FrameGenTest {
         )
     }
 
+    @Test fun theFrameLimitIsTheLaunchersOwnLimiter() {      // board n-fps-40: the container's limiter extras, no game CVar
+        assertEquals(mapOf("fpsLimiterEnabled" to "true", "fpsLimiterTarget" to "40"), LsfgVkManager.dsForeverLimitExtras(40))
+        assertEquals(mapOf("fpsLimiterEnabled" to "true", "fpsLimiterTarget" to "60"), LsfgVkManager.dsForeverLimitExtras(60))
+        assertEquals(mapOf("fpsLimiterEnabled" to "false"), LsfgVkManager.dsForeverLimitExtras(0))
+    }
+
     // ---- conf.toml
 
     @Test fun configCarriesTheSettings() {

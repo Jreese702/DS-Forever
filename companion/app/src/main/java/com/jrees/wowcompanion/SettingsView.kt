@@ -121,6 +121,8 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     private val segMult = Array(FrameGen.MULTIPLIERS.size) { RectF() }
     private var btnFlowMinus = RectF(); private var btnFlowPlus = RectF()
     private val segPerf = Array(2) { RectF() }
+    /** Frame generation > Frame limit: 40 / 60 / Off (FrameGen.fpsLimit; board n-fps-40) */
+    private val segLimit = Array(FrameGen.LIMITS.size) { RectF() }
 
     /** INERT since the rework: the D-pad row moved to Home's section ("DS WoW toolbar"). Kept so an old host's wiring compiles. */
     var dpadState: () -> PadMapModel.Dpad? = { null }
@@ -183,7 +185,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     fun focusTargets(): List<RectF> =
         ((if (hasGame) listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss) else emptyList()) +
             (if (hasRest) listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segIndoor.toList() + listOf(btnDeferred) + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() + segChat.toList() +
-                listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() + listOf(btnRestart) else emptyList()))
+                segLimit.toList() + listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() + listOf(btnRestart) else emptyList()))
             .filter { !it.isEmpty }.map { RectF(it) }
 
     /** the part's height, laid out exactly as onDraw lays it out (the room's scroll asks; nothing here scrolls) */
@@ -200,8 +202,9 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
     }
 
     /** the Frame generation section's rows now (FrameGen.rows: the DLL row alone until one is set; Restart when it would change something) */
-    private fun fgRows(): List<FrameGen.Row> = FrameGen.rows(FrameGen.hasDll(),
-        FrameGen.showRestart(gameRunning(), SetupBridge.restarting, FrameGen.launched, FrameGen.current()))
+    private fun fgRows(): List<FrameGen.Row> = listOf(FrameGen.Row.LIMIT) + FrameGen.rows(FrameGen.hasDll(),
+        FrameGen.showRestart(gameRunning(), SetupBridge.restarting, FrameGen.launched, FrameGen.current()) ||
+            (gameRunning() && !SetupBridge.restarting && FrameGen.limitNeedsRestart(FrameGen.launchedLimit, FrameGen.fpsLimit)))
 
     private fun fgHeight(): Float {
         val n = fgRows().size.also { measuredFg = it }
@@ -289,6 +292,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
             segFg[1].contains(x, y) -> if (FrameGen.hasDll()) FrameGen.enabled = true
             btnFlowMinus.contains(x, y) -> FrameGen.flowScale = FrameGen.stepFlow(FrameGen.flowScale, -1)
             btnFlowPlus.contains(x, y) -> FrameGen.flowScale = FrameGen.stepFlow(FrameGen.flowScale, +1)
+            segLimit.any { it.contains(x, y) } -> FrameGen.askLimit(FrameGen.LIMITS[segLimit.indexOfFirst { it.contains(x, y) }])
             segPerf[0].contains(x, y) -> FrameGen.performance = true
             segPerf[1].contains(x, y) -> FrameGen.performance = false
             else -> {
@@ -518,12 +522,27 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
         val fg = fgRows()
         if (fg.size != measuredFg) requestLayout()        // a row came or went: the room's scroll needs the new height
         btnDll = RectF(); btnFlowMinus = RectF(); btnFlowPlus = RectF(); btnRestart = RectF()
-        for (r in segFg + segMult + segPerf) r.setEmpty()   // hidden rows press nothing
+        for (r in segFg + segMult + segPerf + segLimit) r.setEmpty()   // hidden rows press nothing
         val on = FrameGen.enabled && hasDll
         val later = if (up) "Applies when the game restarts." else "Applies at the next game start."
         for ((i, r) in fg.withIndex()) {
             if (i > 0) y += ROW_H + 10f
             when (r) {
+                FrameGen.Row.LIMIT -> {
+                    val lim = FrameGen.fpsLimit
+                    // the launcher's own limiter (its quick menu shows the same value); another value from there shows as it is
+                    val what = when {
+                        FrameGen.limitNote && lim == FrameGen.LIMIT_MIGRATED -> "Set to 40 for battery and heat; change it here. "
+                        lim <= 0 -> "No limit. "
+                        lim in FrameGen.LIMITS -> "At most $lim frames a second: cooler, longer on battery. "
+                        else -> "$lim frames a second (set in the launcher's menu). "
+                    }
+                    row(c, y, "Frame limit", what + later, enabled = true) { box ->
+                        val b = RectF(box.right - 16f - segW * FrameGen.LIMITS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                        segmented(c, b, FrameGen.LIMITS.map { FrameGen.limitLabel(it) }, FrameGen.LIMITS.indexOf(lim), segLimit)
+                        b
+                    }
+                }
                 FrameGen.Row.DLL -> btnDll = row(c, y, "Lossless.dll: ${if (hasDll) "found" else "not set"}",
                     when {
                         FrameGen.lastPick.isNotEmpty() -> FrameGen.lastPick + if (up && hasDll) ". $later" else ""
@@ -541,7 +560,8 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
                 }
                 FrameGen.Row.MULTIPLIER -> {
                     val mult = FrameGen.multiplier
-                    row(c, y, "Multiplier", "Frames shown per game frame (40 fps x$mult = ${40 * mult})", enabled = on) { box ->
+                    val base = FrameGen.fpsLimit.takeIf { it > 0 } ?: 40
+                    row(c, y, "Multiplier", "Frames shown per game frame ($base fps x$mult = ${base * mult})", enabled = on) { box ->
                         val b = RectF(box.right - 16f - segW * FrameGen.MULTIPLIERS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
                         segmented(c, b, FrameGen.MULTIPLIERS.map { "${it}x" }, FrameGen.MULTIPLIERS.indexOf(mult), segMult)
                         b
@@ -565,7 +585,7 @@ class SettingsView(context: Context, private val part: Part = Part.ALL, private 
                     segmented(c, b, listOf("On", "Off"), if (FrameGen.performance) 0 else 1, segPerf)
                     b
                 }
-                FrameGen.Row.RESTART -> btnRestart = row(c, y, "Restart the game", "To use the new frame generation settings", enabled = true) { box ->
+                FrameGen.Row.RESTART -> btnRestart = row(c, y, "Restart the game", "To use the new frame limit and frame generation settings", enabled = true) { box ->
                     val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
                     UiKit.button(c, b, "Restart", UiKit.Button.UP)
                     b
