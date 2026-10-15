@@ -1373,6 +1373,19 @@ class HomeView(
      * the fight greyed, a buff is removed out of combat only). The pane lies over the map and takes only the touches on its buttons
      * (and every touch while its list is open); the rest fall through to the map. Select a row, then ONE action: Remove.
      */
+    /**
+     * THE GAME'S DURABILITY WARNING on Home (f-durability; the user after the Thor test, 15 Oct: "I wanted to show the heads up display
+     * of broken armor from the top screen and move that to the bottom between the buffs"; the place, the user's pick: between the buff
+     * row and the debuff row): `bags.equipped.durw`, the game's own figure as it draws it (Bags.lua reads its DurabilityFrame), drawn
+     * by [AuraPane] while the game shows it. The top screen's copy goes with the buffs (Hub's "hud" element).
+     */
+    fun durability(durw: JSONObject?) {
+        val was = durabilityWarning?.toString()
+        durabilityWarning = durw
+        if (was != durw?.toString()) auraPane.invalidate()
+    }
+    private var durabilityWarning: JSONObject? = null
+
     inner class AuraPane(c: Context) : View(c) {
         /** null = closed; false = the buffs' list; true = the debuffs' */
         var open: Boolean? = null
@@ -1505,7 +1518,7 @@ class HomeView(
             // (the user on the test build, 2026-10-12: "The quest arrow is getting stuck on the + and - buttons. It should show on
             // the edge of the screen for those"): the arrow keeps the true edge there, under the buttons, which rest at ZOOM_MIN
             if (lent(mapView) && !fullMap()) mapView.rimKeepOut = if (!mapView.compact) emptyList()
-                else listOf(buffBox, debuffBox, panel).filter { !it.isEmpty }
+                else listOf(buffBox, debuffBox, panel, warnBox).filter { !it.isEmpty }
             // Map 2026-10-09 (the user: the quest arrow under the card; the player lower): how far down the card covers the map now
             if (lent(mapView) && !fullMap()) mapView.compactCover = cardCover()
         }
@@ -1517,7 +1530,7 @@ class HomeView(
             val full = fullMap()
             if (!full && (open == null || !auras.live(now))) zoom(c, w, h, now)      // the open list covers that corner
             if (full) { drawFull(c, w, h, now); return }
-            if (!auras.live(now)) { open = null; return }
+            if (!auras.live(now)) { open = null; warning(c, buffTop(), h - 4f); return }
             val nb = auras.shownBuffs.size; val nd = auras.shownDebuffs.size
             if (open == false && nb == 0 || open == true && nd == 0) { open = null; sel = null }
             // THE AURAS LISTED, NOT A BUTTON (the user 2026-09-30, LATER item 6: "I dont want it to show the triangles, I want it to
@@ -1529,6 +1542,7 @@ class HomeView(
             // not drawn meanwhile (a dark square showed through the list's corner)
             if (nb > 0 && open != true) auraRow(c, auras.shownBuffs, false, buffTop(), w - 12f, buffBox, now)
             if (nd > 0 && open != false) auraRow(c, auras.shownDebuffs, true, h - 4f, (if (zoomOut.isEmpty) w - 4f else zoomOut.left) - 12f, debuffBox, now)
+            if (open == null) warning(c, if (buffBox.isEmpty) buffTop() else buffBox.bottom, if (debuffBox.isEmpty) h - 4f else debuffBox.top)
             val which = open ?: return
             list(c, which, w, h, now)
         }
@@ -1576,7 +1590,13 @@ class HomeView(
             buffRects.clear(); debuffRects.clear()
             val right = w - FULL_RIGHT
             if (nb > 0) auraRow(c, auras.shownBuffs, false, FULL_TOP, right, buffBox, now, fromRight = true, rects = buffRects)
-            val dTop = if (nb > 0) buffBox.bottom + 8f else FULL_TOP
+            var dTop = if (nb > 0) buffBox.bottom + 8f else FULL_TOP
+            // the game's durability warning between the buffs and the debuffs (the user's pick): the debuffs make room for it
+            warnBox.setEmpty()
+            if (open == null && Doll.warning(c, RectF(right - WARN_H, dTop, right, dTop + WARN_H), durabilityWarning, alignRight = true)) {
+                warnBox.set(right - WARN_H, dTop, right, dTop + WARN_H)
+                dTop = warnBox.bottom + 8f
+            }
             if (nd > 0) auraRow(c, auras.shownDebuffs, true, dTop, right, debuffBox, now, fromRight = true, rects = debuffRects)
             fullCur?.let { (deb, i) ->
                 val list = if (deb) debuffRects else buffRects
@@ -1591,7 +1611,25 @@ class HomeView(
 
         /** the map's quest arrow keeps off the auras (Map: the open module honours rimKeepOut) */
         private fun keepOut() {
-            if (lent(mapView)) mapView.rimKeepOut = listOf(buffBox, debuffBox, panel).filter { !it.isEmpty }.map { RectF(it) }
+            if (lent(mapView)) mapView.rimKeepOut = listOf(buffBox, debuffBox, panel, warnBox).filter { !it.isEmpty }.map { RectF(it) }
+        }
+
+        /** where the durability warning was drawn (empty = not shown): the map's quest arrow keeps off it too */
+        private val warnBox = RectF()
+
+        /**
+         * The game's durability figure on the SMALL map: at its left edge (the rows' left), centred in the gap between [above] (the buff
+         * row's bottom) and [below] (the debuff row's top), about two buff icons tall; nothing while the game does not show it or the
+         * gap is too small for it. It takes no touch.
+         */
+        private fun warning(c: Canvas, above: Float, below: Float) {
+            warnBox.setEmpty()
+            val gap = below - above - 2f * WARN_PAD
+            if (gap < WARN_MIN) return
+            val hgt = minOf(WARN_H, gap)
+            val top = above + WARN_PAD + (gap - hgt) / 2f
+            val box = RectF(ROW_LEFT, top, ROW_LEFT + hgt, top + hgt)
+            if (Doll.warning(c, box, durabilityWarning, alignRight = false)) warnBox.set(box)
         }
 
         /** how far down (this pane's = the map's px) the quest card covers the small map NOW (it rides the fold / fade): 0 = none */
@@ -1952,6 +1990,10 @@ class HomeView(
         const val AURA_BTN = 112f
         /** the rows: icons 56 px with the time under them (24 px), 8 px apart, from 8 px in, two lines at most */
         const val AURA_ICON = 56f
+        /** the durability figure on Home: about two buff icons tall (the user's pick), its smallest, its room above and below */
+        const val WARN_H = 2f * AURA_ICON
+        const val WARN_MIN = 48f
+        const val WARN_PAD = 8f
         const val TIME_H = 24f
         const val ICON_GAP = 8f
         /** between two lines of a row, so their bands just meet */

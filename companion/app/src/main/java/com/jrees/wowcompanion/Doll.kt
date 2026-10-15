@@ -106,9 +106,7 @@ object Doll {
                     pTint.colorFilter = PorterDuffColorFilter(Theme.quality(q), PorterDuff.Mode.MULTIPLY)
                     c.drawBitmap(b, null, box, pTint)
                 }
-                val dur = if (w.has("dur")) w.optInt("dur") else 100
-                if (!dim && dur in 0..20 && icon != null) c.drawBitmap(icon, null, inset, pBroken)
-                if (!dim) durability(c, box, w, alertColours)
+                if (!dim && icon != null) durability(c, icon, inset, w, alertColours)
                 val n = if (slot == 0 && w.has("count")) w.optInt("count") else 0
                 if (n > 1) {
                     // the game's outlined count, bottom right
@@ -138,27 +136,26 @@ object Doll {
         return hex?.let { runCatching { Color.parseColor("#$it") }.getOrNull() } ?: ALERT_DEFAULT[alert - 1]
     }
 
-    private val pDur = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private val pAlert = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
     /**
-     * A PIECE'S DURABILITY on its slot (the user's pick, 15 Oct: "per-item percentages"): its percentage along the slot's bottom
-     * edge, outlined as the game's counts are, whenever it is below 100 %; in the game's yellow / red when the game itself calls
-     * it damaged / broken ([w]'s `alert`), else white (a piece in the bags: red at 0 %, the one fact the game shows there).
-     * Nothing for a piece without durability (a ring, a trinket).
+     * A WORN-DOWN PIECE'S COLOUR on its slot (f-durability; the user after the Thor test, 15 Oct: "I dont want to show the percents
+     * on each armor peice, the color is fine"): the piece's [icon] drawn again over itself in the game's yellow when the game calls it
+     * damaged and its red when broken ([w]'s `alert`, the game's own verdict, its INVENTORY_ALERT_COLORS). A piece without the game's
+     * verdict (one in the bags) keeps the room's old rule: red at 20 % or less. No text.
      */
-    fun durability(c: Canvas, box: RectF, w: JSONObject, alertColours: org.json.JSONArray? = null) {
+    fun durability(c: Canvas, icon: Bitmap, inset: RectF, w: JSONObject, alertColours: org.json.JSONArray? = null) {
         if (!w.has("dur")) return
         val dur = w.optInt("dur", 100)
-        if (dur >= 100) return
-        val alert = if (w.has("alert")) w.optInt("alert") else if (dur <= 0) 2 else 0
-        pDur.textSize = box.width() * 0.27f
-        UiKit.asNumber(pDur, shadow = false)
-        val t = "$dur%"
-        val tx = box.centerX(); val ty = box.bottom - box.height() * 0.07f
-        pDur.style = Paint.Style.STROKE; pDur.strokeWidth = 4f; pDur.color = Color.BLACK
-        c.drawText(t, tx, ty, pDur)
-        pDur.style = Paint.Style.FILL; pDur.color = alertColour(alert, alertColours)
-        c.drawText(t, tx, ty, pDur)
+        val alert = when {
+            w.has("alert") -> w.optInt("alert")
+            dur in 0..20 -> 2
+            else -> 0
+        }
+        if (alert !in 1..2) return
+        val paint = if (alert == 2 && alertColours == null) pBroken
+            else pAlert.apply { colorFilter = PorterDuffColorFilter(alertColour(alert, alertColours), PorterDuff.Mode.MULTIPLY) }
+        c.drawBitmap(icon, null, inset, paint)
     }
 
     private val pPart = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -168,16 +165,16 @@ object Doll {
     /**
      * THE GAME'S DURABILITY WARNING, the little armoured figure (DurabilityFrame) the game shows while a piece is damaged or broken:
      * drawn from [durw] (`bags.equipped.durw`: the pieces exactly as the game drew them, each its texture, crop, place and the colour
-     * the game gave it), fitted into [box] keeping its shape, against [box]'s top-right corner as the game keeps it by the minimap.
+     * the game gave it), fitted into [box] keeping its shape, against [box]'s top-right corner ([alignRight] = false: top-left).
      * Draws nothing (returns false) while the game does not show it, or before its art is on the device.
      */
-    fun warning(c: Canvas, box: RectF, durw: JSONObject?): Boolean {
+    fun warning(c: Canvas, box: RectF, durw: JSONObject?, alignRight: Boolean = true): Boolean {
         if (durw == null || !durw.optBoolean("show")) return false
         val parts = durw.optJSONArray("parts") ?: return false
         val fw = durw.optDouble("w", 0.0).toFloat(); val fh = durw.optDouble("h", 0.0).toFloat()
         if (fw <= 0f || fh <= 0f) return false
         val k = minOf(box.width() / fw, box.height() / fh)
-        val ox = box.right - fw * k; val oy = box.top
+        val ox = if (alignRight) box.right - fw * k else box.left; val oy = box.top
         var drew = false
         for (i in 0 until parts.length()) {
             val p = parts.optJSONObject(i) ?: continue

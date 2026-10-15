@@ -1362,7 +1362,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 }
                 msg.optJSONObject("actionbar")?.let { castView.update(it) }
                 homeView.onFull(msg, current)
-                msg.optJSONObject("bags")?.let { bagsView.update(it, current); pinPicker.update(it); characterView.updateBags(it); if (ProfessionsStore.onBags(it)) professionsView.refresh() }   // old = no room switch, no tap (bags)
+                msg.optJSONObject("bags")?.let { bagsView.update(it, current); pinPicker.update(it); characterView.updateBags(it)
+                    it.optJSONObject("equipped")?.let { eq -> homeView.durability(eq.optJSONObject("durw")) }; if (ProfessionsStore.onBags(it)) professionsView.refresh() }   // old = no room switch, no tap (bags)
                 status.text = "gaps ${tail?.gapCount() ?: 0}   v${msg.optString("v", "?")}"
             }
             "pos" -> msg.optJSONObject("map")?.let {
