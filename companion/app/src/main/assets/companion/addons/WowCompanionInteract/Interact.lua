@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i115"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i116"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -4464,7 +4464,9 @@ function N.sync(open, doc)
             -- the trainer's Settings menu is on SELECT (the user, 2026-10-09: Start opens the pause wheel from every room and pop-up)
             local want = (doc and doc.trainer) and { PADBACK = true }
                 or (doc and doc.bank and doc.bank.account) and { PADLSHOULDER = true, PADRSHOULDER = true }
-                or (doc and doc.mail) and { PADLSHOULDER = true, PADRSHOULDER = true } or {}
+                or (doc and doc.mail) and { PADLSHOULDER = true, PADRSHOULDER = true }
+                -- the user (15 Oct): L / R on every tab row, always: so they switch the vendor's and the auction house's tabs too
+                or (doc and (doc.merchant or doc.auction)) and { PADLSHOULDER = true, PADRSHOULDER = true } or {}
             for k in pairs(N.npcExtra) do
                 if not want[k] then pcall(function() SetOverrideBinding(padOwner, true, k, nil) end) end
             end
@@ -5070,6 +5072,19 @@ local function padPress(key, down, via)
             elseif key == "PADBACK" and N.npcExtra.PADBACK and isOpen("trainer") then navRun("trmenu")
             elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and isOpen("bank") then
                 navRun("bktab " .. ((key == "PADRSHOULDER") and "acct" or "char"))
+            elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and isOpen("merchant") then
+                -- the vendor's Buy / Sell / Buyback, one step that way (no wrap, as the game's tab indicators)
+                local order, at = { "buy", "sell", "back" }, 1
+                for k2, t in ipairs(order) do if t == (N.tab or "buy") then at = k2 end end
+                local to = order[at + ((key == "PADRSHOULDER") and 1 or -1)]
+                if not to then return end
+                local onTabs = type(N.cur) == "string" and N.cur:match("^tab ") ~= nil
+                N.tabLand("tab " .. to)
+                if onTabs then N.cur = "tab " .. to end
+            elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and isOpen("auction") then
+                -- the auction house's Buy / Auctions
+                local want = (key == "PADRSHOULDER") and "owned" or "browse"
+                if AH.tab ~= want then navRun("ahtab " .. want) else return end
             elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and isOpen("mail") then
                 -- f-mailbox-look: LB / RB switch Inbox and Send Mail (the bag list goes with the page it stood on)
                 local want = (key == "PADRSHOULDER") and "send" or "inbox"

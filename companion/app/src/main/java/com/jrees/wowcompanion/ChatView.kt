@@ -1294,6 +1294,8 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             // links, the input screen's keys and tiles) NOTHING: the user's tab ruling (10-07) took the L / R glyphs off tab rows,
             // LB / RB still work unlabelled as in every room, and the arrows coming back are the cue (UI Art)
             if (typeOnDpad()) UiKit.moveArrows(c, boxes[chosen], left = canL, right = canR, words = false)
+            // L and R on the row's outsides, always (the user, 15 Oct: every tabbed room; it replaces 10-07's "no glyphs on tab rows")
+            gaps.badges(c)
             // Select's glyph and the funnel: the log screen's only (no filters on the input screen: the user, b121); they fade with the move
             funnel.set(w - 84f, 18f, w - 22f, 80f)
             val fa = ((1f - k) * 255).toInt()

@@ -1006,6 +1006,7 @@ class PadTabPage(
         }
         // p17: the cursor on the tab row: the game's gold arrows beside the open tab (D-pad Left / Right change it), no L / R glyphs
         if (ccTabs) UiKit.moveArrows(c, tr[cur], left = cur > 0, right = cur < keys.size - 1, words = false)
+        cGaps.badges(c)                 // L and R on the chooser's tab row, always (the user, 15 Oct)
 
         val rows = rowsOf(list, book, m)
         val pin = pinned(m)

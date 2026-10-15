@@ -1775,8 +1775,7 @@ class InteractView(context: Context) : View(context) {
         val names = listOf("Inbox" to "mailtab inbox", "Send Mail" to "mailtab send")
         val openIdx = if (sendTab) 1 else 0
         for ((k, nm) in names.withIndex()) UiKit.tab(c, tabs[k], nm.first, k == openIdx, cursor = cur == nm.second)
-        UiKit.pad(c, UiKit.shoulderGlyph(false), tabs[0].left - MAIL_GLYPH_W / 2f, tabs[0].centerY() + 4f, 64f)
-        UiKit.pad(c, UiKit.shoulderGlyph(true), tabs[1].right + MAIL_GLYPH_W / 2f, tabs[1].centerY() + 4f, 64f)
+        UiKit.tabEnds(c, tabs[0], tabs[1], MAIL_GLYPH_W)
         val onTabs = cur == "mailtab inbox" || cur == "mailtab send"
         if (onTabs) { val ci = if (cur == "mailtab send") 1 else 0; UiKit.moveArrows(c, tabs[ci], left = ci > 0, right = ci < 1, words = false) }
         ml.optJSONObject("act")?.let { a ->
@@ -2180,16 +2179,19 @@ class InteractView(context: Context) : View(context) {
         val purse = au.optLong("money", 0)
         val busy = pendingCmd != null
         val ty = r.top + 94f; val th = 108f
-        val tb = RectF(176f, ty + 4f, 366f, ty + th); val ta = RectF(362f, ty + 12f, 612f, ty + th)
+        val e = UiKit.TAB_END_W           // L and R on the row's outsides, always (the user, 15 Oct)
+        val tb = RectF(176f + e, ty + 4f, 366f + e, ty + th); val ta = RectF(362f + e, ty + 12f, 612f + e, ty + th)
         // the tab cursor is the kit's (LATER 19: the tab lit soft gold, its own edge traced), never the gold box on a tab
         UiKit.tab(c, tb, "Buy", !owned, cursor = cur == "ahtab browse")
         UiKit.tab(c, ta, "Auctions", owned, au.optInt("nOwned", 0), cursor = cur == "ahtab owned")
+        UiKit.tabEnds(c, RectF(tb.left, ty + 12f, tb.right, ty + th), RectF(ta.left, ty + 12f, ta.right, ty + th))
         act?.let { slotOf(it, "browse") }?.let { if (it >= 0) hits.add(tb to "act:ahtab browse|$it") }
         act?.let { slotOf(it, "owned") }?.let { if (it >= 0) hits.add(ta to "act:ahtab owned|$it") }
         pFill.color = Color.rgb(96, 80, 50)
         c.drawRect(inner.left - 6f, ty + th, inner.right + 6f, ty + th + 2f, pFill)
         val pm = UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-        c.drawText("Your money", inner.right - 230f, ty + th / 2f + 14f, pm)
+        val wordsR = inner.right - 16f - UiKit.moneyWidth(purse, 30f) - 14f        // the words before the coins, measured
+        if (wordsR - UiKit.bodyPaint(22f, Theme.dim).measureText("Your money") > ta.right + e + 8f) c.drawText("Your money", wordsR, ty + th / 2f + 14f, pm)
         UiKit.money(c, purse, inner.right - 16f, ty + th / 2f + 6f, 30f, fromRight = true)
         val by0 = ty + th + 10f; val by1 = inner.bottom - UiKit.STRIP - 6f
         val strip = UiKit.strip(c, inner)
@@ -3278,7 +3280,7 @@ class InteractView(context: Context) : View(context) {
             val ta = RectF(row[1]).apply { if (!acct) top = ty + 12f }
             UiKit.tab(c, ta, "Account Bank", acct)
             act?.let { slotOf(it, "acct") }?.let { if (it >= 0) hits.add(ta to "act:bktab acct|$it") }
-            if (cur != null) bankGaps.badges(c)
+            bankGaps.badges(c)          // L and R on the row's outsides, always (the user, 15 Oct)
         }
         pFill.color = Color.rgb(96, 80, 50)
         c.drawRect(inner.left - 6f, ty + th, inner.right + 6f, ty + th + 2f, pFill)
@@ -3609,7 +3611,9 @@ class InteractView(context: Context) : View(context) {
         // ---- the tabs stand on top of the list, right of the ring; the purse ends their row
         val ty = r.top + 94f; val th = 108f
         val nSell = arr(m, "sell").size; val nBack = arr(m, "buyback").size
-        val spans = listOf(Triple(Tab.BUY, 176f, 366f), Triple(Tab.SELL, 362f, 552f), Triple(Tab.BACK, 548f, 798f))
+        // L and R on the row's outsides, always (the user, 15 Oct): the row starts one glyph's room further right
+        val te = UiKit.TAB_END_W
+        val spans = listOf(Triple(Tab.BUY, 176f + te, 366f + te), Triple(Tab.SELL, 362f + te, 552f + te), Triple(Tab.BACK, 548f + te, 798f + te))
         for ((t, x0, x1) in spans) {
             val on = t == tab
             val tr = RectF(x0, ty + (if (on) 4f else 12f), x1, ty + th)
@@ -3620,12 +3624,14 @@ class InteractView(context: Context) : View(context) {
             UiKit.tab(c, tr, label, on, n, cursor = cur == id)
             hits.add(RectF(x0, ty, x1, ty + th) to "tab:${t.name}")
         }
+        UiKit.tabEnds(c, RectF(spans[0].second, ty + 12f, spans[0].third, ty + th), RectF(spans[2].second, ty + 12f, spans[2].third, ty + th))
         pFill.color = Color.rgb(96, 80, 50)
         c.drawRect(inner.left - 6f, ty + th, inner.right + 6f, ty + th + 2f, pFill)
         val pm = UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
         val purseX = UiKit.money(c, purse, inner.right - 16f, ty + th / 2f + 6f, 30f, fromRight = true)
-        val pw = UiKit.numberPaint(30f).measureText(purse.toString()) + 140f
-        c.drawText("Your money", max(820f + pm.measureText("Your money"), inner.right - 16f - pw), ty + th / 2f + 14f, pm)
+        // the words before the coins, measured; left out when they would reach the R glyph (the coins say it alone)
+        val wordsR = inner.right - 16f - UiKit.moneyWidth(purse, 30f) - 14f
+        if (wordsR - pm.measureText("Your money") > 798f + 2f * te + 8f) c.drawText("Your money", wordsR, ty + th / 2f + 14f, pm)
 
         // ---- the list: two columns, row-major, dragged; the last row is cut by the strip
         val list = entries()
