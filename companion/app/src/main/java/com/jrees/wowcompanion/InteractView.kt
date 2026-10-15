@@ -1767,13 +1767,18 @@ class InteractView(context: Context) : View(context) {
         // tab): the controller's gold tab with the game's gold arrows beside it (D-pad Left / Right switch), elsewhere LB / RB in the
         // gaps. Touch = the controller's A on them.
         val sendTab = ml.optString("tab") == "send"
-        val tabs = UiKit.tabRow(2, 176f, inner.right - 420f, ty + 6f, th - 6f, 250f)
+        // the user (15 Oct, on the render): "the L and R need to be on the outsides of both tabs always there": [LB] Inbox | Send Mail [RB],
+        // the glyphs in the chosen button set (UiKit.pad / shoulderGlyph), the narrow gap between the tabs left to the cursor's arrows
+        // the purse sits at the right; the row of tabs and glyphs stops short of its words
+        val purseLeft = inner.right - 16f - UiKit.moneyWidth(purse, 30f) - 14f - UiKit.bodyPaint(22f, Theme.dim).measureText("Your money")
+        val tabs = UiKit.tabRow(2, 176f + MAIL_GLYPH_W, purseLeft - MAIL_GLYPH_W - 16f, ty + 6f, th - 6f, 220f, gap = 44f)
         val names = listOf("Inbox" to "mailtab inbox", "Send Mail" to "mailtab send")
         val openIdx = if (sendTab) 1 else 0
         for ((k, nm) in names.withIndex()) UiKit.tab(c, tabs[k], nm.first, k == openIdx, cursor = cur == nm.second)
+        UiKit.pad(c, UiKit.shoulderGlyph(false), tabs[0].left - MAIL_GLYPH_W / 2f, tabs[0].centerY() + 4f, 64f)
+        UiKit.pad(c, UiKit.shoulderGlyph(true), tabs[1].right + MAIL_GLYPH_W / 2f, tabs[1].centerY() + 4f, 64f)
         val onTabs = cur == "mailtab inbox" || cur == "mailtab send"
         if (onTabs) { val ci = if (cur == "mailtab send") 1 else 0; UiKit.moveArrows(c, tabs[ci], left = ci > 0, right = ci < 1, words = false) }
-        else if (cur != null) { if (openIdx < 1) UiKit.tabBadge(c, tabs[1], right = true) else UiKit.tabBadge(c, tabs[0], right = false) }
         ml.optJSONObject("act")?.let { a ->
             slotOf(a, "tabInbox").takeIf { it >= 0 }?.let { hits.add(tabs[0] to "act:mailtab inbox|$it") }
             slotOf(a, "tabSend").takeIf { it >= 0 }?.let { hits.add(tabs[1] to "act:mailtab send|$it") }
@@ -3790,6 +3795,8 @@ class InteractView(context: Context) : View(context) {
         const val PENDING_FOLD_MS = 1_500L    // no document at all this long after an action: the window folds away
         const val PRESS_MIN_MS = 160L         // a press stays visibly DOWN at least this long
         private val PAD_FACES = setOf("PAD1", "PAD2", "PAD3", "PAD4")
+        /** the room for an LB / RB glyph outside the mailbox's tab pair */
+        private const val MAIL_GLYPH_W = 64f
         /** the game's INBOXITEMS_TO_DISPLAY */
         private const val PER_PAGE = 7
         /** the keyboard's D-pad repeat (Bags' values) */
