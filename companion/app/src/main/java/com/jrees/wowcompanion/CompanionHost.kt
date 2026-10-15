@@ -811,7 +811,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         barSelect.appAway()
     }
 
-    private fun show(r: Room, byB: Boolean = false) {
+    private fun show(r: Room, byB: Boolean = false, motion: Boolean = true) {
         flushBLeave()
         // the pause menu never stays over a room change (a whisper's jump, a game window); its own picks run after it has folded
         if (::pauseView.isInitialized && pauseView.isOpen) pauseView.shut()
@@ -864,7 +864,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // now, is pictured BEFORE anything is taken from it (Home gives its map and bars back right below)
         roomMotionEnd()
         val outgoing = shownView
-        val roomMotion = r != room && !chatOpening && !chatClosing && outgoing != null && outgoing.isShown &&
+        val roomMotion = motion && r != room && !chatOpening && !chatClosing && outgoing != null && outgoing.isShown &&
             !(::pauseView.isInitialized && pauseView.isOpen)
         // Home is pictured as it leaves (its map and bars go back to their rooms right below); a room keeps drawing itself
         val outPicture = if (roomMotion && outgoing === homeView) viewShot(homeView) else null
@@ -1646,8 +1646,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // the page picks the room: the Controller room's own page (b17 croom), Talents, or the book
                     val want = if (c.croom) Room.CONTROLLER else if (c.talentsPage) Room.TALENTS else Room.SPELLBOOK
                     // via "trainer": Context Menus' trainer lent the controller on Y (the user: "Y opens the Spellbook room; B comes back")
-                    if (room != want && (c.via == "button" || c.via == "trainer" || room == Room.SPELLBOOK || room == Room.TALENTS ||
-                            room == Room.CONTROLLER)) show(want)
+                    // 1.0.8-test7 (the user: "the controller room seems to open and swipe right instantly"): a page the BOOK moves inside its
+                    // own rooms (Spellbook / Talents / Controller, the same add-on page following the game) is not a room change the player
+                    // made, so it does not push: the old instant swap. Coming in from another room (the game's button) still pushes
+                    val inBook = room == Room.SPELLBOOK || room == Room.TALENTS || room == Room.CONTROLLER
+                    if (room != want && (c.via == "button" || c.via == "trainer" || inBook)) {
+                        Log.i("WCHOME", "spellsctl: the book's page picks ${want.name} (from ${room.name}, via ${c.via}, croom=${c.croom})")
+                        show(want, motion = !inBook)
+                    }
                 }
             }
             "spellsack" -> if (current) SpellsModel.parseBind(msg)?.let { spellsOverlay.onBind(it); spellbookView.invalidate() }
