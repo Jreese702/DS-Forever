@@ -1880,7 +1880,7 @@ local function buildDoc()
     -- 1.0.8: a field is being typed with the app's Chat keyboard (N.kbdOpen): which one, and its value when it opened
     if N.kbd then
         if (TN(function() return GetTime() end) or 0) - (N.kbdAt or 0) > N.KBD_TTL then N.kbdClose()
-        else doc.kbd = { name = N.kbd, text = N.kbdText } end
+        else doc.kbd = { name = N.kbd, text = N.kbdText, max = N.kbdMax } end
     end
     if isOpen("gossip") then doc.gossip = collectGossip() end
     if isOpen("quest") and questStage then doc.quest = collectQuest() end
@@ -3025,7 +3025,7 @@ function N.kbdOpen(name, text, max, done)
             return d, why
         end })
     if not ok then return false, "the keyboard did not open" end
-    N.kbd, N.kbdText, N.kbdAt = name, text or "", TN(function() return GetTime() end) or 0
+    N.kbd, N.kbdText, N.kbdAt, N.kbdMax = name, text or "", TN(function() return GetTime() end) or 0, max
     emitSoon()
     return true
 end
