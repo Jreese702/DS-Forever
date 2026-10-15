@@ -2631,6 +2631,7 @@ class InteractView(context: Context) : View(context) {
     private var dzAt = 0L
     private var dzRare = false
     private var dzBox: RectF? = null
+    private var dzItem: JSONObject? = null
     private val DZ_WAIT_MS = 3000L
 
     private fun lootButtons(c: Canvas, strip: RectF, bs: List<Triple<String, String, String>>, enabled: (String) -> Boolean) {
@@ -3146,13 +3147,14 @@ class InteractView(context: Context) : View(context) {
                 msTiles["$b $sl"] = box
                 // the moment the hold is full: the flash starts on this tile, once per hold
                 if (key == chosen && heldE >= 1f && it != null && dzKey != key && msStripText == null) {
-                    dzKey = key; dzAt = now; dzBox = RectF(box); dzRare = it.optInt("quality", 1) >= 3
+                    dzKey = key; dzAt = now; dzBox = RectF(box); dzItem = it; dzRare = it.optInt("quality", 1) >= 3
                 }
                 val dzT = if (key == dzKey) now - dzAt else -1L
                 when {
                     msHide == "$b $sl" || "$b $sl" in msHideSet -> BagsView.drawSlot(c, box, null, bagPaints)
-                    // after the flash, the slot shows what replaces the item (empty) while the game answers
-                    dzT >= UiKit.DELETE_BURST_MS / 2 && !dzRare -> BagsView.drawSlot(c, box, null, bagPaints)
+                    // the moment it is full the item breaks over its EMPTY slot (UiKit.itemBreak, drawn below), and the slot stays
+                    // empty while the game answers
+                    dzT >= 0 && !dzRare -> BagsView.drawSlot(c, box, null, bagPaints)
                     key == chosen && heldE > 0f && it != null -> {
                         // LOOTWIN 7 (900 .. 1900 ms): the item sinks to 0.82 and loses its colour with the hold
                         BagsView.drawSlot(c, box, null, bagPaints)
@@ -3178,7 +3180,12 @@ class InteractView(context: Context) : View(context) {
             c.drawText("Not shown: your " + skipped.joinToString(" and ") { it.lowercase() } + " (they can't hold this loot)",
                 gx + 2f, y + 22f, UiKit.bodyPaint(20f, Theme.dim))
         chosenBox?.let { UiKit.focus(c, it) }
-        dzBox?.let { bx -> val t = now - dzAt; if (t < UiKit.DELETE_BURST_MS) UiKit.deleteBurst(c, bx, t.toFloat() / UiKit.DELETE_BURST_MS) }
+        // the item breaks in half, greys and fades (the user's pick for the items); a blue / purple one waits for the game's Yes / No
+        dzBox?.let { bx ->
+            val t = now - dzAt; val itm = dzItem
+            if (!dzRare && itm != null && t < UiKit.ITEM_BREAK_MS)
+                UiKit.itemBreak(c, bx, t.toFloat() / UiKit.ITEM_BREAK_MS) { cc -> BagsView.drawSlot(cc, bx, itm, bagPaints) }
+        }
         if (dzKey != null) postInvalidateOnAnimation()
         // THE TOOLTIP BY THE CURSOR: beside the chosen slot, flipped left at the edge, raised above the strip, never cut
         val strip = UiKit.strip(c, inner)
@@ -3215,8 +3222,16 @@ class InteractView(context: Context) : View(context) {
         }
         UiKit.button(c, del, "Hold to delete", "rev_a", if (!canDel) UiKit.Button.DISABLED else if (held > 0f) UiKit.Button.DOWN else UiKit.Button.UP)
         val gg = min(70f, del.height() * 0.64f)
-        // f-delete-hold-polish: the fill lives on the item itself now (UiKit.holdTile); the button keeps its glyph's ring
+        // f-delete-hold-polish: the fill lives on the item itself (UiKit.holdTile; the user: not on this button); the button keeps its
+        // glyph's ring, and the moment the hold is full it gets the flash with sparkles (the user, after the mock: "I do like this on the
+        // button at the bottom")
         if (held > 0f) UiKit.holdRing(c, del.left + 22f + gg / 2f, del.centerY() - 1f, gg / 2f + 7f, held)
+        if (dzKey != null && now - dzAt < UiKit.DELETE_BURST_MS) {
+            // on the button's A glyph, where the hold's ring was (the words stay readable)
+            val hb = del.height(); val gx0 = del.left + 22f + gg / 2f
+            UiKit.deleteBurst(c, RectF(gx0 - hb / 2f, del.centerY() - hb / 2f, gx0 + hb / 2f, del.centerY() + hb / 2f),
+                (now - dzAt).toFloat() / UiKit.DELETE_BURST_MS)
+        }
         if (canDel) hits.add(del to "lt:hold")
         UiKit.button(c, back, if (sp.optJSONObject("want")?.optBoolean("anyway") == true) "Accept anyway" else "Back", UiKit.backGlyph(),
             kitState("act:lootback"))

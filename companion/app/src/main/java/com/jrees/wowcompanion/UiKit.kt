@@ -5882,6 +5882,59 @@ object UiKit {
     const val DELETE_BURST_MS = 420L
 
     /**
+     * THE ITEM BREAKS (f-delete-hold-polish, the user after the mock, 15 Oct: "for the Item buttons, I want them to have an almost
+     * animated like jagged breaking in half and going grey and fading out"): the item [draw]n into [box] once per half, each half cut
+     * along the same jagged crack down its middle; over [k] 0..1 of [ITEM_BREAK_MS] the halves part and drop, tilt away from each
+     * other, lose their colour and fade out. What lies under [box] (the empty slot) shows through.
+     */
+    fun itemBreak(c: Canvas, box: RectF, k: Float, draw: (Canvas) -> Unit) {
+        val t = k.coerceIn(0f, 1f)
+        if (t >= 1f) return
+        val e = t * t                                   // slow at first, then falling away
+        val cx = box.centerX()
+        // the crack: down the middle, jagged (six teeth), the same for both halves
+        val teeth = 6
+        val pts = ArrayList<Pair<Float, Float>>()
+        for (i in 0..teeth) {
+            val y = box.top + box.height() * i / teeth
+            val x = cx + (if (i % 2 == 0) -1f else 1f) * box.width() * 0.07f * (if (i == 0 || i == teeth) 0.4f else 1f)
+            pts += x to y
+        }
+        val cm = ColorMatrix().apply { setSaturation(1f - minOf(1f, t * 2.2f)) }
+        pBreak.colorFilter = ColorMatrixColorFilter(cm)
+        pBreak.alpha = (255 * (1f - e)).toInt().coerceIn(0, 255)
+        for (leftHalf in booleanArrayOf(true, false)) {
+            breakPath.reset()
+            val edgeX = if (leftHalf) box.left - 4f else box.right + 4f
+            breakPath.moveTo(edgeX, box.top - 4f)
+            breakPath.lineTo(pts.first().first, box.top - 4f)
+            for ((x, y) in pts) breakPath.lineTo(x, y)
+            breakPath.lineTo(pts.last().first, box.bottom + 4f)
+            breakPath.lineTo(edgeX, box.bottom + 4f)
+            breakPath.close()
+            val dir = if (leftHalf) -1f else 1f
+            val save = c.saveLayer(RectF(box.left - box.width(), box.top - box.height(), box.right + box.width(), box.bottom + box.height() * 2f), pBreak)
+            c.translate(dir * box.width() * 0.22f * e + dir * 2f * minOf(1f, t * 6f), box.height() * 0.35f * e)
+            c.rotate(dir * 14f * e, if (leftHalf) box.left else box.right, box.bottom)
+            c.clipPath(breakPath)
+            draw(c)
+            c.restoreToCount(save)
+        }
+        // the crack's bright line in its first moment
+        val la = (1f - t / 0.3f).coerceIn(0f, 1f)
+        if (la > 0f) {
+            pHold.style = Paint.Style.STROKE; pHold.strokeWidth = 3f; pHold.color = Color.argb((230 * la).toInt(), 255, 236, 170)
+            breakPath.reset(); breakPath.moveTo(pts.first().first, pts.first().second)
+            for ((x, y) in pts) breakPath.lineTo(x, y)
+            c.drawPath(breakPath, pHold)
+            pHold.style = Paint.Style.FILL
+        }
+    }
+    const val ITEM_BREAK_MS = 480L
+    private val pBreak = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val breakPath = android.graphics.Path()
+
+    /**
      * MORE BELOW (a tooltip stack taller than the window, while it scrolls): over the visible stack's last [h] px above [bottom],
      * the tooltip's ground fades in, and a plate with the scroll glyphs ([glyphs], e.g. "gen_down" and "gen_rstickdown") and "More"
      * sits on it. Draw it last, over the stack. [left] / [right] = the stack's sides.
