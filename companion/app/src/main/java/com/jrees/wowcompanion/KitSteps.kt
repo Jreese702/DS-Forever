@@ -44,7 +44,7 @@ object KitSteps {
     /** the controller HUD's pieces (extract_cast_art.py) */
     object Cast : ArtHarvest.Step {
         override val id = "cast"
-        override val version = 2
+        override val version = 3                  // f-cast-bar-art: + the casting bar's pieces
         override val beforePlay = true
         override val weight = 50
         override fun run(job: ArtHarvest.Job) {
