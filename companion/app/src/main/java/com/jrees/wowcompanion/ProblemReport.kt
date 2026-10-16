@@ -44,7 +44,7 @@ object ProblemReport {
 
     /** the report from its parts: pure (the tests build one from strings) */
     fun build(now: Long, description: String, facts: Facts, diag: List<String>, logcat: List<String>,
-              crashes: List<Pair<String, String>>, recorded: Boolean, names: Collection<String>): Report {
+              crashes: List<Pair<String, String>>, recorded: Boolean, names: Collection<String>, dxvk: String = ""): Report {
         val pattern = Redact.namePattern(names)                       // compiled once for the whole report
         val r = { s: String -> Redact.text(s, pattern) }
         val head = buildString {
@@ -69,6 +69,8 @@ object ProblemReport {
         files += "report.txt" to head
         files += "logs.txt" to logs.ifEmpty { "(no log lines in the last ${WINDOW_MS / 60_000} minutes)" }
         for ((n, t) in crashes.take(MAX_CRASHES)) files += "crashes/$n" to r(t)
+        // DXVK's own log, this run's and the previous one's (b-dxvk-load-crash)
+        if (dxvk.isNotBlank()) files += "dxvk.txt" to r(dxvk)
         return Report("ds-forever-report-${stamp(now)}", files)
     }
 
@@ -118,7 +120,8 @@ object ProblemReport {
             .sortedByDescending { it.lastModified() }.take(MAX_CRASHES)
             .map { it.name to runCatching { it.readText().take(200_000) }.getOrDefault("") }
         return build(now, description, facts(ctx), DiagLog.lines(WINDOW_MS, now), logcat(now - WINDOW_MS), crashes,
-            DiagLog.recording(now) || DiagLog.lines(WINDOW_MS, now).any { it.contains("report: recording started") }, Redact.names())
+            DiagLog.recording(now) || DiagLog.lines(WINDOW_MS, now).any { it.contains("report: recording started") }, Redact.names(),
+            runCatching { DxvkLogs.forReport(DxvkLogs.dir(ctx.dataDir)) }.getOrDefault(""))
     }
 
     fun facts(ctx: Context): Facts {

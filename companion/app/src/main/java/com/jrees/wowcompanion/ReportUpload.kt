@@ -29,7 +29,11 @@ object ReportUpload {
     fun request(report: ProblemReport.Report, words: String, facts: ProblemReport.Facts, recorded: Boolean,
                 names: Collection<String> = Redact.names()): String {
         fun file(name: String) = report.files.firstOrNull { it.first == name }?.second ?: ""
-        var logs = file("logs.txt").let { if (it.length > MAX_LOGS) "[older lines cut]\n" + it.takeLast(MAX_LOGS) else it }
+        // DXVK's log goes LAST into the logs field (the trims below and the receiver keep the NEWEST end, so it survives them: it is the
+        // one a load crash needs; b-dxvk-load-crash), after the newest of our own lines
+        val dxvk = file("dxvk.txt").let { if (it.isBlank()) "" else "\n\n===== dxvk.txt =====\n" + it.takeLast(40_000) }
+        var logs = file("logs.txt").let { if (it.length > MAX_LOGS - dxvk.length) "[older lines cut]\n" + it.takeLast(MAX_LOGS - dxvk.length) else it }
+            .let { it + dxvk }
         val head = file("report.txt").let { if (it.length > MAX_REPORT) it.take(MAX_REPORT) + "\n[cut]" else it }
         fun json() = JSONObject()
             .put("version", facts.app)
