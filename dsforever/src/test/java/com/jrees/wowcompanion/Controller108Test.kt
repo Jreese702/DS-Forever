@@ -148,4 +148,15 @@ class ClassSlotTest {
         val a = ClassSlot.column(emptyList(), 390f, h, g, left = false, w = w)
         assertTrue(a.left >= w / 2f && a.top >= 390f)
     }
+    // f-radial-middle: the item / spell wheel between the columns
+    @Test fun theItemWheelSitsCentredUnderTheBars() {
+        val m = ClassSlot.middle(w, h, 208f, g, minOf(w * 0.5f, chat.right - chat.left))
+        assertEquals("centred", w / 2f, m.left + m.side / 2f, 0.5f)
+        assertTrue("under the bars, above the bottom", m.top >= 208f + g - 0.5f && m.top + m.side <= h - g + 0.5f)
+        assertEquals("the columns part by half of it and a gap", m.side / 2f + g, m.push, 0.01f)
+    }
+    @Test fun theItemWheelNeverOutgrowsTheChatColumn() {
+        val m = ClassSlot.middle(w, 2000f, 100f, g, chat.right - chat.left)
+        assertTrue(m.side <= chat.right - chat.left + 0.5f)
+    }
 }

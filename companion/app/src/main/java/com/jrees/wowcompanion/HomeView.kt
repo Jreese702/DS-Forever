@@ -445,6 +445,44 @@ class HomeView(
     /** the side the open wheel took (true = the left column's) */
     private var classLeft = true
 
+    /**
+     * f-radial-middle (1.0.9, the user: "The Dpad up radial, and spell radial should slideup between the middle of the modules like the
+     * class bars used to, like a mixture of what it is now and what those were sort of"): the item / spell wheel (HomeRadialView) asks
+     * for its slot here. [open] true: a square under the bars between the columns (ClassSlot.middle, never wider than the chat column);
+     * the columns part outwards by half of it (the class wheel's 1.0.8 motion), the slot is returned in Home's coordinates; null =
+     * Home is not on show or a module is full screen (the wheel then stays the full-screen one). false: the columns come back.
+     */
+    fun wheelSlot(open: Boolean): RectF? {
+        if (open && (width == 0 || flow.screen.full != null)) return null            // the host asks only while Home is the room
+        if (open == wheelOpen) return if (open) RectF(wheelRect) else null
+        wheelOpen = open
+        val w = width.toFloat(); val h = height.toFloat()
+        val g = UiKit.MODULE_GAP
+        if (open) {
+            val chat = now[Part.CHAT]
+            val s = ClassSlot.middle(w, h, now[Part.BARS]?.bottom ?: 0f, g, minOf(w * WHEEL_SLOT_MAX, chat?.width() ?: w / 2f))
+            wheelRect.set(s.left, s.top, s.left + s.side, s.top + s.side)
+            wheelPush = s.push
+        }
+        for ((p, v) in views) {
+            if (p == Part.BARS) continue
+            if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f }; continue }
+            val r = now[p] ?: continue
+            val to = if (!open) 0f else if (r.centerX() < w / 2f) -wheelPush else wheelPush
+            v.animate().cancel()
+            val a = v.animate().translationX(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
+                .setInterpolator(Motion.curve()).withLayer()
+            // the map's well edge and zone band are Home's own paint (dispatchDraw): a redraw per frame of ITS slide (no layout)
+            if (v === mapSlot) a.setUpdateListener { invalidate() } else a.setUpdateListener(null)
+            a.setListener(null)
+            a.start()
+        }
+        return if (open) RectF(wheelRect) else null
+    }
+    private var wheelOpen = false
+    private val wheelRect = RectF()
+    private var wheelPush = 0f
+
     /** p-grow-glitch: when the big controller last grew (wall clock, onB's), for B's grace */
     private var grewAt = 0L
 
@@ -2236,6 +2274,8 @@ class HomeView(
         private const val CLASS_LONG_MS = 450L
         /** 1.0.8-test5: the left column's raise while the wheel shows (it slides out from under the chat) */
         private const val CLASS_COVER_Z = 4f
+        /** f-radial-middle: the item / spell wheel's slot is never wider than this share of Home (nor than the chat column) */
+        private const val WHEEL_SLOT_MAX = 0.5f
         /** the focused quest's card over the map (b121): above the map's 0, under the wheel's lifted left column */
         private const val CARD_Z = 2f
         /** the focused quest over the minimap (Settings > Home, HomeSettings.questOverMap; was the constant QUEST_ABOVE_MAP) */
@@ -2342,6 +2382,17 @@ internal object ClassSlot {
     fun inColumn(a: Area): Slot {
         val side = minOf(a.right - a.left, a.bottom - a.top).coerceAtLeast(1f)
         return Slot((a.left + a.right - side) / 2f, (a.top + a.bottom - side) / 2f, side)
+    }
+    /**
+     * f-radial-middle: the item / spell wheel's square between the columns, under the bars ([barsBottom]), at most [maxSide]; [push] =
+     * how far each column parts (half the wheel and a gap)
+     */
+    data class Middle(val left: Float, val top: Float, val side: Float, val push: Float)
+    fun middle(w: Float, h: Float, barsBottom: Float, gap: Float, maxSide: Float): Middle {
+        val avail = (h - gap) - (barsBottom + gap)
+        val side = minOf(avail, maxSide).coerceAtLeast(1f)
+        val top = barsBottom + gap + (avail - side) / 2f
+        return Middle((w - side) / 2f, top, side, side / 2f + gap)
     }
     /** how far a part of the column slides to be wholly off its own edge ([w] the page's width) */
     fun away(left: Boolean, partLeft: Float, partRight: Float, w: Float, gap: Float): Float =

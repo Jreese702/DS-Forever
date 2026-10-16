@@ -3807,8 +3807,13 @@ object UiKit {
      * screen allows under the one-line name band at its top (the user, b69: "The Radial menu should be much larger, giving just enough
      * room to comfortable fit the title of the Item at the top of the screen")
      */
-    private fun crGeo(screen: RectF): CrGeo {
+    private fun crGeo(screen: RectF, slot: RectF? = null): CrGeo {
         val s = screen.height() / 1080f
+        // f-radial-middle: Home's middle slot (HomeView.wheelSlot): the rim fits the square, the words keep the screen's scale
+        if (slot != null) {
+            val k = minOf(slot.width(), slot.height()) / 472f
+            return CrGeo(s, k, 540f * k, slot.centerX(), slot.centerY(), 236f * k)
+        }
         val d = WHEEL_D * s; val k = d / 540f; val rim = 236f * k
         return CrGeo(s, k, d, screen.centerX(), screen.bottom - rim, rim)
     }
@@ -3817,8 +3822,8 @@ object UiKit {
     fun consumableRadialHub(screen: RectF): android.graphics.PointF = crGeo(screen).let { android.graphics.PointF(it.hx, it.hy) }
 
     /** a finger at ([x], [y]): slice 0..7 (0 = the top, clockwise), [CR_HUB] = the hub (B: close), -1 = outside the wheel */
-    fun consumableRadialHit(screen: RectF, x: Float, y: Float): Int {
-        val g = crGeo(screen)
+    fun consumableRadialHit(screen: RectF, x: Float, y: Float, slot: RectF? = null): Int {
+        val g = crGeo(screen, slot)
         val dx = x - g.hx; val dy = y - g.hy
         val r = kotlin.math.hypot(dx, dy)
         if (r <= 87f * g.k) return CR_HUB                    // inside the hub ring's outer edge
@@ -3905,11 +3910,11 @@ object UiKit {
      */
     fun consumableRadial(c: Canvas, screen: RectF, disc: android.graphics.PointF, discSize: Float, items: List<RadialItem?>,
                          pointed: Int, page: Int = 0, pages: Int = 1, t: Float = CR_OPEN_MS, glyphs: Boolean = true,
-                         plusSlot: Int = -1, choose: RadialChoice? = null, hubDown: Float = 0f): Boolean {
-        val g = crGeo(screen)
+                         plusSlot: Int = -1, choose: RadialChoice? = null, hubDown: Float = 0f, slot: RectF? = null): Boolean {
+        val g = crGeo(screen, slot)
         val tt = t.coerceIn(0f, CR_OPEN_MS)
-        // the cover: the room 0.65, the bar 0.45
-        val dim = crEaseOut(tt / 180f)
+        // the cover: the room 0.65, the bar 0.45 (in Home's middle slot none: the columns part for it, as the class wheel's did)
+        val dim = if (slot != null) 0f else crEaseOut(tt / 180f)
         val barTop = screen.bottom - Strip.HEIGHT * g.s
         pFlat.style = Paint.Style.FILL
         pFlat.color = Color.argb((255 * 0.65f * dim).toInt(), 0, 0, 0)
@@ -3935,7 +3940,8 @@ object UiKit {
         // rise and it grows from the stone's own width (discSize / the wheel's) to 1; the close runs t backward, so it goes back in
         val openK = crEaseOut((tt - 60f) / 260f)
         if (openK > 0f) {
-            val s0 = (discSize / g.d).coerceIn(0.05f, 1f)
+            // in Home's middle slot it SLIDES UP whole, riding with the disc from the bar (f-radial-middle), not growing
+            val s0 = if (slot != null) 1f else (discSize / g.d).coerceIn(0.05f, 1f)
             val sc = s0 + (1f - s0) * openK
             val save = c.save()
             c.translate(cx, cy); c.scale(sc, sc); c.translate(-g.hx, -g.hy)
@@ -4045,6 +4051,22 @@ object UiKit {
         c.drawBitmap(base, null, box, pBmp)
         c.drawBitmap(flare, null, box, pCrAdd)
         c.drawBitmap(base, null, box, pCrMask)
+        c.restoreToCount(l)
+    }
+
+    /** the bar Home button's press flash over a disc: its gold pieces by [k], the gold light added again (x 2.3 at the peak) */
+    private fun crDiscGold(c: Canvas, box: RectF, k: Float) {
+        val base = tex("home_live_gold_base"); val flare = tex("home_live_gold_flare")
+        val l = c.saveLayerAlpha(box, (255 * k).toInt())
+        if (base != null && flare != null) {
+            c.drawBitmap(base, null, box, pBmp)
+            c.drawBitmap(flare, null, box, pCrAdd)
+            c.drawBitmap(flare, null, box, pCrAdd)
+            c.drawBitmap(base, null, box, pCrMask)
+        } else {
+            pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(140, 255, 200, 70)
+            c.drawCircle(box.centerX(), box.centerY(), box.width() / 2f, pFlat)
+        }
         c.restoreToCount(l)
     }
 
@@ -4178,7 +4200,7 @@ object UiKit {
         // at the screen's top, just over the rim: the name in one line, comfortably large; an instruction (the "+", the chooser, a pin
         // that ran out) a smaller second line under it; the page dots at the band's right end
         val bw = 1000f * g.s; val bh = 96f * g.s
-        val top = g.hy - g.rim - bh - 10f * g.s
+        val top = maxOf(6f * g.s, g.hy - g.rim - bh - 10f * g.s)
         val a = (255 * k).toInt()
         val dotsW = if (pages >= 2) 34f * g.s * pages + 30f * g.s else 0f
         if (line1 != null) {
@@ -4336,6 +4358,35 @@ object UiKit {
             crEaseInOut(pSpan(t, 380f, 460f)), crEaseOut(pSpan(t, 420f, 520f)), 0.55f * pSpan(t, 0f, 60f) * (1f - pSpan(t, 260f, 520f)))
     }
 
+    /**
+     * THE PAUSE HUB (1.0.9, the user: "the middle button in th pause menu needs to be red and have the same reaction animations to being
+     * pressed"): Home's disc, its swirl's light RED ([red] of it), the B, and the bar's Home press: [push] 0..1 sinks it to 0.92 around a
+     * point 2 px lower with a shade at its lower edge (Strip.pushNow), [gold] 0..1 its press flash (Strip.goldNow: the gold light, brighter)
+     */
+    private fun pauseHubAt(c: Canvas, g: PauseGeo, cx: Float, cy: Float, size: Float, red: Float, b: Float, push: Float, gold: Float,
+                           alpha: Int = 255) {
+        val box = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
+        val p = push.coerceIn(0f, 1f)
+        val l = c.saveLayerAlpha(RectF(box).apply { inset(-4f, -4f) }, alpha)
+        if (p > 0f) { val sc = 1f - 0.08f * p; c.scale(sc, sc, cx, cy + 2f * g.k * p) }
+        if (red < 1f) crDisc(c, box, false, 255)
+        if (red > 0f) crDisc(c, box, true, (255 * red.coerceIn(0f, 1f)).toInt())
+        if (gold > 0f) crDiscGold(c, box, gold.coerceIn(0f, 1f))
+        if (b > 0f) pad(c, backGlyph(), cx, cy, size * 0.30f, (255 * b.coerceIn(0f, 1f)).toInt())
+        if (p > 0f) {
+            val r = size / 2f
+            pCrShade.shader = RadialGradient(cx, cy - r * 0.35f, r * 1.25f, intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT,
+                Color.argb((150 * p).toInt(), 0, 0, 0)), floatArrayOf(0f, 0.62f, 1f), Shader.TileMode.CLAMP)
+            c.drawCircle(cx, cy, r, pCrShade)
+        }
+        c.restoreToCount(l)
+    }
+    /** the pause hub alone where the open wheel has it (B's press plays on after the wheel has gone): see [pauseHubAt] */
+    fun pauseHub(c: Canvas, screen: RectF, push: Float, gold: Float, alpha: Int = 255) {
+        val g = pauseGeo(screen)
+        pauseHubAt(c, g, g.cx, g.cy, PAUSE_DISC_U * g.s, 1f, 1f, push, gold, alpha)
+    }
+
     /** a finger at ([x], [y]): a slice 0..7 (the KIT's order: 0 = the top, clockwise), [PAUSE_HUB] = the hub, -1 = outside the wheel */
     fun pauseRadialHit(screen: RectF, x: Float, y: Float): Int {
         val g = pauseGeo(screen)
@@ -4411,7 +4462,7 @@ object UiKit {
     fun pauseRadial(c: Canvas, screen: RectF, disc: android.graphics.PointF, discSize: Float, slices: List<PauseSlice?>, page: Int,
                     pointed: Int, heldOption: Int = -1, t: Float = PAUSE_OPEN_MS, hubDown: Float = 0f, line: String? = null,
                     lineAlpha: Float = 1f, glyphs: Boolean = true, up: String? = "Emotes", down: String? = "Sit / Stand",
-                    pickGlyph: Boolean = false, left: String? = null, right: String? = null): Boolean {
+                    pickGlyph: Boolean = false, left: String? = null, right: String? = null, hubGold: Float = 0f): Boolean {
         val g = pauseGeo(screen)
         val tt = t.coerceIn(0f, PAUSE_OPEN_MS)
         // the game's order from here on
@@ -4429,21 +4480,9 @@ object UiKit {
             c.restoreToCount(l)
             c.restoreToCount(save)
         }
-        // the disc (the hub): as the consumables wheel draws it, its halo, its red, its B, its press
+        // the disc (the hub): Home's own disc turning RED as it lands, its B, its press
         val d = pauseDisc(screen, disc, discSize, tt)
-        val box = RectF(d.cx - d.size / 2f, d.cy - d.size / 2f, d.cx + d.size / 2f, d.cy + d.size / 2f)
-        val push = hubDown.coerceIn(0f, 1f)
-        val pressSave = c.save()
-        if (push > 0f) { val sc = 1f - 0.08f * push; c.scale(sc, sc, d.cx, d.cy + 2f * g.k * push) }
-        crDisc(c, box, false, 255)
-        if (glyphs && d.b > 0f) pad(c, backGlyph(), d.cx, d.cy, d.size * 0.30f, (255 * d.b).toInt())
-        if (push > 0f) {
-            val r = d.size / 2f
-            pCrShade.shader = RadialGradient(d.cx, d.cy - r * 0.35f, r * 1.25f, intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT,
-                Color.argb((150 * push).toInt(), 0, 0, 0)), floatArrayOf(0f, 0.62f, 1f), Shader.TileMode.CLAMP)
-            c.drawCircle(d.cx, d.cy, r, pCrShade)
-        }
-        c.restoreToCount(pressSave)
+        pauseHubAt(c, g, d.cx, d.cy, d.size, d.red, if (glyphs) d.b else 0f, hubDown, hubGold)
         val b = pSpan(tt, 440f, 600f)
         if (b > 0f) pauseBands(c, g, page, crEaseOut(b), 24f * g.k * (1f - crEaseOut(b)), heldOption, up, down, left, right)
         if (line != null && lineAlpha > 0f)
