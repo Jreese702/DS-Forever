@@ -44,7 +44,8 @@ object ProblemReport {
 
     /** the report from its parts: pure (the tests build one from strings) */
     fun build(now: Long, description: String, facts: Facts, diag: List<String>, logcat: List<String>,
-              crashes: List<Pair<String, String>>, recorded: Boolean, names: Collection<String>, dxvk: String = ""): Report {
+              crashes: List<Pair<String, String>>, recorded: Boolean, names: Collection<String>, dxvk: String = "",
+              gameCrashes: List<Pair<String, String>> = emptyList()): Report {
         val pattern = Redact.namePattern(names)                       // compiled once for the whole report
         val r = { s: String -> Redact.text(s, pattern) }
         val head = buildString {
@@ -63,12 +64,15 @@ object ProblemReport {
             appendLine("Everything here went through DS Forever's privacy pass: logins, BattleTags, character, realm, guild and party names,")
             appendLine("chat text and IP addresses are replaced by <email>, <battletag>, <name>, <text>, <ip>.")
         }
-        val logs = (diag.map { "diag  $it" } + logcat.filter { l -> tagOf(l)?.let(::ourTag) == true }.map { "log   $it" })
-            .joinToString("\n") { r(it) }
+        // issue #9: our lines kept, the expected CascLib / CDN noise summarised, errors / crashes / exits / setup LAST (LogSieve)
+        val logs = (diag.joinToString("\n") { "diag  $it" } + "\n" + LogSieve.sieve(logcat)).trim()
+            .lineSequence().joinToString("\n") { r(it) }
         val files = ArrayList<Pair<String, String>>()
         files += "report.txt" to head
         files += "logs.txt" to logs.ifEmpty { "(no log lines in the last ${WINDOW_MS / 60_000} minutes)" }
         for ((n, t) in crashes.take(MAX_CRASHES)) files += "crashes/$n" to r(t)
+        // the GAME's own crash reports (its Errors folder): their head only (time, command, exception, the first stack lines)
+        for ((n, t) in gameCrashes.take(MAX_GAME_CRASHES)) files += "game-crashes/$n" to r(LogSieve.gameCrashHead(t))
         // DXVK's own log, this run's and the previous one's (b-dxvk-load-crash)
         if (dxvk.isNotBlank()) files += "dxvk.txt" to r(dxvk)
         return Report("ds-forever-report-${stamp(now)}", files)
@@ -121,8 +125,20 @@ object ProblemReport {
             .map { it.name to runCatching { it.readText().take(200_000) }.getOrDefault("") }
         return build(now, description, facts(ctx), DiagLog.lines(WINDOW_MS, now), logcat(now - WINDOW_MS), crashes,
             DiagLog.recording(now) || DiagLog.lines(WINDOW_MS, now).any { it.contains("report: recording started") }, Redact.names(),
-            runCatching { DxvkLogs.forReport(DxvkLogs.dir(ctx.dataDir)) }.getOrDefault(""))
+            runCatching { DxvkLogs.forReport(DxvkLogs.dir(ctx.dataDir)) }.getOrDefault(""), gameCrashes(ctx, now))
     }
+
+    /** the game's newest crash reports (the "Crash" .txt files in <game>/<flavor>/Errors, the last 7 days): issue #9 had none of them */
+    fun gameCrashes(ctx: Context, now: Long = System.currentTimeMillis()): List<Pair<String, String>> = runCatching {
+        val root = GameFiles.gameRoot(ctx)
+        (root.listFiles()?.filter { it.isDirectory && it.name.startsWith("_") }.orEmpty())
+            .flatMap { File(it, "Errors").listFiles()?.toList().orEmpty() }
+            .filter { it.isFile && it.name.contains("Crash") && it.name.endsWith(".txt") && now - it.lastModified() < 7L * 24 * 3600_000 }
+            .sortedByDescending { it.lastModified() }.take(MAX_GAME_CRASHES)
+            .map { it.name to runCatching { it.bufferedReader().use { r -> r.lineSequence().take(80).joinToString("\n") } }.getOrDefault("") }
+    }.getOrDefault(emptyList())
+
+    private const val MAX_GAME_CRASHES = 2
 
     fun facts(ctx: Context): Facts {
         val pkg = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
@@ -144,10 +160,13 @@ object ProblemReport {
         return Facts(app, addons, game, device, settings)
     }
 
-    /** this process's logcat since [sinceMs] (own lines need no permission) */
+    /**
+     * DS Forever's logcat since [sinceMs]: EVERY process of the app (an app reads its own user's lines without a permission), not just
+     * this one: a run of DS Forever that crashed and restarted, and its FATAL EXCEPTION, were cut out by --pid (issue #9)
+     */
     private fun logcat(sinceMs: Long): List<String> = runCatching {
         val since = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(Date(sinceMs))
-        val p = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "threadtime", "-T", since, "--pid=${android.os.Process.myPid()}"))
+        val p = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "threadtime", "-T", since))
         try { p.inputStream.bufferedReader().readLines() } finally { p.destroy() }
     }.getOrDefault(emptyList())
 

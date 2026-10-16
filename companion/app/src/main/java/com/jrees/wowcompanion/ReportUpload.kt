@@ -34,6 +34,10 @@ object ReportUpload {
         val dxvk = file("dxvk.txt").let { if (it.isBlank()) "" else "\n\n===== dxvk.txt =====\n" + it.takeLast(40_000) }
         var logs = file("logs.txt").let { if (it.length > MAX_LOGS - dxvk.length) "[older lines cut]\n" + it.takeLast(MAX_LOGS - dxvk.length) else it }
             .let { it + dxvk }
+        // the crash records, ours (DS Forever's) and the game's heads, at the very END: the trims keep the newest end (issue #9)
+        val crashText = report.files.filter { it.first.startsWith("crashes/") || it.first.startsWith("game-crashes/") }
+            .joinToString("") { (n, t) -> "\n\n===== $n =====\n" + t.take(15_000) }.takeLast(30_000)
+        logs = logs.takeLast(MAX_LOGS - crashText.length) + crashText
         val head = file("report.txt").let { if (it.length > MAX_REPORT) it.take(MAX_REPORT) + "\n[cut]" else it }
         fun json() = JSONObject()
             .put("version", facts.app)
