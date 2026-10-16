@@ -4210,34 +4210,37 @@ object UiKit {
      * empty slice's dim "Empty", so the band holds still while the stick sweeps); [line1] null = no band; the page dots under it
      */
     private fun crBand(c: Canvas, g: CrGeo, line1: String?, colour1: Int, line2: String?, page: Int, pages: Int, k: Float) {
-        // at the screen's top, just over the rim: the name in one line, comfortably large; an instruction (the "+", the chooser, a pin
-        // that ran out) a smaller second line under it; the page dots at the band's right end
-        val bw = 1000f * g.s; val bh = 96f * g.s
-        val top = maxOf(6f * g.s, g.hy - g.rim - bh - 10f * g.s)
+        // THE PAUSE MENU'S HEADER LOOK (the user on 1.0.9-test18: "The name of the thing that I am selecting should be reduced in size down
+        // to look similar to the main menu with L and R to indicate the other pages instead of them way off to the side"): the slim band
+        // art, the name in the game's font at the "Main Menu" size, LB / RB right beside it and the page dots under it (more than one
+        // page); an instruction (the "+", the chooser, a pin that ran out) a small line under the band
         val a = (255 * k).toInt()
-        val dotsW = if (pages >= 2) 34f * g.s * pages + 30f * g.s else 0f
-        if (line1 != null) {
-            val band = tex("rwheel_band")
-            val r = RectF(g.hx - bw / 2f, top, g.hx + bw / 2f, top + bh)
-            if (band != null) { pBmp.alpha = a; c.drawBitmap(band, null, r, pBmp); pBmp.alpha = 255 }
-            else { pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb((200 * k).toInt(), 0, 0, 0); c.drawRect(r, pFlat) }
-            val maxW = bw - 60f * g.s - 2f * dotsW
-            if (line2 != null) {
-                crWords(c, line1, g.hx, top + 36f * g.s, 48f * g.s, colour1, 3f * g.s, a, maxW)
-                crWords(c, line2, g.hx, top + 74f * g.s, 26f * g.s, Color.rgb(200, 200, 200), 2f * g.s, a, maxW)
-            } else crWords(c, line1, g.hx, top + bh / 2f, 56f * g.s, colour1, 3f * g.s, a, maxW)
+        val s = g.s
+        val bh = P_TOP_H * s
+        val ty = maxOf(6f * s + bh / 2f, g.hy - g.rim - bh / 2f - 6f * s)
+        val size = 32f * s
+        val maxName = 420f * s
+        val nameW = if (line1 != null) minOf(bodyPaint(size).measureText(line1), maxName) else 0f
+        val paging = pages >= 2
+        val half = maxOf(nameW / 2f + 52f * s, 150f * s)                 // the glyphs' distance: beside the name, never closer than the pause's
+        tex("rwheel_band")?.let {
+            val bw = maxOf(520f * s, 2f * half + 90f * s)
+            pBmp.alpha = a; c.drawBitmap(it, null, RectF(g.hx - bw / 2f, ty - bh / 2f, g.hx + bw / 2f, ty + bh / 2f), pBmp); pBmp.alpha = 255
         }
-        if (pages >= 2) {
-            val y = top + bh / 2f
-            for (i in 0 until pages) {
-                val x = g.hx + bw / 2f - 34f * g.s - (pages - 1 - i) * 34f * g.s
-                val lit = i == page
-                val rr = (if (lit) 9f else 7f) * g.s
-                pFlat.style = Paint.Style.FILL
-                pFlat.color = Color.argb((200 * k).toInt(), 0, 0, 0); c.drawCircle(x, y, rr + 3f * g.s, pFlat)
-                pFlat.color = if (lit) Color.argb(a, 255, 209, 0) else Color.argb(a, 110, 96, 70); c.drawCircle(x, y, rr, pFlat)
+        if (line1 != null) gameWords(c, line1, g.hx, ty - (if (paging) 8f else 0f) * s, size, colour1, a, maxName)
+        if (paging) {
+            val ds = 12f * s; val dy = ty + 20f * s
+            for (n in 0 until pages) {
+                val x = g.hx + (n - (pages - 1) / 2f) * (ds + 6f * s)
+                val dot = tex(if (n == page) "rpage_on" else "rpage_off")
+                if (dot != null) { pBmp.alpha = a; c.drawBitmap(dot, null, RectF(x - ds / 2f, dy - ds / 2f, x + ds / 2f, dy + ds / 2f), pBmp); pBmp.alpha = 255 }
+                else { pFlat.style = Paint.Style.FILL; pFlat.color = if (n == page) Color.argb(a, 255, 209, 0) else Color.argb(a, 70, 64, 52); c.drawCircle(x, dy, ds / 2f, pFlat) }
             }
+            val gs = 46f * s
+            pad(c, shoulderGlyph(false), g.hx - half, ty, gs, a)
+            pad(c, shoulderGlyph(true), g.hx + half, ty, gs, a)
         }
+        if (line2 != null) crWords(c, line2, g.hx, ty + bh / 2f + 16f * s, 22f * s, Color.rgb(200, 200, 200), 2f * s, a, 900f * s)
     }
 
     /** words with a dark edge, centred on ([cx], [cy]), shrunk to [maxW] */

@@ -826,7 +826,14 @@ local function gameMenuRow()
     local pad = WC.pad
     if type(pad) ~= "table" or type(pad.secureRow) ~= "function" then return end
     local S, SN = WC.S, WC.SN
-    local GMV = "gm2"
+    local GMV = "gm3"
+    -- gm3 (the user on 1.0.9-test18: "The options and addons button in the game menu don't actually open the options or the addons
+    -- menus", "Same with the support"; the user's pick A): those three have no slash command, only the GAME's own menu buttons (a pool
+    -- GameMenuFrame:InitButtons fills when IT opens, Blizzard_GameMenu GameMenuFrame.lua). So the APP clicks the game's own buttons, as a
+    -- finger would: every document carries `micro`, the game's Menu micro button's box in game px (top-left, the pad's px) while it
+    -- shows; the app taps it (a real click: MainMenuMicroButton's OnClick wants the mouse over it) and the game opens its menu; its
+    -- OnShow (a post-hook: nothing of ours runs inside it) sends a "shown" document with `targets` = the boxes of its Options / AddOns /
+    -- Support buttons, and the app taps the one it wants. Nothing here opens, closes or clicks a game window; only reads.
     -- gm2 (the map session, test15's safe close: the Exit cell answered but no QUIT countdown came): after a Log Out / Exit tap the row
     -- reports what the GAME did with it: its own refusal line (UI_ERROR_MESSAGE within EXIT_ERR_S: in combat, falling, ...) as a
     -- "gamemenu" doc why "refused" with err = the game's words, and its quitting / camping event as why "event" with ev = the event
@@ -843,6 +850,39 @@ local function gameMenuRow()
         return g
     end
     local function flush() if type(WC.flush) == "function" then pcall(WC.flush) else WC.push() end end
+    -- gm3: a shown frame's box in game px (the pad's: physical px, top-left origin), or nil (hidden, see-through, unreadable)
+    local function rectOf(fr)
+        if type(fr) ~= "table" then return nil end
+        local ok, r = pcall(function()
+            if not fr:IsVisible() or fr:GetEffectiveAlpha() < 0.05 then return nil end
+            local pw, ph = GetPhysicalScreenSize()
+            local uw, uh = UIParent:GetWidth(), UIParent:GetHeight()
+            local l, t, w, h = fr:GetLeft(), fr:GetTop(), fr:GetWidth(), fr:GetHeight()
+            if not (pw and ph and uw and uh and l and t and w and h) or uw <= 0 or uh <= 0 or w <= 0 or h <= 0 then return nil end
+            local es = fr:GetEffectiveScale() / UIParent:GetEffectiveScale()
+            local sx, sy = pw / uw, ph / uh
+            local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
+            return { x = r1(l * es * sx), y = r1((uh - t * es) * sy), w = r1(w * es * sx), h = r1(h * es * sy) }
+        end)
+        return ok and r or nil
+    end
+    -- gm3: the game's own menu buttons the app clicks, by their own words (GAMEMENU_OPTIONS / ADDONS / GAMEMENU_SUPPORT)
+    local OPEN_KEYS = { options = "GAMEMENU_OPTIONS", addons = "ADDONS", support = "GAMEMENU_SUPPORT" }
+    local function targets()
+        local out = {}
+        local ok, kids = pcall(function() return { GameMenuFrame:GetChildren() } end)
+        if not ok or type(kids) ~= "table" then return out end
+        for _, b in ipairs(kids) do
+            local okT, txt = pcall(function() return b:GetText() end)
+            local okE, en = pcall(function() return b:IsEnabled() end)
+            if okT and type(txt) == "string" then
+                for key, g in pairs(OPEN_KEYS) do
+                    if txt == _G[g] and okE and en then out[key] = rectOf(b) end
+                end
+            end
+        end
+        return out
+    end
     local function popup(which)
         local ok, name, dialog = pcall(function() return StaticPopup_Visible(which) end)
         if ok and name then return type(dialog) == "table" and dialog or true end
@@ -896,7 +936,8 @@ local function gameMenuRow()
     local function doc(why, extra)
         local list, kiosk = items()
         local d = { type = "gamemenu", v = GMV, why = why, mode = SN(function() return C_GameRules.GetActiveGameMode() end),
-                    kiosk = kiosk or nil, items = list, cells = COL, binds = bindList() }
+                    kiosk = kiosk or nil, items = list, cells = COL, binds = bindList(), micro = rectOf(_G.MainMenuMicroButton),
+                    fight = (S(function() return InCombatLockdown() end) == true) or nil }
         for k, v in pairs(extra or {}) do d[k] = v end
         WC.send(WC.encode(d))
         flush()
@@ -976,6 +1017,18 @@ local function gameMenuRow()
         elseif e == "PLAYER_ENTERING_WORLD" then C_Timer.After(2, function() pcall(doc, "login") end)
         else watch() end
     end)
+    -- gm3: the game's menu opened (by the app's tap on its Menu button, or by the player): where its buttons are, once laid out
+    local hookedShow = false
+    local function hookShow()
+        if hookedShow or type(GameMenuFrame) ~= "table" or type(GameMenuFrame.HookScript) ~= "function" then return end
+        hookedShow = pcall(function()
+            GameMenuFrame:HookScript("OnShow", function()
+                C_Timer.After(0.05, function() pcall(doc, "shown", { targets = targets() }) end)
+            end)
+        end)
+    end
+    pcall(hookShow)
+    if not hookedShow and type(C_Timer) == "table" then C_Timer.After(2, function() pcall(hookShow) end) end
     WC.gameMenu = { version = GMV, doc = function(why) return doc(why or "manual") end, tick = function() return tick() end, cells = COL }
 end
 gameMenuRow()

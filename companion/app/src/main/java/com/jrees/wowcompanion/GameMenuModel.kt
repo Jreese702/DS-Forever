@@ -25,6 +25,24 @@ object GameMenuModel {
     /** one button: [key] the game's (InitButtons), [label] its own words, [on] false = greyed, [col] its secure cell or -1 (Escape) */
     data class Item(val key: String, val label: String, val on: Boolean, val col: Int)
 
+    /** a game control's box in game px (the pad's px, top-left): Spells' gm3 `micro` and `targets` */
+    data class Box(val x: Double, val y: Double, val w: Double, val h: Double) {
+        val cx get() = x + w / 2.0
+        val cy get() = y + h / 2.0
+    }
+    /** the entries opened through the game's own menu (gm3) */
+    val GAME_OPEN = setOf("options", "addons", "support")
+    fun box(o: JSONObject?): Box? {
+        if (o == null) return null
+        val w = o.optDouble("w", 0.0); val h = o.optDouble("h", 0.0)
+        if (w <= 0 || h <= 0 || !o.has("x") || !o.has("y")) return null
+        return Box(o.optDouble("x"), o.optDouble("y"), w, h)
+    }
+    /** the game's Menu micro button in a document (gm3), or null (an older add-on, or the player hid it: Escape then) */
+    fun micro(doc: JSONObject?): Box? = box(doc?.optJSONObject("micro"))
+    /** the box of the game's own button [key] in a "shown" document (gm3), or null */
+    fun target(doc: JSONObject?, key: String): Box? = box(doc?.optJSONObject("targets")?.optJSONObject(key))
+
     /** the game's countdown: [kind] "logout" | "quit", [left] whole seconds */
     data class Count(val kind: String, val left: Int)
 
@@ -37,6 +55,11 @@ object GameMenuModel {
         data class Cell(val item: Item) : Act()
         /** no clean route: the menu goes and the game's own Escape opens its menu on the top screen */
         data class Escape(val item: Item) : Act()
+        /**
+         * gm3 (the user's pick A): Options / AddOns / Support through the GAME's own menu: the menu goes, the app taps the game's Menu
+         * micro button ([micro], its box in game px) and then the game's own button for [item] once that menu shows
+         */
+        data class Game(val item: Item, val micro: Box) : Act()
         /** Log Out / Exit asked once: the line asks for the second A */
         data class Ask(val item: Item) : Act()
         /** the countdown's Cancel */
@@ -98,7 +121,7 @@ object GameMenuModel {
      * Exit question, and the game's countdown. D-pad up / down move and WRAP (the game's Smart Navigation jump from the first to the
      * last); A presses; B returns to the game.
      */
-    class Flow(items: List<Item>) {
+    class Flow(items: List<Item>, private var microBox: Box? = null) {
         var rows: List<Item?> = rows(items); private set
         var cursor = first(); private set
         /** the Log Out / Exit asked (its key) and when, else null */
@@ -112,6 +135,7 @@ object GameMenuModel {
         fun update(doc: JSONObject?) {
             val key = rows.getOrNull(cursor)?.key
             rows = rows(items(doc))
+            microBox = micro(doc)
             cursor = rows.indexOfFirst { it != null && it.key == key && it.on }.let { if (it >= 0) it else first() }
             if (doc?.has("count") == true || doc?.has("ended") == true) count = count(doc)
             if (count != null) asking = null
@@ -137,7 +161,10 @@ object GameMenuModel {
             val it = rows.getOrNull(at) ?: return Act.None
             if (!it.on) return Act.None
             if (at != cursor) { cursor = at; asking = null }
-            if (it.col < 0) return Act.Escape(it)
+            if (it.col < 0) {
+                val m = microBox
+                return if (it.key in GAME_OPEN && m != null) Act.Game(it, m) else Act.Escape(it)
+            }
             if (it.key == "logout" || it.key == "quit") {
                 if (asking != it.key || now - askedAt > CONFIRM_MS) { asking = it.key; askedAt = now; return Act.Ask(it) }
                 asking = null

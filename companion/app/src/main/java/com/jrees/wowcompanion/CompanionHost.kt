@@ -755,6 +755,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         pauseView.onPick = { s -> pausePick(s) }
+        pauseView.inFight = { homeView.inFight() }
         pauseView.barsBottom = {
             if (room != Room.HOME || !homeView.isShown || homeView.barsBottom() <= 0f) 0f else {
                 val a = IntArray(2); val b = IntArray(2)
