@@ -481,6 +481,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         barSelect = HomeBarSelect(this, strip, { questsPad }) { r -> if (r == Room.HOME) openPause("the bar's swirl", byStart = false) else pickRoom(r) }
         // LATER item 23a (the user: "the buttons at the top still show their presses, and that's confusing"): quiet while the cursor is up
         barSelect.onOpenChanged = { open -> castView.quietPresses = open }
+        // b-cast-predict-menus (the user: "the predictive cast is triggering when I am navigating menus"): the predicted bar starts only
+        // for a press that goes to the game's bars - the router's own holder (the add-on's capture), Home's guests, the menus on screen
+        castView.pressesReachGame = {
+            CastPredict.reaches(capHolder, room == Room.HOME, homeView.homeGuestWanted(), pauseView.isOpen, barSelect.open,
+                interactView.visibility == View.VISIBLE || dialogView.visibility == View.VISIBLE ||
+                    spellsOverlay.visibility == View.VISIBLE || startView.visibility == View.VISIBLE,
+                barsUsable = true, radialOpen = false)
+        }
         // the D-pad layout (the user's design 2026-10-05; Hub hub5, Spells' router): right = Home's map module, left = the Chat room
         // ("The full Chat room": one way into chat), up = the consumables radial (batch b; nothing yet). Down is the bar's own
         barSelect.onDpad = dpad@{ k ->

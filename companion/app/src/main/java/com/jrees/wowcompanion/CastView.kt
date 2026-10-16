@@ -1089,9 +1089,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var predPressAt = 0L
     private var predStartMs = 0.0
     private var predEndMs = 0.0
+    /** b-cast-predict-menus: the host's say whether a press goes to the game's bars now (CastPredict.reaches); true = no host */
+    var pressesReachGame: () -> Boolean = { true }
     private fun predictCast(pos: Int, now: Long) {
         val h = hud ?: return
         if (!barsUsable || !bottomLine) return
+        if (quietPresses || chordRadial() != null || !pressesReachGame()) return
         val src = srcOf[pos]
         val li = layer
         val fb = dpadFightOverride(li, src) ?: fightOverride(li, src)
@@ -3503,4 +3506,15 @@ internal object CastPredict {
     const val PENDING_ALPHA = 150
     fun start(ctMs: Int, casting: Boolean, usable: Boolean): Boolean = ctMs > 0 && !casting && usable
     fun alive(pressAt: Long, now: Long): Boolean = pressAt > 0L && now - pressAt in 0 until CONFIRM_MS
+
+    /**
+     * b-cast-predict-menus (the user on 1.0.9: "the predictive cast is triggering when I am navigating menus"): a press reaches a bar
+     * slot only when nobody else holds the pad - no guest of the add-on ([holder]: a DS room, Home's chat / map / aura list, the
+     * pause wheel, the Keyboard & Trackpad, Interact's windows), none of Home's own ([homeGuest]), the pause wheel not open, the bar
+     * cursor not up, no pop-up / NPC window / Spellbook overlay over the screen ([overlay]), Home on screen, the game's own windows
+     * not owning the pad ([barsUsable], hudS.bu) and no class radial open (its presses pick on the wheel)
+     */
+    fun reaches(holder: String, onHome: Boolean, homeGuest: Boolean, pauseOpen: Boolean, barCursor: Boolean, overlay: Boolean,
+                barsUsable: Boolean, radialOpen: Boolean): Boolean =
+        holder.isEmpty() && onHome && !homeGuest && !pauseOpen && !barCursor && !overlay && barsUsable && !radialOpen
 }
