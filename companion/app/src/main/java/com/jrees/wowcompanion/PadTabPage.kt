@@ -306,7 +306,7 @@ class PadTabPage(
         if (lb == lbHeld) return
         lbHeld = lb
         if (lb || ctl?.on != true) return
-        if (chooserList() == null && boxOpenNow() == null) {
+        if (boxOpenNow() == null) {                                     // p30: the chooser open too (LB is the room's tab before)
             val i = PadMapModel.tabOf(view) - 1
             if (i >= 1) showTabLocal(PadMapModel.TABS[i - 1])
         }
@@ -1036,9 +1036,10 @@ class PadTabPage(
             }
             UiKit.smallTab(c, tr[i], icon, i == cur, cursor = ccTabs && i == cur)
         }
-        // p17: the cursor on the tab row: the game's gold arrows beside the open tab (D-pad Left / Right change it), no L / R glyphs
-        if (ccTabs) UiKit.moveArrows(c, tr[cur], left = cur > 0, right = cur < keys.size - 1, words = false)
-        cGaps.badges(c)                 // L and R on the chooser's tab row, always (the user, 15 Oct)
+        // the game's gold arrows beside the open tab: D-pad Left / Right page these tabs (PadTabCtl p30; the user on 1.0.9-test19: "those
+        // control the tabs at the top of the screen and they should stay that way. Instead they should have the arrows side to side").
+        // No L / R glyphs here: LB / RB stay the room's own tabs. Dimmer while the cursor is down in the list
+        UiKit.moveArrows(c, tr[cur], left = cur > 0, right = cur < keys.size - 1, alpha = if (ccTabs) 255 else 150, words = false)
 
         val rows = rowsOf(list, book, m)
         val pin = pinned(m)
