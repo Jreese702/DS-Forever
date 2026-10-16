@@ -358,6 +358,17 @@ end
 
 -- ---------------------------------------------------------------- gear sets
 
+-- THE GEAR SETS' CELLS (f-equipment-manager) live on Auras.lua's own SECURE row "auracancel", in its cells EQ_FIRST.. (cells 0..2 are
+-- the buff cancel and the game window's open / close), NOT on a row of their own: the pad has 54 rows and every one counts (1.0.8:
+-- the dialogs' row, asked for last, got none). Those cells carry no secure action, so a tap only runs Auras' onClick, which hands it
+-- here (WC.character.onSetCell). Each key keeps its cell as a plain row's would (pad.slotFor's "eqset" namespace, its quarantine).
+local EQ_ROW, EQ_FIRST, EQ_CELLS = "auracancel", 3, 40
+local function eqCell(key)
+    if not (WC.pad and type(WC.pad.slotFor) == "function") then return nil end
+    local s = WC.pad.slotFor("eqset", key)
+    if type(s) == "number" and EQ_FIRST + s < EQ_CELLS then return EQ_FIRST + s end
+end
+
 local function collectSets()
     local ok, ids = CALL(function() return C_EquipmentSet.GetEquipmentSetIDs() end)
     if not ok or type(ids) ~= "table" then return false end
@@ -371,8 +382,8 @@ local function collectSets()
                 local row = { id = id, n = PS(name), icon = PN(icon), eq = PB(eq) or false, lost = PN(lost) }
                 -- the set's two cells on the `eqset` row (f-equipment-manager): Equip and Save
                 if WC.pad and type(WC.pad.slotFor) == "function" then
-                    row.ce = WC.pad.slotFor("eqset", "equip:" .. id)
-                    row.cs = WC.pad.slotFor("eqset", "save:" .. id)
+                    row.ce = eqCell("equip:" .. id)
+                    row.cs = eqCell("save:" .. id)
                 end
                 out[#out + 1] = row
             end
@@ -1099,13 +1110,18 @@ local function collectEqs()
     if eqs.ask and inCombat() then eqs.ask = nil end        -- a fight drops the question (the game refuses the save then)
     local row = { ask = eqs.ask or false, ack = eqs.ack }
     if pad and type(pad.slotFor) == "function" then
-        row.row = "eqset"; row.yes = pad.slotFor("eqset", "yes"); row.no = pad.slotFor("eqset", "no")
+        row.row = EQ_ROW; row.yes = eqCell("yes"); row.no = eqCell("no")
     end
     return row
 end
 COLLECT.eqs = collectEqs
 if not BARS_ONLY then PARTS[#PARTS + 1] = "eqs"; dirty.eqs = true end
-if WC.pad and type(WC.pad.op) == "function" then pcall(WC.pad.op, "eqset", "eqset", onSetTap) end
+-- a tap on one of the gear sets' cells of "auracancel" (Auras.lua's onClick hands it here): the key that cell holds
+local function onSetCell(col)
+    local t = WC.pad and WC.pad.ns and WC.pad.ns.eqset
+    local key = t and type(col) == "number" and t.byCol[col - EQ_FIRST] or nil
+    onSetTap(key)
+end
 
 local function onPress(key)
     if ctl.pend then ctl.pend = nil; note("taken") end      -- a press reaches us: the app's ENTER landed
@@ -1391,4 +1407,5 @@ end
 
 WC.character = { version = CV, barsOnly = BARS_ONLY, emit = emit, collect = COLLECT, standIn = standIn, ctl = ctl,
                   touchOpen = touchOpen, touchClose = touchClose,
-                  initOpenCell = initOpenCell, initCloseCell = initCloseCell, onOpenTap = onOpenTap, onCloseTap = onCloseTap }   -- standIn / ctl for tools/test_character.py; the touch pair for Auras.lua
+                  initOpenCell = initOpenCell, initCloseCell = initCloseCell, onOpenTap = onOpenTap, onCloseTap = onCloseTap,
+                  onSetCell = onSetCell, eqFirst = EQ_FIRST, eqCells = EQ_CELLS }   -- standIn / ctl for tools/test_character.py; the touch pair for Auras.lua

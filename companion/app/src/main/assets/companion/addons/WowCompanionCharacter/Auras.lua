@@ -404,10 +404,14 @@ if WC.pad then
     -- the Character room's fixed cells FIRST (columns 0 and 1; Character.lua, loaded before this file, claims them too)
     if type(WC.pad.slotFor) == "function" then WC.pad.slotFor("aura", "open"); WC.pad.slotFor("aura", "close") end
     WC.pad.op("aurapick", "aura", onPick)
-    -- THREE secure cells (the pad is full: the Character room's two share my own row, 2026-10-01): 0 = the buff cancel, no action
+    -- ITS SECURE CELLS (the pad is full: the Character room shares my own row, 2026-10-01; 1.0.8: its gear sets too): 0 = the buff cancel, no action
     -- until a pick arms it; 1 / 2 = the game's own Character window opened / closed the game's way (Character.lua owns them)
+    -- cells 3.. (Character.lua's EQ_FIRST): the gear sets' Equip / Save / Yes / No, no secure action (a tap runs onCell only)
+    local C0 = WC.character
+    local eqFirst = type(C0) == "table" and C0.eqFirst or nil
     local function initCell(btn, col)
         if col == 0 or col == nil then cell = btn; pcall(btn.SetAttribute, btn, "type", nil) return end
+        if eqFirst and col >= eqFirst then pcall(btn.SetAttribute, btn, "type", nil) return end
         local C = WC.character
         if type(C) ~= "table" then return end
         if col == 1 and type(C.initOpenCell) == "function" then pcall(C.initOpenCell, btn) end
@@ -417,10 +421,14 @@ if WC.pad then
         if col == 0 or col == nil then return onCancel() end
         local C = WC.character
         if type(C) ~= "table" then return end
+        if eqFirst and col >= eqFirst then
+            if type(C.onSetCell) == "function" then pcall(C.onSetCell, col) end
+            return
+        end
         if col == 1 and type(C.onOpenTap) == "function" then pcall(C.onOpenTap) end
         if col == 2 and type(C.onCloseTap) == "function" then pcall(C.onCloseTap) end
     end
-    WC.pad.secureRow("auracancel", 3, initCell, onCell)
+    WC.pad.secureRow("auracancel", (type(C0) == "table" and C0.eqCells) or 3, initCell, onCell)
     WC.pad.onLayout(function() soon() end)
 end
 -- A FIGHT DISARMS THE CELL AT ITS START (the pad owner's rule, 2026-09-29): PLAYER_REGEN_DISABLED runs just before the game's
