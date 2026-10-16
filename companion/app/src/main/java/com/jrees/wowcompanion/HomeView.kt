@@ -365,13 +365,12 @@ class HomeView(
         Log.i(TAG, "class radial: place ${i + 1}${if (auto) " autocast" else ""} -> classr $col ${if (sent) "tapped" else "not sent"}")
     }
     /**
-     * f-class-radial REWORK (the user on 1.0.8-test2: "it should have an animation where it kind of expands in from the corner of the held
-     * triggers, and instead of being an overlay, it goes in between the map and chat, animating them ourtwards"): the wheel takes its OWN
-     * square slot between Home's left column (chat, the quest card above it) and the right column (the map, its buffs, the card over it),
-     * under the bars; the two columns slide OUTWARDS by half the wheel and back. It grows in from the held triggers' corner of the bars
-     * (LB + LT the left, RB + RT the right) and closes back into it. Rooms' motion (Motion.MODULE_OPEN / CLOSE, Motion.curve); alpha,
-     * scale and translation only, on hardware layers: one layout at the open, none per frame. The "close the chat / map" hint (a module
-     * holds the controller) stays a plain full-page note.
+     * f-class-radial (1.0.9 rework, the user: "make them appear on the right or left sides of the screen, and slide the whole chat away or
+     * back over top when releasing, or the map if its the right rigger"): the wheel takes the CHORD's own side - LB + LT the left column
+     * (chat), RB + RT the right column (the map, the card over it) - as the largest square that fits there under the bars; that column
+     * slides off its own screen edge to uncover it and back over it on release; the other column stays. Rooms' motion
+     * (Motion.MODULE_OPEN / CLOSE, Motion.curve), translation only, on hardware layers. The "close the chat / map" hint (a module holds
+     * the controller) stays a plain full-page note.
      */
     private val classRect = android.graphics.Rect()
     private var classOpen = false
@@ -386,60 +385,65 @@ class HomeView(
         if (open == classOpen) { classLayer.invalidate(); return }
         classOpen = open
         val w = width.toFloat(); val h = height.toFloat()
-        val bars = now[Part.BARS] ?: RectF(0f, 0f, w, 120f)
         val g = UiKit.MODULE_GAP
-        // never wider than the chat column: it starts hidden right behind it (1.0.8-test5)
-        val chatBox = now[Part.CHAT] ?: RectF(g, 0f, w / 2f - 4f, h)
-        val slot = ClassSlot.of(w, h, bars.bottom, g, minOf(w * CLASS_SLOT_MAX, chatBox.width()))
-        val side = slot.side
-        classRect.set(slot.left.toInt(), slot.top.toInt(), (slot.left + side).toInt(), (slot.top + side).toInt())
-        // 1.0.8-test5 (the user: "instead of making it slide in from the top left, make it look like its sliding in from behind the
-        // chat"): the wheel lies UNDER the left column (chat, a card above it: raised while it shows) and slides out from behind the chat's
-        // right edge into its slot as the columns part; on close it slides back under the returning chat. Both chords alike
-        val push = slot.push
-        val hidden = ClassSlot.hiddenOffset(chatBox.left, chatBox.right, slot)
+        // 1.0.9 (the user: "make them appear on the right or left sides of the screen, and slide the whole chat away or back over top
+        // when releasing, or the map if its the right rigger"): LB + LT takes the LEFT column's place (the chat slides off the left edge),
+        // RB + RT the RIGHT column's (the map slides off the right edge); the other column stays. The side is the one it OPENED on
+        if (open) classLeft = !lent(castView) || castView.classRadialLeft()
+        val left = classLeft
+        val col = ArrayList<Pair<View, RectF>>()
+        for ((p, v) in views) {
+            if (p == Part.BARS) continue
+            val r = now[p] ?: continue
+            if ((r.centerX() < w / 2f) == left) col += v to r
+        }
+        val area = ClassSlot.column(col.filter { it.first.visibility == View.VISIBLE }.map { (_, r) -> ClassSlot.Area(r.left, r.top, r.right, r.bottom) },
+            now[Part.BARS]?.bottom ?: 0f, h, g, left, w)
+        val slot = ClassSlot.inColumn(area)
+        classRect.set(slot.left.toInt(), slot.top.toInt(), (slot.left + slot.side).toInt(), (slot.top + slot.side).toInt())
+        // the wheel lies UNDER its column (raised while it shows) and is uncovered as the column slides away; on release the column
+        // slides back OVER it (the frozen picture rides it out, CastView), and the wheel goes when it is covered
         for ((p, v) in views) if (p != Part.BARS) {
             val r = now[p]
-            // lifted over the wheel on the left; anything else at ITS resting depth (p-card-invisible 2: this set the card, which lies
-            // over the map on the right, to 0, so it drew UNDER the map: "shown" in the log, nothing on the screen)
-            v.translationZ = if (r != null && r.centerX() < w / 2f && (open || classLayer.visibility == View.VISIBLE)) CLASS_COVER_Z else restZ(p)
+            v.translationZ = if (r != null && (r.centerX() < w / 2f) == left && (open || classLayer.visibility == View.VISIBLE)) CLASS_COVER_Z else restZ(p)
         }
         if (open) {
             classLayer.visibility = View.VISIBLE
             classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)   // the one layout of the open
             classLayer.animate().cancel()
-            classLayer.alpha = 1f; classLayer.scaleX = 1f; classLayer.scaleY = 1f
-            classLayer.translationX = hidden
-            classLayer.animate().translationX(0f).setDuration(Motion.MODULE_OPEN).setInterpolator(Motion.curve())
-                .withLayer().setListener(null).start()
+            classLayer.alpha = 1f; classLayer.scaleX = 1f; classLayer.scaleY = 1f; classLayer.translationX = 0f
         } else {
-            classLayer.animate().cancel()
             classLayer.invalidate()                                           // redrawn as closing: the last radial (CastView keeps it)
-            classLayer.animate().translationX(hidden).setDuration(Motion.MODULE_CLOSE)
-                .setInterpolator(Motion.curve()).withLayer()
-                .setListener(object : android.animation.AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(a: android.animation.Animator) {
-                        if (classOpen) return
-                        classLayer.visibility = View.GONE
-                        for ((p, v) in views) v.translationZ = restZ(p)                   // back to the page's own order (the card over the map)
-                    }
-                }).start()
         }
-        // the columns: everything left of the middle slides left, everything right of it slides right (and back)
-        for ((p, v) in views) {
-            if (p == Part.BARS) continue
-            // a part not shown does not slide; on a close it is put back at once (a card hidden mid-slide kept its ~312 px offset)
+        // the column: off its own edge (open) / back (close); the other column never moves
+        var last: android.view.ViewPropertyAnimator? = null
+        for ((v, r) in col) {
+            // a part not shown does not slide; on a close it is put back at once (a card hidden mid-slide kept its offset)
             if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f }; continue }
-            val r = now[p] ?: continue
-            val to = if (!open) 0f else if (r.centerX() < w / 2f) -push else push
+            val to = if (open) ClassSlot.away(left, r.left, r.right, w, g) else 0f
             v.animate().cancel()
             val a = v.animate().translationX(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
                 .setInterpolator(Motion.curve()).withLayer()
             // the map's well edge and zone band are Home's own paint (dispatchDraw): a redraw per frame of ITS slide (no layout)
             if (v === mapSlot) a.setUpdateListener { invalidate() } else a.setUpdateListener(null)
-            a.start()
+            a.setListener(null)
+            last = a
         }
+        val done = {
+            if (!classOpen) {
+                classLayer.visibility = View.GONE
+                for ((p, v) in views) v.translationZ = restZ(p)                   // back to the page's own order (the card over the map)
+            }
+        }
+        if (!open) {
+            if (last != null) last.setListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) = done()
+            }) else done()
+        }
+        for ((v, _) in col) if (v.visibility == View.VISIBLE) v.animate().start()
     }
+    /** the side the open wheel took (true = the left column's) */
+    private var classLeft = true
 
     /** p-grow-glitch: when the big controller last grew (wall clock, onB's), for B's grace */
     private var grewAt = 0L
@@ -2230,8 +2234,6 @@ class HomeView(
         private const val GROW_B_GRACE_MS = 2_000L
         /** f-class-radial: a press this long on a pet spell's place toggles its autocast */
         private const val CLASS_LONG_MS = 450L
-        /** f-class-radial rework: the wheel's slot is at most this share of Home's width */
-        private const val CLASS_SLOT_MAX = 0.5f
         /** 1.0.8-test5: the left column's raise while the wheel shows (it slides out from under the chat) */
         private const val CLASS_COVER_Z = 4f
         /** the focused quest's card over the map (b121): above the map's 0, under the wheel's lifted left column */
@@ -2330,16 +2332,20 @@ class HomeView(
 /** f-class-radial rework: Home's wheel slot, pure (the tests check it fits): a square centred between the columns under the bars, at
  *  most [maxSide] (half the width, and never wider than the chat column it hides behind); [push] = how far each column slides out */
 internal object ClassSlot {
-    data class Slot(val left: Float, val top: Float, val side: Float, val push: Float)
-    fun of(w: Float, h: Float, barsBottom: Float, gap: Float, maxSide: Float): Slot {
-        val avail = (h - gap) - (barsBottom + gap)
-        val side = minOf(avail, maxSide).coerceAtLeast(1f)
-        val top = barsBottom + gap + (avail - side) / 2f
-        return Slot((w - side) / 2f, top, side, side / 2f + gap)
+    data class Slot(val left: Float, val top: Float, val side: Float)
+    data class Area(val left: Float, val top: Float, val right: Float, val bottom: Float)
+    /** the column's area: the union of its parts' boxes [parts] (l, t, r, b), under the bars; none shown = that half of the page */
+    fun column(parts: List<Area>, barsBottom: Float, h: Float, gap: Float, left: Boolean, w: Float): Area =
+        if (parts.isEmpty()) (if (left) Area(gap, barsBottom + gap, w / 2f - gap / 2f, h - gap) else Area(w / 2f + gap / 2f, barsBottom + gap, w - gap, h - gap))
+        else Area(parts.minOf { it.left }, maxOf(barsBottom + gap, parts.minOf { it.top }), parts.maxOf { it.right }, parts.maxOf { it.bottom })
+    /** the wheel: the largest square in the column's area, centred in it */
+    fun inColumn(a: Area): Slot {
+        val side = minOf(a.right - a.left, a.bottom - a.top).coerceAtLeast(1f)
+        return Slot((a.left + a.right - side) / 2f, (a.top + a.bottom - side) / 2f, side)
     }
-    /** 1.0.8-test5 ("sliding in from behind the chat"): the wheel's start offset, centred behind the chat column ([chatLeft]..
-     *  [chatRight], before the columns part): hidden under the chat */
-    fun hiddenOffset(chatLeft: Float, chatRight: Float, s: Slot): Float = (chatLeft + chatRight) / 2f - (s.left + s.side / 2f)
+    /** how far a part of the column slides to be wholly off its own edge ([w] the page's width) */
+    fun away(left: Boolean, partLeft: Float, partRight: Float, w: Float, gap: Float): Float =
+        if (left) -(partRight + gap) else (w - partLeft + gap)
 }
 
 /** p-card-invisible: the quest card's state in words, for the WCHOME "quest card:" line (pure, so the JVM tests read it) */

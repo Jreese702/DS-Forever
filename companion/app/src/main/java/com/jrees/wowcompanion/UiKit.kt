@@ -4283,9 +4283,13 @@ object UiKit {
             // estate"; "inconsistent size with the rest of our UI"): one slim top row, the wheel, the D-pad with its words hugging it,
             // the stack centred on the screen
             val s = 1.3f * k
-            val total = (P_TOP_H + P_GAP + 2f * 270f * 1.3f + P_GAP + P_PAD_H) * k
-            val y0 = screen.top + (screen.height() - total) / 2f
-            val topY = y0 + P_TOP_H * k / 2f
+            // the wheel and the D-pad centred in the space under the top row
+            val below = screen.top + (2f * P_TOP_Y + P_GAP) * k
+            val total = (2f * 270f * 1.3f + P_GAP + P_PAD_H) * k
+            val y0 = below + (screen.bottom - below - total) / 2f - (P_TOP_H + P_GAP) * k
+            // 1.0.9 (the user: "the Text for main menu needs to be larger and pushed up more to make space for the disk"): the top row
+            // at the screen's top, whatever the centring
+            val topY = screen.top + P_TOP_Y * k
             val cy = y0 + (P_TOP_H + P_GAP) * k + 270f * s
             val padY = cy + 270f * s + (P_GAP + P_PAD_H / 2f) * k
             return PauseGeo(k, s, screen.centerX(), cy, topY, padY)
@@ -4293,6 +4297,7 @@ object UiKit {
     }
     /** the Home disc in the wheel's middle, game units (the user: "the disk needs to be larger"): the centre hole, the inner ring clear */
     private const val PAUSE_DISC_U = 168f
+    private const val P_TOP_Y = 40f            // the top row's middle, from the screen's top
     private const val P_TOP_H = 54f; private const val P_GAP = 10f; private const val P_PAD_H = 116f
     /** the compact D-pad's words: their distance from the D-pad's middle (frame px) and size */
     private const val P_ARM = 34f; private const val P_WORD = 23f
@@ -4525,12 +4530,12 @@ object UiKit {
         val ty = g.topY - slide
         val paging = page >= 0
         tex("rwheel_band")?.let {
-            val bw = 470f * g.k; val bh = P_TOP_H * g.k
+            val bw = 520f * g.k; val bh = P_TOP_H * g.k
             c.drawBitmap(it, null, RectF(g.cx - bw / 2f, ty - bh / 2f, g.cx + bw / 2f, ty + bh / 2f), pBmp)
         }
-        gameWords(c, if (paging) "Main Menu" else "Emotes", g.cx, ty - (if (paging) 7f else 0f) * g.k, 24f * g.k, Color.WHITE, 255, 300f * g.k)
+        gameWords(c, if (paging) "Main Menu" else "Emotes", g.cx, ty - (if (paging) 8f else 0f) * g.k, 32f * g.k, Color.WHITE, 255, 340f * g.k)
         if (paging) {
-            val ds = 12f * g.k; val dy = ty + 15f * g.k
+            val ds = 12f * g.k; val dy = ty + 20f * g.k
             for (n in 0..2) {
                 val x = g.cx + (n - 1) * (ds + 6f * g.k)
                 val dot = tex(if (n == page) "rpage_on" else "rpage_off")
@@ -4538,8 +4543,8 @@ object UiKit {
                 else { pFlat.style = Paint.Style.FILL; pFlat.color = if (n == page) PAUSE_GOLD else Color.rgb(40, 40, 44); c.drawCircle(x, dy, ds / 2f, pFlat) }
             }
             val gs = 46f * g.k
-            pad(c, shoulderGlyph(false), g.cx - 128f * g.k, ty, gs)
-            pad(c, shoulderGlyph(true), g.cx + 128f * g.k, ty, gs)
+            pad(c, shoulderGlyph(false), g.cx - 150f * g.k, ty, gs)
+            pad(c, shoulderGlyph(true), g.cx + 150f * g.k, ty, gs)
         }
         val py = g.padY + slide
         val ds = 40f * g.k

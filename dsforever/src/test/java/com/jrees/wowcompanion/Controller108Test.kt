@@ -123,29 +123,29 @@ class CastPredictTest {
 
 /** f-class-radial rework (the user: "it goes in between the map and chat, animating them ourtwards"; 1.0.8-test5: "make it look like
  *  its sliding in from behind the chat"): the wheel's slot fits, and it starts hidden behind the chat column */
+/** f-class-radial, 1.0.9 rework (the user: "make them appear on the right or left sides of the screen, and slide the whole chat away or
+ *  back over top when releasing, or the map if its the right rigger") */
 class ClassSlotTest {
     private val w = 1240f; private val h = 1000f; private val g = 8f
-    private val chatLeft = g; private val chatRight = w / 2f - 4f                        // Home's left column at rest
-    private val maxSide = minOf(w * 0.5f, chatRight - chatLeft)
-    @Test fun atRestTheWheelFillsTheMiddleUnderTheBars() {
-        val s = ClassSlot.of(w, h, barsBottom = 208f, gap = g, maxSide = maxSide)       // the small diamonds at rest
-        assertEquals("no wider than the chat column", chatRight - chatLeft, s.side, 0.5f)
-        assertEquals("centred", w / 2f, s.left + s.side / 2f, 0.5f)
-        assertTrue("under the bars", s.top >= 208f + g)
-        assertTrue("above the bottom", s.top + s.side <= h - g + 0.5f)
-        assertEquals("each column slides out by half the wheel and a gap", s.side / 2f + g, s.push, 0.5f)
+    private val chat = ClassSlot.Area(g, 216f, w / 2f - 4f, h - g)                  // Home's left column at rest (the diamonds' bars to 208)
+    private val map = ClassSlot.Area(w / 2f + 4f, 216f, w - g, h - g)
+    @Test fun theLeftChordTakesTheChatColumn() {
+        val s = ClassSlot.inColumn(ClassSlot.column(listOf(chat), 208f, h, g, left = true, w = w))
+        assertTrue("inside the chat column", s.left >= chat.left - 0.5f && s.left + s.side <= chat.right + 0.5f)
+        assertTrue("under the bars and above the bottom", s.top >= 216f - 0.5f && s.top + s.side <= h - g + 0.5f)
+        assertEquals("as wide as the column allows", chat.right - chat.left, s.side, 0.5f)
     }
-    @Test fun theCombatLayoutStillFitsASmallerWheel() {
-        val s = ClassSlot.of(w, h, barsBottom = 390f, gap = g, maxSide = maxSide)       // Grow: the bigger band
-        assertTrue("a usable wheel: ${s.side}", s.side >= 450f)
-        assertTrue(s.top >= 390f + g && s.top + s.side <= h - g + 0.5f)
+    @Test fun theRightChordTakesTheMapColumn() {
+        val s = ClassSlot.inColumn(ClassSlot.column(listOf(map), 208f, h, g, left = false, w = w))
+        assertTrue("on the right half", s.left >= w / 2f)
+        assertTrue(s.left + s.side <= map.right + 0.5f)
     }
-    @Test fun itStartsHiddenBehindTheChatColumn() {
-        for (bars in listOf(208f, 390f)) {
-            val s = ClassSlot.of(w, h, bars, g, maxSide)
-            val start = s.left + ClassSlot.hiddenOffset(chatLeft, chatRight, s)        // the wheel's left edge at the start
-            assertTrue("left edge inside the chat ($start)", start >= chatLeft - 0.5f)
-            assertTrue("right edge inside the chat (${start + s.side})", start + s.side <= chatRight + 0.5f)
-        }
+    @Test fun theColumnSlidesWhollyOffItsOwnEdge() {
+        assertTrue("the chat's right edge past the left edge", chat.right + ClassSlot.away(true, chat.left, chat.right, w, g) < 0f)
+        assertTrue("the map's left edge past the right edge", map.left + ClassSlot.away(false, map.left, map.right, w, g) > w)
+    }
+    @Test fun aColumnWithNothingShownStillGivesTheWheelItsHalf() {
+        val a = ClassSlot.column(emptyList(), 390f, h, g, left = false, w = w)
+        assertTrue(a.left >= w / 2f && a.top >= 390f)
     }
 }
