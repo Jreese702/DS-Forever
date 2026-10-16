@@ -131,6 +131,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var lastAddonAt = 0L
     private var gmAckAt = 0L          // the game menu row's last answer (Radial.lua r12 "gmack") and its cell
     private var gmAckCol = -1
+    private var cleanExitWaiting = false   // a clean exit waits for the game: its answers are copied to WCSETUP
+    private var lastCountLogged = ""
     // SvKeep (the user's pick after test22): our tables confirmed this run (a non-empty first word, or the player changed a setting)
     private val svArmed = HashSet<String>()
     private val svSeen = HashSet<String>()                              // the run's FIRST word per table decides (a partial restore later must not)
@@ -1515,9 +1517,21 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "radialuse", "sradialuse" -> if (current) radialView.onUse(msg)
             "pauseack" -> if (current && ::pauseView.isInitialized) pauseView.onAck(msg)
             // the Game Menu on the bottom screen (Spells r12): the game's list + its countdown, and the cells' answers
-            "gamemenu" -> { if (current) lastGameMenu = msg; if (current && ::pauseView.isInitialized) pauseView.onGameMenuDoc(msg) }
+            "gamemenu" -> {
+                if (current) lastGameMenu = msg
+                // during a clean exit's wait, the game's own countdown goes into the app's log too (General.log starts afresh at the
+                // next launch, so after an install only logcat still has it): each change of it, and its end
+                if (current && cleanExitWaiting) {
+                    val c = if (msg.has("count")) "count ${msg.optString("count")} left ${msg.optInt("left", -1)}"
+                            else if (msg.has("ended")) "countdown ended (${msg.optString("ended")})" else ""
+                    if (c.isNotEmpty() && c != lastCountLogged) { lastCountLogged = c; Log.i("WCSETUP", "clean exit: the game says: $c") }
+                }
+                if (current && ::pauseView.isInitialized) pauseView.onGameMenuDoc(msg)
+            }
             "gmack" -> {
                 if (current) { gmAckAt = SystemClock.elapsedRealtime(); gmAckCol = msg.optInt("col", -1) }    // the clean exit's wait reads it
+                if (current && cleanExitWaiting) Log.i("WCSETUP", "clean exit: the game's menu row answered: col ${msg.optInt("col", -1)} " +
+                    "${msg.optString("cmd")} ok ${msg.optBoolean("ok")}${msg.optString("why", "").let { if (it.isEmpty()) "" else " ($it)" }}")
                 if (current && ::pauseView.isInitialized) pauseView.onGameMenuAck(msg)
             }
             "radialpinack" -> if (current) radialView.onPinAck(msg)
@@ -2830,11 +2844,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         say("clean exit ($why): the game's own Exit Game asked (its save is written as it exits)")
         val t0 = SystemClock.elapsedRealtime()
         var retapped = false
+        cleanExitWaiting = true; lastCountLogged = ""
         val poll = object : Runnable {
             override fun run() {
                 val now = SystemClock.elapsedRealtime()
                 val s = (now - t0) / 1000
                 if (!LauncherHooks.gameUp()) {
+                    cleanExitWaiting = false
                     say("clean exit ($why): the game exited by itself after $s s")
                     QuestWatchKeep.cleanEnd()                                   // its state is written: nothing to restore next time
                     done(false); return
@@ -2850,7 +2866,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                         say("clean exit ($why): no answer from the Exit cell after $s s: tapped again (${if (again) "sent" else "not sent"})")
                         ui.postDelayed(this, 500L)
                     }
-                    is CleanExit.Wait.GiveUp -> { say("clean exit ($why): still running after $s s: ${w.why}: the old close"); done(true) }
+                    is CleanExit.Wait.GiveUp -> { cleanExitWaiting = false; say("clean exit ($why): still running after $s s: ${w.why}: the old close"); done(true) }
                     CleanExit.Wait.On -> ui.postDelayed(this, 500L)
                 }
             }
