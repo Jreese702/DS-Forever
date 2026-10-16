@@ -180,3 +180,28 @@ class ClassChordExclusiveTest {
         assertEquals(N, ClassChord.latch(N, lt = false, rt = true, lb = false, rb = true, blocked = true))
     }
 }
+
+/** b-class-radial-slots: only the places the character has, evenly round the wheel; the stick picks among them */
+class ClassRadialSlotsTest {
+    @Test fun twoFormsSitOppositeEachOther() {
+        assertEquals(0.0, ClassChord.evenAngle(0, 2), 0.001)
+        assertEquals(180.0, ClassChord.evenAngle(1, 2), 0.001)
+    }
+    @Test fun threeStancesAreAThirdApart() {
+        assertEquals(120.0, ClassChord.evenAngle(1, 3), 0.001)
+        assertEquals(240.0, ClassChord.evenAngle(2, 3), 0.001)
+    }
+    @Test fun theStickPicksTheNearestOfTheShownSlices() {
+        assertEquals(0, ClassChord.nearest(10.0, 3))
+        assertEquals(1, ClassChord.nearest(100.0, 3))
+        assertEquals(2, ClassChord.nearest(250.0, 3))
+        assertEquals(0, ClassChord.nearest(350.0, 3))             // past the last slice: back to the first
+        assertEquals(1, ClassChord.nearest(170.0, 2))
+        assertEquals(-1, ClassChord.nearest(90.0, 0))
+    }
+    @Test fun aStickAtRestPointsAtNothing() {
+        assertEquals(null, ClassChord.stickDeg(0.1f, -0.2f))
+        assertEquals(90.0, ClassChord.stickDeg(1f, 0f)!!, 0.001)    // right
+        assertEquals(0.0, ClassChord.stickDeg(0f, -1f)!!, 0.001)    // up
+    }
+}
