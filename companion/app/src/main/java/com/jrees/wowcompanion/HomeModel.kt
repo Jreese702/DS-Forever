@@ -532,6 +532,36 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
         return FocusTap.Send(questId, slot)
     }
 
+    /** the quest of the log (tracked or not) with id [questId] */
+    fun inLog(questId: Int): HomeQuest? = tracked.firstOrNull { it.id == questId } ?: untracked.firstOrNull { it.id == questId }
+
+    /** how many quests the game's tracker shows now */
+    val trackedCount: Int get() = tracked.size
+
+    /**
+     * ONE ACTION ON ANY QUEST OF THE LOG (the map module's Untracked rows and their panel, the user 2026-10-16: A track and focus,
+     * Share, Abandon): [op] is the questack that answers ("track", "share", "arm"). The same gates as every quest tap.
+     */
+    fun tapAny(questId: Int, op: String, live: Boolean, now: Long): FocusTap {
+        val q = inLog(questId) ?: return FocusTap.Refused("Not in your quest log any more")
+        if (!live) return FocusTap.Refused("Waiting for the game")
+        if (currentAt < 0 || now - currentAt >= freshMs) return FocusTap.Refused("Waiting for the game's quest list")
+        if (inCombat) return FocusTap.Refused("In combat")
+        if (pending(now) != null) return FocusTap.Refused("Waiting for the game's answer")
+        val slot = q.slot ?: return FocusTap.Refused("This quest has no tap column")
+        pendingId = questId; pendingAt = now; pendingOp = op
+        return FocusTap.Send(questId, slot)
+    }
+
+    /** Abandon's second tap (CONFIRM drops what ARM named, Quests.lua): it answers "abandon" */
+    fun tapConfirm(questId: Int, live: Boolean, now: Long): FocusTap {
+        if (!live) return FocusTap.Refused("Waiting for the game")
+        if (inCombat) return FocusTap.Refused("In combat")
+        if (pending(now) != null) return FocusTap.Refused("Waiting for the game's answer")
+        pendingId = questId; pendingAt = now; pendingOp = "abandon"
+        return FocusTap.Send(questId, 0)
+    }
+
     /**
      * TRACK from the map module's Untracked tabs (A on an untracked quest; the user, 2026-10-16): the game's objective tracker takes
      * the quest (QuestPad WATCH). The same gates as an untrack; one tap waits at a time.
@@ -576,6 +606,8 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
         val failed = when (pendingOp) {
             "unwatch" -> "The game did not untrack it"
             "watch" -> "The game did not track it"
+            "share" -> "The game did not share it"
+            "arm", "abandon" -> "The game did not abandon it"
             "untrack" -> "The game did not clear the focus"
             else -> "The game did not change the focus"
         }

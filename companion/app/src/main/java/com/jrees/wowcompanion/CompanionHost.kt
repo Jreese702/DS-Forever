@@ -464,6 +464,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the map module's Untracked tabs and its portrait (the user, 2026-10-16): A tracks an untracked quest, A on the portrait opens
         // the game's player menu (Quests q38)
         mapView.onTrackQuest = { id -> homeView.watchQuest(id) { mapView.note(it) } }
+        // the Untracked rows (the user, 2026-10-16): A tracks and focuses; Y's panel shares and abandons (Abandon asks first)
+        mapView.onTrackFocusQuest = { id -> homeView.trackAndFocus(id) { mapView.note(it) } }
+        mapView.onShareQuest = { id -> homeView.shareQuest(id) { mapView.note(it) } }
+        mapView.onAbandonArm = { id -> homeView.armAbandon(id) { mapView.note(it) } }
+        mapView.onAbandonConfirm = { id -> homeView.confirmAbandon(id) { mapView.note(it) } }
         mapView.onPlayerMenu = { homeView.playerMenu { mapView.note(it) } }
         mapView.onPlayerMenuRun = { id -> homeView.playerMenuRun(id) { mapView.note(it) } }
         // LATER item 5, the generic controller guests (Quests.lua q6): B with nothing nearer to do leaves with B -> Home
@@ -1541,7 +1546,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 }
             }
             // both may be waiting: each takes only the answers to what it sent
-            "questack" -> { questsView.ack(msg); homeView.ack(msg); if (current) worldMapRoom.onQuestAck(msg) }
+            "questack" -> { questsView.ack(msg); homeView.ack(msg); if (current) { worldMapRoom.onQuestAck(msg); mapView.onQuestAck(msg) } }
             // character's aura documents: Home's buff / debuff buttons and their list (listed in AGENT_LOG first)
             "auras" -> homeView.onAuras(msg, current)
             "auraack" -> homeView.auraAck(msg)

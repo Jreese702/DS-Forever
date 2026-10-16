@@ -62,7 +62,11 @@ class MapListTest {
         assertEquals(MapCursor.Do.Toggle(g), c.key("PAD1", stops, 7, false, untracked))
         c.key("PADDDOWN", stops, 7, false, untracked)
         assertEquals(MapCursor.Do.Track(20), c.key("PAD1", stops, 7, false, untracked))
-        assertEquals(MapCursor.Do.Nothing, c.key("PAD4", stops, 7, false, untracked))       // an untracked quest has no mark
+        // the user, 2026-10-16: A tracks and focuses, X is the inverse of its tracking, Y opens its panel
+        assertEquals(MapCursor.Do.Watch(20), c.key("PAD3", stops, 7, false, untracked))
+        assertEquals(MapCursor.Do.Open(20), c.key("PAD4", stops, 7, false, untracked))
+        c.key("PADDUP", stops, 7, false, untracked); c.key("PADDUP", stops, 7, false, untracked)
+        assertEquals(MapCursor.Do.Untrack(7), c.key("PAD3", stops, 7, false, untracked))     // X on a tracked quest: untrack, as before
         assertFalse(MapList.isGroup(MapList.ME))
     }
 
@@ -77,5 +81,17 @@ class MapListTest {
         assertEquals(FocusTap.Already, hq.tapWatch(1, live = true, now = 20L))
         hq.update(doc(true), current = true, now = 30L)        // the game tracked it: nothing waits any more
         assertEquals(null, hq.pending(40L))
+    }
+
+    @Test fun shareAndAbandonReachAnyQuestOfTheLog() {
+        val hq = HomeQuests()
+        val doc = org.json.JSONObject().put("list", org.json.JSONArray()
+            .put(org.json.JSONObject().put("id", 2).put("title", "B").put("slot", 5)))
+        hq.update(doc, current = true, now = 0L)
+        assertEquals(FocusTap.Send(2, 5), hq.tapAny(2, "arm", live = true, now = 10L))
+        val armed = org.json.JSONObject().put("op", "arm").put("id", 2).put("ok", true)
+        assertEquals("", hq.ack(armed, 20L))
+        assertEquals(FocusTap.Send(2, 0), hq.tapConfirm(2, live = true, now = 30L))
+        assertEquals(FocusTap.Refused("Not in your quest log any more"), HomeQuests().tapAny(9, "share", true, 0L))
     }
 }

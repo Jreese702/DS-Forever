@@ -1185,7 +1185,7 @@ class MapView(context: Context) : View(context) {
             if (field == v) return
             field = v
             filterOpen = false
-            pmenu.close()
+            pmenu.close(); closePanel()
             compactDown = false
             lastCamAt = 0L                  // the Map room's camera eases from a fresh clock
             postInvalidate()
@@ -1323,13 +1323,14 @@ class MapView(context: Context) : View(context) {
             morphOk = !drawnPx.isNaN() && !drawnPy.isNaN() && drawnS > 0f
             morphP0x = drawnPx; morphP0y = drawnPy; morphS0 = drawnS
             filterOpen = false
-            pmenu.close()
+            pmenu.close(); closePanel()
             touchOwner = OWN_NONE
             if (opening) {
                 // the list starts settled, the focused quest in its top spot
                 listFirst = 0; listShow(shownFocus())
                 rowPos.clear(); listScroll = Float.NaN; listGroundH = Float.NaN
                 openPathAt = android.os.SystemClock.elapsedRealtime()
+                openTabs.clear(); rebuildItems()          // every opening starts with the Untracked tabs closed (the user, 2026-10-16)
             }
         }
         morphCard = card?.let { RectF(it) }
@@ -1519,6 +1520,14 @@ class MapView(context: Context) : View(context) {
         }
         if (e.action == MotionEvent.ACTION_DOWN) {
             touchOwner = OWN_NONE
+            if (panelId != 0 && !pmenu.open) {
+                // the quest panel: its buttons act, the rest of it does nothing, outside it closes
+                val hit = panelHits.firstOrNull { it.first.contains(e.x, e.y) }
+                if (hit != null) panelAct(hit.second)
+                else if (!panelBox.contains(e.x, e.y)) closePanel()
+                touchOwner = OWN_CONTROL
+                syncB(); postInvalidate(); return true
+            }
             if (pmenu.open) {
                 // the player menu: a row chooses it, anywhere else closes it (and does nothing else)
                 val hit = pmenuHits.firstOrNull { it.first.contains(e.x, e.y) }
@@ -3020,6 +3029,170 @@ class MapView(context: Context) : View(context) {
         }
     }
 
+    // ---- AN UNTRACKED QUEST'S PANEL (the user, 2026-10-16: Y "opens a panel kind of like a tool tip that does not take over the
+    // full space, but it shows the right half panel of what it would show in the quest log, complete with two buttons at the bottom,
+    // for Share and Abandon instead of track and more"). Beside the list: the quest as the Quests room's right half words it (title in
+    // its difficulty colour, level and zone, its state, the next step, the objectives, the description), scrolled with the D-pad, and
+    // Share (A) and Abandon (Y) through the Quests actions. Abandon asks first, as the game does (the add-on arms it and names the
+    // quest; A drops it, B keeps it). B closes the panel.
+    /** A on an untracked quest: the host tracks it AND focuses it (the user: "A to track and Focus") */
+    var onTrackFocusQuest: ((questId: Int) -> Unit)? = null
+    var onShareQuest: ((questId: Int) -> Unit)? = null
+    var onAbandonArm: ((questId: Int) -> Unit)? = null
+    var onAbandonConfirm: ((questId: Int) -> Unit)? = null
+    private var panelId = 0
+    private var armedId = 0
+    private var armedTitle = ""
+    private var armedAt = 0L
+    private var panelScroll = 0f
+    private var panelContentH = 0f
+    private var panelViewH = 0f
+    private val panelBox = RectF()
+    private val panelHits = ArrayList<Pair<RectF, String>>()
+    private val ARM_MS = 10_000L                     // Quests.lua ARM_SECONDS: a confirm after it is refused
+
+    private fun openPanel(id: Int) { panelId = id; armedId = 0; panelScroll = 0f; panelContentH = 0f; syncB(); invalidate() }
+    private fun closePanel() { panelId = 0; armedId = 0; panelHits.clear() }
+    private fun armedNow(): Boolean = armedId != 0 && armedId == panelId && android.os.SystemClock.elapsedRealtime() - armedAt < ARM_MS
+
+    private fun panelKey(k: String) {
+        when (k) {
+            "PAD2" -> if (armedNow()) armedId = 0 else closePanel()
+            "PAD1" -> panelAct(if (armedNow()) "abandon!" else "share")
+            "PAD4" -> if (!armedNow()) panelAct("abandon")
+            "PADDUP" -> panelScroll = (panelScroll - 90f).coerceAtLeast(0f)
+            "PADDDOWN" -> panelScroll = (panelScroll + 90f).coerceAtMost(max(0f, panelContentH - panelViewH))
+        }
+        syncB(); invalidate()
+    }
+
+    private fun panelAct(act: String) {
+        val id = panelId
+        if (id == 0) return
+        when (act) {
+            "share" -> {
+                val q = questById[id] ?: return
+                if (!questsParty) { note("You are not in a party."); return }          // the game's ERR_QUEST_PUSH_NOT_IN_PARTY_S
+                if (!q.optBoolean("push")) { note("That quest cannot be shared."); return }
+                onShareQuest?.invoke(id) ?: note("Share is not on the tap pad yet")
+            }
+            "abandon" -> {
+                if (questById[id]?.optBoolean("canAbandon", true) == false) { note("That quest cannot be abandoned."); return }
+                onAbandonArm?.invoke(id) ?: note("Abandon is not on the tap pad yet")
+            }
+            "abandon!" -> if (armedNow()) { armedId = 0; onAbandonConfirm?.invoke(id) }
+            "cancel" -> armedId = 0
+        }
+        syncB(); invalidate()
+    }
+
+    /** {"type":"questack"}: Abandon's arm opens the question; a share / abandon answer is said */
+    fun onQuestAck(msg: JSONObject) {
+        val op = msg.optString("op")
+        val id = msg.optInt("id", 0)
+        if (panelId == 0 || (id != 0 && id != panelId)) return
+        val ok = msg.optBoolean("ok")
+        when (op) {
+            "arm" -> if (ok) { armedId = panelId; armedTitle = msg.optString("title", "this quest"); armedAt = android.os.SystemClock.elapsedRealtime() }
+                else note(msg.optString("why", "").ifEmpty { "The game did not abandon it" })
+            "abandon" -> if (ok) { closePanel(); note("Abandoned") } else note(msg.optString("why", "").ifEmpty { "The game did not abandon it" })
+            "share" -> note(if (ok) "Shared" else msg.optString("why", "").ifEmpty { "The game did not share it" })
+            else -> return
+        }
+        syncB(); postInvalidate()
+    }
+
+    private fun wrap(text: String, p: Paint, w: Float): android.text.StaticLayout =
+        android.text.StaticLayout.Builder.obtain(text, 0, text.length, android.text.TextPaint(p), w.toInt().coerceAtLeast(10)).setLineSpacing(0f, 1.05f).build()
+
+    private fun drawPanel(c: Canvas, x: Float, y0: Float, yMax: Float, maxW: Float) {
+        panelHits.clear()
+        val q = questById[panelId]
+        if (q == null) { closePanel(); return }                     // it left the log
+        val w = min(680f, maxW)
+        if (w < 260f || yMax - y0 < 260f) return
+        val pad = 20f
+        val btnH = 84f
+        val armed = armedNow()
+        // as tall as its text needs (a tooltip, not a pane: the user), at most down to the field's bottom
+        val want = if (panelContentH > 0f) 10f + 16f + panelContentH + 8f + (if (armed) 46f else 0f) + 16f + btnH + 10f else Float.MAX_VALUE
+        panelBox.set(x, y0, x + w, min(yMax, y0 + max(want, 360f)))
+        val inner = UiKit.menu(c, panelBox, solid = true)
+        val tw = inner.width() - 2f * pad
+        val actTop = inner.bottom - btnH - 16f - (if (armed) 46f else 0f)
+        // the text, scrolled, clipped above the buttons
+        panelViewH = actTop - inner.top - 8f
+        panelScroll = panelScroll.coerceIn(0f, max(0f, panelContentH - panelViewH))
+        c.save()
+        c.clipRect(inner.left, inner.top, inner.right, actTop - 8f)
+        c.translate(inner.left + pad, inner.top + 16f - panelScroll)
+        var y = 0f
+        val tl = wrap(q.optString("title", "Quest"), UiKit.bodyPaint(32f, cardFor(q).colour), tw); tl.draw(c); y += tl.height + 8f
+        val meta = listOfNotNull(if (q.has("lv")) "Level ${q.optInt("lv")}" else null, q.optString("zone", "").ifEmpty { null },
+            if (q.optInt("grp", 0) > 1) "Group ${q.optInt("grp")}" else null, "Not tracked").joinToString("  ·  ")
+        c.drawText(ellipsize(UiKit.bodyPaint(22f, cDim), meta, tw), 0f, y + 22f, UiKit.bodyPaint(22f, cDim)); y += 38f
+        when {
+            q.optBoolean("failed") -> { c.drawText("Failed", 0f, y + 24f, UiKit.bodyPaint(25f, Color.rgb(230, 70, 50))); y += 38f }
+            q.optBoolean("ready") || q.optBoolean("done") -> { c.drawText("Ready to turn in", 0f, y + 24f, UiKit.bodyPaint(25f, Theme.ok)); y += 38f }
+        }
+        q.optString("wp", "").takeIf { it.isNotEmpty() }?.let {
+            val l = wrap("Next: $it", UiKit.bodyPaint(24f, Theme.text), tw); c.save(); c.translate(0f, y); l.draw(c); c.restore(); y += l.height + 10f
+        }
+        val objs = q.optJSONArray("obj")
+        if (objs != null && objs.length() > 0) {
+            y += 6f
+            c.drawText("Objectives", 0f, y + 26f, UiKit.bodyPaint(27f, cGold)); y += 42f
+            for (i in 0 until objs.length()) {
+                val o = objs.optJSONObject(i) ?: continue
+                val fin = o.optBoolean("f")
+                val t = o.optString("t", "").ifEmpty { if (o.has("need")) "${o.optInt("have")}/${o.optInt("need")}" else "objective" }
+                val l = wrap(t, UiKit.bodyPaint(24f, if (fin) Theme.dim else Theme.text), tw - 34f)
+                UiKit.objectiveMark(c, 13f, y + 15f, 22f, done = fin)
+                c.save(); c.translate(34f, y); l.draw(c); c.restore()
+                y += l.height + 10f
+            }
+        }
+        q.optString("desc", "").takeIf { it.isNotEmpty() }?.let { desc ->
+            y += 14f
+            val edge = 28f
+            val l = wrap(desc, UiKit.bodyPaint(23f, Color.rgb(48, 32, 16)), tw + 16f - edge * 2.4f)
+            val box = RectF(-8f, y, tw + 8f, y + l.height + 44f + edge * 2.2f + 8f)
+            val pin = UiKit.parchment(c, box, edge)
+            c.drawText("Description", pin.left, pin.top + 26f, UiKit.bodyPaint(26f, Color.rgb(64, 40, 16)))
+            c.save(); c.translate(pin.left, pin.top + 44f); l.draw(c); c.restore()
+            y = box.bottom + 12f
+        }
+        panelContentH = y + 24f
+        c.restore()
+        if (panelContentH - panelScroll > panelViewH + 1f) {
+            val cue = RectF(inner.left, inner.top, inner.right, actTop - 14f)
+            UiKit.moveArrowsUpDown(c, cue, up = false, down = true, size = 18f, width = 26f, around = true)
+        }
+        // the two buttons: Share and Abandon (Cancel and Abandon while the game asks)
+        val gap = 10f
+        val bw = (inner.width() - 2f * pad - gap) / 2f
+        val b1 = RectF(inner.left + pad, inner.bottom - btnH - 12f, inner.left + pad + bw, inner.bottom - 12f)
+        val b2 = RectF(b1.right + gap, b1.top, b1.right + gap + bw, b1.bottom)
+        val glyphs = held || padHints
+        if (armed) {
+            val qp = UiKit.bodyPaint(25f, Theme.text)
+            c.drawText(ellipsize(qp, "Abandon \"$armedTitle\"?", tw), inner.left + pad, b1.top - 16f, qp)
+            if (glyphs) UiKit.button(c, b1, "Cancel", UiKit.backGlyph()) else UiKit.button(c, b1, "Cancel")
+            if (glyphs) UiKit.button(c, b2, "Abandon", glyph("a")) else UiKit.button(c, b2, "Abandon")
+            panelHits.add(RectF(b1) to "cancel"); panelHits.add(RectF(b2) to "abandon!")
+        } else {
+            val shareOk = questsParty && q.optBoolean("push")
+            val abandonOk = q.optBoolean("canAbandon", true)
+            val s1 = if (shareOk) UiKit.Button.UP else UiKit.Button.DISABLED
+            val s2 = if (abandonOk) UiKit.Button.UP else UiKit.Button.DISABLED
+            if (glyphs) UiKit.button(c, b1, "Share", glyph("a"), s1) else UiKit.button(c, b1, "Share", s1)
+            if (glyphs) UiKit.button(c, b2, "Abandon", glyph("y"), s2) else UiKit.button(c, b2, "Abandon", s2)
+            panelHits.add(RectF(b1) to "share"); panelHits.add(RectF(b2) to "abandon")
+        }
+        if (armedId != 0 && !armed) { armedId = 0 }                   // the game's question ran out
+        else if (armed) postInvalidateDelayed(500)
+    }
+
     // ---- THE OPEN'S DOTTED LINE (the user, 2026-10-16: "Opening the map module defaults the cursor on the currently focused quest
     // ... and highlights a dotted line slowly moving towards the quest marker if it is available. (only show this when opening the
     // map module)"): from the player to the focused quest's mark, its dots marching toward the mark, for OPEN_PATH_MS after an open.
@@ -3078,6 +3251,12 @@ class MapView(context: Context) : View(context) {
         val cy = band.centerY()
         if (filterOpen) { UiKit.hints(c, band.right - 24f, cy, glyph("b") to "Close"); return }
         if (pmenu.open) { UiKit.hints(c, band.right - 24f, cy, glyph("up") to "Select", glyph("a") to "Choose", glyph("b") to "Back"); return }
+        if (panelId != 0) {
+            val hp = if (armedId == panelId) arrayOf(glyph("a") to "Abandon", glyph("b") to "Cancel")
+                else listOfNotNull(if (panelContentH > panelViewH + 1f) glyph("up") to "Scroll" else null, glyph("a") to "Share",
+                    glyph("y") to "Abandon", glyph("b") to "Close").toTypedArray()
+            UiKit.hints(c, band.right - 24f, cy, *hp); return
+        }
         // only what does something on the map right now (UI Art / the user's clutter rule)
         val ids = trackedIds()
         val sel = if (cursor.shown && cursor.sel != 0 && ids.contains(cursor.sel)) cursor.sel else 0
@@ -3089,7 +3268,11 @@ class MapView(context: Context) : View(context) {
         when {
             at == MapList.ME -> if (onPlayerMenu != null) pairs.add(glyph("a") to "Menu")
             MapList.isGroup(at) -> pairs.add(glyph("a") to (if (openTabs[groupZone(at)] == true) "Close" else "Open"))
-            at > 0 && at in MapList.untracked(items) -> if (onTrackQuest != null) pairs.add(glyph("a") to "Track")
+            at > 0 && at in MapList.untracked(items) -> {
+                if (onTrackFocusQuest != null) pairs.add(glyph("a") to "Track & focus")
+                if (onTrackQuest != null) pairs.add(glyph("x") to "Track")
+                pairs.add(glyph("y") to "Open")
+            }
         }
         if (sel != 0) {
             if (sel != focusQid) pairs.add(glyph("a") to "Focus")
@@ -3097,7 +3280,6 @@ class MapView(context: Context) : View(context) {
             if (onUntrackQuest != null) pairs.add(glyph("x") to "Untrack")
             if (q != null && !q.optDouble("x", Double.NaN).isNaN() && !q.optDouble("y", Double.NaN).isNaN()) pairs.add(glyph("y") to "Show")
         }
-        pairs.add(glyph("lb") to ""); pairs.add(glyph("rb") to "Zoom")
         pairs.add(glyph("b") to "Back")
         UiKit.hints(c, band.right - 24f, cy, *pairs.toTypedArray())
     }
@@ -3193,6 +3375,7 @@ class MapView(context: Context) : View(context) {
         lastPadN = -1; bSaid = "home"
         cursor.reset()
         openPathAt = android.os.SystemClock.elapsedRealtime()
+        openTabs.clear(); rebuildItems()          // every opening starts with the Untracked tabs closed (the user, 2026-10-16)
         holdAsk.shown()
         askHold()
     }
@@ -3202,7 +3385,7 @@ class MapView(context: Context) : View(context) {
         held = false
         holdAsk.hidden(); removeCallbacks(holdTick)
         cursor.reset()
-        pmenu.close()
+        pmenu.close(); closePanel()
         guestTap(GuestPad.cells(padDoc, "map", hold = false))
         invalidate()
     }
@@ -3253,18 +3436,21 @@ class MapView(context: Context) : View(context) {
     }
 
     /** where the host's next B leads: "back" (closes the filter) or "home" */
-    fun hostBLeads(): String = cursor.bLeads(filterOpen || pmenu.open)
+    fun hostBLeads(): String = cursor.bLeads(filterOpen || pmenu.open || panelId != 0)
 
     /** apply one key; everything but leaving (returned as [MapCursor.Do.Leave] for the caller) */
     private fun applyKey(k: String): MapCursor.Do {
         if (pmenu.open) { pmenuDid(pmenu.key(k)); return MapCursor.Do.Nothing }      // every key is the open player menu's
+        if (panelId != 0) { panelKey(k); return MapCursor.Do.Nothing }                // ... and the open quest panel's
         val d = cursor.key(k, listKeys(), focusQid, filterOpen, MapList.untracked(items))
         when (d) {
             MapCursor.Do.Show -> { listShow(cursor.sel); landOn(cursor.sel) }
             is MapCursor.Do.Select -> { listShow(d.id); landOn(d.id) }
             MapCursor.Do.PlayerMenu -> openPlayerMenu()
             is MapCursor.Do.Toggle -> toggleTab(d.key)
-            is MapCursor.Do.Track -> onTrackQuest?.invoke(d.id) ?: note("Track is not on the tap pad yet")
+            is MapCursor.Do.Track -> onTrackFocusQuest?.invoke(d.id) ?: note("Track is not on the tap pad yet")
+            is MapCursor.Do.Watch -> onTrackQuest?.invoke(d.id) ?: note("Track is not on the tap pad yet")
+            is MapCursor.Do.Open -> openPanel(d.id)
             is MapCursor.Do.Focus -> askFocus(d.id)
             is MapCursor.Do.Unfocus -> onUnfocusQuest?.invoke(d.id) ?: note("Unfocus is not on the tap pad yet")
             is MapCursor.Do.Untrack -> onUntrackQuest?.invoke(d.id) ?: note("Untrack is not on the tap pad yet")
@@ -3287,7 +3473,7 @@ class MapView(context: Context) : View(context) {
     /** tell the capture where B leads now, so the Home button shows B only when it leads Home */
     private fun syncB() {
         if (!held) return
-        val where = cursor.bLeads(filterOpen || pmenu.open)
+        val where = cursor.bLeads(filterOpen || pmenu.open || panelId != 0)
         if (where != bSaid && guestTap(GuestPad.bnext(padDoc, home = where == "home"))) bSaid = where
     }
 
@@ -3295,6 +3481,7 @@ class MapView(context: Context) : View(context) {
     fun onQuests(q: JSONObject) {
         q.optJSONObject("pad")?.let { padDoc = it; if (holdAsk.padArrived()) askHold() }
         questsPlv = if (q.has("plv")) q.optInt("plv") else null
+        questsParty = q.optBoolean("party")
         questsTriv = if (q.has("trivRange")) q.optInt("trivRange") else 5
         cards.clear()
         val shownBefore = trackedIds()
@@ -3365,6 +3552,7 @@ class MapView(context: Context) : View(context) {
     // quest (the game's focused one): the gold bar and the gold disc; every other card the dark disc, no bar. The card draws no
     // cursor: the selection box and the up / down arrows stay the list's.
     private val cards = HashMap<Int, UiKit.QuestCard>()      // questID -> its card, until the quests document or the focus changes
+    private var questsParty = false                          // in a party: Share Quest's other half (Quests.lua q11)
     private var questsPlv: Int? = null                       // the quests document's player level and trivial range (Home's tier)
     private var questsTriv = 5
 
@@ -4555,7 +4743,7 @@ class MapView(context: Context) : View(context) {
                 keepTmp.clear()
                 if (compact) keepTmp.addAll(rimKeepOut)
                 else {
-                    keepTmp.add(RectF(btnIn.left, btnIn.top, btnOut.right, btnOut.bottom))
+                    keepTmp.add(RectF(btnIn.left - 26f, btnIn.top, btnOut.right, btnOut.bottom + 26f))   // + their shoulders' glyphs
                     keepTmp.add(RectF(btnFilter.left - 56f, btnFilter.top, btnFilter.right, btnFilter.bottom))   // + its key's glyph
                     keepTmp.addAll(rimKeepOut)          // the host's own over the open module too (Home's buffs / debuffs)
                     for (r in spine) keepTmp.add(r)
@@ -4660,6 +4848,12 @@ class MapView(context: Context) : View(context) {
             if (!hostZoomHidden) {
                 drawButton(c, btnInDraw, "+", zoom < ZOOM_MAX, 1f)
                 drawButton(c, btnOutDraw, "-", zoom > 1f, 1f)
+                // their shoulders on their lower left corners (the user, 2026-10-16: "Put the L and R button glyphs onto the + and _
+                // buttons instead of in the bottom with the glyph descriptions"): RB zooms in, LB out (MapCursor)
+                if (hintsOn()) {
+                    UiKit.pad(c, glyph("rb"), btnInDraw.left + 4f, btnInDraw.bottom - 4f, 44f)
+                    UiKit.pad(c, glyph("lb"), btnOutDraw.left + 4f, btnOutDraw.bottom - 4f, 44f)
+                }
             }
             // the game's own filter button (pressed while the panel is open), as the other rooms draw it, Select / View's glyph to its left
             val fb = UiKit.tex(if (filterOpen) "map_filter_btn_down" else "map_filter_btn")
@@ -4700,6 +4894,10 @@ class MapView(context: Context) : View(context) {
                 val lw = if (showTracker && items.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + 16f else 0f
                 drawPlayerMenu(c, left + BTN_GAP + lw, top + BTN_GAP, top + fh - 64f - (if (hintsOn()) HINT_BAND else 0f), fw - lw - 2f * BTN_GAP)
             } else { pmenuHits.clear(); pmenuBox.setEmpty() }
+            if (panelId != 0 && !pmenu.open && !morphOn) {
+                val lw = if (showTracker && items.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + 16f else 0f
+                drawPanel(c, left + BTN_GAP + lw, top + BTN_GAP, top + fh - 64f - (if (hintsOn()) HINT_BAND else 0f), fw - lw - 2f * BTN_GAP)
+            } else { panelHits.clear(); panelBox.setEmpty() }
         }
 
         // the selected quest's bubble wears the round ring (UI Art: round things get round cursors), touch or controller;
