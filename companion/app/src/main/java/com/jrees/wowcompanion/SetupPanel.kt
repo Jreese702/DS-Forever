@@ -93,8 +93,11 @@ class SetupPanel(context: Context) : View(context) {
         // the buttons, the box under the focused one
         val live = buttons.indices.filter { buttons[it].second.enabled }
         if (live.isNotEmpty()) focus = focus.coerceIn(0, live.size - 1)
+        // b-login-a-input (the user, 15 Oct: the login screen's cursor, glyph and A "cause issues with inputting on both screens"): in
+        // the game (no Play) the sign-in pop-up has no gold box and no A glyph, and takes no pad presses; its buttons are touch only
+        val padUi = SetupFlow.padDriven(s)
         buttons.forEachIndexed { i, (r, b) ->
-            val boxed = live.isNotEmpty() && live[focus] == i
+            val boxed = padUi && live.isNotEmpty() && live[focus] == i
             if (boxed) box(c, r)
             val state = when { !b.enabled -> UiKit.Button.DISABLED; pressed == i -> UiKit.Button.DOWN; else -> UiKit.Button.UP }
             if (boxed) UiKit.button(c, r, b.label, StartView.GLYPH_A, state) else UiKit.button(c, r, b.label, state)
@@ -159,7 +162,8 @@ class SetupPanel(context: Context) : View(context) {
 
     /** the pad while the game runs (PadFeed's copy through PadInput; the game gets the same presses): only while a pop-up shows */
     fun pad(down: Int): Boolean {
-        if (visibility != VISIBLE || screen?.prompt == null) return false
+        // b-login-a-input: never in the game's login screen (A goes to the game, or is held back at the code prompt: PopupHold)
+        if (visibility != VISIBLE || screen?.prompt == null || !SetupFlow.padDriven(screen!!)) return false
         for ((slot, code) in PAD_KEYS) if (PadInput.isHeld(down, slot)) return key(code, true)
         return false
     }

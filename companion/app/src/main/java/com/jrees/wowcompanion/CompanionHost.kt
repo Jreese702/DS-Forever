@@ -516,8 +516,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 NativeLogin.logEvent("sign-in: keyboard closed (B)"); SetupBridge.keyboard(false)
             }
             else if (::setupPanel.isInitialized && !loginPrompt.isOpen && setupPanel.pad(down)) Unit      // the setup's pop-up (Track C)
+            // b-login-a-input: not in the game (its login screen): A goes to the game, never to our login row / form
             else if (startView.visibility == View.VISIBLE && startView.login != StartView.Login.NONE && !loginPrompt.isOpen &&
-                setupView.visibility != View.VISIBLE) loginPad(down)
+                setupView.visibility != View.VISIBLE && !LauncherHooks.gameUp()) loginPad(down)
             else if (::dialogView.isInitialized && dialogView.visibility == View.VISIBLE) dialogView.onPadHeld(m)   // Interact: the dialog's press look
             else if (::interactView.isInitialized && interactView.visibility == View.VISIBLE) interactView.onPadHeld(m)
         }

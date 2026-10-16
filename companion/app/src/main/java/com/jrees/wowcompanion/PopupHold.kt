@@ -16,9 +16,12 @@ object PopupHold {
         KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
     )
 
-    /** the sign-in states whose pop-up has buttons in the game */
-    private val SIGN_IN_ASKS = setOf(SetupFlow.SignIn.FAILED, SetupFlow.SignIn.RESTART, SetupFlow.SignIn.TYPING,
-        SetupFlow.SignIn.AUTH, SetupFlow.SignIn.CHECK)
+    /**
+     * The sign-in states that hold the pad: only the code / password prompt (1.0.7's "Type with Keyboard; don't press A": the game's
+     * gamepad cursor sits on the username behind its dialog). The others (FAILED / RESTART / TYPING) let A, B and the D-pad go to the
+     * game as normal (b-login-a-input, the user 15 Oct); our pop-up there is touch only.
+     */
+    private val SIGN_IN_ASKS = setOf(SetupFlow.SignIn.AUTH, SetupFlow.SignIn.CHECK)
 
     fun holds(signIn: SetupFlow.SignIn, gameUp: Boolean, loginFormOpen: Boolean, noticeAsking: Boolean): Boolean =
         gameUp && !loginFormOpen && (noticeAsking || signIn in SIGN_IN_ASKS)
