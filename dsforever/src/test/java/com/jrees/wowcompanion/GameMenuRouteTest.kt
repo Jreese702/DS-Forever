@@ -32,3 +32,12 @@ class GameMenuRouteTest {
         assertNull(GameMenuModel.target(s, "options"))
     }
 }
+
+/** test18: B on a wheel plays the wheel's close once; its guest's in-game release is not "B went Home" (no second press on the bar) */
+class WheelBOnceTest {
+    @Test fun aWheelsOwnBIsNotBackToHome() {
+        assertTrue(HomeBack.wheelB("pad:radial"))
+        assertTrue(HomeBack.wheelB("pad:class"))
+        assertTrue(!HomeBack.wheelB("pad:chat") && !HomeBack.wheelB("npc") && !HomeBack.wheelB(null))
+    }
+}

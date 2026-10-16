@@ -112,7 +112,9 @@ class BagsPinPicker(c: Context) : View(c) {
         val order = HashMap<Int, Int>()
         bags.optJSONArray("bags")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.let { order[it.optInt("bag")] = i } }
         val its = bags.optJSONArray("items") ?: JSONArray()
-        val usable = (0 until its.length()).mapNotNull { its.optJSONObject(it) }.filter { it.optBoolean("use") && it.has("id") }
+        // the user's ruling on 1.0.9-test18: "Recipes should not be an option to assign to the quick radial" (Bags' cls 9 = Recipe)
+        val usable = (0 until its.length()).mapNotNull { its.optJSONObject(it) }
+            .filter { it.optBoolean("use") && it.has("id") && it.optInt("cls", -1) != RECIPE_CLASS }
             .sortedWith(compareBy({ order[it.optInt("bag")] ?: (100 + it.optInt("bag")) }, { it.optInt("slot") }))
         val byId = LinkedHashMap<Int, Pair<JSONObject, Int>>()
         for (r in usable) {
@@ -375,3 +377,6 @@ class BagsPinPicker(c: Context) : View(c) {
         return true
     }
 }
+
+/** Bags' numeric item class of a recipe (Enum.ItemClass.Recipe): never offered for the quick radial */
+internal const val RECIPE_CLASS = 9
