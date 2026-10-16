@@ -168,7 +168,7 @@ class PadTabPage(
         if (carryNow() != null) return when (key) { "PAD1" -> DOWN_PLACE; "PAD2" -> DOWN_CANCEL; else -> null }
         if (k.focus != "buttons" || m.combat) return null
         if (view == "radial") return when (key) { "PAD1" -> DOWN_CHANGE; "PAD3" -> if (radId(pos) != 0) DOWN_MOVE else null; else -> null }   // p16
-        val sl = PadMapModel.slot(m, shown(), pos) ?: return null
+        val sl = slotOf(m, shown(), pos) ?: return null
         val fixed = sl.kind == PadMapModel.Kind.FIXED
         val filled = sl.kind != PadMapModel.Kind.NONE && !fixed && sl.kind != PadMapModel.Kind.BIND     // m34: a binding never moves
         return when (key) {
@@ -336,6 +336,37 @@ class PadTabPage(
     /** the chooser's layout: the tab's (In combat = fight spells). batch5, the user's pick "No flip in the chooser": its Normal | In
      *  combat pair is gone (the Spellbook's Bind box has the switch) */
     private fun fight(): Boolean = view == "combat"
+
+    // ---------------------------------------------------------------- p29 (f-combat-forms, PadMap m55): the In combat tab's FORM row
+    /** the form whose own set the bare set shows now (the In combat tab, a form chosen, no trigger set); null = the caster's */
+    private fun formNow(): Int? = ctl?.form?.takeIf { view == "combat" && shown() == 1 && (map?.forms?.any { f -> f.id == it } == true) }
+    /** the button as the room shows it: with a form chosen, the bare set's positions are that form's own In-combat spells (empty = the
+     *  caster's spell fights there); B (7) stays the game's Back */
+    private fun slotOf(m: PadMapModel.Map, s: Int, p: Int): PadMapModel.Slot? {
+        val f = formNow()
+        if (f == null || s != 1 || p == 7) return PadMapModel.slot(m, s, p)
+        val r = PadMapModel.formFight(m, f, p)
+        return if (r != null) PadMapModel.Slot(p, null, PadMapModel.Kind.COMBAT, r.id, r.name, r.icon, combat = r, ov = true)
+               else PadMapModel.Slot(p, null, PadMapModel.Kind.NONE, null, null, 0)
+    }
+    /** the form row: Caster, then the forms (between the set row and the buttons) */
+    private fun formRect(i: Int) = RectF(40f + i * 112f, 364f, 40f + i * 112f + 100f, 434f)
+    private fun drawForms(c: Canvas, m: PadMapModel.Map) {
+        if (view != "combat" || m.forms.isEmpty()) return
+        val chosen = ctl?.form ?: 0
+        val list = listOf<PadMapModel.Form?>(null) + m.forms.take(10)
+        for ((i, f) in list.withIndex()) {
+            val r = formRect(i)
+            if (r.right > SPLIT - 20f) break
+            UiKit.choice(c, r, if (f == null) "Caster" else "", (f?.id ?: 0) == chosen)
+            if (f != null) Icons.get(f.icon)?.let { bmp ->
+                val sz = 54f
+                c.drawBitmap(bmp, null, RectF(r.centerX() - sz / 2f, r.centerY() - sz / 2f, r.centerX() + sz / 2f, r.centerY() + sz / 2f), PBMP)
+            }
+        }
+        val k = ctl?.takeIf { it.on }
+        if (k != null && k.focus == "forms" && SystemClock.uptimeMillis() >= pickUntil) UiKit.focus(c, formRect((k.fcur ?: 0).coerceIn(0, list.size - 1)), onPaper = true)
+    }
     private fun page(): Int {
         val want = pageWant
         return if (want != null && SystemClock.uptimeMillis() < pageUntil) want else map?.page ?: 1
@@ -404,7 +435,7 @@ class PadTabPage(
 
     /** the combat view, or a combat button out of combat: spells only (the addon's rows do the same) */
     private fun onlySpells(m: PadMapModel.Map) = fight() || view == "radial" ||                  // p16: a radial casts spells
-        PadMapModel.slot(m, shown(), pos)?.kind == PadMapModel.Kind.COMBAT
+        slotOf(m, shown(), pos)?.kind == PadMapModel.Kind.COMBAT
 
     /** p11 the chooser's tabs (the user 2026-10-07: "in the controller menu, when assigning a spell, the spell menu needs some tabs. start on spells, then general (including professions), then extra"); a fight spell's chooser has no Extra */
     private fun chooserTabs(m: PadMapModel.Map) =
@@ -414,7 +445,7 @@ class PadTabPage(
         if (list != "extra" || onlySpells(m)) {
             val which = if (list == "extra") "spells" else list
             // the combat view leaves out the spells already on the button (the same spell in and out of a fight only spends a macro)
-            val skip = if (fight()) PadMapModel.onButton(PadMapModel.slot(m, shown(), pos)) else emptySet()
+            val skip = if (fight()) PadMapModel.onButton(slotOf(m, shown(), pos)) else emptySet()
             val spells = book?.let { b -> SpellsModel.tabSpells(b, which).filter { (it.spellId ?: it.actionId) !in skip }.map { Thing.Spell(it) } }
                 ?: emptyList()
             // (m45 / p24: no "suggestion" row - the user: nothing is ever suggested; the add-on's chooser has none either, so rows line up)
@@ -439,7 +470,7 @@ class PadTabPage(
     /** the row pinned under the list: "Clear combat spell" (combat view, a combat button), "Clear this button" (out of combat, filled) */
     private fun pinned(m: PadMapModel.Map): Thing? {
         if (view == "radial") return if (radId(pos) != 0) Thing.Clear else null            // p16: "Clear this slice"
-        val sl = PadMapModel.slot(m, shown(), pos)
+        val sl = slotOf(m, shown(), pos)
         return if (fight()) when {
             sl?.kind == PadMapModel.Kind.COMBAT -> Thing.Uncombat
             PadMapModel.isFace(sl) && sl!!.fight != null -> Thing.Unface
@@ -538,6 +569,7 @@ class PadTabPage(
             if (g.size == 1) UiKit.pad(c, g[0], r.centerX(), r.centerY(), 56f)
             else { UiKit.pad(c, g[0], r.centerX() - 32f, r.centerY(), 52f); UiKit.pad(c, g[1], r.centerX() + 32f, r.centerY(), 52f) }
         }
+        drawForms(c, m)
         val carry = carryNow()
         for (p in 1..8) drawButton(c, m, s, p)
         // the glyphs over ALL the buttons: drawn with its own button, the bottom face button's was half hidden by the next one's frame
@@ -704,7 +736,7 @@ class PadTabPage(
     private fun changesInFight(sl: PadMapModel.Slot?) = (sl?.kind == PadMapModel.Kind.COMBAT && sl.ov) || (PadMapModel.isFace(sl) && sl!!.fight != null)
 
     private fun drawButton(c: Canvas, m: PadMapModel.Map, s: Int, p: Int) {
-        val sl = PadMapModel.slot(m, s, p)
+        val sl = slotOf(m, s, p)
         val r = square(p)
         val fixed = sl?.kind == PadMapModel.Kind.FIXED
         val changes = changesInFight(sl)
@@ -763,7 +795,7 @@ class PadTabPage(
     }
 
     private fun drawRight(c: Canvas, m: PadMapModel.Map, s: Int, w: Float, h: Float) {
-        val slc = PadMapModel.slot(m, s, pos)
+        val slc = slotOf(m, s, pos)
         carryNow()?.let { drawMoveRight(c, m, s, it, w, h); return }
         if (view == "combat" || slc?.kind == PadMapModel.Kind.COMBAT) { drawCombatRight(c, m, s, slc, w, h); return }
         val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
@@ -1080,7 +1112,7 @@ class PadTabPage(
 
     private fun drawBox(c: Canvas, m: PadMapModel.Map, book: SpellsModel.Book?, s: Int, w: Float) {
         val (kind, thing) = tBox?.let { it.kind to it.thing } ?: ctlBox()?.let { b -> thingOf(b, book, m)?.let { b.kind to it } } ?: return
-        val sl = PadMapModel.slot(m, s, pos)
+        val sl = slotOf(m, s, pos)
         val isCombat = sl?.kind == PadMapModel.Kind.COMBAT
         val face = PadMapModel.isFace(sl)
         val here = if (isCombat) "${sl!!.combat?.name ?: "?"} / ${sl.otherwise?.name ?: "Nothing"}" else nameOf(m, sl)
@@ -1244,7 +1276,7 @@ class PadTabPage(
             if (m.combat) say(COMBAT) else { tLock = null; tChooser = "spells"; scroll = 0f }
             return
         }
-        if (was == DOWN_MOVE && moveRect(w, h).contains(x, y) && PadMapModel.slot(m, shown(), pos)?.kind == PadMapModel.Kind.BIND) {
+        if (was == DOWN_MOVE && moveRect(w, h).contains(x, y) && slotOf(m, shown(), pos)?.kind == PadMapModel.Kind.BIND) {
             say("It rides the key, not the bar: clear it and choose it where you want it"); return
         }
         if (was == DOWN_MOVE && moveRect(w, h).contains(x, y)) {
@@ -1253,7 +1285,7 @@ class PadTabPage(
         }
         // Choose / Change
         if (was == DOWN_CHANGE && actRect(w, h).contains(x, y)) {
-            val sl = PadMapModel.slot(m, shown(), pos)
+            val sl = slotOf(m, shown(), pos)
             when {
                 sl == null -> {}
                 sl.kind == PadMapModel.Kind.FIXED && !(view == "combat" && PadMapModel.isFace(sl)) -> {}
@@ -1277,6 +1309,11 @@ class PadTabPage(
             val sl = UiKit.radialPreviewHit(WHEEL_CX, wheelCy(h), wheelD(h), x, y)
             if (sl >= 0) { fingerOnButton = true; pick(set, sl + 1); tap(listOf(PadMapModel.ROW to PadMapModel.colPos(sl + 1))) }
             return
+        }
+        // p29: the form row (In combat): Caster, then the forms; a pick (padtab 15 + k)
+        if (view == "combat" && m.forms.isNotEmpty()) for (i in 0..minOf(10, m.forms.size)) if (formRect(i).contains(x, y)) {
+            fingerOnButton = false
+            tap(listOf(PadMapModel.ROW_PADTAB to PadMapModel.colForm(i))); host.invalidate(); return
         }
         // p9: ZL / ZR / ZL + ZR; the lit one again = the base set (no "None")
         for (i in 0..2) if (setRect(i).contains(x, y)) {
@@ -1331,14 +1368,14 @@ class PadTabPage(
     private fun boxFor(t: Thing, m: PadMapModel.Map, afterReplace: Boolean): String? {
         if (t is Thing.Clear || t is Thing.Uncombat || t is Thing.Unface) return "clear"
         if (view == "radial") return if (!afterReplace && radId(pos) != 0) "replace" else null       // p16: PadTabCtl's boxFor
-        val here = PadMapModel.slot(m, shown(), pos)
+        val here = slotOf(m, shown(), pos)
         if (fight() && t is Thing.Spell && PadMapModel.isFace(here)) {
             // a base X / Y / A: its own box the first time (it changes every fight), Replace after; no macro
             return if (here!!.fight != null) (if (!afterReplace) "replace" else null) else "cface"
         }
         if (fight() && t is Thing.Spell) {
             // m43 (PadTabCtl p22): the overlay: no macro is made and nothing leaves the button; Replace only names a fight spell there
-            val k = PadMapModel.slot(m, shown(), pos)?.kind
+            val k = slotOf(m, shown(), pos)?.kind
             return if (k == PadMapModel.Kind.COMBAT && !afterReplace) "replace" else null
         }
         if (!afterReplace && PadMapModel.replaces(m, shown(), pos) != null) return "replace"

@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p28"                -- bump on every change
+local CV = "p29"                -- bump on every change; p29: the In combat tab's FORM row (f-combat-forms, PadMap m55)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -59,14 +59,15 @@ local SWITCHES = { normal = {}, ds = { "dpad" }, combat = { "cc", "sa" }, radial
 -- room's DS tab lists exactly what goes; one yes per character"): under the D-pad, only while the plan has something
 -- p21: "shared" (PadMap m42, the user's answer 2026-10-09 "Last, separately"): the shared DS macros' own button, beside the clean-up's on
 -- the left page's bottom (shared left, cleanup right); Left / Right between the two, Up back to the D-pad
-local ORDER = { normal = { "tabs", "sets", "buttons" }, ds = { "tabs", "switches", "dpad" }, combat = { "tabs", "switches", "sets", "buttons" },
+-- p29 (f-combat-forms): the In combat tab's "forms" row (Caster | the character's forms / stances), only while it has forms
+local ORDER = { normal = { "tabs", "sets", "buttons" }, ds = { "tabs", "switches", "dpad" }, combat = { "tabs", "switches", "forms", "sets", "buttons" },
                 radial = { "tabs", "rpages", "buttons" } }
 local HOME_FOCUS = { normal = "buttons", ds = "dpad", combat = "buttons", radial = "buttons" }
 local function SR() return type(WC.spellRadial) == "table" and WC.spellRadial or nil end
 
 -- `view`: the tab ("normal" = WoW Defaults, "ds", "combat" = In combat)
 local tc = { on = false, focus = "buttons", set = 1, pos = 1, chooser = nil, box = nil, note = nil, view = "normal",
-             tcur = 1, sw = 1, scur = 2, dpos = 2, carry = nil, rpage = 1 }
+             tcur = 1, sw = 1, scur = 2, dpos = 2, carry = nil, rpage = 1, form = 0, fcur = 0 }
 -- p25 THE KEEP MODE (Book b36's quiet enter; test22 device: two of the restore's taps were lost, the "combat layer" pick among them, so
 -- the In-combat spell went onto the GAME's bar slot as a plain spell): while the app restores its backup, a spell is ONLY ever an
 -- In-combat setting (the overlay / a face's fight spell), and only right after a FRESH set AND button pick; nothing else acts
@@ -123,7 +124,8 @@ local function report(note)
         chooser = ch, box = box, lay = layout(), view = tc.view, note = tc.note,
         tcur = tc.tcur, sw = tc.sw, scur = tc.scur, dpos = tc.dpos,
         carry = tc.carry and { set = tc.carry.set, pos = tc.carry.pos, page = tc.carry.page } or nil,
-        rpage = tc.view == "radial" and tc.rpage or nil, rad = tc.view == "radial" and radialPage() or nil } }))
+        rpage = tc.view == "radial" and tc.rpage or nil, rad = tc.view == "radial" and radialPage() or nil,
+        form = tc.form ~= 0 and tc.form or nil, fcur = tc.view == "combat" and tc.fcur or nil } }))
     WC.push()
 end
 
@@ -136,6 +138,11 @@ local function here()
     end
     local pm = PM()
     if not pm then return nil end
+    -- p29: a FORM chosen on the In combat tab: the bare set's buttons are that form's own In-combat spells (B stays the game's Back)
+    if tc.view == "combat" and tc.form ~= 0 and shownSet() == 1 and tc.pos ~= 7 and type(pm.formFight) == "function" then
+        local e = pm.formFight(tc.form, tc.pos)
+        return { kind = e and "combat" or "none", form = tc.form, pos = tc.pos, c = e and { id = e.id, n = e.n, i = e.i } or nil }
+    end
     return pm.slotAt(pm.page(), shownSet(), tc.pos)
 end
 local function filled(slot) return slot and slot.kind ~= "none" and slot.kind ~= "fixed" end
@@ -228,6 +235,14 @@ local function act(thing)
     local pm = PM()
     if not pm then return end
     local page, set, pos = pm.page(), shownSet(), tc.pos
+    -- p29: with a form chosen (the In combat tab, the bare set) a fight spell is THAT form's own (PadMap m55)
+    local h = here()
+    if h and h.form and type(pm.putCombatForm) == "function" then
+        if thing.kind == "combat" or thing.kind == "cface" then pm.putCombatForm(h.form, pos, thing.slot)
+        elseif thing.kind == "uncombat" or thing.kind == "uncface" then pm.clearCombatForm(h.form, pos) end
+        tc.box, tc.chooser, tc.focus = nil, nil, "buttons"
+        return
+    end
     if thing.kind == "spell" then pm.putSpell(page, set, pos, thing.slot)
     elseif thing.kind == "command" then pm.putCommand(page, set, pos, thing.key)
     elseif thing.kind == "item" then pm.putItem(page, set, pos, thing.id)            -- p12: the bags' items (PadMap m33)
@@ -328,9 +343,14 @@ end
 
 -- one row up / down in the tab's ORDER (the carried button stays among the sets and the buttons)
 -- p19 / p21: the DS tab's bottom rows are there only while they have something to do
+local function formList()
+    local pm = PM()
+    return (pm and type(pm.forms) == "function") and pm.forms() or {}
+end
 local function rowThere(f)
     local pm = PM()
     if not pm then return false end
+    if f == "forms" then return #formList() > 0 end                    -- p29: a class without forms has no form row
     -- p24: the clean-up rows are gone (the user after test14: "I dont understand why we have a cleanup button"; PadMap m45 removes
     -- our own old macros by itself)
     if f == "cleanup" or f == "shared" then return false end
@@ -343,7 +363,7 @@ local function step(dir)
     for k, f in ipairs(order) do if f == tc.focus then i = k end end
     local j = i + dir
     -- p19 / p21: the clean-up's and the shared macros' rows only while they are there; a missing one is stepped over
-    while order[j] == "cleanup" or order[j] == "shared" do
+    while order[j] == "cleanup" or order[j] == "shared" or order[j] == "forms" do
         if rowThere(order[j]) then break end
         j = j + dir
     end
@@ -496,6 +516,20 @@ local function pressSwitches(key)
     return true
 end
 
+-- p29 the form row: Caster, then the character's forms in the game's order; LANDING on one shows its set (p10's rule, no A needed)
+local function pressForms(key)
+    local list = formList()
+    if key == "PADDLEFT" or key == "PADDRIGHT" then
+        tc.fcur = math.min(#list, math.max(0, (tc.fcur or 0) + (key == "PADDLEFT" and -1 or 1)))
+        tc.form = tc.fcur == 0 and 0 or (list[tc.fcur] and list[tc.fcur].id or 0)
+        report("form")
+    elseif key == "PADDUP" then step(-1)
+    elseif key == "PADDDOWN" then step(1)
+    elseif key == "PAD2" then return false
+    end
+    return true
+end
+
 local function pressSets(key)
     if key == "PADDLEFT" then tc.scur = math.max(2, tc.scur - 1); report("set-cursor")
     elseif key == "PADDRIGHT" then tc.scur = math.min(4, tc.scur + 1); report("set-cursor")
@@ -613,6 +647,7 @@ WC.padTabCtl = {
         if tc.focus == "tabs" then return pressTabs(key) end
         if tc.focus == "switches" then return pressSwitches(key) end
         if tc.focus == "sets" then return pressSets(key) end
+        if tc.focus == "forms" then return pressForms(key) end
         if tc.focus == "rpages" then return pressRpages(key) end
         if tc.focus == "dpad" then return pressDpad(key) end
         if tc.focus == "cleanup" or tc.focus == "shared" then           -- p19 / p21: A asks (a box that names it all), Up the D-pad, B Home
@@ -666,6 +701,15 @@ WC.padTabCtl = {
     end,
     -- p9 (the padtab row): the tab (1-3, a pick), Move's pick-up (a pick), its PLACE / SWAP (ONE game action), its cancel (a pick)
     touchTab = function(k) if TABS[k] then setTab(TABS[k]) end end,
+    -- p29: a finger on the form row (padtab 15 = Caster, 16-25 = the forms in the game's order): a pick, no game action
+    touchForm = function(k)
+        local list = formList()
+        if k == 0 or list[k] then
+            tc.fcur = k; tc.form = k == 0 and 0 or list[k].id
+            if tc.on and not tc.chooser and not tc.box then tc.focus = "forms" end
+            report("touch-form")
+        end
+    end,
     touchCarry = function() if not tc.carry then carryStart() end end,
     touchPlace = function() carryPlace() end,
     -- p20: a finger's Cancel also closes the controller's clean-up box (the room draws that box over the DS tab; nothing done)

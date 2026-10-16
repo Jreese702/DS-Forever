@@ -331,6 +331,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * A fight override is drawn with that state - not enough mana blue, unusable dark, out of range red, selected for casting checked -
      * as the game's own buttons are.
      */
+    /** m55 (f-combat-forms): base-set GAME positions whose fight spell is the active FORM's own, and that form's icon (0 = none) */
+    var fightFormPos: Set<Int> = emptySet()
+        set(v) { if (field != v) { field = v; invalidate() } }
+    var fightFormIcon = 0
+        set(v) { if (field != v) { field = v; invalidate() } }
     var fightIds: Map<Int, Int>? = null
         set(v) { if (field != v) { field = v; invalidate() } }
     private val fightStates = HashMap<Int, St>()
@@ -2366,6 +2371,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             next = min(next, drawSlot(c, pos, 0f, 0f, circle, b, st,
                 if (li < STATE_LAYERS) li * 8 + src else -1, now, pressed, flash, null,
                 if (fb != null && fb.k == "spell") fightCdLeft(src, now) else -1f))
+            // m55 (f-combat-forms): a fight spell from the FORM's own set wears the form's icon at its lower left (whose set fights)
+            if (fb != null && li == N && (src + 1) in fightFormPos) fightFormIcon.takeIf { it > 0 }?.let { id ->
+                (iconReady[id] ?: run { requestIcon(id); null })?.let { bmp ->
+                    val half = (if (circle) 19f else 20f) * k
+                    drawChordIcon(c, bmp, -half + 5f * k, half - 5f * k, 6.5f * k)
+                }
+            }
             c.restore()
         }
         val t = bandT()
