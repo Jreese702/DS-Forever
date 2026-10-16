@@ -21,7 +21,14 @@ class CleanExitWaitTest {
     @Test fun theGiveUpSaysWhy() {
         val never = CleanExit.waitAfterTap(36_000L, acked = false, retapped = true, countLeft = null)
         assertTrue(never is CleanExit.Wait.GiveUp && never.why.contains("never answered"))
-        val noCount = CleanExit.waitAfterTap(36_000L, acked = true, retapped = false, countLeft = null)
+        // test15: answered, no countdown seen: the countdown's whole wait, not 35 s
+        assertEquals(CleanExit.Wait.On, CleanExit.waitAfterTap(36_000L, acked = true, retapped = false, countLeft = null))
+        val noCount = CleanExit.waitAfterTap(60_000L, acked = true, retapped = false, countLeft = null)
         assertTrue(noCount is CleanExit.Wait.GiveUp && noCount.why.contains("no QUIT countdown"))
+    }
+
+    @Test fun theGamesOwnRefusalEndsTheWaitInItsWords() {
+        val w = CleanExit.waitAfterTap(1_000L, acked = true, retapped = false, countLeft = null, refused = "You can't do that while in combat")
+        assertTrue(w is CleanExit.Wait.GiveUp && w.why == "the game refused: You can't do that while in combat")
     }
 }

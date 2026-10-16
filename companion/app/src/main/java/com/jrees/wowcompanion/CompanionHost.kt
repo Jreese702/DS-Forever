@@ -133,6 +133,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var gmAckCol = -1
     private var cleanExitWaiting = false   // a clean exit waits for the game: its answers are copied to WCSETUP
     private var lastCountLogged = ""
+    private var gmRefused: String? = null  // the game's own refusal of the Exit tap (Radial gm2), during a clean exit's wait
     // SvKeep (the user's pick after test22): our tables confirmed this run (a non-empty first word, or the player changed a setting)
     private val svArmed = HashSet<String>()
     private val svSeen = HashSet<String>()                              // the run's FIRST word per table decides (a partial restore later must not)
@@ -1532,8 +1533,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // during a clean exit's wait, the game's own countdown goes into the app's log too (General.log starts afresh at the
                 // next launch, so after an install only logcat still has it): each change of it, and its end
                 if (current && cleanExitWaiting) {
+                    if (msg.optString("why") == "refused") gmRefused = msg.optString("err", "").ifEmpty { "no reason given" }
                     val c = if (msg.has("count")) "count ${msg.optString("count")} left ${msg.optInt("left", -1)}"
-                            else if (msg.has("ended")) "countdown ended (${msg.optString("ended")})" else ""
+                            else if (msg.has("ended")) "countdown ended (${msg.optString("ended")})"
+                            else if (msg.optString("why") == "refused") "refused: ${msg.optString("err")}"
+                            else if (msg.optString("why") == "event") "event ${msg.optString("ev")}"
+                            else "a game menu document (${msg.optString("why")})"
                     if (c.isNotEmpty() && c != lastCountLogged) { lastCountLogged = c; Log.i("WCSETUP", "clean exit: the game says: $c") }
                 }
                 if (current && ::pauseView.isInitialized) pauseView.onGameMenuDoc(msg)
@@ -2854,7 +2859,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         say("clean exit ($why): the game's own Exit Game asked (its save is written as it exits)")
         val t0 = SystemClock.elapsedRealtime()
         var retapped = false
-        cleanExitWaiting = true; lastCountLogged = ""
+        cleanExitWaiting = true; lastCountLogged = ""; gmRefused = null
+        var lastStatusS = 0L
         val poll = object : Runnable {
             override fun run() {
                 val now = SystemClock.elapsedRealtime()
@@ -2869,7 +2875,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // the game's own QUIT countdown, as Radial r12's "gamemenu" documents count it (null = none showing)
                 val gm = lastGameMenu
                 val countLeft = if (gm != null && gm.optString("count") == "quit" && gm.has("left")) gm.optInt("left") else null
-                when (val w = CleanExit.waitAfterTap(now - t0, acked, retapped, countLeft)) {
+                // every 5 s, where the wait stands: whether the game still speaks (a paused game goes quiet), the fight flag
+                if (s >= lastStatusS + 5) {
+                    lastStatusS = s
+                    Log.i("WCSETUP", "clean exit ($why): waiting $s s: exit cell ${if (acked) "answered" else "silent"}, countdown " +
+                        "${countLeft?.let { "$it s left" } ?: "none seen"}, the game last spoke ${(now - lastAddonAt) / 1000} s ago, " +
+                        "fight ${homeView.inFight()}")
+                }
+                when (val w = CleanExit.waitAfterTap(now - t0, acked, retapped, countLeft, gmRefused)) {
                     CleanExit.Wait.Retap -> {
                         retapped = true
                         val again = TapBridge.tap(this@CompanionHost, questsPad, GameMenuModel.ROW, col) { }
