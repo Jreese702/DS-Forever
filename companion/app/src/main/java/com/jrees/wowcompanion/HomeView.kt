@@ -116,7 +116,9 @@ class HomeView(
         setWillNotDraw(false)
         for ((_, v) in views) { addView(v); v.visibility = View.GONE }
         mapView.onCompactTap = { if (flow.tapMap()) changed() }
-        mapView.onShownFocusChanged = { questPane.invalidate() }
+        // the card's CONTENT is the map's (its focus, its default focus): a change there re-lays Home when the card comes or goes
+        // (p-card-invisible: it only redrew, and a pane laid without a card stayed GONE until a later quests document)
+        mapView.onShownFocusChanged = { questPane.invalidate(); cardCheck("focus") }
         chatSlot.outlineProvider = object : android.view.ViewOutlineProvider() {
             override fun getOutline(v: View, o: android.graphics.Outline) {
                 val b = chatGlideBox
@@ -627,10 +629,43 @@ class HomeView(
         tick()
         // the card's height can change with the focus or its objectives: re-place the wells (the chat's top follows the card). Posted:
         // MainActivity gives the map the same document right after us, and the card is the map's
-        post { if (cardHeight() != laidCardH && shown != null) apply(shown!!, animate = isShown) }
+        cardCheck("quests")
+    }
+
+    /**
+     * THE CARD MATCHES ITS LAYOUT (p-card-invisible, the user on v1.0.8: "Sometimes the current focused quest is like, invisible"):
+     * Home lays the quest pane out only while there is a card (b125: no focused quest, no card: the pane is GONE). The card's content
+     * is the MAP'S (mapView.focusedCard(): its focus, else its default focus), and it can change from the map's own document; only
+     * a quests document re-laid Home, so a card that came in between stayed invisible. Checked on the quests document, on the map's
+     * focus change and on every full document (a cheap compare); a re-lay when the card's height is not the one laid. Then the WCHOME
+     * "quest card:" line ([logCard]) says what the card is, only when that changes.
+     */
+    private fun cardCheck(why: String) {
+        post {
+            val ch = cardHeight()
+            if (ch != laidCardH && shown != null) {
+                Log.i(TAG, "quest card: re-laid ($why) height ${laidCardH.toInt()} -> ${ch.toInt()}")
+                apply(shown!!, animate = isShown)
+            }
+            logCard()
+        }
+    }
+
+    private var cardSaid = ""
+    /** WCHOME: the card's state (the focused quest, whether there is a card, the pane's visibility / alpha / place / height, why hidden) */
+    private fun logCard() {
+        val q = mapView.shownFocusQuest()
+        val card = homeCard() != null
+        val p = questPane
+        val why = HomeCardState.why(q, card, auraPane.open != null, p.visibility == View.VISIBLE, p.cardHidden, p.alpha, p.height)
+        val st = "q=$q${if (mapView.focusIsDefault()) " (default)" else ""} card=$card $why vis=${p.visibility == View.VISIBLE} " +
+            "a=${"%.2f".format(p.alpha)} t=${p.translationX.toInt()},${p.translationY.toInt()} z=${p.translationZ.toInt()} " +
+            "h=${p.height} laid=${laidCardH.toInt()}"
+        if (st != cardSaid) { cardSaid = st; Log.i(TAG, "quest card: $st") }
     }
 
     fun onFull(msg: JSONObject, current: Boolean) {
+        cardCheck("full")                                   // the map's document may have brought (or taken) the card
         if (!barsSeen && msg.optJSONObject("actionbar")?.optJSONObject("hud") != null) { barsSeen = true; invalidate() }
         msg.optJSONObject("map")?.let { m ->
             val t = m.optString("subzone", "").ifEmpty { m.optString("zone", "") }
@@ -2205,4 +2240,19 @@ internal object ClassSlot {
     /** 1.0.8-test5 ("sliding in from behind the chat"): the wheel's start offset, centred behind the chat column ([chatLeft]..
      *  [chatRight], before the columns part): hidden under the chat */
     fun hiddenOffset(chatLeft: Float, chatRight: Float, s: Slot): Float = (chatLeft + chatRight) / 2f - (s.left + s.side / 2f)
+}
+
+/** p-card-invisible: the quest card's state in words, for the WCHOME "quest card:" line (pure, so the JVM tests read it) */
+internal object HomeCardState {
+    /** the quest card's state in words (the WCHOME "quest card:" line; pure, for the tests): "shown", or why it is not */
+    fun why(q: Int, card: Boolean, auraOpen: Boolean, visible: Boolean, flying: Boolean, alpha: Float, height: Int): String = when {
+        q == 0 -> "no focused quest"
+        !card -> "focus $q has no quest in the log"
+        auraOpen -> "buff / debuff list open"
+        !visible -> "pane not laid out"
+        flying -> "flying (map open / close)"
+        alpha < 0.05f -> "faded"
+        height <= 0 -> "zero height"
+        else -> "shown"
+    }
 }
