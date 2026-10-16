@@ -2502,6 +2502,7 @@ fun XServerScreen(
                     val xs = xServerView.getxServer()
                     xs.injectPointerMove((fx * xs.screenInfo.width).toInt(), (fy * xs.screenInfo.height).toInt())
                 }
+                override fun showPointer(on: Boolean) { xServerView.getRenderer()?.setForceCursor(on) }
                 override fun pointerNote(): String {
                     val xs = xServerView.getxServer()
                     return "${xs.pointer.getX()},${xs.pointer.getY()} of ${xs.screenInfo.width}x${xs.screenInfo.height}" +

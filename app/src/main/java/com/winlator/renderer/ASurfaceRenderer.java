@@ -50,6 +50,9 @@ public class ASurfaceRenderer implements WindowManager.OnWindowModificationListe
     private String forceFullscreenWMClass = null;
     private boolean containerCursorVisible = true;
     private boolean gameCursorVisible = true;
+    private volatile boolean forceCursor = false;
+    /** the cursor drawn now: the container's and the game's say, or the trackpad's forced arrow */
+    private boolean effCursorVisible() { return forceCursor || (containerCursorVisible && gameCursorVisible); }
     private final Drawable rootCursorDrawable;
     private Cursor lastCursor = null;
     private boolean surfaceInitialized = false;
@@ -440,9 +443,10 @@ public class ASurfaceRenderer implements WindowManager.OnWindowModificationListe
     }
 
     private void sendCursorToNative(Cursor cursor) {
-        if (!containerCursorVisible) return;
-        Drawable cd = cursor != null ? cursor.cursorImage : rootCursorDrawable;
-        if (cursor != null && !cursor.isVisible()) return;
+        if (!containerCursorVisible && !forceCursor) return;
+        boolean own = cursor != null && (cursor.isVisible() || !forceCursor);
+        Drawable cd = own ? cursor.cursorImage : rootCursorDrawable;
+        if (own && !cursor.isVisible()) return;
         if (cd == null || cd.getBuffer() == null) return;
         synchronized (cd.renderLock) {
             ByteBuffer buf = cd.getBuffer();
@@ -457,7 +461,7 @@ public class ASurfaceRenderer implements WindowManager.OnWindowModificationListe
         Cursor cursor = pw != null ? pw.attributes.getCursor() : null;
         if (cursor != null && gameCursorVisible != cursor.isVisible()) {
             gameCursorVisible = cursor.isVisible();
-            nativeScanoutSetCursorVisibility(containerCursorVisible && gameCursorVisible);
+            nativeScanoutSetCursorVisibility(effCursorVisible());
         }
         synchronized (drawable.renderLock) {
             if (drawable.getTexture() instanceof AHBImage g) {
@@ -484,7 +488,7 @@ public class ASurfaceRenderer implements WindowManager.OnWindowModificationListe
         Cursor cursor = pw != null ? pw.attributes.getCursor() : null;
         if (cursor != null && gameCursorVisible != cursor.isVisible()) {
             gameCursorVisible = cursor.isVisible();
-            nativeScanoutSetCursorVisibility(containerCursorVisible && gameCursorVisible);
+            nativeScanoutSetCursorVisibility(effCursorVisible());
         }
         synchronized (drawable.renderLock) {
             if (drawable.getTexture() instanceof AHBImage g) {
@@ -555,10 +559,11 @@ public class ASurfaceRenderer implements WindowManager.OnWindowModificationListe
                 sendCursorToNative(cursor);
             }
 
-            short hotX = (short) cursor.hotSpotX;
-            short hotY = (short) cursor.hotSpotY;
+            boolean forced = forceCursor && !cursor.isVisible();
+            short hotX = forced ? 0 : (short) cursor.hotSpotX;
+            short hotY = forced ? 0 : (short) cursor.hotSpotY;
 
-            nativeScanoutSetCursorPos(x, y, hotX, hotY, containerCursorVisible && gameCursorVisible);
+            nativeScanoutSetCursorPos(x, y, hotX, hotY, effCursorVisible());
         }
     }
 
@@ -645,6 +650,16 @@ public class ASurfaceRenderer implements WindowManager.OnWindowModificationListe
                 sendCursorToNative(lastCursor);
             }
         }
+    }
+
+    /** DS Forever (f-trackpad-keyboard, the user on 1.0.8: "The track pad doesn't actually show the mouse cursor on the top screen"):
+     * the game hides its cursor in gamepad mode (an empty-mask X cursor), so while the companion's trackpad is open the renderer
+     * draws the launcher's own arrow (R.drawable.cursor, the root cursor) at the X pointer instead. Nothing is sent to the game. */
+    @Override
+    public void setForceCursor(boolean force) {
+        forceCursor = force;
+        sendCursorToNative(lastCursor);
+        nativeScanoutSetCursorVisibility(effCursorVisible());
     }
 
     public void setCursorVisible(boolean visible) {

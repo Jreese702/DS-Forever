@@ -24,6 +24,8 @@ object InputSink {
         fun button(right: Boolean, down: Boolean) {}
         /** f-trackpad-keyboard rework: the pointer to this fraction of the game's screen (the trackpad's start); default: nothing */
         fun moveTo(fx: Float, fy: Float) {}
+        /** f-trackpad-keyboard: the launcher draws its own arrow at the pointer (the game hides its cursor in gamepad mode); default: nothing */
+        fun showPointer(on: Boolean) {}
         /** the game's pointer now, game px ("x,y"), and how the X server takes moves; null = unknown (for the log) */
         fun pointerNote(): String? = null
     }
@@ -75,6 +77,16 @@ object InputSink {
         gameIo.execute {
             val r = try { s.moveTo(0.5f, 0.5f); "ok" } catch (t: Throwable) { "threw ${t.javaClass.simpleName}" }
             tlog("trackpad: centre -> sink $r (pointer ${s.pointerNote() ?: "?"})")
+        }
+    }
+
+    /** the trackpad's pointer drawn on the top screen (on while the Trackpad tab is open) */
+    fun gamePointer(on: Boolean) {
+        val s = sink
+        if (s == null) { tlog("trackpad: pointer ${if (on) "on" else "off"} -> sink none"); return }
+        gameIo.execute {
+            val r = try { s.showPointer(on); "ok" } catch (t: Throwable) { "threw ${t.javaClass.simpleName}" }
+            tlog("trackpad: pointer ${if (on) "on" else "off"} -> sink $r")
         }
     }
 

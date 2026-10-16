@@ -70,7 +70,12 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
 
     fun open() { typed = ""; lastN = -1; kb.open(); showTab(tab); invalidate(); if (tab == 0) InputSink.gameCentre() }
 
+    /** the tool closed: the forced pointer goes (Home's closeTypeTool) */
+    fun close() { InputSink.gamePointer(false) }
+
     private fun showTab(t: Int) {
+        // the 1.0.8 report: the game hides its cursor in gamepad mode; the launcher draws its own arrow while the Trackpad tab shows
+        InputSink.gamePointer(t == 0)
         tab = t
         pad.visibility = if (t == 0) View.VISIBLE else View.GONE
         kb.visibility = if (t == 1) View.VISIBLE else View.GONE
@@ -107,9 +112,8 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
             UiKit.pad(c, "${glyphSet()}_lshoulder", tabRect(0).left + 40f, tabRect(0).centerY(), 44f)
             UiKit.pad(c, "${glyphSet()}_rshoulder", tabRect(1).right - 40f, tabRect(1).centerY(), 44f)
             val p = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            val line = if (tab == 1) (if (typed.isEmpty()) "Typing into the game's text box" else "Typed: $typed")
-                else "Move the pointer on the pad. Tap to click."
-            c.drawText(line, width / 2f, 140f, p)
+            // the user (1.0.8): "remove the text on it" - the trackpad has no words; the keyboard keeps what it typed
+            if (tab == 1) c.drawText(if (typed.isEmpty()) "Typing into the game's text box" else "Typed: $typed", width / 2f, 140f, p)
         }
         override fun onTouchEvent(e: MotionEvent): Boolean {
             if (e.actionMasked == MotionEvent.ACTION_UP) for (i in 0..1) if (tabRect(i).contains(e.x, e.y)) { showTab(i); break }
@@ -130,11 +134,14 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
         private fun button(i: Int): RectF { val w = (width - 100f) / 2f; val l = 40f + i * (w + 20f); return RectF(l, height - 150f, l + w, height - 40f) }
         override fun onDraw(c: Canvas) {
             UiKit.module(c, well())
-            val p = UiKit.bodyPaint(24f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("Trackpad", well().centerX(), well().centerY(), p)
             val g = glyphSet()
-            UiKit.button(c, button(0), "Left click", if (g == "shp") "shp_cross" else "${g}_a", if (onButton == 0) UiKit.Button.DOWN else UiKit.Button.UP)
-            UiKit.button(c, button(1), "Right click", if (g == "shp") "shp_square" else "${g}_x", if (onButton == 1) UiKit.Button.DOWN else UiKit.Button.UP)
+            // no words (the user): each click button is its plate and its glyph, centred
+            for (i in 0..1) {
+                val r = button(i)
+                UiKit.button(c, r, "", if (onButton == i) UiKit.Button.DOWN else UiKit.Button.UP)
+                UiKit.pad(c, if (i == 0) (if (g == "shp") "shp_cross" else "${g}_a") else (if (g == "shp") "shp_square" else "${g}_x"),
+                    r.centerX(), r.centerY(), r.height() * 0.62f)
+            }
         }
         override fun onTouchEvent(e: MotionEvent): Boolean {
             when (e.actionMasked) {
