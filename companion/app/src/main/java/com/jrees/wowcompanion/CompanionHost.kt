@@ -341,6 +341,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             } else DiagLog.checkEnd()
             recIndicator.visibility = if (on) View.VISIBLE else View.GONE
             if (::settingsView.isInitialized) settingsView.invalidate()
+            if (++newSpellTick % 5 == 0) newSpellAsk()                    // f-new-spell-prompt: a fight ended, a window closed
             ui.postDelayed(this, 1000)
         }
     }
@@ -837,6 +838,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     private fun show(r: Room, byB: Boolean = false, motion: Boolean = true) {
         flushBLeave()
+        if (r == Room.HOME) ui.postDelayed({ newSpellAsk() }, 800L)          // f-new-spell-prompt: back Home, the next one
         // the pause menu never stays over a room change (a whisper's jump, a game window); its own picks run after it has folded
         if (::pauseView.isInitialized && pauseView.isOpen) pauseView.shut()
         if (::pauseView.isInitialized && r != room) pauseView.clearHint()
@@ -1663,12 +1665,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 else if (current && !msg.has("lost")) freeHidden("groupfinder", press = true)
             // the Spellbook (spells session): the book, who holds the controller, the answer to a Bind press. Leaving it with B goes
             // Home through the capture's release ("B") and the home session's route, as for Bags
-            "spells" -> SpellsModel.parse(msg)?.let { lastBook = it; spellsPad = it.pad; spellbookView.update(it); controllerView.update(it); spellsOverlay.onBook(it) }
+            "spells" -> SpellsModel.parse(msg)?.let { lastBook = it; spellsPad = it.pad; spellbookView.update(it); controllerView.update(it); spellsOverlay.onBook(it)
+                if (current) newSpellsFrom(it) }
             // CONTROL documents act only when CURRENT: one replayed from the backlog at app start tells who held the controller THEN, and
             // must not open the room or a page, bring up the Bind box or a Talents box, or leave a stale "held" behind (a later room change
             // would tap close). Home's finding, AGENT_LOG 9596d1a. The book, the tree and the chosen talent replay: the last known state shows.
             "spellsctl" -> if (current) SpellsModel.parseCtl(msg)?.let { c ->
                 spellbookView.onCtl(c); controllerView.onCtl(c); spellsOverlay.onCtl(c)
+                if (c.note == "bind-cancel" || c.note == "result-closed") newSpellBindDone()   // f-new-spell-prompt: the Bind box closed
                 // the page the controller drives (Book.lua b3 `pg`) picks the room: the game's own Talents / Spellbook buttons bring theirs
                 // up; between the two rooms the page follows the bar (no taps here: see pickRoom)
                 // (the Talents page flag BEFORE the jump: show()'s hand-over reads it, so a page the game moved is not moved again)
@@ -1687,7 +1691,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     }
                 }
             }
-            "spellsack" -> if (current) SpellsModel.parseBind(msg)?.let { spellsOverlay.onBind(it); spellbookView.invalidate() }
+            "spellsack" -> if (current) SpellsModel.parseBind(msg)?.let { spellsOverlay.onBind(it); spellbookView.invalidate(); newSpellBindDone() }
             // the Professions room (professions session): the professions, the open one's recipes, the answers to its taps
             "prof" -> msg.optJSONObject("p")?.let { p ->
                 val was = ProfessionsStore.overview?.open
@@ -1738,6 +1742,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "padmap" -> PadMapModel.parse(msg)?.let {
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
                 spellbookView.onPadMap(it); controllerView.onPadMap(it); homeView.onPadMap(it); spellsOverlay.onPadMap(it)
+                if (current) { newSpellMap = it; it.dpad?.name?.takeIf { n -> n.isNotEmpty() }?.let { n -> newSpellWho = "$n-${it.dpad.realm ?: ""}" } }
                 // the D-pad room bar (Spells' m24): the Settings row's state, and the once-per-character prompt
                 it.dpad?.let { d ->
                     // the character now: the wheels' kept lists of another character go (the per-character ruling)
@@ -2533,6 +2538,83 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** Spells' last word on the D-pad room bar (null = an older add-on) */
     private var lastDpad: PadMapModel.Dpad? = null
+
+    // ---------------------------------------------------------------- f-new-spell-prompt: learned spells, one prompt at a time on Home
+    /** the user (1.0.9): "After learning new spells when I return home they should have a prompt 1 at a time a to bind or b to dismiss" */
+    private val newSpells by lazy { NewSpells.Store(getSharedPreferences("newspells", MODE_PRIVATE)) }
+    private var newSpellWho: String? = null           // the character now (the padmap's name-realm)
+    private var newSpellMap: PadMapModel.Map? = null  // what is on the buttons (a spell already there is not news)
+    private var newSpellAsking = 0                    // the spell the open (or waiting) prompt is about
+    private var newSpellBinding = 0                   // the spell whose Bind box A opened (Home again when it closes)
+    private var newSpellWaitId = 0
+    private var newSpellTick = 0
+
+    /** a `spells` document: the add-on's news joins this character's queue; then maybe ask */
+    private fun newSpellsFrom(book: SpellsModel.Book) {
+        val who = newSpellWho ?: return
+        val onPad = NewSpells.onPad(newSpellMap)
+        val q = NewSpells.enqueue(newSpells.queue(who), newSpells.handled(who), book.news.sortedBy { it.nid }.map { it.spellId }) {
+            NewSpells.worthAsking(book, it, onPad)
+        }
+        if (q != newSpells.queue(who)) { newSpells.add(who, q); Log.i(HomeView.TAG, "new spells: queue $q") }
+        newSpellAsk()
+    }
+
+    /** the next prompt, when the player is on Home with nothing else up: no room, no module of Home's, no game window, no fight */
+    private fun newSpellAsk() {
+        val who = newSpellWho ?: return
+        val book = lastBook ?: return
+        if (newSpellBinding != 0) { if (room == Room.HOME) newSpellBinding = 0 else return }   // back Home: that bind is over
+        if (newSpellAsking != 0) return
+        if (room != Room.HOME || homeView.homeGuestWanted() || capHolder.isNotEmpty() || homeView.inFight() || book.combat) return
+        if (setupView.visibility == View.VISIBLE || setupWaiting != null || startView.visibility == View.VISIBLE) return
+        if (interactView.visibility == View.VISIBLE || dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE) return
+        val onPad = NewSpells.onPad(newSpellMap)
+        val q = NewSpells.stillWanted(newSpells.queue(who)) { NewSpells.worthAsking(book, it, onPad) }
+        if (q != newSpells.queue(who)) newSpells.setQueue(who, q)            // bound meanwhile (it shows on a bar): dropped unasked
+        val id = q.firstOrNull() ?: return
+        val e = NewSpells.entryOf(book, id) ?: return
+        newSpellAsking = id
+        val title = "New spell: ${e.name}" + (e.rank?.let { " ($it)" } ?: "")
+        val show = {
+            setupView.ask(CompanionSetup.Prompt(title, emptyList(), "Put it on a controller button now, or dismiss it."), "Bind", "Dismiss",
+                onYes = { newSpellAnswer(who, id, bind = true) }, onNo = { newSpellAnswer(who, id, bind = false) }, icon = e.icon)
+        }
+        // only once the game hands Home the controller: a press never also reaches the game (setupHoldAck runs [setupWaiting])
+        setupWaiting = show
+        val wait = ++newSpellWaitId
+        if (!setupPadOn()) { setupWaiting = null; newSpellAsking = 0; return }
+        Log.i(HomeView.TAG, "new spells: ask $id (${e.name}), waits for the controller")
+        ui.postDelayed({ if (wait == newSpellWaitId && newSpellAsking == id && setupView.visibility != View.VISIBLE) newSpellRetry("no hold") }, 6_000L)
+    }
+
+    /** the controller never came (or was refused): nothing shows; asked again later */
+    private fun newSpellRetry(why: String) {
+        Log.i(HomeView.TAG, "new spells: not asked now ($why)")
+        setupWaiting = null; setupPadOff(); newSpellAsking = 0
+        ui.postDelayed({ newSpellAsk() }, 5_000L)
+    }
+
+    /** A = Bind: the Spellbook's own Bind box for that spell (the game's controller press puts it on); B = Dismiss. Never asked again. */
+    private fun newSpellAnswer(who: String, id: Int, bind: Boolean) {
+        newSpells.done(who, id)
+        newSpellAsking = 0
+        setupView.close(); setupPadOff()
+        val e = if (bind) lastBook?.let { NewSpells.bindEntry(it, id) } else null
+        if (e == null) { ui.postDelayed({ newSpellAsk() }, 400L); return }
+        Log.i(HomeView.TAG, "new spells: bind $id")
+        newSpellBinding = id
+        show(Room.SPELLBOOK); spellbookView.openAt(id)
+        ui.postDelayed({ spellsCells(e) }, 400L)
+        ui.postDelayed({ if (newSpellBinding == id && room != Room.SPELLBOOK) newSpellBindDone() }, 120_000L)
+    }
+
+    /** the Bind box closed (bound, cancelled, refused): back Home, where the next prompt follows */
+    private fun newSpellBindDone() {
+        if (newSpellBinding == 0) return
+        newSpellBinding = 0
+        ui.postDelayed({ if (room == Room.SPELLBOOK) show(Room.HOME); ui.postDelayed({ newSpellAsk() }, 700L) }, 900L)
+    }
     /** characters whose stored choice this run already re-applied to a game whose add-on had no answer (once per run) */
     private val dpadApplied = HashSet<String>()
 
@@ -2654,6 +2736,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         setupHeld = msg.optBoolean("ok") && msg.optString("why") != "pending"
         // b137: the waiting prompt shows now, its A / B live from the first frame; b138: a refusal shows it too (touch first)
         if (setupHeld) setupWaiting?.let { setupWaiting = null; it() }
+        else if (newSpellAsking != 0) { newSpellRetry("the game said no: ${msg.optString("why")}"); return }
         else setupShowAnyway("the game said no: ${msg.optString("why")}")
         setupView.padOn = setupHeld
         Log.i(HomeView.TAG, "dpad prompt: ${if (setupHeld) "held - A / B press it" else "hold not given (${msg.optString("why")})"}")

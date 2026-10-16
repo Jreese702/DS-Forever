@@ -43,8 +43,8 @@ class SetupView(context: Context) : View(context) {
      * ANY one-question prompt in the same look (the D-pad controls' "Use DS Forever D-pad controls?", 2026-10-02): a title, the
      * bullets, one closing line and two buttons, [yes] -> [onYes], [no] -> [onNo]. Touch only, as the setup's.
      */
-    fun ask(p: CompanionSetup.Prompt, yes: String, no: String, onYes: () -> Unit, onNo: () -> Unit) {
-        face = Face.PROMPT; title = p.title; bullets = p.bullets; footer = p.footer; note = ""
+    fun ask(p: CompanionSetup.Prompt, yes: String, no: String, onYes: () -> Unit, onNo: () -> Unit, icon: Int = 0) {
+        face = Face.PROMPT; title = p.title; bullets = p.bullets; footer = p.footer; note = ""; promptIcon = icon
         yesLabel = yes; noLabel = no; yesAct = onYes; noAct = onNo
         visibility = VISIBLE; invalidate()
     }
@@ -99,6 +99,9 @@ class SetupView(context: Context) : View(context) {
         }
     }
 
+    /** f-new-spell-prompt: a spell's icon (fileID) over the title; 0 = none */
+    private var promptIcon = 0
+
     private fun drawPrompt(c: Canvas, w: Float, h: Float, cx: Float) {
         UiKit.cover(c, RectF(0f, 0f, w, h))
         val tp = UiKit.bodyPaint(42f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
@@ -111,13 +114,20 @@ class SetupView(context: Context) : View(context) {
         val bl = bullets.map { wrap(it, lp, textW - BULLET_IN) }
         val fl = if (footer.isEmpty()) emptyList() else wrap(footer, fp, textW)
         val nl = if (note.isEmpty()) emptyList() else wrap(note, np, textW)
+        val iconBmp = promptIcon.takeIf { it > 0 }?.let { Icons.get(it) }
         var ch = tl.size * 56f + 20f + bl.sumOf { it.size } * 44f + bl.size * 6f + 18f + fl.size * 38f + 40f + 111f
+        if (promptIcon > 0) ch += ICON_SZ + 20f
         if (nl.isNotEmpty()) ch += 16f + nl.size * 42f
         val boxH = ch + 2 * 50f + 36f
         val top = maxOf(30f, (h - boxH) / 2f)
         val box = RectF(cx - BOX_W / 2f, top, cx + BOX_W / 2f, top + boxH)
         UiKit.dialog(c, box)
         var y = box.top + 50f + 18f + 42f
+        if (promptIcon > 0) {
+            // the spell's own icon, in the game's slot frame (the Spellbook's look), centred over the title
+            UiKit.slot(c, iconBmp, cx - ICON_SZ / 2f, y - 42f, ICON_SZ)
+            y += ICON_SZ + 20f
+        }
         for (l in tl) { c.drawText(l, cx, y, tp); y += 56f }
         y += 20f
         val left = box.left + 70f
@@ -173,5 +183,6 @@ class SetupView(context: Context) : View(context) {
     private companion object {
         const val BOX_W = 900f
         const val BULLET_IN = 34f    // the bullet text's start in from the bullet
+        const val ICON_SZ = 96f      // f-new-spell-prompt: the spell icon over the title
     }
 }
