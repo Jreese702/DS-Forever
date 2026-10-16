@@ -126,7 +126,7 @@ class HomeView(
                 else o.setRoundRect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt(), UiKit.MODULE_R)
             }
         }
-        questPane.translationZ = 2f                                 // the card lies over the map (b121)   // the card shows the map's shown focus (Map's default focus)
+        questPane.translationZ = restZ(Part.QUESTS)                 // the card lies over the map (b121)   // the card shows the map's shown focus (Map's default focus)
         // clipped AT REST (the default): only a morph unclips, see [flightClip]
     }
 
@@ -399,7 +399,9 @@ class HomeView(
         val hidden = ClassSlot.hiddenOffset(chatBox.left, chatBox.right, slot)
         for ((p, v) in views) if (p != Part.BARS) {
             val r = now[p]
-            v.translationZ = if (r != null && r.centerX() < w / 2f && (open || classLayer.visibility == View.VISIBLE)) CLASS_COVER_Z else 0f
+            // lifted over the wheel on the left; anything else at ITS resting depth (p-card-invisible 2: this set the card, which lies
+            // over the map on the right, to 0, so it drew UNDER the map: "shown" in the log, nothing on the screen)
+            v.translationZ = if (r != null && r.centerX() < w / 2f && (open || classLayer.visibility == View.VISIBLE)) CLASS_COVER_Z else restZ(p)
         }
         if (open) {
             classLayer.visibility = View.VISIBLE
@@ -418,13 +420,15 @@ class HomeView(
                     override fun onAnimationEnd(a: android.animation.Animator) {
                         if (classOpen) return
                         classLayer.visibility = View.GONE
-                        for ((_, v) in views) v.translationZ = 0f                         // the chat back to the page's own order
+                        for ((p, v) in views) v.translationZ = restZ(p)                   // back to the page's own order (the card over the map)
                     }
                 }).start()
         }
         // the columns: everything left of the middle slides left, everything right of it slides right (and back)
         for ((p, v) in views) {
-            if (p == Part.BARS || v.visibility != View.VISIBLE) continue
+            if (p == Part.BARS) continue
+            // a part not shown does not slide; on a close it is put back at once (a card hidden mid-slide kept its ~312 px offset)
+            if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f }; continue }
             val r = now[p] ?: continue
             val to = if (!open) 0f else if (r.centerX() < w / 2f) -push else push
             v.animate().cancel()
@@ -654,16 +658,26 @@ class HomeView(
         }
     }
 
+    /** a part's depth at rest: the card lies over the map (b121); every other part on the page's own order */
+    private fun restZ(p: Part): Float = if (p == Part.QUESTS) CARD_Z else 0f
+
     private var cardSaid = ""
     /** WCHOME: the card's state (the focused quest, whether there is a card, the pane's visibility / alpha / place / height, why hidden) */
     private fun logCard() {
         val q = mapView.shownFocusQuest()
         val card = homeCard() != null
         val p = questPane
-        val why = HomeCardState.why(q, card, auraPane.open != null, p.visibility == View.VISIBLE, p.cardHidden, p.alpha, p.height)
+        // what actually draws: under the map (its depth not above the map's, while it lies over the map), on screen at all
+        val under = cardOverMap() && p.translationZ <= mapSlot.translationZ
+        val drawn = android.graphics.Rect()
+        val onScreen = p.visibility == View.VISIBLE && p.getGlobalVisibleRect(drawn)
+        val why = HomeCardState.why(q, card, auraPane.open != null, p.visibility == View.VISIBLE, p.cardHidden, p.alpha, p.height,
+            under, onScreen)
         val st = "q=$q${if (mapView.focusIsDefault()) " (default)" else ""} card=$card $why vis=${p.visibility == View.VISIBLE} " +
-            "a=${"%.2f".format(p.alpha)} t=${p.translationX.toInt()},${p.translationY.toInt()} z=${p.translationZ.toInt()} " +
-            "h=${p.height} laid=${laidCardH.toInt()}"
+            "a=${"%.2f".format(p.alpha)} t=${p.translationX.toInt()},${p.translationY.toInt()} z=${p.translationZ.toInt()}/map ${mapSlot.translationZ.toInt()} " +
+            "h=${p.height} laid=${laidCardH.toInt()} screen=${if (onScreen) drawn.toShortString() else "none"} " +
+            "home vis=${visibility == View.VISIBLE} a=${"%.2f".format(alpha)} cols=${(now[Part.CHAT]?.let { chatPane.translationX } ?: 0f).toInt()}," +
+            "${mapSlot.translationX.toInt()} wheel=${if (classOpen) "open" else "shut"}"
         if (st != cardSaid) { cardSaid = st; Log.i(TAG, "quest card: $st") }
     }
 
@@ -957,7 +971,11 @@ class HomeView(
         anim?.cancel()
         if (w <= 0f || h <= 0f) { chatReturn(); requestLayout(); return }       // placed at the first layout
         val to = places(s, w, h)
-        for ((p, v) in views) if (to.containsKey(p)) { v.visibility = View.VISIBLE; v.alpha = 1f }
+        for ((p, v) in views) if (to.containsKey(p)) {
+            // a part coming back after being GONE starts from rest: no left-over slide, its own depth (the card over the map)
+            if (v.visibility != View.VISIBLE && !classOpen && pauseT == 0f) { v.animate().cancel(); v.translationX = 0f; v.translationZ = restZ(p) }
+            v.visibility = View.VISIBLE; v.alpha = 1f
+        }
         if (!animate || before == null) {
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
             flightClip(false)
@@ -2141,6 +2159,8 @@ class HomeView(
         private const val CLASS_SLOT_MAX = 0.5f
         /** 1.0.8-test5: the left column's raise while the wheel shows (it slides out from under the chat) */
         private const val CLASS_COVER_Z = 4f
+        /** the focused quest's card over the map (b121): above the map's 0, under the wheel's lifted left column */
+        private const val CARD_Z = 2f
         /** the focused quest over the minimap (Settings > Home, HomeSettings.questOverMap; was the constant QUEST_ABOVE_MAP) */
         fun cardOverMap(): Boolean = HomeSettings.questOverMap
         /** logcat tag for Home's taps and refusals (`adb logcat -s WCHOME`) */
@@ -2248,7 +2268,8 @@ internal object ClassSlot {
 /** p-card-invisible: the quest card's state in words, for the WCHOME "quest card:" line (pure, so the JVM tests read it) */
 internal object HomeCardState {
     /** the quest card's state in words (the WCHOME "quest card:" line; pure, for the tests): "shown", or why it is not */
-    fun why(q: Int, card: Boolean, auraOpen: Boolean, visible: Boolean, flying: Boolean, alpha: Float, height: Int): String = when {
+    fun why(q: Int, card: Boolean, auraOpen: Boolean, visible: Boolean, flying: Boolean, alpha: Float, height: Int,
+            underMap: Boolean = false, onScreen: Boolean = true): String = when {
         q == 0 -> "no focused quest"
         !card -> "focus $q has no quest in the log"
         auraOpen -> "buff / debuff list open"
@@ -2256,6 +2277,8 @@ internal object HomeCardState {
         flying -> "flying (map open / close)"
         alpha < 0.05f -> "faded"
         height <= 0 -> "zero height"
+        underMap -> "under the map (depth)"
+        !onScreen -> "clipped off screen"
         else -> "shown"
     }
 }
