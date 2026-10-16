@@ -2921,22 +2921,33 @@ class MapView(context: Context) : View(context) {
         invalidate()
     }
 
-    /** the cursor came onto [key]: the portrait centres the map on the player, a tracked quest comes into view */
+    /**
+     * the cursor came onto [key]: the portrait brings the map to the player; a tracked quest with a mark on this map comes into view;
+     * a quest with none here (another zone, or an untracked one) brings the map back to the player too (b-map-glide, the user:
+     * "they are just keeping the map placement where ever it just was instead of transitioning to the player location")
+     */
     private fun landOn(key: Int) {
         when {
             key == MapList.ME -> centreOnPlayer()
-            key > 0 && key in trackedNo -> revealSelected()
+            key > 0 && key in trackedNo && selectedPoint() != null -> revealSelected()
+            key > 0 -> centreOnPlayer()
         }
     }
 
-    /** the portrait highlighted (the user: "it should center my current position on the map"): follow the player, at this zoom */
+    /**
+     * THE MAP GLIDES TO THE PLAYER, at this zoom (the portrait: "it should center my current position on the map"; b-map-glide: "the
+     * map snaps to the player location instead of gliding smoothly"): the glide home a pan already uses ([recentreFrom], eased over
+     * RECENTRE_MS toward the LIVE position), from where the view is now; at its end the view follows the player.
+     */
     private fun centreOnPlayer() {
-        followPlayer = true
-        recentreFrom = null
         focusRestoreZoom = Float.NaN
         zoomEase = Float.NaN
         autoZoom = false; autoZoomCur = zoom
         camAncX = Float.NaN
+        panX = lastViewCx; panY = lastViewCy
+        followPlayer = false
+        recentreFrom = floatArrayOf(lastViewCx, lastViewCy)
+        recentreStart = System.currentTimeMillis()
         invalidate()
     }
 

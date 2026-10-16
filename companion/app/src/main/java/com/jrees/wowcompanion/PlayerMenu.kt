@@ -11,7 +11,7 @@ import org.json.JSONObject
  * map module: the D-pad walks the rows, A opens a sub-menu or runs an entry (the menu closes, as the game's does), B goes back a
  * level or closes. A title row (the game's own heading, the player's name) is no stop.
  */
-class PlayerMenu {
+class PlayerMenu(private val runs: Boolean = RUNS) {
     data class Entry(val text: String, val id: Int?, val enabled: Boolean, val checked: Boolean?, val title: Boolean, val sub: List<Entry>?)
 
     sealed class Do {
@@ -101,6 +101,7 @@ class PlayerMenu {
                     return Do.None
                 }
                 val id = e.id ?: return Do.None
+                if (!runs) return Do.Refused("Not available yet")
                 close()
                 return Do.Run(id, e.text)
             }
@@ -109,6 +110,13 @@ class PlayerMenu {
     }
 
     companion object {
+        /**
+         * Entries are NOT run for now (test10 on the Thor: an entry's own OnClick from the add-on ran tainted, and Reset all instances'
+         * confirm then raised ADDON_ACTION_FORBIDDEN; the toggles did nothing). The menu shows read-only until each kind of entry has
+         * a taint-free way (Quests.lua q42 refuses a run too).
+         */
+        const val RUNS = false
+
         /** an entry's id as the add-on's two digit taps: the first digit's column, then the second's (Quests.lua q41: 33 - digit) */
         fun digitCols(id: Int): List<Int> = listOf(33 - (id / 8) % 8, 33 - id % 8)
 
