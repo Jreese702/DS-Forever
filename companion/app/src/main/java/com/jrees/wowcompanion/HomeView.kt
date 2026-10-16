@@ -815,11 +815,19 @@ class HomeView(
     fun watchQuest(id: Int, note: (String) -> Unit) =
         questAct(id, "watch", QuestPad.Act.WATCH, quests.tapWatch(id, GameInput.live(), System.currentTimeMillis()), note)
 
-    /** the game's own player menu (A on the map module's portrait; Quests.lua q38, qact 34) */
+    /** read the game's own player menu for the bottom screen (A on the map module's portrait; Quests.lua q41, qact 34) */
     fun playerMenu(note: (String) -> Unit) {
         if (!GameInput.live()) { note("Waiting for the game"); return }
         val cells = GuestPad.playerMenu(pad)
         Log.i(TAG, "player menu: send ${cells ?: "no cells"}")
+        if (cells == null || !TapBridge.taps(context, pad, cells) { why -> post { note(why) } }) note("The game has not published its tap pad")
+    }
+
+    /** run entry [id] of the game's player menu (Quests.lua q41's two digit taps, in one shell session) */
+    fun playerMenuRun(id: Int, note: (String) -> Unit) {
+        if (!GameInput.live()) { note("Waiting for the game"); return }
+        val cells = GuestPad.playerMenuRun(pad, id)
+        Log.i(TAG, "player menu: run $id ${cells ?: "no cells"}")
         if (cells == null || !TapBridge.taps(context, pad, cells) { why -> post { note(why) } }) note("The game has not published its tap pad")
     }
 

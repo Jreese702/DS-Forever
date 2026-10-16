@@ -50,4 +50,6 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     // off-device tests of the companion's pure parts (launch support: WowProduct, GamePaths)
     testImplementation(libs.junit)
+    // the real org.json for those tests (android.jar's is a stub that throws "not mocked"): the quests / pmenu documents' models
+    testImplementation("org.json:json:20231013")
 }

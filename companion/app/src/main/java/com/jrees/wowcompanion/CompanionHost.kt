@@ -465,6 +465,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the game's player menu (Quests q38)
         mapView.onTrackQuest = { id -> homeView.watchQuest(id) { mapView.note(it) } }
         mapView.onPlayerMenu = { homeView.playerMenu { mapView.note(it) } }
+        mapView.onPlayerMenuRun = { id -> homeView.playerMenuRun(id) { mapView.note(it) } }
         // LATER item 5, the generic controller guests (Quests.lua q6): B with nothing nearer to do leaves with B -> Home
         questsView.onLeave = { show(Room.HOME) }
         // B leaves the chat for Home: the disc's press (UI Art's push + gold flash; the user's Home-button feedback 2026-10-01)
@@ -1437,6 +1438,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "mapquests" -> worldMapRoom.onMapQuests(msg)
             // Hub hub6's logout word: the world closed (character select, or the game quitting): the waiting screen at once
             // a flight master's map (Map.lua taxinet): which known nodes connect (b-route-unknown-taxi); replays too (they stay true)
+            // the game's player menu, read for the map module's bottom-screen copy (Quests q41): only a current one is the game's now
+            "pmenu" -> if (current) mapView.onPlayerMenuDoc(msg)
             "taxinet" -> {
                 val reach = msg.optJSONArray("reach")?.let { r -> List(r.length()) { r.optInt(it) }.filter { it != 0 } } ?: emptyList()
                 val cur = msg.optInt("cur", 0)
@@ -1519,6 +1522,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // counts as shown (the map module: freed at 18:29:17 / 18:29:47, then re-held by the app). Look again after a short grace
                 if (current && msg.optString("op") == "hold" && msg.optBoolean("ok") && !guestShown(gid))
                     strip.postDelayed({ if (!guestShown(gid)) refree(gid, "hold ok") }, 400L)
+                if (op == "pmenurun") mapView.onPlayerMenuRan(msg)
                 when (gid) {
                     "settings" -> settings.pad.onGuestAck(msg)
                     "quests" -> questsView.onGuestAck(msg)

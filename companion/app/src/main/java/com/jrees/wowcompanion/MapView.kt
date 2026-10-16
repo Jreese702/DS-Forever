@@ -1185,6 +1185,7 @@ class MapView(context: Context) : View(context) {
             if (field == v) return
             field = v
             filterOpen = false
+            pmenu.close()
             compactDown = false
             lastCamAt = 0L                  // the Map room's camera eases from a fresh clock
             postInvalidate()
@@ -1322,6 +1323,7 @@ class MapView(context: Context) : View(context) {
             morphOk = !drawnPx.isNaN() && !drawnPy.isNaN() && drawnS > 0f
             morphP0x = drawnPx; morphP0y = drawnPy; morphS0 = drawnS
             filterOpen = false
+            pmenu.close()
             touchOwner = OWN_NONE
             if (opening) {
                 // the list starts settled, the focused quest in its top spot
@@ -1517,6 +1519,14 @@ class MapView(context: Context) : View(context) {
         }
         if (e.action == MotionEvent.ACTION_DOWN) {
             touchOwner = OWN_NONE
+            if (pmenu.open) {
+                // the player menu: a row chooses it, anywhere else closes it (and does nothing else)
+                val hit = pmenuHits.firstOrNull { it.first.contains(e.x, e.y) }
+                if (hit != null) pmenuDid(pmenu.touch(hit.second))
+                else if (!pmenuBox.contains(e.x, e.y)) { pmenu.close(); syncB() }
+                touchOwner = OWN_CONTROL
+                postInvalidate(); return true
+            }
             if (filterOpen) {
                 // A pop-out panel, not a row of chips: the user's standing rule for these
                 // companions is icons and pop-outs over words, and no per-row buttons.
@@ -2936,6 +2946,80 @@ class MapView(context: Context) : View(context) {
         invalidate()
     }
 
+    // ---- THE PLAYER MENU ON THE BOTTOM SCREEN ([PlayerMenu]; the user, 2026-10-16: "a replication of the menu on the bottom screen
+    // basically that the controller still drives"). A on the portrait asks the game for its own player menu (Quests q41 reads it) and
+    // shows it beside the list; a chosen entry goes back as its id (two digit taps) and the game's own entry runs it.
+    /** the host's way to run entry [id] of the game's player menu (Quests q41's digit cells) */
+    var onPlayerMenuRun: ((id: Int) -> Unit)? = null
+    private val pmenu = PlayerMenu()
+    private val pmenuHits = ArrayList<Pair<RectF, Int>>()
+    private val pmenuBox = RectF()
+
+    private fun openPlayerMenu() {
+        val ask = onPlayerMenu ?: run { note("The player menu is not on the tap pad yet"); return }
+        pmenu.openReading()
+        ask()
+        syncB(); invalidate()
+    }
+
+    private fun pmenuDid(d: PlayerMenu.Do) {
+        when (d) {
+            is PlayerMenu.Do.Run -> onPlayerMenuRun?.invoke(d.id) ?: note("The player menu is not on the tap pad yet")
+            is PlayerMenu.Do.Refused -> note(d.why)
+            PlayerMenu.Do.Close, PlayerMenu.Do.None -> {}
+        }
+        syncB(); invalidate()
+    }
+
+    /** {"type":"pmenu"} (Quests q41): the game's player menu, as it would show it now */
+    fun onPlayerMenuDoc(d: JSONObject) {
+        if (!pmenu.open) return
+        pmenu.onDoc(d)
+        postInvalidate()
+    }
+
+    /** the game's answer to a run (guestack op "pmenurun"): only a refusal is said */
+    fun onPlayerMenuRan(msg: JSONObject) {
+        if (!msg.optBoolean("ok")) note(msg.optString("why", "").ifEmpty { "The game did not do it" })
+    }
+
+    private fun drawPlayerMenu(c: Canvas, x: Float, y0: Float, yMax: Float, maxW: Float) {
+        pmenuHits.clear()
+        val rows = pmenu.rows()
+        val rowH = 80f; val head = 64f
+        val lines = if (pmenu.loading || pmenu.empty) 1 else rows.count { !(it.title && it.text == pmenu.heading()) }.coerceAtLeast(1)
+        val w = min(560f, maxW)
+        if (w < 200f || yMax - y0 < head + rowH) return
+        pmenuBox.set(x, y0, x + w, min(yMax, y0 + 20f + head + lines * rowH + 20f))
+        val inner = UiKit.menu(c, pmenuBox, solid = true)
+        val hp = UiKit.bodyPaint(28f, cGold)
+        val heading = (if (pmenu.depth > 0) "< " else "") + (pmenu.heading() ?: portrait?.optString("n", "") ?: "")
+        c.drawText(ellipsize(hp, heading, inner.width() - 32f), inner.left + 16f, inner.top + 40f, hp)
+        val top0 = inner.top + head
+        if (pmenu.loading || pmenu.empty) {
+            val dp = UiKit.bodyPaint(24f, cDim)
+            c.drawText(if (pmenu.loading) "Asking the game..." else "The game's menu could not be read here", inner.left + 16f, top0 + 46f, dp)
+            return
+        }
+        // the game's own title row is the heading already: not twice
+        val shown = rows.indices.filter { !(rows[it].title && rows[it].text == pmenu.heading()) }
+        val fit = ((inner.bottom - top0) / rowH).toInt().coerceAtLeast(1)
+        val first = (shown.indexOf(pmenu.sel) - fit + 1).coerceIn(0, max(0, shown.size - fit))
+        for (k in first until min(shown.size, first + fit)) {
+            val i = shown[k]
+            val e = rows[i]
+            val r = RectF(inner.left, top0 + (k - first) * rowH, inner.right, top0 + (k - first + 1) * rowH)
+            if (e.title) {
+                val tp = UiKit.bodyPaint(22f, cDim)
+                c.drawText(ellipsize(tp, e.text, r.width() - 32f), r.left + 16f, r.centerY() + 8f, tp)
+                continue
+            }
+            UiKit.menuRow(c, r, e.text + (if (e.sub != null) "  >" else ""), i == pmenu.sel, enabled = e.enabled,
+                mark = if (e.checked == true) "icon_check" else null, size = 28f)
+            pmenuHits.add(RectF(r) to i)
+        }
+    }
+
     // ---- THE OPEN'S DOTTED LINE (the user, 2026-10-16: "Opening the map module defaults the cursor on the currently focused quest
     // ... and highlights a dotted line slowly moving towards the quest marker if it is available. (only show this when opening the
     // map module)"): from the player to the focused quest's mark, its dots marching toward the mark, for OPEN_PATH_MS after an open.
@@ -2993,6 +3077,7 @@ class MapView(context: Context) : View(context) {
         c.drawRect(band.left, band.top, band.right, band.top + 1.5f, pFill)
         val cy = band.centerY()
         if (filterOpen) { UiKit.hints(c, band.right - 24f, cy, glyph("b") to "Close"); return }
+        if (pmenu.open) { UiKit.hints(c, band.right - 24f, cy, glyph("up") to "Select", glyph("a") to "Choose", glyph("b") to "Back"); return }
         // only what does something on the map right now (UI Art / the user's clutter rule)
         val ids = trackedIds()
         val sel = if (cursor.shown && cursor.sel != 0 && ids.contains(cursor.sel)) cursor.sel else 0
@@ -3117,6 +3202,7 @@ class MapView(context: Context) : View(context) {
         held = false
         holdAsk.hidden(); removeCallbacks(holdTick)
         cursor.reset()
+        pmenu.close()
         guestTap(GuestPad.cells(padDoc, "map", hold = false))
         invalidate()
     }
@@ -3167,15 +3253,16 @@ class MapView(context: Context) : View(context) {
     }
 
     /** where the host's next B leads: "back" (closes the filter) or "home" */
-    fun hostBLeads(): String = cursor.bLeads(filterOpen)
+    fun hostBLeads(): String = cursor.bLeads(filterOpen || pmenu.open)
 
     /** apply one key; everything but leaving (returned as [MapCursor.Do.Leave] for the caller) */
     private fun applyKey(k: String): MapCursor.Do {
+        if (pmenu.open) { pmenuDid(pmenu.key(k)); return MapCursor.Do.Nothing }      // every key is the open player menu's
         val d = cursor.key(k, listKeys(), focusQid, filterOpen, MapList.untracked(items))
         when (d) {
             MapCursor.Do.Show -> { listShow(cursor.sel); landOn(cursor.sel) }
             is MapCursor.Do.Select -> { listShow(d.id); landOn(d.id) }
-            MapCursor.Do.PlayerMenu -> onPlayerMenu?.invoke() ?: note("The player menu is not on the tap pad yet")
+            MapCursor.Do.PlayerMenu -> openPlayerMenu()
             is MapCursor.Do.Toggle -> toggleTab(d.key)
             is MapCursor.Do.Track -> onTrackQuest?.invoke(d.id) ?: note("Track is not on the tap pad yet")
             is MapCursor.Do.Focus -> askFocus(d.id)
@@ -3200,7 +3287,7 @@ class MapView(context: Context) : View(context) {
     /** tell the capture where B leads now, so the Home button shows B only when it leads Home */
     private fun syncB() {
         if (!held) return
-        val where = cursor.bLeads(filterOpen)
+        val where = cursor.bLeads(filterOpen || pmenu.open)
         if (where != bSaid && guestTap(GuestPad.bnext(padDoc, home = where == "home"))) bSaid = where
     }
 
@@ -4608,6 +4695,11 @@ class MapView(context: Context) : View(context) {
                 fly = morphOn && morphCard != null)
             else { trackerRect.setEmpty(); flyLand.setEmpty() }
             if (rows >= 0) c.restoreToCount(rows)
+            // the player menu beside the list, from the top (the portrait's height)
+            if (pmenu.open && !morphOn) {
+                val lw = if (showTracker && items.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + 16f else 0f
+                drawPlayerMenu(c, left + BTN_GAP + lw, top + BTN_GAP, top + fh - 64f - (if (hintsOn()) HINT_BAND else 0f), fw - lw - 2f * BTN_GAP)
+            } else { pmenuHits.clear(); pmenuBox.setEmpty() }
         }
 
         // the selected quest's bubble wears the round ring (UI Art: round things get round cursors), touch or controller;
