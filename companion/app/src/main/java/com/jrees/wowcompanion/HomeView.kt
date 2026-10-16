@@ -456,8 +456,10 @@ class HomeView(
         val w = width.toFloat(); val h = height.toFloat()
         val g = UiKit.MODULE_GAP
         if (open) {
-            val chat = now[Part.CHAT]
-            val s = ClassSlot.middle(w, h, now[Part.BARS]?.bottom ?: 0f, g, minOf(w * WHEEL_SLOT_MAX, chat?.width() ?: w / 2f))
+            // the user on test18: "I want the dpad up radial to be about the same size as the pause menu radial": as tall as the space
+            // under the bars allows (the pause wheel fills the same height); no longer held to the chat column's width (it rises from
+            // below now, behind the parting columns)
+            val s = ClassSlot.middle(w, h, now[Part.BARS]?.bottom ?: 0f, g, w * WHEEL_SLOT_MAX)
             wheelRect.set(s.left, s.top, s.left + s.side, s.top + s.side)
             wheelPush = s.push
         }
@@ -2302,8 +2304,8 @@ class HomeView(
         private const val CLASS_LONG_MS = 450L
         /** 1.0.8-test5: the left column's raise while the wheel shows (it slides out from under the chat) */
         private const val CLASS_COVER_Z = 4f
-        /** f-radial-middle: the item / spell wheel's slot is never wider than this share of Home (nor than the chat column) */
-        private const val WHEEL_SLOT_MAX = 0.5f
+        /** f-radial-middle: the item / spell wheel's slot is never wider than this share of Home */
+        private const val WHEEL_SLOT_MAX = 0.6f
         /** the focused quest's card over the map (b121): above the map's 0, under the wheel's lifted left column */
         private const val CARD_Z = 2f
         /** the focused quest over the minimap (Settings > Home, HomeSettings.questOverMap; was the constant QUEST_ABOVE_MAP) */

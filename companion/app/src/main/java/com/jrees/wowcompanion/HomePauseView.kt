@@ -247,6 +247,8 @@ class HomePauseView(
     /** Spells' "gamemenu" document (r12): the menu's list and the game's countdown; the countdown's end by a log out closes it */
     fun onGameMenuDoc(msg: JSONObject) {
         gmDoc = msg
+        // gm3: the game's own menu is up: tap its button for what was asked
+        if (msg.optString("why") == "shown") gameShown(msg)
         val m = gm ?: return
         m.update(msg)
         Log.i(TAG, "pause: game menu doc ${msg.optString("why")}" + (m.count?.let { " ${it.kind} ${it.left}" } ?: "") +
@@ -390,7 +392,7 @@ class HomePauseView(
     /** the Game Menu on the cleared stage: the last known list at once, Spells' fresh one follows the info tap */
     private fun openMenu() {
         // a countdown is only shown from a FRESH document (the kept one may carry an old count)
-        gm = GameMenuModel.Flow(GameMenuModel.items(gmDoc))
+        gm = GameMenuModel.Flow(GameMenuModel.items(gmDoc), GameMenuModel.micro(gmDoc))
         gmPressed = -1; line = null
         val sent = TapBridge.tap(context, questsPad(), GameMenuModel.ROW, GameMenuModel.COL_INFO) { why -> Log.i(TAG, "pause: game menu info refused ($why)") }
         Log.i(TAG, "pause: game menu open (info ${if (sent) "asked" else "NOT asked: no gamemenu row yet"})")
@@ -410,6 +412,14 @@ class HomePauseView(
                 lastActAt = SystemClock.uptimeMillis()
                 // Log Out / Exit stay for the game's countdown (Spells' document); Macros / Edit Mode open the game's own window: go
                 if (a.item.key != "logout" && a.item.key != "quit") close()
+            }
+            is GameMenuModel.Act.Game -> {
+                // gm3 (the user's pick A): the wheel goes; once the controller is let go, the game's Menu button, then its own button
+                Log.i(TAG, "pause: game menu ${a.item.key} -> the game's own menu (its Menu button)")
+                gameWant = a.item.key; gameMicro = a.micro; gameWantAt = SystemClock.uptimeMillis()
+                menuPending = true
+                close()
+                postDelayed({ menuEscape("no answer to the free in $MENU_ESC_MS ms") }, MENU_ESC_MS)
             }
             is GameMenuModel.Act.Escape -> {
                 // no clean route (the user's "Escape fallback"): the menu folds, the controller goes, the game's own menu opens on top
@@ -431,9 +441,46 @@ class HomePauseView(
     private fun menuEscape(why: String) {
         if (!menuPending) return
         menuPending = false
+        if (gameWant != null) { gameMenuTap(why); return }
         val sent = GameInput.escape()
         Log.i(TAG, "pause: menu Escape ${if (sent) "sent" else "NOT sent"} ($why)")
         if (!sent) { hintText = "Couldn't reach the game"; hintAt = SystemClock.uptimeMillis(); if (!isOpen) visibility = VISIBLE; invalidate() }
+    }
+
+    /** gm3: the entry asked for through the game's own menu, its Menu button's box, and when (0 = none) */
+    private var gameWant: String? = null
+    private var gameMicro: GameMenuModel.Box? = null
+    private var gameWantAt = 0L
+    /** gm3: a fight (the host's): said when the game's menu does not come */
+    var inFight: () -> Boolean = { false }
+
+    /** gm3 step 1: the game's Menu micro button, as a finger would press it (the game opens its own menu) */
+    private fun gameMenuTap(why: String) {
+        val m = gameMicro ?: return gameFailed("no Menu button")
+        val sent = TapBridge.tapGame(context, questsPad(), m.cx, m.cy, "the game's Menu button") { w -> Log.i(TAG, "pause: Menu button tap refused ($w)") }
+        Log.i(TAG, "pause: the game's Menu button ${if (sent) "tapped" else "NOT tapped"} for $gameWant ($why)")
+        if (!sent) { gameFailed("not tapped"); return }
+        postDelayed({ if (gameWant != null) gameFailed("the game's menu did not open") }, GAME_MENU_WAIT_MS)
+    }
+    /** gm3 step 2: the game's menu is up: its own Options / AddOns / Support button */
+    private fun gameShown(msg: JSONObject) {
+        val key = gameWant ?: return
+        if (SystemClock.uptimeMillis() - gameWantAt > GAME_WANT_MS) { gameWant = null; return }
+        gameWant = null
+        val b = GameMenuModel.target(msg, key) ?: run { showHint("The game's menu has no ${key.replaceFirstChar { it.uppercase() }} now"); return }
+        val sent = TapBridge.tapGame(context, questsPad(), b.cx, b.cy, "the game's $key button") { w -> Log.i(TAG, "pause: $key tap refused ($w)") }
+        Log.i(TAG, "pause: the game's $key button ${if (sent) "tapped" else "NOT tapped"}")
+        if (!sent) showHint("Couldn't reach the game")
+    }
+    private fun gameFailed(why: String) {
+        if (gameWant == null) return
+        gameWant = null
+        Log.i(TAG, "pause: game menu route failed ($why)")
+        // the user (via tracking): "In combat, say why nothing happens instead of failing silently"
+        showHint(if (inFight()) "Not during a fight: the game keeps its menu closed" else "The game's menu didn't open")
+    }
+    private fun showHint(text: String) {
+        hintText = text; hintAt = SystemClock.uptimeMillis(); if (!isOpen) visibility = VISIBLE; invalidate()
     }
 
     /** the preview only: draw the motion frozen at this t (ms along the open), -1 = live */
@@ -615,6 +662,9 @@ class HomePauseView(
         const val CONFIRM_MS = 4_000L
         /** the Game Menu's Escape goes this long after the pick at the latest (the free's answer took 90-370 ms on b65) */
         const val MENU_ESC_MS = 600L
+        /** gm3: the game's menu should show this soon after the Menu button's tap; a "shown" later than [GAME_WANT_MS] is not ours */
+        const val GAME_MENU_WAIT_MS = 1_500L
+        const val GAME_WANT_MS = 3_000L
         /** the user 2026-10-09: "the animation for it needs to be WAAAAAAY faster": the kit's 600 ms open plays in 120 ms */
         const val SPEED = 600f / 120f
         const val HINT_Y = 64f

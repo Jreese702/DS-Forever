@@ -806,6 +806,14 @@ class HomeBack {
             who != null && who in left && nowMs - leftAtMs in 0..windowMs
 
         /**
+         * a B release of a WHEEL's guest (the user on 1.0.9-test18: "The b animation on the radicals plays and then plays again when its at
+         * the bottom of the screen"): B on the item / spell / pause wheel frees "radial" in the game (Quests q17), and the release came back
+         * here as "B went Home", so the bar's Home disc played its press AGAIN after the wheel's own close had played. The wheel's close is
+         * the one animation: no bar press, no room change ("class" alike)
+         */
+        fun wheelB(who: String?): Boolean = who == "pad:radial" || who == "pad:class"
+
+        /**
          * b94 (Spells' find, 23:33:56): the capture ids a move from room [was] to room [to] really LEFT. A move between rooms of the SAME
          * id (Spellbook -> Talents, both "spells": Book's "taken" shows the book face, then "page-talents" the Talents room) leaves
          * nothing, so the player's B right after it is not taken for that move's echo

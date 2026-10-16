@@ -755,6 +755,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         pauseView.onPick = { s -> pausePick(s) }
+        pauseView.inFight = { homeView.inFight() }
         pauseView.barsBottom = {
             if (room != Room.HOME || !homeView.isShown || homeView.barsBottom() <= 0f) 0f else {
                 val a = IntArray(2); val b = IntArray(2)
@@ -1659,6 +1660,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     val who = homeView.bReleasedBy()
                     if (HomeBack.isOwnLeave(who, leftIds, leftAt, SystemClock.uptimeMillis()))
                         Log.i("WCHOME", "release by B from $who: the app's own leave, not the player's B (stays on $room)")
+                    else if (HomeBack.wheelB(who))
+                        Log.i("WCHOME", "release by B from $who: a wheel's own B (its close is the animation; no bar press)")
                     else { strip.homePressed(); if (room != Room.HOME) show(Room.HOME) }
                 }
                 // A FIGHT LET GO OF THE ROOM ON SCREEN (rel by "combat": the user 2026-10-01, "I get stuck in there ... Controller inputs

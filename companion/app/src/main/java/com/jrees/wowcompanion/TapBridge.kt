@@ -121,12 +121,17 @@ object TapBridge {
         val rows = pad.optJSONObject("rows") ?: return null
         if (!rows.has(op)) return null
         val row = rows.optInt(op, -1)
-        val pw = pad.optDouble("pw", 0.0); val ph = pad.optDouble("ph", 0.0)
         val cw = pad.optDouble("cw", 0.0); val ch = pad.optDouble("ch", 0.0)
-        if (row < 0 || pw <= 0 || ph <= 0 || cw <= 0 || ch <= 0) return null
+        if (row < 0 || cw <= 0 || ch <= 0) return null
         if (col < 0 || col >= pad.optInt("cols", 0)) return null
-        val gx = pad.optDouble("x", 0.0) + (col + 0.5) * cw
-        val gy = pad.optDouble("y", 0.0) + (row + 0.5) * ch
+        return gamePoint(ctx, pad, pad.optDouble("x", 0.0) + (col + 0.5) * cw, pad.optDouble("y", 0.0) + (row + 0.5) * ch)
+    }
+
+    /** display pixel of game px ([gx], [gy]) (the pad's px: its pw x ph, top-left), or null (no trusted geometry) */
+    private fun gamePoint(ctx: Context, pad: JSONObject?, gx: Double, gy: Double): Point? {
+        if (pad == null) return null
+        val pw = pad.optDouble("pw", 0.0); val ph = pad.optDouble("ph", 0.0)
+        if (pw <= 0 || ph <= 0 || gx < 0 || gy < 0 || gx > pw || gy > ph) return null
         val d = gameDisplay(ctx) ?: run { Log.w(TAG, "refused: no trusted display size"); return null }
         // The game fills the top screen (960x540 scaled 2x), so both must have the SAME SHAPE. A mismatch
         // means the size is wrong -- the old bug gave 1240x1080 (1.15) against the game's 1.78 -- and a tap
@@ -170,6 +175,18 @@ object TapBridge {
     fun tapsSpaced(ctx: Context, pad: JSONObject?, cells: List<Pair<String, Int>>, gapMs: Long, onFail: (String) -> Unit = {}): Boolean =
         send(ctx, pad, cells, gapMs.coerceIn(0L, 1000L), onFail)
 
+    /**
+     * gm3 (the game menu's Options / AddOns / Support, the user's pick A): one tap at game px ([gx], [gy]) - a GAME control's own box the
+     * add-on published (the Menu micro button, a button of the game's own menu), so the game takes it as the finger click it is. The same
+     * live gate, quiet pad and single worker as the cells; never keys.
+     */
+    fun tapGame(ctx: Context, pad: JSONObject?, gx: Double, gy: Double, what: String, onFail: (String) -> Unit = {}): Boolean {
+        val now = System.currentTimeMillis()
+        if (!GameInput.live(now)) { onFail("${GameInput.gate.why(now) ?: "The game is not live"}: nothing was sent"); return false }
+        val c = gamePoint(ctx, pad, gx, gy) ?: run { onFail("no trusted geometry for $what"); return false }
+        return clicks(listOf(c), 0L, what, null, onFail)
+    }
+
     private fun send(ctx: Context, pad: JSONObject?, cells: List<Pair<String, Int>>, gapMs: Long, onFail: (String) -> Unit): Boolean {
         if (cells.isEmpty()) return false
         val now = System.currentTimeMillis()
@@ -211,6 +228,11 @@ object TapBridge {
             !KEYS_ON -> "off"; !inLauncher -> "no launcher"; GameInput.typing -> "typing"
             TapKeys.session(pad) != keySession -> "no handshake"; else -> "a cell without keys" } else null
         val pts = cells.map { (op, col) -> cellCentre(ctx, pad, op, col) ?: return false }
+        return clicks(pts, gapMs, cells.joinToString(" ") { "${it.first}:${it.second}" }, keysOff, onFail)
+    }
+
+    /** the taps at display points [pts], in one batch on the worker, after the quiet pad */
+    private fun clicks(pts: List<Point>, gapMs: Long, what: String, keysOff: String?, onFail: (String) -> Unit): Boolean {
         // -d 0: the top screen. The companion holds focus on display 4, and a bare input command would deliver to itself.
         // ONE root shell for every tap (RootShell, 2026-10-06: a new su per tap was a Magisk toast per tap); the taps of one action
         // are one batch, so nothing else lands between them
@@ -225,7 +247,6 @@ object TapBridge {
         // "nothing held" and tapped with A down. The reader's state is current here (PadHub sets it before calling anyone)
         if (Looper.myLooper() == Looper.getMainLooper()) syncPad(queuedAt)
         val heldAtQueue = heldNow
-        val what = cells.joinToString(" ") { "${it.first}:${it.second}" }
         worker.execute {
             val waited = settle(queuedAt)
             // one line per batch (Quests, after the 23:00 focus padstray): which cells, how long the quiet pad held them, and whether

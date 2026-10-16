@@ -155,9 +155,11 @@ class ClassSlotTest {
         assertTrue("under the bars, above the bottom", m.top >= 208f + g - 0.5f && m.top + m.side <= h - g + 0.5f)
         assertEquals("the columns part by half of it and a gap", m.side / 2f + g, m.push, 0.01f)
     }
-    @Test fun theItemWheelNeverOutgrowsTheChatColumn() {
-        val m = ClassSlot.middle(w, 2000f, 100f, g, chat.right - chat.left)
-        assertTrue(m.side <= chat.right - chat.left + 0.5f)
+    @Test fun theItemWheelFillsTheHeightUnderTheBars() {
+        // test18 ("about the same size as the pause menu radial"): as tall as the space under the bars, within its width cap
+        val m = ClassSlot.middle(w, h, 300f, g, w * 0.6f)
+        assertEquals(h - g - (300f + g), m.side, 0.5f)
+        assertTrue(ClassSlot.middle(w, 2000f, 100f, g, w * 0.6f).side <= w * 0.6f + 0.5f)
     }
 }
 
