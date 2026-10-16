@@ -733,6 +733,7 @@ class InteractView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN -> {
                 downX = e.x; downY = e.y; lastY = e.y; dragging = false
                 dragB = viewB.contains(e.x, e.y)
+                msDrag = System.currentTimeMillis() - msPaneAt < 400L && msPane.contains(e.x, e.y)
                 pressed = hits.lastOrNull { it.first.contains(e.x, e.y) }?.second ?: ""
                 if (pressed == "lt:hold") {
                     ltTouchHoldAt = System.currentTimeMillis(); ltTouchFired = false
@@ -750,7 +751,8 @@ class InteractView(context: Context) : View(context) {
                 }
                 if (!dragging && abs(e.y - downY) > 18f) { dragging = true; pressed = "" }
                 if (dragging) {
-                    if (dragB) scrollB += lastY - e.y else scrollA += lastY - e.y
+                    if (msDrag) { msScrollTo += lastY - e.y; msScroll = msScrollTo }
+                    else if (dragB) scrollB += lastY - e.y else scrollA += lastY - e.y
                     invalidate()
                 }
                 lastY = e.y
@@ -3156,6 +3158,19 @@ class InteractView(context: Context) : View(context) {
 
     // ---- LOOTWIN_SPEC 8 (APPROVED "as drawn", 2026-10-05): BAGS FULL AT A QUEST GIVER
     private val MS_COLS = 6                              // Make Space's tiles per row (the addon's N.MS_COLS)
+    // 1.0.9: the bag pane's scroll (content px, eased toward msScrollTo) and the tooltip's fade during a hold
+    private var msScroll = 0f
+    private var msScrollTo = 0f
+    private var msScrollAt = 0L
+    private var msFollowed: String? = null                 // the chosen tile the scroll last followed (a finger's scroll stays until it moves)
+    private var msPane = RectF()                            // the bag pane as last drawn (its own touch scroll)
+    private var msDrag = false
+    private var msPaneAt = 0L                               // when the bag pane was last drawn (a drag there is the pane's)
+    private var msTipA = 1f
+    private var msTipAt = 0L
+    private val MS_SCROLL_TAU_MS = 70.0
+    private val MS_TIP_FADE_MS = 150f
+    private val MS_EDGE = 40f                                // the pane's edge shade (36 px) and a little more
     private var qSpaceAt = 0L
     private var qSpaceGoneAt = 0L                        // when the quest's Make Space last went (a refusal within 2 s keeps its place)
     private var qStrip = RectF()                         // the quest page's strip, from its last draw
@@ -3256,8 +3271,48 @@ class InteractView(context: Context) : View(context) {
         // the user 10-06: "some of the items in the bags appear to not be selectable" -- the cursor walked 7 wide, the screen 6)
         val gap = 8f; val cols = MS_COLS
         val s = min(76f, (inner.right - 8f - gx - gap * (cols - 1)) / cols)
-        var y = top - 34f
         val chosen = cur?.takeIf { it.startsWith("bag ") } ?: ltPick
+        // 1.0.9 (the user: "when deleting Items, some of them clip off the bottom, and I cannot see them, the menu should sort of
+        // dynamically scroll"): THE BAG PANE SCROLLS. Its content is laid out first; the chosen tile is kept fully in view (with its
+        // bag's name over a first row), eased (MS_SCROLL_TAU_MS); a finger drags it too; a gold arrow at an edge says there is more.
+        val paneTop = top - 34f
+        val paneBot = inner.bottom - UiKit.STRIP - 8f
+        var ly = 0f; var c0 = -1f; var c1 = -1f
+        for (e in arr(sp, "bags")) {
+            val b = e.optInt("bag")
+            ly += 32f
+            val ids = HashMap<Int, Int>()
+            for (it in arr(e, "items")) ids[it.optInt("slot")] = it.optInt("id", 0)
+            val n = e.optInt("slots", 0)
+            for (k in 0 until n) {
+                val sl = k + 1
+                if ("bag $b $sl ${ids[sl] ?: 0}" == chosen) {
+                    val by = ly + (k / cols) * (s + gap)
+                    // clear of the edge's shade and arrow (MS_EDGE): the bag's name over a first row, the shade's height otherwise
+                    c0 = if (k < cols) by - 32f - 8f else by - MS_EDGE; c1 = by + s + MS_EDGE
+                }
+            }
+            ly += ((n + cols - 1) / cols) * (s + gap) + 6f
+        }
+        if ((sp.optJSONArray("skipped")?.length() ?: 0) > 0) ly += 30f
+        ly += 8f
+        val paneH = paneBot - paneTop
+        val maxScroll = max(0f, ly - paneH)
+        if (chosen != msFollowed && c0 >= 0f) {
+            msFollowed = chosen
+            if (c0 < msScrollTo) msScrollTo = c0 else if (c1 > msScrollTo + paneH) msScrollTo = c1 - paneH
+        }
+        msScrollTo = msScrollTo.coerceIn(0f, maxScroll)
+        val dtS = if (msScrollAt > 0L) (now - msScrollAt).coerceIn(0L, 100L) else 0L
+        msScrollAt = now
+        msScroll = if (abs(msScrollTo - msScroll) < 3f) msScrollTo
+            else msScroll + (msScrollTo - msScroll) * (1f - kotlin.math.exp(-dtS / MS_SCROLL_TAU_MS)).toFloat()
+        msScroll = msScroll.coerceIn(0f, maxScroll)
+        if (msScroll != msScrollTo) postInvalidateOnAnimation()
+        msPane = RectF(gx - 6f, paneTop, inner.right, paneBot); msPaneAt = System.currentTimeMillis()
+        val sc0 = c.save()
+        c.clipRect(msPane)
+        var y = paneTop - msScroll
         // the hold, known before the tiles are drawn (the chosen item sinks and greys with it)
         val holdIdE = sp.optJSONObject("hold")?.optString("id")
         val heldE = if (msStripText != null) 0f else max(max(
@@ -3307,7 +3362,8 @@ class InteractView(context: Context) : View(context) {
                     else -> BagsView.drawSlot(c, box, it, bagPaints)
                 }
                 if ("$b $sl" in freedKeys) c.drawRect(RectF(box).apply { inset(1.5f, 1.5f) }, rim)
-                hits.add(box to "lt:$key")
+                if (box.bottom > msPane.top && box.top < msPane.bottom)
+                    hits.add(RectF(box.left, max(box.top, msPane.top), box.right, min(box.bottom, msPane.bottom)) to "lt:$key")
                 if (key == chosen) { chosenBox = box; chosenItem = it }
             }
             y += ((n + cols - 1) / cols) * (s + gap) + 6f
@@ -3317,6 +3373,30 @@ class InteractView(context: Context) : View(context) {
             c.drawText("Not shown: your " + skipped.joinToString(" and ") { it.lowercase() } + " (they can't hold this loot)",
                 gx + 2f, y + 22f, UiKit.bodyPaint(20f, Theme.dim))
         chosenBox?.let { UiKit.focus(c, it) }
+        c.restoreToCount(sc0)
+        // more above / below: a soft shade at that edge and the kit's small gold arrow in it
+        if (maxScroll > 1f) {
+            val sh = Paint()
+            if (msScroll > 1f) {
+                sh.shader = LinearGradient(0f, msPane.top, 0f, msPane.top + MS_EDGE - 4f, Color.argb(150, 0, 0, 0), Color.TRANSPARENT, Shader.TileMode.CLAMP)
+                c.drawRect(msPane.left, msPane.top, msPane.right, msPane.top + MS_EDGE - 4f, sh)
+                UiKit.moveArrowsUpDown(c, RectF(msPane.left, msPane.top + 4f, msPane.right, msPane.top + 30f), up = true, down = false,
+                    size = 18f, width = 26f, around = true)
+            }
+            if (msScroll < maxScroll - 1f) {
+                sh.shader = LinearGradient(0f, msPane.bottom - MS_EDGE + 4f, 0f, msPane.bottom, Color.TRANSPARENT, Color.argb(150, 0, 0, 0), Shader.TileMode.CLAMP)
+                c.drawRect(msPane.left, msPane.bottom - MS_EDGE + 4f, msPane.right, msPane.bottom, sh)
+                UiKit.moveArrowsUpDown(c, RectF(msPane.left, msPane.bottom - 30f, msPane.right, msPane.bottom - 4f), up = false, down = true,
+                    size = 18f, width = 26f, around = true)
+            }
+        }
+        // the tooltip, out of the way while the hold runs (the user: "Once I start to hold A, I want the tooltip to fade out of the
+        // way"): to 0 in MS_TIP_FADE_MS from the hold's start, back as fast when it is let go early
+        val dtT = if (msTipAt > 0L) (now - msTipAt).coerceIn(0L, 100L) else 0L
+        msTipAt = now
+        val tipWant = if (heldE > 0f || dzKey != null) 0f else 1f
+        msTipA = if (tipWant < msTipA) max(tipWant, msTipA - dtT.toFloat() / MS_TIP_FADE_MS) else min(tipWant, msTipA + dtT.toFloat() / MS_TIP_FADE_MS)
+        if (msTipA != tipWant) postInvalidateOnAnimation()
         // the item breaks in half, greys and fades (the user's pick for the items); a blue / purple one waits for the game's Yes / No
         dzBox?.let { bx ->
             val t = now - dzAt; val itm = dzItem
@@ -3326,8 +3406,10 @@ class InteractView(context: Context) : View(context) {
         if (dzKey != null) postInvalidateOnAnimation()
         // THE TOOLTIP BY THE CURSOR: beside the chosen slot, flipped left at the edge, raised above the strip, never cut
         val strip = UiKit.strip(c, inner)
-        if (chosen != null && chosenBox != null && msStripText == null) tipFor(chosen)?.let { t ->
+        if (chosen != null && chosenBox != null && msStripText == null && msTipA > 0.01f && chosenBox!!.bottom > msPane.top &&
+            chosenBox!!.top < msPane.bottom) tipFor(chosen)?.let { t ->
             val box = chosenBox!!
+            val tl = c.saveLayerAlpha(null, (255 * msTipA).toInt())
             val tw = 420f; val g = 12f
             var ty = box.top
             val tx = when {
@@ -3338,6 +3420,7 @@ class InteractView(context: Context) : View(context) {
             tipStack.draw(c, tx, ty, tw, chosenItem?.let { TipStack.strip(it.optString("name", "")) }?.takeIf { it.isNotEmpty() }
                 ?: (t.optJSONArray("lines")?.optJSONObject(0)?.optString("t") ?: ""), chosenItem?.optInt("quality", 1) ?: 1, t,
                 r.top + 112f, inner.bottom - UiKit.STRIP - 10f, tx, compareHeld = false, steps = tipTs, hint = false)
+            c.restoreToCount(tl)
         }
         // the strip: the words; Hold to delete (A) with its ring; Back (B)
         val bw = 300f; val bh = strip.height() - 30f
