@@ -24,6 +24,7 @@ object GuestPad {
     private const val BNEXT_BACK = 7
     private const val FIRST = 8
     private const val REFUSED = 37      // the quest actions grow down from 39 (39 untrack, 38 share), so this sits under them
+    private const val PLAYER_MENU = 34  // Quests.lua q38: the game's own player menu (36 / 35 are Start's)
 
     /** hold (true) or free (false) the controller for guest [id] */
     fun cells(pad: JSONObject?, id: String, hold: Boolean): List<Pair<String, Int>>? {
@@ -40,6 +41,9 @@ object GuestPad {
 
     /** the holder turned a press down because of the fight: the addon calls the capture's refused(), Home flashes red */
     fun refused(pad: JSONObject?): List<Pair<String, Int>>? = code(pad, REFUSED)
+
+    /** the game's own player menu, the one the player's portrait opens (the map module's portrait) */
+    fun playerMenu(pad: JSONObject?): List<Pair<String, Int>>? = code(pad, PLAYER_MENU)
 
     private fun code(pad: JSONObject?, col: Int): List<Pair<String, Int>>? =
         if (pad?.optJSONObject("rows")?.has(ROW) == true) listOf(ROW to col) else null

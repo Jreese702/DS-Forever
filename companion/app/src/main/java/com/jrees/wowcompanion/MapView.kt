@@ -1327,6 +1327,7 @@ class MapView(context: Context) : View(context) {
                 // the list starts settled, the focused quest in its top spot
                 listFirst = 0; listShow(shownFocus())
                 rowPos.clear(); listScroll = Float.NaN; listGroundH = Float.NaN
+                openPathAt = android.os.SystemClock.elapsedRealtime()
             }
         }
         morphCard = card?.let { RectF(it) }
@@ -1395,7 +1396,7 @@ class MapView(context: Context) : View(context) {
         if (autoZoom && followPlayer && recentreFrom == null) {
             val keepW = lastFieldW; val keepH = lastFieldH; val keepT = lastTrackPx
             lastFieldW = fw; lastFieldH = fh
-            lastTrackPx = if (showTracker && tracked.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + BTN_GAP else 0f
+            lastTrackPx = if (showTracker && items.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + BTN_GAP else 0f
             fr = computeFrame(m, px, py)
             lastFieldW = keepW; lastFieldH = keepH; lastTrackPx = keepT
         }
@@ -1409,7 +1410,7 @@ class MapView(context: Context) : View(context) {
         if (zoneView) { cxT = 0.5f; cyT = 0.5f }
         val hx = 0.5f / zT
         val hy = hx * rc.width.toFloat() / rc.height.toFloat() * (fh / fw)
-        val tp = if (showTracker && tracked.isNotEmpty() && !zoneView) min(TRACKER_W, fw * 0.34f) + BTN_GAP else 0f
+        val tp = if (showTracker && items.isNotEmpty() && !zoneView) min(TRACKER_W, fw * 0.34f) + BTN_GAP else 0f
         val cxV = cxT - (tp / 2f) / fw * (2f * hx)
         out[0] = r.left + (px.toFloat() - (cxV - hx)) / (2f * hx) * fw
         out[1] = r.top + hh + (py.toFloat() - (cyT - hy)) / (2f * hy) * fh
@@ -1507,7 +1508,7 @@ class MapView(context: Context) : View(context) {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (touchOwner == OWN_LIST && !listMoved)
-                        trackerHits.firstOrNull { it.first.contains(e.x, e.y) }?.let { (_, q) -> touchQuest(q.optInt("id", 0), q) }
+                        trackerHits.firstOrNull { it.first.contains(e.x, e.y) }?.let { (_, item) -> touchItem(item) }
                     touchOwner = OWN_NONE
                 }
                 MotionEvent.ACTION_CANCEL -> touchOwner = OWN_NONE
@@ -2148,6 +2149,8 @@ class MapView(context: Context) : View(context) {
         refreshDefault(m)
         fireFocus()
         noteIndoor(m)
+        val where = m?.let { it.optString("zone", "") + "\u0000" + it.optString("subzone", "") }
+        if (where != null && where != listWhere) { listWhere = where; rebuildItems() }
         trackFromMap(m)
         postInvalidate()
     }
@@ -2731,7 +2734,7 @@ class MapView(context: Context) : View(context) {
     /** every quest of the last quests document by id (the focused one may not be a tracked one: p-card-invisible) */
     private val questById = HashMap<Int, JSONObject>()
     private var trackedMap = Int.MIN_VALUE
-    private val trackerHits = ArrayList<Pair<RectF, JSONObject>>()
+    private val trackerHits = ArrayList<Pair<RectF, MapList.Item>>()
     private val TRACKER_W = 400f
 
     // ---- NUMBERED QUEST BUBBLES (the user, LATER.md item 10, 2026-09-30: "in the map function the yellow quest bubble
@@ -2864,6 +2867,100 @@ class MapView(context: Context) : View(context) {
     private var listMaxFirst = 0              // the furthest it may scroll (its last quest in view)
     private fun trackedIds(): List<Int> = tracked.map { it.optInt("id", 0) }
 
+    // ---- THE WHOLE LIST (the user, 2026-10-16; [MapList]): the portrait above the quests, the tracked quests, then the Untracked
+    // section with one tab per quest-log header, every tab closed until the player opens it. [items] is what the list draws and the
+    // cursor walks; it is rebuilt when the quests document, the tracked order or the zone changes, or a tab opens / closes.
+    /** A on an untracked quest: the host's way to TRACK it (QuestPad's watch). Null: A only says so. */
+    var onTrackQuest: ((questId: Int) -> Unit)? = null
+    /** A on the portrait: the host's way to open the game's own player menu (Quests q38). Null: A only says so. */
+    var onPlayerMenu: (() -> Unit)? = null
+    private var items: List<MapList.Item> = emptyList()
+    private val untrackedLog = ArrayList<JSONObject>()        // the log's untracked quests, in log order
+    private var portrait: JSONObject? = null                      // the quests document's `me`: name, class file, class word
+    private var ownHeaders: List<String> = emptyList()         // the log headers that are the player's class or professions
+    private val openTabs = HashMap<String, Boolean>()          // the tabs the player opened (all closed until then)
+    private var listWhere: String? = null                      // the zone and subzone the tabs were sorted for
+    private fun listKeys(): List<Int> = MapList.stops(items)
+    private fun groupZone(key: Int): String? = (items.firstOrNull { it.key == key } as? MapList.Item.Group)?.zone
+
+    private fun rebuildItems() {
+        val m = map
+        val entries = untrackedLog.map { e ->
+            MapList.Entry(e.optInt("id", 0), e.optString("zone", ""), if (e.has("lv")) e.optInt("lv") else null,
+                here = e.has("x") && e.has("y"))
+        }
+        val current = listOfNotNull(m?.optString("subzone", "")?.ifEmpty { null }, m?.optString("zone", "")?.ifEmpty { null })
+        val groups = MapList.groups(entries, questsPlv, current, ownHeaders)
+        items = MapList.items(portrait != null && trackedKnown, trackedIds(), groups) { z -> openTabs[z] == true }
+    }
+
+    private fun toggleTab(key: Int) {
+        val z = groupZone(key) ?: return
+        openTabs[z] = openTabs[z] != true
+        rebuildItems()
+        listShow(key)
+        invalidate()
+    }
+
+    /** the cursor came onto [key]: the portrait centres the map on the player, a tracked quest comes into view */
+    private fun landOn(key: Int) {
+        when {
+            key == MapList.ME -> centreOnPlayer()
+            key > 0 && key in trackedNo -> revealSelected()
+        }
+    }
+
+    /** the portrait highlighted (the user: "it should center my current position on the map"): follow the player, at this zoom */
+    private fun centreOnPlayer() {
+        followPlayer = true
+        recentreFrom = null
+        focusRestoreZoom = Float.NaN
+        zoomEase = Float.NaN
+        autoZoom = false; autoZoomCur = zoom
+        camAncX = Float.NaN
+        invalidate()
+    }
+
+    /** a touch on a row of the list: a quest as always; the portrait centres (again: its menu); a tab opens / closes */
+    private fun touchItem(it: MapList.Item) {
+        when (it) {
+            is MapList.Item.Tracked -> touchQuest(it.id, tracked.firstOrNull { e -> e.optInt("id", 0) == it.id })
+            is MapList.Item.Me -> {
+                if (cursor.shown && cursor.sel == MapList.ME) onPlayerMenu?.invoke()
+                cursor.touched(MapList.ME, listKeys()); centreOnPlayer()
+            }
+            is MapList.Item.Group -> { cursor.touched(it.key, listKeys()); toggleTab(it.key) }
+            is MapList.Item.Untracked -> { cursor.touched(it.id, listKeys()); listShow(it.id) }
+            is MapList.Item.Section -> {}
+        }
+        invalidate()
+    }
+
+    // ---- THE OPEN'S DOTTED LINE (the user, 2026-10-16: "Opening the map module defaults the cursor on the currently focused quest
+    // ... and highlights a dotted line slowly moving towards the quest marker if it is available. (only show this when opening the
+    // map module)"): from the player to the focused quest's mark, its dots marching toward the mark, for OPEN_PATH_MS after an open.
+    private var openPathAt = 0L
+    private val OPEN_PATH_MS = 6000L
+    private val pPath = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+    private val pathTmp = Path()
+
+    private fun drawOpenPath(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float) {
+        val age = android.os.SystemClock.elapsedRealtime() - openPathAt
+        if (openPathAt == 0L || age >= OPEN_PATH_MS) return
+        val len = hypot(x1 - x0, y1 - y0)
+        if (len < 40f) return
+        val a = (min(1f, age / 300f) * min(1f, (OPEN_PATH_MS - age) / 1200f)).coerceIn(0f, 1f)
+        // the dots: 16 px apart, moving 24 px a second toward the mark (a dash path's phase runs against the path, hence minus)
+        val phase = -(age / 1000f * 24f) % 16f
+        pathTmp.reset(); pathTmp.moveTo(x0, y0); pathTmp.lineTo(x1, y1)
+        pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
+        pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * a).toInt(), 0, 0, 0); c.drawPath(pathTmp, pPath)
+        pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * a).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
+        c.drawPath(pathTmp, pPath)
+        pPath.pathEffect = null
+        postInvalidateOnAnimation()
+    }
+
     // ---- THE CONTROLS LINE (the user, 2026-09-30: "we still need to add the one line to the bottom with the focus controlls and
     // stuff for that screen"): the kit's hints (UiKit.hints: glyph + word, as the bar's "A Open  B Back"), on a slim band along the
     // field's bottom, while the map holds the controller (the Map room's guest, or a host that says so with [padHints]). The
@@ -2901,7 +2998,14 @@ class MapView(context: Context) : View(context) {
         val sel = if (cursor.shown && cursor.sel != 0 && ids.contains(cursor.sel)) cursor.sel else 0
         val q = if (sel != 0) tracked.firstOrNull { it.optInt("id", 0) == sel } else null
         val pairs = ArrayList<Pair<String, String>>()
-        if (ids.size > 1) pairs.add(glyph("up") to "Select")
+        val stops = listKeys()
+        val at = if (cursor.shown && stops.contains(cursor.sel)) cursor.sel else 0
+        if (stops.size > 1) pairs.add(glyph("up") to "Select")
+        when {
+            at == MapList.ME -> if (onPlayerMenu != null) pairs.add(glyph("a") to "Menu")
+            MapList.isGroup(at) -> pairs.add(glyph("a") to (if (openTabs[groupZone(at)] == true) "Close" else "Open"))
+            at > 0 && at in MapList.untracked(items) -> if (onTrackQuest != null) pairs.add(glyph("a") to "Track")
+        }
         if (sel != 0) {
             if (sel != focusQid) pairs.add(glyph("a") to "Focus")
             else if (onUnfocusQuest != null) pairs.add(glyph("a") to "Unfocus")
@@ -2966,6 +3070,7 @@ class MapView(context: Context) : View(context) {
         if (tracked.size < 2) return
         val f = shownFocus()                     // the game's focus, else the default focus
         tracked.sortBy { e -> val id = e.optInt("id", 0); if (id == f && f != 0) 0 else trackedNo[id] ?: Int.MAX_VALUE }
+        if (!orderingDoc) rebuildItems()
         if (trackedIds() != before) {          // against the order that was SHOWN, so an unchanged list never scrolls
             if (cursor.shown && cursor.sel != 0) listShow(cursor.sel) else listFirst = 0
             postInvalidate()
@@ -2974,7 +3079,7 @@ class MapView(context: Context) : View(context) {
 
     /** keep [id] in the list's window */
     private fun listShow(id: Int) {
-        val i = trackedIds().indexOf(id)
+        val i = items.indexOfFirst { it.key == id && it !is MapList.Item.Section }
         if (i < 0) return
         if (i < listFirst) listFirst = i
         else if (i >= listFirst + listFits) listFirst = i - listFits + 1
@@ -2982,7 +3087,7 @@ class MapView(context: Context) : View(context) {
 
     /** a touch picked quest [id]: select it (highlighted at once) and focus it, as the list always did */
     private fun touchQuest(id: Int, q: JSONObject?) {
-        cursor.touched(id, trackedIds())
+        cursor.touched(id, listKeys())
         listShow(id)
         revealSelected()
         if (onFocusQuest != null) askFocus(id)
@@ -3002,6 +3107,7 @@ class MapView(context: Context) : View(context) {
     fun onShown() {
         lastPadN = -1; bSaid = "home"
         cursor.reset()
+        openPathAt = android.os.SystemClock.elapsedRealtime()
         holdAsk.shown()
         askHold()
     }
@@ -3023,7 +3129,7 @@ class MapView(context: Context) : View(context) {
                 if (msg.optBoolean("ok")) {
                     held = true; bSaid = "home"; syncB()
                     // the room just took the controller: the selection is shown at once, on the focused quest, else the first
-                    if (cursor.startAt(trackedIds(), shownFocus())) { listShow(cursor.sel); revealSelected() }
+                    if (cursor.startAt(listKeys(), shownFocus())) { listShow(cursor.sel); revealSelected() }
                 }
             }
             "free", "leave" -> held = false
@@ -3056,7 +3162,7 @@ class MapView(context: Context) : View(context) {
 
     /** the host's full map just took the controller: the selection SHOWN at once (the focused quest, else the first) */
     fun hostStart() {
-        if (cursor.startAt(trackedIds(), shownFocus())) { listShow(cursor.sel); revealSelected() }
+        if (cursor.startAt(listKeys(), shownFocus())) { listShow(cursor.sel); revealSelected() }
         invalidate()
     }
 
@@ -3065,10 +3171,13 @@ class MapView(context: Context) : View(context) {
 
     /** apply one key; everything but leaving (returned as [MapCursor.Do.Leave] for the caller) */
     private fun applyKey(k: String): MapCursor.Do {
-        val d = cursor.key(k, trackedIds(), focusQid, filterOpen)
+        val d = cursor.key(k, listKeys(), focusQid, filterOpen, MapList.untracked(items))
         when (d) {
-            MapCursor.Do.Show -> { listShow(cursor.sel); revealSelected() }
-            is MapCursor.Do.Select -> { listShow(d.id); revealSelected() }
+            MapCursor.Do.Show -> { listShow(cursor.sel); landOn(cursor.sel) }
+            is MapCursor.Do.Select -> { listShow(d.id); landOn(d.id) }
+            MapCursor.Do.PlayerMenu -> onPlayerMenu?.invoke() ?: note("The player menu is not on the tap pad yet")
+            is MapCursor.Do.Toggle -> toggleTab(d.key)
+            is MapCursor.Do.Track -> onTrackQuest?.invoke(d.id) ?: note("Track is not on the tap pad yet")
             is MapCursor.Do.Focus -> askFocus(d.id)
             is MapCursor.Do.Unfocus -> onUnfocusQuest?.invoke(d.id) ?: note("Unfocus is not on the tap pad yet")
             is MapCursor.Do.Untrack -> onUntrackQuest?.invoke(d.id) ?: note("Untrack is not on the tap pad yet")
@@ -3106,6 +3215,9 @@ class MapView(context: Context) : View(context) {
         questById.clear()
         trackedNo.clear()
         trackedMap = q.optInt("mapID", Int.MIN_VALUE)
+        untrackedLog.clear()
+        portrait = q.optJSONObject("me")
+        ownHeaders = q.optJSONArray("own")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it, "").ifEmpty { null } } } ?: emptyList()
         val list = q.optJSONArray("list") ?: return
         var docFocus = 0
         for (i in 0 until list.length()) {
@@ -3116,7 +3228,7 @@ class MapView(context: Context) : View(context) {
                 tracked.add(e)
                 val id = e.optInt("id", 0)
                 if (id != 0) trackedNo[id] = tracked.size
-            }
+            } else if (e.optInt("id", 0) != 0) untrackedLog.add(e)
         }
         // "none" too when the map document does not say (an older add-on left superTracked out for none: test24's stuck Unfocus)
         focusQid = MapCursor.focusFromQuests(docFocus, map?.has("superTracked") == true, focusQid)
@@ -3127,8 +3239,9 @@ class MapView(context: Context) : View(context) {
         orderTracked(shownBefore)
         refreshDefault(map)                     // the tracked list changed: the default focus may too
         fireFocus()
-        cursor.keepValid(trackedIds())
-        listFirst = listFirst.coerceIn(0, (tracked.size - 1).coerceAtLeast(0))
+        rebuildItems()
+        cursor.keepValid(listKeys())
+        listFirst = listFirst.coerceIn(0, (items.size - 1).coerceAtLeast(0))
         if (askedQid != 0 && askedQid == focusQid) askedQid = 0
         postInvalidate()
     }
@@ -3219,31 +3332,90 @@ class MapView(context: Context) : View(context) {
         UiKit.questCard(c, box, cardFor(e), scale = scale)
     }
 
+    private val ME_H = 92f                   // the portrait's row
+    private val GROUP_H = 52f                // an untracked tab (the quest book's header, smaller)
+    private val SECTION_H = 62f              // the "Untracked" line (UiKit.trackerHeader)
+
+    /** one item's height in the list */
+    private fun itemH(it: MapList.Item): Float = when (it) {
+        is MapList.Item.Me -> ME_H
+        is MapList.Item.Tracked -> tracked.firstOrNull { e -> e.optInt("id", 0) == it.id }?.let { e -> rowContentH(e) } ?: 0f
+        is MapList.Item.Section -> SECTION_H
+        is MapList.Item.Group -> GROUP_H
+        is MapList.Item.Untracked -> questById[it.id]?.let { e -> rowContentH(e) } ?: 0f
+    }
+
+    /** the portrait: the class's picture in the game's round ring, the name and "Level N Class" */
+    private fun drawMe(c: Canvas, box: RectF) {
+        val who = portrait ?: return
+        pFill.color = Color.argb(215, 18, 12, 8); c.drawRoundRect(box, 10f, 10f, pFill)
+        val cy = box.centerY(); val rad = (box.height() - 18f) / 2f; val cx = box.left + 12f + rad
+        pFill.color = Color.argb(255, 8, 6, 4); c.drawCircle(cx, cy, rad, pFill)
+        UiKit.classIcon(who.optString("c", ""))?.let { b ->
+            val save = c.save()
+            pathTmp.reset(); pathTmp.addCircle(cx, cy, rad - 3f, Path.Direction.CW); c.clipPath(pathTmp)
+            c.drawBitmap(b, null, RectF(cx - rad, cy - rad, cx + rad, cy + rad), pBmpList)
+            c.restoreToCount(save)
+        }
+        pRing.color = cGold; c.drawCircle(cx, cy, rad, pRing)
+        val tx = cx + rad + 16f; val tw = box.right - 12f - tx
+        val np = UiKit.bodyPaint(27f, cGold)
+        c.drawText(ellipsize(np, who.optString("n", ""), tw), tx, cy - 6f, np)
+        val lp = UiKit.bodyPaint(21f, cDim)
+        val line = listOfNotNull(questsPlv?.let { "Level $it" }, who.optString("cl", "").ifEmpty { null }).joinToString(" ")
+        c.drawText(ellipsize(lp, line, tw), tx, cy + 24f, lp)
+    }
+
+    /** an untracked tab: the quest book's header bar, the zone, its count and the game's + / - */
+    private fun drawGroup(c: Canvas, g: MapList.Item.Group, r: RectF) {
+        val bar = UiKit.tex("list_heading")
+        if (bar != null) {
+            val cap = 30f / 56f
+            val capS = (bar.height * cap).toInt().coerceIn(1, bar.width / 2); val capD = r.height() * cap
+            srcList.set(0, 0, capS, bar.height); dstList.set(r.left, r.top, r.left + capD, r.bottom); c.drawBitmap(bar, srcList, dstList, pBmpList)
+            srcList.set(capS, 0, bar.width - capS, bar.height); dstList.set(r.left + capD, r.top, r.right - capD, r.bottom); c.drawBitmap(bar, srcList, dstList, pBmpList)
+            srcList.set(bar.width - capS, 0, bar.width, bar.height); dstList.set(r.right - capD, r.top, r.right, r.bottom); c.drawBitmap(bar, srcList, dstList, pBmpList)
+        } else { pFill.color = Color.argb(200, 40, 30, 20); c.drawRect(r, pFill) }
+        val tp = UiKit.bodyPaint(22f, Color.rgb(230, 222, 200)).apply { setShadowLayer(2f, 1f, 1f, Color.BLACK) }
+        val label = "${g.zone} (${g.count})"
+        c.drawText(ellipsize(tp, label, r.width() - 80f), r.left + 18f, r.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+        UiKit.tex(if (g.open) "list_minus" else "list_plus")?.let { b ->
+            val sc = 26f / 26f
+            val bw = b.width * sc; val bh = b.height * sc
+            val cx = r.right - 30f; val cy = r.centerY()
+            dstList.set(cx - bw / 2f, cy - bh / 2f, cx + bw / 2f, cy + bh / 2f); c.drawBitmap(b, null, dstList, pBmpList)
+        }
+    }
+    private val srcList = Rect()
+    private val dstList = RectF()
+    private val pBmpList = Paint(Paint.FILTER_BITMAP_FLAG)
+
     private fun drawTracker(c: Canvas, x: Float, y0: Float, yMax: Float, fly: Boolean) {
         trackerHits.clear()
         trackerRect.setEmpty()
         flyLand.setEmpty()
-        if (tracked.isEmpty() || yMax - y0 < 60f) { rowPos.clear(); listScroll = Float.NaN; listGroundH = Float.NaN; return }
+        if (items.isEmpty() || yMax - y0 < 60f) { rowPos.clear(); listScroll = Float.NaN; listGroundH = Float.NaN; return }
         // the same width onDraw keeps clear (trackPx); during Home's open / close, the full map's (so the top spot holds still)
         val fieldW = if (morphOn) (if (morphOpening) morphTo.width() else morphFrom.width()) else lastFieldW
         val w = min(TRACKER_W, fieldW * 0.34f)
         val dp = UiKit.bodyPaint(23f, cDim)
         val lineO = LINE_O
         val gapC = UiKit.MODULE_GAP
+        val list = items
         // the selected row stands in a gap above and below for its up / down arrows (the user: "add some buffer between current
         // selection and next quests")
-        fun isSel(e: JSONObject) = cursor.shown && e.optInt("id", 0) == cursor.sel
-        fun need(e: JSONObject) = rowContentH(e) + gapC + (if (isSel(e)) 2f * SEL_GAP else 0f)
+        fun isSel(it: MapList.Item) = cursor.shown && it !is MapList.Item.Section && it.key == cursor.sel
+        fun need(it: MapList.Item) = itemH(it) + gapC + (if (isSel(it)) 2f * SEL_GAP else 0f)
         // THE LAYOUT, in list space
-        val n = tracked.size
+        val n = list.size
         val at = FloatArray(n)
         var acc = 0f
-        for (i in 0 until n) { at[i] = acc; acc += need(tracked[i]) }
-        // the furthest it may scroll: until its LAST quest is in view (a list that fits never scrolls)
+        for (i in 0 until n) { at[i] = acc; acc += need(list[i]) }
+        // the furthest it may scroll: until its LAST row is in view (a list that fits never scrolls)
         var tail = 0f
         var maxFirst = n - 1
         for (i in (0 until n).reversed()) {
-            val nd = need(tracked[i])
+            val nd = need(list[i])
             if (y0 + (if (i > 0) lineO else 0f) + tail + nd > yMax) break
             tail += nd; maxFirst = i
         }
@@ -3253,7 +3425,7 @@ class MapView(context: Context) : View(context) {
         var h = (if (above > 0) lineO else 0f)
         var shown = 0
         for (i in listFirst until n) {
-            val nd = need(tracked[i])
+            val nd = need(list[i])
             if (y0 + h + nd + lineO > yMax && shown > 0) break
             h += nd; shown++
         }
@@ -3281,9 +3453,9 @@ class MapView(context: Context) : View(context) {
         listGroundH = ease(listGroundH, h)
         val live = HashSet<Int>(n * 2)
         for (i in 0 until n) {
-            val id = tracked[i].optInt("id", 0)
-            live.add(id)
-            rowPos[id] = ease(rowPos[id] ?: Float.NaN, at[i])
+            val k = list[i].key
+            live.add(k)
+            rowPos[k] = ease(rowPos[k] ?: Float.NaN, at[i])
         }
         rowPos.keys.retainAll(live)
         // no ground: each card is its own well (the box is still the list's, for touches and the rim arrow's keep-out)
@@ -3292,35 +3464,44 @@ class MapView(context: Context) : View(context) {
         val winTop = y0 + (if (above > 0) lineO else 0f)
         val winBot = y0 + gh - (if (more > 0) lineO else 0f)
         if (above > 0) c.drawText("$above more above", x + ROW_PAD_X, y0 + lineO - 10f, dp)
-        // THE TOP SPOT, where Home's flying card lands (see [morph]): the first row as the list puts it once settled
-        if (listFirst == 0) {
-            val e0 = tracked[0]
-            val t0 = winTop + (if (isSel(e0)) SEL_GAP else 0f)
-            flyLand.set(x, t0, x + w, t0 + rowContentH(e0))
+        // THE TOP SPOT, where Home's flying card lands (see [morph]): the first tracked quest's row as the list puts it once settled
+        val ti = list.indexOfFirst { it is MapList.Item.Tracked }
+        if (ti >= listFirst && ti >= 0) {
+            val e0 = tracked.firstOrNull { it.optInt("id", 0) == list[ti].key }
+            if (e0 != null) {
+                val t0 = winTop + at[ti] - at[listFirst] + (if (isSel(list[ti])) SEL_GAP else 0f)
+                flyLand.set(x, t0, x + w, t0 + rowContentH(e0))
+            }
         }
+        val stops = listKeys()
         c.save()
         c.clipRect(x, winTop, x + w, winBot)
         // the FOCUSED quest is drawn last, so while it slides up to the top spot it passes over the others
         for (pass in 0..1) for (i in 0 until n) {
-            val e = tracked[i]
-            val id = e.optInt("id", 0)
-            val front = id == shownFocus()
+            val it = list[i]
+            val front = it is MapList.Item.Tracked && it.id == shownFocus()
             if ((pass == 1) != front) continue
-            if (fly && i == 0 && front) continue             // in flight: drawFlight draws it
-            val pos = rowPos[id] ?: at[i]
-            val sel = isSel(e)
-            val ch = rowContentH(e)
+            if (fly && i == ti && front) continue            // in flight: drawFlight draws it
+            val pos = rowPos[it.key] ?: at[i]
+            val sel = isSel(it)
+            val ch = itemH(it)
             val ct = winTop + pos - listScroll + (if (sel) SEL_GAP else 0f)
             if (ct + ch < winTop - SEL_GAP || ct > winBot + SEL_GAP) continue    // outside the window
             val row = RectF(x, ct, x + w, ct + ch)
-            drawRow(c, e, row)                               // a well: opaque, so the one sliding over the others hides them
-            trackerHits.add(row to e)
-            // THE SELECTED QUEST, highlighted with the kit's focus (the user: "it should like highlight"), and the up / down
-            // arrows that say the controller changes it (none above the first quest, none below the last), centred in its gaps
-            // (the user: "on the top and bottom of the selection not the side")
+            when (it) {
+                is MapList.Item.Me -> drawMe(c, row)
+                is MapList.Item.Tracked -> tracked.firstOrNull { e -> e.optInt("id", 0) == it.id }?.let { e -> drawRow(c, e, row) }
+                is MapList.Item.Section -> UiKit.trackerHeader(c, row.left, row.top, row.right, "Untracked", "${it.count}")
+                is MapList.Item.Group -> drawGroup(c, it, row)
+                is MapList.Item.Untracked -> questById[it.id]?.let { e -> drawRow(c, e, row) }
+            }
+            if (it !is MapList.Item.Section) trackerHits.add(row to it)
+            // THE SELECTED ROW, highlighted with the kit's focus (the user: "it should like highlight"), and the up / down arrows
+            // that say the controller changes it (none above the first stop, none below the last), centred in its gaps
             if (sel) {
                 UiKit.focus(c, row)
-                UiKit.moveArrowsUpDown(c, row, up = i > 0, down = i < n - 1, size = 22f, width = 34f, around = true, gap = SEL_GAP)
+                val si = stops.indexOf(it.key)
+                UiKit.moveArrowsUpDown(c, row, up = si > 0, down = si < stops.size - 1, size = 22f, width = 34f, around = true, gap = SEL_GAP)
             }
         }
         c.restore()
@@ -3784,7 +3965,7 @@ class MapView(context: Context) : View(context) {
         // THE TRACKER covers the field's left side (drawTracker): keep the view's centre in the middle
         // of the part it leaves, so nothing under the list is lost -- inside the Goldshire inn the list
         // hid the red exit (seen on UI Art's emulator). Not at whole-zone view, which must show it all.
-        val trackPx = if (!compact && showTracker && tracked.isNotEmpty() && !zoneView)
+        val trackPx = if (!compact && showTracker && items.isNotEmpty() && !zoneView)
             min(TRACKER_W, fw * 0.34f) + BTN_GAP else 0f
         var cxView = cxMap - (trackPx / 2f) / fw * (2f * halfX)
         var cyView = cyMap
@@ -4050,11 +4231,11 @@ class MapView(context: Context) : View(context) {
             val tr = m.optJSONObject("track")
             // the minimap probe's LIVE herb / ore dots (Map.lua mp1): what the game's minimap shows now, a filter switch
             if (probeWanted and PROBE_ON != 0 && liveMap == mid && android.os.SystemClock.elapsedRealtime() - liveAt < LIVE_MS) {
-                for (lv in live) { val gx = sx(lv.x); val gy = sy(lv.y); if (onField(gx, gy)) UiKit.spawnSpot(c, gx, gy, lv.kind, sp) }
+                for (lv in live) { val gx = sx(lv.x); val gy = sy(lv.y); if (onField(gx, gy)) UiKit.spawnSpot(c, gx, gy, lv.kind, sp, glow = true) }
             }
             qdbNodes[mid]?.let { n ->
                 fun layer(a: List<QdbPins.Node>, kind: UiKit.Spawn) {
-                    for (q in a) { val gx = sx(q.x); val gy = sy(q.y); if (onField(gx, gy)) UiKit.spawnSpot(c, gx, gy, kind, sp) }
+                    for (q in a) { val gx = sx(q.x); val gy = sy(q.y); if (onField(gx, gy)) UiKit.spawnSpot(c, gx, gy, kind, sp, glow = true) }
                 }
                 if (tr?.optInt("h") == 1) layer(n.herb, UiKit.Spawn.HERB)
                 if (tr?.optInt("m") == 1) layer(n.ore, UiKit.Spawn.ORE)
@@ -4062,7 +4243,7 @@ class MapView(context: Context) : View(context) {
             // chests: only the ones the probe SAW (SeenChests; b-ghost-chests), never QuestieDB's spawn spots
             if (showChests) for (ch in SeenChests.on(mid, android.os.SystemClock.elapsedRealtime())) {
                 val gx = sx(ch.nx); val gy = sy(ch.ny)
-                if (onField(gx, gy)) UiKit.spawnSpot(c, gx, gy, UiKit.Spawn.CHEST, sp)
+                if (onField(gx, gy)) UiKit.spawnSpot(c, gx, gy, UiKit.Spawn.CHEST, sp, glow = tr?.optInt("t") == 1)
             }
             if (showRares) qdbPins[mid]?.let { p ->
                 for (rare in p.rares) {
@@ -4250,6 +4431,13 @@ class MapView(context: Context) : View(context) {
         // target is off the field, as on the game's minimap; on the field its own mark shows.
         // while a ghost with a corpse known it points at the CORPSE instead (the user's answer, 2026-10-01: "The corpse only")
         val toCorpse = corpseKnown()
+        if (!compact && !morphOn && !toCorpse && !focusTX.isNaN() && !px.isNaN() && !py.isNaN()) {
+            // inside the field only (a mark off it: the dots run to the edge, where the rim arrow takes over)
+            val save = c.save()
+            c.clipRect(left, top, left + fw, top + fh - (if (hintsOn()) HINT_BAND else 0f))
+            drawOpenPath(c, sx(px), sy(py), sx(focusTX), sy(focusTY))
+            c.restoreToCount(save)
+        }
         val rimTX = if (toCorpse) corpseX else focusTX
         val rimTY = if (toCorpse) corpseY else focusTY
         if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN()) {

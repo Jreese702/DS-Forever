@@ -20,6 +20,10 @@ package com.jrees.wowcompanion
  *   LB / RB       zoom out / in (Quests q7 gives the map guest the shoulders)
  *   B  (PAD2)     closes an open filter first, otherwise leaves (Home)
  * The room opens with the selection SHOWN on the FOCUSED quest, else the first (LATER 19 + the user: "it should already be there").
+ *
+ * THE WHOLE LIST (the user, 2026-10-16; [MapList]): the ids are the list's stops, the portrait ([MapList.ME]) and the untracked tabs
+ * ([MapList.isGroup]) among them; [untracked] names the untracked quests. A on the portrait opens the game's player menu, on a tab
+ * opens / closes it, on an untracked quest tracks it; X and Y act on tracked quests only.
  */
 class MapCursor {
     sealed class Do {
@@ -29,6 +33,12 @@ class MapCursor {
         data class Unfocus(val id: Int) : Do()
         data class Untrack(val id: Int) : Do()
         data class ShowOnMap(val id: Int) : Do()
+        /** A on the portrait: the game's own player menu */
+        object PlayerMenu : Do()
+        /** A on an untracked tab: open / close it */
+        data class Toggle(val key: Int) : Do()
+        /** A on an untracked quest: the game's tracker takes it */
+        data class Track(val id: Int) : Do()
         data class Zoom(val out: Boolean) : Do()
         object CloseFilter : Do()
         object ToggleFilter : Do()
@@ -73,7 +83,9 @@ class MapCursor {
      */
     fun startAt(ids: List<Int>, focusId: Int): Boolean {
         if (ids.isEmpty()) return false
-        val i = ids.indexOf(focusId).let { if (focusId == 0 || it < 0) 0 else it }
+        // the focused quest, else the first quest (not the portrait above them), else the first stop
+        val first = ids.indexOfFirst { it > 0 }.coerceAtLeast(0)
+        val i = ids.indexOf(focusId).let { if (focusId == 0 || it < 0) first else it }
         sel = ids[i]; shown = true; lastIndex = i
         return true
     }
@@ -95,7 +107,7 @@ class MapCursor {
     }
 
     /** One press [k]; [ids] the tracked quests in the list's order; [focusId] the game's focused quest (0 = none). */
-    fun key(k: String, ids: List<Int>, focusId: Int, filterOpen: Boolean): Do {
+    fun key(k: String, ids: List<Int>, focusId: Int, filterOpen: Boolean, untracked: Set<Int> = emptySet()): Do {
         keepValid(ids)
         if (k == "PAD2") return if (filterOpen) Do.CloseFilter else Do.Leave
         if (k == "PADBACK") return Do.ToggleFilter         // Select / View (Start is the pause wheel, the user 2026-10-09)
@@ -110,7 +122,7 @@ class MapCursor {
                 if (ids.isEmpty()) return Do.Nothing
                 if (!shown || !valid) {
                     shown = true
-                    sel = if (valid) sel else if (ids.contains(focusId)) focusId else ids[0]
+                    sel = if (valid) sel else if (ids.contains(focusId)) focusId else ids.firstOrNull { it > 0 } ?: ids[0]
                     lastIndex = ids.indexOf(sel)
                     return Do.Show
                 }
@@ -119,9 +131,16 @@ class MapCursor {
                 sel = ids[i]; lastIndex = i
                 return Do.Select(sel)
             }
-            "PAD1" -> return if (!shown || !valid) Do.Nothing else if (sel == focusId) Do.Unfocus(sel) else Do.Focus(sel)
-            "PAD3" -> return if (!shown || !valid) Do.Nothing else Do.Untrack(sel)
-            "PAD4" -> return if (!shown || !valid) Do.Nothing else Do.ShowOnMap(sel)
+            "PAD1" -> return when {
+                !shown || !valid -> Do.Nothing
+                sel == MapList.ME -> Do.PlayerMenu
+                MapList.isGroup(sel) -> Do.Toggle(sel)
+                sel in untracked -> Do.Track(sel)
+                sel == focusId -> Do.Unfocus(sel)
+                else -> Do.Focus(sel)
+            }
+            "PAD3" -> return if (!shown || !valid || sel <= 0 || sel in untracked) Do.Nothing else Do.Untrack(sel)
+            "PAD4" -> return if (!shown || !valid || sel <= 0 || sel in untracked) Do.Nothing else Do.ShowOnMap(sel)
         }
         return Do.Nothing
     }
