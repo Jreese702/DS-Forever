@@ -49,6 +49,8 @@ object SetupFlow {
         val appLine: String? = null,
         /** the background all-icons step's line (AllIcons.line): optional, never gates Play */
         val iconsLine: String? = null,
+        /** the game folder's Data is older than its build (DataStaleness), null = fine or not known; its plain message */
+        val staleData: String? = null,
         /** a problem report saved by itself and not opened yet (ReportFlow.noteTitle), null = none */
         val reportSaved: String? = null,
         /** DS Forever runs from the SD card / adopted storage (InstallCheck): the container can't be made there */
@@ -73,6 +75,8 @@ object SetupFlow {
         RELAUNCH,
         /** "Report a problem" (board f-problem-report): the report screen, before Play too */
         REPORT,
+        /** the out-of-date folder's pop-up: OK (this run) */
+        STALE_OK,
         /** the saved report's note: open its GitHub issue, or dismiss it */
         REPORT_OPEN, REPORT_DISMISS
     }
@@ -107,6 +111,9 @@ object SetupFlow {
                 if (i.wrongGame) "The folder ${i.path} holds ${i.product.ifEmpty { "another game" }}, not WoW Forever. Choose the WoW Forever folder: the one with .build.info and Data."
                 else "It isn't in ${i.path}. Choose the folder with .build.info and Data (for example Documents/WoW Forever).",
                 listOf(Button("Choose folder", Action.CHOOSE_FOLDER)))
+            // issues #8 / #9 (the user's pick): an out-of-date Data folder, said plainly; Play stays (it may still start)
+            i.staleData != null && i.folderFound && !i.wrongGame && i.storage -> Prompt("stale", "Your game folder is out of date",
+                i.staleData, listOf(Button("OK", Action.STALE_OK)))
             !i.storage -> Prompt("storage", "Allow file access",
                 "Android needs \"All files access\" so the game and DS Forever can read the game folder.",
                 listOf(Button("Open settings", Action.GRANT_STORAGE)))
@@ -179,6 +186,7 @@ object SetupFlow {
             !i.storage -> Check("Game folder: ${i.path} (needs file access)", Mark.BAD)
             else -> Check("Game folder: ${i.path}", Mark.OK)
         })
+        if (i.staleData != null) add(Check("Game folder: its Data is out of date - copy it again from your PC", Mark.BAD))
         add(if (i.loginSaved) Check("Battle.net login: saved", Mark.OK) else Check("Battle.net login: not saved", Mark.WAIT))
         add(when (i.art) {
             Art.IDLE -> Check(if (i.folderFound) "Game art: checking" else "Game art: waits for the game folder", Mark.WAIT)

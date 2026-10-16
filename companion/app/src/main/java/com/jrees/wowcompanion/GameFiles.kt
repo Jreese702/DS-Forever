@@ -29,8 +29,11 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             CascNative.takeNeed()
             val bytes = load()
             status = CascNative.lastStatus()
+            // issues #8 / #9: is this game folder's Data the build's? (the first try: read here = local, a fetch needed = from the CDN)
+            if (attempt == 0 && bytes != null) DataStaleness.count(root, buildKey, local = true)
             if (bytes != null) return@synchronized bytes
             val need = CascNative.takeNeed() ?: break
+            if (attempt == 0) DataStaleness.count(root, buildKey, local = false)
             if (attempt == 4 || status == CascNative.ENCRYPTED) break
             if (!fetch(root, cache, File(need))) {
                 lastReadWhy = "$label: not on this device, and downloading it failed (${File(need).name}: ${lastFetchWhy ?: "no answer"})"
