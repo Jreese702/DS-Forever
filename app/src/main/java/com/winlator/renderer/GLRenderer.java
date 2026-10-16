@@ -50,6 +50,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     private boolean toggleFullscreen = false;
     private boolean viewportNeedsUpdate = true;
     private boolean cursorVisible = true;
+    private volatile boolean forceCursor = false;
     private boolean screenOffsetYRelativeToCursor = false;
     private String[] unviewableWMClasses = null;
     private float magnifierZoom = 1.0f;
@@ -225,7 +226,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
         }
 
         renderWindows();
-        if (cursorVisible) renderCursor();
+        if (cursorVisible || forceCursor) renderCursor();
 
         if ((!magnifierEnabled && !fullscreen) || renderingToOffscreenTarget) GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
     }
@@ -332,7 +333,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
             short x = xServer.pointer.getClampedX();
             short y = xServer.pointer.getClampedY();
 
-            if (cursor != null) {
+            if (cursor != null && (cursor.isVisible() || !forceCursor)) {
                 if (cursor.isVisible()) renderDrawable(cursor.cursorImage, x - cursor.hotSpotX, y - cursor.hotSpotY, cursorMaterial);
             }
             else renderDrawable(rootCursorDrawable, x, y, cursorMaterial);
@@ -442,6 +443,15 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
 
     public boolean isCursorVisible() {
         return cursorVisible;
+    }
+
+    /** DS Forever (f-trackpad-keyboard, the user on 1.0.8: "The track pad doesn't actually show the mouse cursor on the top screen"):
+     * the game hides its cursor in gamepad mode (an empty-mask X cursor), so while the companion's trackpad is open the renderer
+     * draws the launcher's own arrow (R.drawable.cursor, the root cursor) at the X pointer instead. Nothing is sent to the game. */
+    @Override
+    public void setForceCursor(boolean force) {
+        forceCursor = force;
+        xServerView.requestRender();
     }
 
     public boolean isScreenOffsetYRelativeToCursor() {

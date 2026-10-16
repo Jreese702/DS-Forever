@@ -318,6 +318,7 @@ class HomeView(
     fun closeTypeTool() {
         if (!typeWanted) return
         typeWanted = false
+        typeTool.close()                                                  // the launcher's forced pointer goes
         typeTool.visibility = View.GONE
         invalidate()                                                      // the map's well and the zone band come back
         Log.i(TAG, "type tool: close")
