@@ -91,7 +91,8 @@ class HomeRadialView(
     /**
      * f-radial-behind (the user: "the radial needs to look like its behind the Map and Chat modules, not slide up in front of it"): in
      * Home's slot the wheel itself is drawn by Home, UNDER its columns ([drawUnder], through HomeView.wheelPainter): true = start that,
-     * false = stop it. [underRedraw] asks Home's layer for a frame. This view keeps the input, and only the item's name band on top.
+     * false = stop it. [underRedraw] asks Home's layer for a frame. This view keeps the input, and draws on top the disc (the one on
+     * screen: the bar's own is hidden meanwhile, f-one-disc), the chooser and the item's name band.
      */
     var under: ((Boolean) -> Unit)? = null
     var underRedraw: (() -> Unit)? = null
@@ -214,15 +215,18 @@ class HomeRadialView(
     fun open(src: String = "radial") {
         source = src; doc = docs[src]; trusted = src in trustedOf
         flow.reset(); heldOk = false; aimStick = -1; bnextHome = true
-        flow.holdOpen = !HomeSettings.radialTap; flow.pickA = HomeSettings.radialPickA       // the one radial behaviour (2026-10-09)
+        // each wheel its own pair (f-radial-settings: the item wheel's, the spell wheel's)
+        val spell = src == "sradial"
+        flow.holdOpen = !(if (spell) HomeSettings.spellTap else HomeSettings.radialTap)
+        flow.pickA = if (spell) HomeSettings.spellPickA else HomeSettings.radialPickA
         flow.armMs = RadialModel.ARM_MS; flow.openAt = SystemClock.uptimeMillis(); stickWait = false; removeCallbacks(stickBack)
         openedAt = SystemClock.uptimeMillis(); closingFrom = -1f
         leaveAt = 0L; leaveSlot = null
         slot = homeSlot?.invoke(true)
         if (slot != null) under?.invoke(true)
         held = 0; lb = false; rb = false; seeded = false; openKeys = 0
-        // in Home's slot the bar keeps its own disc: the wheel (its own hub) rises from behind the columns
-        strip.homeLifted = slot == null
+        // one disc on screen (the user: "only one place at once"): the bar's own goes while the wheel's hub is up
+        strip.homeLifted = true
         visibility = VISIBLE
         reader?.stop(); reader = null; rawHeld = 0
         hold(0)
@@ -349,26 +353,23 @@ class HomeRadialView(
     }
 
     /** the wheel's slide back down from Home's slot into the bar's disc, fading as it lands ([LEAVE_MS]); [part] UiKit.CR_* */
-    private fun drawLeave(c: Canvas, part: Int = UiKit.CR_BAND) {
+    private fun drawLeave(c: Canvas, part: Int = UiKit.CR_TOP) {
         val s = leaveSlot ?: return
         val p = ((SystemClock.uptimeMillis() - leaveAt) / LEAVE_MS).coerceIn(0f, 1f)
         if (p >= 1f) {
-            if (part != UiKit.CR_BAND) return                                // the overlay's frame ends it
+            if (part != UiKit.CR_TOP) return                                // the overlay's frame ends it
             leaveSlot = null; leaveAt = 0L; strip.homeLifted = false; under?.invoke(false); visibility = GONE; return
         }
-        // the name band goes with the close at once (it would cross the chat on the way down); the wheel slides on under the columns
-        if (part == UiKit.CR_BAND) { underRedraw?.invoke(); postInvalidateOnAnimation(); return }
+        if (part == UiKit.CR_TOP) underRedraw?.invoke()
+        // THE ARRIVAL RUN BACKWARD (f-one-disc): the hub glides from the slot down onto the bar's Home disc, its size and its blue, the
+        // wheel riding down with it under the columns; the name band goes first. The bar's own disc comes back when it has landed
         val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
         val (disc, size) = discHere()
-        val e = leaveCurve.getInterpolation(p)
-        val save = c.save()
-        c.translate(0f, (disc.y - s.centerY()) * e)
-        c.saveLayerAlpha(null, (255 * (1f - ((p - 0.5f) / 0.5f).coerceIn(0f, 1f))).toInt())
         val plus = if (RadialModel.plusOn(doc) && flow.page == 0) UiKit.CR_PLUS else -1
         UiKit.consumableRadial(c, screen, disc, size, itemsOf(RadialModel.slices(doc, flow.page)), flow.pointed, flow.page,
-            RadialModel.pages(doc), UiKit.CR_OPEN_MS, glyphs = flow.pickA, plusSlot = plus, slot = s, part = part)
-        c.restoreToCount(save)
-        if (part == UiKit.CR_BAND) postInvalidateOnAnimation()
+            RadialModel.pages(doc), UiKit.CR_OPEN_MS * (1f - leaveCurve.getInterpolation(p)), glyphs = flow.pickA, plusSlot = plus,
+            slot = s, part = part)
+        if (part == UiKit.CR_TOP) postInvalidateOnAnimation()
     }
 
     /** f-radial-behind: the wheel without its band, in THIS view's coordinates (Home's layer under its columns draws it) */
@@ -551,7 +552,7 @@ class HomeRadialView(
                 flow.reset(); flow.tap = true; aimStick = -1; holdReset()
                 pinNote = if (c == null) "This item can't be pinned right now" else null
                 // the wheel comes back with its open motion, the item over the hub
-                openedAt = SystemClock.uptimeMillis(); strip.homeLifted = slot == null
+                openedAt = SystemClock.uptimeMillis(); strip.homeLifted = true
                 Log.i(TAG, "radial: chooser for $id (${action.name.lowercase()}${if (c == null) ", NOT pinnable" else ""})")
                 invalidate()
             }
@@ -576,7 +577,7 @@ class HomeRadialView(
         mode = Mode.WHEEL; choice = null; pinNote = null; holdReset()
         setBNext(true)
         flow.reset(); flow.tap = true; aimStick = -1
-        openedAt = SystemClock.uptimeMillis(); strip.homeLifted = slot == null
+        openedAt = SystemClock.uptimeMillis(); strip.homeLifted = true
         invalidate()
     }
 
@@ -706,7 +707,7 @@ class HomeRadialView(
         if (closingFrom >= 0f && tNow() <= 0f) { done(); return }
         // in Home's slot the wheel is Home's to draw, under its columns (f-radial-behind); here only the band on top
         if (slot != null) underRedraw?.invoke()
-        if (paint(c, if (slot != null) UiKit.CR_BAND else UiKit.CR_ALL)) postInvalidateOnAnimation()
+        if (paint(c, if (slot != null) UiKit.CR_TOP else UiKit.CR_ALL)) postInvalidateOnAnimation()
     }
 
     /** the wheel at this moment ([part] UiKit.CR_*); true = it wants another frame */

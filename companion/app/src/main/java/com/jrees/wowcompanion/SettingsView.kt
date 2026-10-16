@@ -98,6 +98,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** the wheels' two settings (Home's HomeSettings.radialTap / radialPickA; the user 2026-10-09) */
     private val segOpen = Array(2) { RectF() }
     private val segPick = Array(2) { RectF() }
+    /** the spell wheel's own pair (HomeSettings.spellTap / spellPickA; f-radial-settings) */
+    private val segSpellOpen = Array(2) { RectF() }
+    private val segSpellPick = Array(2) { RectF() }
     /** the pause wheel's own pair (HomeSettings.pauseTap / pausePickA; the user 2026-10-09) */
     private val segPauseOpen = Array(2) { RectF() }
     private val segPausePick = Array(2) { RectF() }
@@ -200,7 +203,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         rowHits.clear()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
-        for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segChat, segLimit, segFg, segMult, segPerf))
+        for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segChat,
+                         segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
 
@@ -220,7 +224,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         SettingsTabs.Block.MAP -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH()
-        SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 5f * (10f + ROW_H)
+        SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 10f + ROW_H
+        SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.CHAT -> 16f + ROW_H
         SettingsTabs.Block.FRAMES -> 16f + fgHeight()
         else -> 0f
@@ -311,6 +316,10 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segOpen[1].contains(x, y) -> HomeSettings.radialTap = false
             segPick[0].contains(x, y) -> HomeSettings.radialPickA = true
             segPick[1].contains(x, y) -> HomeSettings.radialPickA = false
+            segSpellOpen[0].contains(x, y) -> HomeSettings.spellTap = true
+            segSpellOpen[1].contains(x, y) -> HomeSettings.spellTap = false
+            segSpellPick[0].contains(x, y) -> HomeSettings.spellPickA = true
+            segSpellPick[1].contains(x, y) -> HomeSettings.spellPickA = false
             btnDll.contains(x, y) -> onChooseDll()
             btnRestart.contains(x, y) -> { btnRestart = RectF(); onRestart() }
             segFg[0].contains(x, y) -> FrameGen.enabled = false
@@ -363,6 +372,12 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 SettingsTabs.Block.MAP -> drawMap(c, y)
                 SettingsTabs.Block.INDOOR -> drawIndoor(c, y)
                 SettingsTabs.Block.CONTROLLER -> drawController(c, y)
+                SettingsTabs.Block.PAUSE_WHEEL -> drawWheel(c, y, "Pause menu", "Press Start to open; it stays until B.",
+                    "Hold Start; letting go closes it.", HomeSettings.pauseTap, HomeSettings.pausePickA, segPauseOpen, segPausePick)
+                SettingsTabs.Block.ITEM_WHEEL -> drawWheel(c, y, "Item wheel", "Press D-pad Up to open; it stays until B.",
+                    "Hold D-pad Up; letting go closes it.", HomeSettings.radialTap, HomeSettings.radialPickA, segOpen, segPick)
+                SettingsTabs.Block.SPELL_WHEEL -> drawWheel(c, y, "Spell wheel", "Press its button to open; it stays until B.",
+                    "Hold its button; letting go closes it.", HomeSettings.spellTap, HomeSettings.spellPickA, segSpellOpen, segSpellPick)
                 SettingsTabs.Block.CHAT -> drawChat(c, y)
                 SettingsTabs.Block.FRAMES -> drawFrames(c, y)
                 else -> y
@@ -529,35 +544,28 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segmented(c, b, LAYOUT_LABELS, LAYOUTS.indexOf(layout), segLayout)
             b
         }
-        // THE WHEELS (the user 2026-10-09: "2 settings per radial. Tap VS hold and A to select vs release select"), TWO PAIRS since the
-        // user's revision ("I dont want that setting to affect the pause menu wheel"): the pause wheel's own, then the item & spell wheels'
-        // (consumables, spell radial). App-wide, the same for every character, defaults Tap + A
-        y += ROW_H + 10f
-        row(c, y, "Pause wheel: open", if (HomeSettings.pauseTap) "Press Start to open; it stays until B." else "Hold Start; letting go closes it.",
-            enabled = true) { box ->
+        return y + ROW_H
+    }
+
+    /**
+     * THE WHEELS (the user 2026-10-09: "2 settings per radial. Tap VS hold and A to select vs release select"), a pair per wheel under
+     * its own heading (f-radial-settings, 1.0.9: "better organize each radial setting into categories so its clear what each one is"):
+     * [name]: open ([tap]: Tap / Hold, its two lines), pick ([pickA]: A / Release). App-wide, the same for every character
+     */
+    private fun drawWheel(c: Canvas, top: Float, name: String, tapLine: String, holdLine: String, tap: Boolean, pickA: Boolean,
+                          segOpenBoxes: Array<RectF>, segPickBoxes: Array<RectF>): Float {
+        var y = top
+        val segW = segW()
+        row(c, y, "$name: open", if (tap) tapLine else holdLine, enabled = true) { box ->
             val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("Tap", "Hold"), if (HomeSettings.pauseTap) 0 else 1, segPauseOpen)
+            segmented(c, b, listOf("Tap", "Hold"), if (tap) 0 else 1, segOpenBoxes)
             b
         }
         y += ROW_H + 10f
-        row(c, y, "Pause wheel: pick", if (HomeSettings.pausePickA) "Aim with the stick, ${Glyphs.name("a")} picks." else "Aim, let the stick go to pick.",
+        row(c, y, "$name: pick", if (pickA) "Aim with the stick, ${Glyphs.name("a")} picks." else "Aim, let the stick go to pick.",
             enabled = true) { box ->
             val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("A", "Release"), if (HomeSettings.pausePickA) 0 else 1, segPausePick)
-            b
-        }
-        y += ROW_H + 10f
-        row(c, y, "Item & spell wheels: open", if (HomeSettings.radialTap) "Press to open; it stays until B." else "Hold to open; letting go closes it.",
-            enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("Tap", "Hold"), if (HomeSettings.radialTap) 0 else 1, segOpen)
-            b
-        }
-        y += ROW_H + 10f
-        row(c, y, "Item & spell wheels: pick", if (HomeSettings.radialPickA) "Aim with the stick, ${Glyphs.name("a")} picks." else "Aim, let the stick go to pick.",
-            enabled = true) { box ->
-            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("A", "Release"), if (HomeSettings.radialPickA) 0 else 1, segPick)
+            segmented(c, b, listOf("A", "Release"), if (pickA) 0 else 1, segPickBoxes)
             b
         }
         return y + ROW_H

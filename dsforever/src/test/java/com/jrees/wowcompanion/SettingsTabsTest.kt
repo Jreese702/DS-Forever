@@ -35,7 +35,18 @@ class SettingsTabsTest {
         assertTrue(SettingsTabs.viewBlocks(T.HOME).isEmpty())          // Home's section
         assertTrue(SettingsTabs.viewBlocks(T.TOP).isEmpty())           // the game's elements
         assertEquals(listOf(B.GAME), SettingsTabs.viewBlocks(T.SYSTEM))   // + the companion's status (GameUiSection)
-        assertEquals(listOf(B.CONTROLLER), SettingsTabs.viewBlocks(T.CONTROLLER))
+        assertEquals(listOf(B.CONTROLLER, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL), SettingsTabs.viewBlocks(T.CONTROLLER))
+    }
+
+    /** f-radial-settings: each wheel its own heading, naming the button that opens it, and its own open / pick pair */
+    @Test fun eachWheelHasItsOwnCategory() {
+        for ((b, button) in listOf(B.PAUSE_WHEEL to "Start", B.ITEM_WHEEL to "D-pad Up")) assertTrue(b.heading, button in b.heading)
+        for (b in listOf(B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL)) {
+            assertEquals(T.CONTROLLER, b.tab)
+            assertEquals(2, b.rows.size)
+            assertTrue(b.rows[0].endsWith(": open") && b.rows[1].endsWith(": pick"))
+            for (r in b.rows) assertTrue("$r has a picture", SettingsPreview.has(r))
+        }
     }
 
     @Test fun lAndRWrap() {
@@ -71,8 +82,8 @@ class SettingsPreviewRowsTest {
         }
     }
 
-    @Test fun twentyRowsAndTheMovingOnes() {
-        assertEquals(20, SettingsPreview.ROWS.size)
+    @Test fun twentyTwoRowsAndTheMovingOnes() {          // f-radial-settings: + the spell wheel's own pair
+        assertEquals(22, SettingsPreview.ROWS.size)
         assertTrue(SettingsPreview.animated("Swing timer") && SettingsPreview.animated("Frame limit") && !SettingsPreview.animated("Button glyphs"))
     }
 }

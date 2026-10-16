@@ -193,6 +193,7 @@ class HomeView(
         // B through the Cast view's OWN reader while Home holds it (see [watchB]): one getevent, never two
         castView.onPadButtons = { held -> onPadHeld(held) }
         castView.onClassRadial = { open -> classLayerShow(open) }             // f-class-radial: the mirror over Home
+        castView.onClassStick = { if (classOpen) classLayer.invalidate() }      // b-class-radial-stick: the pointed slice follows
         // ARRIVING MID-FIGHT (the user, 2026-10-01: "going back home by what ever means, engages the combat transition at that time"):
         // the takeover was already on while Home was hidden, so Home lands at its rest and the combat transition PLAYS from there
         if (flow.takeover) {
@@ -211,7 +212,7 @@ class HomeView(
         }
         if (lent(castView)) {
             castView.layout = CastView.Layout.FULL; castView.bottomLine = false; castView.onPadButtons = null
-            castView.onClassRadial = null; classLayerShow(false)                 // the Cast room draws its own radial
+            castView.onClassRadial = null; castView.onClassStick = null; classLayerShow(false)   // the Cast room draws its own radial
             castView.groundPainter = null; castView.triggerStrip = false; redShown = false
         }
         if (lent(mapView)) mapView.rimKeepOut = emptyList()
@@ -270,13 +271,9 @@ class HomeView(
     private var bWasHeld = false
     private fun watchB(on: Boolean) {
         if (!on) { bReader?.stop(); if (classHint != null) { classHint = null; classLayerShow(false) }; return }
-        // f-class-radial: Home's own reader (a chat / map module holds the controller): the game's class radial cannot open; say so
-        val p = bReader ?: PadInput({ lt, rt, lb, rb ->
-            val left = lb && lt; val right = rb && rt
-            val hint = if ((left && castView.hasClassRadial(true)) || (right && castView.hasClassRadial(false)))
-                "Close the ${if (flow.full == HomeModule.MAP) "map" else "chat"} to use the class radial (${Glyphs.name("b")})" else null
-            if (hint != classHint) { classHint = hint; classLayerShow(hint != null) }
-        }, { _, _ -> }, { held -> onPadHeld(held) }).also { bReader = it }
+        // Home's own reader (a chat / map module holds the controller). b-radial-exclusive (1.0.9, the user: one overlay at a time): the
+        // class chord does nothing here - no wheel and no "close the chat" note over the page
+        val p = bReader ?: PadInput({ _, _, _, _ -> }, { _, _ -> }, { held -> onPadHeld(held) }).also { bReader = it }
         p.start()
     }
 
@@ -1397,6 +1394,10 @@ class HomeView(
     /** the pause menu's point in its motion (ms along the open, 0 = at rest) and each part's (dx, dy, alpha) for it */
     private var pauseT = 0f
     private var pauseTop = floatArrayOf(0f, 0f, 1f)
+    /** f-pause-bars: the controller's alpha under the open pause menu (the user's pick B: 40 %, "so the menu reads as on top") */
+    var pauseBarsDim = 0.4f
+    /** f-pause-bars: the bottom of the controller (the bars) in Home's px, 0 = none laid out */
+    fun barsBottom(): Float = now[Part.BARS]?.bottom ?: 0f
     private var pauseMap = floatArrayOf(0f, 0f, 1f)
 
     /**
@@ -1408,7 +1409,10 @@ class HomeView(
         if (t == pauseT) return
         pauseT = t
         val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
-        pauseTop = UiKit.pauseOut(UiKit.PAUSE_TOP, t, screen)
+        // f-pause-bars (the user: "I dont think I want the controller top part to slide off screen"): over Home the controller stays,
+        // only stepping back to [pauseBarsDim] (the title row lies over its lower half); elsewhere its old slide
+        pauseTop = if (UiKit.pauseBarsBottom > 0f) floatArrayOf(0f, 0f, 1f - (1f - pauseBarsDim) * (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f))
+            else UiKit.pauseOut(UiKit.PAUSE_TOP, t, screen)
         val left = UiKit.pauseOut(UiKit.PAUSE_LEFT, t, screen)
         pauseMap = UiKit.pauseOut(UiKit.PAUSE_MAP, t, screen)
         for ((p, v) in views) {

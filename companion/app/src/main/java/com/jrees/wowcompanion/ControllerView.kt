@@ -416,11 +416,11 @@ class ControllerView(
             val tap = HomeSettings.radialTap
             val pickA = HomeSettings.radialPickA
             val ph = UiKit.inkPaint(26f, heading = true)
-            val note = "The pause wheel (Start) has its own pair in Settings > Controller."
+            val note = "The pause menu and the spell wheel have their own pairs in Settings > Controller."
             val nl = StaticLayout.Builder.obtain(note, 0, note.length, TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }),
                 (x1 - x0 - 16f).toInt()).setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(2f, 1f).setMaxLines(2).build()
             c.save(); c.translate(x0 + 8f, h - 392f - nl.height); nl.draw(c); c.restore()
-            c.drawText("Item and spell wheels", x0 + 8f, h - 352f, ph)
+            c.drawText("Item wheel (D-pad Up)", x0 + 8f, h - 352f, ph)
             c.drawText("Wheels: open", x0 + 8f, h - 312f, pi)
             UiKit.choice(c, openRect(0, w, h), "Tap", tap)
             UiKit.choice(c, openRect(1, w, h), "Hold", !tap)

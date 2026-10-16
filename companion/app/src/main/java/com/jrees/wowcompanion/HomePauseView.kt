@@ -95,6 +95,7 @@ class HomePauseView(
     /** [fromT]: a reverse still running when Start came again: the open goes on from where the panels are, no jump */
     fun open(fromT: Float = 0f, byStart: Boolean = true) {
         if (isOpen) return
+        UiKit.pauseBarsBottom = barsBottom?.invoke() ?: 0f                  // f-pause-bars: over Home, its controller stays
         openByStart = byStart
         LatLog.mark("wheel", "pause open")
         flow.reset(); flow.holdOpen = !HomeSettings.pauseTap; flow.pickA = HomeSettings.pausePickA      // its own pair (the user, 2026-10-09)
@@ -102,7 +103,7 @@ class HomePauseView(
         afterStick = null
         line = null; after = null; pvpArmedAt = 0L; aimStick = -1; startHeld = false
         openedAt = SystemClock.uptimeMillis() - (fromT / SPEED).toLong(); closingFrom = -1f; hubPressAt = 0L
-        hubHeldAt = 0L; pressedAt = 0L
+        hubHeldAt = 0L; pressedAt = 0L; glideAt = 0L
         held = 0; seeded = false; lb = false; rb = false
         strip.homeLifted = true
         visibility = VISIBLE
@@ -129,6 +130,8 @@ class HomePauseView(
      */
     fun close() {
         if (!isOpen || closingFrom >= 0f) return
+        // f-one-disc: the wheel's hub glides back down onto the bar (none from the Game Menu: its stage has no hub)
+        if (gm == null && isShown) glideAt = SystemClock.uptimeMillis()
         gm = null; gmPressed = -1
         LatLog.mark("wheel", "pause gone")
         stickLater()
@@ -151,7 +154,7 @@ class HomePauseView(
         if (!isOpen) return
         guestTap(GuestPad.cells(questsPad(), GUEST, hold = false))
         after = null
-        pressedAt = 0L
+        pressedAt = 0L; glideAt = 0L
         done()
     }
 
@@ -161,10 +164,11 @@ class HomePauseView(
         val from = slidT; slidT = 0f
         onClose(from)
         hubHeldAt = 0L
-        // the hub's press plays on where the hub stood (the wheel already gone, input already the room's / Home's)
-        if (pressedAt != 0L && isShown) { visibility = VISIBLE; invalidate() }
+        // the hub glides back down onto the bar, a press playing on it (the wheel already gone, input already the room's / Home's);
+        // the bar's own disc stays hidden until it lands (one disc on screen)
+        if (glideAt != 0L && isShown) { visibility = VISIBLE; invalidate() }
         else {
-            pressedAt = 0L
+            pressedAt = 0L; glideAt = 0L
             strip.homeLifted = false
             // the Game Menu's "Press Start" stays on its own (touches pass through) until it runs out
             visibility = if (menuHint()) VISIBLE else GONE
@@ -437,10 +441,15 @@ class HomePauseView(
         return (now - openedAt) * SPEED
     }
 
+    /** f-pause-bars: the bottom of Home's controller in this view's px when the menu opens over Home, else 0 (the host's) */
+    var barsBottom: (() -> Float)? = null
+
     /** a finger held on the hub (uptime ms), 0 = none: it sinks and stays sunk, its gold comes, until it lifts */
     private var hubHeldAt = 0L
-    /** B / the hub's press (uptime ms): the hub alone plays it out after the wheel has gone, 0 = none */
+    /** B / the hub's press (uptime ms): the hub plays it out as it glides home after the wheel has gone, 0 = none */
     private var pressedAt = 0L
+    /** the close's glide of the hub back onto the bar's disc (uptime ms), 0 = none ([GLIDE_MS]) */
+    private var glideAt = 0L
 
     /** the press's depth [dt] ms after it (Strip.pushNow: in 70 ms, out 160 ms on the bar's curve) */
     private fun pushAt(dt: Float): Float = when {
@@ -468,15 +477,20 @@ class HomePauseView(
     private fun slices(): List<UiKit.PauseSlice?> = flow.slices().map { it?.let { s -> UiKit.PauseSlice(s.key, s.label, s.enabled) } }
 
     override fun onDraw(c: Canvas) {
-        if (!isOpen && pressedAt != 0L) {
-            val dt = (SystemClock.uptimeMillis() - pressedAt).toFloat()
-            if (dt < PRESS_SHOW_MS) {
-                val fade = (1f - (dt - (PRESS_SHOW_MS - 80f)) / 80f).coerceIn(0f, 1f)
-                UiKit.pauseHub(c, RectF(0f, 0f, width.toFloat(), height.toFloat()), pushAt(dt), goldAt(dt), (255 * fade).toInt())
+        if (!isOpen && glideAt != 0L) {
+            val now = SystemClock.uptimeMillis()
+            val p = (now - glideAt) / GLIDE_MS
+            if (p < 1f) {
+                // the arrival run backward from the hub's red (GLIDE_FROM), on the bar's curve: it ends exactly on the bar's Home disc
+                val (disc, size) = discHere()
+                val dt = if (pressedAt != 0L) (now - pressedAt).toFloat() else -1f
+                UiKit.pauseHubGlide(c, RectF(0f, 0f, width.toFloat(), height.toFloat()), disc, size,
+                    GLIDE_FROM * (1f - pressCurve.getInterpolation(p)), if (dt >= 0f) pushAt(dt) else 0f, if (dt >= 0f) goldAt(dt) else 0f,
+                    left = HomePauseModel.TRACKPAD_WORD, right = HomePauseModel.KEYBOARD_WORD)
                 postInvalidateOnAnimation()
                 return
             }
-            pressedAt = 0L
+            pressedAt = 0L; glideAt = 0L
             strip.homeLifted = false
             if (!menuHint()) { visibility = GONE; return }
         }
@@ -603,7 +617,10 @@ class HomePauseView(
         const val LINE_MS = 2_000L
         const val LINE_FADE_MS = 500L
         /** the hub's press after the wheel has gone: its gold held this long, the press over by [PRESS_SHOW_MS] (Strip's 0.8 s, quicker) */
-        const val PRESS_GOLD_HOLD_MS = 160f
-        const val PRESS_SHOW_MS = 360f
+        const val PRESS_GOLD_HOLD_MS = 90f
+        const val PRESS_SHOW_MS = 210f        // f-one-disc: the gold gone as the hub lands on the bar (GLIDE_MS)
+        /** f-one-disc: the hub's glide home after a close, and where along its arrival it starts (the red landed, UiKit.pauseDisc) */
+        const val GLIDE_MS = 220f
+        const val GLIDE_FROM = 460f
     }
 }

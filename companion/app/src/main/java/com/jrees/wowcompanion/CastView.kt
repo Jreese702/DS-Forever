@@ -132,6 +132,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private class Radial {
         val has = BooleanArray(8); val names = arrayOfNulls<String>(8); val icons = IntArray(8); val lit = BooleanArray(8)
         val cell = arrayOfNulls<Int>(8); val auto = arrayOfNulls<Int>(8)
+        /** b-class-radial-slots: the places it HAS, in order: only these are drawn, evenly round the wheel */
+        val order: List<Int> get() = (0 until 8).filter { has[it] }
+        /** place [i]'s angle on the wheel (degrees, 0 = the top, clockwise) */
+        fun angle(i: Int): Double { val o = order; return ClassChord.evenAngle(o.indexOf(i).coerceAtLeast(0), o.size) }
     }
 
     private var hud: Hud? = null
@@ -143,6 +147,15 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var drawCollapsed = false
     /** the right stick's eighth (0 = top, clockwise), -1 at rest: the radial's pointed-at place */
     private var stickSector = -1
+    /** b-class-radial-slots: the right stick as a vector (x right +, y down +), for the evenly spaced class wheel */
+    private var stickX = 0f
+    private var stickY = 0f
+    /** the place of [r] the right stick points at now (its evenly spaced slices), -1 = none */
+    private fun pointedPlace(r: Radial): Int {
+        val o = r.order
+        val deg = ClassChord.stickDeg(stickX, stickY) ?: return -1
+        return o.getOrNull(ClassChord.nearest(deg, o.size)) ?: -1
+    }
     private var autoAttack = false
     /** the swing timer (hudS.sw, combat only): which swing (0 main, 1 off, 2 ranged), its start on the
      *  app's elapsedRealtime clock in ms (NaN = none) and its length */
@@ -614,6 +627,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             onStatus = { ok, _ -> padOk = ok; invalidate() },
             onButtons = { mask -> onButtons(mask) },
             onStick = { sec -> if (sec != stickSector) { stickSector = sec; invalidate() } },
+            // b-class-radial-stick: Home's class layer is another view: it is told too (it was redrawn only at the open / close)
+            onStickVector = { st, x, y -> if (st == 1) { stickX = x; stickY = y
+                if (chordSide != ClassChord.NONE) { invalidate(); onClassStick?.invoke() } } },
         )
         ready = true
         refreshSettings()
@@ -1595,8 +1611,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         drawLegend(c, h)
         // the class-only radial while LB+LT or RB+RT is held (Blizzard camelot; not while a window has the pad)
         if (!drawCollapsed) {
-            val left = padLb && padLt
-            val rad = when { left -> h.caL; padRb && padRt -> h.caR; else -> null }
+            val left = chordSide == ClassChord.LEFT                          // b-radial-exclusive: the latched side only
+            val rad = when { left -> h.caL; chordSide == ClassChord.RIGHT -> h.caR; else -> null }
             if (rad != null) drawRadial(c, rad, ox + (if (left) -75f else 70f) * k, oy, width.toFloat(), height.toFloat())
         }
 
@@ -2168,12 +2184,14 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
         aRadBase?.let { a -> val hw = 256f * sc; drawBox(c, a, cx - hw, cy - hw, cx + hw, cy + hw) }
         val slot = 157f * sc
-        for (i in 0 until 8) {
-            val a = Math.toRadians(i * 45.0)
+        // b-class-radial-slots: only the places it has, evenly round the wheel; the stick points among those
+        val pointed = pointedPlace(r)
+        for (i in r.order) {
+            val a = Math.toRadians(r.angle(i))
             val px = cx + (sin(a) * 168.0).toFloat() * sc
             val py = cy - (kotlin.math.cos(a) * 168.0).toFloat() * sc
             val has = r.has[i]
-            val sel = has && i == stickSector
+            val sel = has && i == pointed
             aRadBack?.let { b -> val bw = slot * 82f / 112f / 2f; val bh = slot * 84f / 112f / 2f
                 drawBox(c, b, px - bw, py - bh, px + bw, py + bh, if (has) 255 else 115) }
             val frame = if (sel) aRadSel ?: aRadNormal else aRadNormal
@@ -2197,10 +2215,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 c.drawCircle(px, py, 56f * sc, pStroke)
             }
         }
-        if (stickSector in 0..7 && r.has[stickSector]) {
+        if (pointed in 0..7) {
             val p = radialName ?: UiKit.bodyPaint(30f, Color.WHITE).also { it.textAlign = Paint.Align.CENTER; radialName = it }
             p.textSize = 30f * sc
-            c.drawText(r.names[stickSector] ?: "", cx, cy + p.textSize / 3f, p)
+            c.drawText(r.names[pointed] ?: "", cx, cy + p.textSize / 3f, p)
         }
     }
 
@@ -2225,21 +2243,39 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private fun chordRadial(): Radial? {
         val h = hud ?: return null
         if (!barsUsable) return null
-        return when (ClassChord.side(padLt, padRt, padLb, padRb)) { ClassChord.LEFT -> h.caL; ClassChord.RIGHT -> h.caR; else -> null }
+        return when (chordSide) { ClassChord.LEFT -> h.caL; ClassChord.RIGHT -> h.caR; else -> null }
     }
     /** Home's layer: the chord opened a radial (true) or closed it (false); main thread, on change */
     var onClassRadial: ((Boolean) -> Unit)? = null
+    /** b-radial-exclusive: another overlay is up (the host's list): no class radial opens ([ClassChord.latch]) */
+    var overlayOpen: (() -> Boolean)? = null
+    /** b-class-radial-stick: the right stick moved while a class radial is open (Home redraws its class layer) */
+    var onClassStick: (() -> Unit)? = null
+    /** b-class-radial-stick: a WCLOG line per chord (opened, or held but blocked), with the host's state ([String] = its words) */
+    var onClassChordLog: ((String) -> Unit)? = null
+    private var chordLogged = ClassChord.NONE
+    /** the side the class radial opened on (ClassChord), latched while its chord is held */
+    private var chordSide = ClassChord.NONE
     private var classOpen = false
     private fun noteClassRadial() {
+        val blocked = overlayOpen?.invoke() == true
+        chordSide = ClassChord.latch(chordSide, padLt, padRt, padLb, padRb, blocked)
+        // the device log for the stick that turned the camera (the user, 1.0.9-test16): which chord, and what held the controller then
+        val raw = ClassChord.side(padLt, padRt, padLb, padRb)
+        if (raw != chordLogged) {
+            chordLogged = raw
+            if (raw != ClassChord.NONE) onClassChordLog?.invoke("chord ${if (raw == ClassChord.LEFT) "LB+LT" else "RB+RT"}: " +
+                (if (chordSide == raw) "opened" else "not opened") + " (blocked=$blocked barsUsable=$barsUsable radial=${chordRadial() != null})")
+        }
         val open = chordRadial() != null
         if (open != classOpen) { classOpen = open; onClassRadial?.invoke(open) }
     }
     /** the scale that fits the radial (its base art 512 units; places to 168 + 157 / 2) into a [vw] x [vh] box */
     private fun fitScale(vw: Float, vh: Float) = min(vw, vh) / 520f
     /** the radial's place centre in a [vw] x [vh] box (the same geometry [drawRadial] uses, fitted and centred) */
-    private fun placeAt(i: Int, vw: Float, vh: Float, out: FloatArray) {
+    private fun placeAt(r: Radial, i: Int, vw: Float, vh: Float, out: FloatArray) {
         val sc = fitScale(vw, vh)
-        val a = Math.toRadians(i * 45.0)
+        val a = Math.toRadians(r.angle(i))
         out[0] = vw / 2f + (sin(a) * 168.0).toFloat() * sc
         out[1] = vh / 2f - (kotlin.math.cos(a) * 168.0).toFloat() * sc
     }
@@ -2255,7 +2291,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     /** the class radial last drawn by [drawClassRadial] (for its slide-back after the chord is let go) */
     private var lastClassRadial: Radial? = null
     /** the chord's side now: true = LB + LT (the left radial), false = RB + RT */
-    fun classRadialLeft(): Boolean = ClassChord.side(padLt, padRt, padLb, padRb) != ClassChord.RIGHT
+    fun classRadialLeft(): Boolean = chordSide != ClassChord.RIGHT
     /** the place under ([x], [y]) in that canvas: 0..7, or -1 (none, or an empty place) */
     fun classRadialHit(x: Float, y: Float, vw: Float, vh: Float): Int {
         val r = chordRadial() ?: return -1
@@ -2263,7 +2299,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val pt = FloatArray(2)
         for (i in 0 until 8) {
             if (!r.has[i]) continue
-            placeAt(i, vw, vh, pt)
+            placeAt(r, i, vw, vh, pt)
             if (kotlin.math.abs(x - pt[0]) <= half && kotlin.math.abs(y - pt[1]) <= half) return i
         }
         return -1
@@ -3486,6 +3522,39 @@ internal object ClassChord {
         lb && lt -> LEFT
         rb && rt -> RIGHT
         else -> NONE
+    }
+
+    /**
+     * b-radial-exclusive (1.0.9, the user: "if I use a class radial while the other one is open, they get weird and overlap. I think that
+     * while another overlay is open, a player should not be able to acutally open the class radials"): ONE OVERLAY AT A TIME. The side
+     * open [was] stays while its own chord is held, whatever the other side does (the other chord never takes over or opens beside it);
+     * once let go, a side opens only from nothing and only when no other overlay is up ([blocked]: the item / spell wheel, the pause
+     * menu, the Keyboard & Trackpad, the new-spell prompt, a Home module full screen, a dialog / window).
+     */
+    /**
+     * b-class-radial-slots (1.0.9, the user: "all of the empty slots imply they will all eventually be filled ... I want it to only show
+     * the number of slots that it has available and they should offset each other equally depending on how many the player has"): the
+     * [k]th of [n] places sits at k x 360 / n degrees (0 = the top, clockwise)
+     */
+    fun evenAngle(k: Int, n: Int): Double = if (n <= 0) 0.0 else k * 360.0 / n
+    /** the place (0 until [n]) nearest a stick pointing at [deg] degrees (0 = up, clockwise); -1 for none */
+    fun nearest(deg: Double, n: Int): Int {
+        if (n <= 0) return -1
+        val step = 360.0 / n
+        val a = ((deg % 360.0) + 360.0) % 360.0
+        return ((a + step / 2.0) / step).toInt() % n
+    }
+    /** the right stick ([x] right +, [y] DOWN +, -1..1) as degrees (0 = up, clockwise), or null inside [dead] */
+    fun stickDeg(x: Float, y: Float, dead: Float = 0.5f): Double? {
+        if (kotlin.math.hypot(x, y) < dead) return null
+        val a = Math.toDegrees(kotlin.math.atan2(x.toDouble(), (-y).toDouble()))
+        return if (a < 0) a + 360.0 else a
+    }
+
+    fun latch(was: Int, lt: Boolean, rt: Boolean, lb: Boolean, rb: Boolean, blocked: Boolean): Int = when (was) {
+        LEFT -> if (lb && lt) LEFT else NONE
+        RIGHT -> if (rb && rt) RIGHT else NONE
+        else -> if (blocked) NONE else side(lt, rt, lb, rb)
     }
 
     /**
