@@ -981,7 +981,9 @@ function WC.collectMap()
             local fac = SN(function() return n.faction end)
             if fx and fy and oku and type(und) == "boolean" and WC.isPlain(und) and und == false
                 and (mine == nil or fac == nil or fac == 0 or fac == mine) and #out.fly < 60 then
-                out.fly[#out.fly + 1] = { x = math.floor(fx * 10000 + 0.5) / 10000, y = math.floor(fy * 10000 + 0.5) / 10000 }
+                -- id: the node's own id (b-route-unknown-taxi: the app flies only between nodes a flight master showed connected)
+                out.fly[#out.fly + 1] = { x = math.floor(fx * 10000 + 0.5) / 10000, y = math.floor(fy * 10000 + 0.5) / 10000,
+                                          id = SN(function() return n.nodeID end) }
             end
         end
         for _, n in ipairs(ts) do
@@ -1448,6 +1450,32 @@ local function onExplorationUpdated()
     if id then sendMapExpl(false, { [tostring(id)] = mapExplOne(id) }) end
 end
 
+-- ---------------------------------------------------------------- the flight network (b-route-unknown-taxi)
+-- The user, 2026-10-16: "my current quest is telling me to take a flight path, however I dont have any flight paths connected to where
+-- I am at". Which known flight points CONNECT is readable only at a flight master: its map (C_TaxiMap.GetAllTaxiNodes, the client's
+-- own FlightMapFrame source) gives each node's state - Current (here), Reachable (a flight from here, known and connected) or
+-- Unreachable. At TAXIMAP_OPENED this sends {"type":"taxinet", cur = the node here, reach = {ids}}; the app keeps, per character,
+-- the groups of nodes that connect, and suggests a flight only inside one. Reads only. In WC (the main chunk's 200-local limit).
+function WC.taxiNet()
+    local okm, mid = CALL(function() return (type(GetTaxiMapID) == "function") and GetTaxiMapID() or nil end)
+    if not okm or type(mid) ~= "number" or not WC.isPlain(mid) then return end
+    local okn, nodes = CALL(function() return C_TaxiMap.GetAllTaxiNodes(mid) end)
+    if not okn or type(nodes) ~= "table" then return end
+    local cur, reach = nil, {}
+    local CURRENT = Enum and Enum.FlightPathState and Enum.FlightPathState.Current or 0
+    local REACHABLE = Enum and Enum.FlightPathState and Enum.FlightPathState.Reachable or 1
+    for _, n in ipairs(nodes) do
+        local id = SN(function() return n.nodeID end)
+        local st = SN(function() return n.state end)
+        if id and st then
+            if st == CURRENT then cur = id elseif st == REACHABLE and #reach < 80 then reach[#reach + 1] = id end
+        end
+    end
+    if not cur then return end
+    WC.send(WC.encode({ type = "taxinet", v = "tn1", m = mid, cur = cur, reach = reach }))
+    pcall(WC.push)
+end
+
 -- ---------------------------------------------------------------- quest-marker events
 -- Map.lua's OWN frame, not Core's WANT list: Core's router hands every event it does not know
 -- to WC.snapshot, and QUEST_LOG_UPDATE must never cost a snapshot per kill credit.
@@ -1462,6 +1490,7 @@ local QUEST_MARKER_EVENTS = {
     "MINIMAP_UPDATE_TRACKING",  -- Find Herbs / Minerals switched: the node spots follow at once
     "MAP_EXPLORATION_UPDATED",  -- a new area discovered: the Map room's painted overlays follow (mapexpl)
     "USER_WAYPOINT_UPDATED",    -- the map pin placed / moved / cleared: uwp rides the map snapshot
+    "TAXIMAP_OPENED",           -- a flight master's map: which known nodes connect (taxinet; b-route-unknown-taxi)
 }
 
 local function onQuestMarkerEvent(_, event, a1)
@@ -1491,6 +1520,8 @@ local function onQuestMarkerEvent(_, event, a1)
         snapshotSoon("tracking")    -- map.track rides the map snapshot
     elseif event == "MAP_EXPLORATION_UPDATED" then
         onExplorationUpdated()      -- the current map's explored overlays again
+    elseif event == "TAXIMAP_OPENED" then
+        pcall(WC.taxiNet)           -- read only: the flight master's own answer on what connects
     elseif event == "USER_WAYPOINT_UPDATED" then
         snapshotSoon("waypoint")    -- map.uwp rides the map snapshot
     elseif event == "PLAYER_LEVEL_UP" then

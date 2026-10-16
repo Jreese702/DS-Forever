@@ -629,7 +629,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             bookReady = { lastBook != null },
             fighting = { homeView.inFight() })
         LauncherHooks.cleanExit = { why, done -> ui.post { cleanExit(why, done) } }
-        QuestWatchKeep.init(this)                         // the watch list kept per character (the user's "Restore silently")
+        QuestWatchKeep.init(this)
+        TaxiNet.init(this)                                // which known flight points connect, per character (b-route-unknown-taxi)                         // the watch list kept per character (the user's "Restore silently")
         AllIcons.busy = { homeView.inFight() }                            // the background icons wait while the player fights
         if (LauncherHooks.pkg != null) {
             NativeLogin.onTrafficSample = { rx, tx -> signInCheck.traffic(NativeLogin.firstReadAt, rx, tx) }
@@ -1425,6 +1426,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // every zone's quest markers for the Map room (Map.lua mq1; the user after b101: "I cant see the quests on the map")
             "mapquests" -> worldMapRoom.onMapQuests(msg)
             // Hub hub6's logout word: the world closed (character select, or the game quitting): the waiting screen at once
+            // a flight master's map (Map.lua taxinet): which known nodes connect (b-route-unknown-taxi); replays too (they stay true)
+            "taxinet" -> {
+                val reach = msg.optJSONArray("reach")?.let { r -> List(r.length()) { r.optInt(it) }.filter { it != 0 } } ?: emptyList()
+                val cur = msg.optInt("cur", 0)
+                if (cur != 0) { TaxiNet.onTaxiNet(cur, reach); Log.i("WCMAP", "taxinet: at $cur, ${reach.size} reachable") }
+            }
             "bye" -> if (current) { QuestWatchKeep.cleanEnd(); byeShow() }     // a logout: the game writes its state (the watch list)
             "chat" -> msg.optJSONObject("chat")?.let { chatView.update(it); homeView.onChat(it) }
             // the game's world notice (Chat chat21: the shard transfer's countdown) over Home's chat: current only (a replayed one is old)
@@ -1749,6 +1756,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // the character now: the wheels' kept lists of another character go (the per-character ruling)
                     if (current && !d.name.isNullOrEmpty() && ::radialView.isInitialized) radialView.character("${d.name}-${d.realm ?: ""}")
                     if (current && !d.name.isNullOrEmpty()) QuestWatchKeep.character("${d.name}-${d.realm ?: ""}")
+                    if (!d.name.isNullOrEmpty()) TaxiNet.character("${d.name}-${d.realm ?: ""}")
                     lastDpad = d; settings.homeSection.dpadChanged()
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state

@@ -2464,11 +2464,15 @@ class MapView(context: Context) : View(context) {
         val pxm = m.optDouble("x", Double.NaN); val pym = m.optDouble("y", Double.NaN)
         if (pxm.isNaN() || pym.isNaN()) return
         val nodes = ArrayList<DoubleArray>(a.length())
+        val ids = ArrayList<Int>(a.length())
         for (i in 0 until a.length()) a.optJSONObject(i)?.let { o ->
             val x = o.optDouble("x", Double.NaN); val y = o.optDouble("y", Double.NaN)
-            if (!x.isNaN() && !y.isNaN()) nodes.add(doubleArrayOf(x, y))
+            // b-route-unknown-taxi: a point without its node id (an older add-on) cannot be shown connected: never a flight from it
+            if (!x.isNaN() && !y.isNaN()) { nodes.add(doubleArrayOf(x, y)); ids.add(o.optInt("id", 0)) }
         }
-        val k = FlightRoute.pick(pxm, pym, focusTX, focusTY, nodes, r.width, r.height) ?: return
+        val k = FlightRoute.pick(pxm, pym, focusTX, focusTY, nodes, r.width, r.height) { i, j ->
+            ids[i] != 0 && ids[j] != 0 && TaxiNet.connected(ids[i], ids[j])
+        } ?: return
         focusTX = nodes[k][0]; focusTY = nodes[k][1]; flyStep = true
     }
 
