@@ -37,8 +37,12 @@ class MapCursor {
         object PlayerMenu : Do()
         /** A on an untracked tab: open / close it */
         data class Toggle(val key: Int) : Do()
-        /** A on an untracked quest: the game's tracker takes it */
+        /** A on an untracked quest: the game's tracker takes it, and the game's focus (the user, 2026-10-16: "A to track and Focus") */
         data class Track(val id: Int) : Do()
+        /** X on an untracked quest: the tracker takes it (X is the inverse of a quest's tracking, tracked or not: the user 2026-10-16) */
+        data class Watch(val id: Int) : Do()
+        /** Y on an untracked quest: its panel (the quest log's right half, with Share and Abandon) */
+        data class Open(val id: Int) : Do()
         data class Zoom(val out: Boolean) : Do()
         object CloseFilter : Do()
         object ToggleFilter : Do()
@@ -139,8 +143,17 @@ class MapCursor {
                 sel == focusId -> Do.Unfocus(sel)
                 else -> Do.Focus(sel)
             }
-            "PAD3" -> return if (!shown || !valid || sel <= 0 || sel in untracked) Do.Nothing else Do.Untrack(sel)
-            "PAD4" -> return if (!shown || !valid || sel <= 0 || sel in untracked) Do.Nothing else Do.ShowOnMap(sel)
+            "PAD3" -> return when {
+                !shown || !valid -> Do.Nothing
+                sel <= 0 -> Do.Nothing
+                sel in untracked -> Do.Watch(sel)
+                else -> Do.Untrack(sel)
+            }
+            "PAD4" -> return when {
+                !shown || !valid || sel <= 0 -> Do.Nothing
+                sel in untracked -> Do.Open(sel)
+                else -> Do.ShowOnMap(sel)
+            }
         }
         return Do.Nothing
     }

@@ -815,6 +815,35 @@ class HomeView(
     fun watchQuest(id: Int, note: (String) -> Unit) =
         questAct(id, "watch", QuestPad.Act.WATCH, quests.tapWatch(id, GameInput.live(), System.currentTimeMillis()), note)
 
+    /**
+     * TRACK AND FOCUS quest [id] (A on an untracked quest; the user, 2026-10-16: "A to track and Focus"): the tracker takes it, then
+     * the game's focus, one pick + act pair each, WATCH_GAP_MS apart (the pick serves one action).
+     */
+    fun trackAndFocus(id: Int, note: (String) -> Unit) {
+        val t = quests.tapAny(id, "track", GameInput.live(), System.currentTimeMillis())
+        if (t !is FocusTap.Send) { if (t is FocusTap.Refused) note(t.why); return }
+        val watch = QuestPad.cells(pad, QuestPad.Act.WATCH, t.slot)
+        Log.i(TAG, "track+focus $id: send ${watch ?: "no cells"}")
+        if (watch == null || !TapBridge.taps(context, pad, watch) { why -> post { quests.sendFailed(); note(why) } }) {
+            quests.sendFailed(); note("The game has not published its tap pad"); return
+        }
+        postDelayed({
+            QuestPad.cells(pad, QuestPad.Act.FOCUS, t.slot)?.let { TapBridge.taps(context, pad, it) { why -> post { note(why) } } }
+        }, WATCH_GAP_MS)
+    }
+
+    /** SHARE quest [id] (the map module's quest panel; the game's own Share Quest, Quests.lua q11) */
+    fun shareQuest(id: Int, note: (String) -> Unit) =
+        questAct(id, "share", QuestPad.Act.SHARE, quests.tapAny(id, "share", GameInput.live(), System.currentTimeMillis()), note)
+
+    /** ABANDON quest [id], first tap: the add-on names the quest it would drop (questack "arm"); the panel then asks */
+    fun armAbandon(id: Int, note: (String) -> Unit) =
+        questAct(id, "arm", QuestPad.Act.ARM, quests.tapAny(id, "arm", GameInput.live(), System.currentTimeMillis()), note)
+
+    /** ABANDON, the confirm: drops what ARM named */
+    fun confirmAbandon(id: Int, note: (String) -> Unit) =
+        questAct(id, "abandon", QuestPad.Act.CONFIRM, quests.tapConfirm(id, GameInput.live(), System.currentTimeMillis()), note)
+
     /** read the game's own player menu for the bottom screen (A on the map module's portrait; Quests.lua q41, qact 34) */
     fun playerMenu(note: (String) -> Unit) {
         if (!GameInput.live()) { note("Waiting for the game"); return }
@@ -2187,6 +2216,8 @@ class HomeView(
     }
 
     companion object {
+        /** one pick + act pair at a time: the add-on's pick serves one action (CompanionHost's restore uses the same gap) */
+        const val WATCH_GAP_MS = 700L
         /** p-grow-glitch: B does not shrink the big controller this soon after it grew */
         private const val GROW_B_GRACE_MS = 2_000L
         /** f-class-radial: a press this long on a pet spell's place toggles its autocast */
