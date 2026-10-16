@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b40"                -- bump on every change
+local BV = "b41"                -- bump on every change; b41: padtab 15-25 = the In combat tab's form row (PadTabCtl p29)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -1181,7 +1181,10 @@ local PADTAB = {
     [11] = function(pt) pt.touchCleanList() end, [12] = function(pt) pt.touchCleanRun() end,
     -- b32: 13 the shared DS macros' run (PadTabCtl p21 / PadMap m42; 14-39 refused)
     [13] = function(pt) pt.touchSharedRun() end,
+    -- b41 (f-combat-forms, PadTabCtl p29): 15 the In combat tab's Caster, 16-25 its forms in the game's order (a pick; 14 is b35's)
+    [15] = function(pt) if type(pt.touchForm) == "function" then pt.touchForm(0) end end,
 }
+for k = 1, 10 do PADTAB[15 + k] = function(pt) if type(pt.touchForm) == "function" then pt.touchForm(k) end end end
 if type(pad) == "table" and type(pad.op) == "function" then
     pcall(pad.op, "padtab", "padtab", function(_, col)
         local fn = type(col) == "number" and PADTAB[col]

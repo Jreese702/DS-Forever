@@ -23,12 +23,28 @@ object HomeFightFace {
         for (pos in PadMapModel.FACES) PadMapModel.slot(map, BASE_SET, pos)?.fight?.id?.takeIf { it > 0 }?.let { out[pos] = it }
         if (fight) for (pos in 1..4) PadMapModel.slot(map, BASE_SET, pos)?.takeIf { it.kind == PadMapModel.Kind.COMBAT && it.ov }
             ?.combat?.id?.takeIf { it > 0 }?.let { out[pos] = it }
+        formOwn(map).forEach { (pos, r) -> if (pos in PadMapModel.FACES || fight) r.id?.takeIf { it > 0 }?.let { out[pos] = it } }
         return out
     }
 
+    /**
+     * m55 IN-COMBAT SETS PER FORM (f-combat-forms; the user's pick "1: A set per form"): in a form, the bare set's positions the form has its
+     * OWN In-combat spell for (the router casts those there); every other position keeps the caster's (its fallback). Empty out of a form.
+     */
+    fun formOwn(map: PadMapModel.Map): Map<Int, PadMapModel.Ref> {
+        val f = map.activeForm ?: return emptyMap()
+        return map.formFights.filter { it.form == f.id && it.pos != 7 }.associate { it.pos to it.ref }
+    }
+
+    /** the face positions (5 / 6 / 8): a form's own face spell shows whenever the faces' own do; its D-pad ones only in a fight */
+    val FACE_POSITIONS: Set<Int> get() = PadMapModel.FACES.toSet()
+
+    /** m55: the active form's icon for the In-combat mark (Home's bars show whose set fights), null when not in a form or it has none */
+    fun formBadge(map: PadMapModel.Map): Int? = map.activeForm?.takeIf { f -> map.formFights.any { it.form == f.id } }?.icon?.takeIf { it != 0 }
+
     fun icons(map: PadMapModel.Map): Map<Int, Int> =
         PadMapModel.FACES.filter { it in map.faceArmed }.mapNotNull { pos ->
-            PadMapModel.slot(map, BASE_SET, pos)?.fight?.icon?.takeIf { it != 0 }?.let { pos to it }
+            (formOwn(map)[pos]?.icon?.takeIf { it != 0 } ?: PadMapModel.slot(map, BASE_SET, pos)?.fight?.icon?.takeIf { it != 0 })?.let { pos to it }
         }.toMap()
 
     /**
@@ -37,7 +53,9 @@ object HomeFightFace {
      */
     fun dpadIcons(map: PadMapModel.Map, fight: Boolean = map.fight): Map<Int, Int> = if (!fight) emptyMap() else
         (1..4).mapNotNull { pos ->
-            PadMapModel.slot(map, BASE_SET, pos)?.takeIf { it.kind == PadMapModel.Kind.COMBAT && it.ov }?.combat?.icon?.takeIf { it != 0 }?.let { pos to it }
+            (formOwn(map)[pos]?.icon?.takeIf { it != 0 }
+                ?: PadMapModel.slot(map, BASE_SET, pos)?.takeIf { it.kind == PadMapModel.Kind.COMBAT && it.ov }?.combat?.icon?.takeIf { it != 0 })
+                ?.let { pos to it }
         }.toMap()
 
     /**

@@ -56,6 +56,11 @@ object PadMapModel {
     /** m33 an Extra tab entry that is not a command: a mount (the Mount Journal's) or a bag item, by its id, name and icon (the user's picks 2026-10-07: the ready-made commands, "Any Item from a bag (mount hearthstone etc)") */
     data class Extra(val id: Int, val name: String, val icon: Int)
 
+    /** m55 (f-combat-forms): one of the character's forms / stances in the game's order ([x] its index now, [id] its spell id, [on] the
+     *  form now) and a form's OWN In-combat spell on bare-set position [pos] (1-4 the D-pad, 5 / 6 / 8 the faces) */
+    data class Form(val x: Int, val id: Int, val name: String, val icon: Int, val on: Boolean)
+    data class FormFight(val form: Int, val pos: Int, val ref: Ref)
+
     data class Map(
         val version: String,
         val page: Int,
@@ -101,7 +106,12 @@ object PadMapModel {
         /** m49 A / X / Y's FIGHT SWITCH (an attack / auto-repeat running, or combat; the user on test20: the D-pad's In-combat picture
          *  must switch WITH the other combat spells, not at combat): the padmap's `fight`; null = an older add-on (then [combat]) */
         val fightSwitch: Boolean? = null,
+        /** m55: the forms (empty: a class without) and every form's own In-combat spells */
+        val forms: List<Form> = emptyList(),
+        val formFights: List<FormFight> = emptyList(),
     ) {
+        /** m55: the form the character is in now (null: none / caster) */
+        val activeForm: Form? get() = forms.firstOrNull { it.on }
         /** what the D-pad's In-combat picture follows: the faces' switch, or the combat flag from an older add-on */
         val fight: Boolean get() = fightSwitch ?: combat
         val faceArmed: Set<Int> get() = faceArmedLayer.keys
@@ -162,6 +172,15 @@ object PadMapModel {
             },
             mounts = objects(m.optJSONArray("mounts")).mapNotNull { o -> extra(o) },
             items = objects(m.optJSONArray("items")).mapNotNull { o -> extra(o) },
+            forms = objects(m.optJSONArray("forms")).mapNotNull { o ->
+                val id = o.optInt("id", 0)
+                if (id <= 0) null else Form(o.optInt("x", 0), id, o.optString("n", ""), o.optInt("i", 0), o.optBoolean("on", false))
+            },
+            formFights = objects(m.optJSONArray("ff")).mapNotNull { o ->
+                val f = o.optInt("f", 0); val p = o.optInt("p", 0)
+                val r = textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0)) }
+                if (f > 0 && p in 1..8 && r != null) FormFight(f, p, r) else null
+            },
             faceKeys = m.optJSONObject("face")?.optJSONObject("keys")?.let { k ->
                 FACES.mapNotNull { p -> k.optString(p.toString(), "").takeIf { it.isNotEmpty() }?.let { p to it } }.toMap()
             } ?: emptyMap(),
@@ -372,6 +391,9 @@ object PadMapModel {
          *  clockwise, as Home's wheel */
         val rpage: Int = 1,
         val rad: List<Int> = emptyList(),
+        /** p29 (f-combat-forms): the In combat tab's chosen form (its spell id; null = Caster) and the form row's cursor (0 = Caster) */
+        val form: Int? = null,
+        val fcur: Int? = null,
     )
     /** the button Move carries: its set (1-4), its place (1-8), its bar page */
     data class Carry(val set: Int, val pos: Int, val page: Int)
@@ -403,6 +425,8 @@ object PadMapModel {
                                                          it.optInt("page", 1).coerceIn(1, 3)) },
             rpage = c.optInt("rpage", 1).coerceIn(1, 3),
             rad = c.optJSONArray("rad")?.let { a -> List(minOf(8, a.length())) { i -> a.optInt(i, 0) } } ?: emptyList(),
+            form = intOrNull(c, "form")?.takeIf { it > 0 },
+            fcur = intOrNull(c, "fcur"),
         )
     }
 
@@ -454,6 +478,11 @@ object PadMapModel {
     const val COL_CLEAN_RUN = 12
     /** m42 (PadTabCtl p21, Book b32): the shared DS macros' run (ONE action, after the room's box) */
     const val COL_CLEAN_SHARED = 13
+    /** b41 / p29 (f-combat-forms): the In combat tab's form row by touch: 15 = Caster, 16-25 = the forms in the game's order (a pick) */
+    fun colForm(k: Int) = 15 + k.coerceIn(0, 10)
+    /** m55: form [form]'s own In-combat spell on bare-set position [pos], or null */
+    fun formFight(map: Map, form: Int, pos: Int): Ref? = map.formFights.firstOrNull { it.form == form && it.pos == pos }?.ref
+
     /** b27 / p13: LB, tapped by the app on the bumper's release (LB is the game's emulated Ctrl on this device: the capture never hears it) */
     const val COL_LB = 9
 

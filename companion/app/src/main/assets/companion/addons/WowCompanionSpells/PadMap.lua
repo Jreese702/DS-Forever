@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m54"                -- bump on every change
+local PV = "m55"                -- bump on every change; m55: In-combat sets per form / stance (f-combat-forms)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -434,6 +434,20 @@ function WC.collectPadMap()
         end
         doc.sets[set] = row
     end
+    -- m55: the character's forms (index order; `on` = the form now) and every form's own In-combat spells, as a flat list
+    local forms = OV.forms()
+    doc.forms = #forms > 0 and forms or nil
+    local ffl = {}
+    for fid, t in pairs(OV.ffdb()) do
+        if type(t) == "table" then
+            for pos, e in pairs(t) do
+                if type(pos) == "number" and type(e) == "table" and type(e.n) == "string" then
+                    ffl[#ffl + 1] = { f = fid, p = pos, id = e.id, n = e.n, i = e.i }
+                end
+            end
+        end
+    end
+    doc.ff = #ffl > 0 and ffl or nil
     doc.macros = macroCounts()
     doc.face = faceState()
     doc.dpad = dpadState()
@@ -686,6 +700,44 @@ function OV.ftAt(s)
     local e = OV.ftdb()[s]
     return (type(e) == "table" and type(e.n) == "string") and e or nil
 end
+-- m55 IN-COMBAT SETS PER FORM (f-combat-forms; the user 2026-10-15: "we need to figure out a way to have dynamic in combat bars that support
+-- changing forms", then the pick "1: A set per form"): a druid's Bear / Cat / ..., a warrior's stances, a rogue's Stealth each get their OWN
+-- In-combat spells for the BARE set (the one the game swaps per form: the triggers' sets stay the caster's), this character's entry
+-- formFightBy[name-realm][form spell id][pos] = { id, n, i } (pos 1-4 the D-pad, 5 / 6 / 8 the faces; B never). A form without its own
+-- spell on a position uses the caster's (the D-pad's slot fight spell, the faces' own). Kept by spell id, so learning a new form (which
+-- renumbers the forms) never moves a set; the router reads the form NOW from a state driver ([form:N], in fights too).
+function OV.forms()
+    local out = {}
+    local ok, n = pcall(GetNumShapeshiftForms)
+    n = (ok and type(n) == "number") and n or 0
+    for x = 1, math.min(n, 10) do
+        local okf, icon, active, _, sid = pcall(GetShapeshiftFormInfo, x)
+        if okf and type(sid) == "number" and sid > 0 then
+            local nm = TS(function() return C_Spell.GetSpellName(sid) end)
+            out[#out + 1] = { x = x, id = sid, n = nm, i = type(icon) == "number" and icon or nil, on = (active == true) or nil }
+        end
+    end
+    return out
+end
+function OV.ffdb()
+    if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+    local db = _G.WowCompanionSpellsDB
+    if type(db.formFightBy) ~= "table" then db.formFightBy = {} end
+    local k = whoKey()
+    if not k then return {} end
+    if type(db.formFightBy[k]) ~= "table" then db.formFightBy[k] = {} end
+    return db.formFightBy[k]
+end
+function OV.ffAt(form, pos)
+    local t = OV.ffdb()[form]
+    local e = type(t) == "table" and t[pos]
+    return (type(e) == "table" and type(e.n) == "string") and e or nil
+end
+-- a form this character has (by spell id), or nil
+function OV.formOf(id)
+    for _, f in ipairs(OV.forms()) do if f.id == id then return f end end
+end
+
 -- what a button shows: a binding, else its command or its bar slot; with a fight spell it reads as a combat button ("ov": the overlay's),
 -- its Otherwise being whatever the button holds
 function OV.view(set, pos, s)
@@ -853,6 +905,19 @@ local PRE = [=[
         -- auto-repeat running and not given back (faceWant)
         -- m50 (the user on test21, "Switch everything back"): B's give-back wins in a fight too, exactly as for A / X / Y
         local sw = (self:GetAttribute("wc-state") == "fight" or self:GetAttribute("wc-pre")) and not self:GetAttribute("wc-given")
+        -- m55 IN-COMBAT SETS PER FORM: in a form (the header's "wc-form", a state driver on [form:N]) a bare press takes the FORM's own
+        -- In-combat spell for this position ("wc-ff-<form>-<pos>", the faces' too); a D-pad position without one takes the caster's
+        -- ("wc-ffc-<pos>": the form's bar has other slots, whose own fight spells are none); the faces without one keep their fight spell
+        if bare and mode ~= "room" and role ~= "back" then
+            local fh = self:GetFrameRef("wc-hdr")
+            local fm = fh and fh:GetAttribute("wc-form")
+            local fp = self:GetAttribute("wc-pos")
+            if fm and fm ~= 0 and fp then
+                local own = fh:GetAttribute("wc-ff-" .. fm .. "-" .. fp)
+                if own then ft = own; fight = false
+                elseif not ft and not fight then ft = fh:GetAttribute("wc-ffc-" .. fp) end
+            end
+        end
         if rb and sw and dest and ft then rb = nil end
         local mb = "LeftButton"
         if mode == "room" and self:GetAttribute("wc-room-dest") then
@@ -933,6 +998,9 @@ local function routerHeader()
         R.hdr = CreateFrame("Frame", "WowCompanionFaceRouter", UIParent, "SecureHandlerStateTemplate")
         R.hdr:SetAttribute("_onstate-wcfight", ONFIGHT)
         RegisterStateDriver(R.hdr, "wcfight", "[combat] 1; 0")
+        -- m55: the shapeshift form now (0 = none), for the per-form In-combat sets; a state driver, so it follows forms in fights too
+        R.hdr:SetAttribute("_onstate-wcform", [=[ self:SetAttribute("wc-form", tonumber(newstate) or 0) ]=])
+        RegisterStateDriver(R.hdr, "wcform", "[form:1] 1; [form:2] 2; [form:3] 3; [form:4] 4; [form:5] 5; [form:6] 6; [form:7] 7; [form:8] 8; [form:9] 9; [form:10] 10; 0")
         -- SPEC item 2: a secure click on this button gives A / X / Y back IN a fight (Book's give-back cell clicks it)
         R.give = CreateFrame("Button", "WowCompanionFaceGiveBack", UIParent, "SecureHandlerClickTemplate")
         R.give:RegisterForClicks("AnyDown")
@@ -982,6 +1050,7 @@ end
 -- Forever's buttons for one bar position (1-4 the D-pad, 5-8 the faces), per anchor, plus the triggers' indexes and the key's name
 local function routerWire(b, pos, key)
     local bars = routerBars()
+    b:SetAttribute("wc-pos", pos)                                      -- m55: the per-form sets are kept by position
     -- m53: the stance / form bar, marked where it is wired (the snippet counts it as the bare press on the top anchor)
     local sb = T(function() local pu = _G.GamepadMainActionBarFrame.PageUnit; return pu.actionBars and pu.actionBars.stanceBar end)
     for k in pairs(ANCHORS) do
@@ -1244,6 +1313,34 @@ local function routerMacros()
     for k in pairs(was) do if not now[k] then OV.rebind = true end end
     for k in pairs(now) do if not was[k] then OV.rebind = true end end
     R.saPos = posS
+    -- m55: the forms' own In-combat spells ("wc-ff-<form index>-<pos>") and the caster's D-pad ones for a form without its own
+    -- ("wc-ffc-<pos>": the bare set's slots on the page in use); the index is the form's NOW, so a newly learned form re-sends them
+    local wantFF = {}
+    if combatOn() then
+        local idx = {}
+        for _, fo in ipairs(OV.forms()) do idx[fo.id] = fo.x end
+        for fid, t in pairs(OV.ffdb()) do
+            if idx[fid] and type(t) == "table" then
+                for pos, e in pairs(t) do
+                    if type(pos) == "number" and type(e) == "table" and type(e.n) == "string" and WC.isPlain(e.n) then
+                        wantFF["wc-ff-" .. idx[fid] .. "-" .. pos] = ((saOn and harmful(e.id or e.n)) and attackLines("") or "") .. "/cast " .. e.n
+                    end
+                end
+            end
+        end
+        local pg = gamePage()
+        for pos = 1, 4 do
+            local sl = not fixed(1, pos) and storage(pg, 1, pos)
+            if sl and wantF[sl] then wantFF["wc-ffc-" .. pos] = wantF[sl] end
+        end
+    end
+    R.ff = R.ff or {}
+    for k in pairs(R.ff) do
+        if wantFF[k] == nil then pcall(function() hdr:SetAttribute(k, nil) end); R.ff[k] = nil; changed = true end
+    end
+    for k, body in pairs(wantFF) do
+        if R.ff[k] ~= body then pcall(function() hdr:SetAttribute(k, body) end); R.ff[k] = body; changed = true end
+    end
     for slot in pairs(R.ft) do
         if wantF[slot] == nil then pcall(function() hdr:SetAttribute("wc-ft-" .. slot, nil) end); R.ft[slot] = nil; changed = true end
     end
@@ -2329,7 +2426,7 @@ local CLEAN = (function()
     local function knownChars()
         local db, out = _G.WowCompanionSpellsDB, {}
         if type(db) ~= "table" then return out end
-        for _, t in ipairs({ db.faceBy, db.attackBy, db.dpad, db.dpadZL, db.binds, db.ccOff, db.cmdBy, db.genUse }) do
+        for _, t in ipairs({ db.faceBy, db.attackBy, db.dpad, db.dpadZL, db.binds, db.ccOff, db.cmdBy, db.genUse, db.formFightBy }) do
             if type(t) == "table" then
                 for k in pairs(t) do if type(k) == "string" and k:find("-", 1, true) then out[k] = true end end
             end
@@ -2742,6 +2839,36 @@ WC.padMap = {
         soon()
         return ok
     end,
+    -- m55 A FORM'S OWN In-combat spell on the bare set's position (1-4 the D-pad, 5 / 6 / 8 the faces), out of combat; nothing of the
+    -- player's changes (the router's header text, as every fight spell)
+    putCombatForm = function(form, pos, bookSlot)
+        if inCombat() then ack("cform", false, "combat") return false, "combat" end
+        if not OV.formOf(form) then ack("cform", false, "no form") return false, "no form" end
+        if type(pos) ~= "number" or pos < 1 or pos > 8 or pos == 7 then ack("cform", false, "reserved") return false, "reserved" end
+        if not whoKey() then ack("cform", false, "no character") return false, "no character" end
+        local id, name = bookSpell(bookSlot)
+        if not name then ack("cform", false, "bad spell") return false, "bad spell" end
+        local r = spellRef(name) or {}
+        local t = OV.ffdb()
+        if type(t[form]) ~= "table" then t[form] = {} end
+        t[form][pos] = { id = id, n = name, i = r.i or 0 }
+        pcall(routerMacros)
+        ack("cform", true)
+        soon()
+        return true
+    end,
+    clearCombatForm = function(form, pos)
+        if inCombat() then ack("uncform", false, "combat") return false, "combat" end
+        local t = OV.ffdb()[form]
+        if type(t) == "table" then t[pos] = nil; if next(t) == nil then OV.ffdb()[form] = nil end end
+        pcall(routerMacros)
+        ack("uncform", true)
+        soon()
+        return true
+    end,
+    -- what a form's position holds (PadTabCtl's In combat view with a form chosen): its own entry, or nil
+    formFight = function(form, pos) return OV.ffAt(form, pos) end,
+    forms = function() return OV.forms() end,
     -- THE BASE FACE BUTTONS IN FIGHTS: a spell for bare X / Y / A (B stays the game's Back); no macro, the companion's secure header
     putCombatFace = function(pos, bookSlot)
         if inCombat() then ack("cface", false, "combat") return false, "combat" end
@@ -3021,6 +3148,8 @@ end
 R.fs = CreateFrame("Frame")
 for _, e in ipairs({ "UPDATE_SHAPESHIFT_FORM", "UPDATE_SHAPESHIFT_FORMS", "PLAYER_REGEN_ENABLED" }) do pcall(function() R.fs:RegisterEvent(e) end) end
 R.fs:SetScript("OnEvent", function()
+    pcall(soon)                                                         -- m55: the document's active form (Home's bars show its set)
+    if routerMacrosSoon then pcall(routerMacrosSoon) end                -- m55: a learned form renumbers the forms (out of combat)
     if R.rewireQueued then return end
     R.rewireQueued = true
     C_Timer.After(0.3, R.rewireAll)

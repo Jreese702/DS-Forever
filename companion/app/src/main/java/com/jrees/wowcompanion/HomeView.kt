@@ -504,6 +504,9 @@ class HomeView(
         val d = HomeFightFace.dpadIcons(map, fightNow)
         castView.fightDpad = d
         castView.fightIds = HomeFightFace.ids(map, fightNow)            // b-combat-bar-states: their state by spell id
+        // m55 (f-combat-forms): in a form, the positions fighting with the form's own set wear its icon
+        castView.fightFormPos = HomeFightFace.formOwn(map).keys.filter { it in HomeFightFace.FACE_POSITIONS || fightNow }.toSet()
+        castView.fightFormIcon = HomeFightFace.formBadge(map) ?: 0
         // ONE line per change, so one approved log read proves what the toolbar's D-pad was given (Tracking's ask after test18)
         if (d != dpadSaid) { dpadSaid = d; Log.i("WCLOG", "dpad draw: fight=$fightNow dpad=$d") }
     }
