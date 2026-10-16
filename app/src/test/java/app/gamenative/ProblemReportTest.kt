@@ -334,6 +334,16 @@ class ProblemReportTest {
         ReportFlow.clearPending()
     }
 
+    @Test fun theReportCarriesDxvksLog() {
+        val r = ProblemReport.build(0L, "crash loading in", facts, emptyList(), emptyList(), emptyList(), false, listOf("Jaina"),
+            dxvk = "--- Wow_d3d11.log (previous run) ---\nerr: DxvkMemoryAllocator: Memory allocation failed (Jaina)")
+        val d = r.files.first { it.first == "dxvk.txt" }.second
+        assertTrue(d.contains("Memory allocation failed")); assertFalse(d.contains("Jaina"))
+        val o = JSONObject(ReportUpload.request(r, "crash loading in", facts, false, emptyList()))
+        assertTrue(o.getString("logs").endsWith("err: DxvkMemoryAllocator: Memory allocation failed (<name>)"))   // last: survives trims
+        assertFalse(ProblemReport.build(0L, "x", facts, emptyList(), emptyList(), emptyList(), false, emptyList()).files.any { it.first == "dxvk.txt" })
+    }
+
     @Test fun onlyOurTags() {
         assertTrue(ProblemReport.ourTag("WCHARVEST")); assertTrue(ProblemReport.ourTag("DSFORK")); assertTrue(ProblemReport.ourTag("FrameGen"))
         assertFalse(ProblemReport.ourTag("WCCHAT")); assertFalse(ProblemReport.ourTag("ActivityManager"))

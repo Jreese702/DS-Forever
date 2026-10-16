@@ -789,6 +789,8 @@ private data class GpuProfile(val driver: String, val tuDebug: String, val scree
 
 private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onStatus: (String) -> Unit): String {
     installBundledComponents(context, onStatus)
+    // b-dxvk-load-crash: the last run's DXVK log is kept (DXVK truncates it at start: a restart after a crash would erase it)
+    runCatching { com.jrees.wowcompanion.DxvkLogs.rotate(com.jrees.wowcompanion.DxvkLogs.dir(context.dataDir)) }
 
     check(File(gameRoot, BUILD_INFO).exists()) { "Missing $BUILD_INFO in $gameRoot. Copy it from your WoW install." }
     // launch support: the client this folder runs (the beta or the launch client, from its .build.info), for every path below
@@ -840,7 +842,9 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
 
 private fun containerConfig(gameRoot: File, gpu: GpuProfile, executablePath: String): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
-    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144$samsungEnv"
+    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144$samsungEnv " +
+        // b-dxvk-load-crash: DXVK's own warnings into a private log (the container's vars come after DXVKHelper's "none")
+        com.jrees.wowcompanion.DxvkLogs.ENV
     return JSONObject().apply {
         put("id", CONTAINER_ID)
         put("name", "WoW Forever")
