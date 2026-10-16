@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q41"    -- bump on every change; the app shows it, so a stale build is visible
+local QV = "q42"    -- bump on every change; the app shows it, so a stale build is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2067,19 +2067,11 @@ function WC.pmenu.read()
     end
     pcall(function() WC.send(WC.encode({ type = "pmenu", v = QV, shape = shape, items = items })); WC.push() end)
 end
+-- q42: NOTHING IS RUN (test10 on the Thor: an entry's OnClick from add-on code ran tainted; Reset all instances' confirm then had the
+-- game's own gamepad code call SetPreferredGamepadInteractTarget() from that stack: ADDON_ACTION_FORBIDDEN blamed on this add-on; the
+-- toggles did nothing). The menu stays readable; a run is refused until each entry has a taint-free way (the plan with tracking).
 function WC.pmenu.run(id)
-    local P = WC.pmenu
-    local e = P.list[id + 1]
-    if not e then return gack(nil, "pmenurun", false, "the menu changed") end
-    local ctx = P.ctx()
-    if P.blocked(e) then return gack(nil, "pmenurun", false, "not from the companion") end
-    local okS, show = pcall(function() return type(e.CanShow) ~= "function" or e:CanShow(ctx) end)
-    local okE, en = pcall(function() return type(e.IsEnabled) ~= "function" or e:IsEnabled(ctx) end)
-    if not (okS and show and okE and en) then return gack(nil, "pmenurun", false, "not available now") end
-    local okT, t = pcall(e.GetText, e, ctx)
-    local ok = type(e.OnClick) == "function" and pcall(e.OnClick, e, ctx)
-    gack(nil, "pmenurun", ok and true or false, (okT and type(t) == "string" and WC.isPlain(t)) and t or nil)
-    C_Timer.After(0.3, function() pcall(P.read) end)      -- the checks and the entries follow what it did
+    gack(nil, "pmenurun", false, "not available yet")
 end
 GACT[G_PLAYER_MENU] = function() WC.pmenu.read() end
 for d = 0, 7 do

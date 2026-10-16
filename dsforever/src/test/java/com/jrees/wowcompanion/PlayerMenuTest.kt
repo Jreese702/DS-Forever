@@ -14,7 +14,7 @@ class PlayerMenuTest {
         {"t":"Set Focus","i":2,"en":0},
         {"t":"Reset all instances","i":3,"en":1}]}""")
 
-    private fun opened() = PlayerMenu().apply { openReading(); onDoc(doc) }
+    private fun opened(runs: Boolean = true) = PlayerMenu(runs).apply { openReading(); onDoc(doc) }
 
     @Test fun opensOnTheFirstEntryNotTheTitle() {
         val m = opened()
@@ -61,5 +61,13 @@ class PlayerMenuTest {
         val m = PlayerMenu().apply { openReading(); onDoc(JSONObject("""{"type":"pmenu","shape":"none","items":[]}""")) }
         assertTrue(m.empty)
         assertEquals(PlayerMenu.Do.None, m.key("PAD1"))
+    }
+
+    @Test fun nothingRunsWhileTheRunPathIsOff() {
+        assertFalse(PlayerMenu.RUNS)
+        val m = opened(runs = false)
+        m.key("PADDDOWN"); m.key("PADDDOWN")
+        assertEquals(PlayerMenu.Do.Refused("Not available yet"), m.key("PAD1"))
+        assertTrue(m.open)
     }
 }
