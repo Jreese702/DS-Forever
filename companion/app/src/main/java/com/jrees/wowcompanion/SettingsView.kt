@@ -100,6 +100,11 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segPick = Array(2) { RectF() }
     /** the spell wheel's own pair (HomeSettings.spellTap / spellPickA; f-radial-settings) */
     private val segSpellOpen = Array(2) { RectF() }
+    /** the class radials' pairs (HomeSettings.classTapL / classPickAL, ...R; f-radial-settings) */
+    private val segClassLOpen = Array(2) { RectF() }
+    private val segClassLPick = Array(2) { RectF() }
+    private val segClassROpen = Array(2) { RectF() }
+    private val segClassRPick = Array(2) { RectF() }
     private val segSpellPick = Array(2) { RectF() }
     /** the pause wheel's own pair (HomeSettings.pauseTap / pausePickA; the user 2026-10-09) */
     private val segPauseOpen = Array(2) { RectF() }
@@ -203,7 +208,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         rowHits.clear()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
-        for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segChat,
+        for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
+                         segClassROpen, segClassRPick, segChat,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -225,7 +231,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.MAP -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH()
         SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 10f + ROW_H
-        SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL -> 16f + ROW_H + 10f + ROW_H
+        SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
+        SettingsTabs.Block.CLASS_LEFT, SettingsTabs.Block.CLASS_RIGHT -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.CHAT -> 16f + ROW_H
         SettingsTabs.Block.FRAMES -> 16f + fgHeight()
         else -> 0f
@@ -320,6 +327,14 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segSpellOpen[1].contains(x, y) -> HomeSettings.spellTap = false
             segSpellPick[0].contains(x, y) -> HomeSettings.spellPickA = true
             segSpellPick[1].contains(x, y) -> HomeSettings.spellPickA = false
+            segClassLOpen[0].contains(x, y) -> HomeSettings.classTapL = true
+            segClassLOpen[1].contains(x, y) -> HomeSettings.classTapL = false
+            segClassLPick[0].contains(x, y) -> HomeSettings.classPickAL = true
+            segClassLPick[1].contains(x, y) -> HomeSettings.classPickAL = false
+            segClassROpen[0].contains(x, y) -> HomeSettings.classTapR = true
+            segClassROpen[1].contains(x, y) -> HomeSettings.classTapR = false
+            segClassRPick[0].contains(x, y) -> HomeSettings.classPickAR = true
+            segClassRPick[1].contains(x, y) -> HomeSettings.classPickAR = false
             btnDll.contains(x, y) -> onChooseDll()
             btnRestart.contains(x, y) -> { btnRestart = RectF(); onRestart() }
             segFg[0].contains(x, y) -> FrameGen.enabled = false
@@ -378,6 +393,10 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                     "Hold D-pad Up; letting go closes it.", HomeSettings.radialTap, HomeSettings.radialPickA, segOpen, segPick)
                 SettingsTabs.Block.SPELL_WHEEL -> drawWheel(c, y, "Spell wheel", "Press its button to open; it stays until B.",
                     "Hold its button; letting go closes it.", HomeSettings.spellTap, HomeSettings.spellPickA, segSpellOpen, segSpellPick)
+                SettingsTabs.Block.CLASS_LEFT -> drawWheel(c, y, "Left class radial", "Press LB + LT to open; it stays until B.",
+                    "Hold LB + LT; letting go closes it.", HomeSettings.classTapL, HomeSettings.classPickAL, segClassLOpen, segClassLPick)
+                SettingsTabs.Block.CLASS_RIGHT -> drawWheel(c, y, "Right class radial", "Press RB + RT to open; it stays until B.",
+                    "Hold RB + RT; letting go closes it.", HomeSettings.classTapR, HomeSettings.classPickAR, segClassROpen, segClassRPick)
                 SettingsTabs.Block.CHAT -> drawChat(c, y)
                 SettingsTabs.Block.FRAMES -> drawFrames(c, y)
                 else -> y

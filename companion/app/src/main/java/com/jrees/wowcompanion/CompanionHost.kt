@@ -724,6 +724,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         radialView.underRedraw = { homeView.wheelRedraw() }
         // b-radial-exclusive (1.0.9, the user: "while another overlay is open, a player should not be able to acutally open the class
         // radials"): one overlay at a time
+        // b-class-takeover: the class wheel holds the controller (the guest "class") and casts through the "classr" row
+        castView.onClassHold = { hold ->
+            val sent = guestTap(GuestPad.cells(questsPad, "class", hold))
+            Log.i("WCLOG", "class radial: ${if (hold) "hold" else "free"} ${if (sent) "sent" else "not sent (no qact row)"}")
+        }
+        castView.onClassPick = { col -> TapBridge.tap(this, questsPad, "classr", col) { why -> Log.i("WCLOG", "class radial: cast refused ($why)") } }
         castView.onClassChordLog = { what ->
             Log.i("WCLOG", "class radial: $what capHolder=${capHolder.ifEmpty { "-" }} room=${room.name} pause=${pauseView.isOpen} " +
                 "wheel=${radialView.isOpen} tool=${homeView.toolWanted()} barCursor=${barSelect.open}")

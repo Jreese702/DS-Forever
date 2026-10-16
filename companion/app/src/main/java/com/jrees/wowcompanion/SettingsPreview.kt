@@ -30,6 +30,7 @@ object SettingsPreview {
         val abxyNintendo: Boolean = true, val glyphSet: Int = 0,
         val pauseTap: Boolean = true, val pausePickA: Boolean = true, val radialTap: Boolean = true, val radialPickA: Boolean = true,
         val spellTap: Boolean = true, val spellPickA: Boolean = true,
+        val classTapL: Boolean = false, val classPickAL: Boolean = false, val classTapR: Boolean = false, val classPickAR: Boolean = false,
         val miniOutYd: Int = 80, val miniInYd: Int = 60, val quickChat: Boolean = true,
         val fpsLimit: Int = 40, val frameGen: Boolean = false, val multiplier: Int = 2, val flow: Float = 0.8f, val indoorBuild: Boolean = true,
     )
@@ -44,6 +45,7 @@ object SettingsPreview {
         "ABXY location" to true, "Button glyphs" to false,
         "Pause menu: open" to true, "Pause menu: pick" to true, "Item wheel: open" to true, "Item wheel: pick" to true,
         "Spell wheel: open" to true, "Spell wheel: pick" to true,
+        "Left class radial: open" to true, "Left class radial: pick" to true, "Right class radial: open" to true, "Right class radial: pick" to true,
         "Minimap zoom outdoors" to false, "Minimap zoom indoors" to false, "Message input" to false,
         "Frame limit" to true, "Frame generation" to true, "Multiplier" to true, "Flow scale" to true, "Build in the background" to true)
 
@@ -61,9 +63,9 @@ object SettingsPreview {
         "ABXY location" -> if (s.abxyNintendo) "Nintendo" else "Xbox"
         "Button glyphs" -> SET_NAMES[s.glyphSet.coerceIn(0, 2)]
         "Pause menu: open" -> if (s.pauseTap) "Tap" else "Hold"
-        "Item wheel: open", "Spell wheel: open" -> if (tapOf(id, s)) "Tap" else "Hold"
+        "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> if (tapOf(id, s)) "Tap" else "Hold"
         "Pause menu: pick" -> if (s.pausePickA) "A" else "Release"
-        "Item wheel: pick", "Spell wheel: pick" -> if (pickAOf(id, s)) "A" else "Release"
+        "Item wheel: pick", "Spell wheel: pick", "Left class radial: pick", "Right class radial: pick" -> if (pickAOf(id, s)) "A" else "Release"
         "Minimap zoom outdoors" -> "${s.miniOutYd} yd"
         "Minimap zoom indoors" -> "${s.miniInYd} yd"
         "Message input" -> if (s.quickChat) "Quick chat" else "Keyboard"
@@ -93,9 +95,9 @@ object SettingsPreview {
             else listOf("The D-pad keeps your own slots.")
         "ABXY location" -> listOf("Which face button does what (for button", "mods). The pictures follow \"Button glyphs\".")
         "Button glyphs" -> listOf("The button pictures shown everywhere.", "Where they sit is \"ABXY location\".")
-        "Pause menu: open", "Item wheel: open", "Spell wheel: open" -> if (tapOf(id, s)) listOf("A press opens the wheel;", "it stays open until you pick or press B.")
+        "Pause menu: open", "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> if (tapOf(id, s)) listOf("A press opens the wheel;", "it stays open until you pick or press B.")
             else listOf("Hold the button: the wheel is open", "while you hold it, and closes when you let go.")
-        "Pause menu: pick", "Item wheel: pick", "Spell wheel: pick" -> if (pickAOf(id, s)) listOf("Aim with the stick, then press A to pick.")
+        "Pause menu: pick", "Item wheel: pick", "Spell wheel: pick", "Left class radial: pick", "Right class radial: pick" -> if (pickAOf(id, s)) listOf("Aim with the stick, then press A to pick.")
             else listOf("Aim with the stick; letting go of", "the stick picks what it points at.")
         "Minimap zoom outdoors" -> listOf("How many yards across Home's small map", "shows outside.")
         "Minimap zoom indoors" -> listOf("How many yards across Home's small map", "shows inside buildings.")
@@ -120,8 +122,12 @@ object SettingsPreview {
     private const val FLOW_MIN = 0.25f
     private const val FLOW_MAX = 1.0f
     private fun onOff(b: Boolean) = if (b) "On" else "Off"
-    private fun tapOf(id: String, s: State) = when { id.startsWith("Pause") -> s.pauseTap; id.startsWith("Spell") -> s.spellTap; else -> s.radialTap }
-    private fun pickAOf(id: String, s: State) = when { id.startsWith("Pause") -> s.pausePickA; id.startsWith("Spell") -> s.spellPickA; else -> s.radialPickA }
+    private fun tapOf(id: String, s: State) = when {
+        id.startsWith("Pause") -> s.pauseTap; id.startsWith("Spell") -> s.spellTap
+        id.startsWith("Left class") -> s.classTapL; id.startsWith("Right class") -> s.classTapR; else -> s.radialTap }
+    private fun pickAOf(id: String, s: State) = when {
+        id.startsWith("Pause") -> s.pausePickA; id.startsWith("Spell") -> s.spellPickA
+        id.startsWith("Left class") -> s.classPickAL; id.startsWith("Right class") -> s.classPickAR; else -> s.radialPickA }
 
     // the drawing's paints and colours, made at the first picture (the text and the rows above stay plain data: the JVM tests read them)
     private val pFill by lazy { Paint(Paint.ANTI_ALIAS_FLAG) }
@@ -149,8 +155,8 @@ object SettingsPreview {
             "DS WoW toolbar" -> toolbar(c, r, s.toolbar == true)
             "ABXY location" -> abxy(c, r, s, prev, sinceMs, glyph)
             "Button glyphs" -> glyphSets(c, r, s.glyphSet, glyph)
-            "Pause menu: open", "Item wheel: open", "Spell wheel: open" -> wheelOpen(c, r, tapOf(id, s), t, id.startsWith("Pause"))
-            "Pause menu: pick", "Item wheel: pick", "Spell wheel: pick" -> wheelPick(c, r, pickAOf(id, s), t, glyph, s.glyphSet)
+            "Pause menu: open", "Item wheel: open", "Spell wheel: open", "Left class radial: open", "Right class radial: open" -> wheelOpen(c, r, tapOf(id, s), t, id.startsWith("Pause"))
+            "Pause menu: pick", "Item wheel: pick", "Spell wheel: pick", "Left class radial: pick", "Right class radial: pick" -> wheelPick(c, r, pickAOf(id, s), t, glyph, s.glyphSet)
             "Minimap zoom outdoors" -> minimap(c, r, s.miniOutYd, false)
             "Minimap zoom indoors" -> minimap(c, r, s.miniInYd, true)
             "Message input" -> chatInput(c, r, s.quickChat)
