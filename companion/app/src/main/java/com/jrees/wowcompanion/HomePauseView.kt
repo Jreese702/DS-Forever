@@ -456,8 +456,20 @@ class HomePauseView(
             if (cnt != null) UiKit.gameCountdown(c, screen, cnt.kind == "quit", cnt.left, 0, gmPressed)   // one Cancel: never the game's "Exit now" (ForceQuit)
             else {
                 UiKit.gameMenu(c, screen, m.rows.map { it?.let { r -> UiKit.GameMenuItem(r.label, r.on) } }, m.cursor, gmPressed)
-                val ask = m.askLine(SystemClock.uptimeMillis()) ?: line
-                if (ask != null) { UiKit.asBody(pHint); c.drawText(ask, width / 2f, height - ASK_Y_UP, pHint); postInvalidateDelayed(250L) }
+                val asking = m.asking
+                if (asking != null && m.askLine(SystemClock.uptimeMillis()) != null) {
+                    // f-pause-art: the question as the game asks it - its own StaticPopup, the A / B glyph hints under the words
+                    val bw = 640f; val bh = 210f
+                    val box = RectF(width / 2f - bw / 2f, height - 24f - bh, width / 2f + bw / 2f, height - 24f)
+                    UiKit.dialog(c, box)
+                    val tp = UiKit.bodyPaint(34f, android.graphics.Color.WHITE).apply { textAlign = android.graphics.Paint.Align.CENTER }
+                    c.drawText(if (asking == "quit") "Exit the game?" else "Log out now?", box.centerX(), box.top + 78f, tp)
+                    UiKit.hints(c, box.centerX() + 150f, box.bottom - 56f, UiKit.okGlyph() to "Yes", UiKit.backGlyph() to "No")
+                    postInvalidateDelayed(250L)
+                } else {
+                    val ask = m.askLine(SystemClock.uptimeMillis()) ?: line
+                    if (ask != null) { UiKit.asBody(pHint); c.drawText(ask, width / 2f, height - ASK_Y_UP, pHint); postInvalidateDelayed(250L) }
+                }
             }
             return
         }
