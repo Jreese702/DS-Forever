@@ -1582,6 +1582,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             "dialogs" -> dialogView.update(msg, current)
             "dialogack" -> dialogView.ack(msg)
+            // b-release-spirit: the dialogs' tap row could not be had (the tap pad has no row left): every dialog button would tap nothing
+            "dialogpad" -> android.util.Log.w("WCDLG", "the dialogs have NO tap row: ${msg.optString("why")} (rows ${msg.optInt("rows", -1)})")
             "pvp" -> PvpModel.update(msg)   // the PvP rank (Character room tab 4) + the battleground queues (pvp session)
             "hub" -> GameUi.onHub(msg, current)
             "poi" -> msg.optJSONObject("poi")?.let { if (PoiHarvest.ingest(it)) refreshServices() }
