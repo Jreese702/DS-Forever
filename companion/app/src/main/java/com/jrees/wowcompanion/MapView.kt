@@ -1329,7 +1329,6 @@ class MapView(context: Context) : View(context) {
                 // the list starts settled, the focused quest in its top spot
                 listFirst = 0; listShow(shownFocus())
                 rowPos.clear(); listScroll = Float.NaN; listGroundH = Float.NaN
-                openPathAt = android.os.SystemClock.elapsedRealtime()
                 openTabs.clear(); rebuildItems()          // every opening starts with the Untracked tabs closed (the user, 2026-10-16)
             }
         }
@@ -3207,20 +3206,41 @@ class MapView(context: Context) : View(context) {
         else if (armed) postInvalidateDelayed(500)
     }
 
-    // ---- THE OPEN'S DOTTED LINE (the user, 2026-10-16: "Opening the map module defaults the cursor on the currently focused quest
-    // ... and highlights a dotted line slowly moving towards the quest marker if it is available. (only show this when opening the
-    // map module)"): from the player to the focused quest's mark, its dots marching toward the mark, for OPEN_PATH_MS after an open.
-    private var openPathAt = 0L
-    private val OPEN_PATH_MS = 6000L
+    // ---- THE CURSOR'S DOTTED LINE (the user, 2026-10-16: first "Opening the map module ... highlights a dotted line slowly moving
+    // towards the quest marker if it is available", then on test13: "The dotted lines to quests is only showing when first opening the
+    // Map module, instead of on what ever quest I am currently highlighting (if available)"). From the player to the HIGHLIGHTED quest's
+    // mark, tracked or untracked, its dots marching toward the mark, for as long as the quest is highlighted (my pick: stays on; it
+    // fades in on each new quest). No line on the portrait, a tab, or a quest with no mark on this map.
+    private var pathFor = 0                       // the quest the line was drawn for (a new one fades in)
+    private var pathAt = 0L
     private val pPath = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val pathTmp = Path()
 
-    private fun drawOpenPath(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float) {
-        val age = android.os.SystemClock.elapsedRealtime() - openPathAt
-        if (openPathAt == 0L || age >= OPEN_PATH_MS) return
+    /** where the highlighted quest's mark is on this map (its turn-in when ready), or null */
+    private fun cursorMark(): DoubleArray? {
+        val q = cursor.sel
+        if (!cursor.shown || q <= 0) return null
+        selectedPoint()?.let { return doubleArrayOf(it.x, it.y) }
+        // an untracked quest has no drawn mark: the game's own point for it, from the map document (the whole log on this map)
+        val qs = map?.optJSONArray("quests") ?: return null
+        for (i in 0 until qs.length()) {
+            val o = qs.optJSONObject(i) ?: continue
+            if (o.optInt("questID", 0) != q) continue
+            val ready = o.optBoolean("done", false)
+            val x = if (ready && o.has("tx")) o.optDouble("tx", Double.NaN) else o.optDouble("x", Double.NaN)
+            val y = if (ready && o.has("ty")) o.optDouble("ty", Double.NaN) else o.optDouble("y", Double.NaN)
+            return if (x.isNaN() || y.isNaN()) null else doubleArrayOf(x, y)
+        }
+        return null
+    }
+
+    private fun drawCursorPath(c: Canvas, qid: Int, x0: Float, y0: Float, x1: Float, y1: Float) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (qid != pathFor) { pathFor = qid; pathAt = now }
         val len = hypot(x1 - x0, y1 - y0)
         if (len < 40f) return
-        val a = (min(1f, age / 300f) * min(1f, (OPEN_PATH_MS - age) / 1200f)).coerceIn(0f, 1f)
+        val age = now - pathAt
+        val a = min(1f, age / 300f)
         // the dots: 16 px apart, moving 24 px a second toward the mark (a dash path's phase runs against the path, hence minus)
         val phase = -(age / 1000f * 24f) % 16f
         pathTmp.reset(); pathTmp.moveTo(x0, y0); pathTmp.lineTo(x1, y1)
@@ -3229,7 +3249,8 @@ class MapView(context: Context) : View(context) {
         pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * a).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
         c.drawPath(pathTmp, pPath)
         pPath.pathEffect = null
-        postInvalidateOnAnimation()
+        // the dots keep moving: about 30 frames a second is plenty for 24 px a second (not every frame: the map stays cheap)
+        postInvalidateDelayed(33)
     }
 
     // ---- THE CONTROLS LINE (the user, 2026-09-30: "we still need to add the one line to the bottom with the focus controlls and
@@ -3388,7 +3409,6 @@ class MapView(context: Context) : View(context) {
     fun onShown() {
         lastPadN = -1; bSaid = "home"
         cursor.reset()
-        openPathAt = android.os.SystemClock.elapsedRealtime()
         openTabs.clear(); rebuildItems()          // every opening starts with the Untracked tabs closed (the user, 2026-10-16)
         holdAsk.shown()
         askHold()
@@ -4720,13 +4740,14 @@ class MapView(context: Context) : View(context) {
         // target is off the field, as on the game's minimap; on the field its own mark shows.
         // while a ghost with a corpse known it points at the CORPSE instead (the user's answer, 2026-10-01: "The corpse only")
         val toCorpse = corpseKnown()
-        if (!compact && !morphOn && !toCorpse && !focusTX.isNaN() && !px.isNaN() && !py.isNaN()) {
-            // inside the field only (a mark off it: the dots run to the edge, where the rim arrow takes over)
+        val mark = if (!compact && !morphOn && !toCorpse && !px.isNaN() && !py.isNaN()) cursorMark() else null
+        if (mark != null) {
+            // inside the field only (a mark off it: the dots run to the edge)
             val save = c.save()
             c.clipRect(left, top, left + fw, top + fh - (if (hintsOn()) HINT_BAND else 0f))
-            drawOpenPath(c, sx(px), sy(py), sx(focusTX), sy(focusTY))
+            drawCursorPath(c, cursor.sel, sx(px), sy(py), sx(mark[0]), sy(mark[1]))
             c.restoreToCount(save)
-        }
+        } else pathFor = 0
         val rimTX = if (toCorpse) corpseX else focusTX
         val rimTY = if (toCorpse) corpseY else focusTY
         if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN()) {
