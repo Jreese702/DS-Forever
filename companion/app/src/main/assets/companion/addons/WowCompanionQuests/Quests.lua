@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q42"    -- bump on every change; the app shows it, so a stale build is visible
+local QV = "q43"    -- bump on every change; the app shows it, so a stale build is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1995,14 +1995,19 @@ local function startTo(rooms)
     end
     gack(nil, "start", true, rooms and "rooms" or "game")
 end
--- THE PLAYER MENU, MIRRORED (q41). The game's unit popup menu for "SELF" (the menu the player's portrait opens) is Blizzard Lua, so
--- the binary cannot name its API: whichever this build has is tried (UnitPopupManager:GetMenu, else UnitPopupMenus.SELF; the entries
--- through GetEntries or GetMenuButtons). Each entry the game would show (CanShow) goes out with its own words (GetText), enabled
--- (IsEnabled) and checked (IsChecked) state, and its sub-entries (IsMenu); an entry that can be run gets an id (at most 64). The app
--- draws it on the bottom screen and sends an id back as two digit taps; the entry's own OnClick runs it, as the game's menu would.
--- Never run: the focus entries (FocusUnit is protected: an add-on's call is blocked). No CVar, no macro, no binding is written.
--- {"type":"pmenu", v, shape, items = {{t, i?, en, ck?, ttl?, sub?}, ...}} ; a run answers guestack op "pmenurun" (why = the words).
-WC.pmenu = { list = {}, d1 = nil, d1at = 0 }
+-- THE PLAYER MENU, MIRRORED (q41 read, q43 run). The game's unit popup menu for "SELF" (the menu the player's portrait opens) is
+-- Blizzard Lua, so the binary cannot name its API: whichever this build has is tried (UnitPopupManager:GetMenu, else
+-- UnitPopupMenus.SELF; the entries through GetEntries or GetMenuButtons). Each entry the game would show (CanShow) goes out with its
+-- own words (GetText), enabled (IsEnabled) and checked (IsChecked) state, and its sub-menus (IsMenu).
+-- q43 (test10: the entries' own OnClick, run from here, ran Blizzard's menu code TAINTED: Reset all instances' StaticPopup then had
+-- the gamepad code's SetPreferredGamepadInteractTarget() forbidden, blamed on this add-on; the toggles did nothing). NOTHING of
+-- Blizzard's menu code is ever run now. An entry is known by its mixin's global name (UnitPopup...Mixin, found once in _G; never by
+-- its words, so any language works) and done with the game's plain engine call for it (SetRaidTarget, SetPVP, SetOptOutOfLoot,
+-- SetLootMethod, SetLootThreshold, ResetInstances, LeaveParty), the app asking first on the bottom screen where the game would ask
+-- (`cf`); Set / Clear Focus through the secure row "pfocus" (a SecureActionButton, type focus / clearfocus, unit player; no macro).
+-- Self Highlight is a CVar: not offered (hidden). Any other entry is shown greyed with its key (`k`) so it can be mapped later.
+-- {"type":"pmenu", v, shape, items = {{t, k, i?, en, ck?, ttl?, sub?, cf?, sc?}, ...}} ; a run answers guestack op "pmenurun".
+WC.pmenu = { list = {}, d1 = nil, d1at = 0, mix = nil }
 function WC.pmenu.ctx()
     return { unit = "player", which = "SELF", name = TS(function() return (UnitName("player")) end),
              guid = TS(function() return UnitGUID("player") end) }
@@ -2016,10 +2021,71 @@ function WC.pmenu.entries(obj, ctx)
     end
     return nil
 end
-function WC.pmenu.blocked(e)
-    for _, g in ipairs({ "UnitPopupSetFocusButtonMixin", "UnitPopupClearFocusButtonMixin" }) do if _G[g] ~= nil and e == _G[g] then return true end end
-    local okT, t = pcall(e.GetText, e, WC.pmenu.ctx())
-    return okT and (t == _G.SET_FOCUS or t == _G.CLEAR_FOCUS)
+-- the menu's mixins by name, read once (reading globals runs nothing)
+function WC.pmenu.mixins()
+    local P = WC.pmenu
+    if P.mix then return P.mix end
+    P.mix = {}
+    for k, v in pairs(_G) do
+        if type(k) == "string" and type(v) == "table" and k:sub(1, 9) == "UnitPopup" and k:sub(-5) == "Mixin" then P.mix[#P.mix + 1] = { k, v } end
+    end
+    return P.mix
+end
+-- an entry's key: its mixin's name less "UnitPopup" and "ButtonMixin" (an entry made FROM a mixin: the one whose own OnClick it has)
+function WC.pmenu.keyOf(e)
+    local m = WC.pmenu.mixins()
+    local name = nil
+    for _, kv in ipairs(m) do if kv[2] == e then name = kv[1] break end end
+    if not name then
+        local oc = e.OnClick
+        if oc ~= nil then for _, kv in ipairs(m) do if rawget(kv[2], "OnClick") == oc then name = kv[1] break end end end
+    end
+    if not name then return nil end
+    return (name:gsub("^UnitPopup", ""):gsub("ButtonMixin$", ""):gsub("Mixin$", ""))
+end
+-- what the companion does for an entry with key [key]: { fn, ck?, cf? } (a plain engine call), { sc = col } (the secure row),
+-- "hide", or nil (not known: greyed)
+function WC.pmenu.actFor(key, text)
+    if not key then return nil end
+    local k = key:lower()
+    local function onOff(set, get)
+        if k:find("enable") or k:find("on$") or k:find("yes") then return { fn = function() set(true) end, ck = function() return get() == true end } end
+        if k:find("disable") or k:find("off$") or k:find("no$") then return { fn = function() set(false) end, ck = function() return get() == false end } end
+        return { fn = function() set(not get()) end, ck = function() return get() == true end }
+    end
+    if k:find("selfhighlight") or k:find("findyourself") then return "hide" end
+    local n = k:match("raidtarget(%d)") or k:match("raidtargeticon(%d)")
+    if n then
+        n = tonumber(n)
+        return { fn = function() SetRaidTarget("player", n) end, ck = function() return GetRaidTargetIndex("player") == n end }
+    end
+    if k:find("raidtarget") and k:find("none") then return { fn = function() SetRaidTarget("player", 0) end } end
+    if k:find("clearfocus") then return { sc = 1 } end
+    if k:find("setfocus") or k == "focus" then return { sc = 0 } end
+    if k:find("pvp") then
+        return onOff(function(on) SetPVP(on and 1 or 0) end, function() local ok, v = pcall(GetPVPDesired); return ok and (v == true or v == 1) end)
+    end
+    if k:find("optout") or k:find("passonloot") or k:find("lootpass") then
+        return onOff(function(on) SetOptOutOfLoot(on) end, function() local ok, v = pcall(GetOptOutOfLoot); return ok and v == true end)
+    end
+    for pat, method in pairs({ freeforall = "freeforall", roundrobin = "roundrobin", master = "master", needbeforegreed = "needbeforegreed",
+                               grouploot = "group" }) do
+        if k:find(pat) then
+            return { fn = function() if method == "master" then SetLootMethod(method, UnitName("player")) else SetLootMethod(method) end end,
+                     ck = function() local ok, v = pcall(GetLootMethod); return ok and v == method end }
+        end
+    end
+    if k:find("threshold") or k:find("lootquality") then
+        for pat, q in pairs({ uncommon = 2, rare = 3, epic = 4 }) do
+            if k:find(pat) then return { fn = function() SetLootThreshold(q) end, ck = function() local ok, v = pcall(GetLootThreshold); return ok and v == q end } end
+        end
+    end
+    if k:find("resetinstances") or k:find("resetallinstances") then return { fn = function() ResetInstances() end, cf = (text or "Reset all instances") .. "?" } end
+    if k:find("leaveparty") or k:find("leavegroup") or k:find("partyleave") or k:find("leaveinstancegroup") then
+        return { fn = function() if C_PartyInfo and type(C_PartyInfo.LeaveParty) == "function" then C_PartyInfo.LeaveParty() else LeaveParty() end end,
+                 cf = (text or "Leave the group") .. "?" }
+    end
+    return nil
 end
 function WC.pmenu.read()
     local P = WC.pmenu
@@ -2044,17 +2110,25 @@ function WC.pmenu.read()
                 local show = call(e, "CanShow", true)
                 local t = call(e, "GetText", nil)
                 if show == true and type(t) == "string" and WC.isPlain(t) and t ~= "" then
-                    local row = { t = t }
-                    if call(e, "IsTitle", false) == true then row.ttl = 1
+                    local row = { t = t, k = P.keyOf(e) }
+                    if call(e, "IsTitle", false) == true then row.ttl = 1; out[#out + 1] = row
                     else
                         local sub = (depth < 2 and call(e, "IsMenu", false) == true) and P.entries(e, ctx) or nil
-                        if sub then row.sub = walk(sub, depth + 1) end
-                        row.en = (call(e, "IsEnabled", true) == true and not P.blocked(e)) and 1 or 0
-                        local ck = call(e, "IsChecked", nil)
-                        if type(ck) == "boolean" then row.ck = ck and 1 or 0 end
-                        if not row.sub then P.list[#P.list + 1] = e; row.i = #P.list - 1 end
+                        local act = (not sub) and P.actFor(row.k, t) or nil
+                        if act ~= "hide" then
+                            local live = call(e, "IsEnabled", true) == true
+                            if sub then row.sub = walk(sub, depth + 1); row.en = live and 1 or 0
+                            elseif type(act) == "table" and act.sc then row.sc = act.sc; row.en = live and 1 or 0
+                            elseif type(act) == "table" then
+                                P.list[#P.list + 1] = act; row.i = #P.list - 1; row.cf = act.cf; row.en = live and 1 or 0
+                            else row.en = 0 end
+                            local ck = nil
+                            if type(act) == "table" and act.ck then local okC, v = pcall(act.ck); if okC then ck = v end
+                            else ck = call(e, "IsChecked", nil) end
+                            if type(ck) == "boolean" then row.ck = ck and 1 or 0 end
+                            out[#out + 1] = row
+                        end
                     end
-                    out[#out + 1] = row
                 end
             end
         end
@@ -2065,13 +2139,23 @@ function WC.pmenu.read()
         local es, how = P.entries(menu, ctx)
         if es then shape = how; items = walk(es, 0) end
     end
-    pcall(function() WC.send(WC.encode({ type = "pmenu", v = QV, shape = shape, items = items })); WC.push() end)
+    pcall(function() WC.send(WC.encode({ type = "pmenu", v = QV, shape = shape, items = items, focus = WC.pmenu.focusRow and 1 or nil })); WC.push() end)
 end
--- q42: NOTHING IS RUN (test10 on the Thor: an entry's OnClick from add-on code ran tainted; Reset all instances' confirm then had the
--- game's own gamepad code call SetPreferredGamepadInteractTarget() from that stack: ADDON_ACTION_FORBIDDEN blamed on this add-on; the
--- toggles did nothing). The menu stays readable; a run is refused until each entry has a taint-free way (the plan with tracking).
+-- an entry the app chose: its plain engine call (never Blizzard's menu code)
 function WC.pmenu.run(id)
-    gack(nil, "pmenurun", false, "not available yet")
+    local P = WC.pmenu
+    local a = P.list[id + 1]
+    if type(a) ~= "table" or type(a.fn) ~= "function" then return gack(nil, "pmenurun", false, "the menu changed") end
+    local ok, err = pcall(a.fn)
+    gack(nil, "pmenurun", ok and true or false, (not ok) and tostring(err):sub(1, 120) or nil)
+    C_Timer.After(0.3, function() pcall(P.read) end)      -- the checks follow what it did
+end
+-- Set / Clear Focus: FocusUnit is protected, so a SECURE cell does it (the click on it is the hardware event), static attributes
+if WC.pad and type(WC.pad.secureRow) == "function" then
+    WC.pmenu.focusRow = WC.pad.secureRow("pfocus", 2, function(btn, col)
+        btn:SetAttribute("type", col == 0 and "focus" or "clearfocus")
+        btn:SetAttribute("unit", "player")
+    end, function(col) C_Timer.After(0.3, function() pcall(WC.pmenu.read) end) end)
 end
 GACT[G_PLAYER_MENU] = function() WC.pmenu.read() end
 for d = 0, 7 do

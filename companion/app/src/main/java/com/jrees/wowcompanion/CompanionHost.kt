@@ -471,6 +471,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         mapView.onAbandonConfirm = { id -> homeView.confirmAbandon(id) { mapView.note(it) } }
         mapView.onPlayerMenu = { homeView.playerMenu { mapView.note(it) } }
         mapView.onPlayerMenuRun = { id -> homeView.playerMenuRun(id) { mapView.note(it) } }
+        mapView.onPlayerMenuSecure = { col -> homeView.playerMenuSecure(col) { mapView.note(it) } }
         // LATER item 5, the generic controller guests (Quests.lua q6): B with nothing nearer to do leaves with B -> Home
         questsView.onLeave = { show(Room.HOME) }
         // B leaves the chat for Home: the disc's press (UI Art's push + gold flash; the user's Home-button feedback 2026-10-01)
@@ -2813,24 +2814,27 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * row: "/quit", which writes SavedVariables), then wait for the game to go; [done] says whether the old close is still needed.
      */
     private fun cleanExit(why: String, done: (Boolean) -> Unit) {
+        // every route line is logged AND kept, so the safe close's own "done" line can repeat it (tracking: the WCSETUP lines rolled
+        // out of logcat before they were read)
+        fun say(line: String) { Log.i("WCSETUP", line); LauncherHooks.lastCleanExit = line }
         val route = CleanExit.route(lastAddonAt, SystemClock.elapsedRealtime(), homeView.inFight(), CleanExit.quitCol(lastGameMenu))
-        if (route is CleanExit.Route.Force) { Log.i("WCSETUP", "clean exit ($why): ${route.why}: the old close"); done(true); return }
+        if (route is CleanExit.Route.Force) { say("clean exit ($why): ${route.why}: the old close"); done(true); return }
         val col = (route as CleanExit.Route.Quit).col
-        val sent = TapBridge.tap(this, questsPad, GameMenuModel.ROW, col) { r -> Log.i("WCSETUP", "clean exit ($why): tap refused ($r)") }
-        if (!sent) { Log.i("WCSETUP", "clean exit ($why): the Exit Game tap was not sent: the old close"); done(true); return }
-        Log.i("WCSETUP", "clean exit ($why): the game's own Exit Game asked (its save is written as it exits)")
+        val sent = TapBridge.tap(this, questsPad, GameMenuModel.ROW, col) { r -> say("clean exit ($why): tap refused ($r)") }
+        if (!sent) { say("clean exit ($why): the Exit Game tap was not sent: the old close"); done(true); return }
+        say("clean exit ($why): the game's own Exit Game asked (its save is written as it exits)")
         val t0 = SystemClock.elapsedRealtime()
         val poll = object : Runnable {
             override fun run() {
                 val s = (SystemClock.elapsedRealtime() - t0) / 1000
                 when {
                     !LauncherHooks.gameUp() -> {
-                        Log.i("WCSETUP", "clean exit ($why): the game exited by itself after $s s")
+                        say("clean exit ($why): the game exited by itself after $s s")
                         QuestWatchKeep.cleanEnd()                               // its state is written: nothing to restore next time
                         done(false)
                     }
                     SystemClock.elapsedRealtime() - t0 > CleanExit.WAIT_MS -> {
-                        Log.i("WCSETUP", "clean exit ($why): still running after $s s: the old close"); done(true)
+                        say("clean exit ($why): still running after $s s: the old close"); done(true)
                     }
                     else -> ui.postDelayed(this, 500L)
                 }

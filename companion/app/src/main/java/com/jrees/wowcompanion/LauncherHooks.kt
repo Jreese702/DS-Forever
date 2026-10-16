@@ -17,4 +17,6 @@ object LauncherHooks {
     /** A CLEAN EXIT FIRST (the user's ruling after test20, "Both"; [CleanExit]): the launcher calls it before it ends the game itself;
      *  [done] runs on the main thread once the game went by itself (false) or the old close is needed (true). Null = no companion */
     @Volatile var cleanExit: ((why: String, done: (forceNeeded: Boolean) -> Unit) -> Unit)? = null
+    /** the clean exit's last route line ("clean exit (safe close): ..."), for the safe close's "done" line */
+    @Volatile var lastCleanExit: String = ""
 }

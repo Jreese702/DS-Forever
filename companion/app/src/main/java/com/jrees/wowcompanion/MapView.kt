@@ -2971,6 +2971,8 @@ class MapView(context: Context) : View(context) {
     // shows it beside the list; a chosen entry goes back as its id (two digit taps) and the game's own entry runs it.
     /** the host's way to run entry [id] of the game's player menu (Quests q41's digit cells) */
     var onPlayerMenuRun: ((id: Int) -> Unit)? = null
+    /** the host's way to tap column [col] of the add-on's secure "pfocus" row (Set / Clear Focus, Quests q43) */
+    var onPlayerMenuSecure: ((col: Int) -> Unit)? = null
     private val pmenu = PlayerMenu()
     private val pmenuHits = ArrayList<Pair<RectF, Int>>()
     private val pmenuBox = RectF()
@@ -2985,6 +2987,7 @@ class MapView(context: Context) : View(context) {
     private fun pmenuDid(d: PlayerMenu.Do) {
         when (d) {
             is PlayerMenu.Do.Run -> onPlayerMenuRun?.invoke(d.id) ?: note("The player menu is not on the tap pad yet")
+            is PlayerMenu.Do.Secure -> onPlayerMenuSecure?.invoke(d.col) ?: note("Focus is not on the tap pad yet")
             is PlayerMenu.Do.Refused -> note(d.why)
             PlayerMenu.Do.Close, PlayerMenu.Do.None -> {}
         }

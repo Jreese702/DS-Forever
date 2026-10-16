@@ -12,12 +12,17 @@ import org.json.JSONObject
  * level or closes. A title row (the game's own heading, the player's name) is no stop.
  */
 class PlayerMenu(private val runs: Boolean = RUNS) {
-    data class Entry(val text: String, val id: Int?, val enabled: Boolean, val checked: Boolean?, val title: Boolean, val sub: List<Entry>?)
+    /** [confirm]: the question the game would ask first (asked here, on the bottom screen); [secure]: a column of the add-on's secure
+     *  "pfocus" row (Set / Clear Focus) instead of an [id] */
+    data class Entry(val text: String, val id: Int?, val enabled: Boolean, val checked: Boolean?, val title: Boolean, val sub: List<Entry>?,
+                     val confirm: String? = null, val secure: Int? = null)
 
     sealed class Do {
         object None : Do()
         object Close : Do()
         data class Run(val id: Int, val text: String) : Do()
+        /** a tap on the add-on's secure "pfocus" row, column [col] */
+        data class Secure(val col: Int, val text: String) : Do()
         data class Refused(val why: String) : Do()
     }
 
@@ -33,8 +38,12 @@ class PlayerMenu(private val runs: Boolean = RUNS) {
     private val path = ArrayList<Int>()          // the sub-menus opened, by their row in the level above
     private val sels = arrayListOf(0)            // the selected row of each level
 
-    fun openReading() { open = true; loading = true; empty = false; path.clear(); sels.clear(); sels.add(0) }
-    fun close() { open = false; loading = false; path.clear(); sels.clear(); sels.add(0) }
+    /** the entry whose question is asked now (its Yes / No stand in for the level's rows) */
+    private var asking: Entry? = null
+    private var askSel = 0
+
+    fun openReading() { open = true; loading = true; empty = false; asking = null; path.clear(); sels.clear(); sels.add(0) }
+    fun close() { open = false; loading = false; asking = null; path.clear(); sels.clear(); sels.add(0) }
 
     /** the game's document; the open levels stay where they are while they still exist */
     fun onDoc(d: JSONObject) {
@@ -47,10 +56,12 @@ class PlayerMenu(private val runs: Boolean = RUNS) {
     }
 
     /** the rows of the level shown now */
-    fun rows(): List<Entry> = level(path.size)
-    /** the heading over the level shown now: the game's title row on top, a sub-menu's own words below it */
-    fun heading(): String? = if (path.isEmpty()) root.firstOrNull { it.title }?.text else level(path.size - 1).getOrNull(path.last())?.text
-    val sel: Int get() = sels.last()
+    fun rows(): List<Entry> = asking?.let { listOf(Entry("Yes", it.id, true, null, false, null), Entry("No", null, true, null, false, null)) }
+        ?: level(path.size)
+    /** the heading over the level shown now: the game's title row on top, a sub-menu's own words below it, a question while asking */
+    fun heading(): String? = asking?.confirm
+        ?: if (path.isEmpty()) root.firstOrNull { it.title }?.text else level(path.size - 1).getOrNull(path.last())?.text
+    val sel: Int get() = if (asking != null) askSel else sels.last()
     val depth: Int get() = path.size
 
     private fun level(n: Int): List<Entry> {
@@ -70,13 +81,26 @@ class PlayerMenu(private val runs: Boolean = RUNS) {
     fun touch(i: Int): Do {
         val rows = rows()
         if (i !in rows.indices || rows[i].title) return Do.None
-        sels[sels.size - 1] = i
+        if (asking != null) askSel = i else sels[sels.size - 1] = i
         return key("PAD1")
     }
 
     /** one press while the menu is open (every key is the menu's) */
     fun key(k: String): Do {
         if (!open) return Do.None
+        asking?.let { q ->
+            when (k) {
+                "PAD2" -> asking = null
+                "PADDUP" -> askSel = 0
+                "PADDDOWN" -> askSel = 1
+                "PAD1" -> {
+                    if (askSel != 0) { asking = null; return Do.None }
+                    close()
+                    return Do.Run(q.id ?: return Do.None, q.text)
+                }
+            }
+            return Do.None
+        }
         val rows = rows()
         when (k) {
             "PAD2" -> {
@@ -100,8 +124,10 @@ class PlayerMenu(private val runs: Boolean = RUNS) {
                     path.add(sel); sels.add(firstStop(e.sub, 0))
                     return Do.None
                 }
-                val id = e.id ?: return Do.None
                 if (!runs) return Do.Refused("Not available yet")
+                e.secure?.let { col -> close(); return Do.Secure(col, e.text) }
+                val id = e.id ?: return Do.Refused("Not available yet")
+                if (e.confirm != null) { asking = e; askSel = 1; return Do.None }     // the game asks first: No is where the cursor starts
                 close()
                 return Do.Run(id, e.text)
             }
@@ -111,11 +137,10 @@ class PlayerMenu(private val runs: Boolean = RUNS) {
 
     companion object {
         /**
-         * Entries are NOT run for now (test10 on the Thor: an entry's own OnClick from the add-on ran tainted, and Reset all instances'
-         * confirm then raised ADDON_ACTION_FORBIDDEN; the toggles did nothing). The menu shows read-only until each kind of entry has
-         * a taint-free way (Quests.lua q42 refuses a run too).
+         * Entries run (q43: the add-on does each with the game's plain engine call, never Blizzard's menu code, after test10's taint;
+         * Focus through its secure row). False = the menu shows read-only, every entry saying "Not available yet".
          */
-        const val RUNS = false
+        const val RUNS = true
 
         /** an entry's id as the add-on's two digit taps: the first digit's column, then the second's (Quests.lua q41: 33 - digit) */
         fun digitCols(id: Int): List<Int> = listOf(33 - (id / 8) % 8, 33 - id % 8)
@@ -129,7 +154,8 @@ class PlayerMenu(private val runs: Boolean = RUNS) {
                 if (t.isEmpty()) continue
                 out.add(Entry(t, if (o.has("i")) o.optInt("i") else null, o.optInt("en", 1) == 1,
                     if (o.has("ck")) o.optInt("ck") == 1 else null, o.optInt("ttl", 0) == 1,
-                    if (o.has("sub")) parse(o.optJSONArray("sub")) else null))
+                    if (o.has("sub")) parse(o.optJSONArray("sub")) else null,
+                    o.optString("cf", "").ifEmpty { null }, if (o.has("sc")) o.optInt("sc") else null))
             }
             return out
         }

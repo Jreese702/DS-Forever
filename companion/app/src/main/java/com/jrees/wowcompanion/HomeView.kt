@@ -852,6 +852,14 @@ class HomeView(
         if (cells == null || !TapBridge.taps(context, pad, cells) { why -> post { note(why) } }) note("The game has not published its tap pad")
     }
 
+    /** Set (0) / Clear (1) Focus from the player menu: a tap on the add-on's SECURE "pfocus" row (FocusUnit is protected; Quests q43) */
+    fun playerMenuSecure(col: Int, note: (String) -> Unit) {
+        if (!GameInput.live()) { note("Waiting for the game"); return }
+        if (pad?.optJSONObject("rows")?.has("pfocus") != true) { note("Focus is not on the tap pad yet"); return }
+        Log.i(TAG, "player menu: focus cell $col")
+        if (!TapBridge.tap(context, pad, "pfocus", col) { why -> post { note(why) } }) note("The game has not published its tap pad")
+    }
+
     /** run entry [id] of the game's player menu (Quests.lua q41's two digit taps, in one shell session) */
     fun playerMenuRun(id: Int, note: (String) -> Unit) {
         if (!GameInput.live()) { note("Waiting for the game"); return }
