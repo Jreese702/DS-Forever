@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d18"         -- bump on every change
+local DV = "d19"         -- bump on every change
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -537,7 +537,25 @@ end
 
 -- a dialog opened, closed or changed its focus: look now, within this very frame (no flash);
 -- while one is shown, look again four times a second (its buttons, its end)
+-- d19: the shown dialogs' cells aimed again at the game's own buttons (out of combat only; a secure attribute), each look: a cell
+-- aimed once after the login can never point at anything but the button the game shows now
+function D.aim()
+    if not D.cellBtn or TB(function() return InCombatLockdown() end) == true then return end
+    for i = 1, POOL do
+        local f = dialogFrame(i)
+        if f and shown(f) then
+            for k = 1, CELLS do
+                local cb, t = D.cellBtn[(i - 1) * CELLS + (k - 1)], buttonOf(f, k)
+                if cb and t and S(function() return cb:GetAttribute("clickbutton") end) ~= t then
+                    pcall(function() cb:SetAttribute("type", "click"); cb:SetAttribute("clickbutton", t) end)
+                end
+            end
+        end
+    end
+end
+
 local function look()
+    pcall(D.aim)
     local ok, n = pcall(emit, false)
     if ok and type(n) == "number" and n > 0 and not D.polling then
         D.polling = true
@@ -589,12 +607,18 @@ end
 -- the pad. So the row is asked for LATE (after every addon has loaded) and only when the pad's
 -- rows are thinner than 6 px, which is the wide pad. Until then the dialogs are answered with the
 -- controller, and the document carries no cells.
+-- d19 (b-release-spirit, 1.0.8: "my release spirit button is not working" / "my accept res button isn't working now either"): the
+-- row is asked for AS THIS FILE LOADS, before the rooms' add-ons, so the game's dialogs (release, resurrect, invites) always have
+-- their cells. Asked LAST (the 6 px pad's rule above), it was the first row to lose its place when the pad's 54 rows were all
+-- taken (1.0.8 added one more room row), and then every dialog button on the bottom screen tapped nothing. The 6 px check stays for
+-- a pad that is wide again; a pad with no room left says so (doc "dialogpad", the app's WCDLG log) instead of failing silently.
 local function offerTouch()
     if D.touch ~= nil then return end
-    if not (WC.pad and type(WC.pad.secureRow) == "function" and type(WC.pad.describe) == "function") then return end
-    local ok, d = pcall(WC.pad.describe)
-    if not ok or type(d) ~= "table" or type(d.ch) ~= "number" then return end      -- not laid out yet: asked again later
-    if d.ch >= 6 then D.touch = false; return end
+    if not (WC.pad and type(WC.pad.secureRow) == "function") then return end
+    if type(WC.pad.describe) == "function" then
+        local ok, d = pcall(WC.pad.describe)
+        if ok and type(d) == "table" and type(d.ch) == "number" and d.ch >= 6 then D.touch = false; return end
+    end
     local got, row = pcall(WC.pad.secureRow, ROW, POOL * CELLS + 7, function(btn, col)
         if col >= PET_COL and col <= PET_COL + 2 then
             btn:SetAttribute("type", "click")       -- aimed at the charter's own button (again on PETITION_SHOW)
@@ -620,6 +644,8 @@ local function offerTouch()
         local i, k = math.floor(col / CELLS) + 1, (col % CELLS) + 1
         local f = dialogFrame(i)
         local target = f and buttonOf(f, k)
+        D.cellBtn = D.cellBtn or {}
+        D.cellBtn[col] = btn                 -- d19: kept, so a shown dialog's cells are aimed again (D.aim) and a click can say where
         if target then
             btn:SetAttribute("type", "click")
             btn:SetAttribute("clickbutton", target)
@@ -635,13 +661,37 @@ local function offerTouch()
             return
         end
         local gi = (col == GUILD_COL or col == GUILD_COL + 1)
-        WC.send(WC.encode({ type = "dialogack", dv = DV, cell = col,
-                            i = gi and GUILD_I or (math.floor(col / CELLS) + 1), k = gi and (col - GUILD_COL + 1) or ((col % CELLS) + 1) }))
+        local i, k = gi and GUILD_I or (math.floor(col / CELLS) + 1), gi and (col - GUILD_COL + 1) or ((col % CELLS) + 1)
+        -- d19 (b-release-spirit, 1.0.8: "it presses but nothing happens and then it reappears"): the click's answer says WHAT it
+        -- clicked: the dialog (which), the game's button, whether that button was enabled, whether the cell was aimed at it; and,
+        -- half a second later, whether that dialog is still up (a release that the game took closes DEATH)
+        local f = (not gi) and dialogFrame(i) or nil
+        local which = f and TS(function() return f.which end)
+        local cur = f and buttonOf(f, k)
+        local cb = D.cellBtn and D.cellBtn[col]
+        local aimed = cb and cur and (S(function() return cb:GetAttribute("clickbutton") end) == cur) or false
+        WC.send(WC.encode({ type = "dialogack", dv = DV, cell = col, i = i, k = k, which = which,
+                            enabled = cur and TB(function() return cur:IsEnabled() end) or nil, aimed = aimed and true or false,
+                            dead = TB(function() return UnitIsDeadOrGhost("player") end) }))
         WC.push()
+        if f and type(C_Timer) == "table" then
+            C_Timer.After(0.5, function()
+                local still = shown(f) and TS(function() return f.which end) == which
+                WC.send(WC.encode({ type = "dialogack", dv = DV, after = true, cell = col, i = i, k = k, which = which,
+                                    still = still and true or false, ghost = TB(function() return UnitIsGhost("player") end) }))
+                WC.push()
+            end)
+        end
         look()
     end)
     D.touch = got and row ~= nil
+    if not D.touch then
+        WC.send(WC.encode({ type = "dialogpad", dv = DV, why = got and "the tap pad has no row left" or tostring(row),
+                            rows = type(WC.pad.nrows) == "number" and WC.pad.nrows or nil }))
+        WC.push()
+    end
 end
+pcall(offerTouch)          -- d19: now, as the add-on loads (PLAYER_LOGIN and the pad's layout below only retry a failed first ask)
 
 local function petAim()
     if TB(function() return InCombatLockdown() end) == true then return end

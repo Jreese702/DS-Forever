@@ -209,7 +209,15 @@ class DialogView(context: Context) : View(context) {
     }
 
     /** {"type":"dialogack", cell, i, k}: the tap landed, the game's button was clicked */
-    fun ack(msg: JSONObject) { postInvalidate() }
+    fun ack(msg: JSONObject) {
+        // b-release-spirit (1.0.8): the add-on's word on the click (d19: which dialog, the button enabled, the cell aimed at it; and
+        // half a second later whether the dialog is still up), so ONE log read tells a lost tap from a click the game did not take
+        android.util.Log.i("WCDLG", (if (msg.optBoolean("after")) "after " else "clicked ") + "cell ${msg.optInt("cell")} " +
+            "dialog ${msg.optInt("i")} ${msg.optString("which", "?")} button ${msg.optInt("k")}" +
+            (if (msg.optBoolean("after")) " still up ${msg.optBoolean("still")} ghost ${msg.optBoolean("ghost")}"
+             else " enabled ${if (msg.has("enabled")) msg.optBoolean("enabled") else "?"} aimed ${msg.optBoolean("aimed")} dead ${msg.optBoolean("dead")}"))
+        postInvalidate()
+    }
 
     /** true while a dialog owns the bottom screen */
     fun showing() = visibility == VISIBLE
@@ -296,7 +304,8 @@ class DialogView(context: Context) : View(context) {
         }
         lastTapAt = now
         if (dryRun) { lastSent = "$what cell $cell"; note("Preview: $what"); return true }
-        val ok = TapBridge.tap(context, doc?.optJSONObject("pad"), "idlg", cell) { why -> post { note(why) } }
+        val ok = TapBridge.tap(context, doc?.optJSONObject("pad"), "idlg", cell) { why -> post { note(why) }; android.util.Log.w("WCDLG", "press '$what' cell $cell failed: $why") }
+        android.util.Log.i("WCDLG", "press '$what' cell $cell: ${if (ok) "sent" else "NOT sent (no pad)"} (dialogs ${list.joinToString { "${it.i}:${it.which}" }})")
         if (!ok) note("The game has not published its tap pad")
         return ok
     }
