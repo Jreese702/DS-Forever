@@ -4322,7 +4322,9 @@ object UiKit {
             val dpadTop = screen.bottom - bar
             val topY = screen.top + pauseBarsBottom * 0.75f
             val above = screen.top + pauseBarsBottom
-            val s = minOf(1.3f * k, (dpadTop - above - 2f * P_GAP * k) / 544f)
+            // the user: "make the full radial wheel about 20% bigger in the pause screen to fill the blank space": up to 1.2 x the old
+            // 1.3, as large as fits between the controller and the D-pad bar (the rim 236 units, a 6 px margin each side)
+            val s = minOf(1.3f * 1.2f * k, (dpadTop - above - 12f * k) / 472f)
             return PauseGeo(k, s, screen.centerX(), (above + dpadTop) / 2f, topY, screen.bottom - bar / 2f)
         }
         run {
@@ -4585,7 +4587,7 @@ object UiKit {
                 // consumables wheel marks its pointed item, the A half over the icon's top-left corner
                 // (UI Art on 98a70ded: on the small plain emote icons the full-size A hid half the face: 0.7 of it there, centred on the corner)
                 if (pickGlyph && i == pt && sl.enabled && selK > 0f) {
-                    val gs = 41.6f * g.k * (if (plain) 0.7f else 1f)
+                    val gs = 41.6f * g.s / 1.3f * (if (plain) 0.7f else 1f)
                     val off = if (plain) 0f else gs / 2f - 0.35f * gs
                     pad(c, okGlyph().takeIf { n -> tex("pad_$n") != null } ?: "rev_a", ix - aw / 2f + off, iy - ah / 2f + off, gs, (255 * selK).toInt())
                 }
@@ -4595,10 +4597,10 @@ object UiKit {
                 // the game's IconLabel: under the icon, 80 x 40 units (two lines), GameFontNormal
                 val sx = g.cx + 150f * g.s * Math.cos(a).toFloat(); val sy = g.cy - 150f * g.s * Math.sin(a).toFloat()
                 val words = sl.label.split(' ')
-                val lsz = 22f * g.k
+                val lsz = 22f * g.s / 1.3f                            // the labels grow with the wheel
                 val lines = if (words.size > 1 && bodyPaint(lsz).measureText(sl.label) > 110f * g.s) listOf(words.dropLast(1).joinToString(" "), words.last()) else listOf(sl.label)
                 val ly = sy + 35f * g.s * 1.1f
-                for ((n, ln) in lines.withIndex()) gameWords(c, ln, sx, ly + n * 23f * g.k, lsz, if (sl.enabled) PAUSE_GOLD else PAUSE_GREY, la, 140f * g.s)
+                for ((n, ln) in lines.withIndex()) gameWords(c, ln, sx, ly + n * 23f * g.s / 1.3f, lsz, if (sl.enabled) PAUSE_GOLD else PAUSE_GREY, la, 140f * g.s)
             }
         }
     }
