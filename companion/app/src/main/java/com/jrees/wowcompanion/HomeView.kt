@@ -946,6 +946,7 @@ class HomeView(
             }
             // the big controller's bottom edge is the SWING TIMER (Cast draws it; Home leaves its own line out, see onDraw)
             castView.bottomLine = true
+            castView.castTop = big(s)                                     // b-cast-bar-size: the top edge in a fight, the strip at rest
             // b-cast-any: at rest the line is the cast bar alone (every player cast, in or out of a fight); in combat the full line
             castView.castOnly = !s.takeover
             // p-swing-timer, batch 12 ("they should be seperate"): Settings > Home turns the SWING off; the cast bar stays
@@ -1088,9 +1089,9 @@ class HomeView(
     private fun big(s: HomeScreen) = s.takeover && HomeSettings.combatGrow
 
     private fun barsBottom(s: HomeScreen) = when {
-        big(s) -> 10f + COMBAT_BARS
-        s.rest == HomeRest.DIAMONDS -> 8f + REST_DIAMONDS_BARS
-        else -> 120f
+        big(s) -> 10f + COMBAT_BARS + CastBarPlace.TOP_STRIP          // b-cast-bar-size: the top-edge cast bar's room in a fight
+        s.rest == HomeRest.DIAMONDS -> 8f + REST_DIAMONDS_BARS + CastBarPlace.REST_STRIP   // its strip under the buttons at rest
+        else -> 120f + CastBarPlace.REST_STRIP
     }
 
     /**

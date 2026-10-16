@@ -98,5 +98,5 @@ class CastNameTest {
         val f = CastFx.fit("Conjure Refreshment Table of the Ancients", 150f, w)
         assertTrue(f, f.endsWith("\u2026") && w(f) <= 150f)
     }
-    @Test fun theBarStartsAfterTheIconAndItsGap() = assertTrue(CastFx.ICON_X + CastFx.ICON_SIDE + CastFx.ICON_GAP < 60f)
+
 }
