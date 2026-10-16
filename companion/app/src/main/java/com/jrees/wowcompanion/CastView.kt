@@ -2236,11 +2236,16 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         out[1] = vh / 2f - (kotlin.math.cos(a) * 168.0).toFloat() * sc
     }
     /** draw the open class radial fitted into a [vw] x [vh] box (Home's wheel slot); false = none open */
-    fun drawClassRadial(c: Canvas, vw: Float, vh: Float): Boolean {
-        val r = chordRadial() ?: return false
+    fun drawClassRadial(c: Canvas, vw: Float, vh: Float, closing: Boolean = false): Boolean {
+        // 1.0.9 (the user, a druid: "When the form bar slides out, It disappears instead of sliding back behind"): letting go of the
+        // chord (a pick, B, a plain release) ends the game's radial BEFORE Home's slide-back runs, so the wheel had nothing to draw.
+        // [closing]: Home's wheel is sliding back under the chat - the last radial drawn, frozen as it was, rides it out
+        val r = chordRadial()?.also { lastClassRadial = it } ?: (if (closing) lastClassRadial else null) ?: return false
         drawRadial(c, r, vw / 2f, vh / 2f, vw, vh, fitScale(vw, vh))
         return true
     }
+    /** the class radial last drawn by [drawClassRadial] (for its slide-back after the chord is let go) */
+    private var lastClassRadial: Radial? = null
     /** the chord's side now: true = LB + LT (the left radial), false = RB + RT */
     fun classRadialLeft(): Boolean = ClassChord.side(padLt, padRt, padLb, padRb) != ClassChord.RIGHT
     /** the place under ([x], [y]) in that canvas: 0..7, or -1 (none, or an empty place) */

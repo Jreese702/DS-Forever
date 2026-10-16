@@ -338,7 +338,8 @@ class HomeView(
                 c.drawText(hint, width / 2f, height / 2f, p)
                 return
             }
-            if (lent(castView)) castView.drawClassRadial(c, width.toFloat(), height.toFloat())
+            // closing (classOpen false while it still shows): the slide-back draws the last radial (the chord is already let go)
+            if (lent(castView)) castView.drawClassRadial(c, width.toFloat(), height.toFloat(), closing = !classOpen)
         }
         override fun onTouchEvent(e: MotionEvent): Boolean {
             if (classHint != null) return true
@@ -410,6 +411,7 @@ class HomeView(
                 .withLayer().setListener(null).start()
         } else {
             classLayer.animate().cancel()
+            classLayer.invalidate()                                           // redrawn as closing: the last radial (CastView keeps it)
             classLayer.animate().translationX(hidden).setDuration(Motion.MODULE_CLOSE)
                 .setInterpolator(Motion.curve()).withLayer()
                 .setListener(object : android.animation.AnimatorListenerAdapter() {
