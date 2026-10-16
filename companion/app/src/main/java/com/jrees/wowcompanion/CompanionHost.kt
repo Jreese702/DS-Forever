@@ -11,6 +11,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -685,7 +686,20 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         pauseView.onPick = { s -> pausePick(s) }
-        shell.setHostContent(FrameLayout(this).apply {
+        shell.setHostContent(object : FrameLayout(this) {
+            // b-release-spirit (test16: a bottom-screen dialog press reached nothing, not even the dialog's own view): while a dialog
+            // shows, a finger's DOWN says which view on top took it, so one log read tells "covered" from "pressed"
+            override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+                val r = super.dispatchTouchEvent(e)
+                if (e.actionMasked == MotionEvent.ACTION_DOWN && ::dialogView.isInitialized && dialogView.visibility == View.VISIBLE) {
+                    val above = (indexOfChild(dialogView) + 1 until childCount).map { getChildAt(it) }
+                        .filter { it.visibility == View.VISIBLE }.map { it.javaClass.simpleName.ifEmpty { "view" } }
+                    android.util.Log.i("WCDLG", "finger down at ${e.x.toInt()},${e.y.toInt()} with a dialog up; visible above it: " +
+                        (above.joinToString().ifEmpty { "none" }) + (if (r) "" else "; nobody took it"))
+                }
+                return r
+            }
+        }.apply {
             addView(root, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             // the bar selector's cursor and hint plate: over the rooms and the bar (it takes no touch)
@@ -1581,9 +1595,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 interactView.ack(msg)
             }
             "dialogs" -> dialogView.update(msg, current)
-            "dialogack" -> dialogView.ack(msg)
+            "dialogack" -> dialogView.ack(msg, current)
             // b-release-spirit: the dialogs' tap row could not be had (the tap pad has no row left): every dialog button would tap nothing
-            "dialogpad" -> android.util.Log.w("WCDLG", "the dialogs have NO tap row: ${msg.optString("why")} (rows ${msg.optInt("rows", -1)})")
+            "dialogpad" -> if (current) android.util.Log.w("WCDLG", "the dialogs have NO tap row: ${msg.optString("why")} (rows ${msg.optInt("rows", -1)})")
             "pvp" -> PvpModel.update(msg)   // the PvP rank (Character room tab 4) + the battleground queues (pvp session)
             "hub" -> GameUi.onHub(msg, current)
             "poi" -> msg.optJSONObject("poi")?.let { if (PoiHarvest.ingest(it)) refreshServices() }

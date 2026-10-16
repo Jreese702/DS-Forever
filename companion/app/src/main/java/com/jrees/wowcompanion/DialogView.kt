@@ -117,6 +117,8 @@ class DialogView(context: Context) : View(context) {
                     else -> null
                 } ?: continue
                 padHit = hit; padKey = key; changed = true
+                // b-release-spirit: the controller's press is the GAME's to answer (nothing is tapped): said, so a log tells A from a finger
+                android.util.Log.i("WCDLG", "controller $key on '$hit' of dialog ${d.i} ${d.which}: left to the game (no tap)")
                 chose(hit, d)
             } else if (rolls.isNotEmpty()) {
                 // the rolls: the game keeps the controller (A Need, X Greed / Transmog, B Pass) on ITS selected roll
@@ -188,6 +190,7 @@ class DialogView(context: Context) : View(context) {
             if (out.none { keyOf(it) == fk }) foldKey = null                    // the game closed it: the fold was right
             else if (docGt > foldGt + FOLD_REFUSE_MS) {                         // still there, written well after the choice
                 foldKey = null
+                android.util.Log.w("WCDLG", "dialog $fk is still up ${docGt - foldGt} ms after the press: the game did not take it")
                 note("The game did not take that")
             }
         }
@@ -209,10 +212,12 @@ class DialogView(context: Context) : View(context) {
     }
 
     /** {"type":"dialogack", cell, i, k}: the tap landed, the game's button was clicked */
-    fun ack(msg: JSONObject) {
+    fun ack(msg: JSONObject, current: Boolean = true) {
         // b-release-spirit (1.0.8): the add-on's word on the click (d19: which dialog, the button enabled, the cell aimed at it; and
-        // half a second later whether the dialog is still up), so ONE log read tells a lost tap from a click the game did not take
-        android.util.Log.i("WCDLG", (if (msg.optBoolean("after")) "after " else "clicked ") + "cell ${msg.optInt("cell")} " +
+        // half a second later whether the dialog is still up), so ONE log read tells a lost tap from a click the game did not take.
+        // test16: an answer replayed from the log at the app's start is not this session's press: said so ("old", and its dv)
+        android.util.Log.i("WCDLG", (if (current) "" else "OLD (replayed, ${msg.optString("dv", "before d19")}) ") +
+            (if (msg.optBoolean("after")) "after " else "clicked ") + "cell ${msg.optInt("cell")} " +
             "dialog ${msg.optInt("i")} ${msg.optString("which", "?")} button ${msg.optInt("k")}" +
             (if (msg.optBoolean("after")) " still up ${msg.optBoolean("still")} ghost ${msg.optBoolean("ghost")}"
              else " enabled ${if (msg.has("enabled")) msg.optBoolean("enabled") else "?"} aimed ${msg.optBoolean("aimed")} dead ${msg.optBoolean("dead")}"))
@@ -295,8 +300,9 @@ class DialogView(context: Context) : View(context) {
     private fun send(what: String, cell: Int): Boolean {
         val now = System.currentTimeMillis()
         if (cell < 0 && doc?.has("touch") == true && doc?.optBoolean("touch") == false) { note("Answer with the controller"); return false }
-        blocked(now)?.let { note(it); return false }
+        blocked(now)?.let { note(it); android.util.Log.w("WCDLG", "press '$what' cell $cell: not sent ($it; the document is ${ageMs()} ms old)"); return false }
         if (cell < 0) {
+            android.util.Log.w("WCDLG", "press '$what': no tap cell (touch ${doc?.opt("touch")})")
             // touch = false: the tap pad on this game has no room for the dialogs' cells yet
             note(if (doc?.has("touch") == true && doc?.optBoolean("touch") == false) "Answer with the controller"
                  else "The game gave this no tap cell")
@@ -333,6 +339,8 @@ class DialogView(context: Context) : View(context) {
                 val hit = hits.lastOrNull { it.first.contains(e.x, e.y) }?.second
                 val was = pressed
                 pressed = ""
+                // b-release-spirit: every finger press on the dialog, so "it presses but nothing happens" has its reason in the log
+                android.util.Log.i("WCDLG", "finger up on '${hit ?: "-"}' (down on '$was')" + if (hit == null || hit != was) ": no press" else "")
                 if (hit != null && hit == was) tap(hit)
                 invalidate()
             }
@@ -349,13 +357,16 @@ class DialogView(context: Context) : View(context) {
             if (rollSend(parts[1], parts[2].toIntOrNull() ?: -1)) chose("roll:" + parts[1], null, shownRoll()?.optInt("id") ?: -1)
             return
         }
-        val d = active() ?: return
+        val d = active() ?: run { android.util.Log.w("WCDLG", "press '$hit': no dialog is shown"); return }
         when {
             hit == "x" -> if (send("close", d.xCell)) chose(hit, d)
             hit == "extra" -> if (send(d.extra ?: "extra", d.extraCell)) chose(hit, d)
             hit.startsWith("b") -> {
                 val b = d.buttons.firstOrNull { "b${it.k}" == hit } ?: return
-                if (!b.on || secondsOf(d.delay) > 0) return
+                if (!b.on || secondsOf(d.delay) > 0) {
+                    android.util.Log.i("WCDLG", "press '${b.label}' of ${d.which}: the game has it ${if (!b.on) "greyed out" else "waiting ${secondsOf(d.delay)} s"}")
+                    return
+                }
                 if (send(b.label, b.cell)) chose(hit, d)
             }
         }
