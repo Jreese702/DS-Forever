@@ -282,9 +282,22 @@ class ProblemReportTest {
         val o = JSONObject(ReportUpload.request(r, "lag", facts, false))
         val logs = o.getString("logs")
         assertTrue(logs.length <= ReportUpload.MAX_LOGS + 40)
-        assertTrue(logs.startsWith("[older lines cut]"))
+        assertTrue(logs.contains("older lines cut]"))                      // the sieve keeps the newest 1500 (issue #9)
         assertTrue(logs.contains("line number 20000"))
         assertTrue(o.toString().length <= ReportUpload.MAX_REQUEST)
+    }
+
+    @Test fun theUploadEndsWithTheCrashRecords() {
+        val r = ProblemReport.build(0L, "crashing on launch", facts, emptyList(),
+            listOf("10-16 01:10:02.000  2000  2000 E : E: Guest program terminated with status: 3"),
+            listOf("2026-10-16_01-10-05_native-crash.txt" to "Reason: native-crash"), false, emptyList(),
+            gameCrashes = listOf("2026-10-16_01.10.04_Crash_236.txt" to "Exception: ACCESS_VIOLATION\nline 2"))
+        assertTrue(r.files.any { it.first == "game-crashes/2026-10-16_01.10.04_Crash_236.txt" })
+        val logs = JSONObject(ReportUpload.request(r, "crashing on launch", facts, false, emptyList())).getString("logs")
+        assertTrue(logs.contains("Guest program terminated with status: 3"))
+        assertTrue(logs.indexOf("===== game-crashes/") > logs.indexOf("Guest program terminated"))   // last: kept by every trim
+        assertTrue(logs.contains("Exception: ACCESS_VIOLATION"))
+        assertTrue(logs.contains("Reason: native-crash"))
     }
 
     @Test fun theReceiversAnswer() {
