@@ -2724,6 +2724,8 @@ class MapView(context: Context) : View(context) {
     var showTracker = true
         set(v) { if (field != v) { field = v; invalidate() } }
     private val tracked = ArrayList<JSONObject>()
+    /** every quest of the last quests document by id (the focused one may not be a tracked one: p-card-invisible) */
+    private val questById = HashMap<Int, JSONObject>()
     private var trackedMap = Int.MIN_VALUE
     private val trackerHits = ArrayList<Pair<RectF, JSONObject>>()
     private val TRACKER_W = 400f
@@ -3097,6 +3099,7 @@ class MapView(context: Context) : View(context) {
         cards.clear()
         val shownBefore = trackedIds()
         tracked.clear()
+        questById.clear()
         trackedNo.clear()
         trackedMap = q.optInt("mapID", Int.MIN_VALUE)
         val list = q.optJSONArray("list") ?: return
@@ -3104,6 +3107,7 @@ class MapView(context: Context) : View(context) {
         for (i in 0 until list.length()) {
             val e = list.optJSONObject(i) ?: continue
             if (e.optBoolean("focus")) docFocus = e.optInt("id", 0)
+            e.optInt("id", 0).takeIf { it != 0 }?.let { questById[it] = e }
             if (e.has("watch") && !e.isNull("watch")) {
                 tracked.add(e)
                 val id = e.optInt("id", 0)
@@ -3197,7 +3201,9 @@ class MapView(context: Context) : View(context) {
     fun focusedCard(): UiKit.QuestCard? {
         val f = shownFocus()                     // the default focus stands in for "No focused quest" (2026-10-06)
         if (f == 0) return null
-        val e = tracked.firstOrNull { it.optInt("id", 0) == f } ?: return null
+        // the tracked quest's card (its number); a focused quest the tracker does not list still gets its card, without a number
+        // (p-card-invisible: the user saw no card while a quest was focused)
+        val e = tracked.firstOrNull { it.optInt("id", 0) == f } ?: questById[f] ?: return null
         return cardFor(e)
     }
 
