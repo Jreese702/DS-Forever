@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d19"         -- bump on every change
+local DV = "d20"         -- bump on every change
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -780,9 +780,12 @@ WC.dialogs = { version = DV, setMode = setMode, look = look,
                    if gf and shown(gf) and not TB(function() return gf.gamepadFocused end) then n = n + 1 end
                    return n
                end,
+               -- d20: the sign of life also asks for a fresh document (b-release-spirit: the app taps it right after the controller's
+               -- press; a dialog still listed in it = the game did not take the press, and the app taps the button's cell instead)
                alive = function()
                    D.lifeAt = now()
                    look()
+                   pcall(emit, true)
                end }
 
 -- a dialog that was open across a reload

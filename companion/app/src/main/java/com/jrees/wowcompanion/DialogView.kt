@@ -117,9 +117,12 @@ class DialogView(context: Context) : View(context) {
                     else -> null
                 } ?: continue
                 padHit = hit; padKey = key; changed = true
-                // b-release-spirit: the controller's press is the GAME's to answer (nothing is tapped): said, so a log tells A from a finger
-                android.util.Log.i("WCDLG", "controller $key on '$hit' of dialog ${d.i} ${d.which}: left to the game (no tap)")
+                // b-release-spirit: the controller's press is the GAME's to answer first (nothing is tapped now); if a document written
+                // after it still lists this dialog, the game did not take it, and its cell is tapped then ([padRefused])
+                android.util.Log.i("WCDLG", "controller $key on '$hit' of dialog ${d.i} ${d.which}: left to the game first")
+                padPress = PadPress(keyOf(d), hit, gameNow())
                 chose(hit, d)
+                pokeSoon()
             } else if (rolls.isNotEmpty()) {
                 // the rolls: the game keeps the controller (A Need, X Greed / Transmog, B Pass) on ITS selected roll
                 val r = rolls.firstOrNull { it.optBoolean("sel") } ?: rolls.firstOrNull() ?: continue
@@ -137,6 +140,41 @@ class DialogView(context: Context) : View(context) {
         if (changed) postInvalidateOnAnimation()
     }
     private var padKey = ""
+
+    // ---- A THE GAME DID NOT TAKE (b-release-spirit, 1.0.8 test16/17: the user's A on Release Spirit / Accept res "presses but nothing
+    // happens and then it reappears", while a finger works). The press is the game's first; a document written PAD_FALLBACK_MS or more
+    // after it that still lists the SAME dialog (slot and which) means the game never got it: the button's own cell is tapped then, as
+    // a finger's press. Never both: once the game took it the dialog is gone from that document; never another dialog: the slot's
+    // which must still match. The add-on sends that document soon (the sign of life asks for one: Dialogs d20).
+    private class PadPress(val key: String, val hit: String, val gt: Long)
+    private var padPress: PadPress? = null
+
+    /** a sign of life now-ish (a fresh document from the add-on, d20), so a refused press is seen within a second */
+    private fun pokeSoon() {
+        postDelayed({
+            val d = doc ?: return@postDelayed
+            val col = d.optJSONObject("life")?.optInt("col", -1) ?: -1
+            if (col < 0 || !docCurrent || dryRun) return@postDelayed
+            TapBridge.tap(context, d.optJSONObject("pad"), "iact", col) { }
+        }, PAD_POKE_MS)
+    }
+
+    /** a new document: was the controller's press refused? then its cell, once */
+    private fun padRefused() {
+        val p = padPress ?: return
+        if (docGt >= 0 && docGt < p.gt + PAD_FALLBACK_MS) return
+        padPress = null
+        val d = list.firstOrNull { keyOf(it) == p.key && it.top == null } ?: return       // gone: the game took it
+        if (docGt - p.gt > PAD_FALLBACK_MAX_MS) return                                     // too late to be that press
+        val cell = when {
+            p.hit == "extra" -> d.extraCell
+            else -> d.buttons.firstOrNull { "b${it.k}" == p.hit }?.takeIf { it.on }?.cell ?: -1
+        }
+        val label = if (p.hit == "extra") (d.extra ?: "extra") else d.buttons.firstOrNull { "b${it.k}" == p.hit }?.label ?: p.hit
+        android.util.Log.w("WCDLG", "the game did not take the controller's press on '$label' (${p.key} still up ${docGt - p.gt} ms after): tapping its cell")
+        lastTapAt = 0L
+        if (cell >= 0 && send(label, cell)) chose(p.hit, d)
+    }
     // the app's own shared reader while a dialog shows (also over a room, where Home's reader is off); the same edges as Home's
     // mask, so a mask that arrives twice presses once
     private var padSub: PadInput? = null
@@ -186,6 +224,7 @@ class DialogView(context: Context) : View(context) {
                         str(d, "fkey")))
         }
         list = out
+        if (current) padRefused() else padPress = null
         foldKey?.let { fk ->
             if (out.none { keyOf(it) == fk }) foldKey = null                    // the game closed it: the fold was right
             else if (docGt > foldGt + FOLD_REFUSE_MS) {                         // still there, written well after the choice
@@ -758,7 +797,10 @@ class DialogView(context: Context) : View(context) {
         const val SETTLE_MS = 700L            // after the dialogs changed: a tap may have been aimed at the old one
         const val PRESS_MIN_MS = 160L         // a press stays visibly DOWN at least this long
         const val FOLD_MS = 240L              // the dialog folds away this fast after the press
-        const val FOLD_REFUSE_MS = 1_500L     // a document this much newer that still lists the dialog = the game refused
+        const val FOLD_REFUSE_MS = 1_500L
+        const val PAD_FALLBACK_MS = 400L      // a document this much newer than the controller's press that still lists its dialog
+        const val PAD_FALLBACK_MAX_MS = 6_000L   // later than this the press is stale: nothing is tapped
+        const val PAD_POKE_MS = 450L          // the sign of life that asks the add-on for that document     // a document this much newer that still lists the dialog = the game refused
         private val PAD_SLOTS = listOf(PadInput.SLOT_FACE_BOTTOM to "PAD1", PadInput.SLOT_FACE_RIGHT to "PAD2",
                                        PadInput.SLOT_FACE_LEFT to "PAD3", PadInput.SLOT_FACE_TOP to "PAD4")
         const val MIN_LIFE_GAP_MS = 1_000L    // never more than one sign of life a second
