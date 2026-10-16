@@ -3793,10 +3793,13 @@ object UiKit {
     /** the open motion's length; closing runs the same motion backward in [CR_CLOSE_MS]: t = CR_OPEN_MS x (1 - closing ms / CR_CLOSE_MS) */
     const val CR_OPEN_MS = 440f
     const val CR_CLOSE_MS = 220f
-    /** [consumableRadial]'s parts: all of it; the wheel (cover, disc, wheel, chooser) without the band; the band alone (f-radial-behind) */
+    /**
+     * [consumableRadial]'s parts: all of it; the wheel alone (cover, wheel: Home draws it under its columns, f-radial-behind); the top
+     * (the disc rising from the bar, the chooser, the name band: over everything, f-one-disc)
+     */
     const val CR_ALL = 0
     const val CR_WHEEL = 1
-    const val CR_BAND = 2
+    const val CR_TOP = 2
     /** [consumableRadialHit]: the hub (B, close) */
     const val CR_HUB = -2
 
@@ -3929,7 +3932,7 @@ object UiKit {
         // an EMPTY slice lights too when pointed at (the user after the device test, 2026-10-06: "even if its blank I want it to highlight")
         val pt = if (pointed in 0..7) pointed else -1
         val selK = crEaseOut((tt - 320f) / 120f)
-        if (part != CR_BAND) {
+        run {
         // the disc: from the bar to the hub
         val cx: Float; val cy: Float; var size: Float; val glow: Float
         if (tt < 60f) {
@@ -3945,7 +3948,7 @@ object UiKit {
         // of growing out from the spiral stone (it should also retract into the stone as well"): its middle rides with the disc along the
         // rise and it grows from the stone's own width (discSize / the wheel's) to 1; the close runs t backward, so it goes back in
         val openK = crEaseOut((tt - 60f) / 260f)
-        if (openK > 0f) {
+        if (openK > 0f && part != CR_TOP) {
             // in Home's middle slot it SLIDES UP whole, riding with the disc from the bar (f-radial-middle), not growing
             val s0 = if (slot != null) 1f else (discSize / g.d).coerceIn(0.05f, 1f)
             val sc = s0 + (1f - s0) * openK
@@ -3958,6 +3961,8 @@ object UiKit {
             c.restoreToCount(save)
         }
         val redK = crEaseInOut((tt - 120f) / 180f)
+        // the disc (the spiral) and the chooser: on TOP (f-one-disc: it rises over Home's columns from the bar, the one disc on screen)
+        if (part != CR_WHEEL) {
         if (glow > 0f) {
             val hr = size * 0.85f
             val (r0, g0, b0) = if (redK > 0.5f) Triple(230, 50, 40) else Triple(40, 110, 230)
@@ -4000,6 +4005,7 @@ object UiKit {
             c.drawCircle(fx, fy, fs, pCrGlow)
             slot(c, choose.icon, fx - fs / 2f, fy - fs / 2f, fs, Theme.quality(choose.quality))
             c.restoreToCount(l)
+        }
         }
         }
         // the band above the wheel: what the pointed slice holds (or what A does there); the page dots under it
@@ -4388,10 +4394,16 @@ object UiKit {
         }
         c.restoreToCount(l)
     }
-    /** the pause hub alone where the open wheel has it (B's press plays on after the wheel has gone): see [pauseHubAt] */
-    fun pauseHub(c: Canvas, screen: RectF, push: Float, gold: Float, alpha: Int = 255) {
+    /**
+     * the pause hub alone after the wheel has gone (1.0.9, the user: "when closing the main menu, the spiral lingers in the middle, it
+     * should transition back down to where it should be instead of fading out"): the disc at [t] of its arrival ([pauseDisc]) run
+     * backward by the caller, so it glides from the wheel's middle back down onto the bar's Home disc ([disc], [discSize]), its red going
+     * back to the bar's blue; a press ([push], [gold]) plays on it meanwhile. See [pauseHubAt]
+     */
+    fun pauseHubGlide(c: Canvas, screen: RectF, disc: android.graphics.PointF, discSize: Float, t: Float, push: Float, gold: Float) {
         val g = pauseGeo(screen)
-        pauseHubAt(c, g, g.cx, g.cy, PAUSE_DISC_U * g.s, 1f, 1f, push, gold, alpha)
+        val d = pauseDisc(screen, disc, discSize, t)
+        pauseHubAt(c, g, d.cx, d.cy, d.size, d.red, d.b, push, gold)
     }
 
     /** a finger at ([x], [y]): a slice 0..7 (the KIT's order: 0 = the top, clockwise), [PAUSE_HUB] = the hub, -1 = outside the wheel */
