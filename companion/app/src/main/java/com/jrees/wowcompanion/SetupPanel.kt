@@ -91,7 +91,7 @@ class SetupPanel(context: Context) : View(context) {
             report?.let { buttons.add(it) }
         }
         // the buttons, the box under the focused one
-        val live = buttons.indices.filter { buttons[it].second.enabled }
+        val live = buttons.indices.filter { SetupFlow.padTarget(buttons[it].second) }      // "Report a problem" is touch only
         if (live.isNotEmpty()) focus = focus.coerceIn(0, live.size - 1)
         // b-login-a-input (the user, 15 Oct: the login screen's cursor, glyph and A "cause issues with inputting on both screens"): in
         // the game (no Play) the sign-in pop-up has no gold box and no A glyph, and takes no pad presses; its buttons are touch only
@@ -144,7 +144,7 @@ class SetupPanel(context: Context) : View(context) {
 
     // ------------------------------------------------------------------ input
 
-    private fun live(): List<Int> = buttons.indices.filter { buttons[it].second.enabled }
+    private fun live(): List<Int> = buttons.indices.filter { SetupFlow.padTarget(buttons[it].second) }
 
     /** one key from a game controller (before Play: the launcher's activity; true = the panel's) */
     fun key(code: Int, down: Boolean): Boolean {

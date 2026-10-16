@@ -95,6 +95,12 @@ object SetupFlow {
      */
     fun padDriven(s: Screen): Boolean = s.play != null
 
+    /**
+     * A button the controller's cursor may land on. "Report a problem" never (b-setup-report-cursor, the user: "I keep accidentally
+     * clicking the Send a problem at launch because its on the cursor. that should only be a touchable option"): touch only.
+     */
+    fun padTarget(b: Button): Boolean = b.enabled && b.action != Action.REPORT
+
     fun canPlay(i: Inputs): Boolean =
         i.folderFound && !i.wrongGame && i.storage && i.art == Art.READY && i.busy == null && !i.gameRunning && i.appUpdate == null
 

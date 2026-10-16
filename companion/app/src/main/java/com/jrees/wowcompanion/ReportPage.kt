@@ -40,7 +40,9 @@ class ReportPage(c: Context) : FrameLayout(c) {
         fun keyName(code: Int): String? = when (code) {
             KeyEvent.KEYCODE_DPAD_UP -> "PADDUP"; KeyEvent.KEYCODE_DPAD_DOWN -> "PADDDOWN"
             KeyEvent.KEYCODE_DPAD_LEFT -> "PADDLEFT"; KeyEvent.KEYCODE_DPAD_RIGHT -> "PADDRIGHT"
-            KeyEvent.KEYCODE_BUTTON_A -> "PAD1"; KeyEvent.KEYCODE_BUTTON_B -> "PAD2"
+            KeyEvent.KEYCODE_BUTTON_A -> "PAD1"
+            // B, and a pad whose B arrives as Android's Back (b-setup-report-cursor: "it needs a way to back out of it")
+            KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> "PAD2"
             KeyEvent.KEYCODE_BUTTON_X -> "PAD3"; KeyEvent.KEYCODE_BUTTON_Y -> "PAD4"
             KeyEvent.KEYCODE_BUTTON_L1 -> "PADLSHOULDER"; KeyEvent.KEYCODE_BUTTON_R1 -> "PADRSHOULDER"
             KeyEvent.KEYCODE_BUTTON_L2 -> "PADLTRIGGER"; KeyEvent.KEYCODE_BUTTON_R2 -> "PADRTRIGGER"
@@ -100,6 +102,8 @@ class ReportPage(c: Context) : FrameLayout(c) {
 
     fun close() {
         if (!isOpen) return
+        // backing out keeps what was typed as the unsent draft (ReportFlow.description; a send clears it), even across a restart
+        if (words.isNotBlank()) ReportFlow.description = words.trim()
         isOpen = false; visibility = View.GONE
         kbAnim?.cancel(); kbK = 0f; kb.visibility = View.GONE; preview.visibility = View.GONE
         ui.removeCallbacks(tick)
@@ -229,6 +233,15 @@ class ReportPage(c: Context) : FrameLayout(c) {
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        // the on-screen Back (touch): the keyboard, then the preview, then the page, as B does
+        if (e.actionMasked == MotionEvent.ACTION_UP && backBox.contains(e.x, e.y)) {
+            when {
+                kbUp -> closeKeyboard()
+                preview.visibility == View.VISIBLE -> { preview.visibility = View.GONE; invalidate() }
+                else -> close()
+            }
+            return true
+        }
         if (e.actionMasked == MotionEvent.ACTION_UP && preview.visibility != View.VISIBLE) {
             val live = Model.live(ReportFlow.canSend(words))
             boxes.entries.firstOrNull { it.key in live && it.value.contains(e.x, e.y) }?.key?.let { t ->
@@ -251,13 +264,15 @@ class ReportPage(c: Context) : FrameLayout(c) {
         val boardTop = height - ChatKeyboard.fullHeight().toFloat()
         val upButtonsTop = boardTop - 16f - BUTTON_H
         val upBoxBottom = upButtonsTop - 20f
-        val upBoxTop = maxOf(16f, upBoxBottom - BOX_UP_H)
+        val upBoxTop = maxOf(20f + BACK_H + 12f, upBoxBottom - BOX_UP_H)      // under the Back button
         val boxTop = lerp(110f, upBoxTop, k)
         val boxBottom = lerp(110f + BOX_H, upBoxBottom, k)
         val buttonsTop = lerp(110f + BOX_H + 30f, upButtonsTop, k)
         if (boxTop > 80f) c.drawText("Send a problem report", PAD, 70f, UiKit.titlePaint(44f))
+        drawBack(c)
         if (preview.visibility == View.VISIBLE) {
             UiKit.bodyPaint(24f, Theme.textDim).let { c.drawText("Everything the report holds. B goes back.", PAD, 100f, it) }
+            drawBack(c)
             return
         }
         val can = ReportFlow.canSend(words)
@@ -307,6 +322,13 @@ class ReportPage(c: Context) : FrameLayout(c) {
     }
 
     private fun inset(r: RectF) = RectF(r.left - 6f, r.top - 6f, r.right + 6f, r.bottom + 6f)
+
+    /** the on-screen Back, top right (touch only; B does the same) */
+    private val backBox = RectF()
+    private fun drawBack(c: Canvas) {
+        backBox.set(width - PAD - BACK_W, 20f, width - PAD, 20f + BACK_H)
+        UiKit.button(c, backBox, "Back", UiKit.Button.UP)
+    }
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
 
     companion object {
@@ -317,6 +339,8 @@ class ReportPage(c: Context) : FrameLayout(c) {
         private const val BOX_UP_H = 150f
         /** Chat's input slide (ChatView.INPUT_MS) */
         private const val SLIDE_MS = 240L
+        private const val BACK_W = 200f
+        private const val BACK_H = 70f
         private const val BUTTON_H = 90f
         private const val MAX_WORDS = 1500
     }

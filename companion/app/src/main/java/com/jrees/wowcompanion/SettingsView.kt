@@ -434,6 +434,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 saved != null && saved.sent > 0 -> "Open the issue to see it."
                 saved != null -> "Open the GitHub issue to post it (the file is in Documents/DS Forever/reports)."
                 rec -> "Recording… %d:%02d left. Send it when the problem happened.".format(left / 60, left % 60)
+                ReportFlow.description.isNotBlank() -> "Your unsent report is kept: Send to finish it."
                 else -> "Say what happened; DS Forever adds its logs, without names or logins."
             }, enabled = true) { box ->
             val b = RectF(box.right - 260f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
