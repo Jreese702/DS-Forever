@@ -627,6 +627,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             bookReady = { lastBook != null },
             fighting = { homeView.inFight() })
         LauncherHooks.cleanExit = { why, done -> ui.post { cleanExit(why, done) } }
+        QuestWatchKeep.init(this)                         // the watch list kept per character (the user's "Restore silently")
         AllIcons.busy = { homeView.inFight() }                            // the background icons wait while the player fights
         if (LauncherHooks.pkg != null) {
             NativeLogin.onTrafficSample = { rx, tx -> signInCheck.traffic(NativeLogin.firstReadAt, rx, tx) }
@@ -1421,7 +1422,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // every zone's quest markers for the Map room (Map.lua mq1; the user after b101: "I cant see the quests on the map")
             "mapquests" -> worldMapRoom.onMapQuests(msg)
             // Hub hub6's logout word: the world closed (character select, or the game quitting): the waiting screen at once
-            "bye" -> if (current) byeShow()
+            "bye" -> if (current) { QuestWatchKeep.cleanEnd(); byeShow() }     // a logout: the game writes its state (the watch list)
             "chat" -> msg.optJSONObject("chat")?.let { chatView.update(it); homeView.onChat(it) }
             // the game's world notice (Chat chat21: the shard transfer's countdown) over Home's chat: current only (a replayed one is old)
             "notice" -> if (current) homeView.onNotice(msg)
@@ -1432,6 +1433,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "quests" -> msg.optJSONObject("q")?.let {
                 it.optJSONObject("pad")?.let { p -> questsPad = p }
                 questsView.update(it); homeView.onQuests(it, current); mapView.onQuests(it); worldMapRoom.onQuests(it)
+                if (current) {
+                    val back = QuestWatchKeep.onQuests(QuestWatchKeep.parse(it), canAct = questsPad != null && GameInput.live() && !homeView.inFight())
+                    if (back.isNotEmpty()) restoreWatches(back)
+                }
             }
             // the generic controller guests (Quests.lua q6, LATER item 5): each room's presses (CURRENT only, the room shown) and answers
             "guestpad" -> if (current) {
@@ -1621,6 +1626,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 status.text = "addon ${msg.optString("v", "?")} connected"
                 // a login or a reload just happened: the game's UI hide waits out the loading screen (GameUiPolicy.SETTLE_MS)
                 if (current) GameUi.onHello()
+                if (current) QuestWatchKeep.newSession()        // a login or reload: its first quests document is checked
                 if (current && reloadAt != 0L) reloadDone()
             }
             // the Social room (social session): its lists and the answers to its taps; the controller's presses while it shows.
@@ -1736,6 +1742,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 it.dpad?.let { d ->
                     // the character now: the wheels' kept lists of another character go (the per-character ruling)
                     if (current && !d.name.isNullOrEmpty() && ::radialView.isInitialized) radialView.character("${d.name}-${d.realm ?: ""}")
+                    if (current && !d.name.isNullOrEmpty()) QuestWatchKeep.character("${d.name}-${d.realm ?: ""}")
                     lastDpad = d; settings.homeSection.dpadChanged()
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
@@ -2671,6 +2678,24 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun padTabTap(cells: List<Pair<String, Int>>): Boolean = TapBridge.taps(this, talentsPad ?: spellsPad, cells)
 
     /**
+     * THE WATCH LIST BACK after an unclean end ([QuestWatchKeep]; the user's "Restore silently"): the game's own "watch" action for each
+     * quest (Quests' qpick + qact WATCH, the same pair the Quests room's Track sends), one every [WATCH_GAP_MS], never in a fight.
+     */
+    private fun restoreWatches(back: List<QuestWatchKeep.Q>) {
+        Log.i(HomeView.TAG, "quest watch: restoring ${back.size} after an unclean end: ${back.joinToString(",") { it.id.toString() }}")
+        fun step(i: Int) {
+            if (i >= back.size) { Log.i(HomeView.TAG, "quest watch: restore sent"); return }
+            if (homeView.inFight()) { Log.i(HomeView.TAG, "quest watch: a fight: the rest (${back.size - i}) not sent"); return }
+            val q = back[i]
+            val cells = QuestPad.cells(questsPad, QuestPad.Act.WATCH, q.slot)
+            val ok = cells != null && TapBridge.taps(this, questsPad, cells) { why -> Log.i(HomeView.TAG, "quest watch: ${q.id}: tap failed: $why") }
+            Log.i(HomeView.TAG, "quest watch: ${q.id} ${if (ok) "sent" else "not sent"}")
+            ui.postDelayed({ step(i + 1) }, WATCH_GAP_MS)
+        }
+        step(0)
+    }
+
+    /**
      * A CLEAN EXIT FIRST ([CleanExit]; the user's "Both" ruling after test20): the game's own Exit Game cell (Spells' secure gamemenu
      * row: "/quit", which writes SavedVariables), then wait for the game to go; [done] says whether the old close is still needed.
      */
@@ -2686,7 +2711,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             override fun run() {
                 val s = (SystemClock.elapsedRealtime() - t0) / 1000
                 when {
-                    !LauncherHooks.gameUp() -> { Log.i("WCSETUP", "clean exit ($why): the game exited by itself after $s s"); done(false) }
+                    !LauncherHooks.gameUp() -> {
+                        Log.i("WCSETUP", "clean exit ($why): the game exited by itself after $s s")
+                        QuestWatchKeep.cleanEnd()                               // its state is written: nothing to restore next time
+                        done(false)
+                    }
                     SystemClock.elapsedRealtime() - t0 > CleanExit.WAIT_MS -> {
                         Log.i("WCSETUP", "clean exit ($why): still running after $s s: the old close"); done(true)
                     }
@@ -2698,6 +2727,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     companion object {
+        /** between two restored watches: the add-on's pick serves one action for 2 s, a pair is two taps */
+        private const val WATCH_GAP_MS = 700L
         /** the router's "pause" after the app's own Start read is the same press (the doc arrives ~0.1-0.4 s later) */
         const val START_DEDUPE_MS = 800L
         const val SWEEP_ACTION = "app.dsforever.companion.KEYSWEEP"
