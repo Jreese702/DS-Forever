@@ -79,12 +79,16 @@ object HomePauseModel {
 
     /** the D-pad buttons the wheel passes to [Flow.dpad] (the reader's slot -> the direction): EVERY direction it acts on (1.0.8-test7:
      *  Left was missing from the view's own list, so its option never fired) */
-    val DPAD_OPTIONS: List<Pair<Int, Int>> = listOf(PadInput.SLOT_DPAD_UP to 0, PadInput.SLOT_DPAD_DOWN to 2, PadInput.SLOT_DPAD_LEFT to 3)
+    val DPAD_OPTIONS: List<Pair<Int, Int>> = listOf(PadInput.SLOT_DPAD_UP to 0, PadInput.SLOT_DPAD_RIGHT to 1, PadInput.SLOT_DPAD_DOWN to 2,
+        PadInput.SLOT_DPAD_LEFT to 3)
 
-    /** f-trackpad-keyboard (the user's pick: "D-pad Left"): the Keyboard & Trackpad tool, Home's own (HomeView.openTypeTool) */
-    val TOOL = Slice("typetool", "Keyboard & Trackpad", Kind.HOME)
-    /** its word on the context band */
-    const val TOOL_WORD = "Keyboard & Trackpad"
+    /** the Track Pad & Keyboard tool, Home's own (HomeView.openTypeTool), split by the user (2026-10-16: "on the left side it should be
+     *  Track Pad, and on the right it should be Keyboard"): D-pad Left opens it on the Track Pad, Right on the Keyboard */
+    val TRACKPAD = Slice("trackpad", "Track Pad", Kind.HOME)
+    val KEYBOARD = Slice("keyboard", "Keyboard", Kind.HOME)
+    /** their words on the context band, left and right of the D-pad */
+    const val TRACKPAD_WORD = "Track Pad"
+    const val KEYBOARD_WORD = "Keyboard"
 
     /** D-pad UP's custom page: eight one-shot emotes (the game's order), header "Emotes" */
     val EMOTES: List<Slice?> = kitOrder(listOf("Dance", "Point", "Wave", "Kneel", "Train", "Chicken", "Angry", "Cheer")
@@ -216,13 +220,19 @@ object HomePauseModel {
             return true
         }
 
-        /** a D-pad direction (0 up, 1 right, 2 down, 3 left) pressed or let go; f-trackpad-keyboard: LEFT = the Keyboard & Trackpad */
+        /** a D-pad direction (0 up, 1 right, 2 down, 3 left) pressed or let go: up Emotes, down Sit / Stand, left the Track Pad,
+         *  right the Keyboard */
         fun dpad(dir: Int, down: Boolean): Act {
-            if (dir != 0 && dir != 2 && dir != 3) return Act.None        // right: no option (kept free)
+            if (dir !in 0..3) return Act.None
             if (down) { heldOption = dir; return Act.None }
             if (heldOption != dir) return Act.None                      // a release with no press seen
             heldOption = -1
-            return when (dir) { 0 -> { page = EMOTE_PAGE; pointed = -1; Act.None }; 3 -> Act.Pick(TOOL); else -> Act.Sit }
+            return when (dir) {
+                0 -> { page = EMOTE_PAGE; pointed = -1; Act.None }
+                1 -> Act.Pick(KEYBOARD)
+                3 -> Act.Pick(TRACKPAD)
+                else -> Act.Sit
+            }
         }
 
         /** a finger on slot [s] (the kit's hit test): a pick at once; [HUB] closes */
