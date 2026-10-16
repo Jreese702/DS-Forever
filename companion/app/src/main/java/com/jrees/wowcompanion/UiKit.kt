@@ -4263,10 +4263,6 @@ object UiKit {
     private val PAUSE_GREY = Color.rgb(128, 128, 128)
     private val PAUSE_RED = Color.rgb(255, 26, 26)
 
-    /** the game's label offsets from the icon per slice in the GAME's order (textAnchorData), game units, y UP */
-    private val PAUSE_TEXT = arrayOf(floatArrayOf(60f, 0f), floatArrayOf(30f, 45f), floatArrayOf(0f, 60f), floatArrayOf(-30f, 45f),
-        floatArrayOf(-60f, 0f), floatArrayOf(-30f, -45f), floatArrayOf(0f, -60f), floatArrayOf(30f, -45f))
-
     private fun pauseFlip(i: Int) = ((2 - i) % 8 + 8) % 8
 
     /** the slice's kit picture */
@@ -4278,12 +4274,28 @@ object UiKit {
     fun pauseCloseT(ms: Float): Float = PAUSE_OPEN_MS * (1f - (ms / PAUSE_CLOSE_MS).coerceIn(0f, 1f))
 
     /** [s] = screen px per game unit (1.38 on the 1240 x 1080 bottom screen), the wheel's middle at (620, 520) of it */
-    private class PauseGeo(val k: Float, val s: Float, val cx: Float, val cy: Float)
+    private class PauseGeo(val k: Float, val s: Float, val cx: Float, val cy: Float, val topY: Float = 0f, val padY: Float = 0f)
 
     private fun pauseGeo(screen: RectF): PauseGeo {
         val k = minOf(screen.width() / 1240f, screen.height() / 1080f)
-        return PauseGeo(k, 1.38f * k, screen.centerX(), screen.top + screen.height() * 520f / 1080f)
+        run {
+            // f-pause-art (the user: "the top main menu with L/R tabs and bottom dpad sections give up WAY too much screen real
+            // estate"; "inconsistent size with the rest of our UI"): one slim top row, the wheel, the D-pad with its words hugging it,
+            // the stack centred on the screen
+            val s = 1.3f * k
+            val total = (P_TOP_H + P_GAP + 2f * 270f * 1.3f + P_GAP + P_PAD_H) * k
+            val y0 = screen.top + (screen.height() - total) / 2f
+            val topY = y0 + P_TOP_H * k / 2f
+            val cy = y0 + (P_TOP_H + P_GAP) * k + 270f * s
+            val padY = cy + 270f * s + (P_GAP + P_PAD_H / 2f) * k
+            return PauseGeo(k, s, screen.centerX(), cy, topY, padY)
+        }
     }
+    /** the Home disc in the wheel's middle, game units (the user: "the disk needs to be larger"): the centre hole, the inner ring clear */
+    private const val PAUSE_DISC_U = 168f
+    private const val P_TOP_H = 54f; private const val P_GAP = 10f; private const val P_PAD_H = 116f
+    /** the compact D-pad's words: their distance from the D-pad's middle (frame px) and size */
+    private const val P_ARM = 34f; private const val P_WORD = 23f
 
     private val pauseExit = android.view.animation.PathInterpolator(0.4f, 0f, 1f, 1f)          // FastOutLinearIn
     private fun pSpan(t: Float, a: Float, b: Float) = ((t - a) / (b - a)).coerceIn(0f, 1f)
@@ -4315,7 +4327,7 @@ object UiKit {
     fun pauseDisc(screen: RectF, disc: android.graphics.PointF, discSize: Float, t: Float): PauseDisc {
         val g = pauseGeo(screen)
         val m = crEaseInOut(pSpan(t, 60f, 380f))
-        return PauseDisc(disc.x + (g.cx - disc.x) * m, disc.y + (g.cy - disc.y) * m, discSize + (146f * g.s - discSize) * m,
+        return PauseDisc(disc.x + (g.cx - disc.x) * m, disc.y + (g.cy - disc.y) * m, discSize + (PAUSE_DISC_U * g.s - discSize) * m,
             crEaseInOut(pSpan(t, 380f, 460f)), crEaseOut(pSpan(t, 420f, 520f)), 0.55f * pSpan(t, 0f, 60f) * (1f - pSpan(t, 260f, 520f)))
     }
 
@@ -4338,15 +4350,12 @@ object UiKit {
     /** a finger on the context band's words: [PAUSE_OPT_UP] ("Emotes"), [PAUSE_OPT_DOWN] ("Sit / Stand"), -1 elsewhere */
     fun pauseOptionHit(screen: RectF, x: Float, y: Float): Int {
         val g = pauseGeo(screen)
-        val cy = g.cy + 310f * g.s
-        if (kotlin.math.abs(x - g.cx) > 285f * g.s) return -1
-        // f-trackpad-keyboard: Left's words sit left of the D-pad, clear of the centred "Emotes" / "Sit / Stand" (a tap on their left half
-        // must stay theirs)
-        if (x < g.cx - 75f * g.s && kotlin.math.abs(y - cy) <= 26f * g.s) return PAUSE_OPT_LEFT
-        if (x > g.cx + 75f * g.s && kotlin.math.abs(y - cy) <= 26f * g.s) return PAUSE_OPT_RIGHT
-        return when (y) {
-            in cy - 72f * g.s..cy - 10f * g.s -> PAUSE_OPT_UP
-            in cy + 10f * g.s..cy + 72f * g.s -> PAUSE_OPT_DOWN
+        val dx = x - g.cx; val dy = y - g.padY
+        return when {
+            kotlin.math.abs(dx) < 110f * g.k && dy < -16f * g.k && dy > -(P_ARM + 26f) * g.k -> PAUSE_OPT_UP
+            kotlin.math.abs(dx) < 110f * g.k && dy > 16f * g.k && dy < (P_ARM + 26f) * g.k -> PAUSE_OPT_DOWN
+            kotlin.math.abs(dy) <= 18f * g.k && dx < -22f * g.k && dx > -240f * g.k -> PAUSE_OPT_LEFT
+            kotlin.math.abs(dy) <= 18f * g.k && dx > 22f * g.k && dx < 240f * g.k -> PAUSE_OPT_RIGHT
             else -> -1
         }
     }
@@ -4354,14 +4363,9 @@ object UiKit {
     /** a finger on LB / RB beside the page dots (a main page): -1 = the previous page, +1 = the next, 0 = elsewhere */
     fun pausePageHit(screen: RectF, x: Float, y: Float): Int {
         val g = pauseGeo(screen)
-        val dy = g.cy - 310f * g.s + 24f * g.s + 11f * g.s
-        if (kotlin.math.abs(y - dy) > 48f * g.s) return 0
+        if (kotlin.math.abs(y - g.topY) > 30f * g.k) return 0
         val off = x - g.cx
-        return when {
-            off < -24f * g.s && off > -110f * g.s -> -1
-            off > 24f * g.s && off < 110f * g.s -> 1
-            else -> 0
-        }
+        return when { off < -70f * g.k && off > -220f * g.k -> -1; off > 70f * g.k && off < 220f * g.k -> 1; else -> 0 }
     }
 
     /**
@@ -4382,6 +4386,23 @@ object UiKit {
      * top, over the title ("Coming later" for a greyed pick); the caller holds and fades it ([lineAlpha]) as the game does (about 2 s,
      * then 0.5 s out). [up] / [down] = the context band's words. Returns true while the motion wants another frame.
      */
+    /*
+     * f-pause-art (the user, 1.0.9: "the art all looks like its made by AI instead of using in game assets. not everything match's the
+     * home screen either", then on the renders "Option2, but the disk needs to be larger"): the game's own GamepadRadial
+     * (blizzard_gamepad/ui/radials/gamepadradial.xml) - each label UNDER its icon in the game's GameFontNormal (gold, its shadow, no
+     * outline), the D-pad's four words at its arms in the same font, one slim top row, sizes at Home's scale - with Home's own blue
+     * Home-button disc in the middle (as the bottom bar's), filling the wheel's centre
+     */
+    /** the game's GameFontNormal: gold, its drop shadow, no outline (styles 1 / 2) */
+    private fun gameWords(c: Canvas, text: String, x: Float, y: Float, size: Float, colour: Int, alpha: Int, maxW: Float) {
+        val p = bodyPaint(size, colour, shadow = false).apply {
+            textAlign = Paint.Align.CENTER; this.alpha = alpha; setShadowLayer(size * 0.08f, size * 0.06f, size * 0.06f, Color.argb(alpha, 0, 0, 0))
+        }
+        var t = text
+        while (p.measureText(t) > maxW && t.length > 2) t = t.dropLast(2) + "\u2026"
+        c.drawText(t, x, y - (p.ascent() + p.descent()) / 2f, p)
+    }
+
     fun pauseRadial(c: Canvas, screen: RectF, disc: android.graphics.PointF, discSize: Float, slices: List<PauseSlice?>, page: Int,
                     pointed: Int, heldOption: Int = -1, t: Float = PAUSE_OPEN_MS, hubDown: Float = 0f, line: String? = null,
                     lineAlpha: Float = 1f, glyphs: Boolean = true, up: String? = "Emotes", down: String? = "Sit / Stand",
@@ -4405,20 +4426,11 @@ object UiKit {
         }
         // the disc (the hub): as the consumables wheel draws it, its halo, its red, its B, its press
         val d = pauseDisc(screen, disc, discSize, tt)
-        if (d.glow > 0f) {
-            val hr = d.size * 0.9f
-            val (r0, g0, b0) = if (d.red > 0.5f) Triple(230, 50, 40) else Triple(40, 110, 230)
-            pCrHalo.shader = RadialGradient(d.cx, d.cy, hr, intArrayOf(Color.argb(255, (r0 * d.glow).toInt(), (g0 * d.glow).toInt(), (b0 * d.glow).toInt()),
-                Color.argb(255, (r0 * d.glow * 0.3f).toInt(), (g0 * d.glow * 0.3f).toInt(), (b0 * d.glow * 0.3f).toInt()), Color.argb(255, 0, 0, 0)),
-                floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
-            c.drawCircle(d.cx, d.cy, hr, pCrHalo)
-        }
         val box = RectF(d.cx - d.size / 2f, d.cy - d.size / 2f, d.cx + d.size / 2f, d.cy + d.size / 2f)
         val push = hubDown.coerceIn(0f, 1f)
         val pressSave = c.save()
         if (push > 0f) { val sc = 1f - 0.08f * push; c.scale(sc, sc, d.cx, d.cy + 2f * g.k * push) }
         crDisc(c, box, false, 255)
-        if (d.red > 0f) crDisc(c, box, true, (255 * d.red).toInt())
         if (glyphs && d.b > 0f) pad(c, backGlyph(), d.cx, d.cy, d.size * 0.30f, (255 * d.b).toInt())
         if (push > 0f) {
             val r = d.size / 2f
@@ -4473,7 +4485,7 @@ object UiKit {
             // the game's SetIcon pulls an atlas icon 50 units toward the hub IN ITS OWN SCALED SPACE (SetScale(57 / its size), ~0.45
             // for the 128 px icons): ~23 units, so it sits mid-slice (r ~127) and its label near the rim (v1 pulled the full 50: the
             // icons sat against the hub; the user 2026-10-09, "the proportions on the pause wheel dont look right", picked 1C)
-            val pull = if (plain) 20f else if (art != null) 50f * 57f / maxOf(art.width, art.height) else 23f
+            val pull = 12f                                        // the icon on its segment's centre, the label under it (the game's)
             val ri = (150f - pull) * g.s
             val ix = g.cx + ri * Math.cos(a).toFloat(); val iy = g.cy - ri * Math.sin(a).toFloat()
             if (art != null) {
@@ -4495,90 +4507,62 @@ object UiKit {
             }
             if (k > 0.6f) {
                 val la = (255 * ((k - 0.6f) / 0.4f).coerceIn(0f, 1f)).toInt()
-                val o = PAUSE_TEXT[i]
-                pauseLabel(c, g, sl, ix + o[0] * g.s, iy - o[1] * g.s, o[1], la)
+                // the game's IconLabel: under the icon, 80 x 40 units (two lines), GameFontNormal
+                val sx = g.cx + 150f * g.s * Math.cos(a).toFloat(); val sy = g.cy - 150f * g.s * Math.sin(a).toFloat()
+                val words = sl.label.split(' ')
+                val lsz = 22f * g.k
+                val lines = if (words.size > 1 && bodyPaint(lsz).measureText(sl.label) > 110f * g.s) listOf(words.dropLast(1).joinToString(" "), words.last()) else listOf(sl.label)
+                val ly = sy + 35f * g.s * 1.1f
+                for ((n, ln) in lines.withIndex()) gameWords(c, ln, sx, ly + n * 23f * g.k, lsz, if (sl.enabled) PAUSE_GOLD else PAUSE_GREY, la, 140f * g.s)
             }
         }
     }
 
-    /** a slice's label (21 px at k 1, up to two lines in 130 px: the user's 1C, the game's 12 units grown for this screen) centred on
-     *  ([x], [y]); its [PauseSlice.note] on the outer side */
-    private fun pauseLabel(c: Canvas, g: PauseGeo, sl: PauseSlice, x: Float, y: Float, up: Float, alpha: Int) {
-        val size = 21f * g.k
-        val p = bodyPaint(size, Color.WHITE, shadow = false)
-        val lines = ArrayList<String>()
-        var cur = ""
-        for (word in sl.label.split(' ')) {
-            val tryIt = if (cur.isEmpty()) word else "$cur $word"
-            // beside the icon (east / west: [up] 0) a label wraps sooner, so a long one ("Group Finder") does not run into its icon
-            if (cur.isNotEmpty() && p.measureText(tryIt) > (if (up == 0f) 96f else 130f) * g.k) { lines.add(cur); cur = word } else cur = tryIt
-        }
-        lines.add(cur)
-        val lh = size * 1.05f
-        val colour = if (sl.enabled) PAUSE_GOLD else PAUSE_GREY
-        val y0 = y - (lines.size - 1) * lh / 2f
-        for ((n, line) in lines.withIndex()) crWords(c, line, x, y0 + n * lh, size, colour, 2f * g.k, alpha, 150f * g.k)
-        val note = sl.note ?: return
-        val ny = if (up > 0f) y0 - lh * 0.95f else y0 + (lines.size - 1) * lh + lh * 0.95f
-        crWords(c, note, x, ny, 17f * g.k, Color.rgb(150, 150, 150), 2f * g.k, alpha, 150f * g.k)
-    }
-
-    /** the header band (the title, the page dots between LB and RB) and the context band (the D-pad and its words), the game's anchors */
+    /** the slim top row (LB, the title and its page dots, RB) and the D-pad with its four words at its arms */
     private fun pauseBands(c: Canvas, g: PauseGeo, page: Int, k: Float, slide: Float, held: Int, up: String?, down: String?,
-                           left: String? = null, right: String? = null) {
+                                  left: String?, right: String?) {
         val l = c.saveLayerAlpha(null, (255 * k).toInt())
-        val hb = g.cy - 310f * g.s - slide                          // the title's bottom edge
+        val ty = g.topY - slide
         val paging = page >= 0
-        if (paging) tex("rwheel_band")?.let {
-            val bw = 487f * g.s; val bh = 75f * g.s
-            c.drawBitmap(it, null, RectF(g.cx - bw / 2f, hb - 4f * g.s, g.cx + bw / 2f, hb - 4f * g.s + bh), pBmp)
+        tex("rwheel_band")?.let {
+            val bw = 470f * g.k; val bh = P_TOP_H * g.k
+            c.drawBitmap(it, null, RectF(g.cx - bw / 2f, ty - bh / 2f, g.cx + bw / 2f, ty + bh / 2f), pBmp)
         }
-        c.drawText(if (paging) "Main Menu" else "Emotes", g.cx, hb - 4f * g.k, bodyPaint(30f * g.k, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
+        gameWords(c, if (paging) "Main Menu" else "Emotes", g.cx, ty - (if (paging) 7f else 0f) * g.k, 24f * g.k, Color.WHITE, 255, 300f * g.k)
         if (paging) {
-            val ds = 15f * g.s + 2f * g.k
-            val dy = hb + 24f * g.s + ds / 2f
+            val ds = 12f * g.k; val dy = ty + 15f * g.k
             for (n in 0..2) {
-                val x = g.cx + (n - 1) * (ds + 5f * g.s)
+                val x = g.cx + (n - 1) * (ds + 6f * g.k)
                 val dot = tex(if (n == page) "rpage_on" else "rpage_off")
                 if (dot != null) c.drawBitmap(dot, null, RectF(x - ds / 2f, dy - ds / 2f, x + ds / 2f, dy + ds / 2f), pBmp)
-                else {
-                    pFlat.style = Paint.Style.FILL; pFlat.color = if (n == page) PAUSE_GOLD else Color.rgb(40, 40, 44)
-                    c.drawCircle(x, dy, ds / 2f, pFlat)
-                }
+                else { pFlat.style = Paint.Style.FILL; pFlat.color = if (n == page) PAUSE_GOLD else Color.rgb(40, 40, 44); c.drawCircle(x, dy, ds / 2f, pFlat) }
             }
-            val gs = 26f * g.s * 1.15f                            // the game's 26 units, a little larger so they read on the small screen
-            val gx = ds * 1.5f + 8f * g.s + gs / 2f
-            pad(c, shoulderGlyph(false), g.cx - gx, dy - 2f * g.s, gs)
-            pad(c, shoulderGlyph(true), g.cx + gx, dy - 2f * g.s, gs)
+            val gs = 46f * g.k
+            pad(c, shoulderGlyph(false), g.cx - 128f * g.k, ty, gs)
+            pad(c, shoulderGlyph(true), g.cx + 128f * g.k, ty, gs)
         }
-        val cy = g.cy + 310f * g.s + slide                          // the context band's middle
-        tex("rwheel_ctx")?.let {
-            val bw = 570f * g.s; val bh = 151f * g.s
-            c.drawBitmap(it, null, RectF(g.cx - bw / 2f, cy - bh / 2f, g.cx + bw / 2f, cy + bh / 2f), pBmp)
+        val py = g.padY + slide
+        val ds = 40f * g.k
+        tex("rdpad")?.let { c.drawBitmap(it, null, RectF(g.cx - ds / 2f, py - ds / 2f, g.cx + ds / 2f, py + ds / 2f), pBmp) }
+        val wp = bodyPaint(P_WORD * g.k)
+        fun lit(x: Float, y: Float, w: Float) = tex("ropt_on")?.let {
+            c.drawBitmap(it, null, RectF(x - w / 2f - 14f * g.k, y - 15f * g.k, x + w / 2f + 14f * g.k, y + 15f * g.k), pBmp)
         }
-        tex("rdpad")?.let { val ds = 30f * g.s * 1.15f; c.drawBitmap(it, null, RectF(g.cx - ds / 2f, cy - ds / 2f, g.cx + ds / 2f, cy + ds / 2f), pBmp) }
-        for ((word, opt) in listOf(up to PAUSE_OPT_UP, down to PAUSE_OPT_DOWN)) {
+        for ((word, opt) in listOf(up to PAUSE_OPT_UP, down to PAUSE_OPT_DOWN, left to PAUSE_OPT_LEFT, right to PAUSE_OPT_RIGHT)) {
             if (word == null) continue
-            val y = cy + (if (opt == PAUSE_OPT_UP) -30f else 30f) * g.s
-            if (held == opt) tex("ropt_on")?.let {
-                val hw = 100f * g.s * 1.4f; val hh = 20f * g.s * 1.3f
-                c.drawBitmap(it, null, RectF(g.cx - hw / 2f, y - hh / 2f, g.cx + hw / 2f, y + hh / 2f), pBmp)
+            val w = wp.measureText(word)
+            val (x, y) = when (opt) {
+                PAUSE_OPT_UP -> g.cx to py - P_ARM * g.k
+                PAUSE_OPT_DOWN -> g.cx to py + P_ARM * g.k
+                PAUSE_OPT_LEFT -> g.cx - P_ARM * g.k - w / 2f to py
+                else -> g.cx + P_ARM * g.k + w / 2f to py
             }
-            crWords(c, word, g.cx, y, 21f * g.k, PAUSE_GOLD, 2f * g.k, 255, 380f * g.s)
-        }
-        // D-pad LEFT's / RIGHT's words (the Track Pad / the Keyboard), either side of the D-pad, held-lit EXACTLY as Up / Down (the
-        // user, 2026-10-16: "the highlight is not currently consistant with the up and down select"): the same lit bar, size and type
-        for ((word, opt) in listOf(left to PAUSE_OPT_LEFT, right to PAUSE_OPT_RIGHT)) {
-            if (word == null) continue
-            val x = g.cx + (if (opt == PAUSE_OPT_LEFT) -160f else 160f) * g.s
-            if (held == opt) tex("ropt_on")?.let {
-                val hw = 100f * g.s * 1.4f; val hh = 20f * g.s * 1.3f
-                c.drawBitmap(it, null, RectF(x - hw / 2f, cy - hh / 2f, x + hw / 2f, cy + hh / 2f), pBmp)
-            }
-            crWords(c, word, x, cy, 21f * g.k, PAUSE_GOLD, 2f * g.k, 255, 140f * g.s)
+            if (held == opt) lit(x, y, w)
+            gameWords(c, word, x, y, P_WORD * g.k, PAUSE_GOLD, 255, 260f * g.k)
         }
         c.restoreToCount(l)
     }
+
 
     // ---------------------------------------------------------------- the GAME MENU and its COUNTDOWN (the pause wheel's Game Menu)
     //
