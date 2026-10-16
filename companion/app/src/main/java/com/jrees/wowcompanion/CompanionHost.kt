@@ -1084,7 +1084,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             HomePauseModel.Kind.HOME -> when (s.key) {
                 "buffs" -> homeView.openAuras(debuff = false)
                 // f-trackpad-keyboard: the pause wheel's D-pad Left; on Home (from a room: Home first)
-                "typetool" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openTypeTool() } }
+                // the pause wheel's D-pad Left / Right (the user, 2026-10-16): the Track Pad / the Keyboard, the same tool on its tab
+                "trackpad", "typetool" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openTypeTool(0) } }
+                "keyboard" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openTypeTool(1) } }
             }
             else -> {}
         }
@@ -1161,6 +1163,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         DirectPad.register(DirectPad.Reg("home", DirectPadKeys.EIGHT + lr + setOf("PADBACK"), active = live("home"),
             onKey = synth("home") { if (setupPad) setupView.padKey(it.optString("k")) else homeView.auraPad(it) }))
+        // the Track Pad & Keyboard: LB / RB the tabs, ZL / ZR the clicks (the user, 2026-10-16)
+        DirectPad.register(DirectPad.Reg("tool", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT), active = live("tool"),
+            onKey = synth("tool") { homeView.toolPad(it) }))
     }
 
     private fun guestShown(id: String): Boolean = when (id) {
@@ -1171,7 +1176,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // during the no-gap hand-over the bar still holds ON PURPOSE: its presses are dropped (HomeBarSelect.onPad, closed), never
         // re-freed here (a free then would open the very gap the hand-over avoids); the hand-over frees it itself when it must
         "bar" -> barSelect.open || barSelect.handingOver
-        "home" -> room == Room.HOME && (homeView.homeGuestWanted() || setupPad)
+        "home" -> room == Room.HOME && (homeView.homeOwnGuestWanted() || setupPad)
+        "tool" -> room == Room.HOME && homeView.toolWanted()
         // the consumables radial holds only while its wheel shows (b57, 13:29: the close's free went out before the capture had taken
         // the hold, so "radial" kept the controller with no wheel; a late "hold ok", a press or the holder report now frees it again)
         "radial" -> (::radialView.isInitialized && radialView.isOpen) || (::pauseView.isInitialized && pauseView.isOpen)
@@ -1463,6 +1469,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     "map" -> worldMapRoom.onPad(msg)
                     "bar" -> barSelect.onPad(msg)
                     "home" -> if (setupPad) { if (!msg.has("lost")) setupView.padKey(msg.optString("k")) } else homeView.auraPad(msg)
+                    "tool" -> homeView.toolPad(msg)
                 }
             }
             // THE MAP ROOM's own hold (Map.lua mr1, the user's v2): its state, its presses, its answers. The GAME opening its map
@@ -1522,6 +1529,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     "radial" -> if (::pauseView.isInitialized && pauseView.isOpen) pauseView.onGuestAck(msg)
                         else if (::radialView.isInitialized) radialView.onGuestAck(msg)
                     "home" -> { setupHoldAck(msg); homeView.auraGuestAck(msg) }
+                    "tool" -> homeView.toolGuestAck(msg)
                 }
             }
             // both may be waiting: each takes only the answers to what it sent
@@ -2755,7 +2763,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         setupLoadingDone()
         if (!setupPad) return
         setupPad = false; setupHeld = false; setupView.padOn = false
-        if (!homeView.homeGuestWanted()) guestTap(GuestPad.cells(questsPad, "home", hold = false))
+        if (!homeView.homeOwnGuestWanted()) guestTap(GuestPad.cells(questsPad, "home", hold = false))
         Log.i(HomeView.TAG, "dpad prompt: free")
     }
 

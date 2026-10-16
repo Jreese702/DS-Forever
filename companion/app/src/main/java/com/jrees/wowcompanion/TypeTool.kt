@@ -41,7 +41,8 @@ object GameTyping {
 /**
  * THE KEYBOARD & TRACKPAD TOOL (the pause wheel's D-pad Left; Home's layer while it is open). Two tabs, LB / RB or a finger:
  *   * TRACKPAD: the bottom screen moves the game's mouse (relative, like a laptop pad); a quick tap = a left click; Left click / Right
- *     click buttons. The controller: A left click, X right click, the D-pad nudges the pointer.
+ *     click buttons. The controller: ZL left click, ZR right click (the user, 2026-10-16: "instead of A and X"), the D-pad
+ *     nudges the pointer.
  *   * KEYBOARD: Chat's own keyboard (ChatKeyboard, its art and rules); every letter goes to the GAME's focused text box as a real key
  *     (InputSink, the launcher's X server), Start / the Enter key = Enter, Backspace = Backspace. Nothing else is ever sent.
  * B closes it (back to Home). Nothing is bound, saved or set. [onClose] = Home takes the layer away.
@@ -68,7 +69,8 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
         showTab(0)
     }
 
-    fun open() { typed = ""; lastN = -1; kb.open(); showTab(tab); invalidate(); if (tab == 0) InputSink.gameCentre() }
+    /** open on tab [startTab] (0 Track Pad, 1 Keyboard: the pause wheel's D-pad Left / Right) */
+    fun open(startTab: Int = 0) { typed = ""; lastN = -1; tab = startTab; kb.open(); showTab(tab); invalidate(); if (tab == 0) InputSink.gameCentre() }
 
     /** the tool closed: the forced pointer goes (Home's closeTypeTool) */
     fun close() { InputSink.gamePointer(false) }
@@ -96,8 +98,8 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
         }
         if (tab == 1) { kb.press(k); return }
         when (k) {
-            "PAD1" -> InputSink.gameClick(right = false)
-            "PAD3" -> InputSink.gameClick(right = true)
+            "PADLTRIGGER" -> InputSink.gameClick(right = false)
+            "PADRTRIGGER" -> InputSink.gameClick(right = true)
             "PADDUP" -> InputSink.gameMove(0, -NUDGE); "PADDDOWN" -> InputSink.gameMove(0, NUDGE)
             "PADDLEFT" -> InputSink.gameMove(-NUDGE, 0); "PADDRIGHT" -> InputSink.gameMove(NUDGE, 0)
         }
@@ -139,8 +141,7 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
             for (i in 0..1) {
                 val r = button(i)
                 UiKit.button(c, r, "", if (onButton == i) UiKit.Button.DOWN else UiKit.Button.UP)
-                UiKit.pad(c, if (i == 0) (if (g == "shp") "shp_cross" else "${g}_a") else (if (g == "shp") "shp_square" else "${g}_x"),
-                    r.centerX(), r.centerY(), r.height() * 0.62f)
+                UiKit.pad(c, "${g}_" + if (i == 0) "ltrigger" else "rtrigger", r.centerX(), r.centerY(), r.height() * 0.62f)
             }
         }
         override fun onTouchEvent(e: MotionEvent): Boolean {

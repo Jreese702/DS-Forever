@@ -298,8 +298,9 @@ class HomeView(
     /** the tool over the whole page while open; it holds the generic guest "home" (as the chat module does) and takes its presses */
     private var typeWanted = false
     private val typeTool: TypeToolView by lazy { TypeToolView(context) { closeTypeTool() } }
-    fun openTypeTool() {
-        Log.i(TAG, "type tool: open${if (typeWanted) " (already)" else ""} sink=${if (InputSink.sink != null) "ok" else "none"}")
+    /** [tab]: 0 the Track Pad, 1 the Keyboard (the pause wheel's D-pad Left / Right) */
+    fun openTypeTool(tab: Int = 0) {
+        Log.i(TAG, "type tool: open tab $tab${if (typeWanted) " (already)" else ""} sink=${if (InputSink.sink != null) "ok" else "none"}")
         if (typeWanted) return
         if (typeTool.parent == null) addView(typeTool)
         typeWanted = true
@@ -311,9 +312,9 @@ class HomeView(
         typeTool.outlineProvider = null
         typeTool.translationZ = TYPE_Z
         typeTool.bringToFront()
-        typeTool.open()
+        typeTool.open(tab)
         requestLayout()
-        if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = true))) Log.i(TAG, "type tool: hold")
+        if (homeGuestTap(GuestPad.cells(pad, TOOL_GUEST, hold = true))) Log.i(TAG, "type tool: hold")
     }
     fun closeTypeTool() {
         if (!typeWanted) return
@@ -322,7 +323,7 @@ class HomeView(
         typeTool.visibility = View.GONE
         invalidate()                                                      // the map's well and the zone band come back
         Log.i(TAG, "type tool: close")
-        if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))) Log.i(TAG, "type tool: free")
+        if (homeGuestTap(GuestPad.cells(pad, TOOL_GUEST, hold = false))) Log.i(TAG, "type tool: free")
         onBHome?.invoke()
     }
 
@@ -549,8 +550,16 @@ class HomeView(
      * The generic guest "home" (MainActivity routes CURRENT documents while Home shows): the full-screen chat module's presses go to
      * the ChatView while it holds, else the buff / debuff list's. The two never hold at once (the module closes the list first).
      */
+    /** the guest "tool": the Track Pad & Keyboard's presses (its own guest since ZL / ZR click: q-tool) */
+    fun toolPad(msg: JSONObject) { if (typeWanted) typeTool.onPad(msg) }
+    fun toolGuestAck(msg: JSONObject) {
+        if (typeWanted && msg.optString("op") == "hold" && !msg.optBoolean("ok")) Log.i(TAG, "type tool: hold refused (${msg.optString("why")})")
+    }
+    /** the tool shows (its guest is wanted) */
+    fun toolWanted(): Boolean = typeWanted
+
     fun auraPad(msg: JSONObject) {
-        if (typeWanted) { typeTool.onPad(msg); return }                  // f-trackpad-keyboard: the tool holds the guest
+        if (typeWanted) return                                            // the tool holds its own guest ("tool")
         if (mapWanted) { mapPad(msg); return }
         if (!chatWanted) { auraPane.onPad(msg); return }
         if (msg.has("lost")) chatHeld = false else chatHeld = true
@@ -611,7 +620,10 @@ class HomeView(
     }
 
     /** something of Home's wants the guest "home" now: the full-screen chat module, or an open buff / debuff list (MainActivity's b7b check) */
-    fun homeGuestWanted(): Boolean = typeWanted || chatWanted || mapWanted || auraPane.open != null
+    /** Home is busy with a controller layer of its own: its guest "home" (chat / map / aura list) or the tool's "tool" */
+    fun homeGuestWanted(): Boolean = typeWanted || homeOwnGuestWanted()
+    /** the guest "home" itself is wanted (the chat or map module, the buff / debuff list; the tool has its own "tool") */
+    fun homeOwnGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null
     /** the chat module is full screen (the ChatView lent, the guest "home" wanted): only then does the chat's B sign reach the game */
     val chatModuleOn: Boolean get() = chatWanted
 
@@ -2167,6 +2179,8 @@ class HomeView(
         private const val CARD_Z = 2f
         /** the focused quest over the minimap (Settings > Home, HomeSettings.questOverMap; was the constant QUEST_ABOVE_MAP) */
         fun cardOverMap(): Boolean = HomeSettings.questOverMap
+        /** the Track Pad & Keyboard's own controller guest (Quests.lua's "tool": ZL / ZR kept from the game while it holds) */
+        const val TOOL_GUEST = "tool"
         /** logcat tag for Home's taps and refusals (`adb logcat -s WCHOME`) */
         const val TAG = "WCHOME"
         /** f-trackpad-keyboard: the tool's lift, above the quest card (2) and the class wheel's cover */

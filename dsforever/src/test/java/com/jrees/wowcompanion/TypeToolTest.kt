@@ -40,22 +40,35 @@ class TypeToolTest {
 
     // ---------------------------------------------------------------- the entry: the pause wheel's D-pad Left
 
-    @Test fun dpadLeftOpensTheToolOnItsRelease() {
+    // the user, 2026-10-16: "on the left side it should be Track Pad, and on the right it should be Keyboard"
+    @Test fun dpadLeftOpensTheTrackPadOnItsRelease() {
         val f = HomePauseModel.Flow()
         assertEquals(HomePauseModel.Act.None, f.dpad(3, down = true))
-        assertEquals(HomePauseModel.Act.Pick(HomePauseModel.TOOL), f.dpad(3, down = false))
-        assertEquals("typetool", HomePauseModel.TOOL.key)
-        assertEquals(HomePauseModel.Kind.HOME, HomePauseModel.TOOL.kind)
+        assertEquals(HomePauseModel.Act.Pick(HomePauseModel.TRACKPAD), f.dpad(3, down = false))
+        assertEquals("trackpad", HomePauseModel.TRACKPAD.key)
+        assertEquals(HomePauseModel.Kind.HOME, HomePauseModel.TRACKPAD.kind)
     }
+
+    @Test fun dpadRightOpensTheKeyboardOnItsRelease() {
+        val f = HomePauseModel.Flow()
+        assertEquals(HomePauseModel.Act.None, f.dpad(1, down = true))
+        assertEquals(HomePauseModel.Act.Pick(HomePauseModel.KEYBOARD), f.dpad(1, down = false))
+        assertEquals("keyboard", HomePauseModel.KEYBOARD.key)
+    }
+
+    @Test fun everyDirectionHasItsDpadSlot() =
+        assertEquals(listOf(0, 1, 2, 3), HomePauseModel.DPAD_OPTIONS.map { it.second }.sorted())
 
     @Test fun aLeftReleaseWithNoPressDoesNothing() = assertEquals(HomePauseModel.Act.None, HomePauseModel.Flow().dpad(3, down = false))
 
-    @Test fun upAndDownAreUnchangedAndRightStaysFree() {
+    @Test fun upAndDownAreUnchanged() {
         val f = HomePauseModel.Flow()
         f.dpad(2, true); assertEquals(HomePauseModel.Act.Sit, f.dpad(2, false))
         f.dpad(0, true); assertEquals(HomePauseModel.Act.None, f.dpad(0, false)); assertEquals(HomePauseModel.EMOTE_PAGE, f.page)
-        val g = HomePauseModel.Flow()
-        assertEquals(HomePauseModel.Act.None, g.dpad(1, true)); assertEquals(HomePauseModel.Act.None, g.dpad(1, false))
+    }
+
+    @Test fun theToolHasItsOwnGuestAfterRadial() {
+        assertEquals(listOf("quests", "map", "settings", "chat", "bar", "home", "radial", "tool"), GuestPad.IDS)   // hold 22 / free 23
     }
 }
 

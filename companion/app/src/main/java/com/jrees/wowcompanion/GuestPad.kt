@@ -16,7 +16,7 @@ import org.json.JSONObject
  */
 object GuestPad {
     /** Home's spec: the order is the column layout; never reorder it, new ids only go on the END (Quests.lua GUESTS) */
-    val IDS = listOf("quests", "map", "settings", "chat", "bar", "home", "radial")   // radial: the consumables radial (Quests.lua q15)
+    val IDS = listOf("quests", "map", "settings", "chat", "bar", "home", "radial", "tool")   // tool: Home's Track Pad & Keyboard (q-tool)   // radial: the consumables radial (Quests.lua q15)
 
     private const val ROW = "qact"
     private const val LEAVE_B = 5

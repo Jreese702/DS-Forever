@@ -1655,7 +1655,9 @@ local ACTS = {
 -- window) answers ok and WAITS; the capture grants it once the holder lets go (in a fight as the pending ENTER). So ANY ok take
 -- that does not hold yet is pending here, in or out of a fight, and turns into held when the capture names us (or at our first
 -- press: only the holder gets presses). A newer waiter wins: we are told lost("taken") and the room is no longer wanted.
-local GUESTS = { "quests", "map", "settings", "chat", "bar", "home", "radial" }   -- home: Home's buff / debuff list (the user, 2026-09-30)
+local GUESTS = { "quests", "map", "settings", "chat", "bar", "home", "radial", "tool" }   -- home: Home's buff / debuff list (the user, 2026-09-30)
+-- tool (the user, 2026-10-16: "instead of A and X as left and right click, can we use ZL and ZR"): Home's Track Pad & Keyboard, its own
+-- guest (hold 22 / free 23) so ITS extras can keep ZL / ZR (the clicks) from the game without Home's other modules taking them
 -- radial (q15, 2026-10-06): the user's consumables radial (Home's D-pad up, the signed bronze wheel v4); hold 20 / free 21
 -- buttons beyond the eight a guest keeps from the game (capture v4 `extra`; delivered on the release like the face
 -- buttons). The Map room zooms with the shoulders (Home's item-5 plan, tracking's call 2026-09-30); the bar selector
@@ -1683,6 +1685,8 @@ local EXTRA = {
     -- signed radial PAUSE menu, which reuses this guest): Start while either wheel is open closes it -- the capture keeps Start from
     -- the game (whose own radial would open over the wheel) and hands it to the app as a press
     radial = { "PADLSHOULDER", "PADRSHOULDER", "PADFORWARD" },
+    -- the Track Pad & Keyboard: LB / RB its tabs, ZL / ZR the left / right click (never a game action while the tool holds)
+    tool = { "PADLSHOULDER", "PADRSHOULDER", "PADLTRIGGER", "PADRTRIGGER", "PADFORWARD" },
 }
 -- B FREES IN-GAME (q17): the guests whose B, while their bnext is "home", lets go of the controller right here (see leaveInGame)
 local BFREE = { radial = true }
