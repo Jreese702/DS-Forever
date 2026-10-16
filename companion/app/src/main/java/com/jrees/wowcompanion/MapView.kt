@@ -3216,42 +3216,115 @@ class MapView(context: Context) : View(context) {
     private val pPath = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val pathTmp = Path()
 
-    /** where the highlighted quest's mark is on this map (its turn-in when ready), or null */
-    private fun cursorMark(): DoubleArray? {
+    /**
+     * THE LINE'S ROUTE for the highlighted quest ([CursorRoute]; the user's agreed design, 2026-10-16): the nearest still-needed goal on
+     * this map, else the next step of the way there (a known, connected flight master; the game's next waypoint; the map's edge).
+     * Worked out again when the quest, the map document or the quests document changes (not every frame).
+     */
+    private var routeKey: Any? = null
+    private var routeNow: CursorRoute.Route? = null
+    private fun cursorRoute(): CursorRoute.Route? {
         val q = cursor.sel
         if (!cursor.shown || q <= 0) return null
-        selectedPoint()?.let { return doubleArrayOf(it.x, it.y) }
-        // an untracked quest has no drawn mark: the game's own point for it, from the map document (the whole log on this map)
-        val qs = map?.optJSONArray("quests") ?: return null
-        for (i in 0 until qs.length()) {
-            val o = qs.optJSONObject(i) ?: continue
-            if (o.optInt("questID", 0) != q) continue
-            val ready = o.optBoolean("done", false)
-            val x = if (ready && o.has("tx")) o.optDouble("tx", Double.NaN) else o.optDouble("x", Double.NaN)
-            val y = if (ready && o.has("ty")) o.optDouble("ty", Double.NaN) else o.optDouble("y", Double.NaN)
-            return if (x.isNaN() || y.isNaN()) null else doubleArrayOf(x, y)
+        val m = map ?: return null
+        val key = listOf(q, System.identityHashCode(m), System.identityHashCode(questById[q]))
+        if (key == routeKey) return routeNow
+        routeKey = key
+        routeNow = null
+        val r = rect ?: return null
+        if (!r.valid) return null
+        val mapId = m.optInt("mapID", Int.MIN_VALUE)
+        var mq: JSONObject? = null
+        m.optJSONArray("quests")?.let { qs -> for (i in 0 until qs.length()) qs.optJSONObject(i)?.let { if (it.optInt("questID", 0) == q) mq = it } }
+        val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
+        val goals = ArrayList(CursorRoute.goals(mq, questById[q], mapId))
+        // where the game's zone maps show it (the Map room's kept mapquests), carried onto this map: a goal when it falls on this map
+        var far: DoubleArray? = null
+        offMapSpots?.invoke(q)?.let { spots ->
+            WorldMapModel.nearestWorld(spots, r.continent, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN))?.let { best ->
+                val fx = r.nx(best[2]); val fy = r.ny(best[1])
+                if (fx in 0.0..1.0 && fy in 0.0..1.0) { if (goals.isEmpty()) goals.add(doubleArrayOf(fx, fy)) } else far = doubleArrayOf(fx, fy)
+            }
         }
-        return null
+        // the game's next waypoint is given for its focused quest only (Map.lua's stWay)
+        val way = if (q == focusQid) m.optJSONObject("stWay")?.let { w ->
+            val wx = w.optDouble("x", Double.NaN); val wy = w.optDouble("y", Double.NaN)
+            if (wx.isNaN() || wy.isNaN()) null else doubleArrayOf(wx, wy)
+        } else null
+        val nodes = ArrayList<CursorRoute.Node>()
+        m.optJSONArray("fly")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.let { o ->
+            val x = o.optDouble("x", Double.NaN); val y = o.optDouble("y", Double.NaN)
+            if (!x.isNaN() && !y.isNaN()) nodes.add(CursorRoute.Node(x, y, o.optInt("id", 0), o.optString("name", "")))
+        } }
+        routeNow = CursorRoute.plan(px, py, r.width, r.height, goals, far, way, questById[q]?.optString("wp", ""), nodes) { i, j -> TaxiNet.connected(i, j) }
+        return routeNow
     }
 
-    private fun drawCursorPath(c: Canvas, qid: Int, x0: Float, y0: Float, x1: Float, y1: Float) {
+    /**
+     * The line from the player ([x0], [y0]) to the route's point ([x1], [y1]), inside the field [fl]..[fb]. A point off the field: the
+     * dots run to its edge, where a small gold arrow points on and the yards stand; a step of the way (flight, waypoint, exit) wears its
+     * words at the line's end.
+     */
+    private fun drawCursorPath(c: Canvas, qid: Int, route: CursorRoute.Route, yards: Int, x0: Float, y0: Float, x1: Float, y1: Float,
+                               fl: Float, ft: Float, fr: Float, fb: Float) {
         val now = android.os.SystemClock.elapsedRealtime()
         if (qid != pathFor) { pathFor = qid; pathAt = now }
-        val len = hypot(x1 - x0, y1 - y0)
-        if (len < 40f) return
+        val inset = 26f
+        val l = fl + inset; val t = ft + inset; val r = fr - inset; val b = fb - inset
+        val inside = x1 in l..r && y1 in t..b
+        var ex = x1; var ey = y1
+        if (!inside) {
+            // where the line leaves the field (the player clamped in first: a panned map may have the player off it too)
+            val ox = x0.coerceIn(l, r); val oy = y0.coerceIn(t, b)
+            val dx = x1 - ox; val dy = y1 - oy
+            var k = 1f
+            if (dx > 0f) k = min(k, (r - ox) / dx) else if (dx < 0f) k = min(k, (l - ox) / dx)
+            if (dy > 0f) k = min(k, (b - oy) / dy) else if (dy < 0f) k = min(k, (t - oy) / dy)
+            ex = ox + dx * k; ey = oy + dy * k
+        }
+        val len = hypot(ex - x0, ey - y0)
         val age = now - pathAt
         val a = min(1f, age / 300f)
-        // the dots: 16 px apart, moving 24 px a second toward the mark (a dash path's phase runs against the path, hence minus)
-        val phase = -(age / 1000f * 24f) % 16f
-        pathTmp.reset(); pathTmp.moveTo(x0, y0); pathTmp.lineTo(x1, y1)
-        pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
-        pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * a).toInt(), 0, 0, 0); c.drawPath(pathTmp, pPath)
-        pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * a).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
-        c.drawPath(pathTmp, pPath)
-        pPath.pathEffect = null
-        // the dots keep moving: about 30 frames a second is plenty for 24 px a second (not every frame: the map stays cheap)
-        postInvalidateDelayed(33)
+        if (len >= 40f) {
+            // the dots: 16 px apart, moving 24 px a second toward the goal (a dash path's phase runs against the path, hence minus)
+            val phase = -(age / 1000f * 24f) % 16f
+            pathTmp.reset(); pathTmp.moveTo(x0, y0); pathTmp.lineTo(ex, ey)
+            pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
+            pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * a).toInt(), 0, 0, 0); c.drawPath(pathTmp, pPath)
+            pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * a).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
+            c.drawPath(pathTmp, pPath)
+            pPath.pathEffect = null
+        }
+        // at the edge: an arrow on along the way (not for the focused quest: the game's own rim arrow already points there)
+        if (!inside && qid != shownFocus()) {
+            val ang = atan2((y1 - ey).toDouble(), (x1 - ex).toDouble()).toFloat()
+            c.save(); c.rotate(Math.toDegrees(ang.toDouble()).toFloat(), ex, ey)
+            pathTmp.reset(); pathTmp.moveTo(ex + 14f, ey); pathTmp.lineTo(ex - 8f, ey - 11f); pathTmp.lineTo(ex - 8f, ey + 11f); pathTmp.close()
+            pArrowFill.color = Color.argb((255 * a).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold)); c.drawPath(pathTmp, pArrowFill)
+            pArrowEdge.color = Color.argb((200 * a).toInt(), 0, 0, 0); c.drawPath(pathTmp, pArrowEdge)
+            c.restore()
+        }
+        // the words: the step's (flight / waypoint / exit) and the yards; a goal on the field needs none
+        val words = listOfNotNull(route.label, if (!inside || route.kind != CursorRoute.Kind.GOAL) "$yards yd" else null).joinToString("  ·  ")
+        if (words.isNotEmpty()) {
+            val tp = UiKit.bodyPaint(22f, Color.argb((255 * a).toInt(), 240, 228, 200))
+            val tw = tp.measureText(words)
+            // set back from the end toward the player, kept inside the field
+            val ux = if (len > 1f) (ex - x0) / len else 0f; val uy = if (len > 1f) (ey - y0) / len else 0f
+            val back = if (inside) 46f else 96f                        // clear of the edge arrow
+            val cx = (ex - ux * back).coerceIn(fl + tw / 2f + 12f, fr - tw / 2f - 12f)
+            val cy = (ey - uy * back + 8f).coerceIn(ft + 30f, fb - 12f)
+            labelBox.set(cx - tw / 2f - 10f, cy - 22f, cx + tw / 2f + 10f, cy + 8f)
+            pLabelBack.color = Color.argb((190 * a).toInt(), 10, 8, 6); c.drawRoundRect(labelBox, 8f, 8f, pLabelBack)
+            c.drawText(words, cx - tw / 2f, cy, tp)
+        }
+        // the dots keep moving while the map shows: about 30 frames a second is plenty for 24 px a second
+        if (isShown) postInvalidateDelayed(33)
     }
+    private val pArrowFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val pArrowEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
+    private val pLabelBack = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val labelBox = RectF()
 
     // ---- THE CONTROLS LINE (the user, 2026-09-30: "we still need to add the one line to the bottom with the focus controlls and
     // stuff for that screen"): the kit's hints (UiKit.hints: glyph + word, as the bar's "A Open  B Back"), on a slim band along the
@@ -4584,6 +4657,18 @@ class MapView(context: Context) : View(context) {
             drawPin(c, kind, cxp, cyp)
         }
 
+        // ---- THE CURSOR'S DOTTED LINE, under the live markers and the player's arrow (the agreed design), inside the field
+        val route = if (!compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN()) cursorRoute() else null
+        if (route != null) {
+            val fb = top + fh - (if (hintsOn()) HINT_BAND else 0f)
+            val save = c.save()
+            c.clipRect(left, top, left + fw, fb)
+            val rr = rect
+            val yd = if (rr != null && rr.valid) CursorRoute.yards(px, py, route.x, route.y, rr.width, rr.height) else 0
+            drawCursorPath(c, cursor.sel, route, yd, sx(px), sy(py), sx(route.x), sy(route.y), left, top, left + fw, fb)
+            c.restoreToCount(save)
+        } else pathFor = 0
+
         // ---- live markers, as icons, in the game's own vocabulary so nothing needs learning:
         //   "!"  (yellow, 40 px)   a quest AVAILABLE to pick up, at the giver. Blue for a daily,
         //                          as the game draws it.
@@ -4740,14 +4825,6 @@ class MapView(context: Context) : View(context) {
         // target is off the field, as on the game's minimap; on the field its own mark shows.
         // while a ghost with a corpse known it points at the CORPSE instead (the user's answer, 2026-10-01: "The corpse only")
         val toCorpse = corpseKnown()
-        val mark = if (!compact && !morphOn && !toCorpse && !px.isNaN() && !py.isNaN()) cursorMark() else null
-        if (mark != null) {
-            // inside the field only (a mark off it: the dots run to the edge)
-            val save = c.save()
-            c.clipRect(left, top, left + fw, top + fh - (if (hintsOn()) HINT_BAND else 0f))
-            drawCursorPath(c, cursor.sel, sx(px), sy(py), sx(mark[0]), sy(mark[1]))
-            c.restoreToCount(save)
-        } else pathFor = 0
         val rimTX = if (toCorpse) corpseX else focusTX
         val rimTY = if (toCorpse) corpseY else focusTY
         if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN()) {

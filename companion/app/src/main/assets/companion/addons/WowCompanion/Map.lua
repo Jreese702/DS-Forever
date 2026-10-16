@@ -982,8 +982,11 @@ function WC.collectMap()
             if fx and fy and oku and type(und) == "boolean" and WC.isPlain(und) and und == false
                 and (mine == nil or fac == nil or fac == 0 or fac == mine) and #out.fly < 60 then
                 -- id: the node's own id (b-route-unknown-taxi: the app flies only between nodes a flight master showed connected)
+                -- name: the node's own words, for the cursor line's "Flight to <name>" (the agreed route design, 2026-10-16)
                 out.fly[#out.fly + 1] = { x = math.floor(fx * 10000 + 0.5) / 10000, y = math.floor(fy * 10000 + 0.5) / 10000,
-                                          id = SN(function() return n.nodeID end) }
+                                          id = SN(function() return n.nodeID end),
+                                          name = (function() local v = S(function() return n.name end)
+                                              if type(v) == "string" and v ~= WC.ABSENT and v ~= WC.THREW then return v end end)() }
             end
         end
         for _, n in ipairs(ts) do
