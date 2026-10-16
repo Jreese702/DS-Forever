@@ -85,6 +85,12 @@ object SetupFlow {
     data class Check(val label: String, val mark: Mark)
 
     /** the "DS Forever vX is out" pop-up holds Play until Update or Later (board b-update-blocks-play) */
+    /**
+     * The bottom screen's setup takes the pad (the gold box, the A glyph, D-pad / A) only before Play. In the game, at its login screen,
+     * the pop-ups are touch only (b-login-a-input, the user 15 Oct: pressing A must never open "Update login" by accident).
+     */
+    fun padDriven(s: Screen): Boolean = s.play != null
+
     fun canPlay(i: Inputs): Boolean =
         i.folderFound && !i.wrongGame && i.storage && i.art == Art.READY && i.busy == null && !i.gameRunning && i.appUpdate == null
 

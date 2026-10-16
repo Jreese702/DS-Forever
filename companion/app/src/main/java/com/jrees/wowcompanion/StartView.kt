@@ -71,7 +71,9 @@ class StartView(context: Context) : View(context) {
         if (login == Login.FIRST) {
             val r = RectF(cx - firstW / 2f, top, cx + firstW / 2f, top + BUTTON_H)
             // the one button, with the A that presses it (no gold box on this row: the user, 2026-10-05)
-            UiKit.button(c, r, firstLabel, GLYPH_A, if (pressed == CURSOR_GEAR) UiKit.Button.DOWN else UiKit.Button.UP)
+            // b-login-a-input: with the game up the row is touch only (no A glyph; A never opens the login form)
+            if (LauncherHooks.gameUp()) UiKit.button(c, r, firstLabel, if (pressed == CURSOR_GEAR) UiKit.Button.DOWN else UiKit.Button.UP)
+            else UiKit.button(c, r, firstLabel, GLYPH_A, if (pressed == CURSOR_GEAR) UiKit.Button.DOWN else UiKit.Button.UP)
             hits += r to CURSOR_GEAR
             return
         }
@@ -83,6 +85,7 @@ class StartView(context: Context) : View(context) {
         // grey then no glyphs on the bottom")
         UiKit.iconButton(c, gear, "icon_settings", if (pressed == CURSOR_GEAR) UiKit.Button.DOWN else UiKit.Button.UP)
         if (loginBusy) UiKit.button(c, go, "Login", UiKit.Button.DISABLED)
+        else if (LauncherHooks.gameUp()) UiKit.button(c, go, "Login", if (pressed == CURSOR_LOGIN) UiKit.Button.DOWN else UiKit.Button.UP)
         else UiKit.button(c, go, "Login", GLYPH_A, if (pressed == CURSOR_LOGIN) UiKit.Button.DOWN else UiKit.Button.UP)
         hits += gear to CURSOR_GEAR
         hits += go to CURSOR_LOGIN

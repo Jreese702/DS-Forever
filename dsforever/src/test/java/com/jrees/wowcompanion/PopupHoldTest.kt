@@ -10,8 +10,10 @@ class PopupHoldTest {
     private val S = SetupFlow.SignIn.AUTH
 
     @Test fun ourPopUpsHoldThePadFromTheGame() {
-        for (st in listOf(SetupFlow.SignIn.FAILED, SetupFlow.SignIn.RESTART, SetupFlow.SignIn.TYPING, SetupFlow.SignIn.AUTH, SetupFlow.SignIn.CHECK))
+        for (st in listOf(SetupFlow.SignIn.AUTH, SetupFlow.SignIn.CHECK))                                                 // the code prompt
             assertTrue(st.name, PopupHold.holds(st, gameUp = true, loginFormOpen = false, noticeAsking = false))
+        for (st in listOf(SetupFlow.SignIn.FAILED, SetupFlow.SignIn.RESTART, SetupFlow.SignIn.TYPING))                   // b-login-a-input
+            assertFalse(st.name, PopupHold.holds(st, gameUp = true, loginFormOpen = false, noticeAsking = false))
         assertTrue(PopupHold.holds(SetupFlow.SignIn.NONE, gameUp = true, loginFormOpen = false, noticeAsking = true))   // the report's notice
         for (st in listOf(SetupFlow.SignIn.NONE, SetupFlow.SignIn.SIGNING, SetupFlow.SignIn.RESTARTING))                 // nothing asks
             assertFalse(st.name, PopupHold.holds(st, gameUp = true, loginFormOpen = false, noticeAsking = false))
@@ -27,6 +29,15 @@ class PopupHoldTest {
             assertFalse(PopupHold.holdsKey(holding = false, keyCode = k, down = true))      // the pop-up went: everything back
         }
         assertFalse(PopupHold.holdsKey(holding = true, keyCode = KeyEvent.KEYCODE_BUTTON_X, down = true))   // not one the pop-ups use
+    }
+
+    @Test fun theLoginPopUpIsTouchOnlyInTheGame() {
+        val inGame = SetupFlow.screen(SetupFlow.Inputs(path = "/g", folderFound = true, gameRunning = true, loginSaved = true,
+            signIn = SetupFlow.SignIn.FAILED))
+        assertTrue(inGame.prompt != null)
+        assertFalse(SetupFlow.padDriven(inGame))                 // no gold box, no A glyph, no pad presses
+        val beforePlay = SetupFlow.screen(SetupFlow.Inputs(path = "/g", folderFound = true, loginSaved = false))
+        assertTrue(SetupFlow.padDriven(beforePlay))              // the setup before Play keeps its controller cursor
     }
 
     @Test fun theHatIsHeldWhileItPointsAndItsCentringPasses() {
