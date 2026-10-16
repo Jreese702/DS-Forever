@@ -129,6 +129,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var lastBook: SpellsModel.Book? = null
     private var lastGameMenu: JSONObject? = null
     private var lastAddonAt = 0L
+    private var gmAckAt = 0L          // the game menu row's last answer (Radial.lua r12 "gmack") and its cell
+    private var gmAckCol = -1
     // SvKeep (the user's pick after test22): our tables confirmed this run (a non-empty first word, or the player changed a setting)
     private val svArmed = HashSet<String>()
     private val svSeen = HashSet<String>()                              // the run's FIRST word per table decides (a partial restore later must not)
@@ -1514,7 +1516,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "pauseack" -> if (current && ::pauseView.isInitialized) pauseView.onAck(msg)
             // the Game Menu on the bottom screen (Spells r12): the game's list + its countdown, and the cells' answers
             "gamemenu" -> { if (current) lastGameMenu = msg; if (current && ::pauseView.isInitialized) pauseView.onGameMenuDoc(msg) }
-            "gmack" -> if (current && ::pauseView.isInitialized) pauseView.onGameMenuAck(msg)
+            "gmack" -> {
+                if (current) { gmAckAt = SystemClock.elapsedRealtime(); gmAckCol = msg.optInt("col", -1) }    // the clean exit's wait reads it
+                if (current && ::pauseView.isInitialized) pauseView.onGameMenuAck(msg)
+            }
             "radialpinack" -> if (current) radialView.onPinAck(msg)
             "guestack" -> if (current) {
                 val gid = msg.optString("id")
@@ -2824,19 +2829,29 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!sent) { say("clean exit ($why): the Exit Game tap was not sent: the old close"); done(true); return }
         say("clean exit ($why): the game's own Exit Game asked (its save is written as it exits)")
         val t0 = SystemClock.elapsedRealtime()
+        var retapped = false
         val poll = object : Runnable {
             override fun run() {
-                val s = (SystemClock.elapsedRealtime() - t0) / 1000
-                when {
-                    !LauncherHooks.gameUp() -> {
-                        say("clean exit ($why): the game exited by itself after $s s")
-                        QuestWatchKeep.cleanEnd()                               // its state is written: nothing to restore next time
-                        done(false)
+                val now = SystemClock.elapsedRealtime()
+                val s = (now - t0) / 1000
+                if (!LauncherHooks.gameUp()) {
+                    say("clean exit ($why): the game exited by itself after $s s")
+                    QuestWatchKeep.cleanEnd()                                   // its state is written: nothing to restore next time
+                    done(false); return
+                }
+                val acked = gmAckAt >= t0 && gmAckCol == col
+                // the game's own QUIT countdown, as Radial r12's "gamemenu" documents count it (null = none showing)
+                val gm = lastGameMenu
+                val countLeft = if (gm != null && gm.optString("count") == "quit" && gm.has("left")) gm.optInt("left") else null
+                when (val w = CleanExit.waitAfterTap(now - t0, acked, retapped, countLeft)) {
+                    CleanExit.Wait.Retap -> {
+                        retapped = true
+                        val again = TapBridge.tap(this@CompanionHost, questsPad, GameMenuModel.ROW, col) { }
+                        say("clean exit ($why): no answer from the Exit cell after $s s: tapped again (${if (again) "sent" else "not sent"})")
+                        ui.postDelayed(this, 500L)
                     }
-                    SystemClock.elapsedRealtime() - t0 > CleanExit.WAIT_MS -> {
-                        say("clean exit ($why): still running after $s s: the old close"); done(true)
-                    }
-                    else -> ui.postDelayed(this, 500L)
+                    is CleanExit.Wait.GiveUp -> { say("clean exit ($why): still running after $s s: ${w.why}: the old close"); done(true) }
+                    CleanExit.Wait.On -> ui.postDelayed(this, 500L)
                 }
             }
         }
