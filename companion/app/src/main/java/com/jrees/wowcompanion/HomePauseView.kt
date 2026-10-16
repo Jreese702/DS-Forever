@@ -95,6 +95,7 @@ class HomePauseView(
     /** [fromT]: a reverse still running when Start came again: the open goes on from where the panels are, no jump */
     fun open(fromT: Float = 0f, byStart: Boolean = true) {
         if (isOpen) return
+        UiKit.pauseBarsBottom = barsBottom?.invoke() ?: 0f                  // f-pause-bars: over Home, its controller stays
         openByStart = byStart
         LatLog.mark("wheel", "pause open")
         flow.reset(); flow.holdOpen = !HomeSettings.pauseTap; flow.pickA = HomeSettings.pausePickA      // its own pair (the user, 2026-10-09)
@@ -440,6 +441,9 @@ class HomePauseView(
         return (now - openedAt) * SPEED
     }
 
+    /** f-pause-bars: the bottom of Home's controller in this view's px when the menu opens over Home, else 0 (the host's) */
+    var barsBottom: (() -> Float)? = null
+
     /** a finger held on the hub (uptime ms), 0 = none: it sinks and stays sunk, its gold comes, until it lifts */
     private var hubHeldAt = 0L
     /** B / the hub's press (uptime ms): the hub plays it out as it glides home after the wheel has gone, 0 = none */
@@ -481,7 +485,8 @@ class HomePauseView(
                 val (disc, size) = discHere()
                 val dt = if (pressedAt != 0L) (now - pressedAt).toFloat() else -1f
                 UiKit.pauseHubGlide(c, RectF(0f, 0f, width.toFloat(), height.toFloat()), disc, size,
-                    GLIDE_FROM * (1f - pressCurve.getInterpolation(p)), if (dt >= 0f) pushAt(dt) else 0f, if (dt >= 0f) goldAt(dt) else 0f)
+                    GLIDE_FROM * (1f - pressCurve.getInterpolation(p)), if (dt >= 0f) pushAt(dt) else 0f, if (dt >= 0f) goldAt(dt) else 0f,
+                    left = HomePauseModel.TRACKPAD_WORD, right = HomePauseModel.KEYBOARD_WORD)
                 postInvalidateOnAnimation()
                 return
             }

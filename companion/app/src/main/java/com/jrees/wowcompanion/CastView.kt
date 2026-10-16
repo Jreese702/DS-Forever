@@ -627,7 +627,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             onStatus = { ok, _ -> padOk = ok; invalidate() },
             onButtons = { mask -> onButtons(mask) },
             onStick = { sec -> if (sec != stickSector) { stickSector = sec; invalidate() } },
-            onStickVector = { st, x, y -> if (st == 1) { stickX = x; stickY = y; if (chordSide != ClassChord.NONE) invalidate() } },
+            // b-class-radial-stick: Home's class layer is another view: it is told too (it was redrawn only at the open / close)
+            onStickVector = { st, x, y -> if (st == 1) { stickX = x; stickY = y
+                if (chordSide != ClassChord.NONE) { invalidate(); onClassStick?.invoke() } } },
         )
         ready = true
         refreshSettings()
@@ -2247,11 +2249,24 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     var onClassRadial: ((Boolean) -> Unit)? = null
     /** b-radial-exclusive: another overlay is up (the host's list): no class radial opens ([ClassChord.latch]) */
     var overlayOpen: (() -> Boolean)? = null
+    /** b-class-radial-stick: the right stick moved while a class radial is open (Home redraws its class layer) */
+    var onClassStick: (() -> Unit)? = null
+    /** b-class-radial-stick: a WCLOG line per chord (opened, or held but blocked), with the host's state ([String] = its words) */
+    var onClassChordLog: ((String) -> Unit)? = null
+    private var chordLogged = ClassChord.NONE
     /** the side the class radial opened on (ClassChord), latched while its chord is held */
     private var chordSide = ClassChord.NONE
     private var classOpen = false
     private fun noteClassRadial() {
-        chordSide = ClassChord.latch(chordSide, padLt, padRt, padLb, padRb, overlayOpen?.invoke() == true)
+        val blocked = overlayOpen?.invoke() == true
+        chordSide = ClassChord.latch(chordSide, padLt, padRt, padLb, padRb, blocked)
+        // the device log for the stick that turned the camera (the user, 1.0.9-test16): which chord, and what held the controller then
+        val raw = ClassChord.side(padLt, padRt, padLb, padRb)
+        if (raw != chordLogged) {
+            chordLogged = raw
+            if (raw != ClassChord.NONE) onClassChordLog?.invoke("chord ${if (raw == ClassChord.LEFT) "LB+LT" else "RB+RT"}: " +
+                (if (chordSide == raw) "opened" else "not opened") + " (blocked=$blocked barsUsable=$barsUsable radial=${chordRadial() != null})")
+        }
         val open = chordRadial() != null
         if (open != classOpen) { classOpen = open; onClassRadial?.invoke(open) }
     }

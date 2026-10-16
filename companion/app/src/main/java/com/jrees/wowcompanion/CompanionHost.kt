@@ -724,6 +724,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         radialView.underRedraw = { homeView.wheelRedraw() }
         // b-radial-exclusive (1.0.9, the user: "while another overlay is open, a player should not be able to acutally open the class
         // radials"): one overlay at a time
+        castView.onClassChordLog = { what ->
+            Log.i("WCLOG", "class radial: $what capHolder=${capHolder.ifEmpty { "-" }} room=${room.name} pause=${pauseView.isOpen} " +
+                "wheel=${radialView.isOpen} tool=${homeView.toolWanted()} barCursor=${barSelect.open}")
+        }
         castView.overlayOpen = {
             radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || homeView.toolWanted() ||
                 setupView.visibility == View.VISIBLE || loginPrompt.isOpen || barSelect.open ||
@@ -745,6 +749,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         pauseView.onPick = { s -> pausePick(s) }
+        pauseView.barsBottom = {
+            if (room != Room.HOME || !homeView.isShown || homeView.barsBottom() <= 0f) 0f else {
+                val a = IntArray(2); val b = IntArray(2)
+                homeView.getLocationOnScreen(a); pauseView.getLocationOnScreen(b)
+                homeView.barsBottom() + (a[1] - b[1])
+            }
+        }
         shell.setHostContent(object : FrameLayout(this) {
             // b-release-spirit (test16: a bottom-screen dialog press reached nothing, not even the dialog's own view): while a dialog
             // shows, a finger's DOWN says which view on top took it, so one log read tells "covered" from "pressed"
@@ -2186,8 +2197,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             val e = roomExit.getInterpolation(p)
             v.alpha = 1f - e; v.scaleX = 1f - 0.04f * e; v.scaleY = 1f - 0.04f * e
         }
-        val bar = UiKit.pauseOut(UiKit.PAUSE_BAR, t, android.graphics.RectF(0f, 0f, pauseView.width.toFloat(), pauseView.height.toFloat()))
-        strip.translationY = bar[1]
+        // f-pause-bars: the rooms' bar stays; the pause menu's own D-pad bar slides up over it
+        strip.translationY = 0f
     }
 
     // ---------------------------------------------------------------- THE CHAT ROOM'S GLIDE (b-chat-slide)

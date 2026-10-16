@@ -4313,6 +4313,18 @@ object UiKit {
 
     private fun pauseGeo(screen: RectF): PauseGeo {
         val k = minOf(screen.width() / 1240f, screen.height() / 1080f)
+        if (pauseBarsBottom > 0f) {
+            // f-pause-bars (1.0.9, the user: "I dont think I want the controller top part to slide off screen. I want to move the "main
+            // menu" text and buttons down to the bottom half of it and then the Dpad part on the bottom is its own full bar that slides up
+            // to cover the rooms"): Home's controller stays; the title row in its lower half; the D-pad bar over the rooms' bar at the
+            // bottom; the wheel centred between them
+            val bar = Strip.HEIGHT * screen.height() / 1080f
+            val dpadTop = screen.bottom - bar
+            val topY = screen.top + pauseBarsBottom * 0.75f
+            val above = screen.top + pauseBarsBottom
+            val s = minOf(1.3f * k, (dpadTop - above - 2f * P_GAP * k) / 544f)
+            return PauseGeo(k, s, screen.centerX(), (above + dpadTop) / 2f, topY, screen.bottom - bar / 2f)
+        }
         run {
             // f-pause-art (the user: "the top main menu with L/R tabs and bottom dpad sections give up WAY too much screen real
             // estate"; "inconsistent size with the rest of our UI"): one slim top row, the wheel, the D-pad with its words hugging it,
@@ -4330,6 +4342,12 @@ object UiKit {
             return PauseGeo(k, s, screen.centerX(), cy, topY, padY)
         }
     }
+    /**
+     * f-pause-bars: the bottom of Home's controller (its bars) in the pause view's px while the menu opens over Home (the host sets it on
+     * every open); 0 = another room: the slim top row at the screen's top as before. Either way the D-pad is its own bar at the bottom
+     */
+    @JvmField var pauseBarsBottom = 0f
+
     /** the Home disc in the wheel's middle, game units (the user: "the disk needs to be larger"): the centre hole, the inner ring clear */
     private const val PAUSE_DISC_U = 168f
     private const val P_TOP_Y = 40f            // the top row's middle, from the screen's top
@@ -4400,8 +4418,10 @@ object UiKit {
      * backward by the caller, so it glides from the wheel's middle back down onto the bar's Home disc ([disc], [discSize]), its red going
      * back to the bar's blue; a press ([push], [gold]) plays on it meanwhile. See [pauseHubAt]
      */
-    fun pauseHubGlide(c: Canvas, screen: RectF, disc: android.graphics.PointF, discSize: Float, t: Float, push: Float, gold: Float) {
+    fun pauseHubGlide(c: Canvas, screen: RectF, disc: android.graphics.PointF, discSize: Float, t: Float, push: Float, gold: Float,
+                      up: String? = "Emotes", down: String? = "Sit / Stand", left: String? = null, right: String? = null) {
         val g = pauseGeo(screen)
+        pauseDpadBar(c, screen, g, t * 260f / 460f, -1, up, down, left, right)     // the D-pad bar goes back down meanwhile
         val d = pauseDisc(screen, disc, discSize, t)
         pauseHubAt(c, g, d.cx, d.cy, d.size, d.red, d.b, push, gold)
     }
@@ -4499,11 +4519,13 @@ object UiKit {
             c.restoreToCount(l)
             c.restoreToCount(save)
         }
+        // the D-pad bar slides up over the rooms' bar first; the disc rises over it
+        pauseDpadBar(c, screen, g, tt, heldOption, up, down, left, right)
         // the disc (the hub): Home's own disc turning RED as it lands, its B, its press
         val d = pauseDisc(screen, disc, discSize, tt)
         pauseHubAt(c, g, d.cx, d.cy, d.size, d.red, if (glyphs) d.b else 0f, hubDown, hubGold)
         val b = pSpan(tt, 440f, 600f)
-        if (b > 0f) pauseBands(c, g, page, crEaseOut(b), 24f * g.k * (1f - crEaseOut(b)), heldOption, up, down, left, right)
+        if (b > 0f) pauseBands(c, g, page, crEaseOut(b), 24f * g.k * (1f - crEaseOut(b)))
         if (line != null && lineAlpha > 0f)
             crWords(c, line, g.cx, screen.top + 26f * g.k, 28f * g.k, PAUSE_RED, 2f * g.k, (255 * lineAlpha.coerceIn(0f, 1f)).toInt(),
                 screen.width() - 40f * g.k)
@@ -4582,8 +4604,7 @@ object UiKit {
     }
 
     /** the slim top row (LB, the title and its page dots, RB) and the D-pad with its four words at its arms */
-    private fun pauseBands(c: Canvas, g: PauseGeo, page: Int, k: Float, slide: Float, held: Int, up: String?, down: String?,
-                                  left: String?, right: String?) {
+    private fun pauseBands(c: Canvas, g: PauseGeo, page: Int, k: Float, slide: Float) {
         val l = c.saveLayerAlpha(null, (255 * k).toInt())
         val ty = g.topY - slide
         val paging = page >= 0
@@ -4604,7 +4625,29 @@ object UiKit {
             pad(c, shoulderGlyph(false), g.cx - 150f * g.k, ty, gs)
             pad(c, shoulderGlyph(true), g.cx + 150f * g.k, ty, gs)
         }
-        val py = g.padY + slide
+        c.restoreToCount(l)
+    }
+
+    /**
+     * f-pause-bars: THE D-PAD BAR - its own full-width bar over the rooms' bar (the user: "the Dpad part on the bottom is its own full bar
+     * that slides up to cover the rooms"): it slides up from under the screen's bottom edge over [t] 40..260 of the open (the rooms' bar's
+     * old drop, reversed: run t backward to put it away), the D-pad and its four words in it
+     */
+    private fun pauseDpadBar(c: Canvas, screen: RectF, g: PauseGeo, t: Float, held: Int, up: String?, down: String?,
+                             left: String?, right: String?) {
+        val bar = Strip.HEIGHT * screen.height() / 1080f
+        val e = crEaseOut(pSpan(t, 40f, 260f))
+        if (e <= 0f) return
+        val top = screen.bottom - bar * e
+        val box = RectF(screen.left, top, screen.right, top + bar)
+        pFlat.style = Paint.Style.FILL
+        pFlat.shader = LinearGradient(0f, box.top, 0f, box.bottom, Color.rgb(30, 24, 18), Color.rgb(8, 7, 6), Shader.TileMode.CLAMP)
+        c.drawRect(box, pFlat)
+        pFlat.shader = null
+        pFlat.color = Theme.bronze; c.drawRect(box.left, box.top, box.right, box.top + 3f * g.k, pFlat)
+        pFlat.color = Color.argb(120, 0, 0, 0); c.drawRect(box.left, box.top - 6f * g.k, box.right, box.top, pFlat)
+        val l = c.saveLayerAlpha(null, 255)
+        val py = g.padY + bar * (1f - e)
         val ds = 40f * g.k
         tex("rdpad")?.let { c.drawBitmap(it, null, RectF(g.cx - ds / 2f, py - ds / 2f, g.cx + ds / 2f, py + ds / 2f), pBmp) }
         val wp = bodyPaint(P_WORD * g.k)
