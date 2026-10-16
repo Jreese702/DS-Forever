@@ -825,7 +825,12 @@ local function gameMenuRow()
     local pad = WC.pad
     if type(pad) ~= "table" or type(pad.secureRow) ~= "function" then return end
     local S, SN = WC.S, WC.SN
-    local GMV = "gm1"
+    local GMV = "gm2"
+    -- gm2 (the map session, test15's safe close: the Exit cell answered but no QUIT countdown came): after a Log Out / Exit tap the row
+    -- reports what the GAME did with it: its own refusal line (UI_ERROR_MESSAGE within EXIT_ERR_S: in combat, falling, ...) as a
+    -- "gamemenu" doc why "refused" with err = the game's words, and its quitting / camping event as why "event" with ev = the event
+    local EXIT_ERR_S = 5
+    local exitAt = -100
     local CELLS = { [0] = { "gm_logout", "/logout" }, [1] = { "gm_quit", "/quit" }, [2] = { "gm_macro", "/macro" },
                     [3] = { "gm_editmode", "/editmode" }, [4] = { "gm_info" }, [5] = { "gm_cancel" } }
     local COL = {}
@@ -943,7 +948,7 @@ local function gameMenuRow()
         elseif CELLS[col] then
             -- a secure cell: the game ran its own slash command on this tap (Logout / Quit: its countdown popup follows)
             ack(col, { ok = true })
-            if col == COL.gm_logout or col == COL.gm_quit then C_Timer.After(0.3, watch) end
+            if col == COL.gm_logout or col == COL.gm_quit then exitAt = GetTime(); C_Timer.After(0.3, watch) end
         end
     end
     local function cellInit(btn, col)
@@ -953,10 +958,19 @@ local function gameMenuRow()
     end
     pcall(pad.secureRow, "gamemenu", 6, cellInit, function(col) pcall(onCell, col) end, { onPress = true })
     local f = CreateFrame("Frame")
-    for _, e in ipairs({ "PLAYER_CAMPING", "PLAYER_QUITING", "LOGOUT_CANCEL", "PLAYER_ENTERING_WORLD" }) do
+    for _, e in ipairs({ "PLAYER_CAMPING", "PLAYER_QUITING", "LOGOUT_CANCEL", "PLAYER_ENTERING_WORLD", "UI_ERROR_MESSAGE" }) do
         pcall(function() f:RegisterEvent(e) end)
     end
-    f:SetScript("OnEvent", function(_, e)
+    f:SetScript("OnEvent", function(_, e, a1, a2)
+        if e == "UI_ERROR_MESSAGE" then
+            -- only right after our own Log Out / Exit tap, and only a plain line of the game's
+            if GetTime() - exitAt <= EXIT_ERR_S then
+                local msg = (type(a2) == "string" and a2) or (type(a1) == "string" and a1) or nil
+                if msg and (type(WC.isPlain) ~= "function" or WC.isPlain(msg)) then pcall(doc, "refused", { err = msg }) end
+            end
+            return
+        end
+        if (e == "PLAYER_QUITING" or e == "PLAYER_CAMPING") then pcall(doc, "event", { ev = e }) end
         if e == "LOGOUT_CANCEL" then endedHow = "cancelled"; pcall(tick)
         elseif e == "PLAYER_ENTERING_WORLD" then C_Timer.After(2, function() pcall(doc, "login") end)
         else watch() end
