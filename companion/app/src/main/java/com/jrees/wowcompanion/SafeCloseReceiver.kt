@@ -20,10 +20,12 @@ class SafeCloseReceiver : BroadcastReceiver() {
         val ce = LauncherHooks.cleanExit
         if (ce == null || !LauncherHooks.gameUp()) { Log.i(TAG, "safe close: done (nothing to close)"); return }
         Log.i(TAG, "safe close: asked")
+        LauncherHooks.lastCleanExit = ""
         ce("safe close") { forceNeeded ->
             if (!forceNeeded) QuestWatchKeep.cleanEnd()           // exited by itself: its save is written
+            // the route repeated on the last line, so the one line the install step waits for says why (tracking's ask)
             Log.i(TAG, "safe close: done (" + (if (forceNeeded) "the game did not exit by itself: the install will close it"
-                else "the game exited by itself, its state saved") + ")")
+                else "the game exited by itself, its state saved") + ") [" + LauncherHooks.lastCleanExit + "]")
         }
     }
 

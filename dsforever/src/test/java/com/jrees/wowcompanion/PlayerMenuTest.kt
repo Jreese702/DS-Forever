@@ -11,8 +11,9 @@ class PlayerMenuTest {
     private val doc = JSONObject("""{"type":"pmenu","shape":"GetEntries","items":[
         {"t":"Remy","ttl":1},
         {"t":"Raid Target Icon","en":1,"sub":[{"t":"Star","i":0,"en":1,"ck":0},{"t":"Circle","i":1,"en":1,"ck":1}]},
-        {"t":"Set Focus","i":2,"en":0},
-        {"t":"Reset all instances","i":3,"en":1}]}""")
+        {"t":"Set Focus","k":"SetFocus","sc":0,"en":1},
+        {"t":"Reset all instances","k":"ResetInstances","i":3,"en":1,"cf":"Reset all instances?"},
+        {"t":"Copy Name","k":"CopyName","en":0}]}""")
 
     private fun opened(runs: Boolean = true) = PlayerMenu(runs).apply { openReading(); onDoc(doc) }
 
@@ -41,14 +42,30 @@ class PlayerMenuTest {
         assertEquals(PlayerMenu.Do.Close, m.key("PAD2")); assertFalse(m.open)
     }
 
-    @Test fun aGreyEntrySaysWhyAndUpSkipsTheTitle() {
+    @Test fun focusGoesToTheSecureCellAndAnUnknownEntryIsGrey() {
         val m = opened()
         m.key("PADDDOWN")
-        assertEquals(PlayerMenu.Do.Refused("Not available now"), m.key("PAD1"))
-        m.key("PADDUP"); m.key("PADDUP")
-        assertEquals(1, m.sel)                                       // the title row is no stop
+        assertEquals(PlayerMenu.Do.Secure(0, "Set Focus"), m.key("PAD1"))
+        val n = opened()
+        repeat(3) { n.key("PADDDOWN") }
+        assertEquals(PlayerMenu.Do.Refused("Not available now"), n.key("PAD1"))
+        n.key("PADDUP"); n.key("PADDUP"); n.key("PADDUP"); n.key("PADDUP")
+        assertEquals(1, n.sel)                                       // the title row is no stop
+    }
+
+    @Test fun resetAsksFirstOnTheBottomScreenNoFirst() {
+        val m = opened()
         m.key("PADDDOWN"); m.key("PADDDOWN")
+        assertEquals(PlayerMenu.Do.None, m.key("PAD1"))
+        assertEquals("Reset all instances?", m.heading())
+        assertEquals(listOf("Yes", "No"), m.rows().map { it.text })
+        assertEquals(1, m.sel)                                       // the cursor starts on No
+        assertEquals(PlayerMenu.Do.None, m.key("PAD1")); assertEquals(null, m.rows().firstOrNull { it.text == "Yes" })   // No: back to the menu
+        m.key("PAD1"); m.key("PADDUP")
         assertEquals(PlayerMenu.Do.Run(3, "Reset all instances"), m.key("PAD1"))
+        assertFalse(m.open)
+        val b = opened(); b.key("PADDDOWN"); b.key("PADDDOWN"); b.key("PAD1")
+        assertEquals(PlayerMenu.Do.None, b.key("PAD2")); assertTrue(b.open); assertEquals("Remy", b.heading())   // B: no reset
     }
 
     @Test fun anEntryGoesBackAsTwoDigitTaps() {
@@ -64,7 +81,7 @@ class PlayerMenuTest {
     }
 
     @Test fun nothingRunsWhileTheRunPathIsOff() {
-        assertFalse(PlayerMenu.RUNS)
+        assertTrue(PlayerMenu.RUNS)
         val m = opened(runs = false)
         m.key("PADDDOWN"); m.key("PADDDOWN")
         assertEquals(PlayerMenu.Do.Refused("Not available yet"), m.key("PAD1"))
