@@ -450,6 +450,8 @@ sealed class FocusTap {
 class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long = 25_000L) {
     var tracked: List<HomeQuest> = emptyList()
         private set
+    /** the log's quests the tracker does not show (the map module's Untracked tabs track them) */
+    private var untracked: List<HomeQuest> = emptyList()
     /** the quest the strip and the combat takeover show; see [pickShown] */
     var shown: HomeQuest? = null
         private set
@@ -481,6 +483,7 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
             all.add(parse(o, plv, triv))
         }
         tracked = all.filter { it.tracked }
+        untracked = all.filter { !it.tracked }
         focusId = all.firstOrNull { it.focused }?.id ?: (if (q.has("focus")) q.optInt("focus") else null)
         shown = pickShown(all)
         inCombat = q.optBoolean("cb")
@@ -489,6 +492,7 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
         // the game did it: a focus that is the focus now, an untrack whose quest left the tracker
         if (pendingId != null && pendingOp == "track" && pendingId == focusId) pendingId = null
         if (pendingId != null && pendingOp == "unwatch" && tracked.none { it.id == pendingId }) pendingId = null
+        if (pendingId != null && pendingOp == "watch" && tracked.any { it.id == pendingId }) pendingId = null
         if (pendingId != null && pendingOp == "untrack" && focusId != pendingId) pendingId = null
     }
 
@@ -529,6 +533,22 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
     }
 
     /**
+     * TRACK from the map module's Untracked tabs (A on an untracked quest; the user, 2026-10-16): the game's objective tracker takes
+     * the quest (QuestPad WATCH). The same gates as an untrack; one tap waits at a time.
+     */
+    fun tapWatch(questId: Int, live: Boolean, now: Long): FocusTap {
+        if (tracked.any { it.id == questId }) return FocusTap.Already
+        val q = untracked.firstOrNull { it.id == questId } ?: return FocusTap.Refused("Not in your quest log any more")
+        if (!live) return FocusTap.Refused("Waiting for the game")
+        if (currentAt < 0 || now - currentAt >= freshMs) return FocusTap.Refused("Waiting for the game's quest list")
+        if (inCombat) return FocusTap.Refused("In combat")
+        if (pending(now) != null) return FocusTap.Refused("Waiting for the game's answer")
+        val slot = q.slot ?: return FocusTap.Refused("This quest has no tap column")
+        pendingId = questId; pendingAt = now; pendingOp = "watch"
+        return FocusTap.Send(questId, slot)
+    }
+
+    /**
      * UNFOCUS from the Map room (A on the quest that has the focus; Quests.lua q9: it clears the focus only while that quest still
      * has it, replying op "untrack"). The quest must be the focused one now; the same gates; one tap waits at a time.
      */
@@ -555,6 +575,7 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
         pendingId = null
         val failed = when (pendingOp) {
             "unwatch" -> "The game did not untrack it"
+            "watch" -> "The game did not track it"
             "untrack" -> "The game did not clear the focus"
             else -> "The game did not change the focus"
         }

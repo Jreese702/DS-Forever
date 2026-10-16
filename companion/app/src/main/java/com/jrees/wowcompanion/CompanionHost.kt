@@ -461,6 +461,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         mapView.onUntrackQuest = { id -> homeView.untrackQuest(id) { mapView.note(it) } }
         // A on the focused quest clears the focus (Quests q9, qact 39)
         mapView.onUnfocusQuest = { id -> homeView.unfocusQuest(id) { mapView.note(it) } }
+        // the map module's Untracked tabs and its portrait (the user, 2026-10-16): A tracks an untracked quest, A on the portrait opens
+        // the game's player menu (Quests q38)
+        mapView.onTrackQuest = { id -> homeView.watchQuest(id) { mapView.note(it) } }
+        mapView.onPlayerMenu = { homeView.playerMenu { mapView.note(it) } }
         // LATER item 5, the generic controller guests (Quests.lua q6): B with nothing nearer to do leaves with B -> Home
         questsView.onLeave = { show(Room.HOME) }
         // B leaves the chat for Home: the disc's press (UI Art's push + gold flash; the user's Home-button feedback 2026-10-01)

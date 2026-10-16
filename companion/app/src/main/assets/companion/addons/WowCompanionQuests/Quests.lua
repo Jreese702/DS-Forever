@@ -87,6 +87,24 @@ local function objectives(qid)
     return out
 end
 
+-- q38: the words of the quest-log headers that are the player's own class or professions (the class's name, the professions' names)
+function WC.ownHeaders()
+    local out = {}
+    local cl = TS(function() return (UnitClass("player")) end)
+    if cl then out[#out + 1] = cl end
+    pcall(function()
+        local list = { GetProfessions() }
+        for k = 1, 7 do
+            local ix = list[k]
+            if type(ix) == "number" then
+                local name = GetProfessionInfo(ix)
+                if type(name) == "string" and WC.isPlain(name) and name ~= "" then out[#out + 1] = name end
+            end
+        end
+    end)
+    return out
+end
+
 -- Returns the document and, separately, the distances (kept out of the change test).
 function WC.collectQuests()
     tally = { secret = 0, threw = 0 }
@@ -177,6 +195,11 @@ function WC.collectQuests()
         focus = focus,
         mapID = mapID,
         plv = SN(function() return UnitLevel("player") end),
+        -- q38: the map module's portrait (name, class file, the class's own word) and the log headers that are the player's class or
+        -- professions (its untracked tabs sort them after the zone's)
+        me = { n = TS(function() return (UnitName("player")) end), c = TS(function() return (select(2, UnitClass("player"))) end),
+               cl = TS(function() return (UnitClass("player")) end) },
+        own = WC.ownHeaders(),
         trivRange = (okR and type(range) == "number" and WC.isPlain(range)) and range or nil,
         cb = TB(function() return UnitAffectingCombat("player") end),
         -- in a party or raid: the other half of the game's rule for Share Quest (IsPushableQuest AND IsInGroup)
@@ -1729,6 +1752,9 @@ local G_LEAVE_B, G_BNEXT_HOME, G_BNEXT_BACK, G_FIRST = 5, 6, 7, 8
 local G_REFUSED = 37        -- quest-side codes grow DOWN from 39 (39 unfocus, 38 share, 37 this), the guests UP from 8
 -- q35: where Start goes while a room holds: 36 = the rooms keep it (the app's pause wheel; the default), 35 = the game (the toolbar off)
 local G_START_ROOMS, G_START_GAME = 36, 35
+-- q38 (the map session, 2026-10-16; the user: the map module's portrait, "selecting it opens the menu options as if I was to normally
+-- open my character portrait menu"): 34 opens the game's own player menu, the one a right click on the player's portrait opens
+local G_PLAYER_MENU = 34
 local startToRooms = true
 local startDirty = false      -- changed in a fight: the holding room is re-taken with its new keys when the fight ends
 local guest = {}
@@ -1966,6 +1992,19 @@ local function startTo(rooms)
         if InCombatLockdown() then startDirty = true else takeFor(id) end
     end
     gack(nil, "start", true, rooms and "rooms" or "game")
+end
+GACT[G_PLAYER_MENU] = function()
+    -- whichever this build has (all Blizzard Lua, so the binary cannot say): the unit popup menu, the old drop-down, the frame's own;
+    -- opening a menu changes nothing in the game. One guestack: op "pmenu", why = the way it opened (or "no menu").
+    local how = nil
+    local ok = pcall(function()
+        local pf = _G.PlayerFrame
+        if type(_G.UnitPopup_OpenMenu) == "function" then _G.UnitPopup_OpenMenu("SELF", { unit = "player" }); how = "popup"
+        elseif type(_G.ToggleDropDownMenu) == "function" and _G.PlayerFrameDropDown then
+            _G.ToggleDropDownMenu(1, nil, _G.PlayerFrameDropDown, "PlayerFrame", 106, 27); how = "dropdown"
+        elseif type(pf) == "table" and type(pf.menu) == "function" then pf.menu(pf); how = "frame" end
+    end)
+    gack(nil, "pmenu", ok and how ~= nil, how or (ok and "no menu" or "threw"))
 end
 GACT[G_START_ROOMS] = function() startTo(true) end
 GACT[G_START_GAME] = function() startTo(false) end

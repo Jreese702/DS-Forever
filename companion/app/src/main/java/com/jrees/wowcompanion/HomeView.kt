@@ -811,6 +811,18 @@ class HomeView(
     fun untrackQuest(id: Int, note: (String) -> Unit) =
         questAct(id, "untrack", QuestPad.Act.UNWATCH, quests.tapUntrack(id, GameInput.live(), System.currentTimeMillis()), note)
 
+    /** TRACK quest [id] (A on an untracked quest of the map module's Untracked tabs): the game's tracker takes it */
+    fun watchQuest(id: Int, note: (String) -> Unit) =
+        questAct(id, "watch", QuestPad.Act.WATCH, quests.tapWatch(id, GameInput.live(), System.currentTimeMillis()), note)
+
+    /** the game's own player menu (A on the map module's portrait; Quests.lua q38, qact 34) */
+    fun playerMenu(note: (String) -> Unit) {
+        if (!GameInput.live()) { note("Waiting for the game"); return }
+        val cells = GuestPad.playerMenu(pad)
+        Log.i(TAG, "player menu: send ${cells ?: "no cells"}")
+        if (cells == null || !TapBridge.taps(context, pad, cells) { why -> post { note(why) } }) note("The game has not published its tap pad")
+    }
+
     /** UNFOCUS quest [id] (the Map room's A on the focused quest; Quests.lua q9 qact 39): the game drops its focus, only if [id] still has it */
     fun unfocusQuest(id: Int, note: (String) -> Unit) =
         questAct(id, "unfocus", QuestPad.Act.UNFOCUS, quests.tapUnfocus(id, GameInput.live(), System.currentTimeMillis()), note)

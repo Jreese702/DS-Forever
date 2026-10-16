@@ -2970,10 +2970,19 @@ object UiKit {
      *  - [live] = the game shows it right now (a node the player stands next to, soft-interact): the picture SOLID on a dark well with a
      *    gold rim and a soft glow, never a ghost.
      */
-    fun spawnSpot(c: Canvas, cx: Float, cy: Float, kind: Spawn, size: Float, live: Boolean = false) {
+    fun spawnSpot(c: Canvas, cx: Float, cy: Float, kind: Spawn, size: Float, live: Boolean = false, glow: Boolean = false) {
         val pic = tex(when (kind) { Spawn.HERB -> "mm_herb"; Spawn.ORE -> "mm_ore"; Spawn.CHEST -> "mm_chest"
             Spawn.RARE -> "mm_rare"; Spawn.RARE_ELITE -> "mm_rare_elite" })
         val rare = kind == Spawn.RARE || kind == Spawn.RARE_ELITE
+        // THE TRACKING'S GOLD (the user, 2026-10-16: the herb / ore / treasure the player tracks "is hard to see sometimes blending with
+        // the map, can we give those Icons a golden glow"): a soft gold halo under the spot, at least 14 px across at zone zoom
+        if (glow) {
+            val gr = maxOf(size * 0.95f, 14f)
+            pSpotGlow.shader = RadialGradient(cx, cy, gr, intArrayOf(Color.argb(200, 255, 205, 70), Color.argb(110, 255, 190, 40),
+                Color.argb(0, 255, 180, 30)), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+            c.drawCircle(cx, cy, gr, pSpotGlow)
+            pSpotGlow.shader = null
+        }
         if (!live && size < 16f) {
             val (r0, g0, b0) = when (kind) {
                 Spawn.HERB -> Triple(150, 200, 120); Spawn.ORE -> Triple(185, 192, 205); Spawn.CHEST -> Triple(235, 205, 110)
@@ -3004,6 +3013,8 @@ object UiKit {
         if (!rare) { pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(70, 18, 12, 8); c.drawCircle(cx, cy, size * 0.55f, pFlat) }
         if (pic != null) { pGhost.alpha = if (rare) 165 else 140; c.drawBitmap(pic, null, if (rare) box else RectF(cx - size * 0.45f, cy - size * 0.45f, cx + size * 0.45f, cy + size * 0.45f), pGhost); pGhost.alpha = 255 }
     }
+
+    private val pSpotGlow = Paint(Paint.ANTI_ALIAS_FLAG)
 
     /**
      * The tracker's header: the game's line, [label] in gold at its left and an optional [count]
