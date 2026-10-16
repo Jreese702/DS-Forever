@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p29"                -- bump on every change; p29: the In combat tab's FORM row (f-combat-forms, PadMap m55)
+local CV = "p30"                -- bump on every change; p30: LB / RB stay the room's tabs with the chooser open (D-pad Left / Right its tabs)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -583,7 +583,14 @@ local function pressChooser(key)
         local i = ctabIndex(tc.chooser.list) + d
         if T[i] then tc.chooser.list, tc.chooser.row = T[i], 1; report("list") end
     end
-    if key == "PADLSHOULDER" or key == "PADRSHOULDER" then nextTab(key == "PADLSHOULDER" and -1 or 1) return true end
+    -- p30 (the user on 1.0.9-test19: "the spells with tabs have the l and r glyph but those control the tabs at the top of the screen and
+    -- they should stay that way. Instead they should have the arrows side to side"): LB / RB are the ROOM's tabs, chooser or not (the
+    -- chooser closes with the tab it was on, as a tap on a room tab does); the chooser's own tabs page with D-pad Left / Right
+    if key == "PADLSHOULDER" or key == "PADRSHOULDER" then
+        local i = tabIndex(tc.view) + (key == "PADLSHOULDER" and -1 or 1)
+        if i >= 1 and i <= #TABS then setTab(TABS[i]) end
+        return true
+    end
     if tc.chooser.tabs then                                 -- the cursor on the chooser's tab row
         if key == "PADDLEFT" or key == "PADDRIGHT" then nextTab(key == "PADDLEFT" and -1 or 1)
         elseif key == "PADDDOWN" or key == "PAD1" then tc.chooser.tabs = nil; report("to-rows")
@@ -789,7 +796,7 @@ WC.padTabCtl = {
     -- p13 THE LEFT BUMPER FROM THE APP (the user on b124: "the main tabs in the controller room move right with R but wont move back left
     -- with L"): on this device LB is the game's emulated Ctrl (GamePadEmulateCtrl = PADLSHOULDER, MEASURED 2026-09-28, AGENT_LOG "BUTTON
     -- TEST ANSWERED"), so the game never hands it to the capture; the app reads the bumper itself (getevent, read-only) and taps padtab 9
-    -- on its release. It does what LB does: a box open, nothing; the chooser open, its tab before; else the room's tab before.
+    -- on its release. It does what LB does: a box open, nothing; else the room's tab before (p30: the chooser open too, it closes).
     touchShoulder = function(d)
         if not tc.on or tc.box then return end
         local key = d < 0 and "PADLSHOULDER" or "PADRSHOULDER"
