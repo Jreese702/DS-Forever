@@ -2498,6 +2498,15 @@ fun XServerScreen(
                 }
                 // f-trackpad-keyboard: the bottom screen's trackpad (relative moves) and its Left / Right click, where the pointer is
                 override fun moveBy(dx: Int, dy: Int) { xServerView.getxServer().injectPointerMoveDelta(dx, dy) }
+                override fun moveTo(fx: Float, fy: Float) {
+                    val xs = xServerView.getxServer()
+                    xs.injectPointerMove((fx * xs.screenInfo.width).toInt(), (fy * xs.screenInfo.height).toInt())
+                }
+                override fun pointerNote(): String {
+                    val xs = xServerView.getxServer()
+                    return "${xs.pointer.getX()},${xs.pointer.getY()} of ${xs.screenInfo.width}x${xs.screenInfo.height}" +
+                        (if (xs.isRelativeMouseMovement) " relative" else "")
+                }
                 override fun button(right: Boolean, down: Boolean) {
                     val xs = xServerView.getxServer()
                     val b = if (right) com.winlator.xserver.Pointer.Button.BUTTON_RIGHT else com.winlator.xserver.Pointer.Button.BUTTON_LEFT

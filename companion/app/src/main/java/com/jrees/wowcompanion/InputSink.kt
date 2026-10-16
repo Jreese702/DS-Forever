@@ -22,6 +22,10 @@ object InputSink {
         fun moveBy(dx: Int, dy: Int) {}
         /** f-trackpad-keyboard: the left / right mouse button down / up where the pointer is; default: nothing */
         fun button(right: Boolean, down: Boolean) {}
+        /** f-trackpad-keyboard rework: the pointer to this fraction of the game's screen (the trackpad's start); default: nothing */
+        fun moveTo(fx: Float, fy: Float) {}
+        /** the game's pointer now, game px ("x,y"), and how the X server takes moves; null = unknown (for the log) */
+        fun pointerNote(): String? = null
     }
 
     // ---------------------------------------------------------------- f-trackpad-keyboard: the tool's ONLY ways into the game
@@ -44,16 +48,46 @@ object InputSink {
         gameIo.execute { s.key(GameTyping.X_ENTER, true); Thread.sleep(CHAR_GAP_MS); s.key(GameTyping.X_ENTER, false) }
     }
 
-    /** the trackpad: the pointer moved */
+    /** the trackpad: the pointer moved. WCHOME log, at most one line a second: "trackpad: move dx dy -> sink ok|none|threw" */
     fun gameMove(dx: Int, dy: Int) {
-        val s = sink ?: return
-        gameIo.execute { s.moveBy(dx, dy) }
+        val s = sink
+        if (s == null) { tlog("trackpad: move $dx $dy -> sink none", throttle = true); return }
+        gameIo.execute {
+            val r = try { s.moveBy(dx, dy); "ok" } catch (t: Throwable) { "threw ${t.javaClass.simpleName}: ${t.message}" }
+            tlog("trackpad: move $dx $dy -> sink $r (pointer ${s.pointerNote() ?: "?"})", throttle = r == "ok")
+        }
     }
 
-    /** a click (left / right) where the pointer is */
+    /** a click (left / right) where the pointer is; logged each time */
     fun gameClick(right: Boolean) {
-        val s = sink ?: return
-        gameIo.execute { s.button(right, true); Thread.sleep(30); s.button(right, false) }
+        val s = sink
+        if (s == null) { tlog("trackpad: click ${if (right) "right" else "left"} -> sink none"); return }
+        gameIo.execute {
+            val r = try { s.button(right, true); Thread.sleep(30); s.button(right, false); "ok" } catch (t: Throwable) { "threw ${t.javaClass.simpleName}" }
+            tlog("trackpad: click ${if (right) "right" else "left"} -> sink $r (pointer ${s.pointerNote() ?: "?"})")
+        }
+    }
+
+    /** the trackpad's start: the pointer to the game screen's centre (a hidden controller-mode cursor shows where the pad moves it) */
+    fun gameCentre() {
+        val s = sink
+        if (s == null) { tlog("trackpad: centre -> sink none"); return }
+        gameIo.execute {
+            val r = try { s.moveTo(0.5f, 0.5f); "ok" } catch (t: Throwable) { "threw ${t.javaClass.simpleName}" }
+            tlog("trackpad: centre -> sink $r (pointer ${s.pointerNote() ?: "?"})")
+        }
+    }
+
+    /** a drag's summary from the pad (the touch side): how many moves it sent and their sum */
+    fun dragNote(moves: Int, sumX: Int, sumY: Int) =
+        tlog("trackpad: drag ${moves} moves, sum $sumX $sumY, sink ${if (sink != null) "ok" else "none"}")
+
+    @Volatile private var lastLogAt = 0L
+    private fun tlog(msg: String, throttle: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (throttle && now - lastLogAt < 1000L) return
+        lastLogAt = now
+        try { android.util.Log.i("WCHOME", msg) } catch (_: Throwable) {}
     }
 
     @Volatile var sink: Sink? = null
