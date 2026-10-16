@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q40"    -- bump on every change; the app shows it, so a stale build is visible
+local QV = "q41"    -- bump on every change; the app shows it, so a stale build is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1752,8 +1752,10 @@ local G_LEAVE_B, G_BNEXT_HOME, G_BNEXT_BACK, G_FIRST = 5, 6, 7, 8
 local G_REFUSED = 37        -- quest-side codes grow DOWN from 39 (39 unfocus, 38 share, 37 this), the guests UP from 8
 -- q35: where Start goes while a room holds: 36 = the rooms keep it (the app's pause wheel; the default), 35 = the game (the toolbar off)
 local G_START_ROOMS, G_START_GAME = 36, 35
--- q38 (the map session, 2026-10-16; the user: the map module's portrait, "selecting it opens the menu options as if I was to normally
--- open my character portrait menu"): 34 opens the game's own player menu, the one a right click on the player's portrait opens
+-- q38 / q41 (the map session, 2026-10-16; the user: the map module's portrait, "selecting it opens the menu options as if I was to
+-- normally open my character portrait menu", then "no not the menu on the top screen, I want a replication of the menu on the bottom
+-- screen basically that the controller still drives"): 34 READS the game's own player menu (the portrait's) and sends it as a
+-- {"type":"pmenu"} document; 26..33 are the two base-8 digits of the entry to run (see WC.pmenu below). Below Start's 35 / 36.
 local G_PLAYER_MENU = 34
 local startToRooms = true
 local startDirty = false      -- changed in a fight: the holding room is re-taken with its new keys when the fight ends
@@ -1993,18 +1995,99 @@ local function startTo(rooms)
     end
     gack(nil, "start", true, rooms and "rooms" or "game")
 end
-GACT[G_PLAYER_MENU] = function()
-    -- whichever this build has (all Blizzard Lua, so the binary cannot say): the unit popup menu, the old drop-down, the frame's own;
-    -- opening a menu changes nothing in the game. One guestack: op "pmenu", why = the way it opened (or "no menu").
-    local how = nil
-    local ok = pcall(function()
-        local pf = _G.PlayerFrame
-        if type(_G.UnitPopup_OpenMenu) == "function" then _G.UnitPopup_OpenMenu("SELF", { unit = "player" }); how = "popup"
-        elseif type(_G.ToggleDropDownMenu) == "function" and _G.PlayerFrameDropDown then
-            _G.ToggleDropDownMenu(1, nil, _G.PlayerFrameDropDown, "PlayerFrame", 106, 27); how = "dropdown"
-        elseif type(pf) == "table" and type(pf.menu) == "function" then pf.menu(pf); how = "frame" end
-    end)
-    gack(nil, "pmenu", ok and how ~= nil, how or (ok and "no menu" or "threw"))
+-- THE PLAYER MENU, MIRRORED (q41). The game's unit popup menu for "SELF" (the menu the player's portrait opens) is Blizzard Lua, so
+-- the binary cannot name its API: whichever this build has is tried (UnitPopupManager:GetMenu, else UnitPopupMenus.SELF; the entries
+-- through GetEntries or GetMenuButtons). Each entry the game would show (CanShow) goes out with its own words (GetText), enabled
+-- (IsEnabled) and checked (IsChecked) state, and its sub-entries (IsMenu); an entry that can be run gets an id (at most 64). The app
+-- draws it on the bottom screen and sends an id back as two digit taps; the entry's own OnClick runs it, as the game's menu would.
+-- Never run: the focus entries (FocusUnit is protected: an add-on's call is blocked). No CVar, no macro, no binding is written.
+-- {"type":"pmenu", v, shape, items = {{t, i?, en, ck?, ttl?, sub?}, ...}} ; a run answers guestack op "pmenurun" (why = the words).
+WC.pmenu = { list = {}, d1 = nil, d1at = 0 }
+function WC.pmenu.ctx()
+    return { unit = "player", which = "SELF", name = TS(function() return (UnitName("player")) end),
+             guid = TS(function() return UnitGUID("player") end) }
+end
+function WC.pmenu.entries(obj, ctx)
+    for _, fn in ipairs({ "GetEntries", "GetMenuButtons" }) do
+        if type(obj) == "table" and type(obj[fn]) == "function" then
+            local ok, r = pcall(obj[fn], obj, ctx)
+            if ok and type(r) == "table" then return r, fn end
+        end
+    end
+    return nil
+end
+function WC.pmenu.blocked(e)
+    for _, g in ipairs({ "UnitPopupSetFocusButtonMixin", "UnitPopupClearFocusButtonMixin" }) do if _G[g] ~= nil and e == _G[g] then return true end end
+    local okT, t = pcall(e.GetText, e, WC.pmenu.ctx())
+    return okT and (t == _G.SET_FOCUS or t == _G.CLEAR_FOCUS)
+end
+function WC.pmenu.read()
+    local P = WC.pmenu
+    P.list = {}; P.d1 = nil
+    local ctx = P.ctx()
+    local menu, shape = nil, "none"
+    local mgr = _G.UnitPopupManager
+    if type(mgr) == "table" and type(mgr.GetMenu) == "function" then
+        local ok, m = pcall(mgr.GetMenu, mgr, "SELF"); if ok and type(m) == "table" then menu = m end
+    end
+    if not menu and type(_G.UnitPopupMenus) == "table" and type(_G.UnitPopupMenus.SELF) == "table" then menu = _G.UnitPopupMenus.SELF end
+    local function call(e, fn, dflt)
+        if type(e[fn]) ~= "function" then return dflt end
+        local ok, v = pcall(e[fn], e, ctx)
+        if not ok then return nil end
+        return v
+    end
+    local function walk(es, depth)
+        local out = {}
+        for _, e in ipairs(es) do
+            if type(e) == "table" and #P.list < 64 then
+                local show = call(e, "CanShow", true)
+                local t = call(e, "GetText", nil)
+                if show == true and type(t) == "string" and WC.isPlain(t) and t ~= "" then
+                    local row = { t = t }
+                    if call(e, "IsTitle", false) == true then row.ttl = 1
+                    else
+                        local sub = (depth < 2 and call(e, "IsMenu", false) == true) and P.entries(e, ctx) or nil
+                        if sub then row.sub = walk(sub, depth + 1) end
+                        row.en = (call(e, "IsEnabled", true) == true and not P.blocked(e)) and 1 or 0
+                        local ck = call(e, "IsChecked", nil)
+                        if type(ck) == "boolean" then row.ck = ck and 1 or 0 end
+                        if not row.sub then P.list[#P.list + 1] = e; row.i = #P.list - 1 end
+                    end
+                    out[#out + 1] = row
+                end
+            end
+        end
+        return out
+    end
+    local items = {}
+    if menu then
+        local es, how = P.entries(menu, ctx)
+        if es then shape = how; items = walk(es, 0) end
+    end
+    pcall(function() WC.send(WC.encode({ type = "pmenu", v = QV, shape = shape, items = items })); WC.push() end)
+end
+function WC.pmenu.run(id)
+    local P = WC.pmenu
+    local e = P.list[id + 1]
+    if not e then return gack(nil, "pmenurun", false, "the menu changed") end
+    local ctx = P.ctx()
+    if P.blocked(e) then return gack(nil, "pmenurun", false, "not from the companion") end
+    local okS, show = pcall(function() return type(e.CanShow) ~= "function" or e:CanShow(ctx) end)
+    local okE, en = pcall(function() return type(e.IsEnabled) ~= "function" or e:IsEnabled(ctx) end)
+    if not (okS and show and okE and en) then return gack(nil, "pmenurun", false, "not available now") end
+    local okT, t = pcall(e.GetText, e, ctx)
+    local ok = type(e.OnClick) == "function" and pcall(e.OnClick, e, ctx)
+    gack(nil, "pmenurun", ok and true or false, (okT and type(t) == "string" and WC.isPlain(t)) and t or nil)
+    C_Timer.After(0.3, function() pcall(P.read) end)      -- the checks and the entries follow what it did
+end
+GACT[G_PLAYER_MENU] = function() WC.pmenu.read() end
+for d = 0, 7 do
+    GACT[33 - d] = function()
+        local P = WC.pmenu
+        if P.d1 ~= nil and GetTime() - P.d1at < 2 then local id = P.d1 * 8 + d; P.d1 = nil; P.run(id)
+        else P.d1 = d; P.d1at = GetTime() end
+    end
 end
 GACT[G_START_ROOMS] = function() startTo(true) end
 GACT[G_START_GAME] = function() startTo(false) end
