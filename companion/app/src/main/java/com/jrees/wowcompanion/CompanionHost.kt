@@ -699,6 +699,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         radialView = HomeRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pinPicker = BagsPinPicker(this)
         radialView.picker = pinPicker
+        // f-radial-middle: on Home the item / spell wheel takes Home's middle slot (the columns part), mapped into the wheel's view
+        radialView.homeSlot = { open ->
+            if (!open) { homeView.wheelSlot(false); null }
+            else if (room != Room.HOME) null
+            else homeView.wheelSlot(true)?.also { r ->
+                val a = IntArray(2); val b = IntArray(2)
+                homeView.getLocationOnScreen(a); radialView.getLocationOnScreen(b)
+                r.offset((a[0] - b[0]).toFloat(), (a[1] - b[1]).toFloat())
+            }
+        }
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pauseView.onSlide = { t -> pauseSlideAll(t) }
         // the open's REVERSE after the wheel has gone (the user 2026-10-09: "it needs to have a reverse animation for when the B button

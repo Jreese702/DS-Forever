@@ -83,6 +83,19 @@ class HomeRadialView(
     var picker: BagsPinPicker? = null
 
     /**
+     * f-radial-middle (1.0.9, the user: "The Dpad up radial, and spell radial should slideup between the middle of the modules like the
+     * class bars used to"): on Home the wheel takes Home's middle slot (HomeView.wheelSlot: the columns part for it), in THIS view's
+     * coordinates; null = no slot (another room, a module full screen): the full-screen wheel. Called with false when the wheel goes.
+     */
+    var homeSlot: ((Boolean) -> RectF?)? = null
+    private var slot: RectF? = null
+    /** the wheel sliding back down into the bar after it has gone (the controller already let go): since (uptime ms), in that slot */
+    private var leaveAt = 0L
+    private var leaveSlot: RectF? = null
+    private var shutting = false
+    private val leaveCurve = Motion.curve()
+
+    /**
      * NO TAP RIGHT AFTER A CONTROLLER PRESS (b67, measured 15:27:17-15:27:33: all 5 pins' taps, 2 each, became pad8 `padstray`s, and
      * Bags' bmvq 23 at the "+" too). A controller press makes the game park its hidden cursor at the freelook point, where TapPad's
      * sink sits, and a tap that reaches the game in that moment lands there. Every one was sent a few ms after the A that asked for it,
@@ -197,6 +210,8 @@ class HomeRadialView(
         flow.holdOpen = !HomeSettings.radialTap; flow.pickA = HomeSettings.radialPickA       // the one radial behaviour (2026-10-09)
         flow.armMs = RadialModel.ARM_MS; flow.openAt = SystemClock.uptimeMillis(); stickWait = false; removeCallbacks(stickBack)
         openedAt = SystemClock.uptimeMillis(); closingFrom = -1f
+        leaveAt = 0L; leaveSlot = null
+        slot = homeSlot?.invoke(true)
         held = 0; lb = false; rb = false; seeded = false; openKeys = 0
         strip.homeLifted = true
         visibility = VISIBLE
@@ -301,18 +316,46 @@ class HomeRadialView(
         if (!isOpen) return
         reader?.stop(); reader = null
         guestTap(GuestPad.cells(questsPad(), GUEST, hold = false))
-        done()
+        shutting = true; done(); shutting = false
+        leaveAt = 0L; leaveSlot = null
     }
 
     private fun done() {
         if (openedAt != 0L) Log.i("WCLOG", "radial: close (src=$source, after ${SystemClock.uptimeMillis() - openedAt} ms, " +
             "drawn=${!firstFrame}, why=${Throwable().stackTrace.getOrNull(1)?.methodName})")
+        val shown = strip.homeLifted                       // the wheel itself on screen (not Bags' picker)
         picker?.close(); mode = Mode.WHEEL; choice = null; holdReset(); pinNote = null
         if (!stickWait && (freeTry == 0 || freed)) { reader?.stop(); reader = null }
         openedAt = 0L; closingFrom = -1f; hubPressAt = 0L
+        val was = slot; slot = null
+        if (was != null) homeSlot?.invoke(false)
+        // f-radial-middle: from Home's slot the wheel slides back DOWN into the bar as the columns close over its place; input is
+        // already Home's (the controller let go above), only the picture rides it out
+        if (was != null && shown && !shutting && isShown) { leaveSlot = was; leaveAt = SystemClock.uptimeMillis(); invalidate(); return }
         strip.homeLifted = false
         visibility = GONE
     }
+
+    /** the wheel's slide back down from Home's slot into the bar's disc, fading as it lands ([LEAVE_MS]) */
+    private fun drawLeave(c: Canvas) {
+        val s = leaveSlot ?: return
+        val p = ((SystemClock.uptimeMillis() - leaveAt) / LEAVE_MS).coerceIn(0f, 1f)
+        if (p >= 1f) { leaveSlot = null; leaveAt = 0L; strip.homeLifted = false; visibility = GONE; return }
+        if (p >= 0.7f && strip.homeLifted) strip.homeLifted = false          // the bar's own disc back under the landing wheel
+        val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        val (disc, size) = discHere()
+        val e = leaveCurve.getInterpolation(p)
+        val save = c.save()
+        c.translate(0f, (disc.y - s.centerY()) * e)
+        c.saveLayerAlpha(null, (255 * (1f - ((p - 0.5f) / 0.5f).coerceIn(0f, 1f))).toInt())
+        val plus = if (RadialModel.plusOn(doc) && flow.page == 0) UiKit.CR_PLUS else -1
+        UiKit.consumableRadial(c, screen, disc, size, itemsOf(RadialModel.slices(doc, flow.page)), flow.pointed, flow.page,
+            RadialModel.pages(doc), UiKit.CR_OPEN_MS, glyphs = flow.pickA, plusSlot = plus, slot = s)
+        c.restoreToCount(save)
+        postInvalidateOnAnimation()
+    }
+    private fun itemsOf(src: List<RadialModel.Item?>) =
+        src.map { it?.let { i -> UiKit.RadialItem(Icons.get(i.icon), i.name, i.count, pinned = i.pinned, ranOut = i.ranOut) } }
 
     /** the stick goes back only from neutral, or [RadialModel.STICK_BACK_MS] after the close (the user 2026-10-09; the pause wheel's rule) */
     private val mag = DoubleArray(2)
@@ -635,7 +678,7 @@ class HomeRadialView(
 
     private var firstFrame = false
     override fun onDraw(c: Canvas) {
-        if (!isOpen) return
+        if (!isOpen) { drawLeave(c); return }
         if (firstFrame) { firstFrame = false; Log.i("WCLOG", "radial: first frame (${width}x$height, src=$source, items=${doc?.items?.size ?: 0})") }
         val t = tNow()
         if (closingFrom >= 0f && t <= 0f) { done(); return }
@@ -646,7 +689,7 @@ class HomeRadialView(
         // the chooser shows page 1 as it is: pins AND the auto-filled items (b67, the user: "all of the slots show empty (doesnt show
         // what Items are currently there from the recommendeds)"). Only a PIN needs A held to replace; an auto-filled slice pins at once
         val src = RadialModel.slices(doc, if (choosing) 0 else flow.page)
-        val items = src.map { it?.let { i -> UiKit.RadialItem(Icons.get(i.icon), i.name, i.count, pinned = i.pinned, ranOut = i.ranOut) } }
+        val items = itemsOf(src)
         val hold = if (choosing) holdNow() else 0f
         val onAuto = choosing && flow.pointed in 0 until RadialModel.PER_PAGE && flow.pointed != RadialModel.PLUS &&
             src.getOrNull(flow.pointed)?.pinned == false
@@ -654,7 +697,7 @@ class HomeRadialView(
             UiKit.RadialChoice(Icons.get(it.icon), it.name, prompt = pinNote ?: if (onAuto) "Press ${Glyphs.name("a")} to pin it here" else null, hold = hold) }
         val plus = if (RadialModel.plusOn(doc) && (choosing || flow.page == 0)) UiKit.CR_PLUS else -1
         val moving = UiKit.consumableRadial(c, screen, disc, size, items, flow.pointed, if (choosing) 0 else flow.page,
-            if (choosing) 1 else RadialModel.pages(doc), t, glyphs = flow.pickA, plusSlot = plus, choose = ch, hubDown = hubDown())
+            if (choosing) 1 else RadialModel.pages(doc), t, glyphs = flow.pickA, plusSlot = plus, choose = ch, hubDown = hubDown(), slot = slot)
         // the secure row is not built yet (Spells r2's nopad): the items show, and the wheel says why none can be used
         if (doc?.noPad == true && t >= UiKit.CR_OPEN_MS * 0.7f) {
             UiKit.asBody(pNote)
@@ -677,8 +720,9 @@ class HomeRadialView(
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (!isOpen || closingFrom >= 0f || mode == Mode.PICK) return true
-        val slice = UiKit.consumableRadialHit(RectF(0f, 0f, width.toFloat(), height.toFloat()), e.x, e.y)
+        if (!isOpen) return false                                           // the slide back down takes no touch
+        if (closingFrom >= 0f || mode == Mode.PICK) return true
+        val slice = UiKit.consumableRadialHit(RectF(0f, 0f, width.toFloat(), height.toFloat()), e.x, e.y, slot)
         if (mode == Mode.CHOOSE) {
             // a finger: an empty slice pins at the touch; a pinned one is held down (the same 1 s as A); the hub goes back
             when (e.action) {
@@ -724,6 +768,8 @@ class HomeRadialView(
         const val FOLD_MS = 180f
         /** smoothness D: the open, played faster than the kit's CR_OPEN_MS (440) */
         const val OPEN_MS = 120f      // the user 2026-10-09: "WAAAAAAY faster" (was 300)
+        /** f-radial-middle: the slide back down from Home's slot, with Home's columns closing (Motion.MODULE_CLOSE) */
+        const val LEAVE_MS = 200f
         /** a stick held in the picker repeats its step: the first after this, then every [STICK_REPEAT_MS] */
         const val STICK_REPEAT_FIRST_MS = 350L
         const val STICK_REPEAT_MS = 130L
