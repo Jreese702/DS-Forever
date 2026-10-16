@@ -35,13 +35,15 @@ class SettingsTabsTest {
         assertTrue(SettingsTabs.viewBlocks(T.HOME).isEmpty())          // Home's section
         assertTrue(SettingsTabs.viewBlocks(T.TOP).isEmpty())           // the game's elements
         assertEquals(listOf(B.GAME), SettingsTabs.viewBlocks(T.SYSTEM))   // + the companion's status (GameUiSection)
-        assertEquals(listOf(B.CONTROLLER, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL), SettingsTabs.viewBlocks(T.CONTROLLER))
+        assertEquals(listOf(B.CONTROLLER, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT),
+            SettingsTabs.viewBlocks(T.CONTROLLER))
     }
 
     /** f-radial-settings: each wheel its own heading, naming the button that opens it, and its own open / pick pair */
     @Test fun eachWheelHasItsOwnCategory() {
-        for ((b, button) in listOf(B.PAUSE_WHEEL to "Start", B.ITEM_WHEEL to "D-pad Up")) assertTrue(b.heading, button in b.heading)
-        for (b in listOf(B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL)) {
+        for ((b, button) in listOf(B.PAUSE_WHEEL to "Start", B.ITEM_WHEEL to "D-pad Up", B.CLASS_LEFT to "LB + LT", B.CLASS_RIGHT to "RB + RT"))
+            assertTrue(b.heading, button in b.heading)
+        for (b in listOf(B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT)) {
             assertEquals(T.CONTROLLER, b.tab)
             assertEquals(2, b.rows.size)
             assertTrue(b.rows[0].endsWith(": open") && b.rows[1].endsWith(": pick"))
@@ -83,7 +85,7 @@ class SettingsPreviewRowsTest {
     }
 
     @Test fun twentyTwoRowsAndTheMovingOnes() {          // f-radial-settings: + the spell wheel's own pair
-        assertEquals(22, SettingsPreview.ROWS.size)
+        assertEquals(26, SettingsPreview.ROWS.size)
         assertTrue(SettingsPreview.animated("Swing timer") && SettingsPreview.animated("Frame limit") && !SettingsPreview.animated("Button glyphs"))
     }
 }

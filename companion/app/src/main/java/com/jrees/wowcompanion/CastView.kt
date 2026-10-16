@@ -628,8 +628,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             onButtons = { mask -> onButtons(mask) },
             onStick = { sec -> if (sec != stickSector) { stickSector = sec; invalidate() } },
             // b-class-radial-stick: Home's class layer is another view: it is told too (it was redrawn only at the open / close)
-            onStickVector = { st, x, y -> if (st == 1) { stickX = x; stickY = y
-                if (chordSide != ClassChord.NONE) { invalidate(); onClassStick?.invoke() } } },
+            onStickVector = { st, x, y -> if (st == 1) { stickX = x; stickY = y; classStick() } },
         )
         ready = true
         refreshSettings()
@@ -1091,9 +1090,31 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     var onPadButtons: ((held: Int) -> Unit)? = null
 
     /** PadInput: the D-pad / face buttons held, bit n = drawn position n; main thread, on change */
+    /** b-class-takeover: the right stick while the class wheel is open: the pointed slice follows; back in the middle = Tap + Release's
+     *  cast; a wheel already closed lets the controller go once the stick is back */
+    private fun classStick() {
+        if (chordSide == ClassChord.NONE) {
+            if (classHeld && ClassChord.stickDeg(stickX, stickY, CLASS_NEUTRAL) == null) { removeCallbacks(freeLater); freeLater.run() }
+            return
+        }
+        invalidate(); onClassStick?.invoke()
+        val p = pointedNow()
+        if (p >= 0) { classLastPointed = p; return }
+        if (ClassChord.stickDeg(stickX, stickY, CLASS_NEUTRAL) != null) return
+        val r = chordRadial()
+        val was = classLastPointed; classLastPointed = -1
+        if (was >= 0) classAct(classFlow.stickBack(::pickAOf, was), r)
+    }
+
     private fun onButtons(mask: Int) {
         onPadButtons?.invoke(mask)
         val down = mask and held.inv()
+        // b-class-takeover: A / B while the class wheel is open are the wheel's (the guest keeps them from the game)
+        if (chordSide != ClassChord.NONE && down != 0) {
+            val r = chordRadial()
+            if (PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) classAct(classFlow.b(), r)
+            else if (PadInput.isHeld(down, PadInput.SLOT_FACE_BOTTOM)) classAct(classFlow.a(::pickAOf, pointedNow()), r)
+        }
         if (down != 0) {
             val now = SystemClock.elapsedRealtime()
             for (pos in 0 until 8) if (down and (1 shl pos) != 0) { pressAtMs[pos] = now; predictCast(pos, now) }
@@ -2242,7 +2263,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     /** the class radial the held chord opens in the game right now (LB+LT the left, RB+RT the right; not while a window has the pad) */
     private fun chordRadial(): Radial? {
         val h = hud ?: return null
-        if (!barsUsable) return null
+        // a window owning the pad blocks the OPEN (noteClassRadial); once open the wheel holds the controller itself (b-class-takeover)
         return when (chordSide) { ClassChord.LEFT -> h.caL; ClassChord.RIGHT -> h.caR; else -> null }
     }
     /** Home's layer: the chord opened a radial (true) or closed it (false); main thread, on change */
@@ -2255,11 +2276,46 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     var onClassChordLog: ((String) -> Unit)? = null
     private var chordLogged = ClassChord.NONE
     /** the side the class radial opened on (ClassChord), latched while its chord is held */
-    private var chordSide = ClassChord.NONE
+    private val classFlow = ClassChord.Flow()
+    private val chordSide get() = classFlow.side
+    /** b-class-takeover: the app holds the controller for the class wheel (true) / lets it go (false); the host's guest "class" */
+    var onClassHold: ((Boolean) -> Unit)? = null
+    /** b-class-takeover: cast the class radial's cell [col] on the add-on's "classr" row (the host's tap) */
+    var onClassPick: ((Int) -> Unit)? = null
+    private var classHeld = false
+    private var classLastPointed = -1
+    private val freeLater = Runnable { if (classHeld && chordSide == ClassChord.NONE) { classHeld = false; onClassHold?.invoke(false) } }
+    private fun tapOf(side: Int) = if (side == ClassChord.LEFT) HomeSettings.classTapL else HomeSettings.classTapR
+    private fun pickAOf(side: Int) = if (side == ClassChord.LEFT) HomeSettings.classPickAL else HomeSettings.classPickAR
+    /** the open side's radial and the place the stick points at in it now */
+    private fun pointedNow(): Int = chordRadial()?.let { pointedPlace(it) } ?: -1
+    /** an act of the flow: a pick taps its cell (read before the close: [r] is the side's radial), then the open state follows */
+    private fun classAct(a: ClassChord.Flow.Act, r: Radial?) {
+        if (a is ClassChord.Flow.Act.Pick) {
+            val col = r?.cell?.getOrNull(a.place)
+            android.util.Log.i("WCLOG", "class radial: cast place ${a.place + 1} -> classr ${col ?: "none"}")
+            if (col != null) onClassPick?.invoke(col)
+        }
+        noteClassOpen()
+    }
+    /** the open state changed: Home's mirror, the controller's hold (its free waits for the stick to come back, as the item wheel's) */
+    private fun noteClassOpen() {
+        val open = chordRadial() != null
+        if (open != classOpen) { classOpen = open; onClassRadial?.invoke(open) }
+        removeCallbacks(freeLater)
+        if (open && !classHeld) { classHeld = true; onClassHold?.invoke(true) }
+        if (!open && classHeld) {
+            if (ClassChord.stickDeg(stickX, stickY, CLASS_NEUTRAL) == null) freeLater.run() else postDelayed(freeLater, CLASS_FREE_MS)
+        }
+        invalidate()
+    }
     private var classOpen = false
     private fun noteClassRadial() {
-        val blocked = overlayOpen?.invoke() == true
-        chordSide = ClassChord.latch(chordSide, padLt, padRt, padLb, padRb, blocked)
+        val blocked = overlayOpen?.invoke() == true || !barsUsable
+        val raw0 = ClassChord.side(padLt, padRt, padLb, padRb)
+        val r0 = chordRadial()
+        val act = classFlow.chord(if (raw0 != ClassChord.NONE && (if (raw0 == ClassChord.LEFT) hud?.caL else hud?.caR) == null &&
+            chordSide == ClassChord.NONE) ClassChord.NONE else raw0, blocked, ::tapOf, ::pickAOf, pointedNow())
         // the device log for the stick that turned the camera (the user, 1.0.9-test16): which chord, and what held the controller then
         val raw = ClassChord.side(padLt, padRt, padLb, padRb)
         if (raw != chordLogged) {
@@ -2267,8 +2323,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             if (raw != ClassChord.NONE) onClassChordLog?.invoke("chord ${if (raw == ClassChord.LEFT) "LB+LT" else "RB+RT"}: " +
                 (if (chordSide == raw) "opened" else "not opened") + " (blocked=$blocked barsUsable=$barsUsable radial=${chordRadial() != null})")
         }
-        val open = chordRadial() != null
-        if (open != classOpen) { classOpen = open; onClassRadial?.invoke(open) }
+        classAct(act, r0)
     }
     /** the scale that fits the radial (its base art 512 units; places to 168 + 157 / 2) into a [vw] x [vh] box */
     private fun fitScale(vw: Float, vh: Float) = min(vw, vh) / 520f
@@ -3170,6 +3225,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
 
     companion object {
+        /** b-class-takeover: the stick counts as back in the middle under this; a closed wheel lets the controller go then, or after [CLASS_FREE_MS] */
+        const val CLASS_NEUTRAL = 0.3f
+        const val CLASS_FREE_MS = 1_500L
         // layers: the four trigger layers carry state, the three shoulder layers do not
         private const val N = 0; private const val LT = 1; private const val RT = 2; private const val LR = 3
         private const val FR = 4; private const val HO = 5; private const val SC = 6
@@ -3549,6 +3607,56 @@ internal object ClassChord {
         if (kotlin.math.hypot(x, y) < dead) return null
         val a = Math.toDegrees(kotlin.math.atan2(x.toDouble(), (-y).toDouble()))
         return if (a < 0) a + 360.0 else a
+    }
+
+    /**
+     * b-class-takeover (1.0.9-test17, the user: "Stick still moves screen", with no holder of ours when the chord is held: the game's own
+     * class radial does not take the stick on this client; the user's pick: "our wheel taking over"): OUR wheel runs the class radial.
+     * While it is open the app holds the controller (the guest "class": the chord's buttons and Start kept from the game, the camera
+     * held still by Spells' stick catch), aims with the right stick, and casts the pointed slice itself through the "classr" row. Each
+     * side has its own open (Tap / Hold) and pick (A / Release) (Settings > Controller, f-radial-settings; the defaults Hold + Release
+     * are the game's own way: hold the chord, aim, let the chord go).
+     *   Hold + Release  open while the chord is held; letting it go casts the pointed slice (none pointed: nothing)
+     *   Hold + A        open while held; A casts the pointed slice and closes; letting the chord go closes
+     *   Tap + Release   the chord opens it and it STAYS; the stick going back to the middle casts what it pointed at
+     *   Tap + A         stays; A casts the pointed slice
+     * B closes, and in Tap the same chord again closes. One overlay at a time ([latch]'s rule): it opens only from nothing, never
+     * under another overlay, and a closed wheel waits for its chord to be let go before it can open again.
+     */
+    class Flow {
+        sealed class Act { object None : Act(); object Close : Act(); data class Pick(val place: Int) : Act() }
+        var side = NONE; private set
+        /** Tap: the chord was let go and the wheel stayed */
+        var latched = false; private set
+        private var needFree = false
+        private var lastRaw = NONE
+
+        /** the chord now ([raw]: [side]'s answer for the four buttons); [pointed] = the place the stick points at, -1 none */
+        fun chord(raw: Int, blocked: Boolean, tap: (Int) -> Boolean, pickA: (Int) -> Boolean, pointed: Int): Act {
+            lastRaw = raw
+            if (side == NONE) {
+                if (raw == NONE) needFree = false
+                if (!needFree && !blocked && raw != NONE) { side = raw; latched = false }
+                return Act.None
+            }
+            if (!latched) {
+                if (raw == side) return Act.None
+                if (tap(side)) { latched = true; return Act.None }
+                return end(if (!pickA(side) && pointed >= 0) Act.Pick(pointed) else Act.Close)
+            }
+            return if (raw == side) end(Act.Close) else Act.None
+        }
+        /** A pressed: casts the pointed slice where A picks */
+        fun a(pickA: (Int) -> Boolean, pointed: Int): Act =
+            if (side != NONE && pickA(side) && pointed >= 0) end(Act.Pick(pointed)) else Act.None
+        /** B pressed: closes */
+        fun b(): Act = if (side != NONE) end(Act.Close) else Act.None
+        /** the stick went back to the middle after pointing at [pointed]: Tap + Release casts it */
+        fun stickBack(pickA: (Int) -> Boolean, pointed: Int): Act =
+            if (side != NONE && latched && !pickA(side) && pointed >= 0) end(Act.Pick(pointed)) else Act.None
+        /** the app left the screen: shut, no cast */
+        fun reset() { side = NONE; latched = false; needFree = false }
+        private fun end(a: Act): Act { side = NONE; latched = false; needFree = lastRaw != NONE; return a }
     }
 
     fun latch(was: Int, lt: Boolean, rt: Boolean, lb: Boolean, rb: Boolean, blocked: Boolean): Int = when (was) {

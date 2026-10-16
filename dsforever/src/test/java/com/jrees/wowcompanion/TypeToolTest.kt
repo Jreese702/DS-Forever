@@ -68,7 +68,8 @@ class TypeToolTest {
     }
 
     @Test fun theToolHasItsOwnGuestAfterRadial() {
-        assertEquals(listOf("quests", "map", "settings", "chat", "bar", "home", "radial", "tool"), GuestPad.IDS)   // hold 22 / free 23
+        // b-class-takeover (Quests q44): "class" on the END (hold 24 / free 25); no earlier guest's columns move
+        assertEquals(listOf("quests", "map", "settings", "chat", "bar", "home", "radial", "tool", "class"), GuestPad.IDS)   // tool: hold 22 / free 23
     }
 }
 

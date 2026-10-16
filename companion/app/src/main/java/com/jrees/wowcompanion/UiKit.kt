@@ -4318,9 +4318,11 @@ object UiKit {
             // menu" text and buttons down to the bottom half of it and then the Dpad part on the bottom is its own full bar that slides up
             // to cover the rooms"): Home's controller stays; the title row in its lower half; the D-pad bar over the rooms' bar at the
             // bottom; the wheel centred between them
-            val bar = Strip.HEIGHT * screen.height() / 1080f
+            val bar = pauseBarH(screen)
             val dpadTop = screen.bottom - bar
-            val topY = screen.top + pauseBarsBottom * 0.75f
+            // the user on test17: "very slightly lowered down so that its not overlapping buttons and there is space between them": the
+            // row just above the controller's bottom edge (2 px in), clear of its buttons, still above the wheel
+            val topY = screen.top + pauseBarsBottom - (P_TOP_H / 2f + 2f) * k
             val above = screen.top + pauseBarsBottom
             // the user: "make the full radial wheel about 20% bigger in the pause screen to fill the blank space": up to 1.2 x the old
             // 1.3, as large as fits between the controller and the D-pad bar (the rim 236 units, a 6 px margin each side)
@@ -4349,6 +4351,14 @@ object UiKit {
      * every open); 0 = another room: the slim top row at the screen's top as before. Either way the D-pad is its own bar at the bottom
      */
     @JvmField var pauseBarsBottom = 0f
+    /**
+     * the rooms' bar's top in the pause view's px, MEASURED by the host on each open (the user on test17: "When using the radial the rooms
+     * bar clips visually in the background": the D-pad bar was Strip.HEIGHT tall, the bar on the device is not); 0 = not known
+     */
+    @JvmField var pauseStripTop = 0f
+    /** the D-pad bar's height: down from the rooms' bar's top (2 px over it, so no edge of it peeks), else Strip.HEIGHT */
+    private fun pauseBarH(screen: RectF): Float =
+        if (pauseStripTop > screen.top && pauseStripTop < screen.bottom) screen.bottom - pauseStripTop + 2f else Strip.HEIGHT * screen.height() / 1080f
 
     /** the Home disc in the wheel's middle, game units (the user: "the disk needs to be larger"): the centre hole, the inner ring clear */
     private const val PAUSE_DISC_U = 168f
@@ -4637,7 +4647,7 @@ object UiKit {
      */
     private fun pauseDpadBar(c: Canvas, screen: RectF, g: PauseGeo, t: Float, held: Int, up: String?, down: String?,
                              left: String?, right: String?) {
-        val bar = Strip.HEIGHT * screen.height() / 1080f
+        val bar = pauseBarH(screen)
         val e = crEaseOut(pSpan(t, 40f, 260f))
         if (e <= 0f) return
         val top = screen.bottom - bar * e

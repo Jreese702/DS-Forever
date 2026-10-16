@@ -205,3 +205,54 @@ class ClassRadialSlotsTest {
         assertEquals(0.0, ClassChord.stickDeg(0f, -1f)!!, 0.001)    // up
     }
 }
+
+/** b-class-takeover: our class wheel's open / pick per side (the defaults: the game's hold the chord, aim, let go) */
+class ClassWheelFlowTest {
+    private val L = ClassChord.LEFT; private val R = ClassChord.RIGHT; private val N = ClassChord.NONE
+    private val no: (Int) -> Boolean = { false }
+    private val yes: (Int) -> Boolean = { true }
+    private fun open(f: ClassChord.Flow, side: Int, tap: (Int) -> Boolean = no, pickA: (Int) -> Boolean = no) =
+        f.chord(side, false, tap, pickA, -1)
+    @Test fun holdReleaseCastsWhatTheStickPointsAtOnLettingGo() {
+        val f = ClassChord.Flow(); open(f, L)
+        assertEquals(L, f.side)
+        assertEquals(ClassChord.Flow.Act.Pick(2), f.chord(N, false, no, no, 2))
+        assertEquals(N, f.side)
+    }
+    @Test fun holdReleaseWithNothingPointedJustCloses() {
+        val f = ClassChord.Flow(); open(f, R)
+        assertEquals(ClassChord.Flow.Act.Close, f.chord(N, false, no, no, -1))
+    }
+    @Test fun holdAPicksWithAAndLettingGoOnlyCloses() {
+        val f = ClassChord.Flow(); open(f, L, pickA = yes)
+        assertEquals(ClassChord.Flow.Act.Pick(1), f.a(yes, 1))
+        assertEquals(N, f.side)
+        val g = ClassChord.Flow(); open(g, L, pickA = yes)
+        assertEquals(ClassChord.Flow.Act.Close, g.chord(N, false, no, yes, 3))
+    }
+    @Test fun tapStaysOpenAndTheStickComingBackCasts() {
+        val f = ClassChord.Flow(); open(f, L, tap = yes)
+        assertEquals(ClassChord.Flow.Act.None, f.chord(N, false, yes, no, 0))
+        assertEquals(L, f.side); assertTrue(f.latched)
+        assertEquals(ClassChord.Flow.Act.Pick(0), f.stickBack(no, 0))
+        assertEquals(N, f.side)
+    }
+    @Test fun tapClosesWithBOrTheSameChordAgain() {
+        val f = ClassChord.Flow(); open(f, R, tap = yes); f.chord(N, false, yes, no, -1)
+        assertEquals(ClassChord.Flow.Act.Close, f.b())
+        val g = ClassChord.Flow(); open(g, R, tap = yes); g.chord(N, false, yes, no, -1)
+        assertEquals(ClassChord.Flow.Act.Close, g.chord(R, false, yes, no, -1))
+        // still held after that close: it does not open again until the chord is let go
+        assertEquals(N, g.chord(R, false, yes, no, -1).let { g.side })
+        g.chord(N, false, yes, no, -1); g.chord(R, false, yes, no, -1)
+        assertEquals(R, g.side)
+    }
+    @Test fun oneOverlayAtATime() {
+        val f = ClassChord.Flow()
+        f.chord(L, true, no, no, -1)
+        assertEquals(N, f.side)                                   // under another overlay: nothing
+        f.chord(N, false, no, no, -1); open(f, L)
+        f.chord(R, false, no, no, -1)                            // the other chord alone: the left one let go -> closed, never the right
+        assertEquals(N, f.side)
+    }
+}

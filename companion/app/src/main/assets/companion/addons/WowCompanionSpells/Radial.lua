@@ -18,7 +18,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local RV = "r12"                -- bump on every change
+local RV = "r13"                -- bump on every change
 local ROW, CELLS = "radial", 24 -- the secure pad row: 24 cells = 3 pages of 8
 local PLAYER_BAGS = { 0, 1, 2, 3, 4 }
 local QUARANTINE = 30           -- seconds a freed column stays unused (as the pad's own columns)
@@ -454,7 +454,8 @@ stickSync = function()
     local holder = holderNow()
     if holder == GUEST_HOLDER then armedAt = nil end              -- the hold has come: the arm has done its job
     local armed = armedAt ~= nil and holder == nil and (GetTime() - armedAt) < ARM_S
-    local want = (holder == GUEST_HOLDER or armed) and stickOn
+    -- r13 (b-class-takeover, Quests q44): the app's CLASS wheel's guest holds the camera still the same way while it aims
+    local want = (holder == GUEST_HOLDER or holder == "pad:class" or armed) and stickOn
     if want ~= (catch:IsShown() and true or false) then
         if want then catch:Show() else catch:Hide() end
         -- r6 (the user, b65: "A sometimes doesn't use it" -- MEASURED: after an app restart every wheel had 0 items, because this doc is

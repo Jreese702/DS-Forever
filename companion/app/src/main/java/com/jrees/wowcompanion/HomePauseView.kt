@@ -96,6 +96,12 @@ class HomePauseView(
     fun open(fromT: Float = 0f, byStart: Boolean = true) {
         if (isOpen) return
         UiKit.pauseBarsBottom = barsBottom?.invoke() ?: 0f                  // f-pause-bars: over Home, its controller stays
+        // the rooms' bar's top here (at rest: the bar no longer drops), for the D-pad bar that covers it whole
+        UiKit.pauseStripTop = run {
+            val a = IntArray(2); val b = IntArray(2)
+            strip.getLocationOnScreen(a); getLocationOnScreen(b)
+            if (strip.height > 0) (a[1] - b[1]).toFloat() - strip.translationY else 0f
+        }
         openByStart = byStart
         LatLog.mark("wheel", "pause open")
         flow.reset(); flow.holdOpen = !HomeSettings.pauseTap; flow.pickA = HomeSettings.pausePickA      // its own pair (the user, 2026-10-09)

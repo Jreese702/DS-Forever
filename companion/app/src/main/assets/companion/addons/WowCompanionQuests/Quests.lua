@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q43"    -- bump on every change; the app shows it, so a stale build is visible
+local QV = "q44"    -- bump on every change; the app shows it, so a stale build is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1678,7 +1678,10 @@ local ACTS = {
 -- window) answers ok and WAITS; the capture grants it once the holder lets go (in a fight as the pending ENTER). So ANY ok take
 -- that does not hold yet is pending here, in or out of a fight, and turns into held when the capture names us (or at our first
 -- press: only the holder gets presses). A newer waiter wins: we are told lost("taken") and the room is no longer wanted.
-local GUESTS = { "quests", "map", "settings", "chat", "bar", "home", "radial", "tool" }   -- home: Home's buff / debuff list (the user, 2026-09-30)
+local GUESTS = { "quests", "map", "settings", "chat", "bar", "home", "radial", "tool", "class" }
+-- class (q44, b-class-takeover; the user, 1.0.9-test17: "Stick still moves screen", the game's own class radial not taking the stick):
+-- the app's class wheel holds the controller while it shows (hold 24 / free 25): the chord's buttons and Start kept from the game,
+-- the camera held still by Spells' stick catch (Radial.lua r13), the cast through ActionBar's "classr" row   -- home: Home's buff / debuff list (the user, 2026-09-30)
 -- tool (the user, 2026-10-16: "instead of A and X as left and right click, can we use ZL and ZR"): Home's Track Pad & Keyboard, its own
 -- guest (hold 22 / free 23) so ITS extras can keep ZL / ZR (the clicks) from the game without Home's other modules taking them
 -- radial (q15, 2026-10-06): the user's consumables radial (Home's D-pad up, the signed bronze wheel v4); hold 20 / free 21
@@ -1710,6 +1713,8 @@ local EXTRA = {
     radial = { "PADLSHOULDER", "PADRSHOULDER", "PADFORWARD" },
     -- the Track Pad & Keyboard: LB / RB its tabs, ZL / ZR the left / right click (never a game action while the tool holds)
     tool = { "PADLSHOULDER", "PADRSHOULDER", "PADLTRIGGER", "PADRTRIGGER", "PADFORWARD" },
+    -- q44: the class wheel (the chord itself, and Start, never reach the game while the app's wheel holds)
+    class = { "PADLSHOULDER", "PADRSHOULDER", "PADLTRIGGER", "PADRTRIGGER", "PADFORWARD" },
 }
 -- B FREES IN-GAME (q17): the guests whose B, while their bnext is "home", lets go of the controller right here (see leaveInGame)
 local BFREE = { radial = true }

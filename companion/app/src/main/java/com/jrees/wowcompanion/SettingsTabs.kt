@@ -27,6 +27,8 @@ object SettingsTabs {
         PAUSE_WHEEL(Tab.CONTROLLER, "Pause menu (Start)", listOf("Pause menu: open", "Pause menu: pick")),
         ITEM_WHEEL(Tab.CONTROLLER, "Item wheel (D-pad Up)", listOf("Item wheel: open", "Item wheel: pick")),
         SPELL_WHEEL(Tab.CONTROLLER, "Spell wheel (its button in Controller)", listOf("Spell wheel: open", "Spell wheel: pick")),
+        CLASS_LEFT(Tab.CONTROLLER, "Left class radial (LB + LT)", listOf("Left class radial: open", "Left class radial: pick")),
+        CLASS_RIGHT(Tab.CONTROLLER, "Right class radial (RB + RT)", listOf("Right class radial: open", "Right class radial: pick")),
         GAME_UI(Tab.TOP, "Game UI on the top screen", listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window",
             "NPC windows", "Cast bar", "Loot window")),
         MAP(Tab.ROOMS, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors")),
@@ -40,6 +42,7 @@ object SettingsTabs {
 
     /** the blocks SettingsView draws itself (the others are Home's section and the two GameUiSection parts) */
     val VIEW_BLOCKS = setOf(Block.GAME, Block.MAP, Block.INDOOR, Block.CONTROLLER, Block.PAUSE_WHEEL, Block.ITEM_WHEEL, Block.SPELL_WHEEL,
+        Block.CLASS_LEFT, Block.CLASS_RIGHT,
         Block.CHAT, Block.FRAMES)
 
     fun blocks(tab: Tab): List<Block> = Block.values().filter { it.tab == tab }

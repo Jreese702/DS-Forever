@@ -105,6 +105,24 @@ object HomeSettings {
             for (l in listeners) l()
         }
 
+    /**
+     * f-radial-settings / b-class-takeover (the user: "add radial settings for the left and right class radials like we have for the other
+     * ones"): each class radial's open (Tap = the chord opens it and it stays; Hold = open while the chord is held) and pick (A; Release =
+     * letting go picks). Defaults Hold + Release: the game's own way (hold the chord, aim, let go). L = LB + LT, R = RB + RT.
+     */
+    var classTapL: Boolean
+        get() = prefs?.getBoolean("classTapL", false) ?: false
+        set(v) { if (v != classTapL) { prefs?.edit()?.putBoolean("classTapL", v)?.apply(); for (l in listeners) l() } }
+    var classPickAL: Boolean
+        get() = prefs?.getBoolean("classPickAL", false) ?: false
+        set(v) { if (v != classPickAL) { prefs?.edit()?.putBoolean("classPickAL", v)?.apply(); for (l in listeners) l() } }
+    var classTapR: Boolean
+        get() = prefs?.getBoolean("classTapR", false) ?: false
+        set(v) { if (v != classTapR) { prefs?.edit()?.putBoolean("classTapR", v)?.apply(); for (l in listeners) l() } }
+    var classPickAR: Boolean
+        get() = prefs?.getBoolean("classPickAR", false) ?: false
+        set(v) { if (v != classPickAR) { prefs?.edit()?.putBoolean("classPickAR", v)?.apply(); for (l in listeners) l() } }
+
     var pauseTap: Boolean
         get() = prefs?.getBoolean(KEY_PAUSE_TAP, true) ?: true
         set(v) {
