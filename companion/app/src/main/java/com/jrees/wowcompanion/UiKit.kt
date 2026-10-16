@@ -4327,7 +4327,9 @@ object UiKit {
             // the user: "make the full radial wheel about 20% bigger in the pause screen to fill the blank space": up to 1.2 x the old
             // 1.3, as large as fits between the controller and the D-pad bar (the rim 236 units, a 6 px margin each side)
             val s = minOf(1.3f * 1.2f * k, (dpadTop - above - 12f * k) / 472f)
-            return PauseGeo(k, s, screen.centerX(), (above + dpadTop) / 2f, topY, screen.bottom - bar / 2f)
+            // the user on test18: "The options wheel needs to be moved up very slightly": 8 px up (the title band's art ends ~11 px over
+            // its box, so the rim stays clear of it)
+            return PauseGeo(k, s, screen.centerX(), (above + dpadTop) / 2f - 8f * k, topY, screen.bottom - bar / 2f)
         }
         run {
             // f-pause-art (the user: "the top main menu with L/R tabs and bottom dpad sections give up WAY too much screen real
