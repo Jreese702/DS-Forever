@@ -297,11 +297,17 @@ class HomeView(
     private var typeWanted = false
     private val typeTool: TypeToolView by lazy { TypeToolView(context) { closeTypeTool() } }
     fun openTypeTool() {
-        Log.i(TAG, "type tool: open${if (typeWanted) " (already)" else ""}")
+        Log.i(TAG, "type tool: open${if (typeWanted) " (already)" else ""} sink=${if (InputSink.sink != null) "ok" else "none"}")
         if (typeWanted) return
         if (typeTool.parent == null) addView(typeTool)
         typeWanted = true
         typeTool.visibility = View.VISIBLE
+        // f-trackpad-keyboard rework (the user on test9: "the map border map name and quest tracker thing is all in the way. Also the
+        // track pad is not working"): the quest card lies at translationZ 2 and the class wheel lifts the chat, so bringToFront alone
+        // left them OVER the tool (drawn and touched first); the tool now lies above every module, no shadow, and Home's own
+        // paints after the children (the map's well, the zone band, the clock) and its bars touch-intercept stand aside while it is open
+        typeTool.outlineProvider = null
+        typeTool.translationZ = TYPE_Z
         typeTool.bringToFront()
         typeTool.open()
         requestLayout()
@@ -311,6 +317,8 @@ class HomeView(
         if (!typeWanted) return
         typeWanted = false
         typeTool.visibility = View.GONE
+        invalidate()                                                      // the map's well and the zone band come back
+        Log.i(TAG, "type tool: close")
         if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))) Log.i(TAG, "type tool: free")
         onBHome?.invoke()
     }
@@ -1234,7 +1242,7 @@ class HomeView(
 
     override fun dispatchDraw(c: Canvas) {
         super.dispatchDraw(c)
-        if (shown == null) return
+        if (shown == null || typeWanted) return                          // f-trackpad-keyboard: the tool is a clean page
         // the zone band and the clock FADE with a move (the harmony pass; they used to vanish at a move's start and pop back at
         // its end), drawn where their part is now (and, while the pause menu slides, where the map / the band have gone)
         val zoneA = mix(overlayFrom.zone, overlayTo.zone) * pauseMap[2]
@@ -1277,6 +1285,8 @@ class HomeView(
 
     private var barsDown = false
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
+        // f-trackpad-keyboard: the tool's touches are the tool's (a drag starting where the bars lie was taken as a tap on the bars)
+        if (typeWanted) { barsDown = false; return false }
         if (flow.full == HomeModule.BARS || barsSlot.visibility != View.VISIBLE) return false
         if (e.actionMasked == MotionEvent.ACTION_DOWN) barsDown = inBars(e)
         return barsDown
@@ -2097,6 +2107,8 @@ class HomeView(
         fun cardOverMap(): Boolean = HomeSettings.questOverMap
         /** logcat tag for Home's taps and refusals (`adb logcat -s WCHOME`) */
         const val TAG = "WCHOME"
+        /** f-trackpad-keyboard: the tool's lift, above the quest card (2) and the class wheel's cover */
+        private const val TYPE_Z = 50f
         /** B's give-back is retried once after this when the faces are still armed (the bar cursor's hold retry, the same reason) */
         const val GIVEBACK_RETRY_MS = 450L
         const val NOTE_MS = 2500L

@@ -68,7 +68,7 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
         showTab(0)
     }
 
-    fun open() { typed = ""; lastN = -1; kb.open(); showTab(tab); invalidate() }
+    fun open() { typed = ""; lastN = -1; kb.open(); showTab(tab); invalidate(); if (tab == 0) InputSink.gameCentre() }
 
     private fun showTab(t: Int) {
         tab = t
@@ -125,6 +125,7 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
     private inner class Pad(c: Context) : View(c) {
         private var lastX = 0f; private var lastY = 0f; private var downX = 0f; private var downY = 0f
         private var downAt = 0L; private var onButton = -1; private var accX = 0f; private var accY = 0f
+        private var moves = 0; private var sumX = 0; private var sumY = 0
         private fun well() = RectF(40f, 70f, width - 40f, height - 170f)
         private fun button(i: Int): RectF { val w = (width - 100f) / 2f; val l = 40f + i * (w + 20f); return RectF(l, height - 150f, l + w, height - 40f) }
         override fun onDraw(c: Canvas) {
@@ -140,15 +141,17 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
                 MotionEvent.ACTION_DOWN -> {
                     onButton = (0..1).firstOrNull { button(it).contains(e.x, e.y) } ?: -1
                     lastX = e.x; lastY = e.y; downX = e.x; downY = e.y; downAt = SystemClock.uptimeMillis(); accX = 0f; accY = 0f
+                    moves = 0; sumX = 0; sumY = 0
                     invalidate()
                 }
                 MotionEvent.ACTION_MOVE -> if (onButton < 0) {
                     accX += (e.x - lastX) * SPEED; accY += (e.y - lastY) * SPEED
                     lastX = e.x; lastY = e.y
                     val dx = accX.toInt(); val dy = accY.toInt()
-                    if (dx != 0 || dy != 0) { InputSink.gameMove(dx, dy); accX -= dx; accY -= dy }
+                    if (dx != 0 || dy != 0) { InputSink.gameMove(dx, dy); accX -= dx; accY -= dy; moves++; sumX += dx; sumY += dy }
                 }
                 MotionEvent.ACTION_UP -> {
+                    if (moves > 0) InputSink.dragNote(moves, sumX, sumY)
                     val b = onButton; onButton = -1
                     if (b >= 0 && button(b).contains(e.x, e.y)) InputSink.gameClick(right = b == 1)
                     else if (b < 0 && SystemClock.uptimeMillis() - downAt < TAP_MS && hypot(e.x - downX, e.y - downY) < TAP_SLOP) InputSink.gameClick(right = false)
