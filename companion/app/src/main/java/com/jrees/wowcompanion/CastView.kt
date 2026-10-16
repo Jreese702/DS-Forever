@@ -1595,8 +1595,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         drawLegend(c, h)
         // the class-only radial while LB+LT or RB+RT is held (Blizzard camelot; not while a window has the pad)
         if (!drawCollapsed) {
-            val left = padLb && padLt
-            val rad = when { left -> h.caL; padRb && padRt -> h.caR; else -> null }
+            val left = chordSide == ClassChord.LEFT                          // b-radial-exclusive: the latched side only
+            val rad = when { left -> h.caL; chordSide == ClassChord.RIGHT -> h.caR; else -> null }
             if (rad != null) drawRadial(c, rad, ox + (if (left) -75f else 70f) * k, oy, width.toFloat(), height.toFloat())
         }
 
@@ -2225,12 +2225,17 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private fun chordRadial(): Radial? {
         val h = hud ?: return null
         if (!barsUsable) return null
-        return when (ClassChord.side(padLt, padRt, padLb, padRb)) { ClassChord.LEFT -> h.caL; ClassChord.RIGHT -> h.caR; else -> null }
+        return when (chordSide) { ClassChord.LEFT -> h.caL; ClassChord.RIGHT -> h.caR; else -> null }
     }
     /** Home's layer: the chord opened a radial (true) or closed it (false); main thread, on change */
     var onClassRadial: ((Boolean) -> Unit)? = null
+    /** b-radial-exclusive: another overlay is up (the host's list): no class radial opens ([ClassChord.latch]) */
+    var overlayOpen: (() -> Boolean)? = null
+    /** the side the class radial opened on (ClassChord), latched while its chord is held */
+    private var chordSide = ClassChord.NONE
     private var classOpen = false
     private fun noteClassRadial() {
+        chordSide = ClassChord.latch(chordSide, padLt, padRt, padLb, padRb, overlayOpen?.invoke() == true)
         val open = chordRadial() != null
         if (open != classOpen) { classOpen = open; onClassRadial?.invoke(open) }
     }
@@ -2255,7 +2260,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     /** the class radial last drawn by [drawClassRadial] (for its slide-back after the chord is let go) */
     private var lastClassRadial: Radial? = null
     /** the chord's side now: true = LB + LT (the left radial), false = RB + RT */
-    fun classRadialLeft(): Boolean = ClassChord.side(padLt, padRt, padLb, padRb) != ClassChord.RIGHT
+    fun classRadialLeft(): Boolean = chordSide != ClassChord.RIGHT
     /** the place under ([x], [y]) in that canvas: 0..7, or -1 (none, or an empty place) */
     fun classRadialHit(x: Float, y: Float, vw: Float, vh: Float): Int {
         val r = chordRadial() ?: return -1
@@ -3486,6 +3491,19 @@ internal object ClassChord {
         lb && lt -> LEFT
         rb && rt -> RIGHT
         else -> NONE
+    }
+
+    /**
+     * b-radial-exclusive (1.0.9, the user: "if I use a class radial while the other one is open, they get weird and overlap. I think that
+     * while another overlay is open, a player should not be able to acutally open the class radials"): ONE OVERLAY AT A TIME. The side
+     * open [was] stays while its own chord is held, whatever the other side does (the other chord never takes over or opens beside it);
+     * once let go, a side opens only from nothing and only when no other overlay is up ([blocked]: the item / spell wheel, the pause
+     * menu, the Keyboard & Trackpad, the new-spell prompt, a Home module full screen, a dialog / window).
+     */
+    fun latch(was: Int, lt: Boolean, rt: Boolean, lb: Boolean, rb: Boolean, blocked: Boolean): Int = when (was) {
+        LEFT -> if (lb && lt) LEFT else NONE
+        RIGHT -> if (rb && rt) RIGHT else NONE
+        else -> if (blocked) NONE else side(lt, rt, lb, rb)
     }
 
     /**

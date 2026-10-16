@@ -160,3 +160,23 @@ class ClassSlotTest {
         assertTrue(m.side <= chat.right - chat.left + 0.5f)
     }
 }
+
+/** b-radial-exclusive: one overlay at a time - a class radial never opens beside another, nor under any other overlay */
+class ClassChordExclusiveTest {
+    private val L = ClassChord.LEFT; private val R = ClassChord.RIGHT; private val N = ClassChord.NONE
+    @Test fun theOtherChordNeverOpensBesideAnOpenRadial() {
+        // LB + LT open, then RB + RT pressed too: the left stays, the right never shows
+        assertEquals(L, ClassChord.latch(N, lt = true, rt = false, lb = true, rb = false, blocked = false))
+        assertEquals(L, ClassChord.latch(L, lt = true, rt = true, lb = true, rb = true, blocked = false))
+        // the right open, then the left chord too: the right stays
+        assertEquals(R, ClassChord.latch(R, lt = true, rt = true, lb = true, rb = true, blocked = false))
+    }
+    @Test fun lettingGoClosesItAndTheOtherNeedsAFreshStart() {
+        assertEquals(N, ClassChord.latch(L, lt = false, rt = true, lb = true, rb = true, blocked = false))
+        assertEquals(R, ClassChord.latch(N, lt = false, rt = true, lb = false, rb = true, blocked = false))
+    }
+    @Test fun noClassRadialOpensUnderAnotherOverlay() {
+        assertEquals(N, ClassChord.latch(N, lt = true, rt = false, lb = true, rb = false, blocked = true))
+        assertEquals(N, ClassChord.latch(N, lt = false, rt = true, lb = false, rb = true, blocked = true))
+    }
+}

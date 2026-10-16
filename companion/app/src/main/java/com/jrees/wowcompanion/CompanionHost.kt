@@ -722,6 +722,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         radialView.underRedraw = { homeView.wheelRedraw() }
+        // b-radial-exclusive (1.0.9, the user: "while another overlay is open, a player should not be able to acutally open the class
+        // radials"): one overlay at a time
+        castView.overlayOpen = {
+            radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || homeView.toolWanted() ||
+                setupView.visibility == View.VISIBLE || loginPrompt.isOpen || barSelect.open ||
+                (::dialogView.isInitialized && dialogView.visibility == View.VISIBLE) ||
+                (::interactView.isInitialized && interactView.visibility == View.VISIBLE) || spellsOverlay.visibility == View.VISIBLE ||
+                (room == Room.HOME && homeView.flow.screen.full.let { it == HomeModule.CHAT || it == HomeModule.MAP })
+        }
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pauseView.onSlide = { t -> pauseSlideAll(t) }
         // the open's REVERSE after the wheel has gone (the user 2026-10-09: "it needs to have a reverse animation for when the B button

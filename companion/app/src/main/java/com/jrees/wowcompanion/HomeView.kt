@@ -270,13 +270,9 @@ class HomeView(
     private var bWasHeld = false
     private fun watchB(on: Boolean) {
         if (!on) { bReader?.stop(); if (classHint != null) { classHint = null; classLayerShow(false) }; return }
-        // f-class-radial: Home's own reader (a chat / map module holds the controller): the game's class radial cannot open; say so
-        val p = bReader ?: PadInput({ lt, rt, lb, rb ->
-            val left = lb && lt; val right = rb && rt
-            val hint = if ((left && castView.hasClassRadial(true)) || (right && castView.hasClassRadial(false)))
-                "Close the ${if (flow.full == HomeModule.MAP) "map" else "chat"} to use the class radial (${Glyphs.name("b")})" else null
-            if (hint != classHint) { classHint = hint; classLayerShow(hint != null) }
-        }, { _, _ -> }, { held -> onPadHeld(held) }).also { bReader = it }
+        // Home's own reader (a chat / map module holds the controller). b-radial-exclusive (1.0.9, the user: one overlay at a time): the
+        // class chord does nothing here - no wheel and no "close the chat" note over the page
+        val p = bReader ?: PadInput({ _, _, _, _ -> }, { _, _ -> }, { held -> onPadHeld(held) }).also { bReader = it }
         p.start()
     }
 
