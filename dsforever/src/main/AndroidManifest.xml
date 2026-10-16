@@ -7,5 +7,15 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!-- The safe close before an install (SafeCloseReceiver.kt): the game's own Exit Game, so it writes its saved state. DUMP is held by
+             the system and the adb shell, never by a normal app: only an install step (adb) can ask it -->
+        <receiver
+            android:name="com.jrees.wowcompanion.SafeCloseReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="app.dsforever.SAFE_CLOSE" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
