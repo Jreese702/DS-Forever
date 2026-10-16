@@ -994,6 +994,9 @@ function WC.collectMap()
                     name = S(function() return n.name end),
                     x = nx, y = ny,
                     state = SN(function() return n.state end),
+                    -- probe (b-route-transports, 2026-10-16): does the game mark a boat / zeppelin / tram node? (read only)
+                    kit = S(function() return n.textureKit end),
+                    sp = SN(function() return n.useSpecialIcon and 1 or 0 end),
                 }
             end
         end
@@ -1011,6 +1014,24 @@ function WC.collectMap()
                 row.y = SN(function() return pos.y end)
             end
             out.vignettes[#out.vignettes + 1] = row
+        end
+    end
+
+    -- probe (b-route-transports; the user, 2026-10-16: "Read them from the game"): the map's links to other maps
+    -- (C_Map.GetMapLinksForMap, in this client's binary; boats / zeppelins / the tram are expected here if anywhere).
+    -- Reads only; at most 20 rows; a missing API leaves links absent.
+    local okl, ls = CALL(function() return C_Map.GetMapLinksForMap(id) end)
+    if okl and type(ls) == "table" then
+        out.links = {}
+        for _, l in ipairs(ls) do
+            if #out.links >= 20 then break end
+            out.links[#out.links + 1] = {
+                name = S(function() return l.name end),
+                atlas = S(function() return l.atlasName end),
+                to = SN(function() return l.linkedUiMapID end),
+                x = SN(function() return l.position and l.position.x end),
+                y = SN(function() return l.position and l.position.y end),
+            }
         end
     end
 
