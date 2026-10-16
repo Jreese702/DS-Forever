@@ -86,6 +86,25 @@ object HomeSettings {
      * Open defaults Tap): [pauseTap] true = Start opens it and it stays, false = held while Start is held; [pausePickA] true = A picks,
      * false = letting the stick go picks. [radialTap] / [radialPickA] stay the item & spell wheels' pair. App-wide, as those.
      */
+    /**
+     * f-radial-settings (1.0.9, the user: "better organize each radial setting into categories"): THE SPELL WHEEL'S OWN PAIR, apart from
+     * the item wheel's ([radialTap] / [radialPickA], D-pad Up). Until set it follows the item wheel's (they were one pair before).
+     */
+    var spellTap: Boolean
+        get() = prefs?.getBoolean(KEY_SPELL_TAP, radialTap) ?: radialTap
+        set(v) {
+            if (prefs?.contains(KEY_SPELL_TAP) == true && v == spellTap) return
+            prefs?.edit()?.putBoolean(KEY_SPELL_TAP, v)?.apply()
+            for (l in listeners) l()
+        }
+    var spellPickA: Boolean
+        get() = prefs?.getBoolean(KEY_SPELL_PICK, radialPickA) ?: radialPickA
+        set(v) {
+            if (prefs?.contains(KEY_SPELL_PICK) == true && v == spellPickA) return
+            prefs?.edit()?.putBoolean(KEY_SPELL_PICK, v)?.apply()
+            for (l in listeners) l()
+        }
+
     var pauseTap: Boolean
         get() = prefs?.getBoolean(KEY_PAUSE_TAP, true) ?: true
         set(v) {
@@ -134,6 +153,8 @@ object HomeSettings {
     private const val KEY_PAUSE_PICK = "pausePickA"
     private const val KEY_PICK = "radialPickA"
     private const val KEY_RADIAL = "radialTap"
+    private const val KEY_SPELL_TAP = "spellTap"
+    private const val KEY_SPELL_PICK = "spellPickA"
 }
 
 /**

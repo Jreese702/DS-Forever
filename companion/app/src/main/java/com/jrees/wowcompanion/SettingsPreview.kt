@@ -29,6 +29,7 @@ object SettingsPreview {
         val startAttack: Boolean? = null, val toolbar: Boolean? = null,
         val abxyNintendo: Boolean = true, val glyphSet: Int = 0,
         val pauseTap: Boolean = true, val pausePickA: Boolean = true, val radialTap: Boolean = true, val radialPickA: Boolean = true,
+        val spellTap: Boolean = true, val spellPickA: Boolean = true,
         val miniOutYd: Int = 80, val miniInYd: Int = 60, val quickChat: Boolean = true,
         val fpsLimit: Int = 40, val frameGen: Boolean = false, val multiplier: Int = 2, val flow: Float = 0.8f, val indoorBuild: Boolean = true,
     )
@@ -41,7 +42,8 @@ object SettingsPreview {
         "Controller on Home" to false, "Combat layout" to true, "Swing timer" to true, "Focused quest" to false,
         "Start the attack when a spell is cast" to true, "DS WoW toolbar" to false,
         "ABXY location" to true, "Button glyphs" to false,
-        "Pause wheel: open" to true, "Pause wheel: pick" to true, "Item & spell wheels: open" to true, "Item & spell wheels: pick" to true,
+        "Pause menu: open" to true, "Pause menu: pick" to true, "Item wheel: open" to true, "Item wheel: pick" to true,
+        "Spell wheel: open" to true, "Spell wheel: pick" to true,
         "Minimap zoom outdoors" to false, "Minimap zoom indoors" to false, "Message input" to false,
         "Frame limit" to true, "Frame generation" to true, "Multiplier" to true, "Flow scale" to true, "Build in the background" to true)
 
@@ -58,10 +60,10 @@ object SettingsPreview {
         "DS WoW toolbar" -> s.toolbar?.let { onOff(it) } ?: "-"
         "ABXY location" -> if (s.abxyNintendo) "Nintendo" else "Xbox"
         "Button glyphs" -> SET_NAMES[s.glyphSet.coerceIn(0, 2)]
-        "Pause wheel: open" -> if (s.pauseTap) "Tap" else "Hold"
-        "Item & spell wheels: open" -> "open with " + if (s.radialTap) "Tap" else "Hold"
-        "Pause wheel: pick" -> if (s.pausePickA) "A" else "Release"
-        "Item & spell wheels: pick" -> "pick with " + if (s.radialPickA) "A" else "Release"
+        "Pause menu: open" -> if (s.pauseTap) "Tap" else "Hold"
+        "Item wheel: open", "Spell wheel: open" -> if (tapOf(id, s)) "Tap" else "Hold"
+        "Pause menu: pick" -> if (s.pausePickA) "A" else "Release"
+        "Item wheel: pick", "Spell wheel: pick" -> if (pickAOf(id, s)) "A" else "Release"
         "Minimap zoom outdoors" -> "${s.miniOutYd} yd"
         "Minimap zoom indoors" -> "${s.miniInYd} yd"
         "Message input" -> if (s.quickChat) "Quick chat" else "Keyboard"
@@ -74,8 +76,7 @@ object SettingsPreview {
     }.let { v -> val n = SHORT[id] ?: id; if (v.isEmpty()) n else "$n: $v" }
 
     /** a row's name in the picture's title when the row's own words are too long for the panel */
-    private val SHORT = mapOf("Start the attack when a spell is cast" to "Start the attack", "Item & spell wheels: open" to "Item & spell wheels",
-        "Item & spell wheels: pick" to "Item & spell wheels")
+    private val SHORT = mapOf("Start the attack when a spell is cast" to "Start the attack")
 
     /** two or three short lines under the picture */
     fun caption(id: String, s: State): List<String> = when (id) {
@@ -92,9 +93,9 @@ object SettingsPreview {
             else listOf("The D-pad keeps your own slots.")
         "ABXY location" -> listOf("Which face button does what (for button", "mods). The pictures follow \"Button glyphs\".")
         "Button glyphs" -> listOf("The button pictures shown everywhere.", "Where they sit is \"ABXY location\".")
-        "Pause wheel: open", "Item & spell wheels: open" -> if (tapOf(id, s)) listOf("A press opens the wheel;", "it stays open until you pick or press B.")
+        "Pause menu: open", "Item wheel: open", "Spell wheel: open" -> if (tapOf(id, s)) listOf("A press opens the wheel;", "it stays open until you pick or press B.")
             else listOf("Hold the button: the wheel is open", "while you hold it, and closes when you let go.")
-        "Pause wheel: pick", "Item & spell wheels: pick" -> if (pickAOf(id, s)) listOf("Aim with the stick, then press A to pick.")
+        "Pause menu: pick", "Item wheel: pick", "Spell wheel: pick" -> if (pickAOf(id, s)) listOf("Aim with the stick, then press A to pick.")
             else listOf("Aim with the stick; letting go of", "the stick picks what it points at.")
         "Minimap zoom outdoors" -> listOf("How many yards across Home's small map", "shows outside.")
         "Minimap zoom indoors" -> listOf("How many yards across Home's small map", "shows inside buildings.")
@@ -119,8 +120,8 @@ object SettingsPreview {
     private const val FLOW_MIN = 0.25f
     private const val FLOW_MAX = 1.0f
     private fun onOff(b: Boolean) = if (b) "On" else "Off"
-    private fun tapOf(id: String, s: State) = if (id.startsWith("Pause")) s.pauseTap else s.radialTap
-    private fun pickAOf(id: String, s: State) = if (id.startsWith("Pause")) s.pausePickA else s.radialPickA
+    private fun tapOf(id: String, s: State) = when { id.startsWith("Pause") -> s.pauseTap; id.startsWith("Spell") -> s.spellTap; else -> s.radialTap }
+    private fun pickAOf(id: String, s: State) = when { id.startsWith("Pause") -> s.pausePickA; id.startsWith("Spell") -> s.spellPickA; else -> s.radialPickA }
 
     // the drawing's paints and colours, made at the first picture (the text and the rows above stay plain data: the JVM tests read them)
     private val pFill by lazy { Paint(Paint.ANTI_ALIAS_FLAG) }
@@ -148,8 +149,8 @@ object SettingsPreview {
             "DS WoW toolbar" -> toolbar(c, r, s.toolbar == true)
             "ABXY location" -> abxy(c, r, s, prev, sinceMs, glyph)
             "Button glyphs" -> glyphSets(c, r, s.glyphSet, glyph)
-            "Pause wheel: open", "Item & spell wheels: open" -> wheelOpen(c, r, tapOf(id, s), t, id.startsWith("Pause"))
-            "Pause wheel: pick", "Item & spell wheels: pick" -> wheelPick(c, r, pickAOf(id, s), t, glyph, s.glyphSet)
+            "Pause menu: open", "Item wheel: open", "Spell wheel: open" -> wheelOpen(c, r, tapOf(id, s), t, id.startsWith("Pause"))
+            "Pause menu: pick", "Item wheel: pick", "Spell wheel: pick" -> wheelPick(c, r, pickAOf(id, s), t, glyph, s.glyphSet)
             "Minimap zoom outdoors" -> minimap(c, r, s.miniOutYd, false)
             "Minimap zoom indoors" -> minimap(c, r, s.miniInYd, true)
             "Message input" -> chatInput(c, r, s.quickChat)

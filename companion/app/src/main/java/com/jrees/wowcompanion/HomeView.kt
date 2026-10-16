@@ -1394,8 +1394,8 @@ class HomeView(
     /** the pause menu's point in its motion (ms along the open, 0 = at rest) and each part's (dx, dy, alpha) for it */
     private var pauseT = 0f
     private var pauseTop = floatArrayOf(0f, 0f, 1f)
-    /** f-pause-bars: the controller's alpha under the open pause menu (1 = as it is) */
-    var pauseBarsDim = 1f
+    /** f-pause-bars: the controller's alpha under the open pause menu (the user's pick B: 40 %, "so the menu reads as on top") */
+    var pauseBarsDim = 0.4f
     /** f-pause-bars: the bottom of the controller (the bars) in Home's px, 0 = none laid out */
     fun barsBottom(): Float = now[Part.BARS]?.bottom ?: 0f
     private var pauseMap = floatArrayOf(0f, 0f, 1f)

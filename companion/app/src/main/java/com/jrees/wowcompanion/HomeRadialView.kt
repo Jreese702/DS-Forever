@@ -215,7 +215,10 @@ class HomeRadialView(
     fun open(src: String = "radial") {
         source = src; doc = docs[src]; trusted = src in trustedOf
         flow.reset(); heldOk = false; aimStick = -1; bnextHome = true
-        flow.holdOpen = !HomeSettings.radialTap; flow.pickA = HomeSettings.radialPickA       // the one radial behaviour (2026-10-09)
+        // each wheel its own pair (f-radial-settings: the item wheel's, the spell wheel's)
+        val spell = src == "sradial"
+        flow.holdOpen = !(if (spell) HomeSettings.spellTap else HomeSettings.radialTap)
+        flow.pickA = if (spell) HomeSettings.spellPickA else HomeSettings.radialPickA
         flow.armMs = RadialModel.ARM_MS; flow.openAt = SystemClock.uptimeMillis(); stickWait = false; removeCallbacks(stickBack)
         openedAt = SystemClock.uptimeMillis(); closingFrom = -1f
         leaveAt = 0L; leaveSlot = null

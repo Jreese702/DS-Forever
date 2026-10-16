@@ -21,8 +21,12 @@ object SettingsTabs {
     enum class Block(val tab: Tab, val heading: String, val rows: List<String>) {
         HOME_SECTION(Tab.HOME, "Home", listOf("Controller on Home", "Combat layout", "Swing timer", "Stance bar", "Pet bar",
             "Focused quest", "Start the attack when a spell is cast", "DS WoW toolbar")),
-        CONTROLLER(Tab.CONTROLLER, "Controller", listOf("ABXY location", "Button glyphs", "Pause wheel: open", "Pause wheel: pick",
-            "Item & spell wheels: open", "Item & spell wheels: pick")),
+        CONTROLLER(Tab.CONTROLLER, "Controller", listOf("ABXY location", "Button glyphs")),
+        // f-radial-settings (1.0.9, the user: "better organize each radial setting into categories so its clear what each one is"): a
+        // heading per wheel, naming the button that opens it
+        PAUSE_WHEEL(Tab.CONTROLLER, "Pause menu (Start)", listOf("Pause menu: open", "Pause menu: pick")),
+        ITEM_WHEEL(Tab.CONTROLLER, "Item wheel (D-pad Up)", listOf("Item wheel: open", "Item wheel: pick")),
+        SPELL_WHEEL(Tab.CONTROLLER, "Spell wheel (its button in Controller)", listOf("Spell wheel: open", "Spell wheel: pick")),
         GAME_UI(Tab.TOP, "Game UI on the top screen", listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window",
             "NPC windows", "Cast bar", "Loot window")),
         MAP(Tab.ROOMS, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors")),
@@ -35,7 +39,8 @@ object SettingsTabs {
     }
 
     /** the blocks SettingsView draws itself (the others are Home's section and the two GameUiSection parts) */
-    val VIEW_BLOCKS = setOf(Block.GAME, Block.MAP, Block.INDOOR, Block.CONTROLLER, Block.CHAT, Block.FRAMES)
+    val VIEW_BLOCKS = setOf(Block.GAME, Block.MAP, Block.INDOOR, Block.CONTROLLER, Block.PAUSE_WHEEL, Block.ITEM_WHEEL, Block.SPELL_WHEEL,
+        Block.CHAT, Block.FRAMES)
 
     fun blocks(tab: Tab): List<Block> = Block.values().filter { it.tab == tab }
     fun viewBlocks(tab: Tab): List<Block> = blocks(tab).filter { it in VIEW_BLOCKS }
