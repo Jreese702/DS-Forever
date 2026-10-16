@@ -3793,6 +3793,10 @@ object UiKit {
     /** the open motion's length; closing runs the same motion backward in [CR_CLOSE_MS]: t = CR_OPEN_MS x (1 - closing ms / CR_CLOSE_MS) */
     const val CR_OPEN_MS = 440f
     const val CR_CLOSE_MS = 220f
+    /** [consumableRadial]'s parts: all of it; the wheel (cover, disc, wheel, chooser) without the band; the band alone (f-radial-behind) */
+    const val CR_ALL = 0
+    const val CR_WHEEL = 1
+    const val CR_BAND = 2
     /** [consumableRadialHit]: the hub (B, close) */
     const val CR_HUB = -2
 
@@ -3910,7 +3914,8 @@ object UiKit {
      */
     fun consumableRadial(c: Canvas, screen: RectF, disc: android.graphics.PointF, discSize: Float, items: List<RadialItem?>,
                          pointed: Int, page: Int = 0, pages: Int = 1, t: Float = CR_OPEN_MS, glyphs: Boolean = true,
-                         plusSlot: Int = -1, choose: RadialChoice? = null, hubDown: Float = 0f, slot: RectF? = null): Boolean {
+                         plusSlot: Int = -1, choose: RadialChoice? = null, hubDown: Float = 0f, slot: RectF? = null,
+                         part: Int = CR_ALL): Boolean {
         val g = crGeo(screen, slot)
         val tt = t.coerceIn(0f, CR_OPEN_MS)
         // the cover: the room 0.65, the bar 0.45 (in Home's middle slot none: the columns part for it, as the class wheel's did)
@@ -3924,6 +3929,7 @@ object UiKit {
         // an EMPTY slice lights too when pointed at (the user after the device test, 2026-10-06: "even if its blank I want it to highlight")
         val pt = if (pointed in 0..7) pointed else -1
         val selK = crEaseOut((tt - 320f) / 120f)
+        if (part != CR_BAND) {
         // the disc: from the bar to the hub
         val cx: Float; val cy: Float; var size: Float; val glow: Float
         if (tt < 60f) {
@@ -3995,8 +4001,9 @@ object UiKit {
             slot(c, choose.icon, fx - fs / 2f, fy - fs / 2f, fs, Theme.quality(choose.quality))
             c.restoreToCount(l)
         }
+        }
         // the band above the wheel: what the pointed slice holds (or what A does there); the page dots under it
-        if (selK > 0f) {
+        if (part != CR_WHEEL && selK > 0f) {
             val it = if (pt >= 0) items.getOrNull(pt) else null
             when {
                 choose != null -> crBand(c, g, choose.name, Theme.quality(choose.quality), choose.prompt ?: when {

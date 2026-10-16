@@ -709,6 +709,18 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 r.offset((a[0] - b[0]).toFloat(), (a[1] - b[1]).toFloat())
             }
         }
+        // f-radial-behind: the wheel drawn by Home, under its columns, in the wheel view's coordinates moved onto Home's
+        radialView.under = { on ->
+            homeView.wheelPainter = if (!on) null else { c ->
+                val a = IntArray(2); val b = IntArray(2)
+                homeView.getLocationOnScreen(a); radialView.getLocationOnScreen(b)
+                val save = c.save()
+                c.translate((b[0] - a[0]).toFloat(), (b[1] - a[1]).toFloat())
+                radialView.drawUnder(c)
+                c.restoreToCount(save)
+            }
+        }
+        radialView.underRedraw = { homeView.wheelRedraw() }
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pauseView.onSlide = { t -> pauseSlideAll(t) }
         // the open's REVERSE after the wheel has gone (the user 2026-10-09: "it needs to have a reverse animation for when the B button

@@ -479,6 +479,27 @@ class HomeView(
         }
         return if (open) RectF(wheelRect) else null
     }
+    /**
+     * f-radial-behind (1.0.9, the user: "the radial needs to look like its behind the Map and Chat modules, not slide up in front of it"):
+     * the item / spell wheel is drawn by HomeRadialView into THIS layer, which lies over the bars but UNDER every column (the chat, the
+     * card, the map, the auras): the columns part to uncover it and close over it. Non-null = the layer shows and draws it (Home's own
+     * coordinates, clipped to Home); null = gone. [wheelRedraw] asks for its next frame.
+     */
+    var wheelPainter: ((Canvas) -> Unit)? = null
+        set(v) {
+            field = v
+            val l = wheelLayer ?: if (v == null) return else object : View(context) {
+                override fun onDraw(c: Canvas) { wheelPainter?.invoke(c) }
+            }.also { wheelLayer = it; addView(it, 1) }                     // right over the bars (child 0), under every column
+            l.visibility = if (v != null) View.VISIBLE else View.GONE
+            if (v != null) {
+                l.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
+                l.layout(0, 0, width, height)
+                l.invalidate()
+            }
+        }
+    private var wheelLayer: View? = null
+    fun wheelRedraw() { wheelLayer?.invalidate() }
     private var wheelOpen = false
     private val wheelRect = RectF()
     private var wheelPush = 0f
@@ -1286,6 +1307,8 @@ class HomeView(
         val cw = if (classRect.isEmpty) MeasureSpec.getSize(wSpec) else classRect.width()
         val ch = if (classRect.isEmpty) MeasureSpec.getSize(hSpec) else classRect.height()
         classLayer.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ch, MeasureSpec.EXACTLY))
+        wheelLayer?.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(hSpec), MeasureSpec.EXACTLY))
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
             val r = now[p] ?: continue
@@ -1317,6 +1340,7 @@ class HomeView(
         if (typeWanted) typeTool.layout(0, 0, r - l, b - t)                  // f-trackpad-keyboard: the whole page
         // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint
         if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
+        wheelLayer?.layout(0, 0, r - l, b - t)                              // f-radial-behind: the whole page, under the columns
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
             val f = now[p] ?: continue

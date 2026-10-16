@@ -88,6 +88,13 @@ class HomeRadialView(
      * coordinates; null = no slot (another room, a module full screen): the full-screen wheel. Called with false when the wheel goes.
      */
     var homeSlot: ((Boolean) -> RectF?)? = null
+    /**
+     * f-radial-behind (the user: "the radial needs to look like its behind the Map and Chat modules, not slide up in front of it"): in
+     * Home's slot the wheel itself is drawn by Home, UNDER its columns ([drawUnder], through HomeView.wheelPainter): true = start that,
+     * false = stop it. [underRedraw] asks Home's layer for a frame. This view keeps the input, and only the item's name band on top.
+     */
+    var under: ((Boolean) -> Unit)? = null
+    var underRedraw: (() -> Unit)? = null
     private var slot: RectF? = null
     /** the wheel sliding back down into the bar after it has gone (the controller already let go): since (uptime ms), in that slot */
     private var leaveAt = 0L
@@ -212,8 +219,10 @@ class HomeRadialView(
         openedAt = SystemClock.uptimeMillis(); closingFrom = -1f
         leaveAt = 0L; leaveSlot = null
         slot = homeSlot?.invoke(true)
+        if (slot != null) under?.invoke(true)
         held = 0; lb = false; rb = false; seeded = false; openKeys = 0
-        strip.homeLifted = true
+        // in Home's slot the bar keeps its own disc: the wheel (its own hub) rises from behind the columns
+        strip.homeLifted = slot == null
         visibility = VISIBLE
         reader?.stop(); reader = null; rawHeld = 0
         hold(0)
@@ -323,7 +332,7 @@ class HomeRadialView(
     private fun done() {
         if (openedAt != 0L) Log.i("WCLOG", "radial: close (src=$source, after ${SystemClock.uptimeMillis() - openedAt} ms, " +
             "drawn=${!firstFrame}, why=${Throwable().stackTrace.getOrNull(1)?.methodName})")
-        val shown = strip.homeLifted                       // the wheel itself on screen (not Bags' picker)
+        val shown = strip.homeLifted || (slot != null && mode != Mode.PICK)     // the wheel itself on screen (not Bags' picker)
         picker?.close(); mode = Mode.WHEEL; choice = null; holdReset(); pinNote = null
         if (!stickWait && (freeTry == 0 || freed)) { reader?.stop(); reader = null }
         openedAt = 0L; closingFrom = -1f; hubPressAt = 0L
@@ -331,17 +340,24 @@ class HomeRadialView(
         if (was != null) homeSlot?.invoke(false)
         // f-radial-middle: from Home's slot the wheel slides back DOWN into the bar as the columns close over its place; input is
         // already Home's (the controller let go above), only the picture rides it out
-        if (was != null && shown && !shutting && isShown) { leaveSlot = was; leaveAt = SystemClock.uptimeMillis(); invalidate(); return }
+        if (was != null && shown && !shutting && isShown) {
+            leaveSlot = was; leaveAt = SystemClock.uptimeMillis(); invalidate(); underRedraw?.invoke(); return
+        }
+        if (was != null) under?.invoke(false)
         strip.homeLifted = false
         visibility = GONE
     }
 
-    /** the wheel's slide back down from Home's slot into the bar's disc, fading as it lands ([LEAVE_MS]) */
-    private fun drawLeave(c: Canvas) {
+    /** the wheel's slide back down from Home's slot into the bar's disc, fading as it lands ([LEAVE_MS]); [part] UiKit.CR_* */
+    private fun drawLeave(c: Canvas, part: Int = UiKit.CR_BAND) {
         val s = leaveSlot ?: return
         val p = ((SystemClock.uptimeMillis() - leaveAt) / LEAVE_MS).coerceIn(0f, 1f)
-        if (p >= 1f) { leaveSlot = null; leaveAt = 0L; strip.homeLifted = false; visibility = GONE; return }
-        if (p >= 0.7f && strip.homeLifted) strip.homeLifted = false          // the bar's own disc back under the landing wheel
+        if (p >= 1f) {
+            if (part != UiKit.CR_BAND) return                                // the overlay's frame ends it
+            leaveSlot = null; leaveAt = 0L; strip.homeLifted = false; under?.invoke(false); visibility = GONE; return
+        }
+        // the name band goes with the close at once (it would cross the chat on the way down); the wheel slides on under the columns
+        if (part == UiKit.CR_BAND) { underRedraw?.invoke(); postInvalidateOnAnimation(); return }
         val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
         val (disc, size) = discHere()
         val e = leaveCurve.getInterpolation(p)
@@ -350,9 +366,16 @@ class HomeRadialView(
         c.saveLayerAlpha(null, (255 * (1f - ((p - 0.5f) / 0.5f).coerceIn(0f, 1f))).toInt())
         val plus = if (RadialModel.plusOn(doc) && flow.page == 0) UiKit.CR_PLUS else -1
         UiKit.consumableRadial(c, screen, disc, size, itemsOf(RadialModel.slices(doc, flow.page)), flow.pointed, flow.page,
-            RadialModel.pages(doc), UiKit.CR_OPEN_MS, glyphs = flow.pickA, plusSlot = plus, slot = s)
+            RadialModel.pages(doc), UiKit.CR_OPEN_MS, glyphs = flow.pickA, plusSlot = plus, slot = s, part = part)
         c.restoreToCount(save)
-        postInvalidateOnAnimation()
+        if (part == UiKit.CR_BAND) postInvalidateOnAnimation()
+    }
+
+    /** f-radial-behind: the wheel without its band, in THIS view's coordinates (Home's layer under its columns draws it) */
+    fun drawUnder(c: Canvas) {
+        if (!isOpen) { drawLeave(c, UiKit.CR_WHEEL); return }
+        if (slot == null || mode == Mode.PICK) return
+        paint(c, UiKit.CR_WHEEL)
     }
     private fun itemsOf(src: List<RadialModel.Item?>) =
         src.map { it?.let { i -> UiKit.RadialItem(Icons.get(i.icon), i.name, i.count, pinned = i.pinned, ranOut = i.ranOut) } }
@@ -528,7 +551,7 @@ class HomeRadialView(
                 flow.reset(); flow.tap = true; aimStick = -1; holdReset()
                 pinNote = if (c == null) "This item can't be pinned right now" else null
                 // the wheel comes back with its open motion, the item over the hub
-                openedAt = SystemClock.uptimeMillis(); strip.homeLifted = true
+                openedAt = SystemClock.uptimeMillis(); strip.homeLifted = slot == null
                 Log.i(TAG, "radial: chooser for $id (${action.name.lowercase()}${if (c == null) ", NOT pinnable" else ""})")
                 invalidate()
             }
@@ -553,7 +576,7 @@ class HomeRadialView(
         mode = Mode.WHEEL; choice = null; pinNote = null; holdReset()
         setBNext(true)
         flow.reset(); flow.tap = true; aimStick = -1
-        openedAt = SystemClock.uptimeMillis(); strip.homeLifted = true
+        openedAt = SystemClock.uptimeMillis(); strip.homeLifted = slot == null
         invalidate()
     }
 
@@ -680,11 +703,18 @@ class HomeRadialView(
     override fun onDraw(c: Canvas) {
         if (!isOpen) { drawLeave(c); return }
         if (firstFrame) { firstFrame = false; Log.i("WCLOG", "radial: first frame (${width}x$height, src=$source, items=${doc?.items?.size ?: 0})") }
+        if (closingFrom >= 0f && tNow() <= 0f) { done(); return }
+        // in Home's slot the wheel is Home's to draw, under its columns (f-radial-behind); here only the band on top
+        if (slot != null) underRedraw?.invoke()
+        if (paint(c, if (slot != null) UiKit.CR_BAND else UiKit.CR_ALL)) postInvalidateOnAnimation()
+    }
+
+    /** the wheel at this moment ([part] UiKit.CR_*); true = it wants another frame */
+    private fun paint(c: Canvas, part: Int): Boolean {
         val t = tNow()
-        if (closingFrom >= 0f && t <= 0f) { done(); return }
         val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
         val (disc, size) = discHere()
-        if (mode == Mode.PICK) return                                        // Bags' picker shows; the wheel is away
+        if (mode == Mode.PICK) return false                                  // Bags' picker shows; the wheel is away
         val choosing = mode == Mode.CHOOSE
         // the chooser shows page 1 as it is: pins AND the auto-filled items (b67, the user: "all of the slots show empty (doesnt show
         // what Items are currently there from the recommendeds)"). Only a PIN needs A held to replace; an auto-filled slice pins at once
@@ -697,7 +727,9 @@ class HomeRadialView(
             UiKit.RadialChoice(Icons.get(it.icon), it.name, prompt = pinNote ?: if (onAuto) "Press ${Glyphs.name("a")} to pin it here" else null, hold = hold) }
         val plus = if (RadialModel.plusOn(doc) && (choosing || flow.page == 0)) UiKit.CR_PLUS else -1
         val moving = UiKit.consumableRadial(c, screen, disc, size, items, flow.pointed, if (choosing) 0 else flow.page,
-            if (choosing) 1 else RadialModel.pages(doc), t, glyphs = flow.pickA, plusSlot = plus, choose = ch, hubDown = hubDown(), slot = slot)
+            if (choosing) 1 else RadialModel.pages(doc), t, glyphs = flow.pickA, plusSlot = plus, choose = ch, hubDown = hubDown(), slot = slot,
+            part = part)
+        if (part == UiKit.CR_WHEEL) return moving
         // the secure row is not built yet (Spells r2's nopad): the items show, and the wheel says why none can be used
         if (doc?.noPad == true && t >= UiKit.CR_OPEN_MS * 0.7f) {
             UiKit.asBody(pNote)
@@ -708,7 +740,7 @@ class HomeRadialView(
             UiKit.asBody(pNote)
             c.drawText("No spells yet: add them in Controller, Spell radial", width / 2f, 64f, pNote)
         }
-        if (moving || closingFrom >= 0f || hubPressAt != 0L || aHeldAt != 0L) postInvalidateOnAnimation()
+        return moving || closingFrom >= 0f || hubPressAt != 0L || aHeldAt != 0L || slot != null
     }
 
     /** the bar's Home disc, in this view's coordinates: its middle and its width */
