@@ -29,6 +29,8 @@ object SetupBridge {
     @Volatile var updateLogin: (() -> Unit)? = null
     /** "Report a problem" on the setup screen (board f-problem-report): the companion opens its report screen */
     @Volatile var openReport: (() -> Unit)? = null
+    /** the out-of-date folder's pop-up was OK'd: not again this run (the red check line stays) */
+    @Volatile var staleOk = false
     /** the saved report's note > Open GitHub issue */
     @Volatile var openSavedReport: (() -> Unit)? = null
     /** the report page takes the launcher's keys while it is open (before Play) */
@@ -84,7 +86,8 @@ object SetupBridge {
     fun screen(gameRunning: Boolean = LauncherHooks.gameUp()): SetupFlow.Screen? {
         val i = inputs ?: return null
         return SetupFlow.screen(i.copy(signIn = signIn, restartOffered = restartOffered, gameRunning = gameRunning, restarting = restarting,
-            reportSaved = ReportFlow.pending?.let { ReportFlow.noteTitle(it) }))
+            reportSaved = ReportFlow.pending?.let { ReportFlow.noteTitle(it) },
+            staleData = DataStaleness.current()?.takeIf { !staleOk }))
     }
 
     /** the sign-in's lean log (NativeLogin.logEvent): each sign-in button, never anything typed */
@@ -99,6 +102,7 @@ object SetupBridge {
             SetupFlow.Action.RESTART_GAME -> { signIn(SetupFlow.SignIn.NONE); restartGame?.invoke() }
             SetupFlow.Action.REPORT -> openReport?.invoke()
             SetupFlow.Action.REPORT_OPEN -> openSavedReport?.invoke()
+            SetupFlow.Action.STALE_OK -> { staleOk = true; changed() }
             SetupFlow.Action.REPORT_DISMISS -> { ReportFlow.clearPending(); changed() }
             else -> launcherActions?.invoke(a)
         }

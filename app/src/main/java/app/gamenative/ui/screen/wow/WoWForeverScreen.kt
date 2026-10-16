@@ -513,6 +513,8 @@ fun WoWForeverScreen(
         appLine = AppUpdater.line(appCheck),
         // the background all-icons step (Track C, test23): ready when its stamp says so, else its count while it runs
         installedExternal = installedExternal,
+        // issues #8 / #9: the game folder's Data older than its build (the art's reads say so), on the top screen's checks
+        staleData = remember { com.jrees.wowcompanion.DataStaleness.init(context); 0 }.let { com.jrees.wowcompanion.DataStaleness.current() },
         iconsLine = com.jrees.wowcompanion.AllIcons.line(com.jrees.wowcompanion.ArtHarvest.state is com.jrees.wowcompanion.ArtHarvest.State.Ready),
         busy = when {
             isUpdating -> updateStatusText
