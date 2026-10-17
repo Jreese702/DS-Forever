@@ -62,4 +62,19 @@ class CityExitsTest {
         l.onDoc(1453, 0, -8961.0, 521.0, false, 40_000L); l.onDoc(1429, 0, -8975.0, 525.0, false, 41_000L)
         assertEquals(1, l.of(1453).size)
     }
+
+    @Test fun aRideThroughItsOwnInstanceIsLearnedWithItsFarEnd() {
+        val l = CityExits.Learner(Mem())
+        l.onDoc(1453, 0, -8354.5, 524.1, false, 0L)                         // the tram entrance in Stormwind
+        assertNull(l.onDoc(1452, 369, 10.0, 10.0, false, 5_000L))          // the tram's own instance
+        val e = l.onDoc(1455, 0, -4840.0, -1100.0, false, 90_000L)          // out in Ironforge's Tinker Town
+        assertNotNull(e); assertTrue(e!!.transport)
+        assertEquals(1453, e.map); assertEquals(1455, e.toMap); assertEquals(-4840.0, e.toWx, 1e-9)
+        assertEquals(1, l.of(1453).count { it.toMap == 1455 })
+    }
+
+    @Test fun onlyTheMeasuredTramIsInTheTable() {
+        assertEquals(1, CityExits.TABLE.size)
+        assertEquals(0.690, CityExits.TABLE[0].x, 1e-9); assertEquals(0.310, CityExits.TABLE[0].y, 1e-9)
+    }
 }

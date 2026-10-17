@@ -842,15 +842,16 @@ function WC.collectMap()
     -- World position too: distances belong in world space. Zone maps are exactly 3:2, so a
     -- distance measured in 0..1 is wrong by up to 50% depending on bearing, and a range ring
     -- drawn there is an ellipse on the ground.
-    local okw, wx, wy, wz = CALL(UnitPosition, "player")
+    local okw, wx, wy, wz, wcont = CALL(UnitPosition, "player")
     if okw then
+        out.cont = (type(wcont) == "number" and WC.isPlain(wcont)) and wcont or nil     -- the continent (UnitPosition's instance id)
         out.wx = (type(wx) == "number" and WC.isPlain(wx)) and wx or nil
         out.wy = (type(wy) == "number" and WC.isPlain(wy)) and wy or nil
         out.wz = (type(wz) == "number" and WC.isPlain(wz)) and wz or nil
     end
     -- on a flight (b-route-city-exits): a map crossed in the air is no way out on foot, so the app learns no exit from it
     local okt, onTaxi = CALL(UnitOnTaxi, "player")
-    if okt and onTaxi == true then out.taxi = 1 end
+    out.taxi = (okt and onTaxi == true) and 1 or 0
     -- Services the player has actually interacted with here. Authoritative, unlike the bundle.
     out.svc = WC.collectServices and WC.collectServices(id) or nil
 
@@ -1198,11 +1199,15 @@ function WC.collectPos()
     -- the real numbers is exact and, per Sink.lua, extra bytes make the push FASTER not slower.
     -- wz (height) too: indoors it is the ONLY thing that says which FLOOR you are on, and a
     -- two-storey building drawn on the wrong floor is worse than no floorplan at all.
-    local okw, wx, wy, wz = CALL(UnitPosition, "player")
+    local okw, wx, wy, wz, wcont = CALL(UnitPosition, "player")
     if okw then
         if type(wx) == "number" and WC.isPlain(wx) then out.wx = wx end
         if type(wy) == "number" and WC.isPlain(wy) then out.wy = wy end
+        if type(wcont) == "number" and WC.isPlain(wcont) then out.cont = wcont end
     end
+    -- the learner's two other words on the cheap tick too (b-learn-exits): on a flight, and (above) the continent
+    local okt2, onTaxi2 = CALL(UnitOnTaxi, "player")
+    out.taxi = (okt2 and onTaxi2 == true) and 1 or 0
     -- the quest-area tracer rides the position it was taken at (see traceSample)
     local okQ, qb = pcall(traceSample, plainNum(id), out.wx, out.wy)
     if okQ and qb then out.qb = qb end

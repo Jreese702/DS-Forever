@@ -1486,6 +1486,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // (every session, in MapView's shape) replaces it
                     PoiHarvest.ingestAll(it.optJSONArray("svc")); PoiHarvest.attach(it)
                     lastMap = it; lastMapAt = System.currentTimeMillis(); mapView.update(it, 0); worldMapRoom.update(it)
+                    if (current) mapView.learnExit(it)          // the ways out of a map, learned from live play only (CityExits.Learner)
                     if (current) GameUi.onTracking(it.optJSONObject("track"))     // LATER 25: the "While tracking" minimap
                 }
                 msg.optJSONObject("actionbar")?.let { castView.update(it) }
@@ -1496,6 +1497,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             "pos" -> msg.optJSONObject("map")?.let {
                 mapView.updatePos(it, msg.optLong("_gt", -1L)); worldMapRoom.updatePos(it)
+                if (current) mapView.learnNow()                     // the last place on a map before a crossing is the tick's, not a stale doc's
                 // the background minimap step builds the player's own zone first (Map's nearest-first hook)
                 if (it.has("mapID") && it.has("wx")) MapHarvestSteps.near = Triple(it.optInt("mapID"), it.optDouble("wx"), it.optDouble("wy"))
                 // ... and the interiors bake its building first

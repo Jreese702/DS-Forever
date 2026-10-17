@@ -2159,7 +2159,7 @@ class MapView(context: Context) : View(context) {
         map = m; staleMs = ageMs
         addTrail(m?.optString("tr", null), -1L,  // the view is handed the map object itself
                  m?.optInt("mapID", Int.MIN_VALUE) ?: Int.MIN_VALUE)
-        if (m != null) { adoptRect(m); recomputeSeed(); learnExit(m) }
+        if (m != null) { adoptRect(m); recomputeSeed() }
         deriveMarkers(m)
         deriveFocusTarget(m)
         deriveCorpse(m)
@@ -2180,7 +2180,7 @@ class MapView(context: Context) : View(context) {
         // and a key missing from this list silently never reaches the map object -- the indoor
         // framing simply never fired even though the addon was sending indoors=true.
         for (k in listOf("x", "y", "facing", "zone", "subzone", "mapID", "wx", "wy",
-                         "indoors", "inst")) {
+                         "indoors", "inst", "cont", "taxi")) {
             if (pos.has(k)) m.put(k, pos.get(k))
         }
         staleMs = 0
@@ -2497,6 +2497,39 @@ class MapView(context: Context) : View(context) {
         focusTX = nodes[k][0]; focusTY = nodes[k][1]; flyStep = true
     }
 
+    /**
+     * THE SOURCES OF A MAP'S WAYS OUT, asked in turn for the route ([CursorRoute] takes the best of them all): each turns a map id and
+     * that map's rectangle into ways in its 0..1. Learned crossings, then the measured table; a later path source (Track B's walking
+     * map from the player's own game files) is one more entry here.
+     */
+    val waySources: MutableList<(Int, PoiStore.Rect) -> List<CityExits.Way>> = mutableListOf(
+        { mapId, r -> learnedWays(mapId, r) },
+        { mapId, r -> tableWays(mapId, r) },
+    )
+
+    private fun here(r: PoiStore.Rect, wx: Double, wy: Double) = doubleArrayOf(r.nx(wy), r.ny(wx))
+
+    /** the crossings this device has learned out of [mapId] (any map, on any continent: CityExits.Learner) */
+    private fun learnedWays(mapId: Int, r: PoiStore.Rect): List<CityExits.Way> = (exitLearner()?.of(mapId) ?: emptyList()).mapNotNull { e ->
+        val at = here(r, e.wx, e.wy)
+        val end = if (e.transport) (if (!e.toWx.isNaN()) here(r, e.toWx, e.toWy) else null) else at
+        end?.let { CityExits.Way(e, at[0], at[1], it[0], it[1]) }
+    }
+
+    /** the measured table's ways out of [mapId], less any a learned way to the same map replaces; a ride's unknown far end = the
+     *  far map's own centre (the game's world map data) */
+    private fun tableWays(mapId: Int, r: PoiStore.Rect): List<CityExits.Way> {
+        val learnedTo = (exitLearner()?.of(mapId) ?: emptyList()).map { it.toMap }.toSet()
+        return CityExits.TABLE.filter { it.map == mapId && it.toMap !in learnedTo }.mapNotNull { e ->
+            val end = if (!e.transport) doubleArrayOf(e.x, e.y)
+                else worldOf?.invoke(e.toMap)?.takeIf { it.valid && it.continent == r.continent }?.let { w ->
+                    val tx = if (e.toX.isNaN()) 0.5 else e.toX; val ty = if (e.toY.isNaN()) 0.5 else e.toY
+                    here(r, w.wx(ty), w.wy(tx))
+                }
+            end?.let { CityExits.Way(e, e.x, e.y, it[0], it[1]) }
+        }
+    }
+
     /** a map's world rectangle and its name (the Map room's model, read from the game's own world map data) */
     var worldOf: ((Int) -> WorldMapModel.World?)? = null
     var mapName: ((Int) -> String)? = null
@@ -2510,10 +2543,17 @@ class MapView(context: Context) : View(context) {
         }).also { learner = it }
     }
 
-    /** one map document for the learner: a way out it just learned is logged (WCMAP) in both world yards and the old map's 0..1 */
-    private fun learnExit(m: JSONObject) {
+    /**
+     * one LIVE map document for the learner (the host calls it for current documents only: a replayed log would join two sessions
+     * into a false crossing): a way out it just learned is logged (WCMAP) in both world yards and the old map's 0..1
+     */
+    /** the position tick merged into the map document: the learner sees it as well (current ticks only, as [learnExit]) */
+    fun learnNow() { map?.let { learnExit(it) } }
+
+    fun learnExit(m: JSONObject) {
         val mapId = m.optInt("mapID", 0)
-        val cont = m.optJSONObject("rect")?.optInt("c", -1) ?: -1
+        // the continent: the game's own (UnitPosition's instance id, Map.lua `cont`), else the map rectangle's
+        val cont = if (m.has("cont")) m.optInt("cont", -1) else m.optJSONObject("rect")?.optInt("c", -1) ?: -1
         val e = exitLearner()?.onDoc(mapId, cont, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN), m.optInt("taxi", 0) == 1,
             android.os.SystemClock.elapsedRealtime()) ?: return
         val w = worldOf?.invoke(e.map)
@@ -3346,21 +3386,10 @@ class MapView(context: Context) : View(context) {
             val x = o.optDouble("x", Double.NaN); val y = o.optDouble("y", Double.NaN)
             if (!x.isNaN() && !y.isNaN()) nodes.add(CursorRoute.Node(x, y, o.optInt("id", 0), o.optString("name", "")))
         } }
-        // the map's real ways out (b-route-city-exits): what this player learned here, else the approved table's estimates
-        fun here(wx: Double, wy: Double) = doubleArrayOf(r.nx(wy), r.ny(wx))
+        // the map's real ways out (b-route-city-exits), from every source in turn (learned first, then measured; Track B's walking
+        // paths will slot in as one more [waySources] entry)
         val ways = ArrayList<CityExits.Way>()
-        val learned = exitLearner()?.of(mapId) ?: emptyList()
-        for (e in learned) {
-            val at = here(e.wx, e.wy)
-            val end = if (e.transport) (if (!e.toWx.isNaN()) here(e.toWx, e.toWy) else null) else at
-            if (end != null) ways.add(CityExits.Way(e, at[0], at[1], end[0], end[1]))
-        }
-        val learnedFoot = learned.any { !it.transport }
-        for (e in CityExits.TABLE) if (e.map == mapId && !(learnedFoot && !e.transport)) {
-            val end = if (!e.transport) doubleArrayOf(e.x, e.y)
-                else worldOf?.invoke(e.toMap)?.takeIf { it.valid && it.continent == r.continent }?.let { w -> here(w.wx(e.toY), w.wy(e.toX)) }
-            if (end != null) ways.add(CityExits.Way(e, e.x, e.y, end[0], end[1]))
-        }
+        for (src in waySources) ways.addAll(src(mapId, r))
         routeNow = CursorRoute.plan(px, py, r.width, r.height, goals, far, way, questById[q]?.optString("wp", ""), nodes,
             ways = ways, inCity = mapId in CityExits.CITIES,
             wayName = { e ->
