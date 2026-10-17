@@ -766,6 +766,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             homeView.dropB("pad:radial", HomeBGlyph.WHEEL_MUTE_MS)
             discB("the pause closed")
             strip.snapRed()
+            // test40 (the user: "slide the rooms down out of view"): the rooms' bar comes back up with the hub's glide onto it
+            stripBack?.cancel()
+            if (strip.translationY > 0f) stripBack = android.animation.ValueAnimator.ofFloat(strip.translationY, 0f).apply {
+                duration = HomePauseView.GLIDE_MS.toLong()
+                interpolator = stripIn
+                addUpdateListener { a -> strip.translationY = a.animatedValue as Float }
+                start()
+            }
+            Log.i("WCLOG", "pause: rooms bar back up (${HomePauseView.GLIDE_MS.toInt()} ms)")
             pauseBack?.cancel()
             if (from <= 0f) pauseSlideAll(0f)
             else pauseBack = android.animation.ValueAnimator.ofFloat(from, 0f).apply {
@@ -2260,9 +2269,19 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             val e = roomExit.getInterpolation(p)
             v.alpha = 1f - e; v.scaleX = 1f - 0.04f * e; v.scaleY = 1f - 0.04f * e
         }
-        // f-pause-bars: the rooms' bar stays; the pause menu's own D-pad bar slides up over it
-        strip.translationY = 0f
+        // test40 (the user: "Cycling on the pause wheel still has the problem from before where the rooms flash through the background.
+        // Maybe to fix this we should slide the rooms down out of view"): the rooms' bar slides DOWN off the screen over the open (the
+        // room's own exit curve) and stays down while the pause is up, the D-pad bar rising over where it was; on the close it comes back
+        // up with the hub's glide ([stripBack], set by the close), so nothing of it is left behind the wheel to show through
+        if (pauseView.isOpen) {
+            stripBack?.cancel()
+            strip.translationY = (strip.height + 4f) * roomExit.getInterpolation((t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f))
+        } else if (stripBack?.isRunning != true) strip.translationY = 0f
     }
+
+    /** the rooms' bar's way back up on a pause close (the hub's glide), and its curve (the room's enter: LinearOutSlowIn) */
+    private var stripBack: android.animation.ValueAnimator? = null
+    private val stripIn = android.view.animation.PathInterpolator(0f, 0f, 0.2f, 1f)
 
     // ---------------------------------------------------------------- THE CHAT ROOM'S GLIDE (b-chat-slide)
     // The user's pick: chat going full screen from Home and back should move like the map's morph. Home's chat pane opens the Chat
