@@ -39,8 +39,6 @@ object HomeFightFace {
     /** the face positions (5 / 6 / 8): a form's own face spell shows whenever the faces' own do; its D-pad ones only in a fight */
     val FACE_POSITIONS: Set<Int> get() = PadMapModel.FACES.toSet()
 
-    /** m55: the active form's icon for the In-combat mark (Home's bars show whose set fights), null when not in a form or it has none */
-    fun formBadge(map: PadMapModel.Map): Int? = map.activeForm?.takeIf { f -> map.formFights.any { it.form == f.id } }?.icon?.takeIf { it != 0 }
 
     fun icons(map: PadMapModel.Map): Map<Int, Int> =
         PadMapModel.FACES.filter { it in map.faceArmed }.mapNotNull { pos ->
