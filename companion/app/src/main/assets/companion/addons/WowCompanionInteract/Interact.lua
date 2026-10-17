@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i117"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i118"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -4525,11 +4525,50 @@ local function navStep(z, ii, d)
     end
 end
 
+-- THE MAILBOX'S UP / DOWN (the user on test20: "Pressing down on the cursor in the mailbox does not work for moving it to the required
+-- fields"). The tab row's Down only knew the vendor's "grid", and the Send Mail form's parts were zones nothing crossed between. One
+-- chain per tab, in the order drawn: Inbox = the tab row, the letters; Send Mail = the tab row, To / Subject / the letter, the money
+-- row, the attachments, Clear / Send. Up / Down walk a zone's rows, then step into the next zone that way (its first item going down
+-- (Send on the last row, when it can send), its last going up; the tab row lands on the open tab; the letters on the open letter).
+-- An opened letter's attachments (right of the list) and the bag list keep their own moves.
+MAIL.CHAIN = { send = { "tabs", "mform", "mmoney", "msattach", "msend" }, inbox = { "tabs", "mlist" } }
+function MAIL.zoneMove(z, ii, dir)
+    if dir ~= "up" and dir ~= "down" then return false end
+    local chain = (navZoneNamed("mform") and MAIL.CHAIN.send) or (navZoneNamed("mlist") and MAIL.CHAIN.inbox)
+    if not chain then return false end
+    local at
+    for k, n in ipairs(chain) do if n == z.name then at = k end end
+    if not at then return false end
+    local up = dir == "up"
+    if z.name ~= "tabs" then
+        local c = z.cols or 1
+        local j = ii + (up and -c or c)
+        while z.items[j] and not z.items[j].ok do j = j + (up and -c or c) end
+        if z.items[j] then N.cur = z.items[j].id; return true end
+    end
+    local k = at + (up and -1 or 1)
+    while chain[k] do
+        local nz = navZoneNamed(chain[k])
+        if nz and #nz.items > 0 then
+            local pick
+            if nz.name == "tabs" then pick = "mailtab " .. (MAIL.tab or "inbox")
+            elseif nz.name == "mlist" and MAIL.open and navFind("mail " .. MAIL.open) then pick = "mail " .. MAIL.open
+            elseif up then for q = #nz.items, 1, -1 do if nz.items[q].ok then pick = nz.items[q].id; break end end
+            elseif nz.name == "msend" and nz.items[2] and nz.items[2].ok then pick = nz.items[2].id
+            else pick = navFirst(nz) end
+            if pick then N.cur = pick; return true end
+        end
+        k = k + (up and -1 or 1)
+    end
+    return true             -- the end of the chain: the cursor stays
+end
+
 function N.move(dir)
     local zi, ii = navFind(N.cur)
     if not zi then return end
     local z = N.zones[zi]
     local name = z.name
+    if MAIL.zoneMove(z, ii, dir) then return end
     if name == "trlist" and N.trLines then
         local li, col
         for a, line in ipairs(N.trLines) do for b, id in ipairs(line) do if id == N.cur then li, col = a, b end end end
