@@ -40,4 +40,21 @@ class QuestTrailBridgeTest {
         assertEquals(listOf(0.5, 0.5, 0.6, 0.55), QuestTrailBridge.path(m, 12)!!.toList())
         assertNull(QuestTrailBridge.path(m, 99))
     }
+
+    /** b-qtrail-golden: QuestTrail's minimap drawing (pixels, x east, y north) put back on the map */
+    @Test fun theGoldenPathFromItsMinimapPixels() {
+        // a 140 px minimap 200 yd across (0.7 px a yard); the player at world (-100, -100) on a map whose top-left is world (0, 0),
+        // 1000 x 1000 yd: the player at 0.1, 0.1
+        val gp = JSONObject("""{"w":140,"yd":200,"rot":0,"s":[[0,0,0,35,0],[0,35,35,35,2]]}""")
+        val p = QuestTrailBridge.trail(gp, -100.0, -100.0, 0.0, 0.0, 1000.0, 1000.0)
+        assertEquals(2, p.size)
+        // 35 px north = 50 yd north: world x -50 = map y 0.05; then 50 yd east = world y -150 = map x 0.15
+        assertEquals(0.1, p[0].x0, 1e-9); assertEquals(0.1, p[0].y0, 1e-9); assertEquals(0.05, p[0].y1, 1e-9)
+        assertEquals(0.15, p[1].x1, 1e-9); assertEquals(0.05, p[1].y1, 1e-9); assertEquals(2, p[1].kind)
+        // a rotating minimap, the player facing west (pi/2): "up" on it is west, so 35 px up = 50 yd west = map x 0.05
+        val r = QuestTrailBridge.trail(JSONObject("""{"w":140,"yd":200,"rot":1.5707963267948966,"s":[[0,0,0,35,0]]}"""),
+            -100.0, -100.0, 0.0, 0.0, 1000.0, 1000.0)
+        assertEquals(0.05, r[0].x1, 1e-9); assertEquals(0.1, r[0].y1, 1e-9)
+        assertTrue(QuestTrailBridge.trail(null, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0).isEmpty())
+    }
 }

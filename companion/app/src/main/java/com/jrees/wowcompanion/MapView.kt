@@ -3787,6 +3787,49 @@ class MapView(context: Context) : View(context) {
         return CursorRoute.Route(CursorRoute.Kind.WAYPOINT, t.x, t.y, t.label?.let { "QuestTrail: $it" } ?: "QuestTrail")
     }
 
+    /** QuestTrail's golden path on this map (its minimap drawing read back: Map.lua's qtrail.gp), empty when none */
+    private fun qtGolden(): List<QuestTrailBridge.Piece> {
+        if (Settings.questTracking != "questtrail") return emptyList()
+        val o = questTrailLive()?.optJSONObject("gp") ?: return emptyList()
+        val m = map ?: return emptyList(); val r = rect ?: return emptyList()
+        if (!r.valid) return emptyList()
+        return QuestTrailBridge.trail(o, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN), r.top, r.left, r.width, r.height)
+    }
+    private var goldenShown = false
+    private val pGolden = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    private val GOLD_WALKED = Color.rgb(255, 209, 0)          // QuestTrail's gpColor default (1, 0.82, 0)
+    private val GOLD_SHARED = Color.rgb(255, 227, 102)        // 40 % of the way to white (its SHARED_PALE)
+    private val GOLD_LINE = Color.rgb(255, 241, 178)          // 70 % (its LINE_PALE), and thinner (its LINE_THIN)
+
+    /**
+     * QuestTrail's trail in its own look: each stretch a gold stroke with dark edges (its line_arrow texture's), paler where only others
+     * walked, palest and thinner over ground nobody walked; then, past what its minimap shows, on to its [target] in faint dashes so it
+     * always ends there. True = drawn.
+     */
+    private fun drawGolden(c: Canvas, target: CursorRoute.Route?, small: Boolean, sx: (Double) -> Float, sy: (Double) -> Float): Boolean {
+        val ps = qtGolden()
+        if (ps.isEmpty()) return false
+        val w = if (small) 7f else 9f
+        for (pass in 0..1) for (p in ps) {
+            val k = if (p.kind == 2) 0.6f else 1f
+            pGolden.pathEffect = null
+            if (pass == 0) { pGolden.strokeWidth = w * k + 4f; pGolden.color = Color.argb(190, 0, 0, 0) }
+            else { pGolden.strokeWidth = w * k; pGolden.color = when (p.kind) { 0 -> GOLD_WALKED; 1 -> GOLD_SHARED; else -> GOLD_LINE } }
+            c.drawLine(sx(p.x0), sy(p.y0), sx(p.x1), sy(p.y1), pGolden)
+        }
+        target?.let { t ->
+            val last = ps.last()
+            val x0 = sx(last.x1); val y0 = sy(last.y1); val x1 = sx(t.x); val y1 = sy(t.y)
+            if (hypot(x1 - x0, y1 - y0) > 12f) {
+                pGolden.pathEffect = DashPathEffect(floatArrayOf(10f, 12f), 0f)
+                pGolden.strokeWidth = 6f; pGolden.color = Color.argb(120, 0, 0, 0); c.drawLine(x0, y0, x1, y1, pGolden)
+                pGolden.strokeWidth = 3.5f; pGolden.color = Color.argb(150, 255, 209, 0); c.drawLine(x0, y0, x1, y1, pGolden)
+                pGolden.pathEffect = null
+            }
+        }
+        return true
+    }
+
     /** the API's planned path (should QuestTrail offer one), drawn as the line's dots; true = drawn */
     private fun drawQuestTrailPath(c: Canvas, x0: Float, y0: Float, sx: (Double) -> Float, sy: (Double) -> Float): Boolean {
         val m = map ?: return false
@@ -5695,11 +5738,25 @@ class MapView(context: Context) : View(context) {
             }
         }
         // ---- THE CURSOR'S DOTTED LINE, under the live markers and the player's arrow (the agreed design), inside the field
+        // ---- QUESTTRAIL'S OWN TRAIL (b-qtrail-golden; the user, test55: "it should show the actual trail like it normally does on our
+        // map module instead of our arrow and dots"): its golden path as it draws it on the minimap, then on to its target; the module
+        // and Home's small map; our line, dots and rim arrow give way to it
+        goldenShown = false
+        if (!morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN() && Settings.questTracking == "questtrail") {
+            val nb = top + (if (compact) compactTop() else 0f)
+            val fb = top + fh - (if (hintsOn() && !compact) HINT_BAND else 0f)
+            val save = c.save()
+            c.clipRect(left, nb, left + fw, fb)
+            goldenShown = drawGolden(c, questTrailRoute(qtOrGameFocus()), compact, ::sx, ::sy)
+            c.restoreToCount(save)
+        }
         val route = if (!compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN()) cursorRoute() else null
         // Polestar's own walking route for the focused quest, when it is the router and has one (b-route-polestar)
         val poleOn = Settings.questTracking == "polestar"
         val qtOn = Settings.questTracking == "questtrail"
-        if ((poleOn || qtOn) && route != null && cursor.sel == qtOrGameFocus() && run {
+        if (goldenShown) {
+            pathFor = 0
+        } else if ((poleOn || qtOn) && route != null && cursor.sel == qtOrGameFocus() && run {
                 val fb = top + fh - (if (hintsOn()) HINT_BAND else 0f)
                 val save = c.save()
                 c.clipRect(left, top, left + fw, fb)
@@ -5975,7 +6032,7 @@ class MapView(context: Context) : View(context) {
         // bent round danger (b-danger-layer): the arrow points along the leg's first stretch, at its first bend
         val bend = if (!toCorpse && !rimFly0 && fRoute != null) dangerLeg(focusTq, fRoute)?.get(1) else null
         val rimFly = rimFly0
-        if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN()) {
+        if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN() && !(goldenShown && !toCorpse)) {
             val tx = sx(bend?.get(0) ?: rimTX); val ty = sy(bend?.get(1) ?: rimTY)
             val inset = RIM_R + 6f
             val l0 = left + inset; val r0 = left + fw - inset
