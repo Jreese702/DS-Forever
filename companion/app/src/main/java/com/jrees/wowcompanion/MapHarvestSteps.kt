@@ -335,8 +335,9 @@ object MapHarvestSteps {
      */
     val TRANSPORTS = object : ArtHarvest.Step {
         override val id = "transports"
-        override val version = 4                    // 2: each ride's cost (yd) from the game's path; 3: its docks' towns; 4: the travel
-                                                    // layer's data (b-travel-layer): the masters' names, the flight routes, boat or air
+        override val version = 5                    // 2: each ride's cost (yd) from the game's path; 3: its docks' towns; 4: the travel
+                                                    // layer's data (b-travel-layer): the masters' names, the flight routes, boat or air;
+                                                    // 5: the docks' exact place names (b-dock-names: AreaTable + the ground's areas)
         override val beforePlay = false
         override val weight = 5
         override fun run(job: ArtHarvest.Job) {
@@ -361,7 +362,7 @@ object MapHarvestSteps {
             // the game's flight routes (TaxiPath: 1 from, 2 to; measured on the PC client), for the known flights' lines
             val flights = job.game.db2(TransportRoutes.DB_TAXI_PATH)?.rows()?.map { intArrayOf(it.int(1), it.int(2)) }
                 ?: emptyList<IntArray>().also { android.util.Log.i("WCMAP", "transports: TaxiPath did not read (${job.game.lastReadWhy})") }
-            val rides = TransportRoutes.withFactions(TransportRoutes.rides(nodes), masters)
+            val rides = TransportRoutes.withFactions(TransportRoutes.rides(nodes), masters, placeNames(job))
             android.util.Log.i("WCMAP", "transports: ${masters.count { it.real }} flight masters, ${flights.size} flight routes; " +
                 "docks: " + rides.joinToString(", ") { "${it.na ?: "?"} - ${it.nb ?: "?"}${if (it.air) " (air)" else ""}" })
             android.util.Log.i("WCMAP", TransportRoutes.summary(nodes, rides))
@@ -370,6 +371,29 @@ object MapHarvestSteps {
                 "${rd.a[0].toInt()},${rd.a[1].toInt()} (${town(rd.fa)}) -> ${rd.cb}:${rd.b[0].toInt()},${rd.b[1].toInt()} (${town(rd.fb)})")
             job.writeBytes("transports.json", TransportRoutes.toJson(nodes, rides, masters, flights).toString().toByteArray())
         }
+    }
+
+    /**
+     * THE PLACE AT A SPOT (b-dock-names): AreaTable's names (1 the name, 3 the parent; measured on the PC client) and the root ADTs'
+     * chunk areas (each continent's WDT from Map.db2, a tile read once); null when AreaTable or Map does not read (the docks keep the
+     * other names)
+     */
+    private fun placeNames(job: ArtHarvest.Job): ((Int, Float, Float) -> String?)? {
+        val g = job.game
+        val areas = g.db2(PlaceNames.DB_AREA_TABLE)?.rows(strings = setOf(1))?.associate { it.id to PlaceNames.Area(it.str(1), it.int(3)) }
+            ?: return null.also { android.util.Log.i("WCMAP", "transports: AreaTable did not read (${g.lastReadWhy})") }
+        val mapRows = g.db2(MapHarvest.DB_MAP)?.rows()?.associateBy { it.id } ?: return null
+        val roots = HashMap<Int, Map<Int, Int>>()
+        val tiles = HashMap<Long, Map<Int, Int>>()
+        fun areaAt(c: Int, wx: Double, wy: Double): Int? {
+            val (tc, tr, ch) = PlaceNames.locate(wx, wy).let { Triple(it[0], it[1], it[2]) }
+            if (tc !in 0..63 || tr !in 0..63) return null
+            val root = roots.getOrPut(c) { mapRows[c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) }?.let { Terrain.maidRoot(it) } ?: emptyMap() }
+            val key = (c.toLong() shl 32) or MapHarvest.key(tc, tr).toLong()
+            val chunks = tiles.getOrPut(key) { root[MapHarvest.key(tc, tr)]?.let { g.read(it) }?.let { PlaceNames.chunkAreas(it) } ?: emptyMap() }
+            return chunks[ch]
+        }
+        return { c, x, y -> PlaceNames.nameAt(x.toDouble(), y.toDouble(), areas) { wx, wy -> areaAt(c, wx, wy) } }
     }
 
     /**
