@@ -37,6 +37,17 @@ object PreviewStage {
     /** something to show (the panel draws its own diagram until the game has sent a full document) */
     val ready get() = full != null
 
+    /** the player's own item / spell wheel lists (the host's HomeRadialView) */
+    var wheelItems: (spell: Boolean) -> List<UiKit.RadialItem?> = { emptyList() }
+
+    /** the class radial on that side, from the stage's own CastView (the bars' latest document) */
+    fun classWheel(ctx: Context, c: Canvas, w: Float, h: Float, left: Boolean, pointed: Int): Boolean {
+        val f = full ?: return false
+        val t = tree ?: build(ctx).also { tree = it }
+        strip(f).optJSONObject("actionbar")?.let { t.cast.update(it) }
+        return t.cast.drawClassPreview(c, w, h, left, pointed)
+    }
+
     /** the live bar's DS toolbar (the host's CastView): its pictures and whether they show */
     var roomBar: () -> Map<Int, String>? = { null }
     var roomBarOn: () -> Boolean = { false }

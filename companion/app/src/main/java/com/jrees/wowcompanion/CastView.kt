@@ -152,11 +152,22 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var stickY = 0f
     /** the place of [r] the right stick points at now (its evenly spaced slices), -1 = none */
     private fun pointedPlace(r: Radial): Int {
+        previewPointed?.let { return it }
         val o = r.order
         val deg = ClassChord.stickDeg(stickX, stickY) ?: return -1
         return o.getOrNull(ClassChord.nearest(deg, o.size)) ?: -1
     }
     private var autoAttack = false
+    /** f-settings-previews: the place a preview lights (the stage's own CastView only), null = the stick's */
+    private var previewPointed: Int? = null
+
+    /** f-settings-previews: the class radial on that side fitted into [vw] x [vh], place [pointed] lit (the order's index); false = none */
+    fun drawClassPreview(c: Canvas, vw: Float, vh: Float, left: Boolean, pointed: Int): Boolean {
+        val r = (if (left) hud?.caL else hud?.caR) ?: return false
+        previewPointed = if (pointed >= 0) r.order.getOrNull(pointed % maxOf(1, r.order.size)) ?: -1 else -1
+        try { drawRadial(c, r, vw / 2f, vh / 2f, vw, vh, min(vw, vh) / 520f) } finally { previewPointed = null }
+        return true
+    }
     /** the swing timer (hudS.sw, combat only): which swing (0 main, 1 off, 2 ranged), its start on the
      *  app's elapsedRealtime clock in ms (NaN = none) and its length */
     private var swingKind = -1

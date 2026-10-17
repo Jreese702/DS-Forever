@@ -705,6 +705,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         radialView = HomeRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pinPicker = BagsPinPicker(this)
         radialView.picker = pinPicker
+        PreviewStage.wheelItems = { spell -> radialView.previewItems(spell) }        // f-settings-previews: the wheels' pictures
         // f-radial-middle: on Home the item / spell wheel takes Home's middle slot (the columns part), mapped into the wheel's view
         radialView.homeSlot = { open ->
             if (!open) { homeView.wheelSlot(false); null }
