@@ -12,7 +12,8 @@ import kotlin.math.hypot
  *      objectives, the nearest on the ground; once every objective is done, the turn-in (the game's, else QuestieDB's);
  *   3. by the ROUTE when the goal is not on this map: a known AND connected flight master when flying is clearly faster
  *      ([FlightRoute]; "Flight to <node>"), else the game's own next waypoint when it gives one (the focused quest's), else the
- *      map's edge toward the quest ("Exit east"). Boats / trams / zeppelins wait for the transport probe.
+ *      map's edge toward the quest ("Exit east"). The game's boats / zeppelins are ways out like any other ([TransportRoutes.hops]);
+ *      a quest on ANOTHER continent goes by the ride that lands nearest it ("Ride to Theramore"), else no line.
  * Points are in the map's 0..1 space; [ax] / [ay] are the yards across / down it, so "nearest" and the yards are on the ground.
  */
 object CursorRoute {
@@ -65,7 +66,11 @@ object CursorRoute {
             val g = goals.minByOrNull { hypot((it[0] - px) * ax, (it[1] - py) * ay) }!!
             return Route(Kind.GOAL, g[0], g[1], null)
         }
-        if (far == null) return null
+        if (far == null) {
+            // on another continent: only a ride there (a way with its own tail) can take the player
+            val w = CityExits.pick(px, py, null, ways, ax, ay) ?: return null
+            return Route(Kind.EXIT, w.x, w.y, wayName(w.exit) ?: "Exit ${compass(px, py, w.x, w.y, ax, ay)}")
+        }
         // (c) IN A CITY a flight comes first, but ONLY when this character is known to have it (the user: "only if we know for sure
         // that this character has the flight paths unlocked"): the city's known flight point and the known point nearest the quest,
         // joined by a flight a flight master showed this character (TaxiNet). Elsewhere a flight only when clearly faster.

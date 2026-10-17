@@ -45,4 +45,16 @@ class CursorRouteTest {
         assertEquals("south-west", CursorRoute.compass(0.5, 0.5, 0.2, 0.8, ax, ay))
         assertEquals(300, CursorRoute.yards(0.5, 0.5, 0.8, 0.5, ax, ay))
     }
+
+    @Test fun aQuestOverseasGoesByTheRide() {
+        val e = CityExits.Exit(12, "Ride to Theramore", wx = 0.0, wy = 0.0, rideYd = 600.0)
+        val near = CityExits.Way(e, 0.6, 0.5, 0.6, 0.5, tailYd = 900.0)
+        val farther = CityExits.Way(e.copy(name = "Ride to Ratchet"), 0.9, 0.5, 0.9, 0.5, tailYd = 100.0)
+        val r = CursorRoute.plan(0.5, 0.5, ax, ay, emptyList(), null, null, null, emptyList(), ways = listOf(near, farther), wayName = { it.name }) { _, _ -> false }!!
+        // 100 + 600 + 900 against 400 + 600 + 100: Ratchet
+        assertEquals(CursorRoute.Kind.EXIT, r.kind); assertEquals("Ride to Ratchet", r.label)
+        // a way without a tail cannot reach another continent
+        assertNull(CursorRoute.plan(0.5, 0.5, ax, ay, emptyList(), null, null, null, emptyList(),
+            ways = listOf(CityExits.Way(e, 0.6, 0.5, 0.6, 0.5))) { _, _ -> false })
+    }
 }

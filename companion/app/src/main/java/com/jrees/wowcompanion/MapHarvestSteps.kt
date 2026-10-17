@@ -332,7 +332,7 @@ object MapHarvestSteps {
      */
     val TRANSPORTS = object : ArtHarvest.Step {
         override val id = "transports"
-        override val version = 1
+        override val version = 2                    // 2: each ride's cost (yd) from the game's path
         override val beforePlay = false
         override val weight = 5
         override fun run(job: ArtHarvest.Job) {

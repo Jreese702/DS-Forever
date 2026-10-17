@@ -137,6 +137,12 @@ class WorldMapModel {
 
     fun world(id: Int): World? = maps[id]?.world
 
+    /** the smallest zone (mapType 3: a zone or a city) whose world rectangle holds ([wx], [wy]) on [continent], or null */
+    fun zoneAt(continent: Int, wx: Double, wy: Double): MapInfo? = maps.values.filter { m ->
+        val w = m.world
+        m.type == 3 && w != null && w.continent == continent && wx in w.bottom..w.top && wy in w.right..w.left
+    }.minByOrNull { (it.world!!.top - it.world.bottom) * (it.world.left - it.world.right) }
+
     /** World ... [id] */
     fun ancestors(id: Int): List<Int> {
         val out = ArrayList<Int>()

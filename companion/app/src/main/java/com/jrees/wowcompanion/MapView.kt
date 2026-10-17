@@ -2535,7 +2535,38 @@ class MapView(context: Context) : View(context) {
     val waySources: MutableList<(Int, PoiStore.Rect) -> List<CityExits.Way>> = mutableListOf(
         { mapId, r -> learnedWays(mapId, r) },
         { mapId, r -> tableWays(mapId, r) },
+        { mapId, r -> rideWays(mapId, r, emptyList()) },
     )
+
+    // ---- THE GAME'S BOATS AND ZEPPELINS (b-route-rides): the art harvest's transports.json (TransportRoutes, from the game's own
+    // TaxiPathNode table on this device), read again when the harvest rewrites it
+    var ridesFile: () -> java.io.File = { ArtHarvest.file("transports.json") }
+    var zoneAt: ((Int, Double, Double) -> String?)? = null
+    private var rides: List<TransportRoutes.Ride> = emptyList()
+    private var ridesStamp = -1L
+    private fun rides(): List<TransportRoutes.Ride> {
+        val f = ridesFile()
+        val st = if (f.isFile) f.lastModified() + f.length() else 0L
+        if (st != ridesStamp) {
+            ridesStamp = st
+            rides = if (st == 0L) emptyList() else runCatching { TransportRoutes.fromJson(JSONObject(f.readText())) }.getOrElse { emptyList() }
+            if (st != 0L) android.util.Log.i("WCMAP", "route: ${rides.size} rides read from transports.json")
+        }
+        return rides
+    }
+
+    /** the rides from a dock on this map's continent, as ways out of [mapId]: walk to the dock, ride, on from the far dock (on this
+     *  continent: its place on this map; to [spots] on another: the yards from it to the nearest) */
+    private fun rideWays(mapId: Int, r: PoiStore.Rect, spots: List<DoubleArray>): List<CityExits.Way> =
+        TransportRoutes.hops(rides(), r.continent, spots).filter { it.tailYd.isNaN() == spots.isEmpty() }.map { h ->
+            val rd = h.ride
+            val at = here(r, rd.a[0].toDouble(), rd.a[1].toDouble())
+            val end = if (h.tailYd.isNaN()) here(r, rd.b[0].toDouble(), rd.b[1].toDouble()) else at
+            val name = zoneAt?.invoke(rd.cb, rd.b[0].toDouble(), rd.b[1].toDouble())?.takeIf { it.isNotEmpty() }
+            val e = CityExits.Exit(mapId, if (name != null) "Ride to $name" else "Boat or zeppelin", wx = rd.a[0].toDouble(), wy = rd.a[1].toDouble(),
+                toWx = rd.b[0].toDouble(), toWy = rd.b[1].toDouble(), rideYd = rd.yd.coerceAtLeast(1.0))
+            CityExits.Way(e, at[0], at[1], end[0], end[1], h.tailYd)
+        }
 
     private fun here(r: PoiStore.Rect, wx: Double, wy: Double) = doubleArrayOf(r.nx(wy), r.ny(wx))
 
@@ -3415,7 +3446,8 @@ class MapView(context: Context) : View(context) {
         val goals = ArrayList(CursorRoute.goals(mq, questById[q], mapId))
         // where the game's zone maps show it (the Map room's kept mapquests), carried onto this map: a goal when it falls on this map
         var far: DoubleArray? = null
-        offMapSpots?.invoke(q)?.let { spots ->
+        val allSpots = offMapSpots?.invoke(q) ?: emptyList()
+        allSpots.let { spots ->
             WorldMapModel.nearestWorld(spots, r.continent, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN))?.let { best ->
                 val fx = r.nx(best[2]); val fy = r.ny(best[1])
                 if (fx in 0.0..1.0 && fy in 0.0..1.0) { if (goals.isEmpty()) goals.add(doubleArrayOf(fx, fy)) } else far = doubleArrayOf(fx, fy)
@@ -3435,6 +3467,9 @@ class MapView(context: Context) : View(context) {
         // paths will slot in as one more [waySources] entry)
         val ways = ArrayList<CityExits.Way>()
         for (src in waySources) ways.addAll(src(mapId, r))
+        // the quest only on ANOTHER continent: the rides there (b-route-rides), each with the yards on from where it lands
+        if (far == null && goals.isEmpty() && allSpots.isNotEmpty() && allSpots.none { it.size >= 3 && it[0].toInt() == r.continent })
+            ways.addAll(rideWays(mapId, r, allSpots))
         return CursorRoute.plan(px, py, r.width, r.height, goals, far, way, questById[q]?.optString("wp", ""), nodes,
             ways = ways, inCity = mapId in CityExits.CITIES,
             wayName = { e ->
