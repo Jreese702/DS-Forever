@@ -15,6 +15,8 @@ class QuestLayers(private val get: (String, Boolean) -> Boolean, private val put
         TURN_INS("q_turnins", "Turn-ins", "every quest ready to hand in", true),
         DAILY("q_daily", "Daily & repeatable", "", true),
         SMALL("q_small", "Small map: quests nearby", "Home's small map: the ! within 200 yd, the focused quest's objectives", true),
+        // b-danger-layer (the user's pick: the tint only with this filter, off by default)
+        DANGER("q_danger", "Danger areas", "hostile mobs at or above your level, tinted red (QuestieDB)", false),
     }
 
     fun on(l: Layer): Boolean = get(l.key, l.default)

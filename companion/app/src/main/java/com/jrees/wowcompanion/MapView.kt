@@ -3640,6 +3640,133 @@ class MapView(context: Context) : View(context) {
         return doubleArrayOf(best[0], best[1], best[2])
     }
 
+    // ---- THE DANGER LAYER (b-danger-layer; the user: "map out the safe paths on maps to navigate around those, to keep me from
+    // navigating into ... hostile mobs"; their picks: neutrals ignored, High by default, the tint only with the "Danger areas" filter,
+    // elites x3). QuestieDB's hostile spawns on this map (DangerStore) as a DangerGrid for this character (level, faction); in
+    // Vanilla the leg to the route's next point bends round it (A* + string-pull, kept while it costs at most [DANGER_STICK] more than
+    // a new one, worked out again after [DANGER_MOVE_YD] of walking); under Polestar / QuestTrail their route is kept and its
+    // dangerous stretches are drawn red with a note.
+    private var dGrid: DangerGrid? = null
+    private var dGridKey = ""
+    private class DangerLeg(val pts: List<DoubleArray>, val tx: Double, val ty: Double, val atX: Double, val atY: Double, val k: Double)
+    private val dangerLegs = HashMap<Int, DangerLeg>()
+    private val DANGER_MOVE_YD = 30.0
+    private val DANGER_STICK = 1.10
+    private val DANGER_WARN = 1.0f                         // a stretch of another router's route this dangerous is drawn red
+    private var dangerNote: String? = null
+
+    private fun dangerGrid(): DangerGrid? {
+        val m = map ?: return null
+        val r = rect ?: return null
+        if (!r.valid) return null
+        DangerStore.check(context) { dGridKey = ""; dangerLegs.clear(); invalidate() }
+        val plv = questsPlv ?: return null
+        val mapId = m.optInt("mapID", 0)
+        val mine = TransportRoutes.factionOf(m.optString("fac", null))
+        val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}"
+        if (key != dGridKey) {
+            dGridKey = key
+            dangerLegs.clear()
+            val sp = DangerStore.spawns(mapId)
+            dGrid = if (sp.isEmpty()) null else DangerGrid.build(sp, mine, plv, r.width, r.height)
+        }
+        return dGrid
+    }
+
+    /** quest [q]'s leg to [route]'s point, bent round danger (Vanilla, "Avoid dangerous areas" not Off): the player first, the
+     *  route's point last; null = straight */
+    private fun dangerLeg(q: Int, route: CursorRoute.Route): List<DoubleArray>? {
+        if (Settings.questTracking != "vanilla") return null
+        val k = DangerGrid.strength(Settings.avoidDanger)
+        if (k <= 0.0) return null
+        val g = dangerGrid() ?: return null
+        val m = map ?: return null
+        val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
+        if (px.isNaN() || py.isNaN()) return null
+        val ax = g.ax; val ay = g.ay
+        val here = doubleArrayOf(px, py); val to = doubleArrayOf(route.x, route.y)
+        val old = dangerLegs[q]
+        val sameGoal = old != null && hypot((route.x - old.tx) * ax, (route.y - old.ty) * ay) <= 20.0 && old.k == k
+        if (old != null && sameGoal && hypot((px - old.atX) * ax, (py - old.atY) * ay) <= DANGER_MOVE_YD)
+            return if (old.pts.size > 2) listOf(here) + old.pts.drop(1) else null
+        var pts = g.route(here, to, k)
+        if (old != null && sameGoal && old.pts.size > 2) {
+            val kept = listOf(here) + old.pts.drop(1)
+            if (g.cost(kept, k, to) <= g.cost(pts, k, to) * DANGER_STICK) pts = kept
+        }
+        val wasBent = old != null && old.pts.size > 2
+        if (pts.size > 2 || wasBent) {
+            val firstMoved = !wasBent || pts.size <= 2 || hypot((pts[1][0] - old!!.pts[1][0]) * ax, (pts[1][1] - old.pts[1][1]) * ay) > 40.0
+            if (firstMoved) {
+                val straight = listOf(here, to)
+                android.util.Log.i("WCMAP", if (pts.size > 2) "danger: quest $q bent round hostile ground: ${pts.size - 2} bends, " +
+                    "detour +${(DangerGrid.yards(pts, ax, ay) - DangerGrid.yards(straight, ax, ay)).toInt()} yd, danger avoided " +
+                    "${(g.cost(straight, k, to) - g.cost(pts, k, to)).toInt()} (strength ${Settings.avoidDanger})"
+                    else "danger: quest $q straight again")
+            }
+        }
+        dangerLegs[q] = DangerLeg(pts, route.x, route.y, px, py, k)
+        return pts.takeIf { it.size > 2 }
+    }
+
+    /** a route of another router's ([pts], this map's 0..1) over dangerous ground: its red stretches on top, and [dangerNote] */
+    private fun dangerWarn(c: Canvas, pts: List<DoubleArray>, who: String, sx: (Double) -> Float, sy: (Double) -> Float) {
+        val g = dangerGrid() ?: return
+        if (pts.size < 2) return
+        val goal = pts.last()
+        var worst = 0f; var at: DoubleArray? = null
+        pathTmp.reset()
+        for (i in 1 until pts.size) {
+            // in pieces about a cell long, so only the dangerous stretches turn red
+            val a0 = pts[i - 1]; val b0 = pts[i]
+            val n = max(1, (hypot((b0[0] - a0[0]) * g.ax, (b0[1] - a0[1]) * g.ay) / DangerGrid.CELL_YD).toInt())
+            for (s in 0 until n) {
+                val p0 = doubleArrayOf(a0[0] + (b0[0] - a0[0]) * s / n, a0[1] + (b0[1] - a0[1]) * s / n)
+                val p1 = doubleArrayOf(a0[0] + (b0[0] - a0[0]) * (s + 1) / n, a0[1] + (b0[1] - a0[1]) * (s + 1) / n)
+                val pk = g.peak(p0, p1, goal)
+                if (pk >= DANGER_WARN) {
+                    pathTmp.moveTo(sx(p0[0]), sy(p0[1])); pathTmp.lineTo(sx(p1[0]), sy(p1[1]))
+                    if (pk > worst) { worst = pk; at = doubleArrayOf((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2) }
+                }
+            }
+        }
+        if (at == null) return
+        pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), 0f)
+        pPath.strokeWidth = 7f; pPath.color = Color.rgb(230, 50, 40); c.drawPath(pathTmp, pPath)
+        pPath.pathEffect = null
+        // the note names the strongest hostile creature near the worst stretch
+        val mapId = map?.optInt("mapID", 0) ?: 0
+        val plv = questsPlv ?: 0
+        val s = DangerStore.spawns(mapId).filter { DangerGrid.weight(it.minLv, it.maxLv, it.elite, plv) > 0f }
+            .minByOrNull { hypot((it.x - at[0]) * g.ax, (it.y - at[1]) * g.ay) }
+        dangerNote = "$who's route crosses hostile ground" + (s?.let { ": ${it.name} (Lv ${it.minLv}${if (it.maxLv != it.minLv) "-${it.maxLv}" else ""}${if (it.elite) ", elite" else ""})" } ?: "")
+    }
+
+    /** the "Danger areas" filter: the grid's dangerous cells, tinted faintly red under the markers */
+    private fun drawDangerTint(c: Canvas, sx: (Double) -> Float, sy: (Double) -> Float) {
+        val g = dangerGrid() ?: return
+        // each dangerous cell a soft round patch, a little wider than the cell, so the camps read as areas, not squares
+        val rad = abs(sx(g.cx) - sx(0.0)) * 0.8f
+        for (j in 0 until g.ny) for (i in 0 until g.nx) {
+            val v = g.cell(i, j)
+            if (v < 0.15f) continue
+            pFill.color = Color.argb((min(1f, v / 2f) * 70).toInt(), 210, 40, 30)
+            c.drawCircle(sx((i + 0.5) * g.cx), sy((j + 0.5) * g.cy), rad, pFill)
+        }
+    }
+
+    /** the bent leg's dots up to its last bend (the last stretch is drawCursorPath's, with its words and its edge arrow) */
+    private fun drawDangerDots(c: Canvas, leg: List<DoubleArray>, sx: (Double) -> Float, sy: (Double) -> Float) {
+        pathTmp.reset()
+        pathTmp.moveTo(sx(leg[0][0]), sy(leg[0][1]))
+        for (i in 1 until leg.size - 1) pathTmp.lineTo(sx(leg[i][0]), sy(leg[i][1]))
+        val phase = -(android.os.SystemClock.elapsedRealtime() / 1000f * 24f) % 16f
+        pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
+        pPath.strokeWidth = 9f; pPath.color = Color.argb(160, 0, 0, 0); c.drawPath(pathTmp, pPath)
+        pPath.strokeWidth = 6f; pPath.color = cGold; c.drawPath(pathTmp, pPath)
+        pPath.pathEffect = null
+    }
+
     /** Polestar's live route on this continent, drawn as the line's dots (true = drawn) */
     private fun drawPolestarRoute(c: Canvas, x0: Float, y0: Float, sx: (Double) -> Float, sy: (Double) -> Float): Boolean {
         val r = rect ?: return false
@@ -3663,6 +3790,15 @@ class MapView(context: Context) : View(context) {
         pPath.strokeWidth = 9f; pPath.color = Color.argb(160, 0, 0, 0); c.drawPath(pathTmp, pPath)
         pPath.strokeWidth = 6f; pPath.color = cGold; c.drawPath(pathTmp, pPath)
         pPath.pathEffect = null
+        // its dangerous stretches (b-danger-layer: Polestar keeps its route; we warn)
+        map?.let { m ->
+            val pts = arrayListOf(doubleArrayOf(m.optDouble("x"), m.optDouble("y")))
+            for (leg in legs) if (leg.cont == null || leg.cont == r.continent) {
+                var i = 0
+                while (i + 1 < leg.pts.size) { pts.add(doubleArrayOf(r.nx(leg.pts[i + 1]), r.ny(leg.pts[i]))); i += 2 }
+            }
+            dangerWarn(c, pts, "Polestar", sx, sy)
+        }
         postInvalidateOnAnimation()
         return true
     }
@@ -5213,6 +5349,11 @@ class MapView(context: Context) : View(context) {
             drawPin(c, kind, cxp, cyp)
         }
 
+        // ---- THE DANGER AREAS (b-danger-layer: the "Danger areas" filter, off by default), under the line and the markers
+        if (!compact && !morphOn && on(QuestLayers.Layer.DANGER)) {
+            val save = c.save(); c.clipRect(left, top, left + fw, top + fh); drawDangerTint(c, ::sx, ::sy); c.restoreToCount(save)
+        }
+        dangerNote = null
         // ---- THE CURSOR'S DOTTED LINE, under the live markers and the player's arrow (the agreed design), inside the field
         val route = if (!compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN()) cursorRoute() else null
         // Polestar's own walking route for the focused quest, when it is the router and has one (b-route-polestar)
@@ -5242,10 +5383,25 @@ class MapView(context: Context) : View(context) {
             val save = c.save()
             c.clipRect(left, top, left + fw, fb)
             val rr = rect
-            val yd = if (rr != null && rr.valid) CursorRoute.yards(px, py, route.x, route.y, rr.width, rr.height) else 0
-            drawCursorPath(c, cursor.sel, route, yd, sx(px), sy(py), sx(route.x), sy(route.y), left, top, left + fw, fb)
+            // Vanilla: the leg bent round hostile ground (b-danger-layer); its last stretch is the line's own (words, edge arrow)
+            val leg = dangerLeg(cursor.sel, route)
+            if (leg != null && rr != null && rr.valid) {
+                drawDangerDots(c, leg, ::sx, ::sy)
+                val b = leg[leg.size - 2]
+                drawCursorPath(c, cursor.sel, route, DangerGrid.yards(leg, rr.width, rr.height).toInt(), sx(b[0]), sy(b[1]),
+                    sx(route.x), sy(route.y), left, top, left + fw, fb)
+            } else {
+                val yd = if (rr != null && rr.valid) CursorRoute.yards(px, py, route.x, route.y, rr.width, rr.height) else 0
+                drawCursorPath(c, cursor.sel, route, yd, sx(px), sy(py), sx(route.x), sy(route.y), left, top, left + fw, fb)
+                // QuestTrail's line straight to its point: its dangerous stretch warned
+                if (qtOn && cursor.sel == focusQid) dangerWarn(c, listOf(doubleArrayOf(px, py), doubleArrayOf(route.x, route.y)), "QuestTrail", ::sx, ::sy)
+            }
             c.restoreToCount(save)
         } else pathFor = 0
+        dangerNote?.let { n ->
+            val np = UiKit.bodyPaint(18f, Color.rgb(255, 170, 150)).apply { setShadowLayer(3f, 0f, 0f, Color.BLACK) }
+            c.drawText(n, left + 16f, top + fh - 48f - (if (hintsOn()) HINT_BAND else 0f), np)
+        }
 
         // ---- live markers, as icons, in the game's own vocabulary so nothing needs learning:
         //   "!"  (yellow, 40 px)   a quest AVAILABLE to pick up, at the giver. Blue for a daily,
@@ -5423,9 +5579,12 @@ class MapView(context: Context) : View(context) {
         val viaWay = fRoute != null && fRoute.kind != CursorRoute.Kind.GOAL
         val rimTX = if (toCorpse) corpseX else if (viaWay) fRoute!!.x else focusTX
         val rimTY = if (toCorpse) corpseY else if (viaWay) fRoute!!.y else focusTY
-        val rimFly = if (viaWay) fRoute!!.kind == CursorRoute.Kind.FLIGHT else flyStep
+        val rimFly0 = if (viaWay) fRoute!!.kind == CursorRoute.Kind.FLIGHT else flyStep
+        // bent round danger (b-danger-layer): the arrow points along the leg's first stretch, at its first bend
+        val bend = if (!toCorpse && !rimFly0 && fRoute != null) dangerLeg(focusTq, fRoute)?.get(1) else null
+        val rimFly = rimFly0
         if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN()) {
-            val tx = sx(rimTX); val ty = sy(rimTY)
+            val tx = sx(bend?.get(0) ?: rimTX); val ty = sy(bend?.get(1) ?: rimTY)
             val inset = RIM_R + 6f
             val l0 = left + inset; val r0 = left + fw - inset
             // the top rule: on the small map the whole marker stays below the host's name bar
@@ -5787,6 +5946,7 @@ class MapView(context: Context) : View(context) {
                 QuestLayers.Layer.TURN_INS -> drawIcon(c, Ic.QUEST_DONE, x0 + 116f, cy, 52f)
                 QuestLayers.Layer.TRACKED -> UiKit.questDisc(c, x0 + 116f, cy, 60f, number = 1)
                 QuestLayers.Layer.OTHER -> objDot(c, x0 + 116f, cy, 0.5f)
+                QuestLayers.Layer.DANGER -> { pFill.color = Color.argb(150, 210, 40, 30); c.drawRoundRect(x0 + 94f, cy - 20f, x0 + 138f, cy + 20f, 10f, 10f, pFill) }
             }
             name.color = if (on) cGold else cDim
             val hasSub = l.sub.isNotEmpty() && rowH >= 84f
