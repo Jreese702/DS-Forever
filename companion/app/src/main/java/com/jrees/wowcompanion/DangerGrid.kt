@@ -97,7 +97,10 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
                 val vi = ui + di; val vj = uj + dj
                 if (vi !in 0 until nx || vj !in 0 until ny) continue
                 val v = vj * nx + vi
-                if (terr[v] >= Terrain.WALL && v != t) continue           // a cliff is a wall, not a cost (test51)
+                // a cliff or a building is a wall, not a cost (test51, test54); not near the start or the goal (a door: leaving or
+                // reaching a building, a quest giver inside one)
+                if (terr[v] >= Terrain.WALL && v != t && hypot((vi - si) * cx * ax, (vj - sj) * cy * ay) > WALL_FREE_YD &&
+                    hypot((vi - ti) * cx * ax, (vj - tj) * cy * ay) > WALL_FREE_YD) continue
                 val len = hypot(di * cx * ax, dj * cy * ay)
                 val free = hypot((vi + 0.5) * cx * ax - goal[0] * ax, (vj + 0.5) * cy * ay - goal[1] * ay) <= GOAL_FREE_YD
                 val c = g[u] + len * (terr[v] + (if (free) 0.0 else k * cell(vi, vj)))
@@ -141,6 +144,8 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
          *  like 1.5x to see if that fits the safe pathing": 30 -> 45; then "Make the danger areas about 2x": 60) */
         const val AGGRO_YD = 60.0
         const val GOAL_FREE_YD = 60.0
+        /** walls (cliffs, buildings) do not hold within this of the start or the goal: a building's door, a quest giver inside */
+        const val WALL_FREE_YD = 40.0
         const val CALM = 0.05f          // a straight line crossing no more than this is left alone
         const val CAP = 4f              // a cell's danger at most (a dense camp is a wall, not an infinity)
         /** the user's strengths: "Avoid dangerous areas" Off / Low / High */

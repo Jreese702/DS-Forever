@@ -3903,29 +3903,49 @@ class MapView(context: Context) : View(context) {
         val tg = Terrain.of(mapId)
         // the roads this device learned from the walking (b-route-roads), learned again as the walked cells grow
         Roads.relearn(200) { dGridKey = ""; invalidate() }
-        val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}:${tg != null}:${Terrain.Walked.count() / 40}:${Roads.version}"
+        // the buildings (test54: "Sometimes checkpoints are going through buildings"): the interiors' placed buildings on this map, their
+        // storeys' outlines in the world (b-route-buildings)
+        ensurePlaces(r.continent)
+        val bl = if (placesFor == r.continent) places else null
+        val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}:${tg != null}:${Terrain.Walked.count() / 40}:${Roads.version}:${bl?.size}"
         if (key != dGridKey) {
             dGridKey = key
             dangerLegs.clear()
             val sp = DangerStore.spawns(mapId)
             val cont = r.continent
+            val foot = Buildings.onMap((bl ?: emptyList()).map { p ->
+                Buildings.Foot(p.ox, p.oy, p.cs, p.sn, p.levels.minOf { it.lxmin }, p.levels.maxOf { it.lxmax },
+                    p.levels.minOf { it.lymin }, p.levels.maxOf { it.lymax })
+            }, r)
+            val cellX = DangerGrid.CELL_YD / r.width; val cellY = DangerGrid.CELL_YD / r.height
             val ground: ((Double, Double) -> Float)? = { x, y ->
                 val wy = r.left - x * r.width; val wx = r.top - y * r.height
                 val slope = tg?.at(wx, wy) ?: Terrain.NO_DATA
-                val f = Terrain.factor(slope)
+                val f0 = Terrain.factor(slope)
+                // the zone's border band (test54: "that Westfall quest is sending me along the mountains"): dear unless level
+                val edgeYd = minOf(x * r.width, (1 - x) * r.width, y * r.height, (1 - y) * r.height)
+                val f = if (edgeYd < BORDER_YD && (slope == Terrain.NO_DATA || f0 > 1f)) f0 * BORDER_COST else f0
+                val built = Buildings.cover(foot, x, y, cellX, cellY, r)
                 when {
+                    built >= Buildings.WALL_COVER -> Terrain.WALL                 // a building: a wall (its doors: the start's / goal's ends)
                     f >= 3f -> f
+                    built >= Buildings.PART_COVER -> f * Buildings.PART_COST
                     Roads.isRoad(mapId, wx, wy) -> f * Roads.ROAD                // a learned road: cheaper still than walked ground
                     Terrain.Walked.walked(cont, wx, wy) -> f * Terrain.Walked.WALKED
                     else -> f
                 }
             }
-            dGrid = if (sp.isEmpty() && tg == null) null else DangerGrid.build(sp, mine, plv, r.width, r.height, ground)
-            if (tg != null) android.util.Log.i("WCMAP", "terrain: map $mapId's ground in the route (${Terrain.Walked.count()} walked cells kept)")
+            dGrid = if (sp.isEmpty() && tg == null && foot.isEmpty()) null else DangerGrid.build(sp, mine, plv, r.width, r.height, ground)
+            android.util.Log.i("WCMAP", "terrain: grid for map $mapId ${if (tg != null) "present" else "missing"}; " +
+                "${foot.size} buildings as walls; ${Terrain.Walked.count()} walked cells kept")
             Roads.of(mapId)?.let { android.util.Log.i("WCMAP", "roads: ${Roads.roadCells(mapId)} road cells in map $mapId") }
         }
         return dGrid
     }
+
+    /** a zone's border band (yd) and its cost unless the ground there is level (Terrain.factor 1; unknown ground counts as not level) */
+    private val BORDER_YD = 75.0
+    private val BORDER_COST = 2.5f
 
     /** quest [q]'s leg to [route]'s point, bent round danger (Vanilla, "Avoid dangerous areas" not Off): the player first, the
      *  route's point last; null = straight */
@@ -3963,7 +3983,9 @@ class MapView(context: Context) : View(context) {
                 val straight = listOf(here, to)
                 android.util.Log.i("WCMAP", if (pts.size > 2) "danger: quest $q bent round hostile ground: ${pts.size - 2} bends, " +
                     "detour +${(DangerGrid.yards(pts, ax, ay) - DangerGrid.yards(straight, ax, ay)).toInt()} yd, danger avoided " +
-                    "${(g.cost(straight, k, to) - g.cost(pts, k, to)).toInt()} (strength ${Settings.avoidDanger}, radius ${DangerGrid.AGGRO_YD.toInt()} yd)"
+                    "${(g.cost(straight, k, to) - g.cost(pts, k, to)).toInt()} (strength ${Settings.avoidDanger}, radius ${DangerGrid.AGGRO_YD.toInt()} yd); " +
+                    "cost: ground ${g.cost(pts, 0.0, to).toInt()} + danger ${(g.cost(pts, k, to) - g.cost(pts, 0.0, to)).toInt()} " +
+                    "(straight: ground ${g.cost(straight, 0.0, to).toInt()} + danger ${(g.cost(straight, k, to) - g.cost(straight, 0.0, to)).toInt()})"
                     else "danger: quest $q straight again")
             }
         }
