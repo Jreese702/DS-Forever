@@ -41,7 +41,13 @@ object SettingsPreview {
      * as our own views draw it ([PreviewStage]: an offscreen Home fed the game's latest documents) at a [HomeView.Companion.Look], in a
      * fight or not, the DS toolbar on / off / as it is (null). null = not yet (no game documents): the row's own drawing stands in.
      */
-    fun interface Live { fun home(look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?): Bitmap? }
+    interface Live {
+        fun home(look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?): Bitmap?
+        /** the player's own item wheel ([spell] = the spell wheel): page 1's slices (null = an empty slice) */
+        fun wheelItems(spell: Boolean): List<UiKit.RadialItem?> = emptyList()
+        /** the player's class radial on that side, drawn fitted into [w] x [h] with place [pointed] lit; false = none on that side */
+        fun classWheel(c: Canvas, w: Float, h: Float, left: Boolean, pointed: Int): Boolean = false
+    }
 
     /** a button picture: [action] "a" "b" "x" "y" "start", in glyph set [set] (0 Nintendo, 1 Xbox, 2 PlayStation), centred, [size] px */
     fun interface Glyph { fun draw(c: Canvas, action: String, set: Int, cx: Float, cy: Float, size: Float) }
@@ -157,6 +163,8 @@ object SettingsPreview {
         val t = tMs / 1000f
         // the Home tab: the real Home in miniature where the stage has one (the row's own drawing until then)
         if (live != null && liveHome(c, r, id, s, t, live)) return
+        // the Controller tab's wheels: the real wheel art over the real Home
+        if (live != null && liveWheel(c, r, id, s, t, live, glyph)) return
         when (id) {
             "Controller on Home" -> homeLayout(c, r, s.diamonds)
             "Combat layout" -> combat(c, r, s.combatGrow, t)
@@ -344,6 +352,107 @@ object SettingsPreview {
     }
 
     private fun ease(x: Float): Float { val v = x.coerceIn(0f, 1f); return v * v * (3f - 2f * v) }
+
+    // ---- the Controller tab's wheels: LIVE (f-settings-previews)
+
+    /**
+     * one moment of a wheel's loop: [open] 0..1 along its open motion, [down] the opening button held, [b] B pressed, [pointed] the place
+     * the stick points at (-1 none), [stick] the stick's push 0..1, [picked] the pick just made
+     */
+    private class WheelFrame(val open: Float, val down: Boolean, val b: Boolean, val pointed: Int, val stick: Float, val picked: Boolean)
+
+    /** Tap / Hold over 3.6 s: the press (a blip, or held), the open, B (Tap) or the release (Hold) closing it */
+    private fun openFrame(tap: Boolean, k: Float): WheelFrame {
+        val close = 2.4f
+        val open = when { k < 0.1f -> 0f; k < close -> ((k - 0.1f) / 0.3f).coerceIn(0f, 1f); else -> 1f - ((k - close) / 0.25f).coerceIn(0f, 1f) }
+        val down = if (tap) k < 0.15f else k < close
+        return WheelFrame(open, down, tap && k in close..close + 0.15f, -1, 0f, false)
+    }
+
+    /** A / Release over 3.4 s on the open wheel: the stick swings to place [target], A (or letting the stick go) picks it, the wheel goes */
+    private fun pickFrame(pickA: Boolean, k: Float, target: Int, places: Int): WheelFrame {
+        val reopen = 2.9f
+        val open = when { k < 1.9f -> 1f; k < 2.2f -> 1f - (k - 1.9f) / 0.3f; k < reopen -> 0f; else -> ((k - reopen) / 0.3f).coerceIn(0f, 1f) }
+        val stick = when { k < 0.4f -> 0f; k < 0.8f -> (k - 0.4f) / 0.4f; k < 1.6f -> 1f; pickA && k < 1.9f -> 1f; else -> 0f }
+        val pointed = if (k in 0.6f..1.9f) (if (k < 0.9f) (target + places - 1) % places else target) else -1
+        val picked = k in 1.6f..1.9f
+        return WheelFrame(open, false, false, pointed, stick, picked)
+    }
+
+    private val wheelScreen = RectF(0f, 0f, 1240f, 1080f - Strip.HEIGHT)
+
+    /** the Controller tab's wheel rows: the real wheel over the real Home (dimmed), a press line under it; false = no picture yet */
+    private fun liveWheel(c: Canvas, r: RectF, id: String, s: State, t: Float, live: Live, glyph: Glyph): Boolean {
+        val kind = when {
+            id.startsWith("Pause") -> "pause"; id.startsWith("Item") -> "item"; id.startsWith("Spell") -> "spell"
+            id.startsWith("Left class") -> "classL"; id.startsWith("Right class") -> "classR"; else -> return false
+        }
+        val isOpen = id.endsWith(": open")
+        val home = live.home(look(s), false, null) ?: return false
+        val box = RectF(r.left + 10f, r.top + 6f, r.right - 10f, r.bottom - 120f)
+        val dst = mini(c, box, home, null)
+        c.drawRect(dst, pDim)
+        val f = if (isOpen) openFrame(tapOf(id, s), t % 3.6f) else pickFrame(pickAOf(id, s), t % 3.4f, 2, if (kind == "pause") 8 else 8)
+        // the wheel, drawn by the app's own code on Home's frame, fitted to the miniature
+        c.save()
+        c.clipRect(dst)
+        c.translate(dst.left, dst.top)
+        val sc = dst.width() / wheelScreen.width()
+        c.scale(sc, sc)
+        val disc = android.graphics.PointF(wheelScreen.centerX(), wheelScreen.bottom + 40f)
+        when (kind) {
+            "pause" -> if (f.open > 0f) {
+                val keepB = UiKit.pauseBarsBottom; val keepS = UiKit.pauseStripTop
+                UiKit.pauseBarsBottom = 0f; UiKit.pauseStripTop = 0f            // the preview's own layout; the live pause view's restored below
+                try {
+                    val slices = HomePauseModel.Flow().slices().map { it?.let { sl -> UiKit.PauseSlice(sl.key, sl.label, sl.enabled) } }
+                    UiKit.pauseRadial(c, wheelScreen, disc, 140f, slices, 0, f.pointed, -1, UiKit.PAUSE_OPEN_MS * f.open,
+                        if (f.picked) 1f else 0f, pickGlyph = pickAOf(id, s))
+                } finally { UiKit.pauseBarsBottom = keepB; UiKit.pauseStripTop = keepS }
+            }
+            "item", "spell" -> if (f.open > 0f) UiKit.consumableRadial(c, wheelScreen, disc, 140f, live.wheelItems(kind == "spell"),
+                f.pointed, 0, 1, UiKit.CR_OPEN_MS * f.open, glyphs = pickAOf(id, s))
+            else -> if (f.open > 0f) {
+                // the class wheel takes its side's column (as on Home); shown at its open's scale
+                val side = 520f * f.open.coerceAtLeast(0.2f)
+                val cx = if (kind == "classL") 330f else 910f
+                c.save(); c.translate(cx - side / 2f, wheelScreen.centerY() - side / 2f)
+                val drawn = live.classWheel(c, side, side, kind == "classL", f.pointed)
+                c.restore()
+                if (!drawn) text(c, "Your character has no radial on this side", wheelScreen.centerX(), wheelScreen.centerY(), 40f, DIMC)
+            }
+        }
+        c.restore()
+        // the press line: the opening button / the stick, and B or A
+        val y = dst.bottom + 40f
+        val opener = when (kind) { "pause" -> "Start"; "item" -> "D-pad Up"; "spell" -> "its button"; "classL" -> "LB + LT"; else -> "RB + RT" }
+        if (isOpen) {
+            text(c, opener, r.left + 20f, y + 6f, 19f, if (f.down) GOLD else DIMC, Paint.Align.LEFT)
+            val x0 = r.left + 140f; val x1 = r.right - 30f
+            pFill.color = Color.rgb(30, 26, 20); c.drawRoundRect(x0, y - 9f, x1, y + 9f, 9f, 9f, pFill)
+            val k = t % 3.6f
+            val pressEnd = if (tapOf(id, s)) 0.15f else 2.4f
+            pFill.color = GOLD; c.drawRoundRect(x0, y - 7f, x0 + (x1 - x0) * (minOf(k, pressEnd) / 3.6f).coerceAtLeast(0.01f), y + 7f, 7f, 7f, pFill)
+            pFill.color = TEXT; c.drawCircle(x0 + (x1 - x0) * k / 3.6f, y, 6f, pFill)
+            if (tapOf(id, s)) {
+                glyph.draw(c, "b", s.glyphSet, x0 + (x1 - x0) * 2.4f / 3.6f, y + 40f, if (f.b) 44f else 34f)
+                text(c, "closes", x0 + (x1 - x0) * 2.4f / 3.6f + 30f, y + 46f, 18f, if (f.b) GOLD else DIMC, Paint.Align.LEFT)
+            } else text(c, "letting go closes it", x1, y + 46f, 18f, if (k >= 2.4f) GOLD else DIMC, Paint.Align.RIGHT)
+        } else {
+            // the stick: a ring and its knob pushed toward the pointed place; then A (or the knob coming home) picks
+            val sx = r.left + 70f; val sy = y + 16f
+            pStroke.color = Theme.bronze; pStroke.strokeWidth = 3f; c.drawCircle(sx, sy, 30f, pStroke)
+            val ang = Math.toRadians(-90.0 + 45.0 * 2)
+            pFill.color = if (f.stick > 0f) GOLD else DIMC
+            c.drawCircle(sx + (Math.cos(ang) * 18f * f.stick).toFloat(), sy + (Math.sin(ang) * 18f * f.stick).toFloat(), 12f, pFill)
+            text(c, "aim with the stick", sx + 50f, sy + 6f, 18f, DIMC, Paint.Align.LEFT)
+            if (pickAOf(id, s)) {
+                glyph.draw(c, "a", s.glyphSet, r.right - 60f, sy, if (f.picked) 50f else 38f)
+                text(c, "picks", r.right - 60f, sy + 44f, 18f, if (f.picked) GOLD else DIMC)
+            } else text(c, if (f.picked) "let go: picked" else "", r.right - 30f, sy + 6f, 18f, GOLD, Paint.Align.RIGHT)
+        }
+        return true
+    }
 
     /** a word in a small plate, gold when it is the state shown */
     private fun chip(c: Canvas, x: Float, y: Float, word: String, on: Boolean) {

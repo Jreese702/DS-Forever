@@ -381,6 +381,8 @@ class HomeRadialView(
         if (slot == null || mode == Mode.PICK) return
         paint(c, UiKit.CR_WHEEL)
     }
+    /** f-settings-previews: the player's own wheel, page 1 (the Settings panel's picture) */
+    fun previewItems(spell: Boolean): List<UiKit.RadialItem?> = itemsOf(RadialModel.slices(docs[if (spell) "sradial" else "radial"], 0))
     private fun itemsOf(src: List<RadialModel.Item?>) =
         src.map { it?.let { i -> UiKit.RadialItem(Icons.get(i.icon), i.name, i.count, pinned = i.pinned, ranOut = i.ranOut) } }
 

@@ -42,7 +42,11 @@ class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean
     private val changed: () -> Unit = { post { invalidate() } }
 
     /** f-settings-previews: the real Home in miniature (PreviewStage); the panel draws it again while a picture is still coming */
-    private val live = SettingsPreview.Live { look, fight, toolbar -> PreviewStage.home(context, look, fight, toolbar) }
+    private val live = object : SettingsPreview.Live {
+        override fun home(look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?) = PreviewStage.home(context, look, fight, toolbar)
+        override fun wheelItems(spell: Boolean) = PreviewStage.wheelItems(spell)
+        override fun classWheel(c: Canvas, w: Float, h: Float, left: Boolean, pointed: Int) = PreviewStage.classWheel(context, c, w, h, left, pointed)
+    }
 
     init {
         HomeSettings.onChange(changed); Settings.onChange(changed); FrameGen.onChange(changed); CastSettings.onChange(changed)
