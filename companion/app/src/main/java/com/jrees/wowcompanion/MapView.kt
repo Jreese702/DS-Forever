@@ -2159,7 +2159,7 @@ class MapView(context: Context) : View(context) {
         map = m; staleMs = ageMs
         addTrail(m?.optString("tr", null), -1L,  // the view is handed the map object itself
                  m?.optInt("mapID", Int.MIN_VALUE) ?: Int.MIN_VALUE)
-        if (m != null) { adoptRect(m); recomputeSeed() }
+        if (m != null) { adoptRect(m); recomputeSeed(); learnExit(m) }
         deriveMarkers(m)
         deriveFocusTarget(m)
         deriveCorpse(m)
@@ -2495,6 +2495,32 @@ class MapView(context: Context) : View(context) {
             ids[i] != 0 && ids[j] != 0 && TaxiNet.connected(ids[i], ids[j])
         } ?: return
         focusTX = nodes[k][0]; focusTY = nodes[k][1]; flyStep = true
+    }
+
+    /** a map's world rectangle and its name (the Map room's model, read from the game's own world map data) */
+    var worldOf: ((Int) -> WorldMapModel.World?)? = null
+    var mapName: ((Int) -> String)? = null
+    private var learner: CityExits.Learner? = null
+    private fun exitLearner(): CityExits.Learner? {
+        learner?.let { return it }
+        val prefs = runCatching { context.getSharedPreferences("cityexits", Context.MODE_PRIVATE) }.getOrNull() ?: return null
+        return CityExits.Learner(object : CityExits.Learner.Store {
+            override fun get(k: String): String? = prefs.getString(k, null)
+            override fun put(k: String, v: String?) { prefs.edit().apply { if (v == null) remove(k) else putString(k, v) }.apply() }
+        }).also { learner = it }
+    }
+
+    /** one map document for the learner: a way out it just learned is logged (WCMAP) in both world yards and the old map's 0..1 */
+    private fun learnExit(m: JSONObject) {
+        val mapId = m.optInt("mapID", 0)
+        val cont = m.optJSONObject("rect")?.optInt("c", -1) ?: -1
+        val e = exitLearner()?.onDoc(mapId, cont, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN), m.optInt("taxi", 0) == 1,
+            android.os.SystemClock.elapsedRealtime()) ?: return
+        val w = worldOf?.invoke(e.map)
+        val at = if (w != null && w.valid) String.format(java.util.Locale.US, " = %.1f, %.1f on its map", w.nx(e.wy) * 100, w.ny(e.wx) * 100) else ""
+        android.util.Log.i("WCMAP", "learned a way out of map ${e.map} (${mapName?.invoke(e.map) ?: ""}) to ${e.toMap} " +
+            "(${mapName?.invoke(e.toMap) ?: ""})${if (e.transport) " by a transport" else " on foot"}: world ${e.wx.toInt()}, ${e.wy.toInt()}$at")
+        routeKey = null
     }
 
     /** where the game's zone maps show a quest, in world yards ([continent, wx, wy] each): the Map room's kept mapquests (MainActivity) */
@@ -3256,7 +3282,27 @@ class MapView(context: Context) : View(context) {
             val x = o.optDouble("x", Double.NaN); val y = o.optDouble("y", Double.NaN)
             if (!x.isNaN() && !y.isNaN()) nodes.add(CursorRoute.Node(x, y, o.optInt("id", 0), o.optString("name", "")))
         } }
-        routeNow = CursorRoute.plan(px, py, r.width, r.height, goals, far, way, questById[q]?.optString("wp", ""), nodes) { i, j -> TaxiNet.connected(i, j) }
+        // the map's real ways out (b-route-city-exits): what this player learned here, else the approved table's estimates
+        fun here(wx: Double, wy: Double) = doubleArrayOf(r.nx(wy), r.ny(wx))
+        val ways = ArrayList<CityExits.Way>()
+        val learned = exitLearner()?.of(mapId) ?: emptyList()
+        for (e in learned) {
+            val at = here(e.wx, e.wy)
+            val end = if (e.transport) (if (!e.toWx.isNaN()) here(e.toWx, e.toWy) else null) else at
+            if (end != null) ways.add(CityExits.Way(e, at[0], at[1], end[0], end[1]))
+        }
+        val learnedFoot = learned.any { !it.transport }
+        for (e in CityExits.TABLE) if (e.map == mapId && !(learnedFoot && !e.transport)) {
+            val end = if (!e.transport) doubleArrayOf(e.x, e.y)
+                else worldOf?.invoke(e.toMap)?.takeIf { it.valid && it.continent == r.continent }?.let { w -> here(w.wx(e.toY), w.wy(e.toX)) }
+            if (end != null) ways.add(CityExits.Way(e, e.x, e.y, end[0], end[1]))
+        }
+        routeNow = CursorRoute.plan(px, py, r.width, r.height, goals, far, way, questById[q]?.optString("wp", ""), nodes,
+            ways = ways, inCity = mapId in CityExits.CITIES,
+            wayName = { e ->
+                if (!e.learned) e.name
+                else mapName?.invoke(e.toMap)?.takeIf { it.isNotEmpty() }?.let { if (e.transport) "Ride to $it" else "To $it" }
+            }) { i, j -> TaxiNet.connected(i, j) }
         return routeNow
     }
 
