@@ -28,7 +28,10 @@ import android.view.View
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
+import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.max
+import kotlin.math.sign
 import kotlin.math.min
 
 /**
@@ -692,6 +695,34 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
     private val legendBox = RectF()
 
+    // ---- THE RIGHT STICK'S ZOOM: while it is pushed up or down, the zone map zooms smoothly (exponential: the same feel at every
+    // zoom; ZOOM_STICK_RATE per second at full tilt), in toward the cursor, out about the view; LB / RB keep their 1.6x steps
+    private var zoomY = 0f
+    private val ZOOM_STICK_RATE = 1.6f        // e-folds a second at full tilt: 1x to the 3.2x maximum in about 0.7 s
+    private var zoomRunning = false
+    private var zoomFrameAt = 0L
+    private val zoomFrame = Runnable { stepZoom() }
+    private fun startZoom() {
+        if (zoomRunning) return
+        zoomRunning = true; zoomFrameAt = 0L
+        postOnAnimation(zoomFrame)
+    }
+    private fun stepZoom() {
+        // a zone's map only, as LB / RB (a continent or the world does not zoom)
+        if (!isShown || modal() || abs(zoomY) <= MapRoomKeys.STICK_DEAD || !isZoneView()) { zoomRunning = false; return }
+        val now = SystemClock.uptimeMillis()
+        val dt = if (zoomFrameAt == 0L) 1f / 60f else ((now - zoomFrameAt) / 1000f).coerceIn(0f, 0.05f)
+        zoomFrameAt = now
+        // past the dead zone, scaled 0..1; up (y < 0) zooms in
+        val tilt = (abs(zoomY) - MapRoomKeys.STICK_DEAD) / (1f - MapRoomKeys.STICK_DEAD)
+        val was = zoom
+        zoom = (zoom * exp(-sign(zoomY) * tilt * ZOOM_STICK_RATE * dt)).coerceIn(1f, 3.2f)
+        if (zoom > was) { val k = min(1f, dt * 3f); panX += (curX - panX) * k; panY += (curY - panY) * k }   // in: toward the cursor
+        clampPan()
+        invalidate()
+        postOnAnimation(zoomFrame)
+    }
+
     private fun startCursor() {
         if (cursorRunning) return
         cursorRunning = true; cursorFrameAt = 0L
@@ -712,6 +743,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (reader != null) return
         reader = PadInput(onPad = { _, _, _, _ -> }, onStatus = { _, _ -> },
             onStickVector = { stick, x, y ->
+                // the RIGHT stick zooms (the user, 2026-10-17: "use the right stick to zoom in and out"): up in, down out, by how far
+                if (stick == 1) { zoomY = y; if (abs(y) > MapRoomKeys.STICK_DEAD) startZoom(); return@PadInput }
                 if (stick != 0) return@PadInput
                 stickX = x; stickY = y
                 if (region == MapRoomKeys.Region.MAP && MapRoomKeys.stickMoves(x, y)) startCursor()
