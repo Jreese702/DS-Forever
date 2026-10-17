@@ -149,11 +149,9 @@ class MapCursor {
                 sel in untracked -> Do.Watch(sel)
                 else -> Do.Untrack(sel)
             }
-            "PAD4" -> return when {
-                !shown || !valid || sel <= 0 -> Do.Nothing
-                sel in untracked -> Do.Open(sel)
-                else -> Do.ShowOnMap(sel)
-            }
+            // Y opens the quest's panel, tracked or not (the user, 2026-10-16: "The show button should be on the tracked quests as well
+            // in the map module"); highlighting a tracked quest already brings it into view, so Y no longer only shows it on the map
+            "PAD4" -> return if (!shown || !valid || sel <= 0) Do.Nothing else Do.Open(sel)
         }
         return Do.Nothing
     }

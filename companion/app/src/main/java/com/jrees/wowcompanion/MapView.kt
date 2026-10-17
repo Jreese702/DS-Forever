@@ -3168,7 +3168,8 @@ class MapView(context: Context) : View(context) {
         var y = 0f
         val tl = wrap(q.optString("title", "Quest"), UiKit.bodyPaint(32f, cardFor(q).colour), tw); tl.draw(c); y += tl.height + 8f
         val meta = listOfNotNull(if (q.has("lv")) "Level ${q.optInt("lv")}" else null, q.optString("zone", "").ifEmpty { null },
-            if (q.optInt("grp", 0) > 1) "Group ${q.optInt("grp")}" else null, "Not tracked").joinToString("  ·  ")
+            if (q.optInt("grp", 0) > 1) "Group ${q.optInt("grp")}" else null,
+            if (trackedNo.containsKey(panelId)) "Tracked" else "Not tracked").joinToString("  ·  ")
         c.drawText(ellipsize(UiKit.bodyPaint(22f, cDim), meta, tw), 0f, y + 22f, UiKit.bodyPaint(22f, cDim)); y += 38f
         when {
             q.optBoolean("failed") -> { c.drawText("Failed", 0f, y + 24f, UiKit.bodyPaint(25f, Color.rgb(230, 70, 50))); y += 38f }
@@ -3432,7 +3433,7 @@ class MapView(context: Context) : View(context) {
             if (sel != focusQid) pairs.add(glyph("a") to "Focus")
             else if (onUnfocusQuest != null) pairs.add(glyph("a") to "Unfocus")
             if (onUntrackQuest != null) pairs.add(glyph("x") to "Untrack")
-            if (q != null && !q.optDouble("x", Double.NaN).isNaN() && !q.optDouble("y", Double.NaN).isNaN()) pairs.add(glyph("y") to "Show")
+            pairs.add(glyph("y") to "Open")                       // the quest's panel, as on an untracked quest
         }
         pairs.add(glyph("b") to "Back")
         UiKit.hints(c, band.right - 24f, cy, *pairs.toTypedArray())
