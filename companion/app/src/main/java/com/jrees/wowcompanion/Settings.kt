@@ -83,6 +83,12 @@ object Settings {
         set(v) { prefs?.edit()?.putString("avoidDanger", if (v in AVOID_DANGER) v else "high")?.apply(); changed() }
     val AVOID_DANGER = listOf("off", "low", "high")
 
+    /** "World map" (b-seamless-map; the user: "Give an option in settings"): the stitched continent shows every zone revealed ("all",
+     *  the default) or only what this character has explored ("explored") */
+    var worldMapFog: String
+        get() = prefs?.getString("worldMapFog", "all")?.takeIf { it == "all" || it == "explored" } ?: "all"
+        set(v) { prefs?.edit()?.putString("worldMapFog", if (v == "explored") "explored" else "all")?.apply(); changed() }
+
     var chatDefaultInput: String
         // the default is the keyboard (the user's pick, 2026-10-07)
         get() = prefs?.getString("chatDefaultInput", "keys")?.takeIf { it == "quick" || it == "keys" } ?: "keys"
