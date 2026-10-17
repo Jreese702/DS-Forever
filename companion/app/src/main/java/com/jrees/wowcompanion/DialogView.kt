@@ -159,12 +159,19 @@ class DialogView(context: Context) : View(context) {
         }, PAD_POKE_MS)
     }
 
+    /**
+     * NEVER PRESSED BY US (the user's standing ruling: never press "Exit Now"; test50: the d20 fallback tapped the QUIT countdown's "Exit
+     * now" during the safe close): the QUIT dialog's button 1. The add-on (Dialogs d22) no longer mirrors it; this refuses it anyway.
+     */
+    private fun neverPress(d: Dlg, hit: String) = d.which == "QUIT" && hit == "b1"
+
     /** a new document: was the controller's press refused? then its cell, once */
     private fun padRefused() {
         val p = padPress ?: return
         if (docGt >= 0 && docGt < p.gt + PAD_FALLBACK_MS) return
         padPress = null
         val d = list.firstOrNull { keyOf(it) == p.key && it.top == null } ?: return       // gone: the game took it
+        if (neverPress(d, p.hit)) { android.util.Log.w("WCDLG", "the controller's press on ${d.which} ${p.hit} is never tapped (Exit now)"); return }
         if (docGt - p.gt > PAD_FALLBACK_MAX_MS) return                                     // too late to be that press
         val cell = when {
             p.hit == "extra" -> d.extraCell
@@ -402,6 +409,7 @@ class DialogView(context: Context) : View(context) {
             hit == "extra" -> if (send(d.extra ?: "extra", d.extraCell)) chose(hit, d)
             hit.startsWith("b") -> {
                 val b = d.buttons.firstOrNull { "b${it.k}" == hit } ?: return
+                if (neverPress(d, hit)) { android.util.Log.w("WCDLG", "press on ${d.which} $hit refused (Exit now)"); return }
                 if (!b.on || secondsOf(d.delay) > 0) {
                     android.util.Log.i("WCDLG", "press '${b.label}' of ${d.which}: the game has it ${if (!b.on) "greyed out" else "waiting ${secondsOf(d.delay)} s"}")
                     return

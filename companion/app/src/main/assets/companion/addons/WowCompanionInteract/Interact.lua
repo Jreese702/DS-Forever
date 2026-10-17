@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i121"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i122"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1830,9 +1830,12 @@ function N.build(doc)
             for _, it in ipairs(q.items or {}) do
                 if it.k ~= "text" and (it.k ~= "head" or it.on ~= nil) then navAdd(z, "qt " .. it.id, it.en ~= false) end
             end
-            local zs = navZone("qtstrip", 3)
+            -- test50 (the user: "I need a next and back button to make it clear"): Reset, Back, Next (Finish on the last), On the top screen
+            local zs = navZone("qtstrip", 4)
             if q.reset then navAdd(zs, "qtreset") end
-            navAdd(zs, q.finish and "qtfinish" or "qttop")
+            if q.kind == "setup" then navAdd(zs, "qtgo back", q.back == true) end
+            if q.finish then navAdd(zs, "qtfinish") else navAdd(zs, "qtgo next", q["next"] == true) end
+            if q.kind == "setup" then navAdd(zs, "qttop") end
             N.zones = { z, zs }
             first = navFirst(z) or navFirst(zs)
         end
@@ -3024,6 +3027,12 @@ function ACT.qt(id, sign)
         return false, "colours are chosen on the top screen"
     else
         pcall(function() w:Click() end)                -- a check box, a group's switch, a button (a Trail mode)
+        -- test50 (the user: "Selecting world trail is not doing anything": it was already the choice): a button chosen moves the
+        -- cursor on to Next (Finish on the last step), so the way on is plain; the app flashes the button and says it was chosen
+        if c.kind == "button" then
+            local q = N.qt.lastDoc
+            N.cur = (q and q.finish) and "qtfinish" or "qtgo next"
+        end
     end
     emitSoon()
     return true
@@ -5321,7 +5330,9 @@ function N.sync(open, doc)
                 or (doc and doc.bank and doc.bank.account) and { PADLSHOULDER = true, PADRSHOULDER = true }
                 or (doc and doc.mail) and { PADLSHOULDER = true, PADRSHOULDER = true }
                 -- the user (15 Oct): L / R on every tab row, always: so they switch the vendor's and the auction house's tabs too
-                or (doc and (doc.merchant or doc.auction)) and { PADLSHOULDER = true, PADRSHOULDER = true } or {}
+                or (doc and (doc.merchant or doc.auction)) and { PADLSHOULDER = true, PADRSHOULDER = true }
+                -- test50: QuestTrail's setup: LB / RB are its Back / Next
+                or (doc and doc.qtsetup) and { PADLSHOULDER = true, PADRSHOULDER = true } or {}
             for k in pairs(N.npcExtra) do
                 if not want[k] then pcall(function() SetOverrideBinding(padOwner, true, k, nil) end) end
             end
@@ -6072,6 +6083,8 @@ local function padPress(key, down, via)
             if down then return end
             if key == "PAD1" then N.act() elseif key == "PAD2" then N.back()
             elseif key == "PADBACK" and N.npcExtra.PADBACK and isOpen("trainer") then navRun("trmenu")
+            elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and N.qt.open() and not N.qt.top then
+                navRun("qtgo " .. ((key == "PADRSHOULDER") and "next" or "back"))
             elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and isOpen("bank") then
                 navRun("bktab " .. ((key == "PADRSHOULDER") and "acct" or "char"))
             elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and isOpen("merchant") then
