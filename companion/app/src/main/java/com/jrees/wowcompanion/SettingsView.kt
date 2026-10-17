@@ -37,6 +37,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         textSize = 44f; color = Theme.gold; typeface = Typeface.DEFAULT_BOLD
     }
     private val pSection = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 32f; color = Theme.gold }   // a heading, in Morpheus
+    private val pSubHead = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 26f; color = Theme.gold }   // a block under [SettingsTabs.HOME_MODULES]
     private val pLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 31f; color = Theme.text }
     private val pSub = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Theme.textDim }
     private val pBtn = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -200,9 +201,21 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss) +
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segChat.toList() +
             segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
+            // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
+            // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
+            segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
+            segClassRPick.toList() +
             segLimit.toList() + listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() +
             listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred) + addonFocus())
-            .filter { !it.isEmpty }.map { RectF(it) }
+            .filter { !it.isEmpty }.map { RectF(it) }.let { controls ->
+                // ... and a row with nothing to press (an add-on's greyed module before its install, a status line) is still a stop:
+                // the cursor walks every row it can see, A there does nothing
+                controls + rowHits.map { it.first }.filter { row -> !row.isEmpty && controls.none { row.contains(it.centerX(), it.centerY()) } }
+                    .map { RectF(it) }
+            }
+
+    /** [r] is the Reload game UI button (the cursor never starts there: the room's one destructive control) */
+    fun isReload(r: RectF): Boolean = !btnReload.isEmpty && r == btnReload
 
     /** the Add-ons tab's controls, in reading order (each module's box, then each option's two segments) */
     private fun addonFocus(): List<RectF> = listOf(addonRestart) + addonCoreBtn.values.toList() + addonModuleBoxes.values.toList() +
@@ -234,7 +247,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun layoutHeight(): Float {
         val blocks = SettingsTabs.viewBlocks(tab)
         if (blocks.isEmpty()) return 0f
-        return TOP_PAD + blocks.sumOf { blockHeight(it).toDouble() }.toFloat() + SECTION_GAP * (blocks.size - 1) + BOTTOM_PAD
+        return TOP_PAD + (if (tab == SettingsTabs.Tab.HOME) MODULES_HEAD else 0f) + blocks.sumOf { blockHeight(it).toDouble() }.toFloat() + SECTION_GAP * (blocks.size - 1) + BOTTOM_PAD
     }
 
     /** a block's height from its heading's y to its last row's bottom, laid out exactly as its draw function lays it out */
@@ -380,7 +393,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      *  device after this view is built, and a paint keeps the font it was given. */
     private fun fonts() {
         UiKit.asTitle(pTitle)
-        UiKit.asTitle(pSection); UiKit.asBody(pLabel); UiKit.asBody(pSub); UiKit.asBody(pBtn)
+        UiKit.asTitle(pSection); UiKit.asTitle(pSubHead); UiKit.asBody(pLabel); UiKit.asBody(pSub); UiKit.asBody(pBtn)
         UiKit.asNumber(pValue)
     }
 
@@ -392,10 +405,13 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         c.drawColor(Theme.ink)
         clearBoxes()
         var y = TOP_PAD - scroll       // everything below is laid out in screen coordinates
+        // on Home, the modules' blocks stand under one heading of their own, below Home's rows (each block then a sub-heading)
+        val modules = tab == SettingsTabs.Tab.HOME && SettingsTabs.viewBlocks(tab).isNotEmpty()
+        if (modules) { c.drawText(SettingsTabs.HOME_MODULES, PAD_X, y + 4f, pSection); y += MODULES_HEAD }
         for ((i, b) in SettingsTabs.viewBlocks(tab).withIndex()) {
             if (i > 0) y += SECTION_GAP
             // the block's heading (its words are the tab data's), then its rows; each draw returns its last row's bottom
-            c.drawText(b.heading, PAD_X, y + 4f, pSection)
+            c.drawText(b.heading, PAD_X, y + 4f, if (modules) pSubHead else pSection)
             y += 16f
             y = when (b) {
                 SettingsTabs.Block.GAME -> drawGame(c, y)
@@ -957,6 +973,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         private const val SEG_MIN_W = 120f
         // SPACING, measured against the signed-off picture on the emulator (2026-10-06): a row's bottom to the next heading's top
         // is 60 px everywhere; a heading's cap top is ~26 px above its baseline, which is drawn 4 px below the section's y
+        private const val MODULES_HEAD = 58f  // "Home module settings" -> its first block's heading
         private const val SECTION_GAP = 82f  // row bottom -> the next section's y (its heading baseline 86 below: cap top +60)
         private const val TOP_PAD = 48f      // the page's top -> its first heading's y (the tab bar stands above the page)
         private const val PAD_X = 28f

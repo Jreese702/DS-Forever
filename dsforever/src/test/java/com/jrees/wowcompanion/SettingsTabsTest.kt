@@ -9,8 +9,9 @@ private typealias T = SettingsTabs.Tab
 private typealias B = SettingsTabs.Block
 
 class SettingsTabsTest {
-    @Test fun sevenTabsInTheApprovedOrder() =
-        assertEquals(listOf("Home", "Controller", "Top screen", "Rooms", "Add-ons", "Performance", "System"), T.values().map { it.label })
+    /** test40: the Rooms tab is gone (the user: "move those settings to the home tab and put them under home module settings") */
+    @Test fun sixTabsInTheApprovedOrder() =
+        assertEquals(listOf("Home", "Controller", "Top screen", "Add-ons", "Performance", "System"), T.values().map { it.label })
 
     /** 1.0.9 Add-ons: every third-party add-on has its block there, its rows its own (title, modules, options) */
     @Test fun addOnsHaveTheirOwnTab() {
@@ -33,7 +34,8 @@ class SettingsTabsTest {
 
     @Test fun theUsersPicks() {
         assertEquals(T.PERFORMANCE, B.INDOOR.tab)                       // indoor maps: "Performance (Recommended)"
-        assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.blocks(T.ROOMS))   // Map and Chat together as Rooms
+        assertEquals(listOf(B.HOME_SECTION, B.MAP, B.CHAT), SettingsTabs.blocks(T.HOME))   // Home's rows, then its modules' (test40)
+        assertEquals("Home module settings", SettingsTabs.HOME_MODULES)
         assertEquals(listOf(B.FRAMES, B.INDOOR), SettingsTabs.blocks(T.PERFORMANCE))
         assertEquals(listOf(B.GAME, B.COMPANION), SettingsTabs.blocks(T.SYSTEM))
         assertTrue("Cast bar" in B.GAME_UI.rows && B.GAME_UI.tab == T.TOP)   // the Controller session's new row lands on Top screen
@@ -41,7 +43,7 @@ class SettingsTabsTest {
     }
 
     @Test fun settingsViewDrawsItsOwnBlocksOnly() {
-        assertTrue(SettingsTabs.viewBlocks(T.HOME).isEmpty())          // Home's section
+        assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.HOME))   // under Home's section (HomeSettingsSection)
         assertTrue(SettingsTabs.viewBlocks(T.TOP).isEmpty())           // the game's elements
         assertEquals(listOf(B.GAME), SettingsTabs.viewBlocks(T.SYSTEM))   // + the companion's status (GameUiSection)
         assertEquals(listOf(B.CONTROLLER, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT),
@@ -96,5 +98,35 @@ class SettingsPreviewRowsTest {
     @Test fun twentyTwoRowsAndTheMovingOnes() {          // f-radial-settings: + the spell wheel's own pair
         assertEquals(26, SettingsPreview.ROWS.size)
         assertTrue(SettingsPreview.animated("Swing timer") && SettingsPreview.animated("Frame limit") && !SettingsPreview.animated("Button glyphs"))
+    }
+}
+
+/** test40 ("the tabs seem way too small for the text of each one"): every tab as wide as its label, a strip that scrolls when too wide */
+class SettingsTabBarLayoutTest {
+    private val w: (String) -> Float = { it.length * 15f }          // a stand-in font: 15 px a letter
+
+    @Test fun everyLabelFitsItsTab() {
+        val labels = SettingsTabs.Tab.values().map { it.label }
+        val lay = SettingsTabBar.layout(labels, 1080f, 0, w)
+        for ((i, l) in labels.withIndex()) {
+            val (x0, x1) = lay.xs[i]
+            assertTrue(l, x1 - x0 >= w(l) + 2f * SettingsTabBar.TAB_PAD)
+            if (i > 0) assertEquals(SettingsTabBar.TAB_GAP, x0 - lay.xs[i - 1].second, 1e-3f)
+        }
+        assertTrue(lay.total <= 1080f + 1e-3f); assertEquals(0f, lay.offset)
+    }
+
+    @Test fun tooWideScrollsToTheChosenTab() {
+        val labels = List(9) { "Long tab name $it" }
+        val avail = 900f
+        for (chosen in labels.indices) {
+            val lay = SettingsTabBar.layout(labels, avail, chosen, w)
+            assertTrue(lay.total > avail)
+            val (x0, x1) = lay.xs[chosen]
+            assertTrue("tab $chosen shows whole", x0 - lay.offset >= 0f && x1 - lay.offset <= avail)
+            assertTrue(lay.offset in 0f..(lay.total - avail))
+        }
+        assertEquals(0f, SettingsTabBar.layout(labels, avail, 0, w).offset)
+        assertEquals(SettingsTabBar.layout(labels, avail, 8, w).total - avail, SettingsTabBar.layout(labels, avail, 8, w).offset, 1e-3f)
     }
 }
