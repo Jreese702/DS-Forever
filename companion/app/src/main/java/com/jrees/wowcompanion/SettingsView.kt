@@ -71,7 +71,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segLayout = Array(LAYOUTS.size) { RectF() }
     private val segLocation = Array(LOCATIONS.size) { RectF() }
     private val segChat = Array(CHAT_INPUTS.size) { RectF() }
-    private val segQt = Array(3) { RectF() }
+    private val segQt = Array(4) { RectF() }
     private val segDanger = Array(3) { RectF() }
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
     private val segIndoor = Array(2) { RectF() }
@@ -378,7 +378,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 val ci = segChat.indexOfFirst { it.contains(x, y) }
                 val qi = segQt.indexOfFirst { it.contains(x, y) }
                 val di = segDanger.indexOfFirst { it.contains(x, y) }
-                if (di >= 0) { Settings.avoidDanger = Settings.AVOID_DANGER[di]; invalidate(); return }
+                if (di >= 0) { if (Settings.questTracking == "safepath") Settings.avoidDanger = Settings.AVOID_DANGER[di]; invalidate(); return }
                 if (qi >= 0) {
                     if (Settings.questTracking != Settings.QUEST_TRACKING[qi]) Settings.questTracking = Settings.QUEST_TRACKING[qi]
                     // an add-on not installed yet: choosing it installs it (the Add-ons tab's own Install; the app's route meanwhile)
@@ -556,24 +556,37 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         val sub = when (Settings.questTracking) {
             "polestar" -> addonWord(ThirdPartyAddons.POLESTAR, "walking routes")
             "questtrail" -> addonWord(ThirdPartyAddons.QUESTTRAIL, "the line follows its arrow, no game pin")
-            else -> "DS Forever's own route: learned ways, the tram, known flights"
+            "vanilla" -> "The game's own way: the line points straight at the quest, no route, the game's pin left alone"
+            else -> "DS Forever's route: round mobs and cliffs, by roads, ways and rides, checkpoint flags"
         }
         row(c, y, "Quest tracking", sub, enabled = true) { box ->
-            val b = RectF(box.right - 16f - qtW * QT_LABELS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            // four choices: never more than two thirds of the row, the label and its line keep the rest
+            val bw = minOf(qtW * QT_LABELS.size, box.width() * 0.66f)
+            val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             qtSegmented(c, b, Settings.QUEST_TRACKING.indexOf(Settings.questTracking))
             b
         }
         // AVOID DANGEROUS AREAS (b-danger-layer): how hard the route bends round hostile mobs (QuestieDB's); High by default
         y += ROW_H + 10f
-        val dsub = when (Settings.avoidDanger) {
-            "off" -> "The line goes straight, through hostile mobs"
-            "low" -> "The line bends round dense or high-level hostile mobs"
+        // SafePath's own: greyed in the other modes, and says so
+        val safe = Settings.questTracking == "safepath"
+        val dsub = when {
+            !safe -> "SafePath only: choose SafePath in Quest tracking"
+            Settings.avoidDanger == "off" -> "The line goes straight, through hostile mobs"
+            Settings.avoidDanger == "low" -> "The line bends round dense or high-level hostile mobs"
             else -> "The line bends round hostile mobs at or above your level"
         }
-        row(c, y, "Avoid dangerous areas", dsub, enabled = true) { box ->
-            val segW = segW()
-            val b = RectF(box.right - 16f - segW * 3, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, listOf("Off", "Low", "High"), Settings.AVOID_DANGER.indexOf(Settings.avoidDanger), segDanger)
+        row(c, y, "Avoid dangerous areas", dsub, enabled = safe) { box ->
+            // never under the row's own words (it ran over "Avoid dangerous areas" at the page's segment width)
+            val bw = minOf(segW() * 3, box.width() * 0.44f)
+            val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            val sel = Settings.AVOID_DANGER.indexOf(Settings.avoidDanger)
+            val w = b.width() / 3
+            for ((i, l) in listOf("Off", "Low", "High").withIndex()) {
+                segDanger[i].set(b.left + i * w, b.top, b.left + (i + 1) * w, b.bottom)
+                UiKit.choice(c, RectF(segDanger[i].left + 2f, b.top - 6f, segDanger[i].right - 2f, b.bottom + 6f), l, i == sel,
+                    enabled = safe, textSize = SEG_TEXT)
+            }
             b
         }
         return y + ROW_H
@@ -1000,7 +1013,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         }
         private val CHAT_INPUTS = listOf("quick", "keys")
         private val CHAT_INPUT_LABELS = listOf("Quick chat", "Keyboard")
-        private val QT_LABELS = listOf("Vanilla", "QuestTrail", "Polestar")
+        private val QT_LABELS = listOf("Vanilla", "SafePath", "QuestTrail", "Polestar")
         private const val SEG_TEXT = 24f
         private const val SEG_PAD = 36f      // text-to-edge room inside a segment, both sides
         private const val SEG_MIN_W = 120f
