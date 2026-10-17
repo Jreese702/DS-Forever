@@ -326,5 +326,34 @@ object MapHarvestSteps {
     }
 
     /** every Map step, for [ArtHarvest.STEPS] (Hub registers them) */
-    val STEPS: List<ArtHarvest.Step> = listOf(WORLD_MAP, POI_ICONS, NPC_ICONS, MINIMAP)
+    /**
+     * [TRANSPORTS] "transports", in the background: harvest/transports.json, the boats' / zeppelins' / trams' rides from the game's own
+     * TaxiPathNode table (TransportRoutes; b-route-transports). Also the probe: WCMAP logs how much the table gave on this client.
+     */
+    val TRANSPORTS = object : ArtHarvest.Step {
+        override val id = "transports"
+        override val version = 1
+        override val beforePlay = false
+        override val weight = 5
+        override fun run(job: ArtHarvest.Job) {
+            val t = job.game.db2(TransportRoutes.DB_TAXI_PATH_NODE)
+            if (t == null) {
+                android.util.Log.i("WCMAP", "transports: the TaxiPathNode table did not read (${job.game.lastReadWhy})")
+                error(job.game.lastReadWhy ?: "TaxiPathNode unreadable")
+            }
+            // fields (this build, measured on the PC client): 0 the position (3 floats), 1 the id, 2 the path, 3 the node's index,
+            // 4 the continent, 5 the flags, 6 the delay
+            val nodes = t.rows().mapNotNull { row ->
+                val p = row.vec3(0) ?: return@mapNotNull null
+                TransportRoutes.Node(row.int(2), row.int(3), row.int(4), row.int(5), row.int(6), p[0], p[1], p[2])
+            }
+            val rides = TransportRoutes.rides(nodes)
+            android.util.Log.i("WCMAP", TransportRoutes.summary(nodes, rides))
+            for (rd in rides.take(40)) android.util.Log.i("WCMAP", "transports: path ${rd.path} ${rd.ca}:" +
+                "${rd.a[0].toInt()},${rd.a[1].toInt()} -> ${rd.cb}:${rd.b[0].toInt()},${rd.b[1].toInt()}")
+            job.writeBytes("transports.json", TransportRoutes.toJson(nodes, rides).toString().toByteArray())
+        }
+    }
+
+    val STEPS: List<ArtHarvest.Step> = listOf(WORLD_MAP, POI_ICONS, NPC_ICONS, MINIMAP, TRANSPORTS)
 }
