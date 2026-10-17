@@ -351,8 +351,10 @@ class PadTabPage(
     }
     /** the form row: Caster, then the forms (between the set row and the buttons) */
     private fun formRect(i: Int) = RectF(40f + i * 112f, 364f, 40f + i * 112f + 100f, 434f)
+    /** the form row shows: In combat (a character with forms), or out of combat while the game lays a form bar (PadMap m57, the user's A) */
+    private fun formsShown(m: PadMapModel.Map) = m.forms.isNotEmpty() && (view == "combat" || (view == "normal" && m.stance != null))
     private fun drawForms(c: Canvas, m: PadMapModel.Map, book: SpellsModel.Book?) {
-        if (view != "combat" || m.forms.isEmpty()) return
+        if (!formsShown(m)) return
         val chosen = ctl?.form ?: 0
         val list = listOf<PadMapModel.Form?>(null) + m.forms.take(10)
         for ((i, f) in list.withIndex()) {
@@ -370,6 +372,13 @@ class PadTabPage(
         }
         val k = ctl?.takeIf { it.on }
         if (k != null && k.focus == "forms" && SystemClock.uptimeMillis() >= pickUntil) UiKit.focus(c, formRect((k.fcur ?: 0).coerceIn(0, list.size - 1)), onPaper = true)
+        // out of combat: the game's own form bar is known only once the player has been in that form (PadMap m57 learns it there)
+        val fo = m.forms.firstOrNull { it.id == chosen }
+        if (view == "normal" && fo != null && !fo.bar) {
+            val p = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
+            p.textAlign = Paint.Align.CENTER
+            c.drawText("Shift into ${fo.name} once: the game then shows its bar here", SPLIT / 2f, 806f, p)
+        }
     }
     private fun page(): Int {
         val want = pageWant
@@ -1316,7 +1325,7 @@ class PadTabPage(
             return
         }
         // p29: the form row (In combat): Caster, then the forms; a pick (padtab 15 + k)
-        if (view == "combat" && m.forms.isNotEmpty()) for (i in 0..minOf(10, m.forms.size)) if (formRect(i).contains(x, y)) {
+        if (formsShown(m)) for (i in 0..minOf(10, m.forms.size)) if (formRect(i).contains(x, y)) {
             fingerOnButton = false
             tap(listOf(PadMapModel.ROW_PADTAB to PadMapModel.colForm(i))); host.invalidate(); return
         }

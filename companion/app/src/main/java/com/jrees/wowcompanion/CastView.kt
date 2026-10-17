@@ -1998,6 +1998,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val gy = cy - (if (circle) 8.5f else 11.5f) * k
         val outOfRange = st != null && st.r == 0 && !empty
         // a collapsed bar hides its prompts (mainactionbarframe.lua HideButtonIcons)
+        // m55 / test21 (the user: "Maybe layered below/under the button glyphs"): a fight spell of the FORM's own set wears the form's
+        // icon UNDER the button's glyph: a small round picture peeking out below-left of the glyph, which stays on top and readable
+        slotFormMark?.let { fm -> drawChordIcon(c, fm, gx - 5f * k, gy + 5f * k, 6f * k, 225) }
         if (!(drawCollapsed && keyText == null)) drawGlyphBadge(c, gx, gy, pos, keyText, outOfRange, pressed)
         // the companion mark: a small gold "two screens" tag in the lower-left corner (the slot drives the bottom screen)
         if (b != null && b.ds) drawDsMark(c, cx - iconHalf * 0.62f, cy + iconHalf * 0.62f, iconHalf * 0.34f)
@@ -2391,24 +2394,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         return iconReady[id] ?: run { requestIcon(id); null }
     }
     /** the icon in a circle of radius [ir] at ([cx], [cy]) with a gold edge (the radial's own look) */
-    /**
-     * the form's mark on a fight spell of its own set (m55), in the slot's own frame (centred, the band's k). The user on test20: "Using
-     * the icon on top of the button also lines up really really weird": it sat at the square box's corner, which on a ROUND face button is
-     * outside the ring. [formMarkStyle] (render options, the user to pick): 0 = lower left ON the button's own edge (the ring at 225 deg, a
-     * tile's corner inset), 1 = a tab centred on the bottom edge, 2 = upper left on the edge
-     */
-    private fun drawFormMark(c: Canvas, bmp: Bitmap, circle: Boolean) {
-        val r = (if (circle) 19f else 20f) * k
-        val ir = 7.5f * k
-        val d = if (circle) r * 0.70f else r - ir * 0.85f            // a ring's 45 deg point; a tile's corner, the mark inside it
-        when (formMarkStyle) {
-            1 -> drawChordIcon(c, bmp, 0f, r - ir * 0.35f, ir)
-            2 -> drawChordIcon(c, bmp, -d, -d, ir)
-            else -> drawChordIcon(c, bmp, -d, d, ir)
-        }
-    }
-    /** the form mark's place (render options; see [drawFormMark]) */
-    @JvmField var formMarkStyle = 0
+    /** the form's picture drawSlot lays under the glyph badge of the slot being drawn (m55), null = none */
+    private var slotFormMark: Bitmap? = null
 
     private fun drawChordIcon(c: Canvas, bmp: Bitmap, cx: Float, cy: Float, ir: Float, alpha: Int = 255) {
         c.save()
@@ -2481,13 +2468,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             c.save()
             c.translate(bandBox[0], bandBox[1])
             c.scale(scale, scale)
+            // m55 (f-combat-forms): a fight spell from the FORM's own set wears the form's icon under its glyph (whose set fights)
+            slotFormMark = if (fb != null && li == N && (src + 1) in fightFormPos)
+                fightFormIcon.takeIf { it > 0 }?.let { id -> iconReady[id] ?: run { requestIcon(id); null } } else null
             next = min(next, drawSlot(c, pos, 0f, 0f, circle, b, st,
                 if (li < STATE_LAYERS) li * 8 + src else -1, now, pressed, flash, null,
                 if (fb != null && fb.k == "spell") fightCdLeft(src, now) else -1f))
-            // m55 (f-combat-forms): a fight spell from the FORM's own set wears the form's icon at its lower left (whose set fights)
-            if (fb != null && li == N && (src + 1) in fightFormPos) fightFormIcon.takeIf { it > 0 }?.let { id ->
-                (iconReady[id] ?: run { requestIcon(id); null })?.let { bmp -> drawFormMark(c, bmp, circle) }
-            }
+            slotFormMark = null
             c.restore()
         }
         val t = bandT()

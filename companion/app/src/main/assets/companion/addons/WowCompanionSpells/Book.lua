@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b43"                -- bump on every change; b43: Select cycles the Bind box's form row (In combat) / the room's form tabs
+local BV = "b44"                -- bump on every change; b44: the Bind box's form row on Normal too (the game's own form bars, PadMap m57)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -578,9 +578,19 @@ local function bindPress(key)
         return why == "combat" and "combat" or "failed"
     end
     local page = gamePage()
+    -- b44 (the user's pick A): a FORM chosen in the box's row, pressed in the set the game lays the form bar over = that form's own slot
+    local fslot = nil
+    local pmf = WC.padMap
+    if ctl.bindForm and ctl.bindForm ~= 0 and type(pmf) == "table" and type(pmf.stance) == "function" then
+        local st = pmf.stance()
+        if st and st.b == set and st.pg == page then
+            fslot = pmf.formSlot(ctl.bindForm, pos)
+            if not fslot then ack(false, b.id, "form-unknown", nil, probe) return "unsure" end
+        end
+    end
     -- the slot: from the game's own button when it is the set the press was made in (right in a form or stance as well); else the
     -- standard-page formula for that set (b16: the trigger held while the game still shows the base bar)
-    local storage = activeBar and (not pset or pset == gameSet) and storageFromGame(activeBar, pos)
+    local storage = fslot or (activeBar and (not pset or pset == gameSet) and storageFromGame(activeBar, pos))
     probe.slotSrc = storage and "button" or "formula"
     if storage == 0 then ack(false, b.id, "reserved", nil, probe) return "reserved" end
     if not storage then
@@ -824,7 +834,9 @@ onPress = function(key)
         -- hears LB here, it is the emulated Ctrl) or a tap, through the bf-on / bf-off columns. A plain B is the way back (b39: Back shows
         -- B); neither SELECT nor a shoulder is ever a place for a spell
         -- b43: Select cycles the form row (the In combat tab, a character with forms): the caster, then each form, round
-        if key == SELECT and ctl.bind and ctl.bind.fight and type(WC.padMap) == "table" and type(WC.padMap.forms) == "function" then
+        -- b44: Normal too, while the game lays a form bar over a set (PadMap m57's stance)
+        local stOk = type(WC.padMap) == "table" and type(WC.padMap.stance) == "function" and WC.padMap.stance() ~= nil
+        if key == SELECT and ctl.bind and (ctl.bind.fight or stOk) and type(WC.padMap) == "table" and type(WC.padMap.forms) == "function" then
             local okf, list = pcall(WC.padMap.forms)
             if okf and type(list) == "table" and #list > 0 then
                 local i = 0

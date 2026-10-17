@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m56"                -- bump on every change; m56: each form's own fixed icon (never the active form's cancel icon)
+local PV = "m57"                -- bump on every change; m57: the forms' own bars out of combat (the game's stance bar slots, learned)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -150,6 +150,8 @@ local function commandName(c) return word("BINDING_NAME_" .. c.key) or c.n end
 local function macroName(c) return c.mn end
 
 local function storage(page, set, pos)
+    -- m57: a form chosen in the room (OV.fe): the set the game's stance bar lies over is that FORM's own bar (false = not learned yet)
+    if OV and OV.fe then local fs = OV.feSlot(page, set, pos); if fs ~= nil then return fs or nil end end
     if type(WC.spellsStorageFor) ~= "function" then return nil end
     local ok, s = pcall(WC.spellsStorageFor, page, set, pos)
     if ok and type(s) == "number" then return s end
@@ -437,6 +439,23 @@ function WC.collectPadMap()
     -- m55: the character's forms (index order; `on` = the form now) and every form's own In-combat spells, as a flat list
     local forms = OV.forms()
     doc.forms = #forms > 0 and forms or nil
+    -- m57: where the form bar lies, the form being edited, and each learned form's own bar (its eight places' pictures) for the views
+    doc.stance = OV.stanceAt()
+    doc.fe = OV.fe
+    local fbl = {}
+    local stp = doc.stance
+    if stp then
+        for _, fo in ipairs(forms) do
+            local first = OV.fsdb()[fo.id]
+            if type(first) == "number" then
+                for pos = 1, POSITIONS do
+                    local sl = readSlot(first + pos - 1)
+                    if sl.kind ~= "none" then fbl[#fbl + 1] = { f = fo.id, p = pos, i = sl.i or 0, n = sl.n } end
+                end
+            end
+        end
+    end
+    doc.fb = #fbl > 0 and fbl or nil
     local ffl = {}
     for fid, t in pairs(OV.ffdb()) do
         if type(t) == "table" then
@@ -721,10 +740,52 @@ function OV.forms()
             local fixedIcon = (okt and type(orig) == "number" and orig > 0 and orig) or (not active and type(icon) == "number" and icon)
                 or (okt and type(cur) == "number" and cur > 0 and cur) or nil
             icon = fixedIcon or icon
-            out[#out + 1] = { x = x, id = sid, n = nm, i = type(icon) == "number" and icon or nil, on = (active == true) or nil }
+            out[#out + 1] = { x = x, id = sid, n = nm, i = type(icon) == "number" and icon or nil, on = (active == true) or nil,
+                              bar = type(OV.fsdb()[sid]) == "number" or nil }      -- m57: its own bar's slots are known
         end
     end
     return out
+end
+-- m57 THE FORMS' OWN BARS OUT OF COMBAT (the user's pick A on test20: "The form options need to also apply to the not in combat bars", the
+-- game's own form bars): in a form the game lays its STANCE BAR (eight storage slots of the form's own) over ONE of the sets - the one its
+-- Controller setting GamepadStanceBarOverride names (page 1 Left / Right / Bottom, pages 2-3 Top / Left / Right / Bottom; "None" = no form
+-- bar on the controller). The game names only the ACTIVE form's first slot (C_GamepadUI ...ForActiveStance), so each form's is learned in
+-- that form and kept for this character (formSlotsBy[name-realm][form spell id] = first slot). With a form chosen in the room (OV.fe) that
+-- set's places ARE the form's own slots (storage()): read, put, cleared the game's own way; an empty one stays empty (the game's rule)
+function OV.fsdb()
+    if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+    local db = _G.WowCompanionSpellsDB
+    if type(db.formSlotsBy) ~= "table" then db.formSlotsBy = {} end
+    local k = whoKey()
+    if not k then return {} end
+    if type(db.formSlotsBy[k]) ~= "table" then db.formSlotsBy[k] = {} end
+    return db.formSlotsBy[k]
+end
+-- where the form bar lies: { pg, b } (the Cast replica's sets: 1 none, 2 LT, 3 RT, 4 LT + RT), nil = "None"
+function OV.stanceAt()
+    local v = tonumber(TS(function() return C_CVar.GetCVar("GamepadStanceBarOverride") end) or "")
+    if not v or v <= 1 or v > 12 then return nil end
+    if v <= 4 then return { pg = 1, b = v } end                       -- 2-4: page 1 Left / Right / Bottom = LT / RT / LT + RT
+    return { pg = math.floor((v - 5) / 4) + 2, b = (v - 5) % 4 + 1 }   -- 5-12: pages 2-3, Top / Left / Right / Bottom
+end
+-- in a form now: its bar's first slot, kept
+function OV.formLearn()
+    local idx = TN(function() return GetShapeshiftForm() end)
+    if not idx or idx <= 0 then return end
+    local okf, _, _, _, sid = pcall(GetShapeshiftFormInfo, idx)
+    local first = TN(function() return C_GamepadUI.GetFirstGamepadActionBarStorageSlotIndexForActiveStance() end)
+    if okf and type(sid) == "number" and sid > 0 and first and first > 0 and OV.fsdb()[sid] ~= first then
+        OV.fsdb()[sid] = first
+        soon()
+    end
+end
+-- the chosen form's slot for (page, set, pos): a number, false (that form's bar not learned yet), nil (not the form bar's set)
+function OV.feSlot(page, set, pos)
+    local st = OV.stanceAt()
+    if not st or st.pg ~= page or st.b ~= set or not OV.fe then return nil end
+    local first = OV.fsdb()[OV.fe]
+    if type(first) ~= "number" then return false end
+    return first + pos - 1
 end
 function OV.ffdb()
     if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
@@ -2876,6 +2937,16 @@ WC.padMap = {
     -- what a form's position holds (PadTabCtl's In combat view with a form chosen): its own entry, or nil
     formFight = function(form, pos) return OV.ffAt(form, pos) end,
     forms = function() return OV.forms() end,
+    -- m57: the room's chosen form for the out-of-combat bars (0 / nil = the caster's); its slot for a place (Book's bind); the form bar's set
+    formEdit = function(id)
+        local fe = (type(id) == "number" and id ~= 0) and id or nil
+        if fe ~= OV.fe then OV.fe = fe; soon() end
+    end,
+    formSlot = function(form, pos)
+        local first = OV.fsdb()[form]
+        return type(first) == "number" and (first + pos - 1) or nil
+    end,
+    stance = function() return OV.stanceAt() end,
     -- THE BASE FACE BUTTONS IN FIGHTS: a spell for bare X / Y / A (B stays the game's Back); no macro, the companion's secure header
     putCombatFace = function(pos, bookSlot)
         if inCombat() then ack("cface", false, "combat") return false, "combat" end
@@ -3153,8 +3224,10 @@ function R.rewireAll()
     if R.bbtn then pcall(routerWire, R.bbtn, 7, R.keys[7]) end
 end
 R.fs = CreateFrame("Frame")
-for _, e in ipairs({ "UPDATE_SHAPESHIFT_FORM", "UPDATE_SHAPESHIFT_FORMS", "PLAYER_REGEN_ENABLED" }) do pcall(function() R.fs:RegisterEvent(e) end) end
+for _, e in ipairs({ "UPDATE_SHAPESHIFT_FORM", "UPDATE_SHAPESHIFT_FORMS", "PLAYER_REGEN_ENABLED", "UPDATE_BONUS_ACTIONBAR",
+                     "PLAYER_ENTERING_WORLD" }) do pcall(function() R.fs:RegisterEvent(e) end) end
 R.fs:SetScript("OnEvent", function()
+    C_Timer.After(0.2, function() pcall(OV.formLearn) end)              -- m57: the form now's own bar (the game names it a moment later)
     pcall(soon)                                                         -- m55: the document's active form (Home's bars show its set)
     if routerMacrosSoon then pcall(routerMacrosSoon) end                -- m55: a learned form renumbers the forms (out of combat)
     if R.rewireQueued then return end
