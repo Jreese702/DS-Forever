@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b42"                -- bump on every change; b42: a bind waits for A (keep) / B (undo, bind again)
+local BV = "b43"                -- bump on every change; b43: Select cycles the Bind box's form row (In combat) / the room's form tabs
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -250,6 +250,7 @@ local function report(note)
         rk = ri, rks = e and e.ranks and #e.ranks or nil,
         sel = p and (p.id or p.a) or nil, mode = ctl.mode, bind = ctl.bind and ctl.bind.id or nil, pg = ctl.pg, ctrl = ctl.ctrlTab or nil,
         bf = ctl.bind and ctl.bind.fight or nil,                    -- b37: the Bind box puts it on the In combat layout
+        bform = (ctl.bindForm and ctl.bindForm ~= 0) and ctl.bindForm or nil,   -- b43: the In combat bind goes to this form's own set
         bk = extraOn and "select" or nil, croom = ctl.croom or nil,
         tn = ctl.croom and (ctl.tn or 0) or nil, pn = ctl.croom and (ctl.pn or 0) or nil, note = ctl.note } }))
     WC.push()
@@ -483,9 +484,11 @@ function UNDO.put(u)
         if u.prevFight then
             local bs = type(WC.spellsBookSlotOf) == "function" and WC.spellsBookSlotOf(u.prevFight) or nil
             if not bs then return false, "failed" end
-            if u.face then okp, ok = pcall(pm.putCombatFace, u.pos, bs) else okp, ok = pcall(pm.putCombat, u.page, u.set, u.pos, bs) end
+            if u.form then okp, ok = pcall(pm.putCombatForm, u.form, u.pos, bs)
+            elseif u.face then okp, ok = pcall(pm.putCombatFace, u.pos, bs) else okp, ok = pcall(pm.putCombat, u.page, u.set, u.pos, bs) end
         else
-            if u.face then okp, ok = pcall(pm.clearCombatFace, u.pos) else okp, ok = pcall(pm.clearCombat, u.page, u.set, u.pos) end
+            if u.form then okp, ok = pcall(pm.clearCombatForm, u.form, u.pos)
+            elseif u.face then okp, ok = pcall(pm.clearCombatFace, u.pos) else okp, ok = pcall(pm.clearCombat, u.page, u.set, u.pos) end
         end
         return okp and ok and true or false, (not (okp and ok)) and "failed" or nil
     end
@@ -539,6 +542,22 @@ local function bindPress(key)
         local pm = WC.padMap
         if type(pm) ~= "table" then ack(false, b.id, "failed", nil, probe) return "failed" end
         local okp, ok, fwhy
+        -- b43 (the user: "We need to add this to the actual bind pop up in the spell book"): a FORM chosen in the box's form row = that
+        -- form's own In-combat set (PadMap m55: the bare set, B never); its spell there before is B's undo
+        local form = ctl.bindForm
+        if form and form ~= 0 and set == 1 and type(pm.putCombatForm) == "function" then
+            if pos == 7 then ack(false, b.id, "reserved", nil, probe) return "reserved" end
+            local okw, was = pcall(pm.formFight, form, pos)
+            local prevF = okw and type(was) == "table" and type(was.id) == "number" and was.id or nil
+            okp, ok, fwhy = pcall(pm.putCombatForm, form, pos, b.slot)
+            if okp and ok then
+                ctl.undo = { fight = true, form = form, pos = pos, prevFight = prevF, bind = b }
+                ack(true, b.id, nil, { pg = gamePage(), b = set, p = pos, fight = true, form = form }, probe) return nil
+            end
+            local why = okp and fwhy or nil
+            ack(false, b.id, (why == "combat") and why or "failed", nil, probe)
+            return why == "combat" and "combat" or "failed"
+        end
         -- b42: the fight spell there before (PadMap's view: a combat slot's `c`, a base face button's `cf`), for B's undo
         local face = set == 1 and pos >= FIRST_RESERVED
         local okv, v = pcall(pm.slotAt, gamePage(), set, pos)
@@ -615,7 +634,8 @@ local function extraApply()
     local cap = capture()
     if not (ctl.on and cap and (cap.version or 0) >= 4 and type(cap.extra) == "function") then extraOn = false; extraSent = nil return end
     local list = {}
-    if selWant then list[#list + 1] = SELECT end
+    -- b43 (the user on test20: "We can use the select button to cycle these tabs"): the Controller room keeps Select too (its form tabs)
+    if selWant or ctl.croom then list[#list + 1] = SELECT end
     for _, k in ipairs(shoulders()) do list[#list + 1] = k end
     local key = table.concat(list, ",")
     if key == extraSent then return end
@@ -752,7 +772,7 @@ end
 
 -- the Bind box opens / closes: B changes meaning (cancel inside the box, the game's close outside it); with capture v4, Select is asked for
 local function backFor(boxOpen)
-    extraFor(boxOpen and (ctl.mode == "bind" or ctl.mode == "result"))    -- Select: the Bind box only (the Talents boxes keep B)
+    extraFor(boxOpen and (ctl.mode == "bind" or ctl.mode == "result" or ctl.mode == "confirm"))    -- Select: the Bind box only (the Talents boxes keep B)
     if not (ctl.on and ctl.via == "button") then return end
     local want = not boxOpen
     if ctl.back == want then return end
@@ -803,6 +823,18 @@ onPress = function(key)
         -- b40 (the user on batch5, their pick): Normal | In combat are TABS the APP switches with LB / RB (its own reader: the game never
         -- hears LB here, it is the emulated Ctrl) or a tap, through the bf-on / bf-off columns. A plain B is the way back (b39: Back shows
         -- B); neither SELECT nor a shoulder is ever a place for a spell
+        -- b43: Select cycles the form row (the In combat tab, a character with forms): the caster, then each form, round
+        if key == SELECT and ctl.bind and ctl.bind.fight and type(WC.padMap) == "table" and type(WC.padMap.forms) == "function" then
+            local okf, list = pcall(WC.padMap.forms)
+            if okf and type(list) == "table" and #list > 0 then
+                local i = 0
+                for k, f in ipairs(list) do if f.id == ctl.bindForm then i = k end end
+                i = (i + 1) % (#list + 1)
+                ctl.bindForm = i == 0 and 0 or list[i].id
+                report("bind-form")
+            end
+            return
+        end
         if key == SELECT or key == "PADLSHOULDER" or key == "PADRSHOULDER" then return end
         if (key == "PAD2" and plainNow()) or (key == backKey() and key ~= SELECT) then
             ctl.bind, ctl.mode = nil, "book"; backFor(false); report("bind-cancel") return

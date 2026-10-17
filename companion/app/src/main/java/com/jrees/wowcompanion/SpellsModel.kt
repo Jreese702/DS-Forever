@@ -74,6 +74,7 @@ object SpellsModel {
         val rank: Int? = null,              // b23: the rank on show, its place in the spell's rank family (1 = the highest); null = no family
         val ranks: Int? = null,             // b23: how many ranks the family has
         val bindFight: Boolean = false,     // b37: the Bind box puts the spell on the In combat layout (b-bind-combat-toggle)
+        val bindForm: Int? = null,          // b43: the In combat bind goes to this form's own set (its spell id); null = the caster's
     ) {
         val bindOpen get() = binding != null
     }
@@ -96,6 +97,7 @@ object SpellsModel {
             onTabs = c.optBoolean("tabs", false),
             selected = c.optInt("sel", 0).takeIf { it > 0 },
             binding = if (c.optString("mode") == "bind") c.optInt("bind", 0).takeIf { it > 0 } else null,
+            bindForm = c.optInt("bform", 0).takeIf { it > 0 },
             note = c.optString("note", "").takeIf { it.isNotEmpty() },
             mode = c.optString("mode", "book").ifEmpty { "book" },
             talentsPage = c.optString("pg", "book") == "talents",

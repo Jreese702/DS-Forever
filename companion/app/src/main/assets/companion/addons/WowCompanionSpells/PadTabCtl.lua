@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p30"                -- bump on every change; p30: LB / RB stay the room's tabs with the chooser open (D-pad Left / Right its tabs)
+local CV = "p31"                -- bump on every change; p31: Select cycles the form tabs (In combat)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -651,6 +651,17 @@ WC.padTabCtl = {
             return true
         end
         if tc.carry and key == "PAD2" then tc.carry = nil; report("carry-cancel") return true end
+        -- p31 (the user on test20: "We can use the select button to cycle these tabs"): Select cycles the form row, the caster then each
+        -- form, round, wherever the cursor is (Book b43 keeps Select for the room)
+        if key == "PADBACK" then
+            local list = formList()
+            if tc.view == "combat" and #list > 0 then
+                tc.fcur = ((tc.fcur or 0) + 1) % (#list + 1)
+                tc.form = tc.fcur == 0 and 0 or list[tc.fcur].id
+                report("form")
+            end
+            return true
+        end
         if tc.focus == "tabs" then return pressTabs(key) end
         if tc.focus == "switches" then return pressSwitches(key) end
         if tc.focus == "sets" then return pressSets(key) end

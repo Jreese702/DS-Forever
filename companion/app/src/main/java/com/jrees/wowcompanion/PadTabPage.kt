@@ -351,15 +351,19 @@ class PadTabPage(
     }
     /** the form row: Caster, then the forms (between the set row and the buttons) */
     private fun formRect(i: Int) = RectF(40f + i * 112f, 364f, 40f + i * 112f + 100f, 434f)
-    private fun drawForms(c: Canvas, m: PadMapModel.Map) {
+    private fun drawForms(c: Canvas, m: PadMapModel.Map, book: SpellsModel.Book?) {
         if (view != "combat" || m.forms.isEmpty()) return
         val chosen = ctl?.form ?: 0
         val list = listOf<PadMapModel.Form?>(null) + m.forms.take(10)
         for ((i, f) in list.withIndex()) {
             val r = formRect(i)
             if (r.right > SPLIT - 20f) break
-            UiKit.choice(c, r, if (f == null) "Caster" else "", (f?.id ?: 0) == chosen)
-            if (f != null) Icons.get(f.icon)?.let { bmp ->
+            UiKit.choice(c, r, "", (f?.id ?: 0) == chosen)
+            // the user on test20: "I don't like the *caster* for forms, it should just be the class Icon": the caster's tab wears the
+            // class's own icon (the book's class line, as the chooser's General tab), no word; the word only until the book has come
+            val classBmp = if (f == null) book?.lines?.firstOrNull { it.index == 1 }?.let { Icons.get(it.icon) } else null
+            if (f == null && classBmp == null) UiKit.choice(c, r, "Caster", 0 == chosen)
+            (if (f != null) Icons.get(f.icon) else classBmp)?.let { bmp ->
                 val sz = 54f
                 c.drawBitmap(bmp, null, RectF(r.centerX() - sz / 2f, r.centerY() - sz / 2f, r.centerX() + sz / 2f, r.centerY() + sz / 2f), PBMP)
             }
@@ -569,7 +573,7 @@ class PadTabPage(
             if (g.size == 1) UiKit.pad(c, g[0], r.centerX(), r.centerY(), 56f)
             else { UiKit.pad(c, g[0], r.centerX() - 32f, r.centerY(), 52f); UiKit.pad(c, g[1], r.centerX() + 32f, r.centerY(), 52f) }
         }
-        drawForms(c, m)
+        drawForms(c, m, book)
         val carry = carryNow()
         for (p in 1..8) drawButton(c, m, s, p)
         // the glyphs over ALL the buttons: drawn with its own button, the bottom face button's was half hidden by the next one's frame

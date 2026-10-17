@@ -199,6 +199,9 @@ class SpellsOverlay(
         val now = SystemClock.uptimeMillis()
         // the answer: while the addon shows it (mode "result"), or 1.5 s for one that keeps the box waiting (reserved, unsure)
         val confirming = ctl?.mode == "confirm"
+        // b43: the form row (In combat, a character with forms) takes the box's top line: the instruction moves down under it
+        val rowOn = !confirming && fightShown() && padMap?.forms?.isNotEmpty() == true
+        val ly = cy + (if (rowOn) 14f else 0f)
         val r = result?.takeIf { it.spellId == boxSpell && (ctl?.mode == "result" || confirming || now - resultAt < SHOW_MS) }
 
         // the line: the instruction, or the answer
@@ -220,10 +223,10 @@ class SpellsOverlay(
         } else if (now - undoneAt < SHOW_MS) {
             // b42: B put back what was there: the box waits for a button again
             val p = UiKit.bodyPaint(30f, Theme.warn).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("Put back what was there. Press another button for:", w / 2f, cy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText("Put back what was there. Press another button for:", w / 2f, ly - (p.ascent() + p.descent()) / 2f, p)
         } else {
             val p = UiKit.bodyPaint(30f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("Press the button combination you want to use for:", w / 2f, cy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText("Press the button combination you want to use for:", w / 2f, ly - (p.ascent() + p.descent()) / 2f, p)
         }
 
         // the spell
@@ -262,7 +265,12 @@ class SpellsOverlay(
         // Home's own drawing either way (tracking for the user: "identical look, only the spells and swords change"): CastView.drawSet
         // with each button's fight spell; the stand-ins only until the Cast room has its first layout
         val m = padMap
-        val fight: ((Int) -> Int?)? = if (f && m != null) { p -> fightIcon(m, set, p) } else null
+        // b43: a form chosen (the form row, Select) shows that form's own fight spells on the bare set (B never); none = an empty slot
+        val form = ctl?.bindForm?.takeIf { f && set == 1 && m?.forms?.any { fo -> fo.id == it } == true }
+        val fight: ((Int) -> Int?)? = if (f && m != null) { p ->
+            if (form != null && p != 7) PadMapModel.formFight(m, form, p)?.icon else fightIcon(m, set, p)
+        } else null
+        if (f && m != null && m.forms.isNotEmpty()) formRow(c, w, box, m, b, st)
         val drawn = try { drawSet(c, set, dpad, face, lit.takeIf { it > 0 }, icon, fight) } catch (_: Throwable) { false }
         if (!drawn) standIns(c, dpad, face, lit, icon, st)
 
@@ -295,6 +303,33 @@ class SpellsOverlay(
         }
         if (r != null && r.ok) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Close")
         else if (!lt && !rt) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Back")
+    }
+
+    /**
+     * b43 (the user on test20: "We need to add this to the actual bind pop up in the spell book", "We can use the select button to cycle these
+     * tabs"): the In combat tab's FORM ROW along the box's top: the class's icon (the caster's set), then each form's own icon; the chosen one
+     * lit; Select (its glyph first) cycles them (Book b43). An In combat bind goes to the chosen form's own set
+     */
+    private fun formRow(c: Canvas, w: Float, box: RectF, m: PadMapModel.Map, b: SpellsModel.Book?, st: SpellsModel.PadStyle) {
+        val list = listOf<PadMapModel.Form?>(null) + m.forms.take(9)
+        val chosen = ctl?.bindForm ?: 0
+        val sz = 46f; val step = 54f
+        val total = 56f + list.size * step
+        var x = w / 2f - total / 2f
+        val cy = box.top + 74f                                          // under the header's plate, over the instruction line (moved down)
+        UiKit.pad(c, selectGlyph(st), x + 22f, cy, 40f)
+        x += 56f
+        val classBmp = b?.lines?.firstOrNull { it.index == 1 }?.let { Icons.get(it.icon) }
+        for (fo in list) {
+            val r = RectF(x, cy - sz / 2f, x + sz, cy + sz / 2f)
+            UiKit.choice(c, r, if (fo == null && classBmp == null) "C" else "", (fo?.id ?: 0) == chosen)
+            (if (fo == null) classBmp else Icons.get(fo.icon))?.let { bmp ->
+                val i = sz - 10f
+                c.drawBitmap(bmp, null, RectF(r.centerX() - i / 2f, r.centerY() - i / 2f, r.centerX() + i / 2f, r.centerY() + i / 2f), null)
+            }
+            if ((fo?.id ?: 0) == chosen) UiKit.focus(c, RectF(r).apply { inset(-3f, -3f) })     // the chosen set, plainly lit
+            x += step
+        }
     }
 
     /** empty slots with the glyphs, where the Cast room's drawing goes, for as long as it has none */

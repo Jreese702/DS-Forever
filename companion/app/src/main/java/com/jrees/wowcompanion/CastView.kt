@@ -2391,6 +2391,25 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         return iconReady[id] ?: run { requestIcon(id); null }
     }
     /** the icon in a circle of radius [ir] at ([cx], [cy]) with a gold edge (the radial's own look) */
+    /**
+     * the form's mark on a fight spell of its own set (m55), in the slot's own frame (centred, the band's k). The user on test20: "Using
+     * the icon on top of the button also lines up really really weird": it sat at the square box's corner, which on a ROUND face button is
+     * outside the ring. [formMarkStyle] (render options, the user to pick): 0 = lower left ON the button's own edge (the ring at 225 deg, a
+     * tile's corner inset), 1 = a tab centred on the bottom edge, 2 = upper left on the edge
+     */
+    private fun drawFormMark(c: Canvas, bmp: Bitmap, circle: Boolean) {
+        val r = (if (circle) 19f else 20f) * k
+        val ir = 7.5f * k
+        val d = if (circle) r * 0.70f else r - ir * 0.85f            // a ring's 45 deg point; a tile's corner, the mark inside it
+        when (formMarkStyle) {
+            1 -> drawChordIcon(c, bmp, 0f, r - ir * 0.35f, ir)
+            2 -> drawChordIcon(c, bmp, -d, -d, ir)
+            else -> drawChordIcon(c, bmp, -d, d, ir)
+        }
+    }
+    /** the form mark's place (render options; see [drawFormMark]) */
+    @JvmField var formMarkStyle = 0
+
     private fun drawChordIcon(c: Canvas, bmp: Bitmap, cx: Float, cy: Float, ir: Float, alpha: Int = 255) {
         c.save()
         litClip.reset(); litClip.addCircle(cx, cy, ir, Path.Direction.CW); c.clipPath(litClip)
@@ -2467,10 +2486,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 if (fb != null && fb.k == "spell") fightCdLeft(src, now) else -1f))
             // m55 (f-combat-forms): a fight spell from the FORM's own set wears the form's icon at its lower left (whose set fights)
             if (fb != null && li == N && (src + 1) in fightFormPos) fightFormIcon.takeIf { it > 0 }?.let { id ->
-                (iconReady[id] ?: run { requestIcon(id); null })?.let { bmp ->
-                    val half = (if (circle) 19f else 20f) * k
-                    drawChordIcon(c, bmp, -half + 5f * k, half - 5f * k, 6.5f * k)
-                }
+                (iconReady[id] ?: run { requestIcon(id); null })?.let { bmp -> drawFormMark(c, bmp, circle) }
             }
             c.restore()
         }

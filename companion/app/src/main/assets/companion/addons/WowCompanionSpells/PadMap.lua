@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m55"                -- bump on every change; m55: In-combat sets per form / stance (f-combat-forms)
+local PV = "m56"                -- bump on every change; m56: each form's own fixed icon (never the active form's cancel icon)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -714,6 +714,13 @@ function OV.forms()
         local okf, icon, active, _, sid = pcall(GetShapeshiftFormInfo, x)
         if okf and type(sid) == "number" and sid > 0 then
             local nm = TS(function() return C_Spell.GetSpellName(sid) end)
+            -- m56 (the user on test20: "when transformed into a bear, the bear icon changes to the untransform button so its not totally
+            -- clear that its the bear options"): the form's OWN picture, its spell's original icon (GetShapeshiftFormInfo gives the
+            -- cancel-form icon while the form is on); the shapeshift icon only when the spell has none
+            local okt, cur, orig = pcall(C_Spell.GetSpellTexture, sid)
+            local fixedIcon = (okt and type(orig) == "number" and orig > 0 and orig) or (not active and type(icon) == "number" and icon)
+                or (okt and type(cur) == "number" and cur > 0 and cur) or nil
+            icon = fixedIcon or icon
             out[#out + 1] = { x = x, id = sid, n = nm, i = type(icon) == "number" and icon or nil, on = (active == true) or nil }
         end
     end
