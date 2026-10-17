@@ -27,6 +27,8 @@ class Db2(private val d: ByteArray, private val name: String = "db2") {
         fun int(f: Int): Int = (values[f] as? Int) ?: 0
         fun str(f: Int): String = (values[f] as? String) ?: ""
         fun ints(f: Int): IntArray = values[f] as? IntArray ?: error("field $f is not an array")
+        /** a 96-bit inline field read as three little-endian floats (a position: TaxiPathNode's Loc), or null */
+        fun vec3(f: Int): FloatArray? = values[f] as? FloatArray
     }
 
     init {
@@ -103,6 +105,11 @@ class Db2(private val d: ByteArray, private val name: String = "db2") {
                 val vals = Array<Any>(storage.size) { fi ->
                     val st = storage[fi]
                     if (fi in arrays) arrayValue(rec, fi, st)
+                    // an inline 96-bit field: three floats (a position), byte-aligned in this build's tables
+                    else if (st.type == ST_NONE && st.sizeBits == 96 && st.offsetBits % 8 == 0) {
+                        val b = rec + st.offsetBits / 8
+                        FloatArray(3) { java.lang.Float.intBitsToFloat(le32(d, b + it * 4)) }
+                    }
                     else {
                         val v = value(rec, fi, st, r, ids)
                         if (fi in strings) string(strStart, sec.stringTableSize, v, r, st.offsetBits) else v

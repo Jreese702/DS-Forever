@@ -1427,6 +1427,18 @@ class MapView(context: Context) : View(context) {
     }
 
     /** an objective's gold dot in its dark rim, at [alpha] (the small map's mark; Home's open hands it over to the bubble) */
+    /** a dungeon / raid entrance: a dark disc, a gold rim, a violet swirl (the portal); its name below once zoomed in */
+    private fun drawDungeon(c: Canvas, x: Float, y: Float, name: String) {
+        pFill.color = Color.argb(220, 16, 10, 24); c.drawCircle(x, y, 17f, pFill)
+        pFill.color = Color.argb(255, 150, 90, 230); c.drawCircle(x, y, 10f, pFill)
+        pFill.color = Color.argb(255, 230, 200, 255); c.drawCircle(x, y, 4f, pFill)
+        pRing.color = cGold; c.drawCircle(x, y, 17f, pRing)
+        if (zoom >= 2.5f && name.isNotEmpty()) {
+            val lp = UiKit.bodyPaint(20f, Color.rgb(220, 200, 255)).apply { textAlign = Paint.Align.CENTER; setShadowLayer(3f, 0f, 0f, Color.BLACK) }
+            c.drawText(name, x, y + 40f, lp)
+        }
+    }
+
     private fun objDot(c: Canvas, x: Float, y: Float, alpha: Float) {
         val a = alpha.coerceIn(0f, 1f)
         pFill.color = Color.argb((170 * a).toInt(), 0, 0, 0)
@@ -2096,6 +2108,7 @@ class MapView(context: Context) : View(context) {
     private val TRIVIAL_DIM = 0.62f     // the trivial "!" brightness: (255,209,0) -> (158,130,0)
     private val SH_AVAIL_LOW = 6         // a low-level (trivial) quest's "!": a DIMMED yellow, the game's own trivial look
     private val SH_OBJ_OTHER = 7         // an UNTRACKED quest's objective (QuestLayers OTHER): the gold dot, dimmer
+    private val SH_DUNGEON = 8           // a dungeon / raid entrance (the game's C_Map.GetDungeonEntrancesForMap; Map.lua dent)
     // the user, 2026-10-07: "Normally grey is stuff these too high level. I think it should instead be a dimmed yellow like it
     // normally is": the yellow "!" at reduced brightness (an olive gold, as the game's trivialquests mark), the dark outline kept
     private val pTrivial = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
@@ -2133,6 +2146,8 @@ class MapView(context: Context) : View(context) {
     }
     private val qxy = DoubleArray(2)       // scratch for questXY; UI thread only
     private val OTHER_SPOTS = 3             // an untracked quest's QuestieDB spots drawn at most (the nearest)
+    private val dungeonNames = HashMap<Int, String>()   // a dungeon entrance marker's qid (negative) -> its name
+    private var dentLogged = Int.MIN_VALUE
 
     /**
      * Colour by the most specific role, from a deliberately small palette. Only the filter's
@@ -4350,6 +4365,23 @@ class MapView(context: Context) : View(context) {
                     mkMid.add(Marker(x, y, if (daily) SH_AVAIL_DAILY else SH_AVAIL))
                 }
             }
+            // DUNGEON AND RAID ENTRANCES, the game's own (Map.lua dent): logged once a map for the probe (b-dungeon-entrances)
+            dungeonNames.clear()
+            m.optJSONArray("dent")?.let { a ->
+                for (i in 0 until a.length()) {
+                    val d = a.optJSONObject(i) ?: continue
+                    val x = d.optDouble("x", Double.NaN); val y = d.optDouble("y", Double.NaN)
+                    if (x.isNaN() || y.isNaN()) continue
+                    mkMid.add(Marker(x, y, SH_DUNGEON, -(1000 + i)))
+                    dungeonNames[-(1000 + i)] = d.optString("n", "")
+                }
+                val mid = m.optInt("mapID", 0)
+                if (mid != dentLogged) {
+                    dentLogged = mid
+                    android.util.Log.i("WCMAP", "dungeon entrances on map $mid: ${a.length()}" + (if (a.length() > 0)
+                        " (${(0 until a.length()).joinToString(", ") { a.optJSONObject(it)?.optString("n", "") ?: "" }})" else ""))
+                }
+            }
             m.optJSONArray("taxi")?.let { a ->
                 for (i in 0 until a.length()) {
                     val t = a.optJSONObject(i) ?: continue
@@ -4977,6 +5009,7 @@ class MapView(context: Context) : View(context) {
             if (!onField(cxp, cyp)) continue
             when (mk.shape) {
                 SH_OBJ_OTHER -> objDot(c, cxp, cyp, 0.5f)                // an untracked quest's objective: dimmer
+                SH_DUNGEON -> if (!compact) drawDungeon(c, cxp, cyp, dungeonNames[mk.qid] ?: "")
                 SH_FLIGHT -> drawIcon(c, Ic.FLIGHT, cxp, cyp, SVC_ICON_PX)
                 SH_VIGNETTE -> drawIcon(c, Ic.VIGNETTE, cxp, cyp, 22f)
                 SH_AVAIL, SH_AVAIL_DAILY, SH_AVAIL_LOW -> {

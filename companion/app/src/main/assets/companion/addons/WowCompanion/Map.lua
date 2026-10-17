@@ -1050,6 +1050,22 @@ function WC.collectMap()
         end
     end
 
+    -- DUNGEON AND RAID ENTRANCES on this map, the game's own (b-dungeon-entrances; the user, 2026-10-17, from OpenMap's list: the
+    -- game files are the source): C_Map.GetDungeonEntrancesForMap, read only. dent = {{n, x, y, j}} (j the journal instance), <= 30
+    local okD, ents = CALL(function() return C_Map.GetDungeonEntrancesForMap(id) end)
+    if okD and type(ents) == "table" then
+        out.dent = {}
+        for _, e in ipairs(ents) do
+            if #out.dent >= 30 then break end
+            local ex = SN(function() return e.position and e.position.x end)
+            local ey = SN(function() return e.position and e.position.y end)
+            if ex and ey then
+                out.dent[#out.dent + 1] = { n = WC.plainStr(S(function() return e.name end)), x = math.floor(ex * 10000 + 0.5) / 10000,
+                                            y = math.floor(ey * 10000 + 0.5) / 10000, j = SN(function() return e.journalInstanceID end) }
+            end
+        end
+    end
+
     out.track = trackingState()          -- Find Herbs / Minerals / Treasure on or off (see trackingState)
     -- the hidden minimap at the last re-assert (WC.mmHide; absent = shown): the mask and the icon scale taken (1 / 0), the frame
     if hiddenFrame and not peek then
