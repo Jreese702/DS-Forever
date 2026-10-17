@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q44"    -- bump on every change; the app shows it, so a stale build is visible
+local QV = "q45"    -- bump on every change; the app shows it, so a stale build is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -49,6 +49,9 @@ local function TN(fn) local v = T(fn); if type(v) == "number" then return v end 
 local function TB(fn) local v = T(fn); if type(v) == "boolean" then return v end end
 
 local function superTracked()
+    -- the route's pin (Map.lua b-route-waypoint) stands for this quest: still the focus while the game super-tracks the pin
+    local R = WC.routeWp
+    if R and R.active and R.qid and R.qid > 0 then return R.qid end
     local id = TN(function() return C_SuperTrack.GetSuperTrackedQuestID() end)
     if id and id > 0 then return id end
 end

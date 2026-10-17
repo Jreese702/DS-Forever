@@ -3385,6 +3385,19 @@ class MapView(context: Context) : View(context) {
         return route
     }
 
+    /**
+     * WHERE THE GAME'S PIN GOES (b-route-waypoint): the game-focused quest's route's next way on the player's map while the route goes
+     * through one; null when the route is direct, there is no game focus (a default focus is the app's own), or the player is in flight
+     */
+    fun routePin(): DoubleArray? {
+        val m = map ?: return null
+        if (focusQid <= 0 || m.optInt("onTaxi", 0) == 1) return null
+        val r = routeFor(focusQid) ?: return null
+        if (r.kind == CursorRoute.Kind.GOAL) return null
+        if (r.x !in 0.0..1.0 || r.y !in 0.0..1.0) return null
+        return doubleArrayOf(r.x, r.y)
+    }
+
     private fun planRoute(q: Int, m: JSONObject): CursorRoute.Route? {
         val r = rect ?: return null
         if (!r.valid) return null
