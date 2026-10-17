@@ -5,7 +5,7 @@
 ## Group: WowCompanion
 ## Notes: NPC dialogs and vendors for the Thor's bottom screen
 ## Author: DS Forever
-## Version: Set 168
+## Version: Set 169
 ## DefaultState: enabled
 ## Dependencies: WowCompanion
 ## OptionalDeps: WowCompanionHub
