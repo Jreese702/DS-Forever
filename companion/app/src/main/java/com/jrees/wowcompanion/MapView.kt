@@ -3676,7 +3676,9 @@ class MapView(context: Context) : View(context) {
         // the ground (b-route-terrain): the zone's slope grid from the harvest, and the cells this player has walked
         Terrain.Walked.init(java.io.File(context.filesDir, "walked.bin"))
         val tg = Terrain.of(mapId)
-        val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}:${tg != null}:${Terrain.Walked.count() / 40}"
+        // the roads this device learned from the walking (b-route-roads), learned again as the walked cells grow
+        Roads.relearn(200) { dGridKey = ""; invalidate() }
+        val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}:${tg != null}:${Terrain.Walked.count() / 40}:${Roads.version}"
         if (key != dGridKey) {
             dGridKey = key
             dangerLegs.clear()
@@ -3686,10 +3688,16 @@ class MapView(context: Context) : View(context) {
                 val wy = r.left - x * r.width; val wx = r.top - y * r.height
                 val slope = tg?.at(wx, wy) ?: Terrain.NO_DATA
                 val f = Terrain.factor(slope)
-                if (f < 3f && Terrain.Walked.walked(cont, wx, wy)) f * Terrain.Walked.WALKED else f
+                when {
+                    f >= 3f -> f
+                    Roads.isRoad(mapId, wx, wy) -> f * Roads.ROAD                // a learned road: cheaper still than walked ground
+                    Terrain.Walked.walked(cont, wx, wy) -> f * Terrain.Walked.WALKED
+                    else -> f
+                }
             }
             dGrid = if (sp.isEmpty() && tg == null) null else DangerGrid.build(sp, mine, plv, r.width, r.height, ground)
             if (tg != null) android.util.Log.i("WCMAP", "terrain: map $mapId's ground in the route (${Terrain.Walked.count()} walked cells kept)")
+            Roads.of(mapId)?.let { android.util.Log.i("WCMAP", "roads: ${Roads.roadCells(mapId)} road cells in map $mapId") }
         }
         return dGrid
     }

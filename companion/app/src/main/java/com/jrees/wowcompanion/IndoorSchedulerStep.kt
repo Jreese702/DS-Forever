@@ -101,6 +101,9 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     /** standing still or moving (b-interiors-stutter): fed by every position, asked by the bake's gate */
     private val motion = IndoorIdle.Motion()
 
+    /** the player is walking now (the bake's own gate; the road harvest waits on it too: b-route-roads) */
+    fun playerMoving(): Boolean = LauncherHooks.gameUp() && synchronized(motion) { motion.moving(System.currentTimeMillis()) }
+
     /** a "pos" map document: the add-on's `inst` (continent / instance map), `wx`, `wy` */
     fun notePosition(map: JSONObject) {
         if (!map.has("inst") || !map.has("wx") || !map.has("wy")) return

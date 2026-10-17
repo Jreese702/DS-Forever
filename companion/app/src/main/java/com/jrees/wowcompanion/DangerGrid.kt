@@ -81,8 +81,8 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
         val n = nx * ny
         val g = DoubleArray(n) { Double.MAX_VALUE }
         val prev = IntArray(n) { -1 }
-        // the estimate never more than the cheapest ground could cost (a walked cell: Terrain.Walked.WALKED of its yards)
-        fun h(i: Int, j: Int) = hypot((i - ti) * cx * ax, (j - tj) * cy * ay) * Terrain.Walked.WALKED
+        // the estimate never more than the cheapest ground could cost (a learned road: Roads.ROAD of its yards)
+        fun h(i: Int, j: Int) = hypot((i - ti) * cx * ax, (j - tj) * cy * ay) * minOf(Roads.ROAD, Terrain.Walked.WALKED)
         val open = PriorityQueue<DoubleArray>(compareBy { it[0] })
         val s = sj * nx + si; val t = tj * nx + ti
         g[s] = 0.0; open.add(doubleArrayOf(h(si, sj), s.toDouble()))
