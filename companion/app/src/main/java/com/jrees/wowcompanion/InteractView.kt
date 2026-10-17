@@ -1659,6 +1659,15 @@ class InteractView(context: Context) : View(context) {
      * slider), so QuestTrail writes its own settings. The strip: Reset, the step's arrows and number, Finish on the last, and "On the
      * top screen" (its window back, for anything this cannot do here).
      */
+    /** Add-ons > "QuestTrail settings" (test51): the add-on's cell opens QuestTrail's own pages (Interact i123); false = no cell yet */
+    fun openAddonSettings(id: String): Boolean {
+        if (id != "questtrail") return false
+        val d = doc ?: return false
+        val cell = d.optJSONObject("questtrail")?.optInt("open", -1) ?: -1
+        if (cell < 0 || dryRun) return false
+        return TapBridge.tap(context, d.optJSONObject("pad"), "iact", cell) { why -> post { note(why, false) } }
+    }
+
     private var qtFlashId: String? = null
     private var qtFlashAt = 0L
     private fun qtWindow(c: Canvas, r: RectF, q: JSONObject, now: Long) {
@@ -1679,9 +1688,29 @@ class InteractView(context: Context) : View(context) {
             drawLayout(c, lay, x0, y); y += lay.height + 14f
         }
         pFill.color = Color.rgb(96, 80, 50); c.drawRect(x0, y, x1, y + 2f, pFill); y += 10f
+        // ---- "QuestTrail settings" (test51): its steps' titles down the left, the step's page to their right
+        val cats = arr(q, "cats")
+        var pageLeft = inner.left + 4f
+        if (q.optBoolean("browse") && cats.isNotEmpty()) {
+            val cw = 300f
+            val col = RectF(inner.left + 4f, y, inner.left + 4f + cw, strip.top - 8f)
+            UiKit.ahPanel(c, col, "ah_bg_categories")
+            val rh = min(66f, (col.height() - 12f) / cats.size)
+            for ((k, ct) in cats.withIndex()) {
+                val rr = RectF(col.left + 8f, col.top + 6f + k * rh, col.right - 8f, col.top + 6f + k * rh + rh - 6f)
+                UiKit.ahNav(c, rr, ct.optString("t"), 0, ct.optInt("i") == q.optInt("i"))
+                hits.add(rr to hitOf("qtcat ${ct.optInt("i")}", slotOf(ct)))
+                if (cur == "qtcat ${ct.optInt("i")}") {
+                    UiKit.focus(c, rr)
+                    val gs = 40f
+                    UiKit.pad(c, UiKit.okGlyph(), rr.left - 0.35f * gs + gs / 2f, rr.top - 0.35f * gs + gs / 2f, gs)
+                }
+            }
+            pageLeft = col.right + 12f
+        }
         // ---- the page's controls, scrolled to keep the cursor's in view
         val items = arr(q, "items")
-        val view = RectF(inner.left + 4f, y, inner.right - 4f, strip.top - 8f)
+        val view = RectF(pageLeft, y, inner.right - 4f, strip.top - 8f)
         // rows: the items the game draws on one line go side by side (its mode buttons, its check rows)
         val rows = ArrayList<MutableList<JSONObject>>()
         for (it in items) { val rw = it.optInt("row", -1); if (rows.isNotEmpty() && rw >= 0 && rows.last().first().optInt("row", -2) == rw) rows.last().add(it) else rows.add(mutableListOf(it)) }
@@ -1702,9 +1731,10 @@ class InteractView(context: Context) : View(context) {
             val top = view.top + tops[ri] - scrollA
             val h = hOf(rw)
             if (top + h < view.top || top > view.bottom) continue
-            val w = (x1 - x0 - (rw.size - 1) * 16f) / rw.size
+            val px0 = max(x0, view.left + 16f)
+            val w = (x1 - px0 - (rw.size - 1) * 16f) / rw.size
             for ((k, it) in rw.withIndex()) {
-                val bx = x0 + k * (w + 16f)
+                val bx = px0 + k * (w + 16f)
                 val box = RectF(bx, top, bx + w, top + h - 8f)
                 val id = "qt ${it.optString("id")}"
                 val en = it.optBoolean("en", true)
@@ -1838,7 +1868,7 @@ class InteractView(context: Context) : View(context) {
         }
         // a press's line (test50: "World Trail chosen"), just over the strip
         resultLine(c, x0, x1, strip.top - 26f, now)
-        UiKit.windowFrame(c, r, if (q.optString("kind") == "intro") "QuestTrail: Shared Trail" else "QuestTrail setup",
+        UiKit.windowFrame(c, r, when { q.optString("kind") == "intro" -> "QuestTrail: Shared Trail"; q.optBoolean("browse") -> "QuestTrail settings"; else -> "QuestTrail setup" },
             UiKit.tex("portrait_quest"), Theme.gold, closeDown = pressed == "x", closeB = 0)
         hits.add(UiKit.windowClose(r) to hitOf("qtclose", col("close")))
         // QuestTrail's own dropdown menu, open: its choices over the page (a pick presses its row; B closes it)

@@ -220,7 +220,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun isReload(r: RectF): Boolean = !btnReload.isEmpty && r == btnReload
 
     /** the Add-ons tab's controls, in reading order (each module's box, then each option's two segments) */
-    private fun addonFocus(): List<RectF> = listOf(addonRestart) + addonCoreBtn.values.toList() + addonModuleBoxes.values.toList() +
+    private fun addonFocus(): List<RectF> = listOf(addonRestart) + addonCoreBtn.values.toList() + addonSettingsBtn.values.toList() + addonModuleBoxes.values.toList() +
         addonOptionSegs.values.flatMap { it.toList() }
 
     /** the rows as last drawn, with their words (the "What it does" panel follows the row under the cursor or a touch) */
@@ -232,7 +232,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** every hit box empty: a block not drawn on this tab presses nothing */
     private fun clearBoxes() {
         rowHits.clear()
-        addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty()
+        addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty(); addonSettingsBtn.clear()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
@@ -804,7 +804,11 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** the rows an add-on's block shows now: its own row; its modules and options only once it is installed (the user, test40:
      *  "The settings under spoken shouldn't show until after it's installed") */
     private fun addonRows(a: ThirdPartyAddons.Addon): Int =
-        1 + (if (ThirdPartyAddons.coreInstalled(a)) a.modules.size + a.options.size else 0)
+        1 + (if (ThirdPartyAddons.coreInstalled(a)) a.modules.size + a.options.size + (if (a.settings != null) 1 else 0) else 0)
+
+    /** an add-on's own settings, on the bottom screen (QuestTrail's): the host leaves Settings and asks the game to open them */
+    var onAddonSettings: (ThirdPartyAddons.Addon) -> Unit = {}
+    private val addonSettingsBtn = HashMap<String, RectF>()
 
     private fun drawAddon(c: Canvas, top: Float, a: ThirdPartyAddons.Addon): Float {
         var y = top
@@ -873,6 +877,16 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             }
             addonOptionSegs["${a.id}.${o.id}"] = segs
         }
+        // its own settings view (QuestTrail's options pages, mirrored), only with the game up
+        a.settings?.let { label ->
+            y += ROW_H + 10f
+            val up = gameRunning()
+            addonSettingsBtn[a.id] = row(c, y, label, if (up) "Its options here, on the bottom screen" else "Open with the game running", enabled = up) { box ->
+                val r = RectF(box.right - 16f - 220f, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                UiKit.button(c, r, "Open", if (up) UiKit.Button.UP else UiKit.Button.DISABLED)
+                if (up) r else RectF(r.left, r.top, r.left, r.top)
+            }
+        }
         return y + ROW_H
     }
     private val addonDrawnRows = HashMap<String, Int>()
@@ -898,6 +912,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun addonTap(x: Float, y: Float): Boolean {
         if (!addonRestart.isEmpty && addonRestart.contains(x, y)) { addonRestartAt = SystemClock.elapsedRealtime(); onRestart(); return true }
         for (a in ThirdPartyAddons.ALL) {
+            if (addonSettingsBtn[a.id]?.let { !it.isEmpty && it.contains(x, y) } == true) { onAddonSettings(a); return true }
             addonCoreBtn[a.id]?.takeIf { !it.isEmpty && it.contains(x, y) }?.let {
                 val installed = ThirdPartyAddons.coreInstalled(a)
                 val wanted = ThirdPartyAddons.coreWanted(a)
