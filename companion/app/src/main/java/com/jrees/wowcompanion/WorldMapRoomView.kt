@@ -67,6 +67,9 @@ class WorldMapRoomView(context: Context) : View(context) {
     /** read the art set's manifest and indexes off the UI thread (60 small files) */
     fun loadArt() {
         kidsCache.clear(); seamZones.clear()            // the zoom's hand-overs follow the art read again
+        // the world map's continents, each by its own UiMapAssignment row (b-world-zoom: the recipe's "assign")
+        runCatching { context.assets.open("harvest/worldmap.json").use { JSONObject(it.readBytes().toString(Charsets.UTF_8)) } }
+            .getOrNull()?.optJSONObject("assign")?.let { model.setAssign(it) }
         io.execute {
             val dir = artDir()
             val note = try {
@@ -173,10 +176,12 @@ class WorldMapRoomView(context: Context) : View(context) {
         var guard = 0
         while (guard++ < 4) {
             // in: the smallest finer map under the view's middle that the zoom has made fill the frame
-            val kid = kidsOf(shown).filter { (_, p) -> p.contains(panX, panY) && zoom * p.width() >= 1f }
+            val kid = kidsOf(shown).filter { (k, p) -> under(shown, k, p) && zoom * p.width() >= 1f }
                 .minByOrNull { (_, p) -> p.width() * p.height() }
             if (kid != null) {
                 val (id, p) = kid
+                android.util.Log.i("WCMAP", "map room: zoom in ${shown} -> $id at ${"%.3f".format(panX)}, ${"%.3f".format(panY)} " +
+                    "(${if (model.maps[id]?.world?.let { model.assignOf(shown, it.continent) } != null) "inside its own region on the world map" else "its frame under the view"})")
                 val nz = zoom * p.width(); val npx = (panX - p.left) / p.width(); val npy = (panY - p.top) / p.height()
                 val ncx = (curX - p.left) / p.width(); val ncy = (curY - p.top) / p.height()
                 goTo(id)
@@ -199,11 +204,25 @@ class WorldMapRoomView(context: Context) : View(context) {
         }
     }
 
+    /** the view's middle is on finer map [kid] of [id] (frame [p] there): on a world map, inside the box the continent is DRAWN in (its
+     *  frame reaches into the ocean, over the other continent's), else inside its frame */
+    private fun under(id: Int, kid: Int, p: RectF): Boolean {
+        val cont = model.maps[kid]?.world?.continent
+        val a = cont?.let { model.assignOf(id, it) }
+        return if (a != null) a.holds(panX, panY) else p.contains(panX, panY)
+    }
+
     /** the finer maps of [id] the zoom can hand over to, each with its place in [id]'s frame */
     private fun kidsOf(id: Int): List<Pair<Int, RectF>> {
         kidsCache[id]?.let { return it }
         val out = ArrayList<Pair<Int, RectF>>()
         if (seamless(id)) seamZonesOf(id).forEach { z -> seamPlace(id, z)?.let { out.add(z to it) } }
+        else if (model.assignsOf(id).isNotEmpty()) {
+            // a world map: each continent's frame through its own assignment (the game's GetMapRectOnMap gave Kalimdor's for both)
+            model.maps.values.filter { it.type == 2 && model.parentOf(it.id) == id }.forEach { m ->
+                model.frameOn(id, m.id)?.let { f -> out.add(m.id to RectF(f[0], f[1], f[2], f[3])) }
+            }
+        }
         else model.children(id).forEach { c -> model.rectOf(c)?.let { r -> out.add(c to RectF(r[0], r[2], r[1], r[3])) } }
         model.citiesIn(id).forEach { (c, r) -> out.add(c to RectF(r[0], r[2], r[1], r[3])) }
         val ok = out.filter { (c, p) -> c != id && p.width() > 0.005f && p.height() > 0.005f && p.width() < 0.999f }
@@ -269,8 +288,16 @@ class WorldMapRoomView(context: Context) : View(context) {
     private var travelDrawn: List<Pair<Travel.Point, FloatArray>> = emptyList()
     private fun drawTravel(c: Canvas) {
         travelDrawn = emptyList()
-        val w = model.maps[shown]?.world ?: return
         val s = travelScene?.invoke() ?: return
+        // a world map: each continent through its own assignment (b-world-zoom: the icons sat in the ocean)
+        val assigns = model.assignsOf(shown)
+        if (assigns.isNotEmpty()) {
+            travelDrawn = assigns.flatMap { a ->
+                TravelPaint.draw(c, s, a.map, { _, wy -> sx(a.u(wy).toFloat()) }, { wx, _ -> sy(a.v(wx).toFloat()) }, canvasR, compact = false, labels = false)
+            }
+            return
+        }
+        val w = model.maps[shown]?.world ?: return
         travelDrawn = TravelPaint.draw(c, s, w.continent, { _, wy -> sx(w.nx(wy).toFloat()) }, { wx, _ -> sy(w.ny(wx).toFloat()) },
             canvasR, compact = false, labels = isZoneView())
     }
@@ -297,9 +324,13 @@ class WorldMapRoomView(context: Context) : View(context) {
     /** the group on the map shown (b-group-map): each member on its continent's maps, named (the user's pick: names in the room) */
     private fun drawGroup(c: Canvas) {
         val w = model.maps[shown]?.world ?: return
+        val world = model.assignsOf(shown).isNotEmpty()
         for (gm in group) {
-            if (gm.cont != null && gm.cont != w.continent) continue
-            val u = w.nx(gm.wy).toFloat(); val v = w.ny(gm.wx).toFloat()
+            if (!world && gm.cont != null && gm.cont != w.continent) continue
+            // a world map: the member's continent through its own assignment (b-world-zoom)
+            val uv = if (world) gm.cont?.let { model.project(shown, it, gm.wx, gm.wy) } ?: continue
+                else floatArrayOf(w.nx(gm.wy).toFloat(), w.ny(gm.wx).toFloat())
+            val u = uv[0]; val v = uv[1]
             if (u !in 0f..1f || v !in 0f..1f) continue
             GroupMembers.draw(c, gm, sx(u), sy(v), named = true)
         }

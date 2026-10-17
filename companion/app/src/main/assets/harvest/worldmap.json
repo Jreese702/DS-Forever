@@ -1,4 +1,7 @@
 {"about": "each uiMap with art: its world rect [continent, top, bottom, left, right] (tools/harvest/map_recipes.py)",
+ "assign": {"947": [[0, 0.5505, 0.0994, 0.8966, 0.8691, -16000.0, -7466.7, 6933.3, 8000.0],
+                   [1, 0.0399, 0.0855, 0.4083, 0.9234, -12800.0, -9600.0, 12266.7, 6933.3]]},
+ "assignAbout": "the world map's per-continent UiMapAssignment rows (uiMap: [map, uiMin x, uiMin y, uiMax x, uiMax y, region min x, min y, max x, max y], world yards x north / y west), read on the PC client: the world view places each continent by its own region (b-world-zoom)",
  "rects": {
   "947": [1, 14824.5254, -19900.1797, 8723.958, -12087.4941],
   "1411": [1, 1808.3333, -1716.6666, -1962.4999, -7249.9995],
