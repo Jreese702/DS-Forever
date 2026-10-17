@@ -1487,6 +1487,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     PoiHarvest.ingestAll(it.optJSONArray("svc")); PoiHarvest.attach(it)
                     lastMap = it; lastMapAt = System.currentTimeMillis(); mapView.update(it, 0); worldMapRoom.update(it)
                     if (current) mapView.learnExit(it)          // the ways out of a map, learned from live play only (CityExits.Learner)
+                    if (current) routePinTick()
                     if (current) GameUi.onTracking(it.optJSONObject("track"))     // LATER 25: the "While tracking" minimap
                 }
                 msg.optJSONObject("actionbar")?.let { castView.update(it) }
@@ -1498,6 +1499,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "pos" -> msg.optJSONObject("map")?.let {
                 mapView.updatePos(it, msg.optLong("_gt", -1L)); worldMapRoom.updatePos(it)
                 if (current) mapView.learnNow()                     // the last place on a map before a crossing is the tick's, not a stale doc's
+                if (current) routePinTick()
                 // the background minimap step builds the player's own zone first (Map's nearest-first hook)
                 if (it.has("mapID") && it.has("wx")) MapHarvestSteps.near = Triple(it.optInt("mapID"), it.optDouble("wx"), it.optDouble("wy"))
                 // ... and the interiors bake its building first
@@ -1525,6 +1527,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // a flight master's map (Map.lua taxinet): which known nodes connect (b-route-unknown-taxi); replays too (they stay true)
             // the game's player menu, read for the map module's bottom-screen copy (Quests q41): only a current one is the game's now
             "pmenu" -> if (current) mapView.onPlayerMenuDoc(msg)
+            // the route's pin's answer (Map.lua b-route-waypoint): a refused one is not tried again for a while
+            "routewp" -> if (current) {
+                routeWp.onAnswer(msg.optString("op"), msg.optBoolean("ok"), SystemClock.elapsedRealtime())
+                Log.i("WCMAP", "route pin: ${msg.optString("op")} ${if (msg.optBoolean("ok")) "ok" else "refused"} ${msg.optString("why", "")}")
+            }
             "taxinet" -> {
                 val reach = msg.optJSONArray("reach")?.let { r -> List(r.length()) { r.optInt(it) }.filter { it != 0 } } ?: emptyList()
                 val cur = msg.optInt("cur", 0)
@@ -2920,6 +2927,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * A CLEAN EXIT FIRST ([CleanExit]; the user's "Both" ruling after test20): the game's own Exit Game cell (Spells' secure gamemenu
      * row: "/quit", which writes SavedVariables), then wait for the game to go; [done] says whether the old close is still needed.
      */
+    // THE GAME'S PIN ON THE ROUTE (b-route-waypoint, the user's pick): RouteWaypoint decides the taps of Map.lua's row "uwp"
+    private val routeWp = RouteWaypoint()
+    private fun routePinTick() {
+        val pad = questsPad ?: return
+        if (pad.optJSONObject("rows")?.has(RouteWaypoint.ROW) != true) return          // an older add-on: no pin at all
+        val cols = routeWp.tick(mapView.routePin(), SystemClock.elapsedRealtime())
+        if (cols.isEmpty()) return
+        Log.i("WCMAP", "route pin: tap $cols")
+        TapBridge.taps(this, pad, cols.map { RouteWaypoint.ROW to it }) { why -> Log.i("WCMAP", "route pin: tap failed: $why") }
+    }
+
     private fun cleanExit(why: String, done: (Boolean) -> Unit) {
         // every route line is logged AND kept, so the safe close's own "done" line can repeat it (tracking: the WCSETUP lines rolled
         // out of logcat before they were read)

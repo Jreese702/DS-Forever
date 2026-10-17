@@ -205,6 +205,9 @@ end
 -- "after unfocusing a quest on the minimap, I cant re-focus it": with the key left out for "none" the app kept the old focus, so A
 -- kept offering Unfocus); nil means unknown.
 local function superTrackedQuest()
+    -- while the route's pin stands (b-route-waypoint) the game super-tracks the pin; the quest it stands for is still the focus
+    local R = WC.routeWp
+    if R and R.active and R.qid and R.qid > 0 then return R.qid end
     local id = SN(function()
         local get = C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID
         if type(get) ~= "function" then get = C_QuestLog and C_QuestLog.GetSuperTrackedQuestID end
@@ -927,6 +930,7 @@ function WC.collectMap()
         wm, wx, wy = plainNum(okP and wm or nil), plainNum(wx), plainNum(wy)
         if wm and wx and wy then
             out.uwp = { m = wm, x = wx, y = wy }
+            if WC.routeWp and WC.routeWp.active then out.uwp.ours = 1 end      -- the route's pin, not the player's own
             local okS, st = CALL(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
             if okS and type(st) == "boolean" and WC.isPlain(st) and st then out.uwp.st = 1 end   -- proven plain first
         end
@@ -2551,3 +2555,125 @@ function WC.mmp.init()
     end)
 end
 WC.mmp.init()
+
+-- ---------------------------------------------------------------- THE ROUTE'S PIN (b-route-waypoint)
+-- The user's pick (2026-10-17, via tracking: "(b), the game user waypoint"; an explicit exception to leave-no-trace for this only): the
+-- GAME's own arrow (the top screen's minimap / navigation) points at the route's next way - the tram, a gate, a flight master - while
+-- the focused quest's route goes through one. The app works the route out and taps the pad row "uwp":
+--   36, xh, xl, yh, yl   SET the pin at (x, y) on the player's map (base-36 digits: 1296 steps across); super-track it
+--   37                   KEEP: the app is still routing (without one in KEEP_S the pin is cleared: an app that went away leaves none)
+--   39                   CLEAR: the pin goes and the quest's own super-track comes back
+-- Plain engine calls only (C_Map / C_SuperTrack, not protected; no Blizzard frame touched). NEVER STALE: cleared on the CLEAR tap, on
+-- the KEEP timeout, when the player focuses something else in the game, at log out; and a pin of ours found at log in (the game kept
+-- it through a crash) is cleared then (WowCompanionDB.routeWp names it). Never takes over the player's OWN pin.
+-- While it stands, the map / quests documents keep reporting the quest it stands for as the focus (WC.routeWp.qid), and map.uwp
+-- carries ours = 1. Every tap answers {"type":"routewp", op, ok, why}.
+WC.routeWp = { active = false, qid = nil, m = nil, x = nil, y = nil, keepAt = 0, digits = nil, digitsAt = 0, ours = false }
+local RWP = WC.routeWp
+RWP.KEEP_S, RWP.DIGITS_S = 60, 2
+
+function RWP.say(op, ok, why)
+    pcall(function() WC.send(WC.encode({ type = "routewp", v = "rw1", op = op, ok = ok and true or false, why = why })); WC.push() end)
+end
+
+local function pinHere(x, y)
+    local okH, has = CALL(function() return C_Map.HasUserWaypoint() end)
+    if not okH or has ~= true then return false end
+    local okG, p = CALL(function() return C_Map.GetUserWaypoint() end)
+    if not okG or type(p) ~= "table" then return false end
+    local okP, px, py = pcall(function() return p.position.x, p.position.y end)
+    return okP and type(px) == "number" and math.abs(px - x) < 0.002 and math.abs(py - y) < 0.002
+end
+
+function RWP.set(x, y)
+    local m = currentMap()
+    if not m then return RWP.say("set", false, "no map") end
+    -- the player's own pin is theirs: never moved or replaced
+    local okH, has = CALL(function() return C_Map.HasUserWaypoint() end)
+    if okH and has == true and not (RWP.active and pinHere(RWP.x, RWP.y)) then return RWP.say("set", false, "the player's own pin") end
+    local okC, can = CALL(function() return C_Map.CanSetUserWaypointOnMap(m) end)
+    if okC and can == false then return RWP.say("set", false, "no pins on this map") end
+    if not RWP.active then RWP.qid = superTrackedQuest() end              -- the quest it stands for (given back at the end)
+    RWP.ours = true
+    local ok = pcall(function()
+        local pt = (UiMapPoint and UiMapPoint.CreateFromCoordinates) and UiMapPoint.CreateFromCoordinates(m, x, y)
+            or { uiMapID = m, position = CreateVector2D(x, y) }
+        C_Map.SetUserWaypoint(pt)
+        C_SuperTrack.SetSuperTrackedUserWaypoint(true)
+    end)
+    RWP.ours = false
+    if not ok then return RWP.say("set", false, "the game refused") end
+    RWP.active, RWP.m, RWP.x, RWP.y, RWP.keepAt = true, m, x, y, GetTime()
+    if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+    WowCompanionDB.routeWp = { m = m, x = x, y = y, qid = RWP.qid }
+    RWP.say("set", true)
+    snapshotSoon("waypoint")
+end
+
+-- [restore]: give the quest its super-track back (not when the player has just focused something else)
+function RWP.clear(restore, why)
+    if not RWP.active then
+        if type(WowCompanionDB) == "table" then WowCompanionDB.routeWp = nil end
+        return
+    end
+    RWP.ours = true
+    pcall(function()
+        if pinHere(RWP.x, RWP.y) then C_Map.ClearUserWaypoint() end
+        C_SuperTrack.SetSuperTrackedUserWaypoint(false)
+        if restore and RWP.qid and RWP.qid > 0 then C_SuperTrack.SetSuperTrackedQuestID(RWP.qid) end
+    end)
+    RWP.ours = false
+    RWP.active, RWP.qid, RWP.m, RWP.x, RWP.y = false, nil, nil, nil, nil
+    if type(WowCompanionDB) == "table" then WowCompanionDB.routeWp = nil end
+    RWP.say("clear", true, why)
+    snapshotSoon("waypoint")
+end
+
+-- a pin of ours the game kept through a crash or a kill: cleared at log in, the quest's super-track given back
+function RWP.stale()
+    local s = type(WowCompanionDB) == "table" and WowCompanionDB.routeWp or nil
+    if type(s) ~= "table" then return end
+    if type(s.x) == "number" and type(s.y) == "number" and pinHere(s.x, s.y) then
+        RWP.active, RWP.qid, RWP.m, RWP.x, RWP.y = true, s.qid, s.m, s.x, s.y
+        RWP.clear(true, "left from before")
+    else
+        WowCompanionDB.routeWp = nil
+    end
+end
+
+if WC.pad and type(WC.pad.op) == "function" then
+    WC.pad.op("uwp", "uwp", function(_, col)
+        if type(col) ~= "number" then return end
+        if col == 39 then RWP.digits = nil; return RWP.clear(true, "asked") end
+        if col == 37 then RWP.keepAt = GetTime(); return end
+        if col == 36 then RWP.digits = {}; RWP.digitsAt = GetTime(); return end
+        if col <= 35 and RWP.digits and GetTime() - RWP.digitsAt <= RWP.DIGITS_S then
+            local d = RWP.digits
+            d[#d + 1] = col
+            if #d == 4 then
+                RWP.digits = nil
+                RWP.set((d[1] * 36 + d[2]) / 1295, (d[3] * 36 + d[4]) / 1295)
+            end
+        end
+    end)
+end
+
+do
+    local f = CreateFrame("Frame")
+    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_LOGOUT", "SUPER_TRACKING_CHANGED" }) do pcall(function() f:RegisterEvent(e) end) end
+    f:SetScript("OnEvent", function(_, e)
+        if e == "PLAYER_ENTERING_WORLD" then
+            C_Timer.After(1, function() pcall(RWP.stale) end)
+        elseif e == "PLAYER_LOGOUT" then
+            pcall(RWP.clear, true, "log out")
+        elseif e == "SUPER_TRACKING_CHANGED" and RWP.active and not RWP.ours then
+            -- the player focused something else in the game (or cleared the pin): ours goes, their choice stands
+            local okU, onPin = CALL(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
+            if not (okU and onPin == true) then pcall(RWP.clear, false, "the player chose another") end
+        end
+    end)
+    -- the KEEP timeout: an app that stopped routing (closed, killed) leaves no pin
+    C_Timer.NewTicker(10, function()
+        if RWP.active and GetTime() - RWP.keepAt > RWP.KEEP_S then pcall(RWP.clear, true, "no word from the app") end
+    end)
+end
