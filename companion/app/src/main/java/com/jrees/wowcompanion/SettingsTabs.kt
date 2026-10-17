@@ -14,7 +14,8 @@ import android.content.SharedPreferences
  */
 object SettingsTabs {
     enum class Tab(val label: String) {
-        HOME("Home"), CONTROLLER("Controller"), TOP("Top screen"), ROOMS("Rooms"), PERFORMANCE("Performance"), SYSTEM("System")
+        HOME("Home"), CONTROLLER("Controller"), TOP("Top screen"), ROOMS("Rooms"), ADDONS("Add-ons"), PERFORMANCE("Performance"),
+        SYSTEM("System")
     }
 
     /** the order within a tab is this enum's order */
@@ -33,6 +34,8 @@ object SettingsTabs {
             "NPC windows", "Cast bar", "Loot window")),
         MAP(Tab.ROOMS, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "Quest tracking")),
         CHAT(Tab.ROOMS, "Chat", listOf("Message input")),
+        // 1.0.9 (the user, on Spoken: "make an addon section of our settings"): one block per third-party add-on (ThirdPartyAddons)
+        ADDON_SPOKEN(Tab.ADDONS, "Spoken", ThirdPartyAddons.SPOKEN.rowWords()),
         FRAMES(Tab.PERFORMANCE, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game")),
         INDOOR(Tab.PERFORMANCE, "Indoor maps", listOf("Build in the background", "Progress")),
@@ -43,7 +46,10 @@ object SettingsTabs {
     /** the blocks SettingsView draws itself (the others are Home's section and the two GameUiSection parts) */
     val VIEW_BLOCKS = setOf(Block.GAME, Block.MAP, Block.INDOOR, Block.CONTROLLER, Block.PAUSE_WHEEL, Block.ITEM_WHEEL, Block.SPELL_WHEEL,
         Block.CLASS_LEFT, Block.CLASS_RIGHT,
-        Block.CHAT, Block.FRAMES)
+        Block.CHAT, Block.FRAMES, Block.ADDON_SPOKEN)
+
+    /** the third-party add-on a block draws (Settings > Add-ons), or null */
+    fun addonOf(b: Block): ThirdPartyAddons.Addon? = when (b) { Block.ADDON_SPOKEN -> ThirdPartyAddons.SPOKEN; else -> null }
 
     fun blocks(tab: Tab): List<Block> = Block.values().filter { it.tab == tab }
     fun viewBlocks(tab: Tab): List<Block> = blocks(tab).filter { it in VIEW_BLOCKS }

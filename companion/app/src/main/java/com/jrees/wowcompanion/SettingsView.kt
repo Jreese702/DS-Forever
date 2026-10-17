@@ -153,7 +153,13 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     private val castListener: () -> Unit = { postInvalidate() }
 
+    /** Settings > Add-ons (1.0.9): each module's check box and each option's On / Off, as last drawn ("<addon>.<id>") */
+    private val addonModuleBoxes = LinkedHashMap<String, RectF>()
+    private val addonOptionSegs = LinkedHashMap<String, Array<RectF>>()
+
     init {
+        ThirdPartyAddons.init(context)
+        ThirdPartyAddons.onChange { postInvalidate() }
         Settings.onChange { postInvalidate() }
         ReportFlow.init(context)
         ReportFlow.onChange { postInvalidate() }
@@ -195,8 +201,11 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segChat.toList() +
             segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             segLimit.toList() + listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() +
-            listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred))
+            listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred) + addonFocus())
             .filter { !it.isEmpty }.map { RectF(it) }
+
+    /** the Add-ons tab's controls, in reading order (each module's box, then each option's two segments) */
+    private fun addonFocus(): List<RectF> = addonModuleBoxes.values.toList() + addonOptionSegs.values.flatMap { it.toList() }
 
     /** the rows as last drawn, with their words (the "What it does" panel follows the row under the cursor or a touch) */
     private val rowHits = ArrayList<Pair<RectF, String>>()
@@ -207,6 +216,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** every hit box empty: a block not drawn on this tab presses nothing */
     private fun clearBoxes() {
         rowHits.clear()
+        addonModuleBoxes.clear(); addonOptionSegs.clear()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
@@ -236,7 +246,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.CLASS_LEFT, SettingsTabs.Block.CLASS_RIGHT -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.CHAT -> 16f + ROW_H
         SettingsTabs.Block.FRAMES -> 16f + fgHeight()
-        else -> 0f
+        else -> SettingsTabs.addonOf(b)?.let { a -> val n = 1 + a.modules.size + a.options.size; 16f + n * ROW_H + (n - 1) * 10f } ?: 0f
     }
 
     /** the Frame generation section's rows now (FrameGen.rows: the DLL row alone until one is set; Restart when it would change something) */
@@ -336,6 +346,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segClassROpen[1].contains(x, y) -> HomeSettings.classTapR = false
             segClassRPick[0].contains(x, y) -> HomeSettings.classPickAR = true
             segClassRPick[1].contains(x, y) -> HomeSettings.classPickAR = false
+            addonTap(x, y) -> {}
             btnDll.contains(x, y) -> onChooseDll()
             btnRestart.contains(x, y) -> { btnRestart = RectF(); onRestart() }
             segFg[0].contains(x, y) -> FrameGen.enabled = false
@@ -402,7 +413,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                     "Hold RB + RT; letting go closes it.", HomeSettings.classTapR, HomeSettings.classPickAR, segClassROpen, segClassRPick)
                 SettingsTabs.Block.CHAT -> drawChat(c, y)
                 SettingsTabs.Block.FRAMES -> drawFrames(c, y)
-                else -> y
+                else -> SettingsTabs.addonOf(b)?.let { drawAddon(c, y, it) } ?: y
             }
         }
         y += BOTTOM_PAD
@@ -708,6 +719,64 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             }
         }
         return y + ROW_H
+    }
+
+    /**
+     * ONE THIRD-PARTY ADD-ON (Settings > Add-ons, 1.0.9; the user on Spoken: modules opt-in, nothing downloaded by default, the size
+     * shown first, the stop rules a setting): its own row (what it is, by whom, its licence, its pinned version), a row per module
+     * with the game's check box and the size switching it on would download, then the companion's options for it.
+     */
+    private fun drawAddon(c: Canvas, top: Float, a: ThirdPartyAddons.Addon): Float {
+        var y = top
+        val any = ThirdPartyAddons.anyOn(a)
+        // "About": the block's heading already names it; what it is, by whom, its licence; on the right the version pinned for it
+        row(c, y, "About", "${a.what}. By ${a.by}, ${a.license}.", enabled = true) { box ->
+            val words = if (any) "${a.version}: installs with the game closed" else "Not installed"
+            pValue.color = if (any) Theme.text else Theme.dim
+            pValue.textAlign = Paint.Align.RIGHT
+            c.drawText(words, box.right - 22f, box.centerY() + 11f, pValue)
+            pValue.textAlign = Paint.Align.CENTER
+            RectF(box.right - 22f - pValue.measureText(words), box.top, box.right - 22f, box.top)   // no hit: words only
+        }
+        for (m in a.modules) {
+            y += ROW_H + 10f
+            val on = ThirdPartyAddons.moduleOn(a, m)
+            val sub = if (on) "${m.what}. Downloads at the next start with the game closed."
+                else "${m.what}. ${ThirdPartyAddons.size(ThirdPartyAddons.downloadMb(a, m))} download."
+            val b = row(c, y, m.title, sub, enabled = true) { box ->
+                val r = RectF(box.right - 16f - 96f, box.centerY() - 40f, box.right - 16f, box.centerY() + 40f)
+                toggle(c, r, on)
+                r
+            }
+            addonModuleBoxes["${a.id}.${m.id}"] = b
+        }
+        val segW = segW()
+        for (o in a.options) {
+            y += ROW_H + 10f
+            val on = ThirdPartyAddons.option(a, o)
+            val segs = Array(2) { RectF() }
+            row(c, y, o.title, if (on) o.on else o.off, enabled = any) { box ->
+                val r = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                segmented(c, r, listOf("On", "Off"), if (on) 0 else 1, segs)
+                r
+            }
+            addonOptionSegs["${a.id}.${o.id}"] = segs
+        }
+        return y + ROW_H
+    }
+
+    /** a press on an Add-ons control; true = it was one */
+    private fun addonTap(x: Float, y: Float): Boolean {
+        for (a in ThirdPartyAddons.ALL) {
+            for (m in a.modules) if (addonModuleBoxes["${a.id}.${m.id}"]?.contains(x, y) == true) {
+                ThirdPartyAddons.setModule(a, m, !ThirdPartyAddons.moduleOn(a, m)); return true
+            }
+            for (o in a.options) addonOptionSegs["${a.id}.${o.id}"]?.let { s ->
+                if (s[0].contains(x, y)) { ThirdPartyAddons.setOption(a, o, true); return true }
+                if (s[1].contains(x, y)) { ThirdPartyAddons.setOption(a, o, false); return true }
+            }
+        }
+        return false
     }
 
     // 96, not 104: with three sections the page came to 1024 px in a ~970 px room, and the last row
