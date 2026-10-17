@@ -682,9 +682,9 @@ class InteractView(context: Context) : View(context) {
     private fun rowOf(cmd: String) = when (cmd.substringBefore(' ')) {
         "opt", "take", "turnin", "pick", "trhead", "ahcat" -> "ipick"
         "buy", "train", "pet", "mail", "ahres", "ahrow", "taxi", "bkdo", "loot" -> "ibuy"
-        "sell", "mailtake", "mailmoney", "mailall", "bkpick", "bkput", "lootdelc", "lootdelr", "maildetach" -> "isell"
+        "sell", "mailtake", "mailmoney", "mailall", "bkpick", "bkput", "lootdelc", "lootdelr", "maildetach", "ahsitem" -> "isell"
         "lookbag", "ahfilter" -> "ipick"
-        "mailattach" -> "ibuy"
+        "mailattach", "ahcancel" -> "ibuy"
         else -> "iact"
     }
 
@@ -2180,23 +2180,257 @@ class InteractView(context: Context) : View(context) {
     // Categories down the left (the game's tree, the browsed path open in place); on the right the results, a commodity's
     // price tiers with its quantity, or an item's listings; the game's buy box over it all while a purchase is armed.
 
+    /**
+     * THE GAME'S CONFIRM BOX over the auction house (1.0.9): [title], the [lines] in their colours, the [money] rows (a label, the coins),
+     * Accept ([yesHit]: A) and Cancel ([noHit]: B). Nothing under it takes a touch meanwhile.
+     */
+    private fun ahConfirm(c: Canvas, r: RectF, title: String, lines: List<Pair<String, Int>>, money: List<Pair<String, Long>>,
+                          yesWord: String, yesHit: String, noHit: String) {
+        hits.clear()
+        UiKit.cover(c, r)
+        val w = 960f
+        val h = 150f + lines.size * 46f + money.size * 52f + 150f
+        val d = RectF(r.centerX() - w / 2f, r.top + max(150f, (r.height() - h) / 2f - 60f), r.centerX() + w / 2f, 0f)
+        d.bottom = d.top + h
+        val inn = UiKit.dialog(c, d)
+        c.drawText(title, inn.centerX(), inn.top + 46f, UiKit.bodyPaint(34f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+        var y = inn.top + 104f
+        for ((t, colour) in lines) {
+            val p = UiKit.bodyPaint(28f, colour).apply { textAlign = Paint.Align.CENTER }
+            c.drawText(fit(p, t, inn.width() - 40f), inn.centerX(), y, p); y += 46f
+        }
+        y += 6f
+        for ((label, v) in money) {
+            c.drawText("$label:", inn.centerX() - 20f, y + 10f, UiKit.bodyPaint(27f, Theme.gold).apply { textAlign = Paint.Align.RIGHT })
+            UiKit.money(c, v, inn.centerX() + 10f, y, 30f)
+            y += 52f
+        }
+        val bw = 330f; val bh = 104f
+        val yes = RectF(inn.centerX() - 14f - bw, d.bottom - 40f - bh, inn.centerX() - 14f, d.bottom - 40f)
+        val no = RectF(inn.centerX() + 14f, yes.top, inn.centerX() + 14f + bw, yes.bottom)
+        stripButton(c, yes, yesWord, yesHit, !yesHit.startsWith("why:"), pendingCmd != null, "rev_a", always = true)
+        stripButton(c, no, "Cancel", noHit, true, false, UiKit.backGlyph(), always = true)
+    }
+
+    /**
+     * THE SELL TAB (1.0.9; the user's "Yes, build it": post from the bags, the game's way). The game's Sell frame, read from the client:
+     * your bags' sellable items down the left (the game takes them by drag; here they are listed); the chosen one's form in the middle
+     * (Quantity with X / Y and Max, "Buyout only" and the Bid for an item, the price's gold / silver / copper, 12 / 24 / 48 h, the
+     * Deposit, the Total); the game's current listings for it on the right (its own lowest price fills the form until one is typed).
+     * Post (A) arms it: the confirm with the deposit; A again posts. A second word the game wants is its own dialog (mirrored).
+     */
+    private fun sellPage(c: Canvas, r: RectF, inner: RectF, au: JSONObject, act: JSONObject?, by0: Float, by1: Float, strip: RectF,
+                         now: Long, name: String) {
+        fun col(k: String) = act?.let { slotOf(it, k) } ?: -1
+        fun hitOf(cmd: String, k: String) = col(k).let { if (it >= 0) "act:$cmd|$it" else "why:The game gave this no tap cell" }
+        val sl = au.optJSONObject("sell") ?: JSONObject()
+        val item = sl.optJSONObject("item")
+        val cy = strip.centerY() + 2f
+        val bx = inner.right - 8f
+        // ---- your bags, down the left
+        val left = RectF(inner.left + 4f, by0, inner.left + 334f, by1)
+        UiKit.ahPanel(c, left, "ah_bg_categories")
+        c.drawText("Your bags", left.left + 18f, left.top + 36f, UiKit.bodyPaint(24f, Theme.gold))
+        val bags = arr(sl, "bags")
+        val view = RectF(left.left, left.top + 52f, left.right, left.bottom - 4f)
+        val rowH = 72f
+        viewB = view; contentB = bags.size * rowH + 8f
+        fun cmdOf(b: JSONObject) = "ahsitem ${b.optInt("bag")} ${b.optInt("s")} ${b.optInt("id")}"
+        val ci = bags.indexOfFirst { cmdOf(it) == cur }
+        if (ci >= 0 && cur != shownCatCur) {
+            shownCatCur = cur
+            val top = ci * rowH
+            if (top < scrollB) scrollB = top else if (top + rowH > scrollB + view.height()) scrollB = top + rowH - view.height()
+        }
+        scrollB = scrollB.coerceIn(0f, max(0f, contentB - view.height()))
+        val chosen = item?.let { "ahsitem ${it.optInt("bag")} ${it.optInt("s")} ${it.optInt("id")}" }
+        c.save(); c.clipRect(view)
+        for ((k, b) in bags.withIndex()) {
+            val y = view.top + 4f + k * rowH - scrollB
+            if (y + rowH < view.top || y > view.bottom) continue
+            val rr = RectF(left.left + 8f, y, left.right - 8f, y + rowH - 6f)
+            val cmd = cmdOf(b)
+            UiKit.ahRowGround(c, rr, k % 2 == 1)
+            if (cmd == chosen) { pFill.color = Color.argb(70, Color.red(Theme.gold), Color.green(Theme.gold), Color.blue(Theme.gold)); c.drawRect(rr, pFill) }
+            UiKit.slot(c, itemIcon(b), rr.left + 6f, rr.top + 5f, rr.height() - 10f, count = b.optInt("n", 0), dim = b.optBoolean("locked"))
+            val np = UiKit.bodyPaint(23f, Theme.quality(b.optInt("q", 1)))
+            c.drawText(fit(np, b.optString("name", ""), rr.width() - rr.height() - 16f), rr.left + rr.height() + 6f,
+                rr.centerY() - (np.ascent() + np.descent()) / 2f, np)
+            val s0 = slotOf(b)
+            hits.add(RectF(rr.left, max(rr.top, view.top), rr.right, min(rr.bottom, view.bottom)) to when {
+                b.optBoolean("locked") -> "why:That item is locked"; s0 >= 0 -> "act:$cmd|$s0"; else -> "why:The game gave this no tap cell" })
+            if (cur == cmd) UiKit.focus(c, rr)
+        }
+        c.restore()
+        if (bags.isEmpty()) {
+            val lay = layout("Nothing in your bags can be sold at auction", UiKit.bodyPaint(24f, Theme.dim), (left.width() - 36f).toInt(), 4f)
+            drawLayout(c, lay, left.left + 18f, view.top + 20f)
+        }
+        // ---- the form, in the middle
+        val f = RectF(left.right + 12f, by0, left.right + 12f + 470f, by1)
+        UiKit.ahPanel(c, f, "ah_bg_commodities")
+        val mk = RectF(f.right + 12f, by0, inner.right - 4f, by1)
+        UiKit.ahPanel(c, mk, "ah_bg_market")
+        val lab = UiKit.bodyPaint(25f, Theme.gold)
+        val postB = RectF(bx - 250f, cy - 55f, bx, cy + 56f)
+        val why = if (sl.has("why")) sl.optString("why") else null
+        val st = sl.optString("status", "")
+        if (item == null) {
+            val lay = layout("Choose an item from your bags to sell it", UiKit.bodyPaint(27f, Theme.dim), (f.width() - 60f).toInt(), 6f)
+            drawLayout(c, lay, f.left + 30f, f.top + 80f)
+            stripButton(c, postB, "Post", "why:Choose an item to sell", false, false, "rev_a", id = "ahspost")
+        } else {
+            val commodity = item.optBoolean("commodity")
+            UiKit.ahItemHeader(c, RectF(f.left + 10f, f.top + 10f, f.right - 10f, f.top + 120f), itemIcon(item),
+                item.optString("name", ""), Theme.quality(item.optInt("q", 1)))
+            var y = f.top + 140f
+            val gl = cur != null
+            // Quantity: X / Y (- / +), A or a touch on the number = the game's Max
+            val q = sl.optInt("qty", 1); val mx = sl.optInt("max", 1)
+            if (mx > 1) {
+                val qy = y + 40f
+                c.drawText("Quantity", f.left + 24f, qy + 10f, lab)
+                UiKit.square(c, "minus", f.left + 236f, qy, 72f, if (q > 1) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_x".takeIf { gl })
+                c.drawText(q.toString(), f.left + 313f, qy + 12f, UiKit.numberPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
+                UiKit.square(c, "plus", f.left + 390f, qy, 72f, if (q < mx) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_y".takeIf { gl }, glyphRight = true)
+                if (q > 1) hits.add(RectF(f.left + 192f, qy - 44f, f.left + 280f, qy + 44f) to hitOf("ahsqty less", "sq_less"))
+                if (q < mx) hits.add(RectF(f.left + 346f, qy - 44f, f.left + 434f, qy + 44f) to hitOf("ahsqty more", "sq_more"))
+                hits.add(RectF(f.left + 282f, qy - 40f, f.left + 344f, qy + 40f) to hitOf("ahsqty max", "sq_max"))
+                c.drawText("of $mx", f.left + 313f, qy + 50f, UiKit.bodyPaint(18f, Theme.dim).apply { textAlign = Paint.Align.CENTER })
+                if (cur == "ahsq") UiKit.focus(c, RectF(f.left + 12f, qy - 46f, f.right - 12f, qy + 52f))
+                y += 104f
+            }
+            // an item: the game's "Buyout only" box; unchecked, the Bid too
+            val bidOn = sl.optBoolean("bidOn")
+            if (!commodity) {
+                val ry = y + 28f
+                UiKit.check(c, f.left + 44f, ry, 40f, !bidOn)
+                c.drawText(sl.optString("boWord", "Buyout only"), f.left + 76f, ry + 9f, lab)
+                val rr = RectF(f.left + 12f, ry - 28f, f.right - 12f, ry + 28f)
+                hits.add(rr to hitOf("ahsbo", "sbo"))
+                if (cur == "ahsbo") UiKit.focus(c, rr)
+                y += 64f
+            }
+            val copper = sl.optBoolean("copper")
+            fun moneyRow(label: String, v: Long, pre: String) {
+                c.drawText(label, f.left + 24f, y + 22f, lab)
+                val parts = listOf("g" to (v / 10000), "s" to ((v / 100) % 100), "c" to (v % 100)).filter { it.first != "c" || copper }
+                val x0 = f.left + 24f; val x1 = f.right - 20f
+                val w = (x1 - x0 - (parts.size - 1) * 10f) / parts.size
+                for ((i, pv) in parts.withIndex()) {
+                    val (k, n) = pv
+                    val b = RectF(x0 + i * (w + 10f), y + 34f, x0 + i * (w + 10f) + w, y + 92f)
+                    formBox(c, RectF(b.left, b.top, b.right - 38f, b.bottom), if (n > 0) n.toString() else "", "0", "ahsedit $pre$k",
+                        col("se_$pre$k"), "ahs$pre$k", size = 26f, digits = true)
+                    val coin = when (k) { "g" -> "coin_gold"; "s" -> "coin_silver"; else -> "coin_copper" }
+                    UiKit.tex(coin)?.let { bm -> c.drawBitmap(bm, null, RectF(b.right - 34f, b.centerY() - 15f, b.right - 4f, b.centerY() + 15f), pArt) }
+                }
+                y += 104f
+            }
+            if (!commodity && bidOn) moneyRow("Bid Price", sl.optLong("bid", 0), "b")
+            moneyRow(if (commodity) "Unit Price" else "Buyout Price", sl.optLong("unit", 0), "p")
+            // the duration: the game's three
+            val durs = sl.optJSONArray("durs")
+            val dur = sl.optInt("dur", 2)
+            c.drawText("Duration", f.left + 24f, y + 22f, lab)
+            val dw = (f.width() - 40f) / 3f
+            for (k in 1..3) {
+                val rr = RectF(f.left + 20f + (k - 1) * dw, y + 36f, f.left + 20f + k * dw, y + 84f)
+                UiKit.radio(c, rr.left + 22f, rr.centerY(), 36f, dur == k)
+                c.drawText(fit(UiKit.bodyPaint(22f, Color.WHITE), durs?.optString(k - 1) ?: "${12 * (1 shl (k - 1))} Hours", dw - 50f),
+                    rr.left + 46f, rr.centerY() + 8f, UiKit.bodyPaint(22f, Color.WHITE))
+                hits.add(rr to hitOf("ahsdur $k", "sd_$k"))
+                if (cur == "ahsdur $k") UiKit.focus(c, rr)
+            }
+            y += 100f
+            // the deposit and the total, the game's two lines
+            val dep = sl.optLong("deposit", 0)
+            c.drawText("Deposit", f.left + 24f, y + 10f, lab)
+            UiKit.money(c, dep, f.right - 24f, y, 28f, if (dep <= au.optLong("money", 0)) Theme.text else Theme.unusable, fromRight = true)
+            y += 48f
+            c.drawText("Total Price", f.left + 24f, y + 10f, lab)
+            UiKit.money(c, sl.optLong("total", 0), f.right - 24f, y, 30f, fromRight = true)
+            val canPost = why == null && st != "posting" && st != "warn"
+            stripButton(c, postB, "Post", if (canPost) hitOf("ahspost", "spost") else "why:${why ?: "One moment"}", canPost,
+                pendingCmd == "ahspost", "rev_a", id = "ahspost")
+            // ---- the listings now, on the right (the game's own search for this item)
+            val rows = arr(sl, "listings")
+            UiKit.ahHeader(c, mk.left + 10f, mk.right - 10f, mk.top + 30f,
+                listOf((if (commodity) "Unit Price" else "Buyout") to mk.left + 24f, (if (commodity) "Available" else "Qty") to -(mk.right - 24f)))
+            var ly = mk.top + 66f
+            for ((k, row) in rows.withIndex()) {
+                val rr = RectF(mk.left + 8f, ly, mk.right - 8f, ly + 54f)
+                if (rr.bottom > mk.bottom - 4f) break
+                UiKit.ahRowGround(c, rr, k % 2 == 1)
+                val pr = row.optLong("price", 0)
+                if (pr > 0) UiKit.money(c, pr, rr.left + 14f, rr.centerY(), 25f)
+                else c.drawText("Bid only", rr.left + 14f, rr.centerY() + 8f, UiKit.bodyPaint(22f, Theme.dim))
+                val cp = UiKit.numberPaint(24f, if (row.optBoolean("mine")) Theme.gold else Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
+                c.drawText((if (row.optBoolean("mine")) "Yours  " else "") + row.optInt("count", 0), rr.right - 14f, rr.centerY() + 9f, cp)
+                ly += 58f
+            }
+            if (rows.isEmpty()) {
+                val lay = layout("No one else is selling this right now", UiKit.bodyPaint(23f, Theme.dim), (mk.width() - 40f).toInt(), 4f)
+                drawLayout(c, lay, mk.left + 20f, mk.top + 80f)
+            }
+        }
+        // ---- the strip: the game's word on the last post, or why it can't go yet; Back; Post
+        UiKit.hints(c, postB.left - 20f, cy, UiKit.backGlyph() to "Back")
+        if (!resultLine(c, inner.left + 24f, postB.left - 200f, cy, now)) {
+            val msg = sl.optJSONObject("msg")
+            val (words, colour) = when {
+                st == "warn" -> "Answer the game's message" to Theme.gold
+                st == "posting" -> "Posting..." to Theme.dim
+                st == "failed" -> "The game did not post it" to Theme.unusable
+                msg != null -> msg.optString("words") to (if (msg.optBoolean("ok")) Theme.gold else Theme.unusable)
+                item != null && why != null -> why to Theme.dim
+                else -> "" to Theme.dim
+            }
+            if (words.isNotEmpty()) c.drawText(fit(UiKit.bodyPaint(24f, colour), words, postB.left - 220f - inner.left), inner.left + 24f, cy + 8f,
+                UiKit.bodyPaint(24f, colour))
+        }
+        UiKit.windowFrame(c, r, name, UiKit.tex("mm_auctioneer"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
+        // ---- Post armed: the confirm, with the deposit (the user's ask)
+        if (item != null && sl.optBoolean("armed")) {
+            val commodity = item.optBoolean("commodity")
+            val durs = sl.optJSONArray("durs")
+            val money = ArrayList<Pair<String, Long>>()
+            if (commodity) money.add("Unit Price" to sl.optLong("unit", 0))
+            else {
+                if (sl.optBoolean("bidOn") && sl.optLong("bid", 0) > 0) money.add("Bid" to sl.optLong("bid", 0))
+                if (sl.optLong("unit", 0) > 0) money.add("Buyout" to sl.optLong("unit", 0))
+            }
+            money.add("Total Price" to sl.optLong("total", 0))
+            money.add("Deposit" to sl.optLong("deposit", 0))
+            val q = sl.optInt("qty", 1)
+            ahConfirm(c, r, "Post Auction", listOf((item.optString("name", "") + if (q > 1) "  x$q" else "") to Theme.quality(item.optInt("q", 1)),
+                (durs?.optString(sl.optInt("dur", 2) - 1) ?: "") to Theme.dim), money,
+                "Post", hitOf("ahspost", "spost"), act?.let { slotOf(it, "back") }?.takeIf { it >= 0 }?.let { "act:ahback|$it" } ?: "why:Press ${Glyphs.name("b")}")
+        }
+    }
+
     private fun timeWord(n: Int) = when (n) { 0 -> "Short"; 1 -> "Medium"; 2 -> "Long"; 3 -> "Very Long"; else -> "" }
 
     private fun auctionWindow(c: Canvas, r: RectF, au: JSONObject, now: Long) {
         val inner = UiKit.windowGround(c, r, marble = true)
         val act = au.optJSONObject("act")
-        val owned = au.optString("tab") == "owned"
+        val tabId = au.optString("tab", "browse")
+        val owned = tabId == "owned"
         val purse = au.optLong("money", 0)
         val busy = pendingCmd != null
         val ty = r.top + 94f; val th = 108f
         val e = UiKit.TAB_END_W           // L and R on the row's outsides, always (the user, 15 Oct)
-        val tb = RectF(176f + e, ty + 4f, 366f + e, ty + th); val ta = RectF(362f + e, ty + 12f, 612f + e, ty + th)
-        // the tab cursor is the kit's (LATER 19: the tab lit soft gold, its own edge traced), never the gold box on a tab
-        UiKit.tab(c, tb, "Buy", !owned, cursor = cur == "ahtab browse")
-        UiKit.tab(c, ta, "Auctions", owned, au.optInt("nOwned", 0), cursor = cur == "ahtab owned")
-        UiKit.tabEnds(c, RectF(tb.left, ty + 12f, tb.right, ty + th), RectF(ta.left, ty + 12f, ta.right, ty + th))
-        act?.let { slotOf(it, "browse") }?.let { if (it >= 0) hits.add(tb to "act:ahtab browse|$it") }
-        act?.let { slotOf(it, "owned") }?.let { if (it >= 0) hits.add(ta to "act:ahtab owned|$it") }
+        // 1.0.9: the game's three tabs, Buy | Sell | Auctions (the vendor's spans); the open one stands taller
+        val spans = listOf(Triple("browse", "Buy", 176f to 366f), Triple("sell", "Sell", 362f to 552f), Triple("owned", "Auctions", 548f to 798f))
+        for ((id, label, xs) in spans) {
+            val on = tabId == id
+            val tr = RectF(xs.first + e, ty + (if (on) 4f else 12f), xs.second + e, ty + th)
+            // the tab cursor is the kit's (LATER 19: the tab lit soft gold, its own edge traced), never the gold box on a tab
+            UiKit.tab(c, tr, label, on, if (id == "owned") au.optInt("nOwned", 0) else 0, cursor = cur == "ahtab $id")
+            act?.let { slotOf(it, id) }?.let { if (it >= 0) hits.add(tr to "act:ahtab $id|$it") }
+        }
+        val ta = RectF(548f + e, ty + 12f, 798f + e, ty + th)
+        UiKit.tabEnds(c, RectF(176f + e, ty + 12f, 366f + e, ty + th), ta)
         pFill.color = Color.rgb(96, 80, 50)
         c.drawRect(inner.left - 6f, ty + th, inner.right + 6f, ty + th + 2f, pFill)
         val pm = UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
@@ -2211,6 +2445,7 @@ class InteractView(context: Context) : View(context) {
         fun entry(cmd: String) = es.firstOrNull { it.cmd == cmd }
         val name = au.optJSONObject("npc")?.optString("name", "")?.takeIf { it.isNotEmpty() } ?: "Auction House"
 
+        if (tabId == "sell") { sellPage(c, r, inner, au, act, by0, by1, strip, now, name); return }
         if (owned) {
             // ---- your auctions, read only
             val t = RectF(inner.left + 4f, by0, inner.right - 4f, by1)
@@ -2234,13 +2469,29 @@ class InteractView(context: Context) : View(context) {
                 val sold = o.optInt("status", 0) == 1
                 val tp = UiKit.bodyPaint(24f, if (sold) Color.rgb(32, 255, 32) else Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
                 c.drawText(if (sold) "Sold" else timeWord(o.optInt("left", -1)), row.right - 16f, row.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+                // 1.0.9: a touch on one of yours cancels it (armed first: the game's confirm), as A does
+                val sl = slotOf(o)
+                val hr = RectF(row.left, max(row.top, view.top), row.right, min(row.bottom, view.bottom))
+                if (hr.height() > 0f) hits.add(hr to when { sold -> "why:That one has sold"; !o.optBoolean("can") -> "why:The game won't cancel this one"
+                    sl >= 0 -> "act:ahcancel ${o.optInt("i")}|$sl"; else -> "why:The game gave this no tap cell" })
                 if (cur == "ahown ${o.optInt("i")}") UiKit.focus(c, row)
             }
             c.restore()
             if (rows.isEmpty()) c.drawText("You have no auctions", t.left + 24f, t.top + 100f, UiKit.bodyPaint(26f, Theme.dim))
-            UiKit.hints(c, inner.right - 16f, cy, UiKit.backGlyph() to "Back")
-            resultLine(c, inner.left + 24f, bx - 200f, cy, now)
+            UiKit.hints(c, inner.right - 16f, cy, UiKit.backGlyph() to "Back", "rev_a" to "Cancel Auction")
+            resultLine(c, inner.left + 24f, bx - 520f, cy, now)
             UiKit.windowFrame(c, r, name, UiKit.tex("mm_auctioneer"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
+            // 1.0.9: a Cancel armed: the game's CANCEL_AUCTION box (its words, its cost when there is one), A again cancels
+            au.optJSONObject("cancel")?.let { cc ->
+                val i = cc.optInt("i")
+                val o = rows.firstOrNull { it.optInt("i") == i }
+                val sl = o?.let { slotOf(it) } ?: -1
+                val cost = cc.optLong("cost", 0)
+                ahConfirm(c, r, "Cancel Auction", listOfNotNull(o?.let { it.optString("name", "") to Theme.quality(it.optInt("q", 1)) },
+                    cc.optString("words") to Color.WHITE), if (cost > 0) listOf("Cost" to cost) else emptyList(),
+                    "Accept", if (sl >= 0) "act:ahcancel $i|$sl" else "why:The game gave this no tap cell",
+                    act?.let { slotOf(it, "back") }?.takeIf { it >= 0 }?.let { "act:ahback|$it" } ?: "why:Press ${Glyphs.name("b")}")
+            }
             return
         }
 

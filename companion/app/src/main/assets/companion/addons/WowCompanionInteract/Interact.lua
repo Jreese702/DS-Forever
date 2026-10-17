@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i118"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i119"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1096,6 +1096,8 @@ local function collectAuction()
         end
         ah.item = it
     end
+    if AH.tab == "sell" then ah.sell = AH.sellCollect() end          -- 1.0.9: the Sell tab
+    if AH.tab == "owned" then ah.cancel = AH.cancelDoc() end         -- 1.0.9: a Cancel armed
     if AH.buy then ah.buy = { kind = AH.buy.kind, total = AH.buy.total, unit = AH.buy.unit, qty = AH.buy.qty, row = AH.buy.row,
                               waiting = AH.buy.waiting or nil, armed = AH.buy.armedAt and true or nil } end
     -- your auctions, read only
@@ -1108,7 +1110,11 @@ local function collectAuction()
                 local info = r.itemKey and ahKeyInfo(r.itemKey)
                 ah.owned[#ah.owned + 1] = { i = i, name = info and TS(function() return info.itemName end), icon = info and TN(function() return info.iconFileID end),
                     count = TN(function() return r.quantity end), price = TN(function() return r.buyoutAmount end), bid = TN(function() return r.bidAmount end),
-                    left = TN(function() return r.timeLeft end), status = TN(function() return r.status end) }
+                    left = TN(function() return r.timeLeft end), status = TN(function() return r.status end),
+                    q = info and TN(function() return info.quality end), id = TN(function() return r.auctionID end) }
+                local o = ah.owned[#ah.owned]
+                -- 1.0.9: Cancel, the game's rule (a sold one cannot be; CanCancelAuction says the rest)
+                o.can = (o.id and o.status ~= 1 and TB(function() return C_AuctionHouse.CanCancelAuction(o.id) end) ~= false) or nil
             end
         end
     end
@@ -1322,8 +1328,21 @@ local function assignSlots(doc)
     if au then
         any = true
         au.act = { browse = slot("iact", "ahtab browse"), owned = slot("iact", "ahtab owned"), back = slot("iact", "ahback"),
-                   buy = slot("iact", "ahbuy"), less = slot("iact", "ahqty less"), more = slot("iact", "ahqty more") }
-        if au.tab ~= "owned" then
+                   buy = slot("iact", "ahbuy"), less = slot("iact", "ahqty less"), more = slot("iact", "ahqty more"),
+                   sell = slot("iact", "ahtab sell") }
+        -- 1.0.9: the Sell tab's cells (touch = the controller's A on them), your auctions' Cancel
+        if au.sell then
+            local sl, a2 = au.sell, au.act
+            for _, b in ipairs(sl.bags or {}) do b.slot = slot("isell", "ahsitem " .. b.bag .. " " .. b.s .. " " .. b.id) end
+            if sl.item then
+                for _, k in ipairs({ "less", "more", "max" }) do a2["sq_" .. k] = slot("iact", "ahsqty " .. k) end
+                for _, k in ipairs({ "pg", "ps", "pc", "bg", "bs", "bc" }) do a2["se_" .. k] = slot("iact", "ahsedit " .. k) end
+                for d = 1, 3 do a2["sd_" .. d] = slot("iact", "ahsdur " .. d) end
+                a2.sbo, a2.spost = slot("iact", "ahsbo"), slot("iact", "ahspost")
+            end
+        end
+        for _, o in ipairs(au.owned or {}) do if o.can then o.slot = slot("ibuy", "ahcancel " .. o.i) end end
+        if au.tab ~= "owned" and au.tab ~= "sell" then
             for _, c in ipairs(au.cats) do c.slot = slot("ipick", "ahcat " .. c.i) end
         end
         -- 1.0.8: the search bar, the Filter list and the column headers (touch = the controller's A on them)
@@ -1626,7 +1645,7 @@ function N.build(doc)
     elseif doc.auction then
         local au = doc.auction
         local tabs = navZone("tabs", 2)
-        navAdd(tabs, "ahtab browse"); navAdd(tabs, "ahtab owned")
+        navAdd(tabs, "ahtab browse"); navAdd(tabs, "ahtab sell"); navAdd(tabs, "ahtab owned")
         local zr = navZone("ahright", 1)
         N.ahSel = nil
         local function heads(ctx, order)
@@ -1645,8 +1664,50 @@ function N.build(doc)
             navAdd(zf, "ahfclear")
             N.zones = { zf }
             first = navFirst(zf)
+        elseif au.tab == "sell" then
+            -- 1.0.9 THE SELL TAB (the game's Sell): your bags' sellable items down the left; the chosen one's form on the right, top to
+            -- bottom as the game draws it (Quantity, Buyout only, Bid, the price, the duration, Post). A Post armed: its confirm alone.
+            local sl = au.sell or {}
+            local it = sl.item
+            sig = "ah|sell|" .. (it and (it.bag .. ":" .. it.s .. ":" .. tostring(it.id)) or "") .. (sl.armed and "|armed" or "")
+            if sl.armed then
+                local zc = navZone("ahsconfirm", 1)
+                navAdd(zc, "ahspost")
+                N.zones = { zc }
+                first = "ahspost"
+            else
+                local zb = navZone("ahsbags", 1)
+                for _, b in ipairs(sl.bags or {}) do navAdd(zb, "ahsitem " .. b.bag .. " " .. b.s .. " " .. b.id, not b.locked) end
+                if it then
+                    local zq = navZone("ahsq", 1)
+                    if (sl.max or 1) > 1 then navAdd(zq, "ahsq") end
+                    local zo = navZone("ahsbo", 1)
+                    if not it.commodity then navAdd(zo, "ahsbo") end
+                    local zbid = navZone("ahsbid", 3)
+                    if sl.bidOn then navAdd(zbid, "ahsedit bg"); navAdd(zbid, "ahsedit bs"); if sl.copper then navAdd(zbid, "ahsedit bc") end end
+                    local zp = navZone("ahsprice", 3)
+                    navAdd(zp, "ahsedit pg"); navAdd(zp, "ahsedit ps"); if sl.copper then navAdd(zp, "ahsedit pc") end
+                    local zd = navZone("ahsdur", 3)
+                    navAdd(zd, "ahsdur 1"); navAdd(zd, "ahsdur 2"); navAdd(zd, "ahsdur 3")
+                    local zpo = navZone("ahspost", 1)
+                    navAdd(zpo, "ahspost", sl.why == nil)
+                    N.zones = { tabs, zb, zq, zo, zbid, zp, zd, zpo }
+                    -- an item chosen: the cursor on Post when it can go (the game's price is already in), else on the price
+                    first = (sl.why == nil) and "ahspost" or "ahsedit pg"
+                else
+                    N.zones = { tabs, zb }
+                    first = navFirst(zb) or "ahtab sell"
+                end
+            end
+        elseif au.tab == "owned" and au.cancel then
+            -- 1.0.9: a Cancel armed: A on it again cancels (the game's own confirm, its cost), B keeps the auction
+            sig = "ah|cancel|" .. tostring(au.cancel.i)
+            local zc = navZone("ahcconfirm", 1)
+            navAdd(zc, "ahcancel " .. au.cancel.i)
+            N.zones = { zc }
+            first = "ahcancel " .. au.cancel.i
         elseif au.tab == "owned" then
-            -- your auctions: read only; the cursor walks them (A does nothing); the headers sort them
+            -- your auctions: the cursor walks them; A on one cancels it (1.0.9, after the game's confirm); the headers sort them
             sig = "ah|owned"
             for _, o in ipairs(au.owned or {}) do navAdd(zr, "ahown " .. o.i) end
             N.zones = { tabs, heads("owned", { "Name", "Bid", "Buyout", "TimeRemaining" }), zr }
@@ -2122,8 +2183,20 @@ local ON = {
     SECURE_TRANSFER_CONFIRM_SEND_MAIL = function()
         if MAIL.status == "sending" then MAIL.status, MAIL.confirmAt = "confirm", TN(function() return GetTime() end) end
     end,
-    AUCTION_HOUSE_SHOW = function() AH.path, AH.results, AH.key, AH.buy, AH.tab = {}, nil, nil, nil, "browse"; mark("auction", true) end,
-    AUCTION_HOUSE_CLOSED = function() AH.buy = nil; mark("auction", false) end,
+    AUCTION_HOUSE_SHOW = function()
+        AH.path, AH.results, AH.key, AH.buy, AH.tab = {}, nil, nil, nil, "browse"
+        AH.sell, AH.cancel = nil, nil
+        pcall(AH.hookWarn)
+        mark("auction", true)
+    end,
+    AUCTION_HOUSE_CLOSED = function() AH.buy, AH.sell, AH.cancel = nil, nil, nil; mark("auction", false) end,
+    -- 1.0.9: a post the game took (its own "Auction created."), refused, or an auction cancelled
+    AUCTION_HOUSE_AUCTION_CREATED = function() pcall(AH.posted) end,
+    AUCTION_HOUSE_POST_ERROR = function() if AH.sell then AH.sell.pending, AH.sell.status = nil, "failed" end end,
+    AUCTION_CANCELED = function()
+        AH.cancel = nil
+        if AH.tab == "owned" then CALL(function() C_AuctionHouse.QueryOwnedAuctions(AH.sortList("owned")) end) end
+    end,
     TAXIMAP_OPENED = function() mark("taxi", true) end,
     START_LOOT_ROLL = function() if type(WC.dialogs) == "table" then pcall(WC.dialogs.look) end end,
     CANCEL_LOOT_ROLL = function() if type(WC.dialogs) == "table" then pcall(WC.dialogs.look) end end,
@@ -2858,9 +2931,11 @@ end
 -- /wci ahtab browse|owned
 function ACT.ahtab(a)
     if not ahIsOpen() then return false, "no auction house open" end
-    if a ~= "browse" and a ~= "owned" then return false, "no such tab" end
+    if a ~= "browse" and a ~= "owned" and a ~= "sell" then return false, "no such tab" end
     ahCancelBuy()
-    AH.tab = a
+    AH.tab, AH.cancel = a, nil
+    if AH.sell then AH.sell.armedAt = nil end
+    AH.hookWarn()
     if a == "owned" then CALL(function() C_AuctionHouse.QueryOwnedAuctions(AH.sortList("owned")) end) end
     emitSoon()
     return true
@@ -2993,12 +3068,317 @@ function ACT.ahrow(a)
     emitSoon()
     return true
 end
+-- ---------------------------------------------------------------- the auction house: SELL and CANCEL (1.0.9)
+-- The user (1.0.9, "Yes, build it"): post from the bags and cancel your own auctions on the bottom screen, the game's way. Read from
+-- the client's own Sell frames (Blizzard_AuctionHouseUI: SellFrame, CommoditiesSellFrame, ItemSellFrame) and mirrored:
+--   the item: one of the bags' items the game will take (C_AuctionHouse.IsSellItemValid);
+--   the quantity: a commodity starts at its stack (the most: GetAvailablePostCount), an item at 1;
+--   the price: the game's own first guess (the vendor price x DEFAULT_AUCTION_PRICE_MULTIPLIER, rounded up to the silver; nothing
+--     when ShouldAutoPopulatePrice is off), then the lowest listing once the game's search comes back (a commodity: its first price;
+--     an item: the cheapest buyout at its item level, any level for a green or a pet), until the player types one;
+--   an item's bid: "Buyout only" checked by default, as the game's; unchecked, a bid too (never at or over the buyout);
+--   the duration: 12 / 24 / 48 h, starting on the game's last choice (its CVar, READ only: nothing is written);
+--   the deposit: CalculateCommodityDeposit / CalculateItemDeposit (rounded up to the silver where the game has no copper);
+--   Post: armed first (a confirm with the deposit, the user's ask), then the game's PostCommodity / PostItem, in the press. When
+--   the game wants a second word (AUCTION_HOUSE_POST_WARNING) its own dialog shows (mirrored on the bottom screen like any); its
+--   Accept is the game's, and our post-hook on it confirms OUR post (the game's own frame has none pending).
+-- Cancel: A on your auction arms it (the game's CANCEL_AUCTION words and cost); A again cancels it (C_AuctionHouse.CancelAuction).
+-- Never in a fight. Everything hangs on AH (the main chunk is at Lua's 200-local limit).
+AH.sell = nil
+AH.cancel = nil
+AH.SFIELD = { pg = 7, ps = 2, pc = 2, bg = 7, bs = 2, bc = 2 }
+function AH.dur()
+    local d = AH.sellDur or TN(function() return tonumber(GetCVar("auctionHouseDurationDropdown")) end) or 2
+    return (d >= 1 and d <= 3) and d or 2
+end
+function AH.gs(name, fallback) return TS(function() return _G[name] end) or fallback end
+function AH.loc(bag, sl)
+    local ok, loc = CALL(function() return ItemLocation:CreateFromBagAndSlot(bag, sl) end)
+    if ok and type(loc) == "table" then return loc end
+end
+function AH.sellBags()
+    local out = {}
+    for bag = 0, 5 do
+        for sl = 1, TN(function() return C_Container.GetContainerNumSlots(bag) end) or 0 do
+            local ok, info = CALL(function() return C_Container.GetContainerItemInfo(bag, sl) end)
+            local id = ok and type(info) == "table" and TN(function() return info.itemID end)
+            local loc = id and AH.loc(bag, sl)
+            if loc and TB(function() return C_AuctionHouse.IsSellItemValid(loc, false) end) == true then
+                local link = TS(function() return info.hyperlink end)
+                out[#out + 1] = { bag = bag, s = sl, id = id, icon = TN(function() return info.iconFileID end),
+                    n = TN(function() return info.stackCount end) or 1, q = TN(function() return info.quality end),
+                    name = link and link:match("%[(.-)%]") or nil, locked = TB(function() return info.isLocked end) or nil }
+            end
+        end
+    end
+    return out
+end
+function AH.defaultPrice(loc)
+    if TB(function() return C_AuctionHouse.ShouldAutoPopulatePrice() end) == false then return 0 end
+    local link = TS(function() return C_Item.GetItemLink(loc) end)
+    local p = 100
+    if link and link:find("|Hitem:") then
+        local vendor = TN(function() return select(11, C_Item.GetItemInfo(link)) end)
+        local mult = TN(function() return Constants.AuctionConstants.DEFAULT_AUCTION_PRICE_MULTIPLIER end) or 1
+        p = vendor and (vendor * mult) or 100
+        p = p + (100 - (p % 100))                    -- the game's own: always up to the next silver
+    end
+    return math.max(p, 100)
+end
+function AH.maxQty(sl) return math.max(1, TN(function() return C_AuctionHouse.GetAvailablePostCount(sl.loc) end) or 1) end
+function AH.deposit(sl)
+    local d
+    if sl.commodity then d = TN(function() return C_AuctionHouse.CalculateCommodityDeposit(sl.id, AH.dur(), sl.qty) end)
+    else d = TN(function() return C_AuctionHouse.CalculateItemDeposit(sl.loc, AH.dur(), sl.qty) end) end
+    d = d or 0
+    if TB(function() return C_AuctionHouse.SupportsCopperValues() end) ~= true then d = math.ceil(d / 100) * 100 end
+    return d
+end
+-- what stops the post, in the game's own order (SellFrame:CanPostItem, then the commodity's / item's own); nil = it can go
+function AH.sellWhy(sl, deposit)
+    if not TB(function() return C_Item.DoesItemExist(sl.loc) end) then return AH.gs("AUCTION_HOUSE_SELL_FRAME_ERROR_ITEM", "Choose an item") end
+    if (TN(function() return GetMoney() end) or 0) < (deposit or AH.deposit(sl)) then
+        return AH.gs("AUCTION_HOUSE_SELL_FRAME_ERROR_DEPOSIT", "Not enough money for the deposit")
+    end
+    if (sl.qty or 0) < 1 then return AH.gs("AUCTION_HOUSE_SELL_FRAME_ERROR_QUANTITY", "Choose a quantity") end
+    if TB(function() return C_AuctionHouse.IsThrottledMessageSystemReady() end) == false then return AH.gs("ERR_GENERIC_THROTTLE", "One moment") end
+    local bid = (sl.bidOn and (sl.bid or 0) > 0) and sl.bid or nil
+    local buy = ((sl.unit or 0) > 0) and sl.unit or nil
+    if sl.commodity then
+        if not buy then return AH.gs("AUCTION_HOUSE_SELL_FRAME_ERROR_PRICE", "Type a price") end
+    else
+        if not bid and not buy then return AH.gs("AUCTION_HOUSE_SELL_FRAME_ERROR_PRICE", "Type a price") end
+        if bid and buy and buy <= bid then return AH.gs("AUCTION_HOUSE_SELL_FRAME_ERROR_BUYOUT", "The buyout must be more than the bid") end
+    end
+    return nil
+end
+function AH.sellCollect()
+    local t = TN(function() return GetTime() end) or 0
+    local out = { bags = AH.sellBags(), dur = AH.dur(), copper = TB(function() return C_AuctionHouse.SupportsCopperValues() end) or nil,
+                  durs = { AH.gs("AUCTION_DURATION_ONE", "12 Hours"), AH.gs("AUCTION_DURATION_TWO", "24 Hours"), AH.gs("AUCTION_DURATION_THREE", "48 Hours") },
+                  boWord = AH.gs("AUCTION_HOUSE_BUYOUT_MODE_CHECK_BOX", "Buyout only") }
+    if AH.sellMsg and t - AH.sellMsg.t <= 4 then out.msg = { ok = AH.sellMsg.ok, words = AH.sellMsg.words } end
+    local sl = AH.sell
+    if sl and not TB(function() return C_Item.DoesItemExist(sl.loc) end) then AH.sell, sl = nil, nil end
+    if not sl then return out end
+    -- the listings now, cheapest first (the game's own search for this item), and the price the game would fill in
+    local rows, best = {}, nil
+    if sl.commodity then
+        local n = TN(function() return C_AuctionHouse.GetNumCommoditySearchResults(sl.id) end) or 0
+        for i = 1, n do
+            local ok, r = CALL(function() return C_AuctionHouse.GetCommoditySearchResultInfo(sl.id, i) end)
+            if ok and type(r) == "table" then
+                local pr = TN(function() return r.unitPrice end)
+                if i == 1 then best = pr end
+                if #rows < 8 then rows[#rows + 1] = { price = pr, count = TN(function() return r.quantity end), mine = TB(function() return r.containsOwnerItem end) or nil } end
+            end
+        end
+    elseif sl.key then
+        local lvl = TN(function() return C_Item.GetCurrentItemLevel(sl.loc) end)
+        local info = ahKeyInfo(sl.key)
+        local anyLevel = TN(function() return C_Item.GetItemQuality(sl.loc) end) == 2 or (info and TB(function() return info.isPet end)) or false
+        local n = TN(function() return C_AuctionHouse.GetNumItemSearchResults(sl.key) end) or 0
+        for i = 1, n do
+            local ok, r = CALL(function() return C_AuctionHouse.GetItemSearchResultInfo(sl.key, i) end)
+            if ok and type(r) == "table" then
+                local buy = TN(function() return r.buyoutAmount end)
+                local rl = TN(function() return r.itemKey.itemLevel end)
+                if buy and buy > 0 and (anyLevel or rl == lvl) and (not best or buy < best) then best = buy end
+                if #rows < 8 then rows[#rows + 1] = { price = buy, bid = TN(function() return r.bidAmount end), count = TN(function() return r.quantity end),
+                                                      mine = TB(function() return r.containsOwnerItem end) or nil, lvl = rl } end
+            end
+        end
+    end
+    if not sl.user and best and best > 0 then sl.unit = best end
+    local mx = AH.maxQty(sl)
+    if sl.qty > mx then sl.qty = mx end
+    out.item = { bag = sl.bag, s = sl.s, id = sl.id, commodity = sl.commodity or nil,
+                 name = TS(function() return C_Item.GetItemName(sl.loc) end), icon = TN(function() return C_Item.GetItemIcon(sl.loc) end),
+                 q = TN(function() return C_Item.GetItemQuality(sl.loc) end), lvl = TN(function() return C_Item.GetCurrentItemLevel(sl.loc) end) }
+    out.qty, out.max, out.unit, out.bid, out.bidOn = sl.qty, mx, sl.unit or 0, sl.bid or 0, sl.bidOn or nil
+    out.deposit = AH.deposit(sl)
+    out.total = sl.qty * (((sl.unit or 0) > 0) and sl.unit or ((sl.bidOn and sl.bid) or 0))
+    out.why = AH.sellWhy(sl, out.deposit)
+    out.listings, out.searched = rows, (#rows > 0) or nil
+    if sl.armedAt and (t - sl.armedAt > AH_ARM or out.why) then sl.armedAt = nil end
+    out.armed = sl.armedAt and true or nil
+    out.status = sl.status
+    return out
+end
+-- /wci ahsitem <bag> <slot> <itemID>   the item to sell (the game's item slot, filled from the bags)
+function ACT.ahsitem(a, b, c)
+    if not ahIsOpen() then return false, "no auction house open" end
+    local bag, sl, id = tonumber(a), tonumber(b), tonumber(c)
+    local loc = bag and sl and AH.loc(bag, sl)
+    if not (loc and TN(function() return C_Item.GetItemID(loc) end) == id) then return false, "the bags changed" end
+    if TB(function() return C_AuctionHouse.IsSellItemValid(loc, false) end) ~= true then return false, "the auction house won't take this" end
+    local okK, key = CALL(function() return C_AuctionHouse.GetItemKeyFromItem(loc) end)
+    local st = TN(function() return C_AuctionHouse.GetItemCommodityStatus(loc) end)
+    local commodity = st ~= nil and st == TN(function() return Enum.ItemCommodityStatus.Commodity end)
+    local new = { bag = bag, s = sl, id = id, loc = loc, key = okK and key or nil, commodity = commodity, bid = 0, bidOn = false }
+    new.qty = commodity and math.min(TN(function() return C_Item.GetStackCount(loc) end) or 1, AH.maxQty(new)) or 1
+    new.unit = AH.defaultPrice(loc)
+    AH.sell, AH.cancel = new, nil
+    if new.key then
+        local sorts = { { sortOrder = AH.sortEnum("Price") or 0, reverseSort = false } }
+        run(function() C_AuctionHouse.SendSearchQuery(new.key, sorts, true) end)
+    end
+    emitSoon()
+    return true
+end
+-- /wci ahsqty less|more|max   the quantity (X / Y, touch's - / +, the game's Max)
+function ACT.ahsqty(a)
+    local sl = AH.sell
+    if not (sl and ahIsOpen()) then return false, "choose an item to sell" end
+    local mx = AH.maxQty(sl)
+    local q = (a == "max") and mx or (sl.qty + ((a == "more") and 1 or -1))
+    q = math.max(1, math.min(mx, q))
+    if q ~= sl.qty then sl.qty, sl.armedAt = q, nil end
+    emitSoon()
+    return true
+end
+-- /wci ahsdur 1|2|3   12 / 24 / 48 hours (kept for the session; the game's CVar is only read)
+function ACT.ahsdur(a)
+    local d = tonumber(a)
+    if not (d and d >= 1 and d <= 3 and ahIsOpen()) then return false, "no such duration" end
+    AH.sellDur = d
+    if AH.sell then AH.sell.armedAt = nil end
+    emitSoon()
+    return true
+end
+-- /wci ahsbo   the game's "Buyout only" check box (an item's bid on or off)
+function ACT.ahsbo()
+    local sl = AH.sell
+    if not (sl and ahIsOpen()) or sl.commodity then return false, "an item only" end
+    sl.bidOn, sl.bid, sl.armedAt = not sl.bidOn, 0, nil
+    emitSoon()
+    return true
+end
+-- /wci ahsedit pg|ps|pc|bg|bs|bc   the price's (p) or the bid's (b) gold / silver / copper box: the keyboard opens on it
+function ACT.ahsedit(a)
+    local sl = AH.sell
+    if not (sl and ahIsOpen()) then return false, "choose an item to sell" end
+    local max = AH.SFIELD[a]
+    if not max then return false, "no such field" end
+    local isBid = a:sub(1, 1) == "b"
+    if isBid and not sl.bidOn then return false, "Buyout only is checked" end
+    local v = (isBid and sl.bid or sl.unit) or 0
+    local part = a:sub(2, 2)
+    local now = (part == "g") and math.floor(v / 10000) or (part == "s") and (math.floor(v / 100) % 100) or (v % 100)
+    return N.kbdOpen("ahs" .. a, (now > 0) and tostring(now) or "", max, function(t)
+        if not (AH.sell == sl and ahIsOpen()) then return false, "the item changed" end
+        t = tostring(t or ""):gsub("%s", "")
+        if t ~= "" and not t:match("^%d+$") then return false, "numbers only" end
+        local n = tonumber(t) or 0
+        local cur = (isBid and sl.bid or sl.unit) or 0
+        local g, sv, cp = math.floor(cur / 10000), math.floor(cur / 100) % 100, cur % 100
+        if part == "g" then g = n elseif part == "s" then sv = math.min(n, 99) else cp = math.min(n, 99) end
+        local total = g * 10000 + sv * 100 + cp
+        if isBid then sl.bid = total else sl.unit = total end
+        sl.user, sl.armedAt = true, nil
+        return true
+    end)
+end
+-- /wci ahspost   the game's Post: press 1 arms it (the deposit shown), press 2 posts (PostCommodity / PostItem, in the press)
+function ACT.ahspost()
+    local sl = AH.sell
+    if not (sl and ahIsOpen()) then return false, "choose an item to sell" end
+    if TB(function() return InCombatLockdown() end) == true then return false, "not in a fight" end
+    local why = AH.sellWhy(sl)
+    if why then return false, why end
+    local t = TN(function() return GetTime() end) or 0
+    if not (sl.armedAt and t - sl.armedAt <= AH_ARM) then
+        sl.armedAt, sl.status = t, nil
+        emitSoon()
+        return true
+    end
+    sl.armedAt = nil
+    local dur, qty = AH.dur(), sl.qty
+    local ok, needs
+    if sl.commodity then
+        ok, needs = CALL(function() return C_AuctionHouse.PostCommodity(sl.loc, dur, qty, sl.unit) end)
+        if ok and needs then sl.pending = { "commodity", sl.loc, dur, qty, sl.unit } end
+    else
+        local bid = (sl.bidOn and (sl.bid or 0) > 0) and sl.bid or nil
+        local buy = ((sl.unit or 0) > 0) and sl.unit or nil
+        ok, needs = CALL(function() return C_AuctionHouse.PostItem(sl.loc, dur, qty, bid, buy) end)
+        if ok and needs then sl.pending = { "item", sl.loc, dur, qty, bid, buy } end
+    end
+    LOOT.ranGame = true
+    if not ok then return false, "the game call failed" end
+    sl.status = needs and "warn" or "posting"
+    emitSoon()
+    return true
+end
+-- the game's own "Auction created.": the item is gone from the form (as the game's ClearPost), the word shown
+function AH.posted()
+    AH.sellMsg = { ok = true, words = AH.gs("ERR_AUCTION_STARTED", "Auction created."), t = TN(function() return GetTime() end) or 0 }
+    if AH.sell and not AH.sell.pending then AH.sell = nil end
+end
+-- the game's post warning (AUCTION_HOUSE_POST_WARNING): its own dialog's Accept, post-hooked, confirms OUR post; its hide drops it
+function AH.hookWarn()
+    if AH.warnHooked then return end
+    local d = type(StaticPopupDialogs) == "table" and StaticPopupDialogs.AUCTION_HOUSE_POST_WARNING
+    if type(d) ~= "table" or type(d.OnAccept) ~= "function" or type(hooksecurefunc) ~= "function" then return end
+    AH.warnHooked = true
+    pcall(hooksecurefunc, d, "OnAccept", function()
+        local sl = AH.sell
+        local p = sl and sl.pending
+        if not p then return end
+        sl.pending, sl.status = nil, "posting"
+        if p[1] == "commodity" then CALL(function() C_AuctionHouse.ConfirmPostCommodity(p[2], p[3], p[4], p[5]) end)
+        else CALL(function() C_AuctionHouse.ConfirmPostItem(p[2], p[3], p[4], p[5], p[6]) end) end
+    end)
+    if type(d.OnHide) == "function" then
+        pcall(hooksecurefunc, d, "OnHide", function()
+            local sl = AH.sell
+            if sl then sl.pending = nil; if sl.status == "warn" then sl.status = nil end end
+        end)
+    end
+end
+-- an armed Cancel for the document: the game's own words (with its cost when there is one)
+function AH.cancelDoc()
+    local c = AH.cancel
+    if not c then return nil end
+    local t = TN(function() return GetTime() end) or 0
+    if t - c.at > AH_ARM then AH.cancel = nil; return nil end
+    local cost = TN(function() return C_AuctionHouse.GetCancelCost(c.id) end) or 0
+    return { i = c.i, cost = cost, words = (cost > 0) and AH.gs("CANCEL_AUCTION_CONFIRMATION_MONEY", "Cancelling this auction will cost:")
+                                         or AH.gs("CANCEL_AUCTION_CONFIRMATION", "Cancel this auction? You will lose your deposit.") }
+end
+-- /wci ahcancel <i>   your auction i (the Auctions tab's row): press 1 arms it, press 2 cancels it (the game's CancelAuction)
+function ACT.ahcancel(a)
+    local i = tonumber(a)
+    if not (i and ahIsOpen()) then return false, "no auction house open" end
+    if TB(function() return InCombatLockdown() end) == true then return false, "not in a fight" end
+    local ok, r = CALL(function() return C_AuctionHouse.GetOwnedAuctionInfo(i) end)
+    local id = ok and type(r) == "table" and TN(function() return r.auctionID end)
+    if not id then return false, "your auctions changed" end
+    if TN(function() return r.status end) == 1 then return false, "that one has sold" end
+    if TB(function() return C_AuctionHouse.CanCancelAuction(id) end) == false then return false, "the game won't cancel this one" end
+    local t = TN(function() return GetTime() end) or 0
+    local c = AH.cancel
+    if c and c.id == id and t - c.at <= AH_ARM then
+        local cost = TN(function() return C_AuctionHouse.GetCancelCost(id) end) or 0
+        if (TN(function() return GetMoney() end) or 0) < cost then AH.cancel = nil; return false, "not enough money" end
+        AH.cancel = nil
+        return run(function() C_AuctionHouse.CancelAuction(id) end)
+    end
+    if TB(function() return C_AuctionHouse.IsThrottledMessageSystemReady() end) == false then return false, "the auction house is busy: one moment" end
+    AH.cancel = { id = id, i = i, at = t }
+    emitSoon()
+    return true
+end
+
 -- /wci ahback   one level up: a purchase armed -> cancelled; an item -> the results; results -> the categories; a category -> its parent
 function ACT.ahback()
     if not ahIsOpen() then return false, "no auction house open" end
-    if AH.buy then ahCancelBuy()
+    if AH.cancel then AH.cancel = nil                                   -- 1.0.9: an armed Cancel: the auction stays
+    elseif AH.sell and AH.sell.armedAt then AH.sell.armedAt = nil      -- 1.0.9: an armed Post: back to the form
+    elseif AH.tab == "sell" and AH.sell then AH.sell = nil             -- 1.0.9: the item chosen goes back to the bags
+    elseif AH.buy then ahCancelBuy()
     elseif AH.key then AH.key = nil; AH.lastRes = AH.res
-    elseif AH.tab == "owned" then AH.tab = "browse"
+    elseif AH.tab ~= "browse" then AH.tab = "browse"
     elseif #AH.path > 0 then
         local path = {}
         for k = 1, #AH.path - 1 do path[k] = AH.path[k] end
@@ -4563,12 +4943,74 @@ function MAIL.zoneMove(z, ii, dir)
     return true             -- the end of the chain: the cursor stays
 end
 
+-- 1.0.9: THE SELL TAB's moves. The bags' list down the left; the form's rows on the right (AH.SELLCHAIN, the game's order). Up / Down
+-- walk a row zone's rows, then the next row that way (the same column where it has one); Left from a row's first column goes to the
+-- item chosen in the list, Right from the list to the form's first row; Up past the top lands on the Sell tab.
+AH.SELLCHAIN = { "ahsq", "ahsbo", "ahsbid", "ahsprice", "ahsdur", "ahspost" }
+function AH.sellMove(z, ii, dir)
+    if not navZoneNamed("ahsbags") then return false end
+    local name = z.name
+    local function bagsCur()
+        local sl = AH.sell
+        if sl then
+            local id = "ahsitem " .. sl.bag .. " " .. sl.s .. " " .. sl.id
+            if navFind(id) then return id end
+        end
+        return navFirst(navZoneNamed("ahsbags"))
+    end
+    local function formFirst()
+        for _, n in ipairs(AH.SELLCHAIN) do local id = navFirst(navZoneNamed(n)); if id then return id end end
+    end
+    if name == "tabs" then
+        if dir == "down" then N.cur = bagsCur() or N.cur; return true end
+        return false
+    end
+    if name == "ahsbags" then
+        if dir == "up" or dir == "down" then
+            local j = navStep(z, ii, dir == "up" and -1 or 1)
+            if j then N.cur = z.items[j].id elseif dir == "up" then N.cur = "ahtab sell" end
+        elseif dir == "right" then
+            N.cur = formFirst() or N.cur
+        end
+        return true
+    end
+    local at
+    for k, n in ipairs(AH.SELLCHAIN) do if n == name then at = k end end
+    if not at then return false end
+    local c = z.cols or 1
+    local col = (ii - 1) % c
+    if dir == "left" then
+        if col > 0 then local j = navStep(z, ii, -1); if j then N.cur = z.items[j].id end
+        else N.cur = bagsCur() or N.cur end
+        return true
+    elseif dir == "right" then
+        if col < c - 1 and z.items[ii + 1] and z.items[ii + 1].ok then N.cur = z.items[ii + 1].id end
+        return true
+    end
+    local k = at + (dir == "up" and -1 or 1)
+    while AH.SELLCHAIN[k] do
+        local nz = navZoneNamed(AH.SELLCHAIN[k])
+        if nz and #nz.items > 0 then
+            local pick = nz.items[math.min(col + 1, #nz.items)]
+            if not pick.ok then
+                pick = nil
+                for _, x in ipairs(nz.items) do if x.ok then pick = x; break end end
+            end
+            if pick then N.cur = pick.id; return true end
+        end
+        k = k + (dir == "up" and -1 or 1)
+    end
+    if dir == "up" then N.cur = "ahtab sell" end
+    return true
+end
+
 function N.move(dir)
     local zi, ii = navFind(N.cur)
     if not zi then return end
     local z = N.zones[zi]
     local name = z.name
     if MAIL.zoneMove(z, ii, dir) then return end
+    if AH.sellMove(z, ii, dir) then return end
     if name == "trlist" and N.trLines then
         local li, col
         for a, line in ipairs(N.trLines) do for b, id in ipairs(line) do if id == N.cur then li, col = a, b end end end
@@ -4902,8 +5344,10 @@ function N.act()
         if BANK.box then navRun("bkbuy") else navRun(id) end
     elseif type(id) == "string" and id:match("^taxi %d+$") then
         navRun(id)
-    elseif type(id) == "string" and id:match("^ahown ") then
-        -- your auctions are read only in step 1
+    elseif type(id) == "string" and id:match("^ahown %d+$") then
+        navRun("ahcancel " .. id:match("%d+"))      -- 1.0.9: Cancel, armed first (the game's confirm and its cost)
+    elseif id == "ahsq" then
+        navRun("ahsqty max")                        -- 1.0.9: the game's Max button
     elseif type(id) == "string" and (id:match("^mail %d+$") or id:match("^mailtake ") or id:match("^mailmoney ") or id:match("^mailall ")) then
         local t = TN(function() return GetTime() end) or 0
         if id:match("^mail %d+$") then
@@ -4970,7 +5414,7 @@ function N.back()
         N.trMenu = nil                      -- the trainer's Settings menu closes first
     elseif isOpen("auction") and AH.filtersOpen then
         AH.filtersOpen = false              -- the auction house: the Filter list goes first
-    elseif isOpen("auction") and (AH.buy or AH.key or AH.tab == "owned" or #AH.path > 0) then
+    elseif isOpen("auction") and (AH.buy or AH.key or AH.tab ~= "browse" or AH.cancel or #AH.path > 0) then
         navRun("ahback")                    -- the auction house: one level up first
     elseif MAIL.open and isOpen("mail") and MAIL.tab ~= "send" then
         MAIL.back, MAIL.open = MAIL.open, nil  -- an opened letter: B goes back to the inbox first, onto it
@@ -5113,6 +5557,10 @@ local function padPress(key, down, via)
         elseif key == "PAD4" and WINDOWS.trainer and isOpen("trainer") and not G.holder and not trProfession() then
             if down then return end
             navRun("trspell")
+        elseif (key == "PAD3" or key == "PAD4") and AH.tab == "sell" and AH.sell and isOpen("auction") then
+            -- 1.0.9: the Sell tab's quantity, one step per press (X less, Y more)
+            if not down then return end
+            navRun((key == "PAD4") and "ahsqty more" or "ahsqty less")
         elseif (key == "PAD3" or key == "PAD4") and AH.key and isOpen("auction") then
             -- the auction house: a commodity's quantity (one step per press); a change cancels an armed purchase
             if not down then return end
@@ -5362,7 +5810,7 @@ WC.bnextOf = function()
         -- window, only when B would really go Home: the user, 2026-10-01, "Yes, everywhere it shows B")
         if N.cur == "go" then return "back" end
         if N.trMenu and isOpen("trainer") then return "back" end
-        if isOpen("auction") and (AH.buy or AH.key or AH.tab == "owned" or #AH.path > 0) then return "back" end
+        if isOpen("auction") and (AH.buy or AH.key or AH.tab ~= "browse" or AH.cancel or #AH.path > 0) then return "back" end
         if MAIL.open and isOpen("mail") then return "back" end
         if LOOT.on() then return "back" end
         if isOpen("bank") and (BANK.box or BANK.hand) then return "back" end
