@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i123"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i124"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2784,7 +2784,9 @@ do
         t = 0
         pcall(N.qt.hook)
         pcall(N.qt.hideArrow)
-        if N.qt.hooked.qtsetup and N.qt.hooked.qtintro and N.qt.hooked.arrow then hf:SetScript("OnUpdate", nil) end
+        pcall(N.qt.onceDefaults)
+        -- (every 0.5 s until its windows are hooked, then every 2 s: the tracker's item buttons come and go)
+        if N.qt.hooked.qtsetup and N.qt.hooked.qtintro then t = -1.5 end
     end)
 end
 
@@ -3013,6 +3015,24 @@ N.qt.DEFAULTS = {
     { k = "check", t = "Extended minimap", on = false },      -- the mouse wheel's zoom
     { k = "check", t = "Fiercely announce new levels", on = false },
 }
+-- test58: the defaults ONCE per install of QuestTrail, whenever they were never applied (a player who had gone through its assistant
+-- in an earlier build never saw it again): its own /qtr setup, run unseen, the same widget-driven walk, its own Finish. Kept in
+-- WowCompanion's own saved table (WowCompanionDB.qtDefaults); never in a fight, never while a window of its is up.
+N.qt.DEFAULTS_V = 1
+function N.qt.onceDefaults()
+    if N.qt.onceTried or N.qt.auto then return end
+    local db = rawget(_G, "WowCompanionDB")
+    if type(db) ~= "table" or (tonumber(db.qtDefaults) or 0) >= N.qt.DEFAULTS_V then return end
+    if not (type(SlashCmdList) == "table" and type(SlashCmdList.QUESTTRAIL) == "function") then return end
+    if N.qt.open() or TB(function() return InCombatLockdown() end) == true then return end
+    -- after QuestTrail's own start (6 s after the login): it may start the assistant itself, which runs the same defaults
+    local t = TN(function() return GetTime() end) or 0
+    N.qt.seenAt = N.qt.seenAt or t
+    if t - N.qt.seenAt < 12 then return end
+    N.qt.onceTried = true
+    N.qt.browse = false
+    pcall(SlashCmdList.QUESTTRAIL, "setup")              -- its OnShow (hooked) starts the unseen walk
+end
 function N.qt.startAuto(f)
     if N.qt.auto then return end
     N.qt.auto = true
@@ -3055,38 +3075,47 @@ function N.qt.runAuto(f)
     for _, r in pairs(want) do missed[#missed + 1] = r.t .. " (not found)" end
     pcall(function() f.finish:Click() end)
     N.qt.auto = false
+    local db = rawget(_G, "WowCompanionDB")
+    if type(db) == "table" then db.qtDefaults = N.qt.DEFAULTS_V end     -- once: never again for this install
     ack("qtdefaults", #missed == 0, (#missed == 0) and ("set: " .. table.concat(done, ", ")) or ("missed: " .. table.concat(missed, ", ")), steps)
     emitSoon()
 end
 -- ---- the COMPASS hidden on the top screen (the user: "I kind of don't like the compass"): QuestTrail's compass option stays on, so it
 -- keeps computing, and Map's bridge reads it (QuestTrailArrowFrame: shown, its .arrow shown, .bearing / .label / .dist); only its
 -- alpha goes to 0 and it takes no mouse, again whenever QuestTrail sets its alpha or shows it. Its hearth / teleport buttons too.
+-- test58 (the user: "There's a QuestTrail tracker on the top screen that needs to be hidden"): its tracker too, QuestTrailTrackerFrame and
+-- its quest item buttons (QuestTrailItemButton<n>, SECURE: their alpha only, their mouse off out of a fight), by the same rule
+N.qt.HIDDEN = { "QuestTrailArrowFrame", "QuestTrailHearthButton", "QuestTrailTeleportButton", "QuestTrailTrackerFrame" }
+N.qt.zeroed = {}
 function N.qt.hideArrow()
-    local f = rawget(_G, "QuestTrailArrowFrame")
-    if type(f) ~= "table" then return end
-    local function zero(o)
-        if type(o) ~= "table" then return end
-        pcall(function() o:SetAlpha(0) end)
-        pcall(function() o:EnableMouse(false) end)
-    end
-    zero(f)
-    if N.qt.hooked.arrow then return end
-    N.qt.hooked.arrow = true
+    local fight = TB(function() return InCombatLockdown() end) == true
     local busy = false
-    local function again(o)
-        if busy then return end
-        busy = true; zero(o); busy = false
+    local function zero(o)
+        if type(o) ~= "table" or busy then return end
+        busy = true
+        pcall(function() o:SetAlpha(0) end)
+        if not fight then pcall(function() o:EnableMouse(false) end) end
+        busy = false
     end
-    pcall(function() hooksecurefunc(f, "SetAlpha", function(self, a) if (a or 0) > 0 then again(self) end end) end)
-    pcall(function() f:HookScript("OnShow", function(self) again(self) end) end)
-    for _, name in ipairs({ "QuestTrailHearthButton", "QuestTrailTeleportButton" }) do
-        local b = rawget(_G, name)
-        if type(b) == "table" then
-            zero(b)
-            pcall(function() hooksecurefunc(b, "SetAlpha", function(self, a) if (a or 0) > 0 then again(self) end end) end)
-            pcall(function() b:HookScript("OnShow", function(self) again(self) end) end)
+    local names = {}
+    for _, n in ipairs(N.qt.HIDDEN) do names[#names + 1] = n end
+    for k = 1, 12 do names[#names + 1] = "QuestTrailItemButton" .. k end
+    for _, name in ipairs(names) do
+        local o = rawget(_G, name)
+        if type(o) == "table" then
+            if (TN(function() return o:GetAlpha() end) or 0) > 0 then zero(o) end
+            if not N.qt.zeroed[name] then
+                N.qt.zeroed[name] = true
+                zero(o)
+                -- (a secure item button's own table is never written: its OnShow hooked only, the 2 s look re-zeroes its alpha)
+                if not name:match("^QuestTrailItemButton") then
+                    pcall(function() hooksecurefunc(o, "SetAlpha", function(self, a) if (a or 0) > 0 then zero(self) end end) end)
+                end
+                pcall(function() o:HookScript("OnShow", function(self) zero(self) end) end)
+            end
         end
     end
+    N.qt.hooked.arrow = N.qt.zeroed.QuestTrailArrowFrame
 end
 -- ---- "QUESTTRAIL SETTINGS" (Add-ons): QuestTrail's own pages, through its own command (/qtr setup), mirrored and browsable by its
 -- steps' titles (read by stepping through once with its own arrows, then back to the first)
