@@ -33,13 +33,14 @@ object CityExits {
 
     /**
      * THE APPROVED TABLE (the user, 2026-10-16: "(b) the hand table of each capital's gates (approved now)", and the Deeprun Tram in
-     * it). ESTIMATES (my reading of the classic maps), to be checked on the Thor: a learned crossing of the same way replaces its
-     * entry. Only the ways I am fairly sure of are here; the rest are learned.
+     * it). The Stormwind tram end is measured on the Thor; the gates and the Ironforge tram end are still ESTIMATES (my reading of
+     * the classic maps), to be checked there. A learned crossing of the same way replaces its entry. The rest are learned.
      */
     val TABLE = listOf(
         Exit(1453, "Stormwind Gates", x = 0.715, y = 0.90),
-        Exit(1453, "Deeprun Tram", x = 0.642, y = 0.082, toMap = 1455, toX = 0.762, toY = 0.512, rideYd = TRAM_YD),
-        Exit(1455, "Deeprun Tram", x = 0.762, y = 0.512, toMap = 1453, toX = 0.642, toY = 0.082, rideYd = TRAM_YD),
+        // the Stormwind end MEASURED on the Thor (2026-10-16 21:49, the player at the tram entrance, Dwarven District): 69.0, 31.0
+        Exit(1453, "Deeprun Tram", x = 0.690, y = 0.310, toMap = 1455, toX = 0.762, toY = 0.512, rideYd = TRAM_YD),
+        Exit(1455, "Deeprun Tram", x = 0.762, y = 0.512, toMap = 1453, toX = 0.690, toY = 0.310, rideYd = TRAM_YD),
     )
 
     /** a way out of the current map, in ITS 0..1: where to walk, and where the way ends (the transport's far end, or the same) */

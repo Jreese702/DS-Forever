@@ -10,9 +10,9 @@ import org.junit.Test
 class CityExitsTest {
     private val ax = 1000.0; private val ay = 700.0
     private val gate = CityExits.Exit(1453, "Stormwind Gates", x = 0.715, y = 0.90)
-    private val tram = CityExits.Exit(1453, "Deeprun Tram", x = 0.642, y = 0.082, toMap = 1455, rideYd = CityExits.TRAM_YD)
+    private val tram = CityExits.Exit(1453, "Deeprun Tram", x = 0.690, y = 0.310, toMap = 1455, rideYd = CityExits.TRAM_YD)
     // the tram's far end in Stormwind's coordinates: Ironforge is far north
-    private val ways = listOf(CityExits.Way(gate, 0.715, 0.90, 0.715, 0.90), CityExits.Way(tram, 0.642, 0.082, 0.5, -3.0))
+    private val ways = listOf(CityExits.Way(gate, 0.715, 0.90, 0.715, 0.90), CityExits.Way(tram, 0.690, 0.310, 0.5, -3.0))
 
     @Test fun westfallLeavesByTheGateNotTheEdgeNorTheTram() {
         val w = CityExits.pick(0.5, 0.5, doubleArrayOf(-0.8, 2.2), ways, ax, ay)!!
