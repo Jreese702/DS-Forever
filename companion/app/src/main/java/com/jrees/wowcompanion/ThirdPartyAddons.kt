@@ -53,9 +53,9 @@ object ThirdPartyAddons {
      */
     data class Addon(val id: String, val title: String, val what: String, val by: String, val license: String, val repo: String,
                      val version: String, val core: Pkg, val modules: List<Module> = emptyList(), val options: List<Option> = emptyList(),
-                     val inUse: (() -> Boolean)? = null, val usedIn: String? = null) {
+                     val inUse: (() -> Boolean)? = null, val usedIn: String? = null, val settings: String? = null) {
         /** the rows' words, as the Settings tabs count them (SettingsTabs.Block.rows) */
-        fun rowWords(): List<String> = listOf(title) + modules.map { "$title: ${it.title}" } + options.map { it.title }
+        fun rowWords(): List<String> = listOf(title) + modules.map { "$title: ${it.title}" } + options.map { it.title } + listOfNotNull(settings)
         fun pkgs(): List<Pair<String, Pkg>> = listOf("core" to core) + modules.map { it.id to it.pkg }
     }
 
@@ -110,7 +110,10 @@ object ThirdPartyAddons {
         by = "Krom", license = "MIT", repo = "", version = "3.1.0",
         core = Pkg("3.1.0", "QuestTrail-3.1.0.zip", 578_289L, "2f2c81c276c1f083cea68f2a69de5b8dd78df81cbd2d8cacc2582166a250194b",
             listOf("QuestTrail"), url = "https://mediafilez.forgecdn.net/files/9208/872/QuestTrail-3.1.0.zip"),
-        inUse = { Settings.questTracking == "questtrail" }, usedIn = "Map › Quest tracking")
+        inUse = { Settings.questTracking == "questtrail" }, usedIn = "Map › Quest tracking",
+        // test51 (the user: "a default setting set ... then just expose the other settings in the addons menu"): its own options pages,
+        // mirrored on the bottom screen (Interact's QuestTrail mirror, browsable by its steps)
+        settings = "QuestTrail settings")
 
     var ALL: List<Addon> = listOf(SPOKEN, POLESTAR, QUESTTRAIL)
         internal set                                            // the off-device test swaps in its own

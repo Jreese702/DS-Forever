@@ -445,6 +445,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // with the game up (v1.0.4), so the picker opens HERE, on the bottom screen's display: the game's window on the top screen is never
         // covered (the picker's task sits over this Presentation until it closes). The copy applies at the next game start
         settingsRest.gameRunning = { LauncherHooks.gameUp() }
+        // test51: Add-ons > "QuestTrail settings": Settings closes (its room left as B does), the game opens QuestTrail's own pages and
+        // the bottom screen mirrors them (InteractView's QuestTrail window)
+        settingsRest.onAddonSettings = { a ->
+            if (room != Room.HOME) show(Room.HOME)
+            val sent = interactView.openAddonSettings(a.id)
+            Log.i("WCINTERACT", "add-on settings ${a.id}: ${if (sent) "asked" else "not asked (no cell yet)"}")
+        }
         settingsRest.onChooseDll = { openDllPicker() }
         // "Restart the game" when a frame-gen setting differs from the running game's start: the sign-in's restart (close, wait, Play)
         // b-addons-restart (test40, the user: "The restart button after installing addons breaks our addon because it behaves like it's

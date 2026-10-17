@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i122"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i123"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1476,8 +1476,13 @@ local function assignSlots(doc)
             end
         end
         if qt.menu then for _, it in ipairs(qt.menu.items or {}) do it.slot = slot("isell", "qt " .. it.id) end end
+        for _, c in ipairs(qt.cats or {}) do c.slot = slot("isell", "qtcat " .. c.i) end
     end
     if any then doc.act = { close = slot("iact", "close") } end
+    -- 1.0.9 Add-ons > "QuestTrail settings": its cell while QuestTrail is loaded (the app taps it; QuestTrail's own pages open here)
+    if type(SlashCmdList) == "table" and type(SlashCmdList.QUESTTRAIL) == "function" then
+        doc.questtrail = { open = slot("iact", "qtopen") }
+    end
     -- 1.0.9 Spoken's two stop options (Settings > Add-ons): a cell for each value; the app taps the one its setting says
     if doc.spoken then
         doc.spoken.cells = { closeOn = slot("iact", "spkopt close on"), closeOff = slot("iact", "spkopt close off"),
@@ -1485,7 +1490,7 @@ local function assignSlots(doc)
     end
     local ok, d = pcall(pad.describe)
     padNow = ok and d or nil
-    if any or doc.spoken then doc.pad = padNow end
+    if any or doc.spoken or doc.questtrail then doc.pad = padNow end
     for _, ns in ipairs(NS) do pcall(pad.retain, ns, present[ns]) end
 end
 
@@ -1826,6 +1831,8 @@ function N.build(doc)
             N.zones = { zm }
             first = navFirst(zm)
         else
+            local zc = navZone("qtcats", 1)
+            for _, c in ipairs(q.cats or {}) do navAdd(zc, "qtcat " .. c.i) end
             local z = navZone("qt", 1)
             for _, it in ipairs(q.items or {}) do
                 if it.k ~= "text" and (it.k ~= "head" or it.on ~= nil) then navAdd(z, "qt " .. it.id, it.en ~= false) end
@@ -1836,7 +1843,7 @@ function N.build(doc)
             if q.kind == "setup" then navAdd(zs, "qtgo back", q.back == true) end
             if q.finish then navAdd(zs, "qtfinish") else navAdd(zs, "qtgo next", q["next"] == true) end
             if q.kind == "setup" then navAdd(zs, "qttop") end
-            N.zones = { z, zs }
+            N.zones = { zc, z, zs }
             first = navFirst(z) or navFirst(zs)
         end
     elseif doc.petition then
@@ -2007,7 +2014,7 @@ local function buildDoc()
     if WINDOWS.trainer and isOpen("trainer") then doc.trainer = collectTrainer() end
     if WINDOWS.stable and isOpen("stable") then doc.stable = collectStable() end
     if WINDOWS.petition and isOpen("petition") then doc.petition = LOOT.collectPetition() end
-    if N.qt.open() and not N.qt.top then
+    if N.qt.open() and not N.qt.top and not N.qt.auto then
         doc.qtsetup = N.qt.collect()                                               -- 1.0.9: QuestTrail's setup / intro
         N.qt.lastDoc, N.qt.lastItems = doc.qtsetup, doc.qtsetup and doc.qtsetup.items
     end
@@ -2754,8 +2761,15 @@ function N.qt.hook()
         if type(f) == "table" and not N.qt.hooked[slotName] then
             N.qt.hooked[slotName] = true
             pcall(function()
-                f:HookScript("OnShow", function() N.qt.top = false; N.qt.menu = nil; mark(slotName, true); emitSoon() end)
-                f:HookScript("OnHide", function() N.qt.top = false; N.qt.menu = nil; mark(slotName, false); emitSoon() end)
+                f:HookScript("OnShow", function()
+                    N.qt.top = false; N.qt.menu = nil; mark(slotName, true)
+                    -- QuestTrail's OWN first start of its assistant (not our "QuestTrail settings"): the DS Forever defaults, silently
+                    if slotName == "qtsetup" and not N.qt.browse then N.qt.startAuto(f) end
+                    emitSoon()
+                end)
+                f:HookScript("OnHide", function()
+                    N.qt.top = false; N.qt.menu = nil; N.qt.browse, N.qt.cats = false, nil; mark(slotName, false); emitSoon()
+                end)
             end)
             if TB(function() return f:IsShown() end) == true then mark(slotName, true); emitSoon() end
         end
@@ -2769,7 +2783,8 @@ do
         if t < 0.5 then return end
         t = 0
         pcall(N.qt.hook)
-        if N.qt.hooked.qtsetup and N.qt.hooked.qtintro then hf:SetScript("OnUpdate", nil) end
+        pcall(N.qt.hideArrow)
+        if N.qt.hooked.qtsetup and N.qt.hooked.qtintro and N.qt.hooked.arrow then hf:SetScript("OnUpdate", nil) end
     end)
 end
 
@@ -2958,6 +2973,8 @@ function N.qt.collect()
         q.finish, q.finishWord = true, OKAY or "OK"
     end
     if N.qt.menu then q.menu = { t = N.qt.menu.t, items = N.qt.menu.items } end
+    -- "QuestTrail settings" (Add-ons): browsable by its steps' titles
+    if N.qt.browse and kind == "setup" and N.qt.cats then q.browse = true; q.cats = N.qt.cats end
     return q
 end
 
@@ -2981,6 +2998,138 @@ function N.qt.readMenu(title)
     end
     N.qt.menu = { t = title, items = items, rows = fns }
     emitSoon()
+end
+
+-- ---- THE DS FOREVER DEFAULTS (the user, test51: "identify a default setting set for quest trail and then just expose the other
+-- settings in the addons menu"; the list approved as proposed, minus the compass): QuestTrail's own first start of its assistant is
+-- never shown: its pages are walked unseen, each default set THROUGH QuestTrail's own widget (its button / check box / group switch
+-- clicked, read back after), then its own Finish marks it done. Matched by QuestTrail 3.1.0's own words (English); a setting not found
+-- or not taken is said in the answer and left as QuestTrail's.
+N.qt.DEFAULTS = {
+    { step = "Shared Trail", k = "button", t = "World Trail", on = true },
+    { k = "head", t = "Quest Tracker", on = false },          -- its tracker, and with it its hide of Blizzard's (autoQuestWatch CVars)
+    { k = "head", t = "Questing Helpers", on = false },       -- auto-accept / turn-in / sell grey / repair
+    { k = "check", t = "Minimap button", on = false },
+    { k = "check", t = "Extended minimap", on = false },      -- the mouse wheel's zoom
+    { k = "check", t = "Fiercely announce new levels", on = false },
+}
+function N.qt.startAuto(f)
+    if N.qt.auto then return end
+    N.qt.auto = true
+    pcall(function() f:SetAlpha(0) end)                       -- never seen, not even for a frame
+    if type(C_Timer) == "table" then C_Timer.After(0.1, function() pcall(N.qt.runAuto, f) end) else pcall(N.qt.runAuto, f) end
+end
+function N.qt.runAuto(f)
+    local done, missed, steps = {}, {}, 0
+    local want = {}
+    for i, r in ipairs(N.qt.DEFAULTS) do want[i] = r end
+    local function apply(items, title)
+        for i, r in pairs(want) do
+            if not r.step or r.step == title then
+                for _, it in ipairs(items) do
+                    if it.k == r.k and it.t == r.t and (it.on ~= nil or it.k == "button") then    -- (a button not chosen reads as nil)
+                        if (it.on == true) ~= r.on then
+                            local c = N.qt.ctl[it.id]
+                            local w = c and c.w and c.w[1]
+                            if w then pcall(function() w:Click() end) end
+                        end
+                        want[i] = nil
+                        done[#done + 1] = r.t
+                        break
+                    end
+                end
+            end
+        end
+    end
+    -- every step's page, from the first: the defaults found on it set, then its own Next; its own Finish at the end
+    for _ = 1, 20 do
+        steps = steps + 1
+        local page
+        for _, pg in pairs(type(f.pages) == "table" and f.pages or {}) do if TB(function() return pg:IsShown() end) == true then page = pg end end
+        local title = TS(function() return f.title:GetText() end)
+        if page then apply(N.qt.read(page), title) end
+        if TB(function() return f["next"]:IsEnabled() end) ~= true then break end
+        pcall(function() f["next"]:Click() end)
+    end
+    -- read back: each default now as wanted? (QuestTrail re-syncs its widgets as it is set)
+    for _, r in pairs(want) do missed[#missed + 1] = r.t .. " (not found)" end
+    pcall(function() f.finish:Click() end)
+    N.qt.auto = false
+    ack("qtdefaults", #missed == 0, (#missed == 0) and ("set: " .. table.concat(done, ", ")) or ("missed: " .. table.concat(missed, ", ")), steps)
+    emitSoon()
+end
+-- ---- the COMPASS hidden on the top screen (the user: "I kind of don't like the compass"): QuestTrail's compass option stays on, so it
+-- keeps computing, and Map's bridge reads it (QuestTrailArrowFrame: shown, its .arrow shown, .bearing / .label / .dist); only its
+-- alpha goes to 0 and it takes no mouse, again whenever QuestTrail sets its alpha or shows it. Its hearth / teleport buttons too.
+function N.qt.hideArrow()
+    local f = rawget(_G, "QuestTrailArrowFrame")
+    if type(f) ~= "table" then return end
+    local function zero(o)
+        if type(o) ~= "table" then return end
+        pcall(function() o:SetAlpha(0) end)
+        pcall(function() o:EnableMouse(false) end)
+    end
+    zero(f)
+    if N.qt.hooked.arrow then return end
+    N.qt.hooked.arrow = true
+    local busy = false
+    local function again(o)
+        if busy then return end
+        busy = true; zero(o); busy = false
+    end
+    pcall(function() hooksecurefunc(f, "SetAlpha", function(self, a) if (a or 0) > 0 then again(self) end end) end)
+    pcall(function() f:HookScript("OnShow", function(self) again(self) end) end)
+    for _, name in ipairs({ "QuestTrailHearthButton", "QuestTrailTeleportButton" }) do
+        local b = rawget(_G, name)
+        if type(b) == "table" then
+            zero(b)
+            pcall(function() hooksecurefunc(b, "SetAlpha", function(self, a) if (a or 0) > 0 then again(self) end end) end)
+            pcall(function() b:HookScript("OnShow", function(self) again(self) end) end)
+        end
+    end
+end
+-- ---- "QUESTTRAIL SETTINGS" (Add-ons): QuestTrail's own pages, through its own command (/qtr setup), mirrored and browsable by its
+-- steps' titles (read by stepping through once with its own arrows, then back to the first)
+function ACT.qtopen()
+    if N.qt.open() then return true end
+    if TB(function() return InCombatLockdown() end) == true then return false, "not in a fight" end
+    if not (type(SlashCmdList) == "table" and type(SlashCmdList.QUESTTRAIL) == "function") then return false, "QuestTrail is not loaded" end
+    N.qt.browse, N.qt.cats = true, nil
+    pcall(SlashCmdList.QUESTTRAIL, "setup")
+    local f = rawget(_G, "QuestTrailSetup")
+    if type(f) ~= "table" then N.qt.browse = false; return false, "QuestTrail did not open its settings" end
+    local cats = {}
+    pcall(function()
+        for _ = 1, 20 do
+            local cnt = TS(function() return f.count:GetText() end) or ""
+            cats[#cats + 1] = { i = tonumber(cnt:match("^(%d+)")) or (#cats + 1), t = TS(function() return f.title:GetText() end) or "" }
+            if TB(function() return f["next"]:IsEnabled() end) ~= true then break end
+            f["next"]:Click()
+        end
+        for _ = 1, 20 do
+            if TB(function() return f.back:IsEnabled() end) ~= true then break end
+            f.back:Click()
+        end
+    end)
+    N.qt.cats = cats
+    emitSoon()
+    return true
+end
+-- /wci qtcat <i>   to step i (its own arrows, as many times as it takes)
+function ACT.qtcat(a)
+    local want = tonumber(a)
+    local f, kind = N.qt.frame()
+    if not (want and kind == "setup") then return false, "QuestTrail's settings are not open" end
+    N.qt.menu = nil
+    for _ = 1, 20 do
+        local i = tonumber((TS(function() return f.count:GetText() end) or ""):match("^(%d+)")) or want
+        if i == want then break end
+        local b = (i < want) and f["next"] or f.back
+        if TB(function() return b:IsEnabled() end) ~= true then break end
+        pcall(function() b:Click() end)
+    end
+    emitSoon()
+    return true
 end
 
 -- /wci qt <id> [-|+]   QuestTrail's own widget: pressed, stepped, or its menu's row picked
@@ -5475,7 +5624,12 @@ end
 
 -- the cursor on its page: a line's controls Left / Right, the lines Up / Down; Left / Right on a slider or a number steps it
 function N.qt.move(z, ii, dir)
-    if z.name ~= "qt" and z.name ~= "qtstrip" and z.name ~= "qtmenu" then return false end
+    if z.name ~= "qt" and z.name ~= "qtstrip" and z.name ~= "qtmenu" and z.name ~= "qtcats" then return false end
+    if z.name == "qtcats" then
+        if dir == "up" or dir == "down" then local j = navStep(z, ii, dir == "up" and -1 or 1); if j then N.cur = z.items[j].id end
+        elseif dir == "right" then local zq = navZoneNamed("qt"); local id = zq and navFirst(zq); if id then N.cur = id end end
+        return true
+    end
     if z.name == "qtmenu" then
         if dir == "up" or dir == "down" then local j = navStep(z, ii, dir == "up" and -1 or 1); if j then N.cur = z.items[j].id end end
         return true
@@ -5495,7 +5649,8 @@ function N.qt.move(z, ii, dir)
     end
     if dir == "left" or dir == "right" then
         local j = navStep(z, ii, dir == "left" and -1 or 1)
-        if j and byId[z.items[j].id] and me and byId[z.items[j].id].row == me.row then N.cur = z.items[j].id end
+        if j and byId[z.items[j].id] and me and byId[z.items[j].id].row == me.row then N.cur = z.items[j].id
+        elseif dir == "left" and q and q.browse and q.i then N.cur = "qtcat " .. q.i end      -- browse: back to the categories
         return true
     end
     -- up / down: the next line's first usable control (the strip below the last line)
