@@ -76,4 +76,13 @@ class DangerLayerTest {
         val r = g.route(doubleArrayOf(0.2, 0.5), doubleArrayOf(0.8, 0.5), 5.0)
         assertEquals(2, r.size)
     }
+
+    /** test45 ("At every bend I want a checkpoint flag which the arrow leads to"): a bend within 18 yd is passed, the next leads */
+    @Test fun aReachedCheckpointIsPassed() {
+        val leg = listOf(doubleArrayOf(0.100, 0.5), doubleArrayOf(0.108, 0.5), doubleArrayOf(0.3, 0.6), doubleArrayOf(0.8, 0.5))
+        val p = DangerGrid.passed(leg, 2000.0, 2000.0)!!                      // the first bend 16 yd away: passed
+        assertEquals(3, p.size); assertEquals(0.3, p[1][0], 1e-9)
+        assertEquals(null, DangerGrid.passed(listOf(leg[0], doubleArrayOf(0.105, 0.5), leg[3]), 2000.0, 2000.0))   // none left
+        assertEquals(4, DangerGrid.passed(listOf(leg[0], doubleArrayOf(0.2, 0.5), leg[2], leg[3]), 2000.0, 2000.0)!!.size)
+    }
 }
