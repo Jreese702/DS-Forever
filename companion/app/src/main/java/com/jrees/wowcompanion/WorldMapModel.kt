@@ -39,6 +39,49 @@ class WorldMapModel {
     private val levels = HashMap<Int, IntArray>()
     private val highlights = HashMap<Int, HashMap<Int, Highlight>>()   // parent map -> highlight fid -> the game's box (maphl)
 
+    /**
+     * THE WORLD MAP'S CONTINENTS (b-world-zoom; the user on test60: "When I ... try to come in to Eastern Kingdoms it changes to Kalimdor",
+     * "the icons are all sitting in the ocean"): the world map (Azeroth) places each continent by its OWN UiMapAssignment row (the
+     * recipe's "assign": the continent's world region and the box of the world map it is drawn in). Its single world rect is only
+     * Kalimdor's, stretched: Eastern Kingdoms had no place on it, and markers went through the wrong transform.
+     */
+    class Assign(val map: Int, val u0: Double, val v0: Double, val u1: Double, val v1: Double,
+                 val x0: Double, val y0: Double, val x1: Double, val y1: Double) {
+        fun u(wy: Double) = u0 + (y1 - wy) / (y1 - y0) * (u1 - u0)
+        fun v(wx: Double) = v0 + (x1 - wx) / (x1 - x0) * (v1 - v0)
+        /** ([u], [v]) inside the box the continent is drawn in */
+        fun holds(u: Float, v: Float) = u in u0..u1 && v in v0..v1
+    }
+    private val assigns = HashMap<Int, List<Assign>>()
+    /** the recipe's "assign" ({uiMap: [[map, uMin, vMin, uMax, vMax, xMin, yMin, xMax, yMax], ...]}) */
+    fun setAssign(o: JSONObject?) {
+        if (o == null) return
+        for (k in o.keys()) {
+            val id = k.toIntOrNull() ?: continue
+            val a = o.optJSONArray(k) ?: continue
+            assigns[id] = (0 until a.length()).mapNotNull { i ->
+                val r = a.optJSONArray(i)?.takeIf { it.length() >= 9 } ?: return@mapNotNull null
+                Assign(r.optInt(0), r.optDouble(1), r.optDouble(2), r.optDouble(3), r.optDouble(4), r.optDouble(5), r.optDouble(6),
+                    r.optDouble(7), r.optDouble(8))
+            }
+        }
+    }
+    /** map [id]'s placement of continent [cont] (a world map's), or null */
+    fun assignOf(id: Int, cont: Int): Assign? = assigns[id]?.firstOrNull { it.map == cont }
+    fun assignsOf(id: Int): List<Assign> = assigns[id] ?: emptyList()
+    /** a world point (continent [cont]) on map [id]'s frame: by its assignment when it has one, else its world rect; null = not on it */
+    fun project(id: Int, cont: Int, wx: Double, wy: Double): FloatArray? {
+        assignOf(id, cont)?.let { return floatArrayOf(it.u(wy).toFloat(), it.v(wx).toFloat()) }
+        val w = maps[id]?.world?.takeIf { it.continent == cont } ?: return null
+        return floatArrayOf(w.nx(wy).toFloat(), w.ny(wx).toFloat())
+    }
+    /** continent map [child]'s frame on world map [parent] through the child's assignment there ([l, t, r, b]), or null */
+    fun frameOn(parent: Int, child: Int): FloatArray? {
+        val w = maps[child]?.world ?: return null
+        val a = assignOf(parent, w.continent) ?: return null
+        return floatArrayOf(a.u(w.left).toFloat(), a.v(w.top).toFloat(), a.u(w.right).toFloat(), a.v(w.bottom).toFloat())
+    }
+
     /** one map's index.json */
     fun addIndex(o: JSONObject) {
         val id = o.optInt("uiMapID", 0)
@@ -228,6 +271,8 @@ class WorldMapModel {
     /** the player's spot ([x], [y] on [mapId]) carried up to [target] (an ancestor) through the rects, or null */
     fun carryUp(mapId: Int, x: Float, y: Float, target: Int): FloatArray? {
         val a = maps[mapId]?.world; val b = maps[target]?.world
+        // onto a world map: by the continent's own assignment there (b-world-zoom)
+        if (a != null && assignOf(target, a.continent) != null) return project(target, a.continent, a.wx(y.toDouble()), a.wy(x.toDouble()))
         if (a != null && b != null && a.continent == b.continent && target in ancestors(mapId)) {
             val wy = a.wy(x.toDouble()); val wx = a.wx(y.toDouble())
             return floatArrayOf(b.nx(wy).toFloat(), b.ny(wx).toFloat())

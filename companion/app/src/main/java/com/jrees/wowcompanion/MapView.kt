@@ -608,7 +608,7 @@ class MapView(context: Context) : View(context) {
         val meta = p.gridMeta
         planDecoder.execute {
             val g = runCatching { readGrid(meta) }.getOrNull()
-            post {
+            mainHandler.post {
                 gridLoading.remove(p.fid)
                 if (g != null) { gridCache[p.fid] = g; while (gridCache.size > 3) gridCache.remove(gridCache.keys.first()); invalidate() }
             }
@@ -2666,6 +2666,8 @@ class MapView(context: Context) : View(context) {
     private var travelMasters: List<TransportRoutes.FlightMaster> = emptyList()
     private var travelFlights: List<IntArray> = emptyList()
     private var ridesStamp = -1L
+    /** off-thread results come back here (a View's post waits for the view to be attached) */
+    private val mainHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
     private var ridesCheckedAt = Long.MIN_VALUE / 2
     private var ridesLoading = false
     /** the game's rides (and the travel layer's masters and flights): the file looked at every few seconds and read OFF the UI thread
@@ -2679,7 +2681,7 @@ class MapView(context: Context) : View(context) {
             planDecoder.execute {
                 val st = if (f.isFile) f.lastModified() + f.length() else 0L
                 val o = if (st != was && st != 0L) runCatching { JSONObject(f.readText()) }.getOrNull() else null
-                post {
+                mainHandler.post {
                     ridesLoading = false
                     if (st == ridesStamp) return@post
                     ridesStamp = st
