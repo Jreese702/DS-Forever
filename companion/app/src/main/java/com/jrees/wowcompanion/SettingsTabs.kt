@@ -21,7 +21,8 @@ object SettingsTabs {
 
     /** the order within a tab is this enum's order */
     enum class Block(val tab: Tab, val heading: String, val rows: List<String>) {
-        HOME_SECTION(Tab.HOME, "Home", listOf("Controller on Home", "Combat layout", "Swing timer", "Stance bar", "Pet bar",
+        HOME_SECTION(Tab.HOME, "Home", listOf("Controller on Home", "Combat layout", "Swing timer",
+            // "Stance bar", "Pet bar": hidden for now (test40, the user: "hide the settings that don't do anything for now")
             "Focused quest", "Start the attack when a spell is cast", "DS WoW toolbar")),
         CONTROLLER(Tab.CONTROLLER, "Controller", listOf("ABXY location", "Button glyphs")),
         // f-radial-settings (1.0.9, the user: "better organize each radial setting into categories so its clear what each one is"): a
