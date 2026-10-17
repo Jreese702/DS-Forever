@@ -1132,7 +1132,8 @@ class MapView(context: Context) : View(context) {
         return 1f - (1f - FADE_MIN) * t
     }
 
-    private val RECENTRE_MS = 650f     // long enough to read as a move, short enough not to nag
+    private val RECENTRE_MS = 650f
+    private val NEAR_ARROW_PX = 70f    // the quest arrow beside the player while its target is in view     // long enough to read as a move, short enough not to nag
     private val MOVE_EPS = 0.002f      // ~7 yards in Elwynn; below this it is sampling jitter
     private val DRAG_GRACE_MS = 350L   // do not glide between two scroll events of one drag
 
@@ -5017,7 +5018,8 @@ class MapView(context: Context) : View(context) {
         val toCorpse = corpseKnown()
         // the focused quest's arrow points along its ROUTE (the user on test29): at the route's next way (a tram, a learned crossing, a
         // flight master, the game's waypoint, the map's edge) whenever the line goes through one; at the quest itself when it is direct
-        val fRoute = if (!toCorpse && focusTq > 0 && !compact) routeFor(focusTq) else null
+        // the small map too (the user on test31: "it's still pointing to the wrong place on the mini map" - Home's small map is this view)
+        val fRoute = if (!toCorpse && focusTq > 0) routeFor(focusTq) else null
         val viaWay = fRoute != null && fRoute.kind != CursorRoute.Kind.GOAL
         val rimTX = if (toCorpse) corpseX else if (viaWay) fRoute!!.x else focusTX
         val rimTY = if (toCorpse) corpseY else if (viaWay) fRoute!!.y else focusTY
@@ -5077,6 +5079,21 @@ class MapView(context: Context) : View(context) {
                     // on a dark round backing (UI Art, mr16: on busy city art the bare boot read as a flight-master pin there)
                     pFlyBack.color = Color.argb(140, 0, 0, 0); c.drawCircle(bx, by, FLY_BACK_PX / 2f, pFlyBack)
                     drawIcon(c, Ic.FLIGHT, bx, by, FLY_ICON_PX)
+                }
+            }
+            // ON THE FIELD the arrow stays too (the user on test31: "You took away my quest arrow when I am in the map module ... Turn it
+            // back on"): with its target in view it stands beside the player, pointing at it (the tram, a gate, a flight master, the quest)
+            if (!toCorpse && seen) {
+                val ppx = sx(px); val ppy = sy(py)
+                val dx = tx - ppx; val dy = ty - ppy
+                val d = hypot(dx, dy)
+                if (d > 1f) {
+                    val off = min(if (compact) NEAR_ARROW_PX * 0.7f else NEAR_ARROW_PX, d * 0.6f)
+                    val ax = ppx + dx / d * off; val ay = ppy + dy / d * off
+                    val deg = Math.toDegrees(atan2(dx.toDouble(), -dy.toDouble())).toFloat()   // 0 = up
+                    c.save(); c.rotate(deg, ax, ay)
+                    drawIcon(c, Ic.QUEST_ARROW, ax, ay, if (compact) RIM_ARROW_PX * 0.8f else RIM_ARROW_PX, pArt)
+                    c.restore()
                 }
             }
         }
