@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d21"         -- bump on every change
+local DV = "d22"         -- bump on every change
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -158,6 +158,14 @@ local function read(i, f)
                                           on = TB(function() return b:IsEnabled() end) ~= false,
                                           key = keyOf(f, b) }
         end
+    end
+    -- d22 (the user's standing ruling: NEVER press "Exit Now"; test50: A on the mirrored QUIT dialog during the safe close reached it):
+    -- the QUIT countdown's "Exit now" is never mirrored and has no cell; only Cancel and the countdown show. While QUIT shows, the
+    -- dialogs take the controller (D.padSync) with A bound to nothing and B to Cancel, so the game's own A cannot press it either
+    if d.which == "QUIT" then
+        local keep = {}
+        for _, b in ipairs(d.buttons) do if b.k ~= 1 then keep[#keep + 1] = b end end
+        d.buttons, d.guard = keep, true
     end
     if shown(f.ExtraButton) then
         d.extra = TS(function() return f.ExtraButton:GetText() end) or ""
@@ -407,7 +415,7 @@ function D.padSync(list)
     local target
     if D.mode and not fight and type(cap) == "table" and (cap.version or 0) >= 19 then
         for _, d in ipairs(list) do
-            if not d.focus and d.top == nil and #d.buttons >= 1 then target = d; break end
+            if (not d.focus or d.guard) and d.top == nil and #d.buttons >= 1 then target = d; break end
         end
     end
     if not target then
@@ -429,7 +437,8 @@ function D.padSync(list)
                 DLG.a:SetAttribute("clickbutton", b1)
                 DLG.b:SetAttribute("clickbutton", shown(b2) and b2 or nil)
             end)
-            local spec = { press = function() end, lost = function() D.held, D.queued = nil, nil end, a = "WowCompanionDlgA",
+            -- d22: a guarded dialog (QUIT) binds A to nothing: its button 1 ("Exit now") is never pressed by the controller
+            local spec = { press = function() end, lost = function() D.held, D.queued = nil, nil end, a = (not target.guard) and "WowCompanionDlgA" or nil,
                            back = shown(b2) and "WowCompanionDlgB" or nil, noFight = true, pass = DLG_PASS }
             local ok, got, why = pcall(cap.take, "dialogs", spec)
             if ok and got and why == nil then D.held = want
@@ -440,7 +449,7 @@ function D.padSync(list)
     -- the mirror: A on the first button, B on the second, as if the game had focused it
     target.focus, target.fkey, target.padAB = true, nil, true
     for _, b in ipairs(target.buttons) do
-        if b.k == 1 then b.key = "PAD1" elseif b.k == 2 and shown(b2) then b.key = "PAD2" else b.key = nil end
+        if b.k == 1 and not target.guard then b.key = "PAD1" elseif b.k == 2 and shown(b2) then b.key = "PAD2" else b.key = nil end
     end
 end
 

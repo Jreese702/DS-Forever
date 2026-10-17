@@ -490,6 +490,13 @@ class InteractView(context: Context) : View(context) {
     /** {"type":"interactack","cmd":..,"ok":..,"why":..} */
     fun ack(msg: JSONObject) {
         val cmd = msg.optString("cmd")
+        // test50 (QuestTrail's setup: "Selecting world trail is not doing anything"): every press answered shows: the button flashes
+        // gold and a line says it ("World Trail chosen"), even when it was already the choice
+        if (msg.optBoolean("ok") && Regex("^qt \\d+$").matches(cmd)) {
+            val id = cmd.substringAfter("qt ")
+            val it = arr(doc?.optJSONObject("qtsetup"), "items").firstOrNull { it.optString("id") == id }
+            if (it != null && it.optString("k") == "button") { qtFlashId = id; qtFlashAt = fxClock(); note(it.optString("t") + " chosen", true); postInvalidateOnAnimation() }
+        }
         // f-loot-feedback: a loot the game refused (full bags, locked, ...) shakes its card red, fresh answers only
         if (cmd.startsWith("loot ") && !msg.optBoolean("ok") && abs(gameNow() - msg.optLong("_gt", gameNow())) < 5_000L) {
             shakes[cmd] = fxClock(); postInvalidateOnAnimation()
@@ -1652,6 +1659,8 @@ class InteractView(context: Context) : View(context) {
      * slider), so QuestTrail writes its own settings. The strip: Reset, the step's arrows and number, Finish on the last, and "On the
      * top screen" (its window back, for anything this cannot do here).
      */
+    private var qtFlashId: String? = null
+    private var qtFlashAt = 0L
     private fun qtWindow(c: Canvas, r: RectF, q: JSONObject, now: Long) {
         val inner = UiKit.windowGround(c, r, marble = true)
         val act = q.optJSONObject("act")
@@ -1763,6 +1772,20 @@ class InteractView(context: Context) : View(context) {
                     "button" -> {
                         val bb = RectF(box.left, box.top + 6f, box.right, box.bottom - 6f)
                         UiKit.choice(c, bb, fit(UiKit.bodyPaint(25f, Color.WHITE), it.optString("t"), bb.width() - 30f), it.optBoolean("on"), en, textSize = 25f)
+                        // the chosen one PLAINLY (test50): a gold rim and a soft glow round it
+                        if (it.optBoolean("on")) {
+                            val sw0 = pStroke.strokeWidth; val sc0 = pStroke.color
+                            pStroke.color = Theme.gold; pStroke.strokeWidth = 4f
+                            c.drawRoundRect(RectF(bb.left - 3f, bb.top - 3f, bb.right + 3f, bb.bottom + 3f), 10f, 10f, pStroke)
+                            pStroke.strokeWidth = sw0; pStroke.color = sc0
+                            pFill.color = Color.argb(46, Color.red(Theme.gold), Color.green(Theme.gold), Color.blue(Theme.gold))
+                            c.drawRoundRect(RectF(bb.left - 8f, bb.top - 8f, bb.right + 8f, bb.bottom + 8f), 14f, 14f, pFill)
+                        }
+                        val ft = fxClock() - qtFlashAt
+                        if (qtFlashId == it.optString("id") && ft in 0 until 700L) {
+                            pFill.color = Color.argb((200 * (1f - ft / 700f)).toInt(), 255, 220, 120)
+                            c.drawRoundRect(bb, 10f, 10f, pFill); postInvalidateOnAnimation()
+                        }
                         focusBox = bb
                         if (en) hits.add(bb to hitOf("qt ${it.optString("id")}", sl))
                     }
@@ -1772,37 +1795,51 @@ class InteractView(context: Context) : View(context) {
                         focusBox = RectF()
                     }
                 }
-                if (cur == id && !focusBox.isEmpty) UiKit.focus(c, focusBox)
+                if (cur == id && !focusBox.isEmpty) {
+                    UiKit.focus(c, focusBox)
+                    val gs = 40f                       // the cursor's A, as Settings' cursor wears it (test50: "A on the cursor")
+                    UiKit.pad(c, UiKit.okGlyph(), focusBox.left - 0.35f * gs + gs / 2f, focusBox.top - 0.35f * gs + gs / 2f, gs)
+                }
             }
         }
         c.restore()
         if (contentA > view.height() + 2f) UiKit.scrollBar(c, RectF(inner.right - 14f, view.top, inner.right - 2f, view.bottom),
             scrollA / contentA, min(1f, (scrollA + view.height()) / contentA))
         // ---- the strip: Reset; the step's arrows and number; Finish on the last; its window back on the top screen
+        // test50 (the user: "The arrows left and right are stupid, I need a next and back button to make it clear"): labelled game
+        // buttons, Back (B, and LB) and Next (RB; Finish on the last step), the step's number between them
         val bh = strip.height() - 30f
         if (q.optBoolean("reset")) {
-            val rb = RectF(strip.left + 8f, cy - bh / 2f, strip.left + 8f + 220f, cy + bh / 2f)
-            stripButton(c, rb, "Reset", hitOf("qtreset", col("reset")), true, false, "rev_x", id = "qtreset")
+            val rb = RectF(strip.left + 8f, cy - bh / 2f, strip.left + 8f + 190f, cy + bh / 2f)
+            stripButton(c, rb, "Reset", hitOf("qtreset", col("reset")), true, false, null, id = "qtreset")
         }
         val n = q.optInt("n", 0); val i = q.optInt("i", 0)
-        if (n > 0) {
-            val mid = strip.centerX() - 80f
-            c.drawText("$i/$n", mid, cy + 11f, UiKit.numberPaint(30f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
-            val canB = q.optBoolean("back"); val canN = q.optBoolean("next")
-            UiKit.pageArrow(c, false, mid - 80f, cy, 64f, canB); UiKit.pageArrow(c, true, mid + 80f, cy, 64f, canN)
-            if (canB) hits.add(RectF(mid - 116f, cy - 40f, mid - 44f, cy + 40f) to hitOf("qtgo back", col("back")))
-            if (canN) hits.add(RectF(mid + 44f, cy - 40f, mid + 116f, cy + 40f) to hitOf("qtgo next", col("next")))
+        val setup = q.optString("kind") == "setup"
+        val mid = strip.centerX() - 40f
+        val bw = 230f
+        if (setup) {
+            val canB = q.optBoolean("back")
+            stripButton(c, RectF(mid - 60f - bw, cy - bh / 2f, mid - 60f, cy + bh / 2f), "Back", if (canB) hitOf("qtgo back", col("back"))
+                else "why:This is the first step", canB, false, UiKit.backGlyph(), id = "qtgo back")
+            c.drawText("$i / $n", mid, cy + 11f, UiKit.numberPaint(28f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
         }
-        val right = strip.right - 8f
+        val nx = if (setup) RectF(mid + 60f, cy - bh / 2f, mid + 60f + bw, cy + bh / 2f) else RectF(mid - bw / 2f, cy - bh / 2f, mid + bw / 2f, cy + bh / 2f)
         if (q.optBoolean("finish")) {
-            stripButton(c, RectF(right - 240f, cy - bh / 2f, right, cy + bh / 2f), q.optString("finishWord", "Finish"),
-                hitOf("qtfinish", col("finish")), true, false, "rev_a", id = "qtfinish")
+            stripButton(c, nx, q.optString("finishWord", "Finish"), hitOf("qtfinish", col("finish")), true, false,
+                if (setup) UiKit.shoulderGlyph(true) else null, id = "qtfinish")
         } else {
-            stripButton(c, RectF(right - 300f, cy - bh / 2f, right, cy + bh / 2f), "On the top screen", hitOf("qttop", col("top")), true, false,
+            val canN = q.optBoolean("next")
+            stripButton(c, nx, "Next", if (canN) hitOf("qtgo next", col("next")) else "why:No next step", canN, false, UiKit.shoulderGlyph(true), id = "qtgo next")
+        }
+        if (setup) {
+            val right = strip.right - 8f
+            stripButton(c, RectF(right - 290f, cy - bh / 2f, right, cy + bh / 2f), "On the top screen", hitOf("qttop", col("top")), true, false,
                 null, id = "qttop")
         }
+        // a press's line (test50: "World Trail chosen"), just over the strip
+        resultLine(c, x0, x1, strip.top - 26f, now)
         UiKit.windowFrame(c, r, if (q.optString("kind") == "intro") "QuestTrail: Shared Trail" else "QuestTrail setup",
-            UiKit.tex("portrait_quest"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
+            UiKit.tex("portrait_quest"), Theme.gold, closeDown = pressed == "x", closeB = 0)
         hits.add(UiKit.windowClose(r) to hitOf("qtclose", col("close")))
         // QuestTrail's own dropdown menu, open: its choices over the page (a pick presses its row; B closes it)
         q.optJSONObject("menu")?.let { m ->
