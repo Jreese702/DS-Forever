@@ -98,4 +98,35 @@ object QuestTrailBridge {
             else best.firstOrNull { q -> objectives(q).any { o -> o.trim().let { it.startsWith(obj) || obj.startsWith(it) } } } ?: best.minOrNull()!!
         return Step(id, kind, obj)
     }
+
+    // ---- QUESTTRAIL'S GOLDEN PATH (b-qtrail-golden; the user, test55: "it should show the actual trail like it normally does")
+    /** one stretch of it on this map (0..1): from ([x0], [y0]) to ([x1], [y1]); [kind] 0 walked (gold), 1 others' (pale), 2 straight */
+    class Piece(val x0: Double, val y0: Double, val x1: Double, val y1: Double, val kind: Int)
+
+    /**
+     * The golden path QuestTrail draws on the minimap (Map.lua's `qtrail.gp`: {w, yd, rot, s = [[x1, y1, x2, y2, k], ...]} in minimap
+     * pixels, x east, y north, turned by [rot] when the minimap rotates) put on this map: the player at world ([pwx], [pwy]); the
+     * map's world rectangle ([top], [left]) and its yards ([ax] across, [ay] down). Empty when there is none.
+     */
+    fun trail(gp: JSONObject?, pwx: Double, pwy: Double, top: Double, left: Double, ax: Double, ay: Double): List<Piece> {
+        val a = gp?.optJSONArray("s") ?: return emptyList()
+        val w = gp.optDouble("w", 0.0); val yd = gp.optDouble("yd", 0.0)
+        if (w <= 0.0 || yd <= 0.0 || pwx.isNaN() || pwy.isNaN() || ax <= 0.0 || ay <= 0.0) return emptyList()
+        val scale = w / yd                                     // minimap pixels a yard
+        val rot = gp.optDouble("rot", 0.0); val cs = cos(rot); val sn = sin(rot)
+        fun mapX(x: Double, y: Double): DoubleArray {
+            val e = (x * cs - y * sn) / scale; val n = (x * sn + y * cs) / scale       // east, north (yards)
+            val wx = pwx + n; val wy = pwy - e                                         // world: x north, y west
+            return doubleArrayOf((left - wy) / ax, (top - wx) / ay)
+        }
+        val out = ArrayList<Piece>()
+        for (i in 0 until a.length()) {
+            val p = a.optJSONArray(i) ?: continue
+            if (p.length() < 4) continue
+            val s0 = mapX(p.optDouble(0), p.optDouble(1)); val s1 = mapX(p.optDouble(2), p.optDouble(3))
+            if (s0.any { it.isNaN() } || s1.any { it.isNaN() }) continue
+            out.add(Piece(s0[0], s0[1], s1[0], s1[1], p.optInt(4, 0)))
+        }
+        return out
+    }
 }

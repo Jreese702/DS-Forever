@@ -2878,7 +2878,74 @@ function WC.qtrailRead()
         local metres = d and tonumber(d:match("(%d+)%s*m$") or d:match("(%d+)%s*m%s"))
         if metres then out.yd = math.floor(metres / 0.9144 + 0.5) end
     end
+    -- its golden path as drawn on the minimap (b-qtrail-golden): read back, never changed
+    if out then
+        local okG, gp = pcall(WC.qtrailGp)
+        if okG and gp then out.gp = gp end
+    end
     return out
+end
+
+-- ---------------------------------------------------------------- QUESTTRAIL'S GOLDEN PATH, READ BACK (b-qtrail-golden)
+-- The user (test55): "When using QuestTrail it should show the actual trail like it normally does on our map module instead of our
+-- arrow and dots." QuestTrail keeps its path private; it draws it on the Minimap as Line regions (QuestTrail_GoldenPath.lua
+-- GP.DrawMinimap: an unnamed Frame on Minimap, f:CreateLine with its Media\line_arrow.png, SetStartPoint / SetEndPoint("CENTER", f, x, y)
+-- in minimap pixels: x east, y north, turned with the minimap when it rotates, clipped to its edge). Read only: the frame found once
+-- (its lines' texture), each SHOWN line's two offsets and its colour's kind (QuestTrail's: gold walked, paler shared, palest straight).
+-- -> {w = the minimap's width (px), yd = the yards across it at the game's zoom (indoors / outdoors), rot = the facing it turns by
+-- (0 = north up), s = {{x1, y1, x2, y2, k}, ...}} in drawing order (the player outward), at most QTGP.MAX; nil = none.
+-- (The minimap is hidden by alpha, WC.hideMinimap, so it stays IsVisible and QuestTrail keeps drawing.)
+WC.QTGP = { MAX = 120,
+            YD = { indoor = { [0] = 300, 240, 180, 120, 80, 50 }, outdoor = { [0] = 466 + 2 / 3, 400, 333 + 1 / 3, 266 + 2 / 3, 200, 133 + 1 / 3 } } }
+function WC.qtrailGpFrame()
+    local G, mm = WC.QTGP, _G.Minimap
+    if type(mm) ~= "table" or type(mm.GetChildren) ~= "function" then return nil end
+    if G.frame and G.frame.GetParent and G.frame:GetParent() == mm then return G.frame end
+    G.frame = nil
+    for _, f in ipairs({ mm:GetChildren() }) do
+        if type(f) == "table" and type(f.GetRegions) == "function" and not (f.GetName and f:GetName()) then
+            for _, r in ipairs({ f:GetRegions() }) do
+                if type(r) == "table" and r.GetObjectType and r:GetObjectType() == "Line" then
+                    local okT, t = pcall(r.GetTexture, r)
+                    t = okT and type(t) == "string" and t:lower() or ""
+                    if t:find("questtrail", 1, true) and t:find("line_arrow", 1, true) then G.frame = f; return f end
+                    break
+                end
+            end
+        end
+    end
+    return nil
+end
+function WC.qtrailGp()
+    local G, mm = WC.QTGP, _G.Minimap
+    local f = WC.qtrailGpFrame()
+    if not f then return nil end
+    local s = {}
+    local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
+    for _, r in ipairs({ f:GetRegions() }) do
+        if #s >= G.MAX then break end
+        if type(r) == "table" and r.GetObjectType and r:GetObjectType() == "Line" and r:IsShown() then
+            local ok1, _, _, x1, y1 = pcall(r.GetStartPoint, r)
+            local ok2, _, _, x2, y2 = pcall(r.GetEndPoint, r)
+            if ok1 and ok2 and type(x1) == "number" and type(y1) == "number" and type(x2) == "number" and type(y2) == "number"
+                and WC.isPlain(x1) and WC.isPlain(y1) and WC.isPlain(x2) and WC.isPlain(y2) then
+                local okC, _, _, cb = pcall(r.GetVertexColor, r)
+                local k = 0
+                if okC and type(cb) == "number" and WC.isPlain(cb) then k = (cb < 0.2) and 0 or ((cb < 0.55) and 1 or 2) end
+                s[#s + 1] = { r1(x1), r1(y1), r1(x2), r1(y2), k }
+            end
+        end
+    end
+    if #s == 0 then return nil end
+    local okZ, zoom = pcall(mm.GetZoom, mm)
+    zoom = (okZ and type(zoom) == "number" and WC.isPlain(zoom)) and zoom or 0
+    local okI, ind = pcall(function() return IsIndoors and IsIndoors() end)
+    local yd = ((okI and ind) and G.YD.indoor or G.YD.outdoor)[zoom] or 466
+    local okR, rot = pcall(function() return GetCVarBool and GetCVarBool("rotateMinimap") end)
+    local facing = 0
+    if okR and rot then local okF, fa = pcall(GetPlayerFacing); if okF and type(fa) == "number" and WC.isPlain(fa) then facing = fa end end
+    local okW, w = pcall(mm.GetWidth, mm)
+    return { w = (okW and type(w) == "number" and WC.isPlain(w)) and r1(w) or 140, yd = r1(yd), rot = math.floor(facing * 1000 + 0.5) / 1000, s = s }
 end
 -- the API's path for the full map document (only when the API gives one)
 function WC.qtrailPath()
