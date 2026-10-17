@@ -14,8 +14,8 @@ class SettingsTabsTest {
 
     /** 1.0.9 Add-ons: every third-party add-on has its block there, its rows its own (title, modules, options) */
     @Test fun addOnsHaveTheirOwnTab() {
-        assertEquals(listOf(B.ADDON_SPOKEN), SettingsTabs.blocks(T.ADDONS))
-        assertEquals(listOf(B.ADDON_SPOKEN), SettingsTabs.viewBlocks(T.ADDONS))
+        assertEquals(listOf(B.ADDON_SPOKEN, B.ADDON_POLESTAR, B.ADDON_QUESTTRAIL), SettingsTabs.blocks(T.ADDONS))
+        assertEquals(listOf(B.ADDON_SPOKEN, B.ADDON_POLESTAR, B.ADDON_QUESTTRAIL), SettingsTabs.viewBlocks(T.ADDONS))
         for (a in ThirdPartyAddons.ALL) assertTrue(a.title, SettingsTabs.Block.values().any { SettingsTabs.addonOf(it) == a })
         assertEquals(listOf("Spoken", "Spoken: Quests", "Spoken: Zones", "Spoken: Books", "Stop speech on B, Decline or close",
             "Stop speech on Accept"), B.ADDON_SPOKEN.rows)

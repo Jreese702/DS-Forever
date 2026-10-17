@@ -205,7 +205,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             .filter { !it.isEmpty }.map { RectF(it) }
 
     /** the Add-ons tab's controls, in reading order (each module's box, then each option's two segments) */
-    private fun addonFocus(): List<RectF> = addonModuleBoxes.values.toList() + addonOptionSegs.values.flatMap { it.toList() }
+    private fun addonFocus(): List<RectF> = listOf(addonRestart) + addonCoreBtn.values.toList() + addonModuleBoxes.values.toList() +
+        addonOptionSegs.values.flatMap { it.toList() }
 
     /** the rows as last drawn, with their words (the "What it does" panel follows the row under the cursor or a touch) */
     private val rowHits = ArrayList<Pair<RectF, String>>()
@@ -216,7 +217,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** every hit box empty: a block not drawn on this tab presses nothing */
     private fun clearBoxes() {
         rowHits.clear()
-        addonModuleBoxes.clear(); addonOptionSegs.clear()
+        addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
@@ -728,46 +729,111 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      */
     private fun drawAddon(c: Canvas, top: Float, a: ThirdPartyAddons.Addon): Float {
         var y = top
-        val any = ThirdPartyAddons.anyOn(a)
-        // "About": the block's heading already names it; what it is, by whom, its licence; on the right the version pinned for it
-        row(c, y, "About", "${a.what}. By ${a.by}, ${a.license}.", enabled = true) { box ->
-            val words = if (any) "${a.version}: installs with the game closed" else "Not installed"
-            pValue.color = if (any) Theme.text else Theme.dim
-            pValue.textAlign = Paint.Align.RIGHT
-            c.drawText(words, box.right - 22f, box.centerY() + 11f, pValue)
-            pValue.textAlign = Paint.Align.CENTER
-            RectF(box.right - 22f - pValue.measureText(words), box.top, box.right - 22f, box.top)   // no hit: words only
+        val core = ThirdPartyAddons.status(a, "core")
+        val installed = ThirdPartyAddons.coreInstalled(a)
+        val wanted = ThirdPartyAddons.coreWanted(a)
+        if (core.kind == ThirdPartyAddons.Kind.DOWNLOADING || core.kind == ThirdPartyAddons.Kind.WAITING_WIFI) postInvalidateDelayed(1000)
+        // ---- the add-on's own row: what it is; Install / Uninstall (the user: "an option here to install it in the first place"), or
+        // for one another setting switches (Polestar), where that is; its progress while it comes
+        val who = "${a.what}. By ${a.by}, ${a.license}."
+        val sub = when {
+            core.kind == ThirdPartyAddons.Kind.NONE && a.enabledBy != null -> "$who Off: chosen in ${a.enabledWhere}."
+            core.kind == ThirdPartyAddons.Kind.NONE -> "$who ${ThirdPartyAddons.size(a.core.mb)}."
+            core.kind == ThirdPartyAddons.Kind.INSTALLED -> "$who Version ${a.version}."
+            else -> core.line
         }
+        val label = when { a.enabledBy != null -> a.title; installed || wanted -> a.title; else -> "Install ${a.title}" }
+        val btn = row(c, y, label, sub, enabled = true) { box ->
+            val bw = 260f
+            val r = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            val armedOut = addonArmed == "${a.id}.uninstall" && SystemClock.elapsedRealtime() - addonArmedAt < ARM_MS
+            when {
+                a.enabledBy != null -> {
+                    // switched by another setting: no button here, only where it is and what it is doing
+                    val words = when (core.kind) { ThirdPartyAddons.Kind.INSTALLED -> "Version ${a.version}"; ThirdPartyAddons.Kind.NONE -> "Off"; ThirdPartyAddons.Kind.DOWNLOADED -> "Downloaded"
+                        ThirdPartyAddons.Kind.DOWNLOADING -> if (core.pct >= 0) "${core.pct}%" else "Downloading"; else -> "" }
+                    pValue.color = if (core.kind == ThirdPartyAddons.Kind.INSTALLED) Theme.text else Theme.dim
+                    pValue.textAlign = Paint.Align.RIGHT; c.drawText(words, box.right - 22f, box.centerY() + 11f, pValue)
+                    pValue.textAlign = Paint.Align.CENTER
+                    RectF(box.right - 22f - pValue.measureText(words), box.top, box.right - 22f - pValue.measureText(words), box.top)
+                }
+                // something of it is downloaded and waits for the game to start again: the launcher's own Restart, right here
+                a.pkgs().any { (k, _) -> ThirdPartyAddons.status(a, k).kind == ThirdPartyAddons.Kind.DOWNLOADED } && gameRunning() -> {
+                    UiKit.button(c, r, "Restart game", UiKit.Button.UP); addonRestart = r; RectF(r.left, r.top, r.left, r.top)
+                }
+                core.kind == ThirdPartyAddons.Kind.DOWNLOADING -> { if (core.pct >= 0) progressBar(c, r, core.pct); RectF(r.left, r.top, r.left, r.top) }
+                installed && wanted -> { UiKit.button(c, r, if (armedOut) "Tap again" else "Uninstall", if (armedOut) UiKit.Button.DOWN else UiKit.Button.UP); r }
+                installed -> { UiKit.button(c, r, "Keep it", UiKit.Button.UP); r }                 // moving out at the next start
+                wanted -> { UiKit.button(c, r, "Cancel", UiKit.Button.UP); r }                     // waiting: Wi-Fi, room, a failure
+                else -> { UiKit.button(c, r, "Install", UiKit.Button.UP); r }
+            }
+        }
+        addonCoreBtn[a.id] = btn
+        // ---- its modules: only once it is installed (the user: "the module check boxes ... only once Spoken is installed")
         for (m in a.modules) {
             y += ROW_H + 10f
             val on = ThirdPartyAddons.moduleOn(a, m)
-            val sub = if (on) "${m.what}. Downloads at the next start with the game closed."
-                else "${m.what}. ${ThirdPartyAddons.size(ThirdPartyAddons.downloadMb(a, m))} download."
-            val b = row(c, y, m.title, sub, enabled = true) { box ->
+            val st = ThirdPartyAddons.status(a, m.id)
+            if (st.kind == ThirdPartyAddons.Kind.DOWNLOADING || st.kind == ThirdPartyAddons.Kind.WAITING_WIFI) postInvalidateDelayed(1000)
+            val line = when {
+                !installed -> "${m.what}. Install ${a.title} first."
+                on -> "${m.what}. ${st.line}."
+                else -> "${m.what}. ${ThirdPartyAddons.size(m.pkg.mb)} download."
+            }
+            val box = row(c, y, m.title, line, enabled = installed) { box ->
                 val r = RectF(box.right - 16f - 96f, box.centerY() - 40f, box.right - 16f, box.centerY() + 40f)
-                toggle(c, r, on)
+                if (installed && on && st.kind == ThirdPartyAddons.Kind.DOWNLOADING && st.pct >= 0) progressBar(c, RectF(r.left - 220f, r.top + 12f, r.left - 20f, r.bottom - 12f), st.pct)
+                UiKit.check(c, r.right - 38f, r.centerY(), 76f, on, enabled = installed)
                 r
             }
-            addonModuleBoxes["${a.id}.${m.id}"] = b
+            if (installed) addonModuleBoxes["${a.id}.${m.id}"] = box
         }
         val segW = segW()
         for (o in a.options) {
             y += ROW_H + 10f
             val on = ThirdPartyAddons.option(a, o)
             val segs = Array(2) { RectF() }
-            row(c, y, o.title, if (on) o.on else o.off, enabled = any) { box ->
+            row(c, y, o.title, if (installed) (if (on) o.on else o.off) else "Install ${a.title} first.", enabled = installed) { box ->
                 val r = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
                 segmented(c, r, listOf("On", "Off"), if (on) 0 else 1, segs)
                 r
             }
-            addonOptionSegs["${a.id}.${o.id}"] = segs
+            if (installed) addonOptionSegs["${a.id}.${o.id}"] = segs
         }
         return y + ROW_H
     }
 
+    /** a download's progress, in the game's own bar art when the kit has it: [pct] 0..100 (< 0 = waiting) */
+    private fun progressBar(c: Canvas, r: RectF, pct: Int) {
+        pFill.color = Theme.ink; c.drawRoundRect(r, 6f, 6f, pFill)
+        val k = (pct.coerceIn(0, 100)) / 100f
+        pFill.color = Theme.gold
+        if (k > 0f) c.drawRoundRect(RectF(r.left + 3f, r.top + 3f, r.left + 3f + (r.width() - 6f) * k, r.bottom - 3f), 4f, 4f, pFill)
+        pStroke.color = Theme.bronze; c.drawRoundRect(r, 6f, 6f, pStroke)
+        pValue.color = Theme.text
+        c.drawText(if (pct >= 0) "$pct%" else "...", r.centerX(), r.centerY() + 10f, pValue)
+    }
+
+    private val addonCoreBtn = HashMap<String, RectF>()
+    private var addonRestart = RectF()
+    private var addonArmed: String? = null
+    private var addonArmedAt = 0L
+
     /** a press on an Add-ons control; true = it was one */
     private fun addonTap(x: Float, y: Float): Boolean {
+        if (!addonRestart.isEmpty && addonRestart.contains(x, y)) { onRestart(); return true }
         for (a in ThirdPartyAddons.ALL) {
+            addonCoreBtn[a.id]?.takeIf { !it.isEmpty && it.contains(x, y) }?.let {
+                val installed = ThirdPartyAddons.coreInstalled(a)
+                val wanted = ThirdPartyAddons.coreWanted(a)
+                if (installed && wanted) {
+                    // Uninstall: twice, as Reload (its folders go to the backup at the next start, never deleted)
+                    val now = SystemClock.elapsedRealtime()
+                    if (addonArmed == "${a.id}.uninstall" && now - addonArmedAt < ARM_MS) { addonArmed = null; ThirdPartyAddons.setCore(a, false) }
+                    else { addonArmed = "${a.id}.uninstall"; addonArmedAt = now; postDelayed({ invalidate() }, ARM_MS + 50) }
+                } else ThirdPartyAddons.setCore(a, !wanted)
+                return true
+            }
             for (m in a.modules) if (addonModuleBoxes["${a.id}.${m.id}"]?.contains(x, y) == true) {
                 ThirdPartyAddons.setModule(a, m, !ThirdPartyAddons.moduleOn(a, m)); return true
             }

@@ -413,6 +413,8 @@ fun WoWForeverScreen(
                 runCatching {
                     // the opt-in dependencies (Polestar) follow the companion's own setting: read it here too
                     com.jrees.wowcompanion.Settings.init(context)
+                    // the third-party add-ons the player opted into (Settings > Add-ons; Polestar), applied by the same step
+                    com.jrees.wowcompanion.ThirdPartyAddons.init(context)
                     com.jrees.wowcompanion.DependencyAddons.run(WowClientDownloader.flavorDir(File(gamePath)),
                         File(context.cacheDir, "dsforever"), File(context.filesDir, "dsforever/dependencies.json"))
                 }.getOrElse { "QuestieDB skipped (${it.message})" }

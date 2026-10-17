@@ -32,11 +32,8 @@ object DependencyAddons {
 
     val DEPS = listOf(
         Dep("QuestieDB", "Questie/QuestieDB", "QuestieDB-Forever.zip"),
-        // POLESTAR (the user, 2026-10-17: "Quest tracking: ... Polestar"; "DS Forever downloads it from its GitHub release"): GPL-3,
-        // never bundled - its own release, verified (GitHub's digest, else its SHA256SUMS), only while the setting is Polestar.
-        // The package holds Polestar and Polestar_Nav (Shortest Path Forever's router) side by side; the recorder zip is not taken.
-        Dep("Polestar", "fitzforge/polestar", "Polestar-<version>.zip", assetRegex = Regex("""^Polestar-v?\d[\w.\-]*\.zip$"""),
-            multi = true, optIn = true),
+        // POLESTAR moved to ThirdPartyAddons (Map's word, 1.0.9): pinned there (v0.2.5, its size and sha256), switched by Map's
+        // "Quest tracking: Polestar", installed by the same start step (ThirdPartyAddons.applyAtStart, from run below)
     )
 
     /** which dependencies are wanted now: the always-on ones, and an opt-in one only while the user has chosen it */
@@ -48,8 +45,8 @@ object DependencyAddons {
     private const val MAX_ZIP = 64L * 1024 * 1024
     private const val MAX_FILES = 5_000
     private const val MAX_UNPACKED = 512L * 1024 * 1024
-    private const val BACKUP = "AddOns-backup-dsforever"
-    private const val STAGING = "AddOns-staging-dsforever"
+    internal const val BACKUP = "AddOns-backup-dsforever"
+    internal const val STAGING = "AddOns-staging-dsforever"
 
     /** where the API lives (the tests point it at a local server) */
     @Volatile var api = "https://api.github.com"
@@ -78,9 +75,12 @@ object DependencyAddons {
         for (r in results) out.put(r.dep.folder, JSONObject().put("at", now).put("line", r.line)
             .put("installed", installedVersion(File(addons, r.dep.folder)) ?: "").put("pending", r.line.contains("next start")))
         runCatching { state.parentFile?.mkdirs(); state.writeText(out.toString()) }
-        return results.joinToString("; ") { it.line }
+        // the third-party add-ons the player opted into (Settings > Add-ons, Map's Polestar): in / out with the game closed
+        val third = runCatching { ThirdPartyAddons.applyAtStart(flavorRoot) }.getOrElse { "add-ons skipped (${reason(it)})" }
+        return (results.map { it.line } + listOfNotNull(third.ifEmpty { null })).joinToString("; ")
     }
 
+    internal fun reasonOf(t: Throwable): String = reason(t)
     private fun reason(t: Throwable): String = when (t) {
         is java.net.UnknownHostException, is java.net.ConnectException, is java.net.SocketTimeoutException -> "offline"
         else -> t.message ?: t.javaClass.simpleName
@@ -182,7 +182,7 @@ object DependencyAddons {
     }
 
     /** the zip into [to]: files at its top level, or all under one "<folder>/" (both packagings) */
-    internal fun unpack(zip: File, to: File, folder: String) {
+    internal fun unpack(zip: File, to: File, folder: String, maxFiles: Int = MAX_FILES, maxBytes: Long = MAX_UNPACKED) {
         to.mkdirs()
         val root = to.canonicalFile
         var files = 0; var bytes = 0L
@@ -199,14 +199,14 @@ object DependencyAddons {
                 val out = File(to, name).canonicalFile
                 require(out.path.startsWith(root.path + File.separator)) { "the package has a bad path ($name)" }
                 if (e.isDirectory) { out.mkdirs(); continue }
-                require(++files <= MAX_FILES) { "the package has too many files" }
+                require(++files <= maxFiles) { "the package has too many files" }
                 out.parentFile?.mkdirs()
                 out.outputStream().use { o ->
                     while (true) {
                         val n = z.read(buf)              // a CRC mismatch throws here (ZipException)
                         if (n < 0) break
                         bytes += n
-                        require(bytes <= MAX_UNPACKED) { "the package unpacks too large" }
+                        require(bytes <= maxBytes) { "the package unpacks too large" }
                         o.write(buf, 0, n)
                     }
                 }
@@ -236,13 +236,15 @@ object DependencyAddons {
         return 0
     }
 
-    private fun connect(url: String): HttpURLConnection {
+    /** [from] = resume at this byte (an HTTP Range; the answer is 206, or 200 when the host sends it whole) */
+    internal fun connect(url: String, from: Long? = null): HttpURLConnection {
         var u = URL(url)
         repeat(5) {
             val c = (u.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 15_000; readTimeout = 30_000; instanceFollowRedirects = false
                 setRequestProperty("User-Agent", "DS-Forever")
                 setRequestProperty("Accept", "application/vnd.github+json, application/octet-stream")
+                if (from != null) setRequestProperty("Range", "bytes=$from-")
             }
             // GitHub sends assets through a redirect to its file host; HTTPS only after the first hop
             if (c.responseCode in 300..399) {
@@ -252,12 +254,13 @@ object DependencyAddons {
                 if (u.protocol != "https" && !url.startsWith("http://127.0.0.1")) throw IOException("a redirect off HTTPS")
                 return@repeat
             }
-            if (c.responseCode != 200) { c.disconnect(); throw IOException("HTTP ${c.responseCode}") }
+            if (c.responseCode != 200 && !(from != null && c.responseCode == 206)) { c.disconnect(); throw IOException("HTTP ${c.responseCode}") }
             return c
         }
         throw IOException("too many redirects")
     }
 
+    internal fun getText(url: String): String = get(url).toString(Charsets.UTF_8)
     private fun get(url: String): ByteArray = connect(url).let { c -> try { c.inputStream.use { it.readBytes() } } finally { c.disconnect() } }
 
     private fun download(url: String, to: File, size: Long) {
@@ -279,7 +282,7 @@ object DependencyAddons {
         } finally { c.disconnect() }
     }
 
-    private fun sha256(f: File): String {
+    internal fun sha256(f: File): String {
         val md = MessageDigest.getInstance("SHA-256")
         f.inputStream().use { i -> val buf = ByteArray(65536); while (true) { val n = i.read(buf); if (n < 0) break; md.update(buf, 0, n) } }
         return md.digest().joinToString("") { "%02x".format(it.toInt() and 255) }

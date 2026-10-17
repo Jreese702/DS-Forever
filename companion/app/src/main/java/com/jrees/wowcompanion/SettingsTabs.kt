@@ -36,6 +36,8 @@ object SettingsTabs {
         CHAT(Tab.ROOMS, "Chat", listOf("Message input")),
         // 1.0.9 (the user, on Spoken: "make an addon section of our settings"): one block per third-party add-on (ThirdPartyAddons)
         ADDON_SPOKEN(Tab.ADDONS, "Spoken", ThirdPartyAddons.SPOKEN.rowWords()),
+        ADDON_POLESTAR(Tab.ADDONS, "Polestar", ThirdPartyAddons.POLESTAR.rowWords()),
+        ADDON_QUESTTRAIL(Tab.ADDONS, "QuestTrail", ThirdPartyAddons.QUESTTRAIL.rowWords()),
         FRAMES(Tab.PERFORMANCE, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game")),
         INDOOR(Tab.PERFORMANCE, "Indoor maps", listOf("Build in the background", "Progress")),
@@ -46,10 +48,12 @@ object SettingsTabs {
     /** the blocks SettingsView draws itself (the others are Home's section and the two GameUiSection parts) */
     val VIEW_BLOCKS = setOf(Block.GAME, Block.MAP, Block.INDOOR, Block.CONTROLLER, Block.PAUSE_WHEEL, Block.ITEM_WHEEL, Block.SPELL_WHEEL,
         Block.CLASS_LEFT, Block.CLASS_RIGHT,
-        Block.CHAT, Block.FRAMES, Block.ADDON_SPOKEN)
+        Block.CHAT, Block.FRAMES, Block.ADDON_SPOKEN, Block.ADDON_POLESTAR, Block.ADDON_QUESTTRAIL)
 
     /** the third-party add-on a block draws (Settings > Add-ons), or null */
-    fun addonOf(b: Block): ThirdPartyAddons.Addon? = when (b) { Block.ADDON_SPOKEN -> ThirdPartyAddons.SPOKEN; else -> null }
+    fun addonOf(b: Block): ThirdPartyAddons.Addon? = when (b) {
+        Block.ADDON_SPOKEN -> ThirdPartyAddons.SPOKEN; Block.ADDON_POLESTAR -> ThirdPartyAddons.POLESTAR
+        Block.ADDON_QUESTTRAIL -> ThirdPartyAddons.QUESTTRAIL; else -> null }
 
     fun blocks(tab: Tab): List<Block> = Block.values().filter { it.tab == tab }
     fun viewBlocks(tab: Tab): List<Block> = blocks(tab).filter { it in VIEW_BLOCKS }
