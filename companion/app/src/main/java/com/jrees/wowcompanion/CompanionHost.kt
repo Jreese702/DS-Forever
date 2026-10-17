@@ -498,6 +498,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the cursor line's ways out of a map (b-route-city-exits): the maps' world rectangles and names, the game's own
         mapView.worldOf = { id -> worldMapRoom.model.world(id) }
         mapView.mapName = { id -> worldMapRoom.model.name(id) }
+        mapView.mapType = { id -> worldMapRoom.model.maps[id]?.type }                  // test42: ways only between zone / city maps
         mapView.zoneAt = { c, wx, wy -> worldMapRoom.model.zoneAt(c, wx, wy)?.name }       // a ride's far dock: "Ride to <zone>"
         mapView.onProbeOptions = { bits -> worldMapRoom.sendProbeOptions(bits) }   // Map: the minimap probe's options to the add-on
         worldMapRoom.onLeave = { show(Room.HOME) }

@@ -2632,6 +2632,7 @@ class MapView(context: Context) : View(context) {
     // ---- THE GAME'S BOATS AND ZEPPELINS (b-route-rides): the art harvest's transports.json (TransportRoutes, from the game's own
     // TaxiPathNode table on this device), read again when the harvest rewrites it
     var ridesFile: () -> java.io.File = { ArtHarvest.file("transports.json") }
+    private val RIDE_NEAR = 0.25
     var zoneAt: ((Int, Double, Double) -> String?)? = null
     private var rides: List<TransportRoutes.Ride> = emptyList()
     private var ridesStamp = -1L
@@ -2649,7 +2650,12 @@ class MapView(context: Context) : View(context) {
     /** the rides from a dock on this map's continent, as ways out of [mapId]: walk to the dock, ride, on from the far dock (on this
      *  continent: its place on this map; to [spots] on another: the yards from it to the nearest) */
     private fun rideWays(mapId: Int, r: PoiStore.Rect, spots: List<DoubleArray>): List<CityExits.Way> =
-        TransportRoutes.hops(rides(), r.continent, spots).filter { it.tailYd.isNaN() == spots.isEmpty() }.map { h ->
+        TransportRoutes.hops(rides(), r.continent, spots).filter { it.tailYd.isNaN() == spots.isEmpty() }.filter { h ->
+            // test42: a ride is a way out of THIS map only from a dock on it or just past its edge (a quarter of the map), not from
+            // any dock on the continent (Elwynn offered Hillsbrad's)
+            val at = here(r, h.ride.a[0].toDouble(), h.ride.a[1].toDouble())
+            at[0] in -RIDE_NEAR..(1.0 + RIDE_NEAR) && at[1] in -RIDE_NEAR..(1.0 + RIDE_NEAR)
+        }.map { h ->
             val rd = h.ride
             val at = here(r, rd.a[0].toDouble(), rd.a[1].toDouble())
             val end = if (h.tailYd.isNaN()) here(r, rd.b[0].toDouble(), rd.b[1].toDouble()) else at
@@ -2661,8 +2667,25 @@ class MapView(context: Context) : View(context) {
 
     private fun here(r: PoiStore.Rect, wx: Double, wy: Double) = doubleArrayOf(r.nx(wy), r.ny(wx))
 
+    /** a map's type (the game's UiMap type: 0 cosmic, 1 world, 2 continent, 3 zone, 4 dungeon, 5 micro, 6 orphan), null = unknown */
+    var mapType: ((Int) -> Int?)? = null
+    /** a zone, a city or smaller: never a continent / world / cosmic map (by the game's map data; these four ids while it is not read) */
+    fun isZoneMap(id: Int): Boolean = id != 0 && (mapType?.invoke(id)?.let { it >= 3 } ?: (id !in NOT_ZONES))
+    private val NOT_ZONES = setOf(946, 947, 1414, 1415)          // the classic cosmic, Azeroth, Kalimdor, Eastern Kingdoms maps
+    private var purgedWays = false
+    /** once a run: ways learned from or into a continent (test42) go from the device's store */
+    private fun purgeContinentWays() {
+        if (purgedWays || mapType == null) return
+        val l = exitLearner() ?: return
+        purgedWays = true
+        val prefs = runCatching { context.getSharedPreferences("cityexits", Context.MODE_PRIVATE) }.getOrNull() ?: return
+        val maps = prefs.all.keys.mapNotNull { it.removePrefix("x:").toIntOrNull() }
+        val gone = l.purge(maps) { !isZoneMap(it) }
+        if (gone > 0) { android.util.Log.i("WCMAP", "route: $gone learned ways from / to a continent map dropped"); routeEpoch++ }
+    }
+
     /** the crossings this device has learned out of [mapId] (any map, on any continent: CityExits.Learner) */
-    private fun learnedWays(mapId: Int, r: PoiStore.Rect): List<CityExits.Way> = (exitLearner()?.of(mapId) ?: emptyList()).mapNotNull { e ->
+    private fun learnedWays(mapId: Int, r: PoiStore.Rect): List<CityExits.Way> = (exitLearner()?.of(mapId) ?: emptyList()).filter { isZoneMap(it.toMap) }.mapNotNull { e ->
         val at = here(r, e.wx, e.wy)
         val end = if (e.transport) (if (!e.toWx.isNaN()) here(r, e.toWx, e.toWy) else null) else at
         end?.let { CityExits.Way(e, at[0], at[1], it[0], it[1]) }
@@ -2704,6 +2727,9 @@ class MapView(context: Context) : View(context) {
 
     fun learnExit(m: JSONObject) {
         val mapId = m.optInt("mapID", 0)
+        // test42: only zone and city maps teach ways (a continent / world map as the player's map is the world map open or a load)
+        if (!isZoneMap(mapId)) return
+        purgeContinentWays()
         // the continent: the game's own (UnitPosition's instance id, Map.lua `cont`), else the map rectangle's
         val cont = if (m.has("cont")) m.optInt("cont", -1) else m.optJSONObject("rect")?.optInt("c", -1) ?: -1
         val e = exitLearner()?.onDoc(mapId, cont, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN), m.optInt("onTaxi", 0) == 1,
@@ -3633,7 +3659,7 @@ class MapView(context: Context) : View(context) {
     private var cameFrom = 0
     private val routeKeep = HashMap<Int, String>()
     private fun noteMapChange(id: Int) {
-        if (id == 0 || id == mapNow) return
+        if (id == 0 || id == mapNow || !isZoneMap(id)) return       // test42: never a continent as "came from"
         if (mapNow != 0) cameFrom = mapNow
         mapNow = id
         routeKeep.clear()
