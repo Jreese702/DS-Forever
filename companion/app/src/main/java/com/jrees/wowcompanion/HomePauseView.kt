@@ -90,11 +90,12 @@ class HomePauseView(
     init { visibility = GONE; isClickable = true }
 
     /** barcmd "pause" (Spells' router: Start with nothing holding): open; a second one while open closes */
-    fun toggle() { if (isOpen && closingFrom < 0f) close() else if (!isOpen) open() }
+    fun toggle() { if (isOpen && closingFrom < 0f) close("Start (router)") else if (!isOpen) open() }
 
     /** [fromT]: a reverse still running when Start came again: the open goes on from where the panels are, no jump */
     fun open(fromT: Float = 0f, byStart: Boolean = true) {
         if (isOpen) return
+        Log.i("WCLOG", "pause: OPEN (${if (byStart) "Start" else "the bar's swirl"})")
         UiKit.pauseBarsBottom = barsBottom?.invoke() ?: 0f                  // f-pause-bars: over Home, its controller stays
         // the rooms' bar's top here (at rest: the bar no longer drops), for the D-pad bar that covers it whole
         UiKit.pauseStripTop = run {
@@ -134,8 +135,10 @@ class HomePauseView(
      * away- not taking seconds to think about it"): no fold, no hub press; Home's panels / the room snap back in the same frame; the
      * free (and its retries) follow invisibly. Every close: B, Start, the hub, a pick.
      */
-    fun close() {
+    fun close(why: String = "?") {
         if (!isOpen || closingFrom >= 0f) return
+        // test26 (tracking: "add a WCLOG line for every pause-look state change"): CLOSING, and what closed it
+        Log.i("WCLOG", "pause: CLOSING ($why)")
         // f-one-disc: the wheel's hub glides back down onto the bar (none from the Game Menu: its stage has no hub)
         if (gm == null && isShown) glideAt = SystemClock.uptimeMillis()
         gm = null; gmPressed = -1
@@ -151,7 +154,7 @@ class HomePauseView(
         // blue"): the close plays NO press on the hub - no sink, no gold flash - the hub glides home turning straight from red to the bar's
         // blue ([pressedAt] stays 0). A finger held on the hub still shows its press while it is held (hubHeldAt), and lets go at once
         hubPressAt = 0L; pressedAt = 0L; hubHeldAt = 0L
-        close()
+        close("B / the hub")
     }
 
     /** the app leaves the screen: gone at once, the hold freed */
@@ -160,6 +163,7 @@ class HomePauseView(
         guestTap(GuestPad.cells(questsPad(), GUEST, hold = false))
         after = null
         pressedAt = 0L; glideAt = 0L
+        Log.i("WCLOG", "pause: CLOSED (shut: the app left the screen)")
         done()
     }
 
@@ -252,7 +256,7 @@ class HomePauseView(
         m.update(msg)
         Log.i(TAG, "pause: game menu doc ${msg.optString("why")}" + (m.count?.let { " ${it.kind} ${it.left}" } ?: "") +
             (msg.optString("ended").takeIf { it.isNotEmpty() }?.let { " ended $it" } ?: ""))
-        if (msg.optString("ended") == "gone") close()            // the log out / exit went through: the world is closing
+        if (msg.optString("ended") == "gone") close("the game logged out")            // the log out / exit went through: the world is closing
         invalidate()
     }
 
@@ -295,7 +299,7 @@ class HomePauseView(
         if (!seeded) {
             seeded = true; held = h
             startHeld = PadInput.isHeld(h, PadInput.SLOT_START)
-            if (!startHeld && flow.holdOpen && openByStart && gm == null) close()
+            if (!startHeld && flow.holdOpen && openByStart && gm == null) close("Start let go (Hold)")
             return
         }
         if (startHeld && !PadInput.isHeld(h, PadInput.SLOT_START)) {
@@ -311,7 +315,7 @@ class HomePauseView(
         gm?.let { m ->
             // THE GAME MENU: D-pad up / down move (wrapping), A presses, B returns to the game (on the countdown: B = Cancel, the game's)
             when {
-                pressed(PadInput.SLOT_START) -> close()
+                pressed(PadInput.SLOT_START) -> close("Start")
                 pressed(PadInput.SLOT_FACE_RIGHT) -> gmAct(if (m.count != null) GameMenuModel.Act.Cancel else m.b())
                 pressed(PadInput.SLOT_FACE_BOTTOM) -> gmAct(m.a(SystemClock.uptimeMillis()))
                 pressed(PadInput.SLOT_DPAD_UP) -> m.move(-1)
@@ -320,7 +324,7 @@ class HomePauseView(
             invalidate(); return
         }
         when {
-            pressed(PadInput.SLOT_START) -> { close(); return }
+            pressed(PadInput.SLOT_START) -> { close("Start"); return }
             pressed(PadInput.SLOT_FACE_RIGHT) -> { if (flow.b() == HomePauseModel.Act.Close) pressHub() else invalidate(); return }
             pressed(PadInput.SLOT_RSTICK) -> { flow.cancel(); invalidate() }
             pressed(PadInput.SLOT_FACE_BOTTOM) -> act(flow.a())
@@ -372,7 +376,7 @@ class HomePauseView(
                 }
                 game(cmd, stay = false)
             }
-            HomePauseModel.Kind.ROOM, HomePauseModel.Kind.HOME -> { after = s; close() }
+            HomePauseModel.Kind.ROOM, HomePauseModel.Kind.HOME -> { after = s; close("a room picked") }
             HomePauseModel.Kind.LATER -> say(HomePauseModel.LATER_LINE)
         }
     }
@@ -385,7 +389,7 @@ class HomePauseView(
         Log.i(TAG, "pause: $cmd ${if (sent) "sent" else "NOT sent (no pause row yet?)"}")
         if (!sent) { say("Comes with the next add-on update"); return }
         lastActAt = SystemClock.uptimeMillis()
-        if (!stay) close()
+        if (!stay) close("a pick")
     }
 
     /** the Game Menu on the cleared stage: the last known list at once, Spells' fresh one follows the info tap */
@@ -402,7 +406,7 @@ class HomePauseView(
     private fun gmAct(a: GameMenuModel.Act) {
         when (a) {
             GameMenuModel.Act.None -> {}
-            GameMenuModel.Act.Close -> close()
+            GameMenuModel.Act.Close -> close("Game Menu: B")
             is GameMenuModel.Act.Ask -> {}           // the question shows under the menu (gm.askLine)
             is GameMenuModel.Act.Cell -> {
                 val sent = TapBridge.tap(context, questsPad(), GameMenuModel.ROW, a.item.col) { why -> Log.i(TAG, "pause: game menu tap refused ($why)") }
@@ -410,21 +414,21 @@ class HomePauseView(
                 if (!sent) { say("Comes with the next add-on update"); return }
                 lastActAt = SystemClock.uptimeMillis()
                 // Log Out / Exit stay for the game's countdown (Spells' document); Macros / Edit Mode open the game's own window: go
-                if (a.item.key != "logout" && a.item.key != "quit") close()
+                if (a.item.key != "logout" && a.item.key != "quit") close("Game Menu entry")
             }
             is GameMenuModel.Act.Game -> {
                 // gm3 (the user's pick A): the wheel goes; once the controller is let go, the game's Menu button, then its own button
                 Log.i(TAG, "pause: game menu ${a.item.key} -> the game's own menu (its Menu button)")
                 gameWant = a.item.key; gameMicro = a.micro; gameWantAt = SystemClock.uptimeMillis()
                 menuPending = true
-                close()
+                close("Game Menu: the game's own menu")
                 postDelayed({ menuEscape("no answer to the free in $MENU_ESC_MS ms") }, MENU_ESC_MS)
             }
             is GameMenuModel.Act.Escape -> {
                 // no clean route (the user's "Escape fallback"): the menu folds, the controller goes, the game's own menu opens on top
                 Log.i(TAG, "pause: game menu ${a.item.key} -> the game's own menu (Escape)")
                 menuPending = true
-                close()
+                close("Game Menu: the game's own menu")
                 postDelayed({ menuEscape("no answer to the free in $MENU_ESC_MS ms") }, MENU_ESC_MS)
             }
             GameMenuModel.Act.Cancel -> {
@@ -543,6 +547,7 @@ class HomePauseView(
                 return
             }
             pressedAt = 0L; glideAt = 0L
+            Log.i("WCLOG", "pause: CLOSED (the hub landed on the bar)")
             strip.homeLifted = false
             if (!menuHint()) { visibility = GONE; return }
         }
@@ -620,7 +625,7 @@ class HomePauseView(
                     when {
                         // the countdown: its one Cancel (the exit's "Exit now" is never drawn: no ForceQuit from our side)
                         cnt != null -> if (hit == 0) gmAct(GameMenuModel.Act.Cancel)
-                        hit == UiKit.GAME_MENU_BACK -> close()
+                        hit == UiKit.GAME_MENU_BACK -> close("Game Menu: Back")
                         hit >= 0 -> gmAct(m.a(SystemClock.uptimeMillis(), hit))
                     }
                     invalidate()

@@ -871,12 +871,16 @@ class HomeBGlyph(private val staleMs: Long = 20_000L) {
      * THE GLYPH GOES WITH THE PRESS (RC3, the user 2026-10-09: the B glyph went "after its already returned home"): a room left for
      * Home drops the B at once; documents still naming that room's [holder] say nothing for [MUTE_MS] (the release follows)
      */
-    fun drop(now: Long, holder: String) {
+    fun drop(now: Long, holder: String, muteMs: Long = MUTE_MS) {
         home = false
-        mutedHolder = holder.takeIf { it.isNotEmpty() }; mutedUntil = now + MUTE_MS
+        mutedHolder = holder.takeIf { it.isNotEmpty() }; mutedUntil = now + muteMs
     }
 
-    companion object { const val MUTE_MS = 1_500L }
+    companion object {
+        const val MUTE_MS = 1_500L
+        /** test26: a closed wheel's guest (its free waits for the stick, up to RadialModel's STICK_BACK_MS): its late "home" says nothing */
+        const val WHEEL_MUTE_MS = 5_000L
+    }
 
     /** the Home button shows B at [now] */
     fun shown(now: Long) = home && at >= 0 && now - at < staleMs

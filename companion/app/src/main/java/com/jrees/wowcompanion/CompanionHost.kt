@@ -530,7 +530,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         barSelect.roomNow = { room }        // Select's cursor starts on the room on screen (never on Home: the user's skip-Home rule)
         // the Home button's B follows Home's own state at once (a module full screen shows B; user 15:08)
-        homeView.onStateChanged = { strip.bGoesHome = discShowsB() }
+        homeView.onStateChanged = { discB("Home's state") }
         homeView.onBHome = { strip.homePressed() }
         // Home's controller reader passes each held mask to Interact's pop-up while it shows: its Make Space ring follows the real A
         // press (display only; one getevent). In a room no reader of Home's runs: the ring falls back to Interact's document
@@ -725,6 +725,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         radialView.underRedraw = { homeView.wheelRedraw() }
+        // test26 (the user: "Same thing with the top radial button exactly"): the item / spell wheel shares the pause's guest ("radial"),
+        // so its close is made final the same way: B dropped, the guest's late "home" muted, the disc blue before it shows again
+        radialView.onClosed = {
+            homeView.dropB("pad:radial", HomeBGlyph.WHEEL_MUTE_MS)
+            discB("the wheel closed")
+            strip.snapRed()
+        }
         // b-radial-exclusive (1.0.9, the user: "while another overlay is open, a player should not be able to acutally open the class
         // radials"): one overlay at a time
         // b-class-takeover: the class wheel holds the controller (the guest "class") and casts through the "classr" row
@@ -749,6 +756,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the open's REVERSE after the wheel has gone (the user 2026-10-09: "it needs to have a reverse animation for when the B button
         // gets pressed"): the same quick time; input is already the room's / Home's (the wheel is gone in the B frame)
         pauseView.onClose = { from ->
+            // test26 (the user: "Now it changes blue and still goes back to red with the b button at the bottom before transitioning back
+            // to blue"): the pause's own guest made B lead Home, so the bar's disc (hidden under the hub) still wore its red B look and
+            // played it out after the hub landed. The close is final: that B is dropped now, the guest's late "home" says nothing for
+            // WHEEL_MUTE_MS, and the disc is plain blue before it shows again (no red-to-blue flow); only Start brings the pause back
+            homeView.dropB("pad:radial", HomeBGlyph.WHEEL_MUTE_MS)
+            discB("the pause closed")
+            strip.snapRed()
             pauseBack?.cancel()
             if (from <= 0f) pauseSlideAll(0f)
             else pauseBack = android.animation.ValueAnimator.ofFloat(from, 0f).apply {
@@ -878,7 +892,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 GameUi.tick()
                 homeView.tick()
                 roomCue.tick()
-                strip.bGoesHome = discShowsB()      // on Home a B with no fresh word goes back to the house
+                discB("no fresh word")      // on Home a B with no fresh word goes back to the house
                 ui.postDelayed(this, 1000)
             }
         })
@@ -1001,7 +1015,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // half the rooms' onLeave went Home without it
         // (RC3: `was`, not `room` - room is already r here, so RC2's check never fired) and the B glyph goes in the same frame
         if (r == Room.HOME && was != Room.HOME) { strip.homePressed(); homeView.dropB(capHolder) }
-        strip.bGoesHome = discShowsB()       // the disc follows the room at once (red B in every room)
+        discB("room ${r.name}")       // the disc follows the room at once (red B in every room)
         val v: View = when (r) {
             Room.HOME -> homeView
             Room.MAP -> worldMapRoom; Room.QUESTS -> questsView
@@ -1162,6 +1176,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** the Home disc shows B in every room (HomeDisc: no blue flash on a room-to-room switch); on Home it follows Home's own state */
     private fun discShowsB(): Boolean = HomeDisc.showsB(room != Room.HOME, homeView.bGoesHome())
+    /** the bar disc's red B look follows [discShowsB]; each CHANGE is logged with its cause (test26: tracking reads the event order) */
+    private fun discB(why: String) {
+        val v = discShowsB()
+        if (v != strip.bGoesHome) Log.i("WCLOG", "home disc: B look ${if (v) "ON" else "off"} ($why)")
+        strip.bGoesHome = v
+    }
 
     /**
      * A GUEST NEVER KEEPS THE CONTROLLER FOR A ROOM THAT IS NOT ON SCREEN (2026-09-30 20:11: a release tap that never reached the game
@@ -1685,7 +1705,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 }
                 // the Home button shows B while B would return Home (user 09:23; interact's bnext, UI Art's Strip)
                 homeView.noteB(msg, current)
-                strip.bGoesHome = discShowsB()
+                discB("doc holder=${msg.optString("holder", "-")} bnext=${msg.optString("bnext", "-")}")
                 // LATER item 7: capture v5's Select listener stays wanted while the app runs (Home's bar selector)
                 if (current) barSelect.onInteract(msg)
                 // a generic guest still holding for a room that is not on screen (interact i41's holder; a lost release, an app killed

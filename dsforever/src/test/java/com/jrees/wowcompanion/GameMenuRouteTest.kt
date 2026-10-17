@@ -57,3 +57,18 @@ class FormBarsParseTest {
         assertNull(m.stance)
     }
 }
+
+/** test26: the pause's close is final - its guest's late "B leads Home" never brings the red B look back on the bar's disc */
+class PauseCloseFinalTest {
+    private fun doc(holder: String, bnext: String) = JSONObject().put("holder", holder).put("bnext", bnext)
+    @Test fun aLateHomeFromTheClosedPauseSaysNothing() {
+        val g = HomeBGlyph()
+        g.note(doc("pad:radial", "home"), true, 0L)
+        assertTrue(g.shown(10L))
+        g.drop(100L, "pad:radial", HomeBGlyph.WHEEL_MUTE_MS)
+        g.note(doc("pad:radial", "home"), true, 2_500L)              // past the old 1.5 s mute: still nothing
+        assertTrue(!g.shown(2_510L))
+        g.note(doc("pad:chat", "home"), true, 3_000L)               // another holder's B counts again
+        assertTrue(g.shown(3_010L))
+    }
+}

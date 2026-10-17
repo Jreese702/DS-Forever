@@ -110,6 +110,8 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
     var barB = false
         set(v) { if (field != v) { val t = now(); val was = redB; val from = redNow(t); field = v; flowIf(was, from, t) } }
     private val redB get() = bGoesHome || barB
+    /** test26: the red / B look goes to its target AT ONCE, no flow (a wheel's close: the disc comes back from under the hub blue) */
+    fun snapRed() { redAt = 0L; invalidate() }
     /** the red / B state changed ([was] -> [redB]): its flow starts from where the red stood ([from]) */
     private fun flowIf(was: Boolean, from: Float, t: Long) {
         if (redB != was) { redFrom = from; redAt = t }

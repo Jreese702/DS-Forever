@@ -231,7 +231,7 @@ class HomeView(
     /** an `interact` document's `bnext`: whether the Home button should show B (the strip draws it) */
     fun noteB(msg: JSONObject, current: Boolean) = bGlyph.note(msg, current, System.currentTimeMillis())
     /** a room left for Home: the disc's B goes in the same frame (HomeBGlyph.drop) */
-    fun dropB(holder: String) = bGlyph.drop(System.currentTimeMillis(), holder)
+    fun dropB(holder: String, muteMs: Long = HomeBGlyph.MUTE_MS) = bGlyph.drop(System.currentTimeMillis(), holder, muteMs)
     /**
      * The Home button shows B: when B would return Home (interact's `bnext`), and while one of Home's modules is full
      * screen (user, 15:08: "use the B glyph on the home button to go back to home").
