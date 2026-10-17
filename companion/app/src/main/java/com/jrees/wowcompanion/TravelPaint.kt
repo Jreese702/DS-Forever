@@ -14,6 +14,35 @@ import android.graphics.RectF
  * dimmed. The view gives the projection (world yards to its pixels) and the field.
  */
 object TravelPaint {
+    // ---- THE GAME'S OWN PICTURES (b-travel-game-icons; the user: "Can you like use better or in-game icons for that?"), harvested on
+    // the device (MapHarvestSteps.TRAVEL_ICONS, ui/travel/): the world map's taxi node pins, the ferry pin, the cart, the flight map's
+    // route line, the airship icon. Until they are there, the drawn ones below.
+    const val DB_ATLAS = 897470
+    const val DB_ATLAS_ELEMENT = 1989276
+    const val DB_ATLAS_MEMBER = 897532
+    /** file -> the game's atlas member (UiTextureAtlasMember) */
+    val ART = mapOf(
+        "fm_alliance" to "taxinode_alliance", "fm_horde" to "taxinode_horde", "fm_neutral" to "taxinode_neutral",
+        "fm_unknown" to "taxi_frame_gray", "boat" to "flightmasterferry", "tram" to "vehicle-alliancecart", "line" to "!UI-Taxi-Line")
+    /** file -> the game's picture by path (no map pin for a zeppelin: the airship's icon, cut round) */
+    val ICONS = mapOf("air" to "Interface\\Icons\\achievement_dungeon_hordeairship.blp")
+
+    private val art = HashMap<String, android.graphics.Bitmap?>()
+    private var artAt = 0L
+    /** a harvested picture, or null (read once; asked again every few seconds while the harvest has not written it) */
+    private fun pic(name: String): android.graphics.Bitmap? {
+        art[name]?.let { return it }
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (art.containsKey(name) && now - artAt < 5_000L) return null
+        artAt = now
+        val f = ArtHarvest.file("ui/travel/$name.png")
+        val b = if (f.isFile) runCatching { android.graphics.BitmapFactory.decodeFile(f.path) }.getOrNull() else null
+        art[name] = b
+        return b
+    }
+    private val pBmp by lazy { Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG) }
+    private val dst = RectF()
+
     private val cBoat = 0xFF8EC9F0.toInt()
     private val cAir = 0xFFE2B866.toInt()
     private val cTram = 0xFFE8E4DA.toInt()
@@ -49,6 +78,7 @@ object TravelPaint {
             val x0 = sx(l.ax, l.ay); val y0 = sy(l.ax, l.ay); val x1 = sx(l.bx, l.by); val y1 = sy(l.bx, l.by)
             if (maxOf(x0, x1) < field.left || minOf(x0, x1) > field.right || maxOf(y0, y1) < field.top || minOf(y0, y1) > field.bottom) continue
             val k = if (l.lit) 1f else 0.4f
+            if (texLine(c, l, x0, y0, x1, y1, k)) continue
             when (l.kind) {
                 Travel.Kind.BOAT -> { pLine.pathEffect = dashBoat; pLine.strokeWidth = 3f; pLine.color = a(cBoat, 0.55f * k) }
                 Travel.Kind.AIR -> { pLine.pathEffect = dashBoat; pLine.strokeWidth = 3f; pLine.color = a(cAir, 0.55f * k) }
@@ -66,7 +96,7 @@ object TravelPaint {
             val x = sx(p.wx, p.wy); val y = sy(p.wx, p.wy)
             if (x < field.left - R || x > field.right + R || y < field.top - R || y > field.bottom + R) continue
             if (skip(p, x, y)) continue
-            icon(c, p.kind, x, y, p.lit)
+            icon(c, p.kind, x, y, p.lit, p.fac)
             if (labels && labelled.none { Math.abs(it[0] - x) < LABEL_W && Math.abs(it[1] - y) < LABEL_H }) {
                 labelled.add(floatArrayOf(x, y))
                 pText.color = if (p.lit) 0xFFF2E6C8.toInt() else 0xFFA09A8E.toInt()
@@ -79,8 +109,65 @@ object TravelPaint {
         return out
     }
 
-    /** one point's icon at ([x], [y]): a dark disc, the kind's glyph on it */
-    fun icon(c: Canvas, kind: Travel.Kind, x: Float, y: Float, lit: Boolean) {
+    /**
+     * THE GAME'S ROUTE LINE (!UI-Taxi-Line, a vertical strip): laid along the segment, a known flight whole and faint, a crossing in
+     * dashes tinted by its kind (a boat's blue, an airship's tan, the tram's pale); false = no picture yet (the drawn line instead)
+     */
+    private fun texLine(c: Canvas, l: Travel.Line, x0: Float, y0: Float, x1: Float, y1: Float, k: Float): Boolean {
+        val line = pic("line") ?: return false
+        val len = Math.hypot((x1 - x0).toDouble(), (y1 - y0).toDouble()).toFloat()
+        if (len < 2f) return true
+        val w = if (l.kind == Travel.Kind.FLIGHT) 16f else 20f
+        val save = c.save()
+        c.translate(x0, y0); c.rotate(Math.toDegrees(Math.atan2((y1 - y0).toDouble(), (x1 - x0).toDouble())).toFloat() - 90f)
+        val tint = when (l.kind) { Travel.Kind.BOAT -> cBoat; Travel.Kind.AIR -> cAir; Travel.Kind.TRAM -> cTram; Travel.Kind.FLIGHT -> 0 }
+        pBmp.colorFilter = if (tint != 0) android.graphics.PorterDuffColorFilter(tint, android.graphics.PorterDuff.Mode.MULTIPLY) else null
+        pBmp.alpha = ((if (l.kind == Travel.Kind.FLIGHT) 175 else 235) * k).toInt()
+        val src = android.graphics.Rect(0, 0, line.width, line.height)
+        if (l.kind == Travel.Kind.FLIGHT) { dst.set(-w / 2, 0f, w / 2, len); c.drawBitmap(line, src, dst, pBmp) }
+        else {
+            var t = 0f
+            while (t < len) { dst.set(-w / 2, t, w / 2, minOf(len, t + 18f)); c.drawBitmap(line, src, dst, pBmp); t += 28f }
+        }
+        pBmp.colorFilter = null; pBmp.alpha = 255
+        c.restoreToCount(save)
+        return true
+    }
+
+    /** the picture's size on the map, px */
+    const val ART_PX = 34f
+
+    /** one point's icon at ([x], [y]): the game's own pin ([fac] a flight master's side), else the drawn one */
+    fun icon(c: Canvas, kind: Travel.Kind, x: Float, y: Float, lit: Boolean, fac: Int = 0) {
+        val name = when (kind) {
+            Travel.Kind.FLIGHT -> if (!lit) "fm_unknown" else when (fac) { TransportRoutes.ALLIANCE -> "fm_alliance"; TransportRoutes.HORDE -> "fm_horde"; else -> "fm_neutral" }
+            Travel.Kind.BOAT -> "boat"; Travel.Kind.AIR -> "air"; Travel.Kind.TRAM -> "tram"
+        }
+        val b = pic(name)
+        if (b != null) {
+            pBmp.alpha = if (lit) 255 else if (kind == Travel.Kind.FLIGHT) 170 else 115
+            if (kind == Travel.Kind.AIR) {
+                // an icon, not a pin: cut round in a thin gold ring, a little smaller than the pins
+                val r = ART_PX / 2f - 2f
+                pFill.style = Paint.Style.FILL; pFill.color = Color.argb(pBmp.alpha, 12, 10, 8); c.drawCircle(x, y, r + 2f, pFill)
+                val save = c.save()
+                path.reset(); path.addCircle(x, y, r, Path.Direction.CW); c.clipPath(path)
+                dst.set(x - r * 1.15f, y - r * 1.15f, x + r * 1.15f, y + r * 1.15f); c.drawBitmap(b, null, dst, pBmp)
+                c.restoreToCount(save)
+                pLine.pathEffect = null; pLine.strokeWidth = 2f; pLine.color = a(0xFFC9A14A.toInt(), pBmp.alpha / 255f); c.drawCircle(x, y, r, pLine)
+            } else {
+                val h = ART_PX / 2f
+                dst.set(x - h, y - h * b.height / b.width.coerceAtLeast(1), x + h, y + h * b.height / b.width.coerceAtLeast(1))
+                c.drawBitmap(b, null, dst, pBmp)
+            }
+            pBmp.alpha = 255
+            return
+        }
+        drawn(c, kind, x, y, lit)
+    }
+
+    /** the drawn icon (before the harvest has the game's): a dark disc, the kind's glyph on it */
+    private fun drawn(c: Canvas, kind: Travel.Kind, x: Float, y: Float, lit: Boolean) {
         val k = if (lit) 1f else 0.55f
         pFill.style = Paint.Style.FILL
         pFill.color = Color.argb((200 * k).toInt(), 12, 10, 8); c.drawCircle(x, y, R, pFill)
