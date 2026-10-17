@@ -138,8 +138,8 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
     companion object {
         const val CELL_YD = 25.0
         /** a spawn's danger spreads this far round it (the one knob; the user on test53: "increasing the size of the danger areas by
-         *  like 1.5x to see if that fits the safe pathing": 30 -> 45) */
-        const val AGGRO_YD = 45.0
+         *  like 1.5x to see if that fits the safe pathing": 30 -> 45; then "Make the danger areas about 2x": 60) */
+        const val AGGRO_YD = 60.0
         const val GOAL_FREE_YD = 60.0
         const val CALM = 0.05f          // a straight line crossing no more than this is left alone
         const val CAP = 4f              // a cell's danger at most (a dense camp is a wall, not an infinity)
@@ -194,13 +194,38 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
         }
 
         /** a checkpoint within this many yards of the player is passed (the user on test45: the next one then leads) */
-        const val PASS_YD = 18.0
+        const val PASS_YD = 25.0
+        /** past the line across the leg through the checkpoint by this much (the next stretch's way): passed (a margin, so a player
+         *  coming up beside a sharp bend is not taken as past it) */
+        const val PAST_YD = 8.0
+        /** nearer the next point than the checkpoint is by this much, while within [SKIRT_YD] of it: passed (skirted, the right way) */
+        const val NEARER_YD = 15.0
+        const val SKIRT_YD = 80.0
 
-        /** [leg] (the player first) less the bends already reached ([PASS_YD]); null = no bend left (the line goes straight) */
+        /**
+         * [leg] (the player first) less the bends already passed; null = no bend left (the line goes straight). The user on test54: "I
+         * sometimes walk past them by accident and it makes me go all the way back even if I'm going the right way". A bend is passed
+         * when the player is within [PASS_YD] of it, OR past the line across the leg through it (by [PAST_YD] along the next stretch),
+         * OR nearer the next point than the bend itself is (by [NEARER_YD], within [SKIRT_YD] of it).
+         */
         fun passed(leg: List<DoubleArray>, ax: Double, ay: Double): List<DoubleArray>? {
             var l = leg
-            while (l.size > 2 && hypot((l[1][0] - l[0][0]) * ax, (l[1][1] - l[0][1]) * ay) <= PASS_YD) l = listOf(l[0]) + l.drop(2)
+            while (l.size > 2 && isPassed(l[0], l[1], l[2], ax, ay)) l = listOf(l[0]) + l.drop(2)
             return l.takeIf { it.size > 2 }
+        }
+
+        /** the player [p] has passed checkpoint [c] on the way to [n] */
+        fun isPassed(p: DoubleArray, c: DoubleArray, n: DoubleArray, ax: Double, ay: Double): Boolean {
+            val pc = hypot((c[0] - p[0]) * ax, (c[1] - p[1]) * ay)
+            if (pc <= PASS_YD) return true
+            val vx = (n[0] - c[0]) * ax; val vy = (n[1] - c[1]) * ay
+            val vl = hypot(vx, vy)
+            if (vl > 1e-6) {
+                val along = ((p[0] - c[0]) * ax * vx + (p[1] - c[1]) * ay * vy) / vl
+                if (along >= PAST_YD) return true
+            }
+            val pn = hypot((n[0] - p[0]) * ax, (n[1] - p[1]) * ay)
+            return pc <= SKIRT_YD && pn < vl - NEARER_YD
         }
 
         /** the yards of a polyline on a map of [ax] x [ay] yards */
