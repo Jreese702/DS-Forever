@@ -5,7 +5,7 @@
 ## Group: WowCompanion
 ## Notes: Feeds the PvP rank tab and the battleground queue status on the Thor's bottom screen (read-only)
 ## Author: DS Forever
-## Version: Set 152
+## Version: Set 153
 ## DefaultState: enabled
 ## Dependencies: WowCompanion
 Pvp.lua
