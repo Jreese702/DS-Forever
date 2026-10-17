@@ -54,6 +54,17 @@ object Settings {
      * in the settings, so that I can toggle which one I want to appear when clicking into the message"): "quick" | "keys", default "keys".
      * ChatView reads the same prefs key ("settings" / "chatDefaultInput") each time the input opens.
      */
+    /**
+     * QUEST TRACKING (the user, 2026-10-17: "Quest tracking: Vanilla | QuestTrail | Polestar"; "Depends on which one is set in our
+     * settings"): what the map's dotted line, the arrows and the game's pin follow. "vanilla" = our own route (learned ways, the tram,
+     * proven flights); "polestar" = the focused quest's goal through Polestar's walking router (downloaded on opt-in, DependencyAddons);
+     * "questtrail" = QuestTrail's route (player-installed; until its probe is done it routes as vanilla).
+     */
+    var questTracking: String
+        get() = prefs?.getString("questTracking", "vanilla")?.takeIf { it in QUEST_TRACKING } ?: "vanilla"
+        set(v) { prefs?.edit()?.putString("questTracking", if (v in QUEST_TRACKING) v else "vanilla")?.apply(); changed() }
+    val QUEST_TRACKING = listOf("vanilla", "questtrail", "polestar")
+
     var chatDefaultInput: String
         // the default is the keyboard (the user's pick, 2026-10-07)
         get() = prefs?.getString("chatDefaultInput", "keys")?.takeIf { it == "quick" || it == "keys" } ?: "keys"
