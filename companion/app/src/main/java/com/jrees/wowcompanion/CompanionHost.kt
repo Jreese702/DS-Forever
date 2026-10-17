@@ -518,6 +518,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         mapView.mapType = { id -> worldMapRoom.model.maps[id]?.type }                  // test42: ways only between zone / city maps
         mapView.zoneAt = { c, wx, wy -> worldMapRoom.model.zoneAt(c, wx, wy)?.name }       // a ride's far dock: "Ride to <zone>"
         mapView.zonesAt = { c, wx, wy -> worldMapRoom.model.zonesAt(c, wx, wy) }          // the multi-hop route's "a walk from here"
+        mapView.zonesIn = { c, x0, x1, y0, y1 -> worldMapRoom.model.zonesIn(c, x0, x1, y0, y1) }   // the cross-zone plan's zones
         mapView.zoneIdAt = { c, wx, wy -> worldMapRoom.model.zoneAt(c, wx, wy)?.id }      // a dock's / flight master's map (b-travel-layer)
         worldMapRoom.travelScene = { mapView.travelScene() }                              // the travel layer in the room (b-travel-layer)
         // off-thread loads (test56's ANRs): the views drawn again once a zone file or a picture has arrived
