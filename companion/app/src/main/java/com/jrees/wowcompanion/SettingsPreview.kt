@@ -185,11 +185,11 @@ object SettingsPreview {
             "Minimap zoom outdoors" -> minimap(c, r, s.miniOutYd, false)
             "Minimap zoom indoors" -> minimap(c, r, s.miniInYd, true)
             "Message input" -> chatInput(c, r, s.quickChat)
-            "Frame limit" -> frameLimit(c, r, s, t)
-            "Frame generation" -> frameGen(c, r, s, t)
-            "Multiplier" -> multiplier(c, r, s, t)
-            "Flow scale" -> flow(c, r, s.flow, t)
-            "Build in the background" -> indoor(c, r, s.indoorBuild, t)
+            "Frame limit" -> frameLimit(c, r, s, t, live)
+            "Frame generation" -> frameGen(c, r, s, t, live)
+            "Multiplier" -> multiplier(c, r, s, t, live)
+            "Flow scale" -> flow(c, r, s.flow, t, live)
+            "Build in the background" -> indoor(c, r, s, t, live)
         }
     }
 
@@ -759,114 +759,162 @@ object SettingsPreview {
         }
     }
 
-    // ---- Performance
+    // ---- Performance: in the game's own look (f-settings-previews: the game's bars, its type, gold; the player's own spell icon and map)
 
-    /** one lane of frames: the last quarter second at [fps] scrolling with time, [made] = every other one is generated (a ring) */
-    private fun lane(c: Canvas, x0: Float, x1: Float, y: Float, fps: Int, t: Float, col: Int, every: Int = 1) {
+    private val pTitle by lazy { Paint(Paint.ANTI_ALIAS_FLAG) }
+    private val pBody by lazy { Paint(Paint.ANTI_ALIAS_FLAG) }
+    private val pNum by lazy { Paint(Paint.ANTI_ALIAS_FLAG) }
+
+    /** words in the game's type: [kind] 0 Morpheus (titles), 1 Friz Quadrata (labels), 2 Arial Narrow (numbers) */
+    private fun gText(c: Canvas, s: String, x: Float, y: Float, size: Float, col: Int, align: Paint.Align = Paint.Align.LEFT, kind: Int = 1) {
+        val p = when (kind) { 0 -> pTitle; 2 -> pNum; else -> pBody }
+        p.textSize = size; p.color = col; p.textAlign = align
+        when (kind) { 0 -> UiKit.asTitle(p); 2 -> UiKit.asNumber(p); else -> UiKit.asBody(p) }
+        c.drawText(s, x, y, p)
+    }
+
+    /** the thing that moves across a lane: one of the player's own spell icons (or item icons), a gold orb until there is one */
+    private fun mover(live: Live?): Bitmap? =
+        live?.let { l -> (l.wheelItems(true) + l.wheelItems(false)).firstOrNull { it?.icon != null }?.icon }
+
+    /**
+     * One lane of frames on the game's bar ground: the last quarter second at [fps] scrolling with time. A game frame is a filled gem, a
+     * made one ([every] > 1: all but every [every]th) a ring. Over it the mover, drawn where each frame put it.
+     */
+    private fun lane(c: Canvas, x0: Float, x1: Float, y: Float, fps: Int, t: Float, col: Int, every: Int = 1, icon: Bitmap? = null) {
+        UiKit.standing(c, RectF(x0, y - 15f, x1, y + 15f), col, 0f, "", 1f)
+        val a = x0 + 14f; val b = x1 - 14f
         val win = 0.25f; val dt = 1f / fps
-        pStroke.color = Theme.bronzeDim; pStroke.strokeWidth = 2f; c.drawLine(x0, y, x1, y, pStroke)
         var k = floor((t - win) / dt).toInt() + 1
         val k1 = floor(t / dt).toInt()
         while (k <= k1) {
-            val u = (k * dt - (t - win)) / win
-            val x = x0 + u * (x1 - x0)
-            if (every <= 1 || Math.floorMod(k, every) == 0) { pFill.color = col; c.drawCircle(x, y, 7f, pFill) }
-            else { pStroke.color = col; pStroke.strokeWidth = 2.5f; c.drawCircle(x, y, 6f, pStroke) }
+            val x = a + (k * dt - (t - win)) / win * (b - a)
+            if (every <= 1 || Math.floorMod(k, every) == 0) {
+                pFill.color = col; c.drawRect(x - 3.5f, y - 7f, x + 3.5f, y + 7f, pFill)
+                pFill.color = Color.argb(150, 255, 250, 225); c.drawRect(x - 3.5f, y - 7f, x + 3.5f, y - 4f, pFill)
+            } else { pStroke.color = col; pStroke.strokeWidth = 2f; c.drawCircle(x, y, 4.5f, pStroke) }
             k++
         }
-        // a ball crossing, drawn where each frame put it
         val tq = floor(t * fps) / fps
-        val bx = x0 + ((tq % 1.2f) / 1.2f) * (x1 - x0)
-        pFill.color = col; c.drawCircle(bx, y - 26f, 11f, pFill)
+        val bx = a + ((tq % 1.2f) / 1.2f) * (b - a)
+        val by = y - 36f; val half = 15f
+        if (icon != null) {
+            c.drawBitmap(icon, null, RectF(bx - half, by - half, bx + half, by + half), pPic)
+            pStroke.color = col; pStroke.strokeWidth = 2f; c.drawRect(bx - half, by - half, bx + half, by + half, pStroke)
+        } else {
+            pFill.color = Color.argb(70, Color.red(col), Color.green(col), Color.blue(col)); c.drawCircle(bx, by, half + 5f, pFill)
+            pFill.color = col; c.drawCircle(bx, by, half - 3f, pFill)
+        }
     }
 
-    private fun frameLimit(c: Canvas, r: RectF, s: State, t: Float) {
+    /** a choice's row: the game's selected-row light behind the chosen one */
+    private fun choiceRow(c: Canvas, r: RectF, top: Float, h: Float, on: Boolean, col: Int = GOLD) {
+        if (on) UiKit.selectedRow(c, RectF(r.left + 8f, top, r.right - 8f, top + h), col)
+    }
+
+    private fun frameLimit(c: Canvas, r: RectF, s: State, t: Float, live: Live?) {
+        val icon = mover(live)
         val lanes = listOf(40, 60, 0)
-        val x0 = r.left + 100f; val x1 = r.right - 24f
+        val x0 = r.left + 92f; val x1 = r.right - 20f
         for ((i, fps) in lanes.withIndex()) {
-            val y = r.top + 70f + i * 110f
+            val top = r.top + 14f + i * ((r.height() - 110f) / 3f)
             val on = fps == s.fpsLimit
-            text(c, if (fps > 0) "$fps" else "Off", r.left + 24f, y + 8f, 26f, if (on) GOLD else DIMC, Paint.Align.LEFT)
-            lane(c, x0, x1, y, if (fps > 0) fps else 90, t, if (on) GOLD else DIMC)
+            choiceRow(c, r, top, 96f, on)
+            val y = top + 66f
+            gText(c, if (fps > 0) "$fps" else "Off", r.left + 22f, y + 10f, 30f, if (on) GOLD else DIMC, kind = 2)
+            lane(c, x0, x1, y, if (fps > 0) fps else 90, t, if (on) GOLD else DIMC, icon = icon)
         }
-        // the heat, lower with the limit
-        val hy = r.bottom - 40f
-        text(c, "heat", r.left + 24f, hy + 6f, 18f, DIMC, Paint.Align.LEFT)
+        // the heat, lower with the limit: the game's standing bar
         val heat = when { s.fpsLimit in 1..40 -> 0.5f; s.fpsLimit in 41..60 -> 0.75f; else -> 0.95f }
-        pFill.color = Color.rgb(30, 24, 16); c.drawRect(x0, hy - 8f, x1, hy + 8f, pFill)
-        pFill.color = when { heat < 0.6f -> Theme.ok; heat < 0.85f -> Theme.warn; else -> Color.rgb(210, 80, 50) }
-        c.drawRect(x0, hy - 8f, x0 + (x1 - x0) * heat, hy + 8f, pFill)
+        val col = when { heat < 0.6f -> Theme.ok; heat < 0.85f -> Theme.warn; else -> Color.rgb(210, 80, 50) }
+        UiKit.standing(c, RectF(r.left + 20f, r.bottom - 64f, r.right - 20f, r.bottom - 22f), col, heat,
+            "Heat: " + when { heat < 0.6f -> "cool"; heat < 0.85f -> "warm"; else -> "hot" }, 19f)
     }
 
-    private fun frameGen(c: Canvas, r: RectF, s: State, t: Float) {
+    private fun frameGen(c: Canvas, r: RectF, s: State, t: Float, live: Live?) {
+        val icon = mover(live)
         val base = if (s.fpsLimit > 0) s.fpsLimit else 60
-        val x0 = r.left + 24f; val x1 = r.right - 24f
-        text(c, "the game: $base", x0, r.top + 60f, 22f, if (!s.frameGen) GOLD else DIMC, Paint.Align.LEFT)
-        lane(c, x0, x1, r.top + 120f, base, t, if (!s.frameGen) GOLD else DIMC)
-        text(c, "with frame generation: ${base * s.multiplier}", x0, r.top + 220f, 22f, if (s.frameGen) FLIGHT else DIMC, Paint.Align.LEFT)
-        lane(c, x0, x1, r.top + 280f, base * s.multiplier, t, if (s.frameGen) FLIGHT else DIMC, s.multiplier)
-    }
-
-    private fun multiplier(c: Canvas, r: RectF, s: State, t: Float) {
-        val base = if (s.fpsLimit > 0) s.fpsLimit else 60
-        val x0 = r.left + 70f; val x1 = r.right - 24f
-        for ((i, m) in MULTIPLIERS.withIndex()) {
-            val y = r.top + 70f + i * 110f
-            val on = m == s.multiplier
-            text(c, "${m}x", r.left + 24f, y + 8f, 26f, if (on) FLIGHT else DIMC, Paint.Align.LEFT)
-            lane(c, x0, x1, y, base * m, t, if (on) FLIGHT else DIMC, m)
+        val x0 = r.left + 20f; val x1 = r.right - 20f
+        for ((i, made) in listOf(false, true).withIndex()) {
+            val top = r.top + 14f + i * ((r.height() - 30f) / 2f)
+            val on = made == s.frameGen
+            val col = if (!on) DIMC else if (made) FLIGHT else GOLD
+            choiceRow(c, r, top, 150f, on, if (made) FLIGHT else GOLD)
+            gText(c, if (made) "With frame generation" else "The game alone", x0 + 4f, top + 30f, 21f, col, kind = 0)
+            gText(c, "${if (made) base * s.multiplier else base} fps", x1 - 4f, top + 30f, 24f, col, Paint.Align.RIGHT, 2)
+            lane(c, x0, x1, top + 112f, if (made) base * s.multiplier else base, t, col, if (made) s.multiplier else 1, icon)
         }
     }
 
-    private fun flow(c: Canvas, r: RectF, f: Float, t: Float) {
-        // a shape moving across; the made frames keep less detail at a low flow scale: soft ghosts behind it
-        val cx0 = r.left + 60f; val cx1 = r.right - 60f
+    private fun multiplier(c: Canvas, r: RectF, s: State, t: Float, live: Live?) {
+        val icon = mover(live)
+        val base = if (s.fpsLimit > 0) s.fpsLimit else 60
+        val x0 = r.left + 70f; val x1 = r.right - 20f
+        for ((i, m) in MULTIPLIERS.withIndex()) {
+            val top = r.top + 14f + i * ((r.height() - 40f) / 3f)
+            val on = m == s.multiplier
+            val col = if (on) FLIGHT else DIMC
+            choiceRow(c, r, top, 96f, on, FLIGHT)
+            val y = top + 66f
+            gText(c, "${m}x", r.left + 22f, y + 10f, 30f, col, kind = 2)
+            gText(c, "${base * m} fps", r.left + 22f, y + 34f, 16f, col, kind = 2)
+            lane(c, x0, x1, y, base * m, t, col, m, icon)
+        }
+    }
+
+    private fun flow(c: Canvas, r: RectF, f: Float, t: Float, live: Live?) {
+        // the mover crossing; the made frames keep less detail at a low flow scale: soft ghosts trail it
+        val icon = mover(live)
+        val cx0 = r.left + 70f; val cx1 = r.right - 70f
         val u = ((t % 2.4f) / 2.4f)
         val x = cx0 + (cx1 - cx0) * (0.5f - 0.5f * cos(u * 2f * PI.toFloat()))
-        val y = r.centerY() - 20f
+        val y = r.top + r.height() * 0.36f
+        val half = 46f
+        UiKit.standing(c, RectF(r.left + 20f, y + half + 18f, r.right - 20f, y + half + 46f), GOLD, 0f, "", 1f)
         val ghosts = ((1f - f) * 10f).toInt() + 1
         for (g in ghosts downTo 1) {
-            pFill.color = Color.argb((40 + 80 * f).toInt() / g, 230, 200, 120)
-            c.drawCircle(x - g * 6f * (1f - f + 0.1f), y, 34f + (1f - f) * 6f * g / ghosts, pFill)
+            val gx = x - g * 7f * (1f - f + 0.1f)
+            val a = ((40 + 80 * f) / g).toInt()
+            if (icon != null) { pPic.alpha = a; c.drawBitmap(icon, null, RectF(gx - half, y - half, gx + half, y + half), pPic); pPic.alpha = 255 }
+            else { pFill.color = Color.argb(a, 230, 200, 120); c.drawCircle(gx, y, half, pFill) }
         }
-        pFill.color = Color.argb(255, 230, 200, 120); c.drawCircle(x, y, 34f, pFill)
-        pStroke.color = if (f > 0.6f) Color.WHITE else Color.argb((255 * f).toInt() + 40, 255, 255, 255); pStroke.strokeWidth = 3f
-        c.drawCircle(x, y, 34f, pStroke)
-        // the scale
-        val y2 = r.bottom - 60f; val a = r.left + 30f; val b = r.right - 30f
-        pStroke.color = Theme.bronzeDim; pStroke.strokeWidth = 4f; c.drawLine(a, y2, b, y2, pStroke)
-        val fx = a + (b - a) * ((f - FLOW_MIN) / (FLOW_MAX - FLOW_MIN)).coerceIn(0f, 1f)
-        pFill.color = GOLD; c.drawCircle(fx, y2, 10f, pFill)
-        text(c, "faster", a, y2 + 32f, 18f, DIMC, Paint.Align.LEFT); text(c, "sharper", b, y2 + 32f, 18f, DIMC, Paint.Align.RIGHT)
+        if (icon != null) c.drawBitmap(icon, null, RectF(x - half, y - half, x + half, y + half), pPic)
+        else { pFill.color = Color.rgb(230, 200, 120); c.drawCircle(x, y, half, pFill) }
+        pStroke.color = if (f > 0.6f) GOLD else Color.argb((255 * f).toInt() + 40, 255, 209, 0); pStroke.strokeWidth = 3f
+        if (icon != null) c.drawRect(x - half, y - half, x + half, y + half, pStroke) else c.drawCircle(x, y, half, pStroke)
+        // the scale: the game's bar, filled to the setting
+        val k = ((f - FLOW_MIN) / (FLOW_MAX - FLOW_MIN)).coerceIn(0f, 1f)
+        val bar = RectF(r.left + 20f, r.bottom - 86f, r.right - 20f, r.bottom - 44f)
+        UiKit.standing(c, bar, GOLD, k, "${Math.round(f * 100)}%", 20f)
+        gText(c, "faster", bar.left + 4f, bar.bottom + 26f, 18f, DIMC)
+        gText(c, "sharper", bar.right - 4f, bar.bottom + 26f, 18f, DIMC, Paint.Align.RIGHT)
     }
 
-    private fun indoor(c: Canvas, r: RectF, on: Boolean, t: Float) {
+    private fun indoor(c: Canvas, r: RectF, s: State, t: Float, live: Live?) {
+        val on = s.indoorBuild
         val period = 6f; val k = t % period
         val walking = on && k in 3f..4.5f
-        // the fill rises while standing, holds while walking
+        // the build rises while standing, holds while walking
         val stand = when { k < 3f -> k; k < 4.5f -> 3f; else -> 3f + (k - 4.5f) }
         val fill = if (on) (stand / 4.5f).coerceIn(0f, 1f) else 0f
-        val hx = r.centerX() + 50f; val hy = r.top + r.height() * 0.46f; val w = 150f; val h = 120f
-        val house = Path().apply {
-            moveTo(hx - w / 2f, hy); lineTo(hx, hy - h * 0.6f); lineTo(hx + w / 2f, hy)
-            lineTo(hx + w / 2f, hy + h); lineTo(hx - w / 2f, hy + h); close()
-        }
-        c.save(); c.clipPath(house)
-        pFill.color = Color.rgb(28, 22, 15); c.drawRect(hx - w, hy - h, hx + w, hy + h + 1f, pFill)
-        pFill.color = if (on) Color.rgb(200, 160, 70) else Theme.bronzeDim
-        val top = hy + h - (h * 1.6f) * fill
-        c.drawRect(hx - w, top, hx + w, hy + h + 1f, pFill)
-        c.restore()
-        pStroke.color = BRONZE; pStroke.strokeWidth = 3f; c.drawPath(house, pStroke)
-        // the player: still, or walking (moving)
-        val px = r.left + 60f + if (walking) ((k - 3f) / 1.5f) * 40f else if (k >= 4.5f) 40f else 0f
-        val py = hy + h - 30f
-        pFill.color = TEXT; c.drawCircle(px, py - 44f, 12f, pFill)
-        pStroke.color = TEXT; pStroke.strokeWidth = 5f
-        c.drawLine(px, py - 30f, px, py, pStroke)
-        val step = if (walking) sin(k * 12f) * 10f else 0f
-        c.drawLine(px, py, px - 8f + step, py + 28f, pStroke); c.drawLine(px, py, px + 8f - step, py + 28f, pStroke)
-        text(c, when { !on -> "off"; walking -> "paused: walking"; fill >= 1f -> "built"; else -> "building" },
-            hx, hy + h + 36f, 22f, when { !on -> DIMC; walking -> Theme.warn; else -> GOLD })
+        // the map being built: the player's own minimap (from the real Home), lit from the bottom up as it is built; parchment until then
+        val box = RectF(r.left + 40f, r.top + 20f, r.right - 40f, r.top + 20f + (r.width() - 80f) * 0.82f)
+        // the focused quest card moved off the map (as the minimap rows show it)
+        val home = live?.home(look(s, overMap = false), false, null)
+        val mb = live?.mapBox()
+        val src = if (home != null && mb != null) android.graphics.Rect((mb.left * home.width).toInt(), (mb.top * home.height).toInt(),
+            (mb.right * home.width).toInt(), (mb.bottom * home.height).toInt()) else null
+        val inner = RectF(box.left + 8f, box.top + 8f, box.right - 8f, box.bottom - 8f)
+        fun picture() { if (home != null && src != null) c.drawBitmap(home, src, inner, pPic) else UiKit.parchment(c, inner, 18f) }
+        picture(); c.drawRect(inner, pDim); c.drawRect(inner, pDim)
+        if (fill > 0f) { c.save(); c.clipRect(inner.left, inner.bottom - inner.height() * fill, inner.right, inner.bottom); picture(); c.restore() }
+        UiKit.border(c, box, "border_tooltip", 16f, BRONZE)
+        // building: the game's progress bar; what the player is doing, as chips
+        UiKit.progress(c, RectF(r.left + 40f, box.bottom + 18f, r.right - 40f, box.bottom + 40f), fill)
+        val cy = box.bottom + 58f
+        chip(c, r.left + 40f, cy, "Standing still", on && !walking)
+        chip(c, r.left + 210f, cy, "Walking", walking)
+        gText(c, when { !on -> "Off"; walking -> "Paused: walking"; fill >= 1f -> "Built"; else -> "Building" },
+            r.centerX(), cy + 76f, 26f, when { !on -> DIMC; walking -> Theme.warn; else -> GOLD }, Paint.Align.CENTER, 0)
     }
 }
