@@ -58,23 +58,45 @@ object CursorRoute {
      * this map and its words; [nodes] the known flight points, [connected] whether a flight joins two of them.
      */
     fun plan(px: Double, py: Double, ax: Double, ay: Double, goals: List<DoubleArray>, far: DoubleArray?, way: DoubleArray?,
-             wayText: String?, nodes: List<Node>, connected: (Int, Int) -> Boolean): Route? {
+             wayText: String?, nodes: List<Node>, ways: List<CityExits.Way> = emptyList(), inCity: Boolean = false,
+             wayName: (CityExits.Exit) -> String? = { null }, connected: (Int, Int) -> Boolean): Route? {
         if (px.isNaN() || py.isNaN()) return null
         if (goals.isNotEmpty()) {
             val g = goals.minByOrNull { hypot((it[0] - px) * ax, (it[1] - py) * ay) }!!
             return Route(Kind.GOAL, g[0], g[1], null)
         }
         if (far == null) return null
-        val k = FlightRoute.pick(px, py, far[0], far[1], nodes.map { doubleArrayOf(it.x, it.y) }, ax, ay) { i, j ->
-            nodes[i].id != 0 && nodes[j].id != 0 && connected(nodes[i].id, nodes[j].id)
-        }
+        // (c) IN A CITY a flight comes first, but ONLY when this character is known to have it (the user: "only if we know for sure
+        // that this character has the flight paths unlocked"): the city's known flight point and the known point nearest the quest,
+        // joined by a flight a flight master showed this character (TaxiNet). Elsewhere a flight only when clearly faster.
+        val k = if (inCity) cityFlight(px, py, far, nodes, ax, ay, connected)
+            else FlightRoute.pick(px, py, far[0], far[1], nodes.map { doubleArrayOf(it.x, it.y) }, ax, ay) { i, j ->
+                nodes[i].id != 0 && nodes[j].id != 0 && connected(nodes[i].id, nodes[j].id)
+            }
         if (k != null) {
             val n = nodes[k]
             return Route(Kind.FLIGHT, n.x, n.y, if (n.name.isNotEmpty()) "Flight to ${n.name}" else "Flight master")
         }
+        // (a) / (b) the map's real ways out: learned crossings and the approved table, by walk + ride + the rest of the way
+        CityExits.pick(px, py, far, ways, ax, ay)?.let { w ->
+            return Route(Kind.EXIT, w.x, w.y, wayName(w.exit) ?: "Exit ${compass(px, py, w.x, w.y, ax, ay)}")
+        }
         if (way != null) return Route(Kind.WAYPOINT, way[0], way[1], wayText?.takeIf { it.isNotEmpty() } ?: "Exit ${compass(px, py, way[0], way[1], ax, ay)}")
         val e = edge(px, py, far[0], far[1]) ?: return null
         return Route(Kind.EXIT, e[0], e[1], "Exit ${compass(px, py, far[0], far[1], ax, ay)}")
+    }
+
+    /** a city's flight, only when known AND connected: the known point nearest the player to the one nearest the quest */
+    private fun cityFlight(px: Double, py: Double, far: DoubleArray, nodes: List<Node>, ax: Double, ay: Double,
+                           connected: (Int, Int) -> Boolean): Int? {
+        val known = nodes.indices.filter { nodes[it].id != 0 }
+        if (known.size < 2) return null
+        fun d(i: Int, x: Double, y: Double) = hypot((nodes[i].x - x) * ax, (nodes[i].y - y) * ay)
+        val a = known.minByOrNull { d(it, px, py) }!!
+        val b = known.filter { it != a }.minByOrNull { d(it, far[0], far[1]) }!!
+        // the far point must be nearer the second than the player is (a flight that lands further away helps nobody)
+        if (d(b, far[0], far[1]) >= hypot((far[0] - px) * ax, (far[1] - py) * ay)) return null
+        return if (connected(nodes[a].id, nodes[b].id)) a else null
     }
 
     /** where the way from ([px], [py]) to ([qx], [qy]) leaves the map's 0..1 square, or null when it does not */

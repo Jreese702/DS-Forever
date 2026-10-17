@@ -488,6 +488,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         mapView.onLeave = { show(Room.HOME) }
         mapView.offMapSpots = { qid -> worldMapRoom.questWorldSpots(qid) }      // Map: the arrow to a quest in another zone
+        // the cursor line's ways out of a map (b-route-city-exits): the maps' world rectangles and names, the game's own
+        mapView.worldOf = { id -> worldMapRoom.model.world(id) }
+        mapView.mapName = { id -> worldMapRoom.model.name(id) }
         mapView.onProbeOptions = { bits -> worldMapRoom.sendProbeOptions(bits) }   // Map: the minimap probe's options to the add-on
         worldMapRoom.onLeave = { show(Room.HOME) }
         worldMapRoom.onFocusQuest = { id -> homeView.focusQuest(id) { } }

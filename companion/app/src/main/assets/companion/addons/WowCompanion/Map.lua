@@ -21,6 +21,10 @@
 local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
+-- a string the game really gave, else nil (S hands back WC.ABSENT / THREW / SECRET as marker strings: never sent as data)
+function WC.plainStr(v)
+    if type(v) == "string" and v ~= WC.ABSENT and v ~= WC.THREW and v ~= WC.SECRET then return v end
+end
 
 -- Candidate frames, most-specific first. MinimapCluster is the modern wrapper; plain Minimap
 -- is the fallback. Both are probed at runtime because frame names live in FrameXML (inside
@@ -844,6 +848,9 @@ function WC.collectMap()
         out.wy = (type(wy) == "number" and WC.isPlain(wy)) and wy or nil
         out.wz = (type(wz) == "number" and WC.isPlain(wz)) and wz or nil
     end
+    -- on a flight (b-route-city-exits): a map crossed in the air is no way out on foot, so the app learns no exit from it
+    local okt, onTaxi = CALL(UnitOnTaxi, "player")
+    if okt and onTaxi == true then out.taxi = 1 end
     -- Services the player has actually interacted with here. Authoritative, unlike the bundle.
     out.svc = WC.collectServices and WC.collectServices(id) or nil
 
@@ -998,7 +1005,7 @@ function WC.collectMap()
                     x = nx, y = ny,
                     state = SN(function() return n.state end),
                     -- probe (b-route-transports, 2026-10-16): does the game mark a boat / zeppelin / tram node? (read only)
-                    kit = S(function() return n.textureKit end),
+                    kit = WC.plainStr(S(function() return n.textureKit end)),   -- absent: left out (test20 sent the absent marker)
                     sp = SN(function() return n.useSpecialIcon and 1 or 0 end),
                 }
             end
@@ -1029,8 +1036,8 @@ function WC.collectMap()
         for _, l in ipairs(ls) do
             if #out.links >= 20 then break end
             out.links[#out.links + 1] = {
-                name = S(function() return l.name end),
-                atlas = S(function() return l.atlasName end),
+                name = WC.plainStr(S(function() return l.name end)),
+                atlas = WC.plainStr(S(function() return l.atlasName end)),
                 to = SN(function() return l.linkedUiMapID end),
                 x = SN(function() return l.position and l.position.x end),
                 y = SN(function() return l.position and l.position.y end),
