@@ -3644,19 +3644,28 @@ class MapView(context: Context) : View(context) {
     var onShareQuest: ((questId: Int) -> Unit)? = null
     var onAbandonArm: ((questId: Int) -> Unit)? = null
     var onAbandonConfirm: ((questId: Int) -> Unit)? = null
-    private var panelId = 0
-    private var armedId = 0
-    private var armedTitle = ""
-    private var armedAt = 0L
-    private var panelScroll = 0f
-    private var panelContentH = 0f
-    private var panelViewH = 0f
-    private val panelBox = RectF()
-    private val panelHits = ArrayList<Pair<RectF, String>>()
-    private val ARM_MS = 10_000L                     // Quests.lua ARM_SECONDS: a confirm after it is refused
+    // ---- THE QUEST PANEL: the shared QuestPanel (also the Map room's: b-maproom-quests); these delegate to it
+    private val qp = QuestPanel(object : QuestPanel.Host {
+        override fun quest(id: Int): JSONObject? = questById[id]
+        override fun tracked(id: Int): Boolean = trackedNo.containsKey(id)
+        override fun colour(q: JSONObject): Int = cardFor(q).colour
+        override fun party(): Boolean = questsParty
+        override fun note(text: String) = this@MapView.note(text)
+        override fun share(id: Int) { onShareQuest?.invoke(id) ?: this@MapView.note("Share is not on the tap pad yet") }
+        override fun abandonArm(id: Int) { onAbandonArm?.invoke(id) ?: this@MapView.note("Abandon is not on the tap pad yet") }
+        override fun abandonConfirm(id: Int) { onAbandonConfirm?.invoke(id) }
+        override fun changed() { syncB(); invalidate() }
+        override fun redrawIn(ms: Long) { postInvalidateDelayed(ms) }
+    })
+    private var panelId: Int get() = qp.id; set(v) { qp.id = v }
+    private var armedId: Int get() = qp.armedId; set(v) { qp.armedId = v }
+    private var panelScroll: Float get() = qp.scroll; set(v) { qp.scroll = v }
+    private var panelContentH: Float get() = qp.contentH; set(v) { qp.contentH = v }
+    private val panelBox: RectF get() = qp.box
+    private val panelHits: ArrayList<Pair<RectF, String>> get() = qp.hits
 
-    private fun openPanel(id: Int) { panelId = id; armedId = 0; panelScroll = 0f; panelContentH = 0f; panelFocus = -1; syncB(); invalidate() }
-    private fun closePanel() { panelId = 0; armedId = 0; panelFocus = -1; panelHits.clear() }
+    private fun openPanel(id: Int) = qp.open(id)
+    private fun closePanel() = qp.close()
 
     /** the open quest panel, for the host: Home's buff / debuff pane leaves this box to it (the panel lies above the buffs) */
     fun panelOpen(): Boolean = panelId != 0
@@ -3668,176 +3677,13 @@ class MapView(context: Context) : View(context) {
     // INTO the box: 0 its text (Up / Down scroll it; Down at its end goes to the buttons), 1.. its buttons (Left / Right between them,
     // A presses one, Up back to the text). Left from the text or the first button, or B, steps back out to the list; B on the list
     // closes the panel.
-    private var panelFocus = -1
-    private fun panelButtons(): List<String> = if (armedNow()) listOf("cancel", "abandon!") else listOf("share", "abandon", "close")
-    private fun armedNow(): Boolean = armedId != 0 && armedId == panelId && android.os.SystemClock.elapsedRealtime() - armedAt < ARM_MS
-
-    /** one key while the panel is open: true = the panel took it (the cursor is in the box, or the key moves it in / closes) */
-    private fun panelKey(k: String): Boolean {
-        if (panelFocus < 0) {
-            // the cursor is on the list: Right goes into the box, B closes the panel; the rest is the list's (the panel follows it)
-            when (k) {
-                "PADDRIGHT" -> { panelFocus = 0; syncB(); invalidate(); return true }
-                "PAD2" -> { closePanel(); syncB(); invalidate(); return true }
-            }
-            return false
-        }
-        val buttons = panelButtons()
-        if (armedNow() && panelFocus > buttons.size) panelFocus = buttons.size
-        val moreText = panelContentH - panelScroll > panelViewH + 1f
-        when (k) {
-            "PAD2" -> if (armedNow()) armedId = 0 else panelFocus = -1
-            "PADDLEFT" -> panelFocus = if (panelFocus <= 1) -1 else panelFocus - 1
-            "PADDRIGHT" -> if (panelFocus in 1 until buttons.size) panelFocus++
-            "PADDUP" -> if (panelFocus == 0) panelScroll = (panelScroll - 90f).coerceAtLeast(0f) else panelFocus = 0
-            "PADDDOWN" -> if (panelFocus == 0) {
-                if (moreText) panelScroll = (panelScroll + 90f).coerceAtMost(max(0f, panelContentH - panelViewH)) else panelFocus = 1
-            }
-            "PAD1" -> if (panelFocus >= 1) panelAct(buttons[panelFocus - 1])
-        }
-        syncB(); invalidate()
-        return true
-    }
-
-    private fun panelAct(act: String) {
-        val id = panelId
-        if (id == 0) return
-        when (act) {
-            "share" -> {
-                val q = questById[id] ?: return
-                if (!questsParty) { note("You are not in a party."); return }          // the game's ERR_QUEST_PUSH_NOT_IN_PARTY_S
-                if (!q.optBoolean("push")) { note("That quest cannot be shared."); return }
-                onShareQuest?.invoke(id) ?: note("Share is not on the tap pad yet")
-            }
-            "abandon" -> {
-                if (questById[id]?.optBoolean("canAbandon", true) == false) { note("That quest cannot be abandoned."); return }
-                onAbandonArm?.invoke(id) ?: note("Abandon is not on the tap pad yet")
-            }
-            "abandon!" -> if (armedNow()) { armedId = 0; onAbandonConfirm?.invoke(id) }
-            "close" -> { closePanel(); return }
-            "cancel" -> armedId = 0
-        }
-        syncB(); invalidate()
-    }
-
+    private var panelFocus: Int get() = qp.focus; set(v) { qp.focus = v }
+    private fun panelKey(k: String): Boolean = qp.key(k)
+    private fun panelAct(act: String) = qp.act(act)
+    private fun armedNow(): Boolean = qp.armedNow()
     /** {"type":"questack"}: Abandon's arm opens the question; a share / abandon answer is said */
-    fun onQuestAck(msg: JSONObject) {
-        val op = msg.optString("op")
-        val id = msg.optInt("id", 0)
-        if (panelId == 0 || (id != 0 && id != panelId)) return
-        val ok = msg.optBoolean("ok")
-        when (op) {
-            "arm" -> if (ok) { armedId = panelId; armedTitle = msg.optString("title", "this quest"); armedAt = android.os.SystemClock.elapsedRealtime() }
-                else note(msg.optString("why", "").ifEmpty { "The game did not abandon it" })
-            "abandon" -> if (ok) { closePanel(); note("Abandoned") } else note(msg.optString("why", "").ifEmpty { "The game did not abandon it" })
-            "share" -> note(if (ok) "Shared" else msg.optString("why", "").ifEmpty { "The game did not share it" })
-            else -> return
-        }
-        syncB(); postInvalidate()
-    }
-
-    private fun wrap(text: String, p: Paint, w: Float): android.text.StaticLayout =
-        android.text.StaticLayout.Builder.obtain(text, 0, text.length, android.text.TextPaint(p), w.toInt().coerceAtLeast(10)).setLineSpacing(0f, 1.05f).build()
-
-    private fun drawPanel(c: Canvas, x: Float, y0: Float, yMax: Float, maxW: Float) {
-        panelHits.clear()
-        val q = questById[panelId]
-        if (q == null) { closePanel(); return }                     // it left the log
-        val w = min(680f, maxW)
-        if (w < 260f || yMax - y0 < 260f) return
-        val pad = 20f
-        val btnH = 84f
-        val armed = armedNow()
-        // as tall as its text needs (a tooltip, not a pane: the user), at most down to the field's bottom
-        val want = if (panelContentH > 0f) 10f + 16f + panelContentH + 8f + (if (armed) 46f else 0f) + 16f + btnH + 10f else Float.MAX_VALUE
-        panelBox.set(x, y0, x + w, min(yMax, y0 + max(want, 360f)))
-        val inner = UiKit.menu(c, panelBox, solid = true)
-        val tw = inner.width() - 2f * pad
-        val actTop = inner.bottom - btnH - 16f - (if (armed) 46f else 0f)
-        // the text, scrolled, clipped above the buttons
-        panelViewH = actTop - inner.top - 8f
-        panelScroll = panelScroll.coerceIn(0f, max(0f, panelContentH - panelViewH))
-        c.save()
-        c.clipRect(inner.left, inner.top, inner.right, actTop - 8f)
-        c.translate(inner.left + pad, inner.top + 16f - panelScroll)
-        var y = 0f
-        val tl = wrap(q.optString("title", "Quest"), UiKit.bodyPaint(32f, cardFor(q).colour), tw); tl.draw(c); y += tl.height + 8f
-        val meta = listOfNotNull(if (q.has("lv")) "Level ${q.optInt("lv")}" else null, q.optString("zone", "").ifEmpty { null },
-            if (q.optInt("grp", 0) > 1) "Group ${q.optInt("grp")}" else null,
-            if (trackedNo.containsKey(panelId)) "Tracked" else "Not tracked").joinToString("  ·  ")
-        c.drawText(ellipsize(UiKit.bodyPaint(22f, cDim), meta, tw), 0f, y + 22f, UiKit.bodyPaint(22f, cDim)); y += 38f
-        when {
-            q.optBoolean("failed") -> { c.drawText("Failed", 0f, y + 24f, UiKit.bodyPaint(25f, Color.rgb(230, 70, 50))); y += 38f }
-            q.optBoolean("ready") || q.optBoolean("done") -> { c.drawText("Ready to turn in", 0f, y + 24f, UiKit.bodyPaint(25f, Theme.ok)); y += 38f }
-        }
-        q.optString("wp", "").takeIf { it.isNotEmpty() }?.let {
-            val l = wrap("Next: $it", UiKit.bodyPaint(24f, Theme.text), tw); c.save(); c.translate(0f, y); l.draw(c); c.restore(); y += l.height + 10f
-        }
-        val objs = q.optJSONArray("obj")
-        if (objs != null && objs.length() > 0) {
-            y += 6f
-            c.drawText("Objectives", 0f, y + 26f, UiKit.bodyPaint(27f, cGold)); y += 42f
-            for (i in 0 until objs.length()) {
-                val o = objs.optJSONObject(i) ?: continue
-                val fin = o.optBoolean("f")
-                val t = o.optString("t", "").ifEmpty { if (o.has("need")) "${o.optInt("have")}/${o.optInt("need")}" else "objective" }
-                val l = wrap(t, UiKit.bodyPaint(24f, if (fin) Theme.dim else Theme.text), tw - 34f)
-                UiKit.objectiveMark(c, 13f, y + 15f, 22f, done = fin)
-                c.save(); c.translate(34f, y); l.draw(c); c.restore()
-                y += l.height + 10f
-            }
-        }
-        q.optString("desc", "").takeIf { it.isNotEmpty() }?.let { desc ->
-            y += 14f
-            val edge = 28f
-            val l = wrap(desc, UiKit.bodyPaint(23f, Color.rgb(48, 32, 16)), tw + 16f - edge * 2.4f)
-            val box = RectF(-8f, y, tw + 8f, y + l.height + 44f + edge * 2.2f + 8f)
-            val pin = UiKit.parchment(c, box, edge)
-            c.drawText("Description", pin.left, pin.top + 26f, UiKit.bodyPaint(26f, Color.rgb(64, 40, 16)))
-            c.save(); c.translate(pin.left, pin.top + 44f); l.draw(c); c.restore()
-            y = box.bottom + 12f
-        }
-        panelContentH = y + 24f
-        c.restore()
-        if (panelContentH - panelScroll > panelViewH + 1f) {
-            val cue = RectF(inner.left, inner.top, inner.right, actTop - 14f)
-            UiKit.moveArrowsUpDown(c, cue, up = false, down = true, size = 18f, width = 26f, around = true)
-        }
-        // the buttons: Share, Abandon and Close (Cancel and Abandon while the game asks)
-        val gap = 10f
-        val nb = if (armed) 2 else 3
-        val bw = (inner.width() - 2f * pad - gap * (nb - 1)) / nb
-        val b1 = RectF(inner.left + pad, inner.bottom - btnH - 12f, inner.left + pad + bw, inner.bottom - 12f)
-        val b2 = RectF(b1.right + gap, b1.top, b1.right + gap + bw, b1.bottom)
-        val b3 = RectF(b2.right + gap, b1.top, b2.right + gap + bw, b1.bottom)
-        val glyphs = false                                           // the cursor says which (the user's box cursor), not a glyph each
-        if (armed) {
-            val qp = UiKit.bodyPaint(25f, Theme.text)
-            c.drawText(ellipsize(qp, "Abandon \"$armedTitle\"?", tw), inner.left + pad, b1.top - 16f, qp)
-            if (glyphs) UiKit.button(c, b1, "Cancel", UiKit.backGlyph()) else UiKit.button(c, b1, "Cancel")
-            if (glyphs) UiKit.button(c, b2, "Abandon", glyph("a")) else UiKit.button(c, b2, "Abandon")
-            panelHits.add(RectF(b1) to "cancel"); panelHits.add(RectF(b2) to "abandon!")
-        } else {
-            val shareOk = questsParty && q.optBoolean("push")
-            val abandonOk = q.optBoolean("canAbandon", true)
-            val s1 = if (shareOk) UiKit.Button.UP else UiKit.Button.DISABLED
-            val s2 = if (abandonOk) UiKit.Button.UP else UiKit.Button.DISABLED
-            if (glyphs) UiKit.button(c, b1, "Share", glyph("a"), s1) else UiKit.button(c, b1, "Share", s1)
-            if (glyphs) UiKit.button(c, b2, "Abandon", glyph("y"), s2) else UiKit.button(c, b2, "Abandon", s2)
-            UiKit.button(c, b3, "Close")
-            panelHits.add(RectF(b1) to "share"); panelHits.add(RectF(b2) to "abandon"); panelHits.add(RectF(b3) to "close")
-        }
-        // the cursor in the box: on the text (with its up / down arrows) or on a button
-        when {
-            panelFocus == 0 -> {
-                val tb = RectF(inner.left + 4f, inner.top + 4f, inner.right - 4f, actTop - 10f)
-                UiKit.focus(c, tb)
-            }
-            panelFocus >= 1 -> listOf(b1, b2, b3).getOrNull(panelFocus - 1)?.let { UiKit.focus(c, it) }
-        }
-        if (armedId != 0 && !armed) { armedId = 0 }                   // the game's question ran out
-        else if (armed) postInvalidateDelayed(500)
-    }
+    fun onQuestAck(msg: JSONObject) = qp.onAck(msg)
+    private fun drawPanel(c: Canvas, x: Float, y0: Float, yMax: Float, maxW: Float) = qp.draw(c, x, y0, yMax, maxW)
 
     // ---- THE CURSOR'S DOTTED LINE (the user, 2026-10-16: first "Opening the map module ... highlights a dotted line slowly moving
     // towards the quest marker if it is available", then on test13: "The dotted lines to quests is only showing when first opening the

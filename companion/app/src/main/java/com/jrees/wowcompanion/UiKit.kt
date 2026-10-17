@@ -2894,6 +2894,11 @@ object UiKit {
             c.drawCircle(cx, cy, size * 0.36f, pFlat)
             pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2.5f; pFlat.color = Theme.gold
             c.drawCircle(cx, cy, size * 0.36f, pFlat)
+            if (number != null) {
+                val p = numberPaint(size * 0.4f, if (focus) Color.rgb(34, 22, 6) else Theme.gold, shadow = !focus)
+                    .apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+                c.drawText(number.toString(), cx, cy - (p.ascent() + p.descent()) / 2f, p)
+            }
             return
         }
         if (focus) tex("poi_glow")?.let {

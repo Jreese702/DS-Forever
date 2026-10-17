@@ -35,6 +35,10 @@ object MapRoomKeys {
         object ToList : Do()
         data class ToggleGroup(val zone: String) : Do()
         object ZoomIn : Do()
+        /** X on the map: the yellow quest circles shown / hidden (b-maproom-quests) */
+        object ToggleQuests : Do()
+        /** A on a quest circle: its quest panel (b-maproom-quests) */
+        data class OpenQuest(val quest: Int) : Do()
         object ZoomOut : Do()
         data class Open(val zone: Int) : Do()
         data class TrackFocus(val quest: Int) : Do()
@@ -53,6 +57,7 @@ object MapRoomKeys {
         val region: Region, val zoneView: Boolean, val hoverZone: Int?, val hoverQuest: Int?, val listQuest: Int?,
         val hasParent: Boolean, val listHasQuests: Boolean,
         val listHeader: String? = null, val hoverCity: Int? = null, val hoverFocused: Boolean = false, val hoverTracked: Boolean = false,
+        val questsOn: Boolean = true,
     )
 
     fun press(k: String, c: Ctx): Do {
@@ -81,9 +86,10 @@ object MapRoomKeys {
             // full-screen map, which the room does not have)
             "PADDUP", "PADDDOWN", "PADDLEFT" -> Do.None
             "PADDRIGHT" -> if (c.listHasQuests) Do.ToList else Do.None
-            // the game's A/X "Change map"; on a quest marker the user's A Focus/Track (not offered on the focused one) and X Track/Untrack
-            "PAD1" -> if (quest != null) (if (c.hoverFocused) Do.None else Do.TrackFocus(quest)) else openable(c)?.let { Do.Open(it) } ?: Do.None
-            "PAD3" -> if (quest != null) Do.ToggleTrack(quest) else if (c.hasParent) Do.Up else Do.None
+            // the user on test61: "Selecting a zone with A opens that zone's quests", "Selecting a quest with A opens that quest in the
+            // quest panel" (Track / Focus are the panel's and the list's now); "Change X to show / hide quests"
+            "PAD1" -> if (quest != null) Do.OpenQuest(quest) else openable(c)?.let { Do.Open(it) } ?: Do.None
+            "PAD3" -> Do.ToggleQuests
             // one zoom on every map, the world to a city (test53: "zoom out all the way to continents ... all the way in to the cities")
             "PADLSHOULDER" -> Do.ZoomOut
             "PADRSHOULDER" -> Do.ZoomIn
@@ -99,12 +105,17 @@ object MapRoomKeys {
     fun bLeadsHome(c: Ctx): Boolean = true            // B is Home everywhere (the user after b104)
 
     /** the legend's lines on the map side (the game's footer; the view draws them): which prompts show for [c] */
-    enum class Prompt { CHANGE_MAP, FOCUS_TRACK, FOCUS, TRACK, UNTRACK, BACK, QUESTS }
+    enum class Prompt { CHANGE_MAP, FOCUS_TRACK, FOCUS, TRACK, UNTRACK, BACK, QUESTS, OPEN, OPEN_QUEST, SHOW_QUESTS, HIDE_QUESTS, MORE, ZOOM }
 
+    /** the map side's legend, the current mapping (the user on test61: "the glyphs need to be updated"): A Open / Open quest, X Show /
+     *  Hide quests, Y More actions, B Back, LB / RB Zoom, D-pad right Quests */
     fun legend(c: Ctx): List<Prompt> {
         val out = ArrayList<Prompt>()
         val quest = c.hoverQuest?.takeIf { c.zoneView && c.region == Region.MAP }
-        if (quest != null) out += questPrompts(c.hoverTracked, c.hoverFocused) else out += Prompt.CHANGE_MAP
+        if (quest != null) out += Prompt.OPEN_QUEST else if (openable(c) != null) out += Prompt.OPEN
+        out += if (c.questsOn) Prompt.HIDE_QUESTS else Prompt.SHOW_QUESTS
+        if (c.hasParent) out += Prompt.MORE
+        out += Prompt.ZOOM
         out += Prompt.BACK
         if (c.listHasQuests) out += Prompt.QUESTS
         return out

@@ -285,6 +285,21 @@ class WorldMapRoomView(context: Context) : View(context) {
     // ---- TRAVEL (b-travel-layer): the map module's scene (its "Travel" filter), on the zone or the continent shown; a zone names its
     // points; the cursor on one (a tap, the stick) shows its name and where it goes
     var travelScene: (() -> Travel.Scene?)? = null
+
+    // ---- THE QUEST PANEL (the user on test61: "Selecting a quest with A opens that quest in the quest panel"): the map module's own
+    // (QuestPanel), its Share / Abandon through this room's Quests actions (its pending answers, its Abandon question)
+    private val qp = QuestPanel(object : QuestPanel.Host {
+        override fun quest(id: Int): JSONObject? = logEntry(id)
+        override fun tracked(id: Int): Boolean = logEntry(id)?.let { trackedQ(it) } ?: false
+        override fun colour(q: JSONObject): Int = Theme.gold
+        override fun party(): Boolean = questsParty
+        override fun note(text: String) = say(text)
+        override fun share(id: Int) { if (pendingBusy()) say("Waiting for the game to answer") else sendOp(QuestPad.Act.SHARE, id) }
+        override fun abandonArm(id: Int) { if (pendingBusy()) say("Waiting for the game to answer") else sendOp(QuestPad.Act.ARM, id) }
+        override fun abandonConfirm(id: Int) { confirmId = id; confirmAt = System.currentTimeMillis(); confirmAbandon() }
+        override fun changed() { syncB(); invalidate() }
+        override fun redrawIn(ms: Long) { postInvalidateDelayed(ms) }
+    })
     private var travelDrawn: List<Pair<Travel.Point, FloatArray>> = emptyList()
     private fun drawTravel(c: Canvas) {
         travelDrawn = emptyList()
@@ -678,7 +693,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         return MapRoomKeys.Ctx(region, isZoneView(), cursor, hoverQuest, selQuest.takeIf { it != 0 },
             hasParent = model.parentOf(shown) != null, listHasQuests = rows.isNotEmpty(),
             listHeader = header, hoverCity = hoverCity ?: hoverNear, hoverFocused = hoverQuest != null && hoverQuest == focusQid,
-            hoverTracked = hoverQuest?.let { q -> logEntry(q)?.let { trackedQ(it) } } ?: false)
+            hoverTracked = hoverQuest?.let { q -> logEntry(q)?.let { trackedQ(it) } } ?: false, questsOn = questsShown())
     }
 
     // ---------------------------------------------------------------- THE QUEST BOOK (the user after b104: every quest, by zone)
@@ -1140,7 +1155,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         c.save()
         c.clipRect(canvasR)
         drawArt(c)
-        if (isZoneView()) drawZoneMarks(c) else drawChildren(c)
+        if (isZoneView()) { if (questsShown()) drawZoneMarks(c) } else { drawChildren(c); if (questsShown()) drawCountCircles(c) }
         drawWaypoint(c)
         drawTravel(c)
         drawGroup(c)
@@ -1148,6 +1163,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         drawAreaLabel(c)
         drawQuestTip(c)
         drawTravelTip(c)
+        // the quest panel (A on a quest circle: b-maproom-quests), at the map's left, over it
+        if (qp.isOpen) qp.draw(c, canvasR.left + 16f, canvasR.top + 16f, canvasR.bottom - 16f, min(680f, canvasR.width() * 0.45f))
         c.restore()
         if (drawerOut() > 0.001f) { drawDrawerShadow(c); drawPanel(c) } else rowHits.clear()   // a closed drawer's rows take no taps
         drawFurniture(c)
@@ -1377,6 +1394,49 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
 
     /** a continent / the world: its zones; the one under the cursor lit (its area label: drawAreaLabel) */
+    // ---- THE QUESTS ON THE MAPS (the user on test61: "show all of the quests on the maps with the yellow circles"; "Before going into
+    // the zone, the yellow circle just says the number of quests in that zone"). A zone's quests are its marks (the game's own
+    // GetQuestsOnMap, Map.lua mapquests; a capital's counted in its zone); on a continent each zone with any gets ONE yellow circle
+    // with their count at its middle, on the world map each continent one. X shows / hides them (the "questcircles" switch).
+    private fun questsShown(): Boolean = prefs.getBoolean("questcircles", true)
+    private fun toggleQuestCircles() { prefs.edit().putBoolean("questcircles", !questsShown()).apply(); invalidate() }
+    /** the distinct quests on map [zone] and the capitals in it */
+    private fun questsIn(zone: Int): Set<Int> {
+        val out = HashSet<Int>()
+        zoneQuests[zone]?.forEach { out.add(it.id) }
+        for ((city, parent) in WorldMapModel.CITY_ZONE) if (parent == zone) zoneQuests[city]?.forEach { out.add(it.id) }
+        if (zone == playerMap) mapDoc?.optJSONArray("quests")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.optInt("questID", 0)?.takeIf { it != 0 }?.let { out.add(it) } }
+        return out
+    }
+    /** this frame's count circles (their zone, where drawn), for the cursor's A */
+    private val countHits = ArrayList<Pair<Int, FloatArray>>()
+    private val COUNT_PX = 54f
+    private fun drawCountCircles(c: Canvas) {
+        countHits.clear()
+        val assigns = model.assignsOf(shown)
+        if (assigns.isNotEmpty()) {
+            // the world map: one circle per continent, at the middle of the box it is drawn in
+            for (a in assigns) {
+                val cont = model.maps.values.firstOrNull { it.type == 2 && it.world?.continent == a.map } ?: continue
+                val n = model.maps.values.filter { it.type == 3 && it.world?.continent == a.map }.flatMap { questsIn(it.id) }.toSet().size
+                if (n == 0) continue
+                val x = sx(((a.u0 + a.u1) / 2).toFloat()); val y = sy(((a.v0 + a.v1) / 2).toFloat())
+                UiKit.questDisc(c, x, y, COUNT_PX, focus = true, number = n)       // the game's yellow disc, the count on it
+                countHits.add(cont.id to floatArrayOf(x, y))
+            }
+            return
+        }
+        for ((zone, p) in kidsOf(shown)) {
+            if (WorldMapModel.CITY_ZONE.containsKey(zone)) continue
+            val n = questsIn(zone).size
+            if (n == 0) continue
+            val x = sx(p.centerX()); val y = sy(p.centerY())
+            if (x < canvasR.left || x > canvasR.right || y < canvasR.top || y > canvasR.bottom) continue
+            UiKit.questDisc(c, x, y, COUNT_PX, focus = true, number = n)       // the game's yellow disc, the count on it
+            countHits.add(zone to floatArrayOf(x, y))
+        }
+    }
+
     private fun drawChildren(c: Canvas) {
         val cur = cursor
         val r = cur?.let { model.rectOf(it) ?: model.highlightOf(shown, it)?.let { h -> floatArrayOf(h.x, h.x + h.w, h.y, h.y + h.h) } }
@@ -1768,6 +1828,10 @@ class WorldMapRoomView(context: Context) : View(context) {
      */
     private fun legendPrompts(): List<Prompt> {
         val back = Prompt(listOf(glyph("b")), "Back")
+        // the quest panel (b-maproom-quests): its own keys
+        if (qp.isOpen) return if (qp.focus < 0) listOf(Prompt(listOf(glyph("right")), "Into the quest"), Prompt(listOf(glyph("b")), "Close"))
+            else if (qp.focus == 0) listOf(Prompt(listOf(glyph("up"), glyph("down")), "Scroll"), Prompt(listOf(glyph("b")), "Back"))
+            else listOf(Prompt(listOf(glyph("a")), "Press"), Prompt(listOf(glyph("b")), "Back"))
         if (confirmId != 0) return emptyList()      // the question's own buttons say A Yes / B No (UI Art: the clutter rule)
         if (optQuest != 0) return listOf(Prompt(listOf(glyph("a")), "Select"), Prompt(listOf(glyph("b")), "Close"))
         if (menuOpen) return listOf(Prompt(listOf(glyph("a")), "Toggle"), Prompt(listOf(glyph("b")), "Close"))
@@ -1783,7 +1847,7 @@ class WorldMapRoomView(context: Context) : View(context) {
                 null -> {}
             }
             out += back
-            out += Prompt(listOf("ltr_left"), "World Map")
+            out += Prompt(listOf(glyph("left")), "World Map")
             return out
         }
         return MapRoomKeys.legend(keyCtx()).map { prompt(it) }
@@ -1795,7 +1859,13 @@ class WorldMapRoomView(context: Context) : View(context) {
         MapRoomKeys.Prompt.TRACK -> Prompt(listOf(glyph("x")), "Track")
         MapRoomKeys.Prompt.UNTRACK -> Prompt(listOf(glyph("x")), "Untrack")
         MapRoomKeys.Prompt.BACK -> Prompt(listOf(glyph("b")), "Back")
-        MapRoomKeys.Prompt.QUESTS -> Prompt(listOf("ltr_right"), "Quests")
+        MapRoomKeys.Prompt.QUESTS -> Prompt(listOf(glyph("right")), "Quests")
+        MapRoomKeys.Prompt.OPEN -> Prompt(listOf(glyph("a")), "Open")
+        MapRoomKeys.Prompt.OPEN_QUEST -> Prompt(listOf(glyph("a")), "Open quest")
+        MapRoomKeys.Prompt.SHOW_QUESTS -> Prompt(listOf(glyph("x")), "Show quests")
+        MapRoomKeys.Prompt.HIDE_QUESTS -> Prompt(listOf(glyph("x")), "Hide quests")
+        MapRoomKeys.Prompt.MORE -> Prompt(listOf(glyph("y")), "More")
+        MapRoomKeys.Prompt.ZOOM -> Prompt(listOf(glyph("lb"), glyph("rb")), "Zoom")
     }
 
     /**
@@ -1971,12 +2041,13 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun glyph(k: String): String = when (CastSettings.buttonLayout) {
         CastSettings.ButtonLayout.XBOX -> when (k) {
             "a" -> "ltr_a"; "b" -> "ltr_b"; "x" -> "ltr_x"; "y" -> "ltr_y"; "lb" -> "ltr_lshoulder"; "rb" -> "ltr_rshoulder"
-            else -> "ltr_up" }
+            "right" -> "ltr_right"; "left" -> "ltr_left"; "down" -> "ltr_down"; else -> "ltr_up" }
         CastSettings.ButtonLayout.PLAYSTATION -> when (k) {
             "a" -> "shp_cross"; "b" -> "shp_circle"; "x" -> "shp_square"; "y" -> "shp_triangle"; "lb" -> "shp_lshoulder"
-            "rb" -> "shp_rshoulder"; else -> "shp_up" }
+            "rb" -> "shp_rshoulder"; "right" -> "shp_right"; "left" -> "shp_left"; "down" -> "shp_down"; else -> "shp_up" }
         else -> when (k) {
             "a" -> "rev_a"; "b" -> "rev_b"; "x" -> "rev_x"; "y" -> "rev_y"; "lb" -> "rev_lshoulder"; "rb" -> "rev_rshoulder"
+            "right" -> "rev_right"; "left" -> "rev_left"; "down" -> "rev_down"
             else -> "gen_up" }
     }
 
@@ -2094,6 +2165,8 @@ class WorldMapRoomView(context: Context) : View(context) {
             when (k) { "PAD1" -> confirmAbandon(); "PAD2", "PAD4" -> confirmId = 0 }
             return false
         }
+        // the quest panel (b-maproom-quests): Right into it, Up / Down / A in it, Left / B out, B on the map closes it
+        if (qp.isOpen && qp.key(k)) return false
         if (optQuest != 0) {
             val os = opts(optQuest)
             when (k) {
@@ -2147,6 +2220,8 @@ class WorldMapRoomView(context: Context) : View(context) {
             MapRoomKeys.Do.ZoomIn -> { zoom = min(zoomMax(), zoom * 1.6f); panX = curX; panY = curY; clampPan(); glide() }
             MapRoomKeys.Do.ZoomOut -> { zoom = max(zoomMin(), zoom / 1.6f); if (zoom >= 1f) clampPan(); glide() }
             is MapRoomKeys.Do.Open -> goTo(d.zone)
+            MapRoomKeys.Do.ToggleQuests -> toggleQuestCircles()
+            is MapRoomKeys.Do.OpenQuest -> qp.open(d.quest)
             is MapRoomKeys.Do.TrackFocus -> trackFocus(d.quest)
             is MapRoomKeys.Do.ToggleTrack -> toggleTrack(d.quest)
             is MapRoomKeys.Do.ListMove -> moveQuest(d.d)
