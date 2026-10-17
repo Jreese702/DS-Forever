@@ -3090,8 +3090,69 @@ class MapView(context: Context) : View(context) {
     private val panelHits = ArrayList<Pair<RectF, String>>()
     private val ARM_MS = 10_000L                     // Quests.lua ARM_SECONDS: a confirm after it is refused
 
-    private fun openPanel(id: Int) { panelId = id; armedId = 0; panelScroll = 0f; panelContentH = 0f; syncB(); invalidate() }
-    private fun closePanel() { panelId = 0; armedId = 0; panelHits.clear() }
+    private fun openPanel(id: Int) { panelId = id; armedId = 0; panelScroll = 0f; panelContentH = 0f; panelAreas = false; syncB(); invalidate() }
+    private fun closePanel() { panelId = 0; armedId = 0; panelAreas = false; panelHits.clear() }
+
+    /** the open quest panel, for the host: Home's buff / debuff pane leaves this box to it (the panel lies above the buffs) */
+    fun panelOpen(): Boolean = panelId != 0
+    fun panelCover(): RectF? = if (panelId != 0 && !panelBox.isEmpty) RectF(panelBox) else null
+
+    // ---- THE PANEL'S QUEST AREAS (the user, 2026-10-16: "pressing over on the dpad should highlight quest areas not the buffs"): D-pad
+    // Right with the panel open lights the quest's own areas on the map - QuestieDB's objective areas, the shape traced from play,
+    // the still-needed goal points - in a pulsing gold, and brings the nearest into view; the panel steps aside meanwhile (it would
+    // cover them, and the buffs come back from behind it); Left goes back to the panel, B closes it.
+    private var panelAreas = false
+    private fun panelAreaShapes(m: JSONObject, r: PoiStore.Rect, q: Int): Pair<List<QArea>, List<DoubleArray>> {
+        val shapes = ArrayList<QArea>()
+        qdbAreas[m.optInt("mapID", Int.MIN_VALUE)]?.let { a ->
+            for (g in QdbAreas.keep(a.objs.filter { it.qid == q }.flatMap { QdbAreas.groups(it.pts, r.width, r.height) }, true))
+                qAreaOf01(g.outline, true, floored = true)?.let { shapes.add(it) }
+        }
+        if (shapes.isEmpty()) QuestTrace.shape(q, r.continent)?.let { pts ->
+            toQArea(r, DoubleArray(pts.size) { pts[it][0] }, DoubleArray(pts.size) { pts[it][1] }, true, true)?.let { shapes.add(it) }
+        }
+        var mq: JSONObject? = null
+        m.optJSONArray("quests")?.let { qs -> for (i in 0 until qs.length()) qs.optJSONObject(i)?.let { if (it.optInt("questID", 0) == q) mq = it } }
+        return shapes to CursorRoute.goals(mq, questById[q], m.optInt("mapID", Int.MIN_VALUE))
+    }
+
+    /** the areas came on: the map pans to the nearest of them (with the player, as Show on map does) */
+    private fun frameAreas() {
+        val m = map ?: return
+        val r = rect ?: return
+        if (!r.valid) return
+        val (shapes, pts) = panelAreaShapes(m, r, panelId)
+        val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
+        val cands = pts + shapes.map { doubleArrayOf(((it.minX + it.maxX) / 2f).toDouble(), ((it.minY + it.maxY) / 2f).toDouble()) }
+        val best = cands.minByOrNull { if (px.isNaN()) 0.0 else hypot((it[0] - px) * r.width, (it[1] - py) * r.height) }
+        if (best == null) { note("This quest has no area on this map"); return }
+        focusOn(best[0], best[1])
+    }
+
+    /** the lit areas, drawn over the map's own areas and under the markers */
+    private fun drawPanelAreas(c: Canvas, m: JSONObject, sx: (Double) -> Float, sy: (Double) -> Float) {
+        val r = rect ?: return
+        if (!r.valid) return
+        val (shapes, pts) = panelAreaShapes(m, r, panelId)
+        val t = (android.os.SystemClock.elapsedRealtime() % 1400L) / 1400f
+        val pulse = 0.55f + 0.45f * kotlin.math.sin(t * 2f * Math.PI.toFloat())
+        val g = Color.argb((90 * pulse).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
+        for (a in shapes) {
+            pathTmp.reset()
+            for (j in a.xs.indices) { val x = sx(a.xs[j].toDouble()); val y = sy(a.ys[j].toDouble()); if (j == 0) pathTmp.moveTo(x, y) else pathTmp.lineTo(x, y) }
+            pathTmp.close()
+            pLit.style = Paint.Style.FILL; pLit.color = g; c.drawPath(pathTmp, pLit)
+            pLit.style = Paint.Style.STROKE; pLit.strokeWidth = 5f; pLit.color = Color.argb((255 * pulse).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
+            c.drawPath(pathTmp, pLit)
+        }
+        for (p in pts) {
+            val x = sx(p[0]); val y = sy(p[1])
+            pLit.style = Paint.Style.STROKE; pLit.strokeWidth = 5f; pLit.color = Color.argb((255 * pulse).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
+            c.drawCircle(x, y, 26f + 10f * pulse, pLit)
+        }
+        if (isShown) postInvalidateDelayed(33)
+    }
+    private val pLit = Paint(Paint.ANTI_ALIAS_FLAG)
     private fun armedNow(): Boolean = armedId != 0 && armedId == panelId && android.os.SystemClock.elapsedRealtime() - armedAt < ARM_MS
 
     private fun panelKey(k: String) {
@@ -3101,6 +3162,8 @@ class MapView(context: Context) : View(context) {
             "PAD4" -> if (!armedNow()) panelAct("abandon")
             "PADDUP" -> panelScroll = (panelScroll - 90f).coerceAtLeast(0f)
             "PADDDOWN" -> panelScroll = (panelScroll + 90f).coerceAtMost(max(0f, panelContentH - panelViewH))
+            "PADDRIGHT" -> if (!armedNow() && !panelAreas) { panelAreas = true; frameAreas() }
+            "PADDLEFT" -> panelAreas = false
         }
         syncB(); invalidate()
     }
@@ -3388,13 +3451,13 @@ class MapView(context: Context) : View(context) {
     private fun glyph(k: String): String = when (CastSettings.buttonLayout) {
         CastSettings.ButtonLayout.XBOX -> when (k) {
             "a" -> "ltr_a"; "b" -> "ltr_b"; "x" -> "ltr_x"; "y" -> "ltr_y"; "lb" -> "ltr_lshoulder"; "rb" -> "ltr_rshoulder"
-            else -> "ltr_up" }
+            "right" -> "ltr_right"; "left" -> "ltr_left"; else -> "ltr_up" }
         CastSettings.ButtonLayout.PLAYSTATION -> when (k) {
             "a" -> "shp_cross"; "b" -> "shp_circle"; "x" -> "shp_square"; "y" -> "shp_triangle"; "lb" -> "shp_lshoulder"
-            "rb" -> "shp_rshoulder"; else -> "shp_up" }
+            "rb" -> "shp_rshoulder"; "right" -> "shp_right"; "left" -> "shp_left"; else -> "shp_up" }
         else -> when (k) {
             "a" -> "rev_a"; "b" -> "rev_b"; "x" -> "rev_x"; "y" -> "rev_y"; "lb" -> "rev_lshoulder"; "rb" -> "rev_rshoulder"
-            else -> "gen_up" }
+            "right" -> "gen_right"; "left" -> "gen_left"; else -> "gen_up" }
     }
 
     private fun drawPadHints(c: Canvas, left: Float, top: Float, fw: Float, fh: Float) {
@@ -3408,8 +3471,9 @@ class MapView(context: Context) : View(context) {
         if (pmenu.open) { UiKit.hints(c, band.right - 24f, cy, glyph("up") to "Select", glyph("a") to "Choose", glyph("b") to "Back"); return }
         if (panelId != 0) {
             val hp = if (armedId == panelId) arrayOf(glyph("a") to "Abandon", glyph("b") to "Cancel")
-                else listOfNotNull(if (panelContentH > panelViewH + 1f) glyph("up") to "Scroll" else null, glyph("a") to "Share",
-                    glyph("y") to "Abandon", glyph("b") to "Close").toTypedArray()
+                else if (panelAreas) arrayOf(glyph("left") to "Quest", glyph("b") to "Close")
+                else listOfNotNull(if (panelContentH > panelViewH + 1f) glyph("up") to "Scroll" else null, glyph("right") to "Areas",
+                    glyph("a") to "Share", glyph("y") to "Abandon", glyph("b") to "Close").toTypedArray()
             UiKit.hints(c, band.right - 24f, cy, *hp); return
         }
         // only what does something on the map right now (UI Art / the user's clutter rule)
@@ -3993,7 +4057,10 @@ class MapView(context: Context) : View(context) {
             val spanX = if (hasPlayer) abs(x - px) * r.width else 0.0
             val spanY = if (hasPlayer) abs(y - py) * r.height else 0.0
             val zx = r.width / max(spanX * 1.35, FOCUS_MIN_YD)
-            val zy = if (spanY > 0.0) r.height / (spanY * 1.35) else Double.MAX_VALUE
+            // the field shows width/z yards across and, at the same yards per pixel, width/z * (its height / its width) down (not the
+            // map's own height/z: the field is wider than the map; a tall span was cut off, b-panel-areas on the render)
+            val fieldAspect = if (lastFieldW > 0f && lastFieldH > 0f) (lastFieldH / lastFieldW).toDouble() else 2.0 / 3.0
+            val zy = if (spanY > 0.0) r.width * fieldAspect / (spanY * 1.35) else Double.MAX_VALUE
             z = min(zx, zy).toFloat().coerceIn(1f, ZOOM_MAX)
         }
         if (focusRestoreZoom.isNaN()) focusRestoreZoom = zoom
@@ -4704,6 +4771,13 @@ class MapView(context: Context) : View(context) {
             drawPin(c, kind, cxp, cyp)
         }
 
+        // ---- the open panel's quest areas, lit (D-pad Right in the panel), under the markers
+        if (panelId != 0 && panelAreas && !compact && !morphOn) {
+            val save = c.save()
+            c.clipRect(left, top, left + fw, top + fh)
+            drawPanelAreas(c, m, { v -> sx(v) }, { v -> sy(v) })
+            c.restoreToCount(save)
+        }
         // ---- THE CURSOR'S DOTTED LINE, under the live markers and the player's arrow (the agreed design), inside the field
         val route = if (!compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN()) cursorRoute() else null
         if (route != null) {
@@ -5053,7 +5127,8 @@ class MapView(context: Context) : View(context) {
                 val lw = if (showTracker && items.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + 16f else 0f
                 drawPlayerMenu(c, left + BTN_GAP + lw, top + BTN_GAP, top + fh - 64f - (if (hintsOn()) HINT_BAND else 0f), fw - lw - 2f * BTN_GAP)
             } else { pmenuHits.clear(); pmenuBox.setEmpty() }
-            if (panelId != 0 && !pmenu.open && !morphOn) {
+            // the panel steps aside while its quest's areas are lit (it would cover them); Left brings it back
+            if (panelId != 0 && !panelAreas && !pmenu.open && !morphOn) {
                 val lw = if (showTracker && items.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + 16f else 0f
                 drawPanel(c, left + BTN_GAP + lw, top + BTN_GAP, top + fh - 64f - (if (hintsOn()) HINT_BAND else 0f), fw - lw - 2f * BTN_GAP)
             } else { panelHits.clear(); panelBox.setEmpty() }
