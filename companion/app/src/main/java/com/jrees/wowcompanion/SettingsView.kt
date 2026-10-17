@@ -375,7 +375,12 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 if (mi >= 0) { FrameGen.multiplier = FrameGen.MULTIPLIERS[mi]; invalidate(); return }
                 val ci = segChat.indexOfFirst { it.contains(x, y) }
                 val qi = segQt.indexOfFirst { it.contains(x, y) }
-                if (qi >= 0) { if (Settings.questTracking != Settings.QUEST_TRACKING[qi]) Settings.questTracking = Settings.QUEST_TRACKING[qi]; invalidate() }
+                if (qi >= 0) {
+                    if (Settings.questTracking != Settings.QUEST_TRACKING[qi]) Settings.questTracking = Settings.QUEST_TRACKING[qi]
+                    // an add-on not installed yet: choosing it installs it (the Add-ons tab's own Install; the app's route meanwhile)
+                    qtAddon(qi)?.let { a -> if (!ThirdPartyAddons.coreInstalled(a)) ThirdPartyAddons.install(a) }
+                    invalidate()
+                }
                 else if (ci >= 0) { if (Settings.chatDefaultInput != CHAT_INPUTS[ci]) Settings.chatDefaultInput = CHAT_INPUTS[ci] }
                 else {
                     val oi = segLocation.indexOfFirst { it.contains(x, y) }
@@ -537,7 +542,11 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         // Polestar / QuestTrail: what the add-on itself is doing, from the Add-ons registry (version, size, download / install)
         fun addonWord(a: ThirdPartyAddons.Addon, what: String): String {
             val st = ThirdPartyAddons.status(a, "core")
-            val state = if (st.kind == ThirdPartyAddons.Kind.INSTALLED) "installed" else st.line.ifEmpty { ThirdPartyAddons.size(a.core.mb) }
+            val state = when (st.kind) {
+                ThirdPartyAddons.Kind.INSTALLED -> "installed"
+                ThirdPartyAddons.Kind.NONE -> "not installed (${ThirdPartyAddons.size(a.core.mb)})"
+                else -> st.line.ifEmpty { "not installed" }
+            }
             return "${a.title} ${a.version}: $state · $what"        // the state first: a long line is cut at its end
         }
         val sub = when (Settings.questTracking) {
@@ -547,7 +556,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         }
         row(c, y, "Quest tracking", sub, enabled = true) { box ->
             val b = RectF(box.right - 16f - qtW * QT_LABELS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            segmented(c, b, QT_LABELS, Settings.QUEST_TRACKING.indexOf(Settings.questTracking), segQt)
+            qtSegmented(c, b, Settings.QUEST_TRACKING.indexOf(Settings.questTracking))
             b
         }
         return y + ROW_H
@@ -921,6 +930,31 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             out[i].set(b.left + i * w, b.top, b.left + (i + 1) * w, b.bottom)
             UiKit.choice(c, RectF(out[i].left + 2f, b.top - 6f, out[i].right - 2f, b.bottom + 6f), labels[i], i == sel,
                 textSize = SEG_TEXT)
+        }
+    }
+
+    /** the add-on behind Quest tracking's segment [i] (QuestTrail, Polestar), or null (Vanilla) */
+    private fun qtAddon(i: Int): ThirdPartyAddons.Addon? = when (Settings.QUEST_TRACKING.getOrNull(i)) {
+        "polestar" -> ThirdPartyAddons.POLESTAR; "questtrail" -> ThirdPartyAddons.QUESTTRAIL; else -> null }
+
+    /**
+     * Quest tracking's three segments (the user: Polestar / QuestTrail installed from Settings > Add-ons; the picker "offers the
+     * installed ones" and marks the others): an add-on not installed is drawn greyed with "not installed" (or "installing" once
+     * asked) under its name; it can still be chosen, which installs it ([qtAddon], ThirdPartyAddons.install).
+     */
+    private fun qtSegmented(c: Canvas, b: RectF, sel: Int) {
+        val w = b.width() / QT_LABELS.size
+        for (i in QT_LABELS.indices) {
+            segQt[i].set(b.left + i * w, b.top, b.left + (i + 1) * w, b.bottom)
+            val r = RectF(segQt[i].left + 2f, b.top - 6f, segQt[i].right - 2f, b.bottom + 6f)
+            val a = qtAddon(i)
+            if (a == null || ThirdPartyAddons.coreInstalled(a)) { UiKit.choice(c, r, QT_LABELS[i], i == sel, textSize = SEG_TEXT); continue }
+            val asked = ThirdPartyAddons.status(a, "core").kind != ThirdPartyAddons.Kind.NONE
+            UiKit.choice(c, r, "", i == sel, enabled = i == sel, textSize = SEG_TEXT)
+            val p1 = UiKit.bodyPaint(SEG_TEXT - 2f, if (i == sel) Theme.text else Theme.dim).apply { textAlign = Paint.Align.CENTER }
+            val p2 = UiKit.bodyPaint(15f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
+            c.drawText(QT_LABELS[i], r.centerX(), r.centerY() - 2f, p1)
+            c.drawText(if (asked) "installing" else "not installed", r.centerX(), r.centerY() + 20f, p2)
         }
     }
 
