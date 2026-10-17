@@ -53,7 +53,42 @@ class ChatKeyboard(c: Context, swap: Boolean = true) : View(c) {
      * One controller button (the room's guest names: PADDUP .. PAD4, the shoulders, the triggers, PADFORWARD). Returns false for a
      * button that is not the keyboard's (X, LB, RB: [ChatKeys.Act.Pass]), which the room then handles.
      */
-    fun press(button: String): Boolean = apply(keys.press(button, text()))
+    fun press(button: String): Boolean {
+        // A types the cursor's key: its letter pops up over it, as a finger's does (shown a moment, then fading)
+        if (button == "PAD1") popFor(keys.row, keys.col, held = false)
+        return apply(keys.press(button, text()))
+    }
+
+    /**
+     * THE KEY POP-UP (the user: "The keyboard needs some button feedback with actually showing the button's letter that you are pressing
+     * above your press so you know which letter you are hitting"): a phone keyboard's bubble - the key's character, enlarged on the
+     * board's own keycap with a gold rim, ABOVE the key - while it is pressed (a finger held on it; A: [POP_SHOW_MS]), the key itself
+     * pressed in; it fades over [POP_FADE_MS] after. Letters, digits and signs only (the word keys say what they are). Kept inside the
+     * board at its edges, so a top-row or end key's bubble stays on screen.
+     */
+    private var popRow = -1
+    private var popCol = -1
+    private var popLabel = ""
+    private var popHeld = false
+    private var popAt = 0L
+    private var popUpAt = 0L
+
+    private fun popFor(r: Int, c: Int, held: Boolean) {
+        val k = keys.layoutRows().getOrNull(r)?.cells?.getOrNull(c)?.key
+        if (k !is ChatKeys.Key.Ch) { popRow = -1; return }
+        popRow = r; popCol = c; popLabel = keys.charOf(k).toString()
+        val now = android.os.SystemClock.uptimeMillis()
+        popAt = now; popHeld = held; popUpAt = if (held) 0L else now + POP_SHOW_MS
+        invalidate()
+    }
+
+    /** the pop-up's alpha now, 0..1 (0 = none) */
+    private fun popAlpha(now: Long): Float {
+        if (popRow < 0) return 0f
+        if (popHeld) return 1f
+        val dt = now - popUpAt
+        return if (dt < 0) 1f else (1f - dt.toFloat() / POP_FADE_MS).coerceIn(0f, 1f)
+    }
 
     private fun apply(a: ChatKeys.Act): Boolean {
         when (a) {
@@ -97,22 +132,49 @@ class ChatKeyboard(c: Context, swap: Boolean = true) : View(c) {
             for ((ci, cell) in row.cells.withIndex()) {
                 val w = unit * cell.w + GAP * (cell.w - 1f)
                 val r = RectF(x, y, x + w, y + keyH)
-                drawKey(c, r, cell.key)
+                drawKey(c, r, cell.key, down = ri == popRow && ci == popCol && popAlpha(android.os.SystemClock.uptimeMillis()) > 0.5f)
                 places += Triple(ri, ci, r)
                 if (ri == keys.row && ci == keys.col) UiKit.focus(c, r)       // the gold box: the cursor
                 x += w + GAP
             }
             y += keyH + GAP
         }
+        drawPop(c, kb)
         // what the controller does here, the game's way: glyph and word, under the keys
         // NO glyph legend under the keys (the user, LATER 27: "the button glyph legend at the bottom of the keyboard is redundant
         // and should be removed"): the keys that have a button carry its glyph themselves
     }
 
-    /** one key: the kit's keycap, LOOK 1 (dark), as the user picked on SHEET_keyboard_v2.png */
-    private fun drawKey(c: Canvas, r: RectF, k: ChatKeys.Key) {
+    /** the pressed key's bubble over it (see [popFor]), inside the board [kb] */
+    private fun drawPop(c: Canvas, kb: RectF) {
+        val now = android.os.SystemClock.uptimeMillis()
+        val a = popAlpha(now)
+        if (a <= 0f) { popRow = -1; return }
+        val key = places.firstOrNull { it.first == popRow && it.second == popCol }?.third ?: return
+        val w = maxOf(key.width() * 1.45f, key.height() * 1.1f); val h = key.height() * 1.35f
+        var left = key.centerX() - w / 2f
+        left = left.coerceIn(kb.left + 4f, kb.right - 4f - w)
+        // over the key, its foot overlapping the key's top; never above the board (a top-row key's bubble stays on screen)
+        val top = (key.top - h + key.height() * 0.30f).coerceAtLeast(kb.top + 2f)
+        val bub = RectF(left, top, left + w, top + h)
+        val layer = c.saveLayerAlpha(bub.left - 8f, bub.top - 8f, bub.right + 8f, bub.bottom + 8f, (255 * a).toInt())
+        shadow.color = Color.argb(150, 0, 0, 0)
+        c.drawRoundRect(bub.left + 3f, bub.top + 6f, bub.right + 3f, bub.bottom + 6f, h * 0.16f, h * 0.16f, shadow)
+        UiKit.keyCap(c, bub, "", LOOK)
+        rim.color = Theme.gold
+        c.drawRoundRect(bub, h * 0.14f, h * 0.14f, rim)
+        val p = UiKit.bodyPaint(h * 0.52f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
+        c.drawText(popLabel, bub.centerX(), bub.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        c.restoreToCount(layer)
+        if (!popHeld) postInvalidateOnAnimation()
+    }
+    private val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
+
+    /** one key: the kit's keycap, LOOK 1 (dark), as the user picked on SHEET_keyboard_v2.png; [down] = pressed now (its pop-up shows) */
+    private fun drawKey(c: Canvas, r: RectF, k: ChatKeys.Key, down: Boolean = false) {
         when (k) {
-            is ChatKeys.Key.Ch -> UiKit.keyCap(c, r, keys.charOf(k).toString(), LOOK)
+            is ChatKeys.Key.Ch -> UiKit.keyCap(c, r, keys.charOf(k).toString(), LOOK, down = down)
             ChatKeys.Key.Shift -> {
                 UiKit.keyCap(c, r, "Shift", LOOK, mod = true, on = keys.shift != ChatKeys.Shift.OFF, glyph = "rev_rtrigger")
                 if (keys.shift == ChatKeys.Shift.LOCK) capsLine(c, r, "Shift")      // locked: a 3 px gold line under the word
@@ -146,8 +208,18 @@ class ChatKeyboard(c: Context, swap: Boolean = true) : View(c) {
     private val underline = Paint().apply { style = Paint.Style.FILL }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (e.actionMasked == MotionEvent.ACTION_UP) {
-            places.firstOrNull { it.third.contains(e.x, e.y) }?.let { (r, col, _) -> apply(keys.touch(r, col, text())) }
+        val at = places.firstOrNull { it.third.contains(e.x, e.y) }
+        when (e.actionMasked) {
+            // the finger's key pops up while held, follows the finger across the keys, and types on the lift (as before)
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                if (at == null) { if (popHeld) { popHeld = false; popUpAt = android.os.SystemClock.uptimeMillis(); invalidate() } }
+                else if (!popHeld || at.first != popRow || at.second != popCol) popFor(at.first, at.second, held = true)
+            }
+            MotionEvent.ACTION_UP -> {
+                if (popHeld) { popHeld = false; popUpAt = android.os.SystemClock.uptimeMillis(); invalidate() }
+                at?.let { (r, col, _) -> apply(keys.touch(r, col, text())) }
+            }
+            MotionEvent.ACTION_CANCEL -> { popRow = -1; popHeld = false; invalidate() }
         }
         return true
     }
@@ -165,5 +237,8 @@ class ChatKeyboard(c: Context, swap: Boolean = true) : View(c) {
         const val KEY_H = 92f
         const val GAP = 8f
         const val INSET = 16f
+        /** the key pop-up: how long A's shows before it fades, and the fade (a finger's shows while held) */
+        const val POP_SHOW_MS = 160L
+        const val POP_FADE_MS = 180f
     }
 }
