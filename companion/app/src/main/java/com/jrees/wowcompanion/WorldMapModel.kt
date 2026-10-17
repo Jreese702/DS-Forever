@@ -137,11 +137,20 @@ class WorldMapModel {
 
     fun world(id: Int): World? = maps[id]?.world
 
-    /** the smallest zone (mapType 3: a zone or a city) whose world rectangle holds ([wx], [wy]) on [continent], or null */
+    /**
+     * the zone (mapType 3: a zone or a city) whose world rectangle holds ([wx], [wy]) on [continent] most DEEPLY (the point's
+     * nearest edge, as a share of the rectangle, the farthest in), or null. The smallest rectangle was wrong for a dock on a
+     * coast, inside a neighbour's box (test42; checked on the PC client's own UiMapAssignment regions: smallest named Ratchet
+     * Durotar, Theramore Thousand Needles, Auberdine Felwood, Undercity's tower Western Plaguelands; deepest names all ten docks
+     * checked right)
+     */
     fun zoneAt(continent: Int, wx: Double, wy: Double): MapInfo? = maps.values.filter { m ->
         val w = m.world
         m.type == 3 && w != null && w.continent == continent && wx in w.bottom..w.top && wy in w.right..w.left
-    }.minByOrNull { (it.world!!.top - it.world.bottom) * (it.world.left - it.world.right) }
+    }.maxByOrNull { m ->
+        val w = m.world!!
+        minOf((w.top - wx) / (w.top - w.bottom), (wx - w.bottom) / (w.top - w.bottom), (w.left - wy) / (w.left - w.right), (wy - w.right) / (w.left - w.right))
+    }
 
     /** World ... [id] */
     fun ancestors(id: Int): List<Int> {
