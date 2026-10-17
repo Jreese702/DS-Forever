@@ -49,3 +49,40 @@ class TransportRoutesTest {
         assertEquals(2, TransportRoutes.hops(listOf(home, sea), 0, emptyList()).size)
     }
 }
+
+/** b-route-faction: a dock's town from the game's flight masters (the PC client's TaxiNodes, these exact rows) */
+class RideFactionTest {
+    private val masters = listOf(
+        TransportRoutes.FlightMaster(0, -12414f, 146f, 1026),     // Grom'gol, Stranglethorn (Horde)
+        TransportRoutes.FlightMaster(0, -3792f, -783f, 1025),     // Menethil Harbor, Wetlands (Alliance)
+        TransportRoutes.FlightMaster(0, -14444f, 509f, 1026),     // Booty Bay (Horde's)
+        TransportRoutes.FlightMaster(0, -14473f, 464f, 1025),     // Booty Bay (Alliance's)
+        TransportRoutes.FlightMaster(1, -894f, -3773f, 1027),     // Ratchet (both)
+        TransportRoutes.FlightMaster(0, -12418f, 235f, 1024))     // "Transport, Grom'gol - Orgrimmar": no faction, not counted
+
+    @Test fun docksTakeTheirTownsFaction() {
+        assertEquals(TransportRoutes.HORDE, TransportRoutes.townFaction(masters, 0, -12464f, 231f))       // Grom'gol's tower
+        assertEquals(TransportRoutes.ALLIANCE, TransportRoutes.townFaction(masters, 0, -3709f, -575f))    // Menethil's dock
+        assertEquals(3, TransportRoutes.townFaction(masters, 0, -14277f, 582f))                          // Booty Bay: both
+        assertEquals(3, TransportRoutes.townFaction(masters, 1, -1005f, -3841f))                         // Ratchet: both
+        assertEquals(0, TransportRoutes.townFaction(masters, 0, -8232f, -5800f))                         // nobody near: unknown
+    }
+
+    @Test fun aHostileTownSkipsTheRideBothWays() {
+        // Grom'gol -> Undercity (both Horde): an Alliance character never; a Horde one yes
+        val r = TransportRoutes.Ride(301, 0, floatArrayOf(-12406f, 211f, 0f), 0, floatArrayOf(2062f, 235f, 0f), 900.0, fa = 2, fb = 2)
+        assertEquals(1, r.hostileDock(TransportRoutes.ALLIANCE)); assertEquals(1, r.back().hostileDock(TransportRoutes.ALLIANCE))
+        assertEquals(0, r.hostileDock(TransportRoutes.HORDE))
+        // Ratchet (both) -> Booty Bay (both): anyone
+        val b = TransportRoutes.Ride(241, 1, floatArrayOf(-1005f, -3841f, 0f), 0, floatArrayOf(-14277f, 582f, 0f), 900.0, fa = 3, fb = 3)
+        assertEquals(0, b.hostileDock(TransportRoutes.ALLIANCE)); assertEquals(0, b.hostileDock(TransportRoutes.HORDE))
+        // Menethil (Alliance) -> an unknown dock: a Horde character no (the near dock), the way back no (the far one)
+        val m = TransportRoutes.Ride(11167, 0, floatArrayOf(-3709f, -575f, 0f), 0, floatArrayOf(-1102f, -554f, 0f), 900.0, fa = 1, fb = 0)
+        assertEquals(1, m.hostileDock(TransportRoutes.HORDE)); assertEquals(2, m.back().hostileDock(TransportRoutes.HORDE))
+        // the faction unknown: no rule
+        assertEquals(0, r.hostileDock(TransportRoutes.factionOf(null)))
+        // the device file keeps the towns
+        val back = TransportRoutes.fromJson(TransportRoutes.toJson(emptyList(), listOf(r)))
+        assertEquals(2, back[0].fa); assertEquals(2, back[0].fb)
+    }
+}

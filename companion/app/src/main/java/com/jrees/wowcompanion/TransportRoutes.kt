@@ -26,10 +26,42 @@ object TransportRoutes {
      * [yd] its cost in walking yards, from the game's own path: the yards sailed between the two stops (a jump between continents
      * counts nothing) and the wait at the first dock (its delay, seconds at [RUN_YD_S]); 0 = not known (an older file).
      */
-    class Ride(val path: Int, val ca: Int, val a: FloatArray, val cb: Int, val b: FloatArray, val yd: Double = 0.0) {
+    class Ride(val path: Int, val ca: Int, val a: FloatArray, val cb: Int, val b: FloatArray, val yd: Double = 0.0,
+               val fa: Int = 0, val fb: Int = 0) {
         /** the same boat the other way (the transports run both ways between their docks) */
-        fun back() = Ride(path, cb, b, ca, a, yd)
+        fun back() = Ride(path, cb, b, ca, a, yd, fb, fa)
+        /** a dock in a town hostile to [mine] (ALLIANCE / HORDE): 1 = the near dock, 2 = the far one, 0 = neither (or unknown) */
+        fun hostileDock(mine: Int): Int = when {
+            mine == 0 -> 0
+            fa != 0 && fa and mine == 0 -> 1
+            fb != 0 && fb and mine == 0 -> 2
+            else -> 0
+        }
     }
+
+    // ---- WHOSE TOWN A DOCK IS IN (b-route-faction; the user's pick: "the hostile-town rule ... using the game's own data, no hand
+    // table"). The game's TaxiNodes table ([DB_TAXI_NODES], read on the device) marks every flight master for the Alliance map
+    // (flag [ALLIANCE]), the Horde map ([HORDE]) or both; a dock's town is whoever's flight masters stand within [DOCK_TOWN_YD] of it
+    // (measured on the PC client: Grom'gol, Orgrimmar's and Undercity's towers Horde; Menethil, Theramore, Rut'theran, Auberdine,
+    // Southshore, Feathermoon, Stormwind's harbour Alliance; Ratchet and Booty Bay both). None near = unknown = no rule.
+    const val DB_TAXI_NODES = 1068100
+    const val ALLIANCE = 1
+    const val HORDE = 2
+    const val DOCK_TOWN_YD = 900.0
+    class FlightMaster(val cont: Int, val x: Float, val y: Float, val flags: Int)
+
+    /** the factions served at ([x], [y]) on [cont]: an OR of ALLIANCE / HORDE, 0 = no flight master near */
+    fun townFaction(masters: List<FlightMaster>, cont: Int, x: Float, y: Float): Int = masters
+        .filter { it.cont == cont && it.flags and 3 != 0 && Math.hypot((it.x - x).toDouble(), (it.y - y).toDouble()) <= DOCK_TOWN_YD }
+        .fold(0) { m, f -> m or (f.flags and 3) }
+
+    /** [rides] with their docks' towns */
+    fun withFactions(rides: List<Ride>, masters: List<FlightMaster>): List<Ride> = rides.map { r ->
+        Ride(r.path, r.ca, r.a, r.cb, r.b, r.yd, townFaction(masters, r.ca, r.a[0], r.a[1]), townFaction(masters, r.cb, r.b[0], r.b[1]))
+    }
+
+    /** "Alliance" / "Horde" (the game's UnitFactionGroup) as [ALLIANCE] / [HORDE], else 0 */
+    fun factionOf(name: String?): Int = when (name) { "Alliance" -> ALLIANCE; "Horde" -> HORDE; else -> 0 }
 
     /** the transport paths' rides: consecutive stops, and the last back to the first when the path ends where it started */
     fun rides(nodes: List<Node>): List<Ride> {
@@ -59,8 +91,8 @@ object TransportRoutes {
         for (r in rides) a.put(JSONObject().put("p", r.path).put("ca", r.ca).put("cb", r.cb)
             .put("a", JSONArray().put(r.a[0].toDouble()).put(r.a[1].toDouble()).put(r.a[2].toDouble()))
             .put("b", JSONArray().put(r.b[0].toDouble()).put(r.b[1].toDouble()).put(r.b[2].toDouble()))
-            .put("yd", Math.round(r.yd).toInt()))
-        return JSONObject().put("v", 2).put("nodes", nodes.size).put("paths", nodes.map { it.path }.toSet().size)
+            .put("yd", Math.round(r.yd).toInt()).put("fa", r.fa).put("fb", r.fb))
+        return JSONObject().put("v", 3).put("nodes", nodes.size).put("paths", nodes.map { it.path }.toSet().size)
             .put("transportPaths", rides.map { it.path }.toSet().size).put("rides", a)
     }
 
@@ -73,7 +105,7 @@ object TransportRoutes {
             val d = a.optJSONObject(i) ?: continue
             val pa = v(d.optJSONArray("a")) ?: continue; val pb = v(d.optJSONArray("b")) ?: continue
             if (pa.any { it.isNaN() } || pb.any { it.isNaN() }) continue
-            out.add(Ride(d.optInt("p"), d.optInt("ca", -1), pa, d.optInt("cb", -1), pb, d.optDouble("yd", 0.0)))
+            out.add(Ride(d.optInt("p"), d.optInt("ca", -1), pa, d.optInt("cb", -1), pb, d.optDouble("yd", 0.0), d.optInt("fa", 0), d.optInt("fb", 0)))
         }
         return out
     }
