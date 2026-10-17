@@ -31,7 +31,7 @@ object SettingsTabs {
         CLASS_RIGHT(Tab.CONTROLLER, "Right class radial (RB + RT)", listOf("Right class radial: open", "Right class radial: pick")),
         GAME_UI(Tab.TOP, "Game UI on the top screen", listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window",
             "NPC windows", "Cast bar", "Loot window")),
-        MAP(Tab.ROOMS, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors")),
+        MAP(Tab.ROOMS, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "Quest tracking")),
         CHAT(Tab.ROOMS, "Chat", listOf("Message input")),
         FRAMES(Tab.PERFORMANCE, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game")),
