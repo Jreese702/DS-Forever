@@ -138,8 +138,8 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
     companion object {
         const val CELL_YD = 25.0
         /** a spawn's danger spreads this far round it (the one knob; the user on test53: "increasing the size of the danger areas by
-         *  like 1.5x to see if that fits the safe pathing": 30 -> 45) */
-        const val AGGRO_YD = 45.0
+         *  like 1.5x to see if that fits the safe pathing": 30 -> 45; then "Make the danger areas about 2x": 60) */
+        const val AGGRO_YD = 60.0
         const val GOAL_FREE_YD = 60.0
         const val CALM = 0.05f          // a straight line crossing no more than this is left alone
         const val CAP = 4f              // a cell's danger at most (a dense camp is a wall, not an infinity)
