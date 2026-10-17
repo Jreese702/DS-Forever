@@ -754,7 +754,8 @@ class HomeRadialView(
         val r = strip.place(Room.HOME) ?: return PointF(width / 2f, height - 80f) to 140f
         val a = IntArray(2); val b = IntArray(2)
         strip.getLocationOnScreen(a); getLocationOnScreen(b)
-        return PointF(r.centerX() + a[0] - b[0], r.centerY() + a[1] - b[1]) to r.width()
+        // the bar's place at rest (the pause slides it down out of view: test40)
+        return PointF(r.centerX() + a[0] - b[0], r.centerY() + a[1] - b[1] - strip.translationY) to r.width()
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
