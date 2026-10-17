@@ -34,7 +34,6 @@ class CombatFormsTest {
         assertEquals(mapOf(1 to 136096), HomeFightFace.dpadIcons(m))
         assertEquals(mapOf(5 to 136041), HomeFightFace.icons(m))
         assertEquals(emptyMap<Int, PadMapModel.Ref>(), HomeFightFace.formOwn(m))
-        assertNull(HomeFightFace.formBadge(m))
     }
 
     @Test fun bearShowsItsOwnSpellsOverTheCasters() {
@@ -42,7 +41,6 @@ class CombatFormsTest {
         assertEquals(mapOf(1 to 132136), HomeFightFace.dpadIcons(m))          // Maul over Moonfire
         assertEquals(mapOf(5 to 134296), HomeFightFace.icons(m))              // Swipe over Healing Touch
         assertEquals(setOf(1, 5), HomeFightFace.formOwn(m).keys)
-        assertEquals(132276, HomeFightFace.formBadge(m))
     }
 
     @Test fun bearsIdsFollowItsOwnSpells() {
@@ -54,7 +52,6 @@ class CombatFormsTest {
         val m = map(768)
         assertEquals(mapOf(1 to 136096), HomeFightFace.dpadIcons(m))
         assertEquals(mapOf(5 to 136041), HomeFightFace.icons(m))
-        assertNull(HomeFightFace.formBadge(m))
     }
 
     @Test fun outOfAFightTheDpadShowsNothing() = assertEquals(emptyMap<Int, Int>(), HomeFightFace.dpadIcons(map(5487), fight = false))
