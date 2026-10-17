@@ -147,11 +147,10 @@ class HomePauseView(
     /** B / the hub: the hub plays the Home press while the wheel folds (the consumables wheel's b70 timing) */
     private fun pressHub() {
         if (!live()) return
-        // the bar Home button's press (1.0.9, the user: "the same reaction animations to being pressed"): a finger already holding the
-        // hub is sunk, so it comes back from there; it plays on, the hub alone, after the wheel has gone ([pressedAt])
-        val now = SystemClock.uptimeMillis()
-        hubPressAt = if (hubHeldAt != 0L) now - UiKit.CR_PRESS_IN_MS.toLong() else now
-        pressedAt = hubPressAt; hubHeldAt = 0L
+        // test20 (the user: "When I press b from pause its still going yellow back down to red with the b button before going back to
+        // blue"): the close plays NO press on the hub - no sink, no gold flash - the hub glides home turning straight from red to the bar's
+        // blue ([pressedAt] stays 0). A finger held on the hub still shows its press while it is held (hubHeldAt), and lets go at once
+        hubPressAt = 0L; pressedAt = 0L; hubHeldAt = 0L
         close()
     }
 
