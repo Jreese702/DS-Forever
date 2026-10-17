@@ -47,6 +47,10 @@ object SettingsPreview {
         fun wheelItems(spell: Boolean): List<UiKit.RadialItem?> = emptyList()
         /** the player's class radial on that side, drawn fitted into [w] x [h] with place [pointed] lit; false = none on that side */
         fun classWheel(c: Canvas, w: Float, h: Float, left: Boolean, pointed: Int): Boolean = false
+        /** the map module's box in a Home picture (fractions of it), null = none */
+        fun mapBox(): RectF? = null
+        /** the companion's own keyboard, drawn at [w] x [h] */
+        fun keyboard(c: Canvas, w: Float, h: Float) {}
     }
 
     /** a button picture: [action] "a" "b" "x" "y" "start", in glyph set [set] (0 Nintendo, 1 Xbox, 2 PlayStation), centred, [size] px */
@@ -165,6 +169,8 @@ object SettingsPreview {
         if (live != null && liveHome(c, r, id, s, t, live)) return
         // the Controller tab's wheels: the real wheel art over the real Home
         if (live != null && liveWheel(c, r, id, s, t, live, glyph)) return
+        // the Rooms tab: the player's own minimap, the real keyboard
+        if (live != null && liveRooms(c, r, id, s, live)) return
         when (id) {
             "Controller on Home" -> homeLayout(c, r, s.diamonds)
             "Combat layout" -> combat(c, r, s.combatGrow, t)
@@ -352,6 +358,63 @@ object SettingsPreview {
     }
 
     private fun ease(x: Float): Float { val v = x.coerceIn(0f, 1f); return v * v * (3f - 2f * v) }
+
+    // ---- the Rooms tab: LIVE (f-settings-previews)
+
+    private fun liveRooms(c: Canvas, r: RectF, id: String, s: State, live: Live): Boolean {
+        when (id) {
+            "Minimap zoom outdoors", "Minimap zoom indoors" -> {
+                // the card off the map (it would cover the minimap's top): the map module alone
+                val home = live.home(look(s, overMap = false), false, null) ?: return false
+                val mb = live.mapBox() ?: return false
+                val indoor = id.endsWith("indoors")
+                val yd = if (indoor) s.miniInYd else s.miniOutYd
+                // the player's own minimap from the Home picture; indoors the same map seen narrower (out yd / in yd closer)
+                val src = android.graphics.Rect((mb.left * home.width).toInt(), (mb.top * home.height).toInt(),
+                    (mb.right * home.width).toInt(), (mb.bottom * home.height).toInt())
+                if (indoor && s.miniInYd > 0) {
+                    val k = (s.miniInYd.toFloat() / s.miniOutYd.coerceAtLeast(1)).coerceIn(0.2f, 1f)
+                    val cx = src.exactCenterX(); val cy = src.exactCenterY()
+                    val hw = src.width() * k / 2f; val hh = src.height() * k / 2f
+                    src.set((cx - hw).toInt(), (cy - hh).toInt(), (cx + hw).toInt(), (cy + hh).toInt())
+                }
+                val w = r.width() - 40f
+                val h = w * src.height() / src.width().coerceAtLeast(1)
+                val dst = RectF(r.left + 20f, r.top + 10f, r.right - 20f, r.top + 10f + h)
+                c.drawBitmap(home, src, dst, pPic)
+                pStroke.color = BRONZE; pStroke.strokeWidth = 3f; c.drawRect(dst, pStroke)
+                val y2 = dst.bottom + 28f
+                pStroke.color = GOLD; pStroke.strokeWidth = 2.5f
+                c.drawLine(dst.left, y2, dst.right, y2, pStroke); c.drawLine(dst.left, y2 - 8f, dst.left, y2 + 8f, pStroke)
+                c.drawLine(dst.right, y2 - 8f, dst.right, y2 + 8f, pStroke)
+                text(c, "$yd yd across" + if (indoor) " inside a building" else "", r.centerX(), y2 + 30f, 22f, GOLD)
+                return true
+            }
+            "Message input" -> {
+                val half = (r.height() - 14f) / 2f
+                // Keyboard: the companion's own board; Quick chat: the phrase rows, the game's menu rows
+                val kbTop = r.top + (if (s.quickChat) half + 14f else 0f)
+                val qcTop = r.top + (if (s.quickChat) 0f else half + 14f)
+                text(c, "Keyboard", r.left + 20f, kbTop + 18f, 19f, if (!s.quickChat) GOLD else DIMC, Paint.Align.LEFT)
+                val kw = r.width() - 40f; val kh = minOf(half - 30f, kw * ChatKeyboard.fullHeight() / 1240f)
+                val kbox = RectF(r.left + 20f, kbTop + 26f, r.left + 20f + kw, kbTop + 26f + kh)
+                c.save(); c.translate(kbox.left, kbox.top); live.keyboard(c, kw, kh); c.restore()
+                if (s.quickChat) c.drawRect(kbox, pDim)
+                pStroke.color = if (!s.quickChat) GOLD else Color.rgb(90, 76, 52); pStroke.strokeWidth = if (!s.quickChat) 3f else 1.5f
+                c.drawRect(kbox, pStroke)
+                text(c, "Quick chat", r.left + 20f, qcTop + 18f, 19f, if (s.quickChat) GOLD else DIMC, Paint.Align.LEFT)
+                val phrases = listOf("Hello!", "Thanks!", "Ready?", "On my way")
+                val rowH = minOf(48f, (half - 34f) / phrases.size)
+                for ((i, ph) in phrases.withIndex()) {
+                    val rr = RectF(r.left + 20f, qcTop + 28f + i * rowH, r.right - 20f, qcTop + 28f + (i + 1) * rowH - 4f)
+                    UiKit.menuRow(c, rr, ph, i == 0 && s.quickChat, size = 20f)
+                }
+                if (!s.quickChat) c.drawRect(RectF(r.left + 20f, qcTop + 28f, r.right - 20f, qcTop + 28f + phrases.size * rowH), pDim)
+                return true
+            }
+        }
+        return false
+    }
 
     // ---- the Controller tab's wheels: LIVE (f-settings-previews)
 

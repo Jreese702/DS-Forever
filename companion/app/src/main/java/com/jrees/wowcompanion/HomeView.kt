@@ -153,6 +153,9 @@ class HomeView(
     val rest: HomeRest get() = flow.rest
     fun setRest(r: HomeRest) { HomeSettings.rest = r; if (flow.setRest(r)) changed() }
 
+    /** f-settings-previews: where the map module lies now (Home's px), for the stage's minimap pictures */
+    internal fun previewMapRect(): RectF? = now[Part.MAP]?.let { RectF(it) }
+
     /** f-settings-previews: the offscreen stage's own Home at [look] (never the live one): its rest, then its places, no motion */
     internal fun previewSettle(look: Companion.Look) {
         flow.setRest(look.rest)

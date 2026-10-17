@@ -46,6 +46,8 @@ class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean
         override fun home(look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?) = PreviewStage.home(context, look, fight, toolbar)
         override fun wheelItems(spell: Boolean) = PreviewStage.wheelItems(spell)
         override fun classWheel(c: Canvas, w: Float, h: Float, left: Boolean, pointed: Int) = PreviewStage.classWheel(context, c, w, h, left, pointed)
+        override fun mapBox() = PreviewStage.mapBox
+        override fun keyboard(c: Canvas, w: Float, h: Float) = PreviewStage.keyboard(context, c, w, h)
     }
 
     init {
