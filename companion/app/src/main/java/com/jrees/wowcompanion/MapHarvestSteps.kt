@@ -355,5 +355,56 @@ object MapHarvestSteps {
         }
     }
 
-    val STEPS: List<ArtHarvest.Step> = listOf(WORLD_MAP, POI_ICONS, NPC_ICONS, MINIMAP, TRANSPORTS)
+    /**
+     * [WMO_MINIMAP] "wmominimap", in the background: THE PROBE for the game's own building art (b-interiors-game-art; the user's
+     * COMBINE pick, 2026-10-17). Reads the client's WMOMinimapTexture table (WmoMinimap) and, for every building root the published
+     * interiors snapshot shows, its WMO id: WCMAP logs how many have the game's art (and for how many of their groups), and a sample
+     * of the tiles is read to prove they are on this device. harvest/wmominimap.json keeps those buildings' tiles for the drawing
+     * step that follows. Nothing is drawn yet.
+     */
+    val WMO_MINIMAP = object : ArtHarvest.Step {
+        override val id = "wmominimap"
+        override val version = 1
+        override val beforePlay = false
+        override val weight = 5
+        override fun run(job: ArtHarvest.Job) {
+            val t = job.game.db2(WmoMinimap.DB_WMO_MINIMAP_TEXTURE)
+            if (t == null) {
+                android.util.Log.i("WCMAP", "wmo minimap: the WMOMinimapTexture table did not read (${job.game.lastReadWhy})")
+                error(job.game.lastReadWhy ?: "WMOMinimapTexture unreadable")
+            }
+            val rows = t.rows()
+            val by = WmoMinimap.byWmo(rows)
+            android.util.Log.i("WCMAP", "wmo minimap: ${rows.size} tiles, ${by.size} buildings, " +
+                "${by.values.sumOf { ts -> ts.map { it.group }.toSet().size }} groups in the table")
+            val roots = WmoMinimap.snapshotRoots(java.io.File(job.out, "interiors"))
+            if (roots.isEmpty()) android.util.Log.i("WCMAP", "wmo minimap: no interiors snapshot yet: the table's totals only")
+            val out = JSONObject()
+            var withArt = 0; var groupsAll = 0; var groupsArt = 0; var unread = 0
+            val none = ArrayList<Int>(); val sample = ArrayList<Int>()
+            for (fid in roots.sorted()) {
+                val root = job.game.read(fid)
+                if (root == null) { unread++; continue }
+                val wmo = WmoMinimap.wmoId(root)
+                if (wmo == null) { unread++; continue }
+                val groups = WmoMinimap.groupCount(root) ?: 0
+                groupsAll += groups
+                val tiles = by[wmo]
+                if (tiles.isNullOrEmpty()) { none.add(fid); continue }
+                withArt++
+                groupsArt += tiles.map { it.group }.toSet().size
+                out.put(fid.toString(), WmoMinimap.toJson(wmo, tiles))
+                if (sample.size < 20) sample.add(tiles[tiles.size / 2].fid)
+            }
+            var readable = 0
+            for (f in sample) if (job.game.blp(f) != null) readable++
+            android.util.Log.i("WCMAP", "wmo minimap: of ${roots.size} interiors buildings $withArt have the game's art " +
+                "($groupsArt of $groupsAll groups), ${none.size} have none, $unread roots unread; sample tiles readable $readable / ${sample.size}")
+            if (none.isNotEmpty()) android.util.Log.i("WCMAP", "wmo minimap: no game art for roots " + none.take(60).joinToString(",") +
+                if (none.size > 60) " (+${none.size - 60})" else "")
+            job.writeBytes("wmominimap.json", JSONObject().put("v", 1).put("roots", out).toString().toByteArray())
+        }
+    }
+
+    val STEPS: List<ArtHarvest.Step> = listOf(WORLD_MAP, POI_ICONS, NPC_ICONS, MINIMAP, TRANSPORTS, WMO_MINIMAP)
 }
