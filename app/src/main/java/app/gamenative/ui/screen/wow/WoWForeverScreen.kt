@@ -411,6 +411,8 @@ fun WoWForeverScreen(
         try {
             dependencies = withContext(Dispatchers.IO) {
                 runCatching {
+                    // the opt-in dependencies (Polestar) follow the companion's own setting: read it here too
+                    com.jrees.wowcompanion.Settings.init(context)
                     com.jrees.wowcompanion.DependencyAddons.run(WowClientDownloader.flavorDir(File(gamePath)),
                         File(context.cacheDir, "dsforever"), File(context.filesDir, "dsforever/dependencies.json"))
                 }.getOrElse { "QuestieDB skipped (${it.message})" }

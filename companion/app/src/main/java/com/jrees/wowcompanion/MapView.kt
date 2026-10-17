@@ -3517,11 +3517,72 @@ class MapView(context: Context) : View(context) {
      */
     fun routePin(): DoubleArray? {
         val m = map ?: return null
+        if (Settings.questTracking == "polestar") return null          // Polestar draws its own arrow (b-route-polestar)
         if (focusQid <= 0 || m.optInt("onTaxi", 0) == 1) return null
         val r = routeFor(focusQid) ?: return null
         if (r.kind == CursorRoute.Kind.GOAL) return null
         if (r.x !in 0.0..1.0 || r.y !in 0.0..1.0) return null
         return doubleArrayOf(r.x, r.y)
+    }
+
+    // ---- POLESTAR AS THE ROUTER (b-route-polestar; Settings' "Quest tracking: Polestar"): the host taps the goal to Polestar
+    // (PolestarNav, Map.lua's row "pnav") and hands its route back here; the line follows Polestar's walking route for the focused
+    // quest while one is live, else the app's own (and the map says why)
+    val polestar = PolestarNav()
+    /** the zone spots of a quest ([map, x, y, continent, wx, wy] each): the Map room's kept mapquests */
+    var zoneSpots: ((Int) -> List<DoubleArray>)? = null
+
+    /** Polestar's goal: the focused quest's nearest still-needed goal here, else its nearest zone spot - (uiMapID, x, y), or null */
+    fun polestarGoal(): DoubleArray? {
+        if (Settings.questTracking != "polestar") return null
+        val m = map ?: return null
+        val q = focusQid
+        if (q <= 0 || m.optInt("onTaxi", 0) == 1) return null
+        val mapId = m.optInt("mapID", 0)
+        val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
+        var mq: JSONObject? = null
+        m.optJSONArray("quests")?.let { qs -> for (i in 0 until qs.length()) qs.optJSONObject(i)?.let { if (it.optInt("questID", 0) == q) mq = it } }
+        val goals = CursorRoute.goals(mq, questById[q], mapId)
+        val r = rect
+        if (goals.isNotEmpty() && mapId != 0 && !px.isNaN()) {
+            val ax = r?.width ?: 1.0; val ay = r?.height ?: 1.0
+            val g = goals.minByOrNull { hypot((it[0] - px) * ax, (it[1] - py) * ay) }!!
+            return doubleArrayOf(mapId.toDouble(), g[0], g[1])
+        }
+        val spots = zoneSpots?.invoke(q)?.filter { it.size >= 6 } ?: return null
+        if (spots.isEmpty()) return null
+        val wx = m.optDouble("wx", Double.NaN); val wy = m.optDouble("wy", Double.NaN)
+        val cont = r?.continent ?: -1
+        val here = spots.filter { it[3].toInt() == cont }
+        val best = if (here.isNotEmpty() && !wx.isNaN()) here.minByOrNull { hypot(it[4] - wx, it[5] - wy) }!! else (here.firstOrNull() ?: spots.first())
+        return doubleArrayOf(best[0], best[1], best[2])
+    }
+
+    /** Polestar's live route on this continent, drawn as the line's dots (true = drawn) */
+    private fun drawPolestarRoute(c: Canvas, x0: Float, y0: Float, sx: (Double) -> Float, sy: (Double) -> Float): Boolean {
+        val r = rect ?: return false
+        val legs = polestar.liveRoute(android.os.SystemClock.elapsedRealtime()) ?: return false
+        pathTmp.reset()
+        var any = false
+        for (leg in legs) {
+            if (leg.cont != null && leg.cont != r.continent) continue
+            var i = 0
+            while (i + 1 < leg.pts.size) {
+                val x = sx(r.nx(leg.pts[i + 1])); val y = sy(r.ny(leg.pts[i]))
+                if (!any) { pathTmp.moveTo(x0, y0); any = true }
+                pathTmp.lineTo(x, y)
+                i += 2
+            }
+        }
+        if (!any) return false
+        val age = android.os.SystemClock.elapsedRealtime()
+        val phase = -(age / 1000f * 24f) % 16f
+        pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
+        pPath.strokeWidth = 9f; pPath.color = Color.argb(160, 0, 0, 0); c.drawPath(pathTmp, pPath)
+        pPath.strokeWidth = 6f; pPath.color = cGold; c.drawPath(pathTmp, pPath)
+        pPath.pathEffect = null
+        postInvalidateOnAnimation()
+        return true
     }
 
     private fun planRoute(q: Int, m: JSONObject): CursorRoute.Route? {
@@ -5047,7 +5108,23 @@ class MapView(context: Context) : View(context) {
 
         // ---- THE CURSOR'S DOTTED LINE, under the live markers and the player's arrow (the agreed design), inside the field
         val route = if (!compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN()) cursorRoute() else null
-        if (route != null) {
+        // Polestar's own walking route for the focused quest, when it is the router and has one (b-route-polestar)
+        val poleOn = Settings.questTracking == "polestar"
+        if (poleOn && route != null && cursor.sel == focusQid && run {
+                val fb = top + fh - (if (hintsOn()) HINT_BAND else 0f)
+                val save = c.save()
+                c.clipRect(left, top, left + fw, fb)
+                val ok = drawPolestarRoute(c, sx(px), sy(py), ::sx, ::sy)
+                c.restoreToCount(save)
+                ok
+            }) {
+            pathFor = 0
+        } else if (route != null) {
+            // Polestar chosen but not routing: the app's own route, and why
+            if (poleOn) polestar.why?.let { w ->
+                val np = UiKit.bodyPaint(18f, Color.rgb(230, 210, 160)).apply { setShadowLayer(3f, 0f, 0f, Color.BLACK) }
+                c.drawText("$w: DS Forever's route", left + 16f, top + 30f, np)
+            }
             val fb = top + fh - (if (hintsOn()) HINT_BAND else 0f)
             val save = c.save()
             c.clipRect(left, top, left + fw, fb)

@@ -70,6 +70,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segLayout = Array(LAYOUTS.size) { RectF() }
     private val segLocation = Array(LOCATIONS.size) { RectF() }
     private val segChat = Array(CHAT_INPUTS.size) { RectF() }
+    private val segQt = Array(3) { RectF() }
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
     private val segIndoor = Array(2) { RectF() }
     /**
@@ -191,7 +192,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      */
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss) +
-            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segChat.toList() +
+            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segChat.toList() +
             segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             segLimit.toList() + listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() +
             listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred))
@@ -209,7 +210,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat,
+                         segClassROpen, segClassRPick, segChat, segQt,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -348,7 +349,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 val mi = segMult.indexOfFirst { it.contains(x, y) }
                 if (mi >= 0) { FrameGen.multiplier = FrameGen.MULTIPLIERS[mi]; invalidate(); return }
                 val ci = segChat.indexOfFirst { it.contains(x, y) }
-                if (ci >= 0) { if (Settings.chatDefaultInput != CHAT_INPUTS[ci]) Settings.chatDefaultInput = CHAT_INPUTS[ci] }
+                val qi = segQt.indexOfFirst { it.contains(x, y) }
+                if (qi >= 0) { if (Settings.questTracking != Settings.QUEST_TRACKING[qi]) Settings.questTracking = Settings.QUEST_TRACKING[qi]; invalidate() }
+                else if (ci >= 0) { if (Settings.chatDefaultInput != CHAT_INPUTS[ci]) Settings.chatDefaultInput = CHAT_INPUTS[ci] }
                 else {
                     val oi = segLocation.indexOfFirst { it.contains(x, y) }
                     if (oi >= 0) { if (CastSettings.abxyLocation != LOCATIONS[oi]) CastSettings.abxyLocation = LOCATIONS[oi]; invalidate(); return }
@@ -497,6 +500,22 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         boxes = stepperRow(c, y, "Minimap zoom indoors", "Width of the small map on Home inside buildings",
                            Settings.minimapIndoorYd, true)
         btnMiniInMinus = boxes.first; btnMiniInPlus = boxes.second
+        y += ROW_H + 10f
+        // QUEST TRACKING (the user, 2026-10-17): what the map's line, arrows and pin follow
+        pBtn.textSize = SEG_TEXT
+        var qtW = SEG_MIN_W
+        for (t in QT_LABELS) qtW = maxOf(qtW, pBtn.measureText(t) + SEG_PAD)
+        pBtn.textSize = 27f
+        val sub = when (Settings.questTracking) {
+            "polestar" -> "Polestar's walking routes (downloaded at the next start when missing)"
+            "questtrail" -> "QuestTrail (install it yourself; routes as Vanilla until it is read)"
+            else -> "DS Forever's own route: learned ways, the tram, known flights"
+        }
+        row(c, y, "Quest tracking", sub, enabled = true) { box ->
+            val b = RectF(box.right - 16f - qtW * QT_LABELS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, QT_LABELS, Settings.QUEST_TRACKING.indexOf(Settings.questTracking), segQt)
+            b
+        }
         return y + ROW_H
     }
 
@@ -772,6 +791,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         }
         private val CHAT_INPUTS = listOf("quick", "keys")
         private val CHAT_INPUT_LABELS = listOf("Quick chat", "Keyboard")
+        private val QT_LABELS = listOf("Vanilla", "QuestTrail", "Polestar")
         private const val SEG_TEXT = 24f
         private const val SEG_PAD = 36f      // text-to-edge room inside a segment, both sides
         private const val SEG_MIN_W = 120f

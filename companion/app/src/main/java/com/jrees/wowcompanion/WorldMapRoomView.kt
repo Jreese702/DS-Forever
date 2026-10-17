@@ -230,6 +230,15 @@ class WorldMapRoomView(context: Context) : View(context) {
         }
         return out
     }
+    /** a quest's spots on the zone maps: [map, x, y, continent, wx, wy] each (Polestar's goal: b-route-polestar) */
+    fun questZoneSpots(qid: Int): List<DoubleArray> {
+        val out = ArrayList<DoubleArray>()
+        for ((map, ms) in zoneQuests) for (mk in ms) if (mk.id == qid) {
+            val w = model.world(map) ?: continue
+            out.add(doubleArrayOf(map.toDouble(), mk.x.toDouble(), mk.y.toDouble(), w.continent.toDouble(), w.wx(mk.y.toDouble()), w.wy(mk.x.toDouble())))
+        }
+        return out
+    }
     private val zoneQuests = HashMap<Int, List<Mark>>()
     fun onQdbPins(d: JSONObject) { QdbPins.pins(d)?.let { qdbPins = it; if (isShown) invalidate() } }
 

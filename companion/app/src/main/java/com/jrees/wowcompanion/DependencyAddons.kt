@@ -22,9 +22,25 @@ import java.util.zip.ZipInputStream
  * More dependencies are one more [Dep] line.
  */
 object DependencyAddons {
-    data class Dep(val folder: String, val repo: String, val asset: String)
+    /**
+     * [asset] the release asset's exact name, or with [assetRegex] its pattern (a versioned name); [multi] = the package holds several
+     * add-on folders side by side (each with its own .toc; [folder] is the one whose version is compared); [optIn] = only while the
+     * user has chosen it (Polestar: Settings' "Quest tracking").
+     */
+    data class Dep(val folder: String, val repo: String, val asset: String, val assetRegex: Regex? = null, val multi: Boolean = false,
+                   val optIn: Boolean = false)
 
-    val DEPS = listOf(Dep("QuestieDB", "Questie/QuestieDB", "QuestieDB-Forever.zip"))
+    val DEPS = listOf(
+        Dep("QuestieDB", "Questie/QuestieDB", "QuestieDB-Forever.zip"),
+        // POLESTAR (the user, 2026-10-17: "Quest tracking: ... Polestar"; "DS Forever downloads it from its GitHub release"): GPL-3,
+        // never bundled - its own release, verified (GitHub's digest, else its SHA256SUMS), only while the setting is Polestar.
+        // The package holds Polestar and Polestar_Nav (Shortest Path Forever's router) side by side; the recorder zip is not taken.
+        Dep("Polestar", "fitzforge/polestar", "Polestar-<version>.zip", assetRegex = Regex("""^Polestar-v?\d[\w.\-]*\.zip$"""),
+            multi = true, optIn = true),
+    )
+
+    /** which dependencies are wanted now: the always-on ones, and an opt-in one only while the user has chosen it */
+    @Volatile var wanted: (Dep) -> Boolean = { !it.optIn || Settings.questTracking == "polestar" }
 
     const val RECHECK_MS = 6 * 60 * 60_000L
     /** a whole download's deadline: a server that trickles bytes (each read inside the read timeout) still ends (Track D's note) */
@@ -49,7 +65,7 @@ object DependencyAddons {
     fun run(flavorRoot: File, cache: File, state: File, now: Long = System.currentTimeMillis()): String {
         val addons = File(flavorRoot, "Interface/AddOns")
         val last = runCatching { JSONObject(state.readText()) }.getOrNull()
-        val results = DEPS.map { dep ->
+        val results = DEPS.filter { wanted(it) }.map { dep ->
             val installed = installedVersion(File(addons, dep.folder))
             val prev = last?.optJSONObject(dep.folder)
             // recently checked and still the same copy: the last line again, no network
@@ -76,10 +92,15 @@ object DependencyAddons {
         val latest = tag.removePrefix("v")
         if (installed != null && compare(installed, latest) >= 0) return Result(dep, "${dep.folder} $installed (up to date)")
         val assets = rel.optJSONArray("assets") ?: throw IOException("no ${dep.asset} in $tag")
-        val asset = (0 until assets.length()).mapNotNull { assets.optJSONObject(it) }.firstOrNull { it.optString("name") == dep.asset }
+        val all = (0 until assets.length()).mapNotNull { assets.optJSONObject(it) }
+        val asset = all.firstOrNull { a -> dep.assetRegex?.matches(a.optString("name")) ?: (a.optString("name") == dep.asset) }
             ?: throw IOException("no ${dep.asset} in $tag")
         val size = asset.optLong("size")
-        val sha = asset.optString("digest").removePrefix("sha256:").lowercase()
+        // GitHub's own digest, else the release's SHA256SUMS line for this asset
+        var sha = asset.optString("digest").removePrefix("sha256:").lowercase()
+        if (!sha.matches(Regex("[0-9a-f]{64}"))) all.firstOrNull { it.optString("name").equals("SHA256SUMS", true) }?.let { sums ->
+            sha = sumFor(get(sums.optString("browser_download_url")).toString(Charsets.UTF_8), asset.optString("name")) ?: ""
+        }
         require(size in 1..MAX_ZIP) { "${dep.asset} has an unexpected size ($size)" }
         require(sha.matches(Regex("[0-9a-f]{64}"))) { "${dep.asset} has no checksum" }
         // the verified zip is kept in the private cache, so a start that cannot move it in yet does not download it again
@@ -104,8 +125,14 @@ object DependencyAddons {
         return Result(dep, if (installed == null) "${dep.folder} $latest installed" else "${dep.folder} updated $installed -> $latest", true)
     }
 
+    /** the checksum a SHA256SUMS text gives [name] ("<sha256>  <name>" lines, a "*" before the name allowed), or null */
+    internal fun sumFor(text: String, name: String): String? = text.lineSequence().map { it.trim() }.mapNotNull { l ->
+        Regex("""^([0-9a-fA-F]{64})\s+\*?(.+)$""").find(l)?.let { m -> if (m.groupValues[2].trim() == name) m.groupValues[1].lowercase() else null }
+    }.firstOrNull()
+
     /** unpack (CRC-checked, no path outside the folder) into staging, old copy to the backup, staging into AddOns */
     private fun install(dep: Dep, flavorRoot: File, zip: File, installed: String?) {
+        if (dep.multi) return installMulti(dep, flavorRoot, zip)
         val iface = File(flavorRoot, "Interface")
         val addons = File(iface, "AddOns").apply { mkdirs() }
         val staging = File(iface, "$STAGING/${dep.folder}")
@@ -130,6 +157,30 @@ object DependencyAddons {
         }
     }
 
+    /** a package of several add-on folders (Polestar + Polestar_Nav): each top-level folder with a .toc goes in as its own, the
+     *  old copy of each to the backup first; nothing else of the package is taken */
+    private fun installMulti(dep: Dep, flavorRoot: File, zip: File) {
+        val iface = File(flavorRoot, "Interface")
+        val addons = File(iface, "AddOns").apply { mkdirs() }
+        val staging = File(iface, "$STAGING/${dep.folder}-pkg")
+        if (staging.exists()) staging.deleteRecursively()
+        unpack(zip, staging, "")
+        val folders = staging.listFiles()?.filter { d -> d.isDirectory && installedVersion(d) != null } ?: emptyList()
+        require(folders.any { it.name == dep.folder }) { "the package has no ${dep.folder} .toc" }
+        if (gameRunning()) throw GameStarted()
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+        for (d in folders) {
+            val target = File(addons, d.name)
+            if (target.exists()) {
+                val backup = File(iface, "$BACKUP/${d.name}-${installedVersion(target) ?: "unknown"}-$stamp")
+                backup.parentFile?.mkdirs()
+                if (!target.renameTo(backup)) throw IOException("the old ${d.name} could not be moved to the backup")
+            }
+            if (!d.renameTo(target)) throw IOException("the new ${d.name} could not be moved in")
+        }
+        staging.deleteRecursively()
+    }
+
     /** the zip into [to]: files at its top level, or all under one "<folder>/" (both packagings) */
     internal fun unpack(zip: File, to: File, folder: String) {
         to.mkdirs()
@@ -138,7 +189,7 @@ object DependencyAddons {
         val names = ZipInputStream(zip.inputStream().buffered()).use { z ->
             generateSequence { z.nextEntry }.map { it.name.replace('\\', '/') }.toList()
         }
-        val prefix = "$folder/".takeIf { p -> names.isNotEmpty() && names.all { it.startsWith(p) } } ?: ""
+        val prefix = "$folder/".takeIf { p -> folder.isNotEmpty() && names.isNotEmpty() && names.all { it.startsWith(p) } } ?: ""
         ZipInputStream(zip.inputStream().buffered()).use { z ->
             val buf = ByteArray(65536)
             while (true) {
