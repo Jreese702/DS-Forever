@@ -19,8 +19,9 @@ import kotlin.math.hypot
 object CursorRoute {
     enum class Kind { GOAL, FLIGHT, WAYPOINT, EXIT }
 
-    /** where the dots go ([x], [y], this map's 0..1), what kind of step that is, its words (null = none) */
-    data class Route(val kind: Kind, val x: Double, val y: Double, val label: String?)
+    /** where the dots go ([x], [y], this map's 0..1), what kind of step that is, its words (null = none); [key] the way taken (its
+     *  CityExits.key: the hysteresis' memory, null = not a way out), [why] how it won (for the WCMAP log) */
+    data class Route(val kind: Kind, val x: Double, val y: Double, val label: String?, val key: String? = null, val why: String? = null)
 
     /** a known flight point on this map's continent, in this map's coordinates */
     class Node(val x: Double, val y: Double, val id: Int, val name: String)
@@ -60,7 +61,8 @@ object CursorRoute {
      */
     fun plan(px: Double, py: Double, ax: Double, ay: Double, goals: List<DoubleArray>, far: DoubleArray?, way: DoubleArray?,
              wayText: String?, nodes: List<Node>, ways: List<CityExits.Way> = emptyList(), inCity: Boolean = false,
-             wayName: (CityExits.Exit) -> String? = { null }, connected: (Int, Int) -> Boolean): Route? {
+             wayName: (CityExits.Exit) -> String? = { null }, cameFrom: Int = 0, keep: String? = null,
+             connected: (Int, Int) -> Boolean): Route? {
         if (px.isNaN() || py.isNaN()) return null
         if (goals.isNotEmpty()) {
             val g = goals.minByOrNull { hypot((it[0] - px) * ax, (it[1] - py) * ay) }!!
@@ -82,13 +84,20 @@ object CursorRoute {
             val n = nodes[k]
             return Route(Kind.FLIGHT, n.x, n.y, if (n.name.isNotEmpty()) "Flight to ${n.name}" else "Flight master")
         }
-        // (a) / (b) the map's real ways out: learned crossings and the approved table, by walk + ride + the rest of the way
-        CityExits.pick(px, py, far, ways, ax, ay)?.let { w ->
-            return Route(Kind.EXIT, w.x, w.y, wayName(w.exit) ?: "Exit ${compass(px, py, w.x, w.y, ax, ay)}")
+        // (a) / (b) the map's real ways out: learned crossings and the approved table, by walk + ride + the rest of the way - weighed
+        // against heading straight for the quest, never back where the player came from (CityExits.choose)
+        val ch = CityExits.choose(px, py, far, ways, ax, ay, cameFrom, inCity, keep)
+        ch.way?.let { w ->
+            val label = wayName(w.exit) ?: "Exit ${compass(px, py, w.x, w.y, ax, ay)}"
+            val runner = ch.runnerUp?.let { r -> "${wayName(r.exit) ?: "map " + r.exit.toMap} (${ch.runnerCost.toInt()} yd)" } ?: "nothing else"
+            return Route(Kind.EXIT, w.x, w.y, label, CityExits.key(w),
+                "$label (${ch.cost.toInt()} yd) over $runner; straight ${ch.direct.toInt()} yd")
         }
-        if (way != null) return Route(Kind.WAYPOINT, way[0], way[1], wayText?.takeIf { it.isNotEmpty() } ?: "Exit ${compass(px, py, way[0], way[1], ax, ay)}")
+        val skipped = if (ways.isEmpty()) "" else " (${ways.size} ways out, none toward it)"
+        if (way != null) return Route(Kind.WAYPOINT, way[0], way[1], wayText?.takeIf { it.isNotEmpty() } ?: "Exit ${compass(px, py, way[0], way[1], ax, ay)}",
+            "wp", "the game's waypoint$skipped")
         val e = edge(px, py, far[0], far[1]) ?: return null
-        return Route(Kind.EXIT, e[0], e[1], "Exit ${compass(px, py, far[0], far[1], ax, ay)}")
+        return Route(Kind.EXIT, e[0], e[1], "Exit ${compass(px, py, far[0], far[1], ax, ay)}", "edge", "the edge toward the quest$skipped")
     }
 
     /** a city's flight, only when known AND connected: the known point nearest the player to the one nearest the quest */

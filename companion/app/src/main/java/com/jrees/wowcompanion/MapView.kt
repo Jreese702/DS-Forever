@@ -1221,7 +1221,6 @@ class MapView(context: Context) : View(context) {
     }
 
     private val RECENTRE_MS = 650f
-    private val NEAR_ARROW_PX = 70f    // the quest arrow beside the player while its target is in view     // long enough to read as a move, short enough not to nag
     private val MOVE_EPS = 0.002f      // ~7 yards in Elwynn; below this it is sampling jitter
     private val DRAG_GRACE_MS = 350L   // do not glide between two scroll events of one drag
 
@@ -2271,6 +2270,7 @@ class MapView(context: Context) : View(context) {
 
     fun update(m: JSONObject?, ageMs: Long) {
         map = m; staleMs = ageMs
+        m?.let { noteMapChange(it.optInt("mapID", 0)) }
         addTrail(m?.optString("tr", null), -1L,  // the view is handed the map object itself
                  m?.optInt("mapID", Int.MIN_VALUE) ?: Int.MIN_VALUE)
         if (m != null) { adoptRect(m); recomputeSeed() }
@@ -2297,6 +2297,7 @@ class MapView(context: Context) : View(context) {
                          "indoors", "inst", "cont", "onTaxi")) {
             if (pos.has(k)) m.put(k, pos.get(k))
         }
+        noteMapChange(m.optInt("mapID", 0))
         staleMs = 0
         // QuestTrail's arrow (Map.lua qtrailRead): every tick says it, absent = not showing (b-route-questtrail)
         qtrail = pos.optJSONObject("qtrail"); qtrailAt = android.os.SystemClock.elapsedRealtime()
@@ -3625,6 +3626,19 @@ class MapView(context: Context) : View(context) {
         return true
     }
 
+    // ---- WHERE THE PLAYER CAME FROM (b-route-no-backtrack; the user on test40: Stormwind -> Elwynn -> Stormwind ... toward Westfall):
+    // the map before this one, so a route never sends them back into it toward a target elsewhere; and the way each quest's route
+    // chose last ([routeKeep]: CityExits' hysteresis), logged when it changes
+    private var mapNow = 0
+    private var cameFrom = 0
+    private val routeKeep = HashMap<Int, String>()
+    private fun noteMapChange(id: Int) {
+        if (id == 0 || id == mapNow) return
+        if (mapNow != 0) cameFrom = mapNow
+        mapNow = id
+        routeKeep.clear()
+    }
+
     private fun planRoute(q: Int, m: JSONObject): CursorRoute.Route? {
         val r = rect ?: return null
         if (!r.valid) return null
@@ -3635,11 +3649,12 @@ class MapView(context: Context) : View(context) {
         val goals = ArrayList(CursorRoute.goals(mq, questById[q], mapId))
         // where the game's zone maps show it (the Map room's kept mapquests), carried onto this map: a goal when it falls on this map
         var far: DoubleArray? = null
+        var farW: DoubleArray? = null
         val allSpots = offMapSpots?.invoke(q) ?: emptyList()
         allSpots.let { spots ->
             WorldMapModel.nearestWorld(spots, r.continent, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN))?.let { best ->
                 val fx = r.nx(best[2]); val fy = r.ny(best[1])
-                if (fx in 0.0..1.0 && fy in 0.0..1.0) { if (goals.isEmpty()) goals.add(doubleArrayOf(fx, fy)) } else far = doubleArrayOf(fx, fy)
+                if (fx in 0.0..1.0 && fy in 0.0..1.0) { if (goals.isEmpty()) goals.add(doubleArrayOf(fx, fy)) } else { far = doubleArrayOf(fx, fy); farW = best }
             }
         }
         // the game's next waypoint is given for its focused quest only (Map.lua's stWay)
@@ -3659,12 +3674,23 @@ class MapView(context: Context) : View(context) {
         // the quest only on ANOTHER continent: the rides there (b-route-rides), each with the yards on from where it lands
         if (far == null && goals.isEmpty() && allSpots.isNotEmpty() && allSpots.none { it.size >= 3 && it[0].toInt() == r.continent })
             ways.addAll(rideWays(mapId, r, allSpots))
-        return CursorRoute.plan(px, py, r.width, r.height, goals, far, way, questById[q]?.optString("wp", ""), nodes,
+        // back where the player came from is ruled out, unless the quest itself lies in that map
+        val fw = farW
+        val backRule = if (fw != null && worldOf?.invoke(cameFrom)?.let { w -> w.valid && w.continent == r.continent &&
+                fw[1] in w.bottom..w.top && fw[2] in w.right..w.left } == true) 0 else cameFrom
+        val route = CursorRoute.plan(px, py, r.width, r.height, goals, far, way, questById[q]?.optString("wp", ""), nodes,
             ways = ways, inCity = mapId in CityExits.CITIES,
             wayName = { e ->
                 if (!e.learned) e.name
                 else mapName?.invoke(e.toMap)?.takeIf { it.isNotEmpty() }?.let { if (e.transport) "Ride to $it" else "To $it" }
-            }) { i, j -> TaxiNet.connected(i, j) }
+            }, cameFrom = backRule, keep = routeKeep[q]) { i, j -> TaxiNet.connected(i, j) }
+        // the choice, logged when it changes (for the next log read: "route: chose <way> (cost) over <runner-up>")
+        val k = route?.key
+        if (k != null && routeKeep[q] != k) {
+            android.util.Log.i("WCMAP", "route: quest $q on map $mapId (came from $cameFrom): chose ${route.why}")
+            routeKeep[q] = k
+        }
+        return route
     }
 
     /**
@@ -5374,10 +5400,14 @@ class MapView(context: Context) : View(context) {
                 ty <= top + fh - (if (hintsOn()) HINT_BAND else 0f)
             if (toCorpse && seen) drawCorpse(c, tx, ty)
             if (!toCorpse && seen && rimFly) drawFlyStep(c, tx, ty)
-            if (r0 > l0 && b0 > t0 && !seen) {
-                val ox = sx(px).coerceIn(l0, r0); val oy = sy(py).coerceIn(t0, b0)
-                val dx = tx - ox; val dy = ty - oy
-                var k = 1f
+            // THE QUEST ARROW IS ALWAYS ON THE RIM (the user on test41: "It's confusing with the arrow moving closer. It should keep
+            // the arrow on the edge of my screen relative to my position"): where the ray from the player toward the target leaves the
+            // field, pointing along it, the target in view or not (it is never hidden: test31) - it moves only as the bearing turns.
+            // The corpse's arrow keeps the game's minimap rule: its stone in view, no arrow.
+            val ox = sx(px).coerceIn(l0, r0); val oy = sy(py).coerceIn(t0, b0)
+            val dx = tx - ox; val dy = ty - oy
+            if (r0 > l0 && b0 > t0 && (!seen || !toCorpse) && (abs(dx) > 0.5f || abs(dy) > 0.5f)) {
+                var k = Float.MAX_VALUE                    // the ray to the edge, however near the target is
                 if (dx > 0f) k = min(k, (r0 - ox) / dx) else if (dx < 0f) k = min(k, (l0 - ox) / dx)
                 if (dy > 0f) k = min(k, (b0 - oy) / dy) else if (dy < 0f) k = min(k, (t0 - oy) / dy)
                 rimPt[0] = ox + dx * k; rimPt[1] = oy + dy * k
@@ -5393,8 +5423,8 @@ class MapView(context: Context) : View(context) {
                 }
                 slideClear(rimPt, l0, t0, r0, b0, keepTmp)
                 val ax = rimPt[0]; val ay = rimPt[1]
-                // pointing from where it sits (it may have slid) at the target
-                val deg = Math.toDegrees(atan2((tx - ax).toDouble(), -(ty - ay).toDouble())).toFloat()   // 0 = up
+                // pointing along the player's bearing to the target (slid clear of a control, it still points the way, not at a spot)
+                val deg = Math.toDegrees(atan2(dx.toDouble(), -dy.toDouble())).toFloat()   // 0 = up
                 c.save(); c.rotate(deg, ax, ay)
                 val corpseArrow = if (toCorpse) UiKit.tex("mm_corpse_arrow") else null
                 if (corpseArrow != null) {
@@ -5407,26 +5437,11 @@ class MapView(context: Context) : View(context) {
                 c.restore()
                 // the step's icon (the user's pick): the winged boot just inside the arrow, upright, while the way goes by air
                 if (!toCorpse && rimFly) {
-                    val len = Math.hypot((tx - ax).toDouble(), (ty - ay).toDouble()).toFloat().coerceAtLeast(1f)
-                    val bx = ax - (tx - ax) / len * FLY_ICON_OFF; val by = ay - (ty - ay) / len * FLY_ICON_OFF
+                    val len = hypot(dx, dy).coerceAtLeast(1f)
+                    val bx = ax - dx / len * FLY_ICON_OFF; val by = ay - dy / len * FLY_ICON_OFF
                     // on a dark round backing (UI Art, mr16: on busy city art the bare boot read as a flight-master pin there)
                     pFlyBack.color = Color.argb(140, 0, 0, 0); c.drawCircle(bx, by, FLY_BACK_PX / 2f, pFlyBack)
                     drawIcon(c, Ic.FLIGHT, bx, by, FLY_ICON_PX)
-                }
-            }
-            // ON THE FIELD the arrow stays too (the user on test31: "You took away my quest arrow when I am in the map module ... Turn it
-            // back on"): with its target in view it stands beside the player, pointing at it (the tram, a gate, a flight master, the quest)
-            if (!toCorpse && seen) {
-                val ppx = sx(px); val ppy = sy(py)
-                val dx = tx - ppx; val dy = ty - ppy
-                val d = hypot(dx, dy)
-                if (d > 1f) {
-                    val off = min(if (compact) NEAR_ARROW_PX * 0.7f else NEAR_ARROW_PX, d * 0.6f)
-                    val ax = ppx + dx / d * off; val ay = ppy + dy / d * off
-                    val deg = Math.toDegrees(atan2(dx.toDouble(), -dy.toDouble())).toFloat()   // 0 = up
-                    c.save(); c.rotate(deg, ax, ay)
-                    drawIcon(c, Ic.QUEST_ARROW, ax, ay, if (compact) RIM_ARROW_PX * 0.8f else RIM_ARROW_PX, pArt)
-                    c.restore()
                 }
             }
         }

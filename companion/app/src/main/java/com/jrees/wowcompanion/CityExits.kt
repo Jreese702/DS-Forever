@@ -50,11 +50,51 @@ object CityExits {
      * to the way, plus its ride, plus the straight yards from where it ends to the quest (a way to another continent: its own
      * [Way.tailYd]). [far] null = the quest is on no map of this continent: only such ways count. Null when there is none.
      */
-    fun pick(px: Double, py: Double, far: DoubleArray?, ways: List<Way>, ax: Double, ay: Double): Way? {
+    fun pick(px: Double, py: Double, far: DoubleArray?, ways: List<Way>, ax: Double, ay: Double): Way? =
+        choose(px, py, far, ways, ax, ay).way
+
+    /** the choice and why: the [way] taken (null = none worth it), its [cost], the [runnerUp] and its cost, the straight [direct] */
+    class Choice(val way: Way?, val cost: Double, val runnerUp: Way?, val runnerCost: Double, val direct: Double)
+
+    /** a way's identity across documents (the hysteresis' memory): where it leads and where it starts, to the yard's tenth of a map */
+    fun key(w: Way): String = "${w.exit.toMap}:${Math.round(w.x * 200)}:${Math.round(w.y * 200)}"
+
+    /**
+     * THE BEST WAY OUT, WEIGHED (the user on test40, Vanilla: "my marker is making me leave stormwind and then re-enter it over and
+     * over for my quest to go to westfall" - in Elwynn the only way known was the learned gate BACK into Stormwind, and any way at
+     * all used to win over simply heading for the quest). Rules:
+     *  - BACK into [cameFrom] (the map the player just came from; 0 = no such rule: the target is in it) only when it makes real
+     *    progress: a ride cheaper than going straight, or a way whose far end is nearer the target than the player is now by
+     *    [PROGRESS] of the straight yards (at least [PROGRESS_YD]). Just through the Stormwind gate into Elwynn, the gate back gains
+     *    nothing toward Westfall and is dropped; in Stormwind, come from Elwynn, the gate out still gains (Westfall lies past it);
+     *  - a walk-only way outside a city ([inCity] false) only when its detour is small ([DETOUR] of the straight yards): no known
+     *    way toward the target's zone = the straight bearing / the game's waypoint / the edge toward the TARGET instead;
+     *  - HYSTERESIS: the way chosen last time ([keep], a [key]) stays while it costs at most [STICK] more than the best.
+     */
+    fun choose(px: Double, py: Double, far: DoubleArray?, ways: List<Way>, ax: Double, ay: Double, cameFrom: Int = 0,
+               inCity: Boolean = true, keep: String? = null): Choice {
         fun d(x0: Double, y0: Double, x1: Double, y1: Double) = hypot((x1 - x0) * ax, (y1 - y0) * ay)
         fun tail(w: Way): Double? = if (!w.tailYd.isNaN()) w.tailYd else far?.let { d(w.endX, w.endY, it[0], it[1]) }
-        return ways.filter { tail(it) != null }.minByOrNull { w -> d(px, py, w.x, w.y) + w.exit.rideYd + tail(w)!! }
+        val direct = far?.let { d(px, py, it[0], it[1]) } ?: Double.NaN
+        val costed = ways.mapNotNull { w -> tail(w)?.let { t -> w to d(px, py, w.x, w.y) + w.exit.rideYd + t } }.filter { (w, c) ->
+            val gains = !direct.isNaN() && far != null &&
+                d(w.endX, w.endY, far[0], far[1]) < direct - maxOf(PROGRESS_YD, PROGRESS * direct)
+            val back = cameFrom != 0 && w.exit.toMap == cameFrom &&
+                !(if (w.exit.transport) !direct.isNaN() && c < direct else gains)
+            val detour = !inCity && !w.exit.transport && !direct.isNaN() && c > direct * DETOUR
+            !back && !detour
+        }.sortedBy { it.second }
+        if (costed.isEmpty()) return Choice(null, Double.NaN, null, Double.NaN, direct)
+        var best = costed[0]
+        if (keep != null) costed.firstOrNull { key(it.first) == keep }?.let { kept -> if (kept.second <= best.second * STICK) best = kept }
+        val runner = costed.firstOrNull { it !== best }
+        return Choice(best.first, best.second, runner?.first, runner?.second ?: Double.NaN, direct)
     }
+
+    const val DETOUR = 1.25      // a walk-only way out of open country: at most this much longer than straight to the target
+    const val PROGRESS = 0.15    // a way back must bring its far end this much of the straight yards nearer the target ...
+    const val PROGRESS_YD = 60.0 // ... and at least this many yards
+    const val STICK = 1.15       // the way chosen before keeps its place until another is this much cheaper
 
     /**
      * THE LEARNER (a): one map document after another. When the map changes, the last place on the old map is a way out of it: on
