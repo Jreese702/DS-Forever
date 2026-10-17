@@ -2180,7 +2180,7 @@ class MapView(context: Context) : View(context) {
         // and a key missing from this list silently never reaches the map object -- the indoor
         // framing simply never fired even though the addon was sending indoors=true.
         for (k in listOf("x", "y", "facing", "zone", "subzone", "mapID", "wx", "wy",
-                         "indoors", "inst", "cont", "taxi")) {
+                         "indoors", "inst", "cont", "onTaxi")) {
             if (pos.has(k)) m.put(k, pos.get(k))
         }
         staleMs = 0
@@ -2558,7 +2558,7 @@ class MapView(context: Context) : View(context) {
         val mapId = m.optInt("mapID", 0)
         // the continent: the game's own (UnitPosition's instance id, Map.lua `cont`), else the map rectangle's
         val cont = if (m.has("cont")) m.optInt("cont", -1) else m.optJSONObject("rect")?.optInt("c", -1) ?: -1
-        val e = exitLearner()?.onDoc(mapId, cont, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN), m.optInt("taxi", 0) == 1,
+        val e = exitLearner()?.onDoc(mapId, cont, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN), m.optInt("onTaxi", 0) == 1,
             android.os.SystemClock.elapsedRealtime()) ?: return
         val w = worldOf?.invoke(e.map)
         val at = if (w != null && w.valid) String.format(java.util.Locale.US, " = %.1f, %.1f on its map", w.nx(e.wy) * 100, w.ny(e.wx) * 100) else ""
