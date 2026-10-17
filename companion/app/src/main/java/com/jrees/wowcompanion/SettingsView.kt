@@ -805,7 +805,11 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             when {
                 // something of it is downloaded and waits for the game to start again: the launcher's own Restart, right here
                 a.pkgs().any { (k, _) -> ThirdPartyAddons.status(a, k).kind == ThirdPartyAddons.Kind.DOWNLOADED } && gameRunning() -> {
-                    UiKit.button(c, r, "Restart game", UiKit.Button.UP); addonRestart = r; RectF(r.left, r.top, r.left, r.top)
+                    // pressed: the game exits by its own Exit Game first (up to ~20 s outside a rested area): said, so it is not "nothing"
+                    val going = SystemClock.elapsedRealtime() - addonRestartAt < 60_000L
+                    UiKit.button(c, r, if (going) "Restarting..." else "Restart game", if (going) UiKit.Button.DOWN else UiKit.Button.UP)
+                    if (!going) addonRestart = r else postInvalidateDelayed(1000)
+                    RectF(r.left, r.top, r.left, r.top)
                 }
                 core.kind == ThirdPartyAddons.Kind.DOWNLOADING -> { if (core.pct >= 0) progressBar(c, r, core.pct); RectF(r.left, r.top, r.left, r.top) }
                 installed && wanted -> { UiKit.button(c, r, if (armedOut) "Tap again" else "Uninstall", if (armedOut) UiKit.Button.DOWN else UiKit.Button.UP); r }
@@ -860,12 +864,13 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     private val addonCoreBtn = HashMap<String, RectF>()
     private var addonRestart = RectF()
+    private var addonRestartAt = -60_000L
     private var addonArmed: String? = null
     private var addonArmedAt = 0L
 
     /** a press on an Add-ons control; true = it was one */
     private fun addonTap(x: Float, y: Float): Boolean {
-        if (!addonRestart.isEmpty && addonRestart.contains(x, y)) { onRestart(); return true }
+        if (!addonRestart.isEmpty && addonRestart.contains(x, y)) { addonRestartAt = SystemClock.elapsedRealtime(); onRestart(); return true }
         for (a in ThirdPartyAddons.ALL) {
             addonCoreBtn[a.id]?.takeIf { !it.isEmpty && it.contains(x, y) }?.let {
                 val installed = ThirdPartyAddons.coreInstalled(a)
