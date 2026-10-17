@@ -1565,6 +1565,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the consumables radial (Spells' Radial.lua): its items (the latest, replays too) and the game's word that a use landed
             "radial", "sradial" -> radialView.onDoc(msg)
             "radialuse", "sradialuse" -> if (current) radialView.onUse(msg)
+            // Spells' stick catch (Radial r15): shown / hidden, for whom, and what it caught (the user on test20: "The control sticks are not
+            // locking on the dpad up radial"): ok = the catch can take sticks at all; n = stick events kept from the game while it showed,
+            // pass = the left stick's events let through (the class wheel)
+            "radialstick" -> if (current) Log.i("WCLOG", "radial: stick catch ${if (msg.optBoolean("on")) "ON" else "off"} " +
+                "(holder=${msg.optString("holder", "-")} mode=${msg.optString("mode", "both")} ok=${msg.optBoolean("ok", false)} " +
+                "fight=${msg.optBoolean("fight", false)} arm=${msg.optBoolean("arm", false)}" +
+                (if (msg.has("n")) " caught=${msg.optInt("n")}" else "") + (if (msg.has("pass")) " passed=${msg.optInt("pass")}" else "") + ", ${msg.optString("v")})")
             "pauseack" -> if (current && ::pauseView.isInitialized) pauseView.onAck(msg)
             // the Game Menu on the bottom screen (Spells r12): the game's list + its countdown, and the cells' answers
             "gamemenu" -> {

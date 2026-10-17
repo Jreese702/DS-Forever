@@ -18,7 +18,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local RV = "r14"                -- bump on every change
+local RV = "r15"                -- bump on every change
 local ROW, CELLS = "radial", 24 -- the secure pad row: 24 cells = 3 pages of 8
 local PLAYER_BAGS = { 0, 1, 2, 3, 4 }
 local QUARANTINE = 30           -- seconds a freed column stays unused (as the pad's own columns)
@@ -411,12 +411,21 @@ local catch = CreateFrame("Frame", "WowCompanionRadialStickCatch", UIParent)
 catch:Hide()
 pcall(function() catch:SetAllPoints(UIParent) end)
 pcall(function() catch:EnableMouse(false) end)
+-- r15 (the user on 1.0.9-test20: "The control sticks are not locking on the dpad up radial"): the catch sits over every window's strata (a
+-- frame of ours higher in the stick's order than a window's own), and counts what it caught while shown (the radialstick doc's n / pass)
+pcall(function() catch:SetFrameStrata("TOOLTIP") end)
+catch.n, catch.pass, catch.mode = 0, 0, nil
 -- r4, MEASURED on b59 (13:48-13:49): the frame was shown with its sticks enabled, yet "the camera is taking over again on the top".
 -- The handler's ANSWER decides: Blizzard's own soft cursor (blizzard_gamepadsoftcursor/softcursor.lua) and stick listener
 -- (inputbindingstack/inputaxisbinding.lua) return FALSE for a stick they use ("handled": the game does not get it) and TRUE to pass it
 -- on ("unhandled"). r3's handler returned nothing, which passed both sticks on. Now both are kept: false for every stick.
+-- r15 (the user: "On the class radial only the right control stick should be locked"): the CLASS wheel's catch keeps only the right stick
+-- (its aim): the left one goes on to the game (the character walks), as Blizzard's own radial does (blizzard_radialwheel.lua: "Only allow
+-- this to consume Right Stick input", Left / Movement passed on). The item / spell / pause wheels aim with both: both kept
 catch:SetScript("OnGamePadStick", function(_, stick, x, y, len)
     catch.lastStick = stick
+    if catch.mode == "class" and (stick == "Left" or stick == "Movement") then catch.pass = catch.pass + 1 return true end
+    catch.n = catch.n + 1
     return false
 end)
 local function enableSticks()
@@ -464,7 +473,10 @@ stickSync = function()
     local armed = armedAt ~= nil and holder == nil and (GetTime() - armedAt) < ARM_S
     -- r13 (b-class-takeover, Quests q44): the app's CLASS wheel's guest holds the camera still the same way while it aims
     local want = (holder == GUEST_HOLDER or holder == "pad:class" or armed) and stickOn
+    catch.mode = holder == "pad:class" and "class" or nil
     if want ~= (catch:IsShown() and true or false) then
+        local caught, passed = catch.n, catch.pass
+        catch.n, catch.pass = 0, 0
         if want then catch:Show() else catch:Hide() end
         -- r6 (the user, b65: "A sometimes doesn't use it" -- MEASURED: after an app restart every wheel had 0 items, because this doc is
         -- sent only on a change and the app's log replay no longer held the last one): the FULL list again on every opening (the arm or
@@ -474,7 +486,8 @@ stickSync = function()
         -- share the guest, so the edge cannot tell which one opens; its list is small), flushed at once
         if want and type(WC.spellRadial) == "table" and type(WC.spellRadial.emit) == "function" then pcall(WC.spellRadial.emit, true) end
         WC.send(WC.encode({ type = "radialstick", v = RV, on = want or false, ok = stickOn or nil, fight = inCombat() or nil,
-                            arm = (want and armed and holder == nil) or nil }))
+                            arm = (want and armed and holder == nil) or nil, holder = holder,
+                            mode = catch.mode, n = (not want) and caught or nil, pass = (not want and passed > 0) and passed or nil }))
         WC.push()
     end
 end
