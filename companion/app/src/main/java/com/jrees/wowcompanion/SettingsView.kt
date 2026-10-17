@@ -72,6 +72,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segLocation = Array(LOCATIONS.size) { RectF() }
     private val segChat = Array(CHAT_INPUTS.size) { RectF() }
     private val segQt = Array(3) { RectF() }
+    private val segDanger = Array(3) { RectF() }
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
     private val segIndoor = Array(2) { RectF() }
     /**
@@ -199,7 +200,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      */
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss) +
-            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segChat.toList() +
+            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segDanger.toList() + segChat.toList() +
             segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
@@ -234,7 +235,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt,
+                         segClassROpen, segClassRPick, segChat, segQt, segDanger,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -253,7 +254,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** a block's height from its heading's y to its last row's bottom, laid out exactly as its draw function lays it out */
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
-        SettingsTabs.Block.MAP -> 16f + ROW_H + 10f + ROW_H
+        // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
+        SettingsTabs.Block.MAP -> 16f + 4 * ROW_H + 3 * 10f
         SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH()
         SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
@@ -375,6 +377,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 if (mi >= 0) { FrameGen.multiplier = FrameGen.MULTIPLIERS[mi]; invalidate(); return }
                 val ci = segChat.indexOfFirst { it.contains(x, y) }
                 val qi = segQt.indexOfFirst { it.contains(x, y) }
+                val di = segDanger.indexOfFirst { it.contains(x, y) }
+                if (di >= 0) { Settings.avoidDanger = Settings.AVOID_DANGER[di]; invalidate(); return }
                 if (qi >= 0) {
                     if (Settings.questTracking != Settings.QUEST_TRACKING[qi]) Settings.questTracking = Settings.QUEST_TRACKING[qi]
                     // an add-on not installed yet: choosing it installs it (the Add-ons tab's own Install; the app's route meanwhile)
@@ -557,6 +561,19 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         row(c, y, "Quest tracking", sub, enabled = true) { box ->
             val b = RectF(box.right - 16f - qtW * QT_LABELS.size, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             qtSegmented(c, b, Settings.QUEST_TRACKING.indexOf(Settings.questTracking))
+            b
+        }
+        // AVOID DANGEROUS AREAS (b-danger-layer): how hard the route bends round hostile mobs (QuestieDB's); High by default
+        y += ROW_H + 10f
+        val dsub = when (Settings.avoidDanger) {
+            "off" -> "The line goes straight, through hostile mobs"
+            "low" -> "The line bends round dense or high-level hostile mobs"
+            else -> "The line bends round hostile mobs at or above your level"
+        }
+        row(c, y, "Avoid dangerous areas", dsub, enabled = true) { box ->
+            val segW = segW()
+            val b = RectF(box.right - 16f - segW * 3, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, listOf("Off", "Low", "High"), Settings.AVOID_DANGER.indexOf(Settings.avoidDanger), segDanger)
             b
         }
         return y + ROW_H

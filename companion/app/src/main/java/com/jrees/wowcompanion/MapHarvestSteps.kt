@@ -427,5 +427,5 @@ object MapHarvestSteps {
         }
     }
 
-    val STEPS: List<ArtHarvest.Step> = listOf(WORLD_MAP, POI_ICONS, NPC_ICONS, MINIMAP, TRANSPORTS, WMO_MINIMAP)
+    val STEPS: List<ArtHarvest.Step> = listOf(WORLD_MAP, POI_ICONS, NPC_ICONS, MINIMAP, TRANSPORTS, WMO_MINIMAP, DangerStore.AREAS_STEP)
 }

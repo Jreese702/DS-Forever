@@ -65,6 +65,12 @@ object Settings {
         set(v) { prefs?.edit()?.putString("questTracking", if (v in QUEST_TRACKING) v else "vanilla")?.apply(); changed() }
     val QUEST_TRACKING = listOf("vanilla", "questtrail", "polestar")
 
+    /** "Avoid dangerous areas" (b-danger-layer): how hard the route bends round hostile mobs; High by default (the user's pick) */
+    var avoidDanger: String
+        get() = prefs?.getString("avoidDanger", "high")?.takeIf { it in AVOID_DANGER } ?: "high"
+        set(v) { prefs?.edit()?.putString("avoidDanger", if (v in AVOID_DANGER) v else "high")?.apply(); changed() }
+    val AVOID_DANGER = listOf("off", "low", "high")
+
     var chatDefaultInput: String
         // the default is the keyboard (the user's pick, 2026-10-07)
         get() = prefs?.getString("chatDefaultInput", "keys")?.takeIf { it == "quick" || it == "keys" } ?: "keys"
