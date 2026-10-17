@@ -67,6 +67,7 @@ class MapListTest {
         assertEquals(MapCursor.Do.Open(20), c.key("PAD4", stops, 7, false, untracked))
         c.key("PADDUP", stops, 7, false, untracked); c.key("PADDUP", stops, 7, false, untracked)
         assertEquals(MapCursor.Do.Untrack(7), c.key("PAD3", stops, 7, false, untracked))     // X on a tracked quest: untrack, as before
+        assertEquals(MapCursor.Do.Open(7), c.key("PAD4", stops, 7, false, untracked))        // Y opens a tracked quest's panel too
         assertFalse(MapList.isGroup(MapList.ME))
     }
 
