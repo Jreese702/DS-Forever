@@ -488,6 +488,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         mapView.onLeave = { show(Room.HOME) }
         mapView.offMapSpots = { qid -> worldMapRoom.questWorldSpots(qid) }      // Map: the arrow to a quest in another zone
+        mapView.zoneSpots = { qid -> worldMapRoom.questZoneSpots(qid) }         // Polestar's goal on its own zone map
         // the cursor line's ways out of a map (b-route-city-exits): the maps' world rectangles and names, the game's own
         mapView.worldOf = { id -> worldMapRoom.model.world(id) }
         mapView.mapName = { id -> worldMapRoom.model.name(id) }
@@ -1529,6 +1530,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the game's player menu, read for the map module's bottom-screen copy (Quests q41): only a current one is the game's now
             "pmenu" -> if (current) mapView.onPlayerMenuDoc(msg)
             // the route's pin's answer (Map.lua b-route-waypoint): a refused one is not tried again for a while
+            // Polestar's answer and its route (Map.lua b-route-polestar)
+            "pnav" -> if (current) {
+                mapView.polestar.onAnswer(msg.optString("op"), msg.optBoolean("ok"), msg.optString("why", ""), msg.optBoolean("have"),
+                    SystemClock.elapsedRealtime())
+                Log.i("WCMAP", "polestar: ${msg.optString("op")} ${if (msg.optBoolean("ok")) "ok" else "refused"} ${msg.optString("why", "")}" +
+                    " (Polestar ${if (msg.optBoolean("have")) "there" else "missing"})")
+                mapView.invalidate()
+            }
+            "pnavroute" -> if (current) { mapView.polestar.onRoute(msg, SystemClock.elapsedRealtime()); mapView.invalidate() }
             "routewp" -> if (current) {
                 routeWp.onAnswer(msg.optString("op"), msg.optBoolean("ok"), SystemClock.elapsedRealtime())
                 Log.i("WCMAP", "route pin: ${msg.optString("op")} ${if (msg.optBoolean("ok")) "ok" else "refused"} ${msg.optString("why", "")}")
@@ -2931,12 +2941,24 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     // THE GAME'S PIN ON THE ROUTE (b-route-waypoint, the user's pick): RouteWaypoint decides the taps of Map.lua's row "uwp"
     private val routeWp = RouteWaypoint()
     private fun routePinTick() {
+        polestarTick()
         val pad = questsPad ?: return
         if (pad.optJSONObject("rows")?.has(RouteWaypoint.ROW) != true) return          // an older add-on: no pin at all
         val cols = routeWp.tick(mapView.routePin(), SystemClock.elapsedRealtime())
         if (cols.isEmpty()) return
         Log.i("WCMAP", "route pin: tap $cols")
         TapBridge.taps(this, pad, cols.map { RouteWaypoint.ROW to it }) { why -> Log.i("WCMAP", "route pin: tap failed: $why") }
+    }
+
+    // POLESTAR AS THE ROUTER (b-route-polestar): PolestarNav decides the taps of Map.lua's row "pnav" (only while the setting is Polestar;
+    // switching away cancels its guidance)
+    private fun polestarTick() {
+        val pad = questsPad ?: return
+        if (pad.optJSONObject("rows")?.has(PolestarNav.ROW) != true) return          // an older add-on: no Polestar bridge
+        val cols = mapView.polestar.tick(mapView.polestarGoal(), SystemClock.elapsedRealtime())
+        if (cols.isEmpty()) return
+        Log.i("WCMAP", "polestar: tap $cols")
+        TapBridge.taps(this, pad, cols.map { PolestarNav.ROW to it }) { why -> Log.i("WCMAP", "polestar: tap failed: $why") }
     }
 
     private fun cleanExit(why: String, done: (Boolean) -> Unit) {

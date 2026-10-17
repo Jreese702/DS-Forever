@@ -2693,3 +2693,119 @@ do
         if RWP.active and GetTime() - RWP.keepAt > RWP.KEEP_S then pcall(RWP.clear, true, "no word from the app") end
     end)
 end
+
+-- ---------------------------------------------------------------- POLESTAR AS THE ROUTER (b-route-polestar)
+-- The user (2026-10-17): "Quest tracking: Vanilla | QuestTrail | Polestar", the setting deciding what the map's line and arrows follow;
+-- with Polestar (downloaded on opt-in, never bundled; GPL-3) the focused quest's goal is handed to Polestar's PUBLIC Nav API
+-- (docs/ARCHITECTURE.md "Nav API", version 1: Navigate(owner, uiMapID, x, y, title) / Cancel(owner) / Active()) and its walking route
+-- read back (Polestar.Nav.GetRouteGeometry(): each leg's kind and points {c, wx, wy}) for the app to draw. Polestar draws its own
+-- arrow as always; nothing of the game is changed by this. The app taps the pad row "pnav":
+--   36, m1, m2, m3, x1, x2, y1, y2   GO: the target (uiMapID in three base-36 digits, x / y in two each: 1296 steps)
+--   37                                KEEP: the app still wants it (none for KEEP_S: cancelled)
+--   39                                CANCEL
+-- Answers {"type":"pnav", op, ok, why, have} (have = Polestar's API is there); the route as {"type":"pnavroute", legs = {{k, c, p}}}
+-- (p = wx, wy pairs, at most PTS points in all), sent when it changes.
+WC.pnav = { active = false, keepAt = 0, digits = nil, digitsAt = 0, sig = nil, sentAt = 0, KEEP_S = 60, PTS = 240, OWNER = "DSForever" }
+function WC.pnav.api()
+    local P = _G.Polestar
+    if type(P) == "table" and type(P.Nav) == "table" and type(P.Nav.API) == "table" and type(P.Nav.API.Navigate) == "function" then
+        return P.Nav.API
+    end
+end
+function WC.pnav.say(op, ok, why)
+    pcall(function()
+        WC.send(WC.encode({ type = "pnav", v = "pn1", op = op, ok = ok and true or false, why = why, have = WC.pnav.api() ~= nil }))
+        WC.push()
+    end)
+end
+function WC.pnav.go(m, x, y)
+    local api = WC.pnav.api()
+    if not api then return WC.pnav.say("go", false, "no Polestar") end
+    local okN, res = pcall(api.Navigate, WC.pnav.OWNER, m, x, y, "DS Forever")
+    if not okN or res == false then return WC.pnav.say("go", false, okN and "refused" or tostring(res):sub(1, 120)) end
+    WC.pnav.active, WC.pnav.keepAt, WC.pnav.sig = true, GetTime(), nil
+    WC.pnav.say("go", true)
+end
+function WC.pnav.cancel(why)
+    if not WC.pnav.active then return end
+    local api = WC.pnav.api()
+    if api and type(api.Cancel) == "function" then pcall(api.Cancel, WC.pnav.OWNER) end
+    WC.pnav.active, WC.pnav.sig = false, nil
+    WC.pnav.say("cancel", true, why)
+end
+-- the route Polestar is guiding now, as legs of world points (only while the guidance is ours)
+function WC.pnav.route()
+    local P = _G.Polestar
+    local api = WC.pnav.api()
+    if not (P and api and type(P.Nav.GetRouteGeometry) == "function") then return nil end
+    if type(api.Active) == "function" then
+        local okA, act, owner = pcall(api.Active)
+        if okA and (not act or owner ~= WC.pnav.OWNER) then return nil end
+    end
+    local okG, legs = pcall(P.Nav.GetRouteGeometry)
+    if not okG or type(legs) ~= "table" then return nil end
+    local n = 0
+    for _, leg in ipairs(legs) do if type(leg) == "table" and type(leg.pts) == "table" then n = n + #leg.pts end end
+    local step = math.max(1, math.ceil(n / WC.pnav.PTS))
+    local out, sig = {}, {}
+    for _, leg in ipairs(legs) do
+        if type(leg) == "table" and type(leg.pts) == "table" then
+            local p, c = {}, nil
+            local cnt = #leg.pts
+            for i = 1, cnt do
+                if i == 1 or i == cnt or (i - 1) % step == 0 then
+                    local pt = leg.pts[i]
+                    if type(pt) == "table" then
+                        local wx, wy = pt.wx or pt[2], pt.wy or pt[3]
+                        c = c or pt.c or pt[1]
+                        if type(wx) == "number" and type(wy) == "number" then
+                            p[#p + 1] = math.floor(wx * 10 + 0.5) / 10; p[#p + 1] = math.floor(wy * 10 + 0.5) / 10
+                        end
+                    end
+                end
+            end
+            local k = type(leg.kind) == "string" and leg.kind or "walk"
+            if #p >= 4 then
+                out[#out + 1] = { k = k, c = type(c) == "number" and c or nil, p = p }
+                sig[#sig + 1] = k .. #p .. ":" .. p[1] .. "," .. p[#p]
+            end
+        end
+    end
+    return out, table.concat(sig, "|")
+end
+
+if WC.pad and type(WC.pad.op) == "function" then
+    WC.pad.op("pnav", "pnav", function(_, col)
+        if type(col) ~= "number" then return end
+        local P = WC.pnav
+        if col == 39 then P.digits = nil; return P.cancel("asked") end
+        if col == 37 then P.keepAt = GetTime(); return end
+        if col == 36 then P.digits = {}; P.digitsAt = GetTime(); return end
+        if col <= 35 and P.digits and GetTime() - P.digitsAt <= 2 then
+            local d = P.digits
+            d[#d + 1] = col
+            if #d == 7 then
+                P.digits = nil
+                P.go((d[1] * 36 + d[2]) * 36 + d[3], (d[4] * 36 + d[5]) / 1295, (d[6] * 36 + d[7]) / 1295)
+            end
+        end
+    end)
+end
+
+do
+    local f = CreateFrame("Frame")
+    pcall(function() f:RegisterEvent("PLAYER_LOGOUT") end)
+    f:SetScript("OnEvent", function() pcall(WC.pnav.cancel, "log out") end)
+    -- once a second while ours: the route when it changed (and every 10 s anyway); no word from the app for KEEP_S: cancelled
+    C_Timer.NewTicker(1, function()
+        local P = WC.pnav
+        if not P.active then return end
+        if GetTime() - P.keepAt > P.KEEP_S then return pcall(P.cancel, "no word from the app") end
+        local okR, legs, sig = pcall(P.route)
+        if not okR or not legs then return end
+        if sig ~= P.sig or GetTime() - P.sentAt > 10 then
+            P.sig, P.sentAt = sig, GetTime()
+            pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn1", legs = legs })); WC.push() end)
+        end
+    end)
+end
