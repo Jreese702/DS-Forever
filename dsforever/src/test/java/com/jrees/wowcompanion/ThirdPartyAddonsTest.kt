@@ -146,6 +146,26 @@ class ThirdPartyAddonsTest {
         assertTrue(File(addons, "TestA").exists())
     }
 
+    /** the user, on Polestar / QuestTrail: "Keep it installed" - switched away it stays; only its own Uninstall takes it out */
+    @Test fun switchedAwayStaysInstalled() {
+        var chosen = true
+        val a = addon(zipBytes).copy(enabledBy = { chosen }, enabledWhere = "Map › Quest tracking: Test")
+        ThirdPartyAddons.ALL = listOf(a)
+        ThirdPartyAddons.fetchNow(a, "core")
+        ThirdPartyAddons.applyAtStart(game)
+        assertTrue(File(addons, "TestA").exists())
+        chosen = false
+        assertEquals(ThirdPartyAddons.Kind.INSTALLED, ThirdPartyAddons.status(a, "core").kind)
+        assertTrue(ThirdPartyAddons.status(a, "core").line.contains("not in use"))
+        ThirdPartyAddons.applyAtStart(game)
+        assertTrue("kept installed", File(addons, "TestA").exists())
+        ThirdPartyAddons.askUninstall(a, true)
+        assertEquals(ThirdPartyAddons.Kind.REMOVING, ThirdPartyAddons.status(a, "core").kind)
+        ThirdPartyAddons.applyAtStart(game)
+        assertFalse("its own Uninstall takes it out", File(addons, "TestA").exists())
+        assertFalse(ThirdPartyAddons.uninstallAsked(a))
+    }
+
     @Test fun aDirectUrlNeedsNoReleaseApi() {
         val base = "http://127.0.0.1:${server.localPort}"
         val a = addon(zipBytes).let { it.copy(core = it.core.copy(url = "$base/dl/Test-1.0.zip")) }

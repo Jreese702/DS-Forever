@@ -156,6 +156,16 @@ object ThirdPartyAddons {
         if (a.enabledBy != null) return
         prefs?.put("${a.id}.core", on); changed(); resume()
     }
+    /**
+     * KEEP IT INSTALLED (the user, 1.0.9, on Polestar / QuestTrail: "Keep it installed"): an add-on another setting switches stays in
+     * AddOns when that setting moves away (unused, not removed); only its own Uninstall here takes it out ([uninstallAsked])
+     */
+    fun uninstallAsked(a: Addon): Boolean = prefs?.get("${a.id}.out", false) ?: false
+    fun askUninstall(a: Addon, on: Boolean) { prefs?.put("${a.id}.out", on); changed() }
+    /** an installed package goes out at the next start: not wanted, and (for one another setting switches) its Uninstall asked */
+    fun goesOut(a: Addon, key: String): Boolean =
+        installed(a, key) && !wanted(a, key) && (a.enabledBy == null || uninstallAsked(a))
+
     fun moduleOn(a: Addon, m: Module): Boolean = prefs?.get("${a.id}.${m.id}", false) ?: false
     fun setModule(a: Addon, m: Module, on: Boolean) { prefs?.put("${a.id}.${m.id}", on); changed(); resume() }
     fun option(a: Addon, o: Option): Boolean = prefs?.get("${a.id}.opt.${o.id}", o.default) ?: o.default
@@ -191,6 +201,7 @@ object ThirdPartyAddons {
         // what the worker is doing, while it is wanted and not in yet (an installed package is installed, whatever it did before)
         synchronized(live) { live["${a.id}/$key"] }?.let { if (want && !inst) return it }
         return when {
+            inst && !want && !goesOut(a, key) -> Status(Kind.INSTALLED, "Installed, not in use: choose it in ${a.enabledWhere}")
             inst && !want -> Status(Kind.REMOVING, "Moves out when the game next starts (kept in a backup)")
             inst -> Status(Kind.INSTALLED, "Installed")
             want && state(a, key).optString("zip") == p.tag && zipOf(p).length() == p.bytes -> Status(Kind.DOWNLOADED, "Downloaded: goes in when the game next starts")
@@ -322,7 +333,12 @@ object ThirdPartyAddons {
             val name = if (key == "core") a.title else "${a.title} ${key.replaceFirstChar { it.uppercase() }}"
             try {
                 val want = wanted(a, key); val inst = installed(a, key)
-                if (!want && inst) { moveOut(a, key, flavorRoot); lines.add("$name moved to the backup"); continue }
+                if (want && a.enabledBy != null && uninstallAsked(a)) askUninstall(a, false)     // chosen again: the Uninstall is off
+                if (goesOut(a, key)) {
+                    moveOut(a, key, flavorRoot); lines.add("$name moved to the backup")
+                    if (key == "core" && a.enabledBy != null) askUninstall(a, false)
+                    continue
+                }
                 if (!want || inst) continue
                 if (state(a, key).optString("zip") != p.tag && p.bytes <= SMALL) fetch(a, key, p)
                 if (state(a, key).optString("zip") != p.tag || zipOf(p).length() != p.bytes) {

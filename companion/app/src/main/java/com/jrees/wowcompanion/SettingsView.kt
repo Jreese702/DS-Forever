@@ -745,6 +745,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         val sub = when {
             core.kind == ThirdPartyAddons.Kind.NONE && a.enabledBy != null -> "$who Off: chosen in ${a.enabledWhere}."
             core.kind == ThirdPartyAddons.Kind.NONE -> "$who ${ThirdPartyAddons.size(a.core.mb)}."
+            a.enabledBy != null && installed && !wanted -> core.line
             core.kind == ThirdPartyAddons.Kind.INSTALLED -> "$who Version ${a.version}."
             else -> core.line
         }
@@ -754,6 +755,13 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             val r = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             val armedOut = addonArmed == "${a.id}.uninstall" && SystemClock.elapsedRealtime() - addonArmedAt < ARM_MS
             when {
+                // switched away but still installed (the user: "Keep it installed"): its own Uninstall, tapped twice
+                a.enabledBy != null && installed && !wanted -> {
+                    val asked = ThirdPartyAddons.uninstallAsked(a)
+                    UiKit.button(c, r, when { asked -> "Keep it"; armedOut -> "Tap again"; else -> "Uninstall" },
+                        if (armedOut) UiKit.Button.DOWN else UiKit.Button.UP)
+                    r
+                }
                 a.enabledBy != null -> {
                     // switched by another setting: no button here, only where it is and what it is doing
                     val words = when (core.kind) { ThirdPartyAddons.Kind.INSTALLED -> "Version ${a.version}"; ThirdPartyAddons.Kind.NONE -> "Off"; ThirdPartyAddons.Kind.DOWNLOADED -> "Downloaded"
@@ -832,6 +840,17 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             addonCoreBtn[a.id]?.takeIf { !it.isEmpty && it.contains(x, y) }?.let {
                 val installed = ThirdPartyAddons.coreInstalled(a)
                 val wanted = ThirdPartyAddons.coreWanted(a)
+                if (a.enabledBy != null) {
+                    // an add-on another setting switches: only its Uninstall (twice) / Keep it, and only once it is switched away
+                    if (!installed || wanted) return true
+                    val now = SystemClock.elapsedRealtime()
+                    when {
+                        ThirdPartyAddons.uninstallAsked(a) -> ThirdPartyAddons.askUninstall(a, false)
+                        addonArmed == "${a.id}.uninstall" && now - addonArmedAt < ARM_MS -> { addonArmed = null; ThirdPartyAddons.askUninstall(a, true) }
+                        else -> { addonArmed = "${a.id}.uninstall"; addonArmedAt = now; postDelayed({ invalidate() }, ARM_MS + 50) }
+                    }
+                    return true
+                }
                 if (installed && wanted) {
                     // Uninstall: twice, as Reload (its folders go to the backup at the next start, never deleted)
                     val now = SystemClock.elapsedRealtime()
