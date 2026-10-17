@@ -97,6 +97,7 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
                 val vi = ui + di; val vj = uj + dj
                 if (vi !in 0 until nx || vj !in 0 until ny) continue
                 val v = vj * nx + vi
+                if (terr[v] >= Terrain.WALL && v != t) continue           // a cliff is a wall, not a cost (test51)
                 val len = hypot(di * cx * ax, dj * cy * ay)
                 val free = hypot((vi + 0.5) * cx * ax - goal[0] * ax, (vj + 0.5) * cy * ay - goal[1] * ay) <= GOAL_FREE_YD
                 val c = g[u] + len * (terr[v] + (if (free) 0.0 else k * cell(vi, vj)))

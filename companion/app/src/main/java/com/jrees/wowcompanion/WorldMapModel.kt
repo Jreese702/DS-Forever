@@ -152,6 +152,12 @@ class WorldMapModel {
         minOf((w.top - wx) / (w.top - w.bottom), (wx - w.bottom) / (w.top - w.bottom), (w.left - wy) / (w.left - w.right), (wy - w.right) / (w.left - w.right))
     }
 
+    /** every zone (mapType 3: a zone or a city) on [continent] whose world rectangle holds ([wx], [wy]) (b-route-multihop) */
+    fun zonesAt(continent: Int, wx: Double, wy: Double): List<Int> = maps.values.filter { m ->
+        val w = m.world
+        m.type == 3 && w != null && w.continent == continent && wx in w.bottom..w.top && wy in w.right..w.left
+    }.map { it.id }
+
     /** World ... [id] */
     fun ancestors(id: Int): List<Int> {
         val out = ArrayList<Int>()

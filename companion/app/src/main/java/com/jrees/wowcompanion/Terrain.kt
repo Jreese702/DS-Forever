@@ -30,8 +30,12 @@ object Terrain {
         slope == NO_DATA || slope < 25 -> 1f
         slope < 40 -> 1f + (slope - 25) / 15f * 2f            // a climb: up to 3x
         slope < 50 -> 3f + (slope - 40) / 10f * 9f            // a steep bank: up to 12x
-        else -> 60f                                            // a cliff: a wall in all but name
+        else -> WALL                                           // a cliff: a wall (DangerGrid.route never steps on one)
     }
+    /** a cliff's factor: the route's A* never enters such a cell (test51: "the pathing needs to really factor walkable terrain") */
+    const val WALL = 60f
+    /** a climb and steeper (a steep bank, a cliff): no way out of a map over it (the edge toward the quest, b-route-multihop) */
+    const val STEEP = 3f
 
     // ---------------------------------------------------------------- one zone's grid (built by the harvest, read by the route)
 
