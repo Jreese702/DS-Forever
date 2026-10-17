@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d20"         -- bump on every change
+local DV = "d21"         -- bump on every change
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -394,6 +394,9 @@ local function dlgButtons()
         DLG.a = CreateFrame("Button", "WowCompanionDlgA", UIParent, "SecureActionButtonTemplate")
         DLG.b = CreateFrame("Button", "WowCompanionDlgB", UIParent, "SecureActionButtonTemplate")
         DLG.a:SetAttribute("type", "click"); DLG.b:SetAttribute("type", "click")
+        -- d21 (the A-on-dialog lead, b-release-spirit): a binding click reaches a secure button on the PRESS when the game's
+        -- ActionButtonUseKeyDown is on, and a button registered for the release only never fired it (TapPad's own measure: both)
+        DLG.a:RegisterForClicks("AnyDown", "AnyUp"); DLG.b:RegisterForClicks("AnyDown", "AnyUp")
     end)
     return DLG.a ~= nil and DLG.b ~= nil
 end
