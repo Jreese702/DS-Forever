@@ -2830,6 +2830,79 @@ class MapView(context: Context) : View(context) {
             "the chain ${p.describe()} (${p.cost.toInt()} yd)")
     }
 
+    /** the zones whose world rectangle meets a box (continent, x0, x1, y0, y1): the cross-zone plan's (b-route-cross-zone) */
+    var zonesIn: ((Int, Double, Double, Double, Double) -> List<Int>)? = null
+    private class XzRoute(val key: String, val route: CursorRoute.Route?)
+    private val xzRoutes = HashMap<Int, XzRoute>()
+    private val xzPending = HashSet<Int>()
+
+    /**
+     * quest [q]'s border crossing from the plan across the zones (CrossZone), worked out on the route thread and kept until the player
+     * has moved [XZ_MOVE_YD] or the data changed; the last one meanwhile (null the first time: the edge stands in for a moment)
+     */
+    private fun crossZoneRoute(q: Int, mapId: Int, r: PoiStore.Rect, m: JSONObject, farW: DoubleArray): CursorRoute.Route? {
+        val zi = zonesIn ?: return null
+        val pwx = m.optDouble("wx", Double.NaN); val pwy = m.optDouble("wy", Double.NaN)
+        if (pwx.isNaN() || pwy.isNaN() || farW.size < 3 || farW[0].toInt() != r.continent) return null
+        val cont = r.continent
+        val gx = farW[1]; val gy = farW[2]
+        val strength = if (Settings.questTracking == "safepath") Settings.avoidDanger else "off"
+        val key = "${(gx / 25).toInt()}:${(gy / 25).toInt()}:${(pwx / XZ_MOVE_YD).toInt()}:${(pwy / XZ_MOVE_YD).toInt()}:$strength:" +
+            "${Terrain.files.version}:${Terrain.buildings.version}:${Roads.version}:${Roads.files.version}:${DangerStore.version}:$questsPlv"
+        val have = xzRoutes[q]
+        if (have?.key != key && xzPending.add(q)) {
+            val plv = questsPlv ?: 0
+            val mine = TransportRoutes.factionOf(m.optString("fac", null))
+            val wo = worldOf; val za = zoneAt
+            RouteWork.run({
+                val x0 = minOf(pwx, gx) - CrossZone.MARGIN; val x1 = maxOf(pwx, gx) + CrossZone.MARGIN
+                val y0 = minOf(pwy, gy) - CrossZone.MARGIN; val y1 = maxOf(pwy, gy) + CrossZone.MARGIN
+                val ids = zi(cont, x0, x1, y0, y1)
+                // the smallest zones first: a city's own grid over its parent zone's (the same ground; its buildings are its own)
+                val zones = ids.mapNotNull { id ->
+                    val w = wo?.invoke(id) ?: return@mapNotNull null
+                    Triple(id, w, (w.top - w.bottom) * (w.left - w.right))
+                }.sortedBy { it.third }.map { (id, _, _) ->
+                    CrossZone.Zone(id, Terrain.of(id), Terrain.buildingsOf(id)) { wx, wy -> Roads.isRoad(id, wx, wy) }
+                }
+                val threats = ArrayList<CrossZone.Threat>()
+                for (id in ids) {
+                    val w = wo?.invoke(id) ?: continue
+                    for (s in DangerStore.spawns(id)) {
+                        if (mine != 0 && s.hostile and mine == 0) continue
+                        val wt = DangerGrid.weight(s.minLv, s.maxLv, s.elite, plv)
+                        if (wt > 0f) threats.add(CrossZone.Threat(w.wx(s.y.toDouble()), w.wy(s.x.toDouble()), wt))
+                    }
+                }
+                val k = DangerGrid.strength(strength)
+                val plan = CrossZone.plan(pwx, pwy, gx, gy, { wx, wy -> CrossZone.cost(zones, wx, wy) { a, b -> Terrain.Walked.walked(cont, a, b) } }, threats, k)
+                val ex = plan?.let { CrossZone.exit(it, r.top, r.bottom, r.left, r.right) }
+                val route = if (plan == null || ex == null) null else {
+                    val (a, b) = ex
+                    val wx = (a[0] + b[0]) / 2; val wy = (a[1] + b[1]) / 2
+                    val next = za?.invoke(cont, b[0], b[1])
+                    val nextId = zi(cont, b[0], b[0], b[1], b[1]).firstOrNull { it != mapId } ?: 0
+                    CursorRoute.Route(CursorRoute.Kind.EXIT, (r.left - wy) / r.width, (r.top - wx) / r.height,
+                        if (next != null) "To $next" else "Exit ${CursorRoute.compass(0.0, 0.0, (r.left - wy) / r.width - (r.left - pwy) / r.width, (r.top - wx) / r.height - (r.top - pwx) / r.height, r.width, r.height)}",
+                        "xz:${(wx / 50).toInt()}:${(wy / 50).toInt()}",
+                        "cross-zone via (${wx.toInt()}, ${wy.toInt()}) [map $mapId -> $nextId], cost ${plan.cost.toInt()} over ${zones.size} zones")
+                }
+                XzRoute(key, route)
+            }) { res ->
+                xzPending.remove(q)
+                val was = xzRoutes[q]?.route?.key
+                xzRoutes[q] = res
+                if (res.route?.key != was) {
+                    android.util.Log.i("WCMAP", "route: quest $q: " + (res.route?.why ?: "cross-zone: no way found over the stitched zones"))
+                    routeEpoch++
+                }
+                invalidate()
+            }
+        }
+        return have?.route
+    }
+    private val XZ_MOVE_YD = 100.0
+
     /**
      * THE EDGE, ONLY WHERE ONE CAN WALK OUT (b-route-multihop; test51: north out of Elwynn over the mountains): with the zone's slope
      * grid (Terrain), the edge toward the quest slides along the border to the nearest stretch whose ground, a few cells in, is no
@@ -4311,7 +4384,9 @@ class MapView(context: Context) : View(context) {
         val chained = if (planned != null && planned.kind != CursorRoute.Kind.FLIGHT && planned.kind != CursorRoute.Kind.GOAL && fw != null)
             chainRoute(q, mapId, r, m, fw) ?: planned else planned
         // the edge toward the quest only where the ground lets anyone walk out (b-route-multihop: never over a mountain border)
-        val planned2 = if (chained?.key == "edge") walkableEdge(q, mapId, r, chained) else chained
+        // ACROSS THE ZONES (b-route-cross-zone, test58: "it still has it sending me up a mountain"): instead of the edge toward the quest,
+        // the crossing a plan over the stitched zones' ground finds (both sides walkable: the road, the bridge); the edge only meanwhile
+        val planned2 = if (chained?.key == "edge") (fw?.let { crossZoneRoute(q, mapId, r, m, it) } ?: walkableEdge(q, mapId, r, chained)) else chained
         // a step on the way (a gate, a tram, a flight, the edge): where the way goes on from it, for its faint continuation
         val route = planned2?.let { p -> if (p.kind != CursorRoute.Kind.GOAL && far != null) p.copy(then = far) else p }
         // the choice, logged when it changes (for the next log read: "route: chose <way> (cost) over <runner-up>")
