@@ -42,8 +42,9 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             orientation = LinearLayout.VERTICAL
             // each part measures its own height; this scroll scrolls the tab's page
             val wrap = { LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
-            addView(view, wrap())
+            // Home's own rows first: on the Home tab the modules' blocks (SettingsView's Map / Chat) come below them
             addView(homeSection, wrap())
+            addView(view, wrap())
             addView(gameUi, wrap())
             addView(companion, wrap())
         }
@@ -54,7 +55,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         val body = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         pad = SettingsPad(context, scroll, listOf(
             // System's first button is "Reload game UI", the room's one destructive control: the cursor never STARTS there
-            SettingsPad.Section(view, { view.focusTargets() }, startSkip = 1),
+            SettingsPad.Section(view, { view.focusTargets() }, noStart = { view.isReload(it) }),
             SettingsPad.Section(homeSection, targets = { homeSection.focusTargets() }),
             SettingsPad.Section(gameUi, targets = { gameUi.focusTargets() }),
         ), gameUi, padSource, tabBar, { dir -> show(SettingsTabs.step(tab, dir)) }, { v, r -> rowOf(v, r.centerX(), r.centerY()) })
@@ -136,8 +137,9 @@ class SettingsPad(
     private val onFocus: (View, RectF) -> Unit = { _, _ -> },
 ) : View(context) {
 
-    /** one section of the room and its buttons, in its own coordinates; its first [startSkip] buttons are never where the cursor starts */
-    class Section(val view: View, val targets: () -> List<RectF>, val startSkip: Int = 0)
+    /** one section of the room and its buttons, in its own coordinates; a button [noStart] says yes to is never where the cursor
+     *  starts (it was "the first N", which on a tab without Reload skipped that tab's first button: Spoken's Install, test40) */
+    class Section(val view: View, val targets: () -> List<RectF>, val noStart: (RectF) -> Boolean = { false })
 
     /** B with nothing nearer to do, when the leave-with-B cell cannot be tapped: Home directly (MainActivity) */
     var onLeave: (() -> Unit)? = null
@@ -169,8 +171,11 @@ class SettingsPad(
         for (s in sections) {
             if (s.view.visibility != View.VISIBLE) continue       // another tab's: its boxes are stale
             val top = s.view.top.toFloat()
-            for ((i, r) in s.targets().withIndex()) out.add(Target(RectF(r.left, r.top + top, r.right, r.bottom + top), s, r, i < s.startSkip))
+            for (r in s.targets()) out.add(Target(RectF(r.left, r.top + top, r.right, r.bottom + top), s, r, s.noStart(r)))
         }
+        // in reading order down the page, whatever order the sections are listed in (on Home, Home's own rows stand above the
+        // modules' blocks: the cursor starts on the topmost)
+        out.sortWith(compareBy({ it.box.top }, { it.box.left }))
         return out
     }
 
