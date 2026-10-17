@@ -1167,6 +1167,10 @@ class MapView(context: Context) : View(context) {
     private val filterPrefs by lazy { context.getSharedPreferences("mapfilters", Context.MODE_PRIVATE) }
     private var mask = runCatching { filterPrefs.getInt("mask", PoiStore.DEFAULT_MASK) }.getOrDefault(PoiStore.DEFAULT_MASK)
     private var filterOpen = false
+        set(v) { if (v && !field) filterTab = 0; field = v }
+    /** the Filter panel's tab (the user's "Tabs as drawn", 2026-10-17): 0 Quests, 1 Services, 2 Gathering & rares; Quests on opening */
+    private var filterTab = 0
+    private val FILTER_TABS = listOf("Quests", "Services", "Gathering & rares")
     private val filterHits = HashMap<Int, RectF>()
     private val filterBox = RectF()          // the open panel, as last drawn
     private var seedNote = ""
@@ -1540,6 +1544,10 @@ class MapView(context: Context) : View(context) {
                 // A pop-out panel, not a row of chips: the user's standing rule for these
                 // companions is icons and pop-outs over words, and no per-row buttons.
                 for ((bit, box) in filterHits) if (box.contains(e.x, e.y)) {
+                    if (bit <= FILTER_TAB0) { filterTab = FILTER_TAB0 - bit; postInvalidate(); return true }
+                    if (bit <= FILTER_LAYER0 && bit > FILTER_TAB0) {
+                        layers.toggle(QuestLayers.Layer.values()[FILTER_LAYER0 - bit]); postInvalidate(); return true
+                    }
                     when (bit) {
                         FILTER_CHESTS -> showChests = !showChests
                         FILTER_RARES -> showRares = !showRares
@@ -2087,6 +2095,7 @@ class MapView(context: Context) : View(context) {
     private val SH_AVAIL_DAILY = 5
     private val TRIVIAL_DIM = 0.62f     // the trivial "!" brightness: (255,209,0) -> (158,130,0)
     private val SH_AVAIL_LOW = 6         // a low-level (trivial) quest's "!": a DIMMED yellow, the game's own trivial look
+    private val SH_OBJ_OTHER = 7         // an UNTRACKED quest's objective (QuestLayers OTHER): the gold dot, dimmer
     // the user, 2026-10-07: "Normally grey is stuff these too high level. I think it should instead be a dimmed yellow like it
     // normally is": the yellow "!" at reduced brightness (an olive gold, as the game's trivialquests mark), the dark outline kept
     private val pTrivial = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
@@ -2123,6 +2132,7 @@ class MapView(context: Context) : View(context) {
         return 1
     }
     private val qxy = DoubleArray(2)       // scratch for questXY; UI thread only
+    private val OTHER_SPOTS = 3             // an untracked quest's QuestieDB spots drawn at most (the nearest)
 
     /**
      * Colour by the most specific role, from a deliberately small palette. Only the filter's
@@ -2629,6 +2639,10 @@ class MapView(context: Context) : View(context) {
         if (a.m == map?.optInt("mapID", Int.MIN_VALUE)) { deriveMarkers(map); invalidate() }
     }
     private val qdbAvail = LinkedHashMap<Int, QdbPins.Avail>()
+    /** the Quests tab's switches (QuestLayers), kept with the other filters */
+    private val layers = QuestLayers({ k, d -> runCatching { filterPrefs.getBoolean(k, d) }.getOrDefault(d) },
+        { k, v -> runCatching { filterPrefs.edit().putBoolean(k, v).apply() }; deriveMarkers(map); invalidate() })
+    private fun on(l: QuestLayers.Layer) = layers.on(l)
     /** which of QuestieDB's quests show (the user's pick 2026-10-07, "A: Gold now + grey low"): low-level (trivial) ones, in a
      *  dimmed yellow (the user's correction), yes; those 1-2 levels away ("soon": grey in the game) and holiday ones, no */
     var showTrivialQuests = true
@@ -3533,7 +3547,7 @@ class MapView(context: Context) : View(context) {
         pFill.color = Color.argb(200, 120, 96, 52)
         c.drawRect(band.left, band.top, band.right, band.top + 1.5f, pFill)
         val cy = band.centerY()
-        if (filterOpen) { UiKit.hints(c, band.right - 24f, cy, glyph("b") to "Close"); return }
+        if (filterOpen) { UiKit.hints(c, band.right - 24f, cy, glyph("lb") to "", glyph("rb") to "Tabs", glyph("b") to "Close"); return }
         if (pmenu.open) { UiKit.hints(c, band.right - 24f, cy, glyph("up") to "Select", glyph("a") to "Choose", glyph("b") to "Back"); return }
         if (panelId != 0) {
             val hp = if (armedId == panelId) arrayOf(glyph("a") to "Abandon", glyph("b") to "Cancel")
@@ -3726,6 +3740,11 @@ class MapView(context: Context) : View(context) {
     private fun applyKey(k: String): MapCursor.Do {
         if (pmenu.open) { pmenuDid(pmenu.key(k)); return MapCursor.Do.Nothing }      // every key is the open player menu's
         if (panelId != 0) { panelKey(k); return MapCursor.Do.Nothing }                // ... and the open quest panel's
+        // the Filter's tabs with LB / RB (zoom is not in use while it is open)
+        if (filterOpen && (k == "PADLSHOULDER" || k == "PADRSHOULDER")) {
+            filterTab = (filterTab + (if (k == "PADRSHOULDER") 1 else FILTER_TABS.size - 1)) % FILTER_TABS.size
+            invalidate(); return MapCursor.Do.Nothing
+        }
         val d = cursor.key(k, listKeys(), focusQid, filterOpen, MapList.untracked(items))
         when (d) {
             MapCursor.Do.Show -> { listShow(cursor.sel); landOn(cursor.sel) }
@@ -4248,7 +4267,7 @@ class MapView(context: Context) : View(context) {
                 if (x.isNaN() || y.isNaN()) continue
                 val offer = g.optJSONArray("offer") ?: continue
                 val ids = IntArray(offer.length()) { offer.optInt(it) }
-                if (QuestStore.offersRecorded(ids, who)) mkMid.add(Marker(x, y, SH_AVAIL))
+                if (QuestStore.offersRecorded(ids, who) && on(QuestLayers.Layer.AVAILABLE)) mkMid.add(Marker(x, y, SH_AVAIL))
             }
         }
         // QUESTIEDB'S AVAILABLE QUESTS for this map (Quests' qdbavail), when it has answered (the bundled Wrath givers left the app
@@ -4260,7 +4279,10 @@ class MapView(context: Context) : View(context) {
             val byGiver = LinkedHashMap<Long, Pair<QdbPins.AvailQ, Int>>()     // giver -> its spot, its strongest mark (3 / 2 / 1)
             for (q in av.q) {
                 if (q.id in who.on || q.id in who.done) continue          // the app's lists may be newer than the add-on's answer
-                if (!QdbPins.availShows(q.f, showTrivialQuests, showSoonQuests, showHolidayQuests)) continue
+                // the Quests tab: low-level ones by their own switch (off by default), repeatable ones by Daily, the rest by Available
+                if (!QdbPins.availShows(q.f, on(QuestLayers.Layer.LOW), showSoonQuests, showHolidayQuests)) continue
+                if (q.f and QdbPins.AV_REPEAT != 0) { if (!on(QuestLayers.Layer.DAILY)) continue }
+                else if (!on(QuestLayers.Layer.AVAILABLE)) continue
                 if ((if (q.obj) recO else recC)?.contains(q.giver) == true) continue
                 val key = if (q.giver != 0) (if (q.obj) -q.giver.toLong() else q.giver.toLong()) else q.id.toLong() shl 32
                 val rank = when {
@@ -4281,13 +4303,38 @@ class MapView(context: Context) : View(context) {
         absorbMe(m)
         if (m != null) deriveDbQuests(m)
         if (m != null) {
+            // THE QUEST LAYERS (QuestLayers; the user's Q1): a TRACKED quest's objective / turn-in as before (its switch: Tracked);
+            // every OTHER quest of the log too, its objective a dimmer dot (Other), its turn-in the game's "?" (Turn-ins)
+            val placed = HashSet<Int>()
             m.optJSONArray("quests")?.let { a ->
                 for (i in 0 until a.length()) {
                     val q = a.optJSONObject(i) ?: continue
-                    if (!shownQuest(q.optInt("questID", 0))) continue   // untracked: no dot, no "?"
+                    val id = q.optInt("questID", 0)
                     if (questXY(q, qxy) == 0) continue
-                    if (q.optBoolean("done", false)) mkTurnIn.add(Marker(qxy[0], qxy[1], SH_TURNIN, q.optInt("questID", 0)))
-                    else mkMid.add(Marker(qxy[0], qxy[1], SH_OBJECTIVE, q.optInt("questID", 0)))
+                    placed.add(id)
+                    val tracked = shownQuest(id)
+                    val done = q.optBoolean("done", false)
+                    when {
+                        tracked && !on(QuestLayers.Layer.TRACKED) -> {}
+                        tracked -> if (done) mkTurnIn.add(Marker(qxy[0], qxy[1], SH_TURNIN, id)) else mkMid.add(Marker(qxy[0], qxy[1], SH_OBJECTIVE, id))
+                        done -> if (on(QuestLayers.Layer.TURN_INS)) mkTurnIn.add(Marker(qxy[0], qxy[1], SH_TURNIN, id))
+                        else -> if (on(QuestLayers.Layer.OTHER)) mkMid.add(Marker(qxy[0], qxy[1], SH_OBJ_OTHER, id))
+                    }
+                }
+            }
+            // an untracked quest the game places nothing for on this map: QuestieDB's spots (its unfinished objectives', a few
+            // nearest; or its turn-in once ready), the same rule as the cursor's line (CursorRoute.goals)
+            if (trackedKnown && (on(QuestLayers.Layer.OTHER) || on(QuestLayers.Layer.TURN_INS))) {
+                val mapId = m.optInt("mapID", Int.MIN_VALUE)
+                val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
+                for ((id, e) in questById) {
+                    if (id in placed || shownQuest(id)) continue
+                    val ready = e.optBoolean("ready") || e.optBoolean("done")
+                    if (if (ready) !on(QuestLayers.Layer.TURN_INS) else !on(QuestLayers.Layer.OTHER)) continue
+                    val pts = CursorRoute.goals(null, e, mapId)
+                        .sortedBy { if (px.isNaN()) 0.0 else hypot(it[0] - px, it[1] - py) }.take(OTHER_SPOTS)
+                    for (p in pts) if (ready) mkTurnIn.add(Marker(p[0], p[1], SH_TURNIN, id, guess = true))
+                        else mkMid.add(Marker(p[0], p[1], SH_OBJ_OTHER, id, guess = true))
                 }
             }
             // Quests AVAILABLE to pick up on this map, at the giver (addon: GetAvailableQuestLines,
@@ -4298,8 +4345,9 @@ class MapView(context: Context) : View(context) {
                     val q = a.optJSONObject(i) ?: continue
                     val x = q.optDouble("x", Double.NaN); val y = q.optDouble("y", Double.NaN)
                     if (x.isNaN() || y.isNaN()) continue
-                    mkMid.add(Marker(x, y,
-                        if (q.optBoolean("daily", false)) SH_AVAIL_DAILY else SH_AVAIL))
+                    val daily = q.optBoolean("daily", false)
+                    if (!on(if (daily) QuestLayers.Layer.DAILY else QuestLayers.Layer.AVAILABLE)) continue
+                    mkMid.add(Marker(x, y, if (daily) SH_AVAIL_DAILY else SH_AVAIL))
                 }
             }
             m.optJSONArray("taxi")?.let { a ->
@@ -4912,12 +4960,23 @@ class MapView(context: Context) : View(context) {
             drawQdbSpot(c, gx, gy, s)
             if (s.lead) addBubble(gx, gy, s.qid)
         }
+        // Home's small map (QuestLayers.smallMapShows): the "!" within 200 yd, no other quest's objective or turn-in
+        val lr = rect
+        fun yardsTo(x: Double, y: Double) = if (lr == null || !lr.valid || px.isNaN()) 0.0 else hypot((x - px) * lr.width, (y - py) * lr.height)
+        val small = on(QuestLayers.Layer.SMALL)
         for (i in 0 until mkMid.size) {
             val mk = mkMid[i]
             if (cityLean && mk.guess) continue
+            val kind = when (mk.shape) {
+                SH_AVAIL, SH_AVAIL_DAILY, SH_AVAIL_LOW -> QuestLayers.Kind.AVAIL
+                SH_OBJ_OTHER -> QuestLayers.Kind.OTHER_OBJECTIVE
+                else -> QuestLayers.Kind.TRACKED
+            }
+            if (!QuestLayers.smallMapShows(compact, small, kind, if (kind == QuestLayers.Kind.AVAIL) yardsTo(mk.x, mk.y) else 0.0)) continue
             val cxp = sx(mk.x); val cyp = sy(mk.y)
             if (!onField(cxp, cyp)) continue
             when (mk.shape) {
+                SH_OBJ_OTHER -> objDot(c, cxp, cyp, 0.5f)                // an untracked quest's objective: dimmer
                 SH_FLIGHT -> drawIcon(c, Ic.FLIGHT, cxp, cyp, SVC_ICON_PX)
                 SH_VIGNETTE -> drawIcon(c, Ic.VIGNETTE, cxp, cyp, 22f)
                 SH_AVAIL, SH_AVAIL_DAILY, SH_AVAIL_LOW -> {
@@ -4969,6 +5028,7 @@ class MapView(context: Context) : View(context) {
             val cxp = turnInPx[2 * i]; val cyp = turnInPx[2 * i + 1]
             if (cxp.isNaN()) continue                  // off the field
             val qid = mkTurnIn[i].qid
+            if (compact && qid != 0 && !trackedNo.containsKey(qid)) continue     // the small map: an untracked quest's "?" not there
             if (qid != 0 && trackedNo.containsKey(qid)) {      // both maps
                 // A TRACKED quest ready to turn in keeps its BUBBLE, at the turn-in, with the game's "?" in place of its number
                 // (the user, 2026-09-30: "On completed quests it should still show the bubbles and instead of a number it
@@ -5261,17 +5321,40 @@ class MapView(context: Context) : View(context) {
         val r = rect
         val roles = PoiStore.ROLES
         val cols = 3
-        val lines = (roles.size + SPAWN_SWITCHES + cols - 1) / cols
+        val lines = when (filterTab) {
+            0 -> QuestLayers.Layer.values().size
+            1 -> (roles.size + cols - 1) / cols
+            else -> (SPAWN_SWITCHES + cols - 1) / cols
+        }
         val fieldW = if (lastFieldW > 0f) lastFieldW else side
         val fieldH = if (lastFieldH > 0f) lastFieldH else side
-        val head = 88f
+        val head = 100f
         // the panel opens UNDER the top-right filter button (UI Art), right-aligned with the field
         val top0 = if (!btnFilter.isEmpty) btnFilter.bottom + 6f else top
-        val rowH = min(FILTER_ROW, (fieldH - (top0 - top) - head - 20f) / lines)
+        // above the controls line when it shows (it carries the panel's LB / RB and B)
+        val rowH = min(FILTER_ROW, (fieldH - (top0 - top) - head - 20f - (if (hintsOn()) HINT_BAND else 0f)) / lines)
         filterBox.set(left, top0, left + fieldW, top0 + head + lines * rowH + 20f)
         UiKit.menu(c, filterBox, solid = true)                      // the game's menu box, solid over the quest list (the kit's rule)
-        val title = UiKit.bodyPaint(34f, cGold)
-        c.drawText("Show", filterBox.left + 28f, filterBox.top + 44f - (title.ascent() + title.descent()) / 2f, title)
+        // THE TABS (as the Settings room's): LB / RB at the row's outsides, the shown one boxed in gold; a touch on a tab shows it
+        filterHits.clear()
+        run {
+            val tp = UiKit.bodyPaint(30f, cGold)
+            val ty = filterBox.top + 50f
+            var tx = filterBox.left + 28f
+            UiKit.pad(c, glyph("lb"), tx + 26f, ty, 48f); tx += 72f
+            for ((i, t) in FILTER_TABS.withIndex()) {
+                val tw = tp.measureText(t) + 48f
+                val box = RectF(tx, ty - 30f, tx + tw, ty + 30f)
+                if (i == filterTab) { UiKit.focus(c, box) }
+                tp.color = if (i == filterTab) cGold else cDim
+                c.drawText(t, tx + 24f, ty - (tp.ascent() + tp.descent()) / 2f, tp)
+                filterHits[FILTER_TAB0 - i] = RectF(box)
+                tx += tw + 14f
+            }
+            UiKit.pad(c, glyph("rb"), tx + 26f, ty, 48f)
+            pFill.color = Theme.bronzeDim; c.drawRect(filterBox.left + 20f, filterBox.top + 90f, filterBox.right - 20f, filterBox.top + 92f, pFill)
+        }
+        if (filterTab == 0) { drawQuestLayers(c, head, rowH); return }
         // no close button (UI Art: the game's own map filter has none): the pressed funnel says "open", and the funnel (a touch
         // outside the panel), B and Start close it
 
@@ -5286,7 +5369,6 @@ class MapView(context: Context) : View(context) {
         }
         map?.optJSONArray("svc")?.let { a -> for (k in 0 until a.length()) a.optJSONObject(k)?.let { count(it.optInt("f")) } }
 
-        filterHits.clear()
         val cw = (filterBox.width() - 24f) / cols
         val name = UiKit.bodyPaint(28f)
         val num = UiKit.numberPaint(27f, cDim).apply { textAlign = Paint.Align.RIGHT }
@@ -5297,7 +5379,7 @@ class MapView(context: Context) : View(context) {
             .maxByOrNull { name.measureText(it) } ?: ""
         var labelSize = 28f
         while (name.measureText(longest) > room && labelSize > 18f) { labelSize -= 1f; name.textSize = labelSize }
-        for ((i, role) in roles.withIndex()) {
+        if (filterTab == 1) for ((i, role) in roles.withIndex()) {
             val (bit, label, _) = role
             val cx0 = filterBox.left + 12f + (i % cols) * cw
             val y0 = filterBox.top + head + (i / cols) * rowH
@@ -5323,9 +5405,9 @@ class MapView(context: Context) : View(context) {
             Triple(FILTER_LIVE, "Live dots", if (liveMap == mid) live.size else 0),
             Triple(FILTER_SWITCH, "Auto-switch", 0),
             Triple(FILTER_SPARKLES, "Sparkles", 0))
-        for ((j, cell) in spawnCells.withIndex()) {
+        if (filterTab == 2) for ((j, cell) in spawnCells.withIndex()) {
             val (key, label, count) = cell
-            val i = roles.size + j
+            val i = j
             val cx0 = filterBox.left + 12f + (i % cols) * cw
             val y0 = filterBox.top + head + (i / cols) * rowH
             val cy = y0 + rowH / 2f
@@ -5366,6 +5448,58 @@ class MapView(context: Context) : View(context) {
     private val FILTER_LIVE = -3
     private val FILTER_SWITCH = -4
     private val FILTER_SPARKLES = -5
+    private val FILTER_LAYER0 = -10          // the Quests tab's rows: FILTER_LAYER0 - their QuestLayers.Layer index
+    private val FILTER_TAB0 = -100           // the tabs: FILTER_TAB0 - their index
+
+    /** THE QUESTS TAB: one row per QuestLayers switch, the game's own icon, its words, this map's count */
+    private fun drawQuestLayers(c: Canvas, head: Float, rowH: Float) {
+        val name = UiKit.bodyPaint(30f)
+        val sub = UiKit.bodyPaint(22f, cDim)
+        val num = UiKit.numberPaint(27f, cDim).apply { textAlign = Paint.Align.RIGHT }
+        val counts = layerCounts()
+        for ((i, l) in QuestLayers.Layer.values().withIndex()) {
+            val y0 = filterBox.top + head + i * rowH
+            val cy = y0 + rowH / 2f
+            val x0 = filterBox.left + 12f
+            filterHits[FILTER_LAYER0 - i] = RectF(x0, y0, filterBox.right - 12f, y0 + rowH)
+            val on = on(l)
+            UiKit.check(c, x0 + 44f, cy, 64f, on)
+            when (l) {
+                QuestLayers.Layer.AVAILABLE, QuestLayers.Layer.SMALL -> drawIcon(c, Ic.QUEST, x0 + 116f, cy, 52f, pArt)
+                QuestLayers.Layer.LOW -> drawIcon(c, Ic.QUEST, x0 + 116f, cy, 52f, pTrivial)
+                QuestLayers.Layer.DAILY -> drawIcon(c, Ic.QUEST, x0 + 116f, cy, 52f, pDaily)
+                QuestLayers.Layer.TURN_INS -> drawIcon(c, Ic.QUEST_DONE, x0 + 116f, cy, 52f)
+                QuestLayers.Layer.TRACKED -> UiKit.questDisc(c, x0 + 116f, cy, 60f, number = 1)
+                QuestLayers.Layer.OTHER -> objDot(c, x0 + 116f, cy, 0.5f)
+            }
+            name.color = if (on) cGold else cDim
+            val hasSub = l.sub.isNotEmpty() && rowH >= 84f
+            c.drawText(l.label, x0 + 156f, (if (hasSub) cy - 12f else cy) - (name.ascent() + name.descent()) / 2f, name)
+            if (hasSub) c.drawText(ellipsize(sub, l.sub, filterBox.width() - 300f), x0 + 156f, cy + 26f, sub)
+            counts[l]?.let { c.drawText(it.toString(), filterBox.right - 28f, cy - (num.ascent() + num.descent()) / 2f, num) }
+        }
+    }
+
+    /** this map's count per Quests switch (what it would show here) */
+    private fun layerCounts(): Map<QuestLayers.Layer, Int> {
+        val out = HashMap<QuestLayers.Layer, Int>()
+        val m = map ?: return out
+        val mid = m.optInt("mapID", Int.MIN_VALUE)
+        qdbAvail[mid]?.let { av ->
+            val who = me
+            val takeable = av.q.filter { q -> who == null || (q.id !in who.on && q.id !in who.done) }
+            out[QuestLayers.Layer.AVAILABLE] = takeable.count { it.f and (QdbPins.AV_TRIVIAL or QdbPins.AV_REPEAT) == 0 }
+            out[QuestLayers.Layer.LOW] = takeable.count { it.f and QdbPins.AV_TRIVIAL != 0 }
+            out[QuestLayers.Layer.DAILY] = takeable.count { it.f and QdbPins.AV_REPEAT != 0 }
+        }
+        val ids = HashSet<Int>()
+        m.optJSONArray("quests")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.optInt("questID", 0)?.let { if (it != 0) ids.add(it) } }
+        out[QuestLayers.Layer.TRACKED] = trackedNo.keys.count { it in ids || CursorRoute.goals(null, questById[it], mid).isNotEmpty() }
+        out[QuestLayers.Layer.OTHER] = questById.keys.count { !trackedNo.containsKey(it) && (it in ids ||
+            CursorRoute.goals(null, questById[it], mid).isNotEmpty()) }
+        out[QuestLayers.Layer.TURN_INS] = questById.values.count { it.optBoolean("ready") || it.optBoolean("done") }
+        return out
+    }
 
     // ---- THE MINIMAP PROBE (Map.lua mp1, "mmprobe"; the user, 2026-10-12): the names of the dots the game's minimap shows, in
     // yards from the player. A name that is one of this map's QuestieDB node kinds is a LIVE herb / ore / chest dot (drawn while the
