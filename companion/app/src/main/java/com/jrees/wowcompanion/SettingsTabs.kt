@@ -42,7 +42,7 @@ object SettingsTabs {
         ADDON_QUESTTRAIL(Tab.ADDONS, "QuestTrail", ThirdPartyAddons.QUESTTRAIL.rowWords()),
         FRAMES(Tab.PERFORMANCE, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game")),
-        INDOOR(Tab.PERFORMANCE, "Indoor maps", listOf("Build in the background", "Progress")),
+        INDOOR(Tab.PERFORMANCE, "Indoor maps", listOf("Build in the background", "Progress", "Route data")),
         GAME(Tab.SYSTEM, "Game", listOf("Reload game UI", "Battle.net login", "Problem report")),
         COMPANION(Tab.SYSTEM, "Companion", listOf("Status")),
     }

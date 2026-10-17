@@ -44,7 +44,11 @@ object Buildings {
     fun cover(feet: List<Foot>, x: Double, y: Double, cellX: Double, cellY: Double, r: PoiStore.Rect): Float {
         if (feet.isEmpty()) return 0f
         val wy = r.left - x * r.width; val wx = r.top - y * r.height
-        val hx = cellY * r.height / 2; val hy = cellX * r.width / 2           // the cell's half size in world yards (x north, y west)
+        return coverWorld(feet, wx, wy, cellY * r.height / 2, cellX * r.width / 2)
+    }
+
+    /** the same at world ([wx], [wy]), the cell [hx] yards north-south and [hy] east-west each side */
+    fun coverWorld(feet: List<Foot>, wx: Double, wy: Double, hx: Double, hy: Double): Float {
         val near = feet.filter { it.wx1 >= wx - hx && it.wx0 <= wx + hx && it.wy1 >= wy - hy && it.wy0 <= wy + hy }
         if (near.isEmpty()) return 0f
         var n = 0
