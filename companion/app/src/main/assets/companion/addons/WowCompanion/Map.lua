@@ -922,6 +922,9 @@ function WC.collectMap()
             end
         end
     end
+    -- QuestTrail's planned path, when its API gives one (b-route-questtrail; the arrow itself rides every position tick)
+    local okQP, qpath = pcall(WC.qtrailPath)
+    if okQP and qpath then out.qtrailPath = qpath end
     -- THE MAP PIN (the Map room's waypoint, 2026-10-07): the game's own user waypoint, wherever it was placed (the game's map,
     -- the Map room), so the room and Home draw the pin the game holds. uwp = {m = its map, x, y, st = 1 while super-tracked}.
     local okU, wp = CALL(function() return C_Map.GetUserWaypoint() end)
@@ -1231,6 +1234,9 @@ function WC.collectPos()
     -- the quest-area tracer rides the position it was taken at (see traceSample)
     local okQ, qb = pcall(traceSample, plainNum(id), out.wx, out.wy)
     if okQ and qb then out.qb = qb end
+    -- QuestTrail's arrow, read (b-route-questtrail; absent = QuestTrail not there or its arrow hidden)
+    local okT, qt = pcall(WC.qtrailRead)
+    if okT and qt then out.qtrail = qt end
     -- NO HEIGHT IS AVAILABLE. Measured: UnitPosition returns 4 values here and the third
     -- (posZ) is 0 while the player stands ~56 yd up -- Blizzard zeroed it years ago. There is
     -- no other Lua source for player height, so the app CANNOT pick a floor by altitude; it
@@ -2808,4 +2814,74 @@ do
             pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn1", legs = legs })); WC.push() end)
         end
     end)
+end
+
+-- ---------------------------------------------------------------- QUESTTRAIL'S ARROW, READ (b-route-questtrail)
+-- The user (2026-10-17): "(a) + (b)" - with Settings' "Quest tracking: QuestTrail" the map's line and arrow follow QuestTrail's own
+-- guidance arrow (QuestTrail by Krom, MIT; player-chosen). QuestTrail has no public API (3.1.0: everything in its private
+-- namespace), so this READS its compass frame: QuestTrailArrowFrame.bearing (its own, exact: 0 = north, counter-clockwise, like
+-- GetPlayerFacing; toward the target or a point of its golden path ahead), the label's words and the distance's ("%d m", metres).
+-- Should QuestTrail ever offer a global QuestTrail_GetTarget() (the request the user may post), its answer is taken first:
+-- {kind, questID, uiMapID, x, y, text, path = {{uiMapID, x, y}, ...}}. Nothing of QuestTrail or the game is changed; read only.
+-- On every position tick: {src, b, yd, t, d, api = {m, x, y, q, k, t}}; the full map document adds qtrailPath (the API's path).
+WC.QTRAIL_PTS = 60
+function WC.qtrailText(fs)
+    if type(fs) ~= "table" or type(fs.GetText) ~= "function" then return nil end
+    local ok, t = pcall(fs.GetText, fs)
+    if not ok or type(t) ~= "string" or (WC.isPlain and not WC.isPlain(t)) then return nil end
+    t = t:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    if t == "" then return nil end
+    return t:sub(1, 80)
+end
+function WC.qtrailApi()
+    local api = _G.QuestTrail_GetTarget
+    if type(api) ~= "function" then return nil end
+    local ok, t = pcall(api)
+    if not ok or type(t) ~= "table" then return nil end
+    local m, x, y = t.uiMapID, t.x, t.y
+    if type(m) ~= "number" or type(x) ~= "number" or type(y) ~= "number" then return nil end
+    if WC.isPlain and not (WC.isPlain(m) and WC.isPlain(x) and WC.isPlain(y)) then return nil end
+    return {
+        m = m, x = math.floor(x * 10000 + 0.5) / 10000, y = math.floor(y * 10000 + 0.5) / 10000,
+        q = type(t.questID) == "number" and t.questID or nil,
+        k = type(t.kind) == "string" and t.kind:sub(1, 16) or nil,
+        t = type(t.text) == "string" and t.text:sub(1, 80) or nil,
+    }, t.path
+end
+function WC.qtrailRead()
+    local out = nil
+    local api = WC.qtrailApi()
+    if api then out = { src = "api", api = api } end
+    local f = _G.QuestTrailArrowFrame
+    if type(f) == "table" and type(f.IsShown) == "function" and f:IsShown() then
+        out = out or { src = "arrow" }
+        local b = f.bearing
+        local arrowOn = type(f.arrow) == "table" and type(f.arrow.IsShown) == "function" and f.arrow:IsShown()
+        if arrowOn and type(b) == "number" and (not WC.isPlain or WC.isPlain(b)) then out.b = math.floor(b * 1000 + 0.5) / 1000 end
+        out.t = WC.qtrailText(f.label)
+        local d = WC.qtrailText(f.dist)
+        out.d = d
+        local metres = d and tonumber(d:match("(%d+)%s*m$") or d:match("(%d+)%s*m%s"))
+        if metres then out.yd = math.floor(metres / 0.9144 + 0.5) end
+    end
+    return out
+end
+-- the API's path for the full map document (only when the API gives one)
+function WC.qtrailPath()
+    local _, path = WC.qtrailApi()
+    if type(path) ~= "table" then return nil end
+    local n = #path
+    if n < 2 then return nil end
+    local step = math.max(1, math.ceil(n / WC.QTRAIL_PTS))
+    local out = {}
+    for i = 1, n, step do
+        local p = path[i]
+        if type(p) == "table" and type(p.uiMapID or p[1]) == "number" then
+            local m, x, y = p.uiMapID or p[1], p.x or p[2], p.y or p[3]
+            if type(x) == "number" and type(y) == "number" then
+                out[#out + 1] = { m, math.floor(x * 10000 + 0.5) / 10000, math.floor(y * 10000 + 0.5) / 10000 }
+            end
+        end
+    end
+    return #out >= 2 and out or nil
 end

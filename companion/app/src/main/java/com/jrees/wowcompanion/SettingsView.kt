@@ -508,7 +508,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         pBtn.textSize = 27f
         val sub = when (Settings.questTracking) {
             "polestar" -> "Polestar's walking routes (downloaded at the next start when missing)"
-            "questtrail" -> "QuestTrail (install it yourself; routes as Vanilla until it is read)"
+            "questtrail" -> "QuestTrail's guidance arrow: the line follows its plan (no game pin)"
             else -> "DS Forever's own route: learned ways, the tram, known flights"
         }
         row(c, y, "Quest tracking", sub, enabled = true) { box ->
