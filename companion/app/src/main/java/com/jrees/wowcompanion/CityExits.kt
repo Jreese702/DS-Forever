@@ -69,6 +69,8 @@ object CityExits {
      *    nothing toward Westfall and is dropped; in Stormwind, come from Elwynn, the gate out still gains (Westfall lies past it);
      *  - a walk-only way outside a city ([inCity] false) only when its detour is small ([DETOUR] of the straight yards): no known
      *    way toward the target's zone = the straight bearing / the game's waypoint / the edge toward the TARGET instead;
+     *  - a RIDE only when it beats going straight, anywhere (test42: in Elwynn a ride costing 18,757 yd from a far dock won over
+     *    the quest 1,561 yd straight ahead: "It's saying to fly to hillsbrad but I'm standing outside stormwind");
      *  - HYSTERESIS: the way chosen last time ([keep], a [key]) stays while it costs at most [STICK] more than the best.
      */
     fun choose(px: Double, py: Double, far: DoubleArray?, ways: List<Way>, ax: Double, ay: Double, cameFrom: Int = 0,
@@ -82,7 +84,8 @@ object CityExits {
             val back = cameFrom != 0 && w.exit.toMap == cameFrom &&
                 !(if (w.exit.transport) !direct.isNaN() && c < direct else gains)
             val detour = !inCity && !w.exit.transport && !direct.isNaN() && c > direct * DETOUR
-            !back && !detour
+            val slowRide = w.exit.transport && !direct.isNaN() && c >= direct
+            !back && !detour && !slowRide
         }.sortedBy { it.second }
         if (costed.isEmpty()) return Choice(null, Double.NaN, null, Double.NaN, direct)
         var best = costed[0]
@@ -141,6 +144,24 @@ object CityExits {
 
         /** the ways learned out of [map] */
         fun of(map: Int): List<Exit> = (store.get("x:$map") ?: "").split(';').mapNotNull { parse(map, it) }
+
+        /**
+         * test42: "learned a way out of map 1415 (Eastern Kingdoms) to 1453" - a document with the CONTINENT as the player's map (the
+         * world map open, a load) taught a way. [notZone] says which maps are not a zone or a city: the ways out of them, and the
+         * ways into them, go from [maps]' entries (the ones this device kept). Returns how many went.
+         */
+        fun purge(maps: Collection<Int>, notZone: (Int) -> Boolean): Int {
+            var gone = 0
+            for (m in maps) {
+                val all = of(m)
+                if (all.isEmpty()) continue
+                val keep = if (notZone(m)) emptyList() else all.filterNot { notZone(it.toMap) }
+                if (keep.size == all.size) continue
+                gone += all.size - keep.size
+                store.put("x:$m", if (keep.isEmpty()) null else keep.joinToString(";") { enc(it) })
+            }
+            return gone
+        }
 
         private fun keep(e: Exit) {
             val kept = of(e.map).filterNot { it.toMap == e.toMap && hypot(it.wx - e.wx, it.wy - e.wy) < MERGE_YD }
