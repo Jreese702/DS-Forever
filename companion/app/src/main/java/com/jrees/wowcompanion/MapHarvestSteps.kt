@@ -335,7 +335,8 @@ object MapHarvestSteps {
      */
     val TRANSPORTS = object : ArtHarvest.Step {
         override val id = "transports"
-        override val version = 3                    // 2: each ride's cost (yd) from the game's path; 3: its docks' towns
+        override val version = 4                    // 2: each ride's cost (yd) from the game's path; 3: its docks' towns; 4: the travel
+                                                    // layer's data (b-travel-layer): the masters' names, the flight routes, boat or air
         override val beforePlay = false
         override val weight = 5
         override fun run(job: ArtHarvest.Job) {
@@ -352,16 +353,22 @@ object MapHarvestSteps {
             }
             // the docks' towns (b-route-faction): the game's flight masters, Alliance / Horde / both (TaxiNodes: 1 the position, 5 the
             // continent, 8 the flags; measured on the PC client)
-            val masters = job.game.db2(TransportRoutes.DB_TAXI_NODES)?.rows()?.mapNotNull { row ->
+            // (0 the name; b-travel-layer)
+            val masters = job.game.db2(TransportRoutes.DB_TAXI_NODES)?.rows(strings = setOf(0))?.mapNotNull { row ->
                 val p = row.vec3(1) ?: return@mapNotNull null
-                TransportRoutes.FlightMaster(row.int(5), p[0], p[1], row.int(8))
+                TransportRoutes.FlightMaster(row.int(5), p[0], p[1], row.int(8), row.id, row.str(0))
             } ?: emptyList<TransportRoutes.FlightMaster>().also { android.util.Log.i("WCMAP", "transports: TaxiNodes did not read (${job.game.lastReadWhy})") }
+            // the game's flight routes (TaxiPath: 1 from, 2 to; measured on the PC client), for the known flights' lines
+            val flights = job.game.db2(TransportRoutes.DB_TAXI_PATH)?.rows()?.map { intArrayOf(it.int(1), it.int(2)) }
+                ?: emptyList<IntArray>().also { android.util.Log.i("WCMAP", "transports: TaxiPath did not read (${job.game.lastReadWhy})") }
             val rides = TransportRoutes.withFactions(TransportRoutes.rides(nodes), masters)
+            android.util.Log.i("WCMAP", "transports: ${masters.count { it.real }} flight masters, ${flights.size} flight routes; " +
+                "docks: " + rides.joinToString(", ") { "${it.na ?: "?"} - ${it.nb ?: "?"}${if (it.air) " (air)" else ""}" })
             android.util.Log.i("WCMAP", TransportRoutes.summary(nodes, rides))
             fun town(f: Int) = when (f) { 1 -> "Alliance"; 2 -> "Horde"; 3 -> "both"; else -> "?" }
             for (rd in rides.take(40)) android.util.Log.i("WCMAP", "transports: path ${rd.path} ${rd.ca}:" +
                 "${rd.a[0].toInt()},${rd.a[1].toInt()} (${town(rd.fa)}) -> ${rd.cb}:${rd.b[0].toInt()},${rd.b[1].toInt()} (${town(rd.fb)})")
-            job.writeBytes("transports.json", TransportRoutes.toJson(nodes, rides).toString().toByteArray())
+            job.writeBytes("transports.json", TransportRoutes.toJson(nodes, rides, masters, flights).toString().toByteArray())
         }
     }
 

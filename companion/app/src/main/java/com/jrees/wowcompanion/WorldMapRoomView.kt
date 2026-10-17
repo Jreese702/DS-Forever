@@ -222,6 +222,37 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
     private var group: List<GroupMembers.Member> = emptyList()
 
+    // ---- TRAVEL (b-travel-layer): the map module's scene (its "Travel" filter), on the zone or the continent shown; a zone names its
+    // points; the cursor on one (a tap, the stick) shows its name and where it goes
+    var travelScene: (() -> Travel.Scene?)? = null
+    private var travelDrawn: List<Pair<Travel.Point, FloatArray>> = emptyList()
+    private fun drawTravel(c: Canvas) {
+        travelDrawn = emptyList()
+        val w = model.maps[shown]?.world ?: return
+        val s = travelScene?.invoke() ?: return
+        travelDrawn = TravelPaint.draw(c, s, w.continent, { _, wy -> sx(w.nx(wy).toFloat()) }, { wx, _ -> sy(w.ny(wx).toFloat()) },
+            canvasR, compact = false, labels = isZoneView())
+    }
+    /** the travel point under the cursor (within [TRAVEL_HOVER_PX]), while the cursor is on the map and no quest is hovered */
+    private fun travelHover(): Pair<Travel.Point, FloatArray>? {
+        if (region != MapRoomKeys.Region.MAP || hoverQuest != null) return null
+        val cx = sx(curX); val cy = sy(curY)
+        return travelDrawn.minByOrNull { (_, xy) -> Math.hypot((xy[0] - cx).toDouble(), (xy[1] - cy).toDouble()) }
+            ?.takeIf { (_, xy) -> Math.hypot((xy[0] - cx).toDouble(), (xy[1] - cy).toDouble()) <= TRAVEL_HOVER_PX }
+    }
+    private fun drawTravelTip(c: Canvas) {
+        val (p, xy) = travelHover() ?: return
+        val title = p.text.substringBefore(": ")
+        val rest = p.text.substringAfter(": ", "")
+        val lines = if (rest.isEmpty()) emptyList() else listOf(UiKit.TipLine(rest, Color.WHITE))
+        val right = min(artR.right + mapShift(), drawerLeft()) - 8f
+        var x = xy[0] + TravelPaint.R + 8f
+        if (x + TIP_W > right) x = xy[0] - TravelPaint.R - 8f - TIP_W
+        val y = (xy[1] - TravelPaint.R).coerceIn(canvasR.top + 8f, canvasR.bottom - 110f)
+        UiKit.tooltip(c, x, y, TIP_W, title, Theme.gold, lines)
+    }
+    private val TRAVEL_HOVER_PX = 34f
+
     /** the group on the map shown (b-group-map): each member on its continent's maps, named (the user's pick: names in the room) */
     private fun drawGroup(c: Canvas) {
         val w = model.maps[shown]?.world ?: return
@@ -1022,10 +1053,12 @@ class WorldMapRoomView(context: Context) : View(context) {
         drawArt(c)
         if (isZoneView()) drawZoneMarks(c) else drawChildren(c)
         drawWaypoint(c)
+        drawTravel(c)
         drawGroup(c)
         drawPlayer(c)
         drawAreaLabel(c)
         drawQuestTip(c)
+        drawTravelTip(c)
         c.restore()
         if (drawerOut() > 0.001f) { drawDrawerShadow(c); drawPanel(c) } else rowHits.clear()   // a closed drawer's rows take no taps
         drawFurniture(c)

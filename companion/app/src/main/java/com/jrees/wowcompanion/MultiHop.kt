@@ -36,6 +36,9 @@ object MultiHop {
         var best: Plan? = if (reaches(startMap, sx, sy)) Plan(emptyList(), walk(sx, sy, gx, gy)) else null
         // layer by layer (at most [maxHops]): the cheapest arrival at the far end of each hop, and the chain that got there
         val n = hops.size
+        // the hops out of each map (b-travel-layer: a continent's known flights are many)
+        val byFrom = HashMap<Int, MutableList<Int>>()
+        for (i in 0 until n) byFrom.getOrPut(hops[i].fromMap) { ArrayList() }.add(i)
         val cost = DoubleArray(n) { Double.MAX_VALUE }
         val via = arrayOfNulls<List<Int>>(n)
         for (i in 0 until n) {
@@ -61,9 +64,9 @@ object MultiHop {
                 if (chain.size != layer) continue
                 val h = hops[i]
                 val seen = chain.map { hops[it].fromMap }.toSet() + h.toMap
-                for (j in 0 until n) {
+                for (j in byFrom[h.toMap] ?: continue) {
                     val g = hops[j]
-                    if (g.fromMap != h.toMap || g.toMap in seen) continue
+                    if (g.toMap in seen) continue
                     val c = cost[i] + walk(h.bx, h.by, g.ax, g.ay) + g.rideYd
                     if (c < next[j]) { next[j] = c; nextVia[j] = chain + j; moved = true }
                 }

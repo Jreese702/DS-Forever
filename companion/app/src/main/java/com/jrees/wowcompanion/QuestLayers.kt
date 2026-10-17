@@ -17,6 +17,8 @@ class QuestLayers(private val get: (String, Boolean) -> Boolean, private val put
         SMALL("q_small", "Small map: quests nearby", "Home's small map: the ! within 200 yd, the focused quest's objectives", true),
         // b-danger-layer (the user's pick: the tint only with this filter, off by default)
         DANGER("q_danger", "Danger areas", "hostile mobs at or above your level, tinted red (QuestieDB)", false),
+        // b-travel-layer (the user, via tracking on test53): the game's own docks, the tram, flight masters, known flights
+        TRAVEL("q_travel", "Travel", "docks and crossings, the tram, flight masters, your known flights", true),
     }
 
     fun on(l: Layer): Boolean = get(l.key, l.default)

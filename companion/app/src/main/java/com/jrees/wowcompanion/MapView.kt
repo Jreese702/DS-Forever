@@ -89,14 +89,20 @@ class MapView(context: Context) : View(context) {
     private val tapDetector = GestureDetector(context,
         object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                if (compact || onFocusQuest == null) return false
+                if (compact) return false
                 var best = -1; var bestD = BUBBLE_HIT * BUBBLE_HIT
-                for (i in 0 until bubbleN) {
+                if (onFocusQuest != null) for (i in 0 until bubbleN) {
                     val dx = bubbleXY[2 * i] - e.x; val dy = bubbleXY[2 * i + 1] - e.y
                     val d = dx * dx + dy * dy
                     if (d <= bestD) { bestD = d; best = i }
                 }
-                if (best < 0) return false
+                // a travel point (b-travel-layer): its name and where it goes
+                if (best < 0) {
+                    val hit = travelHits.minByOrNull { (_, xy) -> hypot(xy[0] - e.x, xy[1] - e.y) }
+                        ?.takeIf { (_, xy) -> hypot(xy[0] - e.x, xy[1] - e.y) <= BUBBLE_HIT }
+                    if (hit != null) { note(hit.first.text); return true }
+                    return false
+                }
                 touchQuest(bubbleQ[best], null)
                 return true
             }
@@ -2641,16 +2647,23 @@ class MapView(context: Context) : View(context) {
     private val TAKEN_YD = 300.0                              // a learned ride this near both docks is that ride, taken
     private val ridesSkipped = HashSet<String>()             // each skip logged once a run
     var zoneAt: ((Int, Double, Double) -> String?)? = null
+    /** the zone a world point lies on (continent, wx, wy): a dock's or a flight master's map, for the multi-hop route (b-travel-layer) */
+    var zoneIdAt: ((Int, Double, Double) -> Int?)? = null
     /** every zone whose world rectangle holds a point (continent, wx, wy): the multi-hop route's "the quest is a walk from here" */
     var zonesAt: ((Int, Double, Double) -> List<Int>)? = null
     private var rides: List<TransportRoutes.Ride> = emptyList()
+    private var travelMasters: List<TransportRoutes.FlightMaster> = emptyList()
+    private var travelFlights: List<IntArray> = emptyList()
     private var ridesStamp = -1L
     private fun rides(): List<TransportRoutes.Ride> {
         val f = ridesFile()
         val st = if (f.isFile) f.lastModified() + f.length() else 0L
         if (st != ridesStamp) {
             ridesStamp = st
-            rides = if (st == 0L) emptyList() else runCatching { TransportRoutes.fromJson(JSONObject(f.readText())) }.getOrElse { emptyList() }
+            val o = if (st == 0L) null else runCatching { JSONObject(f.readText()) }.getOrNull()
+            rides = TransportRoutes.fromJson(o)
+            travelMasters = TransportRoutes.mastersFromJson(o)           // b-travel-layer
+            travelFlights = TransportRoutes.flightsFromJson(o)
             if (st != 0L) android.util.Log.i("WCMAP", "route: ${rides.size} rides read from transports.json")
         }
         return rides
@@ -2711,7 +2724,7 @@ class MapView(context: Context) : View(context) {
     private var hopsCache: List<MultiHop.Hop> = emptyList()
     /** the continent's hops in world yards: the learned crossings and rides of every map on it, and the measured table's */
     private fun continentHops(cont: Int): List<MultiHop.Hop> {
-        val key = "$cont:$routeEpoch"
+        val key = "$cont:$routeEpoch:$ridesStamp:${map?.optString("fac", "")}:${map?.optJSONArray("fly")?.length() ?: 0}"
         if (key == hopsKey) return hopsCache
         val out = ArrayList<MultiHop.Hop>()
         val l = exitLearner()
@@ -2739,9 +2752,39 @@ class MapView(context: Context) : View(context) {
             val tx = if (e.toX.isNaN()) 0.5 else e.toX; val ty = if (e.toY.isNaN()) 0.5 else e.toY
             out.add(MultiHop.Hop(e.map, ax, ay, e.toMap, tw.wx(ty), tw.wy(tx), e.rideYd, "${e.name} to ${name(e.toMap)}", "t:${e.map}>${e.toMap}"))
         }
+        // the game's boats and zeppelins on this continent (b-travel-layer), never from or to a hostile town (b-route-faction)
+        val zid = zoneIdAt
+        val mine = TransportRoutes.factionOf(map?.optString("fac", null))
+        if (zid != null) for (r0 in rides()) for (rd in listOf(r0, r0.back())) {
+            if (rd.ca != cont || rd.cb != cont || rd.hostileDock(mine) != 0) continue
+            val ax = rd.a[0].toDouble(); val ay = rd.a[1].toDouble(); val bx = rd.b[0].toDouble(); val by = rd.b[1].toDouble()
+            val fm = zid(cont, ax, ay) ?: continue; val tm = zid(cont, bx, by) ?: continue
+            if (fm == tm || !isZoneMap(fm) || !isZoneMap(tm)) continue
+            val to = rd.nb ?: name(tm)
+            out.add(MultiHop.Hop(fm, ax, ay, tm, bx, by, rd.yd.coerceAtLeast(1.0), "${if (rd.air) "Zeppelin" else "Boat"} to $to",
+                "r:${rd.path}:${ax.toInt()}:${ay.toInt()}"))
+        }
+        // this character's known flights (TaxiNet: two nodes a flight master showed connected), as the game's taxi flies them
+        if (zid != null) {
+            val fly = HashSet<Int>()
+            map?.optJSONArray("fly")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.optInt("id", 0)?.takeIf { it != 0 }?.let { fly.add(it) } }
+            val known = travelMasters.filter { it.real && it.cont == cont && (it.id in fly || TaxiNet.known(it.id)) }
+            val at = known.associateWith { zid(cont, it.x.toDouble(), it.y.toDouble()) }
+            for (a in known) for (b in known) {
+                if (a === b || !TaxiNet.connected(a.id, b.id)) continue
+                val fm = at[a] ?: continue; val tm = at[b] ?: continue
+                if (fm == tm || !isZoneMap(fm) || !isZoneMap(tm)) continue
+                val d = hypot((b.x - a.x).toDouble(), (b.y - a.y).toDouble())
+                out.add(MultiHop.Hop(fm, a.x.toDouble(), a.y.toDouble(), tm, b.x.toDouble(), b.y.toDouble(), FLIGHT_FIX_YD + d * FLIGHT_K,
+                    "Flight to ${b.town}", "f:${a.id}>${b.id}"))
+            }
+        }
         hopsKey = key; hopsCache = out
         return out
     }
+    /** a flight's cost in walking yards: the yards flown at the taxi's speed (about 4x a run) and the talking and landing */
+    private val FLIGHT_K = 0.25
+    private val FLIGHT_FIX_YD = 150.0
 
     /** the multi-hop route for quest [q] at world [farW] ([continent, wx, wy]): its first hop on this map, or null (no chain, or the
      *  quest is a walk from here: the one-map choice stands) */
@@ -2758,7 +2801,9 @@ class MapView(context: Context) : View(context) {
         val first = p.hops[0]
         val at = here(r, first.ax, first.ay)
         val label = if (p.hops.size == 1) first.label else "${first.label}, then ${p.hops[1].label.let { l -> if (l.startsWith("To ") || l.startsWith("Ride ")) l.replaceFirstChar { it.lowercase() } else l }}"
-        return CursorRoute.Route(CursorRoute.Kind.EXIT, at[0], at[1], label, "mh:${first.key}",
+        // a flight first wears the flight's look (the winged boot on the rim arrow)
+        val kind = if (first.key.startsWith("f:")) CursorRoute.Kind.FLIGHT else CursorRoute.Kind.EXIT
+        return CursorRoute.Route(kind, at[0], at[1], label, "mh:${first.key}",
             "the chain ${p.describe()} (${p.cost.toInt()} yd)")
     }
 
@@ -2780,6 +2825,43 @@ class MapView(context: Context) : View(context) {
     }
     private val edgeLogged = HashMap<Int, String>()
     private val EDGE_SLIDE_YD = 600.0
+
+    // ---- TRAVEL ON THE MAPS (b-travel-layer): the game's docks, the tram, flight masters and known flights (Travel), for this
+    // module, Home's small map and the Map room (the host hands the room [travelScene])
+    private var travelKey = ""
+    private var travelCache: Travel.Scene? = null
+    /** the travel scene, null while the "Travel" filter is off or nothing is harvested */
+    fun travelScene(): Travel.Scene? {
+        if (!on(QuestLayers.Layer.TRAVEL)) return null
+        rides()
+        val m = map
+        val fly = HashSet<Int>()
+        m?.optJSONArray("fly")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.optInt("id", 0)?.takeIf { it != 0 }?.let { fly.add(it) } }
+        val fac = m?.optString("fac", "") ?: ""
+        val tram = tramEnds()
+        val key = "$ridesStamp:$fac:${fly.sorted().hashCode()}:${tram?.contentHashCode()}:$routeEpoch:${travelMasters.count { TaxiNet.known(it.id) }}"
+        if (key == travelKey) return travelCache
+        travelKey = key
+        travelCache = if (rides.isEmpty() && travelMasters.isEmpty() && tram == null) null
+            else Travel.scene(rides, travelMasters, travelFlights, TransportRoutes.factionOf(fac.ifEmpty { null }),
+                { id -> id in fly || TaxiNet.known(id) }, { a, b -> TaxiNet.connected(a, b) }, tram,
+                { c, wx, wy -> zoneAt?.invoke(c, wx, wy) })
+        return travelCache
+    }
+
+    /** the Deeprun Tram's ends [cont, ax, ay, bx, by] in world yards: the measured Stormwind end (or the learned one) and the learned
+     *  Ironforge end, else Ironforge's map centre (the game's world map data) */
+    fun tramEnds(): DoubleArray? {
+        val e = CityExits.TABLE.firstOrNull { it.name == "Deeprun Tram" } ?: return null
+        val w = worldOf?.invoke(e.map)?.takeIf { it.valid } ?: return null
+        val learned = exitLearner()?.of(e.map)?.firstOrNull { it.toMap == e.toMap && it.transport && !it.toWx.isNaN() }
+        if (learned != null) return doubleArrayOf(w.continent.toDouble(), learned.wx, learned.wy, learned.toWx, learned.toWy)
+        val t = worldOf?.invoke(e.toMap)?.takeIf { it.valid && it.continent == w.continent } ?: return null
+        return doubleArrayOf(w.continent.toDouble(), w.wx(e.y), w.wy(e.x), t.wx(0.5), t.wy(0.5))
+    }
+
+    /** this frame's travel points on the field, for the taps */
+    private var travelHits: List<Pair<Travel.Point, FloatArray>> = emptyList()
 
     /** the crossings this device has learned out of [mapId] (any map, on any continent: CityExits.Learner) */
     private fun learnedWays(mapId: Int, r: PoiStore.Rect): List<CityExits.Way> = (exitLearner()?.of(mapId) ?: emptyList()).filter { isZoneMap(it.toMap) }.mapNotNull { e ->
@@ -5577,6 +5659,21 @@ class MapView(context: Context) : View(context) {
             val save = c.save(); c.clipRect(left, top, left + fw, top + fh); drawDangerTint(c, ::sx, ::sy); c.restoreToCount(save)
         }
         dangerNote = null
+        // ---- TRAVEL (b-travel-layer; the "Travel" filter): the docks and crossings, the tram, flight masters and known flights, under the
+        // line and the markers; Home's small map: only the points near the player, no lines
+        travelHits = emptyList()
+        if (!morphOn) rect?.takeIf { it.valid }?.let { r ->
+            travelScene()?.let { s ->
+                val pwx = map?.optDouble("wx", Double.NaN) ?: Double.NaN; val pwy = map?.optDouble("wy", Double.NaN) ?: Double.NaN
+                val nb = top + (if (compact) compactTop() else 0f)
+                val field = RectF(left, nb, left + fw, top + fh - (if (hintsOn() && !compact) HINT_BAND else 0f))
+                travelHits = TravelPaint.draw(c, s, r.continent, { wx, wy -> sx(r.nx(wy)) }, { wx, wy -> sy(r.ny(wx)) }, field, compact,
+                    labels = false,
+                    near = { p -> !compact || (!pwx.isNaN() && hypot(p.wx - pwx, p.wy - pwy) <= Travel.SMALL_NEAR_YD) },
+                    // the game's own flight point (this map's taxi node, drawn with the markers) is not drawn twice
+                    skip = { p, x, y -> p.kind == Travel.Kind.FLIGHT && mkMid.any { it.shape == SH_FLIGHT && hypot(sx(it.x) - x, sy(it.y) - y) < 26f } })
+            }
+        }
         // ---- THE CURSOR'S DOTTED LINE, under the live markers and the player's arrow (the agreed design), inside the field
         val route = if (!compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN()) cursorRoute() else null
         // Polestar's own walking route for the focused quest, when it is the router and has one (b-route-polestar)
@@ -6236,6 +6333,7 @@ class MapView(context: Context) : View(context) {
                 QuestLayers.Layer.TRACKED -> UiKit.questDisc(c, x0 + 116f, cy, 60f, number = 1)
                 QuestLayers.Layer.OTHER -> objDot(c, x0 + 116f, cy, 0.5f)
                 QuestLayers.Layer.DANGER -> { pFill.color = Color.argb(150, 210, 40, 30); c.drawRoundRect(x0 + 94f, cy - 20f, x0 + 138f, cy + 20f, 10f, 10f, pFill) }
+                QuestLayers.Layer.TRAVEL -> TravelPaint.icon(c, Travel.Kind.BOAT, x0 + 116f, cy, true)
             }
             name.color = if (on) cGold else cDim
             val hasSub = l.sub.isNotEmpty() && rowH >= 84f
