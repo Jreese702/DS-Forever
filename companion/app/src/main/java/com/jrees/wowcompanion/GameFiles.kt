@@ -30,10 +30,10 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             val bytes = load()
             status = CascNative.lastStatus()
             // issues #8 / #9: is this game folder's Data the build's? (the first try: read here = local, a fetch needed = from the CDN)
-            if (attempt == 0 && bytes != null) DataStaleness.count(root, buildKey, local = true)
+            if (attempt == 0 && bytes != null) { DataStaleness.count(root, buildKey, local = true); missWindow.note(false) }
             if (bytes != null) return@synchronized bytes
             val need = CascNative.takeNeed() ?: break
-            if (attempt == 0) DataStaleness.count(root, buildKey, local = false)
+            if (attempt == 0) { DataStaleness.count(root, buildKey, local = false); missWindow.note(true) }
             if (attempt == 4 || status == CascNative.ENCRYPTED) break
             if (!fetch(root, cache, File(need))) {
                 lastReadWhy = "$label: not on this device, and downloading it failed (${File(need).name}: ${lastFetchWhy ?: "no answer"})"
@@ -50,6 +50,40 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             else -> "read failed (status $status)"
         } + " (CascLib error $error)"
         null
+    }
+
+    /**
+     * FETCH MANY MISSING GAME FILES AT ONCE (issues #10 / #11, 1.0.9: after a game update each missing file was fetched one at a time,
+     * ~0.2 s of latency each, thousands of them). Of [fids], the ones that are not on the device are found (a cheap failed read names
+     * the file CascLib needs), then fetched [PARALLEL] at a time with the same fetch as a read (archives, retries, checks), so the
+     * reads that follow find them in the cache. Only while the recent reads show many CDN misses (a complete folder: nothing, no
+     * second read). [onProgress] gets (done, total) of the fetches. The number fetched.
+     */
+    fun prefetch(fids: Collection<Int>, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int {
+        if (!missWindow.worthPrefetching()) return 0
+        val needs = LinkedHashSet<String>()
+        synchronized(accessLock) {
+            for (fid in fids.toSet()) {
+                CascNative.takeNeed()
+                if (CascNative.read(handle, fid) == null) CascNative.takeNeed()?.let { needs.add(it) }
+            }
+        }
+        if (needs.isEmpty()) return 0
+        val total = needs.size
+        val done = java.util.concurrent.atomic.AtomicInteger()
+        val ok = java.util.concurrent.atomic.AtomicInteger()
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(PARALLEL, total))
+        try {
+            for (n in needs) pool.execute {
+                if (runCatching { fetch(root, cache, File(n)) }.getOrDefault(false)) ok.incrementAndGet()
+                onProgress(done.incrementAndGet(), total)
+            }
+        } finally {
+            pool.shutdown()
+            pool.awaitTermination(10, java.util.concurrent.TimeUnit.MINUTES)
+        }
+        android.util.Log.i("WCHARVEST", "prefetch: ${ok.get()} of $total missing game files fetched ($PARALLEL at a time)")
+        return ok.get()
     }
 
     /** Track B (interiors): the file's CASC content key without reading it, or null; digests a building's inputs. */
@@ -220,6 +254,12 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             if (lastFetchWhy?.startsWith("HTTP 404") == true) looseMissing = true
             return !archiveFirst && archive()
         }
+
+        /** the art's fetches at once (prefetch): the CDN answers each in ~0.2 s, so a handful in flight hides most of it */
+        const val PARALLEL = 6
+
+        /** the last reads' misses (prefetch only pays when many files are missing: a complete folder never pays twice) */
+        internal val missWindow = MissWindow()
 
         /** a loose game file has answered 404 (the CDN keeps them inside archives): the next ones try the archives first */
         @Volatile private var looseMissing = false

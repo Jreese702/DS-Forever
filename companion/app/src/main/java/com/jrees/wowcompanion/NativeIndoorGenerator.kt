@@ -29,7 +29,7 @@ internal class NativeIndoorGenerator(
 ) : IndoorGenerator {
     override val algorithm: Int = ALGORITHM
 
-    private class Unit(val spec: JSONObject)
+    private class Unit(val spec: JSONObject, val inputs: IntArray = IntArray(0))
     // JNI looks up read by name; keep a named implementation instead of a shrinker-generated SAM.
     private class GameSource(private val game: GameFiles) : IndoorGeneratorNative.Source {
         override fun read(fid: Int): ByteArray? = game.read(fid)
@@ -110,7 +110,7 @@ internal class NativeIndoorGenerator(
                 }
                 val box = unit.optJSONArray("box") ?: continue
                 val locations = unique.map { worldBox(it, box) }
-                units[key] = Unit(spec)
+                units[key] = Unit(spec, inputs)
                 out.add(IndoorBakeStore.Work(key, hex(digest.digest()), algorithm, locations))
             }
         }
@@ -121,6 +121,8 @@ internal class NativeIndoorGenerator(
     override fun produce(work: IndoorBakeStore.Work, out: File, yield: IndoorGenerator.Yield) {
         if (work.key !in units) catalogue(yield)
         val unit = units[work.key] ?: error("building ${work.key} is not in this game build's catalogue")
+        // its input files fetched together, several at a time, when many are missing (after a game update; issue #10)
+        if (unit.inputs.isNotEmpty()) game.prefetch(unit.inputs.toList())
         var started = 0L
         var attempt: String? = null
         while (true) {
