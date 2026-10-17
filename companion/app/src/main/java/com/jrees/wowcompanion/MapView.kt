@@ -2966,7 +2966,8 @@ class MapView(context: Context) : View(context) {
     private val untrackedLog = ArrayList<JSONObject>()        // the log's untracked quests, in log order
     private var portrait: JSONObject? = null                      // the quests document's `me`: name, class file, class word
     private var ownHeaders: List<String> = emptyList()         // the log headers that are the player's class or professions
-    private val openTabs = HashMap<String, Boolean>()          // the tabs the player opened (all closed until then)
+    private val openTabs = HashMap<String, Boolean>()
+    private var revealTab = 0                                  // a tab just opened: the next layout brings its section into view          // the tabs the player opened (all closed until then)
     private var listWhere: String? = null                      // the zone and subzone the tabs were sorted for
     private fun listKeys(): List<Int> = MapList.stops(items)
     private fun groupZone(key: Int): String? = (items.firstOrNull { it.key == key } as? MapList.Item.Group)?.zone
@@ -2987,6 +2988,9 @@ class MapView(context: Context) : View(context) {
         openTabs[z] = openTabs[z] != true
         rebuildItems()
         listShow(key)
+        // an opened tab shifts up into view (the user, 2026-10-16: "that section of quests should shift up to be visible instead of
+        // expanding down off screen"): the list's next layout makes room for it (drawTracker)
+        if (openTabs[z] == true) revealTab = key
         invalidate()
     }
 
@@ -3961,6 +3965,23 @@ class MapView(context: Context) : View(context) {
             tail += nd; maxFirst = i
         }
         listMaxFirst = maxFirst
+        // AN OPENED TAB SHIFTS UP: when its section (the tab and its quests) does not all fit below the list's present first row, the
+        // list scrolls so the tab stands at the top, with as many of its quests under it as fit (the rows glide there)
+        if (revealTab != 0) {
+            val hi = list.indexOfFirst { it is MapList.Item.Group && it.key == revealTab }
+            if (hi >= 0) {
+                var last = hi
+                while (last + 1 < n && list[last + 1] is MapList.Item.Untracked) last++
+                fun fits(f: Int): Boolean {
+                    var hh = if (f > 0) lineO else 0f
+                    for (i in f..last) hh += need(list[i])
+                    if (last < n - 1) hh += lineO
+                    return y0 + hh <= yMax
+                }
+                if (listFirst > hi || !fits(listFirst)) listFirst = hi
+            }
+            revealTab = 0
+        }
         listFirst = listFirst.coerceIn(0, listMaxFirst)
         val above = listFirst
         var h = (if (above > 0) lineO else 0f)
