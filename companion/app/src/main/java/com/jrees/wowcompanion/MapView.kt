@@ -764,14 +764,14 @@ class MapView(context: Context) : View(context) {
         java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "map-plans").apply { isDaemon = true; priority = Thread.MIN_PRIORITY } }
     }
 
-    private fun planBitmap(name: String?, half: Boolean = false): Bitmap? {
+    private fun planBitmap(name: String?, half: Boolean = false, from: java.io.File? = null): Bitmap? {
         if (name == null) return null
         planCache[name]?.let {
             planCache.remove(name); planCache[name] = it       // touch: keep LRU honest
             return it
         }
         if (!planWanted.add(name)) return null
-        val file = runCatching { interiorFile(name) }.getOrNull() ?: return null     // a bad asset reference: never asked again
+        val file = from ?: runCatching { interiorFile(name) }.getOrNull() ?: return null     // a bad asset reference: never asked again
         val gen = planGen
         planDecoder.execute {
             val bm = try {
@@ -796,6 +796,94 @@ class MapView(context: Context) : View(context) {
             planCache.remove(k)?.let { planBytes -= it.byteCount.toLong(); it.recycle() }
         }
         invalidate()
+    }
+
+    // ---- THE GAME'S OWN FLOOR ART (b-interiors-game-art; the user's pick, 2026-10-17: COMBINE - "game minimap tiles as the picture
+    // wherever they exist ...; Track B's geometry stays underneath for floors, stacked-floor picking, walkability and routing, and
+    // draws the picture only where the game has none"). The art harvest's wmominimap.json (the client's WMOMinimapTexture rows for
+    // the buildings the interiors snapshot shows, each group's box) and wmomm/<fid>.webp (the tiles): a storey whose groups have
+    // tiles is drawn with them, Track B's outline on top; a storey without stays Track B's plan. Which storey a group's tiles belong
+    // to: Track B's storey bands (WmoMinimap.assign). Read off the UI thread, again when the harvest rewrites the file.
+    private var gameArt: Map<String, List<WmoMinimap.Group>> = emptyMap()
+    private var gameArtStamp = -1L
+    private var gameArtLoading = false
+    private var gameArtProbeAt = 0L
+    private val levelArt = HashMap<String, List<List<IntArray>>>()   // a place -> per storey its tiles (group's index, bx, by, fid, w, h)
+
+    private fun gameArtNow(): Map<String, List<WmoMinimap.Group>> {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now >= gameArtProbeAt && !gameArtLoading) {
+            gameArtProbeAt = now + 2_000
+            val f = ArtHarvest.file("wmominimap.json")
+            val st = if (f.isFile) f.lastModified() + f.length() else 0L
+            if (st != gameArtStamp) {
+                gameArtLoading = true
+                Thread {
+                    val parsed = HashMap<String, List<WmoMinimap.Group>>()
+                    if (st != 0L) runCatching {
+                        val roots = JSONObject(f.readText()).optJSONObject("roots")
+                        roots?.keys()?.forEach { k -> WmoMinimap.groupsOf(roots.optJSONObject(k)).takeIf { it.isNotEmpty() }?.let { parsed[k] = it } }
+                    }
+                    post {
+                        gameArtLoading = false; gameArtStamp = st; gameArt = parsed; levelArt.clear()
+                        android.util.Log.i("WCMAP", "interiors: the game's floor art for ${parsed.size} buildings")
+                        invalidate()
+                    }
+                }.apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+            }
+        }
+        return gameArt
+    }
+
+    /** storey [i] of [p]'s game tiles, or null when the game has none for it (Track B's plan then) */
+    private fun levelArtOf(p: Place, i: Int): List<IntArray>? {
+        val per = levelArt.getOrPut(p.fid) {
+            val groups = gameArtNow()[p.fid.substringBefore('_')] ?: return null
+            // a city's root holds every building in it, split into places: only the groups inside this place's storeys
+            val lx0 = p.levels.minOf { it.lxmin }; val lx1 = p.levels.maxOf { it.lxmax }
+            val ly0 = p.levels.minOf { it.lymin }; val ly1 = p.levels.maxOf { it.lymax }
+            val mine = groups.filter { g -> g.bb[0] < lx1 && g.bb[3] > lx0 && g.bb[1] < ly1 && g.bb[4] > ly0 }
+            val at = WmoMinimap.assign(FloatArray(mine.size) { mine[it].bb[2] }, p.levels.map { floatArrayOf(it.z0, it.z1) })
+            List(p.levels.size) { li -> mine.indices.filter { at[it] == li }.flatMap { gi -> mine[gi].tiles.map { t -> intArrayOf(gi, *t) } } }
+                .also { if (mine.isNotEmpty()) android.util.Log.i("WCMAP", "interiors: ${p.fid}: the game's art for ${mine.size} groups on " +
+                    "${it.count { l -> l.isNotEmpty() }} of ${p.levels.size} storeys") }
+        }
+        return per.getOrNull(i)?.takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * one storey with the game's tiles, Track B's outline over them; false = a tile is still decoding (the caller draws the plan
+     * meanwhile). [tiles] from [levelArtOf]; the tiles' boxes come from that place's game groups.
+     */
+    private fun drawGameStorey(c: Canvas, p: Place, f: Level, tiles: List<IntArray>, alpha: Int,
+                               sx: (Double) -> Float, sy: (Double) -> Float): Boolean {
+        val r = rect ?: return false
+        val groups = gameArt[p.fid.substringBefore('_')] ?: return false
+        val lx0 = p.levels.minOf { it.lxmin }; val lx1 = p.levels.maxOf { it.lxmax }
+        val ly0 = p.levels.minOf { it.lymin }; val ly1 = p.levels.maxOf { it.lymax }
+        val mine = groups.filter { g -> g.bb[0] < lx1 && g.bb[3] > lx0 && g.bb[1] < ly1 && g.bb[4] > ly0 }
+        val bms = tiles.map { t -> planBitmap("wmomm:${t[3]}", from = ArtHarvest.file(WmoMinimap.tileFile(t[3]))) }
+        if (bms.any { it == null }) return false
+        for ((k, t) in tiles.withIndex()) {
+            val g = mine.getOrNull(t[0]) ?: continue
+            val bm = bms[k] ?: continue
+            val q = WmoMinimap.tileRect(g.bb, t[1], t[2], t[4], t[5])
+            planSrc[0] = 0f; planSrc[1] = 0f
+            planSrc[2] = bm.width.toFloat(); planSrc[3] = 0f
+            planSrc[4] = 0f; planSrc[5] = bm.height.toFloat()
+            // the image's top row is the high-y side (WmoMinimap): top-left (x0, y1), top-right (x1, y1), bottom-left (x0, y0)
+            val lx = doubleArrayOf(q[0], q[2], q[0]); val ly = doubleArrayOf(q[3], q[3], q[1])
+            for (i in 0..2) {
+                planDst[i * 2] = sx(r.nx(p.worldY(lx[i], ly[i])))
+                planDst[i * 2 + 1] = sy(r.ny(p.worldX(lx[i], ly[i])))
+            }
+            planMatrix.setPolyToPoly(planSrc, 0, planDst, 0, 3)
+            pArt.alpha = alpha
+            c.drawBitmap(bm, planMatrix, pArt)
+        }
+        pArt.alpha = 255
+        planBitmap(f.outline)?.let { drawPlan(c, p, f, it, alpha, sx, sy) }
+        return true
     }
 
     /** World AABB of a level, from the four corners of its local rect. */
@@ -4728,13 +4816,16 @@ class MapView(context: Context) : View(context) {
             // the storeys' plans first (asked for off the UI thread; null until decoded), the one you are on before the ghosts
             val bmLo = if (lo >= 0) planBitmap(flPlace.levels[lo].img) else null
             val bmHi = if (lo >= 0 && u > 0f) planBitmap(flPlace.levels[hiIdx].img) else null
+            // the game's own floor art where it has some (b-interiors-game-art)
+            val artLo = if (lo >= 0) levelArtOf(flPlace, lo) else null
+            val artHi = if (lo >= 0 && u > 0f) levelArtOf(flPlace, hiIdx) else null
             c.save()
             c.clipRect(left, top, left + fw, top + fh)
             // Indoors the frame is ~60 yd wide, and 0.96 px/yd terrain at 34x is a smear that
             // fights the plan for attention. Scrim it: the roof and the road outside still
             // give you your bearings, just quietly. No plan decoded yet: the outdoor map as it is.
             pScrim.color = 0xA0100C08.toInt()
-            if (bmLo != null || bmHi != null) c.drawRect(left, top, left + fw, top + fh, pScrim)
+            if (bmLo != null || bmHi != null || artLo != null) c.drawRect(left, top, left + fw, top + fh, pScrim)
             // ALWAYS DRAW THE WHOLE BUILDING. The storeys you are not on are stroked as
             // ghosts, cool below and warm above, so being on the wrong one is one glance from
             // being obvious instead of being a dead end.
@@ -4752,13 +4843,12 @@ class MapView(context: Context) : View(context) {
                 // unsure -> everything at 55%, which is how the map says so without words
                 val k = if (floorUnsure()) 0.55f else 1f
                 // the storey above / below still decoding: the one you are on stays whole until it lands
-                val uLo = if (bmHi == null) 0f else u
-                bmLo?.let { bm ->
-                    drawPlan(c, flPlace, flPlace.levels[lo], bm, (255 * (1f - uLo) * k).toInt(), ::sx, ::sy)
-                }
-                bmHi?.let { bm ->
-                    drawPlan(c, flPlace, flPlace.levels[hiIdx], bm, (255 * u * k).toInt(), ::sx, ::sy)
-                }
+                val uLo = if (bmHi == null && artHi == null) 0f else u
+                val aLo = (255 * (1f - uLo) * k).toInt(); val aHi = (255 * u * k).toInt()
+                if (artLo == null || !drawGameStorey(c, flPlace, flPlace.levels[lo], artLo, aLo, ::sx, ::sy))
+                    bmLo?.let { bm -> drawPlan(c, flPlace, flPlace.levels[lo], bm, aLo, ::sx, ::sy) }
+                if (u > 0f && (artHi == null || !drawGameStorey(c, flPlace, flPlace.levels[hiIdx], artHi, aHi, ::sx, ::sy)))
+                    bmHi?.let { bm -> drawPlan(c, flPlace, flPlace.levels[hiIdx], bm, aHi, ::sx, ::sy) }
                 // the storey's exits and ups and downs, fading with the storey itself
                 drawZones(c, flPlace, flPlace.levels[lo], (1f - u) * k, ::sx, ::sy)
                 if (u > 0f) drawZones(c, flPlace, flPlace.levels[hiIdx], u * k, ::sx, ::sy)
