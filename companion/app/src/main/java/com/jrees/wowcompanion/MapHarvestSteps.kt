@@ -461,5 +461,36 @@ object MapHarvestSteps {
         }
     }
 
-    val STEPS: List<ArtHarvest.Step> = listOf(WORLD_MAP, POI_ICONS, NPC_ICONS, MINIMAP, TRANSPORTS, WMO_MINIMAP, DangerStore.AREAS_STEP, Terrain.STEP, Roads.STEP, Seamless.STEP)
+    /**
+     * [TRAVEL_ICONS] "travelicons", in the background: the travel layer's pictures from the game's own art (b-travel-game-icons; the
+     * user: "Can you like use better or in-game icons for that?"): ui/travel/<name>.png, each [TravelPaint.ART] atlas member cut from its
+     * sheet (the world map's taxi node pins, the ferry pin, the cart, the flight map's route line) and the airship icon by name.
+     */
+    val TRAVEL_ICONS = object : ArtHarvest.Step {
+        override val id = "travelicons"
+        override val version = 1
+        override val beforePlay = false
+        override val weight = 3
+        override fun run(job: ArtHarvest.Job) {
+            val g = job.game
+            val kb = KitBuild({ g.read(it) }, { rel, b -> job.writeBytes(rel, b) }, { null }, why = { g.lastReadWhy })
+            val atlas = kb.atlas(JSONObject().put("atlas", TravelPaint.DB_ATLAS).put("element", TravelPaint.DB_ATLAS_ELEMENT)
+                .put("member", TravelPaint.DB_ATLAS_MEMBER))
+            var n = 0
+            val sheets = HashMap<Int, KitImage?>()
+            for ((file, member) in TravelPaint.ART) {
+                val r = atlas.members[member.lowercase()] ?: run { android.util.Log.i("WCMAP", "travelicons: no atlas member $member"); null } ?: continue
+                val im = sheets.getOrPut(r.fid) { kb.texture(r.fid) }?.crop(r.l, r.t, r.r, r.b) ?: continue
+                job.writeBytes("ui/travel/$file.png", KitPng.encode(im)); n++
+            }
+            for ((file, path) in TravelPaint.ICONS) {
+                val im = g.readName(path)?.let { Blp.decode(it) }?.let { KitImage.of(it) } ?: continue
+                job.writeBytes("ui/travel/$file.png", KitPng.encode(im)); n++
+            }
+            android.util.Log.i("WCMAP", "travelicons: $n of ${TravelPaint.ART.size + TravelPaint.ICONS.size} pictures")
+            check(n > 0) { "no travel picture read (${g.lastReadWhy})" }
+        }
+    }
+
+    val STEPS: List<ArtHarvest.Step> = listOf(WORLD_MAP, POI_ICONS, NPC_ICONS, MINIMAP, TRANSPORTS, TRAVEL_ICONS, WMO_MINIMAP, DangerStore.AREAS_STEP, Terrain.STEP, Roads.STEP, Seamless.STEP)
 }

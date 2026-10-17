@@ -14,7 +14,7 @@ object Travel {
 
     /** a point to draw and tap: [lit] known / friendly, [text] what a tap shows (its name and where it goes) */
     class Point(val kind: Kind, val cont: Int, val wx: Double, val wy: Double, val name: String, val text: String, val lit: Boolean,
-                val id: Int = 0)
+                val id: Int = 0, val fac: Int = 0)          // fac: a flight master's side (TransportRoutes.ALLIANCE / HORDE, both = 3)
 
     /** a line: a crossing (dashed), the tram, a known flight; [lit] false = a hostile town's (dimmed) */
     class Line(val kind: Kind, val cont: Int, val ax: Double, val ay: Double, val bx: Double, val by: Double, val lit: Boolean)
@@ -91,7 +91,7 @@ object Travel {
                 routes[m.id].isNullOrEmpty() -> "Flight master, ${m.town}: discovered (its flights show once you open a flight master in its network)"
                 else -> "Flight master, ${m.town}: flights to ${routes[m.id]!!.joinToString(", ")}"
             }
-            points.add(Point(Kind.FLIGHT, m.cont, m.x.toDouble(), m.y.toDouble(), m.town, text, k, m.id))
+            points.add(Point(Kind.FLIGHT, m.cont, m.x.toDouble(), m.y.toDouble(), m.town, text, k, m.id, m.flags and 3))
         }
         return Scene(points, lines)
     }
