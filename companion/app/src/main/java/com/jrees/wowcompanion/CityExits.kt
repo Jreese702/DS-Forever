@@ -7,8 +7,8 @@ import kotlin.math.hypot
  * quest pointed at the city map's bottom-left edge, an Ironforge one at its top-right edge; the user's picks: ALL of
  *   (a) LEARNED exits: where this player actually left a map on foot, and where a transport (the tram, a boat, a portal) set them
  *       down - read from the game's own positions at runtime, kept on the device ([Learner]);
- *   (b) a small hand TABLE of the capitals' gates and the Deeprun Tram ([TABLE]; the user approved it 2026-10-16). Its points are
- *       ESTIMATES until checked on the Thor (the map header's coordinates, or a learned crossing replacing them);
+ *   (b) a TABLE of only what was MEASURED on the Thor ([TABLE]; the user's later ruling: "There must be a better way to get these
+ *       locations" - learn now, pathing later: no estimates);
  *   (c) a flight first in a city, "only if we know for sure that this character has the flight paths unlocked" (CursorRoute).
  * The game itself names no exits: C_Map.GetMapLinksForMap answered [] in Stormwind on test20, the taxi rows carry no transport kit.)
  * Pure: points are world yards ([Exit.wx] / [Exit.wy], the game's own axes) or a map's 0..1, converted by the caller.
@@ -32,15 +32,13 @@ object CityExits {
     const val TRAM_YD = 420.0
 
     /**
-     * THE APPROVED TABLE (the user, 2026-10-16: "(b) the hand table of each capital's gates (approved now)", and the Deeprun Tram in
-     * it). The Stormwind tram end is measured on the Thor; the gates and the Ironforge tram end are still ESTIMATES (my reading of
-     * the classic maps), to be checked there. A learned crossing of the same way replaces its entry. The rest are learned.
+     * THE TABLE: only what was MEASURED (the user, 2026-10-16: "There must be a better way to get these locations. We can't do this
+     * for every single intended zone transition" - learn now, pathing later). The Deeprun Tram's Stormwind entrance, read on the Thor
+     * (69.0, 31.0, the player standing there); its Ironforge end is LEARNED from the first ride across (until then the route takes
+     * Ironforge's own map centre, from the game's world map data, as where the ride ends). Every other way out is learned.
      */
     val TABLE = listOf(
-        Exit(1453, "Stormwind Gates", x = 0.715, y = 0.90),
-        // the Stormwind end MEASURED on the Thor (2026-10-16 21:49, the player at the tram entrance, Dwarven District): 69.0, 31.0
-        Exit(1453, "Deeprun Tram", x = 0.690, y = 0.310, toMap = 1455, toX = 0.762, toY = 0.512, rideYd = TRAM_YD),
-        Exit(1455, "Deeprun Tram", x = 0.762, y = 0.512, toMap = 1453, toX = 0.690, toY = 0.310, rideYd = TRAM_YD),
+        Exit(1453, "Deeprun Tram", x = 0.690, y = 0.310, toMap = 1455, rideYd = TRAM_YD),
     )
 
     /** a way out of the current map, in ITS 0..1: where to walk, and where the way ends (the transport's far end, or the same) */
@@ -65,6 +63,10 @@ object CityExits {
         interface Store { fun get(k: String): String?; fun put(k: String, v: String?) }
         private var lastMap = 0; private var lastWx = Double.NaN; private var lastWy = Double.NaN; private var lastCont = -1
         private var lastAt = 0L; private var lastTaxi = false
+        // a RIDE THROUGH ANOTHER CONTINENT (the tram runs in an instance of its own): where the first continent was left, until the
+        // player is back on it - on another map there, that is the ride's far end
+        private var rideMap = 0; private var rideWx = Double.NaN; private var rideWy = Double.NaN; private var rideCont = -1
+        private var rideAt = 0L
 
         /** one map document: [map], the continent, world yards, game ms; [taxi] = on a flight. Returns the way it just learned, if any */
         fun onDoc(map: Int, cont: Int, wx: Double, wy: Double, taxi: Boolean, nowMs: Long): Exit? {
@@ -77,6 +79,19 @@ object CityExits {
                     else Exit(lastMap, "", wx = lastWx, wy = lastWy, toMap = map, toWx = wx, toWy = wy, rideYd = TRAM_YD, learned = true)
                 keep(learned)
             }
+            // leaving the continent on foot (a tram / boat / portal into its own instance): remember where
+            if (lastMap != 0 && cont != lastCont && lastCont >= 0 && !taxi && !lastTaxi && rideMap == 0) {
+                rideMap = lastMap; rideWx = lastWx; rideWy = lastWy; rideCont = lastCont; rideAt = nowMs
+            }
+            // back on that continent: on another map, a ride from where it was left to here
+            if (rideMap != 0 && cont == rideCont) {
+                if (map != rideMap && !taxi && nowMs - rideAt < RIDE_MAX_MS) {
+                    learned = Exit(rideMap, "", wx = rideWx, wy = rideWy, toMap = map, toWx = wx, toWy = wy, rideYd = TRAM_YD, learned = true)
+                    keep(learned)
+                }
+                rideMap = 0
+            }
+            if (rideMap != 0 && nowMs - rideAt >= RIDE_MAX_MS) rideMap = 0
             lastMap = map; lastCont = cont; lastWx = wx; lastWy = wy; lastAt = nowMs; lastTaxi = taxi
             return learned
         }
@@ -101,6 +116,7 @@ object CityExits {
 
         companion object {
             const val MAX_GAP_MS = 60_000L     // a loading screen fits; a log-out and back in a day later does not
+            const val RIDE_MAX_MS = 6 * 60_000L // a tram / boat ride through its own instance, loading screens included
             const val FOOT_YD = 60.0            // the two places of a walk across a map's border are this close
             const val MERGE_YD = 40.0
             const val MAX_PER_MAP = 8
