@@ -11,7 +11,7 @@ class QuestLayersTest {
         val kept = HashMap<String, Boolean>()
         val l = QuestLayers({ k, d -> kept[k] ?: d }, { k, v -> kept[k] = v })
         val on = QuestLayers.Layer.values().filter { l.on(it) }.map { it.name }
-        assertEquals(listOf("AVAILABLE", "TRACKED", "OTHER", "TURN_INS", "DAILY", "SMALL"), on)     // low-level off
+        assertEquals(listOf("AVAILABLE", "TRACKED", "OTHER", "TURN_INS", "DAILY", "SMALL", "TRAVEL"), on)     // low-level off; danger off; travel on (b-travel-layer)
         l.toggle(QuestLayers.Layer.LOW); assertTrue(l.on(QuestLayers.Layer.LOW))
         l.toggle(QuestLayers.Layer.OTHER); assertFalse(l.on(QuestLayers.Layer.OTHER))
     }

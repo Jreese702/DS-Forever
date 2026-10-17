@@ -36,6 +36,9 @@ object TaxiNet {
             store.put("g:$c", groups.joinToString(";") { it.joinToString(",") })
         }
 
+        /** node [a] is one a flight master showed this character (b-travel-layer: lit on the maps) */
+        fun known(a: Int): Boolean = groups.any { a in it }
+
         /** a flight from node [a] to node [b] is known to exist */
         fun connected(a: Int, b: Int): Boolean = a != b && groups.any { a in it && b in it }
     }
@@ -52,4 +55,5 @@ object TaxiNet {
     fun character(key: String) { model?.character(key) }
     fun onTaxiNet(cur: Int, reach: List<Int>) { model?.onTaxiNet(cur, reach) }
     fun connected(a: Int, b: Int): Boolean = model?.connected(a, b) ?: false
+    fun known(a: Int): Boolean = model?.known(a) ?: false
 }

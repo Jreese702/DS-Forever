@@ -27,9 +27,9 @@ object TransportRoutes {
      * counts nothing) and the wait at the first dock (its delay, seconds at [RUN_YD_S]); 0 = not known (an older file).
      */
     class Ride(val path: Int, val ca: Int, val a: FloatArray, val cb: Int, val b: FloatArray, val yd: Double = 0.0,
-               val fa: Int = 0, val fb: Int = 0) {
+               val fa: Int = 0, val fb: Int = 0, val air: Boolean = false, val na: String? = null, val nb: String? = null) {
         /** the same boat the other way (the transports run both ways between their docks) */
-        fun back() = Ride(path, cb, b, ca, a, yd, fb, fa)
+        fun back() = Ride(path, cb, b, ca, a, yd, fb, fa, air, nb, na)
         /** a dock in a town hostile to [mine] (ALLIANCE / HORDE): 1 = the near dock, 2 = the far one, 0 = neither (or unknown) */
         fun hostileDock(mine: Int): Int = when {
             mine == 0 -> 0
@@ -45,10 +45,30 @@ object TransportRoutes {
     // (measured on the PC client: Grom'gol, Orgrimmar's and Undercity's towers Horde; Menethil, Theramore, Rut'theran, Auberdine,
     // Southshore, Feathermoon, Stormwind's harbour Alliance; Ratchet and Booty Bay both). None near = unknown = no rule.
     const val DB_TAXI_NODES = 1068100
+    const val DB_TAXI_PATH = 1067802             // TaxiPath: the flight routes between the nodes (b-travel-layer)
     const val ALLIANCE = 1
     const val HORDE = 2
     const val DOCK_TOWN_YD = 900.0
-    class FlightMaster(val cont: Int, val x: Float, val y: Float, val flags: Int)
+    /** a TaxiNodes row: [id] the node's id (the game's nodeID), [name] its words ("Menethil Harbor, Wetlands") */
+    class FlightMaster(val cont: Int, val x: Float, val y: Float, val flags: Int, val id: Int = 0, val name: String = "") {
+        /** a flight master a player can use: a faction's (flag 1 / 2) and not one of the table's retired or quest-path rows */
+        val real get() = flags and 3 != 0 && !name.startsWith("zzOLD") && !name.startsWith("Quest Path")
+        /** the town: the name before its zone ("Menethil Harbor") */
+        val town get() = name.substringBefore(',').trim()
+    }
+
+    /**
+     * A DOCK'S NAME FROM THE GAME'S OWN TABLE (b-travel-layer): the town of the nearest flight master within [DOCK_NAME_YD], else the
+     * nearest other named node (the table's own transport points, "Powderfuse Port, Riverglades"), else null (the app names the zone)
+     */
+    const val DOCK_NAME_YD = 500.0             // Undercity's and Orgrimmar's towers: their masters 494 - 496 yd off
+    fun dockName(nodes: List<FlightMaster>, cont: Int, x: Float, y: Float): String? {
+        fun d(n: FlightMaster) = Math.hypot((n.x - x).toDouble(), (n.y - y).toDouble())
+        val near = nodes.filter { it.cont == cont && it.name.isNotEmpty() && d(it) <= DOCK_NAME_YD }
+        near.filter { it.real }.minByOrNull { d(it) }?.let { return it.town }
+        return near.filter { n -> listOf("Transport", "Generic", "Quest Path", "zzOLD").none { n.name.startsWith(it) } }
+            .minByOrNull { d(it) }?.town
+    }
 
     /** the factions served at ([x], [y]) on [cont]: an OR of ALLIANCE / HORDE, 0 = no flight master near */
     fun townFaction(masters: List<FlightMaster>, cont: Int, x: Float, y: Float): Int = masters
@@ -57,7 +77,8 @@ object TransportRoutes {
 
     /** [rides] with their docks' towns */
     fun withFactions(rides: List<Ride>, masters: List<FlightMaster>): List<Ride> = rides.map { r ->
-        Ride(r.path, r.ca, r.a, r.cb, r.b, r.yd, townFaction(masters, r.ca, r.a[0], r.a[1]), townFaction(masters, r.cb, r.b[0], r.b[1]))
+        Ride(r.path, r.ca, r.a, r.cb, r.b, r.yd, townFaction(masters, r.ca, r.a[0], r.a[1]), townFaction(masters, r.cb, r.b[0], r.b[1]),
+            r.air, dockName(masters, r.ca, r.a[0], r.a[1]), dockName(masters, r.cb, r.b[0], r.b[1]))
     }
 
     /** "Alliance" / "Horde" (the game's UnitFactionGroup) as [ALLIANCE] / [HORDE], else 0 */
@@ -75,25 +96,53 @@ object TransportRoutes {
         return out
     }
 
+    /** a ride whose path rises this far over the sea between its docks flies (a zeppelin, an airship); a boat's stays at 0 (measured
+     *  on the PC client: the boats' paths 0 +- 1, the zeppelins' 59 - 275) */
+    const val AIR_Z = 20f
+
     private fun ride(path: Int, s: Node, t: Node, all: List<Node>): Ride {
         var yd = s.delay * RUN_YD_S
         val leg = all.filter { it.index in s.index..t.index }
+        val air = leg.filter { it.index != s.index && it.index != t.index }.maxOfOrNull { it.z }?.let { it > AIR_Z } ?: false
         for (k in 1 until leg.size) {
             val p = leg[k - 1]; val q = leg[k]
             if (p.cont == q.cont) yd += Math.sqrt(((q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y) + (q.z - p.z) * (q.z - p.z)).toDouble())
         }
-        return Ride(path, s.cont, floatArrayOf(s.x, s.y, s.z), t.cont, floatArrayOf(t.x, t.y, t.z), yd)
+        return Ride(path, s.cont, floatArrayOf(s.x, s.y, s.z), t.cont, floatArrayOf(t.x, t.y, t.z), yd, air = air)
     }
 
     /** the device file (harvest/transports.json): the rides and how the table read, for the log and the route planner */
-    fun toJson(nodes: List<Node>, rides: List<Ride>): JSONObject {
+    fun toJson(nodes: List<Node>, rides: List<Ride>, masters: List<FlightMaster> = emptyList(), flights: List<IntArray> = emptyList()): JSONObject {
         val a = JSONArray()
         for (r in rides) a.put(JSONObject().put("p", r.path).put("ca", r.ca).put("cb", r.cb)
             .put("a", JSONArray().put(r.a[0].toDouble()).put(r.a[1].toDouble()).put(r.a[2].toDouble()))
             .put("b", JSONArray().put(r.b[0].toDouble()).put(r.b[1].toDouble()).put(r.b[2].toDouble()))
-            .put("yd", Math.round(r.yd).toInt()).put("fa", r.fa).put("fb", r.fb))
-        return JSONObject().put("v", 3).put("nodes", nodes.size).put("paths", nodes.map { it.path }.toSet().size)
-            .put("transportPaths", rides.map { it.path }.toSet().size).put("rides", a)
+            .put("yd", Math.round(r.yd).toInt()).put("fa", r.fa).put("fb", r.fb).put("air", r.air)
+            .apply { r.na?.let { put("na", it) }; r.nb?.let { put("nb", it) } })
+        // the flight masters (b-travel-layer: the real ones, their towns) and the game's flight routes between them (TaxiPath)
+        val fm = JSONArray()
+        for (m in masters.filter { it.real }) fm.put(JSONArray().put(m.id).put(m.cont).put(m.x.toDouble()).put(m.y.toDouble()).put(m.flags).put(m.town))
+        val ids = masters.filter { it.real }.map { it.id }.toSet()
+        val tp = JSONArray()
+        for (f in flights) if (f[0] in ids && f[1] in ids) tp.put(JSONArray().put(f[0]).put(f[1]))
+        return JSONObject().put("v", 4).put("nodes", nodes.size).put("paths", nodes.map { it.path }.toSet().size)
+            .put("transportPaths", rides.map { it.path }.toSet().size).put("rides", a).put("fm", fm).put("tp", tp)
+    }
+
+    /** the device file's flight masters (b-travel-layer) */
+    fun mastersFromJson(o: JSONObject?): List<FlightMaster> {
+        val a = o?.optJSONArray("fm") ?: return emptyList()
+        return (0 until a.length()).mapNotNull { i ->
+            val r = a.optJSONArray(i) ?: return@mapNotNull null
+            if (r.length() < 6) return@mapNotNull null
+            FlightMaster(r.optInt(1), r.optDouble(2).toFloat(), r.optDouble(3).toFloat(), r.optInt(4), r.optInt(0), r.optString(5))
+        }
+    }
+
+    /** the device file's flight routes, [from, to] node ids (the game's TaxiPath) */
+    fun flightsFromJson(o: JSONObject?): List<IntArray> {
+        val a = o?.optJSONArray("tp") ?: return emptyList()
+        return (0 until a.length()).mapNotNull { i -> a.optJSONArray(i)?.takeIf { it.length() >= 2 }?.let { intArrayOf(it.optInt(0), it.optInt(1)) } }
     }
 
     /** the device file read back: its rides (none when it is not there or does not read) */
@@ -105,7 +154,8 @@ object TransportRoutes {
             val d = a.optJSONObject(i) ?: continue
             val pa = v(d.optJSONArray("a")) ?: continue; val pb = v(d.optJSONArray("b")) ?: continue
             if (pa.any { it.isNaN() } || pb.any { it.isNaN() }) continue
-            out.add(Ride(d.optInt("p"), d.optInt("ca", -1), pa, d.optInt("cb", -1), pb, d.optDouble("yd", 0.0), d.optInt("fa", 0), d.optInt("fb", 0)))
+            out.add(Ride(d.optInt("p"), d.optInt("ca", -1), pa, d.optInt("cb", -1), pb, d.optDouble("yd", 0.0), d.optInt("fa", 0), d.optInt("fb", 0),
+                d.optBoolean("air", false), d.optString("na", "").ifEmpty { null }, d.optString("nb", "").ifEmpty { null }))
         }
         return out
     }
