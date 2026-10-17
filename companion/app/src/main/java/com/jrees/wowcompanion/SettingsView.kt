@@ -257,7 +257,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
         SettingsTabs.Block.MAP -> 16f + 5 * ROW_H + 4 * 10f
-        SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH()
+        SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
         SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
         SettingsTabs.Block.CLASS_LEFT, SettingsTabs.Block.CLASS_RIGHT -> 16f + ROW_H + 10f + ROW_H
@@ -646,6 +646,11 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 c.drawText(fit(pSub, line, lb.width() - 44f), lb.left + 22f, lb.top + 8f + (i + 1) * LIST_LINE - 10f, pSub)
             y += deferredListH()
         }
+        // the route's data from the game files (b-route-data-all: terrain and buildings for every zone, made before Play)
+        y += 10f
+        row(c, y, "Route data", Terrain.coverageLine(), enabled = true) { box -> RectF(box.right, box.centerY(), box.right, box.centerY()) }
+        if (Terrain.coverageNow()?.let { it.optInt("zones") < it.optInt("total") } != false) postInvalidateDelayed(3_000L)
+        y += ROW_H
         return y
     }
 

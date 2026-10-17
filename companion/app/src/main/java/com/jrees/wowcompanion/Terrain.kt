@@ -161,56 +161,187 @@ object Terrain {
 
     // ---------------------------------------------------------------- the harvest step
 
+    /** the obj0 ADTs of a continent's WDT (MAID's second uint32 of each 32-byte row), by MapHarvest.key(col, row) */
+    fun maidObj0(wdt: ByteArray): Map<Int, Int> {
+        var o = 0
+        while (o + 8 <= wdt.size) {
+            val n = Db2.le32(wdt, o + 4)
+            if (n < 0 || o + 8 + n > wdt.size) break
+            if (tag(wdt, o) == "MAID") {
+                val out = HashMap<Int, Int>()
+                for (i in 0 until n / 32) { val fid = Db2.le32(wdt, o + 8 + i * 32 + 4); if (fid != 0) out[MapHarvest.key(i % 64, i / 64)] = fid }
+                return out
+            }
+            o += 8 + n
+        }
+        return emptyMap()
+    }
+
+    /** a zone's building cover grid ([rect]'s cells like [grid]): each cell the number of its 3 x 3 samples a room covers, 0..9 */
+    fun buildingGrid(rect: MapHarvest.Rect, feet: List<Buildings.Foot>): Grid {
+        val nx = max(1, ((rect.l - rect.r) / CELL_YD).toInt()); val ny = max(1, ((rect.t - rect.b) / CELL_YD).toInt())
+        val cw = (rect.l - rect.r) / nx; val ch = (rect.t - rect.b) / ny
+        val near = feet.filter { it.wx1 >= rect.b && it.wx0 <= rect.t && it.wy1 >= rect.r && it.wy0 <= rect.l }
+        val out = ByteArray(nx * ny)
+        if (near.isNotEmpty()) for (j in 0 until ny) for (i in 0 until nx) {
+            val wx = rect.t - (j + 0.5) * ch; val wy = rect.l - (i + 0.5) * cw
+            out[j * nx + i] = Math.round(Buildings.coverWorld(near, wx, wy, ch / 2, cw / 2) * 9).toInt().toByte()
+        }
+        return Grid(rect.t, rect.b, rect.l, rect.r, nx, ny, out)
+    }
+
     /**
-     * "terrain", in the background: every zone's slope grid (terrain/<uiMap>.bin), the player's zone first (MapHarvestSteps.near),
-     * resumable (terrain/made.txt, per game build). Reads the root ADTs only (about 0.5 MB a tile), each tile once while it is near.
+     * "terrain" (v2, BEFORE PLAY; the user on test56: "I need the path building to work without having played there yet"): every zone's
+     * slope grid (terrain/<uiMap>.bin) AND its building cover (terrain/<uiMap>.bld: the rooms of EVERY placed WMO, [WorldBuildings]), for
+     * all the zones of every continent in the recipe (Forever's lands too): the player's zone first, then by distance on its continent,
+     * then the rest; again after a game update (the harvest's stamp). Resumable per zone (terrain/made.txt, per game build). Each root /
+     * obj0 ADT read once while near (an LRU), each WMO root once. terrain/coverage.json says how far it got; the log says the pace.
      */
     val STEP = object : ArtHarvest.Step {
         override val id = "terrain"
-        override val version = 1
-        override val beforePlay = false
+        override val version = 2
+        override val beforePlay = true
         override val weight = 60
         override fun run(job: ArtHarvest.Job) {
             val g = job.game
+            val t0 = System.nanoTime()
+            var bytes = 0L
+            fun read(fid: Int): ByteArray? = g.read(fid)?.also { bytes += it.size }
             val rects = MapHarvestSteps.zoneRects(job).filterValues { MapHarvest.tilesUnder(it) != null }
             check(rects.isNotEmpty()) { "the worldmap recipe has no zone rects" }
             val mapRows = (g.db2(MapHarvest.DB_MAP) ?: error("Map.db2 unreadable: ${g.lastReadWhy}")).rows().associateBy { it.id }
-            val roots = HashMap<Int, Map<Int, Int>>()
-            for (c in rects.values.map { it.c }.toSortedSet()) {
-                val wdt = mapRows[c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) } ?: continue
-                roots[c] = maidRoot(wdt)
-            }
+            val pass = Pass({ read(it) }) { c -> mapRows[c]?.let { read(it.int(MapHarvest.MAP_WDT)) } }
             val made = job.file("terrain/made.txt")
             val done = HashSet<String>()
-            runCatching { made.readLines() }.getOrNull()?.let { if (it.firstOrNull() == g.buildKey) done.addAll(it.drop(1)) }
-            if (done.isEmpty()) made.writeText(g.buildKey + "\n")
-            // the player's zone first, then by distance on its continent, then the rest
+            val head = g.buildKey + " v2"
+            runCatching { made.readLines() }.getOrNull()?.let { if (it.firstOrNull() == head) done.addAll(it.drop(1)) }
+            if (done.isEmpty()) made.writeText(head + "\n")
+            // the player's zone first, then by distance on its continent, then the rest (before Play the first time: the recipe's order)
             val n = MapHarvestSteps.near
             val nearC = n?.let { rects[it.first]?.c }
             val order = rects.entries.sortedWith(compareBy({ it.value.c != nearC }, { e ->
                 if (n == null || e.value.c != nearC) 0.0 else hypot((e.value.t + e.value.b) / 2 - n.second, (e.value.l + e.value.r) / 2 - n.third)
             }))
-            val cache = object : LinkedHashMap<Long, Tile?>(64, 0.75f, true) {
-                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Tile?>?) = size > 48
-            }
             var built = 0
             for ((i, e) in order.withIndex()) {
                 val (map, rect) = e.key to e.value
                 if (map.toString() in done) continue
-                val root = roots[rect.c] ?: continue
-                val grid = grid(rect) { gr, gc ->
-                    val tr = gr / TILE_V; val tc = gc / TILE_V
-                    if (tr !in 0..63 || tc !in 0..63) return@grid Float.NaN
-                    val key = (rect.c.toLong() shl 32) or MapHarvest.key(tc, tr).toLong()
-                    val tile = if (cache.containsKey(key)) cache[key] else root[MapHarvest.key(tc, tr)]?.let { fid -> g.read(fid)?.let { tile(it) } }.also { cache[key] = it }
-                    tile?.h?.get((gr % TILE_V) * TILE_V + (gc % TILE_V)) ?: Float.NaN
-                }
-                grid.write(job.file("terrain/$map.bin"))
+                job.progress(i, order.size, "")
+                val (slopes, cover) = pass.zone(rect) ?: continue
+                slopes.write(job.file("terrain/$map.bin"))
+                cover.write(job.file("terrain/$map.bld"))
+                files.drop(map); buildings.drop(map)
                 made.appendText("$map\n"); done.add(map.toString()); built++
-                job.progress(i + 1, order.size, "")
+                writeCoverage(job, done.size, order.size, pass.placed.size, pass.rooms, bytes, t0)
             }
-            android.util.Log.i("WCMAP", "terrain: $built zone slope grids built (${done.size} of ${order.size})")
+            job.progress(order.size, order.size)
+            val sec = (System.nanoTime() - t0) / 1e9
+            writeCoverage(job, done.size, order.size, pass.placed.size, pass.rooms, bytes, t0)
+            android.util.Log.i("WCMAP", "terrain: $built zones built (${done.size} of ${order.size}) in ${"%.1f".format(sec)} s, read " +
+                "${bytes / 1_000_000} MB (${"%.0f".format(bytes / 1e6 / sec.coerceAtLeast(0.001))} MB/s); buildings: ${pass.placed.size} " +
+                "placements with ${pass.rooms} rooms as walls, ${pass.wmoRoots} WMO roots read")
         }
+    }
+
+    /**
+     * THE PASS'S WORK, one zone at a time (the step's core; pure but for [read]: a file by its fileDataID, [wdtOf]: a continent's WDT):
+     * the zone's slope grid and its building cover, each root / obj0 ADT read once while near (an LRU), each WMO root once
+     */
+    class Pass(private val read: (Int) -> ByteArray?, private val wdtOf: (Int) -> ByteArray?) {
+        private val roots = HashMap<Int, Map<Int, Int>>(); private val objs = HashMap<Int, Map<Int, Int>>()
+        private val cache = object : LinkedHashMap<Long, Tile?>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Tile?>?) = size > TILE_CACHE
+        }
+        private val wmo = HashMap<Int, List<WorldBuildings.Group>>()
+        private val tileFeet = object : LinkedHashMap<Long, List<Pair<Int, List<Buildings.Foot>>>>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, List<Pair<Int, List<Buildings.Foot>>>>?) = size > TILE_CACHE
+        }
+        private val tileWalks = HashMap<Long, List<Pair<Int, List<Buildings.Foot>>>>()
+        /** the placements with rooms as walls (continent, unique id), and their rooms */
+        val placed = HashSet<Long>(); var rooms = 0; private set
+        val wmoRoots get() = wmo.size
+        /** the last zone's walkway boxes (outdoor groups, cities whole): the log and the tests */
+        var lastWalks = 0; private set
+        private val top = 32.0 * MapHarvest.ADT_YD
+
+        private fun continent(c: Int): Boolean {
+            if (c in roots) return roots[c]!!.isNotEmpty()
+            val wdt = wdtOf(c)
+            roots[c] = wdt?.let { maidRoot(it) } ?: emptyMap(); objs[c] = wdt?.let { maidObj0(it) } ?: emptyMap()
+            return roots[c]!!.isNotEmpty()
+        }
+        private fun tileOf(c: Int, tc: Int, tr: Int): Tile? {
+            if (tr !in 0..63 || tc !in 0..63) return null
+            val key = (c.toLong() shl 32) or MapHarvest.key(tc, tr).toLong()
+            return if (cache.containsKey(key)) cache[key]
+                else roots[c]?.get(MapHarvest.key(tc, tr))?.let { fid -> read(fid)?.let { tile(it) } }.also { cache[key] = it }
+        }
+        private fun height(c: Int, gr: Int, gc: Int): Float {
+            if (gr < 0 || gc < 0) return Float.NaN
+            val t = tileOf(c, gc / TILE_V, gr / TILE_V) ?: return Float.NaN
+            return t.h[(gr % TILE_V) * TILE_V + (gc % TILE_V)]
+        }
+        private fun ground(c: Int, wx: Double, wy: Double): Double = height(c, ((top - wx) / S).toInt(), ((top - wy) / S).toInt()).toDouble()
+        private fun feetOf(c: Int, tc: Int, tr: Int): List<Pair<Int, List<Buildings.Foot>>> {
+            val key = (c.toLong() shl 32) or MapHarvest.key(tc, tr).toLong()
+            tileFeet[key]?.let { return it }
+            val obj = objs[c]?.get(MapHarvest.key(tc, tr))?.let { read(it) }
+            val ps = obj?.let { WorldBuildings.placements(it) } ?: emptyList()
+            val out = ps.map { p ->
+                val groups = wmo.getOrPut(p.fid) { read(p.fid)?.let { WorldBuildings.groups(it) } ?: emptyList() }
+                p.uid to WorldBuildings.feet(p, groups) { wx, wy -> ground(c, wx, wy) }
+            }
+            tileWalks[key] = ps.map { p -> p.uid to WorldBuildings.walkways(p, wmo[p.fid] ?: emptyList()) }
+            if (tileWalks.size > TILE_CACHE) tileWalks.remove(tileWalks.keys.first())
+            tileFeet[key] = out
+            return out
+        }
+
+        /** zone [rect]'s slope grid and building cover; null when its continent has no terrain */
+        fun zone(rect: MapHarvest.Rect): Pair<Grid, Grid>? {
+            if (!continent(rect.c)) return null
+            val slopes = grid(rect) { gr, gc -> height(rect.c, gr, gc) }
+            // every placement on its tiles (a building over two tiles is in both: its unique id once)
+            val seen = HashSet<Int>(); val feet = ArrayList<Buildings.Foot>(); val walks = ArrayList<Buildings.Foot>()
+            for (k in MapHarvest.tilesUnder(rect) ?: emptyList()) {
+                val key = (rect.c.toLong() shl 32) or k.toLong()
+                for ((uid, fs) in feetOf(rect.c, MapHarvest.colOf(k), MapHarvest.rowOf(k))) {
+                    if (!seen.add(uid)) continue
+                    feet.addAll(fs)
+                    tileWalks[key]?.firstOrNull { it.first == uid }?.let { walks.addAll(it.second) }
+                    if (fs.isNotEmpty() && placed.add((rect.c.toLong() shl 32) or (uid.toLong() and 0xFFFFFFFFL))) rooms += fs.size
+                }
+            }
+            // a WMO's outdoor groups are walked on: level there, whatever the terrain under them (a city's streets, a dock, a bridge)
+            lastWalks = walks.size
+            val level = buildingGrid(rect, walks)
+            for (i in slopes.slope.indices) if ((level.slope[i].toInt() and 0xFF) >= 5) slopes.slope[i] = 0
+            return slopes to buildingGrid(rect, feet)
+        }
+    }
+    private const val TILE_CACHE = 160
+
+    private fun writeCoverage(job: ArtHarvest.Job, zones: Int, total: Int, buildings: Int, rooms: Int, bytes: Long, t0: Long) {
+        val o = org.json.JSONObject().put("zones", zones).put("total", total).put("buildings", buildings).put("rooms", rooms)
+            .put("mb", bytes / 1_000_000).put("s", (System.nanoTime() - t0) / 1_000_000_000)
+        job.writeBytes("terrain/coverage.json", o.toString().toByteArray())
+    }
+
+    /** the harvest's coverage ({zones, total, buildings, rooms}); null = none yet. Read on the route thread every few seconds while asked
+     *  ([coverageNow]); the UI reads only the last one read */
+    fun coverage(): org.json.JSONObject? = runCatching { org.json.JSONObject(ArtHarvest.file("terrain/coverage.json").readText()) }.getOrNull()
+    @Volatile private var cov: org.json.JSONObject? = null
+    @Volatile private var covAt = Long.MIN_VALUE / 2
+    fun coverageNow(): org.json.JSONObject? {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - covAt >= 3_000L) { covAt = now; RouteWork.run({ coverage() ?: org.json.JSONObject() }) { cov = it } }
+        return cov?.takeIf { it.has("total") }
+    }
+    /** "Terrain 42 of 60 zones · buildings 4,851" (Settings > Performance), or how far it is */
+    fun coverageLine(): String {
+        val c = coverageNow() ?: return "Not prepared yet: it is made from your game files before Play"
+        val z = c.optInt("zones"); val t = c.optInt("total")
+        return "Terrain ${z} of ${t} zones · buildings ${"%,d".format(c.optInt("buildings"))}" + (if (z < t) " (preparing)" else "")
     }
 
     // ---------------------------------------------------------------- read back at runtime
@@ -220,6 +351,9 @@ object Terrain {
     // (test56's ANRs: kept in memory once read, a missing one remembered a while, never read on the UI thread: RouteWork.Files)
     val files = RouteWork.Files { map -> Grid.read(ArtHarvest.file("terrain/$map.bin")) }
     fun of(map: Int): Grid? = files.get(map)
+    /** zone [map]'s building cover (0..9 of a cell's samples a room covers), null until the harvest built it (RouteWork.Files) */
+    val buildings = RouteWork.Files { map -> Grid.read(ArtHarvest.file("terrain/$map.bld")) }
+    fun buildingsOf(map: Int): Grid? = buildings.get(map)
 
     // ---------------------------------------------------------------- the walked cells (b)
 

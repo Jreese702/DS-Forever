@@ -3977,7 +3977,7 @@ class MapView(context: Context) : View(context) {
         val bl = if (placesFor == r.continent) places else null
         Roads.of(mapId)                                             // asked for on the route thread when not in memory
         val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}:${tg != null}:${Terrain.Walked.count() / 40}:" +
-            "${Roads.version}:${Roads.files.version}:${bl?.size}"
+            "${Roads.version}:${Roads.files.version}:${Terrain.files.version}:${Terrain.buildings.version}:${bl?.size}"
         if (key != dGridKey) {
             dGridKey = key
             val filesDir = context.filesDir
@@ -3999,6 +3999,7 @@ class MapView(context: Context) : View(context) {
         run {
             Terrain.Walked.init(java.io.File(filesDir, "walked.bin"))
             val tg = Terrain.of(mapId)
+            val bg = Terrain.buildingsOf(mapId)
             Roads.of(mapId)
             val sp = DangerStore.spawns(mapId)
             val cont = r.continent
@@ -4014,7 +4015,9 @@ class MapView(context: Context) : View(context) {
                 // the zone's border band (test54: "that Westfall quest is sending me along the mountains"): dear unless level
                 val edgeYd = minOf(x * r.width, (1 - x) * r.width, y * r.height, (1 - y) * r.height)
                 val f = if (edgeYd < BORDER_YD && (slope == Terrain.NO_DATA || f0 > 1f)) f0 * BORDER_COST else f0
-                val built = Buildings.cover(foot, x, y, cellX, cellY, r)
+                // every placed building's rooms (b-route-data-all: the harvest's cover grid, from the game files), and the baked interiors
+                val built = maxOf(Buildings.cover(foot, x, y, cellX, cellY, r),
+                    bg?.at(wx, wy)?.takeIf { it != Terrain.NO_DATA }?.let { it / 9f } ?: 0f)
                 when {
                     built >= Buildings.WALL_COVER -> Terrain.WALL                 // a building: a wall (its doors: the start's / goal's ends)
                     f >= 3f -> f
@@ -5930,6 +5933,15 @@ class MapView(context: Context) : View(context) {
                     }
                     c.restoreToCount(save)
                 }
+            }
+        }
+        // the zone's route data not ready yet (b-route-data-all): said, in the note's place
+        if (dangerNote == null && !compact && Settings.questTracking == "safepath" && rect?.valid == true) {
+            val mid = m.optInt("mapID", 0)
+            if (Terrain.of(mid) == null && isZoneMap(mid)) {
+                val c = Terrain.coverageNow()
+                dangerNote = "Route data for ${m.optString("zone", "this zone")} is still being prepared" +
+                    (c?.let { " (${it.optInt("zones")} of ${it.optInt("total")} zones)" } ?: "")
             }
         }
         dangerNote?.let { n ->
