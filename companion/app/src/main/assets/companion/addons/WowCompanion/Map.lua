@@ -1239,6 +1239,9 @@ function WC.collectPos()
     -- QuestTrail's arrow, read (b-route-questtrail; absent = QuestTrail not there or its arrow hidden)
     local okT, qt = pcall(WC.qtrailRead)
     if okT and qt then out.qtrail = qt end
+    -- the group's members (b-group-map), once a second at most: absent between, grpN = 0 once on leaving the group
+    local okG, grp, grpN = pcall(WC.grpRead)
+    if okG and grpN then out.grpN = grpN; out.grp = grp end
     -- NO HEIGHT IS AVAILABLE. Measured: UnitPosition returns 4 values here and the third
     -- (posZ) is 0 while the player stands ~56 yd up -- Blizzard zeroed it years ago. There is
     -- no other Lua source for player height, so the app CANNOT pick a floor by altitude; it
@@ -2886,4 +2889,51 @@ function WC.qtrailPath()
         end
     end
     return #out >= 2 and out or nil
+end
+
+-- ---------------------------------------------------------------- THE GROUP ON THE MAP (b-group-map)
+-- The user: party / raid members on the Map room, the map module and Home's small map, in their class colours (names in the module and
+-- the room). Read only: per member (party1-4 / raid1-40, never the player) UnitPosition (world yards and its instance / continent: the
+-- game gives nothing inside instances, so such members are left out), the name, the class and its colour as the game's own
+-- RAID_CLASS_COLORS has it (so the app keeps no colour table), dead / offline. At most once a second; nothing while ungrouped except a
+-- single grpN = 0 when the group goes.
+WC.grp = { at = 0, had = false, EVERY = 1.0 }
+function WC.grpRead()
+    local G = WC.grp
+    local now = GetTime()
+    if now - G.at < G.EVERY then return nil end
+    G.at = now
+    local okN, n = pcall(function() return GetNumGroupMembers and GetNumGroupMembers() or 0 end)
+    n = (okN and type(n) == "number" and WC.isPlain(n)) and n or 0
+    if n <= 0 then
+        if G.had then G.had = false; return {}, 0 end
+        return nil
+    end
+    G.had = true
+    local okR, raid = pcall(function() return IsInRaid and IsInRaid() end)
+    local prefix = (okR and raid) and "raid" or "party"
+    local count = (okR and raid) and n or (n - 1)
+    local out = {}
+    for i = 1, math.min(count, 40) do
+        local u = prefix .. i
+        local ok, m = pcall(function()
+            if not UnitExists(u) or UnitIsUnit(u, "player") then return nil end
+            local wx, wy, _, cont = UnitPosition(u)
+            if type(wx) ~= "number" or type(wy) ~= "number" or not (WC.isPlain(wx) and WC.isPlain(wy)) then return nil end
+            local name = UnitName(u)
+            local _, cls = UnitClass(u)
+            local cc = cls and RAID_CLASS_COLORS and RAID_CLASS_COLORS[cls]
+            return {
+                n = (type(name) == "string" and WC.isPlain(name)) and name or "?",
+                c = (type(cls) == "string") and cls or nil,
+                col = cc and cc.colorStr or nil,
+                wx = math.floor(wx * 10 + 0.5) / 10, wy = math.floor(wy * 10 + 0.5) / 10,
+                cont = (type(cont) == "number" and WC.isPlain(cont)) and cont or nil,
+                dead = UnitIsDeadOrGhost(u) and true or nil,
+                off = (not UnitIsConnected(u)) and true or nil,
+            }
+        end)
+        if ok and m then out[#out + 1] = m end
+    end
+    return out, #out
 end

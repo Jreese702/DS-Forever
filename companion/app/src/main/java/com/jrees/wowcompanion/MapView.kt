@@ -2299,6 +2299,8 @@ class MapView(context: Context) : View(context) {
         }
         noteMapChange(m.optInt("mapID", 0))
         staleMs = 0
+        // the group (Map.lua grpRead, b-group-map): once a second; grpN = 0 when the group went
+        if (pos.has("grpN")) group = GroupMembers.parse(pos.optJSONArray("grp"))
         // QuestTrail's arrow (Map.lua qtrailRead): every tick says it, absent = not showing (b-route-questtrail)
         qtrail = pos.optJSONObject("qtrail"); qtrailAt = android.os.SystemClock.elapsedRealtime()
         absorbSoft(pos.optJSONObject("soft"), m)    // absent = nothing beside the player now
@@ -3874,7 +3876,9 @@ class MapView(context: Context) : View(context) {
     private var mapNow = 0
     private var cameFrom = 0
     private val routeKeep = HashMap<Int, String>()
-    private val farKeep = HashMap<Int, DoubleArray>()          // each quest's spot chosen last (its hysteresis)
+    private val farKeep = HashMap<Int, DoubleArray>()
+    /** the group's members (b-group-map) */
+    private var group: List<GroupMembers.Member> = emptyList()          // each quest's spot chosen last (its hysteresis)
     private val SPOT_STICK = 1.25
     private fun noteMapChange(id: Int) {
         if (id == 0 || id == mapNow || !isZoneMap(id)) return       // test42: never a continent as "came from"
@@ -5768,6 +5772,26 @@ class MapView(context: Context) : View(context) {
                     // on a dark round backing (UI Art, mr16: on busy city art the bare boot read as a flight-master pin there)
                     pFlyBack.color = Color.argb(140, 0, 0, 0); c.drawCircle(bx, by, FLY_BACK_PX / 2f, pFlyBack)
                     drawIcon(c, Ic.FLIGHT, bx, by, FLY_ICON_PX)
+                }
+            }
+        }
+
+        // ---- THE GROUP (b-group-map): party / raid members in their class colours, names in the module only (the user's pick);
+        // one off the field gets a small chevron on its rim, pointing their way
+        rect?.takeIf { it.valid }?.let { r ->
+            val nb = top + (if (compact) compactTop() else 0f)
+            val l0 = left + 14f; val r0 = left + fw - 14f; val t0 = nb + 14f; val b0 = top + fh - 14f - (if (hintsOn() && !compact) HINT_BAND else 0f)
+            for (gm in group) {
+                if (gm.cont != null && gm.cont != r.continent) continue
+                val gx = sx(r.nx(gm.wy)); val gy = sy(r.ny(gm.wx))
+                if (gx in l0..r0 && gy in t0..b0) GroupMembers.draw(c, gm, gx, gy, named = !compact)
+                else if (!px.isNaN()) {
+                    val ox = sx(px).coerceIn(l0, r0); val oy = sy(py).coerceIn(t0, b0)
+                    val dx = gx - ox; val dy = gy - oy
+                    var k = Float.MAX_VALUE
+                    if (dx > 0f) k = min(k, (r0 - ox) / dx) else if (dx < 0f) k = min(k, (l0 - ox) / dx)
+                    if (dy > 0f) k = min(k, (b0 - oy) / dy) else if (dy < 0f) k = min(k, (t0 - oy) / dy)
+                    if (k < Float.MAX_VALUE) GroupMembers.draw(c, gm, ox + dx * k, oy + dy * k, false, inside = false, ang = atan2(dy, dx))
                 }
             }
         }
