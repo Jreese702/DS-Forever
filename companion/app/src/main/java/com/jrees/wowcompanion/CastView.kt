@@ -1140,7 +1140,15 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (quietPresses || chordRadial() != null || !pressesReachGame()) return
         val src = srcOf[pos]
         val li = layer
-        val fb = dpadFightOverride(li, src) ?: fightOverride(li, src)
+        // b-cast-predict-toolbar (the user on 1.0.9-test20: "The predictive cast bar is triggering outside of combat when clicking on ds toolbar
+        // options"): the slot as it is DRAWN decides (the same order as the bar): a D-pad toolbar button (map / chat / the wheel / the bar
+        // cursor: the router's, not the game's slot under it) or a companion command is no spell - no prediction. Only the toolbar's
+        // in-fight spells (dpadFightOverride) and the game's own slots go on
+        val dfo = dpadFightOverride(li, src)
+        if (dfo == null && roomOverride(li, src) != null) return
+        val fo = fightOverride(li, src)
+        if (dfo == null && fo == null && commandOverride(li, src) != null) return
+        val fb = dfo ?: fo
         val ct: Int; val usable: Boolean
         if (fb != null) {
             val id = fightIds?.get(src + 1) ?: return
@@ -1158,6 +1166,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (ct > 0) predPressAt = now                                     // the latency line, predicted or not
         if (!CastPredict.start(ct, casting, usable)) return
         predOn = true; predStartMs = now.toDouble(); predEndMs = now.toDouble() + ct
+        android.util.Log.i("WCLOG", "cast predict: start (layer $li, slot ${src + 1}, ${ct} ms${if (fb != null) ", fight spell" else ""})")
         invalidate()
     }
 
