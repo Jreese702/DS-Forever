@@ -3941,11 +3941,19 @@ class MapView(context: Context) : View(context) {
         val here = doubleArrayOf(px, py); val to = doubleArrayOf(route.x, route.y)
         val old = dangerLegs[q]
         val sameGoal = old != null && hypot((route.x - old.tx) * ax, (route.y - old.ty) * ay) <= 20.0 && old.k == k
-        if (old != null && sameGoal && hypot((px - old.atX) * ax, (py - old.atY) * ay) <= DANGER_MOVE_YD)
-            return if (old.pts.size > 2) passed(listOf(here) + old.pts.drop(1), ax, ay) else null
+        if (old != null && sameGoal && hypot((px - old.atX) * ax, (py - old.atY) * ay) <= DANGER_MOVE_YD) {
+            if (old.pts.size <= 2) return null
+            // a passed bend is gone for good (test54: "it makes me go all the way back even if I'm going the right way")
+            val left = passed(listOf(here) + old.pts.drop(1), ax, ay)
+            val keep = if (left == null) listOf(old.pts[0], to) else listOf(old.pts[0]) + left.drop(1)
+            if (keep.size != old.pts.size) dangerLegs[q] = DangerLeg(keep, old.tx, old.ty, old.atX, old.atY, old.k)
+            return left
+        }
+        // walked on: planned again from here; the old way kept only as far as it still lies AHEAD (its passed bends dropped, never
+        // a way back to them)
         var pts = g.route(here, to, k)
         if (old != null && sameGoal && old.pts.size > 2) {
-            val kept = listOf(here) + old.pts.drop(1)
+            val kept = passed(listOf(here) + old.pts.drop(1), ax, ay) ?: listOf(here, to)
             if (g.cost(kept, k, to) <= g.cost(pts, k, to) * DANGER_STICK) pts = kept
         }
         val wasBent = old != null && old.pts.size > 2
@@ -3962,6 +3970,18 @@ class MapView(context: Context) : View(context) {
         dangerLegs[q] = DangerLeg(pts, route.x, route.y, px, py, k)
         return pts.takeIf { it.size > 2 }?.let { passed(it, ax, ay) }
     }
+
+    /** where the way from ([x0], [y0]) to ([x1], [y1]) meets the box l..r x t..b (the start clamped into it first), or null */
+    private fun rimPoint(x0: Float, y0: Float, x1: Float, y1: Float, l: Float, t: Float, r: Float, b: Float): FloatArray? {
+        val ox = x0.coerceIn(l, r); val oy = y0.coerceIn(t, b)
+        val dx = x1 - ox; val dy = y1 - oy
+        var k = Float.MAX_VALUE
+        if (dx > 0f) k = min(k, (r - ox) / dx) else if (dx < 0f) k = min(k, (l - ox) / dx)
+        if (dy > 0f) k = min(k, (b - oy) / dy) else if (dy < 0f) k = min(k, (t - oy) / dy)
+        return if (k == Float.MAX_VALUE || k >= 1f) null else floatArrayOf(ox + dx * k, oy + dy * k)
+    }
+    /** a pinned flag's distance in from the small map's edge (its pole and pennant inside, clear of the rim arrow) */
+    private val RIM_FLAG_IN = 40f
 
     /** CHECKPOINTS REACHED (the user on test45: "At every bend I want a checkpoint flag which the arrow leads to"): a bend within
      *  [CHECKPOINT_PASS_YD] of the player is passed, the next one leads; null = no bend left */
@@ -5759,6 +5779,12 @@ class MapView(context: Context) : View(context) {
                         if (i == stepAt && r0.kind == CursorRoute.Kind.GOAL) continue
                         val x = sx(cps[i][0]); val y = sy(cps[i][1])
                         if (x in left..(left + fw) && y in nb..(top + fh)) drawFlag(c, x, y, next = i == 0)
+                        else if (i == 0) {
+                            // the NEXT flag off this small field (test54: "I still can't see the checkpoints on the normal map module
+                            // when it's not open"): pinned just inside the rim on the way to it, so a flag always shows
+                            rimPoint(sx(px), sy(py), x, y, left + RIM_FLAG_IN, nb + RIM_FLAG_IN, left + fw - RIM_FLAG_IN, top + fh - RIM_FLAG_IN)
+                                ?.let { drawFlag(c, it[0], it[1], next = true) }
+                        }
                     }
                     c.restoreToCount(save)
                 }

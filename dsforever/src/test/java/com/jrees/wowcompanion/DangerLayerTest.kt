@@ -1,6 +1,7 @@
 package com.jrees.wowcompanion
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
@@ -84,5 +85,22 @@ class DangerLayerTest {
         assertEquals(3, p.size); assertEquals(0.3, p[1][0], 1e-9)
         assertEquals(null, DangerGrid.passed(listOf(leg[0], doubleArrayOf(0.105, 0.5), leg[3]), 2000.0, 2000.0))   // none left
         assertEquals(4, DangerGrid.passed(listOf(leg[0], doubleArrayOf(0.2, 0.5), leg[2], leg[3]), 2000.0, 2000.0)!!.size)
+    }
+
+    /** test54 ("I sometimes walk past them by accident and it makes me go all the way back"): passed when past, or skirted */
+    @Test fun aCheckpointWalkedPastOrSkirtedIsPassed() {
+        val ax = 2000.0; val ay = 2000.0
+        val c = doubleArrayOf(0.5, 0.5); val n = doubleArrayOf(0.5, 0.3)          // the bend, then north 400 yd
+        // overshot: 40 yd east of the bend and 20 yd on toward the next (past the line across the leg)
+        assertTrue(DangerGrid.isPassed(doubleArrayOf(0.52, 0.49), c, n, ax, ay))
+        // skirted: 50 yd west of it, 30 yd nearer the next than the bend is
+        assertTrue(DangerGrid.isPassed(doubleArrayOf(0.475, 0.485), c, n, ax, ay))
+        // coming up to a sharp corner from the west, 30 yd short and a few yards north of the line: NOT passed
+        assertFalse(DangerGrid.isPassed(doubleArrayOf(0.485, 0.498), c, n, ax, ay))
+        // within 25 yd: passed
+        assertTrue(DangerGrid.isPassed(doubleArrayOf(0.488, 0.5), c, n, ax, ay))
+        // 150 yd off to the side and not yet up to it: not passed; the same 100 yd on past its line: passed (progress along the leg)
+        assertFalse(DangerGrid.isPassed(doubleArrayOf(0.425, 0.51), c, n, ax, ay))
+        assertTrue(DangerGrid.isPassed(doubleArrayOf(0.425, 0.45), c, n, ax, ay))
     }
 }
