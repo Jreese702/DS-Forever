@@ -3610,6 +3610,7 @@ class MapView(context: Context) : View(context) {
         val m = map ?: return null
         if (Settings.questTracking == "polestar") return null          // Polestar draws its own arrow (b-route-polestar)
         if (Settings.questTracking == "questtrail") return null        // QuestTrail super-tracks its own pick (b-route-questtrail)
+        if (Settings.questTracking == "vanilla") return null           // the game's own way: its super-track left alone (test49)
         if (focusQid <= 0 || m.optInt("onTaxi", 0) == 1) return null
         val r = routeFor(focusQid) ?: return null
         // test48 (the user: "The tracker wants me to go off the safe path straight into mobs"): the game's pin stands on the NEXT
@@ -3715,7 +3716,7 @@ class MapView(context: Context) : View(context) {
     /** quest [q]'s leg to [route]'s point, bent round danger (Vanilla, "Avoid dangerous areas" not Off): the player first, the
      *  route's point last; null = straight */
     private fun dangerLeg(q: Int, route: CursorRoute.Route): List<DoubleArray>? {
-        if (Settings.questTracking != "vanilla") return null
+        if (Settings.questTracking != "safepath") return null
         val k = DangerGrid.strength(Settings.avoidDanger)
         if (k <= 0.0) return null
         val g = dangerGrid() ?: return null
@@ -3921,6 +3922,9 @@ class MapView(context: Context) : View(context) {
         // the map's real ways out (b-route-city-exits), from every source in turn (learned first, then measured; Track B's walking
         // paths will slot in as one more [waySources] entry)
         val ways = ArrayList<CityExits.Way>()
+        // VANILLA (the user, test49: "make the old vanilla quest tracker the vanilla option"): straight at the quest - its goals
+        // here, else the edge toward it; no ways, rides, flights or waypoint (SafePath has those)
+        if (Settings.questTracking == "vanilla") return CursorRoute.plan(px, py, r.width, r.height, goals, far, null, null, emptyList()) { _, _ -> false }
         for (src in waySources) ways.addAll(src(mapId, r))
         // the quest only on ANOTHER continent: the rides there (b-route-rides), each with the yards on from where it lands
         if (far == null && goals.isEmpty() && allSpots.isNotEmpty() && allSpots.none { it.size >= 3 && it[0].toInt() == r.continent })
@@ -5494,7 +5498,7 @@ class MapView(context: Context) : View(context) {
         } else pathFor = 0
         // ---- HOME'S SMALL MAP: the focused quest's checkpoints too (test48: "I cannot see the checkpoint flags when the map module
         // is not full screen") - the flags, the stretch to the next one, faint dots past it; no words (the arrow and the module say them)
-        if (compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN() && focusQid > 0 && Settings.questTracking == "vanilla") {
+        if (compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN() && focusQid > 0 && Settings.questTracking == "safepath") {
             routeFor(focusQid)?.let { r0 ->
                 val leg = dangerLeg(focusQid, r0)
                 val cps = ArrayList<DoubleArray>()

@@ -19,7 +19,18 @@ object Settings {
 
     fun init(c: Context) {
         if (prefs == null) prefs = c.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        // the user (test49): "Add another quest tracking option called safepath and apply our current logic set to that, and then make
+        // the old vanilla quest tracker the vanilla option" - a saved "vanilla" from before WAS our route logic: it becomes SafePath,
+        // once, so nobody silently loses the routes
+        prefs?.let { p ->
+            if (!p.contains(QT_MIGRATED)) {
+                val e = p.edit()
+                if (p.getString("questTracking", null) == "vanilla") e.putString("questTracking", "safepath")
+                e.putBoolean(QT_MIGRATED, true).apply()
+            }
+        }
     }
+    private const val QT_MIGRATED = "questTrackingSafePath"
 
     /** RETIRED 2026-10-02 (the user removed the switch): the map always frames itself. Kept only so old prefs read. */
     var dynamicZoom: Boolean
@@ -61,9 +72,10 @@ object Settings {
      * "questtrail" = QuestTrail's route (player-installed; until its probe is done it routes as vanilla).
      */
     var questTracking: String
-        get() = prefs?.getString("questTracking", "vanilla")?.takeIf { it in QUEST_TRACKING } ?: "vanilla"
-        set(v) { prefs?.edit()?.putString("questTracking", if (v in QUEST_TRACKING) v else "vanilla")?.apply(); changed() }
-    val QUEST_TRACKING = listOf("vanilla", "questtrail", "polestar")
+        get() = prefs?.getString("questTracking", "safepath")?.takeIf { it in QUEST_TRACKING } ?: "safepath"
+        set(v) { prefs?.edit()?.putString("questTracking", if (v in QUEST_TRACKING) v else "safepath")?.apply(); changed() }
+    /** VANILLA: the game's own way, the line straight at the quest, no route, no pin; SAFEPATH: DS Forever's route (the default) */
+    val QUEST_TRACKING = listOf("vanilla", "safepath", "questtrail", "polestar")
 
     /** "Avoid dangerous areas" (b-danger-layer): how hard the route bends round hostile mobs; High by default (the user's pick) */
     var avoidDanger: String
