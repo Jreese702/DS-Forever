@@ -95,6 +95,8 @@ class HomeRadialView(
      * screen: the bar's own is hidden meanwhile, f-one-disc), the chooser and the item's name band.
      */
     var under: ((Boolean) -> Unit)? = null
+    /** test26: the wheel closed (any way but the app leaving): the host makes it final - the guest's B dropped, the bar's disc blue */
+    var onClosed: (() -> Unit)? = null
     var underRedraw: (() -> Unit)? = null
     private var slot: RectF? = null
     /** the wheel sliding back down into the bar after it has gone (the controller already let go): since (uptime ms), in that slot */
@@ -337,6 +339,7 @@ class HomeRadialView(
         if (openedAt != 0L) Log.i("WCLOG", "radial: close (src=$source, after ${SystemClock.uptimeMillis() - openedAt} ms, " +
             "drawn=${!firstFrame}, why=${Throwable().stackTrace.getOrNull(1)?.methodName})")
         val shown = strip.homeLifted || (slot != null && mode != Mode.PICK)     // the wheel itself on screen (not Bags' picker)
+        if (openedAt != 0L && !shutting) onClosed?.invoke()
         picker?.close(); mode = Mode.WHEEL; choice = null; holdReset(); pinNote = null
         if (!stickWait && (freeTry == 0 || freed)) { reader?.stop(); reader = null }
         openedAt = 0L; closingFrom = -1f; hubPressAt = 0L

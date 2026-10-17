@@ -725,6 +725,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         radialView.underRedraw = { homeView.wheelRedraw() }
+        // test26 (the user: "Same thing with the top radial button exactly"): the item / spell wheel shares the pause's guest ("radial"),
+        // so its close is made final the same way: B dropped, the guest's late "home" muted, the disc blue before it shows again
+        radialView.onClosed = {
+            homeView.dropB("pad:radial", HomeBGlyph.WHEEL_MUTE_MS)
+            discB("the wheel closed")
+            strip.snapRed()
+        }
         // b-radial-exclusive (1.0.9, the user: "while another overlay is open, a player should not be able to acutally open the class
         // radials"): one overlay at a time
         // b-class-takeover: the class wheel holds the controller (the guest "class") and casts through the "classr" row
