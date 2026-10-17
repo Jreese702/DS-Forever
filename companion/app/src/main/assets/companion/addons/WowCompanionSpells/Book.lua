@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b41"                -- bump on every change; b41: padtab 15-25 = the In combat tab's form row (PadTabCtl p29)
+local BV = "b42"                -- bump on every change; b42: a bind waits for A (keep) / B (undo, bind again)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -453,6 +453,63 @@ local function cursorKey()
                           tostring(S(function() return c end)), tostring(S(function() return d end)) }, "|")
 end
 
+-- b42 THE CONFIRMATION (the user on 1.0.9-test21: "When binding spells in the spell book there needs to be a confirmation, a confirm and it
+-- closes, b removes it and let's you keep binding"): a bind that took leaves the box in mode "confirm"; A keeps it (the box closes to the
+-- book), B puts back what the place held before (UNDO.put) and the box waits for a button again. UNDO.read is taken just before the place.
+local UNDO = {}
+-- a bar slot's content: { kind = "none" | "spell" | "item" | "macro" | "mount" | "other", id }
+function UNDO.read(storage)
+    local ok, kind, id = CALL(function() return GetActionInfo(storage) end)
+    if not ok or type(kind) ~= "string" or not WC.isPlain(kind) then return { kind = "none" } end
+    id = (type(id) == "number" and WC.isPlain(id)) and id or nil
+    if kind == "spell" or kind == "item" then return { kind = kind, id = id } end
+    if kind == "summonmount" then return { kind = "mount", id = id } end
+    if kind == "macro" then
+        -- by NAME (this client reports a macro's SPELL here, PadMap's readSlot)
+        local name = TS(function() return GetActionText(storage) end)
+        local mi = name and TN(function() return GetMacroIndexByName(name) end)
+        return { kind = (mi and mi > 0) and "macro" or "other", id = mi }
+    end
+    return { kind = "other" }
+end
+-- put [was] back on [storage] (out of combat); true = the slot holds it again
+function UNDO.put(u)
+    if TB(function() return InCombatLockdown() end) then return false, "combat" end
+    if u.fight then
+        -- the In combat tab: the fight spell that was there (by its book place), or none
+        local pm = WC.padMap
+        if type(pm) ~= "table" then return false, "failed" end
+        local okp, ok
+        if u.prevFight then
+            local bs = type(WC.spellsBookSlotOf) == "function" and WC.spellsBookSlotOf(u.prevFight) or nil
+            if not bs then return false, "failed" end
+            if u.face then okp, ok = pcall(pm.putCombatFace, u.pos, bs) else okp, ok = pcall(pm.putCombat, u.page, u.set, u.pos, bs) end
+        else
+            if u.face then okp, ok = pcall(pm.clearCombatFace, u.pos) else okp, ok = pcall(pm.clearCombat, u.page, u.set, u.pos) end
+        end
+        return okp and ok and true or false, (not (okp and ok)) and "failed" or nil
+    end
+    local was, s = u.was, u.storage
+    CALL(function() return ClearCursor() end)
+    if was.kind == "none" then
+        CALL(function() return PickupAction(s) end)                     -- the spell comes off: the place is empty again
+        CALL(function() return ClearCursor() end)
+        return UNDO.read(s).kind == "none", nil
+    end
+    if was.kind == "spell" and was.id then CALL(function() return C_Spell.PickupSpell(was.id) end)
+    elseif was.kind == "item" and was.id then CALL(function() if type(PickupItem) == "function" then return PickupItem(was.id) end return C_Item.PickupItem(was.id) end)
+    elseif was.kind == "macro" and was.id then CALL(function() return PickupMacro(was.id) end)
+    elseif was.kind == "mount" and was.id and type(WC.padMap) == "table" and type(WC.padMap.putMount) == "function" then
+        local okp, ok = pcall(WC.padMap.putMount, u.page, u.set, u.pos, was.id)
+        return okp and ok and true or false, nil
+    else return false, "failed" end
+    if cursorKey() == nil then return false, "failed" end
+    CALL(function() return PlaceAction(s) end)
+    CALL(function() return ClearCursor() end)
+    local now = UNDO.read(s)
+    return now.kind == was.kind, nil
+end
+
 -- the press that answers the Bind box. Returns nil when the spell was placed, else the reason (the answer is sent here).
 local function bindPress(key)
     local b = ctl.bind
@@ -482,13 +539,21 @@ local function bindPress(key)
         local pm = WC.padMap
         if type(pm) ~= "table" then ack(false, b.id, "failed", nil, probe) return "failed" end
         local okp, ok, fwhy
-        if set == 1 and pos >= FIRST_RESERVED then
+        -- b42: the fight spell there before (PadMap's view: a combat slot's `c`, a base face button's `cf`), for B's undo
+        local face = set == 1 and pos >= FIRST_RESERVED
+        local okv, v = pcall(pm.slotAt, gamePage(), set, pos)
+        local prev = okv and type(v) == "table" and ((face and v.cf) or (v.kind == "combat" and v.c)) or nil
+        prev = type(prev) == "table" and type(prev.id) == "number" and prev.id or nil
+        if face then
             if pos == 7 then ack(false, b.id, "reserved", nil, probe) return "reserved" end
             okp, ok, fwhy = pcall(pm.putCombatFace, pos, b.slot)
         else
             okp, ok, fwhy = pcall(pm.putCombat, gamePage(), set, pos, b.slot)
         end
-        if okp and ok then ack(true, b.id, nil, { pg = gamePage(), b = set, p = pos, fight = true }, probe) return nil end
+        if okp and ok then
+            ctl.undo = { fight = true, face = face, page = gamePage(), set = set, pos = pos, prevFight = prev, bind = b }
+            ack(true, b.id, nil, { pg = gamePage(), b = set, p = pos, fight = true }, probe) return nil
+        end
         local why = okp and fwhy or nil
         ack(false, b.id, (why == "combat" or why == "bind" or why == "dpad bar") and why or "failed", nil, probe)
         return why == "combat" and "combat" or "failed"
@@ -509,6 +574,7 @@ local function bindPress(key)
     local ok, info = CALL(function() return C_SpellBook.GetSpellBookItemInfo(b.slot, BOOK_BANK) end)
     local now = ok and type(info) == "table" and (TN(function() return info.spellID end) or TN(function() return info.actionID end))
     if now ~= b.id then ack(false, b.id, "unknown", nil, probe) return "unknown" end
+    local was = UNDO.read(storage)                                       -- b42: what B puts back
     CALL(function() return ClearCursor() end)
     CALL(function() return C_SpellBook.PickupSpellBookItem(b.slot, BOOK_BANK) end)
     local before = cursorKey()
@@ -520,6 +586,7 @@ local function bindPress(key)
     local after = cursorKey()
     CALL(function() return ClearCursor() end)
     if after == before then ack(false, b.id, "failed", nil, probe) return "failed" end
+    ctl.undo = { storage = storage, was = was, page = page, set = set, pos = pos, bind = b }
     ack(true, b.id, nil, { s = storage, pg = page, b = set, p = pos }, probe)
     return nil
 end
@@ -740,8 +807,11 @@ onPress = function(key)
         if (key == "PAD2" and plainNow()) or (key == backKey() and key ~= SELECT) then
             ctl.bind, ctl.mode = nil, "book"; backFor(false); report("bind-cancel") return
         end
+        ctl.undo = nil
         local why = bindPress(key)
         if why == "reserved" or why == "unsure" then report("bind-" .. why) return end    -- the box keeps waiting (SPEC 4)
+        -- b42: it took: the box asks (A keeps, B undoes); B must reach the room meanwhile
+        if not why and ctl.undo then ctl.bind, ctl.mode = nil, "confirm"; backFor(true); report("bound") return end
         -- placed, or refused for good: the box shows the answer for 1.5 s, then the book; B closes it at once (SPEC 4)
         ctl.bind, ctl.mode = nil, "result"
         ctl.resultN = (ctl.resultN or 0) + 1
@@ -750,6 +820,27 @@ onPress = function(key)
         C_Timer.After(1.5, function()
             if ctl.on and ctl.mode == "result" and ctl.resultN == n then ctl.mode = "book"; backFor(false); report("result-closed") end
         end)
+        return
+    end
+    if ctl.mode == "confirm" then
+        local u = ctl.undo
+        if key == "PAD1" then
+            ctl.undo, ctl.mode = nil, "book"; backFor(false); report("bind-kept") return
+        end
+        if (key == "PAD2" and plainNow()) or key == backKey() then
+            if not u then ctl.mode = "book"; backFor(false); report("bind-kept") return end
+            local ok, why = UNDO.put(u)
+            if ok then
+                ctl.undo, ctl.bind, ctl.mode = nil, u.bind, "bind"; backFor(true)
+                WC.send(WC.encode({ type = "spellsack", op = "unbind", v = BV, id = u.bind and u.bind.id, ok = true }))
+                report("bind-undone")
+            else
+                -- nothing changed: the box stays on the question (in a fight A still keeps it)
+                WC.send(WC.encode({ type = "spellsack", op = "unbind", v = BV, id = u.bind and u.bind.id, ok = false, why = why or "failed" }))
+                report("bind-undo-" .. (why or "failed"))
+            end
+            WC.push()
+        end
         return
     end
     if ctl.mode == "result" then

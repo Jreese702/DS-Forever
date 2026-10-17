@@ -124,9 +124,17 @@ class SpellsOverlay(
             if (boxSpell != c.binding || c.note == "bind-wait") { boxSpell = c.binding; result = null }
         }
         if (!c.on) { boxSpell = null; result = null }
+        // b42: B took the bind back: the box waits for a button again, and says so for a moment
+        if (c.on && c.note == "bind-undone") { result = null; undoneAt = SystemClock.uptimeMillis() }
+        if (c.on && c.note?.startsWith("bind-undo-") == true) { undoFail = c.note.removePrefix("bind-undo-"); undoFailAt = SystemClock.uptimeMillis() }
         if (boxOpen() && !was) startPad() else if (!boxOpen() && was) stopPad()
         tick()
     }
+
+    /** b42: when B last took a bind back (the box's line says so for [SHOW_MS]); a refused undo and when */
+    private var undoneAt = 0L
+    private var undoFail: String? = null
+    private var undoFailAt = 0L
 
     /** batch8: the add-on's padmap (Spells' PadMap): each button's In combat spell, for the box's In combat tab */
     private var padMap: PadMapModel.Map? = null
@@ -141,7 +149,7 @@ class SpellsOverlay(
     /** the box is up: the addon's box waits, or its answer shows */
     fun boxOpen(): Boolean {
         val c = ctl ?: return false
-        return c.on && (c.mode == "bind" || c.mode == "result")
+        return c.on && (c.mode == "bind" || c.mode == "result" || c.mode == "confirm")
     }
 
     private fun startPad() {
@@ -166,7 +174,7 @@ class SpellsOverlay(
         }
         visibility = if (boxOpen() || cardSpell != null) VISIBLE else GONE
         invalidate()
-        if (cardSpell != null || (result != null && now - resultAt < SHOW_MS) || queue.isNotEmpty())
+        if (cardSpell != null || (result != null && now - resultAt < SHOW_MS) || now - undoneAt < SHOW_MS || queue.isNotEmpty())
             postDelayed({ tick() }, 50)
     }
 
@@ -190,7 +198,8 @@ class SpellsOverlay(
         val st = style()
         val now = SystemClock.uptimeMillis()
         // the answer: while the addon shows it (mode "result"), or 1.5 s for one that keeps the box waiting (reserved, unsure)
-        val r = result?.takeIf { it.spellId == boxSpell && (ctl?.mode == "result" || now - resultAt < SHOW_MS) }
+        val confirming = ctl?.mode == "confirm"
+        val r = result?.takeIf { it.spellId == boxSpell && (ctl?.mode == "result" || confirming || now - resultAt < SHOW_MS) }
 
         // the line: the instruction, or the answer
         if (r != null && r.ok && r.pad != null) {
@@ -208,6 +217,10 @@ class SpellsOverlay(
             }
             val p = UiKit.bodyPaint(30f, colour).apply { textAlign = Paint.Align.CENTER }
             c.drawText(text, w / 2f, cy - (p.ascent() + p.descent()) / 2f, p)
+        } else if (now - undoneAt < SHOW_MS) {
+            // b42: B put back what was there: the box waits for a button again
+            val p = UiKit.bodyPaint(30f, Theme.warn).apply { textAlign = Paint.Align.CENTER }
+            c.drawText("Put back what was there. Press another button for:", w / 2f, cy - (p.ascent() + p.descent()) / 2f, p)
         } else {
             val p = UiKit.bodyPaint(30f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
             c.drawText("Press the button combination you want to use for:", w / 2f, cy - (p.ascent() + p.descent()) / 2f, p)
@@ -267,6 +280,19 @@ class SpellsOverlay(
         UiKit.triggerChip(c, RectF(w / 2f - 64f - 42f, tcy - 28f, w / 2f - 64f + 42f, tcy + 28f), "${tset}_ltrigger", lt)
         UiKit.triggerChip(c, RectF(w / 2f + 64f - 42f, tcy - 28f, w / 2f + 64f + 42f, tcy + 28f), "${tset}_rtrigger", rt)
         val back = faceGlyph(st, "b")
+        if (confirming && r != null && r.ok) {
+            // b42 (the user: "a confirm and it closes, b removes it and let's you keep binding"): the game's own question look (its
+            // StaticPopup), over the box's foot: Keep / Undo
+            val qb = RectF(w / 2f - 330f, box.bottom - 196f, w / 2f + 330f, box.bottom - 24f)
+            UiKit.dialog(c, qb)
+            val qp = UiKit.bodyPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
+            val failed = undoFail?.takeIf { now - undoFailAt < SHOW_MS }
+            val q = when (failed) { null -> "Keep this binding?"; "combat" -> "Can't undo in combat. Keep it?"; else -> "That couldn't be undone. Keep it?" }
+            c.drawText(q, qb.centerX(), qb.top + 64f, qp)
+            UiKit.hints(c, qb.centerX() + 180f, qb.bottom - 46f, UiKit.okGlyph() to "Keep", back to "Undo")
+            if (failed != null) postInvalidateDelayed(250L)
+            return
+        }
         if (r != null && r.ok) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Close")
         else if (!lt && !rt) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Back")
     }

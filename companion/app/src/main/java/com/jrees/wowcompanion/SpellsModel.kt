@@ -63,7 +63,7 @@ object SpellsModel {
         val selected: Int?,         // the spell under the glow
         val binding: Int?,          // the spell the Bind box waits for, when it is open
         val note: String?,
-        val mode: String = "book",  // "book", "bind" (the box waits), "result" (the box shows the answer)
+        val mode: String = "book",  // "book", "bind" (the box waits), "result" (the box shows the answer), "confirm" (Book b42: A keeps, B undoes)
         val talentsPage: Boolean = false,   // the controller drives the room's Talents page (Book.lua b3 `pg`)
         val backSelect: Boolean = false,    // the box's way back is SELECT (capture v4; the user 2026-09-30), B a place for a spell
         val ctrlTab: Boolean = false,       // the book's CONTROLLER TAB is lit or entered (Book.lua b4 `ctrl`)
