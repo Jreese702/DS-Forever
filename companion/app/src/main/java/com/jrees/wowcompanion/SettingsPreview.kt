@@ -1,5 +1,6 @@
 package com.jrees.wowcompanion
 
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -34,6 +35,13 @@ object SettingsPreview {
         val miniOutYd: Int = 80, val miniInYd: Int = 60, val quickChat: Boolean = true,
         val fpsLimit: Int = 40, val frameGen: Boolean = false, val multiplier: Int = 2, val flow: Float = 0.8f, val indoorBuild: Boolean = true,
     )
+
+    /**
+     * f-settings-previews (the user: "make our visual aids in the settings less shitty", then "Yes, this direction"): REAL MINIATURES - Home
+     * as our own views draw it ([PreviewStage]: an offscreen Home fed the game's latest documents) at a [HomeView.Companion.Look], in a
+     * fight or not, the DS toolbar on / off / as it is (null). null = not yet (no game documents): the row's own drawing stands in.
+     */
+    fun interface Live { fun home(look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?): Bitmap? }
 
     /** a button picture: [action] "a" "b" "x" "y" "start", in glyph set [set] (0 Nintendo, 1 Xbox, 2 PlayStation), centred, [size] px */
     fun interface Glyph { fun draw(c: Canvas, action: String, set: Int, cx: Float, cy: Float, size: Float) }
@@ -144,8 +152,11 @@ object SettingsPreview {
         Color.rgb(120, 70, 150), Color.rgb(170, 140, 50)) }
 
     /** row [id]'s picture in [r] at [tMs] for state [s]; [prev] + [sinceMs]: the state before the last change (a change glides) */
-    fun draw(c: Canvas, r: RectF, id: String, s: State, tMs: Long, glyph: Glyph, prev: State? = null, sinceMs: Long = Long.MAX_VALUE) {
+    fun draw(c: Canvas, r: RectF, id: String, s: State, tMs: Long, glyph: Glyph, prev: State? = null, sinceMs: Long = Long.MAX_VALUE,
+             live: Live? = null) {
         val t = tMs / 1000f
+        // the Home tab: the real Home in miniature where the stage has one (the row's own drawing until then)
+        if (live != null && liveHome(c, r, id, s, t, live)) return
         when (id) {
             "Controller on Home" -> homeLayout(c, r, s.diamonds)
             "Combat layout" -> combat(c, r, s.combatGrow, t)
@@ -215,7 +226,135 @@ object SettingsPreview {
         return Triple(map, chat, ctl)
     }
 
-    // ---- Home
+    // ---- Home: LIVE MINIATURES (f-settings-previews)
+
+    private fun look(s: State, rest: HomeRest? = null, grow: Boolean? = null, overMap: Boolean? = null, swing: Boolean? = null) =
+        HomeView.Companion.Look(rest ?: (if (s.diamonds) HomeRest.DIAMONDS else HomeRest.ROW), grow ?: s.combatGrow,
+            overMap ?: s.questOverMap, swing ?: s.swing)
+
+    private val pPic by lazy { Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG) }
+    private val pDim by lazy { Paint().apply { color = Color.argb(150, 8, 6, 4) } }
+
+    /**
+     * [bmp] fitted to [box]'s width at its top (its own shape), [crop] = the part of it shown (fractions of its height); [lit] true = the
+     * chosen one (a gold frame), false = the other (dimmed, a thin frame), null = alone. Returns where it went.
+     */
+    private fun mini(c: Canvas, box: RectF, bmp: Bitmap, lit: Boolean?, crop: Pair<Float, Float> = 0f to 1f, alpha: Int = 255): RectF {
+        val sy0 = (bmp.height * crop.first).toInt(); val sy1 = (bmp.height * crop.second).toInt()
+        val w = box.width(); val h = w * (sy1 - sy0) / bmp.width
+        val dst = RectF(box.left, box.top, box.right, box.top + h)
+        pPic.alpha = alpha
+        c.drawBitmap(bmp, android.graphics.Rect(0, sy0, bmp.width, sy1), dst, pPic)
+        pPic.alpha = 255
+        if (lit == false) c.drawRect(dst, pDim)
+        pStroke.strokeWidth = if (lit == true) 3f else 1.5f
+        pStroke.color = if (lit == true) GOLD else Color.argb(alpha, 90, 76, 52)
+        c.drawRect(dst, pStroke)
+        return dst
+    }
+
+    /** two choices stacked, each with its words over it; the chosen one lit */
+    private fun beforeAfter(c: Canvas, r: RectF, a: Bitmap, aWord: String, b: Bitmap, bWord: String, aChosen: Boolean,
+                            crop: Pair<Float, Float> = 0f to 1f): Boolean {
+        val gap = 14f; val label = 26f
+        val half = (r.height() - gap) / 2f
+        val ratio = a.width / (a.height * (crop.second - crop.first))
+        val w = minOf(r.width() - 20f, (half - label) * ratio)
+        val x0 = r.centerX() - w / 2f
+        for ((i, pair) in listOf(a to aWord, b to bWord).withIndex()) {
+            val top = r.top + i * (half + gap)
+            val chosen = (i == 0) == aChosen
+            text(c, pair.second, x0, top + 18f, 19f, if (chosen) GOLD else DIMC, Paint.Align.LEFT)
+            mini(c, RectF(x0, top + label, x0 + w, top + half), pair.first, chosen, crop)
+        }
+        return true
+    }
+
+    /** the Home tab's rows from the real Home; false = no picture yet (the row's own drawing then) */
+    private fun liveHome(c: Canvas, r: RectF, id: String, s: State, t: Float, live: Live): Boolean {
+        when (id) {
+            // a look: before / after, the chosen one lit
+            "Controller on Home" -> {
+                val a = live.home(look(s, rest = HomeRest.DIAMONDS), false, null) ?: return false
+                val b = live.home(look(s, rest = HomeRest.ROW), false, null) ?: return false
+                return beforeAfter(c, r, a, "Diamonds", b, "Thin row", s.diamonds)
+            }
+            "Focused quest" -> {
+                val a = live.home(look(s, overMap = true), false, null) ?: return false
+                val b = live.home(look(s, overMap = false), false, null) ?: return false
+                return beforeAfter(c, r, a, "Above Minimap", b, "Above Chat", s.questOverMap)
+            }
+            // the swing line is the fight's: both in a fight, only the controller's band shown
+            "Swing timer" -> {
+                val a = live.home(look(s, swing = true), true, null) ?: return false
+                val b = live.home(look(s, swing = false), true, null) ?: return false
+                return beforeAfter(c, r, a, "On: the swing line under the buttons", b, "Off: the cast bar alone", s.swing, 0f to 0.42f)
+            }
+            "DS WoW toolbar" -> {
+                val on = s.toolbar ?: return false
+                val a = live.home(look(s), false, true) ?: return false
+                val b = live.home(look(s), false, false) ?: return false
+                return beforeAfter(c, r, a, "On: the plain D-pad is the toolbar", b, "Off: your own D-pad slots", on, 0f to 0.32f)
+            }
+            // a behaviour: the real controller band; a cast's press, then the auto-attack's crossed swords light (On) or stay dark (Off)
+            "Start the attack when a spell is cast" -> {
+                val on = s.startAttack ?: return false
+                val band = live.home(look(s), false, null) ?: return false
+                val box = RectF(r.left + 10f, r.top + 10f, r.right - 10f, r.bottom)
+                val dst = mini(c, box, band, null, 0f to 0.3f)
+                val k = t % 2.4f
+                val press = if (k < 0.3f) 1f - k / 0.3f else 0f
+                val cy = dst.bottom + 110f
+                // the press: a gold ring blooming on the bar, then the arrow to the swords
+                pStroke.color = Color.argb((255 * (0.35f + 0.65f * press)).toInt(), 255, 209, 0); pStroke.strokeWidth = 4f
+                c.drawCircle(r.centerX() - 110f, cy, 34f + 10f * press, pStroke)
+                text(c, "a harmful spell", r.centerX() - 110f, cy + 66f, 18f)
+                pStroke.color = DIMC; pStroke.strokeWidth = 3f
+                c.drawLine(r.centerX() - 60f, cy, r.centerX() + 40f, cy, pStroke)
+                c.drawLine(r.centerX() + 40f, cy, r.centerX() + 28f, cy - 10f, pStroke)
+                c.drawLine(r.centerX() + 40f, cy, r.centerX() + 28f, cy + 10f, pStroke)
+                val lit = on && k in 0.35f..2.1f
+                val sw = UiKit.tex("combat_swords")
+                if (sw != null) {
+                    pPic.alpha = if (lit) 255 else 90
+                    c.drawBitmap(sw, null, RectF(r.centerX() + 70f, cy - 36f, r.centerX() + 150f, cy + 36f), pPic)
+                    pPic.alpha = 255
+                } else swords(c, r.centerX() + 110f, cy, 34f, if (lit) GOLD else Theme.bronzeDim)
+                text(c, if (on) "your auto-attack starts" else "no auto-attack", r.centerX() + 110f, cy + 66f, 18f, if (lit) GOLD else DIMC)
+                return true
+            }
+            // a behaviour: a loop, rest -> the fight -> rest, at the choice made (Grow or Same size)
+            "Combat layout" -> {
+                val rest = live.home(look(s), false, null) ?: return false
+                val fight = live.home(look(s), true, null) ?: return false
+                val p = t % 4.4f
+                val k = when { p < 1.2f -> 0f; p < 1.6f -> ease((p - 1.2f) / 0.4f); p < 3.4f -> 1f; p < 3.8f -> 1f - ease((p - 3.4f) / 0.4f); else -> 0f }
+                val box = RectF(r.left + 10f, r.top + 6f, r.right - 10f, r.bottom - 60f)
+                val dst = mini(c, box, rest, null)
+                if (k > 0f) {
+                    pPic.alpha = (255 * k).toInt(); c.drawBitmap(fight, null, dst, pPic); pPic.alpha = 255
+                    pStroke.color = Color.argb((220 * k).toInt(), 200, 40, 30); pStroke.strokeWidth = 4f; c.drawRect(dst, pStroke)
+                }
+                chip(c, dst.left + 6f, dst.bottom + 14f, "Out of combat", k < 0.5f)
+                chip(c, dst.left + 186f, dst.bottom + 14f, "In a fight", k >= 0.5f)
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun ease(x: Float): Float { val v = x.coerceIn(0f, 1f); return v * v * (3f - 2f * v) }
+
+    /** a word in a small plate, gold when it is the state shown */
+    private fun chip(c: Canvas, x: Float, y: Float, word: String, on: Boolean) {
+        pText.textSize = 18f
+        val w = pText.measureText(word) + 26f
+        val box = RectF(x, y, x + w, y + 32f)
+        frame(c, box, if (on) GOLD else Color.rgb(70, 60, 45), 2f, if (on) Color.rgb(46, 36, 17) else Color.rgb(24, 20, 16))
+        text(c, word, box.centerX(), box.centerY() + 6f, 18f, if (on) GOLD else DIMC)
+    }
+
+    // ---- Home: the rows' own drawings (until the stage has a picture)
 
     private fun homeLayout(c: Canvas, r: RectF, diamonds: Boolean) {
         val h = RectF(r.left + 10f, r.top + 10f, r.right - 10f, r.bottom - 10f)
