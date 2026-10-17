@@ -2641,6 +2641,8 @@ class MapView(context: Context) : View(context) {
     private val TAKEN_YD = 300.0                              // a learned ride this near both docks is that ride, taken
     private val ridesSkipped = HashSet<String>()             // each skip logged once a run
     var zoneAt: ((Int, Double, Double) -> String?)? = null
+    /** every zone whose world rectangle holds a point (continent, wx, wy): the multi-hop route's "the quest is a walk from here" */
+    var zonesAt: ((Int, Double, Double) -> List<Int>)? = null
     private var rides: List<TransportRoutes.Ride> = emptyList()
     private var ridesStamp = -1L
     private fun rides(): List<TransportRoutes.Ride> {
@@ -2703,6 +2705,81 @@ class MapView(context: Context) : View(context) {
         val gone = l.purge(maps) { !isZoneMap(it) }
         if (gone > 0) { android.util.Log.i("WCMAP", "route: $gone learned ways from / to a continent map dropped"); routeEpoch++ }
     }
+
+    // ---- MORE THAN ONE WAY OUT (b-route-multihop): every known way of the continent as one graph's hops (MultiHop)
+    private var hopsKey = ""
+    private var hopsCache: List<MultiHop.Hop> = emptyList()
+    /** the continent's hops in world yards: the learned crossings and rides of every map on it, and the measured table's */
+    private fun continentHops(cont: Int): List<MultiHop.Hop> {
+        val key = "$cont:$routeEpoch"
+        if (key == hopsKey) return hopsCache
+        val out = ArrayList<MultiHop.Hop>()
+        val l = exitLearner()
+        val prefs = runCatching { context.getSharedPreferences("cityexits", Context.MODE_PRIVATE) }.getOrNull()
+        val maps = prefs?.all?.keys?.mapNotNull { it.removePrefix("x:").toIntOrNull() } ?: emptyList()
+        fun onCont(id: Int) = worldOf?.invoke(id)?.let { it.valid && it.continent == cont } == true
+        fun name(id: Int) = mapName?.invoke(id)?.takeIf { it.isNotEmpty() } ?: "map $id"
+        val learnedFrom = HashMap<Int, MutableSet<Int>>()
+        if (l != null) for (from in maps) {
+            if (!isZoneMap(from) || !onCont(from)) continue
+            for (e in l.of(from)) {
+                if (!isZoneMap(e.toMap) || !onCont(e.toMap)) continue
+                if (e.transport && e.toWx.isNaN()) continue
+                learnedFrom.getOrPut(from) { HashSet() }.add(e.toMap)
+                val bx = if (e.transport) e.toWx else e.wx; val by = if (e.transport) e.toWy else e.wy
+                out.add(MultiHop.Hop(from, e.wx, e.wy, e.toMap, bx, by, e.rideYd,
+                    if (e.transport) "Ride to ${name(e.toMap)}" else "To ${name(e.toMap)}", "l:$from>${e.toMap}:${e.wx.toInt()}:${e.wy.toInt()}"))
+            }
+        }
+        for (e in CityExits.TABLE) {
+            if (learnedFrom[e.map]?.contains(e.toMap) == true) continue
+            val w = worldOf?.invoke(e.map)?.takeIf { it.valid && it.continent == cont } ?: continue
+            val tw = worldOf?.invoke(e.toMap)?.takeIf { it.valid && it.continent == cont } ?: continue
+            val ax = w.wx(e.y); val ay = w.wy(e.x)
+            val tx = if (e.toX.isNaN()) 0.5 else e.toX; val ty = if (e.toY.isNaN()) 0.5 else e.toY
+            out.add(MultiHop.Hop(e.map, ax, ay, e.toMap, tw.wx(ty), tw.wy(tx), e.rideYd, "${e.name} to ${name(e.toMap)}", "t:${e.map}>${e.toMap}"))
+        }
+        hopsKey = key; hopsCache = out
+        return out
+    }
+
+    /** the multi-hop route for quest [q] at world [farW] ([continent, wx, wy]): its first hop on this map, or null (no chain, or the
+     *  quest is a walk from here: the one-map choice stands) */
+    private fun chainRoute(q: Int, mapId: Int, r: PoiStore.Rect, m: JSONObject, farW: DoubleArray): CursorRoute.Route? {
+        val za = zonesAt ?: return null
+        val pwx = m.optDouble("wx", Double.NaN); val pwy = m.optDouble("wy", Double.NaN)
+        if (pwx.isNaN() || pwy.isNaN() || farW.size < 3 || farW[0].toInt() != r.continent) return null
+        val cont = r.continent
+        val goalZones = za(cont, farW[1], farW[2]).toSet()
+        if (goalZones.isEmpty()) return null
+        val p = MultiHop.plan(mapId, pwx, pwy, farW[1], farW[2], continentHops(cont), { _, wx, wy -> za(cont, wx, wy).any { it in goalZones } })
+            ?: return null
+        if (p.hops.isEmpty()) return null
+        val first = p.hops[0]
+        val at = here(r, first.ax, first.ay)
+        val label = if (p.hops.size == 1) first.label else "${first.label}, then ${p.hops[1].label.let { l -> if (l.startsWith("To ") || l.startsWith("Ride ")) l.replaceFirstChar { it.lowercase() } else l }}"
+        return CursorRoute.Route(CursorRoute.Kind.EXIT, at[0], at[1], label, "mh:${first.key}",
+            "the chain ${p.describe()} (${p.cost.toInt()} yd)")
+    }
+
+    /**
+     * THE EDGE, ONLY WHERE ONE CAN WALK OUT (b-route-multihop; test51: north out of Elwynn over the mountains): with the zone's slope
+     * grid (Terrain), the edge toward the quest slides along the border to the nearest stretch whose ground, a few cells in, is no
+     * climb ([Terrain.STEEP]); none within [EDGE_SLIDE_YD] = no edge at all (no line rather than one over a mountain).
+     */
+    private fun walkableEdge(q: Int, mapId: Int, r: PoiStore.Rect, route: CursorRoute.Route): CursorRoute.Route? {
+        val g = Terrain.of(mapId) ?: return route
+        val p = EdgeWalk.slide(route.x, route.y, r.width, r.height, EDGE_SLIDE_YD) { x, y ->
+            Terrain.factor(g.at(r.top - y * r.height, r.left - x * r.width)) < Terrain.STEEP
+        }
+        if (p != null && p[2] == 0.0) return route
+        val why = if (p != null) "the edge toward the quest, slid ${p[2].toInt()} yd along the border to walkable ground"
+            else "no walkable border within ${EDGE_SLIDE_YD.toInt()} yd of the edge toward the quest: no line over the mountains"
+        if (edgeLogged[q] != why) { edgeLogged[q] = why; android.util.Log.i("WCMAP", "route: quest $q on map $mapId: $why") }
+        return p?.let { route.copy(x = it[0], y = it[1], key = "edge:${Math.round(it[0] * 200)}:${Math.round(it[1] * 200)}", why = why) }
+    }
+    private val edgeLogged = HashMap<Int, String>()
+    private val EDGE_SLIDE_YD = 600.0
 
     /** the crossings this device has learned out of [mapId] (any map, on any continent: CityExits.Learner) */
     private fun learnedWays(mapId: Int, r: PoiStore.Rect): List<CityExits.Way> = (exitLearner()?.of(mapId) ?: emptyList()).filter { isZoneMap(it.toMap) }.mapNotNull { e ->
@@ -3996,8 +4073,14 @@ class MapView(context: Context) : View(context) {
                 if (!e.learned) e.name
                 else mapName?.invoke(e.toMap)?.takeIf { it.isNotEmpty() }?.let { if (e.transport) "Ride to $it" else "To $it" }
             }, cameFrom = backRule, keep = routeKeep[q]) { i, j -> TaxiNet.connected(i, j) }
+        // MORE THAN ONE WAY OUT (b-route-multihop, test51: from Elwynn to an Ironforge quest the line went north over the mountains
+        // instead of Stormwind's gate, then the tram): the continent's known ways chained, when the quest is no walk from here
+        val chained = if (planned != null && planned.kind != CursorRoute.Kind.FLIGHT && planned.kind != CursorRoute.Kind.GOAL && fw != null)
+            chainRoute(q, mapId, r, m, fw) ?: planned else planned
+        // the edge toward the quest only where the ground lets anyone walk out (b-route-multihop: never over a mountain border)
+        val planned2 = if (chained?.key == "edge") walkableEdge(q, mapId, r, chained) else chained
         // a step on the way (a gate, a tram, a flight, the edge): where the way goes on from it, for its faint continuation
-        val route = planned?.let { p -> if (p.kind != CursorRoute.Kind.GOAL && far != null) p.copy(then = far) else p }
+        val route = planned2?.let { p -> if (p.kind != CursorRoute.Kind.GOAL && far != null) p.copy(then = far) else p }
         // the choice, logged when it changes (for the next log read: "route: chose <way> (cost) over <runner-up>")
         val k = route?.key
         if (k != null && routeKeep[q] != k) {
