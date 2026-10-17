@@ -3008,7 +3008,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (pad.optJSONObject("rows")?.has(RouteWaypoint.ROW) != true) return          // an older add-on: no pin at all
         val cols = routeWp.tick(mapView.routePin(), SystemClock.elapsedRealtime())
         if (cols.isEmpty()) return
-        Log.i("WCMAP", "route pin: tap $cols")
+        Log.i("WCMAP", "route pin: tap $cols (${mapView.pinWhy})")
         TapBridge.taps(this, pad, cols.map { RouteWaypoint.ROW to it }) { why -> Log.i("WCMAP", "route pin: tap failed: $why") }
     }
 

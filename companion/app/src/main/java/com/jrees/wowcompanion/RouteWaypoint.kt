@@ -15,6 +15,7 @@ class RouteWaypoint {
     private var sentX = Double.NaN; private var sentY = Double.NaN
     private var setAt = Long.MIN_VALUE / 2; private var keepAt = Long.MIN_VALUE / 2
     private var refusedUntil = Long.MIN_VALUE / 2
+    private var noneSince = Long.MIN_VALUE
 
     /**
      * One look at the route at [nowMs]: [want] = the pin's place on the player's map (0..1), null = no pin. Returns the row's columns
@@ -23,9 +24,13 @@ class RouteWaypoint {
     fun tick(want: DoubleArray?, nowMs: Long): List<Int> {
         if (want == null) {
             if (!active) return emptyList()
-            active = false; sentX = Double.NaN; sentY = Double.NaN
+            // test48: not cleared at the first empty look (a route flickering for a moment); only after CLEAR_GRACE_MS of none
+            if (noneSince == Long.MIN_VALUE) noneSince = nowMs
+            if (nowMs - noneSince < CLEAR_GRACE_MS) return emptyList()
+            active = false; sentX = Double.NaN; sentY = Double.NaN; noneSince = Long.MIN_VALUE
             return listOf(CLEAR)
         }
+        noneSince = Long.MIN_VALUE
         if (nowMs < refusedUntil) return emptyList()
         val moved = !active || abs(want[0] - sentX) > MOVE || abs(want[1] - sentY) > MOVE
         if (moved && nowMs - setAt >= SET_EVERY_MS) {
@@ -46,7 +51,8 @@ class RouteWaypoint {
         const val SET = 36; const val KEEP = 37; const val CLEAR = 39
         const val ROW = "uwp"
         const val MOVE = 0.004               // of the map: a smaller change is not worth a new pin
-        const val SET_EVERY_MS = 2_000L
+        const val SET_EVERY_MS = 5_000L      // test48: a pin moves at most every 5 s (it was 2: it churned)
+        const val CLEAR_GRACE_MS = 8_000L    // no target this long before the pin is cleared
         const val KEEP_EVERY_MS = 20_000L    // well inside Map.lua's 60 s KEEP_S
         const val REFUSED_MS = 60_000L
 

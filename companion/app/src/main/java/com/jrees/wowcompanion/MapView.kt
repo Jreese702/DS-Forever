@@ -3612,10 +3612,20 @@ class MapView(context: Context) : View(context) {
         if (Settings.questTracking == "questtrail") return null        // QuestTrail super-tracks its own pick (b-route-questtrail)
         if (focusQid <= 0 || m.optInt("onTaxi", 0) == 1) return null
         val r = routeFor(focusQid) ?: return null
+        // test48 (the user: "The tracker wants me to go off the safe path straight into mobs"): the game's pin stands on the NEXT
+        // CHECKPOINT - the first bend round danger or a slope - so the top screen's arrow follows the safe way; on to the next as
+        // each is passed (DangerGrid.passed). No bend: the step's own way, as before.
+        dangerLeg(focusQid, r)?.let { leg ->
+            pinWhy = "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}"
+            return leg[1]
+        }
         if (r.kind == CursorRoute.Kind.GOAL) return null
         if (r.x !in 0.0..1.0 || r.y !in 0.0..1.0) return null
+        pinWhy = "the step: ${r.label ?: r.kind.name.lowercase()}"
         return doubleArrayOf(r.x, r.y)
     }
+    /** why the pin stands where [routePin] said last (the host logs it with each tap) */
+    var pinWhy = ""; private set
 
     // ---- POLESTAR AS THE ROUTER (b-route-polestar; Settings' "Quest tracking: Polestar"): the host taps the goal to Polestar
     // (PolestarNav, Map.lua's row "pnav") and hands its route back here; the line follows Polestar's walking route for the focused
@@ -3863,6 +3873,8 @@ class MapView(context: Context) : View(context) {
     private var mapNow = 0
     private var cameFrom = 0
     private val routeKeep = HashMap<Int, String>()
+    private val farKeep = HashMap<Int, DoubleArray>()          // each quest's spot chosen last (its hysteresis)
+    private val SPOT_STICK = 1.25
     private fun noteMapChange(id: Int) {
         if (id == 0 || id == mapNow || !isZoneMap(id)) return       // test42: never a continent as "came from"
         if (mapNow != 0) cameFrom = mapNow
@@ -3883,7 +3895,15 @@ class MapView(context: Context) : View(context) {
         var farW: DoubleArray? = null
         val allSpots = offMapSpots?.invoke(q) ?: emptyList()
         allSpots.let { spots ->
-            WorldMapModel.nearestWorld(spots, r.continent, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN))?.let { best ->
+            val pwx = m.optDouble("wx", Double.NaN); val pwy = m.optDouble("wy", Double.NaN)
+            // test48 (the pin flipping every few seconds between a spot north and one south of the player): the spot chosen before
+            // stays while it is no more than [SPOT_STICK] farther than the nearest
+            val nearest = WorldMapModel.nearestWorld(spots, r.continent, pwx, pwy)
+            val kept = farKeep[q]?.let { k -> spots.firstOrNull { it.size >= 3 && it[0] == k[0] && abs(it[1] - k[1]) < 1.0 && abs(it[2] - k[2]) < 1.0 } }
+            val pick = if (nearest != null && kept != null && !pwx.isNaN() &&
+                hypot(kept[1] - pwx, kept[2] - pwy) <= hypot(nearest[1] - pwx, nearest[2] - pwy) * SPOT_STICK) kept else nearest
+            pick?.let { farKeep[q] = it }
+            pick?.let { best ->
                 val fx = r.nx(best[2]); val fy = r.ny(best[1])
                 if (fx in 0.0..1.0 && fy in 0.0..1.0) { if (goals.isEmpty()) goals.add(doubleArrayOf(fx, fy)) } else { far = doubleArrayOf(fx, fy); farW = best }
             }
@@ -5472,6 +5492,34 @@ class MapView(context: Context) : View(context) {
             if (leg == null && qtOn && cursor.sel == focusQid) dangerWarn(c, listOf(doubleArrayOf(px, py), doubleArrayOf(route.x, route.y)), "QuestTrail", ::sx, ::sy)
             c.restoreToCount(save)
         } else pathFor = 0
+        // ---- HOME'S SMALL MAP: the focused quest's checkpoints too (test48: "I cannot see the checkpoint flags when the map module
+        // is not full screen") - the flags, the stretch to the next one, faint dots past it; no words (the arrow and the module say them)
+        if (compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN() && focusQid > 0 && Settings.questTracking == "vanilla") {
+            routeFor(focusQid)?.let { r0 ->
+                val leg = dangerLeg(focusQid, r0)
+                val cps = ArrayList<DoubleArray>()
+                if (leg != null) for (i in 1 until leg.size) cps.add(leg[i]) else cps.add(doubleArrayOf(r0.x, r0.y))
+                val stepAt = cps.size - 1
+                if (leg != null || r0.kind != CursorRoute.Kind.GOAL) {
+                    val nb = top + compactTop()
+                    val save = c.save()
+                    c.clipRect(left, nb, left + fw, top + fh)
+                    var fx = sx(px); var fy = sy(py)
+                    for ((i, cp) in cps.withIndex()) {
+                        val dim = CHECKPOINT_DIM.getOrElse(i) { 0f }
+                        if (dim <= 0f) break
+                        drawStretch(c, fx, fy, sx(cp[0]), sy(cp[1]), dim)
+                        fx = sx(cp[0]); fy = sy(cp[1])
+                    }
+                    for (i in (0..stepAt).reversed()) {
+                        if (i == stepAt && r0.kind == CursorRoute.Kind.GOAL) continue
+                        val x = sx(cps[i][0]); val y = sy(cps[i][1])
+                        if (x in left..(left + fw) && y in nb..(top + fh)) drawFlag(c, x, y, next = i == 0)
+                    }
+                    c.restoreToCount(save)
+                }
+            }
+        }
         dangerNote?.let { n ->
             val np = UiKit.bodyPaint(18f, Color.rgb(255, 170, 150)).apply { setShadowLayer(3f, 0f, 0f, Color.BLACK) }
             c.drawText(n, left + 16f, top + fh - 48f - (if (hintsOn()) HINT_BAND else 0f), np)
