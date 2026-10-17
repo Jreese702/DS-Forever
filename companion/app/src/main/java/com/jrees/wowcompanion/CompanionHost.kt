@@ -520,6 +520,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         mapView.zonesAt = { c, wx, wy -> worldMapRoom.model.zonesAt(c, wx, wy) }          // the multi-hop route's "a walk from here"
         mapView.zoneIdAt = { c, wx, wy -> worldMapRoom.model.zoneAt(c, wx, wy)?.id }      // a dock's / flight master's map (b-travel-layer)
         worldMapRoom.travelScene = { mapView.travelScene() }                              // the travel layer in the room (b-travel-layer)
+        // off-thread loads (test56's ANRs): the views drawn again once a zone file or a picture has arrived
+        TravelPaint.onArt = { mapView.postInvalidate(); worldMapRoom.postInvalidate() }
+        Terrain.files.onLoaded { mapView.postInvalidate() }
+        Roads.files.onLoaded { mapView.postInvalidate() }
         mapView.onProbeOptions = { bits -> worldMapRoom.sendProbeOptions(bits) }   // Map: the minimap probe's options to the add-on
         worldMapRoom.onLeave = { show(Room.HOME) }
         worldMapRoom.onFocusQuest = { id -> homeView.focusQuest(id) { } }
