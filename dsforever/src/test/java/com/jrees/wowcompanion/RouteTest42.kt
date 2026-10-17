@@ -53,3 +53,16 @@ class RouteTest42 {
         assertEquals(0, l.purge(listOf(1415, 1453), notZone))               // once is enough
     }
 }
+
+/** test42 bug 2: a dock's zone is the one it lies deepest inside, not the smallest box holding it */
+class DockZoneTest {
+    @Test fun aCoastDockIsNamedByTheZoneItIsIn() {
+        val m = WorldMapModel()
+        // Auberdine's dock (6406, 823) on Kalimdor: inside Darkshore's box near its middle, and at the corner of Felwood's smaller box
+        fun idx(id: Int, name: String, t: Double, b: Double, l: Double, r: Double) = m.addIndex(org.json.JSONObject()
+            .put("uiMapID", id).put("name", name).put("mapType", 3).put("rect", org.json.JSONArray().put(1).put(t).put(b).put(l).put(r)))
+        idx(1439, "Darkshore", 7500.0, 5000.0, 2000.0, -500.0)
+        idx(1448, "Felwood", 6500.0, 4800.0, 900.0, -900.0)
+        assertEquals("Darkshore", m.zoneAt(1, 6406.0, 823.0)?.name)
+    }
+}
