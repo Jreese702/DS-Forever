@@ -37,6 +37,20 @@ object PreviewStage {
     /** something to show (the panel draws its own diagram until the game has sent a full document) */
     val ready get() = full != null
 
+    /** the map module's box in the last picture, as fractions of it (the minimap rows crop it), null = none yet */
+    var mapBox: android.graphics.RectF? = null
+        private set
+
+    /** the companion's own keyboard, drawn at [w] x [h] (the Message input row): a board of its own, never wired to anything */
+    private var kb: ChatKeyboard? = null
+    fun keyboard(ctx: Context, c: Canvas, w: Float, h: Float) {
+        val k = kb ?: ChatKeyboard(ctx).also { it.open(); kb = it }
+        val fh = ChatKeyboard.fullHeight()
+        k.measure(View.MeasureSpec.makeMeasureSpec(1240, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(fh, View.MeasureSpec.EXACTLY))
+        k.layout(0, 0, 1240, fh)
+        c.save(); c.scale(w / 1240f, h / fh); k.draw(c); c.restore()
+    }
+
     /** the player's own item / spell wheel lists (the host's HomeRadialView) */
     var wheelItems: (spell: Boolean) -> List<UiKit.RadialItem?> = { emptyList() }
 
@@ -100,6 +114,7 @@ object PreviewStage {
             lay(t)
             t.home.previewSettle(look)
             lay(t)
+            t.home.previewMapRect()?.let { m -> mapBox = android.graphics.RectF(m.left / W, m.top / H, m.right / W, m.bottom / H) }
             val b = Bitmap.createBitmap((W * SCALE).toInt(), (H * SCALE).toInt(), Bitmap.Config.ARGB_8888)
             val c = Canvas(b)
             c.scale(SCALE, SCALE)
