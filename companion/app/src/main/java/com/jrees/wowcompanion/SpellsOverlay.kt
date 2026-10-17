@@ -58,7 +58,8 @@ class SpellsOverlay(
     /** batch5 (the user: tabs "above where it says 'no triggers held' (that text can be removed)"): the two tabs where that line stood,
      *  side by side in the box's middle; [i] 0 Normal, 1 In combat */
     private fun fightRect(i: Int, w: Float): RectF {
-        val cy = 84f + 104f + 206f
+        // the user on test21: "the tabs for in combat vs not should be at the top, then the forms under that ... and the skill under that"
+        val cy = 84f + 62f
         val l = w / 2f - 330f + i * 336f
         return RectF(l, cy - 38f, l + 324f, cy + 38f)
     }
@@ -124,9 +125,17 @@ class SpellsOverlay(
             if (boxSpell != c.binding || c.note == "bind-wait") { boxSpell = c.binding; result = null }
         }
         if (!c.on) { boxSpell = null; result = null }
+        // b42: B took the bind back: the box waits for a button again, and says so for a moment
+        if (c.on && c.note == "bind-undone") { result = null; undoneAt = SystemClock.uptimeMillis() }
+        if (c.on && c.note?.startsWith("bind-undo-") == true) { undoFail = c.note.removePrefix("bind-undo-"); undoFailAt = SystemClock.uptimeMillis() }
         if (boxOpen() && !was) startPad() else if (!boxOpen() && was) stopPad()
         tick()
     }
+
+    /** b42: when B last took a bind back (the box's line says so for [SHOW_MS]); a refused undo and when */
+    private var undoneAt = 0L
+    private var undoFail: String? = null
+    private var undoFailAt = 0L
 
     /** batch8: the add-on's padmap (Spells' PadMap): each button's In combat spell, for the box's In combat tab */
     private var padMap: PadMapModel.Map? = null
@@ -141,7 +150,7 @@ class SpellsOverlay(
     /** the box is up: the addon's box waits, or its answer shows */
     fun boxOpen(): Boolean {
         val c = ctl ?: return false
-        return c.on && (c.mode == "bind" || c.mode == "result")
+        return c.on && (c.mode == "bind" || c.mode == "result" || c.mode == "confirm")
     }
 
     private fun startPad() {
@@ -166,7 +175,7 @@ class SpellsOverlay(
         }
         visibility = if (boxOpen() || cardSpell != null) VISIBLE else GONE
         invalidate()
-        if (cardSpell != null || (result != null && now - resultAt < SHOW_MS) || queue.isNotEmpty())
+        if (cardSpell != null || (result != null && now - resultAt < SHOW_MS) || now - undoneAt < SHOW_MS || queue.isNotEmpty())
             postDelayed({ tick() }, 50)
     }
 
@@ -190,13 +199,19 @@ class SpellsOverlay(
         val st = style()
         val now = SystemClock.uptimeMillis()
         // the answer: while the addon shows it (mode "result"), or 1.5 s for one that keeps the box waiting (reserved, unsure)
-        val r = result?.takeIf { it.spellId == boxSpell && (ctl?.mode == "result" || now - resultAt < SHOW_MS) }
+        val confirming = ctl?.mode == "confirm"
+        // b43: the form row (In combat, a character with forms) takes the box's top line: the instruction moves down under it
+        val rowOn = !confirming && padMap?.forms?.isNotEmpty() == true && (fightShown() || padMap?.stance != null)
+        // the box, top to bottom (the user on test21): the tabs, the form row, the spell, then ONE line for an answer (no instruction)
+        val spellTop = box.top + (if (rowOn) 186f else 128f)
+        val ly = box.top + 296f
+        val r = result?.takeIf { it.spellId == boxSpell && (ctl?.mode == "result" || confirming || now - resultAt < SHOW_MS) }
 
         // the line: the instruction, or the answer
         if (r != null && r.ok && r.pad != null) {
             val p = UiKit.bodyPaint(32f, Color.rgb(30, 255, 0)).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(if (r.fight) "In combat on" else "Bound to", w / 2f - 60f, cy - (p.ascent() + p.descent()) / 2f, p)
-            drawCombo(c, SpellsModel.combo(r.pad, st), w / 2f - 40f, cy, 64f, Theme.text, true)
+            c.drawText(if (r.fight) "In combat on" else "Bound to", w / 2f - 60f, ly - (p.ascent() + p.descent()) / 2f, p)
+            drawCombo(c, SpellsModel.combo(r.pad, st), w / 2f - 40f, ly, 64f, Theme.text, true)
         } else if (r != null && !r.ok) {
             val (text, colour) = when (r.why) {
                 "combat" -> "Not while in combat" to Theme.unusable
@@ -204,23 +219,24 @@ class SpellsOverlay(
                 "bind" -> "A game key rides that button: clear it first" to Theme.unusable        // b37: In combat
                 "dpad bar" -> "The DS toolbar has the plain D-pad: hold a trigger" to Theme.unusable
                 "unsure" -> "Press it again" to Theme.warn
+                "form-unknown" -> "Shift into that form once so the game shows its bar" to Theme.warn       // b44
                 else -> "That did not work" to Theme.unusable
             }
             val p = UiKit.bodyPaint(30f, colour).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(text, w / 2f, cy - (p.ascent() + p.descent()) / 2f, p)
-        } else {
-            val p = UiKit.bodyPaint(30f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("Press the button combination you want to use for:", w / 2f, cy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(text, w / 2f, ly - (p.ascent() + p.descent()) / 2f, p)
+        } else if (now - undoneAt < SHOW_MS) {
+            // b42: B put back what was there: the box waits for a button again
+            val p = UiKit.bodyPaint(30f, Theme.warn).apply { textAlign = Paint.Align.CENTER }
+            c.drawText("Put back what was there. Press another button", w / 2f, ly - (p.ascent() + p.descent()) / 2f, p)
         }
 
         // the spell
         if (e != null) {
             val pn = UiKit.bodyPaint(40f, Theme.gold)
             val bx = w / 2f - (pn.measureText(e.name) + 104f) / 2f
-            UiKit.slot(c, Icons.get(e.icon), bx, cy + 46f, 84f)
-            c.drawText(e.name, bx + 104f, cy + 88f - (pn.ascent() + pn.descent()) / 2f, pn)
+            UiKit.slot(c, Icons.get(e.icon), bx, spellTop, 84f)
+            c.drawText(e.name, bx + 104f, spellTop + 42f - (pn.ascent() + pn.descent()) / 2f, pn)
         }
-        UiKit.divider(c, box.left + 90f, cy + 166f, box.right - 90f, cy + 166f)
 
         // which set: the triggers held now (the app's own read-only controller reader, as the Cast room's)
         // once a button took the spell, the box shows THAT set with the button lit (SPEC 4: "ZR held" in the bound picture)
@@ -249,7 +265,15 @@ class SpellsOverlay(
         // Home's own drawing either way (tracking for the user: "identical look, only the spells and swords change"): CastView.drawSet
         // with each button's fight spell; the stand-ins only until the Cast room has its first layout
         val m = padMap
-        val fight: ((Int) -> Int?)? = if (f && m != null) { p -> fightIcon(m, set, p) } else null
+        // b43: a form chosen (the form row, Select) shows that form's own fight spells on the bare set (B never); none = an empty slot
+        val form = ctl?.bindForm?.takeIf { f && set == 1 && m?.forms?.any { fo -> fo.id == it } == true }
+        // b44 (the user's pick A): Normal, a form chosen, the set the game lays its form bar over = that form's own bar (empty = empty)
+        val nForm = ctl?.bindForm?.takeIf { !f && m?.stance?.set == set && m.forms.any { fo -> fo.id == it } }
+        val fight: ((Int) -> Int?)? = if (f && m != null) { p ->
+            if (form != null && p != 7) PadMapModel.formFight(m, form, p)?.icon else fightIcon(m, set, p)
+        } else if (nForm != null && m != null) { p -> m.formBars.firstOrNull { it.form == nForm && it.pos == p }?.icon }
+        else null
+        if (m != null && m.forms.isNotEmpty() && (f || m.stance != null)) formRow(c, w, box, m, b, st)
         val drawn = try { drawSet(c, set, dpad, face, lit.takeIf { it > 0 }, icon, fight) } catch (_: Throwable) { false }
         if (!drawn) standIns(c, dpad, face, lit, icon, st)
 
@@ -267,8 +291,48 @@ class SpellsOverlay(
         UiKit.triggerChip(c, RectF(w / 2f - 64f - 42f, tcy - 28f, w / 2f - 64f + 42f, tcy + 28f), "${tset}_ltrigger", lt)
         UiKit.triggerChip(c, RectF(w / 2f + 64f - 42f, tcy - 28f, w / 2f + 64f + 42f, tcy + 28f), "${tset}_rtrigger", rt)
         val back = faceGlyph(st, "b")
+        if (confirming && r != null && r.ok) {
+            // b42 (the user: "a confirm and it closes, b removes it and let's you keep binding"): the game's own question look (its
+            // StaticPopup), over the box's foot: Keep / Undo
+            val qb = RectF(w / 2f - 330f, box.bottom - 196f, w / 2f + 330f, box.bottom - 24f)
+            UiKit.dialog(c, qb)
+            val qp = UiKit.bodyPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
+            val failed = undoFail?.takeIf { now - undoFailAt < SHOW_MS }
+            val q = when (failed) { null -> "Keep this binding?"; "combat" -> "Can't undo in combat. Keep it?"; else -> "That couldn't be undone. Keep it?" }
+            c.drawText(q, qb.centerX(), qb.top + 64f, qp)
+            UiKit.hints(c, qb.centerX() + 180f, qb.bottom - 46f, UiKit.okGlyph() to "Keep", back to "Undo")
+            if (failed != null) postInvalidateDelayed(250L)
+            return
+        }
         if (r != null && r.ok) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Close")
         else if (!lt && !rt) UiKit.hints(c, box.right - 80f, box.bottom - 92f, back to "Back")
+    }
+
+    /**
+     * b43 (the user on test20: "We need to add this to the actual bind pop up in the spell book", "We can use the select button to cycle these
+     * tabs"): the In combat tab's FORM ROW along the box's top: the class's icon (the caster's set), then each form's own icon; the chosen one
+     * lit; Select (its glyph first) cycles them (Book b43). An In combat bind goes to the chosen form's own set
+     */
+    private fun formRow(c: Canvas, w: Float, box: RectF, m: PadMapModel.Map, b: SpellsModel.Book?, st: SpellsModel.PadStyle) {
+        val list = listOf<PadMapModel.Form?>(null) + m.forms.take(9)
+        val chosen = ctl?.bindForm ?: 0
+        val sz = 46f; val step = 54f
+        val total = 56f + list.size * step
+        var x = w / 2f - total / 2f
+        val cy = box.top + 142f                                         // under the Normal / In combat tabs
+        UiKit.pad(c, selectGlyph(st), x + 22f, cy, 40f)
+        x += 56f
+        val classBmp = b?.lines?.firstOrNull { it.index == 1 }?.let { Icons.get(it.icon) }
+        for (fo in list) {
+            val r = RectF(x, cy - sz / 2f, x + sz, cy + sz / 2f)
+            UiKit.choice(c, r, if (fo == null && classBmp == null) "C" else "", (fo?.id ?: 0) == chosen)
+            (if (fo == null) classBmp else Icons.get(fo.icon))?.let { bmp ->
+                val i = sz - 10f
+                c.drawBitmap(bmp, null, RectF(r.centerX() - i / 2f, r.centerY() - i / 2f, r.centerX() + i / 2f, r.centerY() + i / 2f), null)
+            }
+            if ((fo?.id ?: 0) == chosen) UiKit.focus(c, RectF(r).apply { inset(-3f, -3f) })     // the chosen set, plainly lit
+            x += step
+        }
     }
 
     /** empty slots with the glyphs, where the Cast room's drawing goes, for as long as it has none */

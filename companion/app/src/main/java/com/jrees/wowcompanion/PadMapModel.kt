@@ -58,7 +58,12 @@ object PadMapModel {
 
     /** m55 (f-combat-forms): one of the character's forms / stances in the game's order ([x] its index now, [id] its spell id, [on] the
      *  form now) and a form's OWN In-combat spell on bare-set position [pos] (1-4 the D-pad, 5 / 6 / 8 the faces) */
-    data class Form(val x: Int, val id: Int, val name: String, val icon: Int, val on: Boolean)
+    /** m57: [bar] = this form's own bar (the game's stance bar slots) has been learned (the player was in it once) */
+    data class Form(val x: Int, val id: Int, val name: String, val icon: Int, val on: Boolean, val bar: Boolean = false)
+    /** m57: where the game lays the form bar: page [page], set [set] (1 none, 2 LT, 3 RT, 4 LT + RT) */
+    data class Stance(val page: Int, val set: Int)
+    /** m57: a learned form's own bar, out of combat: its place [pos] holds [icon] ([name]) */
+    data class FormBar(val form: Int, val pos: Int, val icon: Int, val name: String?)
     data class FormFight(val form: Int, val pos: Int, val ref: Ref)
 
     data class Map(
@@ -109,6 +114,9 @@ object PadMapModel {
         /** m55: the forms (empty: a class without) and every form's own In-combat spells */
         val forms: List<Form> = emptyList(),
         val formFights: List<FormFight> = emptyList(),
+        /** m57: the form bar's place (null = the game's "None": no form bar on the controller), the learned forms' own bars */
+        val stance: Stance? = null,
+        val formBars: List<FormBar> = emptyList(),
     ) {
         /** m55: the form the character is in now (null: none / caster) */
         val activeForm: Form? get() = forms.firstOrNull { it.on }
@@ -174,7 +182,16 @@ object PadMapModel {
             items = objects(m.optJSONArray("items")).mapNotNull { o -> extra(o) },
             forms = objects(m.optJSONArray("forms")).mapNotNull { o ->
                 val id = o.optInt("id", 0)
-                if (id <= 0) null else Form(o.optInt("x", 0), id, o.optString("n", ""), o.optInt("i", 0), o.optBoolean("on", false))
+                if (id <= 0) null else Form(o.optInt("x", 0), id, o.optString("n", ""), o.optInt("i", 0), o.optBoolean("on", false),
+                    o.optBoolean("bar", false))
+            },
+            stance = m.optJSONObject("stance")?.let { s ->
+                val pg = s.optInt("pg", 0); val b = s.optInt("b", 0)
+                if (pg in 1..3 && b in 1..4) Stance(pg, b) else null
+            },
+            formBars = objects(m.optJSONArray("fb")).mapNotNull { o ->
+                val f = o.optInt("f", 0); val p = o.optInt("p", 0)
+                if (f > 0 && p in 1..8) FormBar(f, p, o.optInt("i", 0), textOrNull(o, "n")) else null
             },
             formFights = objects(m.optJSONArray("ff")).mapNotNull { o ->
                 val f = o.optInt("f", 0); val p = o.optInt("p", 0)

@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p30"                -- bump on every change; p30: LB / RB stay the room's tabs with the chooser open (D-pad Left / Right its tabs)
+local CV = "p32"                -- bump on every change; p32: the form row on the out-of-combat tab too (the game's own form bars)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -60,7 +60,8 @@ local SWITCHES = { normal = {}, ds = { "dpad" }, combat = { "cc", "sa" }, radial
 -- p21: "shared" (PadMap m42, the user's answer 2026-10-09 "Last, separately"): the shared DS macros' own button, beside the clean-up's on
 -- the left page's bottom (shared left, cleanup right); Left / Right between the two, Up back to the D-pad
 -- p29 (f-combat-forms): the In combat tab's "forms" row (Caster | the character's forms / stances), only while it has forms
-local ORDER = { normal = { "tabs", "sets", "buttons" }, ds = { "tabs", "switches", "dpad" }, combat = { "tabs", "switches", "forms", "sets", "buttons" },
+-- p32 (the user's pick A on test20): the out-of-combat tab's form row too, the GAME's own form bars (PadMap m57), while the game puts one
+local ORDER = { normal = { "tabs", "forms", "sets", "buttons" }, ds = { "tabs", "switches", "dpad" }, combat = { "tabs", "switches", "forms", "sets", "buttons" },
                 radial = { "tabs", "rpages", "buttons" } }
 local HOME_FOCUS = { normal = "buttons", ds = "dpad", combat = "buttons", radial = "buttons" }
 local function SR() return type(WC.spellRadial) == "table" and WC.spellRadial or nil end
@@ -109,6 +110,10 @@ end
 local function report(note)
     tc.note = note or tc.note
     local pm = PM()
+    -- p32: the form chosen on the out-of-combat tab is the one whose own bar the room shows and edits (PadMap m57); else the caster's
+    if pm and type(pm.formEdit) == "function" then
+        pcall(pm.formEdit, (tc.on and tc.view == "normal" and tc.form and tc.form ~= 0) and tc.form or 0)
+    end
     local box = tc.box and { kind = tc.box.kind, what = tc.box.thing and (tc.box.thing.key or tc.box.thing.id) or nil,  -- p12: a mount / item's key
                              thing = tc.box.thing and tc.box.thing.kind or nil } or nil
     -- the row under the chooser's cursor, by what it is (a spell id, a command key, "clear"): the app finds it in ITS list by that
@@ -350,7 +355,11 @@ end
 local function rowThere(f)
     local pm = PM()
     if not pm then return false end
-    if f == "forms" then return #formList() > 0 end                    -- p29: a class without forms has no form row
+    if f == "forms" then                                                -- p29: a class without forms has no form row
+        if #formList() == 0 then return false end
+        -- p32: on the out-of-combat tab only while the game lays a form bar over a set (its Controller setting is not "None")
+        return tc.view ~= "normal" or (type(pm.stance) == "function" and pm.stance() ~= nil)
+    end
     -- p24: the clean-up rows are gone (the user after test14: "I dont understand why we have a cleanup button"; PadMap m45 removes
     -- our own old macros by itself)
     if f == "cleanup" or f == "shared" then return false end
@@ -651,6 +660,17 @@ WC.padTabCtl = {
             return true
         end
         if tc.carry and key == "PAD2" then tc.carry = nil; report("carry-cancel") return true end
+        -- p31 (the user on test20: "We can use the select button to cycle these tabs"): Select cycles the form row, the caster then each
+        -- form, round, wherever the cursor is (Book b43 keeps Select for the room)
+        if key == "PADBACK" then
+            local list = formList()
+            if (tc.view == "combat" or (tc.view == "normal" and rowThere("forms"))) and #list > 0 then
+                tc.fcur = ((tc.fcur or 0) + 1) % (#list + 1)
+                tc.form = tc.fcur == 0 and 0 or list[tc.fcur].id
+                report("form")
+            end
+            return true
+        end
         if tc.focus == "tabs" then return pressTabs(key) end
         if tc.focus == "switches" then return pressSwitches(key) end
         if tc.focus == "sets" then return pressSets(key) end

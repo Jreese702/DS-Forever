@@ -41,3 +41,19 @@ class WheelBOnceTest {
         assertTrue(!HomeBack.wheelB("pad:chat") && !HomeBack.wheelB("npc") && !HomeBack.wheelB(null))
     }
 }
+
+/** m57 (the user's pick A): the game's own form bars out of combat - where the form bar lies, which forms' bars are known, their places */
+class FormBarsParseTest {
+    @Test fun theFormBarsPlaceAndTheLearnedBars() {
+        val m = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m57","m":{"page":1,"pages":3,"sets":[],
+            "forms":[{"x":1,"id":5487,"n":"Bear Form","i":1,"bar":true},{"x":2,"id":768,"n":"Cat Form","i":2}],
+            "stance":{"pg":1,"b":4},"fb":[{"f":5487,"p":1,"i":132136,"n":"Maul"}]}}"""))!!
+        assertEquals(PadMapModel.Stance(1, 4), m.stance)
+        assertTrue(m.forms[0].bar && !m.forms[1].bar)
+        assertEquals(132136, m.formBars.single { it.form == 5487 && it.pos == 1 }.icon)
+    }
+    @Test fun noFormBarWhenTheGameSaysNone() {
+        val m = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m57","m":{"page":1,"pages":3,"sets":[]}}"""))!!
+        assertNull(m.stance)
+    }
+}
