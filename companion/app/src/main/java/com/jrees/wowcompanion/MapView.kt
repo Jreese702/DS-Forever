@@ -3168,82 +3168,48 @@ class MapView(context: Context) : View(context) {
     private val panelHits = ArrayList<Pair<RectF, String>>()
     private val ARM_MS = 10_000L                     // Quests.lua ARM_SECONDS: a confirm after it is refused
 
-    private fun openPanel(id: Int) { panelId = id; armedId = 0; panelScroll = 0f; panelContentH = 0f; panelAreas = false; syncB(); invalidate() }
-    private fun closePanel() { panelId = 0; armedId = 0; panelAreas = false; panelHits.clear() }
+    private fun openPanel(id: Int) { panelId = id; armedId = 0; panelScroll = 0f; panelContentH = 0f; panelFocus = -1; syncB(); invalidate() }
+    private fun closePanel() { panelId = 0; armedId = 0; panelFocus = -1; panelHits.clear() }
 
     /** the open quest panel, for the host: Home's buff / debuff pane leaves this box to it (the panel lies above the buffs) */
     fun panelOpen(): Boolean = panelId != 0
     fun panelCover(): RectF? = if (panelId != 0 && !panelBox.isEmpty) RectF(panelBox) else null
 
-    // ---- THE PANEL'S QUEST AREAS (the user, 2026-10-16: "pressing over on the dpad should highlight quest areas not the buffs"): D-pad
-    // Right with the panel open lights the quest's own areas on the map - QuestieDB's objective areas, the shape traced from play,
-    // the still-needed goal points - in a pulsing gold, and brings the nearest into view; the panel steps aside meanwhile (it would
-    // cover them, and the buffs come back from behind it); Left goes back to the panel, B closes it.
-    private var panelAreas = false
-    private fun panelAreaShapes(m: JSONObject, r: PoiStore.Rect, q: Int): Pair<List<QArea>, List<DoubleArray>> {
-        val shapes = ArrayList<QArea>()
-        qdbAreas[m.optInt("mapID", Int.MIN_VALUE)]?.let { a ->
-            for (g in QdbAreas.keep(a.objs.filter { it.qid == q }.flatMap { QdbAreas.groups(it.pts, r.width, r.height) }, true))
-                qAreaOf01(g.outline, true, floored = true)?.let { shapes.add(it) }
-        }
-        if (shapes.isEmpty()) QuestTrace.shape(q, r.continent)?.let { pts ->
-            toQArea(r, DoubleArray(pts.size) { pts[it][0] }, DoubleArray(pts.size) { pts[it][1] }, true, true)?.let { shapes.add(it) }
-        }
-        var mq: JSONObject? = null
-        m.optJSONArray("quests")?.let { qs -> for (i in 0 until qs.length()) qs.optJSONObject(i)?.let { if (it.optInt("questID", 0) == q) mq = it } }
-        return shapes to CursorRoute.goals(mq, questById[q], m.optInt("mapID", Int.MIN_VALUE))
-    }
-
-    /** the areas came on: the map pans to the nearest of them (with the player, as Show on map does) */
-    private fun frameAreas() {
-        val m = map ?: return
-        val r = rect ?: return
-        if (!r.valid) return
-        val (shapes, pts) = panelAreaShapes(m, r, panelId)
-        val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
-        val cands = pts + shapes.map { doubleArrayOf(((it.minX + it.maxX) / 2f).toDouble(), ((it.minY + it.maxY) / 2f).toDouble()) }
-        val best = cands.minByOrNull { if (px.isNaN()) 0.0 else hypot((it[0] - px) * r.width, (it[1] - py) * r.height) }
-        if (best == null) { note("This quest has no area on this map"); return }
-        focusOn(best[0], best[1])
-    }
-
-    /** the lit areas, drawn over the map's own areas and under the markers */
-    private fun drawPanelAreas(c: Canvas, m: JSONObject, sx: (Double) -> Float, sy: (Double) -> Float) {
-        val r = rect ?: return
-        if (!r.valid) return
-        val (shapes, pts) = panelAreaShapes(m, r, panelId)
-        val t = (android.os.SystemClock.elapsedRealtime() % 1400L) / 1400f
-        val pulse = 0.55f + 0.45f * kotlin.math.sin(t * 2f * Math.PI.toFloat())
-        val g = Color.argb((90 * pulse).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
-        for (a in shapes) {
-            pathTmp.reset()
-            for (j in a.xs.indices) { val x = sx(a.xs[j].toDouble()); val y = sy(a.ys[j].toDouble()); if (j == 0) pathTmp.moveTo(x, y) else pathTmp.lineTo(x, y) }
-            pathTmp.close()
-            pLit.style = Paint.Style.FILL; pLit.color = g; c.drawPath(pathTmp, pLit)
-            pLit.style = Paint.Style.STROKE; pLit.strokeWidth = 5f; pLit.color = Color.argb((255 * pulse).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
-            c.drawPath(pathTmp, pLit)
-        }
-        for (p in pts) {
-            val x = sx(p[0]); val y = sy(p[1])
-            pLit.style = Paint.Style.STROKE; pLit.strokeWidth = 5f; pLit.color = Color.argb((255 * pulse).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
-            c.drawCircle(x, y, 26f + 10f * pulse, pLit)
-        }
-        if (isShown) postInvalidateDelayed(33)
-    }
-    private val pLit = Paint(Paint.ANTI_ALIAS_FLAG)
+    // ---- THE CURSOR IN THE QUEST BOX (the user's correction, 2026-10-17: "Right d pad was not literally supposed to show quest areas, I
+    // meant that the cursor would move over onto the quest box to scroll the text or press buttons or whatever"). With the panel open
+    // the cursor is on the LIST ([panelFocus] -1: the list moves as always, the panel showing the quest under it) until Right takes it
+    // INTO the box: 0 its text (Up / Down scroll it; Down at its end goes to the buttons), 1.. its buttons (Left / Right between them,
+    // A presses one, Up back to the text). Left from the text or the first button, or B, steps back out to the list; B on the list
+    // closes the panel.
+    private var panelFocus = -1
+    private fun panelButtons(): List<String> = if (armedNow()) listOf("cancel", "abandon!") else listOf("share", "abandon", "close")
     private fun armedNow(): Boolean = armedId != 0 && armedId == panelId && android.os.SystemClock.elapsedRealtime() - armedAt < ARM_MS
 
-    private fun panelKey(k: String) {
+    /** one key while the panel is open: true = the panel took it (the cursor is in the box, or the key moves it in / closes) */
+    private fun panelKey(k: String): Boolean {
+        if (panelFocus < 0) {
+            // the cursor is on the list: Right goes into the box, B closes the panel; the rest is the list's (the panel follows it)
+            when (k) {
+                "PADDRIGHT" -> { panelFocus = 0; syncB(); invalidate(); return true }
+                "PAD2" -> { closePanel(); syncB(); invalidate(); return true }
+            }
+            return false
+        }
+        val buttons = panelButtons()
+        if (armedNow() && panelFocus > buttons.size) panelFocus = buttons.size
+        val moreText = panelContentH - panelScroll > panelViewH + 1f
         when (k) {
-            "PAD2" -> if (armedNow()) armedId = 0 else closePanel()
-            "PAD1" -> panelAct(if (armedNow()) "abandon!" else "share")
-            "PAD4" -> if (!armedNow()) panelAct("abandon")
-            "PADDUP" -> panelScroll = (panelScroll - 90f).coerceAtLeast(0f)
-            "PADDDOWN" -> panelScroll = (panelScroll + 90f).coerceAtMost(max(0f, panelContentH - panelViewH))
-            "PADDRIGHT" -> if (!armedNow() && !panelAreas) { panelAreas = true; frameAreas() }
-            "PADDLEFT" -> panelAreas = false
+            "PAD2" -> if (armedNow()) armedId = 0 else panelFocus = -1
+            "PADDLEFT" -> panelFocus = if (panelFocus <= 1) -1 else panelFocus - 1
+            "PADDRIGHT" -> if (panelFocus in 1 until buttons.size) panelFocus++
+            "PADDUP" -> if (panelFocus == 0) panelScroll = (panelScroll - 90f).coerceAtLeast(0f) else panelFocus = 0
+            "PADDDOWN" -> if (panelFocus == 0) {
+                if (moreText) panelScroll = (panelScroll + 90f).coerceAtMost(max(0f, panelContentH - panelViewH)) else panelFocus = 1
+            }
+            "PAD1" -> if (panelFocus >= 1) panelAct(buttons[panelFocus - 1])
         }
         syncB(); invalidate()
+        return true
     }
 
     private fun panelAct(act: String) {
@@ -3261,6 +3227,7 @@ class MapView(context: Context) : View(context) {
                 onAbandonArm?.invoke(id) ?: note("Abandon is not on the tap pad yet")
             }
             "abandon!" -> if (armedNow()) { armedId = 0; onAbandonConfirm?.invoke(id) }
+            "close" -> { closePanel(); return }
             "cancel" -> armedId = 0
         }
         syncB(); invalidate()
@@ -3349,12 +3316,14 @@ class MapView(context: Context) : View(context) {
             val cue = RectF(inner.left, inner.top, inner.right, actTop - 14f)
             UiKit.moveArrowsUpDown(c, cue, up = false, down = true, size = 18f, width = 26f, around = true)
         }
-        // the two buttons: Share and Abandon (Cancel and Abandon while the game asks)
+        // the buttons: Share, Abandon and Close (Cancel and Abandon while the game asks)
         val gap = 10f
-        val bw = (inner.width() - 2f * pad - gap) / 2f
+        val nb = if (armed) 2 else 3
+        val bw = (inner.width() - 2f * pad - gap * (nb - 1)) / nb
         val b1 = RectF(inner.left + pad, inner.bottom - btnH - 12f, inner.left + pad + bw, inner.bottom - 12f)
         val b2 = RectF(b1.right + gap, b1.top, b1.right + gap + bw, b1.bottom)
-        val glyphs = held || padHints
+        val b3 = RectF(b2.right + gap, b1.top, b2.right + gap + bw, b1.bottom)
+        val glyphs = false                                           // the cursor says which (the user's box cursor), not a glyph each
         if (armed) {
             val qp = UiKit.bodyPaint(25f, Theme.text)
             c.drawText(ellipsize(qp, "Abandon \"$armedTitle\"?", tw), inner.left + pad, b1.top - 16f, qp)
@@ -3368,7 +3337,16 @@ class MapView(context: Context) : View(context) {
             val s2 = if (abandonOk) UiKit.Button.UP else UiKit.Button.DISABLED
             if (glyphs) UiKit.button(c, b1, "Share", glyph("a"), s1) else UiKit.button(c, b1, "Share", s1)
             if (glyphs) UiKit.button(c, b2, "Abandon", glyph("y"), s2) else UiKit.button(c, b2, "Abandon", s2)
-            panelHits.add(RectF(b1) to "share"); panelHits.add(RectF(b2) to "abandon")
+            UiKit.button(c, b3, "Close")
+            panelHits.add(RectF(b1) to "share"); panelHits.add(RectF(b2) to "abandon"); panelHits.add(RectF(b3) to "close")
+        }
+        // the cursor in the box: on the text (with its up / down arrows) or on a button
+        when {
+            panelFocus == 0 -> {
+                val tb = RectF(inner.left + 4f, inner.top + 4f, inner.right - 4f, actTop - 10f)
+                UiKit.focus(c, tb)
+            }
+            panelFocus >= 1 -> listOf(b1, b2, b3).getOrNull(panelFocus - 1)?.let { UiKit.focus(c, it) }
         }
         if (armedId != 0 && !armed) { armedId = 0 }                   // the game's question ran out
         else if (armed) postInvalidateDelayed(500)
@@ -3565,10 +3543,12 @@ class MapView(context: Context) : View(context) {
         if (filterOpen) { UiKit.hints(c, band.right - 24f, cy, glyph("lb") to "", glyph("rb") to "Tabs", glyph("b") to "Close"); return }
         if (pmenu.open) { UiKit.hints(c, band.right - 24f, cy, glyph("up") to "Select", glyph("a") to "Choose", glyph("b") to "Back"); return }
         if (panelId != 0) {
-            val hp = if (armedId == panelId) arrayOf(glyph("a") to "Abandon", glyph("b") to "Cancel")
-                else if (panelAreas) arrayOf(glyph("left") to "Quest", glyph("b") to "Close")
-                else listOfNotNull(if (panelContentH > panelViewH + 1f) glyph("up") to "Scroll" else null, glyph("right") to "Areas",
-                    glyph("a") to "Share", glyph("y") to "Abandon", glyph("b") to "Close").toTypedArray()
+            val hp = when {
+                armedId == panelId -> arrayOf(glyph("left") to "", glyph("right") to "Select", glyph("a") to "Press", glyph("b") to "Cancel")
+                panelFocus < 0 -> arrayOf(glyph("up") to "Select", glyph("right") to "Quest box", glyph("b") to "Close")
+                panelFocus == 0 -> arrayOf(glyph("up") to "Scroll", glyph("left") to "List", glyph("b") to "Back")
+                else -> arrayOf(glyph("left") to "", glyph("right") to "Select", glyph("a") to "Press", glyph("b") to "Back")
+            }
             UiKit.hints(c, band.right - 24f, cy, *hp); return
         }
         // only what does something on the map right now (UI Art / the user's clutter rule)
@@ -3754,7 +3734,7 @@ class MapView(context: Context) : View(context) {
     /** apply one key; everything but leaving (returned as [MapCursor.Do.Leave] for the caller) */
     private fun applyKey(k: String): MapCursor.Do {
         if (pmenu.open) { pmenuDid(pmenu.key(k)); return MapCursor.Do.Nothing }      // every key is the open player menu's
-        if (panelId != 0) { panelKey(k); return MapCursor.Do.Nothing }                // ... and the open quest panel's
+        if (panelId != 0 && panelKey(k)) return MapCursor.Do.Nothing                  // ... and the open quest panel's, when it takes it
         // the Filter's tabs with LB / RB (zoom is not in use while it is open)
         if (filterOpen && (k == "PADLSHOULDER" || k == "PADRSHOULDER")) {
             filterTab = (filterTab + (if (k == "PADRSHOULDER") 1 else FILTER_TABS.size - 1)) % FILTER_TABS.size
@@ -3763,7 +3743,13 @@ class MapView(context: Context) : View(context) {
         val d = cursor.key(k, listKeys(), focusQid, filterOpen, MapList.untracked(items))
         when (d) {
             MapCursor.Do.Show -> { listShow(cursor.sel); landOn(cursor.sel) }
-            is MapCursor.Do.Select -> { listShow(d.id); landOn(d.id) }
+            is MapCursor.Do.Select -> {
+                listShow(d.id); landOn(d.id)
+                // the quest box follows the list's quest while the cursor is on the list (the user's correction, 2026-10-17)
+                if (panelId != 0 && d.id > 0 && questById.containsKey(d.id) && d.id != panelId) {
+                    panelId = d.id; panelScroll = 0f; panelContentH = 0f; armedId = 0
+                }
+            }
             MapCursor.Do.PlayerMenu -> openPlayerMenu()
             is MapCursor.Do.Toggle -> toggleTab(d.key)
             is MapCursor.Do.Track -> onTrackFocusQuest?.invoke(d.id) ?: note("Track is not on the tap pad yet")
@@ -4934,13 +4920,6 @@ class MapView(context: Context) : View(context) {
             drawPin(c, kind, cxp, cyp)
         }
 
-        // ---- the open panel's quest areas, lit (D-pad Right in the panel), under the markers
-        if (panelId != 0 && panelAreas && !compact && !morphOn) {
-            val save = c.save()
-            c.clipRect(left, top, left + fw, top + fh)
-            drawPanelAreas(c, m, { v -> sx(v) }, { v -> sy(v) })
-            c.restoreToCount(save)
-        }
         // ---- THE CURSOR'S DOTTED LINE, under the live markers and the player's arrow (the agreed design), inside the field
         val route = if (!compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN()) cursorRoute() else null
         if (route != null) {
@@ -5325,7 +5304,7 @@ class MapView(context: Context) : View(context) {
                 drawPlayerMenu(c, left + BTN_GAP + lw, top + BTN_GAP, top + fh - 64f - (if (hintsOn()) HINT_BAND else 0f), fw - lw - 2f * BTN_GAP)
             } else { pmenuHits.clear(); pmenuBox.setEmpty() }
             // the panel steps aside while its quest's areas are lit (it would cover them); Left brings it back
-            if (panelId != 0 && !panelAreas && !pmenu.open && !morphOn) {
+            if (panelId != 0 && !pmenu.open && !morphOn) {
                 val lw = if (showTracker && items.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + 16f else 0f
                 drawPanel(c, left + BTN_GAP + lw, top + BTN_GAP, top + fh - 64f - (if (hintsOn()) HINT_BAND else 0f), fw - lw - 2f * BTN_GAP)
             } else { panelHits.clear(); panelBox.setEmpty() }
