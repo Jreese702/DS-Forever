@@ -1004,6 +1004,7 @@ class MapView(context: Context) : View(context) {
 
     /** Settings changed (from the Settings room): take them on now. */
     fun applySettings() {
+        post { refreshQtStep(force = true) }       // into / out of QuestTrail: its step is the focus, or no longer (b-qtrail-focus)
         postInvalidate()                           // the small map's widths are read every frame
     }
 
@@ -2303,6 +2304,7 @@ class MapView(context: Context) : View(context) {
         if (pos.has("grpN")) group = GroupMembers.parse(pos.optJSONArray("grp"))
         // QuestTrail's arrow (Map.lua qtrailRead): every tick says it, absent = not showing (b-route-questtrail)
         qtrail = pos.optJSONObject("qtrail"); qtrailAt = android.os.SystemClock.elapsedRealtime()
+        refreshQtStep()                             // its step may name another quest (b-qtrail-focus)
         absorbSoft(pos.optJSONObject("soft"), m)    // absent = nothing beside the player now
         // the quest-area tracer's samples (Map.lua traceSample), taken at this update's wx / wy
         pos.optJSONArray("qb")?.let { qb ->
@@ -2561,7 +2563,8 @@ class MapView(context: Context) : View(context) {
             if (was != st) cards.clear()                 // the focused card's gold moves with the focus
             if (was != st && !orderingDoc) orderTracked(trackedIds())
         }
-        val tq = if (st > 0) st else if (focusQid == 0) defaultQid else 0      // the game's focus, else the default
+        // QuestTrail's step (b-qtrail-focus), else the game's focus, else the default
+        val tq = qtFocus().takeIf { it > 0 } ?: if (st > 0) st else if (focusQid == 0) defaultQid else 0
         focusTq = if (tq > 0 && shownQuest(tq)) tq else 0
         if (tq <= 0 || !shownQuest(tq)) return            // an untracked focus has no arrow (not on the map at all)
         val qs = m.optJSONArray("quests")
@@ -3045,9 +3048,58 @@ class MapView(context: Context) : View(context) {
     // (A on it focuses it for real; the hints and A / X keep reading the game's own focusQid). FocusDefault.pick holds the
     // choice until another quest is clearly nearer, so walking between two does not make the top card jump.
     private var defaultQid = 0
-    private fun shownFocus(): Int = if (focusQid != 0) focusQid else defaultQid
+    private fun shownFocus(): Int = qtFocus().takeIf { it != 0 } ?: if (focusQid != 0) focusQid else defaultQid
     /** true while the SHOWN focus is the default (the game has none): Home may label its card, or act on the game's focus only */
-    fun focusIsDefault(): Boolean = focusQid == 0 && defaultQid != 0
+    fun focusIsDefault(): Boolean = qtFocus() == 0 && focusQid == 0 && defaultQid != 0
+
+    // ---- QUESTTRAIL'S STEP AS THE FOCUS (b-qtrail-focus; the user, test51: "Using quest trail, the focused quest should be overwritten
+    // by the quest trail objective"). With "Quest tracking: QuestTrail" the SHOWN focus - Home's card, the list's top spot, the gold
+    // look, the areas, the rim arrow, the line - is the quest QuestTrail's compass names (QuestTrailBridge.step, by its title in the
+    // log), and the card's objective line is QuestTrail's words. QuestTrail does not super-track it, so the game's own focus is left
+    // as it is (A / X and Unfocus still act on it). No step named (flying, a boat, a quest to take): the last one stays. Another mode:
+    // the normal focus again.
+    private var qtStep: QuestTrailBridge.Step? = null
+    private var qtLabel: String? = null
+    private var qtWasOn = false
+    private fun qtFocus(): Int {
+        if (Settings.questTracking != "questtrail") return 0
+        val id = qtStep?.questId ?: return 0
+        return if (questById.containsKey(id)) id else 0
+    }
+    /** the quest the line and the rim arrow are for: QuestTrail's step, else the game's focus */
+    private fun qtOrGameFocus(): Int = qtFocus().takeIf { it > 0 } ?: focusQid
+    /** QuestTrail's step from its live label and the log; true = the shown focus or its words changed */
+    private fun qtPick(force: Boolean): Boolean {
+        val on = Settings.questTracking == "questtrail"
+        val label = if (on) questTrailLive()?.optString("t", "")?.ifEmpty { null } else null
+        if (!force && on == qtWasOn && (label == null || label == qtLabel)) return false
+        val before = qtFocus(); val beforeWords = qtStep?.words
+        qtWasOn = on
+        if (!on) { qtStep = null; qtLabel = null }
+        else if (label != null || force) {
+            if (label != null) qtLabel = label
+            val titles = HashMap<Int, String>()
+            for ((id, e) in questById) e.optString("title", "").takeIf { it.isNotEmpty() }?.let { titles[id] = it }
+            QuestTrailBridge.step(qtLabel, titles) { id -> objTexts(questById[id]) }?.let { qtStep = it }
+        }
+        return qtFocus() != before || (qtFocus() != 0 && qtStep?.words != beforeWords)
+    }
+    /** after a new label or mode: on a change, everything that shows the focus follows */
+    private fun refreshQtStep(force: Boolean = false) {
+        if (!qtPick(force)) return
+        cards.clear()
+        orderTracked(trackedIds())
+        deriveFocusTarget(map)
+        deriveQuestAreas(map)
+        // Home's card redraws even when only the words changed (fireFocus says a new quest only)
+        firedFocus = shownFocus()
+        onShownFocusChanged?.let { cb -> post { cb() } }
+        postInvalidate()
+    }
+    private fun objTexts(e: JSONObject?): List<String> {
+        val a = e?.optJSONArray("obj") ?: return emptyList()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it)?.optString("t", "")?.ifEmpty { null } }
+    }
     /** the quest shown as focused (the game's, else the default), 0 = none */
     fun shownFocusQuest(): Int = shownFocus()
 
@@ -3565,8 +3617,9 @@ class MapView(context: Context) : View(context) {
 
     private fun questTrailRoute(q: Int): CursorRoute.Route? {
         if (Settings.questTracking != "questtrail") return null
-        // the quest the game focuses (QuestTrail super-tracks its own pick), or any while nothing is focused (its "hide Blizzard")
-        if (focusQid > 0 && q != focusQid) return null
+        // the quest of QuestTrail's step (b-qtrail-focus), else the one the game focuses, or any while nothing is
+        val f = qtOrGameFocus()
+        if (f > 0 && q != f) return null
         val m = map ?: return null
         val r = rect ?: return null
         if (!r.valid) return null
@@ -4321,6 +4374,7 @@ class MapView(context: Context) : View(context) {
         }
         // "none" too when the map document does not say (an older add-on left superTracked out for none: test24's stuck Unfocus)
         focusQid = MapCursor.focusFromQuests(docFocus, map?.has("superTracked") == true, focusQid)
+        qtPick(force = true)                    // the log changed: QuestTrail's step by its title again (b-qtrail-focus)
         trackedKnown = true
         orderingDoc = true
         map?.let { m -> deriveMarkers(m); deriveFocusTarget(m); deriveQuestAreas(m) }
@@ -4394,6 +4448,8 @@ class MapView(context: Context) : View(context) {
                 objs.add(t to o.optBoolean("f"))
             }
         }
+        // QuestTrail's step (b-qtrail-focus): its words are the card's objective line
+        if (id != 0 && id == qtFocus()) qtStep?.words?.let { w -> objs.clear(); objs.add(w to false) }
         val card = UiKit.QuestCard(e.optString("title", ""), lv ?: 0, colour, objs,
             turnIn = e.optBoolean("ready") || e.optBoolean("done"), number = trackedNo[id], focused = id != 0 && id == shownFocus())
         cards[id] = card
@@ -5443,7 +5499,7 @@ class MapView(context: Context) : View(context) {
         // Polestar's own walking route for the focused quest, when it is the router and has one (b-route-polestar)
         val poleOn = Settings.questTracking == "polestar"
         val qtOn = Settings.questTracking == "questtrail"
-        if ((poleOn || qtOn) && route != null && cursor.sel == focusQid && run {
+        if ((poleOn || qtOn) && route != null && cursor.sel == qtOrGameFocus() && run {
                 val fb = top + fh - (if (hintsOn()) HINT_BAND else 0f)
                 val save = c.save()
                 c.clipRect(left, top, left + fw, fb)
@@ -5497,7 +5553,7 @@ class MapView(context: Context) : View(context) {
                 drawFlag(c, sx(cp[0]), sy(cp[1]), next = i == 0)
             }
             // QuestTrail's line straight to its point: its dangerous stretch warned
-            if (leg == null && qtOn && cursor.sel == focusQid) dangerWarn(c, listOf(doubleArrayOf(px, py), doubleArrayOf(route.x, route.y)), "QuestTrail", ::sx, ::sy)
+            if (leg == null && qtOn && cursor.sel == qtOrGameFocus()) dangerWarn(c, listOf(doubleArrayOf(px, py), doubleArrayOf(route.x, route.y)), "QuestTrail", ::sx, ::sy)
             c.restoreToCount(save)
         } else pathFor = 0
         // ---- HOME'S SMALL MAP: the focused quest's checkpoints too (test48: "I cannot see the checkpoint flags when the map module
