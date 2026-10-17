@@ -153,6 +153,12 @@ class HomeView(
     val rest: HomeRest get() = flow.rest
     fun setRest(r: HomeRest) { HomeSettings.rest = r; if (flow.setRest(r)) changed() }
 
+    /** f-settings-previews: the offscreen stage's own Home at [look] (never the live one): its rest, then its places, no motion */
+    internal fun previewSettle(look: Companion.Look) {
+        flow.setRest(look.rest)
+        apply(flow.screen, false)
+    }
+
     private fun applyHideRuling(c: Context) {
         val p = prefs(c)
         if (p.getBoolean(HIDE_RULING, false)) return
@@ -1085,7 +1091,7 @@ class HomeView(
             // b-cast-any: at rest the line is the cast bar alone (every player cast, in or out of a fight); in combat the full line
             castView.castOnly = !s.takeover
             // p-swing-timer, batch 12 ("they should be seperate"): Settings > Home turns the SWING off; the cast bar stays
-            castView.swingOn = HomeSettings.swingTimer
+            castView.swingOn = renderLook?.swing ?: HomeSettings.swingTimer
             // LATER item 16 (the user: "under the controller area ... the trigger modifiers ... light them up like in the cast menu when
             // they get pressed but dimmed when they arent"): Cast's trigger strip under the diamonds (cast 197ec48, DIAMONDS only)
             castView.triggerStrip = true
@@ -1221,7 +1227,7 @@ class HomeView(
     }
 
     /** r-combat-anim-off: the fight's BIGGER band ("Combat layout: Grow", the default); "Same size" keeps the rest's place and size */
-    private fun big(s: HomeScreen) = s.takeover && HomeSettings.combatGrow
+    private fun big(s: HomeScreen) = s.takeover && (renderLook?.grow ?: HomeSettings.combatGrow)
 
     private fun barsBottom(s: HomeScreen) = when {
         big(s) -> 10f + COMBAT_BARS + CastBarPlace.TOP_STRIP          // b-cast-bar-size: the top-edge cast bar's room in a fight
@@ -2321,7 +2327,16 @@ class HomeView(
         /** the focused quest's card over the map (b121): above the map's 0, under the wheel's lifted left column */
         private const val CARD_Z = 2f
         /** the focused quest over the minimap (Settings > Home, HomeSettings.questOverMap; was the constant QUEST_ABOVE_MAP) */
-        fun cardOverMap(): Boolean = HomeSettings.questOverMap
+        fun cardOverMap(): Boolean = renderLook?.overMap ?: HomeSettings.questOverMap
+
+        /**
+         * f-settings-previews (the user: "make our visual aids in the settings less shitty", "Yes, this direction"): the Settings panel's
+         * live miniatures are drawn by an offscreen Home ([PreviewStage]) at a LOOK that is not the player's own (the other choice of a
+         * setting). The stage sets this for the length of ONE synchronous render on the main thread and clears it; the live Home never
+         * renders while it is set, and no setting is ever written. null = the player's settings
+         */
+        data class Look(val rest: HomeRest, val grow: Boolean, val overMap: Boolean, val swing: Boolean)
+        internal var renderLook: Look? = null
         /** the Track Pad & Keyboard's own controller guest (Quests.lua's "tool": ZL / ZR kept from the game while it holds) */
         const val TOOL_GUEST = "tool"
         /** logcat tag for Home's taps and refusals (`adb logcat -s WCHOME`) */

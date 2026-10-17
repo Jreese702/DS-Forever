@@ -41,6 +41,9 @@ class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean
 
     private val changed: () -> Unit = { post { invalidate() } }
 
+    /** f-settings-previews: the real Home in miniature (PreviewStage); the panel draws it again while a picture is still coming */
+    private val live = SettingsPreview.Live { look, fight, toolbar -> PreviewStage.home(context, look, fight, toolbar) }
+
     init {
         HomeSettings.onChange(changed); Settings.onChange(changed); FrameGen.onChange(changed); CastSettings.onChange(changed)
         HomeAttackSwitch.onChange(changed)
@@ -80,7 +83,7 @@ class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean
         val capTop = box.bottom - 20f - caps.size * 28f
         val pic = RectF(box.left + 8f, box.top + 84f, box.right - 8f, capTop - 8f)
         c.save(); c.clipRect(pic)
-        SettingsPreview.draw(c, pic, row, s, now - t0, glyph, prev, now - changedAt)
+        SettingsPreview.draw(c, pic, row, s, now - t0, glyph, prev, now - changedAt, live)
         c.restore()
         pCap.color = Theme.textDim
         for ((i, line) in caps.withIndex()) c.drawText(fit(pCap, line, box.width() - 36f), box.left + 18f, capTop + 22f + i * 28f, pCap)

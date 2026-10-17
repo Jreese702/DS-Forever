@@ -1494,6 +1494,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 }
                 msg.optJSONObject("actionbar")?.let { castView.update(it) }
                 homeView.onFull(msg, current)
+                if (current) PreviewStage.feedFull(msg)                     // f-settings-previews: the Settings panel's live miniatures
+                PreviewStage.roomBar = { castView.roomBar }; PreviewStage.roomBarOn = { castView.roomBarOn }
                 msg.optJSONObject("bags")?.let { bagsView.update(it, current); pinPicker.update(it); characterView.updateBags(it)
                     it.optJSONObject("equipped")?.let { eq -> homeView.durability(eq.optJSONObject("durw")) }; if (ProfessionsStore.onBags(it)) professionsView.refresh() }   // old = no room switch, no tap (bags)
                 status.text = "gaps ${tail?.gapCount() ?: 0}   v${msg.optString("v", "?")}"
@@ -1549,7 +1551,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (cur != 0) { TaxiNet.onTaxiNet(cur, reach); Log.i("WCMAP", "taxinet: at $cur, ${reach.size} reachable") }
             }
             "bye" -> if (current) { QuestWatchKeep.cleanEnd(); byeShow() }     // a logout: the game writes its state (the watch list)
-            "chat" -> msg.optJSONObject("chat")?.let { chatView.update(it); homeView.onChat(it) }
+            "chat" -> msg.optJSONObject("chat")?.let { chatView.update(it); homeView.onChat(it); PreviewStage.feedChat(it) }
             // the game's world notice (Chat chat21: the shard transfer's countdown) over Home's chat: current only (a replayed one is old)
             "notice" -> if (current) homeView.onNotice(msg)
             "chatt", "chatq", "chatlink" -> {
@@ -1559,6 +1561,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "quests" -> msg.optJSONObject("q")?.let {
                 it.optJSONObject("pad")?.let { p -> questsPad = p }
                 questsView.update(it); homeView.onQuests(it, current); mapView.onQuests(it); worldMapRoom.onQuests(it)
+                if (current) PreviewStage.feedQuests(it)
                 if (current) {
                     val back = QuestWatchKeep.onQuests(QuestWatchKeep.parse(it), canAct = questsPad != null && GameInput.live() && !homeView.inFight())
                     if (back.isNotEmpty()) restoreWatches(back)
