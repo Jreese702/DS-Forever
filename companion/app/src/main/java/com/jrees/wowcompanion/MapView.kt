@@ -600,12 +600,20 @@ class MapView(context: Context) : View(context) {
     // The player is inside exactly one building, so keep a couple and drop the rest.
     private val gridCache = LinkedHashMap<String, IndoorGrid>()
 
+    private val gridLoading = HashSet<String>()
+    /** the building's height field: read off the UI thread (up to 32 MB: test56's ANRs), null until it has arrived */
     private fun gridFor(p: Place): IndoorGrid? {
         gridCache[p.fid]?.let { return it }
-        val g = readGrid(p.gridMeta) ?: return null
-        gridCache[p.fid] = g
-        while (gridCache.size > 3) gridCache.remove(gridCache.keys.first())
-        return g
+        if (!gridLoading.add(p.fid)) return null
+        val meta = p.gridMeta
+        planDecoder.execute {
+            val g = runCatching { readGrid(meta) }.getOrNull()
+            post {
+                gridLoading.remove(p.fid)
+                if (g != null) { gridCache[p.fid] = g; while (gridCache.size > 3) gridCache.remove(gridCache.keys.first()); invalidate() }
+            }
+        }
+        return null
     }
 
     private fun readGrid(o: JSONObject?): IndoorGrid? {
@@ -2655,16 +2663,31 @@ class MapView(context: Context) : View(context) {
     private var travelMasters: List<TransportRoutes.FlightMaster> = emptyList()
     private var travelFlights: List<IntArray> = emptyList()
     private var ridesStamp = -1L
+    private var ridesCheckedAt = Long.MIN_VALUE / 2
+    private var ridesLoading = false
+    /** the game's rides (and the travel layer's masters and flights): the file looked at every few seconds and read OFF the UI thread
+     *  (test56's ANRs: it was stat'ed and parsed in onDraw) */
     private fun rides(): List<TransportRoutes.Ride> {
-        val f = ridesFile()
-        val st = if (f.isFile) f.lastModified() + f.length() else 0L
-        if (st != ridesStamp) {
-            ridesStamp = st
-            val o = if (st == 0L) null else runCatching { JSONObject(f.readText()) }.getOrNull()
-            rides = TransportRoutes.fromJson(o)
-            travelMasters = TransportRoutes.mastersFromJson(o)           // b-travel-layer
-            travelFlights = TransportRoutes.flightsFromJson(o)
-            if (st != 0L) android.util.Log.i("WCMAP", "route: ${rides.size} rides read from transports.json")
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - ridesCheckedAt >= 5_000L && !ridesLoading) {
+            ridesCheckedAt = now
+            ridesLoading = true
+            val f = ridesFile(); val was = ridesStamp
+            planDecoder.execute {
+                val st = if (f.isFile) f.lastModified() + f.length() else 0L
+                val o = if (st != was && st != 0L) runCatching { JSONObject(f.readText()) }.getOrNull() else null
+                post {
+                    ridesLoading = false
+                    if (st == ridesStamp) return@post
+                    ridesStamp = st
+                    rides = TransportRoutes.fromJson(o)
+                    travelMasters = TransportRoutes.mastersFromJson(o)           // b-travel-layer
+                    travelFlights = TransportRoutes.flightsFromJson(o)
+                    if (st != 0L) android.util.Log.i("WCMAP", "route: ${rides.size} rides read from transports.json")
+                    routeEpoch++
+                    invalidate()
+                }
+            }
         }
         return rides
     }
@@ -3925,7 +3948,9 @@ class MapView(context: Context) : View(context) {
     // a new one, worked out again after [DANGER_MOVE_YD] of walking); under Polestar / QuestTrail their route is kept and its
     // dangerous stretches are drawn red with a note.
     private var dGrid: DangerGrid? = null
-    private var dGridKey = ""
+    private var dGridMap = 0
+    private var dGridKey = ""                              // the key of the grid built, or being built on the route thread
+    private val legPending = HashSet<Int>()                // quests whose leg is being planned on the route thread
     private class DangerLeg(val pts: List<DoubleArray>, val tx: Double, val ty: Double, val atX: Double, val atY: Double, val k: Double)
     private val dangerLegs = HashMap<Int, DangerLeg>()
     private val DANGER_MOVE_YD = 30.0
@@ -3941,19 +3966,40 @@ class MapView(context: Context) : View(context) {
         val plv = questsPlv ?: return null
         val mapId = m.optInt("mapID", 0)
         val mine = TransportRoutes.factionOf(m.optString("fac", null))
-        // the ground (b-route-terrain): the zone's slope grid from the harvest, and the cells this player has walked
-        Terrain.Walked.init(java.io.File(context.filesDir, "walked.bin"))
-        val tg = Terrain.of(mapId)
+        // the ground (b-route-terrain): the zone's slope grid from the harvest, and the cells this player has walked. NEVER read or built
+        // here (test56's ANRs): the files load and the grid builds on the route thread (RouteWork); this draws the last one finished
+        val tg = Terrain.of(mapId)                                  // in memory, or null (asked for on the route thread)
         // the roads this device learned from the walking (b-route-roads), learned again as the walked cells grow
         Roads.relearn(200) { dGridKey = ""; invalidate() }
         // the buildings (test54: "Sometimes checkpoints are going through buildings"): the interiors' placed buildings on this map, their
         // storeys' outlines in the world (b-route-buildings)
         ensurePlaces(r.continent)
         val bl = if (placesFor == r.continent) places else null
-        val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}:${tg != null}:${Terrain.Walked.count() / 40}:${Roads.version}:${bl?.size}"
+        Roads.of(mapId)                                             // asked for on the route thread when not in memory
+        val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}:${tg != null}:${Terrain.Walked.count() / 40}:" +
+            "${Roads.version}:${Roads.files.version}:${bl?.size}"
         if (key != dGridKey) {
             dGridKey = key
-            dangerLegs.clear()
+            val filesDir = context.filesDir
+            RouteWork.run({ buildDangerGrid(mapId, plv, mine, r, bl, filesDir) }) { built ->
+                if (dGridKey != key) return@run                     // a newer grid was asked for meanwhile
+                dGrid = built.grid; dGridMap = mapId
+                dangerLegs.clear()
+                android.util.Log.i("WCMAP", built.log)
+                invalidate()
+            }
+        }
+        return dGrid?.takeIf { dGridMap == mapId }
+    }
+
+    private class BuiltGrid(val grid: DangerGrid?, val log: String)
+
+    /** the route's grid for [mapId], on the route thread (the zone's files read here, never on the UI thread) */
+    private fun buildDangerGrid(mapId: Int, plv: Int, mine: Int, r: PoiStore.Rect, bl: List<Place>?, filesDir: java.io.File): BuiltGrid {
+        run {
+            Terrain.Walked.init(java.io.File(filesDir, "walked.bin"))
+            val tg = Terrain.of(mapId)
+            Roads.of(mapId)
             val sp = DangerStore.spawns(mapId)
             val cont = r.continent
             val foot = Buildings.onMap((bl ?: emptyList()).map { p ->
@@ -3978,12 +4024,12 @@ class MapView(context: Context) : View(context) {
                     else -> f
                 }
             }
-            dGrid = if (sp.isEmpty() && tg == null && foot.isEmpty()) null else DangerGrid.build(sp, mine, plv, r.width, r.height, ground)
-            android.util.Log.i("WCMAP", "terrain: grid for map $mapId ${if (tg != null) "present" else "missing"}; " +
-                "${foot.size} buildings as walls; ${Terrain.Walked.count()} walked cells kept")
-            Roads.of(mapId)?.let { android.util.Log.i("WCMAP", "roads: ${Roads.roadCells(mapId)} road cells in map $mapId") }
+            val g = if (sp.isEmpty() && tg == null && foot.isEmpty()) null else DangerGrid.build(sp, mine, plv, r.width, r.height, ground)
+            val log = "terrain: grid for map $mapId ${if (tg != null) "present" else "missing"}; " +
+                "${foot.size} buildings as walls; ${Terrain.Walked.count()} walked cells kept" +
+                (Roads.of(mapId)?.let { "; roads: ${Roads.roadCells(mapId)} road cells" } ?: "")
+            return BuiltGrid(g, log)
         }
-        return dGrid
     }
 
     /** a zone's border band (yd) and its cost unless the ground there is level (Terrain.factor 1; unknown ground counts as not level) */
@@ -4012,10 +4058,28 @@ class MapView(context: Context) : View(context) {
             if (keep.size != old.pts.size) dangerLegs[q] = DangerLeg(keep, old.tx, old.ty, old.atX, old.atY, old.k)
             return left
         }
-        // walked on: planned again from here; the old way kept only as far as it still lies AHEAD (its passed bends dropped, never
-        // a way back to them)
+        // walked on: planned again from here, ON THE ROUTE THREAD (A* never runs in onDraw: test56's ANRs); until it is done the old way
+        // still ahead is shown (or the straight line)
+        if (legPending.add(q)) {
+            val strength = Settings.avoidDanger
+            RouteWork.run({ planLeg(q, g, here, to, k, if (sameGoal) old else null, strength) }) { leg ->
+                legPending.remove(q)
+                if (dGrid !== g) return@run                           // the grid changed meanwhile: planned again on the next frame
+                dangerLegs[q] = leg.first
+                leg.second?.let { android.util.Log.i("WCMAP", it) }
+                invalidate()
+            }
+        }
+        return if (old != null && sameGoal && old.pts.size > 2) passed(listOf(here) + old.pts.drop(1), ax, ay) else null
+    }
+
+    /** quest [q]'s leg planned from [here] to [to] on [g] (the route thread): the leg kept, and the log line when it changed */
+    private fun planLeg(q: Int, g: DangerGrid, here: DoubleArray, to: DoubleArray, k: Double, old: DangerLeg?, strength: String): Pair<DangerLeg, String?> {
+        val ax = g.ax; val ay = g.ay
+        var log: String? = null
+        // the old way kept only as far as it still lies AHEAD (its passed bends dropped, never a way back to them)
         var pts = g.route(here, to, k)
-        if (old != null && sameGoal && old.pts.size > 2) {
+        if (old != null && old.pts.size > 2) {
             val kept = passed(listOf(here) + old.pts.drop(1), ax, ay) ?: listOf(here, to)
             if (g.cost(kept, k, to) <= g.cost(pts, k, to) * DANGER_STICK) pts = kept
         }
@@ -4024,16 +4088,15 @@ class MapView(context: Context) : View(context) {
             val firstMoved = !wasBent || pts.size <= 2 || hypot((pts[1][0] - old!!.pts[1][0]) * ax, (pts[1][1] - old.pts[1][1]) * ay) > 40.0
             if (firstMoved) {
                 val straight = listOf(here, to)
-                android.util.Log.i("WCMAP", if (pts.size > 2) "danger: quest $q bent round hostile ground: ${pts.size - 2} bends, " +
+                log = (if (pts.size > 2) "danger: quest $q bent round hostile ground: ${pts.size - 2} bends, " +
                     "detour +${(DangerGrid.yards(pts, ax, ay) - DangerGrid.yards(straight, ax, ay)).toInt()} yd, danger avoided " +
-                    "${(g.cost(straight, k, to) - g.cost(pts, k, to)).toInt()} (strength ${Settings.avoidDanger}, radius ${DangerGrid.AGGRO_YD.toInt()} yd); " +
+                    "${(g.cost(straight, k, to) - g.cost(pts, k, to)).toInt()} (strength $strength, radius ${DangerGrid.AGGRO_YD.toInt()} yd); " +
                     "cost: ground ${g.cost(pts, 0.0, to).toInt()} + danger ${(g.cost(pts, k, to) - g.cost(pts, 0.0, to)).toInt()} " +
                     "(straight: ground ${g.cost(straight, 0.0, to).toInt()} + danger ${(g.cost(straight, k, to) - g.cost(straight, 0.0, to)).toInt()})"
                     else "danger: quest $q straight again")
             }
         }
-        dangerLegs[q] = DangerLeg(pts, route.x, route.y, px, py, k)
-        return pts.takeIf { it.size > 2 }?.let { passed(it, ax, ay) }
+        return DangerLeg(pts, to[0], to[1], here[0], here[1], k) to log
     }
 
     /** where the way from ([x0], [y0]) to ([x1], [y1]) meets the box l..r x t..b (the start clamped into it first), or null */

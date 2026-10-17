@@ -255,7 +255,10 @@ object Roads {
     private val grids = HashMap<Int, Grid?>()
 
     /** zone [map]'s texture grid (null until the harvest built it) */
-    @Synchronized fun of(map: Int): Grid? = grids.getOrPut(map) { Grid.read(ArtHarvest.file("groundtex/$map.bin")) }.also { if (it == null) grids.remove(map) }
+    // (test56's ANRs: a missing grid was opened again for every cell of the route's grid, on the UI thread, under this object's lock;
+    // now each zone's grid is read once off the UI thread and kept, a missing one remembered a while: RouteWork.Files)
+    val files = RouteWork.Files { map -> Grid.read(ArtHarvest.file("groundtex/$map.bin")) }
+    fun of(map: Int): Grid? = files.get(map)
 
     /** the texture at world ([wx], [wy]) of [map] is a learned road */
     fun isRoad(map: Int, wx: Double, wy: Double): Boolean { val g = of(map) ?: return false; val t = g.at(wx, wy); return t != 0 && t in roads }

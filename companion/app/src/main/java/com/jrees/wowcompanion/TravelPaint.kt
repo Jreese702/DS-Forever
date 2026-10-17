@@ -30,16 +30,23 @@ object TravelPaint {
     private val art = HashMap<String, android.graphics.Bitmap?>()
     private var artAt = 0L
     /** a harvested picture, or null (read once; asked again every few seconds while the harvest has not written it) */
+    private val picLoading = HashSet<String>()
+    /** (decoded OFF the UI thread: test56's ANRs; the map is drawn again once it has arrived) */
     private fun pic(name: String): android.graphics.Bitmap? {
         art[name]?.let { return it }
         val now = android.os.SystemClock.elapsedRealtime()
         if (art.containsKey(name) && now - artAt < 5_000L) return null
+        if (!picLoading.add(name)) return null
         artAt = now
-        val f = ArtHarvest.file("ui/travel/$name.png")
-        val b = if (f.isFile) runCatching { android.graphics.BitmapFactory.decodeFile(f.path) }.getOrNull() else null
-        art[name] = b
-        return b
+        Thread {
+            val f = ArtHarvest.file("ui/travel/$name.png")
+            val b = if (f.isFile) runCatching { android.graphics.BitmapFactory.decodeFile(f.path) }.getOrNull() else null
+            android.os.Handler(android.os.Looper.getMainLooper()).post { picLoading.remove(name); art[name] = b; if (b != null) onArt?.invoke() }
+        }.apply { isDaemon = true }.start()
+        return null
     }
+    /** asked to draw again when a picture has arrived (the views set it) */
+    var onArt: (() -> Unit)? = null
     private val pBmp by lazy { Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG) }
     private val dst = RectF()
 

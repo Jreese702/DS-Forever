@@ -14,6 +14,9 @@ class MainActivity : Activity(), HostShell {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // debug builds: every disk read or write on the UI thread logged (test56's ANRs: the route's grids were read in onDraw)
+        if (BuildConfig.DEBUG) android.os.StrictMode.setThreadPolicy(android.os.StrictMode.ThreadPolicy.Builder()
+            .detectDiskReads().detectDiskWrites().penaltyLog().build())
         host = CompanionHost(this, this)
         host.onCreate(savedInstanceState)
     }

@@ -217,9 +217,9 @@ object Terrain {
 
     private val grids = HashMap<Int, Grid?>()
     /** zone [map]'s grid (null until the harvest built it) */
-    @Synchronized fun of(map: Int): Grid? = grids.getOrPut(map) { Grid.read(ArtHarvest.file("terrain/$map.bin")) }.also {
-        if (it == null) grids.remove(map)                       // asked again later, once the harvest has made it
-    }
+    // (test56's ANRs: kept in memory once read, a missing one remembered a while, never read on the UI thread: RouteWork.Files)
+    val files = RouteWork.Files { map -> Grid.read(ArtHarvest.file("terrain/$map.bin")) }
+    fun of(map: Int): Grid? = files.get(map)
 
     // ---------------------------------------------------------------- the walked cells (b)
 
