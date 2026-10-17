@@ -451,12 +451,22 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // on home but visually appears like it's still in settings"): the restart went out with the Settings room still up and holding
         // the controller in the OLD game; the new game starts with nothing held, so presses drove Home under a Settings picture. Now the
         // room is left first, the same way as B (its hand-over and guest released while the old game still hears them), then the restart
+        // test45 ("The restart game buttons don't work"): the restart did go out, but the game's own Exit Game counts ~20 s outside a
+        // rested area with nothing shown meanwhile. Now the restart goes out AT ONCE after the room leave (the launcher's clean exit taps
+        // through TapBridge's one worker, queued after the leave's own taps anyway), Home shows the notice until the new run attaches,
+        // and every step is logged under WCSETUP
         settingsRest.onRestart = {
             val restart = SetupBridge.restartGame
+            Log.i("WCSETUP", "restart from Settings: pressed in $room; launcher hook ${if (restart != null) "present" else "MISSING"}" +
+                "; restarting already ${SetupBridge.restarting}")
             SetupBridge.log?.invoke("restart: from Settings (frame generation / add-ons)")
             if (room != Room.HOME) show(Room.HOME)
-            if (restart == null) android.util.Log.w("FrameGen", "restart: no launcher hook")
-            else ui.postDelayed({ restart() }, RESTART_LEAVE_MS)
+            if (restart == null) Log.w("WCSETUP", "restart from Settings: no launcher hook, nothing restarts")
+            else {
+                restartNotice()
+                restart()
+                Log.i("WCSETUP", "restart from Settings: the launcher's restart called (the game's own Exit Game first)")
+            }
         }
         settings = SettingsRoom(this, settingsView, { questsPad })
         settings.pad.onLeave = { show(Room.HOME) }
@@ -1494,7 +1504,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (current) IndoorSchedulerStep.noteAlive(homeView.inFight() || setupLoading || startView.visibility == View.VISIBLE)
         // a reload from the Settings keeps it up until the new hello (the game writes on for a moment before it reloads)
         // (an art failure kept it up before Play only: with the game live it never holds the bottom screen; p-build-tables-blocks-keyboard)
-        if (current && startView.visibility == View.VISIBLE && reloadAt == 0L && !setupLoading &&
+        if (current && startView.visibility == View.VISIBLE && reloadAt == 0L && !setupLoading && restartNoticeAt == 0L &&
             (ArtHarvest.state !is ArtHarvest.State.Failed || LauncherHooks.gameUp())) startView.visibility = View.GONE
         // where the character stands chooses the scene behind every waiting screen (UI Art's Scene)
         msg.optJSONObject("map")?.let { if (it.has("inst")) Scene.note(it.optInt("inst", -1)) }
@@ -2034,6 +2044,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             if (LauncherHooks.gameStartSec != signInRun) {
                 // a new client run (any restart route): nothing of a room's hold survives it, so the bottom screen is Home again
                 if (signInRun != 0L && room != Room.HOME) { Log.i("WCHOME", "new game run: $room -> HOME"); show(Room.HOME, motion = false) }
+                // the restart notice ends with the new run (the new game's first current word takes the start view away)
+                if (restartNoticeAt != 0L) { restartNoticeAt = 0L; Log.i("WCSETUP", "restart from Settings: the new game run attached") }
                 signInRun = LauncherHooks.gameStartSec; signInCheck.reset()
                 if (SetupBridge.restarting) { SetupBridge.restarting = false; NativeLogin.logEvent("restart: game attached (a new client run)") }
             }
@@ -2071,8 +2083,24 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (st == SetupFlow.SignIn.NONE && SetupBridge.keyboardOpen) { NativeLogin.logEvent("sign-in: keyboard closed (past the login screen)"); SetupBridge.keyboard(false) }
     }
     private val NO_FILE_LOGIN_S = 30L
-    /** the room's leave taps reach the old game before the launcher's restart closes it */
-    private val RESTART_LEAVE_MS = 600L
+
+    /**
+     * RESTARTING, SAID (test45: a restart from Settings showed nothing for the ~20 s of the game's own Exit Game countdown, so it looked
+     * like the button did nothing): the start view's line over the bottom screen until the new client run attaches (the start view goes
+     * by itself with the game's first current word), at most RESTART_NOTICE_MS.
+     */
+    private fun restartNotice() {
+        if (!::startView.isInitialized) return
+        startView.line = "Restarting the game: it saves and closes first (about 20 s)..."
+        startView.visibility = View.VISIBLE
+        startView.invalidate()
+        val at = SystemClock.elapsedRealtime()
+        restartNoticeAt = at
+        // held over the old game's documents (they keep coming through its exit countdown) until the new run attaches; at most this long
+        ui.postDelayed({ if (restartNoticeAt == at) { restartNoticeAt = 0L; if (LauncherHooks.gameUp()) startView.visibility = View.GONE } }, RESTART_NOTICE_MS)
+    }
+    private var restartNoticeAt = 0L
+    private val RESTART_NOTICE_MS = 120_000L
 
     /**
      * THE AUTHENTICATOR, SIMULATED (p-auth-keyboard, for a Thor without one): while

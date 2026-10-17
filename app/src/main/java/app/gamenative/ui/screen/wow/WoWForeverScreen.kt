@@ -267,6 +267,17 @@ fun WoWForeverScreen(
                     PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
                     return@launch
                 }
+                // THE ADD-ONS INSTALLED FROM SETTINGS > ADD-ONS (test45: the restart's own Play went straight to the launch and the
+                // downloaded packages never went in; the start step runs once per launcher screen): what is downloaded goes in HERE, right
+                // before the game starts, on EVERY launch route (Play, the restart's Play, the auto-launch). Nothing is fetched here, and a
+                // failure never stops the launch (WCSETUP "add-ons: applied ..." / "... not applied: ...")
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        com.jrees.wowcompanion.ThirdPartyAddons.init(context)
+                        com.jrees.wowcompanion.ThirdPartyAddons.applyAtStart(WowClientDownloader.flavorDir(File(gamePath)),
+                            fetchSmall = false, by = "launch by $by")
+                    }.onFailure { android.util.Log.w("WCSETUP", "add-ons at launch: ${it.message}") }
+                }
                 val containerId = withContext(Dispatchers.IO) {
                     prepareLaunch(context, File(gamePath), gpu) { msg ->
                         scope.launch(Dispatchers.Main) { statusText = msg }

@@ -184,12 +184,25 @@ object ThirdPartyAddons {
     private var dir: File? = null
     private var stateJ = JSONObject()                       // "<addon>/<key>" -> { in: installed tag, folders: [...], zip: verified tag }
 
-    @Synchronized private fun state(a: Addon, key: String): JSONObject = stateJ.optJSONObject("${a.id}/$key") ?: JSONObject()
+    /** the state file's time when it was read: the launcher's step may run in another process; a newer file is read again */
+    private var stateAt = 0L
+    @Synchronized private fun state(a: Addon, key: String): JSONObject {
+        val f = dir?.let { File(it, "state.json") }
+        if (f != null && f.lastModified() != stateAt) loadState()
+        return stateJ.optJSONObject("${a.id}/$key") ?: JSONObject()
+    }
     @Synchronized private fun putState(a: Addon, key: String, j: JSONObject) {
         stateJ.put("${a.id}/$key", j)
-        runCatching { File(dir ?: return@runCatching, "state.json").apply { parentFile?.mkdirs() }.writeText(stateJ.toString()) }
+        runCatching {
+            val f = File(dir ?: return@runCatching, "state.json").apply { parentFile?.mkdirs() }
+            f.writeText(stateJ.toString()); stateAt = f.lastModified()
+        }
     }
-    private fun loadState() { stateJ = runCatching { JSONObject(File(dir!!, "state.json").readText()) }.getOrDefault(JSONObject()) }
+    @Synchronized private fun loadState() {
+        val f = File(dir ?: return, "state.json")
+        stateAt = f.lastModified()
+        stateJ = runCatching { JSONObject(f.readText()) }.getOrDefault(JSONObject())
+    }
 
     /** the row's word on package [key] of [a] */
     fun status(a: Addon, key: String): Status {
@@ -325,29 +338,40 @@ object ThirdPartyAddons {
      * The launcher's dependency step (the game closed): every wanted package downloaded goes in, a small one not downloaded yet is
      * fetched first (Polestar, as DependencyAddons did), every installed package no longer wanted goes out to the backup. One line.
      */
-    fun applyAtStart(flavorRoot: File): String {
-        if (dir == null) return ""
+    fun applyAtStart(flavorRoot: File, fetchSmall: Boolean = true, by: String = "the start step"): String {
+        if (dir == null) { log("add-ons ($by): not started (no folder)"); return "" }
         val lines = ArrayList<String>()
         for (a in ALL) for ((key, p) in a.pkgs()) {
             val name = if (key == "core") a.title else "${a.title} ${key.replaceFirstChar { it.uppercase() }}"
             try {
                 val want = wanted(a, key); val inst = installed(a, key)
-                if (goesOut(a, key)) { moveOut(a, key, flavorRoot); lines.add("$name moved to the backup"); continue }
+                if (goesOut(a, key)) { moveOut(a, key, flavorRoot); lines.add("$name moved to the backup"); log("add-ons: removed $name (to the backup)"); continue }
                 if (!want || inst) continue
-                if (state(a, key).optString("zip") != p.tag && p.bytes <= SMALL) fetch(a, key, p)
+                if (state(a, key).optString("zip") != p.tag && p.bytes <= SMALL && fetchSmall) fetch(a, key, p)
                 if (state(a, key).optString("zip") != p.tag || zipOf(p).length() != p.bytes) {
-                    resume(); lines.add("$name downloading"); continue
+                    resume(); lines.add("$name downloading")
+                    log("add-ons: $name not applied: not downloaded yet (${if (zipOf(p).isFile) "${zipOf(p).length()} of ${p.bytes} bytes" else "nothing yet"})")
+                    continue
                 }
-                if (DependencyAddons.gameRunning()) { lines.add("$name goes in at the next start with the game closed"); continue }
+                if (DependencyAddons.gameRunning()) {
+                    lines.add("$name goes in at the next start with the game closed"); log("add-ons: $name not applied: the game is running"); continue
+                }
                 moveIn(a, key, p, flavorRoot)
-                lines.add("$name ${a.version.takeIf { key == "core" } ?: p.tag.substringAfterLast('v')} installed")
+                val ver = a.version.takeIf { key == "core" } ?: p.tag.substringAfterLast('v')
+                lines.add("$name $ver installed")
+                log("add-ons: applied $name $ver")
             } catch (t: Throwable) {
                 lines.add("$name skipped (${DependencyAddons.reasonOf(t)})")
+                log("add-ons: $name not applied: ${t.javaClass.simpleName}: ${t.message}")
             }
         }
+        log("add-ons ($by): " + lines.joinToString("; ").ifEmpty { "nothing to do" })
         changed()
         return lines.joinToString("; ")
     }
+
+    /** one WCSETUP line (the off-device tests have no android.util.Log: ignored there) */
+    private fun log(line: String) { runCatching { android.util.Log.i("WCSETUP", line) } }
 
     private fun moveIn(a: Addon, key: String, p: Pkg, flavorRoot: File) {
         val iface = File(flavorRoot, "Interface")
