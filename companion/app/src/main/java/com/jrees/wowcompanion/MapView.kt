@@ -2428,6 +2428,9 @@ class MapView(context: Context) : View(context) {
     }
     private val rimPt = FloatArray(2)
 
+    /** the quest the rim arrow is for (the game's focus, else the default), 0 = none */
+    private var focusTq = 0
+
     private fun deriveFocusTarget(m: JSONObject?) {
         focusTX = Double.NaN; focusTY = Double.NaN; flyStep = false
         if (m == null) return
@@ -2440,6 +2443,7 @@ class MapView(context: Context) : View(context) {
             if (was != st && !orderingDoc) orderTracked(trackedIds())
         }
         val tq = if (st > 0) st else if (focusQid == 0) defaultQid else 0      // the game's focus, else the default
+        focusTq = if (tq > 0 && shownQuest(tq)) tq else 0
         if (tq <= 0 || !shownQuest(tq)) return            // an untracked focus has no arrow (not on the map at all)
         val qs = m.optJSONArray("quests")
         if (qs != null) for (i in 0 until qs.length()) {
@@ -2560,7 +2564,7 @@ class MapView(context: Context) : View(context) {
         val at = if (w != null && w.valid) String.format(java.util.Locale.US, " = %.1f, %.1f on its map", w.nx(e.wy) * 100, w.ny(e.wx) * 100) else ""
         android.util.Log.i("WCMAP", "learned a way out of map ${e.map} (${mapName?.invoke(e.map) ?: ""}) to ${e.toMap} " +
             "(${mapName?.invoke(e.toMap) ?: ""})${if (e.transport) " by a transport" else " on foot"}: world ${e.wx.toInt()}, ${e.wy.toInt()}$at")
-        routeKey = null
+        routeEpoch++
     }
 
     /** where the game's zone maps show a quest, in world yards ([continent, wx, wy] each): the Map room's kept mapquests (MainActivity) */
@@ -3351,16 +3355,32 @@ class MapView(context: Context) : View(context) {
      * this map, else the next step of the way there (a known, connected flight master; the game's next waypoint; the map's edge).
      * Worked out again when the quest, the map document or the quests document changes (not every frame).
      */
-    private var routeKey: Any? = null
-    private var routeNow: CursorRoute.Route? = null
     private fun cursorRoute(): CursorRoute.Route? {
         val q = cursor.sel
         if (!cursor.shown || q <= 0) return null
+        return routeFor(q)
+    }
+
+    /**
+     * ONE ROUTE PER QUEST, for the cursor's line AND the focused quest's rim arrow (the user on test29: "The quest arrow is still pointing
+     * way up to iron forge instead of at the tram. The dotted lines do go to the tram tho"). Worked out again when a document changes,
+     * a way is learned, or every ROUTE_EVERY_MS while the player walks (the map object is updated in place by the position ticks).
+     */
+    private val routeCache = HashMap<Int, Pair<Any, CursorRoute.Route?>>()
+    private var routeEpoch = 0
+    private val ROUTE_EVERY_MS = 2000L
+    private fun routeFor(q: Int): CursorRoute.Route? {
         val m = map ?: return null
-        val key = listOf(q, System.identityHashCode(m), System.identityHashCode(questById[q]))
-        if (key == routeKey) return routeNow
-        routeKey = key
-        routeNow = null
+        val key = listOf(System.identityHashCode(m), System.identityHashCode(questById[q]), routeEpoch,
+            android.os.SystemClock.elapsedRealtime() / ROUTE_EVERY_MS)
+        routeCache[q]?.let { if (it.first == key) return it.second }
+        if (routeCache.size > 32) routeCache.clear()
+        val route = planRoute(q, m)
+        routeCache[q] = key to route
+        return route
+    }
+
+    private fun planRoute(q: Int, m: JSONObject): CursorRoute.Route? {
         val r = rect ?: return null
         if (!r.valid) return null
         val mapId = m.optInt("mapID", Int.MIN_VALUE)
@@ -3390,13 +3410,12 @@ class MapView(context: Context) : View(context) {
         // paths will slot in as one more [waySources] entry)
         val ways = ArrayList<CityExits.Way>()
         for (src in waySources) ways.addAll(src(mapId, r))
-        routeNow = CursorRoute.plan(px, py, r.width, r.height, goals, far, way, questById[q]?.optString("wp", ""), nodes,
+        return CursorRoute.plan(px, py, r.width, r.height, goals, far, way, questById[q]?.optString("wp", ""), nodes,
             ways = ways, inCity = mapId in CityExits.CITIES,
             wayName = { e ->
                 if (!e.learned) e.name
                 else mapName?.invoke(e.toMap)?.takeIf { it.isNotEmpty() }?.let { if (e.transport) "Ride to $it" else "To $it" }
             }) { i, j -> TaxiNet.connected(i, j) }
-        return routeNow
     }
 
     /**
@@ -4975,8 +4994,13 @@ class MapView(context: Context) : View(context) {
         // target is off the field, as on the game's minimap; on the field its own mark shows.
         // while a ghost with a corpse known it points at the CORPSE instead (the user's answer, 2026-10-01: "The corpse only")
         val toCorpse = corpseKnown()
-        val rimTX = if (toCorpse) corpseX else focusTX
-        val rimTY = if (toCorpse) corpseY else focusTY
+        // the focused quest's arrow points along its ROUTE (the user on test29): at the route's next way (a tram, a learned crossing, a
+        // flight master, the game's waypoint, the map's edge) whenever the line goes through one; at the quest itself when it is direct
+        val fRoute = if (!toCorpse && focusTq > 0 && !compact) routeFor(focusTq) else null
+        val viaWay = fRoute != null && fRoute.kind != CursorRoute.Kind.GOAL
+        val rimTX = if (toCorpse) corpseX else if (viaWay) fRoute!!.x else focusTX
+        val rimTY = if (toCorpse) corpseY else if (viaWay) fRoute!!.y else focusTY
+        val rimFly = if (viaWay) fRoute!!.kind == CursorRoute.Kind.FLIGHT else flyStep
         if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN()) {
             val tx = sx(rimTX); val ty = sy(rimTY)
             val inset = RIM_R + 6f
@@ -4993,7 +5017,7 @@ class MapView(context: Context) : View(context) {
             val seen = tx >= left && tx <= left + fw && ty >= top + nameBar &&
                 ty <= top + fh - (if (hintsOn()) HINT_BAND else 0f)
             if (toCorpse && seen) drawCorpse(c, tx, ty)
-            if (!toCorpse && seen && flyStep) drawFlyStep(c, tx, ty)
+            if (!toCorpse && seen && rimFly) drawFlyStep(c, tx, ty)
             if (r0 > l0 && b0 > t0 && !seen) {
                 val ox = sx(px).coerceIn(l0, r0); val oy = sy(py).coerceIn(t0, b0)
                 val dx = tx - ox; val dy = ty - oy
@@ -5026,7 +5050,7 @@ class MapView(context: Context) : View(context) {
                 } else drawIcon(c, Ic.QUEST_ARROW, ax, ay, RIM_ARROW_PX, if (toCorpse) pCorpseArrow else pArt)
                 c.restore()
                 // the step's icon (the user's pick): the winged boot just inside the arrow, upright, while the way goes by air
-                if (!toCorpse && flyStep) {
+                if (!toCorpse && rimFly) {
                     val len = Math.hypot((tx - ax).toDouble(), (ty - ay).toDouble()).toFloat().coerceAtLeast(1f)
                     val bx = ax - (tx - ax) / len * FLY_ICON_OFF; val by = ay - (ty - ay) / len * FLY_ICON_OFF
                     // on a dark round backing (UI Art, mr16: on busy city art the bare boot read as a flight-master pin there)
