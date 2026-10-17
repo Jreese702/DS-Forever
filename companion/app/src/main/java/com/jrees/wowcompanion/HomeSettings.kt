@@ -327,6 +327,9 @@ class HomeSettingsSection(context: Context) : View(context) {
         lay(c)
     }
 
+    /** the game's stance / possess bar override rows (read only): hidden for now (test40), their code and the game's values kept */
+    private val SHOW_GAME_BARS = false
+
     /** the rows as last drawn, with their words (the "What it does" panel) */
     private val rowHits = ArrayList<Pair<RectF, String>>()
 
@@ -353,12 +356,14 @@ class HomeSettingsSection(context: Context) : View(context) {
         y = row(c, y + GAP, "Swing timer", listOf("The swing line under the controller in a fight. The cast bar stays."),
             listOf("On", "Off"), if (HomeSettings.swingTimer) 0 else 1,
             listOf({ HomeSettings.swingTimer = true }, { HomeSettings.swingTimer = false }))
-        // f-class-radial: the game's own stance / pet bar placement, read only (no choices: DS Forever never changes it)
-        GameBars.stance?.let { v ->
+        // f-class-radial: the game's own stance / pet bar placement, read only (no choices: DS Forever never changes it).
+        // HIDDEN (test40, the user: "We need to hide the settings that don't do anything for now: the stance bar override and possess bar
+        // override"): not offered; GameBars still reads both (the form bars read the stance one), and SHOW_GAME_BARS brings them back
+        if (SHOW_GAME_BARS) GameBars.stance?.let { v ->
             y = row(c, y + GAP, GameBars.stanceTitle ?: "Stance bar", listOf("$v. Change it in the game's Controller settings."),
                 emptyList(), -1, null)
         }
-        GameBars.pet?.let { v ->
+        if (SHOW_GAME_BARS) GameBars.pet?.let { v ->
             y = row(c, y + GAP, GameBars.petTitle ?: "Pet bar", listOf("$v. Change it in the game's Controller settings."),
                 emptyList(), -1, null)
         }
