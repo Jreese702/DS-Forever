@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b44"                -- bump on every change; b44: the Bind box's form row on Normal too (the game's own form bars, PadMap m57)
+local BV = "b45"                -- bump on every change; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -1192,6 +1192,19 @@ if type(pad) == "table" and type(pad.slotFor) == "function" and (secureRowOk or 
         if type(key) == "string" and key:match("^vo%d+$") then
             local p = VIDX.pick
             VIDX.pick = nil
+            -- b45 (the user, via tracking: "a FINGER must be able to pick a form"): the pad's 40 columns are all taken, so while the Bind box
+            -- waits (it covers the book: no spell's two taps can come) a LONE offset tap - no fresh group pick before it - is the box's
+            -- form row: vo0 = the caster (the class icon), vo<k> = the k-th form in the game's order (Select's cycle, by touch)
+            if (not p or GetTime() - p.at > V_PICK_S) and ctl.mode == "bind" and ctl.bind and type(WC.padMap) == "table"
+                and type(WC.padMap.forms) == "function" then
+                local okf, list = pcall(WC.padMap.forms)
+                local k = tonumber(key:sub(3))
+                if okf and type(list) == "table" and k and (k == 0 or list[k]) then
+                    ctl.bindForm = k == 0 and 0 or list[k].id
+                    report("bind-form")
+                end
+                return
+            end
             if not p or GetTime() - p.at > V_PICK_S then report("pad-no-group") return end
             local id = VIDX.byIdx[p.g * V_PER + tonumber(key:sub(3))]
             if id == nil then report("pad-unknown") return end

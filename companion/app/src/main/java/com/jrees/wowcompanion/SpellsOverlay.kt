@@ -189,6 +189,7 @@ class SpellsOverlay(
 
     /** the game's "Bind to Action Bar": its box and words, the controller's buttons for the set held (SPEC 4) */
     private fun bindBox(c: Canvas, w: Float, h: Float) {
+        formHits.clear()                                                // b45: only the row drawn this frame takes a finger
         val b = book
         val e = boxSpell?.let { id -> b?.let { SpellsModel.find(it, id) } }
         UiKit.cover(c, RectF(0f, 0f, w, h), 0.75f)
@@ -315,6 +316,7 @@ class SpellsOverlay(
      */
     private fun formRow(c: Canvas, w: Float, box: RectF, m: PadMapModel.Map, b: SpellsModel.Book?, st: SpellsModel.PadStyle) {
         val list = listOf<PadMapModel.Form?>(null) + m.forms.take(9)
+        formHits.clear()
         val chosen = ctl?.bindForm ?: 0
         val sz = 46f; val step = 54f
         val total = 56f + list.size * step
@@ -331,9 +333,13 @@ class SpellsOverlay(
                 c.drawBitmap(bmp, null, RectF(r.centerX() - i / 2f, r.centerY() - i / 2f, r.centerX() + i / 2f, r.centerY() + i / 2f), null)
             }
             if ((fo?.id ?: 0) == chosen) UiKit.focus(c, RectF(r).apply { inset(-3f, -3f) })     // the chosen set, plainly lit
+            formHits.add(RectF(r).apply { inset(-5f, -5f) })
             x += step
         }
     }
+
+    /** b45: the form row's places as drawn (index = 0 the class icon, k the k-th form), for a finger */
+    private val formHits = ArrayList<RectF>()
 
     /** empty slots with the glyphs, where the Cast room's drawing goes, for as long as it has none */
     private fun standIns(c: Canvas, dpad: RectF, face: RectF, lit: Int, icon: android.graphics.Bitmap?, st: SpellsModel.PadStyle) {
@@ -448,6 +454,9 @@ class SpellsOverlay(
                     val i = downFight; downFight = -1
                     val cols = fightCols()
                     if (i >= 0 && fightRect(i, w).contains(ev.x, ev.y) && cols != null && ctl?.mode == "bind") pickFight(i == 1)
+                    // b45 (a finger picks a form): the row's place k -> the spells row's "vo<k>" (Book b45 reads a lone one as the form)
+                    val k = formHits.indexOfFirst { it.contains(ev.x, ev.y) }
+                    if (k >= 0 && ctl?.mode == "bind") book?.win?.get("vo$k")?.let { onTap(it) }
                 }
                 MotionEvent.ACTION_CANCEL -> downFight = -1
             }
