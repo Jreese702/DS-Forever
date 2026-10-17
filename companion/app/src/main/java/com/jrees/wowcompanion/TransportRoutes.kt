@@ -58,14 +58,17 @@ object TransportRoutes {
     }
 
     /**
-     * A DOCK'S NAME FROM THE GAME'S OWN TABLE (b-travel-layer): the town of the nearest flight master within [DOCK_NAME_YD], else the
-     * nearest other named node (the table's own transport points, "Powderfuse Port, Riverglades"), else null (the app names the zone)
+     * A DOCK'S NAME FROM THE GAME'S OWN DATA (b-travel-layer, b-dock-names): the town of the nearest flight master within
+     * [DOCK_NAME_YD] (a pier at sea reads its bay: Menethil's "Baradin Bay"), else the place there ([place]: the ground's own area,
+     * PlaceNames: "Steamwheedle Port", "Skywatcher Plateau", "Dalaran", "Valanaar"), else the nearest other named node (the table's
+     * own transport points), else null (the app names the zone)
      */
     const val DOCK_NAME_YD = 500.0             // Undercity's and Orgrimmar's towers: their masters 494 - 496 yd off
-    fun dockName(nodes: List<FlightMaster>, cont: Int, x: Float, y: Float): String? {
+    fun dockName(nodes: List<FlightMaster>, cont: Int, x: Float, y: Float, place: ((Int, Float, Float) -> String?)? = null): String? {
         fun d(n: FlightMaster) = Math.hypot((n.x - x).toDouble(), (n.y - y).toDouble())
         val near = nodes.filter { it.cont == cont && it.name.isNotEmpty() && d(it) <= DOCK_NAME_YD }
         near.filter { it.real }.minByOrNull { d(it) }?.let { return it.town }
+        place?.invoke(cont, x, y)?.let { return it }
         return near.filter { n -> listOf("Transport", "Generic", "Quest Path", "zzOLD").none { n.name.startsWith(it) } }
             .minByOrNull { d(it) }?.town
     }
@@ -76,9 +79,9 @@ object TransportRoutes {
         .fold(0) { m, f -> m or (f.flags and 3) }
 
     /** [rides] with their docks' towns */
-    fun withFactions(rides: List<Ride>, masters: List<FlightMaster>): List<Ride> = rides.map { r ->
+    fun withFactions(rides: List<Ride>, masters: List<FlightMaster>, place: ((Int, Float, Float) -> String?)? = null): List<Ride> = rides.map { r ->
         Ride(r.path, r.ca, r.a, r.cb, r.b, r.yd, townFaction(masters, r.ca, r.a[0], r.a[1]), townFaction(masters, r.cb, r.b[0], r.b[1]),
-            r.air, dockName(masters, r.ca, r.a[0], r.a[1]), dockName(masters, r.cb, r.b[0], r.b[1]))
+            r.air, dockName(masters, r.ca, r.a[0], r.a[1], place), dockName(masters, r.cb, r.b[0], r.b[1], place))
     }
 
     /** "Alliance" / "Horde" (the game's UnitFactionGroup) as [ALLIANCE] / [HORDE], else 0 */
