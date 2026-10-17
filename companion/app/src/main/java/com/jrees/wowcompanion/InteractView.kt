@@ -61,7 +61,7 @@ import kotlin.math.*
  */
 class InteractView(context: Context) : View(context) {
 
-    private enum class Kind { NONE, GOSSIP, QUEST, MERCHANT, TRAINER, STABLE, MAIL, AUCTION, TAXI, BANK, LOOT, PETITION }
+    private enum class Kind { NONE, GOSSIP, QUEST, MERCHANT, TRAINER, STABLE, MAIL, AUCTION, TAXI, BANK, LOOT, PETITION, QTSETUP }
     private enum class Tab { BUY, SELL, BACK }
 
     /** one tappable or selectable thing: the command is its identity and what a tap sends */
@@ -147,6 +147,7 @@ class InteractView(context: Context) : View(context) {
             msg.has("bank") -> Kind.BANK
             msg.has("loot") -> Kind.LOOT
             msg.has("gossip") -> Kind.GOSSIP
+            msg.has("qtsetup") -> Kind.QTSETUP           // 1.0.9: QuestTrail's setup assistant / Shared Trail intro, mirrored
             else -> Kind.NONE
         }
         val s = signature(msg, k)
@@ -538,6 +539,7 @@ class InteractView(context: Context) : View(context) {
         Kind.TRAINER -> "t|${d.optJSONObject("trainer")!!.optJSONObject("npc")?.optString("name")}"
         Kind.STABLE -> "s|${d.optJSONObject("stable")!!.optJSONObject("npc")?.optString("name")}"
         Kind.PETITION -> "pe|${d.optJSONObject("petition")!!.optString("title")}"
+        Kind.QTSETUP -> "qt|${d.optJSONObject("qtsetup")!!.optString("kind")}|${d.optJSONObject("qtsetup")!!.optInt("i")}"
         Kind.MAIL -> d.optJSONObject("mail")!!.let { "ml|${it.optString("tab")}|${it.optJSONObject("send")?.has("bags") == true}" }
         Kind.TAXI -> "tx|${d.optJSONObject("taxi")!!.optInt("map")}"
         Kind.BANK -> d.optJSONObject("bank")!!.let { "bk|${it.optBoolean("acct")}|${it.optInt("page")}" }
@@ -675,7 +677,7 @@ class InteractView(context: Context) : View(context) {
                     }
                 }
             }
-            Kind.NONE, Kind.PETITION -> {}
+            Kind.NONE, Kind.PETITION, Kind.QTSETUP -> {}
         }
         return out
     }
@@ -1117,6 +1119,10 @@ class InteractView(context: Context) : View(context) {
             Kind.PETITION -> {
                 val pe = d.optJSONObject("petition") ?: return
                 petitionWindow(c, r, pe)
+            }
+            Kind.QTSETUP -> {
+                val q = d.optJSONObject("qtsetup") ?: return
+                qtWindow(c, r, q, now)
             }
             Kind.MAIL -> {
                 val ml = d.optJSONObject("mail") ?: return
@@ -1637,6 +1643,185 @@ class InteractView(context: Context) : View(context) {
     // window shows it: the charter, the guild master, the signatures up to the minimum ("Not yet signed" after them), the
     // instructions. Its OWN buttons in the strip (Sign; or Request Signature + Rename for the one who bought it), each pressed by
     // a secure click: a tap on its cell, A on the one under the cursor. The game's confirm / rename boxes are its own. B / X: Close.
+    /**
+     * QUESTTRAIL'S SETUP ASSISTANT, MIRRORED (1.0.9; the user: "Shared trail has a UI pop-up right when the game starts ... remake it on
+     * the bottom screen like other UI", all 12 steps in full). The add-on reads QuestTrail's own window (QuestTrailSetup, or the Shared
+     * Trail intro QuestTrailSharedIntro) and every control on the step's page, generically: [items] in the game's reading order, each
+     * { k: head | check | slider | color | drop | num | button | edit | text, t: its label, row: the game's line it sits on, its value,
+     * en: usable, slot: its cell }. A touch or the controller's A presses QuestTrail's OWN widget (the add-on :Click()s it or sets its
+     * slider), so QuestTrail writes its own settings. The strip: Reset, the step's arrows and number, Finish on the last, and "On the
+     * top screen" (its window back, for anything this cannot do here).
+     */
+    private fun qtWindow(c: Canvas, r: RectF, q: JSONObject, now: Long) {
+        val inner = UiKit.windowGround(c, r, marble = true)
+        val act = q.optJSONObject("act")
+        fun col(k: String) = act?.let { slotOf(it, k) } ?: -1
+        fun hitOf(cmd: String, cell: Int) = if (cell >= 0) "act:$cmd|$cell" else "why:The game gave this no tap cell"
+        val strip = UiKit.strip(c, inner)
+        val cy = strip.centerY() + 2f
+        val x0 = inner.left + 24f; val x1 = inner.right - 24f
+        var y = r.top + UiKit.WINDOW_UNDER_RING
+        // the step's title and its words
+        c.drawText(q.optString("title", ""), (x0 + x1) / 2f, y + 44f, UiKit.bodyPaint(40f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+        y += 66f
+        val about = q.optString("about", "")
+        if (about.isNotEmpty()) {
+            val lay = layout(about, UiKit.bodyPaint(24f, Theme.text), (x1 - x0).toInt(), 4f)
+            drawLayout(c, lay, x0, y); y += lay.height + 14f
+        }
+        pFill.color = Color.rgb(96, 80, 50); c.drawRect(x0, y, x1, y + 2f, pFill); y += 10f
+        // ---- the page's controls, scrolled to keep the cursor's in view
+        val items = arr(q, "items")
+        val view = RectF(inner.left + 4f, y, inner.right - 4f, strip.top - 8f)
+        // rows: the items the game draws on one line go side by side (its mode buttons, its check rows)
+        val rows = ArrayList<MutableList<JSONObject>>()
+        for (it in items) { val rw = it.optInt("row", -1); if (rows.isNotEmpty() && rw >= 0 && rows.last().first().optInt("row", -2) == rw) rows.last().add(it) else rows.add(mutableListOf(it)) }
+        fun hOf(row: List<JSONObject>): Float = when (row.first().optString("k")) {
+            "head" -> 58f; "text" -> 24f + 30f * ((row.first().optString("t").length / 70) + 1); "slider", "num" -> 76f; "drop" -> 74f; "edit" -> 74f
+            "button" -> 84f; else -> 64f }
+        var content = 0f
+        val tops = rows.map { rw -> content.also { content += hOf(rw) } }
+        val curRow = rows.indexOfFirst { rw -> rw.any { "qt ${it.optString("id")}" == cur } }
+        if (curRow >= 0) {
+            val t = tops[curRow]; val b = t + hOf(rows[curRow])
+            if (t < scrollA) scrollA = t else if (b > scrollA + view.height()) scrollA = b - view.height()
+        }
+        viewA = view; contentA = content
+        scrollA = scrollA.coerceIn(0f, max(0f, contentA - view.height()))
+        c.save(); c.clipRect(view)
+        for ((ri, rw) in rows.withIndex()) {
+            val top = view.top + tops[ri] - scrollA
+            val h = hOf(rw)
+            if (top + h < view.top || top > view.bottom) continue
+            val w = (x1 - x0 - (rw.size - 1) * 16f) / rw.size
+            for ((k, it) in rw.withIndex()) {
+                val bx = x0 + k * (w + 16f)
+                val box = RectF(bx, top, bx + w, top + h - 8f)
+                val id = "qt ${it.optString("id")}"
+                val en = it.optBoolean("en", true)
+                val sl = slotOf(it)
+                val lp = UiKit.bodyPaint(26f, if (en) Theme.text else Theme.dim)
+                val ty = box.centerY() - (lp.ascent() + lp.descent()) / 2f
+                var focusBox = box
+                when (it.optString("k")) {
+                    "head" -> {
+                        c.drawText(it.optString("t"), box.left + 4f, box.top + 38f, UiKit.bodyPaint(30f, Theme.gold))
+                        if (it.has("on")) {
+                            val on = it.optBoolean("on")
+                            UiKit.check(c, box.right - 30f, box.top + 26f, 50f, on)
+                            c.drawText(if (on) "On" else "Off", box.right - 64f, box.top + 36f, UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT })
+                            focusBox = RectF(box.right - 130f, box.top, box.right, box.top + 54f)
+                            hits.add(focusBox to hitOf("qt ${it.optString("id")}", sl))
+                        } else focusBox = RectF()
+                        pFill.color = Color.argb(90, 96, 80, 50); c.drawRect(box.left, box.top + 50f, box.right, box.top + 52f, pFill)
+                    }
+                    "check" -> {
+                        UiKit.check(c, box.left + 28f, box.centerY(), 50f, it.optBoolean("on"), enabled = en)
+                        c.drawText(fit(lp, it.optString("t"), box.width() - 70f), box.left + 66f, ty, lp)
+                        hits.add(box to if (en) hitOf("qt ${it.optString("id")}", sl) else "why:Turn its group on first")
+                    }
+                    "slider", "num" -> {
+                        c.drawText(fit(lp, it.optString("t"), box.width() * 0.42f), box.left + 4f, ty, lp)
+                        val lo = it.optDouble("min", 0.0); val hi = it.optDouble("max", 1.0); val v = it.optDouble("v", lo)
+                        val sx0 = box.left + box.width() * 0.46f; val sx1 = box.right - 8f
+                        val bm = RectF(sx0, box.centerY() - 30f, sx0 + 60f, box.centerY() + 30f)
+                        val bp = RectF(sx1 - 60f, box.centerY() - 30f, sx1, box.centerY() + 30f)
+                        UiKit.square(c, "minus", bm.centerX(), bm.centerY(), 60f, if (en && v > lo) UiKit.Button.UP else UiKit.Button.DISABLED)
+                        UiKit.square(c, "plus", bp.centerX(), bp.centerY(), 60f, if (en && v < hi) UiKit.Button.UP else UiKit.Button.DISABLED)
+                        val tr = RectF(bm.right + 16f, box.centerY() - 9f, bp.left - 16f, box.centerY() + 9f)
+                        pFill.color = Color.argb(200, 20, 16, 12); c.drawRoundRect(tr, 9f, 9f, pFill)
+                        val k2 = if (hi > lo) ((v - lo) / (hi - lo)).toFloat().coerceIn(0f, 1f) else 0f
+                        pFill.color = if (en) Theme.gold else Theme.dim
+                        c.drawRoundRect(RectF(tr.left, tr.top, tr.left + tr.width() * k2, tr.bottom), 9f, 9f, pFill)
+                        c.drawText(it.optString("txt", v.toString()), tr.centerX(), tr.top - 8f, UiKit.numberPaint(24f, if (en) Color.WHITE else Theme.dim).apply { textAlign = Paint.Align.CENTER })
+                        val cm = slotOf(it, "minus"); val cp = slotOf(it, "plus")
+                        if (en) { hits.add(bm to hitOf("qt ${it.optString("id")} -", cm)); hits.add(bp to hitOf("qt ${it.optString("id")} +", cp)) }
+                    }
+                    "color" -> {
+                        c.drawText(fit(lp, it.optString("t"), box.width() * 0.5f), box.left + 4f, ty, lp)
+                        val rgb = it.optJSONArray("rgb")
+                        val sw = RectF(box.left + box.width() * 0.52f, box.centerY() - 18f, box.left + box.width() * 0.52f + 90f, box.centerY() + 18f)
+                        pFill.color = Color.BLACK; c.drawRect(RectF(sw.left - 2f, sw.top - 2f, sw.right + 2f, sw.bottom + 2f), pFill)
+                        pFill.color = if (rgb != null) Color.rgb((rgb.optDouble(0) * 255).toInt(), (rgb.optDouble(1) * 255).toInt(), (rgb.optDouble(2) * 255).toInt()) else Color.GRAY
+                        c.drawRect(sw, pFill)
+                        c.drawText("Colours: on the top screen", sw.right + 20f, ty, UiKit.bodyPaint(21f, Theme.dim))
+                        hits.add(box to "why:Colours are chosen on the top screen (On the top screen, below)")
+                    }
+                    "drop" -> {
+                        c.drawText(fit(lp, it.optString("t"), box.width() * 0.42f), box.left + 4f, ty, lp)
+                        val dd = RectF(box.left + box.width() * 0.46f, box.centerY() - 30f, box.right - 8f, box.centerY() + 30f)
+                        UiKit.choice(c, dd, fit(UiKit.bodyPaint(24f, Color.WHITE), it.optString("v") + "  v", dd.width() - 30f), false, en, textSize = 24f)
+                        focusBox = dd
+                        if (en) hits.add(dd to hitOf("qt ${it.optString("id")}", sl))
+                    }
+                    "edit" -> {
+                        c.drawText(fit(lp, it.optString("t"), box.width() * 0.5f), box.left + 4f, ty, lp)
+                        val eb = RectF(box.left + box.width() * 0.52f, box.centerY() - 28f, box.right - 8f, box.centerY() + 28f)
+                        formBox(c, eb, it.optString("v"), "", "qt ${it.optString("id")}", if (en) sl else -1, "qt${it.optString("id")}", size = 24f, digits = true)
+                        focusBox = RectF()
+                    }
+                    "button" -> {
+                        val bb = RectF(box.left, box.top + 6f, box.right, box.bottom - 6f)
+                        UiKit.choice(c, bb, fit(UiKit.bodyPaint(25f, Color.WHITE), it.optString("t"), bb.width() - 30f), it.optBoolean("on"), en, textSize = 25f)
+                        focusBox = bb
+                        if (en) hits.add(bb to hitOf("qt ${it.optString("id")}", sl))
+                    }
+                    else -> {   // text
+                        val lay = layout(it.optString("t"), UiKit.bodyPaint(23f, Theme.dim), box.width().toInt(), 3f)
+                        drawLayout(c, lay, box.left + 4f, box.top + 4f)
+                        focusBox = RectF()
+                    }
+                }
+                if (cur == id && !focusBox.isEmpty) UiKit.focus(c, focusBox)
+            }
+        }
+        c.restore()
+        if (contentA > view.height() + 2f) UiKit.scrollBar(c, RectF(inner.right - 14f, view.top, inner.right - 2f, view.bottom),
+            scrollA / contentA, min(1f, (scrollA + view.height()) / contentA))
+        // ---- the strip: Reset; the step's arrows and number; Finish on the last; its window back on the top screen
+        val bh = strip.height() - 30f
+        if (q.optBoolean("reset")) {
+            val rb = RectF(strip.left + 8f, cy - bh / 2f, strip.left + 8f + 220f, cy + bh / 2f)
+            stripButton(c, rb, "Reset", hitOf("qtreset", col("reset")), true, false, "rev_x", id = "qtreset")
+        }
+        val n = q.optInt("n", 0); val i = q.optInt("i", 0)
+        if (n > 0) {
+            val mid = strip.centerX() - 80f
+            c.drawText("$i/$n", mid, cy + 11f, UiKit.numberPaint(30f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
+            val canB = q.optBoolean("back"); val canN = q.optBoolean("next")
+            UiKit.pageArrow(c, false, mid - 80f, cy, 64f, canB); UiKit.pageArrow(c, true, mid + 80f, cy, 64f, canN)
+            if (canB) hits.add(RectF(mid - 116f, cy - 40f, mid - 44f, cy + 40f) to hitOf("qtgo back", col("back")))
+            if (canN) hits.add(RectF(mid + 44f, cy - 40f, mid + 116f, cy + 40f) to hitOf("qtgo next", col("next")))
+        }
+        val right = strip.right - 8f
+        if (q.optBoolean("finish")) {
+            stripButton(c, RectF(right - 240f, cy - bh / 2f, right, cy + bh / 2f), q.optString("finishWord", "Finish"),
+                hitOf("qtfinish", col("finish")), true, false, "rev_a", id = "qtfinish")
+        } else {
+            stripButton(c, RectF(right - 300f, cy - bh / 2f, right, cy + bh / 2f), "On the top screen", hitOf("qttop", col("top")), true, false,
+                null, id = "qttop")
+        }
+        UiKit.windowFrame(c, r, if (q.optString("kind") == "intro") "QuestTrail: Shared Trail" else "QuestTrail setup",
+            UiKit.tex("portrait_quest"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
+        hits.add(UiKit.windowClose(r) to hitOf("qtclose", col("close")))
+        // QuestTrail's own dropdown menu, open: its choices over the page (a pick presses its row; B closes it)
+        q.optJSONObject("menu")?.let { m ->
+            hits.clear()
+            UiKit.cover(c, r)
+            val ch = arr(m, "items")
+            val w = 640f; val rowH = 76f
+            val d = RectF(r.centerX() - w / 2f, r.centerY() - (ch.size * rowH + 120f) / 2f, r.centerX() + w / 2f, r.centerY() + (ch.size * rowH + 120f) / 2f)
+            val inn = UiKit.dialog(c, d)
+            c.drawText(m.optString("t", ""), inn.centerX(), inn.top + 40f, UiKit.bodyPaint(30f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+            for ((k, it) in ch.withIndex()) {
+                val rr = RectF(inn.left + 20f, inn.top + 64f + k * rowH, inn.right - 20f, inn.top + 64f + k * rowH + rowH - 10f)
+                UiKit.choice(c, rr, it.optString("t"), it.optBoolean("on"), true, textSize = 26f)
+                hits.add(rr to hitOf("qt ${it.optString("id")}", slotOf(it)))
+                if (cur == "qt ${it.optString("id")}") UiKit.focus(c, rr)
+            }
+        }
+    }
+
     private fun petitionWindow(c: Canvas, r: RectF, p: JSONObject) {
         val inner = UiKit.windowGround(c, r)
         val strip = UiKit.strip(c, inner)

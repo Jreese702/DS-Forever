@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i120"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i121"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1135,6 +1135,9 @@ local FRAME = { gossip = "GossipFrame", quest = "QuestFrame", merchant = "Mercha
 local ev = 0
 local shownAt = { gossip = 0, quest = 0, merchant = 0, trainer = 0, stable = 0, mail = 0, auction = 0, taxi = 0, bank = 0, loot = 0, petition = 0 }
 local hiddenAt = { gossip = 0, quest = 0, merchant = 0, trainer = 0, stable = 0, mail = 0, auction = 0, taxi = 0, bank = 0, loot = 0, petition = 0 }
+-- 1.0.9: QuestTrail's setup assistant and its Shared Trail intro (N.qt below): windows like the game's, opened by hooks on their frames
+FRAME.qtsetup, FRAME.qtintro = "QuestTrailSetup", "QuestTrailSharedIntro"
+shownAt.qtsetup, shownAt.qtintro, hiddenAt.qtsetup, hiddenAt.qtintro = 0, 0, 0, 0
 local frameSeen = {}        -- slot -> true once its Blizzard frame has been seen shown
 local disagreed = false
 
@@ -1458,6 +1461,21 @@ local function assignSlots(doc)
                 sv.look = slot("ipick", "look train " .. sv.i)
             end
         end
+    end
+    -- 1.0.9 QuestTrail's setup: every control a cell (a slider's - and + their own), its strip's buttons on iact
+    local qt = doc.qtsetup
+    if qt then
+        any = true
+        qt.act = { back = slot("iact", "qtgo back"), next = slot("iact", "qtgo next"), finish = slot("iact", "qtfinish"),
+                   reset = slot("iact", "qtreset"), top = slot("iact", "qttop"), close = slot("iact", "qtclose") }
+        for _, it in ipairs(qt.items or {}) do
+            if it.k == "slider" or it.k == "num" then
+                it.minus, it.plus = slot("ibuy", "qt " .. it.id .. " -"), slot("ibuy", "qt " .. it.id .. " +")
+            elseif it.k ~= "text" and it.k ~= "color" and (it.k ~= "head" or it.on ~= nil) then
+                it.slot = slot("ipick", "qt " .. it.id)
+            end
+        end
+        if qt.menu then for _, it in ipairs(qt.menu.items or {}) do it.slot = slot("isell", "qt " .. it.id) end end
     end
     if any then doc.act = { close = slot("iact", "close") } end
     -- 1.0.9 Spoken's two stop options (Settings > Add-ons): a cell for each value; the app taps the one its setting says
@@ -1798,6 +1816,26 @@ function N.build(doc)
         end
         N.zones = { mtabs, z, za }
         if first == nil then first = "none" end
+    elseif doc.qtsetup then
+        -- 1.0.9 QuestTrail's setup: its controls in the game's reading order (a line's several side by side); its menu alone when open
+        local q = doc.qtsetup
+        sig = "qt|" .. tostring(q.kind) .. "|" .. tostring(q.i) .. (q.menu and "|menu" or "")
+        if q.menu then
+            local zm = navZone("qtmenu", 1)
+            for _, it in ipairs(q.menu.items or {}) do navAdd(zm, "qt " .. it.id) end
+            N.zones = { zm }
+            first = navFirst(zm)
+        else
+            local z = navZone("qt", 1)
+            for _, it in ipairs(q.items or {}) do
+                if it.k ~= "text" and (it.k ~= "head" or it.on ~= nil) then navAdd(z, "qt " .. it.id, it.en ~= false) end
+            end
+            local zs = navZone("qtstrip", 3)
+            if q.reset then navAdd(zs, "qtreset") end
+            navAdd(zs, q.finish and "qtfinish" or "qttop")
+            N.zones = { z, zs }
+            first = navFirst(z) or navFirst(zs)
+        end
     elseif doc.petition then
         local pt = doc.petition
         sig = "pe|" .. tostring(pt.title)
@@ -1966,6 +2004,10 @@ local function buildDoc()
     if WINDOWS.trainer and isOpen("trainer") then doc.trainer = collectTrainer() end
     if WINDOWS.stable and isOpen("stable") then doc.stable = collectStable() end
     if WINDOWS.petition and isOpen("petition") then doc.petition = LOOT.collectPetition() end
+    if N.qt.open() and not N.qt.top then
+        doc.qtsetup = N.qt.collect()                                               -- 1.0.9: QuestTrail's setup / intro
+        N.qt.lastDoc, N.qt.lastItems = doc.qtsetup, doc.qtsetup and doc.qtsetup.items
+    end
     N.lastStable = doc.stable
     if WINDOWS.mail and isOpen("mail") then doc.mail = collectMail() end
     if WINDOWS.auction and isOpen("auction") then doc.auction = collectAuction() end
@@ -1989,7 +2031,7 @@ local function buildDoc()
     assignSlots(doc)
     -- The controller takes the buttons only while a window is open and the companion is in charge.
     -- sync() binds or lets go BEFORE the document is built, so `nav.on` is what is true now.
-    local open = (doc.gossip or doc.quest or doc.merchant or doc.trainer or doc.stable or doc.mail or doc.auction or doc.taxi or doc.bank or doc.loot or doc.petition) and true or false
+    local open = (doc.gossip or doc.quest or doc.merchant or doc.trainer or doc.stable or doc.mail or doc.auction or doc.taxi or doc.bank or doc.loot or doc.petition or doc.qtsetup) and true or false
     if N.sync then N.sync(open, doc) end
     if N.grantWait then N.grantWait() end       -- v11: the queued take, once nobody holds
     doc.rel = N.rel
@@ -2679,6 +2721,360 @@ function ACT.alive()
 end
 
 -- /wci close   close whichever NPC windows are open
+-- ---------------------------------------------------------------- QUESTTRAIL'S SETUP, MIRRORED (1.0.9)
+-- The user: "Shared trail has a UI pop-up right when the game starts ... remake it on the bottom screen like other UI", all 12 steps in
+-- full; B = Back a step, the X closes. QuestTrail (Krom, MIT; Settings > Add-ons) shows "QuestTrailSetup", its configuration assistant,
+-- or "QuestTrailSharedIntro", its Shared Trail chooser, 6 s after the login. Both are plain insecure frames of its own. This reads them
+-- GENERICALLY (QuestTrail_Setup.lua / QuestTrail_Options.lua 3.1.0): the step's title / about / "i/n" from the window's fields, and every
+-- control on the step's page by walking its children in the game's reading order, each paired with the label on its line:
+--   CheckButton with .label -> check; a group's switch (a CheckButton without one) -> its head's On / Off; a Slider (also inside the
+--   game's MinimalSliderWithSteppers) -> slider; a "-" / "+" pair -> num; a text-less small button -> color (chosen on the top screen);
+--   a button whose text ends in "v" -> drop (QuestTrail's own menu: pressed, its rows read, a pick runs the row's own OnClick: the menu
+--   closes on any mouse down, our tap's too); other buttons -> button (the chosen Trail mode gold); an EditBox -> edit; GameFontNormal
+--   words -> head; other words -> text.
+-- Every change is QuestTrail's OWN widget pressed (:Click(), its slider's :SetValue(), its edit box's own Enter): QuestTrail writes its
+-- own settings and re-syncs its page; nothing of ours is written. The window is alpha 0 with the shield while mirrored (HIDE.qtsetup);
+-- "On the top screen" (N.qt.top) gives it back until it closes. Hung on N (the main chunk is at its 200-local limit).
+N.qt = { top = false, ctl = {}, menu = nil }
+function N.qt.frame()
+    local f = rawget(_G, "QuestTrailSetup")
+    if type(f) == "table" and TB(function() return f:IsShown() end) == true then return f, "setup" end
+    f = rawget(_G, "QuestTrailSharedIntro")
+    if type(f) == "table" and TB(function() return f:IsShown() end) == true then return f, "intro" end
+end
+function N.qt.open() return N.qt.frame() ~= nil end
+-- the frames come lazily (at the assistant's first start): hooked once they exist; their show / hide is the window opening / closing
+N.qt.hooked = {}
+function N.qt.hook()
+    for _, slotName in ipairs({ "qtsetup", "qtintro" }) do
+        local f = rawget(_G, FRAME[slotName])
+        if type(f) == "table" and not N.qt.hooked[slotName] then
+            N.qt.hooked[slotName] = true
+            pcall(function()
+                f:HookScript("OnShow", function() N.qt.top = false; N.qt.menu = nil; mark(slotName, true); emitSoon() end)
+                f:HookScript("OnHide", function() N.qt.top = false; N.qt.menu = nil; mark(slotName, false); emitSoon() end)
+            end)
+            if TB(function() return f:IsShown() end) == true then mark(slotName, true); emitSoon() end
+        end
+    end
+end
+do
+    local t = 0
+    local hf = CreateFrame("Frame")
+    hf:SetScript("OnUpdate", function(_, el)
+        t = t + (el or 0)
+        if t < 0.5 then return end
+        t = 0
+        pcall(N.qt.hook)
+        if N.qt.hooked.qtsetup and N.qt.hooked.qtintro then hf:SetScript("OnUpdate", nil) end
+    end)
+end
+
+function N.qt.ty(o) return TS(function() return o:GetObjectType() end) end
+function N.qt.vis(o) return TB(function() return o:IsVisible() end) == true end
+function N.qt.txt(o) return TS(function() return o:GetText() end) end
+function N.qt.top_(o) return TN(function() return o:GetTop() end) end
+function N.qt.left_(o) return TN(function() return o:GetLeft() end) end
+-- a FontString's font object name (GameFontNormal = a gold heading)
+function N.qt.font(fs)
+    local ok, fo = pcall(function() return fs:GetFontObject() end)
+    return ok and type(fo) == "table" and TS(function() return fo:GetName() end) or nil
+end
+-- every visible widget and FontString under [root], each { o, t = its type, top, left }
+function N.qt.walk(root, out, depth)
+    if depth > 6 then return out end
+    local okR, regs = pcall(function() return { root:GetRegions() } end)
+    if okR then for _, r in ipairs(regs) do
+        if N.qt.ty(r) == "FontString" and N.qt.vis(r) and (N.qt.txt(r) or "") ~= "" then
+            out[#out + 1] = { o = r, t = "FontString", top = N.qt.top_(r) or 0, left = N.qt.left_(r) or 0, parent = root }
+        end
+    end end
+    local okC, kids = pcall(function() return { root:GetChildren() } end)
+    if okC then for _, k in ipairs(kids) do
+        if N.qt.vis(k) then
+            local ty = N.qt.ty(k)
+            out[#out + 1] = { o = k, t = ty, top = N.qt.top_(k) or 0, left = N.qt.left_(k) or 0, parent = root }
+            -- inside a group box (a plain Frame) its own controls; a slider's insides and a button's own words are not walked
+            if ty == "Frame" then N.qt.walk(k, out, depth + 1) end
+        end
+    end end
+    return out
+end
+
+-- the page's controls, as the document's items (and N.qt.ctl: id -> the widget(s) a press acts on)
+function N.qt.read(page, skip)
+    local all = N.qt.walk(page, {}, 0)
+    table.sort(all, function(a, b) if math.abs(a.top - b.top) > 6 then return a.top > b.top end return a.left < b.left end)
+    local used, items, ctl = {}, {}, {}
+    for _, e in ipairs(all) do if skip and skip[e.o] then used[e] = true end end
+    local function label(e)
+        local best, bd
+        for _, f in ipairs(all) do
+            if not used[f] and f.t == "FontString" and math.abs(f.top - e.top) <= 14 and f.left < e.left then
+                local d = e.left - f.left
+                if not bd or d < bd then best, bd = f, d end
+            end
+        end
+        if best then used[best] = true; return N.qt.txt(best.o) end
+    end
+    local function add(it, w) items[#items + 1] = it; it.id = tostring(#items); ctl[it.id] = w; it.top = 0 end
+    for _, e in ipairs(all) do
+        if not used[e] then
+            local o, ty = e.o, e.t
+            local en = TB(function() return o:IsEnabled() end) ~= false
+            if ty == "CheckButton" then
+                used[e] = true
+                local lab = type(o.label) == "table" and N.qt.txt(o.label) or nil
+                if lab then
+                    for _, f in ipairs(all) do if f.o == o.label then used[f] = true end end
+                    add({ k = "check", t = lab, on = TB(function() return o:GetChecked() end) == true, en = en, row = e.top }, { o })
+                else
+                    -- a group's switch: its On / Off words beside it go; its head takes its state (merged below)
+                    for _, f in ipairs(all) do if not used[f] and f.t == "FontString" and f.parent == e.parent and math.abs(f.top - e.top) <= 14 and
+                        f.left > e.left - 80 and f.left < e.left then used[f] = true end end
+                    add({ k = "switch", on = TB(function() return o:GetChecked() end) == true, en = en, row = e.top, box = e.parent }, { o })
+                end
+            elseif ty == "Slider" or (ty == "Frame" and type(o.Slider) == "table") then
+                local sl = (ty == "Slider") and o or o.Slider
+                used[e] = true
+                -- the minimal slider's own value words (its label right of the bar), then its pieces are not walked again
+                local own
+                for _, f in ipairs(all) do if f.t == "FontString" and f.parent == o and not own then own = N.qt.txt(f.o) end end
+                for _, f in ipairs(all) do if f.o == sl or f.parent == o then used[f] = true end end
+                local okM, lo, hi = pcall(function() return sl:GetMinMaxValues() end)
+                local v = TN(function() return sl:GetValue() end) or 0
+                local stp = TN(function() return sl:GetValueStep() end)
+                if not (stp and stp > 0) then stp = okM and (hi - lo) / 20 or 1 end
+                -- the value as QuestTrail shows it: the word right of the bar on its line (the classic slider's), else the number
+                local txt
+                for _, f in ipairs(all) do if not used[f] and f.t == "FontString" and math.abs(f.top - e.top) <= 14 and f.left > e.left then
+                    txt = N.qt.txt(f.o); used[f] = true; break end end
+                txt = own or txt
+                if not txt and type(o.RightText) == "table" then txt = N.qt.txt(o.RightText) end
+                add({ k = "slider", t = label(e) or "", v = v, min = okM and lo or 0, max = okM and hi or 1, step = stp,
+                      txt = txt or tostring(math.floor(v * 100 + 0.5) / 100), en = en, row = e.top }, { sl })
+            elseif ty == "Button" then
+                local t = N.qt.txt(o)
+                local w = TN(function() return o:GetWidth() end) or 0
+                if t == "-" then
+                    used[e] = true
+                    local plus, val
+                    for _, f in ipairs(all) do
+                        if not used[f] and math.abs(f.top - e.top) <= 14 and f.left > e.left then
+                            if f.t == "Button" and N.qt.txt(f.o) == "+" and not plus then plus = f; used[f] = true
+                            elseif f.t == "FontString" and not val then val = f; used[f] = true end
+                        end
+                    end
+                    local vt = val and N.qt.txt(val.o) or "0"
+                    add({ k = "num", t = label(e) or "", v = tonumber(vt) or 0, min = -1e9, max = 1e9, txt = vt, en = en, row = e.top },
+                        { o, plus and plus.o })
+                elseif not t or t == "" then
+                    used[e] = true
+                    if w <= 60 then add({ k = "color", t = label(e) or "", en = en, row = e.top }, { o }) end   -- a swatch
+                elseif t:match("%s+v$") then
+                    used[e] = true
+                    add({ k = "drop", t = label(e) or "", v = (t:gsub("%s+v$", "")), en = en, row = e.top }, { o })
+                else
+                    used[e] = true
+                    local okF, r, g, b = pcall(function() local fs = o:GetFontString(); return fs:GetTextColor() end)
+                    add({ k = "button", t = t, on = okF and r and r > 0.9 and g > 0.7 and b < 0.3 or nil, en = en, row = e.top }, { o })
+                end
+            elseif ty == "EditBox" then
+                used[e] = true
+                local t = N.qt.txt(o) or ""
+                if t:match("^https?://") or t:match("discord") then add({ k = "text", t = t, row = e.top }, nil)
+                else add({ k = "edit", t = label(e) or "", v = t, en = en, row = e.top }, { o }) end
+            end
+        end
+    end
+    -- the words left: headings (QuestTrail's GameFontNormal) and text
+    for _, e in ipairs(all) do
+        if not used[e] and e.t == "FontString" then
+            used[e] = true
+            local t = N.qt.txt(e.o)
+            local f = N.qt.font(e.o) or ""
+            local it = { k = (f == "GameFontNormal" or f == "GameFontNormalLarge") and #t <= 48 and "head" or "text", t = t, row = e.top, box = e.parent }
+            items[#items + 1] = it; it.id = tostring(#items)
+        end
+    end
+    -- back in reading order; a group's switch goes onto its head
+    table.sort(items, function(a, b) if math.abs(a.row - b.row) > 6 then return a.row > b.row end return (tonumber(a.id) or 0) < (tonumber(b.id) or 0) end)
+    local out = {}
+    for _, it in ipairs(items) do
+        if it.k == "switch" then
+            local head
+            for _, h in ipairs(items) do if h.k == "head" and h.box == it.box then head = h end end
+            if head then head.on, head.en, head.sid = it.on, it.en, it.id else it.k = "check"; it.t = "On"; out[#out + 1] = it end
+        else out[#out + 1] = it end
+    end
+    -- ids again in order (the cursor's), each pointing at its widget; the line it sits on (side by side) as a number
+    N.qt.ctl = {}
+    local rowN, lastTop = 0, nil
+    for i, it in ipairs(out) do
+        local w = ctl[it.sid or it.id]
+        it.sid, it.box = nil, nil
+        if not lastTop or math.abs(it.row - lastTop) > 6 then rowN = rowN + 1; lastTop = it.row end
+        it.row = rowN
+        it.id = tostring(i)
+        N.qt.ctl[it.id] = { kind = it.k, w = w, min = it.min, max = it.max, step = it.step }
+        if it.k == "num" then it.min, it.max = nil, nil end
+    end
+    return out
+end
+
+function N.qt.collect()
+    local f, kind = N.qt.frame()
+    if not f then return nil end
+    local q = { kind = kind }
+    if kind == "setup" then
+        q.title = TS(function() return f.title:GetText() end) or "QuestTrail"
+        q.about = TS(function() return f.about:GetText() end)
+        local cnt = TS(function() return f.count:GetText() end) or ""
+        q.i, q.n = tonumber(cnt:match("^(%d+)")), tonumber(cnt:match("/(%d+)$"))
+        q.back = TB(function() return f.back:IsEnabled() end) == true
+        q.next = TB(function() return f["next"]:IsEnabled() end) == true
+        q.finish = TB(function() return f.finish:IsShown() end) == true or nil
+        q.reset = TB(function() return f.reset:IsShown() end) == true or nil
+        local page
+        for _, pg in pairs(type(f.pages) == "table" and f.pages or {}) do if TB(function() return pg:IsShown() end) == true then page = pg end end
+        q.items = page and N.qt.read(page) or {}
+    else
+        -- the Shared Trail intro: its title is "QuestTrail", its body the about; its OK the strip's
+        q.title, q.i, q.n = "Shared Trail", 1, 1
+        local skip, okB = {}, nil
+        local okR, regs = pcall(function() return { f:GetRegions() } end)
+        local words = {}
+        if okR then for _, r in ipairs(regs) do if N.qt.ty(r) == "FontString" and N.qt.vis(r) then words[#words + 1] = r end end end
+        table.sort(words, function(a, b) return (N.qt.top_(a) or 0) > (N.qt.top_(b) or 0) end)
+        if words[1] then skip[words[1]] = true end
+        if words[2] then skip[words[2]] = true; q.about = N.qt.txt(words[2]) end
+        local okC, kids = pcall(function() return { f:GetChildren() } end)
+        if okC then for _, k in ipairs(kids) do if N.qt.ty(k) == "Button" and N.qt.txt(k) == (OKAY or "OK") then skip[k] = true; okB = k end end end
+        N.qt.ok = okB
+        q.items = N.qt.read(f, skip)
+        q.finish, q.finishWord = true, OKAY or "OK"
+    end
+    if N.qt.menu then q.menu = { t = N.qt.menu.t, items = N.qt.menu.items } end
+    return q
+end
+
+-- QuestTrail's own menu, just opened by its dropdown: its rows (words, chosen, their own OnClick) kept here, so a pick runs that row's
+-- own handler even after the menu closed (it closes on any mouse down, our tap's too)
+function N.qt.readMenu(title)
+    local m = rawget(_G, "QuestTrailMenuFrame")
+    if type(m) ~= "table" or TB(function() return m:IsShown() end) ~= true then return end
+    local items, fns = {}, {}
+    local okC, kids = pcall(function() return { m:GetChildren() } end)
+    if okC then
+        table.sort(kids, function(a, b) return (N.qt.top_(a) or 0) > (N.qt.top_(b) or 0) end)
+        for _, r in ipairs(kids) do
+            local t = type(r.text) == "table" and N.qt.txt(r.text) or nil
+            if N.qt.vis(r) and t and t ~= "" then
+                local on = type(r.mark) == "table" and TB(function() return r.mark:IsShown() end) == true and (TN(function() return r.mark:GetAlpha() end) or 0) > 0.9
+                items[#items + 1] = { t = t, on = on or nil, id = "m" .. (#items + 1) }
+                fns["m" .. #items] = r
+            end
+        end
+    end
+    N.qt.menu = { t = title, items = items, rows = fns }
+    emitSoon()
+end
+
+-- /wci qt <id> [-|+]   QuestTrail's own widget: pressed, stepped, or its menu's row picked
+function ACT.qt(id, sign)
+    if not N.qt.open() then return false, "QuestTrail's setup is not open" end
+    local m = N.qt.menu
+    if m and type(id) == "string" and id:match("^m%d+$") then
+        local row = m.rows[id]
+        N.qt.menu = nil
+        if not row then return false, "the menu changed" end
+        local fn = row:GetScript("OnClick")
+        if type(fn) == "function" then pcall(fn, row) end
+        emitSoon()
+        return true
+    end
+    local c = N.qt.ctl[tostring(id)]
+    local w = c and c.w and c.w[1]
+    if not w then return false, "the page changed" end
+    if c.kind == "slider" then
+        if sign ~= "-" and sign ~= "+" then return true end
+        local v = TN(function() return w:GetValue() end) or 0
+        local nv = v + ((sign == "+") and 1 or -1) * (c.step or 1)
+        if c.min then nv = math.max(c.min, nv) end
+        if c.max then nv = math.min(c.max, nv) end
+        pcall(function() w:SetValue(nv) end)
+    elseif c.kind == "num" then
+        local b = (sign == "+") and c.w[2] or c.w[1]
+        if not b then return false, "no such step" end
+        pcall(function() b:Click() end)
+    elseif c.kind == "drop" then
+        pcall(function() w:Click() end)
+        local title = nil
+        for _, it in ipairs((N.qt.lastItems or {})) do if it.id == tostring(id) then title = it.t end end
+        if type(C_Timer) == "table" then C_Timer.After(0.05, function() N.qt.readMenu(title) end) else N.qt.readMenu(title) end
+    elseif c.kind == "edit" then
+        return N.kbdOpen("qt" .. id, TS(function() return w:GetText() end) or "", 8, function(t)
+            if not N.qt.open() then return false, "QuestTrail's setup closed" end
+            pcall(function() w:SetText(tostring(t or "")) end)
+            local fn = w:GetScript("OnEnterPressed")
+            if type(fn) == "function" then pcall(fn, w) end
+            return true
+        end)
+    elseif c.kind == "color" then
+        return false, "colours are chosen on the top screen"
+    else
+        pcall(function() w:Click() end)                -- a check box, a group's switch, a button (a Trail mode)
+    end
+    emitSoon()
+    return true
+end
+-- /wci qtgo back|next   its own arrows
+function ACT.qtgo(dir)
+    local f, kind = N.qt.frame()
+    if kind ~= "setup" then return false, "no steps here" end
+    local b = (dir == "next") and f["next"] or f.back
+    if TB(function() return b:IsEnabled() end) ~= true then return false, "no step that way" end
+    N.qt.menu = nil
+    pcall(function() b:Click() end)
+    emitSoon()
+    return true
+end
+-- /wci qtfinish   its own Finish (or the intro's OK)
+function ACT.qtfinish()
+    local f, kind = N.qt.frame()
+    if not f then return false, "QuestTrail's setup is not open" end
+    local b = (kind == "setup") and f.finish or N.qt.ok
+    if not b then return false, "no Finish" end
+    pcall(function() b:Click() end)
+    return true
+end
+-- /wci qtreset   its own Reset (the step's settings back to QuestTrail's defaults)
+function ACT.qtreset()
+    local f, kind = N.qt.frame()
+    if kind ~= "setup" then return false, "no Reset here" end
+    pcall(function() f.reset:Click() end)
+    emitSoon()
+    return true
+end
+-- /wci qtclose   its own X (the assistant ends, done for good, as QuestTrail's X does); the intro has its OK
+function ACT.qtclose()
+    local f, kind = N.qt.frame()
+    if not f then return false, "QuestTrail's setup is not open" end
+    if kind == "intro" then return ACT.qtfinish() end
+    local okC, kids = pcall(function() return { f:GetChildren() } end)
+    if okC then for _, k in ipairs(kids) do
+        if N.qt.ty(k) == "Button" and (N.qt.txt(k) or "") == "" and (TN(function() return k:GetWidth() end) or 0) >= 20 and k ~= f.back and k ~= f["next"]
+            and k ~= f.reset and (N.qt.top_(k) or 0) >= (N.qt.top_(f) or 0) - 40 then pcall(function() k:Click() end); return true end
+    end end
+    return false, "its close button was not found"
+end
+-- /wci qttop   its window back on the top screen until it closes (colours, anything this cannot do here)
+function ACT.qttop()
+    if not N.qt.open() then return false, "QuestTrail's setup is not open" end
+    N.qt.top, N.qt.menu = true, nil
+    emitSoon()
+    return true
+end
 -- ---------------------------------------------------------------- SPOKEN (1.0.9, Settings > Add-ons)
 -- The user's rulings on Spoken (rusty-key/spoken-wow, opt-in from the Add-ons tab): its top-screen windows HIDDEN (its player window,
 -- its portrait, its minimap button, its first-run welcome), and OUR stop rules: speech stops when the player leaves the NPC (B, Decline,
@@ -4108,6 +4504,8 @@ local HIDE = {
     taxi = { "FlightMapFrame", "TaxiFrame" },
     bank = { "BankFrame", "ContainerFrameCombinedBags", "GamepadBagBar" },
     loot = { "LootFrame" },
+    -- 1.0.9: QuestTrail's setup assistant / Shared Trail intro, and its own dropdown menu while it is mirrored
+    qtsetup = { "QuestTrailSetup", "QuestTrailSharedIntro", "QuestTrailMenuFrame" },
 }
 local HIDE_ALWAYS = { "GamepadPersistentInputLegend" }
 local hidden = {}           -- frame or region -> the alpha it had
@@ -5064,12 +5462,47 @@ function AH.sellMove(z, ii, dir)
     return true
 end
 
+-- the cursor on its page: a line's controls Left / Right, the lines Up / Down; Left / Right on a slider or a number steps it
+function N.qt.move(z, ii, dir)
+    if z.name ~= "qt" and z.name ~= "qtstrip" and z.name ~= "qtmenu" then return false end
+    if z.name == "qtmenu" then
+        if dir == "up" or dir == "down" then local j = navStep(z, ii, dir == "up" and -1 or 1); if j then N.cur = z.items[j].id end end
+        return true
+    end
+    local q = N.qt.lastDoc
+    local byId = {}
+    for _, it in ipairs(q and q.items or {}) do byId["qt " .. it.id] = it end
+    if z.name == "qtstrip" then
+        if dir == "left" or dir == "right" then local j = navStep(z, ii, dir == "left" and -1 or 1); if j then N.cur = z.items[j].id end
+        elseif dir == "up" then local zq = navZoneNamed("qt"); if zq and #zq.items > 0 then N.cur = zq.items[#zq.items].id end end
+        return true
+    end
+    local me = byId[z.items[ii].id]
+    if me and (me.k == "slider" or me.k == "num") and (dir == "left" or dir == "right") then
+        pcall(ACT.qt, z.items[ii].id:match("^qt (.+)$"), dir == "left" and "-" or "+")     -- (navRun is declared below this)
+        return true
+    end
+    if dir == "left" or dir == "right" then
+        local j = navStep(z, ii, dir == "left" and -1 or 1)
+        if j and byId[z.items[j].id] and me and byId[z.items[j].id].row == me.row then N.cur = z.items[j].id end
+        return true
+    end
+    -- up / down: the next line's first usable control (the strip below the last line)
+    local d = (dir == "up") and -1 or 1
+    local j = ii + d
+    while z.items[j] and (not z.items[j].ok or (me and byId[z.items[j].id] and byId[z.items[j].id].row == me.row)) do j = j + d end
+    if z.items[j] then N.cur = z.items[j].id
+    elseif dir == "down" then local zs = navZoneNamed("qtstrip"); if zs and #zs.items > 0 then N.cur = zs.items[1].id end end
+    return true
+end
+
 function N.move(dir)
     local zi, ii = navFind(N.cur)
     if not zi then return end
     local z = N.zones[zi]
     local name = z.name
     if MAIL.zoneMove(z, ii, dir) then return end
+    if N.qt.move(z, ii, dir) then return end
     if AH.sellMove(z, ii, dir) then return end
     if name == "trlist" and N.trLines then
         local li, col
@@ -5470,6 +5903,11 @@ function N.act()
 end
 
 function N.back()
+    if N.qt.open() and not N.qt.top then
+        -- 1.0.9 QuestTrail's setup: B closes its menu first, else goes Back a step (the user's pick; the X closes it)
+        if N.qt.menu then N.qt.menu = nil; emitSoon() else navRun("qtgo back") end
+        return
+    end
     if N.trMenu and isOpen("trainer") then
         N.trMenu = nil                      -- the trainer's Settings menu closes first
     elseif isOpen("auction") and AH.filtersOpen then
@@ -5860,6 +6298,7 @@ WC.interactMode = function() return N.mode end
 -- defined here, where G and N are known; buildDoc() above calls it
 WC.bnextOf = function()
     local dlg = type(WC.dialogs) == "table" and type(WC.dialogs.open) == "function" and WC.dialogs.open() or 0
+    if N.qt.open() and not N.qt.top then return "back" end
     if G.holder then
         if dlg > 0 then return "back" end
         return G.bnext
