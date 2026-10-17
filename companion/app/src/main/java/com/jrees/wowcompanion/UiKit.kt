@@ -4019,7 +4019,8 @@ object UiKit {
                     choose.hold >= 1f -> "Let go to replace ${it.name}"
                     else -> "Hold ${Glyphs.name("a")} to replace ${it.name}"
                 }, page, pages, selK)
-                pt >= 0 && pt == plusSlot -> crBand(c, g, "Pin an item", Theme.gold, "Let go to choose one from your bags", page, pages, selK)
+                // test28 (the user: "all that it needs to say at the top is pin", the wheel band only): just "Pin", no second line
+                pt >= 0 && pt == plusSlot -> crBand(c, g, "Pin", Theme.gold, null, page, pages, selK)
                 it != null && it.ranOut -> crBand(c, g, it.name, Color.rgb(150, 150, 150),
                     "None left: it keeps its place until you have one again", page, pages, selK)
                 // the item's name alone (the user, b69: "the sub text on Items saying how many are in bags is redundant"): the count

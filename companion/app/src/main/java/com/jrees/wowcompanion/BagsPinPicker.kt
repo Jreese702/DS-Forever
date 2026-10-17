@@ -240,7 +240,7 @@ class BagsPinPicker(c: Context) : View(c) {
         val r = RectF(0f, 0f, width.toFloat(), height.toFloat())
         val inner = UiKit.windowGround(c, r)
         val strip = UiKit.strip(c, inner)
-        // test28 (the user: "when choosing the pin item all that it needs to say at the top is pin, the rest of the text can go away")
+        c.drawText("Usable items in your bags", inner.left + 150f, inner.top + 42f, UiKit.bodyPaint(24f, Theme.textDim))
         val gx = inner.left + 150f; val gy = inner.top + 76f
         val gBottom = strip.top - 12f
         gridR = RectF(gx - 20f, gy - 20f, gx + COLS * S + (COLS - 1) * GAP + 20f, gBottom)
@@ -293,7 +293,7 @@ class BagsPinPicker(c: Context) : View(c) {
             else -> UiKit.Button.UP
         })
         UiKit.button(c, backR, "Back", UiKit.backGlyph(), if (pressed === backR) UiKit.Button.DOWN else UiKit.Button.UP)
-        UiKit.windowFrame(c, r, "Pin", UiKit.tex("ricon_bags"), close = false)
+        UiKit.windowFrame(c, r, "Pin an item", UiKit.tex("ricon_bags"), close = false)
     }
 
     /** the Friends list's gold pin over the tile's top-right corner (the count keeps the bottom-right) */
