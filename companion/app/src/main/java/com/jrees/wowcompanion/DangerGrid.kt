@@ -175,6 +175,16 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
             return DangerGrid(nx, ny, d, ax, ay)
         }
 
+        /** a checkpoint within this many yards of the player is passed (the user on test45: the next one then leads) */
+        const val PASS_YD = 18.0
+
+        /** [leg] (the player first) less the bends already reached ([PASS_YD]); null = no bend left (the line goes straight) */
+        fun passed(leg: List<DoubleArray>, ax: Double, ay: Double): List<DoubleArray>? {
+            var l = leg
+            while (l.size > 2 && hypot((l[1][0] - l[0][0]) * ax, (l[1][1] - l[0][1]) * ay) <= PASS_YD) l = listOf(l[0]) + l.drop(2)
+            return l.takeIf { it.size > 2 }
+        }
+
         /** the yards of a polyline on a map of [ax] x [ay] yards */
         fun yards(pts: List<DoubleArray>, ax: Double, ay: Double): Double =
             (1 until pts.size).sumOf { hypot((pts[it][0] - pts[it - 1][0]) * ax, (pts[it][1] - pts[it - 1][1]) * ay) }

@@ -3688,7 +3688,7 @@ class MapView(context: Context) : View(context) {
         val old = dangerLegs[q]
         val sameGoal = old != null && hypot((route.x - old.tx) * ax, (route.y - old.ty) * ay) <= 20.0 && old.k == k
         if (old != null && sameGoal && hypot((px - old.atX) * ax, (py - old.atY) * ay) <= DANGER_MOVE_YD)
-            return if (old.pts.size > 2) listOf(here) + old.pts.drop(1) else null
+            return if (old.pts.size > 2) passed(listOf(here) + old.pts.drop(1), ax, ay) else null
         var pts = g.route(here, to, k)
         if (old != null && sameGoal && old.pts.size > 2) {
             val kept = listOf(here) + old.pts.drop(1)
@@ -3706,8 +3706,14 @@ class MapView(context: Context) : View(context) {
             }
         }
         dangerLegs[q] = DangerLeg(pts, route.x, route.y, px, py, k)
-        return pts.takeIf { it.size > 2 }
+        return pts.takeIf { it.size > 2 }?.let { passed(it, ax, ay) }
     }
+
+    /** CHECKPOINTS REACHED (the user on test45: "At every bend I want a checkpoint flag which the arrow leads to"): a bend within
+     *  [CHECKPOINT_PASS_YD] of the player is passed, the next one leads; null = no bend left */
+    private fun passed(leg: List<DoubleArray>, ax: Double, ay: Double): List<DoubleArray>? = DangerGrid.passed(leg, ax, ay)
+    /** the stretches' strength: to the next checkpoint, to the one after it, after that (then none; the step's own words stay) */
+    private val CHECKPOINT_DIM = floatArrayOf(1f, 0.35f, 0.18f)
 
     /** a route of another router's ([pts], this map's 0..1) over dangerous ground: its red stretches on top, and [dangerNote] */
     private fun dangerWarn(c: Canvas, pts: List<DoubleArray>, who: String, sx: (Double) -> Float, sy: (Double) -> Float) {
@@ -3755,17 +3761,36 @@ class MapView(context: Context) : View(context) {
         }
     }
 
-    /** the bent leg's dots up to its last bend (the last stretch is drawCursorPath's, with its words and its edge arrow) */
-    private fun drawDangerDots(c: Canvas, leg: List<DoubleArray>, sx: (Double) -> Float, sy: (Double) -> Float) {
-        pathTmp.reset()
-        pathTmp.moveTo(sx(leg[0][0]), sy(leg[0][1]))
-        for (i in 1 until leg.size - 1) pathTmp.lineTo(sx(leg[i][0]), sy(leg[i][1]))
+    /** one stretch of the route's dots, at [dim] of their strength (1 = the stretch to the next checkpoint, less beyond it) */
+    private fun drawStretch(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, dim: Float) {
+        pathTmp.reset(); pathTmp.moveTo(x0, y0); pathTmp.lineTo(x1, y1)
         val phase = -(android.os.SystemClock.elapsedRealtime() / 1000f * 24f) % 16f
         pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
-        pPath.strokeWidth = 9f; pPath.color = Color.argb(160, 0, 0, 0); c.drawPath(pathTmp, pPath)
-        pPath.strokeWidth = 6f; pPath.color = cGold; c.drawPath(pathTmp, pPath)
+        pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * dim).toInt(), 0, 0, 0); c.drawPath(pathTmp, pPath)
+        pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * dim).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
+        c.drawPath(pathTmp, pPath)
         pPath.pathEffect = null
     }
+
+    /**
+     * A CHECKPOINT FLAG (the user on test45): a pole and a gold pennant standing at ([x], [y]) (the flag's foot on the point); the
+     * [next] one (the arrow leads to it) full size, the later ones smaller and fainter
+     */
+    private fun drawFlag(c: Canvas, x: Float, y: Float, next: Boolean) {
+        val k = if (next) 1f else 0.8f
+        val a = if (next) 255 else 150
+        val h = 38f * k
+        // its shadow on the ground, the pole, the pennant (dark edge, gold fill)
+        pFill.color = Color.argb(a * 90 / 255, 0, 0, 0); c.drawOval(x - 9f * k, y - 3.5f * k, x + 9f * k, y + 3.5f * k, pFill)
+        pPath.pathEffect = null
+        pPath.strokeWidth = 5f * k; pPath.color = Color.argb(a, 20, 14, 8); c.drawLine(x, y, x, y - h, pPath)
+        pPath.strokeWidth = 2.6f * k; pPath.color = Color.argb(a, 200, 190, 170); c.drawLine(x, y, x, y - h, pPath)
+        flagPath.reset()
+        flagPath.moveTo(x + 1f, y - h); flagPath.lineTo(x + 24f * k, y - h + 8f * k); flagPath.lineTo(x + 1f, y - h + 16f * k); flagPath.close()
+        pArrowFill.color = Color.argb(a, Color.red(cGold), Color.green(cGold), Color.blue(cGold)); c.drawPath(flagPath, pArrowFill)
+        pArrowEdge.color = Color.argb(a * 220 / 255, 0, 0, 0); c.drawPath(flagPath, pArrowEdge)
+    }
+    private val flagPath = Path()
 
     /** Polestar's live route on this continent, drawn as the line's dots (true = drawn) */
     private fun drawPolestarRoute(c: Canvas, x0: Float, y0: Float, sx: (Double) -> Float, sy: (Double) -> Float): Boolean {
@@ -3855,12 +3880,14 @@ class MapView(context: Context) : View(context) {
         val fw = farW
         val backRule = if (fw != null && worldOf?.invoke(cameFrom)?.let { w -> w.valid && w.continent == r.continent &&
                 fw[1] in w.bottom..w.top && fw[2] in w.right..w.left } == true) 0 else cameFrom
-        val route = CursorRoute.plan(px, py, r.width, r.height, goals, far, way, questById[q]?.optString("wp", ""), nodes,
+        val planned = CursorRoute.plan(px, py, r.width, r.height, goals, far, way, questById[q]?.optString("wp", ""), nodes,
             ways = ways, inCity = mapId in CityExits.CITIES,
             wayName = { e ->
                 if (!e.learned) e.name
                 else mapName?.invoke(e.toMap)?.takeIf { it.isNotEmpty() }?.let { if (e.transport) "Ride to $it" else "To $it" }
             }, cameFrom = backRule, keep = routeKeep[q]) { i, j -> TaxiNet.connected(i, j) }
+        // a step on the way (a gate, a tram, a flight, the edge): where the way goes on from it, for its faint continuation
+        val route = planned?.let { p -> if (p.kind != CursorRoute.Kind.GOAL && far != null) p.copy(then = far) else p }
         // the choice, logged when it changes (for the next log read: "route: chose <way> (cost) over <runner-up>")
         val k = route?.key
         if (k != null && routeKeep[q] != k) {
@@ -3876,7 +3903,7 @@ class MapView(context: Context) : View(context) {
      * words at the line's end.
      */
     private fun drawCursorPath(c: Canvas, qid: Int, route: CursorRoute.Route, yards: Int, x0: Float, y0: Float, x1: Float, y1: Float,
-                               fl: Float, ft: Float, fr: Float, fb: Float) {
+                               fl: Float, ft: Float, fr: Float, fb: Float, dim: Float = 1f) {
         val now = android.os.SystemClock.elapsedRealtime()
         if (qid != pathFor) { pathFor = qid; pathAt = now }
         val inset = 26f
@@ -3900,8 +3927,8 @@ class MapView(context: Context) : View(context) {
             val phase = -(age / 1000f * 24f) % 16f
             pathTmp.reset(); pathTmp.moveTo(x0, y0); pathTmp.lineTo(ex, ey)
             pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
-            pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * a).toInt(), 0, 0, 0); c.drawPath(pathTmp, pPath)
-            pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * a).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
+            pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * a * dim).toInt(), 0, 0, 0); c.drawPath(pathTmp, pPath)
+            pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * a * dim).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
             c.drawPath(pathTmp, pPath)
             pPath.pathEffect = null
         }
@@ -5385,17 +5412,35 @@ class MapView(context: Context) : View(context) {
             val rr = rect
             // Vanilla: the leg bent round hostile ground (b-danger-layer); its last stretch is the line's own (words, edge arrow)
             val leg = dangerLeg(cursor.sel, route)
-            if (leg != null && rr != null && rr.valid) {
-                drawDangerDots(c, leg, ::sx, ::sy)
-                val b = leg[leg.size - 2]
-                drawCursorPath(c, cursor.sel, route, DangerGrid.yards(leg, rr.width, rr.height).toInt(), sx(b[0]), sy(b[1]),
-                    sx(route.x), sy(route.y), left, top, left + fw, fb)
-            } else {
-                val yd = if (rr != null && rr.valid) CursorRoute.yards(px, py, route.x, route.y, rr.width, rr.height) else 0
-                drawCursorPath(c, cursor.sel, route, yd, sx(px), sy(py), sx(route.x), sy(route.y), left, top, left + fw, fb)
-                // QuestTrail's line straight to its point: its dangerous stretch warned
-                if (qtOn && cursor.sel == focusQid) dangerWarn(c, listOf(doubleArrayOf(px, py), doubleArrayOf(route.x, route.y)), "QuestTrail", ::sx, ::sy)
+            // THE CHECKPOINTS (the user on test45: "At every bend I want a checkpoint flag which the arrow leads to. After the flag,
+            // have some low-opacity dots towards the next checkpoint"): the bends round danger, then the step's own point (a gate,
+            // a tram, a dock, a flight master, the edge; the goal ends it), then where the way goes on beyond it. The stretch to the
+            // next checkpoint is the line as ever; the next one faint, the one after fainter, the rest not drawn.
+            val cps = ArrayList<DoubleArray>()
+            if (leg != null) for (i in 1 until leg.size) cps.add(leg[i]) else cps.add(doubleArrayOf(route.x, route.y))
+            val stepAt = cps.size - 1
+            val stepOn = sx(route.x) in left..(left + fw) && sy(route.y) in top..fb
+            if (stepOn) route.then?.let { cps.add(it) }
+            val yd = if (rr != null && rr.valid) (leg?.let { DangerGrid.yards(it, rr.width, rr.height) }
+                ?: CursorRoute.yards(px, py, route.x, route.y, rr.width, rr.height).toDouble()).toInt() else 0
+            var fx = sx(px); var fy = sy(py)
+            for ((i, cp) in cps.withIndex()) {
+                val dim = CHECKPOINT_DIM.getOrElse(i) { 0f }.let { if (i == stepAt) max(it, CHECKPOINT_DIM.last()) else it }
+                if (dim <= 0f) break
+                val tx = sx(cp[0]); val ty = sy(cp[1])
+                if (i == stepAt) drawCursorPath(c, cursor.sel, route, yd, fx, fy, tx, ty, left, top, left + fw, fb, dim)
+                else drawStretch(c, fx, fy, tx, ty, dim)
+                fx = tx; fy = ty
             }
+            // the flags: every bend, and the step's point when it is a way (the goal wears its own mark); the next one in front
+            val flagged = (0..stepAt).filter { it < stepAt || route.kind != CursorRoute.Kind.GOAL }
+            for (i in flagged.reversed()) {
+                val cp = cps[i]
+                if (i == stepAt && !stepOn) continue
+                drawFlag(c, sx(cp[0]), sy(cp[1]), next = i == 0)
+            }
+            // QuestTrail's line straight to its point: its dangerous stretch warned
+            if (leg == null && qtOn && cursor.sel == focusQid) dangerWarn(c, listOf(doubleArrayOf(px, py), doubleArrayOf(route.x, route.y)), "QuestTrail", ::sx, ::sy)
             c.restoreToCount(save)
         } else pathFor = 0
         dangerNote?.let { n ->

@@ -21,7 +21,10 @@ object CursorRoute {
 
     /** where the dots go ([x], [y], this map's 0..1), what kind of step that is, its words (null = none); [key] the way taken (its
      *  CityExits.key: the hysteresis' memory, null = not a way out), [why] how it won (for the WCMAP log) */
-    data class Route(val kind: Kind, val x: Double, val y: Double, val label: String?, val key: String? = null, val why: String? = null)
+    data class Route(val kind: Kind, val x: Double, val y: Double, val label: String?, val key: String? = null, val why: String? = null,
+                     /** where the way goes on from this step (the quest beyond a gate / a tram / a flight; this map's coordinates),
+                      *  for the faint continuation past the step's checkpoint; null = nothing beyond (a goal) */
+                     val then: DoubleArray? = null)
 
     /** a known flight point on this map's continent, in this map's coordinates */
     class Node(val x: Double, val y: Double, val id: Int, val name: String)
