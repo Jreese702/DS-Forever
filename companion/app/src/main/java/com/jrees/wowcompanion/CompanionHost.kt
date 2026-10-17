@@ -1174,7 +1174,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /**
      * A TOUCH ON THE SWIRL = THE BAR CURSOR'S PICK OF IT (the user on RC4: "tapping on the swirl should do the same thing as picking it
-     * with the controller"): the pause wheel, on Home and in rooms. What the cursor can never reach keeps the disc's B: a game window
+     * with the controller"): the pause wheel on Home's plain disc; where the disc shows B (test51) it is B: Home. What the cursor can never reach keeps the disc's B: a game window
      * whose B goes Home closes with its own close (the 2026-10-01 ruling) and Home shows; on Home, a full-screen module or the buff list
      * steps back (the B the disc shows there, the user 15:08).
      */
@@ -1183,7 +1183,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Log.i("WCHOME", "swirl touched while it shows B: the game window closes (its own close)")
             pickRoom(Room.HOME); return
         }
-        if (room == Room.HOME && homeView.bGoesHome()) { pickRoom(Room.HOME); return }
+        // test51 (the user: "When I'm in a room and I touch the B spiral button to go home, the pause menu opens instead of going home"):
+        // while the disc wears its B look (every room; on Home, a step back to take) a touch is B: Home, the room stepping back as B
+        // does it. Only the plain blue disc on Home opens the pause wheel
+        if (room != Room.HOME || strip.bGoesHome || homeView.bGoesHome()) {
+            Log.i("WCLOG", "home disc: touched with the B look in ${room.name}: Home")
+            pickRoom(Room.HOME); return
+        }
         openPause("a touch on the swirl", byStart = false)
     }
 
