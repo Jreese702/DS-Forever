@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i119"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i120"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1460,9 +1460,14 @@ local function assignSlots(doc)
         end
     end
     if any then doc.act = { close = slot("iact", "close") } end
+    -- 1.0.9 Spoken's two stop options (Settings > Add-ons): a cell for each value; the app taps the one its setting says
+    if doc.spoken then
+        doc.spoken.cells = { closeOn = slot("iact", "spkopt close on"), closeOff = slot("iact", "spkopt close off"),
+                             acceptOn = slot("iact", "spkopt accept on"), acceptOff = slot("iact", "spkopt accept off") }
+    end
     local ok, d = pcall(pad.describe)
     padNow = ok and d or nil
-    if any then doc.pad = padNow end
+    if any or doc.spoken then doc.pad = padNow end
     for _, ns in ipairs(NS) do pcall(pad.retain, ns, present[ns]) end
 end
 
@@ -1964,6 +1969,7 @@ local function buildDoc()
     N.lastStable = doc.stable
     if WINDOWS.mail and isOpen("mail") then doc.mail = collectMail() end
     if WINDOWS.auction and isOpen("auction") then doc.auction = collectAuction() end
+    if N.spk.on() then doc.spoken = { close = N.spk.close, accept = N.spk.accept } end     -- 1.0.9: Spoken is loaded
     if WINDOWS.taxi and isOpen("taxi") then doc.taxi = collectTaxi() end
     if WINDOWS.bank and isOpen("bank") then doc.bank = collectBank() end
     if WINDOWS.loot and isOpen("loot") then
@@ -2415,6 +2421,7 @@ function ACT.accept(a, anyway)
         return run(function() CloseQuest() end)
     end
     N.qtry = { cmd = "accept", a = a, at = TN(function() return GetTime() end) or 0 }
+    N.spk.stop("accept")
     return run(function() AcceptQuest() end)
 end
 
@@ -2422,6 +2429,7 @@ end
 function ACT.decline(a)
     local id, why = questGuard("detail", a)
     if not id then return false, why end
+    N.spk.stop("decline")
     return run(function() DeclineQuest() end)
 end
 
@@ -2671,7 +2679,59 @@ function ACT.alive()
 end
 
 -- /wci close   close whichever NPC windows are open
+-- ---------------------------------------------------------------- SPOKEN (1.0.9, Settings > Add-ons)
+-- The user's rulings on Spoken (rusty-key/spoken-wow, opt-in from the Add-ons tab): its top-screen windows HIDDEN (its player window,
+-- its portrait, its minimap button, its first-run welcome), and OUR stop rules: speech stops when the player leaves the NPC (B, Decline,
+-- the window closed; "Stop speech on B, Decline or close", default on) and on Accept ("Stop speech on Accept", default off). Only
+-- Spoken's own public API (Spoken:StopAll) and its own settings table are touched (an add-on's, never the game's: no taint); its own
+-- sound CVar writes are the user's accepted exception. The options live in the app; it taps "spkopt" with the value it has.
+N.spk = { close = true, accept = false }
+function N.spk.on()
+    local sp = rawget(_G, "Spoken")
+    return (type(sp) == "table" and type(sp.StopAll) == "function") and sp or nil
+end
+function N.spk.stop(why)
+    local sp = N.spk.on()
+    if not sp then return end
+    if (why == "accept" and N.spk.accept) or (why ~= "accept" and N.spk.close) then pcall(sp.StopAll, sp) end
+end
+-- its windows off, in its own settings (the voice alone: Frame.Style "none"; no portrait; the minimap icon hidden; the welcome seen)
+function N.spk.hide()
+    local env = rawget(_G, "SpokenEnv")
+    local ad = type(env) == "table" and rawget(env, "Addon") or nil
+    local db = type(ad) == "table" and ad.db or nil
+    if type(db) ~= "table" or type(db.profile) ~= "table" then return false end
+    pcall(function()
+        local fr = db.profile.Frame
+        if type(fr) == "table" then fr.Style = "none"; fr.HidePortrait = true end
+        local mm = db.profile.Minimap
+        if type(mm) == "table" and type(mm.LibDBIcon) == "table" then mm.LibDBIcon.hide = true end
+        if type(db.global) == "table" then db.global.Welcomed = true end
+    end)
+    pcall(function() local ic = LibStub and LibStub("LibDBIcon-1.0", true); if ic then ic:Hide("Spoken") end end)
+    pcall(function() local w = rawget(_G, "SpokenWelcomeFrame"); if type(w) == "table" then w:Hide() end end)
+    return true
+end
+-- at login (before Spoken's own welcome looks, at PLAYER_ENTERING_WORLD) and once more a moment after entering the world
+do
+    local sf = CreateFrame("Frame")
+    sf:SetScript("OnEvent", function(_, event)
+        pcall(N.spk.hide)
+        if event == "PLAYER_ENTERING_WORLD" and type(C_Timer) == "table" then C_Timer.After(3, function() pcall(N.spk.hide) end) end
+    end)
+    pcall(function() sf:RegisterEvent("PLAYER_LOGIN") end)
+    pcall(function() sf:RegisterEvent("PLAYER_ENTERING_WORLD") end)
+end
+-- /wci spkopt close|accept on|off   our stop options, as the app's Settings say them
+function ACT.spkopt(which, v)
+    if which ~= "close" and which ~= "accept" then return false, "no such option" end
+    N.spk[which] = (v == "on")
+    emitSoon()
+    return true
+end
+
 function ACT.close()
+    N.spk.stop("close")
     local any = false
     if isOpen("quest") then any = true; CALL(function() CloseQuest() end) end
     if isOpen("merchant") then any = true; CALL(function() CloseMerchant() end) end
