@@ -17,7 +17,7 @@ import java.util.concurrent.Executors
  * THIRD-PARTY ADD-ONS THE PLAYER OPTS INTO (Settings > Add-ons; the user, 1.0.9, on Spoken: "Modules, don't download by default but
  * make an addon section of our settings"; then "For the larger app like spoken I think we need an option here to install it in the
  * first place"). Unlike QuestieDB ([DependencyAddons]: needed, installed by itself), nothing here is downloaded until the player (or,
- * for [Addon.enabledBy], another setting) asks for it, every size is shown first, and every package is PINNED: its release tag, its
+ * Map's Quest tracking picker, [install]) asks for it, every size is shown first, and every package is PINNED: its release tag, its
  * exact size and its sha256, read on the day it was added (an update is offered, never taken by itself). Never inside the APK: the
  * project's own GitHub releases.
  *
@@ -47,12 +47,13 @@ object ThirdPartyAddons {
     data class Module(val id: String, val title: String, val what: String, val pkg: Pkg)
     data class Option(val id: String, val title: String, val on: String, val off: String, val default: Boolean)
     /**
-     * [enabledBy] set: no Install of its own, another setting switches it ([enabledWhere] names it: Map's "Quest tracking: Polestar").
-     * [version] = the pinned release's version.
+     * [inUse] set: an add-on another setting USES (Map's Quest tracking for Polestar / QuestTrail; [usedIn] names it). Display only:
+     * it is installed from Add-ons like any (the user, test40: "Install from Add-ons"), and kept until its Uninstall. [version] = the
+     * pinned release's version.
      */
     data class Addon(val id: String, val title: String, val what: String, val by: String, val license: String, val repo: String,
                      val version: String, val core: Pkg, val modules: List<Module> = emptyList(), val options: List<Option> = emptyList(),
-                     val enabledBy: (() -> Boolean)? = null, val enabledWhere: String? = null) {
+                     val inUse: (() -> Boolean)? = null, val usedIn: String? = null) {
         /** the rows' words, as the Settings tabs count them (SettingsTabs.Block.rows) */
         fun rowWords(): List<String> = listOf(title) + modules.map { "$title: ${it.title}" } + options.map { it.title }
         fun pkgs(): List<Pair<String, Pkg>> = listOf("core" to core) + modules.map { it.id to it.pkg }
@@ -95,7 +96,7 @@ object ThirdPartyAddons {
         license = "GPL-3.0", repo = "fitzforge/polestar", version = "0.2.5",
         core = Pkg("v0.2.5", "Polestar-0.2.5.zip", 38_112_129L, "ff3ea16e3d83e7e3071416c6a89d14be557b7f56f1733caa6d3067248594ff60",
             listOf("Polestar", "Polestar_Nav")),
-        enabledBy = { Settings.questTracking == "polestar" }, enabledWhere = "Map › Quest tracking: Polestar")
+        inUse = { Settings.questTracking == "polestar" }, usedIn = "Map › Quest tracking")
 
     /**
      * QUESTTRAIL (Krom, MIT; CurseForge project 1725624, file 9208872; Map's "Quest tracking: QuestTrail", the user: "Download it
@@ -109,7 +110,7 @@ object ThirdPartyAddons {
         by = "Krom", license = "MIT", repo = "", version = "3.1.0",
         core = Pkg("3.1.0", "QuestTrail-3.1.0.zip", 578_289L, "2f2c81c276c1f083cea68f2a69de5b8dd78df81cbd2d8cacc2582166a250194b",
             listOf("QuestTrail"), url = "https://mediafilez.forgecdn.net/files/9208/872/QuestTrail-3.1.0.zip"),
-        enabledBy = { Settings.questTracking == "questtrail" }, enabledWhere = "Map › Quest tracking: QuestTrail")
+        inUse = { Settings.questTracking == "questtrail" }, usedIn = "Map › Quest tracking")
 
     var ALL: List<Addon> = listOf(SPOKEN, POLESTAR, QUESTTRAIL)
         internal set                                            // the off-device test swaps in its own
@@ -143,6 +144,11 @@ object ThirdPartyAddons {
         dir = folder
         synchronized(live) { live.clear() }
         loadState()
+        // test40: Polestar / QuestTrail installed while Map's setting switched them in (no Install of their own then): their Install
+        // stands now, so they stay until their Uninstall (once, flagged)
+        for (a in ALL) if (installed(a, "core") && prefs?.get("${a.id}.migrated", false) != true) {
+            prefs?.put("${a.id}.migrated", true); if (!coreWanted(a)) prefs?.put("${a.id}.core", true)
+        }
         // anything asked for and not here yet carries on downloading (a 1.5 GB pack outlives the app being closed)
         resume()
     }
@@ -150,21 +156,13 @@ object ThirdPartyAddons {
     fun onChange(l: () -> Unit) { listeners.add(l) }
     private fun changed() { for (l in listeners) runCatching { l() } }
 
-    /** the core is wanted: Install pressed (or, for [Addon.enabledBy], that setting says so) */
-    fun coreWanted(a: Addon): Boolean = a.enabledBy?.invoke() ?: (prefs?.get("${a.id}.core", false) ?: false)
-    fun setCore(a: Addon, on: Boolean) {
-        if (a.enabledBy != null) return
-        prefs?.put("${a.id}.core", on); changed(); resume()
-    }
-    /**
-     * KEEP IT INSTALLED (the user, 1.0.9, on Polestar / QuestTrail: "Keep it installed"): an add-on another setting switches stays in
-     * AddOns when that setting moves away (unused, not removed); only its own Uninstall here takes it out ([uninstallAsked])
-     */
-    fun uninstallAsked(a: Addon): Boolean = prefs?.get("${a.id}.out", false) ?: false
-    fun askUninstall(a: Addon, on: Boolean) { prefs?.put("${a.id}.out", on); changed() }
-    /** an installed package goes out at the next start: not wanted, and (for one another setting switches) its Uninstall asked */
-    fun goesOut(a: Addon, key: String): Boolean =
-        installed(a, key) && !wanted(a, key) && (a.enabledBy == null || uninstallAsked(a))
+    /** the core is wanted: Install pressed (and not Uninstall since) */
+    fun coreWanted(a: Addon): Boolean = prefs?.get("${a.id}.core", false) ?: false
+    fun setCore(a: Addon, on: Boolean) { prefs?.put("${a.id}.core", on); changed(); resume() }
+    /** MAP'S HOOK (its Quest tracking picker): choosing an add-on that is not installed starts its install, as Install here does */
+    fun install(a: Addon) { if (!coreWanted(a)) setCore(a, true) }
+    /** an installed package goes out at the next start: its Install undone (Uninstall), or its module switched off */
+    fun goesOut(a: Addon, key: String): Boolean = installed(a, key) && !wanted(a, key)
 
     fun moduleOn(a: Addon, m: Module): Boolean = prefs?.get("${a.id}.${m.id}", false) ?: false
     fun setModule(a: Addon, m: Module, on: Boolean) { prefs?.put("${a.id}.${m.id}", on); changed(); resume() }
@@ -201,8 +199,9 @@ object ThirdPartyAddons {
         // what the worker is doing, while it is wanted and not in yet (an installed package is installed, whatever it did before)
         synchronized(live) { live["${a.id}/$key"] }?.let { if (want && !inst) return it }
         return when {
-            inst && !want && !goesOut(a, key) -> Status(Kind.INSTALLED, "Installed, not in use: choose it in ${a.enabledWhere}")
             inst && !want -> Status(Kind.REMOVING, "Moves out when the game next starts (kept in a backup)")
+            inst && key == "core" && a.inUse != null ->
+                if (a.inUse.invoke()) Status(Kind.INSTALLED, "Installed: in use") else Status(Kind.INSTALLED, "Installed, not in use: choose it in ${a.usedIn}")
             inst -> Status(Kind.INSTALLED, "Installed")
             want && state(a, key).optString("zip") == p.tag && zipOf(p).length() == p.bytes -> Status(Kind.DOWNLOADED, "Downloaded: goes in when the game next starts")
             want -> Status(Kind.DOWNLOADING, "Waiting to download", -1)
@@ -333,12 +332,7 @@ object ThirdPartyAddons {
             val name = if (key == "core") a.title else "${a.title} ${key.replaceFirstChar { it.uppercase() }}"
             try {
                 val want = wanted(a, key); val inst = installed(a, key)
-                if (want && a.enabledBy != null && uninstallAsked(a)) askUninstall(a, false)     // chosen again: the Uninstall is off
-                if (goesOut(a, key)) {
-                    moveOut(a, key, flavorRoot); lines.add("$name moved to the backup")
-                    if (key == "core" && a.enabledBy != null) askUninstall(a, false)
-                    continue
-                }
+                if (goesOut(a, key)) { moveOut(a, key, flavorRoot); lines.add("$name moved to the backup"); continue }
                 if (!want || inst) continue
                 if (state(a, key).optString("zip") != p.tag && p.bytes <= SMALL) fetch(a, key, p)
                 if (state(a, key).optString("zip") != p.tag || zipOf(p).length() != p.bytes) {

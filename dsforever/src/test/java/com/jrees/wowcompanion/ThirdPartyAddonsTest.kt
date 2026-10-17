@@ -146,24 +146,28 @@ class ThirdPartyAddonsTest {
         assertTrue(File(addons, "TestA").exists())
     }
 
-    /** the user, on Polestar / QuestTrail: "Keep it installed" - switched away it stays; only its own Uninstall takes it out */
-    @Test fun switchedAwayStaysInstalled() {
-        var chosen = true
-        val a = addon(zipBytes).copy(enabledBy = { chosen }, enabledWhere = "Map › Quest tracking: Test")
+    /** test40: the questing ones install from Add-ons too ([ThirdPartyAddons.install], Map's picker); "in use" is display only;
+     *  switched away they stay (the user: "Keep it installed"); only their Uninstall takes them out */
+    @Test fun usedElsewhereInstallsHereAndStays() {
+        var chosen = false
+        val a = addon(zipBytes).copy(inUse = { chosen }, usedIn = "Map › Quest tracking")
         ThirdPartyAddons.ALL = listOf(a)
+        ThirdPartyAddons.applyAtStart(game)
+        assertFalse("choosing it elsewhere installs nothing by itself", File(addons, "TestA").exists())
+        ThirdPartyAddons.install(a); ThirdPartyAddons.install(a)          // twice: harmless
         ThirdPartyAddons.fetchNow(a, "core")
         ThirdPartyAddons.applyAtStart(game)
         assertTrue(File(addons, "TestA").exists())
-        chosen = false
-        assertEquals(ThirdPartyAddons.Kind.INSTALLED, ThirdPartyAddons.status(a, "core").kind)
         assertTrue(ThirdPartyAddons.status(a, "core").line.contains("not in use"))
+        chosen = true
+        assertEquals("Installed: in use", ThirdPartyAddons.status(a, "core").line)
+        chosen = false
         ThirdPartyAddons.applyAtStart(game)
         assertTrue("kept installed", File(addons, "TestA").exists())
-        ThirdPartyAddons.askUninstall(a, true)
+        ThirdPartyAddons.setCore(a, false)                                 // its Uninstall
         assertEquals(ThirdPartyAddons.Kind.REMOVING, ThirdPartyAddons.status(a, "core").kind)
         ThirdPartyAddons.applyAtStart(game)
-        assertFalse("its own Uninstall takes it out", File(addons, "TestA").exists())
-        assertFalse(ThirdPartyAddons.uninstallAsked(a))
+        assertFalse(File(addons, "TestA").exists())
     }
 
     @Test fun aDirectUrlNeedsNoReleaseApi() {

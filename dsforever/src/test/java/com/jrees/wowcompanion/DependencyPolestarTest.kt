@@ -18,7 +18,7 @@ class DependencyPolestarTest {
         assertEquals(38_112_129L, pole.core.bytes)
         assertTrue(pole.core.sha256.matches(Regex("[0-9a-f]{64}")))
         assertEquals(listOf("Polestar", "Polestar_Nav"), pole.core.folders)
-        assertTrue(pole.modules.isEmpty() && pole.enabledBy != null)
+        assertTrue(pole.modules.isEmpty() && pole.inUse != null)
         assertTrue(DependencyAddons.DEPS.none { it.folder == "Polestar" })        // one path in, never two
     }
 

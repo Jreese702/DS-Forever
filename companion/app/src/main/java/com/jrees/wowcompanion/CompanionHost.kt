@@ -447,10 +447,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsRest.gameRunning = { LauncherHooks.gameUp() }
         settingsRest.onChooseDll = { openDllPicker() }
         // "Restart the game" when a frame-gen setting differs from the running game's start: the sign-in's restart (close, wait, Play)
+        // b-addons-restart (test40, the user: "The restart button after installing addons breaks our addon because it behaves like it's
+        // on home but visually appears like it's still in settings"): the restart went out with the Settings room still up and holding
+        // the controller in the OLD game; the new game starts with nothing held, so presses drove Home under a Settings picture. Now the
+        // room is left first, the same way as B (its hand-over and guest released while the old game still hears them), then the restart
         settingsRest.onRestart = {
             val restart = SetupBridge.restartGame
-            SetupBridge.log?.invoke("restart: frame generation settings changed")
-            if (restart == null) android.util.Log.w("FrameGen", "restart: no launcher hook") else restart()
+            SetupBridge.log?.invoke("restart: from Settings (frame generation / add-ons)")
+            if (room != Room.HOME) show(Room.HOME)
+            if (restart == null) android.util.Log.w("FrameGen", "restart: no launcher hook")
+            else ui.postDelayed({ restart() }, RESTART_LEAVE_MS)
         }
         settings = SettingsRoom(this, settingsView, { questsPad })
         settings.pad.onLeave = { show(Room.HOME) }
@@ -2025,6 +2031,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val st0 = if (restartOnSave) SetupBridge.signIn else if (LauncherHooks.gameUp()) {
             // a new client run starts clean
             if (LauncherHooks.gameStartSec != signInRun) {
+                // a new client run (any restart route): nothing of a room's hold survives it, so the bottom screen is Home again
+                if (signInRun != 0L && room != Room.HOME) { Log.i("WCHOME", "new game run: $room -> HOME"); show(Room.HOME, motion = false) }
                 signInRun = LauncherHooks.gameStartSec; signInCheck.reset()
                 if (SetupBridge.restarting) { SetupBridge.restarting = false; NativeLogin.logEvent("restart: game attached (a new client run)") }
             }
@@ -2062,6 +2070,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (st == SetupFlow.SignIn.NONE && SetupBridge.keyboardOpen) { NativeLogin.logEvent("sign-in: keyboard closed (past the login screen)"); SetupBridge.keyboard(false) }
     }
     private val NO_FILE_LOGIN_S = 30L
+    /** the room's leave taps reach the old game before the launcher's restart closes it */
+    private val RESTART_LEAVE_MS = 600L
 
     /**
      * THE AUTHENTICATOR, SIMULATED (p-auth-keyboard, for a Thor without one): while
