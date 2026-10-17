@@ -217,7 +217,20 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (mid != playerMap) { playerMap = mid; mapDoc?.put("mapID", mid) }
         px = pos.optDouble("x", Double.NaN).toFloat(); py = pos.optDouble("y", Double.NaN).toFloat()
         facing = pos.optDouble("facing", facing.toDouble()).toFloat()
+        if (pos.has("grpN")) group = GroupMembers.parse(pos.optJSONArray("grp"))   // the group (b-group-map)
         if (isShown) invalidate()
+    }
+    private var group: List<GroupMembers.Member> = emptyList()
+
+    /** the group on the map shown (b-group-map): each member on its continent's maps, named (the user's pick: names in the room) */
+    private fun drawGroup(c: Canvas) {
+        val w = model.maps[shown]?.world ?: return
+        for (gm in group) {
+            if (gm.cont != null && gm.cont != w.continent) continue
+            val u = w.nx(gm.wy).toFloat(); val v = w.ny(gm.wx).toFloat()
+            if (u !in 0f..1f || v !in 0f..1f) continue
+            GroupMembers.draw(c, gm, sx(u), sy(v), named = true)
+        }
     }
 
     /** the quests document (its pad carries the guest cells) */
@@ -1009,6 +1022,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         drawArt(c)
         if (isZoneView()) drawZoneMarks(c) else drawChildren(c)
         drawWaypoint(c)
+        drawGroup(c)
         drawPlayer(c)
         drawAreaLabel(c)
         drawQuestTip(c)
