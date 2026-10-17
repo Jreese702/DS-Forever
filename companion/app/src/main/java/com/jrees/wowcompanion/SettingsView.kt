@@ -518,9 +518,15 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         var qtW = SEG_MIN_W
         for (t in QT_LABELS) qtW = maxOf(qtW, pBtn.measureText(t) + SEG_PAD)
         pBtn.textSize = 27f
+        // Polestar / QuestTrail: what the add-on itself is doing, from the Add-ons registry (version, size, download / install)
+        fun addonWord(a: ThirdPartyAddons.Addon, what: String): String {
+            val st = ThirdPartyAddons.status(a, "core")
+            val state = if (st.kind == ThirdPartyAddons.Kind.INSTALLED) "installed" else st.line.ifEmpty { ThirdPartyAddons.size(a.core.mb) }
+            return "${a.title} ${a.version}: $state · $what"        // the state first: a long line is cut at its end
+        }
         val sub = when (Settings.questTracking) {
-            "polestar" -> "Polestar's walking routes (downloaded at the next start when missing)"
-            "questtrail" -> "QuestTrail's guidance arrow: the line follows its plan (no game pin)"
+            "polestar" -> addonWord(ThirdPartyAddons.POLESTAR, "walking routes")
+            "questtrail" -> addonWord(ThirdPartyAddons.QUESTTRAIL, "the line follows its arrow, no game pin")
             else -> "DS Forever's own route: learned ways, the tram, known flights"
         }
         row(c, y, "Quest tracking", sub, enabled = true) { box ->
