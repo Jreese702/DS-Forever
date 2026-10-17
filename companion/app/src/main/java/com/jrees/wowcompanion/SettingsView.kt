@@ -73,6 +73,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segChat = Array(CHAT_INPUTS.size) { RectF() }
     private val segQt = Array(4) { RectF() }
     private val segDanger = Array(3) { RectF() }
+    private val segFog = Array(2) { RectF() }
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
     private val segIndoor = Array(2) { RectF() }
     /**
@@ -200,7 +201,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      */
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss) +
-            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segDanger.toList() + segChat.toList() +
+            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segDanger.toList() + segFog.toList() + segChat.toList() +
             segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
@@ -235,7 +236,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segDanger,
+                         segClassROpen, segClassRPick, segChat, segQt, segDanger, segFog,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -255,7 +256,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
-        SettingsTabs.Block.MAP -> 16f + 4 * ROW_H + 3 * 10f
+        SettingsTabs.Block.MAP -> 16f + 5 * ROW_H + 4 * 10f
         SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH()
         SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
@@ -378,6 +379,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 val ci = segChat.indexOfFirst { it.contains(x, y) }
                 val qi = segQt.indexOfFirst { it.contains(x, y) }
                 val di = segDanger.indexOfFirst { it.contains(x, y) }
+                val fi = segFog.indexOfFirst { it.contains(x, y) }
+                if (fi >= 0) { Settings.worldMapFog = if (fi == 0) "all" else "explored"; invalidate(); return }
                 if (di >= 0) { if (Settings.questTracking == "safepath") Settings.avoidDanger = Settings.AVOID_DANGER[di]; invalidate(); return }
                 if (qi >= 0) {
                     if (Settings.questTracking != Settings.QUEST_TRACKING[qi]) Settings.questTracking = Settings.QUEST_TRACKING[qi]
@@ -587,6 +590,16 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 UiKit.choice(c, RectF(segDanger[i].left + 2f, b.top - 6f, segDanger[i].right - 2f, b.bottom + 6f), l, i == sel,
                     enabled = safe, textSize = SEG_TEXT)
             }
+            b
+        }
+        // WORLD MAP (b-seamless-map; the user: "Give an option in settings"): the stitched continent, every zone or only the explored
+        y += ROW_H + 10f
+        val all = Settings.worldMapFog == "all"
+        row(c, y, "World map", if (all) "The Map room's continents show every zone, revealed" else "The Map room's continents show what you have explored",
+            enabled = true) { box ->
+            val bw = minOf(segW() * 2.6f, box.width() * 0.5f)
+            val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, listOf("Show all", "Explored only"), if (all) 0 else 1, segFog)
             b
         }
         return y + ROW_H

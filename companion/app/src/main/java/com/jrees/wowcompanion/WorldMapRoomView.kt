@@ -92,6 +92,99 @@ class WorldMapRoomView(context: Context) : View(context) {
         return null
     }
 
+    /** a picture by its file, decoded off the UI thread at 1/[sample] size, cached as [key] (the seamless tiles, sampled overlays) */
+    private fun bmpFile(key: String, f: File, sample: Int = 1): Bitmap? {
+        bmps.get(key)?.let { return it }
+        if (key in inFlight) return null
+        inFlight.add(key)
+        io.execute {
+            val b = try { BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample }) } catch (t: Throwable) { null }
+            post { inFlight.remove(key); if (b != null) bmps.put(key, b); invalidate() }
+        }
+        return null
+    }
+
+    // ---------------------------------------------------------------- THE SEAMLESS CONTINENT (b-seamless-map)
+    // The user: "Why didn't we implement openmap on our map?" - a continent is one stitched, zoomable picture (Seamless: the harvest's
+    // tile pyramid of the game's own zone art, blended at the zones' outlines). Its frame IS the continent's art frame (0..1), so every
+    // marker, the cursor and the zones' highlights stay where they were. Zoom glides on into a zone: once the zone under the view fills
+    // it, the room hands over to the zone's own map at the same place and scale (and back out past 1x). "World map: Explored only" draws
+    // the zones' unrevealed art ("base") with only the overlays this character has explored over it.
+    private val seamZones = HashMap<Int, List<Int>>()
+    private fun seamless(id: Int = shown): Boolean = !isZoneView(id) && (model.maps[id]?.type == 2) && Seamless.has(id)
+    private fun seamZonesOf(cont: Int): List<Int> = seamZones.getOrPut(cont) {
+        runCatching { JSONObject(ArtHarvest.file("seamless/$cont/index.json").readText()).optJSONArray("zones") }.getOrNull()
+            ?.let { a -> List(a.length()) { a.optInt(it) } } ?: emptyList()
+    }
+    /** zone [z]'s place on continent [cont] (0..1 of its frame), from their world rects */
+    private fun seamPlace(cont: Int, z: Int): RectF? {
+        val c = model.maps[cont]?.world ?: return null; val w = model.maps[z]?.world ?: return null
+        return RectF(((c.left - w.left) / (c.left - c.right)).toFloat(), ((c.top - w.top) / (c.top - c.bottom)).toFloat(),
+            ((c.left - w.right) / (c.left - c.right)).toFloat(), ((c.top - w.bottom) / (c.top - c.bottom)).toFloat())
+    }
+
+    private fun drawSeamless(c: Canvas) {
+        val variant = if (Settings.worldMapFog == "explored") "base" else "all"
+        // the level whose pixels are at least the screen's: level 0 is W0 across the frame
+        val screenW = artR.width() * zoom
+        var level = 0
+        while (level + 1 < Seamless.LEVELS && (Seamless.W0 shr (level + 1)) >= screenW) level++
+        // the coarsest level whole, under everything (the tiles of the right level land over it as they decode)
+        for (lv in listOf(Seamless.LEVELS - 1, level).distinct()) {
+            val lw = Seamless.W0 shr lv; val lh = Seamless.H0 shr lv
+            val cols = (lw + Seamless.TILE - 1) / Seamless.TILE; val rows = (lh + Seamless.TILE - 1) / Seamless.TILE
+            val u0 = ux(canvasR.left); val u1 = ux(canvasR.right); val v0 = uy(canvasR.top); val v1 = uy(canvasR.bottom)
+            for (r in 0 until rows) for (col in 0 until cols) {
+                val tu0 = col * Seamless.TILE.toFloat() / lw; val tu1 = min(1f, (col + 1) * Seamless.TILE.toFloat() / lw)
+                val tv0 = r * Seamless.TILE.toFloat() / lh; val tv1 = min(1f, (r + 1) * Seamless.TILE.toFloat() / lh)
+                if (tu1 < u0 || tu0 > u1 || tv1 < v0 || tv0 > v1) continue
+                val b = bmpFile("seam:$shown/$variant/$lv/${col}_$r", Seamless.tile(shown, variant, lv, col, r)) ?: continue
+                dst.set(sx(tu0), sy(tv0), sx(tu1), sy(tv1))
+                c.drawBitmap(b, null, dst, pBmp)
+            }
+        }
+        // Explored only: each zone's explored overlays over its unrevealed art, decoded no larger than they show
+        if (variant == "base") for (z in seamZonesOf(shown)) {
+            val p = seamPlace(shown, z) ?: continue
+            if (sx(p.right) < canvasR.left || sx(p.left) > canvasR.right || sy(p.bottom) < canvasR.top || sy(p.top) > canvasR.bottom) continue
+            val info = model.maps[z] ?: continue
+            val zw = sx(p.right) - sx(p.left)
+            var sample = 1
+            while (sample < 8 && info.w / (sample * 2) >= zw) sample *= 2
+            for (o in model.paintedOverlays(z)) {
+                val b = bmpFile("seamov:$z/${o.id}@$sample", File(ArtHarvest.dir("worldmap"), "$z/ov_${o.id}.webp"), sample) ?: continue
+                dst.set(sx(p.left + o.x / info.w.toFloat() * p.width()), sy(p.top + o.y / info.h.toFloat() * p.height()),
+                    sx(p.left + (o.x + o.w) / info.w.toFloat() * p.width()), sy(p.top + (o.y + o.h) / info.h.toFloat() * p.height()))
+                c.drawBitmap(b, null, dst, pBmp)
+            }
+        }
+    }
+
+    /** the zoom glide's hand-over: on a seamless continent, into the zone that now fills the view; on a zone, out to its continent */
+    private fun glide() {
+        if (seamless()) {
+            val cont = shown
+            val z = seamZonesOf(cont).mapNotNull { z -> seamPlace(cont, z)?.let { z to it } }
+                .filter { (_, p) -> p.contains(panX, panY) }.minByOrNull { (_, p) -> p.width() * p.height() } ?: return
+            val (zone, p) = z
+            if (zoom * p.width() < 1f) return
+            val nz = zoom * p.width(); val npx = (panX - p.left) / p.width(); val npy = (panY - p.top) / p.height()
+            val ncx = (curX - p.left) / p.width(); val ncy = (curY - p.top) / p.height()
+            goTo(zone)
+            zoom = nz; panX = npx; panY = npy; curX = ncx.coerceIn(0f, 1f); curY = ncy.coerceIn(0f, 1f); clampPan(); invalidate()
+        } else if (isZoneView() && zoom < 1f) {
+            val cont = model.parentOf(shown)?.takeIf { seamless(it) } ?: run { zoom = 1f; return }
+            val p = seamPlace(cont, shown) ?: run { zoom = 1f; return }
+            val nz = max(1f, zoom / p.width()); val npx = p.left + panX * p.width(); val npy = p.top + panY * p.height()
+            val ncx = p.left + curX * p.width(); val ncy = p.top + curY * p.height()
+            goTo(cont)
+            zoom = nz; panX = npx; panY = npy; curX = ncx; curY = ncy; clampPan(); invalidate()
+        }
+    }
+    /** the zoom's range here: a seamless continent zooms deep (the glide hands over at the zone); a zone below 1x only to hand out */
+    private fun zoomMin() = if (isZoneView() && model.parentOf(shown)?.let { seamless(it) } == true) 0.6f else 1f
+    private fun zoomMax() = if (seamless()) 24f else 3.2f
+
     // ---------------------------------------------------------------- live data
     private var mapDoc: JSONObject? = null
     private var playerMap = 0
@@ -718,16 +811,17 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
     private fun stepZoom() {
         // a zone's map only, as LB / RB (a continent or the world does not zoom)
-        if (!isShown || modal() || abs(zoomY) <= MapRoomKeys.STICK_DEAD || !isZoneView()) { zoomRunning = false; return }
+        if (!isShown || modal() || abs(zoomY) <= MapRoomKeys.STICK_DEAD || !(isZoneView() || seamless())) { zoomRunning = false; return }
         val now = SystemClock.uptimeMillis()
         val dt = if (zoomFrameAt == 0L) 1f / 60f else ((now - zoomFrameAt) / 1000f).coerceIn(0f, 0.05f)
         zoomFrameAt = now
         // past the dead zone, scaled 0..1; up (y < 0) zooms in
         val tilt = (abs(zoomY) - MapRoomKeys.STICK_DEAD) / (1f - MapRoomKeys.STICK_DEAD)
         val was = zoom
-        zoom = (zoom * exp(-sign(zoomY) * tilt * ZOOM_STICK_RATE * dt)).coerceIn(1f, 3.2f)
+        zoom = (zoom * exp(-sign(zoomY) * tilt * ZOOM_STICK_RATE * dt)).coerceIn(zoomMin(), zoomMax())
         if (zoom > was) { val k = min(1f, dt * 3f); panX += (curX - panX) * k; panY += (curY - panY) * k }   // in: toward the cursor
-        clampPan()
+        if (zoom >= 1f) clampPan()
+        glide()
         invalidate()
         postOnAnimation(zoomFrame)
     }
@@ -931,6 +1025,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
 
     private fun drawArt(c: Canvas) {
+        if (seamless()) { drawSeamless(c); return }
         val info = model.maps[shown] ?: return
         val base = bmp("$shown/base")
         if (base == null) {
@@ -939,7 +1034,9 @@ class WorldMapRoomView(context: Context) : View(context) {
         }
         dst.set(sx(0f), sy(0f), sx(1f), sy(1f))
         c.drawBitmap(base, null, dst, pBmp)
-        for (o in model.paintedOverlays(shown)) {
+        // "World map: Show all" (b-seamless-map) reveals every zone's whole art here too, so the glide from the continent never jumps
+        // from revealed to fogged; "Explored only" keeps the game's own rule (only what this character has explored)
+        for (o in if (Settings.worldMapFog == "all") info.overlays else model.paintedOverlays(shown)) {
             val b = bmp("$shown/ov_${o.id}") ?: continue
             dst.set(sx(o.x / info.w.toFloat()), sy(o.y / info.h.toFloat()),
                 sx((o.x + o.w) / info.w.toFloat()), sy((o.y + o.h) / info.h.toFloat()))
@@ -1911,8 +2008,8 @@ class WorldMapRoomView(context: Context) : View(context) {
                 listIndex = listRows().indexOfFirst { it is MapQuestBook.Row.Header && it.zone == d.zone }.coerceAtLeast(0)
                 setListCursor(follow = false)
             }
-            MapRoomKeys.Do.ZoomIn -> { zoom = min(3.2f, zoom * 1.6f); panX = curX; panY = curY; clampPan() }
-            MapRoomKeys.Do.ZoomOut -> { zoom = max(1f, zoom / 1.6f); clampPan() }
+            MapRoomKeys.Do.ZoomIn -> { zoom = min(zoomMax(), zoom * 1.6f); panX = curX; panY = curY; clampPan(); glide() }
+            MapRoomKeys.Do.ZoomOut -> { zoom = max(zoomMin(), zoom / 1.6f); if (zoom >= 1f) clampPan(); glide() }
             is MapRoomKeys.Do.Open -> goTo(d.zone)
             is MapRoomKeys.Do.TrackFocus -> trackFocus(d.quest)
             is MapRoomKeys.Do.ToggleTrack -> toggleTrack(d.quest)
