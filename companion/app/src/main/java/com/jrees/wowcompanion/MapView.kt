@@ -2318,6 +2318,9 @@ class MapView(context: Context) : View(context) {
         if (pos.has("grpN")) group = GroupMembers.parse(pos.optJSONArray("grp"))
         // QuestTrail's arrow (Map.lua qtrailRead): every tick says it, absent = not showing (b-route-questtrail)
         qtrail = pos.optJSONObject("qtrail"); qtrailAt = android.os.SystemClock.elapsedRealtime()
+        // why QuestTrail's golden path is not read (Map.lua gpWhy; test58: never any gp on the device), logged when it changes
+        qtrail?.optString("gpWhy", "")?.takeIf { it.isNotEmpty() && it != gpWhyLogged }?.let { gpWhyLogged = it; android.util.Log.i("WCMAP", "qtrail: golden path not read: $it") }
+        if (qtrail?.has("gp") == true && gpWhyLogged != "read") { gpWhyLogged = "read"; android.util.Log.i("WCMAP", "qtrail: golden path read (${qtrail?.optJSONObject("gp")?.optJSONArray("s")?.length()} pieces)") }
         refreshQtStep()                             // its step may name another quest (b-qtrail-focus)
         absorbSoft(pos.optJSONObject("soft"), m)    // absent = nothing beside the player now
         // the quest-area tracer's samples (Map.lua traceSample), taken at this update's wx / wy
@@ -3892,6 +3895,14 @@ class MapView(context: Context) : View(context) {
         return QuestTrailBridge.trail(o, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN), r.top, r.left, r.width, r.height)
     }
     private var goldenShown = false
+    /** QuestTrail's target line alone (its golden path not readable now): a plain gold stroke with dark edges, no dots, no words */
+    private fun drawQtTarget(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float) {
+        if (hypot(x1 - x0, y1 - y0) < 12f) return
+        pGolden.pathEffect = null
+        pGolden.strokeWidth = 7f; pGolden.color = Color.argb(170, 0, 0, 0); c.drawLine(x0, y0, x1, y1, pGolden)
+        pGolden.strokeWidth = 4f; pGolden.color = Color.argb(220, 255, 209, 0); c.drawLine(x0, y0, x1, y1, pGolden)
+    }
+    private var gpWhyLogged: String? = null
     private val pGolden = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     private val GOLD_WALKED = Color.rgb(255, 209, 0)          // QuestTrail's gpColor default (1, 0.82, 0)
     private val GOLD_SHARED = Color.rgb(255, 227, 102)        // 40 % of the way to white (its SHARED_PALE)
@@ -5941,7 +5952,10 @@ class MapView(context: Context) : View(context) {
             val fb = top + fh - (if (hintsOn() && !compact) HINT_BAND else 0f)
             val save = c.save()
             c.clipRect(left, nb, left + fw, fb)
-            goldenShown = drawGolden(c, questTrailRoute(qtOrGameFocus()), compact, ::sx, ::sy)
+            val target = questTrailRoute(qtOrGameFocus())
+            goldenShown = drawGolden(c, target, compact, ::sx, ::sy)
+            // the user's rule (test58): in QuestTrail mode ONLY QuestTrail's look - no trail to read, its target line alone (no dots)
+            if (!goldenShown && target != null) drawQtTarget(c, sx(px), sy(py), sx(target.x), sy(target.y))
             c.restoreToCount(save)
         }
         val route = if (!compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN()) cursorRoute() else null
@@ -5950,6 +5964,14 @@ class MapView(context: Context) : View(context) {
         val qtOn = Settings.questTracking == "questtrail"
         if (goldenShown) {
             pathFor = 0
+        } else if (qtOn) {
+            // QuestTrail mode (the user, test58: "instead of just showing the trail line"): never our dots, flags or words; its target
+            // line is drawn above, or nothing when it shows none (with the note)
+            pathFor = 0
+            if (!compact && questTrailLive() == null) {
+                val np = UiKit.bodyPaint(18f, Color.rgb(230, 210, 160)).apply { setShadowLayer(3f, 0f, 0f, Color.BLACK) }
+                c.drawText("QuestTrail's arrow is not showing", left + 16f, top + 30f, np)
+            }
         } else if ((poleOn || qtOn) && route != null && cursor.sel == qtOrGameFocus() && run {
                 val fb = top + fh - (if (hintsOn()) HINT_BAND else 0f)
                 val save = c.save()
@@ -6235,7 +6257,8 @@ class MapView(context: Context) : View(context) {
         // bent round danger (b-danger-layer): the arrow points along the leg's first stretch, at its first bend
         val bend = if (!toCorpse && !rimFly0 && fRoute != null) dangerLeg(focusTq, fRoute)?.get(1) else null
         val rimFly = rimFly0
-        if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN() && !(goldenShown && !toCorpse)) {
+        // QuestTrail mode: no rim arrow of ours at all (the user, test58); the corpse's stays
+        if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN() && !(Settings.questTracking == "questtrail" && !toCorpse)) {
             val tx = sx(bend?.get(0) ?: rimTX); val ty = sy(bend?.get(1) ?: rimTY)
             val inset = RIM_R + 6f
             val l0 = left + inset; val r0 = left + fw - inset

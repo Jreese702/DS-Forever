@@ -2881,7 +2881,15 @@ function WC.qtrailRead()
     -- its golden path as drawn on the minimap (b-qtrail-golden): read back, never changed
     if out then
         local okG, gp = pcall(WC.qtrailGp)
-        if okG and gp then out.gp = gp end
+        if okG and gp then out.gp = gp
+        else
+            -- why there is none (test58: never any gp on the device), every few seconds: the app logs it
+            local now = GetTime()
+            if now - (WC.QTGP.whyAt or -100) >= 5 then
+                WC.QTGP.whyAt = now
+                out.gpWhy = okG and (WC.QTGP.why or "no lines") or ("error: " .. tostring(gp):sub(1, 80))
+            end
+        end
     end
     return out
 end
@@ -2897,23 +2905,45 @@ end
 -- (The minimap is hidden by alpha, WC.hideMinimap, so it stays IsVisible and QuestTrail keeps drawing.)
 WC.QTGP = { MAX = 120,
             YD = { indoor = { [0] = 300, 240, 180, 120, 80, 50 }, outdoor = { [0] = 466 + 2 / 3, 400, 333 + 1 / 3, 266 + 2 / 3, 200, 133 + 1 / 3 } } }
+-- a Line's picture as words: its file path when the client tells it (GetTextureFilePath), else GetTexture's answer (a path, or a
+-- file id on some builds: test58 found no frame by the path alone)
+function WC.qtrailTex(r)
+    local t
+    if type(r.GetTextureFilePath) == "function" then local ok, v = pcall(r.GetTextureFilePath, r); if ok then t = v end end
+    if t == nil and type(r.GetTexture) == "function" then local ok, v = pcall(r.GetTexture, r); if ok then t = v end end
+    if type(t) == "string" then return t:lower() end
+    if type(t) == "number" and WC.isPlain(t) then return tostring(t) end
+    return ""
+end
 function WC.qtrailGpFrame()
     local G, mm = WC.QTGP, _G.Minimap
-    if type(mm) ~= "table" or type(mm.GetChildren) ~= "function" then return nil end
+    if type(mm) ~= "table" or type(mm.GetChildren) ~= "function" then G.why = "no Minimap"; return nil end
     if G.frame and G.frame.GetParent and G.frame:GetParent() == mm then return G.frame end
     G.frame = nil
+    -- QuestTrail's golden path frame: an unnamed child of Minimap holding Line regions with its line_arrow texture; failing the
+    -- texture (a file id), the unnamed child at the Minimap's level + 3 holding Lines (GP's MMFrame; its route's frame sits lower)
+    local okL, base = pcall(mm.GetFrameLevel, mm)
+    base = okL and type(base) == "number" and base or -100
+    local kids, lineFrames, byLevel, firstTex = 0, 0, nil, nil
     for _, f in ipairs({ mm:GetChildren() }) do
+        kids = kids + 1
         if type(f) == "table" and type(f.GetRegions) == "function" and not (f.GetName and f:GetName()) then
             for _, r in ipairs({ f:GetRegions() }) do
                 if type(r) == "table" and r.GetObjectType and r:GetObjectType() == "Line" then
-                    local okT, t = pcall(r.GetTexture, r)
-                    t = okT and type(t) == "string" and t:lower() or ""
-                    if t:find("questtrail", 1, true) and t:find("line_arrow", 1, true) then G.frame = f; return f end
+                    lineFrames = lineFrames + 1
+                    local t = WC.qtrailTex(r)
+                    firstTex = firstTex or t
+                    if t:find("line_arrow", 1, true) then G.frame = f; G.why = nil; return f end
+                    local okF, lv = pcall(f.GetFrameLevel, f)
+                    if okF and lv == base + 3 then byLevel = byLevel or f end
                     break
                 end
             end
         end
     end
+    if byLevel then G.frame = byLevel; G.why = nil; return byLevel end
+    G.why = string.format("frame not found (%d children, %d with lines, first texture %s)", kids, lineFrames,
+        firstTex and firstTex:sub(-40) or "none")
     return nil
 end
 function WC.qtrailGp()
@@ -2936,7 +2966,8 @@ function WC.qtrailGp()
             end
         end
     end
-    if #s == 0 then return nil end
+    if #s == 0 then G.why = "frame found, 0 shown lines"; return nil end
+    G.why = nil
     local okZ, zoom = pcall(mm.GetZoom, mm)
     zoom = (okZ and type(zoom) == "number" and WC.isPlain(zoom)) and zoom or 0
     local okI, ind = pcall(function() return IsIndoors and IsIndoors() end)
