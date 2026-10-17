@@ -332,7 +332,7 @@ object MapHarvestSteps {
      */
     val TRANSPORTS = object : ArtHarvest.Step {
         override val id = "transports"
-        override val version = 2                    // 2: each ride's cost (yd) from the game's path
+        override val version = 3                    // 2: each ride's cost (yd) from the game's path; 3: its docks' towns
         override val beforePlay = false
         override val weight = 5
         override fun run(job: ArtHarvest.Job) {
@@ -347,10 +347,17 @@ object MapHarvestSteps {
                 val p = row.vec3(0) ?: return@mapNotNull null
                 TransportRoutes.Node(row.int(2), row.int(3), row.int(4), row.int(5), row.int(6), p[0], p[1], p[2])
             }
-            val rides = TransportRoutes.rides(nodes)
+            // the docks' towns (b-route-faction): the game's flight masters, Alliance / Horde / both (TaxiNodes: 1 the position, 5 the
+            // continent, 8 the flags; measured on the PC client)
+            val masters = job.game.db2(TransportRoutes.DB_TAXI_NODES)?.rows()?.mapNotNull { row ->
+                val p = row.vec3(1) ?: return@mapNotNull null
+                TransportRoutes.FlightMaster(row.int(5), p[0], p[1], row.int(8))
+            } ?: emptyList<TransportRoutes.FlightMaster>().also { android.util.Log.i("WCMAP", "transports: TaxiNodes did not read (${job.game.lastReadWhy})") }
+            val rides = TransportRoutes.withFactions(TransportRoutes.rides(nodes), masters)
             android.util.Log.i("WCMAP", TransportRoutes.summary(nodes, rides))
+            fun town(f: Int) = when (f) { 1 -> "Alliance"; 2 -> "Horde"; 3 -> "both"; else -> "?" }
             for (rd in rides.take(40)) android.util.Log.i("WCMAP", "transports: path ${rd.path} ${rd.ca}:" +
-                "${rd.a[0].toInt()},${rd.a[1].toInt()} -> ${rd.cb}:${rd.b[0].toInt()},${rd.b[1].toInt()}")
+                "${rd.a[0].toInt()},${rd.a[1].toInt()} (${town(rd.fa)}) -> ${rd.cb}:${rd.b[0].toInt()},${rd.b[1].toInt()} (${town(rd.fb)})")
             job.writeBytes("transports.json", TransportRoutes.toJson(nodes, rides).toString().toByteArray())
         }
     }

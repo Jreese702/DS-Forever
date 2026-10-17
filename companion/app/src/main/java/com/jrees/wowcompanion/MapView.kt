@@ -2633,6 +2633,8 @@ class MapView(context: Context) : View(context) {
     // TaxiPathNode table on this device), read again when the harvest rewrites it
     var ridesFile: () -> java.io.File = { ArtHarvest.file("transports.json") }
     private val RIDE_NEAR = 0.25
+    private val TAKEN_YD = 300.0                              // a learned ride this near both docks is that ride, taken
+    private val ridesSkipped = HashSet<String>()             // each skip logged once a run
     var zoneAt: ((Int, Double, Double) -> String?)? = null
     private var rides: List<TransportRoutes.Ride> = emptyList()
     private var ridesStamp = -1L
@@ -2651,6 +2653,19 @@ class MapView(context: Context) : View(context) {
      *  continent: its place on this map; to [spots] on another: the yards from it to the nearest) */
     private fun rideWays(mapId: Int, r: PoiStore.Rect, spots: List<DoubleArray>): List<CityExits.Way> =
         TransportRoutes.hops(rides(), r.continent, spots).filter { it.tailYd.isNaN() == spots.isEmpty() }.filter { h ->
+            // the hostile-town rule (b-route-faction, the user's pick): never a ride from or to a town hostile to this character
+            var bad = h.ride.hostileDock(TransportRoutes.factionOf(map?.optString("fac", null)))
+            // ... unless this character has taken it: a learned ride from this map starting at its near dock and landing at its far one
+            if (bad != 0 && (exitLearner()?.of(mapId) ?: emptyList()).any { e -> e.transport && !e.toWx.isNaN() &&
+                    hypot(e.wx - h.ride.a[0], e.wy - h.ride.a[1]) <= TAKEN_YD && hypot(e.toWx - h.ride.b[0], e.toWy - h.ride.b[1]) <= TAKEN_YD })
+                bad = 0
+            if (bad != 0) {
+                val why = "route: ride path ${h.ride.path} skipped: its ${if (bad == 1) "near" else "far"} dock's town is " +
+                    "${if ((if (bad == 1) h.ride.fa else h.ride.fb) == TransportRoutes.HORDE) "Horde" else "Alliance"}'s"
+                if (ridesSkipped.add(why)) android.util.Log.i("WCMAP", why)
+            }
+            bad == 0
+        }.filter { h ->
             // test42: a ride is a way out of THIS map only from a dock on it or just past its edge (a quarter of the map), not from
             // any dock on the continent (Elwynn offered Hillsbrad's)
             val at = here(r, h.ride.a[0].toDouble(), h.ride.a[1].toDouble())

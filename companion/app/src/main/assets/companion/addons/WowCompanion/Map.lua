@@ -988,6 +988,8 @@ function WC.collectMap()
         -- -> fly = {{x, y}, ...} (4 decimals), at most 60; a node with a secret or missing field is left out.
         local okf, fg = CALL(function() return UnitFactionGroup("player") end)
         local mine = (okf and type(fg) == "string" and WC.isPlain(fg)) and ({ Alliance = 2, Horde = 1 })[fg] or nil
+        -- the character's faction for the app's rides (b-route-faction: a ride from or to a hostile town is skipped)
+        if mine then out.fac = fg end
         out.fly = {}
         for _, n in ipairs(ts) do
             local fx = SN(function() return n.position and n.position.x end)
