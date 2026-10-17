@@ -13,7 +13,9 @@ import kotlin.math.min
  * danger)), then string-pulled so the line is a few straight legs again. The last [GOAL_FREE_YD] to the leg's end are never danger
  * (a kill objective, a giver among mobs: the route must reach them). Pure: map 0..1 coordinates, [ax] / [ay] the map's yards.
  */
-class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Double, val ay: Double) {
+class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Double, val ay: Double,
+                 /** the ground's cost per cell (b-route-terrain: Terrain.factor x the walked discount; 1 = flat, unknown) */
+                 private val terr: FloatArray = FloatArray(nx * ny) { 1f }) {
     val cx get() = 1.0 / nx            // a cell, in the map's 0..1
     val cy get() = 1.0 / ny
 
@@ -23,6 +25,11 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
         return if (i in 0 until nx && j in 0 until ny) d[j * nx + i] else 0f
     }
     fun cell(i: Int, j: Int): Float = d[j * nx + i]
+    /** the ground's cost at the map's ([x], [y]) (1 off the map) */
+    fun ground(x: Double, y: Double): Float {
+        val i = (x * nx).toInt(); val j = (y * ny).toInt()
+        return if (i in 0 until nx && j in 0 until ny) terr[j * nx + i] else 1f
+    }
     val max: Float get() = d.maxOrNull() ?: 0f
 
     /** the cost of walking straight from [a] to [b] at strength [k]: its yards, each weighed by the danger it crosses (none within
@@ -36,7 +43,7 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
             val t = (s + 0.5) / n
             val x = a[0] + (b[0] - a[0]) * t; val y = a[1] + (b[1] - a[1]) * t
             val free = hypot((x - goal[0]) * ax, (y - goal[1]) * ay) <= GOAL_FREE_YD
-            c += (len / n) * (1.0 + (if (free) 0.0 else k * at(x, y)))
+            c += (len / n) * (ground(x, y) + (if (free) 0.0 else k * at(x, y)))
         }
         return c
     }
@@ -65,13 +72,17 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
     fun route(from: DoubleArray, to: DoubleArray, k: Double): List<DoubleArray> {
         val goal = doubleArrayOf(to[0].coerceIn(0.0, 1.0 - 1e-9), to[1].coerceIn(0.0, 1.0 - 1e-9))
         val straight = listOf(from, to)
-        if (k <= 0.0 || peak(from, goal) < CALM) return straight
+        if (k <= 0.0) return straight
+        // calm and level: straight (the ground's cost along it no more than a few percent over its yards)
+        val len = hypot((goal[0] - from[0]) * ax, (goal[1] - from[1]) * ay)
+        if (peak(from, goal) < CALM && segCost(from, goal, 0.0, goal) <= len * 1.05) return straight
         val si = (from[0].coerceIn(0.0, 1.0 - 1e-9) * nx).toInt(); val sj = (from[1].coerceIn(0.0, 1.0 - 1e-9) * ny).toInt()
         val ti = (goal[0] * nx).toInt(); val tj = (goal[1] * ny).toInt()
         val n = nx * ny
         val g = DoubleArray(n) { Double.MAX_VALUE }
         val prev = IntArray(n) { -1 }
-        fun h(i: Int, j: Int) = hypot((i - ti) * cx * ax, (j - tj) * cy * ay)
+        // the estimate never more than the cheapest ground could cost (a walked cell: Terrain.Walked.WALKED of its yards)
+        fun h(i: Int, j: Int) = hypot((i - ti) * cx * ax, (j - tj) * cy * ay) * Terrain.Walked.WALKED
         val open = PriorityQueue<DoubleArray>(compareBy { it[0] })
         val s = sj * nx + si; val t = tj * nx + ti
         g[s] = 0.0; open.add(doubleArrayOf(h(si, sj), s.toDouble()))
@@ -88,7 +99,7 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
                 val v = vj * nx + vi
                 val len = hypot(di * cx * ax, dj * cy * ay)
                 val free = hypot((vi + 0.5) * cx * ax - goal[0] * ax, (vj + 0.5) * cy * ay - goal[1] * ay) <= GOAL_FREE_YD
-                val c = g[u] + len * (1.0 + (if (free) 0.0 else k * cell(vi, vj)))
+                val c = g[u] + len * (terr[v] + (if (free) 0.0 else k * cell(vi, vj)))
                 if (c < g[v]) { g[v] = c; prev[v] = u; open.add(doubleArrayOf(c + h(vi, vj), v.toDouble())) }
             }
         }
@@ -158,9 +169,13 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
          * the grid of one map: [spawns] on it (x, y in 0..1) hostile to [mine] (TransportRoutes.ALLIANCE / HORDE; 0 = unknown: all
          * hostile spawns count), for a player of [plv]; [ax] / [ay] the map's yards
          */
-        fun build(spawns: List<QuestieNpcs.Spawn>, mine: Int, plv: Int, ax: Double, ay: Double): DangerGrid {
+        fun build(spawns: List<QuestieNpcs.Spawn>, mine: Int, plv: Int, ax: Double, ay: Double,
+                  ground: ((Double, Double) -> Float)? = null): DangerGrid {
             val nx = max(1, (ax / CELL_YD).toInt()); val ny = max(1, (ay / CELL_YD).toInt())
             val d = FloatArray(nx * ny)
+            // the ground's cost at each cell's middle (b-route-terrain), 1 without it
+            val terr = FloatArray(nx * ny) { 1f }
+            if (ground != null) for (j in 0 until ny) for (i in 0 until nx) terr[j * nx + i] = ground((i + 0.5) / nx, (j + 0.5) / ny)
             val rx = (AGGRO_YD / ax * nx).toInt() + 1; val ry = (AGGRO_YD / ay * ny).toInt() + 1
             for (s in spawns) {
                 if (mine != 0 && s.hostile and mine == 0) continue
@@ -172,7 +187,7 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
                     if (dist < AGGRO_YD) d[j * nx + i] = min(CAP, d[j * nx + i] + w * (1f - (dist / AGGRO_YD).toFloat() * 0.5f))
                 }
             }
-            return DangerGrid(nx, ny, d, ax, ay)
+            return DangerGrid(nx, ny, d, ax, ay, terr)
         }
 
         /** a checkpoint within this many yards of the player is passed (the user on test45: the next one then leads) */

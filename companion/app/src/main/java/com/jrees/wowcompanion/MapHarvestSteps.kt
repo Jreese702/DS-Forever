@@ -27,6 +27,9 @@ object MapHarvestSteps {
      */
     @Volatile var near: Triple<Int, Double, Double>? = null
 
+    /** the worldmap recipe's map rects (zones and continents; the terrain step keeps the zone-sized ones) */
+    fun zoneRects(job: ArtHarvest.Job): Map<Int, MapHarvest.Rect> = rects(job)
+
     private fun rects(job: ArtHarvest.Job): Map<Int, MapHarvest.Rect> {
         val out = LinkedHashMap<Int, MapHarvest.Rect>()
         val o = job.recipe("worldmap").optJSONObject("rects") ?: return out
@@ -427,5 +430,5 @@ object MapHarvestSteps {
         }
     }
 
-    val STEPS: List<ArtHarvest.Step> = listOf(WORLD_MAP, POI_ICONS, NPC_ICONS, MINIMAP, TRANSPORTS, WMO_MINIMAP, DangerStore.AREAS_STEP)
+    val STEPS: List<ArtHarvest.Step> = listOf(WORLD_MAP, POI_ICONS, NPC_ICONS, MINIMAP, TRANSPORTS, WMO_MINIMAP, DangerStore.AREAS_STEP, Terrain.STEP)
 }

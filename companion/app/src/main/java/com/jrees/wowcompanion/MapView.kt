@@ -2738,7 +2738,17 @@ class MapView(context: Context) : View(context) {
      * into a false crossing): a way out it just learned is logged (WCMAP) in both world yards and the old map's 0..1
      */
     /** the position tick merged into the map document: the learner sees it as well (current ticks only, as [learnExit]) */
-    fun learnNow() { map?.let { learnExit(it) } }
+    fun learnNow() {
+        map?.let { m ->
+            learnExit(m)
+            // the walked ground (b-route-terrain): this cell is one the player walks
+            if (m.optInt("onTaxi", 0) != 1 && !m.optBoolean("indoors", false)) {
+                Terrain.Walked.init(java.io.File(context.filesDir, "walked.bin"))
+                Terrain.Walked.note(m.optInt("cont", rect?.continent ?: -1), m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN),
+                    android.os.SystemClock.elapsedRealtime())
+            }
+        }
+    }
 
     fun learnExit(m: JSONObject) {
         val mapId = m.optInt("mapID", 0)
@@ -3663,12 +3673,23 @@ class MapView(context: Context) : View(context) {
         val plv = questsPlv ?: return null
         val mapId = m.optInt("mapID", 0)
         val mine = TransportRoutes.factionOf(m.optString("fac", null))
-        val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}"
+        // the ground (b-route-terrain): the zone's slope grid from the harvest, and the cells this player has walked
+        Terrain.Walked.init(java.io.File(context.filesDir, "walked.bin"))
+        val tg = Terrain.of(mapId)
+        val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}:${tg != null}:${Terrain.Walked.count() / 40}"
         if (key != dGridKey) {
             dGridKey = key
             dangerLegs.clear()
             val sp = DangerStore.spawns(mapId)
-            dGrid = if (sp.isEmpty()) null else DangerGrid.build(sp, mine, plv, r.width, r.height)
+            val cont = r.continent
+            val ground: ((Double, Double) -> Float)? = { x, y ->
+                val wy = r.left - x * r.width; val wx = r.top - y * r.height
+                val slope = tg?.at(wx, wy) ?: Terrain.NO_DATA
+                val f = Terrain.factor(slope)
+                if (f < 3f && Terrain.Walked.walked(cont, wx, wy)) f * Terrain.Walked.WALKED else f
+            }
+            dGrid = if (sp.isEmpty() && tg == null) null else DangerGrid.build(sp, mine, plv, r.width, r.height, ground)
+            if (tg != null) android.util.Log.i("WCMAP", "terrain: map $mapId's ground in the route (${Terrain.Walked.count()} walked cells kept)")
         }
         return dGrid
     }
