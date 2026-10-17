@@ -2830,13 +2830,21 @@ end
 -- {kind, questID, uiMapID, x, y, text, path = {{uiMapID, x, y}, ...}}. Nothing of QuestTrail or the game is changed; read only.
 -- On every position tick: {src, b, yd, t, d, api = {m, x, y, q, k, t}}; the full map document adds qtrailPath (the API's path).
 WC.QTRAIL_PTS = 60
-function WC.qtrailText(fs)
+function WC.qtrailText(fs, cap)
     if type(fs) ~= "table" or type(fs.GetText) ~= "function" then return nil end
     local ok, t = pcall(fs.GetText, fs)
     if not ok or type(t) ~= "string" or (WC.isPlain and not WC.isPlain(t)) then return nil end
     t = t:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
     if t == "" then return nil end
-    return t:sub(1, 80)
+    cap = cap or 80
+    if #t > cap then
+        -- cut on a character, not inside one (QuestTrail's "–" is three bytes)
+        t = t:sub(1, cap)
+        local i = #t
+        while i > 0 and t:byte(i) >= 0x80 and t:byte(i) < 0xC0 do i = i - 1 end
+        if i > 0 and t:byte(i) >= 0xC0 then t = t:sub(1, i - 1) end
+    end
+    return t
 end
 function WC.qtrailApi()
     local api = _G.QuestTrail_GetTarget
@@ -2863,7 +2871,8 @@ function WC.qtrailRead()
         local b = f.bearing
         local arrowOn = type(f.arrow) == "table" and type(f.arrow.IsShown) == "function" and f.arrow:IsShown()
         if arrowOn and type(b) == "number" and (not WC.isPlain or WC.isPlain(b)) then out.b = math.floor(b * 1000 + 0.5) / 1000 end
-        out.t = WC.qtrailText(f.label)
+        -- the label whole (b-qtrail-focus: the app finds its quest by title and shows its objective): "Objective" over "Title – Kolkar slain"
+        out.t = WC.qtrailText(f.label, 200)
         local d = WC.qtrailText(f.dist)
         out.d = d
         local metres = d and tonumber(d:match("(%d+)%s*m$") or d:match("(%d+)%s*m%s"))

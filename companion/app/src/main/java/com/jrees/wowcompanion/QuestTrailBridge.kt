@@ -25,7 +25,7 @@ object QuestTrailBridge {
      */
     fun target(o: JSONObject?, mapId: Int, px: Double, py: Double, ax: Double, ay: Double): Target? {
         if (o == null || px.isNaN() || py.isNaN() || ax <= 0.0 || ay <= 0.0) return null
-        val words = o.optString("t", "").takeIf { it.isNotEmpty() }
+        val words = o.optString("t", "").replace("\n", " · ").takeIf { it.isNotEmpty() }
         o.optJSONObject("api")?.let { a ->
             val x = a.optDouble("x", Double.NaN); val y = a.optDouble("y", Double.NaN)
             if (a.optInt("m", 0) == mapId && !x.isNaN() && !y.isNaN())
@@ -54,5 +54,48 @@ object QuestTrailBridge {
             if (!x.isNaN() && !y.isNaN()) { out.add(x); out.add(y) }
         }
         return if (out.size >= 4) out.toDoubleArray() else null
+    }
+
+    /**
+     * QUESTTRAIL'S STEP AS THE FOCUS (b-qtrail-focus; the user, test51: "Using quest trail, the focused quest should be overwritten by
+     * the quest trail objective"). QuestTrail does not super-track its pick (with "hide Blizzard" it even clears the game's focus), so
+     * the quest is found from its compass label (QuestTrail_Compass.lua 3.1.0): a first line with what to do ("Objective", "Turn in",
+     * "Take", "Quest item", maybe "Fly to X, then ..."), then "<the quest's title>[ (estimate)][ – <the objective's text>]". [kind]:
+     * QuestTrail's first line; [objective]: the objective's own words, null for a turn-in / take.
+     */
+    class Step(val questId: Int, val kind: String?, val objective: String?) {
+        /** the card's one line: the objective's words, else what to do ("Turn in") */
+        val words: String? get() = objective ?: kind
+    }
+
+    private const val DASH = " – "
+    private const val ESTIMATE = " (estimate)"
+
+    /**
+     * The quest of the log [titles] (questID to title) QuestTrail's label [label] names; null when it names none (flying, a boat, the
+     * corpse, "Recomputing path", a quest to take that is not in the log yet). The longest title that the label's last line starts
+     * with, followed by nothing, " (estimate)" or " – "; two quests of one title: the one with [objectives] holding the step's words.
+     */
+    fun step(label: String?, titles: Map<Int, String>, objectives: (Int) -> List<String> = { emptyList() }): Step? {
+        if (label.isNullOrBlank()) return null
+        val lines = label.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+        if (lines.isEmpty()) return null
+        val line = lines.last()
+        var best = emptyList<Int>(); var bestLen = 0
+        for ((id, t0) in titles) {
+            val t = t0.trim()
+            if (t.isEmpty() || t.length < bestLen || !line.startsWith(t)) continue
+            val rest = line.substring(t.length)
+            if (rest.isNotEmpty() && !rest.startsWith(DASH) && !rest.startsWith(ESTIMATE)) continue
+            if (t.length > bestLen) { best = listOf(id); bestLen = t.length } else best = best + id
+        }
+        if (best.isEmpty()) return null
+        var rest = line.substring(bestLen)
+        if (rest.startsWith(ESTIMATE)) rest = rest.substring(ESTIMATE.length)
+        val obj = if (rest.startsWith(DASH)) rest.substring(DASH.length).trim().ifEmpty { null } else null
+        val kind = if (lines.size >= 2) lines[lines.size - 2] else null
+        val id = if (best.size == 1 || obj == null) best.minOrNull()!!
+            else best.firstOrNull { q -> objectives(q).any { o -> o.trim().let { it.startsWith(obj) || obj.startsWith(it) } } } ?: best.minOrNull()!!
+        return Step(id, kind, obj)
     }
 }
