@@ -14,8 +14,9 @@ import android.content.SharedPreferences
  */
 object SettingsTabs {
     enum class Tab(val label: String) {
-        HOME("Home"), CONTROLLER("Controller"), TOP("Top screen"), ROOMS("Rooms"), ADDONS("Add-ons"), PERFORMANCE("Performance"),
-        SYSTEM("System")
+        // test40 (the user: "Rather than renaming, move those settings to the home tab and put them under home module settings"): the
+        // Rooms tab is gone, its Map and Chat rows on Home under [HOME_MODULES] (a saved "ROOMS" opens on Home: [last])
+        HOME("Home"), CONTROLLER("Controller"), TOP("Top screen"), ADDONS("Add-ons"), PERFORMANCE("Performance"), SYSTEM("System")
     }
 
     /** the order within a tab is this enum's order */
@@ -32,8 +33,8 @@ object SettingsTabs {
         CLASS_RIGHT(Tab.CONTROLLER, "Right class radial (RB + RT)", listOf("Right class radial: open", "Right class radial: pick")),
         GAME_UI(Tab.TOP, "Game UI on the top screen", listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window",
             "NPC windows", "Cast bar", "Loot window")),
-        MAP(Tab.ROOMS, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "Quest tracking")),
-        CHAT(Tab.ROOMS, "Chat", listOf("Message input")),
+        MAP(Tab.HOME, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "Quest tracking")),
+        CHAT(Tab.HOME, "Chat", listOf("Message input")),
         // 1.0.9 (the user, on Spoken: "make an addon section of our settings"): one block per third-party add-on (ThirdPartyAddons)
         ADDON_SPOKEN(Tab.ADDONS, "Spoken", ThirdPartyAddons.SPOKEN.rowWords()),
         ADDON_POLESTAR(Tab.ADDONS, "Polestar", ThirdPartyAddons.POLESTAR.rowWords()),
@@ -44,6 +45,9 @@ object SettingsTabs {
         GAME(Tab.SYSTEM, "Game", listOf("Reload game UI", "Battle.net login", "Problem report")),
         COMPANION(Tab.SYSTEM, "Companion", listOf("Status")),
     }
+
+    /** the heading over the Home modules' blocks on the Home tab (below Home's own rows) */
+    const val HOME_MODULES = "Home module settings"
 
     /** the blocks SettingsView draws itself (the others are Home's section and the two GameUiSection parts) */
     val VIEW_BLOCKS = setOf(Block.GAME, Block.MAP, Block.INDOOR, Block.CONTROLLER, Block.PAUSE_WHEEL, Block.ITEM_WHEEL, Block.SPELL_WHEEL,
