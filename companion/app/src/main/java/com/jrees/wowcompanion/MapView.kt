@@ -2298,6 +2298,8 @@ class MapView(context: Context) : View(context) {
             if (pos.has(k)) m.put(k, pos.get(k))
         }
         staleMs = 0
+        // QuestTrail's arrow (Map.lua qtrailRead): every tick says it, absent = not showing (b-route-questtrail)
+        qtrail = pos.optJSONObject("qtrail"); qtrailAt = android.os.SystemClock.elapsedRealtime()
         absorbSoft(pos.optJSONObject("soft"), m)    // absent = nothing beside the player now
         // the quest-area tracer's samples (Map.lua traceSample), taken at this update's wx / wy
         pos.optJSONArray("qb")?.let { qb ->
@@ -3500,7 +3502,44 @@ class MapView(context: Context) : View(context) {
     private val routeCache = HashMap<Int, Pair<Any, CursorRoute.Route?>>()
     private var routeEpoch = 0
     private val ROUTE_EVERY_MS = 2000L
+    // ---- QUESTTRAIL AS THE ROUTER (b-route-questtrail; Settings' "Quest tracking: QuestTrail"): the focused quest's line and rim
+    // arrow follow QuestTrail's own arrow (QuestTrailBridge) while it shows one - QuestTrail's plan, its words; else the app's own
+    private var qtrail: JSONObject? = null
+    private var qtrailAt = Long.MIN_VALUE / 2
+    private fun questTrailLive(): JSONObject? =
+        qtrail?.takeIf { android.os.SystemClock.elapsedRealtime() - qtrailAt <= QuestTrailBridge.STALE_MS }
+
+    private fun questTrailRoute(q: Int): CursorRoute.Route? {
+        if (Settings.questTracking != "questtrail") return null
+        // the quest the game focuses (QuestTrail super-tracks its own pick), or any while nothing is focused (its "hide Blizzard")
+        if (focusQid > 0 && q != focusQid) return null
+        val m = map ?: return null
+        val r = rect ?: return null
+        if (!r.valid) return null
+        val t = QuestTrailBridge.target(questTrailLive(), m.optInt("mapID", 0), m.optDouble("x", Double.NaN), m.optDouble("y", Double.NaN),
+            r.width, r.height) ?: return null
+        return CursorRoute.Route(CursorRoute.Kind.WAYPOINT, t.x, t.y, t.label?.let { "QuestTrail: $it" } ?: "QuestTrail")
+    }
+
+    /** the API's planned path (should QuestTrail offer one), drawn as the line's dots; true = drawn */
+    private fun drawQuestTrailPath(c: Canvas, x0: Float, y0: Float, sx: (Double) -> Float, sy: (Double) -> Float): Boolean {
+        val m = map ?: return false
+        if (questTrailLive()?.optJSONObject("api") == null) return false
+        val p = QuestTrailBridge.path(m, m.optInt("mapID", 0)) ?: return false
+        pathTmp.reset(); pathTmp.moveTo(x0, y0)
+        var i = 0
+        while (i + 1 < p.size) { pathTmp.lineTo(sx(p[i]), sy(p[i + 1])); i += 2 }
+        val phase = -(android.os.SystemClock.elapsedRealtime() / 1000f * 24f) % 16f
+        pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
+        pPath.strokeWidth = 9f; pPath.color = Color.argb(160, 0, 0, 0); c.drawPath(pathTmp, pPath)
+        pPath.strokeWidth = 6f; pPath.color = cGold; c.drawPath(pathTmp, pPath)
+        pPath.pathEffect = null
+        postInvalidateOnAnimation()
+        return true
+    }
+
     private fun routeFor(q: Int): CursorRoute.Route? {
+        questTrailRoute(q)?.let { return it }               // QuestTrail's arrow, live: never cached
         val m = map ?: return null
         val key = listOf(System.identityHashCode(m), System.identityHashCode(questById[q]), routeEpoch,
             android.os.SystemClock.elapsedRealtime() / ROUTE_EVERY_MS)
@@ -3518,6 +3557,7 @@ class MapView(context: Context) : View(context) {
     fun routePin(): DoubleArray? {
         val m = map ?: return null
         if (Settings.questTracking == "polestar") return null          // Polestar draws its own arrow (b-route-polestar)
+        if (Settings.questTracking == "questtrail") return null        // QuestTrail super-tracks its own pick (b-route-questtrail)
         if (focusQid <= 0 || m.optInt("onTaxi", 0) == 1) return null
         val r = routeFor(focusQid) ?: return null
         if (r.kind == CursorRoute.Kind.GOAL) return null
@@ -5110,11 +5150,12 @@ class MapView(context: Context) : View(context) {
         val route = if (!compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN()) cursorRoute() else null
         // Polestar's own walking route for the focused quest, when it is the router and has one (b-route-polestar)
         val poleOn = Settings.questTracking == "polestar"
-        if (poleOn && route != null && cursor.sel == focusQid && run {
+        val qtOn = Settings.questTracking == "questtrail"
+        if ((poleOn || qtOn) && route != null && cursor.sel == focusQid && run {
                 val fb = top + fh - (if (hintsOn()) HINT_BAND else 0f)
                 val save = c.save()
                 c.clipRect(left, top, left + fw, fb)
-                val ok = drawPolestarRoute(c, sx(px), sy(py), ::sx, ::sy)
+                val ok = if (poleOn) drawPolestarRoute(c, sx(px), sy(py), ::sx, ::sy) else drawQuestTrailPath(c, sx(px), sy(py), ::sx, ::sy)
                 c.restoreToCount(save)
                 ok
             }) {
@@ -5124,6 +5165,11 @@ class MapView(context: Context) : View(context) {
             if (poleOn) polestar.why?.let { w ->
                 val np = UiKit.bodyPaint(18f, Color.rgb(230, 210, 160)).apply { setShadowLayer(3f, 0f, 0f, Color.BLACK) }
                 c.drawText("$w: DS Forever's route", left + 16f, top + 30f, np)
+            }
+            // QuestTrail chosen, its arrow not showing (not installed, off, or nothing planned): the app's own route, said so
+            if (qtOn && questTrailLive() == null) {
+                val np = UiKit.bodyPaint(18f, Color.rgb(230, 210, 160)).apply { setShadowLayer(3f, 0f, 0f, Color.BLACK) }
+                c.drawText("QuestTrail's arrow is not showing: DS Forever's route", left + 16f, top + 30f, np)
             }
             val fb = top + fh - (if (hintsOn()) HINT_BAND else 0f)
             val save = c.save()
