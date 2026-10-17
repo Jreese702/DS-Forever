@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat24"     -- chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
+local CHATV = "chat25"     -- chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -356,7 +356,48 @@ local STATE_EVENTS = { PLAYER_GUILD_UPDATE = true, GROUP_ROSTER_UPDATE = true, P
                        CHANNEL_UI_UPDATE = true, ZONE_CHANGED_NEW_AREA = true }      -- chat16: a city's channels come and go
 local BLOCKED_EVENTS = { ADDON_ACTION_BLOCKED = true, ADDON_ACTION_FORBIDDEN = true }
 
+-- test60 (the user: "when I log in it's randomly telling me in chat 'no player named <name> is online'"): QuestTrail's Shared Trail
+-- whispers its peers (add-on messages, WHISPER); one gone offline answers with the game's ERR_CHAT_PLAYER_NOT_FOUND_S. QuestTrail keeps
+-- out the ones it can tie to its own whispers, not all. While QuestTrail is loaded, those lines are kept out of both chats (this one and,
+-- by a chat filter, the game's), unless the player whispered that name themselves in the last 2 minutes. Runtime only: nothing saved.
+WC.notFound = { own = {} }
+do
+    local g = rawget(_G, "ERR_CHAT_PLAYER_NOT_FOUND_S")       -- the game's own words, localised
+    if type(g) == "string" then
+        WC.notFound.pat = "^" .. g:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1"):gsub("%%%%s", "(.+)") .. "$"
+    end
+end
+function WC.notFound.key(name) return type(name) == "string" and (name:match("^[^-]+") or name):lower() or nil end
+function WC.notFound.qt()
+    local f = type(C_AddOns) == "table" and C_AddOns.IsAddOnLoaded
+    if type(f) ~= "function" then f = rawget(_G, "IsAddOnLoaded") end
+    if type(f) ~= "function" then return false end
+    local ok, r = pcall(f, "QuestTrail")
+    return ok and r and true or false
+end
+function WC.notFound.hide(text)
+    local nf = WC.notFound
+    if not nf.pat or type(text) ~= "string" then return false end
+    local who = text:match(nf.pat)
+    if not who or not nf.qt() then return false end
+    local at = nf.own[nf.key(who)]
+    if at and type(GetTime) == "function" and GetTime() - at < 120 then return false end   -- the player's own whisper: its answer kept
+    return true
+end
+do
+    local function own(_, chatType, _, target)
+        if chatType == "WHISPER" and type(target) == "string" and type(GetTime) == "function" then WC.notFound.own[WC.notFound.key(target)] = GetTime() end
+    end
+    if type(hooksecurefunc) == "function" then
+        if type(rawget(_G, "SendChatMessage")) == "function" then pcall(hooksecurefunc, "SendChatMessage", own) end
+        if type(C_ChatInfo) == "table" and type(C_ChatInfo.SendChatMessage) == "function" then pcall(hooksecurefunc, C_ChatInfo, "SendChatMessage", own) end
+    end
+    local add = rawget(_G, "ChatFrame_AddMessageEventFilter")
+    if type(add) == "function" then pcall(add, "CHAT_MSG_SYSTEM", function(_, _, text) return WC.notFound.hide(text) end) end
+end
+
 local function onChatEvent(event, ...)
+    if event == "CHAT_MSG_SYSTEM" and WC.notFound.hide((...)) then return end
     if STATE_EVENTS[event] then
         if talkChanged() then dirty = true end
         return

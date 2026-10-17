@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i124"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i125"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2752,7 +2752,8 @@ function N.qt.frame()
     f = rawget(_G, "QuestTrailSharedIntro")
     if type(f) == "table" and TB(function() return f:IsShown() end) == true then return f, "intro" end
 end
-function N.qt.open() return N.qt.frame() ~= nil end
+-- test60: never "open" while the silent defaults run (no mirror, no controller taken, no B of ours)
+function N.qt.open() return not N.qt.auto and not N.qt.hush and N.qt.frame() ~= nil end
 -- the frames come lazily (at the assistant's first start): hooked once they exist; their show / hide is the window opening / closing
 N.qt.hooked = {}
 function N.qt.hook()
@@ -2769,9 +2770,14 @@ function N.qt.hook()
                 end)
                 f:HookScript("OnHide", function()
                     N.qt.top = false; N.qt.menu = nil; N.qt.browse, N.qt.cats = false, nil; mark(slotName, false); emitSoon()
+                    if slotName == "qtsetup" then N.qt.hush = nil end
                 end)
             end)
-            if TB(function() return f:IsShown() end) == true then mark(slotName, true); emitSoon() end
+            if TB(function() return f:IsShown() end) == true then
+                -- test60: QuestTrail made and showed it in one go (its own first start), before this hook: the silent run starts now
+                if slotName == "qtsetup" and not N.qt.browse then N.qt.startAuto(f) end
+                mark(slotName, true); emitSoon()
+            end
         end
     end
 end
@@ -3020,7 +3026,7 @@ N.qt.DEFAULTS = {
 -- WowCompanion's own saved table (WowCompanionDB.qtDefaults); never in a fight, never while a window of its is up.
 N.qt.DEFAULTS_V = 1
 function N.qt.onceDefaults()
-    if N.qt.onceTried or N.qt.auto then return end
+    if N.qt.onceTried or N.qt.auto then return end            -- (once a session at most; a closed setup is never re-opened)
     local db = rawget(_G, "WowCompanionDB")
     if type(db) ~= "table" or (tonumber(db.qtDefaults) or 0) >= N.qt.DEFAULTS_V then return end
     if not (type(SlashCmdList) == "table" and type(SlashCmdList.QUESTTRAIL) == "function") then return end
@@ -3035,9 +3041,41 @@ function N.qt.onceDefaults()
 end
 function N.qt.startAuto(f)
     if N.qt.auto then return end
-    N.qt.auto = true
+    N.qt.auto, N.qt.hush = true, true                         -- (hush: until the window is gone, whatever the run did)
+    N.qt.onceTried = true
+    -- test60: ONE attempt: the flag at its start, so a run that stalls or errors never loops at the next login / reload
+    local db = rawget(_G, "WowCompanionDB")
+    if type(db) == "table" then db.qtDefaults = N.qt.DEFAULTS_V end
     pcall(function() f:SetAlpha(0) end)                       -- never seen, not even for a frame
-    if type(C_Timer) == "table" then C_Timer.After(0.1, function() pcall(N.qt.runAuto, f) end) else pcall(N.qt.runAuto, f) end
+    local function run()
+        local ok, err = pcall(N.qt.runAuto, f)
+        if not ok then
+            ack("qtdefaults", false, "stopped: " .. tostring(err))
+            N.qt.endAuto(f)
+        end
+    end
+    if type(C_Timer) == "table" then
+        C_Timer.After(0.1, run)
+        C_Timer.After(20, function()                          -- a hard watchdog: still going after 20 s, it ends here
+            if N.qt.auto then ack("qtdefaults", false, "timed out"); N.qt.endAuto(f) end
+        end)
+    else run() end
+end
+-- the end of the silent run, whatever happened: its own Finish, else its own X; never left open, never mirrored
+function N.qt.endAuto(f)
+    if TB(function() return f:IsShown() end) == true then pcall(function() f.finish:Click() end) end
+    if TB(function() return f:IsShown() end) == true then
+        local okC, kids = pcall(function() return { f:GetChildren() } end)
+        if okC then for _, k in ipairs(kids) do
+            if N.qt.ty(k) == "Button" and (N.qt.txt(k) or "") == "" and (TN(function() return k:GetWidth() end) or 0) >= 20 and k ~= f.back and
+                k ~= f["next"] and k ~= f.reset and TB(function() return k:IsShown() end) == true and (N.qt.top_(k) or 0) >= (N.qt.top_(f) or 0) - 40 then
+                pcall(function() k:Click() end)
+            end
+        end end
+    end
+    if TB(function() return f:IsShown() end) == true then pcall(function() f:Hide() end) end
+    N.qt.auto = false
+    emitSoon()
 end
 function N.qt.runAuto(f)
     local done, missed, steps = {}, {}, 0
@@ -3071,12 +3109,8 @@ function N.qt.runAuto(f)
         if TB(function() return f["next"]:IsEnabled() end) ~= true then break end
         pcall(function() f["next"]:Click() end)
     end
-    -- read back: each default now as wanted? (QuestTrail re-syncs its widgets as it is set)
     for _, r in pairs(want) do missed[#missed + 1] = r.t .. " (not found)" end
-    pcall(function() f.finish:Click() end)
-    N.qt.auto = false
-    local db = rawget(_G, "WowCompanionDB")
-    if type(db) == "table" then db.qtDefaults = N.qt.DEFAULTS_V end     -- once: never again for this install
+    N.qt.endAuto(f)                                            -- its own Finish (else its X): ended, whatever was found
     ack("qtdefaults", #missed == 0, (#missed == 0) and ("set: " .. table.concat(done, ", ")) or ("missed: " .. table.concat(missed, ", ")), steps)
     emitSoon()
 end
