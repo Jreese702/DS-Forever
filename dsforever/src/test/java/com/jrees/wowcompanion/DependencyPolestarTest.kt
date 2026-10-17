@@ -6,15 +6,20 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Polestar as an opt-in dependency (the user, 2026-10-17): its versioned zip, its SHA256SUMS, wanted only when chosen */
+/**
+ * Polestar (the user, 2026-10-17), now a third-party add-on of the registry (Map's word, 1.0.9): pinned (v0.2.5, its size and sha256),
+ * its package's two folders, switched by Map's "Quest tracking"; the SHA256SUMS reader stays DependencyAddons' own
+ */
 class DependencyPolestarTest {
-    private val pole = DependencyAddons.DEPS.first { it.folder == "Polestar" }
+    private val pole = ThirdPartyAddons.POLESTAR
 
-    @Test fun theZipNotTheRecorder() {
-        val re = pole.assetRegex!!
-        assertTrue(re.matches("Polestar-1.4.2.zip")); assertTrue(re.matches("Polestar-v2.0.0-beta.1.zip"))
-        assertFalse(re.matches("Polestar_Recorder-1.4.2.zip")); assertFalse(re.matches("SHA256SUMS"))
-        assertTrue(pole.multi && pole.optIn)
+    @Test fun pinnedTheZipNotTheRecorder() {
+        assertEquals("Polestar-0.2.5.zip", pole.core.asset)
+        assertEquals(38_112_129L, pole.core.bytes)
+        assertTrue(pole.core.sha256.matches(Regex("[0-9a-f]{64}")))
+        assertEquals(listOf("Polestar", "Polestar_Nav"), pole.core.folders)
+        assertTrue(pole.modules.isEmpty() && pole.enabledBy != null)
+        assertTrue(DependencyAddons.DEPS.none { it.folder == "Polestar" })        // one path in, never two
     }
 
     @Test fun theChecksumLine() {
@@ -25,8 +30,8 @@ class DependencyPolestarTest {
     }
 
     @Test fun wantedOnlyWhenChosen() {
-        // no settings (a fresh install): Vanilla, so QuestieDB only
+        // no settings (a fresh install): Vanilla, so QuestieDB only, and Polestar not wanted
         assertTrue(DependencyAddons.wanted(DependencyAddons.DEPS.first { it.folder == "QuestieDB" }))
-        assertFalse(DependencyAddons.wanted(pole))
+        assertFalse(ThirdPartyAddons.coreWanted(pole))
     }
 }

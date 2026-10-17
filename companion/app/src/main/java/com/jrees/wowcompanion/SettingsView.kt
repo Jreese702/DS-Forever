@@ -153,7 +153,13 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     private val castListener: () -> Unit = { postInvalidate() }
 
+    /** Settings > Add-ons (1.0.9): each module's check box and each option's On / Off, as last drawn ("<addon>.<id>") */
+    private val addonModuleBoxes = LinkedHashMap<String, RectF>()
+    private val addonOptionSegs = LinkedHashMap<String, Array<RectF>>()
+
     init {
+        ThirdPartyAddons.init(context)
+        ThirdPartyAddons.onChange { postInvalidate() }
         Settings.onChange { postInvalidate() }
         ReportFlow.init(context)
         ReportFlow.onChange { postInvalidate() }
@@ -195,8 +201,12 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segChat.toList() +
             segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             segLimit.toList() + listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() +
-            listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred))
+            listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred) + addonFocus())
             .filter { !it.isEmpty }.map { RectF(it) }
+
+    /** the Add-ons tab's controls, in reading order (each module's box, then each option's two segments) */
+    private fun addonFocus(): List<RectF> = listOf(addonRestart) + addonCoreBtn.values.toList() + addonModuleBoxes.values.toList() +
+        addonOptionSegs.values.flatMap { it.toList() }
 
     /** the rows as last drawn, with their words (the "What it does" panel follows the row under the cursor or a touch) */
     private val rowHits = ArrayList<Pair<RectF, String>>()
@@ -207,6 +217,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** every hit box empty: a block not drawn on this tab presses nothing */
     private fun clearBoxes() {
         rowHits.clear()
+        addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
@@ -236,7 +247,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.CLASS_LEFT, SettingsTabs.Block.CLASS_RIGHT -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.CHAT -> 16f + ROW_H
         SettingsTabs.Block.FRAMES -> 16f + fgHeight()
-        else -> 0f
+        else -> SettingsTabs.addonOf(b)?.let { a -> val n = 1 + a.modules.size + a.options.size; 16f + n * ROW_H + (n - 1) * 10f } ?: 0f
     }
 
     /** the Frame generation section's rows now (FrameGen.rows: the DLL row alone until one is set; Restart when it would change something) */
@@ -336,6 +347,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segClassROpen[1].contains(x, y) -> HomeSettings.classTapR = false
             segClassRPick[0].contains(x, y) -> HomeSettings.classPickAR = true
             segClassRPick[1].contains(x, y) -> HomeSettings.classPickAR = false
+            addonTap(x, y) -> {}
             btnDll.contains(x, y) -> onChooseDll()
             btnRestart.contains(x, y) -> { btnRestart = RectF(); onRestart() }
             segFg[0].contains(x, y) -> FrameGen.enabled = false
@@ -402,7 +414,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                     "Hold RB + RT; letting go closes it.", HomeSettings.classTapR, HomeSettings.classPickAR, segClassROpen, segClassRPick)
                 SettingsTabs.Block.CHAT -> drawChat(c, y)
                 SettingsTabs.Block.FRAMES -> drawFrames(c, y)
-                else -> y
+                else -> SettingsTabs.addonOf(b)?.let { drawAddon(c, y, it) } ?: y
             }
         }
         y += BOTTOM_PAD
@@ -506,9 +518,15 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         var qtW = SEG_MIN_W
         for (t in QT_LABELS) qtW = maxOf(qtW, pBtn.measureText(t) + SEG_PAD)
         pBtn.textSize = 27f
+        // Polestar / QuestTrail: what the add-on itself is doing, from the Add-ons registry (version, size, download / install)
+        fun addonWord(a: ThirdPartyAddons.Addon, what: String): String {
+            val st = ThirdPartyAddons.status(a, "core")
+            val state = if (st.kind == ThirdPartyAddons.Kind.INSTALLED) "installed" else st.line.ifEmpty { ThirdPartyAddons.size(a.core.mb) }
+            return "${a.title} ${a.version}: $state · $what"        // the state first: a long line is cut at its end
+        }
         val sub = when (Settings.questTracking) {
-            "polestar" -> "Polestar's walking routes (downloaded at the next start when missing)"
-            "questtrail" -> "QuestTrail's guidance arrow: the line follows its plan (no game pin)"
+            "polestar" -> addonWord(ThirdPartyAddons.POLESTAR, "walking routes")
+            "questtrail" -> addonWord(ThirdPartyAddons.QUESTTRAIL, "the line follows its arrow, no game pin")
             else -> "DS Forever's own route: learned ways, the tram, known flights"
         }
         row(c, y, "Quest tracking", sub, enabled = true) { box ->
@@ -708,6 +726,129 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             }
         }
         return y + ROW_H
+    }
+
+    /**
+     * ONE THIRD-PARTY ADD-ON (Settings > Add-ons, 1.0.9; the user on Spoken: modules opt-in, nothing downloaded by default, the size
+     * shown first, the stop rules a setting): its own row (what it is, by whom, its licence, its pinned version), a row per module
+     * with the game's check box and the size switching it on would download, then the companion's options for it.
+     */
+    private fun drawAddon(c: Canvas, top: Float, a: ThirdPartyAddons.Addon): Float {
+        var y = top
+        val core = ThirdPartyAddons.status(a, "core")
+        val installed = ThirdPartyAddons.coreInstalled(a)
+        val wanted = ThirdPartyAddons.coreWanted(a)
+        if (core.kind == ThirdPartyAddons.Kind.DOWNLOADING || core.kind == ThirdPartyAddons.Kind.WAITING_WIFI) postInvalidateDelayed(1000)
+        // ---- the add-on's own row: what it is; Install / Uninstall (the user: "an option here to install it in the first place"), or
+        // for one another setting switches (Polestar), where that is; its progress while it comes
+        val who = "${a.what}. By ${a.by}, ${a.license}."
+        val sub = when {
+            core.kind == ThirdPartyAddons.Kind.NONE && a.enabledBy != null -> "$who Off: chosen in ${a.enabledWhere}."
+            core.kind == ThirdPartyAddons.Kind.NONE -> "$who ${ThirdPartyAddons.size(a.core.mb)}."
+            core.kind == ThirdPartyAddons.Kind.INSTALLED -> "$who Version ${a.version}."
+            else -> core.line
+        }
+        val label = when { a.enabledBy != null -> a.title; installed || wanted -> a.title; else -> "Install ${a.title}" }
+        val btn = row(c, y, label, sub, enabled = true) { box ->
+            val bw = 260f
+            val r = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            val armedOut = addonArmed == "${a.id}.uninstall" && SystemClock.elapsedRealtime() - addonArmedAt < ARM_MS
+            when {
+                a.enabledBy != null -> {
+                    // switched by another setting: no button here, only where it is and what it is doing
+                    val words = when (core.kind) { ThirdPartyAddons.Kind.INSTALLED -> "Version ${a.version}"; ThirdPartyAddons.Kind.NONE -> "Off"; ThirdPartyAddons.Kind.DOWNLOADED -> "Downloaded"
+                        ThirdPartyAddons.Kind.DOWNLOADING -> if (core.pct >= 0) "${core.pct}%" else "Downloading"; else -> "" }
+                    pValue.color = if (core.kind == ThirdPartyAddons.Kind.INSTALLED) Theme.text else Theme.dim
+                    pValue.textAlign = Paint.Align.RIGHT; c.drawText(words, box.right - 22f, box.centerY() + 11f, pValue)
+                    pValue.textAlign = Paint.Align.CENTER
+                    RectF(box.right - 22f - pValue.measureText(words), box.top, box.right - 22f - pValue.measureText(words), box.top)
+                }
+                // something of it is downloaded and waits for the game to start again: the launcher's own Restart, right here
+                a.pkgs().any { (k, _) -> ThirdPartyAddons.status(a, k).kind == ThirdPartyAddons.Kind.DOWNLOADED } && gameRunning() -> {
+                    UiKit.button(c, r, "Restart game", UiKit.Button.UP); addonRestart = r; RectF(r.left, r.top, r.left, r.top)
+                }
+                core.kind == ThirdPartyAddons.Kind.DOWNLOADING -> { if (core.pct >= 0) progressBar(c, r, core.pct); RectF(r.left, r.top, r.left, r.top) }
+                installed && wanted -> { UiKit.button(c, r, if (armedOut) "Tap again" else "Uninstall", if (armedOut) UiKit.Button.DOWN else UiKit.Button.UP); r }
+                installed -> { UiKit.button(c, r, "Keep it", UiKit.Button.UP); r }                 // moving out at the next start
+                wanted -> { UiKit.button(c, r, "Cancel", UiKit.Button.UP); r }                     // waiting: Wi-Fi, room, a failure
+                else -> { UiKit.button(c, r, "Install", UiKit.Button.UP); r }
+            }
+        }
+        addonCoreBtn[a.id] = btn
+        // ---- its modules: only once it is installed (the user: "the module check boxes ... only once Spoken is installed")
+        for (m in a.modules) {
+            y += ROW_H + 10f
+            val on = ThirdPartyAddons.moduleOn(a, m)
+            val st = ThirdPartyAddons.status(a, m.id)
+            if (st.kind == ThirdPartyAddons.Kind.DOWNLOADING || st.kind == ThirdPartyAddons.Kind.WAITING_WIFI) postInvalidateDelayed(1000)
+            val line = when {
+                !installed -> "${m.what}. Install ${a.title} first."
+                on -> "${m.what}. ${st.line}."
+                else -> "${m.what}. ${ThirdPartyAddons.size(m.pkg.mb)} download."
+            }
+            val box = row(c, y, m.title, line, enabled = installed) { box ->
+                val r = RectF(box.right - 16f - 96f, box.centerY() - 40f, box.right - 16f, box.centerY() + 40f)
+                if (installed && on && st.kind == ThirdPartyAddons.Kind.DOWNLOADING && st.pct >= 0) progressBar(c, RectF(r.left - 220f, r.top + 12f, r.left - 20f, r.bottom - 12f), st.pct)
+                UiKit.check(c, r.right - 38f, r.centerY(), 76f, on, enabled = installed)
+                r
+            }
+            if (installed) addonModuleBoxes["${a.id}.${m.id}"] = box
+        }
+        val segW = segW()
+        for (o in a.options) {
+            y += ROW_H + 10f
+            val on = ThirdPartyAddons.option(a, o)
+            val segs = Array(2) { RectF() }
+            row(c, y, o.title, if (installed) (if (on) o.on else o.off) else "Install ${a.title} first.", enabled = installed) { box ->
+                val r = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                segmented(c, r, listOf("On", "Off"), if (on) 0 else 1, segs)
+                r
+            }
+            if (installed) addonOptionSegs["${a.id}.${o.id}"] = segs
+        }
+        return y + ROW_H
+    }
+
+    /** a download's progress, in the game's own bar art when the kit has it: [pct] 0..100 (< 0 = waiting) */
+    private fun progressBar(c: Canvas, r: RectF, pct: Int) {
+        pFill.color = Theme.ink; c.drawRoundRect(r, 6f, 6f, pFill)
+        val k = (pct.coerceIn(0, 100)) / 100f
+        pFill.color = Theme.gold
+        if (k > 0f) c.drawRoundRect(RectF(r.left + 3f, r.top + 3f, r.left + 3f + (r.width() - 6f) * k, r.bottom - 3f), 4f, 4f, pFill)
+        pStroke.color = Theme.bronze; c.drawRoundRect(r, 6f, 6f, pStroke)
+        pValue.color = Theme.text
+        c.drawText(if (pct >= 0) "$pct%" else "...", r.centerX(), r.centerY() + 10f, pValue)
+    }
+
+    private val addonCoreBtn = HashMap<String, RectF>()
+    private var addonRestart = RectF()
+    private var addonArmed: String? = null
+    private var addonArmedAt = 0L
+
+    /** a press on an Add-ons control; true = it was one */
+    private fun addonTap(x: Float, y: Float): Boolean {
+        if (!addonRestart.isEmpty && addonRestart.contains(x, y)) { onRestart(); return true }
+        for (a in ThirdPartyAddons.ALL) {
+            addonCoreBtn[a.id]?.takeIf { !it.isEmpty && it.contains(x, y) }?.let {
+                val installed = ThirdPartyAddons.coreInstalled(a)
+                val wanted = ThirdPartyAddons.coreWanted(a)
+                if (installed && wanted) {
+                    // Uninstall: twice, as Reload (its folders go to the backup at the next start, never deleted)
+                    val now = SystemClock.elapsedRealtime()
+                    if (addonArmed == "${a.id}.uninstall" && now - addonArmedAt < ARM_MS) { addonArmed = null; ThirdPartyAddons.setCore(a, false) }
+                    else { addonArmed = "${a.id}.uninstall"; addonArmedAt = now; postDelayed({ invalidate() }, ARM_MS + 50) }
+                } else ThirdPartyAddons.setCore(a, !wanted)
+                return true
+            }
+            for (m in a.modules) if (addonModuleBoxes["${a.id}.${m.id}"]?.contains(x, y) == true) {
+                ThirdPartyAddons.setModule(a, m, !ThirdPartyAddons.moduleOn(a, m)); return true
+            }
+            for (o in a.options) addonOptionSegs["${a.id}.${o.id}"]?.let { s ->
+                if (s[0].contains(x, y)) { ThirdPartyAddons.setOption(a, o, true); return true }
+                if (s[1].contains(x, y)) { ThirdPartyAddons.setOption(a, o, false); return true }
+            }
+        }
+        return false
     }
 
     // 96, not 104: with three sections the page came to 1024 px in a ~970 px room, and the last row
