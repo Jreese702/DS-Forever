@@ -127,6 +127,7 @@ class InteractView(context: Context) : View(context) {
 
     fun update(msg: JSONObject, current: Boolean = true) {
         lastDocAt = System.currentTimeMillis()
+        if (current) spokenSync(msg)
         if (current) takeLootGone(msg, doc?.optJSONObject("loot"))
         prevLoot = doc?.optJSONObject("loot")
         docCurrent = current
@@ -677,6 +678,27 @@ class InteractView(context: Context) : View(context) {
             Kind.NONE, Kind.PETITION -> {}
         }
         return out
+    }
+
+    // ---- SPOKEN'S STOP OPTIONS (1.0.9, Settings > Add-ons): the add-on says the values it has (doc.spoken, Interact i120); one that
+    // differs from the player's setting is put right with its cell, at most every SPK_EVERY_MS (a fresh game starts on the defaults)
+    private var spkTapAt = 0L
+    private fun spokenSync(msg: JSONObject) {
+        val sp = msg.optJSONObject("spoken") ?: return
+        val cells = sp.optJSONObject("cells") ?: return
+        ThirdPartyAddons.init(context)
+        val a = ThirdPartyAddons.SPOKEN
+        fun want(id: String) = a.options.firstOrNull { it.id == id }?.let { ThirdPartyAddons.option(a, it) } ?: false
+        val (k, v) = when {
+            sp.optBoolean("close") != want("stopClose") -> "close" to want("stopClose")
+            sp.optBoolean("accept") != want("stopAccept") -> "accept" to want("stopAccept")
+            else -> return
+        }
+        val col = cells.optInt(k + if (v) "On" else "Off", -1)
+        val now = android.os.SystemClock.uptimeMillis()
+        if (col < 0 || dryRun || now - spkTapAt < SPK_EVERY_MS) return
+        spkTapAt = now
+        TapBridge.tap(context, msg.optJSONObject("pad"), "iact", col) { }
     }
 
     private fun rowOf(cmd: String) = when (cmd.substringBefore(' ')) {
@@ -4303,6 +4325,7 @@ class InteractView(context: Context) : View(context) {
     }
 
     companion object {
+        const val SPK_EVERY_MS = 3_000L
         const val PAPER_GOLD = 2            // UI Art's gold selection look; the user's pick replaces it
         const val CLOSE_B_LOOK = 1
         const val TIP_STEP = 90f                // px the tooltip stack moves per right-stick step
