@@ -66,6 +66,7 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     /** read the art set's manifest and indexes off the UI thread (60 small files) */
     fun loadArt() {
+        kidsCache.clear(); seamZones.clear()            // the zoom's hand-overs follow the art read again
         io.execute {
             val dir = artDir()
             val note = try {
@@ -161,29 +162,69 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
 
     /** the zoom glide's hand-over: on a seamless continent, into the zone that now fills the view; on a zone, out to its continent */
+    /**
+     * ONE ZOOM FROM THE WORLD TO A CITY (the user on test53: "The open map needs to zoom out all the way to continents, and be able to
+     * zoom all the way in to the cities"). Each map hands over to the finer map under the view once that map fills the frame (its
+     * width x the zoom reaches 1), and back out to its parent below 1x, at the same place and scale: the world -> a continent -> a zone
+     * -> a city. A seamless continent's zones by its own stitched frame (seamPlace); otherwise the game's own rects (a map's place on
+     * its parent; a capital's in its zone from the two world rects).
+     */
     private fun glide() {
-        if (seamless()) {
-            val cont = shown
-            val z = seamZonesOf(cont).mapNotNull { z -> seamPlace(cont, z)?.let { z to it } }
-                .filter { (_, p) -> p.contains(panX, panY) }.minByOrNull { (_, p) -> p.width() * p.height() } ?: return
-            val (zone, p) = z
-            if (zoom * p.width() < 1f) return
-            val nz = zoom * p.width(); val npx = (panX - p.left) / p.width(); val npy = (panY - p.top) / p.height()
-            val ncx = (curX - p.left) / p.width(); val ncy = (curY - p.top) / p.height()
-            goTo(zone)
-            zoom = nz; panX = npx; panY = npy; curX = ncx.coerceIn(0f, 1f); curY = ncy.coerceIn(0f, 1f); clampPan(); invalidate()
-        } else if (isZoneView() && zoom < 1f) {
-            val cont = model.parentOf(shown)?.takeIf { seamless(it) } ?: run { zoom = 1f; return }
-            val p = seamPlace(cont, shown) ?: run { zoom = 1f; return }
-            val nz = max(1f, zoom / p.width()); val npx = p.left + panX * p.width(); val npy = p.top + panY * p.height()
-            val ncx = p.left + curX * p.width(); val ncy = p.top + curY * p.height()
-            goTo(cont)
-            zoom = nz; panX = npx; panY = npy; curX = ncx; curY = ncy; clampPan(); invalidate()
+        var guard = 0
+        while (guard++ < 4) {
+            // in: the smallest finer map under the view's middle that the zoom has made fill the frame
+            val kid = kidsOf(shown).filter { (_, p) -> p.contains(panX, panY) && zoom * p.width() >= 1f }
+                .minByOrNull { (_, p) -> p.width() * p.height() }
+            if (kid != null) {
+                val (id, p) = kid
+                val nz = zoom * p.width(); val npx = (panX - p.left) / p.width(); val npy = (panY - p.top) / p.height()
+                val ncx = (curX - p.left) / p.width(); val ncy = (curY - p.top) / p.height()
+                goTo(id)
+                // the view as it was; the finer map has no art past its frame, so the view eases into it (no jump)
+                zoom = nz; panX = npx; panY = npy; curX = ncx.coerceIn(0f, 1f); curY = ncy.coerceIn(0f, 1f); startEase(); clampPan(); invalidate()
+                continue
+            }
+            // out: below 1x, to the parent, the same place and scale
+            if (zoom < 1f) {
+                val (parent, p) = placeIn(shown) ?: run { zoom = 1f; clampPan(); return }
+                val nz = zoom / p.width(); val npx = p.left + panX * p.width(); val npy = p.top + panY * p.height()
+                val ncx = p.left + curX * p.width(); val ncy = p.top + curY * p.height()
+                goTo(parent)
+                zoom = nz; panX = npx; panY = npy; curX = ncx.coerceIn(0f, 1f); curY = ncy.coerceIn(0f, 1f)
+                startEase(); if (zoom >= 1f) clampPan()
+                invalidate()
+                continue
+            }
+            return
         }
     }
-    /** the zoom's range here: a seamless continent zooms deep (the glide hands over at the zone); a zone below 1x only to hand out */
-    private fun zoomMin() = if (isZoneView() && model.parentOf(shown)?.let { seamless(it) } == true) 0.6f else 1f
-    private fun zoomMax() = if (seamless()) 24f else 3.2f
+
+    /** the finer maps of [id] the zoom can hand over to, each with its place in [id]'s frame */
+    private fun kidsOf(id: Int): List<Pair<Int, RectF>> {
+        kidsCache[id]?.let { return it }
+        val out = ArrayList<Pair<Int, RectF>>()
+        if (seamless(id)) seamZonesOf(id).forEach { z -> seamPlace(id, z)?.let { out.add(z to it) } }
+        else model.children(id).forEach { c -> model.rectOf(c)?.let { r -> out.add(c to RectF(r[0], r[2], r[1], r[3])) } }
+        model.citiesIn(id).forEach { (c, r) -> out.add(c to RectF(r[0], r[2], r[1], r[3])) }
+        val ok = out.filter { (c, p) -> c != id && p.width() > 0.005f && p.height() > 0.005f && p.width() < 0.999f }
+        kidsCache[id] = ok
+        return ok
+    }
+    private val kidsCache = HashMap<Int, List<Pair<Int, RectF>>>()
+
+    /** [id]'s parent and its place in the parent's frame, or null (the world) */
+    private fun placeIn(id: Int): Pair<Int, RectF>? {
+        val parent = model.parentOf(id) ?: return null
+        return kidsOf(parent).firstOrNull { it.first == id }?.let { parent to it.second }
+    }
+
+    /** the zoom's range here: below 1x only to hand out to a parent; in far enough that the finest map under it hands over */
+    private fun zoomMin() = if (placeIn(shown) != null) 0.6f else 1f
+    private fun zoomMax(): Float {
+        if (seamless()) return 24f
+        val finest = kidsOf(shown).minOfOrNull { it.second.width() } ?: return 3.2f
+        return max(3.2f, min(24f, 1.1f / finest))
+    }
 
     // ---------------------------------------------------------------- live data
     private var mapDoc: JSONObject? = null
@@ -855,7 +896,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
     private fun stepZoom() {
         // a zone's map only, as LB / RB (a continent or the world does not zoom)
-        if (!isShown || modal() || abs(zoomY) <= MapRoomKeys.STICK_DEAD || !(isZoneView() || seamless())) { zoomRunning = false; return }
+        if (!isShown || modal() || abs(zoomY) <= MapRoomKeys.STICK_DEAD) { zoomRunning = false; return }
         val now = SystemClock.uptimeMillis()
         val dt = if (zoomFrameAt == 0L) 1f / 60f else ((now - zoomFrameAt) / 1000f).coerceIn(0f, 0.05f)
         zoomFrameAt = now
@@ -1016,8 +1057,24 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     private fun clampPan() {
         val hw = 0.5f / zoom
-        panX = panX.coerceIn(hw, 1f - hw); panY = panY.coerceIn(hw, 1f - hw)
+        val cx = if (hw >= 0.5f) 0.5f else panX.coerceIn(hw, 1f - hw)
+        val cy = if (hw >= 0.5f) 0.5f else panY.coerceIn(hw, 1f - hw)
+        if (!easeX.isNaN()) { easeX = cx; easeY = cy } else { panX = cx; panY = cy }
     }
+    // A HAND-OVER'S EASE (the zoom's one range): the view kept where it was, then eased into the new map's frame over a few frames
+    private var easeX = Float.NaN; private var easeY = Float.NaN; private var easeAt = 0L
+    private fun startEase() { easeX = panX; easeY = panY; easeAt = 0L }
+    private fun stepEase() {
+        if (easeX.isNaN()) return
+        val now = SystemClock.uptimeMillis()
+        val dt = if (easeAt == 0L) 1f / 60f else ((now - easeAt) / 1000f).coerceIn(0f, 0.05f)
+        easeAt = now
+        val k = min(1f, dt * EASE_RATE)
+        panX += (easeX - panX) * k; panY += (easeY - panY) * k
+        if (abs(easeX - panX) < 1e-4f && abs(easeY - panY) < 1e-4f) { panX = easeX; panY = easeY; easeX = Float.NaN; easeY = Float.NaN }
+        else postInvalidateOnAnimation()
+    }
+    private val EASE_RATE = 9f
 
     private fun sx(u: Float): Float = sx0(u) + mapShift()
     private fun sx0(u: Float): Float { val hw = 0.5f / zoom; return artR.left + (u - (panX - hw)) / (2f * hw) * artR.width() }
@@ -1047,6 +1104,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         }
         if (shown == 0) shown = startMap()
         if (hoverDirty) updateHover()
+        stepEase()
         aimShift()
         c.save()
         c.clipRect(canvasR)
