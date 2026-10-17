@@ -41,16 +41,19 @@ object CityExits {
         Exit(1453, "Deeprun Tram", x = 0.690, y = 0.310, toMap = 1455, rideYd = TRAM_YD),
     )
 
-    /** a way out of the current map, in ITS 0..1: where to walk, and where the way ends (the transport's far end, or the same) */
-    class Way(val exit: Exit, val x: Double, val y: Double, val endX: Double, val endY: Double)
+    /** a way out of the current map, in ITS 0..1: where to walk, and where the way ends (the transport's far end, or the same).
+     *  [tailYd]: a ride to ANOTHER continent, the yards from where it lands to the quest there (its end cannot be put on this map) */
+    class Way(val exit: Exit, val x: Double, val y: Double, val endX: Double, val endY: Double, val tailYd: Double = Double.NaN)
 
     /**
      * The best way from the player ([px], [py]) toward [far] (all this map's 0..1; [ax] / [ay] yards across / down): the least walk
-     * to the way, plus its ride, plus the straight yards from where it ends to the quest. Null when there is none.
+     * to the way, plus its ride, plus the straight yards from where it ends to the quest (a way to another continent: its own
+     * [Way.tailYd]). [far] null = the quest is on no map of this continent: only such ways count. Null when there is none.
      */
-    fun pick(px: Double, py: Double, far: DoubleArray, ways: List<Way>, ax: Double, ay: Double): Way? {
+    fun pick(px: Double, py: Double, far: DoubleArray?, ways: List<Way>, ax: Double, ay: Double): Way? {
         fun d(x0: Double, y0: Double, x1: Double, y1: Double) = hypot((x1 - x0) * ax, (y1 - y0) * ay)
-        return ways.minByOrNull { w -> d(px, py, w.x, w.y) + w.exit.rideYd + d(w.endX, w.endY, far[0], far[1]) }
+        fun tail(w: Way): Double? = if (!w.tailYd.isNaN()) w.tailYd else far?.let { d(w.endX, w.endY, it[0], it[1]) }
+        return ways.filter { tail(it) != null }.minByOrNull { w -> d(px, py, w.x, w.y) + w.exit.rideYd + tail(w)!! }
     }
 
     /**
