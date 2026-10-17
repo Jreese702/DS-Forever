@@ -642,6 +642,12 @@ class HomeView(
             if (k == "PADBACK" || k == "PADLSHOULDER" || k == "PADRSHOULDER") mapView.hostKey(k) else auraPane.fullKey(k)
             syncMapB(); return
         }
+        // the quest panel open (MapView): every key is the panel's - Right lights the quest's areas, not the buffs (the user, 2026-10-16:
+        // "pressing over on the dpad should highlight quest areas not the buffs"); the buff pane redraws round it
+        if (mapView.panelOpen()) {
+            if (!mapView.hostKey(k)) { if (flow.close()) { changed(); onBHome?.invoke() }; return }
+            auraPane.invalidate(); syncMapB(); return
+        }
         if (k == "PADDRIGHT") { auraPane.enterFull(); syncMapB(); return }
         if (k == "PADDLEFT") return
         if (!mapView.hostKey(k)) { if (flow.close()) { changed(); onBHome?.invoke() }; return }
@@ -1831,7 +1837,11 @@ class HomeView(
         }
 
         override fun onDraw(c: Canvas) {
-            drawPane(c)
+            // the open quest panel lies ABOVE the buffs (the user: "when a quest is open the buffs should be behind it"): the pane lies
+            // exactly over the map, so the panel's box is the same in both; the pane leaves it out
+            val cover = if (fullMap() && lent(mapView)) mapView.panelCover() else null
+            if (cover != null) { c.save(); c.clipOutRect(cover); drawPane(c); c.restore() } else drawPane(c)
+            if (cover != null || coverWas) { coverWas = cover != null; postInvalidateDelayed(100) }   // follows the panel's box
             // map's quest arrow slides along the small map's edge away from these boxes (map's rimKeepOut; the pane lies exactly
             // over the map, so its coordinates are the map's). An unchanged list costs nothing (map compares). NOT the + / - column
             // (the user on the test build, 2026-10-12: "The quest arrow is getting stuck on the + and - buttons. It should show on
@@ -2189,7 +2199,11 @@ class HomeView(
 
         private var downX = 0f; private var downY = 0f; private var dragging = false; private var startScroll = 0f
 
+        private var coverWas = false
+
         override fun onTouchEvent(e: MotionEvent): Boolean {
+            // a touch on the open quest panel is the panel's (the map below takes it), never a buff's
+            if (e.actionMasked == MotionEvent.ACTION_DOWN && fullMap() && lent(mapView) && mapView.panelCover()?.contains(e.x, e.y) == true) return false
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     zoomDown = when { zoomIn.contains(e.x, e.y) -> -1; zoomOut.contains(e.x, e.y) -> +1; else -> 0 }
