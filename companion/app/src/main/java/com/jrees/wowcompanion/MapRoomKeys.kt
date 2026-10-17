@@ -69,8 +69,9 @@ object MapRoomKeys {
             // a zone header opens / closes its group; a quest: track + focus ("pressing A focuses")
             "PAD1" -> c.listHeader?.let { Do.ToggleGroup(it) } ?: c.listQuest?.let { Do.TrackFocus(it) } ?: Do.None
             "PAD3" -> c.listQuest?.let { Do.ToggleTrack(it) } ?: Do.None
-            "PADLSHOULDER" -> if (c.zoneView) Do.ZoomOut else Do.None
-            "PADRSHOULDER" -> if (c.zoneView) Do.ZoomIn else Do.None
+            // one zoom on every map, the world to a city (test53: "zoom out all the way to continents ... all the way in to the cities")
+            "PADLSHOULDER" -> Do.ZoomOut
+            "PADRSHOULDER" -> Do.ZoomIn
             else -> Do.None
         }
         val quest = c.hoverQuest?.takeIf { c.zoneView }
@@ -83,8 +84,9 @@ object MapRoomKeys {
             // the game's A/X "Change map"; on a quest marker the user's A Focus/Track (not offered on the focused one) and X Track/Untrack
             "PAD1" -> if (quest != null) (if (c.hoverFocused) Do.None else Do.TrackFocus(quest)) else openable(c)?.let { Do.Open(it) } ?: Do.None
             "PAD3" -> if (quest != null) Do.ToggleTrack(quest) else if (c.hasParent) Do.Up else Do.None
-            "PADLSHOULDER" -> if (c.zoneView) Do.ZoomOut else Do.None
-            "PADRSHOULDER" -> if (c.zoneView) Do.ZoomIn else Do.None
+            // one zoom on every map, the world to a city (test53: "zoom out all the way to continents ... all the way in to the cities")
+            "PADLSHOULDER" -> Do.ZoomOut
+            "PADRSHOULDER" -> Do.ZoomIn
             else -> Do.None
         }
     }
