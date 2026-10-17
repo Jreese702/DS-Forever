@@ -47,11 +47,20 @@ function WC.snapshot(reason)
         reason = reason,
         actionbar = bar,
         player = WC.collectPlayer(),
-        map = WC.collectMap(),
+        map = WC.collectMapSafe(),
         bags = WC.collectBags(),
         equipped = equipped,
     })
     return true
+end
+
+-- THE MAP NEVER STOPS THE BARS (test29: an error in the map's build - a key clash, Map.lua:1004 - threw out the whole "full"
+-- document every 15 s, the action bar and bags with it, and the user's bars went grey). The map is built under pcall: an error
+-- sends { ok = false, err } in its place and everything else goes out as always.
+function WC.collectMapSafe()
+    local ok, m = pcall(WC.collectMap)
+    if ok then return m end
+    return { ok = false, err = tostring(m):sub(1, 200) }
 end
 
 -- A forced snapshot, coalesced. The harvester fires on MERCHANT_SHOW etc., and the player is
@@ -87,8 +96,8 @@ local function start()
     -- 0.1 s. The map is a minimap replacement, so the sample rate is what makes the arrow
     -- glide rather than hop; 0.25 quantised movement into four steps a second.
     C_Timer.NewTicker(0.1, function()
-        local pos = WC.collectPos()
-        if not pos then return end
+        local okP, pos = pcall(WC.collectPos)          -- an error in the tick's build never breaks the ticker (test29)
+        if not okP or not pos then return end
         WC.trailMap(pos.mapID)
         -- A NEW MAP means new quests, POIs and flight points. A position-only update would
         -- leave the old zone's markers on screen over the new zone's coordinates, which is
@@ -256,7 +265,7 @@ SlashCmdList["WCMAP"] = function(arg)
         return
     end
     local found = WC.probeMinimapFrames()
-    WC.emit({ type = "cap", minimapFrames = found, map = WC.collectMap() })
+    WC.emit({ type = "cap", minimapFrames = found, map = WC.collectMapSafe() })
     if #found == 0 then
         say("|cffff5555no minimap frame found|r")
     else

@@ -851,7 +851,7 @@ function WC.collectMap()
     end
     -- on a flight (b-route-city-exits): a map crossed in the air is no way out on foot, so the app learns no exit from it
     local okt, onTaxi = CALL(UnitOnTaxi, "player")
-    out.taxi = (okt and onTaxi == true) and 1 or 0
+    out.onTaxi = (okt and onTaxi == true) and 1 or 0     -- NOT `taxi`: that key is this document's list of flight nodes
     -- Services the player has actually interacted with here. Authoritative, unlike the bundle.
     out.svc = WC.collectServices and WC.collectServices(id) or nil
 
@@ -1207,7 +1207,7 @@ function WC.collectPos()
     end
     -- the learner's two other words on the cheap tick too (b-learn-exits): on a flight, and (above) the continent
     local okt2, onTaxi2 = CALL(UnitOnTaxi, "player")
-    out.taxi = (okt2 and onTaxi2 == true) and 1 or 0
+    out.onTaxi = (okt2 and onTaxi2 == true) and 1 or 0   -- NOT `taxi` (the full document's flight-node list)
     -- the quest-area tracer rides the position it was taken at (see traceSample)
     local okQ, qb = pcall(traceSample, plainNum(id), out.wx, out.wy)
     if okQ and qb then out.qb = qb end
