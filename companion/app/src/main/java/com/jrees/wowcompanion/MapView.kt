@@ -3873,7 +3873,7 @@ class MapView(context: Context) : View(context) {
                 val straight = listOf(here, to)
                 android.util.Log.i("WCMAP", if (pts.size > 2) "danger: quest $q bent round hostile ground: ${pts.size - 2} bends, " +
                     "detour +${(DangerGrid.yards(pts, ax, ay) - DangerGrid.yards(straight, ax, ay)).toInt()} yd, danger avoided " +
-                    "${(g.cost(straight, k, to) - g.cost(pts, k, to)).toInt()} (strength ${Settings.avoidDanger})"
+                    "${(g.cost(straight, k, to) - g.cost(pts, k, to)).toInt()} (strength ${Settings.avoidDanger}, radius ${DangerGrid.AGGRO_YD.toInt()} yd)"
                     else "danger: quest $q straight again")
             }
         }
