@@ -4632,12 +4632,12 @@ class MapView(context: Context) : View(context) {
             }
             MapCursor.Do.PlayerMenu -> openPlayerMenu()
             is MapCursor.Do.Toggle -> toggleTab(d.key)
-            is MapCursor.Do.Track -> onTrackFocusQuest?.invoke(d.id) ?: note("Track is not on the tap pad yet")
-            is MapCursor.Do.Watch -> onTrackQuest?.invoke(d.id) ?: note("Track is not on the tap pad yet")
+            is MapCursor.Do.Track -> onTrackFocusQuest?.let { it(d.id); trackNow(d.id, true) } ?: note("Track is not on the tap pad yet")
+            is MapCursor.Do.Watch -> onTrackQuest?.let { it(d.id); trackNow(d.id, true) } ?: note("Track is not on the tap pad yet")
             is MapCursor.Do.Open -> openPanel(d.id)
             is MapCursor.Do.Focus -> askFocus(d.id)
             is MapCursor.Do.Unfocus -> onUnfocusQuest?.invoke(d.id) ?: note("Unfocus is not on the tap pad yet")
-            is MapCursor.Do.Untrack -> onUntrackQuest?.invoke(d.id) ?: note("Untrack is not on the tap pad yet")
+            is MapCursor.Do.Untrack -> onUntrackQuest?.let { it(d.id); trackNow(d.id, false) } ?: note("Untrack is not on the tap pad yet")
             is MapCursor.Do.ShowOnMap -> tracked.firstOrNull { it.optInt("id", 0) == d.id }?.let { q ->
                 val qx = q.optDouble("x", Double.NaN); val qy = q.optDouble("y", Double.NaN)
                 if (!qx.isNaN() && !qy.isNaN()) focusOn(qx, qy, trackedMap) else note("This quest has no place on this map")
@@ -4664,6 +4664,29 @@ class MapView(context: Context) : View(context) {
     /** the Quests room's document (MainActivity routes "quests" here too) */
     fun onQuests(q: JSONObject) {
         q.optJSONObject("pad")?.let { padDoc = it; if (holdAsk.padArrived()) askHold() }
+        lastQuests = q
+        applyQuests(q)
+    }
+
+    // ---- TRACKING SHOWN AT ONCE (the user on test58: "When I track a quest it doesn't move up out of the untracked sort in the map
+    // module"): the list was sorted from the quests document only, and the game's answer comes a moment later (or not at all). A press
+    // (Track, Track & focus, Untrack) moves the quest at once - up into the tracked quests, or back down into its tab - the cursor
+    // staying on it; the next document that agrees settles it, and after [TRACK_PENDING_MS] the game's word stands again.
+    private var lastQuests: JSONObject? = null
+    private val trackPending = HashMap<Int, Pair<Boolean, Long>>()
+    private val TRACK_PENDING_MS = 10_000L
+    /** quest [id] tracked ([on]) or not, shown now: the list re-sorted from the last document with the press on top */
+    private fun trackNow(id: Int, on: Boolean) {
+        if (id == 0) return
+        trackPending[id] = on to android.os.SystemClock.elapsedRealtime()
+        // back down: its zone's tab opened, so the cursor can stay on it there
+        if (!on) questById[id]?.optString("zone", "")?.takeIf { it.isNotEmpty() }?.let { openTabs[it] = true }
+        lastQuests?.let { applyQuests(it) }
+        if (cursor.shown && cursor.sel == id) { listShow(id); revealSelected() }
+        invalidate()
+    }
+
+    private fun applyQuests(q: JSONObject) {
         questsPlv = if (q.has("plv")) q.optInt("plv") else null
         questsParty = q.optBoolean("party")
         questsTriv = if (q.has("trivRange")) q.optInt("trivRange") else 5
@@ -4682,7 +4705,15 @@ class MapView(context: Context) : View(context) {
             val e = list.optJSONObject(i) ?: continue
             if (e.optBoolean("focus")) docFocus = e.optInt("id", 0)
             e.optInt("id", 0).takeIf { it != 0 }?.let { questById[it] = e }
-            if (e.has("watch") && !e.isNull("watch")) {
+            // the document's tracking, unless a press of the last few seconds says otherwise (and the document does not agree yet)
+            val docWatch = e.has("watch") && !e.isNull("watch")
+            val pend = trackPending[e.optInt("id", 0)]
+            val watched = if (pend == null) docWatch else {
+                if (pend.first == docWatch || android.os.SystemClock.elapsedRealtime() - pend.second > TRACK_PENDING_MS) {
+                    trackPending.remove(e.optInt("id", 0)); docWatch
+                } else pend.first
+            }
+            if (watched) {
                 tracked.add(e)
                 val id = e.optInt("id", 0)
                 if (id != 0) trackedNo[id] = tracked.size
