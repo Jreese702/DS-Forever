@@ -26,7 +26,7 @@ object CdnArchives {
     private val lock = Any()
 
     /** the self-heal dropped the cache (GameFiles, p-casclib-1000): the indexes read from it go too */
-    fun forget() = synchronized(lock) { indexes.clear() }
+    fun forget() = synchronized(lock) { indexes.clear(); cfgs.clear() }
 
     private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
     private fun cdnRel(kind: String, key: String, ext: String = "") = "$kind/${key.substring(0, 2)}/${key.substring(2, 4)}/$key$ext"
@@ -36,35 +36,63 @@ object CdnArchives {
      * [download] fetches one loose CDN file (its path under the CDN path, e.g. "config/ab/cd/<key>") to a local file.
      * The game's own indexes are searched first (no downloads); then the build's indexes the device lacks, downloaded one by one.
      */
+    /**
+     * The build's CDN config, read ONCE per game folder and build (issues #10 / #11, 1.0.9: every missing file re-read and re-parsed
+     * the config and checked ~1000 index files on the slow shared storage, one stat each, before its download began): the archives,
+     * which of their indexes are on the device, the archive-group.
+     */
+    private class Cfg(val archives: List<String>, val local: List<String>, val group: String?)
+    private val cfgs = HashMap<String, Cfg>()
+    /** one download of a shared index or config at a time (the art's fetches run in parallel now) */
+    private val downloadLock = Any()
+
+    private fun cfg(root: File, cache: File, cdnKey: String, download: (String, File) -> Boolean, log: (String) -> Unit): Cfg? {
+        synchronized(lock) { cfgs[root.path + "|" + cdnKey]?.let { return it } }
+        val config = File(root, "Data/" + cdnRel("config", cdnKey)).takeIf { it.isFile }
+            ?: File(cache, cdnRel("config", cdnKey)).takeIf { f -> synchronized(downloadLock) { f.isFile || run { f.parentFile?.mkdirs(); download(cdnRel("config", cdnKey), f) } } }
+            ?: return null.also { log("cdn archives: the build's CDN config $cdnKey is not available") }
+        val lines = config.readLines()
+        val archives = lines.firstOrNull { it.startsWith("archives =") }
+            ?.substringAfter('=')?.trim()?.split(' ')?.filter { Regex("[0-9a-f]{32}").matches(it) }.orEmpty()
+        val group = lines.firstOrNull { it.startsWith("archive-group =") }?.substringAfter('=')?.trim()?.takeIf { Regex("[0-9a-f]{32}").matches(it) }
+        val onDevice = File(root, "Data/indices").list()?.toHashSet().orEmpty()          // ONE listing instead of a stat per archive
+        val c = Cfg(archives, archives.filter { "$it.index" in onDevice }, group)
+        synchronized(lock) { cfgs[root.path + "|" + cdnKey] = c }
+        return c
+    }
+
     fun locate(root: File, cache: File, cdnKey: String, ekey: ByteArray, download: (String, File) -> Boolean,
                log: (String) -> Unit = {}): Hit? {
         if (!Regex("[0-9a-f]{32}").matches(cdnKey)) return null
-        val config = File(root, "Data/" + cdnRel("config", cdnKey)).takeIf { it.isFile }
-            ?: File(cache, cdnRel("config", cdnKey)).takeIf { it.isFile || run { it.parentFile?.mkdirs(); download(cdnRel("config", cdnKey), it) } }
-            ?: return null.also { log("cdn archives: the build's CDN config $cdnKey is not available") }
-        val archives = config.readLines().firstOrNull { it.startsWith("archives =") }
-            ?.substringAfter('=')?.trim()?.split(' ')?.filter { Regex("[0-9a-f]{32}").matches(it) }.orEmpty()
+        val c = cfg(root, cache, cdnKey, download, log) ?: return null
+        val archives = c.archives
         if (archives.isEmpty()) return null.also { log("cdn archives: no archives in the CDN config") }
-        val local = archives.filter { File(root, "Data/indices/$it.index").isFile }
-        for (a in local) find(File(root, "Data/indices/$a.index"), ekey)?.let { return Hit(a, it.first, it.second) }
-        val missing = archives - local.toSet()
-        // many indexes missing (a folder without them): the build's one combined index (archive-group) instead of hundreds
-        if (missing.count { !File(cache, "indices/$it.index").isFile } > MAX_INDEX_DOWNLOADS) {
-            val group = config.readLines().firstOrNull { it.startsWith("archive-group =") }?.substringAfter('=')?.trim()
-                ?.takeIf { Regex("[0-9a-f]{32}").matches(it) } ?: return null.also { log("cdn archives: no archive-group in the CDN config") }
-            val f = File(root, "Data/indices/$group.index").takeIf { it.isFile } ?: File(cache, "indices/$group.index")
-            if (!f.isFile) { f.parentFile?.mkdirs(); if (!download(cdnRel("data", group, ".index"), f)) return null.also { log("cdn archives: the archive-group index did not download") } }
-            val (size, packed) = find(f, ekey) ?: return null.also { log("cdn archives: ${hex(ekey)} is not in the archive-group index") }
+        fun inGroup(f: File): Hit? {
+            val (size, packed) = find(f, ekey) ?: return null
             val which = (packed ushr 32).toInt()                   // a group entry's offset: archive number (2 bytes) + offset (4 bytes)
             return archives.getOrNull(which)?.let { Hit(it, size, packed and 0xffffffffL) }
+        }
+        // the archive-group index when it is here (ONE lookup), before walking every archive's own index
+        c.group?.let { g -> listOf(File(root, "Data/indices/$g.index"), File(cache, "indices/$g.index")).firstOrNull { it.isFile }?.let { f ->
+            inGroup(f)?.let { return it }
+        } }
+        for (a in c.local) find(File(root, "Data/indices/$a.index"), ekey)?.let { return Hit(a, it.first, it.second) }
+        val missing = archives - c.local.toSet()
+        // many indexes missing (a folder without them): the build's one combined index (archive-group) instead of hundreds
+        if (missing.count { !File(cache, "indices/$it.index").isFile } > MAX_INDEX_DOWNLOADS) {
+            val group = c.group ?: return null.also { log("cdn archives: no archive-group in the CDN config") }
+            val f = File(root, "Data/indices/$group.index").takeIf { it.isFile } ?: File(cache, "indices/$group.index")
+            synchronized(downloadLock) {
+                if (!f.isFile) { f.parentFile?.mkdirs(); if (!download(cdnRel("data", group, ".index"), f)) return null.also { log("cdn archives: the archive-group index did not download") } }
+            }
+            return inGroup(f) ?: null.also { log("cdn archives: ${hex(ekey)} is not in the archive-group index") }
         }
         var fetched = 0
         for (a in missing) {
             val f = File(cache, "indices/$a.index")
             if (!f.isFile) {
-                f.parentFile?.mkdirs()
-                if (!download(cdnRel("data", a, ".index"), f)) continue
-                fetched++
+                val got = synchronized(downloadLock) { f.isFile || run { f.parentFile?.mkdirs(); download(cdnRel("data", a, ".index"), f).also { if (it) fetched++ } } }
+                if (!got) continue
             }
             find(f, ekey)?.let { log("cdn archives: found in $a after $fetched index downloads"); return Hit(a, it.first, it.second) }
         }

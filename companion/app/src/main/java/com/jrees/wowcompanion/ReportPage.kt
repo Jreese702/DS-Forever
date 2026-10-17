@@ -50,6 +50,49 @@ class ReportPage(c: Context) : FrameLayout(c) {
             else -> null
         }
 
+        /**
+         * The words box's lines with where each starts in the text (issue #11: "cant go back to previously entered text to fix missed
+         * typo": the caret needs to know where it is drawn and where a tap lands). Words wrap at spaces as SetupPanel.wrap does.
+         */
+        fun wrapIndexed(text: String, width: Float, measure: (String) -> Float): List<Pair<Int, String>> {
+            val out = ArrayList<Pair<Int, String>>()
+            var lineStart = 0
+            var line = ""
+            var i = 0
+            while (true) {
+                val end = text.indexOf(' ', i).let { if (it < 0) text.length else it }
+                val word = text.substring(i, end)
+                if (i == lineStart) line = word
+                else {
+                    val next = "$line $word"
+                    if (measure(next) > width) { out += lineStart to line; lineStart = i; line = word } else line = next
+                }
+                if (end >= text.length) break
+                i = end + 1
+            }
+            out += lineStart to line
+            return out
+        }
+
+        /** the keyboard typed: [prefix] is the new text before the caret; what was after the caret stays (issue #11) */
+        fun edit(words: String, caret: Int, prefix: String, max: Int): Pair<String, Int> {
+            val tail = words.substring(caret.coerceIn(0, words.length))
+            val w = (prefix + tail).take(max)
+            return w to minOf(prefix.length, w.length)
+        }
+
+        /** the caret's line in [lines] (the last line it can be on) */
+        fun caretLine(lines: List<Pair<Int, String>>, caret: Int): Int =
+            lines.indexOfLast { (start, _) -> start <= caret }.coerceAtLeast(0)
+
+        /** the text index a tap at [x] (from the line's left) lands on, in [line] */
+        fun caretAt(line: Pair<Int, String>, x: Float, measure: (String) -> Float): Int {
+            val (start, t) = line
+            var best = 0; var bestD = Float.MAX_VALUE
+            for (j in 0..t.length) { val d = kotlin.math.abs(measure(t.substring(0, j)) - x); if (d < bestD) { bestD = d; best = j } }
+            return start + best
+        }
+
         fun recordLabel(recording: Boolean, leftMs: Long): String =
             if (recording) (leftMs / 1000).let { "Recording %d:%02d - Stop".format(it / 60, it % 60) } else "Record 5 minutes"
     }
@@ -67,6 +110,12 @@ class ReportPage(c: Context) : FrameLayout(c) {
     var onSend: (String) -> Unit = {}
 
     private var words = ""
+    /** where the keyboard types (issue #11: LB / RB move it, a tap places it); the keyboard edits the text BEFORE it */
+    private var caret = 0
+    private var shownLines: List<Pair<Int, String>> = emptyList()
+    private var shownFrom = 0
+    private var lineX = 0f
+    private var lineTop = 0f
     private var status = ""
     private var busy = false
     private var focus = Model.Target.WORDS
@@ -79,8 +128,12 @@ class ReportPage(c: Context) : FrameLayout(c) {
 
     init {
         setWillNotDraw(false)
-        kb.text = { words }
-        kb.onText = { t -> words = t.take(MAX_WORDS); invalidate() }     // every key: the buttons light up as soon as the rule is met
+        // the keyboard sees only the text before the caret; what is after it stays (typing and Back work mid-text; issue #11)
+        kb.text = { words.substring(0, caret.coerceIn(0, words.length)) }
+        kb.onText = { t ->                                                 // every key: the buttons light up as soon as the rule is met
+            Model.edit(words, caret, t, MAX_WORDS).let { (w, c) -> words = w; caret = c }
+            invalidate()
+        }
         kb.onSend = { closeKeyboard() }
         kb.onClose = { closeKeyboard() }
         addView(preview, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply { topMargin = 110 })
@@ -93,6 +146,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
         ReportFlow.init(context)
         isOpen = true; visibility = View.VISIBLE
         words = ReportFlow.description.ifEmpty { words }
+        caret = words.length
         status = ""; focus = Model.Target.WORDS
         preview.visibility = View.GONE
         tick.run()
@@ -177,7 +231,13 @@ class ReportPage(c: Context) : FrameLayout(c) {
                 focus = if (ReportFlow.canSend(words)) Model.Target.RECORD else Model.Target.WORDS
                 invalidate(); return
             }
-            kb.press(k); return
+            // LB / RB move the caret (the keyboard passes them on); everything else types
+            when (k) {
+                "PADLSHOULDER" -> { caret = (caret - 1).coerceAtLeast(0); invalidate() }
+                "PADRSHOULDER" -> { caret = (caret + 1).coerceAtMost(words.length); invalidate() }
+                else -> kb.press(k)
+            }
+            return
         }
         val row = if (ReportFlow.canSend(words)) listOf(Model.Target.RECORD, Model.Target.SEND) else listOf(Model.Target.WORDS)
         val i = row.indexOf(focus).coerceAtLeast(0)
@@ -244,6 +304,15 @@ class ReportPage(c: Context) : FrameLayout(c) {
         }
         if (e.actionMasked == MotionEvent.ACTION_UP && preview.visibility != View.VISIBLE) {
             val live = Model.live(ReportFlow.canSend(words))
+            // a tap in the words box while typing places the caret there (issue #11)
+            val wordsBox = boxes[Model.Target.WORDS]
+            if (kbUp && wordsBox != null && wordsBox.contains(e.x, e.y) && shownLines.isNotEmpty() && words.isNotEmpty()) {
+                val i = ((e.y - lineTop) / LINE_H).toInt().coerceIn(0, shownLines.size - 1)
+                caret = Model.caretAt(shownLines[i], e.x - lineX) { textPaint.measureText(it) }.coerceIn(0, words.length)
+                inKeys = true
+                invalidate()
+                return true
+            }
             boxes.entries.firstOrNull { it.key in live && it.value.contains(e.x, e.y) }?.key?.let { t ->
                 val up = kbUp
                 if (up && t != Model.Target.WORDS) closeKeyboard()
@@ -285,9 +354,31 @@ class ReportPage(c: Context) : FrameLayout(c) {
         val shown = words.ifEmpty { "What were you doing when it went wrong?" }
         body.color = if (words.isEmpty()) Theme.textDim else Theme.text
         var y = box.top + 46f
-        val fits = ((box.height() - 20f) / 40f).toInt().coerceAtLeast(1)
-        for (line in SetupPanel.wrap(shown + if (k > 0f) "_" else "", body, box.width() - 40f).takeLast(fits)) {
-            c.drawText(line, box.left + 20f, y, body); y += 40f
+        val fits = ((box.height() - 20f) / LINE_H).toInt().coerceAtLeast(1)
+        if (words.isEmpty()) {
+            for (line in SetupPanel.wrap(shown, body, box.width() - 40f).takeLast(fits)) { c.drawText(line, box.left + 20f, y, body); y += LINE_H }
+            shownLines = emptyList()
+        } else {
+            // the lines around the caret, and the caret itself while typing (issue #11)
+            textPaint.set(body)
+            val lines = Model.wrapIndexed(words, box.width() - 40f) { body.measureText(it) }
+            val cl = Model.caretLine(lines, caret)
+            val from = (cl - fits + 1).coerceIn(0, maxOf(0, lines.size - fits)).let { if (cl < it) cl else it }
+            shownLines = lines.subList(from, minOf(lines.size, from + fits)); shownFrom = from
+            lineX = box.left + 20f; lineTop = box.top + 46f - 32f
+            for ((idx, line) in shownLines.withIndex()) {
+                c.drawText(line.second, lineX, y, body)
+                if (k > 0f && from + idx == cl) {
+                    val cx = lineX + body.measureText(line.second.substring(0, (caret - line.first).coerceIn(0, line.second.length)))
+                    pCaret.color = Theme.gold
+                    c.drawRect(cx, y - 30f, cx + 3f, y + 6f, pCaret)
+                }
+                y += LINE_H
+            }
+            if (k > 0f) UiKit.bodyPaint(18f, Theme.textDim).let { hint ->
+                hint.textAlign = Paint.Align.RIGHT
+                c.drawText("LB / RB move the cursor, or tap", box.right - 14f, box.bottom - 10f, hint)
+            }
         }
         // Record and Send: above the keyboard while it is up (the user: "push up a bit above the keyboard")
         var top = buttonsTop
@@ -325,6 +416,8 @@ class ReportPage(c: Context) : FrameLayout(c) {
 
     /** the on-screen Back, top right (touch only; B does the same) */
     private val backBox = RectF()
+    private val textPaint = Paint()
+    private val pCaret = Paint().apply { style = Paint.Style.FILL }
     private fun drawBack(c: Canvas) {
         backBox.set(width - PAD - BACK_W, 20f, width - PAD, 20f + BACK_H)
         UiKit.button(c, backBox, "Back", UiKit.Button.UP)
@@ -340,6 +433,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
         /** Chat's input slide (ChatView.INPUT_MS) */
         private const val SLIDE_MS = 240L
         private const val BACK_W = 200f
+        private const val LINE_H = 40f
         private const val BACK_H = 70f
         private const val BUTTON_H = 90f
         private const val MAX_WORDS = 1500

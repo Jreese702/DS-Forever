@@ -84,8 +84,21 @@ object MapHarvestSteps {
             val manifest = JSONObject()
             val hlDone = HashSet<Int>()
             for ((i, m) in maps.withIndex()) {
-                job.progress(i, maps.size, m.name)
                 val dir = "worldmap/${m.uiMap}"
+                // a map finished before a restart (this build): its manifest line from its own index, nothing made again
+                if (job.finished("map ${m.uiMap}")) {
+                    val done = runCatching { JSONObject(job.file("$dir/index.json").readText()) }.getOrNull()
+                    if (done != null) {
+                        if (done.has("hl")) hlDone.add(done.optInt("hl"))
+                        manifest.put(m.uiMap.toString(), JSONObject().put("name", m.name).put("mapType", m.type).put("parent", m.parent)
+                            .put("overlays", done.optJSONArray("overlays")?.length() ?: 0))
+                        continue
+                    }
+                }
+                job.progress(i, maps.size, m.name)
+                // its game files fetched together, several at a time, when many are missing (after a game update; issue #10 / #11)
+                val fids = m.tiles.map { it.fid } + m.overlays.flatMap { o -> o.tiles.map { it.fid } } + listOfNotNull(m.hl.takeIf { it != 0 })
+                g.prefetch(fids) { d, n -> job.progress(i, maps.size, "${m.name}: game files $d of $n") }
                 stitch(g, m.tiles, m.tile, m.w, m.h)?.let { job.writeWebp("$dir/base.webp", it, 88); it.recycle() }
                 val ovs = JSONArray()
                 for (o in m.overlays) {
@@ -103,6 +116,7 @@ object MapHarvestSteps {
                 }
                 rects[m.uiMap]?.let { r -> idx.put("rect", JSONArray(listOf(r.c, r.t, r.b, r.l, r.r))) }
                 job.writeBytes("$dir/index.json", idx.toString().toByteArray())
+                job.markFinished("map ${m.uiMap}")
                 manifest.put(m.uiMap.toString(), JSONObject().put("name", m.name).put("mapType", m.type).put("parent", m.parent)
                     .put("overlays", ovs.length()))
             }

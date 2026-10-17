@@ -56,6 +56,15 @@ object ArtHarvest {
         /** [done] of [total] in this step, and what is being made (shown under the bar) */
         fun progress(done: Int, total: Int, what: String = "") = onProgress(if (total > 0) done.toFloat() / total else 0f, what)
 
+        /**
+         * RESUME (issue #11, 1.0.9: "stuck on 68% EPL, then reopened stuck on 8% EPL"): the parts of this step finished for THIS game
+         * build, kept across a restart so a reopened app goes on where it stopped; forgotten when the step is stamped done (or for
+         * another build).
+         */
+        private val resume by lazy { ResumeList(File(out, ".resume/$stepId-${game.buildKey.ifEmpty { "nobuild" }}.txt")) }
+        fun finished(part: String): Boolean = resume.finished(part)
+        fun markFinished(part: String) = resume.markFinished(part)
+
         fun file(rel: String): File = File(out, rel).also { it.parentFile?.mkdirs() }
         fun writeBytes(rel: String, b: ByteArray) = atomic(file(rel)) { it.write(b) }
         fun writePng(rel: String, bmp: Bitmap) = atomic(file(rel)) { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -181,6 +190,8 @@ object ArtHarvest {
             pending(ctx, beforePlay = true).isEmpty()
 
     private fun markDone(ctx: Context, s: Step, build: String, inputs: String?) = synchronized(this) {
+        // the step is whole: its resume list (any build's) goes
+        File(root(ctx), ".resume").listFiles { f -> f.name.startsWith("${s.id}-") }?.forEach { it.delete() }
         val st = stamp(ctx)
         st.put(s.id, JSONObject().put("build", build).put("v", s.version).put("inputs", inputs).put("at", System.currentTimeMillis()))
         val f = stampFile(ctx); val tmp = File(f.path + ".part")
