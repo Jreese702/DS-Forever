@@ -71,6 +71,10 @@ python dump_cavegroups.py <dir>                      # cave / tunnel / mine / de
 | `border` | The pair of zones whose crossings get the border picture. |
 | `title`, `crop` (`[top x, bottom x, left y, right y]`, the zone's land), `closeups` (name and box, the same order) | For the renders. |
 | `goals` | 8–10 routes, as below. With no `goals` key, Durotar's own built-in goals are used. |
+| `friendlyMinLevel` | Optional. Spawns at or above this level are placeholders (WoW Forever's own NPCs at 9999), counted as friendly. |
+| `voidBelow` | Optional. A floating zone's void floor: ground below this height is no ground (Zephras Isle: 300). |
+| `roadTextures` | Optional. Extra name parts that mark a road texture named otherwise (Dun Morogh: `browncracks`). |
+| `roads` | Obsolete. Thin roads are always counted now, the device's own rule (`Roads.THIN_MIN`). |
 | `roads` | `"thin"` (Teldrassil): a 25 yd cell is road when a road texture shows at any of its 6 x 6 points, for paths too narrow (4-6 yd) to show most in any cell. Leave it out elsewhere. |
 
 Goal fields:

@@ -16,7 +16,7 @@ caves = []
 extra = {int(x) for x in sys.argv[2].split(',')} if len(sys.argv) > 2 else set()
 for f in os.listdir(OUT + '/wmo'):
     fid = int(f); n = names.get(fid, '')
-    if fid not in extra and (not any(k in n for k in ('cave', 'tunnel', 'mine', 'den', 'pass')) or '/dungeon/' not in n and 'cave' not in n): continue
+    if fid not in extra and (not any(k in n for k in ('cave', 'tunnel', 'mine', 'den', 'pass', 'crypt', 'barrow', 'hollow', 'grave')) or '/dungeon/' not in n and 'cave' not in n): continue
     b = open(OUT + '/wmo/' + f, 'rb').read(); o = 0; gf = []
     while o + 8 <= len(b):
         nn = le(b, o + 4); tag = b[o:o+4][::-1].decode('latin1')

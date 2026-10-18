@@ -163,7 +163,15 @@ class SafePathTest {
         assertEquals(5, SafePath.smooth(hook, SafePath.clearOf { _, _ -> Terrain.WALL }).size)       // over a cliff: kept
     }
 
-    /** the user on the border picture: "I don't mind them, as long as there is a low danger path back to another path" */
+    @Test fun townsSharingANameAreToldApart() {
+        // three towns on one subzone (Tirisfal's Deathknell): two with an inn's keeper, one with trainers - told apart by what they are
+        fun town(x: Double, sub: String) = (0 until 6).map { SafePath.Npc(x + it, 0.0, sub) }
+        val hubs = SafePath.hubs(town(0.0, "Innkeeper") + town(500.0, "Warrior Trainer") + town(1000.0, "Innkeeper"), { _, _ -> "Deathknell" })
+        assertEquals(3, hubs.size)
+        assertEquals(3, hubs.map { it.name }.toSet().size)
+        assertTrue(hubs.all { it.name.startsWith("Deathknell") })
+    }
+
     @Test fun theWalkedWayHasNoThereAndBack() {
         // Teldrassil's Fel Rock: the network ran on 58 yd past the turn, and the ground's leg walked back the same road
         val way = listOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(100.0, 0.0), doubleArrayOf(100.0, 58.0), doubleArrayOf(100.0, 0.0), doubleArrayOf(150.0, -30.0))
@@ -177,6 +185,7 @@ class SafePathTest {
         assertEquals(4, SafePath.unloop(cave, null).size)
     }
 
+    /** the user on the border picture: "I don't mind them, as long as there is a low danger path back to another path" */
     @Test fun aCrossingStaysWhereBothSidesHaveALowDangerWayBack() {
         fun n(id: Int, x: Double, y: Double, kind: String = SafePath.POINT) = SafePath.Node(id, x, y, kind)
         // zone 1 (y > 0): a town at y 600, a road to the border at y 0 (exit 2); a second exit 300 yd north with only a dangerous way

@@ -81,12 +81,9 @@ class RenderSafePath {
             val a = recipe.optJSONArray(map.toString())!!
             val rect = MapHarvest.Rect(a.optInt(0), a.optDouble(1), a.optDouble(2), a.optDouble(3), a.optDouble(4))
             val rg = Roads.grid(rect) { col, row -> tex.getOrPut(col to row) { File(dir, "tex0/${col}_$row.adt").takeIf { it.isFile }?.let { Roads.tile(it.readBytes()) } } }
-            // THIN ROADS (a zone spec's "roads": "thin"; Teldrassil): a 4-6 yd path never shows MOST in a 25 yd cell, so there the cell
-            // counts as road when a road texture shows at any of its 6 x 6 points (the device's dominant-texture grid misses these paths)
-            val thinRoad = if (spec?.optString("roads") == "thin") roadAny(rect, rg.nx, rg.ny, roadTex) { col, row -> tex.getOrPut(col to row) { File(dir, "tex0/${col}_$row.adt").takeIf { it.isFile }?.let { Roads.tile(it.readBytes()) } } } else null
-            val roadAt: (Double, Double) -> Boolean = if (thinRoad == null) { wx, wy -> rg.at(wx, wy) in roadTex } else { wx, wy ->
-                val i = Math.floor((rect.l - wy) / (rect.l - rect.r) * rg.nx).toInt(); val j = Math.floor((rect.t - wx) / (rect.t - rect.b) * rg.ny).toInt()
-                i in 0 until rg.nx && j in 0 until rg.ny && thinRoad[j * rg.nx + i] }
+            // the roads as the device counts them (Roads.isRoad): a road texture showing most in a cell, or showing thinly there (at
+            // Roads.THIN_MIN of its 36 points: Teldrassil's 4-6 yd path, Dun Morogh's road under the snow)
+            val roadAt: (Double, Double) -> Boolean = { wx, wy -> rg.shows(wx, wy, roadTex) }
             val tg = Terrain.grid(rect) { gr, gc ->
                 val t = tiles.getOrPut((gc / 128) to (gr / 128)) { File(dir, "adt/${gc / 128}_${gr / 128}.adt").takeIf { it.isFile }?.let { Terrain.tile(it.readBytes()) } }
                 t?.h?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN
@@ -144,25 +141,6 @@ class RenderSafePath {
     }
 
     /** per 25 yd cell (Roads.grid's cells): does a road texture show at any of its 6 x 6 points */
-    private fun roadAny(rect: MapHarvest.Rect, nx: Int, ny: Int, roadTex: Set<Int>, tileAt: (Int, Int) -> Roads.Tile?): BooleanArray {
-        val cw = (rect.l - rect.r) / nx; val ch = (rect.t - rect.b) / ny; val top = 32.0 * MapHarvest.ADT_YD; val chunkYd = 100.0 / 3.0
-        val out = BooleanArray(nx * ny)
-        for (j in 0 until ny) for (i in 0 until nx) {
-            loop@ for (sj in 0 until 6) for (si in 0 until 6) {
-                val wx = rect.t - (j + (sj + 0.5) / 6) * ch; val wy = rect.l - (i + (si + 0.5) / 6) * cw
-                val gx = (top - wx) / MapHarvest.ADT_YD; val gy = (top - wy) / MapHarvest.ADT_YD
-                val row = Math.floor(gx).toInt(); val col = Math.floor(gy).toInt()
-                val t = tileAt(col, row) ?: continue
-                val inX = (gx - row) * MapHarvest.ADT_YD; val inY = (gy - col) * MapHarvest.ADT_YD
-                val cy = (inX / chunkYd).toInt().coerceIn(0, 15); val cx = (inY / chunkYd).toInt().coerceIn(0, 15)
-                val c = t.chunks[cy * 16 + cx] ?: continue
-                val py = ((inX - cy * chunkYd) / chunkYd * 64).toInt().coerceIn(0, 63); val px = ((inY - cx * chunkYd) / chunkYd * 64).toInt().coerceIn(0, 63)
-                if (Roads.showing(c, px, py) in roadTex) { out[j * nx + i] = true; break@loop }
-            }
-        }
-        return out
-    }
-
     private fun painted(art: File, map: Int, rect: MapHarvest.Rect): (Double, Double) -> Boolean {
         val dir = File(art, "worldmap/$map")
         val idx = JSONObject(File(dir, "index.json").readText())
@@ -283,7 +261,9 @@ class RenderSafePath {
                 .filter { zg.areaAt(it[0], it[1]) == a && !deep(it[0], it[1]) && height(it[0], it[1]) > 0 }
             return pts.maxByOrNull { p -> pts.count { Math.hypot(it[0] - p[0], it[1] - p[1]) < 60 } }
         }
-        fun at(name: String) = net.nodes.firstOrNull { it.name == name }?.let { doubleArrayOf(it.wx, it.wy) }
+        // a node by its name, or by its base name when towns sharing it were told apart ("Deathknell · Inn", "Gustberry Lowlands (2)")
+        fun at(name: String) = (net.nodes.firstOrNull { it.name == name } ?: net.nodes.firstOrNull { it.name?.startsWith("$name ") == true })
+            ?.let { doubleArrayOf(it.wx, it.wy) }
         /** a named mob's spawns at their thickest (near [near] when given: within 500 yd of it) */
         fun mob(name: String, near: DoubleArray?): DoubleArray? {
             val pts = spawns.filter { it.name.equals(name, true) }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
@@ -344,8 +324,22 @@ class RenderSafePath {
             Triple("Valley of Trials", vt, "the Burning Blade Coven's mouth" to (caveMouth(111290, -135.0, -4371.0, vt) ?: wmo(111290, -135.0, -4371.0)?.let { mouth(it) })),
         )
         }
+        /** a spot over a cave's floor, the terrain well above it (Dun Morogh's Rockjaw Raiders, height 514 over the Coldridge tunnel):
+         *  the creatures are in the cave - the goal is its nearest mouth */
+        fun inCaveMouth(p: DoubleArray): DoubleArray? {
+            val h = height(p[0], p[1]); if (h.isNaN()) return null
+            for (c in caves) {
+                val under = c.floor.filter { Math.hypot(it[0] - p[0], it[1] - p[1]) < 8.0 }.minByOrNull { it[2] } ?: continue
+                if (h - under[2] < 8.0) continue
+                val m = c.mouths.minByOrNull { Math.hypot(it[0] - p[0], it[1] - p[1]) } ?: continue
+                println("GOAL over cave ${c.fid}'s floor (terrain ${h.toInt()}, floor ${under[2].toInt()}): its mouth ${m[0].toInt()},${m[1].toInt()}")
+                return doubleArrayOf(m[0], m[1])
+            }
+            return null
+        }
         /** a start or a goal on ground one can stand on: itself, or the nearest such spot within 15 yd (a camp's spawn on a slope) */
-        fun stand(p: DoubleArray?): DoubleArray? {
+        fun stand(p0: DoubleArray?): DoubleArray? {
+            val p = p0?.let { inCaveMouth(it) ?: it }
             if (p == null || standable(p[0], p[1])) return p
             val c = cg.at(p[0], p[1]); val r = (15 / S).toInt(); var best: DoubleArray? = null; var bd = Double.MAX_VALUE
             for (j in (c[1] - r)..(c[1] + r)) for (i in (c[0] - r)..(c[0] + r)) {
@@ -406,7 +400,9 @@ class RenderSafePath {
             }
         }
         val clear = SafePath.clearOf { a, b -> Terrain.factor(tg.at(a, b)) }
-        val netC = SafePath.withCaves(net, caves) { x, y -> danger(x, y) / DangerGrid.CAP }
+        val netW = SafePath.dropWalled(net) { a, b -> Climb.walkable(cg, a, b) }
+        println("DROPWALLED ${netW.edges.count { it.state == SafePath.REMOVED } - net.edges.count { it.state == SafePath.REMOVED }} drafted ways cross a wall on the fine ground: removed")
+        val netC = SafePath.withCaves(netW, caves) { x, y -> danger(x, y) / DangerGrid.CAP }
         println("NET with caves: ${netC.nodes.size} nodes, ${netC.edges.size} edges (${netC.edges.count { it.kind == SafePath.CAVE }} cave)")
         val export = org.json.JSONObject(); val rs = org.json.JSONArray()
         for ((i, trip) in trips.withIndex()) {

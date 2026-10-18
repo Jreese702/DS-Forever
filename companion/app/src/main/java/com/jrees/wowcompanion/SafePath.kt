@@ -970,7 +970,7 @@ object SafePath {
     fun hubs(friendly: List<Npc>, nameAt: (Double, Double) -> String? = { _, _ -> null }, generic: String? = null,
              districtAt: ((Double, Double) -> String?)? = null): List<Fixed> {
         val left = friendly.toMutableList()
-        val out = ArrayList<Fixed>()
+        val out = ArrayList<Fixed>(); val roles = ArrayList<String?>()
         while (left.isNotEmpty()) {
             // the densest spot first
             val best = left.maxByOrNull { p -> left.count { hypot(it.wx - p.wx, it.wy - p.wy) < HUB_YD } } ?: break
@@ -981,7 +981,17 @@ object SafePath {
             val name = districtAt?.invoke(x, y)?.let { d -> if (role != null) "$d · $role" else d }
                 ?: nameAt(x, y)?.takeIf { it.isNotEmpty() && it != generic } ?: role ?: generic ?: "Town"
             out.add(Fixed(x, y, HUB, name))
+            roles.add(role)
             left.removeAll { hypot(it.wx - best.wx, it.wy - best.wy) < HUB_YD * 2 }
+        }
+        // towns sharing a name (Tirisfal: three "Deathknell"s): each told apart by what its creatures are, then numbered north to south
+        for ((nm, idx) in out.indices.groupBy { out[it].name }) {
+            if (idx.size < 2) continue
+            val named = idx.associateWith { k -> roles[k]?.takeIf { r -> !nm.contains(r) }?.let { "$nm · $it" } ?: nm }
+            for ((nm2, same) in idx.groupBy { named[it]!! }) {
+                val sorted = same.sortedByDescending { out[it].wx }
+                for ((n, k) in sorted.withIndex()) out[k] = Fixed(out[k].wx, out[k].wy, HUB, if (sorted.size > 1) "$nm2 (${n + 1})" else nm2)
+            }
         }
         return out
     }
@@ -1511,6 +1521,21 @@ object SafePath {
      * from the goal - and the ground's own [leg] from there to it. A goal near the player ([DIRECT_YD]): the leg alone. World points;
      * null = no network.
      */
+    /**
+     * [net] without the ways that cross a wall on the fine ground ([walkable]: Climb's lattice; the user: "I cant walk up walls"): the
+     * draft draws from 25 yd cells, so a trail can still run over a ridge (Dun Morogh's Brewnall and Coldridge Pass trails) - such a
+     * way is marked [REMOVED] (the review still sees it; no route takes it). A cave's way is its own floor's, kept.
+     */
+    fun dropWalled(net: Net, walkable: (DoubleArray, DoubleArray) -> Boolean): Net {
+        val byId = net.nodes.associateBy { it.id }
+        return Net(net.map, net.cont, net.built, net.nodes, net.edges.map { e ->
+            val a = byId[e.a]; val b = byId[e.b]
+            if (e.kind == CAVE || e.state == REMOVED || a == null || b == null || a.kind == MOUTH || b.kind == MOUTH ||
+                walkable(doubleArrayOf(a.wx, a.wy), doubleArrayOf(b.wx, b.wy))) e
+            else Edge(e.a, e.b, e.kind, REMOVED, e.src, e.danger, e.climb)
+        }, net.exits, net.reviewed)
+    }
+
     /**
      * [net] with [caves]' ways (b-route-climb; the user: "Caves like this need to be logically detected and factored"): each way a
      * chain of [CAVE] nodes between two [MOUTH] nodes, [CAVE] edges along its floor ([danger] there, 0..1: they are often full of mobs);

@@ -112,6 +112,29 @@ class ClimbTest {
         assertTrue(hypot(way.last()[0], way.last()[1] + 190) < 1.0)
     }
 
+    @Test fun aDraftedWayOverACliffIsRemoved() {
+        val g = grid(::basin)
+        val net = SafePath.Net(1, 0, "", listOf(SafePath.Node(1, 0.0, 150.0, "road"), SafePath.Node(2, 0.0, -150.0, "road"),
+            SafePath.Node(3, 150.0, 150.0, "road")), listOf(SafePath.Edge(1, 2, SafePath.TRAIL), SafePath.Edge(1, 3, SafePath.ROAD)), emptyList())
+        val out = SafePath.dropWalled(net) { a, b -> Climb.walkable(g, a, b) }
+        assertEquals(SafePath.REMOVED, out.edges[0].state)                      // over the pit's rim
+        assertEquals(SafePath.DRAFT, out.edges[1].state)                        // along the level ground
+    }
+
+    @Test fun aThinRoadShowsInItsCell() {
+        // a 2 x 1 grid: cell 0's most-shown texture is grass (1); a road (7) shows thinly in it; cell 1 is all grass
+        val rg = Roads.Grid(0, 50.0, 0.0, 50.0, 0.0, 2, 1, intArrayOf(1, 1), intArrayOf(1, 7), longArrayOf(0b11L, 0b01L))
+        assertTrue(rg.shows(25.0, 40.0, setOf(7)))
+        assertFalse(rg.shows(25.0, 10.0, setOf(7)))
+        assertTrue(rg.shows(25.0, 10.0, setOf(1)))
+        // kept through its file (GTX2)
+        val f = java.io.File.createTempFile("gtx", ".bin"); f.deleteOnExit()
+        rg.write(f)
+        val back = Roads.Grid.read(f)!!
+        assertTrue(back.shows(25.0, 40.0, setOf(7)))
+        assertFalse(back.shows(25.0, 10.0, setOf(7)))
+    }
+
     // ---------------------------------------------------------------- the caves' own floors
 
     private fun chunk(o: ByteArrayOutputStream, tag: String, body: ByteArray) {
