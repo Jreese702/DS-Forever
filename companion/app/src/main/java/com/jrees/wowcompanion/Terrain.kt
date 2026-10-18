@@ -118,6 +118,30 @@ object Terrain {
     private fun tag(b: ByteArray, o: Int) = String(charArrayOf(b[o + 3].toInt().toChar(), b[o + 2].toInt().toChar(), b[o + 1].toInt().toChar(), b[o].toInt().toChar()))
 
     /**
+     * a root ADT's holes (each MCNK's: the high-res 8 x 8 mask at 0x14 when its flags hold 0x10000, else the low-res 4 x 4 at 0x3C,
+     * each bit 2 x 2 cells): where the terrain opens into a cave and its ground is not there to walk. A [TILE_V] x [TILE_V] grid of
+     * cells like [water]'s; null when the tile has none.
+     */
+    fun holes(adt: ByteArray): BooleanArray? {
+        val out = BooleanArray(TILE_V * TILE_V); var any = false
+        var o = 0
+        while (o + 8 <= adt.size) {
+            val n = Db2.le32(adt, o + 4); if (n < 0 || o + 8 + n > adt.size) break
+            if (tag(adt, o) == "MCNK" && n >= 128) {
+                val d = o + 8
+                val fl = Db2.le32(adt, d); val ix = Db2.le32(adt, d + 4); val iy = Db2.le32(adt, d + 8)
+                if (ix in 0..15 && iy in 0..15) for (r in 0 until 8) for (c in 0 until 8) {
+                    val hole = if (fl and 0x10000 != 0) (adt[d + 0x14 + r].toInt() shr c) and 1 != 0
+                        else (((adt[d + 0x3C].toInt() and 0xFF) or ((adt[d + 0x3D].toInt() and 0xFF) shl 8)) shr ((r / 2) * 4 + c / 2)) and 1 != 0
+                    if (hole) { out[(iy * 8 + r) * TILE_V + ix * 8 + c] = true; any = true }
+                }
+            }
+            o += 8 + n
+        }
+        return if (any) out else null
+    }
+
+    /**
      * THE WATER OF A ROOT ADT (b-safepath-water; the user: "Pathing shouldn't be in water"): its MH2O - per MCNK (in MCNK order) its
      * liquid instances, each over a w x h block of the chunk's 8 x 8 cells from (x, y), the cells there (its bitmap, when it has one)
      * at its surface height (the instance's highest). A [TILE_V] x [TILE_V] grid like [Tile.h] (row south, column east) of the
