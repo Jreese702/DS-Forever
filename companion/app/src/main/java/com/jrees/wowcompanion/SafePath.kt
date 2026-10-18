@@ -41,6 +41,11 @@ object SafePath {
     const val SPUR_MAX_YD = 700.0          // a travel point or a town joins the network this near, else it stands alone (the review sees it)
     const val TRAIL_MAX_YD = 1600.0        // a piece of the network joins the rest by a trail this near
     const val EXIT_MERGE_YD = 160.0
+    const val WATER_MARGIN_YD = 10.0       // the ways keep this far off the water
+    const val FORD_DEPTH = 1.5f            // water no deeper than this (yards) is a ford a border crossing may wade
+    const val FORD_COST = 4.0              // a ford's yard costs this much
+    const val CLIMB_STUB = 1.8             // a dead-end spur or trail climbing this hard (its mean walking factor) ...
+    const val CLIMB_STUB_YD = 900.0        // ... and shorter than this goes
     const val WELD_YD = 60.0               // a road's end this near another piece's way is welded to it
     const val PAINT_FILL_CELLS = 5         // the painted road fills a learned road's gap this many cells along it
     const val PAINTED_COST = 0.5f          // a step on the painted road costs this much of the ground's (a trail follows the paint)
@@ -106,7 +111,8 @@ object SafePath {
                 val road: (Double, Double) -> Boolean, val cost: (Double, Double) -> Float, val zoneAt: (Double, Double) -> Int,
                 val fixed: List<Fixed> = emptyList(), val nameOf: (Int) -> String = { "" },
                 val danger: ((Double, Double) -> Float)? = null, val capitals: Set<Int> = CityExits.CITIES,
-                val ground: ((Double, Double) -> Float)? = null, val painted: ((Double, Double) -> Boolean)? = null)
+                val ground: ((Double, Double) -> Float)? = null, val painted: ((Double, Double) -> Boolean)? = null,
+                val water: ((Double, Double) -> Float)? = null)
 
     /** the zone's first draft */
     fun draft(inp: Input, built: String = ""): Net = Builder(inp).build(built)
@@ -134,7 +140,23 @@ object SafePath {
         val danger = FloatArray(n) { k -> inp.danger?.invoke(wxOf(k), wyOf(k)) ?: 0f }
         /** the zone's map paints a road here (the user: "its pretty clearly shown on the map where the safe walking trails are") */
         val painted = BooleanArray(n) { k -> inp.painted?.invoke(wxOf(k), wyOf(k)) ?: false }
-        fun passable(k: Int) = !cost[k].isNaN() && cost[k] < Terrain.WALL
+        /** a cell's water, with a [WATER_MARGIN_YD] margin round it: 0 dry, 1 a shallow ford (no deeper than [FORD_DEPTH]), 2 deep,
+         *  3 a bridge over it (its middle on a building's walkway: the margin's open water either side does not wall it) */
+        val wet = ByteArray(n) { k ->
+            val f = inp.water ?: return@ByteArray 0
+            var deepest = Float.NaN
+            // a bridge's landing too: a cell whose margin reaches the walkway is its way on (never walled by the water beside it)
+            val m0 = CELL_YD / 2 + WATER_MARGIN_YD
+            for (a in -2..2) for (bb in -2..2) if (f(wxOf(k) + a * m0 / 2, wyOf(k) + bb * m0 / 2) == Water.BRIDGE) return@ByteArray 3
+            val m = CELL_YD / 2 + WATER_MARGIN_YD
+            for (a in -2..2) for (bb in -2..2) {
+                val d = f(wxOf(k) + a * m / 2, wyOf(k) + bb * m / 2).let { if (it == Water.BRIDGE) Float.NaN else it }
+                if (!d.isNaN() && (deepest.isNaN() || d > deepest)) deepest = d
+            }
+            (if (deepest.isNaN()) 0 else if (deepest <= FORD_DEPTH) 1 else 2).toByte()
+        }
+        /** dry ground the ways may take (water is a wall: the user, "Pathing shouldn't be in water") */
+        fun passable(k: Int) = !cost[k].isNaN() && cost[k] < Terrain.WALL && (wet[k].toInt() == 0 || wet[k].toInt() == 3)
 
         inner class E(val a: Int, val b: Int, val kind: String, val cells: List<Int>)
         val nodes = ArrayList<Node>()
@@ -182,6 +204,8 @@ object SafePath {
             mergeExits()
             val roadless = edges.isEmpty()
             for (f in stops(inp.fixed)) fixed(f)
+            // a town by the border (Far Watch Post by its bridge): on to the neighbour's ground too, unless an exit there already is
+            borderEnds(stopsToo = true)
             // a zone with no road of its own (a capital: its streets are buildings, its ground plain dirt): its points joined by trails,
             // its ways out found from them
             if (roadless) { linkPoints(); waysOut(); mergeExits() }
@@ -332,6 +356,12 @@ object SafePath {
          *  (nothing known there, the sea) the line just ends */
         fun crossing(outside: Int, inside: Int): Int {
             val to = zone[outside]
+            if (wet[inside].toInt() != 0 && to != 0 && to != own) {
+                // on a bridge: back along the road to its bank is the walk's own business; the exit names the bridge
+                val id = addNode((wxOf(outside) + wxOf(inside)) / 2, (wyOf(outside) + wyOf(inside)) / 2, EXIT)
+                exits.add(Exit(id, to, "bridge", inp.nameOf(to)))
+                return id
+            }
             if (to == 0 || to == own) return nodeAt(inside, POINT)
             val id = addNode((wxOf(outside) + wxOf(inside)) / 2, (wyOf(outside) + wyOf(inside)) / 2, EXIT)
             exits.add(Exit(id, to, if (to in inp.capitals || own in inp.capitals) "gate" else "walk", inp.nameOf(to)))
@@ -366,17 +396,18 @@ object SafePath {
 
         /** a road that ends short of the border (a bridge, a city's gate: buildings, no road texture): on to the neighbour's ground if
          *  it is this near, an exit there */
-        fun borderEnds() {
+        fun borderEnds(stopsToo: Boolean = false) {
             val deg = HashMap<Int, Int>()
             for (e in edges) { deg[e.a] = (deg[e.a] ?: 0) + 1; deg[e.b] = (deg[e.b] ?: 0) + 1 }
             val exitNodes = exits.map { it.node }.toHashSet()
             for ((id, d) in deg.toList()) {
                 if (d != 1 || id in exitNodes) continue
+                if (stopsToo && nodes[id].kind != HUB && nodes[id].kind != FLIGHT) continue
+                if (stopsToo && exits.any { x -> nodes[x.node].let { hypot(it.wx - nodes[id].wx, it.wy - nodes[id].wy) } < PAIR_YD }) continue
                 val c = cellOf(nodes[id].wx, nodes[id].wy).takeIf { it >= 0 } ?: continue
-                val path = search(listOf(c), BORDER_END_YD) { k -> zone[k] != own && zone[k] != 0 && roadNear(k, zone[k], ROAD_ON_YD) } ?: continue
+                val path = search(listOf(c), BORDER_END_YD, ford = true) { k -> zone[k] != own && zone[k] != 0 && passable(k) && roadNear(k, zone[k], ROAD_ON_YD) } ?: continue
                 if (path.size < 2) continue
-                val x = crossing(path.last(), path[path.size - 2])
-                emit(id, x, path.dropLast(1), SPUR)
+                bankExit(id, path, SPUR)
             }
         }
 
@@ -414,6 +445,22 @@ object SafePath {
                 emit(id, to, path, ROAD)
                 union(id, to)
             }
+        }
+
+        /** a way [path] from node [from] onto a neighbour's ground: over water (a bridge, or a shallow ford), the exit stands on THIS
+         *  bank (the last dry cell before it: never a node in the water) and says which; else at the border, as a road's crossing */
+        fun bankExit(from: Int, path: List<Int>, kind: String) {
+            val firstWet = path.indexOfFirst { wet[it].toInt() != 0 }
+            val how = if (path.any { wet[it].toInt() == 1 }) "ford" else "bridge"
+            if (firstWet < 0) { val x = crossing(path.last(), path[path.size - 2]); emit(from, x, path.dropLast(1), kind); return }
+            if (firstWet == 0) return
+            val bank = path[firstWet - 1]
+            val to = zone[path.last()]
+            val id = if (bank == path[0]) from else addNode(wxOf(bank), wyOf(bank), EXIT)
+            if (id != from) emit(from, id, path.subList(0, firstWet), kind) else {
+                val i = nodes.indexOfFirst { it.id == from }; nodes[i].let { nodes[i] = Node(it.id, it.wx, it.wy, EXIT, it.src, it.name) }
+            }
+            exits.add(Exit(id, to, how, inp.nameOf(to)))
         }
 
         /** the crossings into one neighbour this near each other: one exit (their middle), the edges moved onto it */
@@ -455,7 +502,7 @@ object SafePath {
         }
 
         /** the cheapest walk on the ground from the [starts] to a cell [goal] says yes to, within [maxYd]; null = none */
-        fun search(starts: List<Int>, maxYd: Double, goal: (Int) -> Boolean): List<Int>? {
+        fun search(starts: List<Int>, maxYd: Double, ford: Boolean = false, goal: (Int) -> Boolean): List<Int>? {
             val dist = HashMap<Int, Float>(); val walked = HashMap<Int, Double>(); val from = HashMap<Int, Int>()
             val q = PriorityQueue<Pair<Float, Int>>(compareBy { it.first })
             for (s in starts) { dist[s] = 0f; walked[s] = 0.0; q.add(0f to s) }
@@ -469,8 +516,10 @@ object SafePath {
                     return path.reversed()
                 }
                 for (o in nb8(k)) {
-                    if (!passable(o)) continue
-                    val step = if (o % nx != k % nx && o / nx != k / nx) CELL_YD * 1.4142 else CELL_YD
+                    // a ford's shallow water only where the search may cross a river (a border), and dearer
+                    val shallow = ford && wet[o].toInt() == 1 && !cost[o].isNaN() && cost[o] < Terrain.WALL
+                    if (!passable(o) && !shallow) continue
+                    val step = (if (o % nx != k % nx && o / nx != k / nx) CELL_YD * 1.4142 else CELL_YD) * (if (shallow) FORD_COST else 1.0)
                     val w = walked[k]!! + step
                     if (w > maxYd) continue
                     val c = (step * cost[o] * (1f + DANGER_COST * danger[o]) * (if (zone[o] == own) 1f else OFF_ZONE) *
@@ -490,7 +539,7 @@ object SafePath {
             fixedIds.add(id)
             if (f.toMap != 0) exits.add(Exit(id, f.toMap, f.how ?: "boat", f.name))
             if (edges.isEmpty()) return
-            val path = search(listOf(k), SPUR_MAX_YD) { c -> c in cellEdge } ?: return
+            val path = search(listOf(k), SPUR_MAX_YD, ford = wet[k].toInt() != 0) { c -> c in cellEdge } ?: return
             val at = cellEdge[path.last()]?.let { split(it, path.last()) } ?: return
             emit(id, at, path, SPUR)
         }
@@ -511,13 +560,12 @@ object SafePath {
             repeat(4) {
                 val starts = (cellEdge.keys + fixedIds.mapNotNull { cellOf(nodes[it].wx, nodes[it].wy).takeIf { c -> c >= 0 } }).distinct()
                 if (starts.isEmpty()) return
-                val path = search(starts, TRAIL_MAX_YD) { k -> zone[k] != own && zone[k] != 0 && zone[k] !in done && roadNear(k, zone[k], ROAD_ON_YD) } ?: return
+                val path = search(starts, TRAIL_MAX_YD, ford = true) { k -> zone[k] != own && zone[k] != 0 && zone[k] !in done && passable(k) && roadNear(k, zone[k], ROAD_ON_YD) } ?: return
                 if (path.size < 2) return
                 done.add(zone[path.last()])
                 val first = path.first()
                 val from = nodeAtCell[first] ?: cellEdge[first]?.let { split(it, first) } ?: return
-                val x = crossing(path.last(), path[path.size - 2])
-                emit(from, x, path.dropLast(1), TRAIL)
+                bankExit(from, path, TRAIL)
             }
         }
 
@@ -579,7 +627,10 @@ object SafePath {
                     // a road's fragment reached only by a trail and leading nowhere goes too (the trail was only there to join it)
                     val roadYd = chain.filter { it.kind == ROAD }.sumOf { it.cells.size } * CELL_YD
                     val viaTrail = chain.any { it.kind == TRAIL } && roadYd < TRAIL_STUB_YD
-                    if (yd < STUB_YD || (bad * 2 >= cells && yd < DANGER_STUB_YD) || viaTrail) { edges.removeAll(chain.toSet()); removed = true }
+                    // a spur or a trail that only climbs to nothing (test11: "shooting up into the mountain")
+                    val climb = chain.flatMap { it.cells }.map { k -> cost[k].let { c -> if (c.isNaN()) 1f else c } }.average()
+                    val uphill = chain.all { it.kind != ROAD } && climb >= CLIMB_STUB && yd < CLIMB_STUB_YD
+                    if (yd < STUB_YD || (bad * 2 >= cells && yd < DANGER_STUB_YD) || viaTrail || uphill) { edges.removeAll(chain.toSet()); removed = true }
                 }
                 reindex()
                 if (!removed) return
@@ -676,6 +727,65 @@ object SafePath {
         }
     }
     val zones = RouteWork.Files { map -> Zones.read(ArtHarvest.file("safepath/zones/$map.bin")) }
+
+    /**
+     * a zone's WATER by [WATER_YD] cell over its world rect: the depth there in tenths of a yard (the liquid's surface over the ground,
+     * 1..252), 0 = dry, 253 = water under a bridge (a building's outdoor walkway over it), 255 = deeper than 25 yd (b-safepath-water:
+     * no way or node in water but over a bridge or a shallow ford)
+     */
+    class Water(val t: Double, val b: Double, val l: Double, val r: Double, val nx: Int, val ny: Int, val depth: ByteArray) {
+        /** the depth at world ([wx], [wy]) in yards; NaN = dry (or off the grid), [BRIDGE] = a bridge over the water */
+        fun at(wx: Double, wy: Double): Float {
+            val i = floor((l - wy) / (l - r) * nx).toInt(); val j = floor((t - wx) / (t - b) * ny).toInt()
+            if (i !in 0 until nx || j !in 0 until ny) return Float.NaN
+            val d = depth[j * nx + i].toInt() and 0xFF
+            return when (d) { 0 -> Float.NaN; 253 -> BRIDGE; 255 -> 99f; else -> (d - 1) / 10f }
+        }
+        fun write(f: File) {
+            f.parentFile?.mkdirs()
+            DataOutputStream(f.outputStream().buffered()).use { o ->
+                o.writeInt(MAGIC); o.writeDouble(t); o.writeDouble(b); o.writeDouble(l); o.writeDouble(r); o.writeInt(nx); o.writeInt(ny); o.write(depth)
+            }
+        }
+        companion object {
+            const val MAGIC = 0x57545231                       // "WTR1"
+            fun read(f: File): Water? = runCatching {
+                DataInputStream(f.inputStream().buffered()).use { i ->
+                    if (i.readInt() != MAGIC) return null
+                    val t = i.readDouble(); val b = i.readDouble(); val l = i.readDouble(); val r = i.readDouble()
+                    val nx = i.readInt(); val ny = i.readInt()
+                    Water(t, b, l, r, nx, ny, ByteArray(nx * ny).also { i.readFully(it) })
+                }
+            }.getOrNull()
+            /** over world rect ([t], [b], [l], [r]) by [WATER_YD] cells: [depthAt] the water's depth at a spot (NaN dry), [bridgeAt] a
+             *  building's outdoor walkway over it (a bridge, a pier) */
+            fun build(t: Double, b: Double, l: Double, r: Double, bridgeAt: (Double, Double) -> Boolean = { _, _ -> false },
+                      depthAt: (Double, Double) -> Float): Water {
+                val nx = max(1, ceil((l - r) / WATER_YD).toInt()); val ny = max(1, ceil((t - b) / WATER_YD).toInt())
+                return Water(t, b, l, r, nx, ny, ByteArray(nx * ny) { k ->
+                    val x = t - (k / nx + 0.5) * (t - b) / ny; val y = l - (k % nx + 0.5) * (l - r) / nx
+                    val d = depthAt(x, y)
+                    (if (d.isNaN()) 0 else if (bridgeAt(x, y)) 253 else if (d >= 25.3f) 255 else (1 + (max(0f, d) * 10).roundToInt()).coerceIn(1, 252)).toByte()
+                })
+            }
+            const val BRIDGE = -1f
+            /** the water's depth at world ([wx], [wy]) of continent tiles: [surfaceOf] a tile's water grid (Terrain.water), [heightOf] its
+             *  ground (Terrain.Tile.h); NaN = dry */
+            fun depthOf(wx: Double, wy: Double, surfaceOf: (Int, Int) -> FloatArray?, heightOf: (Int, Int) -> FloatArray?): Float {
+                val gx = (32 * MapHarvest.ADT_YD - wy) / MapHarvest.ADT_YD; val gy = (32 * MapHarvest.ADT_YD - wx) / MapHarvest.ADT_YD
+                val tc = floor(gx).toInt(); val tr = floor(gy).toInt()
+                if (tc !in 0..63 || tr !in 0..63) return Float.NaN
+                val w = surfaceOf(tc, tr) ?: return Float.NaN
+                val cx = ((gx - tc) * 128).toInt().coerceIn(0, 127); val cy = ((gy - tr) * 128).toInt().coerceIn(0, 127)
+                val top = w[cy * 128 + cx]
+                if (top.isNaN()) return Float.NaN
+                val h = heightOf(tc, tr)?.get(cy * 128 + cx) ?: return 10f
+                return if (h.isNaN()) 10f else max(0f, top - h)
+            }
+        }
+    }
+    const val WATER_YD = 100.0 / 12.0      // the water grid's cell: two of the liquid's own (4.2 yd)
+    val waters = RouteWork.Files { map -> Water.read(ArtHarvest.file("safepath/water/$map.bin")) }
     const val AREAS_FILE = "safepath/areas.json"
     @Volatile private var areasRead: Areas? = null
     /** the areas table (read once, off the UI thread) */
@@ -688,7 +798,7 @@ object SafePath {
      */
     val ZONES_STEP = object : ArtHarvest.Step {
         override val id = "safepathzones"
-        override val version = 1
+        override val version = 3
         override val beforePlay = false
         override val weight = 40
         override fun run(job: ArtHarvest.Job) {
@@ -703,6 +813,13 @@ object SafePath {
             val roots = HashMap<Int, Map<Int, Int>>()
             val tiles = object : LinkedHashMap<Long, Map<Int, Int>>(16, 0.75f, true) {
                 override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Map<Int, Int>>?) = size > 24
+            }
+            // each root's water and ground, kept while near (the water grid reads them cell by cell)
+            class Wet(val surface: FloatArray?, val ground: FloatArray?, val walks: List<Buildings.Foot>)
+            val objs = HashMap<Int, Map<Int, Int>>()
+            val wmoGroups = HashMap<Int, List<WorldBuildings.Group>>()
+            val wets = object : LinkedHashMap<Long, Wet>(16, 0.75f, true) {
+                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Wet>?) = size > 24
             }
             var built = 0
             for ((i, e) in rects.entries.withIndex()) {
@@ -722,6 +839,26 @@ object SafePath {
                 }
                 z.write(job.file("safepath/zones/$map.bin"))
                 zones.drop(map)
+                fun wet(tc: Int, tr: Int): Wet {
+                    val key = (rect.c.toLong() shl 32) or MapHarvest.key(tc, tr).toLong()
+                    return wets[key] ?: run {
+                        val b = root[MapHarvest.key(tc, tr)]?.let { g.read(it) } ?: return@run Wet(null, null, emptyList())
+                        val surface = Terrain.water(b)
+                        // the outdoor walkways over the water (a bridge, a pier): only where the tile has water at all
+                        val walks = if (surface == null) emptyList() else {
+                            val obj = objs.getOrPut(rect.c) { mapRows[rect.c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) }?.let { Terrain.maidObj0(it) } ?: emptyMap() }
+                            obj[MapHarvest.key(tc, tr)]?.let { g.read(it) }?.let { WorldBuildings.placements(it) }?.flatMap { p ->
+                                WorldBuildings.walkways(p, wmoGroups.getOrPut(p.fid) { g.read(p.fid)?.let { WorldBuildings.groups(it) } ?: emptyList() })
+                            } ?: emptyList()
+                        }
+                        Wet(surface, Terrain.tile(b)?.h, walks)
+                    }.also { wets[key] = it }
+                }
+                fun tileOf(wx: Double, wy: Double) = PlaceNames.locate(wx, wy).let { it[0] to it[1] }
+                Water.build(rect.t, rect.b, rect.l, rect.r, { wx, wy -> tileOf(wx, wy).let { (c, r) -> wet(c, r).walks.any { it.holds(wx, wy) } } }) { wx, wy ->
+                    Water.depthOf(wx, wy, { c, r -> wet(c, r).surface }, { c, r -> wet(c, r).ground }) }
+                    .write(job.file("safepath/water/$map.bin"))
+                waters.drop(map)
                 built++
                 job.progress(i + 1, rects.size, "")
             }
@@ -754,7 +891,7 @@ object SafePath {
             val tg = Terrain.of(map) ?: return@run "no terrain yet"
             val zg = zones.get(map) ?: return@run "no zone ground yet"
             val ar = areas() ?: return@run "no areas table yet"
-            val built = "roads $roadCells, ${zg.nx}x${zg.ny} chunks, v2"
+            val built = "roads $roadCells, ${zg.nx}x${zg.ny} chunks, water ${waters.get(map) != null}, v3"
             val old = drafts.get(map)
             if (old != null && old.built == built) return@run null
             val names = HashMap<Int, String>()
@@ -769,11 +906,12 @@ object SafePath {
             val artPx = artPixels(map)
             val ground = if (map in CityExits.CITIES) artPx?.let { (px, w, h) -> artGround(px, w, h, t, b, l, r) } else null
             val painted = artPx?.let { (px, w, h) -> paintedRoads(px, w, h, t, b, l, r) }
+            val water = waters.get(map)
             val net = draft(Input(map, cont, t, b, l, r, { wx, wy -> Roads.isRoad(map, wx, wy) },
                 { wx, wy -> Terrain.factor(tg.at(wx, wy)) }, { wx, wy -> ar.uiMap(zg.areaAt(wx, wy)) },
                 fixed + hubs(friendly, { x, y -> PlaceNames.nameAt(x, y, ar.rows) { a, b2 -> zg.areaAt(a, b2) } }, nameOf(map),
                     districtFor(map, t, b, l, r)), ::nameOf,
-                dangerOf(hostile), ground = ground, painted = painted), built)
+                dangerOf(hostile), ground = ground, painted = painted, water = water?.let { wg -> { x, y -> wg.at(x, y) } }), built)
             // the crossings checked from both sides, against the neighbours' drafts there are (the user: "a low danger path back")
             val neighbours = net.exits.map { it.toMap }.distinct().mapNotNull { m -> drafts.get(m) }
             val checked = checkCrossings(net, neighbours)
@@ -1303,7 +1441,9 @@ object SafePath {
             val n = byId[k]!!
             val far = hypot(n.wx - start.wx, n.wy - start.wy) >= LINK_FROM_YD
             val target = k != node && far && (n.kind == HUB || n.kind == FLIGHT || n.kind == DOCK || (roadDeg[k] ?: 0) >= 3)
-            if (target) return if (bad[k]!! <= DANGER_LINK_YD) Link.LOW else Link.DANGER
+            // low danger: at most [DANGER_LINK_YD] of the way back among hostile mobs, or a [DANGER_LINK_SHARE] of a long one (a road
+            // past camps for a mile is still the way the game made)
+            if (target) return if (bad[k]!! <= max(DANGER_LINK_YD, DANGER_LINK_SHARE * d)) Link.LOW else Link.DANGER
             for ((o, e) in adj[k] ?: continue) {
                 val l = len(e); val nd = d + l
                 if (nd < (dist[o] ?: Double.MAX_VALUE)) { dist[o] = nd; bad[o] = bad[k]!! + l * e.danger; q.add(nd to o) }
@@ -1312,7 +1452,8 @@ object SafePath {
         return Link.NONE
     }
     const val LINK_FROM_YD = 150.0         // the way back counts from a place this far from the crossing
-    const val DANGER_LINK_YD = 150.0       // at most this much of it among hostile mobs is a low-danger way back
+    const val DANGER_LINK_YD = 150.0       // at most this much of it among hostile mobs is a low-danger way back ...
+    const val DANGER_LINK_SHARE = 0.25     // ... or this share of a longer one
     const val PAIR_YD = 400.0              // two zones' exits into each other this near are one crossing
 
     /**
