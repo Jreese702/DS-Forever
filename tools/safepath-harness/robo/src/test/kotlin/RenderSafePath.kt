@@ -1,0 +1,593 @@
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.DashPathEffect
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
+import com.jrees.wowcompanion.Caves
+import com.jrees.wowcompanion.Climb
+import com.jrees.wowcompanion.Db2
+import com.jrees.wowcompanion.WorldBuildings
+import com.jrees.wowcompanion.DangerGrid
+import com.jrees.wowcompanion.MapHarvest
+import com.jrees.wowcompanion.PlaceNames
+import com.jrees.wowcompanion.QuestieNpcs
+import com.jrees.wowcompanion.Roads
+import com.jrees.wowcompanion.SafePath
+import com.jrees.wowcompanion.Terrain
+import com.jrees.wowcompanion.TransportRoutes
+import org.json.JSONObject
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.File
+import java.io.FileOutputStream
+
+/**
+ * THE SAFEPATH ZONE HARNESS (tools/safepath-harness; docs/safepath/SAFEPATH_SPEC.md, ZONE_PLAYBOOK.md): a zone's network drafted by
+ * the app's own SafePath from the PC client's dumps, its exits checked on the ground, its caves found, its test routes walked the
+ * device's way (the network first, Climb's legs on the game's triangles), all exported for the renders. ZONESPEC names the zone
+ * (tools/safepath-harness/zones/<tag>.json); none = Durotar's own goals.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], manifest = Config.NONE)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class RenderSafePath {
+    private val out = File(System.getProperty("out.dir") ?: "out").also { it.mkdirs() }
+    @Test fun durotar() {
+        val spec = System.getenv("ZONESPEC")?.let { JSONObject(File(it).readText()) }
+        // the work folder (outside the repo: the client's dumps, the art, the tables, the pictures): SAFEPATH_WORK
+        val work = File(System.getenv("SAFEPATH_WORK") ?: return)
+        val dir = File(work, spec?.optString("dir")?.takeIf { it.isNotEmpty() } ?: "kalimdor")
+        val art = File(System.getenv("ART_ROOT") ?: File(work, "artroot").path)
+        val zoneList = spec?.optJSONArray("maps")?.let { a -> (0 until a.length()).map { a.getJSONArray(it).let { q -> q.getInt(0) to q.getInt(1) } } }
+            ?: listOf(1411 to 14, 1454 to 1637, 1413 to 17)
+        val main = spec?.optInt("zone") ?: 1411
+        val mainArea = spec?.optInt("area") ?: 14
+        val mine = if (spec?.optString("faction") == "alliance") TransportRoutes.ALLIANCE else TransportRoutes.HORDE
+        val foe = if (mine == TransportRoutes.HORDE) TransportRoutes.ALLIANCE else TransportRoutes.HORDE
+        val cities = spec?.optJSONArray("cities")?.let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() } ?: setOf(1454)
+        val tag = spec?.optString("tag") ?: "durotar"
+        val borderPair = spec?.optJSONArray("border")?.let { it.getInt(0) to it.getInt(1) } ?: (1411 to 1413)
+        val db2 = File(System.getenv("DB2_DIR") ?: File(work, "db2").path); val toc = File(System.getenv("QDBTOC") ?: return)
+        val names = File(dir, "tex0/names.txt").readLines().mapNotNull { l -> l.split(';', limit = 2).takeIf { it.size == 2 }?.let { it[0].toInt() to it[1] } }.toMap()
+        // the device LEARNS its road textures from the player's walking (Roads.learn); here the client's own names stand in for it
+        val roadTex = names.filterValues { n -> listOf("road", "path", "cobble", "trail").any { it in n.lowercase() } }.keys
+        println("SAFEPATH road textures: ${roadTex.joinToString { names[it]!!.substringAfterLast('/') }}")
+        val areas = Db2(File(db2, "AreaTable.db2").readBytes()).rows(strings = setOf(1)).associate { it.id to PlaceNames.Area(it.str(1), it.int(3)) }
+        val uimap = HashMap<Int, Int>().also { o -> for (r in Db2(File(db2, "UiMapAssignment.db2").readBytes()).rows()) { val a = r.int(7); val m = r.int(4); if (a != 0 && m != 0 && a !in o) o[a] = m } }
+        val chunkAreas = HashMap<Pair<Int, Int>, Map<Int, Int>>()
+        fun areaAt(wx: Double, wy: Double): Int? {
+            val l = PlaceNames.locate(wx, wy)
+            val m = chunkAreas.getOrPut(l[0] to l[1]) { File(dir, "adt/${l[0]}_${l[1]}.adt").takeIf { it.isFile }?.let { PlaceNames.chunkAreas(it.readBytes()) } ?: emptyMap() }
+            return m[l[2]]
+        }
+        val tex = HashMap<Pair<Int, Int>, Roads.Tile?>()
+        val tiles = HashMap<Pair<Int, Int>, Terrain.Tile?>()
+        val transports = JSONObject(File(art, "transports.json").readText())
+        val spawns = QuestieNpcs.read(toc)
+        fun nameOf(m: Int) = runCatching { JSONObject(File(art, "worldmap/$m/index.json").readText()).optString("name") }.getOrDefault("")
+        val recipe = JSONObject(File(System.getenv("RECIPE")).readText()).optJSONObject("rects")!!
+        class Done(val net: SafePath.Net, val rect: MapHarvest.Rect, val zg: SafePath.Zones, val ar: SafePath.Areas, val hostile: List<DoubleArray>)
+        val done = HashMap<Int, Done>()
+        for ((map, area) in zoneList) {
+            tex.clear(); tiles.clear(); System.gc()
+            val a = recipe.optJSONArray(map.toString())!!
+            val rect = MapHarvest.Rect(a.optInt(0), a.optDouble(1), a.optDouble(2), a.optDouble(3), a.optDouble(4))
+            val rg = Roads.grid(rect) { col, row -> tex.getOrPut(col to row) { File(dir, "tex0/${col}_$row.adt").takeIf { it.isFile }?.let { Roads.tile(it.readBytes()) } } }
+            val tg = Terrain.grid(rect) { gr, gc ->
+                val t = tiles.getOrPut((gc / 128) to (gr / 128)) { File(dir, "adt/${gc / 128}_${gr / 128}.adt").takeIf { it.isFile }?.let { Terrain.tile(it.readBytes()) } }
+                t?.h?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN
+            }
+            val zg = SafePath.Zones.build(rect.t, rect.b, rect.l, rect.r, PlaceNames.CHUNK_YD, ::areaAt)
+            // the water: the root ADTs' MH2O over their ground
+            val wetTiles = HashMap<Pair<Int, Int>, Pair<FloatArray?, FloatArray?>>()
+            fun wet(c: Int, r: Int) = wetTiles.getOrPut(c to r) { File(dir, "adt/${c}_$r.adt").takeIf { it.isFile }?.readBytes()?.let { b -> Terrain.water(b) to Terrain.tile(b)?.h } ?: (null to null) }
+            val walks = HashMap<Pair<Int, Int>, List<com.jrees.wowcompanion.Buildings.Foot>>()
+            fun walksOf(c: Int, r: Int) = walks.getOrPut(c to r) {
+                File(dir, "obj0/${c}_$r.adt").takeIf { it.isFile }?.readBytes()?.let { com.jrees.wowcompanion.WorldBuildings.placements(it) }?.flatMap { p ->
+                    com.jrees.wowcompanion.WorldBuildings.walkways(p, File(dir, "wmo/${p.fid}").takeIf { it.isFile }?.readBytes()?.let { com.jrees.wowcompanion.WorldBuildings.groups(it) } ?: emptyList())
+                } ?: emptyList()
+            }
+            val wg = SafePath.Water.build(rect.t, rect.b, rect.l, rect.r, { x, y -> PlaceNames.locate(x, y).let { l -> walksOf(l[0], l[1]).any { it.holds(x, y) } } }) { x, y ->
+                SafePath.Water.depthOf(x, y, { c, r -> wet(c, r).first }, { c, r -> wet(c, r).second }) }
+            println("SAFEPATH water of $map: ${wg.depth.count { it.toInt() != 0 }} wet cells of ${wg.depth.size}, shallow ${wg.depth.count { (it.toInt() and 0xFF) in 1..16 }}, bridged ${wg.depth.count { (it.toInt() and 0xFF) == 253 }}")
+            val ar = SafePath.Areas(areas, uimap)
+            run {
+                var rc = 0; var tot = 0; var steep = 0; val hist = HashMap<Int, Int>()
+                for (j in 0 until rg.ny) for (i in 0 until rg.nx) { val cc = rg.centre(i, j); if (ar.uiMap(zg.areaAt(cc[0], cc[1])) != map) continue; tot++
+                    val tx = rg.tex[j * rg.nx + i]; hist[tx] = (hist[tx] ?: 0) + 1; if (tx in roadTex) rc++; if (Terrain.factor(tg.at(cc[0], cc[1])) >= Terrain.WALL) steep++ }
+                println("SAFEPATH $map own cells $tot road $rc walls $steep top textures ${hist.entries.sortedByDescending { it.value }.take(6).map { (names[it.key] ?: it.key.toString()).substringAfterLast('/') + "=" + it.value }}")
+            }
+            val ax = rect.l - rect.r; val ay = rect.t - rect.b
+            val here = spawns.filter { it.area == area }
+            val hostile = here.filter { it.hostile == mine || it.hostile == 3 }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
+            val friendly = here.filter { it.hostile == foe }.map { SafePath.Npc(rect.t - it.y * ay, rect.l - it.x * ax, it.sub) }
+            val fixed = SafePath.fixedPoints(map, rect.c, rect.t, rect.b, rect.l, rect.r, mine, transports) + SafePath.hubs(friendly, { x, y -> PlaceNames.nameAt(x, y, areas) { a, b2 -> zg.areaAt(a, b2) } }, nameOf(map), SafePath.districtFor(map, rect.t, rect.b, rect.l, rect.r))
+            val t0 = System.nanoTime()
+            val net = SafePath.draft(SafePath.Input(map, rect.c, rect.t, rect.b, rect.l, rect.r, { wx, wy -> rg.at(wx, wy) in roadTex },
+                { wx, wy -> Terrain.factor(tg.at(wx, wy)) }, { wx, wy -> ar.uiMap(zg.areaAt(wx, wy)) }, fixed, ::nameOf, SafePath.dangerOf(hostile),
+                ground = if (map in cities) artGround(art, map, rect) else null, painted = painted(art, map, rect), water = { x, y -> wg.at(x, y) }), "off-device")
+            val ms = (System.nanoTime() - t0) / 1_000_000
+            println("SAFEPATH ${nameOf(map)}: ${net.nodes.size} nodes, ${net.edges.size} edges (${net.edges.groupBy { it.kind }.mapValues { it.value.size }}), " +
+                "${net.exits.size} exits: ${net.exits.joinToString { "${it.name} (${it.how})" }}; fixed ${fixed.joinToString { it.name }}; " +
+                "${hostile.size} hostile, ${friendly.size} friendly spawns; $ms ms")
+            File(out, "safepath_$map.draft.json").writeText(net.toJson().toString(1))
+            draw(net, rect, art, map, zg, ar, nameOf(map))
+            if (map == main) levels2(net, rect, tg, { gr, gc ->
+                val t = tiles.getOrPut((gc / 128) to (gr / 128)) { File(dir, "adt/${gc / 128}_${gr / 128}.adt").takeIf { it.isFile }?.let { Terrain.tile(it.readBytes()) } }
+                t?.h?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN }, { wx, wy -> rg.at(wx, wy) in roadTex }, zg, areas, here, dir, { x, y -> wg.at(x, y) },
+                mainArea, spec, tag, mine, ar, map)
+            done[map] = Done(net, rect, zg, ar, hostile)
+        }
+        if (done.containsKey(borderPair.first) && done.containsKey(borderPair.second))
+            border(art, borderPair.first, borderPair.second, done.mapValues { it.value.net }, done.mapValues { it.value.rect }, done.mapValues { it.value.zg },
+                done.mapValues { it.value.ar }, done.mapValues { it.value.hostile }, ::nameOf)
+    }
+
+    private fun painted(art: File, map: Int, rect: MapHarvest.Rect): (Double, Double) -> Boolean {
+        val dir = File(art, "worldmap/$map")
+        val idx = JSONObject(File(dir, "index.json").readText())
+        val bm = BitmapFactory.decodeFile(File(dir, "base.webp").path).copy(Bitmap.Config.ARGB_8888, true)
+        val c = Canvas(bm)
+        val ovs = idx.optJSONArray("overlays")!!
+        for (i in 0 until ovs.length()) { val o = ovs.getJSONObject(i); BitmapFactory.decodeFile(File(dir, "ov_${o.getInt("id")}.webp").path)?.let {
+            c.drawBitmap(it, null, RectF(o.getInt("x").toFloat(), o.getInt("y").toFloat(), (o.getInt("x") + o.getInt("w")).toFloat(), (o.getInt("y") + o.getInt("h")).toFloat()), null) } }
+        val px = IntArray(bm.width * bm.height); bm.getPixels(px, 0, bm.width, 0, 0, bm.width, bm.height)
+        return SafePath.paintedRoads(px, bm.width, bm.height, rect.t, rect.b, rect.l, rect.r)
+    }
+
+    /**
+     * THE TEST ROUTES, SECOND ROUND (the user: "The whole skull rock path actually makes 0 sense, it goes straight into and up the
+     * mountain instead of along the zeplin path and then into the skull rock cave"; "Some of the paths are still going through a wall"):
+     * goals where players go - a cave's mouth (the ground at its own floor's height beside the cave WMO), a building, a camp, the
+     * quest mobs' thickest spot - and every route the device's new way: the SafePath network as far as it helps, the ground's own leg
+     * (Climb: the 4 yd lattice's A*, cliffs walls, the danger and deep water in) to the goal. Exported for the 3D and height-map renders.
+     */
+    private fun levels2(net: SafePath.Net, rect: MapHarvest.Rect, tg: Terrain.Grid, heightV: (Int, Int) -> Float, roadAt: (Double, Double) -> Boolean,
+                        zg: SafePath.Zones, areas: Map<Int, PlaceNames.Area>, spawns: List<QuestieNpcs.Spawn>, dir: File, waterAt: (Double, Double) -> Float,
+                        zoneArea: Int = 14, spec: JSONObject? = null, tag: String = "durotar", mine: Int = TransportRoutes.HORDE,
+                        ar: SafePath.Areas? = null, map: Int = 1411) {
+        val S = Climb.STEP; val ORG = 32 * MapHarvest.ADT_YD
+        fun height(wx: Double, wy: Double): Float = heightV(Math.round((ORG - wx) / S).toInt(), Math.round((ORG - wy) / S).toInt())
+        val ax = rect.l - rect.r; val ay = rect.t - rect.b
+        fun uv(wx: Double, wy: Double) = doubleArrayOf((rect.l - wy) / ax, (rect.t - wx) / ay)
+        val t0 = System.nanoTime()
+        // the ADTs' holes (the terrain opened into a cave), per global cell
+        val holeTiles = HashMap<Pair<Int, Int>, BooleanArray?>()
+        // a hole under a placed building is its floor's place (a garrison's, a barn's: the WMO is the ground there), no wall; elsewhere
+        // the terrain opened into a cave, its ground not there
+        val covers = HashMap<Long, ArrayList<com.jrees.wowcompanion.Buildings.Foot>>()
+        for (f in (File(dir, "obj0").listFiles() ?: emptyArray())) for (p in WorldBuildings.placements(f.readBytes())) {
+            if (p.ox > rect.t + 100 || p.ox < rect.b - 100 || p.oy > rect.l + 100 || p.oy < rect.r - 100) continue
+            val gs = File(dir, "wmo/${p.fid}").takeIf { it.isFile }?.readBytes()?.let { WorldBuildings.groups(it) } ?: continue
+            val cs = Math.cos(p.yaw); val sn = Math.sin(p.yaw)
+            for (g in gs) {
+                val bx = g.box
+                val ft = com.jrees.wowcompanion.Buildings.Foot(p.ox, p.oy, cs, sn, minOf(bx[0], bx[3]) * p.scale, maxOf(bx[0], bx[3]) * p.scale,
+                    minOf(bx[1], bx[4]) * p.scale, maxOf(bx[1], bx[4]) * p.scale)
+                for (cx in Math.floorDiv(ft.wx0.toLong(), 64L)..Math.floorDiv(ft.wx1.toLong(), 64L)) for (cy in Math.floorDiv(ft.wy0.toLong(), 64L)..Math.floorDiv(ft.wy1.toLong(), 64L))
+                    covers.getOrPut(cx * 100000 + cy) { ArrayList() }.add(ft)
+            }
+        }
+        fun covered(x: Double, y: Double) = covers[Math.floorDiv(x.toLong(), 64L) * 100000 + Math.floorDiv(y.toLong(), 64L)]?.any { it.holds(x, y) } == true
+        fun holed(gr: Int, gc: Int): Boolean { val key = (gc / 128) to (gr / 128)
+            if (key !in holeTiles) holeTiles[key] = File(dir, "adt/${gc / 128}_${gr / 128}.adt").takeIf { it.isFile }?.let { Terrain.holes(it.readBytes()) }
+            return holeTiles[key]?.get((gr % 128) * 128 + (gc % 128)) == true }
+        val hole: (Int, Int) -> Boolean = { gr, gc -> holed(gr, gc) && !covered(ORG - (gr + 0.5) * S, ORG - (gc + 0.5) * S) }
+        // beside a hole a building or a cave covers, its floor is the ground: the terrain's heights there (under it) no wall
+        val onFloor: (Double, Double) -> Boolean = { x, y -> val gr = Math.round((ORG - x) / S).toInt(); val gc = Math.round((ORG - y) / S).toInt()
+            listOf(gr - 1 to gc - 1, gr - 1 to gc, gr to gc - 1, gr to gc).any { (r, c) -> holed(r, c) && covered(ORG - (r + 0.5) * S, ORG - (c + 0.5) * S) } }
+        // the cells' middle vertices (the game's surface: four triangles a cell through each)
+        val ctiles = HashMap<Pair<Int, Int>, FloatArray?>()
+        val centre: (Int, Int) -> Float = { gr, gc -> val key = (gc / 128) to (gr / 128)
+            if (key !in ctiles) ctiles[key] = File(dir, "adt/${gc / 128}_${gr / 128}.adt").takeIf { it.isFile }?.let { Terrain.tile(it.readBytes())?.c }
+            ctiles[key]?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN }
+        val cg = Climb.build(rect.t, rect.b, rect.l, rect.r, heightV, level = onFloor, hole = hole, centre = centre)
+        println("CLIMB lattice ${cg.nx} x ${cg.ny} in ${(System.nanoTime() - t0) / 1_000_000} ms; walls ${cg.cls.count { (it.toInt() and 3) == 3 } * 100 / cg.cls.size}% of the east steps")
+        val ground: (Double, Double) -> Float = { u, v -> val wx = rect.t - v * ay; val wy = rect.l - u * ax; Terrain.factor(tg.at(wx, wy)) }
+        val level = spec?.optInt("level", 8) ?: 8
+        val g = DangerGrid.build(spawns, mine, level, ax, ay, ground)
+        val k = DangerGrid.strength("high")
+        val danger: (Double, Double) -> Float = { x, y -> uv(x, y).let { g.at(it[0], it[1]) } }
+        val deep: (Double, Double) -> Boolean = { x, y -> val d = waterAt(x, y); !d.isNaN() && d != SafePath.Water.BRIDGE && d > SafePath.FORD_DEPTH }
+        val reachedOf = HashMap<String, Boolean>()
+        var lastReached = true
+        var links: List<Climb.Link> = emptyList()
+        val leg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b -> Climb.route(cg, a, b, danger, k, deep, links)?.also { lastReached = it.reached }?.pts }
+        // the placed buildings and caves (the obj0s' MODF)
+        val placed = (File(dir, "obj0").listFiles() ?: emptyArray()).flatMap { f -> WorldBuildings.placements(f.readBytes()) }.distinctBy { it.uid }
+        // the caves: every placed cave / tunnel / mine WMO in the zone (its groups dumped), its floor, mouths and ways
+        fun bil(wx: Double, wy: Double): Float {
+            val gx = (ORG - wy) / S; val gy = (ORG - wx) / S; val i = Math.floor(gx).toInt(); val j = Math.floor(gy).toInt(); val tx = gx - i; val ty = gy - j
+            val a = heightV(j, i); val b = heightV(j, i + 1).let { if (it.isNaN()) a else it }; val c = heightV(j + 1, i).let { if (it.isNaN()) a else it }
+            val d = heightV(j + 1, i + 1).let { if (it.isNaN()) a else it }
+            return ((a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty).toFloat()
+        }
+        // a mouth is where one can stand: off any wall face (the game's own triangles), a walkable step away from it
+        val standable: (Double, Double) -> Boolean = { x, y -> val v = cg.at(x, y)
+            cg.lineClear(doubleArrayOf(x, y), doubleArrayOf(x, y)) && (0..3).any { q -> cg.step(v[0], v[1], listOf(1, -1, 0, 0)[q], listOf(0, 0, 1, -1)[q]) != Climb.WALL } }
+        val gdir = File(dir, "wmogroup")
+        val caves = placed.filter { p -> p.ox <= rect.t && p.ox >= rect.b && p.oy <= rect.l && p.oy >= rect.r && File(gdir, "${p.fid}_0").isFile }.map { p ->
+            val gs = (0 until 200).map { File(gdir, "${p.fid}_$it") }.takeWhile { it.isFile }.map { it.readBytes() }
+            Caves.cave(p, gs, ::bil, standable)
+        }.filter { it.mouths.isNotEmpty() }
+        for (c in caves) println("CAVE ${c.fid} at ${c.wx.toInt()},${c.wy.toInt()}: ${c.mouths.size} mouths ${c.mouths.joinToString { "${it[0].toInt()},${it[1].toInt()} z ${it[2].toInt()}" }}; ${c.ways.size} ways ${c.ways.joinToString { "${it.yd.toInt()} yd" }}")
+        links = caves.flatMap { c -> c.ways.map { Climb.Link(it.pts, it.yd) } }
+        fun caveMouth(fid: Int, nearX: Double, nearY: Double, from: DoubleArray?): DoubleArray? = caves.filter { it.fid == fid }
+            .minByOrNull { Math.hypot(it.wx - nearX, it.wy - nearY) }?.mouths?.minByOrNull { m -> from?.let { Math.hypot(m[0] - it[0], m[1] - it[1]) } ?: 0.0 }?.let { doubleArrayOf(it[0], it[1]) }
+        fun wmo(fid: Int, nearX: Double, nearY: Double) = placed.filter { it.fid == fid }.minByOrNull { Math.hypot(it.ox - nearX, it.oy - nearY) }
+        /** a cave's mouth: the level ground beside it at its floor's own height, the nearest to the cave */
+        fun mouth(p: WorldBuildings.Placement): DoubleArray {
+            val c = cg.at(p.ox, p.oy); val r = (160 / S).toInt()
+            var best: DoubleArray? = null; var bs = Double.MAX_VALUE
+            for (j in (c[1] - r)..(c[1] + r)) for (i in (c[0] - r)..(c[0] + r)) {
+                if (i !in 0 until cg.nx || j !in 0 until cg.ny) continue
+                if (cg.east(i, j) > Climb.CLIMB || cg.south(i, j) > Climb.CLIMB) continue
+                val x = cg.wx(j); val y = cg.wy(i); val h = height(x, y)
+                if (h.isNaN() || h < p.oz - 2) continue
+                val sc = Math.abs(h - p.oz) + 0.04 * Math.hypot(x - p.ox, y - p.oy)
+                if (sc < bs) { bs = sc; best = doubleArrayOf(x, y) }
+            }
+            return best ?: doubleArrayOf(p.ox, p.oy)
+        }
+        /** a subzone's quest mobs at their thickest: the hostile spawn with the most others within 60 yd */
+        fun camp(name: String): DoubleArray? {
+            val a = areas.entries.firstOrNull { it.value.name.equals(name, true) && it.value.parent == zoneArea }?.key ?: return null
+            val pts = spawns.filter { it.hostile == mine || it.hostile == 3 }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
+                .filter { zg.areaAt(it[0], it[1]) == a && !deep(it[0], it[1]) && height(it[0], it[1]) > 0 }
+            return pts.maxByOrNull { p -> pts.count { Math.hypot(it[0] - p[0], it[1] - p[1]) < 60 } }
+        }
+        fun at(name: String) = net.nodes.firstOrNull { it.name == name }?.let { doubleArrayOf(it.wx, it.wy) }
+        /** a named mob's spawns at their thickest (near [near] when given: within 500 yd of it) */
+        fun mob(name: String, near: DoubleArray?): DoubleArray? {
+            val pts = spawns.filter { it.name.equals(name, true) }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
+                .filter { !deep(it[0], it[1]) && (near == null || Math.hypot(it[0] - near[0], it[1] - near[1]) < 500) }
+            return pts.maxByOrNull { p -> pts.count { Math.hypot(it[0] - p[0], it[1] - p[1]) < 60 } }
+        }
+        /** where an exit's way opens onto this zone's own level ground (a gate's tunnel or a lift is the other map's: its top not ours) */
+        fun exitStart(name: String): DoubleArray? = net.exits.firstOrNull { it.name.equals(name, true) }?.let { x -> net.nodes.first { it.id == x.node } }?.let { gn ->
+            val c = cg.at(gn.wx, gn.wy); val r = (150 / S).toInt(); var best: DoubleArray? = null; var bd = Double.MAX_VALUE
+            for (j in (c[1] - r)..(c[1] + r)) for (i in (c[0] - r)..(c[0] + r)) {
+                if (i !in 1 until cg.nx - 1 || j !in 1 until cg.ny - 1) continue
+                if (cg.east(i, j) != Climb.LEVEL || cg.south(i, j) != Climb.LEVEL || cg.east(i - 1, j) != Climb.LEVEL || cg.south(i, j - 1) != Climb.LEVEL) continue
+                val x = cg.wx(j); val y = cg.wy(i); if (ar != null && ar.uiMap(zg.areaAt(x, y)) != map) continue
+                val d = Math.hypot(x - gn.wx, y - gn.wy); if (d < bd) { bd = d; best = doubleArrayOf(x, y) }
+            }
+            best }
+        fun xy(a: org.json.JSONArray?) = a?.let { doubleArrayOf(it.getDouble(0), it.getDouble(1)) }
+        fun specTrips(goals: org.json.JSONArray): List<Triple<String, DoubleArray?, Pair<String, DoubleArray?>>> = (0 until goals.length()).map { gi ->
+            val o = goals.getJSONObject(gi); val fr = o.getJSONObject("from"); val to = o.getJSONObject("to")
+            val f = when { fr.has("node") -> at(fr.getString("node")); fr.has("exit") -> exitStart(fr.getString("exit")); else -> xy(fr.optJSONArray("xy")) }
+            val near = xy(to.optJSONArray("near"))
+            val gp = when {
+                to.has("cave") -> caveMouth(to.getInt("cave"), near!![0], near[1], f) ?: wmo(to.getInt("cave"), near[0], near[1])?.let { mouth(it) }
+                to.has("wmo") -> wmo(to.getInt("wmo"), near!![0], near[1])?.let { doubleArrayOf(it.ox, it.oy) }
+                to.has("camp") -> camp(to.getString("camp"))
+                to.has("mob") -> mob(to.getString("mob"), near)
+                to.has("node") -> at(to.getString("node"))
+                to.has("exit") -> net.exits.firstOrNull { it.name.equals(to.getString("exit"), true) && (!to.has("how") || it.how == to.getString("how")) }
+                    ?.let { x -> net.nodes.firstOrNull { it.id == x.node } }?.let { doubleArrayOf(it.wx, it.wy) }
+                else -> xy(to.optJSONArray("xy"))
+            }
+            if (f == null || gp == null) println("GOAL ${o.optString("name")}: from ${f?.toList()} to ${gp?.toList()} - not found, left out")
+            Triple(fr.optString("name", fr.optString("node", fr.optString("exit"))), f, o.optString("name") to gp)
+        }
+        fun durotarTrips(): List<Triple<String, DoubleArray?, Pair<String, DoubleArray?>>> {
+        // the gate's tunnel is the city's WMO, the terrain over it the mountain: start where it opens onto Durotar's own level ground
+        val gate = net.exits.firstOrNull { it.name == "Orgrimmar" }?.let { x -> net.nodes.first { it.id == x.node } }?.let { gn ->
+            val c = cg.at(gn.wx, gn.wy); val r = (150 / S).toInt(); var best: DoubleArray? = null; var bd = Double.MAX_VALUE
+            for (j in (c[1] - r)..(c[1] + r)) for (i in (c[0] - r)..(c[0] + r)) {
+                if (i !in 1 until cg.nx - 1 || j !in 1 until cg.ny - 1) continue
+                if (cg.east(i, j) != Climb.LEVEL || cg.south(i, j) != Climb.LEVEL || cg.east(i - 1, j) != Climb.LEVEL || cg.south(i, j - 1) != Climb.LEVEL) continue
+                val x = cg.wx(j); val y = cg.wy(i); if (!(height(x, y) < 40f) || x > gn.wx) continue
+                val d = Math.hypot(x - gn.wx, y - gn.wy); if (d < bd) { bd = d; best = doubleArrayOf(x, y) }
+            }
+            println("GATE exit node ${gn.wx.toInt()},${gn.wy.toInt()} h ${height(gn.wx, gn.wy).toInt()}; start ${best?.let { "${it[0].toInt()},${it[1].toInt()} h ${height(it[0], it[1]).toInt()}" }}")
+            best }
+        val rh = at("Razor Hill")!!; val sj = at("Sen'jin Village"); val vt = at("Valley of Trials")
+        return listOf(
+            Triple("Razor Hill", rh, "the Razor Hill watchtower" to wmo(113091, 388.0, -4591.0)?.let { doubleArrayOf(it.ox, it.oy) }),
+            Triple("Razor Hill", rh, "Thunder Ridge's lizards" to camp("Thunder Ridge")),
+            Triple("Razor Hill", rh, "Dustwind Cave's mouth (Drygulch)" to (caveMouth(110589, 843.0, -4705.0, rh) ?: wmo(110589, 843.0, -4705.0)?.let { mouth(it) })),
+            Triple("Razor Hill", rh, "Tiragarde Keep" to wmo(112746, -166.0, -5111.0)?.let { doubleArrayOf(it.ox, it.oy) }),
+            Triple("Sen'jin Village", sj, "the Kolkar camp (Kolkar Crag)" to wmo(113293, -967.0, -4419.0)?.let { doubleArrayOf(it.ox, it.oy) }),
+            Triple("the Orgrimmar gate", gate, "Skull Rock's cave mouth" to (caveMouth(111290, 1504.0, -4854.0, gate) ?: wmo(111290, 1504.0, -4854.0)?.let { mouth(it) })),
+            Triple("Razor Hill", rh, "the Razormane camp" to camp("Razormane Grounds")),
+            Triple("Sen'jin Village", sj, "Darkspear Strand's mobs" to camp("Darkspear Strand")),
+            Triple("Razor Hill", rh, "Drygulch Ravine's deep camp" to camp("Drygulch Ravine")),
+            Triple("Valley of Trials", vt, "the Burning Blade Coven's mouth" to (caveMouth(111290, -135.0, -4371.0, vt) ?: wmo(111290, -135.0, -4371.0)?.let { mouth(it) })),
+        )
+        }
+        /** a start or a goal on ground one can stand on: itself, or the nearest such spot within 15 yd (a camp's spawn on a slope) */
+        fun stand(p: DoubleArray?): DoubleArray? {
+            if (p == null || standable(p[0], p[1])) return p
+            val c = cg.at(p[0], p[1]); val r = (15 / S).toInt(); var best: DoubleArray? = null; var bd = Double.MAX_VALUE
+            for (j in (c[1] - r)..(c[1] + r)) for (i in (c[0] - r)..(c[0] + r)) {
+                if (i !in 0 until cg.nx || j !in 0 until cg.ny) continue
+                val x = cg.wx(j); val y = cg.wy(i); val d = Math.hypot(x - p[0], y - p[1])
+                if (d < bd && standable(x, y)) { bd = d; best = doubleArrayOf(x, y) }
+            }
+            return best ?: p
+        }
+        val trips = (spec?.optJSONArray("goals")?.let { specTrips(it) } ?: durotarTrips()).filter { it.second != null && it.third.second != null }
+            .map { (fn, f, g) -> Triple(fn, stand(f), g.first to stand(g.second)) }
+        // THE EXITS CHECKED ON THE GROUND: from each, the lattice flooded (no wall step, no deep water, the caves' links taken) - how
+        // much of this zone and of the neighbour it leads to it reaches. A way out that reaches only a pocket on either side is no way.
+        val exitChecks = org.json.JSONArray()
+        run {
+            val n = cg.nx * cg.ny
+            val dry = BooleanArray(n) { q -> !deep(cg.wx(q / cg.nx), cg.wy(q % cg.nx)) }
+            val jump = HashMap<Int, ArrayList<Int>>()
+            for (lk in links) { val a0 = cg.at(lk.pts.first()[0], lk.pts.first()[1]); val b0 = cg.at(lk.pts.last()[0], lk.pts.last()[1])
+                val qa = a0[1] * cg.nx + a0[0]; val qb = b0[1] * cg.nx + b0[0]
+                jump.getOrPut(qa) { ArrayList() }.add(qb); jump.getOrPut(qb) { ArrayList() }.add(qa) }
+            val mapOf = IntArray(n) { q -> ar?.uiMap(zg.areaAt(cg.wx(q / cg.nx), cg.wy(q % cg.nx))) ?: 0 }
+            val ownAll = mapOf.count { it == map }
+            for (x in net.exits) {
+                val node = net.nodes.firstOrNull { it.id == x.node } ?: continue
+                val s0 = cg.at(node.wx, node.wy); val seen = BooleanArray(n); val st = IntArray(n); var sp = 0
+                val q0 = s0[1] * cg.nx + s0[0]; seen[q0] = true; st[sp++] = q0
+                var own = 0; var theirs = 0
+                while (sp > 0) {
+                    val q = st[--sp]; val i = q % cg.nx; val j = q / cg.nx
+                    if (mapOf[q] == map) own++ else if (mapOf[q] == x.toMap) theirs++
+                    for (dj in -1..1) for (di in -1..1) {
+                        if (di == 0 && dj == 0) continue
+                        val vi = i + di; val vj = j + dj; if (vi !in 0 until cg.nx || vj !in 0 until cg.ny) continue
+                        val v = vj * cg.nx + vi; if (seen[v] || !dry[v] || cg.step(i, j, di, dj) == Climb.WALL) continue
+                        seen[v] = true; st[sp++] = v
+                    }
+                    jump[q]?.forEach { v -> if (!seen[v]) { seen[v] = true; st[sp++] = v } }
+                }
+                val ownYd = own * S * S; val theirYd = theirs * S * S
+                val ok = own > ownAll / 4 && theirs * S * S > 20000
+                println("EXIT ${x.name} (${x.how}) at ${node.wx.toInt()},${node.wy.toInt()} h ${height(node.wx, node.wy).toInt()}: reaches ${own * 100 / maxOf(1, ownAll)}% of this zone, " +
+                    "${(theirYd / 1000).toInt()}k sq yd of ${x.name}'s ground in the lattice - ${if (ok) "WALKABLE" else "NOT WALKABLE"}")
+                exitChecks.put(org.json.JSONArray(listOf(node.wx, node.wy, x.name, x.how, ok, own * 100 / maxOf(1, ownAll), (theirYd / 1000).toInt())))
+            }
+        }
+        val clear = SafePath.clearOf { a, b -> Terrain.factor(tg.at(a, b)) }
+        val netC = SafePath.withCaves(net, caves) { x, y -> danger(x, y) / DangerGrid.CAP }
+        println("NET with caves: ${netC.nodes.size} nodes, ${netC.edges.size} edges (${netC.edges.count { it.kind == SafePath.CAVE }} cave)")
+        val export = org.json.JSONObject(); val rs = org.json.JSONArray()
+        for ((i, trip) in trips.withIndex()) {
+            val (fromName, f, goal) = trip; val (goalName, gp) = goal
+            lastReached = true
+            val way = SafePath.routeOn(netC, f!![0], f[1], gp!![0], gp[1], leg, clear = clear, walkable = { a, b -> Climb.walkable(cg, a, b) }) ?: leg(f, gp) ?: listOf(f, gp)
+            if (way.size < 2) { val r0 = Climb.route(cg, f, gp, danger, k, deep, links); val r1 = Climb.route(cg, f, gp)
+                println("EMPTY ${f.toList()} -> ${gp.toList()}: full ${r0?.reached} ${r0?.pts?.size}, bare ${r1?.reached} ${r1?.pts?.size}; deep at start ${deep(f[0], f[1])} goal ${deep(gp[0], gp[1])}") }
+            val yd = way.zipWithNext { a, b -> Math.hypot(a[0] - b[0], a[1] - b[1]) }.sum()
+            val letter = ('A' + i).toString()
+            // the hard rule: no final segment crosses a wall step of the 4 yd lattice
+            val walls = way.zipWithNext().withIndex().filter { (_, ab) -> !Climb.walkable(cg, ab.first, ab.second) }.map { it.index }
+            if (walls.isNotEmpty()) println("WALLS route $letter crosses a wall on segments $walls")
+            println("ROUTE2 $letter $fromName -> $goalName: ${yd.toInt()} yd, ${way.size - 2} flags${if (lastReached) "" else " (the goal unreachable: to the nearest ground)"}; goal ${gp[0].toInt()},${gp[1].toInt()} h ${height(gp[0], gp[1]).toInt()}")
+            rs.put(org.json.JSONObject().put("letter", letter).put("name", "$fromName → $goalName").put("reached", lastReached)
+                .put("pts", org.json.JSONArray(way.map { org.json.JSONArray(if (Climb.inCave(it)) listOf(it[0], it[1], 1) else listOf(it[0], it[1])) })))
+        }
+        export.put("routes", rs)
+        export.put("caves", org.json.JSONArray(caves.map { c -> org.json.JSONObject().put("fid", c.fid).put("wx", c.wx).put("wy", c.wy)
+            .put("mouths", org.json.JSONArray(c.mouths.map { org.json.JSONArray(listOf(it[0], it[1], it[2])) }))
+            .put("ways", org.json.JSONArray(c.ways.map { w -> org.json.JSONArray(w.pts.map { org.json.JSONArray(listOf(it[0], it[1], it[2])) }) })) }))
+        val cells = HashMap<Int, ArrayList<DoubleArray>>()
+        for (j in 0 until zg.ny) for (i in 0 until zg.nx) {
+            val a = zg.area[j * zg.nx + i]; if (a == 0 || areas[a]?.parent != zoneArea) continue
+            cells.getOrPut(a) { ArrayList() }.add(doubleArrayOf(rect.t - (j + 0.5) * ay / zg.ny, rect.l - (i + 0.5) * ax / zg.nx))
+        }
+        // the drafted network (its ways and exits) for the renders; and a catalogue for picking goals: the named nodes, the mobs
+        val byId = netC.nodes.associateBy { it.id }
+        export.put("net", org.json.JSONObject()
+            .put("edges", org.json.JSONArray(netC.edges.filter { it.state != SafePath.REMOVED }.mapNotNull { e -> val a = byId[e.a] ?: return@mapNotNull null; val b = byId[e.b] ?: return@mapNotNull null
+                org.json.JSONArray(listOf(a.wx, a.wy, b.wx, b.wy, e.kind)) }))
+            .put("exits", org.json.JSONArray(netC.exits.mapNotNull { x -> byId[x.node]?.let { n -> org.json.JSONArray(listOf(n.wx, n.wy, x.name, x.how)) } }))
+            .put("nodes", org.json.JSONArray(netC.nodes.filter { it.name != null }.map { n -> org.json.JSONArray(listOf(n.wx, n.wy, n.name, n.kind)) })))
+        val mobs = spawns.filter { it.hostile == mine || it.hostile == 3 }.groupBy { it.name }.map { (n, l) ->
+            val p = l.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
+            org.json.JSONArray(listOf(n, l.size, l.minOf { it.minLv }, l.maxOf { it.maxLv }, p.map { it[0] }.average(), p.map { it[1] }.average(),
+                p.groupBy { zg.areaAt(it[0], it[1]) }.maxByOrNull { it.value.size }?.key?.let { areas[it]?.name } ?: "")) }
+        export.put("mobs", org.json.JSONArray(mobs))
+        export.put("exitChecks", exitChecks)
+        export.put("zone", tag).put("rect", org.json.JSONArray(listOf(rect.t, rect.b, rect.l, rect.r)))
+        export.put("subzones", org.json.JSONArray(cells.map { (a, cs0) -> org.json.JSONObject().put("name", areas[a]?.name ?: "")
+            .put("wx", cs0.map { it[0] }.average()).put("wy", cs0.map { it[1] }.average()).put("n", cs0.size) }))
+        // the danger grid (QuestieDB's hostile mobs for a level 8 Horde player, "high"): its cells for the renders
+        export.put("danger", org.json.JSONObject().put("t", rect.t).put("b", rect.b).put("l", rect.l).put("r", rect.r).put("nx", g.nx).put("ny", g.ny)
+            .put("d", org.json.JSONArray((0 until g.nx * g.ny).map { q -> Math.round(g.cell(q % g.nx, q / g.nx) * 100) / 100.0 })))
+        File(out, "levels_routes_$tag.json").writeText(export.toString())
+    }
+
+    /** Durotar and the Barrens side by side, joined at their border: both drafts, the crossings paired, the danger heat on both */
+    private fun border(art: File, a: Int, b: Int, nets: Map<Int, SafePath.Net>, rects: Map<Int, MapHarvest.Rect>, zgs: Map<Int, SafePath.Zones>,
+                       ars: Map<Int, SafePath.Areas>, hostile: Map<Int, List<DoubleArray>>, names: (Int) -> String) {
+        // the frame: Durotar whole and the Barrens' eastern half (world x north = up, world y west = left)
+        val ra = rects[a]!!; val rb = rects[b]!!
+        val top = maxOf(ra.t, rb.t) - 200.0; val bot = minOf(ra.b, rb.b + 1600.0)
+        val left = minOf(ra.l, rb.l) - 0.0; val right = ra.r
+        val west = (rb.l + rb.r) / 2 + 600.0                                // the Barrens' east half
+        val L = minOf(west, left); val R = right
+        val yd = L - R; val H0 = top - bot
+        val W = 2400; val H = (W * H0 / yd).toInt()
+        val bmp = Bitmap.createBitmap(W, H + 70, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp); c.drawColor(Color.rgb(20, 16, 12))
+        fun sx(wy: Double) = ((L - wy) / yd * W).toFloat()
+        fun sy(wx: Double) = ((top - wx) / H0 * H).toFloat()
+        fun artOf(map: Int): Bitmap {
+            val dir = File(art, "worldmap/$map"); val idx = JSONObject(File(dir, "index.json").readText())
+            val bm = BitmapFactory.decodeFile(File(dir, "base.webp").path).copy(Bitmap.Config.ARGB_8888, true)
+            val cc = Canvas(bm); val ovs = idx.optJSONArray("overlays")!!
+            for (i in 0 until ovs.length()) { val o = ovs.getJSONObject(i); BitmapFactory.decodeFile(File(dir, "ov_${o.getInt("id")}.webp").path)?.let {
+                cc.drawBitmap(it, null, RectF(o.getInt("x").toFloat(), o.getInt("y").toFloat(), (o.getInt("x") + o.getInt("w")).toFloat(), (o.getInt("y") + o.getInt("h")).toFloat()), null) } }
+            return bm
+        }
+        // each zone's own art on its own ground only (its chunks), the Barrens first
+        for (m in listOf(b, a)) {
+            val r = rects[m]!!; val zg = zgs[m]!!; val ar = ars[m]!!
+            val clip = Path()
+            for (j in 0 until zg.ny) for (i in 0 until zg.nx) if (ar.uiMap(zg.area[j * zg.nx + i]) == m) {
+                val x0 = r.l - i * (r.l - r.r) / zg.nx; val x1 = r.l - (i + 1) * (r.l - r.r) / zg.nx
+                val y0 = r.t - j * (r.t - r.b) / zg.ny; val y1 = r.t - (j + 1) * (r.t - r.b) / zg.ny
+                clip.addRect(sx(x0), sy(y0), sx(x1) + 1f, sy(y1) + 1f, Path.Direction.CW)
+            }
+            c.save(); c.clipPath(clip)
+            c.drawBitmap(artOf(m), null, RectF(sx(r.l), sy(r.t), sx(r.r), sy(r.b)), Paint(Paint.FILTER_BITMAP_FLAG))
+            c.restore()
+        }
+        // the danger heat: two or more hostile mobs within 40 yd, by 20 yd cells
+        val heat = Paint()
+        for (m in listOf(a, b)) {
+            val dz = SafePath.dangerOf(hostile[m]!!)
+            val r = rects[m]!!; val zg = zgs[m]!!; val ar = ars[m]!!
+            var x = top; while (x > bot) { var y = L; while (y > R) {
+                if (ar.uiMap(zg.areaAt(x, y)) == m) { val d = dz(x, y); if (d >= 0.34f) { heat.color = Color.argb((60 + 110 * d).toInt(), 230, 30, 20)
+                    c.drawRect(sx(y), sy(x), sx(y - 20) + 1f, sy(x - 20) + 1f, heat) } }
+                y -= 20.0 }; x -= 20.0 }
+        }
+        // the crossings checked from both sides (the user: "as long as there is a low danger path back to another path")
+        val raw = nets
+        val checked = mapOf(a to SafePath.checkCrossings(raw[a]!!, listOf(raw[b]!!)), b to SafePath.checkCrossings(raw[b]!!, listOf(raw[a]!!)))
+        @Suppress("NAME_SHADOWING") val nets = checked
+        // the two networks
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+        for (m in listOf(a, b)) { val net = nets[m]!!; val byId = net.nodes.associateBy { it.id }
+            for (pass in 0..1) for (e in net.edges) { val n0 = byId[e.a]!!; val n1 = byId[e.b]!!
+                p.pathEffect = if (e.kind == SafePath.TRAIL) DashPathEffect(floatArrayOf(14f, 10f), 0f) else null
+                if (pass == 0) { p.color = Color.argb(200, 0, 0, 0); p.strokeWidth = 8f } else { p.strokeWidth = 4.5f
+                    p.color = when (e.kind) { SafePath.ROAD -> Color.rgb(255, 209, 0); SafePath.SPUR -> Color.rgb(140, 220, 255); else -> Color.rgb(255, 140, 60) }
+                    if (e.state == SafePath.AVOID) { p.color = Color.rgb(255, 40, 200); p.pathEffect = DashPathEffect(floatArrayOf(10f, 8f), 0f); p.strokeWidth = 6f } }
+                c.drawLine(sx(n0.wy), sy(n0.wx), sx(n1.wy), sy(n1.wx), p) } }
+        p.pathEffect = null
+        // the crossings: each zone's exits into the other, paired where they meet (within 400 yd)
+        val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 30f; color = Color.WHITE; setShadowLayer(5f, 0f, 0f, Color.BLACK); isFakeBoldText = true }
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+        fun exitsOf(m: Int, to: Int) = raw[m]!!.let { net -> net.exits.filter { it.toMap == to }.map { x -> net.nodes.first { it.id == x.node } } }
+        val ea = exitsOf(a, b); val eb = exitsOf(b, a)
+        val pairs = ArrayList<Pair<SafePath.Node?, SafePath.Node?>>()
+        val usedB = HashSet<Int>()
+        for (x in ea) { val y = eb.filter { it.id !in usedB }.minByOrNull { Math.hypot(it.wx - x.wx, it.wy - x.wy) }?.takeIf { Math.hypot(it.wx - x.wx, it.wy - x.wy) < 400 }
+            if (y != null) usedB.add(y.id); pairs.add(x to y) }
+        for (y in eb) if (y.id !in usedB) pairs.add(null to y)
+        for ((i, pr) in pairs.sortedBy { (it.first ?: it.second)!!.wx.unaryMinus() }.withIndex()) {
+            val (x, y) = pr
+            for (n in listOfNotNull(x, y)) { fill.color = Color.BLACK; c.drawCircle(sx(n.wy), sy(n.wx), 18f, fill)
+                fill.color = if (n === x) Color.rgb(255, 120, 40) else Color.rgb(80, 200, 255); c.drawCircle(sx(n.wy), sy(n.wx), 14f, fill) }
+            if (x != null && y != null) {
+                val fordA = nets[a]!!.exits.any { it.node == x.id && (it.how == "ford" || it.how == "bridge") } || nets[b]!!.exits.any { it.node == y.id && (it.how == "ford" || it.how == "bridge") }
+                p.color = if (fordA) Color.rgb(120, 255, 255) else Color.WHITE; p.strokeWidth = if (fordA) 7f else 3f
+                c.drawLine(sx(x.wy), sy(x.wx), sx(y.wy), sy(y.wx), p)
+            }
+            val n = (x ?: y)!!
+            val la = x?.let { SafePath.link(raw[a]!!, it.id) }; val lb = y?.let { SafePath.link(raw[b]!!, it.id) }
+            val kept = x != null && nets[a]!!.exits.any { it.node == x.id } || y != null && nets[b]!!.exits.any { it.node == y.id }
+            val avoided = x != null && nets[a]!!.edges.any { (it.a == x.id || it.b == x.id) && it.state == SafePath.AVOID }
+            val how = (x?.let { xx -> raw[a]!!.exits.firstOrNull { it.node == xx.id }?.how } ?: y?.let { yy -> raw[b]!!.exits.firstOrNull { it.node == yy.id }?.how })
+            val verdict = when { !kept -> "DROPPED"; avoided -> "AVOID (last resort)"; else -> "KEPT" } + if (how == "ford" || how == "bridge") ", a $how" else ""
+            fun w(l: SafePath.Link?) = when (l) { SafePath.Link.LOW -> "low danger"; SafePath.Link.DANGER -> "through mobs"; SafePath.Link.NONE -> "no way back"; null -> "no exit" }
+            c.drawText("Crossing ${i + 1}: $verdict", sx(n.wy) + 26f, sy(n.wx) - 22f, tp)
+            c.drawText("Durotar: ${w(la)}, Barrens: ${w(lb)}", sx(n.wy) + 26f, sy(n.wx) + 12f, tp.apply { textSize = 24f }); tp.textSize = 30f
+            println("BORDER crossing ${i + 1}: $verdict - Durotar ${x?.let { "${it.wx.toInt()},${it.wy.toInt()}" }} ${w(la)}, Barrens ${y?.let { "${it.wx.toInt()},${it.wy.toInt()}" }} ${w(lb)}")
+        }
+        // the towns
+        for (m in listOf(a, b)) for (n in nets[m]!!.nodes) if (n.kind == SafePath.HUB || n.kind == SafePath.FLIGHT || n.kind == SafePath.DOCK) {
+            fill.color = Color.BLACK; c.drawCircle(sx(n.wy), sy(n.wx), 11f, fill)
+            fill.color = when (n.kind) { SafePath.FLIGHT -> Color.rgb(80, 170, 255); SafePath.DOCK -> Color.rgb(200, 120, 255); else -> Color.rgb(120, 220, 110) }
+            c.drawCircle(sx(n.wy), sy(n.wx), 8f, fill)
+            c.drawText(n.name ?: "", sx(n.wy) + 14f, sy(n.wx) + 10f, tp.apply { textSize = 24f }); tp.textSize = 30f
+        }
+        c.drawText("${names(b)} (left) and ${names(a)} (right): both SafePath drafts; gold road, blue spur, orange trail; red = hostile mobs; " +
+            "orange / blue dot = Durotar's / the Barrens' exit (on its bank); cyan = a bridge or ford; magenta dashed = avoided", 16f, H + 46f, Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 28f; color = Color.WHITE })
+        FileOutputStream(File(out, "safepath_border_${a}_$b.png")).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    private fun artGround(art: File, map: Int, rect: MapHarvest.Rect): (Double, Double) -> Float {
+        val dir = File(art, "worldmap/$map")
+        val idx = JSONObject(File(dir, "index.json").readText())
+        val bm = BitmapFactory.decodeFile(File(dir, "base.webp").path).copy(Bitmap.Config.ARGB_8888, true)
+        val c = Canvas(bm)
+        val ovs = idx.optJSONArray("overlays")!!
+        for (i in 0 until ovs.length()) { val o = ovs.getJSONObject(i); BitmapFactory.decodeFile(File(dir, "ov_${o.getInt("id")}.webp").path)?.let {
+            c.drawBitmap(it, null, RectF(o.getInt("x").toFloat(), o.getInt("y").toFloat(), (o.getInt("x") + o.getInt("w")).toFloat(), (o.getInt("y") + o.getInt("h")).toFloat()), null) } }
+        val px = IntArray(bm.width * bm.height); bm.getPixels(px, 0, bm.width, 0, 0, bm.width, bm.height)
+        return SafePath.artGround(px, bm.width, bm.height, rect.t, rect.b, rect.l, rect.r)
+    }
+
+    private fun draw(net: SafePath.Net, rect: MapHarvest.Rect, art: File, map: Int, zg: SafePath.Zones, ar: SafePath.Areas, title: String) {
+        val W = 2004; val H = 1336
+        val b = Bitmap.createBitmap(W, H + 70, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        c.drawColor(Color.rgb(20, 16, 12))
+        val dir = File(art, "worldmap/$map")
+        val idx = JSONObject(File(dir, "index.json").readText())
+        BitmapFactory.decodeFile(File(dir, "base.webp").path)?.let { c.drawBitmap(it, null, RectF(0f, 0f, W.toFloat(), H.toFloat()), null) }
+        val ovs = idx.optJSONArray("overlays")
+        if (ovs != null) for (i in 0 until ovs.length()) {
+            val o = ovs.getJSONObject(i)
+            BitmapFactory.decodeFile(File(dir, "ov_${o.getInt("id")}.webp").path)?.let { bm ->
+                val s = W / 1002f
+                c.drawBitmap(bm, null, RectF(o.getInt("x") * s, o.getInt("y") * s, (o.getInt("x") + o.getInt("w")) * s, (o.getInt("y") + o.getInt("h")) * s), null)
+            }
+        }
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        // the ground that is not this zone's, shaded (where the exits are found)
+        p.color = Color.argb(70, 0, 0, 0)
+        val zw = W / zg.nx.toFloat(); val zh = H / zg.ny.toFloat()
+        for (j in 0 until zg.ny) for (i in 0 until zg.nx) if (ar.uiMap(zg.area[j * zg.nx + i]) != map) c.drawRect(i * zw, j * zh, (i + 1) * zw, (j + 1) * zh, p)
+        fun sx(wy: Double) = ((rect.l - wy) / (rect.l - rect.r) * W).toFloat()
+        fun sy(wx: Double) = ((rect.t - wx) / (rect.t - rect.b) * H).toFloat()
+        val byId = net.nodes.associateBy { it.id }
+        for (pass in 0..1) for (e in net.edges) {
+            val a = byId[e.a]!!; val bb = byId[e.b]!!
+            p.style = Paint.Style.STROKE; p.strokeCap = Paint.Cap.ROUND
+            p.pathEffect = if (e.kind == SafePath.TRAIL) DashPathEffect(floatArrayOf(18f, 12f), 0f) else null
+            if (pass == 0) { p.color = Color.argb(200, 0, 0, 0); p.strokeWidth = if (e.kind == SafePath.ROAD) 11f else 8f }
+            else {
+                p.strokeWidth = if (e.kind == SafePath.ROAD) 6f else 4f
+                p.color = when (e.kind) { SafePath.ROAD -> Color.rgb(255, 209, 0); SafePath.SPUR -> Color.rgb(140, 220, 255); else -> Color.rgb(255, 140, 60) }
+                if (e.danger >= 0.5f) p.color = Color.rgb(230, 40, 40)
+            }
+            c.drawLine(sx(a.wy), sy(a.wx), sx(bb.wy), sy(bb.wx), p)
+        }
+        p.pathEffect = null; p.style = Paint.Style.FILL
+        val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 30f; color = Color.WHITE; setShadowLayer(4f, 0f, 0f, Color.BLACK); isFakeBoldText = true }
+        val taken = ArrayList<RectF>()
+        fun label(text: String, x: Float, y: Float) {
+            var yy = y
+            val w = tp.measureText(text)
+            var r = RectF(x, yy - 28f, x + w, yy + 6f)
+            var guard = 0
+            while (taken.any { RectF.intersects(it, r) } && guard++ < 12) { yy += 34f; r = RectF(x, yy - 28f, x + w, yy + 6f) }
+            taken.add(r)
+            c.drawText(text, x, yy, tp)
+        }
+        for (n in net.nodes) {
+            val x = sx(n.wy); val y = sy(n.wx)
+            when (n.kind) {
+                SafePath.JUNCTION -> { p.color = Color.BLACK; c.drawCircle(x, y, 7f, p); p.color = Color.rgb(255, 230, 120); c.drawCircle(x, y, 5f, p) }
+                SafePath.FLIGHT, SafePath.DOCK, SafePath.HUB -> {
+                    p.color = Color.BLACK; c.drawCircle(x, y, 17f, p)
+                    p.color = when (n.kind) { SafePath.FLIGHT -> Color.rgb(80, 170, 255); SafePath.DOCK -> Color.rgb(200, 120, 255); else -> Color.rgb(120, 220, 110) }
+                    c.drawCircle(x, y, 14f, p)
+                    label(n.name ?: n.kind, x + 20f, y + 10f)
+                }
+                else -> {}
+            }
+        }
+        for (x in net.exits) {
+            val n = byId[x.node]!!
+            val px = sx(n.wy); val py = sy(n.wx)
+            val path = Path().apply { moveTo(px, py - 22f); lineTo(px + 20f, py + 14f); lineTo(px - 20f, py + 14f); close() }
+            p.color = Color.BLACK; c.drawCircle(px, py, 25f, p)
+            p.color = if (x.how == "gate") Color.rgb(255, 80, 80) else Color.rgb(255, 120, 40); c.drawPath(path, p)
+            label("To ${x.name} (${x.how})", px + 28f, py - 10f)
+        }
+        val hp = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 34f; color = Color.WHITE }
+        c.drawText("$title - SafePath first draft: ${net.edges.count { it.kind == SafePath.ROAD }} road, ${net.edges.count { it.kind == SafePath.SPUR }} spur, " +
+            "${net.edges.count { it.kind == SafePath.TRAIL }} trail edges, ${net.exits.size} exits.  Gold road, blue spur, orange dashed trail, red = danger; " +
+            "shaded = another zone's ground", 16f, H + 46f, hp)
+        FileOutputStream(File(out, "safepath_draft_$map.png")).use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+}

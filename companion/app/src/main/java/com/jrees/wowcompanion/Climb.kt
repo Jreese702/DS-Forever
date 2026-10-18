@@ -44,7 +44,29 @@ object Climb {
      * one zone's lattice: its first vertex at global row [gr0] / column [gc0] (rows south from the map's top, columns east), [nx] x [ny]
      * vertices; [cls] each vertex's east step (bits 0-1) and south step (bits 2-3)
      */
-    class Grid(val gr0: Int, val gc0: Int, val nx: Int, val ny: Int, val cls: ByteArray) {
+    class Grid(val gr0: Int, val gc0: Int, val nx: Int, val ny: Int, val cls: ByteArray, val faces: ByteArray? = null) {
+        /** the class of the terrain triangle under world ([wx], [wy]) ([faces]: each cell's north, east, south, west triangles, 2 bits
+         *  each); LEVEL when the faces are not known, a WALL off the grid */
+        fun faceAt(wx: Double, wy: Double): Int {
+            val f = faces ?: return LEVEL
+            val gx = (ORG - wy) / STEP - gc0; val gy = (ORG - wx) / STEP - gr0
+            val i = floor(gx).toInt(); val j = floor(gy).toInt()
+            if (i < 0 || j < 0 || i >= nx || j >= ny) return WALL
+            val fx = gx - i; val fy = gy - j
+            val t = when { fy <= fx && fy <= 1 - fx -> 0; fx >= fy && fx >= 1 - fy -> 1; fy >= fx && fy >= 1 - fx -> 2; else -> 3 }
+            return (f[j * nx + i].toInt() shr (2 * t)) and 3
+        }
+        /** the straight line from world [a] to [b] crosses no wall face (sampled each half yard; at each, the gentlest face within a
+         *  quarter yard - a line along an edge is walked on its gentler side) */
+        fun lineClear(a: DoubleArray, b: DoubleArray): Boolean {
+            if (faces == null) return true
+            val n = max(1, (hypot(b[0] - a[0], b[1] - a[1]) / 0.5).toInt())
+            for (q in 0..n) {
+                val x = a[0] + (b[0] - a[0]) * q / n; val y = a[1] + (b[1] - a[1]) * q / n
+                if (minOf(faceAt(x, y), faceAt(x + 0.25, y), faceAt(x - 0.25, y), faceAt(x, y + 0.25), faceAt(x, y - 0.25)) == WALL) return false
+            }
+            return true
+        }
         fun wx(j: Int) = ORG - (gr0 + j) * STEP
         fun wy(i: Int) = ORG - (gc0 + i) * STEP
         /** the vertex nearest world ([wx], [wy]) (column, row), clamped onto the grid */
@@ -59,22 +81,32 @@ object Climb {
             return when {
                 dj == 0 -> h(i, j, di)
                 di == 0 -> v(i, j, dj)
-                else -> min(max(h(i, j, di), v(i + di, j, dj)), max(v(i, j, dj), h(i, j + dj, di)))
+                else -> {
+                    val corners = min(max(h(i, j, di), v(i + di, j, dj)), max(v(i, j, dj), h(i, j + dj, di)))
+                    // straight across the cell, through its middle vertex: each half of the diagonal walked on the gentler face beside it
+                    val f = faces ?: return corners
+                    val ci = min(i, i + di); val cj = min(j, j + dj)
+                    if (ci < 0 || cj < 0 || ci >= nx || cj >= ny) return WALL
+                    val c = f[cj * nx + ci].toInt(); val nN = c and 3; val nE = (c shr 2) and 3; val nS = (c shr 4) and 3; val nW = (c shr 6) and 3
+                    val across = if (di == dj) max(min(nN, nW), min(nE, nS)) else max(min(nN, nE), min(nS, nW))
+                    max(corners, across)
+                }
             }
         }
         fun write(f: File) {
             f.parentFile?.mkdirs()
             DataOutputStream(GZIPOutputStream(f.outputStream().buffered())).use { o ->
                 o.writeInt(MAGIC); o.writeInt(gr0); o.writeInt(gc0); o.writeInt(nx); o.writeInt(ny); o.write(cls)
+                o.write(faces ?: ByteArray(nx * ny))
             }
         }
         companion object {
-            const val MAGIC = 0x434C4231                       // "CLB1"
+            const val MAGIC = 0x434C4232                       // "CLB2": the steps, then the cells' faces
             fun read(f: File): Grid? = runCatching {
                 DataInputStream(GZIPInputStream(f.inputStream().buffered())).use { i ->
                     if (i.readInt() != MAGIC) return null
                     val gr0 = i.readInt(); val gc0 = i.readInt(); val nx = i.readInt(); val ny = i.readInt()
-                    Grid(gr0, gc0, nx, ny, ByteArray(nx * ny).also { i.readFully(it) })
+                    Grid(gr0, gc0, nx, ny, ByteArray(nx * ny).also { i.readFully(it) }, ByteArray(nx * ny).also { i.readFully(it) })
                 }
             }.getOrNull()
         }
@@ -83,14 +115,24 @@ object Climb {
     /** the lattice over world rect [t] / [b] / [l] / [r] from the vertex heights ([height]: global row, column -> yards; NaN none);
      *  [level] a spot a building's walkway makes level (a city's street, a bridge: its steps level, whatever the terrain under it) */
     fun build(t: Double, b: Double, l: Double, r: Double, height: (Int, Int) -> Float, level: ((Double, Double) -> Boolean)? = null,
-              hole: ((Int, Int) -> Boolean)? = null): Grid {
+              hole: ((Int, Int) -> Boolean)? = null, centre: ((Int, Int) -> Float)? = null): Grid {
         val gr0 = floor((ORG - t) / STEP).toInt(); val gr1 = ceil((ORG - b) / STEP).toInt()
         val gc0 = floor((ORG - l) / STEP).toInt(); val gc1 = ceil((ORG - r) / STEP).toInt()
         val nx = gc1 - gc0 + 1; val ny = gr1 - gr0 + 1
         val cls = ByteArray(nx * ny)
+        val faces = if (centre != null) ByteArray(nx * ny) else null
         for (j in 0 until ny) for (i in 0 until nx) {
             val h = height(gr0 + j, gc0 + i)
             var e = classOf(height(gr0 + j, gc0 + i + 1) - h); var s = classOf(height(gr0 + j + 1, gc0 + i) - h)
+            // the game's own surface (the user on Elwynn: "Jasperlode mine path literally walks up and down a mountain thay cant be
+            // climbed"): each cell four triangles through its middle vertex ([centre]: global row, column of a cell), a ridge between
+            // two outer vertices standing on the middle ones. A step along an edge is walked on the gentler of the two faces beside it.
+            if (centre != null) {
+                val gr = gr0 + j; val gc = gc0 + i
+                val hE = height(gr, gc + 1); val hS = height(gr + 1, gc)
+                e = maxOf(e, minOf(faceClass(h, hE, centre(gr - 1, gc)), faceClass(h, hE, centre(gr, gc))))
+                s = maxOf(s, minOf(faceClass(h, hS, centre(gr, gc - 1)), faceClass(h, hS, centre(gr, gc))))
+            }
             // a step between two holed cells (the terrain opened into a cave: [hole] global row, column of a cell) has no ground
             if (hole != null) {
                 if (hole(gr0 + j - 1, gc0 + i) && hole(gr0 + j, gc0 + i)) e = WALL
@@ -98,8 +140,31 @@ object Climb {
             }
             if (level != null && (e != LEVEL || s != LEVEL) && level(ORG - (gr0 + j) * STEP, ORG - (gc0 + i) * STEP)) { e = LEVEL; s = LEVEL }
             cls[j * nx + i] = (e or (s shl 2)).toByte()
+            // the cell's own four triangles (north, east, south, west of its middle vertex): a straight line across it meets them
+            if (faces != null) {
+                val gr = gr0 + j; val gc = gc0 + i
+                val ha = h; val hb = height(gr, gc + 1); val hc = height(gr + 1, gc); val hd = height(gr + 1, gc + 1); val m = centre!!(gr, gc)
+                val f = when {
+                    hole?.invoke(gr, gc) == true -> WALL or (WALL shl 2) or (WALL shl 4) or (WALL shl 6)
+                    level != null && level(ORG - (gr + 0.5) * STEP, ORG - (gc + 0.5) * STEP) -> 0
+                    else -> faceClass(ha, hb, m) or (faceClass(hb, hd, m) shl 2) or (faceClass(hc, hd, m) shl 4) or (faceClass(ha, hc, m) shl 6)
+                }
+                faces[j * nx + i] = f.toByte()
+            }
         }
-        return Grid(gr0, gc0, nx, ny, cls)
+        return Grid(gr0, gc0, nx, ny, cls, faces)
+    }
+
+    /** the class of the triangle on an edge between two outer vertices ([a], [b]: STEP apart) and a cell's middle vertex [m] (half a
+     *  STEP off the edge, at its middle): by its face's own slope, its normal's angle from the vertical; NaN (no middle) the edge's own */
+    fun faceClass(a: Float, b: Float, m: Float): Int {
+        if (a.isNaN() || b.isNaN()) return WALL
+        if (m.isNaN()) return classOf(b - a)
+        // the edge along x (0..STEP, heights a, b), the middle at (STEP / 2, STEP / 2, m): the normal of (STEP, 0, b - a) x (STEP / 2, STEP / 2, m - a)
+        val ux = STEP; val uz = (b - a).toDouble(); val vx = STEP / 2; val vy = STEP / 2; val vz = (m - a).toDouble()
+        val nx = -uz * vy; val ny = uz * vx - ux * vz; val nz = ux * vy
+        val deg = Math.toDegrees(Math.acos(abs(nz) / Math.sqrt(nx * nx + ny * ny + nz * nz)))
+        return when { deg < CLIMB_DEG -> LEVEL; deg < STEEP_DEG -> CLIMB; deg < WALL_DEG -> STEEP; else -> WALL }
     }
 
     /** a planned leg: world points (x, y) from the start; [reached] false when the goal stands on ground no one can walk to (the leg
@@ -195,6 +260,7 @@ object Climb {
                 if (di == 0 && dj == 0) continue
                 val cl = g.step(ci, cj, di, dj); if (cl == WALL) return Double.MAX_VALUE
                 if (ni !in i0..i1 || nj !in j0..j1) return Double.MAX_VALUE
+                if (q == n && n > 1 && !g.lineClear(doubleArrayOf(g.wx(a[1]), g.wy(a[0])), doubleArrayOf(g.wx(b[1]), g.wy(b[0])))) return Double.MAX_VALUE
                 val x = extraOf(ni, nj); if (x < 0) return Double.MAX_VALUE
                 cost += (if (di != 0 && dj != 0) STEP * 1.41421356 else STEP) * (COST[cl] + x)
                 ci = ni; cj = nj
@@ -221,9 +287,13 @@ object Climb {
             while (b > a + 1 && lineCost(path[a], path[b]) > (along[b] - along[a]) * 1.03 + 1.0) b--
             pts.add(vert(b)); a = b
         }
-        pts[0] = from
+        // the leg's own ends: the start's and the goal's vertices kept (the lines were checked from them), the exact points a short hop
+        // beyond (within their cell)
+        if (hypot(pts[0][0] - from[0], pts[0][1] - from[1]) > 0.5) pts.add(0, from) else pts[0] = from
         val reached = end == goal
-        if (reached && !inCave(pts[pts.size - 1])) pts[pts.size - 1] = to
+        if (reached && !inCave(pts[pts.size - 1])) {
+            if (hypot(pts.last()[0] - to[0], pts.last()[1] - to[1]) > 0.5) pts.add(to) else pts[pts.size - 1] = to
+        }
         return Leg(pts, reached)
     }
     const val MARGIN_YD = 800.0
@@ -244,7 +314,7 @@ object Climb {
             if (g.step(ci, cj, di, dj) == WALL) return false
             ci = ni; cj = nj
         }
-        return true
+        return g.lineClear(a, b)
     }
 
     /** the zones' lattices (the terrain step's), kept in memory */

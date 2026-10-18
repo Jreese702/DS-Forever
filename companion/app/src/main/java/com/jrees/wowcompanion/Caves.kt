@@ -9,7 +9,7 @@ import kotlin.math.sqrt
 /**
  * CAVES AND TUNNELS AS WAYS (b-route-climb; the user on Drygulch Ravine: "there's like caves connecting those walkable spaces. Caves
  * like this need to be logically detected and factored"). A cave is a WMO placed in the hills (MODF); its walkable floor is its
- * groups' own collision triangles (MOPY: a collision face, or a rendered one that is not detail - the server extractors' rule) no
+ * groups' own collision triangles (MOPY, or the newer groups' MPY2: a collision face, or a rendered one that is not detail - the server extractors' rule) no
  * steeper than [FLOOR_DEG]. Where that floor meets the terrain at the terrain's own height on ground one can stand on, the cave has a
  * MOUTH; a floor that reaches two or more mouths is a tunnel joining pockets the cliffs wall apart, and the floor's shortest way
  * between each two of them a [Way] the routes may take (Climb's links). The ADT's holes (MCNK) are where the terrain opens into a cave:
@@ -45,12 +45,13 @@ object Caves {
         return FloatArray(0)
     }
     private fun trisIn(b: ByteArray, from: Int, end: Int): FloatArray {
-        var mopy = -1; var nPoly = 0; var movi = -1; var nIdx = 0; var movt = -1; var nVert = 0
+        var mopy = -1; var nPoly = 0; var polyStride = 2; var movi = -1; var nIdx = 0; var movt = -1; var nVert = 0
         var o = from
         while (o + 8 <= end) {
             val n = Db2.le32(b, o + 4); if (n < 0 || o + 8 + n > end) break
             when (tag(b, o)) {
-                "MOPY" -> { mopy = o + 8; nPoly = n / 2 }
+                "MOPY" -> { mopy = o + 8; nPoly = n / 2; polyStride = 2 }
+                "MPY2" -> { mopy = o + 8; nPoly = n / 4; polyStride = 4 }      // the newer groups: a face's flags (16 bits), its material
                 "MOVI" -> { movi = o + 8; nIdx = n / 2 }
                 "MOVT" -> { movt = o + 8; nVert = n / 12 }
             }
@@ -61,7 +62,7 @@ object Caves {
         val out = ArrayList<Float>()
         fun v(i: Int, c: Int) = java.lang.Float.intBitsToFloat(Db2.le32(b, movt + i * 12 + c * 4))
         for (t in 0 until minOf(nPoly, nIdx / 3)) {
-            val fl = b[mopy + t * 2].toInt() and 0xFF
+            val fl = b[mopy + t * polyStride].toInt() and 0xFF
             val render = fl and 0x20 != 0 && fl and 0x04 == 0
             if (fl and 0x08 == 0 && !render) continue
             val ix = IntArray(3) { (b[movi + (t * 3 + it) * 2].toInt() and 0xFF) or ((b[movi + (t * 3 + it) * 2 + 1].toInt() and 0xFF) shl 8) }
