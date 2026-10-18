@@ -23,6 +23,21 @@ object Caves {
     const val MOUTH_GAP_YD = 25.0          // mouths farther apart than this are separate openings
     const val SIMPLIFY_YD = 3.0            // a way's points kept at least this far apart
     const val FLOOR_SAMPLE_YD = 4          // the floor's footprint kept a point a square this size
+    const val STEP_JOIN_YD = 0.8           // a stair's treads (their risers no floor): vertices this near across ...
+    const val STEP_UP_YD = 1.5             // ... and no more than this apart in height are one step
+
+    /** the floor's steps joined: each two vertices within [STEP_JOIN_YD] across and [STEP_UP_YD] up (a stair's treads, a ledge's lip) */
+    private fun joinSteps(xs: List<Double>, ys: List<Double>, zs: List<Double>, link: (Int, Int) -> Unit) {
+        val grid = HashMap<Long, ArrayList<Int>>()
+        fun key(i: Long, j: Long) = (i shl 32) xor (j and 0xFFFFFFFFL)
+        for (v in xs.indices) grid.getOrPut(key(Math.floor(xs[v]).toLong(), Math.floor(ys[v]).toLong())) { ArrayList() }.add(v)
+        for (v in xs.indices) {
+            val bx = Math.floor(xs[v]).toLong(); val by = Math.floor(ys[v]).toLong()
+            for (i in -1L..1L) for (j in -1L..1L) grid[key(bx + i, by + j)]?.forEach { w ->
+                if (w > v && hypot(xs[w] - xs[v], ys[w] - ys[v]) <= STEP_JOIN_YD && abs(zs[w] - zs[v]) <= STEP_UP_YD) link(v, w)
+            }
+        }
+    }
 
     /** the WMO name parts that mark a cave, a tunnel, a mine, a den, a pass (Coldridge Valley's tunnel is md_anvilmarpass/anvilmarpass.wmo),
      *  a crypt or a barrow (Tirisfal's md_cryptonerm and md_crypt, Teldrassil's Ban'ethil barrow den), a hollow, a grave */
@@ -108,6 +123,7 @@ object Caves {
                 for ((u, w) in listOf(a to b, b to c, c to a)) if (u != w) { adj[u].add(w); adj[w].add(u) }
             }
         }
+        joinSteps(xs, ys, zs) { u, w -> adj[u].add(w); adj[w].add(u) }
         val n = xs.size
         // its pieces (a cave's floor can be several: a ledge, a pit)
         val comp = IntArray(n) { -1 }; var nc = 0
@@ -150,6 +166,87 @@ object Caves {
         val floor = (0 until n).groupBy { Math.floorDiv(Math.round(xs[it]), FLOOR_SAMPLE_YD.toLong()) * 100000 + Math.floorDiv(Math.round(ys[it]), FLOOR_SAMPLE_YD.toLong()) }
             .values.map { vs -> vs.minByOrNull { zs[it] }!!.let { doubleArrayOf(xs[it], ys[it], zs[it]) } }
         return Cave(p.fid, p.uid, p.ox, p.oy, mouths.map { doubleArrayOf(xs[it], ys[it], zs[it]) }, ways, floor)
+    }
+
+    /**
+     * one walkable floor across several placed WMOs ([parts]: each placement with its groups' files), welded where they meet: a place
+     * built in the air (Zephras' Rohashi Spires: a sanctuary, its stairs and perimeter paths, the confrontation platform) is walked on
+     * these floors alone. Points world (x, y, z).
+     */
+    class Floor(val xs: DoubleArray, val ys: DoubleArray, val zs: DoubleArray, val adj: Array<IntArray>) {
+        val size get() = xs.size
+        /** the floor's pieces: each vertex's piece number */
+        val piece: IntArray by lazy {
+            val c = IntArray(size) { -1 }; var nc = 0
+            for (s in 0 until size) if (c[s] < 0) {
+                val st = ArrayDeque<Int>(); st.add(s); c[s] = nc
+                while (st.isNotEmpty()) { val u = st.removeLast(); for (w in adj[u]) if (c[w] < 0) { c[w] = nc; st.add(w) } }
+                nc++
+            }
+            c
+        }
+        /** the vertex nearest world ([x], [y]) on the floor (within piece [inPiece] when given): the highest of those within 2 yd of it
+         *  ([high]), else the lowest - a tower's floors stand over each other */
+        fun near(x: Double, y: Double, high: Boolean = true, inPiece: Int = -1): Int {
+            var best = -1; var bd = Double.MAX_VALUE
+            for (v in 0 until size) { if (inPiece >= 0 && piece[v] != inPiece) continue
+                val d = hypot(xs[v] - x, ys[v] - y); if (d < bd) { bd = d; best = v } }
+            if (best < 0) return -1
+            return (0 until size).filter { (inPiece < 0 || piece[it] == inPiece) && hypot(xs[it] - x, ys[it] - y) <= bd + 2.0 }
+                .let { c -> if (high) c.maxByOrNull { zs[it] } else c.minByOrNull { zs[it] } } ?: best
+        }
+        /** the floor's shortest way from vertex [a] to [b] (3D lengths), its points kept SIMPLIFY_YD apart; null when they don't join */
+        fun path(a: Int, b: Int): List<DoubleArray>? {
+            if (a < 0 || b < 0 || piece[a] != piece[b]) return null
+            val dist = DoubleArray(size) { Double.MAX_VALUE }; val prev = IntArray(size) { -1 }
+            val pq = PriorityQueue<DoubleArray>(compareBy { it[0] }); dist[a] = 0.0; pq.add(doubleArrayOf(0.0, a.toDouble()))
+            while (pq.isNotEmpty()) {
+                val top = pq.poll(); val u = top[1].toInt(); if (top[0] > dist[u]) continue; if (u == b) break
+                for (w in adj[u]) {
+                    val d = dist[u] + sqrt((xs[w] - xs[u]).let { it * it } + (ys[w] - ys[u]).let { it * it } + (zs[w] - zs[u]).let { it * it })
+                    if (d < dist[w]) { dist[w] = d; prev[w] = u; pq.add(doubleArrayOf(d, w.toDouble())) }
+                }
+            }
+            if (dist[b] == Double.MAX_VALUE) return null
+            val chain = ArrayList<Int>(); var c = b; while (c != -1) { chain.add(c); c = prev[c] }
+            chain.reverse()
+            val pts = ArrayList<DoubleArray>()
+            for ((q, v) in chain.withIndex()) {
+                val pt = doubleArrayOf(xs[v], ys[v], zs[v])
+                if (q == 0 || q == chain.size - 1 || hypot(pt[0] - pts.last()[0], pt[1] - pts.last()[1]) >= SIMPLIFY_YD || abs(pt[2] - pts.last()[2]) >= SIMPLIFY_YD) pts.add(pt)
+            }
+            return pts
+        }
+        fun length(pts: List<DoubleArray>) = pts.zipWithNext { p, q -> sqrt((q[0] - p[0]).let { it * it } + (q[1] - p[1]).let { it * it } + (q[2] - p[2]).let { it * it }) }.sum()
+    }
+
+    /** the walkable floor of [parts] (placements with their groups' files) as one [Floor] */
+    fun floor(parts: List<Pair<WorldBuildings.Placement, List<ByteArray>>>): Floor {
+        val bucket = HashMap<Long, ArrayList<Int>>(); val xs = ArrayList<Double>(); val ys = ArrayList<Double>(); val zs = ArrayList<Double>()
+        val adj = ArrayList<HashSet<Int>>()
+        fun bk(a: Long, b: Long, c: Long) = (a and 0x1FFFFFL) or ((b and 0x1FFFFFL) shl 21) or ((c and 0x1FFFFFL) shl 42)
+        fun vid(x: Double, y: Double, z: Double): Int {
+            val bx = Math.floor(x).toLong(); val by = Math.floor(y).toLong(); val bz = Math.floor(z).toLong()
+            for (i in -1L..1L) for (j in -1L..1L) for (k in -1L..1L) bucket[bk(bx + i, by + j, bz + k)]?.forEach { v ->
+                if ((xs[v] - x) * (xs[v] - x) + (ys[v] - y) * (ys[v] - y) + (zs[v] - z) * (zs[v] - z) <= WELD_YD * WELD_YD) return v
+            }
+            xs.add(x); ys.add(y); zs.add(z); adj.add(HashSet())
+            bucket.getOrPut(bk(bx, by, bz)) { ArrayList() }.add(xs.size - 1)
+            return xs.size - 1
+        }
+        for ((p, groups) in parts) {
+            val cs = cos(p.yaw); val sn = Math.sin(p.yaw)
+            fun w(lx: Float, ly: Float, lz: Float) = vid(p.ox - lx * p.scale * cs + ly * p.scale * sn, p.oy - lx * p.scale * sn - ly * p.scale * cs, p.oz + lz * p.scale)
+            for (g in groups) {
+                val t = floorTris(g)
+                for (q in 0 until t.size / 9) {
+                    val a = w(t[q * 9], t[q * 9 + 1], t[q * 9 + 2]); val b = w(t[q * 9 + 3], t[q * 9 + 4], t[q * 9 + 5]); val c = w(t[q * 9 + 6], t[q * 9 + 7], t[q * 9 + 8])
+                    for ((u, v) in listOf(a to b, b to c, c to a)) if (u != v) { adj[u].add(v); adj[v].add(u) }
+                }
+            }
+        }
+        joinSteps(xs, ys, zs) { u, w -> adj[u].add(w); adj[w].add(u) }
+        return Floor(xs.toDoubleArray(), ys.toDoubleArray(), zs.toDoubleArray(), Array(adj.size) { adj[it].toIntArray() })
     }
 
     private fun tag(b: ByteArray, o: Int) = String(charArrayOf(b[o + 3].toInt().toChar(), b[o + 2].toInt().toChar(), b[o + 1].toInt().toChar(), b[o].toInt().toChar()))

@@ -178,6 +178,25 @@ class ClimbTest {
         assertTrue("${cave.ways[0].yd}", abs(cave.ways[0].yd - 40) < 3)
     }
 
+    @Test fun aPortalGoesOneWay() {
+        // the 50 yd cliff along y 0 again; a portal from the low side to the high side, one way
+        val g = grid { _, wy -> if (wy > 0) 0.0 else 50.0 }
+        val portal = Climb.Link(listOf(doubleArrayOf(20.0, 20.0, 0.0), doubleArrayOf(20.0, -20.0, 50.0)), 15.0, oneWay = true)
+        assertTrue(Climb.route(g, doubleArrayOf(0.0, 100.0), doubleArrayOf(0.0, -100.0), links = listOf(portal))!!.reached)
+        assertFalse(Climb.route(g, doubleArrayOf(0.0, -100.0), doubleArrayOf(0.0, 100.0), links = listOf(portal))!!.reached)
+    }
+
+    @Test fun aStairsTreadsAreOneFloor() {
+        // three treads 2 yd deep, each 1 yd up and 0.5 yd on from the last (the risers no floor): one way up them
+        val tris = ArrayList<List<FloatArray>>()
+        for (k in 0 until 3) { val x0 = k * 2.5f; val z = k.toFloat()
+            tris.add(listOf(f(x0, -1, z), f(x0 + 2, -1, z), f(x0, 1, z))); tris.add(listOf(f(x0 + 2, -1, z), f(x0 + 2, 1, z), f(x0, 1, z))) }
+        val fl = Caves.floor(listOf(WorldBuildings.Placement(1, 1, 0.0, 0.0, 0.0, 0.0, 1.0) to listOf(group(tris))))
+        assertEquals(1, fl.piece.toSet().size)
+        val bottom = (0 until fl.size).minByOrNull { fl.zs[it] }!!; val top = (0 until fl.size).maxByOrNull { fl.zs[it] }!!
+        assertNotNull(fl.path(bottom, top))
+    }
+
     @Test fun anAdtHoleIsReadFromItsChunk() {
         // one MCNK (index 0, 0), its low-res holes 0x0001: the chunk's first 2 x 2 cells
         val hdr = ByteBuffer.allocate(128).order(ByteOrder.LITTLE_ENDIAN); hdr.putShort(0x3C, 1)

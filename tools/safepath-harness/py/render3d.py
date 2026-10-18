@@ -126,6 +126,12 @@ for cv in data['caves']:
     for m in cv['mouths']:
         r, c = vert(m[0], m[1]); x, y = c * SC, r * SC
         dr.polygon([(x, y - 8), (x + 8, y), (x, y + 8), (x - 8, y)], fill=CAVE, outline=(0, 0, 0))
+LINK = (60, 230, 255)
+for lk in data.get('manualLinks', []):
+    xy = [(c * SC, r * SC) for r, c in (vert(p[0], p[1]) for p in lk['pts'])]
+    dashed(dr, xy, (0, 0, 0), 8, 14, 6); dashed(dr, xy, LINK, 4, 14, 6)
+    mx, my = xy[len(xy) // 2]
+    text(dr, (mx + 10, my), 'manual link: ' + lk['kind'], FONTS, LINK, 'lm')
 for i, rt in enumerate(data['routes']):
     pts = [vert(p[0], p[1]) for p in rt['pts']]; xy = [(c * SC, r * SC) for r, c in pts]
     for cv, part in runs(rt['pts']):
@@ -196,6 +202,10 @@ for z in data['subzones']:
 # a cave's floor height at a point: its nearest way point's
 CPTS = [p for cv in data['caves'] for w in cv['ways'] for p in w]
 def cave_z(x, y): return min(CPTS, key=lambda p: (p[0] - x) ** 2 + (p[1] - y) ** 2)[2] if CPTS else None
+for lk in data.get('manualLinks', []):
+    xy = [p3(p[0], p[1], 2, p[2]) for p in lk['pts']]
+    dashed(d3, xy, (0, 0, 0), 7, 14, 6); dashed(d3, xy, (60, 230, 255), 4, 14, 6)
+    text(d3, xy[len(xy) // 2], lk['kind'], FONTS, (60, 230, 255))
 for cv in data['caves']:
     for w in cv['ways']:
         xy = [p3(p[0], p[1], 2, p[2]) for p in w]

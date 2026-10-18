@@ -112,7 +112,10 @@ class RenderSafePath {
             // a zone's own friendly NPCs QuestieDB codes hostile to both (WoW Forever's new factions): those at a placeholder level
             // (the spec's friendlyMinLevel, e.g. 9999) are no mobs - made the player's side's, so they count for the towns, not the danger
             val friendlyMin = spec?.optInt("friendlyMinLevel", Int.MAX_VALUE) ?: Int.MAX_VALUE
-            val here = spawns.filter { it.area == area }.map { sp -> if (sp.minLv >= friendlyMin && sp.hostile != foe)
+            // and a zone's own peoples the guides call friendly to all (the spec's friendlyNames, regexes: Zephras' Windshapers and High
+            // Order - the isle shared by both factions; QuestieDB's kill links to them are beta leftovers)
+            val friendlyNames = spec?.optJSONArray("friendlyNames")?.let { a -> (0 until a.length()).map { Regex(a.getString(it)) } } ?: emptyList()
+            val here = spawns.filter { it.area == area }.map { sp -> if ((sp.minLv >= friendlyMin || friendlyNames.any { it.containsMatchIn(sp.name) }) && sp.hostile != foe)
                 QuestieNpcs.Spawn(sp.area, sp.x, sp.y, sp.minLv, sp.maxLv, sp.elite, foe, sp.name, sp.sub) else sp }
             val hostile = here.filter { it.hostile == mine || it.hostile == 3 }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
             val friendly = here.filter { it.hostile == foe }.map { SafePath.Npc(rect.t - it.y * ay, rect.l - it.x * ax, it.sub) }
@@ -230,6 +233,49 @@ class RenderSafePath {
         }.filter { it.mouths.isNotEmpty() }
         for (c in caves) println("CAVE ${c.fid} at ${c.wx.toInt()},${c.wy.toInt()}: ${c.mouths.size} mouths ${c.mouths.joinToString { "${it[0].toInt()},${it[1].toInt()} z ${it[2].toInt()}" }}; ${c.ways.size} ways ${c.ways.joinToString { "${it.yd.toInt()} yd" }}")
         links = caves.flatMap { c -> c.ways.map { Climb.Link(it.pts, it.yd) } }
+        // AN AIR CHAIN (the spec's "airChain": Zephras' Rohashi Spires, floating): a portal from the ground to the lowest floor of the
+        // place built in the air, its own floors (stairs, perimeter paths) up to a stair top, an updraft across to a platform, and the
+        // way out (a portal back down). Manual links - the game keeps portals and updrafts server-side
+        val manual = org.json.JSONArray()
+        var platformAt: DoubleArray? = null
+        spec?.optJSONObject("airChain")?.let { ac ->
+            fun xyOf(k: String) = ac.optJSONArray(k)?.let { doubleArrayOf(it.getDouble(0), it.getDouble(1)) }
+            val fids = ac.getJSONArray("floor").let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() }
+            val near = xyOf("near")!!
+            val parts = placed.filter { it.fid in fids && Math.hypot(it.ox - near[0], it.oy - near[1]) < 600 }.map { p ->
+                p to (0 until 200).map { File(gdir, "${p.fid}_$it") }.takeWhile { it.isFile }.map { it.readBytes() } }
+            val fl = Caves.floor(parts)
+            val pieceSize = fl.piece.toList().groupingBy { it }.eachCount()
+            /** the floor at world xy: of the vertices within 6 yd, the one on the largest piece (a deck, a platform - not a ledge) */
+            fun onLargest(x: Double, y: Double): Int = (0 until fl.size).filter { Math.hypot(fl.xs[it] - x, fl.ys[it] - y) < 6.0 }
+                .maxWithOrNull(compareBy<Int> { pieceSize[fl.piece[it]] ?: 0 }.thenBy { -Math.hypot(fl.xs[it] - x, fl.ys[it] - y) }) ?: fl.near(x, y)
+            val baseXY = xyOf("base")!!; val topXY = xyOf("stairTop")!!; val platXY = xyOf("platform")!!
+            val base = fl.near(baseXY[0], baseXY[1], high = true)                  // the sanctuary's top floor
+            val top = onLargest(topXY[0], topXY[1])                                // the Peacekeeper's deck
+            val deckIn = (0 until fl.size).filter { fl.piece[it] == fl.piece[top] }.minByOrNull { Math.hypot(fl.xs[it] - fl.xs[base], fl.ys[it] - fl.ys[base]) }!!
+            val plat = onLargest(platXY[0], platXY[1])                             // Lorthuna's platform
+            fun pt(v: Int) = doubleArrayOf(fl.xs[v], fl.ys[v], fl.zs[v])
+            val stairsRead = fl.path(base, deckIn)
+            val deck = fl.path(deckIn, top)
+            println("AIRCHAIN floor ${fl.size} vertices, ${pieceSize.size} pieces, ${parts.size} placements; sanctuary ${pt(base).map { it.toInt() }}; " +
+                "deck (${pieceSize[fl.piece[top]]} vertices) from ${pt(deckIn).map { it.toInt() }} to the stair top ${pt(top).map { it.toInt() }}; " +
+                "platform (${pieceSize[fl.piece[plat]]} vertices) ${pt(plat).map { it.toInt() }}; stairs ${if (stairsRead != null) "read: ${fl.length(stairsRead).toInt()} yd" else "NOT in the floors (a manual link)"}")
+            val from = xyOf("portalFrom")!!; val exit = xyOf("exitTo")!!
+            val chain = listOf(
+                Triple("portal", listOf(doubleArrayOf(from[0], from[1], height(from[0], from[1]).toDouble()), pt(base)), true),
+                Triple(if (stairsRead != null) "stairs" else "stairs (not read)", stairsRead ?: listOf(pt(base), pt(deckIn)), false),
+                Triple("deck", deck ?: listOf(pt(deckIn), pt(top)), false),
+                Triple("updraft", listOf(pt(top), pt(plat)), true),
+                Triple("portal (out)", listOf(pt(plat), doubleArrayOf(exit[0], exit[1], height(exit[0], exit[1]).toDouble())), true))
+            for ((kind, pts, oneWay) in chain) {
+                if (pts.size < 2) continue
+                val yd = if (oneWay) 15.0 else fl.length(pts)                  // a portal or an updraft: a few seconds
+                links = links + Climb.Link(pts, yd, oneWay)
+                manual.put(org.json.JSONObject().put("kind", kind).put("pts", org.json.JSONArray(pts.map { org.json.JSONArray(listOf(it[0], it[1], it[2])) })))
+            }
+            platformAt = doubleArrayOf(fl.xs[plat], fl.ys[plat])
+
+        }
         /** a cave's mouth as a goal: the nearest to the start of those with walkable ground all round (no wall face within 2 yd: a
          *  den's opening, not a spot on its roof where the floor happens to meet a slope) */
         fun caveMouth(fid: Int, nearX: Double, nearY: Double, from: DoubleArray?): DoubleArray? {
@@ -291,6 +337,7 @@ class RenderSafePath {
                 to.has("camp") -> camp(to.getString("camp"))
                 to.has("mob") -> mob(to.getString("mob"), near)
                 to.has("node") -> at(to.getString("node"))
+                to.optBoolean("airChainTop") -> platformAt
                 to.has("exit") -> net.exits.firstOrNull { it.name.equals(to.getString("exit"), true) && (!to.has("how") || it.how == to.getString("how")) }
                     ?.let { x -> net.nodes.firstOrNull { it.id == x.node } }?.let { doubleArrayOf(it.wx, it.wy) }
                 else -> xy(to.optJSONArray("xy"))
@@ -442,6 +489,7 @@ class RenderSafePath {
                 p.groupBy { zg.areaAt(it[0], it[1]) }.maxByOrNull { it.value.size }?.key?.let { areas[it]?.name } ?: "")) }
         export.put("mobs", org.json.JSONArray(mobs))
         export.put("exitChecks", exitChecks)
+        export.put("manualLinks", manual)
         export.put("zone", tag).put("rect", org.json.JSONArray(listOf(rect.t, rect.b, rect.l, rect.r)))
         export.put("subzones", org.json.JSONArray(cells.map { (a, cs0) -> org.json.JSONObject().put("name", areas[a]?.name ?: "")
             .put("wx", cs0.map { it[0] }.average()).put("wy", cs0.map { it[1] }.average()).put("n", cs0.size) }))

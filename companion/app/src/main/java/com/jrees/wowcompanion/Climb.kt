@@ -172,7 +172,7 @@ object Climb {
     class Leg(val pts: List<DoubleArray>, val reached: Boolean)
 
     /** a way the lattice does not see: a cave's or a tunnel's floor between two mouths ([Caves.Way]: world x, y, z points; [yd] along) */
-    class Link(val pts: List<DoubleArray>, val yd: Double)
+    class Link(val pts: List<DoubleArray>, val yd: Double, val oneWay: Boolean = false)    // oneWay: a portal, an updraft - from its first point only
 
     /** a point of a leg inside a cave: world x, y and this mark (its ground is the cave's floor, not the terrain over it) */
     const val IN_CAVE = 1.0
@@ -214,7 +214,7 @@ object Climb {
             linkCost[li] = lk.yd + k * lk.pts.zipWithNext { a, b -> val mx = (a[0] + b[0]) / 2; val my = (a[1] + b[1]) / 2
                 hypot(b[0] - a[0], b[1] - a[1]) * danger(mx, my) * (hypot(mx - to[0], my - to[1]) / fade).coerceAtMost(1.0) }.sum()
             jumps.getOrPut(id(p[0], p[1])) { ArrayList() }.add(intArrayOf(id(q[0], q[1]), li, 0))
-            jumps.getOrPut(id(q[0], q[1])) { ArrayList() }.add(intArrayOf(id(p[0], p[1]), li, 1))
+            if (!lk.oneWay) jumps.getOrPut(id(q[0], q[1])) { ArrayList() }.add(intArrayOf(id(p[0], p[1]), li, 1))
         }
         val via = IntArray(w * hgt) { -1 }                     // how a vertex was reached: a link (its index x 2 + its way back) or a step
         fun hEst(i: Int, j: Int) = hypot((i - e[0]).toDouble(), (j - e[1]).toDouble()) * STEP
@@ -297,6 +297,9 @@ object Climb {
         // the goal's exact point only where the hop to it crosses no wall face (a network point 2 yd up a cliff, an unreachable goal):
         // else the leg ends at its last vertex, short of it
         var arrived = reached
+        // a goal reached by a link (a portal's, an updraft's, a floor's in the air): the leg ends on the link's own last point
+        if (reached && pts.size >= 2 && inCave(pts[pts.size - 2]) && !inCave(pts.last()) && hypot(pts[pts.size - 2][0] - to[0], pts[pts.size - 2][1] - to[1]) <= 3.0)
+            pts.removeAt(pts.size - 1)
         if (reached && !inCave(pts[pts.size - 1])) {
             if (hypot(pts.last()[0] - to[0], pts.last()[1] - to[1]) <= 0.5) pts[pts.size - 1] = to
             else if (g.lineClear(pts.last(), to)) pts.add(to) else arrived = false
