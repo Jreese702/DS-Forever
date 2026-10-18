@@ -48,6 +48,12 @@ object SafePath {
     const val DANGER_COST = 4f             // ... and a dangerous cell costs up to this much more to a spur or a trail
     const val HUB_YD = 110.0               // the player's side's creatures this near each other are one town ...
     const val HUB_MIN = 5                  // ... when there are this many
+    const val HUB_BY_STOP_YD = 150.0       // a town this near a flight master or a dock is that stop's (its NPCs are its crew)
+    const val DOCK_SAME_YD = 60.0          // docks this near are one tower / pier
+    const val STUB_YD = 250.0              // a dead end shorter than this goes (a road's fragment that leads nowhere) ...
+    const val DANGER_STUB_YD = 600.0       // ... and a mostly dangerous one shorter than this
+    const val TRAIL_STUB_YD = 400.0        // ... and one reached by a trail with less road than this at its end
+    const val STRAY_CELLS = 24             // a piece left apart this small, with no stop or exit on it, goes
 
     class Node(val id: Int, val wx: Double, val wy: Double, val kind: String, val src: String = "auto", val name: String? = null)
     class Edge(val a: Int, val b: Int, val kind: String, val state: String = DRAFT, val src: String = "auto", val danger: Float = 0f)
@@ -91,7 +97,8 @@ object SafePath {
     class Input(val map: Int, val cont: Int, val t: Double, val b: Double, val l: Double, val r: Double,
                 val road: (Double, Double) -> Boolean, val cost: (Double, Double) -> Float, val zoneAt: (Double, Double) -> Int,
                 val fixed: List<Fixed> = emptyList(), val nameOf: (Int) -> String = { "" },
-                val danger: ((Double, Double) -> Float)? = null, val capitals: Set<Int> = CityExits.CITIES)
+                val danger: ((Double, Double) -> Float)? = null, val capitals: Set<Int> = CityExits.CITIES,
+                val ground: ((Double, Double) -> Float)? = null)
 
     /** the zone's first draft */
     fun draft(inp: Input, built: String = ""): Net = Builder(inp).build(built)
@@ -112,7 +119,10 @@ object SafePath {
         val n = nx * ny
         val own = inp.map
         val zone = IntArray(n) { k -> inp.zoneAt(wxOf(k), wyOf(k)) }
-        val cost = FloatArray(n) { k -> inp.cost(wxOf(k), wyOf(k)) }
+        val cost = FloatArray(n) { k ->
+            val c = inp.cost(wxOf(k), wyOf(k)); val g = inp.ground?.invoke(wxOf(k), wyOf(k)) ?: 1f
+            if (g >= Terrain.WALL) Terrain.WALL else if (c.isNaN()) g else c * g
+        }
         val danger = FloatArray(n) { k -> inp.danger?.invoke(wxOf(k), wyOf(k)) ?: 0f }
         fun passable(k: Int) = !cost[k].isNaN() && cost[k] < Terrain.WALL
 
@@ -158,11 +168,16 @@ object SafePath {
             borderEnds()
             mergeExits()
             val roadless = edges.isEmpty()
-            for (f in inp.fixed) fixed(f)
+            for (f in stops(inp.fixed)) fixed(f)
             // a zone with no road of its own (a capital: its streets are buildings, its ground plain dirt): its points joined by trails,
             // its ways out found from them
             if (roadless) { linkPoints(); waysOut(); mergeExits() }
             joinPieces()
+            // the clean-up: trails that only double a road, the pieces they leave apart, the stubs that lead nowhere
+            dropDoubles()
+            joinPieces()
+            dropStrays()
+            trimStubs()
             val out = edges.map { e ->
                 // its danger: the share of its length that passes hostile creatures (two or more near)
                 val d = if (e.cells.isEmpty()) 0f else e.cells.count { danger[it] >= 0.6f }.toFloat() / e.cells.size
@@ -454,6 +469,71 @@ object SafePath {
             }
         }
 
+        /** the stops: a town this near a flight master or a dock is that stop's (the zeppelin tower's crew is not a town) */
+        fun stops(all: List<Fixed>): List<Fixed> = all.filter { f ->
+            f.kind != HUB || all.none { o -> o.kind == DOCK && hypot(o.wx - f.wx, o.wy - f.wy) < HUB_BY_STOP_YD }
+        }
+        fun reindex() { cellEdge.clear(); for (e in edges) for (c in e.cells) if (c !in cellEdge) cellEdge[c] = e }
+        /** a trail between two places the network already joins without it only doubles a way (the longest such first); a trail
+         *  filling a road's gap (its texture missing on a bridge or a bend) joins what nothing else does, and stays */
+        fun dropDoubles() {
+            for (e in edges.filter { it.kind == TRAIL }.sortedByDescending { it.cells.size }) {
+                val adj = HashMap<Int, MutableList<Int>>()
+                for (o in edges) if (o !== e) { adj.getOrPut(o.a) { ArrayList() }.add(o.b); adj.getOrPut(o.b) { ArrayList() }.add(o.a) }
+                val seen = hashSetOf(e.a); val q = ArrayDeque(listOf(e.a))
+                while (q.isNotEmpty() && e.b !in seen) for (x in adj[q.removeFirst()] ?: emptyList()) if (seen.add(x)) q.add(x)
+                if (e.b in seen) edges.remove(e)
+            }
+            reindex()
+        }
+        fun pieces(): Map<Int, List<E>> {
+            val parent = HashMap<Int, Int>()
+            fun find(x: Int): Int { var a = x; while ((parent[a] ?: a) != a) a = parent[a]!!; return a }
+            for (e in edges) { val a = find(e.a); val b = find(e.b); if (a != b) parent[a] = b }
+            return edges.groupBy { find(it.a) }
+        }
+        /** a small piece left apart with no stop or exit on it */
+        fun dropStrays() {
+            val keep = exits.map { it.node }.toHashSet() + fixedIds
+            val ps = pieces()
+            val main = ps.maxByOrNull { (_, es) -> es.sumOf { it.cells.size } }?.key
+            for ((root, es) in ps) {
+                if (root == main || es.sumOf { it.cells.size } >= STRAY_CELLS) continue
+                if (es.any { it.a in keep || it.b in keep }) continue
+                edges.removeAll(es.toSet())
+            }
+            reindex()
+        }
+        /** a dead end that leads nowhere: short, or mostly among hostile creatures and not long (never one ending at a stop or an exit) */
+        fun trimStubs() {
+            val keep = exits.map { it.node }.toHashSet() + fixedIds
+            repeat(6) {
+                val deg = HashMap<Int, Int>()
+                for (e in edges) { deg[e.a] = (deg[e.a] ?: 0) + 1; deg[e.b] = (deg[e.b] ?: 0) + 1 }
+                var removed = false
+                for ((start, d) in deg.toList()) {
+                    if (d != 1 || start in keep) continue
+                    val chain = ArrayList<E>(); var cur = start
+                    while (true) {
+                        val e = edges.firstOrNull { (it.a == cur || it.b == cur) && it !in chain } ?: break
+                        chain.add(e)
+                        cur = if (e.a == cur) e.b else e.a
+                        if (deg[cur] != 2 || cur in keep) break
+                    }
+                    if (chain.isEmpty() || chain.any { it !in edges }) continue
+                    val cells = chain.sumOf { it.cells.size }
+                    val bad = chain.sumOf { e -> e.cells.count { danger[it] >= 0.6f } }
+                    val yd = cells * CELL_YD
+                    // a road's fragment reached only by a trail and leading nowhere goes too (the trail was only there to join it)
+                    val roadYd = chain.filter { it.kind == ROAD }.sumOf { it.cells.size } * CELL_YD
+                    val viaTrail = chain.any { it.kind == TRAIL } && roadYd < TRAIL_STUB_YD
+                    if (yd < STUB_YD || (bad * 2 >= cells && yd < DANGER_STUB_YD) || viaTrail) { edges.removeAll(chain.toSet()); removed = true }
+                }
+                reindex()
+                if (!removed) return
+            }
+        }
+
         /** the network's pieces: each smaller one joined to the biggest by a trail (the review looks at every trail) */
         fun joinPieces() {
             repeat(12) {
@@ -618,7 +698,7 @@ object SafePath {
         RouteWork.run({
             Roads.of(map) ?: return@run "no road textures yet"
             val roadCells = Roads.roadCells(map)
-            if (roadCells == 0) return@run "no learned roads yet"
+            if (roadCells == 0 && map !in CityExits.CITIES) return@run "no learned roads yet"
             val tg = Terrain.of(map) ?: return@run "no terrain yet"
             val zg = zones.get(map) ?: return@run "no zone ground yet"
             val ar = areas() ?: return@run "no areas table yet"
@@ -633,10 +713,12 @@ object SafePath {
             val spawns = DangerStore.spawns(map)
             val ax = l - r; val ay = t - b
             val hostile = spawns.filter { it.hostile == mine || it.hostile == 3 }.map { doubleArrayOf(t - it.y * ay, l - it.x * ax) }
-            val friendly = spawns.filter { it.hostile != mine && it.hostile != 3 }.map { doubleArrayOf(t - it.y * ay, l - it.x * ax) }
+            val friendly = spawns.filter { it.hostile != mine && it.hostile != 3 }.map { Npc(t - it.y * ay, l - it.x * ax, it.sub) }
+            val ground = if (map in CityExits.CITIES) artPixels(map)?.let { (px, w, h) -> artGround(px, w, h, t, b, l, r) } else null
             val net = draft(Input(map, cont, t, b, l, r, { wx, wy -> Roads.isRoad(map, wx, wy) },
                 { wx, wy -> Terrain.factor(tg.at(wx, wy)) }, { wx, wy -> ar.uiMap(zg.areaAt(wx, wy)) },
-                fixed + hubs(friendly) { x, y -> PlaceNames.nameAt(x, y, ar.rows) { a, b2 -> zg.areaAt(a, b2) } }, ::nameOf, dangerOf(hostile)), built)
+                fixed + hubs(friendly, { x, y -> PlaceNames.nameAt(x, y, ar.rows) { a, b2 -> zg.areaAt(a, b2) } }, nameOf(map)), ::nameOf,
+                dangerOf(hostile), ground = ground), built)
             ArtHarvest.file("safepath/$map.draft.json").also { it.parentFile?.mkdirs() }.writeText(net.toJson().toString())
             drafts.drop(map)
             "drafted: ${net.nodes.size} nodes, ${net.edges.size} edges (${net.edges.count { it.kind == TRAIL }} trails), " +
@@ -656,34 +738,115 @@ object SafePath {
             if (!fm.real || (mine != 0 && (fm.flags and (if (mine == TransportRoutes.HORDE) 2 else 1)) == 0)) continue
             out.add(Fixed(fm.x.toDouble(), fm.y.toDouble(), FLIGHT, fm.name.ifEmpty { "Flight master" }))
         }
+        // the docks: a tower's (or a pier's) rides together, one stop named for all of them ("Zeppelin tower: Grom'gol, Undercity")
+        class D(val x: Double, val y: Double, val air: Boolean, val to: ArrayList<String>)
+        val docks = ArrayList<D>()
         for (ride in TransportRoutes.fromJson(o)) {
             for (end in 0..1) {
                 val c = if (end == 0) ride.ca else ride.cb
                 val p = if (end == 0) ride.a else ride.b
                 val x = p[0].toDouble(); val y = p[1].toDouble()
-                if (c != cont || !inRect(x, y) || out.any { it.kind == DOCK && hypot(it.wx - x, it.wy - y) < 30.0 && it.how == (if (ride.air) "zeppelin" else "boat") }) continue
-                val other = if (end == 0) ride.nb else ride.na
-                out.add(Fixed(x, y, DOCK, (if (ride.air) "Zeppelin to " else "Boat to ") + other, 0, if (ride.air) "zeppelin" else "boat"))
+                if (c != cont || !inRect(x, y)) continue
+                val other = (if (end == 0) ride.nb else ride.na) ?: continue
+                val d = docks.firstOrNull { it.air == ride.air && hypot(it.x - x, it.y - y) < DOCK_SAME_YD } ?: D(x, y, ride.air, ArrayList()).also { docks.add(it) }
+                if (other !in d.to) d.to.add(other)
             }
         }
+        for (d in docks) out.add(Fixed(d.x, d.y, DOCK, (if (d.air) "Zeppelin tower: " else "Dock: ") + d.to.joinToString(", "), 0, if (d.air) "zeppelin" else "boat"))
         return out
     }
 
-    /** the towns: where this many of the player's side's creatures stand this near each other (QuestieDB's spawns) */
-    fun hubs(friendly: List<DoubleArray>, nameAt: (Double, Double) -> String? = { _, _ -> null }): List<Fixed> {
+    /** one of the player's side's creatures: where it stands, its title ("Banker", "Warrior Trainer"; QuestieDB's subName) */
+    class Npc(val wx: Double, val wy: Double, val sub: String = "")
+
+    /**
+     * the towns: where this many of the player's side's creatures stand this near each other (QuestieDB's spawns), named by the
+     * ground's own subzone ([nameAt]); where that is only the zone's own name ([generic]: a capital's districts are no areas in the
+     * game's tables) by what its creatures are ([roleName]: "Bank, Auction House", "Warrior trainers")
+     */
+    fun hubs(friendly: List<Npc>, nameAt: (Double, Double) -> String? = { _, _ -> null }, generic: String? = null): List<Fixed> {
         val left = friendly.toMutableList()
         val out = ArrayList<Fixed>()
         while (left.isNotEmpty()) {
             // the densest spot first
-            val best = left.maxByOrNull { p -> left.count { hypot(it[0] - p[0], it[1] - p[1]) < HUB_YD } } ?: break
-            val group = left.filter { hypot(it[0] - best[0], it[1] - best[1]) < HUB_YD }
+            val best = left.maxByOrNull { p -> left.count { hypot(it.wx - p.wx, it.wy - p.wy) < HUB_YD } } ?: break
+            val group = left.filter { hypot(it.wx - best.wx, it.wy - best.wy) < HUB_YD }
             if (group.size < HUB_MIN) break
-            val x = group.map { it[0] }.average(); val y = group.map { it[1] }.average()
-            out.add(Fixed(x, y, HUB, nameAt(x, y) ?: "Town"))
-            left.removeAll { hypot(it[0] - best[0], it[1] - best[1]) < HUB_YD * 2 }
+            val x = group.map { it.wx }.average(); val y = group.map { it.wy }.average()
+            val name = nameAt(x, y)?.takeIf { it.isNotEmpty() && it != generic } ?: roleName(group) ?: generic ?: "Town"
+            out.add(Fixed(x, y, HUB, name))
+            left.removeAll { hypot(it.wx - best.wx, it.wy - best.wy) < HUB_YD * 2 }
         }
         return out
     }
+    private val ROLES = listOf("Banker" to "Bank", "Auctioneer" to "Auction House", "Innkeeper" to "Inn", "Wind Rider Master" to "Wind riders",
+        "Gryphon Master" to "Gryphons", "Battlemaster" to "Battlemasters", "Stable Master" to "Stables", "Zeppelin Master" to "Zeppelins")
+    /** a town by what its creatures are: its services (the bank, the auction house, the inn), else its most common trainers */
+    fun roleName(group: List<Npc>): String? {
+        val subs = group.map { it.sub }.filter { it.isNotEmpty() }
+        val roles = ROLES.filter { (k, _) -> subs.any { it.contains(k, ignoreCase = true) } }.map { it.second }
+        if (roles.isNotEmpty()) return roles.take(2).joinToString(", ")
+        val trainer = subs.filter { it.endsWith("Trainer", ignoreCase = true) }.map { it.removeSuffix("Trainer").removeSuffix("trainer").trim() }
+            .filter { it.isNotEmpty() }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
+        return trainer?.let { "$it trainers" }
+    }
+
+    /**
+     * A CAPITAL'S STREETS FROM ITS OWN MAP ART (the user on the first Orgrimmar draft: "lay the trails on its streets, not through
+     * buildings or the Cleft of Shadow"): its ground reads as plain dirt and its walls are one city building the route counts as level,
+     * so the map's own painting tells them apart - its buildings red / brown (and the orange round roofs), the Cleft's pink, the pools'
+     * green-blue, against the golden streets. [px] the art (w x [h], over the zone's world rect [t] / [b] / [l] / [r]): a ground factor
+     * at a spot - [Terrain.WALL] where most of a cell is painted building, else dearer the more of it is.
+     */
+    fun artGround(px: IntArray, w: Int, h: Int, t: Double, b: Double, l: Double, r: Double): (Double, Double) -> Float {
+        // a summed table of the blocked pixels: any window's count at once
+        val sum = IntArray((w + 1) * (h + 1))
+        for (y in 0 until h) { var row = 0; for (x in 0 until w) { if (blockedPaint(px[y * w + x])) row++; sum[(y + 1) * (w + 1) + x + 1] = sum[y * (w + 1) + x + 1] + row } }
+        val hw = max(1, (CELL_YD / (l - r) * w / 2).roundToInt()); val hh = max(1, (CELL_YD / (t - b) * h / 2).roundToInt())
+        return { wx, wy ->
+            val x = ((l - wy) / (l - r) * w).toInt(); val y = ((t - wx) / (t - b) * h).toInt()
+            val x0 = (x - hw).coerceIn(0, w); val x1 = (x + hw).coerceIn(0, w); val y0 = (y - hh).coerceIn(0, h); val y1 = (y + hh).coerceIn(0, h)
+            val area = (x1 - x0) * (y1 - y0)
+            if (area <= 0) 1f else {
+                val k = sum[y1 * (w + 1) + x1] - sum[y0 * (w + 1) + x1] - sum[y1 * (w + 1) + x0] + sum[y0 * (w + 1) + x0]
+                val f = k.toFloat() / area
+                if (f > 0.55f) Terrain.WALL else 1f + 4f * f
+            }
+        }
+    }
+    /** a pixel of painted building, the Cleft or water (an ARGB colour), by its hue, saturation and brightness */
+    fun blockedPaint(c: Int): Boolean {
+        if ((c ushr 24) < 128) return false
+        val r = (c shr 16 and 0xFF) / 255f; val g = (c shr 8 and 0xFF) / 255f; val bl = (c and 0xFF) / 255f
+        val mx = max(r, max(g, bl)); val mn = min(r, min(g, bl)); val d = mx - mn
+        val s = if (mx <= 0f) 0f else d / mx; val v = mx
+        if (d <= 0f) return false
+        var hue = when (mx) { r -> 60f * (((g - bl) / d) % 6f); g -> 60f * ((bl - r) / d + 2f); else -> 60f * ((r - g) / d + 4f) }
+        if (hue < 0f) hue += 360f
+        return ((hue < 22f || hue > 330f) && s > 0.25f) ||          // the red / brown buildings, the Cleft's pink
+            (hue < 29f && s > 0.95f && v > 0.78f) ||                 // the orange round roofs
+            (hue in 60f..200f && s > 0.15f)                          // the pools
+    }
+
+    /** a map's whole painting (its base and every overlay) as ARGB pixels at its own size, or null */
+    fun artPixels(map: Int): Triple<IntArray, Int, Int>? = runCatching {
+        val dir = File(ArtHarvest.dir("worldmap"), "$map")
+        val idx = JSONObject(File(dir, "index.json").readText())
+        val base = android.graphics.BitmapFactory.decodeFile(File(dir, "base.webp").path) ?: return null
+        val bm = base.copy(android.graphics.Bitmap.Config.ARGB_8888, true); base.recycle()
+        val c = android.graphics.Canvas(bm)
+        val ovs = idx.optJSONArray("overlays") ?: JSONArray()
+        val sx = bm.width / idx.optDouble("w", 1002.0).toFloat(); val sy = bm.height / idx.optDouble("h", 668.0).toFloat()
+        for (i in 0 until ovs.length()) {
+            val o = ovs.optJSONObject(i) ?: continue
+            val ob = android.graphics.BitmapFactory.decodeFile(File(dir, "ov_${o.optInt("id")}.webp").path) ?: continue
+            c.drawBitmap(ob, null, android.graphics.RectF(o.optInt("x") * sx, o.optInt("y") * sy, (o.optInt("x") + o.optInt("w")) * sx,
+                (o.optInt("y") + o.optInt("h")) * sy), null)
+            ob.recycle()
+        }
+        val px = IntArray(bm.width * bm.height); bm.getPixels(px, 0, bm.width, 0, 0, bm.width, bm.height)
+        Triple(px, bm.width, bm.height).also { bm.recycle() }
+    }.getOrNull()
 
     /** danger 0..1 at a spot: how many hostile creatures stand within [DANGER_YD] (three or more: the most) */
     fun dangerOf(hostile: List<DoubleArray>): (Double, Double) -> Float {

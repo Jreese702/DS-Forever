@@ -17,7 +17,7 @@ object QuestieNpcs {
     /** one hostile spawn: on area [area]'s map at ([x], [y]) (0..1), levels [minLv]..[maxLv], [elite], hostile to [hostile]
      *  (TransportRoutes.ALLIANCE / HORDE bits), the creature's name [name] */
     class Spawn(val area: Int, val x: Float, val y: Float, val minLv: Int, val maxLv: Int, val elite: Boolean, val hostile: Int,
-                val name: String)
+                val name: String, val sub: String = "")
 
     /** every hostile creature's spawns in the toc at [toc] (QuestieDB_Forever.toc / _Camelot.toc) */
     fun read(toc: File): List<Spawn> = toc.inputStream().buffered(1 shl 16).use { read(it) }
@@ -61,6 +61,7 @@ object QuestieNpcs {
             val maxLv = (row[5L] as? Long)?.toInt() ?: minLv
             val rank = (row[6L] as? Long)?.toInt() ?: 0
             val name = (row[1L] as? ByteArray)?.toString(Charsets.UTF_8) ?: (row[1L] as? String) ?: ""
+            val sub = (row[14L] as? ByteArray)?.toString(Charsets.UTF_8) ?: (row[14L] as? String) ?: ""          // its title: "Banker"
             for ((a, list) in areas) {
                 val area = (a as? Long)?.toInt() ?: continue
                 for (pt in (list as? List<*>) ?: continue) {
@@ -68,7 +69,7 @@ object QuestieNpcs {
                     val x = (xy.getOrNull(0) as? Number)?.toFloat() ?: continue
                     val y = (xy.getOrNull(1) as? Number)?.toFloat() ?: continue
                     if (x < 0f || y < 0f) continue                    // QuestieDB's -1, -1: an instance spawn
-                    out.add(Spawn(area, x / 100f, y / 100f, minLv, maxLv, rank == 1 || rank == 2 || rank == 3, hostile, name))
+                    out.add(Spawn(area, x / 100f, y / 100f, minLv, maxLv, rank == 1 || rank == 2 || rank == 3, hostile, name, sub))
                 }
             }
         }

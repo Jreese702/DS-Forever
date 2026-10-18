@@ -62,10 +62,13 @@ class SafePathTest {
     }
 
     @Test fun theTownsAreWhereTheSidesCreaturesGather() {
-        val town = List(6) { doubleArrayOf(100.0 + it * 10, 200.0) }
-        val lone = listOf(doubleArrayOf(900.0, -900.0))
-        val hubs = SafePath.hubs(town + lone) { _, _ -> "Razor Hill" }
+        val town = List(6) { SafePath.Npc(100.0 + it * 10, 200.0, if (it == 0) "Banker" else "Warrior Trainer") }
+        val lone = listOf(SafePath.Npc(900.0, -900.0))
+        val hubs = SafePath.hubs(town + lone, { _, _ -> "Razor Hill" })
         assertEquals(1, hubs.size); assertEquals("Razor Hill", hubs[0].name)
         assertEquals(125.0, hubs[0].wx, 1.0)
+        // a capital's district: the ground says only the zone's name, so its creatures name it
+        assertEquals("Bank", SafePath.hubs(town, { _, _ -> "Orgrimmar" }, "Orgrimmar")[0].name)
+        assertEquals("Warrior trainers", SafePath.roleName(town.drop(1)))
     }
 }
