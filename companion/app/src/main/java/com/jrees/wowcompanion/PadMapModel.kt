@@ -117,6 +117,8 @@ object PadMapModel {
         /** m57: the form bar's place (null = the game's "None": no form bar on the controller), the learned forms' own bars */
         val stance: Stance? = null,
         val formBars: List<FormBar> = emptyList(),
+        /** m59: the player's Fishing spell while a fishing pole is in the main hand (a bare X fishes / interacts); null = X as it is */
+        val fish: Ref? = null,
     ) {
         /** m55: the form the character is in now (null: none / caster) */
         val activeForm: Form? get() = forms.firstOrNull { it.on }
@@ -193,6 +195,7 @@ object PadMapModel {
                 val f = o.optInt("f", 0); val p = o.optInt("p", 0)
                 if (f > 0 && p in 1..8) FormBar(f, p, o.optInt("i", 0), textOrNull(o, "n")) else null
             },
+            fish = m.optJSONObject("fish")?.let { o -> textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0)) } },
             formFights = objects(m.optJSONArray("ff")).mapNotNull { o ->
                 val f = o.optInt("f", 0); val p = o.optInt("p", 0)
                 val r = textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0)) }

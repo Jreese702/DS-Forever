@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m58"                -- bump on every change; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m59"                -- bump on every change; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -467,6 +467,8 @@ function WC.collectPadMap()
         end
     end
     doc.ff = #ffl > 0 and ffl or nil
+    -- m59: X fishes while a fishing pole is in the main hand (the player's Fishing spell: id, name, icon); absent = X as it is
+    doc.fish = OV.fish and { id = OV.fish.id, n = OV.fish.n, i = OV.fish.i } or nil
     doc.macros = macroCounts()
     doc.face = faceState()
     doc.dpad = dpadState()
@@ -987,6 +989,11 @@ local PRE = [=[
             end
         end
         if rb and sw and dest and ft then rb = nil end
+        -- m59 FISHING ON X (the user: "When the fishing pole is equipped I want to change X from the auto attack / interact to be fishing /
+        -- interact"): a bare X out of the fight switch with a pole in the main hand ("wc-fish" = the Fishing spell's name, set out of
+        -- combat) casts Fishing; while Fishing channels (the bobber is out) it stays Forever's Interact, so the same X loots the bobber
+        local fish = bare and mode ~= "room" and role ~= "back" and not sw and self:GetAttribute("wc-fish")
+        if fish and SecureCmdOptionParse and SecureCmdOptionParse("[channeling] 1") == "1" then fish = nil end
         local mb = "LeftButton"
         if mode == "room" and self:GetAttribute("wc-room-dest") then
             dest = self:GetAttribute("wc-room-dest"); mb = self:GetAttribute("wc-key") or mb; fight = false
@@ -999,6 +1006,12 @@ local PRE = [=[
             self:SetAttribute("type", self:GetAttribute("wc-fight-type"))
             self:SetAttribute("spell", self:GetAttribute("wc-fight-spell"))
             self:SetAttribute("macrotext", self:GetAttribute("wc-fight-macro"))
+        elseif fish then
+            self:SetAttribute("wc-kind", "fish")
+            self:SetAttribute("pressAndHoldAction", nil)
+            self:SetAttribute("typerelease", nil)
+            self:SetAttribute("type", "spell")
+            self:SetAttribute("spell", fish)
         elseif rb then
             self:SetAttribute("wc-kind", "roombar")
             self:SetAttribute("pressAndHoldAction", nil)
@@ -1179,6 +1192,7 @@ local function routerSetup(b, pos)
     pcall(SecureHandlerSetFrameRef, R.give, "wc-face-" .. pos, b)
     pcall(SecureHandlerSetFrameRef, R.rearm, "wc-face-" .. pos, b)
     b:SetAttribute("wc-interact", pos == 5 or nil)                    -- X = Forever's Interact With Target (on an enemy: an attack)
+    if pos == 5 then b:SetAttribute("wc-fish", OV.fish and OV.fish.n or nil) end      -- m59: Fishing while a pole is in the main hand
     for p, o in pairs(face.buttons) do
         pcall(SecureHandlerSetFrameRef, b, "wc-face-" .. p, o)
         pcall(SecureHandlerSetFrameRef, o, "wc-face-" .. pos, b)
@@ -3237,6 +3251,48 @@ R.fs:SetScript("OnEvent", function()
     if R.rewireQueued then return end
     R.rewireQueued = true
     C_Timer.After(0.3, R.rewireAll)
+end)
+-- m59 FISHING ON X: the main hand's item read out of combat (a Weapon, subclass Fishing Pole: classID 2 / subclassID 20) and the player's
+-- Fishing spell (any rank they know); X's router button carries its name ("wc-fish", an attribute: in memory, nothing saved, no binding,
+-- no macro, no bar write). An equipment change in a fight waits for its end (attributes cannot change in the lockdown)
+OV.FISH_IDS = { 131474, 110410, 158743, 88868, 51294, 33095, 18248, 7732, 7731, 7620 }
+function OV.fishNow()
+    local id = T(function() return GetInventoryItemID("player", 16) end)
+    if not id then return nil end
+    local fn = (C_Item and C_Item.GetItemInfoInstant) or _G.GetItemInfoInstant
+    if not fn then return nil end
+    local ok, _, _, _, _, _, cls, sub = pcall(fn, id)
+    if not ok or cls ~= 2 or sub ~= 20 then return nil end
+    for _, sid in ipairs(OV.FISH_IDS) do
+        local known = T(function() return (IsPlayerSpell and IsPlayerSpell(sid)) or (IsSpellKnown and IsSpellKnown(sid)) end)
+        if known then
+            local n = T(function() return (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(sid)) or (GetSpellInfo(sid)) end)
+            local i = T(function() return (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sid)) or GetSpellTexture(sid) end)
+            if type(n) == "string" and n ~= "" then return { id = sid, n = n, i = type(i) == "number" and i or 0 } end
+        end
+    end
+    return nil                                                          -- a pole, but no Fishing known: X as it is
+end
+function OV.fishApply()
+    if inCombat() then OV.fishPending = true; return end
+    OV.fishPending = nil
+    local f = OV.fishNow()
+    local was = OV.fish and OV.fish.n
+    OV.fish = f
+    local b = face.buttons[5]
+    if b then pcall(b.SetAttribute, b, "wc-fish", f and f.n or nil) end
+    if (f and f.n) ~= was then
+        pcall(function() WC.send(WC.encode({ type = "cap", padmap = PV, fish = f and f.n or "off" })) end)
+        pcall(emit, true); WC.push()
+    end
+end
+OV.fishF = CreateFrame("Frame")
+for _, e in ipairs({ "PLAYER_EQUIPMENT_CHANGED", "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD", "SPELLS_CHANGED" }) do
+    pcall(function() OV.fishF:RegisterEvent(e) end)
+end
+OV.fishF:SetScript("OnEvent", function(_, e)
+    if e == "PLAYER_REGEN_ENABLED" and not OV.fishPending then return end
+    C_Timer.After(0.2, function() pcall(OV.fishApply) end)
 end)
 -- m33: the bags and the Mount Journal change the Extra tab's lists: a doc soon (no router work for these)
 local fx = CreateFrame("Frame")

@@ -393,6 +393,26 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         android.util.Log.i("WCLOG", "bar states: $words")
     }
 
+    /**
+     * m59 FISHING ON X (the user: "When the fishing pole is equipped I want to change X from the auto attack / interact to be fishing /
+     * interact"): the player's Fishing spell ([fishIcon], [fishName]; the host's, from the padmap) on the base layer's X (game position 5)
+     * while a pole is in the main hand. While Fishing channels (the bobber is out) X is the game's Interact again, and so is its picture
+     */
+    var fishIcon = 0
+        set(v) { if (field != v) { field = v; fishBtn = null; invalidate() } }
+    var fishName: String? = null
+    private var fishBtn: Btn? = null
+    private fun fishOverride(li: Int, src: Int): Btn? {
+        if (li != N || src != 4 || fishIcon <= 0) return null
+        if (castChannel && !castStartMs.isNaN() && fishName != null && castName == fishName) return null      // the bobber is out: Interact
+        fishBtn?.let { if (it.shader == null) resolve(it, true); return it }
+        val b = Btn().apply { p = 5; k = "spell"; icon = fishIcon; e = true }
+        classify(b)
+        resolve(b, true)
+        fishBtn = b
+        return b
+    }
+
     /** the fight spell drawn over base-layer face slot [src] (0-based), or null to draw the game's own button */
     private fun fightOverride(li: Int, src: Int): Btn? {
         if (!fightFaceOn || li != N || src < 4 || src == 6) return null
@@ -1652,7 +1672,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         var flashing = false
         for (pos in 0 until 8) {
             val src = srcOf[pos]                 // drawn at slot pos, taken from Blizzard position src
-            val fb = dpadFightOverride(li, src) ?: fightOverride(li, src) ?: commandOverride(li, src)
+            val fb = dpadFightOverride(li, src) ?: fightOverride(li, src) ?: commandOverride(li, src) ?: fishOverride(li, src)
             val b = fb ?: h.layers[li][src]
             val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else fightStateOf(fb, src)
             // pushed: a touch on the replica, or the PHYSICAL button at this position held
@@ -2482,7 +2502,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         for (pos in 0 until 8) {
             val src = srcOf[pos]
             // in a fight a D-pad In-combat spell beats DS Forever's layout picture (that press casts it)
-            val fb = dpadFightOverride(li, src) ?: roomOverride(li, src) ?: fightOverride(li, src) ?: commandOverride(li, src)
+            val fb = dpadFightOverride(li, src) ?: roomOverride(li, src) ?: fightOverride(li, src) ?: commandOverride(li, src) ?: fishOverride(li, src)
             if (fb != null && fb.icon > 0 && fb.shader == null) resolve(fb, pos >= 4)   // built now, at this frame's scale
             val b = fb ?: h.layers[li][src]
             val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else fightStateOf(fb, src)
