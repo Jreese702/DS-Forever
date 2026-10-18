@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m59"                -- bump on every change; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m60"                -- bump on every change; m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -994,6 +994,11 @@ local PRE = [=[
         -- combat) casts Fishing; while Fishing channels (the bobber is out) it stays Forever's Interact, so the same X loots the bobber
         local fish = bare and mode ~= "room" and role ~= "back" and not sw and self:GetAttribute("wc-fish")
         if fish and SecureCmdOptionParse and SecureCmdOptionParse("[channeling] 1") == "1" then fish = nil end
+        -- m60 (the user on test6: "When I walk up to vendors and stuff x doesn't work on them. But it works with the fishing"): something
+        -- to interact with comes first - the game's soft-interact target (the NPC / object / bobber the controller's Interact would use,
+        -- the macro conditional's own unit) - so X fishes only when there is nothing there. Read through the secure conditional parser
+        -- only (no unit API in the snippet); a client without @softinteract parses it as nothing: fishing as before
+        if fish and SecureCmdOptionParse and SecureCmdOptionParse("[@softinteract,exists] 1") == "1" then fish = nil end
         local mb = "LeftButton"
         if mode == "room" and self:GetAttribute("wc-room-dest") then
             dest = self:GetAttribute("wc-room-dest"); mb = self:GetAttribute("wc-key") or mb; fight = false
