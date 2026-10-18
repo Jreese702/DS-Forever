@@ -294,10 +294,14 @@ object Climb {
         // beyond (within their cell)
         if (hypot(pts[0][0] - from[0], pts[0][1] - from[1]) > 0.5) pts.add(0, from) else pts[0] = from
         val reached = end == goal
+        // the goal's exact point only where the hop to it crosses no wall face (a network point 2 yd up a cliff, an unreachable goal):
+        // else the leg ends at its last vertex, short of it
+        var arrived = reached
         if (reached && !inCave(pts[pts.size - 1])) {
-            if (hypot(pts.last()[0] - to[0], pts.last()[1] - to[1]) > 0.5) pts.add(to) else pts[pts.size - 1] = to
+            if (hypot(pts.last()[0] - to[0], pts.last()[1] - to[1]) <= 0.5) pts[pts.size - 1] = to
+            else if (g.lineClear(pts.last(), to)) pts.add(to) else arrived = false
         }
-        return Leg(pts, reached)
+        return Leg(pts, arrived)
     }
     const val MARGIN_YD = 800.0
     const val GOAL_FADE_YD = 100.0
