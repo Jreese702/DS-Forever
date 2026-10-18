@@ -45,6 +45,21 @@ class ClimbTest {
         assertEquals(Climb.WALL, Climb.classOf(Float.NaN))
     }
 
+    @Test fun aRidgeOnTheMiddleVerticesIsAWall() {
+        // the outer vertices all level; a band of cells (world y 20 .. -20) whose middle vertices stand 6 yd up: the game's triangles
+        // there rise 6 yd in 2 yd (over 70 degrees), a ridge the outer vertices alone never show
+        fun ridge(gr: Int, gc: Int) = if (abs(org - (gc + 0.5) * s) < 20 && abs(org - (gr + 0.5) * s) < 150) 6f else 0f
+        val flat = Climb.build(200.0, -200.0, 200.0, -200.0, { _, _ -> 0f })
+        val g = Climb.build(200.0, -200.0, 200.0, -200.0, { _, _ -> 0f }, centre = ::ridge)
+        val from = doubleArrayOf(0.0, 100.0); val goal = doubleArrayOf(0.0, -100.0)
+        assertTrue("the outer vertices alone: level", Climb.walkable(flat, from, goal))
+        assertFalse("the triangles: a wall", Climb.walkable(g, from, goal))
+        val leg = Climb.route(g, from, goal)!!
+        assertTrue(leg.reached)
+        assertWalkable(g, leg.pts)
+        assertTrue("round the ridge's end", leg.pts.any { abs(it[0]) >= 145 })
+    }
+
     @Test fun aBasinIsEnteredByItsOpeningNeverOverItsRim() {
         val g = grid(::basin)
         val from = doubleArrayOf(0.0, 150.0); val goal = doubleArrayOf(0.0, 0.0)
@@ -104,10 +119,11 @@ class ClimbTest {
         o.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(body.size).array()); o.write(body)
     }
     /** a group file: MVER, then MOGP (its 0x44 header, then MOPY / MOVI / MOVT) of [tris] (three corners each), all collision faces */
-    private fun group(tris: List<List<FloatArray>>): ByteArray {
+    private fun group(tris: List<List<FloatArray>>, mpy2: Boolean = false): ByteArray {
         val inner = ByteArrayOutputStream()
         inner.write(ByteArray(0x44))
-        chunk(inner, "MOPY", ByteArray(tris.size * 2) { if (it % 2 == 0) 0x08 else 0 })
+        if (mpy2) chunk(inner, "MPY2", ByteArray(tris.size * 4) { if (it % 4 == 0) 0x08 else 0 })        // the newer groups' faces
+        else chunk(inner, "MOPY", ByteArray(tris.size * 2) { if (it % 2 == 0) 0x08 else 0 })
         val idx = ByteBuffer.allocate(tris.size * 6).order(ByteOrder.LITTLE_ENDIAN); for (i in 0 until tris.size * 3) idx.putShort(i.toShort())
         chunk(inner, "MOVI", idx.array())
         val v = ByteBuffer.allocate(tris.size * 36).order(ByteOrder.LITTLE_ENDIAN); for (t in tris) for (c in t) for (x in c) v.putFloat(x)
@@ -123,6 +139,7 @@ class ClimbTest {
         val floor = listOf(f(0, 0, 0), f(1, 0, 0), f(0, 1, 0))
         val wall = listOf(f(0, 0, 0), f(1, 0, 0), f(0, 0, 1))
         assertEquals(9, Caves.floorTris(group(listOf(floor, wall))).size)
+        assertEquals(9, Caves.floorTris(group(listOf(floor, wall), mpy2 = true)).size)
     }
 
     @Test fun aTunnelJoinsItsTwoMouths() {
