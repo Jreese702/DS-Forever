@@ -63,9 +63,16 @@ object QuestTrailBridge {
      * "Take", "Quest item", maybe "Fly to X, then ..."), then "<the quest's title>[ (estimate)][ – <the objective's text>]". [kind]:
      * QuestTrail's first line; [objective]: the objective's own words, null for a turn-in / take.
      */
-    class Step(val questId: Int, val kind: String?, val objective: String?) {
-        /** the card's one line: the objective's words, else what to do ("Turn in") */
-        val words: String? get() = objective ?: kind
+    class Step(val questId: Int, val kind: String?, val objective: String?, val title: String? = null) {
+        /** the card's one line: the objective's words, else what to do ("Turn in"); a step not in the log: "Take: <quest> from <giver>" */
+        val words: String? get() = if (questId == 0) looseWords() else objective ?: kind
+        private fun looseWords(): String? {
+            val k = kind?.trimEnd(':')
+            val what = listOfNotNull(k?.let { "$it:" }, title).joinToString(" ").ifEmpty { null } ?: return objective
+            return if (objective == null) what else if (k.equals("Take", ignoreCase = true)) "$what from $objective" else "$what$DASH$objective"
+        }
+        /** a step for no quest of the log (a quest to take, a flight): QuestTrail's own words stand for it */
+        val loose get() = questId == 0
     }
 
     private const val DASH = " – "
@@ -97,6 +104,24 @@ object QuestTrailBridge {
         val id = if (best.size == 1 || obj == null) best.minOrNull()!!
             else best.firstOrNull { q -> objectives(q).any { o -> o.trim().let { it.startsWith(obj) || obj.startsWith(it) } } } ?: best.minOrNull()!!
         return Step(id, kind, obj)
+    }
+
+    /**
+     * QuestTrail's step when its label names no quest of the log (the user on test61: "the QuestTrail objective needs to trump the
+     * focus objective" - a "Take" step's quest is not in the log yet): its own words, [Step.questId] 0. The last line's title (up to
+     * " – " / " (estimate)") and what follows the dash (a giver, an objective); [Step.kind] its first line. Null for an empty label.
+     */
+    fun loose(label: String?): Step? {
+        if (label.isNullOrBlank()) return null
+        val lines = label.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+        if (lines.isEmpty()) return null
+        var line = lines.last()
+        val dash = line.indexOf(DASH)
+        val rest = if (dash >= 0) line.substring(dash + DASH.length).trim().ifEmpty { null } else null
+        if (dash >= 0) line = line.substring(0, dash)
+        val title = line.removeSuffix(ESTIMATE).trim().ifEmpty { null }
+        val kind = if (lines.size >= 2) lines[lines.size - 2] else null
+        return Step(0, kind, rest, title)
     }
 
     // ---- QUESTTRAIL'S GOLDEN PATH (b-qtrail-golden; the user, test55: "it should show the actual trail like it normally does")

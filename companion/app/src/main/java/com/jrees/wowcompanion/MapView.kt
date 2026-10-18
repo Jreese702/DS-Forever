@@ -2580,8 +2580,8 @@ class MapView(context: Context) : View(context) {
             if (was != st) cards.clear()                 // the focused card's gold moves with the focus
             if (was != st && !orderingDoc) orderTracked(trackedIds())
         }
-        // QuestTrail's step (b-qtrail-focus), else the game's focus, else the default
-        val tq = qtFocus().takeIf { it > 0 } ?: if (st > 0) st else if (focusQid == 0) defaultQid else 0
+        // QuestTrail's step (b-qtrail-focus; it always wins, a step not in the log has no arrow here), else the game's focus, else the default
+        val tq = if (qtHolds()) qtFocus() else if (st > 0) st else if (focusQid == 0) defaultQid else 0
         focusTq = if (tq > 0 && shownQuest(tq)) tq else 0
         if (tq <= 0 || !shownQuest(tq)) return            // an untracked focus has no arrow (not on the map at all)
         val qs = m.optJSONArray("quests")
@@ -3338,9 +3338,11 @@ class MapView(context: Context) : View(context) {
     // (A on it focuses it for real; the hints and A / X keep reading the game's own focusQid). FocusDefault.pick holds the
     // choice until another quest is clearly nearer, so walking between two does not make the top card jump.
     private var defaultQid = 0
-    private fun shownFocus(): Int = qtFocus().takeIf { it != 0 } ?: if (focusQid != 0) focusQid else defaultQid
+    // in QuestTrail mode its step ALWAYS wins (the user on test61: "the QuestTrail objective needs to trump the focus objective"): while
+    // it has one, never the game's / the app's focus, even for a step whose quest is not in the log (its own card: qtCard)
+    private fun shownFocus(): Int = if (qtHolds()) qtFocus() else if (focusQid != 0) focusQid else defaultQid
     /** true while the SHOWN focus is the default (the game has none): Home may label its card, or act on the game's focus only */
-    fun focusIsDefault(): Boolean = qtFocus() == 0 && focusQid == 0 && defaultQid != 0
+    fun focusIsDefault(): Boolean = !qtHolds() && focusQid == 0 && defaultQid != 0
 
     // ---- QUESTTRAIL'S STEP AS THE FOCUS (b-qtrail-focus; the user, test51: "Using quest trail, the focused quest should be overwritten
     // by the quest trail objective"). With "Quest tracking: QuestTrail" the SHOWN focus - Home's card, the list's top spot, the gold
@@ -3351,28 +3353,36 @@ class MapView(context: Context) : View(context) {
     private var qtStep: QuestTrailBridge.Step? = null
     private var qtLabel: String? = null
     private var qtWasOn = false
+    private var qtSaid: String? = null
+    /** QuestTrail mode with a step of its own (a quest of the log or not): it is the focus */
+    private fun qtHolds(): Boolean = Settings.questTracking == "questtrail" && qtStep != null
     private fun qtFocus(): Int {
         if (Settings.questTracking != "questtrail") return 0
         val id = qtStep?.questId ?: return 0
         return if (questById.containsKey(id)) id else 0
     }
     /** the quest the line and the rim arrow are for: QuestTrail's step, else the game's focus */
-    private fun qtOrGameFocus(): Int = qtFocus().takeIf { it > 0 } ?: focusQid
+    private fun qtOrGameFocus(): Int = if (qtHolds()) qtFocus() else focusQid
     /** QuestTrail's step from its live label and the log; true = the shown focus or its words changed */
     private fun qtPick(force: Boolean): Boolean {
         val on = Settings.questTracking == "questtrail"
         val label = if (on) questTrailLive()?.optString("t", "")?.ifEmpty { null } else null
         if (!force && on == qtWasOn && (label == null || label == qtLabel)) return false
-        val before = qtFocus(); val beforeWords = qtStep?.words
+        val before = qtFocus(); val beforeWords = qtStep?.words; val beforeHolds = qtHolds()
         qtWasOn = on
         if (!on) { qtStep = null; qtLabel = null }
         else if (label != null || force) {
             if (label != null) qtLabel = label
             val titles = HashMap<Int, String>()
             for ((id, e) in questById) e.optString("title", "").takeIf { it.isNotEmpty() }?.let { titles[id] = it }
-            QuestTrailBridge.step(qtLabel, titles) { id -> objTexts(questById[id]) }?.let { qtStep = it }
+            // a label naming no quest of the log (a "Take" step, a flight) is QuestTrail's step all the same: its own words
+            (QuestTrailBridge.step(qtLabel, titles) { id -> objTexts(questById[id]) } ?: QuestTrailBridge.loose(qtLabel))?.let { qtStep = it }
         }
-        return qtFocus() != before || (qtFocus() != 0 && qtStep?.words != beforeWords)
+        val st = qtStep
+        val said = if (!on) null else if (st == null) "no target" else if (!st.loose) "${st.kind ?: "step"} '${questById[st.questId]?.optString("title", "") ?: ""}' matched quest ${st.questId}"
+            else "${st.kind ?: "step"} '${st.title ?: ""}' not in log"
+        if (said != qtSaid) { qtSaid = said; if (said != null) android.util.Log.i("WCMAP", "qtrail focus: $said") }
+        return qtFocus() != before || qtHolds() != beforeHolds || (qtHolds() && qtStep?.words != beforeWords)
     }
     /** after a new label or mode: on a change, everything that shows the focus follows */
     private fun refreshQtStep(force: Boolean = false) {
@@ -4774,11 +4784,18 @@ class MapView(context: Context) : View(context) {
      */
     fun focusedCard(): UiKit.QuestCard? {
         val f = shownFocus()                     // the default focus stands in for "No focused quest" (2026-10-06)
-        if (f == 0) return null
+        if (f == 0) return qtCard()
         // the tracked quest's card (its number); a focused quest the tracker does not list still gets its card, without a number
         // (p-card-invisible: the user saw no card while a quest was focused)
         val e = tracked.firstOrNull { it.optInt("id", 0) == f } ?: questById[f] ?: return null
         return cardFor(e)
+    }
+
+    /** QuestTrail's step for no quest of the log (a quest to take): its own card, its title and words, never the old focus */
+    private fun qtCard(): UiKit.QuestCard? {
+        val st = qtStep?.takeIf { qtHolds() && it.loose } ?: return null
+        val title = st.title ?: st.kind ?: return null
+        return UiKit.QuestCard(title, 0, Theme.gold, listOfNotNull(st.words?.let { it to false }), focused = true)
     }
 
     /** one card's height (the selection's gaps and the gap under it are the layout's) */

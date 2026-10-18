@@ -57,4 +57,21 @@ class QuestTrailBridgeTest {
         assertEquals(0.05, r[0].x1, 1e-9); assertEquals(0.1, r[0].y1, 1e-9)
         assertTrue(QuestTrailBridge.trail(null, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0).isEmpty())
     }
+
+    /** the user on test61: "the QuestTrail objective needs to trump the focus objective" - a step for no quest of the log keeps its own words */
+    @Test fun aStepNotInTheLogIsItsOwnCard() {
+        val titles = mapOf(7 to "Kobold Candles")
+        assertNull(QuestTrailBridge.step("Take\nReport to Gryan Stoutmantle", titles))
+        val t = QuestTrailBridge.loose("Take\nReport to Gryan Stoutmantle")!!
+        assertEquals(0, t.questId); assertTrue(t.loose)
+        assertEquals("Report to Gryan Stoutmantle", t.title)
+        assertEquals("Take: Report to Gryan Stoutmantle", t.words)
+        val g = QuestTrailBridge.loose("Take\nThe Fargodeep Mine (estimate) – Marshal McBride")!!
+        assertEquals("The Fargodeep Mine", g.title)
+        assertEquals("Take: The Fargodeep Mine from Marshal McBride", g.words)
+        assertNull(QuestTrailBridge.loose("  "))
+        // a quest of the log still matches it, with its objective's words
+        val m = QuestTrailBridge.step("Objective\nKobold Candles – Large Candle: 3/8", titles)!!
+        assertEquals(7, m.questId); assertEquals("Large Candle: 3/8", m.words)
+    }
 }
