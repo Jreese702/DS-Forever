@@ -2334,6 +2334,17 @@ object UiKit {
      * [CARD_HOME_SCALE] on Home; a flight eases both). [q] null = the empty card ("No focused quest"). The card draws no cursor:
      * the Map's selection box and arrows stay the Map's.
      */
+    /** the quest card's see-through plate over the map ([questCard]'s bgAlpha < 255): the module at [bgAlpha], its soft dark band */
+    fun seeThroughPlate(c: Canvas, box: RectF, bgAlpha: Int, scale: Float = 1f) {
+        module(c, box, alpha = bgAlpha.coerceIn(0, 255), scale = scale)
+        if (bgAlpha >= 255) return
+        pFlat.style = Paint.Style.FILL
+        pFlat.shader = LinearGradient(box.left, 0f, box.left + box.width() * 0.75f, 0f,
+            Color.argb(((255 - bgAlpha) * 0.55f).toInt(), 0, 0, 0), Color.argb(0, 0, 0, 0), Shader.TileMode.CLAMP)
+        c.drawRoundRect(box, MODULE_R * scale, MODULE_R * scale, pFlat)
+        pFlat.shader = null
+    }
+
     fun questCard(c: Canvas, box: RectF, q: QuestCard?, alpha: Int = 255, scale: Float = 1f, bgAlpha: Int = 255,
                   collapsed: Boolean = false) {
         val s = scale

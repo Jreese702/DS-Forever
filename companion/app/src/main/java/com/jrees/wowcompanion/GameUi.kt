@@ -66,8 +66,9 @@ object GameUi {
     @Volatile private var helloAt = 0L
     fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin() }
 
-    /** f-top-castbar-toggle: the user's Hide for the game's cast bar (default Show: nothing changes for anyone who never picks) */
-    fun castBarHide(): Boolean = prefs?.getBoolean("castbar.hide", false) ?: false
+    /** f-top-castbar-toggle: the user's Hide for the game's cast bar. Default HIDE (1.0.10-test3, the user: "The cast bar needs to be
+     *  hidden": Home's bottom bar shows every cast); a player who picked Show keeps it */
+    fun castBarHide(): Boolean = prefs?.getBoolean("castbar.hide", true) ?: true
     /** one touch, so at most one tap follows */
     fun setCastBar(show: Boolean) {
         prefs?.edit()?.putBoolean("castbar.hide", !show)?.apply()
