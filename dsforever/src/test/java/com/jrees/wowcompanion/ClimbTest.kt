@@ -104,10 +104,11 @@ class ClimbTest {
         o.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(body.size).array()); o.write(body)
     }
     /** a group file: MVER, then MOGP (its 0x44 header, then MOPY / MOVI / MOVT) of [tris] (three corners each), all collision faces */
-    private fun group(tris: List<List<FloatArray>>): ByteArray {
+    private fun group(tris: List<List<FloatArray>>, mpy2: Boolean = false): ByteArray {
         val inner = ByteArrayOutputStream()
         inner.write(ByteArray(0x44))
-        chunk(inner, "MOPY", ByteArray(tris.size * 2) { if (it % 2 == 0) 0x08 else 0 })
+        if (mpy2) chunk(inner, "MPY2", ByteArray(tris.size * 4) { if (it % 4 == 0) 0x08 else 0 })        // the newer groups' faces
+        else chunk(inner, "MOPY", ByteArray(tris.size * 2) { if (it % 2 == 0) 0x08 else 0 })
         val idx = ByteBuffer.allocate(tris.size * 6).order(ByteOrder.LITTLE_ENDIAN); for (i in 0 until tris.size * 3) idx.putShort(i.toShort())
         chunk(inner, "MOVI", idx.array())
         val v = ByteBuffer.allocate(tris.size * 36).order(ByteOrder.LITTLE_ENDIAN); for (t in tris) for (c in t) for (x in c) v.putFloat(x)
@@ -123,6 +124,7 @@ class ClimbTest {
         val floor = listOf(f(0, 0, 0), f(1, 0, 0), f(0, 1, 0))
         val wall = listOf(f(0, 0, 0), f(1, 0, 0), f(0, 0, 1))
         assertEquals(9, Caves.floorTris(group(listOf(floor, wall))).size)
+        assertEquals(9, Caves.floorTris(group(listOf(floor, wall), mpy2 = true)).size)
     }
 
     @Test fun aTunnelJoinsItsTwoMouths() {
