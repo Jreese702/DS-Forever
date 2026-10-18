@@ -170,6 +170,40 @@ class ThirdPartyAddonsTest {
         assertFalse(File(addons, "TestA").exists())
     }
 
+    /** QuestTrail 3.1.0 -> 3.2.1 (the user: "Update QuestTrail on my Thor"): a new pin updates an installed older version by itself,
+     *  its row saying so; downloaded, in at the next start, the old copy to the backup */
+    private fun installedThenRepinned(): ThirdPartyAddons.Addon {
+        val base = "http://127.0.0.1:${server.localPort}"
+        val a = addon(zipBytes).let { it.copy(core = it.core.copy(url = "$base/dl/Test-1.0.zip")) }
+        ThirdPartyAddons.ALL = listOf(a)
+        choices["t.core"] = true; ThirdPartyAddons.fetchNow(a, "core"); ThirdPartyAddons.applyAtStart(game)
+        assertTrue(ThirdPartyAddons.coreInstalled(a))
+        val b = a.copy(version = "1.1", core = a.core.copy(tag = "t/v1.1"))
+        ThirdPartyAddons.ALL = listOf(b)
+        return b
+    }
+
+    @Test fun aNewPinUpdatesTheInstalledVersion() {
+        val b = installedThenRepinned()
+        assertFalse(ThirdPartyAddons.coreInstalled(b))
+        assertFalse("an update never takes it out", ThirdPartyAddons.goesOut(b, "core"))
+        assertTrue(ThirdPartyAddons.status(b, "core").line, ThirdPartyAddons.status(b, "core").line.startsWith("Update to 1.1"))
+        Thread.sleep(1100)                                              // a new backup stamp
+        val line = ThirdPartyAddons.applyAtStart(game)                  // small: fetched in the start step itself
+        assertTrue(line, line.contains("Test 1.1 installed"))
+        assertTrue(ThirdPartyAddons.coreInstalled(b))
+        assertEquals("Installed", ThirdPartyAddons.status(b, "core").line)
+        assertTrue(File(game, "Interface/AddOns-backup-dsforever").listFiles()!!.any { it.name.startsWith("TestA-1.0-") })
+    }
+
+    @Test fun anOlderVersionStillGoesOutOnUninstall() {
+        val b = installedThenRepinned()
+        ThirdPartyAddons.setCore(b, false)
+        assertEquals(ThirdPartyAddons.Kind.REMOVING, ThirdPartyAddons.status(b, "core").kind)
+        ThirdPartyAddons.applyAtStart(game)
+        assertFalse(File(addons, "TestA").exists())
+    }
+
     @Test fun aDirectUrlNeedsNoReleaseApi() {
         val base = "http://127.0.0.1:${server.localPort}"
         val a = addon(zipBytes).let { it.copy(core = it.core.copy(url = "$base/dl/Test-1.0.zip")) }
@@ -185,5 +219,7 @@ class ThirdPartyAddonsTest {
             assertTrue(p.asset, p.sha256.matches(Regex("[0-9a-f]{64}")) && p.bytes > 0 && p.folders.isNotEmpty())
         }
         assertEquals(1540, ThirdPartyAddons.SPOKEN.modules.first { it.id == "quests" }.pkg.mb)
+        assertEquals("3.2.1", ThirdPartyAddons.QUESTTRAIL.core.tag)
+        assertEquals(7_656_314L, ThirdPartyAddons.QUESTTRAIL.core.bytes)
     }
 }

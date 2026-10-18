@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i127"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i128"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -3056,16 +3056,17 @@ end
 -- or not taken is said in the answer and left as QuestTrail's.
 N.qt.DEFAULTS = {
     { step = "Shared Trail", k = "button", t = "World Trail", on = true },
-    { k = "head", t = "Quest Tracker", on = false },          -- its tracker, and with it its hide of Blizzard's (autoQuestWatch CVars)
+    -- its tracker, and with it its hide of Blizzard's (autoQuestWatch CVars): 3.1.0 a group's switch, 3.2.x a check in Questing Helpers
+    { k = "head", t = "Quest Tracker", on = false, any = { { k = "head", t = "Quest Tracker" }, { k = "check", t = "Enable Quest Tracker" } } },
     { k = "head", t = "Questing Helpers", on = false },       -- auto-accept / turn-in / sell grey / repair
     { k = "check", t = "Minimap button", on = false },
-    { k = "check", t = "Extended minimap", on = false },      -- the mouse wheel's zoom
+    { k = "check", t = "Extended minimap", on = false },      -- the mouse wheel's zoom (3.2.x: "Extended Minimap"; matched by case)
     { k = "check", t = "Fiercely announce new levels", on = false },
 }
 -- test58: the defaults ONCE per install of QuestTrail, whenever they were never applied (a player who had gone through its assistant
 -- in an earlier build never saw it again): its own /qtr setup, run unseen, the same widget-driven walk, its own Finish. Kept in
 -- WowCompanion's own saved table (WowCompanionDB.qtDefaults); never in a fight, never while a window of its is up.
-N.qt.DEFAULTS_V = 1
+N.qt.DEFAULTS_V = 2                                           -- 2: QuestTrail 3.2.1 (its tracker switch moved)
 function N.qt.onceDefaults()
     if N.qt.onceTried or N.qt.auto or not N.qt.on() then return end            -- (once a session at most; a closed setup is never re-opened)
     local db = rawget(_G, "WowCompanionDB")
@@ -3118,6 +3119,13 @@ function N.qt.endAuto(f)
     N.qt.auto = false
     emitSoon()
 end
+-- a default's widget: its kind and words (any of its versions' [any], the words without regard to case)
+function N.qt.isDef(r, it)
+    for _, a in ipairs(r.any or { r }) do
+        if it.k == a.k and type(it.t) == "string" and it.t:lower() == a.t:lower() then return true end
+    end
+    return false
+end
 function N.qt.runAuto(f)
     local done, missed, steps = {}, {}, 0
     local want = {}
@@ -3126,7 +3134,7 @@ function N.qt.runAuto(f)
         for i, r in pairs(want) do
             if not r.step or r.step == title then
                 for _, it in ipairs(items) do
-                    if it.k == r.k and it.t == r.t and (it.on ~= nil or it.k == "button") then    -- (a button not chosen reads as nil)
+                    if N.qt.isDef(r, it) and (it.on ~= nil or it.k == "button") then    -- (a button not chosen reads as nil)
                         if (it.on == true) ~= r.on then
                             local c = N.qt.ctl[it.id]
                             local w = c and c.w and c.w[1]
@@ -3165,7 +3173,8 @@ end
 -- 1.0.10-test3 (the user: "The QuestTrail UI needs to be hidden"): whenever QuestTrail is loaded, in EVERY Quest tracking mode, its plain
 -- frames that show on the top screen: the compass (kept shown at alpha 0, Map's reader), the tracker, its minimap button, its dungeon
 -- list, its update notice; its setup / intro / menu too while QuestTrail mode is off (in it they are the mirror's). Logged once each.
-N.qt.HIDDEN = { "QuestTrailArrowFrame", "QuestTrailTrackerFrame", "QuestTrailMinimapButton", "QuestTrailDungeonList", "QuestTrailUpdateFrame" }
+N.qt.HIDDEN = { "QuestTrailArrowFrame", "QuestTrailTrackerFrame", "QuestTrailMinimapButton", "QuestTrailDungeonList", "QuestTrailUpdateFrame",
+    "QuestTrailHeightDebug" }                                  -- (3.2.x: its height debug window)
 N.qt.WINDOWS = { QuestTrailSetup = true, QuestTrailSharedIntro = true, QuestTrailMenuFrame = true }
 N.qt.zeroed, N.qt.hideHooked = {}, {}
 function N.qt.loaded() return type(SlashCmdList) == "table" and type(SlashCmdList.QUESTTRAIL) == "function" end
