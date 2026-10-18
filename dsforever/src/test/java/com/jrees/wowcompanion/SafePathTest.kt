@@ -138,4 +138,28 @@ class SafePathTest {
         val town = List(6) { SafePath.Npc(100.0 + it * 10, 200.0, if (it == 0) "Banker" else "Innkeeper") }
         assertEquals("Valley of Strength · Bank, Inn", SafePath.hubs(town, { _, _ -> "Orgrimmar" }, "Orgrimmar") { _, _ -> "Valley of Strength" }[0].name)
     }
+
+    /** test9's route (the user: "why is it looping down and around an up onto the mountains?"): road pieces apart by a texture's gap
+     *  are welded into one; the painted road fills a gap; a way's ends never hook back first */
+    @Test fun roadPiecesAreOneWayAndTheEndsGoAhead() {
+        // the road along x 500 with a 40 yd gap in it (y 400..360): one piece after the weld, the route straight along it
+        val gapped = { wx: Double, wy: Double -> abs(wx - 500) < 38 && wy < 900 && wy > 0 && (wy > 400 || wy < 360) }
+        val net = SafePath.draft(input(road = gapped))
+        val w = SafePath.route(net, 470.0, 850.0, 470.0, 60.0)!!
+        assertTrue("along the road, no detour: ${w.size} points", w.zipWithNext { a, b -> hypot(a[0] - b[0], a[1] - b[1]) }.sum() < 900.0)
+        // a wider gap the paint closes: the painted cells there make it one road
+        val wide = { wx: Double, wy: Double -> abs(wx - 500) < 38 && wy < 900 && wy > 0 && (wy > 500 || wy < 300) }
+        val painted = SafePath.Input(1, 0, 1000.0, 0.0, 1000.0, -1000.0, wide, { _, _ -> 1f }, { _, wy -> if (wy > 0) 1 else 2 },
+            painted = { wx, wy -> abs(wx - 500) < 20 && wy in 290.0..510.0 })
+        val pn = SafePath.draft(painted)
+        assertEquals(1, pn.edges.filter { it.kind == SafePath.ROAD }.let { es ->
+            val par = HashMap<Int, Int>(); fun f(x: Int): Int { var a = x; while ((par[a] ?: a) != a) a = par[a]!!; return a }
+            for (e in es) par[f(e.a)] = f(e.b); es.map { f(it.a) }.toSet().size })
+        // a there-and-back is cut; a hooked start walked straight over level ground
+        val loop = listOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(0.0, 100.0), doubleArrayOf(60.0, 100.0), doubleArrayOf(10.0, 110.0), doubleArrayOf(0.0, 400.0))
+        assertTrue(SafePath.smooth(loop).none { it[0] == 60.0 })                  // the spike out to x 60 is gone
+        val hook = listOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(-120.0, 0.0), doubleArrayOf(-120.0, 200.0), doubleArrayOf(0.0, 200.0), doubleArrayOf(0.0, 900.0))
+        assertEquals(listOf(0.0, 200.0), SafePath.smooth(hook, SafePath.clearOf { _, _ -> 1f })[1].toList())
+        assertEquals(5, SafePath.smooth(hook, SafePath.clearOf { _, _ -> Terrain.WALL }).size)       // over a cliff: kept
+    }
 }
