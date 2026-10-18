@@ -60,7 +60,8 @@ def dang_at(wx, wy):
 RRv, CCv = np.meshgrid(np.arange(NR), np.arange(NC), indexing='ij')
 DANG = dang_at(ORG - (RRv + gr0) * S, ORG - (CCv + gc0) * S)
 DALPHA = np.clip((DANG - 0.3) / 3.7, 0, 1) * 0.55                                  # semi-transparent red: the denser the mobs, the redder
-def incave(p): return len(p) > 2 and p[2] == 1
+def incave(p): return len(p) > 2 and p[2] in (1, 2)          # 1 a cave's floor, 2 a lift's landing
+def atlift(p): return len(p) > 2 and p[2] == 2
 def dashed(dr, xy, fill, width, on=10, off=7):
     for (x0, y0), (x1, y1) in zip(xy, xy[1:]):
         L = math.hypot(x1 - x0, y1 - y0); t = 0.0
@@ -132,6 +133,10 @@ for lk in data.get('manualLinks', []):
     dashed(dr, xy, (0, 0, 0), 8, 14, 6); dashed(dr, xy, LINK, 4, 14, 6)
     mx, my = xy[len(xy) // 2]
     text(dr, (mx + 10, my), 'manual link: ' + lk['kind'], FONTS, LINK, 'lm')
+# the lifts (the spec's, measured from their WMOs' landings): an orange square on the shaft
+for lf in SPEC.get('lifts', []):
+    r_, c_ = vert(lf['x'], lf['y']); x, y = c_ * SC, r_ * SC
+    dr.rectangle((x - 7, y - 7, x + 7, y + 7), outline=(255, 150, 30), width=3)
 for i, rt in enumerate(data['routes']):
     pts = [vert(p[0], p[1]) for p in rt['pts']]; xy = [(c * SC, r * SC) for r, c in pts]
     for cv, part in runs(rt['pts']):
@@ -141,10 +146,13 @@ for i, rt in enumerate(data['routes']):
     for k, (x, y) in enumerate(xy):
         if k == 0: dr.ellipse((x - 9, y - 9, x + 9, y + 9), fill=(120, 220, 110), outline=(0, 0, 0), width=2); continue
         if k == len(xy) - 1: dr.ellipse((x - 10, y - 10, x + 10, y + 10), fill=(255, 209, 0), outline=(0, 0, 0), width=2); text(dr, (x + 14, y - 14), rt['letter'], FONT, COL[i % len(COL)], 'lm'); continue
+        if atlift(rt['pts'][k]) and not atlift(rt['pts'][k - 1]):           # a lift's first landing: the "take the lift" flag
+            dr.rectangle((x - 16, y - 16, x + 16, y + 16), fill=(255, 150, 30), outline=(0, 0, 0), width=3)
+            text(dr, (x + 20, y + 18), '%s%d take the lift' % (rt['letter'], k), FONTS, (255, 200, 120), 'lm'); continue
         if incave(rt['pts'][k]): continue                                   # the cave's floor points: its dashes, no flags
         dr.ellipse((x - 13, y - 13, x + 13, y + 13), fill=(255, 255, 255), outline=(0, 0, 0), width=2)
         dr.text((x, y), '%s%d' % (rt['letter'], k), font=FONTS, fill=(0, 0, 0), anchor='mm')
-legend = '%s from its real heights (top-down): tint %.0f - %.0f yd, hillshade, 10 yd contours; red = mob danger (to a level %d %s character); cream = drafted roads, white dashes = trails; green squares = exits walkable on the ground, red X = not; purple dashes = cave floors, diamonds their mouths; routes (dashed inside a cave)' % (TITLE, lo, hi, SPEC.get('level', 8), SPEC.get('faction', 'horde').title())
+legend = '%s from its real heights (top-down): tint %.0f - %.0f yd, hillshade, 10 yd contours; red = mob danger (to a level %d %s character); cream = drafted roads, white dashes = trails; orange squares = lift shafts, a filled one the take-the-lift flag; green squares = exits walkable on the ground, red X = not; purple dashes = cave floors, diamonds their mouths; routes (dashed inside a cave)' % (TITLE, lo, hi, SPEC.get('level', 8), SPEC.get('faction', 'horde').title())
 text(dr, (16, NR * SC - 24), legend, FONTS, anchor='lm')
 for i, rt in enumerate(data['routes']): text(dr, (16, 24 + i * 30), '%s. %s' % (rt['letter'], rt['name']), FONTS, COL[i % len(COL)], 'lm')
 top.save(os.path.join(OUT, '%s_heightmap.png' % TAG))
@@ -229,6 +237,10 @@ for i, rt in enumerate(data['routes']):
         x, y = p3(p[0], p[1], 3)
         if kk == 0: d3.ellipse((x - 8, y - 8, x + 8, y + 8), fill=(120, 220, 110), outline=(0, 0, 0), width=2); continue
         if kk == len(pts) - 1: d3.ellipse((x - 9, y - 9, x + 9, y + 9), fill=(255, 209, 0), outline=(0, 0, 0), width=2); text(d3, (x + 14, y - 14), rt['letter'], FONT, COL[i % len(COL)], 'lm'); continue
+        if atlift(p) and not atlift(pts[kk - 1]):
+            x, y = p3(p[0], p[1], 3, cave_z(p[0], p[1]))
+            d3.rectangle((x - 12, y - 40, x + 12, y - 16), fill=(255, 150, 30), outline=(0, 0, 0), width=2)
+            d3.text((x, y - 28), 'L', font=FONTS, fill=(0, 0, 0), anchor='mm'); continue
         if incave(p): continue
         d3.line((x, y, x, y - 26), fill=(0, 0, 0), width=3)
         d3.ellipse((x - 12, y - 38, x + 12, y - 14), fill=(255, 255, 255), outline=(0, 0, 0), width=2)

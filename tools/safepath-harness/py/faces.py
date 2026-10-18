@@ -62,7 +62,7 @@ if __name__ == '__main__':
         pts = rt['pts']; worst = 0; over = {35: 0.0, 40: 0.0, 45: 0.0, 50: 0.0}; segs = []
         for k in range(len(pts) - 1):
             a, b = pts[k], pts[k + 1]
-            if (len(a) > 2 and a[2] == 1) or (len(b) > 2 and b[2] == 1): continue
+            if (len(a) > 2 and a[2] in (1, 2)) or (len(b) > 2 and b[2] in (1, 2)): continue
             f = seg_faces(a, b); m = max(f); worst = max(worst, m)
             for lim in over: over[lim] += sum(0.5 for x in f if x >= lim)
             segs.append((m, k))

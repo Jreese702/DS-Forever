@@ -21,9 +21,10 @@ object Caves {
                                            // Barrow Den's stair risers join at 0.8)
     const val MOUTH_YD = 1.5               // a floor vertex this near the terrain's own height is where they meet
     const val MOUTH_GAP_YD = 25.0          // mouths farther apart than this are separate openings
+    const val MOUTH_GAP_Z = 10.0           // ... or this far apart in height (a lift's foot and its top: one over the other, never one opening)
     const val SIMPLIFY_YD = 3.0            // a way's points kept at least this far apart
     const val FLOOR_SAMPLE_YD = 4          // the floor's footprint kept a point a square this size
-    const val STEP_JOIN_YD = 0.8           // a stair's treads (their risers no floor): vertices this near across ...
+    const val STEP_JOIN_YD = 1.0           // a stair's treads (their risers no floor): vertices this near across (TB's stairs: 1.0) ...
     const val STEP_UP_YD = 1.5             // ... and no more than this apart in height are one step
 
     /** the floor's steps joined: each two vertices within [STEP_JOIN_YD] across and [STEP_UP_YD] up (a stair's treads, a ledge's lip) */
@@ -43,7 +44,22 @@ object Caves {
      *  a crypt or a barrow (Tirisfal's md_cryptonerm and md_crypt, Teldrassil's Ban'ethil barrow den), a hollow, a grave */
     val KINDS = listOf("cave", "tunnel", "mine", "den", "pass", "crypt", "barrow", "hollow", "grave")
 
-    /** one way through: world points (x, y, z) from mouth [a] to mouth [b], [yd] long along its floor */
+    /**
+     * A LIFT (the user: "what about quests going up to thunder bluff?"): its car is a server object, in none of the client's files,
+     * but its two landings are the WMO's own fixed floor, one straight above the other with nothing walkable between (the shaft).
+     * World [x], [y] of the shaft and its landings' floor heights [zBottom] / [zTop], measured from the WMO's floor (the harness's
+     * py/liftfind.py) and checked against the car's travel in TransportAnimation. Never estimated: a lift no floor shows needs a
+     * manual link. Riding it costs [LIFT_WAIT_YD].
+     */
+    class Lift(val name: String, val x: Double, val y: Double, val zBottom: Double, val zTop: Double)
+    /** a lift's wait and ride (about 30 s, at a run's 7 yd a second) as yards of walking */
+    const val LIFT_WAIT_YD = 210.0
+    /** a lift's landing is the floor vertex this near its shaft (x, y: a landing is a few big triangles, their corners well off it) and this near its height */
+    const val LIFT_SNAP_YD = 12.0
+    const val LIFT_SNAP_Z = 2.5
+
+    /** one way through: world points (x, y, z) from mouth [a] to mouth [b], [yd] long along its floor; a point with a 4th value 1 is a
+     *  lift's landing (two in a row: the ride between them) */
     class Way(val pts: List<DoubleArray>, val yd: Double) {
         val a get() = pts.first()
         val b get() = pts.last()
@@ -100,7 +116,8 @@ object Caves {
      * placement [p]'s cave from its [groups]' files: the floor in world yards (the placements' own frame, as [Buildings.Foot]),
      * its mouths where the floor meets [ground] (the terrain's height at world x, y; NaN = none) on spots [standable], and the ways.
      */
-    fun cave(p: WorldBuildings.Placement, groups: List<ByteArray>, ground: (Double, Double) -> Float, standable: (Double, Double) -> Boolean): Cave {
+    fun cave(p: WorldBuildings.Placement, groups: List<ByteArray>, ground: (Double, Double) -> Float, standable: (Double, Double) -> Boolean,
+             lifts: List<Lift> = emptyList()): Cave {
         val cs = cos(p.yaw); val sn = Math.sin(p.yaw)
         // the floor's vertices, welded; its edges
         val bucket = HashMap<Long, ArrayList<Int>>(); val xs = ArrayList<Double>(); val ys = ArrayList<Double>(); val zs = ArrayList<Double>()
@@ -116,15 +133,39 @@ object Caves {
             bucket.getOrPut(bk(bx, by, bz)) { ArrayList() }.add(xs.size - 1)
             return xs.size - 1
         }
+        val faces = ArrayList<IntArray>()
         for (g in groups) {
             val t = floorTris(g)
             for (q in 0 until t.size / 9) {
                 val a = vid(t[q * 9], t[q * 9 + 1], t[q * 9 + 2]); val b = vid(t[q * 9 + 3], t[q * 9 + 4], t[q * 9 + 5]); val c = vid(t[q * 9 + 6], t[q * 9 + 7], t[q * 9 + 8])
                 for ((u, w) in listOf(a to b, b to c, c to a)) if (u != w) { adj[u].add(w); adj[w].add(u) }
+                if (lifts.isNotEmpty()) faces.add(intArrayOf(a, b, c))
             }
         }
         joinSteps(xs, ys, zs) { u, w -> adj[u].add(w); adj[w].add(u) }
         val n = xs.size
+        // the lifts whose two landings are this floor's: their bottom and top vertices joined (the ride, [LIFT_WAIT_YD])
+        val rides = HashSet<Long>()
+        // a landing: the floor face straight over / under the shaft at that height (its corner nearest the shaft); else the nearest
+        // floor vertex at that height within [LIFT_SNAP_YD]
+        fun inside(f: IntArray, x: Double, y: Double): Boolean {
+            fun side(i: Int, j: Int) = (xs[j] - xs[i]) * (y - ys[i]) - (ys[j] - ys[i]) * (x - xs[i])
+            val d0 = side(f[0], f[1]); val d1 = side(f[1], f[2]); val d2 = side(f[2], f[0])
+            return !((d0 < 0 || d1 < 0 || d2 < 0) && (d0 > 0 || d1 > 0 || d2 > 0))
+        }
+        fun landing(l: Lift, z: Double): Int {
+            faces.filter { f -> abs((zs[f[0]] + zs[f[1]] + zs[f[2]]) / 3 - z) <= LIFT_SNAP_Z && inside(f, l.x, l.y) }
+                .minByOrNull { f -> abs((zs[f[0]] + zs[f[1]] + zs[f[2]]) / 3 - z) }
+                ?.let { f -> return f.minByOrNull { v -> hypot(xs[v] - l.x, ys[v] - l.y) }!! }
+            return (0 until n).filter { v -> hypot(xs[v] - l.x, ys[v] - l.y) <= LIFT_SNAP_YD && abs(zs[v] - z) <= LIFT_SNAP_Z }
+                .minByOrNull { v -> hypot(xs[v] - l.x, ys[v] - l.y) + abs(zs[v] - z) } ?: -1
+        }
+        for (l in lifts) {
+            val lo = landing(l, l.zBottom); val hi = landing(l, l.zTop)
+            if (lo < 0 || hi < 0 || lo == hi) continue
+            adj[lo].add(hi); adj[hi].add(lo); rides.add(lo.toLong() shl 32 or hi.toLong()); rides.add(hi.toLong() shl 32 or lo.toLong())
+        }
+        fun ride(u: Int, w: Int) = (u.toLong() shl 32 or w.toLong()) in rides
         // its pieces (a cave's floor can be several: a ledge, a pit)
         val comp = IntArray(n) { -1 }; var nc = 0
         for (s in 0 until n) if (comp[s] < 0) {
@@ -136,7 +177,7 @@ object Caves {
         val meets = (0 until n).filter { v -> val h = ground(xs[v], ys[v]); !h.isNaN() && abs(h - zs[v]) <= MOUTH_YD && standable(xs[v], ys[v]) }
         val mouths = ArrayList<Int>()
         for (v in meets.sortedBy { abs(ground(xs[it], ys[it]) - zs[it]) }) {
-            if (mouths.none { m -> comp[m] == comp[v] && hypot(xs[m] - xs[v], ys[m] - ys[v]) < MOUTH_GAP_YD }) mouths.add(v)
+            if (mouths.none { m -> comp[m] == comp[v] && hypot(xs[m] - xs[v], ys[m] - ys[v]) < MOUTH_GAP_YD && abs(zs[m] - zs[v]) < MOUTH_GAP_Z }) mouths.add(v)
         }
         // the ways: each two mouths on one piece, by the floor's shortest way (3D lengths)
         val ways = ArrayList<Way>()
@@ -147,7 +188,8 @@ object Caves {
             while (pq.isNotEmpty()) {
                 val top = pq.poll(); val u = top[1].toInt(); if (top[0] > dist[u]) continue
                 for (w in adj[u]) {
-                    val d = dist[u] + sqrt((xs[w] - xs[u]).let { it * it } + (ys[w] - ys[u]).let { it * it } + (zs[w] - zs[u]).let { it * it })
+                    val d = dist[u] + if (ride(u, w)) LIFT_WAIT_YD else
+                        sqrt((xs[w] - xs[u]).let { it * it } + (ys[w] - ys[u]).let { it * it } + (zs[w] - zs[u]).let { it * it })
                     if (d < dist[w]) { dist[w] = d; prev[w] = u; pq.add(doubleArrayOf(d, w.toDouble())) }
                 }
             }
@@ -157,8 +199,10 @@ object Caves {
                 chain.reverse()
                 val pts = ArrayList<DoubleArray>()
                 for ((q, v) in chain.withIndex()) {
-                    val pt = doubleArrayOf(xs[v], ys[v], zs[v])
-                    if (q == 0 || q == chain.size - 1 || hypot(pt[0] - pts.last()[0], pt[1] - pts.last()[1]) >= SIMPLIFY_YD) pts.add(pt)
+                    // a lift's two landings always kept, marked (the route's "take the lift" flag)
+                    val atLift = (q > 0 && ride(chain[q - 1], v)) || (q < chain.size - 1 && ride(v, chain[q + 1]))
+                    val pt = if (atLift) doubleArrayOf(xs[v], ys[v], zs[v], 1.0) else doubleArrayOf(xs[v], ys[v], zs[v])
+                    if (q == 0 || q == chain.size - 1 || atLift || hypot(pt[0] - pts.last()[0], pt[1] - pts.last()[1]) >= SIMPLIFY_YD) pts.add(pt)
                 }
                 ways.add(Way(pts, dist[b]))
             }

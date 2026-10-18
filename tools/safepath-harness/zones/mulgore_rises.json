@@ -1,0 +1,144 @@
+{
+ "tag": "mulgore_rises",
+ "dir": "kalimdor",
+ "faction": "horde",
+ "zone": 1412,
+ "area": 215,
+ "level": 6,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1412,
+   215
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1412,
+  1412
+ ],
+ "title": "Thunder Bluff rises probe",
+ "crop": [
+  0,
+  -3650,
+  700,
+  -1600
+ ],
+ "closeups": [
+  {
+   "name": "Thunder Bluff",
+   "box": [
+    -880,
+    -1500,
+    420,
+    -460
+   ]
+  }
+ ],
+ "lifts": [
+  {
+   "name": "Thunder Bluff south lift, east car (to the lower rise)",
+   "x": -1284.7,
+   "y": 176.4,
+   "zBottom": 68.9,
+   "zTop": 128.6,
+   "source": "lowermesac.wmo (113761): its foot landing (group 3, z 68.9) straight under its top landing (group 2, z 128.6-130.3), a 55 sq yd overlap (py/floorpieces.py --overlap); a 59.7 yd rise, TransportAnimation's elevators 4170-4173 travel 61.2-61.5 yd"
+  },
+  {
+   "name": "Thunder Bluff south lift, west car (to the lower rise)",
+   "x": -1306.0,
+   "y": 173.5,
+   "zBottom": 68.9,
+   "zTop": 128.6,
+   "source": "lowermesac.wmo (113761): the same foot landing under its second top landing (z 128.6-130.3), a 23-32 sq yd overlap"
+  },
+  {
+   "name": "Thunder Bluff north-east lift, north car (to the middle rise)",
+   "x": -1038.7,
+   "y": -23.5,
+   "zBottom": 69.6,
+   "zTop": 139.3,
+   "source": "midmesaa.wmo (113782): its foot landing (group 4, z 69.6) straight under its top landing (group 3, z 139.3), a 56 sq yd overlap; a 69.7 yd rise, TransportAnimation's elevators 47296/47297 travel 71.2-71.5 yd"
+  },
+  {
+   "name": "Thunder Bluff north-east lift, south car (to the middle rise)",
+   "x": -1047.9,
+   "y": -42.6,
+   "zBottom": 69.6,
+   "zTop": 139.3,
+   "source": "midmesaa.wmo (113782): the same foot landing under its second top landing, a 54 sq yd overlap"
+  }
+ ],
+ "goals": [
+  {
+   "name": "Holt Thunderhorn (Hunter Rise)",
+   "from": {
+    "node": "Bloodhoof Village"
+   },
+   "to": {
+    "xy": [
+     -1475,
+     -81
+    ]
+   }
+  },
+  {
+   "name": "Arch Druid Hamuul Runetotem (Elder Rise)",
+   "from": {
+    "node": "Bloodhoof Village"
+   },
+   "to": {
+    "xy": [
+     -1049,
+     -304
+    ]
+   }
+  },
+  {
+   "name": "Cairne -> Beram (rise to rise)",
+   "from": {
+    "xy": [
+     -1210,
+     -113
+    ]
+   },
+   "to": {
+    "xy": [
+     -981,
+     287
+    ],
+    "exact": true
+   }
+  },
+  {
+   "name": "Tal -> Hamuul (rise to rise)",
+   "from": {
+    "xy": [
+     -1197,
+     26
+    ]
+   },
+   "to": {
+    "xy": [
+     -1049,
+     -304
+    ]
+   }
+  },
+  {
+   "name": "Holt -> Tal (rise to rise)",
+   "from": {
+    "xy": [
+     -1475,
+     -81
+    ]
+   },
+   "to": {
+    "xy": [
+     -1197,
+     26
+    ]
+   }
+  }
+ ]
+}

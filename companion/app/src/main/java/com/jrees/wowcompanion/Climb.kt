@@ -176,7 +176,10 @@ object Climb {
 
     /** a point of a leg inside a cave: world x, y and this mark (its ground is the cave's floor, not the terrain over it) */
     const val IN_CAVE = 1.0
-    fun inCave(p: DoubleArray) = p.size > 2 && p[2] == IN_CAVE
+    /** a lift's landing on a link's way (a point marked so: "take the lift" there; the ride to the next such point) - inside, as a cave's */
+    const val LIFT = 2.0
+    fun inCave(p: DoubleArray) = p.size > 2 && (p[2] == IN_CAVE || p[2] == LIFT)
+    fun atLift(p: DoubleArray) = p.size > 2 && p[2] == LIFT
 
     /**
      * the leg from world [from] to [to] on [g]: A* over the lattice within [MARGIN_YD] of the two, its cost each step's length by its
@@ -235,6 +238,8 @@ object Climb {
                 // the step's own straight line, as the final check walks it (walkable / segcheck): a turn at a vertex every face within
                 // a quarter yard of which is a wall passes the steps beside it but not the line (Tirisfal, Brill -> Agamand Mills)
                 if (g.faces != null && !g.lineClear(doubleArrayOf(g.wx(uj), g.wy(ui)), doubleArrayOf(g.wx(vj), g.wy(vi)))) continue
+                // and its middle off deep water (a diagonal between two dry vertices clips a shore cell's corner)
+                if (water != null && water((g.wx(uj) + g.wx(vj)) / 2, (g.wy(ui) + g.wy(vi)) / 2)) continue
                 val x = extraOf(vi, vj); if (x < 0) continue
                 val len = if (di != 0 && dj != 0) STEP * 1.41421356 else STEP
                 val v = id(vi, vj)
@@ -264,6 +269,11 @@ object Climb {
                 val cl = g.step(ci, cj, di, dj); if (cl == WALL) return Double.MAX_VALUE
                 if (ni !in i0..i1 || nj !in j0..j1) return Double.MAX_VALUE
                 if (q == n && n > 1 && !g.lineClear(doubleArrayOf(g.wx(a[1]), g.wy(a[0])), doubleArrayOf(g.wx(b[1]), g.wy(b[0])))) return Double.MAX_VALUE
+                if (q == n && n > 1 && water != null) {                 // the straight line off deep water all along, not only at its vertices
+                    val ax = g.wx(a[1]); val ay = g.wy(a[0]); val bx = g.wx(b[1]); val by = g.wy(b[0])
+                    val m = max(1, (hypot(bx - ax, by - ay) / 2.0).toInt())
+                    for (t in 1 until m) if (water(ax + (bx - ax) * t / m, ay + (by - ay) * t / m)) return Double.MAX_VALUE
+                }
                 val x = extraOf(ni, nj); if (x < 0) return Double.MAX_VALUE
                 cost += (if (di != 0 && dj != 0) STEP * 1.41421356 else STEP) * (COST[cl] + x)
                 ci = ni; cj = nj
@@ -281,7 +291,7 @@ object Climb {
             if (path[a + 1][2] >= 0) {
                 val lk = links[path[a + 1][2] / 2]
                 val way = if (path[a + 1][2] % 2 == 0) lk.pts else lk.pts.reversed()
-                for (p in way) pts.add(doubleArrayOf(p[0], p[1], IN_CAVE))
+                for (p in way) pts.add(doubleArrayOf(p[0], p[1], if (p.size > 3 && p[3] == 1.0) LIFT else IN_CAVE))
                 pts.add(vert(a + 1)); a++; continue
             }
             var stop = a + 1
@@ -312,8 +322,14 @@ object Climb {
 
     /** whether the straight line from world [a] to [b] on [g] crosses no wall: the lattice's own steps along it (a way the network
      *  drew from the 25 yd cells can still climb a cliff those cells averaged away) */
-    fun walkable(g: Grid, a: DoubleArray, b: DoubleArray): Boolean {
+    fun walkable(g: Grid, a: DoubleArray, b: DoubleArray, water: ((Double, Double) -> Boolean)? = null): Boolean {
         if (inCave(a) || inCave(b)) return true                 // a cave's floor: walkable by its own triangles, not the hill over it
+        // deep water (the user: "Pathing shouldn't be in water"): a straight piece across it is no walk either (Mulgore's Stonebull Lake:
+        // a network way's hooked end cut straight across it)
+        if (water != null) {
+            val n = max(1, (hypot(b[0] - a[0], b[1] - a[1]) / 2.0).toInt())
+            for (q in 0..n) if (water(a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n)) return false
+        }
         val s = g.at(a[0], a[1]); val e = g.at(b[0], b[1])
         val n = max(abs(e[0] - s[0]), abs(e[1] - s[1]))
         var ci = s[0]; var cj = s[1]

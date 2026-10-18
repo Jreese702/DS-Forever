@@ -71,6 +71,7 @@ python dump_cavegroups.py <dir>                      # cave / tunnel / mine / de
 | `border` | The pair of zones whose crossings get the border picture. |
 | `title`, `crop` (`[top x, bottom x, left y, right y]`, the zone's land), `closeups` (name and box, the same order) | For the renders. |
 | `goals` | 8–10 routes, as below. With no `goals` key, Durotar's own built-in goals are used. |
+| `lifts` | Lifts (`Caves.Lift`): `name`, the shaft's `x`, `y`, the landings' floor heights `zBottom` / `zTop`, and the `source` they were measured from (`py/liftfind.py`, `py/floorpieces.py --overlap`; never estimated). A lift whose two landings are one dumped WMO's floor becomes a way through it, costing `Caves.LIFT_WAIT_YD`; the run prints a `LIFT` line for each. |
 | `friendlyMinLevel` | Optional. Spawns at or above this level are placeholders (WoW Forever's own NPCs at 9999), counted as friendly. |
 | `voidBelow` | Optional. A floating zone's void floor: ground below this height is no ground (Zephras Isle: 300). |
 | `roadTextures` | Optional. Extra name parts that mark a road texture named otherwise (Dun Morogh: `browncracks`). |
@@ -93,6 +94,7 @@ Goal fields:
   - `{"node": ...}`;
   - `{"exit": "<name>", "how"?: "bridge"}`;
   - `{"xy": [x, y]}`.
+  - any `to` with `"exact": true`: never moved to a cave's mouth when a cave's floor lies under it (a trainer on Thunder Bluff's Spirit Rise, over the undead cave).
 - World yards: `x` north, `y` west. Starts and goals are snapped to the nearest standable spot within 15 yd.
 
 ## Run, check, render
@@ -142,6 +144,10 @@ Output lines to look for:
 | `mddf_find.py <regex> t b l r [dir]` | Doodads (M2) by name in a box. |
 | `modd_find.py <regex> <wmo regex> [dir]` | A WMO's own doodads (MODD). |
 | `wmofloor.py <fid> <groups>`, `floorcheck.py <fid> <groups> ox oy oz yawdeg` | A cave WMO's groups and its floor against the terrain. |
+| `roadtex.py <regex> t b l r <out.png>` | A zone's ground textures at ~4 yd: where the road textures show, and how many 25 yd cells they dominate / touch (why a thin road is missed). |
+| `reach.py x,y [R] [--box t,b,l,r] [--path x,y ...] [--dump f.txt]` | The ground flood from a point (segcheck's step rule): its size, its highest ground in a box, the way to each target and its steepest steps (an exit's or a ridge's check by hand). |
+| `liftfind.py <fid> [x,y] [--col 6] [--gap 40]` | A WMO's floor in columns: a low landing under a high one with nothing walkable between (a lift shaft). |
+| `floorpieces.py <fid> x,y [--h 1.0 --up 1.5] [--probe x,y,z ...] [--around x,y,r] [--overlap x,y,zlo,zhi]` | A WMO's floor pieces, what the stair step-up joins, and where a low landing lies under a high one (a lift's shaft centre). |
 
 ## Deliverables per zone (checklist)
 

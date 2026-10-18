@@ -1,0 +1,8 @@
+{"tag": "mulgore_ridge", "dir": "kalimdor", "faction": "horde", "zone": 1412, "area": 215, "level": 6, "friendlyMinLevel": 100,
+ "maps": [[1412, 215]], "cities": [], "border": [1412, 1412],
+ "title": "Mulgore ridge probe", "crop": [-2000, -3835, 1200, -600], "closeups": [],
+ "goals": [
+  {"name": "old Shen'dralas exit", "from": {"node": "Bloodhoof Village"}, "to": {"xy": [-2704, 759]}},
+  {"name": "old Feralas exit", "from": {"node": "Red Cloud Mesa"}, "to": {"xy": [-3586, 834]}},
+  {"name": "current Shen'dralas exit", "from": {"node": "Red Cloud Mesa"}, "to": {"xy": [-2828, 386]}}
+ ]}

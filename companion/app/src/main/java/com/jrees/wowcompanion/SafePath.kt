@@ -34,6 +34,7 @@ object SafePath {
     const val ROAD = "road"; const val SPUR = "spur"; const val TRAIL = "trail"
     const val CAVE = "cave"                // a way through a cave or a tunnel, on its own floor (Caves); its inside nodes are this kind too
     const val MOUTH = "mouth"              // a cave's mouth: where its floor meets the terrain
+    const val LIFT = "lift"                // a lift's ride between its two landings (Caves.Lift; an edge, and its landings' nodes)
     const val DRAFT = "draft"; const val OK = "ok"; const val AVOID = "avoid"; const val REMOVED = "removed"
 
     const val CELL_YD = 25.0               // the draft's grid (Roads' and Terrain's cells)
@@ -1287,15 +1288,18 @@ object SafePath {
         fun factor(e: Edge) = (when (e.kind) { ROAD -> 1.0; SPUR, CAVE -> 1.3; else -> 2.2 }) * (if (e.state == AVOID) 6.0 else 1.0) *
             (1.0 + e.danger) * (if (e.kind == ROAD) 1.0 else e.climb.toDouble())
         val pos = HashMap<Int, DoubleArray>()
-        for (n in net.nodes) pos[n.id] = if (n.kind == CAVE) doubleArrayOf(n.wx, n.wy, Climb.IN_CAVE) else doubleArrayOf(n.wx, n.wy)
+        for (n in net.nodes) pos[n.id] = when (n.kind) { CAVE -> doubleArrayOf(n.wx, n.wy, Climb.IN_CAVE); LIFT -> doubleArrayOf(n.wx, n.wy, Climb.LIFT)
+            else -> doubleArrayOf(n.wx, n.wy) }
         val adj = HashMap<Int, ArrayList<Pair<Int, Double>>>()
         fun link(a: Int, b: Int, c: Double) { adj.getOrPut(a) { ArrayList() }.add(b to c); adj.getOrPut(b) { ArrayList() }.add(a to c) }
-        for (e in usable) { val a = pos[e.a]!!; val b = pos[e.b]!!; link(e.a, e.b, hypot(a[0] - b[0], a[1] - b[1]) * factor(e)) }
+        // a lift's ride: its wait, whatever its (nil) length
+        for (e in usable) { val a = pos[e.a]!!; val b = pos[e.b]!!
+            link(e.a, e.b, hypot(a[0] - b[0], a[1] - b[1]) * factor(e) + if (e.kind == LIFT) Caves.LIFT_WAIT_YD else 0.0) }
         // the walk on and off: the nearest points of the nearest ways (a few), each a virtual node cut into its way
         var nextVirtual = -10
         // the walk on / off goes AHEAD: a way behind the player (away from the goal), or behind the goal, costs more to reach
         fun attach(px: Double, py: Double, virt: Int, toward: DoubleArray): Boolean {
-            val cands = usable.map { e ->
+            val cands = usable.filter { it.kind != LIFT }.map { e ->
                 val a = pos[e.a]!!; val b = pos[e.b]!!
                 val dx = b[0] - a[0]; val dy = b[1] - a[1]; val l2 = dx * dx + dy * dy
                 val t = if (l2 <= 0.0) 0.0 else (((px - a[0]) * dx + (py - a[1]) * dy) / l2).coerceIn(0.0, 1.0)
@@ -1346,10 +1350,12 @@ object SafePath {
         var w = pts
         fun d(a: DoubleArray, b: DoubleArray) = hypot(a[0] - b[0], a[1] - b[1])
         fun arc(from: Int, to: Int): Double { var s = 0.0; for (i in from until to) s += d(w[i], w[i + 1]); return s }
-        // the loops: from each point, the farthest later one it comes back to
+        // a cut never starts or ends inside a cave or at a lift (its floor is not the terrain the straight walk would cross: Thunder Bluff's
+        // way cut from the mesa's foot straight onto a ramp's floor 100 yd up, the walk's check passing it as a cave's)
+        fun cut(i: Int, j: Int) = !Climb.inCave(w[i]) && !Climb.inCave(w[j])
         var i = 0
         while (i < w.size - 2) {
-            val j = (w.size - 1 downTo i + 2).firstOrNull { j -> d(w[i], w[j]) < LOOP_YD && arc(i, j) > 2.5 * d(w[i], w[j]) + LOOP_YD }
+            val j = (w.size - 1 downTo i + 2).firstOrNull { j -> cut(i, j) && d(w[i], w[j]) < LOOP_YD && arc(i, j) > 2.5 * d(w[i], w[j]) + LOOP_YD }
             if (j != null) w = w.subList(0, i + 1) + w.subList(j, w.size)
             i++
         }
@@ -1357,20 +1363,20 @@ object SafePath {
         if (clear != null) {
             var a = 0
             while (a < w.size - 2) {
-                val j = (w.size - 1 downTo a + 2).firstOrNull { j -> d(w[a], w[j]) <= SHORTCUT_YD && arc(a, j) > 1.6 * d(w[a], w[j]) && clear(w[a], w[j]) }
+                val j = (w.size - 1 downTo a + 2).firstOrNull { j -> cut(a, j) && d(w[a], w[j]) <= SHORTCUT_YD && arc(a, j) > 1.6 * d(w[a], w[j]) && clear(w[a], w[j]) }
                 if (j != null) w = w.subList(0, a + 1) + w.subList(j, w.size)
                 a++
             }
         }
         // the ends: straight to the farthest point near enough when the way there hooks round
         if (w.size > 2) {
-            val k = (w.size - 2 downTo 1).firstOrNull { k -> (d(w[0], w[k]) <= ATTACH_YD && arc(0, k) > 1.3 * d(w[0], w[k]) + 20.0) ||
+            val k = (w.size - 2 downTo 1).firstOrNull { k -> cut(0, k) && (d(w[0], w[k]) <= ATTACH_YD && arc(0, k) > 1.3 * d(w[0], w[k]) + 20.0) ||
                 (clear != null && d(w[0], w[k]) <= SHORTCUT_YD && arc(0, k) > 1.6 * d(w[0], w[k]) && clear(w[0], w[k])) }
             if (k != null) w = listOf(w[0]) + w.subList(k, w.size)
         }
         if (w.size > 2) {
             val last = w.size - 1
-            val k = (1 until last).firstOrNull { k -> (d(w[last], w[k]) <= ATTACH_YD && arc(k, last) > 1.3 * d(w[last], w[k]) + 20.0) ||
+            val k = (1 until last).firstOrNull { k -> cut(k, last) && (d(w[last], w[k]) <= ATTACH_YD && arc(k, last) > 1.3 * d(w[last], w[k]) + 20.0) ||
                 (clear != null && d(w[last], w[k]) <= SHORTCUT_YD && arc(k, last) > 1.6 * d(w[last], w[k]) && clear(w[last], w[k])) }
             if (k != null) w = w.subList(0, k + 1) + listOf(w[last])
         }
@@ -1554,11 +1560,14 @@ object SafePath {
                 ?.let { edges.add(Edge(it.id, id, SPUR, DRAFT, "cave", danger?.invoke(p[0], p[1]) ?: 0f)) }
             id
         }
+        fun lifted(p: DoubleArray) = p.size > 3 && p[3] == 1.0
         for (c in caves) for (w in c.ways) {
-            var last = mouth(w.a)
-            for (p in w.pts.subList(1, w.pts.size - 1).filterIndexed { i, _ -> i % 3 == 2 }) {
-                val id = next++; nodes.add(Node(id, p[0], p[1], CAVE, "cave"))
-                edges.add(Edge(last, id, CAVE, DRAFT, "cave", danger?.invoke(p[0], p[1]) ?: 0f)); last = id
+            var last = mouth(w.a); var lastLift = false
+            // every third point of its floor kept, and a lift's two landings ([LIFT] nodes, the ride between them a [LIFT] edge)
+            for (p in w.pts.subList(1, w.pts.size - 1).filterIndexed { i, q -> i % 3 == 2 || lifted(q) }) {
+                val lf = lifted(p)
+                val id = next++; nodes.add(Node(id, p[0], p[1], if (lf) LIFT else CAVE, if (lf) "lift" else "cave"))
+                edges.add(Edge(last, id, if (lf && lastLift) LIFT else CAVE, DRAFT, "cave", danger?.invoke(p[0], p[1]) ?: 0f)); last = id; lastLift = lf
             }
             edges.add(Edge(last, mouth(w.b), CAVE, DRAFT, "cave", danger?.invoke(w.b[0], w.b[1]) ?: 0f))
         }
@@ -1573,7 +1582,7 @@ object SafePath {
         val byId = net.nodes.associateBy { it.id }
         val usable = net.edges.filter { it.state != REMOVED && it.state != AVOID && byId.containsKey(it.a) && byId.containsKey(it.b) }
         if (usable.isEmpty()) return null
-        val onLand = usable.filter { it.kind != CAVE }.ifEmpty { usable }          // a walk on / off never into a hill's cave
+        val onLand = usable.filter { it.kind != CAVE && it.kind != LIFT }.ifEmpty { usable }          // a walk on / off never into a hill's cave
         fun nearestOnWay(px: Double, py: Double): DoubleArray = onLand.map { e ->
             val a = byId[e.a]!!; val b = byId[e.b]!!
             val dx = b.wx - a.wx; val dy = b.wy - a.wy; val l2 = dx * dx + dy * dy
@@ -1589,7 +1598,7 @@ object SafePath {
         // no way at all: left out, so the network's search goes round by the ways that are (a cave's own floor is its own)
         val walked = if (walkable == null) net else Net(net.map, net.cont, net.built, net.nodes, net.edges.filter { e ->
             val a = byId[e.a]; val b = byId[e.b]
-            e.kind == CAVE || a == null || b == null || a.kind == MOUTH || b.kind == MOUTH || walkable(doubleArrayOf(a.wx, a.wy), doubleArrayOf(b.wx, b.wy))
+            e.kind == CAVE || e.kind == LIFT || a == null || b == null || a.kind == MOUTH || b.kind == MOUTH || walkable(doubleArrayOf(a.wx, a.wy), doubleArrayOf(b.wx, b.wy))
         }, net.exits, net.reviewed)
         val mid = route(walked, on[0], on[1], off[0], off[1], clear = clear) ?: listOf(on, off)
         val exitEnd = toExit && hypot(off[0] - tx, off[1] - ty) > 1.0 && net.exits.any { x -> byId[x.node]?.let { it.wx == off[0] && it.wy == off[1] } == true }

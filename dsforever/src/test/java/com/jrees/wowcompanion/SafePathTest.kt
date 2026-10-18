@@ -233,4 +233,27 @@ class SafePathTest {
         val n = bridged.nodes.first { it.id == x.node }
         assertTrue("on the bank: y ${n.wy}", n.wy > 25)
     }
+
+    /** a hooked end is never cut straight onto a cave's or a lift's floor point (Thunder Bluff: the foot of the mesa cut straight onto a
+     *  ramp's floor 100 yd up, the walk's own check passing it as a cave's) */
+    @Test fun smoothNeverCutsOntoACavesFloor() {
+        val land = doubleArrayOf(0.0, 0.0)
+        val way = listOf(land, doubleArrayOf(40.0, 0.0), doubleArrayOf(40.0, 40.0, Climb.IN_CAVE), doubleArrayOf(20.0, 40.0, Climb.LIFT),
+            doubleArrayOf(20.0, 41.0, Climb.LIFT), doubleArrayOf(0.0, 30.0, Climb.IN_CAVE), doubleArrayOf(0.0, 25.0))
+        val out = SafePath.smooth(way) { _, _ -> true }
+        for ((a, b) in out.zipWithNext()) {
+            val ia = way.indexOfFirst { it === a }; val ib = way.indexOfFirst { it === b }
+            assertTrue("a cut from ${a.toList()} to ${b.toList()} skips over a floor point", ib == ia + 1 || (!Climb.inCave(a) && !Climb.inCave(b)))
+        }
+    }
+
+    /** a lift's ride is a [SafePath.LIFT] edge whose cost is its wait (zero yards long, it still costs Caves.LIFT_WAIT_YD) */
+    @Test fun aLiftsRideCostsItsWait() {
+        val w = Caves.Way(listOf(doubleArrayOf(0.0, 0.0, 60.0), doubleArrayOf(0.0, 10.0, 69.0), doubleArrayOf(0.0, 12.0, 69.0, 1.0),
+            doubleArrayOf(0.0, 12.0, 129.0, 1.0), doubleArrayOf(0.0, 20.0, 129.0), doubleArrayOf(0.0, 40.0, 130.0)), 40.0 + Caves.LIFT_WAIT_YD)
+        val net = SafePath.Net(1, 0, "", listOf(SafePath.Node(0, -100.0, 0.0, SafePath.JUNCTION)), emptyList(), emptyList())
+        val withLift = SafePath.withCaves(net, listOf(Caves.Cave(1, 1, 0.0, 0.0, listOf(w.a, w.b), listOf(w))))
+        assertEquals(1, withLift.edges.count { it.kind == SafePath.LIFT })
+        assertEquals(2, withLift.nodes.count { it.kind == SafePath.LIFT })
+    }
 }

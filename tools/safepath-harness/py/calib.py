@@ -56,7 +56,7 @@ def runs(rt, step=0.5):
     pts = rt['pts']; best = {l: (0.0, '') for l in LIMITS}
     for k in range(len(pts) - 1):
         a, b = pts[k], pts[k + 1]
-        if (len(a) > 2 and a[2] == 1) or (len(b) > 2 and b[2] == 1): continue
+        if (len(a) > 2 and a[2] in (1, 2)) or (len(b) > 2 and b[2] in (1, 2)): continue
         L = math.hypot(b[0] - a[0], b[1] - a[1]); n = max(1, int(L / step))
         samp = []
         for s in range(n + 1):
