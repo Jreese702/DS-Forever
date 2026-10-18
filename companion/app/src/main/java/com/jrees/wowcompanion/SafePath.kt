@@ -774,10 +774,14 @@ object SafePath {
                 fixed + hubs(friendly, { x, y -> PlaceNames.nameAt(x, y, ar.rows) { a, b2 -> zg.areaAt(a, b2) } }, nameOf(map),
                     districtFor(map, t, b, l, r)), ::nameOf,
                 dangerOf(hostile), ground = ground, painted = painted), built)
-            ArtHarvest.file("safepath/$map.draft.json").also { it.parentFile?.mkdirs() }.writeText(net.toJson().toString())
+            // the crossings checked from both sides, against the neighbours' drafts there are (the user: "a low danger path back")
+            val neighbours = net.exits.map { it.toMap }.distinct().mapNotNull { m -> drafts.get(m) }
+            val checked = checkCrossings(net, neighbours)
+            ArtHarvest.file("safepath/$map.draft.json").also { it.parentFile?.mkdirs() }.writeText(checked.toJson().toString())
             drafts.drop(map); nets.drop(map)
-            "drafted: ${net.nodes.size} nodes, ${net.edges.size} edges (${net.edges.count { it.kind == TRAIL }} trails), " +
-                "${net.exits.size} exits (${net.exits.joinToString { it.name.ifEmpty { it.toMap.toString() } }})"
+            "drafted: ${checked.nodes.size} nodes, ${checked.edges.size} edges (${checked.edges.count { it.kind == TRAIL }} trails), " +
+                "${checked.exits.size} exits (${checked.exits.joinToString { it.name.ifEmpty { it.toMap.toString() } }}; " +
+                "${net.exits.size - checked.exits.size} dropped, checked against ${neighbours.size} neighbours)"
         }) { said -> android.util.Log.i("WCMAP", "safepath $map: $said") }
     }
 
@@ -1268,5 +1272,90 @@ object SafePath {
     /** the district of capital [map] at its ([u], [v]) (0..1), or null (not a capital, or no district near) */
     fun district(map: Int, u: Double, v: Double): String? = DISTRICTS[map]?.minByOrNull { hypot((it.u - u) * 1.5, it.v - v) }
         ?.takeIf { hypot((it.u - u) * 1.5, it.v - v) <= DISTRICT_NEAR }?.name
+
+
+    // ---------------------------------------------------------------- the crossings checked from both sides
+
+    /** how an exit joins the rest of its zone's network: [LOW] by a way with little danger on it, [DANGER] only through hostile
+     *  ground, [NONE] not at all */
+    enum class Link { LOW, DANGER, NONE }
+
+    /**
+     * exit node [node]'s link to the rest of [net]: the shortest way (by length, never a removed one) from it to the nearest stop (a
+     * town, a flight master, a dock) or road junction (three roads or more) at least [LINK_FROM_YD] away; [Link.LOW] when at most
+     * [DANGER_LINK_YD] of that way lies among hostile mobs (its edges' danger share x their length)
+     */
+    fun link(net: Net, node: Int): Link {
+        val byId = net.nodes.associateBy { it.id }
+        val start = byId[node] ?: return Link.NONE
+        val usable = net.edges.filter { it.state != REMOVED && byId.containsKey(it.a) && byId.containsKey(it.b) }
+        val roadDeg = HashMap<Int, Int>()
+        for (e in usable) if (e.kind == ROAD) { roadDeg[e.a] = (roadDeg[e.a] ?: 0) + 1; roadDeg[e.b] = (roadDeg[e.b] ?: 0) + 1 }
+        val adj = HashMap<Int, ArrayList<Pair<Int, Edge>>>()
+        for (e in usable) { adj.getOrPut(e.a) { ArrayList() }.add(e.b to e); adj.getOrPut(e.b) { ArrayList() }.add(e.a to e) }
+        fun len(e: Edge) = byId[e.a]!!.let { a -> byId[e.b]!!.let { b -> hypot(a.wx - b.wx, a.wy - b.wy) } }
+        val dist = HashMap<Int, Double>(); val bad = HashMap<Int, Double>()
+        val q = PriorityQueue<Pair<Double, Int>>(compareBy { it.first })
+        dist[node] = 0.0; bad[node] = 0.0; q.add(0.0 to node)
+        while (q.isNotEmpty()) {
+            val (d, k) = q.poll()
+            if (d > (dist[k] ?: Double.MAX_VALUE)) continue
+            val n = byId[k]!!
+            val far = hypot(n.wx - start.wx, n.wy - start.wy) >= LINK_FROM_YD
+            val target = k != node && far && (n.kind == HUB || n.kind == FLIGHT || n.kind == DOCK || (roadDeg[k] ?: 0) >= 3)
+            if (target) return if (bad[k]!! <= DANGER_LINK_YD) Link.LOW else Link.DANGER
+            for ((o, e) in adj[k] ?: continue) {
+                val l = len(e); val nd = d + l
+                if (nd < (dist[o] ?: Double.MAX_VALUE)) { dist[o] = nd; bad[o] = bad[k]!! + l * e.danger; q.add(nd to o) }
+            }
+        }
+        return Link.NONE
+    }
+    const val LINK_FROM_YD = 150.0         // the way back counts from a place this far from the crossing
+    const val DANGER_LINK_YD = 150.0       // at most this much of it among hostile mobs is a low-danger way back
+    const val PAIR_YD = 400.0              // two zones' exits into each other this near are one crossing
+
+    /**
+     * THE CROSSINGS, CHECKED FROM BOTH SIDES (the user, 2026-10-18: "I don't mind them, as long as there is a low danger path back to
+     * another path"): each of [own]'s exits into a zone of [others] (their drafts) is a crossing with that zone's exit near it; it
+     * stays when both sides join their own network by a low-danger way, is AVOIDED (its ways there marked avoid: a route takes it
+     * only when nothing else goes) when a side only joins through danger, and is dropped (with the dead-end way to it) when the far
+     * side has no exit near it or no way back at all. A neighbour not drafted yet: the exit stays as it is.
+     */
+    fun checkCrossings(own: Net, others: List<Net>): Net {
+        var edges = own.edges.toMutableList()
+        val exits = own.exits.toMutableList()
+        val byId = own.nodes.associateBy { it.id }
+        for (x in own.exits) {
+            val other = others.firstOrNull { it.map == x.toMap } ?: continue
+            val n = byId[x.node] ?: continue
+            // the far side's exit that is this one's nearest AND has this one as its nearest (two crossings 200 yd apart stay two)
+            val mineTo = own.exits.filter { it.toMap == other.map }.mapNotNull { y -> byId[y.node] }
+            val near = other.exits.filter { it.toMap == own.map }.mapNotNull { y -> other.nodes.firstOrNull { it.id == y.node } }
+                .minByOrNull { hypot(it.wx - n.wx, it.wy - n.wy) }?.takeIf { f -> hypot(f.wx - n.wx, f.wy - n.wy) <= PAIR_YD &&
+                    mineTo.minByOrNull { hypot(it.wx - f.wx, it.wy - f.wy) }?.id == n.id }
+            val mine = link(own, x.node)
+            val far = if (near == null) Link.NONE else link(other, near.id)
+            when {
+                mine == Link.NONE || far == Link.NONE -> {
+                    exits.remove(x)
+                    // the dead-end way to it goes too (back to the first place it meets another way)
+                    var cur = x.node
+                    while (true) {
+                        val at = edges.filter { it.a == cur || it.b == cur }
+                        if (at.size != 1) break
+                        val e = at[0]; edges.remove(e)
+                        cur = if (e.a == cur) e.b else e.a
+                        if (exits.any { it.node == cur }) break
+                    }
+                }
+                mine == Link.DANGER || far == Link.DANGER ->
+                    edges = edges.map { e -> if ((e.a == x.node || e.b == x.node) && e.state == DRAFT) Edge(e.a, e.b, e.kind, AVOID, e.src, e.danger, e.climb) else e }.toMutableList()
+            }
+        }
+        val used = (edges.flatMap { listOf(it.a, it.b) } + exits.map { it.node }).toHashSet()
+        val keepNodes = own.nodes.filter { it.id in used || it.kind == HUB || it.kind == FLIGHT || it.kind == DOCK }
+        return Net(own.map, own.cont, own.built, keepNodes, edges, exits, own.reviewed)
+    }
 
 }

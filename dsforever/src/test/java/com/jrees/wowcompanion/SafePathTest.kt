@@ -162,4 +162,35 @@ class SafePathTest {
         assertEquals(listOf(0.0, 200.0), SafePath.smooth(hook, SafePath.clearOf { _, _ -> 1f })[1].toList())
         assertEquals(5, SafePath.smooth(hook, SafePath.clearOf { _, _ -> Terrain.WALL }).size)       // over a cliff: kept
     }
+
+    /** the user on the border picture: "I don't mind them, as long as there is a low danger path back to another path" */
+    @Test fun aCrossingStaysWhereBothSidesHaveALowDangerWayBack() {
+        fun n(id: Int, x: Double, y: Double, kind: String = SafePath.POINT) = SafePath.Node(id, x, y, kind)
+        // zone 1 (y > 0): a town at y 600, a road to the border at y 0 (exit 2); a second exit 300 yd north with only a dangerous way
+        fun west(danger: Float) = SafePath.Net(1, 0, "", listOf(n(0, 500.0, 600.0, SafePath.HUB), n(1, 500.0, 200.0), n(2, 500.0, 0.0, SafePath.EXIT),
+            n(3, 800.0, 200.0), n(4, 800.0, 0.0, SafePath.EXIT)),
+            listOf(SafePath.Edge(0, 1, SafePath.ROAD), SafePath.Edge(1, 2, SafePath.ROAD), SafePath.Edge(1, 3, SafePath.TRAIL, danger = danger),
+                SafePath.Edge(3, 4, SafePath.TRAIL, danger = danger)),
+            listOf(SafePath.Exit(2, 2, "walk", "East"), SafePath.Exit(4, 2, "walk", "East")))
+        // zone 2 (y < 0): its exits across from both, each with a road back to its town
+        val east = SafePath.Net(2, 0, "", listOf(n(10, 500.0, -600.0, SafePath.HUB), n(11, 500.0, -20.0, SafePath.EXIT), n(12, 800.0, -20.0, SafePath.EXIT),
+            n(13, 650.0, -300.0)),
+            listOf(SafePath.Edge(10, 13, SafePath.ROAD), SafePath.Edge(13, 11, SafePath.ROAD), SafePath.Edge(13, 12, SafePath.ROAD)),
+            listOf(SafePath.Exit(11, 1, "walk", "West"), SafePath.Exit(12, 1, "walk", "West")))
+        assertEquals(SafePath.Link.LOW, SafePath.link(west(0f), 2))
+        assertEquals(SafePath.Link.DANGER, SafePath.link(west(1f), 4))
+        // safe both ways: both kept
+        assertEquals(2, SafePath.checkCrossings(west(0f), listOf(east)).exits.size)
+        // the north one's way back runs through mobs: kept, its ways avoided
+        val c = SafePath.checkCrossings(west(1f), listOf(east))
+        assertEquals(2, c.exits.size)
+        assertTrue(c.edges.single { it.b == 4 }.state == SafePath.AVOID)
+        // the far side has no exit across from it: dropped, with the dead-end way to it
+        val lone = SafePath.Net(2, 0, "", east.nodes, east.edges, east.exits.filter { it.node == 11 })
+        val d = SafePath.checkCrossings(west(0f), listOf(lone))
+        assertEquals(listOf(2), d.exits.map { it.node })
+        assertTrue(d.edges.none { it.b == 4 || it.a == 4 })
+        // a neighbour not drafted yet: as it was
+        assertEquals(2, SafePath.checkCrossings(west(1f), emptyList()).exits.size)
+    }
 }
