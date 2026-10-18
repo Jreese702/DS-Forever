@@ -99,17 +99,19 @@ object ThirdPartyAddons {
         inUse = { Settings.questTracking == "polestar" }, usedIn = "Map › Quest tracking")
 
     /**
-     * QUESTTRAIL (Krom, MIT; CurseForge project 1725624, file 9208872; Map's "Quest tracking: QuestTrail", the user: "Download it
+     * QUESTTRAIL (Krom, MIT; CurseForge project 1725624; Map's "Quest tracking: QuestTrail", the user: "Download it
      * (Add-ons tab)"): learns where quests are taken, done and handed in; a guidance arrow that plans the route. One folder,
-     * QuestTrail (its .toc QuestTrail_Camelot.toc). No GitHub: CurseForge's file CDN, our pinned size and sha256 (read by Map
-     * 2026-10-17). In the game it sets the super-tracked quest itself, and its default "hideBlizzard" turns the game's
+     * QuestTrail (its .toc QuestTrail_Camelot.toc). No GitHub: CurseForge's file CDN, our pinned size and sha256. 3.2.1 (file
+     * 9234965, the user: "Update QuestTrail on my Thor"; was 3.1.0, file 9208872): its baked pathfinding grids (Data/NavGrid_*) make
+     * it 7.6 MB. An installed older version is updated by the pin alone (installed() compares the tag): downloaded, then in at the
+     * next start, the old folder to the backup. In the game it sets the super-tracked quest itself, and its default "hideBlizzard" turns the game's
      * autoQuestWatch / autoQuestProgress CVars off (saving and restoring the player's values): QuestTrail's own behaviour.
      */
     val QUESTTRAIL = Addon(
         id = "questtrail", title = "QuestTrail", what = "Learns where quests are taken and handed in; an arrow that plans your route",
-        by = "Krom", license = "MIT", repo = "", version = "3.1.0",
-        core = Pkg("3.1.0", "QuestTrail-3.1.0.zip", 578_289L, "2f2c81c276c1f083cea68f2a69de5b8dd78df81cbd2d8cacc2582166a250194b",
-            listOf("QuestTrail"), url = "https://mediafilez.forgecdn.net/files/9208/872/QuestTrail-3.1.0.zip"),
+        by = "Krom", license = "MIT", repo = "", version = "3.2.1",
+        core = Pkg("3.2.1", "QuestTrail-3.2.1.zip", 7_656_314L, "3e1c72b7a159d2d895d8bee46c059d49c02fe0d54e3098b4abe5342fd98ad8b2",
+            listOf("QuestTrail"), url = "https://mediafilez.forgecdn.net/files/9234/965/QuestTrail-3.2.1.zip"),
         inUse = { Settings.questTracking == "questtrail" }, usedIn = "Map › Quest tracking",
         // test51 (the user: "a default setting set ... then just expose the other settings in the addons menu"): its own options pages,
         // mirrored on the bottom screen (Interact's QuestTrail mirror, browsable by its steps)
@@ -165,7 +167,9 @@ object ThirdPartyAddons {
     /** MAP'S HOOK (its Quest tracking picker): choosing an add-on that is not installed starts its install, as Install here does */
     fun install(a: Addon) { if (!coreWanted(a)) setCore(a, true) }
     /** an installed package goes out at the next start: its Install undone (Uninstall), or its module switched off */
-    fun goesOut(a: Addon, key: String): Boolean = installed(a, key) && !wanted(a, key)
+    fun goesOut(a: Addon, key: String): Boolean = present(a, key) && !wanted(a, key)
+    /** some version of the package is in the game (the pinned one, or an older one the pin moved on from) */
+    fun present(a: Addon, key: String): Boolean = state(a, key).optString("in").isNotEmpty()
 
     fun moduleOn(a: Addon, m: Module): Boolean = prefs?.get("${a.id}.${m.id}", false) ?: false
     fun setModule(a: Addon, m: Module, on: Boolean) { prefs?.put("${a.id}.${m.id}", on); changed(); resume() }
@@ -213,13 +217,17 @@ object ThirdPartyAddons {
         val inst = installed(a, key)
         val want = wanted(a, key)
         // what the worker is doing, while it is wanted and not in yet (an installed package is installed, whatever it did before)
-        synchronized(live) { live["${a.id}/$key"] }?.let { if (want && !inst) return it }
+        // an older version still in (the pin moved on): the row says it is the update
+        val older = state(a, key).optString("in").takeIf { it.isNotEmpty() && !inst }
+        synchronized(live) { live["${a.id}/$key"] }?.let { if (want && !inst) return if (older != null) it.copy(line = "Update to ${a.version}: ${it.line}") else it }
         return when {
-            inst && !want -> Status(Kind.REMOVING, "Moves out when the game next starts (kept in a backup)")
+            (inst || older != null) && !want -> Status(Kind.REMOVING, "Moves out when the game next starts (kept in a backup)")
             inst && key == "core" && a.inUse != null ->
                 if (a.inUse.invoke()) Status(Kind.INSTALLED, "Installed: in use") else Status(Kind.INSTALLED, "Installed, not in use: choose it in ${a.usedIn}")
             inst -> Status(Kind.INSTALLED, "Installed")
-            want && state(a, key).optString("zip") == p.tag && zipOf(p).length() == p.bytes -> Status(Kind.DOWNLOADED, "Downloaded: goes in when the game next starts")
+            want && state(a, key).optString("zip") == p.tag && zipOf(p).length() == p.bytes ->
+                Status(Kind.DOWNLOADED, if (older != null) "Update to ${a.version} downloaded: goes in when the game next starts" else "Downloaded: goes in when the game next starts")
+            want && older != null -> Status(Kind.DOWNLOADING, "Update to ${a.version}: waiting to download", -1)
             want -> Status(Kind.DOWNLOADING, "Waiting to download", -1)
             else -> Status(Kind.NONE, "${size(p.mb)} download")
         }
