@@ -205,6 +205,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * recording. In the game the page opens over the Settings room, which holds the controller (its guest pad passes each press).
      */
     private lateinit var reportPage: ReportPage
+    private lateinit var pathReview: SafePathReview
 
     private fun openReport(sendNow: Boolean = false) {
         if (!::reportPage.isInitialized) return
@@ -697,7 +698,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.onReport = { openReport() }
         settingsView.onReportSendNow = { DiagLog.stopRecording(); sendReport(ReportFlow.description.ifBlank { "(sent from Settings while recording)" }) }
         settingsView.onReportOpenSaved = { openSavedReport() }
-        settings.pad.padOverride = { k -> ::reportPage.isInitialized && reportPage.isOpen && run { reportPage.padKey(k); true } }
+        settings.pad.padOverride = { k ->
+            (::reportPage.isInitialized && reportPage.isOpen && run { reportPage.padKey(k); true }) ||
+                (::pathReview.isInitialized && pathReview.isOpen && run { pathReview.padKey(k); true })
+        }
+        settingsView.onRouteReview = { if (::pathReview.isInitialized) pathReview.open() }
         if (LauncherHooks.pkg != null) {
             startView.firstLabel = "Save your Battle.net login"; startView.firstW = 680f      // the longer words
             sweepTrigger()
@@ -881,6 +886,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 onClosed = { DiagLog.event("report", "report page closed") }
             }
             addView(reportPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            // SafePath's review (b-safepath-review): over Settings as the report page is, opened by Route data's "Review paths"
+            pathReview = SafePathReview(this@CompanionHost).apply { onClosed = { DiagLog.event("safepath", "review closed") } }
+            addView(pathReview, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             reportPage.onSend = { words -> sendReport(words) }
             // Send report's notice on Home (compiling, then ready / failed)
             reportNotice = ReportNotice(this@CompanionHost).apply {
@@ -971,6 +979,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the pause menu never stays over a room change (a whisper's jump, a game window); its own picks run after it has folded
         if (::pauseView.isInitialized && pauseView.isOpen) pauseView.shut()
         if (::pauseView.isInitialized && r != room) pauseView.clearHint()
+        // SafePath's review belongs to Settings: it closes when another room comes up
+        if (r != Room.SETTINGS && ::pathReview.isInitialized && pathReview.isOpen) pathReview.close()
         // any room change ends the bar selector first. NO GAP (the user 2026-10-06): into another room the bar's hold is KEPT for that
         // room's own take to pre-empt (capture v7 / v12; HomeBarSelect.closeFor, RoomHandOver.Bar); Home or the same room: freed now
         barSelect.closeFor(r, room)

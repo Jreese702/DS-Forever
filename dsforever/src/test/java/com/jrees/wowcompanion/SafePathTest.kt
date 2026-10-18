@@ -71,4 +71,43 @@ class SafePathTest {
         assertEquals("Bank", SafePath.hubs(town, { _, _ -> "Orgrimmar" }, "Orgrimmar")[0].name)
         assertEquals("Warrior trainers", SafePath.roleName(town.drop(1)))
     }
+
+    /** b-safepath-review: the user's corrections - approve, remove, draw, join, an exit, their walk - each undone in turn */
+    @Test fun theReviewCorrectsAndUndoes() {
+        val net = SafePath.draft(input(listOf(SafePath.Fixed(800.0, 600.0, SafePath.FLIGHT, "Westwatch")), eastRoad))
+        val e = SafePath.Edit(net)
+        val drafts = e.edges.count { it.state == SafePath.DRAFT }
+        assertTrue(drafts > 0)
+        e.setState(0, SafePath.REMOVED)
+        assertEquals(SafePath.REMOVED, e.edges[0].state); assertEquals("user", e.edges[0].src)
+        e.approveAll()
+        assertEquals(1, e.edges.count { it.state == SafePath.REMOVED })            // a removed way stays removed
+        assertTrue(e.edges.none { it.state == SafePath.DRAFT })
+        val f = e.nodes.single { it.kind == SafePath.FLIGHT }.id
+        val p = e.draw(f, 900.0, 650.0)
+        assertTrue(e.edges.any { it.a == f && it.b == p && it.state == SafePath.OK })
+        e.exit(p, 7, "Northland")
+        assertEquals("Northland", e.exits.single { it.node == p }.name)
+        assertEquals(SafePath.EXIT, e.node(p)!!.kind)
+        // the walk: its ends joined to the nodes near them
+        val walk = listOf(doubleArrayOf(800.0, 600.0), doubleArrayOf(700.0, 600.0), doubleArrayOf(600.0, 650.0), doubleArrayOf(500.0, 700.0))
+        assertTrue(e.addWalk(walk))
+        assertTrue(e.edges.any { it.kind == SafePath.ROAD && it.src == "user" && (it.a == f || it.b == f) })
+        // undone, step by step, back to the draft
+        repeat(5) { assertTrue(e.undo()) }
+        assertTrue(!e.undo())
+        assertEquals(drafts, e.edges.count { it.state == SafePath.DRAFT })
+        assertEquals(net.nodes.size, e.nodes.size); assertEquals(net.exits.size, e.exits.size)
+    }
+
+    @Test fun theLastWalkIsTheLatestRunOnTheMap() {
+        val t0 = 10_000_000L
+        SafePath.noteWalk(5, 0.0, 0.0, t0); SafePath.noteWalk(5, 20.0, 0.0, t0 + 1000)
+        SafePath.noteWalk(5, 20.0, 3.0, t0 + 2000)                                   // under 8 yd: not kept
+        SafePath.noteWalk(5, 400.0, 0.0, t0 + 200_000)                               // after a pause: a new walk
+        SafePath.noteWalk(5, 420.0, 0.0, t0 + 201_000)
+        SafePath.noteWalk(6, 0.0, 0.0, t0 + 202_000)                                 // another map
+        val w = SafePath.lastWalk(5)
+        assertEquals(2, w.size); assertEquals(400.0, w[0][0], 0.0); assertEquals(420.0, w[1][0], 0.0)
+    }
 }

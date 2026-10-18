@@ -3039,6 +3039,8 @@ class MapView(context: Context) : View(context) {
             // the walked ground (b-route-terrain): this cell is one the player walks
             if (m.optInt("onTaxi", 0) != 1 && !m.optBoolean("indoors", false)) {
                 Terrain.Walked.init(java.io.File(context.filesDir, "walked.bin"))
+                // SafePath's review: "Add my last walk" (b-safepath-review)
+                SafePath.noteWalk(m.optInt("mapID", 0), m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN), System.currentTimeMillis())
                 Terrain.Walked.note(m.optInt("cont", rect?.continent ?: -1), m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN),
                     android.os.SystemClock.elapsedRealtime())
             }

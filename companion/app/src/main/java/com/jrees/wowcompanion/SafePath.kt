@@ -860,4 +860,154 @@ object SafePath {
             min(1f, c / 3f)
         }
     }
+
+    // ---------------------------------------------------------------- phase (b): the review's corrections
+
+    /**
+     * THE REVIEW'S WORKING COPY (b-safepath-review; the user's pick "Auto-draft, then review"): a zone's network as the user corrects
+     * it - an edge approved, avoided, removed (kept, marked, so a later draft cannot bring it back) or made a road / a trail; a node
+     * moved, its edges removed, made an exit into a neighbour; a new way drawn node by node, or the player's own last walk added.
+     * Every change can be undone. [net] is what is saved (safepath/<map>.json): the draft is never written over it.
+     */
+    class Edit(from: Net) {
+        val map = from.map; val cont = from.cont; val built = from.built
+        var reviewed = from.reviewed
+        val nodes = from.nodes.toMutableList()
+        val edges = from.edges.toMutableList()
+        val exits = from.exits.toMutableList()
+        private class Snap(val nodes: List<Node>, val edges: List<Edge>, val exits: List<Exit>, val reviewed: Boolean)
+        private val undo = ArrayList<Snap>()
+        val canUndo get() = undo.isNotEmpty()
+        private fun snap() { undo.add(Snap(nodes.toList(), edges.toList(), exits.toList(), reviewed)); if (undo.size > 200) undo.removeAt(0) }
+        fun undo(): Boolean {
+            val s = undo.removeLastOrNull() ?: return false
+            nodes.clear(); nodes.addAll(s.nodes); edges.clear(); edges.addAll(s.edges); exits.clear(); exits.addAll(s.exits); reviewed = s.reviewed
+            return true
+        }
+        fun node(id: Int) = nodes.firstOrNull { it.id == id }
+        private fun nextId() = (nodes.maxOfOrNull { it.id } ?: -1) + 1
+        private fun with(e: Edge, state: String = e.state, kind: String = e.kind) = Edge(e.a, e.b, kind, state, "user", e.danger)
+
+        fun setState(i: Int, state: String) { val e = edges.getOrNull(i) ?: return; if (e.state == state) return; snap(); edges[i] = with(e, state = state) }
+        fun setKind(i: Int, kind: String) { val e = edges.getOrNull(i) ?: return; if (e.kind == kind) return; snap(); edges[i] = with(e, kind = kind) }
+        /** every edge still a draft approved as it is */
+        fun approveAll() { if (edges.none { it.state == DRAFT }) return; snap(); for (i in edges.indices) if (edges[i].state == DRAFT) edges[i] = with(edges[i], state = OK) }
+        /** node [id]'s edges all to [state] */
+        fun setNodeEdges(id: Int, state: String) {
+            if (edges.none { (it.a == id || it.b == id) && it.state != state }) return
+            snap(); for (i in edges.indices) if (edges[i].a == id || edges[i].b == id) edges[i] = with(edges[i], state = state)
+        }
+        fun move(id: Int, wx: Double, wy: Double) {
+            val i = nodes.indexOfFirst { it.id == id }.takeIf { it >= 0 } ?: return
+            snap(); val n = nodes[i]; nodes[i] = Node(n.id, wx, wy, n.kind, "user", n.name)
+        }
+        /** a new node at ([wx], [wy]) joined to [from] (when given) by a user's [kind] edge, approved; its id */
+        fun draw(from: Int?, wx: Double, wy: Double, kind: String = TRAIL): Int {
+            snap()
+            val id = nextId()
+            nodes.add(Node(id, wx, wy, POINT, "user"))
+            if (from != null && node(from) != null) edges.add(Edge(from, id, kind, OK, "user"))
+            return id
+        }
+        /** an approved edge between two nodes (an existing one approved, none twice) */
+        fun join(a: Int, b: Int, kind: String = TRAIL) {
+            if (a == b || node(a) == null || node(b) == null) return
+            val i = edges.indexOfFirst { (it.a == a && it.b == b) || (it.a == b && it.b == a) }
+            snap()
+            if (i >= 0) edges[i] = with(edges[i], state = OK) else edges.add(Edge(a, b, kind, OK, "user"))
+        }
+        /** node [id] an exit into [toMap] (named [name], by [how]), or no longer one ([toMap] 0) */
+        fun exit(id: Int, toMap: Int, name: String, how: String = "walk") {
+            snap()
+            exits.removeAll { it.node == id }
+            if (toMap != 0) {
+                exits.add(Exit(id, toMap, how, name))
+                val i = nodes.indexOfFirst { it.id == id }
+                if (i >= 0 && (nodes[i].kind == POINT || nodes[i].kind == JUNCTION)) nodes[i].let { nodes[i] = Node(it.id, it.wx, it.wy, EXIT, "user", it.name) }
+            }
+        }
+        fun markReviewed(v: Boolean) { if (reviewed == v) return; snap(); reviewed = v }
+        /**
+         * the player's own walk ([pts]: world x, y pairs in order) as an approved road: its bends kept, its ends on the nearest node
+         * within [WALK_JOIN_YD] (else new points); false when it is too short to be a way
+         */
+        fun addWalk(pts: List<DoubleArray>): Boolean {
+            if (pts.size < 2) return false
+            val keep = simplify(pts, SIMPLIFY_YD)
+            if (keep.size < 2 || hypot(keep.first()[0] - keep.last()[0], keep.first()[1] - keep.last()[1]) < 30.0) return false
+            snap()
+            fun near(p: DoubleArray) = nodes.filter { hypot(it.wx - p[0], it.wy - p[1]) < WALK_JOIN_YD }.minByOrNull { hypot(it.wx - p[0], it.wy - p[1]) }?.id
+            var prev = near(keep.first()) ?: nextId().also { nodes.add(Node(it, keep.first()[0], keep.first()[1], POINT, "user")) }
+            for ((k, p) in keep.withIndex()) {
+                if (k == 0) continue
+                val id = (if (k == keep.size - 1) near(p) else null) ?: nextId().also { nodes.add(Node(it, p[0], p[1], POINT, "user")) }
+                if (id != prev) edges.add(Edge(prev, id, ROAD, OK, "user"))
+                prev = id
+            }
+            return true
+        }
+        fun net(): Net = Net(map, cont, built, nodes.toList(), edges.toList(), exits.toList(), reviewed)
+    }
+    const val WALK_JOIN_YD = 60.0          // a walk's end this near a node joins it
+
+    /** Douglas-Peucker over world points: the ones where the line bends more than [tol] yards */
+    fun simplify(pts: List<DoubleArray>, tol: Double): List<DoubleArray> {
+        if (pts.size < 3) return pts
+        val keep = BooleanArray(pts.size); keep[0] = true; keep[pts.size - 1] = true
+        fun dp(s: Int, e: Int) {
+            if (e <= s + 1) return
+            val a = pts[s]; val b = pts[e]; val len = hypot(b[0] - a[0], b[1] - a[1])
+            var worst = -1; var wd = 0.0
+            for (t in s + 1 until e) {
+                val p = pts[t]
+                val d = if (len < 1e-6) hypot(p[0] - a[0], p[1] - a[1]) else abs((b[0] - a[0]) * (a[1] - p[1]) - (a[0] - p[0]) * (b[1] - a[1])) / len
+                if (d > wd) { wd = d; worst = t }
+            }
+            if (wd > tol) { keep[worst] = true; dp(s, worst); dp(worst, e) }
+        }
+        dp(0, pts.size - 1)
+        return pts.filterIndexed { i, _ -> keep[i] }
+    }
+
+    /** a zone's reviewed network (the user's corrections), else its draft; null = neither yet (off the UI thread) */
+    fun load(map: Int): Net? = runCatching { Net.fromJson(JSONObject(ArtHarvest.file("safepath/$map.json").readText())) }.getOrNull()
+        ?: runCatching { Net.fromJson(JSONObject(ArtHarvest.file("safepath/$map.draft.json").readText())) }.getOrNull()
+    /** the user has corrected zone [map] (its own file) */
+    fun hasReview(map: Int) = ArtHarvest.file("safepath/$map.json").isFile
+    fun save(net: Net) { ArtHarvest.file("safepath/${net.map}.json").also { it.parentFile?.mkdirs() }.writeText(net.toJson().toString()) }
+    /** drop the corrections: the draft again */
+    fun forget(map: Int) { ArtHarvest.file("safepath/$map.json").delete() }
+    /** the zones with a draft or a review */
+    fun zonesDrafted(): List<Int> = (ArtHarvest.file("safepath").listFiles() ?: emptyArray()).mapNotNull { f ->
+        f.name.removeSuffix(".draft.json").removeSuffix(".json").toIntOrNull()
+    }.distinct().sorted()
+
+    // ---- the player's walk, for "Add my last walk": the positions as they come (8 yd apart), a run broken by a pause or a map change
+    private class Step(val map: Int, val wx: Double, val wy: Double, val at: Long)
+    private val walk = ArrayDeque<Step>()
+    @Volatile var lastMap = 0; private set
+    /** a position on map [map] (the map document's): kept when it moved [WALK_STEP_YD] or more */
+    @Synchronized fun noteWalk(map: Int, wx: Double, wy: Double, nowMs: Long) {
+        if (wx.isNaN() || wy.isNaN() || map == 0) return
+        lastMap = map
+        val last = walk.lastOrNull()
+        if (last != null && last.map == map && hypot(last.wx - wx, last.wy - wy) < WALK_STEP_YD) return
+        walk.addLast(Step(map, wx, wy, nowMs))
+        while (walk.size > 3000 || (walk.isNotEmpty() && nowMs - walk.first().at > WALK_KEEP_MS)) walk.removeFirst()
+    }
+    /** the last walk on map [map]: the latest run of positions there with no pause over [WALK_PAUSE_MS] (world x, y each) */
+    @Synchronized fun lastWalk(map: Int): List<DoubleArray> {
+        val out = ArrayList<DoubleArray>()
+        var t = Long.MAX_VALUE
+        for (s in walk.reversed()) {
+            if (s.map != map) { if (out.isEmpty()) continue else break }
+            if (out.isNotEmpty() && t - s.at > WALK_PAUSE_MS) break
+            out.add(doubleArrayOf(s.wx, s.wy)); t = s.at
+        }
+        return out.reversed()
+    }
+    const val WALK_STEP_YD = 8.0
+    const val WALK_PAUSE_MS = 90_000L
+    const val WALK_KEEP_MS = 30 * 60_000L
+
 }
