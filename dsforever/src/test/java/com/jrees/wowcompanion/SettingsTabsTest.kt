@@ -15,8 +15,10 @@ class SettingsTabsTest {
 
     /** 1.0.9 Add-ons: every third-party add-on has its block there, its rows its own (title, modules, options) */
     @Test fun addOnsHaveTheirOwnTab() {
-        assertEquals(listOf(B.ADDON_SPOKEN, B.ADDON_POLESTAR, B.ADDON_QUESTTRAIL), SettingsTabs.blocks(T.ADDONS))
-        assertEquals(listOf(B.ADDON_SPOKEN, B.ADDON_POLESTAR, B.ADDON_QUESTTRAIL), SettingsTabs.viewBlocks(T.ADDONS))
+        // 1.0.9: with the route modes held back, only Spoken's block shows (Polestar / QuestTrail come back with them)
+        val shown = if (Settings.ROUTE_MODES_ON) listOf(B.ADDON_SPOKEN, B.ADDON_POLESTAR, B.ADDON_QUESTTRAIL) else listOf(B.ADDON_SPOKEN)
+        assertEquals(shown, SettingsTabs.blocks(T.ADDONS))
+        assertEquals(shown, SettingsTabs.viewBlocks(T.ADDONS))
         for (a in ThirdPartyAddons.ALL) assertTrue(a.title, SettingsTabs.Block.values().any { SettingsTabs.addonOf(it) == a })
         assertEquals(listOf("Spoken", "Spoken: Quests", "Spoken: Zones", "Spoken: Books", "Stop speech on B, Decline or close",
             "Stop speech on Accept"), B.ADDON_SPOKEN.rows)

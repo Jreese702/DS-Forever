@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i125"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i126"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1480,8 +1480,11 @@ local function assignSlots(doc)
     end
     if any then doc.act = { close = slot("iact", "close") } end
     -- 1.0.9 Add-ons > "QuestTrail settings": its cell while QuestTrail is loaded (the app taps it; QuestTrail's own pages open here)
+    -- test61: ALL of our QuestTrail handling only while the app says its mode is on (WC.qtMode, ACT.qtmode); the two cells always
     if type(SlashCmdList) == "table" and type(SlashCmdList.QUESTTRAIL) == "function" then
-        doc.questtrail = { open = slot("iact", "qtopen") }
+        local qon = type(WC) == "table" and WC.qtMode == true      -- (N.qt.on(); N is declared further down)
+        doc.questtrail = { on = qon, cells = { on = slot("iact", "qtmode on"), off = slot("iact", "qtmode off") },
+                           open = qon and slot("iact", "qtopen") or nil }
     end
     -- 1.0.9 Spoken's two stop options (Settings > Add-ons): a cell for each value; the app taps the one its setting says
     if doc.spoken then
@@ -2753,16 +2756,53 @@ function N.qt.frame()
     if type(f) == "table" and TB(function() return f:IsShown() end) == true then return f, "intro" end
 end
 -- test60: never "open" while the silent defaults run (no mirror, no controller taken, no B of ours)
-function N.qt.open() return not N.qt.auto and not N.qt.hush and N.qt.frame() ~= nil end
+function N.qt.open() return N.qt.on() and not N.qt.auto and not N.qt.hush and N.qt.frame() ~= nil end
+-- test61 (QuestTrail blamed for a blocked action on the Thor; 1.0.9 holds the route modes back): nothing of ours touches QuestTrail
+-- (no hooks, no hides, no silent setup, no mirror, no chat filter) unless the app says "Quest tracking: QuestTrail" is on. Runtime only.
+function N.qt.on() return type(WC) == "table" and WC.qtMode == true end
+function ACT.qtmode(v)
+    local on = v == "on"
+    if on == N.qt.on() then return true end
+    WC.qtMode = on
+    if not on then                                             -- given back: its compass and tracker as QuestTrail left them
+        local fight = TB(function() return InCombatLockdown() end) == true
+        for name in pairs(N.qt.zeroed) do
+            local o = rawget(_G, name)
+            if type(o) == "table" then
+                pcall(function() o:SetAlpha(1) end)
+                if not fight then pcall(function() o:EnableMouse(true) end) end
+            end
+        end
+        N.qt.zeroed = {}
+    end
+    emitSoon()
+    return true
+end
+-- the game's "blocked / forbidden action" events, logged with the add-on and the function it names (read only: test61's freeze)
+N.blockSeen = {}
+do
+    local bf = CreateFrame("Frame")
+    pcall(function() bf:RegisterEvent("ADDON_ACTION_BLOCKED"); bf:RegisterEvent("ADDON_ACTION_FORBIDDEN") end)
+    bf:SetScript("OnEvent", function(_, event, addon, what)
+        local key = tostring(event) .. " " .. tostring(addon) .. " " .. tostring(what)
+        local t = TN(function() return GetTime() end) or 0
+        if N.blockSeen[key] and t - N.blockSeen[key] < 30 then return end
+        N.blockSeen[key] = t
+        local fight = TB(function() return InCombatLockdown() end) == true
+        ack("blocked", false, key .. (fight and " (in combat)" or "") .. (N.qt.on() and " qt on" or " qt off"))
+    end)
+end
 -- the frames come lazily (at the assistant's first start): hooked once they exist; their show / hide is the window opening / closing
 N.qt.hooked = {}
 function N.qt.hook()
+    if not N.qt.on() then return end
     for _, slotName in ipairs({ "qtsetup", "qtintro" }) do
         local f = rawget(_G, FRAME[slotName])
         if type(f) == "table" and not N.qt.hooked[slotName] then
             N.qt.hooked[slotName] = true
             pcall(function()
                 f:HookScript("OnShow", function()
+                    if not N.qt.on() then return end
                     N.qt.top = false; N.qt.menu = nil; mark(slotName, true)
                     -- QuestTrail's OWN first start of its assistant (not our "QuestTrail settings"): the DS Forever defaults, silently
                     if slotName == "qtsetup" and not N.qt.browse then N.qt.startAuto(f) end
@@ -2788,6 +2828,7 @@ do
         t = t + (el or 0)
         if t < 0.5 then return end
         t = 0
+        if not N.qt.on() then return end                       -- test61: QuestTrail mode off: nothing of ours touches it
         pcall(N.qt.hook)
         pcall(N.qt.hideArrow)
         pcall(N.qt.onceDefaults)
@@ -3026,7 +3067,7 @@ N.qt.DEFAULTS = {
 -- WowCompanion's own saved table (WowCompanionDB.qtDefaults); never in a fight, never while a window of its is up.
 N.qt.DEFAULTS_V = 1
 function N.qt.onceDefaults()
-    if N.qt.onceTried or N.qt.auto then return end            -- (once a session at most; a closed setup is never re-opened)
+    if N.qt.onceTried or N.qt.auto or not N.qt.on() then return end            -- (once a session at most; a closed setup is never re-opened)
     local db = rawget(_G, "WowCompanionDB")
     if type(db) ~= "table" or (tonumber(db.qtDefaults) or 0) >= N.qt.DEFAULTS_V then return end
     if not (type(SlashCmdList) == "table" and type(SlashCmdList.QUESTTRAIL) == "function") then return end
@@ -3119,13 +3160,16 @@ end
 -- alpha goes to 0 and it takes no mouse, again whenever QuestTrail sets its alpha or shows it. Its hearth / teleport buttons too.
 -- test58 (the user: "There's a QuestTrail tracker on the top screen that needs to be hidden"): its tracker too, QuestTrailTrackerFrame and
 -- its quest item buttons (QuestTrailItemButton<n>, SECURE: their alpha only, their mouse off out of a fight), by the same rule
-N.qt.HIDDEN = { "QuestTrailArrowFrame", "QuestTrailHearthButton", "QuestTrailTeleportButton", "QuestTrailTrackerFrame" }
+-- test61: NEVER its secure buttons (QuestTrailHearthButton / TeleportButton / ItemButton<n>, SecureActionButtonTemplate): no alpha, no
+-- mouse, no hook; only its two plain frames
+N.qt.HIDDEN = { "QuestTrailArrowFrame", "QuestTrailTrackerFrame" }
 N.qt.zeroed = {}
 function N.qt.hideArrow()
+    if not N.qt.on() then return end
     local fight = TB(function() return InCombatLockdown() end) == true
     local busy = false
     local function zero(o)
-        if type(o) ~= "table" or busy then return end
+        if type(o) ~= "table" or busy or not N.qt.on() then return end
         busy = true
         pcall(function() o:SetAlpha(0) end)
         if not fight then pcall(function() o:EnableMouse(false) end) end
@@ -3133,7 +3177,6 @@ function N.qt.hideArrow()
     end
     local names = {}
     for _, n in ipairs(N.qt.HIDDEN) do names[#names + 1] = n end
-    for k = 1, 12 do names[#names + 1] = "QuestTrailItemButton" .. k end
     for _, name in ipairs(names) do
         local o = rawget(_G, name)
         if type(o) == "table" then
@@ -3141,10 +3184,7 @@ function N.qt.hideArrow()
             if not N.qt.zeroed[name] then
                 N.qt.zeroed[name] = true
                 zero(o)
-                -- (a secure item button's own table is never written: its OnShow hooked only, the 2 s look re-zeroes its alpha)
-                if not name:match("^QuestTrailItemButton") then
-                    pcall(function() hooksecurefunc(o, "SetAlpha", function(self, a) if (a or 0) > 0 then zero(self) end end) end)
-                end
+                pcall(function() hooksecurefunc(o, "SetAlpha", function(self, a) if (a or 0) > 0 then zero(self) end end) end)
                 pcall(function() o:HookScript("OnShow", function(self) zero(self) end) end)
             end
         end
@@ -3154,6 +3194,7 @@ end
 -- ---- "QUESTTRAIL SETTINGS" (Add-ons): QuestTrail's own pages, through its own command (/qtr setup), mirrored and browsable by its
 -- steps' titles (read by stepping through once with its own arrows, then back to the first)
 function ACT.qtopen()
+    if not N.qt.on() then return false, "QuestTrail mode is off" end
     if N.qt.open() then return true end
     if TB(function() return InCombatLockdown() end) == true then return false, "not in a fight" end
     if not (type(SlashCmdList) == "table" and type(SlashCmdList.QUESTTRAIL) == "function") then return false, "QuestTrail is not loaded" end

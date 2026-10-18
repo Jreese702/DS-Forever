@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat25"     -- chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
+local CHATV = "chat26"     -- chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -369,6 +369,7 @@ do
 end
 function WC.notFound.key(name) return type(name) == "string" and (name:match("^[^-]+") or name):lower() or nil end
 function WC.notFound.qt()
+    if WC.qtMode ~= true then return false end                -- test61: only while the app's QuestTrail mode is on
     local f = type(C_AddOns) == "table" and C_AddOns.IsAddOnLoaded
     if type(f) ~= "function" then f = rawget(_G, "IsAddOnLoaded") end
     if type(f) ~= "function" then return false end

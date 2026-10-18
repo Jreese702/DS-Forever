@@ -60,7 +60,11 @@ object SettingsTabs {
         Block.ADDON_SPOKEN -> ThirdPartyAddons.SPOKEN; Block.ADDON_POLESTAR -> ThirdPartyAddons.POLESTAR
         Block.ADDON_QUESTTRAIL -> ThirdPartyAddons.QUESTTRAIL; else -> null }
 
-    fun blocks(tab: Tab): List<Block> = Block.values().filter { it.tab == tab }
+    fun blocks(tab: Tab): List<Block> = Block.values().filter { it.tab == tab && shown(it) }
+
+    /** 1.0.9 (the user: "Disable the safe path, quest trail and polestar buttons for now"): with the route modes held back, the
+     *  Polestar and QuestTrail blocks are not shown (Spoken stays) */
+    fun shown(b: Block): Boolean = Settings.ROUTE_MODES_ON || (b != Block.ADDON_POLESTAR && b != Block.ADDON_QUESTTRAIL)
     fun viewBlocks(tab: Tab): List<Block> = blocks(tab).filter { it in VIEW_BLOCKS }
 
     /** the tab [dir] (-1 / +1) steps from [tab], wrapping (L on the first goes to the last) */
