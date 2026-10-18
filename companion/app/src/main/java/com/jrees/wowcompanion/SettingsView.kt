@@ -382,6 +382,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 val fi = segFog.indexOfFirst { it.contains(x, y) }
                 if (fi >= 0) { Settings.worldMapFog = if (fi == 0) "all" else "explored"; invalidate(); return }
                 if (di >= 0) { if (Settings.questTracking == "safepath") Settings.avoidDanger = Settings.AVOID_DANGER[di]; invalidate(); return }
+                if (qi >= 0 && !Settings.ROUTE_MODES_ON && qi != 0) { invalidate(); return }   // held back for 1.0.9
                 if (qi >= 0) {
                     if (Settings.questTracking != Settings.QUEST_TRACKING[qi]) Settings.questTracking = Settings.QUEST_TRACKING[qi]
                     // an add-on not installed yet: choosing it installs it (the Add-ons tab's own Install; the app's route meanwhile)
@@ -559,7 +560,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         val sub = when (Settings.questTracking) {
             "polestar" -> addonWord(ThirdPartyAddons.POLESTAR, "walking routes")
             "questtrail" -> addonWord(ThirdPartyAddons.QUESTTRAIL, "the line follows its arrow, no game pin")
-            "vanilla" -> "The game's own way: the line points straight at the quest, no route, the game's pin left alone"
+            "vanilla" -> if (Settings.ROUTE_MODES_ON) "The game's own way: the line points straight at the quest, no route, the game's pin left alone"
+                         else "The line points straight at the quest. SafePath, QuestTrail and Polestar come in a later update"
             else -> "DS Forever's route: round mobs and cliffs, by roads, ways and rides, checkpoint flags"
         }
         row(c, y, "Quest tracking", sub, enabled = true) { box ->
@@ -574,6 +576,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         // SafePath's own: greyed in the other modes, and says so
         val safe = Settings.questTracking == "safepath"
         val dsub = when {
+            !Settings.ROUTE_MODES_ON -> "Comes with SafePath in a later update"
             !safe -> "SafePath only: choose SafePath in Quest tracking"
             Settings.avoidDanger == "off" -> "The line goes straight, through hostile mobs"
             Settings.avoidDanger == "low" -> "The line bends round dense or high-level hostile mobs"
@@ -1015,6 +1018,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (i in QT_LABELS.indices) {
             segQt[i].set(b.left + i * w, b.top, b.left + (i + 1) * w, b.bottom)
             val r = RectF(segQt[i].left + 2f, b.top - 6f, segQt[i].right - 2f, b.bottom + 6f)
+            if (!Settings.ROUTE_MODES_ON && i != 0) {        // held back for 1.0.9: drawn greyed, not choosable
+                UiKit.choice(c, r, QT_LABELS[i], false, enabled = false, textSize = SEG_TEXT); continue
+            }
             val a = qtAddon(i)
             if (a == null || ThirdPartyAddons.coreInstalled(a)) { UiKit.choice(c, r, QT_LABELS[i], i == sel, textSize = SEG_TEXT); continue }
             val asked = ThirdPartyAddons.status(a, "core").kind != ThirdPartyAddons.Kind.NONE
