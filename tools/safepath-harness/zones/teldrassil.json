@@ -1,0 +1,17 @@
+{"tag": "teldrassil", "dir": "kalimdor", "faction": "alliance", "zone": 1438, "area": 141, "level": 6, "friendlyMinLevel": 100,
+ "maps": [[1438, 141], [1457, 1657], [1439, 148]], "cities": [1457], "border": [1438, 1439], "roads": "thin",
+ "title": "Teldrassil", "crop": [11250, 8450, 3000, -500],
+ "closeups": [{"name": "Shadowglen", "box": [10950, 10000, 1150, 450]}, {"name": "Ban'ethil Barrow Den", "box": [10150, 9650, 1800, 1300]},
+  {"name": "Darnassus gate", "box": [10250, 9750, 2300, 1700]}],
+ "goals": [
+  {"name": "Shadowthread Cave's mouth (Webwood spiders)", "from": {"node": "Aldrassil"}, "to": {"cave": 111099, "near": [10752, 920]}},
+  {"name": "Fel Rock's mouth (the sprites)", "from": {"node": "Aldrassil"}, "to": {"cave": 111098, "near": [10093, 1030]}},
+  {"name": "Dolanaar (the road from Shadowglen)", "from": {"node": "Aldrassil"}, "to": {"node": "Dolanaar"}},
+  {"name": "Ban'ethil Barrow Den's mouth", "from": {"node": "Dolanaar"}, "to": {"cave": 110359, "near": [9865, 1556]}},
+  {"name": "the Gnarlpine den in Ban'ethil Hollow", "from": {"node": "Dolanaar"}, "to": {"cave": 110494, "near": [10062, 1460]}},
+  {"name": "Lake Al'Ameth's Timberlings", "from": {"node": "Dolanaar"}, "to": {"mob": "Timberling", "near": [9549, 817]}},
+  {"name": "Starbreeze Village's Gnarlpine", "from": {"node": "Dolanaar"}, "to": {"camp": "Starbreeze Village"}},
+  {"name": "The Oracle Glade", "from": {"node": "Dolanaar"}, "to": {"node": "The Oracle Glade"}},
+  {"name": "Gnarlpine Hold", "from": {"node": "Dolanaar"}, "to": {"camp": "Gnarlpine Hold"}},
+  {"name": "the Darnassus gate", "from": {"node": "Dolanaar"}, "to": {"exit": "Darnassus"}}
+ ]}

@@ -1590,7 +1590,30 @@ object SafePath {
             val direct = leg(f, t)
             if (direct != null && hypot(direct.last()[0] - tx, direct.last()[1] - ty) <= 3.0 && yd(direct) * NET_FAVOUR < yd(out)) return direct
         }
-        return out
+        return unloop(out, walkable)
+    }
+
+    /**
+     * the WALKED way's there-and-backs (Teldrassil's Fel Rock: the network ran on to the way's point nearest the goal, past the turn,
+     * and the ground's leg walked back the same road): smooth() sees only the network's points, so the walked way is cut here too - a
+     * point it comes back to within [LOOP_YD] the long way round, joined straight when that straight step is [walkable] (never a wall)
+     * and neither end is in a cave (a cave's floor is its own way)
+     */
+    fun unloop(pts: List<DoubleArray>, walkable: ((DoubleArray, DoubleArray) -> Boolean)?): List<DoubleArray> {
+        if (pts.size < 3) return pts
+        var w = pts
+        var i = 0
+        while (i < w.size - 2) {
+            val cum = DoubleArray(w.size); for (k in 1 until w.size) cum[k] = cum[k - 1] + hypot(w[k][0] - w[k - 1][0], w[k][1] - w[k - 1][1])
+            val a = w[i]
+            val j = if (Climb.inCave(a)) null else (w.size - 1 downTo i + 2).firstOrNull { j ->
+                val d = hypot(w[j][0] - a[0], w[j][1] - a[1])
+                d < LOOP_YD && cum[j] - cum[i] > 2.5 * d + LOOP_YD && !Climb.inCave(w[j]) && (walkable?.invoke(a, w[j]) ?: true)
+            }
+            if (j != null) w = w.subList(0, i + 1) + w.subList(j, w.size)
+            i++
+        }
+        return w
     }
     const val DIRECT_LEG_YD = 1500.0       // a goal this near: the ground's own way there is the network's rival ...
     const val NET_FAVOUR = 1.5             // ... taken when the network's way is this many times longer

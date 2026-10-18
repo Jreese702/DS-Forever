@@ -164,6 +164,19 @@ class SafePathTest {
     }
 
     /** the user on the border picture: "I don't mind them, as long as there is a low danger path back to another path" */
+    @Test fun theWalkedWayHasNoThereAndBack() {
+        // Teldrassil's Fel Rock: the network ran on 58 yd past the turn, and the ground's leg walked back the same road
+        val way = listOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(100.0, 0.0), doubleArrayOf(100.0, 58.0), doubleArrayOf(100.0, 0.0), doubleArrayOf(150.0, -30.0))
+        assertTrue(SafePath.unloop(way, null).none { it[1] == 58.0 })
+        assertEquals(4, SafePath.unloop(way, null).size)
+        // a shortcut over a wall is never taken: the loop stays
+        val round = listOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(0.0, 100.0), doubleArrayOf(60.0, 100.0), doubleArrayOf(60.0, 0.0), doubleArrayOf(60.0, -50.0))
+        assertEquals(5, SafePath.unloop(round) { _, _ -> false }.size)
+        // nor cut out of a cave: its points are its own floor
+        val cave = listOf(doubleArrayOf(0.0, 0.0, Climb.IN_CAVE), doubleArrayOf(0.0, 100.0, Climb.IN_CAVE), doubleArrayOf(10.0, 0.0, Climb.IN_CAVE), doubleArrayOf(50.0, 0.0))
+        assertEquals(4, SafePath.unloop(cave, null).size)
+    }
+
     @Test fun aCrossingStaysWhereBothSidesHaveALowDangerWayBack() {
         fun n(id: Int, x: Double, y: Double, kind: String = SafePath.POINT) = SafePath.Node(id, x, y, kind)
         // zone 1 (y > 0): a town at y 600, a road to the border at y 0 (exit 2); a second exit 300 yd north with only a dangerous way

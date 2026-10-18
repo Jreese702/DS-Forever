@@ -79,6 +79,12 @@ class RenderSafePath {
             val a = recipe.optJSONArray(map.toString())!!
             val rect = MapHarvest.Rect(a.optInt(0), a.optDouble(1), a.optDouble(2), a.optDouble(3), a.optDouble(4))
             val rg = Roads.grid(rect) { col, row -> tex.getOrPut(col to row) { File(dir, "tex0/${col}_$row.adt").takeIf { it.isFile }?.let { Roads.tile(it.readBytes()) } } }
+            // THIN ROADS (a zone spec's "roads": "thin"; Teldrassil): a 4-6 yd path never shows MOST in a 25 yd cell, so there the cell
+            // counts as road when a road texture shows at any of its 6 x 6 points (the device's dominant-texture grid misses these paths)
+            val thinRoad = if (spec?.optString("roads") == "thin") roadAny(rect, rg.nx, rg.ny, roadTex) { col, row -> tex.getOrPut(col to row) { File(dir, "tex0/${col}_$row.adt").takeIf { it.isFile }?.let { Roads.tile(it.readBytes()) } } } else null
+            val roadAt: (Double, Double) -> Boolean = if (thinRoad == null) { wx, wy -> rg.at(wx, wy) in roadTex } else { wx, wy ->
+                val i = Math.floor((rect.l - wy) / (rect.l - rect.r) * rg.nx).toInt(); val j = Math.floor((rect.t - wx) / (rect.t - rect.b) * rg.ny).toInt()
+                i in 0 until rg.nx && j in 0 until rg.ny && thinRoad[j * rg.nx + i] }
             val tg = Terrain.grid(rect) { gr, gc ->
                 val t = tiles.getOrPut((gc / 128) to (gr / 128)) { File(dir, "adt/${gc / 128}_${gr / 128}.adt").takeIf { it.isFile }?.let { Terrain.tile(it.readBytes()) } }
                 t?.h?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN
@@ -100,7 +106,7 @@ class RenderSafePath {
             run {
                 var rc = 0; var tot = 0; var steep = 0; val hist = HashMap<Int, Int>()
                 for (j in 0 until rg.ny) for (i in 0 until rg.nx) { val cc = rg.centre(i, j); if (ar.uiMap(zg.areaAt(cc[0], cc[1])) != map) continue; tot++
-                    val tx = rg.tex[j * rg.nx + i]; hist[tx] = (hist[tx] ?: 0) + 1; if (tx in roadTex) rc++; if (Terrain.factor(tg.at(cc[0], cc[1])) >= Terrain.WALL) steep++ }
+                    val tx = rg.tex[j * rg.nx + i]; hist[tx] = (hist[tx] ?: 0) + 1; if (roadAt(cc[0], cc[1])) rc++; if (Terrain.factor(tg.at(cc[0], cc[1])) >= Terrain.WALL) steep++ }
                 println("SAFEPATH $map own cells $tot road $rc walls $steep top textures ${hist.entries.sortedByDescending { it.value }.take(6).map { (names[it.key] ?: it.key.toString()).substringAfterLast('/') + "=" + it.value }}")
             }
             val ax = rect.l - rect.r; val ay = rect.t - rect.b
@@ -113,7 +119,7 @@ class RenderSafePath {
             val friendly = here.filter { it.hostile == foe }.map { SafePath.Npc(rect.t - it.y * ay, rect.l - it.x * ax, it.sub) }
             val fixed = SafePath.fixedPoints(map, rect.c, rect.t, rect.b, rect.l, rect.r, mine, transports) + SafePath.hubs(friendly, { x, y -> PlaceNames.nameAt(x, y, areas) { a, b2 -> zg.areaAt(a, b2) } }, nameOf(map), SafePath.districtFor(map, rect.t, rect.b, rect.l, rect.r))
             val t0 = System.nanoTime()
-            val net = SafePath.draft(SafePath.Input(map, rect.c, rect.t, rect.b, rect.l, rect.r, { wx, wy -> rg.at(wx, wy) in roadTex },
+            val net = SafePath.draft(SafePath.Input(map, rect.c, rect.t, rect.b, rect.l, rect.r, roadAt,
                 { wx, wy -> Terrain.factor(tg.at(wx, wy)) }, { wx, wy -> ar.uiMap(zg.areaAt(wx, wy)) }, fixed, ::nameOf, SafePath.dangerOf(hostile),
                 ground = if (map in cities) artGround(art, map, rect) else null, painted = painted(art, map, rect), water = { x, y -> wg.at(x, y) }), "off-device")
             val ms = (System.nanoTime() - t0) / 1_000_000
@@ -126,13 +132,33 @@ class RenderSafePath {
             val voidBelow = spec?.optDouble("voidBelow", Double.NaN) ?: Double.NaN
             if (map == main) levels2(net, rect, tg, { gr, gc ->
                 val t = tiles.getOrPut((gc / 128) to (gr / 128)) { File(dir, "adt/${gc / 128}_${gr / 128}.adt").takeIf { it.isFile }?.let { Terrain.tile(it.readBytes()) } }
-                (t?.h?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN).let { if (!voidBelow.isNaN() && it < voidBelow) Float.NaN else it } }, { wx, wy -> rg.at(wx, wy) in roadTex }, zg, areas, here, dir, { x, y -> wg.at(x, y) },
+                (t?.h?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN).let { if (!voidBelow.isNaN() && it < voidBelow) Float.NaN else it } }, roadAt, zg, areas, here, dir, { x, y -> wg.at(x, y) },
                 mainArea, spec, tag, mine, ar, map)
             done[map] = Done(net, rect, zg, ar, hostile)
         }
         if (done.containsKey(borderPair.first) && done.containsKey(borderPair.second))
             border(art, borderPair.first, borderPair.second, done.mapValues { it.value.net }, done.mapValues { it.value.rect }, done.mapValues { it.value.zg },
                 done.mapValues { it.value.ar }, done.mapValues { it.value.hostile }, ::nameOf)
+    }
+
+    /** per 25 yd cell (Roads.grid's cells): does a road texture show at any of its 6 x 6 points */
+    private fun roadAny(rect: MapHarvest.Rect, nx: Int, ny: Int, roadTex: Set<Int>, tileAt: (Int, Int) -> Roads.Tile?): BooleanArray {
+        val cw = (rect.l - rect.r) / nx; val ch = (rect.t - rect.b) / ny; val top = 32.0 * MapHarvest.ADT_YD; val chunkYd = 100.0 / 3.0
+        val out = BooleanArray(nx * ny)
+        for (j in 0 until ny) for (i in 0 until nx) {
+            loop@ for (sj in 0 until 6) for (si in 0 until 6) {
+                val wx = rect.t - (j + (sj + 0.5) / 6) * ch; val wy = rect.l - (i + (si + 0.5) / 6) * cw
+                val gx = (top - wx) / MapHarvest.ADT_YD; val gy = (top - wy) / MapHarvest.ADT_YD
+                val row = Math.floor(gx).toInt(); val col = Math.floor(gy).toInt()
+                val t = tileAt(col, row) ?: continue
+                val inX = (gx - row) * MapHarvest.ADT_YD; val inY = (gy - col) * MapHarvest.ADT_YD
+                val cy = (inX / chunkYd).toInt().coerceIn(0, 15); val cx = (inY / chunkYd).toInt().coerceIn(0, 15)
+                val c = t.chunks[cy * 16 + cx] ?: continue
+                val py = ((inX - cy * chunkYd) / chunkYd * 64).toInt().coerceIn(0, 63); val px = ((inY - cx * chunkYd) / chunkYd * 64).toInt().coerceIn(0, 63)
+                if (Roads.showing(c, px, py) in roadTex) { out[j * nx + i] = true; break@loop }
+            }
+        }
+        return out
     }
 
     private fun painted(art: File, map: Int, rect: MapHarvest.Rect): (Double, Double) -> Boolean {
@@ -352,7 +378,8 @@ class RenderSafePath {
                 val qa = a0[1] * cg.nx + a0[0]; val qb = b0[1] * cg.nx + b0[0]
                 jump.getOrPut(qa) { ArrayList() }.add(qb); jump.getOrPut(qb) { ArrayList() }.add(qa) }
             val mapOf = IntArray(n) { q -> ar?.uiMap(zg.areaAt(cg.wx(q / cg.nx), cg.wy(q % cg.nx))) ?: 0 }
-            val ownAll = mapOf.count { it == map }
+            // the zone's DRY lattice: an exit can't reach the sea floor (Teldrassil's rect is over half sea)
+            val ownAll = (0 until n).count { mapOf[it] == map && dry[it] }
             for (x in net.exits) {
                 val node = net.nodes.firstOrNull { it.id == x.node } ?: continue
                 val s0 = cg.at(node.wx, node.wy); val seen = BooleanArray(n); val st = IntArray(n); var sp = 0
