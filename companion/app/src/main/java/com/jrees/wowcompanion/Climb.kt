@@ -232,6 +232,9 @@ object Climb {
                 val vi = ui + di; val vj = uj + dj
                 if (vi !in i0..i1 || vj !in j0..j1) continue
                 val c = g.step(ui, uj, di, dj); if (c == WALL) continue
+                // the step's own straight line, as the final check walks it (walkable / segcheck): a turn at a vertex every face within
+                // a quarter yard of which is a wall passes the steps beside it but not the line (Tirisfal, Brill -> Agamand Mills)
+                if (g.faces != null && !g.lineClear(doubleArrayOf(g.wx(uj), g.wy(ui)), doubleArrayOf(g.wx(vj), g.wy(vi)))) continue
                 val x = extraOf(vi, vj); if (x < 0) continue
                 val len = if (di != 0 && dj != 0) STEP * 1.41421356 else STEP
                 val v = id(vi, vj)
