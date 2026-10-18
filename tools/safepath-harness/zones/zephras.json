@@ -1,15 +1,181 @@
-{"tag": "zephras", "dir": "zephras", "faction": "alliance", "zone": 2521, "area": 16593, "level": 6, "friendlyMinLevel": 100,
- "maps": [[2521, 16593]], "cities": [], "border": [2521, 2521], "title": "Zephras Isle", "crop": [4400, 1600, 2500, 0],
- "closeups": [{"name": "Shriekling Den", "box": [2650, 2250, 1650, 1050]}],
+{
+ "tag": "zephras",
+ "dir": "zephras",
+ "faction": "alliance",
+ "zone": 2521,
+ "area": 16593,
+ "level": 6,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   2521,
+   16593
+  ]
+ ],
+ "cities": [],
+ "border": [
+  2521,
+  2521
+ ],
+ "title": "Zephras Isle",
+ "crop": [
+  4400,
+  1600,
+  2500,
+  0
+ ],
+ "closeups": [
+  {
+   "name": "Shriekling Den",
+   "box": [
+    2650,
+    2250,
+    1650,
+    1050
+   ]
+  },
+  {
+   "name": "Skywall bridge",
+   "box": [
+    3450,
+    2750,
+    1150,
+    450
+   ]
+  }
+ ],
  "goals": [
-  {"name": "the Ornery Galestriders (Gustberry Lowlands)", "from": {"node": "Valanaar"}, "to": {"mob": "Ornery Galestrider", "near": [2145, 1281]}},
-  {"name": "the Bandit Highwaymen's camp", "from": {"node": "Valanaar"}, "to": {"mob": "Bandit Highwayman", "near": [2178, 1600]}},
-  {"name": "the Hungry Bandits (Windfield Orchard)", "from": {"node": "Valanaar"}, "to": {"mob": "Hungry Bandit", "near": [1960, 1602]}},
-  {"name": "the Shriekling Den's mouth", "from": {"node": "Gustberry Lowlands"}, "to": {"cave": 111160, "near": [2408, 1372]}},
-  {"name": "Ur'endra's den (the volcanic den)", "from": {"node": "Gustberry Lowlands"}, "to": {"cave": 110506, "near": [2535, 1233]}},
-  {"name": "the Prideclaws (Shen'dar Highlands)", "from": {"node": "Windsong Standing Stones"}, "to": {"mob": "Prideclaw", "near": [3258, 1903]}},
-  {"name": "the Bandit Hideout's mouth", "from": {"node": "Windsong Standing Stones"}, "to": {"cave": 111137, "near": [3626, 1473]}},
-  {"name": "the Thendal cave's mouth (Thendal Grove)", "from": {"node": "Windsong Standing Stones"}, "to": {"cave": 111221, "near": [3934, 2114]}},
-  {"name": "the Wind Hollows (Ruins of Ban'aethal)", "from": {"node": "Valanaar"}, "to": {"mob": "Wind Hollow", "near": [3772, 997]}},
-  {"name": "the Shadowgale cave's mouth", "from": {"node": "Rohashi Spires"}, "to": {"cave": 111226, "near": [3607, 687]}}
- ]}
+  {
+   "name": "the Ornery Galestriders (Gustberry Lowlands)",
+   "from": {
+    "node": "Valanaar"
+   },
+   "to": {
+    "mob": "Ornery Galestrider",
+    "near": [
+     2145,
+     1281
+    ]
+   }
+  },
+  {
+   "name": "the Bandit Highwaymen's camp",
+   "from": {
+    "node": "Valanaar"
+   },
+   "to": {
+    "mob": "Bandit Highwayman",
+    "near": [
+     2178,
+     1600
+    ]
+   }
+  },
+  {
+   "name": "the Hungry Bandits (Windfield Orchard)",
+   "from": {
+    "node": "Valanaar"
+   },
+   "to": {
+    "mob": "Hungry Bandit",
+    "near": [
+     1960,
+     1602
+    ]
+   }
+  },
+  {
+   "name": "the Shriekling Den's mouth",
+   "from": {
+    "node": "Gustberry Lowlands"
+   },
+   "to": {
+    "cave": 111160,
+    "near": [
+     2408,
+     1372
+    ]
+   }
+  },
+  {
+   "name": "Ur'endra's den (the volcanic den)",
+   "from": {
+    "node": "Gustberry Lowlands"
+   },
+   "to": {
+    "cave": 110506,
+    "near": [
+     2535,
+     1233
+    ]
+   }
+  },
+  {
+   "name": "the Prideclaws (Shen'dar Highlands)",
+   "from": {
+    "node": "Windsong Standing Stones"
+   },
+   "to": {
+    "mob": "Prideclaw",
+    "near": [
+     3258,
+     1903
+    ]
+   }
+  },
+  {
+   "name": "the Bandit Hideout's mouth",
+   "from": {
+    "node": "Windsong Standing Stones"
+   },
+   "to": {
+    "cave": 111137,
+    "near": [
+     3626,
+     1473
+    ]
+   }
+  },
+  {
+   "name": "the Thendal cave's mouth (Thendal Grove)",
+   "from": {
+    "node": "Windsong Standing Stones"
+   },
+   "to": {
+    "cave": 111221,
+    "near": [
+     3934,
+     2114
+    ]
+   }
+  },
+  {
+   "name": "the Wind Hollows (Ruins of Ban'aethal)",
+   "from": {
+    "node": "Valanaar"
+   },
+   "to": {
+    "mob": "Wind Hollow",
+    "near": [
+     3772,
+     997
+    ]
+   }
+  },
+  {
+   "name": "the Shadowgale cave's mouth (via the Skywall bridge)",
+   "from": {
+    "node": "Valanaar"
+   },
+   "to": {
+    "cave": 111226,
+    "near": [
+     3607,
+     687
+    ]
+   }
+  }
+ ],
+ "voidBelow": 300,
+ "notes": "Rohashi Spires (2987, 57): a floating Skywall entrance platform (kl_skywall_entrance.wmo, z 1163) over the void; no taxi node, area trigger or walkable ground reaches it in the client data - manual link, unknown; left out of the review."
+}

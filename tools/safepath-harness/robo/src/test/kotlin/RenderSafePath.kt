@@ -122,9 +122,11 @@ class RenderSafePath {
                 "${hostile.size} hostile, ${friendly.size} friendly spawns; $ms ms")
             File(out, "safepath_$map.draft.json").writeText(net.toJson().toString(1))
             draw(net, rect, art, map, zg, ar, nameOf(map))
+            // a floating zone's void floor (Zephras Isle's flat ground far below the island: falling, not walking) is no ground
+            val voidBelow = spec?.optDouble("voidBelow", Double.NaN) ?: Double.NaN
             if (map == main) levels2(net, rect, tg, { gr, gc ->
                 val t = tiles.getOrPut((gc / 128) to (gr / 128)) { File(dir, "adt/${gc / 128}_${gr / 128}.adt").takeIf { it.isFile }?.let { Terrain.tile(it.readBytes()) } }
-                t?.h?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN }, { wx, wy -> rg.at(wx, wy) in roadTex }, zg, areas, here, dir, { x, y -> wg.at(x, y) },
+                (t?.h?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN).let { if (!voidBelow.isNaN() && it < voidBelow) Float.NaN else it } }, { wx, wy -> rg.at(wx, wy) in roadTex }, zg, areas, here, dir, { x, y -> wg.at(x, y) },
                 mainArea, spec, tag, mine, ar, map)
             done[map] = Done(net, rect, zg, ar, hostile)
         }
@@ -222,8 +224,15 @@ class RenderSafePath {
         }.filter { it.mouths.isNotEmpty() }
         for (c in caves) println("CAVE ${c.fid} at ${c.wx.toInt()},${c.wy.toInt()}: ${c.mouths.size} mouths ${c.mouths.joinToString { "${it[0].toInt()},${it[1].toInt()} z ${it[2].toInt()}" }}; ${c.ways.size} ways ${c.ways.joinToString { "${it.yd.toInt()} yd" }}")
         links = caves.flatMap { c -> c.ways.map { Climb.Link(it.pts, it.yd) } }
-        fun caveMouth(fid: Int, nearX: Double, nearY: Double, from: DoubleArray?): DoubleArray? = caves.filter { it.fid == fid }
-            .minByOrNull { Math.hypot(it.wx - nearX, it.wy - nearY) }?.mouths?.minByOrNull { m -> from?.let { Math.hypot(m[0] - it[0], m[1] - it[1]) } ?: 0.0 }?.let { doubleArrayOf(it[0], it[1]) }
+        /** a cave's mouth as a goal: the nearest to the start of those with walkable ground all round (no wall face within 2 yd: a
+         *  den's opening, not a spot on its roof where the floor happens to meet a slope) */
+        fun caveMouth(fid: Int, nearX: Double, nearY: Double, from: DoubleArray?): DoubleArray? {
+            val cave = caves.filter { it.fid == fid }.minByOrNull { Math.hypot(it.wx - nearX, it.wy - nearY) } ?: return null
+            fun open(m: DoubleArray) = listOf(2.0 to 0.0, -2.0 to 0.0, 0.0 to 2.0, 0.0 to -2.0).all { (dx, dy) ->
+                cg.lineClear(doubleArrayOf(m[0], m[1]), doubleArrayOf(m[0] + dx, m[1] + dy)) }
+            val ms = cave.mouths.filter { open(it) }.ifEmpty { cave.mouths }
+            return ms.minByOrNull { m -> from?.let { Math.hypot(m[0] - it[0], m[1] - it[1]) } ?: 0.0 }?.let { doubleArrayOf(it[0], it[1]) }
+        }
         fun wmo(fid: Int, nearX: Double, nearY: Double) = placed.filter { it.fid == fid }.minByOrNull { Math.hypot(it.ox - nearX, it.oy - nearY) }
         /** a cave's mouth: the level ground beside it at its floor's own height, the nearest to the cave */
         fun mouth(p: WorldBuildings.Placement): DoubleArray {
