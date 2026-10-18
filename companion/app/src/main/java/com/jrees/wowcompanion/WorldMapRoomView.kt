@@ -1228,8 +1228,16 @@ class WorldMapRoomView(context: Context) : View(context) {
                 val cx = sx(q.x); val cy = sy(q.y)
                 val k = when (q.id) { lit -> e; prevLit -> 1f - e; else -> 0f }
                 if (k > 0.01f) selectGlow(c, cx, cy, SEL_GLOW_R * (0.6f + 0.4f * k), k)
-                UiKit.questDisc(c, cx, cy, DISC_PX * (1f + (SEL_SCALE - 1f) * k), if (q.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
-                    focus = q.id == focusQid, number = if (q.done || n <= 0) null else n)
+                // EVERY quest a yellow disc (the user on test62: "show ALL of the quests on the maps with the yellow circles"); the
+                // focused one stands out by the game's glow and a bright ring, not by another colour
+                val focused = q.id == focusQid
+                val size = DISC_PX * (1f + (SEL_SCALE - 1f) * k)
+                UiKit.questDisc(c, cx, cy, size, if (q.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
+                    focus = true, glow = focused, number = if (q.done || n <= 0) null else n)
+                if (focused) {
+                    pRing.color = Color.argb(240, 255, 236, 140); pRing.strokeWidth = 3.5f
+                    c.drawCircle(cx, cy, size * 0.42f, pRing)
+                }
             }
             if (e < 1f) postInvalidateOnAnimation()
         }
@@ -1411,6 +1419,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     /** this frame's count circles (their zone, where drawn), for the cursor's A */
     private val countHits = ArrayList<Pair<Int, FloatArray>>()
     private val COUNT_PX = 54f
+    private val pRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private fun drawCountCircles(c: Canvas) {
         countHits.clear()
         val assigns = model.assignsOf(shown)

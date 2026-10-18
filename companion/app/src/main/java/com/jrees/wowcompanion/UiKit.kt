@@ -2885,7 +2885,7 @@ object UiKit {
      * fill or its glow, the number / mark in pale parchment. Callers draw it at 80 % of the live disc's size.
      */
     fun questDisc(c: Canvas, cx: Float, cy: Float, size: Float, state: Quest = Quest.PROGRESS, focus: Boolean = false,
-                  number: Int? = null, ghost: Boolean = false) {
+                  number: Int? = null, ghost: Boolean = false, glow: Boolean = focus) {
         val r = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
         if (ghost) { questGhost(c, cx, cy, size, state, focus, number, r); return }
         val disc = tex(if (focus) "poi_disc_focus" else "poi_disc")
@@ -2901,7 +2901,7 @@ object UiKit {
             }
             return
         }
-        if (focus) tex("poi_glow")?.let {
+        if (glow) tex("poi_glow")?.let {
             val k = size * 0.78f
             pGlow.colorFilter = null; pGlow.alpha = 204
             c.drawBitmap(it, null, RectF(cx - k, cy - k, cx + k, cy + k), pGlow)
