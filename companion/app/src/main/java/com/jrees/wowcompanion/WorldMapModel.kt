@@ -82,6 +82,75 @@ class WorldMapModel {
         return floatArrayOf(a.u(w.left).toFloat(), a.v(w.top).toFloat(), a.u(w.right).toFloat(), a.v(w.bottom).toFloat())
     }
 
+    // ---- THE LAYERED ZOOM (the user on test63: "make it work more exactly like OpenMap does, so that it kind of just layers opacity
+    // down to the next level of the zoom, not literally bringing me to a map that I can't go to"). One CANVAS a root - the world map
+    // (its continents by their assignments), else a continent - and every finer map (a zone, a capital) a LAYER on it at its place,
+    // its art fading in as the zoom makes it fill the view ([fade]). Places are [l, t, r, b] in the canvas's 0..1 frame.
+
+    /** the continent (mapType 2) map [id] lies on: itself or its ancestor; null = none */
+    fun continentOf(id: Int): Int? = ancestors(id).lastOrNull { maps[it]?.type == 2 }
+
+    /** zone / capital [z]'s place on continent [cont]'s frame, from their two world rects (the stitched picture's own rule) */
+    fun zonePlace(cont: Int, z: Int): FloatArray? {
+        val c = maps[cont]?.world ?: return null; val w = maps[z]?.world ?: return null
+        if (c.continent != w.continent) return null
+        return floatArrayOf(c.nx(w.left).toFloat(), c.ny(w.top).toFloat(), c.nx(w.right).toFloat(), c.ny(w.bottom).toFloat())
+    }
+
+    /** map [id]'s place on its ROOT (the world map holding its continent's assignment, else its continent, else itself) */
+    fun rootPlace(id: Int): Pair<Int, FloatArray>? {
+        if (!maps.containsKey(id)) return null
+        if (assignsOf(id).isNotEmpty()) return id to UNIT
+        val cont = continentOf(id) ?: return id to UNIT
+        val inCont = if (cont == id) UNIT else zonePlace(cont, id) ?: return id to UNIT
+        val world = parentOf(cont)
+        val f = world?.let { frameOn(it, cont) } ?: return cont to inCont
+        return world to compose(f, inCont)
+    }
+
+    /** map [id]'s place on [canvas]'s frame (it may reach past 0..1: the world from a continent), or null when they share no root */
+    fun placeOn(id: Int, canvas: Int): FloatArray? {
+        val a = rootPlace(id) ?: return null; val b = rootPlace(canvas) ?: return null
+        if (a.first != b.first) return null
+        val p = a.second; val q = b.second
+        val w = q[2] - q[0]; val h = q[3] - q[1]
+        if (w <= 0f || h <= 0f) return null
+        return floatArrayOf((p[0] - q[0]) / w, (p[1] - q[1]) / h, (p[2] - q[0]) / w, (p[3] - q[1]) / h)
+    }
+
+    /** the canvas map [id] is seen on: a world map or a continent is its own; a zone or a capital its continent's */
+    fun canvasFor(id: Int): Int {
+        val t = maps[id]?.type ?: return id
+        if (assignsOf(id).isNotEmpty() || t <= 2) return id
+        return continentOf(id)?.takeIf { placeOn(id, it) != null } ?: id
+    }
+
+    /** one finer map on a canvas: [kind] CONTINENT / ZONE / CITY, its [place], the layer it sits in ([parent]; null = the canvas) */
+    class Layer(val id: Int, val kind: Int, val place: FloatArray, val parent: Int?)
+
+    /**
+     * The layers on [canvas], parents first: on a world map its continents (by their assignments), then each continent's zones
+     * ([zonesOf], largest first), then the capitals in them; on a continent its zones and capitals; on a zone its capitals. Only
+     * zones and capitals: never a dungeon or any map the player cannot walk to.
+     */
+    fun layersOn(canvas: Int, zonesOf: (Int) -> List<Int>): List<Layer> {
+        val out = ArrayList<Layer>()
+        val conts = if (assignsOf(canvas).isNotEmpty()) assignsOf(canvas).mapNotNull { a ->
+            maps.values.firstOrNull { it.type == 2 && it.world?.continent == a.map && parentOf(it.id) == canvas }?.id
+        } else listOf(canvas)
+        for (k in conts) {
+            if (k != canvas) out.add(Layer(k, CONTINENT, placeOn(k, canvas) ?: continue, null))
+            val zs = if (maps[k]?.type == 2) zonesOf(k).filter { maps[it]?.type == 3 && !CITY_ZONE.containsKey(it) } else emptyList()
+            for (z in zs) placeOn(z, canvas)?.let { out.add(Layer(z, ZONE, it, k.takeIf { k != canvas })) }
+            val inside = zs.toSet() + (if ((maps[k]?.type ?: 0) >= 3) setOf(k) else emptySet())
+            for ((city, zone) in CITY_ZONE.entries.sortedBy { it.key }) {
+                if (zone !in inside || !maps.containsKey(city)) continue
+                placeOn(city, canvas)?.let { out.add(Layer(city, CITY, it, zone.takeIf { zone != canvas })) }
+            }
+        }
+        return out
+    }
+
     /** one map's index.json */
     fun addIndex(o: JSONObject) {
         val id = o.optInt("uiMapID", 0)
@@ -360,6 +429,37 @@ class WorldMapModel {
         /** THE CAPITALS AND THE ZONES THEY SIT IN (the game's geography; their uiMaps are children of the continent, so the
          *  world rects' overlap cannot tell: Ironforge's box falls inside Wetlands', Undercity's inside Silverpine's) */
         val CITY_ZONE = mapOf(1453 to 1429, 1455 to 1426, 1454 to 1411, 1456 to 1412, 1457 to 1438, 1458 to 1420)
+
+        const val CONTINENT = 1
+        const val ZONE = 2
+        const val CITY = 3
+        val UNIT = floatArrayOf(0f, 0f, 1f, 1f)
+        /** a layer's art fades in from this share of the view's width ... */
+        const val FADE_FROM = 0.55f
+        /** ... to whole at this (about 1.5x of zoom, OpenMap's soft hand-over) */
+        const val FADE_TO = 0.85f
+
+        /** a layer's opacity when it spans [s] of the view's width (smoothstep between [FADE_FROM] and [FADE_TO]) */
+        fun fade(s: Float): Float {
+            val t = ((s - FADE_FROM) / (FADE_TO - FADE_FROM)).coerceIn(0f, 1f)
+            return t * t * (3f - 2f * t)
+        }
+
+        /**
+         * a continent's opacity on its world map at [zoom], its art frame [w] of the world's width: none at the world's whole, whole
+         * where it fills the view (its frame is mostly sea - the game's ~79% of the world - so the share rule would show it at once)
+         */
+        fun fadeContinent(zoom: Float, w: Float): Float {
+            if (w >= 1f) return 1f
+            val t = ((zoom - 1f) / (1f / w - 1f)).coerceIn(0f, 1f)
+            return t * t * (3f - 2f * t)
+        }
+
+        /** [inner] (0..1 of [outer]) on [outer]'s frame */
+        fun compose(outer: FloatArray, inner: FloatArray): FloatArray {
+            val w = outer[2] - outer[0]; val h = outer[3] - outer[1]
+            return floatArrayOf(outer[0] + inner[0] * w, outer[1] + inner[1] * h, outer[0] + inner[2] * w, outer[1] + inner[3] * h)
+        }
 
         /** the art set's manifest.json -> its map ids */
         fun manifestIds(o: JSONObject): List<Int> {
