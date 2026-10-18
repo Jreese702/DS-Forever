@@ -110,4 +110,32 @@ class SafePathTest {
         val w = SafePath.lastWalk(5)
         assertEquals(2, w.size); assertEquals(400.0, w[0][0], 0.0); assertEquals(420.0, w[1][0], 0.0)
     }
+
+    /** b-safepath-route: on the road rather than across, never on a removed way, out by the network's exit */
+    @Test fun theRouteKeepsToTheNetwork() {
+        val net = SafePath.draft(input(road = eastRoad))
+        // 40 yd off the road at one end, the goal 40 yd off it near the other: along the road
+        val w = SafePath.route(net, 460.0, 850.0, 460.0, 60.0)!!
+        assertEquals(460.0, w.first()[0], 1e-6); assertEquals(460.0, w.last()[0], 1e-6)
+        assertTrue(w.drop(1).dropLast(1).all { abs(it[0] - 500) < 40 })
+        // a goal beside the player: the straight walk, no network
+        assertTrue(SafePath.route(net, 460.0, 850.0, 440.0, 800.0) == null)
+        // far from every way: no help
+        assertTrue(SafePath.route(net, 100.0, 850.0, 100.0, 60.0) == null)
+        // every way removed: none
+        val e = SafePath.Edit(net); for (k in e.edges.indices) e.setState(k, SafePath.REMOVED)
+        assertTrue(SafePath.route(e.net(), 460.0, 850.0, 460.0, 60.0) == null)
+        // a crossing out near the network's exit (at the border, y 0): the way ends at that exit
+        val x = net.nodes.first { it.id == net.exits.single().node }
+        val out = SafePath.route(net, 460.0, 850.0, 400.0, -150.0, toExit = true)!!
+        assertEquals(x.wx, out.last()[0], 1e-6); assertEquals(x.wy, out.last()[1], 1e-6)
+    }
+
+    @Test fun theCapitalsDistrictsNameTheirTowns() {
+        assertEquals("Valley of Wisdom", SafePath.district(1454, 0.40, 0.40))
+        assertEquals("The Drag", SafePath.district(1454, 0.60, 0.45))
+        assertTrue(SafePath.district(1411, 0.5, 0.5) == null)
+        val town = List(6) { SafePath.Npc(100.0 + it * 10, 200.0, if (it == 0) "Banker" else "Innkeeper") }
+        assertEquals("Valley of Strength · Bank, Inn", SafePath.hubs(town, { _, _ -> "Orgrimmar" }, "Orgrimmar") { _, _ -> "Valley of Strength" }[0].name)
+    }
 }
