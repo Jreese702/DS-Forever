@@ -367,6 +367,32 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         return fightStates[id]
     }
 
+    /**
+     * 1.0.10-test2 (the user, a druid: "my Wrath ability on my Y button never shows when it's too low mana to cast"): ONE WCLOG line per
+     * change of where X / Y / A (game positions 5 / 6 / 8) take their state from - the fight spell's by id (hudS.fs) or the game's slot -
+     * and whether that state says usable / not enough mana; "none" = drawn with no state (never tinted)
+     */
+    private var faceStateSaid = ""
+    private fun faceStateLog() {
+        val h = hud ?: return
+        val words = listOf(5 to "X", 6 to "Y", 8 to "A").joinToString(" ") { (pos, name) ->
+            val src = pos - 1
+            val fightPic = fightFaceOn && (fightFace?.get(pos) ?: 0) > 0
+            if (fightPic) {
+                val id = fightIds?.get(pos)
+                val st = id?.let { fightStates[it] }
+                "$name=fight:${id ?: "?"}:" + (st?.let { "u${it.u}m${it.m}" } ?: "none")
+            } else {
+                val b = h.layers.getOrNull(N)?.getOrNull(src)
+                val st = if (hasState) state[N][h.indexOfPos[N][src]] else null
+                "$name=slot:${b?.k ?: "?"}${b?.id?.takeIf { it != 0 }?.let { ":$it" } ?: ""}:" + (st?.let { "u${it.u}m${it.m}" } ?: "none")
+            }
+        }
+        if (words == faceStateSaid) return
+        faceStateSaid = words
+        android.util.Log.i("WCLOG", "bar states: $words")
+    }
+
     /** the fight spell drawn over base-layer face slot [src] (0-based), or null to draw the game's own button */
     private fun fightOverride(li: Int, src: Int): Btn? {
         if (!fightFaceOn || li != N || src < 4 || src == 6) return null
@@ -943,6 +969,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 prevCd[key] = st.cd
             }
         }
+        faceStateLog()
         hasState = true
     }
 
