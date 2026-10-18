@@ -3946,6 +3946,8 @@ class MapView(context: Context) : View(context) {
         val tg = Terrain.of(mapId)                                  // in memory, or null (asked for on the route thread)
         // the roads this device learned from the walking (b-route-roads), learned again as the walked cells grow
         Roads.relearn(200) { dGridKey = ""; invalidate() }
+        // SafePath's network (b-safepath-net): the zone's first draft, made again when the learned roads change (the route thread)
+        SafePath.refresh(mapId, r.continent, r.top, r.bottom, r.left, r.right, mine)
         // the buildings (test54: "Sometimes checkpoints are going through buildings"): the interiors' placed buildings on this map, their
         // storeys' outlines in the world (b-route-buildings)
         ensurePlaces(r.continent)
