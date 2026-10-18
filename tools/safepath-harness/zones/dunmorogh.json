@@ -1,0 +1,199 @@
+{
+ "tag": "dunmorogh",
+ "dir": "azeroth",
+ "faction": "alliance",
+ "zone": 1426,
+ "area": 1,
+ "level": 6,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1426,
+   1
+  ],
+  [
+   1455,
+   1537
+  ],
+  [
+   1432,
+   38
+  ],
+  [
+   1437,
+   11
+  ]
+ ],
+ "cities": [
+  1455
+ ],
+ "border": [
+  1426,
+  1432
+ ],
+ "title": "Dun Morogh",
+ "crop": [
+  -4500,
+  -6600,
+  1500,
+  -3000
+ ],
+ "closeups": [
+  {
+   "name": "Coldridge Valley and its tunnel",
+   "box": [
+    -5950,
+    -6650,
+    650,
+    -250
+   ]
+  },
+  {
+   "name": "Ironforge gate ramp",
+   "box": [
+    -4900,
+    -5450,
+    -500,
+    -1050
+   ]
+  },
+  {
+   "name": "Gnomeregan and Frostmane Hold",
+   "box": [
+    -5000,
+    -5750,
+    900,
+    0
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "Coldridge Valley's ice cave (trolls)",
+   "from": {
+    "node": "Coldridge Valley"
+   },
+   "to": {
+    "cave": 111043,
+    "near": [
+     -6538,
+     471
+    ]
+   }
+  },
+  {
+   "name": "the Coldridge Pass tunnel's valley mouth (Rockjaw Raiders inside)",
+   "from": {
+    "node": "Coldridge Valley"
+   },
+   "to": {
+    "cave": 110345,
+    "near": [
+     -6255,
+     126
+    ]
+   }
+  },
+  {
+   "name": "out of Coldridge Valley through the tunnel to Kharanos",
+   "from": {
+    "node": "Coldridge Valley"
+   },
+   "to": {
+    "node": "Kharanos"
+   }
+  },
+  {
+   "name": "the Grizzled Den's mouth (wendigos)",
+   "from": {
+    "node": "Kharanos"
+   },
+   "to": {
+    "cave": 111052,
+    "near": [
+     -5654,
+     -275
+    ]
+   }
+  },
+  {
+   "name": "Frostmane Hold's mouth",
+   "from": {
+    "node": "Kharanos"
+   },
+   "to": {
+    "cave": 111044,
+    "near": [
+     -5547,
+     573
+    ]
+   }
+  },
+  {
+   "name": "the Ironforge gate (the ramp's top, outside the door)",
+   "from": {
+    "node": "Kharanos"
+   },
+   "to": {
+    "xy": [
+     -5045,
+     -833
+    ]
+   }
+  },
+  {
+   "name": "Gnomeregan's entrance",
+   "from": {
+    "node": "Kharanos"
+   },
+   "to": {
+    "wmo": 109593,
+    "near": [
+     -5183,
+     607
+    ]
+   }
+  },
+  {
+   "name": "Shimmer Ridge's troll den (Frostmane Seers)",
+   "from": {
+    "node": "Kharanos"
+   },
+   "to": {
+    "cave": 110491,
+    "near": [
+     -5040,
+     -236
+    ]
+   }
+  },
+  {
+   "name": "Gol'Bolar Quarry's cave (Rockjaw troggs)",
+   "from": {
+    "node": "Gol'Bolar Quarry"
+   },
+   "to": {
+    "cave": 111061,
+    "near": [
+     -5736,
+     -1680
+    ]
+   }
+  },
+  {
+   "name": "through the South Gate tunnels to Loch Modan",
+   "from": {
+    "node": "Gol'Bolar Quarry"
+   },
+   "to": {
+    "xy": [
+     -5650,
+     -2545
+    ]
+   }
+  }
+ ],
+ "roadTextures": [
+  "browncracks"
+ ]
+}

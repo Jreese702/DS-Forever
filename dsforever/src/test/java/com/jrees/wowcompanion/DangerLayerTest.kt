@@ -40,6 +40,19 @@ class DangerLayerTest {
         assertEquals(0.5f, s[0].x, 1e-6f); assertEquals(0.25f, s[0].y, 1e-6f)
     }
 
+    @Test fun areaOneComesAsAnArray() {
+        // Rockjaw Trogg (707), Dun Morogh only: Lua writes {[1] = {...}} as a sequence, so its spawns are a CBOR array, not a map
+        val withMap = spawnsCbor(40, listOf(30.0 to 75.0))
+        val asArray = byteArrayOf(0x81.toByte()) + withMap.copyOfRange(3, withMap.size)        // array(1) in place of map(1) + key
+        val toc = """
+            ## X-Npc-3-S: pgFLRmxlc2ggRWF0ZXIEGBgFGBkJCgwVQXAYQA==
+            ## X-Npc-3-7: ${b64(asArray)}
+        """.trimIndent()
+        val s = QuestieNpcs.read(toc.byteInputStream())
+        assertEquals(1, s.size)
+        assertEquals(1, s[0].area); assertEquals(0.3f, s[0].x, 1e-6f); assertEquals(0.75f, s[0].y, 1e-6f)
+    }
+
     @Test fun greyCountsNothingEliteThreeTimes() {
         assertEquals(0f, DangerGrid.weight(5, 6, false, 20))                   // grey to a level 20 (grey line 13)
         assertEquals(0.3f, DangerGrid.weight(16, 17, false, 20))               // green

@@ -22,8 +22,8 @@ object Caves {
     const val MOUTH_GAP_YD = 25.0          // mouths farther apart than this are separate openings
     const val SIMPLIFY_YD = 3.0            // a way's points kept at least this far apart
 
-    /** the WMO name parts that mark a cave, a tunnel, a mine, a den */
-    val KINDS = listOf("cave", "tunnel", "mine", "den")
+    /** the WMO name parts that mark a cave, a tunnel, a mine, a den, a pass (Coldridge Valley's tunnel is md_anvilmarpass/anvilmarpass.wmo) */
+    val KINDS = listOf("cave", "tunnel", "mine", "den", "pass")
 
     /** one way through: world points (x, y, z) from mouth [a] to mouth [b], [yd] long along its floor */
     class Way(val pts: List<DoubleArray>, val yd: Double) {

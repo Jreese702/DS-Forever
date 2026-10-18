@@ -56,7 +56,9 @@ class RenderSafePath {
         val db2 = File(System.getenv("DB2_DIR") ?: File(work, "db2").path); val toc = File(System.getenv("QDBTOC") ?: return)
         val names = File(dir, "tex0/names.txt").readLines().mapNotNull { l -> l.split(';', limit = 2).takeIf { it.size == 2 }?.let { it[0].toInt() to it[1] } }.toMap()
         // the device LEARNS its road textures from the player's walking (Roads.learn); here the client's own names stand in for it
-        val roadTex = names.filterValues { n -> listOf("road", "path", "cobble", "trail").any { it in n.lowercase() } }.keys
+        // (a zone whose road texture is named otherwise lists it: the spec's "roadTextures", e.g. Dun Morogh's "browncracks")
+        val extraRoad = spec?.optJSONArray("roadTextures")?.let { a -> (0 until a.length()).map { a.getString(it).lowercase() } } ?: emptyList()
+        val roadTex = names.filterValues { n -> (listOf("road", "path", "cobble", "trail", "footprint") + extraRoad).any { it in n.lowercase() } }.keys
         println("SAFEPATH road textures: ${roadTex.joinToString { names[it]!!.substringAfterLast('/') }}")
         val areas = Db2(File(db2, "AreaTable.db2").readBytes()).rows(strings = setOf(1)).associate { it.id to PlaceNames.Area(it.str(1), it.int(3)) }
         val uimap = HashMap<Int, Int>().also { o -> for (r in Db2(File(db2, "UiMapAssignment.db2").readBytes()).rows()) { val a = r.int(7); val m = r.int(4); if (a != 0 && m != 0 && a !in o) o[a] = m } }

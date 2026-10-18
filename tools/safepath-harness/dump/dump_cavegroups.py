@@ -13,7 +13,7 @@ def le(b, o): return struct.unpack_from('<i', b, o)[0]
 caves = []
 for f in os.listdir(OUT + '/wmo'):
     fid = int(f); n = names.get(fid, '')
-    if not any(k in n for k in ('cave', 'tunnel', 'mine', 'den')) or '/dungeon/' not in n and 'cave' not in n: continue
+    if not any(k in n for k in ('cave', 'tunnel', 'mine', 'den', 'pass')) or '/dungeon/' not in n and 'cave' not in n: continue
     b = open(OUT + '/wmo/' + f, 'rb').read(); o = 0; gf = []
     while o + 8 <= len(b):
         nn = le(b, o + 4); tag = b[o:o+4][::-1].decode('latin1')
