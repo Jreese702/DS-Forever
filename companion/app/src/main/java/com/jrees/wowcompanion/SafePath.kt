@@ -32,6 +32,8 @@ object SafePath {
     const val DOCK = "dock"; const val TRAM = "tram"; const val HUB = "hub"; const val EXIT = "exit"
     // an edge's kind, and its state (the review's)
     const val ROAD = "road"; const val SPUR = "spur"; const val TRAIL = "trail"
+    const val CAVE = "cave"                // a way through a cave or a tunnel, on its own floor (Caves); its inside nodes are this kind too
+    const val MOUTH = "mouth"              // a cave's mouth: where its floor meets the terrain
     const val DRAFT = "draft"; const val OK = "ok"; const val AVOID = "avoid"; const val REMOVED = "removed"
 
     const val CELL_YD = 25.0               // the draft's grid (Roads' and Terrain's cells)
@@ -1272,10 +1274,10 @@ object SafePath {
         if (toExit) net.exits.mapNotNull { x -> byId[x.node] }.minByOrNull { hypot(it.wx - tx, it.wy - ty) }
             ?.takeIf { hypot(it.wx - tx, it.wy - ty) <= EXIT_SNAP_YD }?.let { gx = it.wx; gy = it.wy }
         // a road first; a trail only where no road joins the two places (its base and its climb: over the hills it costs what they do)
-        fun factor(e: Edge) = (when (e.kind) { ROAD -> 1.0; SPUR -> 1.3; else -> 2.2 }) * (if (e.state == AVOID) 6.0 else 1.0) *
+        fun factor(e: Edge) = (when (e.kind) { ROAD -> 1.0; SPUR, CAVE -> 1.3; else -> 2.2 }) * (if (e.state == AVOID) 6.0 else 1.0) *
             (1.0 + e.danger) * (if (e.kind == ROAD) 1.0 else e.climb.toDouble())
         val pos = HashMap<Int, DoubleArray>()
-        for (n in net.nodes) pos[n.id] = doubleArrayOf(n.wx, n.wy)
+        for (n in net.nodes) pos[n.id] = if (n.kind == CAVE) doubleArrayOf(n.wx, n.wy, Climb.IN_CAVE) else doubleArrayOf(n.wx, n.wy)
         val adj = HashMap<Int, ArrayList<Pair<Int, Double>>>()
         fun link(a: Int, b: Int, c: Double) { adj.getOrPut(a) { ArrayList() }.add(b to c); adj.getOrPut(b) { ArrayList() }.add(a to c) }
         for (e in usable) { val a = pos[e.a]!!; val b = pos[e.b]!!; link(e.a, e.b, hypot(a[0] - b[0], a[1] - b[1]) * factor(e)) }
@@ -1498,5 +1500,100 @@ object SafePath {
         val keepNodes = own.nodes.filter { it.id in used || it.kind == HUB || it.kind == FLIGHT || it.kind == DOCK }
         return Net(own.map, own.cont, own.built, keepNodes, edges, exits, own.reviewed)
     }
+
+
+    // ---------------------------------------------------------------- the network, then the ground's own leg (b-route-climb)
+
+    /**
+     * THE NETWORK AS FAR AS IT HELPS, THE GROUND'S OWN LEG AFTER (the user on Skull Rock: "it goes straight into and up the mountain
+     * instead of along the zeplin path and then into the skull rock cave"): from [f] to the way nearest it ([leg]: the lattice's A*,
+     * Climb.route, when it is more than a few yards off), along the network to the way nearest the goal [t] - however far that is
+     * from the goal - and the ground's own [leg] from there to it. A goal near the player ([DIRECT_YD]): the leg alone. World points;
+     * null = no network.
+     */
+    /**
+     * [net] with [caves]' ways (b-route-climb; the user: "Caves like this need to be logically detected and factored"): each way a
+     * chain of [CAVE] nodes between two [MOUTH] nodes, [CAVE] edges along its floor ([danger] there, 0..1: they are often full of mobs);
+     * a mouth joined by a [SPUR] to the network's nearest node within [ATTACH_YD] (a mouth far from every way stands alone: the
+     * review sees it, and the routes reach it by the ground's own legs).
+     */
+    fun withCaves(net: Net, caves: List<Caves.Cave>, danger: ((Double, Double) -> Float)? = null): Net {
+        if (caves.none { it.ways.isNotEmpty() }) return net
+        val nodes = net.nodes.toMutableList(); val edges = net.edges.toMutableList()
+        var next = (nodes.maxOfOrNull { it.id } ?: 0) + 1
+        val land = net.nodes.filter { it.kind != CAVE && it.kind != MOUTH }
+        val mouths = HashMap<String, Int>()
+        fun mouth(p: DoubleArray): Int = mouths.getOrPut("${Math.round(p[0])},${Math.round(p[1])}") {
+            val id = next++; nodes.add(Node(id, p[0], p[1], MOUTH, "cave"))
+            land.minByOrNull { hypot(it.wx - p[0], it.wy - p[1]) }?.takeIf { hypot(it.wx - p[0], it.wy - p[1]) <= ATTACH_YD }
+                ?.let { edges.add(Edge(it.id, id, SPUR, DRAFT, "cave", danger?.invoke(p[0], p[1]) ?: 0f)) }
+            id
+        }
+        for (c in caves) for (w in c.ways) {
+            var last = mouth(w.a)
+            for (p in w.pts.subList(1, w.pts.size - 1).filterIndexed { i, _ -> i % 3 == 2 }) {
+                val id = next++; nodes.add(Node(id, p[0], p[1], CAVE, "cave"))
+                edges.add(Edge(last, id, CAVE, DRAFT, "cave", danger?.invoke(p[0], p[1]) ?: 0f)); last = id
+            }
+            edges.add(Edge(last, mouth(w.b), CAVE, DRAFT, "cave", danger?.invoke(w.b[0], w.b[1]) ?: 0f))
+        }
+        return Net(net.map, net.cont, net.built, nodes, edges, net.exits, net.reviewed)
+    }
+
+    fun routeOn(net: Net, fx: Double, fy: Double, tx: Double, ty: Double, leg: (DoubleArray, DoubleArray) -> List<DoubleArray>?,
+                toExit: Boolean = false, clear: ((DoubleArray, DoubleArray) -> Boolean)? = null,
+                walkable: ((DoubleArray, DoubleArray) -> Boolean)? = null): List<DoubleArray>? {
+        val f = doubleArrayOf(fx, fy); val t = doubleArrayOf(tx, ty)
+        if (hypot(tx - fx, ty - fy) <= DIRECT_YD) return leg(f, t) ?: listOf(f, t)
+        val byId = net.nodes.associateBy { it.id }
+        val usable = net.edges.filter { it.state != REMOVED && it.state != AVOID && byId.containsKey(it.a) && byId.containsKey(it.b) }
+        if (usable.isEmpty()) return null
+        val onLand = usable.filter { it.kind != CAVE }.ifEmpty { usable }          // a walk on / off never into a hill's cave
+        fun nearestOnWay(px: Double, py: Double): DoubleArray = onLand.map { e ->
+            val a = byId[e.a]!!; val b = byId[e.b]!!
+            val dx = b.wx - a.wx; val dy = b.wy - a.wy; val l2 = dx * dx + dy * dy
+            val u = if (l2 <= 0.0) 0.0 else (((px - a.wx) * dx + (py - a.wy) * dy) / l2).coerceIn(0.0, 1.0)
+            doubleArrayOf(a.wx + u * dx, a.wy + u * dy)
+        }.minByOrNull { hypot(it[0] - px, it[1] - py) }!!
+        val on = nearestOnWay(fx, fy)
+        val off = if (toExit) net.exits.mapNotNull { x -> byId[x.node] }.minByOrNull { hypot(it.wx - tx, it.wy - ty) }
+            ?.takeIf { hypot(it.wx - tx, it.wy - ty) <= EXIT_SNAP_YD }?.let { doubleArrayOf(it.wx, it.wy) } ?: nearestOnWay(tx, ty) else nearestOnWay(tx, ty)
+        // the goal no farther from the start than from the network: the ground's own leg straight there
+        if (hypot(tx - fx, ty - fy) < hypot(tx - off[0], ty - off[1])) return leg(f, t) ?: listOf(f, t)
+        // the network's own ways that climb a wall on the fine ground (drawn from the coarse cells: a cliff they averaged away) are
+        // no way at all: left out, so the network's search goes round by the ways that are (a cave's own floor is its own)
+        val walked = if (walkable == null) net else Net(net.map, net.cont, net.built, net.nodes, net.edges.filter { e ->
+            val a = byId[e.a]; val b = byId[e.b]
+            e.kind == CAVE || a == null || b == null || a.kind == MOUTH || b.kind == MOUTH || walkable(doubleArrayOf(a.wx, a.wy), doubleArrayOf(b.wx, b.wy))
+        }, net.exits, net.reviewed)
+        val mid = route(walked, on[0], on[1], off[0], off[1], clear = clear) ?: listOf(on, off)
+        val exitEnd = toExit && hypot(off[0] - tx, off[1] - ty) > 1.0 && net.exits.any { x -> byId[x.node]?.let { it.wx == off[0] && it.wy == off[1] } == true }
+        val chain = ArrayList<DoubleArray>()
+        for (p in listOf(f) + mid + (if (exitEnd) emptyList() else listOf(t))) if (chain.isEmpty() || hypot(chain.last()[0] - p[0], chain.last()[1] - p[1]) > 0.5) chain.add(p)
+        // walked a piece at a time, each from where the last one truly ended: the walk on and off by the ground's own leg; the network's
+        // pieces straight unless they cross a wall on the fine ground (a cliff its coarse cells missed: the ground's leg instead); a
+        // point no leg reaches (a way's node on a ledge) passed by, the next leg going on from where it stopped
+        val out = arrayListOf(f)
+        for (q in 1 until chain.size) {
+            val cur = out.last(); val tgt = chain[q]
+            val ends = q == 1 || (q == chain.size - 1 && !exitEnd)
+            val straight = if (ends) hypot(tgt[0] - cur[0], tgt[1] - cur[1]) <= JOIN_YD else walkable?.invoke(cur, tgt) ?: true
+            if (straight || Climb.inCave(cur) && Climb.inCave(tgt)) { out.add(tgt); continue }
+            val lg = leg(cur, tgt)
+            if (lg == null) { if (walkable == null) out.add(tgt); continue }
+            for (p in lg.drop(1)) if (hypot(out.last()[0] - p[0], out.last()[1] - p[1]) > 0.5) out.add(p)
+        }
+        // the ground's own way straight there, when it reaches the goal and the network's way round is far longer (a valley walled
+        // round, its goal at its own far end: the network leaves it by its gate and comes back)
+        if (walkable != null && hypot(tx - fx, ty - fy) <= DIRECT_LEG_YD) {
+            fun yd(w: List<DoubleArray>) = w.zipWithNext { a, b -> hypot(b[0] - a[0], b[1] - a[1]) }.sum()
+            val direct = leg(f, t)
+            if (direct != null && hypot(direct.last()[0] - tx, direct.last()[1] - ty) <= 3.0 && yd(direct) * NET_FAVOUR < yd(out)) return direct
+        }
+        return out
+    }
+    const val DIRECT_LEG_YD = 1500.0       // a goal this near: the ground's own way there is the network's rival ...
+    const val NET_FAVOUR = 1.5             // ... taken when the network's way is this many times longer
+    const val JOIN_YD = 12.0               // a start or a goal this near the way needs no leg of its own
 
 }
