@@ -41,6 +41,9 @@ object SafePath {
     const val SPUR_MAX_YD = 700.0          // a travel point or a town joins the network this near, else it stands alone (the review sees it)
     const val TRAIL_MAX_YD = 1600.0        // a piece of the network joins the rest by a trail this near
     const val EXIT_MERGE_YD = 160.0
+    const val WELD_YD = 60.0               // a road's end this near another piece's way is welded to it
+    const val PAINT_FILL_CELLS = 5         // the painted road fills a learned road's gap this many cells along it
+    const val PAINTED_COST = 0.5f          // a step on the painted road costs this much of the ground's (a trail follows the paint)
     const val BORDER_END_YD = 320.0        // a road ending this near another zone's ground goes on to it (an exit) ...
     const val ROAD_ON_YD = 250.0           // ... where that zone's own road goes on this near (a bridge's far end, a gate's road)        // crossings into one neighbour this near are one exit
     const val OFF_ZONE = 3f                // a spur or a trail through a neighbour's ground costs this much more
@@ -56,7 +59,10 @@ object SafePath {
     const val STRAY_CELLS = 24             // a piece left apart this small, with no stop or exit on it, goes
 
     class Node(val id: Int, val wx: Double, val wy: Double, val kind: String, val src: String = "auto", val name: String? = null)
-    class Edge(val a: Int, val b: Int, val kind: String, val state: String = DRAFT, val src: String = "auto", val danger: Float = 0f)
+    /** a way between nodes [a] and [b]; [danger] the share of it among hostile mobs; [climb] the ground's mean walking factor along it
+     *  (Terrain.factor: 1 level, more over hills) */
+    class Edge(val a: Int, val b: Int, val kind: String, val state: String = DRAFT, val src: String = "auto", val danger: Float = 0f,
+               val climb: Float = 1f)
     /** [node] leads into uiMap [toMap] ([how]: walk / gate / tunnel / boat / zeppelin / tram / portal), named [name] */
     class Exit(val node: Int, val toMap: Int, val how: String, val name: String)
 
@@ -67,7 +73,8 @@ object SafePath {
             fun r1(v: Double) = (v * 10).roundToInt() / 10.0
             return JSONObject().put("v", 1).put("map", map).put("cont", cont).put("built", built).put("reviewed", reviewed)
                 .put("nodes", JSONArray(nodes.map { n -> JSONArray(listOfNotNull(n.id, r1(n.wx), r1(n.wy), n.kind, n.src, n.name)) }))
-                .put("edges", JSONArray(edges.map { e -> JSONArray(listOf(e.a, e.b, e.kind, e.state, e.src, (e.danger * 100).roundToInt() / 100.0)) }))
+                .put("edges", JSONArray(edges.map { e -> JSONArray(listOf(e.a, e.b, e.kind, e.state, e.src, (e.danger * 100).roundToInt() / 100.0,
+                    (e.climb * 100).roundToInt() / 100.0)) }))
                 .put("exits", JSONArray(exits.map { x -> JSONArray(listOf(x.node, x.toMap, x.how, x.name)) }))
         }
         companion object {
@@ -79,7 +86,8 @@ object SafePath {
                     (0 until ns.length()).mapNotNull { i -> ns.optJSONArray(i)?.let { a ->
                         Node(a.optInt(0), a.optDouble(1), a.optDouble(2), a.optString(3), a.optString(4, "auto"), a.optString(5, "").ifEmpty { null }) } },
                     (0 until es.length()).mapNotNull { i -> es.optJSONArray(i)?.let { a ->
-                        Edge(a.optInt(0), a.optInt(1), a.optString(2), a.optString(3, DRAFT), a.optString(4, "auto"), a.optDouble(5, 0.0).toFloat()) } },
+                        Edge(a.optInt(0), a.optInt(1), a.optString(2), a.optString(3, DRAFT), a.optString(4, "auto"), a.optDouble(5, 0.0).toFloat(),
+                            a.optDouble(6, 1.0).toFloat()) } },
                     (0 until xs.length()).mapNotNull { i -> xs.optJSONArray(i)?.let { a -> Exit(a.optInt(0), a.optInt(1), a.optString(2), a.optString(3)) } },
                     o.optBoolean("reviewed"))
             }
@@ -98,7 +106,7 @@ object SafePath {
                 val road: (Double, Double) -> Boolean, val cost: (Double, Double) -> Float, val zoneAt: (Double, Double) -> Int,
                 val fixed: List<Fixed> = emptyList(), val nameOf: (Int) -> String = { "" },
                 val danger: ((Double, Double) -> Float)? = null, val capitals: Set<Int> = CityExits.CITIES,
-                val ground: ((Double, Double) -> Float)? = null)
+                val ground: ((Double, Double) -> Float)? = null, val painted: ((Double, Double) -> Boolean)? = null)
 
     /** the zone's first draft */
     fun draft(inp: Input, built: String = ""): Net = Builder(inp).build(built)
@@ -124,6 +132,8 @@ object SafePath {
             if (g >= Terrain.WALL) Terrain.WALL else if (c.isNaN()) g else c * g
         }
         val danger = FloatArray(n) { k -> inp.danger?.invoke(wxOf(k), wyOf(k)) ?: 0f }
+        /** the zone's map paints a road here (the user: "its pretty clearly shown on the map where the safe walking trails are") */
+        val painted = BooleanArray(n) { k -> inp.painted?.invoke(wxOf(k), wyOf(k)) ?: false }
         fun passable(k: Int) = !cost[k].isNaN() && cost[k] < Terrain.WALL
 
         inner class E(val a: Int, val b: Int, val kind: String, val cells: List<Int>)
@@ -162,9 +172,12 @@ object SafePath {
 
         fun build(built: String): Net {
             val m = BooleanArray(n) { k -> passable(k) && inp.road(wxOf(k), wyOf(k)) }
+            // the painted road fills the learned road's gaps (a texture's blend, a bridge): painted cells near a learned road count too
+            fillFromPaint(m)
             roadAll = m.copyOf()
             close(m); dropSmall(m); thin(m); prune(m)
             chains(m)
+            weld()
             borderEnds()
             mergeExits()
             val roadless = edges.isEmpty()
@@ -181,13 +194,15 @@ object SafePath {
             val out = edges.map { e ->
                 // its danger: the share of its length that passes hostile creatures (two or more near)
                 val d = if (e.cells.isEmpty()) 0f else e.cells.count { danger[it] >= 0.6f }.toFloat() / e.cells.size
-                Edge(e.a, e.b, e.kind, danger = d)
+                // its climb: the ground's mean walking factor along it (a trail over the hills costs what they cost)
+                val cl = if (e.cells.isEmpty()) 1f else e.cells.map { k -> cost[k].let { c -> if (c.isNaN()) 1f else min(c, Terrain.STEEP * 4) } }.average().toFloat()
+                Edge(e.a, e.b, e.kind, danger = d, climb = max(1f, cl))
             }
             // only the nodes something uses (the merged exits' old ones go), numbered again
             val used = (out.flatMap { listOf(it.a, it.b) } + exits.map { it.node } + fixedIds).toSortedSet()
             val renum = HashMap<Int, Int>()
             val ns = used.mapIndexed { i, id -> renum[id] = i; nodes[id].let { Node(i, it.wx, it.wy, it.kind, it.src, it.name) } }
-            return Net(inp.map, inp.cont, built, ns, out.map { Edge(renum[it.a]!!, renum[it.b]!!, it.kind, it.state, it.src, it.danger) },
+            return Net(inp.map, inp.cont, built, ns, out.map { Edge(renum[it.a]!!, renum[it.b]!!, it.kind, it.state, it.src, it.danger, it.climb) },
                 exits.map { Exit(renum[it.node]!!, it.toMap, it.how, it.name) })
         }
 
@@ -365,6 +380,42 @@ object SafePath {
             }
         }
 
+        /** the painted road's cells within [PAINT_FILL_CELLS] of a learned road cell, grown along the paint (a gap closed where the
+         *  map paints the road on), never the paint far from any learned road (its speckles over the hills) */
+        fun fillFromPaint(m: BooleanArray) {
+            if (painted.none { it }) return
+            val near = IntArray(n) { Int.MAX_VALUE }
+            val q = ArrayDeque<Int>()
+            for (k in 0 until n) if (m[k]) { near[k] = 0; q.add(k) }
+            while (q.isNotEmpty()) {
+                val k = q.removeFirst()
+                if (near[k] >= PAINT_FILL_CELLS) continue
+                for (o in nb8(k)) if (painted[o] && passable(o) && near[o] > near[k] + 1) { near[o] = near[k] + 1; q.add(o) }
+            }
+            for (k in 0 until n) if (near[k] in 1..PAINT_FILL_CELLS) m[k] = true
+        }
+
+        /** road pieces apart by a texture's gap: an end this near another piece's way is welded to it (one network: the user on
+         *  test9's route, "why is it looping down and around an up onto the mountains?") */
+        fun weld() {
+            val parent = HashMap<Int, Int>()
+            fun find(x: Int): Int { var a = x; while ((parent[a] ?: a) != a) a = parent[a]!!; return a }
+            fun union(a: Int, b: Int) { val x = find(a); val y = find(b); if (x != y) parent[x] = y }
+            for (e in edges) union(e.a, e.b)
+            val deg = HashMap<Int, Int>()
+            for (e in edges) { deg[e.a] = (deg[e.a] ?: 0) + 1; deg[e.b] = (deg[e.b] ?: 0) + 1 }
+            val exitNodes = exits.map { it.node }.toHashSet()
+            for ((id, d) in deg.toList()) {
+                if (d != 1 || id in exitNodes) continue
+                val c = cellOf(nodes[id].wx, nodes[id].wy).takeIf { it >= 0 } ?: continue
+                val path = search(listOf(c), WELD_YD) { k -> cellEdge[k]?.let { e -> e.a != id && e.b != id && find(e.a) != find(id) } == true } ?: continue
+                val e = cellEdge[path.last()] ?: continue
+                val to = split(e, path.last())
+                emit(id, to, path, ROAD)
+                union(id, to)
+            }
+        }
+
         /** the crossings into one neighbour this near each other: one exit (their middle), the edges moved onto it */
         fun mergeExits() {
             val gone = HashMap<Int, Int>()
@@ -422,7 +473,8 @@ object SafePath {
                     val step = if (o % nx != k % nx && o / nx != k / nx) CELL_YD * 1.4142 else CELL_YD
                     val w = walked[k]!! + step
                     if (w > maxYd) continue
-                    val c = (step * cost[o] * (1f + DANGER_COST * danger[o]) * (if (zone[o] == own) 1f else OFF_ZONE)).toFloat()
+                    val c = (step * cost[o] * (1f + DANGER_COST * danger[o]) * (if (zone[o] == own) 1f else OFF_ZONE) *
+                        (if (painted[o]) PAINTED_COST else 1f)).toFloat()
                     val nd = d + c
                     if (nd < (dist[o] ?: Float.MAX_VALUE)) { dist[o] = nd; walked[o] = w; from[o] = k; q.add(nd to o) }
                 }
@@ -702,7 +754,7 @@ object SafePath {
             val tg = Terrain.of(map) ?: return@run "no terrain yet"
             val zg = zones.get(map) ?: return@run "no zone ground yet"
             val ar = areas() ?: return@run "no areas table yet"
-            val built = "roads $roadCells, ${zg.nx}x${zg.ny} chunks"
+            val built = "roads $roadCells, ${zg.nx}x${zg.ny} chunks, v2"
             val old = drafts.get(map)
             if (old != null && old.built == built) return@run null
             val names = HashMap<Int, String>()
@@ -714,12 +766,14 @@ object SafePath {
             val ax = l - r; val ay = t - b
             val hostile = spawns.filter { it.hostile == mine || it.hostile == 3 }.map { doubleArrayOf(t - it.y * ay, l - it.x * ax) }
             val friendly = spawns.filter { it.hostile != mine && it.hostile != 3 }.map { Npc(t - it.y * ay, l - it.x * ax, it.sub) }
-            val ground = if (map in CityExits.CITIES) artPixels(map)?.let { (px, w, h) -> artGround(px, w, h, t, b, l, r) } else null
+            val artPx = artPixels(map)
+            val ground = if (map in CityExits.CITIES) artPx?.let { (px, w, h) -> artGround(px, w, h, t, b, l, r) } else null
+            val painted = artPx?.let { (px, w, h) -> paintedRoads(px, w, h, t, b, l, r) }
             val net = draft(Input(map, cont, t, b, l, r, { wx, wy -> Roads.isRoad(map, wx, wy) },
                 { wx, wy -> Terrain.factor(tg.at(wx, wy)) }, { wx, wy -> ar.uiMap(zg.areaAt(wx, wy)) },
                 fixed + hubs(friendly, { x, y -> PlaceNames.nameAt(x, y, ar.rows) { a, b2 -> zg.areaAt(a, b2) } }, nameOf(map),
                     districtFor(map, t, b, l, r)), ::nameOf,
-                dangerOf(hostile), ground = ground), built)
+                dangerOf(hostile), ground = ground, painted = painted), built)
             ArtHarvest.file("safepath/$map.draft.json").also { it.parentFile?.mkdirs() }.writeText(net.toJson().toString())
             drafts.drop(map); nets.drop(map)
             "drafted: ${net.nodes.size} nodes, ${net.edges.size} edges (${net.edges.count { it.kind == TRAIL }} trails), " +
@@ -836,6 +890,44 @@ object SafePath {
             (hue in 60f..200f && s > 0.15f)                          // the pools
     }
 
+    /**
+     * THE MAP'S PAINTED ROADS (the user on test9: "its pretty clearly shown on the map where the safe walking trails are all at"): the
+     * zone's own painting draws its roads as a pale golden band (hue about 40, its middle 0.6 - 0.8 saturated, 0.62 - 0.82 bright)
+     * between two dark outlines (darker than 0.53, more than 0.86 saturated) - the mountains' pale tops have their stroke on one side
+     * only. [px] the art (w x [h] over the zone's world rect [t] / [b] / [l] / [r]): true where a [CELL_YD] cell holds such a pixel.
+     */
+    fun paintedRoads(px: IntArray, w: Int, h: Int, t: Double, b: Double, l: Double, r: Double): (Double, Double) -> Boolean {
+        val hue = FloatArray(w * h); val sat = FloatArray(w * h); val bri = FloatArray(w * h)
+        for (k in px.indices) { val c = px[k]; hsv(c).let { hue[k] = it[0]; sat[k] = it[1]; bri[k] = it[2] } }
+        fun core(k: Int) = hue[k] in 38.5f..44.5f && sat[k] in 0.6f..0.8f && bri[k] in 0.62f..0.82f
+        fun edge(k: Int) = bri[k] < 0.53f && sat[k] > 0.86f
+        val R = 5
+        val road = BooleanArray(w * h)
+        for (y in R until h - R) for (x in R until w - R) {
+            val k = y * w + x
+            if (!core(k)) continue
+            val lr = (1..R).any { edge(k - it) } && (1..R).any { edge(k + it) }
+            val ud = (1..R).any { edge(k - it * w) } && (1..R).any { edge(k + it * w) }
+            if (lr || ud) road[k] = true
+        }
+        val hw = max(1, (CELL_YD / (l - r) * w / 2).roundToInt()); val hh = max(1, (CELL_YD / (t - b) * h / 2).roundToInt())
+        return { wx, wy ->
+            val x = ((l - wy) / (l - r) * w).toInt(); val y = ((t - wx) / (t - b) * h).toInt()
+            var hit = false
+            for (yy in max(0, y - hh)..min(h - 1, y + hh)) { for (xx in max(0, x - hw)..min(w - 1, x + hw)) if (road[yy * w + xx]) { hit = true; break }; if (hit) break }
+            hit
+        }
+    }
+    private fun hsv(c: Int): FloatArray {
+        val r = (c shr 16 and 0xFF) / 255f; val g = (c shr 8 and 0xFF) / 255f; val bl = (c and 0xFF) / 255f
+        val mx = max(r, max(g, bl)); val mn = min(r, min(g, bl)); val d = mx - mn
+        val s = if (mx <= 0f) 0f else d / mx
+        if (d <= 0f) return floatArrayOf(0f, s, mx)
+        var hue = when (mx) { r -> 60f * (((g - bl) / d) % 6f); g -> 60f * ((bl - r) / d + 2f); else -> 60f * ((r - g) / d + 4f) }
+        if (hue < 0f) hue += 360f
+        return floatArrayOf(hue, s, mx)
+    }
+
     /** a map's whole painting (its base and every overlay) as ARGB pixels at its own size, or null */
     fun artPixels(map: Int): Triple<IntArray, Int, Int>? = runCatching {
         val dir = File(ArtHarvest.dir("worldmap"), "$map")
@@ -894,7 +986,7 @@ object SafePath {
         }
         fun node(id: Int) = nodes.firstOrNull { it.id == id }
         private fun nextId() = (nodes.maxOfOrNull { it.id } ?: -1) + 1
-        private fun with(e: Edge, state: String = e.state, kind: String = e.kind) = Edge(e.a, e.b, kind, state, "user", e.danger)
+        private fun with(e: Edge, state: String = e.state, kind: String = e.kind) = Edge(e.a, e.b, kind, state, "user", e.danger, e.climb)
 
         fun setState(i: Int, state: String) { val e = edges.getOrNull(i) ?: return; if (e.state == state) return; snap(); edges[i] = with(e, state = state) }
         fun setKind(i: Int, kind: String) { val e = edges.getOrNull(i) ?: return; if (e.kind == kind) return; snap(); edges[i] = with(e, kind = kind) }
@@ -1029,14 +1121,17 @@ object SafePath {
      * exit instead. World points (x, y) from the player to the goal; null = the network does not help (too far from it, or the
      * straight walk is as good): the caller keeps its own way.
      */
-    fun route(net: Net, fx: Double, fy: Double, tx: Double, ty: Double, toExit: Boolean = false): List<DoubleArray>? {
+    fun route(net: Net, fx: Double, fy: Double, tx: Double, ty: Double, toExit: Boolean = false,
+              clear: ((DoubleArray, DoubleArray) -> Boolean)? = null): List<DoubleArray>? {
         val byId = net.nodes.associateBy { it.id }
         val usable = net.edges.filter { it.state != REMOVED && byId.containsKey(it.a) && byId.containsKey(it.b) }
         if (usable.isEmpty()) return null
         var gx = tx; var gy = ty
         if (toExit) net.exits.mapNotNull { x -> byId[x.node] }.minByOrNull { hypot(it.wx - tx, it.wy - ty) }
             ?.takeIf { hypot(it.wx - tx, it.wy - ty) <= EXIT_SNAP_YD }?.let { gx = it.wx; gy = it.wy }
-        fun factor(e: Edge) = (when (e.kind) { ROAD -> 1.0; SPUR -> 1.2; else -> 1.8 }) * (if (e.state == AVOID) 6.0 else 1.0) * (1.0 + e.danger)
+        // a road first; a trail only where no road joins the two places (its base and its climb: over the hills it costs what they do)
+        fun factor(e: Edge) = (when (e.kind) { ROAD -> 1.0; SPUR -> 1.3; else -> 2.2 }) * (if (e.state == AVOID) 6.0 else 1.0) *
+            (1.0 + e.danger) * (if (e.kind == ROAD) 1.0 else e.climb.toDouble())
         val pos = HashMap<Int, DoubleArray>()
         for (n in net.nodes) pos[n.id] = doubleArrayOf(n.wx, n.wy)
         val adj = HashMap<Int, ArrayList<Pair<Int, Double>>>()
@@ -1044,7 +1139,8 @@ object SafePath {
         for (e in usable) { val a = pos[e.a]!!; val b = pos[e.b]!!; link(e.a, e.b, hypot(a[0] - b[0], a[1] - b[1]) * factor(e)) }
         // the walk on and off: the nearest points of the nearest ways (a few), each a virtual node cut into its way
         var nextVirtual = -10
-        fun attach(px: Double, py: Double, virt: Int): Boolean {
+        // the walk on / off goes AHEAD: a way behind the player (away from the goal), or behind the goal, costs more to reach
+        fun attach(px: Double, py: Double, virt: Int, toward: DoubleArray): Boolean {
             val cands = usable.map { e ->
                 val a = pos[e.a]!!; val b = pos[e.b]!!
                 val dx = b[0] - a[0]; val dy = b[1] - a[1]; val l2 = dx * dx + dy * dy
@@ -1059,12 +1155,14 @@ object SafePath {
                 pos[id] = q
                 val a = pos[e.a]!!; val b = pos[e.b]!!; val len = hypot(a[0] - b[0], a[1] - b[1]); val f = factor(e)
                 link(id, e.a, t * len * f); link(id, e.b, (1 - t) * len * f)
-                link(virt, id, hypot(q[0] - px, q[1] - py) * OFF_NET)
+                val dx = q[0] - px; val dy = q[1] - py
+                val behind = dx * (toward[0] - px) + dy * (toward[1] - py) < 0.0 && hypot(dx, dy) > 20.0
+                link(virt, id, hypot(dx, dy) * OFF_NET * (if (behind) BEHIND else 1.0))
             }
             return true
         }
         val start = -1; val goal = -2
-        if (!attach(fx, fy, start) || !attach(gx, gy, goal)) return null
+        if (!attach(fx, fy, start, doubleArrayOf(gx, gy)) || !attach(gx, gy, goal, doubleArrayOf(fx, fy))) return null
         // the straight walk, the network's rival only for a goal near the player (farther, the network IS the way)
         if (hypot(gx - fx, gy - fy) <= DIRECT_YD) link(start, goal, hypot(gx - fx, gy - fy) * DIRECT)
         val dist = HashMap<Int, Double>(); val from = HashMap<Int, Int>()
@@ -1084,8 +1182,55 @@ object SafePath {
         while (c in from) { c = from[c]!!; path.add(c) }
         path.reverse()
         if (path.size <= 2) return null                                   // straight: the caller's own way
-        return path.map { pos[it]!! }
+        return smooth(path.map { pos[it]!! }, clear)
     }
+
+    /** the way without its there-and-backs (a loop that comes back within [LOOP_YD] of where it was) and with its ends walked
+     *  straight where the way would hook back first: [ATTACH_YD] at most, the way far longer than the straight walk; up to
+     *  [SHORTCUT_YD] where the ground on the straight walk is [clear] (no climb: a camp's road round it, never over a hill) */
+    fun smooth(pts: List<DoubleArray>, clear: ((DoubleArray, DoubleArray) -> Boolean)? = null): List<DoubleArray> {
+        var w = pts
+        fun d(a: DoubleArray, b: DoubleArray) = hypot(a[0] - b[0], a[1] - b[1])
+        fun arc(from: Int, to: Int): Double { var s = 0.0; for (i in from until to) s += d(w[i], w[i + 1]); return s }
+        // the loops: from each point, the farthest later one it comes back to
+        var i = 0
+        while (i < w.size - 2) {
+            val j = (w.size - 1 downTo i + 2).firstOrNull { j -> d(w[i], w[j]) < LOOP_YD && arc(i, j) > 2.5 * d(w[i], w[j]) + LOOP_YD }
+            if (j != null) w = w.subList(0, i + 1) + w.subList(j, w.size)
+            i++
+        }
+        // its zig-zags: where the ground between two of its points is level, the straight walk when the way is far longer
+        if (clear != null) {
+            var a = 0
+            while (a < w.size - 2) {
+                val j = (w.size - 1 downTo a + 2).firstOrNull { j -> d(w[a], w[j]) <= SHORTCUT_YD && arc(a, j) > 1.6 * d(w[a], w[j]) && clear(w[a], w[j]) }
+                if (j != null) w = w.subList(0, a + 1) + w.subList(j, w.size)
+                a++
+            }
+        }
+        // the ends: straight to the farthest point near enough when the way there hooks round
+        if (w.size > 2) {
+            val k = (w.size - 2 downTo 1).firstOrNull { k -> (d(w[0], w[k]) <= ATTACH_YD && arc(0, k) > 1.3 * d(w[0], w[k]) + 20.0) ||
+                (clear != null && d(w[0], w[k]) <= SHORTCUT_YD && arc(0, k) > 1.6 * d(w[0], w[k]) && clear(w[0], w[k])) }
+            if (k != null) w = listOf(w[0]) + w.subList(k, w.size)
+        }
+        if (w.size > 2) {
+            val last = w.size - 1
+            val k = (1 until last).firstOrNull { k -> (d(w[last], w[k]) <= ATTACH_YD && arc(k, last) > 1.3 * d(w[last], w[k]) + 20.0) ||
+                (clear != null && d(w[last], w[k]) <= SHORTCUT_YD && arc(k, last) > 1.6 * d(w[last], w[k]) && clear(w[last], w[k])) }
+            if (k != null) w = w.subList(0, k + 1) + listOf(w[last])
+        }
+        return w
+    }
+    const val LOOP_YD = 70.0               // a way that comes back this near where it was, the long way round, is a there-and-back
+    const val SHORTCUT_YD = 250.0          // a hooked end walked straight this far where the ground is clear
+
+    /** the straight walk from [a] to [b] (world x, y) on level ground: every [CELL_YD] of it under [Terrain.STEEP] by [factorAt] */
+    fun clearOf(factorAt: (Double, Double) -> Float): (DoubleArray, DoubleArray) -> Boolean = { a, b ->
+        val n = max(1, (hypot(b[0] - a[0], b[1] - a[1]) / CELL_YD).toInt())
+        (0..n).all { i -> val t = i.toDouble() / n; factorAt(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t).let { it.isNaN() || it < Terrain.STEEP } }
+    }
+    const val BEHIND = 3.0                 // the walk onto a way behind the player costs this much more
     const val ATTACH_YD = 150.0            // the walk onto / off the network at most this long
     const val OFF_NET = 1.6                // a yard of it costs this much (off the ways, on the ground's own risks)
     const val DIRECT = 1.35                // the straight walk's yard, the network's rival ...

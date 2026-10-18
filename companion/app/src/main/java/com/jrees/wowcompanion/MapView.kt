@@ -4082,7 +4082,9 @@ class MapView(context: Context) : View(context) {
         if (netPending.add(q)) {
             val toExit = route.kind == CursorRoute.Kind.EXIT
             RouteWork.run({
-                val w = SafePath.route(net, r.top - py * ay, r.left - px * ax, r.top - route.y * ay, r.left - route.x * ax, toExit)
+                // a hooked end walked straight only over level ground (the zone's slopes, when the terrain step made them)
+                val clear = Terrain.of(mapId)?.let { tg -> SafePath.clearOf { x, y -> Terrain.factor(tg.at(x, y)) } }
+                val w = SafePath.route(net, r.top - py * ay, r.left - px * ax, r.top - route.y * ay, r.left - route.x * ax, toExit, clear)
                 w?.map { doubleArrayOf((r.left - it[1]) / ax, (r.top - it[0]) / ay) }
             }) { pts ->
                 netPending.remove(q)
