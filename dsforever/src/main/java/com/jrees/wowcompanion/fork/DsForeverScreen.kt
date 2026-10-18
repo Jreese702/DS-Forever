@@ -86,6 +86,7 @@ class DsForeverScreen(private val context: Context) {
         gameOn = true
         LauncherHooks.gameStartSec = System.currentTimeMillis() / 1000
         lastRx = -1L; note("game screen up"); main.removeCallbacks(traffic); main.post(traffic)
+        com.jrees.wowcompanion.GameLife.started()             // issue #12: the game's life in DS Forever's own log
         Log.i(TAG, "game attached")
     }
 

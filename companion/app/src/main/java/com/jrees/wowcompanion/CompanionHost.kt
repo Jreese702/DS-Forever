@@ -372,6 +372,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the problem report's own log (board f-problem-report): DS Forever's events, never a login, names only to hide them
         DiagLog.init(this)
         DataStaleness.init(this)                   // issues #8 / #9: is the game folder's Data the build's?
+        if (LauncherHooks.pkg != null && !LauncherHooks.gameUp()) GameLife.launcherBack()     // issue #12
         DiagLog.event("app", "bottom screen up (inside the launcher: ${LauncherHooks.pkg != null})")
         ArtHarvest.onState { s ->
             val kind = s.javaClass.simpleName + ((s as? ArtHarvest.State.Failed)?.let { ": ${it.why}" } ?: "")
@@ -1532,6 +1533,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // smoothness A: an answer document's arrival, for the latency chain (inside the launcher only)
         if (LatLog.on) msg.optString("type").let { t -> if (t.endsWith("ack") || t.endsWith("use")) LatLog.mark("doc", "$t gt=${msg.optLong("_gt", -1L)}") }
         if (current && !docFlowSeen) { docFlowSeen = true; Log.i("WCHOME", "docs: first current document (${msg.optString("type")})") }
+        if (current) GameLife.inWorld()                      // issue #12: the first current document = the game is in the world
         // the interiors bake (Track C) runs while the game is there and quiet; it waits while it fights or loads
         if (current) IndoorSchedulerStep.noteAlive(homeView.inFight() || setupLoading || startView.visibility == View.VISIBLE)
         // a reload from the Settings keeps it up until the new hello (the game writes on for a moment before it reloads)

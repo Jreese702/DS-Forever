@@ -49,6 +49,8 @@ object SetupFlow {
         val appLine: String? = null,
         /** the background all-icons step's line (AllIcons.line): optional, never gates Play */
         val iconsLine: String? = null,
+        /** the game ended abnormally (GameLife.note): the touch-only "The game closed" note; null = none */
+        val gameClosed: String? = null,
         /** the game folder's Data is older than its build (DataStaleness), null = fine or not known; its plain message */
         val staleData: String? = null,
         /** a problem report saved by itself and not opened yet (ReportFlow.noteTitle), null = none */
@@ -75,6 +77,8 @@ object SetupFlow {
         RELAUNCH,
         /** "Report a problem" (board f-problem-report): the report screen, before Play too */
         REPORT,
+        /** the "The game closed" note: OK */
+        GAME_CLOSED_OK,
         /** the out-of-date folder's pop-up: OK (this run) */
         STALE_OK,
         /** the saved report's note: open its GitHub issue, or dismiss it */
@@ -99,7 +103,7 @@ object SetupFlow {
      * A button the controller's cursor may land on. "Report a problem" never (b-setup-report-cursor, the user: "I keep accidentally
      * clicking the Send a problem at launch because its on the cursor. that should only be a touchable option"): touch only.
      */
-    fun padTarget(b: Button): Boolean = b.enabled && b.action != Action.REPORT
+    fun padTarget(b: Button): Boolean = b.enabled && b.action != Action.REPORT && b.action != Action.GAME_CLOSED_OK
 
     fun canPlay(i: Inputs): Boolean =
         i.folderFound && !i.wrongGame && i.storage && i.art == Art.READY && i.busy == null && !i.gameRunning && i.appUpdate == null
@@ -120,6 +124,9 @@ object SetupFlow {
             // issues #8 / #9 (the user's pick): an out-of-date Data folder, said plainly; Play stays (it may still start)
             i.staleData != null && i.folderFound && !i.wrongGame && i.storage -> Prompt("stale", "Your game folder is out of date",
                 i.staleData, listOf(Button("OK", Action.STALE_OK)))
+            // issue #12: the game ended abnormally; touch only (its buttons are never the cursor's: padTarget)
+            i.gameClosed != null && i.folderFound && !i.wrongGame && i.storage -> Prompt("closed", "The game closed", i.gameClosed,
+                listOf(Button("Send a problem report", Action.REPORT), Button("OK", Action.GAME_CLOSED_OK)))
             !i.storage -> Prompt("storage", "Allow file access",
                 "Android needs \"All files access\" so the game and DS Forever can read the game folder.",
                 listOf(Button("Open settings", Action.GRANT_STORAGE)))

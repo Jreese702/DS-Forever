@@ -808,6 +808,7 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
     installBundledComponents(context, onStatus)
     // b-dxvk-load-crash: the last run's DXVK log is kept (DXVK truncates it at start: a restart after a crash would erase it)
     runCatching { com.jrees.wowcompanion.DxvkLogs.rotate(com.jrees.wowcompanion.DxvkLogs.dir(context.dataDir)) }
+    runCatching { com.jrees.wowcompanion.DxvkLogs.cacheDir(context.dataDir).mkdirs() }       // issue #12: DXVK's state cache
 
     check(File(gameRoot, BUILD_INFO).exists()) { "Missing $BUILD_INFO in $gameRoot. Copy it from your WoW install." }
     // launch support: the client this folder runs (the beta or the launch client, from its .build.info), for every path below

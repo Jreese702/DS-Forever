@@ -87,7 +87,8 @@ object SetupBridge {
         val i = inputs ?: return null
         return SetupFlow.screen(i.copy(signIn = signIn, restartOffered = restartOffered, gameRunning = gameRunning, restarting = restarting,
             reportSaved = ReportFlow.pending?.let { ReportFlow.noteTitle(it) },
-            staleData = DataStaleness.current()?.takeIf { !staleOk }))
+            staleData = DataStaleness.current()?.takeIf { !staleOk },
+            gameClosed = GameLife.note))
     }
 
     /** the sign-in's lean log (NativeLogin.logEvent): each sign-in button, never anything typed */
@@ -100,7 +101,8 @@ object SetupBridge {
             SetupFlow.Action.UPDATE_LOGIN -> updateLogin?.invoke()
             SetupFlow.Action.ENTER_ON_GAME -> enterOnGame?.invoke()
             SetupFlow.Action.RESTART_GAME -> { signIn(SetupFlow.SignIn.NONE); restartGame?.invoke() }
-            SetupFlow.Action.REPORT -> openReport?.invoke()
+            SetupFlow.Action.REPORT -> { GameLife.dismissNote(); openReport?.invoke() }
+            SetupFlow.Action.GAME_CLOSED_OK -> { GameLife.dismissNote(); changed() }
             SetupFlow.Action.REPORT_OPEN -> openSavedReport?.invoke()
             SetupFlow.Action.STALE_OK -> { staleOk = true; changed() }
             SetupFlow.Action.REPORT_DISMISS -> { ReportFlow.clearPending(); changed() }
