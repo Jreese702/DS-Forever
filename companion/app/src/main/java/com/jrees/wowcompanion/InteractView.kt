@@ -128,6 +128,7 @@ class InteractView(context: Context) : View(context) {
     fun update(msg: JSONObject, current: Boolean = true) {
         lastDocAt = System.currentTimeMillis()
         if (current) spokenSync(msg)
+        if (current) qtModeSync(msg)
         if (current) takeLootGone(msg, doc?.optJSONObject("loot"))
         prevLoot = doc?.optJSONObject("loot")
         docCurrent = current
@@ -707,6 +708,21 @@ class InteractView(context: Context) : View(context) {
         val now = android.os.SystemClock.uptimeMillis()
         if (col < 0 || dryRun || now - spkTapAt < SPK_EVERY_MS) return
         spkTapAt = now
+        TapBridge.tap(context, msg.optJSONObject("pad"), "iact", col) { }
+    }
+
+    // ---- QUESTTRAIL MODE (test61): the add-on touches QuestTrail only while the app says "Quest tracking: QuestTrail" (Interact i126,
+    // doc.questtrail.on); a difference is put right with its cell, at most every SPK_EVERY_MS. Held back in 1.0.9: never on.
+    private var qtModeTapAt = 0L
+    private fun qtModeSync(msg: JSONObject) {
+        val q = msg.optJSONObject("questtrail") ?: return
+        val cells = q.optJSONObject("cells") ?: return
+        val want = Settings.questTracking == "questtrail"
+        if (q.optBoolean("on") == want) return
+        val col = cells.optInt(if (want) "on" else "off", -1)
+        val now = android.os.SystemClock.uptimeMillis()
+        if (col < 0 || dryRun || now - qtModeTapAt < SPK_EVERY_MS) return
+        qtModeTapAt = now
         TapBridge.tap(context, msg.optJSONObject("pad"), "iact", col) { }
     }
 
