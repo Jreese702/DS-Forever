@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i126"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i127"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2764,16 +2764,16 @@ function ACT.qtmode(v)
     local on = v == "on"
     if on == N.qt.on() then return true end
     WC.qtMode = on
-    if not on then                                             -- given back: its compass and tracker as QuestTrail left them
+    if on then                                                 -- its setup / intro / menu: the mirror's from now (HIDE.qtsetup)
         local fight = TB(function() return InCombatLockdown() end) == true
-        for name in pairs(N.qt.zeroed) do
+        for name in pairs(N.qt.WINDOWS) do
             local o = rawget(_G, name)
-            if type(o) == "table" then
+            if N.qt.zeroed[name] and type(o) == "table" then
                 pcall(function() o:SetAlpha(1) end)
                 if not fight then pcall(function() o:EnableMouse(true) end) end
             end
+            N.qt.zeroed[name] = nil
         end
-        N.qt.zeroed = {}
     end
     emitSoon()
     return true
@@ -2828,9 +2828,9 @@ do
         t = t + (el or 0)
         if t < 0.5 then return end
         t = 0
-        if not N.qt.on() then return end                       -- test61: QuestTrail mode off: nothing of ours touches it
+        pcall(N.qt.hideArrow)                                  -- test3: its plain frames hidden in EVERY mode (QuestTrail loaded)
+        if not N.qt.on() then t = -1.5; return end             -- test61: its setup handling only in QuestTrail mode
         pcall(N.qt.hook)
-        pcall(N.qt.hideArrow)
         pcall(N.qt.onceDefaults)
         -- (every 0.5 s until its windows are hooked, then every 2 s: the tracker's item buttons come and go)
         if N.qt.hooked.qtsetup and N.qt.hooked.qtintro then t = -1.5 end
@@ -3161,15 +3161,21 @@ end
 -- test58 (the user: "There's a QuestTrail tracker on the top screen that needs to be hidden"): its tracker too, QuestTrailTrackerFrame and
 -- its quest item buttons (QuestTrailItemButton<n>, SECURE: their alpha only, their mouse off out of a fight), by the same rule
 -- test61: NEVER its secure buttons (QuestTrailHearthButton / TeleportButton / ItemButton<n>, SecureActionButtonTemplate): no alpha, no
--- mouse, no hook; only its two plain frames
-N.qt.HIDDEN = { "QuestTrailArrowFrame", "QuestTrailTrackerFrame" }
-N.qt.zeroed = {}
+-- mouse, no hook; only its plain frames
+-- 1.0.10-test3 (the user: "The QuestTrail UI needs to be hidden"): whenever QuestTrail is loaded, in EVERY Quest tracking mode, its plain
+-- frames that show on the top screen: the compass (kept shown at alpha 0, Map's reader), the tracker, its minimap button, its dungeon
+-- list, its update notice; its setup / intro / menu too while QuestTrail mode is off (in it they are the mirror's). Logged once each.
+N.qt.HIDDEN = { "QuestTrailArrowFrame", "QuestTrailTrackerFrame", "QuestTrailMinimapButton", "QuestTrailDungeonList", "QuestTrailUpdateFrame" }
+N.qt.WINDOWS = { QuestTrailSetup = true, QuestTrailSharedIntro = true, QuestTrailMenuFrame = true }
+N.qt.zeroed, N.qt.hideHooked = {}, {}
+function N.qt.loaded() return type(SlashCmdList) == "table" and type(SlashCmdList.QUESTTRAIL) == "function" end
+function N.qt.wantHidden(name) return N.qt.loaded() and (not N.qt.WINDOWS[name] or not N.qt.on()) end
 function N.qt.hideArrow()
-    if not N.qt.on() then return end
+    if not N.qt.loaded() then return end
     local fight = TB(function() return InCombatLockdown() end) == true
     local busy = false
-    local function zero(o)
-        if type(o) ~= "table" or busy or not N.qt.on() then return end
+    local function zero(o, name)
+        if type(o) ~= "table" or busy or not N.qt.wantHidden(name) then return end
         busy = true
         pcall(function() o:SetAlpha(0) end)
         if not fight then pcall(function() o:EnableMouse(false) end) end
@@ -3177,18 +3183,26 @@ function N.qt.hideArrow()
     end
     local names = {}
     for _, n in ipairs(N.qt.HIDDEN) do names[#names + 1] = n end
+    if not N.qt.on() then for n in pairs(N.qt.WINDOWS) do names[#names + 1] = n end end
+    local fresh = {}
     for _, name in ipairs(names) do
         local o = rawget(_G, name)
-        if type(o) == "table" then
-            if (TN(function() return o:GetAlpha() end) or 0) > 0 then zero(o) end
+        -- (never a protected frame: QuestTrail's secure buttons are not in these lists, and one found protected is left alone)
+        if type(o) == "table" and TB(function() return o:IsProtected() end) ~= true then
+            if (TN(function() return o:GetAlpha() end) or 0) > 0 then zero(o, name) end
             if not N.qt.zeroed[name] then
                 N.qt.zeroed[name] = true
-                zero(o)
-                pcall(function() hooksecurefunc(o, "SetAlpha", function(self, a) if (a or 0) > 0 then zero(self) end end) end)
-                pcall(function() o:HookScript("OnShow", function(self) zero(self) end) end)
+                fresh[#fresh + 1] = name
+                zero(o, name)
+            end
+            if not N.qt.hideHooked[name] then
+                N.qt.hideHooked[name] = true
+                pcall(function() hooksecurefunc(o, "SetAlpha", function(self, a) if (a or 0) > 0 then zero(self, name) end end) end)
+                pcall(function() o:HookScript("OnShow", function(self) zero(self, name) end) end)
             end
         end
     end
+    if #fresh > 0 then ack("qthide", true, "hidden: " .. table.concat(fresh, ", ") .. (N.qt.on() and " (qt mode)" or " (qt mode off)")) end
     N.qt.hooked.arrow = N.qt.zeroed.QuestTrailArrowFrame
 end
 -- ---- "QUESTTRAIL SETTINGS" (Add-ons): QuestTrail's own pages, through its own command (/qtr setup), mirrored and browsable by its
