@@ -3,6 +3,8 @@
 # "A" / "H" / "AH"), the quests it starts (10) and ends (11), and the quests whose objectives (quest field 10) ask to kill it.
 #   python questie_npcs.py "<name regex>" [area id]
 import os, sys, re, base64, struct
+try: sys.stdout.reconfigure(encoding='utf-8')     # the routes' names carry arrows (Windows' console is cp1252)
+except Exception: pass
 TOC = os.environ.get('QDBTOC', 'E:/wow-build/questiedb/unz/QuestieDB/QuestieDB_Forever.toc')
 
 def cbor(b, i=0):

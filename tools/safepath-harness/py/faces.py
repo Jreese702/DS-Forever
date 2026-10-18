@@ -3,6 +3,8 @@
 import os, sys, json, math, struct
 import numpy as np
 import heights as HT
+try: sys.stdout.reconfigure(encoding='utf-8')     # the routes' names carry arrows (Windows' console is cp1252)
+except Exception: pass
 S = HT.S; ORG = HT.ORG
 _inner = {}
 def inner_tile(c, r):

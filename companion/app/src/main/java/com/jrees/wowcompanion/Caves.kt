@@ -58,6 +58,72 @@ object Caves {
     const val LIFT_SNAP_YD = 12.0
     const val LIFT_SNAP_Z = 2.5
 
+    /**
+     * the elevators' vertical travels, from the client's TransportAnimation rows ([rows]: each its transport (the row's parent) and
+     * its position): a transport whose keyframes rise [LIFT_MIN_RISE_YD] or more while drifting under [LIFT_MAX_DRIFT_YD] across
+     * is an elevator, its travel the rise. Derived on the device from the player's own files - never typed from game data.
+     */
+    fun liftTravels(rows: List<Pair<Int, FloatArray>>): List<Double> =
+        rows.groupBy({ it.first }, { it.second }).values.mapNotNull { ps ->
+            val zs = ps.map { it[2].toDouble() }; val rise = zs.max() - zs.min()
+            val drift = hypot(ps.maxOf { it[0] } - ps.minOf { it[0] }.toDouble(), ps.maxOf { it[1] } - ps.minOf { it[1] }.toDouble())
+            if (rise >= LIFT_MIN_RISE_YD && drift < LIFT_MAX_DRIFT_YD) rise else null
+        }.distinctBy { Math.round(it * 2) }
+    const val LIFT_MIN_RISE_YD = 20.0
+    const val LIFT_MAX_DRIFT_YD = 3.0
+    const val LIFT_COL_YD = 2.0            // the shaft search's columns
+    const val LIFT_UNDER_TRAVEL_YD = 3.0   // a landing's rise is an elevator's travel or up to this much less (the car rides a little past
+                                           // its landings: Thunder Bluff's 59.7 / 69.7 yd rises, 61.2 / 71.2 yd travels) ...
+    const val LIFT_OVER_TRAVEL_YD = 0.5    // ... and never more than this over it
+    const val LIFT_MIN_COLS = 8            // a shaft is at least this many columns (a ledge over a floor by chance is fewer)
+
+    /**
+     * the lifts of placement [p] ([groups] its group files): where its own floor has a landing straight over another, nothing
+     * walkable between, the rise an elevator's travel ([travels], from [liftTravels]) - a lift's car is a server object, but its two
+     * landings are the building's fixed floor (Thunder Bluff's lifts: its mesas' WMOs). Each lift at its shaft's middle, its landings'
+     * heights. Derived at runtime from the player's own files: no lift is typed into the app. Asked only of the buildings of a city
+     * with lifts (the caller's choice: a capital's own ground) - a cave's stacked floors match an elevator's travel by chance.
+     */
+    fun findLifts(p: WorldBuildings.Placement, groups: List<ByteArray>, travels: List<Double>): List<Lift> {
+        if (travels.isEmpty()) return emptyList()
+        val cs = cos(p.yaw); val sn = Math.sin(p.yaw)
+        val cols = HashMap<Long, ArrayList<Double>>()
+        fun key(i: Long, j: Long) = (i shl 32) xor (j and 0xFFFFFFFFL)
+        for (g in groups) {
+            val t = floorTris(g)
+            for (q in 0 until t.size / 9) {
+                // the face's points: its corners and its middle, each in its column
+                val xs = DoubleArray(4); val ys = DoubleArray(4); val zs = DoubleArray(4)
+                for (k in 0..2) { val lx = t[q * 9 + k * 3]; val ly = t[q * 9 + k * 3 + 1]; val lz = t[q * 9 + k * 3 + 2]
+                    xs[k] = p.ox - lx * p.scale * cs + ly * p.scale * sn; ys[k] = p.oy - lx * p.scale * sn - ly * p.scale * cs; zs[k] = p.oz + lz * p.scale }
+                xs[3] = (xs[0] + xs[1] + xs[2]) / 3; ys[3] = (ys[0] + ys[1] + ys[2]) / 3; zs[3] = (zs[0] + zs[1] + zs[2]) / 3
+                for (k in 0..3) cols.getOrPut(key(Math.floor(xs[k] / LIFT_COL_YD).toLong(), Math.floor(ys[k] / LIFT_COL_YD).toLong())) { ArrayList() }.add(zs[k])
+            }
+        }
+        // the shaft columns: a floor height and the next one up, nothing between, their gap an elevator's travel
+        class Hit(val i: Long, val j: Long, val lo: Double, val hi: Double)
+        val hits = ArrayList<Hit>()
+        for ((k, zs) in cols) {
+            val sorted = zs.sorted()
+            for (q in 0 until sorted.size - 1) {
+                val gap = sorted[q + 1] - sorted[q]
+                if (travels.any { gap >= it - LIFT_UNDER_TRAVEL_YD && gap <= it + LIFT_OVER_TRAVEL_YD }) hits.add(Hit(k shr 32, (k and 0xFFFFFFFFL).toInt().toLong(), sorted[q], sorted[q + 1]))
+            }
+        }
+        // the shafts: neighbouring hit columns of about the same landings, LIFT_MIN_COLS or more
+        val left = hits.toMutableList(); val out = ArrayList<Lift>()
+        while (left.isNotEmpty()) {
+            val seed = left.removeAt(0); val group = arrayListOf(seed); var grew = true
+            while (grew) { grew = false
+                val more = left.filter { h -> group.any { g -> abs(g.i - h.i) <= 1 && abs(g.j - h.j) <= 1 && abs(g.lo - h.lo) <= 2.0 && abs(g.hi - h.hi) <= 2.0 } }
+                if (more.isNotEmpty()) { group.addAll(more); left.removeAll(more.toSet()); grew = true } }
+            if (group.size < LIFT_MIN_COLS) continue
+            val x = group.map { (it.i + 0.5) * LIFT_COL_YD }.average(); val y = group.map { (it.j + 0.5) * LIFT_COL_YD }.average()
+            out.add(Lift("lift ${p.fid}", x, y, group.map { it.lo }.average(), group.map { it.hi }.average()))
+        }
+        return out
+    }
+
     /** one way through: world points (x, y, z) from mouth [a] to mouth [b], [yd] long along its floor; a point with a 4th value 1 is a
      *  lift's landing (two in a row: the ride between them) */
     class Way(val pts: List<DoubleArray>, val yd: Double) {

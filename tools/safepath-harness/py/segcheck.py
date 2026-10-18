@@ -4,6 +4,8 @@
 # 2 yd stretch of the straight line on the bilinear surface.
 import json, math, os, sys
 import heights as HT
+try: sys.stdout.reconfigure(encoding='utf-8')     # the routes' names carry arrows (Windows' console is cp1252)
+except Exception: pass
 S = HT.S; ORG = HT.ORG
 WALL = 45.0
 def vh(gc, gr):

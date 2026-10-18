@@ -2,6 +2,8 @@
 #   (the zone's rect from the app's recipe: spawns are percent of the zone's map)
 import os, sys, re, json
 import questie_npcs as Q
+try: sys.stdout.reconfigure(encoding='utf-8')     # the routes' names carry arrows (Windows' console is cp1252)
+except Exception: pass
 pat = re.compile(sys.argv[1], re.I); area = int(sys.argv[2]); uimap = sys.argv[3]
 recipe = os.environ.get('RECIPE', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', 'companion', 'app', 'src', 'main', 'assets', 'harvest', 'worldmap.json'))
 c, t, b, l, r = json.load(open(recipe, encoding='utf-8'))['rects'][uimap]

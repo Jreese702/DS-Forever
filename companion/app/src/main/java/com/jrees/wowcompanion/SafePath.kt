@@ -218,6 +218,7 @@ object SafePath {
             joinPieces()
             dropStrays()
             trimStubs()
+            joinOrphanExits()
             val out = edges.map { e ->
                 // its danger: the share of its length that passes hostile creatures (two or more near)
                 val d = if (e.cells.isEmpty()) 0f else e.cells.count { danger[it] >= 0.6f }.toFloat() / e.cells.size
@@ -545,6 +546,22 @@ object SafePath {
             val path = search(listOf(k), SPUR_MAX_YD, ford = wet[k].toInt() != 0) { c -> c in cellEdge } ?: return
             val at = cellEdge[path.last()]?.let { split(it, path.last()) } ?: return
             emit(id, at, path, SPUR)
+        }
+
+        /**
+         * an exit no way reaches (the merges and the clean-up can leave one: Durotar's bridge to the Barrens, the user's accepted
+         * crossing at Far Watch Post, after the thin roads): joined by a spur to the nearest way, as a travel point is
+         */
+        fun joinOrphanExits() {
+            reindex()
+            val linked = edges.flatMap { listOf(it.a, it.b) }.toHashSet()
+            for (x in exits.toList()) {
+                if (x.node in linked || edges.isEmpty()) continue
+                val c = cellOf(nodes[x.node].wx, nodes[x.node].wy).takeIf { it >= 0 } ?: continue
+                val path = search(listOf(c), SPUR_MAX_YD, ford = true) { k -> k in cellEdge } ?: continue
+                val at = cellEdge[path.last()]?.let { split(it, path.last()) } ?: continue
+                emit(x.node, at, path, SPUR); reindex(); linked.add(x.node)
+            }
         }
 
         /** a roadless zone: each of its points joined to the nearest other point or trail */

@@ -2,6 +2,8 @@ import os
 # a zone's catalogue for picking goals: its caves (named), its named nodes, its mobs by subzone, its buildings
 import sys, json, csv, math
 import heights as HT
+try: sys.stdout.reconfigure(encoding='utf-8')     # the routes' names carry arrows (Windows' console is cp1252)
+except Exception: pass
 d = json.load(open(sys.argv[1], encoding='utf-8'))
 t, b, l, r = d['rect']
 names = {}

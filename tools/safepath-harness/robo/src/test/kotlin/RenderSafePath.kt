@@ -164,6 +164,8 @@ class RenderSafePath {
      * quest mobs' thickest spot - and every route the device's new way: the SafePath network as far as it helps, the ground's own leg
      * (Climb: the 4 yd lattice's A*, cliffs walls, the danger and deep water in) to the goal. Exported for the 3D and height-map renders.
      */
+    private val EXIT_NEAR_YD = 400.0       // an exit's crossing: the neighbour's ground reached within this walk of it
+
     private fun levels2(net: SafePath.Net, rect: MapHarvest.Rect, tg: Terrain.Grid, heightV: (Int, Int) -> Float, roadAt: (Double, Double) -> Boolean,
                         zg: SafePath.Zones, areas: Map<Int, PlaceNames.Area>, spawns: List<QuestieNpcs.Spawn>, dir: File, waterAt: (Double, Double) -> Float,
                         zoneArea: Int = 14, spec: JSONObject? = null, tag: String = "durotar", mine: Int = TransportRoutes.HORDE,
@@ -236,8 +238,27 @@ class RenderSafePath {
             cg.lineClear(doubleArrayOf(x, y), doubleArrayOf(x, y)) && (0..3).any { q -> cg.step(v[0], v[1], listOf(1, -1, 0, 0)[q], listOf(0, 0, 1, -1)[q]) != Climb.WALL } }
         val gdir = File(dir, "wmogroup")
         // the lifts (Caves.Lift): measured from their WMOs' own landings (py/liftfind.py), never estimated - the spec's "lifts"
-        val lifts = spec?.optJSONArray("lifts")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
-            Caves.Lift(o.getString("name"), o.getDouble("x"), o.getDouble("y"), o.getDouble("zBottom"), o.getDouble("zTop")) } } ?: emptyList()
+        // DERIVED, as the device must (no lift typed into the app): the elevators' travels from TransportAnimation, each placed WMO's
+        // floor searched for a landing straight over another at such a rise (Caves.findLifts). The spec's "lifts" (measured by hand
+        // off-device) are only compared against
+        val travels = File(System.getenv("DB2_DIR") ?: File(dir.parentFile, "db2").path, "TransportAnimation.db2").takeIf { it.isFile }?.let { f ->
+            Caves.liftTravels(Db2(f.readBytes()).rows().mapNotNull { r -> val v = r.vec3(0) ?: return@mapNotNull null; (r.parent ?: return@mapNotNull null) to v }) } ?: emptyList()
+        // only the buildings inside a capital's map (Thunder Bluff's mesas, their feet on Mulgore's ground; the Undercity): lifts are a city's
+        val recipeRects = JSONObject(File(System.getenv("RECIPE")).readText()).optJSONObject("rects")
+        val cityRects = com.jrees.wowcompanion.CityExits.CITIES.mapNotNull { c -> recipeRects?.optJSONArray(c.toString())?.let { a ->
+            doubleArrayOf(a.getDouble(1), a.getDouble(2), a.getDouble(3), a.getDouble(4)) } }
+        val derivedLifts = placed.filter { p -> p.ox <= rect.t && p.ox >= rect.b && p.oy <= rect.l && p.oy >= rect.r && File(gdir, "${p.fid}_0").isFile &&
+            cityRects.any { r -> p.ox <= r[0] && p.ox >= r[1] && p.oy <= r[2] && p.oy >= r[3] } }.flatMap { p ->
+            Caves.findLifts(p, (0 until 200).map { File(gdir, "${p.fid}_$it") }.takeWhile { it.isFile }.map { it.readBytes() }, travels) }
+        println("LIFTS derived: ${travels.size} elevator travels (${travels.sorted().joinToString { "%.1f".format(it) }} yd); ${derivedLifts.size} lifts: " +
+            derivedLifts.joinToString { "${it.name} at ${it.x.toInt()},${it.y.toInt()} z ${it.zBottom.toInt()} -> ${it.zTop.toInt()}" })
+        // the routes ride the spec's measured lifts while the derivation is being finished (a harness fixture, never in the app); else the derived
+        val measured = spec?.optJSONArray("lifts")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
+            Caves.Lift(o.getString("name"), o.getDouble("x"), o.getDouble("y"), o.getDouble("zBottom"), o.getDouble("zTop")) } }
+        val lifts = measured ?: derivedLifts
+        spec?.optJSONArray("lifts")?.let { a -> for (k in 0 until a.length()) { val o = a.getJSONObject(k)
+            val d = derivedLifts.minByOrNull { Math.hypot(it.x - o.getDouble("x"), it.y - o.getDouble("y")) }
+            println("LIFTS measured ${o.getString("name")}: ${d?.let { "derived one ${Math.hypot(it.x - o.getDouble("x"), it.y - o.getDouble("y")).toInt()} yd off, landings ${it.zBottom.toInt()} / ${it.zTop.toInt()} vs ${o.getDouble("zBottom").toInt()} / ${o.getDouble("zTop").toInt()}" } ?: "NOT derived"}") } }
         val caves = placed.filter { p -> p.ox <= rect.t && p.ox >= rect.b && p.oy <= rect.l && p.oy >= rect.r && File(gdir, "${p.fid}_0").isFile }.map { p ->
             val gs = (0 until 200).map { File(gdir, "${p.fid}_$it") }.takeWhile { it.isFile }.map { it.readBytes() }
             Caves.cave(p, gs, ::bil, standable, lifts)
@@ -445,24 +466,27 @@ class RenderSafePath {
             val ownAll = (0 until n).count { mapOf[it] == map && dry[it] }
             for (x in net.exits) {
                 val node = net.nodes.firstOrNull { it.id == x.node } ?: continue
-                val s0 = cg.at(node.wx, node.wy); val seen = BooleanArray(n); val st = IntArray(n); var sp = 0
-                val q0 = s0[1] * cg.nx + s0[0]; seen[q0] = true; st[sp++] = q0
+                // a breadth-first flood (its depth the walk from the exit, in steps): the neighbour's ground must be reached NEAR the
+                // exit - a real crossing is local; an unbounded flood called Mulgore's Feralas exit walkable by a 6,943 yd loop through Desolace
+                val s0 = cg.at(node.wx, node.wy); val seen = BooleanArray(n); val st = IntArray(n); var head = 0; var tail = 0
+                val depth = IntArray(n); val nearSteps = (EXIT_NEAR_YD / S).toInt()
+                val q0 = s0[1] * cg.nx + s0[0]; seen[q0] = true; st[tail++] = q0
                 var own = 0; var theirs = 0
-                while (sp > 0) {
-                    val q = st[--sp]; val i = q % cg.nx; val j = q / cg.nx
-                    if (mapOf[q] == map) own++ else if (mapOf[q] == x.toMap) theirs++
+                while (head < tail) {
+                    val q = st[head++]; val i = q % cg.nx; val j = q / cg.nx
+                    if (mapOf[q] == map) own++ else if (mapOf[q] == x.toMap && depth[q] <= nearSteps) theirs++
                     for (dj in -1..1) for (di in -1..1) {
                         if (di == 0 && dj == 0) continue
                         val vi = i + di; val vj = j + dj; if (vi !in 0 until cg.nx || vj !in 0 until cg.ny) continue
                         val v = vj * cg.nx + vi; if (seen[v] || !dry[v] || cg.step(i, j, di, dj) == Climb.WALL) continue
-                        seen[v] = true; st[sp++] = v
+                        seen[v] = true; depth[v] = depth[q] + 1; st[tail++] = v
                     }
-                    jump[q]?.forEach { v -> if (!seen[v]) { seen[v] = true; st[sp++] = v } }
+                    jump[q]?.forEach { v -> if (!seen[v]) { seen[v] = true; depth[v] = depth[q] + 1; st[tail++] = v } }
                 }
                 val ownYd = own * S * S; val theirYd = theirs * S * S
                 val ok = own > ownAll / 4 && theirs * S * S > 20000
                 println("EXIT ${x.name} (${x.how}) at ${node.wx.toInt()},${node.wy.toInt()} h ${height(node.wx, node.wy).toInt()}: reaches ${own * 100 / maxOf(1, ownAll)}% of this zone, " +
-                    "${(theirYd / 1000).toInt()}k sq yd of ${x.name}'s ground in the lattice - ${if (ok) "WALKABLE" else "NOT WALKABLE"}")
+                    "${(theirYd / 1000).toInt()}k sq yd of ${x.name}'s ground within ${EXIT_NEAR_YD.toInt()} yd of it - ${if (ok) "WALKABLE" else "NOT WALKABLE"}")
                 exitChecks.put(org.json.JSONArray(listOf(node.wx, node.wy, x.name, x.how, ok, own * 100 / maxOf(1, ownAll), (theirYd / 1000).toInt())))
             }
         }
@@ -611,8 +635,8 @@ class RenderSafePath {
             val verdict = when { !kept -> "DROPPED"; avoided -> "AVOID (last resort)"; else -> "KEPT" } + if (how == "ford" || how == "bridge") ", a $how" else ""
             fun w(l: SafePath.Link?) = when (l) { SafePath.Link.LOW -> "low danger"; SafePath.Link.DANGER -> "through mobs"; SafePath.Link.NONE -> "no way back"; null -> "no exit" }
             c.drawText("Crossing ${i + 1}: $verdict", sx(n.wy) + 26f, sy(n.wx) - 22f, tp)
-            c.drawText("Durotar: ${w(la)}, Barrens: ${w(lb)}", sx(n.wy) + 26f, sy(n.wx) + 12f, tp.apply { textSize = 24f }); tp.textSize = 30f
-            println("BORDER crossing ${i + 1}: $verdict - Durotar ${x?.let { "${it.wx.toInt()},${it.wy.toInt()}" }} ${w(la)}, Barrens ${y?.let { "${it.wx.toInt()},${it.wy.toInt()}" }} ${w(lb)}")
+            c.drawText("${names(a)}: ${w(la)}, ${names(b)}: ${w(lb)}", sx(n.wy) + 26f, sy(n.wx) + 12f, tp.apply { textSize = 24f }); tp.textSize = 30f
+            println("BORDER crossing ${i + 1}: $verdict - ${names(a)} ${x?.let { "${it.wx.toInt()},${it.wy.toInt()}" }} ${w(la)}, ${names(b)} ${y?.let { "${it.wx.toInt()},${it.wy.toInt()}" }} ${w(lb)}")
         }
         // the towns
         for (m in listOf(a, b)) for (n in nets[m]!!.nodes) if (n.kind == SafePath.HUB || n.kind == SafePath.FLIGHT || n.kind == SafePath.DOCK) {
@@ -622,7 +646,7 @@ class RenderSafePath {
             c.drawText(n.name ?: "", sx(n.wy) + 14f, sy(n.wx) + 10f, tp.apply { textSize = 24f }); tp.textSize = 30f
         }
         c.drawText("${names(b)} (left) and ${names(a)} (right): both SafePath drafts; gold road, blue spur, orange trail; red = hostile mobs; " +
-            "orange / blue dot = Durotar's / the Barrens' exit (on its bank); cyan = a bridge or ford; magenta dashed = avoided", 16f, H + 46f, Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 28f; color = Color.WHITE })
+            "orange / blue dot = ${names(a)}'s / ${names(b)}'s exit (on its bank); cyan = a bridge or ford; magenta dashed = avoided", 16f, H + 46f, Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 28f; color = Color.WHITE })
         FileOutputStream(File(out, "safepath_border_${a}_$b.png")).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
