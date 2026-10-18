@@ -193,4 +193,22 @@ class SafePathTest {
         // a neighbour not drafted yet: as it was
         assertEquals(2, SafePath.checkCrossings(west(1f), emptyList()).exits.size)
     }
+
+    /** the user on test11: "Pathing shouldn't be in water" - a river is a wall but for a bridge (or a shallow ford); the exit on its bank */
+    @Test fun noWayOrNodeInWater() {
+        // a road from the west to a 60 yd deep river at y -20..40 (the border at y 0), its road going on beyond on the other side
+        val road = { wx: Double, wy: Double -> abs(wx - 500) < 38 && (wy > 60 || wy < -60) && wy < 900 }
+        val river = { _: Double, wy: Double -> if (wy in -40.0..40.0) 3f else Float.NaN }
+        fun inp(water: (Double, Double) -> Float) = SafePath.Input(1, 0, 1000.0, 0.0, 1000.0, -1000.0, road, { _, _ -> 1f },
+            { _, wy -> if (wy > 0) 1 else 2 }, water = water)
+        val swim = SafePath.draft(inp(river))
+        assertTrue("no exit over deep water", swim.exits.isEmpty())
+        assertTrue("no node in the water", swim.nodes.none { abs(it.wy) < 40 })
+        // a bridge over it at x 480..520: one exit, a bridge, on the west bank (dry, this zone's)
+        val bridged = SafePath.draft(inp { wx, wy -> if (wy in -40.0..40.0) (if (abs(wx - 500) < 12) SafePath.Water.BRIDGE else 3f) else Float.NaN })
+        val x = bridged.exits.single()
+        assertEquals("bridge", x.how)
+        val n = bridged.nodes.first { it.id == x.node }
+        assertTrue("on the bank: y ${n.wy}", n.wy > 25)
+    }
 }

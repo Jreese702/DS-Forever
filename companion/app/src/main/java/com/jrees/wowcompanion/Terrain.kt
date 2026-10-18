@@ -117,6 +117,50 @@ object Terrain {
 
     private fun tag(b: ByteArray, o: Int) = String(charArrayOf(b[o + 3].toInt().toChar(), b[o + 2].toInt().toChar(), b[o + 1].toInt().toChar(), b[o].toInt().toChar()))
 
+    /**
+     * THE WATER OF A ROOT ADT (b-safepath-water; the user: "Pathing shouldn't be in water"): its MH2O - per MCNK (in MCNK order) its
+     * liquid instances, each over a w x h block of the chunk's 8 x 8 cells from (x, y), the cells there (its bitmap, when it has one)
+     * at its surface height (the instance's highest). A [TILE_V] x [TILE_V] grid like [Tile.h] (row south, column east) of the
+     * surface over each cell, NaN = dry; null when the tile has no water at all.
+     */
+    fun water(adt: ByteArray): FloatArray? {
+        var o = 0
+        while (o + 8 <= adt.size) {
+            val n = Db2.le32(adt, o + 4)
+            if (n < 0 || o + 8 + n > adt.size) return null
+            if (tag(adt, o) == "MH2O") break
+            o += 8 + n
+        }
+        if (o + 8 > adt.size) return null
+        val base = o + 8; val end = base + Db2.le32(adt, o + 4)
+        val out = FloatArray(TILE_V * TILE_V) { Float.NaN }
+        var any = false
+        for (c in 0 until 256) {
+            val hp = base + c * 12
+            if (hp + 12 > end) break
+            val inst = Db2.le32(adt, hp); val layers = Db2.le32(adt, hp + 4)
+            if (inst <= 0 || layers <= 0 || layers > 8) continue
+            val cx = c % 16; val cy = c / 16
+            for (l in 0 until layers) {
+                val ip = base + inst + l * 24
+                if (ip + 24 > end) break
+                val top = java.lang.Float.intBitsToFloat(Db2.le32(adt, ip + 8))
+                val xo = adt[ip + 12].toInt() and 0xFF; val yo = adt[ip + 13].toInt() and 0xFF
+                val w = adt[ip + 14].toInt() and 0xFF; val hh = adt[ip + 15].toInt() and 0xFF
+                val bm = Db2.le32(adt, ip + 16)
+                if (top.isNaN() || w == 0 || hh == 0 || xo + w > 8 || yo + hh > 8) continue
+                for (y in 0 until hh) for (x in 0 until w) {
+                    val bit = y * w + x
+                    if (bm != 0) { val bp = base + bm + bit / 8; if (bp >= end || (adt[bp].toInt() shr (bit % 8)) and 1 == 0) continue }
+                    val k = (cy * 8 + yo + y) * TILE_V + (cx * 8 + xo + x)
+                    if (out[k].isNaN() || top > out[k]) out[k] = top
+                    any = true
+                }
+            }
+        }
+        return if (any) out else null
+    }
+
     /** the root ADTs of a continent's WDT (MAID's first uint32 of each 32-byte row), by MapHarvest.key(col, row) */
     fun maidRoot(wdt: ByteArray): Map<Int, Int> {
         var o = 0
