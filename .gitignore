@@ -100,3 +100,11 @@ releases/
 # Frame generation: Lossless Scaling's Lossless.dll is the player's own and commercial; it never goes in git or the APK
 Lossless.dll
 *.dll
+
+# SafePath harness: game dumps, art and pictures stay in the work folder (SAFEPATH_WORK, default E:/safepath-work), never here
+safepath-work/
+tools/safepath-harness/out/
+tools/safepath-harness/robo/build/
+tools/safepath-harness/robo/.gradle/
+__pycache__/
+*.pyc

@@ -1,0 +1,16 @@
+{"tag": "elwynn", "dir": "azeroth", "faction": "alliance", "zone": 1429, "area": 12, "level": 6,
+ "maps": [[1429, 12], [1453, 1519], [1436, 40], [1433, 44]], "cities": [1453], "border": [1429, 1436],
+ "title": "Elwynn Forest", "crop": [-8350, -10200, 1300, -1800],
+ "closeups": [{"name": "Northshire Valley", "box": [-8550, -9150, 150, -500]}, {"name": "Fargodeep Mine", "box": [-9700, -10000, 400, 0]}],
+ "goals": [
+  {"name": "Echo Ridge Mine's mouth (kobolds)", "from": {"node": "Northshire Valley"}, "to": {"cave": 110750, "near": [-8646, -132]}},
+  {"name": "the Defias Thugs in Northshire's vineyards", "from": {"node": "Northshire Valley"}, "to": {"mob": "Defias Thug", "near": [-9034, -347]}},
+  {"name": "Fargodeep Mine's mouth", "from": {"node": "Goldshire"}, "to": {"cave": 110773, "near": [-9834, 194]}},
+  {"name": "Jasperlode Mine's mouth", "from": {"node": "Goldshire"}, "to": {"cave": 111538, "near": [-9155, -594]}},
+  {"name": "Hogger (Forest's Edge)", "from": {"node": "Goldshire"}, "to": {"mob": "Hogger"}},
+  {"name": "Crystal Lake's murlocs", "from": {"node": "Goldshire"}, "to": {"mob": "Murloc", "near": [-9483, -347]}},
+  {"name": "the Tower of Azora", "from": {"node": "Goldshire"}, "to": {"wmo": 107037, "near": [-9550, -720]}},
+  {"name": "Stone Cairn Lake's murlocs", "from": {"node": "Eastvale Logging Camp"}, "to": {"mob": "Murloc Forager", "near": [-9415, -1065]}},
+  {"name": "the Stormwind gate", "from": {"node": "Goldshire"}, "to": {"exit": "Stormwind City", "how": "bridge"}},
+  {"name": "the Riverpaw gnolls (Riverpaw Outrunners)", "from": {"node": "Westbrook Garrison"}, "to": {"mob": "Riverpaw Outrunner", "near": [-9700, 400]}}
+ ]}
