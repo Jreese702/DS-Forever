@@ -74,4 +74,16 @@ class QuestTrailBridgeTest {
         val m = QuestTrailBridge.step("Objective\nKobold Candles – Large Candle: 3/8", titles)!!
         assertEquals(7, m.questId); assertEquals("Large Candle: 3/8", m.words)
     }
+
+    /** QuestTrail 3.2.1's other labels: passing ones keep the step, idle is no target, a map pin / the corpse are targets of their own */
+    @Test fun theCompassLabelKinds() {
+        assertEquals(QuestTrailBridge.Label.PASSING, QuestTrailBridge.labelKind("Recomputing path"))
+        assertEquals(QuestTrailBridge.Label.PASSING, QuestTrailBridge.labelKind("Flying to Sentinel Hill"))
+        assertEquals(QuestTrailBridge.Label.PASSING, QuestTrailBridge.labelKind("On the way to Menethil Harbor"))
+        assertEquals(QuestTrailBridge.Label.IDLE, QuestTrailBridge.labelKind("QuestTrail: no known target on this map"))
+        assertEquals(QuestTrailBridge.Label.STEP, QuestTrailBridge.labelKind("Map pin"))
+        assertEquals(QuestTrailBridge.Label.STEP, QuestTrailBridge.labelKind("Your corpse"))
+        assertEquals(QuestTrailBridge.Label.STEP, QuestTrailBridge.labelKind("Fly to Sentinel Hill, then\nObjective\nThe Westfall Stew"))
+        assertEquals("Map pin", QuestTrailBridge.loose("Map pin")!!.words)
+    }
 }

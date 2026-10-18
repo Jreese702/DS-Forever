@@ -106,6 +106,21 @@ object QuestTrailBridge {
         return Step(id, kind, obj)
     }
 
+    /** what a compass label is: a STEP (a quest's, or a target of its own: "Map pin", "Your corpse", the hearthstone), PASSING (on the
+     *  way: "Recomputing path" while the needle spins, "Flying to X", "On the way to X" - the step before it stands), or IDLE
+     *  ("QuestTrail: <why there is no arrow>": no target) */
+    enum class Label { STEP, PASSING, IDLE }
+
+    /** [label]'s kind, from QuestTrail 3.2.1's English texts (Locales/enUS.lua: compass_DrawNow_recomputingPath, _flyingTo, _onTheWayTo,
+     *  compass_Idle_questtrail) */
+    fun labelKind(label: String): Label {
+        val t = label.trim()
+        if (t.startsWith("QuestTrail:")) return Label.IDLE
+        val last = t.split('\n').lastOrNull { it.isNotBlank() }?.trim() ?: return Label.IDLE
+        if (last.startsWith("Recomputing path") || last.startsWith("Flying to ") || last.startsWith("On the way to ")) return Label.PASSING
+        return Label.STEP
+    }
+
     /**
      * QuestTrail's step when its label names no quest of the log (the user on test61: "the QuestTrail objective needs to trump the
      * focus objective" - a "Take" step's quest is not in the log yet): its own words, [Step.questId] 0. The last line's title (up to

@@ -3370,9 +3370,12 @@ class MapView(context: Context) : View(context) {
         if (!force && on == qtWasOn && (label == null || label == qtLabel)) return false
         val before = qtFocus(); val beforeWords = qtStep?.words; val beforeHolds = qtHolds()
         qtWasOn = on
+        // QuestTrail 3.2.1's labels: on the way (the needle spinning, a flight, a boat) the step before stands; idle = no target
+        val kind = label?.let { QuestTrailBridge.labelKind(it) }
         if (!on) { qtStep = null; qtLabel = null }
-        else if (label != null || force) {
-            if (label != null) qtLabel = label
+        else if (kind == QuestTrailBridge.Label.IDLE) { qtStep = null; qtLabel = null }
+        else if (kind == QuestTrailBridge.Label.STEP || (force && qtLabel != null)) {
+            if (kind == QuestTrailBridge.Label.STEP) qtLabel = label
             val titles = HashMap<Int, String>()
             for ((id, e) in questById) e.optString("title", "").takeIf { it.isNotEmpty() }?.let { titles[id] = it }
             // a label naming no quest of the log (a "Take" step, a flight) is QuestTrail's step all the same: its own words
