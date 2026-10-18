@@ -1,0 +1,61 @@
+{
+ "tag": "climb_durotar",
+ "dir": "kalimdor",
+ "faction": "horde",
+ "zone": 1411,
+ "area": 14,
+ "level": 8,
+ "maps": [
+  [
+   1411,
+   14
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1411,
+  1411
+ ],
+ "title": "Durotar (climb test)",
+ "crop": [
+  1808.3333,
+  -1350.0,
+  -3300.0,
+  -5650.0
+ ],
+ "closeups": [
+  {
+   "name": "Valley of Trials exit",
+   "box": [
+    401.68573475848586,
+    -680.0001066666664,
+    -4120.000106666666,
+    -4950.8334399999985
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "Razor Hill (out of the Valley of Trials)",
+   "from": {
+    "node": "Valley of Trials"
+   },
+   "to": {
+    "node": "Razor Hill"
+   }
+  },
+  {
+   "name": "the Razor Hill watchtower's hill",
+   "from": {
+    "node": "Razor Hill"
+   },
+   "to": {
+    "wmo": 113091,
+    "near": [
+     388,
+     -4591
+    ]
+   }
+  }
+ ]
+}

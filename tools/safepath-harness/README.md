@@ -29,7 +29,7 @@ The work folder's layout:
 | `db2/` | `AreaTable`, `Map`, `UiMapAssignment`, `WMOAreaTable`, `Taxi*`, `UiTextureAtlas*`. |
 | `artroot/` | The app's art harvest: `worldmap/<uiMap>/` (base and overlays, `index.json`) and `transports.json`. Copy it from an existing work folder; `transports.json` is rebuilt by the app's `TransportRoutes` from the `Taxi*` tables. |
 | `monitor-1.7.2.jar` | androidx test monitor, for Robolectric. |
-| `app.jar` | The app's classes (`run.sh` builds it). |
+| (no `app.jar` here) | `run.sh` builds the app's classes into each checkout's own `robo/build/app.jar`, so agents on different branches don't overwrite each other's. |
 | `out/` | Everything the harness writes. |
 
 ## Dump a zone (local CASC reads only: no downloads)
@@ -103,7 +103,7 @@ python render3d.py ../zones/<tag>.json                           # <tag>_heightm
 `run.sh` does four things:
 
 1. builds the app's classes (`:dsforever:compileDebugKotlin`);
-2. jars them into `<work>/app.jar`;
+2. jars them into this checkout's `robo/build/app.jar`;
 3. runs `robo/` (Robolectric, `RenderSafePath`);
 4. greps its output.
 

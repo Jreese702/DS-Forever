@@ -42,7 +42,7 @@ for row in range(row0, row1):
                     for i in range(nn // 4): mdid.add(struct.unpack_from('<I', bb, o + 8 + i * 4)[0])
                 o += 8 + nn
 names = {}
-for line in open(ros.environ.get('LISTFILE', 'E:/wc-scratch-c9979a42/casc/community-listfile.csv'), encoding='utf-8', errors='replace'):
+for line in open(os.environ.get('LISTFILE', 'E:/wc-scratch-c9979a42/casc/community-listfile.csv'), encoding='utf-8', errors='replace'):
     k, _, v = line.strip().partition(';')
     if k.isdigit() and int(k) in mdid: names[int(k)] = v
 old = {}

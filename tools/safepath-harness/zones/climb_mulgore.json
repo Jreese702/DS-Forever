@@ -1,0 +1,67 @@
+{
+ "tag": "climb_mulgore",
+ "dir": "kalimdor",
+ "faction": "horde",
+ "zone": 1412,
+ "area": 215,
+ "level": 6,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1412,
+   215
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1412,
+  1412
+ ],
+ "title": "Mulgore (climb test)",
+ "crop": [
+  266,
+  -3835,
+  2479,
+  -3675
+ ],
+ "closeups": [
+  {
+   "name": "Red Cloud Mesa ramp",
+   "box": [
+    -2532.5001066666664,
+    -3188.3334399999985,
+    242.4998933333336,
+    -330.0001066666664
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "Camp Narache (up on Red Cloud Mesa)",
+   "from": {
+    "node": "Bloodhoof Village"
+   },
+   "to": {
+    "node": "Camp Narache"
+   }
+  },
+  {
+   "name": "the Palemane gnolls' rock",
+   "from": {
+    "node": "Bloodhoof Village"
+   },
+   "to": {
+    "camp": "Palemane Rock"
+   }
+  },
+  {
+   "name": "Red Cloud Mesa's camp",
+   "from": {
+    "node": "Bloodhoof Village"
+   },
+   "to": {
+    "node": "Red Cloud Mesa"
+   }
+  }
+ ]
+}

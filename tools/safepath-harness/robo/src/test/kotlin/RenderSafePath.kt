@@ -104,7 +104,11 @@ class RenderSafePath {
                 println("SAFEPATH $map own cells $tot road $rc walls $steep top textures ${hist.entries.sortedByDescending { it.value }.take(6).map { (names[it.key] ?: it.key.toString()).substringAfterLast('/') + "=" + it.value }}")
             }
             val ax = rect.l - rect.r; val ay = rect.t - rect.b
-            val here = spawns.filter { it.area == area }
+            // a zone's own friendly NPCs QuestieDB codes hostile to both (WoW Forever's new factions): those at a placeholder level
+            // (the spec's friendlyMinLevel, e.g. 9999) are no mobs - made the player's side's, so they count for the towns, not the danger
+            val friendlyMin = spec?.optInt("friendlyMinLevel", Int.MAX_VALUE) ?: Int.MAX_VALUE
+            val here = spawns.filter { it.area == area }.map { sp -> if (sp.minLv >= friendlyMin && sp.hostile != foe)
+                QuestieNpcs.Spawn(sp.area, sp.x, sp.y, sp.minLv, sp.maxLv, sp.elite, foe, sp.name, sp.sub) else sp }
             val hostile = here.filter { it.hostile == mine || it.hostile == 3 }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
             val friendly = here.filter { it.hostile == foe }.map { SafePath.Npc(rect.t - it.y * ay, rect.l - it.x * ax, it.sub) }
             val fixed = SafePath.fixedPoints(map, rect.c, rect.t, rect.b, rect.l, rect.r, mine, transports) + SafePath.hubs(friendly, { x, y -> PlaceNames.nameAt(x, y, areas) { a, b2 -> zg.areaAt(a, b2) } }, nameOf(map), SafePath.districtFor(map, rect.t, rect.b, rect.l, rect.r))
@@ -316,6 +320,18 @@ class RenderSafePath {
         }
         val trips = (spec?.optJSONArray("goals")?.let { specTrips(it) } ?: durotarTrips()).filter { it.second != null && it.third.second != null }
             .map { (fn, f, g) -> Triple(fn, stand(f), g.first to stand(g.second)) }
+        // ROADS ARE MADE TO BE WALKED (the user: "where the rule might trip up is when there are actual mountains that need to be
+        // climbed or actually have a path up"): of the zone's own road-textured vertices, how many stand on a wall face
+        run {
+            var onRoad = 0; var walled = 0; val where = ArrayList<String>()
+            for (j in 0 until cg.ny) for (i in 0 until cg.nx) {
+                val x = cg.wx(j); val y = cg.wy(i)
+                if (!roadAt(x, y) || (ar != null && ar.uiMap(zg.areaAt(x, y)) != map)) continue
+                onRoad++
+                if (!cg.lineClear(doubleArrayOf(x, y), doubleArrayOf(x, y))) { walled++; if (where.size < 12) where.add("${x.toInt()},${y.toInt()} h ${height(x, y).toInt()}") }
+            }
+            println("ROADWALLS $onRoad road-textured vertices, $walled on a wall face (${if (onRoad > 0) walled * 1000 / onRoad / 10.0 else 0.0}%): $where")
+        }
         // THE EXITS CHECKED ON THE GROUND: from each, the lattice flooded (no wall step, no deep water, the caves' links taken) - how
         // much of this zone and of the neighbour it leads to it reaches. A way out that reaches only a pocket on either side is no way.
         val exitChecks = org.json.JSONArray()
