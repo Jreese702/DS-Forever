@@ -82,6 +82,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      * status, re-read when the bake says it changed (IndoorSchedulerStep.onChange) and when the view is shown.
      */
     private var btnDeferred = RectF()
+    /** Route data's "Review paths" (b-safepath-review): the host opens SafePath's review over this room */
+    private var btnRouteReview = RectF()
+    var onRouteReview: () -> Unit = {}
     private var deferredOpen = false
     private var progress: IndoorScheduler.Status? = null
     private val LIST_LINE = 38f
@@ -208,7 +211,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
             segClassRPick.toList() +
             segLimit.toList() + listOf(btnDll) + segFg.toList() + segMult.toList() + listOf(btnFlowMinus, btnFlowPlus) + segPerf.toList() +
-            listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred) + addonFocus())
+            listOf(btnRestart) + segIndoor.toList() + listOf(btnDeferred, btnRouteReview) + addonFocus())
             .filter { !it.isEmpty }.map { RectF(it) }.let { controls ->
                 // ... and a row with nothing to press (an add-on's greyed module before its install, a status line) is still a stop:
                 // the cursor walks every row it can see, A there does nothing
@@ -234,7 +237,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         rowHits.clear()
         addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty(); addonSettingsBtn.clear()
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
-                         btnDeferred, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
+                         btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
                          segClassROpen, segClassRPick, segChat, segQt, segDanger, segFog,
                          segLimit, segFg, segMult, segPerf))
@@ -343,6 +346,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segIndoor[0].contains(x, y) -> { Settings.indoorBuild = true; IndoorSchedulerStep.settingChanged() }
             segIndoor[1].contains(x, y) -> Settings.indoorBuild = false
             btnDeferred.contains(x, y) -> { deferredOpen = !deferredOpen; requestLayout(); invalidate() }
+            btnRouteReview.contains(x, y) -> onRouteReview()
             segPauseOpen[0].contains(x, y) -> HomeSettings.pauseTap = true
             segPauseOpen[1].contains(x, y) -> HomeSettings.pauseTap = false
             segPausePick[0].contains(x, y) -> HomeSettings.pausePickA = true
@@ -651,7 +655,15 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         }
         // the route's data from the game files (b-route-data-all: terrain and buildings for every zone, made before Play)
         y += 10f
-        row(c, y, "Route data", Terrain.coverageLine(), enabled = true) { box -> RectF(box.right, box.centerY(), box.right, box.centerY()) }
+        // SafePath's network (b-safepath-review): each zone's draft, reviewed and corrected over this room
+        row(c, y, "Route data", Terrain.coverageLine(), enabled = true) { box ->
+            val label = "Review paths"
+            val w = UiKit.bodyPaint(26f).measureText(label) + 80f
+            val b = RectF(box.right - 16f - w, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            UiKit.button(c, b, label, UiKit.Button.UP)
+            btnRouteReview = b
+            b
+        }
         if (Terrain.coverageNow()?.let { it.optInt("zones") < it.optInt("total") } != false) postInvalidateDelayed(3_000L)
         y += ROW_H
         return y

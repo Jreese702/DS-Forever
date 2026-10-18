@@ -3039,6 +3039,8 @@ class MapView(context: Context) : View(context) {
             // the walked ground (b-route-terrain): this cell is one the player walks
             if (m.optInt("onTaxi", 0) != 1 && !m.optBoolean("indoors", false)) {
                 Terrain.Walked.init(java.io.File(context.filesDir, "walked.bin"))
+                // SafePath's review: "Add my last walk" (b-safepath-review)
+                SafePath.noteWalk(m.optInt("mapID", 0), m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN), System.currentTimeMillis())
                 Terrain.Walked.note(m.optInt("cont", rect?.continent ?: -1), m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN),
                     android.os.SystemClock.elapsedRealtime())
             }
@@ -3946,6 +3948,8 @@ class MapView(context: Context) : View(context) {
         val tg = Terrain.of(mapId)                                  // in memory, or null (asked for on the route thread)
         // the roads this device learned from the walking (b-route-roads), learned again as the walked cells grow
         Roads.relearn(200) { dGridKey = ""; invalidate() }
+        // SafePath's network (b-safepath-net): the zone's first draft, made again when the learned roads change (the route thread)
+        SafePath.refresh(mapId, r.continent, r.top, r.bottom, r.left, r.right, mine)
         // the buildings (test54: "Sometimes checkpoints are going through buildings"): the interiors' placed buildings on this map, their
         // storeys' outlines in the world (b-route-buildings)
         ensurePlaces(r.continent)
