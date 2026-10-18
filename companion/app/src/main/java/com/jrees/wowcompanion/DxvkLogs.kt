@@ -11,7 +11,14 @@ import java.io.File
  */
 object DxvkLogs {
     /** the container's environment for DXVK's log (Wine path: E: = <app data>/storage; forward slashes, no escapes needed) */
-    const val ENV = "DXVK_LOG_LEVEL=warn DXVK_LOG_PATH=E:/dxvk-logs"
+    const val ENV = "DXVK_LOG_LEVEL=warn DXVK_LOG_PATH=E:/dxvk-logs DXVK_STATE_CACHE_PATH=E:/dxvk-cache"
+
+    /**
+     * DXVK's pipeline state cache (issue #12's logs: "No state cache file found" on EVERY run and never "Creating new state cache
+     * file": DXVKHelper gives it a Unix path, which this plain Windows ARM64 DLL cannot open, so every session compiled its pipelines
+     * again). Now E:/dxvk-cache (= <app data>/storage/dxvk-cache), made before each launch; never rotated or cleared.
+     */
+    fun cacheDir(appDataDir: File): File = File(appDataDir, "storage/dxvk-cache")
 
     /** the folder on Android, under the app's data dir (its "storage" is Wine's E:) */
     fun dir(appDataDir: File): File = File(appDataDir, "storage/dxvk-logs")

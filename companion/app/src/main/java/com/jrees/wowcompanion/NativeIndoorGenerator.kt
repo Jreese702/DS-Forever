@@ -154,7 +154,9 @@ internal class NativeIndoorGenerator(
         val summary = JSONObject().put("ms", ms)
         for (name in SUMMARY_FIELDS) full?.let { if (it.has(name)) summary.put(name, it.get(name)) }
         Log.i(TAG, "summary ${work.key}: $summary")
-        Log.i(TAG, "built ${work.key} in $ms ms: $report")
+        // issue #12: the full report (several KB a building) flooded logcat and pushed everything else out of a problem report's
+        // window; the summary line above is the one the parsers read. The whole report only in debug builds
+        if (BuildConfig.DEBUG) Log.d(TAG, "built ${work.key} in $ms ms: $report")
     }
 
     override fun close() { units.clear() }
