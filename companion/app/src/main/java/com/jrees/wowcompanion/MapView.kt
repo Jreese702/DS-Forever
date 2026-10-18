@@ -3956,7 +3956,7 @@ class MapView(context: Context) : View(context) {
         val bl = if (placesFor == r.continent) places else null
         Roads.of(mapId)                                             // asked for on the route thread when not in memory
         val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}:${tg != null}:${Terrain.Walked.count() / 40}:" +
-            "${Roads.version}:${Roads.files.version}:${Terrain.files.version}:${Terrain.buildings.version}:${bl?.size}"
+            "${Roads.version}:${Roads.files.version}:${Terrain.files.version}:${Terrain.buildings.version}:${bl?.size}:${SafePath.waters.version}"
         if (key != dGridKey) {
             dGridKey = key
             val filesDir = context.filesDir
@@ -3979,6 +3979,8 @@ class MapView(context: Context) : View(context) {
             Terrain.Walked.init(java.io.File(filesDir, "walked.bin"))
             val tg = Terrain.of(mapId)
             val bg = Terrain.buildingsOf(mapId)
+            // the water (b-safepath-water: "Pathing shouldn't be in water"): deep water a wall to the leg too, a ford dear
+            val wg = SafePath.waters.get(mapId)
             Roads.of(mapId)
             val sp = DangerStore.spawns(mapId)
             val cont = r.continent
@@ -3997,7 +3999,10 @@ class MapView(context: Context) : View(context) {
                 // every placed building's rooms (b-route-data-all: the harvest's cover grid, from the game files), and the baked interiors
                 val built = maxOf(Buildings.cover(foot, x, y, cellX, cellY, r),
                     bg?.at(wx, wy)?.takeIf { it != Terrain.NO_DATA }?.let { it / 9f } ?: 0f)
+                val depth = wg?.at(wx, wy) ?: Float.NaN
                 when {
+                    !depth.isNaN() && depth != SafePath.Water.BRIDGE && depth > SafePath.FORD_DEPTH -> Terrain.WALL
+                    !depth.isNaN() && depth != SafePath.Water.BRIDGE -> maxOf(f, 1f) * SafePath.FORD_COST.toFloat()
                     built >= Buildings.WALL_COVER -> Terrain.WALL                 // a building: a wall (its doors: the start's / goal's ends)
                     f >= 3f -> f
                     built >= Buildings.PART_COVER -> f * Buildings.PART_COST
