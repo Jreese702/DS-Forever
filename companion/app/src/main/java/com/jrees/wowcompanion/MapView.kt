@@ -2859,7 +2859,7 @@ class MapView(context: Context) : View(context) {
             val plv = questsPlv ?: 0
             val mine = TransportRoutes.factionOf(m.optString("fac", null))
             val wo = worldOf; val za = zoneAt
-            RouteWork.run({
+            RouteWork.run(run@{
                 val x0 = minOf(pwx, gx) - CrossZone.MARGIN; val x1 = maxOf(pwx, gx) + CrossZone.MARGIN
                 val y0 = minOf(pwy, gy) - CrossZone.MARGIN; val y1 = maxOf(pwy, gy) + CrossZone.MARGIN
                 val ids = zi(cont, x0, x1, y0, y1)
@@ -2880,7 +2880,36 @@ class MapView(context: Context) : View(context) {
                     }
                 }
                 val k = DangerGrid.strength(strength)
-                val plan = CrossZone.plan(pwx, pwy, gx, gy, { wx, wy -> CrossZone.cost(zones, wx, wy) { a, b -> Terrain.Walked.walked(cont, a, b) } }, threats, k)
+                // THE CAPITALS ARE WALLED (test61: "a quest marker literally taking me somewhere that I cannot go" - from inside Stormwind
+                // the plan left by its walls, the city WMO being level ground in the stitch): every capital's box is a wall in the
+                // stitch, and from INSIDE one the plan starts at its gates instead - the ways out this device learned (the main gate)
+                val cityBoxes = ids.filter { it in CityExits.CITIES }.mapNotNull { id -> wo?.invoke(id)?.let { w -> doubleArrayOf(w.top, w.bottom, w.left, w.right) } }
+                fun walled(wx: Double, wy: Double) = cityBoxes.any { b -> wx <= b[0] && wx >= b[1] && wy <= b[2] && wy >= b[3] }
+                // (a gate stands inside its city's box: the walls lift within GATE_FREE_YD of the plan's start, its way out)
+                fun costFrom(sx: Double, sy: Double) = { wx: Double, wy: Double ->
+                    if (walled(wx, wy) && hypot(wx - sx, wy - sy) > GATE_FREE_YD) Float.NaN
+                    else CrossZone.cost(zones, wx, wy) { a, b -> Terrain.Walked.walked(cont, a, b) }
+                }
+                val cost = costFrom(pwx, pwy)
+                if (mapId in CityExits.CITIES) {
+                    // the best learned way out on foot: the walk to it, then the plan from just outside it
+                    val gates = (exitLearner()?.of(mapId) ?: emptyList()).filter { !it.transport && isZoneMap(it.toMap) }
+                    var best: Triple<CityExits.Exit, CrossZone.Plan, Double>? = null
+                    for (e in gates) {
+                        val p = CrossZone.plan(e.wx, e.wy, gx, gy, costFrom(e.wx, e.wy), threats, k) ?: continue
+                        val total = hypot(e.wx - pwx, e.wy - pwy) + p.cost
+                        if (best == null || total < best.third) best = Triple(e, p, total)
+                    }
+                    val route = best?.let { (e, p, total) ->
+                        val name = mapName?.invoke(e.toMap)?.takeIf { it.isNotEmpty() }
+                        CursorRoute.Route(CursorRoute.Kind.EXIT, (r.left - e.wy) / r.width, (r.top - e.wx) / r.height,
+                            if (name != null) "To $name" else "City gate", "xz-gate:${e.wx.toInt()}:${e.wy.toInt()}",
+                            "cross-zone from the city gate (${e.wx.toInt()}, ${e.wy.toInt()}) [map $mapId -> ${e.toMap}], cost ${total.toInt()} " +
+                                "(plan ${p.cost.toInt()} over ${zones.size} zones, ${gates.size} gates known)")
+                    }
+                    return@run XzRoute(key, route)
+                }
+                val plan = CrossZone.plan(pwx, pwy, gx, gy, cost, threats, k)
                 val ex = plan?.let { CrossZone.exit(it, r.top, r.bottom, r.left, r.right) }
                 val route = if (plan == null || ex == null) null else {
                     val (a, b) = ex
@@ -2907,6 +2936,7 @@ class MapView(context: Context) : View(context) {
         return have?.route
     }
     private val XZ_MOVE_YD = 100.0
+    private val GATE_FREE_YD = 120.0
 
     /**
      * THE EDGE, ONLY WHERE ONE CAN WALK OUT (b-route-multihop; test51: north out of Elwynn over the mountains): with the zone's slope
