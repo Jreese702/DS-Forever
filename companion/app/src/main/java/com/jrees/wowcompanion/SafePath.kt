@@ -1577,7 +1577,7 @@ object SafePath {
         for (q in 1 until chain.size) {
             val cur = out.last(); val tgt = chain[q]
             val ends = q == 1 || (q == chain.size - 1 && !exitEnd)
-            val straight = if (ends) hypot(tgt[0] - cur[0], tgt[1] - cur[1]) <= JOIN_YD else walkable?.invoke(cur, tgt) ?: true
+            val straight = (!ends || hypot(tgt[0] - cur[0], tgt[1] - cur[1]) <= JOIN_YD) && walkable?.invoke(cur, tgt) ?: true
             if (straight || Climb.inCave(cur) && Climb.inCave(tgt)) { out.add(tgt); continue }
             val lg = leg(cur, tgt)
             if (lg == null) { if (walkable == null) out.add(tgt); continue }

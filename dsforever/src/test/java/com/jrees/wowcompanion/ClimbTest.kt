@@ -45,6 +45,21 @@ class ClimbTest {
         assertEquals(Climb.WALL, Climb.classOf(Float.NaN))
     }
 
+    @Test fun aRidgeOnTheMiddleVerticesIsAWall() {
+        // the outer vertices all level; a band of cells (world y 20 .. -20) whose middle vertices stand 6 yd up: the game's triangles
+        // there rise 6 yd in 2 yd (over 70 degrees), a ridge the outer vertices alone never show
+        fun ridge(gr: Int, gc: Int) = if (abs(org - (gc + 0.5) * s) < 20 && abs(org - (gr + 0.5) * s) < 150) 6f else 0f
+        val flat = Climb.build(200.0, -200.0, 200.0, -200.0, { _, _ -> 0f })
+        val g = Climb.build(200.0, -200.0, 200.0, -200.0, { _, _ -> 0f }, centre = ::ridge)
+        val from = doubleArrayOf(0.0, 100.0); val goal = doubleArrayOf(0.0, -100.0)
+        assertTrue("the outer vertices alone: level", Climb.walkable(flat, from, goal))
+        assertFalse("the triangles: a wall", Climb.walkable(g, from, goal))
+        val leg = Climb.route(g, from, goal)!!
+        assertTrue(leg.reached)
+        assertWalkable(g, leg.pts)
+        assertTrue("round the ridge's end", leg.pts.any { abs(it[0]) >= 145 })
+    }
+
     @Test fun aBasinIsEnteredByItsOpeningNeverOverItsRim() {
         val g = grid(::basin)
         val from = doubleArrayOf(0.0, 150.0); val goal = doubleArrayOf(0.0, 0.0)

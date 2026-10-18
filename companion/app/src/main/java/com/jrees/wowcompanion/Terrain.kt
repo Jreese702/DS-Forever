@@ -72,14 +72,15 @@ object Terrain {
     // ---------------------------------------------------------------- the game's heights
 
     /** one root ADT's outer heights, [TILE_V] x [TILE_V] (rows south, columns east from the tile's north-west corner) */
-    class Tile(val h: FloatArray)
+    /** [h] the outer vertices; [c] the inner ones, one in each cell's middle (the game's surface: four triangles a cell through it) */
+    class Tile(val h: FloatArray, val c: FloatArray? = null)
 
     /**
      * a root ADT ([adt]): each MCNK's index (ix, iy), its base height (position z at 0x68 + 8) and its MCVT (145 floats: 9 outer,
      * 8 inner, ...); the outer ones kept. Null when it holds no chunk.
      */
     fun tile(adt: ByteArray): Tile? {
-        val h = FloatArray(TILE_V * TILE_V) { Float.NaN }
+        val h = FloatArray(TILE_V * TILE_V) { Float.NaN }; val c = FloatArray(TILE_V * TILE_V) { Float.NaN }
         var o = 0; var any = false
         while (o + 8 <= adt.size) {
             val tag = tag(adt, o); val n = Db2.le32(adt, o + 4)
@@ -103,7 +104,13 @@ object Terrain {
                                     if (gr < TILE_V && gc < TILE_V) h[gr * TILE_V + gc] = v
                                     k++
                                 }
-                            } else k += 8
+                            } else {
+                                val cr = iy * 8 + row / 2
+                                for (vc in 0 until 8) {
+                                    c[cr * TILE_V + ix * 8 + vc] = z + java.lang.Float.intBitsToFloat(Db2.le32(adt, p + 8 + k * 4))
+                                    k++
+                                }
+                            }
                         }
                         any = true
                     }
@@ -112,7 +119,7 @@ object Terrain {
             }
             o += 8 + n
         }
-        return if (any) Tile(h) else null
+        return if (any) Tile(h, c) else null
     }
 
     private fun tag(b: ByteArray, o: Int) = String(charArrayOf(b[o + 3].toInt().toChar(), b[o + 2].toInt().toChar(), b[o + 1].toInt().toChar(), b[o].toInt().toChar()))
