@@ -2029,7 +2029,9 @@ class HomeView(
                 val y = lineTop(line)
                 // a small module well (the harmony pass: "buffs (now in a small well)")
                 val l0 = minOf(xOf(0), xOf(cnt - 1)); val r0 = maxOf(xOf(0), xOf(cnt - 1)) + AURA_ICON
-                UiKit.module(c, RectF(l0 - 6f, y - 6f, r0 + 6f, y + AURA_ICON + timeH + 2f))
+                // 1.0.10-test3 (the user: "The background of the buffs needs to have a low opacity like the focused quest"): the
+                // focused quest card's see-through plate over the map (its alpha, its soft dark band); the icons and times stay whole
+                UiKit.seeThroughPlate(c, RectF(l0 - 6f, y - 6f, r0 + 6f, y + AURA_ICON + timeH + 2f), UiKit.CARD_OVER_MAP_ALPHA)
             }
             for (k in 0 until n) {
                 val line = k / per; val col = k % per
