@@ -1,0 +1,16 @@
+{"tag": "tirisfal", "dir": "azeroth", "faction": "horde", "zone": 1420, "area": 85, "level": 6, "friendlyMinLevel": 100,
+ "maps": [[1420, 85], [1458, 1497], [1421, 130], [1422, 28]], "cities": [1458], "border": [1420, 1421],
+ "title": "Tirisfal Glades", "crop": [3250, 1150, 2850, -950],
+ "closeups": [{"name": "Deathknell", "box": [2150, 1250, 2100, 1150]}, {"name": "Brill and the Ruins", "box": [2450, 1150, 800, -300]}],
+ "goals": [
+  {"name": "the Scarlet Converts (Deathknell's first quest mobs)", "from": {"name": "Deathknell", "xy": [1884, 1582]}, "to": {"mob": "Scarlet Convert", "near": [1795, 1338]}},
+  {"name": "Night Web's Hollow's mouth", "from": {"name": "Deathknell", "xy": [1884, 1582]}, "to": {"cave": 111551, "near": [2041, 1854]}},
+  {"name": "the Shadow Grave (crypt)", "from": {"name": "Deathknell", "xy": [1884, 1582]}, "to": {"wmo": 110650, "near": [1659, 1663]}},
+  {"name": "Solliden Farmstead (the Tirisfal farmers)", "from": {"name": "Deathknell", "xy": [1884, 1582]}, "to": {"camp": "Solliden Farmstead"}},
+  {"name": "Brill", "from": {"name": "Deathknell", "xy": [1884, 1582]}, "to": {"node": "Brill"}},
+  {"name": "Agamand Mills (the Rattlecage Soldiers)", "from": {"node": "Brill"}, "to": {"mob": "Rattlecage Soldier", "near": [2622, 885]}},
+  {"name": "the Agamand Family Crypt", "from": {"node": "Brill"}, "to": {"wmo": 110602, "near": [3029, 672]}},
+  {"name": "the Undercity entrance (Ruins of Lordaeron)", "from": {"node": "Brill"}, "to": {"wmo": 7675285, "near": [1648, 240]}},
+  {"name": "the road into Silverpine Forest", "from": {"node": "Zeppelin tower: Grom'gol, Orgrimmar"}, "to": {"xy": [1432, 725]}},
+  {"name": "The Bulwark (to Western Plaguelands)", "from": {"node": "Brill"}, "to": {"exit": "Western Plaguelands"}}
+ ]}

@@ -970,7 +970,7 @@ object SafePath {
     fun hubs(friendly: List<Npc>, nameAt: (Double, Double) -> String? = { _, _ -> null }, generic: String? = null,
              districtAt: ((Double, Double) -> String?)? = null): List<Fixed> {
         val left = friendly.toMutableList()
-        val out = ArrayList<Fixed>()
+        val out = ArrayList<Fixed>(); val roles = ArrayList<String?>()
         while (left.isNotEmpty()) {
             // the densest spot first
             val best = left.maxByOrNull { p -> left.count { hypot(it.wx - p.wx, it.wy - p.wy) < HUB_YD } } ?: break
@@ -981,7 +981,17 @@ object SafePath {
             val name = districtAt?.invoke(x, y)?.let { d -> if (role != null) "$d · $role" else d }
                 ?: nameAt(x, y)?.takeIf { it.isNotEmpty() && it != generic } ?: role ?: generic ?: "Town"
             out.add(Fixed(x, y, HUB, name))
+            roles.add(role)
             left.removeAll { hypot(it.wx - best.wx, it.wy - best.wy) < HUB_YD * 2 }
+        }
+        // towns sharing a name (Tirisfal: three "Deathknell"s): each told apart by what its creatures are, then numbered north to south
+        for ((nm, idx) in out.indices.groupBy { out[it].name }) {
+            if (idx.size < 2) continue
+            val named = idx.associateWith { k -> roles[k]?.takeIf { r -> !nm.contains(r) }?.let { "$nm · $it" } ?: nm }
+            for ((nm2, same) in idx.groupBy { named[it]!! }) {
+                val sorted = same.sortedByDescending { out[it].wx }
+                for ((n, k) in sorted.withIndex()) out[k] = Fixed(out[k].wx, out[k].wy, HUB, if (sorted.size > 1) "$nm2 (${n + 1})" else nm2)
+            }
         }
         return out
     }
@@ -1512,6 +1522,21 @@ object SafePath {
      * null = no network.
      */
     /**
+     * [net] without the ways that cross a wall on the fine ground ([walkable]: Climb's lattice; the user: "I cant walk up walls"): the
+     * draft draws from 25 yd cells, so a trail can still run over a ridge (Dun Morogh's Brewnall and Coldridge Pass trails) - such a
+     * way is marked [REMOVED] (the review still sees it; no route takes it). A cave's way is its own floor's, kept.
+     */
+    fun dropWalled(net: Net, walkable: (DoubleArray, DoubleArray) -> Boolean): Net {
+        val byId = net.nodes.associateBy { it.id }
+        return Net(net.map, net.cont, net.built, net.nodes, net.edges.map { e ->
+            val a = byId[e.a]; val b = byId[e.b]
+            if (e.kind == CAVE || e.state == REMOVED || a == null || b == null || a.kind == MOUTH || b.kind == MOUTH ||
+                walkable(doubleArrayOf(a.wx, a.wy), doubleArrayOf(b.wx, b.wy))) e
+            else Edge(e.a, e.b, e.kind, REMOVED, e.src, e.danger, e.climb)
+        }, net.exits, net.reviewed)
+    }
+
+    /**
      * [net] with [caves]' ways (b-route-climb; the user: "Caves like this need to be logically detected and factored"): each way a
      * chain of [CAVE] nodes between two [MOUTH] nodes, [CAVE] edges along its floor ([danger] there, 0..1: they are often full of mobs);
      * a mouth joined by a [SPUR] to the network's nearest node within [ATTACH_YD] (a mouth far from every way stands alone: the
@@ -1590,7 +1615,30 @@ object SafePath {
             val direct = leg(f, t)
             if (direct != null && hypot(direct.last()[0] - tx, direct.last()[1] - ty) <= 3.0 && yd(direct) * NET_FAVOUR < yd(out)) return direct
         }
-        return out
+        return unloop(out, walkable)
+    }
+
+    /**
+     * the WALKED way's there-and-backs (Teldrassil's Fel Rock: the network ran on to the way's point nearest the goal, past the turn,
+     * and the ground's leg walked back the same road): smooth() sees only the network's points, so the walked way is cut here too - a
+     * point it comes back to within [LOOP_YD] the long way round, joined straight when that straight step is [walkable] (never a wall)
+     * and neither end is in a cave (a cave's floor is its own way)
+     */
+    fun unloop(pts: List<DoubleArray>, walkable: ((DoubleArray, DoubleArray) -> Boolean)?): List<DoubleArray> {
+        if (pts.size < 3) return pts
+        var w = pts
+        var i = 0
+        while (i < w.size - 2) {
+            val cum = DoubleArray(w.size); for (k in 1 until w.size) cum[k] = cum[k - 1] + hypot(w[k][0] - w[k - 1][0], w[k][1] - w[k - 1][1])
+            val a = w[i]
+            val j = if (Climb.inCave(a)) null else (w.size - 1 downTo i + 2).firstOrNull { j ->
+                val d = hypot(w[j][0] - a[0], w[j][1] - a[1])
+                d < LOOP_YD && cum[j] - cum[i] > 2.5 * d + LOOP_YD && !Climb.inCave(w[j]) && (walkable?.invoke(a, w[j]) ?: true)
+            }
+            if (j != null) w = w.subList(0, i + 1) + w.subList(j, w.size)
+            i++
+        }
+        return w
     }
     const val DIRECT_LEG_YD = 1500.0       // a goal this near: the ground's own way there is the network's rival ...
     const val NET_FAVOUR = 1.5             // ... taken when the network's way is this many times longer

@@ -16,7 +16,7 @@ for k in range(ng):
             ix = struct.unpack_from('<%dH' % (d['MOVI'][1] // 2), b, d['MOVI'][0])
             for t in range(len(ix) // 3):
                 stats['tris'] += 1
-                fl = b[d['MOPY'][0] + 2 * t]
+                fl = b[d['MOPY'][0] + 2 * t] if 'MOPY' in d else b[d['MPY2'][0] + 4 * t] if 'MPY2' in d else 0   # the newer groups: MPY2
                 if not (fl & 0x08 or (fl & 0x20 and not fl & 0x04)): continue
                 stats['coll'] += 1
                 a, bb, c = (vs[ix[3 * t + j]] for j in range(3))

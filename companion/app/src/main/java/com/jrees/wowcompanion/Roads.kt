@@ -26,7 +26,23 @@ object Roads {
 
     // ---------------------------------------------------------------- one zone's grid: the dominant texture per cell
 
-    class Grid(val c: Int, val t: Double, val b: Double, val l: Double, val r: Double, val nx: Int, val ny: Int, val tex: IntArray) {
+    /**
+     * [tex] each cell's texture showing most; [palette] / [thin]: each cell's mask over the zone's palette (at most 64) of the textures
+     * showing at [THIN_MIN] or more of its 6 x 6 points - a road 4-6 yd wide (Teldrassil's path) or one under snow (Dun Morogh) never
+     * shows MOST in a 25 yd cell, but it shows there (the zone workers, 2026-10-18)
+     */
+    class Grid(val c: Int, val t: Double, val b: Double, val l: Double, val r: Double, val nx: Int, val ny: Int, val tex: IntArray,
+               val palette: IntArray = IntArray(0), val thin: LongArray? = null) {
+        /** whether any of the textures [set] shows thinly (or most) in the cell at world ([wx], [wy]) */
+        fun shows(wx: Double, wy: Double, set: Set<Int>): Boolean {
+            val i = floor((l - wy) / (l - r) * nx).toInt(); val j = floor((t - wx) / (t - b) * ny).toInt()
+            if (i !in 0 until nx || j !in 0 until ny) return false
+            if (tex[j * nx + i] in set) return true
+            val m = thin?.get(j * nx + i) ?: return false
+            if (m == 0L) return false
+            for (k in palette.indices) if ((m ushr k) and 1L != 0L && palette[k] in set) return true
+            return false
+        }
         /** the texture showing most at world ([wx], [wy]), 0 none / off the grid */
         fun at(wx: Double, wy: Double): Int {
             val i = floor((l - wy) / (l - r) * nx).toInt(); val j = floor((t - wx) / (t - b) * ny).toInt()
@@ -40,18 +56,25 @@ object Roads {
             DataOutputStream(f.outputStream().buffered()).use { o ->
                 o.writeInt(MAGIC); o.writeInt(c); o.writeDouble(t); o.writeDouble(b); o.writeDouble(l); o.writeDouble(r); o.writeInt(nx); o.writeInt(ny)
                 for (v in tex) o.writeInt(v)
+                o.writeInt(palette.size); for (v in palette) o.writeInt(v)
+                val th = thin ?: LongArray(nx * ny); for (v in th) o.writeLong(v)
             }
         }
         companion object {
-            const val MAGIC = 0x47545831                       // "GTX1"
+            const val MAGIC = 0x47545832                       // "GTX2": the most-shown textures, then the palette and the thin masks
+            const val MAGIC_1 = 0x47545831                     // "GTX1": the most-shown textures only (read still; rebuilt by STEP v2)
             fun read(f: File): Grid? = runCatching {
                 DataInputStream(f.inputStream().buffered()).use { i ->
-                    if (i.readInt() != MAGIC) return null
+                    val magic = i.readInt(); if (magic != MAGIC && magic != MAGIC_1) return null
                     val c = i.readInt()
                     val t = i.readDouble(); val b = i.readDouble(); val l = i.readDouble(); val r = i.readDouble()
                     val nx = i.readInt(); val ny = i.readInt()
                     if (nx !in 1..4096 || ny !in 1..4096) return null
-                    Grid(c, t, b, l, r, nx, ny, IntArray(nx * ny) { i.readInt() })
+                    val tex = IntArray(nx * ny) { i.readInt() }
+                    if (magic == MAGIC_1) return Grid(c, t, b, l, r, nx, ny, tex)
+                    val np = i.readInt(); if (np !in 0..64) return null
+                    val pal = IntArray(np) { i.readInt() }
+                    Grid(c, t, b, l, r, nx, ny, tex, pal, LongArray(nx * ny) { i.readLong() })
                 }
             }.getOrNull()
         }
@@ -173,7 +196,30 @@ object Roads {
         val top = 32.0 * MapHarvest.ADT_YD
         val out = IntArray(nx * ny)
         val count = HashMap<Int, Int>()
+        val palette = ArrayList<Int>(); val thin = LongArray(nx * ny); val thinCount = HashMap<Int, Int>()
+        fun textureAt(wx: Double, wy: Double): Int {
+            val gx = (top - wx) / MapHarvest.ADT_YD; val gy = (top - wy) / MapHarvest.ADT_YD
+            val row = floor(gx).toInt(); val col = floor(gy).toInt()
+            val t = tileAt(col, row) ?: return 0
+            val inTileX = (gx - row) * MapHarvest.ADT_YD; val inTileY = (gy - col) * MapHarvest.ADT_YD
+            val cy = (inTileX / CHUNK_YD).toInt().coerceIn(0, 15); val cx = (inTileY / CHUNK_YD).toInt().coerceIn(0, 15)
+            val c = t.chunks[cy * 16 + cx] ?: return 0
+            return showing(c, ((inTileY - cx * CHUNK_YD) / CHUNK_YD * 64).toInt().coerceIn(0, 63), ((inTileX - cy * CHUNK_YD) / CHUNK_YD * 64).toInt().coerceIn(0, 63))
+        }
         for (j in 0 until ny) for (i in 0 until nx) {
+            // the thin textures: each that shows at THIN_MIN or more of the cell's 6 x 6 points
+            thinCount.clear()
+            for (sj in 0 until 6) for (si in 0 until 6) {
+                val tx = textureAt(rect.t - (j + (sj + 0.5) / 6) * ch, rect.l - (i + (si + 0.5) / 6) * cw)
+                if (tx != 0) thinCount[tx] = (thinCount[tx] ?: 0) + 1
+            }
+            var m = 0L
+            for ((tx, k) in thinCount) if (k >= THIN_MIN) {
+                var p = palette.indexOf(tx)
+                if (p < 0 && palette.size < 64) { palette.add(tx); p = palette.size - 1 }
+                if (p >= 0) m = m or (1L shl p)
+            }
+            thin[j * nx + i] = m
             count.clear()
             for (sj in 0 until 3) for (si in 0 until 3) {
                 val wx = rect.t - (j + (sj + 0.5) / 3) * ch; val wy = rect.l - (i + (si + 0.5) / 3) * cw
@@ -190,8 +236,10 @@ object Roads {
             }
             out[j * nx + i] = count.maxByOrNull { it.value }?.key ?: 0
         }
-        return Grid(rect.c, rect.t, rect.b, rect.l, rect.r, nx, ny, out)
+        return Grid(rect.c, rect.t, rect.b, rect.l, rect.r, nx, ny, out, palette.toIntArray(), thin)
     }
+    /** a texture showing at this many of a cell's 36 points shows there (a 4-6 yd path across a 25 yd cell: about 8) */
+    const val THIN_MIN = 4
 
     // ---------------------------------------------------------------- the harvest step
 
@@ -201,7 +249,7 @@ object Roads {
      */
     val STEP = object : ArtHarvest.Step {
         override val id = "groundtex"
-        override val version = 1
+        override val version = 2                       // v2: the thin masks (GTX2)
         override val beforePlay = false
         override val weight = 80
         override fun run(job: ArtHarvest.Job) {
@@ -261,7 +309,7 @@ object Roads {
     fun of(map: Int): Grid? = files.get(map)
 
     /** the texture at world ([wx], [wy]) of [map] is a learned road */
-    fun isRoad(map: Int, wx: Double, wy: Double): Boolean { val g = of(map) ?: return false; val t = g.at(wx, wy); return t != 0 && t in roads }
+    fun isRoad(map: Int, wx: Double, wy: Double): Boolean { val g = of(map) ?: return false; return roads.isNotEmpty() && g.shows(wx, wy, roads) }
 
     /**
      * which textures are roads: over the zones with walked cells ([zones]: each zone's grid and its continent), a texture is a road

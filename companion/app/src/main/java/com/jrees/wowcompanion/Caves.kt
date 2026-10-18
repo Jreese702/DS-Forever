@@ -17,13 +17,16 @@ import kotlin.math.sqrt
  */
 object Caves {
     const val FLOOR_DEG = 45.0             // the hard rule's limit, as on the terrain
-    const val WELD_YD = 0.6                // floor vertices this near are one (the groups meet at their portals, not always exactly)
+    const val WELD_YD = 0.8                // floor vertices this near are one (the groups meet at their portals, not always exactly; Ban'ethil
+                                           // Barrow Den's stair risers join at 0.8)
     const val MOUTH_YD = 1.5               // a floor vertex this near the terrain's own height is where they meet
     const val MOUTH_GAP_YD = 25.0          // mouths farther apart than this are separate openings
     const val SIMPLIFY_YD = 3.0            // a way's points kept at least this far apart
+    const val FLOOR_SAMPLE_YD = 4          // the floor's footprint kept a point a square this size
 
-    /** the WMO name parts that mark a cave, a tunnel, a mine, a den */
-    val KINDS = listOf("cave", "tunnel", "mine", "den")
+    /** the WMO name parts that mark a cave, a tunnel, a mine, a den, a pass (Coldridge Valley's tunnel is md_anvilmarpass/anvilmarpass.wmo),
+     *  a crypt or a barrow (Tirisfal's md_cryptonerm and md_crypt, Teldrassil's Ban'ethil barrow den), a hollow, a grave */
+    val KINDS = listOf("cave", "tunnel", "mine", "den", "pass", "crypt", "barrow", "hollow", "grave")
 
     /** one way through: world points (x, y, z) from mouth [a] to mouth [b], [yd] long along its floor */
     class Way(val pts: List<DoubleArray>, val yd: Double) {
@@ -31,7 +34,8 @@ object Caves {
         val b get() = pts.last()
     }
     /** a placed cave: its [mouths] (world x, y, z) and the [ways] between them */
-    class Cave(val fid: Int, val uid: Int, val wx: Double, val wy: Double, val mouths: List<DoubleArray>, val ways: List<Way>)
+    class Cave(val fid: Int, val uid: Int, val wx: Double, val wy: Double, val mouths: List<DoubleArray>, val ways: List<Way>,
+               val floor: List<DoubleArray> = emptyList())          // its floor's footprint: a point (x, y, z) per FLOOR_SAMPLE_YD square
 
     /** a group file's walkable collision triangles, in the WMO's own frame: 9 floats each (three corners x, y, z) */
     fun floorTris(group: ByteArray): FloatArray {
@@ -143,7 +147,9 @@ object Caves {
                 ways.add(Way(pts, dist[b]))
             }
         }
-        return Cave(p.fid, p.uid, p.ox, p.oy, mouths.map { doubleArrayOf(xs[it], ys[it], zs[it]) }, ways)
+        val floor = (0 until n).groupBy { Math.floorDiv(Math.round(xs[it]), FLOOR_SAMPLE_YD.toLong()) * 100000 + Math.floorDiv(Math.round(ys[it]), FLOOR_SAMPLE_YD.toLong()) }
+            .values.map { vs -> vs.minByOrNull { zs[it] }!!.let { doubleArrayOf(xs[it], ys[it], zs[it]) } }
+        return Cave(p.fid, p.uid, p.ox, p.oy, mouths.map { doubleArrayOf(xs[it], ys[it], zs[it]) }, ways, floor)
     }
 
     private fun tag(b: ByteArray, o: Int) = String(charArrayOf(b[o + 3].toInt().toChar(), b[o + 2].toInt().toChar(), b[o + 1].toInt().toChar(), b[o].toInt().toChar()))

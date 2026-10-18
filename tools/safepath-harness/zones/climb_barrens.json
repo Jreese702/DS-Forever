@@ -1,0 +1,93 @@
+{
+ "tag": "climb_barrens",
+ "dir": "kalimdor",
+ "faction": "horde",
+ "zone": 1413,
+ "area": 17,
+ "level": 15,
+ "maps": [
+  [
+   1413,
+   17
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1413,
+  1413
+ ],
+ "title": "The Barrens (climb test)",
+ "crop": [
+  1612,
+  -5143,
+  2622,
+  -7510
+ ],
+ "closeups": [
+  {
+   "name": "Thorn Hill",
+   "box": [
+    -503.5603586407191,
+    -717.5001066666664,
+    -2903.3334399999985,
+    -3246.8654107448865
+   ]
+  },
+  {
+   "name": "Far Watch Post",
+   "box": [
+    338.4723393746521,
+    -167.5001066666664,
+    -2599.1667733333343,
+    -3743.5779191466772
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "Far Watch Post (on its ridge)",
+   "from": {
+    "node": "The Crossroads"
+   },
+   "to": {
+    "node": "Far Watch Post"
+   }
+  },
+  {
+   "name": "Honor's Stand (on its hill)",
+   "from": {
+    "node": "The Crossroads"
+   },
+   "to": {
+    "node": "Honor's Stand"
+   }
+  },
+  {
+   "name": "Thorn Hill",
+   "from": {
+    "node": "The Crossroads"
+   },
+   "to": {
+    "node": "Thorn Hill"
+   }
+  },
+  {
+   "name": "the Mor'shan Rampart",
+   "from": {
+    "node": "The Crossroads"
+   },
+   "to": {
+    "node": "The Mor'shan Rampart"
+   }
+  },
+  {
+   "name": "Camp Taurajo",
+   "from": {
+    "node": "The Crossroads"
+   },
+   "to": {
+    "node": "Camp Taurajo"
+   }
+  }
+ ]
+}

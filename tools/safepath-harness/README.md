@@ -29,7 +29,7 @@ The work folder's layout:
 | `db2/` | `AreaTable`, `Map`, `UiMapAssignment`, `WMOAreaTable`, `Taxi*`, `UiTextureAtlas*`. |
 | `artroot/` | The app's art harvest: `worldmap/<uiMap>/` (base and overlays, `index.json`) and `transports.json`. Copy it from an existing work folder; `transports.json` is rebuilt by the app's `TransportRoutes` from the `Taxi*` tables. |
 | `monitor-1.7.2.jar` | androidx test monitor, for Robolectric. |
-| `app.jar` | The app's classes (`run.sh` builds it). |
+| (no `app.jar` here) | `run.sh` builds the app's classes into each checkout's own `robo/build/app.jar`, so agents on different branches don't overwrite each other's. |
 | `out/` | Everything the harness writes. |
 
 ## Dump a zone (local CASC reads only: no downloads)
@@ -71,6 +71,11 @@ python dump_cavegroups.py <dir>                      # cave / tunnel / mine / de
 | `border` | The pair of zones whose crossings get the border picture. |
 | `title`, `crop` (`[top x, bottom x, left y, right y]`, the zone's land), `closeups` (name and box, the same order) | For the renders. |
 | `goals` | 8–10 routes, as below. With no `goals` key, Durotar's own built-in goals are used. |
+| `friendlyMinLevel` | Optional. Spawns at or above this level are placeholders (WoW Forever's own NPCs at 9999), counted as friendly. |
+| `voidBelow` | Optional. A floating zone's void floor: ground below this height is no ground (Zephras Isle: 300). |
+| `roadTextures` | Optional. Extra name parts that mark a road texture named otherwise (Dun Morogh: `browncracks`). |
+| `roads` | Obsolete. Thin roads are always counted now, the device's own rule (`Roads.THIN_MIN`). |
+| `roads` | `"thin"` (Teldrassil): a 25 yd cell is road when a road texture shows at any of its 6 x 6 points, for paths too narrow (4-6 yd) to show most in any cell. Leave it out elsewhere. |
 
 Goal fields:
 
@@ -103,7 +108,7 @@ python render3d.py ../zones/<tag>.json                           # <tag>_heightm
 `run.sh` does four things:
 
 1. builds the app's classes (`:dsforever:compileDebugKotlin`);
-2. jars them into `<work>/app.jar`;
+2. jars them into this checkout's `robo/build/app.jar`;
 3. runs `robo/` (Robolectric, `RenderSafePath`);
 4. greps its output.
 

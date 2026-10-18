@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 import heights as HT
 ADT, S, ORG = HT.ADT, HT.S, HT.ORG
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(os.environ.get('SAFEPATH_WORK', 'E:/safepath-work'), 'out')
+OUT = os.environ.get('SAFEPATH_OUT', os.path.join(os.environ.get('SAFEPATH_WORK', 'E:/safepath-work'), 'out'))
 T, B, L, R = SPEC['crop']                                             # the zone's land (its world rect less the open sea, its neighbours)
 gc0 = int(math.floor((ORG - L) / S)); gc1 = int(math.ceil((ORG - R) / S))
 gr0 = int(math.floor((ORG - T) / S)); gr1 = int(math.ceil((ORG - B) / S))

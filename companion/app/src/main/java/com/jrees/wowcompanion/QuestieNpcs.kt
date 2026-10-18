@@ -56,7 +56,12 @@ object QuestieNpcs {
             val hostile = when (friendly) { null -> 3; "A" -> TransportRoutes.HORDE; "H" -> TransportRoutes.ALLIANCE; else -> 0 }
             if (hostile == 0) continue                                 // "AH": a neutral (ignored) or friendly to all
             val sp = spawns[id] ?: continue
-            val areas = runCatching { Cbor.decode(b64(sp)) as? Map<*, *> }.getOrNull() ?: continue
+            // a creature found only in area 1 (Dun Morogh) or in areas 1..n comes as a CBOR array, not a map: Lua writes a table
+            // whose keys are 1..n as a sequence. Its element i is area i + 1's spawns (measured: Rockjaw Trogg, 707, is [[...]])
+            val areas = runCatching { when (val d = Cbor.decode(b64(sp))) {
+                is Map<*, *> -> d
+                is List<*> -> d.withIndex().associate { (i, v) -> (i + 1).toLong() to v }
+                else -> null } }.getOrNull() ?: continue
             val minLv = (row[4L] as? Long)?.toInt() ?: 0
             val maxLv = (row[5L] as? Long)?.toInt() ?: minLv
             val rank = (row[6L] as? Long)?.toInt() ?: 0

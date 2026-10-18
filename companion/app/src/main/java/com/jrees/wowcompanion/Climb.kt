@@ -232,6 +232,9 @@ object Climb {
                 val vi = ui + di; val vj = uj + dj
                 if (vi !in i0..i1 || vj !in j0..j1) continue
                 val c = g.step(ui, uj, di, dj); if (c == WALL) continue
+                // the step's own straight line, as the final check walks it (walkable / segcheck): a turn at a vertex every face within
+                // a quarter yard of which is a wall passes the steps beside it but not the line (Tirisfal, Brill -> Agamand Mills)
+                if (g.faces != null && !g.lineClear(doubleArrayOf(g.wx(uj), g.wy(ui)), doubleArrayOf(g.wx(vj), g.wy(vi)))) continue
                 val x = extraOf(vi, vj); if (x < 0) continue
                 val len = if (di != 0 && dj != 0) STEP * 1.41421356 else STEP
                 val v = id(vi, vj)
@@ -291,10 +294,14 @@ object Climb {
         // beyond (within their cell)
         if (hypot(pts[0][0] - from[0], pts[0][1] - from[1]) > 0.5) pts.add(0, from) else pts[0] = from
         val reached = end == goal
+        // the goal's exact point only where the hop to it crosses no wall face (a network point 2 yd up a cliff, an unreachable goal):
+        // else the leg ends at its last vertex, short of it
+        var arrived = reached
         if (reached && !inCave(pts[pts.size - 1])) {
-            if (hypot(pts.last()[0] - to[0], pts.last()[1] - to[1]) > 0.5) pts.add(to) else pts[pts.size - 1] = to
+            if (hypot(pts.last()[0] - to[0], pts.last()[1] - to[1]) <= 0.5) pts[pts.size - 1] = to
+            else if (g.lineClear(pts.last(), to)) pts.add(to) else arrived = false
         }
-        return Leg(pts, reached)
+        return Leg(pts, arrived)
     }
     const val MARGIN_YD = 800.0
     const val GOAL_FADE_YD = 100.0
