@@ -79,7 +79,7 @@ object Settings {
             prefs?.edit()?.putString("questTracking", if (v in QUEST_TRACKING) v else "safepath")?.apply(); changed()
         }
     /** the user (1.0.9 release): "Disable the safe path, quest trail and polestar buttons for now" - Vanilla only until this is true */
-    const val ROUTE_MODES_ON = false
+    const val ROUTE_MODES_ON = true
     /** VANILLA: the game's own way, the line straight at the quest, no route, no pin; SAFEPATH: DS Forever's route (the default) */
     val QUEST_TRACKING = listOf("vanilla", "safepath", "questtrail", "polestar")
 
