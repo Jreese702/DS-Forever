@@ -4022,6 +4022,8 @@ class MapView(context: Context) : View(context) {
      *  route's point last; null = straight */
     private fun dangerLeg(q: Int, route: CursorRoute.Route): List<DoubleArray>? {
         if (Settings.questTracking != "safepath") return null
+        // SafePath's network (b-safepath-route): where this zone has one, the leg goes on it; else (off it, no help) the grid's
+        netLeg(q, route)?.let { return it }
         val k = DangerGrid.strength(Settings.avoidDanger)
         if (k <= 0.0) return null
         val g = dangerGrid() ?: return null
@@ -4053,6 +4055,48 @@ class MapView(context: Context) : View(context) {
             }
         }
         return if (old != null && sameGoal && old.pts.size > 2) passed(listOf(here) + old.pts.drop(1), ax, ay) else null
+    }
+
+    // ---- THE LEG ON SAFEPATH'S NETWORK (b-safepath-route): the zone's reviewed network (else its draft), from the player onto its
+    // nearest way, along it, off at the way nearest the route's point (a crossing out: the network's exit there); planned on the route
+    // thread, kept until the player walks [DANGER_MOVE_YD] or the goal moves, its passed bends dropped as the danger leg's are
+    private val netLegs = HashMap<Int, DangerLeg>()
+    private val netPending = HashSet<Int>()
+    private var netSaid = HashMap<Int, String>()
+    private fun netLeg(q: Int, route: CursorRoute.Route): List<DoubleArray>? {
+        val m = map ?: return null
+        val r = rect ?: return null
+        if (!r.valid) return null
+        val mapId = m.optInt("mapID", 0)
+        val net = SafePath.nets.get(mapId) ?: return null                // in memory, or asked for on the route thread
+        val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
+        if (px.isNaN() || py.isNaN()) return null
+        val ax = r.width; val ay = r.height
+        val here = doubleArrayOf(px, py); val to = doubleArrayOf(route.x, route.y)
+        val old = netLegs[q]
+        val sameGoal = old != null && hypot((route.x - old.tx) * ax, (route.y - old.ty) * ay) <= 20.0 && old.k == net.edges.size.toDouble()
+        if (old != null && sameGoal && hypot((px - old.atX) * ax, (py - old.atY) * ay) <= DANGER_MOVE_YD) {
+            if (old.pts.size <= 2) return null
+            return passed(listOf(here) + old.pts.drop(1), ax, ay)
+        }
+        if (netPending.add(q)) {
+            val toExit = route.kind == CursorRoute.Kind.EXIT
+            RouteWork.run({
+                val w = SafePath.route(net, r.top - py * ay, r.left - px * ax, r.top - route.y * ay, r.left - route.x * ax, toExit)
+                w?.map { doubleArrayOf((r.left - it[1]) / ax, (r.top - it[0]) / ay) }
+            }) { pts ->
+                netPending.remove(q)
+                val leg = if (pts == null) listOf(here, to) else listOf(here) + pts.drop(1).dropLast(1) + listOf(pts.last())
+                netLegs[q] = DangerLeg(leg, route.x, route.y, px, py, net.edges.size.toDouble())
+                val said = if (pts == null) "off the network (the grid's way)" else "on the network: ${leg.size - 2} bends, " +
+                    "${DangerGrid.yards(leg, ax, ay).toInt()} yd" + (if (toExit) " to its exit" else "")
+                if (netSaid[q] != said) { netSaid[q] = said; android.util.Log.i("WCMAP", "safepath: quest $q $said (map $mapId)") }
+                invalidate()
+            }
+            // the route thread answers soon; NO DATA meanwhile, so the grid's leg does not flash first
+            if (old == null) return null
+        }
+        return if (old != null && old.pts.size > 2) passed(listOf(here) + old.pts.drop(1), ax, ay) else null
     }
 
     /** quest [q]'s leg planned from [here] to [to] on [g] (the route thread): the leg kept, and the log line when it changed */

@@ -717,14 +717,19 @@ object SafePath {
             val ground = if (map in CityExits.CITIES) artPixels(map)?.let { (px, w, h) -> artGround(px, w, h, t, b, l, r) } else null
             val net = draft(Input(map, cont, t, b, l, r, { wx, wy -> Roads.isRoad(map, wx, wy) },
                 { wx, wy -> Terrain.factor(tg.at(wx, wy)) }, { wx, wy -> ar.uiMap(zg.areaAt(wx, wy)) },
-                fixed + hubs(friendly, { x, y -> PlaceNames.nameAt(x, y, ar.rows) { a, b2 -> zg.areaAt(a, b2) } }, nameOf(map)), ::nameOf,
+                fixed + hubs(friendly, { x, y -> PlaceNames.nameAt(x, y, ar.rows) { a, b2 -> zg.areaAt(a, b2) } }, nameOf(map),
+                    districtFor(map, t, b, l, r)), ::nameOf,
                 dangerOf(hostile), ground = ground), built)
             ArtHarvest.file("safepath/$map.draft.json").also { it.parentFile?.mkdirs() }.writeText(net.toJson().toString())
-            drafts.drop(map)
+            drafts.drop(map); nets.drop(map)
             "drafted: ${net.nodes.size} nodes, ${net.edges.size} edges (${net.edges.count { it.kind == TRAIL }} trails), " +
                 "${net.exits.size} exits (${net.exits.joinToString { it.name.ifEmpty { it.toMap.toString() } }})"
         }) { said -> android.util.Log.i("WCMAP", "safepath $map: $said") }
     }
+
+    /** capital [map]'s districts by world spot (its world rect [t] / [b] / [l] / [r]), or null for any other map */
+    fun districtFor(map: Int, t: Double, b: Double, l: Double, r: Double): ((Double, Double) -> String?)? =
+        if (map !in DISTRICTS) null else { x, y -> district(map, (l - y) / (l - r), (t - x) / (t - b)) }
 
     /** the zone's travel points from the transports file: the flight masters of the player's side, the boats' and zeppelins' docks */
     fun fixedPoints(map: Int, cont: Int, t: Double, b: Double, l: Double, r: Double, mine: Int, o: JSONObject? = runCatching {
@@ -764,7 +769,8 @@ object SafePath {
      * ground's own subzone ([nameAt]); where that is only the zone's own name ([generic]: a capital's districts are no areas in the
      * game's tables) by what its creatures are ([roleName]: "Bank, Auction House", "Warrior trainers")
      */
-    fun hubs(friendly: List<Npc>, nameAt: (Double, Double) -> String? = { _, _ -> null }, generic: String? = null): List<Fixed> {
+    fun hubs(friendly: List<Npc>, nameAt: (Double, Double) -> String? = { _, _ -> null }, generic: String? = null,
+             districtAt: ((Double, Double) -> String?)? = null): List<Fixed> {
         val left = friendly.toMutableList()
         val out = ArrayList<Fixed>()
         while (left.isNotEmpty()) {
@@ -773,7 +779,9 @@ object SafePath {
             val group = left.filter { hypot(it.wx - best.wx, it.wy - best.wy) < HUB_YD }
             if (group.size < HUB_MIN) break
             val x = group.map { it.wx }.average(); val y = group.map { it.wy }.average()
-            val name = nameAt(x, y)?.takeIf { it.isNotEmpty() && it != generic } ?: roleName(group) ?: generic ?: "Town"
+            val role = roleName(group)
+            val name = districtAt?.invoke(x, y)?.let { d -> if (role != null) "$d · $role" else d }
+                ?: nameAt(x, y)?.takeIf { it.isNotEmpty() && it != generic } ?: role ?: generic ?: "Town"
             out.add(Fixed(x, y, HUB, name))
             left.removeAll { hypot(it.wx - best.wx, it.wy - best.wy) < HUB_YD * 2 }
         }
@@ -974,9 +982,9 @@ object SafePath {
         ?: runCatching { Net.fromJson(JSONObject(ArtHarvest.file("safepath/$map.draft.json").readText())) }.getOrNull()
     /** the user has corrected zone [map] (its own file) */
     fun hasReview(map: Int) = ArtHarvest.file("safepath/$map.json").isFile
-    fun save(net: Net) { ArtHarvest.file("safepath/${net.map}.json").also { it.parentFile?.mkdirs() }.writeText(net.toJson().toString()) }
+    fun save(net: Net) { ArtHarvest.file("safepath/${net.map}.json").also { it.parentFile?.mkdirs() }.writeText(net.toJson().toString()); nets.drop(net.map) }
     /** drop the corrections: the draft again */
-    fun forget(map: Int) { ArtHarvest.file("safepath/$map.json").delete() }
+    fun forget(map: Int) { ArtHarvest.file("safepath/$map.json").delete(); nets.drop(map) }
     /** the zones with a draft or a review */
     fun zonesDrafted(): List<Int> = (ArtHarvest.file("safepath").listFiles() ?: emptyArray()).mapNotNull { f ->
         f.name.removeSuffix(".draft.json").removeSuffix(".json").toIntOrNull()
@@ -1009,5 +1017,111 @@ object SafePath {
     const val WALK_STEP_YD = 8.0
     const val WALK_PAUSE_MS = 90_000L
     const val WALK_KEEP_MS = 30 * 60_000L
+
+
+    // ---------------------------------------------------------------- phase (c): the route on the network
+
+    /**
+     * THE WAY ON THE NETWORK (b-safepath-route; the user's plan: "Once we have that then the pathing should be easy"): from the player
+     * at ([fx], [fy]) onto the nearest way (a short walk off it, [ATTACH_YD] at most), along the network - roads first, then spurs,
+     * then trails, an avoided way only when nothing else goes, its danger dearer - and off at the way nearest the goal ([tx], [ty]).
+     * A goal that is a crossing out of the zone (the route's exit) with one of the network's exits within [EXIT_SNAP_YD] goes to that
+     * exit instead. World points (x, y) from the player to the goal; null = the network does not help (too far from it, or the
+     * straight walk is as good): the caller keeps its own way.
+     */
+    fun route(net: Net, fx: Double, fy: Double, tx: Double, ty: Double, toExit: Boolean = false): List<DoubleArray>? {
+        val byId = net.nodes.associateBy { it.id }
+        val usable = net.edges.filter { it.state != REMOVED && byId.containsKey(it.a) && byId.containsKey(it.b) }
+        if (usable.isEmpty()) return null
+        var gx = tx; var gy = ty
+        if (toExit) net.exits.mapNotNull { x -> byId[x.node] }.minByOrNull { hypot(it.wx - tx, it.wy - ty) }
+            ?.takeIf { hypot(it.wx - tx, it.wy - ty) <= EXIT_SNAP_YD }?.let { gx = it.wx; gy = it.wy }
+        fun factor(e: Edge) = (when (e.kind) { ROAD -> 1.0; SPUR -> 1.2; else -> 1.8 }) * (if (e.state == AVOID) 6.0 else 1.0) * (1.0 + e.danger)
+        val pos = HashMap<Int, DoubleArray>()
+        for (n in net.nodes) pos[n.id] = doubleArrayOf(n.wx, n.wy)
+        val adj = HashMap<Int, ArrayList<Pair<Int, Double>>>()
+        fun link(a: Int, b: Int, c: Double) { adj.getOrPut(a) { ArrayList() }.add(b to c); adj.getOrPut(b) { ArrayList() }.add(a to c) }
+        for (e in usable) { val a = pos[e.a]!!; val b = pos[e.b]!!; link(e.a, e.b, hypot(a[0] - b[0], a[1] - b[1]) * factor(e)) }
+        // the walk on and off: the nearest points of the nearest ways (a few), each a virtual node cut into its way
+        var nextVirtual = -10
+        fun attach(px: Double, py: Double, virt: Int): Boolean {
+            val cands = usable.map { e ->
+                val a = pos[e.a]!!; val b = pos[e.b]!!
+                val dx = b[0] - a[0]; val dy = b[1] - a[1]; val l2 = dx * dx + dy * dy
+                val t = if (l2 <= 0.0) 0.0 else (((px - a[0]) * dx + (py - a[1]) * dy) / l2).coerceIn(0.0, 1.0)
+                val q = doubleArrayOf(a[0] + t * dx, a[1] + t * dy)
+                Triple(e, t, q)
+            }.filter { hypot(it.third[0] - px, it.third[1] - py) <= ATTACH_YD }.sortedBy { hypot(it.third[0] - px, it.third[1] - py) }.take(4)
+            if (cands.isEmpty()) return false
+            pos[virt] = doubleArrayOf(px, py)
+            for ((e, t, q) in cands) {
+                val id = nextVirtual--
+                pos[id] = q
+                val a = pos[e.a]!!; val b = pos[e.b]!!; val len = hypot(a[0] - b[0], a[1] - b[1]); val f = factor(e)
+                link(id, e.a, t * len * f); link(id, e.b, (1 - t) * len * f)
+                link(virt, id, hypot(q[0] - px, q[1] - py) * OFF_NET)
+            }
+            return true
+        }
+        val start = -1; val goal = -2
+        if (!attach(fx, fy, start) || !attach(gx, gy, goal)) return null
+        // the straight walk, the network's rival only for a goal near the player (farther, the network IS the way)
+        if (hypot(gx - fx, gy - fy) <= DIRECT_YD) link(start, goal, hypot(gx - fx, gy - fy) * DIRECT)
+        val dist = HashMap<Int, Double>(); val from = HashMap<Int, Int>()
+        val q = java.util.PriorityQueue<Pair<Double, Int>>(compareBy { it.first })
+        dist[start] = 0.0; q.add(0.0 to start)
+        while (q.isNotEmpty()) {
+            val (d, k) = q.poll()
+            if (k == goal) break
+            if (d > (dist[k] ?: Double.MAX_VALUE)) continue
+            for ((o, c) in adj[k] ?: continue) {
+                val nd = d + c
+                if (nd < (dist[o] ?: Double.MAX_VALUE)) { dist[o] = nd; from[o] = k; q.add(nd to o) }
+            }
+        }
+        if (goal !in dist) return null
+        val path = arrayListOf(goal); var c = goal
+        while (c in from) { c = from[c]!!; path.add(c) }
+        path.reverse()
+        if (path.size <= 2) return null                                   // straight: the caller's own way
+        return path.map { pos[it]!! }
+    }
+    const val ATTACH_YD = 150.0            // the walk onto / off the network at most this long
+    const val OFF_NET = 1.6                // a yard of it costs this much (off the ways, on the ground's own risks)
+    const val DIRECT = 1.35                // the straight walk's yard, the network's rival ...
+    const val DIRECT_YD = 250.0            // ... for a goal this near the player (it needs no network)
+    const val EXIT_SNAP_YD = 300.0         // a crossing out of the zone this near one of the network's exits goes to that exit
+
+    /** the networks for the routes, as their files read (the review's corrections, else the draft), kept in memory */
+    val nets = RouteWork.Files { map -> load(map) }
+
+    // ---------------------------------------------------------------- the capitals' districts (our own table; the user: "Both")
+
+    /**
+     * THE CAPITALS' DISTRICTS, typed by us (the game's tables name none of them: Orgrimmar's ground reads only "Orgrimmar", its city
+     * building's groups have inner names): each district's name and its middle on the city's map (0..1, read off the map's own
+     * painted labels). A town there is named "<district> · <its NPCs>" (the user's pick, 2026-10-18: "Valley of Wisdom · Shaman trainers").
+     */
+    private class District(val name: String, val u: Double, val v: Double)
+    private val DISTRICTS: Map<Int, List<District>> = mapOf(
+        1454 to listOf(District("Valley of Wisdom", 0.38, 0.38), District("The Drag", 0.59, 0.43), District("Valley of Honor", 0.70, 0.24),
+            District("Valley of Strength", 0.52, 0.69), District("Valley of Spirits", 0.36, 0.83), District("The Cleft of Shadow", 0.47, 0.50)),
+        1453 to listOf(District("Stormwind Harbor", 0.15, 0.40), District("The Park", 0.35, 0.65), District("Cathedral Square", 0.53, 0.50),
+            District("Dwarven District", 0.66, 0.36), District("Stormwind Keep", 0.84, 0.40), District("Old Town", 0.74, 0.58),
+            District("Trade District", 0.63, 0.68), District("Mage Quarter", 0.47, 0.80), District("Valley of Heroes", 0.71, 0.86)),
+        1455 to listOf(District("The Forlorn Cavern", 0.49, 0.18), District("Hall of Explorers", 0.71, 0.20), District("The Mystic Ward", 0.27, 0.20),
+            District("The Great Forge", 0.49, 0.43), District("Tinker Town", 0.69, 0.47), District("The Deeprun Tram", 0.85, 0.53),
+            District("The Commons", 0.29, 0.62), District("The Military Ward", 0.64, 0.73), District("The Gates of Ironforge", 0.18, 0.80)),
+        1456 to listOf(District("Spirit Rise", 0.25, 0.19), District("Elder Rise", 0.77, 0.28), District("Hunter Rise", 0.58, 0.82)),
+        1457 to listOf(District("Cenarion Enclave", 0.36, 0.12), District("Craftsmen's Terrace", 0.60, 0.18), District("Warrior's Terrace", 0.63, 0.40),
+            District("The Temple Gardens", 0.39, 0.44), District("Tradesmen's Terrace", 0.63, 0.65), District("Temple of the Moon", 0.40, 0.78)),
+        1458 to listOf(District("Ruins of Lordaeron", 0.66, 0.15), District("The War Quarter", 0.54, 0.30), District("The Magic Quarter", 0.79, 0.30),
+            District("The Apothecarium", 0.53, 0.60), District("The Rogues' Quarter", 0.80, 0.60), District("The Sewers", 0.25, 0.32)),
+    )
+    const val DISTRICT_NEAR = 0.20         // a town this near a district's middle (in the map's height, across scaled 3:2) is in it
+
+    /** the district of capital [map] at its ([u], [v]) (0..1), or null (not a capital, or no district near) */
+    fun district(map: Int, u: Double, v: Double): String? = DISTRICTS[map]?.minByOrNull { hypot((it.u - u) * 1.5, it.v - v) }
+        ?.takeIf { hypot((it.u - u) * 1.5, it.v - v) <= DISTRICT_NEAR }?.name
 
 }
