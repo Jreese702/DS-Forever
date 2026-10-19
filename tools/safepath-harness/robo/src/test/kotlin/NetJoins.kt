@@ -201,10 +201,10 @@ object NetJoins {
         }
         val open = Heap()
         var offLattice = 0
-        val seedsOnLattice = IntArray(nP)
+        val seedsOnLattice = IntArray(nP); val seedsDeep = IntArray(nP)
         for ((si, s) in seeds.withIndex()) { val v = g.at(s.end.x, s.end.y); val q = v[1] * nx + v[0]
             val d0 = hypot(g.wx(v[1]) - s.end.x, g.wy(v[0]) - s.end.y)
-            if (deepAt(v[0], v[1]) || d0 > Climb.STEP) { offLattice++; continue }
+            if (deepAt(v[0], v[1]) || d0 > Climb.STEP) { offLattice++; if (d0 <= Climb.STEP) seedsDeep[s.piece]++; continue }
             seedsOnLattice[s.piece]++
             // two pieces' points on one vertex: a meeting already (a cave's mouth on a road's point)
             if (src[q] >= 0 && seeds[src[q]].piece != s.piece) addCand(hypot(seeds[src[q]].end.x - s.end.x, seeds[src[q]].end.y - s.end.y), src[q], si)
@@ -304,7 +304,8 @@ object NetJoins {
             val met = all.filter { (it.pa in ps) != (it.pb in ps) }
             val why = when {
                 seedsN == 0 -> "a cave's or a lift's floor with no node on the ground (no mouth)"
-                ps.sumOf { seedsOnLattice[it] } == 0 -> "its ground points are all in deep water or off the lattice"
+                ps.sumOf { seedsOnLattice[it] } == 0 -> if (ps.sumOf { seedsDeep[it] } > 0) "its ground points (a mouth) are in deep water: an underwater cave, a swim's"
+                    else "its ground points are off the zone's lattice (another map's)"
                 met.isNotEmpty() -> "its ${met.size} meetings with the rest never walked (${rejected.filter { r -> met.any { r.startsWith("${it.pa}-${it.pb} ") } }.take(2).joinToString("; ")})"
                 bd > bw -> "an island: deep water stops its walk (${bd} steps by water, ${bw} by walls) - a declared swim's, or none"
                 else -> "a walled pocket: walls stop its walk (${bw} steps by walls, ${bd} by water)"
