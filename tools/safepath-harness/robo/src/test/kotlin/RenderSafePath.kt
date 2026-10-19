@@ -471,7 +471,7 @@ class RenderSafePath {
             println("ROADWALLS $onRoad road-textured vertices, $walled on a wall face (${if (onRoad > 0) walled * 1000 / onRoad / 10.0 else 0.0}%): $where")
         }
         val clear = SafePath.clearOf { a, b -> Terrain.factor(tg.at(a, b)) }
-        val netW = SafePath.dropWalled(net, { a, b -> Climb.walkable(cg, a, b) }) { a, b ->
+        val netW = SafePath.dropWalled(net, { a, b -> Climb.walkable(cg, a, b, deep) }) { a, b ->
             Climb.route(cg, a, b, water = deep)?.takeIf { it.reached }?.pts?.zipWithNext { p, q -> Math.hypot(q[0] - p[0], q[1] - p[1]) }?.sum() }
         println("DROPWALLED ${netW.edges.count { it.state == SafePath.REMOVED } - net.edges.count { it.state == SafePath.REMOVED }} drafted ways cross a wall on the fine ground: removed; " +
             "${netW.edges.count { it.state == SafePath.REWALK }} kept, walked by the ground's leg (a lip)")
@@ -551,10 +551,22 @@ class RenderSafePath {
             val yd = way.zipWithNext { a, b -> Math.hypot(a[0] - b[0], a[1] - b[1]) }.sum()
             val letter = ('A' + i).toString()
             // the hard rule: no final segment crosses a wall step of the 4 yd lattice
-            val walls = way.zipWithNext().withIndex().filter { (_, ab) -> !Climb.walkable(cg, ab.first, ab.second) }.map { it.index }
+            val walls = way.zipWithNext().withIndex().filter { (_, ab) -> !Climb.walkable(cg, ab.first, ab.second, deep) }.map { it.index }
             if (walls.isNotEmpty()) println("WALLS route $letter crosses a wall on segments $walls")
+            // the gate's water check: the deepest water the route's own segments cross (each yard; a bridge's deck and a cave's floor none)
+            var wmax = 0.0; var wAt = ""
+            for ((pa, pb) in way.zipWithNext()) {
+                if (Climb.inCave(pa) || Climb.inCave(pb)) continue
+                val nn = maxOf(1, Math.hypot(pb[0] - pa[0], pb[1] - pa[1]).toInt())
+                for (t in 0..nn) { val x = pa[0] + (pb[0] - pa[0]) * t / nn; val y = pa[1] + (pb[1] - pa[1]) * t / nn
+                    val d = waterAt(x, y)
+                    // within 3 yd of a bridge's deck it is the bridge (a step along a narrow footbridge's edge)
+                    if (!d.isNaN() && d != SafePath.Water.BRIDGE && d > wmax &&
+                        (-1..1).none { a2 -> (-1..1).any { b2 -> waterAt(x + a2 * 3.0, y + b2 * 3.0) == SafePath.Water.BRIDGE } }) { wmax = d.toDouble(); wAt = "${x.toInt()},${y.toInt()}" } }
+            }
+            println("WATERMAX route $letter ${"%.1f".format(wmax)} yd${if (wAt.isNotEmpty()) " at $wAt" else ""}")
             // and no water: no final segment over deep water (a bridge's walkway is no water)
-            val wet = way.zipWithNext().withIndex().filter { (_, ab) -> Climb.walkable(cg, ab.first, ab.second) && !Climb.walkable(cg, ab.first, ab.second, deep) }.map { it.index }
+            val wet = way.zipWithNext().withIndex().filter { (_, ab) -> Climb.walkable(cg, ab.first, ab.second, deep) && !Climb.walkable(cg, ab.first, ab.second, deep) }.map { it.index }
             if (wet.isNotEmpty()) println("WATER route $letter crosses deep water on segments ${wet.map { q -> val a = way[q]; val b = way[q + 1]
                 val n = maxOf(1, (Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5).toInt())
                 "$q (${(0..n).count { t -> deep(a[0] + (b[0] - a[0]) * t / n, a[1] + (b[1] - a[1]) * t / n) } / 2} yd of ${Math.hypot(b[0] - a[0], b[1] - a[1]).toInt()} at ${a[0].toInt()},${a[1].toInt()})" }}")

@@ -238,8 +238,8 @@ object Climb {
                 // the step's own straight line, as the final check walks it (walkable / segcheck): a turn at a vertex every face within
                 // a quarter yard of which is a wall passes the steps beside it but not the line (Tirisfal, Brill -> Agamand Mills)
                 if (g.faces != null && !g.lineClear(doubleArrayOf(g.wx(uj), g.wy(ui)), doubleArrayOf(g.wx(vj), g.wy(vi)))) continue
-                // and its middle off deep water (a diagonal between two dry vertices clips a shore cell's corner)
-                if (water != null && water((g.wx(uj) + g.wx(vj)) / 2, (g.wy(ui) + g.wy(vi)) / 2)) continue
+                // and off deep water along it (a diagonal between two shallow vertices clips a deep cell's corner: Mulgore's route D)
+                if (water != null && (1..3).any { q -> water(g.wx(uj) + (g.wx(vj) - g.wx(uj)) * q / 4, g.wy(ui) + (g.wy(vi) - g.wy(ui)) * q / 4) }) continue
                 val x = extraOf(vi, vj); if (x < 0) continue
                 val len = if (di != 0 && dj != 0) STEP * 1.41421356 else STEP
                 val v = id(vi, vj)
