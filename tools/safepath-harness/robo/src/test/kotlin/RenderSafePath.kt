@@ -96,8 +96,9 @@ class RenderSafePath {
             // its groups weren't dumped
             val walks = HashMap<Pair<Int, Int>, List<(Double, Double) -> Boolean>>(); val m2Said = HashSet<Int>()
             val deckList = ArrayList<com.jrees.wowcompanion.WorldBuildings.Deck>()     // every deck read (py/wetcheck.py: decks_<tag>.json)
-            // per tile: the decks walked at their own floor's height - a bridge's or a pier's, a fifth or more of its floor over the
-            // water (a building's porch by the shore, its roof read as floor too, and a city's streets stay the level walkways they were)
+            // per tile: the decks walked at their own floor's height - a bridge's or a pier's (no rooms), a fifth or more of its floor over
+            // the water (a building's porch by the shore, its roof read as floor too, a cave's mouth, a city's streets stay the level
+            // walkways they were)
             val tileDecks = HashMap<Pair<Int, Int>, ArrayList<com.jrees.wowcompanion.WorldBuildings.Deck>>()
             fun overWater(d: com.jrees.wowcompanion.WorldBuildings.Deck): Boolean {
                 val ts = d.triangles; if (ts.isEmpty()) return false
@@ -128,7 +129,10 @@ class RenderSafePath {
                         val gf = com.jrees.wowcompanion.WorldBuildings.groupFiles(root)
                         com.jrees.wowcompanion.WorldBuildings.deck(p, root) { id -> gf.indexOf(id).takeIf { it >= 0 }?.let { File(dir, "wmogroup/${p.fid}_$it") }?.takeIf { it.isFile }?.readBytes() }
                             ?.takeIf { !it.empty }?.let { d -> deckList.add(d)
-                                if (!com.jrees.wowcompanion.WorldBuildings.isCity(p, com.jrees.wowcompanion.WorldBuildings.groups(root))) keepHeights(c, r, d)
+                                // a bridge or a pier is all outdoor groups: a cave's or a building's (with rooms) outdoor floor stays level
+                                // (Zephras' Bandit Hideout: its mouth's floor by the water walled its own goal)
+                                val gs = com.jrees.wowcompanion.WorldBuildings.groups(root)
+                                if (!com.jrees.wowcompanion.WorldBuildings.isCity(p, gs) && gs.none { it.interior }) keepHeights(c, r, d)
                                 listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) }) }
                             ?: feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } }
                     }
