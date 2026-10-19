@@ -10,9 +10,17 @@ try: sys.stdout.reconfigure(encoding='utf-8')
 except Exception: pass
 NARROW = 2.2; NARROW_YD = 6
 run = sys.argv[1]
+ZONES = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'zones')
+def shipped(tag):
+    """a zone's own spec, or its other side's (<tag>_horde / _alliance): not the climb tests' nor the cross routes' legs (their maps'
+    networks are the zone's own run's)"""
+    base = re.sub(r'_(horde|alliance)$', '', tag)
+    return not base.startswith('climb_') and (os.path.isfile(os.path.join(ZONES, tag + '.json')) or os.path.isfile(os.path.join(ZONES, base + '.json')))
 for f in sorted(os.listdir(run)):
     if not (f.startswith('gate_') and f.endswith('.log')): continue
-    tag = f[5:-4]; sec = os.path.join(run, 'net1_%s.json' % tag).replace('\\', '/')
+    tag = f[5:-4]
+    if not shipped(tag): continue
+    sec = os.path.join(run, 'net1_%s.json' % tag).replace('\\', '/')
     why = []; routes = 0; wet = 0; seg = None
     for line in open(os.path.join(run, f), encoding='utf-8', errors='replace'):
         line = line.strip()
