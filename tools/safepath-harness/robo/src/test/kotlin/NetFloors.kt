@@ -33,6 +33,8 @@ import kotlin.math.min
  */
 object NetFloors {
     const val FLOOR = "floor"; const val JOIN = "join"; const val SPUR = "spur"
+    /** a capital's NPC spot (Thunder Bluff's mesas), a place joined as a floor's (within [FLOOR_NEAR_YD]) */
+    const val CITY = "city"
     /** a goal place this far from every way gets a spur (the device's attach leg is 150-200 yd at most) */
     const val FAR_YD = 150.0
     /** a place on a floor this far from every way gets a floor way (the device's attach leg can't walk a floor's layers) */
@@ -90,7 +92,9 @@ object NetFloors {
      */
     class Surfaces(private val layers: Map<Long, Float>, private val floors: (Double, Double) -> DoubleArray,
                    private val ground: (Double, Double) -> Float, private val level: (Double, Double) -> Boolean) {
-        private val S = Climb.STEP; private val ORG = 32 * com.jrees.wowcompanion.MapHarvest.ADT_YD
+        // (the exact frame, as py/heights.py's: a line along a lattice row sits on the cells' edge, and MapHarvest.ADT_YD's rounding
+        // flipped which cell it read - Elwynn's harbour W48)
+        private val S = 1600.0 / 3.0 / 128.0; private val ORG = 32 * 1600.0 / 3.0
         var trace: ((String) -> Unit)? = null
         fun ok(pts: List<DoubleArray>): Boolean {
             var zs: List<Double>? = null
@@ -129,9 +133,10 @@ object NetFloors {
 
     // ---------------------------------------------------------------- the ways' index (the nearest way to a spot)
 
-    /** a segment of a way: [target] a way to walk onto (else counted only as "near a way"); [end] where a walk onto it ends */
+    /** a segment of a way: [target] a way to walk onto (else counted only as "near a way"); [mouth] a cave's or a lift's mouth node (a
+     *  target for a floor's or a city's place only: a lift's top on a mesa); [edge] / [mine] / [seg] / [node] where a walk onto it ends */
     private class Seg(val ax: Double, val ay: Double, val bx: Double, val by: Double, val target: Boolean, val edge: Int = -1, val mine: Int = -1,
-                      val seg: Int = -1, val node: Int = -1)
+                      val seg: Int = -1, val node: Int = -1, val mouth: Boolean = false)
     private class Index {
         val cell = 64L
         val grid = HashMap<Long, ArrayList<Seg>>()
@@ -183,6 +188,7 @@ object NetFloors {
         val live = HashSet<Int>().also { s -> for (e in net.edges) if (e.state != SafePath.REMOVED) { s.add(e.a); s.add(e.b) }; for (x in inp.extras) { s.add(x.a); s.add(x.b) } }
         for (n in byId.values) if (n.id in live && n.kind != SafePath.CAVE && n.kind != SafePath.LIFT && n.kind != SafePath.MOUTH)
             idx.add(Seg(n.wx, n.wy, n.wx, n.wy, true, node = n.id))
+        for (n in net.nodes) if (n.id in live && n.kind == SafePath.MOUTH) idx.add(Seg(n.wx, n.wy, n.wx, n.wy, false, node = n.id, mouth = true))
         val out = ArrayList<Way>(); val ends = ArrayList<End>(); val dropped = ArrayList<String>(); val unreached = ArrayList<String>()
 
         fun stand(x: Double, y: Double, r: Double = 15.0): DoubleArray? {
@@ -200,7 +206,8 @@ object NetFloors {
         /** the walk from [from] onto the nearest target way: of the [tries] nearest distinct ones (40 yd apart), the shortest walk that
          *  arrives on it; then, failing those, the nearest of the net's nodes the walk reaches (a way's straight middle may stand on a
          *  lip the leg can't hop onto; its ends are walked) */
-        fun walkOnto(from: DoubleArray, tries: Int = 4): Pair<List<DoubleArray>, Seg>? {
+        fun walkOnto(from: DoubleArray, tries: Int = 4, mouths: Boolean = false): Pair<List<DoubleArray>, Seg>? {
+            val onto: (Seg) -> Boolean = { it.target || (mouths && it.mouth) }
             val why = ArrayList<String>()
             fun pick(ok: (Seg) -> Boolean, n: Int): List<Triple<Double, DoubleArray, Seg>> {
                 val picked = ArrayList<Triple<Double, DoubleArray, Seg>>()
@@ -225,12 +232,12 @@ object NetFloors {
                 }
                 return best
             }
-            var r = tryAll(pick({ it.target }, tries)) ?: tryAll(pick({ it.target && it.node >= 0 }, tries))
+            var r = tryAll(pick(onto, tries)) ?: tryAll(pick({ onto(it) && it.node >= 0 }, tries))
             // the walk's last bend (a ridge's end, a cliff's corner) has a nearer way than the one walked to: onto that one from the start
             // (the nearest straight from the start is not the nearest round the corner), as long as it is shorter
             r?.let { (pts, _) -> if (pts.size >= 3) {
                 val bend = pts[pts.size - 2]; val lastLeg = hypot(pts.last()[0] - bend[0], pts.last()[1] - bend[1])
-                val c = idx.nearest(bend[0], bend[1], lastLeg) { it.target }
+                val c = idx.nearest(bend[0], bend[1], lastLeg, onto)
                 if (c != null && hypot(c.second[0] - pts.last()[0], c.second[1] - pts.last()[1]) > 5.0) {
                     val alt = tryAll(listOf(Triple(0.0, c.second, c.third)))
                     if (alt != null && len(alt.first) < len(pts)) r = alt } } }
@@ -255,7 +262,8 @@ object NetFloors {
             for ((q, ab) in pts.zipWithNext().withIndex()) idx.add(Seg(ab.first[0], ab.first[1], ab.second[0], ab.second[1], true, mine = wi, seg = q))
             return true
         }
-        fun dist(p: Place, targetOnly: Boolean = false) = idx.nearest(p.x, p.y, MAX_LEG_YD) { !targetOnly || it.target }?.first ?: Double.MAX_VALUE
+        fun dist(p: Place, targetOnly: Boolean = false, mouths: Boolean = false) =
+            idx.nearest(p.x, p.y, MAX_LEG_YD) { !targetOnly || it.target || (mouths && it.mouth) }?.first ?: Double.MAX_VALUE
 
         // 2. THE CAVES TO THE GROUND: each mouth of the net onto its nearest ground way (one join a mouth; a cave's mouths a few yards
         // apart are one opening: the nearest joined first, the next then finds that join near)
@@ -269,16 +277,17 @@ object NetFloors {
             val nm = "mouth ${m.x.toInt()},${m.y.toInt()}"
             if (hypot(head[0] - w.first[0][0], head[1] - w.first[0][1]) <= 0.5 || !add(JOIN, nm, listOf(head) + w.first, w.second, quiet = true)) add(JOIN, nm, w.first, w.second)
         }
-        // 1. THE FLOORS: the places on a floor layer and the layers' openings, each walked onto the nearest way (the ways already made
-        // count: a floor's tree grows from its first way)
-        for (p in inp.places.filter { it.floor > 0 || it.why == "opening" }.sortedBy { dist(it) }) {
-            if (dist(p, true) <= FLOOR_NEAR_YD) continue
+        // 1. THE FLOORS: the places on a floor layer, the layers' openings and a capital's NPC spots (Thunder Bluff's mesas: their ways
+        // onto the lifts' tops), each walked onto the nearest way or mouth (the ways already made count: a floor's tree grows from its
+        // first way)
+        for (p in inp.places.filter { it.floor > 0 || it.why == "opening" || it.why == CITY }.sortedBy { dist(it) }) {
+            if (dist(p, true, mouths = true) <= FLOOR_NEAR_YD) continue
             val from = stand(p.x, p.y, 6.0) ?: continue
-            val w = walkOnto(from) ?: run { unreached.add("${p.why} ${p.name} at ${p.x.toInt()},${p.y.toInt()} (floor ${p.floor}): no walk onto a way ($whyNot)"); null } ?: continue
+            val w = walkOnto(from, mouths = true) ?: run { unreached.add("${p.why} ${p.name} at ${p.x.toInt()},${p.y.toInt()} (floor ${p.floor}): no walk onto a way ($whyNot)"); null } ?: continue
             add(FLOOR, "${p.why} ${p.name}", w.first, w.second)
         }
         // 3. THE FAR GOALS: each place more than FAR_YD from every way (a cave's ways count: a camp in a cave is reached by its way)
-        for (p in inp.places.filter { it.floor == 0 && it.why != "opening" }.sortedBy { dist(it) }) {
+        for (p in inp.places.filter { it.floor == 0 && it.why != "opening" && it.why != CITY }.sortedBy { dist(it) }) {
             if (dist(p) <= FAR_YD) continue
             val from = stand(p.x, p.y) ?: run { unreached.add("${p.why} ${p.name} at ${p.x.toInt()},${p.y.toInt()}: no standing ground within 15 yd"); null } ?: continue
             val w = walkOnto(from) ?: run { unreached.add("${p.why} ${p.name} at ${p.x.toInt()},${p.y.toInt()}: no walk onto a way ($whyNot)"); null } ?: continue
@@ -381,10 +390,11 @@ object NetFloors {
     /**
      * where goals usually go, for one faction: camps (its [hostile] spawns, world x, y, name: the spawn with the most others within
      * [CAMP_YD], [CAMP_MIN] or more, camps [CAMP_GAP_YD] apart), the [net]'s cave mouths, flight masters and docks, the spec's own
-     * [goals], the NPC spots ([npcs]) on a floor layer (one a [PLACE_GAP_YD] cluster), and the floor layers' openings
+     * [goals], the NPC spots ([npcs]) on a floor layer and a capital's ([cityNpcs]: those in a capital's own rect - Thunder Bluff on
+     * its mesas), one a [PLACE_GAP_YD] cluster, and the floor layers' openings
      */
     fun places(net: SafePath.Net, hostile: List<Triple<Double, Double, String>>, npcs: List<Triple<Double, Double, String>>,
-               goals: List<Pair<String, DoubleArray>>, layers: Layers): List<Place> {
+               goals: List<Pair<String, DoubleArray>>, layers: Layers, cityNpcs: List<Triple<Double, Double, String>> = emptyList()): List<Place> {
         val out = ArrayList<Place>()
         val left = hostile.toMutableList()
         while (left.isNotEmpty()) {
@@ -403,6 +413,9 @@ object NetFloors {
         val kept = ArrayList<Triple<Double, Double, String>>()
         for (n in npcs.filter { layers.at(it.first, it.second) > 0 }) if (kept.none { hypot(it.first - n.first, it.second - n.second) < PLACE_GAP_YD }) kept.add(n)
         for (n in kept) out.add(Place(n.third, n.first, n.second, "npc", layers.at(n.first, n.second)))
+        val city = ArrayList<Triple<Double, Double, String>>()
+        for (n in cityNpcs) if (layers.at(n.first, n.second) == 0 && city.none { hypot(it.first - n.first, it.second - n.second) < PLACE_GAP_YD }) city.add(n)
+        for (n in city) out.add(Place(n.third, n.first, n.second, CITY))
         for (o in layers.openings) out.add(Place("opening", o[0], o[1], "opening", o[2].toInt()))
         return out
     }

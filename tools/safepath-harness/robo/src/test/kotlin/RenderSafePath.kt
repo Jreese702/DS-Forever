@@ -42,6 +42,8 @@ import java.io.FileOutputStream
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class RenderSafePath {
     private val out = File(System.getProperty("out.dir") ?: "out").also { it.mkdirs() }
+    /** every QuestieDB spawn (NetFloors: a capital's own NPCs, on its own map's coordinates) */
+    private var allSpawns: List<QuestieNpcs.Spawn> = emptyList()
     @Test fun durotar() {
         val spec = System.getenv("ZONESPEC")?.let { JSONObject(File(it).readText()) }
         // the work folder (outside the repo: the client's dumps, the art, the tables, the pictures): SAFEPATH_WORK
@@ -80,6 +82,7 @@ class RenderSafePath {
         val tex = HashMap<Pair<Int, Int>, Roads.Tile?>()
         val transports = JSONObject(File(art, "transports.json").readText())
         val spawns = QuestieNpcs.read(toc)
+        allSpawns = spawns
         fun nameOf(m: Int) = runCatching { JSONObject(File(art, "worldmap/$m/index.json").readText()).optString("name") }.getOrDefault("")
         val recipe = JSONObject(File(System.getenv("RECIPE")).readText()).optJSONObject("rects")!!
         class Done(val net: SafePath.Net, val rect: MapHarvest.Rect, val zg: SafePath.Zones, val ar: SafePath.Areas, val hostile: List<DoubleArray>)
@@ -869,7 +872,14 @@ class RenderSafePath {
                 val npcW = spawns.filter { it.hostile != mine && it.hostile != 3 }.map { w(it) }
                 val goalsW = trips.mapNotNull { (_, _, g) -> g.second?.let { g.first to it } } +
                     (city?.export()?.optJSONArray("places")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { it.getString("name") to doubleArrayOf(it.getDouble("x"), it.getDouble("y")) } } ?: emptyList())
-                val pls = NetFloors.places(netC, hostileW, npcW, goalsW, nl)
+                // (a capital's own NPCs - Thunder Bluff's on its mesas over Mulgore - by its own map's coordinates: QuestieDB's area -> the
+                // capital's uiMap -> its world rect; those inside this zone's lattice, not hostile to this side)
+                val cityW = if (ar == null) emptyList() else allSpawns.filter { it.hostile != mine && it.hostile != 3 }.mapNotNull { sp ->
+                    val m = ar.uiMap(sp.area); if (m !in com.jrees.wowcompanion.CityExits.CITIES || m == map) return@mapNotNull null
+                    val r = recipeRects?.optJSONArray(m.toString()) ?: return@mapNotNull null
+                    val t = r.getDouble(1); val b = r.getDouble(2); val l = r.getDouble(3); val rr = r.getDouble(4)
+                    Triple(t - sp.y * (t - b), l - sp.x * (l - rr), sp.name) }.filter { p -> p.first <= rect.t && p.first >= rect.b && p.second <= rect.l && p.second >= rect.r }
+                val pls = NetFloors.places(netC, hostileW, npcW, goalsW, nl, cityW)
                 // the floors' triangles as py/segcheck.py reads floors_<tag>.json (every deck with heights; a capital's street boxes not)
                 val deckCells = HashMap<Long, ArrayList<com.jrees.wowcompanion.WorldBuildings.Deck>>()
                 for (d in zi.deckList) { if (d.heights == null || d in zi.capitalDecks || d.triangles.isEmpty()) continue
