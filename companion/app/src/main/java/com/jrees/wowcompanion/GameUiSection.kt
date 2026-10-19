@@ -97,7 +97,12 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         GameUi.Row(COMPASS_ID, "Compass bar", null, if (s.show) UiMode.ON else UiMode.OFF, true, !s.show,
             if (s.show) "Heading, next checkpoint and quest at the top" else "Off")
     }
-    private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(GameUi.castBarRow(), lootRow(), compassRow())
+    /** cp7: the compass follows the camera (an experiment), shown while the compass bar is on and the add-on set has it */
+    private fun compassCamRow(): GameUi.Row? = CompassSwitch.state?.takeIf { it.show && it.cam != null && it.camOn >= 0 }?.let { s ->
+        GameUi.Row(COMPASS_CAM_ID, "Compass follows the camera", null, if (s.cam == true) UiMode.ON else UiMode.OFF, true, s.cam != true,
+            if (s.cam == true) "Experiment: while the quest's marker is on screen" else "Off: it follows your character")
+    }
+    private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(GameUi.castBarRow(), lootRow(), compassRow(), compassCamRow())
     private var selected: String? = null
     private val rowBoxes = ArrayList<Pair<RectF, String>>()
     private val segBoxes = ArrayList<Pair<RectF, UiMode>>()
@@ -161,6 +166,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                         when (it) {
                             LOOT_ID -> HomeLootSwitch.turn(context, m == UiMode.ON)
                             COMPASS_ID -> CompassSwitch.turn(context, m == UiMode.ON)
+                            COMPASS_CAM_ID -> CompassSwitch.turnCam(context, m == UiMode.ON)
                             GameUi.CASTBAR_ID -> GameUi.setCastBar(m == UiMode.ON)
                             else -> GameUi.setMode(it, m)
                         }
@@ -236,7 +242,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     private fun bar(c: Canvas, r: GameUi.Row, top: Float) {
         val left = 16f; val right = width - 16f
         val gap = 10f
-        val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == GameUi.CASTBAR_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
+        val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == GameUi.CASTBAR_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
         val sw = (right - left - gap * (modes.size - 1)) / modes.size
         var x = left
         for (m in modes) {
@@ -266,6 +272,10 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     private fun explain(r: GameUi.Row): String {
         if (r.id == LOOT_ID) return if (r.mode == UiMode.ON) "The game's own loot window opens on the top screen, as usual."
             else "Hidden: the loot pop-up opens on this screen."
+        if (r.id == COMPASS_CAM_ID) return if (r.mode == UiMode.ON)
+            "An experiment: while the focused quest's or the route's marker is on the screen, the compass turns with the camera; " +
+            "otherwise it keeps the last angle and settles back to your character as you move."
+            else "The compass turns with your character."
         if (r.id == COMPASS_ID) return if (r.mode == UiMode.ON)
             "A compass along the top of the game screen: your heading, the next checkpoint, the focused quest and your corpse, with distances."
             else "No compass bar on the top screen."
@@ -322,7 +332,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                 c.drawRoundRect(RectF(X(3.5f), Y(10.5f), X(15f), Y(13.5f)), 1.5f, 1.5f, pFill)
             }
             // the compass bar: a ring and its needle
-            COMPASS_ID -> {
+            COMPASS_ID, COMPASS_CAM_ID -> {
                 c.drawCircle(X(12f), Y(12f), 8.5f * s, p)
                 c.drawLine(X(12f), Y(6f), X(14f), Y(12f), p); c.drawLine(X(14f), Y(12f), X(12f), Y(18f), p)
                 c.drawLine(X(12f), Y(18f), X(10f), Y(12f), p); c.drawLine(X(10f), Y(12f), X(12f), Y(6f), p)
@@ -381,6 +391,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         const val LOOT_ID = "loot"
         /** the compass bar's row: our own bar (Trail.lua), the add-on's own switch */
         const val COMPASS_ID = "compass"
+        /** cp7: the compass's camera experiment */
+        const val COMPASS_CAM_ID = "compasscam"
         // SettingsView's own metrics: a section heading 16 px above its first row, 96 px rows
         const val HEAD_TEXT = 26f
         const val HEAD_H = 42f

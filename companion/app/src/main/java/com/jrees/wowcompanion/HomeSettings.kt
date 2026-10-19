@@ -289,7 +289,8 @@ object HomeLootSwitch {
  * once more if the add-on has not said so a moment later (idempotent).
  */
 object CompassSwitch {
-    data class State(val show: Boolean, val colOn: Int, val colOff: Int, val why: String?)
+    data class State(val show: Boolean, val colOn: Int, val colOff: Int, val why: String?,
+                     val cam: Boolean? = null, val camOn: Int = -1, val camOff: Int = -1)
     var state: State? = null
         private set
     private var pad: JSONObject? = null
@@ -302,7 +303,8 @@ object CompassSwitch {
     fun note(msg: JSONObject) {
         msg.optJSONObject("pad")?.let { pad = it }
         val c = msg.optJSONObject("proof")?.optJSONObject("compc") ?: return
-        val s = State(c.optBoolean("show", true), c.optInt("on", -1), c.optInt("off", -1), c.optString("why").ifEmpty { null })
+        val s = State(c.optBoolean("show", true), c.optInt("on", -1), c.optInt("off", -1), c.optString("why").ifEmpty { null },
+            if (c.has("cam")) c.optBoolean("cam") else null, c.optInt("camOn", -1), c.optInt("camOff", -1))
         if (s.colOn < 0 || s.colOff < 0 || s == state) return
         state = s
         for (l in listeners) l()
@@ -319,6 +321,16 @@ object CompassSwitch {
     private fun tap(ctx: Context, on: Boolean): Boolean {
         val s = state ?: return false
         return TapBridge.tap(ctx, pad ?: HomeAttackSwitch.pad, "iact", if (on) s.colOn else s.colOff) { }
+    }
+
+    /** cp7: "Compass follows the camera" (an experiment; off by default): ONE tap, tried once more like the bar's own switch */
+    fun turnCam(ctx: Context, on: Boolean): Boolean {
+        val s = state ?: return false
+        val col = if (on) s.camOn else s.camOff
+        if (col < 0) return false
+        val sent = TapBridge.tap(ctx, pad ?: HomeAttackSwitch.pad, "iact", col) { }
+        if (sent) main.postDelayed({ val n = state; if (n != null && n.cam != on) TapBridge.tap(ctx, pad ?: HomeAttackSwitch.pad, "iact", col) { } }, RETRY_MS)
+        return sent
     }
 
     private const val RETRY_MS = 450L

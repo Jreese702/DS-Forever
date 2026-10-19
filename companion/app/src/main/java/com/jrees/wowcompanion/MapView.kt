@@ -3337,8 +3337,9 @@ class MapView(context: Context) : View(context) {
     private var focusQid = 0                             // the game's focused quest (map.superTracked, else the doc's flag)
     // THE DEFAULT FOCUS (the user, 2026-10-06: "I want the focused quest to default to the closest tracked quest if there is
     // "No focused quest""): with no game focus, the nearest TRACKED quest on this map is SHOWN as the focus -- Home's card
-    // (focusedCard), the list's top spot, the gold look, the area's fill and the rim arrow. The game's focus is never set
-    // (A on it focuses it for real; the hints and A / X keep reading the game's own focusQid). FocusDefault.pick holds the
+    // (focusedCard), the list's top spot, the gold look, the area's fill and the rim arrow. Since 2026-10-19 the game is made to follow
+    // it ([DefaultFocusPush]: the user, "the DS forever should be synced and force the game to follow what ever it has focused"), except
+    // in QuestTrail and the game's own (vanilla) tracking. FocusDefault.pick holds the
     // choice until another quest is clearly nearer, so walking between two does not make the top card jump.
     private var defaultQid = 0
     // in QuestTrail mode its step ALWAYS wins (the user on test61: "the QuestTrail objective needs to trump the focus objective"): while
@@ -3415,6 +3416,15 @@ class MapView(context: Context) : View(context) {
      * document cleared the game's focus, and the card kept the old quest until something else redrew it).
      */
     var onShownFocusChanged: (() -> Unit)? = null
+    /** the host's way to make a quest the game's focus (Home's one focus path); the default focus is pushed through it */
+    var onPushFocus: ((questId: Int) -> Unit)? = null
+    private val focusPush = DefaultFocusPush()
+    private fun pushDefault() {
+        if (qtHolds() || Settings.questTracking == "vanilla") return
+        val cb = onPushFocus ?: return
+        val q = focusPush.tick(defaultQid, focusQid, System.currentTimeMillis())
+        if (q > 0) post { cb(q) }
+    }
     private var firedFocus = Int.MIN_VALUE
     private fun fireFocus() {
         val f = shownFocus()
@@ -3428,6 +3438,7 @@ class MapView(context: Context) : View(context) {
         val before = shownFocus()
         val beforeIds = trackedIds()
         defaultQid = if (focusQid != 0 || m == null) 0 else FocusDefault.pick(defaultCands(m), defaultQid, trackedOrder())
+        pushDefault()
         if (shownFocus() == before) return
         cards.clear()
         orderTracked(beforeIds)

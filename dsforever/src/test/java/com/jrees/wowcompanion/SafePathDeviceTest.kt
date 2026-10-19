@@ -160,17 +160,17 @@ class SafePathDeviceTest {
 
     @Test fun aCancelledLegStopsWithinTenMilliseconds() {
         // a goal on a plateau no step reaches: the A* searches the whole 800 yd window round it until it is told to stop
-        val g = Climb.build(1500.0, -1500.0, 1500.0, -1500.0, { gr, gc -> val x = org - gr * s; val y = org - gc * s
+        val g = Climb.build(2800.0, -2800.0, 2800.0, -2800.0, { gr, gc -> val x = org - gr * s; val y = org - gc * s
             if (hypot(x, y) < 30) 50f else 0f })
         val stop = java.util.concurrent.atomic.AtomicBoolean(false)
         var stopAt = 0L; var endAt = 0L; var threw = false
         val t = Thread {
-            try { Climb.route(g, doubleArrayOf(1200.0, 1200.0), doubleArrayOf(0.0, 0.0), limits = Climb.Limits(cancelled = { stop.get() })) }
+            try { Climb.route(g, doubleArrayOf(2500.0, 2500.0), doubleArrayOf(0.0, 0.0), limits = Climb.Limits(cancelled = { stop.get() })) }
             catch (e: Climb.Cancelled) { threw = true }
             endAt = System.nanoTime()
         }
-        t.start(); Thread.sleep(300)
-        assertTrue("still searching after 300 ms (the test's premise)", t.isAlive)
+        t.start(); Thread.sleep(100)
+        assertTrue("still searching after 100 ms (the test's premise)", t.isAlive)
         stopAt = System.nanoTime(); stop.set(true)
         t.join(2000)
         assertTrue(threw)
