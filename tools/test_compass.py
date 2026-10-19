@@ -44,6 +44,10 @@ function Region:EnableMouse(m) self.mouse = m end
 function Region:SetScript(k, fn) self.scripts = self.scripts or {}; self.scripts[k] = fn end
 function Region:RegisterEvent(e) self.events = self.events or {}; self.events[e] = true end
 function Region:GetHeight() return self.hh or 0 end
+function Region:GetWidth() return self.ww or 0 end
+function Region:GetEffectiveScale() return 1 end
+GAME.speed = 0
+function GetUnitSpeed() return GAME.speed end
 function Region:CreateTexture(name, layer, tmpl, sub)
     local t = setmetatable({ kind = "tex", parent = self, layer = layer, sub = sub, shown = true }, Region)
     self.kids = self.kids or {}; self.kids[#self.kids + 1] = t
@@ -54,7 +58,7 @@ function Region:CreateFontString(name, layer)
     self.kids = self.kids or {}; self.kids[#self.kids + 1] = t
     return t
 end
-UIParent = setmetatable({ name = "UIParent", hh = 768 }, Region)
+UIParent = setmetatable({ name = "UIParent", hh = 768, ww = 1365.3334 }, Region)
 FRAMES = {}
 function CreateFrame(kind, name, parent, template)
     local f = setmetatable({ kind = kind, parent = parent, template = template, shown = true }, Region)
@@ -262,6 +266,34 @@ def main():
         path.append(C.h)
     chk("across north the short way (6.2 -> 0.1 never passes 3)", all(h > 6.0 or h < 0.2 for h in path) and abs(path[-1] - 0.1) < 0.01)
     G.facing = math.radians(270); C.draw()
+    # cp7, the camera experiment (the user: "Try the experiment"): off by default; on, the nav point's x sets the camera offset
+    G.facing = 0.0; G.pin = None; C.draw()
+    chk("cam: OFF by default (heading = facing)", C.camWanted() is False and C.cam.src == "off" and abs(C.h) < 1e-9)
+    C.setCam(True)
+    half = 1365.3334 / 2
+    cam = -math.radians(30)                         # the camera turned 30 degrees clockwise of the character (facing north)
+    b = math.atan2(-100, 100)                       # the quest NE, as the compass computes it (CCW)
+    G.nav = L.table_from({"x": half + half * math.tan(cam - b), "y": 400.0, "clamped": False})
+    for i in range(60):
+        step(f, 1 / 60)
+    chk("cam: the nav point locks the offset to the camera (%.3f, want %.3f), src nav" % (C.cam.off, cam), abs(C.cam.off - cam) < 0.01 and C.cam.src == "nav")
+    chk("cam: the shown heading follows the camera, not the character (%.3f)" % C.wrap(C.h), abs(C.wrap(C.h) - cam) < 0.02)
+    G.nav.clamped = True
+    for i in range(60):
+        step(f, 1 / 60)
+    chk("cam: off screen and standing: the offset HELD (%.3f), src hold" % C.cam.off, abs(C.cam.off - cam) < 0.01 and C.cam.src == "hold")
+    G.speed = 7
+    for i in range(180):
+        step(f, 1 / 60)
+    chk("cam: off screen and moving: settles back to the character (%.3f), src settle" % C.cam.off, abs(C.cam.off) < 0.05 and C.cam.src == "settle")
+    G.speed = 0; G.quest = None; C.read(True)
+    step(f, 1 / 60)
+    chk("cam: no target: nothing from the nav point (src none)", C.cam.src == "none")
+    C.diagAt = -100; C.draw()
+    last = L.globals().SENT[len(L.globals().SENT)]
+    chk("cam: the compass line carries the experiment's state (cam, csrc, coff, nav, nx, ncl, nvp, nst, fov)",
+        last.probe == "compass" and last.cam is True and last.csrc is not None and last.fov == 90 and last.ncl is True)
+    C.setCam(False); G.nav = None; G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.draw()
     # the camera-yaw probe (one shot, read only): starts 20 s after login once the game's nav diamond exists, logs 4 samples a line
     P = C.probe
     L.eval("WowCompanion.compass.probe")

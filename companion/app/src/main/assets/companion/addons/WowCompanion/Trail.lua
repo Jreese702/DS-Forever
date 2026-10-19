@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp6" }
+WC.compass = { V = "cp7" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -118,6 +118,12 @@ do
         local ok2, x2, y2 = pcall(function() return v.x, v.y end)
         if ok2 and num(x2) and num(y2) then return x2, y2 end
         return nil
+    end
+
+    -- cp7, the user: "Try the experiment": the compass follows the CAMERA while the game's navigation point (the super-tracked quest
+    -- or pin, projected by the engine) is on screen; off by default (WowCompanionDB.compassCam, the app's second Top screen row)
+    function C.camWanted()
+        return type(WowCompanionDB) == "table" and WowCompanionDB.compassCam == true
     end
 
     function C.wanted()
@@ -353,6 +359,71 @@ do
         return C.h
     end
 
+    -- THE CAMERA OFFSET (cp7, an experiment; read only). The engine places C_Navigation's frame on the super-tracked target's spot on
+    -- the screen. While it is on screen (valid, not clamped), its x against the screen's centre is the target's angle off the camera's
+    -- axis: theta = atan((x - centre) / f), f = half the width / tan(hfov / 2) (hfov from the cameraFov CVar, READ); the target's
+    -- true bearing b is ours (the compass's own reads), so the camera's yaw is b + theta (counter-clockwise: right of centre = a
+    -- smaller angle). The offset (camera - character) eases to that; off screen it is HELD while standing and settles back to the
+    -- character's facing while moving (the game camera swings behind a moving character); without a target the same.
+    C.cam = { off = 0, src = "none", fovAt = -10, hfov = math.rad(90) }
+    function C.camStep(dt, facing)
+        local K = C.cam
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        if now - K.fovAt > 1 then                          -- the field of view, read once a second (a READ: nothing written)
+            K.fovAt = now
+            local ok, v = pcall(function() return C_CVar.GetCVar("cameraFov") end)
+            local deg = ok and tonumber(v) or nil
+            if deg and deg >= 30 and deg <= 150 then K.hfov = math.rad(deg) end
+        end
+        K.nav, K.nx, K.cl, K.vp, K.ns = false, nil, nil, nil, nil
+        local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
+        local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
+        local tg = C.tg_ or {}
+        local w = (okP and onPin == true) and tg.pin or tg.quest
+        local b, d
+        if C.me_ and w then b, d = C.bearing(C.me_, w) end
+        local seen = false
+        if okF and nav then
+            K.nav = true
+            local okC, x = pcall(function() return nav:GetCenter() end)
+            local okS, ns = pcall(function() return nav:GetEffectiveScale() end)
+            local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
+            local okW, uw = pcall(function() return UIParent:GetWidth() end)
+            local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
+            local okV, vp = pcall(function() return C_Navigation.HasValidScreenPosition() end)
+            local okT, st = pcall(function() return C_Navigation.GetTargetState() end)
+            x = okC and num(x) or nil
+            ns, us, uw = okS and num(ns) or 1, okU and num(us) or 1, okW and num(uw) or nil
+            -- (not `ok and v or nil`: a FALSE "clamped" would turn into nil)
+            if okK and type(cl) == "boolean" then K.cl = cl end
+            if okV and type(vp) == "boolean" then K.vp = vp end
+            K.ns = okT and num(st) or nil
+            if x and uw and us > 0 then
+                x = x * ns / us                            -- into UIParent's units
+                K.nx = x
+                local half = uw / 2
+                if K.vp == true and K.cl == false and b and d and d > 8 and math.abs(x - half) < half * 0.92 then
+                    local f = half / math.tan(K.hfov / 2)
+                    local cam = b + math.atan((x - half) / f)
+                    local want = C.wrap(cam - facing)
+                    K.off = C.wrap(K.off + C.wrap(want - K.off) * (1 - math.exp(-dt / 0.08)))
+                    K.src, seen = "nav", true
+                end
+            end
+        end
+        if not seen then
+            local okM, speed = pcall(GetUnitSpeed, "player")
+            local moving = okM and num(speed) and speed > 0
+            if moving then
+                K.off = K.off * math.exp(-dt / 0.8)
+                K.src = (w and K.nav) and "settle" or "none"
+            else
+                K.src = (w and K.nav) and "hold" or "none"
+            end
+        end
+        return K.off
+    end
+
     -- the world reads (player, pin, quest, corpse) ten times a second; the strip itself every frame
     C.readAt = -1
     function C.read(force)
@@ -374,7 +445,9 @@ do
         if not raw then f:Hide(); return end
         local fresh = C.read(snap)
         if snap then C.h = nil end
-        local heading = C.ease(raw, dt)
+        local target = raw
+        if C.camWanted() then target = C.wrap(raw + C.camStep(dt, raw)) else C.cam.off, C.cam.src = 0, "off" end
+        local heading = C.ease(target, dt)
         local L = C.layout(heading, C.me_, C.tg_ or {})
         C.last = L
         if fresh then C.diag(raw, C.me_, C.tg_ or {}, L) end
@@ -441,6 +514,9 @@ do
             uwp = (okH and has == true) and true or false, st = (okS and onPin == true) and true or false, route = route,
             pin = tg.pin and true or false, qid = C.qid, qsrc = C.qsrc, quest = tg.quest and true or false,
             corpse = tg.corpse and true or false, n = #L.marks,
+            cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
+            nav = C.cam.nav, nx = C.cam.nx and math.floor(C.cam.nx * 10 + 0.5) / 10 or nil, ncl = C.cam.cl, nvp = C.cam.vp,
+            nst = C.cam.ns, fov = math.floor(math.deg(C.cam.hfov) + 0.5),
         }
         C.lastDiag = line
         pcall(function() WC.send(WC.encode(line)) end)
@@ -470,6 +546,14 @@ do
             C.frame:Hide()
         end
         return show
+    end
+
+    -- the camera experiment's switch (Interact's ACT.compass camon / camoff)
+    function C.setCam(on)
+        if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+        WowCompanionDB.compassCam = on and true or false
+        C.cam.off = 0
+        return true
     end
 
     -- the player's choice (Interact's ACT.compass, from the app's Settings row)
