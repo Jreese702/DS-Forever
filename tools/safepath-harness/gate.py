@@ -5,7 +5,10 @@
 #   - segcheck finding a 45+ degree crossing;
 #   - an exit walkable in the baseline that is gone or not walkable now (an approved crossing dropped), a border crossing KEPT
 #     in the baseline that is not now;
-#   - a route more than 15% longer than in the baseline.
+#   - a route more than 15% longer than in the baseline;
+#   - a cross-zone route (cross/routes.json, stitched by py/cross.py into cross.json) with a leg that crosses a wall or deep water or
+#     misses its goal, a leg that doesn't start where the last piece ended, or 15% longer than in the baseline. Its gaps (the links
+#     we don't have) are listed, not failed: routes.json names them.
 #   python gate.py <run folder> [--save]      (--save: this run becomes the baseline; the baseline lives in the work folder)
 import os, re, sys, json
 try: sys.stdout.reconfigure(encoding='utf-8')
@@ -38,10 +41,12 @@ def parse(log):
 zones = {}
 for f in sorted(os.listdir(run)):
     if f.startswith('gate_') and f.endswith('.log'): zones[f[5:-4]] = parse(os.path.join(run, f))
+cross = json.load(open(os.path.join(run, 'cross.json'), encoding='utf-8')) if os.path.exists(os.path.join(run, 'cross.json')) else []
 if '--save' in sys.argv:
+    if cross: zones['_cross'] = {r['id']: {'name': r['name'], 'walkYd': r['walkYd'], 'complete': r['complete'], 'clean': r['clean']} for r in cross}
     os.makedirs(os.path.dirname(BASE), exist_ok=True)
     json.dump(zones, open(BASE, 'w', encoding='utf-8'), indent=1)
-    print('baseline saved: %d zones, %d routes -> %s' % (len(zones), sum(len(z['routes']) for z in zones.values()), BASE)); sys.exit(0)
+    print('baseline saved: %d zones, %d routes -> %s' % (len(zones), sum(len(z['routes']) for t, z in zones.items() if t != '_cross'), BASE)); sys.exit(0)
 base = json.load(open(BASE, encoding='utf-8')) if os.path.exists(BASE) else {}
 fails = []; notes = []
 def near(k, keys):
@@ -72,7 +77,15 @@ for tag, z in zones.items():
         if ok and not any(v and near(k, [o]) for o, v in z['exits'].items()): fails.append('%s: walkable exit %s is gone or not walkable' % (tag, k))
     for k in b['kept']:
         if not near(k, z['kept']) and k not in z['kept']: fails.append('%s: kept border crossing dropped: %s' % (tag, k))
+bc = base.get('_cross', {})
+for r in cross:
+    for p in r['problems']: fails.append('cross %s (%s): %s' % (r['id'], r['name'], p))
+    for g in r['gaps']: notes.append('cross %s: stops at a missing link: %s' % (r['id'], g[:140]))
+    b = bc.get(r['id'])
+    if not b: notes.append('cross %s: no baseline (new route)' % r['id']); continue
+    if b['complete'] and not r['complete']: fails.append('cross %s: was complete, now stops at a gap' % r['id'])
+    if r['walkYd'] > b['walkYd'] * (1 + LONGER): fails.append('cross %s (%s): %d -> %d yd walked (+%d%%)' % (r['id'], r['name'], b['walkYd'], r['walkYd'], round(100 * (r['walkYd'] / b['walkYd'] - 1))))
 for n in notes: print('NOTE ' + n)
 for f in fails: print('FAIL ' + f)
-print('%s: %d zones, %d routes, %d failures' % ('GATE FAILED' if fails else 'GATE PASSED', len(zones), sum(len(z['routes']) for z in zones.values()), len(fails)))
+print('%s: %d zones, %d routes, %d cross-zone routes, %d failures' % ('GATE FAILED' if fails else 'GATE PASSED', len(zones), sum(len(z['routes']) for z in zones.values()), len(cross), len(fails)))
 sys.exit(1 if fails else 0)

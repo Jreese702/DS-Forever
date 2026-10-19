@@ -385,6 +385,9 @@ class RenderSafePath {
             best }
         fun xy(a: org.json.JSONArray?) = a?.let { doubleArrayOf(it.getDouble(0), it.getDouble(1)) }
         val exact = ArrayList<DoubleArray>()
+        // "within": how far a start or a goal may move onto ground one can stand on (a boat's or a zeppelin's stop is beside its pier,
+        // over the water: the cross-zone routes' rides) - 15 yd otherwise
+        val within = java.util.IdentityHashMap<DoubleArray, Double>()
         /** a spot over a cave's floor, the terrain well above it (Dun Morogh's Rockjaw Raiders, height 514 over the Coldridge tunnel):
          *  the creatures are in the cave - the goal is its nearest mouth */
         fun inCaveMouth(p: DoubleArray): DoubleArray? {
@@ -416,6 +419,8 @@ class RenderSafePath {
             if (f == null || gp == null) println("GOAL ${o.optString("name")}: from ${f?.toList()} to ${gp?.toList()} - not found, left out")
             // "exact": the goal is where it says, never moved to a cave under it (Thunder Bluff's trainers stand on Spirit Rise, over the undead cave)
             if (gp != null && to.optBoolean("exact")) exact.add(gp)
+            if (f != null && fr.has("within")) within[f] = fr.getDouble("within")
+            if (gp != null && to.has("within")) within[gp] = to.getDouble("within")
             Triple(fr.optString("name", fr.optString("node", fr.optString("exit"))), f, o.optString("name") to gp)
         }
         fun durotarTrips(): List<Triple<String, DoubleArray?, Pair<String, DoubleArray?>>> {
@@ -448,7 +453,7 @@ class RenderSafePath {
         fun stand(p0: DoubleArray?): DoubleArray? {
             val p = p0?.let { if (exact.any { e -> e === it }) it else inCaveMouth(it) ?: it }
             if (p == null || (standable(p[0], p[1]) && !deep(p[0], p[1]))) return p
-            val c = cg.at(p[0], p[1]); val r = (15 / S).toInt(); var best: DoubleArray? = null; var bd = Double.MAX_VALUE
+            val c = cg.at(p[0], p[1]); val r = ((p0?.let { within[it] } ?: 15.0) / S).toInt(); var best: DoubleArray? = null; var bd = Double.MAX_VALUE
             for (j in (c[1] - r)..(c[1] + r)) for (i in (c[0] - r)..(c[0] + r)) {
                 if (i !in 0 until cg.nx || j !in 0 until cg.ny) continue
                 val x = cg.wx(j); val y = cg.wy(i); val d = Math.hypot(x - p[0], y - p[1])

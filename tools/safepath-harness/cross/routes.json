@@ -1,0 +1,37 @@
+{
+ "_": "THE CROSS-ZONE ROUTES: each a chain of pieces - a leg (one zone's run, from where the last piece ended), a ride (a transports.json ride, by its path id), or a gap (a link we don't have: the route stops there and says why). A leg's from / to are harness goal objects; {\"ride\": p, \"end\": \"a\"|\"b\"} is that ride's end, read from transports.json. py/cross.py writes one spec per zone from these and stitches the runs.",
+ "routes": [
+  {"id": "a", "name": "Valley of Trials → Cairne Bloodhoof (Thunder Bluff)", "pieces": [
+   {"zone": "durotar", "name": "the Valley of Trials → the Southfury bridge", "from": {"node": "Valley of Trials"}, "to": {"xy": [316, -3704]}},
+   {"zone": "barrens", "name": "the Southfury bridge → the Mulgore road", "from": {"xy": [316, -3704]}, "to": {"xy": [-2339, -1545]}},
+   {"zone": "mulgore", "name": "the Mulgore road → Cairne (High Rise, by the lifts)", "from": {"xy": [-2339, -1545]}, "to": {"xy": [-1210, -113]}}
+  ]},
+  {"id": "b", "name": "Northshire Abbey → the Ironforge gate", "pieces": [
+   {"zone": "elwynn", "name": "Northshire Abbey → the Stormwind gate", "from": {"node": "Northshire Valley"}, "to": {"exit": "Stormwind City", "how": "bridge"}},
+   {"gap": "the walk inside Stormwind to the Deeprun Tram and the tram itself: Stormwind has no spec (its walls are its WMOs, not on the lattice), and the tram runs in an instance of its own - not among transports.json's rides (CityExits has only its Stormwind entrance, learned on the device). No walk joins Elwynn to Dun Morogh through the zones we have: the Wetlands would need Menethil's boat, not a road."},
+   {"zone": "dunmorogh", "name": "the Ironforge gate → the South Gate tunnels", "from": {"xy": [-5045, -833]}, "to": {"xy": [-5650, -2545]}, "check": "the tunnels to Loch Modan"},
+   {"zone": "lochmodan", "name": "the South Gate tunnels → Thelsamar", "from": {"xy": [-5650, -2545]}, "to": {"node": "Thelsamar"}, "check": "the tunnels to Loch Modan"}
+  ]},
+  {"id": "c", "name": "Deathknell → Shadowfang Keep", "pieces": [
+   {"zone": "tirisfal", "name": "Deathknell → the road into Silverpine", "from": {"xy": [1884, 1582]}, "to": {"xy": [1432, 725]}},
+   {"zone": "silverpine", "name": "the Tirisfal road → Shadowfang Keep's entrance", "from": {"xy": [1432, 725]}, "to": {"cave": 109960, "near": [-234, 1561]}}
+  ]},
+  {"id": "d", "name": "the Orgrimmar gate → the Undercity (Ruins of Lordaeron), by zeppelin", "pieces": [
+   {"zone": "durotar", "name": "the Orgrimmar gate → the zeppelin tower", "from": {"exit": "Orgrimmar"}, "to": {"ride": 302, "end": "a"}},
+   {"ride": 302, "from": "a", "name": "the zeppelin, Orgrimmar → Undercity"},
+   {"zone": "tirisfal", "name": "the zeppelin tower → the Undercity entrance", "from": {"ride": 302, "end": "b"}, "to": {"wmo": 7675285, "near": [1648, 240]}}
+  ]},
+  {"id": "e", "name": "Shadowglen → Auberdine, by boat", "pieces": [
+   {"zone": "teldrassil", "name": "Shadowglen → the Darnassus gate", "from": {"node": "Shadowglen"}, "to": {"exit": "Darnassus", "how": "gate"}},
+   {"gap": "the walk inside Darnassus and its portal down to Rut'theran: the client holds the portal's trigger (AreaTrigger.db2), but where it sends the player is server-only - a manual link nobody has measured. The route resumes at Rut'theran Village."},
+   {"zone": "teldrassil", "name": "Rut'theran Village → the boat's pier", "from": {"node": "Rut'theran Village"}, "to": {"ride": 293, "end": "a"}},
+   {"ride": 293, "from": "a", "name": "the boat, Rut'theran → Auberdine"},
+   {"zone": "darkshore", "name": "the Auberdine pier → Auberdine", "from": {"ride": 293, "end": "b"}, "to": {"node": "Auberdine"}}
+  ]},
+  {"id": "f", "name": "Camp Narache → the Crossroads → Ratchet", "pieces": [
+   {"zone": "mulgore", "name": "Camp Narache → the Barrens road", "from": {"node": "Camp Narache"}, "to": {"xy": [-2339, -1545]}},
+   {"zone": "barrens", "name": "the Mulgore road → the Crossroads", "from": {"xy": [-2339, -1545]}, "to": {"node": "The Crossroads"}},
+   {"zone": "barrens", "name": "the Crossroads → Ratchet", "from": {"node": "The Crossroads"}, "to": {"node": "Ratchet"}}
+  ]}
+ ]
+}
