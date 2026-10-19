@@ -242,6 +242,69 @@ class ShippedRouteTest {
         assertFalse(ShippedRoute.plan(straightRoad(), flat, null, doubleArrayOf(300.0, -50.0), doubleArrayOf(300.0, 1050.0)).reached)
     }
 
+    // ---------------------------------------------------------------- NET1 v2: walked ways, joins, floors, the pack's roadmap
+
+    @Test fun aWaysShippedPointsAreFollowedAndAFloorStreetIsMarkedInFloor() {
+        val net = SafePath.Net(1411, 1, "off-device", listOf(node(0, 0.0, 0.0), node(1, 0.0, 1000.0)), listOf(road(0, 1, SafePath.REWALK)), emptyList())
+        val bend = listOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(200.0, 500.0), doubleArrayOf(0.0, 1000.0))
+        val walked = ShippedNet.Section(H, 10, "t", net, listOf(ShippedNet.Way(ShippedNet.F_ROAD or ShippedNet.F_REWALK, 1077.0, bend)))
+        val r = ShippedRoute.plan(walked, flat, null, doubleArrayOf(0.0, -40.0), doubleArrayOf(0.0, 1040.0))
+        assertTrue(r.why, r.reached)
+        assertTrue("along its points", r.pts.any { it[0] == 200.0 && it[1] == 500.0 })
+        val floor = ShippedNet.Section(H, 10, "t", net, listOf(ShippedNet.Way(ShippedNet.F_ROAD or ShippedNet.F_FLOOR, 1077.0, bend)))
+        val f = ShippedRoute.plan(floor, flat, null, doubleArrayOf(0.0, -40.0), doubleArrayOf(0.0, 1040.0))
+        assertTrue(f.reached); assertTrue("in-floor", f.pts.any { it[0] == 200.0 && Climb.inCave(it) })
+    }
+
+    @Test fun aJoinCostsAsASpurNotATrail() {
+        // two ways round: a join (trail + join flags) out to x 300, a trail out to x 250: the join's 1.3 beats the trail's 2.2
+        val net = SafePath.Net(1411, 1, "off-device", listOf(node(0, 0.0, 0.0), node(1, 0.0, 1000.0), node(2, 300.0, 500.0), node(3, -250.0, 500.0)),
+            listOf(SafePath.Edge(0, 2, SafePath.TRAIL, SafePath.OK, "join", 0f, 1f), SafePath.Edge(2, 1, SafePath.TRAIL, SafePath.OK, "join", 0f, 1f),
+                SafePath.Edge(0, 3, SafePath.TRAIL, SafePath.OK, "auto", 0f, 1f), SafePath.Edge(3, 1, SafePath.TRAIL, SafePath.OK, "auto", 0f, 1f)), emptyList())
+        val jf = ShippedNet.F_TRAIL or ShippedNet.F_JOIN
+        val sec = ShippedNet.Section(H, 10, "t", net, listOf(ShippedNet.Way(jf, 583.0), ShippedNet.Way(jf, 583.0), ShippedNet.Way(ShippedNet.F_TRAIL, 559.0), ShippedNet.Way(ShippedNet.F_TRAIL, 559.0)))
+        val r = ShippedRoute.plan(sec, flat, null, doubleArrayOf(0.0, -40.0), doubleArrayOf(0.0, 1040.0))
+        assertTrue(r.why, r.reached); assertTrue("by the join", r.pts.any { it[0] > 250.0 })
+    }
+
+    @Test fun thePacksRoadmapIsReadWithItsTiersAndThisFactionsDanger() {
+        // six cells in a row (cell 10 steps), a node at each cell's corner vertex, edges east; the second edge steep (climb tier 2)
+        val gr0 = ShippedNet.gr(500.0); val gc0 = ShippedNet.gc(0.0)
+        val rm = ShippedNet.Roadmap(gr0, gc0, 10, 6, 1, IntArray(6) { it }, IntArray(6) { gr0 }, IntArray(6) { gc0 + 10 * it }, IntArray(6),
+            IntArray(5) { it }, IntArray(5) { it + 1 }, IntArray(5) { if (it == 1) 2 shl 4 else 0 }, arrayOfNulls(5))
+        val sec = ShippedNet.Section(H, 10, "t", none.net, none.ways, roadmapDanger = byteArrayOf(0, 120.toByte(), 0, 0, 0))
+        val r = ShippedRoute.roadmapOf(rm, sec)!!
+        assertEquals(6, r.nodes.size); assertEquals(5, r.edges.size)
+        assertEquals(1.0, r.edges[0].tier, 1e-9); assertEquals(Climb.COST[2], r.edges[1].tier, 1e-9)
+        assertEquals(0.0, r.edges[0].danger!!, 1e-9); assertEquals(2.0, r.edges[1].danger!!, 1e-9)
+        assertTrue(r.nodes.keys.all { it >= ShippedRoute.RM_BASE })
+        assertTrue("cached", ShippedRoute.roadmapOf(rm, sec) === r)
+        val p0 = r.nodes[ShippedRoute.RM_BASE]!!; val p2 = r.nodes[ShippedRoute.RM_BASE + 5]!!
+        val way = ShippedRoute.plan(sec, flat, null, doubleArrayOf(p0[0] + 10, p0[1]), doubleArrayOf(p2[0] + 10, p2[1]), roadmap = r)
+        assertTrue(way.why, way.reached); assertTrue(way.why, way.roadmapYd > 150.0)
+    }
+
+    /** the shipped files (the APK's assets; and T's v2 trial export when it is on this disk): each read, its roadmap taken in, and a
+     *  route planned on each faction's section between two of its nodes far apart (flat ground: the graph's own words) */
+    @Test fun theShippedFilesLoadAndRoute() {
+        val dirs = listOf(java.io.File("../companion/app/src/main/assets/safepath/net"), java.io.File("E:/safepath-work/out-T/v2-assets"))
+        val files = dirs.filter { it.isDirectory }.flatMap { d -> d.listFiles { f -> f.name.endsWith(".bin") }!!.toList() }
+        org.junit.Assume.assumeTrue("no shipped files here", files.isNotEmpty())
+        for (f in files) {
+            val map = f.nameWithoutExtension.toIntOrNull() ?: continue
+            val l = ShippedNets.load(map, { p -> java.io.File(f.parentFile, p.substringAfterLast('/')).takeIf { it.isFile }?.inputStream() }, null, {})
+            assertNotNull("$f reads", l)
+            for (sec in l!!.pack.sections) {
+                val rm = ShippedRoute.roadmapOf(l.pack.roadmap, sec)
+                if (l.pack.header.version >= 2 && l.pack.roadmap != null) assertNotNull(rm)
+                val ns = sec.net.nodes.filter { it.kind != SafePath.CAVE && it.kind != SafePath.LIFT }
+                val a = ns.minByOrNull { it.wx + it.wy }!!; val b = ns.maxByOrNull { it.wx + it.wy }!!
+                val r = ShippedRoute.plan(sec, flat, null, doubleArrayOf(a.wx, a.wy), doubleArrayOf(b.wx, b.wy), roadmap = rm)
+                assertTrue("$f ${sec.tag}: ${r.why}", r.pts.size >= 2)
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- test20: no v1 / v2 switch
 
     @Test fun theRetiredV2PrefIsRemovedOnce() {

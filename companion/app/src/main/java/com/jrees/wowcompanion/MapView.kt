@@ -4219,7 +4219,7 @@ class MapView(context: Context) : View(context) {
                 // the danger grid's ground (its walls: cliffs, buildings, deep water) and the character's danger, in world yards
                 val ground: (Double, Double) -> Float = if (g == null) { _, _ -> 1f } else { x, y -> g.ground((r.left - y) / ax, (r.top - x) / ay) }
                 val danger: ((Double, Double) -> Float)? = if (g == null) null else { x, y -> g.at((r.left - y) / ax, (r.top - x) / ay) }
-                ShippedRoute.plan(sec, ground, danger, here, goal, k, toExit)
+                ShippedRoute.plan(sec, ground, danger, here, goal, k, toExit, roadmap = ShippedRoute.roadmapOf(got.second.pack.roadmap, sec))
             }) { res ->
                 shipPending.remove(q)
                 val said = if (res.reached) "quest $q on map $mapId: ${res.yd.toInt()} yd, ${res.bends} bends (${res.why})" +

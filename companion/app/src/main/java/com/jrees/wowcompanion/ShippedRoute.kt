@@ -67,10 +67,39 @@ object ShippedRoute {
 
     fun length(w: List<DoubleArray>) = w.zipWithNext { a, b -> hypot(b[0] - a[0], b[1] - a[1]) }.sum()
 
-    /** the section's roadmap (NET1 v2), null for a v1 file */
+    /** a section alone carries no roadmap (NET1 v2 keeps it on the pack: [roadmapOf] (pack's roadmap, section)) */
     fun roadmapOf(@Suppress("UNUSED_PARAMETER") sec: ShippedNet.Section): Roadmap? = null
-    /** way [i]'s walked points between its ends (NET1 v2: a rewalk way's polyline), null = straight */
-    fun wayPts(@Suppress("UNUSED_PARAMETER") sec: ShippedNet.Section, @Suppress("UNUSED_PARAMETER") i: Int): List<DoubleArray>? = null
+    private val rmCache = java.util.WeakHashMap<ShippedNet.Section, Pair<ShippedNet.Roadmap, Roadmap>>()
+    /**
+     * the pack's [ShippedNet.Roadmap] (NET1 v2) as the router takes it, with [sec]'s faction danger (Section.roadmapDangerOf; none
+     * shipped: null, the character's own only): node n -> [RM_BASE] + n; an edge's cost a yard Climb.COST of its climb tier + its edge
+     * tier x ShippedNet.EDGE_TIER_COST, a building's edge +[RM_BUILDING_COST], a wade's +[RM_WADE_COST]. Kept per section (weakly).
+     */
+    fun roadmapOf(rm: ShippedNet.Roadmap?, sec: ShippedNet.Section): Roadmap? {
+        rm ?: return null
+        synchronized(rmCache) { rmCache[sec]?.let { (r, out) -> if (r === rm) return out } }
+        val nodes = HashMap<Int, DoubleArray>(rm.nodes * 2)
+        for (n in 0 until rm.nodes) nodes[RM_BASE + n] = doubleArrayOf(rm.x(n), rm.y(n))
+        val edges = (0 until rm.edges).map { e ->
+            val f = rm.edgeFlags[e]
+            val tier = Climb.COST[ShippedNet.climbTier(f).coerceIn(0, 2)] + ShippedNet.edgeTier(f) * ShippedNet.EDGE_TIER_COST +
+                (if (f and ShippedNet.RE_BUILDING != 0) RM_BUILDING_COST else 0.0) + (if (f and ShippedNet.RE_WADE != 0) RM_WADE_COST else 0.0)
+            val pts = if (rm.edgePts[e] == null) emptyList() else rm.points(e).let { it.subList(1, it.size - 1) }
+            Roadmap.Edge(RM_BASE + rm.edgeA[e], RM_BASE + rm.edgeB[e], tier, sec.roadmapDanger?.let { sec.roadmapDangerOf(e).toDouble() }, pts)
+        }
+        return Roadmap(nodes, edges).also { synchronized(rmCache) { rmCache[sec] = rm to it } }
+    }
+    const val RM_BUILDING_COST = 0.5       // a roadmap edge within 2 yd of a building's rooms: this much dearer a yard
+    const val RM_WADE_COST = SafePath.FORD_COST - 1.0   // ... one that crosses a ford
+
+    /** way [i]'s walked points between its ends (NET1 v2's [ShippedNet.Way.pts], its ends dropped), null = straight; a floor's street
+     *  (ShippedNet.F_FLOOR) marked in-floor (Climb.IN_CAVE) */
+    fun wayPts(sec: ShippedNet.Section, i: Int): List<DoubleArray>? {
+        val w = sec.ways.getOrNull(i) ?: return null
+        val p = w.pts?.takeIf { it.size > 2 } ?: return null
+        val floor = w.flags and ShippedNet.F_FLOOR != 0
+        return p.subList(1, p.size - 1).map { if (floor) doubleArrayOf(it[0], it[1], Climb.IN_CAVE) else doubleArrayOf(it[0], it[1]) }
+    }
 
     /**
      * the way from [from] to [to] (world x, y) on [sec]'s graph (and [roadmap]). [ground] the ground's cost per yard at a world point
@@ -138,14 +167,15 @@ object ShippedRoute {
                 val kindF = when {
                     flags and ShippedNet.F_ROAD != 0 || e.kind == SafePath.ROAD -> 1.0
                     flags and ShippedNet.F_LIFT != 0 || e.kind == SafePath.LIFT -> 1.0
-                    flags and (ShippedNet.F_SPUR or ShippedNet.F_CAVE) != 0 || e.kind == SafePath.SPUR || e.kind == SafePath.CAVE || e.kind == JOIN -> 1.3
+                    flags and (ShippedNet.F_SPUR or ShippedNet.F_CAVE or ShippedNet.F_JOIN) != 0 || e.kind == SafePath.SPUR || e.kind == SafePath.CAVE ||
+                        e.kind == JOIN || e.src == JOIN -> 1.3
                     else -> 2.2 }
                 val climb = if (kindF == 1.0) 1.0 else e.climb.toDouble().coerceAtLeast(1.0)
                 val avoid = if (flags and ShippedNet.F_AVOID != 0 || e.state == SafePath.AVOID) AVOID_FACTOR else 1.0
                 val lift = flags and ShippedNet.F_LIFT != 0 || e.kind == SafePath.LIFT
                 val extra = (if (flags and (ShippedNet.F_WADE or ShippedNet.F_SWIM) != 0) WADE_EXTRA_YD else 0.0) + (if (lift) Caves.LIFT_WAIT_YD else 0.0)
                 // the character's danger along the way (none inside a cave or on a lift: their floor is not the ground the mobs stand on)
-                val inside = e.kind == SafePath.CAVE || lift || flags and ShippedNet.F_CAVE != 0
+                val inside = e.kind == SafePath.CAVE || lift || flags and (ShippedNet.F_CAVE or ShippedNet.F_FLOOR) != 0
                 val rewalk = mid.isEmpty() && (flags and ShippedNet.F_REWALK != 0 || e.state == SafePath.REWALK)
                 ways.add(W(e.a, e.b, mid + listOf(b), len, len * kindF * climb * avoid + extra, if (inside) 0.0 else dangerAlong(line),
                     e.danger.toDouble(), !inside, false, rewalk))
