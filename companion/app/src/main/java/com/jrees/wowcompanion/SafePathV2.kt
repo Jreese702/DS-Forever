@@ -16,6 +16,10 @@ import kotlin.math.hypot
  * walkway's deck in a bridge's water cell the device reads the water grid's word "bridge" (no raw depth read yet).
  */
 object SafePathV2 {
+    /** THE LATTICE'S INTERNAL FLAG (test20; the user: "remove the v1 vs v2 options"): no setting turns the on-device lattice on. False:
+     *  ClimbStep never starts, MapView's v2 path never runs; the shipped network (ShippedRoute) is the route. Flipped only in code. */
+    @Volatile var enabled = false
+
     /** a way planned: world points (x, y) from the start, whether it reached its goal, its yards, and what it was planned on */
     class Way(val pts: List<DoubleArray>, val reached: Boolean, val yd: Double, val stamp: String)
 

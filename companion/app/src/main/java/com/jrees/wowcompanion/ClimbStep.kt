@@ -12,7 +12,8 @@ import kotlin.math.hypot
  * line cuts through) made on the device from the player's own game files by the very code the off-device harness runs (ZoneInputs,
  * Climb.build). Nothing about a zone is typed into the app.
  *
- * Only while Settings > Map > "SafePath v2 routing" is On (default Off). DETACHED from the harvest: its own low-priority thread, never
+ * DORMANT (test20; the user removed the v1 / v2 switch): only while [SafePathV2.enabled] (an internal flag, false; no setting) is
+ * true - by default [start] returns at once and no thread, no game file read, no harvest work. DETACHED from the harvest: its own low-priority thread, never
  * before Play. TIER 0 FIRST: the zone the player is in (MapHarvestSteps.near) and the zones whose rect, 450 yd wider, meets it; then a
  * zone a route asks for ([want]); then the rest of that continent, nearest first, pausing while the player walks. RESUMABLE per zone
  * (terrain/climb_made.txt lists the zones made); INVALIDATED as a whole when the game build or the rules ([Climb.RULES_VERSION]) or
@@ -43,10 +44,8 @@ object ClimbStep : ArtHarvest.Step {
         synchronized(wanted) { if (!wanted.add(map)) return }
         start(ctx)
     }
-    /** Settings turned SafePath v2 routing On */
-    fun settingChanged(ctx: Context) { if (Settings.safePathV2) start(ctx) }
-
     fun start(context: Context) = synchronized(this) {
+        if (!SafePathV2.enabled) { line = "Off"; return }
         val ctx = context.applicationContext
         appCtx = ctx
         if (thread != null) { again = true; return }
@@ -77,7 +76,7 @@ object ClimbStep : ArtHarvest.Step {
     private fun body(ctx: Context) {
         runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND) }
         Settings.init(ctx); ArtHarvest.init(ctx)
-        if (!Settings.safePathV2) { line = "Off"; android.util.Log.i("WCMAP", "climb: off (Settings > Map > SafePath v2 routing)"); return }
+        if (!SafePathV2.enabled) { line = "Off"; android.util.Log.i("WCMAP", "climb: off (dormant: SafePathV2.enabled is false)"); return }
         val rects = rects(ctx)
         android.util.Log.i("WCMAP", "climb: start (near ${MapHarvestSteps.near?.first ?: "unknown"}, ${rects.size} zone rects)")
         val game = GameFiles.open(ctx) ?: run { line = "Waiting: ${GameFiles.lastWhy ?: "the game files could not be read"}"
@@ -95,7 +94,7 @@ object ClimbStep : ArtHarvest.Step {
             // what the device has now for the zones near the player (the WCMAP log: SafePathDiag)
             SafePathDiag.coverage(ArtHarvest.rootDir, order(rects, MapHarvestSteps.near, emptyList()).take(TIER0_MAX))
             while (true) {
-                if (!Settings.safePathV2) { line = "Off"; return }
+                if (!SafePathV2.enabled) { line = "Off"; return }
                 val asked = synchronized(wanted) { wanted.toList() }
                 val todo = order(rects, MapHarvestSteps.near, asked).filter { it !in done }
                 val map = todo.firstOrNull() ?: break

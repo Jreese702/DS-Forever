@@ -28,7 +28,15 @@ object Settings {
                 if (p.getString("questTracking", null) == "vanilla") e.putString("questTracking", "safepath")
                 e.putBoolean(QT_MIGRATED, true).apply()
             }
+            dropRetired(p)
         }
+    }
+
+    /** the retired switches' saved values removed (once: nothing is left to remove after); true when one was there */
+    fun dropRetired(p: SharedPreferences): Boolean {
+        if (!p.contains(RETIRED_SAFEPATH_V2)) return false
+        p.edit().remove(RETIRED_SAFEPATH_V2).apply()
+        return true
     }
     private const val QT_MIGRATED = "questTrackingSafePath"
 
@@ -89,11 +97,11 @@ object Settings {
         set(v) { prefs?.edit()?.putString("avoidDanger", if (v in AVOID_DANGER) v else "high")?.apply(); changed() }
     val AVOID_DANGER = listOf("off", "low", "high")
 
-    /** "SafePath v2 routing" (the user's test of the new rules on the device, 2026-10-19; Off by default, the user turns it on): the
-     *  quest's way in the player's zone planned on the zone's ground lattice by the harness's own rules (SafePathV2, ClimbStep) */
-    var safePathV2: Boolean
-        get() = prefs?.getBoolean("safePathV2", false) ?: false
-        set(v) { if (v != safePathV2) { prefs?.edit()?.putBoolean("safePathV2", v)?.apply(); changed() } }
+    /** RETIRED 2026-10-19 (test20; the user: "also change my in game settings to just launch with the new safe path, remove the v1 vs
+     *  v2 options"): the "SafePath v2 routing" switch is gone. Quest tracking = SafePath routes on the zone's shipped network
+     *  (ShippedRoute) wherever the APK has one; the on-device lattice (SafePathV2, ClimbStep) is dormant behind [SafePathV2.enabled], an
+     *  internal flag. A saved "safePathV2" from before is removed on first launch ([dropRetired]), so no stale toggle changes routing. */
+    const val RETIRED_SAFEPATH_V2 = "safePathV2"
 
     /** "World map" (b-seamless-map; the user: "Give an option in settings"): the stitched continent shows every zone revealed ("all",
      *  the default) or only what this character has explored ("explored") */
