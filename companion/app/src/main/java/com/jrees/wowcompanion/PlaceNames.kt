@@ -38,6 +38,9 @@ object PlaceNames {
     fun chunk(ix: Int, iy: Int) = iy * 16 + ix
 
     /** where world ([wx], [wy]) lies: its tile (column, row of the WDT's 64 x 64) and its chunk in that tile */
+    /** the middle of ADT tile ([tc] its column, [tr] its row) in world x, y */
+    fun centreOf(tc: Int, tr: Int): DoubleArray = doubleArrayOf(32 * MapHarvest.ADT_YD - (tr + 0.5) * MapHarvest.ADT_YD, 32 * MapHarvest.ADT_YD - (tc + 0.5) * MapHarvest.ADT_YD)
+
     fun locate(wx: Double, wy: Double): IntArray {
         val gx = (32 * MapHarvest.ADT_YD - wy) / MapHarvest.ADT_YD; val gy = (32 * MapHarvest.ADT_YD - wx) / MapHarvest.ADT_YD
         val tc = floor(gx).toInt(); val tr = floor(gy).toInt()

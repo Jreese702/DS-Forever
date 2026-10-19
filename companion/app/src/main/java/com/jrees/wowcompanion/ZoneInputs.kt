@@ -203,6 +203,13 @@ class ZoneInputs(private val src: Source, val rect: MapHarvest.Rect, private val
             return roomFeet.getOrPut(l[0] to l[1]) { src.obj0(l[0], l[1])?.let { WorldBuildings.placements(it) }?.flatMap { p ->
                 val gs = wmoGroups.getOrPut(p.fid) { src.wmo(p.fid)?.let { WorldBuildings.groups(it) } ?: emptyList() }
                 WorldBuildings.feet(p, gs) { wx, wy -> height(wx, wy).toDouble() } } ?: emptyList() }.any { it.holds(x, y) } }
+        /** every tile's rooms (those [roomsAt] reads, each tile's own placements' feet), for the lattice's file (Climb.Rooms) */
+        fun rooms(): Climb.Rooms {
+            val tiles = HashSet<Pair<Int, Int>>()
+            for (f in src.objTiles()) tiles.add(f[0] to f[1])
+            for ((c, r) in tiles) roomsAt(PlaceNames.centreOf(c, r)[0], PlaceNames.centreOf(c, r)[1])
+            return Climb.Rooms(roomFeet.filterValues { it.isNotEmpty() }.mapKeys { (k, _) -> Climb.Rooms.tileKey(k.first, k.second) })
+        }
         init {
             cg.solid = { x, y -> roomsAt(x, y) }
             println("CLIMB lattice ${cg.nx} x ${cg.ny} in ${(System.nanoTime() - t0) / 1_000_000} ms; walls ${cg.cls.count { (it.toInt() and 3) == 3 } * 100 / cg.cls.size}% of the east steps")

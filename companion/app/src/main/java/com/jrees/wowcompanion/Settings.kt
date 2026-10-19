@@ -89,6 +89,12 @@ object Settings {
         set(v) { prefs?.edit()?.putString("avoidDanger", if (v in AVOID_DANGER) v else "high")?.apply(); changed() }
     val AVOID_DANGER = listOf("off", "low", "high")
 
+    /** "SafePath v2 routing" (the user's test of the new rules on the device, 2026-10-19; Off by default, the user turns it on): the
+     *  quest's way in the player's zone planned on the zone's ground lattice by the harness's own rules (SafePathV2, ClimbStep) */
+    var safePathV2: Boolean
+        get() = prefs?.getBoolean("safePathV2", false) ?: false
+        set(v) { if (v != safePathV2) { prefs?.edit()?.putBoolean("safePathV2", v)?.apply(); changed() } }
+
     /** "World map" (b-seamless-map; the user: "Give an option in settings"): the stitched continent shows every zone revealed ("all",
      *  the default) or only what this character has explored ("explored") */
     var worldMapFog: String
