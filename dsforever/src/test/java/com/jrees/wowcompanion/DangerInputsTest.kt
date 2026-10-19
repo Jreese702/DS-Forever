@@ -61,11 +61,11 @@ class DangerInputsTest {
         assertEquals(0f, at(DangerInputs.build(placeholders, rect, H, 10, rules), 0.5, 0.5), 0f)
         // below the line: still mobs
         assertTrue(at(DangerInputs.build(ring(0.5, 0.5, 8, 3, "Keeper", 99), rect, H, 10, rules), 0.5, 0.5) > 0f)
-        // the harness's rule as it stands: only a spawn already friendly to me is left alone, so a placeholder tagged for the other
-        // side (hostile to me) is made friendly too
+        // the user (2026-10-19, "Yes, other faction = danger"): a placeholder tagged for the other side (hostile to me only: Dalaran's
+        // guards for a Horde character) stays danger; the exemption is for NPCs tagged for neither faction
         val tagged = ring(0.5, 0.5, 8, H, "Keeper", 9999)
-        assertEquals(0f, at(DangerInputs.build(tagged, rect, H, 10, rules), 0.5, 0.5), 0f)
-        assertTrue(DangerInputs.sided(tagged, rect, H, rules).all { it.hostile == A })
+        assertTrue(at(DangerInputs.build(tagged, rect, H, 10, rules), 0.5, 0.5) > 0f)
+        assertTrue(DangerInputs.sided(tagged, rect, H, rules).all { it.hostile == H })
     }
 
     @Test fun theTypicalDangerIsTakenOff() {

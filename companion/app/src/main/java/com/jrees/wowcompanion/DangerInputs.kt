@@ -48,7 +48,8 @@ object DangerInputs {
         val ax = rect.l - rect.r; val ay = rect.t - rect.b
         val foe = foeOf(mine)
         return QuestieNpcs.townSided(spawns) { sp -> doubleArrayOf(rect.t - sp.y * ay, rect.l - sp.x * ax) }.map { sp ->
-            if ((sp.minLv >= rules.friendlyMinLevel || rules.friendlyNames.any { it.containsMatchIn(sp.name) }) && sp.hostile != foe)
+            // the placeholder level only for NPCs tagged for neither faction (the user, 2026-10-19: "Yes, other faction = danger")
+            if ((sp.minLv >= rules.friendlyMinLevel && sp.hostile == 3 || rules.friendlyNames.any { it.containsMatchIn(sp.name) }) && sp.hostile != foe)
                 QuestieNpcs.Spawn(sp.area, sp.x, sp.y, sp.minLv, sp.maxLv, sp.elite, foe, sp.name, sp.sub) else sp }
     }
 
