@@ -258,6 +258,26 @@ class SafePathTest {
         assertEquals(2.95f, back.at(30.0, 50.0), 0.06f)
     }
 
+    /** the zones' cells are the world's own chunks, whatever the rect: Durotar's rect (off the chunk lines) padded 450 yd (13.5 chunks)
+     *  set the cells off the chunks, and the cell over the Southfury bridge read the chunk beside it - the border moved a chunk, the
+     *  bridge exit lost (R2) */
+    @Test fun theZonesCellsAreTheChunks() {
+        val org = 32 * MapHarvest.ADT_YD; val ch = PlaceNames.CHUNK_YD
+        // the area of a chunk by its global column (world y): a border between chunk columns 622 and 623 (y ~ -3667)
+        val areaOf = { _: Double, wy: Double -> if (Math.floor((org - wy) / ch) < 623) 14 else 17 }
+        // Durotar's own rect, and padded by 450 yd as the harness's grids are
+        for (pad in listOf(0.0, SafePath.GRID_PAD_YD, 466.6666)) {
+            val z = SafePath.Zones.build(1808.3333 + pad, -1716.6666 - pad, -1962.4999 + pad, -7249.9995 - pad, ch, areaOf)
+            for (col in 600..640) for (dy in listOf(0.05, 0.5, 0.95)) {
+                val wy = org - (col + dy) * ch
+                assertEquals("pad $pad chunk column $col (+$dy)", if (col < 623) 14 else 17, z.areaAt(0.0, wy))
+            }
+            // the grid covers the rect, on the chunk lines
+            assertTrue(z.t >= 1808.3333 + pad && z.b <= -1716.6666 - pad && z.l >= -1962.4999 + pad && z.r <= -7249.9995 - pad)
+            assertEquals(0.0, ((org - z.l) / ch).let { it - Math.round(it) }, 1e-6)
+        }
+    }
+
     /** the user's narrow-stream ruling (2026-10-18, Silverpine's stream by the Sepulcher: "Yes, you wade it"): water up to 2.2 yd is
      *  crossed where it is no wider than 6 yd, a ford or the bank on both sides; a wide river of the same depth, or a narrow one deeper,
      *  is a swim */

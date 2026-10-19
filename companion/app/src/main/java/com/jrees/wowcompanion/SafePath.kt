@@ -770,13 +770,22 @@ object SafePath {
                 }
             }.getOrNull()
 
-            /** over world rect ([t], [b], [l], [r]) by [chunkYd] cells: each cell's area from [areaAt] */
+            /** over world rect ([t], [b], [l], [r]) by [chunkYd] cells: each cell's area from [areaAt]. THE CELLS ARE THE WORLD'S OWN
+             *  CHUNKS (the rect grown out to the chunk lines, counted from the map's corner): a cell set off the chunks read its middle in
+             *  the chunk beside it wherever its drift (the rect's own offset, a cell a hair smaller than a chunk) passed half a chunk -
+             *  the zones' border moved a chunk, and with the grids padded 450 yd (13.5 chunks) Durotar's Southfury bridge ended a chunk
+             *  short of the Barrens: no bridge exit, the Barrens' one reaching 5k sq yd of Durotar */
             fun build(t: Double, b: Double, l: Double, r: Double, chunkYd: Double, areaAt: (Double, Double) -> Int?): Zones {
-                val nx = max(1, ceil((l - r) / chunkYd).toInt()); val ny = max(1, ceil((t - b) / chunkYd).toInt())
-                return Zones(t, b, l, r, nx, ny, IntArray(nx * ny) { k ->
-                    areaAt(t - (k / nx + 0.5) * (t - b) / ny, l - (k % nx + 0.5) * (l - r) / nx) ?: 0
+                val e = 1e-6
+                val j0 = floor((ORG - t) / chunkYd + e); val j1 = max(j0 + 1, ceil((ORG - b) / chunkYd - e))
+                val i0 = floor((ORG - l) / chunkYd + e); val i1 = max(i0 + 1, ceil((ORG - r) / chunkYd - e))
+                val nx = (i1 - i0).toInt(); val ny = (j1 - j0).toInt()
+                val t2 = ORG - j0 * chunkYd; val l2 = ORG - i0 * chunkYd
+                return Zones(t2, ORG - j1 * chunkYd, l2, ORG - i1 * chunkYd, nx, ny, IntArray(nx * ny) { k ->
+                    areaAt(t2 - (k / nx + 0.5) * chunkYd, l2 - (k % nx + 0.5) * chunkYd) ?: 0
                 })
             }
+            private const val ORG = 32.0 * MapHarvest.ADT_YD
         }
     }
     val zones = RouteWork.Files { map -> Zones.read(ArtHarvest.file("safepath/zones/$map.bin")) }
