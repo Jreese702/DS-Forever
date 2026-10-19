@@ -157,6 +157,77 @@ class ShippedRouteTest {
         assertTrue(r.reached); assertEquals(2, r.pts.size)
     }
 
+    // ---------------------------------------------------------------- one graph: the net, its joins and the roadmap
+
+    /** a roadmap grid of nodes every 40 yd over world x 0 .. 400, y 0 .. 1000 (ids from RM_BASE), its edges at [tier] */
+    private fun grid(tier: Double = 1.0, skip: (Double, Double) -> Boolean = { _, _ -> false }): ShippedRoute.Roadmap {
+        val nodes = HashMap<Int, DoubleArray>(); val id = HashMap<Pair<Int, Int>, Int>()
+        for (i in 0..10) for (j in 0..25) { val x = i * 40.0; val y = j * 40.0; if (skip(x, y)) continue
+            val n = ShippedRoute.RM_BASE + nodes.size; nodes[n] = doubleArrayOf(x + 3.0, y + 3.0); id[i to j] = n }
+        val edges = ArrayList<ShippedRoute.Roadmap.Edge>()
+        for ((ij, a) in id) for ((di, dj) in listOf(1 to 0, 0 to 1)) id[(ij.first + di) to (ij.second + dj)]?.let { b -> edges.add(ShippedRoute.Roadmap.Edge(a, b, tier)) }
+        return ShippedRoute.Roadmap(nodes, edges)
+    }
+    private val none = section(listOf(node(0, 2000.0, 0.0), node(1, 2000.0, 100.0)), listOf(road(0, 1)))
+
+    @Test fun theRoadmapCarriesARouteWhereNoWayGoesAndTheEndsSnapShort() {
+        val r = ShippedRoute.plan(none, flat, null, doubleArrayOf(205.0, 15.0), doubleArrayOf(195.0, 985.0), roadmap = grid())
+        assertTrue(r.why, r.reached); assertTrue(r.why, r.snapped)
+        assertTrue("short snaps: ${r.attachFromYd} / ${r.attachToYd}", r.attachFromYd <= ShippedRoute.SNAP_YD && r.attachToYd <= ShippedRoute.SNAP_YD)
+        assertTrue(r.why, r.roadmapYd > 800.0)
+        assertTrue("about straight: ${r.yd}", r.yd < 1100.0)
+    }
+
+    @Test fun aRoadIsPreferredUntilTheRoadmapIsNetFavourShorter() {
+        // a road along x 0 (y 0 .. 1000) beside the roadmap's grid: the road for a goal along it, though the roadmap is as short
+        val r = ShippedRoute.plan(straightRoad(), flat, null, doubleArrayOf(10.0, 10.0), doubleArrayOf(10.0, 990.0), roadmap = grid())
+        assertTrue(r.why, r.reached)
+        assertTrue("on the road: ${r.why}", r.roadmapYd < 100.0)
+        // a goal across the grid (x 400): the roadmap's own way, the road round being far longer than 1.3x
+        val across = ShippedRoute.plan(straightRoad(), flat, null, doubleArrayOf(10.0, 10.0), doubleArrayOf(390.0, 400.0), roadmap = grid())
+        assertTrue(across.reached); assertTrue(across.why, across.roadmapYd > 300.0)
+    }
+
+    @Test fun theRoadmapsTiersAreCosts() {
+        // the grid's middle band (x 120 .. 280) a rock tier x5: a route from x 40 to x 360 at y 500 goes ... through it (no other way),
+        // and along y it keeps off it
+        fun rocky(): ShippedRoute.Roadmap { val g = grid()
+            return ShippedRoute.Roadmap(g.nodes, g.edges.map { e -> val a = g.nodes[e.a]!!; val b = g.nodes[e.b]!!
+                if (minOf(a[0], b[0]) >= 120.0 && maxOf(a[0], b[0]) <= 280.0) ShippedRoute.Roadmap.Edge(e.a, e.b, 5.0) else e }) }
+        val r = ShippedRoute.plan(none, flat, null, doubleArrayOf(200.0, 20.0), doubleArrayOf(200.0, 980.0), roadmap = rocky())
+        assertTrue(r.why, r.reached)
+        assertTrue("off the rock band", r.pts.subList(2, r.pts.size - 2).all { it[0] !in 130.0..270.0 })
+    }
+
+    @Test fun aRewalkWayIsNeverDrawnStraight() {
+        // a rewalk way across a wall (world x 0, y 400 .. 600 the way; the wall x -20 .. 20, y 490 .. 510 but a gap round x 30)
+        fun wall(x: Double, y: Double) = x in -20.0..20.0 && y in 490.0..510.0
+        val ground: (Double, Double) -> Float = { x, y -> if (wall(x, y)) Terrain.WALL else 1f }
+        val sec = section(listOf(node(0, 0.0, 0.0), node(1, 0.0, 400.0), node(2, 0.0, 600.0), node(3, 0.0, 1000.0)),
+            listOf(road(0, 1), road(1, 2, SafePath.REWALK), road(2, 3)))
+        val r = ShippedRoute.plan(sec, ground, null, doubleArrayOf(0.0, -40.0), doubleArrayOf(0.0, 1040.0))
+        assertTrue(r.why, r.reached)
+        for ((a, b) in r.pts.zipWithNext()) for (q in 0..200) {
+            val x = a[0] + (b[0] - a[0]) * q / 200; val y = a[1] + (b[1] - a[1]) * q / 200
+            assertFalse("crosses the wall at ($x, $y)", wall(x, y))
+        }
+        // walled across (no gap): the rewalk way dropped, nothing else joins: no route
+        val shut: (Double, Double) -> Float = { _, y -> if (y in 490.0..510.0) Terrain.WALL else 1f }
+        val n = ShippedRoute.plan(sec, shut, null, doubleArrayOf(0.0, -40.0), doubleArrayOf(0.0, 1040.0))
+        assertFalse(n.reached)
+    }
+
+    @Test fun theAttachLegRefusesASteepBankAndAShortWalkAcrossDeepWater() {
+        // a steep bank (12x) between the player and the road's node: the snap walks round it
+        fun bank(x: Double, y: Double) = x in 20.0..30.0 && y in -40.0..30.0
+        val ground: (Double, Double) -> Float = { x, y -> if (bank(x, y)) 14f else 1f }
+        val r = ShippedRoute.plan(straightRoad(), ground, null, doubleArrayOf(50.0, 0.0), doubleArrayOf(-50.0, 1000.0))
+        assertTrue(r.why, r.reached)
+        for ((a, b) in r.pts.zipWithNext()) for (q in 0..100) {
+            val x = a[0] + (b[0] - a[0]) * q / 100; val y = a[1] + (b[1] - a[1]) * q / 100; assertFalse("over the bank at ($x, $y)", bank(x, y))
+        }
+    }
+
     // ---------------------------------------------------------------- test20: no v1 / v2 switch
 
     @Test fun theRetiredV2PrefIsRemovedOnce() {
