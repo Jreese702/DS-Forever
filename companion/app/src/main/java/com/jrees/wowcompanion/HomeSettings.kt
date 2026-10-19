@@ -282,6 +282,49 @@ object HomeLootSwitch {
 }
 
 /**
+ * THE COMPASS BAR ON THE TOP SCREEN (live layer part 1, the user's "compass F", 2026-10-19): the "Compass bar" row of Settings > Top
+ * screen (GameUiSection). Like the loot window's switch, the CHOICE is the add-on's (WowCompanion's Trail.lua, WowCompanionDB.compass,
+ * kept across updates by SvKeep; default on), so it holds from the login on. The state comes from every interact document
+ * (`proof.compc`: on / off cells and `show`; absent = an older add-on set: no row); a press is one tap on the `iact` row's cell, tried
+ * once more if the add-on has not said so a moment later (idempotent).
+ */
+object CompassSwitch {
+    data class State(val show: Boolean, val colOn: Int, val colOff: Int, val why: String?)
+    var state: State? = null
+        private set
+    private var pad: JSONObject? = null
+    private val listeners = ArrayList<() -> Unit>()
+    private val main = Handler(Looper.getMainLooper())
+
+    fun onChange(l: () -> Unit) { listeners.add(l) }
+
+    /** every interact document (CompanionHost): the row follows the add-on's word */
+    fun note(msg: JSONObject) {
+        msg.optJSONObject("pad")?.let { pad = it }
+        val c = msg.optJSONObject("proof")?.optJSONObject("compc") ?: return
+        val s = State(c.optBoolean("show", true), c.optInt("on", -1), c.optInt("off", -1), c.optString("why").ifEmpty { null })
+        if (s.colOn < 0 || s.colOff < 0 || s == state) return
+        state = s
+        for (l in listeners) l()
+    }
+
+    /** the player switched the compass bar [on] or off: ONE tap; true = sent */
+    fun turn(ctx: Context, on: Boolean): Boolean {
+        val sent = tap(ctx, on)
+        main.removeCallbacksAndMessages(null)
+        if (sent) main.postDelayed({ val s = state; if (s != null && s.show != on) tap(ctx, on) }, RETRY_MS)
+        return sent
+    }
+
+    private fun tap(ctx: Context, on: Boolean): Boolean {
+        val s = state ?: return false
+        return TapBridge.tap(ctx, pad ?: HomeAttackSwitch.pad, "iact", if (on) s.colOn else s.colOff) { }
+    }
+
+    private const val RETRY_MS = 450L
+}
+
+/**
  * The Settings room's HOME section: one row, "Controller on Home", with its two choices in view as the game's red buttons
  * (UiKit.choice, the chosen one lit). Stacked under the game-UI section by settingsRoom (GameUiSection.kt). Touches act on
  * RELEASE and only when the finger has not moved (the page scrolls).
