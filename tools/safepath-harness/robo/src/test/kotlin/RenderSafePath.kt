@@ -827,9 +827,8 @@ class RenderSafePath {
             val gv = cg.at(gp!![0], gp[1]); val gk = (gv[1].toLong() shl 32) or (gv[0].toLong() and 0xFFFFFFFFL)
             val mySwims = swims.filter { gk in it.island }
             links = baseLinks + mySwims.map { it.link }
-            sr.links = links
-            val way = sr.plan(netC, f!!, gp, clear, i) { println(it) }
-            val lastReached = sr.lastReached
+            val planned = sr.plan(netC, f!!, gp, clear, links, ('A' + i).toString()) { println(it) }
+            val way = planned.pts; val lastReached = planned.reached
             if (way.size < 2) { val r0 = Climb.route(cg, f, gp, danger, k, deep, links); val r1 = Climb.route(cg, f, gp)
                 println("EMPTY ${f.toList()} -> ${gp.toList()}: full ${r0?.reached} ${r0?.pts?.size}, bare ${r1?.reached} ${r1?.pts?.size}; deep at start ${deep(f[0], f[1])} goal ${deep(gp[0], gp[1])}") }
             if (!lastReached) {

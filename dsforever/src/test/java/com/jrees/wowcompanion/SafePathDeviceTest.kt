@@ -10,6 +10,7 @@ import org.junit.Test
 import java.io.DataOutputStream
 import java.io.File
 import java.util.zip.GZIPOutputStream
+import kotlin.math.hypot
 
 /**
  * SafePath on the device (E:/safepath-work/docs/DEVICE_INTEGRATION_PLAN.md, steps 1-7): the files the device's harvest writes and
@@ -57,6 +58,35 @@ class SafePathDeviceTest {
             assertEquals(g.lineClear(pa, pb), back.lineClear(pa, pb))
             assertEquals(Climb.walkable(g, pa, pb), Climb.walkable(back, pa, pb))
         }
+    }
+
+    // ---------------------------------------------------------------- SafeRoute
+
+    private val flat by lazy { Climb.build(200.0, -200.0, 200.0, -200.0, { _, _ -> 0f }) }
+    private val noNet = SafePath.Net(1, 0, "", emptyList(), emptyList(), emptyList())
+
+    @Test fun aLongWadeIsRoutedAgainWithNoWading() {
+        // a river 1.8 yd deep across the way (world y 20 .. -20), with a ford at world x below -150: the first leg wades it (the narrow
+        // stream's depth, but 40 yd on end), so the route is planned again with no wading and crosses at the ford
+        val water: (Double, Double) -> Float = { x, y -> if (y in -20.0..20.0) (if (x < -150) 1.0f else 1.8f) else Float.NaN }
+        val said = ArrayList<String>()
+        val sr = SafeRoute(flat, { _, _ -> 0f }, { _, _ -> 0f }, 8.0, { _, _ -> false }, water, { _, _ -> false }, null)
+        val r = sr.plan(noNet, doubleArrayOf(100.0, 150.0), doubleArrayOf(100.0, -150.0), { _, _ -> true }, emptyList(), "A") { said.add(it) }
+        assertTrue(said.joinToString(), said.any { it.startsWith("WADE route A") })
+        assertTrue(r.reached)
+        assertTrue("no wade over the ford's depth: ${sr.longestWade(r.pts)}", sr.longestWade(r.pts) == 0.0)
+        assertTrue("crosses at the ford", r.pts.any { it[0] < -140 })
+        assertEquals(doubleArrayOf(100.0, -150.0).toList(), r.pts.last().toList())
+    }
+
+    @Test fun aGoalNoWalkReachesIsSaidSo() {
+        // the goal on a plateau 40 yd up, cliffs all round
+        val g = Climb.build(200.0, -200.0, 200.0, -200.0, { gr, gc -> val x = org - gr * s; val y = org - gc * s
+            (if (hypot(x - 100, y + 100) < 40) 40f else 0f) })
+        val sr = SafeRoute(g, { _, _ -> 0f }, { _, _ -> 0f }, 8.0, { _, _ -> false }, { _, _ -> Float.NaN }, { _, _ -> false }, null)
+        val r = sr.plan(noNet, doubleArrayOf(-100.0, 100.0), doubleArrayOf(100.0, -100.0), { _, _ -> true }, emptyList())
+        assertFalse(r.reached)
+        for ((a, b) in r.pts.zipWithNext()) assertTrue(Climb.walkable(g, a, b))
     }
 
     @Test fun aLatticeWithoutFacesOrRoomsComesBackWithout() {
