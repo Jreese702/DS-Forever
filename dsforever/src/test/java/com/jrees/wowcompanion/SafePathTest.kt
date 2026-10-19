@@ -255,6 +255,19 @@ class SafePathTest {
         assertEquals(2.95f, back.at(30.0, 50.0), 0.06f)
     }
 
+    /** the user's narrow-stream ruling (2026-10-18, Silverpine's stream by the Sepulcher: "Yes, you wade it"): water up to 2.2 yd is
+     *  crossed where it is no wider than 6 yd, a ford or the bank on both sides; a wide river of the same depth, or a narrow one deeper,
+     *  is a swim */
+    @Test fun aNarrowStreamIsWaded() {
+        // a 2 yd deep stream 5 yd wide (y 48..53), a 2 yd deep river 30 yd wide (y 10..40), dry between
+        val w = SafePath.Water.build(100.0, 0.0, 100.0, 0.0) { _, y -> if (y in 48.0..53.0 || y in 10.0..40.0) 2f else Float.NaN }
+        assertTrue("the stream", w.wadeable(30.0, 50.5)); assertTrue(w.wading(30.0, 50.5))
+        assertTrue("the river", !w.wadeable(30.0, 25.0))
+        val deep = SafePath.Water.build(100.0, 0.0, 100.0, 0.0) { _, y -> if (y in 48.0..53.0) 3f else Float.NaN }
+        assertTrue("a narrow stream 3 yd deep", !deep.wadeable(30.0, 50.5))
+        assertTrue("a ford", SafePath.Water.build(100.0, 0.0, 100.0, 0.0) { _, _ -> 1.2f }.wadeable(30.0, 30.0))
+    }
+
     /** the depth at a spot is the liquid's surface over the ground at the spot itself (straight between the terrain's vertices), not
      *  over its cell's highest corner: a stream's mouth 3.6 yd deep in Silverpine read shallow over the bank's corner */
     @Test fun depthIsOverTheGroundAtTheSpot() {

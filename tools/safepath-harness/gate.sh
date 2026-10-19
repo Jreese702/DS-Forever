@@ -11,7 +11,7 @@ export SAFEPATH_WORK="${SAFEPATH_WORK:-E:/safepath-work}"
 OUT="${GATE_OUT:-$SAFEPATH_WORK/gate/run-$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$OUT"
 export SAFEPATH_OUT="$OUT"
-ZONES="durotar:kalimdor elwynn:azeroth zephras:zephras tirisfal:azeroth teldrassil:kalimdor dunmorogh:azeroth mulgore:kalimdor barrens:kalimdor westfall:azeroth lochmodan:azeroth silverpine:azeroth darkshore:kalimdor climb_barrens:kalimdor climb_mulgore:kalimdor climb_durotar:kalimdor"
+ZONES="durotar:kalimdor elwynn:azeroth zephras:zephras tirisfal:azeroth teldrassil:kalimdor dunmorogh:azeroth mulgore:kalimdor barrens:kalimdor westfall:azeroth lochmodan:azeroth silverpine:azeroth darkshore:kalimdor climb_barrens:kalimdor climb_mulgore:kalimdor climb_durotar:kalimdor hillsbrad:azeroth duskwood:azeroth redridge:azeroth ashenvale:kalimdor stonetalon:kalimdor wetlands:azeroth alterac:azeroth arathi:azeroth arathi_horde:azeroth dalaran:dalaran"
 [ -n "${CROSS_ONLY:-}" ] && ZONES=""
 # the cross-zone routes' legs: each zone they cross, its own spec with the legs for goals
 CROSS=$(cd "$HERE/py" && PYTHONIOENCODING=utf-8 python cross.py specs "$OUT" | tr -d '\r')

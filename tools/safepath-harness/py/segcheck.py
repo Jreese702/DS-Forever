@@ -35,10 +35,86 @@ def step_deg(gc, gr, dc, dr):
     a = max(edge_deg(gc, gr, dc, 0), edge_deg(gc + dc, gr, 0, dr))
     b = max(edge_deg(gc, gr, 0, dr), edge_deg(gc, gr + dr, dc, 0))
     return min(a, b)
+# THE FLOORS A WALKER IS ON instead of the terrain (the harness writes them beside the routes: floors_<tag>.json, each deck's floor
+# triangles in 3D; holes_<tag>.json, the terrain's holes a building's floor covers). Every WMO's bounding box was taken for a floor
+# here once, and the whole ground under and around a building went unchecked (Wetlands' route G up a 60-75 degree hillside over a
+# buried tunnel's floor)
+DECK_MARGIN = 1.0          # as WorldBuildings.DECK_MARGIN_YD
+BURIED = 1.0               # a floor this far under the ground or more is under it (a tunnel's), not on it
+STEP_UP = 1.5              # a step down off a floor or a ledge (Caves.STEP_UP_YD); deeper is a drop, a wall
+RISE = 1.5                 # a step up within half a yard (Caves.STEP_UP_YD, a stair's join): higher is a parapet, a wall top, a roof - not walked onto
+_floors = None; _holes = set(); _fgrid = {}; _layers = {}
+def load_floors(routes_file):
+    global _floors, _holes
+    d = os.path.dirname(routes_file); tag = os.path.basename(routes_file).replace('levels_routes_', '').replace('.json', '')
+    fp = os.path.join(d, 'floors_%s.json' % tag); hp = os.path.join(d, 'holes_%s.json' % tag)
+    _floors = json.load(open(fp)) if os.path.exists(fp) else []
+    _holes = {(a, b) for a, b in json.load(open(hp))} if os.path.exists(hp) else set()
+    lp = os.path.join(d, 'layers_%s.json' % tag)
+    _layers.clear(); _layers.update({(a, b): z for a, b, z in json.load(open(lp))} if os.path.exists(lp) else {})
+    for k, t in enumerate(_floors):
+        for i in range(int(math.floor((min(t[0], t[3], t[6]) - DECK_MARGIN) / 16)), int(math.floor((max(t[0], t[3], t[6]) + DECK_MARGIN) / 16)) + 1):
+            for j in range(int(math.floor((min(t[1], t[4], t[7]) - DECK_MARGIN) / 16)), int(math.floor((max(t[1], t[4], t[7]) + DECK_MARGIN) / 16)) + 1):
+                _fgrid.setdefault((i, j), []).append(k)
+    return len(_floors), len(_holes)
+def _segd(ax, ay, bx, by, x, y):
+    dx, dy = bx - ax, by - ay; l2 = dx * dx + dy * dy; u = 0 if l2 <= 0 else max(0, min(1, ((x - ax) * dx + (y - ay) * dy) / l2))
+    return math.hypot(ax + u * dx - x, ay + u * dy - y)
+def level_floor(x, y):
+    """on a floor the lattice takes as level ground (a city's street, a building's porch: floors_<tag>.json's 0): no terrain check"""
+    for k in _fgrid.get((int(math.floor(x / 16)), int(math.floor(y / 16))), []):
+        t = _floors[k]
+        if t[9]: continue
+        x0, y0, _, x1, y1, _, x2, y2, _ = t[:9]
+        det = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+        if abs(det) < 1e-9: continue
+        a = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / det; b = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / det
+        if (a >= 0 and b >= 0 and a + b <= 1) or min(_segd(x0, y0, x1, y1, x, y), _segd(x1, y1, x2, y2, x, y), _segd(x2, y2, x0, y0, x, y)) <= DECK_MARGIN: return True
+    return False
+def layer_at(x, y):
+    """the floor the walker is on at (x, y) by the harness's layers (Climb.floorLayers: one height a vertex): straight between the
+    cell's four vertices when all four have one; the nearest vertex's at a floor's edge; None off every reached floor"""
+    gx = (ORG - x) / S; gy = (ORG - y) / S; r0 = int(math.floor(gx)); c0 = int(math.floor(gy)); fr = gx - r0; fc = gy - c0
+    v = [_layers.get((r0, c0)), _layers.get((r0, c0 + 1)), _layers.get((r0 + 1, c0)), _layers.get((r0 + 1, c0 + 1))]
+    if all(z is not None for z in v):
+        return (v[0] * (1 - fc) + v[1] * fc) * (1 - fr) + (v[2] * (1 - fc) + v[3] * fc) * fr
+    return _layers.get((kround(gx), kround(gy)))
+def floors_at(x, y):
+    """every floor's height at (x, y) (its triangles within the margin, on their planes)"""
+    out = []
+    for k in _fgrid.get((int(math.floor(x / 16)), int(math.floor(y / 16))), []):
+        t = _floors[k]
+        x0, y0, z0, x1, y1, z1, x2, y2, z2 = t[:9]
+        det = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+        if abs(det) < 1e-9: continue
+        a = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / det; b = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / det
+        if not (a >= 0 and b >= 0 and a + b <= 1) and min(_segd(x0, y0, x1, y1, x, y), _segd(x1, y1, x2, y2, x, y), _segd(x2, y2, x0, y0, x, y)) > DECK_MARGIN: continue
+        a = max(0.0, min(1.0, a)); b = max(0.0, min(1.0 - a, b))
+        out.append(a * z0 + b * z1 + (1 - a - b) * z2)
+    return out
+def floor_z(x, y, ground):
+    """the floor a walker at (x, y) stands on: of the deck triangles there (within the margin), the lowest at or over the ground (a
+    bridge's deck under its roof), else the highest under it (a tunnel's floor under its hill: the walker is in the tunnel only if it
+    came in by a mouth); None off every floor"""
+    over = None; under = None
+    for k in _fgrid.get((int(math.floor(x / 16)), int(math.floor(y / 16))), []):
+        t = _floors[k]
+        x0, y0, z0, x1, y1, z1, x2, y2, z2 = t[:9]
+        det = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+        if abs(det) < 1e-9: continue
+        a = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / det; b = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / det
+        inside = a >= 0 and b >= 0 and a + b <= 1
+        if not inside and min(_segd(x0, y0, x1, y1, x, y), _segd(x1, y1, x2, y2, x, y), _segd(x2, y2, x0, y0, x, y)) > DECK_MARGIN: continue
+        a = max(0.0, min(1.0, a)); b = max(0.0, min(1.0 - a, b))
+        h = a * z0 + b * z1 + (1 - a - b) * z2
+        if h >= ground - BURIED: over = h if over is None else min(over, h)
+        else: under = h if under is None else max(under, h)
+    return over if over is not None else under
+def hole_at(x, y): return (int(math.floor((ORG - x) / S)), int(math.floor((ORG - y) / S))) in _holes
 _calib = None
 def kround(x): return int(math.floor(x + 0.5))
 def vertex(wx, wy): return kround(((ORG - wy) / S)), kround(((ORG - wx) / S))
-def lattice_worst(a, b):
+def lattice_worst(a, b, on=None):
     s = vertex(*a); e = vertex(*b)
     n = max(abs(e[0] - s[0]), abs(e[1] - s[1])); worst = 0.0; walls = 0
     ci, cj = s
@@ -48,29 +124,46 @@ def lattice_worst(a, b):
         if di == 0 and dj == 0: continue
         d = step_deg(ci, cj, di, dj)
         if d >= WALL:
-            global _calib
-            if _calib is None:
-                import calib as _c; _calib = _c
-            # a building's or a cave's floor there (as Climb.build's level over a covered hole): its terrain no wall
-            if _calib.covered(ORG - (cj + nj) / 2 * S, ORG - (ci + ni) / 2 * S): ci, cj = ni, nj; continue
+            # a floor at the step (its own slope is the line's check, line_faces), or a hole a building's floor covers: no terrain
+            mx = ORG - (cj + nj) / 2 * S; my = ORG - (ci + ni) / 2 * S
+            if hole_at(mx, my) or level_floor(mx, my) or (on and any(abs(px - mx) < 3.0 and abs(py - my) < 3.0 for px, py in on)): ci, cj = ni, nj; continue
             walls += 1
         worst = max(worst, d)
         ci, cj = ni, nj
     return worst, walls
-def line_faces(a, b):
-    """the straight line's faces: sampled each half yard, at each the gentlest face within a quarter yard (as Climb's lineClear);
-    a building's footprint over a hole is its floor. Its steepest and how many samples at the wall limit."""
-    global _calib
-    if _calib is None:
-        import calib as _c; _calib = _c
-    L = math.hypot(b[0] - a[0], b[1] - a[1]); n = max(1, int(L / 0.5)); worst = 0.0; walls = 0
+def line_walk(a, b, z0=None):
+    """THE WALK along the straight line, each half yard: on a floor the harness's layer puts the walker on (layer_at), the floor's
+    own rise over each 2 yd; elsewhere the terrain's gentlest face within a quarter yard (as Climb's lineClear), but where a building's
+    floor covers a hole or a city's street levels it; and a step between the two - on or off a floor - more than STEP_UP is a wall
+    (off a deck's side, onto it from the hill over it, a floor no walker reaches left for the terrain under it). Returns its steepest
+    (degrees), its wall samples, the spots on a floor (for the lattice check), and its height at the end ([z0] at the start)."""
+    L = math.hypot(b[0] - a[0], b[1] - a[1]); n = max(1, int(L / 0.5)); step = L / n
+    worst = 0.0; walls = 0; on = []; hist = []
+    z = z0; win = max(1, int(round(2.0 / max(step, 1e-6))))
     for q in range(n + 1):
         x = a[0] + (b[0] - a[0]) * q / n; y = a[1] + (b[1] - a[1]) * q / n
-        f = min(FC.face_at(x + dx, y + dy) for dx, dy in ((0, 0), (0.25, 0), (-0.25, 0), (0, 0.25), (0, -0.25)))
-        if f >= WALL and _calib.covered(x, y): continue
-        worst = max(worst, f)
-        if f >= WALL: walls += 1
-    return worst, walls
+        f = layer_at(x, y)
+        if f is not None:
+            h = f; on.append((x, y)); hist.append((q, h))
+            back = [(qq, hz) for (qq, hz) in hist if q - qq >= win]
+            if back:
+                qq, hb = back[-1]; d = math.degrees(math.atan(abs(h - hb) / ((q - qq) * step)))
+                worst = max(worst, d)
+                if d >= WALL: walls += 1
+        else:
+            hist = []
+            g = HT.height(x, y); h = g
+            if not (hole_at(x, y) or level_floor(x, y)):
+                fc = min(FC.face_at(x + dx, y + dy) for dx, dy in ((0, 0), (0.25, 0), (-0.25, 0), (0, 0.25), (0, -0.25)))
+                worst = max(worst, fc)
+                if fc >= WALL: walls += 1
+            else: z = None; continue                                   # a covered hole, a city's street: no height to keep
+        if z is not None and abs(h - z) > STEP_UP + step:
+            walls += 1; worst = max(worst, 90.0)
+        z = h
+    return worst, walls, on, z
+def line_faces(a, b):
+    w, n, _, _ = line_walk(a, b); return w, n
 def surface_worst(a, b):
     L = math.hypot(b[0] - a[0], b[1] - a[1]); n = max(2, int(L / 2)); worst = 0.0; prev = a
     for s in range(1, n + 1):
@@ -80,13 +173,14 @@ def surface_worst(a, b):
 if __name__ == '__main__':
     f = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.environ.get('SAFEPATH_WORK', 'E:/safepath-work'), 'out', 'levels_routes_durotar.json')
     d = json.load(open(f, encoding='utf-8'))
+    nf, nh = load_floors(f)
     bad = []; total = 0
     for rt in d['routes']:
-        pts = rt['pts']
+        pts = rt['pts']; z = None
         for k in range(len(pts) - 1):
             a, b = pts[k], pts[k + 1]; total += 1
-            if (len(a) > 2 and a[2] in (1, 2)) or (len(b) > 2 and b[2] in (1, 2)): continue      # a cave: its own floor, not the hill over it
-            w, n = lattice_worst(a, b); sw = surface_worst(a, b); fw, fn = line_faces(a, b)
+            if (len(a) > 2 and a[2] in (1, 2)) or (len(b) > 2 and b[2] in (1, 2)): z = None; continue      # a cave: its own floor, not the hill over it
+            fw, fn, on, z = line_walk(a, b, z); w, n = lattice_worst(a, b, on); sw = surface_worst(a, b)
             if n: bad.append('%s%d-%s%d (%.0f deg, %d wall steps)' % (rt['letter'], k, rt['letter'], k + 1, w, n))
             if fn: bad.append('%s%d-%s%d (faces: %.0f deg over %.1f yd)' % (rt['letter'], k, rt['letter'], k + 1, fw, fn * 0.5))
             if '-v' in sys.argv: print('%s%d->%s%d  %5.0f yd  vertex steps steepest %4.1f  surface %4.1f  %s' % (rt['letter'], k, rt['letter'], k + 1, math.hypot(b[0] - a[0], b[1] - a[1]), w, sw, 'WALL' if n else 'ok'))

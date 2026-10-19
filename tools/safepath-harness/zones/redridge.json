@@ -1,0 +1,19 @@
+{"tag": "redridge", "dir": "azeroth", "faction": "alliance", "zone": 1433, "area": 44, "level": 18, "maps": [[1433, 44], [1429, 12], [1428, 46], [1431, 10]], "cities": [], "border": [1433, 1429], "title": "Redridge Mountains", "crop": [-8575, -10023, -1681, -3852], "floorWmos": [111454],
+ "closeups": [
+  {"name": "Lakeshire and the bridge", "box": [-9120, -9500, -2030, -2420]},
+  {"name": "Stonewatch Keep", "box": [-9230, -9560, -2830, -3160]},
+  {"name": "Render's Valley", "box": [-9580, -9960, -3020, -3420]},
+  {"name": "Three Corners", "box": [-9500, -9990, -1681, -2080]},
+  {"name": "the northern pass", "box": [-8575, -8900, -2400, -2800]}],
+ "goals": [
+  {"name": "Rethban Caverns' mouth (Redridge Drudgers)", "from": {"xy": [-9239, -2150], "name": "Lakeshire"}, "to": {"cave": 111186, "near": [-8980, -2016]}},
+  {"name": "the Redridge gnolls in Redridge Canyons", "from": {"xy": [-9239, -2150], "name": "Lakeshire"}, "to": {"camp": "Redridge Canyons"}},
+  {"name": "Alther's Mill", "from": {"xy": [-9239, -2150], "name": "Lakeshire"}, "to": {"wmo": 107194, "near": [-9227, -2701]}},
+  {"name": "Lakeshire town hall, over the bridge", "from": {"node": "Lakeshire"}, "to": {"wmo": 107210, "near": [-9268, -2213]}},
+  {"name": "Stonewatch Keep (Blackrock orcs)", "from": {"xy": [-9239, -2150], "name": "Lakeshire"}, "to": {"wmo": 111454, "near": [-9388, -3029]}},
+  {"name": "Render's Valley's den (Incinerator Gar'im)", "from": {"xy": [-9239, -2150], "name": "Lakeshire"}, "to": {"cave": 110497, "near": [-9793, -3234]}},
+  {"name": "the Shadowhide gnolls in Galardell Valley", "from": {"xy": [-9239, -2150], "name": "Lakeshire"}, "to": {"mob": "Shadowhide Warrior", "near": [-9172, -3280]}},
+  {"name": "the road to Elwynn Forest", "from": {"node": "Three Corners"}, "to": {"exit": "Elwynn Forest"}},
+  {"name": "the pass to Burning Steppes", "from": {"xy": [-9239, -2150], "name": "Lakeshire"}, "to": {"exit": "Burning Steppes"}},
+  {"name": "over the lion bridge to Duskwood (its far end)", "from": {"node": "Three Corners"}, "to": {"xy": [-9920, -1699]}}
+ ]}

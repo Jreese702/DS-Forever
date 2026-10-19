@@ -1,0 +1,14 @@
+{"tag": "arathi_horde", "dir": "azeroth", "faction": "horde", "zone": 1417, "area": 45, "level": 32, "friendlyMinLevel": 100,
+ "maps": [[1417, 45], [1424, 267], [1437, 11], [1425, 47]], "cities": [], "border": [1417, 1424],
+ "title": "Arathi Highlands (Horde)", "crop": [-300, -2533, -1200, -4400],
+ "floorWmos": [111378, 111366],
+ "closeups": [{"name": "Hammerfall and Drywhisker Gorge", "box": [-650, -1150, -3350, -3950]}],
+ "goals": [
+  {"name": "Go'Shek Farm", "from": {"node": "Hammerfall"}, "to": {"camp": "Go'Shek Farm"}},
+  {"name": "Drywhisker Gorge's mine mouth (kobolds)", "from": {"node": "Hammerfall"}, "to": {"cave": 111233, "near": [-998, -3841]}},
+  {"name": "Circle of East Binding", "from": {"node": "Hammerfall"}, "to": {"camp": "Circle of East Binding"}},
+  {"name": "Witherbark Village (trolls)", "from": {"node": "Hammerfall"}, "to": {"camp": "Witherbark Village"}},
+  {"name": "Boulder'gor (ogres)", "from": {"node": "Hammerfall"}, "to": {"camp": "Boulder'gor"}},
+  {"name": "Circle of Outer Binding", "from": {"node": "Hammerfall"}, "to": {"camp": "Circle of Outer Binding"}},
+  {"name": "Thoradin's Wall gate to Hillsbrad (Tarren Mill)", "from": {"node": "Hammerfall"}, "to": {"exit": "Hillsbrad Foothills"}}
+ ]}

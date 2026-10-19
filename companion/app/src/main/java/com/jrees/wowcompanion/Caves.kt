@@ -86,7 +86,6 @@ object Caves {
      */
     fun findLifts(p: WorldBuildings.Placement, groups: List<ByteArray>, travels: List<Double>): List<Lift> {
         if (travels.isEmpty()) return emptyList()
-        val cs = cos(p.yaw); val sn = Math.sin(p.yaw)
         val cols = HashMap<Long, ArrayList<Double>>()
         fun key(i: Long, j: Long) = (i shl 32) xor (j and 0xFFFFFFFFL)
         for (g in groups) {
@@ -95,7 +94,7 @@ object Caves {
                 // the face's points: its corners and its middle, each in its column
                 val xs = DoubleArray(4); val ys = DoubleArray(4); val zs = DoubleArray(4)
                 for (k in 0..2) { val lx = t[q * 9 + k * 3]; val ly = t[q * 9 + k * 3 + 1]; val lz = t[q * 9 + k * 3 + 2]
-                    xs[k] = p.ox - lx * p.scale * cs + ly * p.scale * sn; ys[k] = p.oy - lx * p.scale * sn - ly * p.scale * cs; zs[k] = p.oz + lz * p.scale }
+                    val w = p.world(lx.toDouble(), ly.toDouble(), lz.toDouble()); xs[k] = w[0]; ys[k] = w[1]; zs[k] = w[2] }
                 xs[3] = (xs[0] + xs[1] + xs[2]) / 3; ys[3] = (ys[0] + ys[1] + ys[2]) / 3; zs[3] = (zs[0] + zs[1] + zs[2]) / 3
                 for (k in 0..3) cols.getOrPut(key(Math.floor(xs[k] / LIFT_COL_YD).toLong(), Math.floor(ys[k] / LIFT_COL_YD).toLong())) { ArrayList() }.add(zs[k])
             }
@@ -195,13 +194,12 @@ object Caves {
      */
     fun cave(p: WorldBuildings.Placement, groups: List<ByteArray>, ground: (Double, Double) -> Float, standable: (Double, Double) -> Boolean,
              lifts: List<Lift> = emptyList()): Cave {
-        val cs = cos(p.yaw); val sn = Math.sin(p.yaw)
         // the floor's vertices, welded; its edges
         val bucket = HashMap<Long, ArrayList<Int>>(); val xs = ArrayList<Double>(); val ys = ArrayList<Double>(); val zs = ArrayList<Double>()
         val adj = ArrayList<ArrayList<Int>>()
         fun bk(a: Long, b: Long, c: Long) = (a and 0x1FFFFFL) or ((b and 0x1FFFFFL) shl 21) or ((c and 0x1FFFFFL) shl 42)
         fun vid(lx: Float, ly: Float, lz: Float): Int {
-            val x = p.ox - lx * p.scale * cs + ly * p.scale * sn; val y = p.oy - lx * p.scale * sn - ly * p.scale * cs; val z = p.oz + lz * p.scale
+            val w = p.world(lx.toDouble(), ly.toDouble(), lz.toDouble()); val x = w[0]; val y = w[1]; val z = w[2]
             val bx = Math.floor(x).toLong(); val by = Math.floor(y).toLong(); val bz = Math.floor(z).toLong()
             for (a in -1L..1L) for (b in -1L..1L) for (c in -1L..1L) bucket[bk(bx + a, by + b, bz + c)]?.forEach { v ->
                 if ((xs[v] - x) * (xs[v] - x) + (ys[v] - y) * (ys[v] - y) + (zs[v] - z) * (zs[v] - z) <= WELD_YD * WELD_YD) return v
@@ -362,8 +360,7 @@ object Caves {
             return xs.size - 1
         }
         for ((p, groups) in parts) {
-            val cs = cos(p.yaw); val sn = Math.sin(p.yaw)
-            fun w(lx: Float, ly: Float, lz: Float) = vid(p.ox - lx * p.scale * cs + ly * p.scale * sn, p.oy - lx * p.scale * sn - ly * p.scale * cs, p.oz + lz * p.scale)
+            fun w(lx: Float, ly: Float, lz: Float) = p.world(lx.toDouble(), ly.toDouble(), lz.toDouble()).let { vid(it[0], it[1], it[2]) }
             for (g in groups) {
                 val t = floorTris(g)
                 for (q in 0 until t.size / 9) {

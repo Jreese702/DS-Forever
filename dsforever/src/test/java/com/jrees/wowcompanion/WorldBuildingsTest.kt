@@ -124,4 +124,26 @@ class WorldBuildingsTest {
         assertEquals(1, decks.size); assertEquals(setOf(1), read.keys)       // the one far from the water never read
         assertTrue(decks[0].holds(100.0, 200.0))
     }
+
+    /** a tilted placement (MODF rotation x / z) turns the model about its own axes; level ones keep the yaw-only formula */
+    @Test fun tiltedPlacementsTurnTheirFloors() {
+        val yaw = Math.toRadians(158.5)
+        val level = WorldBuildings.Placement(1, 1, 1921.0, -729.0, 110.0, yaw, 1.0)
+        val w = level.world(-400.0, 10.0, 2.0)
+        assertEquals(1921.0 + 400.0 * Math.cos(yaw) + 10.0 * Math.sin(yaw), w[0], 1e-9)
+        assertEquals(-729.0 + 400.0 * Math.sin(yaw) - 10.0 * Math.cos(yaw), w[1], 1e-9)
+        assertEquals(112.0, w[2], 1e-9)
+        // pitched 3 degrees about the model's y axis (MODF rotation x = -3): the tunnel's far end 400 yd out sinks 20.9 yd
+        val tunnel = WorldBuildings.Placement(1, 1, 1921.0, -729.0, 110.0, yaw, 1.0, rx = Math.toRadians(-3.0))
+        val far = tunnel.world(-400.0, 0.0, 0.0)
+        assertEquals(110.0 - 400.0 * Math.sin(Math.toRadians(3.0)), far[2], 1e-6)
+        assertEquals(1921.0 + 400.0 * Math.cos(Math.toRadians(3.0)) * Math.cos(yaw), far[0], 1e-6)
+        // rolled about the model's x axis (rotation z): a point off to the side rises or sinks, one on the axis stays
+        val rolled = WorldBuildings.Placement(1, 1, 0.0, 0.0, 0.0, 0.0, 1.0, rz = Math.toRadians(10.0))
+        assertEquals(0.0, rolled.world(5.0, 0.0, 0.0)[2], 1e-9)
+        assertEquals(10.0 * Math.sin(Math.toRadians(10.0)), Math.abs(rolled.world(0.0, 10.0, 0.0)[2]), 1e-9)
+        // the distances are kept (a rotation)
+        val a = tunnel.world(3.0, -4.0, 12.0); val o = tunnel.world(0.0, 0.0, 0.0)
+        assertEquals(13.0, Math.sqrt((a[0] - o[0]) * (a[0] - o[0]) + (a[1] - o[1]) * (a[1] - o[1]) + (a[2] - o[2]) * (a[2] - o[2])), 1e-9)
+    }
 }

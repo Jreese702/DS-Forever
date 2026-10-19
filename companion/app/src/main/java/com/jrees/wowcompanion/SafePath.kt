@@ -47,6 +47,10 @@ object SafePath {
     const val EXIT_MERGE_YD = 160.0
     const val WATER_MARGIN_YD = 10.0       // the ways keep this far off the water
     const val FORD_DEPTH = 1.5f            // water no deeper than this (yards) is a ford a border crossing may wade
+    /** THE NARROW STREAM (the user's ruling, 2026-10-18, on Silverpine's stream by the Sepulcher: "Yes, you wade it"): water up to
+     *  [NARROW_DEPTH] deep is crossed where it is no wider than [NARROW_YD]; [FORD_DEPTH] stays the limit for anything longer */
+    const val NARROW_DEPTH = 2.2f
+    const val NARROW_YD = 6.0
     const val FORD_COST = 4.0              // a ford's yard costs this much
     const val CLIMB_STUB = 1.8             // a dead-end spur or trail climbing this hard (its mean walking factor) ...
     const val CLIMB_STUB_YD = 900.0        // ... and shorter than this goes
@@ -795,6 +799,32 @@ object SafePath {
             fun z(x: Float) = if (x.isNaN()) 0f else x
             return (z(a) * (1 - u) + z(b2) * u) * (1 - w) + (z(c) * (1 - u) + z(d) * u) * w
         }
+        /** whether a walker may stand at world ([wx], [wy]) in its water: dry, a bridge, a ford ([FORD_DEPTH]), or a narrow stream - no
+         *  deeper than [NARROW_DEPTH], a ford or the bank on both sides within [NARROW_YD] across it (along one of four ways), never
+         *  deeper between */
+        fun wadeable(wx: Double, wy: Double): Boolean {
+            val d = at(wx, wy)
+            if (d.isNaN() || d == BRIDGE || d <= FORD_DEPTH) return true
+            if (d > NARROW_DEPTH) return false
+            val r = Math.sqrt(0.5)
+            for ((ux, uy) in listOf(1.0 to 0.0, 0.0 to 1.0, r to r, r to -r)) {
+                fun shore(sg: Double): Double {
+                    var t = 0.5
+                    while (t <= NARROW_YD) {
+                        val q = at(wx + sg * ux * t, wy + sg * uy * t)
+                        if (q.isNaN() || q == BRIDGE || q <= FORD_DEPTH) return t
+                        if (q > NARROW_DEPTH) return Double.MAX_VALUE
+                        t += 0.5
+                    }
+                    return Double.MAX_VALUE
+                }
+                val a = shore(1.0); if (a == Double.MAX_VALUE) continue
+                if (a + shore(-1.0) <= NARROW_YD) return true
+            }
+            return false
+        }
+        /** a narrow stream's water at world ([wx], [wy]) (deeper than a ford, [wadeable]): crossed, but a drier way preferred */
+        fun wading(wx: Double, wy: Double): Boolean { val d = at(wx, wy); return !d.isNaN() && d != BRIDGE && d > FORD_DEPTH && wadeable(wx, wy) }
         fun write(f: File) {
             f.parentFile?.mkdirs()
             DataOutputStream(java.util.zip.DeflaterOutputStream(f.outputStream().buffered())).use { o ->
@@ -932,7 +962,7 @@ object SafePath {
                         val walks: List<(Double, Double) -> Boolean> = if (surface == null) emptyList() else {
                             val obj = objs.getOrPut(rect.c) { mapRows[rect.c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) }?.let { Terrain.maidObj0(it) } ?: emptyMap() }
                             val ob = obj[MapHarvest.key(tc, tr)]?.let { g.read(it) }
-                            ob?.let { WorldBuildings.placements(it) }?.flatMap { p ->
+                            ob?.let { WorldBuildings.placements(it, tilted = true) }?.flatMap { p ->
                                 val root = g.read(p.fid)
                                 val feet = WorldBuildings.walkways(p, wmoGroups.getOrPut(p.fid) { root?.let { WorldBuildings.groups(it) } ?: emptyList() })
                                 if (feet.isEmpty()) emptyList()

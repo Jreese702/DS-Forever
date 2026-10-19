@@ -1,0 +1,22 @@
+{"tag": "arathi", "dir": "azeroth", "faction": "alliance", "zone": 1417, "area": 45, "level": 32, "friendlyMinLevel": 100,
+ "maps": [[1417, 45], [1424, 267], [1437, 11], [1425, 47]], "cities": [], "border": [1417, 1424],
+ "title": "Arathi Highlands", "crop": [-300, -2533, -1200, -4400],
+ "floorWmos": [111378, 111366],
+ "closeups": [{"name": "Refuge Pointe and the Arathi Basin gate", "box": [-1000, -1500, -2250, -2850]},
+              {"name": "Stromgarde Keep", "box": [-1350, -1850, -1450, -2000]},
+              {"name": "Thandol Span", "box": [-1950, -2533, -2150, -2750]},
+              {"name": "Thoradin's Wall gate", "box": [-550, -1050, -1350, -1900]},
+              {"name": "Boulderfist Hall", "box": [-1750, -2150, -2600, -3000]},
+              {"name": "Hammerfall and Drywhisker Gorge", "box": [-650, -1150, -3350, -3950]}],
+ "goals": [
+  {"name": "Stromgarde Keep (the Alliance's ruined keep)", "from": {"node": "Refuge Pointe"}, "to": {"node": "Stromgarde Keep"}},
+  {"name": "Boulderfist Hall's mouth (ogres)", "from": {"node": "Refuge Pointe"}, "to": {"cave": 111378, "near": [-1979, -2797]}},
+  {"name": "Witherbark Village (trolls)", "from": {"node": "Refuge Pointe"}, "to": {"camp": "Witherbark Village"}},
+  {"name": "Drywhisker Gorge's mine mouth (kobolds)", "from": {"node": "Refuge Pointe"}, "to": {"cave": 111233, "near": [-998, -3841]}},
+  {"name": "Circle of East Binding", "from": {"node": "Refuge Pointe"}, "to": {"camp": "Circle of East Binding"}},
+  {"name": "Circle of West Binding", "from": {"node": "Refuge Pointe"}, "to": {"camp": "Circle of West Binding"}},
+  {"name": "Go'Shek Farm (Hammerfall's farm)", "from": {"node": "Refuge Pointe"}, "to": {"camp": "Go'Shek Farm"}},
+  {"name": "Northfold Manor (Syndicate)", "from": {"node": "Refuge Pointe"}, "to": {"camp": "Northfold Manor"}},
+  {"name": "over Thandol Span to the Wetlands (far end)", "from": {"node": "Refuge Pointe"}, "to": {"xy": [-2462, -2516]}},
+  {"name": "Thoradin's Wall gate to Hillsbrad", "from": {"node": "Refuge Pointe"}, "to": {"exit": "Hillsbrad Foothills"}}
+ ]}

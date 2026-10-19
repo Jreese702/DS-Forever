@@ -1,0 +1,18 @@
+{"tag": "duskwood", "dir": "azeroth", "faction": "alliance", "zone": 1431, "area": 10, "level": 24,
+ "maps": [[1431, 10], [1429, 12], [1436, 40], [1433, 44], [1434, 33], [1430, 41]], "cities": [], "border": [1431, 1436],
+ "title": "Duskwood", "crop": [-9900, -11450, 850, -1850],
+ "closeups": [{"name": "Raven Hill and its cemetery", "box": [-10200, -10850, 850, 0]},
+              {"name": "Darkshire and Manor Mistmantle", "box": [-10100, -10750, -1000, -1700]},
+              {"name": "The Westfall crossing", "box": [-10300, -11100, 950, 400]}],
+ "goals": [
+  {"name": "Raven Hill (the inn)", "from": {"node": "Darkshire"}, "to": {"wmo": 106822, "near": [-10709, 315]}},
+  {"name": "Raven Hill Cemetery (the undead)", "from": {"xy": [-10700, 330]}, "to": {"camp": "Raven Hill Cemetery"}},
+  {"name": "the Forlorn Rowe crypt's mouth (Mor'Ladim, Morbent Fel)", "from": {"xy": [-10700, 330]}, "to": {"cave": 110616, "near": [-10414, 405]}},
+  {"name": "The Hushed Bank", "from": {"xy": [-10700, 330]}, "to": {"camp": "The Hushed Bank"}},
+  {"name": "the Yorgen Farmstead", "from": {"node": "Darkshire"}, "to": {"wmo": 106800, "near": [-11103, -534]}},
+  {"name": "the Rotting Orchard", "from": {"node": "Darkshire"}, "to": {"wmo": 106793, "near": [-11091, -956]}},
+  {"name": "Manor Mistmantle (Stalvan)", "from": {"node": "Darkshire"}, "to": {"wmo": 7902366, "near": [-10242, -1426]}},
+  {"name": "Naraxis' spider den's mouth", "from": {"node": "Darkshire"}, "to": {"cave": 110497, "near": [-10605, -1502]}},
+  {"name": "the Vul'Gol Ogre Mound's mouth (Zzarc' Vul)", "from": {"node": "Darkshire"}, "to": {"cave": 111365, "near": [-11090, -87]}},
+  {"name": "the covered bridge to Westfall (its Duskwood end; the bridge is an M2)", "from": {"node": "Darkshire"}, "to": {"xy": [-10865, 590]}}
+ ]}

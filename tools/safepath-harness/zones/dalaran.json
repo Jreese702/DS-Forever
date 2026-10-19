@@ -1,0 +1,306 @@
+{
+ "tag": "dalaran",
+ "dir": "dalaran",
+ "faction": "alliance",
+ "zone": 1416,
+ "area": 36,
+ "level": 20,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1416,
+   36
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1416,
+  1416
+ ],
+ "title": "Dalaran",
+ "crop": [
+  600,
+  -220,
+  700,
+  -20
+ ],
+ "closeups": [
+  {
+   "name": "Skydock and portals",
+   "box": [
+    600,
+    330,
+    560,
+    300
+   ]
+  },
+  {
+   "name": "Runeweaver Square",
+   "box": [
+    380,
+    100,
+    520,
+    160
+   ]
+  }
+ ],
+ "goals": [],
+ "voidBelow": 85,
+ "floorCity": {
+  "fids": [
+   7116370
+  ],
+  "places": [
+   {
+    "name": "Skydock",
+    "source": "TaxiPathNode 175848: airship path 11398 node 13, its Dalaran stop (flag 2, 60 s) at (544.8, 424.2, 107.0)",
+    "xy": [
+     544.8,
+     424.2
+    ],
+    "z": 107.0
+   },
+   {
+    "name": "Glide start",
+    "source": "TaxiPathNode 175850: path 11512 node 0 (TaxiNodes 3260 'Quest Path 11512: 1.60.0 - Dalaran Translocation Path') at (548.9, 421.5, 116.2)",
+    "xy": [
+     548.9,
+     421.5
+    ],
+    "z": 116.2
+   },
+   {
+    "name": "Glide end",
+    "source": "TaxiPathNode 175856: path 11512 node 6 at (482.5, 413.6, 112.2)",
+    "xy": [
+     482.5,
+     413.6
+    ],
+    "z": 112.2
+   },
+   {
+    "name": "Skyborne Portal to Stormwind",
+    "source": "QuestieDB object 631299 at Alterac (12.04, 56.21): 2D",
+    "xy": [
+     450.7,
+     446.2
+    ]
+   },
+   {
+    "name": "Portal to The Purple Parlor",
+    "source": "QuestieDB object 565745 at Alterac (14.40, 57.50) (a second spawn at 14.50, 57.60): 2D",
+    "xy": [
+     426.7,
+     380.1
+    ]
+   },
+   {
+    "name": "Portal to The Violet Citadel",
+    "source": "QuestieDB object 691558 at Alterac (15.10, 55.60): 2D",
+    "xy": [
+     462.1,
+     360.5
+    ]
+   },
+   {
+    "name": "The Purple Parlor",
+    "source": "WMOAreaTable 134347 -> WMO 18950 group id 78451 = group 73 (its floor's middle)",
+    "group": 73
+   },
+   {
+    "name": "The Violet Citadel",
+    "source": "WMOAreaTable 134301 -> group id 78405 = group 82 (its floor's middle)",
+    "group": 82
+   },
+   {
+    "name": "Runeweaver Square",
+    "source": "WMOAreaTable 134311 -> group id 78415 = group 41, outdoor",
+    "group": 41
+   },
+   {
+    "name": "Presage Plaza",
+    "source": "WMOAreaTable 134346 -> group id 78450 = group 81, outdoor",
+    "group": 81
+   },
+   {
+    "name": "Magus Commerce Exchange",
+    "source": "WMOAreaTable 134290 -> group id 78394 = group 21, outdoor",
+    "group": 21
+   },
+   {
+    "name": "The Eventide",
+    "source": "WMOAreaTable 134313 -> group id 78417 = group 43, outdoor (AreaTable 17824)",
+    "group": 43
+   },
+   {
+    "name": "The Atrium of Fortune",
+    "source": "WMOAreaTable 134344 -> group id 78448 = group 80, outdoor",
+    "group": 80
+   },
+   {
+    "name": "A Hero's Welcome (inn)",
+    "source": "WMOAreaTable 134303 -> group id 78407 = group 33",
+    "group": 33
+   },
+   {
+    "name": "The Violet Gate",
+    "source": "WMOAreaTable 134282 -> group id 78386 = group 13",
+    "group": 13
+   },
+   {
+    "name": "Dalaran Merchant's Bank",
+    "source": "WMOAreaTable 134283 -> group id 78387 = group 14",
+    "group": 14
+   },
+   {
+    "name": "The Violet Hold",
+    "source": "WMOAreaTable 134329 -> group id 78433 = group 92, outdoor",
+    "group": 92
+   },
+   {
+    "name": "Talismanic Textiles",
+    "source": "WMOAreaTable 134293 -> group id 78397 = group 24 (a shop)",
+    "group": 24
+   },
+   {
+    "name": "Langrom's Leather",
+    "source": "WMOAreaTable 134297 -> group id 78401 = group 28 (a shop)",
+    "group": 28
+   }
+  ],
+  "links": [
+   {
+    "kind": "airship",
+    "name": "Skyborne airship 11398 to Zephras Isle",
+    "from": "Skydock",
+    "toName": "Zephras Isle, High Order dock (map 2991)",
+    "toAt": [
+     1848.3,
+     569.1,
+     642.7
+    ],
+    "oneWay": false,
+    "source": "TaxiPathNode path 11398: stops 175848 (map 0) and 175202 (map 2991), flag 2, 60 s each"
+   },
+   {
+    "kind": "glide",
+    "name": "Translocation glide 11512",
+    "from": "Glide start",
+    "to": "Glide end",
+    "oneWay": true,
+    "cost": 72,
+    "source": "TaxiPathNode path 11512, 7 nodes, 72 yd; TaxiNodes 3260 is a QUEST path: open to all players or not is unknown"
+   },
+   {
+    "kind": "portal",
+    "name": "Skyborne Portal to Stormwind",
+    "from": "Skyborne Portal to Stormwind",
+    "toName": "Stormwind City (landing POSITION UNKNOWN)",
+    "oneWay": true,
+    "source": "QuestieDB object 631299; the Stormwind end is in no data"
+   },
+   {
+    "kind": "portal",
+    "name": "Portal to The Purple Parlor",
+    "from": "Portal to The Purple Parlor",
+    "toName": "The Purple Parlor, group 73 (landing spot POSITION UNKNOWN)",
+    "oneWay": true,
+    "source": "QuestieDB object 565745; the landing floor is group 73 (WMOAreaTable 134347), its spot unknown"
+   },
+   {
+    "kind": "portal",
+    "name": "Portal to The Violet Citadel",
+    "from": "Portal to The Violet Citadel",
+    "toName": "The Violet Citadel (landing spot POSITION UNKNOWN)",
+    "oneWay": true,
+    "source": "QuestieDB object 691558; the Citadel's groups are 72/82/84/85/87, the landing spot unknown"
+   }
+  ],
+  "routes": [
+   {
+    "name": "Skyborne Portal to Stormwind",
+    "from": "Skydock",
+    "to": "Skyborne Portal to Stormwind"
+   },
+   {
+    "name": "Portal to The Violet Citadel",
+    "from": "Skydock",
+    "to": "Portal to The Violet Citadel"
+   },
+   {
+    "name": "Portal to The Purple Parlor",
+    "from": "Skydock",
+    "to": "Portal to The Purple Parlor"
+   },
+   {
+    "name": "Runeweaver Square",
+    "from": "Glide end",
+    "to": "Runeweaver Square"
+   },
+   {
+    "name": "A Hero's Welcome (inn)",
+    "from": "Skydock",
+    "to": "A Hero's Welcome (inn)"
+   },
+   {
+    "name": "The Eventide",
+    "from": "Skydock",
+    "to": "The Eventide"
+   },
+   {
+    "name": "The Violet Gate",
+    "from": "Skydock",
+    "to": "The Violet Gate"
+   },
+   {
+    "name": "Presage Plaza",
+    "from": "Skydock",
+    "to": "Presage Plaza"
+   },
+   {
+    "name": "Dalaran Merchant's Bank",
+    "from": "Skydock",
+    "to": "Dalaran Merchant's Bank"
+   },
+   {
+    "name": "Langrom's Leather",
+    "from": "Skydock",
+    "to": "Langrom's Leather"
+   }
+  ],
+  "checks": [
+   {
+    "name": "The Purple Parlor on foot",
+    "from": "Skydock",
+    "to": "The Purple Parlor"
+   },
+   {
+    "name": "The Violet Citadel on foot",
+    "from": "Skydock",
+    "to": "The Violet Citadel"
+   },
+   {
+    "name": "Talismanic Textiles",
+    "from": "Skydock",
+    "to": "Talismanic Textiles"
+   },
+   {
+    "name": "Magus Commerce Exchange",
+    "from": "Skydock",
+    "to": "Magus Commerce Exchange"
+   },
+   {
+    "name": "The Violet Hold",
+    "from": "Skydock",
+    "to": "The Violet Hold"
+   },
+   {
+    "name": "The Atrium of Fortune",
+    "from": "Skydock",
+    "to": "The Atrium of Fortune"
+   }
+  ],
+  "notes": "Dalaran's streets are WMO 18950 (file 7116370) placed on MAP 0 over the Alterac crater (Alterac uiMap 1416, QuestieDB area 36); map 2980 'Dalaran City' holds the old Northrend nd_dalaran.wmo (115404, WMO id 5164) instead, so it is not this city. Routes walk the WMO's own floor (Caves.floor); every portal, the airship and the glide are manual links."
+ },
+ "notes": "voidBelow 85 holds only under the city (the crater floor under it is real Alterac ground at 19-82 yd): never copy it into Alterac's spec"
+}

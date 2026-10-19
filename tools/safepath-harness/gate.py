@@ -1,7 +1,8 @@
 # THE REGRESSION GATE: compares a run of every zone (gate.sh writes one log per zone) against the saved baseline, and fails on
 #   - any WALLS line, EMPTY route or "GOAL ... not found";
 #   - a goal that was reached in the baseline and is unreachable now;
-#   - any route crossing water deeper than the ford (1.5 yd: WATERMAX);
+#   - any route crossing water deeper than a narrow stream may be waded (2.2 yd: WATERMAX), or wetcheck's own reading of it deeper
+#     than the ford (1.5 yd) for more than 6 yd on end or deeper than 2.2 at all (the user's narrow-stream ruling, 2026-10-18);
 #   - segcheck finding a 45+ degree crossing;
 #   - an exit walkable in the baseline that is gone or not walkable now (an approved crossing dropped), a border crossing KEPT
 #     in the baseline that is not now;
@@ -17,7 +18,7 @@ WORK = os.environ.get('SAFEPATH_WORK', 'E:/safepath-work')
 BASE = os.path.join(WORK, 'gate', 'baseline.json')
 FORD = 1.5
 LONGER = 0.15
-WET_YD = 0          # wetcheck's yards deeper than the ford a route may wade (none: the user's no-swim ruling)
+NARROW, NARROW_YD = 2.2, 6   # the user's narrow-stream ruling (2026-10-18): a stream up to 2.2 yd deep is waded for 6 yd at most
 run = sys.argv[1]
 def parse(log):
     z = {'routes': {}, 'walls': [], 'empty': [], 'notfound': [], 'water': {}, 'wet': {}, 'exits': {}, 'kept': [], 'segcheck': None}
@@ -36,8 +37,8 @@ def parse(log):
         if m: z['exits']['%s (%s) at %s,%s' % m.group(1, 2, 3, 4)] = m.group(5) == 'WALKABLE'
         m = re.match(r'BORDER crossing \d+: KEPT, (.*?) - (.*)$', line)
         if m: z['kept'].append(re.sub(r' (low|high) danger', '', m.group(2)))
-        m = re.match(r'WET (\w): deepest ([\d.]+) yd(?: at (-?\d+,-?\d+))?, (\d+) yd deeper than', line)
-        if m: z['wet'][m.group(1)] = (float(m.group(2)), m.group(3) or '', int(m.group(4)))
+        m = re.match(r'WET (\w): deepest ([\d.]+) yd(?: at (-?\d+,-?\d+))?, (\d+) yd deeper than .*?longest wade (\d+) yd(?: at (-?\d+,-?\d+))?, (\d+) yd deeper than', line)
+        if m: z['wet'][m.group(1)] = (float(m.group(2)), m.group(3) or '', int(m.group(4)), int(m.group(5)), m.group(6) or '', int(m.group(7)))
         m = re.match(r'(\d+) segments; crossing a 45\+ degree step: (.*)$', line)
         if m: z['segcheck'] = m.group(2)
     return z
@@ -68,10 +69,13 @@ for tag, z in zones.items():
     if z['segcheck'] not in (None, 'none'): fails.append('%s: segcheck %s' % (tag, z['segcheck'][:200]))
     if z['segcheck'] is None: fails.append('%s: no segcheck result (did the run fail?)' % tag)
     for L, (d, at) in z['water'].items():
-        if d > FORD: fails.append('%s: route %s crosses water %.1f yd deep at %s' % (tag, L, d, at))
-    for L, (d, at, n) in z['wet'].items():
-        if n > WET_YD: fails.append('%s: route %s wades %d yd deeper than the ford, %.1f yd at %s (wetcheck)' % (tag, L, n, d, at))
-        elif n: notes.append('%s: route %s wades %d yd deeper than the ford, %.1f yd at %s (wetcheck, within %d yd)' % (tag, L, n, d, at, WET_YD))
+        if d > NARROW: fails.append('%s: route %s crosses water %.1f yd deep at %s' % (tag, L, d, at))
+    for L, (d, at, n, run, rat, over) in z['wet'].items():
+        # the user's narrow-stream ruling (2026-10-18): deeper than the ford for no more than NARROW_YD at a time and never deeper than
+        # NARROW is a wade; else a swim
+        if over: fails.append('%s: route %s swims: %d yd deeper than %.1f, %.1f yd at %s (wetcheck)' % (tag, L, over, NARROW, d, at))
+        elif run > NARROW_YD: fails.append('%s: route %s swims: %d yd on end deeper than the ford at %s (wetcheck)' % (tag, L, run, rat))
+        elif n: notes.append('%s: route %s wades a narrow stream: %d yd deeper than the ford, at most %d yd on end, %.1f yd deep at %s' % (tag, L, n, run, d, at))
     if 'wet' in z and not z['wet'] and z['routes']: fails.append('%s: no wetcheck result' % tag)
     if not b: notes.append('%s: no baseline (new zone)' % tag); continue
     for L, r in b['routes'].items():

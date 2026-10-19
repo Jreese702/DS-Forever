@@ -1,0 +1,18 @@
+{"tag": "ashenvale", "dir": "kalimdor", "faction": "alliance", "zone": 1440, "area": 331, "level": 22, "friendlyMinLevel": 100,
+ "maps": [[1440, 331], [1439, 148], [1413, 17], [1442, 406], [1448, 361], [1447, 16]], "cities": [], "border": [1440, 1439],
+ "title": "Ashenvale", "crop": [4673, 829, 1650, -4067],
+ "closeups": [{"name": "Zoram Strand and Blackfathom", "box": [4400, 3200, 1500, 0]}, {"name": "Astranaar and Thistlefur", "box": [3700, 2400, 0, -1000]},
+  {"name": "Talondeep Path", "box": [2100, 1400, -400, -1000]}, {"name": "Raynewood to Silverwing", "box": [2900, 1300, -1000, -2900]},
+  {"name": "Forest Song and Warsong", "box": [3200, 2000, -2700, -3800]}],
+ "goals": [
+  {"name": "Thistlefur Hold's mouth (the furbolgs)", "from": {"node": "Astranaar"}, "to": {"cave": 111590, "near": [3504, -519]}},
+  {"name": "Blackfathom Deeps' entrance (the Zoram Strand ruins)", "from": {"node": "Maestra's Post"}, "to": {"cave": 109179, "near": [4129, 850]}},
+  {"name": "Zoram'gar Outpost (Horde: its guards are danger)", "from": {"node": "Maestra's Post"}, "to": {"camp": "Zoram'gar Outpost"}},
+  {"name": "Raynewood Retreat", "from": {"node": "Astranaar"}, "to": {"node": "Raynewood Retreat (2)"}},
+  {"name": "Mystral Lake (the befouled water elementals)", "from": {"node": "Astranaar"}, "to": {"camp": "Mystral Lake"}},
+  {"name": "the Talondeep Path to Stonetalon (tunnel)", "from": {"node": "Astranaar"}, "to": {"xy": [1527.66, -573.50]}},
+  {"name": "the Dor'Danil Barrow Den's mouth (the furbolgs)", "from": {"node": "Silverwing Outpost"}, "to": {"cave": 110429, "near": [1772, -2673]}},
+  {"name": "the way to the Barrens (Mor'shan)", "from": {"node": "Silverwing Outpost"}, "to": {"xy": [1329.17, -2191.67]}},
+  {"name": "Warsong Lumber Camp (Horde)", "from": {"node": "Forest Song"}, "to": {"camp": "Warsong Lumber Camp"}},
+  {"name": "Splintertree Post (Horde: its guards are danger)", "from": {"node": "Raynewood Retreat (2)"}, "to": {"camp": "Splintertree Post"}}
+ ]}

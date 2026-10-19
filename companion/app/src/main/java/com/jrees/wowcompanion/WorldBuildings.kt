@@ -14,13 +14,36 @@ object WorldBuildings {
     private const val EXTERIOR = 0x8
 
     /** one placement: the WMO root's fileDataID, its unique id, its world origin (x north, y west, z up), its yaw, its scale */
-    class Placement(val fid: Int, val uid: Int, val ox: Double, val oy: Double, val oz: Double, val yaw: Double, val scale: Double)
+    class Placement(val fid: Int, val uid: Int, val ox: Double, val oy: Double, val oz: Double, val yaw: Double, val scale: Double,
+                    val rx: Double = 0.0, val rz: Double = 0.0) {
+        /**
+         * the model's point (lx, ly, lz) in world yards. Level placements: `wx = ox - lx·cos(yaw) + ly·sin(yaw)`,
+         * `wy = oy - lx·sin(yaw) - ly·cos(yaw)`, `wz = oz + lz` ([Buildings.Foot]). A tilted one ([placements] with `tilted`: MODF's
+         * rotation x and z, radians) is turned in the ADT's own frame (y up) by `Ry(yaw - 90°)·Rz(-rx)·Rx(rz)` on the model's (x, z, -y),
+         * which is the level formula when both tilts are 0. Checked on the data: Stonetalon's Talondeep Path tunnel (430 yd long,
+         * tilted 3°) meets the terrain at both ends only so; level, its far end floats 17 yd over the ground.
+         */
+        fun world(lx: Double, ly: Double, lz: Double): DoubleArray {
+            val x = lx * scale; val y = ly * scale; val z = lz * scale
+            val cs = Math.cos(yaw); val sn = Math.sin(yaw)
+            if (rx == 0.0 && rz == 0.0) return doubleArrayOf(ox - x * cs + y * sn, oy - x * sn - y * cs, oz + z)
+            // m = (x, z, -y) (the model's y-up frame); Rx(rz), then Rz(-rx), then Ry(yaw - 90°)
+            val cz = Math.cos(rz); val sz = Math.sin(rz)
+            val m0 = x; val m1 = z * cz + y * sz; val m2 = z * sz - y * cz
+            val cx = Math.cos(-rx); val sx = Math.sin(-rx)
+            val n0 = m0 * cx - m1 * sx; val n1 = m0 * sx + m1 * cx; val n2 = m2
+            // Ry(yaw - 90°): cos = sin(yaw), sin = -cos(yaw)
+            val a0 = n0 * sn - n2 * cs; val a2 = n0 * cs + n2 * sn
+            return doubleArrayOf(ox - a2, oy - a0, oz + n1)
+        }
+    }
 
     /** a WMO group's box in the model's own space, whether it is a room, whether it is outdoor (streets, docks, bridges) */
     class Group(val interior: Boolean, val box: FloatArray, val exterior: Boolean = false)
 
-    /** the MODF placements of an obj ADT (fileDataID ones, level; scale from its flags) */
-    fun placements(obj: ByteArray): List<Placement> {
+    /** the MODF placements of an obj ADT (fileDataID ones, level, or also tilted ones when [tilted]: only callers that place points
+     *  by [Placement.world] ask for them, as caves do; scale from its flags) */
+    fun placements(obj: ByteArray, tilted: Boolean = false): List<Placement> {
         val out = ArrayList<Placement>()
         var o = 0
         while (o + 8 <= obj.size) {
@@ -35,9 +58,11 @@ object WorldBuildings {
                     fun f(k: Int) = java.lang.Float.intBitsToFloat(Db2.le32(obj, at + k)).toDouble()
                     val px = f(8); val py = f(12); val pz = f(16); val rx = f(20); val ry = f(24); val rz = f(28)
                     if (flags and 8 != 0 && flags and 128 == 0 && listOf(px, py, pz, rx, ry, rz).all { it.isFinite() } &&
-                        Math.abs(rx) <= 0.001 && Math.abs(rz) <= 0.001) {
+                        (tilted || Math.abs(rx) <= 0.001 && Math.abs(rz) <= 0.001)) {
                         val scale = if (flags and 4 != 0) rawScale / 1024.0 else 1.0
-                        if (scale > 0) out.add(Placement(fid, uid, ORIGIN - pz, ORIGIN - px, py, Math.toRadians(ry), scale))
+                        val level = Math.abs(rx) <= 0.001 && Math.abs(rz) <= 0.001
+                        if (scale > 0) out.add(Placement(fid, uid, ORIGIN - pz, ORIGIN - px, py, Math.toRadians(ry), scale,
+                            if (level) 0.0 else Math.toRadians(rx), if (level) 0.0 else Math.toRadians(rz)))
                     }
                     at += 64
                 }
@@ -139,17 +164,21 @@ object WorldBuildings {
         val empty get() = tris.isEmpty()
         /** its triangles in world 2D (x0, y0, x1, y1, x2, y2): the harness's pictures and checks */
         val triangles: List<DoubleArray> get() = tris
+        /** each triangle's corners' world heights (null: a box's footprint, no floor read) */
+        val heights: List<DoubleArray>? get() = zs
         fun holds(x: Double, y: Double): Boolean = grid[Math.floorDiv(x.toLong(), 16L) * 1000003L + Math.floorDiv(y.toLong(), 16L)]?.any { k ->
             val t = tris[k]; inTri(t, x, y) || segDist(t[0], t[1], t[2], t[3], x, y) <= DECK_MARGIN_YD ||
                 segDist(t[2], t[3], t[4], t[5], x, y) <= DECK_MARGIN_YD || segDist(t[4], t[5], t[0], t[1], x, y) <= DECK_MARGIN_YD } == true
         /**
          * the deck's floor height at world ([x], [y]): of its triangles within [DECK_MARGIN_YD] there, the LOWEST floor at or above
          * [above] (the water's surface or the ground under it: a covered bridge's roof and a pier's buildings stand over its deck, its
-         * pillars' feet under the water), on the triangle's own plane at the nearest point of it; NaN off the deck or with no heights
+         * pillars' feet under the water), on the triangle's own plane at the nearest point of it; NaN off the deck or with no heights.
+         * [orBuried]: with no floor that high, the highest one under it (a tunnel's floor under its hill: Wetlands' Dun Algaz, whose
+         * outdoor floor 40 yd under a 60-75 degree hillside leveled it, a route climbing it)
          */
-        fun heightAt(x: Double, y: Double, above: Double = Double.NEGATIVE_INFINITY): Double {
+        fun heightAt(x: Double, y: Double, above: Double = Double.NEGATIVE_INFINITY, orBuried: Boolean = false): Double {
             val z = zs ?: return Double.NaN
-            var best = Double.NaN
+            var best = Double.NaN; var under = Double.NaN
             for (k in grid[Math.floorDiv(x.toLong(), 16L) * 1000003L + Math.floorDiv(y.toLong(), 16L)] ?: return Double.NaN) {
                 val t = tris[k]
                 val inside = inTri(t, x, y)
@@ -164,8 +193,27 @@ object WorldBuildings {
                     a * z[k][0] + b * z[k][1] + (1 - a - b) * z[k][2]
                 }
                 if (h >= above && (best.isNaN() || h < best)) best = h
+                if (h < above && (under.isNaN() || h > under)) under = h
             }
-            return best
+            return if (best.isNaN() && orBuried) under else best
+        }
+        /** every floor's height at world ([x], [y]) (its triangles within [DECK_MARGIN_YD] there, as [heightAt]); empty off the deck */
+        fun heightsAt(x: Double, y: Double): DoubleArray {
+            val z = zs ?: return DoubleArray(0)
+            val out = ArrayList<Double>()
+            for (k in grid[Math.floorDiv(x.toLong(), 16L) * 1000003L + Math.floorDiv(y.toLong(), 16L)] ?: return DoubleArray(0)) {
+                val t = tris[k]
+                if (!inTri(t, x, y) && segDist(t[0], t[1], t[2], t[3], x, y) > DECK_MARGIN_YD && segDist(t[2], t[3], t[4], t[5], x, y) > DECK_MARGIN_YD &&
+                    segDist(t[4], t[5], t[0], t[1], x, y) > DECK_MARGIN_YD) continue
+                val det = (t[3] - t[5]) * (t[0] - t[4]) + (t[4] - t[2]) * (t[1] - t[5])
+                out.add(if (Math.abs(det) < 1e-9) z[k].average() else {
+                    var a = ((t[3] - t[5]) * (x - t[4]) + (t[4] - t[2]) * (y - t[5])) / det
+                    var b = ((t[5] - t[1]) * (x - t[4]) + (t[0] - t[4]) * (y - t[5])) / det
+                    a = a.coerceIn(0.0, 1.0); b = b.coerceIn(0.0, 1.0 - a)
+                    a * z[k][0] + b * z[k][1] + (1 - a - b) * z[k][2]
+                })
+            }
+            return out.toDoubleArray()
         }
         private fun inTri(t: DoubleArray, x: Double, y: Double): Boolean {
             val d0 = (t[2] - t[0]) * (y - t[1]) - (t[3] - t[1]) * (x - t[0]); val d1 = (t[4] - t[2]) * (y - t[3]) - (t[5] - t[3]) * (x - t[2])
@@ -199,12 +247,11 @@ object WorldBuildings {
 
     /** model-frame triangles [t] (9 floats each) of placement [p] into world 2D triangles [tris] and their corners' heights [zs] */
     private fun placeTris(p: Placement, t: FloatArray, tris: MutableList<DoubleArray>, zs: MutableList<DoubleArray>) {
-        val cs = Math.cos(p.yaw); val sn = Math.sin(p.yaw)
+        // by Placement.world: a tilted walkway too (Arathi's Thandol Span, 3 degrees: left out, the river cut the road off)
         for (q in 0 until t.size / 9) {
-            tris.add(DoubleArray(6) { c -> val v = q * 9 + (c / 2) * 3
-                val lx = t[v] * p.scale; val ly = t[v + 1] * p.scale
-                if (c % 2 == 0) p.ox - lx * cs + ly * sn else p.oy - lx * sn - ly * cs })
-            zs.add(DoubleArray(3) { c -> p.oz + t[q * 9 + c * 3 + 2] * p.scale })
+            val w = Array(3) { c -> val v = q * 9 + c * 3; p.world(t[v].toDouble(), t[v + 1].toDouble(), t[v + 2].toDouble()) }
+            tris.add(DoubleArray(6) { c -> w[c / 2][c % 2] })
+            zs.add(DoubleArray(3) { c -> w[c][2] })
         }
     }
 

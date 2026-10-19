@@ -253,4 +253,33 @@ class ClimbTest {
             }
         }
     }
+
+    /** the floor a walker is on (Climb.floorLayers): a bridge's road deck from its approaches, never the arches under it, nor a roof
+     *  over the ground; a tunnel's floor only from its mouth, never from the hillside over it */
+    @Test fun aWalkerIsOnTheFloorItReaches() {
+        val s = Climb.STEP
+        // the ground: a gorge 40 yd deep between x 40 and 120 (banks at 0 yd); the world rect 0..160 x 0..40
+        val gr0 = Math.floor((32 * MapHarvest.ADT_YD - 160.0) / s).toInt()
+        fun gx(gr: Int) = 32 * MapHarvest.ADT_YD - gr * s
+        val ground = { gr: Int, _: Int -> val x = gx(gr); if (x > 40 && x < 120) -40f else 0f }
+        // the bridge over it (y 10..30): its road deck at 0.5 yd all along, arches at -15 under its middle, a parapet 2.5 yd up along
+        // its edges (y 10..12); a roof at 6 yd over the bank at x 140..150
+        val floors = { x: Double, y: Double ->
+            val out = ArrayList<Double>()
+            if (y in 10.0..30.0 && x in 30.0..130.0) { out.add(0.5); if (x in 50.0..110.0) out.add(-15.0); if (y < 12.0) out.add(3.0) }
+            if (x in 140.0..150.0) out.add(6.0)
+            out.toDoubleArray() }
+        val lay = Climb.floorLayers(160.0, 0.0, 40.0, 0.0, floors, ground)
+        assertEquals("the road deck over the gorge", 0.5f, lay[Climb.vkeyAt(80.0, 20.0)]!!, 0.01f)
+        assertEquals("from its approach", 0.5f, lay[Climb.vkeyAt(35.0, 20.0)]!!, 0.01f)
+        assertTrue("a roof over the bank is no ground", lay[Climb.vkeyAt(145.0, 20.0)] == null)
+        // a tunnel: its floor at -20 under a hill (ground 30) from x 40 to 120, its mouths where the floor meets the ground (x < 40, x > 120)
+        val hill = { gr: Int, _: Int -> val x = gx(gr); if (x > 40 && x < 120) 30f else -20f }
+        val tunnel = { x: Double, y: Double -> if (y in 10.0..30.0 && x in 30.0..130.0) doubleArrayOf(-20.0) else DoubleArray(0) }
+        val t = Climb.floorLayers(160.0, 0.0, 40.0, 0.0, tunnel, hill)
+        assertEquals("in the tunnel, by its mouths", -20f, t[Climb.vkeyAt(80.0, 20.0)]!!, 0.01f)
+        val sealed = { x: Double, y: Double -> if (y in 10.0..30.0 && x in 50.0..110.0) doubleArrayOf(-20.0) else DoubleArray(0) }
+        assertTrue("a floor under the hill with no mouth is never reached", Climb.floorLayers(160.0, 0.0, 40.0, 0.0, sealed, hill).isEmpty())
+        assertTrue(gr0 > 0)
+    }
 }

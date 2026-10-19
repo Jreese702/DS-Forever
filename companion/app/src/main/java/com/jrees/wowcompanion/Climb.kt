@@ -112,6 +112,45 @@ object Climb {
         }
     }
 
+    /**
+     * THE FLOOR A WALKER IS ON, at each vertex of the lattice over world rect [t] / [b] / [l] / [r] under a walkway's floors (a bridge's
+     * deck, its arches and parapets; a tunnel's floor under its hill; a pier's planks): only one height a vertex, and of a bridge's
+     * layers the one the walker reaches - from where a floor meets the ground ([ground]: global row, column -> the terrain's height, NaN
+     * none) within [Caves.STEP_UP_YD] (its approach, a tunnel's mouth, a pier's root), on along the floors from vertex to vertex within
+     * that step. A floor never reached so (a roof, a parapet's top, the arches under the road) is no ground; neither is a tunnel's floor
+     * under the hillside but through its mouths. [floors] (wx, wy): every floor's height there (empty off them). Thandol Span: "the
+     * lowest floor over the ground" walked its arches, 20 yd under the road; Wetlands' Dun Algaz: its leveled floor let a route climb
+     * the 60-75 degree hillside over it. Returns each reached vertex's floor height by [vkey].
+     */
+    fun floorLayers(t: Double, b: Double, l: Double, r: Double, floors: (Double, Double) -> DoubleArray, ground: (Int, Int) -> Float): Map<Long, Float> {
+        val gr0 = floor((ORG - t) / STEP).toInt(); val gr1 = ceil((ORG - b) / STEP).toInt()
+        val gc0 = floor((ORG - l) / STEP).toInt(); val gc1 = ceil((ORG - r) / STEP).toInt()
+        val at = HashMap<Long, DoubleArray>()
+        for (gr in gr0..gr1) for (gc in gc0..gc1) { val f = floors(ORG - gr * STEP, ORG - gc * STEP); if (f.isNotEmpty()) at[vkey(gr, gc)] = f }
+        val out = HashMap<Long, Float>()
+        val queue = ArrayDeque<Long>()
+        for ((k, f) in at) {
+            val g = ground((k shr 32).toInt(), k.toInt()); if (g.isNaN()) continue
+            val h = f.minByOrNull { abs(it - g) }!!
+            if (abs(h - g) <= Caves.STEP_UP_YD) { out[k] = h.toFloat(); queue.add(k) }
+        }
+        while (queue.isNotEmpty()) {
+            val k = queue.removeFirst(); val gr = (k shr 32).toInt(); val gc = k.toInt(); val z = out[k]!!.toDouble()
+            for (dr in -1..1) for (dc in -1..1) {
+                if (dr == 0 && dc == 0) continue
+                val n = vkey(gr + dr, gc + dc); if (n in out) continue
+                val f = at[n] ?: continue
+                val h = f.minByOrNull { abs(it - z) }!!
+                if (abs(h - z) <= Caves.STEP_UP_YD) { out[n] = h.toFloat(); queue.add(n) }
+            }
+        }
+        return out
+    }
+    /** a lattice vertex's key (global row, column) */
+    fun vkey(gr: Int, gc: Int): Long = (gr.toLong() shl 32) or (gc.toLong() and 0xFFFFFFFFL)
+    /** the vertex nearest world ([wx], [wy]): its key */
+    fun vkeyAt(wx: Double, wy: Double): Long = vkey(Math.round((ORG - wx) / STEP).toInt(), Math.round((ORG - wy) / STEP).toInt())
+
     /** the lattice over world rect [t] / [b] / [l] / [r] from the vertex heights ([height]: global row, column -> yards; NaN none);
      *  [level] a spot a building's walkway makes level (a city's street, a covered hole: its steps level, whatever the terrain under it);
      *  [deck] the floor height of a walkway's deck (a bridge, a pier) at a spot, NaN off it: its steps classed by that height */
@@ -160,7 +199,9 @@ object Climb {
                 val f = when {
                     hole?.invoke(gr, gc) == true -> WALL or (WALL shl 2) or (WALL shl 4) or (WALL shl 6)
                     level != null && level(ORG - (gr + 0.5) * STEP, ORG - (gc + 0.5) * STEP) -> 0
-                    deck != null && !deck(ORG - (gr + 0.5) * STEP, ORG - (gc + 0.5) * STEP).isNaN() -> 0
+                    // a deck's cell when its four corners are on the deck (a cell with one corner on a floor's edge is the terrain's:
+                    // its middle rounded onto that corner leveled the hillside beside a tunnel's mouth, Wetlands' route G)
+                    deck != null && listOf(0 to 0, 1 to 0, 0 to 1, 1 to 1).all { (a, c) -> !deck(ORG - (gr + a) * STEP, ORG - (gc + c) * STEP).isNaN() } -> 0
                     else -> faceClass(ha, hb, m) or (faceClass(hb, hd, m) shl 2) or (faceClass(hc, hd, m) shl 4) or (faceClass(ha, hc, m) shl 6)
                 }
                 faces[j * nx + i] = f.toByte()

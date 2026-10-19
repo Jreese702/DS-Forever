@@ -1,0 +1,20 @@
+{"tag": "alterac", "dir": "azeroth", "faction": "horde", "zone": 1416, "area": 36, "level": 32, "friendlyMinLevel": 100,
+ "maps": [[1416, 36], [1424, 267], [1421, 130], [1422, 28], [1420, 85]], "cities": [], "border": [1416, 1424],
+ "title": "Alterac Mountains", "crop": [1500, -367, 783, -2017],
+ "closeups": [{"name": "Strahnbrad", "box": [1000, 450, -650, -1250]},
+              {"name": "Misty Shore", "box": [1000, 400, 300, -300]},
+              {"name": "Ruins of Alterac", "box": [900, 300, 0, -700]},
+              {"name": "Ravenholdt tunnel", "box": [300, -250, -1200, -1800]},
+              {"name": "Sofera's Naze and the AV entrance", "box": [550, -50, -550, -1150]}],
+ "goals": [
+  {"name": "Strahnbrad (Syndicate town)", "from": {"exit": "Hillsbrad Foothills"}, "to": {"camp": "Strahnbrad"}},
+  {"name": "Ruins of Alterac (Crushridge ogres)", "from": {"exit": "Hillsbrad Foothills"}, "to": {"camp": "Ruins of Alterac"}},
+  {"name": "Sofera's Naze (Syndicate camp)", "from": {"exit": "Hillsbrad Foothills"}, "to": {"camp": "Sofera's Naze"}},
+  {"name": "Corrahn's Dagger", "from": {"exit": "Hillsbrad Foothills"}, "to": {"camp": "Corrahn's Dagger"}},
+  {"name": "Growless Cave's mouth (yetis)", "from": {"exit": "Hillsbrad Foothills"}, "to": {"cave": 110497, "near": [228, -266]}},
+  {"name": "Chillwind Point (Bath'rah the Windwatcher's hut)", "from": {"exit": "Hillsbrad Foothills"}, "to": {"wmo": 113200, "near": [250, -1475]}},
+  {"name": "Misty Shore (the beach by the Vile Fin murlocs)", "from": {"name": "Ruins of Alterac", "xy": [499, -231]}, "to": {"xy": [760, -50]}},
+  {"name": "Alterac Valley entrance (battleground, not an exit)", "from": {"exit": "Hillsbrad Foothills"}, "to": {"cave": 110594, "near": [402, -1012]}},
+  {"name": "the road on to Western Plaguelands", "from": {"exit": "Hillsbrad Foothills"}, "to": {"exit": "Western Plaguelands"}},
+  {"name": "Ravenholdt Manor (Lord Jorach Ravenholdt)", "from": {"exit": "Hillsbrad Foothills"}, "to": {"xy": [27.6, -1625.2]}}
+ ]}

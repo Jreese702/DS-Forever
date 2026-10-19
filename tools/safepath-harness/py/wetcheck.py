@@ -64,16 +64,24 @@ def on_deck(x, y, m=1.0):
         if not ((d0 < 0 or d1 < 0 or d2 < 0) and (d0 > 0 or d1 > 0 or d2 > 0)): return True
         if min(seg(t[0], t[1], t[2], t[3], x, y), seg(t[2], t[3], t[4], t[5], x, y), seg(t[4], t[5], t[0], t[1], x, y)) <= m: return True
     return False
+# the user's narrow-stream ruling (2026-10-18; SafePath.NARROW_DEPTH / NARROW_YD): water up to 2.2 yd is waded for at most 6 yd at a
+# time; deeper than the ford for longer, or deeper than 2.2 at all, is a swim
+NARROW, NARROW_YD = 2.2, 6.0
 for r in data['routes']:
-    pts = r['pts']; worst = (0.0, None); deep = 0; decked = 0
+    pts = r['pts']; worst = (0.0, None); deep = 0; decked = 0; run = 0; longest = (0, None); over = 0
     for a, b in zip(pts, pts[1:]):
         if len(a) > 2 or len(b) > 2: continue                       # a cave's floor
         n = max(1, int(math.hypot(b[0] - a[0], b[1] - a[1])))
         for q in range(n):
             x = a[0] + (b[0] - a[0]) * q / n; y = a[1] + (b[1] - a[1]) * q / n
             d = depth(x, y)
+            if math.isnan(d) or d <= FORD: run = 0
             if math.isnan(d): continue
-            if on_deck(x, y): decked += 1; continue
-            if d > FORD: deep += 1
+            if on_deck(x, y): decked += 1; run = 0; continue
+            if d > FORD:
+                deep += 1; run += 1
+                if run > longest[0]: longest = (run, (round(x), round(y)))
+            if d > NARROW: over += 1
             if d > worst[0]: worst = (d, (round(x), round(y)))
-    print('WET %s: deepest %.1f yd%s, %d yd deeper than %.1f, %d yd on decks' % (r['letter'], worst[0], ' at %d,%d' % worst[1] if worst[1] else '', deep, FORD, decked))
+    print('WET %s: deepest %.1f yd%s, %d yd deeper than %.1f, %d yd on decks; longest wade %d yd%s, %d yd deeper than %.1f' % (r['letter'], worst[0],
+        ' at %d,%d' % worst[1] if worst[1] else '', deep, FORD, decked, longest[0], ' at %d,%d' % longest[1] if longest[1] else '', over, NARROW))

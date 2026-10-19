@@ -14,7 +14,7 @@ WORK = os.environ.get('SAFEPATH_WORK', 'E:/safepath-work')
 ART = os.environ.get('ART_ROOT', os.path.join(WORK, 'artroot'))
 JOIN_YD = 30.0      # a leg's end and the next leg's start: each moved at most 15 yd onto ground one can stand on
 RIDE_YD = 60.0      # a leg's end and its ride's end (a dock's edge, a tower's top over the ground under it)
-FORD = 1.5
+FORD = 2.2          # a narrow stream's limit (the user's ruling, 2026-10-18); wetcheck's runs are the gate's
 
 def routes(): return json.load(open(os.path.join(HERE, '..', 'cross', 'routes.json'), encoding='utf-8'))['routes']
 def rides():

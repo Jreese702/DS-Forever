@@ -1,0 +1,264 @@
+{
+ "tag": "wetlands",
+ "dir": "azeroth",
+ "faction": "alliance",
+ "zone": 1437,
+ "area": 11,
+ "level": 24,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1437,
+   11
+  ],
+  [
+   1432,
+   38
+  ],
+  [
+   1426,
+   1
+  ],
+  [
+   1417,
+   45
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1437,
+  1432
+ ],
+ "title": "Wetlands",
+ "crop": [
+  -2150,
+  -4900,
+  -390,
+  -4520
+ ],
+ "closeups": [
+  {
+   "name": "Menethil Harbor and its docks",
+   "box": [
+    -3450,
+    -4000,
+    -450,
+    -1150
+   ]
+  },
+  {
+   "name": "Bluegill Marsh and the Lost Fleet",
+   "box": [
+    -2800,
+    -3550,
+    -800,
+    -1550
+   ]
+  },
+  {
+   "name": "Saltspray Glen and Ironbeard's Tomb",
+   "box": [
+    -2550,
+    -3050,
+    -1550,
+    -2350
+   ]
+  },
+  {
+   "name": "Dun Modr and Thandol Span",
+   "box": [
+    -2200,
+    -2800,
+    -2150,
+    -2750
+   ]
+  },
+  {
+   "name": "Angerfang Encampment and Thelgen Rock",
+   "box": [
+    -3250,
+    -4050,
+    -2150,
+    -2850
+   ]
+  },
+  {
+   "name": "Dun Algaz tunnel",
+   "box": [
+    -3950,
+    -4720,
+    -2250,
+    -2850
+   ]
+  },
+  {
+   "name": "Excavation Site plateau",
+   "box": [
+    -3550,
+    -4300,
+    -1250,
+    -2150
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "Bluegill Marsh murloc camp (bank of its pool)",
+   "from": {
+    "node": "Menethil Harbor"
+   },
+   "to": {
+    "xy": [
+     -3230,
+     -1005
+    ]
+   }
+  },
+  {
+   "name": "Whelgar's Excavation Site den",
+   "from": {
+    "node": "Menethil Harbor"
+   },
+   "to": {
+    "cave": 110497,
+    "near": [
+     -3565,
+     -1972
+    ]
+   }
+  },
+  {
+   "name": "Saltspray Glen (Highland raptors)",
+   "from": {
+    "node": "Menethil Harbor"
+   },
+   "to": {
+    "camp": "Saltspray Glen"
+   }
+  },
+  {
+   "name": "Dun Modr, up the main road",
+   "from": {
+    "node": "Menethil Harbor"
+   },
+   "to": {
+    "node": "Dun Modr"
+   }
+  },
+  {
+   "name": "Angerfang Encampment (Dragonmaw)",
+   "from": {
+    "node": "Menethil Harbor"
+   },
+   "to": {
+    "camp": "Angerfang Encampment"
+   }
+  },
+  {
+   "name": "Thelgen Rock cave mouth",
+   "from": {
+    "node": "Menethil Harbor"
+   },
+   "to": {
+    "cave": 111202,
+    "near": [
+     -3875,
+     -2548
+    ]
+   }
+  },
+  {
+   "name": "Dun Algaz tunnel to Loch Modan (far mouth)",
+   "from": {
+    "node": "Menethil Harbor"
+   },
+   "to": {
+    "xy": [
+     -4674,
+     -2696
+    ]
+   }
+  },
+  {
+   "name": "Ironbeard's Tomb mouth",
+   "from": {
+    "node": "Dun Modr"
+   },
+   "to": {
+    "cave": 110602,
+    "near": [
+     -2851,
+     -2213
+    ]
+   }
+  },
+  {
+   "name": "over Thandol Span to Arathi (far end)",
+   "from": {
+    "node": "Dun Modr"
+   },
+   "to": {
+    "xy": [
+     -2270,
+     -2490
+    ]
+   }
+  },
+  {
+   "name": "Dragonmaw Retreat (whelps, Forever sub-area)",
+   "from": {
+    "node": "The Green Belt"
+   },
+   "to": {
+    "camp": "Dragonmaw Retreat"
+   }
+  },
+  {
+   "name": "Excavation Site: Wetlands dig platform (Forever sub-area; plateau cut off from Menethil)",
+   "from": {
+    "node": "Excavation Site: Wetlands"
+   },
+   "to": {
+    "wmo": 113245,
+    "near": [
+     -4040,
+     -1880
+    ]
+   }
+  },
+  {
+   "name": "The Drunken Dwarf tavern (Forever sub-area)",
+   "from": {
+    "node": "Menethil Harbor"
+   },
+   "to": {
+    "xy": [
+     -4357,
+     -2575
+    ]
+   }
+  },
+  {
+   "name": "Dock: Theramore (boat 292)",
+   "from": {
+    "node": "Menethil Harbor"
+   },
+   "to": {
+    "node": "Dock: Theramore"
+   }
+  },
+  {
+   "name": "Dock: Auberdine, Southshore pier end (boats 295 and 11167)",
+   "from": {
+    "node": "Menethil Harbor"
+   },
+   "to": {
+    "xy": [
+     -3725,
+     -575
+    ]
+   }
+  }
+ ],
+ "buriedDecks": true
+}
