@@ -92,6 +92,22 @@ SENT = {}
 C_Map.HasUserWaypoint = function() return GAME.pin ~= nil end
 C_DeathInfo = { GetCorpseMapPosition = function() if GAME.corpse then return CreateVector2D(GAME.corpse[1], GAME.corpse[2]) end end }
 WorldMapFrame = { IsShown = function() return GAME.worldmap end }
+GAME.t = 100
+function GetTime() return GAME.t end
+function GetCameraZoom() return 12.5 end
+CVAR_WRITES = 0
+C_CVar = { GetCVar = function(k) if k == "cameraFov" then return "90" end end, SetCVar = function() CVAR_WRITES = CVAR_WRITES + 1 end }
+GAME.nav = nil         -- { x, y, clamped }
+local NAV = setmetatable({}, Region)
+function NAV:GetCenter() return GAME.nav.x, GAME.nav.y end
+function NAV:GetEffectiveScale() return 1.0 end
+C_Navigation = {
+    GetFrame = function() if GAME.nav then return NAV end end,
+    WasClampedToScreen = function() return GAME.nav and GAME.nav.clamped or false end,
+    HasValidScreenPosition = function() return GAME.nav ~= nil end,
+    GetTargetState = function() return 2 end,
+    GetDistance = function() return 141.4 end,
+}
 WowCompanion = { send = function(j) SENT[#SENT + 1] = j end, encode = function(t) return t end }
 WowCompanionDB = {}
 '''
@@ -216,6 +232,36 @@ def main():
     diag = [sent[i] for i in range(1, len(sent) + 1) if sent[i].probe == "compass"]
     chk("the diagnostic line: pin, quest and its source, the marker count (%d sent)" % len(diag),
         len(diag) == 1 and diag[0].pin is True and diag[0].quest is True and diag[0].qsrc == "onmap" and diag[0].n == 2 and diag[0].uwp is True)
+    # the camera-yaw probe (one shot, read only): starts 20 s after login once the game's nav diamond exists, logs 4 samples a line
+    P = C.probe
+    L.eval("WowCompanion.compass.probe")
+    G.t = 100.0
+    L.eval("(function() local P = WowCompanion.compass.probe; P.loginAt = 100 end)()")
+    P.tick()
+    chk("probe: nothing before the nav diamond exists", not P.on)
+    G.nav = L.table_from({"x": 1100.0, "y": 500.0, "clamped": False})
+    G.t = 110.0; P.tick()
+    chk("probe: waits 20 s after the login", not P.on)
+    G.t = 121.0
+    before = len(sent)
+    for i in range(8):
+        G.t = 121.0 + i * 0.25
+        P.tick()
+    probe = [sent[i] for i in range(before + 1, len(sent) + 1) if sent[i].probe == "camyaw"]
+    starts = [x for x in probe if x.op == "start"]
+    samples = [x for x in probe if x.op == "s"]
+    chk("probe: a start line with the screen, the FOV (read) and the columns", len(starts) == 1 and starts[0].fov == "90" and starts[0].ui.h == 768)
+    first = samples[0].s[1] if samples else ""
+    chk("probe: samples batched 4 a line: t,facing,navX,navY,... (%s)" % first,
+        len(samples) == 2 and first.split(",")[2] == "1100.0" and first.split(",")[5] == "false" and first.split(",")[9] != "nil")
+    for i in range(400):
+        G.t = 125.0 + i * 0.25
+        P.tick()
+    ends = [sent[i] for i in range(1, len(sent) + 1) if sent[i].probe == "camyaw" and sent[i].op == "end"]
+    chk("probe: ends after 360 samples, marked done once per set", len(ends) == 1 and ends[0].n == 360 and L.globals().WowCompanionDB.camProbe == "cp4")
+    n = len(sent); G.t = 300.0; P.tick()
+    chk("probe: never again (no more lines)", len(sent) == n)
+    chk("probe: no CVar written", L.globals().CVAR_WRITES == 0)
     if render:
         paint(f, kids, k, out)
         print("rendered", out)
