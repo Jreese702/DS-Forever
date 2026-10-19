@@ -118,8 +118,12 @@ object NetJoins {
               links: List<ShippedNet.Link> = emptyList(), edges: Boolean = true, wetOf: (DoubleArray, DoubleArray) -> Int = { _, _ -> 0 },
               refuse: (DoubleArray, DoubleArray) -> Boolean = { _, _ -> false }, log: (String) -> Unit = {}): Result {
         val t0 = System.currentTimeMillis()
-        val nodes = net.nodes; val idx = HashMap<Int, Int>(); nodes.forEachIndexed { i, n -> idx[n.id] = i }
-        val pieceOfNode = pieceOf(net)
+        // the nodes the section ships (ShippedNet.section's rule): on a way that is not REMOVED, an exit's, or named. A node whose
+        // ways were all dropped as walled (a draft's trail over a ridge) is no piece: it is not in the shipped net at all
+        val live = HashSet<Int>().also { l -> for (e in net.edges) if (e.state != SafePath.REMOVED) { l.add(e.a); l.add(e.b) }; for (x in net.exits) l.add(x.node) }
+        val netL = SafePath.Net(net.map, net.cont, net.built, net.nodes.filter { it.id in live || it.name != null }, net.edges, net.exits, net.reviewed)
+        val nodes = netL.nodes; val idx = HashMap<Int, Int>(); nodes.forEachIndexed { i, n -> idx[n.id] = i }
+        val pieceOfNode = pieceOf(netL)
         val nP = (pieceOfNode.maxOrNull() ?: -1) + 1
         // the seeds: ground nodes, and points along ground ways
         val seeds = ArrayList<Seed>()
@@ -136,7 +140,7 @@ object NetJoins {
         // the pieces' own facts
         val pieceNodes = (0 until nP).map { ArrayList<Int>() }; nodes.forEachIndexed { i, _ -> pieceNodes[pieceOfNode[i]].add(i) }
         val pieceWays = IntArray(nP); val pieceGround = IntArray(nP); val pieceYd = DoubleArray(nP)
-        for (e in net.edges) { val a = idx[e.a] ?: continue; val b = idx[e.b] ?: continue; val p = pieceOfNode[a]
+        for (e in net.edges) { if (e.state == SafePath.REMOVED) continue; val a = idx[e.a] ?: continue; val b = idx[e.b] ?: continue; val p = pieceOfNode[a]
             pieceWays[p]++; if (e.kind in GROUND_EDGE) pieceGround[p]++; pieceYd[p] += hypot(nodes[a].wx - nodes[b].wx, nodes[a].wy - nodes[b].wy) }
         val pieceSeeds = IntArray(nP); for (s in seeds) pieceSeeds[s.piece]++
         val pieces = (0 until nP).map { p -> val ns = pieceNodes[p]
@@ -281,7 +285,7 @@ object NetJoins {
             val j = walk(c, "tree") ?: continue
             joins.add(j); dsu.union(j.pieceA, j.pieceB) }
         // THE SHORTCUTS: a meeting whose ends are far apart on the net (the joins in) by [SHORTCUT_FACTOR] and [SHORTCUT_MIN_YD]
-        val graph = NetGraph(net, idx)
+        val graph = NetGraph(netL, idx)
         for (j in joins) graph.add(j)
         for (c in all) {
             val ea = seeds[c.sa].end; val eb = seeds[c.sb].end
@@ -395,7 +399,7 @@ object NetJoins {
         val adj = HashMap<Int, ArrayList<Pair<Int, Double>>>()
         var next = -1                                         // virtual nodes (a point on a way): negative ids
         fun link(a: Int, b: Int, w: Double) { adj.getOrPut(a) { ArrayList() }.add(b to w); adj.getOrPut(b) { ArrayList() }.add(a to w) }
-        init { for (e in net.edges) { val a = idx[e.a] ?: continue; val b = idx[e.b] ?: continue
+        init { for (e in net.edges) { if (e.state == SafePath.REMOVED) continue; val a = idx[e.a] ?: continue; val b = idx[e.b] ?: continue
             link(e.a, e.b, hypot(net.nodes[a].wx - net.nodes[b].wx, net.nodes[a].wy - net.nodes[b].wy)) } }
         fun nodeOf(e: End): Int {
             if (e.node >= 0) return e.node

@@ -65,6 +65,19 @@ class NetJoinsTest {
         assertEquals(1, NetJoins.pieceOf(NetJoins.apply(net, r.joins)).toSet().size)
     }
 
+    @Test fun aNodeWithOnlyWalledWaysIsNoPiece() {
+        // the exporter's netC keeps the walled ways (REMOVED) and their nodes: a node whose ways were all dropped is not shipped,
+        // so it is no piece (the coordinator's Zephras check: 3 such nodes counted "apart"); a named one is shipped, and joined
+        val base = net(cave = false)
+        val n = base.nodes + listOf(SafePath.Node(30, 0.0, 30.0, SafePath.POINT), SafePath.Node(31, -100.0, 30.0, SafePath.HUB, name = "a town"))
+        val e = base.edges + listOf(SafePath.Edge(30, 0, SafePath.TRAIL, SafePath.REMOVED), SafePath.Edge(31, 3, SafePath.TRAIL, SafePath.REMOVED))
+        val r = NetJoins.joins(SafePath.Net(1, 1, "test", n, e, emptyList()), grid(-20.0..20.0), noWater, calm, 0.0)
+        println(r.summary("removed")); r.apart.forEach { println("  apart ${it.pieces}: ${it.why}") }
+        assertEquals(3, r.pieces.size)                 // the two roads and the named town, not node 30
+        assertEquals(1, r.after)
+        assertTrue(r.joins.all { j -> j.a.node != 30 && j.b.node != 30 })
+    }
+
     @Test fun aShutRidgeLeavesAWalledPocket() {
         val r = NetJoins.joins(net(cave = false), grid(null), noWater, calm, 0.0)
         println(r.summary("shut")); r.apart.forEach { println("  apart ${it.pieces}: ${it.why}") }
