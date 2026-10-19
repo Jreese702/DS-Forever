@@ -96,8 +96,16 @@ class RenderSafePath {
             // its groups weren't dumped
             val walks = HashMap<Pair<Int, Int>, List<(Double, Double) -> Boolean>>(); val m2Said = HashSet<Int>()
             val deckList = ArrayList<com.jrees.wowcompanion.WorldBuildings.Deck>()     // every deck read (py/wetcheck.py: decks_<tag>.json)
-            // per tile: the decks (floor triangles with heights)
+            // per tile: the decks walked at their own floor's height - a bridge's or a pier's, a fifth or more of its floor over the
+            // water (a building's porch by the shore, its roof read as floor too, and a city's streets stay the level walkways they were)
             val tileDecks = HashMap<Pair<Int, Int>, ArrayList<com.jrees.wowcompanion.WorldBuildings.Deck>>()
+            fun overWater(d: com.jrees.wowcompanion.WorldBuildings.Deck): Boolean {
+                val ts = d.triangles; if (ts.isEmpty()) return false
+                val wetN = ts.count { t -> val x = (t[0] + t[2] + t[4]) / 3; val y = (t[1] + t[3] + t[5]) / 3
+                    !SafePath.Water.depthOf(x, y, { c, r -> wet(c, r).first }, { c, r -> wet(c, r).second }).isNaN() }
+                return wetN * 5 >= ts.size
+            }
+            fun keepHeights(c: Int, r: Int, d: com.jrees.wowcompanion.WorldBuildings.Deck) { if (overWater(d)) tileDecks.getOrPut(c to r) { ArrayList() }.add(d) }
             // the M2 bridges (the device's own WorldBuildings.m2Decks: a doodad by the water whose model's own name says bridge, dock,
             // pier or walkway), from the models dump/dump_m2bridges.py put in <dir>/m2
             fun m2DecksOf(c: Int, r: Int): List<(Double, Double) -> Boolean> {
@@ -109,7 +117,7 @@ class RenderSafePath {
                     val d = com.jrees.wowcompanion.WorldBuildings.m2Deck(p, m)
                     if (m2Said.add(p.uid)) println("DECK M2 ${p.fid} '$name' at ${p.ox.toInt()},${p.oy.toInt()} z ${p.oz.toInt()} yaw ${Math.toDegrees(p.yaw).toInt()}: " +
                         if (d == null) "not a bridge (or no collision floor)" else "a bridge, its deck read")
-                    d?.let { dk -> deckList.add(dk); tileDecks.getOrPut(c to r) { ArrayList() }.add(dk); { x: Double, y: Double -> dk.holds(x, y) } }
+                    d?.let { dk -> deckList.add(dk); keepHeights(c, r, dk); { x: Double, y: Double -> dk.holds(x, y) } }
                 }
             }
             fun walksOf(c: Int, r: Int) = walks.getOrPut(c to r) {
@@ -119,22 +127,22 @@ class RenderSafePath {
                     if (feet.isEmpty() || root == null) emptyList() else {
                         val gf = com.jrees.wowcompanion.WorldBuildings.groupFiles(root)
                         com.jrees.wowcompanion.WorldBuildings.deck(p, root) { id -> gf.indexOf(id).takeIf { it >= 0 }?.let { File(dir, "wmogroup/${p.fid}_$it") }?.takeIf { it.isFile }?.readBytes() }
-                            ?.takeIf { !it.empty }?.let { d -> deckList.add(d); tileDecks.getOrPut(c to r) { ArrayList() }.add(d); listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) }) }
+                            ?.takeIf { !it.empty }?.let { d -> deckList.add(d)
+                                if (!com.jrees.wowcompanion.WorldBuildings.isCity(p, com.jrees.wowcompanion.WorldBuildings.groups(root))) keepHeights(c, r, d)
+                                listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) }) }
                             ?: feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } }
                     }
                 }.orEmpty() + m2DecksOf(c, r)
             }
-            // a deck's floor height at a spot over the water: its lowest floor over the water's surface and the ground there (a covered
-            // bridge's roof over its deck, its pillars' feet in the river), NaN off every deck and off the water
+            // a bridge's or a pier's floor height at a spot: its lowest floor over the water's surface and the ground there (a covered
+            // bridge's roof over its deck, its pillars' feet in the river), NaN off every such deck
             fun deckZ(x: Double, y: Double): Float = PlaceNames.locate(x, y).let { l -> walksOf(l[0], l[1])
                 val ds = tileDecks[l[0] to l[1]] ?: return@let Float.NaN
                 val (sf, hh) = wet(l[0], l[1])
                 val ci = (((32 * MapHarvest.ADT_YD - y) / MapHarvest.ADT_YD - l[0]) * 128).toInt().coerceIn(0, 127)
                 val cj = (((32 * MapHarvest.ADT_YD - x) / MapHarvest.ADT_YD - l[1]) * 128).toInt().coerceIn(0, 127)
-                // only over the water (a pier, a bridge's span): elsewhere a deck stays the level walkway it was (a building's porch, a
-                // ramp - their outdoor groups' roofs read as floors too, and their heights walled Razor Hill in)
-                val surf = sf?.get(cj * 128 + ci)?.takeIf { !it.isNaN() } ?: return@let Float.NaN
-                val above = maxOf(hh?.get(cj * 128 + ci)?.takeIf { !it.isNaN() } ?: Float.NEGATIVE_INFINITY, surf) - 1.0
+                val above = maxOf(hh?.get(cj * 128 + ci)?.takeIf { !it.isNaN() } ?: Float.NEGATIVE_INFINITY,
+                    sf?.get(cj * 128 + ci)?.takeIf { !it.isNaN() } ?: Float.NEGATIVE_INFINITY) - 1.0
                 ds.map { it.heightAt(x, y, above) }.filter { !it.isNaN() }.minOrNull()?.toFloat() ?: Float.NaN }
             val wg = SafePath.Water.build(rect.t, rect.b, rect.l, rect.r, { x, y -> PlaceNames.locate(x, y).let { l -> walksOf(l[0], l[1]).any { it(x, y) } } }) { x, y ->
                 SafePath.Water.depthOf(x, y, { c, r -> wet(c, r).first }, { c, r -> wet(c, r).second }) }
