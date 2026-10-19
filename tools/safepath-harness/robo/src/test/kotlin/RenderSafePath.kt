@@ -174,7 +174,6 @@ class RenderSafePath {
      * quest mobs' thickest spot - and every route the device's new way: the SafePath network as far as it helps, the ground's own leg
      * (Climb: the 4 yd lattice's A*, cliffs walls, the danger and deep water in) to the goal. Exported for the 3D and height-map renders.
      */
-    private val EXIT_NEAR_YD = 400.0       // an exit's crossing: the neighbour's ground reached within this walk of it
 
     private fun levels2(net: SafePath.Net, rect: MapHarvest.Rect, tg: Terrain.Grid, heightV: (Int, Int) -> Float, roadAt: (Double, Double) -> Boolean,
                         zg: SafePath.Zones, areas: Map<Int, PlaceNames.Area>, spawns: List<QuestieNpcs.Spawn>, dir: File, waterAt: (Double, Double) -> Float,
@@ -477,48 +476,30 @@ class RenderSafePath {
             "${netW.edges.count { it.state == SafePath.REWALK }} kept, walked by the ground's leg (a lip)")
         val uiAt: (Double, Double) -> Int = { x, y -> ar?.uiMap(zg.areaAt(x, y)) ?: 0 }
         val netCv = SafePath.withCaves(netW, caves, { x, y -> danger(x, y) / DangerGrid.CAP }, uiAt, mapName)
-        // the ground's own crossings (a walkable corridor over the border, no road): exits too
-        val netC = SafePath.groundExits(netCv, cg, uiAt, { x, y -> !deep(x, y) }, mapName)
-        println("EXITS added: ${netCv.exits.size - netW.exits.size} through tunnels, ${netC.exits.size - netCv.exits.size} on the ground's own crossings")
-        // THE EXITS CHECKED ON THE GROUND: from each, the lattice flooded (no wall step, no deep water, the caves' links taken) - how
-        // much of this zone and of the neighbour it leads to it reaches. A way out that reaches only a pocket on either side is no way.
+        // THE EXITS CHECKED ON THE GROUND, the app's own check (SafePath.Ground / checkExits, as the device runs it on its terrain step):
+        // from each, the lattice flooded (no wall step, no deep water, the caves' links taken) - a "walk" exit whose crossing is not
+        // walkable (a pocket on either side, the neighbour not reached within EXIT_NEAR_YD) is false and goes with its dead-end way;
+        // then the ground's own crossings (a walkable corridor over the border, no road) become exits too
+        val gr = SafePath.Ground(cg, map, uiAt, { x, y -> !deep(x, y) }, links)
+        val netK = SafePath.checkExits(netCv, gr)
+        // a neighbour's own map: its world rect (worldmap.json's rects, as the device's MapHarvest has them)
+        val onMap: (Int, Double, Double) -> Boolean = { m, x, y -> recipeRects?.optJSONArray(m.toString())?.let { r ->
+            x <= r.getDouble(1) && x >= r.getDouble(2) && y <= r.getDouble(3) && y >= r.getDouble(4) } ?: true }
+        val netC = SafePath.groundExits(netK, gr, mapName, onMap = onMap)
+        println("EXITS added: ${netCv.exits.size - netW.exits.size} through tunnels, ${netC.exits.size - netK.exits.size} on the ground's own crossings; " +
+            "${netCv.exits.size - netK.exits.size} false walk exits dropped (${netCv.exits.filter { x -> netK.exits.none { it.node == x.node } }.joinToString { x ->
+                netCv.nodes.first { it.id == x.node }.let { "${x.name} at ${it.wx.toInt()},${it.wy.toInt()}" } }})")
         val exitChecks = org.json.JSONArray()
-        run {
-            val n = cg.nx * cg.ny
-            val dry = BooleanArray(n) { q -> !deep(cg.wx(q / cg.nx), cg.wy(q % cg.nx)) }
-            val jump = HashMap<Int, ArrayList<Int>>()
-            for (lk in links) { val a0 = cg.at(lk.pts.first()[0], lk.pts.first()[1]); val b0 = cg.at(lk.pts.last()[0], lk.pts.last()[1])
-                val qa = a0[1] * cg.nx + a0[0]; val qb = b0[1] * cg.nx + b0[0]
-                jump.getOrPut(qa) { ArrayList() }.add(qb); jump.getOrPut(qb) { ArrayList() }.add(qa) }
-            val mapOf = IntArray(n) { q -> ar?.uiMap(zg.areaAt(cg.wx(q / cg.nx), cg.wy(q % cg.nx))) ?: 0 }
-            // the zone's DRY lattice: an exit can't reach the sea floor (Teldrassil's rect is over half sea)
-            val ownAll = (0 until n).count { mapOf[it] == map && dry[it] }
-            for (x in netC.exits) {
-                val node = netC.nodes.firstOrNull { it.id == x.node } ?: continue
-                // a breadth-first flood (its depth the walk from the exit, in steps): the neighbour's ground must be reached NEAR the
-                // exit - a real crossing is local; an unbounded flood called Mulgore's Feralas exit walkable by a 6,943 yd loop through Desolace
-                val s0 = cg.at(node.wx, node.wy); val seen = BooleanArray(n); val st = IntArray(n); var head = 0; var tail = 0
-                val depth = IntArray(n); val nearSteps = (EXIT_NEAR_YD / S).toInt()
-                val q0 = s0[1] * cg.nx + s0[0]; seen[q0] = true; st[tail++] = q0
-                var own = 0; var theirs = 0
-                while (head < tail) {
-                    val q = st[head++]; val i = q % cg.nx; val j = q / cg.nx
-                    if (mapOf[q] == map) own++ else if (mapOf[q] == x.toMap && depth[q] <= nearSteps) theirs++
-                    for (dj in -1..1) for (di in -1..1) {
-                        if (di == 0 && dj == 0) continue
-                        val vi = i + di; val vj = j + dj; if (vi !in 0 until cg.nx || vj !in 0 until cg.ny) continue
-                        val v = vj * cg.nx + vi; if (seen[v] || !dry[v] || cg.step(i, j, di, dj) == Climb.WALL) continue
-                        seen[v] = true; depth[v] = depth[q] + 1; st[tail++] = v
-                    }
-                    jump[q]?.forEach { v -> if (!seen[v]) { seen[v] = true; depth[v] = depth[q] + 1; st[tail++] = v } }
-                }
-                val ownYd = own * S * S; val theirYd = theirs * S * S
-                val ok = own > ownAll / 4 && theirs * S * S > 20000
-                println("EXIT ${x.name} (${x.how}) at ${node.wx.toInt()},${node.wy.toInt()} h ${height(node.wx, node.wy).toInt()}: reaches ${own * 100 / maxOf(1, ownAll)}% of this zone, " +
-                    "${(theirYd / 1000).toInt()}k sq yd of ${x.name}'s ground within ${EXIT_NEAR_YD.toInt()} yd of it - ${if (ok) "WALKABLE" else "NOT WALKABLE"}")
-                exitChecks.put(org.json.JSONArray(listOf(node.wx, node.wy, x.name, x.how, ok, own * 100 / maxOf(1, ownAll), (theirYd / 1000).toInt())))
-            }
+        for (x in netCv.exits + netC.exits.filter { e -> netCv.exits.none { it.node == e.node } }) {
+            val node = netC.nodes.firstOrNull { it.id == x.node } ?: netCv.nodes.firstOrNull { it.id == x.node } ?: continue
+            val c = gr.check(node.wx, node.wy, x.toMap)
+            val kept = netC.exits.any { it.node == x.node }
+            println("EXIT ${x.name} (${x.how}${if (node.src == "ground") ", ground" else ""}) at ${node.wx.toInt()},${node.wy.toInt()} h ${height(node.wx, node.wy).toInt()}: " +
+                "reaches ${(c.ownShare * 100).toInt()}% of this zone, ${(c.theirsSqYd / 1000).toInt()}k sq yd of ${x.name}'s ground within ${SafePath.EXIT_NEAR_YD.toInt()} yd of it - " +
+                "${if (c.walkable) "WALKABLE" else "NOT WALKABLE"}${if (kept) "" else ", DROPPED"}")
+            exitChecks.put(org.json.JSONArray(listOf(node.wx, node.wy, x.name, x.how, c.walkable, (c.ownShare * 100).toInt(), (c.theirsSqYd / 1000).toInt(), kept, node.src)))
         }
+        exitSheet(cg, gr, netC, tag, mapName, deep)
         println("NET with caves: ${netC.nodes.size} nodes, ${netC.edges.size} edges (${netC.edges.count { it.kind == SafePath.CAVE }} cave)")
         // PROBES (a spec's "probes": [[x1, y1, x2, y2], ...]): a leg between two spots with and without the water, for finding what walls
         // a zone in two
@@ -588,7 +569,7 @@ class RenderSafePath {
         export.put("net", org.json.JSONObject()
             .put("edges", org.json.JSONArray(netC.edges.filter { it.state != SafePath.REMOVED }.mapNotNull { e -> val a = byId[e.a] ?: return@mapNotNull null; val b = byId[e.b] ?: return@mapNotNull null
                 org.json.JSONArray(listOf(a.wx, a.wy, b.wx, b.wy, e.kind)) }))
-            .put("exits", org.json.JSONArray(netC.exits.mapNotNull { x -> byId[x.node]?.let { n -> org.json.JSONArray(listOf(n.wx, n.wy, x.name, x.how)) } }))
+            .put("exits", org.json.JSONArray(netC.exits.mapNotNull { x -> byId[x.node]?.let { n -> org.json.JSONArray(listOf(n.wx, n.wy, x.name, x.how, n.src, x.toMap)) } }))
             .put("nodes", org.json.JSONArray(netC.nodes.filter { it.name != null }.map { n -> org.json.JSONArray(listOf(n.wx, n.wy, n.name, n.kind)) })))
         val mobs = spawns.filter { it.hostile == mine || it.hostile == 3 }.groupBy { it.name }.map { (n, l) ->
             val p = l.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
@@ -606,6 +587,50 @@ class RenderSafePath {
         File(out, "levels_routes_$tag.json").writeText(export.toString())
     }
 
+
+    /** THE EXITS ON THE GROUND, one close-up each (1000 yd round it, 2 px a lattice step): grey = walkable (darker the steeper), dark
+     *  red = a wall, blue = deep water, green tint = the zone's main ground, white = the zones' borders; gold road, blue spur, orange
+     *  trail, purple cave; magenta = a ground exit, orange = a drafted / tunnel / bridge exit. exits_<tag>.png */
+    private fun exitSheet(cg: Climb.Grid, gr: SafePath.Ground, net: SafePath.Net, tag: String, nameOf: (Int) -> String, deep: (Double, Double) -> Boolean) {
+        val exits = net.exits.mapNotNull { x -> net.nodes.firstOrNull { it.id == x.node }?.let { x to it } }
+        if (exits.isEmpty()) return
+        val S = Climb.STEP; val ORG = 32 * MapHarvest.ADT_YD; val half = (500 / S).toInt(); val px = 2; val T = (2 * half + 1) * px
+        val cols = 4; val rows = (exits.size + cols - 1) / cols
+        val bmp = Bitmap.createBitmap(cols * T, rows * T, Bitmap.Config.ARGB_8888); val c = Canvas(bmp); c.drawColor(Color.BLACK)
+        val p = Paint(); val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Color.WHITE; setShadowLayer(4f, 0f, 0f, Color.BLACK); isFakeBoldText = true }
+        val lp = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
+        val byId = net.nodes.associateBy { it.id }
+        for ((k, xn) in exits.withIndex()) {
+            val (x, n) = xn
+            val ox = (k % cols) * T; val oy = (k / cols) * T
+            val ctr = cg.at(n.wx, n.wy); val i0 = ctr[0] - half; val j0 = ctr[1] - half
+            for (dj in 0..2 * half) for (di in 0..2 * half) {
+                val i = i0 + di; val j = j0 + dj
+                p.color = if (i !in 0 until cg.nx || j !in 0 until cg.ny) Color.rgb(10, 10, 10) else {
+                    val q = j * cg.nx + i
+                    val cl = maxOf(cg.east(i, j), cg.south(i, j), cg.east(i - 1, j), cg.south(i, j - 1))
+                    if (!gr.dryAt[q]) Color.rgb(40, 70, 160)
+                    else if (cl == Climb.WALL) Color.rgb(110, 25, 20)
+                    else { val v = when (cl) { Climb.LEVEL -> 200; Climb.CLIMB -> 160; else -> 120 }
+                        if (gr.region[q] in gr.main && gr.zoneOf[q] == net.map) Color.rgb(v - 40, v, v - 40) else Color.rgb(v, v, v) }
+                }
+                if (i in 0 until cg.nx - 1 && j in 0 until cg.ny - 1) { val q = j * cg.nx + i
+                    if (gr.zoneOf[q] != gr.zoneOf[q + 1] || gr.zoneOf[q] != gr.zoneOf[q + cg.nx]) p.color = Color.WHITE }
+                c.drawRect((ox + di * px).toFloat(), (oy + dj * px).toFloat(), (ox + di * px + px).toFloat(), (oy + dj * px + px).toFloat(), p)
+            }
+            fun sx(wy: Double) = (ox + ((ORG - wy) / S - cg.gc0 - i0) * px).toFloat()
+            fun sy(wx: Double) = (oy + ((ORG - wx) / S - cg.gr0 - j0) * px).toFloat()
+            c.save(); c.clipRect(ox.toFloat(), oy.toFloat(), (ox + T).toFloat(), (oy + T).toFloat())
+            for (e in net.edges) { if (e.state == SafePath.REMOVED) continue; val a = byId[e.a] ?: continue; val b = byId[e.b] ?: continue
+                lp.color = when (e.kind) { SafePath.ROAD -> Color.rgb(255, 209, 0); SafePath.SPUR -> Color.rgb(140, 220, 255); SafePath.CAVE -> Color.rgb(170, 90, 255); else -> Color.rgb(255, 140, 60) }
+                c.drawLine(sx(a.wy), sy(a.wx), sx(b.wy), sy(b.wx), lp) }
+            for ((y, m) in exits) { p.color = Color.BLACK; c.drawCircle(sx(m.wy), sy(m.wx), 9f, p)
+                p.color = if (m.src == "ground") Color.rgb(255, 0, 255) else Color.rgb(255, 120, 40); c.drawCircle(sx(m.wy), sy(m.wx), 7f, p) }
+            c.restore()
+            c.drawText("${k + 1}. ${x.name} (${x.how}${if (n.src == "ground") ", ground" else ""}) ${n.wx.toInt()},${n.wy.toInt()}", (ox + 8).toFloat(), (oy + 26).toFloat(), tp)
+        }
+        FileOutputStream(File(out, "exits_$tag.png")).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
     /** Durotar and the Barrens side by side, joined at their border: both drafts, the crossings paired, the danger heat on both */
     private fun border(art: File, a: Int, b: Int, nets: Map<Int, SafePath.Net>, rects: Map<Int, MapHarvest.Rect>, zgs: Map<Int, SafePath.Zones>,
                        ars: Map<Int, SafePath.Areas>, hostile: Map<Int, List<DoubleArray>>, names: (Int) -> String) {
