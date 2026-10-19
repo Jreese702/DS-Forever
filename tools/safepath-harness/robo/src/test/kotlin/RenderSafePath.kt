@@ -374,8 +374,12 @@ class RenderSafePath {
             else !(waterGrid?.wadeable(x, y) ?: (d <= SafePath.FORD_DEPTH)) }
         val reachedOf = HashMap<String, Boolean>()
         var lastReached = true
+        // each leg's end and whether it reached its goal: a route is reached when the leg its way ends with did (SafePath.routeOn tries
+        // more legs than it keeps - the walk off before the turn - so the last leg asked is not always the one the way ends with)
+        val legEnds = ArrayList<Pair<DoubleArray, Boolean>>()
+        fun reachedBy(way: List<DoubleArray>?): Boolean = way?.lastOrNull()?.let { e -> legEnds.lastOrNull { (p, _) -> p[0] == e[0] && p[1] == e[1] }?.second } ?: lastReached
         var links: List<Climb.Link> = emptyList()
-        val leg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b -> Climb.route(cg, a, b, danger, k, deep, links)?.also { lastReached = it.reached }?.pts }
+        val leg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b -> Climb.route(cg, a, b, danger, k, deep, links)?.also { lastReached = it.reached; it.pts.lastOrNull()?.let { e -> legEnds.add(e to it.reached) } }?.pts }
         // the narrow-stream ruling's other half: no wade longer than SafePath.NARROW_YD on end. A route that wades longer (along a stream,
         // Felwood: 2.3 yd for 12 yd) is routed again with no wading at all
         // (deeper than the ford by the grid's vertices or by the liquid's surface over the ground at the spot itself, rawDeep, as
@@ -383,7 +387,7 @@ class RenderSafePath {
         fun overFord(x: Double, y: Double): Boolean { val d = waterAt(x, y)
             return !deckAt(x, y) && ((rawDeep != null && rawDeep(x, y)) || (!d.isNaN() && d != SafePath.Water.BRIDGE && d > SafePath.FORD_DEPTH)) }
         val strictDeep: (Double, Double) -> Boolean = { x, y -> overFord(x, y) }
-        val strictLeg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b -> Climb.route(cg, a, b, danger, k, strictDeep, links)?.also { lastReached = it.reached }?.pts }
+        val strictLeg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b -> Climb.route(cg, a, b, danger, k, strictDeep, links)?.also { lastReached = it.reached; it.pts.lastOrNull()?.let { e -> legEnds.add(e to it.reached) } }?.pts }
         fun longestWade(w: List<DoubleArray>): Double {
             var run = 0.0; var best = 0.0
             for ((pa, pb) in w.zipWithNext()) { if (Climb.inCave(pa) || Climb.inCave(pb)) { run = 0.0; continue }
@@ -840,17 +844,17 @@ class RenderSafePath {
         val export = org.json.JSONObject(); val rs = org.json.JSONArray()
         for ((i, trip) in trips.withIndex()) {
             val (fromName, f, goal) = trip; val (goalName, gp) = goal
-            lastReached = true
+            lastReached = true; legEnds.clear()
             // a declared swim only for a goal on its island
             val gv = cg.at(gp!![0], gp[1]); val gk = (gv[1].toLong() shl 32) or (gv[0].toLong() and 0xFFFFFFFFL)
             val mySwims = swims.filter { gk in it.island }
             links = baseLinks + mySwims.map { it.link }
             val way0 = SafePath.routeOn(netC, f!![0], f[1], gp!![0], gp[1], leg, clear = clear, walkable = { a, b -> Climb.walkable(cg, a, b, deep) }) ?: leg(f, gp) ?: listOf(f, gp)
-            var reached0 = lastReached
+            var reached0 = reachedBy(way0)
             val wayW = if (longestWade(way0) <= SafePath.NARROW_YD) way0 else {
                 println("WADE route ${('A' + i)}: a wade ${longestWade(way0)} yd on end - routed again with no wading")
                 (SafePath.routeOn(netC, f[0], f[1], gp[0], gp[1], strictLeg, clear = clear, walkable = { a, b -> Climb.walkable(cg, a, b, strictDeep) }) ?: strictLeg(f, gp))
-                    ?.also { reached0 = lastReached } ?: way0 }
+                    ?.also { reached0 = reachedBy(it) } ?: way0 }
             val way = if (!reached0) wayW else {
                 val direct = calmLeg(f, gp)?.takeIf { d -> d.size >= 2 && Math.hypot(d.last()[0] - gp[0], d.last()[1] - gp[1]) < 1.0 }
                 SafePath.capDetour(wayW, direct?.takeIf { longestWade(it) <= SafePath.NARROW_YD }).also { if (it !== wayW) println("DETOUR route ${('A' + i)}: round the danger ${wayW.zipWithNext { a, b -> Math.hypot(b[0] - a[0], b[1] - a[1]) }.sum().toInt()} yd, capped: the way ignoring it ${it.zipWithNext { a, b -> Math.hypot(b[0] - a[0], b[1] - a[1]) }.sum().toInt()} yd") }
