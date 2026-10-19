@@ -3,8 +3,8 @@
  "plans": [
   {"id": "dalaran-northshire", "name": "Dalaran → Northshire Abbey, by the one-way portal to Stormwind", "faction": "alliance",
    "from": {"cont": 0, "xy": [451.0, 446.6]}, "to": {"cont": 0, "xy": [-8914, -137]}, "expect": "gap", "use": ["P1"]},
-  {"id": "stormwind-dalaran", "name": "Stormwind → Dalaran: never back through the one-way portal", "faction": "alliance",
-   "from": {"cont": 0, "xy": [-8830, 625]}, "to": {"cont": 0, "xy": [451.0, 446.6]}, "expect": "none", "avoid": ["P1"]},
+  {"id": "stormwind-dalaran", "name": "Stormwind → Dalaran: flown to Southshore and walked up its south stairs, never back through the one-way portal", "faction": "alliance",
+   "from": {"cont": 0, "xy": [-8830, 625]}, "to": {"cont": 0, "xy": [451.0, 446.6]}, "expect": "plan", "use": ["w:1424>1416"], "avoid": ["P1"]},
   {"id": "orgrimmar-undercity", "name": "the Orgrimmar gate → the Undercity, by zeppelin", "faction": "horde", "flights": false,
    "from": {"cont": 1, "xy": [1408, -4207]}, "to": {"cont": 0, "xy": [1648, 240]}, "expect": "plan", "use": ["r302"]},
   {"id": "shadowglen-auberdine", "name": "Shadowglen → Auberdine: down the tree by its portal, then the boat", "faction": "alliance", "flights": false,

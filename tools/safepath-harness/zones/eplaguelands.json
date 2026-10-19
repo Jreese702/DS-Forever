@@ -5,7 +5,8 @@
               {"name": "Stratholme's gate and Plaguewood", "box": [3550, 2850, -2900, -3750]},
               {"name": "Corin's Crossing", "box": [2300, 1800, -4250, -4800]},
               {"name": "Zul'Mashar and Quel'Lithien Lodge", "box": [3600, 3000, -4100, -5100]},
-              {"name": "Thondroril River crossing", "box": [2200, 1600, -2350, -3000]}],
+              {"name": "Thondroril River crossing", "box": [2200, 1600, -2350, -3000]},
+              {"name": "Stratholme service entrance", "box": [3350, 3000, -3900, -4400]}],
  "goals": [
   {"name": "Tyr's Hand (Scarlet town)", "from": {"node": "Light's Hope Chapel"}, "to": {"camp": "Tyr's Hand"}},
   {"name": "New Avalon's ruined mage tower (Forever-added)", "from": {"node": "Light's Hope Chapel"}, "to": {"wmo": 115862, "near": [1928, -5780]}},
@@ -15,8 +16,11 @@
   {"name": "Blackwood Lake", "from": {"node": "Eastwall Tower"}, "to": {"camp": "Blackwood Lake"}},
   {"name": "Zul'Mashar (Mossflayer trolls)", "from": {"node": "Northpass Tower"}, "to": {"camp": "Zul'Mashar"}},
   {"name": "Quel'Lithien Lodge", "from": {"node": "Northpass Tower"}, "to": {"wmo": 112861, "near": [3321, -4234]}},
-  {"name": "Stratholme's main gate", "from": {"node": "Plaguewood Tower"}, "to": {"wmo": 7956012, "near": [3450, -3380]}},
+  {"name": "Stratholme's main gate (Anthion Harmon outside it; Forever map 26.1,11.3)", "from": {"node": "Plaguewood Tower"}, "to": {"xy": [3367.7, -3379.5]}},
+  {"name": "Stratholme's service entrance gatehouse (Forever map 41.9,15.9 = Classic 48.4,21.8)", "from": {"node": "Northpass Tower"}, "to": {"xy": [3176.0, -4033.0]}},
   {"name": "Terrordale (from the Plaguewood Tower flight master's yard, off the tower's floor)", "from": {"xy": [3015, -3045]}, "to": {"camp": "Terrordale"}},
   {"name": "Darrowshire", "from": {"node": "Crown Guard Tower"}, "to": {"camp": "Darrowshire"}},
   {"name": "Thondroril River ford to Western Plaguelands", "from": {"node": "Crown Guard Tower"}, "to": {"exit": "Western Plaguelands", "how": "ford"}}
- ]}
+ ],
+ "notes": "Stratholme (recheck2): the main gate is where Classic had it. QuestieDB_Forever's Anthion Harmon stands at EPL map 26.1,11.3 = world (3367.7, -3379.5) (AreaTable 2279 Stratholme), beside the gate mouths of the Stratholme city WMO (7956012, WMO 21106, placed on map 0 at 3449.7,-3379.7: its street floor meets the terrain at 3349,-3352 / 3358,-3435 / 3377,-3324, z 142); goal I now stops there, not at the WMO's origin 80 yd inside. The reported 48.4,21.8 is the SERVICE entrance in the CLASSIC map frame (Classic EPL rect t 3799.2 b 1218.75 l -2185.4 r -6056.3 -> world 3236.7,-4058.9); this client's map rect differs, so the same spot is Forever map 41.9,15.9. There the gatehouse stratholme_c.wmo (110243 at 3190,-4039) opens onto the ground at 3178,-4033 z 106 (route J) and its tunnel floor (z 109) runs east to 3274,-4078; a collisionwallwmo01 (1719969: an invisible wall 11 x 18 yd, 1.2 yd thick, yaw 107.5) stands across that tunnel at 3238.3,-4060.6 z 105.5, the old portal spot. Whether it is the portal's back stop or a closure is an in-game check. No AreaTrigger for either entrance is in this client's AreaTrigger.db2."
+}

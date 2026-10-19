@@ -22,7 +22,7 @@
   600,
   -220,
   700,
-  -20
+  -150
  ],
  "closeups": [
   {
@@ -42,15 +42,74 @@
     520,
     160
    ]
+  },
+  {
+   "name": "The south stairs and the Hillsbrad road",
+   "box": [
+    250,
+    -150,
+    330,
+    50
+   ]
   }
  ],
- "goals": [],
- "voidBelow": 85,
+ "goals": [
+  {
+   "name": "Dalaran's south stairs from Alterac's road to Hillsbrad (the stairs' foot)",
+   "from": {
+    "name": "Alterac's road crossing to Hillsbrad",
+    "xy": [
+     -92.9,
+     95.8
+    ]
+   },
+   "to": {
+    "xy": [
+     -38.1,
+     169.4
+    ]
+   }
+  },
+  {
+   "name": "the sewer outlet north of the city (Cantrips & Crows)",
+   "from": {
+    "name": "Alterac's road crossing to Hillsbrad",
+    "xy": [
+     -92.9,
+     95.8
+    ]
+   },
+   "to": {
+    "xy": [
+     391.0,
+     535.7
+    ]
+   }
+  }
+ ],
  "floorCity": {
   "fids": [
    7116370
   ],
   "places": [
+   {
+    "name": "South stairs foot",
+    "xy": [
+     -38.1,
+     169.4
+    ],
+    "z": 56.7,
+    "source": "WMO 18950 group 57 (outdoor): its floor meets Alterac's terrain (floor 56.7, terrain 56.7)"
+   },
+   {
+    "name": "Sewer outlet (north)",
+    "xy": [
+     391.0,
+     535.7
+    ],
+    "z": 41.0,
+    "source": "WMO 18950 group 78 ('Sewer', outdoor): its floor meets Alterac's terrain (floor 41.0, terrain 40.9)"
+   },
    {
     "name": "Skydock",
     "source": "TaxiPathNode 175848: airship path 11398 node 13, its Dalaran stop (flag 2, 60 s) at (544.8, 424.2, 107.0)",
@@ -218,6 +277,16 @@
   ],
   "routes": [
    {
+    "name": "into the city by the south stairs: Runeweaver Square",
+    "from": "South stairs foot",
+    "to": "Runeweaver Square"
+   },
+   {
+    "name": "the south stairs to the Skydock",
+    "from": "South stairs foot",
+    "to": "Skydock"
+   },
+   {
     "name": "Skyborne Portal to Stormwind",
     "from": "Skydock",
     "to": "Skyborne Portal to Stormwind"
@@ -270,6 +339,11 @@
   ],
   "checks": [
    {
+    "name": "the sewer outlet to Runeweaver Square (through the Underbelly)",
+    "from": "Sewer outlet (north)",
+    "to": "Runeweaver Square"
+   },
+   {
     "name": "The Purple Parlor on foot",
     "from": "Skydock",
     "to": "The Purple Parlor"
@@ -300,7 +374,12 @@
     "to": "The Atrium of Fortune"
    }
   ],
-  "notes": "Dalaran's streets are WMO 18950 (file 7116370) placed on MAP 0 over the Alterac crater (Alterac uiMap 1416, QuestieDB area 36); map 2980 'Dalaran City' holds the old Northrend nd_dalaran.wmo (115404, WMO id 5164) instead, so it is not this city. Routes walk the WMO's own floor (Caves.floor); every portal, the airship and the glide are manual links."
+  "notes": "Dalaran's streets are WMO 18950 (file 7116370) placed on MAP 0 over the Alterac crater (Alterac uiMap 1416, QuestieDB area 36); map 2980 'Dalaran City' holds the old Northrend nd_dalaran.wmo (115404, WMO id 5164) instead, so it is not this city. Routes in the city walk the WMO's own floor; the two lattice legs walk Alterac's ground to the south stairs' foot and the sewer outlet (Caves.floor); every portal, the airship and the glide are manual links."
  },
- "notes": "voidBelow 85 holds only under the city (the crater floor under it is real Alterac ground at 19-82 yd): never copy it into Alterac's spec"
+ "notes": "Dalaran stands on the Alterac ground (recheck2): WMO 18950's street floor (Caves.floor piece 0, z 40..139) comes down to the terrain by the south stairs (group 76 'Dalaran', outdoor, z 107 -> 81, then group 57 down a cliff to the ground at -38.1,169.4 z 56.7, faces to 41 deg) - on Alterac's main ground (reach.py: 7.3M sq yd, 100 yd from Alterac's road crossing to Hillsbrad at -92.9,95.8) - and by the sewer outlet north of the city (groups 61/65/77 'Cantrips & Crows', 'The Underbelly', 'Sewer' to group 78 at 391.0,535.7 z 41.0, on the same ground). voidBelow (85) is gone: the crater floor is real ground and the stairs land at 56.7.",
+ "goalSources": {
+  "road crossing": "Alterac's drafted exit 'Hillsbrad Foothills' (walk), E:/safepath-work/out-alterac/safepath_1416.draft.json node 53, WALKABLE (102k sq yd of Hillsbrad)",
+  "stairs foot": "WMO 7116370 group 57 (outdoor 'Dalaran', wmoGroupId 78432): its floor meets the terrain at (-38.1, 169.4), floor 56.7 = terrain 56.7, on Caves.floor piece 0 (the streets)",
+  "sewer outlet": "WMO 7116370 group 78 (outdoor 'Sewer', wmoGroupId 78539): its floor meets the terrain at (391.0, 535.7), floor 41.0, terrain 40.9, piece 0"
+ }
 }

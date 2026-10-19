@@ -48,9 +48,18 @@
     750,
     300
    ]
+  },
+  {
+   "name": "Wizard's Sanctum and the Mage Quarter",
+   "box": [
+    -8900,
+    -9100,
+    960,
+    760
+   ]
   }
  ],
- "notes": "Stormwind's streets and harbour are WMO 21138 (file 7962574, 289 groups; the harbour is group 282 = WMOAreaTable 144226, wmoGroupId 84873, z 2..234) at (-8931.6, 539.3, 102.0), yaw 38.5. Its streets stand 20-25 yd over the terrain (Trade District floor 96-100, terrain 72-75), so the lattice's leveling under them walks blind through buildings and over the harbour cliff (the KNOWN SHARED BUG): inside the city the routes are walked on the WMO's own floor (floorCity, fids = the city WMO only). The two terrain stretches are lattice legs: the gate bridge onto the Valley of Heroes street (floor meets terrain at (-9070, 416), 93.1 vs 92.9), and the quay from the harbour ramp's foot ((-8573, 1110), floor 18.3 = terrain 18.3) over the sw_harbor_* stairs and piers (walkways: their own floor layers) to the boat. A full gate-to-boat walk = leg A + city route F + leg B.",
+ "notes": "Stormwind's streets and harbour are WMO 21138 (file 7962574, 289 groups; the harbour is group 282 = WMOAreaTable 144226, wmoGroupId 84873, z 2..234) at (-8931.6, 539.3, 102.0), yaw 38.5. Its streets stand 20-25 yd over the terrain (Trade District floor 96-100, terrain 72-75), so the lattice's leveling under them walks blind through buildings and over the harbour cliff (the KNOWN SHARED BUG): inside the city the routes are walked on the WMO's own floor (floorCity, fids = the city WMO only). The two terrain stretches are lattice legs: the gate bridge onto the Valley of Heroes street (floor meets terrain at (-9070, 416), 93.1 vs 92.9), and the quay from the harbour ramp's foot ((-8573, 1110), floor 18.3 = terrain 18.3) over the sw_harbor_* stairs and piers (walkways: their own floor layers) to the boat. A full gate-to-boat walk = leg A + city route F + leg B. Dalaran's one-way Skyborne Portal (QuestieDB 631299) arrives in the Wizard's Sanctum (guides): its new upper chamber (group 250, floor z 149-151) walks down the tower's spiral and outer ramp to the Mage Quarter (routes I, J): not a trap room by the floor. The landing spot itself is server-side: position unknown.",
  "goals": [
   {
    "name": "onto the Valley of Heroes street (the city's floor)",
@@ -141,7 +150,8 @@
   "gryphon": "transports.json flight master 2 (TaxiNodes)",
   "gate street": "the city floor's mouth nearest the gate: WMO 7962574's floor (Caves rule) within 1.5 yd of the terrain at (-9070, 416), floor 93.1, terrain 92.9",
   "ramp foot": "the city floor's mouth at the harbour: WMO 7962574 group 282's ramp meets the quay terrain at (-8573, 1110), floor 18.3, terrain 18.3",
-  "pier root": "CAVE 219576 (sw_harbor_docks.wmo, a walkway) mouth at (-8611, 1218, z 5): where its deck meets the quay"
+  "pier root": "CAVE 219576 (sw_harbor_docks.wmo, a walkway) mouth at (-8611, 1218, z 5): where its deck meets the quay",
+  "sanctum": "WMO 7962574 group 250 (Wizard's Sanctum, new in Forever): floor z 149-151 joined to the city's street piece by the tower's inner spiral (group 44, faces to 43 deg) and the blue outer ramp (group 102, Mage Quarter, outdoor) down to the street at z 105; its ceilings (down-facing faces at z 156-158 and 163-167) read as separate floor pieces"
  },
  "floorCity": {
   "fids": [
@@ -189,6 +199,20 @@
     ],
     "z": 18.3,
     "source": "WMO 7962574 group 282 (WMOAreaTable 144226 'Stormwind Harbor'): its ramp's foot on the quay (floor 18.3 = terrain 18.3)"
+   },
+   {
+    "name": "Wizard's Sanctum upper chamber",
+    "group": 250,
+    "source": "WMO 21138 (file 7962574) group 250 = WMOAreaTable \"Wizard's Sanctum\" (wmoGroupId 84845), a group Classic's tower lacks: its up-facing floor at z 149-151 (world) over the tower's old top (groups 44/88/89, z 129-148). The Dalaran portal's arrival room by the guides (INGAME_CHECKS_RESEARCH Q1); the landing SPOT is server-side, not in the data"
+   },
+   {
+    "name": "Mage Quarter street (the sanctum's ramp foot)",
+    "xy": [
+     -8956.3,
+     846.9
+    ],
+    "z": 104.9,
+    "source": "WMO 7962574 group 102 (WMOAreaTable 'Mage Quarter', outdoor): the street where the Wizard's Sanctum's outer ramp ends, 16 yd from hub 12 'Mage Quarter · Mage trainers' (-8957.4, 830.5), which stands on no floor (indoors)"
    }
   ],
   "links": [
@@ -221,6 +245,16 @@
     "name": "Cathedral Square to the harbour",
     "from": "Cathedral Square",
     "to": "Harbour ramp foot"
+   },
+   {
+    "name": "the Wizard's Sanctum's upper chamber down to the Mage Quarter",
+    "from": "Wizard's Sanctum upper chamber",
+    "to": "Mage Quarter street (the sanctum's ramp foot)"
+   },
+   {
+    "name": "the Wizard's Sanctum's upper chamber out to the gate street",
+    "from": "Wizard's Sanctum upper chamber",
+    "to": "Gate street (Valley of Heroes)"
    }
   ],
   "checks": [
