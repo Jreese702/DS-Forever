@@ -93,7 +93,10 @@ class RenderSafePath {
                 val t = tiles.getOrPut((gc / 128) to (gr / 128)) { File(dir, "adt/${gc / 128}_${gr / 128}.adt").takeIf { it.isFile }?.let { Terrain.tile(it.readBytes()) } }
                 t?.h?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN
             }
-            val zg = SafePath.Zones.build(rect.t, rect.b, rect.l, rect.r, PlaceNames.CHUNK_YD, ::areaAt)
+            // THE GRIDS REACH PAST THE ZONE'S RECT (SafePath.GRID_PAD_YD: an exit's neighbour ground, a tunnel's far mouth 226 yd beyond the
+            // edge - Felwood's Timbermaw Hold, Desolace's Stonetalon and Feralas exits, Arathi's Thandol Span tunnels read as dead ends)
+            val pad = SafePath.GRID_PAD_YD
+            val zg = SafePath.Zones.build(rect.t + pad, rect.b - pad, rect.l + pad, rect.r - pad, PlaceNames.CHUNK_YD, ::areaAt)
             // the water: the root ADTs' MH2O over their ground
             val wetTiles = HashMap<Pair<Int, Int>, Pair<FloatArray?, FloatArray?>>()
             fun wet(c: Int, r: Int) = wetTiles.getOrPut(c to r) { File(dir, "adt/${c}_$r.adt").takeIf { it.isFile }?.readBytes()?.let { b -> Terrain.water(b, lethal) to Terrain.tile(b)?.h } ?: (null to null) }
@@ -170,7 +173,7 @@ class RenderSafePath {
             fun floorsAt(x: Double, y: Double): DoubleArray = PlaceNames.locate(x, y).let { l -> walksOf(l[0], l[1])
                 val ds = tileDecks[l[0] to l[1]] ?: return@let DoubleArray(0)
                 if (ds.size == 1) ds[0].heightsAt(x, y) else ds.flatMap { it.heightsAt(x, y).toList() }.toDoubleArray() }
-            val wg = SafePath.Water.build(rect.t, rect.b, rect.l, rect.r, { x, y -> PlaceNames.locate(x, y).let { l -> walksOf(l[0], l[1]).any { it(x, y) } } }) { x, y ->
+            val wg = SafePath.Water.build(rect.t + pad, rect.b - pad, rect.l + pad, rect.r - pad, { x, y -> PlaceNames.locate(x, y).let { l -> walksOf(l[0], l[1]).any { it(x, y) } } }) { x, y ->
                 SafePath.Water.depthOf(x, y, { c, r -> wet(c, r).first }, { c, r -> wet(c, r).second }) }
             println("SAFEPATH water of $map: ${wg.depth.count { it.toInt() != 0 }} wet cells of ${wg.depth.size}, shallow ${wg.depth.count { (it.toInt() and 0xFF) in 1..16 }}, bridged ${wg.depth.count { (it.toInt() and 0xFF) == 253 }}")
             val ar = SafePath.Areas(areas, uimap)
@@ -298,11 +301,12 @@ class RenderSafePath {
         // the floor a walker is on at each vertex under a bridge's, a tunnel's or a pier's floors (Climb.floorLayers): those steps classed by
         // its height; the floors no walker reaches (a roof, a parapet, a tunnel's floor from the hill over it) no ground. The other decks
         // (a city's streets, a building's porch) level the ground under them
-        val layers = Climb.floorLayers(rect.t, rect.b, rect.l, rect.r, floorsAt, heightV)
+        val pad = SafePath.GRID_PAD_YD
+        val layers = Climb.floorLayers(rect.t + pad, rect.b - pad, rect.l + pad, rect.r - pad, floorsAt, heightV)
         println("FLOORS ${layers.size} lattice vertices on a walkway's floor")
         File(out, "layers_$tag.json").writeText(org.json.JSONArray(layers.map { (k, z) -> org.json.JSONArray(listOf((k shr 32).toInt(), k.toInt(), z)) }).toString())
         val deckZ: (Double, Double) -> Float = { x, y -> layers[Climb.vkeyAt(x, y)] ?: Float.NaN }
-        val cg = Climb.build(rect.t, rect.b, rect.l, rect.r, heightV, level = { x, y -> onFloor(x, y) || (deckAt(x, y) && floorsAt(x, y).isEmpty()) }, hole = hole, centre = centre, deck = deckZ)
+        val cg = Climb.build(rect.t + pad, rect.b - pad, rect.l + pad, rect.r - pad, heightV, level = { x, y -> onFloor(x, y) || (deckAt(x, y) && floorsAt(x, y).isEmpty()) }, hole = hole, centre = centre, deck = deckZ)
         println("CLIMB lattice ${cg.nx} x ${cg.ny} in ${(System.nanoTime() - t0) / 1_000_000} ms; walls ${cg.cls.count { (it.toInt() and 3) == 3 } * 100 / cg.cls.size}% of the east steps")
         val ground: (Double, Double) -> Float = { u, v -> val wx = rect.t - v * ay; val wy = rect.l - u * ax; Terrain.factor(tg.at(wx, wy)) }
         val level = spec?.optInt("level", 8) ?: 8
@@ -391,7 +395,7 @@ class RenderSafePath {
         // crater's ground, and those "mouths" would join the city to the ground below
         val cityFids = spec?.optJSONObject("floorCity")?.optJSONArray("fids")?.let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() } ?: emptySet()
         // within 300 yd of the zone's rect: a tunnel out may stand just over the border (Loch Modan's Dun Algaz, 1.5 yd outside)
-        val caves = placed.filter { p -> p.fid !in cityFids && p.ox <= rect.t + 300 && p.ox >= rect.b - 300 && p.oy <= rect.l + 300 && p.oy >= rect.r - 300 && File(gdir, "${p.fid}_0").isFile &&
+        val caves = placed.filter { p -> p.fid !in cityFids && p.ox <= rect.t + pad && p.ox >= rect.b - pad && p.oy <= rect.l + pad && p.oy >= rect.r - pad && File(gdir, "${p.fid}_0").isFile &&
             (kinds == null || p.fid in kinds || p.fid in floorWmos || capRects.any { r -> p.ox <= r[0] && p.ox >= r[1] && p.oy <= r[2] && p.oy >= r[3] }) }.map { p ->
             val gs = (0 until 200).map { File(gdir, "${p.fid}_$it") }.takeWhile { it.isFile }.map { it.readBytes() }
             Caves.cave(p, gs, ::bil, standable, lifts)

@@ -50,6 +50,9 @@ object SafePath {
     /** THE NARROW STREAM (the user's ruling, 2026-10-18, on Silverpine's stream by the Sepulcher: "Yes, you wade it"): water up to
      *  [NARROW_DEPTH] deep is crossed where it is no wider than [NARROW_YD]; [FORD_DEPTH] stays the limit for anything longer */
     const val NARROW_DEPTH = 2.2f
+    /** the ground's grids (the lattice, the water, the zones) reach this far past a zone's rect: an exit's neighbour ground, a tunnel's
+     *  far mouth just over the edge */
+    const val GRID_PAD_YD = 450.0
     /** THE DETOUR CAP (the user: "Mobs are a cost, not a wall"; "Some of the paths ... seem overly complicated"): a way round the mobs
      *  longer than [DETOUR_FACTOR] times the way with no danger counted, plus [DETOUR_SLACK_YD], loses to that way */
     const val DETOUR_FACTOR = 2.5
