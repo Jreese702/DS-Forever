@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp8" }
+WC.compass = { V = "cp9" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -370,7 +370,11 @@ do
     -- stays where the right stick left it; cp7 held the offset and settled it to the facing while moving, so every turn of the
     -- character swung the compass. Now: a fix sets the camera yaw; no fix keeps it; only after LOST_S without one does it ease
     -- back to the facing (the camera may have followed, and nothing else tells).
-    C.cam = { off = 0, src = "none", fovAt = -10, hfov = math.rad(90), abs = nil, fixAt = -100, LOST_S = 8 }
+    -- cp9 (test18, the user: "the compass doesnt spin 360 degrees"): cp8's frozen yaw missed every right-stick turn made while the
+    -- marker was off screen (nothing can see those). Now the compass always turns live with the character's facing, plus the last
+    -- MEASURED camera-minus-character offset, which fades out over DECAY_S: a fix nudges it to the camera, and between fixes it
+    -- turns the full 360 with the character (who, with this controller, turns with the camera).
+    C.cam = { off = 0, src = "none", fovAt = -10, hfov = math.rad(90), abs = nil, fixAt = -100, DECAY_S = 1.5 }
     function C.camStep(dt, facing)
         local K = C.cam
         local now = (type(GetTime) == "function" and GetTime()) or 0
@@ -410,24 +414,18 @@ do
                 if K.vp == true and K.cl == false and b and d and d > 8 and math.abs(x - half) < half * 0.92 then
                     local f = half / math.tan(K.hfov / 2)
                     local cam = b + math.atan((x - half) / f)
-                    if not K.abs then K.abs = cam end
-                    K.abs = C.wrap(K.abs + C.wrap(cam - K.abs) * (1 - math.exp(-dt / 0.08)))
+                    local want = C.wrap(cam - facing)
+                    K.off = C.wrap(K.off + C.wrap(want - K.off) * (1 - math.exp(-dt / 0.08)))
                     K.fixAt = now
                     K.src, seen = "nav", true
                 end
             end
         end
         if not seen then
-            if not K.abs then
-                K.abs, K.src = facing, "none"                 -- never had a fix: the character's facing
-            elseif now - K.fixAt > K.LOST_S then
-                K.abs = C.wrap(K.abs + C.wrap(facing - K.abs) * (1 - math.exp(-dt / 1.5)))
-                K.src = "settle"
-            else
-                K.src = (w and K.nav) and "hold" or "none"   -- the camera stays where it was (the character may turn)
-            end
+            K.off = K.off * math.exp(-dt / K.DECAY_S)         -- the last measured offset fades; the facing turns live
+            K.src = (w and K.nav) and "decay" or "none"
         end
-        K.off = C.wrap(K.abs - facing)
+        K.abs = C.wrap(facing + K.off)
         return K.off
     end
 
