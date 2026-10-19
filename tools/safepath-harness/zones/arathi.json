@@ -7,7 +7,8 @@
               {"name": "Thandol Span", "box": [-1950, -2533, -2150, -2750]},
               {"name": "Thoradin's Wall gate", "box": [-550, -1050, -1350, -1900]},
               {"name": "Boulderfist Hall", "box": [-1750, -2150, -2600, -3000]},
-              {"name": "Hammerfall and Drywhisker Gorge", "box": [-650, -1150, -3350, -3950]}],
+              {"name": "Hammerfall and Drywhisker Gorge", "box": [-650, -1150, -3350, -3950]},
+              {"name": "Faldir's Cove tunnel", "box": [-1850, -2150, -1500, -2150]}],
  "goals": [
   {"name": "Stromgarde Keep (the Alliance's ruined keep)", "from": {"node": "Refuge Pointe"}, "to": {"node": "Stromgarde Keep"}},
   {"name": "Boulderfist Hall's mouth (ogres)", "from": {"node": "Refuge Pointe"}, "to": {"cave": 111378, "near": [-1979, -2797]}},
@@ -18,5 +19,8 @@
   {"name": "Go'Shek Farm (Hammerfall's farm)", "from": {"node": "Refuge Pointe"}, "to": {"camp": "Go'Shek Farm"}},
   {"name": "Northfold Manor (Syndicate)", "from": {"node": "Refuge Pointe"}, "to": {"camp": "Northfold Manor"}},
   {"name": "over Thandol Span to the Wetlands (far end)", "from": {"node": "Refuge Pointe"}, "to": {"xy": [-2462, -2516]}},
-  {"name": "Thoradin's Wall gate to Hillsbrad", "from": {"node": "Refuge Pointe"}, "to": {"exit": "Hillsbrad Foothills"}}
- ]}
+  {"name": "Thoradin's Wall gate to Hillsbrad", "from": {"node": "Refuge Pointe"}, "to": {"exit": "Hillsbrad Foothills"}},
+  {"name": "Faldir's Cove: the beach below the tunnel's cove mouth (md_cavetunnel01, map 21,75 -> 22,80)", "from": {"node": "Stromgarde Keep"}, "to": {"xy": [-2079, -1750]}}
+ ],
+ "notes": "Faldir's Cove (recheck2): the tunnel south-east of Stromgarde is md_cavetunnel01 (110553, one floor piece, mouths -1950,-1650 z 48 on the main ground and -2037,-1661 z 44 at the cove: map 21.8,75.7 -> 22.1,79.3); route K walks it to the beach below the cove mouth. That beach is a pocket of about 5k sq yd (water <= 1.5 yd). The docks with Shakes O'Breen's crew (redridgedocks01-03, deck z 3.5; QuestieDB 2610 at -2086.5,-2028.7, 1.6 yd off the deck) stand on a second pocket of about 16k sq yd across the bay (its only other way is a one-mouth mushroom den, 110497): no walk reaches it, only a swim of about 250 yd (deepest 35 yd). Not added: a swim needs the user's yes."
+}

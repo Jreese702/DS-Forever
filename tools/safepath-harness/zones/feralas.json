@@ -91,6 +91,15 @@
     950,
     550
    ]
+  },
+  {
+   "name": "Eldreth Row and the courtyard",
+   "box": [
+    -3550,
+    -4150,
+    1450,
+    800
+   ]
   }
  ],
  "goals": [
@@ -210,5 +219,51 @@
  "floorWmos": [
   7952258,
   109273
- ]
+ ],
+ "floorCity": {
+  "fids": [
+   7952258
+  ],
+  "places": [
+   {
+    "name": "Outer ramp foot by the giant moonwell",
+    "xy": [
+     -4434.9,
+     1347.4
+    ],
+    "z": 126.0,
+    "source": "WMO 7952258 (Dire Maul exterior, WMO 21065) group 5 (outdoor): its floor meets the terrain here (floor 126.0, terrain 125.9), 45 yd from route C's goal (the moonwell's mouth, -4464,1386)"
+   },
+   {
+    "name": "Eldreth Row (the south hallway)",
+    "group": 0,
+    "source": "WMO 21065 group 0 = WMOAreaTable 'Eldreth Row' (wmoGroupId 83930): its main floor, z 160-162"
+   },
+   {
+    "name": "Central courtyard (Eldreth Row's north ramp foot)",
+    "xy": [
+     -3936.2,
+     1108.2
+    ],
+    "z": 149.6,
+    "source": "WMO 21065 group 27 ('Eldre'Thalas', outdoor): the foot of Eldreth Row's north ramp (a 40 yd wide quad, 161.1 -> 149.6) on the courtyard's terrain ring (151.4); the ring (87k sq yd, terrain 150-152) holds group 27's courtyard walkway mouths (-3689,1177), (-3693,1005), (-3632,1174) - reach.py from (-3920,1100)"
+   }
+  ],
+  "links": [],
+  "routes": [
+   {
+    "name": "the moonwell to Dire Maul's central courtyard through Eldreth Row",
+    "from": "Outer ramp foot by the giant moonwell",
+    "to": "Central courtyard (Eldreth Row's north ramp foot)"
+   }
+  ],
+  "checks": [
+   {
+    "name": "Eldreth Row from the moonwell",
+    "from": "Outer ramp foot by the giant moonwell",
+    "to": "Eldreth Row (the south hallway)"
+   }
+  ]
+ },
+ "notes": "Dire Maul's central courtyard (recheck2): the lattice cannot route it. Eldreth Row's floor (WMO 7952258's piece 0) runs from the outer ramp by the moonwell (126) up to the hall (161) and down its north ramp onto the courtyard's terrain ring, but the ramp is one quad whose foot vertices lie 1.7-2.1 yd under the terrain (MOUTH_YD 1.5: no mouth, no cave way), and a lattice route there drops 79 yd off the west rampart (a floor at 230-235 levels the column under it). So the courtyard is walked as route C (Camp Mojache -> the moonwell) + the floorCity route K on the WMO's own floor. floorCity takes 7952258 off the caves list (its ways are walked as the floor instead)."
 }
