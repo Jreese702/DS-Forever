@@ -11,11 +11,25 @@ except Exception: pass
 NARROW = 2.2; NARROW_YD = 6
 run = sys.argv[1]
 ZONES = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'zones')
+EXCLUDE = [re.compile(l.strip()) for l in open(os.path.join(ZONES, '..', 'export_exclude.txt'), encoding='utf-8') if l.strip() and not l.lstrip().startswith('#')]
+def excluded(tag):
+    """export_exclude.txt's probes (and a spec saying "probe": true), by the tag or its base (<tag>_horde / _alliance's)"""
+    base = re.sub(r'_(horde|alliance)$', '', tag)
+    if any(x.fullmatch(tag) or x.fullmatch(base) for x in EXCLUDE): return True
+    for t in (tag, base):
+        f = os.path.join(ZONES, t + '.json')
+        if os.path.isfile(f):
+            import json
+            return bool(json.load(open(f, encoding='utf-8')).get('probe'))
+    return False
 def shipped(tag):
-    """a zone's own spec, or its other side's (<tag>_horde / _alliance): not the climb tests' nor the cross routes' legs (their maps'
+    """a zone's own spec, or its other side's (<tag>_horde / _alliance), not excluded: never the cross routes' legs (their maps'
     networks are the zone's own run's)"""
     base = re.sub(r'_(horde|alliance)$', '', tag)
-    return not base.startswith('climb_') and (os.path.isfile(os.path.join(ZONES, tag + '.json')) or os.path.isfile(os.path.join(ZONES, base + '.json')))
+    return not excluded(tag) and (os.path.isfile(os.path.join(ZONES, tag + '.json')) or os.path.isfile(os.path.join(ZONES, base + '.json')))
+if __name__ != '__main__': pass
+if len(sys.argv) > 2 and sys.argv[1] == '--excluded':
+    sys.exit(0 if excluded(sys.argv[2]) else 1)
 for f in sorted(os.listdir(run)):
     if not (f.startswith('gate_') and f.endswith('.log')): continue
     tag = f[5:-4]

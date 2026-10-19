@@ -4,6 +4,9 @@
 import json, os, sys
 here = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'zones')
 tag, out = sys.argv[1], sys.argv[2]
+import re
+base = re.sub(r'_(horde|alliance)$', '', tag)
+if base != tag and os.path.isfile(os.path.join(here, base + '.json')): sys.exit()     # arathi_horde: arathi's own other side, run with it
 s = json.load(open(os.path.join(here, tag + '.json'), encoding='utf-8'))
 other = 'horde' if s.get('faction', 'horde') == 'alliance' else 'alliance'
 own = os.path.join(here, tag + '_' + other + '.json')

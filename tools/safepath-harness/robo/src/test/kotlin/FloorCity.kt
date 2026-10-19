@@ -178,6 +178,49 @@ class FloorCity private constructor(private val spec: JSONObject, private val fl
         .put("mouths", JSONArray(places.values.map { JSONArray(pt(it.v).toList()) }))
         .put("ways", JSONArray(wayPts.map { w -> JSONArray(w.map { JSONArray(it.toList()) }) }))
 
+    /**
+     * THE CITY'S STREETS AS WAYS (NET1 v2, the coordinator: "export the city's floor ways as ordinary ways"): on each floor piece of
+     * [minPiece] vertices or more, one vertex a [cellYd] box (x, y, and [layerYd] of height: a street over a street is its own) - the one
+     * nearest the box's middle - joined to those of the boxes round it by the floor's own shortest way (no longer than [maxFactor] x
+     * their distance). Returns the boxes' vertices (x, y, z) and each join (a, b: their indices; its points x, y, z kept
+     * [Caves.SIMPLIFY_YD] apart, the floor's own vertices).
+     */
+    fun floorWays(cellYd: Double = 15.0, layerYd: Double = 6.0, minPiece: Int = 60, maxFactor: Double = 2.0): Pair<List<DoubleArray>, List<Triple<Int, Int, List<DoubleArray>>>> {
+        fun box(v: Int) = Triple(Math.floor(fl.xs[v] / cellYd).toInt(), Math.floor(fl.ys[v] / cellYd).toInt(), Math.floor(fl.zs[v] / layerYd).toInt())
+        val boxes = HashMap<Triple<Int, Int, Int>, Int>()
+        for (v in 0 until fl.size) { if ((pieceSize[fl.piece[v]] ?: 0) < minPiece) continue
+            val k = box(v); val cx = (k.first + 0.5) * cellYd; val cy = (k.second + 0.5) * cellYd
+            val o = boxes[k]; if (o == null || hypot(fl.xs[v] - cx, fl.ys[v] - cy) < hypot(fl.xs[o] - cx, fl.ys[o] - cy)) boxes[k] = v }
+        val reps = boxes.values.toList(); val idx = HashMap<Int, Int>().also { m -> reps.forEachIndexed { i, v -> m[v] = i } }
+        val repBox = reps.map { box(it) }
+        val out = ArrayList<Triple<Int, Int, List<DoubleArray>>>()
+        val limit = cellYd * 1.5 * maxFactor
+        for ((ia, a) in reps.withIndex()) {
+            val ka = repBox[ia]
+            val dist = HashMap<Int, Double>(); val prev = HashMap<Int, Int>()
+            val pq = PriorityQueue<DoubleArray>(compareBy { it[0] }); dist[a] = 0.0; pq.add(doubleArrayOf(0.0, a.toDouble()))
+            while (pq.isNotEmpty()) {
+                val top = pq.poll(); val u = top[1].toInt(); if (top[0] > (dist[u] ?: Double.MAX_VALUE)) continue
+                if (top[0] > limit) break
+                val ib = idx[u]
+                if (ib != null && ib > ia) { val kb = repBox[ib]
+                    if (abs(kb.first - ka.first) <= 1 && abs(kb.second - ka.second) <= 1 && abs(kb.third - ka.third) <= 1 &&
+                        top[0] <= maxFactor * hypot(fl.xs[u] - fl.xs[a], fl.ys[u] - fl.ys[a]) + 3.0) {
+                        val chain = ArrayList<Int>(); var c = u; while (c != a) { chain.add(c); c = prev[c]!! }; chain.add(a); chain.reverse()
+                        val keep = ArrayList<Int>()
+                        for ((q, v) in chain.withIndex()) if (q == 0 || q == chain.size - 1 || hypot(fl.xs[v] - fl.xs[keep.last()], fl.ys[v] - fl.ys[keep.last()]) >= Caves.SIMPLIFY_YD ||
+                            abs(fl.zs[v] - fl.zs[keep.last()]) >= Caves.SIMPLIFY_YD) keep.add(v)
+                        out.add(Triple(ia, ib, keep.map { pt(it) }))
+                    }
+                }
+                for (w in fl.adj[u]) { val nd = top[0] + sqrt((fl.xs[w] - fl.xs[u]).let { it * it } + (fl.ys[w] - fl.ys[u]).let { it * it } + (fl.zs[w] - fl.zs[u]).let { it * it })
+                    if (nd < (dist[w] ?: Double.MAX_VALUE)) { dist[w] = nd; prev[w] = u; pq.add(doubleArrayOf(nd, w.toDouble())) } }
+            }
+        }
+        println("FLOORWAYS ${reps.size} street points (boxes of ${cellYd.toInt()} yd, pieces of $minPiece+ vertices), ${out.size} ways")
+        return reps.map { pt(it) } to out
+    }
+
     fun export(): JSONObject = JSONObject()
         .put("places", JSONArray(places.values.map { p -> JSONObject().put("name", p.name).put("x", fl.xs[p.v]).put("y", fl.ys[p.v]).put("z", fl.zs[p.v])
             .put("piece", fl.piece[p.v]).put("pieceSize", pieceSize[fl.piece[p.v]]).put("how", p.how).put("source", p.source) }))
