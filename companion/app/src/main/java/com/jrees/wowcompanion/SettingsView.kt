@@ -74,6 +74,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segQt = Array(4) { RectF() }
     private val segDanger = Array(3) { RectF() }
     private val segFog = Array(2) { RectF() }
+    /** Map > SafePath v2 routing On / Off (Settings.safePathV2; the user's test of the new rules, Off by default) */
+    private val segV2 = Array(2) { RectF() }
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
     private val segIndoor = Array(2) { RectF() }
     /**
@@ -204,7 +206,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      */
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss) +
-            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segDanger.toList() + segFog.toList() + segChat.toList() +
+            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segDanger.toList() + segFog.toList() + segV2.toList() + segChat.toList() +
             segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
@@ -239,7 +241,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segDanger, segFog,
+                         segClassROpen, segClassRPick, segChat, segQt, segDanger, segFog, segV2,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -259,7 +261,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
-        SettingsTabs.Block.MAP -> 16f + 5 * ROW_H + 4 * 10f
+        SettingsTabs.Block.MAP -> 16f + 6 * ROW_H + 5 * 10f
         SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
         SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
@@ -344,6 +346,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             btnMiniInMinus.contains(x, y) -> Settings.minimapIndoorYd = Settings.stepYd(Settings.minimapIndoorYd, -1)
             btnMiniInPlus.contains(x, y) -> Settings.minimapIndoorYd = Settings.stepYd(Settings.minimapIndoorYd, +1)
             segIndoor[0].contains(x, y) -> { Settings.indoorBuild = true; IndoorSchedulerStep.settingChanged() }
+            segV2[0].contains(x, y) -> { Settings.safePathV2 = true; ClimbStep.settingChanged(context) }
+            segV2[1].contains(x, y) -> Settings.safePathV2 = false
             segIndoor[1].contains(x, y) -> Settings.indoorBuild = false
             btnDeferred.contains(x, y) -> { deferredOpen = !deferredOpen; requestLayout(); invalidate() }
             btnRouteReview.contains(x, y) -> onRouteReview()
@@ -607,6 +611,17 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             val bw = minOf(segW() * 2.6f, box.width() * 0.5f)
             val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
             segmented(c, b, listOf("Show all", "Explored only"), if (all) 0 else 1, segFog)
+            b
+        }
+        // SAFEPATH V2 ROUTING (Off by default): the quest's way in your zone on the zone's own ground lattice, the harness's rules
+        y += ROW_H + 10f
+        val v2 = Settings.safePathV2
+        row(c, y, "SafePath v2 routing", if (!v2) "Off: the route as before"
+            else if (!safe) "SafePath only: choose SafePath in Quest tracking" else "In your zone: no walls, roads first, round buildings · ${ClimbStep.line}",
+            enabled = true) { box ->
+            val bw = minOf(segW() * 2f, box.width() * 0.4f)
+            val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, listOf("On", "Off"), if (v2) 0 else 1, segV2)
             b
         }
         return y + ROW_H

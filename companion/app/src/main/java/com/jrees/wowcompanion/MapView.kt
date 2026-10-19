@@ -3888,7 +3888,7 @@ class MapView(context: Context) : View(context) {
         // CHECKPOINT - the first bend round danger or a slope - so the top screen's arrow follows the safe way; on to the next as
         // each is passed (DangerGrid.passed). No bend: the step's own way, as before.
         dangerLeg(focusQid, r)?.let { leg ->
-            pinWhy = "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}"
+            pinWhy = "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}" + if (Settings.safePathV2 && v2Shown) " (SafePath v2)" else ""
             return leg[1]
         }
         if (r.kind == CursorRoute.Kind.GOAL) return none("the route is direct (no checkpoint, no way)")
@@ -4007,7 +4007,7 @@ class MapView(context: Context) : View(context) {
             val ground: ((Double, Double) -> Float)? = { x, y ->
                 val wy = r.left - x * r.width; val wx = r.top - y * r.height
                 val slope = tg?.at(wx, wy) ?: Terrain.NO_DATA
-                val f0 = Terrain.factor(slope)
+                val f0 = Terrain.legCost(tg, wx, wy, slope)   // rock fields dearer, a cell off a cliff (test12, test13)
                 // the zone's border band (test54: "that Westfall quest is sending me along the mountains"): dear unless level
                 val edgeYd = minOf(x * r.width, (1 - x) * r.width, y * r.height, (1 - y) * r.height)
                 val f = if (edgeYd < BORDER_YD && (slope == Terrain.NO_DATA || f0 > 1f)) f0 * BORDER_COST else f0
@@ -4042,6 +4042,8 @@ class MapView(context: Context) : View(context) {
      *  route's point last; null = straight */
     private fun dangerLeg(q: Int, route: CursorRoute.Route): List<DoubleArray>? {
         if (Settings.questTracking != "safepath") return null
+        // SAFEPATH V2 ROUTING (the setting, Off by default): the zone's own lattice and the harness's rules; none here yet, the old way
+        if (Settings.safePathV2) safeLeg(q, route)?.let { return it.takeIf { l -> l.size > 2 } }
         // SafePath's network (b-safepath-route): where this zone has one, the leg goes on it; else (off it, no help) the grid's
         netLeg(q, route)?.let { return it }
         val k = DangerGrid.strength(Settings.avoidDanger)
@@ -4077,6 +4079,76 @@ class MapView(context: Context) : View(context) {
         return if (old != null && sameGoal && old.pts.size > 2) passed(listOf(here) + old.pts.drop(1), ax, ay) else null
     }
 
+    // ---- SAFEPATH V2 (Settings > Map > "SafePath v2 routing"; SafePathV2): the quest's way in the player's zone on the zone's own
+    // ground lattice (ClimbStep's CLB3), planned on the route thread (cancelled when a newer plan is asked for), kept while the player is
+    // within SafePathV2.OFF_ROUTE_YD of the way still ahead (its passed checkpoints dropped, as the danger leg's), planned again when the
+    // player strays farther, the goal moves or the zone's files change - a new way taken then only when SafePathV2.HYSTERESIS shorter
+    // than the rest of the kept one - and never more than once every SafePathV2.REPLAN_MS a quest. No v2 way (no lattice yet, the goal
+    // off this map, a way the final check refuses): null, the old routing's
+    private class V2Leg(val world: List<DoubleArray>, val gx: Double, val gy: Double, val stamp: String, val map: Int, val reached: Boolean)
+    private val v2Legs = HashMap<Int, V2Leg>()
+    private val v2Gen = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+    private val v2At = HashMap<Int, Long>()
+    private val v2None = HashMap<Int, String>()            // quest -> the stamp and goal no v2 way was found for (not asked again until they change)
+    private val v2Pending = HashSet<Int>()
+    /** the focused quest's way came from SafePath v2 (the pin's word) */
+    private var v2Shown = false
+    /** quest [q]'s v2 way to [route]'s point (the map's 0..1, the player first; two points = straight there), null = none (the old way) */
+    private fun safeLeg(q: Int, route: CursorRoute.Route): List<DoubleArray>? {
+        val m = map ?: return null
+        val r = rect ?: return null
+        if (!r.valid || m.optInt("onTaxi", 0) == 1) return null
+        if (route.x !in 0.0..1.0 || route.y !in 0.0..1.0) return null                     // outside the zone: the old routing
+        val mapId = m.optInt("mapID", 0)
+        val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
+        if (px.isNaN() || py.isNaN() || mapId == 0) return null
+        val plv = questsPlv ?: return null
+        val mine = TransportRoutes.factionOf(m.optString("fac", null))
+        SafePathV2.init(context)
+        val ax = r.width; val ay = r.height
+        fun world(x: Double, y: Double) = doubleArrayOf(r.top - y * ay, r.left - x * ax)
+        fun onMap(w: DoubleArray) = doubleArrayOf((r.left - w[1]) / ax, (r.top - w[0]) / ay)
+        val here = world(px, py); val goal = world(route.x, route.y)
+        val stamp = SafePathV2.stamp(mapId, mine, plv)
+        val old = v2Legs[q]?.takeIf { it.map == mapId && hypot(it.gx - goal[0], it.gy - goal[1]) <= SafePathV2.GOAL_MOVED_YD }
+        // the kept way less its passed checkpoints (the player first, as the danger leg's), in the map's 0..1 and in the world
+        val shown = old?.let { o -> DangerGrid.passed(listOf(doubleArrayOf(px, py)) + o.world.drop(1).map { onMap(it) }, ax, ay) ?: listOf(doubleArrayOf(px, py), onMap(o.world.last())) }
+        val rest = shown?.map { world(it[0], it[1]) }
+        val off = old?.let { SafePathV2.offWay(here, it.world) } ?: Double.MAX_VALUE
+        val now = android.os.SystemClock.elapsedRealtime()
+        val due = old == null || off > SafePathV2.OFF_ROUTE_YD || old.stamp != stamp
+        val noneKey = "$stamp:${(goal[0] / SafePathV2.GOAL_MOVED_YD).toInt()}:${(goal[1] / SafePathV2.GOAL_MOVED_YD).toInt()}"
+        if (due && v2None[q] != noneKey && now - (v2At[q] ?: Long.MIN_VALUE / 2) >= SafePathV2.REPLAN_MS && v2Pending.add(q)) {
+            v2At[q] = now
+            val gen = (v2Gen[q] ?: 0) + 1; v2Gen[q] = gen
+            val toExit = route.kind == CursorRoute.Kind.EXIT
+            val rect0 = MapHarvest.Rect(r.continent, r.top, r.bottom, r.left, r.right)
+            val keptYd = rest?.let { SafeRoute.length(it) }
+            val strayed = off > SafePathV2.OFF_ROUTE_YD
+            val ctx = context.applicationContext
+            RouteWork.run({
+                val way = try { SafePathV2.plan(ctx, mapId, rect0, mine, plv, here, goal, toExit) { v2Gen[q] != gen } } catch (e: Climb.Cancelled) { null }
+                way to SafePathV2.lastWhy
+            }) { (way, why) ->
+                v2Pending.remove(q)
+                if (v2Gen[q] != gen) return@run                                            // a newer plan was asked for meanwhile
+                if (way == null) { v2None[q] = noneKey; v2Legs.remove(q) }
+                else {
+                    v2None.remove(q)
+                    // hysteresis: on the kept way, a new one only when it is that much shorter than the kept one's rest
+                    val keep = old != null && !strayed && keptYd != null && !SafePathV2.takeNew(keptYd, way.yd)
+                    v2Legs[q] = if (keep) V2Leg(old!!.world, old.gx, old.gy, way.stamp, mapId, old.reached)
+                                else V2Leg(way.pts, goal[0], goal[1], way.stamp, mapId, way.reached)
+                }
+                android.util.Log.i("WCMAP", "safepath v2: quest $q $why")
+                invalidate()
+            }
+        }
+        if (old == null) { if (q == focusQid) v2Shown = false; return null }
+        if (q == focusQid) v2Shown = true
+        return shown                                          // two points: straight on to the goal
+    }
+
     // ---- THE LEG ON SAFEPATH'S NETWORK (b-safepath-route): the zone's reviewed network (else its draft), from the player onto its
     // nearest way, along it, off at the way nearest the route's point (a crossing out: the network's exit there); planned on the route
     // thread, kept until the player walks [DANGER_MOVE_YD] or the goal moves, its passed bends dropped as the danger leg's are
@@ -4101,10 +4173,15 @@ class MapView(context: Context) : View(context) {
         }
         if (netPending.add(q)) {
             val toExit = route.kind == CursorRoute.Kind.EXIT
+            // the danger grid's leg for a goal off the network (SafePath.deviceLeg: the way taken as near as it goes, the grid's leg on)
+            val dg = dangerGrid(); val dk = DangerGrid.strength(Settings.avoidDanger)
             RouteWork.run({
                 // a hooked end walked straight only over level ground (the zone's slopes, when the terrain step made them)
                 val clear = Terrain.of(mapId)?.let { tg -> SafePath.clearOf { x, y -> Terrain.factor(tg.at(x, y)) } }
-                val w = SafePath.route(net, r.top - py * ay, r.left - px * ax, r.top - route.y * ay, r.left - route.x * ax, toExit, clear)
+                val offNet: ((DoubleArray, DoubleArray) -> List<DoubleArray>?)? = if (dg == null || dk <= 0.0) null else { a, b ->
+                    dg.route(doubleArrayOf((r.left - a[1]) / ax, (r.top - a[0]) / ay), doubleArrayOf((r.left - b[1]) / ax, (r.top - b[0]) / ay), dk)
+                        .map { doubleArrayOf(r.top - it[1] * ay, r.left - it[0] * ax) } }
+                val w = SafePath.deviceLeg(net, r.top - py * ay, r.left - px * ax, r.top - route.y * ay, r.left - route.x * ax, toExit, clear, offNet)
                 w?.map { doubleArrayOf((r.left - it[1]) / ax, (r.top - it[0]) / ay) }
             }) { pts ->
                 netPending.remove(q)

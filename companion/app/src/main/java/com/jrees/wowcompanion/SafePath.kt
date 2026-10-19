@@ -952,14 +952,9 @@ object SafePath {
             val tiles = object : LinkedHashMap<Long, Map<Int, Int>>(16, 0.75f, true) {
                 override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Map<Int, Int>>?) = size > 24
             }
-            // each root's water and ground, kept while near (the water grid reads them cell by cell)
-            class Wet(val surface: FloatArray?, val ground: FloatArray?, val walks: List<(Double, Double) -> Boolean>)
             val objs = HashMap<Int, Map<Int, Int>>()
-            val wmoGroups = HashMap<Int, List<WorldBuildings.Group>>()
-            val m2Floors = HashMap<Int, FloatArray?>()            // each doodad model read once: its floor when it is a bridge, else null
-            val wets = object : LinkedHashMap<Long, Wet>(16, 0.75f, true) {
-                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Wet>?) = size > 24
-            }
+            // each continent's water (ZoneWater: its tiles' water and walkways kept while near)
+            val waterOf = HashMap<Int, ZoneWater>()
             var built = 0
             for ((i, e) in rects.entries.withIndex()) {
                 val (map, rect) = e.key to e.value
@@ -978,36 +973,12 @@ object SafePath {
                 }
                 z.write(job.file("safepath/zones/$map.bin"))
                 zones.drop(map)
-                fun wet(tc: Int, tr: Int): Wet {
-                    val key = (rect.c.toLong() shl 32) or MapHarvest.key(tc, tr).toLong()
-                    return wets[key] ?: run {
-                        val b = root[MapHarvest.key(tc, tr)]?.let { g.read(it) } ?: return@run Wet(null, null, emptyList())
-                        val surface = Terrain.water(b, lethal)
-                        // the outdoor walkways over the water (a bridge, a pier): only where the tile has water at all
-                        // each walkway by its DECK (its outdoor groups' own floor triangles), the box only where the groups can't be read
-                        val walks: List<(Double, Double) -> Boolean> = if (surface == null) emptyList() else {
-                            val obj = objs.getOrPut(rect.c) { mapRows[rect.c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) }?.let { Terrain.maidObj0(it) } ?: emptyMap() }
-                            val ob = obj[MapHarvest.key(tc, tr)]?.let { g.read(it) }
-                            ob?.let { WorldBuildings.placements(it, tilted = true) }?.flatMap { p ->
-                                val root = g.read(p.fid)
-                                val feet = WorldBuildings.walkways(p, wmoGroups.getOrPut(p.fid) { root?.let { WorldBuildings.groups(it) } ?: emptyList() })
-                                if (feet.isEmpty()) emptyList()
-                                else root?.let { WorldBuildings.deck(p, it) { id -> g.read(id) } }?.takeIf { !it.empty }?.let { d -> listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) && d.over(x, y, Terrain.surfaceAt(surface, tc, tr, x, y)) }) }
-                                    ?: feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } }
-                            }.orEmpty() + ob?.let { o ->
-                                // and the M2 bridges (Duskwood's covered bridge into Westfall), by their models' own names
-                                WorldBuildings.m2Decks(o, { x, y -> Terrain.wetNear(surface, tc, tr, x, y, WorldBuildings.M2_NEAR_WATER_YD) }) { fid ->
-                                    if (fid in m2Floors) m2Floors[fid] else g.read(fid)?.let { WorldBuildings.m2BridgeFloor(it) }.also { m2Floors[fid] = it } }
-                                    .map { d -> { x: Double, y: Double -> d.holds(x, y) && d.over(x, y, Terrain.surfaceAt(surface, tc, tr, x, y)) } }
-                            }.orEmpty()
-                        }
-                        Wet(surface, Terrain.tile(b)?.h, walks)
-                    }.also { wets[key] = it }
-                }
-                fun tileOf(wx: Double, wy: Double) = PlaceNames.locate(wx, wy).let { it[0] to it[1] }
-                Water.build(rect.t, rect.b, rect.l, rect.r, { wx, wy -> tileOf(wx, wy).let { (c, r) -> wet(c, r).walks.any { it(wx, wy) } } }) { wx, wy ->
-                    Water.depthOf(wx, wy, { c, r -> wet(c, r).surface }, { c, r -> wet(c, r).ground }) }
-                    .write(job.file("safepath/water/$map.bin"))
+                val wt0 = System.nanoTime()
+                waterOf.getOrPut(rect.c) {
+                    val obj = objs.getOrPut(rect.c) { mapRows[rect.c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) }?.let { Terrain.maidObj0(it) } ?: emptyMap() }
+                    ZoneWater(lethal, { tc, tr -> root[MapHarvest.key(tc, tr)]?.let { g.read(it) } }, { tc, tr -> obj[MapHarvest.key(tc, tr)]?.let { g.read(it) } }) { g.read(it) }
+                }.build(rect).write(job.file("safepath/water/$map.bin"))
+                SafePathDiag.harvestStep(id, map, (System.nanoTime() - wt0) / 1_000_000)
                 waters.drop(map)
                 built++
                 job.progress(i + 1, rects.size, "")
@@ -1435,7 +1406,7 @@ object SafePath {
      * straight walk is as good): the caller keeps its own way.
      */
     fun route(net: Net, fx: Double, fy: Double, tx: Double, ty: Double, toExit: Boolean = false,
-              clear: ((DoubleArray, DoubleArray) -> Boolean)? = null): List<DoubleArray>? {
+              clear: ((DoubleArray, DoubleArray) -> Boolean)? = null, goalAttachYd: Double = ATTACH_YD): List<DoubleArray>? {
         val byId = net.nodes.associateBy { it.id }
         val usable = net.edges.filter { it.state != REMOVED && byId.containsKey(it.a) && byId.containsKey(it.b) }
         if (usable.isEmpty()) return null
@@ -1456,7 +1427,7 @@ object SafePath {
         // the walk on and off: the nearest points of the nearest ways (a few), each a virtual node cut into its way
         var nextVirtual = -10
         // the walk on / off goes AHEAD: a way behind the player (away from the goal), or behind the goal, costs more to reach
-        fun attach(px: Double, py: Double, virt: Int, toward: DoubleArray): Boolean {
+        fun attach(px: Double, py: Double, virt: Int, toward: DoubleArray, lim: Double = ATTACH_YD): Boolean {
             // never cut into a cave's way (as routeOn's walk on and off): its point would stand on the terrain over the floor, unmarked, and
             // the leg on from it started there on the terrain (Loch Modan B: off Stonewrought Dam's floor onto a 49 degree face)
             val cands = (usable.filter { it.kind != LIFT && it.kind != CAVE }.ifEmpty { usable.filter { it.kind != LIFT } }).map { e ->
@@ -1465,7 +1436,7 @@ object SafePath {
                 val t = if (l2 <= 0.0) 0.0 else (((px - a[0]) * dx + (py - a[1]) * dy) / l2).coerceIn(0.0, 1.0)
                 val q = doubleArrayOf(a[0] + t * dx, a[1] + t * dy)
                 Triple(e, t, q)
-            }.filter { hypot(it.third[0] - px, it.third[1] - py) <= ATTACH_YD }.sortedBy { hypot(it.third[0] - px, it.third[1] - py) }.take(4)
+            }.filter { hypot(it.third[0] - px, it.third[1] - py) <= lim }.sortedBy { hypot(it.third[0] - px, it.third[1] - py) }.take(4)
             if (cands.isEmpty()) return false
             pos[virt] = doubleArrayOf(px, py)
             for ((e, t, q) in cands) {
@@ -1480,7 +1451,7 @@ object SafePath {
             return true
         }
         val start = -1; val goal = -2
-        if (!attach(fx, fy, start, doubleArrayOf(gx, gy)) || !attach(gx, gy, goal, doubleArrayOf(fx, fy))) return null
+        if (!attach(fx, fy, start, doubleArrayOf(gx, gy)) || !attach(gx, gy, goal, doubleArrayOf(fx, fy), goalAttachYd)) return null
         // the straight walk, the network's rival only for a goal near the player (farther, the network IS the way)
         if (hypot(gx - fx, gy - fy) <= DIRECT_YD) link(start, goal, hypot(gx - fx, gy - fy) * DIRECT)
         val dist = HashMap<Int, Double>(); val from = HashMap<Int, Int>()
@@ -1502,6 +1473,33 @@ object SafePath {
         if (path.size <= 2) return null                                   // straight: the caller's own way
         return smooth(path.map { pos[it]!! }, clear)
     }
+
+    /**
+     * THE DEVICE'S LEG BEFORE IT HAS THE LATTICE (MapView.netLeg; the user's test13 on Zephras: the leg "leaves the road heading NNW,
+     * straight up into the rocky, wooded ridge between the player and the quest", its last flag short of the area): [route]; and when
+     * the goal lies off every way (more than [ATTACH_YD] from one) but [FAR_GOAL_YD] or more from the player, the network still takes the
+     * player as near as it goes - onto the way nearest the goal within [FAR_ATTACH_YD], when leaving there brings the player at least
+     * [FAR_GAIN_YD] nearer - and [offNet] (the danger grid's own leg) walks the rest from where the way is left. Before, such a goal
+     * gave no network at all, and the 25 yd grid's leg went the whole way over whatever its mean slopes called passable. World points;
+     * null = the network does not help (the caller's grid leg).
+     */
+    fun deviceLeg(net: Net, fx: Double, fy: Double, tx: Double, ty: Double, toExit: Boolean = false, clear: ((DoubleArray, DoubleArray) -> Boolean)? = null,
+                  offNet: ((DoubleArray, DoubleArray) -> List<DoubleArray>?)? = null): List<DoubleArray>? {
+        route(net, fx, fy, tx, ty, toExit, clear)?.let { return it }
+        if (toExit || hypot(tx - fx, ty - fy) < FAR_GOAL_YD) return null
+        val w = route(net, fx, fy, tx, ty, false, clear, FAR_ATTACH_YD) ?: return null
+        if (w.size < 3) return null
+        val off = w[w.size - 2]
+        if (hypot(off[0] - tx, off[1] - ty) > hypot(fx - tx, fy - ty) - FAR_GAIN_YD) return null
+        val way = offNet?.invoke(off, w.last())?.takeIf { it.size >= 2 }?.let { tail -> w.dropLast(1) + tail.drop(1) } ?: w
+        // ... and never a silly detour (the user: "Tighten to 1.75x"): no longer than DETOUR_FACTOR the straight walk + DETOUR_SLACK_YD
+        // (Elwynn's and Arathi's far goals: the road's way round 2.2x the grid's own leg)
+        val yd = way.zipWithNext { a, b -> hypot(b[0] - a[0], b[1] - a[1]) }.sum()
+        return way.takeIf { yd <= DETOUR_FACTOR * hypot(tx - fx, ty - fy) + DETOUR_SLACK_YD }
+    }
+    const val FAR_GOAL_YD = 400.0          // a goal this far from the player is worth the road's way even when it lies off it ...
+    const val FAR_ATTACH_YD = 450.0        // ... onto the way nearest it within this ...
+    const val FAR_GAIN_YD = 150.0          // ... when leaving the way there brings the player this much nearer
 
     /** the way without its there-and-backs (a loop that comes back within [LOOP_YD] of where it was) and with its ends walked
      *  straight where the way would hook back first: [ATTACH_YD] at most, the way far longer than the straight walk; up to

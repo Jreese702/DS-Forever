@@ -192,6 +192,38 @@
    "to": {
     "airChainTop": true
    }
+  },
+  {
+   "name": "the nearest Flutterfly (Flutterfly Dust; the user's test12: the leg by Valanaar's rim)",
+   "from": {
+    "xy": [
+     2156,
+     951
+    ],
+    "name": "Valanaar (1)'s road"
+   },
+   "to": {
+    "xy": [
+     1978,
+     1269
+    ]
+   }
+  },
+  {
+   "name": "the Al'Aketh Assassins (the user's test13: the leg up the ridge)",
+   "from": {
+    "xy": [
+     2215,
+     1075
+    ],
+    "name": "the south road NE of the swirl meadow"
+   },
+   "to": {
+    "xy": [
+     2718,
+     1125
+    ]
+   }
   }
  ],
  "voidBelow": 300,
