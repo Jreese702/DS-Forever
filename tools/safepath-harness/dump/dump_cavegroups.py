@@ -12,6 +12,34 @@ for row in csv.reader(open(os.environ.get('LISTFILE', 'E:/wc-scratch-c9979a42/ca
     if len(row) >= 2 and row[1].endswith('.wmo'): names[int(row[0])] = row[1]
 def le(b, o): return struct.unpack_from('<i', b, o)[0]
 caves = []
+# A CAVE BY ITS SHAPE (no cave word in its name: Dustwallow's Den of Flame and Onyxia's Lair, Felwood's Timbermaw Hold, Ashenvale's
+# Thistlefur Hold, Arathi's Boulderfist Hall): most of its rooms (interior groups) lie under the terrain where it is placed
+os.environ.setdefault('ZDIR', sys.argv[1] if len(sys.argv) > 1 else 'kalimdor')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'py'))
+import math, heights as HT
+_placed = {}
+for _u, (_f, _x, _y, _z) in HT.placements().items(): _placed.setdefault(_f, []).append((_x, _y, _z))
+def buried(rb, fid):
+    """most interior groups' boxes (their tops) under the terrain at their middles, at any placement of [fid] (yaw ignored: a room's
+    middle is near the origin's)"""
+    boxes = []; ro = 0
+    while ro + 8 <= len(rb):
+        rn = le(rb, ro + 4); rt = rb[ro:ro+4][::-1].decode('latin1')
+        if rt == 'MOGI':
+            for g in range(rn // 32):
+                fl = le(rb, ro + 8 + g * 32)
+                if fl & 0x2000: boxes.append(struct.unpack_from('<6f', rb, ro + 8 + g * 32 + 4))
+        if rn < 0: break
+        ro += 8 + rn
+    if not boxes: return False
+    for (x, y, z) in _placed.get(fid, []):
+        under = 0
+        for bx in boxes:
+            cx = (bx[0] + bx[3]) / 2; cy = (bx[1] + bx[4]) / 2; top = z + max(bx[2], bx[5])
+            g = HT.height(x - cx, y - cy)
+            if not math.isnan(g) and top < g - 2.0: under += 1
+        if under * 2 > len(boxes): return True
+    return False
 # the manifest the harness reads: which WMOs' floors are ways (a cave, a walkway, one asked for by id)
 kinds = {}
 kp = OUT + '/wmogroup/kinds.txt'
@@ -32,7 +60,8 @@ for f in os.listdir(OUT + '/wmo'):
             walkway = any(v & 0x8 for v in fls) and not any(v & 0x2000 for v in fls)     # outdoor only, no room: a bridge, a pier, a dock
         if rn < 0: break
         ro += 8 + rn
-    cave = any(k in n for k in ('cave', 'tunnel', 'mine', 'den', 'pass', 'crypt', 'barrow', 'hollow', 'grave')) and ('/dungeon/' in n or 'cave' in n)
+    cave = any(k in n for k in ('cave', 'tunnel', 'mine', 'den', 'pass', 'crypt', 'barrow', 'hollow', 'grave', 'mound', 'furbog', 'blackfathom')) and ('/dungeon/' in n or 'cave' in n)
+    if not cave and not walkway and fid not in extra and buried(rb, fid): cave = True; print('%7d %s: its rooms under the terrain - a cave' % (fid, n[-60:]))
     if fid not in extra and not walkway and not cave: continue
     kinds[fid] = 'extra' if fid in extra else 'cave' if cave else 'walkway'
     b = open(OUT + '/wmo/' + f, 'rb').read(); o = 0; gf = []
