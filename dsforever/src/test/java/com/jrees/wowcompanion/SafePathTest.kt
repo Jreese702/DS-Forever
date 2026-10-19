@@ -386,4 +386,24 @@ class SafePathTest {
         assertEquals(800.0, yd, 1.0)
         for ((a, b) in way.zipWithNext()) assertTrue("${a.toList()} -> ${b.toList()}", walk(a, b))
     }
+
+    @Test fun aFarGoalOffTheNetworkStillTakesTheRoad() {
+        // the user's test13 (Zephras): a road east, then north; the goal 230 yd off the road's far end, a ridge straight between
+        fun n(id: Int, x: Double, y: Double) = SafePath.Node(id, x, y, SafePath.POINT)
+        val net = SafePath.Net(1, 0, "", listOf(n(0, 0.0, 0.0), n(1, 0.0, -600.0), n(2, 600.0, -600.0)),
+            listOf(SafePath.Edge(0, 1, SafePath.ROAD), SafePath.Edge(1, 2, SafePath.ROAD)), emptyList())
+        val goal = doubleArrayOf(650.0, -380.0)
+        // the network alone: no way within ATTACH_YD of the goal, so none (the grid's leg went the whole way, over the ridge)
+        assertTrue(SafePath.route(net, 0.0, -10.0, goal[0], goal[1]) == null)
+        var asked: Pair<DoubleArray, DoubleArray>? = null
+        val w = SafePath.deviceLeg(net, 0.0, -10.0, goal[0], goal[1]) { a, b -> asked = a to b; listOf(a, doubleArrayOf((a[0] + b[0]) / 2, a[1]), b) }!!
+        // along the road to its far end, then the grid's own leg from where the road is left
+        assertTrue(w.any { abs(it[0] - 0.0) < 1 && abs(it[1] + 600.0) < 1 })
+        val off = asked!!.first
+        assertTrue("left the road near its far end: ${off.toList()}", off[0] > 400.0)
+        assertEquals(goal[0], w.last()[0], 1e-9); assertEquals(goal[1], w.last()[1], 1e-9)
+        // a goal near the player, or one the road brings no nearer: the caller's own leg, as before
+        assertTrue(SafePath.deviceLeg(net, 0.0, -10.0, 300.0, 200.0) == null)
+        assertTrue(SafePath.deviceLeg(net, 0.0, -10.0, -600.0, 300.0) == null)
+    }
 }

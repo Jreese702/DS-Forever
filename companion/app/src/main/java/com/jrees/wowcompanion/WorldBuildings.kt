@@ -121,6 +121,32 @@ object WorldBuildings {
     }
 
     /**
+     * AN OUTDOOR-ONLY BUILDING (the user on Zephras, test12: "it pathed me directly into a building that didn't have a back door"):
+     * WoW Forever's new buildings (Valanaar's houses) are one OUTDOOR group each, no interior one, so [feet] sees no room and [walkways]
+     * leveled them as a street. [p] is one when all its groups are outdoor (none interior, not a city), it stands on the ground (its
+     * base no more than [STAND_BASE_YD] under the terrain at its middle, nor [STAND_LIFT_YD] over it: no buried rock mass under a town,
+     * no deck in the air), rises [STAND_TALL_YD] or more over it, and is compact (no side over [STAND_MAX_YD], the long side no more than
+     * [STAND_RATIO] the short: a bridge, a wall, a causeway are long and thin). Its whole box, or null. A guess from the box alone - the
+     * device's 25 yd grid takes it as a COST (Buildings.PART_COVER at most), never a wall; the lattice's floors say what is walked.
+     */
+    fun standing(p: Placement, groups: List<Group>, ground: (Double, Double) -> Double): Buildings.Foot? {
+        if (groups.isEmpty() || groups.any { it.interior } || groups.none { it.exterior } || isCity(p, groups)) return null
+        val lx0 = groups.minOf { minOf(it.box[0], it.box[3]) } * p.scale; val lx1 = groups.maxOf { maxOf(it.box[0], it.box[3]) } * p.scale
+        val ly0 = groups.minOf { minOf(it.box[1], it.box[4]) } * p.scale; val ly1 = groups.maxOf { maxOf(it.box[1], it.box[4]) } * p.scale
+        val z0 = p.oz + groups.minOf { minOf(it.box[2], it.box[5]) } * p.scale; val z1 = p.oz + groups.maxOf { maxOf(it.box[2], it.box[5]) } * p.scale
+        val a = lx1 - lx0; val b = ly1 - ly0
+        if (maxOf(a, b) > STAND_MAX_YD || minOf(a, b) < MIN_YD || maxOf(a, b) > STAND_RATIO * minOf(a, b)) return null
+        val f = Buildings.Foot(p.ox, p.oy, Math.cos(p.yaw), Math.sin(p.yaw), lx0, lx1, ly0, ly1)
+        val h = ground((f.wx0 + f.wx1) / 2, (f.wy0 + f.wy1) / 2); if (h.isNaN()) return null
+        return f.takeIf { z0 >= h - STAND_BASE_YD && z0 <= h + STAND_LIFT_YD && z1 >= h + STAND_TALL_YD }
+    }
+    const val STAND_MAX_YD = 90.0
+    const val STAND_RATIO = 3.0
+    const val STAND_TALL_YD = 10.0
+    const val STAND_BASE_YD = 8.0
+    const val STAND_LIFT_YD = 3.0
+
+    /**
      * [p]'s OUTDOOR groups (MOGI 0x8: a city's streets and squares, a dock, a bridge): walked on, whatever the terrain below them does
      * (Stormwind's ground under its streets reads as steep everywhere). Their footprints, for the slope grid to take as level.
      */

@@ -32,6 +32,40 @@ object Terrain {
         slope < 50 -> 3f + (slope - 40) / 10f * 9f            // a steep bank: up to 12x
         else -> WALL                                           // a cliff: a wall (DangerGrid.route never steps on one)
     }
+    /**
+     * THE DEVICE'S 25 YD LEG over rough ground (the user's test13, Zephras: the leg left the road "straight up into the rocky, wooded
+     * ridge", its flags in the rock outcrops): a cell's slope is the MEAN of its steps', and a field of rock outcrops between grass reads
+     * 30-40 degrees with a third of its steps cliffs (Zephras' ridge: mean 33-40, 30-44% of its steps 45 degrees or more), which [factor]
+     * weighed only 2-3x - a straight line over it beat the road round. From [ROUGH_DEG] up the cell is a rock field: 2x there, rising
+     * to 12x at 45 and 20x at 50; a cliff ([WALL]) as before. Gentler cells as [factor]. For DangerGrid's ground only (the draft keeps
+     * [factor]); a cost, never a wall.
+     */
+    fun legFactor(slope: Int): Float = when {
+        slope == NO_DATA || slope < ROUGH_DEG -> factor(slope)
+        slope < 45 -> 2f + (slope - ROUGH_DEG) / (45f - ROUGH_DEG) * 10f
+        slope < 50 -> 12f + (slope - 45) / 5f * 8f
+        else -> WALL
+    }
+    const val ROUGH_DEG = 28
+    /**
+     * THE DEVICE LEG'S GROUND COST at world ([wx], [wy]) on slope grid [g] ([legFactor]), and a CLIFF'S BAND (the user on Zephras,
+     * test12: the leg "hugged the bottom second of the map so tightly that I almost fell off the island ... it didn't have a lot of
+     * wiggle room"): a cell beside a cliff cell ([WALL]: a mean slope of 50 or more, the island's rim over the void) costs [CLIFF_BAND]
+     * times more, so the 25 yd leg keeps a cell off a cliff where it can. The grid keeps slopes, not heights, so it cannot tell a drop
+     * from a wall rising beside a canyon's floor: both get the band (a cost; the lattice's own EDGE CLEARANCE, Climb.dropsOf, tells
+     * them apart once the device has the lattice).
+     */
+    fun legCost(g: Grid?, wx: Double, wy: Double, slope: Int = g?.at(wx, wy) ?: NO_DATA): Float {
+        val f = legFactor(slope)
+        if (g == null || f >= WALL) return f
+        for (a in -1..1) for (b in -1..1) {
+            if (a == 0 && b == 0) continue
+            val s = g.at(wx + a * CELL_YD, wy + b * CELL_YD)
+            if (s != NO_DATA && factor(s) >= WALL) return f * CLIFF_BAND
+        }
+        return f
+    }
+    const val CLIFF_BAND = 1.6f
     /** a cliff's factor: the route's A* never enters such a cell (test51: "the pathing needs to really factor walkable terrain") */
     const val WALL = 60f
     /** a climb and steeper (a steep bank, a cliff): no way out of a map over it (the edge toward the quest, b-route-multihop) */
@@ -287,21 +321,27 @@ object Terrain {
         return emptyMap()
     }
 
+    /** an outdoor-only building's cell at most this of 9 (Buildings.PART_COVER and over, under WALL_COVER) */
+    const val STAND_COVER = 4
     /** a zone's building cover grid ([rect]'s cells like [grid]): each cell the number of its 3 x 3 samples a room covers, 0..9 */
-    fun buildingGrid(rect: MapHarvest.Rect, feet: List<Buildings.Foot>): Grid {
+    fun buildingGrid(rect: MapHarvest.Rect, feet: List<Buildings.Foot>, stands: List<Buildings.Foot> = emptyList()): Grid {
         val nx = max(1, ((rect.l - rect.r) / CELL_YD).toInt()); val ny = max(1, ((rect.t - rect.b) / CELL_YD).toInt())
         val cw = (rect.l - rect.r) / nx; val ch = (rect.t - rect.b) / ny
         val near = feet.filter { it.wx1 >= rect.b && it.wx0 <= rect.t && it.wy1 >= rect.r && it.wy0 <= rect.l }
+        val nearS = stands.filter { it.wx1 >= rect.b && it.wx0 <= rect.t && it.wy1 >= rect.r && it.wy0 <= rect.l }
         val out = ByteArray(nx * ny)
-        if (near.isNotEmpty()) for (j in 0 until ny) for (i in 0 until nx) {
+        if (near.isNotEmpty() || nearS.isNotEmpty()) for (j in 0 until ny) for (i in 0 until nx) {
             val wx = rect.t - (j + 0.5) * ch; val wy = rect.l - (i + 0.5) * cw
-            out[j * nx + i] = Math.round(Buildings.coverWorld(near, wx, wy, ch / 2, cw / 2) * 9).toInt().toByte()
+            val rooms = Math.round(Buildings.coverWorld(near, wx, wy, ch / 2, cw / 2) * 9).toInt()
+            // an outdoor-only building's box: a part-covered cell at most (dearer, never a wall: its box is a guess, its doors unknown)
+            val stand = minOf(STAND_COVER, Math.round(Buildings.coverWorld(nearS, wx, wy, ch / 2, cw / 2) * 9).toInt())
+            out[j * nx + i] = maxOf(rooms, stand).toByte()
         }
         return Grid(rect.t, rect.b, rect.l, rect.r, nx, ny, out)
     }
 
     /**
-     * "terrain" (v2, BEFORE PLAY; the user on test56: "I need the path building to work without having played there yet"): every zone's
+     * "terrain" (v3: outdoor-only buildings a cost, not a street - WorldBuildings.standing; BEFORE PLAY; the user on test56: "I need the path building to work without having played there yet"): every zone's
      * slope grid (terrain/<uiMap>.bin) AND its building cover (terrain/<uiMap>.bld: the rooms of EVERY placed WMO, [WorldBuildings]), for
      * all the zones of every continent in the recipe (Forever's lands too): the player's zone first, then by distance on its continent,
      * then the rest; again after a game update (the harvest's stamp). Resumable per zone (terrain/made.txt, per game build). Each root /
@@ -309,7 +349,7 @@ object Terrain {
      */
     val STEP = object : ArtHarvest.Step {
         override val id = "terrain"
-        override val version = 2
+        override val version = 3
         override val beforePlay = true
         override val weight = 60
         override fun run(job: ArtHarvest.Job) {
@@ -323,7 +363,7 @@ object Terrain {
             val pass = Pass({ read(it) }) { c -> mapRows[c]?.let { read(it.int(MapHarvest.MAP_WDT)) } }
             val made = job.file("terrain/made.txt")
             val done = HashSet<String>()
-            val head = g.buildKey + " v2"
+            val head = g.buildKey + " v$version"
             runCatching { made.readLines() }.getOrNull()?.let { if (it.firstOrNull() == head) done.addAll(it.drop(1)) }
             if (done.isEmpty()) made.writeText(head + "\n")
             // the player's zone first, then by distance on its continent, then the rest (before Play the first time: the recipe's order)
@@ -367,11 +407,14 @@ object Terrain {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, List<Pair<Int, List<Buildings.Foot>>>>?) = size > TILE_CACHE
         }
         private val tileWalks = HashMap<Long, List<Pair<Int, List<Buildings.Foot>>>>()
+        private val tileStands = HashMap<Long, List<Pair<Int, List<Buildings.Foot>>>>()
         /** the placements with rooms as walls (continent, unique id), and their rooms */
         val placed = HashSet<Long>(); var rooms = 0; private set
         val wmoRoots get() = wmo.size
         /** the last zone's walkway boxes (outdoor groups, cities whole): the log and the tests */
         var lastWalks = 0; private set
+        /** the last zone's outdoor-only buildings (WorldBuildings.standing): the log and the tests */
+        var lastStands = 0; private set
         private val top = 32.0 * MapHarvest.ADT_YD
 
         private fun continent(c: Int): Boolean {
@@ -401,8 +444,12 @@ object Terrain {
                 val groups = wmo.getOrPut(p.fid) { read(p.fid)?.let { WorldBuildings.groups(it) } ?: emptyList() }
                 p.uid to WorldBuildings.feet(p, groups) { wx, wy -> ground(c, wx, wy) }
             }
-            tileWalks[key] = ps.map { p -> p.uid to WorldBuildings.walkways(p, wmo[p.fid] ?: emptyList()) }
+            // an outdoor-only building (WorldBuildings.standing: Valanaar's houses) is no street: not leveled, its box a cost
+            val stand = ps.map { p -> p.uid to listOfNotNull(WorldBuildings.standing(p, wmo[p.fid] ?: emptyList()) { wx, wy -> ground(c, wx, wy) }) }
+            tileStands[key] = stand
+            tileWalks[key] = ps.mapIndexed { q, p -> p.uid to (if (stand[q].second.isEmpty()) WorldBuildings.walkways(p, wmo[p.fid] ?: emptyList()) else emptyList()) }
             if (tileWalks.size > TILE_CACHE) tileWalks.remove(tileWalks.keys.first())
+            if (tileStands.size > TILE_CACHE) tileStands.remove(tileStands.keys.first())
             tileFeet[key] = out
             return out
         }
@@ -412,13 +459,14 @@ object Terrain {
             if (!continent(rect.c)) return null
             val slopes = grid(rect) { gr, gc -> height(rect.c, gr, gc) }
             // every placement on its tiles (a building over two tiles is in both: its unique id once)
-            val seen = HashSet<Int>(); val feet = ArrayList<Buildings.Foot>(); val walks = ArrayList<Buildings.Foot>()
+            val seen = HashSet<Int>(); val feet = ArrayList<Buildings.Foot>(); val walks = ArrayList<Buildings.Foot>(); val stands = ArrayList<Buildings.Foot>()
             for (k in MapHarvest.tilesUnder(rect) ?: emptyList()) {
                 val key = (rect.c.toLong() shl 32) or k.toLong()
                 for ((uid, fs) in feetOf(rect.c, MapHarvest.colOf(k), MapHarvest.rowOf(k))) {
                     if (!seen.add(uid)) continue
                     feet.addAll(fs)
                     tileWalks[key]?.firstOrNull { it.first == uid }?.let { walks.addAll(it.second) }
+                    tileStands[key]?.firstOrNull { it.first == uid }?.let { stands.addAll(it.second) }
                     if (fs.isNotEmpty() && placed.add((rect.c.toLong() shl 32) or (uid.toLong() and 0xFFFFFFFFL))) rooms += fs.size
                 }
             }
@@ -426,7 +474,8 @@ object Terrain {
             lastWalks = walks.size
             val level = buildingGrid(rect, walks)
             for (i in slopes.slope.indices) if ((level.slope[i].toInt() and 0xFF) >= 5) slopes.slope[i] = 0
-            return slopes to buildingGrid(rect, feet)
+            lastStands = stands.size
+            return slopes to buildingGrid(rect, feet, stands)
         }
     }
     private const val TILE_CACHE = 160

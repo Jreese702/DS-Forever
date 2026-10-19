@@ -1435,7 +1435,7 @@ object SafePath {
      * straight walk is as good): the caller keeps its own way.
      */
     fun route(net: Net, fx: Double, fy: Double, tx: Double, ty: Double, toExit: Boolean = false,
-              clear: ((DoubleArray, DoubleArray) -> Boolean)? = null): List<DoubleArray>? {
+              clear: ((DoubleArray, DoubleArray) -> Boolean)? = null, goalAttachYd: Double = ATTACH_YD): List<DoubleArray>? {
         val byId = net.nodes.associateBy { it.id }
         val usable = net.edges.filter { it.state != REMOVED && byId.containsKey(it.a) && byId.containsKey(it.b) }
         if (usable.isEmpty()) return null
@@ -1456,7 +1456,7 @@ object SafePath {
         // the walk on and off: the nearest points of the nearest ways (a few), each a virtual node cut into its way
         var nextVirtual = -10
         // the walk on / off goes AHEAD: a way behind the player (away from the goal), or behind the goal, costs more to reach
-        fun attach(px: Double, py: Double, virt: Int, toward: DoubleArray): Boolean {
+        fun attach(px: Double, py: Double, virt: Int, toward: DoubleArray, lim: Double = ATTACH_YD): Boolean {
             // never cut into a cave's way (as routeOn's walk on and off): its point would stand on the terrain over the floor, unmarked, and
             // the leg on from it started there on the terrain (Loch Modan B: off Stonewrought Dam's floor onto a 49 degree face)
             val cands = (usable.filter { it.kind != LIFT && it.kind != CAVE }.ifEmpty { usable.filter { it.kind != LIFT } }).map { e ->
@@ -1465,7 +1465,7 @@ object SafePath {
                 val t = if (l2 <= 0.0) 0.0 else (((px - a[0]) * dx + (py - a[1]) * dy) / l2).coerceIn(0.0, 1.0)
                 val q = doubleArrayOf(a[0] + t * dx, a[1] + t * dy)
                 Triple(e, t, q)
-            }.filter { hypot(it.third[0] - px, it.third[1] - py) <= ATTACH_YD }.sortedBy { hypot(it.third[0] - px, it.third[1] - py) }.take(4)
+            }.filter { hypot(it.third[0] - px, it.third[1] - py) <= lim }.sortedBy { hypot(it.third[0] - px, it.third[1] - py) }.take(4)
             if (cands.isEmpty()) return false
             pos[virt] = doubleArrayOf(px, py)
             for ((e, t, q) in cands) {
@@ -1480,7 +1480,7 @@ object SafePath {
             return true
         }
         val start = -1; val goal = -2
-        if (!attach(fx, fy, start, doubleArrayOf(gx, gy)) || !attach(gx, gy, goal, doubleArrayOf(fx, fy))) return null
+        if (!attach(fx, fy, start, doubleArrayOf(gx, gy)) || !attach(gx, gy, goal, doubleArrayOf(fx, fy), goalAttachYd)) return null
         // the straight walk, the network's rival only for a goal near the player (farther, the network IS the way)
         if (hypot(gx - fx, gy - fy) <= DIRECT_YD) link(start, goal, hypot(gx - fx, gy - fy) * DIRECT)
         val dist = HashMap<Int, Double>(); val from = HashMap<Int, Int>()
@@ -1502,6 +1502,33 @@ object SafePath {
         if (path.size <= 2) return null                                   // straight: the caller's own way
         return smooth(path.map { pos[it]!! }, clear)
     }
+
+    /**
+     * THE DEVICE'S LEG BEFORE IT HAS THE LATTICE (MapView.netLeg; the user's test13 on Zephras: the leg "leaves the road heading NNW,
+     * straight up into the rocky, wooded ridge between the player and the quest", its last flag short of the area): [route]; and when
+     * the goal lies off every way (more than [ATTACH_YD] from one) but [FAR_GOAL_YD] or more from the player, the network still takes the
+     * player as near as it goes - onto the way nearest the goal within [FAR_ATTACH_YD], when leaving there brings the player at least
+     * [FAR_GAIN_YD] nearer - and [offNet] (the danger grid's own leg) walks the rest from where the way is left. Before, such a goal
+     * gave no network at all, and the 25 yd grid's leg went the whole way over whatever its mean slopes called passable. World points;
+     * null = the network does not help (the caller's grid leg).
+     */
+    fun deviceLeg(net: Net, fx: Double, fy: Double, tx: Double, ty: Double, toExit: Boolean = false, clear: ((DoubleArray, DoubleArray) -> Boolean)? = null,
+                  offNet: ((DoubleArray, DoubleArray) -> List<DoubleArray>?)? = null): List<DoubleArray>? {
+        route(net, fx, fy, tx, ty, toExit, clear)?.let { return it }
+        if (toExit || hypot(tx - fx, ty - fy) < FAR_GOAL_YD) return null
+        val w = route(net, fx, fy, tx, ty, false, clear, FAR_ATTACH_YD) ?: return null
+        if (w.size < 3) return null
+        val off = w[w.size - 2]
+        if (hypot(off[0] - tx, off[1] - ty) > hypot(fx - tx, fy - ty) - FAR_GAIN_YD) return null
+        val way = offNet?.invoke(off, w.last())?.takeIf { it.size >= 2 }?.let { tail -> w.dropLast(1) + tail.drop(1) } ?: w
+        // ... and never a silly detour (the user: "Tighten to 1.75x"): no longer than DETOUR_FACTOR the straight walk + DETOUR_SLACK_YD
+        // (Elwynn's and Arathi's far goals: the road's way round 2.2x the grid's own leg)
+        val yd = way.zipWithNext { a, b -> hypot(b[0] - a[0], b[1] - a[1]) }.sum()
+        return way.takeIf { yd <= DETOUR_FACTOR * hypot(tx - fx, ty - fy) + DETOUR_SLACK_YD }
+    }
+    const val FAR_GOAL_YD = 400.0          // a goal this far from the player is worth the road's way even when it lies off it ...
+    const val FAR_ATTACH_YD = 450.0        // ... onto the way nearest it within this ...
+    const val FAR_GAIN_YD = 150.0          // ... when leaving the way there brings the player this much nearer
 
     /** the way without its there-and-backs (a loop that comes back within [LOOP_YD] of where it was) and with its ends walked
      *  straight where the way would hook back first: [ATTACH_YD] at most, the way far longer than the straight walk; up to
