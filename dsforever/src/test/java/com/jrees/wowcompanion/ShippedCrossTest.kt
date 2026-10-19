@@ -317,6 +317,30 @@ class ShippedCrossTest {
         assertTrue(c.steps(::name).any { it.contains("walk on from where it lands") })
     }
 
+    @Test fun aSlimSectionGivesTheSameGraph() {
+        val starts = listOf(updraft, S(1445, at(1445, 900.0, 900.0), "portal", 1454, "Portal to Orgrimmar"))
+        val full = zones(A, starts)
+        val slim = full.map { ShippedCross.Zone(it.map, ShippedCross.slim(it.section)) }
+        fun sig(zs: List<ShippedCross.Zone>) = TravelLinks.build(ShippedCross.inputs(base(), zs), TravelLinks.Character(A)).links
+            .map { "${it.key}|${it.fromMap}>${it.toMap}|${it.ax},${it.ay}|${it.yd}|${it.avoid}|${it.words}" }.sorted()
+        assertEquals(sig(full), sig(slim))
+        assertTrue(slim.all { z -> z.net.nodes.none { it.kind == SafePath.HUB } })            // the towns' hubs are not the graph's
+        // an avoided crossing stays avoided
+        val av = ShippedCross.slim(pack(1429, listOf(X(1429, 1453, at(1429, 500.0, 990.0), "the gate", avoid = true)), emptyList()).section(A)!!)
+        assertTrue(TravelLinks.build(TravelLinks.Inputs(::mapAt, ::name, listOf(av.net)), TravelLinks.Character(A)).links.all { it.avoid })
+    }
+
+    @Test fun theLegsOnTheShippedRoute() {
+        // the device's in-zone route (ShippedRoute) over a zone's whole section: Elwynn's leg to the Stormwind gate along its road
+        val sec = pack(1453, crossings.filter { it.from == 1453 }, emptyList()).section(A)!!
+        val legs = ShippedCross.LegYards { map, a, b, toExit ->
+            if (map != 1453) null else ShippedRoute.plan(sec, { _, _ -> Float.NaN }, null, a, b, toExit = toExit).takeIf { it.reached }?.yd }
+        val c = plan(A, at(1453, 450.0, 450.0), 0, at(1429, 300.0, 300.0), 0, flights = false, legs = legs)!!
+        assertEquals(listOf("w:1453>1429"), c.keys)
+        assertTrue(c.legs[0].onNet)
+        assertTrue(c.legs[0].yd >= Math.hypot(c.legs[0].b[0] - c.legs[0].a[0], c.legs[0].b[1] - c.legs[0].a[1]) - 1e-6)
+    }
+
     @Test fun theStartsMapAloneIsNoChain() {
         assertNull(plan(A, at(1429, 300.0, 300.0), 0, at(1429, 700.0, 700.0), 0))
         assertNotNull(plan(A, at(1429, 300.0, 300.0), 0, at(1453, 700.0, 700.0), 0))

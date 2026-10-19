@@ -23,6 +23,20 @@ object ShippedCross {
         val net get() = section.net
     }
 
+    /**
+     * [sec] cut to what the cross-zone graph reads (every zone kept in memory at once, not only the few the in-zone route keeps): the
+     * exits' and starts' nodes and the ways that touch them (an exit's way marked avoid makes its crossing dear), with their NET1 fields
+     */
+    fun slim(sec: ShippedNet.Section): ShippedNet.Section {
+        val keep = (sec.net.exits.map { it.node } + sec.starts.map { it.node }).toSet()
+        val idx = sec.net.edges.indices.filter { sec.net.edges[it].a in keep || sec.net.edges[it].b in keep }
+        val net = sec.net
+        val nodes = net.nodes.filter { it.id in keep }
+        return ShippedNet.Section(sec.faction, sec.level, sec.tag,
+            SafePath.Net(net.map, net.cont, net.built, nodes, idx.map { net.edges[it] }, net.exits, net.reviewed),
+            idx.map { sec.ways[it] }, emptyList(), sec.starts, emptyList())
+    }
+
     /** the words for a link start whose far end is not known until taken (the user's ruling on air places) */
     const val LEARNED_UP = "the way up is learned the first time you take it"
     /** a link start this near one of QuestieDB's portals on its map is that portal (TravelLinks builds it, with its landing learned) */
