@@ -215,6 +215,8 @@ object Terrain {
 
     /** the liquid types no one wades (LiquidType.db2: [names] by id): magma, lava, slime, fire, acid by their names */
     const val DB_LIQUID_TYPE = 1371380
+    /** the liquid types no one wades, as read ([lethalLiquids]) by the harvest or the harness: a WMO's own lava (Caves) asks it too */
+    @Volatile var lethal: Set<Int> = setOf(3, 4, 7, 8)
     fun lethalLiquids(names: Map<Int, String>): Set<Int> = names.filter { (_, n) -> LETHAL.containsMatchIn(n) }.keys
     val LETHAL = Regex("magma|lava|slime|fire|acid|poison|ooze", RegexOption.IGNORE_CASE)
 

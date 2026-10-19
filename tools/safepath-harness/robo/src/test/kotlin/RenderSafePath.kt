@@ -63,6 +63,7 @@ class RenderSafePath {
         // the liquids no one wades (magma, slime: LiquidType's names), for the water grid and py/wetcheck.py (liquids.json)
         val lethal = File(db2, "LiquidType.db2").takeIf { it.isFile }?.let { f -> Terrain.lethalLiquids(Db2(f.readBytes()).rows(strings = setOf(0)).associate { it.id to it.str(0) }) } ?: emptySet()
         println("SAFEPATH lethal liquids: ${lethal.sorted()}")
+        if (lethal.isNotEmpty()) Terrain.lethal = lethal
         File(work, "db2/liquids.json").writeText(org.json.JSONObject().put("lethal", org.json.JSONArray(lethal.sorted())).toString())
         val areas = Db2(File(db2, "AreaTable.db2").readBytes()).rows(strings = setOf(1)).associate { it.id to PlaceNames.Area(it.str(1), it.int(3)) }
         val uimap = HashMap<Int, Int>().also { o -> for (r in Db2(File(db2, "UiMapAssignment.db2").readBytes()).rows()) { val a = r.int(7); val m = r.int(4); if (a != 0 && m != 0 && a !in o) o[a] = m } }
@@ -473,13 +474,13 @@ class RenderSafePath {
         }
         /** a subzone's quest mobs at their thickest: the hostile spawn with the most others within 60 yd */
         fun camp(name: String): DoubleArray? {
-            val a = areas.entries.firstOrNull { it.value.name.equals(name, true) && it.value.parent == zoneArea }?.key ?: return null
+            val a = areas.entries.firstOrNull { it.value.name.trim().equals(name.trim(), true) && it.value.parent == zoneArea }?.key ?: return null
             val pts = spawns.filter { it.hostile == mine || it.hostile == 3 }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
-                .filter { zg.areaAt(it[0], it[1]) == a && !deep(it[0], it[1]) && height(it[0], it[1]) > 0 }
+                .filter { zg.areaAt(it[0], it[1]) == a && !deep(it[0], it[1]) && !height(it[0], it[1]).isNaN() }      // ground there (Un'Goro's crater is under the sea's level)
             return pts.maxByOrNull { p -> pts.count { Math.hypot(it[0] - p[0], it[1] - p[1]) < 60 } }
         }
         // a node by its name, or by its base name when towns sharing it were told apart ("Deathknell · Inn", "Gustberry Lowlands (2)")
-        fun at(name: String) = (net.nodes.firstOrNull { it.name == name } ?: net.nodes.firstOrNull { it.name?.startsWith("$name ") == true })
+        fun at(name: String) = (net.nodes.firstOrNull { it.name?.trim() == name.trim() } ?: net.nodes.firstOrNull { it.name?.trim()?.startsWith("${name.trim()} ") == true })
             ?.let { doubleArrayOf(it.wx, it.wy) }
         /** a named mob's spawns at their thickest (near [near] when given: within 500 yd of it) */
         fun mob(name: String, near: DoubleArray?): DoubleArray? {

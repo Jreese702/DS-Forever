@@ -929,7 +929,8 @@ object SafePath {
             val areas = g.db2(PlaceNames.DB_AREA_TABLE)?.rows(strings = setOf(1))?.associate { it.id to PlaceNames.Area(it.str(1), it.int(3)) }
                 ?: error("AreaTable unreadable: ${g.lastReadWhy}")
             // the liquids no one wades (magma, slime): a wall at any depth
-            val lethal = g.db2(Terrain.DB_LIQUID_TYPE)?.rows(strings = setOf(0))?.associate { it.id to it.str(0) }?.let { Terrain.lethalLiquids(it) } ?: emptySet()
+            val lethal = g.db2(Terrain.DB_LIQUID_TYPE)?.rows(strings = setOf(0))?.associate { it.id to it.str(0) }?.let { Terrain.lethalLiquids(it) } ?: Terrain.lethal
+            Terrain.lethal = lethal
             val uimap = g.db2(DangerStore.DB_UIMAP_ASSIGNMENT)?.rows()?.let { rows ->
                 val o = HashMap<Int, Int>(); for (r in rows) { val a = r.int(7); val m = r.int(4); if (a != 0 && m != 0 && a !in o) o[a] = m }; o
             } ?: error("UiMapAssignment unreadable: ${g.lastReadWhy}")
@@ -1527,6 +1528,8 @@ object SafePath {
         return w
     }
     const val LOOP_YD = 70.0               // a way that comes back this near where it was, the long way round, is a there-and-back
+    const val HOOK_YD = 20.0               // ... longer than 2.5 times the straight step plus this (Desolace's Ghost Walker Post: 25 yd out to a
+                                           // junction and back; a mountain path's switchbacks stay, their straight step no walk)
     const val SHORTCUT_YD = 250.0          // a hooked end walked straight this far where the ground is clear
 
     /** the straight walk from [a] to [b] (world x, y) on level ground: every [CELL_YD] of it under [Terrain.STEEP] by [factorAt] */
@@ -2081,7 +2084,7 @@ object SafePath {
             val a = w[i]
             val j = if (Climb.inCave(a)) null else (w.size - 1 downTo i + 2).firstOrNull { j ->
                 val d = hypot(w[j][0] - a[0], w[j][1] - a[1])
-                d < LOOP_YD && cum[j] - cum[i] > 2.5 * d + LOOP_YD && !Climb.inCave(w[j]) && (walkable?.invoke(a, w[j]) ?: true)
+                d < LOOP_YD && cum[j] - cum[i] > 2.5 * d + HOOK_YD && !Climb.inCave(w[j]) && (walkable?.invoke(a, w[j]) ?: true)
             }
             if (j != null) w = w.subList(0, i + 1) + w.subList(j, w.size)
             i++

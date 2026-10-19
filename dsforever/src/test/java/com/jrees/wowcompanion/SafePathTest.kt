@@ -176,7 +176,10 @@ class SafePathTest {
         // Teldrassil's Fel Rock: the network ran on 58 yd past the turn, and the ground's leg walked back the same road
         val way = listOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(100.0, 0.0), doubleArrayOf(100.0, 58.0), doubleArrayOf(100.0, 0.0), doubleArrayOf(150.0, -30.0))
         assertTrue(SafePath.unloop(way, null).none { it[1] == 58.0 })
-        assertEquals(4, SafePath.unloop(way, null).size)
+        assertEquals(3, SafePath.unloop(way, null).size)              // the turn's point, back on the road, cut straight to the next too
+        // a short hook (Desolace's Ghost Walker Post: 25 yd out to a junction and back) is cut too
+        val hook = listOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(50.0, 0.0), doubleArrayOf(50.0, 25.0), doubleArrayOf(52.0, 0.0), doubleArrayOf(120.0, 0.0))
+        assertTrue(SafePath.unloop(hook, null).none { it[1] == 25.0 })
         // a shortcut over a wall is never taken: the loop stays
         val round = listOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(0.0, 100.0), doubleArrayOf(60.0, 100.0), doubleArrayOf(60.0, 0.0), doubleArrayOf(60.0, -50.0))
         assertEquals(5, SafePath.unloop(round) { _, _ -> false }.size)

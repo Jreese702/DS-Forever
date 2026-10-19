@@ -163,9 +163,10 @@ class ClimbTest {
         o.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(body.size).array()); o.write(body)
     }
     /** a group file: MVER, then MOGP (its 0x44 header, then MOPY / MOVI / MOVT) of [tris] (three corners each), all collision faces */
-    private fun group(tris: List<List<FloatArray>>, mpy2: Boolean = false): ByteArray {
+    private fun group(tris: List<List<FloatArray>>, mpy2: Boolean = false, mliq: ByteArray? = null): ByteArray {
         val inner = ByteArrayOutputStream()
         inner.write(ByteArray(0x44))
+        if (mliq != null) chunk(inner, "MLIQ", mliq)
         if (mpy2) chunk(inner, "MPY2", ByteArray(tris.size * 4) { if (it % 4 == 0) 0x08 else 0 })        // the newer groups' faces
         else chunk(inner, "MOPY", ByteArray(tris.size * 2) { if (it % 2 == 0) 0x08 else 0 })
         val idx = ByteBuffer.allocate(tris.size * 6).order(ByteOrder.LITTLE_ENDIAN); for (i in 0 until tris.size * 3) idx.putShort(i.toShort())
@@ -184,6 +185,21 @@ class ClimbTest {
         val wall = listOf(f(0, 0, 0), f(1, 0, 0), f(0, 0, 1))
         assertEquals(9, Caves.floorTris(group(listOf(floor, wall))).size)
         assertEquals(9, Caves.floorTris(group(listOf(floor, wall), mpy2 = true)).size)
+    }
+
+    /** a group's own lava (its MLIQ: Searing Gorge's Cauldron) leaves no floor under it; a floor over it, or under water, stays */
+    @Test fun noFloorUnderAGroupsOwnLava() {
+        // one liquid tile 4.17 yd square from the model's origin, its surface at 5; tile type 2 (magma), or 0 (water)
+        fun mliq(type: Int): ByteArray {
+            val b = ByteBuffer.allocate(30 + 4 * 8 + 1).order(ByteOrder.LITTLE_ENDIAN)
+            b.putInt(2); b.putInt(2); b.putInt(1); b.putInt(1); b.putFloat(0f); b.putFloat(0f); b.putFloat(5f); b.putShort(0)
+            repeat(4) { b.putInt(0); b.putFloat(5f) }
+            b.put(type.toByte()); return b.array()
+        }
+        val under = listOf(f(0, 0, 0), f(2, 0, 0), f(0, 2, 0))
+        val over = listOf(f(0, 0, 9), f(2, 0, 9), f(0, 2, 9))
+        assertEquals(9, Caves.floorTris(group(listOf(under, over), mliq = mliq(2))).size)
+        assertEquals(18, Caves.floorTris(group(listOf(under, over), mliq = mliq(0))).size)
     }
 
     @Test fun aTunnelJoinsItsTwoMouths() {

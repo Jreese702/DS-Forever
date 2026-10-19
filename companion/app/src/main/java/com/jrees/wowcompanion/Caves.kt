@@ -150,13 +150,43 @@ object Caves {
         var o = 0
         while (o + 8 <= group.size) {
             val n = Db2.le32(group, o + 4); if (n < 0 || o + 8 + n > group.size) break
-            if (tag(group, o) == "MOGP") return trisIn(group, o + 8 + 0x44, o + 8 + n)
+            if (tag(group, o) == "MOGP") return trisIn(group, o + 8 + 0x44, o + 8 + n, Db2.le32(group, o + 8 + 0x34))
             o += 8 + n
         }
         return FloatArray(0)
     }
-    private fun trisIn(b: ByteArray, from: Int, end: Int): FloatArray {
+    /**
+     * THE GROUP'S OWN LAVA (its MLIQ: Searing Gorge's Cauldron, Blackrock Mountain - lava inside a WMO the water grid never sees): its
+     * tiles of a liquid no one wades (the group's liquid type [groupLiquid] in [Terrain.lethal], or a legacy tile type 2 magma / 3 slime)
+     * and their surface; a floor triangle under one is no floor
+     */
+    private class Lava(val x0: Float, val y0: Float, val nx: Int, val ny: Int, val top: FloatArray) {
+        fun covers(x: Float, y: Float, z: Float): Boolean {
+            val i = Math.floor(((x - x0) / Climb.STEP).toDouble()).toInt(); val j = Math.floor(((y - y0) / Climb.STEP).toDouble()).toInt()
+            if (i !in 0 until nx || j !in 0 until ny) return false
+            val t = top[j * nx + i]; return !t.isNaN() && z <= t + 0.5f
+        }
+    }
+    private fun lavaIn(b: ByteArray, at: Int, size: Int, groupLiquid: Int): Lava? {
+        if (size < 30) return null
+        val xv = Db2.le32(b, at); val yv = Db2.le32(b, at + 4); val xt = Db2.le32(b, at + 8); val yt = Db2.le32(b, at + 12)
+        if (xv <= 0 || yv <= 0 || xt <= 0 || yt <= 0 || xv * yv * 8 + xt * yt + 30 > size) return null
+        val cx = java.lang.Float.intBitsToFloat(Db2.le32(b, at + 16)); val cy = java.lang.Float.intBitsToFloat(Db2.le32(b, at + 20))
+        val vAt = at + 30; val tAt = vAt + xv * yv * 8
+        val groupDeadly = groupLiquid in Terrain.lethal
+        val top = FloatArray(xt * yt) { Float.NaN }; var any = false
+        for (j in 0 until yt) for (i in 0 until xt) {
+            val f = b[tAt + j * xt + i].toInt() and 0xFF
+            if (f and 0x0F == 0x0F) continue                                      // no liquid on this tile
+            if (!groupDeadly && (f and 0x03) != 2 && (f and 0x03) != 3) continue   // water: the water grid's business
+            fun h(ii: Int, jj: Int) = java.lang.Float.intBitsToFloat(Db2.le32(b, vAt + (jj * xv + ii) * 8 + 4))
+            top[j * xt + i] = maxOf(h(i, j), h(i + 1, j), h(i, j + 1), h(i + 1, j + 1)); any = true
+        }
+        return if (any) Lava(cx, cy, xt, yt, top) else null
+    }
+    private fun trisIn(b: ByteArray, from: Int, end: Int, groupLiquid: Int = 0): FloatArray {
         var mopy = -1; var nPoly = 0; var polyStride = 2; var movi = -1; var nIdx = 0; var movt = -1; var nVert = 0
+        var lava: Lava? = null
         var o = from
         while (o + 8 <= end) {
             val n = Db2.le32(b, o + 4); if (n < 0 || o + 8 + n > end) break
@@ -165,6 +195,7 @@ object Caves {
                 "MPY2" -> { mopy = o + 8; nPoly = n / 4; polyStride = 4 }      // the newer groups: a face's flags (16 bits), its material
                 "MOVI" -> { movi = o + 8; nIdx = n / 2 }
                 "MOVT" -> { movt = o + 8; nVert = n / 12 }
+                "MLIQ" -> lava = lavaIn(b, o + 8, n, groupLiquid)
             }
             o += 8 + n
         }
@@ -183,6 +214,8 @@ object Caves {
             val nx = ay * bz - az * by; val ny = az * bx - ax * bz; val nz = ax * by - ay * bx
             val len = sqrt((nx * nx + ny * ny + nz * nz).toDouble()); if (len < 1e-9) continue
             if (abs(nz) / len < minUp) continue                 // a wall or a ceiling's slope: no floor (either winding)
+            if (lava != null && lava!!.covers((v(ix[0], 0) + v(ix[1], 0) + v(ix[2], 0)) / 3, (v(ix[0], 1) + v(ix[1], 1) + v(ix[2], 1)) / 3,
+                    (v(ix[0], 2) + v(ix[1], 2) + v(ix[2], 2)) / 3)) continue           // under the group's own lava
             for (k in ix) for (c in 0..2) out.add(v(k, c))
         }
         return out.toFloatArray()
