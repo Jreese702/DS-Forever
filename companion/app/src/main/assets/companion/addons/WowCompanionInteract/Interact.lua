@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i129"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i130"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1263,12 +1263,17 @@ local function assignSlots(doc)
     local ltOn, ltOff = slot("iact", "loottop on"), slot("iact", "loottop off")
     -- the compass bar (Trail.lua, WC.compass): Settings > Top screen's "Compass bar" switch (CompassSwitch); `on` is the add-on's word
     local cpOn, cpOff = slot("iact", "compass on"), slot("iact", "compass off")
+    local ccOn, ccOff = slot("iact", "compass camon"), slot("iact", "compass camoff")     -- cp7: follow the camera (experiment)
     if GB and trustCol then
         doc.proof = { gb = GB, cv = CAPV, boot = BOOT, col = trustCol }
         if selOn and selOff then doc.proof.selc = { on = selOn, off = selOff } end
         if ltOn and ltOff then doc.proof.lootc = { on = ltOn, off = ltOff, top = LOOT.top() } end
         if cpOn and cpOff and type(WC.compass) == "table" then
             doc.proof.compc = { on = cpOn, off = cpOff, show = WC.compass.wanted() and true or false, why = WC.compass.why, v = WC.compass.V }
+            if ccOn and ccOff and WC.compass.camWanted then
+                doc.proof.compc.camOn, doc.proof.compc.camOff = ccOn, ccOff
+                doc.proof.compc.cam = WC.compass.camWanted() and true or false
+            end
         end
     end
     if g then
@@ -2558,9 +2563,14 @@ end
 
 -- /wci compass on|off   the compass bar (Trail.lua): the player's choice, kept in WowCompanionDB.compass (our own saved data)
 function ACT.compass(a)
-    if a ~= "on" and a ~= "off" then return false, "on or off" end
+    if a ~= "on" and a ~= "off" and a ~= "camon" and a ~= "camoff" then return false, "on, off, camon or camoff" end
     if type(WC.compass) ~= "table" then return false, "no compass in this add-on set" end
-    WC.compass.set(a == "on")
+    if a == "camon" or a == "camoff" then
+        if type(WC.compass.setCam) ~= "function" then return false, "no camera mode in this add-on set" end
+        WC.compass.setCam(a == "camon")
+    else
+        WC.compass.set(a == "on")
+    end
     N.n = N.n + 1
     emitSoon()
     return true
