@@ -3891,7 +3891,9 @@ class MapView(context: Context) : View(context) {
         // CHECKPOINT - the first bend round danger or a slope - so the top screen's arrow follows the safe way; on to the next as
         // each is passed (DangerGrid.passed). No bend: the step's own way, as before.
         dangerLeg(focusQid, r)?.let { leg ->
-            pinWhy = "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}" + (if (SafePathV2.enabled && v2Shown) " (SafePath v2)" else if (shipShown) " (shipped network)" else "")
+            val sl = shipPinLeg
+            pinWhy = if (shipShown && sl != null && !(SafePathV2.enabled && v2Shown)) ShippedPins.pinWhy(sl, r.label ?: "the quest", shipStale)
+                else "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}" + (if (SafePathV2.enabled && v2Shown) " (SafePath v2)" else "")
             return leg[1]
         }
         if (r.kind == CursorRoute.Kind.GOAL) return none("the route is direct (no checkpoint, no way)")
@@ -3980,7 +3982,7 @@ class MapView(context: Context) : View(context) {
             val filesDir = context.filesDir
             RouteWork.run({ buildDangerGrid(mapId, plv, mine, r, bl, filesDir) }) { built ->
                 if (dGridKey != key) return@run                     // a newer grid was asked for meanwhile
-                dGrid = built.grid; dGridMap = mapId
+                dGrid = built.grid; dGridMap = mapId; dGridSnap = built.snap
                 dangerLegs.clear()
                 android.util.Log.i("WCMAP", built.log)
                 invalidate()
@@ -3989,7 +3991,11 @@ class MapView(context: Context) : View(context) {
         return dGrid?.takeIf { dGridMap == mapId }
     }
 
-    private class BuiltGrid(val grid: DangerGrid?, val log: String)
+    /** [snap]: the same ground read FINE for the shipped network's attach snap (ShippedSnap.Ground: the leg's cost without the 25 yd
+     *  cell's water, the WTR2 depths per vertex, the placed buildings' own room outlines), in world yards */
+    /** the last grid's ground read fine for the shipped network's snap ([BuiltGrid.snap]) */
+    private var dGridSnap: ShippedSnap.Ground? = null
+    private class BuiltGrid(val grid: DangerGrid?, val log: String, val snap: ShippedSnap.Ground? = null)
 
     /** the route's grid for [mapId], on the route thread (the zone's files read here, never on the UI thread) */
     private fun buildDangerGrid(mapId: Int, plv: Int, mine: Int, r: PoiStore.Rect, bl: List<Place>?, filesDir: java.io.File): BuiltGrid {
@@ -4007,8 +4013,9 @@ class MapView(context: Context) : View(context) {
                     p.levels.minOf { it.lymin }, p.levels.maxOf { it.lymax })
             }, r)
             val cellX = DangerGrid.CELL_YD / r.width; val cellY = DangerGrid.CELL_YD / r.height
-            val ground: ((Double, Double) -> Float)? = { x, y ->
-                val wy = r.left - x * r.width; val wx = r.top - y * r.height
+            // the leg's cost at the map's (x, y) = world (wx, wy); [wet]: with the water (the danger grid's ground) - without it, the
+            // shipped network's snap reads the water itself, per vertex
+            val legAt: (Double, Double, Double, Double, Boolean) -> Float = { x, y, wx, wy, wet ->
                 val slope = tg?.at(wx, wy) ?: Terrain.NO_DATA
                 val f0 = Terrain.legCost(tg, wx, wy, slope)   // rock fields dearer, a cell off a cliff (test12, test13)
                 // the zone's border band (test54: "that Westfall quest is sending me along the mountains"): dear unless level
@@ -4017,7 +4024,7 @@ class MapView(context: Context) : View(context) {
                 // every placed building's rooms (b-route-data-all: the harvest's cover grid, from the game files), and the baked interiors
                 val built = maxOf(Buildings.cover(foot, x, y, cellX, cellY, r),
                     bg?.at(wx, wy)?.takeIf { it != Terrain.NO_DATA }?.let { it / 9f } ?: 0f)
-                val depth = wg?.at(wx, wy) ?: Float.NaN
+                val depth = if (wet) wg?.at(wx, wy) ?: Float.NaN else Float.NaN
                 when {
                     !depth.isNaN() && depth != SafePath.Water.BRIDGE && depth > SafePath.FORD_DEPTH -> Terrain.WALL
                     !depth.isNaN() && depth != SafePath.Water.BRIDGE -> maxOf(f, 1f) * SafePath.FORD_COST.toFloat()
@@ -4029,11 +4036,15 @@ class MapView(context: Context) : View(context) {
                     else -> f
                 }
             }
+            val ground: ((Double, Double) -> Float)? = { x, y -> legAt(x, y, r.left - x * r.width, r.top - y * r.height, true) }
+            // the shipped network's snap: the same dry ground at the spot itself, the water per vertex, the rooms' own outlines
+            val snap = ShippedSnap.Ground({ wx, wy -> legAt((r.left - wy) / r.width, (r.top - wx) / r.height, wx, wy, false) }, wg,
+                if (foot.isEmpty()) null else { wx, wy -> foot.any { it.holds(wx, wy) } })
             val g = if (sp.isEmpty() && tg == null && foot.isEmpty()) null else DangerGrid.build(sp, mine, plv, r.width, r.height, ground)
             val log = "terrain: grid for map $mapId ${if (tg != null) "present" else "missing"}; " +
                 "${foot.size} buildings as walls; ${Terrain.Walked.count()} walked cells kept" +
                 (Roads.of(mapId)?.let { "; roads: ${Roads.roadCells(mapId)} road cells" } ?: "")
-            return BuiltGrid(g, log)
+            return BuiltGrid(g, log, snap)
         }
     }
 
@@ -4166,7 +4177,13 @@ class MapView(context: Context) : View(context) {
     // Planned on the route thread; kept while the player is within SafePathV2.OFF_ROUTE_YD of the way still ahead (its passed
     // checkpoints dropped), planned again when the player strays, the goal moves or the network / grid / danger change, at most once
     // every SafePathV2.REPLAN_MS a quest. No shipped network here, or no attach within the limit: null, the older route (its why logged)
-    private class ShipLeg(val world: List<DoubleArray>, val gx: Double, val gy: Double, val stamp: String, val map: Int)
+    /** [leg]: the way's checkpoints (ShippedPins: its bends and the named checkpoints on it, the passed ones dropped), world yards;
+     *  [atX] / [atY] where it was planned (planned again [ShippedPins.REPLAN_YD] on), [stale] the file's "may be out of date" words */
+    private class ShipLeg(val leg: ShippedPins.Leg, val gx: Double, val gy: Double, val stamp: String, val map: Int,
+                          val atX: Double, val atY: Double, val stale: String?) {
+        val world get() = leg.pts
+        fun with(l: ShippedPins.Leg) = ShipLeg(l, gx, gy, stamp, map, atX, atY, stale)
+    }
     /** [leg]: the way in the map's 0..1, the player first (null: straight on to the goal while the first plan is made) */
     private class Shipped(val leg: List<DoubleArray>?)
     private val shipLegs = HashMap<Int, ShipLeg>()
@@ -4175,11 +4192,14 @@ class MapView(context: Context) : View(context) {
     private val shipNone = HashMap<Int, String>()          // quest -> the stamp and goal the network gave no way for (the older route's)
     private val shipSaid = HashMap<Int, String>()
     private var shipWhyLast = ""
-    /** the focused quest's way came from the shipped network (the pin's word) */
+    /** the focused quest's way came from the shipped network (the pin's word); [shipPinLeg] its checkpoints (their names), [shipStale]
+     *  its file's "may be out of date" words (the pin's log, the map's note) */
     private var shipShown = false
+    private var shipPinLeg: ShippedPins.Leg? = null
+    private var shipStale: String? = null
     private var shipListen = false
     private fun shipOff(q: Int, why: String): Shipped? {
-        if (q == focusQid) shipShown = false
+        if (q == focusQid) { shipShown = false; shipPinLeg = null }
         if (why != shipWhyLast) { shipWhyLast = why; android.util.Log.i("WCMAP", "safepath net: quest $q none: $why - the older route") }
         return null
     }
@@ -4204,35 +4224,65 @@ class MapView(context: Context) : View(context) {
         val g = dangerGrid()
         val k = DangerGrid.strength(Settings.avoidDanger)
         val stamp = "$mapId:${System.identityHashCode(sec)}:${System.identityHashCode(g)}:$k:$mine"
+        // the kept way, its passed checkpoints dropped for good (test54: never sent back to one already walked past)
         val old = shipLegs[q]?.takeIf { it.map == mapId && hypot(it.gx - goal[0], it.gy - goal[1]) <= SafePathV2.GOAL_MOVED_YD }
-        val shown = old?.let { o -> DangerGrid.passed(listOf(doubleArrayOf(px, py)) + o.world.drop(1).map { onMap(it) }, ax, ay) ?: listOf(doubleArrayOf(px, py), onMap(o.world.last())) }
+            ?.let { o -> val l = ShippedPins.dropPassed(o.leg, here, ::onMap, ax, ay); if (l === o.leg) o else o.with(l).also { shipLegs[q] = it } }
+        val shown = old?.let { o -> listOf(doubleArrayOf(px, py)) + o.world.drop(1).map { onMap(it) } }
         val off = old?.let { SafePathV2.offWay(here, it.world) } ?: Double.MAX_VALUE
         val now = android.os.SystemClock.elapsedRealtime()
-        val due = old == null || off > SafePathV2.OFF_ROUTE_YD || old.stamp != stamp
+        // planned again: none yet, the network / grid / danger changed, strayed 30 yd off it, or walked 30 yd on since (kept then
+        // unless the new way is SafePathV2.HYSTERESIS shorter than the kept one's rest)
+        val walkedOn = old != null && hypot(here[0] - old.atX, here[1] - old.atY) >= ShippedPins.REPLAN_YD
+        val strayed = off > SafePathV2.OFF_ROUTE_YD
+        val due = old == null || strayed || old.stamp != stamp || walkedOn
         val noneKey = "$stamp:${(goal[0] / SafePathV2.GOAL_MOVED_YD).toInt()}:${(goal[1] / SafePathV2.GOAL_MOVED_YD).toInt()}:" +
             "${(here[0] / ShippedRoute.ATTACH_STEP_YD / 6).toInt()}:${(here[1] / ShippedRoute.ATTACH_STEP_YD / 6).toInt()}"
         if (shipNone[q] == noneKey) return shipOff(q, shipSaid[q] ?: "no way on the shipped network")
         if (due && now - (shipAt[q] ?: Long.MIN_VALUE / 2) >= SafePathV2.REPLAN_MS && shipPending.add(q)) {
             shipAt[q] = now
             val toExit = route.kind == CursorRoute.Kind.EXIT
+            val fine = dGridSnap.takeIf { g != null }
+            val stale = got.second.stale
+            val keptYd = old?.let { ShippedPins.restYd(it.leg, here) }
+            val sameStamp = old?.stamp == stamp
             RouteWork.run({
-                // the danger grid's ground (its walls: cliffs, buildings, deep water) and the character's danger, in world yards
-                val ground: (Double, Double) -> Float = if (g == null) { _, _ -> 1f } else { x, y -> g.ground((r.left - y) / ax, (r.top - x) / ay) }
+                // the danger grid's ground (its walls: cliffs, buildings, deep water) and the character's danger, in world yards; the
+                // attach snap over the same ground read fine (ShippedSnap: the water per vertex, the rooms' outlines, straight lines
+                // every yard), the router's other walks over it as one cost
+                val coarse: (Double, Double) -> Float = if (g == null) { _, _ -> 1f } else { x, y -> g.ground((r.left - y) / ax, (r.top - x) / ay) }
+                val ground = fine?.asCost ?: coarse
                 val danger: ((Double, Double) -> Float)? = if (g == null) null else { x, y -> g.at((r.left - y) / ax, (r.top - x) / ay) }
-                ShippedRoute.plan(sec, ground, danger, here, goal, k, toExit, roadmap = ShippedRoute.roadmapOf(got.second.pack.roadmap, sec))
-            }) { res ->
+                val snapLog = java.util.Collections.synchronizedList(ArrayList<String>())
+                val res = ShippedRoute.plan(sec, ground, danger, here, goal, k, toExit, roadmap = ShippedRoute.roadmapOf(got.second.pack.roadmap, sec),
+                    attacher = ShippedSnap.attacher(fine) { snapLog.add(it) })
+                Triple(res, if (res.reached) ShippedPins.checkpoints(res.pts, ShippedPins.named(sec)) else null, snapLog.toList())
+            }) { (res, leg, snapLog) ->
                 shipPending.remove(q)
-                val said = if (res.reached) "quest $q on map $mapId: ${res.yd.toInt()} yd, ${res.bends} bends (${res.why})" +
-                    (got.second.stale?.let { "; may be out of date ($it)" } ?: "") else res.why
-                if (res.reached) { shipNone.remove(q); shipLegs[q] = ShipLeg(res.pts, goal[0], goal[1], stamp, mapId) }
+                for (l in snapLog.distinct()) android.util.Log.i("WCMAP", "safepath net: quest $q $l")
+                val mark = stale?.let { "; may be out of date ($it)" } ?: ""
+                val said = if (res.reached) "quest $q on map $mapId: ${res.yd.toInt()} yd, ${res.bends} bends (${res.why})$mark" else res.why
+                if (res.reached && leg != null) {
+                    shipNone.remove(q)
+                    // the hysteresis: a replan while on the kept way takes the new one only when it is that much shorter
+                    val cur = shipLegs[q]
+                    val keep = cur != null && sameStamp && !ShippedPins.takeNew(keptYd, res.yd, strayed)
+                    shipLegs[q] = if (keep) ShipLeg(cur!!.leg, cur.gx, cur.gy, stamp, mapId, here[0], here[1], stale)
+                                  else ShipLeg(leg, goal[0], goal[1], stamp, mapId, here[0], here[1], stale)
+                    if (keep) android.util.Log.i("WCMAP", "safepath net: quest $q kept its way (${keptYd?.toInt()} yd left; the new " +
+                        "${res.yd.toInt()} yd is not ${((SafePathV2.HYSTERESIS - 1) * 100).toInt()}% shorter)")
+                }
+                else if (shipLegs[q] != null && sameStamp && !strayed) {
+                    // a walked-on replan found none from here: the kept way stays (the player is still on it)
+                    shipLegs[q]?.let { c -> shipLegs[q] = ShipLeg(c.leg, c.gx, c.gy, stamp, mapId, here[0], here[1], stale) }
+                }
                 else { shipNone[q] = noneKey; shipLegs.remove(q) }
+                if (shipSaid[q] != said) android.util.Log.i("WCMAP", if (res.reached) "safepath net: $said" else "safepath net: quest $q none: $said - the older route")
                 shipSaid[q] = said
-                android.util.Log.i("WCMAP", if (res.reached) "safepath net: $said" else "safepath net: quest $q none: $said - the older route")
                 invalidate()
             }
         }
-        if (old == null) { if (q == focusQid) shipShown = false; return Shipped(null) }
-        if (q == focusQid) shipShown = true
+        if (old == null) { if (q == focusQid) { shipShown = false; shipPinLeg = null }; return Shipped(null) }
+        if (q == focusQid) { shipShown = true; shipPinLeg = old.leg; shipStale = old.stale }
         return Shipped(shown?.takeIf { it.size > 2 })
     }
 
@@ -6195,6 +6245,9 @@ class MapView(context: Context) : View(context) {
                 }
             }
         }
+        // the shipped network's file is for another game build (ShippedNets: still used): said, in the note's place
+        if (dangerNote == null && !compact && Settings.questTracking == "safepath" && shipShown && shipStale != null)
+            dangerNote = "SafePath's network for this zone may be out of date (the game was updated)"
         // the zone's route data not ready yet (b-route-data-all): said, in the note's place
         if (dangerNote == null && !compact && Settings.questTracking == "safepath" && rect?.valid == true) {
             val mid = m.optInt("mapID", 0)
