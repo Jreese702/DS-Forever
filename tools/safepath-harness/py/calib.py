@@ -3,6 +3,8 @@
 import os, sys, json, math, struct, glob
 import heights as HT
 import faces as FC
+try: sys.stdout.reconfigure(encoding='utf-8')     # the routes' names carry arrows (Windows' console is cp1252)
+except Exception: pass
 S = HT.S; ORG = HT.ORG
 def surface_z(wx, wy):
     gx = (ORG - wy) / S; gy = (ORG - wx) / S
@@ -56,12 +58,14 @@ def runs(rt, step=0.5):
     pts = rt['pts']; best = {l: (0.0, '') for l in LIMITS}
     for k in range(len(pts) - 1):
         a, b = pts[k], pts[k + 1]
-        if (len(a) > 2 and a[2] == 1) or (len(b) > 2 and b[2] == 1): continue
+        if (len(a) > 2 and a[2] in (1, 2)) or (len(b) > 2 and b[2] in (1, 2)): continue
         L = math.hypot(b[0] - a[0], b[1] - a[1]); n = max(1, int(L / step))
         samp = []
         for s in range(n + 1):
             x = a[0] + (b[0] - a[0]) * s / n; y = a[1] + (b[1] - a[1]) * s / n
-            samp.append((FC.face_at(x, y), surface_z(x, y), covered(x, y)))
+            # the gentlest face within a quarter yard (as Climb's lineClear: a line along an edge walks its gentler side)
+            f = min(FC.face_at(x + dx, y + dy) for dx, dy in ((0, 0), (0.25, 0), (-0.25, 0), (0, 0.25), (0, -0.25)))
+            samp.append((f, surface_z(x, y), covered(x, y)))
         for l in LIMITS:
             z0 = None; zl = zh = 0
             for sl, z, cov in samp:

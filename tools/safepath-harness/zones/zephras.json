@@ -22,7 +22,7 @@
   4400,
   1600,
   2500,
-  0
+  -250
  ],
  "closeups": [
   {
@@ -41,6 +41,15 @@
     2750,
     1150,
     450
+   ]
+  },
+  {
+   "name": "Rohashi Spires",
+   "box": [
+    3300,
+    2850,
+    700,
+    -100
    ]
   }
  ],
@@ -174,8 +183,53 @@
      687
     ]
    }
+  },
+  {
+   "name": "Lorthuna's platform (Rohashi Spires, by the portal, the stairs and the updraft)",
+   "from": {
+    "node": "Valanaar"
+   },
+   "to": {
+    "airChainTop": true
+   }
   }
  ],
  "voidBelow": 300,
- "notes": "Rohashi Spires (2987, 57): a floating Skywall entrance platform (kl_skywall_entrance.wmo, z 1163) over the void; no taxi node, area trigger or walkable ground reaches it in the client data - manual link, unknown; left out of the review."
+ "notes": "Rohashi Spires: floating (kl_skywall_*); reached by a portal near Valennia Stormfist in the Sanctum of Storms (position approximate), stairs on the spires' own floors, an updraft to Lorthuna's platform, a portal out to Valanaar - all manual links (airChain)",
+ "friendlyNames": [
+  "^Windshaper",
+  "^High Order"
+ ],
+ "airChain": {
+  "floor": [
+   427314,
+   427678,
+   387612
+  ],
+  "near": [
+   3060,
+   300
+  ],
+  "portalFrom": [
+   3088,
+   603
+  ],
+  "stairTop": [
+   3061,
+   314
+  ],
+  "platform": [
+   2970,
+   77
+  ],
+  "exitTo": [
+   1993,
+   527
+  ],
+  "notes": "portalFrom: Valennia Stormfist (253590, gives Confront Lorthuna) - the portal is 'a short run' from her, its exact spot not in the data; stairTop: Peacekeeper 256635; platform: High Priestess Lorthuna 252957's spawns; exitTo: Elaadrin Evengale (252475, ends Confront Lorthuna) in Valanaar; base: the sanctuary (kl_skywall_entrance_building_01) at the spire's foot",
+  "base": [
+   3183,
+   466
+  ]
+ }
 }

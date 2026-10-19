@@ -175,16 +175,24 @@ object Terrain {
             for (l in 0 until layers) {
                 val ip = base + inst + l * 24
                 if (ip + 24 > end) break
+                val low = java.lang.Float.intBitsToFloat(Db2.le32(adt, ip + 4))
                 val top = java.lang.Float.intBitsToFloat(Db2.le32(adt, ip + 8))
                 val xo = adt[ip + 12].toInt() and 0xFF; val yo = adt[ip + 13].toInt() and 0xFF
                 val w = adt[ip + 14].toInt() and 0xFF; val hh = adt[ip + 15].toInt() and 0xFF
-                val bm = Db2.le32(adt, ip + 16)
+                val bm = Db2.le32(adt, ip + 16); val vd = Db2.le32(adt, ip + 20)
                 if (top.isNaN() || w == 0 || hh == 0 || xo + w > 8 || yo + hh > 8) continue
+                // the surface's own heights at its (w+1) x (h+1) vertices, where the instance keeps them first in its vertex data (a stream
+                // running downhill: its top alone read it deep all along - Silverpine's 0.4 yd stream walled the zone in two); kept only when
+                // they lie within the instance's own low..top (else that data is depth or uv only: the flat top)
+                val nv = (w + 1) * (hh + 1)
+                val vh: FloatArray? = if (vd > 0 && base + vd + nv * 4 <= end) FloatArray(nv) { java.lang.Float.intBitsToFloat(Db2.le32(adt, base + vd + it * 4)) }
+                    .takeIf { a -> a.all { !it.isNaN() && it >= minOf(low, top) - 0.5f && it <= top + 0.5f } } else null
                 for (y in 0 until hh) for (x in 0 until w) {
                     val bit = y * w + x
                     if (bm != 0) { val bp = base + bm + bit / 8; if (bp >= end || (adt[bp].toInt() shr (bit % 8)) and 1 == 0) continue }
                     val k = (cy * 8 + yo + y) * TILE_V + (cx * 8 + xo + x)
-                    if (out[k].isNaN() || top > out[k]) out[k] = top
+                    val surf = if (vh == null) top else (vh[y * (w + 1) + x] + vh[y * (w + 1) + x + 1] + vh[(y + 1) * (w + 1) + x] + vh[(y + 1) * (w + 1) + x + 1]) / 4f
+                    if (out[k].isNaN() || surf > out[k]) out[k] = surf
                     any = true
                 }
             }

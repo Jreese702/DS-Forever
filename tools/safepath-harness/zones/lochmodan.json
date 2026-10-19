@@ -1,0 +1,207 @@
+{
+ "tag": "lochmodan",
+ "dir": "azeroth",
+ "faction": "alliance",
+ "zone": 1432,
+ "area": 38,
+ "level": 14,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1432,
+   38
+  ],
+  [
+   1426,
+   1
+  ],
+  [
+   1437,
+   11
+  ],
+  [
+   1427,
+   51
+  ],
+  [
+   1418,
+   3
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1432,
+  1426
+ ],
+ "title": "Loch Modan",
+ "crop": [
+  -4480,
+  -6330,
+  -1990,
+  -4760
+ ],
+ "closeups": [
+  {
+   "name": "South Gate tunnels and Valley of Kings",
+   "box": [
+    -5450,
+    -5800,
+    -2150,
+    -2700
+   ]
+  },
+  {
+   "name": "Algaz Station, Dun Algaz and North Gate",
+   "box": [
+    -4450,
+    -4950,
+    -2300,
+    -2850
+   ]
+  },
+  {
+   "name": "Silver Stream Mine and Stonewrought Dam",
+   "box": [
+    -4600,
+    -5050,
+    -2800,
+    -3450
+   ]
+  },
+  {
+   "name": "Ironband's Excavation and Farstrider Lodge",
+   "box": [
+    -5450,
+    -5950,
+    -3650,
+    -4400
+   ]
+  },
+  {
+   "name": "the Badlands pass",
+   "box": [
+    -5850,
+    -6330,
+    -3000,
+    -3600
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "Silver Stream Mine's mouth (Tunnel Rat kobolds)",
+   "from": {
+    "node": "Thelsamar"
+   },
+   "to": {
+    "cave": 110750,
+    "near": [
+     -4849,
+     -2965
+    ]
+   }
+  },
+  {
+   "name": "Stonewrought Dam",
+   "from": {
+    "node": "Thelsamar"
+   },
+   "to": {
+    "node": "Stonewrought Dam"
+   }
+  },
+  {
+   "name": "Mo'grosh Stronghold (ogres)",
+   "from": {
+    "node": "Thelsamar"
+   },
+   "to": {
+    "camp": "Mo'grosh Stronghold"
+   }
+  },
+  {
+   "name": "Ironband's Excavation Site (dig platform)",
+   "from": {
+    "node": "Thelsamar"
+   },
+   "to": {
+    "wmo": 114107,
+    "near": [
+     -5707,
+     -3836
+    ]
+   }
+  },
+  {
+   "name": "The Farstrider Lodge",
+   "from": {
+    "node": "Thelsamar"
+   },
+   "to": {
+    "wmo": 112863,
+    "near": [
+     -5656,
+     -4275
+    ]
+   }
+  },
+  {
+   "name": "Stonesplinter Valley (troggs)",
+   "from": {
+    "node": "Valley of Kings"
+   },
+   "to": {
+    "camp": "Stonesplinter Valley"
+   }
+  },
+  {
+   "name": "Grizzlepaw Ridge's den",
+   "from": {
+    "node": "Thelsamar"
+   },
+   "to": {
+    "cave": 110497,
+    "near": [
+     -5637,
+     -3029
+    ]
+   }
+  },
+  {
+   "name": "through the South Gate tunnels to Dun Morogh",
+   "from": {
+    "node": "Valley of Kings"
+   },
+   "to": {
+    "xy": [
+     -5640,
+     -2240
+    ]
+   }
+  },
+  {
+   "name": "Dun Algaz tunnel to the Wetlands (south mouth)",
+   "from": {
+    "node": "Algaz Station"
+   },
+   "to": {
+    "xy": [
+     -4664,
+     -2696
+    ]
+   }
+  },
+  {
+   "name": "south through the pass to the Badlands border",
+   "from": {
+    "node": "Thelsamar"
+   },
+   "to": {
+    "xy": [
+     -6300,
+     -3400
+    ]
+   }
+  }
+ ]
+}

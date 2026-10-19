@@ -1,0 +1,17 @@
+{"tag": "darkshore", "dir": "kalimdor", "faction": "alliance", "zone": 1439, "area": 148, "level": 14, "friendlyMinLevel": 100,
+ "maps": [[1439, 148], [1440, 331], [1448, 361]], "cities": [], "border": [1439, 1440],
+ "title": "Darkshore", "crop": [7800, 4000, 1100, -1800],
+ "closeups": [{"name": "Auberdine", "box": [6750, 6150, 900, 100]}, {"name": "Cliffspring and Althalaxx", "box": [7400, 6500, 100, -1000]},
+  {"name": "Ruins of Mathystra", "box": [7700, 7100, -600, -1300]}, {"name": "Blackwood Den", "box": [5000, 4200, 600, -200]}],
+ "goals": [
+  {"name": "Bashal'Aran (the satyrs and grell)", "from": {"node": "Auberdine"}, "to": {"camp": "Bashal'Aran"}},
+  {"name": "the Cliffspring River cave's mouth", "from": {"node": "Auberdine"}, "to": {"cave": 111160, "near": [6876, -659]}},
+  {"name": "the Tower of Althalaxx", "from": {"node": "Auberdine"}, "to": {"wmo": 107196, "near": [7177, -761]}},
+  {"name": "the Ruins of Mathystra (the naga)", "from": {"node": "Auberdine"}, "to": {"camp": "Ruins of Mathystra"}},
+  {"name": "Ameth'Aran (the road south)", "from": {"node": "Auberdine"}, "to": {"node": "Ameth'Aran"}},
+  {"name": "the Rut'theran boat's pier end (the boat itself is a manual link)", "from": {"node": "Auberdine"}, "to": {"xy": [6580, 755]}},
+  {"name": "Grove of the Ancients", "from": {"node": "Ameth'Aran"}, "to": {"node": "Grove of the Ancients"}},
+  {"name": "Blackwood Den's mouth (the furbolgs)", "from": {"node": "Grove of the Ancients"}, "to": {"cave": 110497, "near": [4621, 24]}},
+  {"name": "the Master's Glaive", "from": {"node": "Grove of the Ancients"}, "to": {"camp": "The Master's Glaive"}},
+  {"name": "the way to Ashenvale", "from": {"node": "Grove of the Ancients"}, "to": {"xy": [4166.67, 104.17]}}
+ ]}

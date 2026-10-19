@@ -4,6 +4,8 @@
 # 2 yd stretch of the straight line on the bilinear surface.
 import json, math, os, sys
 import heights as HT
+try: sys.stdout.reconfigure(encoding='utf-8')     # the routes' names carry arrows (Windows' console is cp1252)
+except Exception: pass
 S = HT.S; ORG = HT.ORG
 WALL = 45.0
 def vh(gc, gr):
@@ -83,7 +85,7 @@ if __name__ == '__main__':
         pts = rt['pts']
         for k in range(len(pts) - 1):
             a, b = pts[k], pts[k + 1]; total += 1
-            if (len(a) > 2 and a[2] == 1) or (len(b) > 2 and b[2] == 1): continue      # a cave: its own floor, not the hill over it
+            if (len(a) > 2 and a[2] in (1, 2)) or (len(b) > 2 and b[2] in (1, 2)): continue      # a cave: its own floor, not the hill over it
             w, n = lattice_worst(a, b); sw = surface_worst(a, b); fw, fn = line_faces(a, b)
             if n: bad.append('%s%d-%s%d (%.0f deg, %d wall steps)' % (rt['letter'], k, rt['letter'], k + 1, w, n))
             if fn: bad.append('%s%d-%s%d (faces: %.0f deg over %.1f yd)' % (rt['letter'], k, rt['letter'], k + 1, fw, fn * 0.5))
