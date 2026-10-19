@@ -29,6 +29,10 @@ import kotlin.math.sign
 object Climb {
     const val STEP = 100.0 / 3.0 / 8.0          // the lattice: an ADT chunk's 8 cells
     private const val ORG = 32.0 * MapHarvest.ADT_YD
+    /** the map's corner exact (32 ADTs of 1600/3 yd), for where a point falls within a cell (its face, its floor's height): the lattice's
+     *  own [ORG] (MapHarvest.ADT_YD's 533.33333) is 0.0001 yd off the game's, and a sample 0.0002 yd from a triangle's edge took the face
+     *  beside it (Durotar G8: the level west face, where the game's own and py/segcheck.py's is the 47.9 degree south one) */
+    private const val ORG_EXACT = 32.0 * 1600.0 / 3.0
     /** a lattice step's water samples: every half yard along it, a side step's and a diagonal's (route's water check, as [walkable]'s) */
     const val LEVEL = 0; const val CLIMB = 1; const val STEEP = 2; const val WALL = 3
     const val CLIMB_DEG = 20.0; const val STEEP_DEG = 35.0; const val WALL_DEG = 45.0
@@ -55,7 +59,7 @@ object Climb {
          *  each); LEVEL when the faces are not known, a WALL off the grid */
         fun faceAt(wx: Double, wy: Double): Int {
             val f = faces ?: return LEVEL
-            val gx = (ORG - wy) / STEP - gc0; val gy = (ORG - wx) / STEP - gr0
+            val gx = (ORG_EXACT - wy) / STEP - gc0; val gy = (ORG_EXACT - wx) / STEP - gr0
             val i = floor(gx).toInt(); val j = floor(gy).toInt()
             if (i < 0 || j < 0 || i >= nx || j >= ny) return WALL
             val fx = gx - i; val fy = gy - j
@@ -80,6 +84,40 @@ object Climb {
                 if (!(short48(x, y) || short48(x + 0.25, y) || short48(x - 0.25, y) || short48(x, y + 0.25) || short48(x, y - 0.25))) return false
                 run += step; if (run > SHORT_STEEP_YD) return false
             }
+            return floorClear(a, b, n)
+        }
+        /** the floor a walker is on at each vertex ([floorLayers]' height; NaN off every floor) and whether it stands more than a step
+         *  ([Caves.STEP_UP_YD]) over its own ground there; null when the lattice was built with no floors (the device's) */
+        var deckZ: FloatArray? = null
+        var deckHigh: BooleanArray? = null
+        /** the line's own rise on a floor, as py/segcheck.py walks it: where a sample's cell has its four corners on a floor, the floor's
+         *  height there (straight between them) against the height 2 yd back along the line; 45 degrees or more is a wall. The lattice
+         *  classes a diagonal by the easier of its corner pairs, and a floor sloping 49 degrees across a cell reads 42 and 37 along its
+         *  sides (Stormwind's harbour ramp; Shen'dralar's stair, 59 along the line) */
+        private fun floorClear(a: DoubleArray, b: DoubleArray, n: Int): Boolean {
+            val dz = deckZ ?: return true
+            val len = hypot(b[0] - a[0], b[1] - a[1]); val step = len / n
+            val win = max(1, Math.round(2.0 / max(step, 1e-6)).toInt())
+            val zs = DoubleArray(n + 1); var runFrom = -1; var steep = 0.0
+            for (q in 0..n) {
+                val x = a[0] + (b[0] - a[0]) * q / n; val y = a[1] + (b[1] - a[1]) * q / n
+                val gx = (ORG_EXACT - y) / STEP - gc0; val gy = (ORG_EXACT - x) / STEP - gr0
+                val i = floor(gx).toInt(); val j = floor(gy).toInt()
+                val z = if (i < 0 || j < 0 || i + 1 >= nx || j + 1 >= ny) Double.NaN else {
+                    val v0 = dz[j * nx + i]; val v1 = dz[j * nx + i + 1]; val v2 = dz[(j + 1) * nx + i]; val v3 = dz[(j + 1) * nx + i + 1]
+                    val fc = gx - i; val fr = gy - j
+                    ((v0 * (1 - fc) + v1 * fc) * (1 - fr) + (v2 * (1 - fc) + v3 * fc) * fr)      // NaN when a corner is off the floor
+                }
+                if (z.isNaN()) { runFrom = -1; steep = 0.0; continue }
+                if (runFrom < 0) runFrom = q
+                zs[q] = z
+                if (q - runFrom < win) continue
+                // the user (2026-10-19, "Yes, floors too"): a floor's short steep stretch, 45-48 degrees for no more than SHORT_STEEP_YD, is
+                // walked as on the terrain; 48 degrees or more, or a longer stretch, is a wall (segcheck's line_walk the same)
+                val deg = Math.toDegrees(atan(abs(z - zs[q - win]) / (win * step)))
+                if (deg >= SHORT_STEEP_DEG) return false
+                if (deg >= WALL_DEG) { steep += step; if (steep > SHORT_STEEP_YD) return false } else steep = 0.0
+            }
             return true
         }
         /** the faces 45-48 degrees steep (each cell's four, a bit each: [SHORT_STEEP_DEG]); null when not read */
@@ -87,7 +125,7 @@ object Climb {
         /** the face under world ([wx], [wy]) a wall under [SHORT_STEEP_DEG] */
         fun short48(wx: Double, wy: Double): Boolean {
             val f = faces48 ?: return false
-            val gx = (ORG - wy) / STEP - gc0; val gy = (ORG - wx) / STEP - gr0
+            val gx = (ORG_EXACT - wy) / STEP - gc0; val gy = (ORG_EXACT - wx) / STEP - gr0
             val i = floor(gx).toInt(); val j = floor(gy).toInt()
             if (i < 0 || j < 0 || i >= nx || j >= ny) return false
             val fx = gx - i; val fy = gy - j
@@ -111,6 +149,20 @@ object Climb {
                 dj == 0 -> h(i, j, di)
                 di == 0 -> v(i, j, dj)
                 else -> {
+                    // A FLOOR'S EDGE ACROSS THE CELL: a diagonal cuts through the cell's middle, not by the corner its pair of steps is
+                    // classed by. With an end on a floor, some of the cell's four corners off it, and a floor corner standing more than a
+                    // step over its own ground, the line steps on or off the floor across its edge where it stands over the ground: a wall
+                    // (a step off it is one at a vertex too; a line on the ground at both ends past a floor's corner stays the ground's).
+                    // Wetlands' dig platform (the line cut past the ramp's foot onto the platform's side, 3.5 yd up), the Hinterlands'
+                    // rope bridge and Dustwallow's (off the deck's side 3-4 yd over the ground)
+                    val dz = deckZ; val dh = deckHigh
+                    if (dz != null && dh != null) {
+                        val ks = intArrayOf(j * nx + i, j * nx + i + di, (j + dj) * nx + i, (j + dj) * nx + i + di)
+                        if (i + di in 0 until nx && j + dj in 0 until ny && i in 0 until nx && j in 0 until ny) {
+                            val on = ks.count { !dz[it].isNaN() }
+                            if (on in 1..3 && (!dz[ks[0]].isNaN() || !dz[ks[3]].isNaN()) && ks.any { dh[it] }) return WALL
+                        }
+                    }
                     val corners = min(max(h(i, j, di), v(i + di, j, dj)), max(v(i, j, dj), h(i, j + dj, di)))
                     // straight across the cell, through its middle vertex: each half of the diagonal walked on the gentler face beside it
                     val f = faces ?: return corners
@@ -314,6 +366,7 @@ object Climb {
         val faces = if (centre != null) ByteArray(nx * ny) else null
         val faces48 = if (centre != null) ByteArray(nx * ny) else null          // the faces 45-48 degrees steep (a bit each: SHORT_STEEP_DEG)
         val candE = BooleanArray(nx * ny); val candS = BooleanArray(nx * ny)  // a wall step under SHORT_STEEP_DEG, by its slope alone
+        val deckZ = if (deck != null) FloatArray(nx * ny) else null; val deckHigh = if (deck != null) BooleanArray(nx * ny) else null
         for (j in 0 until ny) for (i in 0 until nx) {
             val h = height(gr0 + j, gc0 + i)
             var e = classOf(height(gr0 + j, gc0 + i + 1) - h); var s = classOf(height(gr0 + j + 1, gc0 + i) - h)
@@ -344,6 +397,7 @@ object Climb {
                 val x = ORG - (gr0 + j) * STEP; val y = ORG - (gc0 + i) * STEP
                 val dv = deck(x, y); val dE = deck(x, ORG - (gc0 + i + 1) * STEP); val dS = deck(ORG - (gr0 + j + 1) * STEP, y)
                 val sv = if (dv.isNaN()) h else dv
+                deckZ!![j * nx + i] = dv; deckHigh!![j * nx + i] = !dv.isNaN() && dv - h > Caves.STEP_UP_YD
                 // ... and a step off a floor standing more than a step over its own ground there is off its edge: a wall, however the
                 // rise reads over the lattice's 4.17 yd (Stranglethorn's tower base, a 3.9 yd sheer edge read as 43 degrees)
                 fun off(dHere: Float, dThere: Float, hHere: Float, hThere: Float) = (!dHere.isNaN() && dThere.isNaN() && dHere - hHere > Caves.STEP_UP_YD) ||
@@ -395,7 +449,7 @@ object Climb {
             if (candS[k] && sAt(j - 1) != WALL && sAt(j + 1) != WALL) c = (c and 0b0011) or (STEEP shl 2)
             cls[k] = c.toByte()
         }
-        return Grid(gr0, gc0, nx, ny, cls, faces).also { it.faces48 = faces48 }
+        return Grid(gr0, gc0, nx, ny, cls, faces).also { it.faces48 = faces48; it.deckZ = deckZ; it.deckHigh = deckHigh }
     }
 
     /** the class of the triangle on an edge between two outer vertices ([a], [b]: STEP apart) and a cell's middle vertex [m] (half a
