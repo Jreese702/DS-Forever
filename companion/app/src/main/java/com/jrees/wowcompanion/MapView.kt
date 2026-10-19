@@ -3891,7 +3891,7 @@ class MapView(context: Context) : View(context) {
         // CHECKPOINT - the first bend round danger or a slope - so the top screen's arrow follows the safe way; on to the next as
         // each is passed (DangerGrid.passed). No bend: the step's own way, as before.
         dangerLeg(focusQid, r)?.let { leg ->
-            pinWhy = "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}" + if (Settings.safePathV2 && v2Shown) " (SafePath v2)" else ""
+            pinWhy = "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}" + (if (SafePathV2.enabled && v2Shown) " (SafePath v2)" else if (shipShown) " (shipped network)" else "")
             return leg[1]
         }
         if (r.kind == CursorRoute.Kind.GOAL) return none("the route is direct (no checkpoint, no way)")
@@ -4045,9 +4045,11 @@ class MapView(context: Context) : View(context) {
      *  route's point last; null = straight */
     private fun dangerLeg(q: Int, route: CursorRoute.Route): List<DoubleArray>? {
         if (Settings.questTracking != "safepath") return null
-        // SAFEPATH V2 ROUTING (the setting, Off by default): the zone's own lattice and the harness's rules; none here yet, the old way
-        if (Settings.safePathV2) safeLeg(q, route)?.let { return it.takeIf { l -> l.size > 2 } } else v2Off("the setting is Off")
-        // SafePath's network (b-safepath-route): where this zone has one, the leg goes on it; else (off it, no help) the grid's
+        // SAFEPATH V2 (the on-device lattice): dormant, no setting (test20); only an internal flag (SafePathV2.enabled) runs it
+        if (SafePathV2.enabled) safeLeg(q, route)?.let { return it.takeIf { l -> l.size > 2 } }
+        // THE SHIPPED NETWORK (the user: "Ship our path network"): where the APK has this zone's network it is the route, always
+        shippedLeg(q, route)?.let { return it.leg }
+        // the internal fallback (no shipped network here, or its attach legs too long; the why logged): the device's own draft, the grid's
         netLeg(q, route)?.let { return it }
         val k = DangerGrid.strength(Settings.avoidDanger)
         if (k <= 0.0) return null
@@ -4156,6 +4158,82 @@ class MapView(context: Context) : View(context) {
         if (old == null) { if (q == focusQid) v2Shown = false; return null }
         if (q == focusQid) v2Shown = true
         return shown                                          // two points: straight on to the goal
+    }
+
+    // ---- THE SHIPPED NETWORK (the user, 2026-10-19: "Ship our path network"; ShippedNets, ShippedRoute): with Quest tracking SafePath,
+    // the zone's shipped network is the route wherever the APK has one - the player and the goal attached by a walk over the danger
+    // grid's ground (its walls, buildings, deep water; ShippedRoute.ATTACH_MAX_YD at most), the network's ways between, the detour cap.
+    // Planned on the route thread; kept while the player is within SafePathV2.OFF_ROUTE_YD of the way still ahead (its passed
+    // checkpoints dropped), planned again when the player strays, the goal moves or the network / grid / danger change, at most once
+    // every SafePathV2.REPLAN_MS a quest. No shipped network here, or no attach within the limit: null, the older route (its why logged)
+    private class ShipLeg(val world: List<DoubleArray>, val gx: Double, val gy: Double, val stamp: String, val map: Int)
+    /** [leg]: the way in the map's 0..1, the player first (null: straight on to the goal while the first plan is made) */
+    private class Shipped(val leg: List<DoubleArray>?)
+    private val shipLegs = HashMap<Int, ShipLeg>()
+    private val shipPending = HashSet<Int>()
+    private val shipAt = HashMap<Int, Long>()
+    private val shipNone = HashMap<Int, String>()          // quest -> the stamp and goal the network gave no way for (the older route's)
+    private val shipSaid = HashMap<Int, String>()
+    private var shipWhyLast = ""
+    /** the focused quest's way came from the shipped network (the pin's word) */
+    private var shipShown = false
+    private var shipListen = false
+    private fun shipOff(q: Int, why: String): Shipped? {
+        if (q == focusQid) shipShown = false
+        if (why != shipWhyLast) { shipWhyLast = why; android.util.Log.i("WCMAP", "safepath net: quest $q none: $why - the older route") }
+        return null
+    }
+    private fun shippedLeg(q: Int, route: CursorRoute.Route): Shipped? {
+        val m = map ?: return null
+        val r = rect ?: return null
+        if (!r.valid || m.optInt("onTaxi", 0) == 1) return null
+        val mapId = m.optInt("mapID", 0)
+        val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
+        if (px.isNaN() || py.isNaN() || mapId == 0) return null
+        ShippedNets.init(context)
+        if (!shipListen) { shipListen = true; ShippedNets.files.onLoaded { invalidate() } }   // a zone's network read: plan on it
+        val mine = TransportRoutes.factionOf(m.optString("fac", null))
+        val got = ShippedNets.section(mapId, mine)
+            ?: return if (ShippedNets.none(mapId)) shipOff(q, "no shipped network for map $mapId") else Shipped(null)   // loading: straight meanwhile
+        if (route.x !in 0.0..1.0 || route.y !in 0.0..1.0) return shipOff(q, "the goal is off map $mapId")
+        val sec = got.first
+        val ax = r.width; val ay = r.height
+        fun world(x: Double, y: Double) = doubleArrayOf(r.top - y * ay, r.left - x * ax)
+        fun onMap(w: DoubleArray) = doubleArrayOf((r.left - w[1]) / ax, (r.top - w[0]) / ay)
+        val here = world(px, py); val goal = world(route.x, route.y)
+        val g = dangerGrid()
+        val k = DangerGrid.strength(Settings.avoidDanger)
+        val stamp = "$mapId:${System.identityHashCode(sec)}:${System.identityHashCode(g)}:$k:$mine"
+        val old = shipLegs[q]?.takeIf { it.map == mapId && hypot(it.gx - goal[0], it.gy - goal[1]) <= SafePathV2.GOAL_MOVED_YD }
+        val shown = old?.let { o -> DangerGrid.passed(listOf(doubleArrayOf(px, py)) + o.world.drop(1).map { onMap(it) }, ax, ay) ?: listOf(doubleArrayOf(px, py), onMap(o.world.last())) }
+        val off = old?.let { SafePathV2.offWay(here, it.world) } ?: Double.MAX_VALUE
+        val now = android.os.SystemClock.elapsedRealtime()
+        val due = old == null || off > SafePathV2.OFF_ROUTE_YD || old.stamp != stamp
+        val noneKey = "$stamp:${(goal[0] / SafePathV2.GOAL_MOVED_YD).toInt()}:${(goal[1] / SafePathV2.GOAL_MOVED_YD).toInt()}:" +
+            "${(here[0] / ShippedRoute.ATTACH_STEP_YD / 6).toInt()}:${(here[1] / ShippedRoute.ATTACH_STEP_YD / 6).toInt()}"
+        if (shipNone[q] == noneKey) return shipOff(q, shipSaid[q] ?: "no way on the shipped network")
+        if (due && now - (shipAt[q] ?: Long.MIN_VALUE / 2) >= SafePathV2.REPLAN_MS && shipPending.add(q)) {
+            shipAt[q] = now
+            val toExit = route.kind == CursorRoute.Kind.EXIT
+            RouteWork.run({
+                // the danger grid's ground (its walls: cliffs, buildings, deep water) and the character's danger, in world yards
+                val ground: (Double, Double) -> Float = if (g == null) { _, _ -> 1f } else { x, y -> g.ground((r.left - y) / ax, (r.top - x) / ay) }
+                val danger: ((Double, Double) -> Float)? = if (g == null) null else { x, y -> g.at((r.left - y) / ax, (r.top - x) / ay) }
+                ShippedRoute.plan(sec, ground, danger, here, goal, k, toExit)
+            }) { res ->
+                shipPending.remove(q)
+                val said = if (res.reached) "quest $q on map $mapId: ${res.yd.toInt()} yd, ${res.bends} bends (${res.why})" +
+                    (got.second.stale?.let { "; may be out of date ($it)" } ?: "") else res.why
+                if (res.reached) { shipNone.remove(q); shipLegs[q] = ShipLeg(res.pts, goal[0], goal[1], stamp, mapId) }
+                else { shipNone[q] = noneKey; shipLegs.remove(q) }
+                shipSaid[q] = said
+                android.util.Log.i("WCMAP", if (res.reached) "safepath net: $said" else "safepath net: quest $q none: $said - the older route")
+                invalidate()
+            }
+        }
+        if (old == null) { if (q == focusQid) shipShown = false; return Shipped(null) }
+        if (q == focusQid) shipShown = true
+        return Shipped(shown?.takeIf { it.size > 2 })
     }
 
     // ---- THE LEG ON SAFEPATH'S NETWORK (b-safepath-route): the zone's reviewed network (else its draft), from the player onto its

@@ -3,7 +3,6 @@ package com.jrees.wowcompanion
 import java.util.PriorityQueue
 import kotlin.math.abs
 import kotlin.math.ceil
-import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
 
@@ -48,14 +47,19 @@ object ShippedRoute {
      * ([DangerGrid.strength]; 0 = none). [toExit]: the goal is a crossing out, snapped to the net's exit within [SafePath.EXIT_SNAP_YD].
      */
     fun plan(sec: ShippedNet.Section, ground: (Double, Double) -> Float, danger: ((Double, Double) -> Float)?, from: DoubleArray, to: DoubleArray,
-             k: Double = DangerGrid.strength("high"), toExit: Boolean = false, attachMaxYd: Double = ATTACH_MAX_YD): Result {
-        val g = Graph(sec, danger)
+             k: Double = DangerGrid.strength("high"), toExit: Boolean = false, attachMaxYd: Double = ATTACH_MAX_YD,
+             goalFreeYd: Double = DangerGrid.GOAL_FREE_YD): Result {
         var goal = to
-        if (toExit) g.exitNear(to)?.let { goal = it }
-        val round = g.search(ground, danger, from, goal, k, attachMaxYd)
+        if (toExit) sec.net.exits.mapNotNull { x -> sec.net.nodes.firstOrNull { it.id == x.node } }.minByOrNull { hypot(it.wx - to[0], it.wy - to[1]) }
+            ?.takeIf { hypot(it.wx - to[0], it.wy - to[1]) <= SafePath.EXIT_SNAP_YD }?.let { goal = doubleArrayOf(it.wx, it.wy) }
+        // the last yards to the goal are never danger (a kill objective, a giver among mobs: the route must reach them; DangerGrid's rule)
+        val gx = goal[0]; val gy = goal[1]
+        val dz = danger?.let { d -> { x: Double, y: Double -> if (hypot(x - gx, y - gy) <= goalFreeYd) 0f else d(x, y) } }
+        val g = Graph(sec, dz)
+        val round = g.search(ground, dz, from, goal, k, attachMaxYd)
         if (round.pts.size < 2 || !round.reached) return round
         if (k <= 0.0) return round
-        val calm = g.search(ground, danger, from, goal, 0.0, attachMaxYd).takeIf { it.reached }
+        val calm = g.search(ground, dz, from, goal, 0.0, attachMaxYd).takeIf { it.reached }
         val pick = SafePath.capDetour(round.pts, calm?.pts)
         if (pick === round.pts || calm == null) return round
         return Result(calm.pts, true, calm.why + "; capped: round the danger ${round.yd.toInt()} yd, the way ignoring it ${calm.yd.toInt()} yd",
@@ -97,9 +101,6 @@ object ShippedRoute {
         }
         fun cost(w: W, k: Double, danger: Boolean): Double = if (danger) w.base + k * w.dangerYd else w.base * (if (k > 0.0) 1.0 + w.tier else 1.0)
 
-        fun exitNear(p: DoubleArray): DoubleArray? = net.exits.mapNotNull { byId[it.node] }.minByOrNull { hypot(it.wx - p[0], it.wy - p[1]) }
-            ?.takeIf { hypot(it.wx - p[0], it.wy - p[1]) <= SafePath.EXIT_SNAP_YD }?.let { doubleArrayOf(it.wx, it.wy) }
-
         fun nearestNode(p: DoubleArray, lim: Double): Int? = net.nodes.minByOrNull { hypot(it.wx - p[0], it.wy - p[1]) }
             ?.takeIf { hypot(it.wx - p[0], it.wy - p[1]) <= lim }?.id
 
@@ -131,6 +132,7 @@ object ShippedRoute {
             var nextVirtual = -10
             val sg = Leg(ground, danger, k, from, lim); val gg = Leg(ground, danger, k, goal, lim)
             val attachYd = HashMap<Int, Double>()
+            val cuts = ArrayList<Triple<Int, W, Double>>()
             fun attach(leg: Leg, p: DoubleArray, virt: Int, outward: Boolean): String? {
                 val cands = ways.filter { it.onLand }.map { w ->
                     val a = pos[w.a]!!; val b = pos[w.b]!!
@@ -149,6 +151,9 @@ object ShippedRoute {
                     val c = cost(w, k, withDanger)
                     arc(id, w.a, t * c, listOf(pos[w.a]!!)); arc(w.a, id, t * c, listOf(q))
                     arc(id, w.b, (1 - t) * c, listOf(pos[w.b]!!)); arc(w.b, id, (1 - t) * c, listOf(q))
+                    // the other end's cut on this same way: along it, not out to a node and back
+                    for ((oid, ow, ot) in cuts) if (ow === w) { val oq = pos[oid]!!; arc(id, oid, abs(t - ot) * c, listOf(oq)); arc(oid, id, abs(t - ot) * c, listOf(q)) }
+                    cuts.add(Triple(id, w, t))
                     val wc = walk.cost * SafePath.OFF_NET
                     attachYd[id] = walk.yd
                     if (outward) arc(virt, id, wc, walk.pts.drop(1)) else arc(id, virt, wc, walk.pts.reversed().drop(1))
@@ -297,7 +302,4 @@ object ShippedRoute {
             return out
         }
     }
-
-    // the floor: a point index past floor() of a negative stays in the grid
-    @Suppress("unused") private fun fl(v: Double) = floor(v).toInt()
 }
