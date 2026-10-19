@@ -335,4 +335,24 @@ class ClimbTest {
         // 50 degrees: a wall
         assertEquals(Climb.WALL, grid { c -> if (c > 10) rise50 else 0f }.east(10, 5))
     }
+
+    /** the router never draws a segment its own final check ([Climb.walkable]) rejects: a step whose lattice class is level but whose
+     *  own line crosses wall faces on both sides (A* goes round it) is never put back by the straightening as a one-step "line"
+     *  (gate run 5: Duskwood I, Wetlands C-L, the Barrens D - a bend cut to the vertex next to its start, checked on its class alone) */
+    @Test fun noLegSegmentFailsTheFinalCheck() {
+        val flat = Climb.build(100.0, 0.0, 100.0, 0.0, { _, _ -> 0f })
+        val i = flat.nx / 2; val j = flat.ny / 2
+        // the two cells either side of the east step (i, j) -> (i + 1, j): every triangle a wall face, the step's own class level
+        val faces = (flat.faces?.copyOf() ?: ByteArray(flat.nx * flat.ny)).also { it[(j - 1) * flat.nx + i] = 0xFF.toByte(); it[j * flat.nx + i] = 0xFF.toByte() }
+        val g = Climb.Grid(flat.gr0, flat.gc0, flat.nx, flat.ny, flat.cls, faces)
+        val a = doubleArrayOf(g.wx(j), g.wy(i)); val b = doubleArrayOf(g.wx(j), g.wy(i + 1))
+        assertEquals(Climb.LEVEL, g.step(i, j, 1, 0))
+        assertFalse("the step's own line: walls on both sides", Climb.walkable(g, a, b))
+        for ((from, to) in listOf(a to b, b to a, doubleArrayOf(a[0] + 1.0, a[1] + 1.0) to doubleArrayOf(b[0] + 1.0, b[1] - 1.0))) {
+            val leg = Climb.route(g, from, to)!!
+            assertTrue(leg.reached)
+            assertWalkable(g, leg.pts)
+            assertTrue("round the two cells", leg.pts.size >= 3)
+        }
+    }
 }

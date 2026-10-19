@@ -1448,7 +1448,9 @@ object SafePath {
         var nextVirtual = -10
         // the walk on / off goes AHEAD: a way behind the player (away from the goal), or behind the goal, costs more to reach
         fun attach(px: Double, py: Double, virt: Int, toward: DoubleArray): Boolean {
-            val cands = usable.filter { it.kind != LIFT }.map { e ->
+            // never cut into a cave's way (as routeOn's walk on and off): its point would stand on the terrain over the floor, unmarked, and
+            // the leg on from it started there on the terrain (Loch Modan B: off Stonewrought Dam's floor onto a 49 degree face)
+            val cands = (usable.filter { it.kind != LIFT && it.kind != CAVE }.ifEmpty { usable.filter { it.kind != LIFT } }).map { e ->
                 val a = pos[e.a]!!; val b = pos[e.b]!!
                 val dx = b[0] - a[0]; val dy = b[1] - a[1]; val l2 = dx * dx + dy * dy
                 val t = if (l2 <= 0.0) 0.0 else (((px - a[0]) * dx + (py - a[1]) * dy) / l2).coerceIn(0.0, 1.0)
@@ -2062,7 +2064,9 @@ object SafePath {
             if (straight || Climb.inCave(cur) && Climb.inCave(tgt)) { out.add(tgt); continue }
             val lg = leg(cur, tgt)
             if (lg == null) { if (walkable == null) out.add(tgt); continue }
-            for (p in lg.drop(1)) if (hypot(out.last()[0] - p[0], out.last()[1] - p[1]) > 0.5) out.add(p)
+            // the leg's every point: one that starts at its first vertex (the hop from [cur] crosses a wall) never loses that vertex, else
+            // [cur] would be joined straight to the next one, a line nobody checked (Loch Modan B, out of a mine's mouth)
+            for (p in lg) if (hypot(out.last()[0] - p[0], out.last()[1] - p[1]) > 0.5) out.add(p)
         }
         // the ground's own way straight there, when it reaches the goal and the network's way round is far longer (a valley walled
         // round, its goal at its own far end: the network leaves it by its gate and comes back)

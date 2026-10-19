@@ -326,4 +326,16 @@ class SafePathTest {
         assertEquals(5f, w.at(50.0, yc - SafePath.WATER_YD), 0.05f)
         assertTrue(!strip(50.0, yc))                                  // its middle is off the deck
     }
+
+    /** the walk on and off the network never cuts into a cave's way: a point there would stand, unmarked, on the terrain over the floor
+     *  and the leg on from it start inside the hill (gate run 5: Loch Modan B off Stonewrought Dam's floor) */
+    @Test fun theWalkOnAndOffNeverCutsIntoACave() {
+        fun n(id: Int, x: Double, y: Double, kind: String = SafePath.POINT) = SafePath.Node(id, x, y, kind)
+        val net = SafePath.Net(1, 0, "", listOf(n(0, 0.0, 0.0), n(1, 0.0, 400.0), n(2, 0.0, 420.0, SafePath.MOUTH),
+            n(3, 0.0, 500.0, SafePath.CAVE), n(4, 0.0, 600.0, SafePath.CAVE), n(5, 0.0, 700.0, SafePath.MOUTH)),
+            listOf(SafePath.Edge(0, 1, SafePath.ROAD), SafePath.Edge(1, 2, SafePath.SPUR), SafePath.Edge(2, 3, SafePath.CAVE),
+                SafePath.Edge(3, 4, SafePath.CAVE), SafePath.Edge(4, 5, SafePath.CAVE)), emptyList())
+        val way = SafePath.route(net, 0.0, -100.0, 10.0, 560.0)!!
+        for (p in way) assertTrue("${p.toList()}: on a cave's way, unmarked", Climb.inCave(p) || !(abs(p[0]) < 1e-6 && p[1] > 420.5 && p[1] < 699.5))
+    }
 }
