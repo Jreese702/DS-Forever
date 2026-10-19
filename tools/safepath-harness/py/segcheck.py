@@ -223,7 +223,7 @@ def line_walk(a, b, z0=None):
     L = math.hypot(b[0] - a[0], b[1] - a[1]); n = max(1, int(L / 0.5)); step = L / n
     worst = 0.0; walls = 0; on = []; hist = []
     zs = None if z0 is None else (list(z0) if isinstance(z0, (list, tuple)) else [z0])
-    win = max(1, int(round(2.0 / max(step, 1e-6)))); steep_run = 0.0
+    win = max(1, int(round(2.0 / max(step, 1e-6)))); steep_run = 0.0; floor_run = 0.0
     for q in range(n + 1):
         x = a[0] + (b[0] - a[0]) * q / n; y = a[1] + (b[1] - a[1]) * q / n
         fl = layer_at(x, y); fs = floors_at(x, y) if (fl is not None or edge_cell(x, y)) else []
@@ -233,7 +233,7 @@ def line_walk(a, b, z0=None):
         # no terrain height to keep there, as on a leveled cell itself. A line along a porch's edge read the cliff beside it 3 yd a
         # half yard and walled the walk the faces pass (Alterac B10, B13, B15: 83 degree faces a quarter yard off the porch's cells)
         if fl is None and not fs and (hole_at(x, y) or cell_level(x, y) or any(cell_level(x + dx, y + dy) for dx, dy in ((0.25, 0), (-0.25, 0), (0, 0.25), (0, -0.25)))):
-            zs = None; hist = []; steep_run = 0.0; continue
+            zs = None; hist = []; steep_run = 0.0; floor_run = 0.0; continue
         # the layer's own height too: a stair's treads are floors, its risers are not (Zephras' ramps: the layer climbs tread to tread)
         cand = [(h, True) for h in fs] + ([(g, False)] if fl is None else [(fl, True)])
         live = cand if zs is None else [c for c in cand if any(abs(c[0] - z) <= EDGE_UP for z in zs)]
@@ -247,10 +247,15 @@ def line_walk(a, b, z0=None):
             back = [(qq, hz) for (qq, hz) in hist if q - qq >= win]
             if back:
                 qq, hb = back[-1]; d = math.degrees(math.atan(min(abs(c - h0) for c in fl_live for h0 in hb) / ((q - qq) * step)))
-                worst = max(worst, d)
-                if d >= WALL: walls += 1
+                # the user (2026-10-19, "Yes, floors too"): a floor's 45-48 degree stretch of no more than SHORT_YD is walked (Climb.floorClear)
+                if WALL <= d < SHORT_DEG:
+                    floor_run += step
+                    if floor_run > SHORT_YD: worst = max(worst, d); walls += 1
+                else:
+                    floor_run = 0.0; worst = max(worst, d)
+                    if d >= WALL: walls += 1
         else:
-            if not fl_live: hist = []
+            if not fl_live: hist = []; floor_run = 0.0
             if not (hole_at(x, y) or cell_level(x, y)):
                 if fl_live: steep_run = 0.0                                # at a floor's edge, the floor beside the terrain carries it
                 else:

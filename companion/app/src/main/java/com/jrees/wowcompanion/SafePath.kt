@@ -55,8 +55,8 @@ object SafePath {
     const val GRID_PAD_YD = 450.0
     /** THE DETOUR CAP (the user: "Mobs are a cost, not a wall"; "Some of the paths ... seem overly complicated"): a way round the mobs
      *  longer than [DETOUR_FACTOR] times the way with no danger counted, plus [DETOUR_SLACK_YD], loses to that way */
-    const val DETOUR_FACTOR = 2.5
-    const val DETOUR_SLACK_YD = 1000.0
+    const val DETOUR_FACTOR = 1.75                   // the user, 2026-10-19: "Tighten to 1.75x" (was 2.5x + 1000 yd)
+    const val DETOUR_SLACK_YD = 500.0
     /** of a route round the danger ([round]) and the one ignoring it ([direct]): the one to take ([DETOUR_FACTOR]) */
     fun capDetour(round: List<DoubleArray>, direct: List<DoubleArray>?): List<DoubleArray> {
         if (direct == null || direct.size < 2) return round
@@ -2148,7 +2148,7 @@ object SafePath {
         return w
     }
     const val DIRECT_LEG_YD = 1500.0       // a goal this near: the ground's own way there is the network's rival ...
-    const val NET_FAVOUR = 1.5             // ... taken when the network's way is this many times longer
+    const val NET_FAVOUR = 1.3             // ... taken when the network's way is this many times longer
     const val OFF_BEFORE_TRIES = 4         // the network's points before its walk off tried as the walk off (the walk off before the turn)
     const val JOIN_YD = 12.0               // a start or a goal this near the way needs no leg of its own
 

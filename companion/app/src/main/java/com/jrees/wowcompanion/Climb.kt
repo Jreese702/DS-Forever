@@ -98,7 +98,7 @@ object Climb {
             val dz = deckZ ?: return true
             val len = hypot(b[0] - a[0], b[1] - a[1]); val step = len / n
             val win = max(1, Math.round(2.0 / max(step, 1e-6)).toInt())
-            val zs = DoubleArray(n + 1); var runFrom = -1
+            val zs = DoubleArray(n + 1); var runFrom = -1; var steep = 0.0
             for (q in 0..n) {
                 val x = a[0] + (b[0] - a[0]) * q / n; val y = a[1] + (b[1] - a[1]) * q / n
                 val gx = (ORG_EXACT - y) / STEP - gc0; val gy = (ORG_EXACT - x) / STEP - gr0
@@ -108,10 +108,15 @@ object Climb {
                     val fc = gx - i; val fr = gy - j
                     ((v0 * (1 - fc) + v1 * fc) * (1 - fr) + (v2 * (1 - fc) + v3 * fc) * fr)      // NaN when a corner is off the floor
                 }
-                if (z.isNaN()) { runFrom = -1; continue }
+                if (z.isNaN()) { runFrom = -1; steep = 0.0; continue }
                 if (runFrom < 0) runFrom = q
                 zs[q] = z
-                if (q - runFrom >= win && Math.toDegrees(atan(abs(z - zs[q - win]) / (win * step))) >= WALL_DEG) return false
+                if (q - runFrom < win) continue
+                // the user (2026-10-19, "Yes, floors too"): a floor's short steep stretch, 45-48 degrees for no more than SHORT_STEEP_YD, is
+                // walked as on the terrain; 48 degrees or more, or a longer stretch, is a wall (segcheck's line_walk the same)
+                val deg = Math.toDegrees(atan(abs(z - zs[q - win]) / (win * step)))
+                if (deg >= SHORT_STEEP_DEG) return false
+                if (deg >= WALL_DEG) { steep += step; if (steep > SHORT_STEEP_YD) return false } else steep = 0.0
             }
             return true
         }
