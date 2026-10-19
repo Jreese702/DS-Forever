@@ -285,7 +285,7 @@ object Climb {
                 if (q == n && n > 1 && !g.lineClear(doubleArrayOf(g.wx(a[1]), g.wy(a[0])), doubleArrayOf(g.wx(b[1]), g.wy(b[0])))) return Double.MAX_VALUE
                 if (q == n && n > 1 && water != null) {                 // the straight line off deep water all along, not only at its vertices
                     val ax = g.wx(a[1]); val ay = g.wy(a[0]); val bx = g.wx(b[1]); val by = g.wy(b[0])
-                    val m = max(1, (hypot(bx - ax, by - ay) / 2.0).toInt())
+                    val m = max(1, (hypot(bx - ax, by - ay) / 0.5).toInt())        // every half yard (Redridge J clipped a 3.9 yd cell's corner between 2 yd samples)
                     for (t in 1 until m) if (water(ax + (bx - ax) * t / m, ay + (by - ay) * t / m)) return Double.MAX_VALUE
                 }
                 val x = extraOf(ni, nj); if (x < 0) return Double.MAX_VALUE
@@ -344,7 +344,7 @@ object Climb {
         // deep water (the user: "Pathing shouldn't be in water"): a straight piece across it is no walk either (Mulgore's Stonebull Lake:
         // a network way's hooked end cut straight across it)
         if (water != null) {
-            val n = max(1, (hypot(b[0] - a[0], b[1] - a[1]) / 2.0).toInt())
+            val n = max(1, (hypot(b[0] - a[0], b[1] - a[1]) / 0.5).toInt())
             for (q in 0..n) if (water(a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n)) return false
         }
         val s = g.at(a[0], a[1]); val e = g.at(b[0], b[1])

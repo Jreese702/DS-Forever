@@ -21,6 +21,8 @@ for z in $ZONES $CROSS; do
   echo "=== $tag"
   bash "$HERE/run.sh" "$spec" "ROUTE2|WALLS|EMPTY|GOAL|WATERMAX|EXIT |EXITS added|BORDER crossing|ROADWALLS|DROPWALLED|SAFEPATH [A-Z][a-z' ]+:|^e:|Exception" > "$OUT/gate_$tag.log" 2>&1
   (cd "$HERE/py" && PYTHONIOENCODING=utf-8 ZDIR=$dir python segcheck.py "$OUT/levels_routes_$tag.json" 2>&1 | tail -1) >> "$OUT/gate_$tag.log"
+  # the water, read apart from the app's grid: every yard of every route over the liquid's own surface and the terrain (py/wetcheck.py)
+  (cd "$HERE/py" && PYTHONIOENCODING=utf-8 ZDIR=$dir python wetcheck.py "$OUT/levels_routes_$tag.json" 2>&1 | grep -E "^WET|Error") >> "$OUT/gate_$tag.log"
   grep -cE "^ROUTE2" "$OUT/gate_$tag.log" | sed "s/^/  routes: /"
 done
 (cd "$HERE/py" && PYTHONIOENCODING=utf-8 python cross.py stitch "$OUT" > "$OUT/cross.log" 2>&1; python cross.py draw "$OUT" >> "$OUT/cross.log" 2>&1); grep -E "^CROSS|MISSING" "$OUT/cross.log"

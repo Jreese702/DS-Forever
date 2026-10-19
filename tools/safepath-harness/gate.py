@@ -17,9 +17,10 @@ WORK = os.environ.get('SAFEPATH_WORK', 'E:/safepath-work')
 BASE = os.path.join(WORK, 'gate', 'baseline.json')
 FORD = 1.5
 LONGER = 0.15
+WET_YD = 0          # wetcheck's yards deeper than the ford a route may wade (none: the user's no-swim ruling)
 run = sys.argv[1]
 def parse(log):
-    z = {'routes': {}, 'walls': [], 'empty': [], 'notfound': [], 'water': {}, 'exits': {}, 'kept': [], 'segcheck': None}
+    z = {'routes': {}, 'walls': [], 'empty': [], 'notfound': [], 'water': {}, 'wet': {}, 'exits': {}, 'kept': [], 'segcheck': None}
     for line in open(log, encoding='utf-8', errors='replace'):
         line = line.rstrip('\n')
         m = re.match(r'ROUTE2 (\w) (.*?): (\d+) yd, .*?flags(.*)$', line)
@@ -35,6 +36,8 @@ def parse(log):
         if m: z['exits']['%s (%s) at %s,%s' % m.group(1, 2, 3, 4)] = m.group(5) == 'WALKABLE'
         m = re.match(r'BORDER crossing \d+: KEPT, (.*?) - (.*)$', line)
         if m: z['kept'].append(re.sub(r' (low|high) danger', '', m.group(2)))
+        m = re.match(r'WET (\w): deepest ([\d.]+) yd(?: at (-?\d+,-?\d+))?, (\d+) yd deeper than', line)
+        if m: z['wet'][m.group(1)] = (float(m.group(2)), m.group(3) or '', int(m.group(4)))
         m = re.match(r'(\d+) segments; crossing a 45\+ degree step: (.*)$', line)
         if m: z['segcheck'] = m.group(2)
     return z
@@ -66,6 +69,10 @@ for tag, z in zones.items():
     if z['segcheck'] is None: fails.append('%s: no segcheck result (did the run fail?)' % tag)
     for L, (d, at) in z['water'].items():
         if d > FORD: fails.append('%s: route %s crosses water %.1f yd deep at %s' % (tag, L, d, at))
+    for L, (d, at, n) in z['wet'].items():
+        if n > WET_YD: fails.append('%s: route %s wades %d yd deeper than the ford, %.1f yd at %s (wetcheck)' % (tag, L, n, d, at))
+        elif n: notes.append('%s: route %s wades %d yd deeper than the ford, %.1f yd at %s (wetcheck, within %d yd)' % (tag, L, n, d, at, WET_YD))
+    if 'wet' in z and not z['wet'] and z['routes']: fails.append('%s: no wetcheck result' % tag)
     if not b: notes.append('%s: no baseline (new zone)' % tag); continue
     for L, r in b['routes'].items():
         now = z['routes'].get(L)
@@ -75,8 +82,12 @@ for tag, z in zones.items():
         elif now['yd'] < r['yd'] * (1 - LONGER): notes.append('%s: route %s %d -> %d yd (shorter)' % (tag, L, r['yd'], now['yd']))
     for k, ok in b['exits'].items():
         if ok and not any(v and near(k, [o]) for o, v in z['exits'].items()): fails.append('%s: walkable exit %s is gone or not walkable' % (tag, k))
+    def same_crossing(a, b):
+        # "The Barrens 316,-3704, Durotar 320,-3758": the same zones in order, each end within 60 yd
+        pa = re.findall(r'(.*?) (-?\d+),(-?\d+)(?:, |$)', a); pb = re.findall(r'(.*?) (-?\d+),(-?\d+)(?:, |$)', b)
+        return len(pa) == len(pb) and len(pa) > 0 and all(x[0] == y[0] and abs(int(x[1]) - int(y[1])) <= 60 and abs(int(x[2]) - int(y[2])) <= 60 for x, y in zip(pa, pb))
     for k in b['kept']:
-        if not near(k, z['kept']) and k not in z['kept']: fails.append('%s: kept border crossing dropped: %s' % (tag, k))
+        if k not in z['kept'] and not any(same_crossing(k, o) for o in z['kept']): fails.append('%s: kept border crossing dropped: %s' % (tag, k))
 bc = base.get('_cross', {})
 for r in cross:
     for p in r['problems']: fails.append('cross %s (%s): %s' % (r['id'], r['name'], p))

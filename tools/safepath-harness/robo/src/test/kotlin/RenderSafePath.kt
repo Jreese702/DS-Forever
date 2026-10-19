@@ -582,6 +582,14 @@ class RenderSafePath {
                 val x = cg.wx(v0[1] + dj); val y = cg.wy(v0[0] + di)
                 "${cg.step(v0[0], v0[1], di, dj)}/${"%.1f".format(waterAt(x, y))}/${if (deep(x, y)) "D" else "-"}" } +
                 "; always-dry water: ${Climb.route(cg, pa, pb, water = { _, _ -> false })?.reached}")
+            run { val hits = ArrayList<String>(); var calls = 0
+                Climb.route(cg, pa, pb, water = { x, y -> calls++; deep(x, y).also { if (it && hits.size < 8) hits.add("${"%.1f".format(x)},${"%.1f".format(y)} w ${waterAt(x, y)}") } })
+                println("PROBE the water the route asked: $calls calls, deep at ${hits}")
+                println("PROBE the dry way: " + (noW?.pts ?: emptyList()).zipWithNext().joinToString(" ") { (u, v) -> val n = maxOf(1, (Math.hypot(v[0] - u[0], v[1] - u[1]) * 2).toInt())
+                    "${u[0].toInt()},${u[1].toInt()}" + ((0..n).map { t -> val x = u[0] + (v[0] - u[0]) * t / n; val y = u[1] + (v[1] - u[1]) * t / n; x to y }.firstOrNull { deep(it.first, it.second) }?.let { "[DEEP ${it.first.toInt()},${it.second.toInt()} ${waterAt(it.first, it.second)}]" } ?: "") }) }
+            println("PROBE the vertices around the start (depth / D deep / class of the step east, south), north row first: | " + (-6..6).joinToString(" | ") { dj -> (-6..6).joinToString(" ") { di ->
+                val vi = v0[0] + di; val vj = v0[1] + dj; val x = cg.wx(vj); val y = cg.wy(vi); val w = waterAt(x, y)
+                (if (w.isNaN()) "  . " else "%4.1f".format(w)) + (if (deep(x, y)) "D" else " ") + cg.step(vi, vj, -1, 0) + cg.step(vi, vj, 0, 1) } })
             println("PROBE ${pa.map { it.toInt() }} -> ${pb.map { it.toInt() }}: with water ${withW?.reached} (ends ${withW?.pts?.last()?.map { it.toInt() }}), without ${noW?.reached}" +
                 "; deep cells on the straight line ${(0..40).count { t -> deep(pa[0] + (pb[0] - pa[0]) * t / 40, pa[1] + (pb[1] - pa[1]) * t / 40) }}/41; depths " +
                 (0..20).joinToString(" ") { t -> waterAt(pa[0] + (pb[0] - pa[0]) * t / 20, pa[1] + (pb[1] - pa[1]) * t / 20).let { if (it.isNaN()) "." else "%.1f".format(it) } } +

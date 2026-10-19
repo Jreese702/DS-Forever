@@ -234,6 +234,41 @@ class SafePathTest {
         assertTrue("on the bank: y ${n.wy}", n.wy > 25)
     }
 
+    /** the water per vertex: the depth at a vertex is the mean of the wet liquid cells meeting there, straight between vertices (a
+     *  coarse cell read only one side of its border, and the lattice's steps run on those borders: Darkshore's route B up the
+     *  Cliffspring River swam 5.8 yd water reading the 1.0 yd cell beside the line); dry beyond the water's last vertex */
+    @Test fun theWaterIsReadPerVertex() {
+        val s = Climb.STEP
+        // west of y 50 (a lattice line) 4.9 yd deep, east of it 1.0
+        val w = SafePath.Water.build(100.0, 0.0, 100.0, 0.0) { _, y -> if (y > 50.0) 4.9f else 1.0f }
+        assertEquals("on the border, both sides' mean", 2.95f, w.at(30.0, 50.0), 0.06f)
+        assertEquals("a vertex west of it", 4.9f, w.at(30.0, 50.0 + s), 0.05f)
+        assertEquals("a vertex east of it", 1.0f, w.at(30.0, 50.0 - s), 0.05f)
+        assertEquals("halfway west", 3.925f, w.at(30.0, 50.0 + s / 2), 0.06f)
+        // dry beyond the water's edge
+        val shore = SafePath.Water.build(100.0, 0.0, 100.0, 0.0) { _, y -> if (y > 50.0) 2f else Float.NaN }
+        assertTrue(shore.at(30.0, 50.0 - 1.5 * s).isNaN())
+        assertEquals("the shore's vertex has its wet cells' depth", 2f, shore.at(30.0, 50.0), 0.05f)
+        // the file keeps it
+        val f = java.io.File.createTempFile("water", ".bin"); w.write(f)
+        val back = SafePath.Water.read(f)!!; f.delete()
+        assertEquals(2.95f, back.at(30.0, 50.0), 0.06f)
+    }
+
+    /** the depth at a spot is the liquid's surface over the ground at the spot itself (straight between the terrain's vertices), not
+     *  over its cell's highest corner: a stream's mouth 3.6 yd deep in Silverpine read shallow over the bank's corner */
+    @Test fun depthIsOverTheGroundAtTheSpot() {
+        // one tile: the surface 10 yd everywhere; the ground falling 1 yd a vertex eastward from 10
+        val tc = 32; val tr = 32
+        val surf = FloatArray(128 * 128) { 10f }
+        val ground = FloatArray(128 * 128) { k -> 10f - (k % 128) }
+        val ox = 32 * MapHarvest.ADT_YD - tr * MapHarvest.ADT_YD; val oy = 32 * MapHarvest.ADT_YD - tc * MapHarvest.ADT_YD
+        fun at(col: Double) = SafePath.Water.depthOf(ox - 0.5 * Climb.STEP, oy - col * Climb.STEP, { _, _ -> surf }, { _, _ -> ground })
+        assertEquals(0f, at(0.01), 0.05f)
+        assertEquals(2.5f, at(2.5), 0.05f)
+        assertEquals(4.0f, at(4.0), 0.05f)
+    }
+
     /** a hooked end is never cut straight onto a cave's or a lift's floor point (Thunder Bluff: the foot of the mesa cut straight onto a
      *  ramp's floor 100 yd up, the walk's own check passing it as a cave's) */
     @Test fun smoothNeverCutsOntoACavesFloor() {

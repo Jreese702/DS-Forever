@@ -765,74 +765,108 @@ object SafePath {
     val zones = RouteWork.Files { map -> Zones.read(ArtHarvest.file("safepath/zones/$map.bin")) }
 
     /**
-     * a zone's WATER by [WATER_YD] cell over its world rect: the depth there in tenths of a yard (the liquid's surface over the ground,
-     * 1..252), 0 = dry, 253 = water under a bridge (a building's outdoor walkway over it), 255 = deeper than 25 yd (b-safepath-water:
-     * no way or node in water but over a bridge or a shallow ford)
+     * a zone's WATER (b-safepath-water: no way or node in water but over a bridge or a shallow ford), as the game holds it: per vertex
+     * of the climb lattice ([Climb.STEP] yd, the terrain's own outer vertices; [j0] / [i0] its first row / column from the world's
+     * corner) the liquid's surface over the ground there, in tenths of a yard (1..252; 0 = dry, 255 = deeper than 25 yd): the surface
+     * there the mean of the wet liquid cells meeting at it (a stream falling down its bed: the deepest cell's read its upper neighbour's
+     * surface and walled Silverpine's ford at 834,1132), and between vertices the depth runs straight ([at]). [bridge] per cell (row-major,
+     * (nx - 1) x (ny - 1)): a walkway's deck over the water (a bridge, a pier).
+     * One depth a coarse cell read only the cell on one side of its border, and the lattice's steps run on those borders: Darkshore's
+     * route B walked x = 7008.3 up the Cliffspring River reading the 1.0 yd cell east of the line, the water there 5.8 yd deep (the
+     * user: "Pathing shouldn't be in water"); measured over a cell's highest corner, it let Silverpine's routes swim a stream's mouth
+     * 3.6 yd deep where a ford 8 yd off is shallow
      */
-    class Water(val t: Double, val b: Double, val l: Double, val r: Double, val nx: Int, val ny: Int, val depth: ByteArray) {
-        /** the depth at world ([wx], [wy]) in yards; NaN = dry (or off the grid), [BRIDGE] = a bridge over the water */
-        fun at(wx: Double, wy: Double): Float {
-            val i = floor((l - wy) / (l - r) * nx).toInt(); val j = floor((t - wx) / (t - b) * ny).toInt()
+    class Water(val j0: Int, val i0: Int, val nx: Int, val ny: Int, val depth: ByteArray, val bridge: ByteArray) {
+        private fun v(j: Int, i: Int): Float {
             if (i !in 0 until nx || j !in 0 until ny) return Float.NaN
             val d = depth[j * nx + i].toInt() and 0xFF
-            return when (d) { 0 -> Float.NaN; 253 -> BRIDGE; 255 -> 99f; else -> (d - 1) / 10f }
+            return when (d) { 0 -> Float.NaN; 255 -> 99f; else -> (d - 1) / 10f }
+        }
+        /** the depth at world ([wx], [wy]) in yards: its cell's four vertices', straight between them; NaN = dry (or off the grid),
+         *  [BRIDGE] = on a bridge's deck over the water */
+        fun at(wx: Double, wy: Double): Float {
+            val fj = (ORG - wx) / Climb.STEP - j0; val fi = (ORG - wy) / Climb.STEP - i0
+            val j = floor(fj).toInt(); val i = floor(fi).toInt()
+            if (i !in 0 until nx - 1 || j !in 0 until ny - 1) return Float.NaN
+            if (bridge[j * (nx - 1) + i].toInt() != 0) return BRIDGE
+            val a = v(j, i); val b2 = v(j, i + 1); val c = v(j + 1, i); val d = v(j + 1, i + 1)
+            if (a.isNaN() && b2.isNaN() && c.isNaN() && d.isNaN()) return Float.NaN
+            val u = (fi - i).toFloat(); val w = (fj - j).toFloat()
+            fun z(x: Float) = if (x.isNaN()) 0f else x
+            return (z(a) * (1 - u) + z(b2) * u) * (1 - w) + (z(c) * (1 - u) + z(d) * u) * w
         }
         fun write(f: File) {
             f.parentFile?.mkdirs()
-            DataOutputStream(f.outputStream().buffered()).use { o ->
-                o.writeInt(MAGIC); o.writeDouble(t); o.writeDouble(b); o.writeDouble(l); o.writeDouble(r); o.writeInt(nx); o.writeInt(ny); o.write(depth)
+            DataOutputStream(java.util.zip.DeflaterOutputStream(f.outputStream().buffered())).use { o ->
+                o.writeInt(MAGIC); o.writeInt(j0); o.writeInt(i0); o.writeInt(nx); o.writeInt(ny); o.write(depth); o.write(bridge)
             }
         }
         companion object {
-            const val MAGIC = 0x57545231                       // "WTR1"
+            const val MAGIC = 0x57545232                       // "WTR2": per vertex, deflated
+            private const val ORG = 32.0 * MapHarvest.ADT_YD
             fun read(f: File): Water? = runCatching {
-                DataInputStream(f.inputStream().buffered()).use { i ->
+                DataInputStream(java.util.zip.InflaterInputStream(f.inputStream().buffered())).use { i ->
                     if (i.readInt() != MAGIC) return null
-                    val t = i.readDouble(); val b = i.readDouble(); val l = i.readDouble(); val r = i.readDouble()
-                    val nx = i.readInt(); val ny = i.readInt()
-                    Water(t, b, l, r, nx, ny, ByteArray(nx * ny).also { i.readFully(it) })
+                    val j0 = i.readInt(); val i0 = i.readInt(); val nx = i.readInt(); val ny = i.readInt()
+                    Water(j0, i0, nx, ny, ByteArray(nx * ny).also { i.readFully(it) }, ByteArray((nx - 1) * (ny - 1)).also { i.readFully(it) })
                 }
             }.getOrNull()
-            /** over world rect ([t], [b], [l], [r]) by [WATER_YD] cells: [depthAt] the water's depth at a spot (NaN dry), [bridgeAt] a
-             *  building's outdoor walkway over it (a bridge, a pier) */
+            /** over world rect ([t], [b], [l], [r]), on the lattice's vertices: [depthAt] the water's depth at a spot (NaN dry: [depthOf]),
+             *  [bridgeAt] a building's outdoor walkway over it (a bridge, a pier) */
             fun build(t: Double, b: Double, l: Double, r: Double, bridgeAt: (Double, Double) -> Boolean = { _, _ -> false },
                       depthAt: (Double, Double) -> Float): Water {
-                val nx = max(1, ceil((l - r) / WATER_YD).toInt()); val ny = max(1, ceil((t - b) / WATER_YD).toInt())
-                return Water(t, b, l, r, nx, ny, ByteArray(nx * ny) { k ->
-                    val x = t - (k / nx + 0.5) * (t - b) / ny; val y = l - (k % nx + 0.5) * (l - r) / nx
-                    // the deepest of the cell's own four liquid cells (4.17 yd: MH2O's own), each at its middle: one point a cell let a
-                    // route swim a narrow channel (Darkshore: 5.8 yd deep where the cell's middle read 1.0; the user: "Pathing shouldn't
-                    // be in water"). Never a neighbour's: a ford beside the channel stays a ford (Silverpine's river)
-                    var d = Float.NaN
-                    for (dj in listOf(-1.0, 1.0)) for (di in listOf(-1.0, 1.0)) { val v = depthAt(x + dj * WATER_YD / 4, y + di * WATER_YD / 4); if (!v.isNaN() && (d.isNaN() || v > d)) d = v }
-                    // a bridge where the deck holds the cell's middle or one of those four points (a deck narrower than the cell, an M2
-                    // bridge's 4 yd footbridge, a pier's edge: its middle alone missed it)
-                    val bridged = !d.isNaN() && (bridgeAt(x, y) || listOf(-1.0, 1.0).any { dj -> listOf(-1.0, 1.0).any { di -> bridgeAt(x + dj * WATER_YD / 4, y + di * WATER_YD / 4) } })
-                    (if (d.isNaN()) 0 else if (bridged) 253 else if (d >= 25.3f) 255 else (1 + (max(0f, d) * 10).roundToInt()).coerceIn(1, 252)).toByte()
-                })
+                val s = Climb.STEP
+                val j0 = floor((ORG - t) / s).toInt(); val i0 = floor((ORG - l) / s).toInt()
+                val ny = max(2, ceil((ORG - b) / s).toInt() - j0 + 1); val nx = max(2, ceil((ORG - r) / s).toInt() - i0 + 1)
+                // a vertex is the corner of four liquid cells: the mean of the wet ones there (read a hair inside each)
+                val e = s * 0.01
+                val depth = ByteArray(nx * ny) { k ->
+                    val x = ORG - (j0 + k / nx) * s; val y = ORG - (i0 + k % nx) * s
+                    var sum = 0f; var n = 0
+                    for (dx in listOf(-e, e)) for (dy in listOf(-e, e)) { val q = depthAt(x + dx, y + dy); if (!q.isNaN()) { sum += q; n++ } }
+                    val d = if (n == 0) Float.NaN else sum / n
+                    (if (d.isNaN()) 0 else if (d >= 25.15f) 255 else (1 + (max(0f, d) * 10).roundToInt()).coerceIn(1, 252)).toByte()
+                }
+                // a bridge where the deck holds the cell's middle or one of its quarters' (a deck narrower than the cell, an M2 bridge's
+                // 4 yd footbridge, a pier's edge: its middle alone missed it), over water
+                val bridge = ByteArray((nx - 1) * (ny - 1)) { k ->
+                    val j = k / (nx - 1); val i = k % (nx - 1)
+                    val wet = depth[j * nx + i].toInt() != 0 || depth[j * nx + i + 1].toInt() != 0 || depth[(j + 1) * nx + i].toInt() != 0 || depth[(j + 1) * nx + i + 1].toInt() != 0
+                    val x = ORG - (j0 + j + 0.5) * s; val y = ORG - (i0 + i + 0.5) * s
+                    (if (wet && (bridgeAt(x, y) || listOf(-1.0, 1.0).any { dj -> listOf(-1.0, 1.0).any { di -> bridgeAt(x + dj * s / 4, y + di * s / 4) } })) 1 else 0).toByte()
+                }
+                return Water(j0, i0, nx, ny, depth, bridge)
             }
             const val BRIDGE = -1f
-            /** the water's depth at world ([wx], [wy]) of continent tiles: [surfaceOf] a tile's water grid (Terrain.water), [heightOf] its
-             *  ground (Terrain.Tile.h); NaN = dry */
+            /** the water's depth at world ([wx], [wy]) of continent tiles: the surface of the liquid cell there over the ground's height
+             *  at the spot itself (straight between the terrain's outer vertices). [surfaceOf] a tile's water grid (Terrain.water: per
+             *  liquid cell, the instance's own heights where it keeps them), [heightOf] its ground (Terrain.Tile.h); NaN = dry */
             fun depthOf(wx: Double, wy: Double, surfaceOf: (Int, Int) -> FloatArray?, heightOf: (Int, Int) -> FloatArray?): Float {
-                val gx = (32 * MapHarvest.ADT_YD - wy) / MapHarvest.ADT_YD; val gy = (32 * MapHarvest.ADT_YD - wx) / MapHarvest.ADT_YD
+                val gx = (ORG - wy) / MapHarvest.ADT_YD; val gy = (ORG - wx) / MapHarvest.ADT_YD
                 val tc = floor(gx).toInt(); val tr = floor(gy).toInt()
                 if (tc !in 0..63 || tr !in 0..63) return Float.NaN
                 val w = surfaceOf(tc, tr) ?: return Float.NaN
-                val cx = ((gx - tc) * 128).toInt().coerceIn(0, 127); val cy = ((gy - tr) * 128).toInt().coerceIn(0, 127)
+                val fx = ((gx - tc) * 128).coerceIn(0.0, 127.999); val fy = ((gy - tr) * 128).coerceIn(0.0, 127.999)
+                val cx = fx.toInt(); val cy = fy.toInt()
                 val top = w[cy * 128 + cx]
                 if (top.isNaN()) return Float.NaN
-                // the depth over the cell's HIGHEST corner (its shallowest): water deep there is deep all over the cell - a channel's bed
-                // (Darkshore's, 5.8 yd) stays deep; a stream down a slope (Silverpine's, 0.4 yd where it is walked) is shallow at its upper
-                // corners, and one corner alone read its fall as 2-3 yd of depth
-                val hs = heightOf(tc, tr) ?: return 10f
-                var hi = Float.NaN
-                for ((dx, dy) in listOf(0 to 0, 1 to 0, 0 to 1, 1 to 1)) { val v = hs[minOf(127, cy + dy) * 128 + minOf(127, cx + dx)]; if (!v.isNaN() && (hi.isNaN() || v > hi)) hi = v }
-                return if (hi.isNaN()) 10f else max(0f, top - hi)
+                // the ground at the spot: its cell's four outer vertices (the 129th row / column is the next tile's first)
+                fun h(row: Int, col: Int): Float {
+                    val t2 = tc + col / 128; val r2 = tr + row / 128
+                    if (t2 !in 0..63 || r2 !in 0..63) return Float.NaN
+                    val hs = heightOf(t2, r2) ?: return Float.NaN
+                    return hs[(row % 128) * 128 + (col % 128)]
+                }
+                val a = h(cy, cx); if (a.isNaN()) return 10f
+                fun or(x: Float) = if (x.isNaN()) a else x
+                val b1 = or(h(cy, cx + 1)); val c = or(h(cy + 1, cx)); val d = or(h(cy + 1, cx + 1))
+                val u = (fx - cx).toFloat(); val v = (fy - cy).toFloat()
+                val g = (a * (1 - u) + b1 * u) * (1 - v) + (c * (1 - u) + d * u) * v
+                return max(0f, top - g)
             }
         }
     }
-    const val WATER_YD = 100.0 / 12.0      // the water grid's cell: two of the liquid's own (4.2 yd)
+    const val WATER_YD = Climb.STEP         // the water's vertices: the lattice's own (4.2 yd, the liquid's own cell)
     val waters = RouteWork.Files { map -> Water.read(ArtHarvest.file("safepath/water/$map.bin")) }
     const val AREAS_FILE = "safepath/areas.json"
     @Volatile private var areasRead: Areas? = null
@@ -846,7 +880,7 @@ object SafePath {
      */
     val ZONES_STEP = object : ArtHarvest.Step {
         override val id = "safepathzones"
-        override val version = 5                       // v4: decks and the four-cell water; v5: M2 bridges (by model name) as decks
+        override val version = 6                       // v4: decks; v5: M2 bridges (by model name) as decks; v6: the water per vertex (WTR2)
         override val beforePlay = false
         override val weight = 40
         override fun run(job: ArtHarvest.Job) {
