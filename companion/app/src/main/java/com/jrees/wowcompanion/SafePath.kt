@@ -1779,7 +1779,8 @@ object SafePath {
      * - onto the neighbour's own map ([onMap]: inside its world rect), never the world's rim beyond its map's edge;
      * - one per open stretch of border: crossings within [GROUND_EXIT_GAP_YD] of each other, or whose far sides walk to each other
      *   within [GROUND_EXIT_JOIN_YD] on the neighbour's own ground, are one stretch (found the same in any order); a stretch an exit
-     *   already crosses gets none, any other one exit (a capital's ground, entered at many points: no exit within the gap only);
+     *   already crosses has its crossings within [GROUND_EXIT_SERVE_YD] served by it; the rest get one exit each that far apart (a
+     *   capital's ground, entered at many points: no exit within the gap only);
      * A drafted "walk" exit off the zone's main ground (on a ridge over a tunnel: Loch Modan's four) is dropped (a bridge, a gate, a
      * tunnel, a boat is a structure's way: kept).
      */
@@ -1852,11 +1853,17 @@ object SafePath {
             (oneStretch(open[a].first, open[b].first.x, open[b].first.y) || oneStretch(open[b].first, open[a].first.x, open[a].first.y))) parent[find(a)] = find(b)
         for ((_, ks) in open.indices.groupBy { find(it) }) {
             val to = open[ks[0]].first.to
-            val served = exits.filter { it.toMap == to }.mapNotNull { byId[it.node] }.firstOrNull { e -> ks.any { oneStretch(open[it].first, e.wx, e.wy) } }
-            if (served != null) { for (k in ks) say(open[k].first, "the same open stretch as the exit at ${served.wx.toInt()},${served.wy.toInt()}"); continue }
-            val pick = ks.min()
-            for (k in ks) if (k != pick) say(open[k].first, "the same open stretch as ${open[pick].first.x.toInt()},${open[pick].first.y.toInt()}")
-            add(open[pick].first, "an exit (a corridor ${open[pick].second} vertices wide, ${ks.size} in its stretch)")
+            // the exits already on this stretch; each serves its crossings within [GROUND_EXIT_SERVE_YD] (a long open border keeps one
+            // every so far: Mulgore's Red Rocks, 1070 yd up the border from its gate road, keeps its own)
+            val servers = exits.filter { it.toMap == to }.mapNotNull { byId[it.node] }.filter { e -> ks.any { oneStretch(open[it].first, e.wx, e.wy) } }
+                .map { doubleArrayOf(it.wx, it.wy) }.toMutableList()
+            for (k in ks.sorted()) {
+                val at = open[k].first
+                val by = servers.firstOrNull { hypot(it[0] - at.x, it[1] - at.y) <= GROUND_EXIT_SERVE_YD }
+                if (by != null) { say(at, "the same open stretch as the exit at ${by[0].toInt()},${by[1].toInt()} (${hypot(by[0] - at.x, by[1] - at.y).toInt()} yd)"); continue }
+                add(at, "an exit (a corridor ${open[k].second} vertices wide, ${ks.size} in its stretch)")
+                servers.add(doubleArrayOf(at.x, at.y))
+            }
         }
         return Net(net.map, net.cont, net.built, nodes, edges, exits, net.reviewed)
     }
@@ -1864,6 +1871,7 @@ object SafePath {
     const val GROUND_EXIT_MIN = 5          // a crossing corridor this many lattice vertices wide (about 20 yd) ...
     const val GROUND_EXIT_GAP_YD = 600.0   // ... with no exit into that neighbour this near ...
     const val GROUND_EXIT_JOIN_YD = 800.0  // ... nor one its far side reaches within this walk on the neighbour's ground (one open border) ...
+    const val GROUND_EXIT_SERVE_YD = 1000.0 // ... an exit on a stretch serving its crossings this near
     const val JOIN_NEAR_YD = 100.0         // ... to within this of it (a bridge's or a road's exit stands on this zone's bank or side)
 
     fun routeOn(net: Net, fx: Double, fy: Double, tx: Double, ty: Double, leg: (DoubleArray, DoubleArray) -> List<DoubleArray>?,
