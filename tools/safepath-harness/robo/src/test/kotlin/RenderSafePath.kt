@@ -197,13 +197,15 @@ class RenderSafePath {
             }
             val ax = rect.l - rect.r; val ay = rect.t - rect.b
             // a zone's own friendly NPCs QuestieDB codes hostile to both (WoW Forever's new factions): those at a placeholder level
-            // (the spec's friendlyMinLevel, e.g. 9999) are no mobs - made the player's side's, so they count for the towns, not the danger
+            // (the spec's friendlyMinLevel, e.g. 9999) are no mobs - made the player's side's, so they count for the towns, not the danger.
+            // Only those tagged for neither faction: the user (2026-10-19, "Yes, other faction = danger") - a faction's own placeholder-level
+            // NPCs (Dalaran's guards for a Horde character) are danger to the other faction
             val friendlyMin = spec?.optInt("friendlyMinLevel", Int.MAX_VALUE) ?: Int.MAX_VALUE
             // and a zone's own peoples the guides call friendly to all (the spec's friendlyNames, regexes: Zephras' Windshapers and High
             // Order - the isle shared by both factions; QuestieDB's kill links to them are beta leftovers)
             val friendlyNames = spec?.optJSONArray("friendlyNames")?.let { a -> (0 until a.length()).map { Regex(a.getString(it)) } } ?: emptyList()
             // a town's faction-less people (no level, or a guard's name) take the side of the faction-tagged ones round them (QuestieNpcs.townSided)
-            val here = QuestieNpcs.townSided(spawns.filter { it.area == area }) { sp -> doubleArrayOf(rect.t - sp.y * ay, rect.l - sp.x * ax) }.map { sp -> if ((sp.minLv >= friendlyMin || friendlyNames.any { it.containsMatchIn(sp.name) }) && sp.hostile != foe)
+            val here = QuestieNpcs.townSided(spawns.filter { it.area == area }) { sp -> doubleArrayOf(rect.t - sp.y * ay, rect.l - sp.x * ax) }.map { sp -> if ((sp.minLv >= friendlyMin && sp.hostile == 3 || friendlyNames.any { it.containsMatchIn(sp.name) }) && sp.hostile != foe)
                 QuestieNpcs.Spawn(sp.area, sp.x, sp.y, sp.minLv, sp.maxLv, sp.elite, foe, sp.name, sp.sub) else sp }
             val hostile = here.filter { it.hostile == mine || it.hostile == 3 }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
             val friendly = here.filter { it.hostile == foe }.map { SafePath.Npc(rect.t - it.y * ay, rect.l - it.x * ax, it.sub) }
