@@ -418,4 +418,36 @@ class ClimbTest {
             assertTrue("round the two cells", leg.pts.size >= 3)
         }
     }
+
+    /** gate run 7 (Stormwind's harbour ramp, 49 degrees along the line; Shen'dralar's stair, 59): a floor sloping 49 degrees across a
+     *  cell reads 42 and 37 along its sides, so its diagonal passed by its corner pairs - its own line on the floor is the wall
+     *  (py/segcheck.py's 2 yd rise), its sides still walked */
+    @Test fun aFloorsOwnSlopeAlongTheLineIsTheWall() {
+        val flat = { _: Int, _: Int -> 0f }
+        val g0 = Climb.build(60.0, 0.0, 60.0, 0.0, flat, centre = flat)
+        // the floor over the whole lattice: rising 0.89 a yard north (x) and 0.74 a yard west (y), 49 degrees at its steepest
+        val g = Climb.build(60.0, 0.0, 60.0, 0.0, flat, centre = flat, deck = { x, y -> (100.0 + 0.89 * x + 0.74 * y).toFloat() })
+        val i = g0.nx / 2; val j = g0.ny / 2
+        val a = doubleArrayOf(g.wx(j), g.wy(i)); val b = doubleArrayOf(g.wx(j - 1), g.wy(i - 1))
+        assertTrue("its corner pairs no walls", g.step(i, j, -1, -1) != Climb.WALL)
+        assertFalse("49 degrees along the diagonal", Climb.walkable(g, a, b))
+        assertTrue("42 degrees along its north side", Climb.walkable(g, a, doubleArrayOf(g.wx(j - 1), g.wy(i))))
+        assertTrue("37 degrees along its west side", Climb.walkable(g, a, doubleArrayOf(g.wx(j), g.wy(i - 1))))
+    }
+
+    /** gate run 7 (Wetlands' dig platform, the Hinterlands' rope bridge, Dustwallow's bridge): a diagonal through a cell some of whose
+     *  corners are on a floor standing more than a step over its ground cuts across the floor's edge, whatever its corner pairs (the
+     *  ramp's foot up to the platform) - a wall; the two steps by the ramp's foot are walked */
+    @Test fun aDiagonalNeverCutsAFloorsHighEdge() {
+        val flat = { _: Int, _: Int -> 0f }
+        val g0 = Climb.build(60.0, 0.0, 60.0, 0.0, flat, centre = flat)
+        val i = g0.nx / 2; val j = g0.ny / 2
+        // the ramp's foot (i + 1, j) 1 yd up, the platform's corner (i + 1, j + 1) 3.5 yd up; (i, j) and (i, j + 1) off it on the ground
+        val decks = mapOf(Climb.vkey(g0.gr0 + j, g0.gc0 + i + 1) to 1.0f, Climb.vkey(g0.gr0 + j + 1, g0.gc0 + i + 1) to 3.5f)
+        val g = Climb.build(60.0, 0.0, 60.0, 0.0, flat, centre = flat, deck = { x, y -> decks[Climb.vkeyAt(x, y)] ?: Float.NaN })
+        assertTrue("onto the ramp's foot", g.step(i, j, 1, 0) != Climb.WALL)
+        assertTrue("up the ramp", g.step(i + 1, j, 0, 1) != Climb.WALL)
+        assertEquals("straight across past its foot", Climb.WALL, g.step(i, j, 1, 1))
+        assertFalse(Climb.walkable(g, doubleArrayOf(g.wx(j), g.wy(i)), doubleArrayOf(g.wx(j + 1), g.wy(i + 1))))
+    }
 }

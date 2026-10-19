@@ -2090,7 +2090,18 @@ object SafePath {
             val direct = leg(f, t)
             if (direct != null && hypot(direct.last()[0] - tx, direct.last()[1] - ty) <= 3.0 && yd(direct) * NET_FAVOUR < yd(out)) return direct
         }
-        var best = unloop(out, walkable)
+        // A WAY OUT AND STRAIGHT BACK (a network point passed by, its node off the walk: out to it and back to the same spot) is no way:
+        // left out. Mulgore's J went 1.6 yd off the Spirit Rise walkway's edge to a node on the ground 2.3 yd under it and climbed back
+        // (back to the very same spot only, the line on from it the one checked from there; never the goal's own point; after the
+        // choice of the ground's own way over this one, which it leaves as it was)
+        fun dropBack(w: List<DoubleArray>): List<DoubleArray> { val o = ArrayList(w); var sp = 1
+            while (sp < o.size - 2) {
+                val a = o[sp - 1]; val c = o[sp + 1]
+                if (!Climb.inCave(o[sp]) && !Climb.inCave(a) && !Climb.inCave(c) && a[0] == c[0] && a[1] == c[1]) { o.removeAt(sp); o.removeAt(sp); if (sp > 1) sp-- }
+                else sp++
+            }
+            return o }
+        var best = unloop(dropBack(out), walkable)
         // THE WALK OFF BEFORE THE TURN (Teldrassil's Fel Rock, gate run 7: +404 yd): the walk off is at the way's point nearest the goal,
         // which can lie past the turn - the network runs on along the road and the ground's leg walks back. unloop cuts that only where
         // the straight join is itself walkable; past a ridge or a town's houses (no cutting through buildings) it is not, so the
@@ -2107,7 +2118,7 @@ object SafePath {
                 if (hypot(lg.last()[0] - tx, lg.last()[1] - ty) > 3.0) continue
                 val alt = ArrayList(out.subList(0, k + 1)); for (r in lg) if (hypot(alt.last()[0] - r[0], alt.last()[1] - r[1]) > 0.5) alt.add(r)
                 if (yd(alt, k) * NET_FAVOUR >= yd(out, k)) continue
-                val altU = unloop(alt, walkable)
+                val altU = unloop(dropBack(alt), walkable)
                 if (yd(altU) < yd(best)) best = altU
             }
         }
