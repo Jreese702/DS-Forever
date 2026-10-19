@@ -229,6 +229,11 @@ def line_walk(a, b, z0=None):
         fl = layer_at(x, y); fs = floors_at(x, y) if (fl is not None or edge_cell(x, y)) else []
         if fl is not None and not fs: fl = None                         # the layer's vertices reach past the floor's own triangles
         g = tri_height(x, y)
+        # LEVELED GROUND at the sample or within the quarter yard its faces are read from (near_face: a covered hole, a street, a porch):
+        # no terrain height to keep there, as on a leveled cell itself. A line along a porch's edge read the cliff beside it 3 yd a
+        # half yard and walled the walk the faces pass (Alterac B10, B13, B15: 83 degree faces a quarter yard off the porch's cells)
+        if fl is None and not fs and (hole_at(x, y) or cell_level(x, y) or any(cell_level(x + dx, y + dy) for dx, dy in ((0.25, 0), (-0.25, 0), (0, 0.25), (0, -0.25)))):
+            zs = None; hist = []; steep_run = 0.0; continue
         # the layer's own height too: a stair's treads are floors, its risers are not (Zephras' ramps: the layer climbs tread to tread)
         cand = [(h, True) for h in fs] + ([(g, False)] if fl is None else [(fl, True)])
         live = cand if zs is None else [c for c in cand if any(abs(c[0] - z) <= EDGE_UP for z in zs)]
