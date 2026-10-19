@@ -202,7 +202,8 @@ def near_face(x, y):
     gr = int(math.floor((ORG - x) / S)); gc = int(math.floor((ORG - y) / S))
     mx = ORG - (gr + 0.5) * S; my = ORG - (gc + 0.5) * S
     vr = kround((ORG - mx) / S); vc = kround((ORG - my) / S)
-    if any((vr + a, vc + b) in _holes for a in (-1, 0) for b in (-1, 0)) or level_floor(mx, my, cap_near=True): return 0.0
+    # (a capital's floor (flag 2) is now a true capital's, in a capital's own map: RenderSafePath.capital - leveled as the router does)
+    if any((vr + a, vc + b) in _holes for a in (-1, 0) for b in (-1, 0)) or level_floor(mx, my): return 0.0
     return FC.face_at(x, y)
 def line_walk(a, b, z0=None):
     """THE WALK along the straight line, each half yard: on a floor the harness's layer puts the walker on (layer_at), the floor's
