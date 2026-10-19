@@ -104,6 +104,7 @@ class RenderSafePath {
             // its groups weren't dumped
             val walks = HashMap<Pair<Int, Int>, List<(Double, Double) -> Boolean>>(); val m2Said = HashSet<Int>()
             val unread = HashSet<Int>()
+            val capitalDecks = HashSet<com.jrees.wowcompanion.WorldBuildings.Deck>()   // a capital's read floors: leveled whatever their height (flag 2)
             val cityFeet = ArrayList<com.jrees.wowcompanion.Buildings.Foot>()   // a capital's streets leveled by their boxes (py/segcheck.py: flag 2)
             val deckList = ArrayList<com.jrees.wowcompanion.WorldBuildings.Deck>()     // every deck read (py/wetcheck.py: decks_<tag>.json)
             // per tile: the decks walked at their own floor's height - a bridge's or a pier's (no rooms), a fifth or more of its floor over
@@ -156,7 +157,10 @@ class RenderSafePath {
                                 if (!com.jrees.wowcompanion.WorldBuildings.isCity(p, gs) && gs.none { it.interior }) keepHeights(c, r, d, any = true)
                                 // ... and a floor is the ground only where it is not buried: more than LEVEL_BURIED_YD under the terrain (Blasted
                                 // Lands' Garrison Armory mine: its outdoor floors at 0-40 under a hill to 263 leveled it, a route climbed it)
-                                listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) && !buriedAt(c, r, d, x, y) && d.over(x, y, Terrain.surfaceAt(wet(c, r).first, c, r, x, y)) }) }
+                                // (a capital's streets level whatever the terrain under or over them: its ground reads steep or high everywhere)
+                                val capital = com.jrees.wowcompanion.WorldBuildings.isCity(p, gs)
+                                if (capital) capitalDecks.add(d)
+                                listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) && (capital || !buriedAt(c, r, d, x, y)) && d.over(x, y, Terrain.surfaceAt(wet(c, r).first, c, r, x, y)) }) }
                             // a WMO whose floors can't be read (its groups not dumped) levels nothing - the ground under its box is the
                             // terrain's (Silithus: Cenarion Hold's outpost, undumped, let a route over a 67-90 degree step) - but a capital's
                             // streets, whose ground under them reads steep everywhere
@@ -220,7 +224,7 @@ class RenderSafePath {
             // height classes the lattice's steps, 0 where it levels them - a city's, a building's porch)
             if (map == main) { val classed = tileDecks.values.flatten().toSet()
                 File(out, "floors_$tag.json").writeText(org.json.JSONArray(deckList.flatMap { d -> val hs = d.heights ?: return@flatMap emptyList<org.json.JSONArray>()
-                    d.triangles.mapIndexed { k, t -> org.json.JSONArray(listOf(t[0], t[1], hs[k][0], t[2], t[3], hs[k][1], t[4], t[5], hs[k][2], if (d in classed) 1 else 0)) } }
+                    d.triangles.mapIndexed { k, t -> org.json.JSONArray(listOf(t[0], t[1], hs[k][0], t[2], t[3], hs[k][1], t[4], t[5], hs[k][2], if (d in classed) 1 else if (d in capitalDecks) 2 else 0)) } }
                     // and a capital's street boxes (no floor read: leveled whatever their height - flag 2), two triangles a box
                     + cityFeet.flatMap { f -> val c = listOf(doubleArrayOf(f.worldX(f.lx0, f.ly0), f.worldY(f.lx0, f.ly0)), doubleArrayOf(f.worldX(f.lx1, f.ly0), f.worldY(f.lx1, f.ly0)),
                         doubleArrayOf(f.worldX(f.lx1, f.ly1), f.worldY(f.lx1, f.ly1)), doubleArrayOf(f.worldX(f.lx0, f.ly1), f.worldY(f.lx0, f.ly1)))
@@ -524,8 +528,9 @@ class RenderSafePath {
             return pts.maxByOrNull { p -> pts.count { Math.hypot(it[0] - p[0], it[1] - p[1]) < 60 } }
         }
         // a node by its name, or by its base name when towns sharing it were told apart ("Deathknell · Inn", "Gustberry Lowlands (2)")
+        // ... or, a town that is no hub for this faction (the other side's: Theramore for the Horde), the place itself: its subzone's ground
         fun at(name: String) = (net.nodes.firstOrNull { it.name?.trim() == name.trim() } ?: net.nodes.firstOrNull { it.name?.trim()?.startsWith("${name.trim()} ") == true })
-            ?.let { doubleArrayOf(it.wx, it.wy) }
+            ?.let { doubleArrayOf(it.wx, it.wy) } ?: areaSpot(name.substringBefore(" ·").substringBefore(" (").trim())
         /** a named mob's spawns at their thickest (near [near] when given: within 500 yd of it) */
         fun mob(name: String, near: DoubleArray?): DoubleArray? {
             val pts = spawns.filter { it.name.equals(name, true) }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
@@ -537,7 +542,9 @@ class RenderSafePath {
         var goalNet: SafePath.Net = net
         fun exitNamed(name: String, how: String? = null): SafePath.Node? {
             fun inNet(n: SafePath.Net) = n.exits.firstOrNull { it.name.equals(name, true) && (how == null || it.how == how) }?.let { x -> n.nodes.firstOrNull { it.id == x.node } }
+            // (its kind when the spec names one; else, one exit a stretch now, any of that name: Elwynn's Stormwind "bridge" is its gate's)
             return inNet(goalNet) ?: inNet(net)?.also { println("GOALEXIT $name${how?.let { " ($it)" } ?: ""}: dropped by the ground check, its draft spot ${it.wx.toInt()},${it.wy.toInt()} kept as the goal") }
+                ?: if (how != null) exitNamed(name, null)?.also { println("GOALEXIT $name ($how): none of that kind, the stretch's exit taken") } else null
         }
         /** where an exit's way opens onto this zone's own level ground (a gate's tunnel or a lift is the other map's: its top not ours) */
         fun exitStart(name: String): DoubleArray? = exitNamed(name)?.let { gn ->
@@ -691,6 +698,11 @@ class RenderSafePath {
                 println("PROBE the water the route asked: $calls calls, deep at ${hits}")
                 println("PROBE the dry way: " + (noW?.pts ?: emptyList()).zipWithNext().joinToString(" ") { (u, v) -> val n = maxOf(1, (Math.hypot(v[0] - u[0], v[1] - u[1]) * 2).toInt())
                     "${u[0].toInt()},${u[1].toInt()}" + ((0..n).map { t -> val x = u[0] + (v[0] - u[0]) * t / n; val y = u[1] + (v[1] - u[1]) * t / n; x to y }.firstOrNull { deep(it.first, it.second) }?.let { "[DEEP ${it.first.toInt()},${it.second.toInt()} ${waterAt(it.first, it.second)}]" } ?: "") }) }
+            println("PROBE the faces along the line (class at the point / gentlest within a quarter yard / 45-48 bit), a yard apart: " +
+                (0..Math.hypot(pb[0] - pa[0], pb[1] - pa[1]).toInt()).joinToString(" ") { t -> val n = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]).coerceAtLeast(1e-9)
+                    val x = pa[0] + (pb[0] - pa[0]) * t / n; val y = pa[1] + (pb[1] - pa[1]) * t / n
+                    "${cg.faceAt(x, y)}${minOf(cg.faceAt(x, y), cg.faceAt(x + 0.25, y), cg.faceAt(x - 0.25, y), cg.faceAt(x, y + 0.25), cg.faceAt(x, y - 0.25))}${if (cg.short48(x, y)) "s" else ""}" } +
+                "; lineClear ${cg.lineClear(pa, pb)}; walkable ${Climb.walkable(cg, pa, pb, deep)}")
             println("PROBE the vertices around the start (depth / D deep / class of the step east, south), north row first: | " + (-6..6).joinToString(" | ") { dj -> (-6..6).joinToString(" ") { di ->
                 val vi = v0[0] + di; val vj = v0[1] + dj; val x = cg.wx(vj); val y = cg.wy(vi); val w = waterAt(x, y)
                 (if (w.isNaN()) "  . " else "%4.1f".format(w)) + (if (deep(x, y)) "D" else " ") + cg.step(vi, vj, -1, 0) + cg.step(vi, vj, 0, 1) } })

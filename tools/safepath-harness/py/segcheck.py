@@ -137,6 +137,18 @@ def floor_z(x, y, ground):
         if h >= ground - BURIED: over = h if over is None else min(over, h)
         else: under = h if under is None else max(under, h)
     return over if over is not None else under
+def cell_level(x, y):
+    """as Climb.build decides a cell's faces: the cell holding (x, y) is level when its middle is on a leveled floor, or (the harness's
+    onFloor) the vertex its middle rounds to has a covered hole among its four cells"""
+    gr = int(math.floor((ORG - x) / S)); gc = int(math.floor((ORG - y) / S))
+    mx = ORG - (gr + 0.5) * S; my = ORG - (gc + 0.5) * S
+    vr = kround((ORG - mx) / S); vc = kround((ORG - my) / S)
+    if any((vr + a, vc + b) in _holes for a in (-1, 0) for b in (-1, 0)): return True
+    return level_floor(mx, my)
+def vertex_level(gc, gr):
+    """as Climb.build levels a vertex's steps: a covered hole among its four cells, or a leveled floor over it"""
+    if any((gr + a, gc + b) in _holes for a in (-1, 0) for b in (-1, 0)): return True
+    return level_floor(ORG - gr * S, ORG - gc * S)
 def hole_at(x, y):
     """a hole a building's floor covers at (x, y), or one beside its cell: the harness levels the vertices beside such a hole (the
     floor is the ground there: a cave's mouth, a mine's entrance)"""
@@ -158,7 +170,7 @@ def lattice_worst(a, b, on=None):
         if d >= WALL:
             # a floor at the step (its own slope is the line's check, line_faces), or a hole a building's floor covers: no terrain
             mx = ORG - (cj + nj) / 2 * S; my = ORG - (ci + ni) / 2 * S
-            if hole_at(mx, my) or level_floor(mx, my) or (on and any(abs(px - mx) < 3.0 and abs(py - my) < 3.0 for px, py in on)): ci, cj = ni, nj; continue
+            if vertex_level(ci, cj) or vertex_level(ni, nj) or level_floor(mx, my) or (on and any(abs(px - mx) < 3.0 and abs(py - my) < 3.0 for px, py in on)): ci, cj = ni, nj; continue
             walls += 1
         worst = max(worst, d)
         ci, cj = ni, nj
@@ -192,7 +204,7 @@ def line_walk(a, b, z0=None):
         else:
             hist = []
             g = HT.height(x, y); h = g
-            if not (hole_at(x, y) or level_floor(x, y)):
+            if not (hole_at(x, y) or cell_level(x, y)):
                 fc = min(FC.face_at(x + dx, y + dy) for dx, dy in ((0, 0), (0.25, 0), (-0.25, 0), (0, 0.25), (0, -0.25)))
                 if WALL <= fc < SHORT_DEG:
                     steep_run += step

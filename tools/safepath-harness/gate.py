@@ -72,12 +72,12 @@ for tag, z in zones.items():
     if z['segcheck'] is None: fails.append('%s: no segcheck result (did the run fail?)' % tag)
     for L, (d, at) in z['water'].items():
         if d > NARROW: fails.append('%s: route %s crosses water %.1f yd deep at %s' % (tag, L, d, at))
-    for L, (d, at, n, run, rat, over) in z['wet'].items():
+    for L, (d, at, n, wrun, rat, over) in z['wet'].items():
         # the user's narrow-stream ruling (2026-10-18): deeper than the ford for no more than NARROW_YD at a time and never deeper than
         # NARROW is a wade; else a swim
         if over: fails.append('%s: route %s swims: %d yd deeper than %.1f, %.1f yd at %s (wetcheck)' % (tag, L, over, NARROW, d, at))
-        elif run > NARROW_YD: fails.append('%s: route %s swims: %d yd on end deeper than the ford at %s (wetcheck)' % (tag, L, run, rat))
-        elif n: notes.append('%s: route %s wades a narrow stream: %d yd deeper than the ford, at most %d yd on end, %.1f yd deep at %s' % (tag, L, n, run, d, at))
+        elif wrun > NARROW_YD: fails.append('%s: route %s swims: %d yd on end deeper than the ford at %s (wetcheck)' % (tag, L, wrun, rat))
+        elif n: notes.append('%s: route %s wades a narrow stream: %d yd deeper than the ford, at most %d yd on end, %.1f yd deep at %s' % (tag, L, n, wrun, d, at))
     if 'wet' in z and not z['wet'] and z['routes']: fails.append('%s: no wetcheck result' % tag)
     for sw in z.get('swims', []): notes.append('%s: %s' % (tag, sw))
     if z.get('unread'): notes.append('%s: %d WMOs with their floors not dumped (the ground under them taken as the terrain): %s' % (tag, len(z['unread']), ', '.join(z['unread'][:12])))
@@ -107,8 +107,7 @@ for r in cross:
 # the planner's checks (PlanCross): a FAIL fails; no plan.log is no check run
 pl = os.path.join(run, 'plan.log')
 if os.path.exists(pl):
-    pls = [l.rstrip('
-') for l in open(pl, encoding='utf-8', errors='replace') if l.startswith('PLAN ')]
+    pls = [l.rstrip(chr(10)) for l in open(pl, encoding='utf-8', errors='replace') if l.startswith('PLAN ')]
     if not pls: fails.append('plan: no PLAN lines (did PlanCross run?)')
     for l in pls:
         if ' FAIL' in l.split('|')[0]: fails.append(l[5:])
