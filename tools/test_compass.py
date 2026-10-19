@@ -29,8 +29,11 @@ function Region:SetPoint(...) self.point = { ... } end
 function Region:ClearAllPoints() self.point = nil end
 function Region:SetSize(w, h) self.w, self.h = w, h end
 function Region:SetAllPoints(t) self.all = t end
+function Region:SetAlpha(a) self.alpha = a end
+FONTSETS = 0
+local setFont = Region.SetFont
 function Region:SetText(t) self.text = t end
-function Region:SetFont(f, s, fl) self.font, self.fsize, self.flags = f, s, fl end
+function Region:SetFont(f, s, fl) self.font, self.fsize, self.flags = f, s, fl; FONTSETS = (FONTSETS or 0) + 1 end
 function Region:SetTextColor(r, g, b, a) self.col = { r, g, b, a } end
 function Region:SetVertexColor(r, g, b, a) self.col = { r, g, b, a } end
 function Region:SetAtlas(a) self.atlas = a end
@@ -218,8 +221,8 @@ def main():
     fs = [k for k in shown if k.kind == "fs" and k.text in ("N", "NE", "E", "SE", "S")]
     endN = [k for k in fs if k.text == "N"]
     midE = [k for k in fs if k.text == "E"]
-    chk("letters fade by ALPHA toward the ends (N at the end %.2f, E centred %.2f)" % (endN[0].col[4], midE[0].col[4]),
-        endN and midE and endN[0].col[4] < 0.25 and midE[0].col[4] > 0.99 and endN[0].col[1] == 1)
+    chk("letters fade by ALPHA toward the ends (N at the end %.2f, E centred %.2f)" % (endN[0].alpha, midE[0].alpha),
+        endN and midE and endN[0].alpha < 0.25 and midE[0].alpha > 0.99 and endN[0].col[1] == 1)
     chk("letters in FRIZQT, OUTLINE", fs and all(k.font == "Fonts\\FRIZQT__.TTF" and k.flags == "OUTLINE" for k in fs))
     k = 768 / 1080
     chk("the band is 860 x 76 spec px in UI units (1/1080 of UIParent's height each)", abs(f.w - 860 * k) < 1e-6 and abs(f.h - 76 * k) < 1e-6)
@@ -232,6 +235,32 @@ def main():
     diag = [sent[i] for i in range(1, len(sent) + 1) if sent[i].probe == "compass"]
     chk("the diagnostic line: pin, quest and its source, the marker count (%d sent)" % len(diag),
         len(diag) == 1 and diag[0].pin is True and diag[0].quest is True and diag[0].qsrc == "onmap" and diag[0].n == 2 and diag[0].uwp is True)
+    # cp5 (the user: "the compass scrolling is kind of choppy"): every frame, an eased heading, pieces only moved
+    G.facing = 1.0
+    C.draw()
+    nk = len([1 for i in range(1, len(f.kids) + 1)])
+    fonts0 = L.globals().FONTSETS
+    G.facing = 1.5
+    hs, step = [], f.scripts.OnUpdate
+    for i in range(60):
+        step(f, 1 / 60)
+        hs.append(C.h)
+    chk("eases to the new facing in ~0.3 s (%.3f after 18 frames, %.4f after 60)" % (hs[17], hs[59]), abs(hs[59] - 1.5) < 0.005 and 1.3 < hs[17] < 1.5)
+    chk("critically damped: never overshoots", max(hs) <= 1.5 + 1e-6)
+    chk("moves every frame, no throttle (60 different headings)", len(set(round(h, 6) for h in hs)) >= 55)
+    nk2 = len([1 for i in range(1, len(f.kids) + 1)])
+    chk("no new pieces per frame (%d before, %d after 60 frames)" % (nk, nk2), nk == nk2)
+    chk("no SetFont per frame while nothing lifts (%d calls)" % (L.globals().FONTSETS - fonts0), L.globals().FONTSETS - fonts0 <= 4)
+    xs = [k.point[4] for k in [f.kids[i] for i in range(1, len(f.kids) + 1)] if k.kind == "fs" and k.shown and k.point and k.text == "N"]
+    chk("sub-pixel placement (an x offset like %.3f)" % (xs[0] if xs else -1), xs and abs(xs[0] - round(xs[0])) > 1e-6)
+    G.facing = 6.2; C.draw()
+    G.facing = 0.1
+    path = []
+    for i in range(40):
+        step(f, 1 / 60)
+        path.append(C.h)
+    chk("across north the short way (6.2 -> 0.1 never passes 3)", all(h > 6.0 or h < 0.2 for h in path) and abs(path[-1] - 0.1) < 0.01)
+    G.facing = math.radians(270); C.draw()
     # the camera-yaw probe (one shot, read only): starts 20 s after login once the game's nav diamond exists, logs 4 samples a line
     P = C.probe
     L.eval("WowCompanion.compass.probe")

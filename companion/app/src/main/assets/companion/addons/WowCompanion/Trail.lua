@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp4", pool = {}, used = {} }
+WC.compass = { V = "cp5" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -256,10 +256,10 @@ do
                     for _, m in ipairs(out.marks) do
                         if math.abs(m.x - x) < S.near + (m.off and 14 or 0) then lift = true end
                     end
-                    out.letters[#out.letters + 1] = { name = name, x = x, fade = fade, size = lift and (size - 5) or size,
+                    out.letters[#out.letters + 1] = { deg = deg, name = name, x = x, fade = fade, size = lift and (size - 5) or size,
                                                       y = lift and (S.line - S.lift) or S.line, lifted = lift }
                 else
-                    out.ticks[#out.ticks + 1] = { x = x, fade = fade }
+                    out.ticks[#out.ticks + 1] = { deg = deg, x = x, fade = fade }
                 end
             end
         end
@@ -289,102 +289,129 @@ do
         g:SetTexture(C.BAND)
         g:SetAllPoints(f)
         C.ground = { g }
-        -- the 30 Hz redraw, only while shown
-        local acc2 = 0
-        f:SetScript("OnUpdate", function(_, el)
-            acc2 = acc2 + (el or 0)
-            if acc2 < 1 / 30 then return end
-            acc2 = 0
-            pcall(C.draw)
-        end)
+        -- every frame while shown (cp5, the user: "the compass scrolling is kind of choppy"): one eased heading, pieces only moved
+        f:SetScript("OnUpdate", function(_, el) pcall(C.step, el or 0) end)
+        -- the pieces, made ONCE: a letter or a tick per 15 degrees, and one set per marker kind (their atlas set once)
+        C.slot = {}
+        for deg = 0, 345, 15 do
+            if C.NAMES[deg] then
+                local fs = f:CreateFontString(nil, "OVERLAY")
+                fs:SetFont(C.FONT, u(#C.NAMES[deg] == 1 and S.letter or S.letter2), "OUTLINE")
+                fs:SetText(C.NAMES[deg])
+                if deg == 0 then fs:SetTextColor(1, 0.25, 0.25, 1) else fs:SetTextColor(1, 0.82, 0, 1) end
+                C.slot[deg] = { fs = fs, lifted = false }
+            else
+                local t = plain(f, "ARTWORK", 0)
+                t:SetSize(u(2), u(S.tick))
+                C.slot[deg] = { tick = t }
+            end
+        end
+        C.mk = {}
+        for key, spec in pairs(C.MARK) do
+            local sz = u(spec.size)
+            local o = {}
+            -- its edge: the same art in black, a little larger, under it (the silhouette's dark rim, as the game outlines text)
+            o.sh = f:CreateTexture(nil, "ARTWORK", nil, 1)
+            pcall(function() o.sh:SetAtlas(spec.atlas) end)
+            o.sh:SetVertexColor(0, 0, 0, 0.85)
+            o.sh:SetSize(sz + u(3), sz + u(3))
+            o.tx = f:CreateTexture(nil, "ARTWORK", nil, 3)
+            pcall(function() o.tx:SetAtlas(spec.atlas) end)
+            o.tx:SetSize(sz, sz)
+            o.d = f:CreateFontString(nil, "OVERLAY")
+            o.d:SetFont(C.FONT, u(S.dist), "OUTLINE")
+            if spec.red then o.d:SetTextColor(1, 0.25, 0.25, 1) else o.d:SetTextColor(1, 1, 1, 1) end
+            o.a = f:CreateTexture(nil, "ARTWORK", nil, 3)
+            pcall(function() o.a:SetAtlas("Navigation-Tracked-Arrow") end)
+            o.a:SetSize(u(14), u(14))
+            C.mk[key] = o
+        end
         return f
     end
 
-    -- pooled pieces, handed out per draw
-    local function take(kind)
-        C.pool[kind] = C.pool[kind] or {}
-        local list = C.pool[kind]
-        C.used[kind] = (C.used[kind] or 0) + 1
-        local i = C.used[kind]
-        if not list[i] then
-            local f = C.frame
-            if kind == "font" or kind == "dist" then
-                list[i] = f:CreateFontString(nil, "OVERLAY")
-            elseif kind == "shadow" then
-                list[i] = f:CreateTexture(nil, "ARTWORK", nil, 1)
-            elseif kind == "mark" or kind == "arrow" then
-                list[i] = f:CreateTexture(nil, "ARTWORK", nil, 3)
-            else
-                list[i] = plain(f, "ARTWORK", 0)
-            end
-        end
-        local o = list[i]
-        o:ClearAllPoints()
-        o:Show()
-        return o
-    end
-    local function finish()
-        for kind, list in pairs(C.pool) do
-            for i = (C.used[kind] or 0) + 1, #list do list[i]:Hide() end
-        end
-        C.used = {}
+    -- the shown heading: a critically damped spring toward the game's facing, always the short way round (no jump across 0 / 2 pi)
+    C.OMEGA = 22                         -- rad/s: settles in ~0.2 s, close to the game camera's own swing behind the character
+    function C.ease(raw, dt)
+        if not C.h then C.h, C.hv = raw, 0; return C.h end
+        dt = math.min(dt, 0.1)
+        local err = C.wrap(raw - C.h)
+        if math.abs(err) > 2.5 then C.h, C.hv = raw, 0; return C.h end      -- a teleport / a load: no spin across the bar
+        local w = C.OMEGA
+        C.hv = C.hv + (w * w * err - 2 * w * C.hv) * dt
+        C.h = C.wrap(C.h + C.hv * dt)
+        return C.h
     end
 
-    function C.draw()
+    -- the world reads (player, pin, quest, corpse) ten times a second; the strip itself every frame
+    C.readAt = -1
+    function C.read(force)
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        if not force and now - C.readAt < 0.1 then return false end
+        C.readAt = now
+        C.me_ = C.me()
+        C.tg_ = C.targets(C.me_)
+        return true
+    end
+
+    local function hide(o) if o:IsShown() then o:Hide() end end
+    local function show(o) if not o:IsShown() then o:Show() end end
+
+    function C.step(dt, snap)
         local f = C.frame
-        if not f then return end
-        local facing = C.facing()
-        if not facing then f:Hide(); return end
-        local me = C.me()
-        local tg = C.targets(me)
-        local L = C.layout(facing, me, tg)
+        if not f or not C.slot then return end
+        local raw = C.facing()
+        if not raw then f:Hide(); return end
+        local fresh = C.read(snap)
+        if snap then C.h = nil end
+        local heading = C.ease(raw, dt)
+        local L = C.layout(heading, C.me_, C.tg_ or {})
         C.last = L
-        C.diag(facing, me, tg, L)
+        if fresh then C.diag(raw, C.me_, C.tg_ or {}, L) end
         local u, S = C.u, C.SPEC
-        C.used = {}
+        local seen = {}
         for _, t in ipairs(L.ticks) do
-            local tx = take("tick")
-            tx:SetVertexColor(200 / 255, 180 / 255, 120 / 255, 0.67 * t.fade)
-            tx:SetSize(u(2), u(S.tick))
-            tx:SetPoint("CENTER", f, "TOP", u(t.x), -u(S.line))
+            local o = C.slot[t.deg].tick
+            seen[t.deg] = true
+            o:SetVertexColor(200 / 255, 180 / 255, 120 / 255, 0.67 * t.fade)
+            o:SetPoint("CENTER", f, "TOP", u(t.x), -u(S.line))
+            show(o)
         end
         for _, l in ipairs(L.letters) do
-            local fs = take("font")
-            fs:SetFont(C.FONT, u(l.size), "OUTLINE")
-            if l.name == "N" then fs:SetTextColor(1, 0.25, 0.25, l.fade) else fs:SetTextColor(1, 0.82, 0, l.fade) end
-            fs:SetText(l.name)
-            fs:SetPoint("CENTER", f, "TOP", u(l.x), -u(l.y))
+            local s = C.slot[l.deg]
+            seen[l.deg] = true
+            if s.lifted ~= l.lifted then                    -- the font only when the size changes (a marker came / went)
+                s.fs:SetFont(C.FONT, u(l.size), "OUTLINE")
+                s.lifted = l.lifted
+            end
+            s.fs:SetAlpha(l.fade)
+            s.fs:SetPoint("CENTER", f, "TOP", u(l.x), -u(l.y))
+            show(s.fs)
         end
+        for deg, s in pairs(C.slot) do
+            if not seen[deg] then hide(s.fs or s.tick) end
+        end
+        local drawn = {}
         for _, m in ipairs(L.marks) do
-            local spec = C.MARK[m.key]
-            local sz = u(spec.size)
-            -- its edge: the same art in black, a little larger, under it (the silhouette's dark rim, as the game outlines text)
-            local sh = take("shadow")
-            pcall(function() sh:SetAtlas(spec.atlas) end)
-            sh:SetVertexColor(0, 0, 0, 0.85)
-            sh:SetSize(sz + u(3), sz + u(3))
-            sh:SetPoint("CENTER", f, "TOP", u(m.x), -u(S.line))
-            local tx = take("mark")
-            pcall(function() tx:SetAtlas(spec.atlas) end)
-            tx:SetVertexColor(1, 1, 1, 1)
-            tx:SetSize(sz, sz)
-            tx:SetPoint("CENTER", f, "TOP", u(m.x), -u(S.line))
-            local d = take("dist")
-            d:SetFont(C.FONT, u(S.dist), "OUTLINE")
-            if spec.red then d:SetTextColor(1, 0.25, 0.25, 1) else d:SetTextColor(1, 1, 1, 1) end
-            d:SetText(m.dist)
-            d:SetPoint("TOP", f, "TOP", u(m.x), -u(S.line + spec.size / 2 + 3))
+            local o, spec = C.mk[m.key], C.MARK[m.key]
+            drawn[m.key] = true
+            o.sh:SetPoint("CENTER", f, "TOP", u(m.x), -u(S.line)); show(o.sh)
+            o.tx:SetPoint("CENTER", f, "TOP", u(m.x), -u(S.line)); show(o.tx)
+            if o.text ~= m.dist then o.d:SetText(m.dist); o.text = m.dist end
+            o.d:SetPoint("TOP", f, "TOP", u(m.x), -u(S.line + spec.size / 2 + 3)); show(o.d)
             if m.off then                       -- off the bar: the game's nav arrow, pointing outward
-                local a = take("arrow")
-                pcall(function() a:SetAtlas("Navigation-Tracked-Arrow") end)
-                a:SetVertexColor(1, 1, 1, 1)
-                a:SetSize(u(14), u(14))
-                pcall(function() a:SetRotation(m.side > 0 and -PI / 2 or PI / 2) end)
-                a:SetPoint("CENTER", f, "TOP", u(m.x + m.side * (spec.size / 2 + 10)), -u(S.line))
+                if o.side ~= m.side then pcall(function() o.a:SetRotation(m.side > 0 and -PI / 2 or PI / 2) end); o.side = m.side end
+                o.a:SetPoint("CENTER", f, "TOP", u(m.x + m.side * (spec.size / 2 + 10)), -u(S.line)); show(o.a)
+            else
+                hide(o.a)
             end
         end
-        finish()
+        for key, o in pairs(C.mk) do
+            if not drawn[key] then hide(o.sh); hide(o.tx); hide(o.d); hide(o.a) end
+        end
     end
+
+    -- a full draw now (the first show, the harness): fresh reads, the heading snapped to the facing
+    function C.draw() C.step(0, true) end
 
     -- test13: one line every 5 s while shown, so a short log read tells what the compass has: the pin (and whether the game has a
     -- user waypoint at all, and Map's route pin), the focused quest and where its spot came from, how many markers it drew.
@@ -458,7 +485,7 @@ do
         if ev == "UI_SCALE_CHANGED" or ev == "DISPLAY_SIZE_CHANGED" then
             -- the sizes are in UI units: the frame is rebuilt at the new scale on the next show
             if C.frame then C.frame:Hide() end
-            C.frame, C.pool, C.used = nil, {}, {}
+            C.frame, C.slot, C.mk, C.h = nil, nil, nil, nil
         end
         pcall(C.refresh)
     end)
