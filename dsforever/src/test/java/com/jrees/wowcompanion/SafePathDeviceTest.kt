@@ -133,6 +133,73 @@ class SafePathDeviceTest {
         assertEquals(0f, w.calm(500.0, 500.0))
     }
 
+    // ---------------------------------------------------------------- memory and cancellation
+
+    @Test fun theZoneFilesKeepThreeAtMost() {
+        val lru = RouteWork.Lru<Int, String>(3)
+        for (m in 1..3) lru[m] = "zone $m"
+        lru[1]                                         // the first one used again: the second is now the oldest
+        lru[4] = "zone 4"
+        assertEquals(setOf(1, 3, 4), lru.keys)
+        lru[5] = "zone 5"
+        assertEquals(setOf(1, 4, 5), lru.keys)
+    }
+
+    /** flat ground over world x [half] .. -[half], y the same */
+    private fun plain(half: Double) = Climb.build(half, -half, half, -half, { _, _ -> 0f })
+
+    @Test fun aLegTooBigForItsWindowIsNarrowedOrRefused() {
+        val g = plain(2000.0)                                  // 961 x 961 vertices
+        val a = doubleArrayOf(1500.0, 1500.0); val b = doubleArrayOf(-1500.0, -1500.0)
+        val free = Climb.route(g, a, b)!!
+        // the whole lattice is its window (over a million vertices with the margin): narrowed to fit 800k, the same way on flat ground
+        val narrowed = Climb.route(g, a, b, limits = Climb.Limits(maxWindow = 800_000))!!
+        assertTrue(narrowed.reached)
+        assertEquals(SafeRoute.length(free.pts), SafeRoute.length(narrowed.pts), 1.0)
+        assertTrue("the scratch is the narrowed window's", Climb.Scratch.sizeHere() >= 961 * 961)
+        // a window no margin makes small enough: no leg
+        assertNull(Climb.route(g, a, b, limits = Climb.Limits(maxWindow = 100_000)))
+        // under the cap, nothing changes
+        val capped = Climb.route(g, doubleArrayOf(100.0, 100.0), doubleArrayOf(-100.0, -100.0), limits = Climb.Limits())!!
+        val plainLeg = Climb.route(g, doubleArrayOf(100.0, 100.0), doubleArrayOf(-100.0, -100.0))!!
+        assertEquals(plainLeg.pts.map { it.toList() }, capped.pts.map { it.toList() })
+    }
+
+    @Test fun theScratchIsReusedAndLetGo() {
+        val g = plain(2000.0)
+        Climb.Scratch.release()
+        Climb.route(g, doubleArrayOf(1500.0, 1500.0), doubleArrayOf(-1500.0, -1500.0))
+        val big = Climb.Scratch.sizeHere()
+        assertTrue(big > 0)
+        // a shorter leg reuses the same arrays, and comes out the same as on fresh ones
+        val a = Climb.route(g, doubleArrayOf(50.0, 50.0), doubleArrayOf(-50.0, 30.0))!!
+        assertEquals(big, Climb.Scratch.sizeHere())
+        Climb.Scratch.release()
+        val b = Climb.route(g, doubleArrayOf(50.0, 50.0), doubleArrayOf(-50.0, 30.0))!!
+        assertTrue("let go: the next leg's arrays are its own size", Climb.Scratch.sizeHere() < big)
+        assertEquals(a.pts.map { it.toList() }, b.pts.map { it.toList() })
+    }
+
+    @Test fun aCancelledLegStopsWithinTenMilliseconds() {
+        // a goal on a plateau no step reaches: the A* searches the whole 800 yd window round it until it is told to stop
+        val g = Climb.build(1500.0, -1500.0, 1500.0, -1500.0, { gr, gc -> val x = org - gr * s; val y = org - gc * s
+            if (hypot(x, y) < 30) 50f else 0f })
+        val stop = java.util.concurrent.atomic.AtomicBoolean(false)
+        var stopAt = 0L; var endAt = 0L; var threw = false
+        val t = Thread {
+            try { Climb.route(g, doubleArrayOf(1200.0, 1200.0), doubleArrayOf(0.0, 0.0), limits = Climb.Limits(cancelled = { stop.get() })) }
+            catch (e: Climb.Cancelled) { threw = true }
+            endAt = System.nanoTime()
+        }
+        t.start(); Thread.sleep(300)
+        assertTrue("still searching after 300 ms (the test's premise)", t.isAlive)
+        stopAt = System.nanoTime(); stop.set(true)
+        t.join(2000)
+        assertTrue(threw)
+        val ms = (endAt - stopAt) / 1e6
+        assertTrue("stopped in $ms ms", ms < 10.0)
+    }
+
     @Test fun aLatticeWithoutFacesOrRoomsComesBackWithout() {
         val g = Climb.build(100.0, -100.0, 100.0, -100.0, { _, _ -> 0f })
         val f = temp("clb3bare"); g.write(f)

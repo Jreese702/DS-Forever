@@ -500,15 +500,25 @@ object Climb {
      * then its bends straightened along lines of sight that cross no wall and cost no more. Null when the start itself is off the grid.
      */
     fun route(g: Grid, from: DoubleArray, to: DoubleArray, danger: (Double, Double) -> Float = { _, _ -> 0f }, k: Double = 0.0,
-              water: ((Double, Double) -> Boolean)? = null, links: List<Link> = emptyList()): Leg? {
+              water: ((Double, Double) -> Boolean)? = null, links: List<Link> = emptyList(), limits: Limits? = null): Leg? {
         val s = g.at(from[0], from[1]); val e = g.at(to[0], to[1])
-        val m = (MARGIN_YD / STEP).toInt()
+        var m = (MARGIN_YD / STEP).toInt()
+        fun window(m: Int) = (min(g.nx - 1, max(s[0], e[0]) + m) - max(0, min(s[0], e[0]) - m) + 1).toLong() *
+            (min(g.ny - 1, max(s[1], e[1]) + m) - max(0, min(s[1], e[1]) - m) + 1)
+        // THE ROUTE'S MEMORY BOUND (the device: [Limits.maxWindow] vertices of scratch at most): a window too big for it is narrowed toward
+        // [MIN_MARGIN_YD] round the leg's two ends, and a leg whose window is still too big is no leg (the caller keeps the network's way)
+        if (limits != null && window(m) > limits.maxWindow) {
+            val m0 = (MIN_MARGIN_YD / STEP).toInt()
+            while (m > m0 && window(m) > limits.maxWindow) m = max(m0, m - 8)
+            if (window(m) > limits.maxWindow) return null
+        }
         val i0 = max(0, min(s[0], e[0]) - m); val i1 = min(g.nx - 1, max(s[0], e[0]) + m)
         val j0 = max(0, min(s[1], e[1]) - m); val j1 = min(g.ny - 1, max(s[1], e[1]) + m)
         val w = i1 - i0 + 1; val hgt = j1 - j0 + 1
         fun id(i: Int, j: Int) = (j - j0) * w + (i - i0)
-        val dist = DoubleArray(w * hgt) { Double.MAX_VALUE }; val prev = IntArray(w * hgt) { -1 }
-        val stepCost = HashMap<Long, Double>()
+        // the scratch, reused from the last leg on this thread (one zone's legs one after another: no new arrays a leg)
+        val sc = Scratch.of(w * hgt)
+        val dist = sc.dist; val prev = sc.prev
         // the mobs a cost, never a wall (the user: "some quests do expect the player to have to kill through mobs to get to the
         // destination"): the danger fades toward the goal, to none at it - over [GOAL_FADE_YD], twice that when the goal's own spot is
         // dangerous (a quest's mobs in a ravine, a cave full of them) - so the way avoids them on the way and goes in straight at the end
@@ -518,7 +528,7 @@ object Climb {
             if (water?.invoke(x, y) == true) return Double.NaN
             return k * danger(x, y) * (hypot(x - to[0], y - to[1]) / fade).coerceAtMost(1.0)
         }
-        val extra = DoubleArray(w * hgt) { Double.NaN }
+        val extra = sc.extra
         fun extraOf(i: Int, j: Int): Double { val q = id(i, j); if (extra[q].isNaN()) extra[q] = cellCost(i, j).let { if (it.isNaN()) -1.0 else it }; return extra[q] }
         val start = id(s[0], s[1]); val goal = id(e[0], e[1])
         // the caves' links with both mouths in the window: from a mouth's vertex to the other's, at their floor's length (and danger)
@@ -532,12 +542,15 @@ object Climb {
             jumps.getOrPut(id(p[0], p[1])) { ArrayList() }.add(intArrayOf(id(q[0], q[1]), li, 0))
             if (!lk.oneWay) jumps.getOrPut(id(q[0], q[1])) { ArrayList() }.add(intArrayOf(id(p[0], p[1]), li, 1))
         }
-        val via = IntArray(w * hgt) { -1 }                     // how a vertex was reached: a link (its index x 2 + its way back) or a step
+        val via = sc.via                                       // how a vertex was reached: a link (its index x 2 + its way back) or a step
         fun hEst(i: Int, j: Int) = hypot((i - e[0]).toDouble(), (j - e[1]).toDouble()) * STEP
         val open = PriorityQueue<DoubleArray>(compareBy { it[0] })
         dist[start] = 0.0; open.add(doubleArrayOf(hEst(s[0], s[1]), start.toDouble()))
         var best = start; var bestD = hEst(s[0], s[1])
+        val cancelled = limits?.cancelled; var pops = 0
         while (open.isNotEmpty()) {
+            // asked to stop (a newer plan, the player gone): within [CANCEL_EVERY] pops
+            if (cancelled != null && (++pops and (CANCEL_EVERY - 1)) == 0 && cancelled()) throw Cancelled()
             val top = open.poll(); val u = top[1].toInt()
             val ui = u % w + i0; val uj = u / w + j0
             if (top[0] - hEst(ui, uj) > dist[u] + 1e-6) continue
@@ -635,6 +648,43 @@ object Climb {
         return Leg(pts, arrived)
     }
     const val MARGIN_YD = 800.0
+    /** a window narrowed for [Limits.maxWindow] keeps at least this margin round the leg's ends */
+    const val MIN_MARGIN_YD = 200.0
+    /** the device's scratch bound: a leg's window of at most this many vertices (24 bytes a vertex: about 24 MB of scratch) */
+    const val WINDOW_CAP = 1_000_000
+    /** the A* asks whether it is cancelled every this many pops (a power of two: a few milliseconds of work at most) */
+    const val CANCEL_EVERY = 256
+    /** the device's bounds on a leg: its window ([maxWindow] vertices, else narrowed, else no leg) and [cancelled] asked as it runs */
+    class Limits(val maxWindow: Int = WINDOW_CAP, val cancelled: (() -> Boolean)? = null)
+    /** a leg stopped by [Limits.cancelled] */
+    class Cancelled : RuntimeException("route cancelled")
+
+    /**
+     * A LEG'S SCRATCH, kept per thread and reused (the route thread plans one leg after another): the A*'s distances, its links back,
+     * each vertex's cost and how it was reached, grown to the biggest window asked for and filled afresh for each leg. [release] lets the
+     * next leg start from small arrays again (the device's memory trim)
+     */
+    class Scratch private constructor(n: Int) {
+        val dist = DoubleArray(n); val prev = IntArray(n); val extra = DoubleArray(n); val via = IntArray(n)
+        val size get() = dist.size
+        companion object {
+            private val mine = ThreadLocal<Scratch?>()
+            @Volatile private var released = 0
+            private val seen = ThreadLocal<Int>()
+            /** this thread's scratch for [n] vertices, the first [n] of each array set as a fresh leg's */
+            fun of(n: Int): Scratch {
+                if (seen.get() != released) { mine.set(null); seen.set(released) }
+                val sc = mine.get()?.takeIf { it.size >= n } ?: Scratch(n).also { mine.set(it) }
+                java.util.Arrays.fill(sc.dist, 0, n, Double.MAX_VALUE); java.util.Arrays.fill(sc.prev, 0, n, -1)
+                java.util.Arrays.fill(sc.extra, 0, n, Double.NaN); java.util.Arrays.fill(sc.via, 0, n, -1)
+                return sc
+            }
+            /** every thread's scratch let go at its next leg */
+            fun release() { released++ }
+            /** this thread's scratch's size now (the tests) */
+            fun sizeHere(): Int = mine.get()?.size ?: 0
+        }
+    }
     /** a straight line longer than this (a diagonal step and a half) is a cut, never through a room ([Grid.solid]) */
     const val SOLID_LINE_YD = STEP * 1.5 * 1.41421356
     const val GOAL_FADE_YD = 100.0
@@ -667,5 +717,5 @@ object Climb {
     }
 
     /** the zones' lattices (the terrain step's), kept in memory */
-    val files = RouteWork.Files { map -> Grid.read(ArtHarvest.file("terrain/$map.clb")) }
+    val files = RouteWork.Files(max = 3) { map -> Grid.read(ArtHarvest.file("terrain/$map.clb")) }
 }
