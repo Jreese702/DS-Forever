@@ -1,0 +1,17 @@
+{"tag": "felwood", "dir": "kalimdor", "faction": "horde", "zone": 1448, "area": 361, "level": 50, "friendlyMinLevel": 100, "floorWmos": [111596],
+ "maps": [[1448, 361], [1440, 331], [1439, 148], [1452, 618], [1450, 493], [2482, 616]], "cities": [], "border": [1448, 1440],
+ "title": "Felwood", "crop": [7133, 3300, 300, -2500],
+ "closeups": [{"name": "Bloodvenom Post and Jaedenar", "box": [5450, 4600, 100, -1000]}, {"name": "Timbermaw Hold tunnel", "box": [7133, 6550, -1700, -2450]},
+  {"name": "Emerald Sanctuary and Deadwood", "box": [4350, 3400, -600, -1800]}, {"name": "Irontree and Talonbranch", "box": [6750, 5850, -1100, -2300]}],
+ "goals": [
+  {"name": "Shatter Scar Vale (the infernals)", "from": {"node": "Bloodvenom Post "}, "to": {"camp": "Shatter Scar Vale"}},
+  {"name": "Jadefire Run (the satyrs)", "from": {"node": "Bloodvenom Post"}, "to": {"camp": "Jadefire Run"}},
+  {"name": "the Emerald Sanctuary", "from": {"node": "Bloodvenom Post"}, "to": {"wmo": 113174, "near": [4007, -1285]}},
+  {"name": "Jadefire Glen (the satyrs)", "from": {"xy": [4006, -1288], "name": "Emerald Sanctuary"}, "to": {"camp": "Jadefire Glen"}},
+  {"name": "Deadwood Village (the furbolgs)", "from": {"xy": [4006, -1288], "name": "Emerald Sanctuary"}, "to": {"camp": "Deadwood Village"}},
+  {"name": "the way to Ashenvale", "from": {"xy": [4006, -1288], "name": "Emerald Sanctuary"}, "to": {"exit": "Ashenvale"}},
+  {"name": "Irontree Cavern's mouth", "from": {"node": "Bloodvenom Post"}, "to": {"cave": 111211, "near": [6462, -1564]}},
+  {"name": "Talonbranch Glade (Alliance: its guards are danger)", "from": {"node": "Bloodvenom Post"}, "to": {"camp": "Talonbranch Glade "}},
+  {"name": "Felpaw Village (the Deadwood furbolgs)", "from": {"xy": [6206, -1992], "name": "Talonbranch Glade"}, "to": {"camp": "Felpaw Village"}},
+  {"name": "Timbermaw Hold's mouth (the tunnel to Winterspring and Moonglade)", "from": {"xy": [6787, -1987], "name": "Felpaw Village"}, "to": {"cave": 111596, "near": [6842, -2090]}}
+ ]}

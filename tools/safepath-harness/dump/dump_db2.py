@@ -5,7 +5,7 @@ import casc
 h = casc.open_storage(os.environ.get('WOW_DIR', r'C:\Program Files (x86)\World of Warcraft'), os.environ.get('WOW_PRODUCT', 'wow_classic_beta'), locale=0x2)
 WORK = os.environ.get('SAFEPATH_WORK', 'E:/safepath-work')
 os.makedirs(os.path.join(WORK, 'db2'), exist_ok=True)
-NAMES = ['AreaTable', 'Map', 'UiMapAssignment', 'WMOAreaTable', 'TaxiNodes', 'TaxiPath', 'TaxiPathNode', 'UiTextureAtlas', 'UiTextureAtlasMember']
+NAMES = ['AreaTable', 'Map', 'UiMapAssignment', 'WMOAreaTable', 'TaxiNodes', 'TaxiPath', 'TaxiPathNode', 'UiTextureAtlas', 'UiTextureAtlasMember', 'LiquidType']
 want = {'dbfilesclient/%s.db2' % n.lower(): n for n in NAMES}
 for row in csv.reader(open(os.environ.get('LISTFILE', 'E:/wc-scratch-c9979a42/casc/community-listfile.csv'), encoding='utf-8', errors='ignore'), delimiter=';'):
     if len(row) >= 2 and row[1].lower() in want:

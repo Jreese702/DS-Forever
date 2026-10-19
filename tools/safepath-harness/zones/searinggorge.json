@@ -1,0 +1,201 @@
+{
+ "tag": "searinggorge",
+ "dir": "azeroth",
+ "faction": "alliance",
+ "zone": 1427,
+ "area": 51,
+ "level": 48,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1427,
+   51
+  ],
+  [
+   1418,
+   3
+  ],
+  [
+   1428,
+   46
+  ],
+  [
+   1432,
+   38
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1427,
+  1428
+ ],
+ "title": "Searing Gorge",
+ "crop": [
+  -6150,
+  -7550,
+  -350,
+  -2550
+ ],
+ "closeups": [
+  {
+   "name": "Thorium Point and the Cauldron",
+   "box": [
+    -6400,
+    -7100,
+    -850,
+    -1550
+   ]
+  },
+  {
+   "name": "Firewatch Ridge and Blackchar Cave",
+   "box": [
+    -6450,
+    -7350,
+    -450,
+    -1050
+   ]
+  },
+  {
+   "name": "Blackrock Mountain entrance",
+   "box": [
+    -7150,
+    -7550,
+    -850,
+    -1400
+   ]
+  },
+  {
+   "name": "Loch Modan gate and the Badlands way",
+   "box": [
+    -6150,
+    -6700,
+    -1750,
+    -2450
+   ]
+  },
+  {
+   "name": "Grimesilt and Tanner Camp",
+   "box": [
+    -6800,
+    -7450,
+    -1500,
+    -2150
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "The Slag Pit's north mouth (Cauldron rim)",
+   "from": {
+    "node": "Thorium Point"
+   },
+   "to": {
+    "cave": 110833,
+    "near": [
+     -6740,
+     -1105
+    ]
+   }
+  },
+  {
+   "name": "Firewatch Ridge (Twilight camp)",
+   "from": {
+    "node": "Thorium Point"
+   },
+   "to": {
+    "camp": "Firewatch Ridge"
+   }
+  },
+  {
+   "name": "Blackchar Cave's mouth",
+   "from": {
+    "node": "Thorium Point"
+   },
+   "to": {
+    "cave": 111186,
+    "near": [
+     -7282,
+     -795
+    ]
+   }
+  },
+  {
+   "name": "The Cauldron's terraces (Dark Iron Taskmasters)",
+   "from": {
+    "node": "Thorium Point"
+   },
+   "to": {
+    "mob": "Dark Iron Taskmaster"
+   }
+  },
+  {
+   "name": "Grimesilt Dig Site",
+   "from": {
+    "node": "Thorium Point"
+   },
+   "to": {
+    "camp": "Grimesilt Dig Site"
+   }
+  },
+  {
+   "name": "Tanner Camp's den (Margol the Rager)",
+   "from": {
+    "node": "Thorium Point"
+   },
+   "to": {
+    "cave": 110497,
+    "near": [
+     -7291,
+     -1951
+    ]
+   }
+  },
+  {
+   "name": "Blackrock Mountain entrance",
+   "from": {
+    "node": "Thorium Point"
+   },
+   "to": {
+    "cave": 7952336,
+    "near": [
+     -7370,
+     -1100
+    ]
+   }
+  },
+  {
+   "name": "Dustfire Valley (Dark Iron kidnappers)",
+   "from": {
+    "node": "Thorium Point"
+   },
+   "to": {
+    "camp": "Dustfire Valley"
+   }
+  },
+  {
+   "name": "the Loch Modan gate (inner mouth)",
+   "from": {
+    "node": "Thorium Point"
+   },
+   "to": {
+    "cave": 110684,
+    "near": [
+     -6359,
+     -2078
+    ]
+   }
+  },
+  {
+   "name": "east over the pass into the Badlands (towards Kargath)",
+   "from": {
+    "node": "Thorium Point"
+   },
+   "to": {
+    "xy": [
+     -6845,
+     -2196
+    ]
+   }
+  }
+ ]
+}

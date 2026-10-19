@@ -1,0 +1,283 @@
+{
+ "tag": "stranglethorn",
+ "dir": "azeroth",
+ "faction": "horde",
+ "zone": 1434,
+ "area": 33,
+ "level": 40,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1434,
+   33
+  ],
+  [
+   1431,
+   10
+  ],
+  [
+   1436,
+   40
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1434,
+  1431
+ ],
+ "floorWmos": [
+  111333
+ ],
+ "floorCity": {
+  "fids": [
+   7952254
+  ],
+  "places": [
+   {
+    "name": "Booty Bay tunnel mouth",
+    "xy": [
+     -14266.7,
+     330.4
+    ],
+    "z": 27.0,
+    "source": "WMO 7952254 (Booty Bay)'s floor meeting the terrain at the land tunnel (Caves' mouth read, z 27)"
+   },
+   {
+    "name": "Booty Bay flight master (Gringer)",
+    "xy": [
+     -14444.3,
+     509.6
+    ],
+    "z": 26.2,
+    "source": "TaxiNodes 18 (Booty Bay, Horde) at (-14444.3, 509.6, 26.2); Gringer QuestieDB 2858 at (-14448.7, 506.2)"
+   },
+   {
+    "name": "Ratchet boat dock",
+    "xy": [
+     -14277.7,
+     582.9
+    ],
+    "source": "transports.json ride 241 (TaxiPath 241) Booty Bay stop (-14277.7, 582.9, 0): the boat's own height, so the dock's planks nearest it"
+   }
+  ],
+  "links": [
+   {
+    "kind": "boat",
+    "name": "Boat 241 to Ratchet",
+    "from": "Ratchet boat dock",
+    "toName": "The Barrens, Ratchet dock (map 1)",
+    "toAt": [
+     -1005.6,
+     -3841.6,
+     0.0
+    ],
+    "oneWay": false,
+    "source": "transports.json ride 241: a (-1005.6, -3841.6, 0) Ratchet, b (-14277.7, 582.9, 0) Booty Bay, neutral (fa=fb=3)"
+   }
+  ],
+  "routes": [
+   {
+    "name": "Booty Bay: the tunnel down to the flight master",
+    "from": "Booty Bay tunnel mouth",
+    "to": "Booty Bay flight master (Gringer)"
+   },
+   {
+    "name": "Booty Bay: the flight master down to the Ratchet boat's dock",
+    "from": "Booty Bay flight master (Gringer)",
+    "to": "Ratchet boat dock"
+   }
+  ]
+ },
+ "title": "Stranglethorn Vale",
+ "crop": [
+  -11169,
+  -15100,
+  1500,
+  -1950
+ ],
+ "closeups": [
+  {
+   "name": "Booty Bay",
+   "box": [
+    -14150,
+    -14600,
+    800,
+    200
+   ]
+  },
+  {
+   "name": "Grom'gol Base Camp",
+   "box": [
+    -12250,
+    -12600,
+    400,
+    0
+   ]
+  },
+  {
+   "name": "Nesingwary and Kurzen",
+   "box": [
+    -11250,
+    -11800,
+    100,
+    -1000
+   ]
+  },
+  {
+   "name": "Zul'Gurub entrance and Mosh'Ogg",
+   "box": [
+    -11800,
+    -12550,
+    -600,
+    -1300
+   ]
+  },
+  {
+   "name": "Gurubashi Arena",
+   "box": [
+    -13050,
+    -13400,
+    450,
+    50
+   ]
+  },
+  {
+   "name": "Crystalvein Mine",
+   "box": [
+    -13150,
+    -13500,
+    -200,
+    -650
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "Nesingwary's Expedition (Hemet Nesingwary)",
+   "from": {
+    "node": "Grom'gol"
+   },
+   "to": {
+    "xy": [
+     -11628.6,
+     -54.7
+    ]
+   }
+  },
+  {
+   "name": "Kurzen's Compound mine's south-west mouth",
+   "from": {
+    "node": "Grom'gol"
+   },
+   "to": {
+    "xy": [
+     -11525,
+     -748
+    ]
+   }
+  },
+  {
+   "name": "the Ruins of Zul'Kunda (Bloodscalp trolls)",
+   "from": {
+    "node": "Grom'gol"
+   },
+   "to": {
+    "camp": "Ruins of Zul'Kunda"
+   }
+  },
+  {
+   "name": "the Venture Co. Base Camp (geologists), in from the Duskwood road",
+   "from": {
+    "xy": [
+     -11216.7,
+     -79.2
+    ]
+   },
+   "to": {
+    "camp": "Venture Co. Base Camp"
+   }
+  },
+  {
+   "name": "the Mosh'Ogg Ogre Mound's mouth, from the Venture Co. camp",
+   "from": {
+    "xy": [
+     -12038,
+     -560
+    ]
+   },
+   "to": {
+    "cave": 111333,
+    "near": [
+     -12352,
+     -977
+    ]
+   }
+  },
+  {
+   "name": "the Zul'Gurub entrance",
+   "from": {
+    "node": "Grom'gol"
+   },
+   "to": {
+    "cave": 108081,
+    "near": [
+     -11911,
+     -937
+    ]
+   }
+  },
+  {
+   "name": "the road from Grom'gol to Booty Bay's tunnel",
+   "from": {
+    "node": "Grom'gol"
+   },
+   "to": {
+    "xy": [
+     -14266.7,
+     330.4
+    ]
+   }
+  },
+  {
+   "name": "the Gurubashi Arena",
+   "from": {
+    "xy": [
+     -14266.7,
+     330.4
+    ]
+   },
+   "to": {
+    "cave": 108163,
+    "near": [
+     -13206,
+     272
+    ]
+   }
+  },
+  {
+   "name": "Crystalvein Mine's mouth (Venture Co. strip miners)",
+   "from": {
+    "node": "Grom'gol"
+   },
+   "to": {
+    "cave": 111194,
+    "near": [
+     -13303,
+     -443
+    ]
+   }
+  },
+  {
+   "name": "the road north into Duskwood",
+   "from": {
+    "node": "Grom'gol"
+   },
+   "to": {
+    "xy": [
+     -11216.7,
+     -79.2
+    ]
+   }
+  }
+ ]
+}

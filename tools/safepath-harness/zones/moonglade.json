@@ -1,0 +1,15 @@
+{"tag": "moonglade", "dir": "kalimdor", "faction": "alliance", "zone": 1450, "area": 493, "level": 30, "friendlyMinLevel": 100, "floorWmos": [111596], "friendlyNames": ["^Orokai$", "^Elaren Stargrove$", "^Cenarion Warden$", "^Slumbering Druid$"], "maps": [[1450, 493], [1448, 361], [1452, 618]], "cities": [], "border": [1450, 1448], "title": "Moonglade", "crop": [8300, 7100, -1700, -3400], "closeups": [
+  {"name": "Nighthaven", "box": [8100, 7700, -2300, -2750]}, 
+  {"name": "Stormrage Barrow Dens", "box": [7800, 7400, -2800, -3150]}, 
+  {"name": "Timbermaw tunnel mouth", "box": [7600, 7250, -2000, -2400]}, 
+  {"name": "Shrine of Remulos", "box": [8000, 7700, -2000, -2300]}], "goals": [
+  {"name": "the Shrine of Remulos (Keeper Remulos)", "from": {"xy": [7948, -2372], "name": "Nighthaven (the north landing, on the road to the Shrine)"}, "to": {"xy": [7848.3, -2216.4]}}, 
+  {"name": "the Timbermaw tunnel's Moonglade mouth (to Felwood and Winterspring)", "from": {"xy": [7948, -2372], "name": "Nighthaven (the north landing, on the road to the Shrine)"}, "to": {"cave": 111596, "near": [7360, -2205]}}, 
+  {"name": "Stormrage Barrow Dens: the great barrow's east mouth", "from": {"xy": [7521.0, -3032.0], "name": "the west barrow's mouth"}, "to": {"xy": [7630.0, -3071.0]}}, 
+  {"name": "Stormrage Barrow Dens: the west barrow (Restless Spirits)", "from": {"node": "Moonglade"}, "to": {"cave": 110463, "near": [7541, -3035]}}, 
+  {"name": "Stormrage Barrow Dens: the north barrow's west mouth", "from": {"node": "Moonglade"}, "to": {"xy": [7707.0, -2933.0]}}, 
+  {"name": "the great moonwell (Elaren Stargrove, Cenarion Wardens)", "from": {"node": "Moonglade"}, "to": {"xy": [7586.4, -2923.2]}}, 
+  {"name": "Nighthaven's west bridges to the hunters' lodge", "from": {"xy": [7948, -2372], "name": "Nighthaven (the north landing, on the road to the Shrine)"}, "to": {"wmo": 112861, "near": [7830, -2571]}}, 
+  {"name": "Nighthaven over its bridges: the inn to the lakeside house's door", "from": {"xy": [7961, -2410], "name": "Nighthaven inn"}, "to": {"cave": 112828, "near": [7981, -2576]}}, 
+  {"name": "the south bridge on Lake Elune'ara", "from": {"node": "Moonglade"}, "to": {"wmo": 113291, "near": [7476, -2651]}}, 
+  {"name": "from the Timbermaw tunnel to the Shrine of Remulos", "from": {"xy": [7380, -2205], "name": "Timbermaw tunnel mouth"}, "to": {"xy": [7848.3, -2216.4]}}]}

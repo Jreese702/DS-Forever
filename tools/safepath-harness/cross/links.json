@@ -15,7 +15,8 @@
   {"a": 1426, "b": 1432, "at": [-5650, -2545], "name": "the South Gate tunnels", "evidence": "cross routes b2 / b3 join there"},
   {"a": 1411, "b": 1454, "at": [1408, -4207], "name": "the Orgrimmar gate", "evidence": "Durotar's exit (gate) to Orgrimmar; cross route d1 starts there"},
   {"a": 1420, "b": 1458, "at": [1648, 240], "name": "the Undercity entrance", "evidence": "Tirisfal's goal: the Ruins of Lordaeron (the Undercity's lifts are manual links, inside the city)"},
-  {"a": 1426, "b": 1455, "at": [-5045, -833], "name": "the Gates of Ironforge", "evidence": "Dun Morogh's goal at the ramp's top; AreaTrigger 4026 at (-5049, -818)"}
+  {"a": 1426, "b": 1455, "at": [-5045, -833], "name": "the Gates of Ironforge", "evidence": "Dun Morogh's goal at the ramp's top; AreaTrigger 4026 at (-5049, -818)"},
+  {"a": 1452, "b": 2482, "at": [4543, -3974], "name": "the Darkwhisper Gorge tunnel to Mount Hyjal", "evidence": "md_cavetunnel01 (110553): the Winterspring worker's far mouth on Hyjal's ground (4601,-3883) and the Hyjal worker's EXIT Winterspring (tunnel) at 4543,-3974, walkable - Hyjal's only ground entry"}
  ],
  "links": [
   {"id": "P1", "kind": "portal", "name": "the Skyborne Portal to Stormwind", "from": {"map": -2980, "xy": [451.0, 446.6]}, "to": {"map": 1453, "xy": null}, "oneWay": true,
@@ -24,6 +25,8 @@
    "evidence": "QuestieDB object 654168 lists it in Stormwind with no spawn: not placed in the world, check in game before linking"},
   {"id": "TRAM", "kind": "tram", "name": "the Deeprun Tram", "from": {"map": 1453, "xy": [-8346, 514]}, "to": {"map": 1455, "xy": [-4840, -1330]}, "oneWay": false, "yd": 420,
    "evidence": "AreaTrigger.db2 2173 (Stormwind's Dwarven District) and 2175 (Ironforge's Tinker Town); the ride's yards as CityExits.TRAM_YD"},
+  {"id": "LIFT-GREAT", "kind": "lift", "name": "the Great Lift", "from": {"map": 1413, "xy": [-4617, -1850]}, "to": {"map": 1441, "xy": [-4663.8, -1825.4]}, "oneWay": false, "yd": 210,
+   "evidence": "the Thousand Needles worker: thousandneedleselevator.wmo 112647, car B at (-4663.8,-1825.4) z -44 -> 85.6 (rise 129.6 vs TransportAnimation 129.3), its top mouths (-4617,-1850); car A's ramp foot sunk 5 yd, not joined. The wait as Caves.LIFT_WAIT_YD"},
   {"id": "P9", "kind": "portal", "name": "the portal up to Darnassus", "from": {"map": -702, "xy": [8799, 970]}, "to": {"map": 1457, "xy": null}, "oneWay": true,
    "evidence": "AreaTrigger.db2 542 at (8799, 970, 30), r 10; where it sends the player is server-side"},
   {"id": "P10", "kind": "portal", "name": "the portal down to Rut'theran", "from": {"map": 1457, "xy": null}, "to": {"map": -702, "xy": null}, "oneWay": true,

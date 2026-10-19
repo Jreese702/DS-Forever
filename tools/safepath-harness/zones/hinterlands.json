@@ -1,0 +1,21 @@
+{"tag": "hinterlands", "dir": "azeroth", "faction": "alliance", "zone": 1425, "area": 47, "level": 45, "friendlyMinLevel": 100,
+ "maps": [[1425, 47], [1424, 267], [1417, 45], [1422, 28], [1423, 139]], "cities": [], "border": [1425, 1424],
+ "title": "The Hinterlands", "crop": [1400, -1000, -1575, -5300],
+ "closeups": [{"name": "Aerie Peak and the Hillsbrad crossing", "box": [450, -250, -1650, -2350]},
+              {"name": "Plaguemist Ravine to Western Plaguelands", "box": [1150, 300, -1750, -2700]},
+              {"name": "Shadra'Alor", "box": [-150, -650, -2600, -3100]},
+              {"name": "Jintha'Alor", "box": [-150, -750, -3650, -4250]},
+              {"name": "Skulk Rock and Seradane", "box": [1100, 300, -3600, -4350]},
+              {"name": "Revantusk Village and the Overlook Cliffs", "box": [150, -800, -4300, -4950]}],
+ "goals": [
+  {"name": "the pass down to Hillsbrad (the crossing Hillsbrad confirmed)", "from": {"node": "Aerie Peak"}, "to": {"exit": "Hillsbrad Foothills"}},
+  {"name": "Shadra'Alor (Witherbark trolls)", "from": {"node": "Aerie Peak"}, "to": {"camp": "Shadra'Alor"}},
+  {"name": "Quel'Danil Lodge (the hunters' lodge)", "from": {"node": "Aerie Peak"}, "to": {"wmo": 112863, "near": [237, -2771]}},
+  {"name": "Skulk Rock's cave mouth (oozes)", "from": {"node": "Aerie Peak"}, "to": {"cave": 111160, "near": [464, -3788]}},
+  {"name": "Seradane (the green dragons' portal), on from Skulk Rock over the rope bridge", "from": {"node": "Skulk Rock (2)"}, "to": {"cave": 108071, "near": [843, -3965]}},
+  {"name": "The Altar of Zul (Vilebranch ziggurat)", "from": {"node": "Aerie Peak"}, "to": {"camp": "The Altar of Zul"}},
+  {"name": "Jintha'Alor's lowest terrace (Vilebranch Warriors), up its first ramp", "from": {"node": "Aerie Peak"}, "to": {"mob": "Vilebranch Warrior"}},
+  {"name": "Revantusk Village (Horde town)", "from": {"node": "Aerie Peak"}, "to": {"wmo": 113216, "near": [-567, -4638]}},
+  {"name": "The Overlook Cliffs from Revantusk", "from": {"name": "Revantusk Village", "xy": [-560, -4600]}, "to": {"camp": "The Overlook Cliffs"}},
+  {"name": "through Plaguemist Ravine to Western Plaguelands (Darrowmere Lake's east shore)", "from": {"node": "Aerie Peak"}, "to": {"xy": [900, -2150]}}
+ ]}

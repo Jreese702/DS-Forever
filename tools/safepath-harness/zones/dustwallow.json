@@ -1,0 +1,260 @@
+{
+ "tag": "dustwallow",
+ "dir": "kalimdor",
+ "faction": "alliance",
+ "zone": 1445,
+ "area": 15,
+ "level": 38,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1445,
+   15
+  ],
+  [
+   1413,
+   17
+  ],
+  [
+   1441,
+   400
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1445,
+  1413
+ ],
+ "title": "Dustwallow Marsh",
+ "crop": [
+  -2100,
+  -5400,
+  -2350,
+  -5300
+ ],
+ "floorWmos": [
+  111365,
+  109468
+ ],
+ "closeups": [
+  {
+   "name": "Theramore Isle, its bridge and docks",
+   "box": [
+    -3450,
+    -4100,
+    -4200,
+    -4850
+   ]
+  },
+  {
+   "name": "Shady Rest Inn and Lost Point",
+   "box": [
+    -3550,
+    -4050,
+    -2400,
+    -2950
+   ]
+  },
+  {
+   "name": "Brackenwall Village and Darkmist Cavern",
+   "box": [
+    -2600,
+    -3300,
+    -2550,
+    -3200
+   ]
+  },
+  {
+   "name": "Stonemaul Ruins and the Den of Flame",
+   "box": [
+    -4100,
+    -4550,
+    -2550,
+    -3400
+   ]
+  },
+  {
+   "name": "The Wyrmbog and Onyxia's Lair",
+   "box": [
+    -4500,
+    -5150,
+    -3450,
+    -4050
+   ]
+  },
+  {
+   "name": "Witch Hill and Swamplight Manor",
+   "box": [
+    -2750,
+    -3200,
+    -3600,
+    -4100
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "Theramore's docks: the boat to Menethil (292)",
+   "from": {
+    "node": "Theramore Isle · Inn, Stables"
+   },
+   "to": {
+    "node": "Dock: Menethil Harbor"
+   }
+  },
+  {
+   "name": "Sentry Point lighthouse",
+   "from": {
+    "node": "Theramore"
+   },
+   "to": {
+    "node": "Sentry Point"
+   }
+  },
+  {
+   "name": "Shady Rest Inn (burnt inn)",
+   "from": {
+    "node": "Theramore"
+   },
+   "to": {
+    "wmo": 114570,
+    "near": [
+     -3729,
+     -2535
+    ]
+   }
+  },
+  {
+   "name": "the road west to the Barrens",
+   "from": {
+    "node": "Theramore"
+   },
+   "to": {
+    "xy": [
+     -3714,
+     -2486
+    ]
+   }
+  },
+  {
+   "name": "Lost Point tower",
+   "from": {
+    "xy": [
+     -3700,
+     -2560
+    ]
+   },
+   "to": {
+    "node": "Lost Point"
+   }
+  },
+  {
+   "name": "Brackenwall Village (Horde town)",
+   "from": {
+    "node": "Theramore"
+   },
+   "to": {
+    "camp": "Brackenwall Village"
+   }
+  },
+  {
+   "name": "Darkmist Cavern mouth (spiders)",
+   "from": {
+    "xy": [
+     -3700,
+     -2560
+    ]
+   },
+   "to": {
+    "cave": 111538,
+    "near": [
+     -2822,
+     -2685
+    ]
+   }
+  },
+  {
+   "name": "Swamplight Manor (Witch Hill)",
+   "from": {
+    "node": "Theramore"
+   },
+   "to": {
+    "wmo": 106735,
+    "near": [
+     -2950,
+     -3894
+    ]
+   }
+  },
+  {
+   "name": "North Point Tower",
+   "from": {
+    "node": "Theramore"
+   },
+   "to": {
+    "node": "North Point Tower"
+   }
+  },
+  {
+   "name": "Bloodfen Burrow mouth (raptors)",
+   "from": {
+    "node": "Theramore"
+   },
+   "to": {
+    "cave": 110497,
+    "near": [
+     -4335,
+     -2644
+    ]
+   }
+  },
+  {
+   "name": "Den of Flame mouth (Firemane)",
+   "from": {
+    "node": "Lost Point"
+   },
+   "to": {
+    "cave": 111365,
+    "near": [
+     -4337,
+     -3008
+    ]
+   }
+  },
+  {
+   "name": "Stonemaul Ruins (ogres)",
+   "from": {
+    "node": "Lost Point"
+   },
+   "to": {
+    "camp": "Stonemaul Ruins"
+   }
+  },
+  {
+   "name": "Onyxia's Lair entrance (the Wyrmbog)",
+   "from": {
+    "node": "Lost Point"
+   },
+   "to": {
+    "cave": 109468,
+    "near": [
+     -4707,
+     -3727
+    ]
+   }
+  },
+  {
+   "name": "Beezil's Wreck (crashed zeppelin)",
+   "from": {
+    "node": "Lost Point"
+   },
+   "to": {
+    "wmo": 113267,
+    "near": [
+     -4004,
+     -3804
+    ]
+   }
+  }
+ ]
+}

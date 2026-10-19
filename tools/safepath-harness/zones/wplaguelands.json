@@ -1,0 +1,21 @@
+{"tag": "wplaguelands", "dir": "azeroth", "faction": "horde", "zone": 1422, "area": 28, "level": 52, "friendlyMinLevel": 100, "roadTextures": ["westplaguedbasedirt"],
+ "maps": [[1422, 28], [1420, 85], [1416, 36], [1425, 47], [1423, 139]], "cities": [], "border": [1422, 1420],
+ "title": "Western Plaguelands", "crop": [3200, 750, -450, -2950],
+ "closeups": [{"name": "The Bulwark", "box": [1850, 1550, -600, -1100]},
+              {"name": "Andorhal", "box": [1700, 1150, -1100, -1750]},
+              {"name": "Caer Darrow", "box": [1450, 850, -2200, -2800]},
+              {"name": "Sorrow Hill to Caer Darrow", "box": [1300, 450, -1500, -2700]},
+              {"name": "Hearthglen", "box": [3150, 2550, -1250, -1850]},
+              {"name": "Thondroril crossing", "box": [2150, 1700, -2300, -2800]}],
+ "goals": [
+  {"name": "Felstone Field (farm, Jabbering Ghouls)", "from": {"name": "The Bulwark", "xy": [1705, -727]}, "to": {"camp": "Felstone Field"}},
+  {"name": "Dalson's Tears (farm)", "from": {"name": "The Bulwark", "xy": [1705, -727]}, "to": {"camp": "Dalson's Tears"}},
+  {"name": "Ruins of Andorhal (Skeletal Acolytes)", "from": {"name": "The Bulwark", "xy": [1705, -727]}, "to": {"camp": "Ruins of Andorhal"}},
+  {"name": "The Writhing Haunt (farm)", "from": {"name": "The Bulwark", "xy": [1705, -727]}, "to": {"camp": "The Writhing Haunt"}},
+  {"name": "Gahrron's Withering (farm)", "from": {"name": "The Bulwark", "xy": [1705, -727]}, "to": {"camp": "Gahrron's Withering"}},
+  {"name": "Uther's Tomb (Sorrow Hill)", "from": {"name": "The Bulwark", "xy": [1705, -727]}, "to": {"wmo": 114424, "near": [969, -1826]}},
+  {"name": "Caer Darrow: the Scholomance entrance (crypt)", "from": {"name": "The Bulwark", "xy": [1705, -727]}, "to": {"wmo": 111471, "near": [1248, -2589]}},
+  {"name": "the road at Hearthglen's gate (Scarlet town)", "from": {"name": "The Bulwark", "xy": [1705, -727]}, "to": {"xy": [2745, -1692]}},
+  {"name": "the crossing into Eastern Plaguelands (Thondroril)", "from": {"name": "The Bulwark", "xy": [1705, -727]}, "to": {"exit": "Eastern Plaguelands"}},
+  {"name": "the road into Alterac Mountains (by Chillwind Camp)", "from": {"name": "The Bulwark", "xy": [1705, -727]}, "to": {"exit": "Alterac Mountains"}}
+ ]}

@@ -1,0 +1,22 @@
+{"tag": "ungoro", "dir": "kalimdor", "faction": "alliance", "zone": 1449, "area": 490, "level": 52,
+ "maps": [[1449, 490], [1446, 440], [1451, 1377]], "cities": [], "border": [1449, 1446],
+ "title": "Un'Goro Crater", "crop": [-5350, -8600, 533, -3166],
+ "closeups": [
+  {"name": "Marshal's Refuge", "box": [-5950, -6400, -850, -1450]},
+  {"name": "Fire Plume Ridge", "box": [-6950, -7450, -1050, -1550]},
+  {"name": "Tanaris ramp", "box": [-7700, -8600, -1800, -2450]},
+  {"name": "Silithus pass", "box": [-5950, -6550, 0, -900]},
+  {"name": "Shaper's Terrace", "box": [-5350, -6100, -550, -1900]}
+ ],
+ "goals": [
+  {"name": "Blazerunner's den on top of Fire Plume Ridge (beside the lava lake)", "from": {"node": "Marshal's Refuge"}, "to": {"cave": 110506, "near": [-7177, -1290]}},
+  {"name": "the Slithering Scar's Gorishi hive", "from": {"node": "Marshal's Refuge"}, "to": {"mob": "Gorishi Reaver"}},
+  {"name": "the Lakkari Tar Pits' tar elementals", "from": {"node": "Marshal's Refuge"}, "to": {"mob": "Tar Beast"}},
+  {"name": "Fungal Rock cave's mouth", "from": {"node": "Marshal's Refuge"}, "to": {"xy": [-6374, -1809]}},
+  {"name": "the Golakka Hot Springs (the Golakka Crater quest spot)", "from": {"node": "Marshal's Refuge"}, "to": {"xy": [-7191, -649]}},
+  {"name": "Terror Run's stegodons", "from": {"node": "Marshal's Refuge"}, "to": {"mob": "Stegodon"}},
+  {"name": "the Marshlands' ravasaurs", "from": {"node": "Marshal's Refuge"}, "to": {"mob": "Ravasaur Runner"}},
+  {"name": "down the ramp from Tanaris to Marshal's Refuge", "from": {"xy": [-8505, -2112]}, "to": {"node": "Marshal's Refuge"}},
+  {"name": "the pass to Silithus (the ground exit)", "from": {"node": "Marshal's Refuge"}, "to": {"xy": [-6225, -466]}},
+  {"name": "the Eastern Crystal Pylon", "from": {"node": "Marshal's Refuge"}, "to": {"xy": [-7199, -2321]}}
+ ]}

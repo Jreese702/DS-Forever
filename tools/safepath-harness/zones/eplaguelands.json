@@ -1,0 +1,22 @@
+{"tag": "eplaguelands", "dir": "azeroth", "faction": "alliance", "zone": 1423, "area": 139, "level": 55, "friendlyMinLevel": 100,
+ "maps": [[1423, 139], [1422, 28], [1425, 47]], "cities": [], "border": [1423, 1422],
+ "title": "Eastern Plaguelands", "crop": [3691, 825, -2256, -6558],
+ "closeups": [{"name": "Light's Hope, Tyr's Hand and New Avalon", "box": [2500, 1500, -5100, -6300]},
+              {"name": "Stratholme's gate and Plaguewood", "box": [3550, 2850, -2900, -3750]},
+              {"name": "Corin's Crossing", "box": [2300, 1800, -4250, -4800]},
+              {"name": "Zul'Mashar and Quel'Lithien Lodge", "box": [3600, 3000, -4100, -5100]},
+              {"name": "Thondroril River crossing", "box": [2200, 1600, -2350, -3000]}],
+ "goals": [
+  {"name": "Tyr's Hand (Scarlet town)", "from": {"node": "Light's Hope Chapel"}, "to": {"camp": "Tyr's Hand"}},
+  {"name": "New Avalon's ruined mage tower (Forever-added)", "from": {"node": "Light's Hope Chapel"}, "to": {"wmo": 115862, "near": [1928, -5780]}},
+  {"name": "The Forbidding Sea: top of the wall stairs down to the shore (Forever-added)", "from": {"node": "Light's Hope Chapel"}, "to": {"xy": [1466, -5955]}},
+  {"name": "The Noxious Glade", "from": {"node": "Light's Hope Chapel"}, "to": {"camp": "The Noxious Glade"}},
+  {"name": "Corin's Crossing", "from": {"node": "Light's Hope Chapel"}, "to": {"camp": "Corin's Crossing"}},
+  {"name": "Blackwood Lake", "from": {"node": "Eastwall Tower"}, "to": {"camp": "Blackwood Lake"}},
+  {"name": "Zul'Mashar (Mossflayer trolls)", "from": {"node": "Northpass Tower"}, "to": {"camp": "Zul'Mashar"}},
+  {"name": "Quel'Lithien Lodge", "from": {"node": "Northpass Tower"}, "to": {"wmo": 112861, "near": [3321, -4234]}},
+  {"name": "Stratholme's main gate", "from": {"node": "Plaguewood Tower"}, "to": {"wmo": 7956012, "near": [3450, -3380]}},
+  {"name": "Terrordale (from the Plaguewood Tower flight master's yard, off the tower's floor)", "from": {"xy": [3015, -3045]}, "to": {"camp": "Terrordale"}},
+  {"name": "Darrowshire", "from": {"node": "Crown Guard Tower"}, "to": {"camp": "Darrowshire"}},
+  {"name": "Thondroril River ford to Western Plaguelands", "from": {"node": "Crown Guard Tower"}, "to": {"exit": "Western Plaguelands", "how": "ford"}}
+ ]}

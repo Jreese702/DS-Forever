@@ -42,7 +42,7 @@ def step_deg(gc, gr, dc, dr):
 DECK_MARGIN = 1.0          # as WorldBuildings.DECK_MARGIN_YD
 BURIED = 1.0               # a floor this far under the ground or more is under it (a tunnel's), not on it
 STEP_UP = 1.5              # a step down off a floor or a ledge (Caves.STEP_UP_YD); deeper is a drop, a wall
-EDGE_UP = 4.0              # a step on or off a floor's edge within a lattice step (4.17 yd at 45 degrees: Climb.build classes its edge
+EDGE_UP = STEP_UP + 0.5    # a step on or off a floor's edge (Climb.build: a floor more than a step over its own ground ends in a wall), a half yard's slope allowed
                            # steps over that run; a platform's 2 yd edge is its stairs' or a ramp's the lattice can't see finer)
 RISE = 1.5                 # a step up within half a yard (Caves.STEP_UP_YD, a stair's join): higher is a parapet, a wall top, a roof - not walked onto
 _floors = None; _holes = set(); _fgrid = {}; _layers = {}

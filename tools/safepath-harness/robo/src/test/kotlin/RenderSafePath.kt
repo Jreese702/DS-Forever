@@ -60,6 +60,10 @@ class RenderSafePath {
         val extraRoad = spec?.optJSONArray("roadTextures")?.let { a -> (0 until a.length()).map { a.getString(it).lowercase() } } ?: emptyList()
         val roadTex = names.filterValues { n -> (listOf("road", "path", "cobble", "trail", "footprint") + extraRoad).any { it in n.lowercase() } }.keys
         println("SAFEPATH road textures: ${roadTex.joinToString { names[it]!!.substringAfterLast('/') }}")
+        // the liquids no one wades (magma, slime: LiquidType's names), for the water grid and py/wetcheck.py (liquids.json)
+        val lethal = File(db2, "LiquidType.db2").takeIf { it.isFile }?.let { f -> Terrain.lethalLiquids(Db2(f.readBytes()).rows(strings = setOf(0)).associate { it.id to it.str(0) }) } ?: emptySet()
+        println("SAFEPATH lethal liquids: ${lethal.sorted()}")
+        File(work, "db2/liquids.json").writeText(org.json.JSONObject().put("lethal", org.json.JSONArray(lethal.sorted())).toString())
         val areas = Db2(File(db2, "AreaTable.db2").readBytes()).rows(strings = setOf(1)).associate { it.id to PlaceNames.Area(it.str(1), it.int(3)) }
         val uimap = HashMap<Int, Int>().also { o -> for (r in Db2(File(db2, "UiMapAssignment.db2").readBytes()).rows()) { val a = r.int(7); val m = r.int(4); if (a != 0 && m != 0 && a !in o) o[a] = m } }
         val chunkAreas = HashMap<Pair<Int, Int>, Map<Int, Int>>()
@@ -91,7 +95,7 @@ class RenderSafePath {
             val zg = SafePath.Zones.build(rect.t, rect.b, rect.l, rect.r, PlaceNames.CHUNK_YD, ::areaAt)
             // the water: the root ADTs' MH2O over their ground
             val wetTiles = HashMap<Pair<Int, Int>, Pair<FloatArray?, FloatArray?>>()
-            fun wet(c: Int, r: Int) = wetTiles.getOrPut(c to r) { File(dir, "adt/${c}_$r.adt").takeIf { it.isFile }?.readBytes()?.let { b -> Terrain.water(b) to Terrain.tile(b)?.h } ?: (null to null) }
+            fun wet(c: Int, r: Int) = wetTiles.getOrPut(c to r) { File(dir, "adt/${c}_$r.adt").takeIf { it.isFile }?.readBytes()?.let { b -> Terrain.water(b, lethal) to Terrain.tile(b)?.h } ?: (null to null) }
             // each walkway by its deck (its outdoor groups' floor triangles, the device's own WorldBuildings.deck), its box only where
             // its groups weren't dumped
             val walks = HashMap<Pair<Int, Int>, List<(Double, Double) -> Boolean>>(); val m2Said = HashSet<Int>()
@@ -152,7 +156,9 @@ class RenderSafePath {
                             // terrain's (Silithus: Cenarion Hold's outpost, undumped, let a route over a 67-90 degree step) - but a capital's
                             // streets, whose ground under them reads steep everywhere
                             ?: if (com.jrees.wowcompanion.WorldBuildings.isCity(p, com.jrees.wowcompanion.WorldBuildings.groups(root))) feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } }
-                            else { if (unread.add(p.fid)) println("WARNING WMO ${p.fid} at ${p.ox.toInt()},${p.oy.toInt()}: its floors not dumped (dump/dump_cavegroups.py <dir> ${p.fid}) - the ground under it is taken as the terrain"); emptyList() }
+                            else { if (unread.add(p.fid)) println("WARNING WMO ${p.fid} at ${p.ox.toInt()},${p.oy.toInt()}: " +
+                                (if (File(dir, "wmogroup/${p.fid}_0").isFile) "its groups hold no readable floor" else "its floors not dumped (dump/dump_cavegroups.py <dir> ${p.fid})") +
+                                " - the ground under it is taken as the terrain"); emptyList() }
                     }
                 }.orEmpty() + m2DecksOf(c, r)
             }
@@ -180,7 +186,8 @@ class RenderSafePath {
             // and a zone's own peoples the guides call friendly to all (the spec's friendlyNames, regexes: Zephras' Windshapers and High
             // Order - the isle shared by both factions; QuestieDB's kill links to them are beta leftovers)
             val friendlyNames = spec?.optJSONArray("friendlyNames")?.let { a -> (0 until a.length()).map { Regex(a.getString(it)) } } ?: emptyList()
-            val here = spawns.filter { it.area == area }.map { sp -> if ((sp.minLv >= friendlyMin || friendlyNames.any { it.containsMatchIn(sp.name) }) && sp.hostile != foe)
+            // a town's faction-less people (no level, or a guard's name) take the side of the faction-tagged ones round them (QuestieNpcs.townSided)
+            val here = QuestieNpcs.townSided(spawns.filter { it.area == area }) { sp -> doubleArrayOf(rect.t - sp.y * ay, rect.l - sp.x * ax) }.map { sp -> if ((sp.minLv >= friendlyMin || friendlyNames.any { it.containsMatchIn(sp.name) }) && sp.hostile != foe)
                 QuestieNpcs.Spawn(sp.area, sp.x, sp.y, sp.minLv, sp.maxLv, sp.elite, foe, sp.name, sp.sub) else sp }
             val hostile = here.filter { it.hostile == mine || it.hostile == 3 }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
             val friendly = here.filter { it.hostile == foe }.map { SafePath.Npc(rect.t - it.y * ay, rect.l - it.x * ax, it.sub) }
@@ -301,7 +308,11 @@ class RenderSafePath {
         val g = DangerGrid.build(spawns, mine, level, ax, ay, ground)
         val k = DangerGrid.strength("high")
         // a narrow stream waded (SafePath.NARROW_DEPTH) costs as the mobs' middling danger does: a drier way wins where there is one
-        val danger: (Double, Double) -> Float = { x, y -> uv(x, y).let { g.at(it[0], it[1]) } + if (waterGrid?.wading(x, y) == true) WADE_DANGER else 0f }
+        // the zone's typical danger taken off (DangerGrid.typical: an all-red zone steers round its worst camps only)
+        val typical = g.typical { u, v -> ar?.uiMap(zg.areaAt(rect.t - v * ay, rect.l - u * ax)) == map }
+        println("DANGER typical ${"%.2f".format(typical)} of ${"%.2f".format(g.max)}")
+        val danger: (Double, Double) -> Float = { x, y -> uv(x, y).let { maxOf(0f, g.at(it[0], it[1]) - typical) } + if (waterGrid?.wading(x, y) == true) WADE_DANGER else 0f }
+        val calm: (Double, Double) -> Float = { x, y -> if (waterGrid?.wading(x, y) == true) WADE_DANGER else 0f }
         // a bridge whose WMO floor is read (its groups dumped: Mulgore's Stonebull Lake bridge) is walked on its own floor, so the water
         // grid's bridge cells (the walkway's whole bounding box) are water again off that floor: the lake beside the deck is no bridge
         var floorCells: Set<Long> = emptySet()
@@ -310,13 +321,29 @@ class RenderSafePath {
         // narrow pier's edge in a cell whose middle is off it: Ratchet's dock tip); off the deck in a bridge's cell, the water there
         val deep: (Double, Double) -> Boolean = { x, y -> val d = waterAt(x, y)
             if (d.isNaN() || deckAt(x, y)) false
-            else if (d == SafePath.Water.BRIDGE) rawDeep != null && rawDeep(x, y) &&
-                (floorCells.isEmpty() || (-1..1).none { a -> (-1..1).any { b -> fkey(x + a * 4.0, y + b * 4.0) in floorCells } })
+            // off the deck in a bridge's cell: the water as it is (Felwood: a floor within 4 yd let a route step off the Bloodvenom dock into
+            // 2.6-4.7 yd water)
+            else if (d == SafePath.Water.BRIDGE) rawDeep != null && rawDeep(x, y)
             else !(waterGrid?.wadeable(x, y) ?: (d <= SafePath.FORD_DEPTH)) }
         val reachedOf = HashMap<String, Boolean>()
         var lastReached = true
         var links: List<Climb.Link> = emptyList()
         val leg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b -> Climb.route(cg, a, b, danger, k, deep, links)?.also { lastReached = it.reached }?.pts }
+        // the narrow-stream ruling's other half: no wade longer than SafePath.NARROW_YD on end. A route that wades longer (along a stream,
+        // Felwood: 2.3 yd for 12 yd) is routed again with no wading at all
+        val strictDeep: (Double, Double) -> Boolean = { x, y -> val d = waterAt(x, y)
+            if (d.isNaN() || deckAt(x, y)) false else if (d == SafePath.Water.BRIDGE) rawDeep != null && rawDeep(x, y) else d > SafePath.FORD_DEPTH }
+        val strictLeg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b -> Climb.route(cg, a, b, danger, k, strictDeep, links)?.also { lastReached = it.reached }?.pts }
+        fun longestWade(w: List<DoubleArray>): Double {
+            var run = 0.0; var best = 0.0
+            for ((pa, pb) in w.zipWithNext()) { if (Climb.inCave(pa) || Climb.inCave(pb)) { run = 0.0; continue }
+                val n = maxOf(1, (Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) * 2).toInt())
+                for (q in 0 until n) { val x = pa[0] + (pb[0] - pa[0]) * q / n; val y = pa[1] + (pb[1] - pa[1]) * q / n; val d = waterAt(x, y)
+                    if (!d.isNaN() && d != SafePath.Water.BRIDGE && d > SafePath.FORD_DEPTH && !deckAt(x, y)) { run += 0.5; best = maxOf(best, run) } else run = 0.0 } }
+            return best
+        }
+        // the same with no danger counted (the detour cap's rival: SafePath.capDetour)
+        val calmLeg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b -> Climb.route(cg, a, b, calm, k, deep, links)?.pts }
         // the placed buildings and caves (the obj0s' MODF), tilted ones too: their floors are placed by Placement.world (Stonetalon's
         // Talondeep Path tunnel is tilted 3 degrees and was dropped as "not level")
         val placed = (File(dir, "obj0").listFiles() ?: emptyArray()).flatMap { f -> WorldBuildings.placements(f.readBytes(), tilted = true) }.distinctBy { it.uid }
@@ -684,7 +711,17 @@ class RenderSafePath {
             val gv = cg.at(gp!![0], gp[1]); val gk = (gv[1].toLong() shl 32) or (gv[0].toLong() and 0xFFFFFFFFL)
             val mySwims = swims.filter { gk in it.island }
             links = baseLinks + mySwims.map { it.link }
-            val way = SafePath.routeOn(netC, f!![0], f[1], gp!![0], gp[1], leg, clear = clear, walkable = { a, b -> Climb.walkable(cg, a, b, deep) }) ?: leg(f, gp) ?: listOf(f, gp)
+            val way0 = SafePath.routeOn(netC, f!![0], f[1], gp!![0], gp[1], leg, clear = clear, walkable = { a, b -> Climb.walkable(cg, a, b, deep) }) ?: leg(f, gp) ?: listOf(f, gp)
+            var reached0 = lastReached
+            val wayW = if (longestWade(way0) <= SafePath.NARROW_YD) way0 else {
+                println("WADE route ${('A' + i)}: a wade ${longestWade(way0)} yd on end - routed again with no wading")
+                (SafePath.routeOn(netC, f[0], f[1], gp[0], gp[1], strictLeg, clear = clear, walkable = { a, b -> Climb.walkable(cg, a, b, strictDeep) }) ?: strictLeg(f, gp))
+                    ?.also { reached0 = lastReached } ?: way0 }
+            val way = if (!reached0) wayW else {
+                val direct = calmLeg(f, gp)?.takeIf { d -> d.size >= 2 && Math.hypot(d.last()[0] - gp[0], d.last()[1] - gp[1]) < 1.0 }
+                SafePath.capDetour(wayW, direct?.takeIf { longestWade(it) <= SafePath.NARROW_YD }).also { if (it !== wayW) println("DETOUR route ${('A' + i)}: round the danger ${wayW.zipWithNext { a, b -> Math.hypot(b[0] - a[0], b[1] - a[1]) }.sum().toInt()} yd, capped: the way ignoring it ${it.zipWithNext { a, b -> Math.hypot(b[0] - a[0], b[1] - a[1]) }.sum().toInt()} yd") }
+            }
+            lastReached = reached0
             if (way.size < 2) { val r0 = Climb.route(cg, f, gp, danger, k, deep, links); val r1 = Climb.route(cg, f, gp)
                 println("EMPTY ${f.toList()} -> ${gp.toList()}: full ${r0?.reached} ${r0?.pts?.size}, bare ${r1?.reached} ${r1?.pts?.size}; deep at start ${deep(f[0], f[1])} goal ${deep(gp[0], gp[1])}") }
             if (!lastReached) {

@@ -117,7 +117,9 @@ object Climb {
      * deck, its arches and parapets; a tunnel's floor under its hill; a pier's planks): only one height a vertex, and of a bridge's
      * layers the one the walker reaches - from where a floor meets the ground ([ground]: global row, column -> the terrain's height, NaN
      * none) within [Caves.STEP_UP_YD] (its approach, a tunnel's mouth, a pier's root), on along the floors from vertex to vertex within
-     * that step. A floor never reached so (a roof, a parapet's top, the arches under the road) is no ground; neither is a tunnel's floor
+     * a step's 45 degrees, the highest floor first (a deck over its supports), never one more than [LAYER_UNDER_YD] under the terrain,
+     * pieces of fewer than [MIN_FLOOR_PIECE] vertices dropped.
+     * A floor never reached so (a roof, a parapet's top, the arches under the road) is no ground; neither is a tunnel's floor
      * under the hillside but through its mouths. [floors] (wx, wy): every floor's height there (empty off them). Thandol Span: "the
      * lowest floor over the ground" walked its arches, 20 yd under the road; Wetlands' Dun Algaz: its leveled floor let a route climb
      * the 60-75 degree hillside over it. Returns each reached vertex's floor height by [vkey].
@@ -128,24 +130,52 @@ object Climb {
         val at = HashMap<Long, DoubleArray>()
         for (gr in gr0..gr1) for (gc in gc0..gc1) { val f = floors(ORG - gr * STEP, ORG - gc * STEP); if (f.isNotEmpty()) at[vkey(gr, gc)] = f }
         val out = HashMap<Long, Float>()
-        val queue = ArrayDeque<Long>()
+        // HIGHEST FIRST: the walking surface claims its vertices before anything under it reaches them (Riverglades' Farholde causeway:
+        // its supports' tops, 2.6 yd under the deck, were taken where the flood reached them first)
+        val queue = PriorityQueue<Pair<Float, Long>>(compareByDescending { it.first })
         for ((k, f) in at) {
             val g = ground((k shr 32).toInt(), k.toInt()); if (g.isNaN()) continue
-            val h = f.minByOrNull { abs(it - g) }!!
-            if (abs(h - g) <= Caves.STEP_UP_YD) { out[k] = h.toFloat(); queue.add(k) }
+            // a floor meets the ground at or over it: never one under it (Riverglades: a shipwreck sunk in the riverbed)
+            // every floor meeting the ground here is a start; the highest is popped first, so a deck claims its vertices before its supports
+            for (h in f) if (h >= g - SEED_UNDER_YD && h - g <= Caves.STEP_UP_YD) queue.add(h.toFloat() to k)
         }
         while (queue.isNotEmpty()) {
-            val k = queue.removeFirst(); val gr = (k shr 32).toInt(); val gc = k.toInt(); val z = out[k]!!.toDouble()
+            val (z, k) = queue.poll()
+            if (k in out) continue
+            out[k] = z
+            val gr = (k shr 32).toInt(); val gc = k.toInt()
             for (dr in -1..1) for (dc in -1..1) {
                 if (dr == 0 && dc == 0) continue
                 val n = vkey(gr + dr, gc + dc); if (n in out) continue
                 val f = at[n] ?: continue
-                val h = f.minByOrNull { abs(it - z) }!!
-                if (abs(h - z) <= Caves.STEP_UP_YD) { out[n] = h.toFloat(); queue.add(n) }
+                // along the floor within a step's 45 degrees (a ramp, a stair's run), the nearest to this vertex's height - never a floor
+                // more than LAYER_UNDER_YD under the terrain (Azshara's ruins, a floor 2-4 yd under the grass; a tunnel's floor under its
+                // hill is walked by its cave's link between its mouths, not as a layer)
+                val reach = STEP * hypot(dr.toDouble(), dc.toDouble())
+                val gn = ground(gr + dr, gc + dc)
+                val h = f.filter { abs(it - z) <= reach && (gn.isNaN() || it >= gn - LAYER_UNDER_YD) }.minByOrNull { abs(it - z) } ?: continue
+                queue.add(h.toFloat() to n)
             }
+        }
+        // and no piece of a few vertices (a tower's ledge 3.6 yd over the ground beside it: Riverglades' outlandhumantower02)
+        val seen = HashSet<Long>()
+        for (k0 in out.keys.toList()) {
+            if (k0 in seen) continue
+            val piece = ArrayList<Long>(); val st = ArrayDeque<Long>(); st.add(k0); seen.add(k0)
+            while (st.isNotEmpty()) { val k = st.removeLast(); piece.add(k); val z = out[k]!!
+                val gr = (k shr 32).toInt(); val gc = k.toInt()
+                for (dr in -1..1) for (dc in -1..1) { val n = vkey(gr + dr, gc + dc); val zn = out[n] ?: continue
+                    if (n !in seen && abs(zn - z) <= STEP * hypot(dr.toDouble(), dc.toDouble())) { seen.add(n); st.add(n) } } }
+            if (piece.size < MIN_FLOOR_PIECE) for (k in piece) out.remove(k)
         }
         return out
     }
+    /** a floor's piece of fewer lattice vertices than this is no walk (a ledge, a sill) */
+    const val MIN_FLOOR_PIECE = 4
+    /** a floor meeting the ground no more than this under it (a ramp's foot sunk in its grass) */
+    const val SEED_UNDER_YD = 0.5
+    /** a floor this far under the terrain or more is under it: no layer (py/segcheck.py's BURIED) */
+    const val LAYER_UNDER_YD = 1.0
     /** whether cell ([gr], [gc]) has corners on a floor ([deck] non-NaN) and off it more than one step's 45 degrees apart in height */
     private fun edgeDrop(gr: Int, gc: Int, height: (Int, Int) -> Float, deck: (Double, Double) -> Float): Boolean {
         var on = false; var off = false; var lo = Double.MAX_VALUE; var hi = -Double.MAX_VALUE
@@ -199,8 +229,13 @@ object Climb {
                 val x = ORG - (gr0 + j) * STEP; val y = ORG - (gc0 + i) * STEP
                 val dv = deck(x, y); val dE = deck(x, ORG - (gc0 + i + 1) * STEP); val dS = deck(ORG - (gr0 + j + 1) * STEP, y)
                 val sv = if (dv.isNaN()) h else dv
-                if (!dv.isNaN() || !dE.isNaN()) e = classOf((if (dE.isNaN()) height(gr0 + j, gc0 + i + 1) else dE) - sv)
-                if (!dv.isNaN() || !dS.isNaN()) s = classOf((if (dS.isNaN()) height(gr0 + j + 1, gc0 + i) else dS) - sv)
+                // ... and a step off a floor standing more than a step over its own ground there is off its edge: a wall, however the
+                // rise reads over the lattice's 4.17 yd (Stranglethorn's tower base, a 3.9 yd sheer edge read as 43 degrees)
+                fun off(dHere: Float, dThere: Float, hHere: Float, hThere: Float) = (!dHere.isNaN() && dThere.isNaN() && dHere - hHere > Caves.STEP_UP_YD) ||
+                    (dHere.isNaN() && !dThere.isNaN() && dThere - hThere > Caves.STEP_UP_YD)
+                val hE = height(gr0 + j, gc0 + i + 1); val hS = height(gr0 + j + 1, gc0 + i)
+                if (!dv.isNaN() || !dE.isNaN()) e = if (off(dv, dE, h, hE)) WALL else classOf((if (dE.isNaN()) hE else dE) - sv)
+                if (!dv.isNaN() || !dS.isNaN()) s = if (off(dv, dS, h, hS)) WALL else classOf((if (dS.isNaN()) hS else dS) - sv)
             }
             cls[j * nx + i] = (e or (s shl 2)).toByte()
             // the cell's own four triangles (north, east, south, west of its middle vertex): a straight line across it meets them

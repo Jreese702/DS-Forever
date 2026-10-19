@@ -164,7 +164,7 @@ object Terrain {
      * at its surface height (the instance's highest). A [TILE_V] x [TILE_V] grid like [Tile.h] (row south, column east) of the
      * surface over each cell, NaN = dry; null when the tile has no water at all.
      */
-    fun water(adt: ByteArray): FloatArray? {
+    fun water(adt: ByteArray, lethal: Set<Int> = emptySet()): FloatArray? {
         var o = 0
         while (o + 8 <= adt.size) {
             val n = Db2.le32(adt, o + 4)
@@ -191,6 +191,9 @@ object Terrain {
                 val w = adt[ip + 14].toInt() and 0xFF; val hh = adt[ip + 15].toInt() and 0xFF
                 val bm = Db2.le32(adt, ip + 16); val vd = Db2.le32(adt, ip + 20)
                 if (top.isNaN() || w == 0 || hh == 0 || xo + w > 8 || yo + hh > 8) continue
+                // MAGMA AND SLIME (the instance's LiquidType, [lethal]: Searing Gorge's lava read as a 0.3 yd ford) are no ford at any depth:
+                // their surface reads bottomless
+                val deadly = ((adt[ip].toInt() and 0xFF) or ((adt[ip + 1].toInt() and 0xFF) shl 8)) in lethal
                 // the surface's own heights at its (w+1) x (h+1) vertices, where the instance keeps them first in its vertex data (a stream
                 // running downhill: its top alone read it deep all along - Silverpine's 0.4 yd stream walled the zone in two); kept only when
                 // they lie within the instance's own low..top (else that data is depth or uv only: the flat top)
@@ -201,7 +204,7 @@ object Terrain {
                     val bit = y * w + x
                     if (bm != 0) { val bp = base + bm + bit / 8; if (bp >= end || (adt[bp].toInt() shr (bit % 8)) and 1 == 0) continue }
                     val k = (cy * 8 + yo + y) * TILE_V + (cx * 8 + xo + x)
-                    val surf = if (vh == null) top else (vh[y * (w + 1) + x] + vh[y * (w + 1) + x + 1] + vh[(y + 1) * (w + 1) + x] + vh[(y + 1) * (w + 1) + x + 1]) / 4f
+                    val surf = if (deadly) Float.POSITIVE_INFINITY else if (vh == null) top else (vh[y * (w + 1) + x] + vh[y * (w + 1) + x + 1] + vh[(y + 1) * (w + 1) + x] + vh[(y + 1) * (w + 1) + x + 1]) / 4f
                     if (out[k].isNaN() || surf > out[k]) out[k] = surf
                     any = true
                 }
@@ -209,6 +212,11 @@ object Terrain {
         }
         return if (any) out else null
     }
+
+    /** the liquid types no one wades (LiquidType.db2: [names] by id): magma, lava, slime, fire, acid by their names */
+    const val DB_LIQUID_TYPE = 1371380
+    fun lethalLiquids(names: Map<Int, String>): Set<Int> = names.filter { (_, n) -> LETHAL.containsMatchIn(n) }.keys
+    val LETHAL = Regex("magma|lava|slime|fire|acid|poison|ooze", RegexOption.IGNORE_CASE)
 
     /** the root ADTs of a continent's WDT (MAID's first uint32 of each 32-byte row), by MapHarvest.key(col, row) */
     fun maidRoot(wdt: ByteArray): Map<Int, Int> {

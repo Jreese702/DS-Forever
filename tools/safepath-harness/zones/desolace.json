@@ -1,0 +1,285 @@
+{
+ "tag": "desolace",
+ "dir": "kalimdor",
+ "faction": "horde",
+ "zone": 1443,
+ "area": 405,
+ "level": 35,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1443,
+   405
+  ],
+  [
+   1442,
+   406
+  ],
+  [
+   1444,
+   357
+  ],
+  [
+   1412,
+   215
+  ],
+  [
+   2652,
+   16651
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1443,
+  1442
+ ],
+ "floorWmos": [
+  113464
+ ],
+ "title": "Desolace",
+ "crop": [
+  452,
+  -2546,
+  4233,
+  -262
+ ],
+ "closeups": [
+  {
+   "name": "Shadowprey Village",
+   "box": [
+    -1450,
+    -1900,
+    3400,
+    2900
+   ]
+  },
+  {
+   "name": "Maraudon and the Valley of Spears",
+   "box": [
+    -1000,
+    -1600,
+    3150,
+    2550
+   ]
+  },
+  {
+   "name": "Ghost Walker Post and the Kodo Graveyard",
+   "box": [
+    -950,
+    -1600,
+    2250,
+    1550
+   ]
+  },
+  {
+   "name": "Thunder Axe Fortress and the Stonetalon pass",
+   "box": [
+    452,
+    -650,
+    2100,
+    1300
+   ]
+  },
+  {
+   "name": "Gelkis Village and the Feralas road",
+   "box": [
+    -2000,
+    -2546,
+    2800,
+    2100
+   ]
+  },
+  {
+   "name": "Mannoroc Coven",
+   "box": [
+    -1550,
+    -2250,
+    2250,
+    1550
+   ]
+  },
+  {
+   "name": "Sargeron and the Mulgore pass",
+   "box": [
+    350,
+    -500,
+    1250,
+    450
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "the way to Stonetalon (the road up to Sun Rock)",
+   "from": {
+    "xy": [
+     -1245,
+     1680
+    ],
+    "name": "Ghost Walker Post (its road)"
+   },
+   "to": {
+    "xy": [
+     349,
+     1804
+    ]
+   }
+  },
+  {
+   "name": "the way to Feralas (the southern road)",
+   "from": {
+    "node": "Shadowprey Village"
+   },
+   "to": {
+    "exit": "Feralas"
+   }
+  },
+  {
+   "name": "Maraudon's entrance (the cave's east mouth, Valley of Spears)",
+   "from": {
+    "node": "Shadowprey Village"
+   },
+   "to": {
+    "xy": [
+     -1389,
+     2910
+    ]
+   }
+  },
+  {
+   "name": "the Maraudine centaur camp (Valley of Spears)",
+   "from": {
+    "node": "Shadowprey Village"
+   },
+   "to": {
+    "mob": "Maraudine Wrangler",
+    "near": [
+     -1357,
+     2723
+    ]
+   }
+  },
+  {
+   "name": "the Gelkis centaur village",
+   "from": {
+    "node": "Shadowprey Village"
+   },
+   "to": {
+    "camp": "Gelkis Village"
+   }
+  },
+  {
+   "name": "the Kodo Graveyard",
+   "from": {
+    "node": "Ghost Walker Post"
+   },
+   "to": {
+    "camp": "Kodo Graveyard"
+   }
+  },
+  {
+   "name": "Thunder Axe Fortress (the Burning Blade keep)",
+   "from": {
+    "node": "Ghost Walker Post"
+   },
+   "to": {
+    "wmo": 112927,
+    "near": [
+     -396,
+     1730
+    ]
+   }
+  },
+  {
+   "name": "the Kolkar centaur village",
+   "from": {
+    "xy": [
+     -1245,
+     1680
+    ],
+    "name": "Ghost Walker Post (its road)"
+   },
+   "to": {
+    "camp": "Kolkar Village"
+   }
+  },
+  {
+   "name": "the Magram centaur village",
+   "from": {
+    "node": "Ghost Walker Post"
+   },
+   "to": {
+    "camp": "Magram Village"
+   }
+  },
+  {
+   "name": "Mannoroc Coven's demons",
+   "from": {
+    "node": "Ghost Walker Post"
+   },
+   "to": {
+    "xy": [
+     -1992,
+     1905
+    ]
+   }
+  },
+  {
+   "name": "Sargeron's Hatefury satyrs",
+   "from": {
+    "xy": [
+     -1245,
+     1680
+    ],
+    "name": "Ghost Walker Post (its road)"
+   },
+   "to": {
+    "xy": [
+     -180,
+     815
+    ]
+   }
+  },
+  {
+   "name": "Ethel Rethor's ruins",
+   "from": {
+    "node": "Ghost Walker Post"
+   },
+   "to": {
+    "xy": [
+     -450,
+     2483
+    ]
+   }
+  },
+  {
+   "name": "Nijel's Point (the Alliance town's inn)",
+   "from": {
+    "xy": [
+     -1245,
+     1680
+    ],
+    "name": "Ghost Walker Post (its road)"
+   },
+   "to": {
+    "xy": [
+     214,
+     1262
+    ]
+   }
+  },
+  {
+   "name": "the way to Mulgore (the pass by Sargeron)",
+   "from": {
+    "xy": [
+     -1245,
+     1680
+    ],
+    "name": "Ghost Walker Post (its road)"
+   },
+   "to": {
+    "exit": "Mulgore"
+   }
+  }
+ ]
+}

@@ -1,0 +1,215 @@
+{
+ "tag": "hyjal",
+ "dir": "kalimdor",
+ "faction": "alliance",
+ "zone": 2482,
+ "area": 616,
+ "level": 58,
+ "friendlyMinLevel": 100,
+ "floorWmos": [
+  7302482
+ ],
+ "maps": [
+  [
+   2482,
+   616
+  ],
+  [
+   1452,
+   618
+  ],
+  [
+   1448,
+   361
+  ],
+  [
+   1440,
+   331
+  ],
+  [
+   1447,
+   16
+  ]
+ ],
+ "cities": [],
+ "border": [
+  2482,
+  1452
+ ],
+ "title": "Mount Hyjal",
+ "crop": [
+  6000,
+  4100,
+  -1000,
+  -4396
+ ],
+ "closeups": [
+  {
+   "name": "Tainted Foothills",
+   "box": [
+    4750,
+    4250,
+    -2450,
+    -3150
+   ]
+  },
+  {
+   "name": "Summit of Eternity",
+   "box": [
+    5750,
+    5050,
+    -3100,
+    -3800
+   ]
+  },
+  {
+   "name": "Elderwild and Mourning's Rest",
+   "box": [
+    5400,
+    4700,
+    -1150,
+    -2000
+   ]
+  },
+  {
+   "name": "Darkwhisper tunnel",
+   "box": [
+    4800,
+    4350,
+    -3600,
+    -4150
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "Felblood Scar (the Ashen Acolytes)",
+   "from": {
+    "node": "Tainted Foothills"
+   },
+   "to": {
+    "camp": "Felblood Scar"
+   }
+  },
+  {
+   "name": "the Darkwhisper Gorge tunnel to Winterspring",
+   "from": {
+    "node": "Tainted Foothills"
+   },
+   "to": {
+    "xy": [
+     4543.8,
+     -3974.9
+    ]
+   }
+  },
+  {
+   "name": "Malorne's Retreat (the furbolg den's mouth)",
+   "from": {
+    "node": "Tainted Foothills"
+   },
+   "to": {
+    "xy": [
+     4836,
+     -1744
+    ],
+    "exact": true
+   }
+  },
+  {
+   "name": "Elderwild (the Alliance defenders)",
+   "from": {
+    "node": "Tainted Foothills"
+   },
+   "to": {
+    "mob": "Elderwild Alliance Defender"
+   }
+  },
+  {
+   "name": "Mourning's Rest (the ruined mage tower)",
+   "from": {
+    "xy": [
+     5012,
+     -1450
+    ],
+    "name": "Elderwild"
+   },
+   "to": {
+    "cave": 115862,
+    "near": [
+     5114,
+     -1756
+    ]
+   }
+  },
+  {
+   "name": "the Cradle of Tranquility",
+   "from": {
+    "xy": [
+     5098,
+     -1763
+    ],
+    "name": "Mourning's Rest"
+   },
+   "to": {
+    "wmo": 7765529,
+    "near": [
+     5304,
+     -2132
+    ]
+   }
+  },
+  {
+   "name": "Summit of Eternity's flight master (the ground way up from the Cradle)",
+   "from": {
+    "xy": [
+     5304,
+     -2132
+    ],
+    "name": "Cradle of Tranquility"
+   },
+   "to": {
+    "node": "Summit of Eternity"
+   }
+  },
+  {
+   "name": "Dae'gun's great hall",
+   "from": {
+    "node": "Summit of Eternity"
+   },
+   "to": {
+    "wmo": 112993,
+    "near": [
+     5339,
+     -2958
+    ]
+   }
+  },
+  {
+   "name": "the Shrine of Aviana (its ruin's doorstep)",
+   "from": {
+    "xy": [
+     5304,
+     -2132
+    ],
+    "name": "Cradle of Tranquility"
+   },
+   "to": {
+    "xy": [
+     4840,
+     -2802
+    ],
+    "exact": true
+   }
+  },
+  {
+   "name": "the Blackthorne cult (Summit of Eternity)",
+   "from": {
+    "node": "Summit of Eternity"
+   },
+   "to": {
+    "mob": "Blackthorne Cultist"
+   }
+  }
+ ]
+}

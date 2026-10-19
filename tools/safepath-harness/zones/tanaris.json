@@ -1,0 +1,218 @@
+{
+ "tag": "tanaris",
+ "dir": "kalimdor",
+ "faction": "horde",
+ "zone": 1446,
+ "area": 440,
+ "level": 45,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1446,
+   440
+  ],
+  [
+   1441,
+   400
+  ],
+  [
+   1449,
+   490
+  ],
+  [
+   1451,
+   1377
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1446,
+  1441
+ ],
+ "title": "Tanaris",
+ "crop": [
+  -5875,
+  -10475,
+  -218,
+  -5800
+ ],
+ "closeups": [
+  {
+   "name": "Gadgetzan",
+   "box": [
+    -6800,
+    -7400,
+    -3500,
+    -4100
+   ]
+  },
+  {
+   "name": "Steamwheedle Port",
+   "box": [
+    -6600,
+    -7200,
+    -4500,
+    -5200
+   ]
+  },
+  {
+   "name": "Zul'Farrak entrance",
+   "box": [
+    -6600,
+    -7100,
+    -2650,
+    -3300
+   ]
+  },
+  {
+   "name": "Caverns of Time",
+   "box": [
+    -7900,
+    -8500,
+    -4300,
+    -4950
+   ]
+  },
+  {
+   "name": "Lost Rigger Cove",
+   "box": [
+    -7600,
+    -8300,
+    -4800,
+    -5600
+   ]
+  },
+  {
+   "name": "The Gaping Chasm",
+   "box": [
+    -8800,
+    -9500,
+    -3700,
+    -4300
+   ]
+  },
+  {
+   "name": "Way to Un'Goro",
+   "box": [
+    -7900,
+    -8700,
+    -1800,
+    -2700
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "Steamwheedle Port's pier root (the boat to Powderfuse Port, Riverglades; the pier's planks are unnamed Forever M2s, not read)",
+   "from": {
+    "node": "Gadgetzan"
+   },
+   "to": {
+    "xy": [
+     -6930,
+     -4870
+    ]
+   }
+  },
+  {
+   "name": "the way north to Thousand Needles (Shimmering Flats)",
+   "from": {
+    "node": "Gadgetzan"
+   },
+   "to": {
+    "exit": "Thousand Needles"
+   }
+  },
+  {
+   "name": "Zul'Farrak's entrance (the ruins at Sandsorrow Watch's north)",
+   "from": {
+    "node": "Gadgetzan"
+   },
+   "to": {
+    "wmo": 113140,
+    "near": [
+     -6806,
+     -2918
+    ]
+   }
+  },
+  {
+   "name": "the Wastewander camps of Waterspring Field",
+   "from": {
+    "node": "Gadgetzan"
+   },
+   "to": {
+    "camp": "Waterspring Field"
+   }
+  },
+  {
+   "name": "the Caverns of Time entrance (its cave's mouth on the canyon floor, cavernsoftimeentrance.wmo 108841)",
+   "from": {
+    "node": "Gadgetzan"
+   },
+   "to": {
+    "xy": [
+     -8250,
+     -4576
+    ],
+    "exact": true
+   }
+  },
+  {
+   "name": "the Southsea pirates of Lost Rigger Cove (docks)",
+   "from": {
+    "xy": [
+     -6930,
+     -4870
+    ]
+   },
+   "to": {
+    "camp": "Lost Rigger Cove"
+   }
+  },
+  {
+   "name": "the Centipaar silithid of the Noxious Lair",
+   "from": {
+    "node": "Gadgetzan"
+   },
+   "to": {
+    "camp": "The Noxious Lair"
+   }
+  },
+  {
+   "name": "the Gaping Chasm's mouth (Hazzali silithid; exterior_piece03.wmo 110875)",
+   "from": {
+    "node": "Gadgetzan"
+   },
+   "to": {
+    "xy": [
+     -9019,
+     -3933
+    ],
+    "exact": true
+   }
+  },
+  {
+   "name": "Thistleshrub Valley's dew collectors",
+   "from": {
+    "node": "Gadgetzan"
+   },
+   "to": {
+    "camp": "Thistleshrub Valley"
+   }
+  },
+  {
+   "name": "the way west down into Un'Goro Crater",
+   "from": {
+    "node": "Gadgetzan"
+   },
+   "to": {
+    "xy": [
+     -8245,
+     -2054
+    ]
+   }
+  }
+ ],
+ "decksByHeight": true
+}

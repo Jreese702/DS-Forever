@@ -81,6 +81,34 @@ object QuestieNpcs {
         return out
     }
 
+    /**
+     * A TOWN'S FACTION-LESS PEOPLE TAKE ITS SIDE (the user, 2026-10-18, on Dalaran: "has a heat map for danger but thats going to be faction
+     * specific as its a alliance city now"; "danger maps are going to change faction to faction"). QuestieDB leaves some towns' people
+     * without a faction (WoW Forever's Kirin Tor, the Shen'dralar, Riverglades' keeps): read as hostile to both, they painted a city red
+     * for its own side. Such a spawn with no level, or a guard's name ([GUARD]), takes the side most of the faction-tagged spawns within
+     * [TOWN_YD] of it are on (by [pos], world yards; null = unknown); none near, it stays as it was. A wild beast with a level keeps
+     * counting as danger to both.
+     */
+    fun townSided(spawns: List<Spawn>, pos: (Spawn) -> DoubleArray?): List<Spawn> {
+        val tagged = spawns.filter { it.hostile == TransportRoutes.ALLIANCE || it.hostile == TransportRoutes.HORDE }.mapNotNull { s -> pos(s)?.let { it to s.hostile } }
+        if (tagged.isEmpty()) return spawns
+        val cell = HashMap<Long, ArrayList<Pair<DoubleArray, Int>>>()
+        fun key(x: Double, y: Double) = Math.floorDiv(x.toLong(), TOWN_YD.toLong()) * 1_000_003L + Math.floorDiv(y.toLong(), TOWN_YD.toLong())
+        for (t in tagged) cell.getOrPut(key(t.first[0], t.first[1])) { ArrayList() }.add(t)
+        return spawns.map { s ->
+            if (s.hostile != 3 || !(s.minLv <= 0 || GUARD.containsMatchIn(s.name))) return@map s
+            val p = pos(s) ?: return@map s
+            var hostileToA = 0; var hostileToH = 0
+            for (dx in -1..1) for (dy in -1..1) cell[key(p[0] + dx * TOWN_YD, p[1] + dy * TOWN_YD)]?.forEach { (q, h) ->
+                if (Math.hypot(q[0] - p[0], q[1] - p[1]) <= TOWN_YD) { if (h == TransportRoutes.ALLIANCE) hostileToA++ else hostileToH++ } }
+            if (hostileToA == hostileToH) s
+            else Spawn(s.area, s.x, s.y, s.minLv, s.maxLv, s.elite, if (hostileToA > hostileToH) TransportRoutes.ALLIANCE else TransportRoutes.HORDE, s.name, s.sub)
+        }
+    }
+    const val TOWN_YD = 150.0
+    /** a guard's name: a town's own, whatever its faction field says */
+    val GUARD = Regex("\\b(Guard|Guardian|Enforcer|Sentry|Sentinel|Watchman|Peacekeeper|Protector|Defender|Warden)s?\\b", RegexOption.IGNORE_CASE)
+
     private const val PREFIX = "## X-Npc-"
     private fun b64(s: String): ByteArray = java.util.Base64.getMimeDecoder().decode(s)
 

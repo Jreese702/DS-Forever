@@ -277,7 +277,15 @@ class ClimbTest {
         val hill = { gr: Int, _: Int -> val x = gx(gr); if (x > 40 && x < 120) 30f else -20f }
         val tunnel = { x: Double, y: Double -> if (y in 10.0..30.0 && x in 30.0..130.0) doubleArrayOf(-20.0) else DoubleArray(0) }
         val t = Climb.floorLayers(160.0, 0.0, 40.0, 0.0, tunnel, hill)
-        assertEquals("in the tunnel, by its mouths", -20f, t[Climb.vkeyAt(80.0, 20.0)]!!, 0.01f)
+        assertEquals("at its mouth", -20f, t[Climb.vkeyAt(35.0, 20.0)]!!, 0.01f)
+        assertTrue("under the hill no layer: the cave's link walks it", t[Climb.vkeyAt(80.0, 20.0)] == null)
+        // supports under a deck, both meeting the ground: the deck, the higher, is the walker's (Riverglades' Farholde causeway)
+        val flat = { _: Int, _: Int -> 0f }
+        val stacked = { x: Double, y: Double -> if (y in 10.0..30.0 && x in 20.0..140.0) doubleArrayOf(0.4, -0.3) else DoubleArray(0) }
+        assertEquals(0.4f, Climb.floorLayers(160.0, 0.0, 40.0, 0.0, stacked, flat)[Climb.vkeyAt(80.0, 20.0)]!!, 0.01f)
+        // a ruin's floor 3 yd under the grass is no layer (Azshara)
+        val ruin = { x: Double, y: Double -> if (y in 10.0..30.0 && x in 20.0..140.0) doubleArrayOf(-3.0) else DoubleArray(0) }
+        assertTrue(Climb.floorLayers(160.0, 0.0, 40.0, 0.0, ruin, flat).isEmpty())
         val sealed = { x: Double, y: Double -> if (y in 10.0..30.0 && x in 50.0..110.0) doubleArrayOf(-20.0) else DoubleArray(0) }
         assertTrue("a floor under the hill with no mouth is never reached", Climb.floorLayers(160.0, 0.0, 40.0, 0.0, sealed, hill).isEmpty())
         assertTrue(gr0 > 0)

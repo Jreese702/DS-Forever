@@ -1,0 +1,17 @@
+{"tag": "winterspring", "dir": "kalimdor", "faction": "alliance", "zone": 1452, "area": 618, "level": 55, "friendlyMinLevel": 100, "roadTextures": ["winterspringdirt"], "floorWmos": [111596],
+ "maps": [[1452, 618], [1448, 361], [1450, 493], [2482, 616]], "cities": [], "border": [1452, 1448],
+ "title": "Winterspring", "crop": [8533, 3800, -317, -7417],
+ "closeups": [{"name": "Timbermaw Hold mouth", "box": [7450, 6650, -1950, -2600]}, {"name": "Everlook", "box": [7000, 6500, -4350, -5000]},
+  {"name": "Mazthoril", "box": [6450, 5900, -4050, -4750]}, {"name": "Darkwhisper Gorge", "box": [4950, 4300, -3700, -4850]}],
+ "goals": [
+  {"name": "Starfall Village (the road before the lodge)", "from": {"node": "Everlook"}, "to": {"xy": [7066.7, -4033.3]}},
+  {"name": "Frostsaber Rock (the Frostsaber Huntresses)", "from": {"node": "Everlook"}, "to": {"camp": "Frostsaber Rock"}},
+  {"name": "the Timbermaw Hold tunnel's Winterspring mouth (to Felwood and Moonglade)", "from": {"xy": [7066.7, -4033.3], "name": "Starfall Village"}, "to": {"cave": 111596, "near": [6920, -2280]}},
+  {"name": "Frostfire Hot Springs (Winterfall Pathfinders)", "from": {"xy": [7066.7, -4033.3], "name": "Starfall Village"}, "to": {"camp": "Frostfire Hot Springs"}},
+  {"name": "Winterfall Village (the furbolgs)", "from": {"node": "Everlook"}, "to": {"camp": "Winterfall Village"}},
+  {"name": "The Ruins of Kel'Theril (Suffering Highborne)", "from": {"node": "Everlook"}, "to": {"mob": "Suffering Highborne", "near": [6503, -4087]}},
+  {"name": "Mazthoril's mouth (the blue dragonflight cave)", "from": {"node": "Everlook"}, "to": {"cave": 113856, "near": [6174, -4410]}},
+  {"name": "Owl Wing Thicket (the owlbeasts)", "from": {"node": "Everlook"}, "to": {"camp": "Owl Wing Thicket"}},
+  {"name": "Darkwhisper Gorge (the Hederine)", "from": {"node": "Everlook"}, "to": {"camp": "Darkwhisper Gorge"}},
+  {"name": "the tunnel into Mount Hyjal (Darkwhisper Gorge)", "from": {"node": "Everlook"}, "to": {"xy": [4601.12, -3883.56]}}
+ ]}

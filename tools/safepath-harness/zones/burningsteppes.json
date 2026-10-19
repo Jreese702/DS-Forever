@@ -1,0 +1,186 @@
+{
+ "tag": "burningsteppes",
+ "dir": "azeroth",
+ "faction": "alliance",
+ "zone": 1428,
+ "area": 46,
+ "level": 55,
+ "maps": [
+  [
+   1428,
+   46
+  ],
+  [
+   1433,
+   44
+  ],
+  [
+   1427,
+   51
+  ],
+  [
+   2548,
+   16591
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1428,
+  1433
+ ],
+ "title": "Burning Steppes",
+ "crop": [
+  -7031,
+  -8983,
+  -267,
+  -3196
+ ],
+ "closeups": [
+  {
+   "name": "Blackrock Mountain's gate and lava bridge",
+   "box": [
+    -7700,
+    -8100,
+    -950,
+    -1350
+   ]
+  },
+  {
+   "name": "the Altar of Storms",
+   "box": [
+    -7500,
+    -7800,
+    -600,
+    -900
+   ]
+  },
+  {
+   "name": "Blackrock Pass and Morgan's Vigil",
+   "box": [
+    -8250,
+    -8750,
+    -2300,
+    -2900
+   ]
+  },
+  {
+   "name": "Dreadmaul Rock and Terror Wing Path",
+   "box": [
+    -7500,
+    -8100,
+    -2400,
+    -3000
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "the Firegut ogres at Dreadmaul Rock",
+   "from": {
+    "node": "Morgan's Vigil"
+   },
+   "to": {
+    "camp": "Dreadmaul Rock"
+   }
+  },
+  {
+   "name": "the black dragonflight on Terror Wing Path",
+   "from": {
+    "node": "Morgan's Vigil"
+   },
+   "to": {
+    "camp": "Terror Wing Path"
+   }
+  },
+  {
+   "name": "the Ruins of Thaurissan (War Reavers, Thaurissan relics)",
+   "from": {
+    "node": "Morgan's Vigil"
+   },
+   "to": {
+    "camp": "Ruins of Thaurissan"
+   }
+  },
+  {
+   "name": "Flame Crest (Horde camp, Ragged John)",
+   "from": {
+    "node": "Morgan's Vigil"
+   },
+   "to": {
+    "xy": [
+     -7495,
+     -2171
+    ]
+   }
+  },
+  {
+   "name": "The Pillar of Ash (Blackrock orcs)",
+   "from": {
+    "node": "Morgan's Vigil"
+   },
+   "to": {
+    "camp": "The Pillar of Ash"
+   }
+  },
+  {
+   "name": "Blackrock Stronghold",
+   "from": {
+    "node": "Morgan's Vigil"
+   },
+   "to": {
+    "wmo": 112927,
+    "near": [
+     -7725,
+     -1497
+    ]
+   }
+  },
+  {
+   "name": "Blackrock Mountain's Burning Steppes gate",
+   "from": {
+    "node": "Morgan's Vigil"
+   },
+   "to": {
+    "xy": [
+     -7772,
+     -1142
+    ],
+    "exact": true
+   }
+  },
+  {
+   "name": "Draco'dar (Flamescale dragonkin)",
+   "from": {
+    "node": "Morgan's Vigil"
+   },
+   "to": {
+    "camp": "Draco'dar"
+   }
+  },
+  {
+   "name": "the Altar of Storms (the walkway over its lava, north-west side)",
+   "from": {
+    "node": "Morgan's Vigil"
+   },
+   "to": {
+    "xy": [
+     -7640,
+     -712
+    ],
+    "exact": true
+   }
+  },
+  {
+   "name": "Blackrock Pass to Redridge Mountains (Redridge's own pass exit)",
+   "from": {
+    "node": "Morgan's Vigil"
+   },
+   "to": {
+    "xy": [
+     -8675,
+     -2567
+    ]
+   }
+  }
+ ]
+}

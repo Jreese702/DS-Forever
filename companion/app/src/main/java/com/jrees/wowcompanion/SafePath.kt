@@ -50,6 +50,16 @@ object SafePath {
     /** THE NARROW STREAM (the user's ruling, 2026-10-18, on Silverpine's stream by the Sepulcher: "Yes, you wade it"): water up to
      *  [NARROW_DEPTH] deep is crossed where it is no wider than [NARROW_YD]; [FORD_DEPTH] stays the limit for anything longer */
     const val NARROW_DEPTH = 2.2f
+    /** THE DETOUR CAP (the user: "Mobs are a cost, not a wall"; "Some of the paths ... seem overly complicated"): a way round the mobs
+     *  longer than [DETOUR_FACTOR] times the way with no danger counted, plus [DETOUR_SLACK_YD], loses to that way */
+    const val DETOUR_FACTOR = 2.5
+    const val DETOUR_SLACK_YD = 1000.0
+    /** of a route round the danger ([round]) and the one ignoring it ([direct]): the one to take ([DETOUR_FACTOR]) */
+    fun capDetour(round: List<DoubleArray>, direct: List<DoubleArray>?): List<DoubleArray> {
+        if (direct == null || direct.size < 2) return round
+        fun len(w: List<DoubleArray>) = w.zipWithNext { a, b -> hypot(b[0] - a[0], b[1] - a[1]) }.sum()
+        return if (len(round) > DETOUR_FACTOR * len(direct) + DETOUR_SLACK_YD) direct else round
+    }
     const val NARROW_YD = 6.0
     const val FORD_COST = 4.0              // a ford's yard costs this much
     const val CLIMB_STUB = 1.8             // a dead-end spur or trail climbing this hard (its mean walking factor) ...
@@ -910,7 +920,7 @@ object SafePath {
      */
     val ZONES_STEP = object : ArtHarvest.Step {
         override val id = "safepathzones"
-        override val version = 6                       // v4: decks; v5: M2 bridges (by model name) as decks; v6: the water per vertex (WTR2)
+        override val version = 7                       // v4: decks; v5: M2 bridges (by model name) as decks; v6: the water per vertex (WTR2); v7: lava and slime a wall
         override val beforePlay = false
         override val weight = 40
         override fun run(job: ArtHarvest.Job) {
@@ -918,6 +928,8 @@ object SafePath {
             val rects = MapHarvestSteps.zoneRects(job).filterValues { MapHarvest.tilesUnder(it) != null }
             val areas = g.db2(PlaceNames.DB_AREA_TABLE)?.rows(strings = setOf(1))?.associate { it.id to PlaceNames.Area(it.str(1), it.int(3)) }
                 ?: error("AreaTable unreadable: ${g.lastReadWhy}")
+            // the liquids no one wades (magma, slime): a wall at any depth
+            val lethal = g.db2(Terrain.DB_LIQUID_TYPE)?.rows(strings = setOf(0))?.associate { it.id to it.str(0) }?.let { Terrain.lethalLiquids(it) } ?: emptySet()
             val uimap = g.db2(DangerStore.DB_UIMAP_ASSIGNMENT)?.rows()?.let { rows ->
                 val o = HashMap<Int, Int>(); for (r in rows) { val a = r.int(7); val m = r.int(4); if (a != 0 && m != 0 && a !in o) o[a] = m }; o
             } ?: error("UiMapAssignment unreadable: ${g.lastReadWhy}")
@@ -956,7 +968,7 @@ object SafePath {
                     val key = (rect.c.toLong() shl 32) or MapHarvest.key(tc, tr).toLong()
                     return wets[key] ?: run {
                         val b = root[MapHarvest.key(tc, tr)]?.let { g.read(it) } ?: return@run Wet(null, null, emptyList())
-                        val surface = Terrain.water(b)
+                        val surface = Terrain.water(b, lethal)
                         // the outdoor walkways over the water (a bridge, a pier): only where the tile has water at all
                         // each walkway by its DECK (its outdoor groups' own floor triangles), the box only where the groups can't be read
                         val walks: List<(Double, Double) -> Boolean> = if (surface == null) emptyList() else {

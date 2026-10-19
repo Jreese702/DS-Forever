@@ -31,6 +31,17 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
         return if (i in 0 until nx && j in 0 until ny) terr[j * nx + i] else 1f
     }
     val max: Float get() = d.maxOrNull() ?: 0f
+    /**
+     * THE ZONE'S TYPICAL DANGER (the user's "silly detours": a level 52 in Un'Goro, every cell red, routes went 2-4 times the straight
+     * way): the median danger of the cells [inZone] (the map's 0..1 middle of each cell) - a route's cost counts only the danger over it,
+     * so it steers round the worst camps, not round the whole zone. 0 when the zone is mostly quiet.
+     */
+    fun typical(inZone: (Double, Double) -> Boolean): Float {
+        val v = ArrayList<Float>()
+        for (j in 0 until ny) for (i in 0 until nx) if (inZone((i + 0.5) / nx, (j + 0.5) / ny)) v.add(d[j * nx + i])
+        if (v.isEmpty()) return 0f
+        v.sort(); return v[v.size / 2]
+    }
 
     /** the cost of walking straight from [a] to [b] at strength [k]: its yards, each weighed by the danger it crosses (none within
      *  [GOAL_FREE_YD] of [goal]) */

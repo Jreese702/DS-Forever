@@ -1,0 +1,20 @@
+{"tag": "azshara", "dir": "kalimdor", "faction": "horde", "zone": 1447, "area": 16, "level": 50, "friendlyMinLevel": 100,
+ "maps": [[1447, 16], [1440, 331], [1448, 361], [2482, 616]], "cities": [], "border": [1447, 1440],
+ "title": "Azshara", "crop": [5300, 1960, -3300, -8000],
+ "closeups": [{"name": "Southfury bridge and Bough Shadow", "box": [3750, 2550, -3550, -4250]},
+  {"name": "Valormok and Haldarr", "box": [3850, 3100, -4050, -4800]},
+  {"name": "Ruins of Eldarath and Ursolan", "box": [4700, 3200, -4700, -5800]},
+  {"name": "Legash and the Thalassian camps", "box": [4950, 4150, -5800, -7000]},
+  {"name": "Temple of Arkkoran and Bitter Reaches", "box": [4900, 3600, -6800, -7500]}],
+ "goals": [
+  {"name": "Haldarr Encampment (the satyrs)", "from": {"node": "Valormok"}, "to": {"cave": 112685, "near": [3299, -4270]}},
+  {"name": "Ruins of Eldarath (the Spitelash naga)", "from": {"node": "Valormok"}, "to": {"camp": "Ruins of Eldarath"}},
+  {"name": "Ursolan (the Timbermaw)", "from": {"node": "Valormok"}, "to": {"camp": "Ursolan"}},
+  {"name": "Thalassian Base Camp (the blood elves)", "from": {"node": "Valormok"}, "to": {"camp": "Thalassian Base Camp"}},
+  {"name": "Legash Encampment (the satyrs)", "from": {"node": "Valormok"}, "to": {"camp": "Legashi Encampment"}},
+  {"name": "Legashi Stronghold (Forever-added)", "from": {"node": "Valormok"}, "to": {"camp": "Legashi Stronghold"}},
+  {"name": "Thalassian Vanguard Camp (Forever-added)", "from": {"node": "Valormok"}, "to": {"camp": "Thalassian Vanguard Camp"}},
+  {"name": "Temple of Arkkoran (the Bay of Storms' makrura)", "from": {"node": "Valormok"}, "to": {"camp": "Temple of Arkkoran"}},
+  {"name": "Bitter Reaches", "from": {"node": "Valormok"}, "to": {"camp": "Bitter Reaches"}},
+  {"name": "the Southfury bridge to Ashenvale", "from": {"node": "Valormok"}, "to": {"exit": "Ashenvale", "how": "bridge"}}
+ ]}
