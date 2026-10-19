@@ -145,7 +145,7 @@ object Climb {
      * deck, its arches and parapets; a tunnel's floor under its hill; a pier's planks): only one height a vertex, and of a bridge's
      * layers the one the walker reaches - from where a floor meets the ground ([ground]: global row, column -> the terrain's height, NaN
      * none) within [Caves.STEP_UP_YD] (its approach, a tunnel's mouth, a pier's root), on along the floors from vertex to vertex within
-     * a step's 45 degrees, the highest floor first (a deck over its supports), never one more than [LAYER_UNDER_YD] under the terrain,
+     * a step's 45 degrees, the floor reached first (of those reached as soon, the highest: a deck over its supports), never one more than [LAYER_UNDER_YD] under the terrain,
      * pieces of fewer than [MIN_FLOOR_PIECE] vertices dropped.
      * A floor never reached so (a roof, a parapet's top, the arches under the road) is no ground; neither is a tunnel's floor
      * under the hillside but through its mouths. [floors] (wx, wy): every floor's height there (empty off them). Thandol Span: "the
@@ -158,17 +158,21 @@ object Climb {
         val at = HashMap<Long, DoubleArray>()
         for (gr in gr0..gr1) for (gc in gc0..gc1) { val f = floors(ORG - gr * STEP, ORG - gc * STEP); if (f.isNotEmpty()) at[vkey(gr, gc)] = f }
         val out = HashMap<Long, Float>()
-        // HIGHEST FIRST: the walking surface claims its vertices before anything under it reaches them (Riverglades' Farholde causeway:
-        // its supports' tops, 2.6 yd under the deck, were taken where the flood reached them first)
-        val queue = PriorityQueue<Pair<Float, Long>>(compareByDescending { it.first })
+        // NEAREST FIRST, THEN HIGHEST: a vertex holds the floor a walker from the ground reaches first (the flood's yards along the floors
+        // from where they meet the ground), and of floors reached as soon, the highest - the walking surface over anything under it
+        // (Riverglades' Farholde causeway: its supports' tops, 2.6 yd under the deck, meet the ground where the deck does). Highest
+        // first over the whole flood let a building's upper storey, reached by its own stair, claim every vertex over its ground storey:
+        // the storey's doors and the room round a start inside were walled in (Zephras' Valanaar, 7704163; the Darnassus and
+        // Orgrimmar gates)
+        val queue = PriorityQueue<Triple<Double, Float, Long>>(compareBy<Triple<Double, Float, Long>> { it.first }.thenByDescending { it.second })
         for ((k, f) in at) {
             val g = ground((k shr 32).toInt(), k.toInt()); if (g.isNaN()) continue
             // a floor meets the ground at or over it: never one under it (Riverglades: a shipwreck sunk in the riverbed)
             // every floor meeting the ground here is a start; the highest is popped first, so a deck claims its vertices before its supports
-            for (h in f) if (h >= g - SEED_UNDER_YD && h - g <= Caves.STEP_UP_YD) queue.add(h.toFloat() to k)
+            for (h in f) if (h >= g - SEED_UNDER_YD && h - g <= Caves.STEP_UP_YD) queue.add(Triple(0.0, h.toFloat(), k))
         }
         while (queue.isNotEmpty()) {
-            val (z, k) = queue.poll()
+            val (d, z, k) = queue.poll()
             if (k in out) continue
             out[k] = z
             val gr = (k shr 32).toInt(); val gc = k.toInt()
@@ -182,7 +186,7 @@ object Climb {
                 val reach = STEP * hypot(dr.toDouble(), dc.toDouble())
                 val gn = ground(gr + dr, gc + dc)
                 val h = f.filter { abs(it - z) <= reach && (gn.isNaN() || it >= gn - LAYER_UNDER_YD) }.minByOrNull { abs(it - z) } ?: continue
-                queue.add(h.toFloat() to n)
+                queue.add(Triple(d + reach, h.toFloat(), n))
             }
         }
         // and no piece of a few vertices (a tower's ledge 3.6 yd over the ground beside it: Riverglades' outlandhumantower02)
