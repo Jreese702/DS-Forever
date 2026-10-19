@@ -6,6 +6,7 @@
               {"name": "Durnholde Keep", "box": [-150, -750, -1150, -1750]},
               {"name": "Thoradin's Wall gate", "box": [-450, -1150, -1250, -1950]},
               {"name": "Hinterlands pass", "box": [350, -200, -1300, -1950]}],
+ "swims": [{"name": "Purgation Isle", "island": {"area": "Purgation Isle"}, "evidence": "the user, 2026-10-18: \"Yes, all of them\" (swim islands) - Purgation Isle, its ground by its AreaTable name; the shortest gap to the shore found at run time"}],
  "goals": [
   {"name": "the road in from Silverpine to Tarren Mill", "from": {"exit": "Silverpine Forest"}, "to": {"node": "Tarren Mill"}},
   {"name": "Hillsbrad Fields (farmers and peasants)", "from": {"node": "Tarren Mill"}, "to": {"camp": "Hillsbrad Fields"}},
@@ -16,5 +17,6 @@
   {"name": "Darrow Hill's yeti cave", "from": {"node": "Tarren Mill"}, "to": {"cave": 111160, "near": [-271, -396]}},
   {"name": "Thoradin's Wall gate to Arathi", "from": {"node": "Tarren Mill"}, "to": {"exit": "Arathi Highlands"}},
   {"name": "the Alterac pass north of Tarren Mill", "from": {"node": "Tarren Mill"}, "to": {"exit": "Alterac Mountains"}},
-  {"name": "the way up to the Hinterlands", "from": {"node": "Tarren Mill"}, "to": {"xy": [-128, -1812]}}
+  {"name": "the way up to the Hinterlands", "from": {"node": "Tarren Mill"}, "to": {"xy": [-128, -1812]}},
+  {"name": "Purgation Isle (a declared swim)", "from": {"exit": "Silverpine Forest"}, "to": {"area": "Purgation Isle"}}
  ]}

@@ -59,7 +59,7 @@ def surface(x, y):
     return float(surface_tile(c, r)[min(127, int((gy - r) * 128)), min(127, int((gx - c) * 128))])
 # the decks bucketed by 16 yd
 grid = {}
-decks = [[t[0], t[1], t[3], t[4], t[6], t[7], min(t[2], t[5], t[8])] for t in decks]      # 2D corners and the floor's lowest height
+decks = [[t[0], t[1], t[3], t[4], t[6], t[7], min(t[2], t[5], t[8])] for t in decks if len(t) < 10 or t[9] != 2]   # a capital's box: no deck      # 2D corners and the floor's lowest height
 for k, t in enumerate(decks):
     for i in range(int(math.floor(min(t[0], t[2], t[4]) / 16)) - 1, int(math.floor(max(t[0], t[2], t[4]) / 16)) + 2):
         for j in range(int(math.floor(min(t[1], t[3], t[5]) / 16)) - 1, int(math.floor(max(t[1], t[3], t[5]) / 16)) + 2):

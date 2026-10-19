@@ -2,6 +2,7 @@
  "maps": [[1436, 40], [1429, 12], [1431, 10], [1434, 33]], "cities": [], "border": [1436, 1429],
  "title": "Westfall", "crop": [-9400, -11733, 2500, -483],
  "closeups": [{"name": "Moonbrook and the Deadmines", "box": [-10850, -11300, 1750, 1300]}, {"name": "Jangolode Mine", "box": [-9750, -10150, 1650, 1150]}],
+ "swims": [{"name": "the Westfall Lighthouse", "island": {"area": "the Westfall Lighthouse"}, "evidence": "the user, 2026-10-18: \"Yes, all of them\" (swim islands) - the Westfall Lighthouse, its ground by its AreaTable name; the shortest gap to the shore found at run time"}],
  "goals": [
   {"name": "Furlbrow's Pumpkin Farm", "from": {"exit": "Elwynn Forest"}, "to": {"wmo": 108016, "near": [-9847, 1287]}},
   {"name": "Jangolode Mine's mouth (kobolds)", "from": {"node": "Sentinel Hill"}, "to": {"cave": 110750, "near": [-9977, 1460]}},
@@ -12,5 +13,6 @@
   {"name": "the Deadmines' entrance in Moonbrook", "from": {"node": "Sentinel Hill"}, "to": {"cave": 108444, "near": [-11070, 1496]}},
   {"name": "the Defias in the Dagger Hills", "from": {"node": "Sentinel Hill"}, "to": {"mob": "Defias Highwayman", "near": [-11202, 1387]}},
   {"name": "the Westfall Lighthouse (the shore facing its islet)", "from": {"node": "Sentinel Hill"}, "to": {"xy": [-11354, 1925]}},
-  {"name": "the bridge to Elwynn Forest", "from": {"node": "Sentinel Hill"}, "to": {"exit": "Elwynn Forest", "how": "bridge"}}
+  {"name": "the bridge to Elwynn Forest", "from": {"node": "Sentinel Hill"}, "to": {"exit": "Elwynn Forest", "how": "bridge"}},
+  {"name": "the Westfall Lighthouse (a declared swim)", "from": {"node": "Sentinel Hill"}, "to": {"area": "the Westfall Lighthouse"}}
  ]}

@@ -8,6 +8,10 @@ try: sys.stdout.reconfigure(encoding='utf-8')     # the routes' names carry arro
 except Exception: pass
 S = HT.S; ORG = HT.ORG
 WALL = 45.0
+# the user's short steep step (2026-10-18, "Allow short steps to 48°"; Climb.SHORT_STEEP_DEG / SHORT_STEEP_YD): one lattice step under 48
+# degrees whose neighbours along its line are no walls, or a line's stretch of 45-48 degree faces no longer than 2 yd, is walked
+SHORT_DEG = 48.0
+SHORT_YD = 2.0
 def vh(gc, gr):
     c = gc // 128; r = gr // 128
     v = HT.tile(c, r)[gr - r * 128, gc - c * 128]
@@ -30,6 +34,15 @@ def edge_deg(gc, gr, dc, dr):
         r0 = min(gr, gr + dr); ha, hb = vh(gc, r0), vh(gc, r0 + 1)
         f = min(face_deg(ha, hb, FC.centre(r0, gc - 1)), face_deg(ha, hb, FC.centre(r0, gc)))
     return max(deg(ha, hb, S), f)
+def edge_short(gc, gr, dc, dr):
+    """an edge step under SHORT_DEG whose neighbours along its own line are no walls (Climb.build's lone short steep step)"""
+    if not (WALL <= edge_deg(gc, gr, dc, dr) < SHORT_DEG): return False
+    return edge_deg(gc - dc, gr - dr, dc, dr) < WALL and edge_deg(gc + dc, gr + dr, dc, dr) < WALL
+def step_ok(gc, gr, dc, dr):
+    """a lattice step no wall: under 45 degrees, or a lone short steep one (a diagonal by either of its corner pairs)"""
+    def edge_ok(c, r, ddc, ddr): return edge_deg(c, r, ddc, ddr) < WALL or edge_short(c, r, ddc, ddr)
+    if dr == 0 or dc == 0: return edge_ok(gc, gr, dc, dr)
+    return (edge_ok(gc, gr, dc, 0) and edge_ok(gc + dc, gr, 0, dr)) or (edge_ok(gc, gr, 0, dr) and edge_ok(gc, gr + dr, dc, 0))
 def step_deg(gc, gr, dc, dr):
     if dr == 0 or dc == 0: return edge_deg(gc, gr, dc, dr)
     a = max(edge_deg(gc, gr, dc, 0), edge_deg(gc + dc, gr, 0, dr))
@@ -54,6 +67,7 @@ def load_floors(routes_file):
     _holes = {(a, b) for a, b in json.load(open(hp))} if os.path.exists(hp) else set()
     lp = os.path.join(d, 'layers_%s.json' % tag)
     _layers.clear(); _layers.update({(a, b): z for a, b, z in json.load(open(lp))} if os.path.exists(lp) else {})
+    _floors = [t for t in _floors if len(t) < 10 or t[9] != 2] + [t for t in _floors if len(t) >= 10 and t[9] == 2]
     for k, t in enumerate(_floors):
         for i in range(int(math.floor((min(t[0], t[3], t[6]) - DECK_MARGIN) / 16)), int(math.floor((max(t[0], t[3], t[6]) + DECK_MARGIN) / 16)) + 1):
             for j in range(int(math.floor((min(t[1], t[4], t[7]) - DECK_MARGIN) / 16)), int(math.floor((max(t[1], t[4], t[7]) + DECK_MARGIN) / 16)) + 1):
@@ -67,12 +81,13 @@ def level_floor(x, y, g=None):
     """on a floor the lattice takes as level ground (a city's street, a building's porch: floors_<tag>.json's 0): no terrain check"""
     for k in _fgrid.get((int(math.floor(x / 16)), int(math.floor(y / 16))), []):
         t = _floors[k]
-        if t[9]: continue
+        if t[9] == 1: continue
         x0, y0, z0, x1, y1, z1, x2, y2, z2 = t[:9]
         det = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
         if abs(det) < 1e-9: continue
         a = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / det; b = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / det
         if (a >= 0 and b >= 0 and a + b <= 1) or min(_segd(x0, y0, x1, y1, x, y), _segd(x1, y1, x2, y2, x, y), _segd(x2, y2, x0, y0, x, y)) <= DECK_MARGIN:
+            if t[9] == 2: return True                                   # a capital's street box: leveled whatever its height
             # a buried floor (a mine's under its hill) is no street: the terrain over it is checked (the harness's LEVEL_BURIED_YD)
             a = max(0.0, min(1.0, a)); b = max(0.0, min(1.0 - a, b)); h = a * z0 + b * z1 + (1 - a - b) * z2
             if g is None: g = HT.height(x, y)
@@ -91,10 +106,11 @@ def edge_cell(x, y):
     gx = (ORG - x) / S; gy = (ORG - y) / S; r0 = int(math.floor(gx)); c0 = int(math.floor(gy))
     return any(k in _layers for k in ((r0, c0), (r0, c0 + 1), (r0 + 1, c0), (r0 + 1, c0 + 1)))
 def floors_at(x, y):
-    """every floor's height at (x, y) (its triangles within the margin, on their planes)"""
+    """every floor's height at (x, y) (its triangles within the margin, on their planes; a capital's street box is no floor)"""
     out = []
     for k in _fgrid.get((int(math.floor(x / 16)), int(math.floor(y / 16))), []):
         t = _floors[k]
+        if len(t) >= 10 and t[9] == 2: continue
         x0, y0, z0, x1, y1, z1, x2, y2, z2 = t[:9]
         det = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
         if abs(det) < 1e-9: continue
@@ -138,6 +154,7 @@ def lattice_worst(a, b, on=None):
         di = (ni > ci) - (ni < ci); dj = (nj > cj) - (nj < cj)
         if di == 0 and dj == 0: continue
         d = step_deg(ci, cj, di, dj)
+        if d >= WALL and step_ok(ci, cj, di, dj): ci, cj = ni, nj; continue      # a lone short steep step
         if d >= WALL:
             # a floor at the step (its own slope is the line's check, line_faces), or a hole a building's floor covers: no terrain
             mx = ORG - (cj + nj) / 2 * S; my = ORG - (ci + ni) / 2 * S
@@ -154,7 +171,7 @@ def line_walk(a, b, z0=None):
     (degrees), its wall samples, the spots on a floor (for the lattice check), and its height at the end ([z0] at the start)."""
     L = math.hypot(b[0] - a[0], b[1] - a[1]); n = max(1, int(L / 0.5)); step = L / n
     worst = 0.0; walls = 0; on = []; hist = []
-    z = z0; win = max(1, int(round(2.0 / max(step, 1e-6))))
+    z = z0; win = max(1, int(round(2.0 / max(step, 1e-6)))); steep_run = 0.0
     for q in range(n + 1):
         x = a[0] + (b[0] - a[0]) * q / n; y = a[1] + (b[1] - a[1]) * q / n
         f = layer_at(x, y)
@@ -177,8 +194,13 @@ def line_walk(a, b, z0=None):
             g = HT.height(x, y); h = g
             if not (hole_at(x, y) or level_floor(x, y)):
                 fc = min(FC.face_at(x + dx, y + dy) for dx, dy in ((0, 0), (0.25, 0), (-0.25, 0), (0, 0.25), (0, -0.25)))
-                worst = max(worst, fc)
-                if fc >= WALL: walls += 1
+                if WALL <= fc < SHORT_DEG:
+                    steep_run += step
+                    if steep_run > SHORT_YD: worst = max(worst, fc); walls += 1
+                else:
+                    steep_run = 0.0
+                    worst = max(worst, fc)
+                    if fc >= WALL: walls += 1
             else: z = None; continue                                   # a covered hole, a city's street: no height to keep
         if z is not None and abs(h - z) > EDGE_UP:
             walls += 1; worst = max(worst, 90.0)

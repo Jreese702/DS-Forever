@@ -104,6 +104,7 @@ class RenderSafePath {
             // its groups weren't dumped
             val walks = HashMap<Pair<Int, Int>, List<(Double, Double) -> Boolean>>(); val m2Said = HashSet<Int>()
             val unread = HashSet<Int>()
+            val cityFeet = ArrayList<com.jrees.wowcompanion.Buildings.Foot>()   // a capital's streets leveled by their boxes (py/segcheck.py: flag 2)
             val deckList = ArrayList<com.jrees.wowcompanion.WorldBuildings.Deck>()     // every deck read (py/wetcheck.py: decks_<tag>.json)
             // per tile: the decks walked at their own floor's height - a bridge's or a pier's (no rooms), a fifth or more of its floor over
             // the water (a building's porch by the shore, its roof read as floor too, a cave's mouth, a city's streets stay the level
@@ -159,7 +160,7 @@ class RenderSafePath {
                             // a WMO whose floors can't be read (its groups not dumped) levels nothing - the ground under its box is the
                             // terrain's (Silithus: Cenarion Hold's outpost, undumped, let a route over a 67-90 degree step) - but a capital's
                             // streets, whose ground under them reads steep everywhere
-                            ?: if (com.jrees.wowcompanion.WorldBuildings.isCity(p, com.jrees.wowcompanion.WorldBuildings.groups(root))) feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } }
+                            ?: if (com.jrees.wowcompanion.WorldBuildings.isCity(p, com.jrees.wowcompanion.WorldBuildings.groups(root))) { cityFeet.addAll(feet); feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } } }
                             else { if (unread.add(p.fid)) println("WARNING WMO ${p.fid} at ${p.ox.toInt()},${p.oy.toInt()}: " +
                                 (if (File(dir, "wmogroup/${p.fid}_0").isFile) "its groups hold no readable floor" else "its floors not dumped (dump/dump_cavegroups.py <dir> ${p.fid})") +
                                 " - the ground under it is taken as the terrain"); emptyList() }
@@ -219,7 +220,11 @@ class RenderSafePath {
             // height classes the lattice's steps, 0 where it levels them - a city's, a building's porch)
             if (map == main) { val classed = tileDecks.values.flatten().toSet()
                 File(out, "floors_$tag.json").writeText(org.json.JSONArray(deckList.flatMap { d -> val hs = d.heights ?: return@flatMap emptyList<org.json.JSONArray>()
-                    d.triangles.mapIndexed { k, t -> org.json.JSONArray(listOf(t[0], t[1], hs[k][0], t[2], t[3], hs[k][1], t[4], t[5], hs[k][2], if (d in classed) 1 else 0)) } }).toString()) }
+                    d.triangles.mapIndexed { k, t -> org.json.JSONArray(listOf(t[0], t[1], hs[k][0], t[2], t[3], hs[k][1], t[4], t[5], hs[k][2], if (d in classed) 1 else 0)) } }
+                    // and a capital's street boxes (no floor read: leveled whatever their height - flag 2), two triangles a box
+                    + cityFeet.flatMap { f -> val c = listOf(doubleArrayOf(f.worldX(f.lx0, f.ly0), f.worldY(f.lx0, f.ly0)), doubleArrayOf(f.worldX(f.lx1, f.ly0), f.worldY(f.lx1, f.ly0)),
+                        doubleArrayOf(f.worldX(f.lx1, f.ly1), f.worldY(f.lx1, f.ly1)), doubleArrayOf(f.worldX(f.lx0, f.ly1), f.worldY(f.lx0, f.ly1)))
+                        listOf(listOf(0, 1, 2), listOf(0, 2, 3)).map { q -> org.json.JSONArray(q.flatMap { listOf(c[it][0], c[it][1], 0.0) } + 2) } }).toString()) }
             done[map] = Done(net, rect, zg, ar, hostile)
         }
         if (done.containsKey(borderPair.first) && done.containsKey(borderPair.second))
@@ -499,6 +504,17 @@ class RenderSafePath {
             return best ?: doubleArrayOf(p.ox, p.oy)
         }
         /** a subzone's quest mobs at their thickest: the hostile spawn with the most others within 60 yd */
+        // a subzone's own ground by its AreaTable name (an island: the Westfall Lighthouse, Purgation Isle): the dry spot one can stand on
+        // nearest the middle of its chunks
+        fun areaSpot(name: String): DoubleArray? {
+            val a = areas.entries.firstOrNull { it.value.name.trim().equals(name.trim(), true) && (it.value.parent == zoneArea || it.key == zoneArea) }?.key ?: return null
+            val pts = ArrayList<DoubleArray>()
+            var j = 0; while (j < cg.ny) { var i = 0; while (i < cg.nx) { val x = cg.wx(j); val y = cg.wy(i)
+                if (zg.areaAt(x, y) == a) pts.add(doubleArrayOf(x, y)); i += 2 }; j += 2 }
+            if (pts.isEmpty()) return null
+            val mx = pts.sumOf { it[0] } / pts.size; val my = pts.sumOf { it[1] } / pts.size
+            return pts.filter { standable(it[0], it[1]) && !deep(it[0], it[1]) }.minByOrNull { Math.hypot(it[0] - mx, it[1] - my) }
+        }
         fun camp(name: String): DoubleArray? {
             val a = areas.entries.firstOrNull { it.value.name.trim().equals(name.trim(), true) && it.value.parent == zoneArea }?.key ?: return null
             val pts = spawns.filter { it.hostile == mine || it.hostile == 3 }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
@@ -559,6 +575,7 @@ class RenderSafePath {
                 to.has("camp") -> camp(to.getString("camp"))
                 to.has("mob") -> mob(to.getString("mob"), near)
                 to.has("node") -> at(to.getString("node"))
+                to.has("area") -> areaSpot(to.getString("area"))
                 to.optBoolean("airChainTop") -> platformAt
                 to.has("exit") -> exitNamed(to.getString("exit"), if (to.has("how")) to.getString("how") else null)?.let { doubleArrayOf(it.wx, it.wy) }
                 else -> xy(to.optJSONArray("xy"))
@@ -687,7 +704,7 @@ class RenderSafePath {
         val swims = ArrayList<Swim>()
         spec?.optJSONArray("swims")?.let { a -> for (q in 0 until a.length()) {
             val o = a.getJSONObject(q); val isl = o.getJSONObject("island")
-            val p0 = (if (isl.has("node")) at(isl.getString("node")) else xy(isl.optJSONArray("xy"))) ?: run { println("SWIM ${o.optString("name")}: its island's spot not found"); null } ?: continue
+            val p0 = (if (isl.has("node")) at(isl.getString("node")) else if (isl.has("area")) areaSpot(isl.getString("area")) else xy(isl.optJSONArray("xy"))) ?: run { println("SWIM ${o.optString("name")}: its island's spot not found"); null } ?: continue
             fun key(i: Int, j: Int) = (j.toLong() shl 32) or (i.toLong() and 0xFFFFFFFFL)
             fun dryAt(i: Int, j: Int) = i in 0 until cg.nx && j in 0 until cg.ny && !deep(cg.wx(j), cg.wy(i))
             val nb = listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1, 1 to 1, 1 to -1, -1 to 1, -1 to -1)

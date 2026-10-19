@@ -318,4 +318,21 @@ class ClimbTest {
         assertTrue("a step in", g.lineClear(doubleArrayOf(50.0, 36.0), doubleArrayOf(50.0, 41.0)))
         assertTrue(ox > 0)
     }
+
+    /** the user's "Allow short steps to 48°": one lattice step under 48 degrees between gentler ones is walked (Feralas' Woodpaw Den);
+     *  two in a row, or a 50 degree step, stay walls (Jasperlode) */
+    @Test fun aLoneShortSteepStepIsWalked() {
+        val rise46 = (Climb.STEP * Math.tan(Math.toRadians(46.0))).toFloat()
+        val rise50 = (Climb.STEP * Math.tan(Math.toRadians(50.0))).toFloat()
+        val gc0 = Math.floor((32 * MapHarvest.ADT_YD - 100.0) / Climb.STEP).toInt()
+        fun grid(h: (Int) -> Float) = Climb.build(100.0, 0.0, 100.0, 0.0, { _, gc -> h(gc - gc0) })
+        // flat, one step up at column 10 -> 11
+        val one = grid { c -> if (c > 10) rise46 else 0f }
+        assertEquals(Climb.STEEP, one.east(10, 5))
+        // two in a row: both walls
+        val two = grid { c -> if (c > 11) 2 * rise46 else if (c > 10) rise46 else 0f }
+        assertEquals(Climb.WALL, two.east(10, 5)); assertEquals(Climb.WALL, two.east(11, 5))
+        // 50 degrees: a wall
+        assertEquals(Climb.WALL, grid { c -> if (c > 10) rise50 else 0f }.east(10, 5))
+    }
 }

@@ -92,6 +92,7 @@
    ]
   }
  ],
+ "swims": [{"name": "Alcaz Island", "island": {"area": "Alcaz Island"}, "evidence": "the user, 2026-10-18: \"Yes, all of them\" (swim islands) - Alcaz Island, its ground by its AreaTable name; the shortest gap to the shore found at run time"}],
  "goals": [
   {
    "name": "Theramore's docks: the boat to Menethil (292)",
@@ -255,6 +256,7 @@
      -3804
     ]
    }
-  }
+  },
+  {"name": "Alcaz Island (a declared swim)", "from": {"node": "Theramore Isle · Inn, Stables"}, "to": {"area": "Alcaz Island"}}
  ]
 }

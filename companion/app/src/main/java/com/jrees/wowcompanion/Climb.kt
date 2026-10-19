@@ -31,13 +31,18 @@ object Climb {
     private const val ORG = 32.0 * MapHarvest.ADT_YD
     const val LEVEL = 0; const val CLIMB = 1; const val STEEP = 2; const val WALL = 3
     const val CLIMB_DEG = 20.0; const val STEEP_DEG = 35.0; const val WALL_DEG = 45.0
+    /** THE SHORT STEEP STEP (the user, 2026-10-18: "Allow short steps to 48°"): one lattice step, or a straight line's stretch of faces no
+     *  longer than [SHORT_STEEP_YD], under this is walked (Feralas' Woodpaw Den, 45.0; the Grimtotem ramp, 46.5-47.1); a run of them, or
+     *  anything steeper, stays a wall (Jasperlode's 50-64 degree cliff) */
+    const val SHORT_STEEP_DEG = 48.0
+    const val SHORT_STEEP_YD = 2.0
     /** a step's cost per yard by its class (a wall: none) */
     val COST = doubleArrayOf(1.0, 1.3, 2.0, Double.NaN)
 
-    fun classOf(dh: Float, run: Double = STEP): Int {
+    fun classOf(dh: Float, run: Double = STEP, wallDeg: Double = WALL_DEG): Int {
         if (dh.isNaN()) return WALL
         val deg = Math.toDegrees(atan(abs(dh) / run))
-        return when { deg < CLIMB_DEG -> LEVEL; deg < STEEP_DEG -> CLIMB; deg < WALL_DEG -> STEEP; else -> WALL }
+        return when { deg < CLIMB_DEG -> LEVEL; deg < STEEP_DEG -> CLIMB; deg < wallDeg -> STEEP; else -> WALL }
     }
 
     /**
@@ -66,11 +71,27 @@ object Climb {
             val sol = solid
             if (sol != null && len > SOLID_LINE_YD) for (q in 0..n) { if (sol(a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n)) return false }
             if (faces == null) return true
+            var run = 0.0; val step = len / n
             for (q in 0..n) {
                 val x = a[0] + (b[0] - a[0]) * q / n; val y = a[1] + (b[1] - a[1]) * q / n
-                if (minOf(faceAt(x, y), faceAt(x + 0.25, y), faceAt(x - 0.25, y), faceAt(x, y + 0.25), faceAt(x, y - 0.25)) == WALL) return false
+                if (minOf(faceAt(x, y), faceAt(x + 0.25, y), faceAt(x - 0.25, y), faceAt(x, y + 0.25), faceAt(x, y - 0.25)) != WALL) { run = 0.0; continue }
+                // walls all round: a short stretch of 45-48 degree faces is walked (SHORT_STEEP_YD), anything steeper or longer is a wall
+                if (!(short48(x, y) || short48(x + 0.25, y) || short48(x - 0.25, y) || short48(x, y + 0.25) || short48(x, y - 0.25))) return false
+                run += step; if (run > SHORT_STEEP_YD) return false
             }
             return true
+        }
+        /** the faces 45-48 degrees steep (each cell's four, a bit each: [SHORT_STEEP_DEG]); null when not read */
+        var faces48: ByteArray? = null
+        /** the face under world ([wx], [wy]) a wall under [SHORT_STEEP_DEG] */
+        fun short48(wx: Double, wy: Double): Boolean {
+            val f = faces48 ?: return false
+            val gx = (ORG - wy) / STEP - gc0; val gy = (ORG - wx) / STEP - gr0
+            val i = floor(gx).toInt(); val j = floor(gy).toInt()
+            if (i < 0 || j < 0 || i >= nx || j >= ny) return false
+            val fx = gx - i; val fy = gy - j
+            val t = when { fy <= fx && fy <= 1 - fx -> 0; fx >= fy && fx >= 1 - fy -> 1; fy >= fx && fy >= 1 - fx -> 2; else -> 3 }
+            return (f[j * nx + i].toInt() shr t) and 1 != 0
         }
         /** a building's room footprint at world (x, y) (the caller's: WorldBuildings.feet), never cut through by a straight line */
         var solid: ((Double, Double) -> Boolean)? = null
@@ -209,9 +230,12 @@ object Climb {
         val nx = gc1 - gc0 + 1; val ny = gr1 - gr0 + 1
         val cls = ByteArray(nx * ny)
         val faces = if (centre != null) ByteArray(nx * ny) else null
+        val faces48 = if (centre != null) ByteArray(nx * ny) else null          // the faces 45-48 degrees steep (a bit each: SHORT_STEEP_DEG)
+        val candE = BooleanArray(nx * ny); val candS = BooleanArray(nx * ny)  // a wall step under SHORT_STEEP_DEG, by its slope alone
         for (j in 0 until ny) for (i in 0 until nx) {
             val h = height(gr0 + j, gc0 + i)
             var e = classOf(height(gr0 + j, gc0 + i + 1) - h); var s = classOf(height(gr0 + j + 1, gc0 + i) - h)
+            var e48 = classOf(height(gr0 + j, gc0 + i + 1) - h, wallDeg = SHORT_STEEP_DEG); var s48 = classOf(height(gr0 + j + 1, gc0 + i) - h, wallDeg = SHORT_STEEP_DEG)
             // the game's own surface (the user on Elwynn: "Jasperlode mine path literally walks up and down a mountain thay cant be
             // climbed"): each cell four triangles through its middle vertex ([centre]: global row, column of a cell), a ridge between
             // two outer vertices standing on the middle ones. A step along an edge is walked on the gentler of the two faces beside it.
@@ -220,11 +244,13 @@ object Climb {
                 val hE = height(gr, gc + 1); val hS = height(gr + 1, gc)
                 e = maxOf(e, minOf(faceClass(h, hE, centre(gr - 1, gc)), faceClass(h, hE, centre(gr, gc))))
                 s = maxOf(s, minOf(faceClass(h, hS, centre(gr, gc - 1)), faceClass(h, hS, centre(gr, gc))))
+                e48 = maxOf(e48, minOf(faceClass(h, hE, centre(gr - 1, gc), SHORT_STEEP_DEG), faceClass(h, hE, centre(gr, gc), SHORT_STEEP_DEG)))
+                s48 = maxOf(s48, minOf(faceClass(h, hS, centre(gr, gc - 1), SHORT_STEEP_DEG), faceClass(h, hS, centre(gr, gc), SHORT_STEEP_DEG)))
             }
             // a step between two holed cells (the terrain opened into a cave: [hole] global row, column of a cell) has no ground
             if (hole != null) {
-                if (hole(gr0 + j - 1, gc0 + i) && hole(gr0 + j, gc0 + i)) e = WALL
-                if (hole(gr0 + j, gc0 + i - 1) && hole(gr0 + j, gc0 + i)) s = WALL
+                if (hole(gr0 + j - 1, gc0 + i) && hole(gr0 + j, gc0 + i)) { e = WALL; e48 = WALL }
+                if (hole(gr0 + j, gc0 + i - 1) && hole(gr0 + j, gc0 + i)) { s = WALL; s48 = WALL }
             }
             if (level != null && (e != LEVEL || s != LEVEL) && level(ORG - (gr0 + j) * STEP, ORG - (gc0 + i) * STEP)) { e = LEVEL; s = LEVEL }
             // a walkway's DECK (a bridge, a pier: its floor triangles, WorldBuildings.Deck; [deck] its floor's height, NaN off it) is the
@@ -245,6 +271,11 @@ object Climb {
                 if (!dv.isNaN() || !dS.isNaN()) s = if (off(dv, dS, h, hS)) WALL else classOf((if (dS.isNaN()) hS else dS) - sv)
             }
             cls[j * nx + i] = (e or (s shl 2)).toByte()
+            // (a step with either end on a floor is classed by the floor's height: never a short steep one)
+            fun onDeck(gr: Int, gc: Int) = deck != null && !deck(ORG - gr * STEP, ORG - gc * STEP).isNaN()
+            val here = onDeck(gr0 + j, gc0 + i)
+            candE[j * nx + i] = e == WALL && e48 != WALL && !here && !onDeck(gr0 + j, gc0 + i + 1)
+            candS[j * nx + i] = s == WALL && s48 != WALL && !here && !onDeck(gr0 + j + 1, gc0 + i)
             // the cell's own four triangles (north, east, south, west of its middle vertex): a straight line across it meets them
             if (faces != null) {
                 val gr = gr0 + j; val gc = gc0 + i
@@ -261,21 +292,38 @@ object Climb {
                     else -> faceClass(ha, hb, m) or (faceClass(hb, hd, m) shl 2) or (faceClass(hc, hd, m) shl 4) or (faceClass(ha, hc, m) shl 6)
                 }
                 faces[j * nx + i] = f.toByte()
+                // which of the four are walls under SHORT_STEEP_DEG (a short stretch of them is walked: Grid.lineClear)
+                if (hole?.invoke(gr, gc) != true) {
+                    val f48 = intArrayOf(faceClass(ha, hb, m, SHORT_STEEP_DEG), faceClass(hb, hd, m, SHORT_STEEP_DEG), faceClass(hc, hd, m, SHORT_STEEP_DEG), faceClass(ha, hc, m, SHORT_STEEP_DEG))
+                    var b48 = 0
+                    for (q in 0..3) if ((f shr (2 * q)) and 3 == WALL && f48[q] != WALL) b48 = b48 or (1 shl q)
+                    faces48!![j * nx + i] = b48.toByte()
+                }
             }
         }
-        return Grid(gr0, gc0, nx, ny, cls, faces)
+        // a short steep step stands alone: a wall step under SHORT_STEEP_DEG walked as steep when the steps before and after it along its
+        // own line are no walls (one step up a den's lip; a run of them is a cliff)
+        for (j in 0 until ny) for (i in 0 until nx) {
+            val k = j * nx + i; var c = cls[k].toInt()
+            fun eAt(ii: Int) = if (ii in 0 until nx) cls[j * nx + ii].toInt() and 3 else WALL
+            fun sAt(jj: Int) = if (jj in 0 until ny) (cls[jj * nx + i].toInt() shr 2) and 3 else WALL
+            if (candE[k] && eAt(i - 1) != WALL && eAt(i + 1) != WALL) c = (c and 0b1100) or STEEP
+            if (candS[k] && sAt(j - 1) != WALL && sAt(j + 1) != WALL) c = (c and 0b0011) or (STEEP shl 2)
+            cls[k] = c.toByte()
+        }
+        return Grid(gr0, gc0, nx, ny, cls, faces).also { it.faces48 = faces48 }
     }
 
     /** the class of the triangle on an edge between two outer vertices ([a], [b]: STEP apart) and a cell's middle vertex [m] (half a
      *  STEP off the edge, at its middle): by its face's own slope, its normal's angle from the vertical; NaN (no middle) the edge's own */
-    fun faceClass(a: Float, b: Float, m: Float): Int {
+    fun faceClass(a: Float, b: Float, m: Float, wallDeg: Double = WALL_DEG): Int {
         if (a.isNaN() || b.isNaN()) return WALL
-        if (m.isNaN()) return classOf(b - a)
+        if (m.isNaN()) return classOf(b - a, wallDeg = wallDeg)
         // the edge along x (0..STEP, heights a, b), the middle at (STEP / 2, STEP / 2, m): the normal of (STEP, 0, b - a) x (STEP / 2, STEP / 2, m - a)
         val ux = STEP; val uz = (b - a).toDouble(); val vx = STEP / 2; val vy = STEP / 2; val vz = (m - a).toDouble()
         val nx = -uz * vy; val ny = uz * vx - ux * vz; val nz = ux * vy
         val deg = Math.toDegrees(Math.acos(abs(nz) / Math.sqrt(nx * nx + ny * ny + nz * nz)))
-        return when { deg < CLIMB_DEG -> LEVEL; deg < STEEP_DEG -> CLIMB; deg < WALL_DEG -> STEEP; else -> WALL }
+        return when { deg < CLIMB_DEG -> LEVEL; deg < STEEP_DEG -> CLIMB; deg < wallDeg -> STEEP; else -> WALL }
     }
 
     /** a planned leg: world points (x, y) from the start; [reached] false when the goal stands on ground no one can walk to (the leg
