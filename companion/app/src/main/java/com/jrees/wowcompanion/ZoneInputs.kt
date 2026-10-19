@@ -69,15 +69,10 @@ class ZoneInputs(private val src: Source, val rect: MapHarvest.Rect, private val
             d?.let { dk -> deckList.add(dk); keepHeights(c, r, dk); { x: Double, y: Double -> dk.holds(x, y) && dk.over(x, y, Terrain.surfaceAt(surface, c, r, x, y)) } }
         }
     }
-    // a deck's floors all more than LEVEL_BURIED_YD under the terrain at a spot (its nearest outer vertex): buried, no ground there
-    fun buriedAt(c: Int, r: Int, d: WorldBuildings.Deck, x: Double, y: Double): Boolean {
-        val hs = d.heightsAt(x, y); if (hs.isEmpty()) return false
-        val h = wet(c, r).second ?: return false
-        val ci = (((32 * MapHarvest.ADT_YD - y) / MapHarvest.ADT_YD - c) * 128).toInt().coerceIn(0, 127)
-        val cj = (((32 * MapHarvest.ADT_YD - x) / MapHarvest.ADT_YD - r) * 128).toInt().coerceIn(0, 127)
-        val g = h[cj * 128 + ci]; if (g.isNaN()) return false
-        return hs.all { it < g - LEVEL_BURIED_YD }
-    }
+    // a deck's floors all more than LEVEL_BURIED_YD under the terrain at the spot itself (Climb.buried: straight between its four outer
+    // vertices, as segcheck reads it; the cell's north-west corner alone leveled a cliff over a porch, Mulgore K - rules-3 7d60068)
+    fun buriedAt(c: Int, r: Int, d: WorldBuildings.Deck, x: Double, y: Double): Boolean =
+        Climb.buried(d.heightsAt(x, y), x, y) { gr, gc -> wet(gc / 128, gr / 128).second?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN }
     fun walksOf(c: Int, r: Int) = walks.getOrPut(c to r) {
         src.obj0(c, r)?.let { WorldBuildings.placements(it, tilted = true) }?.flatMap { p ->
             val root = src.wmo(p.fid)
