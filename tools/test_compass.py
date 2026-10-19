@@ -71,9 +71,10 @@ function UnitIsDeadOrGhost() return GAME.dead end
 local function toWorld(mx, my) return 500 - my * 1000, 500 - mx * 1000 end
 C_Map = {
     GetBestMapForUnit = function() return GAME.map end,
-    GetPlayerMapPosition = function() return CreateVector2D(GAME.px, GAME.py) end,
-    GetWorldPosFromMapPos = function(m, v) local wx, wy = toWorld(v.x, v.y); return GAME.cont, CreateVector2D(wx, wy) end,
-    GetUserWaypoint = function() if GAME.pin then return { uiMapID = GAME.map, position = CreateVector2D(GAME.pin[1], GAME.pin[2]) } end end,
+    -- as on the Thor (test15): the C API hands back PLAIN { x, y } tables, no :GetXY (that is FrameXML's mixin)
+    GetPlayerMapPosition = function() return { x = GAME.px, y = GAME.py } end,
+    GetWorldPosFromMapPos = function(m, v) local wx, wy = toWorld(v.x, v.y); return GAME.cont, { x = wx, y = wy } end,
+    GetUserWaypoint = function() if GAME.pin then return { uiMapID = GAME.map, position = { x = GAME.pin[1], y = GAME.pin[2] } } end end,
 }
 C_SuperTrack = {
     IsSuperTrackingUserWaypoint = function() return false end,
@@ -93,7 +94,7 @@ C_QuestLog = {
 GAME.qsrc = "onmap"
 SENT = {}
 C_Map.HasUserWaypoint = function() return GAME.pin ~= nil end
-C_DeathInfo = { GetCorpseMapPosition = function() if GAME.corpse then return CreateVector2D(GAME.corpse[1], GAME.corpse[2]) end end }
+C_DeathInfo = { GetCorpseMapPosition = function() if GAME.corpse then return { x = GAME.corpse[1], y = GAME.corpse[2] } end end }
 WorldMapFrame = { IsShown = function() return GAME.worldmap end }
 GAME.t = 100
 function GetTime() return GAME.t end

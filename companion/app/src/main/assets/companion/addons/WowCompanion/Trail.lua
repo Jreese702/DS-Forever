@@ -82,13 +82,13 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp5" }
+WC.compass = { V = "cp6" }
 do
     local C = WC.compass
     local PI = math.pi
     local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end     -- (the game's Lua 5.1 has math.atan2; the harness's not)
     -- the spec's sizes, in the Thor's top-screen pixels (1920 x 1080); C.k turns them into UI units
-    C.SPEC = { w = 860, h = 76, top = 16, line = 32, half = 400, tick = 8, letter = 22, letter2 = 17, dist = 12, lift = 25, near = 22,
+    C.SPEC = { w = 860, h = 76, top = 4, line = 32, half = 400, tick = 8, letter = 22, letter2 = 17, dist = 12, lift = 25, near = 22,
                edge = 48 }
     C.BAND = "Interface\\AddOns\\WowCompanion\\Media\\compass_band"       -- our own soft band (tools/make_compass_band.py)
     C.MARK = {
@@ -108,6 +108,17 @@ do
         return v
     end
     C.num = num
+
+    -- a Vector2D's x, y: its GetXY when the mixin is there, else its plain fields (test15: no markers at all; Coords.lua: "the C API
+    -- hands back a table with .x/.y, and :GetXY() is FrameXML sugar that may or may not be loaded")
+    function C.xy(v)
+        if type(v) ~= "table" then return nil end
+        local ok, x, y = pcall(function() return v:GetXY() end)
+        if ok and num(x) and num(y) then return x, y end
+        local ok2, x2, y2 = pcall(function() return v.x, v.y end)
+        if ok2 and num(x2) and num(y2) then return x2, y2 end
+        return nil
+    end
 
     function C.wanted()
         return not (type(WowCompanionDB) == "table" and WowCompanionDB.compass == false)          -- default ON
@@ -134,9 +145,9 @@ do
         if not (num(uiMapID) and num(x) and num(y)) then return nil end
         local ok, cont, v = pcall(function() return C_Map.GetWorldPosFromMapPos(uiMapID, CreateVector2D(x, y)) end)
         if not ok or not v then return nil end
-        local okX, wx, wy = pcall(function() return v:GetXY() end)
-        if not okX or not num(wx) or not num(wy) then return nil end
-        return { x = wx, y = wy, cont = cont }
+        local wx, wy = C.xy(v)
+        if not wx then return nil end
+        return { x = wx, y = wy, cont = num(cont) }
     end
 
     function C.me()
@@ -144,8 +155,8 @@ do
         if not ok or not num(m) then return nil end
         local okP, p = pcall(C_Map.GetPlayerMapPosition, m, "player")
         if not okP or not p then return nil end
-        local okX, x, y = pcall(function() return p:GetXY() end)
-        if not okX then return nil end
+        local x, y = C.xy(p)
+        if not x then return nil end
         local w = C.world(m, x, y)
         if w then w.map = m end
         return w
@@ -157,8 +168,8 @@ do
         -- the next checkpoint: our pin (Map.lua places it), read back from the game
         local okW, wp = pcall(C_Map.GetUserWaypoint)
         if okW and type(wp) == "table" and wp.position then
-            local okX, x, y = pcall(function() return wp.position:GetXY() end)
-            if okX then t.pin = C.world(wp.uiMapID, x, y) end
+            local x, y = C.xy(wp.position)
+            if x then t.pin = C.world(wp.uiMapID, x, y) end
         end
         -- the focused quest's goal (not while the game super-tracks our pin: that one IS the pin)
         local okS, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
@@ -197,8 +208,8 @@ do
         if okD and dead == true and me and me.map then
             local okC, v = pcall(C_DeathInfo.GetCorpseMapPosition, me.map)
             if okC and v then
-                local okX, x, y = pcall(function() return v:GetXY() end)
-                if okX then t.corpse = C.world(me.map, x, y) end
+                local x, y = C.xy(v)
+                if x then t.corpse = C.world(me.map, x, y) end
             end
         end
         -- only spots on the player's own continent
