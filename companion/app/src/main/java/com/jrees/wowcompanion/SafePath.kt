@@ -1777,9 +1777,9 @@ object SafePath {
      *   a walled city's gate is its drafted exit);
      * - its own crossing walkable ([Ground.check]: the neighbour's ground reached within [EXIT_NEAR_YD]) - not a pocket over the line;
      * - onto the neighbour's own map ([onMap]: inside its world rect), never the world's rim beyond its map's edge;
-     * - one per open stretch of border: none within [GROUND_EXIT_GAP_YD] of an exit into that neighbour, nor where the far side walks
-     *   to one within [GROUND_EXIT_JOIN_YD] on the neighbour's own ground ([Ground.joins]: the same open border) - but a capital's
-     *   ground, entered at many points (Thunder Bluff's lifts at its mesas' feet), is never merged;
+     * - one per open stretch of border: crossings within [GROUND_EXIT_GAP_YD] of each other, or whose far sides walk to each other
+     *   within [GROUND_EXIT_JOIN_YD] on the neighbour's own ground, are one stretch (found the same in any order); a stretch an exit
+     *   already crosses gets none, any other one exit (a capital's ground, entered at many points: no exit within the gap only);
      * A drafted "walk" exit off the zone's main ground (on a ridge over a tunnel: Loch Modan's four) is dropped (a bridge, a gate, a
      * tunnel, a boat is a structure's way: kept).
      */
@@ -1788,7 +1788,7 @@ object SafePath {
         groundExits(net, Ground(g, net.map, zoneAt, dry, links), nameOf, capitals, onMap)
 
     fun groundExits(net: Net, ground: Ground, nameOf: (Int) -> String = { "" }, capitals: Set<Int> = emptySet(),
-                    onMap: ((Int, Double, Double) -> Boolean)? = null): Net {
+                    onMap: ((Int, Double, Double) -> Boolean)? = null, said: ((String) -> Unit)? = null): Net {
         val g = ground.g
         class X(val v: Int, val x: Double, val y: Double, val to: Int)
         val cross = ArrayList<X>()
@@ -1799,9 +1799,6 @@ object SafePath {
                 val v = ground.next(q, di, dj); if (v < 0) continue
                 val zv = ground.zoneOf[v]
                 if (zv == 0 || zv == net.map) continue
-                // onto the neighbour's own map (its rect): never the land beyond its map's edge (Loch Modan's east, "Wetlands" by its
-                // areas but off the Wetlands' map: the world's unplayable rim)
-                if (onMap != null && !onMap(zv, g.wx(v / g.nx), g.wy(v % g.nx))) continue
                 cross.add(X(v, g.wx(j), g.wy(i), zv)); break
             }
         }
@@ -1809,8 +1806,8 @@ object SafePath {
         val nodes = net.nodes.toMutableList(); val edges = net.edges.toMutableList()
         val exits = net.exits.filter { e -> e.how != "walk" || byId[e.node]?.let { ground.onMain(it.wx, it.wy) } != false }.toMutableList()
         var next = (nodes.maxOfOrNull { it.id } ?: 0) + 1
-        // the corridors: crossings into one neighbour side by side; each one's crossing at its middle
-        val left = cross.toMutableList(); val corridors = ArrayList<X>()
+        // the corridors: crossings into one neighbour side by side; each one's crossing at its middle, and its width
+        val left = cross.toMutableList(); val corridors = ArrayList<Pair<X, Int>>()
         while (left.isNotEmpty()) {
             val seed = left.removeAt(0); val group = arrayListOf(seed); var grew = true
             while (grew) { grew = false
@@ -1818,17 +1815,48 @@ object SafePath {
                 if (more.isNotEmpty()) { group.addAll(more); left.removeAll(more.toSet()); grew = true } }
             if (group.size < GROUND_EXIT_MIN || seed.to in capitals) continue
             val cx = group.map { it.x }.average(); val cy = group.map { it.y }.average()
-            corridors.add(group.minByOrNull { hypot(it.x - cx, it.y - cy) }!!)
+            corridors.add(group.minByOrNull { hypot(it.x - cx, it.y - cy) }!! to group.size)
         }
-        for (at in corridors) {
-            val same = exits.filter { it.toMap == at.to }.mapNotNull { byId[it.node] }
-            if (same.any { hypot(it.wx - at.x, it.wy - at.y) <= GROUND_EXIT_GAP_YD }) continue
-            if (!ground.check(at.x, at.y, at.to).walkable) continue
-            if (at.to !in CityExits.CITIES && same.any { ground.joins(at.v, it.wx, it.wy, at.to, GROUND_EXIT_JOIN_YD) }) continue
+        fun say(at: X, why: String) { said?.invoke("${nameOf(at.to)} at ${at.x.toInt()},${at.y.toInt()}: $why") }
+        // the ones a player could take: onto the neighbour's own map (its rect: never the land beyond its map's edge - Loch Modan's
+        // east, "Wetlands" by its areas but off the Wetlands' map), and walkable (its ground reached near it, not a pocket)
+        val good = corridors.filter { (at, _) ->
+            if (onMap != null && !onMap(at.to, g.wx(at.v / g.nx), g.wy(at.v % g.nx))) { say(at, "off ${nameOf(at.to)}'s own map"); return@filter false }
+            val ck = ground.check(at.x, at.y, at.to)
+            if (!ck.walkable) say(at, "not walkable (${(ck.theirsSqYd / 1000).toInt()}k sq yd of its ground within ${EXIT_NEAR_YD.toInt()} yd)")
+            ck.walkable
+        }
+        fun add(at: X, why: String) {
+            say(at, why)
             val id = next++; nodes.add(Node(id, at.x, at.y, EXIT, "ground")); byId[id] = nodes.last()
             exits.add(Exit(id, at.to, "walk", nameOf(at.to)))
             net.nodes.filter { it.kind != CAVE && it.kind != MOUTH && it.kind != LIFT }.minByOrNull { hypot(it.wx - at.x, it.wy - at.y) }
                 ?.let { edges.add(Edge(it.id, id, TRAIL, DRAFT, "ground")) }
+        }
+        // a capital's ground is entered at many points (Thunder Bluff's plain at its mesas' feet, walked to its lifts): a crossing into
+        // it with no exit into it within [GROUND_EXIT_GAP_YD], in the lattice's order
+        for ((at, w) in good) if (at.to in CityExits.CITIES) {
+            val close = exits.filter { it.toMap == at.to }.mapNotNull { byId[it.node] }.firstOrNull { hypot(it.wx - at.x, it.wy - at.y) <= GROUND_EXIT_GAP_YD }
+            if (close != null) say(at, "an exit into the city ${hypot(close.wx - at.x, close.wy - at.y).toInt()} yd away") else add(at, "an exit (a corridor $w vertices wide)")
+        }
+        // THE OPEN STRETCHES (any other neighbour): crossings into one neighbour within [GROUND_EXIT_GAP_YD] of each other, or whose far
+        // sides walk to each other on the neighbour's ground ([Ground.joins]), are one stretch of border, whatever the order they are
+        // found in; a stretch an exit already crosses (a road's, a bridge's, a tunnel's) needs none, any other gets one, at its first
+        // corridor in the lattice's order (the same spot as before this rule: the routes that walk its trail keep it)
+        fun oneStretch(a: X, bx: Double, by: Double) = hypot(a.x - bx, a.y - by) <= GROUND_EXIT_GAP_YD ||
+            ground.joins(a.v, bx, by, a.to, GROUND_EXIT_JOIN_YD)
+        val open = good.filter { it.first.to !in CityExits.CITIES }
+        val parent = IntArray(open.size) { it }
+        fun find(k: Int): Int { var a = k; while (parent[a] != a) a = parent[a]; return a }
+        for (a in open.indices) for (b in a + 1 until open.size) if (open[a].first.to == open[b].first.to && find(a) != find(b) &&
+            (oneStretch(open[a].first, open[b].first.x, open[b].first.y) || oneStretch(open[b].first, open[a].first.x, open[a].first.y))) parent[find(a)] = find(b)
+        for ((_, ks) in open.indices.groupBy { find(it) }) {
+            val to = open[ks[0]].first.to
+            val served = exits.filter { it.toMap == to }.mapNotNull { byId[it.node] }.firstOrNull { e -> ks.any { oneStretch(open[it].first, e.wx, e.wy) } }
+            if (served != null) { for (k in ks) say(open[k].first, "the same open stretch as the exit at ${served.wx.toInt()},${served.wy.toInt()}"); continue }
+            val pick = ks.min()
+            for (k in ks) if (k != pick) say(open[k].first, "the same open stretch as ${open[pick].first.x.toInt()},${open[pick].first.y.toInt()}")
+            add(open[pick].first, "an exit (a corridor ${open[pick].second} vertices wide, ${ks.size} in its stretch)")
         }
         return Net(net.map, net.cont, net.built, nodes, edges, exits, net.reviewed)
     }

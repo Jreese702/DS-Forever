@@ -485,7 +485,7 @@ class RenderSafePath {
         // a neighbour's own map: its world rect (worldmap.json's rects, as the device's MapHarvest has them)
         val onMap: (Int, Double, Double) -> Boolean = { m, x, y -> recipeRects?.optJSONArray(m.toString())?.let { r ->
             x <= r.getDouble(1) && x >= r.getDouble(2) && y <= r.getDouble(3) && y >= r.getDouble(4) } ?: true }
-        val netC = SafePath.groundExits(netK, gr, mapName, onMap = onMap)
+        val netC = SafePath.groundExits(netK, gr, mapName, onMap = onMap) { println("GROUNDCROSS $it") }
         println("EXITS added: ${netCv.exits.size - netW.exits.size} through tunnels, ${netC.exits.size - netK.exits.size} on the ground's own crossings; " +
             "${netCv.exits.size - netK.exits.size} false walk exits dropped (${netCv.exits.filter { x -> netK.exits.none { it.node == x.node } }.joinToString { x ->
                 netCv.nodes.first { it.id == x.node }.let { "${x.name} at ${it.wx.toInt()},${it.wy.toInt()}" } }})")
