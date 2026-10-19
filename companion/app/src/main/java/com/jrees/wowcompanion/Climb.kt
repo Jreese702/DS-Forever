@@ -134,6 +134,16 @@ object Climb {
         }
         /** a building's room footprint at world (x, y) (the caller's: WorldBuildings.feet), never cut through by a straight line */
         var solid: ((Double, Double) -> Boolean)? = null
+        /** each vertex's yards to the nearest DROP (a wall step where the ground falls away: [dropsOf]), in tenths, 255 = none within
+         *  [EDGE_YD]; null when not known (a lattice read from a file that keeps no heights) */
+        var dropD: ByteArray? = null
+        /** the yards from vertex ([i], [j]) to the nearest drop, [Double.MAX_VALUE] none near (or not known) */
+        fun dropYd(i: Int, j: Int): Double {
+            val d = dropD ?: return Double.MAX_VALUE
+            if (i < 0 || j < 0 || i >= nx || j >= ny) return Double.MAX_VALUE
+            val v = d[j * nx + i].toInt() and 0xFF
+            return if (v == 255) Double.MAX_VALUE else v / 10.0
+        }
         fun wx(j: Int) = ORG - (gr0 + j) * STEP
         fun wy(i: Int) = ORG - (gc0 + i) * STEP
         /** the vertex nearest world ([wx], [wy]) (column, row), clamped onto the grid */
@@ -180,7 +190,8 @@ object Climb {
         /** CLB3 (gzip, the .part file renamed into place): [MAGIC], [RULES_VERSION], gr0, gc0, nx, ny, a byte of what follows (1 the
          *  faces, 2 the 45-48 degree faces, 4 the rooms, 8 the floors), the steps (a byte a vertex), the faces (a byte a cell), the 45-48
          *  degree faces (4 bits a cell, two cells a byte), the rooms ([Rooms.write]), the floors (the vertices on one, [deckZ] and
-         *  [deckHigh]: their count, then each one's index, height and a byte 1 when it stands more than a step over its ground) */
+         *  [deckHigh]: their count, then each one's index, height and a byte 1 when it stands more than a step over its ground), the
+         *  drops (16: [dropD], a byte a vertex: EDGE CLEARANCE's yards to the nearest drop in tenths) */
         fun write(f: File) {
             f.parentFile?.mkdirs()
             val tmp = File(f.path + ".part")
@@ -189,8 +200,9 @@ object Climb {
         }
         fun write(o: DataOutputStream) {
             o.writeInt(MAGIC); o.writeInt(RULES_VERSION); o.writeInt(gr0); o.writeInt(gc0); o.writeInt(nx); o.writeInt(ny)
-            val f48 = faces48; val rs = rooms; val dz = deckZ; val dh = deckHigh
-            o.writeByte((if (faces != null) 1 else 0) or (if (f48 != null) 2 else 0) or (if (rs != null) 4 else 0) or (if (dz != null) 8 else 0))
+            val f48 = faces48; val rs = rooms; val dz = deckZ; val dh = deckHigh; val dd = dropD
+            o.writeByte((if (faces != null) 1 else 0) or (if (f48 != null) 2 else 0) or (if (rs != null) 4 else 0) or (if (dz != null) 8 else 0) or
+                (if (dd != null) 16 else 0))
             o.write(cls)
             faces?.let { o.write(it) }
             if (f48 != null) o.write(ByteArray((nx * ny + 1) / 2) { k -> ((f48[2 * k].toInt() and 15) or
@@ -201,6 +213,7 @@ object Climb {
                 o.writeInt(on.size)
                 for (k in on) { o.writeInt(k); o.writeFloat(dz[k]); o.writeByte(if (dh?.get(k) == true) 1 else 0) }
             }
+            dd?.let { o.write(it) }
         }
         companion object {
             const val MAGIC = 0x434C4233                       // "CLB3"
@@ -225,7 +238,8 @@ object Climb {
                     dz = FloatArray(nx * ny) { Float.NaN }; dh = BooleanArray(nx * ny)
                     repeat(n) { val k = i.readInt(); require(k in 0 until nx * ny); dz[k] = i.readFloat(); dh[k] = i.readUnsignedByte() != 0 }
                 }
-                return Grid(gr0, gc0, nx, ny, cls, faces).also { it.faces48 = f48; if (rooms != null) it.rooms = rooms; it.deckZ = dz; it.deckHigh = dh }
+                val dd = if (has and 16 != 0) ByteArray(nx * ny).also { i.readFully(it) } else null
+                return Grid(gr0, gc0, nx, ny, cls, faces).also { it.faces48 = f48; if (rooms != null) it.rooms = rooms; it.deckZ = dz; it.deckHigh = dh; it.dropD = dd }
             }
             /** a lattice bigger than this is no zone's (a damaged file) */
             const val MAX_VERTICES = 40_000_000L
@@ -267,11 +281,11 @@ object Climb {
 
     /** THE RULES THE LATTICE IS MADE BY (written in its file, CLB3): bumped whenever a rule changes what [build] or the inputs to it make
      *  (a made lattice of other rules is made again). Pinned to the rules commit [RULES_COMMIT] */
-    const val RULES_VERSION = 4
-    /** feat/safepath-rules-3 at 2d37f15: 48 degree short steps (on floors too), solid room footprints, the 450 yd margin, every WMO
+    const val RULES_VERSION = 5
+    /** feat/safepath-rules-3 at 7cf9b16: 48 degree short steps (on floors too), solid room footprints, the 450 yd margin, every WMO
      *  group, caves by shape, name-less flat decks, the narrow-stream wade, a floor's own slope along a line and its high edge (4: the
-     *  floors in the lattice's file) */
-    const val RULES_COMMIT = "2d37f15"
+     *  floors in the lattice's file), edge clearance (5: the drops in the lattice's file) */
+    const val RULES_COMMIT = "7cf9b16"
 
     /**
      * THE FLOOR A WALKER IS ON, at each vertex of the lattice over world rect [t] / [b] / [l] / [r] under a walkway's floors (a bridge's
@@ -462,8 +476,56 @@ object Climb {
             if (candS[k] && sAt(j - 1) != WALL && sAt(j + 1) != WALL) c = (c and 0b0011) or (STEEP shl 2)
             cls[k] = c.toByte()
         }
-        return Grid(gr0, gc0, nx, ny, cls, faces).also { it.faces48 = faces48; it.deckZ = deckZ; it.deckHigh = deckHigh }
+        return Grid(gr0, gc0, nx, ny, cls, faces).also { it.faces48 = faces48; it.deckZ = deckZ; it.deckHigh = deckHigh
+            it.dropD = dropsOf(it) { j, i -> deckZ?.get(j * nx + i)?.takeIf { z -> !z.isNaN() } ?: height(gr0 + j, gc0 + i) } }
     }
+
+    /**
+     * EDGE CLEARANCE (the user on Zephras, test12: "the path hugged the bottom second of the map so tightly that I almost fell off the
+     * island ... it was not easy to traverse and felt like it didn't have a lot of wiggle room to breath from the side of the map"):
+     * each vertex's yards to the nearest DROP - a WALL step of [g] (the eight, as the A* takes them) whose far end lies [DROP_YD] or more
+     * under its near one, or has no ground at all (a floating isle's rim over the void, a floor's open side over the ground under it:
+     * [height] row, column of the grid -> the surface a walker is on there, a floor's where one is) - measured to the step's middle
+     * (the cliff's lip lies between the two vertices), within [EDGE_YD]. A wall that RISES from a vertex (a canyon's floor, the foot of a
+     * mesa) is none: only the ground falling away is. Tenths of a yard, 255 = none near. ([route] leaves a walkway's own floor out of the
+     * cost: a bridge's deck is walked edge to edge.)
+     */
+    fun dropsOf(g: Grid, height: (Int, Int) -> Float): ByteArray {
+        val nx = g.nx; val ny = g.ny
+        val out = ByteArray(nx * ny) { 255.toByte() }
+        val r = ceil(EDGE_YD / STEP).toInt()
+        for (j in 0 until ny) for (i in 0 until nx) {
+            val h = height(j, i); if (h.isNaN()) continue
+            for (dj in -1..1) for (di in -1..1) {
+                if (di == 0 && dj == 0) continue
+                val vi = i + di; val vj = j + dj
+                if (vi !in 0 until nx || vj !in 0 until ny) continue
+                val hn = height(vj, vi)
+                if (!hn.isNaN() && h - hn < DROP_YD) continue
+                if (g.step(i, j, di, dj) != WALL) continue
+                // the drop's lip: half way along the step; every vertex within EDGE_YD of it keeps its nearest such
+                val mi = i + di / 2.0; val mj = j + dj / 2.0
+                for (b in max(0, j - r)..min(ny - 1, j + r)) for (a in max(0, i - r)..min(nx - 1, i + r)) {
+                    val d = hypot(a - mi, b - mj) * STEP; if (d >= EDGE_YD) continue
+                    // only the drop's own top: the ground at its foot (the plain under a mesa, the beach under a cliff) is no edge
+                    val ha = height(b, a); if (ha.isNaN() || ha < h - DROP_YD) continue
+                    val t = Math.round(d * 10).toInt().coerceIn(0, 254)
+                    if (t < (out[b * nx + a].toInt() and 0xFF)) out[b * nx + a] = t.toByte()
+                }
+            }
+        }
+        return out
+    }
+    /** EDGE CLEARANCE's reach and weight: a vertex within EDGE_YD of a drop or of deep water costs up to EDGE_COST more a yard, the more the
+     *  nearer (straight down to none at EDGE_YD). A cost, never a wall: a ledge path, a bridge, a mountain road along a cliff still walked
+     *  where it is the way. 8 yd: the lattice's lip vertex (2.1 yd from the lip) +1.1 a yard, the next in (6.25 yd) +0.33, two in none -
+     *  a route along a rim keeps 8-10 yd off it where the ground is open, and no route grows by more than a few yards for it */
+    const val EDGE_YD = 8.0
+    const val EDGE_COST = 1.5
+    /** a wall step falling this far or more is a drop (a fall a player feels or is stranded by); a lower one is a bump */
+    const val DROP_YD = 5.0
+    /** the extra cost a yard at [d] yards from an edge */
+    fun edgeCost(d: Double): Double = if (d >= EDGE_YD) 0.0 else EDGE_COST * (1.0 - d / EDGE_YD)
 
     /** the class of the triangle on an edge between two outer vertices ([a], [b]: STEP apart) and a cell's middle vertex [m] (half a
      *  STEP off the edge, at its middle): by its face's own slope, its normal's angle from the vertical; NaN (no middle) the edge's own */
@@ -500,7 +562,7 @@ object Climb {
      * then its bends straightened along lines of sight that cross no wall and cost no more. Null when the start itself is off the grid.
      */
     fun route(g: Grid, from: DoubleArray, to: DoubleArray, danger: (Double, Double) -> Float = { _, _ -> 0f }, k: Double = 0.0,
-              water: ((Double, Double) -> Boolean)? = null, links: List<Link> = emptyList(), limits: Limits? = null): Leg? {
+              water: ((Double, Double) -> Boolean)? = null, links: List<Link> = emptyList(), edges: Boolean = true, limits: Limits? = null): Leg? {
         val s = g.at(from[0], from[1]); val e = g.at(to[0], to[1])
         var m = (MARGIN_YD / STEP).toInt()
         fun window(m: Int) = (min(g.nx - 1, max(s[0], e[0]) + m) - max(0, min(s[0], e[0]) - m) + 1).toLong() *
@@ -523,10 +585,32 @@ object Climb {
         // destination"): the danger fades toward the goal, to none at it - over [GOAL_FADE_YD], twice that when the goal's own spot is
         // dangerous (a quest's mobs in a ravine, a cave full of them) - so the way avoids them on the way and goes in straight at the end
         val fade = if (danger(to[0], to[1]) >= GOAL_DANGEROUS) GOAL_FADE_YD * 2 else GOAL_FADE_YD
+        // the deep water at each vertex of the window, asked once (0 not yet, 1 dry, 2 deep): its own cost (a wall) and its edge's
+        val wet = sc.wet
+        fun deepAt(i: Int, j: Int): Boolean {
+            if (water == null || i !in i0..i1 || j !in j0..j1) return false
+            val q = (j - j0) * w + (i - i0)
+            if (wet[q].toInt() == 0) wet[q] = if (water(g.wx(j), g.wy(i))) 2 else 1
+            return wet[q].toInt() == 2
+        }
+        val er = ceil(EDGE_YD / STEP).toInt()
+        // EDGE CLEARANCE ([dropsOf]): a vertex near a drop, or near deep water (its bank: half a step past the last dry vertex), costs more
+        // (a walkway's own floor - a bridge's deck, a pier, a rope bridge between Thunder Bluff's rises - is walked edge to edge: its
+        // parapets and ropes hold, and its whole width is near its sides; Mulgore G went 376 yd round one)
+        val dz = g.deckZ
+        fun edgeOf(i: Int, j: Int): Double {
+            if (dz != null && !dz[j * g.nx + i].isNaN()) return 0.0
+            var d = g.dropYd(i, j)
+            if (water != null) for (b in j - er..j + er) for (a in i - er..i + er) {
+                if ((a == i && b == j) || !deepAt(a, b)) continue
+                d = min(d, max(0.0, hypot((a - i).toDouble(), (b - j).toDouble()) * STEP - STEP / 2))
+            }
+            return edgeCost(d)
+        }
         fun cellCost(i: Int, j: Int): Double {
             val x = g.wx(j); val y = g.wy(i)
-            if (water?.invoke(x, y) == true) return Double.NaN
-            return k * danger(x, y) * (hypot(x - to[0], y - to[1]) / fade).coerceAtMost(1.0)
+            if (deepAt(i, j)) return Double.NaN
+            return k * danger(x, y) * (hypot(x - to[0], y - to[1]) / fade).coerceAtMost(1.0) + (if (edges) edgeOf(i, j) else 0.0)
         }
         val extra = sc.extra
         fun extraOf(i: Int, j: Int): Double { val q = id(i, j); if (extra[q].isNaN()) extra[q] = cellCost(i, j).let { if (it.isNaN()) -1.0 else it }; return extra[q] }
@@ -665,7 +749,7 @@ object Climb {
      * next leg start from small arrays again (the device's memory trim)
      */
     class Scratch private constructor(n: Int) {
-        val dist = DoubleArray(n); val prev = IntArray(n); val extra = DoubleArray(n); val via = IntArray(n)
+        val dist = DoubleArray(n); val prev = IntArray(n); val extra = DoubleArray(n); val via = IntArray(n); val wet = ByteArray(n)
         val size get() = dist.size
         companion object {
             private val mine = ThreadLocal<Scratch?>()
@@ -677,7 +761,7 @@ object Climb {
                 if (n > (peak.get() ?: 0)) peak.set(n)
                 val sc = mine.get()?.takeIf { it.size >= n } ?: Scratch(n).also { mine.set(it) }
                 java.util.Arrays.fill(sc.dist, 0, n, Double.MAX_VALUE); java.util.Arrays.fill(sc.prev, 0, n, -1)
-                java.util.Arrays.fill(sc.extra, 0, n, Double.NaN); java.util.Arrays.fill(sc.via, 0, n, -1)
+                java.util.Arrays.fill(sc.extra, 0, n, Double.NaN); java.util.Arrays.fill(sc.via, 0, n, -1); java.util.Arrays.fill(sc.wet, 0, n, 0)
                 return sc
             }
             /** every thread's scratch let go at its next leg */

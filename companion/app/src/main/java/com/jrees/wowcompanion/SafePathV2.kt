@@ -98,10 +98,11 @@ object SafePathV2 {
     }
 
     /** the network's drafted ways that cross a wall on the lattice: walked by the ground's leg when it joins their ends within 1.5x
-     *  (a lip), else left out (SafePath.dropWalled, as the harness does before its routes) */
+     *  (a lip), else left out (SafePath.dropWalled, as the harness does before its routes; measured with no edge clearance, as the
+     *  harness: a comfort cost must not drop or keep the network's ways) */
     fun unwalled(net: SafePath.Net, g: Climb.Grid, deep: (Double, Double) -> Boolean): SafePath.Net =
         SafePath.dropWalled(net, { a, b -> Climb.walkable(g, a, b, deep) }) { a, b ->
-            Climb.route(g, a, b, water = deep, limits = Climb.Limits())?.takeIf { it.reached }?.pts?.zipWithNext { p, q -> hypot(q[0] - p[0], q[1] - p[1]) }?.sum() }
+            Climb.route(g, a, b, water = deep, edges = false, limits = Climb.Limits())?.takeIf { it.reached }?.pts?.zipWithNext { p, q -> hypot(q[0] - p[0], q[1] - p[1]) }?.sum() }
 
     /** the way from [from] to [to]: SafeRoute on lattice [g], water [wg], network [net], danger [dc] at strength [k]; null when a segment
      *  of it fails the final check (every segment walkable on the lattice, off deep water - the hard rule, on what is handed out) */

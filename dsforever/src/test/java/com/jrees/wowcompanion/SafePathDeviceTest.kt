@@ -50,6 +50,11 @@ class SafePathDeviceTest {
         assertArrayEquals(g.cls, back.cls)
         assertArrayEquals(g.faces, back.faces)
         assertArrayEquals(g.faces48, back.faces48)
+        // EDGE CLEARANCE's drops (the hill's 40 yd cliff): kept, so the lattice read back costs a rim's lip as the one made did
+        assertTrue("the cliff has a lip", g.dropD!!.any { (it.toInt() and 0xFF) < 255 })
+        assertArrayEquals(g.dropD, back.dropD)
+        val legA = Climb.route(g, doubleArrayOf(150.0, 130.0), doubleArrayOf(-150.0, 120.0))!!; val legB = Climb.route(back, doubleArrayOf(150.0, 130.0), doubleArrayOf(-150.0, 120.0))!!
+        assertEquals(legA.pts.map { it.toList() }, legB.pts.map { it.toList() })
         assertEquals(1, back.rooms!!.size)
         assertTrue(back.solid!!(-50.0, -50.0)); assertFalse(back.solid!!(-50.0, -60.0))
         // the rules read the same off the file: every line the original clears, the copy clears

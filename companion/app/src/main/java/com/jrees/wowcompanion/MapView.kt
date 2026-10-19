@@ -3996,7 +3996,7 @@ class MapView(context: Context) : View(context) {
             val ground: ((Double, Double) -> Float)? = { x, y ->
                 val wy = r.left - x * r.width; val wx = r.top - y * r.height
                 val slope = tg?.at(wx, wy) ?: Terrain.NO_DATA
-                val f0 = Terrain.factor(slope)
+                val f0 = Terrain.legCost(tg, wx, wy, slope)   // rock fields dearer, a cell off a cliff (test12, test13)
                 // the zone's border band (test54: "that Westfall quest is sending me along the mountains"): dear unless level
                 val edgeYd = minOf(x * r.width, (1 - x) * r.width, y * r.height, (1 - y) * r.height)
                 val f = if (edgeYd < BORDER_YD && (slope == Terrain.NO_DATA || f0 > 1f)) f0 * BORDER_COST else f0
@@ -4162,10 +4162,15 @@ class MapView(context: Context) : View(context) {
         }
         if (netPending.add(q)) {
             val toExit = route.kind == CursorRoute.Kind.EXIT
+            // the danger grid's leg for a goal off the network (SafePath.deviceLeg: the way taken as near as it goes, the grid's leg on)
+            val dg = dangerGrid(); val dk = DangerGrid.strength(Settings.avoidDanger)
             RouteWork.run({
                 // a hooked end walked straight only over level ground (the zone's slopes, when the terrain step made them)
                 val clear = Terrain.of(mapId)?.let { tg -> SafePath.clearOf { x, y -> Terrain.factor(tg.at(x, y)) } }
-                val w = SafePath.route(net, r.top - py * ay, r.left - px * ax, r.top - route.y * ay, r.left - route.x * ax, toExit, clear)
+                val offNet: ((DoubleArray, DoubleArray) -> List<DoubleArray>?)? = if (dg == null || dk <= 0.0) null else { a, b ->
+                    dg.route(doubleArrayOf((r.left - a[1]) / ax, (r.top - a[0]) / ay), doubleArrayOf((r.left - b[1]) / ax, (r.top - b[0]) / ay), dk)
+                        .map { doubleArrayOf(r.top - it[1] * ay, r.left - it[0] * ax) } }
+                val w = SafePath.deviceLeg(net, r.top - py * ay, r.left - px * ax, r.top - route.y * ay, r.left - route.x * ax, toExit, clear, offNet)
                 w?.map { doubleArrayOf((r.left - it[1]) / ax, (r.top - it[0]) / ay) }
             }) { pts ->
                 netPending.remove(q)

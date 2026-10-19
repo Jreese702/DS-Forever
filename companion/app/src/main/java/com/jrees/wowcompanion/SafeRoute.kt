@@ -18,7 +18,7 @@ import kotlin.math.hypot
 class SafeRoute(private val g: Climb.Grid, private val danger: (Double, Double) -> Float, private val calm: (Double, Double) -> Float,
                 private val k: Double, private val deep: (Double, Double) -> Boolean, private val waterAt: (Double, Double) -> Float,
                 private val deckAt: (Double, Double) -> Boolean, private val rawDeep: ((Double, Double) -> Boolean)?,
-                private val limits: Climb.Limits? = null) {
+                private val limits: Climb.Limits? = null, private val edges: Boolean = true) {
 
     /** a planned way: its points (x, y, and [Climb.IN_CAVE] / [Climb.LIFT] / [Climb.SWIM] marks), and whether it reached its goal */
     class Result(val pts: List<DoubleArray>, val reached: Boolean) {
@@ -64,7 +64,7 @@ class SafeRoute(private val g: Climb.Grid, private val danger: (Double, Double) 
         val legEnds = ArrayList<Pair<DoubleArray, Boolean>>()
         fun reachedBy(way: List<DoubleArray>?): Boolean = way?.lastOrNull()?.let { e -> legEnds.lastOrNull { (p, _) -> p[0] == e[0] && p[1] == e[1] }?.second } ?: lastReached
         fun legBy(water: (Double, Double) -> Boolean): (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b ->
-            Climb.route(g, a, b, danger, k, water, links, limits)?.also { lastReached = it.reached; it.pts.lastOrNull()?.let { e -> legEnds.add(e to it.reached) } }?.pts }
+            Climb.route(g, a, b, danger, k, water, links, edges, limits)?.also { lastReached = it.reached; it.pts.lastOrNull()?.let { e -> legEnds.add(e to it.reached) } }?.pts }
         val leg = legBy(deep)
         val way0 = SafePath.routeOn(net, from[0], from[1], to[0], to[1], leg, toExit = toExit, clear = clear, walkable = { a, b -> Climb.walkable(g, a, b, deep) })
             ?: leg(from, to) ?: listOf(from, to)
@@ -80,7 +80,7 @@ class SafeRoute(private val g: Climb.Grid, private val danger: (Double, Double) 
         // the detour cap: the way round the danger against the way with no danger counted (only a reached way; the rival must reach the
         // goal itself and wade no longer)
         val way = if (!reached) wayW else {
-            val direct = Climb.route(g, from, to, calm, k, deep, links, limits)?.pts?.takeIf { d -> d.size >= 2 && hypot(d.last()[0] - to[0], d.last()[1] - to[1]) < 1.0 }
+            val direct = Climb.route(g, from, to, calm, k, deep, links, edges, limits)?.pts?.takeIf { d -> d.size >= 2 && hypot(d.last()[0] - to[0], d.last()[1] - to[1]) < 1.0 }
             SafePath.capDetour(wayW, direct?.takeIf { longestWade(it) <= SafePath.NARROW_YD }).also {
                 if (it !== wayW) log("DETOUR route $label: round the danger ${length(wayW).toInt()} yd, capped: the way ignoring it ${length(it).toInt()} yd") }
         }

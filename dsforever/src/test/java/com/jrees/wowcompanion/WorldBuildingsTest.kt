@@ -148,4 +148,25 @@ class WorldBuildingsTest {
         val a = tunnel.world(3.0, -4.0, 12.0); val o = tunnel.world(0.0, 0.0, 0.0)
         assertEquals(13.0, Math.sqrt((a[0] - o[0]) * (a[0] - o[0]) + (a[1] - o[1]) * (a[1] - o[1]) + (a[2] - o[2]) * (a[2] - o[2])), 1e-9)
     }
+
+    @Test fun anOutdoorOnlyBuildingIsNoStreet() {
+        // the user's test12 (Zephras' Valanaar): a house built as one OUTDOOR group, 60 x 50 yd and 30 high, on the ground
+        val p = WorldBuildings.Placement(77, 5, 100.0, 200.0, 30.0, 0.0, 1.0)
+        fun one(box: FloatArray, interior: Boolean = false) = listOf(WorldBuildings.Group(interior, box, !interior))
+        val house = one(floatArrayOf(-30f, -25f, 0f, 30f, 25f, 30f))
+        val f = WorldBuildings.standing(p, house) { _, _ -> 30.0 }
+        assertTrue(f != null && f.holds(100.0, 200.0) && !f.holds(100.0, 240.0))
+        assertTrue(WorldBuildings.feet(p, house) { _, _ -> 30.0 }.isEmpty())                       // no room: feet alone never saw it
+        // not one: a street (low), a bridge (long and thin), a rock mass sunk under a town, a deck in the air, a building with rooms
+        assertTrue(WorldBuildings.standing(p, one(floatArrayOf(-30f, -25f, 0f, 30f, 25f, 2f))) { _, _ -> 30.0 } == null)
+        assertTrue(WorldBuildings.standing(p, one(floatArrayOf(-60f, -5f, 0f, 60f, 5f, 20f))) { _, _ -> 30.0 } == null)
+        assertTrue(WorldBuildings.standing(p, one(floatArrayOf(-30f, -25f, -60f, 30f, 25f, 10f))) { _, _ -> 30.0 } == null)
+        assertTrue(WorldBuildings.standing(p, one(floatArrayOf(-30f, -25f, 20f, 30f, 25f, 40f))) { _, _ -> 30.0 } == null)
+        assertTrue(WorldBuildings.standing(p, house + one(floatArrayOf(-5f, -5f, 0f, 5f, 5f, 5f), interior = true)) { _, _ -> 30.0 } == null)
+        // on the terrain step's cover grid it is a part-covered cell at most: dearer, never a wall
+        val rect = MapHarvest.Rect(0, 150.0, 50.0, 250.0, 150.0)
+        val cover = Terrain.buildingGrid(rect, emptyList(), listOf(f!!))
+        val v = (cover.at(100.0, 200.0) and 0xFF) / 9f
+        assertTrue("$v", v >= Buildings.PART_COVER && v < Buildings.WALL_COVER)
+    }
 }
