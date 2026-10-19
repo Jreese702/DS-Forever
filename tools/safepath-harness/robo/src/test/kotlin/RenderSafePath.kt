@@ -18,6 +18,7 @@ import com.jrees.wowcompanion.QuestieNpcs
 import com.jrees.wowcompanion.Roads
 import com.jrees.wowcompanion.SafePath
 import com.jrees.wowcompanion.SafeRoute
+import com.jrees.wowcompanion.ShippedNet
 import com.jrees.wowcompanion.Terrain
 import com.jrees.wowcompanion.TransportRoutes
 import com.jrees.wowcompanion.ZoneInputs
@@ -820,22 +821,56 @@ class RenderSafePath {
         // dropped, the caves' and lifts' ways, the checked exits) and the links (an air chain's, the declared swims), one faction's
         // section, for tools/safepath-harness/export.sh to gate (segcheck / wetcheck none, no WALLS / EMPTY) and pack
         if (System.getenv("SAFEPATH_EXPORT") == "1") {
-            val sec = com.jrees.wowcompanion.ShippedNet.section(netC, mine, level, tag, shipLinks) { pa, pb ->
+            val wetOf: (DoubleArray, DoubleArray) -> Int = { pa, pb ->
                 var f = 0; val n = maxOf(1, (Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) / 2).toInt())
                 for (t in 0..n) { val x = pa[0] + (pb[0] - pa[0]) * t / n; val y = pa[1] + (pb[1] - pa[1]) * t / n; val d = waterAt(x, y)
                     f = f or when {
                         // (the water grid's bridge: a walkway's deck over water - not any floor, a cave's mouth on its own floor)
-                        d == SafePath.Water.BRIDGE -> com.jrees.wowcompanion.ShippedNet.F_BRIDGE
+                        d == SafePath.Water.BRIDGE -> ShippedNet.F_BRIDGE
                         d.isNaN() || d <= 0f -> 0
-                        deep(x, y) -> com.jrees.wowcompanion.ShippedNet.F_SWIM
-                        else -> com.jrees.wowcompanion.ShippedNet.F_WADE } }
+                        deep(x, y) -> ShippedNet.F_SWIM
+                        else -> ShippedNet.F_WADE } }
                 f }
-            val head = com.jrees.wowcompanion.ShippedNet.Header(map, rect.c, Climb.RULES_VERSION, System.getenv("SAFEPATH_RULES_COMMIT") ?: "",
+            // the lattice's own leg between two points, as the routes walk (the danger, the edge clearance; deep water a wall), every piece
+            // of it walkable by the one check - or none
+            val legOf: (DoubleArray, DoubleArray) -> Pair<List<DoubleArray>, Boolean>? = { a, b ->
+                Climb.route(cg, a, b, danger, k, deep, edges = edgesOn)?.let { r -> r.pts to (r.reached && r.pts.zipWithNext().all { (u, v) -> Climb.walkable(cg, u, v, deep) }) } }
+            fun meanDanger(pts: List<DoubleArray>): Float { var sum = 0.0; var n = 0
+                for ((u, v) in pts.zipWithNext()) { val m = maxOf(1, Math.hypot(v[0] - u[0], v[1] - u[1]).toInt() / 4)
+                    for (q in 0 until m) { sum += danger(u[0] + (v[0] - u[0]) * q / m, u[1] + (v[1] - u[1]) * q / m); n++ } }
+                return if (n == 0) 0f else (sum / n / DangerGrid.CAP).toFloat().coerceIn(0f, 1f) }
+            // A CITY'S STREETS (the spec's floorCity: Dalaran) as ways on its own floor: their points marked in-floor; a street point at the
+            // terrain's own height, standable, is a mouth (the ground's way on)
+            val floorNodes = ArrayList<SafePath.Node>(); val extras = ArrayList<ShippedNet.Extra>()
+            var nextId = (netC.nodes.maxOfOrNull { it.id } ?: 0) + 1
+            city?.floorWays()?.let { (reps, ways) ->
+                val ids = reps.map { p -> val onGround = !height(p[0], p[1]).isNaN() && Math.abs(height(p[0], p[1]) - p[2]) < 1.5 && standable(p[0], p[1])
+                    val id = nextId++; floorNodes.add(SafePath.Node(id, p[0], p[1], if (onGround) SafePath.MOUTH else SafePath.CAVE, "floor")); id }
+                for ((a, b, pts) in ways) extras.add(ShippedNet.Extra(ids[a], ids[b], SafePath.CAVE, ShippedNet.F_FLOOR or ShippedNet.F_CAVE,
+                    pts.map { doubleArrayOf(it[0], it[1]) }, 0f, "floor"))
+                println("NET1 floor: ${floorNodes.size} street points (${floorNodes.count { it.kind == SafePath.MOUTH }} at the ground), ${extras.size} street ways")
+            }
+            // THE JOINS: the network's pieces (the city's streets with it) joined where the lattice's leg joins them
+            val netF = SafePath.Net(netC.map, netC.cont, netC.built, netC.nodes + floorNodes,
+                netC.edges + extras.map { SafePath.Edge(it.a, it.b, it.kind, SafePath.OK, it.src) }, netC.exits)
+            val js = ShippedNet.joins(netF, legOf, log = { println("NET1 $it") })
+            for ((a, b, pts) in js) extras.add(ShippedNet.Extra(a, b, SafePath.TRAIL, ShippedNet.F_JOIN or ShippedNet.F_TRAIL, pts.map { doubleArrayOf(it[0], it[1]) }, meanDanger(pts)))
+            // THE ROADMAP: the coverage graph of the walkable ground, this faction's danger along each of its edges
+            val rb = RoadmapBuild(cg, deep, standable, ::roomsAt, waterAt, layers, rect.t, rect.b, rect.l, rect.r)
+            val built = rb.build { println("NET1 $it") }
+            val rmDanger = rb.dangerBytes(built, danger)
+            val sec = ShippedNet.section(netC, mine, level, tag, shipLinks, wetOf,
+                walk = { a, b -> legOf(a, b)?.takeIf { it.second }?.first?.map { doubleArrayOf(it[0], it[1]) } },
+                extraNodes = floorNodes, extras = extras, roadmapDanger = rmDanger)
+            val head = ShippedNet.Header(map, rect.c, Climb.RULES_VERSION, System.getenv("SAFEPATH_RULES_COMMIT") ?: "",
                 System.getenv("SAFEPATH_BUILD") ?: "", java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString())
-            File(out, "net1_$tag.json").writeText(com.jrees.wowcompanion.ShippedNet.Pack(head, listOf(sec)).toJson().toString())
+            val pack = ShippedNet.Pack(head, listOf(sec), built.rm)
+            File(out, "net1_$tag.json").writeText(pack.toJson().toString())
+            val rmBytes = ShippedNet.pack64(built.rm.encode()).length
             println("NET1 $tag map $map faction $mine: ${sec.net.nodes.size} nodes, ${sec.net.edges.size} ways " +
-                "(${com.jrees.wowcompanion.ShippedNet.FLAG_NAMES.joinToString { (b, nm) -> "$nm ${sec.ways.count { it.flags and b != 0 }}" }}), " +
-                "${sec.net.exits.size} exits, ${sec.links.size} links, ${sec.starts.size} starts, ${sec.checkpoints.size} checkpoints")
+                "(${ShippedNet.FLAG_NAMES.joinToString { (b, nm) -> "$nm ${sec.ways.count { it.flags and b != 0 }}" }}; ${sec.ways.count { it.pts != null }} walked), " +
+                "${sec.net.exits.size} exits, ${sec.links.size} links, ${sec.starts.size} starts, ${sec.checkpoints.size} checkpoints; " +
+                "roadmap ${built.rm.nodes} nodes ${built.rm.edges} edges, $rmBytes bytes (base64), danger ${ShippedNet.pack64(rmDanger).length} bytes")
         }
     }
 

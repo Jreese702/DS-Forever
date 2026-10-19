@@ -7,6 +7,8 @@
 #   bash tools/safepath-harness/export.sh --list <file>               the tags in a file (one a line, # comments)
 #   bash tools/safepath-harness/export.sh --pack <run folder>         pack a finished run's sections (gate.sh with SAFEPATH_EXPORT=1)
 #   ONE_FACTION=1 ...                                                 only the spec's own side
+# Probes (export_exclude.txt, or a spec's "probe": true) are skipped. Specs sharing a map (alterac and dalaran: 1416) pack into ONE
+# file, one section a faction holding their union (PackNet, ShippedNet.merge).
 # Runs into $SAFEPATH_OUT/export-<time>/ (or $EXPORT_OUT). A side that fails its checks ships nothing; the other side still ships.
 # A map's file holds the sections that passed in THIS run (an earlier asset of that map is replaced).
 set -u
@@ -33,6 +35,7 @@ if [ -z "${SAFEPATH_RULES_COMMIT:-}" ]; then
 fi
 for tag in $TAGS; do
   spec="$HERE/zones/$tag.json"; [ -f "$spec" ] || { echo "no spec $spec"; continue; }
+  if (cd "$HERE/py" && python exportcheck.py --excluded "$tag"); then echo "skip $tag: a probe (export_exclude.txt)"; continue; fi
   RUNS="$tag:$spec"
   [ -z "${ONE_FACTION:-}" ] && RUNS="$RUNS $(cd "$HERE/py" && PYTHONIOENCODING=utf-8 python otherspec.py "$tag" "$OUT" | tr -d '\r')"
   for r in $RUNS; do
