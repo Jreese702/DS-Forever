@@ -3422,6 +3422,9 @@ class MapView(context: Context) : View(context) {
     private fun pushDefault() {
         if (qtHolds() || Settings.questTracking == "vanilla") return
         val cb = onPushFocus ?: return
+        // only while the game is live: a push refused as "Waiting for the game" would wait out RETRY_MS after the first document
+        // (test18: refused every 30 s for 5 minutes, then pushed only by hand)
+        if (!GameInput.live()) return
         val q = focusPush.tick(defaultQid, focusQid, System.currentTimeMillis())
         if (q > 0) post { cb(q) }
     }
@@ -4043,7 +4046,7 @@ class MapView(context: Context) : View(context) {
     private fun dangerLeg(q: Int, route: CursorRoute.Route): List<DoubleArray>? {
         if (Settings.questTracking != "safepath") return null
         // SAFEPATH V2 ROUTING (the setting, Off by default): the zone's own lattice and the harness's rules; none here yet, the old way
-        if (Settings.safePathV2) safeLeg(q, route)?.let { return it.takeIf { l -> l.size > 2 } }
+        if (Settings.safePathV2) safeLeg(q, route)?.let { return it.takeIf { l -> l.size > 2 } } else v2Off("the setting is Off")
         // SafePath's network (b-safepath-route): where this zone has one, the leg goes on it; else (off it, no help) the grid's
         netLeg(q, route)?.let { return it }
         val k = DangerGrid.strength(Settings.avoidDanger)
@@ -4094,15 +4097,20 @@ class MapView(context: Context) : View(context) {
     /** the focused quest's way came from SafePath v2 (the pin's word) */
     private var v2Shown = false
     /** quest [q]'s v2 way to [route]'s point (the map's 0..1, the player first; two points = straight there), null = none (the old way) */
+    // why v2 gave no way, logged once per change (test18: SafePath v2 left no line at all, so "off", "no level yet" and "no lattice"
+    // could not be told apart)
+    private var v2WhyLast = ""
+    private fun v2Off(why: String): List<DoubleArray>? { if (why != v2WhyLast) { v2WhyLast = why; android.util.Log.i("WCMAP", "safepath v2: the old way ($why)") }; return null }
     private fun safeLeg(q: Int, route: CursorRoute.Route): List<DoubleArray>? {
-        val m = map ?: return null
-        val r = rect ?: return null
-        if (!r.valid || m.optInt("onTaxi", 0) == 1) return null
-        if (route.x !in 0.0..1.0 || route.y !in 0.0..1.0) return null                     // outside the zone: the old routing
+        val m = map ?: return v2Off("no map yet")
+        val r = rect ?: return v2Off("no map rect yet")
+        if (!r.valid) return v2Off("the map's rect is not valid")
+        if (m.optInt("onTaxi", 0) == 1) return v2Off("in flight")
+        if (route.x !in 0.0..1.0 || route.y !in 0.0..1.0) return v2Off("the goal is off this map")   // outside the zone: the old routing
         val mapId = m.optInt("mapID", 0)
         val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
-        if (px.isNaN() || py.isNaN() || mapId == 0) return null
-        val plv = questsPlv ?: return null
+        if (px.isNaN() || py.isNaN() || mapId == 0) return v2Off("no position yet")
+        val plv = questsPlv ?: return v2Off("no character level yet (the quests document)")
         val mine = TransportRoutes.factionOf(m.optString("fac", null))
         SafePathV2.init(context)
         val ax = r.width; val ay = r.height
@@ -4126,6 +4134,7 @@ class MapView(context: Context) : View(context) {
             val keptYd = rest?.let { SafeRoute.length(it) }
             val strayed = off > SafePathV2.OFF_ROUTE_YD
             val ctx = context.applicationContext
+            android.util.Log.i("WCMAP", "safepath v2: quest $q planning on map $mapId${if (strayed) " (strayed)" else ""}")
             RouteWork.run({
                 val way = try { SafePathV2.plan(ctx, mapId, rect0, mine, plv, here, goal, toExit) { v2Gen[q] != gen } } catch (e: Climb.Cancelled) { null }
                 way to SafePathV2.lastWhy
