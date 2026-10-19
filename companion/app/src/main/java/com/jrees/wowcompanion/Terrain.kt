@@ -148,6 +148,16 @@ object Terrain {
         return if (any) out else null
     }
 
+    /** whether tile ([tc], [tr])'s water grid ([surface], as [water]) has any liquid within [yd] of world ([wx], [wy]) (a doodad standing
+     *  by or over the water: the only ones read as possible bridges) */
+    fun wetNear(surface: FloatArray, tc: Int, tr: Int, wx: Double, wy: Double, yd: Double): Boolean {
+        val cell = MapHarvest.ADT_YD / TILE_V
+        val ci = (((32 * MapHarvest.ADT_YD - wy) / MapHarvest.ADT_YD - tc) * TILE_V).toInt(); val cj = (((32 * MapHarvest.ADT_YD - wx) / MapHarvest.ADT_YD - tr) * TILE_V).toInt()
+        val r = Math.ceil(yd / cell).toInt()
+        for (j in maxOf(0, cj - r)..minOf(TILE_V - 1, cj + r)) for (i in maxOf(0, ci - r)..minOf(TILE_V - 1, ci + r)) if (!surface[j * TILE_V + i].isNaN()) return true
+        return false
+    }
+
     /**
      * THE WATER OF A ROOT ADT (b-safepath-water; the user: "Pathing shouldn't be in water"): its MH2O - per MCNK (in MCNK order) its
      * liquid instances, each over a w x h block of the chunk's 8 x 8 cells from (x, y), the cells there (its bitmap, when it has one)

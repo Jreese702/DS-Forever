@@ -137,6 +137,8 @@ object WorldBuildings {
                 grid.getOrPut(i * 1000003L + j) { ArrayList() }.add(k)
         } }
         val empty get() = tris.isEmpty()
+        /** its triangles in world 2D (x0, y0, x1, y1, x2, y2): the harness's pictures and checks */
+        val triangles: List<DoubleArray> get() = tris
         fun holds(x: Double, y: Double): Boolean = grid[Math.floorDiv(x.toLong(), 16L) * 1000003L + Math.floorDiv(y.toLong(), 16L)]?.any { k ->
             val t = tris[k]; inTri(t, x, y) || segDist(t[0], t[1], t[2], t[3], x, y) <= DECK_MARGIN_YD ||
                 segDist(t[2], t[3], t[4], t[5], x, y) <= DECK_MARGIN_YD || segDist(t[4], t[5], t[0], t[1], x, y) <= DECK_MARGIN_YD } == true
@@ -173,6 +175,124 @@ object WorldBuildings {
         }
         return Deck(tris)
     }
+
+    // ---------------------------------------------------------------- M2 bridges (doodads)
+
+    /**
+     * the MDDF doodad placements of an obj ADT (M2 models: 36 bytes each - fileDataID when flags & 0x40, unique id, position, rotation,
+     * scale / 1024, flags), in the same frame as [placements]. A doodad tilted more than [M2_TILT_DEG] is left out (a bridge lies level).
+     */
+    fun doodads(obj: ByteArray): List<Placement> {
+        val out = ArrayList<Placement>()
+        var o = 0
+        while (o + 8 <= obj.size) {
+            val n = Db2.le32(obj, o + 4)
+            if (n < 0 || o + 8 + n > obj.size) break
+            if (tag(obj, o) == "MDDF") {
+                var at = o + 8
+                while (at + 36 <= o + 8 + n) {
+                    val fid = Db2.le32(obj, at); val uid = Db2.le32(obj, at + 4)
+                    fun f(k: Int) = java.lang.Float.intBitsToFloat(Db2.le32(obj, at + k)).toDouble()
+                    val px = f(8); val py = f(12); val pz = f(16); val rx = f(20); val ry = f(24); val rz = f(28)
+                    val scale = ((obj[at + 32].toInt() and 0xFF) or ((obj[at + 33].toInt() and 0xFF) shl 8)) / 1024.0
+                    val flags = (obj[at + 34].toInt() and 0xFF) or ((obj[at + 35].toInt() and 0xFF) shl 8)
+                    if (flags and 0x40 != 0 && fid != 0 && scale > 0 && listOf(px, py, pz, rx, ry, rz).all { it.isFinite() } &&
+                        Math.abs(rx) <= M2_TILT_DEG && Math.abs(rz) <= M2_TILT_DEG)
+                        out.add(Placement(fid, uid, ORIGIN - pz, ORIGIN - px, py, Math.toRadians(ry), scale))
+                    at += 36
+                }
+            }
+            o += 8 + n
+        }
+        return out
+    }
+    const val M2_TILT_DEG = 5.0
+
+    /** an M2 file's MD20 block (inside its MD21 chunk; or the whole file, an old unchunked one): its offset, or -1 */
+    private fun md20(m2: ByteArray): Int {
+        if (m2.size >= 8 && tag(m2, 0) == "MD20".reversed()) return 0
+        var o = 0
+        while (o + 8 <= m2.size) {
+            val n = Db2.le32(m2, o + 4)
+            if (n < 0 || o + 8 + n > m2.size) return -1
+            if (String(CharArray(4) { m2[o + it].toInt().toChar() }) == "MD21") return o + 8
+            o += 8 + n
+        }
+        return -1
+    }
+
+    /** an M2's own model name (its MD20 header's name: "DuskwoodCoveredBridge"; the phone has no listfile), "" when unreadable */
+    fun m2Name(m2: ByteArray): String {
+        val b = md20(m2); if (b < 0 || b + 16 > m2.size) return ""
+        val n = Db2.le32(m2, b + 8); val at = Db2.le32(m2, b + 12)
+        if (n <= 0 || n > 256 || at < 0 || b + at + n > m2.size) return ""
+        return String(CharArray(n) { m2[b + at + it].toInt().toChar() }).trimEnd('\u0000')
+    }
+
+    /** the model names that mark a walkable bridge (b-safepath-water: Duskwood's covered bridge into Westfall is an M2), lower case */
+    val M2_BRIDGES = listOf("bridge", "dock", "pier", "walkway")
+    fun isM2Bridge(name: String): Boolean = name.lowercase().let { n -> M2_BRIDGES.any { it in n } }
+
+    /**
+     * an M2's walkable collision triangles in its own frame (9 floats each, as Caves.floorTris): its MD20 collision mesh
+     * (collisionIndices at 0xD8, collisionPositions at 0xE0), the faces no steeper than Caves.FLOOR_DEG; empty when it has none
+     */
+    fun m2FloorTris(m2: ByteArray): FloatArray {
+        val b = md20(m2); if (b < 0 || b + 0xE8 > m2.size) return FloatArray(0)
+        val ni = Db2.le32(m2, b + 0xD8); val oi = Db2.le32(m2, b + 0xDC); val nv = Db2.le32(m2, b + 0xE0); val ov = Db2.le32(m2, b + 0xE4)
+        if (ni <= 0 || nv <= 0 || oi < 0 || ov < 0 || b + oi + ni * 2 > m2.size || b + ov + nv * 12 > m2.size) return FloatArray(0)
+        fun v(k: Int, c: Int) = java.lang.Float.intBitsToFloat(Db2.le32(m2, b + ov + k * 12 + c * 4))
+        val out = ArrayList<Float>()
+        val cosMax = Math.cos(Math.toRadians(Caves.FLOOR_DEG))
+        for (t in 0 until ni / 3) {
+            val idx = IntArray(3) { q -> (m2[b + oi + (t * 3 + q) * 2].toInt() and 0xFF) or ((m2[b + oi + (t * 3 + q) * 2 + 1].toInt() and 0xFF) shl 8) }
+            if (idx.any { it >= nv }) continue
+            val ux = v(idx[1], 0) - v(idx[0], 0); val uy = v(idx[1], 1) - v(idx[0], 1); val uz = v(idx[1], 2) - v(idx[0], 2)
+            val wx = v(idx[2], 0) - v(idx[0], 0); val wy = v(idx[2], 1) - v(idx[0], 1); val wz = v(idx[2], 2) - v(idx[0], 2)
+            val nx = uy * wz - uz * wy; val ny = uz * wx - ux * wz; val nz = ux * wy - uy * wx
+            val len = Math.sqrt((nx * nx + ny * ny + nz * nz).toDouble())
+            if (len <= 0.0 || Math.abs(nz) / len < cosMax) continue
+            for (q in 0..2) for (c in 0..2) out.add(v(idx[q], c))
+        }
+        return out.toFloatArray()
+    }
+
+    /**
+     * AN M2 BRIDGE'S DECK (b-safepath-water; the user: "Pathing shouldn't be in water" - so a river is crossed only where a bridge is,
+     * and Duskwood's covered bridge into Westfall is a doodad, not a WMO): placement [p] of model [m2], when its own model name says
+     * bridge, dock, pier or walkway ([isM2Bridge]) - its collision mesh's walkable triangles in world 2D, as a WMO walkway's [deck].
+     * Null when the model is no bridge or has no collision floor.
+     */
+    fun m2Deck(p: Placement, m2: ByteArray): Deck? = m2BridgeFloor(m2)?.let { m2DeckOf(p, it) }
+    /**
+     * model [m2]'s bridge floor: its [m2FloorTris] when its own name says bridge ([isM2Bridge]) and the floor spans at least
+     * [M2_MIN_SPAN_YD] (a brick or a pylon's top named for the bridge it decorates - RedRidgeBridgeBrick01, 3 yd - is no deck); else null
+     */
+    fun m2BridgeFloor(m2: ByteArray): FloatArray? {
+        if (!isM2Bridge(m2Name(m2))) return null
+        val t = m2FloorTris(m2); if (t.isEmpty()) return null
+        var x0 = Float.MAX_VALUE; var x1 = -Float.MAX_VALUE; var y0 = Float.MAX_VALUE; var y1 = -Float.MAX_VALUE
+        for (v in 0 until t.size / 3) { x0 = minOf(x0, t[v * 3]); x1 = maxOf(x1, t[v * 3]); y0 = minOf(y0, t[v * 3 + 1]); y1 = maxOf(y1, t[v * 3 + 1]) }
+        return t.takeIf { maxOf(x1 - x0, y1 - y0) >= M2_MIN_SPAN_YD }
+    }
+    const val M2_MIN_SPAN_YD = 8.0
+    /** [p]'s deck from its model's own floor triangles ([m2FloorTris]: cached per model by the callers); null when there are none */
+    fun m2DeckOf(p: Placement, t: FloatArray): Deck? {
+        if (t.isEmpty()) return null
+        val cs = Math.cos(p.yaw); val sn = Math.sin(p.yaw)
+        return Deck((0 until t.size / 9).map { q -> DoubleArray(6) { c -> val v = q * 9 + (c / 2) * 3
+            val lx = t[v] * p.scale; val ly = t[v + 1] * p.scale
+            if (c % 2 == 0) p.ox - lx * cs + ly * sn else p.oy - lx * sn - ly * cs } })
+    }
+
+    /**
+     * the M2 bridges of obj ADT [obj]: each doodad standing [near] water (the rest are never read: trees, rocks), its model's floor
+     * ([floorOf] a model's fileDataID -> its [m2FloorTris] when [isM2Bridge] by its own name, else null; the callers cache it per model)
+     */
+    fun m2Decks(obj: ByteArray, near: (Double, Double) -> Boolean, floorOf: (Int) -> FloatArray?): List<Deck> =
+        doodads(obj).filter { near(it.ox, it.oy) }.mapNotNull { p -> floorOf(p.fid)?.let { m2DeckOf(p, it) } }
+    /** a doodad this near the water is read as a possible bridge (a bridge's middle stands over its river) */
+    const val M2_NEAR_WATER_YD = 24.0
 
     /** wider than this (yd), a WMO is a city or a stretch of terrain (Stormwind, Ironforge's mountain): no rooms as walls; level */
     const val CITY_YD = 300.0

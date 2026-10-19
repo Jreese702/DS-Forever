@@ -94,7 +94,22 @@ class RenderSafePath {
             fun wet(c: Int, r: Int) = wetTiles.getOrPut(c to r) { File(dir, "adt/${c}_$r.adt").takeIf { it.isFile }?.readBytes()?.let { b -> Terrain.water(b) to Terrain.tile(b)?.h } ?: (null to null) }
             // each walkway by its deck (its outdoor groups' floor triangles, the device's own WorldBuildings.deck), its box only where
             // its groups weren't dumped
-            val walks = HashMap<Pair<Int, Int>, List<(Double, Double) -> Boolean>>()
+            val walks = HashMap<Pair<Int, Int>, List<(Double, Double) -> Boolean>>(); val m2Said = HashSet<Int>()
+            val deckList = ArrayList<com.jrees.wowcompanion.WorldBuildings.Deck>()     // every deck read (py/wetcheck.py: decks_<tag>.json)
+            // the M2 bridges (the device's own WorldBuildings.m2Decks: a doodad by the water whose model's own name says bridge, dock,
+            // pier or walkway), from the models dump/dump_m2bridges.py put in <dir>/m2
+            fun m2DecksOf(c: Int, r: Int): List<(Double, Double) -> Boolean> {
+                val obj = File(dir, "obj0/${c}_$r.adt").takeIf { it.isFile }?.readBytes() ?: return emptyList()
+                val surface = wet(c, r).first ?: return emptyList()
+                return com.jrees.wowcompanion.WorldBuildings.doodads(obj).filter { Terrain.wetNear(surface, c, r, it.ox, it.oy, com.jrees.wowcompanion.WorldBuildings.M2_NEAR_WATER_YD) }.mapNotNull { p ->
+                    val m = File(dir, "m2/${p.fid}").takeIf { it.isFile }?.readBytes() ?: return@mapNotNull null
+                    val name = com.jrees.wowcompanion.WorldBuildings.m2Name(m)
+                    val d = com.jrees.wowcompanion.WorldBuildings.m2Deck(p, m)
+                    if (m2Said.add(p.uid)) println("DECK M2 ${p.fid} '$name' at ${p.ox.toInt()},${p.oy.toInt()} z ${p.oz.toInt()} yaw ${Math.toDegrees(p.yaw).toInt()}: " +
+                        if (d == null) "not a bridge (or no collision floor)" else "a bridge, its deck read")
+                    d?.let { dk -> deckList.add(dk); { x: Double, y: Double -> dk.holds(x, y) } }
+                }
+            }
             fun walksOf(c: Int, r: Int) = walks.getOrPut(c to r) {
                 File(dir, "obj0/${c}_$r.adt").takeIf { it.isFile }?.readBytes()?.let { com.jrees.wowcompanion.WorldBuildings.placements(it) }?.flatMap { p ->
                     val root = File(dir, "wmo/${p.fid}").takeIf { it.isFile }?.readBytes()
@@ -102,10 +117,10 @@ class RenderSafePath {
                     if (feet.isEmpty() || root == null) emptyList() else {
                         val gf = com.jrees.wowcompanion.WorldBuildings.groupFiles(root)
                         com.jrees.wowcompanion.WorldBuildings.deck(p, root) { id -> gf.indexOf(id).takeIf { it >= 0 }?.let { File(dir, "wmogroup/${p.fid}_$it") }?.takeIf { it.isFile }?.readBytes() }
-                            ?.takeIf { !it.empty }?.let { d -> listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) }) }
+                            ?.takeIf { !it.empty }?.let { d -> deckList.add(d); listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) }) }
                             ?: feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } }
                     }
-                } ?: emptyList()
+                }.orEmpty() + m2DecksOf(c, r)
             }
             val wg = SafePath.Water.build(rect.t, rect.b, rect.l, rect.r, { x, y -> PlaceNames.locate(x, y).let { l -> walksOf(l[0], l[1]).any { it(x, y) } } }) { x, y ->
                 SafePath.Water.depthOf(x, y, { c, r -> wet(c, r).first }, { c, r -> wet(c, r).second }) }
@@ -147,6 +162,7 @@ class RenderSafePath {
                 { x, y -> PlaceNames.locate(x, y).let { l -> walksOf(l[0], l[1]).any { it(x, y) } } }, ::nameOf,
                 mainArea, spec, tag, mine, ar, map, rawDeep = { x, y -> SafePath.Water.depthOf(x, y, { c, r -> wet(c, r).first }, { c, r -> wet(c, r).second })
                     .let { !it.isNaN() && it > SafePath.FORD_DEPTH } })
+            if (map == main) File(out, "decks_$tag.json").writeText(org.json.JSONArray(deckList.flatMap { d -> d.triangles.map { org.json.JSONArray(it.toList()) } }).toString())
             done[map] = Done(net, rect, zg, ar, hostile)
         }
         if (done.containsKey(borderPair.first) && done.containsKey(borderPair.second))
@@ -216,7 +232,7 @@ class RenderSafePath {
             if (key !in ctiles) ctiles[key] = File(dir, "adt/${gc / 128}_${gr / 128}.adt").takeIf { it.isFile }?.let { Terrain.tile(it.readBytes())?.c }
             ctiles[key]?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN }
         // a walkway's deck (a bridge, a pier, a dock: its floor, over water or a drop) is level ground, whatever lies under it
-        val cg = Climb.build(rect.t, rect.b, rect.l, rect.r, heightV, level = { x, y -> onFloor(x, y) || deckAt(x, y) }, hole = hole, centre = centre)
+        val cg = Climb.build(rect.t, rect.b, rect.l, rect.r, heightV, level = onFloor, hole = hole, centre = centre, deck = deckAt)
         println("CLIMB lattice ${cg.nx} x ${cg.ny} in ${(System.nanoTime() - t0) / 1_000_000} ms; walls ${cg.cls.count { (it.toInt() and 3) == 3 } * 100 / cg.cls.size}% of the east steps")
         val ground: (Double, Double) -> Float = { u, v -> val wx = rect.t - v * ay; val wy = rect.l - u * ax; Terrain.factor(tg.at(wx, wy)) }
         val level = spec?.optInt("level", 8) ?: 8
@@ -227,10 +243,13 @@ class RenderSafePath {
         // grid's bridge cells (the walkway's whole bounding box) are water again off that floor: the lake beside the deck is no bridge
         var floorCells: Set<Long> = emptySet()
         fun fkey(x: Double, y: Double) = Math.floorDiv(Math.round(x), 4L) * 100000 + Math.floorDiv(Math.round(y), 4L)
+        // and a spot on a walkway's deck (its floor triangles, [deckAt]) is never water, whatever the 8 yd water cell it is in reads (a
+        // narrow pier's edge in a cell whose middle is off it: Ratchet's dock tip); off the deck in a bridge's cell, the water there
         val deep: (Double, Double) -> Boolean = { x, y -> val d = waterAt(x, y)
-            if (d == SafePath.Water.BRIDGE) rawDeep != null && floorCells.isNotEmpty() && rawDeep(x, y) &&
-                (-1..1).none { a -> (-1..1).any { b -> fkey(x + a * 4.0, y + b * 4.0) in floorCells } }
-            else !d.isNaN() && d > SafePath.FORD_DEPTH }
+            if (d.isNaN() || deckAt(x, y)) false
+            else if (d == SafePath.Water.BRIDGE) rawDeep != null && rawDeep(x, y) &&
+                (floorCells.isEmpty() || (-1..1).none { a -> (-1..1).any { b -> fkey(x + a * 4.0, y + b * 4.0) in floorCells } })
+            else d > SafePath.FORD_DEPTH }
         val reachedOf = HashMap<String, Boolean>()
         var lastReached = true
         var links: List<Climb.Link> = emptyList()

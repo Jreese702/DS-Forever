@@ -226,4 +226,30 @@ class ClimbTest {
         assertTrue(h[0] && h[1] && h[128] && h[129])
         assertFalse(h[2] || h[256])
     }
+
+    /** b-safepath-water: a walkway's DECK (a bridge over a trench 20 yd deep across the whole lattice) is level ground - walked over in
+     *  both directions, never left over its sides (a step is level only when both its ends are on the deck), and the trench is crossed
+     *  nowhere else */
+    @Test fun aBridgesDeckIsLevelBothWaysAndNeverStepsOffItsSides() {
+        fun trench(wx: Double, wy: Double) = if (abs(wy) < 30) -20.0 else 0.0
+        val onDeck: (Double, Double) -> Boolean = { x, y -> abs(x) <= 5.0 && abs(y) <= 40.0 }
+        val bare = grid(::trench)
+        val g = Climb.build(200.0, -200.0, 200.0, -200.0, { gr, gc -> trench(org - gr * s, org - gc * s).toFloat() }, deck = onDeck)
+        assertFalse(Climb.route(bare, doubleArrayOf(0.0, 60.0), doubleArrayOf(0.0, -60.0))!!.reached)
+        for ((a, b) in listOf(doubleArrayOf(0.0, 60.0) to doubleArrayOf(0.0, -60.0), doubleArrayOf(0.0, -60.0) to doubleArrayOf(0.0, 60.0))) {
+            val leg = Climb.route(g, a, b)!!
+            assertTrue("crossed by the bridge", leg.reached)
+            assertWalkable(g, leg.pts)
+            for (p in leg.pts) if (abs(p[1]) < 30) assertTrue("over the trench off the deck at ${p.toList()}", abs(p[0]) <= 5.5)
+        }
+        // the deck's edge vertices over the trench: their steps off it are walls on every side (north, south, east of the deck's end)
+        for (j in 0 until g.ny) for (i in 0 until g.nx) {
+            val x = g.wx(j); val y = g.wy(i)
+            if (!onDeck(x, y) || abs(y) >= 30) continue
+            for ((di, dj) in listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1)) {
+                val nx = g.wx(j + dj); val ny = g.wy(i + di)
+                if (!onDeck(nx, ny) && abs(ny) < 30) assertEquals("a step off the deck at ${x.toInt()},${y.toInt()} by ($di, $dj)", Climb.WALL, g.step(i, j, di, dj))
+            }
+        }
+    }
 }

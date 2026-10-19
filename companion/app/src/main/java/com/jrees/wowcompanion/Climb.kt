@@ -113,9 +113,10 @@ object Climb {
     }
 
     /** the lattice over world rect [t] / [b] / [l] / [r] from the vertex heights ([height]: global row, column -> yards; NaN none);
-     *  [level] a spot a building's walkway makes level (a city's street, a bridge: its steps level, whatever the terrain under it) */
+     *  [level] a spot a building's walkway makes level (a city's street, a covered hole: its steps level, whatever the terrain under it);
+     *  [deck] a spot on a walkway's deck (a bridge, a pier): a step level when both its ends are on it */
     fun build(t: Double, b: Double, l: Double, r: Double, height: (Int, Int) -> Float, level: ((Double, Double) -> Boolean)? = null,
-              hole: ((Int, Int) -> Boolean)? = null, centre: ((Int, Int) -> Float)? = null): Grid {
+              hole: ((Int, Int) -> Boolean)? = null, centre: ((Int, Int) -> Float)? = null, deck: ((Double, Double) -> Boolean)? = null): Grid {
         val gr0 = floor((ORG - t) / STEP).toInt(); val gr1 = ceil((ORG - b) / STEP).toInt()
         val gc0 = floor((ORG - l) / STEP).toInt(); val gc1 = ceil((ORG - r) / STEP).toInt()
         val nx = gc1 - gc0 + 1; val ny = gr1 - gr0 + 1
@@ -139,6 +140,13 @@ object Climb {
                 if (hole(gr0 + j, gc0 + i - 1) && hole(gr0 + j, gc0 + i)) s = WALL
             }
             if (level != null && (e != LEVEL || s != LEVEL) && level(ORG - (gr0 + j) * STEP, ORG - (gc0 + i) * STEP)) { e = LEVEL; s = LEVEL }
+            // a walkway's DECK (a bridge, a pier: its floor triangles, WorldBuildings.Deck) is level ground over the water or the drop
+            // under it - a step along it is level only when BOTH its ends stand on the deck: one end alone leveled the step off its
+            // east and south edges and walled its west and north ones (Ratchet's pier and Auberdine's, entered from the shore, unreached)
+            if (deck != null && (e != LEVEL || s != LEVEL) && deck(ORG - (gr0 + j) * STEP, ORG - (gc0 + i) * STEP)) {
+                if (e != LEVEL && deck(ORG - (gr0 + j) * STEP, ORG - (gc0 + i + 1) * STEP)) e = LEVEL
+                if (s != LEVEL && deck(ORG - (gr0 + j + 1) * STEP, ORG - (gc0 + i) * STEP)) s = LEVEL
+            }
             cls[j * nx + i] = (e or (s shl 2)).toByte()
             // the cell's own four triangles (north, east, south, west of its middle vertex): a straight line across it meets them
             if (faces != null) {
@@ -147,6 +155,7 @@ object Climb {
                 val f = when {
                     hole?.invoke(gr, gc) == true -> WALL or (WALL shl 2) or (WALL shl 4) or (WALL shl 6)
                     level != null && level(ORG - (gr + 0.5) * STEP, ORG - (gc + 0.5) * STEP) -> 0
+                    deck != null && deck(ORG - (gr + 0.5) * STEP, ORG - (gc + 0.5) * STEP) -> 0
                     else -> faceClass(ha, hb, m) or (faceClass(hb, hd, m) shl 2) or (faceClass(hc, hd, m) shl 4) or (faceClass(ha, hc, m) shl 6)
                 }
                 faces[j * nx + i] = f.toByte()
