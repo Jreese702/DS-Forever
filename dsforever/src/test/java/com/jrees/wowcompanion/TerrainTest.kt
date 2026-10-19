@@ -75,4 +75,23 @@ class TerrainTest {
         val r = g.route(doubleArrayOf(0.2, 0.5), doubleArrayOf(0.8, 0.5), 8.0)
         assertTrue("north: ${r.joinToString { "%.2f,%.2f".format(it[0], it[1]) }}", r.any { it[1] < 0.25 })
     }
+
+    @Test fun theDevicesLegWeighsRockFieldsAndKeepsOffCliffs() {
+        // the user's test13: a ridge of rock outcrops reads a mean slope of 33-40 degrees, a third of its steps cliffs
+        assertEquals(Terrain.factor(20), Terrain.legFactor(20)); assertEquals(Terrain.factor(Terrain.NO_DATA), Terrain.legFactor(Terrain.NO_DATA))
+        assertTrue(Terrain.legFactor(36) > 2.5f * Terrain.factor(36))
+        assertEquals(12f, Terrain.legFactor(45), 1e-4f); assertEquals(Terrain.WALL, Terrain.legFactor(55))
+        // a band of it across the way, open past its north end: the old factor walks over it, the leg's goes round
+        fun way(f: (Int) -> Float) = DangerGrid.build(emptyList(), 0, 10, 2000.0, 2000.0) { x, y -> if (x in 0.45..0.55 && y < 0.6) f(36) else 1f }
+            .route(doubleArrayOf(0.2, 0.3), doubleArrayOf(0.8, 0.3), DangerGrid.strength("high"))
+        assertTrue("over it before", way(Terrain::factor).all { it[1] < 0.6 })
+        assertTrue("round it now", way(Terrain::legFactor).any { it[1] >= 0.6 })
+        // the cliff's band: a cell beside a cliff cell dearer, a cliff itself as before
+        val sl = ByteArray(10 * 10) { 5 }; sl[5 * 10 + 5] = 70
+        val g = Terrain.Grid(250.0, 0.0, 250.0, 0.0, 10, 10, sl)
+        fun at(i: Int, j: Int) = Terrain.legCost(g, 250.0 - (j + 0.5) * 25, 250.0 - (i + 0.5) * 25)
+        assertEquals(Terrain.WALL, at(5, 5), 0f)
+        assertEquals(Terrain.CLIFF_BAND, at(4, 4), 1e-4f); assertEquals(Terrain.CLIFF_BAND, at(6, 5), 1e-4f)
+        assertEquals(1f, at(2, 5), 0f)
+    }
 }

@@ -450,4 +450,77 @@ class ClimbTest {
         assertEquals("straight across past its foot", Climb.WALL, g.step(i, j, 1, 1))
         assertFalse(Climb.walkable(g, doubleArrayOf(g.wx(j), g.wy(i)), doubleArrayOf(g.wx(j + 1), g.wy(i + 1))))
     }
+
+    // ---------------------------------------------------------------- EDGE CLEARANCE (the user on Zephras, test12: "I almost fell off the island")
+
+    /** a floating plateau: ground at 0 for world y >= -100 (west of the line), nothing (NaN: the void) east of it */
+    private fun isle() = Climb.build(200.0, -200.0, 200.0, -200.0, { _, gc -> if (org - gc * s >= -101.0) 0f else Float.NaN })
+
+    @Test fun aDropIsTheGroundFallingAwayNotAWallRising() {
+        // a mesa 30 yd up east of world y 0 (y < 0), the plain west of it
+        val g = grid { _, wy -> if (wy < 0) 30.0 else 0.0 }
+        val (i0, j) = g.at(0.0, 0.0)
+        // the mesa's lip vertex: half a step from the cliff's middle; the plain's vertex at the cliff's foot: no drop near
+        val top = (i0 - 2..i0 + 2).first { g.wy(it) < 0 && g.wy(it - 1) >= 0 }
+        assertEquals(s / 2, g.dropYd(top, j), 0.11)
+        assertEquals(Double.MAX_VALUE, g.dropYd(top - 1, j), 0.0)
+        // farther onto the mesa: one step in nearer EDGE_YD, two steps none
+        assertTrue(g.dropYd(top + 1, j) in s..Climb.EDGE_YD)
+        assertEquals(Double.MAX_VALUE, g.dropYd(top + 2, j), 0.0)
+        // a bump under DROP_YD is no drop, however steep
+        val bump = grid { _, wy -> if (wy < 0) 4.5 else 0.0 }
+        assertEquals(Double.MAX_VALUE, bump.dropYd(top, j), 0.0)
+        // the cost: most at the lip, none at EDGE_YD
+        assertEquals(Climb.EDGE_COST, Climb.edgeCost(0.0), 1e-9); assertEquals(0.0, Climb.edgeCost(Climb.EDGE_YD), 1e-9)
+        assertTrue(Climb.edgeCost(2.0) > Climb.edgeCost(6.0))
+    }
+
+    @Test fun aRouteAlongAnIslesRimKeepsOffIt() {
+        val g = isle()
+        // the rim's lip vertices: the last ground before the void
+        val from = doubleArrayOf(150.0, -98.0); val to = doubleArrayOf(-150.0, -98.0)
+        val bare = Climb.route(g, from, to, edges = false)!!
+        val kept = Climb.route(g, from, to)!!
+        assertTrue("bare ${bare.pts.map { it.toList() }}", bare.reached); assertTrue("kept ${kept.pts.map { it.toList() }}", kept.reached)
+        assertWalkable(g, kept.pts)
+        // with no clearance the straight line along the lip; with it, the middle of the way keeps EDGE_YD off the rim
+        val mid = kept.pts.filter { abs(it[0]) < 100 }
+        assertTrue("a middle point: ${kept.pts.map { it.toList() }}", mid.isNotEmpty() || kept.pts.size > 2)
+        for (k in 0 until 40) {
+            val t = 0.3 + 0.4 * k / 39.0
+            val p = alongWay(kept.pts, t)
+            assertTrue("at ${p.toList()}: ${-100 - p[1]} yd off the rim", p[1] >= -100 + Climb.EDGE_YD - 0.5)
+        }
+        // and it costs only a few yards more
+        val yd = { w: List<DoubleArray> -> w.zipWithNext { a, b -> hypot(b[0] - a[0], b[1] - a[1]) }.sum() }
+        assertTrue("${yd(kept.pts)} against ${yd(bare.pts)}", yd(kept.pts) < yd(bare.pts) * 1.15)
+    }
+
+    /** the point a share [t] of the way along [w] */
+    private fun alongWay(w: List<DoubleArray>, t: Double): DoubleArray {
+        val segs = w.zipWithNext { a, b -> hypot(b[0] - a[0], b[1] - a[1]) }; var left = segs.sum() * t
+        for ((q, l) in segs.withIndex()) { if (left <= l) { val a = w[q]; val b = w[q + 1]; return doubleArrayOf(a[0] + (b[0] - a[0]) * left / l, a[1] + (b[1] - a[1]) * left / l) }; left -= l }
+        return w.last()
+    }
+
+    @Test fun aNarrowRidgeIsStillWalkedWhereItIsTheWay() {
+        // a causeway 10 yd wide (world y -5 .. 5) over the void between two isles: drops on both sides all along it, a cost, never a wall
+        val g = Climb.build(200.0, -200.0, 200.0, -200.0, { gr, gc -> val x = org - gr * s; val y = org - gc * s
+            if (abs(x) > 60 || abs(y) <= 5.5) 0f else Float.NaN })
+        val leg = Climb.route(g, doubleArrayOf(150.0, 0.0), doubleArrayOf(-150.0, 0.0))!!
+        assertTrue(leg.reached)
+        assertWalkable(g, leg.pts)
+        assertTrue(leg.pts.all { abs(it[1]) <= 6.0 || abs(it[0]) > 55 })
+    }
+
+    @Test fun deepWatersBankIsAnEdgeToo() {
+        // a lake east of world y -100 (deep), flat ground: a route along its shore keeps off the water's edge
+        val g = grid { _, _ -> 0.0 }
+        val deep = { _: Double, y: Double -> y < -100.0 }
+        val leg = Climb.route(g, doubleArrayOf(150.0, -96.0), doubleArrayOf(-150.0, -96.0), water = deep)!!
+        assertTrue(leg.reached)
+        for (k in 0 until 20) { val p = alongWay(leg.pts, 0.3 + 0.4 * k / 19.0); assertTrue("at ${p.toList()}", p[1] >= -100 + Climb.EDGE_YD - s / 2 - 0.5) }
+        val bare = Climb.route(g, doubleArrayOf(150.0, -96.0), doubleArrayOf(-150.0, -96.0), water = deep, edges = false)!!
+        assertEquals("no clearance: straight along the shore", 2, bare.pts.size)
+    }
 }
