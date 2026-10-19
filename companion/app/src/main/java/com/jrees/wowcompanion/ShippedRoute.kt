@@ -80,14 +80,14 @@ object ShippedRoute {
      */
     fun plan(sec: ShippedNet.Section, ground: (Double, Double) -> Float, danger: ((Double, Double) -> Float)?, from: DoubleArray, to: DoubleArray,
              k: Double = DangerGrid.strength("high"), toExit: Boolean = false, attachMaxYd: Double = ATTACH_MAX_YD,
-             goalFreeYd: Double = DangerGrid.GOAL_FREE_YD, roadmap: Roadmap? = roadmapOf(sec)): Result {
+             goalFreeYd: Double = DangerGrid.GOAL_FREE_YD, roadmap: Roadmap? = roadmapOf(sec), attacher: Attacher = DefaultAttach): Result {
         var goal = to
         if (toExit) sec.net.exits.mapNotNull { x -> sec.net.nodes.firstOrNull { it.id == x.node } }.minByOrNull { hypot(it.wx - to[0], it.wy - to[1]) }
             ?.takeIf { hypot(it.wx - to[0], it.wy - to[1]) <= SafePath.EXIT_SNAP_YD }?.let { goal = doubleArrayOf(it.wx, it.wy) }
         // the last yards to the goal are never danger (a kill objective, a giver among mobs: the route must reach them; DangerGrid's rule)
         val gx = goal[0]; val gy = goal[1]
         val dz = danger?.let { d -> { x: Double, y: Double -> if (hypot(x - gx, y - gy) <= goalFreeYd) 0f else d(x, y) } }
-        val g = Graph(sec, roadmap, dz, ground)
+        val g = Graph(sec, roadmap, dz, ground, attacher)
         val round = g.search(ground, dz, from, goal, k, attachMaxYd)
         if (round.pts.size < 2 || !round.reached) return round
         if (k <= 0.0) return round
@@ -100,7 +100,8 @@ object ShippedRoute {
     }
 
     /** the one graph: the net's ways along their points, the roadmap's edges, their base costs and the danger along them */
-    private class Graph(val sec: ShippedNet.Section, roadmap: Roadmap?, danger: ((Double, Double) -> Float)?, ground: (Double, Double) -> Float) {
+    private class Graph(val sec: ShippedNet.Section, roadmap: Roadmap?, danger: ((Double, Double) -> Float)?, ground: (Double, Double) -> Float,
+                        val attacher: Attacher) {
         val net = sec.net
         /** a way: [via] its points after [a] up to [b] (both directions walk it), [rewalk] a rewalk way with no shipped points */
         /** [share]: the net's danger share (the cost x 1 + it with no character danger); [fixedYd]: the roadmap's shipped danger x yards
@@ -239,61 +240,36 @@ object ShippedRoute {
             var nextVirtual = -10
             val attachYd = HashMap<Int, Double>()
             var snaps = 0
-            // THE SHORT SNAP: the nearest nodes within SNAP_YD, each by the ground's walk (walls refused)
-            fun snap(p: DoubleArray, virt: Int, outward: Boolean): Boolean {
-                val leg = Leg(ground, danger, k, p, SNAP_WALK_YD)
-                var any = false
-                for (id in snapIds.filter { hypot(pos[it]!![0] - p[0], pos[it]!![1] - p[1]) <= SNAP_YD }
-                        .sortedBy { hypot(pos[it]!![0] - p[0], pos[it]!![1] - p[1]) }.take(SNAP_CANDIDATES)) {
-                    val walk = leg.to(pos[id]!!) ?: continue
-                    any = true
-                    val wc = walk.cost * SafePath.OFF_NET
-                    if (outward) { arc(virt, id, wc, walk.pts.drop(1)); attachYd[id + OUT] = walk.yd }
-                    else { arc(id, virt, wc, walk.pts.reversed().drop(1)); attachYd[id + IN] = walk.yd }
-                }
-                if (any) snaps++
-                return any
-            }
-            // THE LONG ATTACH (no node near): a walk onto each of the nearest ways, a virtual node cut into it
+            // THE ATTACH (the seam: [attacher]): each end's joins - onto graph nodes, or cut into ways - added as arcs
             val cuts = ArrayList<Triple<Int, W, Double>>()
-            fun attach(p: DoubleArray, virt: Int, outward: Boolean): String? {
-                val leg = Leg(ground, danger, k, p, lim)
-                val cands = ways.filter { it.onLand && it !in banned && !it.rewalk }.map { w ->
-                    // the way's nearest point (its own points, not only its ends' line)
-                    val line = listOf(pos[w.a]!!) + w.via
-                    var best: Pair<Double, DoubleArray>? = null; var at = 0.0; var bestAt = 0.0
-                    for ((s, e) in line.zipWithNext()) {
-                        val dx = e[0] - s[0]; val dy = e[1] - s[1]; val l2 = dx * dx + dy * dy
-                        val t = if (l2 <= 0.0) 0.0 else (((p[0] - s[0]) * dx + (p[1] - s[1]) * dy) / l2).coerceIn(0.0, 1.0)
-                        val q = doubleArrayOf(s[0] + t * dx, s[1] + t * dy); val d = hypot(q[0] - p[0], q[1] - p[1])
-                        if (best == null || d < best.first) { best = d to q; bestAt = at + t * hypot(dx, dy) }
-                        at += hypot(dx, dy)
+            val view = AttachView(snapIds.map { it to pos[it]!! },
+                ways.withIndex().filter { (_, w) -> w.onLand && w !in banned && !w.rewalk }.map { (i, w) -> WayView(i, listOf(pos[w.a]!!) + w.via, w.len) },
+                ground, danger, k, lim)
+            fun join(p: DoubleArray, virt: Int, outward: Boolean, who: String): Result? {
+                val at = attacher.attach(view, p)
+                if (at.joins.isEmpty()) return Result(straight, false, "$who is ${at.why ?: "joined to nothing"}")
+                if (at.snapped) snaps++
+                for (j in at.joins) {
+                    val wc = j.cost * SafePath.OFF_NET
+                    val walk = if (outward) j.pts.drop(1) else j.pts.reversed().drop(1)
+                    val id = j.node ?: run {
+                        val w = ways[j.way]; val t = j.t; val q = j.at
+                        val id = nextVirtual--
+                        pos[id] = q
+                        val c = cost(w, k, withDanger)
+                        // (the cut walks straight to the way's ends; the way's own points on either side are kept by the way's arcs)
+                        arc(id, w.a, t * c, listOf(pos[w.a]!!)); arc(w.a, id, t * c, listOf(q))
+                        arc(id, w.b, (1 - t) * c, listOf(pos[w.b]!!)); arc(w.b, id, (1 - t) * c, listOf(q))
+                        for ((oid, ow, ot) in cuts) if (ow === w) { val oq = pos[oid]!!; arc(id, oid, abs(t - ot) * c, listOf(oq)); arc(oid, id, abs(t - ot) * c, listOf(q)) }
+                        cuts.add(Triple(id, w, t))
+                        id
                     }
-                    Triple(w, if (w.len <= 0.0) 0.0 else bestAt / w.len, best!!)
-                }.sortedBy { it.third.first }
-                val nearest = cands.firstOrNull()?.third?.first ?: Double.MAX_VALUE
-                if (nearest > lim) return "${nearest.toInt()} yd from the nearest way (no node within ${SNAP_YD.toInt()} yd; attach at most ${lim.toInt()} yd)"
-                var any = false
-                for ((w, t, b) in cands.filter { it.third.first <= lim }.take(ATTACH_CANDIDATES)) {
-                    val q = b.second
-                    val walk = leg.to(q) ?: continue
-                    any = true
-                    val id = nextVirtual--
-                    pos[id] = q
-                    val c = cost(w, k, withDanger)
-                    // (the cut walks straight to the way's ends; the way's own points on either side are kept by the way's arcs)
-                    arc(id, w.a, t * c, listOf(pos[w.a]!!)); arc(w.a, id, t * c, listOf(q))
-                    arc(id, w.b, (1 - t) * c, listOf(pos[w.b]!!)); arc(w.b, id, (1 - t) * c, listOf(q))
-                    for ((oid, ow, ot) in cuts) if (ow === w) { val oq = pos[oid]!!; arc(id, oid, abs(t - ot) * c, listOf(oq)); arc(oid, id, abs(t - ot) * c, listOf(q)) }
-                    cuts.add(Triple(id, w, t))
-                    val wc = walk.cost * SafePath.OFF_NET
-                    attachYd[id] = walk.yd
-                    if (outward) arc(virt, id, wc, walk.pts.drop(1)) else arc(id, virt, wc, walk.pts.reversed().drop(1))
+                    if (outward) { arc(virt, id, wc, walk); attachYd[id + OUT] = j.yd } else { arc(id, virt, wc, walk); attachYd[id + IN] = j.yd }
                 }
-                return if (any) null else "no walk of ${lim.toInt()} yd or less reaches a way (walls, deep water)"
+                return null
             }
-            if (!snap(from, start, true)) attach(from, start, true)?.let { return Result(straight, false, "the player is $it") to null }
-            if (!snap(goal, end, false)) attach(goal, end, false)?.let { return Result(straight, false, "the goal is $it") to null }
+            join(from, start, true, "the player")?.let { return it to null }
+            join(goal, end, false, "the goal")?.let { return it to null }
             // the ground's own walk straight there, the graph's rival for a goal this near
             if (hypot(goal[0] - from[0], goal[1] - from[1]) <= DIRECT_MAX_YD)
                 Leg(ground, danger, k, from, DIRECT_MAX_YD * 1.5).to(goal)?.let { arc(start, end, it.cost * SafePath.DIRECT, it.pts.drop(1)) }
@@ -331,8 +307,8 @@ object ShippedRoute {
             if (hypot(pts.last()[0] - goal[0], pts.last()[1] - goal[1]) > 0.5) pts.add(goal)
             val out = tidy(pts)
             val first = arcs.first(); val last = arcs.last()
-            val onYd = attachYd[first.second.to + OUT] ?: attachYd[first.second.to] ?: 0.0
-            val offYd = attachYd[last.first + IN] ?: attachYd[last.first] ?: 0.0
+            val onYd = attachYd[first.second.to + OUT] ?: 0.0
+            val offYd = attachYd[last.first + IN] ?: 0.0
             val direct = arcs.size == 1
             val swims = out.count { Climb.atSwim(it) }
             return Result(out, true, (if (direct) "the ground's own walk (near)" else "on the shipped network") +
@@ -341,6 +317,52 @@ object ShippedRoute {
                 (if (swimOffered > 0) ", swim offered ($swims swum points)" else ""),
                 attachFromYd = onYd, attachToYd = offYd, swims = swims, snapped = snaps == 2, roadmapYd = rmYd) to null
         }
+    }
+
+    // ---------------------------------------------------------------- THE ATTACH SEAM (helper U2 owns the attach; U1 the graph)
+
+    /** a way an end may be cut into: [index] the graph's way, [line] its points from its node a to its node b, [len] its yards */
+    class WayView(val index: Int, val line: List<DoubleArray>, val len: Double)
+    /** what an [Attacher] sees: the nodes an end may snap to (id, world point; no cave's or lift's inside point), the ways it may be
+     *  cut into (no cave, lift or unwalked rewalk way), the ground and danger the router has ([k] the danger's weight), and the long
+     *  attach's limit [lim] (yd walked) */
+    class AttachView(val nodes: List<Pair<Int, DoubleArray>>, val ways: List<WayView>, val ground: (Double, Double) -> Float,
+                     val danger: ((Double, Double) -> Float)?, val k: Double, val lim: Double)
+    /** one join of an end: onto graph node [node], or (node null) cut into way [way] ([WayView.index]) at [t] (0..1 of its yards) at
+     *  [at]; [pts] the walk from the end to it (the end first, the joined point last), [cost] its cost (the ground's and the danger's;
+     *  the router adds SafePath.OFF_NET), [yd] its walked yards */
+    class Join(val node: Int?, val way: Int, val t: Double, val at: DoubleArray, val pts: List<DoubleArray>, val cost: Double, val yd: Double)
+    /** an end's joins (none: no route, [why] said); [snapped]: a short snap (no long attach) */
+    class Attach(val joins: List<Join>, val snapped: Boolean, val why: String? = null)
+    /** THE SEAM: how an end ([p], world) joins the graph; called for the player (walked out from p) and the goal (walked in to p) */
+    fun interface Attacher { fun attach(v: AttachView, p: DoubleArray): Attach }
+
+    /** the attach as built by U1: the nearest nodes within [SNAP_YD] by the ground's walk ([Leg]); with none, a walk onto each of the
+     *  nearest ways, [AttachView.lim] walked at most */
+    val DefaultAttach = Attacher { v, p ->
+        val snapLeg = Leg(v.ground, v.danger, v.k, p, SNAP_WALK_YD)
+        val snaps = v.nodes.filter { hypot(it.second[0] - p[0], it.second[1] - p[1]) <= SNAP_YD }
+            .sortedBy { hypot(it.second[0] - p[0], it.second[1] - p[1]) }.take(SNAP_CANDIDATES)
+            .mapNotNull { (id, q) -> snapLeg.to(q)?.let { w -> Join(id, -1, 0.0, q, w.pts, w.cost, w.yd) } }
+        if (snaps.isNotEmpty()) return@Attacher Attach(snaps, true)
+        val cands = v.ways.map { w ->
+            var best: Pair<Double, DoubleArray>? = null; var at = 0.0; var bestAt = 0.0
+            for ((s, e) in w.line.zipWithNext()) {
+                val dx = e[0] - s[0]; val dy = e[1] - s[1]; val l2 = dx * dx + dy * dy
+                val t = if (l2 <= 0.0) 0.0 else (((p[0] - s[0]) * dx + (p[1] - s[1]) * dy) / l2).coerceIn(0.0, 1.0)
+                val q = doubleArrayOf(s[0] + t * dx, s[1] + t * dy); val d = hypot(q[0] - p[0], q[1] - p[1])
+                if (best == null || d < best.first) { best = d to q; bestAt = at + t * hypot(dx, dy) }
+                at += hypot(dx, dy)
+            }
+            Triple(w, if (w.len <= 0.0) 0.0 else bestAt / w.len, best!!)
+        }.sortedBy { it.third.first }
+        val nearest = cands.firstOrNull()?.third?.first ?: Double.MAX_VALUE
+        if (nearest > v.lim) return@Attacher Attach(emptyList(), false,
+            "${nearest.toInt()} yd from the nearest way (no node within ${SNAP_YD.toInt()} yd; attach at most ${v.lim.toInt()} yd)")
+        val leg = Leg(v.ground, v.danger, v.k, p, v.lim)
+        val joins = cands.filter { it.third.first <= v.lim }.take(ATTACH_CANDIDATES).mapNotNull { (w, t, b) ->
+            leg.to(b.second)?.let { walk -> Join(null, w.index, t, b.second, walk.pts, walk.cost, walk.yd) } }
+        Attach(joins, false, if (joins.isEmpty()) "no walk of ${v.lim.toInt()} yd or less reaches a way (walls, deep water)" else null)
     }
 
     /** an edge kind of NET1 v2: a way joining the net's pieces, or a piece to a cave's mouth (costed as a spur) */

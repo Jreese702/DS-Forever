@@ -228,6 +228,20 @@ class ShippedRouteTest {
         }
     }
 
+    @Test fun theAttachIsASeamAnotherAttacherReplaces() {
+        // an attacher that joins each end straight to the nearest node, whatever the ground (U2's seam: ShippedRoute.Attacher)
+        val straightTo = ShippedRoute.Attacher { v, p ->
+            val (id, q) = v.nodes.minByOrNull { hypot(it.second[0] - p[0], it.second[1] - p[1]) }!!
+            val d = hypot(q[0] - p[0], q[1] - p[1])
+            ShippedRoute.Attach(listOf(ShippedRoute.Join(id, -1, 0.0, q, listOf(p, q), d, d)), true)
+        }
+        val r = ShippedRoute.plan(straightRoad(), flat, null, doubleArrayOf(300.0, -50.0), doubleArrayOf(300.0, 1050.0), attacher = straightTo)
+        assertTrue(r.why, r.reached); assertTrue(r.snapped)
+        assertEquals(listOf(listOf(300.0, -50.0), listOf(0.0, 0.0), listOf(0.0, 1000.0), listOf(300.0, 1050.0)), r.pts.map { it.toList() })
+        // the default refuses the same ends (300 yd off every way)
+        assertFalse(ShippedRoute.plan(straightRoad(), flat, null, doubleArrayOf(300.0, -50.0), doubleArrayOf(300.0, 1050.0)).reached)
+    }
+
     // ---------------------------------------------------------------- test20: no v1 / v2 switch
 
     @Test fun theRetiredV2PrefIsRemovedOnce() {
