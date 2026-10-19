@@ -224,14 +224,8 @@ class RenderSafePath {
         // grid's bridge cells (the walkway's whole bounding box) are water again off that floor: the lake beside the deck is no bridge
         var floorCells: Set<Long> = emptySet()
         fun fkey(x: Double, y: Double) = Math.floorDiv(Math.round(x), 4L) * 100000 + Math.floorDiv(Math.round(y), 4L)
-        // and a spot on a walkway's deck (its floor triangles, [deckAt]) is never water, whatever the 8 yd water cell it is in reads (a
-        // narrow pier's edge in a cell whose middle is off it: Ratchet's dock tip); off the deck in a bridge's cell, the water there
-        val deep: (Double, Double) -> Boolean = { x, y -> val d = waterAt(x, y)
-            if (d.isNaN() || deckAt(x, y)) false
-            // off the deck in a bridge's cell: the water as it is (Felwood: a floor within 4 yd let a route step off the Bloodvenom dock into
-            // 2.6-4.7 yd water)
-            else if (d == SafePath.Water.BRIDGE) rawDeep != null && rawDeep(x, y)
-            else !(waterGrid?.wadeable(x, y) ?: (d <= SafePath.FORD_DEPTH)) }
+        // deep water, a wall (ZoneInputs.deep: off a walkway's deck, deeper than a ford or a narrow stream)
+        val deep: (Double, Double) -> Boolean = zi.deep
         val reachedOf = HashMap<String, Boolean>()
         var links: List<Climb.Link> = emptyList()
         // the route sequence (the app's SafeRoute: the network's way, the wade retry, the detour cap), the device's own
