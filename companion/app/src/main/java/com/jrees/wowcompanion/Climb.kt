@@ -122,24 +122,91 @@ object Climb {
                 }
             }
         }
+        /** the rooms' footprints [solid] was made from, when they are known (written with the lattice: [write]) */
+        var rooms: Rooms? = null
+            set(v) { field = v; if (v != null) solid = v::holds }
+        /** CLB3 (gzip, the .part file renamed into place): [MAGIC], [RULES_VERSION], gr0, gc0, nx, ny, a byte of what follows (1 the
+         *  faces, 2 the 45-48 degree faces, 4 the rooms), the steps (a byte a vertex), the faces (a byte a cell), the 45-48 degree faces
+         *  (4 bits a cell, two cells a byte), the rooms ([Rooms.write]) */
         fun write(f: File) {
             f.parentFile?.mkdirs()
-            DataOutputStream(GZIPOutputStream(f.outputStream().buffered())).use { o ->
-                o.writeInt(MAGIC); o.writeInt(gr0); o.writeInt(gc0); o.writeInt(nx); o.writeInt(ny); o.write(cls)
-                o.write(faces ?: ByteArray(nx * ny))
+            val tmp = File(f.path + ".part")
+            DataOutputStream(GZIPOutputStream(tmp.outputStream().buffered())).use { o -> write(o) }
+            if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+        }
+        fun write(o: DataOutputStream) {
+            o.writeInt(MAGIC); o.writeInt(RULES_VERSION); o.writeInt(gr0); o.writeInt(gc0); o.writeInt(nx); o.writeInt(ny)
+            val f48 = faces48; val rs = rooms
+            o.writeByte((if (faces != null) 1 else 0) or (if (f48 != null) 2 else 0) or (if (rs != null) 4 else 0))
+            o.write(cls)
+            faces?.let { o.write(it) }
+            if (f48 != null) o.write(ByteArray((nx * ny + 1) / 2) { k -> ((f48[2 * k].toInt() and 15) or
+                ((if (2 * k + 1 < f48.size) f48[2 * k + 1].toInt() and 15 else 0) shl 4)).toByte() })
+            rs?.write(o)
+        }
+        companion object {
+            const val MAGIC = 0x434C4233                       // "CLB3"
+            /** CLB2 (the steps and the faces only: no 45-48 degree faces, no rooms) is never read: the lattice is made again */
+            const val MAGIC_CLB2 = 0x434C4232
+            /** the lattice in [f]: null when it is none, an old format (CLB2) or made by other rules ([RULES_VERSION]) */
+            fun read(f: File): Grid? = runCatching { DataInputStream(GZIPInputStream(f.inputStream().buffered())).use { read(it) } }.getOrNull()
+            fun read(i: DataInputStream): Grid? {
+                if (i.readInt() != MAGIC) return null
+                if (i.readInt() != RULES_VERSION) return null
+                val gr0 = i.readInt(); val gc0 = i.readInt(); val nx = i.readInt(); val ny = i.readInt()
+                if (nx <= 0 || ny <= 0 || nx.toLong() * ny > MAX_VERTICES) return null
+                val has = i.readUnsignedByte()
+                val cls = ByteArray(nx * ny).also { i.readFully(it) }
+                val faces = if (has and 1 != 0) ByteArray(nx * ny).also { i.readFully(it) } else null
+                val f48 = if (has and 2 != 0) ByteArray((nx * ny + 1) / 2).also { i.readFully(it) }.let { p ->
+                    ByteArray(nx * ny) { k -> ((p[k / 2].toInt() shr (4 * (k % 2))) and 15).toByte() } } else null
+                val rooms = if (has and 4 != 0) Rooms.read(i) else null
+                return Grid(gr0, gc0, nx, ny, cls, faces).also { it.faces48 = f48; if (rooms != null) it.rooms = rooms }
+            }
+            /** a lattice bigger than this is no zone's (a damaged file) */
+            const val MAX_VERTICES = 40_000_000L
+        }
+    }
+
+    /**
+     * THE ROOMS NO STRAIGHT LINE CUTS THROUGH (the user, 2026-10-18: "No cutting through"), as [Grid.solid] reads them: each ADT tile's
+     * own placements' room footprints (WorldBuildings.feet), a spot inside one of its tile's feet. Kept by tile, as the obj0 ADTs list
+     * them, so the lattice's file says exactly what the harness's own lookup does (a footprint is found from the tiles that place it).
+     * [byTile] is keyed by [tileKey] (the ADT tile's column and row).
+     */
+    class Rooms(val byTile: Map<Int, List<Buildings.Foot>>) {
+        fun holds(wx: Double, wy: Double): Boolean {
+            val tc = floor((ORG - wy) / MapHarvest.ADT_YD).toInt(); val tr = floor((ORG - wx) / MapHarvest.ADT_YD).toInt()
+            return byTile[tileKey(tc, tr)]?.any { it.holds(wx, wy) } == true
+        }
+        val size get() = byTile.values.sumOf { it.size }
+        fun write(o: DataOutputStream) {
+            o.writeInt(byTile.size)
+            for ((k, fs) in byTile.entries.sortedBy { it.key }) {
+                o.writeInt(k); o.writeInt(fs.size)
+                for (f in fs) for (v in doubleArrayOf(f.ox, f.oy, f.cs, f.sn, f.lx0, f.lx1, f.ly0, f.ly1)) o.writeDouble(v)
             }
         }
         companion object {
-            const val MAGIC = 0x434C4232                       // "CLB2": the steps, then the cells' faces
-            fun read(f: File): Grid? = runCatching {
-                DataInputStream(GZIPInputStream(f.inputStream().buffered())).use { i ->
-                    if (i.readInt() != MAGIC) return null
-                    val gr0 = i.readInt(); val gc0 = i.readInt(); val nx = i.readInt(); val ny = i.readInt()
-                    Grid(gr0, gc0, nx, ny, ByteArray(nx * ny).also { i.readFully(it) }, ByteArray(nx * ny).also { i.readFully(it) })
+            fun tileKey(tc: Int, tr: Int) = (tc shl 16) or (tr and 0xFFFF)
+            fun read(i: DataInputStream): Rooms {
+                val n = i.readInt(); require(n in 0..4096)
+                val m = HashMap<Int, List<Buildings.Foot>>(n * 2)
+                repeat(n) {
+                    val k = i.readInt(); val c = i.readInt(); require(c in 0..1_000_000)
+                    m[k] = List(c) { val v = DoubleArray(8) { i.readDouble() }; Buildings.Foot(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]) }
                 }
-            }.getOrNull()
+                return Rooms(m)
+            }
         }
     }
+
+    /** THE RULES THE LATTICE IS MADE BY (written in its file, CLB3): bumped whenever a rule changes what [build] or the inputs to it make
+     *  (a made lattice of other rules is made again). Pinned to the rules commit [RULES_COMMIT] */
+    const val RULES_VERSION = 3
+    /** feat/safepath-rules-3 at de23d76: 48 degree short steps, solid room footprints, the 450 yd margin, every WMO group, caves by shape,
+     *  name-less flat decks, the narrow-stream wade */
+    const val RULES_COMMIT = "de23d76"
 
     /**
      * THE FLOOR A WALKER IS ON, at each vertex of the lattice over world rect [t] / [b] / [l] / [r] under a walkway's floors (a bridge's
