@@ -348,12 +348,18 @@ object WorldBuildings {
      * [M2_MIN_SPAN_YD] (a brick or a pylon's top named for the bridge it decorates - RedRidgeBridgeBrick01, 3 yd - is no deck); else null
      */
     fun m2BridgeFloor(m2: ByteArray): FloatArray? {
-        if (!isM2Bridge(m2Name(m2))) return null
+        val name = m2Name(m2)
+        // ... or a model with no name of its own (WoW Forever's new piers: Tanaris' Steamwheedle Port, 7539395 / 7539398) whose floor is
+        // one flat board: rising no more than [M2_FLAT_RISE_YD] over its span (a rock or a tree always has its name)
+        if (!isM2Bridge(name) && name.isNotBlank()) return null
         val t = m2FloorTris(m2); if (t.isEmpty()) return null
-        var x0 = Float.MAX_VALUE; var x1 = -Float.MAX_VALUE; var y0 = Float.MAX_VALUE; var y1 = -Float.MAX_VALUE
-        for (v in 0 until t.size / 3) { x0 = minOf(x0, t[v * 3]); x1 = maxOf(x1, t[v * 3]); y0 = minOf(y0, t[v * 3 + 1]); y1 = maxOf(y1, t[v * 3 + 1]) }
+        var x0 = Float.MAX_VALUE; var x1 = -Float.MAX_VALUE; var y0 = Float.MAX_VALUE; var y1 = -Float.MAX_VALUE; var z0 = Float.MAX_VALUE; var z1 = -Float.MAX_VALUE
+        for (v in 0 until t.size / 3) { x0 = minOf(x0, t[v * 3]); x1 = maxOf(x1, t[v * 3]); y0 = minOf(y0, t[v * 3 + 1]); y1 = maxOf(y1, t[v * 3 + 1])
+            z0 = minOf(z0, t[v * 3 + 2]); z1 = maxOf(z1, t[v * 3 + 2]) }
+        if (name.isBlank() && z1 - z0 > M2_FLAT_RISE_YD) return null
         return t.takeIf { maxOf(x1 - x0, y1 - y0) >= M2_MIN_SPAN_YD }
     }
+    const val M2_FLAT_RISE_YD = 2.0
     const val M2_MIN_SPAN_YD = 8.0
     /** [p]'s deck from its model's own floor triangles ([m2FloorTris]: cached per model by the callers); null when there are none */
     fun m2DeckOf(p: Placement, t: FloatArray): Deck? {

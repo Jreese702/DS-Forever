@@ -101,6 +101,8 @@ class WorldBuildingsTest {
         assertTrue(WorldBuildings.m2BridgeFloor(m2("ElwynnTree01")) == null)
         // a brick named for its bridge (RedRidgeBridgeBrick01, 3 yd) is no deck
         assertTrue(WorldBuildings.m2BridgeFloor(m2("RedRidgeBridgeBrick01", deckY = 1f)) == null)
+        // a model with no name (WoW Forever's new piers) whose floor is one flat board 32 yd long is a deck
+        assertTrue(WorldBuildings.m2BridgeFloor(m2("")) != null)
     }
 
     @Test fun anM2BridgesDeckIsItsCollisionFloor() {
