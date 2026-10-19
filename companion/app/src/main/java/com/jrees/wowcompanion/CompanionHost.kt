@@ -3040,13 +3040,18 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val routeWp = RouteWaypoint()
     private fun routePinTick() {
         polestarTick()
-        val pad = questsPad ?: return
-        if (pad.optJSONObject("rows")?.has(RouteWaypoint.ROW) != true) return          // an older add-on: no pin at all
-        val cols = routeWp.tick(mapView.routePin(), SystemClock.elapsedRealtime())
+        val pad = questsPad ?: return pinState("none: no quests pad yet")
+        if (pad.optJSONObject("rows")?.has(RouteWaypoint.ROW) != true) return pinState("none: the add-on has no \"${RouteWaypoint.ROW}\" row (an older add-on, or the pad's row budget full)")
+        val want = mapView.routePin(); pinState(mapView.pinWhy)
+        val cols = routeWp.tick(want, SystemClock.elapsedRealtime())
         if (cols.isEmpty()) return
         Log.i("WCMAP", "route pin: tap $cols (${mapView.pinWhy})")
         TapBridge.taps(this, pad, cols.map { RouteWaypoint.ROW to it }) { why -> Log.i("WCMAP", "route pin: tap failed: $why") }
     }
+
+    // why the game's pin is or isn't set, logged once per change (test13: no checkpoint marker on the compass, and no line said why)
+    private var pinStateLast = ""
+    private fun pinState(why: String) { if (why != pinStateLast) { pinStateLast = why; Log.i("WCMAP", "route pin: $why") } }
 
     // POLESTAR AS THE ROUTER (b-route-polestar): PolestarNav decides the taps of Map.lua's row "pnav" (only while the setting is Polestar;
     // switching away cancels its guidance)
