@@ -283,6 +283,8 @@ class RenderSafePath {
         // place built in the air, its own floors (stairs, perimeter paths) up to a stair top, an updraft across to a platform, and the
         // way out (a portal back down). Manual links - the game keeps portals and updrafts server-side
         val manual = org.json.JSONArray()
+        // the same links for the shipped network (NET1, ShippedNet.Link): points marked ground / floor / swim, never their heights
+        val shipLinks = ArrayList<com.jrees.wowcompanion.ShippedNet.Link>()
         var platformAt: DoubleArray? = null
         spec?.optJSONObject("airChain")?.let { ac ->
             fun xyOf(k: String) = ac.optJSONArray(k)?.let { doubleArrayOf(it.getDouble(0), it.getDouble(1)) }
@@ -318,6 +320,10 @@ class RenderSafePath {
                 val yd = if (oneWay) 15.0 else fl.length(pts)                  // a portal or an updraft: a few seconds
                 links = links + Climb.Link(pts, yd, oneWay)
                 manual.put(org.json.JSONObject().put("kind", kind).put("pts", org.json.JSONArray(pts.map { org.json.JSONArray(listOf(it[0], it[1], it[2])) })))
+                // (a portal's ground end is the ground; every other point is on the place's own floors)
+                shipLinks.add(com.jrees.wowcompanion.ShippedNet.Link(kind, "", oneWay, yd, pts.mapIndexed { q, p ->
+                    val ground = (kind == "portal" && q == 0) || (kind == "portal (out)" && q == pts.size - 1)
+                    doubleArrayOf(p[0], p[1], if (ground) 0.0 else Climb.IN_CAVE) }))
             }
             platformAt = doubleArrayOf(fl.xs[plat], fl.ys[plat])
 
@@ -658,6 +664,10 @@ class RenderSafePath {
             val yd = pts.zipWithNext { u, w -> Math.hypot(w[0] - u[0], w[1] - u[1]) }.sum()
             swims.add(Swim(o.optString("name"), island, Climb.Link(pts, yd), pts.first(), pts.last()))
             println("SWIM ${o.optString("name")}: the island's ground ${island.size} vertices; the swim ${yd.toInt()} yd from ${pts.first()[0].toInt()},${pts.first()[1].toInt()} to ${pts.last()[0].toInt()},${pts.last()[1].toInt()}")
+            run { val ix = island.map { cg.wx((it shr 32).toInt()) }; val iy = island.map { cg.wy(it.toInt()) }
+                val cx = ix.average(); val cy = iy.average(); val r = ix.indices.maxOf { Math.hypot(ix[it] - cx, iy[it] - cy) }
+                shipLinks.add(com.jrees.wowcompanion.ShippedNet.Link("swim", o.optString("name"), false, yd,
+                    pts.map { doubleArrayOf(it[0], it[1], Climb.SWIM) }, doubleArrayOf(cx, cy, r))) }
             manual.put(org.json.JSONObject().put("kind", "swim").put("name", o.optString("name")).put("pts", org.json.JSONArray(pts.map { org.json.JSONArray(listOf(it[0], it[1], 0.0)) })))
         } }
         val baseLinks = links
@@ -806,6 +816,27 @@ class RenderSafePath {
         export.put("danger", org.json.JSONObject().put("t", rect.t).put("b", rect.b).put("l", rect.l).put("r", rect.r).put("nx", g.nx).put("ny", g.ny)
             .put("d", org.json.JSONArray((0 until g.nx * g.ny).map { q -> Math.round(g.cell(q % g.nx, q / g.nx) * 100) / 100.0 })))
         File(out, "levels_routes_$tag.json").writeText(export.toString())
+        // THE SHIPPED NETWORK (the user: "Ship our path network"; NET1, ShippedNet): the network the routes ran on (the draft, walls
+        // dropped, the caves' and lifts' ways, the checked exits) and the links (an air chain's, the declared swims), one faction's
+        // section, for tools/safepath-harness/export.sh to gate (segcheck / wetcheck none, no WALLS / EMPTY) and pack
+        if (System.getenv("SAFEPATH_EXPORT") == "1") {
+            val sec = com.jrees.wowcompanion.ShippedNet.section(netC, mine, level, tag, shipLinks) { pa, pb ->
+                var f = 0; val n = maxOf(1, (Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) / 2).toInt())
+                for (t in 0..n) { val x = pa[0] + (pb[0] - pa[0]) * t / n; val y = pa[1] + (pb[1] - pa[1]) * t / n; val d = waterAt(x, y)
+                    f = f or when {
+                        // (the water grid's bridge: a walkway's deck over water - not any floor, a cave's mouth on its own floor)
+                        d == SafePath.Water.BRIDGE -> com.jrees.wowcompanion.ShippedNet.F_BRIDGE
+                        d.isNaN() || d <= 0f -> 0
+                        deep(x, y) -> com.jrees.wowcompanion.ShippedNet.F_SWIM
+                        else -> com.jrees.wowcompanion.ShippedNet.F_WADE } }
+                f }
+            val head = com.jrees.wowcompanion.ShippedNet.Header(map, rect.c, Climb.RULES_VERSION, System.getenv("SAFEPATH_RULES_COMMIT") ?: "",
+                System.getenv("SAFEPATH_BUILD") ?: "", java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString())
+            File(out, "net1_$tag.json").writeText(com.jrees.wowcompanion.ShippedNet.Pack(head, listOf(sec)).toJson().toString())
+            println("NET1 $tag map $map faction $mine: ${sec.net.nodes.size} nodes, ${sec.net.edges.size} ways " +
+                "(${com.jrees.wowcompanion.ShippedNet.FLAG_NAMES.joinToString { (b, nm) -> "$nm ${sec.ways.count { it.flags and b != 0 }}" }}), " +
+                "${sec.net.exits.size} exits, ${sec.links.size} links, ${sec.starts.size} starts, ${sec.checkpoints.size} checkpoints")
+        }
     }
 
 

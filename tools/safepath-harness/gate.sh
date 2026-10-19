@@ -4,6 +4,7 @@
 #   bash tools/safepath-harness/gate.sh --save     run and make this run the baseline (only the rules owner, after a review)
 #   CROSS_ONLY=1 bash tools/safepath-harness/gate.sh   only the cross-zone routes (cross/routes.json), compared as the rest
 #   ONE_FACTION=1 bash tools/safepath-harness/gate.sh  each zone for its own spec's faction only (not the other side's run too)
+#   SAFEPATH_EXPORT=1 bash tools/safepath-harness/gate.sh  also packs the passing zones' networks (NET1) into the app's assets
 # Runs into $SAFEPATH_WORK/gate/run-<time>/ (or $GATE_OUT); one log per zone, gate_<tag>.log. Takes about 30-40 minutes, the
 # cross-zone routes 20 more: their legs, one spec per zone they cross (py/cross.py specs), stitched into cross.json.
 set -u
@@ -47,4 +48,7 @@ done
 (cd "$HERE/py" && PYTHONIOENCODING=utf-8 python cross.py stitch "$OUT" > "$OUT/cross.log" 2>&1; python cross.py draw "$OUT" >> "$OUT/cross.log" 2>&1); grep -E "^CROSS|MISSING" "$OUT/cross.log"
 # the cross-continent planner's checks (cross/plans.json over cross/links.json: one-way portals, rides, flights)
 CROSS_DIR="$HERE/cross" SAFEPATH_TEST=PlanCross bash "$HERE/run.sh" "" "PLAN |^e:|Exception" > "$OUT/plan.log" 2>&1; grep -E "^PLAN" "$OUT/plan.log" | cut -c1-200
+# SAFEPATH_EXPORT=1: the runs above also wrote each zone's NET1 section (run.sh); the zones that pass their own checks are packed
+# into the app's assets (export.sh --pack: py/exportcheck.py, then PackNet)
+[ "${SAFEPATH_EXPORT:-}" = "1" ] && bash "$HERE/export.sh" --pack "$OUT"
 cd "$HERE" && PYTHONIOENCODING=utf-8 python gate.py "$OUT" "$@"

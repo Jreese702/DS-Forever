@@ -133,6 +133,27 @@ Output lines to look for:
 | `WALLS route X crosses a wall on segments [...]` | The hard rule broken. Must never appear. |
 | `GOAL ... not found` | A spec goal that doesn't resolve. |
 
+## Export the shipped network (NET1)
+
+The user's ruling "Ship our path network" (2026-10-19): a zone's own gate-checked network ships in the APK, one file a map,
+`companion/app/src/main/assets/safepath/net/<uiMap>.bin` (gzip JSON, format NET1: `ShippedNet.kt`; the field list is
+`E:/safepath-work/docs/NET1_FORMAT.md`). Only our computed network: never heights, geometry, textures, file ids or table rows.
+
+```bash
+bash tools/safepath-harness/export.sh zephras durotar elwynn     # each zone for both factions, checked, packed into the assets
+bash tools/safepath-harness/export.sh --list my_zones.txt          # the tags in a file
+SAFEPATH_EXPORT=1 bash tools/safepath-harness/gate.sh              # the whole gate, then its passing zones packed
+```
+
+- `SAFEPATH_EXPORT=1 run.sh` makes RenderSafePath write `net1_<tag>.json`: one faction's section of the network the routes ran on
+  (the draft, walled ways dropped, caves and lifts, the checked exits, the air chain's and swims' links). It is stamped with the
+  checkout's commit (`SAFEPATH_RULES_COMMIT`, `-dirty` with uncommitted sources) and the client's Build Key (`SAFEPATH_BUILD`, read
+  from `.build.info` for `WOW_PRODUCT`).
+- `py/exportcheck.py` lets a side ship only when its routes have no WALLS / EMPTY / GOAL not found, segcheck says "none" and wetcheck
+  finds no swim (gate.py's own readings; no baseline comparison).
+- The `PackNet` test packs the passing sections one file a map and reads each back (a byte-identical round trip) - `NET1PACK OK`.
+- Commit the export from a clean checkout: a `-dirty` stamp means the rules that made it are not in git.
+
 ## Other tools (`py/`)
 
 | Tool | Use |
