@@ -39,6 +39,10 @@ object TransportRoutes {
         }
     }
 
+    /** a ride's legs to plan with: itself, and its way back when its path is a single crossing (two docks); a round of three stops or
+     *  more runs one way (path 11167: Menethil -> Southshore -> Auberdine) - its own rides list each leg it runs */
+    fun legs(r: Ride, all: List<Ride>): List<Ride> = if (all.count { it.path == r.path } <= 1) listOf(r, r.back()) else listOf(r)
+
     // ---- WHOSE TOWN A DOCK IS IN (b-route-faction; the user's pick: "the hostile-town rule ... using the game's own data, no hand
     // table"). The game's TaxiNodes table ([DB_TAXI_NODES], read on the device) marks every flight master for the Alliance map
     // (flag [ALLIANCE]), the Horde map ([HORDE]) or both; a dock's town is whoever's flight masters stand within [DOCK_TOWN_YD] of it

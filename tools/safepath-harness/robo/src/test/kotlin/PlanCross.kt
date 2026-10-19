@@ -71,10 +71,13 @@ class PlanCross {
             val mine = if (plan.optString("faction") == "horde") TransportRoutes.HORDE else TransportRoutes.ALLIANCE
             val hops = ArrayList<MultiHop.Hop>(); val left = ArrayList<String>()
             // the rides, both ways; a dock in a hostile town never boarded (fa / fb: its town's faction; links.json may name one)
-            for (r0 in TransportRoutes.fromJson(transports)) {
+            val allRides = TransportRoutes.fromJson(transports)
+            for (r0 in allRides) {
                 val f = rideFaction.optInt(r0.path.toString(), -1)
                 val r1 = if (f < 0) r0 else TransportRoutes.Ride(r0.path, r0.ca, r0.a, r0.cb, r0.b, r0.yd, f, f, r0.air, r0.na, r0.nb)
-                for ((k, rd) in listOf(r1, r1.back()).withIndex()) {
+                // both ways only for a path that is one crossing (two docks); a round of three stops runs one way (path 11167: Menethil ->
+                // Southshore -> Auberdine, the research's one-way legs)
+                for ((k, rd) in TransportRoutes.legs(r1, allRides).withIndex()) {
                     if (rd.hostileDock(mine) != 0) continue
                     val fm = mapAt(rd.ca, rd.a[0].toDouble(), rd.a[1].toDouble()) ?: continue; val tm = mapAt(rd.cb, rd.b[0].toDouble(), rd.b[1].toDouble()) ?: continue
                     if (fm == tm) continue
@@ -99,9 +102,13 @@ class PlanCross {
                 hops.add(MultiHop.Hop(w.getInt("a"), x, y, w.getInt("b"), x, y, 0.0, w.getString("name"), "w:${w.getInt("a")}>${w.getInt("b")}"))
                 hops.add(MultiHop.Hop(w.getInt("b"), x, y, w.getInt("a"), x, y, 0.0, w.getString("name"), "w:${w.getInt("b")}>${w.getInt("a")}")) }
             val ls = links.optJSONArray("links") ?: JSONArray()
+            val has = plan.optJSONArray("has")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
             for (i in 0 until ls.length()) {
                 val k = ls.getJSONObject(i)
                 if (!k.optBoolean("placed", true)) { left.add("${k.getString("id")} (not placed)"); continue }
+                // a link with a requirement (a key, a quest, a race) only for a character that has it (the plan's "has")
+                val req = k.optString("requires")
+                if (req.isNotEmpty() && req !in has) { left.add("${k.getString("id")} (needs $req)"); continue }
                 val fac = k.optString("faction", ""); if (fac == "alliance" && mine != TransportRoutes.ALLIANCE || fac == "horde" && mine != TransportRoutes.HORDE) continue
                 fun end(o: JSONObject) = o.optJSONArray("xy")?.let { doubleArrayOf(it.getDouble(0), it.getDouble(1)) } ?: doubleArrayOf(Double.NaN, Double.NaN)
                 val f = k.getJSONObject("from"); val t = k.getJSONObject("to"); val a = end(f); val b = end(t)

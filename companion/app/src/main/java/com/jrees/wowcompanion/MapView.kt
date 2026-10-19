@@ -2783,7 +2783,8 @@ class MapView(context: Context) : View(context) {
         // the game's boats and zeppelins on this continent (b-travel-layer), never from or to a hostile town (b-route-faction)
         val zid = zoneIdAt
         val mine = TransportRoutes.factionOf(map?.optString("fac", null))
-        if (zid != null) for (r0 in rides()) for (rd in listOf(r0, r0.back())) {
+        // (each ride back too, but on a round of three stops or more: it runs one way - TransportRoutes.legs)
+        if (zid != null) { val all = rides(); for (r0 in all) for (rd in TransportRoutes.legs(r0, all)) {
             if (rd.ca != cont || rd.cb != cont || rd.hostileDock(mine) != 0) continue
             val ax = rd.a[0].toDouble(); val ay = rd.a[1].toDouble(); val bx = rd.b[0].toDouble(); val by = rd.b[1].toDouble()
             val fm = zid(cont, ax, ay) ?: continue; val tm = zid(cont, bx, by) ?: continue
@@ -2791,7 +2792,7 @@ class MapView(context: Context) : View(context) {
             val to = rd.nb ?: name(tm)
             out.add(MultiHop.Hop(fm, ax, ay, tm, bx, by, rd.yd.coerceAtLeast(1.0), "${if (rd.air) "Zeppelin" else "Boat"} to $to",
                 "r:${rd.path}:${ax.toInt()}:${ay.toInt()}"))
-        }
+        } }
         // this character's known flights (TaxiNet: two nodes a flight master showed connected), as the game's taxi flies them
         if (zid != null) {
             val fly = HashSet<Int>()

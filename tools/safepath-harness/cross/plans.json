@@ -11,6 +11,12 @@
    "from": {"cont": 1, "xy": [10311, 832]}, "to": {"cont": 1, "xy": [6418, 503]}, "expect": "gap", "use": ["P10", "r293"]},
   {"id": "horde-no-alliance-boat", "name": "Ratchet → Auberdine for the Horde: never an Alliance boat", "faction": "horde", "flights": false,
    "from": {"cont": 1, "xy": [-956, -3754]}, "to": {"cont": 1, "xy": [6418, 503]}, "avoid": ["r293", "r295", "r11616", "r11167"]},
+  {"id": "auberdine-southshore", "name": "Auberdine → Southshore: the round boat runs one way, so by Menethil", "faction": "alliance", "flights": false,
+   "from": {"cont": 1, "xy": [6418, 503]}, "to": {"cont": 0, "xy": [-857, -540]}, "expect": "plan", "use": ["r295", "r11167"]},
+  {"id": "thelsamar-searinggorge-nokey", "name": "Thelsamar → Searing Gorge without the key: the gate is shut", "faction": "alliance", "flights": false,
+   "from": {"cont": 0, "xy": [-5404, -2894]}, "to": {"cont": 0, "xy": [-6500, -1150]}, "avoid": ["SG-GATE"]},
+  {"id": "thelsamar-searinggorge-key", "name": "Thelsamar → Searing Gorge with the key: through the gate", "faction": "alliance", "flights": false, "has": ["key-searing-gorge"],
+   "from": {"cont": 0, "xy": [-5404, -2894]}, "to": {"cont": 0, "xy": [-6500, -1150]}, "expect": "plan", "use": ["SG-GATE"]},
   {"id": "northshire-ironforge", "name": "Northshire Abbey → the Ironforge gate, by the tram", "faction": "alliance", "flights": false,
    "from": {"cont": 0, "xy": [-8914, -137]}, "to": {"cont": 0, "xy": [-5045, -833]}, "expect": "plan", "use": ["TRAM"]}
  ]
