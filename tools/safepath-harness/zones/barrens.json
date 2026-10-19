@@ -1,0 +1,22 @@
+{"tag": "barrens", "dir": "kalimdor", "faction": "horde", "zone": 1413, "area": 17, "level": 15,
+ "maps": [[1413, 17], [1411, 14], [1412, 215]], "cities": [], "border": [1413, 1411],
+ "title": "The Barrens", "crop": [1612, -5143, -700, -4000],
+ "closeups": [
+  {"name": "Wailing Caverns", "box": [-600, -1150, -1850, -2400]},
+  {"name": "The Crossroads", "box": [-200, -700, -2300, -2850]},
+  {"name": "Ratchet", "box": [-650, -1150, -3450, -3950]},
+  {"name": "Boulder Lode Mine", "box": [1550, 1150, -3300, -3750]},
+  {"name": "The Great Lift", "box": [-4300, -4750, -1600, -2050]}
+ ],
+ "goals": [
+  {"name": "the Wailing Caverns' mouth", "from": {"node": "The Crossroads"}, "to": {"cave": 109550, "near": [-830, -2050]}},
+  {"name": "Ratchet's pier (the boat to Booty Bay)", "from": {"node": "The Crossroads"}, "to": {"wmo": 107922, "near": [-976, -3796]}},
+  {"name": "Camp Taurajo", "from": {"node": "The Crossroads"}, "to": {"node": "Camp Taurajo"}},
+  {"name": "the bridge to Durotar (by Far Watch Post)", "from": {"node": "The Crossroads"}, "to": {"exit": "Durotar"}},
+  {"name": "the Mor'shan Rampart's way to Ashenvale", "from": {"node": "The Crossroads"}, "to": {"exit": "Ashenvale"}},
+  {"name": "Boulder Lode Mine's mouth", "from": {"node": "The Crossroads"}, "to": {"cave": 110984, "near": [1355, -3544]}},
+  {"name": "Dreadmist Den's mouth (Dreadmist Peak)", "from": {"node": "The Crossroads"}, "to": {"cave": 110512, "near": [319, -2204]}},
+  {"name": "the Stagnant Oasis", "from": {"node": "The Crossroads"}, "to": {"camp": "The Stagnant Oasis"}},
+  {"name": "the Great Lift's top (to Thousand Needles)", "from": {"node": "Camp Taurajo"}, "to": {"xy": [-4615, -1856]}},
+  {"name": "Thorn Hill's Razormane den", "from": {"node": "The Crossroads"}, "to": {"cave": 111304, "near": [-139, -3234]}}
+ ]}

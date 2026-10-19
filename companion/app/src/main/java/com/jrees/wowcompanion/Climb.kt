@@ -311,7 +311,10 @@ object Climb {
         if (reached && pts.size >= 2 && inCave(pts[pts.size - 2]) && !inCave(pts.last()) && hypot(pts[pts.size - 2][0] - to[0], pts[pts.size - 2][1] - to[1]) <= 3.0)
             pts.removeAt(pts.size - 1)
         if (reached && !inCave(pts[pts.size - 1])) {
-            if (hypot(pts.last()[0] - to[0], pts.last()[1] - to[1]) <= 0.5) pts[pts.size - 1] = to
+            if (hypot(pts.last()[0] - to[0], pts.last()[1] - to[1]) <= 0.5) {
+                // even the last half yard re-checked: the point before must reach the goal itself (Darkshore's route J)
+                if (pts.size < 2 || g.lineClear(pts[pts.size - 2], to)) pts[pts.size - 1] = to else arrived = false
+            }
             else if (g.lineClear(pts.last(), to)) pts.add(to) else arrived = false
         }
         return Leg(pts, arrived)

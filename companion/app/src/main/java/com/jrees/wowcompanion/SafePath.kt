@@ -36,6 +36,7 @@ object SafePath {
     const val MOUTH = "mouth"              // a cave's mouth: where its floor meets the terrain
     const val LIFT = "lift"                // a lift's ride between its two landings (Caves.Lift; an edge, and its landings' nodes)
     const val DRAFT = "draft"; const val OK = "ok"; const val AVOID = "avoid"; const val REMOVED = "removed"
+    const val REWALK = "rewalk"            // a way whose straight line crosses a wall, its ends joined by the ground's own leg (a lip on a road)
 
     const val CELL_YD = 25.0               // the draft's grid (Roads' and Terrain's cells)
     const val MIN_ROAD_CELLS = 8           // a road patch smaller than this is a texture's speck, not a road
@@ -50,6 +51,8 @@ object SafePath {
     const val CLIMB_STUB = 1.8             // a dead-end spur or trail climbing this hard (its mean walking factor) ...
     const val CLIMB_STUB_YD = 900.0        // ... and shorter than this goes
     const val WELD_YD = 60.0               // a road's end this near another piece's way is welded to it
+    const val WELD_ROUND_FACTOR = 4.0      // ... or its own piece's way, when the way round is this many times the gap ...
+    const val WELD_ROUND_MIN_YD = 150.0    // ... and at least this long
     const val PAINT_FILL_CELLS = 5         // the painted road fills a learned road's gap this many cells along it
     const val PAINTED_COST = 0.5f          // a step on the painted road costs this much of the ground's (a trail follows the paint)
     const val BORDER_END_YD = 320.0        // a road ending this near another zone's ground goes on to it (an exit) ...
@@ -440,10 +443,23 @@ object SafePath {
             val deg = HashMap<Int, Int>()
             for (e in edges) { deg[e.a] = (deg[e.a] ?: 0) + 1; deg[e.b] = (deg[e.b] ?: 0) + 1 }
             val exitNodes = exits.map { it.node }.toHashSet()
+            // the network's own lengths from a node (its edges' cells): a gap within one piece is closed too when the way round is far
+            // longer than the gap (Westfall's main road: its halves 25 yd apart, joined only round the west loop)
+            fun netDist(from: Int): Map<Int, Double> {
+                val adj = HashMap<Int, ArrayList<Pair<Int, Double>>>()
+                for (e in edges) { val w = e.cells.size * CELL_YD; adj.getOrPut(e.a) { ArrayList() }.add(e.b to w); adj.getOrPut(e.b) { ArrayList() }.add(e.a to w) }
+                val dist = HashMap<Int, Double>(); val pq = java.util.PriorityQueue<Pair<Double, Int>>(compareBy { it.first })
+                dist[from] = 0.0; pq.add(0.0 to from)
+                while (pq.isNotEmpty()) { val (d0, u) = pq.poll(); if (d0 > (dist[u] ?: Double.MAX_VALUE)) continue
+                    for ((v, w) in adj[u] ?: continue) { val nd = d0 + w; if (nd < (dist[v] ?: Double.MAX_VALUE)) { dist[v] = nd; pq.add(nd to v) } } }
+                return dist
+            }
             for ((id, d) in deg.toList()) {
                 if (d != 1 || id in exitNodes) continue
                 val c = cellOf(nodes[id].wx, nodes[id].wy).takeIf { it >= 0 } ?: continue
-                val path = search(listOf(c), WELD_YD) { k -> cellEdge[k]?.let { e -> e.a != id && e.b != id && find(e.a) != find(id) } == true } ?: continue
+                val round by lazy { netDist(id) }
+                val path = search(listOf(c), WELD_YD) { k -> cellEdge[k]?.let { e -> e.a != id && e.b != id && (find(e.a) != find(id) ||
+                    minOf(round[e.a] ?: Double.MAX_VALUE, round[e.b] ?: Double.MAX_VALUE) >= maxOf(WELD_ROUND_MIN_YD, WELD_ROUND_FACTOR * hypot(wxOf(k) - nodes[id].wx, wyOf(k) - nodes[id].wy))) } == true } ?: continue
                 val e = cellEdge[path.last()] ?: continue
                 val to = split(e, path.last())
                 emit(id, to, path, ROAD)
@@ -784,7 +800,11 @@ object SafePath {
                 val nx = max(1, ceil((l - r) / WATER_YD).toInt()); val ny = max(1, ceil((t - b) / WATER_YD).toInt())
                 return Water(t, b, l, r, nx, ny, ByteArray(nx * ny) { k ->
                     val x = t - (k / nx + 0.5) * (t - b) / ny; val y = l - (k % nx + 0.5) * (l - r) / nx
-                    val d = depthAt(x, y)
+                    // the deepest of the cell's own four liquid cells (4.17 yd: MH2O's own), each at its middle: one point a cell let a
+                    // route swim a narrow channel (Darkshore: 5.8 yd deep where the cell's middle read 1.0; the user: "Pathing shouldn't
+                    // be in water"). Never a neighbour's: a ford beside the channel stays a ford (Silverpine's river)
+                    var d = Float.NaN
+                    for (dj in listOf(-1.0, 1.0)) for (di in listOf(-1.0, 1.0)) { val v = depthAt(x + dj * WATER_YD / 4, y + di * WATER_YD / 4); if (!v.isNaN() && (d.isNaN() || v > d)) d = v }
                     (if (d.isNaN()) 0 else if (bridgeAt(x, y)) 253 else if (d >= 25.3f) 255 else (1 + (max(0f, d) * 10).roundToInt()).coerceIn(1, 252)).toByte()
                 })
             }
@@ -799,8 +819,13 @@ object SafePath {
                 val cx = ((gx - tc) * 128).toInt().coerceIn(0, 127); val cy = ((gy - tr) * 128).toInt().coerceIn(0, 127)
                 val top = w[cy * 128 + cx]
                 if (top.isNaN()) return Float.NaN
-                val h = heightOf(tc, tr)?.get(cy * 128 + cx) ?: return 10f
-                return if (h.isNaN()) 10f else max(0f, top - h)
+                // the depth over the cell's HIGHEST corner (its shallowest): water deep there is deep all over the cell - a channel's bed
+                // (Darkshore's, 5.8 yd) stays deep; a stream down a slope (Silverpine's, 0.4 yd where it is walked) is shallow at its upper
+                // corners, and one corner alone read its fall as 2-3 yd of depth
+                val hs = heightOf(tc, tr) ?: return 10f
+                var hi = Float.NaN
+                for ((dx, dy) in listOf(0 to 0, 1 to 0, 0 to 1, 1 to 1)) { val v = hs[minOf(127, cy + dy) * 128 + minOf(127, cx + dx)]; if (!v.isNaN() && (hi.isNaN() || v > hi)) hi = v }
+                return if (hi.isNaN()) 10f else max(0f, top - hi)
             }
         }
     }
@@ -818,7 +843,7 @@ object SafePath {
      */
     val ZONES_STEP = object : ArtHarvest.Step {
         override val id = "safepathzones"
-        override val version = 3
+        override val version = 4                       // v4: each water cell the deepest of 9 points
         override val beforePlay = false
         override val weight = 40
         override fun run(job: ArtHarvest.Job) {
@@ -835,7 +860,7 @@ object SafePath {
                 override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Map<Int, Int>>?) = size > 24
             }
             // each root's water and ground, kept while near (the water grid reads them cell by cell)
-            class Wet(val surface: FloatArray?, val ground: FloatArray?, val walks: List<Buildings.Foot>)
+            class Wet(val surface: FloatArray?, val ground: FloatArray?, val walks: List<(Double, Double) -> Boolean>)
             val objs = HashMap<Int, Map<Int, Int>>()
             val wmoGroups = HashMap<Int, List<WorldBuildings.Group>>()
             val wets = object : LinkedHashMap<Long, Wet>(16, 0.75f, true) {
@@ -865,17 +890,22 @@ object SafePath {
                         val b = root[MapHarvest.key(tc, tr)]?.let { g.read(it) } ?: return@run Wet(null, null, emptyList())
                         val surface = Terrain.water(b)
                         // the outdoor walkways over the water (a bridge, a pier): only where the tile has water at all
-                        val walks = if (surface == null) emptyList() else {
+                        // each walkway by its DECK (its outdoor groups' own floor triangles), the box only where the groups can't be read
+                        val walks: List<(Double, Double) -> Boolean> = if (surface == null) emptyList() else {
                             val obj = objs.getOrPut(rect.c) { mapRows[rect.c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) }?.let { Terrain.maidObj0(it) } ?: emptyMap() }
                             obj[MapHarvest.key(tc, tr)]?.let { g.read(it) }?.let { WorldBuildings.placements(it) }?.flatMap { p ->
-                                WorldBuildings.walkways(p, wmoGroups.getOrPut(p.fid) { g.read(p.fid)?.let { WorldBuildings.groups(it) } ?: emptyList() })
+                                val root = g.read(p.fid)
+                                val feet = WorldBuildings.walkways(p, wmoGroups.getOrPut(p.fid) { root?.let { WorldBuildings.groups(it) } ?: emptyList() })
+                                if (feet.isEmpty()) emptyList()
+                                else root?.let { WorldBuildings.deck(p, it) { id -> g.read(id) } }?.takeIf { !it.empty }?.let { d -> listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) }) }
+                                    ?: feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } }
                             } ?: emptyList()
                         }
                         Wet(surface, Terrain.tile(b)?.h, walks)
                     }.also { wets[key] = it }
                 }
                 fun tileOf(wx: Double, wy: Double) = PlaceNames.locate(wx, wy).let { it[0] to it[1] }
-                Water.build(rect.t, rect.b, rect.l, rect.r, { wx, wy -> tileOf(wx, wy).let { (c, r) -> wet(c, r).walks.any { it.holds(wx, wy) } } }) { wx, wy ->
+                Water.build(rect.t, rect.b, rect.l, rect.r, { wx, wy -> tileOf(wx, wy).let { (c, r) -> wet(c, r).walks.any { it(wx, wy) } } }) { wx, wy ->
                     Water.depthOf(wx, wy, { c, r -> wet(c, r).surface }, { c, r -> wet(c, r).ground }) }
                     .write(job.file("safepath/water/$map.bin"))
                 waters.drop(map)
@@ -1549,15 +1579,21 @@ object SafePath {
      * draft draws from 25 yd cells, so a trail can still run over a ridge (Dun Morogh's Brewnall and Coldridge Pass trails) - such a
      * way is marked [REMOVED] (the review still sees it; no route takes it). A cave's way is its own floor's, kept.
      */
-    fun dropWalled(net: Net, walkable: (DoubleArray, DoubleArray) -> Boolean): Net {
+    fun dropWalled(net: Net, walkable: (DoubleArray, DoubleArray) -> Boolean, legYd: ((DoubleArray, DoubleArray) -> Double?)? = null): Net {
         val byId = net.nodes.associateBy { it.id }
         return Net(net.map, net.cont, net.built, net.nodes, net.edges.map { e ->
             val a = byId[e.a]; val b = byId[e.b]
-            if (e.kind == CAVE || e.state == REMOVED || a == null || b == null || a.kind == MOUTH || b.kind == MOUTH ||
-                walkable(doubleArrayOf(a.wx, a.wy), doubleArrayOf(b.wx, b.wy))) e
+            if (e.kind == CAVE || e.kind == LIFT || e.state == REMOVED || a == null || b == null || a.kind == MOUTH || b.kind == MOUTH) return@map e
+            val pa = doubleArrayOf(a.wx, a.wy); val pb = doubleArrayOf(b.wx, b.wy)
+            if (walkable(pa, pb)) return@map e
+            // one lip on a main road (Westfall's, a 50 degree step with level ground a few yards off) is no reason to lose the road: kept
+            // when the ground's own leg joins its ends hardly longer, walked by that leg ([REWALK])
+            val yd = legYd?.invoke(pa, pb)
+            if (yd != null && yd <= REWALK_FACTOR * hypot(a.wx - b.wx, a.wy - b.wy)) Edge(e.a, e.b, e.kind, REWALK, e.src, e.danger, e.climb)
             else Edge(e.a, e.b, e.kind, REMOVED, e.src, e.danger, e.climb)
         }, net.exits, net.reviewed)
     }
+    const val REWALK_FACTOR = 1.5
 
     /**
      * [net] with [caves]' ways (b-route-climb; the user: "Caves like this need to be logically detected and factored"): each way a
@@ -1565,7 +1601,8 @@ object SafePath {
      * a mouth joined by a [SPUR] to the network's nearest node within [ATTACH_YD] (a mouth far from every way stands alone: the
      * review sees it, and the routes reach it by the ground's own legs).
      */
-    fun withCaves(net: Net, caves: List<Caves.Cave>, danger: ((Double, Double) -> Float)? = null): Net {
+    fun withCaves(net: Net, caves: List<Caves.Cave>, danger: ((Double, Double) -> Float)? = null,
+                  zoneAt: ((Double, Double) -> Int)? = null, nameOf: (Int) -> String = { "" }): Net {
         if (caves.none { it.ways.isNotEmpty() }) return net
         val nodes = net.nodes.toMutableList(); val edges = net.edges.toMutableList()
         var next = (nodes.maxOfOrNull { it.id } ?: 0) + 1
@@ -1588,8 +1625,89 @@ object SafePath {
             }
             edges.add(Edge(last, mouth(w.b), CAVE, DRAFT, "cave", danger?.invoke(w.b[0], w.b[1]) ?: 0f))
         }
-        return Net(net.map, net.cont, net.built, nodes, edges, net.exits, net.reviewed)
+        // A TUNNEL OUT (Dun Morogh's South Gate, Loch Modan's gates: the road texture runs through the pass, so the draft drew the road
+        // over the ridge and its exits stood on the ridge): a cave way whose two mouths are on different maps' ground leads into the
+        // other - its far mouth is an exit ([zoneAt]: the uiMap at a spot), "tunnel"
+        val exits = net.exits.toMutableList()
+        if (zoneAt != null) for (c in caves) for (w in c.ways) {
+            val za = zoneAt(w.a[0], w.a[1]); val zb = zoneAt(w.b[0], w.b[1])
+            if (za == zb || za == 0 || zb == 0 || (za != net.map && zb != net.map)) continue
+            val far = if (za == net.map) w.b else w.a; val to = if (za == net.map) zb else za
+            val id = mouths["${Math.round(far[0])},${Math.round(far[1])}"] ?: continue
+            if (exits.none { it.node == id }) exits.add(Exit(id, to, "tunnel", nameOf(to)))
+        }
+        return Net(net.map, net.cont, net.built, nodes, edges, exits, net.reviewed)
     }
+
+    /**
+     * GROUND EXITS (the zone workers: the Barrens' way to Stonetalon by Greatwood Vale, Loch Modan's to the Badlands - walkable, but no
+     * road reaches the border, so the draft made no exit): where the walkable lattice ([g]: no wall step, [dry]) crosses the border
+     * into a neighbour ([zoneAt]: the uiMap at a spot) along a corridor at least [GROUND_EXIT_MIN] crossings wide, with no exit into
+     * that neighbour within [GROUND_EXIT_GAP_YD], an exit on this side of it ("walk"), joined by a trail to the nearest node.
+     */
+    fun groundExits(net: Net, g: Climb.Grid, zoneAt: (Double, Double) -> Int, dry: (Double, Double) -> Boolean, nameOf: (Int) -> String = { "" }): Net {
+        class X(val x: Double, val y: Double, val to: Int)
+        // the walkable ground's regions (no wall step, dry): a crossing counts only from the zone's MAIN ground - a region holding a
+        // quarter of its dry lattice or more (a pocket walled off by cliffs, a mountain top, crosses nowhere a player goes)
+        val n = g.nx * g.ny
+        val zoneOf = IntArray(n) { q -> zoneAt(g.wx(q / g.nx), g.wy(q % g.nx)) }
+        val dryAt = BooleanArray(n) { q -> dry(g.wx(q / g.nx), g.wy(q % g.nx)) }
+        val region = IntArray(n) { -1 }; val ownCount = ArrayList<Int>(); val st = IntArray(n)
+        for (q0 in 0 until n) {
+            if (region[q0] >= 0 || !dryAt[q0]) continue
+            val r = ownCount.size; var own = 0; var sp = 0; st[sp++] = q0; region[q0] = r
+            while (sp > 0) {
+                val q = st[--sp]; if (zoneOf[q] == net.map) own++
+                val i = q % g.nx; val j = q / g.nx
+                for (dj in -1..1) for (di in -1..1) {
+                    if (di == 0 && dj == 0) continue
+                    val vi = i + di; val vj = j + dj; if (vi !in 0 until g.nx || vj !in 0 until g.ny) continue
+                    val v = vj * g.nx + vi; if (region[v] >= 0 || !dryAt[v] || g.step(i, j, di, dj) == Climb.WALL) continue
+                    region[v] = r; st[sp++] = v
+                }
+            }
+            ownCount.add(own)
+        }
+        val ownDry = (0 until n).count { zoneOf[it] == net.map && dryAt[it] }
+        val main = ownCount.indices.filter { ownCount[it] * 4 >= ownDry }.toHashSet()
+        val cross = ArrayList<X>()
+        for (j in 0 until g.ny) for (i in 0 until g.nx) {
+            val q = j * g.nx + i
+            if (region[q] !in main) continue
+            val x = g.wx(j); val y = g.wy(i); val z = zoneOf[q]; if (z != net.map) continue
+            for ((di, dj) in listOf(1 to 0, 0 to 1, -1 to 0, 0 to -1)) {
+                val vi = i + di; val vj = j + dj; if (vi !in 0 until g.nx || vj !in 0 until g.ny) continue
+                val vx = g.wx(vj); val vy = g.wy(vi); val zv = zoneOf[vj * g.nx + vi]
+                if (zv == 0 || zv == net.map || g.step(i, j, di, dj) == Climb.WALL || !dryAt[vj * g.nx + vi]) continue
+                cross.add(X(x, y, zv)); break
+            }
+        }
+        val byId = net.nodes.associateBy { it.id }.toMutableMap()
+        val nodes = net.nodes.toMutableList(); val edges = net.edges.toMutableList()
+        // a drafted "walk" exit off the zone's main ground (on a ridge over a tunnel: Loch Modan's four) leads nowhere: dropped
+        // (a bridge, a gate, a tunnel, a boat is a structure's way: kept)
+        fun onMain(x: Double, y: Double): Boolean { val v = g.at(x, y); return region[v[1] * g.nx + v[0]] in main }
+        val exits = net.exits.filter { e -> e.how != "walk" || byId[e.node]?.let { onMain(it.wx, it.wy) } != false }.toMutableList()
+        var next = (nodes.maxOfOrNull { it.id } ?: 0) + 1
+        val left = cross.toMutableList()
+        while (left.isNotEmpty()) {
+            val seed = left.removeAt(0); val group = arrayListOf(seed); var grew = true
+            while (grew) { grew = false
+                val more = left.filter { c -> c.to == seed.to && group.any { hypot(it.x - c.x, it.y - c.y) <= Climb.STEP * 1.5 } }
+                if (more.isNotEmpty()) { group.addAll(more); left.removeAll(more.toSet()); grew = true } }
+            if (group.size < GROUND_EXIT_MIN) continue
+            val cx = group.map { it.x }.average(); val cy = group.map { it.y }.average()
+            val at = group.minByOrNull { hypot(it.x - cx, it.y - cy) }!!
+            if (exits.any { e -> e.toMap == seed.to && byId[e.node]?.let { hypot(it.wx - at.x, it.wy - at.y) <= GROUND_EXIT_GAP_YD } == true }) continue
+            val id = next++; nodes.add(Node(id, at.x, at.y, EXIT, "ground")); byId[id] = nodes.last()
+            exits.add(Exit(id, seed.to, "walk", nameOf(seed.to)))
+            net.nodes.filter { it.kind != CAVE && it.kind != MOUTH && it.kind != LIFT }.minByOrNull { hypot(it.wx - at.x, it.wy - at.y) }
+                ?.let { edges.add(Edge(it.id, id, TRAIL, DRAFT, "ground")) }
+        }
+        return Net(net.map, net.cont, net.built, nodes, edges, exits, net.reviewed)
+    }
+    const val GROUND_EXIT_MIN = 5          // a crossing corridor this many lattice vertices wide (about 20 yd) ...
+    const val GROUND_EXIT_GAP_YD = 600.0   // ... with no exit into that neighbour this near
 
     fun routeOn(net: Net, fx: Double, fy: Double, tx: Double, ty: Double, leg: (DoubleArray, DoubleArray) -> List<DoubleArray>?,
                 toExit: Boolean = false, clear: ((DoubleArray, DoubleArray) -> Boolean)? = null,
@@ -1615,7 +1733,7 @@ object SafePath {
         // no way at all: left out, so the network's search goes round by the ways that are (a cave's own floor is its own)
         val walked = if (walkable == null) net else Net(net.map, net.cont, net.built, net.nodes, net.edges.filter { e ->
             val a = byId[e.a]; val b = byId[e.b]
-            e.kind == CAVE || e.kind == LIFT || a == null || b == null || a.kind == MOUTH || b.kind == MOUTH || walkable(doubleArrayOf(a.wx, a.wy), doubleArrayOf(b.wx, b.wy))
+            e.kind == CAVE || e.kind == LIFT || e.state == REWALK || a == null || b == null || a.kind == MOUTH || b.kind == MOUTH || walkable(doubleArrayOf(a.wx, a.wy), doubleArrayOf(b.wx, b.wy))
         }, net.exits, net.reviewed)
         val mid = route(walked, on[0], on[1], off[0], off[1], clear = clear) ?: listOf(on, off)
         val exitEnd = toExit && hypot(off[0] - tx, off[1] - ty) > 1.0 && net.exits.any { x -> byId[x.node]?.let { it.wx == off[0] && it.wy == off[1] } == true }

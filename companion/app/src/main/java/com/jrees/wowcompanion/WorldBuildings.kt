@@ -111,6 +111,69 @@ object WorldBuildings {
         }
     }
 
+    /** a WMO root's group files (GFID: the groups' fileDataIDs, the first [groups] of them the full-detail ones), empty when none */
+    fun groupFiles(root: ByteArray): IntArray {
+        var o = 0
+        while (o + 8 <= root.size) {
+            val n = Db2.le32(root, o + 4)
+            if (n < 0 || o + 8 + n > root.size) break
+            if (tag(root, o) == "GFID") return IntArray(n / 4) { Db2.le32(root, o + 8 + it * 4) }
+            o += 8 + n
+        }
+        return IntArray(0)
+    }
+
+    /**
+     * A WALKWAY'S DECK (b-route-climb; Darkshore's Auberdine pier, Mulgore's Stonebull bridge, Ratchet's pier: a walkway's bounding
+     * box over the water let routes walk on 21 yd deep sea beside the deck): its outdoor groups' own walkable floor triangles in
+     * world 2D, bucketed. [holds] a spot within [DECK_MARGIN_YD] of a triangle.
+     */
+    class Deck(private val tris: List<DoubleArray>) {
+        private val grid = HashMap<Long, ArrayList<Int>>()
+        init { for ((k, t) in tris.withIndex()) {
+            val x0 = minOf(t[0], t[2], t[4]) - DECK_MARGIN_YD; val x1 = maxOf(t[0], t[2], t[4]) + DECK_MARGIN_YD
+            val y0 = minOf(t[1], t[3], t[5]) - DECK_MARGIN_YD; val y1 = maxOf(t[1], t[3], t[5]) + DECK_MARGIN_YD
+            for (i in Math.floorDiv(x0.toLong(), 16L)..Math.floorDiv(x1.toLong(), 16L)) for (j in Math.floorDiv(y0.toLong(), 16L)..Math.floorDiv(y1.toLong(), 16L))
+                grid.getOrPut(i * 1000003L + j) { ArrayList() }.add(k)
+        } }
+        val empty get() = tris.isEmpty()
+        fun holds(x: Double, y: Double): Boolean = grid[Math.floorDiv(x.toLong(), 16L) * 1000003L + Math.floorDiv(y.toLong(), 16L)]?.any { k ->
+            val t = tris[k]; inTri(t, x, y) || segDist(t[0], t[1], t[2], t[3], x, y) <= DECK_MARGIN_YD ||
+                segDist(t[2], t[3], t[4], t[5], x, y) <= DECK_MARGIN_YD || segDist(t[4], t[5], t[0], t[1], x, y) <= DECK_MARGIN_YD } == true
+        private fun inTri(t: DoubleArray, x: Double, y: Double): Boolean {
+            val d0 = (t[2] - t[0]) * (y - t[1]) - (t[3] - t[1]) * (x - t[0]); val d1 = (t[4] - t[2]) * (y - t[3]) - (t[5] - t[3]) * (x - t[2])
+            val d2 = (t[0] - t[4]) * (y - t[5]) - (t[1] - t[5]) * (x - t[4])
+            return !((d0 < 0 || d1 < 0 || d2 < 0) && (d0 > 0 || d1 > 0 || d2 > 0))
+        }
+        private fun segDist(ax: Double, ay: Double, bx: Double, by: Double, x: Double, y: Double): Double {
+            val dx = bx - ax; val dy = by - ay; val l2 = dx * dx + dy * dy
+            val u = if (l2 <= 0.0) 0.0 else (((x - ax) * dx + (y - ay) * dy) / l2).coerceIn(0.0, 1.0)
+            return Math.hypot(ax + u * dx - x, ay + u * dy - y)
+        }
+    }
+    const val DECK_MARGIN_YD = 1.0
+
+    /**
+     * placement [p]'s deck: the floor triangles of its outdoor groups ([walkways]' groups), read from its group files ([root]'s GFID,
+     * [read] a file by its id); null when the groups can't be read (the caller keeps the bounding boxes then)
+     */
+    fun deck(p: Placement, root: ByteArray, read: (Int) -> ByteArray?): Deck? {
+        val gs = groups(root); val files = groupFiles(root)
+        if (gs.isEmpty() || files.size < gs.size) return null
+        val city = isCity(p, gs)
+        val cs = Math.cos(p.yaw); val sn = Math.sin(p.yaw)
+        val tris = ArrayList<DoubleArray>()
+        for ((k, g) in gs.withIndex()) {
+            if (!(city || (g.exterior && !g.interior))) continue
+            val bytes = files[k].takeIf { it != 0 }?.let(read) ?: return null
+            val t = Caves.floorTris(bytes)
+            for (q in 0 until t.size / 9) tris.add(DoubleArray(6) { c -> val v = q * 9 + (c / 2) * 3
+                val lx = t[v] * p.scale; val ly = t[v + 1] * p.scale
+                if (c % 2 == 0) p.ox - lx * cs + ly * sn else p.oy - lx * sn - ly * cs })
+        }
+        return Deck(tris)
+    }
+
     /** wider than this (yd), a WMO is a city or a stretch of terrain (Stormwind, Ironforge's mountain): no rooms as walls; level */
     const val CITY_YD = 300.0
     fun isCity(p: Placement, groups: List<Group>): Boolean {

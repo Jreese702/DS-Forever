@@ -1,0 +1,19 @@
+{"tag": "silverpine", "dir": "azeroth", "faction": "horde", "zone": 1421, "area": 130, "level": 13, "friendlyMinLevel": 100,
+ "maps": [[1421, 130], [1420, 85], [1424, 267], [1416, 36]], "cities": [], "border": [1421, 1420],
+ "title": "Silverpine Forest", "crop": [1666, -1000, 2100, 300],
+ "closeups": [{"name": "Tirisfal border", "box": [1666, 1250, 1150, 400]},
+              {"name": "The Sepulcher", "box": [800, 250, 1950, 1250]},
+              {"name": "Pyrewood and Shadowfang Keep", "box": [0, -550, 1800, 1250]},
+              {"name": "Fenris Isle crossing", "box": [1150, 600, 1150, 400]}],
+ "goals": [
+  {"name": "the road in from Tirisfal to the Sepulcher", "from": {"exit": "Tirisfal Glades"}, "to": {"node": "The Sepulcher"}},
+  {"name": "Malden's Orchard", "from": {"node": "The Sepulcher"}, "to": {"camp": "Malden's Orchard"}},
+  {"name": "the Dead Field (Rot Hide gnolls)", "from": {"node": "The Sepulcher"}, "to": {"camp": "The Dead Field"}},
+  {"name": "the Skittering Dark's mouth (spider cave)", "from": {"node": "The Sepulcher"}, "to": {"cave": 111538, "near": [1300, 1950]}},
+  {"name": "North Tide's Hollow (Moonrage worgen)", "from": {"node": "The Sepulcher"}, "to": {"camp": "North Tide's Hollow"}},
+  {"name": "the Decrepit Ferry", "from": {"node": "The Sepulcher"}, "to": {"camp": "The Decrepit Ferry"}},
+  {"name": "Deep Elem Mine's mouth", "from": {"node": "The Sepulcher"}, "to": {"cave": 110761, "near": [386, 1042]}},
+  {"name": "Fenris Isle (Fenris Keep)", "from": {"node": "The Sepulcher"}, "to": {"node": "Fenris Isle"}},
+  {"name": "Shadowfang Keep's entrance", "from": {"name": "Pyrewood Village", "xy": [-383, 1556]}, "to": {"cave": 109960, "near": [-234, 1561]}},
+  {"name": "Ambermill (its town hall)", "from": {"node": "The Sepulcher"}, "to": {"wmo": 106781, "near": [-130, 835]}}
+ ]}

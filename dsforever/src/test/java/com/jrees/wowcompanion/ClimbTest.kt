@@ -116,9 +116,30 @@ class ClimbTest {
         val g = grid(::basin)
         val net = SafePath.Net(1, 0, "", listOf(SafePath.Node(1, 0.0, 150.0, "road"), SafePath.Node(2, 0.0, -150.0, "road"),
             SafePath.Node(3, 150.0, 150.0, "road")), listOf(SafePath.Edge(1, 2, SafePath.TRAIL), SafePath.Edge(1, 3, SafePath.ROAD)), emptyList())
-        val out = SafePath.dropWalled(net) { a, b -> Climb.walkable(g, a, b) }
-        assertEquals(SafePath.REMOVED, out.edges[0].state)                      // over the pit's rim
+        fun leg(a: DoubleArray, b: DoubleArray) = Climb.route(g, a, b)?.takeIf { it.reached }?.pts?.zipWithNext { p, q -> hypot(q[0] - p[0], q[1] - p[1]) }?.sum()
+        val out = SafePath.dropWalled(net, { a, b -> Climb.walkable(g, a, b) }, ::leg)
+        assertEquals(SafePath.REWALK, out.edges[0].state)                       // over the pit, its rim walked round on level ground
         assertEquals(SafePath.DRAFT, out.edges[1].state)                        // along the level ground
+        // a cliff with no way round: removed
+        val cliff = grid { _, wy -> if (wy > 0) 0.0 else 50.0 }
+        val net2 = SafePath.Net(1, 0, "", listOf(SafePath.Node(1, 0.0, 100.0, "road"), SafePath.Node(2, 0.0, -100.0, "road")), listOf(SafePath.Edge(1, 2, SafePath.TRAIL)), emptyList())
+        val out2 = SafePath.dropWalled(net2, { a, b -> Climb.walkable(cliff, a, b) }) { a, b ->
+            Climb.route(cliff, a, b)?.takeIf { it.reached }?.pts?.zipWithNext { p, q -> hypot(q[0] - p[0], q[1] - p[1]) }?.sum() }
+        assertEquals(SafePath.REMOVED, out2.edges[0].state)
+    }
+
+    @Test fun aRoadOverOneLipIsWalkedRoundIt() {
+        // a lip 40 yd long (a short ridge on the middle vertices) across a road: the ground's leg goes round its end, hardly longer
+        fun lip(gr: Int, gc: Int) = if (abs(org - (gc + 0.5) * s) < 6 && abs(org - (gr + 0.5) * s) < 20) 6f else 0f
+        val g = Climb.build(200.0, -200.0, 200.0, -200.0, { _, _ -> 0f }, centre = ::lip)
+        val net = SafePath.Net(1, 0, "", listOf(SafePath.Node(1, 0.0, 100.0, "road"), SafePath.Node(2, 0.0, -100.0, "road")),
+            listOf(SafePath.Edge(1, 2, SafePath.ROAD)), emptyList())
+        val out = SafePath.dropWalled(net, { a, b -> Climb.walkable(g, a, b) }) { a, b ->
+            Climb.route(g, a, b)?.takeIf { it.reached }?.pts?.zipWithNext { p, q -> hypot(q[0] - p[0], q[1] - p[1]) }?.sum() }
+        assertEquals(SafePath.REWALK, out.edges[0].state)
+        // and a route rides it, walked round the lip
+        val way = SafePath.routeOn(out, 0.0, 190.0, 0.0, -190.0, { a, b -> Climb.route(g, a, b)?.pts }, walkable = { a, b -> Climb.walkable(g, a, b) })!!
+        assertWalkable(g, way)
     }
 
     @Test fun aThinRoadShowsInItsCell() {

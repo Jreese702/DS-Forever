@@ -134,6 +134,17 @@ object Caves {
     class Cave(val fid: Int, val uid: Int, val wx: Double, val wy: Double, val mouths: List<DoubleArray>, val ways: List<Way>,
                val floor: List<DoubleArray> = emptyList())          // its floor's footprint: a point (x, y, z) per FLOOR_SAMPLE_YD square
 
+    /** a group file's MOGP flags (0x8: an outdoor group - a mine's entrance, a bridge; 0x2000: a room), 0 when unreadable */
+    fun groupFlags(group: ByteArray): Int {
+        var o = 0
+        while (o + 8 <= group.size) {
+            val n = Db2.le32(group, o + 4); if (n < 0 || o + 8 + n > group.size) break
+            if (tag(group, o) == "MOGP") return if (n >= 12) Db2.le32(group, o + 8 + 8) else 0
+            o += 8 + n
+        }
+        return 0
+    }
+
     /** a group file's walkable collision triangles, in the WMO's own frame: 9 floats each (three corners x, y, z) */
     fun floorTris(group: ByteArray): FloatArray {
         // MVER, then MOGP: its 0x44-byte header, then its own chunks
@@ -200,10 +211,15 @@ object Caves {
             return xs.size - 1
         }
         val faces = ArrayList<IntArray>()
+        // the outdoor groups' vertices: a mine's entrance (a deep floor meeting the terrain's height under a hill's far side is no mouth:
+        // Westfall's Jangolode, 120 yd inside)
+        val outdoor = HashSet<Int>(); var anyOutdoor = false
         for (g in groups) {
             val t = floorTris(g)
+            val isOut = groupFlags(g) and 0x8 != 0; if (isOut) anyOutdoor = true
             for (q in 0 until t.size / 9) {
                 val a = vid(t[q * 9], t[q * 9 + 1], t[q * 9 + 2]); val b = vid(t[q * 9 + 3], t[q * 9 + 4], t[q * 9 + 5]); val c = vid(t[q * 9 + 6], t[q * 9 + 7], t[q * 9 + 8])
+                if (isOut) { outdoor.add(a); outdoor.add(b); outdoor.add(c) }
                 for ((u, w) in listOf(a to b, b to c, c to a)) if (u != w) { adj[u].add(w); adj[w].add(u) }
                 if (lifts.isNotEmpty()) faces.add(intArrayOf(a, b, c))
             }
@@ -240,7 +256,8 @@ object Caves {
             nc++
         }
         // the mouths: floor at the terrain's own height, on ground one can stand on; grouped per opening, each its best-met vertex
-        val meets = (0 until n).filter { v -> val h = ground(xs[v], ys[v]); !h.isNaN() && abs(h - zs[v]) <= MOUTH_YD && standable(xs[v], ys[v]) }
+        val meets = (0 until n).filter { v -> val h = ground(xs[v], ys[v]); !h.isNaN() && abs(h - zs[v]) <= MOUTH_YD && standable(xs[v], ys[v]) &&
+            (!anyOutdoor || v in outdoor) }
         val mouths = ArrayList<Int>()
         for (v in meets.sortedBy { abs(ground(xs[it], ys[it]) - zs[it]) }) {
             if (mouths.none { m -> comp[m] == comp[v] && hypot(xs[m] - xs[v], ys[m] - ys[v]) < MOUTH_GAP_YD && abs(zs[m] - zs[v]) < MOUTH_GAP_Z }) mouths.add(v)

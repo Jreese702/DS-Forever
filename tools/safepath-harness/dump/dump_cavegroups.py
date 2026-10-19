@@ -12,11 +12,29 @@ for row in csv.reader(open(os.environ.get('LISTFILE', 'E:/wc-scratch-c9979a42/ca
     if len(row) >= 2 and row[1].endswith('.wmo'): names[int(row[0])] = row[1]
 def le(b, o): return struct.unpack_from('<i', b, o)[0]
 caves = []
+# the manifest the harness reads: which WMOs' floors are ways (a cave, a walkway, one asked for by id)
+kinds = {}
+kp = OUT + '/wmogroup/kinds.txt'
+if os.path.exists(kp):
+    for line in open(kp):
+        k, _, v = line.strip().partition(' ')
+        if k.isdigit(): kinds[int(k)] = v
 # extra WMOs by file id (argv[2], comma-separated): bridges, ramps, platforms - every WMO whose groups are dumped is read for its floor
 extra = {int(x) for x in sys.argv[2].split(',')} if len(sys.argv) > 2 else set()
 for f in os.listdir(OUT + '/wmo'):
     fid = int(f); n = names.get(fid, '')
-    if fid not in extra and (not any(k in n for k in ('cave', 'tunnel', 'mine', 'den', 'pass', 'crypt', 'barrow', 'hollow', 'grave')) or '/dungeon/' not in n and 'cave' not in n): continue
+    # and every walkway (a WMO with an outdoor group and no room in it: a bridge, a pier, a dock) - its deck is its floor
+    rb = open(OUT + '/wmo/' + f, 'rb').read(); ro = 0; walkway = False
+    while ro + 8 <= len(rb):
+        rn = le(rb, ro + 4); rt = rb[ro:ro+4][::-1].decode('latin1')
+        if rt == 'MOGI':
+            fls = [le(rb, ro + 8 + g * 32) for g in range(rn // 32)]
+            walkway = any(v & 0x8 for v in fls) and not any(v & 0x2000 for v in fls)     # outdoor only, no room: a bridge, a pier, a dock
+        if rn < 0: break
+        ro += 8 + rn
+    cave = any(k in n for k in ('cave', 'tunnel', 'mine', 'den', 'pass', 'crypt', 'barrow', 'hollow', 'grave')) and ('/dungeon/' in n or 'cave' in n)
+    if fid not in extra and not walkway and not cave: continue
+    kinds[fid] = 'extra' if fid in extra else 'cave' if cave else 'walkway'
     b = open(OUT + '/wmo/' + f, 'rb').read(); o = 0; gf = []
     while o + 8 <= len(b):
         nn = le(b, o + 4); tag = b[o:o+4][::-1].decode('latin1')
@@ -31,3 +49,4 @@ for f in os.listdir(OUT + '/wmo'):
         got += os.path.exists(p)
     caves.append((fid, n, len(gf), got))
 for c in caves: print('%7d %-70s groups %d, got %d' % c)
+open(kp, 'w').write(''.join('%d %s\n' % kv for kv in sorted(kinds.items())))
