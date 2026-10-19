@@ -34,9 +34,14 @@ import kotlin.math.min
 object NetJoins {
     const val SAMPLE_YD = 20.0             // a seed every this far along a ground way (a way passing close to another piece is joined there)
     const val LINK_SNAP_YD = 30.0          // a link's end joins the piece of the nearest node this near
+    const val LINK_CHAIN_YD = 3.0          // two links' ends this near are one (an air chain: portal, stairs, deck, updraft, portal out)
     const val SHORTCUT_FACTOR = 3.0        // an extra join where the net's own way between its ends is this many times longer ...
     const val SHORTCUT_MIN_YD = 600.0      // ... and longer by this much
     const val ALT_APART_YD = 150.0         // a pair's fallback join: its ends this far from the best one's
+    const val ALT_END_YD = 80.0          // a failed end's fallbacks: the same piece's points this near ...
+    const val ALT_ENDS = 3               // ... this many of them
+    const val ALT_TRIES = 6              // pairs of ends tried a meeting
+    const val FLAGGED_YD = 2.5            // a segment segcheck flags: its ground this near kept off on the next pass
     const val END_YD = 0.75                // a join's walk must start and end this near its two ends (else it is no join of THEM)
     val GROUND_EDGE = setOf(SafePath.ROAD, SafePath.TRAIL, SafePath.SPUR)
 
@@ -59,20 +64,23 @@ object NetJoins {
             .put("pts", JSONArray(pts.map { JSONArray(listOf(r1(it[0]), r1(it[1]))) }))
     }
     /** a piece of the net: its [nodes] (ids), its ways' length [yd], its ground seeds' count [seeds] (0: only a cave's floor) */
-    class Piece(val id: Int, val nodes: List<Int>, val ways: Int, val yd: Double, val seeds: Int, val kinds: Map<String, Int>, val x: Double, val y: Double,
+    class Piece(val id: Int, val nodes: List<Int>, val ways: Int, val groundWays: Int, val yd: Double, val seeds: Int, val kinds: Map<String, Int>, val x: Double, val y: Double,
                 val named: List<String>)
     /** a piece (or a group of pieces already joined) still apart from the main one after the joins: [why] */
-    class Apart(val pieces: List<Int>, val nodes: Int, val yd: Double, val x: Double, val y: Double, val why: String)
+    class Apart(val pieces: List<Int>, val nodes: Int, val yd: Double, val x: Double, val y: Double, val why: String, val ground: Boolean = true)
     class Result(val pieces: List<Piece>, val linked: List<String>, val joins: List<Join>, val apart: List<Apart>, val rejected: List<String>,
                  val candidates: Int, val ms: Long) {
         val tree get() = joins.filter { it.why == "tree" }
         val after get() = apart.size + 1
-        fun summary(tag: String) = "JOINS $tag: pieces ${pieces.size} -> $after; joins ${joins.size} (tree ${tree.size}, shortcut ${joins.size - tree.size}), " +
+        /** pieces with a ground way (road, trail, spur: not only a cave's floor) before, and groups holding one after */
+        val groundBefore get() = pieces.count { it.groundWays > 0 }
+        val groundAfter get() = 1 + apart.count { it.ground }
+        fun summary(tag: String) = "JOINS $tag: pieces ${pieces.size} -> $after (with ground ways $groundBefore -> $groundAfter); joins ${joins.size} (tree ${tree.size}, shortcut ${joins.size - tree.size}), " +
             "${joins.sumOf { it.yd }.toInt()} yd; candidates $candidates, rejected ${rejected.size}; $ms ms"
-        fun json(): JSONObject = JSONObject().put("pieces", pieces.size).put("after", after).put("ms", ms).put("candidates", candidates)
+        fun json(): JSONObject = JSONObject().put("pieces", pieces.size).put("after", after).put("groundBefore", groundBefore).put("groundAfter", groundAfter).put("ms", ms).put("candidates", candidates)
             .put("joins", JSONArray(joins.map { it.json() }))
             .put("apart", JSONArray(apart.map { JSONObject().put("pieces", JSONArray(it.pieces)).put("nodes", it.nodes).put("yd", r1(it.yd))
-                .put("x", r1(it.x)).put("y", r1(it.y)).put("why", it.why) }))
+                .put("x", r1(it.x)).put("y", r1(it.y)).put("why", it.why).put("ground", it.ground) }))
             .put("linked", JSONArray(linked)).put("rejected", JSONArray(rejected))
             .put("pieceList", JSONArray(pieces.map { p -> JSONObject().put("id", p.id).put("nodes", p.nodes.size).put("ways", p.ways).put("yd", r1(p.yd))
                 .put("seeds", p.seeds).put("x", r1(p.x)).put("y", r1(p.y)).put("kinds", JSONObject(p.kinds as Map<*, *>)).put("named", JSONArray(p.named)) }))
@@ -97,7 +105,7 @@ object NetJoins {
     }
 
     private class Seed(val piece: Int, val end: End)
-    private class Cand(val cost: Double, val u: Int, val v: Int, val pa: Int, val pb: Int)
+    private class Cand(val cost: Double, val sa: Int, val sb: Int, val pa: Int, val pb: Int)
 
     /**
      * the joins of [net] (one faction's section net: REMOVED ways already gone) on the zone's lattice [g], walked by the harness's rules:
@@ -108,7 +116,7 @@ object NetJoins {
      */
     fun joins(net: SafePath.Net, g: Climb.Grid, deep: (Double, Double) -> Boolean, danger: (Double, Double) -> Float, k: Double,
               links: List<ShippedNet.Link> = emptyList(), edges: Boolean = true, wetOf: (DoubleArray, DoubleArray) -> Int = { _, _ -> 0 },
-              log: (String) -> Unit = {}): Result {
+              refuse: (DoubleArray, DoubleArray) -> Boolean = { _, _ -> false }, log: (String) -> Unit = {}): Result {
         val t0 = System.currentTimeMillis()
         val nodes = net.nodes; val idx = HashMap<Int, Int>(); nodes.forEachIndexed { i, n -> idx[n.id] = i }
         val pieceOfNode = pieceOf(net)
@@ -127,26 +135,31 @@ object NetJoins {
         }
         // the pieces' own facts
         val pieceNodes = (0 until nP).map { ArrayList<Int>() }; nodes.forEachIndexed { i, _ -> pieceNodes[pieceOfNode[i]].add(i) }
-        val pieceWays = IntArray(nP); val pieceYd = DoubleArray(nP)
+        val pieceWays = IntArray(nP); val pieceGround = IntArray(nP); val pieceYd = DoubleArray(nP)
         for (e in net.edges) { val a = idx[e.a] ?: continue; val b = idx[e.b] ?: continue; val p = pieceOfNode[a]
-            pieceWays[p]++; pieceYd[p] += hypot(nodes[a].wx - nodes[b].wx, nodes[a].wy - nodes[b].wy) }
+            pieceWays[p]++; if (e.kind in GROUND_EDGE) pieceGround[p]++; pieceYd[p] += hypot(nodes[a].wx - nodes[b].wx, nodes[a].wy - nodes[b].wy) }
         val pieceSeeds = IntArray(nP); for (s in seeds) pieceSeeds[s.piece]++
         val pieces = (0 until nP).map { p -> val ns = pieceNodes[p]
-            Piece(p, ns.map { nodes[it].id }, pieceWays[p], pieceYd[p], pieceSeeds[p], ns.groupingBy { nodes[it].kind }.eachCount(),
+            Piece(p, ns.map { nodes[it].id }, pieceWays[p], pieceGround[p], pieceYd[p], pieceSeeds[p], ns.groupingBy { nodes[it].kind }.eachCount(),
                 ns.map { nodes[it].wx }.average(), ns.map { nodes[it].wy }.average(), ns.mapNotNull { nodes[it].name }) }
-        val dsu = Dsu(nP)
-        // the links join pieces (a portal, an updraft, a declared swim): each end to the nearest node's piece
+        // the links join pieces (a portal, an updraft, a declared swim; an air chain's links one after another): each link's two ends
+        // are one, an end on another link's end (within [LINK_CHAIN_YD]) is that end, an end within [LINK_SNAP_YD] of a node is its piece
+        val dsu = Dsu(nP + 2 * links.size)
         val linked = ArrayList<String>()
-        for (l in links) {
-            if (l.pts.size < 2) continue
-            fun near(p: DoubleArray) = nodes.indices.minByOrNull { hypot(nodes[it].wx - p[0], nodes[it].wy - p[1]) }
-                ?.takeIf { hypot(nodes[it].wx - p[0], nodes[it].wy - p[1]) <= LINK_SNAP_YD }
-            val a = near(l.pts.first()); val b = near(l.pts.last())
-            if (a != null && b != null && pieceOfNode[a] != pieceOfNode[b]) { dsu.union(pieceOfNode[a], pieceOfNode[b])
-                linked.add("${l.kind} ${l.name}".trim() + ": pieces ${pieceOfNode[a]} - ${pieceOfNode[b]}") }
-            else linked.add("${l.kind} ${l.name}".trim() + ": " + (if (a == null || b == null) "an end ${if (a == null) "first" else "last"} not within ${LINK_SNAP_YD.toInt()} yd of a node" else "within piece ${pieceOfNode[a]}"))
+        val okLinks = links.withIndex().filter { it.value.pts.size >= 2 }
+        fun endPt(li: Int, last: Boolean) = links[li].pts.let { if (last) it.last() else it.first() }
+        for ((li, _) in okLinks) dsu.union(nP + 2 * li, nP + 2 * li + 1)
+        for ((li, _) in okLinks) for ((lj, _) in okLinks) { if (lj <= li) continue
+            for (ea in listOf(false, true)) for (eb in listOf(false, true)) { val p = endPt(li, ea); val q = endPt(lj, eb)
+                if (hypot(p[0] - q[0], p[1] - q[1]) <= LINK_CHAIN_YD) dsu.union(nP + 2 * li + (if (ea) 1 else 0), nP + 2 * lj + (if (eb) 1 else 0)) } }
+        for ((li, l) in okLinks) {
+            val onto = ArrayList<String>()
+            for (last in listOf(false, true)) { val p = endPt(li, last)
+                val nn = nodes.indices.minByOrNull { hypot(nodes[it].wx - p[0], nodes[it].wy - p[1]) }
+                    ?.takeIf { hypot(nodes[it].wx - p[0], nodes[it].wy - p[1]) <= LINK_SNAP_YD }
+                if (nn != null) { dsu.union(nP + 2 * li + (if (last) 1 else 0), pieceOfNode[nn]); onto.add("${if (last) "last" else "first"} on piece ${pieceOfNode[nn]}") } }
+            linked.add("${l.kind} ${l.name}".trim() + (if (l.oneWay) " (one way)" else "") + ": " + onto.ifEmpty { listOf("no end on a node (a chain's middle)") }.joinToString())
         }
-
         // THE WALK: multi-source Dijkstra over the lattice, Climb.route's step rule and costs (no goal fade: no goal)
         val nx = g.nx; val ny = g.ny; val N = nx * ny
         val dist = DoubleArray(N) { Double.MAX_VALUE }; val src = IntArray(N) { -1 }
@@ -173,10 +186,28 @@ object NetJoins {
             if (!Climb.walkable(g, doubleArrayOf(g.wx(j), g.wy(i)), doubleArrayOf(g.wx(vj), g.wy(vi)), deep, ends = false)) return -1.0
             return (if (di != 0 && dj != 0) Climb.STEP * 1.41421356 else Climb.STEP) * (Climb.COST[c] + x)
         }
+        // per pair of pieces its cheapest meetings (the best, and fallbacks with other ends [ALT_APART_YD] off)
+        val cands = HashMap<Long, ArrayList<Cand>>()
+        fun addCand(cost: Double, sa: Int, sb: Int) {
+            val pa = seeds[sa].piece; val pb = seeds[sb].piece; if (pa == pb) return
+            val c = Cand(cost, sa, sb, pa, pb)
+            val l = cands.getOrPut(min(pa, pb).toLong() * 1_000_000 + max(pa, pb)) { ArrayList() }
+            val ca = seeds[sa].end; val cb = seeds[sb].end
+            val same = l.indexOfFirst { o -> val oa = seeds[o.sa].end; val ob = seeds[o.sb].end
+                (hypot(oa.x - ca.x, oa.y - ca.y) < ALT_APART_YD && hypot(ob.x - cb.x, ob.y - cb.y) < ALT_APART_YD) ||
+                (hypot(oa.x - cb.x, oa.y - cb.y) < ALT_APART_YD && hypot(ob.x - ca.x, ob.y - ca.y) < ALT_APART_YD) }
+            if (same >= 0) { if (l[same].cost > c.cost) l[same] = c } else l.add(c)
+            if (l.size > 3) { l.sortBy { it.cost }; l.removeAt(l.size - 1) }
+        }
         val open = Heap()
+        var offLattice = 0
+        val seedsOnLattice = IntArray(nP)
         for ((si, s) in seeds.withIndex()) { val v = g.at(s.end.x, s.end.y); val q = v[1] * nx + v[0]
-            if (deepAt(v[0], v[1])) continue
             val d0 = hypot(g.wx(v[1]) - s.end.x, g.wy(v[0]) - s.end.y)
+            if (deepAt(v[0], v[1]) || d0 > Climb.STEP) { offLattice++; continue }
+            seedsOnLattice[s.piece]++
+            // two pieces' points on one vertex: a meeting already (a cave's mouth on a road's point)
+            if (src[q] >= 0 && seeds[src[q]].piece != s.piece) addCand(hypot(seeds[src[q]].end.x - s.end.x, seeds[src[q]].end.y - s.end.y), src[q], si)
             if (d0 < dist[q]) { dist[q] = d0; src[q] = si; open.add(d0, q) } }
         // why a piece's walk stopped (for the pieces left apart): steps refused by deep water, by a wall
         val blockedDeep = IntArray(nP); val blockedWall = IntArray(nP)
@@ -190,34 +221,31 @@ object NetJoins {
                 val v = (uj + dj) * nx + ui + di; val nd = dist[u] + sc
                 if (nd < dist[v]) { dist[v] = nd; src[v] = src[u]; open.add(nd, v) } }
         }
-        // where two pieces' walks meet: per pair the cheapest meetings (the best, and fallbacks with other ends)
-        val cands = HashMap<Long, ArrayList<Cand>>()
+        // where two pieces' walks meet
         for (u in 0 until N) { if (src[u] < 0) continue; val ui = u % nx; val uj = u / nx
             for (dd in 0 until 4) { val di = FWD_I[dd]; val dj = FWD_J[dd]
                 val vi = ui + di; val vj = uj + dj; if (vi !in 0 until nx || vj !in 0 until ny) continue
-                val v = vj * nx + vi; if (src[v] < 0) continue
-                val pa = seeds[src[u]].piece; val pb = seeds[src[v]].piece; if (pa == pb) continue
+                val v = vj * nx + vi; if (src[v] < 0 || seeds[src[u]].piece == seeds[src[v]].piece) continue
                 val sc = stepCost(ui, uj, di, dj); if (sc < 0) continue
-                val c = Cand(dist[u] + sc + dist[v], u, v, pa, pb)
-                val key = min(pa, pb).toLong() * 1_000_000 + max(pa, pb)
-                val l = cands.getOrPut(key) { ArrayList() }
-                fun endsOf(x: Cand) = seeds[src[x.u]].end to seeds[src[x.v]].end
-                val (ca, cb) = endsOf(c)
-                val same = l.indexOfFirst { o -> val (oa, ob) = endsOf(o)
-                    hypot(oa.x - ca.x, oa.y - ca.y) < ALT_APART_YD && hypot(ob.x - cb.x, ob.y - cb.y) < ALT_APART_YD }
-                if (same >= 0) { if (l[same].cost > c.cost) l[same] = c } else l.add(c)
-                if (l.size > 3) { l.sortBy { it.cost }; l.removeAt(l.size - 1) }
+                addCand(dist[u] + sc + dist[v], src[u], src[v])
             } }
         val all = cands.values.flatten().sortedBy { it.cost }
-        log("JOINS walk: ${seeds.size} seeds on $nP pieces, ${N} lattice vertices, ${dist.count { it < Double.MAX_VALUE }} reached; ${cands.size} piece pairs meet, ${all.size} candidates; ${System.currentTimeMillis() - t0} ms")
+        log("JOINS walk: ${seeds.size} seeds ($offLattice in deep water or off the lattice) on $nP pieces, ${N} lattice vertices, ${dist.count { it < Double.MAX_VALUE }} reached; ${cands.size} piece pairs meet, ${all.size} candidates; ${System.currentTimeMillis() - t0} ms")
 
         // a candidate as a walked join: Climb.route between its two ends, every segment re-checked
         val rejected = ArrayList<String>()
-        fun walk(c: Cand, why: String, saved: Double = 0.0): Join? {
-            val ea = seeds[src[c.u]].end; val eb = seeds[src[c.v]].end
-            val tag = "${c.pa}-${c.pb} ${ea.x.toInt()},${ea.y.toInt()} -> ${eb.x.toInt()},${eb.y.toInt()} (${c.cost.toInt()})"
+        val seedsOf = seeds.indices.groupBy { seeds[it].piece }
+        /** a seed and the same piece's next nearest within [ALT_END_YD] (a way's point on a wall face: its neighbour's) */
+        fun endsNear(si: Int): List<Int> = listOf(si) + (seedsOf[seeds[si].piece] ?: emptyList()).filter { it != si }
+            .map { it to hypot(seeds[it].end.x - seeds[si].end.x, seeds[it].end.y - seeds[si].end.y) }.filter { it.second <= ALT_END_YD }
+            .sortedBy { it.second }.take(ALT_ENDS).map { it.first }
+        val tried = HashMap<Long, Any>()                      // (seed a, seed b) -> its Join or its refusal
+        fun walkSeeds(sa: Int, sb: Int, c: Cand, why: String, saved: Double): Join? {
+            val key = sa.toLong() * 10_000_000 + sb
+            tried[key]?.let { return (it as? Join)?.let { j -> Join(j.a, j.b, j.pieceA, j.pieceB, j.pts, j.yd, j.cost, j.flags, j.danger, j.tier, why, saved) } }
+            val ea = seeds[sa].end; val eb = seeds[sb].end
+            fun bad(m: String): Join? { tried[key] = m; return null }
             val leg = Climb.route(g, ea.pt(), eb.pt(), danger, k, deep, edges = edges)
-            fun bad(m: String): Join? { rejected.add("$tag: $m"); return null }
             if (leg == null || leg.pts.size < 2) return bad("no leg")
             if (!leg.reached) return bad("not reached (ends ${hypot(leg.pts.last()[0] - eb.x, leg.pts.last()[1] - eb.y).toInt()} yd short)")
             val pts = leg.pts
@@ -225,6 +253,8 @@ object NetJoins {
                 return bad("the walk starts or ends off its ends (a wall face at a way's point)")
             val walls = pts.zipWithNext().indices.filter { q -> !Climb.walkable(g, pts[q], pts[q + 1], deep) }
             if (walls.isNotEmpty()) return bad("segments $walls not walkable")
+            val refused = pts.zipWithNext().indices.filter { q -> refuse(pts[q], pts[q + 1]) }
+            if (refused.isNotEmpty()) return bad("segments $refused refused (segcheck)")
             if (pts.any { Climb.inCave(it) }) return bad("walks a link")
             val yd = pts.zipWithNext { p, q -> hypot(q[0] - p[0], q[1] - p[1]) }.sum()
             var share = 0.0; var f = ShippedNet.F_JOIN or ShippedNet.F_TRAIL
@@ -232,25 +262,37 @@ object NetJoins {
                 for (t in 0 until n) share += l / n * (danger(p[0] + (q[0] - p[0]) * (t + 0.5) / n, p[1] + (q[1] - p[1]) * (t + 0.5) / n) / DangerGrid.CAP)
                 f = f or wetOf(p, q) }
             val sh = if (yd > 0) (share / yd).toFloat().coerceIn(0f, 1f) else 0f
-            return Join(ea, eb, c.pa, c.pb, pts.map { doubleArrayOf(it[0], it[1]) }, yd, c.cost, f, sh, tierOf(sh), why, saved)
+            return Join(ea, eb, seeds[sa].piece, seeds[sb].piece, pts.map { doubleArrayOf(it[0], it[1]) }, yd, c.cost, f, sh, tierOf(sh), why, saved)
+                .also { tried[key] = it }
+        }
+        /** a candidate as a walked join: Climb.route between its two ends (or, failing, the nearest other ends of the same two pieces) */
+        fun walk(c: Cand, why: String, saved: Double = 0.0): Join? {
+            val aa = endsNear(c.sa); val bb = endsNear(c.sb)
+            val pairs = aa.indices.flatMap { i -> bb.indices.map { j -> Triple(i + j, aa[i], bb[j]) } }.sortedBy { it.first }.take(ALT_TRIES)
+            for ((_, sa, sb) in pairs) walkSeeds(sa, sb, c, why, saved)?.let { return it }
+            val ea = seeds[c.sa].end; val eb = seeds[c.sb].end
+            rejected.add("${c.pa}-${c.pb} ${ea.x.toInt()},${ea.y.toInt()} -> ${eb.x.toInt()},${eb.y.toInt()} (${c.cost.toInt()}): ${tried[c.sa.toLong() * 10_000_000 + c.sb]}" +
+                (if (pairs.size > 1) " (and ${pairs.size - 1} pairs of nearby ends)" else ""))
+            return null
         }
         // KRUSKAL by walked cost
         val joins = ArrayList<Join>()
         for (c in all) { if (dsu.find(c.pa) == dsu.find(c.pb)) continue
             val j = walk(c, "tree") ?: continue
-            joins.add(j); dsu.union(c.pa, c.pb) }
+            joins.add(j); dsu.union(j.pieceA, j.pieceB) }
         // THE SHORTCUTS: a meeting whose ends are far apart on the net (the joins in) by [SHORTCUT_FACTOR] and [SHORTCUT_MIN_YD]
         val graph = NetGraph(net, idx)
         for (j in joins) graph.add(j)
         for (c in all) {
-            if (joins.any { it.pieceA == c.pa && it.pieceB == c.pb && hypot(it.a.x - seeds[src[c.u]].end.x, it.a.y - seeds[src[c.u]].end.y) < ALT_APART_YD }) continue
-            val ea = seeds[src[c.u]].end; val eb = seeds[src[c.v]].end
+            val ea = seeds[c.sa].end; val eb = seeds[c.sb].end
+            if (joins.any { j -> (hypot(j.a.x - ea.x, j.a.y - ea.y) < ALT_APART_YD && hypot(j.b.x - eb.x, j.b.y - eb.y) < ALT_APART_YD) ||
+                    (hypot(j.a.x - eb.x, j.a.y - eb.y) < ALT_APART_YD && hypot(j.b.x - ea.x, j.b.y - ea.y) < ALT_APART_YD) }) continue
             val direct = c.cost
             val onNet = graph.dist(ea, eb)
             if (onNet < SHORTCUT_FACTOR * direct || onNet - direct < SHORTCUT_MIN_YD) continue
             val j = walk(c, "shortcut", if (onNet == Double.MAX_VALUE) -1.0 else onNet - direct) ?: continue
             if (onNet != Double.MAX_VALUE && (onNet < SHORTCUT_FACTOR * j.yd || onNet - j.yd < SHORTCUT_MIN_YD)) continue
-            joins.add(j); graph.add(j); dsu.union(c.pa, c.pb)
+            joins.add(j); graph.add(j); dsu.union(j.pieceA, j.pieceB)
         }
         // WHAT STANDS APART: the groups other than the biggest (by its ways' yards), and why
         val groups = (0 until nP).groupBy { dsu.find(it) }.values.sortedByDescending { ps -> ps.sumOf { pieceYd[it] } }
@@ -262,13 +304,78 @@ object NetJoins {
             val met = all.filter { (it.pa in ps) != (it.pb in ps) }
             val why = when {
                 seedsN == 0 -> "a cave's or a lift's floor with no node on the ground (no mouth)"
+                ps.sumOf { seedsOnLattice[it] } == 0 -> "its ground points are all in deep water or off the lattice"
                 met.isNotEmpty() -> "its ${met.size} meetings with the rest never walked (${rejected.filter { r -> met.any { r.startsWith("${it.pa}-${it.pb} ") } }.take(2).joinToString("; ")})"
                 bd > bw -> "an island: deep water stops its walk (${bd} steps by water, ${bw} by walls) - a declared swim's, or none"
                 else -> "a walled pocket: walls stop its walk (${bw} steps by walls, ${bd} by water)"
             }
-            Apart(ps, ns, ps.sumOf { pieceYd[it] }, x, y, why)
+            Apart(ps, ns, ps.sumOf { pieceYd[it] }, x, y, why, ps.any { pieceGround[it] > 0 })
         }
-        return Result(pieces, linked, joins, apart, rejected, all.size, System.currentTimeMillis() - t0)
+        return Result(pieces, linked, joins, apart, rejected.distinct(), all.size, System.currentTimeMillis() - t0)
+    }
+
+    /**
+     * [joins], then [check] on its joins (py/segcheck.py's verdict: [segcheck]) - each segment it flags refused and the joins walked
+     * again (another leg, other ends), at most [passes] times. A join still flagged after them is dropped (its pieces stay apart, the
+     * rejected list says so). The exporter's entry point when segcheck must say "none" on the joins too.
+     */
+    fun joinsChecked(net: SafePath.Net, g: Climb.Grid, deep: (Double, Double) -> Boolean, danger: (Double, Double) -> Float, k: Double,
+                     links: List<ShippedNet.Link> = emptyList(), edges: Boolean = true, wetOf: (DoubleArray, DoubleArray) -> Int = { _, _ -> 0 },
+                     check: (List<Join>) -> List<Pair<Int, Int>>, passes: Int = 3, log: (String) -> Unit = {}): Result {
+        // a flagged segment's ground is kept off as deep water is (a wall to the walk and to Climb.route): within [FLAGGED_YD] of it
+        val bad = ArrayList<DoubleArray>()
+        fun segD(x: Double, y: Double, s: DoubleArray): Double {
+            val dx = s[2] - s[0]; val dy = s[3] - s[1]; val l2 = dx * dx + dy * dy
+            val t = if (l2 == 0.0) 0.0 else (((x - s[0]) * dx + (y - s[1]) * dy) / l2).coerceIn(0.0, 1.0)
+            return hypot(x - s[0] - t * dx, y - s[1] - t * dy) }
+        val deepX: (Double, Double) -> Boolean = { x, y -> deep(x, y) || bad.any { s ->
+            x >= minOf(s[0], s[2]) - FLAGGED_YD && x <= maxOf(s[0], s[2]) + FLAGGED_YD && y >= minOf(s[1], s[3]) - FLAGGED_YD &&
+                y <= maxOf(s[1], s[3]) + FLAGGED_YD && segD(x, y, s) < FLAGGED_YD } }
+        var r = joins(net, g, deep, danger, k, links, edges, wetOf, log = log)
+        for (pass in 1..passes) {
+            val flagged = check(r.joins)
+            log("JOINS segcheck pass $pass: ${flagged.size} segments flagged${flagged.take(6).joinToString("") { (j, q) -> " ${r.joins[j].pieceA}-${r.joins[j].pieceB}#$q" }}")
+            if (flagged.isEmpty()) return r
+            for ((j, q) in flagged) { val p0 = r.joins[j].pts[q]; val p1 = r.joins[j].pts[q + 1]; bad.add(doubleArrayOf(p0[0], p0[1], p1[0], p1[1])) }
+            if (pass == passes) {
+                // still flagged: those joins dropped (the pieces they joined counted apart again)
+                val drop = flagged.map { it.first }.toSet()
+                val bans = drop.map { i -> r.joins[i] }
+                val again = joins(net, g, deepX, danger, k, links, edges, wetOf, { a, b -> bans.any { j -> j.pts.zipWithNext().any { (p, q) ->
+                    hypot(p[0] - a[0], p[1] - a[1]) < 0.5 && hypot(q[0] - b[0], q[1] - b[1]) < 0.5 } } }, log)
+                val still = check(again.joins).map { it.first }.toSet()
+                return Result(again.pieces, again.linked, again.joins.filterIndexed { i, _ -> i !in still }, again.apart, again.rejected +
+                    drop.map { i -> "${r.joins[i].pieceA}-${r.joins[i].pieceB}: dropped, segcheck still flags it after $passes passes" } +
+                    still.map { i -> "${again.joins[i].pieceA}-${again.joins[i].pieceB}: DROPPED at the end, segcheck flags it (its pieces are apart: not in the apart list)" },
+                    again.candidates, again.ms)
+            }
+            r = joins(net, g, deepX, danger, k, links, edges, wetOf, log = log)
+        }
+        return r
+    }
+
+    /** a join's route letter in the segcheck file: JA, JB, ... JZ, JAA, ... (letters only: segcheck names a segment letter + index) */
+    fun letter(i: Int): String { var n = i; val sb = StringBuilder(); do { sb.insert(0, 'A' + n % 26); n = n / 26 - 1 } while (n >= 0); return "J$sb" }
+
+    /** [joins] as routes for py/segcheck.py and py/wetcheck.py: [dir]/levels_routes_[tag].json, a route a join ([letter]) */
+    fun routesFile(dir: java.io.File, tag: String, joins: List<Join>): java.io.File = java.io.File(dir, "levels_routes_$tag.json").also { f ->
+        f.writeText(JSONObject().put("zone", tag).put("routes", JSONArray(joins.mapIndexed { i, j -> JSONObject().put("letter", letter(i))
+            .put("name", "join ${j.pieceA}-${j.pieceB} (${j.why})").put("reached", true).put("pts", JSONArray(j.pts.map { JSONArray(listOf(it[0], it[1])) })) })).toString()) }
+
+    /**
+     * py/segcheck.py as a [joinsChecked] check: the joins written to [dir] (beside the zone's floors_ / holes_ / layers_ files, which
+     * the caller puts there: RenderSafePath writes them into its out folder), segcheck run from [py] with ZDIR [zdir], its flagged
+     * segments back as (join index, segment index)
+     */
+    fun segcheck(py: java.io.File, dir: java.io.File, tag: String, zdir: String, work: java.io.File): (List<Join>) -> List<Pair<Int, Int>> = { js ->
+        if (js.isEmpty()) emptyList() else {
+            val f = routesFile(dir, tag, js)
+            val out = ParityCompare.runPy(py, "segcheck.py", f, zdir, work)
+            val last = out.lines().lastOrNull { "crossing a" in it } ?: error("segcheck said nothing: ${out.takeLast(300)}")
+            val byLetter = js.indices.associateBy { letter(it) }
+            Regex("(J[A-Z]+)(\\d+)-J[A-Z]+\\d+").findAll(last.substringAfter(":")).mapNotNull { m ->
+                byLetter[m.groupValues[1]]?.let { it to m.groupValues[2].toInt() } }.distinct().toList()
+        }
     }
 
     private val FWD_I = intArrayOf(1, 0, 1, 1); private val FWD_J = intArrayOf(0, 1, 1, -1)

@@ -82,5 +82,12 @@ class NetJoinsTest {
         val swim = ShippedNet.Link("swim", "the isle", false, 80.0, listOf(doubleArrayOf(0.0, -60.0, 3.0), doubleArrayOf(0.0, 60.0, 3.0)))
         val r2 = NetJoins.joins(net(cave = false), grid(-200.0..200.0), deep, calm, 0.0, links = listOf(swim))
         assertEquals(1, r2.after); assertEquals(0, r2.joins.size)
+        // an air chain: a portal up, a deck, a portal down - only its first and last ends on nodes; its links meet end to end
+        val chain = listOf(ShippedNet.Link("portal", "", true, 15.0, listOf(doubleArrayOf(0.0, -60.0, 0.0), doubleArrayOf(0.0, -200.0, 1.0))),
+            ShippedNet.Link("deck", "", false, 300.0, listOf(doubleArrayOf(0.0, -200.0, 1.0), doubleArrayOf(0.0, 200.0, 1.0))),
+            ShippedNet.Link("portal (out)", "", true, 15.0, listOf(doubleArrayOf(0.0, 200.0, 1.0), doubleArrayOf(0.0, 60.0, 0.0))))
+        val r3 = NetJoins.joins(net(cave = false), grid(-200.0..200.0), deep, calm, 0.0, links = chain)
+        r3.linked.forEach { println("  link $it") }
+        assertEquals(1, r3.after)
     }
 }

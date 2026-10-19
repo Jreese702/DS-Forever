@@ -77,19 +77,24 @@ class NetJoinsZone {
                 val here = DangerInputs.sided(spawns.filter { it.area == area }, rect, mine, rules)
                 val dz = DangerInputs.grid(here, rect, mine, sec.level, "high", { wx, wy -> Terrain.factor(tg.at(wx, wy)) }, { wx, wy -> ar.uiMap(zg.areaAt(wx, wy)) == map })
                 val danger = dz.danger(wading, zl::roomsAt)
-                val r = NetJoins.joins(sec.net, cg, deep, danger, dz.k, sec.links, wetOf = wetOf) { println(it) }
+                val fl = File(System.getenv("JOINS_FLOORS") ?: f.parent)
+                for (k in listOf("floors", "holes", "layers", "decks")) File(fl, "${k}_${sec.tag}.json").takeIf { it.isFile }?.copyTo(File(jd, "${k}_${sec.tag}.json"), overwrite = true)
+                val py = File(File(System.getProperty("user.dir")).parentFile, "py")
+                val r = if (System.getenv("JOINS_SEGCHECK") == "0") NetJoins.joins(sec.net, cg, deep, danger, dz.k, sec.links, wetOf = wetOf) { println(it) }
+                    else NetJoins.joinsChecked(sec.net, cg, deep, danger, dz.k, sec.links, wetOf = wetOf,
+                        check = NetJoins.segcheck(py, jd, sec.tag, spec.optString("dir", "kalimdor"), work)) { println(it) }
                 println(r.summary("${sec.tag} (${if (mine == TransportRoutes.HORDE) "horde" else "alliance"})"))
-                for (p in r.pieces.sortedByDescending { it.yd }.take(12)) println("JOINS ${sec.tag} piece ${p.id}: ${p.nodes.size} nodes, ${p.ways} ways, ${p.yd.toInt()} yd, ${p.seeds} seeds at ${p.x.toInt()},${p.y.toInt()} ${p.kinds} ${p.named.take(3)}")
+                for (p in r.pieces.sortedByDescending { it.yd }.take(12)) println("JOINS ${sec.tag} piece ${p.id}: ${p.nodes.size} nodes, ${p.ways} ways (${p.groundWays} ground), ${p.yd.toInt()} yd, ${p.seeds} seeds at ${p.x.toInt()},${p.y.toInt()} ${p.kinds} ${p.named.take(3)}")
                 for (l in r.linked) println("JOINS ${sec.tag} link $l")
                 for (j in r.joins) println("JOINS ${sec.tag} ${j.why} ${j.pieceA}-${j.pieceB}: ${j.yd.toInt()} yd (cost ${j.cost.toInt()}), ${j.pts.size - 1} segments, ${NetJoins.flagNames(j.flags)}, danger ${"%.2f".format(j.danger)} tier ${j.tier}" +
                     (if (j.why == "shortcut") ", saves ${j.saved.toInt()} yd" else "") + "; ${j.a.x.toInt()},${j.a.y.toInt()} -> ${j.b.x.toInt()},${j.b.y.toInt()}")
-                for (x in r.apart) println("JOINS ${sec.tag} APART pieces ${x.pieces} (${x.nodes} nodes, ${x.yd.toInt()} yd) at ${x.x.toInt()},${x.y.toInt()}: ${x.why}")
+                for (x in r.apart) println("JOINS ${sec.tag} APART${if (x.ground) " (ground)" else ""} pieces ${x.pieces} (${x.nodes} nodes, ${x.yd.toInt()} yd) at ${x.x.toInt()},${x.y.toInt()}: ${x.why}")
                 for (x in r.rejected.take(15)) println("JOINS ${sec.tag} rejected $x")
                 // every join walkable step by step (the hard rule), and applied
                 val bad = r.joins.sumOf { j -> j.pts.zipWithNext().count { (p, q) -> !Climb.walkable(cg, p, q, deep) } }
                 val joined = NetJoins.apply(sec.net, r.joins)
                 val left = NetJoins.pieceOf(joined).let { pc -> pc.toSet().size }
-                println("JOINS ${sec.tag} CHECK walls on joins $bad; applied: ${joined.nodes.size} nodes, ${joined.edges.size} ways; pieces by ways alone ${r.pieces.size} -> $left (links join ${r.linked.count { "pieces" in it }} more)")
+                println("JOINS ${sec.tag} CHECK walls on joins $bad; applied: ${joined.nodes.size} nodes, ${joined.edges.size} ways; pieces by ways alone ${r.pieces.size} -> $left, with the links ${r.after}")
                 // T1's reference (ShippedNet.joins, 92314db) on the same net and legs, for the comparison (JOINS_PROTO=1)
                 if (System.getenv("JOINS_PROTO") == "1") { val tp = System.currentTimeMillis()
                     val legOf: (DoubleArray, DoubleArray) -> Pair<List<DoubleArray>, Boolean>? = { p, q ->
@@ -98,11 +103,7 @@ class NetJoinsZone {
                     val pj = NetJoins.pieceOf(SafePath.Net(sec.net.map, sec.net.cont, sec.net.built, sec.net.nodes, sec.net.edges + js.map { SafePath.Edge(it.first, it.second, SafePath.TRAIL) }, sec.net.exits))
                     println("JOINS ${sec.tag} PROTO ShippedNet.joins: ${js.size} joins, ${js.sumOf { t -> t.third.zipWithNext { u, v -> Math.hypot(v[0] - u[0], v[1] - u[1]) }.sum() }.toInt()} yd; pieces ${r.pieces.size} -> ${pj.toSet().size}; ${System.currentTimeMillis() - tp} ms") }
                 File(jd, "joins_${sec.tag}.json").writeText(r.json().put("tag", sec.tag).put("faction", mine).put("map", map).toString())
-                File(jd, "levels_routes_${sec.tag}.json").writeText(JSONObject().put("zone", sec.tag)
-                    .put("routes", JSONArray(r.joins.mapIndexed { i, j -> JSONObject().put("letter", "J${i + 1}").put("name", "join ${j.pieceA}-${j.pieceB} (${j.why})")
-                        .put("reached", true).put("pts", JSONArray(j.pts.map { JSONArray(listOf(it[0], it[1])) })) })).toString())
-                val fl = File(System.getenv("JOINS_FLOORS") ?: f.parent)
-                for (k in listOf("floors", "holes", "layers", "decks")) File(fl, "${k}_${sec.tag}.json").takeIf { it.isFile }?.copyTo(File(jd, "${k}_${sec.tag}.json"), overwrite = true)
+                NetJoins.routesFile(jd, sec.tag, r.joins)
             }
         }
     }
