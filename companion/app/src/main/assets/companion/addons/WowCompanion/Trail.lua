@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp7" }
+WC.compass = { V = "cp8" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -365,7 +365,12 @@ do
     -- true bearing b is ours (the compass's own reads), so the camera's yaw is b + theta (counter-clockwise: right of centre = a
     -- smaller angle). The offset (camera - character) eases to that; off screen it is HELD while standing and settles back to the
     -- character's facing while moving (the game camera swings behind a moving character); without a target the same.
-    C.cam = { off = 0, src = "none", fovAt = -10, hfov = math.rad(90) }
+    -- cp8 (test16, the cp7 log): the camera is held as an ABSOLUTE world yaw between fixes, not as an offset from the character.
+    -- With a controller the CHARACTER turns to its movement (even toward the camera: offsets near pi were real) while the camera
+    -- stays where the right stick left it; cp7 held the offset and settled it to the facing while moving, so every turn of the
+    -- character swung the compass. Now: a fix sets the camera yaw; no fix keeps it; only after LOST_S without one does it ease
+    -- back to the facing (the camera may have followed, and nothing else tells).
+    C.cam = { off = 0, src = "none", fovAt = -10, hfov = math.rad(90), abs = nil, fixAt = -100, LOST_S = 8 }
     function C.camStep(dt, facing)
         local K = C.cam
         local now = (type(GetTime) == "function" and GetTime()) or 0
@@ -405,22 +410,24 @@ do
                 if K.vp == true and K.cl == false and b and d and d > 8 and math.abs(x - half) < half * 0.92 then
                     local f = half / math.tan(K.hfov / 2)
                     local cam = b + math.atan((x - half) / f)
-                    local want = C.wrap(cam - facing)
-                    K.off = C.wrap(K.off + C.wrap(want - K.off) * (1 - math.exp(-dt / 0.08)))
+                    if not K.abs then K.abs = cam end
+                    K.abs = C.wrap(K.abs + C.wrap(cam - K.abs) * (1 - math.exp(-dt / 0.08)))
+                    K.fixAt = now
                     K.src, seen = "nav", true
                 end
             end
         end
         if not seen then
-            local okM, speed = pcall(GetUnitSpeed, "player")
-            local moving = okM and num(speed) and speed > 0
-            if moving then
-                K.off = K.off * math.exp(-dt / 0.8)
-                K.src = (w and K.nav) and "settle" or "none"
+            if not K.abs then
+                K.abs, K.src = facing, "none"                 -- never had a fix: the character's facing
+            elseif now - K.fixAt > K.LOST_S then
+                K.abs = C.wrap(K.abs + C.wrap(facing - K.abs) * (1 - math.exp(-dt / 1.5)))
+                K.src = "settle"
             else
-                K.src = (w and K.nav) and "hold" or "none"
+                K.src = (w and K.nav) and "hold" or "none"   -- the camera stays where it was (the character may turn)
             end
         end
+        K.off = C.wrap(K.abs - facing)
         return K.off
     end
 
@@ -446,7 +453,7 @@ do
         local fresh = C.read(snap)
         if snap then C.h = nil end
         local target = raw
-        if C.camWanted() then target = C.wrap(raw + C.camStep(dt, raw)) else C.cam.off, C.cam.src = 0, "off" end
+        if C.camWanted() then target = C.wrap(raw + C.camStep(dt, raw)) else C.cam.off, C.cam.src, C.cam.abs = 0, "off", nil end
         local heading = C.ease(target, dt)
         local L = C.layout(heading, C.me_, C.tg_ or {})
         C.last = L
@@ -515,6 +522,7 @@ do
             pin = tg.pin and true or false, qid = C.qid, qsrc = C.qsrc, quest = tg.quest and true or false,
             corpse = tg.corpse and true or false, n = #L.marks,
             cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
+            cyaw = C.cam.abs and math.floor(C.cam.abs * 1000 + 0.5) / 1000 or nil,
             nav = C.cam.nav, nx = C.cam.nx and math.floor(C.cam.nx * 10 + 0.5) / 10 or nil, ncl = C.cam.cl, nvp = C.cam.vp,
             nst = C.cam.ns, fov = math.floor(math.deg(C.cam.hfov) + 0.5),
         }
@@ -552,7 +560,7 @@ do
     function C.setCam(on)
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
         WowCompanionDB.compassCam = on and true or false
-        C.cam.off = 0
+        C.cam.off, C.cam.abs, C.cam.fixAt = 0, nil, -100
         return true
     end
 

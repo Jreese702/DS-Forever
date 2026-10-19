@@ -278,21 +278,64 @@ def main():
         step(f, 1 / 60)
     chk("cam: the nav point locks the offset to the camera (%.3f, want %.3f), src nav" % (C.cam.off, cam), abs(C.cam.off - cam) < 0.01 and C.cam.src == "nav")
     chk("cam: the shown heading follows the camera, not the character (%.3f)" % C.wrap(C.h), abs(C.wrap(C.h) - cam) < 0.02)
-    G.nav.clamped = True
-    for i in range(60):
-        step(f, 1 / 60)
-    chk("cam: off screen and standing: the offset HELD (%.3f), src hold" % C.cam.off, abs(C.cam.off - cam) < 0.01 and C.cam.src == "hold")
-    G.speed = 7
+    # cp8: lost, the camera's WORLD yaw is held while the CHARACTER turns and moves (a controller turns it to its movement)
+    G.nav.clamped = True; G.speed = 7; G.facing = 2.5
     for i in range(180):
+        G.t = G.t + 1 / 60
         step(f, 1 / 60)
-    chk("cam: off screen and moving: settles back to the character (%.3f), src settle" % C.cam.off, abs(C.cam.off) < 0.05 and C.cam.src == "settle")
+    chk("cam: off screen, the character turned and moving: the camera's yaw HELD (%.3f), src hold" % C.wrap(C.h),
+        abs(C.wrap(C.h) - cam) < 0.02 and C.cam.src == "hold")
+    for i in range(900):
+        G.t = G.t + 1 / 60
+        step(f, 1 / 60)
+    chk("cam: no fix for 8 s: it settles back to the character (%.3f), src settle" % C.wrap(C.h), abs(C.wrap(C.h) - 2.5) < 0.05 and C.cam.src == "settle")
+    G.speed = 0
+
+    # the TEST16 LOG (cp7, 12:56:12 .. 12:56:32), its exact numbers: the route pin super-tracked; each nav sample's pin bearing as
+    # the log implies it (cam = f + coff, theta from nx); 12:56:22 is clamped with the character turned
+    G.quest = None
+    C.setCam(True)
+    c0 = 1365.3334 / 2
+
+    def put_pin(bear):
+        dx, dy = 100 * math.cos(bear), 100 * math.sin(bear)
+        G.pin = L.table((500 - dy) / 1000, (500 - dx) / 1000)
+
+    def run_frames(n=90):
+        for i in range(n):
+            G.t = G.t + 1 / 60
+            if i % 6 == 0:
+                C.read(True)
+            step(f, 1 / 60)
+
+    log = [("12:56:12", 0.38, 1276.6, False, 2.351), ("12:56:17", 2.652, 1198.3, False, 0.042),
+           ("12:56:22", 1.804, 1357.3, True, None), ("12:56:27", 5.941, 633.1, False, 3.126), ("12:56:32", 1.956, 604.6, False, 0.091)]
+    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end")
+    want_prev = None
+    for ts, fac, nx, clamped, coff in log:
+        G.facing = fac
+        if coff is not None:
+            camw = C.wrap(fac + coff)
+            put_pin(camw - math.atan((nx - c0) / c0))
+            want = camw
+        else:
+            want = want_prev
+        G.nav = L.table_from({"x": nx, "y": 400.0, "clamped": clamped})
+        G.speed = 7 if clamped else 0
+        run_frames()
+        chk("test16 %s (f %.3f, nx %.1f%s): the compass shows the camera %.3f (got %.3f)"
+            % (ts, fac, nx, ", clamped" if clamped else "", want, C.wrap(C.h)), abs(C.wrap(C.wrap(C.h) - want)) < 0.03)
+        want_prev = want
+    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end")
+    G.pin = None; G.speed = 0
     G.speed = 0; G.quest = None; C.read(True)
     step(f, 1 / 60)
     chk("cam: no target: nothing from the nav point (src none)", C.cam.src == "none")
     C.diagAt = -100; C.draw()
     last = L.globals().SENT[len(L.globals().SENT)]
-    chk("cam: the compass line carries the experiment's state (cam, csrc, coff, nav, nx, ncl, nvp, nst, fov)",
-        last.probe == "compass" and last.cam is True and last.csrc is not None and last.fov == 90 and last.ncl is True)
+    chk("cam: the compass line carries the experiment's state (cam, csrc, coff, cyaw, nav, nx, ncl, nvp, nst, fov)",
+        last.probe == "compass" and last.cam is True and last.csrc is not None and last.fov == 90 and last.ncl is not None
+        and last.cyaw is not None)
     C.setCam(False); G.nav = None; G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.draw()
     # the camera-yaw probe (one shot, read only): starts 20 s after login once the game's nav diamond exists, logs 4 samples a line
     P = C.probe
