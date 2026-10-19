@@ -67,6 +67,8 @@ def load_floors(routes_file):
     _holes = {(a, b) for a, b in json.load(open(hp))} if os.path.exists(hp) else set()
     lp = os.path.join(d, 'layers_%s.json' % tag)
     _layers.clear(); _layers.update({(a, b): z for a, b, z in json.load(open(lp))} if os.path.exists(lp) else {})
+    # (3: a capital's read floor - the harness's own flag for py/wetcheck.py, where it is a deck; here leveled whatever its height, as a 2)
+    _floors = [t[:9] + [2] if len(t) >= 10 and t[9] == 3 else t for t in _floors]
     _floors = [t for t in _floors if len(t) < 10 or t[9] != 2] + [t for t in _floors if len(t) >= 10 and t[9] == 2]
     for k, t in enumerate(_floors):
         for i in range(int(math.floor((min(t[0], t[3], t[6]) - DECK_MARGIN) / 16)), int(math.floor((max(t[0], t[3], t[6]) + DECK_MARGIN) / 16)) + 1):

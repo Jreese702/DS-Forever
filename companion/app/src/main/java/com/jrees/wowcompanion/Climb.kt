@@ -29,6 +29,8 @@ import kotlin.math.sign
 object Climb {
     const val STEP = 100.0 / 3.0 / 8.0          // the lattice: an ADT chunk's 8 cells
     private const val ORG = 32.0 * MapHarvest.ADT_YD
+    /** a lattice step's water samples: every half yard along it, a side step's and a diagonal's (route's water check, as [walkable]'s) */
+    private val WATER_SIDE = Math.ceil(STEP / 0.5).toInt(); private val WATER_DIAG = Math.ceil(STEP * Math.sqrt(2.0) / 0.5).toInt()
     const val LEVEL = 0; const val CLIMB = 1; const val STEEP = 2; const val WALL = 3
     const val CLIMB_DEG = 20.0; const val STEEP_DEG = 35.0; const val WALL_DEG = 45.0
     /** THE SHORT STEEP STEP (the user, 2026-10-18: "Allow short steps to 48°"): one lattice step, or a straight line's stretch of faces no
@@ -406,8 +408,11 @@ object Climb {
                 // the step's own straight line, as the final check walks it (walkable / segcheck): a turn at a vertex every face within
                 // a quarter yard of which is a wall passes the steps beside it but not the line (Tirisfal, Brill -> Agamand Mills)
                 if (g.faces != null && !g.lineClear(doubleArrayOf(g.wx(uj), g.wy(ui)), doubleArrayOf(g.wx(vj), g.wy(vi)))) continue
-                // and off deep water along it (a diagonal between two shallow vertices clips a deep cell's corner: Mulgore's route D)
-                if (water != null && (1..3).any { q -> water(g.wx(uj) + (g.wx(vj) - g.wx(uj)) * q / 4, g.wy(ui) + (g.wy(vi) - g.wy(ui)) * q / 4) }) continue
+                // and off deep water along it (a diagonal between two shallow vertices clips a deep cell's corner: Mulgore's route D),
+                // every half yard as [walkable] samples it (quarters, 1.5 yd apart on a diagonal, let Darkshore's route F cut a pier's
+                // corner 1.1 yd off its deck, over 30 yd of sea)
+                if (water != null && (if (di != 0 && dj != 0) WATER_DIAG else WATER_SIDE).let { n -> (1 until n).any { q ->
+                        water(g.wx(uj) + (g.wx(vj) - g.wx(uj)) * q / n, g.wy(ui) + (g.wy(vi) - g.wy(ui)) * q / n) } }) continue
                 val x = extraOf(vi, vj); if (x < 0) continue
                 val len = if (di != 0 && dj != 0) STEP * 1.41421356 else STEP
                 val v = id(vi, vj)
