@@ -187,7 +187,17 @@ object Climb {
                 // hill is walked by its cave's link between its mouths, not as a layer)
                 val reach = STEP * hypot(dr.toDouble(), dc.toDouble())
                 val gn = ground(gr + dr, gc + dc)
-                val h = f.filter { abs(it - z) <= reach && (gn.isNaN() || it >= gn - LAYER_UNDER_YD) }.minByOrNull { abs(it - z) } ?: continue
+                // ... and a rise of more than a step only along a floor BETWEEN the two vertices (a ramp's, a stair's: a floor at the
+                // step's middle within a step of the straight line): two floors a sheer side apart are no ramp, however near their
+                // vertices' heights (the Southfury bridge: its deck at 38 yd and its gate arch's roof at 43.6 yd, 5.8 yd apart over a
+                // diagonal's 5.9 - the flood climbed onto the arches, and the roof, highest first, took the deck under it)
+                var mid: DoubleArray? = null
+                fun between(h: Double): Boolean {
+                    if (abs(h - z) <= Caves.STEP_UP_YD) return true
+                    val m = mid ?: floors(ORG - (gr + dr / 2.0) * STEP, ORG - (gc + dc / 2.0) * STEP).also { mid = it }
+                    return m.any { abs(it - (h + z) / 2) <= Caves.STEP_UP_YD }
+                }
+                val h = f.filter { abs(it - z) <= reach && (gn.isNaN() || it >= gn - LAYER_UNDER_YD) && between(it) }.minByOrNull { abs(it - z) } ?: continue
                 queue.add(Triple(d + reach, h.toFloat(), n))
             }
         }

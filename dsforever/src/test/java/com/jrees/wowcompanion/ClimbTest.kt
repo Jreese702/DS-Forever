@@ -334,6 +334,28 @@ class ClimbTest {
         assertEquals("off the room's side", Climb.WALL, g.step(i, j, -1, 0))
     }
 
+    /** a rise of more than a step is climbed only along a floor between the two vertices (a ramp, a stair): the Southfury bridge's gate
+     *  arch (its roof 5.8 yd over the deck, a pillar beside the deck with only its top read) was climbed over a lattice diagonal's 5.9 yd,
+     *  and its roof, highest first, took the deck under it - the bridge's steps walled, the Barrens' bridge exit dropped (R2) */
+    @Test fun aSheerSideIsNoRamp() {
+        val gorge = { gr: Int, _: Int -> val x = 32 * MapHarvest.ADT_YD - gr * Climb.STEP; if (x > 40 && x < 120) -40f else 0f }
+        // the deck at 0.5 (y 10..30) over the gorge; over its middle (x 70..90) a gate arch: its roof at 5.5 over the deck, its pillar
+        // beside the deck (y 30..40) solid to the top - only its top (5.5) read
+        val arch = { x: Double, y: Double ->
+            val out = ArrayList<Double>()
+            if (y in 10.0..30.0 && x in 30.0..130.0) out.add(0.5)
+            if (y in 10.0..40.0 && x in 70.0..90.0) out.add(5.5)
+            out.toDoubleArray() }
+        val lay = Climb.floorLayers(160.0, 0.0, 50.0, 0.0, arch, gorge)
+        for (x in listOf(72.0, 80.0, 88.0)) for (y in listOf(12.0, 20.0, 28.0))
+            assertEquals("the deck under the arch at $x,$y", 0.5f, lay[Climb.vkeyAt(x, y)]!!, 0.01f)
+        assertTrue("the pillar's top is no ground", lay[Climb.vkeyAt(80.0, 36.0)] == null)
+        // a ramp of 42 degrees from the bank (its floor between every two vertices) is still walked up
+        val flat = { _: Int, _: Int -> 0f }
+        val ramp = { x: Double, y: Double -> if (y in 10.0..30.0 && x in 10.0..60.0) doubleArrayOf(maxOf(0.0, (x - 20.0) * 0.9)) else DoubleArray(0) }
+        assertEquals("up the ramp", 27.0f, Climb.floorLayers(160.0, 0.0, 40.0, 0.0, ramp, flat)[Climb.vkeyAt(50.0, 20.0)]!!, 2f)
+    }
+
     /** the user's "No cutting through": a straight line longer than a step never crosses a building's room ([Climb.Grid.solid]); a
      *  step into it (an inn's door) stays open */
     @Test fun noStraightLineCutsThroughABuilding() {
