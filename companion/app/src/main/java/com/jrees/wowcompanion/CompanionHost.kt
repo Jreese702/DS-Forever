@@ -1742,6 +1742,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 interactView.update(msg, current)
                 // Home > Settings' loot window row (r-loot-on-top): the add-on's word; a replayed document only draws
                 if (current) HomeLootSwitch.note(msg)
+                // Settings > Top screen's compass bar row: the add-on's word (Trail.lua's WC.compass, through Interact's proof.compc)
+                if (current) CompassSwitch.note(msg)
                 // a room keeping the controller through a fight (capture v8's `fight`): the room flashes red (Home's cue)
                 if (current) roomCue.note(msg, room != Room.HOME)
                 // ... and leaving it in the fight goes through the capture's secure leave cell (v9's `fightLeave`)
