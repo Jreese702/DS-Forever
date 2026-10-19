@@ -25,8 +25,22 @@ def face_deg(ha, hb, m):
     if math.isnan(ha) or math.isnan(hb): return 90.0
     if math.isnan(m): return deg(ha, hb, S)
     return FC.tri_slope((0, 0, ha), (S, 0, hb), (S / 2, S / 2, m))
+def layer_deg(gc, gr, dc, dr):
+    """an edge step with an end on the harness's floor layer (layers_<tag>.json: the floor a walker is on at a vertex), as Climb.build
+    classes it: by the layer's height there and the other end's (its layer's, else the terrain's); a step off the layer where it
+    stands more than a step (STEP_UP) over its own ground is off its edge, a wall. None when neither end is on the layer. The terrain
+    under a deck read for it walled a line along a bridge's edge the walk itself passed on the deck (Silverpine A, 875,1354 ->
+    854,1354: the deck at 52-53, the river bank under its side falling 51.9 -> 40.9 at 69 degrees)"""
+    za = _layers.get((gr, gc)); zb = _layers.get((gr + dr, gc + dc))
+    if za is None and zb is None: return None
+    ha = vh(gc, gr); hb = vh(gc + dc, gr + dr)
+    if (za is not None and zb is None and za - ha > STEP_UP) or (za is None and zb is not None and zb - hb > STEP_UP): return 90.0
+    return deg(ha if za is None else za, hb if zb is None else zb, S)
 def edge_deg(gc, gr, dc, dr):
-    """an edge step (one of the 4): its vertices' own slope, or the gentler of the two faces beside it when steeper (as Climb.build)"""
+    """an edge step (one of the 4): its vertices' own slope, or the gentler of the two faces beside it when steeper (as Climb.build);
+    on the floor layer by the floor's heights (layer_deg)"""
+    ld = layer_deg(gc, gr, dc, dr) if _layers else None
+    if ld is not None: return ld
     if dr == 0:
         c0 = min(gc, gc + dc); ha, hb = vh(c0, gr), vh(c0 + 1, gr)
         f = min(face_deg(ha, hb, FC.centre(gr - 1, c0)), face_deg(ha, hb, FC.centre(gr, c0)))
@@ -37,14 +51,24 @@ def edge_deg(gc, gr, dc, dr):
 def edge_short(gc, gr, dc, dr):
     """an edge step under SHORT_DEG whose neighbours along its own line are no walls (Climb.build's lone short steep step)"""
     if not (WALL <= edge_deg(gc, gr, dc, dr) < SHORT_DEG): return False
+    if (gr, gc) in _layers or (gr + dr, gc + dc) in _layers: return False      # (a step with an end on a floor: never a short steep one)
     return edge_deg(gc - dc, gr - dr, dc, dr) < WALL and edge_deg(gc + dc, gr + dr, dc, dr) < WALL
 def step_ok(gc, gr, dc, dr):
     """a lattice step no wall: under 45 degrees, or a lone short steep one (a diagonal by either of its corner pairs)"""
     def edge_ok(c, r, ddc, ddr): return edge_deg(c, r, ddc, ddr) < WALL or edge_short(c, r, ddc, ddr)
     if dr == 0 or dc == 0: return edge_ok(gc, gr, dc, dr)
+    if diag_floor_edge(gc, gr, dc, dr): return False
     return (edge_ok(gc, gr, dc, 0) and edge_ok(gc + dc, gr, 0, dr)) or (edge_ok(gc, gr, 0, dr) and edge_ok(gc, gr + dr, dc, 0))
+def diag_floor_edge(gc, gr, dc, dr):
+    """a diagonal across a floor's high edge, as Climb.Grid.step walls it: an end on the floor layer, some of the cell's four corners off
+    it, and a corner on it more than a step over its own ground - the straight line cuts across the floor's edge (Wetlands' dig platform)"""
+    if not _layers: return False
+    ks = [(gr, gc), (gr, gc + dc), (gr + dr, gc), (gr + dr, gc + dc)]
+    on = [k for k in ks if k in _layers]
+    return 1 <= len(on) <= 3 and (ks[0] in _layers or ks[3] in _layers) and any(_layers[k] - vh(k[1], k[0]) > STEP_UP for k in on)
 def step_deg(gc, gr, dc, dr):
     if dr == 0 or dc == 0: return edge_deg(gc, gr, dc, dr)
+    if diag_floor_edge(gc, gr, dc, dr): return 90.0
     a = max(edge_deg(gc, gr, dc, 0), edge_deg(gc + dc, gr, 0, dr))
     b = max(edge_deg(gc, gr, 0, dr), edge_deg(gc, gr + dr, dc, 0))
     return min(a, b)
