@@ -1,0 +1,214 @@
+{
+ "tag": "feralas",
+ "dir": "kalimdor",
+ "faction": "horde",
+ "zone": 1444,
+ "area": 357,
+ "level": 45,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1444,
+   357
+  ],
+  [
+   1443,
+   405
+  ],
+  [
+   1441,
+   400
+  ],
+  [
+   2652,
+   16651
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1444,
+  1443
+ ],
+ "title": "Feralas",
+ "crop": [
+  -2367,
+  -7000,
+  3600,
+  -1508
+ ],
+ "decksByHeight": true,
+ "closeups": [
+  {
+   "name": "Camp Mojache",
+   "box": [
+    -4150,
+    -4650,
+    450,
+    -50
+   ]
+  },
+  {
+   "name": "Verdantis bridge",
+   "box": [
+    -4600,
+    -4900,
+    1150,
+    850
+   ]
+  },
+  {
+   "name": "Dire Maul",
+   "box": [
+    -3450,
+    -4600,
+    1850,
+    800
+   ]
+  },
+  {
+   "name": "Desolace road",
+   "box": [
+    -2367,
+    -2750,
+    2600,
+    2100
+   ]
+  },
+  {
+   "name": "Woodpaw Den",
+   "box": [
+    -4650,
+    -5000,
+    1050,
+    700
+   ]
+  },
+  {
+   "name": "Grimtotem Compound",
+   "box": [
+    -4050,
+    -4650,
+    950,
+    550
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "the Grimtotem Compound's shamans",
+   "from": {
+    "node": "Camp Mojache"
+   },
+   "to": {
+    "mob": "Grimtotem Shaman",
+    "near": [
+     -4515,
+     790
+    ]
+   }
+  },
+  {
+   "name": "the Woodpaw gnolls' camp in the Woodpaw Hills",
+   "from": {
+    "node": "Camp Mojache"
+   },
+   "to": {
+    "mob": "Woodpaw Brute",
+    "near": [
+     -4770,
+     545
+    ]
+   }
+  },
+  {
+   "name": "the giant moonwell before Dire Maul (the Dire Maul ruins)",
+   "from": {
+    "node": "Camp Mojache"
+   },
+   "to": {
+    "cave": 112873,
+    "near": [
+     -4462,
+     1403
+    ]
+   }
+  },
+  {
+   "name": "the Lower Wilds' bears",
+   "from": {
+    "node": "Camp Mojache"
+   },
+   "to": {
+    "camp": "Lower Wilds"
+   }
+  },
+  {
+   "name": "the way to Thousand Needles",
+   "from": {
+    "node": "Camp Mojache"
+   },
+   "to": {
+    "xy": [
+     -4162,
+     -850
+    ]
+   }
+  },
+  {
+   "name": "the Writhing Deep",
+   "from": {
+    "node": "Camp Mojache"
+   },
+   "to": {
+    "camp": "The Writhing Deep"
+   }
+  },
+  {
+   "name": "Frayfeather Highlands' hippogryphs",
+   "from": {
+    "node": "Camp Mojache"
+   },
+   "to": {
+    "camp": "Frayfeather Highlands"
+   }
+  },
+  {
+   "name": "the Ruins of Isildien's great ruin (the Gordunni ogres)",
+   "from": {
+    "node": "Camp Mojache"
+   },
+   "to": {
+    "cave": 112694,
+    "near": [
+     -5731,
+     1183
+    ]
+   }
+  },
+  {
+   "name": "the Twin Colossals' zapped giants",
+   "from": {
+    "node": "Camp Mojache"
+   },
+   "to": {
+    "camp": "The Twin Colossals"
+   }
+  },
+  {
+   "name": "the way to Desolace (the road north, at the zone's edge)",
+   "from": {
+    "node": "Ruins of Ravenwind"
+   },
+   "to": {
+    "xy": [
+     -2390,
+     2378
+    ]
+   }
+  }
+ ],
+ "floorWmos": [
+  7952258,
+  109273
+ ]
+}

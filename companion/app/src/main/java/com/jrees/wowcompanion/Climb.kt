@@ -59,14 +59,21 @@ object Climb {
         /** the straight line from world [a] to [b] crosses no wall face (sampled each half yard; at each, the gentlest face within a
          *  quarter yard - a line along an edge is walked on its gentler side) */
         fun lineClear(a: DoubleArray, b: DoubleArray): Boolean {
+            val len = hypot(b[0] - a[0], b[1] - a[1])
+            val n = max(1, (len / 0.5).toInt())
+            // NO CUTTING THROUGH A BUILDING (the user, 2026-10-18: "No cutting through"): a straight line longer than a step never crosses
+            // a room's footprint ([solid]); the steps into one (an inn, a trainer's hall) stay open
+            val sol = solid
+            if (sol != null && len > SOLID_LINE_YD) for (q in 0..n) { if (sol(a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n)) return false }
             if (faces == null) return true
-            val n = max(1, (hypot(b[0] - a[0], b[1] - a[1]) / 0.5).toInt())
             for (q in 0..n) {
                 val x = a[0] + (b[0] - a[0]) * q / n; val y = a[1] + (b[1] - a[1]) * q / n
                 if (minOf(faceAt(x, y), faceAt(x + 0.25, y), faceAt(x - 0.25, y), faceAt(x, y + 0.25), faceAt(x, y - 0.25)) == WALL) return false
             }
             return true
         }
+        /** a building's room footprint at world (x, y) (the caller's: WorldBuildings.feet), never cut through by a straight line */
+        var solid: ((Double, Double) -> Boolean)? = null
         fun wx(j: Int) = ORG - (gr0 + j) * STEP
         fun wy(i: Int) = ORG - (gc0 + i) * STEP
         /** the vertex nearest world ([wx], [wy]) (column, row), clamped onto the grid */
@@ -430,6 +437,8 @@ object Climb {
         return Leg(pts, arrived)
     }
     const val MARGIN_YD = 800.0
+    /** a straight line longer than this (a diagonal step and a half) is a cut, never through a room ([Grid.solid]) */
+    const val SOLID_LINE_YD = STEP * 1.5 * 1.41421356
     const val GOAL_FADE_YD = 100.0
     const val GOAL_DANGEROUS = 1f              // a goal's spot this dangerous (the grid's 0..4) fades its danger over twice as far
 

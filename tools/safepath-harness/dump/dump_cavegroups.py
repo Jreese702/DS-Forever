@@ -32,13 +32,16 @@ def buried(rb, fid):
         if rn < 0: break
         ro += 8 + rn
     if not boxes: return False
+    # EVERY room fully under the ground all round where it could lie (its box's reach from the origin, any yaw): a house built into a
+    # hillside, an inn, a monastery keep their roofs in the open air
     for (x, y, z) in _placed.get(fid, []):
-        under = 0
+        ok = True
         for bx in boxes:
-            cx = (bx[0] + bx[3]) / 2; cy = (bx[1] + bx[4]) / 2; top = z + max(bx[2], bx[5])
-            g = HT.height(x - cx, y - cy)
-            if not math.isnan(g) and top < g - 2.0: under += 1
-        if under * 2 > len(boxes): return True
+            r = max(abs(bx[0]), abs(bx[3]), abs(bx[1]), abs(bx[4])); top = z + max(bx[2], bx[5])
+            gs = [HT.height(x + r * math.cos(a), y + r * math.sin(a)) for a in [k * math.pi / 4 for k in range(8)]] + [HT.height(x, y)]
+            gs = [g for g in gs if not math.isnan(g)]
+            if not gs or top > min(gs) - 3.0: ok = False; break
+        if ok: return True
     return False
 # the manifest the harness reads: which WMOs' floors are ways (a cave, a walkway, one asked for by id)
 kinds = {}
@@ -61,9 +64,10 @@ for f in os.listdir(OUT + '/wmo'):
         if rn < 0: break
         ro += 8 + rn
     cave = any(k in n for k in ('cave', 'tunnel', 'mine', 'den', 'pass', 'crypt', 'barrow', 'hollow', 'grave', 'mound', 'furbog', 'blackfathom')) and ('/dungeon/' in n or 'cave' in n)
-    if not cave and not walkway and fid not in extra and buried(rb, fid): cave = True; print('%7d %s: its rooms under the terrain - a cave' % (fid, n[-60:]))
+    if not cave and not walkway and fid not in extra and fid not in kinds and '/buildings/' not in n and '/transports/' not in n and buried(rb, fid): cave = True; print('%7d %s: its rooms under the terrain - a cave' % (fid, n[-60:]))
     if fid not in extra and not walkway and not cave: continue
-    kinds[fid] = 'extra' if fid in extra else 'cave' if cave else 'walkway'
+    # a kind already recorded (an extra asked for once, a walkway) stays as it was
+    kinds[fid] = 'extra' if fid in extra else kinds.get(fid) or ('cave' if cave else 'walkway')
     b = open(OUT + '/wmo/' + f, 'rb').read(); o = 0; gf = []
     while o + 8 <= len(b):
         nn = le(b, o + 4); tag = b[o:o+4][::-1].decode('latin1')

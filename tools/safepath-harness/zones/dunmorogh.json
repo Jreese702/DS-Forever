@@ -195,5 +195,8 @@
  ],
  "roadTextures": [
   "browncracks"
- ]
+ ],
+ "forever": {
+  "Ironforge Submarine Facility": "NOT ROUTED: not in the world data. AreaTable 16741 'Ironforge Submarine Facility' (parent 1) has no MCNK chunk on map 0 (all 736 root ADTs scanned), nor on maps 3021 / 3104; WMOAreaTable lists WMO id 16741 (group 73533) but no placed WMO root carries that id; TaxiNodes 3205 'Tidegear Coast, Dun Morogh' (flags 1152, no faction, no TaxiPath) is at (-4375.7, 864.8, 32.7), 32 yd under the terrain there (64.6), on tiles 29-31_23 with no WMO or doodad placed (area 2399 The Great Sea) and not reached on the ground from Gnomeregan (the coast lies beyond the 400-500 yd ridge). Re-check after launch (4 Nov)"
+ }
 }

@@ -1,7 +1,9 @@
 {"tag": "tirisfal", "dir": "azeroth", "faction": "horde", "zone": 1420, "area": 85, "level": 6, "friendlyMinLevel": 100,
  "maps": [[1420, 85], [1458, 1497], [1421, 130], [1422, 28]], "cities": [1458], "border": [1420, 1421],
+ "floorWmos": [114572],
  "title": "Tirisfal Glades", "crop": [3250, 1150, 2850, -950],
- "closeups": [{"name": "Deathknell", "box": [2150, 1250, 2100, 1150]}, {"name": "Brill and the Ruins", "box": [2450, 1150, 800, -300]}],
+ "closeups": [{"name": "Deathknell", "box": [2150, 1250, 2100, 1150]}, {"name": "Brill and the Ruins", "box": [2450, 1150, 800, -300]},
+   {"name": "Bandarion Keep, Whispering Forest and Shadowvale", "box": [2600, 1700, 2750, 1850]}],
  "goals": [
   {"name": "the Scarlet Converts (Deathknell's first quest mobs)", "from": {"name": "Deathknell", "xy": [1884, 1582]}, "to": {"mob": "Scarlet Convert", "near": [1795, 1338]}},
   {"name": "Night Web's Hollow's mouth", "from": {"name": "Deathknell", "xy": [1884, 1582]}, "to": {"cave": 111551, "near": [2041, 1854]}},
@@ -12,5 +14,12 @@
   {"name": "the Agamand Family Crypt", "from": {"node": "Brill"}, "to": {"wmo": 110602, "near": [3029, 672]}},
   {"name": "the Undercity entrance (Ruins of Lordaeron)", "from": {"node": "Brill"}, "to": {"wmo": 7675285, "near": [1648, 240]}},
   {"name": "the road into Silverpine Forest", "from": {"node": "Zeppelin tower: Grom'gol, Orgrimmar"}, "to": {"xy": [1432, 725]}},
-  {"name": "The Bulwark (to Western Plaguelands)", "from": {"node": "Brill"}, "to": {"exit": "Western Plaguelands"}}
- ]}
+  {"name": "The Bulwark (to Western Plaguelands)", "from": {"node": "Brill"}, "to": {"exit": "Western Plaguelands"}},
+  {"name": "Bandarion Keep (the Forsaken paladins' keep)", "from": {"name": "Deathknell", "xy": [1884, 1582]}, "to": {"node": "Bandarion Keep"}},
+  {"name": "the Whispering Forest's mobs (Blightscullers, Whispering Horrors)", "from": {"name": "Deathknell", "xy": [1884, 1582]}, "to": {"camp": "Whispering Forest"}},
+  {"name": "Shadowvale (Rudolph Gelhardt's farm)", "from": {"name": "Deathknell", "xy": [1884, 1582]}, "to": {"node": "Shadowvale"}},
+  {"name": "the Shadowvale Lurchers and Mystics", "from": {"node": "Shadowvale"}, "to": {"mob": "Shadowvale Lurcher", "near": [1855, 2640]}}
+ ],
+ "forever": {"Bandarion Keep": "area 16602; md_ruinedkeep/ruinedkeep.wmo (111454) at (2447, 2058, 140); the drafted hub (QuestieDB: Bandarion Keep Paladins lv 55 friendlyTo H, Paladin Trainees)",
+  "Whispering Forest": "area 16616; hostile Blightsculler (271080, lv 10) and Whispering Horror; Knight of Mourning friendly (H)",
+  "Shadowvale": "area 16881; the drafted hub (Rudolph Gelhardt 259431, friendlyTo H); hostile Shadowvale Lurchers and Mystics (lv 8-10) live in the wine cellar huruinedbuildingssm01_winecellar.wmo (114572, 7 groups, one outdoor: its entrance at (1844, 2453, 134)), an underground complex reaching ~240 yd under the hill (floor 105-121 under terrain 166-175): floorWmos reads it as a cave"}}

@@ -306,4 +306,16 @@ class ClimbTest {
         assertTrue("a floor under the hill with no mouth is never reached", Climb.floorLayers(160.0, 0.0, 40.0, 0.0, sealed, hill).isEmpty())
         assertTrue(gr0 > 0)
     }
+
+    /** the user's "No cutting through": a straight line longer than a step never crosses a building's room ([Climb.Grid.solid]); a
+     *  step into it (an inn's door) stays open */
+    @Test fun noStraightLineCutsThroughABuilding() {
+        val g = Climb.build(100.0, 0.0, 100.0, 0.0, { _, _ -> 0f })
+        val ox = 32 * MapHarvest.ADT_YD
+        g.solid = { x, y -> x in 40.0..60.0 && y in 40.0..60.0 }
+        assertFalse(g.lineClear(doubleArrayOf(50.0, 10.0), doubleArrayOf(50.0, 90.0)))
+        assertTrue(g.lineClear(doubleArrayOf(30.0, 10.0), doubleArrayOf(30.0, 90.0)))
+        assertTrue("a step in", g.lineClear(doubleArrayOf(50.0, 36.0), doubleArrayOf(50.0, 41.0)))
+        assertTrue(ox > 0)
+    }
 }

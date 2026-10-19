@@ -1,0 +1,239 @@
+{
+ "tag": "stormwind",
+ "dir": "azeroth",
+ "faction": "alliance",
+ "zone": 1453,
+ "area": 1519,
+ "level": 10,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1453,
+   1519
+  ],
+  [
+   1429,
+   12
+  ]
+ ],
+ "cities": [
+  1453
+ ],
+ "border": [
+  1453,
+  1429
+ ],
+ "title": "Stormwind City and Harbor",
+ "crop": [
+  -8000,
+  -9200,
+  1700,
+  100
+ ],
+ "closeups": [
+  {
+   "name": "Stormwind Harbor",
+   "box": [
+    -8100,
+    -8950,
+    1500,
+    650
+   ]
+  },
+  {
+   "name": "The gate and the Trade District",
+   "box": [
+    -8750,
+    -9150,
+    750,
+    300
+   ]
+  }
+ ],
+ "notes": "Stormwind's streets and harbour are WMO 21138 (file 7962574, 289 groups; the harbour is group 282 = WMOAreaTable 144226, wmoGroupId 84873, z 2..234) at (-8931.6, 539.3, 102.0), yaw 38.5. Its streets stand 20-25 yd over the terrain (Trade District floor 96-100, terrain 72-75), so the lattice's leveling under them walks blind through buildings and over the harbour cliff (the KNOWN SHARED BUG): inside the city the routes are walked on the WMO's own floor (floorCity, fids = the city WMO only). The two terrain stretches are lattice legs: the gate bridge onto the Valley of Heroes street (floor meets terrain at (-9070, 416), 93.1 vs 92.9), and the quay from the harbour ramp's foot ((-8573, 1110), floor 18.3 = terrain 18.3) over the sw_harbor_* stairs and piers (walkways: their own floor layers) to the boat. A full gate-to-boat walk = leg A + city route F + leg B.",
+ "goals": [
+  {
+   "name": "onto the Valley of Heroes street (the city's floor)",
+   "from": {
+    "name": "the Stormwind gate (Elwynn side)",
+    "xy": [
+     -9047.1,
+     411.8
+    ]
+   },
+   "to": {
+    "xy": [
+     -9070.0,
+     416.0
+    ]
+   }
+  },
+  {
+   "name": "the boat pier's root on the quay",
+   "from": {
+    "name": "the harbour ramp's foot (the quay)",
+    "xy": [
+     -8573.0,
+     1110.0
+    ]
+   },
+   "to": {
+    "xy": [
+     -8611.0,
+     1218.0
+    ]
+   }
+  },
+  {
+   "name": "the Auberdine boat's pier (boat 11616)",
+   "from": {
+    "name": "the boat pier's root (sw_harbor_docks' mouth on the quay)",
+    "xy": [
+     -8611.0,
+     1218.0
+    ]
+   },
+   "to": {
+    "xy": [
+     -8646.9,
+     1330.7
+    ]
+   }
+  },
+  {
+   "name": "Stormwind Harbor's Dock Worker (the pier roots)",
+   "from": {
+    "name": "the harbour ramp's foot (the quay)",
+    "xy": [
+     -8573.0,
+     1110.0
+    ]
+   },
+   "to": {
+    "xy": [
+     -8556.2,
+     1224.4
+    ]
+   }
+  },
+  {
+   "name": "Stormwind Harbor's Harbor Guard (the quay)",
+   "from": {
+    "name": "the harbour ramp's foot (the quay)",
+    "xy": [
+     -8573.0,
+     1110.0
+    ]
+   },
+   "to": {
+    "xy": [
+     -8578.5,
+     1159.1
+    ]
+   }
+  }
+ ],
+ "goalSources": {
+  "gate": "Elwynn's drafted exit 'Stormwind City' (bridge), safepath_1429.draft.json node 5",
+  "Harbor Guard": "QuestieDB 267007 'Stormwind Harbor Guard' at Stormwind (32.5, 50.3)",
+  "Dock Worker": "QuestieDB 249215 'Stormwind Dock Worker' at Stormwind (28.7, 48.4)",
+  "boat pier": "TaxiPathNode 177218 (path 11616 node 18, flag 2, 60 s) at (-8654.5, 1344.4, 0.0): the boat's spot on the water; (-8646.9, 1330.7, 5.2) is the nearest pier floor (Caves.floor of the sw_harbor WMOs, 15.7 yd off)",
+  "gryphon": "transports.json flight master 2 (TaxiNodes)",
+  "gate street": "the city floor's mouth nearest the gate: WMO 7962574's floor (Caves rule) within 1.5 yd of the terrain at (-9070, 416), floor 93.1, terrain 92.9",
+  "ramp foot": "the city floor's mouth at the harbour: WMO 7962574 group 282's ramp meets the quay terrain at (-8573, 1110), floor 18.3, terrain 18.3",
+  "pier root": "CAVE 219576 (sw_harbor_docks.wmo, a walkway) mouth at (-8611, 1218, z 5): where its deck meets the quay"
+ },
+ "floorCity": {
+  "fids": [
+   7962574
+  ],
+  "places": [
+   {
+    "name": "Gate street (Valley of Heroes)",
+    "xy": [
+     -9070.0,
+     416.0
+    ],
+    "z": 93.1,
+    "source": "the city floor's mouth nearest the Elwynn gate (floor 93.1, terrain 92.9)"
+   },
+   {
+    "name": "Trade District",
+    "xy": [
+     -8842.6,
+     605.5
+    ],
+    "source": "safepath_1453.draft.json hub 11 'Trade District · Bank, Inn' (QuestieDB NPCs)"
+   },
+   {
+    "name": "Gryphon master (Dungar Longdrink)",
+    "xy": [
+     -8832.8,
+     478.6
+    ],
+    "source": "transports.json flight master 2, Stormwind (TaxiNodes)"
+   },
+   {
+    "name": "Cathedral Square",
+    "xy": [
+     -8620.8,
+     812.0
+    ],
+    "source": "safepath_1453.draft.json hub 21 'Cathedral Square · Paladin trainers'"
+   },
+   {
+    "name": "Harbour ramp foot",
+    "xy": [
+     -8573.0,
+     1110.0
+    ],
+    "z": 18.3,
+    "source": "WMO 7962574 group 282 (WMOAreaTable 144226 'Stormwind Harbor'): its ramp's foot on the quay (floor 18.3 = terrain 18.3)"
+   }
+  ],
+  "links": [
+   {
+    "kind": "boat",
+    "name": "Boat 11616 to Auberdine",
+    "from": "Harbour ramp foot",
+    "toName": "Darkshore, Auberdine dock (the Stormwind end is the pier at (-8646.9, 1330.7), leg B)",
+    "toAt": [
+     6548.3,
+     942.2,
+     0.0
+    ],
+    "oneWay": false,
+    "source": "TaxiPathNode path 11616: stops 177218 (map 0, -8654.5, 1344.4, 0) and 177206 (map 1, 6548.3, 942.2, 0), flag 2, 60 s each"
+   }
+  ],
+  "routes": [
+   {
+    "name": "the gate street to the harbour",
+    "from": "Gate street (Valley of Heroes)",
+    "to": "Harbour ramp foot"
+   },
+   {
+    "name": "the Trade District to the harbour",
+    "from": "Trade District",
+    "to": "Harbour ramp foot"
+   },
+   {
+    "name": "Cathedral Square to the harbour",
+    "from": "Cathedral Square",
+    "to": "Harbour ramp foot"
+   }
+  ],
+  "checks": [
+   {
+    "name": "the Trade District from the gate street",
+    "from": "Gate street (Valley of Heroes)",
+    "to": "Trade District"
+   },
+   {
+    "name": "the gryphon master's platform from the Trade District (NOT joined: its stairs are no collision floor, a 5.9 yd step at (-8847, 510))",
+    "from": "Trade District",
+    "to": "Gryphon master (Dungar Longdrink)"
+   }
+  ]
+ }
+}

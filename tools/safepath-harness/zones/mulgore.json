@@ -61,6 +61,15 @@
     -500,
     -1400
    ]
+  },
+  {
+   "name": "Skywatcher Plateau and Gloomrise",
+   "box": [
+    50,
+    -880,
+    620,
+    80
+   ]
   }
  ],
  "lifts": [
@@ -226,6 +235,56 @@
      26
     ]
    }
+  },
+  {
+   "name": "the Skyborne airship's dock (Skywatcher Plateau, airship 11457 to Zephras)",
+   "from": {
+    "name": "Thunder Bluff's north-east lift (its Mulgore foot)",
+    "xy": [
+     -996,
+     -13
+    ]
+   },
+   "to": {
+    "xy": [
+     -795.1,
+     373.5
+    ]
+   }
+  },
+  {
+   "name": "Camp Gev'rek (the Earthen Ring camp, Skywatcher Plateau)",
+   "from": {
+    "name": "Thunder Bluff's north-east lift (its Mulgore foot)",
+    "xy": [
+     -996,
+     -13
+    ]
+   },
+   "to": {
+    "node": "Camp Gev'rek"
+   }
+  },
+  {
+   "name": "Gloomrise's troll den",
+   "from": {
+    "node": "Camp Gev'rek"
+   },
+   "to": {
+    "cave": 110500,
+    "near": [
+     -26,
+     420
+    ],
+    "exact": true
+   }
   }
- ]
+ ],
+ "forever": {
+  "Skywatcher Plateau": "area 17045; the airship 11457 stop is TaxiPathNode 174802 (map 1, -802.0, 366.5, 188.0, flag 2, 60 s); the dock is WMO 7814111 (autogen 20877, a walkway, scale 0.579) at (-753.5, 394.7, 185.9), its deck at 190 out to (-795.1, 373.5) over the cliff, 9.9 yd from the stop",
+  "airship 11457": "MANUAL LINK, both ways: Skywatcher Plateau (-802.0, 366.5, 188.0) <-> Zephras Isle Windshapers dock (1952.5, 1019.1, 659.9), TaxiPathNode 174802 / 174752",
+  "Camp Gev'rek": "area 17223; the drafted hub 'Camp Gev'rek' (QuestieDB: Muln Earthfury, Alaana Stormwalker, Earthen Ring Shamans)",
+  "Gloomrise": "area 17044; md_trollden.wmo (110500) at (-39, 426, 201), one opening (a den): its mouth is the goal; no QuestieDB spawns in the area",
+  "starts": "The plateau's routes start below Thunder Bluff's north-east lift (45 yd out from its landing at (-1039, -16, 69), the spec's measured lift): from Bloodhoof the router went up the south lift, over High Rise and down the north-east lift, and High Rise's edge is leveled over the lift's floor (BURIED-LEVEL 21 yd at (-1186, 9)) - a Thunder Bluff matter for the Mulgore owner, kept out of these routes"
+ }
 }

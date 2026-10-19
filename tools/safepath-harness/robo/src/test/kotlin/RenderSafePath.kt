@@ -249,6 +249,7 @@ class RenderSafePath {
      */
 
     private val WADE_DANGER = 2f
+    private val BUILDING_DANGER = 2f
     /** a floor this far under the terrain or more is under it (a mine's, a tunnel's), never the ground there (py/segcheck.py: the same) */
     private val LEVEL_BURIED_YD = 8.0
     private fun levels2(net: SafePath.Net, rect: MapHarvest.Rect, tg: Terrain.Grid, heightV: (Int, Int) -> Float, roadAt: (Double, Double) -> Boolean,
@@ -307,6 +308,16 @@ class RenderSafePath {
         File(out, "layers_$tag.json").writeText(org.json.JSONArray(layers.map { (k, z) -> org.json.JSONArray(listOf((k shr 32).toInt(), k.toInt(), z)) }).toString())
         val deckZ: (Double, Double) -> Float = { x, y -> layers[Climb.vkeyAt(x, y)] ?: Float.NaN }
         val cg = Climb.build(rect.t + pad, rect.b - pad, rect.l + pad, rect.r - pad, heightV, level = { x, y -> onFloor(x, y) || (deckAt(x, y) && floorsAt(x, y).isEmpty()) }, hole = hole, centre = centre, deck = deckZ)
+        // the buildings' rooms (WorldBuildings.feet: a room rising over the ground, not a city's, not a mine's under the hill): no straight
+        // line through them (Climb.Grid.solid), and their ground costs as the mobs' middling danger (BUILDING_DANGER): a route goes round
+        // a house unless its goal is in it (the user: "No cutting through")
+        val roomFeet = HashMap<Pair<Int, Int>, List<com.jrees.wowcompanion.Buildings.Foot>>()
+        val wmoGroups = HashMap<Int, List<WorldBuildings.Group>>()
+        fun roomsAt(x: Double, y: Double): Boolean { val l = PlaceNames.locate(x, y)
+            return roomFeet.getOrPut(l[0] to l[1]) { File(dir, "obj0/${l[0]}_${l[1]}.adt").takeIf { it.isFile }?.readBytes()?.let { WorldBuildings.placements(it) }?.flatMap { p ->
+                val gs = wmoGroups.getOrPut(p.fid) { File(dir, "wmo/${p.fid}").takeIf { it.isFile }?.readBytes()?.let { WorldBuildings.groups(it) } ?: emptyList() }
+                WorldBuildings.feet(p, gs) { wx, wy -> height(wx, wy).toDouble() } } ?: emptyList() }.any { it.holds(x, y) } }
+        cg.solid = { x, y -> roomsAt(x, y) }
         println("CLIMB lattice ${cg.nx} x ${cg.ny} in ${(System.nanoTime() - t0) / 1_000_000} ms; walls ${cg.cls.count { (it.toInt() and 3) == 3 } * 100 / cg.cls.size}% of the east steps")
         val ground: (Double, Double) -> Float = { u, v -> val wx = rect.t - v * ay; val wy = rect.l - u * ax; Terrain.factor(tg.at(wx, wy)) }
         val level = spec?.optInt("level", 8) ?: 8
@@ -316,8 +327,9 @@ class RenderSafePath {
         // the zone's typical danger taken off (DangerGrid.typical: an all-red zone steers round its worst camps only)
         val typical = g.typical { u, v -> ar?.uiMap(zg.areaAt(rect.t - v * ay, rect.l - u * ax)) == map }
         println("DANGER typical ${"%.2f".format(typical)} of ${"%.2f".format(g.max)}")
-        val danger: (Double, Double) -> Float = { x, y -> uv(x, y).let { maxOf(0f, g.at(it[0], it[1]) - typical) } + if (waterGrid?.wading(x, y) == true) WADE_DANGER else 0f }
-        val calm: (Double, Double) -> Float = { x, y -> if (waterGrid?.wading(x, y) == true) WADE_DANGER else 0f }
+        val danger: (Double, Double) -> Float = { x, y -> uv(x, y).let { maxOf(0f, g.at(it[0], it[1]) - typical) } + (if (waterGrid?.wading(x, y) == true) WADE_DANGER else 0f) +
+            (if (roomsAt(x, y)) BUILDING_DANGER else 0f) }
+        val calm: (Double, Double) -> Float = { x, y -> (if (waterGrid?.wading(x, y) == true) WADE_DANGER else 0f) + (if (roomsAt(x, y)) BUILDING_DANGER else 0f) }
         // a bridge whose WMO floor is read (its groups dumped: Mulgore's Stonebull Lake bridge) is walked on its own floor, so the water
         // grid's bridge cells (the walkway's whole bounding box) are water again off that floor: the lake beside the deck is no bridge
         var floorCells: Set<Long> = emptySet()
@@ -363,6 +375,16 @@ class RenderSafePath {
         val standable: (Double, Double) -> Boolean = { x, y -> val v = cg.at(x, y)
             cg.lineClear(doubleArrayOf(x, y), doubleArrayOf(x, y)) && (0..3).any { q -> cg.step(v[0], v[1], listOf(1, -1, 0, 0)[q], listOf(0, 0, 1, -1)[q]) != Climb.WALL } }
         val gdir = File(dir, "wmogroup")
+        // a WMO's own groups (MOHD's count, at most 400; the group list goes on with LOD copies): Stormwind's city WMO has 289, its harbour
+        // group 282, the Undercity's 216 - 200 were read (the recheck worker's patch)
+        fun groupsOf(fid: Int): List<ByteArray> {
+            val n = File(gdir.parentFile, "wmo/$fid").takeIf { it.isFile }?.readBytes()?.let { b -> var o = 0; var n = 200
+                while (o + 8 <= b.size) { val len = Db2.le32(b, o + 4)
+                    if (String(byteArrayOf(b[o + 3], b[o + 2], b[o + 1], b[o])) == "MOHD") { n = Db2.le32(b, o + 12).coerceIn(1, 400); break }
+                    if (len < 0) break; o += 8 + len }
+                n } ?: 200
+            return (0 until n).map { File(gdir, "${fid}_$it") }.takeWhile { it.isFile }.map { it.readBytes() }
+        }
         // the lifts (Caves.Lift): measured from their WMOs' own landings (py/liftfind.py), never estimated - the spec's "lifts"
         // DERIVED, as the device must (no lift typed into the app): the elevators' travels from TransportAnimation, each placed WMO's
         // floor searched for a landing straight over another at such a rise (Caves.findLifts). The spec's "lifts" (measured by hand
@@ -375,7 +397,7 @@ class RenderSafePath {
             doubleArrayOf(a.getDouble(1), a.getDouble(2), a.getDouble(3), a.getDouble(4)) } }
         val derivedLifts = placed.filter { p -> p.ox <= rect.t && p.ox >= rect.b && p.oy <= rect.l && p.oy >= rect.r && File(gdir, "${p.fid}_0").isFile &&
             cityRects.any { r -> p.ox <= r[0] && p.ox >= r[1] && p.oy <= r[2] && p.oy >= r[3] } }.flatMap { p ->
-            Caves.findLifts(p, (0 until 200).map { File(gdir, "${p.fid}_$it") }.takeWhile { it.isFile }.map { it.readBytes() }, travels) }
+            Caves.findLifts(p, groupsOf(p.fid), travels) }
         println("LIFTS derived: ${travels.size} elevator travels (${travels.sorted().joinToString { "%.1f".format(it) }} yd); ${derivedLifts.size} lifts: " +
             derivedLifts.joinToString { "${it.name} at ${it.x.toInt()},${it.y.toInt()} z ${it.zBottom.toInt()} -> ${it.zTop.toInt()}" })
         // the routes ride the spec's measured lifts while the derivation is being finished (a harness fixture, never in the app); else the derived
@@ -397,7 +419,7 @@ class RenderSafePath {
         // within 300 yd of the zone's rect: a tunnel out may stand just over the border (Loch Modan's Dun Algaz, 1.5 yd outside)
         val caves = placed.filter { p -> p.fid !in cityFids && p.ox <= rect.t + pad && p.ox >= rect.b - pad && p.oy <= rect.l + pad && p.oy >= rect.r - pad && File(gdir, "${p.fid}_0").isFile &&
             (kinds == null || p.fid in kinds || p.fid in floorWmos || capRects.any { r -> p.ox <= r[0] && p.ox >= r[1] && p.oy <= r[2] && p.oy >= r[3] }) }.map { p ->
-            val gs = (0 until 200).map { File(gdir, "${p.fid}_$it") }.takeWhile { it.isFile }.map { it.readBytes() }
+            val gs = groupsOf(p.fid)
             Caves.cave(p, gs, ::bil, standable, lifts)
         }.filter { it.mouths.isNotEmpty() }
         for (c in caves) println("CAVE ${c.fid} at ${c.wx.toInt()},${c.wy.toInt()} (uiMap ${ar?.uiMap(zg.areaAt(c.wx, c.wy))}, ${areas[zg.areaAt(c.wx, c.wy)]?.name}): ${c.mouths.size} mouths ${c.mouths.joinToString { "${it[0].toInt()},${it[1].toInt()} z ${it[2].toInt()}" }}; ${c.ways.size} ways ${c.ways.joinToString { "${it.yd.toInt()} yd" }}")
@@ -412,7 +434,7 @@ class RenderSafePath {
             val fids = ac.getJSONArray("floor").let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() }
             val near = xyOf("near")!!
             val parts = placed.filter { it.fid in fids && Math.hypot(it.ox - near[0], it.oy - near[1]) < 600 }.map { p ->
-                p to (0 until 200).map { File(gdir, "${p.fid}_$it") }.takeWhile { it.isFile }.map { it.readBytes() } }
+                p to groupsOf(p.fid) }
             val fl = Caves.floor(parts)
             val pieceSize = fl.piece.toList().groupingBy { it }.eachCount()
             /** the floor at world xy: of the vertices within 6 yd, the one on the largest piece (a deck, a platform - not a ledge) */
