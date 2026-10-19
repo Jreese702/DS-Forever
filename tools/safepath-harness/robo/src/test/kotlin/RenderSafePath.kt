@@ -859,9 +859,44 @@ class RenderSafePath {
             val rb = RoadmapBuild(cg, deep, standable, ::roomsAt, waterAt, layers, rect.t, rect.b, rect.l, rect.r)
             val built = rb.build { println("NET1 $it") }
             val rmDanger = rb.dangerBytes(built, danger)
-            val sec = ShippedNet.section(netC, mine, level, tag, shipLinks, wetOf,
+            // NET2 (NetFloors, helper T4): the floor layers' ways, the caves' mouths joined to the ground, the far goals' spurs - all walked
+            // (SAFEPATH_NETFLOORS=0: left out)
+            var netS = netC; var nodesS: List<SafePath.Node> = floorNodes; var extrasS: List<ShippedNet.Extra> = extras
+            if (System.getenv("SAFEPATH_NETFLOORS") != "0") {
+                val nl = NetFloors.Layers(layers, cg)
+                fun w(sp: QuestieNpcs.Spawn) = Triple(rect.t - sp.y * ay, rect.l - sp.x * ax, sp.name)
+                val hostileW = com.jrees.wowcompanion.DangerInputs.hostile(spawns, mine).map { w(it) }
+                val npcW = spawns.filter { it.hostile != mine && it.hostile != 3 }.map { w(it) }
+                val goalsW = trips.mapNotNull { (_, _, g) -> g.second?.let { g.first to it } } +
+                    (city?.export()?.optJSONArray("places")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { it.getString("name") to doubleArrayOf(it.getDouble("x"), it.getDouble("y")) } } ?: emptyList())
+                val pls = NetFloors.places(netC, hostileW, npcW, goalsW, nl)
+                // the floors' triangles as py/segcheck.py reads floors_<tag>.json (every deck with heights; a capital's street boxes not)
+                val deckCells = HashMap<Long, ArrayList<com.jrees.wowcompanion.WorldBuildings.Deck>>()
+                for (d in zi.deckList) { if (d.heights == null || d in zi.capitalDecks || d.triangles.isEmpty()) continue
+                    val xs = d.triangles.flatMap { listOf(it[0], it[2], it[4]) }; val ys = d.triangles.flatMap { listOf(it[1], it[3], it[5]) }
+                    for (i in Math.floorDiv(xs.min().toLong() - 2, 64L)..Math.floorDiv(xs.max().toLong() + 2, 64L))
+                        for (j in Math.floorDiv(ys.min().toLong() - 2, 64L)..Math.floorDiv(ys.max().toLong() + 2, 64L)) deckCells.getOrPut(i * 1000003L + j) { ArrayList() }.add(d) }
+                val surf = NetFloors.Surfaces(layers, { x, y -> deckCells[Math.floorDiv(x.toLong(), 64L) * 1000003L + Math.floorDiv(y.toLong(), 64L)]
+                    ?.flatMap { it.heightsAt(x, y).toList() }?.toDoubleArray() ?: DoubleArray(0) }, { x, y -> zl.bil(x, y) },
+                    { x, y -> zl.onFloor(x, y) || (zi.deckAt(x, y) && zi.floorsAt(x, y).isEmpty()) })
+                val t0 = System.nanoTime()
+                val plan = NetFloors.ways(NetFloors.Input(netC, floorNodes, extras, cg, deep, nl, standable, { x, y -> danger(x, y) / DangerGrid.CAP }, pls,
+                    wayOk = surf::ok))
+                val applied = NetFloors.apply(plan, netC, floorNodes, extras, cg, deep)
+                netS = applied.first; nodesS = applied.second; extrasS = applied.third
+                println(NetFloors.summary(tag, plan) + "; ${nl.count} floor layers (${nl.openings.size} openings), ${pls.size} places " +
+                    "(${pls.groupingBy { it.why }.eachCount()}); ${(System.nanoTime() - t0) / 1_000_000} ms; extras ${extras.size} -> ${extrasS.size}, " +
+                    "draft mouth spurs dropped ${netS.edges.count { it.state == SafePath.REMOVED } - netC.edges.count { it.state == SafePath.REMOVED }}")
+                for (d in plan.dropped) println("NETFLOORS dropped $d")
+                for (u in plan.unreached) println("NETFLOORS unreached $u")
+                if (floorNodes.isNotEmpty()) NetFloors.cityCover(floorNodes.map { doubleArrayOf(it.wx, it.wy) }, pls.filter { it.why == "goal" || it.why == "npc" }).let { (n, far) ->
+                    println("NETFLOORS city streets: $n places within ${NetFloors.FLOOR_NEAR_YD.toInt()} yd of a street point; far: $far") }
+                File(out, "nf").mkdirs()
+                File(out, "nf/levels_routes_$tag.json").writeText(NetFloors.routesJson(tag, plan.ways).toString())
+            }
+            val sec = ShippedNet.section(netS, mine, level, tag, shipLinks, wetOf,
                 walk = { a, b -> legOf(a, b)?.takeIf { it.second }?.first?.map { doubleArrayOf(it[0], it[1]) } },
-                extraNodes = floorNodes, extras = extras, roadmapDanger = rmDanger)
+                extraNodes = nodesS, extras = extrasS, roadmapDanger = rmDanger)
             val head = ShippedNet.Header(map, rect.c, Climb.RULES_VERSION, System.getenv("SAFEPATH_RULES_COMMIT") ?: "",
                 System.getenv("SAFEPATH_BUILD") ?: "", java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString())
             val pack = ShippedNet.Pack(head, listOf(sec), built.rm)
