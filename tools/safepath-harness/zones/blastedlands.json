@@ -7,13 +7,13 @@
               {"name": "The Dark Portal and Serpent's Coil", "box": [-11200, -12050, -2700, -3600]}],
  "goals": [
   {"name": "the pass from the Swamp of Sorrows: the canyon road down to the Blasted Lands floor", "from": {"xy": [-10540, -2990]}, "to": {"xy": [-10890, -2990]}},
-  {"name": "the Garrison Armory (the keep's mine)", "from": {"node": "Nethergarde Keep"}, "to": {"cave": 110819, "near": [-10834, -3040]}},
-  {"name": "Dreadmaul Hold (the ogres, Grol)", "from": {"node": "Nethergarde Keep"}, "to": {"camp": "Dreadmaul Hold"}},
-  {"name": "the Altar of Storms", "from": {"node": "Nethergarde Keep"}, "to": {"cave": 106679, "near": [-11284, -2513]}},
-  {"name": "Rise of the Defiler (Razelikh)", "from": {"node": "Nethergarde Keep"}, "to": {"camp": "Rise of the Defiler"}},
-  {"name": "Dreadmaul Post", "from": {"node": "Nethergarde Keep"}, "to": {"camp": "Dreadmaul Post"}},
-  {"name": "Serpent's Coil (the Shadowsworn): its west mouth", "from": {"node": "Nethergarde Keep"}, "to": {"xy": [-11300, -3414], "exact": true}},
-  {"name": "the Dark Portal", "from": {"node": "Nethergarde Keep"}, "to": {"cave": 7952349, "near": [-11848, -3213]}},
-  {"name": "The Tainted Scar", "from": {"node": "Nethergarde Keep"}, "to": {"camp": "The Tainted Scar"}},
-  {"name": "Nethergarde Keep to the foot of the Swamp of Sorrows canyon road", "from": {"node": "Nethergarde Keep"}, "to": {"xy": [-10890, -2990]}}
+  {"name": "the Garrison Armory (the keep's mine)", "from": {"name": "Nethergarde Keep (the foot of the gryphon master's landing pad)", "xy": [-11112, -3441]}, "to": {"cave": 110819, "near": [-10834, -3040]}},
+  {"name": "Dreadmaul Hold (the ogres, Grol)", "from": {"name": "Nethergarde Keep (the foot of the gryphon master's landing pad)", "xy": [-11112, -3441]}, "to": {"camp": "Dreadmaul Hold"}},
+  {"name": "the Altar of Storms", "from": {"name": "Nethergarde Keep (the foot of the gryphon master's landing pad)", "xy": [-11112, -3441]}, "to": {"cave": 106679, "near": [-11284, -2513]}},
+  {"name": "Rise of the Defiler (Razelikh)", "from": {"name": "Nethergarde Keep (the foot of the gryphon master's landing pad)", "xy": [-11112, -3441]}, "to": {"camp": "Rise of the Defiler"}},
+  {"name": "Dreadmaul Post", "from": {"name": "Nethergarde Keep (the foot of the gryphon master's landing pad)", "xy": [-11112, -3441]}, "to": {"camp": "Dreadmaul Post"}},
+  {"name": "Serpent's Coil (the Shadowsworn): its west mouth", "from": {"name": "Nethergarde Keep (the foot of the gryphon master's landing pad)", "xy": [-11112, -3441]}, "to": {"xy": [-11300, -3414], "exact": true}},
+  {"name": "the Dark Portal", "from": {"name": "Nethergarde Keep (the foot of the gryphon master's landing pad)", "xy": [-11112, -3441]}, "to": {"cave": 7952349, "near": [-11848, -3213]}},
+  {"name": "The Tainted Scar", "from": {"name": "Nethergarde Keep (the foot of the gryphon master's landing pad)", "xy": [-11112, -3441]}, "to": {"camp": "The Tainted Scar"}},
+  {"name": "Nethergarde Keep to the foot of the Swamp of Sorrows canyon road", "from": {"name": "Nethergarde Keep (the foot of the gryphon master's landing pad)", "xy": [-11112, -3441]}, "to": {"xy": [-10890, -2990]}}
  ]}

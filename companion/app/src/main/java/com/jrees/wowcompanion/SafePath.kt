@@ -2073,9 +2073,13 @@ object SafePath {
             if (straight || Climb.inCave(cur) && Climb.inCave(tgt)) { out.add(tgt); continue }
             val lg = leg(cur, tgt)
             if (lg == null) { if (walkable == null) out.add(tgt); continue }
+            // the walk on: a leg that starts at its first vertex, not at the exact start (the hop from it crosses a wall face), starts the
+            // way there too - [f] kept would be joined straight to that vertex, the very hop the leg refused (Blasted Lands' Horde A, a
+            // start 2.4 yd over 45-48 degree faces)
+            if (out.size == 1 && hypot(lg[0][0] - f[0], lg[0][1] - f[1]) > 0.5 && walkable?.invoke(f, lg[0]) == false) out.clear()
             // the leg's every point: one that starts at its first vertex (the hop from [cur] crosses a wall) never loses that vertex, else
             // [cur] would be joined straight to the next one, a line nobody checked (Loch Modan B, out of a mine's mouth)
-            for (p in lg) if (hypot(out.last()[0] - p[0], out.last()[1] - p[1]) > 0.5) out.add(p)
+            for (p in lg) if (out.isEmpty() || hypot(out.last()[0] - p[0], out.last()[1] - p[1]) > 0.5) out.add(p)
         }
         // the ground's own way straight there, when it reaches the goal and the network's way round is far longer (a valley walled
         // round, its goal at its own far end: the network leaves it by its gate and comes back)

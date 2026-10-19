@@ -112,6 +112,20 @@ class ClimbTest {
         assertTrue(hypot(way.last()[0], way.last()[1] + 190) < 1.0)
     }
 
+    @Test fun aStartOnAWallFaceIsNotJoinedStraightToTheNetwork() {
+        // the start inside one cell whose middle vertex stands 6 yd up (walls all round it), a road 40 yd off: the way starts at the
+        // leg's first vertex, never with the hop off the wall face the leg itself refused
+        val start = doubleArrayOf(2.0, 189.6)
+        val c0 = Math.floor((org - start[1]) / s); val r0 = Math.floor((org - start[0]) / s)
+        fun peak(gr: Int, gc: Int) = if (gc.toDouble() == c0 && gr.toDouble() == r0) 6f else 0f
+        val g = Climb.build(200.0, -200.0, 200.0, -200.0, { _, _ -> 0f }, centre = ::peak)
+        val net = SafePath.Net(1, 0, "", listOf(SafePath.Node(1, 40.0, 150.0, "road"), SafePath.Node(2, 40.0, -150.0, "road")),
+            listOf(SafePath.Edge(1, 2, SafePath.ROAD)), emptyList())
+        val way = SafePath.routeOn(net, start[0], start[1], 0.0, -190.0, { a, b -> Climb.route(g, a, b)?.pts }, walkable = { a, b -> Climb.walkable(g, a, b) })!!
+        assertTrue("the start ${way[0].toList()} is the leg's vertex", hypot(way[0][0] - start[0], way[0][1] - start[1]) > 0.5)
+        assertWalkable(g, way)
+    }
+
     @Test fun aDraftedWayOverACliffIsRemoved() {
         val g = grid(::basin)
         val net = SafePath.Net(1, 0, "", listOf(SafePath.Node(1, 0.0, 150.0, "road"), SafePath.Node(2, 0.0, -150.0, "road"),
