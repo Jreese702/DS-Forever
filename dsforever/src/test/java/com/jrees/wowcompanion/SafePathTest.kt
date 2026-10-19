@@ -298,6 +298,14 @@ class SafePathTest {
         }
     }
 
+    /** the ends' shortcut never lands on a cave's point either (the review's H2: `cut && (A) || (B)` skipped the guard on B) */
+    @Test fun theEndsShortcutNeverCutsOntoACavesFloor() {
+        val way = listOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(0.0, 50.0), doubleArrayOf(10.0, 50.0), doubleArrayOf(10.0, 0.0, Climb.IN_CAVE),
+            doubleArrayOf(20.0, 0.0, Climb.IN_CAVE), doubleArrayOf(200.0, 0.0))
+        val out = SafePath.smooth(way) { _, _ -> true }
+        assertTrue("the start cut straight onto the cave's point", out.size < 2 || !(Climb.inCave(out[1]) && way.indexOfFirst { it === out[1] } > 1))
+    }
+
     /** a lift's ride is a [SafePath.LIFT] edge whose cost is its wait (zero yards long, it still costs Caves.LIFT_WAIT_YD) */
     @Test fun aLiftsRideCostsItsWait() {
         val w = Caves.Way(listOf(doubleArrayOf(0.0, 0.0, 60.0), doubleArrayOf(0.0, 10.0, 69.0), doubleArrayOf(0.0, 12.0, 69.0, 1.0),

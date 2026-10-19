@@ -197,6 +197,12 @@ object WorldBuildings {
             }
             return if (best.isNaN() && orBuried) under else best
         }
+        /** whether the deck at world ([x], [y]) stands over a liquid whose surface is [surface] (NaN: dry, any): a floor at or over it, or
+         *  no heights read (a box) - a board sunk under the water is no bridge over it (the review's M2) */
+        fun over(x: Double, y: Double, surface: Float): Boolean {
+            if (surface.isNaN() || zs == null) return true
+            val hs = heightsAt(x, y); return hs.isEmpty() || hs.any { it >= surface - 0.5 }
+        }
         /** every floor's height at world ([x], [y]) (its triangles within [DECK_MARGIN_YD] there, as [heightAt]); empty off the deck */
         fun heightsAt(x: Double, y: Double): DoubleArray {
             val z = zs ?: return DoubleArray(0)

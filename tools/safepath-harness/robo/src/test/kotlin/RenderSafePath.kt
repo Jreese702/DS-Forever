@@ -128,7 +128,7 @@ class RenderSafePath {
                     val d = com.jrees.wowcompanion.WorldBuildings.m2Deck(p, m)
                     if (m2Said.add(p.uid)) println("DECK M2 ${p.fid} '$name' at ${p.ox.toInt()},${p.oy.toInt()} z ${p.oz.toInt()} yaw ${Math.toDegrees(p.yaw).toInt()}: " +
                         if (d == null) "not a bridge (or no collision floor)" else "a bridge, its deck read")
-                    d?.let { dk -> deckList.add(dk); keepHeights(c, r, dk); { x: Double, y: Double -> dk.holds(x, y) } }
+                    d?.let { dk -> deckList.add(dk); keepHeights(c, r, dk); { x: Double, y: Double -> dk.holds(x, y) && dk.over(x, y, Terrain.surfaceAt(surface, c, r, x, y)) } }
                 }
             }
             // a deck's floors all more than LEVEL_BURIED_YD under the terrain at a spot (its nearest outer vertex): buried, no ground there
@@ -156,7 +156,7 @@ class RenderSafePath {
                                 if (!com.jrees.wowcompanion.WorldBuildings.isCity(p, gs) && gs.none { it.interior }) keepHeights(c, r, d, any = true)
                                 // ... and a floor is the ground only where it is not buried: more than LEVEL_BURIED_YD under the terrain (Blasted
                                 // Lands' Garrison Armory mine: its outdoor floors at 0-40 under a hill to 263 leveled it, a route climbed it)
-                                listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) && !buriedAt(c, r, d, x, y) }) }
+                                listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) && !buriedAt(c, r, d, x, y) && d.over(x, y, Terrain.surfaceAt(wet(c, r).first, c, r, x, y)) }) }
                             // a WMO whose floors can't be read (its groups not dumped) levels nothing - the ground under its box is the
                             // terrain's (Silithus: Cenarion Hold's outpost, undumped, let a route over a 67-90 degree step) - but a capital's
                             // streets, whose ground under them reads steep everywhere
@@ -254,6 +254,8 @@ class RenderSafePath {
      */
 
     private val WADE_DANGER = 2f
+    /** an island's ground this big (lattice vertices: about 2.6 sq km) is the mainland's: no declared swim to it */
+    private val SWIM_ISLAND_MAX = 150_000
     private val BUILDING_DANGER = 2f
     /** a floor this far under the terrain or more is under it (a mine's, a tunnel's), never the ground there (py/segcheck.py: the same) */
     private val LEVEL_BURIED_YD = 8.0
@@ -717,6 +719,8 @@ class RenderSafePath {
                 return seen
             }
             val v0 = cg.at(p0[0], p0[1]); val island = flood(v0[0], v0[1], 400_000)
+            // an "island" a walk reaches the mainland from is none: no swim offered (the review's M8)
+            if (island.size >= SWIM_ISLAND_MAX) { println("SWIM ${o.optString("name")}: its ground (${island.size} vertices) joins the mainland - no swim"); continue }
             // the swim: from the island's ground through the water, nearest first, to ground of a far bigger piece
             val dist = HashMap<Long, Double>(); val prev = HashMap<Long, Long>()
             val pq = java.util.PriorityQueue<Pair<Double, Long>>(compareBy { it.first })

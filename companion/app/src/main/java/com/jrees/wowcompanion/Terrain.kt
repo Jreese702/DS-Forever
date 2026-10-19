@@ -213,10 +213,17 @@ object Terrain {
         return if (any) out else null
     }
 
+    /** the liquid's surface over world ([wx], [wy]) of tile ([tc], [tr])'s water grid ([surface], as [water]); NaN dry */
+    fun surfaceAt(surface: FloatArray?, tc: Int, tr: Int, wx: Double, wy: Double): Float {
+        val s = surface ?: return Float.NaN
+        val ci = (((32 * MapHarvest.ADT_YD - wy) / MapHarvest.ADT_YD - tc) * TILE_V).toInt().coerceIn(0, TILE_V - 1)
+        val cj = (((32 * MapHarvest.ADT_YD - wx) / MapHarvest.ADT_YD - tr) * TILE_V).toInt().coerceIn(0, TILE_V - 1)
+        return s[cj * TILE_V + ci]
+    }
     /** the liquid types no one wades (LiquidType.db2: [names] by id): magma, lava, slime, fire, acid by their names */
     const val DB_LIQUID_TYPE = 1371380
     /** the liquid types no one wades, as read ([lethalLiquids]) by the harvest or the harness: a WMO's own lava (Caves) asks it too */
-    @Volatile var lethal: Set<Int> = setOf(3, 4, 7, 8)
+    @Volatile var lethal: Set<Int> = emptySet()      // none known until LiquidType.db2 is read (no game ids typed here; the review's M1)
     fun lethalLiquids(names: Map<Int, String>): Set<Int> = names.filter { (_, n) -> LETHAL.containsMatchIn(n) }.keys
     val LETHAL = Regex("magma|lava|slime|fire|acid|poison|ooze", RegexOption.IGNORE_CASE)
 

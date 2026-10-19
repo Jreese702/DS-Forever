@@ -280,6 +280,7 @@ object Climb {
             if (faces != null) {
                 val gr = gr0 + j; val gc = gc0 + i
                 val ha = h; val hb = height(gr, gc + 1); val hc = height(gr + 1, gc); val hd = height(gr + 1, gc + 1); val m = centre!!(gr, gc)
+                var plain = false
                 val f = when {
                     hole?.invoke(gr, gc) == true -> WALL or (WALL shl 2) or (WALL shl 4) or (WALL shl 6)
                     level != null && level(ORG - (gr + 0.5) * STEP, ORG - (gc + 0.5) * STEP) -> 0
@@ -289,11 +290,12 @@ object Climb {
                     // a cell on a floor's edge, its corners on the floor and the terrain more than a 45 degree step apart (a platform
                     // 6 yd over the ground beside it): a wall, whatever the terrain's own faces there (Mulgore D cut across one diagonally)
                     deck != null && edgeDrop(gr, gc, height, deck) -> WALL or (WALL shl 2) or (WALL shl 4) or (WALL shl 6)
-                    else -> faceClass(ha, hb, m) or (faceClass(hb, hd, m) shl 2) or (faceClass(hc, hd, m) shl 4) or (faceClass(ha, hc, m) shl 6)
+                    else -> { plain = true; faceClass(ha, hb, m) or (faceClass(hb, hd, m) shl 2) or (faceClass(hc, hd, m) shl 4) or (faceClass(ha, hc, m) shl 6) }
                 }
                 faces[j * nx + i] = f.toByte()
-                // which of the four are walls under SHORT_STEEP_DEG (a short stretch of them is walked: Grid.lineClear)
-                if (hole?.invoke(gr, gc) != true) {
+                // which of the four are walls under SHORT_STEEP_DEG (a short stretch of them is walked: Grid.lineClear) - the terrain's own faces
+                // only: a floor's edge walled over the ground under it takes none (the review's H3: a line spent 2 yd over a 4-6 yd drop)
+                if (plain) {
                     val f48 = intArrayOf(faceClass(ha, hb, m, SHORT_STEEP_DEG), faceClass(hb, hd, m, SHORT_STEEP_DEG), faceClass(hc, hd, m, SHORT_STEEP_DEG), faceClass(ha, hc, m, SHORT_STEEP_DEG))
                     var b48 = 0
                     for (q in 0..3) if ((f shr (2 * q)) and 3 == WALL && f48[q] != WALL) b48 = b48 or (1 shl q)

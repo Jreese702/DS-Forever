@@ -923,7 +923,7 @@ object SafePath {
      */
     val ZONES_STEP = object : ArtHarvest.Step {
         override val id = "safepathzones"
-        override val version = 7                       // v4: decks; v5: M2 bridges (by model name) as decks; v6: the water per vertex (WTR2); v7: lava and slime a wall
+        override val version = 8                       // v4: decks; v5: M2 bridges (by model name) as decks; v6: the water per vertex (WTR2); v7: lava and slime a wall; v8: name-less flat decks, a deck only over its water
         override val beforePlay = false
         override val weight = 40
         override fun run(job: ArtHarvest.Job) {
@@ -932,7 +932,8 @@ object SafePath {
             val areas = g.db2(PlaceNames.DB_AREA_TABLE)?.rows(strings = setOf(1))?.associate { it.id to PlaceNames.Area(it.str(1), it.int(3)) }
                 ?: error("AreaTable unreadable: ${g.lastReadWhy}")
             // the liquids no one wades (magma, slime): a wall at any depth
-            val lethal = g.db2(Terrain.DB_LIQUID_TYPE)?.rows(strings = setOf(0))?.associate { it.id to it.str(0) }?.let { Terrain.lethalLiquids(it) } ?: Terrain.lethal
+            val lethal = g.db2(Terrain.DB_LIQUID_TYPE)?.rows(strings = setOf(0))?.associate { it.id to it.str(0) }?.let { Terrain.lethalLiquids(it) }
+                ?: Terrain.lethal.also { android.util.Log.w("WCMAP", "safepath: LiquidType unreadable (${g.lastReadWhy}) - no liquid read as lethal") }
             Terrain.lethal = lethal
             val uimap = g.db2(DangerStore.DB_UIMAP_ASSIGNMENT)?.rows()?.let { rows ->
                 val o = HashMap<Int, Int>(); for (r in rows) { val a = r.int(7); val m = r.int(4); if (a != 0 && m != 0 && a !in o) o[a] = m }; o
@@ -982,13 +983,13 @@ object SafePath {
                                 val root = g.read(p.fid)
                                 val feet = WorldBuildings.walkways(p, wmoGroups.getOrPut(p.fid) { root?.let { WorldBuildings.groups(it) } ?: emptyList() })
                                 if (feet.isEmpty()) emptyList()
-                                else root?.let { WorldBuildings.deck(p, it) { id -> g.read(id) } }?.takeIf { !it.empty }?.let { d -> listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) }) }
+                                else root?.let { WorldBuildings.deck(p, it) { id -> g.read(id) } }?.takeIf { !it.empty }?.let { d -> listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) && d.over(x, y, Terrain.surfaceAt(surface, tc, tr, x, y)) }) }
                                     ?: feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } }
                             }.orEmpty() + ob?.let { o ->
                                 // and the M2 bridges (Duskwood's covered bridge into Westfall), by their models' own names
                                 WorldBuildings.m2Decks(o, { x, y -> Terrain.wetNear(surface, tc, tr, x, y, WorldBuildings.M2_NEAR_WATER_YD) }) { fid ->
                                     if (fid in m2Floors) m2Floors[fid] else g.read(fid)?.let { WorldBuildings.m2BridgeFloor(it) }.also { m2Floors[fid] = it } }
-                                    .map { d -> { x: Double, y: Double -> d.holds(x, y) } }
+                                    .map { d -> { x: Double, y: Double -> d.holds(x, y) && d.over(x, y, Terrain.surfaceAt(surface, tc, tr, x, y)) } }
                             }.orEmpty()
                         }
                         Wet(surface, Terrain.tile(b)?.h, walks)
@@ -1034,7 +1035,7 @@ object SafePath {
             val ar = areas() ?: return@run "no areas table yet"
             // the lattice (the terrain step's, when it has run): the exits checked on the ground, as the harness does
             val cg = Climb.files.get(map)
-            val built = "roads $roadCells, ${zg.nx}x${zg.ny} chunks, water ${waters.get(map) != null}, ground ${cg != null}, v3"
+            val built = "roads $roadCells, ${zg.nx}x${zg.ny} chunks, water ${waters.get(map) != null} v${ZONES_STEP.version}, ground ${cg != null}, v3"
             val old = drafts.get(map)
             if (old != null && old.built == built) return@run null
             val names = HashMap<Int, String>()
@@ -1518,14 +1519,15 @@ object SafePath {
         }
         // the ends: straight to the farthest point near enough when the way there hooks round
         if (w.size > 2) {
-            val k = (w.size - 2 downTo 1).firstOrNull { k -> cut(0, k) && (d(w[0], w[k]) <= ATTACH_YD && arc(0, k) > 1.3 * d(w[0], w[k]) + 20.0) ||
-                (clear != null && d(w[0], w[k]) <= SHORTCUT_YD && arc(0, k) > 1.6 * d(w[0], w[k]) && clear(w[0], w[k])) }
+            // (never onto a cave's, a lift's or a swim's point, by either branch: the review's H2, the shortcut's skipped the guard)
+            val k = (w.size - 2 downTo 1).firstOrNull { k -> cut(0, k) && ((d(w[0], w[k]) <= ATTACH_YD && arc(0, k) > 1.3 * d(w[0], w[k]) + 20.0) ||
+                (clear != null && d(w[0], w[k]) <= SHORTCUT_YD && arc(0, k) > 1.6 * d(w[0], w[k]) && clear(w[0], w[k]))) }
             if (k != null) w = listOf(w[0]) + w.subList(k, w.size)
         }
         if (w.size > 2) {
             val last = w.size - 1
-            val k = (1 until last).firstOrNull { k -> cut(k, last) && (d(w[last], w[k]) <= ATTACH_YD && arc(k, last) > 1.3 * d(w[last], w[k]) + 20.0) ||
-                (clear != null && d(w[last], w[k]) <= SHORTCUT_YD && arc(k, last) > 1.6 * d(w[last], w[k]) && clear(w[last], w[k])) }
+            val k = (1 until last).firstOrNull { k -> cut(k, last) && ((d(w[last], w[k]) <= ATTACH_YD && arc(k, last) > 1.3 * d(w[last], w[k]) + 20.0) ||
+                (clear != null && d(w[last], w[k]) <= SHORTCUT_YD && arc(k, last) > 1.6 * d(w[last], w[k]) && clear(w[last], w[k]))) }
             if (k != null) w = w.subList(0, k + 1) + listOf(w[last])
         }
         return w
