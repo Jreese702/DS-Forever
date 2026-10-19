@@ -805,7 +805,10 @@ object SafePath {
                     // be in water"). Never a neighbour's: a ford beside the channel stays a ford (Silverpine's river)
                     var d = Float.NaN
                     for (dj in listOf(-1.0, 1.0)) for (di in listOf(-1.0, 1.0)) { val v = depthAt(x + dj * WATER_YD / 4, y + di * WATER_YD / 4); if (!v.isNaN() && (d.isNaN() || v > d)) d = v }
-                    (if (d.isNaN()) 0 else if (bridgeAt(x, y)) 253 else if (d >= 25.3f) 255 else (1 + (max(0f, d) * 10).roundToInt()).coerceIn(1, 252)).toByte()
+                    // a bridge where the deck holds the cell's middle or one of those four points (a deck narrower than the cell, an M2
+                    // bridge's 4 yd footbridge, a pier's edge: its middle alone missed it)
+                    val bridged = !d.isNaN() && (bridgeAt(x, y) || listOf(-1.0, 1.0).any { dj -> listOf(-1.0, 1.0).any { di -> bridgeAt(x + dj * WATER_YD / 4, y + di * WATER_YD / 4) } })
+                    (if (d.isNaN()) 0 else if (bridged) 253 else if (d >= 25.3f) 255 else (1 + (max(0f, d) * 10).roundToInt()).coerceIn(1, 252)).toByte()
                 })
             }
             const val BRIDGE = -1f
@@ -843,7 +846,7 @@ object SafePath {
      */
     val ZONES_STEP = object : ArtHarvest.Step {
         override val id = "safepathzones"
-        override val version = 4                       // v4: each water cell the deepest of 9 points
+        override val version = 5                       // v4: decks and the four-cell water; v5: M2 bridges (by model name) as decks
         override val beforePlay = false
         override val weight = 40
         override fun run(job: ArtHarvest.Job) {
@@ -863,6 +866,7 @@ object SafePath {
             class Wet(val surface: FloatArray?, val ground: FloatArray?, val walks: List<(Double, Double) -> Boolean>)
             val objs = HashMap<Int, Map<Int, Int>>()
             val wmoGroups = HashMap<Int, List<WorldBuildings.Group>>()
+            val m2Floors = HashMap<Int, FloatArray?>()            // each doodad model read once: its floor when it is a bridge, else null
             val wets = object : LinkedHashMap<Long, Wet>(16, 0.75f, true) {
                 override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Wet>?) = size > 24
             }
@@ -893,13 +897,19 @@ object SafePath {
                         // each walkway by its DECK (its outdoor groups' own floor triangles), the box only where the groups can't be read
                         val walks: List<(Double, Double) -> Boolean> = if (surface == null) emptyList() else {
                             val obj = objs.getOrPut(rect.c) { mapRows[rect.c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) }?.let { Terrain.maidObj0(it) } ?: emptyMap() }
-                            obj[MapHarvest.key(tc, tr)]?.let { g.read(it) }?.let { WorldBuildings.placements(it) }?.flatMap { p ->
+                            val ob = obj[MapHarvest.key(tc, tr)]?.let { g.read(it) }
+                            ob?.let { WorldBuildings.placements(it) }?.flatMap { p ->
                                 val root = g.read(p.fid)
                                 val feet = WorldBuildings.walkways(p, wmoGroups.getOrPut(p.fid) { root?.let { WorldBuildings.groups(it) } ?: emptyList() })
                                 if (feet.isEmpty()) emptyList()
                                 else root?.let { WorldBuildings.deck(p, it) { id -> g.read(id) } }?.takeIf { !it.empty }?.let { d -> listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) }) }
                                     ?: feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } }
-                            } ?: emptyList()
+                            }.orEmpty() + ob?.let { o ->
+                                // and the M2 bridges (Duskwood's covered bridge into Westfall), by their models' own names
+                                WorldBuildings.m2Decks(o, { x, y -> Terrain.wetNear(surface, tc, tr, x, y, WorldBuildings.M2_NEAR_WATER_YD) }) { fid ->
+                                    if (fid in m2Floors) m2Floors[fid] else g.read(fid)?.let { WorldBuildings.m2BridgeFloor(it) }.also { m2Floors[fid] = it } }
+                                    .map { d -> { x: Double, y: Double -> d.holds(x, y) } }
+                            }.orEmpty()
                         }
                         Wet(surface, Terrain.tile(b)?.h, walks)
                     }.also { wets[key] = it }

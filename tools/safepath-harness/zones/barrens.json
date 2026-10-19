@@ -10,7 +10,7 @@
  ],
  "goals": [
   {"name": "the Wailing Caverns' mouth", "from": {"node": "The Crossroads"}, "to": {"cave": 109550, "near": [-830, -2050]}},
-  {"name": "Ratchet's pier (the boat to Booty Bay)", "from": {"node": "The Crossroads"}, "to": {"wmo": 107922, "near": [-976, -3796]}},
+  {"name": "Ratchet's pier tip (the boat to Booty Bay)", "from": {"node": "The Crossroads"}, "to": {"xy": [-1001, -3821]}},
   {"name": "Camp Taurajo", "from": {"node": "The Crossroads"}, "to": {"node": "Camp Taurajo"}},
   {"name": "the bridge to Durotar (by Far Watch Post)", "from": {"node": "The Crossroads"}, "to": {"exit": "Durotar"}},
   {"name": "the Mor'shan Rampart's way to Ashenvale", "from": {"node": "The Crossroads"}, "to": {"exit": "Ashenvale"}},

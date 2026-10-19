@@ -9,7 +9,7 @@
   {"name": "the Tower of Althalaxx", "from": {"node": "Auberdine"}, "to": {"wmo": 107196, "near": [7177, -761]}},
   {"name": "the Ruins of Mathystra (the naga)", "from": {"node": "Auberdine"}, "to": {"camp": "Ruins of Mathystra"}},
   {"name": "Ameth'Aran (the road south)", "from": {"node": "Auberdine"}, "to": {"node": "Ameth'Aran"}},
-  {"name": "the Rut'theran boat's pier end (the boat itself is a manual link)", "from": {"node": "Auberdine"}, "to": {"xy": [6580, 755]}},
+  {"name": "the Rut'theran boat's pier end (the boat itself is a manual link)", "from": {"node": "Auberdine"}, "to": {"xy": [6579, 769]}},
   {"name": "Grove of the Ancients", "from": {"node": "Ameth'Aran"}, "to": {"node": "Grove of the Ancients"}},
   {"name": "Blackwood Den's mouth (the furbolgs)", "from": {"node": "Grove of the Ancients"}, "to": {"cave": 110497, "near": [4621, 24]}},
   {"name": "the Master's Glaive", "from": {"node": "Grove of the Ancients"}, "to": {"camp": "The Master's Glaive"}},

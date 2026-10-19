@@ -256,4 +256,15 @@ class SafePathTest {
         assertEquals(1, withLift.edges.count { it.kind == SafePath.LIFT })
         assertEquals(2, withLift.nodes.count { it.kind == SafePath.LIFT })
     }
+
+    /** b-safepath-water: a deck narrower than the water grid's cell (an M2 footbridge, a pier's edge) marks it a bridge when it holds one
+     *  of the cell's four liquid points, not only its middle; open water beside it stays water */
+    @Test fun aNarrowDeckStillMarksItsWaterCell() {
+        val yc = 100.0 - SafePath.WATER_YD / 2                       // the first column's middle
+        val strip: (Double, Double) -> Boolean = { _, y -> abs(y - (yc + SafePath.WATER_YD / 4)) < 0.5 }
+        val w = SafePath.Water.build(100.0, 0.0, 100.0, 0.0, strip) { _, _ -> 5f }
+        assertEquals(SafePath.Water.BRIDGE, w.at(50.0, yc), 0f)
+        assertEquals(5f, w.at(50.0, yc - SafePath.WATER_YD), 0.05f)
+        assertTrue(!strip(50.0, yc))                                  // its middle is off the deck
+    }
 }

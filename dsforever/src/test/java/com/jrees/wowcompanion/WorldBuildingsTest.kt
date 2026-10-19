@@ -55,4 +55,73 @@ class WorldBuildingsTest {
         assertTrue(WorldBuildings.feet(p, city) { _, _ -> 30.0 }.isEmpty())
         assertEquals(4, WorldBuildings.walkways(p, city).size)
     }
+
+    // ---------------------------------------------------------------- M2 bridges (b-safepath-water: Duskwood's covered bridge)
+
+    /** a made-up chunked M2: an MD21 holding an MD20 header named [name], its collision mesh a flat deck 6 x 32 yd at height 5 (two
+     *  faces) and one upright face (a wall, never floor); [deckY] the deck's half length */
+    private fun m2(name: String, deckY: Float = 16f): ByteArray {
+        val verts = listOf(floatArrayOf(-3f, -deckY, 5f), floatArrayOf(3f, -deckY, 5f), floatArrayOf(3f, deckY, 5f), floatArrayOf(-3f, deckY, 5f),
+            floatArrayOf(-3f, -deckY, 0f), floatArrayOf(-3f, deckY, 0f), floatArrayOf(-3f, deckY, 10f))
+        val idx = shortArrayOf(0, 1, 2, 0, 2, 3, 4, 5, 6)
+        val nameAt = 0x100; val vAt = nameAt + 64; val iAt = vAt + verts.size * 12
+        val md = ByteBuffer.allocate(iAt + idx.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+        md.put("MD20".toByteArray()); md.putInt(272); md.putInt(name.length + 1); md.putInt(nameAt)
+        md.position(0xD8); md.putInt(idx.size); md.putInt(iAt); md.putInt(verts.size); md.putInt(vAt)
+        md.position(nameAt); md.put(name.toByteArray()); md.put(0)
+        md.position(vAt); for (v in verts) v.forEach { md.putFloat(it) }
+        md.position(iAt); for (i in idx) md.putShort(i)
+        val body = md.array()
+        val b = ByteBuffer.allocate(8 + body.size).order(ByteOrder.LITTLE_ENDIAN)
+        b.put("MD21".toByteArray()); b.putInt(body.size); b.put(body)
+        return b.array()
+    }
+
+    /** one MDDF entry: fileDataID [fid] (flag 0x40), uid 9, at map position (x, y, z), yaw [ry], tilt [rx] degrees */
+    private fun mddf(fid: Int, px: Float, py: Float, pz: Float, ry: Float, rx: Float = 0f, flags: Int = 0x40): ByteArray {
+        val b = ByteBuffer.allocate(36).order(ByteOrder.LITTLE_ENDIAN)
+        b.putInt(fid); b.putInt(9); b.putFloat(px); b.putFloat(py); b.putFloat(pz); b.putFloat(rx); b.putFloat(ry); b.putFloat(0f)
+        b.putShort(1024); b.putShort(flags.toShort())
+        return b.array()
+    }
+
+    @Test fun doodadsInTheSameFrameAsTheBuildings() {
+        val d = WorldBuildings.doodads(chunk("MVER", ByteArray(4)) + chunk("MDDF", mddf(189417, 17066.666f - 200f, 30f, 17066.666f - 100f, 90f) +
+            mddf(5, 0f, 0f, 0f, 0f, rx = 30f) + mddf(6, 0f, 0f, 0f, 0f, flags = 0)))
+        assertEquals(1, d.size)                              // the tilted one and the one without a fileDataID left out
+        assertEquals(189417, d[0].fid); assertEquals(100.0, d[0].ox, 0.01); assertEquals(200.0, d[0].oy, 0.01); assertEquals(30.0, d[0].oz, 0.01)
+        assertEquals(Math.PI / 2, d[0].yaw, 1e-6); assertEquals(1.0, d[0].scale, 1e-9)
+    }
+
+    @Test fun anM2BridgeIsPickedByItsOwnModelName() {
+        assertEquals("DuskwoodCoveredBridge", WorldBuildings.m2Name(m2("DuskwoodCoveredBridge")))
+        for (n in listOf("DuskwoodCoveredBridge", "SmallDock", "RedRidgeDocksBoardwalk01", "ThousandNeedlesBridge", "ElvenWalkway")) assertTrue(n, WorldBuildings.isM2Bridge(n))
+        for (n in listOf("ElwynnTree01", "Barrel", "")) assertFalse(n, WorldBuildings.isM2Bridge(n))
+        assertTrue(WorldBuildings.m2BridgeFloor(m2("DuskwoodCoveredBridge")) != null)
+        assertTrue(WorldBuildings.m2BridgeFloor(m2("ElwynnTree01")) == null)
+        // a brick named for its bridge (RedRidgeBridgeBrick01, 3 yd) is no deck
+        assertTrue(WorldBuildings.m2BridgeFloor(m2("RedRidgeBridgeBrick01", deckY = 1f)) == null)
+    }
+
+    @Test fun anM2BridgesDeckIsItsCollisionFloor() {
+        val t = WorldBuildings.m2FloorTris(m2("DuskwoodCoveredBridge"))
+        assertEquals(2 * 9, t.size)                          // the two flat faces; the upright one is a wall
+        val p = WorldBuildings.Placement(1, 1, 100.0, 200.0, 30.0, 0.0, 1.0)
+        val d = WorldBuildings.m2Deck(p, m2("DuskwoodCoveredBridge"))!!
+        // yaw 0: world x = ox - lx, y = oy - ly (as a WMO's)
+        assertTrue(d.holds(100.0, 200.0)); assertTrue(d.holds(102.0, 185.0)); assertTrue(d.holds(98.0, 215.0))
+        assertFalse(d.holds(110.0, 200.0)); assertFalse(d.holds(100.0, 230.0))
+        // its floor's height: the placement's own plus the model's (5), the lowest at or over the water's surface asked for
+        assertEquals(35.0, d.heightAt(100.0, 200.0, 20.0), 1e-6)
+        assertTrue(d.heightAt(100.0, 200.0, 36.0).isNaN()); assertTrue(d.heightAt(110.0, 200.0).isNaN())
+        // turned a quarter: the deck runs along world x
+        val q = WorldBuildings.m2Deck(WorldBuildings.Placement(1, 1, 100.0, 200.0, 30.0, Math.PI / 2, 1.0), m2("DuskwoodCoveredBridge"))!!
+        assertTrue(q.holds(115.0, 200.0)); assertFalse(q.holds(100.0, 215.0))
+        // the doodads by the water only, their models' own names deciding
+        val obj = chunk("MDDF", mddf(1, 17066.666f - 200f, 30f, 17066.666f - 100f, 0f) + mddf(2, 17066.666f - 900f, 30f, 17066.666f - 900f, 0f))
+        val read = HashMap<Int, Int>()
+        val decks = WorldBuildings.m2Decks(obj, { x, _ -> x < 500 }) { fid -> read[fid] = (read[fid] ?: 0) + 1; WorldBuildings.m2BridgeFloor(m2("DuskwoodCoveredBridge")) }
+        assertEquals(1, decks.size); assertEquals(setOf(1), read.keys)       // the one far from the water never read
+        assertTrue(decks[0].holds(100.0, 200.0))
+    }
 }
