@@ -307,6 +307,33 @@ class ClimbTest {
         assertTrue(gr0 > 0)
     }
 
+    /** a building's two storeys (Zephras' Valanaar, walkway 7704163): the ground storey is the walker's from its door, though an upper
+     *  storey over it, reached by its own ramp, is higher - highest first walled a start inside the ground storey in */
+    @Test fun aGroundStoreyIsWalkedFromItsDoor() {
+        // the ground 0, sunk to -1.5 under the room (x 20..60); the ground storey's floor at 1.0 from its door (x 16..20) through the room;
+        // the upper storey at 8 over the room, its ramp down to the ground at x 96 (its foot 1.2 yd up: higher than the door's floor)
+        val ground = { gr: Int, _: Int -> val x = 32 * MapHarvest.ADT_YD - gr * Climb.STEP; if (x > 20 && x < 60) -1.5f else 0f }
+        val floors = { x: Double, y: Double ->
+            val out = ArrayList<Double>()
+            if (y in 10.0..30.0) {
+                if (x in 16.0..60.0) out.add(1.0)
+                if (x in 20.0..60.0) out.add(8.0)
+                if (x > 60.0 && x <= 96.0) out.add(1.2 + 6.8 * (96.0 - x) / 36.0)
+            }
+            out.toDoubleArray() }
+        val lay = Climb.floorLayers(160.0, 0.0, 40.0, 0.0, floors, ground)
+        assertEquals("the room, by its door", 1.0f, lay[Climb.vkeyAt(40.0, 20.0)]!!, 0.01f)
+        assertEquals("the door", 1.0f, lay[Climb.vkeyAt(18.0, 20.0)]!!, 0.01f)
+        assertEquals("the upper storey's ramp", 5.2f, lay[Climb.vkeyAt(75.0, 20.0)]!!, 0.6f)
+        // and the room's step out of its door is no wall; its side, 2.5 yd over the sunk ground, still is
+        val g = Climb.build(160.0, 0.0, 40.0, 0.0, ground, deck = { x, y -> lay[Climb.vkeyAt(x, y)] ?: Float.NaN })
+        assertTrue("out through the door", Climb.route(g, doubleArrayOf(40.0, 20.0), doubleArrayOf(5.0, 20.0))!!.reached)
+        // the room's west side (y 30): its last floor vertex's step west, off the floor 2.5 yd over the sunk ground
+        val j = g.at(40.0, 20.0)[1]
+        val i = (0 until g.nx).filter { lay[Climb.vkeyAt(g.wx(j), g.wy(it))] != null }.minByOrNull { g.wy(it).let { y -> -y } }!!
+        assertEquals("off the room's side", Climb.WALL, g.step(i, j, -1, 0))
+    }
+
     /** the user's "No cutting through": a straight line longer than a step never crosses a building's room ([Climb.Grid.solid]); a
      *  step into it (an inn's door) stays open */
     @Test fun noStraightLineCutsThroughABuilding() {
