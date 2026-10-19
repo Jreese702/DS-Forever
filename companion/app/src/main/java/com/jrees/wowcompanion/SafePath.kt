@@ -1773,20 +1773,21 @@ object SafePath {
      * the border into a neighbour along a corridor at least [GROUND_EXIT_MIN] crossings wide, an exit on this side of it ("walk"),
      * joined by a trail to the nearest node. Only the crossings a player would take (the review of the first 33: most stood on a
      * mountain band, a cliff's foot or a plateau's top a few yards over the border):
-     * - never into a capital ([capitals]): a city's ways are learned or measured, never guessed (Thunder Bluff's mesa, Stormwind's wall);
+     * - never into the [capitals] given (none by default: Thunder Bluff's map holds the plain at its mesas' feet, walked to the lifts;
+     *   a walled city's gate is its drafted exit);
      * - its own crossing walkable ([Ground.check]: the neighbour's ground reached within [EXIT_NEAR_YD]) - not a pocket over the line;
      * - onto the neighbour's own map ([onMap]: inside its world rect), never the world's rim beyond its map's edge;
      * - one per open stretch of border: none within [GROUND_EXIT_GAP_YD] of an exit into that neighbour, nor where the far side walks
-     *   to one within [GROUND_EXIT_JOIN_YD] on the neighbour's own ground ([Ground.joins]: the same open border);
-     * - the corridors nearest a road first (players cross where the roads go; the Barrens' Greatwood Vale road ends 64 yd short).
+     *   to one within [GROUND_EXIT_JOIN_YD] on the neighbour's own ground ([Ground.joins]: the same open border) - but a capital's
+     *   ground, entered at many points (Thunder Bluff's lifts at its mesas' feet), is never merged;
      * A drafted "walk" exit off the zone's main ground (on a ridge over a tunnel: Loch Modan's four) is dropped (a bridge, a gate, a
      * tunnel, a boat is a structure's way: kept).
      */
     fun groundExits(net: Net, g: Climb.Grid, zoneAt: (Double, Double) -> Int, dry: (Double, Double) -> Boolean, nameOf: (Int) -> String = { "" },
-                    links: List<Climb.Link> = emptyList(), capitals: Set<Int> = CityExits.CITIES, onMap: ((Int, Double, Double) -> Boolean)? = null): Net =
+                    links: List<Climb.Link> = emptyList(), capitals: Set<Int> = emptySet(), onMap: ((Int, Double, Double) -> Boolean)? = null): Net =
         groundExits(net, Ground(g, net.map, zoneAt, dry, links), nameOf, capitals, onMap)
 
-    fun groundExits(net: Net, ground: Ground, nameOf: (Int) -> String = { "" }, capitals: Set<Int> = CityExits.CITIES,
+    fun groundExits(net: Net, ground: Ground, nameOf: (Int) -> String = { "" }, capitals: Set<Int> = emptySet(),
                     onMap: ((Int, Double, Double) -> Boolean)? = null): Net {
         val g = ground.g
         class X(val v: Int, val x: Double, val y: Double, val to: Int)
@@ -1819,25 +1820,17 @@ object SafePath {
             val cx = group.map { it.x }.average(); val cy = group.map { it.y }.average()
             corridors.add(group.minByOrNull { hypot(it.x - cx, it.y - cy) }!!)
         }
-        // the nearest road first
-        val roads = net.edges.filter { it.kind == ROAD && it.state != REMOVED }.mapNotNull { e -> byId[e.a]?.let { a -> byId[e.b]?.let { b -> a to b } } }
-        fun roadYd(x: Double, y: Double) = roads.minOfOrNull { (a, b) -> segYd(x, y, a.wx, a.wy, b.wx, b.wy) } ?: Double.MAX_VALUE
-        for (at in corridors.sortedBy { roadYd(it.x, it.y) }) {
+        for (at in corridors) {
             val same = exits.filter { it.toMap == at.to }.mapNotNull { byId[it.node] }
             if (same.any { hypot(it.wx - at.x, it.wy - at.y) <= GROUND_EXIT_GAP_YD }) continue
             if (!ground.check(at.x, at.y, at.to).walkable) continue
-            if (same.any { ground.joins(at.v, it.wx, it.wy, at.to, GROUND_EXIT_JOIN_YD) }) continue
+            if (at.to !in CityExits.CITIES && same.any { ground.joins(at.v, it.wx, it.wy, at.to, GROUND_EXIT_JOIN_YD) }) continue
             val id = next++; nodes.add(Node(id, at.x, at.y, EXIT, "ground")); byId[id] = nodes.last()
             exits.add(Exit(id, at.to, "walk", nameOf(at.to)))
             net.nodes.filter { it.kind != CAVE && it.kind != MOUTH && it.kind != LIFT }.minByOrNull { hypot(it.wx - at.x, it.wy - at.y) }
                 ?.let { edges.add(Edge(it.id, id, TRAIL, DRAFT, "ground")) }
         }
         return Net(net.map, net.cont, net.built, nodes, edges, exits, net.reviewed)
-    }
-    private fun segYd(px: Double, py: Double, ax: Double, ay: Double, bx: Double, by: Double): Double {
-        val dx = bx - ax; val dy = by - ay; val l2 = dx * dx + dy * dy
-        val u = if (l2 <= 0.0) 0.0 else (((px - ax) * dx + (py - ay) * dy) / l2).coerceIn(0.0, 1.0)
-        return hypot(px - ax - u * dx, py - ay - u * dy)
     }
     const val TUNNEL_SAME_YD = 60.0        // a tunnel's far mouths into one neighbour this near are one exit
     const val GROUND_EXIT_MIN = 5          // a crossing corridor this many lattice vertices wide (about 20 yd) ...
