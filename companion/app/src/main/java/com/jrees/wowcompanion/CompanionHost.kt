@@ -1742,6 +1742,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 interactView.update(msg, current)
                 // Home > Settings' loot window row (r-loot-on-top): the add-on's word; a replayed document only draws
                 if (current) HomeLootSwitch.note(msg)
+                // Settings > Top screen's compass bar row: the add-on's word (Trail.lua's WC.compass, through Interact's proof.compc)
+                if (current) CompassSwitch.note(msg)
                 // a room keeping the controller through a fight (capture v8's `fight`): the room flashes red (Home's cue)
                 if (current) roomCue.note(msg, room != Room.HOME)
                 // ... and leaving it in the fight goes through the capture's secure leave cell (v9's `fightLeave`)
@@ -3038,13 +3040,18 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val routeWp = RouteWaypoint()
     private fun routePinTick() {
         polestarTick()
-        val pad = questsPad ?: return
-        if (pad.optJSONObject("rows")?.has(RouteWaypoint.ROW) != true) return          // an older add-on: no pin at all
-        val cols = routeWp.tick(mapView.routePin(), SystemClock.elapsedRealtime())
+        val pad = questsPad ?: return pinState("none: no quests pad yet")
+        if (pad.optJSONObject("rows")?.has(RouteWaypoint.ROW) != true) return pinState("none: the add-on has no \"${RouteWaypoint.ROW}\" row (an older add-on, or the pad's row budget full)")
+        val want = mapView.routePin(); pinState(mapView.pinWhy)
+        val cols = routeWp.tick(want, SystemClock.elapsedRealtime())
         if (cols.isEmpty()) return
         Log.i("WCMAP", "route pin: tap $cols (${mapView.pinWhy})")
         TapBridge.taps(this, pad, cols.map { RouteWaypoint.ROW to it }) { why -> Log.i("WCMAP", "route pin: tap failed: $why") }
     }
+
+    // why the game's pin is or isn't set, logged once per change (test13: no checkpoint marker on the compass, and no line said why)
+    private var pinStateLast = ""
+    private fun pinState(why: String) { if (why != pinStateLast) { pinStateLast = why; Log.i("WCMAP", "route pin: $why") } }
 
     // POLESTAR AS THE ROUTER (b-route-polestar): PolestarNav decides the taps of Map.lua's row "pnav" (only while the setting is Polestar;
     // switching away cancels its guidance)

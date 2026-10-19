@@ -3865,12 +3865,14 @@ class MapView(context: Context) : View(context) {
      * through one; null when the route is direct, there is no game focus (a default focus is the app's own), or the player is in flight
      */
     fun routePin(): DoubleArray? {
-        val m = map ?: return null
-        if (Settings.questTracking == "polestar") return null          // Polestar draws its own arrow (b-route-polestar)
-        if (Settings.questTracking == "questtrail") return null        // QuestTrail super-tracks its own pick (b-route-questtrail)
-        if (Settings.questTracking == "vanilla") return null           // the game's own way: its super-track left alone (test49)
-        if (focusQid <= 0 || m.optInt("onTaxi", 0) == 1) return null
-        val r = routeFor(focusQid) ?: return null
+        fun none(why: String): DoubleArray? { pinWhy = "none: $why"; return null }
+        val m = map ?: return none("no map yet")
+        if (Settings.questTracking == "polestar") return none("Quest tracking is Polestar")      // Polestar draws its own arrow (b-route-polestar)
+        if (Settings.questTracking == "questtrail") return none("Quest tracking is QuestTrail")  // QuestTrail super-tracks its own pick (b-route-questtrail)
+        if (Settings.questTracking == "vanilla") return none("Quest tracking is the game's own") // the game's own way: its super-track left alone (test49)
+        if (focusQid <= 0) return none(if (focusIsDefault()) "no game focus (the app's default focus only)" else "no focused quest")
+        if (m.optInt("onTaxi", 0) == 1) return none("in flight")
+        val r = routeFor(focusQid) ?: return none("no route for quest $focusQid")
         // test48 (the user: "The tracker wants me to go off the safe path straight into mobs"): the game's pin stands on the NEXT
         // CHECKPOINT - the first bend round danger or a slope - so the top screen's arrow follows the safe way; on to the next as
         // each is passed (DangerGrid.passed). No bend: the step's own way, as before.
@@ -3878,8 +3880,8 @@ class MapView(context: Context) : View(context) {
             pinWhy = "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}"
             return leg[1]
         }
-        if (r.kind == CursorRoute.Kind.GOAL) return null
-        if (r.x !in 0.0..1.0 || r.y !in 0.0..1.0) return null
+        if (r.kind == CursorRoute.Kind.GOAL) return none("the route is direct (no checkpoint, no way)")
+        if (r.x !in 0.0..1.0 || r.y !in 0.0..1.0) return none("the route's way is off this map")
         pinWhy = "the step: ${r.label ?: r.kind.name.lowercase()}"
         return doubleArrayOf(r.x, r.y)
     }

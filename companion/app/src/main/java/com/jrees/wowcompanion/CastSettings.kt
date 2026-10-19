@@ -141,6 +141,11 @@ object Glyphs {
     private val PS_NAMES = mapOf("a" to "Cross", "b" to "Circle", "x" to "Square", "y" to "Triangle", "lshoulder" to "L1",
         "rshoulder" to "R1", "ltrigger" to "L2", "rtrigger" to "R2", "select" to "Share") + STICKS
 
+    /** "gen_rstickupdown" / "gen_lstickupdown" (a stick pushed up or down; the game has each alone, UiKit.pad draws the two as one):
+     *  the game's up and down glyphs, else null */
+    fun upDown(name: String): Pair<String, String>? =
+        Regex("^gen_([lr])stickupdown$").find(name)?.let { m -> val s = m.groupValues[1]; "gen_${s}stickup" to "gen_${s}stickdown" }
+
     fun translate(name: String, layout: CastSettings.ButtonLayout): String {
         val us = name.indexOf('_')
         if (us <= 0) return name

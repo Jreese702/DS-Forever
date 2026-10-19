@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i128"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i129"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1261,10 +1261,15 @@ local function assignSlots(doc)
     local selOn, selOff = slot("iact", "sel on"), slot("iact", "sel off")
     -- r-loot-on-top: Home > Settings' switch (HomeLootSwitch); `top` is the add-on's word, the row shows it
     local ltOn, ltOff = slot("iact", "loottop on"), slot("iact", "loottop off")
+    -- the compass bar (Trail.lua, WC.compass): Settings > Top screen's "Compass bar" switch (CompassSwitch); `on` is the add-on's word
+    local cpOn, cpOff = slot("iact", "compass on"), slot("iact", "compass off")
     if GB and trustCol then
         doc.proof = { gb = GB, cv = CAPV, boot = BOOT, col = trustCol }
         if selOn and selOff then doc.proof.selc = { on = selOn, off = selOff } end
         if ltOn and ltOff then doc.proof.lootc = { on = ltOn, off = ltOff, top = LOOT.top() } end
+        if cpOn and cpOff and type(WC.compass) == "table" then
+            doc.proof.compc = { on = cpOn, off = cpOff, show = WC.compass.wanted() and true or false, why = WC.compass.why, v = WC.compass.V }
+        end
     end
     if g then
         any = true
@@ -2546,6 +2551,16 @@ function ACT.loottop(a)
         LOOT.full, LOOT.bind, LOOT.running, LOOT.hold, LOOT.rare = false, false, false, nil, nil
         if shownAt.loot > hiddenAt.loot then N.unhide() end
     end
+    N.n = N.n + 1
+    emitSoon()
+    return true
+end
+
+-- /wci compass on|off   the compass bar (Trail.lua): the player's choice, kept in WowCompanionDB.compass (our own saved data)
+function ACT.compass(a)
+    if a ~= "on" and a ~= "off" then return false, "on or off" end
+    if type(WC.compass) ~= "table" then return false, "no compass in this add-on set" end
+    WC.compass.set(a == "on")
     N.n = N.n + 1
     emitSoon()
     return true
