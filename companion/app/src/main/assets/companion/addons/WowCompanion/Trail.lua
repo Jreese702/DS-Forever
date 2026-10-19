@@ -82,14 +82,15 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp2", pool = {}, used = {} }
+WC.compass = { V = "cp3", pool = {}, used = {} }
 do
     local C = WC.compass
     local PI = math.pi
     local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end     -- (the game's Lua 5.1 has math.atan2; the harness's not)
     -- the spec's sizes, in the Thor's top-screen pixels (1920 x 1080); C.k turns them into UI units
-    C.SPEC = { w = 900, h = 76, top = 16, line = 32, half = 420, tick = 8, letter = 22, letter2 = 17, dist = 12, lift = 25, near = 22,
+    C.SPEC = { w = 860, h = 76, top = 16, line = 32, half = 400, tick = 8, letter = 22, letter2 = 17, dist = 12, lift = 25, near = 22,
                edge = 48 }
+    C.BAND = "Interface\\AddOns\\WowCompanion\\Media\\compass_band"       -- our own soft band (tools/make_compass_band.py)
     C.MARK = {
         pin    = { atlas = "Waypoint-MapPin-Tracked",   size = 28, red = false },
         quest  = { atlas = "questnormal",               size = 32, red = false },
@@ -112,13 +113,12 @@ do
         return not (type(WowCompanionDB) == "table" and WowCompanionDB.compass == false)          -- default ON
     end
 
-    -- UI units per top-screen pixel
+    -- UI units per spec pixel: the spec is drawn on a 1080-tall screen, so a spec pixel is 1/1080 of the screen's height in UIParent's
+    -- own units, whatever the physical or render resolution (test13: the physical size made it 1.3x too big on the Thor)
     function C.scale()
-        local ok, _, ph = pcall(GetPhysicalScreenSize)
         local okH, uh = pcall(function() return UIParent:GetHeight() end)
-        ph = ok and num(ph) or nil
         uh = okH and num(uh) or nil
-        C.k = (ph and uh and ph > 0) and (uh / ph) or (768 / 1080)
+        C.k = (uh and uh > 0) and (uh / 1080) or (768 / 1080)
         return C.k
     end
     function C.u(px) return px * (C.k or C.scale()) end
@@ -246,7 +246,8 @@ do
             local rel = C.wrap(math.rad(deg) - facing)
             if math.abs(rel) <= PI / 2 then
                 local x = -rel / (PI / 2) * S.half
-                local fade = 1 - (math.abs(rel) / (PI / 2)) ^ 2 * 0.65
+                local q = math.abs(rel) / (PI / 2)
+                local fade = 1 - q * q * 0.8
                 local name = C.NAMES[deg]
                 if name then
                     local size = (#name == 1) and S.letter or S.letter2
@@ -271,9 +272,6 @@ do
         t:SetTexture("Interface\\Buttons\\WHITE8X8")
         return t
     end
-    local function grad(t, orient, a1, a2)
-        pcall(function() t:SetGradient(orient, CreateColor(0, 0, 0, a1), CreateColor(0, 0, 0, a2)) end)
-    end
 
     function C.build()
         if C.frame then return C.frame end
@@ -286,26 +284,11 @@ do
         local S, u = C.SPEC, C.u
         f:SetSize(u(S.w), u(S.h))
         f:SetPoint("TOP", UIParent, "TOP", 0, -u(S.top))
-        -- the ground: a soft black band; its two halves fade to the top and bottom edges, its two ends fade out
-        local A, END = 0.69, 0.14
-        C.ground = {}
-        for row = 1, 2 do
-            for col = 1, 3 do
-                local t = plain(f)
-                local x0 = (col == 1) and 0 or (col == 2) and END or (1 - END)
-                local x1 = (col == 1) and END or (col == 2) and (1 - END) or 1
-                t:SetPoint("TOPLEFT", f, "TOPLEFT", u(S.w) * x0, -(row - 1) * u(S.h) / 2)
-                t:SetPoint("BOTTOMRIGHT", f, "TOPLEFT", u(S.w) * x1, -row * u(S.h) / 2)
-                if col == 2 then
-                    if row == 1 then grad(t, "VERTICAL", A, 0) else grad(t, "VERTICAL", 0, A) end     -- (bottom, top)
-                elseif col == 1 then
-                    grad(t, "HORIZONTAL", 0, A * 0.55)
-                else
-                    grad(t, "HORIZONTAL", A * 0.55, 0)
-                end
-                C.ground[#C.ground + 1] = t
-            end
-        end
+        -- the ground: our own soft band texture, its alpha already fading smoothly to every edge
+        local g = f:CreateTexture(nil, "BACKGROUND")
+        g:SetTexture(C.BAND)
+        g:SetAllPoints(f)
+        C.ground = { g }
         -- the 30 Hz redraw, only while shown
         local acc2 = 0
         f:SetScript("OnUpdate", function(_, el)
@@ -368,7 +351,7 @@ do
         for _, l in ipairs(L.letters) do
             local fs = take("font")
             fs:SetFont(C.FONT, u(l.size), "OUTLINE")
-            if l.name == "N" then fs:SetTextColor(l.fade, 0.25 * l.fade, 0.25 * l.fade, 1) else fs:SetTextColor(l.fade, 0.82 * l.fade, 0, 1) end
+            if l.name == "N" then fs:SetTextColor(1, 0.25, 0.25, l.fade) else fs:SetTextColor(1, 0.82, 0, l.fade) end
             fs:SetText(l.name)
             fs:SetPoint("CENTER", f, "TOP", u(l.x), -u(l.y))
         end

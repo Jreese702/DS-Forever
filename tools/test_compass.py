@@ -28,6 +28,7 @@ function Region:IsShown() return self.shown == true end
 function Region:SetPoint(...) self.point = { ... } end
 function Region:ClearAllPoints() self.point = nil end
 function Region:SetSize(w, h) self.w, self.h = w, h end
+function Region:SetAllPoints(t) self.all = t end
 function Region:SetText(t) self.text = t end
 function Region:SetFont(f, s, fl) self.font, self.fsize, self.flags = f, s, fl end
 function Region:SetTextColor(r, g, b, a) self.col = { r, g, b, a } end
@@ -129,7 +130,7 @@ def main():
     ls = letters(lo)
     chk("facing east: E centred", abs(ls["E"].x) < 0.01)
     chk("NE left of E, SE right", ls["NE"].x < 0 < ls["SE"].x)
-    chk("N and S at the ends (+-420 px)", abs(abs(ls["N"].x) - 420) < 0.01 and abs(abs(ls["S"].x) - 420) < 0.01 and ls["N"].x < 0)
+    chk("N and S at the ends (+-400 px)", abs(abs(ls["N"].x) - 400) < 0.01 and abs(abs(ls["S"].x) - 400) < 0.01 and ls["N"].x < 0)
     chk("nothing behind shown (no W)", "W" not in ls)
     chk("ticks every 15 degrees between the letters (8 in +-90)", len(lo.ticks) == 8)
     chk("the ends fade (N dimmer than E)", ls["N"].fade < ls["E"].fade and abs(ls["E"].fade - 1) < 1e-6)
@@ -159,7 +160,7 @@ def main():
     G.dead = True
     G.corpse = L.table(0.3, 0.52)
     ms = marks(lay())
-    chk("the corpse behind is off the bar, pinned at +-402", ms["corpse"].off and abs(abs(ms["corpse"].x) - 402) < 0.01)
+    chk("the corpse behind is off the bar, pinned at +-382", ms["corpse"].off and abs(abs(ms["corpse"].x) - 382) < 0.01)
     ls = letters(lay())
     end = "S" if ms["corpse"].x > 0 else "N"
     chk("the end letter under the pinned corpse (%s) lifts too" % end, ls[end].lifted)
@@ -169,8 +170,8 @@ def main():
     # turning: facing north puts the east pin at the right end, the NE quest at +210
     G.facing = 0.0
     ms = marks(lay())
-    chk("facing north: the east pin at the right end (+420)", abs(ms["pin"].x - 420) < 0.5)
-    chk("facing north: the NE quest halfway right (+210)", abs(ms["quest"].x - 210) < 0.5)
+    chk("facing north: the east pin at the right end (+400)", abs(ms["pin"].x - 400) < 0.5)
+    chk("facing north: the NE quest halfway right (+200)", abs(ms["quest"].x - 200) < 0.5)
 
     # show / hide
     C.refresh()
@@ -199,9 +200,15 @@ def main():
     chk("markers use the game's atlases: " + ", ".join(atl),
         set(atl) == {"Waypoint-MapPin-Tracked", "questnormal"})
     fs = [k for k in shown if k.kind == "fs" and k.text in ("N", "NE", "E", "SE", "S")]
+    endN = [k for k in fs if k.text == "N"]
+    midE = [k for k in fs if k.text == "E"]
+    chk("letters fade by ALPHA toward the ends (N at the end %.2f, E centred %.2f)" % (endN[0].col[4], midE[0].col[4]),
+        endN and midE and endN[0].col[4] < 0.25 and midE[0].col[4] > 0.99 and endN[0].col[1] == 1)
     chk("letters in FRIZQT, OUTLINE", fs and all(k.font == "Fonts\\FRIZQT__.TTF" and k.flags == "OUTLINE" for k in fs))
     k = 768 / 1080
-    chk("the band is 900 x 76 px in UI units", abs(f.w - 900 * k) < 1e-6 and abs(f.h - 76 * k) < 1e-6)
+    chk("the band is 860 x 76 spec px in UI units (1/1080 of UIParent's height each)", abs(f.w - 860 * k) < 1e-6 and abs(f.h - 76 * k) < 1e-6)
+    chk("the ground is ONE texture: our own soft band", L.eval("#WowCompanion.compass.ground") == 1
+        and "compass_band" in L.eval("WowCompanion.compass.ground[1].tex"))
     names = [n for n in ("SetBinding", "SetCVar", "SetRaidTarget", "SetOverrideBinding") if n in open(TRAIL, encoding="utf-8").read()]
     chk("no binding / CVar / raid mark calls in Trail.lua", not names)
 
