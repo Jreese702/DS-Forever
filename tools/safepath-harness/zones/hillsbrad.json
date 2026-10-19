@@ -1,0 +1,20 @@
+{"tag": "hillsbrad", "dir": "azeroth", "faction": "horde", "zone": 1424, "area": 267, "level": 24, "friendlyMinLevel": 100,
+ "maps": [[1424, 267], [1421, 130], [1416, 36], [1417, 45], [1425, 47]], "cities": [], "border": [1424, 1421],
+ "title": "Hillsbrad Foothills", "crop": [400, -1733, 1066, -2133],
+ "closeups": [{"name": "Tarren Mill", "box": [250, -350, -550, -1150]},
+              {"name": "Azurelode Mine", "box": [-550, -1050, 700, 0]},
+              {"name": "Durnholde Keep", "box": [-150, -750, -1150, -1750]},
+              {"name": "Thoradin's Wall gate", "box": [-450, -1150, -1250, -1950]},
+              {"name": "Hinterlands pass", "box": [350, -200, -1300, -1950]}],
+ "goals": [
+  {"name": "the road in from Silverpine to Tarren Mill", "from": {"exit": "Silverpine Forest"}, "to": {"node": "Tarren Mill"}},
+  {"name": "Hillsbrad Fields (farmers and peasants)", "from": {"node": "Tarren Mill"}, "to": {"camp": "Hillsbrad Fields"}},
+  {"name": "Azurelode Mine's mouth", "from": {"node": "Tarren Mill"}, "to": {"cave": 110796, "near": [-824, 205]}},
+  {"name": "Durnholde Keep (Syndicate)", "from": {"node": "Tarren Mill"}, "to": {"camp": "Durnholde Keep"}},
+  {"name": "Nethander Stead (Mudsnout gnolls)", "from": {"node": "Tarren Mill"}, "to": {"camp": "Nethander Stead"}},
+  {"name": "Dun Garok (Dun Garok dwarves)", "from": {"node": "Tarren Mill"}, "to": {"camp": "Dun Garok"}},
+  {"name": "Darrow Hill's yeti cave", "from": {"node": "Tarren Mill"}, "to": {"cave": 111160, "near": [-271, -396]}},
+  {"name": "Thoradin's Wall gate to Arathi", "from": {"node": "Tarren Mill"}, "to": {"exit": "Arathi Highlands"}},
+  {"name": "the Alterac pass north of Tarren Mill", "from": {"node": "Tarren Mill"}, "to": {"exit": "Alterac Mountains"}},
+  {"name": "the way up to the Hinterlands", "from": {"node": "Tarren Mill"}, "to": {"xy": [-128, -1812]}}
+ ]}
