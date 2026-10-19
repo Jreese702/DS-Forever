@@ -487,6 +487,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // LATER item 10 (map session): a tap on a numbered quest bubble, or on a quest in the full map's list, focuses it through
         // Home's ONE focus path (its checks and WCHOME logging); a refusal shows on the map
         mapView.onFocusQuest = { id -> homeView.focusQuest(id) { mapView.note(it) } }
+        mapView.onPushFocus = { id -> homeView.focusQuest(id) { Log.i("WCMAP", "default focus $id: $it") } }
         // the Map room's X on its list (map session, the user's quest-list feedback): untrack through Home's one quest-action path
         mapView.onUntrackQuest = { id -> homeView.untrackQuest(id) { mapView.note(it) } }
         // A on the focused quest clears the focus (Quests q9, qact 39)
