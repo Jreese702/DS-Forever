@@ -111,6 +111,9 @@ class WorldBuildingsTest {
         // yaw 0: world x = ox - lx, y = oy - ly (as a WMO's)
         assertTrue(d.holds(100.0, 200.0)); assertTrue(d.holds(102.0, 185.0)); assertTrue(d.holds(98.0, 215.0))
         assertFalse(d.holds(110.0, 200.0)); assertFalse(d.holds(100.0, 230.0))
+        // its floor's height: the placement's own plus the model's (5), the lowest at or over the water's surface asked for
+        assertEquals(35.0, d.heightAt(100.0, 200.0, 20.0), 1e-6)
+        assertTrue(d.heightAt(100.0, 200.0, 36.0).isNaN()); assertTrue(d.heightAt(110.0, 200.0).isNaN())
         // turned a quarter: the deck runs along world x
         val q = WorldBuildings.m2Deck(WorldBuildings.Placement(1, 1, 100.0, 200.0, 30.0, Math.PI / 2, 1.0), m2("DuskwoodCoveredBridge"))!!
         assertTrue(q.holds(115.0, 200.0)); assertFalse(q.holds(100.0, 215.0))

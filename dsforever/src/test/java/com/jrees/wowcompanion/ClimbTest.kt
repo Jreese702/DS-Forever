@@ -227,14 +227,15 @@ class ClimbTest {
         assertFalse(h[2] || h[256])
     }
 
-    /** b-safepath-water: a walkway's DECK (a bridge over a trench 20 yd deep across the whole lattice) is level ground - walked over in
-     *  both directions, never left over its sides (a step is level only when both its ends are on the deck), and the trench is crossed
-     *  nowhere else */
+    /** b-safepath-water: a walkway's DECK (a bridge over a trench 20 yd deep across the whole lattice) is the ground at its own floor's
+     *  height - walked over in both directions, never left over its sides (a step off it drops to the trench's bed: a wall, on every
+     *  side), and the trench is crossed nowhere else */
     @Test fun aBridgesDeckIsLevelBothWaysAndNeverStepsOffItsSides() {
         fun trench(wx: Double, wy: Double) = if (abs(wy) < 30) -20.0 else 0.0
         val onDeck: (Double, Double) -> Boolean = { x, y -> abs(x) <= 5.0 && abs(y) <= 40.0 }
         val bare = grid(::trench)
-        val g = Climb.build(200.0, -200.0, 200.0, -200.0, { gr, gc -> trench(org - gr * s, org - gc * s).toFloat() }, deck = onDeck)
+        // the deck at the banks' height: its floor 0 over the trench's 20 yd deep bed
+        val g = Climb.build(200.0, -200.0, 200.0, -200.0, { gr, gc -> trench(org - gr * s, org - gc * s).toFloat() }, deck = { x, y -> if (onDeck(x, y)) 0f else Float.NaN })
         assertFalse(Climb.route(bare, doubleArrayOf(0.0, 60.0), doubleArrayOf(0.0, -60.0))!!.reached)
         for ((a, b) in listOf(doubleArrayOf(0.0, 60.0) to doubleArrayOf(0.0, -60.0), doubleArrayOf(0.0, -60.0) to doubleArrayOf(0.0, 60.0))) {
             val leg = Climb.route(g, a, b)!!

@@ -128,7 +128,7 @@ object WorldBuildings {
      * box over the water let routes walk on 21 yd deep sea beside the deck): its outdoor groups' own walkable floor triangles in
      * world 2D, bucketed. [holds] a spot within [DECK_MARGIN_YD] of a triangle.
      */
-    class Deck(private val tris: List<DoubleArray>) {
+    class Deck(private val tris: List<DoubleArray>, private val zs: List<DoubleArray>? = null) {      // zs: each triangle's corners' world heights
         private val grid = HashMap<Long, ArrayList<Int>>()
         init { for ((k, t) in tris.withIndex()) {
             val x0 = minOf(t[0], t[2], t[4]) - DECK_MARGIN_YD; val x1 = maxOf(t[0], t[2], t[4]) + DECK_MARGIN_YD
@@ -142,6 +142,31 @@ object WorldBuildings {
         fun holds(x: Double, y: Double): Boolean = grid[Math.floorDiv(x.toLong(), 16L) * 1000003L + Math.floorDiv(y.toLong(), 16L)]?.any { k ->
             val t = tris[k]; inTri(t, x, y) || segDist(t[0], t[1], t[2], t[3], x, y) <= DECK_MARGIN_YD ||
                 segDist(t[2], t[3], t[4], t[5], x, y) <= DECK_MARGIN_YD || segDist(t[4], t[5], t[0], t[1], x, y) <= DECK_MARGIN_YD } == true
+        /**
+         * the deck's floor height at world ([x], [y]): of its triangles within [DECK_MARGIN_YD] there, the LOWEST floor at or above
+         * [above] (the water's surface or the ground under it: a covered bridge's roof and a pier's buildings stand over its deck, its
+         * pillars' feet under the water), on the triangle's own plane at the nearest point of it; NaN off the deck or with no heights
+         */
+        fun heightAt(x: Double, y: Double, above: Double = Double.NEGATIVE_INFINITY): Double {
+            val z = zs ?: return Double.NaN
+            var best = Double.NaN
+            for (k in grid[Math.floorDiv(x.toLong(), 16L) * 1000003L + Math.floorDiv(y.toLong(), 16L)] ?: return Double.NaN) {
+                val t = tris[k]
+                val inside = inTri(t, x, y)
+                if (!inside && segDist(t[0], t[1], t[2], t[3], x, y) > DECK_MARGIN_YD && segDist(t[2], t[3], t[4], t[5], x, y) > DECK_MARGIN_YD &&
+                    segDist(t[4], t[5], t[0], t[1], x, y) > DECK_MARGIN_YD) continue
+                // barycentric on the plane, clamped onto the triangle (a spot in the margin takes its edge's height)
+                val det = (t[3] - t[5]) * (t[0] - t[4]) + (t[4] - t[2]) * (t[1] - t[5])
+                val h = if (Math.abs(det) < 1e-9) z[k].average() else {
+                    var a = ((t[3] - t[5]) * (x - t[4]) + (t[4] - t[2]) * (y - t[5])) / det
+                    var b = ((t[5] - t[1]) * (x - t[4]) + (t[0] - t[4]) * (y - t[5])) / det
+                    a = a.coerceIn(0.0, 1.0); b = b.coerceIn(0.0, 1.0 - a)
+                    a * z[k][0] + b * z[k][1] + (1 - a - b) * z[k][2]
+                }
+                if (h >= above && (best.isNaN() || h < best)) best = h
+            }
+            return best
+        }
         private fun inTri(t: DoubleArray, x: Double, y: Double): Boolean {
             val d0 = (t[2] - t[0]) * (y - t[1]) - (t[3] - t[1]) * (x - t[0]); val d1 = (t[4] - t[2]) * (y - t[3]) - (t[5] - t[3]) * (x - t[2])
             val d2 = (t[0] - t[4]) * (y - t[5]) - (t[1] - t[5]) * (x - t[4])
@@ -163,17 +188,24 @@ object WorldBuildings {
         val gs = groups(root); val files = groupFiles(root)
         if (gs.isEmpty() || files.size < gs.size) return null
         val city = isCity(p, gs)
-        val cs = Math.cos(p.yaw); val sn = Math.sin(p.yaw)
-        val tris = ArrayList<DoubleArray>()
+        val tris = ArrayList<DoubleArray>(); val zs = ArrayList<DoubleArray>()
         for ((k, g) in gs.withIndex()) {
             if (!(city || (g.exterior && !g.interior))) continue
             val bytes = files[k].takeIf { it != 0 }?.let(read) ?: return null
-            val t = Caves.floorTris(bytes)
-            for (q in 0 until t.size / 9) tris.add(DoubleArray(6) { c -> val v = q * 9 + (c / 2) * 3
+            placeTris(p, Caves.floorTris(bytes), tris, zs)
+        }
+        return Deck(tris, zs)
+    }
+
+    /** model-frame triangles [t] (9 floats each) of placement [p] into world 2D triangles [tris] and their corners' heights [zs] */
+    private fun placeTris(p: Placement, t: FloatArray, tris: MutableList<DoubleArray>, zs: MutableList<DoubleArray>) {
+        val cs = Math.cos(p.yaw); val sn = Math.sin(p.yaw)
+        for (q in 0 until t.size / 9) {
+            tris.add(DoubleArray(6) { c -> val v = q * 9 + (c / 2) * 3
                 val lx = t[v] * p.scale; val ly = t[v + 1] * p.scale
                 if (c % 2 == 0) p.ox - lx * cs + ly * sn else p.oy - lx * sn - ly * cs })
+            zs.add(DoubleArray(3) { c -> p.oz + t[q * 9 + c * 3 + 2] * p.scale })
         }
-        return Deck(tris)
     }
 
     // ---------------------------------------------------------------- M2 bridges (doodads)
@@ -279,10 +311,9 @@ object WorldBuildings {
     /** [p]'s deck from its model's own floor triangles ([m2FloorTris]: cached per model by the callers); null when there are none */
     fun m2DeckOf(p: Placement, t: FloatArray): Deck? {
         if (t.isEmpty()) return null
-        val cs = Math.cos(p.yaw); val sn = Math.sin(p.yaw)
-        return Deck((0 until t.size / 9).map { q -> DoubleArray(6) { c -> val v = q * 9 + (c / 2) * 3
-            val lx = t[v] * p.scale; val ly = t[v + 1] * p.scale
-            if (c % 2 == 0) p.ox - lx * cs + ly * sn else p.oy - lx * sn - ly * cs } })
+        val tris = ArrayList<DoubleArray>(); val zs = ArrayList<DoubleArray>()
+        placeTris(p, t, tris, zs)
+        return Deck(tris, zs)
     }
 
     /**
