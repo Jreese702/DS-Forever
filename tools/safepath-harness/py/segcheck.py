@@ -149,6 +149,10 @@ def vertex_level(gc, gr):
     """as Climb.build levels a vertex's steps: a covered hole among its four cells, or a leveled floor over it"""
     if any((gr + a, gc + b) in _holes for a in (-1, 0) for b in (-1, 0)): return True
     return level_floor(ORG - gr * S, ORG - gc * S)
+def face_lv(x, y):
+    """the face under (x, y) as Climb.build classes it: a cell the harness levels (cell_level) is level whatever its terrain - so a
+    spot a quarter yard off into such a cell walks on it (Grid.lineClear's gentlest within a quarter yard; Elwynn D32 beside a porch)"""
+    return 0.0 if cell_level(x, y) else FC.face_at(x, y)
 def hole_at(x, y):
     """a hole a building's floor covers at (x, y), or one beside its cell: the harness levels the vertices beside such a hole (the
     floor is the ground there: a cave's mouth, a mine's entrance)"""
@@ -205,7 +209,7 @@ def line_walk(a, b, z0=None):
             hist = []
             g = HT.height(x, y); h = g
             if not (hole_at(x, y) or cell_level(x, y)):
-                fc = min(FC.face_at(x + dx, y + dy) for dx, dy in ((0, 0), (0.25, 0), (-0.25, 0), (0, 0.25), (0, -0.25)))
+                fc = min(face_lv(x + dx, y + dy) for dx, dy in ((0, 0), (0.25, 0), (-0.25, 0), (0, 0.25), (0, -0.25)))
                 if WALL <= fc < SHORT_DEG:
                     steep_run += step
                     if steep_run > SHORT_YD: worst = max(worst, fc); walls += 1
