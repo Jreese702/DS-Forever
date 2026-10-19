@@ -1673,15 +1673,17 @@ object SafePath {
             val v = vj * g.nx + vi
             return if (!dryAt[v] || g.step(i, j, di, dj) == Climb.WALL) -1 else v
         }
-        /** each vertex's walkable region (-1 = wet) and the regions that are the zone's main ground */
+        /** each of the zone's own vertices' walkable region ON ITS OWN GROUND (-1 = wet, or another zone's: Duskwood's strip west of
+         *  the river is joined to its main ground only round through Elwynn and over Westfall's bridge - no main ground of Duskwood's),
+         *  and the regions that are the zone's main ground */
         val region: IntArray by lazy {
             val r = IntArray(n) { -1 }; val st = IntArray(n); var nr = 0
             for (q0 in 0 until n) {
-                if (r[q0] >= 0 || !dryAt[q0]) continue
+                if (r[q0] >= 0 || !dryAt[q0] || zoneOf[q0] != own) continue
                 var sp = 0; st[sp++] = q0; r[q0] = nr
                 while (sp > 0) { val q = st[--sp]
                     for (dj in -1..1) for (di in -1..1) { if (di == 0 && dj == 0) continue
-                        val v = next(q, di, dj); if (v >= 0 && r[v] < 0) { r[v] = nr; st[sp++] = v } } }
+                        val v = next(q, di, dj); if (v >= 0 && r[v] < 0 && zoneOf[v] == own) { r[v] = nr; st[sp++] = v } } }
                 nr++
             }
             r
@@ -1690,27 +1692,39 @@ object SafePath {
             val own = HashMap<Int, Int>(); for (q in 0 until n) if (region[q] >= 0 && zoneOf[q] == this.own) own[region[q]] = (own[region[q]] ?: 0) + 1
             own.filterValues { it * 4 >= ownDry }.keys
         }
-        fun onMain(x: Double, y: Double) = region[q(x, y)] in main
+        /** on (or within [ON_MAIN_STEPS] lattice steps of: an exit node stands on the border, maybe a cell over) the main ground */
+        fun onMain(x: Double, y: Double): Boolean { val c = g.at(x, y)
+            for (dj in -ON_MAIN_STEPS..ON_MAIN_STEPS) for (di in -ON_MAIN_STEPS..ON_MAIN_STEPS) { val i = c[0] + di; val j = c[1] + dj
+                if (i in 0 until g.nx && j in 0 until g.ny && region[j * g.nx + i] in main) return true }
+            return false }
 
         /** THE EXIT'S CROSSING ON THE GROUND (the zone workers: Loch Modan's ridge exits, Stranglethorn's on the Dagger Hills slope): from
          *  world ([x], [y]) the lattice flooded breadth first (no wall step, no deep water, the caves' links taken) - the share of this
-         *  zone's dry lattice it reaches, and how much of [to]'s ground within [EXIT_NEAR_YD] of walking (a real crossing is local: an
-         *  unbounded flood called Mulgore's Feralas exit walkable by a 6,943 yd loop through Desolace) */
+         *  zone's dry lattice it reaches, whether it reaches this zone's MAIN ground and how much of [to]'s ground, both within
+         *  [EXIT_NEAR_YD] of walking. A real crossing is local on BOTH sides: an unbounded flood called Mulgore's Feralas exit walkable by a
+         *  6,943 yd loop through Desolace, and Duskwood's Westfall exits (on the far bank of an 8 yd deep river) by one round through
+         *  Elwynn and over its bridge to Westfall */
         fun check(x: Double, y: Double, to: Int): Crossing {
             val seen = BooleanArray(n); val queue = IntArray(n); var head = 0; var tail = 0
             val q0 = q(x, y); seen[q0] = true; queue[tail++] = q0
             val nearSteps = (EXIT_NEAR_YD / Climb.STEP).toInt()
-            var level = 0; var levelEnd = tail; var ownN = 0; var theirs = 0
+            var level = 0; var levelEnd = tail; var ownN = 0; var theirs = 0; var ownNear = false
             while (head < tail) {
                 if (head == levelEnd) { level++; levelEnd = tail }
                 val q = queue[head++]
-                if (zoneOf[q] == own) ownN++ else if (zoneOf[q] == to && level <= nearSteps) theirs++
+                if (zoneOf[q] == own) { ownN++; if (level <= nearSteps && !ownNear && region[q] in main) ownNear = true }
+                else if (zoneOf[q] == to && level <= nearSteps) theirs++
                 for (dj in -1..1) for (di in -1..1) { if (di == 0 && dj == 0) continue
                     val v = next(q, di, dj); if (v >= 0 && !seen[v]) { seen[v] = true; queue[tail++] = v } }
                 jump[q]?.forEach { v -> if (!seen[v]) { seen[v] = true; queue[tail++] = v } }
             }
             val sq = Climb.STEP * Climb.STEP
-            return Crossing(if (ownDry > 0) ownN.toDouble() / ownDry else 0.0, theirs * sq, ownN * 4 > ownDry && theirs * sq > EXIT_THEIRS_SQYD)
+            return Crossing(if (ownDry > 0) ownN.toDouble() / ownDry else 0.0, theirs * sq, ownNear, ownNear && theirs * sq > EXIT_THEIRS_SQYD)
+        }
+        /** the straight line from world ([x], [y]) to ([tx], [ty]) stays out of deep water (sampled each 2 yd) */
+        fun dryLine(x: Double, y: Double, tx: Double, ty: Double): Boolean {
+            val k = max(1, (hypot(tx - x, ty - y) / 2.0).toInt())
+            return (0..k).all { i -> dryAt[q(x + (tx - x) * i / k, y + (ty - y) * i / k)] }
         }
         /** whether the neighbour [to]'s ground at vertex [from] (a crossing's far side) is joined, walking within [maxYd] on [to]'s
          *  ground only (no wall, dry), to within [JOIN_NEAR_YD] of world ([tx], [ty]) (another exit into [to]): two crossings onto one
@@ -1730,7 +1744,8 @@ object SafePath {
         }
     }
     /** an exit's ground check: the [ownShare] of the zone's dry lattice it reaches, the [theirsSqYd] of the neighbour's ground near it */
-    class Crossing(val ownShare: Double, val theirsSqYd: Double, val walkable: Boolean)
+    const val ON_MAIN_STEPS = 5            // about 20 yd
+    class Crossing(val ownShare: Double, val theirsSqYd: Double, val ownNear: Boolean, val walkable: Boolean)
     const val EXIT_NEAR_YD = 400.0         // a crossing is local: the neighbour's ground reached within this walk of the exit ...
     const val EXIT_THEIRS_SQYD = 20000.0   // ... at least this much of it (and more than a quarter of the zone's own dry lattice)
 
@@ -1747,7 +1762,10 @@ object SafePath {
             val n = byId[x.node] ?: continue
             val c = ground.check(n.wx, n.wy, x.toMap)
             verdicts?.invoke(x, c)
-            if (c.walkable || x.how != "walk") continue
+            // a walk exit: both sides near it; a drafted bridge, gate or ford (a structure's way, not the terrain under it): the
+            // neighbour's ground reached at all near it (Hillsbrad's Hinterlands exit on the snow peaks; Elwynn's gate over the wall)
+            val bad = when (x.how) { "walk" -> !c.walkable; "gate", "bridge", "ford" -> c.theirsSqYd <= EXIT_THEIRS_SQYD; else -> false }
+            if (!bad) continue
             exits.remove(x)
             dropDeadEnd(edges, exits, x.node)
         }
@@ -1805,7 +1823,7 @@ object SafePath {
         }
         val byId = net.nodes.associateBy { it.id }.toMutableMap()
         val nodes = net.nodes.toMutableList(); val edges = net.edges.toMutableList()
-        val exits = net.exits.filter { e -> e.how != "walk" || byId[e.node]?.let { ground.onMain(it.wx, it.wy) } != false }.toMutableList()
+        val exits = net.exits.filter { e -> e.how != "walk" || byId[e.node]?.let { ground.onMain(it.wx, it.wy) || ground.check(it.wx, it.wy, e.toMap).walkable } != false }.toMutableList()
         var next = (nodes.maxOfOrNull { it.id } ?: 0) + 1
         // the corridors: crossings into one neighbour side by side; each one's crossing at its middle, and its width
         val left = cross.toMutableList(); val corridors = ArrayList<Pair<X, Int>>()
@@ -1827,17 +1845,22 @@ object SafePath {
             if (!ck.walkable) say(at, "not walkable (${(ck.theirsSqYd / 1000).toInt()}k sq yd of its ground within ${EXIT_NEAR_YD.toInt()} yd)")
             ck.walkable
         }
+        // only VERIFIED exits (their crossing walkable on the ground) stand for a stretch or a gap: a false one (Hillsbrad's Hinterlands
+        // exit on the snow peaks, 329 yd from the real crossing) never hides a real crossing
+        val verified = exits.filter { e -> byId[e.node]?.let { ground.check(it.wx, it.wy, e.toMap).walkable } == true }.map { it.node }.toHashSet()
         fun add(at: X, why: String) {
             say(at, why)
             val id = next++; nodes.add(Node(id, at.x, at.y, EXIT, "ground")); byId[id] = nodes.last()
             exits.add(Exit(id, at.to, "walk", nameOf(at.to)))
-            net.nodes.filter { it.kind != CAVE && it.kind != MOUTH && it.kind != LIFT }.minByOrNull { hypot(it.wx - at.x, it.wy - at.y) }
-                ?.let { edges.add(Edge(it.id, id, TRAIL, DRAFT, "ground")) }
+            verified.add(id)
+            // joined to the nearest node whose straight way there stays out of deep water (Duskwood: trails drawn over an 8 yd deep river)
+            net.nodes.filter { it.kind != CAVE && it.kind != MOUTH && it.kind != LIFT }.sortedBy { hypot(it.wx - at.x, it.wy - at.y) }.take(12)
+                .firstOrNull { ground.dryLine(at.x, at.y, it.wx, it.wy) }?.let { edges.add(Edge(it.id, id, TRAIL, DRAFT, "ground")) }
         }
         // a capital's ground is entered at many points (Thunder Bluff's plain at its mesas' feet, walked to its lifts): a crossing into
         // it with no exit into it within [GROUND_EXIT_GAP_YD], in the lattice's order
         for ((at, w) in good) if (at.to in CityExits.CITIES) {
-            val close = exits.filter { it.toMap == at.to }.mapNotNull { byId[it.node] }.firstOrNull { hypot(it.wx - at.x, it.wy - at.y) <= GROUND_EXIT_GAP_YD }
+            val close = exits.filter { it.toMap == at.to && it.node in verified }.mapNotNull { byId[it.node] }.firstOrNull { hypot(it.wx - at.x, it.wy - at.y) <= GROUND_EXIT_GAP_YD }
             if (close != null) say(at, "an exit into the city ${hypot(close.wx - at.x, close.wy - at.y).toInt()} yd away") else add(at, "an exit (a corridor $w vertices wide)")
         }
         // THE OPEN STRETCHES (any other neighbour): crossings into one neighbour within [GROUND_EXIT_GAP_YD] of each other, or whose far
@@ -1847,6 +1870,11 @@ object SafePath {
         fun oneStretch(a: X, bx: Double, by: Double) = hypot(a.x - bx, a.y - by) <= GROUND_EXIT_GAP_YD ||
             ground.joins(a.v, bx, by, a.to, GROUND_EXIT_JOIN_YD)
         val open = good.filter { it.first.to !in CityExits.CITIES }
+        val roads = net.edges.filter { it.kind == ROAD && it.state != REMOVED }.mapNotNull { e -> byId[e.a]?.let { a -> byId[e.b]?.let { b -> a to b } } }
+        fun roadYd(at: X): Double = roads.minOfOrNull { (a, b) ->
+            val dx = b.wx - a.wx; val dy = b.wy - a.wy; val l2 = dx * dx + dy * dy
+            val u = if (l2 <= 0.0) 0.0 else (((at.x - a.wx) * dx + (at.y - a.wy) * dy) / l2).coerceIn(0.0, 1.0)
+            hypot(at.x - a.wx - u * dx, at.y - a.wy - u * dy) } ?: Double.MAX_VALUE
         val parent = IntArray(open.size) { it }
         fun find(k: Int): Int { var a = k; while (parent[a] != a) a = parent[a]; return a }
         for (a in open.indices) for (b in a + 1 until open.size) if (open[a].first.to == open[b].first.to && find(a) != find(b) &&
@@ -1855,9 +1883,11 @@ object SafePath {
             val to = open[ks[0]].first.to
             // the exits already on this stretch; each serves its crossings within [GROUND_EXIT_SERVE_YD] (a long open border keeps one
             // every so far: Mulgore's Red Rocks, 1070 yd up the border from its gate road, keeps its own)
-            val servers = exits.filter { it.toMap == to }.mapNotNull { byId[it.node] }.filter { e -> ks.any { oneStretch(open[it].first, e.wx, e.wy) } }
+            val servers = exits.filter { it.toMap == to && it.node in verified }.mapNotNull { byId[it.node] }.filter { e -> ks.any { oneStretch(open[it].first, e.wx, e.wy) } }
                 .map { doubleArrayOf(it.wx, it.wy) }.toMutableList()
-            for (k in ks.sorted()) {
+            // in the lattice's order, but a corridor a road comes near first (Hillsbrad's way up to the Hinterlands, 430 yd from its
+            // road, before the snow peaks 334 yd along the stretch, 729 yd from any)
+            for (k in ks.sortedWith(compareBy({ roadYd(open[it].first) > GROUND_EXIT_ROAD_YD }, { it }))) {
                 val at = open[k].first
                 val by = servers.firstOrNull { hypot(it[0] - at.x, it[1] - at.y) <= GROUND_EXIT_SERVE_YD }
                 if (by != null) { say(at, "the same open stretch as the exit at ${by[0].toInt()},${by[1].toInt()} (${hypot(by[0] - at.x, by[1] - at.y).toInt()} yd)"); continue }
@@ -1871,6 +1901,7 @@ object SafePath {
     const val GROUND_EXIT_MIN = 5          // a crossing corridor this many lattice vertices wide (about 20 yd) ...
     const val GROUND_EXIT_GAP_YD = 600.0   // ... with no exit into that neighbour this near ...
     const val GROUND_EXIT_JOIN_YD = 800.0  // ... nor one its far side reaches within this walk on the neighbour's ground (one open border) ...
+    const val GROUND_EXIT_ROAD_YD = 600.0  // ... its corridors this near a road taken first ...
     const val GROUND_EXIT_SERVE_YD = 1000.0 // ... an exit on a stretch serving its crossings this near
     const val JOIN_NEAR_YD = 100.0         // ... to within this of it (a bridge's or a road's exit stands on this zone's bank or side)
 

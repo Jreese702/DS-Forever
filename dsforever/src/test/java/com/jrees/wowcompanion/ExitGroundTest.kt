@@ -34,7 +34,8 @@ class ExitGroundTest {
         val out = SafePath.checkExits(net, ground(g)) { x, c -> seen[x.node] = c }
         assertTrue("the real crossing walkable", seen[2]!!.walkable)
         assertFalse("the ridge's crossing not", seen[4]!!.walkable)
-        assertEquals(listOf(2, 5), out.exits.map { it.node })            // the bridge is a structure's way: kept
+        // a drafted bridge whose far side is no ground of the neighbour's (on the plateau) goes too
+        assertEquals(listOf(2), out.exits.map { it.node })
         assertTrue(out.edges.none { it.a == 4 || it.b == 4 })
         assertTrue(out.edges.any { it.a == 1 && it.b == 2 })
     }
@@ -93,5 +94,39 @@ class ExitGroundTest {
             listOf(cave), zoneAt = zoneAt, nameOf = { "East" })
         assertEquals(1, net.exits.size); assertEquals("tunnel", net.exits[0].how)
         assertTrue(net.nodes.first { it.id == net.exits[0].node }.wy < -90)
+    }
+
+    @Test fun anExitOnTheFarBankOfADeepRiverIsNotACrossing() {
+        // a river 12 yd wide and deep along world y -20 (the east's ground), its far bank the east's; the exit on the far bank (Duskwood's
+        // Westfall exits): the neighbour all round it, its own zone only the long way round - no crossing. On the near bank: one.
+        val g = grid { _, _ -> 0.0 }
+        val deep = { _: Double, wy: Double -> abs(wy + 20) > 6 }
+        val gr = SafePath.Ground(g, 1, zoneAt, deep)
+        assertFalse(gr.check(0.0, -40.0, 2).ownNear)
+        assertFalse(gr.check(0.0, -40.0, 2).walkable)
+        assertTrue(gr.check(0.0, 4.0, 2).ownNear)
+    }
+
+    @Test fun aFalseExitHidesNoRealCrossing() {
+        // a drafted gate exit on the plateau (false: kept by groundExits, not verified) 300 yd from a real corridor: the corridor still gets its ground exit
+        val g = grid(500.0) { wx, wy -> when {
+            wx in 250.0..350.0 && abs(wy) <= 60 -> 60.0
+            abs(wy) <= 6 && abs(wx + 40) > 20 -> 100.0
+            else -> 0.0 } }
+        val net = SafePath.Net(1, 0, "", listOf(node(0, 0.0, 200.0, SafePath.HUB), node(1, 300.0, 2.0, SafePath.EXIT)), listOf(edge(0, 1)),
+            listOf(SafePath.Exit(1, 2, "gate", "East")))
+        val out = SafePath.groundExits(net, ground(g))
+        assertTrue(out.exits.any { x -> out.nodes.first { it.id == x.node }.let { it.src == "ground" && abs(it.wx + 40) <= 20 } })
+    }
+
+    @Test fun aStripOfTheZoneOverARiverIsNotItsMainGround() {
+        // the zone's own strip west of a deep river (world y -70..-40, Duskwood's west bank), joined to its main ground only by a loop
+        // round the river's head 480 yd north through the neighbour's ground: an exit on the strip is no crossing
+        val zone = { wx: Double, wy: Double -> if (wy > 0 || (wy > -70 && wy < -40 && wx < 440)) 1 else 2 }
+        val dry = { wx: Double, wy: Double -> !(wy > -30 && wy < -10 && wx < 470) }
+        val gr = SafePath.Ground(grid(500.0) { _, _ -> 0.0 }, 1, zone, dry)
+        assertFalse(gr.onMain(-200.0, -55.0))
+        assertFalse(gr.check(-200.0, -55.0, 2).walkable)
+        assertTrue(gr.check(-200.0, 4.0, 2).ownNear)
     }
 }

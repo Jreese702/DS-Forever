@@ -372,8 +372,15 @@ class RenderSafePath {
                 .filter { !deep(it[0], it[1]) && (near == null || Math.hypot(it[0] - near[0], it[1] - near[1]) < 500) }
             return pts.maxByOrNull { p -> pts.count { Math.hypot(it[0] - p[0], it[1] - p[1]) < 60 } }
         }
+        /** a goal's exit by its name (and [how]): the checked network's first (its tunnel and ground exits too), else the draft's (an exit
+         *  the ground check dropped: the goal stays where it was, and the line says so) */
+        var goalNet: SafePath.Net = net
+        fun exitNamed(name: String, how: String? = null): SafePath.Node? {
+            fun inNet(n: SafePath.Net) = n.exits.firstOrNull { it.name.equals(name, true) && (how == null || it.how == how) }?.let { x -> n.nodes.firstOrNull { it.id == x.node } }
+            return inNet(goalNet) ?: inNet(net)?.also { println("GOALEXIT $name${how?.let { " ($it)" } ?: ""}: dropped by the ground check, its draft spot ${it.wx.toInt()},${it.wy.toInt()} kept as the goal") }
+        }
         /** where an exit's way opens onto this zone's own level ground (a gate's tunnel or a lift is the other map's: its top not ours) */
-        fun exitStart(name: String): DoubleArray? = net.exits.firstOrNull { it.name.equals(name, true) }?.let { x -> net.nodes.first { it.id == x.node } }?.let { gn ->
+        fun exitStart(name: String): DoubleArray? = exitNamed(name)?.let { gn ->
             val c = cg.at(gn.wx, gn.wy); val r = (150 / S).toInt(); var best: DoubleArray? = null; var bd = Double.MAX_VALUE
             for (j in (c[1] - r)..(c[1] + r)) for (i in (c[0] - r)..(c[0] + r)) {
                 if (i !in 1 until cg.nx - 1 || j !in 1 until cg.ny - 1) continue
@@ -408,8 +415,7 @@ class RenderSafePath {
                 to.has("mob") -> mob(to.getString("mob"), near)
                 to.has("node") -> at(to.getString("node"))
                 to.optBoolean("airChainTop") -> platformAt
-                to.has("exit") -> net.exits.firstOrNull { it.name.equals(to.getString("exit"), true) && (!to.has("how") || it.how == to.getString("how")) }
-                    ?.let { x -> net.nodes.firstOrNull { it.id == x.node } }?.let { doubleArrayOf(it.wx, it.wy) }
+                to.has("exit") -> exitNamed(to.getString("exit"), if (to.has("how")) to.getString("how") else null)?.let { doubleArrayOf(it.wx, it.wy) }
                 else -> xy(to.optJSONArray("xy"))
             }
             if (f == null || gp == null) println("GOAL ${o.optString("name")}: from ${f?.toList()} to ${gp?.toList()} - not found, left out")
@@ -455,8 +461,6 @@ class RenderSafePath {
             }
             return best ?: p
         }
-        val trips = (spec?.optJSONArray("goals")?.let { specTrips(it) } ?: durotarTrips()).filter { it.second != null && it.third.second != null }
-            .map { (fn, f, g) -> Triple(fn, stand(f), g.first to stand(g.second)) }
         // ROADS ARE MADE TO BE WALKED (the user: "where the rule might trip up is when there are actual mountains that need to be
         // climbed or actually have a path up"): of the zone's own road-textured vertices, how many stand on a wall face
         run {
@@ -500,6 +504,10 @@ class RenderSafePath {
             exitChecks.put(org.json.JSONArray(listOf(node.wx, node.wy, x.name, x.how, c.walkable, (c.ownShare * 100).toInt(), (c.theirsSqYd / 1000).toInt(), kept, node.src)))
         }
         exitSheet(cg, gr, netC, tag, mapName, deep)
+        // the goals, now that the exits are checked: an {"exit": name} goal can name a tunnel or a ground exit
+        goalNet = netC
+        val trips = (spec?.optJSONArray("goals")?.let { specTrips(it) } ?: durotarTrips()).filter { it.second != null && it.third.second != null }
+            .map { (fn, f, g) -> Triple(fn, stand(f), g.first to stand(g.second)) }
         println("NET with caves: ${netC.nodes.size} nodes, ${netC.edges.size} edges (${netC.edges.count { it.kind == SafePath.CAVE }} cave)")
         // PROBES (a spec's "probes": [[x1, y1, x2, y2], ...]): a leg between two spots with and without the water, for finding what walls
         // a zone in two
