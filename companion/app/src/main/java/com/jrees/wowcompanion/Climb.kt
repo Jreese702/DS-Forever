@@ -178,8 +178,9 @@ object Climb {
         var rooms: Rooms? = null
             set(v) { field = v; if (v != null) solid = v::holds }
         /** CLB3 (gzip, the .part file renamed into place): [MAGIC], [RULES_VERSION], gr0, gc0, nx, ny, a byte of what follows (1 the
-         *  faces, 2 the 45-48 degree faces, 4 the rooms), the steps (a byte a vertex), the faces (a byte a cell), the 45-48 degree faces
-         *  (4 bits a cell, two cells a byte), the rooms ([Rooms.write]) */
+         *  faces, 2 the 45-48 degree faces, 4 the rooms, 8 the floors), the steps (a byte a vertex), the faces (a byte a cell), the 45-48
+         *  degree faces (4 bits a cell, two cells a byte), the rooms ([Rooms.write]), the floors (the vertices on one, [deckZ] and
+         *  [deckHigh]: their count, then each one's index, height and a byte 1 when it stands more than a step over its ground) */
         fun write(f: File) {
             f.parentFile?.mkdirs()
             val tmp = File(f.path + ".part")
@@ -188,13 +189,18 @@ object Climb {
         }
         fun write(o: DataOutputStream) {
             o.writeInt(MAGIC); o.writeInt(RULES_VERSION); o.writeInt(gr0); o.writeInt(gc0); o.writeInt(nx); o.writeInt(ny)
-            val f48 = faces48; val rs = rooms
-            o.writeByte((if (faces != null) 1 else 0) or (if (f48 != null) 2 else 0) or (if (rs != null) 4 else 0))
+            val f48 = faces48; val rs = rooms; val dz = deckZ; val dh = deckHigh
+            o.writeByte((if (faces != null) 1 else 0) or (if (f48 != null) 2 else 0) or (if (rs != null) 4 else 0) or (if (dz != null) 8 else 0))
             o.write(cls)
             faces?.let { o.write(it) }
             if (f48 != null) o.write(ByteArray((nx * ny + 1) / 2) { k -> ((f48[2 * k].toInt() and 15) or
                 ((if (2 * k + 1 < f48.size) f48[2 * k + 1].toInt() and 15 else 0) shl 4)).toByte() })
             rs?.write(o)
+            if (dz != null) {
+                val on = dz.indices.filter { !dz[it].isNaN() }
+                o.writeInt(on.size)
+                for (k in on) { o.writeInt(k); o.writeFloat(dz[k]); o.writeByte(if (dh?.get(k) == true) 1 else 0) }
+            }
         }
         companion object {
             const val MAGIC = 0x434C4233                       // "CLB3"
@@ -213,7 +219,13 @@ object Climb {
                 val f48 = if (has and 2 != 0) ByteArray((nx * ny + 1) / 2).also { i.readFully(it) }.let { p ->
                     ByteArray(nx * ny) { k -> ((p[k / 2].toInt() shr (4 * (k % 2))) and 15).toByte() } } else null
                 val rooms = if (has and 4 != 0) Rooms.read(i) else null
-                return Grid(gr0, gc0, nx, ny, cls, faces).also { it.faces48 = f48; if (rooms != null) it.rooms = rooms }
+                var dz: FloatArray? = null; var dh: BooleanArray? = null
+                if (has and 8 != 0) {
+                    val n = i.readInt(); require(n in 0..nx * ny)
+                    dz = FloatArray(nx * ny) { Float.NaN }; dh = BooleanArray(nx * ny)
+                    repeat(n) { val k = i.readInt(); require(k in 0 until nx * ny); dz[k] = i.readFloat(); dh[k] = i.readUnsignedByte() != 0 }
+                }
+                return Grid(gr0, gc0, nx, ny, cls, faces).also { it.faces48 = f48; if (rooms != null) it.rooms = rooms; it.deckZ = dz; it.deckHigh = dh }
             }
             /** a lattice bigger than this is no zone's (a damaged file) */
             const val MAX_VERTICES = 40_000_000L
@@ -255,10 +267,11 @@ object Climb {
 
     /** THE RULES THE LATTICE IS MADE BY (written in its file, CLB3): bumped whenever a rule changes what [build] or the inputs to it make
      *  (a made lattice of other rules is made again). Pinned to the rules commit [RULES_COMMIT] */
-    const val RULES_VERSION = 3
-    /** feat/safepath-rules-3 at de23d76: 48 degree short steps, solid room footprints, the 450 yd margin, every WMO group, caves by shape,
-     *  name-less flat decks, the narrow-stream wade */
-    const val RULES_COMMIT = "de23d76"
+    const val RULES_VERSION = 4
+    /** feat/safepath-rules-3 at 2d37f15: 48 degree short steps (on floors too), solid room footprints, the 450 yd margin, every WMO
+     *  group, caves by shape, name-less flat decks, the narrow-stream wade, a floor's own slope along a line and its high edge (4: the
+     *  floors in the lattice's file) */
+    const val RULES_COMMIT = "2d37f15"
 
     /**
      * THE FLOOR A WALKER IS ON, at each vertex of the lattice over world rect [t] / [b] / [l] / [r] under a walkway's floors (a bridge's

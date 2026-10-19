@@ -89,11 +89,28 @@ class SafePathDeviceTest {
         for ((a, b) in r.pts.zipWithNext()) assertTrue(Climb.walkable(g, a, b))
     }
 
+    @Test fun aLatticesFloorsComeBackFromItsFile() {
+        // a platform 6 yd over flat ground (world x 20 .. -20, y 20 .. -20) with a ramp up from the east: the floor a walker is on at its
+        // vertices (Grid.deckZ, its high edge Grid.deckHigh) rules lines over it, so the file keeps it
+        val deck: (Double, Double) -> Float = { x, y -> if (x in -20.0..20.0 && y in -20.0..20.0) 6f else if (x in -4.0..4.0 && y in -60.0..-20.0) (6 + (y + 20) * 0.15).toFloat() else Float.NaN }
+        val g = Climb.build(100.0, -100.0, 100.0, -100.0, { _, _ -> 0f }, centre = { _, _ -> 0f }, deck = deck)
+        assertNotNull(g.deckZ)
+        val f = temp("clb3floors"); g.write(f)
+        val back = Climb.Grid.read(f)!!
+        assertEquals(g.deckZ!!.count { !it.isNaN() }, back.deckZ!!.count { !it.isNaN() })
+        for (k in g.deckZ!!.indices) { assertEquals(g.deckZ!![k].isNaN(), back.deckZ!![k].isNaN()); if (!g.deckZ!![k].isNaN()) assertEquals(g.deckZ!![k], back.deckZ!![k], 0f) }
+        assertArrayEquals(g.deckHigh, back.deckHigh)
+        for (k in 0 until 120) {
+            val pa = doubleArrayOf(-50.0 + k, 50.0 - k * 0.7); val pb = doubleArrayOf(50.0 - k * 0.3, -50.0 + k * 0.9)
+            assertEquals(Climb.walkable(g, pa, pb), Climb.walkable(back, pa, pb))
+        }
+    }
+
     @Test fun aLatticeWithoutFacesOrRoomsComesBackWithout() {
         val g = Climb.build(100.0, -100.0, 100.0, -100.0, { _, _ -> 0f })
         val f = temp("clb3bare"); g.write(f)
         val back = Climb.Grid.read(f)!!
-        assertNull(back.faces); assertNull(back.faces48); assertNull(back.rooms); assertNull(back.solid)
+        assertNull(back.faces); assertNull(back.faces48); assertNull(back.rooms); assertNull(back.solid); assertNull(back.deckZ)
         assertArrayEquals(g.cls, back.cls)
     }
 
