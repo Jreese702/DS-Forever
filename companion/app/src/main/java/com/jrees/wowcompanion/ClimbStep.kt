@@ -83,7 +83,7 @@ object ClimbStep : ArtHarvest.Step {
         val game = GameFiles.open(ctx) ?: run { line = "Waiting: ${GameFiles.lastWhy ?: "the game files could not be read"}"
             android.util.Log.w("WCMAP", "climb: ${line}"); return }
         game.use { g ->
-            val made = File(ArtHarvest.rootDir ?: return, MADE).also { it.parentFile?.mkdirs() }
+            val made = File(ArtHarvest.rootDir ?: run { line = "Waiting: no harvest folder"; android.util.Log.w("WCMAP", "climb: no harvest folder (ArtHarvest.rootDir)"); return }, MADE).also { it.parentFile?.mkdirs() }
             val head = "${g.buildKey} rules ${Climb.RULES_VERSION} v$version"
             val done = HashSet<Int>()
             runCatching { made.readLines() }.getOrNull()?.let { ls -> if (ls.firstOrNull() == head) ls.drop(1).mapNotNullTo(done) { it.trim().toIntOrNull() } }

@@ -4134,6 +4134,7 @@ class MapView(context: Context) : View(context) {
             val keptYd = rest?.let { SafeRoute.length(it) }
             val strayed = off > SafePathV2.OFF_ROUTE_YD
             val ctx = context.applicationContext
+            android.util.Log.i("WCMAP", "safepath v2: quest $q planning on map $mapId${if (strayed) " (strayed)" else ""}")
             RouteWork.run({
                 val way = try { SafePathV2.plan(ctx, mapId, rect0, mine, plv, here, goal, toExit) { v2Gen[q] != gen } } catch (e: Climb.Cancelled) { null }
                 way to SafePathV2.lastWhy
