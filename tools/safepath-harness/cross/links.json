@@ -1,0 +1,32 @@
+{
+ "_": "THE DIRECTED LINK TABLE for the cross-continent planner (PlanCross, the app's own MultiHop): every way from one place to another that is not a walk inside one map. The boats, zeppelins and airships come from transports.json (each ride both ways, a hostile town's dock never boarded: TransportRoutes.Ride.hostileDock); the flights from its masters and paths (the faction's own); the rest are listed here with their evidence (E:/safepath-work/docs/ZONE_INVENTORY.md section 2). A link's end with no position (xy null) is a manual link nobody has measured: the planner may take it, at UNKNOWN_YD, and says so. A link that isn't placed in the world is left out. Places: a walk inside one uiMap is taken as open, so a part of a map no one walks to or from (a floating city, the foot of a tree) is a place of its own, found by the AreaTable name of the ground there or by a box.",
+ "places": [
+  {"id": -2980, "name": "Dalaran", "cont": 0, "box": [600, -220, 700, -20], "evidence": "the Dalaran worker's spec crop: the floating city, WMO 18950 placed on map 0 over the Alterac crater; reached by the airship and the portals only"},
+  {"id": -702, "name": "Rut'theran Village", "cont": 1, "area": "Rut'theran Village", "evidence": "the foot of Teldrassil: its ground's AreaTable name; the tree's top is reached by the portal only"}
+ ],
+ "rideFaction": {"11398": 1},
+ "rideFactionEvidence": {"11398": "path 11398 has no faction master within 900 yd (fa = fb = 0); its Zephras dock is the High Order's (QuestieDB 275269 High Order Dockmaster), the Alliance side (the inventory, 2a)"},
+ "walks": [
+  {"a": 1453, "b": 1429, "at": [-8898, 237], "name": "the Stormwind gate", "evidence": "Elwynn's exit (gate) to Stormwind City; cross route b1 walks to it"},
+  {"a": 1457, "b": 1438, "at": [9997, 1993], "name": "the Darnassus gate", "evidence": "Teldrassil's exit (gate) to Darnassus; cross route e1 walks to it"},
+  {"a": 1411, "b": 1413, "at": [316, -3704], "name": "the Southfury bridge", "evidence": "cross routes a1 / a2 join there"},
+  {"a": 1413, "b": 1412, "at": [-2339, -1545], "name": "the Mulgore road", "evidence": "cross routes a2 / a3, f1 / f2 join there"},
+  {"a": 1420, "b": 1421, "at": [1432, 725], "name": "the road into Silverpine", "evidence": "cross routes c1 / c2 join there"},
+  {"a": 1426, "b": 1432, "at": [-5650, -2545], "name": "the South Gate tunnels", "evidence": "cross routes b2 / b3 join there"},
+  {"a": 1411, "b": 1454, "at": [1408, -4207], "name": "the Orgrimmar gate", "evidence": "Durotar's exit (gate) to Orgrimmar; cross route d1 starts there"},
+  {"a": 1420, "b": 1458, "at": [1648, 240], "name": "the Undercity entrance", "evidence": "Tirisfal's goal: the Ruins of Lordaeron (the Undercity's lifts are manual links, inside the city)"},
+  {"a": 1426, "b": 1455, "at": [-5045, -833], "name": "the Gates of Ironforge", "evidence": "Dun Morogh's goal at the ramp's top; AreaTrigger 4026 at (-5049, -818)"}
+ ],
+ "links": [
+  {"id": "P1", "kind": "portal", "name": "the Skyborne Portal to Stormwind", "from": {"map": -2980, "xy": [451.0, 446.6]}, "to": {"map": 1453, "xy": null}, "oneWay": true,
+   "evidence": "QuestieDB_Forever object 631299 at (451.0, 446.6, 110.7) (the Dalaran worker); the user: \"daleran has one way portals to stormwind\"; its Stormwind landing is not in the data"},
+  {"id": "P2", "kind": "portal", "name": "the Skyborne Portal to Dalaran", "from": {"map": 1453, "xy": null}, "to": {"map": -2980, "xy": null}, "oneWay": true, "placed": false,
+   "evidence": "QuestieDB object 654168 lists it in Stormwind with no spawn: not placed in the world, check in game before linking"},
+  {"id": "TRAM", "kind": "tram", "name": "the Deeprun Tram", "from": {"map": 1453, "xy": [-8346, 514]}, "to": {"map": 1455, "xy": [-4840, -1330]}, "oneWay": false, "yd": 420,
+   "evidence": "AreaTrigger.db2 2173 (Stormwind's Dwarven District) and 2175 (Ironforge's Tinker Town); the ride's yards as CityExits.TRAM_YD"},
+  {"id": "P9", "kind": "portal", "name": "the portal up to Darnassus", "from": {"map": -702, "xy": [8799, 970]}, "to": {"map": 1457, "xy": null}, "oneWay": true,
+   "evidence": "AreaTrigger.db2 542 at (8799, 970, 30), r 10; where it sends the player is server-side"},
+  {"id": "P10", "kind": "portal", "name": "the portal down to Rut'theran", "from": {"map": 1457, "xy": null}, "to": {"map": -702, "xy": null}, "oneWay": true,
+   "evidence": "AreaTrigger.db2 3546 at (9934, 2501) or 527 at (9947, 2630): which is it is not known; where it sends the player is server-side"}
+ ]
+}

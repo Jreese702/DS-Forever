@@ -19,11 +19,13 @@ for z in $ZONES $CROSS; do
   tag=${z%%:*}; dir=${z##*:}
   spec="$HERE/zones/$tag.json"; [ -f "$spec" ] || spec="$OUT/specs/$tag.json"
   echo "=== $tag"
-  bash "$HERE/run.sh" "$spec" "ROUTE2|WALLS|EMPTY|GOAL|WATERMAX|EXIT |EXITS added|BORDER crossing|ROADWALLS|DROPWALLED|SAFEPATH [A-Z][a-z' ]+:|^e:|Exception" > "$OUT/gate_$tag.log" 2>&1
+  bash "$HERE/run.sh" "$spec" "ROUTE2|WALLS|EMPTY|GOAL|WATERMAX|SWIM|EXIT |EXITS added|BORDER crossing|ROADWALLS|DROPWALLED|SAFEPATH [A-Z][a-z' ]+:|^e:|Exception" > "$OUT/gate_$tag.log" 2>&1
   (cd "$HERE/py" && PYTHONIOENCODING=utf-8 ZDIR=$dir python segcheck.py "$OUT/levels_routes_$tag.json" 2>&1 | tail -1) >> "$OUT/gate_$tag.log"
   # the water, read apart from the app's grid: every yard of every route over the liquid's own surface and the terrain (py/wetcheck.py)
   (cd "$HERE/py" && PYTHONIOENCODING=utf-8 ZDIR=$dir python wetcheck.py "$OUT/levels_routes_$tag.json" 2>&1 | grep -E "^WET|Error") >> "$OUT/gate_$tag.log"
   grep -cE "^ROUTE2" "$OUT/gate_$tag.log" | sed "s/^/  routes: /"
 done
 (cd "$HERE/py" && PYTHONIOENCODING=utf-8 python cross.py stitch "$OUT" > "$OUT/cross.log" 2>&1; python cross.py draw "$OUT" >> "$OUT/cross.log" 2>&1); grep -E "^CROSS|MISSING" "$OUT/cross.log"
+# the cross-continent planner's checks (cross/plans.json over cross/links.json: one-way portals, rides, flights)
+CROSS_DIR="$HERE/cross" SAFEPATH_TEST=PlanCross bash "$HERE/run.sh" "" "PLAN |^e:|Exception" > "$OUT/plan.log" 2>&1; grep -E "^PLAN" "$OUT/plan.log" | cut -c1-200
 cd "$HERE" && PYTHONIOENCODING=utf-8 python gate.py "$OUT" "$@"

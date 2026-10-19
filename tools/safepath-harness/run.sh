@@ -16,5 +16,7 @@ CLS="$HERE/robo/build/appclasses"; rm -rf "$CLS"; mkdir -p "$CLS/com/jrees"
 cp -r "$REPO/dsforever/build/tmp/kotlin-classes/debug/com/jrees/wowcompanion" "$CLS/com/jrees/"
 (cd "$CLS" && jar cf "$HERE/robo/build/app.jar" .)
 mkdir -p "${SAFEPATH_OUT:-$SAFEPATH_WORK/out}"
-(cd "$REPO" && ./gradlew -p "$HERE/robo" --offline -q test --tests RenderSafePath --rerun-tasks) 2>&1 | grep -E "^e:|FAIL|Exception" | head -20 || true
-grep -E "${2:-ROUTE2|EXIT|CAVE|WALLS|GOAL|EMPTY}" "$HERE/robo/build/test-results/test/TEST-RenderSafePath.xml" | head -80 || true
+# SAFEPATH_TEST: another of the harness's tests (PlanCross: the cross-continent planner's checks)
+T="${SAFEPATH_TEST:-RenderSafePath}"
+(cd "$REPO" && ./gradlew -p "$HERE/robo" --offline -q test --tests "$T" --rerun-tasks) 2>&1 | grep -E "^e:|FAIL|Exception" | head -20 || true
+grep -E "${2:-ROUTE2|EXIT|CAVE|WALLS|GOAL|EMPTY}" "$HERE/robo/build/test-results/test/TEST-$T.xml" | head -80 || true

@@ -79,4 +79,17 @@ class MultiHopTest {
         val w = EdgeWalk.slide(0.0, 0.5, 1000.0, 800.0, 600.0) { x, y -> x > 0.2 || y > 0.6 }!!
         assertEquals(0.0, w[0], 1e-9); assertTrue(w[1] > 0.6)
     }
+
+    /** a ONE-WAY link (the user: "daleran has one way portals to stormwind ... Anything like that need to be getting factored in on the
+     *  big picture pathing") is one hop: taken out, never planned back; its landing unmeasured (NaN) is reckoned at UNKNOWN_YD */
+    @Test fun aOneWayPortalIsNeverTakenBack() {
+        val dalaran = -2980
+        val portal = MultiHop.Hop(dalaran, 451.0, 446.6, 1453, Double.NaN, Double.NaN, 0.0, "the Skyborne Portal to Stormwind", "P1")
+        val all = hops + portal
+        val north = doubleArrayOf(-8914.0, -137.0)                       // Northshire, in Elwynn
+        val out = MultiHop.plan(dalaran, 451.0, 446.6, north[0], north[1], all, { m, _, _ -> m == 1429 })!!
+        assertEquals(listOf("P1", "gate-out"), out.hops.map { it.key })
+        assertTrue("the unmeasured landing is reckoned, not free: ${out.cost}", out.cost >= MultiHop.UNKNOWN_YD)
+        assertNull("no way back to Dalaran", MultiHop.plan(1453, -8830.0, 625.0, 451.0, 446.6, all, { m, _, _ -> m == dalaran }))
+    }
 }

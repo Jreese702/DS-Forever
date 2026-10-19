@@ -618,10 +618,65 @@ class RenderSafePath {
                 "; deep cells on the straight line ${(0..40).count { t -> deep(pa[0] + (pb[0] - pa[0]) * t / 40, pa[1] + (pb[1] - pa[1]) * t / 40) }}/41; depths " +
                 (0..20).joinToString(" ") { t -> waterAt(pa[0] + (pb[0] - pa[0]) * t / 20, pa[1] + (pb[1] - pa[1]) * t / 20).let { if (it.isNaN()) "." else "%.1f".format(it) } } +
                 "; around the start: " + (-2..2).joinToString(" | ") { dx -> (-2..2).joinToString(" ") { dy -> waterAt(pa[0] + dx * 4.17, pa[1] + dy * 4.17).let { if (it.isNaN()) "." else "%.1f".format(it) } } }) } }
+        // DECLARED SWIMS (the spec's "swims"; the user, 2026-10-18, Fenris Isle: "Swim link, flagged"): an island no walk reaches. Its
+        // ground (the lattice's open steps off deep water from the spec's spot on it), then the shortest swim from it to the mainland's
+        // ground (through the water only, onto a shore step that is no wall): one link, its points marked SWIM. Offered only to a route
+        // whose goal is on the island - never a shortcut elsewhere
+        class Swim(val name: String, val island: Set<Long>, val link: Climb.Link, val from: DoubleArray, val to: DoubleArray)
+        val swims = ArrayList<Swim>()
+        spec?.optJSONArray("swims")?.let { a -> for (q in 0 until a.length()) {
+            val o = a.getJSONObject(q); val isl = o.getJSONObject("island")
+            val p0 = (if (isl.has("node")) at(isl.getString("node")) else xy(isl.optJSONArray("xy"))) ?: run { println("SWIM ${o.optString("name")}: its island's spot not found"); null } ?: continue
+            fun key(i: Int, j: Int) = (j.toLong() shl 32) or (i.toLong() and 0xFFFFFFFFL)
+            fun dryAt(i: Int, j: Int) = i in 0 until cg.nx && j in 0 until cg.ny && !deep(cg.wx(j), cg.wy(i))
+            val nb = listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1, 1 to 1, 1 to -1, -1 to 1, -1 to -1)
+            fun flood(i0: Int, j0: Int, cap: Int): Set<Long> {
+                val seen = HashSet<Long>(); val qq = ArrayDeque<IntArray>(); seen.add(key(i0, j0)); qq.add(intArrayOf(i0, j0))
+                while (qq.isNotEmpty() && seen.size < cap) { val (i, j) = qq.removeFirst()
+                    for ((di, dj) in nb) { val ni = i + di; val nj = j + dj; val k = key(ni, nj)
+                        if (k in seen || !dryAt(ni, nj) || cg.step(i, j, di, dj) == Climb.WALL) continue
+                        seen.add(k); qq.add(intArrayOf(ni, nj)) } }
+                return seen
+            }
+            val v0 = cg.at(p0[0], p0[1]); val island = flood(v0[0], v0[1], 400_000)
+            // the swim: from the island's ground through the water, nearest first, to ground of a far bigger piece
+            val dist = HashMap<Long, Double>(); val prev = HashMap<Long, Long>()
+            val pq = java.util.PriorityQueue<Pair<Double, Long>>(compareBy { it.first })
+            for (k in island) { val i = k.toInt(); val j = (k shr 32).toInt()
+                for ((di, dj) in nb) if (!dryAt(i + di, j + dj)) { dist[k] = 0.0; pq.add(0.0 to k); break } }
+            var landed: Long? = null
+            while (pq.isNotEmpty()) { val (d, k) = pq.poll(); if (d > (dist[k] ?: Double.MAX_VALUE)) continue
+                if (d > 1500.0) break
+                val i = k.toInt(); val j = (k shr 32).toInt()
+                for ((di, dj) in nb) { val ni = i + di; val nj = j + dj; val nk = key(ni, nj)
+                    if (ni !in 0 until cg.nx || nj !in 0 until cg.ny || nk in island) continue
+                    val nd = d + Climb.STEP * Math.hypot(di.toDouble(), dj.toDouble())
+                    if (dryAt(ni, nj)) {
+                        if (cg.step(i, j, di, dj) == Climb.WALL || deep(cg.wx(j), cg.wy(i)).not()) continue
+                        if (flood(ni, nj, 20_000).size < 20_000) continue             // another islet, not the mainland
+                        prev[nk] = k; dist[nk] = nd; landed = nk; break
+                    }
+                    if (nd < (dist[nk] ?: Double.MAX_VALUE)) { dist[nk] = nd; prev[nk] = k; pq.add(nd to nk) }
+                }
+                if (landed != null) break
+            }
+            val land = landed ?: run { println("SWIM ${o.optString("name")}: no shore of the mainland within 1500 yd of the island"); null } ?: continue
+            val path = ArrayList<Long>(); var c: Long? = land; while (c != null) { path.add(c); c = prev[c] }; path.reverse()
+            val pts = path.map { k -> doubleArrayOf(cg.wx((k shr 32).toInt()), cg.wy(k.toInt()), 0.0, 2.0) }
+            val yd = pts.zipWithNext { u, w -> Math.hypot(w[0] - u[0], w[1] - u[1]) }.sum()
+            swims.add(Swim(o.optString("name"), island, Climb.Link(pts, yd), pts.first(), pts.last()))
+            println("SWIM ${o.optString("name")}: the island's ground ${island.size} vertices; the swim ${yd.toInt()} yd from ${pts.first()[0].toInt()},${pts.first()[1].toInt()} to ${pts.last()[0].toInt()},${pts.last()[1].toInt()}")
+            manual.put(org.json.JSONObject().put("kind", "swim").put("name", o.optString("name")).put("pts", org.json.JSONArray(pts.map { org.json.JSONArray(listOf(it[0], it[1], 0.0)) })))
+        } }
+        val baseLinks = links
         val export = org.json.JSONObject(); val rs = org.json.JSONArray()
         for ((i, trip) in trips.withIndex()) {
             val (fromName, f, goal) = trip; val (goalName, gp) = goal
             lastReached = true
+            // a declared swim only for a goal on its island
+            val gv = cg.at(gp!![0], gp[1]); val gk = (gv[1].toLong() shl 32) or (gv[0].toLong() and 0xFFFFFFFFL)
+            val mySwims = swims.filter { gk in it.island }
+            links = baseLinks + mySwims.map { it.link }
             val way = SafePath.routeOn(netC, f!![0], f[1], gp!![0], gp[1], leg, clear = clear, walkable = { a, b -> Climb.walkable(cg, a, b, deep) }) ?: leg(f, gp) ?: listOf(f, gp)
             if (way.size < 2) { val r0 = Climb.route(cg, f, gp, danger, k, deep, links); val r1 = Climb.route(cg, f, gp)
                 println("EMPTY ${f.toList()} -> ${gp.toList()}: full ${r0?.reached} ${r0?.pts?.size}, bare ${r1?.reached} ${r1?.pts?.size}; deep at start ${deep(f[0], f[1])} goal ${deep(gp[0], gp[1])}") }
@@ -653,6 +708,7 @@ class RenderSafePath {
             if (wet.isNotEmpty()) println("WATER route $letter crosses deep water on segments ${wet.map { q -> val a = way[q]; val b = way[q + 1]
                 val n = maxOf(1, (Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5).toInt())
                 "$q (${(0..n).count { t -> deep(a[0] + (b[0] - a[0]) * t / n, a[1] + (b[1] - a[1]) * t / n) } / 2} yd of ${Math.hypot(b[0] - a[0], b[1] - a[1]).toInt()} at ${a[0].toInt()},${a[1].toInt()})" }}")
+            if (way.any { Climb.atSwim(it) }) for (sw in mySwims) println("SWIM route $letter: the declared swim to ${sw.name}, ${sw.link.yd.toInt()} yd from ${sw.from[0].toInt()},${sw.from[1].toInt()} to ${sw.to[0].toInt()},${sw.to[1].toInt()} - swim here")
             println("ROUTE2 $letter $fromName -> $goalName: ${yd.toInt()} yd, ${way.size - 2} flags${way.count { Climb.atLift(it) }.let { if (it > 0) ", ${it / 2} lift ride(s)" else "" }}${if (lastReached) "" else " (the goal unreachable: to the nearest ground)"}; goal ${gp[0].toInt()},${gp[1].toInt()} h ${height(gp[0], gp[1]).toInt()}")
             rs.put(org.json.JSONObject().put("letter", letter).put("name", "$fromName → $goalName").put("reached", lastReached)
                 .put("pts", org.json.JSONArray(way.map { org.json.JSONArray(if (Climb.inCave(it)) listOf(it[0], it[1], it[2].toInt()) else listOf(it[0], it[1])) })))

@@ -60,7 +60,7 @@ def dang_at(wx, wy):
 RRv, CCv = np.meshgrid(np.arange(NR), np.arange(NC), indexing='ij')
 DANG = dang_at(ORG - (RRv + gr0) * S, ORG - (CCv + gc0) * S)
 DALPHA = np.clip((DANG - 0.3) / 3.7, 0, 1) * 0.55                                  # semi-transparent red: the denser the mobs, the redder
-def incave(p): return len(p) > 2 and p[2] in (1, 2)          # 1 a cave's floor, 2 a lift's landing
+def incave(p): return len(p) > 2 and p[2] in (1, 2, 3)       # 1 a cave's floor, 2 a lift's landing, 3 a declared swim
 def atlift(p): return len(p) > 2 and p[2] == 2
 def dashed(dr, xy, fill, width, on=10, off=7):
     for (x0, y0), (x1, y1) in zip(xy, xy[1:]):
@@ -70,6 +70,8 @@ def dashed(dr, xy, fill, width, on=10, off=7):
             t1 = min(L, t + on)
             dr.line((x0 + (x1 - x0) * t / L, y0 + (y1 - y0) * t / L, x0 + (x1 - x0) * t1 / L, y0 + (y1 - y0) * t1 / L), fill=fill, width=width)
             t = t1 + off
+def atswim(p): return len(p) > 2 and p[2] == 3                          # a declared swim (the user: "Swim link, flagged")
+SWIMCOL = (40, 140, 255)
 def runs(pts):
     # the route in stretches: on the ground / in a cave (a stretch touching a cave point is the cave's)
     out = []; cur = [pts[0]]; cv = None
@@ -141,7 +143,7 @@ for i, rt in enumerate(data['routes']):
     pts = [vert(p[0], p[1]) for p in rt['pts']]; xy = [(c * SC, r * SC) for r, c in pts]
     for cv, part in runs(rt['pts']):
         pxy = [(c * SC, r * SC) for r, c in (vert(p[0], p[1]) for p in part)]
-        if cv: dashed(dr, pxy, (0, 0, 0), 9); dashed(dr, pxy, COL[i % len(COL)], 5)
+        if cv: dashed(dr, pxy, (0, 0, 0), 9); dashed(dr, pxy, SWIMCOL if any(atswim(p) for p in part) else COL[i % len(COL)], 5)
         else: dr.line(pxy, fill=(0, 0, 0), width=9); dr.line(pxy, fill=COL[i % len(COL)], width=5)
     for k, (x, y) in enumerate(xy):
         if k == 0: dr.ellipse((x - 9, y - 9, x + 9, y + 9), fill=(120, 220, 110), outline=(0, 0, 0), width=2); continue
@@ -149,10 +151,13 @@ for i, rt in enumerate(data['routes']):
         if atlift(rt['pts'][k]) and not atlift(rt['pts'][k - 1]):           # a lift's first landing: the "take the lift" flag
             dr.rectangle((x - 16, y - 16, x + 16, y + 16), fill=(255, 150, 30), outline=(0, 0, 0), width=3)
             text(dr, (x + 20, y + 18), '%s%d take the lift' % (rt['letter'], k), FONTS, (255, 200, 120), 'lm'); continue
+        if atswim(rt['pts'][k]) and not atswim(rt['pts'][k - 1]):           # a declared swim's first point: the "swim here" flag
+            dr.ellipse((x - 16, y - 16, x + 16, y + 16), fill=SWIMCOL, outline=(0, 0, 0), width=3)
+            text(dr, (x + 20, y + 18), '%s%d swim here' % (rt['letter'], k), FONTS, (150, 200, 255), 'lm'); continue
         if incave(rt['pts'][k]): continue                                   # the cave's floor points: its dashes, no flags
         dr.ellipse((x - 13, y - 13, x + 13, y + 13), fill=(255, 255, 255), outline=(0, 0, 0), width=2)
         dr.text((x, y), '%s%d' % (rt['letter'], k), font=FONTS, fill=(0, 0, 0), anchor='mm')
-legend = '%s from its real heights (top-down): tint %.0f - %.0f yd, hillshade, 10 yd contours; red = mob danger (to a level %d %s character); cream = drafted roads, white dashes = trails; orange squares = lift shafts, a filled one the take-the-lift flag; green squares = exits walkable on the ground, red X = not; purple dashes = cave floors, diamonds their mouths; routes (dashed inside a cave)' % (TITLE, lo, hi, SPEC.get('level', 8), SPEC.get('faction', 'horde').title())
+legend = '%s from its real heights (top-down): tint %.0f - %.0f yd, hillshade, 10 yd contours; red = mob danger (to a level %d %s character); cream = drafted roads, white dashes = trails; orange squares = lift shafts, a filled one the take-the-lift flag; green squares = exits walkable on the ground, red X = not; purple dashes = cave floors, diamonds their mouths; routes (dashed inside a cave; blue dashes a declared swim, its blue flag "swim here")' % (TITLE, lo, hi, SPEC.get('level', 8), SPEC.get('faction', 'horde').title())
 text(dr, (16, NR * SC - 24), legend, FONTS, anchor='lm')
 for i, rt in enumerate(data['routes']): text(dr, (16, 24 + i * 30), '%s. %s' % (rt['letter'], rt['name']), FONTS, COL[i % len(COL)], 'lm')
 top.save(os.path.join(OUT, '%s_heightmap.png' % TAG))
@@ -224,8 +229,9 @@ for i, rt in enumerate(data['routes']):
     pts = rt['pts']
     for cv, part in runs(pts):
         if cv:
-            xy = [p3(p[0], p[1], 2, cave_z(p[0], p[1])) for p in part]
-            dashed(d3, xy, (0, 0, 0), 8); dashed(d3, xy, COL[i % len(COL)], 4); continue
+            sw = any(atswim(p) for p in part)
+            xy = [p3(p[0], p[1], 2) if sw else p3(p[0], p[1], 2, cave_z(p[0], p[1])) for p in part]
+            dashed(d3, xy, (0, 0, 0), 8); dashed(d3, xy, SWIMCOL if sw else COL[i % len(COL)], 4); continue
         dense = []
         for a, b in zip(part, part[1:]):
             n = max(1, int(math.hypot(b[0] - a[0], b[1] - a[1]) / 8))

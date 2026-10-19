@@ -5,6 +5,8 @@
               {"name": "The Sepulcher", "box": [800, 250, 1950, 1250]},
               {"name": "Pyrewood and Shadowfang Keep", "box": [0, -550, 1800, 1250]},
               {"name": "Fenris Isle crossing", "box": [1150, 600, 1150, 400]}],
+ "swims": [{"name": "Fenris Isle", "island": {"node": "Fenris Isle"},
+   "evidence": "the user, 2026-10-18: \"Swim link, flagged\" - no walk reaches Fenris Isle; the shortest water gap to the mainland is found at run time"}],
  "goals": [
   {"name": "the road in from Tirisfal to the Sepulcher", "from": {"exit": "Tirisfal Glades"}, "to": {"node": "The Sepulcher"}},
   {"name": "Malden's Orchard", "from": {"node": "The Sepulcher"}, "to": {"camp": "Malden's Orchard"}},

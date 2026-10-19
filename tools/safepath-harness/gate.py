@@ -21,13 +21,14 @@ LONGER = 0.15
 NARROW, NARROW_YD = 2.2, 6   # the user's narrow-stream ruling (2026-10-18): a stream up to 2.2 yd deep is waded for 6 yd at most
 run = sys.argv[1]
 def parse(log):
-    z = {'routes': {}, 'walls': [], 'empty': [], 'notfound': [], 'water': {}, 'wet': {}, 'exits': {}, 'kept': [], 'segcheck': None}
+    z = {'routes': {}, 'walls': [], 'empty': [], 'notfound': [], 'water': {}, 'wet': {}, 'exits': {}, 'kept': [], 'segcheck': None, 'swims': []}
     for line in open(log, encoding='utf-8', errors='replace'):
         line = line.rstrip('\n')
         m = re.match(r'ROUTE2 (\w) (.*?): (\d+) yd, .*?flags(.*)$', line)
         if m:
             z['routes'][m.group(1)] = {'name': m.group(2), 'yd': int(m.group(3)), 'reached': 'unreachable' not in m.group(4)}
             continue
+        if line.startswith('SWIM route'): z['swims'].append(line)                # a declared swim (the user's "Swim link, flagged"): noted
         if line.startswith('WALLS route'): z['walls'].append(line)
         elif line.startswith('EMPTY'): z['empty'].append(line)
         elif line.startswith('GOAL') and 'not found' in line: z['notfound'].append(line)
@@ -77,6 +78,7 @@ for tag, z in zones.items():
         elif run > NARROW_YD: fails.append('%s: route %s swims: %d yd on end deeper than the ford at %s (wetcheck)' % (tag, L, run, rat))
         elif n: notes.append('%s: route %s wades a narrow stream: %d yd deeper than the ford, at most %d yd on end, %.1f yd deep at %s' % (tag, L, n, run, d, at))
     if 'wet' in z and not z['wet'] and z['routes']: fails.append('%s: no wetcheck result' % tag)
+    for sw in z.get('swims', []): notes.append('%s: %s' % (tag, sw))
     if not b: notes.append('%s: no baseline (new zone)' % tag); continue
     for L, r in b['routes'].items():
         now = z['routes'].get(L)
@@ -100,6 +102,15 @@ for r in cross:
     if not b: notes.append('cross %s: no baseline (new route)' % r['id']); continue
     if b['complete'] and not r['complete']: fails.append('cross %s: was complete, now stops at a gap' % r['id'])
     if r['walkYd'] > b['walkYd'] * (1 + LONGER): fails.append('cross %s (%s): %d -> %d yd walked (+%d%%)' % (r['id'], r['name'], b['walkYd'], r['walkYd'], round(100 * (r['walkYd'] / b['walkYd'] - 1))))
+# the planner's checks (PlanCross): a FAIL fails; no plan.log is no check run
+pl = os.path.join(run, 'plan.log')
+if os.path.exists(pl):
+    pls = [l.rstrip('
+') for l in open(pl, encoding='utf-8', errors='replace') if l.startswith('PLAN ')]
+    if not pls: fails.append('plan: no PLAN lines (did PlanCross run?)')
+    for l in pls:
+        if ' FAIL' in l.split('|')[0]: fails.append(l[5:])
+        else: notes.append(l[5:300])
 for n in notes: print('NOTE ' + n)
 for f in fails: print('FAIL ' + f)
 print('%s: %d zones, %d routes, %d cross-zone routes, %d failures' % ('GATE FAILED' if fails else 'GATE PASSED', len(zones), sum(len(z['routes']) for z in zones.values()), len(cross), len(fails)))

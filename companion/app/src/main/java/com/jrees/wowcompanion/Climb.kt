@@ -146,6 +146,17 @@ object Climb {
         }
         return out
     }
+    /** whether cell ([gr], [gc]) has corners on a floor ([deck] non-NaN) and off it more than one step's 45 degrees apart in height */
+    private fun edgeDrop(gr: Int, gc: Int, height: (Int, Int) -> Float, deck: (Double, Double) -> Float): Boolean {
+        var on = false; var off = false; var lo = Double.MAX_VALUE; var hi = -Double.MAX_VALUE
+        for ((a, c) in listOf(0 to 0, 1 to 0, 0 to 1, 1 to 1)) {
+            val d = deck(ORG - (gr + a) * STEP, ORG - (gc + c) * STEP)
+            val z = if (d.isNaN()) { off = true; height(gr + a, gc + c) } else { on = true; d }
+            if (z.isNaN()) continue
+            lo = min(lo, z.toDouble()); hi = max(hi, z.toDouble())
+        }
+        return on && off && hi - lo > STEP
+    }
     /** a lattice vertex's key (global row, column) */
     fun vkey(gr: Int, gc: Int): Long = (gr.toLong() shl 32) or (gc.toLong() and 0xFFFFFFFFL)
     /** the vertex nearest world ([wx], [wy]): its key */
@@ -202,6 +213,9 @@ object Climb {
                     // a deck's cell when its four corners are on the deck (a cell with one corner on a floor's edge is the terrain's:
                     // its middle rounded onto that corner leveled the hillside beside a tunnel's mouth, Wetlands' route G)
                     deck != null && listOf(0 to 0, 1 to 0, 0 to 1, 1 to 1).all { (a, c) -> !deck(ORG - (gr + a) * STEP, ORG - (gc + c) * STEP).isNaN() } -> 0
+                    // a cell on a floor's edge, its corners on the floor and the terrain more than a 45 degree step apart (a platform
+                    // 6 yd over the ground beside it): a wall, whatever the terrain's own faces there (Mulgore D cut across one diagonally)
+                    deck != null && edgeDrop(gr, gc, height, deck) -> WALL or (WALL shl 2) or (WALL shl 4) or (WALL shl 6)
                     else -> faceClass(ha, hb, m) or (faceClass(hb, hd, m) shl 2) or (faceClass(hc, hd, m) shl 4) or (faceClass(ha, hc, m) shl 6)
                 }
                 faces[j * nx + i] = f.toByte()
@@ -233,7 +247,10 @@ object Climb {
     const val IN_CAVE = 1.0
     /** a lift's landing on a link's way (a point marked so: "take the lift" there; the ride to the next such point) - inside, as a cave's */
     const val LIFT = 2.0
-    fun inCave(p: DoubleArray) = p.size > 2 && (p[2] == IN_CAVE || p[2] == LIFT)
+    /** a point of a declared SWIM link (the user, 2026-10-18, Fenris Isle: "Swim link, flagged"): swum, never walked */
+    const val SWIM = 3.0
+    fun inCave(p: DoubleArray) = p.size > 2 && (p[2] == IN_CAVE || p[2] == LIFT || p[2] == SWIM)
+    fun atSwim(p: DoubleArray) = p.size > 2 && p[2] == SWIM
     fun atLift(p: DoubleArray) = p.size > 2 && p[2] == LIFT
 
     /**
@@ -346,7 +363,7 @@ object Climb {
             if (path[a + 1][2] >= 0) {
                 val lk = links[path[a + 1][2] / 2]
                 val way = if (path[a + 1][2] % 2 == 0) lk.pts else lk.pts.reversed()
-                for (p in way) pts.add(doubleArrayOf(p[0], p[1], if (p.size > 3 && p[3] == 1.0) LIFT else IN_CAVE))
+                for (p in way) pts.add(doubleArrayOf(p[0], p[1], if (p.size > 3 && p[3] == 1.0) LIFT else if (p.size > 3 && p[3] == 2.0) SWIM else IN_CAVE))
                 pts.add(vert(a + 1)); a++; continue
             }
             var stop = a + 1

@@ -1,0 +1,17 @@
+{
+ "_": "THE PLANNER'S CHECKS (PlanCross, in the gate): journeys between continents and places, each planned over cross/links.json and transports.json with the app's own MultiHop, and what the plan must do. use: link ids it must take (r<path> a ride, f<a>><b> a flight, a links.json id, w:<a>><b> a walk); avoid: ids it must not take (above all a one-way link backwards); expect: \"plan\" (a chain is found), \"none\" (no chain: the planner says so), \"gap\" (a chain through a link with an end nobody has measured: it says which). flights: false plans without them (on foot and aboard only).",
+ "plans": [
+  {"id": "dalaran-northshire", "name": "Dalaran → Northshire Abbey, by the one-way portal to Stormwind", "faction": "alliance",
+   "from": {"cont": 0, "xy": [451.0, 446.6]}, "to": {"cont": 0, "xy": [-8914, -137]}, "expect": "gap", "use": ["P1"]},
+  {"id": "stormwind-dalaran", "name": "Stormwind → Dalaran: never back through the one-way portal", "faction": "alliance",
+   "from": {"cont": 0, "xy": [-8830, 625]}, "to": {"cont": 0, "xy": [451.0, 446.6]}, "expect": "none", "avoid": ["P1"]},
+  {"id": "orgrimmar-undercity", "name": "the Orgrimmar gate → the Undercity, by zeppelin", "faction": "horde", "flights": false,
+   "from": {"cont": 1, "xy": [1408, -4207]}, "to": {"cont": 0, "xy": [1648, 240]}, "expect": "plan", "use": ["r302"]},
+  {"id": "shadowglen-auberdine", "name": "Shadowglen → Auberdine: down the tree by its portal, then the boat", "faction": "alliance", "flights": false,
+   "from": {"cont": 1, "xy": [10311, 832]}, "to": {"cont": 1, "xy": [6418, 503]}, "expect": "gap", "use": ["P10", "r293"]},
+  {"id": "horde-no-alliance-boat", "name": "Ratchet → Auberdine for the Horde: never an Alliance boat", "faction": "horde", "flights": false,
+   "from": {"cont": 1, "xy": [-956, -3754]}, "to": {"cont": 1, "xy": [6418, 503]}, "avoid": ["r293", "r295", "r11616", "r11167"]},
+  {"id": "northshire-ironforge", "name": "Northshire Abbey → the Ironforge gate, by the tram", "faction": "alliance", "flights": false,
+   "from": {"cont": 0, "xy": [-8914, -137]}, "to": {"cont": 0, "xy": [-5045, -833]}, "expect": "plan", "use": ["TRAM"]}
+ ]
+}

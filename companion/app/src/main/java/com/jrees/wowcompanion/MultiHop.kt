@@ -25,6 +25,8 @@ object MultiHop {
     }
 
     const val MAX_HOPS = 4
+    /** the walk to or from a link's end with no position (a portal's landing not in the data): reckoned this long */
+    const val UNKNOWN_YD = 500.0
 
     /**
      * The cheapest way from the player on [startMap] at world ([sx], [sy]) to the quest at ([gx], [gy]). [reaches] (map, wx, wy):
@@ -32,7 +34,8 @@ object MultiHop {
      */
     fun plan(startMap: Int, sx: Double, sy: Double, gx: Double, gy: Double, hops: List<Hop>,
              reaches: (Int, Double, Double) -> Boolean, maxHops: Int = MAX_HOPS): Plan? {
-        fun walk(x0: Double, y0: Double, x1: Double, y1: Double) = hypot(x1 - x0, y1 - y0)
+        // a link's end nobody has measured (NaN: a portal's landing) is taken at [UNKNOWN_YD] - a plan through it says so
+        fun walk(x0: Double, y0: Double, x1: Double, y1: Double) = if (x0.isNaN() || x1.isNaN()) UNKNOWN_YD else hypot(x1 - x0, y1 - y0)
         var best: Plan? = if (reaches(startMap, sx, sy)) Plan(emptyList(), walk(sx, sy, gx, gy)) else null
         // layer by layer (at most [maxHops]): the cheapest arrival at the far end of each hop, and the chain that got there
         val n = hops.size
