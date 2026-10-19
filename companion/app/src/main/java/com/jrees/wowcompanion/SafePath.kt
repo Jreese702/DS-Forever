@@ -929,9 +929,10 @@ object SafePath {
      * since the last draft (the learned roads above all): the player's faction [mine] decides which creatures are its towns' and which
      * its danger. Cheap to call often (the map's draw does).
      */
-    fun refresh(map: Int, cont: Int, t: Double, b: Double, l: Double, r: Double, mine: Int) {
+    fun refresh(map: Int, cont: Int, t: Double, b: Double, l: Double, r: Double, mine: Int,
+                onMap: ((Int, Double, Double) -> Boolean)? = null) {
         if (!RouteWork.onMain()) return
-        val stamp = "${Roads.version}:${Roads.files.version}:${Terrain.files.version}:${zones.version}:${DangerStore.version}:$mine"
+        val stamp = "${Roads.version}:${Roads.files.version}:${Terrain.files.version}:${Climb.files.version}:${zones.version}:${DangerStore.version}:$mine"
         if (tried[map] == stamp) return
         tried[map] = stamp
         RouteWork.run({
@@ -941,7 +942,9 @@ object SafePath {
             val tg = Terrain.of(map) ?: return@run "no terrain yet"
             val zg = zones.get(map) ?: return@run "no zone ground yet"
             val ar = areas() ?: return@run "no areas table yet"
-            val built = "roads $roadCells, ${zg.nx}x${zg.ny} chunks, water ${waters.get(map) != null}, v3"
+            // the lattice (the terrain step's, when it has run): the exits checked on the ground, as the harness does
+            val cg = Climb.files.get(map)
+            val built = "roads $roadCells, ${zg.nx}x${zg.ny} chunks, water ${waters.get(map) != null}, ground ${cg != null}, v3"
             val old = drafts.get(map)
             if (old != null && old.built == built) return@run null
             val names = HashMap<Int, String>()
@@ -963,8 +966,16 @@ object SafePath {
                     districtFor(map, t, b, l, r)), ::nameOf,
                 dangerOf(hostile), ground = ground, painted = painted, water = water?.let { wg -> { x, y -> wg.at(x, y) } }), built)
             // the crossings checked from both sides, against the neighbours' drafts there are (the user: "a low danger path back")
-            val neighbours = net.exits.map { it.toMap }.distinct().mapNotNull { m -> drafts.get(m) }
-            val checked = checkCrossings(net, neighbours)
+            // THE EXITS ON THE GROUND (the zone workers' false exits: Loch Modan's ridge over the South Gate tunnels, Stranglethorn's on
+            // the Dagger Hills slope): with the terrain step's lattice, a walk exit whose crossing is not walkable goes, and the ground's
+            // own crossings (no road to them: the Badlands from Loch Modan) are added - the same code the harness runs
+            val grounded = if (cg == null) net else {
+                val gr = Ground(cg, map, { x, y -> ar.uiMap(zg.areaAt(x, y)) }, { x, y -> water?.at(x, y)?.let { d ->
+                    d.isNaN() || d == Water.BRIDGE || d <= FORD_DEPTH } ?: true })
+                groundExits(checkExits(net, gr), gr, ::nameOf, onMap = onMap)
+            }
+            val neighbours = grounded.exits.map { it.toMap }.distinct().mapNotNull { m -> drafts.get(m) }
+            val checked = checkCrossings(grounded, neighbours)
             ArtHarvest.file("safepath/$map.draft.json").also { it.parentFile?.mkdirs() }.writeText(checked.toJson().toString())
             drafts.drop(map); nets.drop(map)
             "drafted: ${checked.nodes.size} nodes, ${checked.edges.size} edges (${checked.edges.count { it.kind == TRAIL }} trails), " +

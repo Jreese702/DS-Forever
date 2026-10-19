@@ -494,9 +494,9 @@ class RenderSafePath {
             val node = netC.nodes.firstOrNull { it.id == x.node } ?: netCv.nodes.firstOrNull { it.id == x.node } ?: continue
             val c = gr.check(node.wx, node.wy, x.toMap)
             val kept = netC.exits.any { it.node == x.node }
-            println("EXIT ${x.name} (${x.how}${if (node.src == "ground") ", ground" else ""}) at ${node.wx.toInt()},${node.wy.toInt()} h ${height(node.wx, node.wy).toInt()}: " +
-                "reaches ${(c.ownShare * 100).toInt()}% of this zone, ${(c.theirsSqYd / 1000).toInt()}k sq yd of ${x.name}'s ground within ${SafePath.EXIT_NEAR_YD.toInt()} yd of it - " +
-                "${if (c.walkable) "WALKABLE" else "NOT WALKABLE"}${if (kept) "" else ", DROPPED"}")
+            println("EXIT ${x.name} (${x.how}) at ${node.wx.toInt()},${node.wy.toInt()} h ${height(node.wx, node.wy).toInt()}: " +
+                "reaches ${(c.ownShare * 100).toInt()}% of this zone, ${(c.theirsSqYd / 1000).toInt()}k sq yd of ${x.name}'s ground within ${SafePath.EXIT_NEAR_YD.toInt()} yd of it${if (node.src == "ground") " [a ground exit]" else ""}${if (kept) "" else " [dropped]"} - " +
+                if (c.walkable) "WALKABLE" else "NOT WALKABLE")
             exitChecks.put(org.json.JSONArray(listOf(node.wx, node.wy, x.name, x.how, c.walkable, (c.ownShare * 100).toInt(), (c.theirsSqYd / 1000).toInt(), kept, node.src)))
         }
         exitSheet(cg, gr, netC, tag, mapName, deep)
