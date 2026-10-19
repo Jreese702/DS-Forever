@@ -2088,6 +2088,16 @@ object SafePath {
             val direct = leg(f, t)
             if (direct != null && hypot(direct.last()[0] - tx, direct.last()[1] - ty) <= 3.0 && yd(direct) * NET_FAVOUR < yd(out)) return direct
         }
+        // A WAY OUT AND STRAIGHT BACK (a network point passed by, its node off the walk: out to it and back to the same spot) is no way:
+        // left out. Mulgore's J went 1.6 yd off the Spirit Rise walkway's edge to a node on the ground 2.3 yd under it and climbed back
+        // (back to the very same spot only, the line on from it the one checked from there; never the goal's own point; after the
+        // choice of the ground's own way over this one, which it leaves as it was)
+        var sp = 1
+        while (sp < out.size - 2) {
+            val a = out[sp - 1]; val c = out[sp + 1]
+            if (!Climb.inCave(out[sp]) && !Climb.inCave(a) && !Climb.inCave(c) && a[0] == c[0] && a[1] == c[1]) { out.removeAt(sp); out.removeAt(sp); if (sp > 1) sp-- }
+            else sp++
+        }
         return unloop(out, walkable)
     }
 
