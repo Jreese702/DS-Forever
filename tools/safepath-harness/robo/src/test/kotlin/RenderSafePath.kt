@@ -620,7 +620,7 @@ class RenderSafePath {
                     if (!gr.dryAt[q]) Color.rgb(40, 70, 160)
                     else if (cl == Climb.WALL) Color.rgb(110, 25, 20)
                     else { val v = when (cl) { Climb.LEVEL -> 200; Climb.CLIMB -> 160; else -> 120 }
-                        if (gr.region[q] in gr.main && gr.zoneOf[q] == net.map) Color.rgb(v - 40, v, v - 40) else Color.rgb(v, v, v) }
+                        if (gr.isMain(q)) Color.rgb(v - 40, v, v - 40) else Color.rgb(v, v, v) }
                 }
                 if (i in 0 until cg.nx - 1 && j in 0 until cg.ny - 1) { val q = j * cg.nx + i
                     if (gr.zoneOf[q] != gr.zoneOf[q + 1] || gr.zoneOf[q] != gr.zoneOf[q + cg.nx]) p.color = Color.WHITE }

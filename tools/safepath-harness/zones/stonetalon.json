@@ -1,0 +1,24 @@
+{"tag": "stonetalon", "dir": "kalimdor", "faction": "horde", "zone": 1442, "area": 406, "level": 20,
+ "maps": [[1442, 406], [1413, 17], [1440, 331], [1443, 405], [1412, 215]], "cities": [], "border": [1413, 1442],
+ "roadTextures": ["stonetalonsand"],
+ "title": "Stonetalon Mountains", "crop": [2916, -340, 3246, -1637],
+ "closeups": [
+  {"name": "Windshear Crag", "box": [1500, 800, 300, -700]},
+  {"name": "Talondeep Path", "box": [2050, 1400, -450, -850]},
+  {"name": "Sun Rock Retreat", "box": [1250, 700, 1250, 700]},
+  {"name": "Greatwood Vale", "box": [250, -340, -300, -1000]},
+  {"name": "Stonetalon Peak", "box": [2916, 2200, 1900, 1100]},
+  {"name": "Mirkfallon mill", "box": [2000, 1450, 1650, 1000]}
+ ],
+ "goals": [
+  {"name": "Windshear Mine's mouth (Windshear Crag)", "from": {"node": "Sun Rock Retreat"}, "to": {"cave": 110773, "near": [972, -368]}},
+  {"name": "the Talondeep Path tunnel to Ashenvale (its Ashenvale mouth, the tunnel exit)", "from": {"node": "Sun Rock Retreat"}, "to": {"xy": [1937, -739]}},
+  {"name": "the Venture Co. sawmill camp (Windshear Crag)", "from": {"node": "Sun Rock Retreat"}, "to": {"wmo": 106759, "near": [1255, -4]}},
+  {"name": "Stonetalon Peak's Cenarion inn", "from": {"node": "Sun Rock Retreat"}, "to": {"wmo": 112865, "near": [2717, 1504]}},
+  {"name": "the Charred Vale's Bloodfury harpies", "from": {"node": "Sun Rock Retreat"}, "to": {"camp": "The Charred Vale"}},
+  {"name": "Greatwood Vale's way in from the Barrens", "from": {"xy": [-190, -840]}, "to": {"node": "Sun Rock Retreat"}},
+  {"name": "Mirkfallon Lake's Pridewing wyverns", "from": {"node": "Sun Rock Retreat"}, "to": {"camp": "Mirkfallon Lake"}},
+  {"name": "Boulderslide Ravine's kobold cave", "from": {"node": "Sun Rock Retreat"}, "to": {"cave": 111177, "near": [-115, 231]}},
+  {"name": "Besseleth (Sishir Canyon)", "from": {"node": "Sun Rock Retreat"}, "to": {"mob": "Besseleth"}},
+  {"name": "the Grimtotem Post", "from": {"node": "Sun Rock Retreat"}, "to": {"camp": "Grimtotem Post"}}
+ ]}

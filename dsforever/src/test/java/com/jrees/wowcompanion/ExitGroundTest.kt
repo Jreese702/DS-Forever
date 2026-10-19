@@ -120,9 +120,9 @@ class ExitGroundTest {
     }
 
     @Test fun aStripOfTheZoneOverARiverIsNotItsMainGround() {
-        // the zone's own strip west of a deep river (world y -70..-40, Duskwood's west bank), joined to its main ground only by a loop
+        // the zone's own strip west of a deep river (world y -60..-40, x < 0: Duskwood's west bank), joined to its main ground only by a loop
         // round the river's head 480 yd north through the neighbour's ground: an exit on the strip is no crossing
-        val zone = { wx: Double, wy: Double -> if (wy > 0 || (wy > -70 && wy < -40 && wx < 440)) 1 else 2 }
+        val zone = { wx: Double, wy: Double -> if (wy > 0 || (wy > -60 && wy < -40 && wx < 0)) 1 else 2 }
         val dry = { wx: Double, wy: Double -> !(wy > -30 && wy < -10 && wx < 470) }
         val gr = SafePath.Ground(grid(500.0) { _, _ -> 0.0 }, 1, zone, dry)
         assertFalse(gr.onMain(-200.0, -55.0))
