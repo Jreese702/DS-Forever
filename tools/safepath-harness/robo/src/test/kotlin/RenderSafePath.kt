@@ -201,10 +201,19 @@ class RenderSafePath {
             val hostile = here.filter { it.hostile == mine || it.hostile == 3 }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
             val friendly = here.filter { it.hostile == foe }.map { SafePath.Npc(rect.t - it.y * ay, rect.l - it.x * ax, it.sub) }
             val fixed = SafePath.fixedPoints(map, rect.c, rect.t, rect.b, rect.l, rect.r, mine, transports) + SafePath.hubs(friendly, { x, y -> PlaceNames.nameAt(x, y, areas) { a, b2 -> zg.areaAt(a, b2) } }, nameOf(map), SafePath.districtFor(map, rect.t, rect.b, rect.l, rect.r))
-            val t0 = System.nanoTime()
-            val net = SafePath.draft(SafePath.Input(map, rect.c, rect.t, rect.b, rect.l, rect.r, roadAt,
-                { wx, wy -> Terrain.factor(tg.at(wx, wy)) }, { wx, wy -> ar.uiMap(zg.areaAt(wx, wy)) }, fixed, ::nameOf, SafePath.dangerOf(hostile),
+            fun draftFor(fx: List<SafePath.Fixed>, foes: List<DoubleArray>) = SafePath.draft(SafePath.Input(map, rect.c, rect.t, rect.b, rect.l, rect.r, roadAt,
+                { wx, wy -> Terrain.factor(tg.at(wx, wy)) }, { wx, wy -> ar.uiMap(zg.areaAt(wx, wy)) }, fx, ::nameOf, SafePath.dangerOf(foes),
                 ground = if (map in cities) artGround(art, map, rect) else null, painted = painted(art, map, rect), water = { x, y -> wg.at(x, y) }), "off-device")
+            // the other side's towns and stops where its own run's draft puts them (their names: Grom'gol for the Alliance, Theramore and
+            // "Theramore Isle · Inn, Stables" for the Horde) - none of them nodes here, only the places a spec's goals name
+            val otherPlaces = if (map != main || spec == null) emptyList() else {
+                val otherFriendly = here.filter { it.hostile == mine }.map { SafePath.Npc(rect.t - it.y * ay, rect.l - it.x * ax, it.sub) }
+                val otherFoes = here.filter { it.hostile == foe || it.hostile == 3 }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
+                val ofx = SafePath.fixedPoints(map, rect.c, rect.t, rect.b, rect.l, rect.r, foe, transports) + SafePath.hubs(otherFriendly,
+                    { x, y -> PlaceNames.nameAt(x, y, areas) { a, b2 -> zg.areaAt(a, b2) } }, nameOf(map), SafePath.districtFor(map, rect.t, rect.b, rect.l, rect.r))
+                draftFor(ofx, otherFoes).nodes.mapNotNull { n -> n.name?.let { it to doubleArrayOf(n.wx, n.wy) } } }
+            val t0 = System.nanoTime()
+            val net = draftFor(fixed, hostile)
             val ms = (System.nanoTime() - t0) / 1_000_000
             println("SAFEPATH ${nameOf(map)}: ${net.nodes.size} nodes, ${net.edges.size} edges (${net.edges.groupBy { it.kind }.mapValues { it.value.size }}), " +
                 "${net.exits.size} exits: ${net.exits.joinToString { "${it.name} (${it.how})" }}; fixed ${fixed.joinToString { it.name }}; " +
@@ -217,14 +226,16 @@ class RenderSafePath {
                 val t = tiles.getOrPut((gc / 128) to (gr / 128)) { File(dir, "adt/${gc / 128}_${gr / 128}.adt").takeIf { it.isFile }?.let { Terrain.tile(it.readBytes()) } }
                 (t?.h?.get((gr % 128) * 128 + (gc % 128)) ?: Float.NaN).let { if (!voidBelow.isNaN() && it < voidBelow) Float.NaN else it } }, roadAt, zg, areas, here, dir, { x, y -> wg.at(x, y) }, wg,
                 { x, y -> PlaceNames.locate(x, y).let { l -> walksOf(l[0], l[1]).any { it(x, y) } } }, ::nameOf, floorsAt = ::floorsAt,
-                mainArea, spec, tag, mine, ar, map, rawDeep = { x, y -> SafePath.Water.depthOf(x, y, { c, r -> wet(c, r).first }, { c, r -> wet(c, r).second })
+                mainArea, spec, tag, mine, ar, map, otherPlaces, rawDeep = { x, y -> SafePath.Water.depthOf(x, y, { c, r -> wet(c, r).first }, { c, r -> wet(c, r).second })
                     .let { !it.isNaN() && it > SafePath.FORD_DEPTH } })
             if (map == main) File(out, "decks_$tag.json").writeText(org.json.JSONArray(deckList.flatMap { d -> d.triangles.map { org.json.JSONArray(it.toList()) } }).toString())
             // and their floors in 3D for py/segcheck.py (the surface a walker is on: each triangle's corners x, y, z, and 1 where its
             // height classes the lattice's steps, 0 where it levels them - a city's, a building's porch)
+            // (3: a capital's read floor - leveled whatever its height, as a street box's 2, but a real floor: a pier over the sea is a deck
+            // for py/wetcheck.py, Theramore's and Auberdine's docks)
             if (map == main) { val classed = tileDecks.values.flatten().toSet()
                 File(out, "floors_$tag.json").writeText(org.json.JSONArray(deckList.flatMap { d -> val hs = d.heights ?: return@flatMap emptyList<org.json.JSONArray>()
-                    d.triangles.mapIndexed { k, t -> org.json.JSONArray(listOf(t[0], t[1], hs[k][0], t[2], t[3], hs[k][1], t[4], t[5], hs[k][2], if (d in classed) 1 else if (d in capitalDecks) 2 else 0)) } }
+                    d.triangles.mapIndexed { k, t -> org.json.JSONArray(listOf(t[0], t[1], hs[k][0], t[2], t[3], hs[k][1], t[4], t[5], hs[k][2], if (d in classed) 1 else if (d in capitalDecks) 3 else 0)) } }
                     // and a capital's street boxes (no floor read: leveled whatever their height - flag 2), two triangles a box
                     + cityFeet.flatMap { f -> val c = listOf(doubleArrayOf(f.worldX(f.lx0, f.ly0), f.worldY(f.lx0, f.ly0)), doubleArrayOf(f.worldX(f.lx1, f.ly0), f.worldY(f.lx1, f.ly0)),
                         doubleArrayOf(f.worldX(f.lx1, f.ly1), f.worldY(f.lx1, f.ly1)), doubleArrayOf(f.worldX(f.lx0, f.ly1), f.worldY(f.lx0, f.ly1)))
@@ -267,7 +278,8 @@ class RenderSafePath {
                         zg: SafePath.Zones, areas: Map<Int, PlaceNames.Area>, spawns: List<QuestieNpcs.Spawn>, dir: File, waterAt: (Double, Double) -> Float, waterGrid: SafePath.Water?,
                         deckAt: (Double, Double) -> Boolean = { _, _ -> false }, mapName: (Int) -> String = { "" },
                         floorsAt: (Double, Double) -> DoubleArray = { _, _ -> DoubleArray(0) }, zoneArea: Int = 14, spec: JSONObject? = null, tag: String = "durotar", mine: Int = TransportRoutes.HORDE,
-                        ar: SafePath.Areas? = null, map: Int = 1411, rawDeep: ((Double, Double) -> Boolean)? = null) {
+                        ar: SafePath.Areas? = null, map: Int = 1411, otherPlaces: List<Pair<String, DoubleArray>> = emptyList(),
+                        rawDeep: ((Double, Double) -> Boolean)? = null) {
         val S = Climb.STEP; val ORG = 32 * MapHarvest.ADT_YD
         fun height(wx: Double, wy: Double): Float = heightV(Math.round((ORG - wx) / S).toInt(), Math.round((ORG - wy) / S).toInt())
         val ax = rect.l - rect.r; val ay = rect.t - rect.b
@@ -359,15 +371,18 @@ class RenderSafePath {
         val leg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b -> Climb.route(cg, a, b, danger, k, deep, links)?.also { lastReached = it.reached }?.pts }
         // the narrow-stream ruling's other half: no wade longer than SafePath.NARROW_YD on end. A route that wades longer (along a stream,
         // Felwood: 2.3 yd for 12 yd) is routed again with no wading at all
-        val strictDeep: (Double, Double) -> Boolean = { x, y -> val d = waterAt(x, y)
-            if (d.isNaN() || deckAt(x, y)) false else if (d == SafePath.Water.BRIDGE) rawDeep != null && rawDeep(x, y) else d > SafePath.FORD_DEPTH }
+        // (deeper than the ford by the grid's vertices or by the liquid's surface over the ground at the spot itself, rawDeep, as
+        // py/wetcheck.py reads it: the grid keeps tenths, and Loch Modan's route C walked 13 yd along a stream 1.51-1.56 deep the grid read 1.5)
+        fun overFord(x: Double, y: Double): Boolean { val d = waterAt(x, y)
+            return !deckAt(x, y) && ((rawDeep != null && rawDeep(x, y)) || (!d.isNaN() && d != SafePath.Water.BRIDGE && d > SafePath.FORD_DEPTH)) }
+        val strictDeep: (Double, Double) -> Boolean = { x, y -> overFord(x, y) }
         val strictLeg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b -> Climb.route(cg, a, b, danger, k, strictDeep, links)?.also { lastReached = it.reached }?.pts }
         fun longestWade(w: List<DoubleArray>): Double {
             var run = 0.0; var best = 0.0
             for ((pa, pb) in w.zipWithNext()) { if (Climb.inCave(pa) || Climb.inCave(pb)) { run = 0.0; continue }
                 val n = maxOf(1, (Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) * 2).toInt())
-                for (q in 0 until n) { val x = pa[0] + (pb[0] - pa[0]) * q / n; val y = pa[1] + (pb[1] - pa[1]) * q / n; val d = waterAt(x, y)
-                    if (!d.isNaN() && d != SafePath.Water.BRIDGE && d > SafePath.FORD_DEPTH && !deckAt(x, y)) { run += 0.5; best = maxOf(best, run) } else run = 0.0 } }
+                for (q in 0 until n) { val x = pa[0] + (pb[0] - pa[0]) * q / n; val y = pa[1] + (pb[1] - pa[1]) * q / n
+                    if (overFord(x, y)) { run += 0.5; best = maxOf(best, run) } else run = 0.0 } }
             return best
         }
         // the same with no danger counted (the detour cap's rival: SafePath.capDetour)
@@ -512,8 +527,13 @@ class RenderSafePath {
         /** a subzone's quest mobs at their thickest: the hostile spawn with the most others within 60 yd */
         // a subzone's own ground by its AreaTable name (an island: the Westfall Lighthouse, Purgation Isle): the dry spot one can stand on
         // nearest the middle of its chunks
+        // (a name as the spec says it and as AreaTable keeps it: "the Westfall Lighthouse" is "Westfall Lighthouse"; failing the whole
+        // name, the one subzone it begins: "Theramore" is "Theramore Isle")
+        fun plain(n: String) = n.trim().lowercase().removePrefix("the ").trim()
         fun areaSpot(name: String): DoubleArray? {
-            val a = areas.entries.firstOrNull { it.value.name.trim().equals(name.trim(), true) && (it.value.parent == zoneArea || it.key == zoneArea) }?.key ?: return null
+            val own = areas.entries.filter { it.value.parent == zoneArea || it.key == zoneArea }
+            val a = (own.firstOrNull { plain(it.value.name) == plain(name) }
+                ?: own.filter { plain(it.value.name).startsWith(plain(name) + " ") }.singleOrNull())?.key ?: return null
             val pts = ArrayList<DoubleArray>()
             var j = 0; while (j < cg.ny) { var i = 0; while (i < cg.nx) { val x = cg.wx(j); val y = cg.wy(i)
                 if (zg.areaAt(x, y) == a) pts.add(doubleArrayOf(x, y)); i += 2 }; j += 2 }
@@ -522,15 +542,41 @@ class RenderSafePath {
             return pts.filter { standable(it[0], it[1]) && !deep(it[0], it[1]) }.minByOrNull { Math.hypot(it[0] - mx, it[1] - my) }
         }
         fun camp(name: String): DoubleArray? {
-            val a = areas.entries.firstOrNull { it.value.name.trim().equals(name.trim(), true) && it.value.parent == zoneArea }?.key ?: return null
+            val a = areas.entries.firstOrNull { plain(it.value.name) == plain(name) && it.value.parent == zoneArea }?.key ?: return null
             val pts = spawns.filter { it.hostile == mine || it.hostile == 3 }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
                 .filter { zg.areaAt(it[0], it[1]) == a && !deep(it[0], it[1]) && !height(it[0], it[1]).isNaN() }      // ground there (Un'Goro's crater is under the sea's level)
             return pts.maxByOrNull { p -> pts.count { Math.hypot(it[0] - p[0], it[1] - p[1]) < 60 } }
         }
         // a node by its name, or by its base name when towns sharing it were told apart ("Deathknell · Inn", "Gustberry Lowlands (2)")
         // ... or, a town that is no hub for this faction (the other side's: Theramore for the Horde), the place itself: its subzone's ground
-        fun at(name: String) = (net.nodes.firstOrNull { it.name?.trim() == name.trim() } ?: net.nodes.firstOrNull { it.name?.trim()?.startsWith("${name.trim()} ") == true })
-            ?.let { doubleArrayOf(it.wx, it.wy) } ?: areaSpot(name.substringBefore(" ·").substringBefore(" (").trim())
+        // ... or, a town that is no hub for this faction (the other side's: Theramore for the Horde), the other side's own town as its
+        // draft places it (otherPlaces), else the place itself: its subzone's ground
+        /** a town of the other side's as a route's end: its spot, or - when the ground from there (the lattice's dry steps, no wall)
+         *  is a pocket (Auberdine's hub spot on its terrace, Dolanaar's subzone middle) - the nearest spot within 60 yd on open ground */
+        fun openSpot(p: DoubleArray): DoubleArray {
+            val nb = listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1, 1 to 1, 1 to -1, -1 to 1, -1 to -1); val want = 3000
+            fun reach(i0: Int, j0: Int): Int {
+                if (i0 !in 0 until cg.nx || j0 !in 0 until cg.ny || deep(cg.wx(j0), cg.wy(i0))) return 0
+                val seen = HashSet<Long>(); val qq = ArrayDeque<IntArray>(); seen.add((j0.toLong() shl 32) or i0.toLong()); qq.add(intArrayOf(i0, j0))
+                while (qq.isNotEmpty() && seen.size < want) { val (i, j) = qq.removeFirst()
+                    for ((di, dj) in nb) { val ni = i + di; val nj = j + dj; val k = (nj.toLong() shl 32) or ni.toLong()
+                        if (ni !in 0 until cg.nx || nj !in 0 until cg.ny || k in seen || deep(cg.wx(nj), cg.wy(ni)) || cg.step(i, j, di, dj) == Climb.WALL) continue
+                        seen.add(k); qq.add(intArrayOf(ni, nj)) } }
+                return seen.size
+            }
+            val v = cg.at(p[0], p[1]); if (reach(v[0], v[1]) >= want) return p
+            val r = (60 / Climb.STEP).toInt()
+            val best = (-r..r).flatMap { dj -> (-r..r).map { di -> intArrayOf(v[0] + di, v[1] + dj) } }
+                .sortedBy { Math.hypot((it[0] - v[0]).toDouble(), (it[1] - v[1]).toDouble()) }.firstOrNull { reach(it[0], it[1]) >= want } ?: return p
+            val q = doubleArrayOf(cg.wx(best[1]), cg.wy(best[0]))
+            println("GOALPLACE ${p[0].toInt()},${p[1].toInt()} is a pocket: the open ground at ${q[0].toInt()},${q[1].toInt()} taken")
+            return q
+        }
+        fun at(name: String): DoubleArray? = (net.nodes.firstOrNull { it.name?.trim() == name.trim() } ?: net.nodes.firstOrNull { it.name?.trim()?.startsWith("${name.trim()} ") == true })
+            ?.let { doubleArrayOf(it.wx, it.wy) }
+            ?: (otherPlaces.firstOrNull { it.first.trim() == name.trim() } ?: otherPlaces.firstOrNull { it.first.trim().startsWith("${name.trim()} ") })
+                ?.let { println("GOALPLACE $name: the other side's town ${it.first} at ${it.second[0].toInt()},${it.second[1].toInt()}"); openSpot(it.second) }
+            ?: areaSpot(name.substringBefore(" ·").substringBefore(" (").trim())?.also { println("GOALPLACE $name: its subzone's ground ${it[0].toInt()},${it[1].toInt()}") }?.let { openSpot(it) }
         /** a named mob's spawns at their thickest (near [near] when given: within 500 yd of it) */
         fun mob(name: String, near: DoubleArray?): DoubleArray? {
             val pts = spawns.filter { it.name.equals(name, true) }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
@@ -581,7 +627,8 @@ class RenderSafePath {
             val gp = when {
                 to.has("cave") -> caveMouth(to.getInt("cave"), near!![0], near[1], f) ?: wmo(to.getInt("cave"), near[0], near[1])?.let { mouth(it) }
                 to.has("wmo") -> wmo(to.getInt("wmo"), near!![0], near[1])?.let { doubleArrayOf(it.ox, it.oy) }
-                to.has("camp") -> camp(to.getString("camp"))
+                // (a camp of none hostile to this side - the other side's town, Zoram'gar Outpost for the Horde: the town itself)
+                to.has("camp") -> camp(to.getString("camp")) ?: at(to.getString("camp"))?.also { println("GOALCAMP ${to.getString("camp")}: no mobs of this side's foes there - the town itself") }
                 to.has("mob") -> mob(to.getString("mob"), near)
                 to.has("node") -> at(to.getString("node"))
                 to.has("area") -> areaSpot(to.getString("area"))
