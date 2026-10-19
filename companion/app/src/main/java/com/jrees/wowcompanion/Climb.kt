@@ -281,6 +281,26 @@ object Climb {
     const val SEED_UNDER_YD = 0.5
     /** a floor this far under the terrain or more is under it: no layer (py/segcheck.py's BURIED) */
     const val LAYER_UNDER_YD = 1.0
+    /** a leveling floor (a building's porch, a mine's outdoor floor) this far under the terrain or more is under it: it levels nothing
+     *  there (py/segcheck.py's LEVEL_BURIED) */
+    const val LEVEL_BURIED_YD = 8.0
+    /** the terrain's height at world ([wx], [wy]) straight between the four outer vertices round it ([height]: global row, column; NaN
+     *  none), as py/segcheck.py's heights.height reads it; NaN when a corner is unknown */
+    fun groundAt(wx: Double, wy: Double, height: (Int, Int) -> Float): Double {
+        val gx = (ORG_EXACT - wx) / STEP; val gy = (ORG_EXACT - wy) / STEP
+        val r = floor(gx).toInt(); val c = floor(gy).toInt(); val fr = gx - r; val fc = gy - c
+        val a = height(r, c); val b = height(r, c + 1); val d = height(r + 1, c); val e = height(r + 1, c + 1)
+        return ((a * (1 - fc) + b * fc) * (1 - fr) + (d * (1 - fc) + e * fc) * fr)
+    }
+    /** a leveling floor's heights at world ([wx], [wy]) ([floors]) all [LEVEL_BURIED_YD] or more under the terrain at that spot itself
+     *  ([groundAt]): buried, no level ground there. Read at the cell's north-west corner instead, a porch at a cliff's foot leveled the
+     *  cliff's cell over it (Mulgore, by Thunder Bluff's foot at -1219,23: the porch at 133, the corner at 138.5, the cell's middle at
+     *  148.7 and its faces 66-77 degrees - the device's route K climbed 24 yd up it) */
+    fun buried(floors: DoubleArray, wx: Double, wy: Double, height: (Int, Int) -> Float): Boolean {
+        if (floors.isEmpty()) return false
+        val g = groundAt(wx, wy, height); if (g.isNaN()) return false
+        return floors.all { it < g - LEVEL_BURIED_YD }
+    }
     /** whether cell ([gr], [gc]) has corners on a floor ([deck] non-NaN) and off it more than one step's 45 degrees apart in height */
     private fun edgeDrop(gr: Int, gc: Int, height: (Int, Int) -> Float, deck: (Double, Double) -> Float): Boolean {
         var on = false; var off = false; var lo = Double.MAX_VALUE; var hi = -Double.MAX_VALUE

@@ -523,4 +523,24 @@ class ClimbTest {
         val bare = Climb.route(g, doubleArrayOf(150.0, -96.0), doubleArrayOf(-150.0, -96.0), water = deep, edges = false)!!
         assertEquals("no clearance: straight along the shore", 2, bare.pts.size)
     }
+
+    /** K's device parity run (Mulgore K, by Thunder Bluff's foot at -1219,23): a porch's floor at a cliff's foot leveled the cliff's
+     *  cell over it, its buried test read at the cell's north-west corner (138.5 over the porch's 133) where the cell's middle stands at
+     *  148.7 and its faces at 66-77 degrees - the route climbed 24 yd up it. A leveling floor is buried by the terrain at the spot itself */
+    @Test fun aPorchUnderACliffLevelsNoneOfIt() {
+        val flat = { _: Int, _: Int -> 0f }
+        val g0 = Climb.build(60.0, 0.0, 60.0, 0.0, flat, centre = flat)
+        val c0 = g0.gc0 + g0.nx / 2
+        // a sheer cliff 20 yd up east of column c0 (the cell from c0 to c0 + 1 its face); a porch's floor 2 yd under the low ground everywhere
+        val height = { _: Int, gc: Int -> if (gc <= c0) 0f else 20f }
+        val porch = doubleArrayOf(-2.0)
+        val level = { x: Double, y: Double -> !Climb.buried(porch, x, y, height) }
+        val g = Climb.build(60.0, 0.0, 60.0, 0.0, height, level = level, centre = { _, gc -> if (gc < c0) 0f else if (gc == c0) 10f else 20f })
+        val j = g.ny / 2; val i = c0 - g.gc0
+        val mid = doubleArrayOf(g.wx(j) - s / 2, g.wy(i) - s / 2)
+        assertFalse("its own corner 2 yd over the porch", Climb.buried(porch, g.wx(j), g.wy(i), height))
+        assertTrue("the cliff's cell: its middle 12 yd over the porch", Climb.buried(porch, mid[0], mid[1], height))
+        assertTrue("along the porch at the cliff's foot", Climb.walkable(g, doubleArrayOf(g.wx(j - 2), g.wy(i - 1)), doubleArrayOf(g.wx(j + 2), g.wy(i - 1))))
+        assertFalse("up the cliff", Climb.walkable(g, doubleArrayOf(g.wx(j), g.wy(i - 2)), doubleArrayOf(g.wx(j), g.wy(i + 2))))
+    }
 }
