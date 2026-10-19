@@ -374,7 +374,10 @@ object Climb {
         }
         // the leg's own ends: the start's and the goal's vertices kept (the lines were checked from them), the exact points a short hop
         // beyond (within their cell)
-        if (hypot(pts[0][0] - from[0], pts[0][1] - from[1]) > 0.5) pts.add(0, from) else pts[0] = from
+        // ... the start's exact point only where the hop from it crosses no wall face (as the goal's: Deadwind's route J began 47 degrees
+        // up a slope): else the leg starts at its first vertex
+        if (hypot(pts[0][0] - from[0], pts[0][1] - from[1]) > 0.5) { if (g.lineClear(from, pts[0])) pts.add(0, from) }
+        else if (pts.size < 2 || g.lineClear(from, pts[1])) pts[0] = from
         val reached = end == goal
         // the goal's exact point only where the hop to it crosses no wall face (a network point 2 yd up a cliff, an unreachable goal):
         // else the leg ends at its last vertex, short of it

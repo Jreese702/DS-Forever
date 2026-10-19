@@ -95,6 +95,7 @@ class RenderSafePath {
             // each walkway by its deck (its outdoor groups' floor triangles, the device's own WorldBuildings.deck), its box only where
             // its groups weren't dumped
             val walks = HashMap<Pair<Int, Int>, List<(Double, Double) -> Boolean>>(); val m2Said = HashSet<Int>()
+            val unread = HashSet<Int>()
             val deckList = ArrayList<com.jrees.wowcompanion.WorldBuildings.Deck>()     // every deck read (py/wetcheck.py: decks_<tag>.json)
             // per tile: the decks walked at their own floor's height - a bridge's or a pier's (no rooms), a fifth or more of its floor over
             // the water (a building's porch by the shore, its roof read as floor too, a cave's mouth, a city's streets stay the level
@@ -121,6 +122,15 @@ class RenderSafePath {
                     d?.let { dk -> deckList.add(dk); keepHeights(c, r, dk); { x: Double, y: Double -> dk.holds(x, y) } }
                 }
             }
+            // a deck's floors all more than LEVEL_BURIED_YD under the terrain at a spot (its nearest outer vertex): buried, no ground there
+            fun buriedAt(c: Int, r: Int, d: com.jrees.wowcompanion.WorldBuildings.Deck, x: Double, y: Double): Boolean {
+                val hs = d.heightsAt(x, y); if (hs.isEmpty()) return false
+                val h = wet(c, r).second ?: return false
+                val ci = (((32 * MapHarvest.ADT_YD - y) / MapHarvest.ADT_YD - c) * 128).toInt().coerceIn(0, 127)
+                val cj = (((32 * MapHarvest.ADT_YD - x) / MapHarvest.ADT_YD - r) * 128).toInt().coerceIn(0, 127)
+                val g = h[cj * 128 + ci]; if (g.isNaN()) return false
+                return hs.all { it < g - LEVEL_BURIED_YD }
+            }
             fun walksOf(c: Int, r: Int) = walks.getOrPut(c to r) {
                 File(dir, "obj0/${c}_$r.adt").takeIf { it.isFile }?.readBytes()?.let { com.jrees.wowcompanion.WorldBuildings.placements(it, tilted = true) }?.flatMap { p ->
                     val root = File(dir, "wmo/${p.fid}").takeIf { it.isFile }?.readBytes()
@@ -135,8 +145,14 @@ class RenderSafePath {
                                 // ... over water or not: a dry ravine's bridge, a tunnel's floor under its hill (Wetlands' Dun Algaz: leveled, its
                                 // hillside 60-75 degrees over it was climbed) are walked at their own floor's height too
                                 if (!com.jrees.wowcompanion.WorldBuildings.isCity(p, gs) && gs.none { it.interior }) keepHeights(c, r, d, any = true)
-                                listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) }) }
-                            ?: feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } }
+                                // ... and a floor is the ground only where it is not buried: more than LEVEL_BURIED_YD under the terrain (Blasted
+                                // Lands' Garrison Armory mine: its outdoor floors at 0-40 under a hill to 263 leveled it, a route climbed it)
+                                listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) && !buriedAt(c, r, d, x, y) }) }
+                            // a WMO whose floors can't be read (its groups not dumped) levels nothing - the ground under its box is the
+                            // terrain's (Silithus: Cenarion Hold's outpost, undumped, let a route over a 67-90 degree step) - but a capital's
+                            // streets, whose ground under them reads steep everywhere
+                            ?: if (com.jrees.wowcompanion.WorldBuildings.isCity(p, com.jrees.wowcompanion.WorldBuildings.groups(root))) feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } }
+                            else { if (unread.add(p.fid)) println("WARNING WMO ${p.fid} at ${p.ox.toInt()},${p.oy.toInt()}: its floors not dumped (dump/dump_cavegroups.py <dir> ${p.fid}) - the ground under it is taken as the terrain"); emptyList() }
                     }
                 }.orEmpty() + m2DecksOf(c, r)
             }
@@ -223,6 +239,8 @@ class RenderSafePath {
     private val EXIT_NEAR_YD = 400.0       // an exit's crossing: the neighbour's ground reached within this walk of it
 
     private val WADE_DANGER = 2f
+    /** a floor this far under the terrain or more is under it (a mine's, a tunnel's), never the ground there (py/segcheck.py: the same) */
+    private val LEVEL_BURIED_YD = 8.0
     private fun levels2(net: SafePath.Net, rect: MapHarvest.Rect, tg: Terrain.Grid, heightV: (Int, Int) -> Float, roadAt: (Double, Double) -> Boolean,
                         zg: SafePath.Zones, areas: Map<Int, PlaceNames.Area>, spawns: List<QuestieNpcs.Spawn>, dir: File, waterAt: (Double, Double) -> Float, waterGrid: SafePath.Water?,
                         deckAt: (Double, Double) -> Boolean = { _, _ -> false }, mapName: (Int) -> String = { "" },

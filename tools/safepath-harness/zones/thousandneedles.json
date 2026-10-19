@@ -1,0 +1,259 @@
+{
+ "tag": "thousandneedles",
+ "dir": "kalimdor",
+ "faction": "horde",
+ "zone": 1441,
+ "area": 400,
+ "level": 30,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1441,
+   400
+  ],
+  [
+   1413,
+   17
+  ],
+  [
+   1444,
+   357
+  ],
+  [
+   1446,
+   440
+  ],
+  [
+   1445,
+   15
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1441,
+  1413
+ ],
+ "title": "Thousand Needles",
+ "crop": [
+  -3966,
+  -6900,
+  -433,
+  -4833
+ ],
+ "closeups": [
+  {
+   "name": "The Great Lift",
+   "box": [
+    -4560,
+    -4760,
+    -1740,
+    -1940
+   ]
+  },
+  {
+   "name": "Freewind Post",
+   "box": [
+    -5300,
+    -5700,
+    -2250,
+    -2650
+   ]
+  },
+  {
+   "name": "Darkcloud Pinnacle",
+   "box": [
+    -4700,
+    -5200,
+    -1750,
+    -2250
+   ]
+  },
+  {
+   "name": "Highperch",
+   "box": [
+    -4850,
+    -5300,
+    -800,
+    -1300
+   ]
+  },
+  {
+   "name": "Roguefeather Den",
+   "box": [
+    -5350,
+    -5700,
+    -1450,
+    -1800
+   ]
+  },
+  {
+   "name": "Shimmering Flats",
+   "box": [
+    -5700,
+    -6500,
+    -3300,
+    -4600
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "the Great Lift's top on the Barrens rim (the way to the Barrens)",
+   "from": {
+    "node": "Freewind Post"
+   },
+   "to": {
+    "xy": [
+     -4612,
+     -1851
+    ],
+    "exact": true
+   }
+  },
+  {
+   "name": "the Screeching Roguefeather harpies' den (Roguefeather Den)",
+   "from": {
+    "node": "Freewind Post"
+   },
+   "to": {
+    "cave": 111304,
+    "near": [
+     -5470,
+     -1627
+    ]
+   }
+  },
+  {
+   "name": "the Galak centaurs of Splithoof Crag",
+   "from": {
+    "node": "Freewind Post"
+   },
+   "to": {
+    "camp": "Splithoof Crag"
+   }
+  },
+  {
+   "name": "Razorfen Downs' bramble on the Barrens rim (a mouth of razorfendowns.wmo by the Great Lift)",
+   "from": {
+    "node": "Freewind Post"
+   },
+   "to": {
+    "xy": [
+     -4743,
+     -2361
+    ],
+    "exact": true
+   }
+  },
+  {
+   "name": "Highperch's wyverns",
+   "from": {
+    "node": "Whitereach Post"
+   },
+   "to": {
+    "mob": "Highperch Wyvern",
+    "near": [
+     -5070,
+     -1055
+    ]
+   }
+  },
+  {
+   "name": "the Galak centaurs' tents at Camp E'thok",
+   "from": {
+    "node": "Whitereach Post"
+   },
+   "to": {
+    "cave": 113295,
+    "near": [
+     -4583,
+     -1250
+    ]
+   }
+  },
+  {
+   "name": "the way to Feralas (the ground exit at the north-west canyon)",
+   "from": {
+    "node": "Whitereach Post"
+   },
+   "to": {
+    "xy": [
+     -4362,
+     -796
+    ]
+   }
+  },
+  {
+   "name": "Pozzik at the Mirage Raceway",
+   "from": {
+    "node": "Freewind Post"
+   },
+   "to": {
+    "xy": [
+     -6192,
+     -3961
+    ]
+   }
+  },
+  {
+   "name": "the silithid of the Rustmaul Dig Site",
+   "from": {
+    "node": "Ironstone Camp"
+   },
+   "to": {
+    "mob": "Silithid Hive Drone",
+    "near": [
+     -6480,
+     -3431
+    ]
+   }
+  },
+  {
+   "name": "the way to Tanaris",
+   "from": {
+    "node": "Ironstone Camp"
+   },
+   "to": {
+    "xy": [
+     -6245,
+     -4529
+    ]
+   }
+  }
+ ],
+ "lifts": [
+  {
+   "name": "The Great Lift, car A",
+   "x": -4669.8,
+   "y": -1853.1,
+   "zBottom": -44.0,
+   "zTop": 85.6,
+   "source": "thousandneedleselevator.wmo (112647) has two car shafts on opposite sides of its central hub, at WMO-local (-0.7, 14.35) and (1.4, -13.85): each the midpoint between a top bridge's inner end (group 0, z 83.9-85.6 at the Great Lift, local (-2.9, 12.1) / (-1.4, -12.0)) and a bottom ramp's head (group 1, z -43.9..-44.2, local (1.5, 16.6) / (4.2, -15.7)), 4.6-4.9 yd apart with no floor between at either level (the car is a server object). Rise 129.6 yd; TransportAnimation's elevator travel 129.3 yd. Read with py/liftfind.py and py/floorpieces.py; placement uid 283429 at -4666.4,-1839.1 z -52.5 yaw 343.5"
+  },
+  {
+   "name": "The Great Lift, car B",
+   "x": -4663.8,
+   "y": -1825.4,
+   "zBottom": -44.0,
+   "zTop": 85.6,
+   "source": "thousandneedleselevator.wmo (112647) has two car shafts on opposite sides of its central hub, at WMO-local (-0.7, 14.35) and (1.4, -13.85): each the midpoint between a top bridge's inner end (group 0, z 83.9-85.6 at the Great Lift, local (-2.9, 12.1) / (-1.4, -12.0)) and a bottom ramp's head (group 1, z -43.9..-44.2, local (1.5, 16.6) / (4.2, -15.7)), 4.6-4.9 yd apart with no floor between at either level (the car is a server object). Rise 129.6 yd; TransportAnimation's elevator travel 129.3 yd. Read with py/liftfind.py and py/floorpieces.py; placement uid 283429 at -4666.4,-1839.1 z -52.5 yaw 343.5"
+  },
+  {
+   "name": "Freewind Post's lift, car A",
+   "x": -5381.4,
+   "y": -2486.0,
+   "zBottom": -40.4,
+   "zTop": 89.2,
+   "source": "thousandneedleselevator.wmo (112647) has two car shafts on opposite sides of its central hub, at WMO-local (-0.7, 14.35) and (1.4, -13.85): each the midpoint between a top bridge's inner end (group 0, z 83.9-85.6 at the Great Lift, local (-2.9, 12.1) / (-1.4, -12.0)) and a bottom ramp's head (group 1, z -43.9..-44.2, local (1.5, 16.6) / (4.2, -15.7)), 4.6-4.9 yd apart with no floor between at either level (the car is a server object). Rise 129.6 yd; TransportAnimation's elevator travel 129.3 yd. Read with py/liftfind.py and py/floorpieces.py; placement uid 399190 at -5392.0,-2495.7 z -48.9 yaw 129.5 (3.6 yd above the Great Lift's: its landings +3.6)"
+  },
+  {
+   "name": "Freewind Post's lift, car B",
+   "x": -5401.8,
+   "y": -2505.6,
+   "zBottom": -40.4,
+   "zTop": 89.2,
+   "source": "thousandneedleselevator.wmo (112647) has two car shafts on opposite sides of its central hub, at WMO-local (-0.7, 14.35) and (1.4, -13.85): each the midpoint between a top bridge's inner end (group 0, z 83.9-85.6 at the Great Lift, local (-2.9, 12.1) / (-1.4, -12.0)) and a bottom ramp's head (group 1, z -43.9..-44.2, local (1.5, 16.6) / (4.2, -15.7)), 4.6-4.9 yd apart with no floor between at either level (the car is a server object). Rise 129.6 yd; TransportAnimation's elevator travel 129.3 yd. Read with py/liftfind.py and py/floorpieces.py; placement uid 399190 at -5392.0,-2495.7 z -48.9 yaw 129.5 (3.6 yd above the Great Lift's: its landings +3.6)"
+  }
+ ],
+ "decksByHeight": true
+}

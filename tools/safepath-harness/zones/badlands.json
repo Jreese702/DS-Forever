@@ -1,0 +1,205 @@
+{
+ "tag": "badlands",
+ "dir": "azeroth",
+ "faction": "horde",
+ "zone": 1418,
+ "area": 3,
+ "level": 38,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   1418,
+   3
+  ],
+  [
+   1432,
+   38
+  ],
+  [
+   1427,
+   51
+  ],
+  [
+   2548,
+   16591
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1418,
+  1432
+ ],
+ "title": "Badlands",
+ "crop": [
+  -5950,
+  -7500,
+  -2100,
+  -4550
+ ],
+ "closeups": [
+  {
+   "name": "Kargath and Apocryphan's Rest",
+   "box": [
+    -6450,
+    -7050,
+    -2100,
+    -2700
+   ]
+  },
+  {
+   "name": "Uldaman, Angor Fortress and the Loch Modan pass",
+   "box": [
+    -5950,
+    -6550,
+    -2950,
+    -3550
+   ]
+  },
+  {
+   "name": "Hammertoe's Digsite, Camp Kosh and Dustwind Gulch",
+   "box": [
+    -6150,
+    -6750,
+    -3300,
+    -3950
+   ]
+  },
+  {
+   "name": "Lethlor Ravine",
+   "box": [
+    -6450,
+    -7100,
+    -3800,
+    -4500
+   ]
+  },
+  {
+   "name": "Agmond's End, Camp Boff and the Riverglades pass",
+   "box": [
+    -6900,
+    -7750,
+    -3150,
+    -3800
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "Uldaman's entrance (the dig)",
+   "from": {
+    "node": "Kargath"
+   },
+   "to": {
+    "wmo": 109758,
+    "near": [
+     -6091,
+     -3185
+    ]
+   }
+  },
+  {
+   "name": "Angor Fortress",
+   "from": {
+    "node": "Kargath"
+   },
+   "to": {
+    "wmo": 113897,
+    "near": [
+     -6380,
+     -3141
+    ]
+   }
+  },
+  {
+   "name": "Hammertoe's Digsite (the crypt)",
+   "from": {
+    "node": "Kargath"
+   },
+   "to": {
+    "cave": 110669,
+    "near": [
+     -6570,
+     -3483
+    ]
+   }
+  },
+  {
+   "name": "Agmond's End",
+   "from": {
+    "node": "Kargath"
+   },
+   "to": {
+    "camp": "Agmond's End"
+   }
+  },
+  {
+   "name": "Camp Kosh",
+   "from": {
+    "node": "Kargath"
+   },
+   "to": {
+    "camp": "Camp Kosh"
+   }
+  },
+  {
+   "name": "Camp Boff",
+   "from": {
+    "node": "Kargath"
+   },
+   "to": {
+    "camp": "Camp Boff"
+   }
+  },
+  {
+   "name": "Lethlor Ravine (whelps)",
+   "from": {
+    "node": "Kargath"
+   },
+   "to": {
+    "camp": "Lethlor Ravine"
+   }
+  },
+  {
+   "name": "Dustwind Gulch",
+   "from": {
+    "node": "Kargath"
+   },
+   "to": {
+    "camp": "Dustwind Gulch"
+   }
+  },
+  {
+   "name": "Apocryphan's Rest",
+   "from": {
+    "node": "Kargath"
+   },
+   "to": {
+    "camp": "Apocryphan's Rest"
+   }
+  },
+  {
+   "name": "the pass to Loch Modan",
+   "from": {
+    "node": "Kargath"
+   },
+   "to": {
+    "xy": [
+     -6154,
+     -3371
+    ]
+   }
+  },
+  {
+   "name": "the pass south to the Riverglades border",
+   "from": {
+    "node": "Kargath"
+   },
+   "to": {
+    "xy": [
+     -7540,
+     -3500
+    ]
+   }
+  }
+ ]
+}

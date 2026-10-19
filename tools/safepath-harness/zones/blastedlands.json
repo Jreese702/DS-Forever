@@ -1,0 +1,19 @@
+{"tag": "blastedlands", "dir": "azeroth", "faction": "alliance", "zone": 1419, "area": 4, "level": 50,
+ "maps": [[1419, 4], [1435, 8]], "cities": [], "border": [1419, 1435],
+ "title": "Blasted Lands", "crop": [-10450, -12500, -1900, -3950],
+ "closeups": [{"name": "Nethergarde Keep and the Garrison Armory", "box": [-10700, -11200, -2950, -3750]},
+              {"name": "The pass from the Swamp of Sorrows", "box": [-10450, -11000, -2800, -3350]},
+              {"name": "Dreadmaul Hold and the Altar of Storms", "box": [-10650, -11450, -2350, -3050]},
+              {"name": "The Dark Portal and Serpent's Coil", "box": [-11200, -12050, -2700, -3600]}],
+ "goals": [
+  {"name": "the pass from the Swamp of Sorrows: the canyon road down to the Blasted Lands floor", "from": {"xy": [-10540, -2990]}, "to": {"xy": [-10890, -2990]}},
+  {"name": "the Garrison Armory (the keep's mine)", "from": {"node": "Nethergarde Keep"}, "to": {"cave": 110819, "near": [-10834, -3040]}},
+  {"name": "Dreadmaul Hold (the ogres, Grol)", "from": {"node": "Nethergarde Keep"}, "to": {"camp": "Dreadmaul Hold"}},
+  {"name": "the Altar of Storms", "from": {"node": "Nethergarde Keep"}, "to": {"cave": 106679, "near": [-11284, -2513]}},
+  {"name": "Rise of the Defiler (Razelikh)", "from": {"node": "Nethergarde Keep"}, "to": {"camp": "Rise of the Defiler"}},
+  {"name": "Dreadmaul Post", "from": {"node": "Nethergarde Keep"}, "to": {"camp": "Dreadmaul Post"}},
+  {"name": "Serpent's Coil (the Shadowsworn): its west mouth", "from": {"node": "Nethergarde Keep"}, "to": {"xy": [-11300, -3414], "exact": true}},
+  {"name": "the Dark Portal", "from": {"node": "Nethergarde Keep"}, "to": {"cave": 7952349, "near": [-11848, -3213]}},
+  {"name": "The Tainted Scar", "from": {"node": "Nethergarde Keep"}, "to": {"camp": "The Tainted Scar"}},
+  {"name": "Nethergarde Keep to the foot of the Swamp of Sorrows canyon road", "from": {"node": "Nethergarde Keep"}, "to": {"xy": [-10890, -2990]}}
+ ]}

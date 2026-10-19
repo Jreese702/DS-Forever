@@ -1,0 +1,199 @@
+{
+ "tag": "shendralas",
+ "dir": "kalimdor",
+ "faction": "alliance",
+ "zone": 2652,
+ "area": 16651,
+ "level": 50,
+ "friendlyMinLevel": 100,
+ "maps": [
+  [
+   2652,
+   16651
+  ],
+  [
+   1412,
+   215
+  ],
+  [
+   1443,
+   405
+  ],
+  [
+   1444,
+   357
+  ],
+  [
+   1441,
+   400
+  ]
+ ],
+ "cities": [],
+ "border": [
+  2652,
+  1443
+ ],
+ "title": "Shen'dralas",
+ "crop": [
+  -1900,
+  -3267,
+  2025,
+  -25
+ ],
+ "closeups": [
+  {
+   "name": "Shen'dralar camp",
+   "box": [
+    -2750,
+    -3100,
+    1250,
+    900
+   ]
+  },
+  {
+   "name": "Valley of Bones",
+   "box": [
+    -1900,
+    -2450,
+    1700,
+    1000
+   ]
+  },
+  {
+   "name": "Bristleback Retreat",
+   "box": [
+    -2050,
+    -2450,
+    900,
+    350
+   ]
+  },
+  {
+   "name": "Forlorn Gardens",
+   "box": [
+    -2550,
+    -3000,
+    1000,
+    400
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "the way in from Desolace (Valley of Bones' north mouth) to the Shen'dralar camp",
+   "from": {
+    "xy": [
+     -1978,
+     1312
+    ]
+   },
+   "to": {
+    "node": "Outcast Hideaway"
+   }
+  },
+  {
+   "name": "the Magram Necromancers of the Valley of Bones",
+   "from": {
+    "node": "Outcast Hideaway"
+   },
+   "to": {
+    "camp": "Valley of Bones"
+   }
+  },
+  {
+   "name": "Mordent Evenshade on Evenshade's Overlook",
+   "from": {
+    "node": "Outcast Hideaway"
+   },
+   "to": {
+    "mob": "Mordent Evenshade"
+   }
+  },
+  {
+   "name": "the Outcast Hideaway's centaur tents",
+   "from": {
+    "node": "Outcast Hideaway"
+   },
+   "to": {
+    "wmo": 113295,
+    "near": [
+     -2964,
+     1325
+    ]
+   }
+  },
+  {
+   "name": "Hagiak at the Magram Front",
+   "from": {
+    "node": "Outcast Hideaway"
+   },
+   "to": {
+    "mob": "Hagiak"
+   }
+  },
+  {
+   "name": "the Bristleback Retreat ruin",
+   "from": {
+    "node": "Outcast Hideaway"
+   },
+   "to": {
+    "cave": 448938,
+    "near": [
+     -2215,
+     543
+    ]
+   }
+  },
+  {
+   "name": "the Malevolent Marigold in the Forlorn Gardens",
+   "from": {
+    "node": "Outcast Hideaway"
+   },
+   "to": {
+    "mob": "Malevolent Marigold"
+   }
+  },
+  {
+   "name": "Orgrul, the first Magram leader in from Desolace (Valley of Bones, north)",
+   "from": {
+    "xy": [
+     -1978,
+     1312
+    ]
+   },
+   "to": {
+    "mob": "Orgrul"
+   }
+  },
+  {
+   "name": "the west way out to Desolace",
+   "from": {
+    "node": "Outcast Hideaway"
+   },
+   "to": {
+    "xy": [
+     -2235,
+     1600
+    ]
+   }
+  },
+  {
+   "name": "the Gelkis Captive (Valley of Bones, east)",
+   "from": {
+    "node": "Outcast Hideaway"
+   },
+   "to": {
+    "mob": "Gelkis Captive"
+   }
+  }
+ ],
+ "friendlyNames": [
+  "^Shen'dral",
+  "^Pylon Protector$",
+  "^Shard Guard$",
+  "^Magister ",
+  "^Mordent Evenshade$",
+  "^(Adarien|Mithera|Liranne|Arondel|Kerelle|Jarael)$",
+  "^Gelkis Captive$"
+ ]
+}

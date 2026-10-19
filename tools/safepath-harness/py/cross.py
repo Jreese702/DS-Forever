@@ -160,7 +160,7 @@ def draw(run):
             col = COL.get(r['id'], (255, 255, 255)); shown = False
             for i, q in enumerate(r['pieces']):
                 if q['kind'] == 'leg' and 'pts' in q and cof(q['zone']) == c:
-                    P = [px(rect, w, h, x, y) for x, y in q['pts']]
+                    P = [px(rect, w, h, x, y) for x, y, *_ in q['pts']]
                     d.line(P, fill=(0, 0, 0), width=6); d.line(P, fill=col, width=3); shown = True
                     for e in (P[0], P[-1]): d.ellipse([e[0] - 4, e[1] - 4, e[0] + 4, e[1] + 4], fill=col, outline=(0, 0, 0))
                 if q['kind'] == 'ride':
@@ -176,7 +176,7 @@ def draw(run):
                 if q['kind'] == 'gap':
                     near = next((x for x in reversed(r['pieces'][:i]) if x['kind'] == 'leg' and 'pts' in x), None)
                     if near and cof(near['zone']) == c:
-                        e = px(rect, w, h, *near['pts'][-1])
+                        e = px(rect, w, h, *near['pts'][-1][:2])
                         d.line([(e[0] - 9, e[1] - 9), (e[0] + 9, e[1] + 9)], fill=(255, 0, 0), width=4); d.line([(e[0] - 9, e[1] + 9), (e[0] + 9, e[1] - 9)], fill=(255, 0, 0), width=4)
                         d.text((e[0] + 12, e[1] - 8), 'missing link', fill=(255, 80, 80), font=fs, stroke_width=2, stroke_fill=(0, 0, 0))
             if shown: legend.append((col, '%s  %s  (%s)' % (r['id'], r['name'], 'complete' if r['complete'] else 'stops at a missing link')))
@@ -194,7 +194,7 @@ def draw(run):
         for q in r['pieces']:
             if q['kind'] == 'leg' and 'pts' in q:
                 im, rect = art(zmap(q['zone'])); W, H = im.size
-                P = [px(rect, W, H, x, y) for x, y in q['pts']]
+                P = [px(rect, W, H, x, y) for x, y, *_ in q['pts']]
                 x0 = min(p[0] for p in P); x1 = max(p[0] for p in P); y0 = min(p[1] for p in P); y1 = max(p[1] for p in P)
                 pad = max(40, 0.15 * max(x1 - x0, y1 - y0)); bx = [max(0, x0 - pad), max(0, y0 - pad), min(W, x1 + pad), min(H, y1 + pad)]
                 if bx[2] - bx[0] < 160: cx = (bx[0] + bx[2]) / 2; bx[0] = max(0, cx - 80); bx[2] = min(W, cx + 80)

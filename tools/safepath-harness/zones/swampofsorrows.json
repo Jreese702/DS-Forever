@@ -1,0 +1,24 @@
+{"tag": "swampofsorrows", "dir": "azeroth", "faction": "horde", "zone": 1435, "area": 8, "level": 38,
+ "maps": [[1435, 8], [1430, 41], [1419, 4], [1433, 44], [1431, 10], [2548, 16591]], "cities": [], "border": [1435, 1430],
+ "title": "Swamp of Sorrows", "crop": [-9620, -11150, -2223, -4517], "layerWmos": [110819, 7962739],
+ "closeups": [
+  {"name": "Stonard", "box": [-10300, -10650, -3100, -3450]},
+  {"name": "Pool of Tears and the Sunken Temple", "box": [-10250, -10650, -3600, -4050]},
+  {"name": "Splinterspear Junction and Itharius's Cave", "box": [-10300, -10750, -2300, -2800]},
+  {"name": "Fallow Sanctuary and the north-east road", "box": [-9420, -10150, -3400, -3950]},
+  {"name": "the Deadwind pass", "box": [-10350, -10750, -2150, -2650]}],
+ "swims": [{"name": "the Sunken Temple", "island": {"xy": [-10436, -3828]},
+   "evidence": "the user, 2026-10-18: \"Swim link, flagged\" - the temple's island in the Pool of Tears, ringed by water 6 yd deep and more; the shortest gap to the shore is found at run time"}],
+ "goals": [
+  {"name": "Itharius's Cave mouth (the dragon whelps)", "from": {"node": "Stonard"}, "to": {"xy": [-10686, -2537]}},
+  {"name": "Splinterspear Junction (the watchtower)", "from": {"node": "Stonard"}, "to": {"wmo": 113094, "near": [-10405, -2615]}},
+  {"name": "The Harborage (the draenei huts)", "from": {"node": "Stonard"}, "to": {"wmo": 115807, "near": [-10083, -2801]}},
+  {"name": "Misty Valley (the swampwalkers)", "from": {"node": "Stonard"}, "to": {"camp": "Misty Valley"}},
+  {"name": "Fallow Sanctuary (the Lost Ones)", "from": {"node": "Stonard"}, "to": {"camp": "Fallow Sanctuary"}},
+  {"name": "the Pool of Tears' west shore, facing the Sunken Temple (the temple itself is a swim)", "from": {"node": "Stonard"}, "to": {"xy": [-10430, -3660]}},
+  {"name": "the Sunken Temple's island (a declared swim across the Pool of Tears)", "from": {"node": "Stonard"}, "to": {"xy": [-10436, -3828]}},
+  {"name": "Stagalbog cave mouth", "from": {"node": "Stonard"}, "to": {"cave": 111226, "near": [-10787, -3742]}},
+  {"name": "the road to Blasted Lands", "from": {"node": "Stonard"}, "to": {"exit": "Blasted Lands"}},
+  {"name": "the pass west to Deadwind Pass", "from": {"node": "Stonard"}, "to": {"xy": [-10580, -2200]}},
+  {"name": "the north-east road up out of the swamp (Redridge / Riverglades)", "from": {"node": "Stonard"}, "to": {"xy": [-9628, -3765]}}
+ ]}

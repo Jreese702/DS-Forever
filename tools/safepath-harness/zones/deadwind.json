@@ -1,0 +1,220 @@
+{
+ "tag": "deadwind",
+ "dir": "azeroth",
+ "faction": "alliance",
+ "zone": 1430,
+ "area": 41,
+ "level": 55,
+ "maps": [
+  [
+   1430,
+   41
+  ],
+  [
+   1431,
+   10
+  ],
+  [
+   1435,
+   8
+  ]
+ ],
+ "cities": [],
+ "border": [
+  1430,
+  1435
+ ],
+ "title": "Deadwind Pass",
+ "crop": [
+  -9950,
+  -11500,
+  -1450,
+  -2700
+ ],
+ "closeups": [
+  {
+   "name": "Karazhan and Morgan's Plot",
+   "box": [
+    -10900,
+    -11300,
+    -1700,
+    -2200
+   ]
+  },
+  {
+   "name": "The Vice and Grosh'gok Compound",
+   "box": [
+    -10750,
+    -11250,
+    -2050,
+    -2550
+   ]
+  },
+  {
+   "name": "Deadman's Crossing and the Duskwood road",
+   "box": [
+    -10300,
+    -10750,
+    -1450,
+    -1950
+   ]
+  },
+  {
+   "name": "Ariden's Camp and the Swamp road",
+   "box": [
+    -10000,
+    -10600,
+    -1950,
+    -2500
+   ]
+  }
+ ],
+ "goals": [
+  {
+   "name": "the through-road: Duskwood crossing (Deadman's Crossing) to the Swamp of Sorrows crossing",
+   "from": {
+    "xy": [
+     -10458,
+     -1630
+    ]
+   },
+   "to": {
+    "xy": [
+     -10550,
+     -2335
+    ]
+   }
+  },
+  {
+   "name": "the through-road back: Swamp of Sorrows crossing to the Duskwood crossing",
+   "from": {
+    "xy": [
+     -10550,
+     -2335
+    ]
+   },
+   "to": {
+    "xy": [
+     -10458,
+     -1630
+    ]
+   }
+  },
+  {
+   "name": "from Duskwood's east road into Deadman's Crossing",
+   "from": {
+    "xy": [
+     -10400,
+     -1500
+    ]
+   },
+   "to": {
+    "xy": [
+     -10458.33,
+     -1716.67
+    ]
+   }
+  },
+  {
+   "name": "from the Swamp of Sorrows road up to Ariden's Camp",
+   "from": {
+    "xy": [
+     -10400,
+     -2533
+    ]
+   },
+   "to": {
+    "xy": [
+     -10446,
+     -2130
+    ]
+   }
+  },
+  {
+   "name": "Deadman's Crossing to Ariden's Camp",
+   "from": {
+    "xy": [
+     -10458.33,
+     -1716.67
+    ]
+   },
+   "to": {
+    "xy": [
+     -10446,
+     -2130
+    ]
+   }
+  },
+  {
+   "name": "Ariden's Camp to Karazhan's front gate",
+   "from": {
+    "xy": [
+     -10446,
+     -2130
+    ]
+   },
+   "to": {
+    "xy": [
+     -11118,
+     -2010
+    ]
+   }
+  },
+  {
+   "name": "Ariden's Camp to the Morgan's Plot crypt's mouth",
+   "from": {
+    "xy": [
+     -10446,
+     -2130
+    ]
+   },
+   "to": {
+    "cave": 110630,
+    "near": [
+     -11080,
+     -1830
+    ]
+   }
+  },
+  {
+   "name": "Ariden's Camp to The Vice (ogre camp)",
+   "from": {
+    "xy": [
+     -10446,
+     -2130
+    ]
+   },
+   "to": {
+    "camp": "The Vice"
+   }
+  },
+  {
+   "name": "Ariden's Camp to Grosh'gok Compound's mouth (the Vice's ogre mound, WMO name set 5)",
+   "from": {
+    "xy": [
+     -10446,
+     -2130
+    ]
+   },
+   "to": {
+    "cave": 111365,
+    "near": [
+     -11100,
+     -2326
+    ]
+   }
+  },
+  {
+   "name": "Deadman's Crossing to Deadwind Ravine (Sky Shadows)",
+   "from": {
+    "xy": [
+     -10458.33,
+     -1716.67
+    ]
+   },
+   "to": {
+    "camp": "Deadwind Ravine"
+   }
+  }
+ ]
+}

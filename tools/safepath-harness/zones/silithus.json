@@ -1,0 +1,22 @@
+{"tag": "silithus", "dir": "kalimdor", "faction": "horde", "zone": 1451, "area": 1377, "level": 58, "friendlyMinLevel": 100,
+ "maps": [[1451, 1377], [1449, 490], [1446, 440], [1444, 357]], "cities": [], "border": [1451, 1449],
+ "title": "Silithus", "crop": [-5960, -8280, 2537, -945],
+ "closeups": [
+  {"name": "Cenarion Hold", "box": [-6600, -7000, 1050, 600]},
+  {"name": "The pass to Un'Goro and Staghelm Point", "box": [-6000, -6650, 400, -650]},
+  {"name": "The Scarab Wall (Ahn'Qiraj gates)", "box": [-7850, -8280, 1950, 1200]},
+  {"name": "Hive'Regal", "box": [-7550, -8250, 1000, 150]},
+  {"name": "Hive'Zora and the Twilight camps", "box": [-6600, -7650, 2000, 1050]}
+ ],
+ "goals": [
+  {"name": "the pass up to Un'Goro Crater", "from": {"node": "Cenarion Hold"}, "to": {"xy": [-6220, -479]}},
+  {"name": "the Scarab Wall (Ahn'Qiraj gates)", "from": {"node": "Cenarion Hold"}, "to": {"cave": 109166, "near": [-7970, 1520]}},
+  {"name": "Hive'Ashi (north hive)", "from": {"node": "Cenarion Hold"}, "to": {"cave": 110877, "near": [-6388, 954]}},
+  {"name": "Hive'Zora (west hive)", "from": {"node": "Cenarion Hold"}, "to": {"cave": 110871, "near": [-7149, 1537]}},
+  {"name": "Hive'Regal (south hive)", "from": {"node": "Cenarion Hold"}, "to": {"cave": 110871, "near": [-7729, 767]}},
+  {"name": "Twilight's Run (cave by Staghelm Point)", "from": {"node": "Cenarion Hold"}, "to": {"cave": 111181, "near": [-6311, 142]}},
+  {"name": "the Crystal Vale (Desert Rumblers)", "from": {"node": "Cenarion Hold"}, "to": {"camp": "The Crystal Vale"}},
+  {"name": "Southwind Village (tortured druids)", "from": {"node": "Cenarion Hold"}, "to": {"camp": "Southwind Village"}},
+  {"name": "Twilight Post (Twilight's Hammer camp)", "from": {"node": "Cenarion Hold"}, "to": {"camp": "Twilight Post"}},
+  {"name": "Twilight Base Camp (Twilight's Hammer camp)", "from": {"node": "Cenarion Hold"}, "to": {"camp": "Twilight Base Camp"}}
+ ]}

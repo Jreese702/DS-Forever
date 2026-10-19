@@ -29,6 +29,7 @@ def parse(log):
             z['routes'][m.group(1)] = {'name': m.group(2), 'yd': int(m.group(3)), 'reached': 'unreachable' not in m.group(4)}
             continue
         if line.startswith('SWIM route'): z['swims'].append(line)                # a declared swim (the user's "Swim link, flagged"): noted
+        if line.startswith('WARNING WMO'): z.setdefault('unread', []).append(line[12:].split(':')[0])     # a WMO whose floors weren't dumped
         if line.startswith('WALLS route'): z['walls'].append(line)
         elif line.startswith('EMPTY'): z['empty'].append(line)
         elif line.startswith('GOAL') and 'not found' in line: z['notfound'].append(line)
@@ -79,6 +80,7 @@ for tag, z in zones.items():
         elif n: notes.append('%s: route %s wades a narrow stream: %d yd deeper than the ford, at most %d yd on end, %.1f yd deep at %s' % (tag, L, n, run, d, at))
     if 'wet' in z and not z['wet'] and z['routes']: fails.append('%s: no wetcheck result' % tag)
     for sw in z.get('swims', []): notes.append('%s: %s' % (tag, sw))
+    if z.get('unread'): notes.append('%s: %d WMOs with their floors not dumped (the ground under them taken as the terrain): %s' % (tag, len(z['unread']), ', '.join(z['unread'][:12])))
     if not b: notes.append('%s: no baseline (new zone)' % tag); continue
     for L, r in b['routes'].items():
         now = z['routes'].get(L)

@@ -62,16 +62,21 @@ def load_floors(routes_file):
 def _segd(ax, ay, bx, by, x, y):
     dx, dy = bx - ax, by - ay; l2 = dx * dx + dy * dy; u = 0 if l2 <= 0 else max(0, min(1, ((x - ax) * dx + (y - ay) * dy) / l2))
     return math.hypot(ax + u * dx - x, ay + u * dy - y)
-def level_floor(x, y):
+LEVEL_BURIED = 8.0         # a floor this far under the terrain or more is under it, never the ground (RenderSafePath.LEVEL_BURIED_YD)
+def level_floor(x, y, g=None):
     """on a floor the lattice takes as level ground (a city's street, a building's porch: floors_<tag>.json's 0): no terrain check"""
     for k in _fgrid.get((int(math.floor(x / 16)), int(math.floor(y / 16))), []):
         t = _floors[k]
         if t[9]: continue
-        x0, y0, _, x1, y1, _, x2, y2, _ = t[:9]
+        x0, y0, z0, x1, y1, z1, x2, y2, z2 = t[:9]
         det = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
         if abs(det) < 1e-9: continue
         a = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / det; b = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / det
-        if (a >= 0 and b >= 0 and a + b <= 1) or min(_segd(x0, y0, x1, y1, x, y), _segd(x1, y1, x2, y2, x, y), _segd(x2, y2, x0, y0, x, y)) <= DECK_MARGIN: return True
+        if (a >= 0 and b >= 0 and a + b <= 1) or min(_segd(x0, y0, x1, y1, x, y), _segd(x1, y1, x2, y2, x, y), _segd(x2, y2, x0, y0, x, y)) <= DECK_MARGIN:
+            # a buried floor (a mine's under its hill) is no street: the terrain over it is checked (the harness's LEVEL_BURIED_YD)
+            a = max(0.0, min(1.0, a)); b = max(0.0, min(1.0 - a, b)); h = a * z0 + b * z1 + (1 - a - b) * z2
+            if g is None: g = HT.height(x, y)
+            if h >= g - LEVEL_BURIED: return True
     return False
 def layer_at(x, y):
     """the floor the walker is on at (x, y) by the harness's layers (Climb.floorLayers: one height a vertex): straight between the

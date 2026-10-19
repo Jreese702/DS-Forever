@@ -11,7 +11,7 @@ export SAFEPATH_WORK="${SAFEPATH_WORK:-E:/safepath-work}"
 OUT="${GATE_OUT:-$SAFEPATH_WORK/gate/run-$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$OUT"
 export SAFEPATH_OUT="$OUT"
-ZONES="durotar:kalimdor elwynn:azeroth zephras:zephras tirisfal:azeroth teldrassil:kalimdor dunmorogh:azeroth mulgore:kalimdor barrens:kalimdor westfall:azeroth lochmodan:azeroth silverpine:azeroth darkshore:kalimdor climb_barrens:kalimdor climb_mulgore:kalimdor climb_durotar:kalimdor hillsbrad:azeroth duskwood:azeroth redridge:azeroth ashenvale:kalimdor stonetalon:kalimdor wetlands:azeroth alterac:azeroth arathi:azeroth arathi_horde:azeroth dalaran:dalaran"
+ZONES="durotar:kalimdor elwynn:azeroth zephras:zephras tirisfal:azeroth teldrassil:kalimdor dunmorogh:azeroth mulgore:kalimdor barrens:kalimdor westfall:azeroth lochmodan:azeroth silverpine:azeroth darkshore:kalimdor climb_barrens:kalimdor climb_mulgore:kalimdor climb_durotar:kalimdor hillsbrad:azeroth duskwood:azeroth redridge:azeroth ashenvale:kalimdor stonetalon:kalimdor wetlands:azeroth alterac:azeroth arathi:azeroth arathi_horde:azeroth dalaran:dalaran blastedlands:azeroth badlands:azeroth thousandneedles:kalimdor swampofsorrows:azeroth deadwind:azeroth shendralas:kalimdor silithus:kalimdor"
 [ -n "${CROSS_ONLY:-}" ] && ZONES=""
 # the cross-zone routes' legs: each zone they cross, its own spec with the legs for goals
 CROSS=$(cd "$HERE/py" && PYTHONIOENCODING=utf-8 python cross.py specs "$OUT" | tr -d '\r')
@@ -19,7 +19,7 @@ for z in $ZONES $CROSS; do
   tag=${z%%:*}; dir=${z##*:}
   spec="$HERE/zones/$tag.json"; [ -f "$spec" ] || spec="$OUT/specs/$tag.json"
   echo "=== $tag"
-  bash "$HERE/run.sh" "$spec" "ROUTE2|WALLS|EMPTY|GOAL|WATERMAX|SWIM|EXIT |EXITS added|BORDER crossing|ROADWALLS|DROPWALLED|SAFEPATH [A-Z][a-z' ]+:|^e:|Exception" > "$OUT/gate_$tag.log" 2>&1
+  bash "$HERE/run.sh" "$spec" "ROUTE2|WALLS|EMPTY|GOAL|WATERMAX|SWIM|WARNING WMO|EXIT |EXITS added|BORDER crossing|ROADWALLS|DROPWALLED|SAFEPATH [A-Z][a-z' ]+:|^e:|Exception" > "$OUT/gate_$tag.log" 2>&1
   (cd "$HERE/py" && PYTHONIOENCODING=utf-8 ZDIR=$dir python segcheck.py "$OUT/levels_routes_$tag.json" 2>&1 | tail -1) >> "$OUT/gate_$tag.log"
   # the water, read apart from the app's grid: every yard of every route over the liquid's own surface and the terrain (py/wetcheck.py)
   (cd "$HERE/py" && PYTHONIOENCODING=utf-8 ZDIR=$dir python wetcheck.py "$OUT/levels_routes_$tag.json" 2>&1 | grep -E "^WET|Error") >> "$OUT/gate_$tag.log"
