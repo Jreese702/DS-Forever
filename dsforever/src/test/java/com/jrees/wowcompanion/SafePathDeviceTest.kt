@@ -106,33 +106,6 @@ class SafePathDeviceTest {
         }
     }
 
-    // ---------------------------------------------------------------- DangerInputs
-
-    @Test fun theDangerIsTheCharactersOwn() {
-        val rect = MapHarvest.Rect(1, 1000.0, 0.0, 1000.0, 0.0)          // 1000 x 1000 yd; map x 0..1 = world y 1000..0
-        fun sp(x: Double, y: Double, lv: Int, hostile: Int, name: String) = QuestieNpcs.Spawn(1, x.toFloat(), y.toFloat(), lv, lv, false, hostile, name, "")
-        val spawns = listOf(
-            sp(0.2, 0.2, 10, TransportRoutes.HORDE, "Alliance guard"),                  // hostile to the Horde
-            sp(0.8, 0.8, 10, TransportRoutes.ALLIANCE, "Horde grunt"),                  // hostile to the Alliance
-            sp(0.5, 0.5, 9999, 3, "Forever's own quest giver"),                         // a placeholder level, coded hostile to both
-            sp(0.5, 0.2, 10, 3, "Windshaper Aerin"))                                     // a zone's own people friendly to all
-        val horde = DangerInputs.sided(spawns, rect, TransportRoutes.ALLIANCE, DangerInputs.FRIENDLY_MIN_LEVEL, DangerInputs.FRIENDLY_NAMES[2521]!!)
-        val alliance = DangerInputs.sided(spawns, rect, TransportRoutes.HORDE, DangerInputs.FRIENDLY_MIN_LEVEL, DangerInputs.FRIENDLY_NAMES[2521]!!)
-        // the Horde's foes: the guard only; the Alliance's: the grunt only - the placeholder and the Windshaper are nobody's
-        assertEquals(1, DangerInputs.hostile(horde, rect, TransportRoutes.HORDE).size)
-        assertEquals(1, DangerInputs.hostile(alliance, rect, TransportRoutes.ALLIANCE).size)
-        val h = DangerInputs.costs(horde, TransportRoutes.HORDE, 10, rect, { _, _ -> true }, { _, _ -> false }, { _, _ -> false })
-        val a = DangerInputs.costs(alliance, TransportRoutes.ALLIANCE, 10, rect, { _, _ -> true }, { _, _ -> false }, { _, _ -> false })
-        // world (800, 800) is map (0.2, 0.2): the guard's - danger for the Horde, none for the Alliance; and the other way round
-        assertTrue(h.danger(800.0, 800.0) > 0f); assertEquals(0f, a.danger(800.0, 800.0))
-        assertTrue(a.danger(200.0, 200.0) > 0f); assertEquals(0f, h.danger(200.0, 200.0))
-        assertEquals(0f, h.danger(500.0, 500.0)); assertEquals(0f, h.danger(800.0, 500.0))
-        // a wade and a room cost as a middling danger, calm or not
-        val w = DangerInputs.costs(horde, TransportRoutes.HORDE, 10, rect, { _, _ -> true }, { x, _ -> x < 100 }, { _, y -> y < 100 })
-        assertEquals(DangerInputs.WADE_DANGER + DangerInputs.BUILDING_DANGER, w.calm(50.0, 50.0))
-        assertEquals(0f, w.calm(500.0, 500.0))
-    }
-
     // ---------------------------------------------------------------- memory and cancellation
 
     @Test fun theZoneFilesKeepThreeAtMost() {

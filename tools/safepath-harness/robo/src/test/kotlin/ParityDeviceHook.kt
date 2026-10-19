@@ -3,6 +3,7 @@ import com.jrees.wowcompanion.ClimbStep
 import com.jrees.wowcompanion.CityExits
 import com.jrees.wowcompanion.Db2
 import com.jrees.wowcompanion.DangerGrid
+import com.jrees.wowcompanion.DangerInputs
 import com.jrees.wowcompanion.MapHarvest
 import com.jrees.wowcompanion.PlaceNames
 import com.jrees.wowcompanion.QuestieNpcs
@@ -79,7 +80,7 @@ class ParityDeviceHook : ParityHook {
         val draft = SafePath.Net.fromJson(JSONObject(File(zone.network, "safepath_${zone.map}.draft.json").readText())) ?: error("no draft for ${zone.map}")
         val gr = SafePath.Ground(g, zone.map, uiAt, { x, y -> !deep(x, y) })
         val net = SafePathV2.unwalled(SafePath.groundExits(SafePath.checkExits(draft, gr), gr), g, deep)
-        val dc = SafePathV2.costs(g, wg, spawns, rect, zone.map, mine, zone.level, own)
+        val dc = SafePathV2.costs(DangerInputs.build(spawns, rect, mine, zone.level, SafePathV2.rulesFor(zone.map), "high", inZone = own), g, wg)
         // a hooked end walked straight only over level ground (the terrain's slopes: the terrain step's grid)
         val zi = ZoneInputs(zone.source, rect, Terrain.lethal, emptyList())
         val tg = Terrain.grid(rect) { gr2, gc -> zi.height(gr2, gc) }

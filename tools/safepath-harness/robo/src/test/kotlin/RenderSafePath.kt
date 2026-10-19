@@ -112,14 +112,14 @@ class RenderSafePath {
             val ax = rect.l - rect.r; val ay = rect.t - rect.b
             // a zone's own friendly NPCs QuestieDB codes hostile to both (WoW Forever's new factions): those at a placeholder level
             // (the spec's friendlyMinLevel, e.g. 9999) are no mobs - made the player's side's, so they count for the towns, not the danger
-            val friendlyMin = spec?.optInt("friendlyMinLevel", Int.MAX_VALUE) ?: Int.MAX_VALUE
             // and a zone's own peoples the guides call friendly to all (the spec's friendlyNames, regexes: Zephras' Windshapers and High
             // Order - the isle shared by both factions; QuestieDB's kill links to them are beta leftovers)
-            val friendlyNames = spec?.optJSONArray("friendlyNames")?.let { a -> (0 until a.length()).map { Regex(a.getString(it)) } } ?: emptyList()
-            // a town's faction-less people (no level, or a guard's name) take the side of the faction-tagged ones round them (QuestieNpcs.townSided)
-            // (DangerInputs.sided, the device's own)
-            val here = DangerInputs.sided(spawns.filter { it.area == area }, rect, foe, friendlyMin, friendlyNames)
-            val hostile = DangerInputs.hostile(here, rect, mine)
+            val rules = DangerInputs.Rules(spec?.optInt("friendlyMinLevel", Int.MAX_VALUE) ?: Int.MAX_VALUE,
+                spec?.optJSONArray("friendlyNames")?.let { a -> (0 until a.length()).map { Regex(a.getString(it)) } } ?: emptyList())
+            // a town's faction-less people (no level, or a guard's name) take the side of the faction-tagged ones round them
+            // (QuestieNpcs.townSided), then the rules' friends made this side's: the app's DangerInputs, the device's own
+            val here = DangerInputs.sided(spawns.filter { it.area == area }, rect, mine, rules)
+            val hostile = DangerInputs.hostile(here, mine).map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
             val friendly = here.filter { it.hostile == foe }.map { SafePath.Npc(rect.t - it.y * ay, rect.l - it.x * ax, it.sub) }
             val fixed = SafePath.fixedPoints(map, rect.c, rect.t, rect.b, rect.l, rect.r, mine, transports) + SafePath.hubs(friendly, { x, y -> PlaceNames.nameAt(x, y, areas) { a, b2 -> zg.areaAt(a, b2) } }, nameOf(map), SafePath.districtFor(map, rect.t, rect.b, rect.l, rect.r))
             fun draftFor(fx: List<SafePath.Fixed>, foes: List<DoubleArray>) = SafePath.draft(SafePath.Input(map, rect.c, rect.t, rect.b, rect.l, rect.r, roadAt,
@@ -200,7 +200,6 @@ class RenderSafePath {
         val zl = zi.Lattice(heightV)
         fun height(wx: Double, wy: Double): Float = zl.height(wx, wy)
         val ax = rect.l - rect.r; val ay = rect.t - rect.b
-        fun uv(wx: Double, wy: Double) = doubleArrayOf((rect.l - wy) / ax, (rect.t - wx) / ay)
         // the holes a building's or a cave's floor covers (py/segcheck.py: no terrain there, the floor is the ground)
         File(out, "holes_$tag.json").writeText(org.json.JSONArray(zl.coveredHoles.map { org.json.JSONArray(listOf(it[0], it[1])) }).toString())
         val pad = SafePath.GRID_PAD_YD
@@ -208,18 +207,18 @@ class RenderSafePath {
         File(out, "layers_$tag.json").writeText(org.json.JSONArray(layers.map { (k, z) -> org.json.JSONArray(listOf((k shr 32).toInt(), k.toInt(), z)) }).toString())
         val cg = zl.cg
         fun roomsAt(x: Double, y: Double) = zl.roomsAt(x, y)
-        val ground: (Double, Double) -> Float = { u, v -> val wx = rect.t - v * ay; val wy = rect.l - u * ax; Terrain.factor(tg.at(wx, wy)) }
         val level = spec?.optInt("level", 8) ?: 8
-        // the danger per character (DangerInputs.costs, the device's own): the zone's typical danger taken off, a narrow stream's wade and
-        // a building's rooms a middling danger
-        val dc = DangerInputs.costs(spawns, mine, level, rect, { x, y -> ar?.uiMap(zg.areaAt(x, y)) == map }, { x, y -> waterGrid?.wading(x, y) == true },
-            { x, y -> roomsAt(x, y) }, ground)
-        val g = dc.g
-        val k = DangerGrid.strength("high")
-        val typical = dc.typical
+        // the character's danger (the app's DangerInputs, the device's own): the hostile spawns' grid for this faction and level, the
+        // zone's typical danger taken off (an all-red zone steers round its worst camps only), and a narrow stream waded
+        // (DangerInputs.WADE_DANGER, as the mobs' middling danger: a drier way wins) and a building's rooms (BUILDING_DANGER) added
+        val dz = DangerInputs.grid(spawns, rect, mine, level, "high", { wx, wy -> Terrain.factor(tg.at(wx, wy)) },
+            { wx, wy -> ar?.uiMap(zg.areaAt(wx, wy)) == map })
+        val g = dz.grid; val k = dz.k; val typical = dz.typical
         println("DANGER typical ${"%.2f".format(typical)} of ${"%.2f".format(g.max)}")
-        val danger: (Double, Double) -> Float = dc.danger
-        val calm: (Double, Double) -> Float = dc.calm
+        println("DANGERINPUTS ${tag}: ${g.nx} x ${g.ny} cells, ${DangerInputs.hostile(spawns, mine).size} hostile of ${spawns.size} spawns, ${"%.1f".format(dz.ms)} ms")
+        val wading: (Double, Double) -> Boolean = { x, y -> waterGrid?.wading(x, y) == true }
+        val danger = dz.danger(wading, ::roomsAt)
+        val calm = dz.calm(wading, ::roomsAt)
         // a bridge whose WMO floor is read (its groups dumped: Mulgore's Stonebull Lake bridge) is walked on its own floor, so the water
         // grid's bridge cells (the walkway's whole bounding box) are water again off that floor: the lake beside the deck is no bridge
         var floorCells: Set<Long> = emptySet()

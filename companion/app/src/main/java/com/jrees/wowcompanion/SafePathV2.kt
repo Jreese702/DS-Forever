@@ -26,8 +26,28 @@ object SafePathV2 {
     fun stamp(map: Int, mine: Int, level: Int): String =
         "${Climb.files.version}:${ClimbStep.zonesMade}:${SafePath.waters.version}:${SafePath.nets.version}:${SafePath.zones.version}:${DangerStore.version}:$mine:$level:${Settings.avoidDanger}:$map"
 
-    private class Danger(val key: String, val costs: DangerInputs.Costs)
-    @Volatile private var danger: Danger? = null
+    /** the device's friend rules (typed, no game coordinates): WoW Forever's placeholder level for every zone, and a zone's own peoples
+     *  the guides call friendly to all by uiMap (our words: regexes over QuestieDB's names; the specs' "friendlyNames", the same lists) */
+    const val FRIENDLY_MIN_LEVEL = 100
+    val FRIENDLY_NAMES: Map<Int, List<Regex>> = mapOf(
+        2521 to listOf("^Windshaper", "^High Order"),                                                     // Zephras Isle
+        2652 to listOf("^Shen'dral", "^Pylon Protector$", "^Shard Guard$", "^Magister ", "^Mordent Evenshade$",
+            "^(Adarien|Mithera|Liranne|Arondel|Kerelle|Jarael)$", "^Gelkis Captive$"),                     // Shen'dralar
+        1450 to listOf("^Orokai$", "^Elaren Stargrove$", "^Cenarion Warden$", "^Slumbering Druid$"),      // Moonglade
+        2548 to listOf("^Sentry ", "^Lieutenant (Maclan|Prenish|Shelby)$", "^Cavalry ", "^Farholde ", "^Brother Lowley$",
+            "^Wounded Soldier$", "^(Tessa|Gray) Dawnbright$", "^Barracks Master Harlan$", "^Scoutmaster Vargas$", "^Scout Bolain$",
+            "^Watcher Cornelius$", "^Sergeant Riftan$", "^Innkeeper Zizplink$", "^Wharfmaster Whizzbuzz$", "^Fimbo Greasemitz$",
+            "^Tallow Sparksocket$", "^Thrash$", "^Spek$", "^Jasper Geartoggle$", "^Mizzy$", "^Mia Tanglewrench$", "^Argo Brinewhistle$",
+            "^Rex Hardwire$", "^Sleebo Fizzlespout$", "^Meadowsbrook Farmhand$", "^Turner's Mill Lumberjack$", "^Woodworker$",
+            "^Halligan Turner$", "^Benjy Wheeler$", "^(Robbie|Eleanor) Holmsby$", "^Dunston Willis$", "^Cedric Dalton$", "^Melanie Sable$",
+            "^Wheatley$", "^Steed$"),                                                                       // the Riverglades
+    ).mapValues { (_, l) -> l.map { Regex(it) } }
+    fun rulesFor(map: Int) = DangerInputs.Rules(FRIENDLY_MIN_LEVEL, FRIENDLY_NAMES[map] ?: emptyList())
+
+    /** a route's danger and its no-mobs rival's (SafeRoute's danger and calm) */
+    class Costs(val danger: (Double, Double) -> Float, val calm: (Double, Double) -> Float, val typical: Float)
+    /** the character's grids, by (map, faction, level, the spawns' version, the avoid setting): DangerInputs' own cache */
+    private val dangers = DangerInputs.Cache()
     private class Walled(val key: String, val net: SafePath.Net)
     @Volatile private var walled: Walled? = null
 
@@ -47,8 +67,8 @@ object SafePathV2 {
         val net0 = SafePath.nets.get(map) ?: SafePath.Net(map, rect.c, "", emptyList(), emptyList(), emptyList())
         val zg = SafePath.zones.get(map); val ar = SafePath.areas()
         val own: (Double, Double) -> Boolean = if (zg != null && ar != null) { x, y -> ar.uiMap(zg.areaAt(x, y)) == map } else { _, _ -> true }
-        val key = "$map:$mine:$level:${DangerStore.version}:${SafePath.waters.version}:${Climb.files.version}:${ClimbStep.zonesMade}:${zg != null}"
-        val dc = danger?.takeIf { it.key == key }?.costs ?: costs(g, wg, DangerStore.spawns(map), rect, map, mine, level, own).also { danger = Danger(key, it) }
+        val d = dangers.get(map, DangerStore.version, DangerStore.spawns(map), rect, mine, level, rulesFor(map), Settings.avoidDanger, inZone = own)
+        val dc = costs(d, g, wg)
         val deep = deepOf(wg)
         val nkey = "$map:${SafePath.nets.version}:${Climb.files.version}:${ClimbStep.zonesMade}:${SafePath.waters.version}:${net0.edges.size}"
         val net = walled?.takeIf { it.key == nkey }?.net ?: unwalled(net0, g, deep).also { walled = Walled(nkey, it) }
@@ -70,13 +90,11 @@ object SafePathV2 {
     fun deepOf(wg: SafePath.Water?): (Double, Double) -> Boolean = { x, y -> val d = wg?.at(x, y) ?: Float.NaN
         if (d.isNaN() || d == SafePath.Water.BRIDGE) false else !wg!!.wadeable(x, y) }
 
-    /** the character's danger in zone [map] from its [spawns]: DangerInputs' (the device's friendly rules), the wade and the rooms */
-    fun costs(g: Climb.Grid, wg: SafePath.Water?, spawns: List<QuestieNpcs.Spawn>, rect: MapHarvest.Rect, map: Int, mine: Int, level: Int,
-              own: (Double, Double) -> Boolean): DangerInputs.Costs {
-        val here = DangerInputs.sided(spawns, rect, if (mine == TransportRoutes.HORDE) TransportRoutes.ALLIANCE else TransportRoutes.HORDE,
-            DangerInputs.FRIENDLY_MIN_LEVEL, DangerInputs.FRIENDLY_NAMES[map] ?: emptyList())
+    /** the character's danger [d] (DangerInputs) with the wade ([wg]) and the rooms ([g]'s solid footprints) as a middling danger */
+    fun costs(d: DangerInputs.Danger, g: Climb.Grid, wg: SafePath.Water?): Costs {
         val rooms = g.solid ?: { _, _ -> false }
-        return DangerInputs.costs(here, mine, level, rect, own, { x, y -> wg?.wading(x, y) == true }, rooms)
+        val wading: (Double, Double) -> Boolean = { x, y -> wg?.wading(x, y) == true }
+        return Costs(d.danger(wading, rooms), d.calm(wading, rooms), d.typical)
     }
 
     /** the network's drafted ways that cross a wall on the lattice: walked by the ground's leg when it joins their ends within 1.5x
@@ -87,7 +105,7 @@ object SafePathV2 {
 
     /** the way from [from] to [to]: SafeRoute on lattice [g], water [wg], network [net], danger [dc] at strength [k]; null when a segment
      *  of it fails the final check (every segment walkable on the lattice, off deep water - the hard rule, on what is handed out) */
-    fun route(g: Climb.Grid, wg: SafePath.Water?, net: SafePath.Net, dc: DangerInputs.Costs, k: Double, clear: (DoubleArray, DoubleArray) -> Boolean,
+    fun route(g: Climb.Grid, wg: SafePath.Water?, net: SafePath.Net, dc: Costs, k: Double, clear: (DoubleArray, DoubleArray) -> Boolean,
               from: DoubleArray, to: DoubleArray, toExit: Boolean, limits: Climb.Limits?): SafeRoute.Result? {
         val deep = deepOf(wg)
         val waterAt: (Double, Double) -> Float = { x, y -> wg?.at(x, y) ?: Float.NaN }
@@ -98,7 +116,7 @@ object SafePathV2 {
     }
 
     /** the route's memory given back when the device asks (onTrimMemory): the lattices and the leg's scratch */
-    fun trim() { Climb.files.trim(); Climb.Scratch.release(); danger = null }
+    fun trim() { Climb.files.trim(); Climb.Scratch.release(); dangers.clear() }
     @Volatile private var hooked = false
     fun init(ctx: Context) {
         if (hooked) return
