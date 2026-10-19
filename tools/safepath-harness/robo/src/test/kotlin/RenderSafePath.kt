@@ -557,6 +557,17 @@ class RenderSafePath {
         // a node by its name, or by its base name when towns sharing it were told apart ("Deathknell · Inn", "Gustberry Lowlands (2)")
         // ... or, a town that is no hub for this faction (the other side's: Theramore for the Horde), the place itself: its subzone's ground
         // ... or, a town that is no hub for this faction (the other side's: Theramore for the Horde), the other side's own town as its
+        /** the walkable ground round world [p]: the lattice vertices a walk from it reaches within 40 yd, off walls and deep water */
+        fun openGround(p: DoubleArray): Int {
+            val v0 = cg.at(p[0], p[1]); val seen = HashSet<Long>(); val q = ArrayDeque<IntArray>(); q.add(v0); seen.add(v0[0].toLong() * 100000 + v0[1])
+            val r = (40 / S).toInt()
+            while (q.isNotEmpty() && seen.size < 4000) { val (i, j) = q.removeFirst()
+                for (di in -1..1) for (dj in -1..1) { if (di == 0 && dj == 0) continue
+                    val ni = i + di; val nj = j + dj; val k = ni.toLong() * 100000 + nj
+                    if (k in seen || Math.abs(ni - v0[0]) > r || Math.abs(nj - v0[1]) > r || cg.step(i, j, di, dj) == Climb.WALL || deep(cg.wx(nj), cg.wy(ni))) continue
+                    seen.add(k); q.add(intArrayOf(ni, nj)) } }
+            return seen.size
+        }
         // draft places it (otherPlaces), else the place itself: its subzone's ground
         /** a town of the other side's as a route's end: its spot, or - when the ground from there (the lattice's dry steps, no wall)
          *  is a pocket (Auberdine's hub spot on its terrace, Dolanaar's subzone middle) - the nearest spot within 60 yd on open ground */
@@ -581,9 +592,13 @@ class RenderSafePath {
         }
         fun at(name: String): DoubleArray? = (net.nodes.firstOrNull { it.name?.trim() == name.trim() } ?: net.nodes.firstOrNull { it.name?.trim()?.startsWith("${name.trim()} ") == true })
             ?.let { doubleArrayOf(it.wx, it.wy) }
-            ?: (otherPlaces.firstOrNull { it.first.trim() == name.trim() } ?: otherPlaces.firstOrNull { it.first.trim().startsWith("${name.trim()} ") })
-                ?.let { println("GOALPLACE $name: the other side's town ${it.first} at ${it.second[0].toInt()},${it.second[1].toInt()}"); openSpot(it.second) }
-            ?: areaSpot(name.substringBefore(" ·").substringBefore(" (").trim())?.also { println("GOALPLACE $name: its subzone's ground ${it[0].toInt()},${it[1].toInt()}") }?.let { openSpot(it) }
+            ?: run {
+                // the other side's town spot, or its subzone's ground: whichever opens onto more walkable ground round it (Auberdine's town
+                // spot boxed the Horde in; Dolanaar's subzone middle did)
+                val town = (otherPlaces.firstOrNull { it.first.trim() == name.trim() } ?: otherPlaces.firstOrNull { it.first.trim().startsWith("${name.trim()} ") })?.second?.let { openSpot(it) }
+                val sub = areaSpot(name.substringBefore(" ·").substringBefore(" (").trim())?.let { openSpot(it) }
+                val pick = listOfNotNull(town, sub).maxByOrNull { openGround(it) }
+                pick?.also { println("GOALPLACE $name: ${if (pick === town) "the other side's town" else "its subzone's ground"} at ${it[0].toInt()},${it[1].toInt()} (open ${openGround(it)})") } }
         /** a named mob's spawns at their thickest (near [near] when given: within 500 yd of it) */
         fun mob(name: String, near: DoubleArray?): DoubleArray? {
             val pts = spawns.filter { it.name.equals(name, true) }.map { doubleArrayOf(rect.t - it.y * ay, rect.l - it.x * ax) }
