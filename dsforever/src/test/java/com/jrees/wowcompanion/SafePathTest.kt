@@ -358,4 +358,32 @@ class SafePathTest {
         val way = SafePath.route(net, 0.0, -100.0, 10.0, 560.0)!!
         for (p in way) assertTrue("${p.toList()}: on a cave's way, unmarked", Climb.inCave(p) || !(abs(p[0]) < 1e-6 && p[1] > 420.5 && p[1] < 699.5))
     }
+
+    /** the walk off before the turn (gate run 7: Teldrassil's Fel Rock +404 yd): the way's point nearest the goal lies past the turn,
+     *  beyond a ridge from it, and the straight join back is no walk, so unloop cannot cut the there-and-back; the walk off at the turn
+     *  itself is taken instead */
+    @Test fun theWalkOffIsBeforeTheTurnWhenTheWayRunsOnPastIt() {
+        fun n(id: Int, x: Double, y: Double) = SafePath.Node(id, x, y, SafePath.POINT)
+        // the road from (0, -300) to the turn (0, 300), on to (100, 400): the goal (200, 300) is nearest that end (141 yd, the turn 200)
+        val net = SafePath.Net(1, 0, "", listOf(n(0, 0.0, -300.0), n(1, 0.0, 300.0), n(2, 100.0, 400.0)),
+            listOf(SafePath.Edge(0, 1, SafePath.ROAD), SafePath.Edge(1, 2, SafePath.ROAD)), emptyList())
+        // a ridge along y 350 from x 80 east (the walk from the road's end round its west end), a cliff along x 50 south of y 250
+        fun crosses(a: DoubleArray, b: DoubleArray, alongY: Boolean, at: Double, ok: (Double) -> Boolean): Boolean {
+            val (u0, u1) = if (alongY) a[1] to b[1] else a[0] to b[0]
+            if ((u0 - at) * (u1 - at) > 0.0 || u0 == u1) return false
+            val t = (at - u0) / (u1 - u0); val v = if (alongY) a[0] + (b[0] - a[0]) * t else a[1] + (b[1] - a[1]) * t
+            return ok(v)
+        }
+        fun ridge(a: DoubleArray, b: DoubleArray) = crosses(a, b, true, 350.0) { it >= 80.0 }
+        val walk = { a: DoubleArray, b: DoubleArray -> !ridge(a, b) && !crosses(a, b, false, 50.0) { it < 250.0 } }
+        val leg = { a: DoubleArray, b: DoubleArray -> when {
+            walk(a, b) -> listOf(a, b)
+            ridge(a, b) && !crosses(a, b, false, 50.0) { it < 250.0 } -> listOf(a, doubleArrayOf(60.0, 350.0), b)
+            else -> null } }
+        val way = SafePath.routeOn(net, 0.0, -300.0, 200.0, 300.0, leg, walkable = walk)!!
+        val yd = way.zipWithNext { a, b -> hypot(b[0] - a[0], b[1] - a[1]) }.sum()
+        assertTrue("${way.map { it.toList() }}", way.none { it[0] == 100.0 && it[1] == 400.0 })
+        assertEquals(800.0, yd, 1.0)
+        for ((a, b) in way.zipWithNext()) assertTrue("${a.toList()} -> ${b.toList()}", walk(a, b))
+    }
 }

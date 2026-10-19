@@ -2066,25 +2066,48 @@ object SafePath {
         // pieces straight unless they cross a wall on the fine ground (a cliff its coarse cells missed: the ground's leg instead); a
         // point no leg reaches (a way's node on a ledge) passed by, the next leg going on from where it stopped
         val out = arrayListOf(f)
+        val reachedAt = IntArray(chain.size)                              // the index in [out] where each of the chain's points was walked to
         for (q in 1 until chain.size) {
             val cur = out.last(); val tgt = chain[q]
             val ends = q == 1 || (q == chain.size - 1 && !exitEnd)
             val straight = (!ends || hypot(tgt[0] - cur[0], tgt[1] - cur[1]) <= JOIN_YD) && walkable?.invoke(cur, tgt) ?: true
-            if (straight || Climb.inCave(cur) && Climb.inCave(tgt)) { out.add(tgt); continue }
+            if (straight || Climb.inCave(cur) && Climb.inCave(tgt)) { out.add(tgt); reachedAt[q] = out.size - 1; continue }
             val lg = leg(cur, tgt)
-            if (lg == null) { if (walkable == null) out.add(tgt); continue }
+            if (lg == null) { if (walkable == null) out.add(tgt); reachedAt[q] = out.size - 1; continue }
             // the leg's every point: one that starts at its first vertex (the hop from [cur] crosses a wall) never loses that vertex, else
             // [cur] would be joined straight to the next one, a line nobody checked (Loch Modan B, out of a mine's mouth)
             for (p in lg) if (hypot(out.last()[0] - p[0], out.last()[1] - p[1]) > 0.5) out.add(p)
+            reachedAt[q] = out.size - 1
         }
         // the ground's own way straight there, when it reaches the goal and the network's way round is far longer (a valley walled
         // round, its goal at its own far end: the network leaves it by its gate and comes back)
+        fun yd(w: List<DoubleArray>, from: Int = 0) = (from until w.size - 1).sumOf { k -> hypot(w[k + 1][0] - w[k][0], w[k + 1][1] - w[k][1]) }
         if (walkable != null && hypot(tx - fx, ty - fy) <= DIRECT_LEG_YD) {
-            fun yd(w: List<DoubleArray>) = w.zipWithNext { a, b -> hypot(b[0] - a[0], b[1] - a[1]) }.sum()
             val direct = leg(f, t)
             if (direct != null && hypot(direct.last()[0] - tx, direct.last()[1] - ty) <= 3.0 && yd(direct) * NET_FAVOUR < yd(out)) return direct
         }
-        return unloop(out, walkable)
+        var best = unloop(out, walkable)
+        // THE WALK OFF BEFORE THE TURN (Teldrassil's Fel Rock, gate run 7: +404 yd): the walk off is at the way's point nearest the goal,
+        // which can lie past the turn - the network runs on along the road and the ground's leg walks back. unloop cuts that only where
+        // the straight join is itself walkable; past a ridge or a town's houses (no cutting through buildings) it is not, so the
+        // there-and-back stayed. The network's last few points before the walk off are each tried as the walk off too, by the ground's
+        // own leg (every rule of the leg holds): taken when the walk from that point as drawn is [NET_FAVOUR] times longer than the
+        // leg (a there-and-back, not a road preferred) and the whole way, unlooped, is shorter
+        val end = chain.size - 2                                           // the walk off (the goal's chain point is after it)
+        if (walkable != null && !exitEnd && end >= 2) {
+            val offYd = hypot(chain[end][0] - tx, chain[end][1] - ty)
+            for (q in end - 1 downTo maxOf(1, end - OFF_BEFORE_TRIES)) {
+                val k = reachedAt[q]; val p = out[k]
+                if (Climb.inCave(p) || hypot(p[0] - tx, p[1] - ty) > offYd + LOOP_YD) continue
+                val lg = leg(p, t) ?: continue
+                if (hypot(lg.last()[0] - tx, lg.last()[1] - ty) > 3.0) continue
+                val alt = ArrayList(out.subList(0, k + 1)); for (r in lg) if (hypot(alt.last()[0] - r[0], alt.last()[1] - r[1]) > 0.5) alt.add(r)
+                if (yd(alt, k) * NET_FAVOUR >= yd(out, k)) continue
+                val altU = unloop(alt, walkable)
+                if (yd(altU) < yd(best)) best = altU
+            }
+        }
+        return best
     }
 
     /**
@@ -2111,6 +2134,7 @@ object SafePath {
     }
     const val DIRECT_LEG_YD = 1500.0       // a goal this near: the ground's own way there is the network's rival ...
     const val NET_FAVOUR = 1.5             // ... taken when the network's way is this many times longer
+    const val OFF_BEFORE_TRIES = 4         // the network's points before its walk off tried as the walk off (the walk off before the turn)
     const val JOIN_YD = 12.0               // a start or a goal this near the way needs no leg of its own
 
 }
