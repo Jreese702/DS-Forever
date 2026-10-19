@@ -278,17 +278,26 @@ def main():
         step(f, 1 / 60)
     chk("cam: the nav point locks the offset to the camera (%.3f, want %.3f), src nav" % (C.cam.off, cam), abs(C.cam.off - cam) < 0.01 and C.cam.src == "nav")
     chk("cam: the shown heading follows the camera, not the character (%.3f)" % C.wrap(C.h), abs(C.wrap(C.h) - cam) < 0.02)
-    # cp8: lost, the camera's WORLD yaw is held while the CHARACTER turns and moves (a controller turns it to its movement)
-    G.nav.clamped = True; G.speed = 7; G.facing = 2.5
-    for i in range(180):
+    # cp9: lost, the compass turns LIVE with the character, the last measured offset fading over 1.5 s (test18: "doesnt spin 360")
+    G.nav.clamped = True; G.facing = 2.5
+    for i in range(6):
         G.t = G.t + 1 / 60
         step(f, 1 / 60)
-    chk("cam: off screen, the character turned and moving: the camera's yaw HELD (%.3f), src hold" % C.wrap(C.h),
-        abs(C.wrap(C.h) - cam) < 0.02 and C.cam.src == "hold")
-    for i in range(900):
+    off1 = C.cam.off
+    chk("cam: off screen: the offset starts fading at once (%.3f, src decay)" % off1, -0.524 < off1 < -0.45 and C.cam.src == "decay")
+    for i in range(300):
         G.t = G.t + 1 / 60
         step(f, 1 / 60)
-    chk("cam: no fix for 8 s: it settles back to the character (%.3f), src settle" % C.wrap(C.h), abs(C.wrap(C.h) - 2.5) < 0.05 and C.cam.src == "settle")
+    chk("cam: after 5 s the compass is on the character (%.3f)" % C.wrap(C.h), abs(C.wrap(C.h) - 2.5) < 0.02)
+    hs = []
+    for k in range(72):                                   # the character turns a full circle, 5 degrees a frame-step
+        G.facing = C.wrap(2.5 + math.radians(5 * (k + 1)))
+        for i in range(4):
+            G.t = G.t + 1 / 60
+            step(f, 1 / 60)
+        hs.append(C.wrap(C.h))
+    turned = sum(abs(C.wrap(hs[i] - hs[i - 1])) for i in range(1, len(hs)))
+    chk("cam: the compass spins the full 360 with the character (%.0f degrees)" % math.degrees(turned), math.degrees(turned) > 340)
     G.speed = 0
 
     # the TEST16 LOG (cp7, 12:56:12 .. 12:56:32), its exact numbers: the route pin super-tracked; each nav sample's pin bearing as
@@ -319,13 +328,18 @@ def main():
             put_pin(camw - math.atan((nx - c0) / c0))
             want = camw
         else:
-            want = want_prev
+            want = None                                   # cp9: off screen, the character's facing + the fading offset
         G.nav = L.table_from({"x": nx, "y": 400.0, "clamped": clamped})
         G.speed = 7 if clamped else 0
         run_frames()
-        chk("test16 %s (f %.3f, nx %.1f%s): the compass shows the camera %.3f (got %.3f)"
-            % (ts, fac, nx, ", clamped" if clamped else "", want, C.wrap(C.h)), abs(C.wrap(C.wrap(C.h) - want)) < 0.03)
-        want_prev = want
+        if want is None:
+            exp_h = C.wrap(fac + C.wrap(want_prev - log[1][1]) * math.exp(-1.5 / 1.5))
+            chk("test16 %s (clamped, the character at %.3f): the compass follows the character + the fading offset (%.3f, got %.3f)"
+                % (ts, fac, exp_h, C.wrap(C.h)), abs(C.wrap(C.wrap(C.h) - exp_h)) < 0.05)
+        else:
+            chk("test16 %s (f %.3f, nx %.1f): the compass shows the camera %.3f (got %.3f)"
+                % (ts, fac, nx, want, C.wrap(C.h)), abs(C.wrap(C.wrap(C.h) - want)) < 0.03)
+        want_prev = want if want is not None else want_prev
     L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end")
     G.pin = None; G.speed = 0
     G.speed = 0; G.quest = None; C.read(True)
