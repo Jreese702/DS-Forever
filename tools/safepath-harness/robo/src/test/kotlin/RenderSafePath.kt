@@ -802,7 +802,11 @@ class RenderSafePath {
             val v0 = cg.at(p0[0], p0[1]); val island = flood(v0[0], v0[1], 400_000)
             // an "island" a walk reaches the mainland from is none: no swim offered (the review's M8)
             if (island.size >= SWIM_ISLAND_MAX) { println("SWIM ${o.optString("name")}: its ground (${island.size} vertices) joins the mainland - no swim"); continue }
-            // the swim: from the island's ground through the water, nearest first, to ground of a far bigger piece
+            // the swim: from the island's ground through the water, nearest first, to ground of a far bigger piece - or, when the spec names
+            // its "shore" (a spot on a small beach a walk reaches, as Faldir's Cove's tunnel beach), to that piece's ground
+            val shore = o.optJSONObject("shore")?.let { xy(it.optJSONArray("xy")) }?.let { s -> val v = cg.at(s[0], s[1]); flood(v[0], v[1], 400_000) }
+                ?.takeIf { it.isNotEmpty() && it.none { k -> k in island } }
+            if (o.has("shore") && shore == null) println("SWIM ${o.optString("name")}: its shore's ground not found (or the island's own) - the mainland instead")
             val dist = HashMap<Long, Double>(); val prev = HashMap<Long, Long>()
             val pq = java.util.PriorityQueue<Pair<Double, Long>>(compareBy { it.first })
             for (k in island) { val i = k.toInt(); val j = (k shr 32).toInt()
@@ -816,7 +820,8 @@ class RenderSafePath {
                     val nd = d + Climb.STEP * Math.hypot(di.toDouble(), dj.toDouble())
                     if (dryAt(ni, nj)) {
                         if (cg.step(i, j, di, dj) == Climb.WALL || deep(cg.wx(j), cg.wy(i)).not()) continue
-                        if (flood(ni, nj, 20_000).size < 20_000) continue             // another islet, not the mainland
+                        if (shore != null) { if (nk !in shore) continue }
+                        else if (flood(ni, nj, 20_000).size < 20_000) continue        // another islet, not the mainland
                         prev[nk] = k; dist[nk] = nd; landed = nk; break
                     }
                     if (nd < (dist[nk] ?: Double.MAX_VALUE)) { dist[nk] = nd; prev[nk] = k; pq.add(nd to nk) }
