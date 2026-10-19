@@ -744,8 +744,9 @@ class WorldMapRoomView(context: Context) : View(context) {
     private var lastBase = 0f
     private fun animating(): Boolean = System.currentTimeMillis() - drawerAt < DRAWER_MS || System.currentTimeMillis() - shiftAt < SHIFT_MS
 
-    /** the drawer is out on every map but the world (Azeroth) */
-    private fun panelWanted(id: Int = shown) = (model.maps[id]?.type ?: 3) > 1
+    /** the drawer (the quest side bar) is on every map but the world (Azeroth); out while the player keeps it out (X) */
+    private fun sideBarHere(id: Int = shown) = (model.maps[id]?.type ?: 3) > 1
+    private fun panelWanted(id: Int = shown) = sideBarHere(id) && sideBarOn()
 
     /** slide the drawer out / in ([now] = no slide, as the room opens) */
     private fun setDrawer(on: Boolean, now: Boolean = false) {
@@ -811,7 +812,7 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     /** the quest markers the cursor can rest on (while Show: has them): id, x, y */
     private fun questMarks(): List<Triple<Int, Float, Float>> =
-        if (!on("quests") || !questsShown()) emptyList()
+        if (!on("quests")) emptyList()
         else layerMarks().filter { it.a >= 0.5f }.map { Triple(it.m.id, (it.u - pl.left) / pl.width(), (it.v - pl.top) / pl.height()) }
 
     /** where the things sit (to put the cursor on one): quest markers and the zone's capitals (a capital's key is minus its map id) in
@@ -918,7 +919,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         return MapRoomKeys.Ctx(region, isZoneView() || hoverQuest != null, cursor, hoverQuest, selQuest.takeIf { it != 0 },
             hasParent = model.parentOf(shown) != null, listHasQuests = rows.isNotEmpty(),
             listHeader = header, hoverCity = hoverCity ?: hoverNear, hoverFocused = hoverQuest != null && hoverQuest == focusQid,
-            hoverTracked = hoverQuest?.let { q -> logEntry(q)?.let { trackedQ(it) } } ?: false, questsOn = questsShown())
+            hoverTracked = hoverQuest?.let { q -> logEntry(q)?.let { trackedQ(it) } } ?: false, sideBarOn = sideBarOn(), sideBarHere = sideBarHere())
     }
 
     // ---------------------------------------------------------------- THE QUEST BOOK (the user after b104: every quest, by zone)
@@ -1426,7 +1427,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (on("quests")) drawQuestAreas(c)
         drawLayerQuests(c)                  // the other layers' discs and counts
         drawCursor(c)                       // over the art and the objective areas, under every marker (the user: "under that numbered circle")
-        if (on("quests") && questsShown()) {
+        if (on("quests")) {
             val fadeA = layOf(shown)?.shown ?: 1f
             val order = mapOrder()
             // THE HOVERED MARKER IS LIT (the user after b101: "I would rather the cursor sort of just highlight the selectable thing"): a
@@ -1621,9 +1622,12 @@ class WorldMapRoomView(context: Context) : View(context) {
     // ---- THE QUESTS ON THE MAPS (the user on test61: "show all of the quests on the maps with the yellow circles"; "Before going into
     // the zone, the yellow circle just says the number of quests in that zone"). A zone's quests are its marks (the game's own
     // GetQuestsOnMap, Map.lua mapquests; a capital's counted in its zone); on a continent each zone with any gets ONE yellow circle
-    // with their count at its middle, on the world map each continent one. X shows / hides them (the "questcircles" switch).
-    private fun questsShown(): Boolean = prefs.getBoolean("questcircles", true)
-    private fun toggleQuestCircles() { prefs.edit().putBoolean("questcircles", !questsShown()).apply(); invalidate() }
+    // with their count at its middle, on the world map each continent one. Show:'s Quest Objectives shows / hides them (X did until
+    // test12; X is the side bar's now, and its old "questcircles" switch is no longer read).
+    // THE SIDE BAR KEPT (the user after test12: "I meant the side bar to give more map space"): X collapses / brings out the quest
+    // drawer, the map the room's whole width; kept across app lives with Show:'s switches ("sidebar")
+    private fun sideBarOn(): Boolean = prefs.getBoolean("sidebar", true)
+    private fun toggleSideBar() { prefs.edit().putBoolean("sidebar", !sideBarOn()).apply(); setDrawer(panelWanted()) }
     /** the distinct quests on map [zone] and the capitals in it */
     private fun questsIn(zone: Int): Set<Int> {
         val out = HashSet<Int>()
@@ -1660,7 +1664,7 @@ class WorldMapRoomView(context: Context) : View(context) {
      */
     private fun drawLayerQuests(c: Canvas) {
         countHits.clear()
-        if (!on("quests") || !questsShown()) return
+        if (!on("quests")) return
         for (l in layers()) {
             val ca = l.vis * (1f - l.a)
             if (ca <= 0.004f) continue
@@ -2126,7 +2130,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         MapRoomKeys.Prompt.SHOW_QUESTS -> Prompt(listOf(glyph("x")), "Show quests")
         MapRoomKeys.Prompt.HIDE_QUESTS -> Prompt(listOf(glyph("x")), "Hide quests")
         MapRoomKeys.Prompt.MORE -> Prompt(listOf(glyph("y")), "More")
-        MapRoomKeys.Prompt.ZOOM -> Prompt(listOf(glyph("lb"), glyph("rb")), "Zoom")
+        MapRoomKeys.Prompt.ZOOM -> Prompt(listOf(MapRoomKeys.ZOOM_GLYPH), "Zoom")
     }
 
     /**
@@ -2482,7 +2486,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             MapRoomKeys.Do.ZoomIn -> { hereTarget = 0; fly((if (flying()) flyZ else zoom) * 1.6f, ccx, ccy) }
             MapRoomKeys.Do.ZoomOut -> { hereTarget = 0; fly((if (flying()) flyZ else zoom) / 1.6f, if (flying()) flyX else panX, if (flying()) flyY else panY) }
             is MapRoomKeys.Do.Open -> goTo(d.zone)
-            MapRoomKeys.Do.ToggleQuests -> toggleQuestCircles()
+            MapRoomKeys.Do.ToggleSideBar -> toggleSideBar()
             is MapRoomKeys.Do.OpenQuest -> qp.open(d.quest)
             is MapRoomKeys.Do.TrackFocus -> trackFocus(d.quest)
             is MapRoomKeys.Do.ToggleTrack -> toggleTrack(d.quest)

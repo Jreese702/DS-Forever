@@ -2102,10 +2102,23 @@ object UiKit {
      * the one it is asked for.
      */
     fun pad(c: Canvas, name: String, cx: Float, cy: Float, size: Float = 70f, alpha: Int = 255) {
+        val r = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
+        // a stick's up AND down (Glyphs.upDown, the Map room's zoom): the game's "down" glyph whole (the stick, the arrow under it),
+        // then its "up" glyph's arrow over it (the 64 px art's top 17 rows: the stick starts lower in both, at the same place)
+        Glyphs.upDown(name)?.let { (up, down) ->
+            val u = tex("pad_$up"); val d = tex("pad_$down")
+            if (u != null && d != null) {
+                pBmp.alpha = alpha
+                c.drawBitmap(d, null, r, pBmp)
+                c.save(); c.clipRect(r.left, r.top, r.right, r.top + r.height() * 17f / 64f); c.drawBitmap(u, null, r, pBmp); c.restore()
+                pBmp.alpha = 255
+                return
+            }
+        }
         // f-abxy-split: every glyph in the chosen BUTTON GLYPHS set, whatever set a caller named (a missing picture: the named one)
         val b = tex("pad_" + Glyphs.translate(name, CastSettings.buttonLayout)) ?: tex("pad_$name") ?: return
         pBmp.alpha = alpha
-        c.drawBitmap(b, null, RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f), pBmp)
+        c.drawBitmap(b, null, r, pBmp)
         pBmp.alpha = 255
     }
 
