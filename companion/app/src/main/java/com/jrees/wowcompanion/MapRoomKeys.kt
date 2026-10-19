@@ -14,7 +14,7 @@ package com.jrees.wowcompanion
  *   MAP   the left stick: the free cursor (the view, [cursorStep]). A: open the zone / capital under it; on a quest marker track + focus
  *         it (nothing on the focused one). X: up a level; on a quest marker track / untrack it. D-pad right: the quest list; up,
  *         down, left: nothing (the user after b109). Y: the shown map's neighbours (More actions).
- *         B: Home. LB / RB: zoom out / in. Select / View: Show: (the game's own filter button; Start is the app's pause wheel
+ *         B: Home. LB / RB: zoom out / in (the right stick up / down too, smoothly: the view). X: the quest side bar. Select / View: Show: (the game's own filter button; Start is the app's pause wheel
  *         from every room, the user 2026-10-09).
  *   LIST  D-pad up / down: the rows; left: back to the map. A: a header opens / closes its group, a quest is tracked + focused.
  *         X: track or untrack. Y on a quest: its options, the game's quest-log menu ([questOptions]; the user after b108: "When
@@ -35,8 +35,10 @@ object MapRoomKeys {
         object ToList : Do()
         data class ToggleGroup(val zone: String) : Do()
         object ZoomIn : Do()
-        /** X on the map: the yellow quest circles shown / hidden (b-maproom-quests) */
-        object ToggleQuests : Do()
+        /** X on the map: the quest side bar collapsed / out, the map the room's whole width (the user after test12: "on the Show/Hide
+         *  quests button I didnt mean the bubbles on the map, I meant the side bar to give more map space"; the bubbles keep Show:'s
+         *  Quest Objectives) */
+        object ToggleSideBar : Do()
         /** A on a quest circle: its quest panel (b-maproom-quests) */
         data class OpenQuest(val quest: Int) : Do()
         object ZoomOut : Do()
@@ -51,13 +53,14 @@ object MapRoomKeys {
      * where the cursor is: [zoneView] = a zone (quest markers) rather than a continent / the world (zones); [hoverZone] / [hoverQuest] /
      * [hoverCity] = the zone / quest marker / map to open (a capital, or a neighbouring zone in a zone's art) under the map cursor (a
      * marker wins over a map around it); [hoverFocused] / [hoverTracked] = that quest is the focused one / tracked; [listQuest] /
-     * [listHeader] = the list cursor's row; [hasParent] = there is a level up; [listHasQuests] = the quest list has a row to go to
+     * [listHeader] = the list cursor's row; [hasParent] = there is a level up; [listHasQuests] = the quest list has a row to go to;
+     * [sideBarHere] = this map has the quest side bar (all but the world), [sideBarOn] = the player keeps it out (X)
      */
     class Ctx(
         val region: Region, val zoneView: Boolean, val hoverZone: Int?, val hoverQuest: Int?, val listQuest: Int?,
         val hasParent: Boolean, val listHasQuests: Boolean,
         val listHeader: String? = null, val hoverCity: Int? = null, val hoverFocused: Boolean = false, val hoverTracked: Boolean = false,
-        val questsOn: Boolean = true,
+        val sideBarOn: Boolean = true, val sideBarHere: Boolean = true,
     )
 
     fun press(k: String, c: Ctx): Do {
@@ -87,9 +90,10 @@ object MapRoomKeys {
             "PADDUP", "PADDDOWN", "PADDLEFT" -> Do.None
             "PADDRIGHT" -> if (c.listHasQuests) Do.ToList else Do.None
             // the user on test61: "Selecting a zone with A opens that zone's quests", "Selecting a quest with A opens that quest in the
-            // quest panel" (Track / Focus are the panel's and the list's now); "Change X to show / hide quests"
+            // quest panel" (Track / Focus are the panel's and the list's now); "Change X to show / hide quests" - the SIDE BAR (after
+            // test12), so nothing on the world, which has none
             "PAD1" -> if (quest != null) Do.OpenQuest(quest) else openable(c)?.let { Do.Open(it) } ?: Do.None
-            "PAD3" -> Do.ToggleQuests
+            "PAD3" -> if (c.sideBarHere) Do.ToggleSideBar else Do.None
             // one zoom on every map, the world to a city (test53: "zoom out all the way to continents ... all the way in to the cities")
             "PADLSHOULDER" -> Do.ZoomOut
             "PADRSHOULDER" -> Do.ZoomIn
@@ -104,16 +108,20 @@ object MapRoomKeys {
     @Suppress("UNUSED_PARAMETER")
     fun bLeadsHome(c: Ctx): Boolean = true            // B is Home everywhere (the user after b104)
 
+    /** the Zoom prompt's glyph: the right stick with the game's white arrows over and under it (UiKit.pad draws the pair as one) */
+    const val ZOOM_GLYPH = "gen_rstickupdown"
+
     /** the legend's lines on the map side (the game's footer; the view draws them): which prompts show for [c] */
     enum class Prompt { CHANGE_MAP, FOCUS_TRACK, FOCUS, TRACK, UNTRACK, BACK, QUESTS, OPEN, OPEN_QUEST, SHOW_QUESTS, HIDE_QUESTS, MORE, ZOOM }
 
     /** the map side's legend, the current mapping (the user on test61: "the glyphs need to be updated"): A Open / Open quest, X Show /
-     *  Hide quests, Y More actions, B Back, LB / RB Zoom, D-pad right Quests */
+     *  Hide quests (the side bar; not on the world), Y More actions, B Back, the right stick up / down Zoom (LB / RB still step it; the
+     *  user after test12: "the Right stick Icon with little white arrows over and under it"), D-pad right Quests */
     fun legend(c: Ctx): List<Prompt> {
         val out = ArrayList<Prompt>()
         val quest = c.hoverQuest?.takeIf { c.zoneView && c.region == Region.MAP }
         if (quest != null) out += Prompt.OPEN_QUEST else if (openable(c) != null) out += Prompt.OPEN
-        out += if (c.questsOn) Prompt.HIDE_QUESTS else Prompt.SHOW_QUESTS
+        if (c.sideBarHere) out += if (c.sideBarOn) Prompt.HIDE_QUESTS else Prompt.SHOW_QUESTS
         if (c.hasParent) out += Prompt.MORE
         out += Prompt.ZOOM
         out += Prompt.BACK
