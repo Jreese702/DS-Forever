@@ -952,14 +952,9 @@ object SafePath {
             val tiles = object : LinkedHashMap<Long, Map<Int, Int>>(16, 0.75f, true) {
                 override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Map<Int, Int>>?) = size > 24
             }
-            // each root's water and ground, kept while near (the water grid reads them cell by cell)
-            class Wet(val surface: FloatArray?, val ground: FloatArray?, val walks: List<(Double, Double) -> Boolean>)
             val objs = HashMap<Int, Map<Int, Int>>()
-            val wmoGroups = HashMap<Int, List<WorldBuildings.Group>>()
-            val m2Floors = HashMap<Int, FloatArray?>()            // each doodad model read once: its floor when it is a bridge, else null
-            val wets = object : LinkedHashMap<Long, Wet>(16, 0.75f, true) {
-                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Wet>?) = size > 24
-            }
+            // each continent's water (ZoneWater: its tiles' water and walkways kept while near)
+            val waterOf = HashMap<Int, ZoneWater>()
             var built = 0
             for ((i, e) in rects.entries.withIndex()) {
                 val (map, rect) = e.key to e.value
@@ -978,36 +973,12 @@ object SafePath {
                 }
                 z.write(job.file("safepath/zones/$map.bin"))
                 zones.drop(map)
-                fun wet(tc: Int, tr: Int): Wet {
-                    val key = (rect.c.toLong() shl 32) or MapHarvest.key(tc, tr).toLong()
-                    return wets[key] ?: run {
-                        val b = root[MapHarvest.key(tc, tr)]?.let { g.read(it) } ?: return@run Wet(null, null, emptyList())
-                        val surface = Terrain.water(b, lethal)
-                        // the outdoor walkways over the water (a bridge, a pier): only where the tile has water at all
-                        // each walkway by its DECK (its outdoor groups' own floor triangles), the box only where the groups can't be read
-                        val walks: List<(Double, Double) -> Boolean> = if (surface == null) emptyList() else {
-                            val obj = objs.getOrPut(rect.c) { mapRows[rect.c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) }?.let { Terrain.maidObj0(it) } ?: emptyMap() }
-                            val ob = obj[MapHarvest.key(tc, tr)]?.let { g.read(it) }
-                            ob?.let { WorldBuildings.placements(it, tilted = true) }?.flatMap { p ->
-                                val root = g.read(p.fid)
-                                val feet = WorldBuildings.walkways(p, wmoGroups.getOrPut(p.fid) { root?.let { WorldBuildings.groups(it) } ?: emptyList() })
-                                if (feet.isEmpty()) emptyList()
-                                else root?.let { WorldBuildings.deck(p, it) { id -> g.read(id) } }?.takeIf { !it.empty }?.let { d -> listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) && d.over(x, y, Terrain.surfaceAt(surface, tc, tr, x, y)) }) }
-                                    ?: feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } }
-                            }.orEmpty() + ob?.let { o ->
-                                // and the M2 bridges (Duskwood's covered bridge into Westfall), by their models' own names
-                                WorldBuildings.m2Decks(o, { x, y -> Terrain.wetNear(surface, tc, tr, x, y, WorldBuildings.M2_NEAR_WATER_YD) }) { fid ->
-                                    if (fid in m2Floors) m2Floors[fid] else g.read(fid)?.let { WorldBuildings.m2BridgeFloor(it) }.also { m2Floors[fid] = it } }
-                                    .map { d -> { x: Double, y: Double -> d.holds(x, y) && d.over(x, y, Terrain.surfaceAt(surface, tc, tr, x, y)) } }
-                            }.orEmpty()
-                        }
-                        Wet(surface, Terrain.tile(b)?.h, walks)
-                    }.also { wets[key] = it }
-                }
-                fun tileOf(wx: Double, wy: Double) = PlaceNames.locate(wx, wy).let { it[0] to it[1] }
-                Water.build(rect.t, rect.b, rect.l, rect.r, { wx, wy -> tileOf(wx, wy).let { (c, r) -> wet(c, r).walks.any { it(wx, wy) } } }) { wx, wy ->
-                    Water.depthOf(wx, wy, { c, r -> wet(c, r).surface }, { c, r -> wet(c, r).ground }) }
-                    .write(job.file("safepath/water/$map.bin"))
+                val wt0 = System.nanoTime()
+                waterOf.getOrPut(rect.c) {
+                    val obj = objs.getOrPut(rect.c) { mapRows[rect.c]?.let { g.read(it.int(MapHarvest.MAP_WDT)) }?.let { Terrain.maidObj0(it) } ?: emptyMap() }
+                    ZoneWater(lethal, { tc, tr -> root[MapHarvest.key(tc, tr)]?.let { g.read(it) } }, { tc, tr -> obj[MapHarvest.key(tc, tr)]?.let { g.read(it) } }) { g.read(it) }
+                }.build(rect).write(job.file("safepath/water/$map.bin"))
+                SafePathDiag.harvestStep(id, map, (System.nanoTime() - wt0) / 1_000_000)
                 waters.drop(map)
                 built++
                 job.progress(i + 1, rects.size, "")

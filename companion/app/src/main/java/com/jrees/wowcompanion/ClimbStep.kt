@@ -90,6 +90,8 @@ object ClimbStep : ArtHarvest.Step {
             if (Terrain.lethal.isEmpty()) g.db2(Terrain.DB_LIQUID_TYPE)?.rows(strings = setOf(0))?.associate { it.id to it.str(0) }?.let { Terrain.lethal = Terrain.lethalLiquids(it) }
             val capitals = CityExits.CITIES.mapNotNull { c -> rects[c]?.let { r -> doubleArrayOf(r.t, r.b, r.l, r.r) } }
             var tier0Left = TIER0_MAX
+            // what the device has now for the zones near the player (the WCMAP log: SafePathDiag)
+            SafePathDiag.coverage(ArtHarvest.rootDir, order(rects, MapHarvestSteps.near, emptyList()).take(TIER0_MAX))
             while (true) {
                 if (!Settings.safePathV2) { line = "Off"; return }
                 val asked = synchronized(wanted) { wanted.toList() }
@@ -112,9 +114,11 @@ object ClimbStep : ArtHarvest.Step {
                 tier0Left--
                 val ms = (System.nanoTime() - t0) / 1_000_000
                 line = "${done.size} of ${rects.count { it.value.c == rect.c }} zones on this continent; last: $map in ${ms / 1000.0} s"
+                SafePathDiag.harvestStep(id, map, ms, why = if (grid == null) "no terrain" else null)
                 android.util.Log.i("WCMAP", "climb: zone $map ${if (grid == null) "has no terrain" else "${grid.nx} x ${grid.ny} vertices, ${grid.rooms?.size ?: 0} rooms"} in $ms ms")
             }
             line = "Ready: ${done.size} zones"
+            SafePathDiag.coverage(ArtHarvest.rootDir, order(rects, MapHarvestSteps.near, emptyList()).take(TIER0_MAX), force = true)
         }
     }
 

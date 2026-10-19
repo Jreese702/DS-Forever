@@ -674,6 +674,7 @@ object Climb {
             /** this thread's scratch for [n] vertices, the first [n] of each array set as a fresh leg's */
             fun of(n: Int): Scratch {
                 if (seen.get() != released) { mine.set(null); seen.set(released) }
+                if (n > (peak.get() ?: 0)) peak.set(n)
                 val sc = mine.get()?.takeIf { it.size >= n } ?: Scratch(n).also { mine.set(it) }
                 java.util.Arrays.fill(sc.dist, 0, n, Double.MAX_VALUE); java.util.Arrays.fill(sc.prev, 0, n, -1)
                 java.util.Arrays.fill(sc.extra, 0, n, Double.NaN); java.util.Arrays.fill(sc.via, 0, n, -1)
@@ -683,6 +684,10 @@ object Climb {
             fun release() { released++ }
             /** this thread's scratch's size now (the tests) */
             fun sizeHere(): Int = mine.get()?.size ?: 0
+            private val peak = ThreadLocal<Int>()
+            /** the biggest window (vertices) a leg on this thread asked for since [resetPeak] (the diagnostics' scratch peak) */
+            fun peakHere(): Int = peak.get() ?: 0
+            fun resetPeak() { peak.set(0) }
         }
     }
     /** a straight line longer than this (a diagonal step and a half) is a cut, never through a room ([Grid.solid]) */

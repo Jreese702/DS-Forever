@@ -28,6 +28,8 @@ object SafePathV2 {
 
     private class Danger(val key: String, val costs: DangerInputs.Costs)
     @Volatile private var danger: Danger? = null
+    private class Walled(val key: String, val net: SafePath.Net)
+    @Volatile private var walled: Walled? = null
 
     /**
      * quest's way in zone [map] (world [rect], continent [rect].c) from world [from] to [to] ([toExit]: to the network's exit there) for
@@ -37,35 +39,62 @@ object SafePathV2 {
     fun plan(ctx: Context?, map: Int, rect: MapHarvest.Rect, mine: Int, level: Int, from: DoubleArray, to: DoubleArray, toExit: Boolean,
              cancelled: () -> Boolean): Way? {
         val st = stamp(map, mine, level)
-        val g = Climb.files.get(map) ?: run { ctx?.let { ClimbStep.want(it, map) }; lastWhy = "no lattice for map $map yet (asked for)"; return null }
+        val g = Climb.files.get(map) ?: run {
+            ctx?.let { ClimbStep.want(it, map) }; lastWhy = "no lattice for map $map yet (asked for)"
+            SafePathDiag.coverage(ArtHarvest.rootDir, listOf(map))
+            return null }
         val wg = SafePath.waters.get(map)
-        val net = SafePath.nets.get(map) ?: SafePath.Net(map, rect.c, "", emptyList(), emptyList(), emptyList())
+        val net0 = SafePath.nets.get(map) ?: SafePath.Net(map, rect.c, "", emptyList(), emptyList(), emptyList())
         val zg = SafePath.zones.get(map); val ar = SafePath.areas()
-        val rooms = g.solid ?: { _, _ -> false }
-        val key = "$map:$mine:$level:${DangerStore.version}:${SafePath.waters.version}:${Climb.files.version}:${zg != null}"
-        val dc = danger?.takeIf { it.key == key }?.costs ?: run {
-            val here = DangerInputs.sided(DangerStore.spawns(map), rect, if (mine == TransportRoutes.HORDE) TransportRoutes.ALLIANCE else TransportRoutes.HORDE,
-                DangerInputs.FRIENDLY_MIN_LEVEL, DangerInputs.FRIENDLY_NAMES[map] ?: emptyList())
-            val own: (Double, Double) -> Boolean = if (zg != null && ar != null) { x, y -> ar.uiMap(zg.areaAt(x, y)) == map } else { _, _ -> true }
-            DangerInputs.costs(here, mine, level, rect, own, { x, y -> wg?.wading(x, y) == true }, rooms).also { danger = Danger(key, it) }
-        }
-        // deep water a wall (the harness's rule, ZoneInputs.deep, on the device's water grid): no deck or raw depth read on the device yet,
-        // so a bridge's cell is the bridge
-        val deep: (Double, Double) -> Boolean = { x, y -> val d = wg?.at(x, y) ?: Float.NaN
-            if (d.isNaN() || d == SafePath.Water.BRIDGE) false else !wg!!.wadeable(x, y) }
-        val waterAt: (Double, Double) -> Float = { x, y -> wg?.at(x, y) ?: Float.NaN }
-        val k = DangerGrid.strength(Settings.avoidDanger)
+        val own: (Double, Double) -> Boolean = if (zg != null && ar != null) { x, y -> ar.uiMap(zg.areaAt(x, y)) == map } else { _, _ -> true }
+        val key = "$map:$mine:$level:${DangerStore.version}:${SafePath.waters.version}:${Climb.files.version}:${ClimbStep.zonesMade}:${zg != null}"
+        val dc = danger?.takeIf { it.key == key }?.costs ?: costs(g, wg, DangerStore.spawns(map), rect, map, mine, level, own).also { danger = Danger(key, it) }
+        val deep = deepOf(wg)
+        val nkey = "$map:${SafePath.nets.version}:${Climb.files.version}:${ClimbStep.zonesMade}:${SafePath.waters.version}:${net0.edges.size}"
+        val net = walled?.takeIf { it.key == nkey }?.net ?: unwalled(net0, g, deep).also { walled = Walled(nkey, it) }
         val clear = Terrain.of(map)?.let { tg -> SafePath.clearOf { x, y -> Terrain.factor(tg.at(x, y)) } } ?: { _, _ -> true }
-        val sr = SafeRoute(g, dc.danger, dc.calm, k, deep, waterAt, { _, _ -> false }, null, Climb.Limits(cancelled = cancelled))
         val t0 = System.nanoTime()
-        val r = sr.plan(net, from, to, clear, emptyList(), toExit = toExit)
+        Climb.Scratch.resetPeak()
+        val r = route(g, wg, net, dc, DangerGrid.strength(Settings.avoidDanger), clear, from, to, toExit, Climb.Limits(cancelled = cancelled))
         val ms = (System.nanoTime() - t0) / 1_000_000
-        // THE HARD RULE, checked on what is handed out: every segment walkable on the lattice (a leg refused for its window falls back to a
-        // straight piece - never shown)
-        val bad = r.pts.zipWithNext().indexOfFirst { (a, b) -> !Climb.walkable(g, a, b, deep) }
-        if (bad >= 0 || r.pts.size < 2) { lastWhy = "map $map: the way's segment $bad crosses a wall or deep water (${r.pts.size} points, $ms ms) - not shown"; return null }
+        SafePathDiag.plan(map, ms, Climb.Scratch.peakHere().toLong(), Climb.Scratch.peakHere() * 24L, r?.reached == true, "safeLeg")
+        if (r == null) { lastWhy = "map $map: the way crosses a wall or deep water by the final check ($ms ms) - not shown"; return null }
         lastWhy = "map $map: ${r.pts.size - 2} flags, ${r.yd.toInt()} yd, ${if (r.reached) "reached" else "the goal not reached (to the nearest ground)"}, $ms ms"
         return Way(r.pts, r.reached, r.yd, st)
+    }
+
+    // ---------------------------------------------------------------- the device's way, pure (the parity test runs it too)
+
+    /** deep water a wall (the harness's rule, ZoneInputs.deep, on the device's water grid): no deck or raw depth read on the device yet,
+     *  so a bridge's water cell is the bridge */
+    fun deepOf(wg: SafePath.Water?): (Double, Double) -> Boolean = { x, y -> val d = wg?.at(x, y) ?: Float.NaN
+        if (d.isNaN() || d == SafePath.Water.BRIDGE) false else !wg!!.wadeable(x, y) }
+
+    /** the character's danger in zone [map] from its [spawns]: DangerInputs' (the device's friendly rules), the wade and the rooms */
+    fun costs(g: Climb.Grid, wg: SafePath.Water?, spawns: List<QuestieNpcs.Spawn>, rect: MapHarvest.Rect, map: Int, mine: Int, level: Int,
+              own: (Double, Double) -> Boolean): DangerInputs.Costs {
+        val here = DangerInputs.sided(spawns, rect, if (mine == TransportRoutes.HORDE) TransportRoutes.ALLIANCE else TransportRoutes.HORDE,
+            DangerInputs.FRIENDLY_MIN_LEVEL, DangerInputs.FRIENDLY_NAMES[map] ?: emptyList())
+        val rooms = g.solid ?: { _, _ -> false }
+        return DangerInputs.costs(here, mine, level, rect, own, { x, y -> wg?.wading(x, y) == true }, rooms)
+    }
+
+    /** the network's drafted ways that cross a wall on the lattice: walked by the ground's leg when it joins their ends within 1.5x
+     *  (a lip), else left out (SafePath.dropWalled, as the harness does before its routes) */
+    fun unwalled(net: SafePath.Net, g: Climb.Grid, deep: (Double, Double) -> Boolean): SafePath.Net =
+        SafePath.dropWalled(net, { a, b -> Climb.walkable(g, a, b, deep) }) { a, b ->
+            Climb.route(g, a, b, water = deep, limits = Climb.Limits())?.takeIf { it.reached }?.pts?.zipWithNext { p, q -> hypot(q[0] - p[0], q[1] - p[1]) }?.sum() }
+
+    /** the way from [from] to [to]: SafeRoute on lattice [g], water [wg], network [net], danger [dc] at strength [k]; null when a segment
+     *  of it fails the final check (every segment walkable on the lattice, off deep water - the hard rule, on what is handed out) */
+    fun route(g: Climb.Grid, wg: SafePath.Water?, net: SafePath.Net, dc: DangerInputs.Costs, k: Double, clear: (DoubleArray, DoubleArray) -> Boolean,
+              from: DoubleArray, to: DoubleArray, toExit: Boolean, limits: Climb.Limits?): SafeRoute.Result? {
+        val deep = deepOf(wg)
+        val waterAt: (Double, Double) -> Float = { x, y -> wg?.at(x, y) ?: Float.NaN }
+        val sr = SafeRoute(g, dc.danger, dc.calm, k, deep, waterAt, { _, _ -> false }, null, limits)
+        val r = sr.plan(net, from, to, clear, emptyList(), toExit = toExit)
+        if (r.pts.size < 2 || r.pts.zipWithNext().any { (a, b) -> !Climb.walkable(g, a, b, deep) }) return null
+        return r
     }
 
     /** the route's memory given back when the device asks (onTrimMemory): the lattices and the leg's scratch */
