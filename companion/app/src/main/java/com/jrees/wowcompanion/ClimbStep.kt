@@ -77,9 +77,11 @@ object ClimbStep : ArtHarvest.Step {
     private fun body(ctx: Context) {
         runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND) }
         Settings.init(ctx); ArtHarvest.init(ctx)
-        if (!Settings.safePathV2) { line = "Off"; return }
+        if (!Settings.safePathV2) { line = "Off"; android.util.Log.i("WCMAP", "climb: off (Settings > Map > SafePath v2 routing)"); return }
         val rects = rects(ctx)
-        val game = GameFiles.open(ctx) ?: run { line = "Waiting: ${GameFiles.lastWhy ?: "the game files could not be read"}"; return }
+        android.util.Log.i("WCMAP", "climb: start (near ${MapHarvestSteps.near?.first ?: "unknown"}, ${rects.size} zone rects)")
+        val game = GameFiles.open(ctx) ?: run { line = "Waiting: ${GameFiles.lastWhy ?: "the game files could not be read"}"
+            android.util.Log.w("WCMAP", "climb: ${line}"); return }
         game.use { g ->
             val made = File(ArtHarvest.rootDir ?: return, MADE).also { it.parentFile?.mkdirs() }
             val head = "${g.buildKey} rules ${Climb.RULES_VERSION} v$version"
