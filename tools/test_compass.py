@@ -28,6 +28,7 @@ function Region:IsShown() return self.shown == true end
 function Region:SetPoint(...) self.point = { ... } end
 function Region:ClearAllPoints() self.point = nil end
 function Region:SetSize(w, h) self.w, self.h = w, h end
+function Region:SetAllPoints(t) self.all = t end
 function Region:SetText(t) self.text = t end
 function Region:SetFont(f, s, fl) self.font, self.fsize, self.flags = f, s, fl end
 function Region:SetTextColor(r, g, b, a) self.col = { r, g, b, a } end
@@ -75,10 +76,39 @@ C_SuperTrack = {
     IsSuperTrackingUserWaypoint = function() return false end,
     GetSuperTrackedQuestID = function() return GAME.quest and 123 or 0 end,
 }
-C_QuestLog = { GetNextWaypoint = function(q) if GAME.quest then return GAME.map, GAME.quest[1], GAME.quest[2] end end }
+-- as on the Thor (test13): GetNextWaypoint answers only for another zone; the spot on the player's own map comes from
+-- GetQuestsOnMap (GAME.qsrc = "onmap") or GetNextWaypointForMap ("wpmap"); "wp" = another zone
+C_QuestLog = {
+    GetNextWaypoint = function(q) if GAME.quest and GAME.qsrc == "wp" then return GAME.map, GAME.quest[1], GAME.quest[2] end end,
+    GetNextWaypointForMap = function(q, m) if GAME.quest and GAME.qsrc == "wpmap" then return GAME.quest[1], GAME.quest[2] end end,
+    GetQuestsOnMap = function(m)
+        local out = { { questID = 999, x = 0.1, y = 0.1 } }
+        if GAME.quest and GAME.qsrc == "onmap" then out[2] = { questID = 123, x = GAME.quest[1], y = GAME.quest[2] } end
+        return out
+    end,
+}
+GAME.qsrc = "onmap"
+SENT = {}
+C_Map.HasUserWaypoint = function() return GAME.pin ~= nil end
 C_DeathInfo = { GetCorpseMapPosition = function() if GAME.corpse then return CreateVector2D(GAME.corpse[1], GAME.corpse[2]) end end }
 WorldMapFrame = { IsShown = function() return GAME.worldmap end }
-WowCompanion = {}
+GAME.t = 100
+function GetTime() return GAME.t end
+function GetCameraZoom() return 12.5 end
+CVAR_WRITES = 0
+C_CVar = { GetCVar = function(k) if k == "cameraFov" then return "90" end end, SetCVar = function() CVAR_WRITES = CVAR_WRITES + 1 end }
+GAME.nav = nil         -- { x, y, clamped }
+local NAV = setmetatable({}, Region)
+function NAV:GetCenter() return GAME.nav.x, GAME.nav.y end
+function NAV:GetEffectiveScale() return 1.0 end
+C_Navigation = {
+    GetFrame = function() if GAME.nav then return NAV end end,
+    WasClampedToScreen = function() return GAME.nav and GAME.nav.clamped or false end,
+    HasValidScreenPosition = function() return GAME.nav ~= nil end,
+    GetTargetState = function() return 2 end,
+    GetDistance = function() return 141.4 end,
+}
+WowCompanion = { send = function(j) SENT[#SENT + 1] = j end, encode = function(t) return t end }
 WowCompanionDB = {}
 '''
 
@@ -116,7 +146,7 @@ def main():
     ls = letters(lo)
     chk("facing east: E centred", abs(ls["E"].x) < 0.01)
     chk("NE left of E, SE right", ls["NE"].x < 0 < ls["SE"].x)
-    chk("N and S at the ends (+-420 px)", abs(abs(ls["N"].x) - 420) < 0.01 and abs(abs(ls["S"].x) - 420) < 0.01 and ls["N"].x < 0)
+    chk("N and S at the ends (+-400 px)", abs(abs(ls["N"].x) - 400) < 0.01 and abs(abs(ls["S"].x) - 400) < 0.01 and ls["N"].x < 0)
     chk("nothing behind shown (no W)", "W" not in ls)
     chk("ticks every 15 degrees between the letters (8 in +-90)", len(lo.ticks) == 8)
     chk("the ends fade (N dimmer than E)", ls["N"].fade < ls["E"].fade and abs(ls["E"].fade - 1) < 1e-6)
@@ -129,17 +159,24 @@ def main():
     ms, ls = marks(lo), letters(lo)
     chk("the pin due east sits on the centre", abs(ms["pin"].x) < 0.5 and not ms["pin"].off)
     chk("its distance: 100 yd", ms["pin"].dist == "100 yd")
-    chk("the quest NE sits on NE's spot", abs(ms["quest"].x - ls["NE"].x) < 0.5)
+    chk("the quest NE sits on NE's spot (its spot from GetQuestsOnMap, as on the Thor)", abs(ms["quest"].x - ls["NE"].x) < 0.5 and C.qsrc == "onmap")
     chk("the quest's distance rounds to 5 above 50 (141 -> 140 yd)", ms["quest"].dist == "140 yd")
     chk("LIFT: E under the pin lifts 25 px and shrinks 5", ls["E"].lifted and ls["E"].y == 32 - 25 and ls["E"].size == 17)
     chk("LIFT: NE under the quest lifts too", ls["NE"].lifted and ls["NE"].size == 12)
     chk("SE (no marker) stays on the line", not ls["SE"].lifted and ls["SE"].y == 32)
 
+    G.qsrc = "wpmap"
+    chk("the quest's spot from GetNextWaypointForMap", "quest" in marks(lay()) and C.qsrc == "wpmap")
+    G.qsrc = "wp"
+    chk("... or GetNextWaypoint (another zone)", "quest" in marks(lay()) and C.qsrc == "wp")
+    G.qsrc = "nowhere"
+    chk("no spot anywhere: no quest marker, qsrc none", "quest" not in marks(lay()) and C.qsrc == "none")
+    G.qsrc = "onmap"
     # a corpse behind (west): pinned 48 px in from the LEFT or RIGHT end, flagged off-bar
     G.dead = True
     G.corpse = L.table(0.3, 0.52)
     ms = marks(lay())
-    chk("the corpse behind is off the bar, pinned at +-402", ms["corpse"].off and abs(abs(ms["corpse"].x) - 402) < 0.01)
+    chk("the corpse behind is off the bar, pinned at +-382", ms["corpse"].off and abs(abs(ms["corpse"].x) - 382) < 0.01)
     ls = letters(lay())
     end = "S" if ms["corpse"].x > 0 else "N"
     chk("the end letter under the pinned corpse (%s) lifts too" % end, ls[end].lifted)
@@ -149,8 +186,8 @@ def main():
     # turning: facing north puts the east pin at the right end, the NE quest at +210
     G.facing = 0.0
     ms = marks(lay())
-    chk("facing north: the east pin at the right end (+420)", abs(ms["pin"].x - 420) < 0.5)
-    chk("facing north: the NE quest halfway right (+210)", abs(ms["quest"].x - 210) < 0.5)
+    chk("facing north: the east pin at the right end (+400)", abs(ms["pin"].x - 400) < 0.5)
+    chk("facing north: the NE quest halfway right (+200)", abs(ms["quest"].x - 200) < 0.5)
 
     # show / hide
     C.refresh()
@@ -179,12 +216,52 @@ def main():
     chk("markers use the game's atlases: " + ", ".join(atl),
         set(atl) == {"Waypoint-MapPin-Tracked", "questnormal"})
     fs = [k for k in shown if k.kind == "fs" and k.text in ("N", "NE", "E", "SE", "S")]
+    endN = [k for k in fs if k.text == "N"]
+    midE = [k for k in fs if k.text == "E"]
+    chk("letters fade by ALPHA toward the ends (N at the end %.2f, E centred %.2f)" % (endN[0].col[4], midE[0].col[4]),
+        endN and midE and endN[0].col[4] < 0.25 and midE[0].col[4] > 0.99 and endN[0].col[1] == 1)
     chk("letters in FRIZQT, OUTLINE", fs and all(k.font == "Fonts\\FRIZQT__.TTF" and k.flags == "OUTLINE" for k in fs))
     k = 768 / 1080
-    chk("the band is 900 x 76 px in UI units", abs(f.w - 900 * k) < 1e-6 and abs(f.h - 76 * k) < 1e-6)
+    chk("the band is 860 x 76 spec px in UI units (1/1080 of UIParent's height each)", abs(f.w - 860 * k) < 1e-6 and abs(f.h - 76 * k) < 1e-6)
+    chk("the ground is ONE texture: our own soft band", L.eval("#WowCompanion.compass.ground") == 1
+        and "compass_band" in L.eval("WowCompanion.compass.ground[1].tex"))
     names = [n for n in ("SetBinding", "SetCVar", "SetRaidTarget", "SetOverrideBinding") if n in open(TRAIL, encoding="utf-8").read()]
     chk("no binding / CVar / raid mark calls in Trail.lua", not names)
 
+    sent = L.globals().SENT
+    diag = [sent[i] for i in range(1, len(sent) + 1) if sent[i].probe == "compass"]
+    chk("the diagnostic line: pin, quest and its source, the marker count (%d sent)" % len(diag),
+        len(diag) == 1 and diag[0].pin is True and diag[0].quest is True and diag[0].qsrc == "onmap" and diag[0].n == 2 and diag[0].uwp is True)
+    # the camera-yaw probe (one shot, read only): starts 20 s after login once the game's nav diamond exists, logs 4 samples a line
+    P = C.probe
+    L.eval("WowCompanion.compass.probe")
+    G.t = 100.0
+    L.eval("(function() local P = WowCompanion.compass.probe; P.loginAt = 100 end)()")
+    P.tick()
+    chk("probe: nothing before the nav diamond exists", not P.on)
+    G.nav = L.table_from({"x": 1100.0, "y": 500.0, "clamped": False})
+    G.t = 110.0; P.tick()
+    chk("probe: waits 20 s after the login", not P.on)
+    G.t = 121.0
+    before = len(sent)
+    for i in range(8):
+        G.t = 121.0 + i * 0.25
+        P.tick()
+    probe = [sent[i] for i in range(before + 1, len(sent) + 1) if sent[i].probe == "camyaw"]
+    starts = [x for x in probe if x.op == "start"]
+    samples = [x for x in probe if x.op == "s"]
+    chk("probe: a start line with the screen, the FOV (read) and the columns", len(starts) == 1 and starts[0].fov == "90" and starts[0].ui.h == 768)
+    first = samples[0].s[1] if samples else ""
+    chk("probe: samples batched 4 a line: t,facing,navX,navY,... (%s)" % first,
+        len(samples) == 2 and first.split(",")[2] == "1100.0" and first.split(",")[5] == "false" and first.split(",")[9] != "nil")
+    for i in range(400):
+        G.t = 125.0 + i * 0.25
+        P.tick()
+    ends = [sent[i] for i in range(1, len(sent) + 1) if sent[i].probe == "camyaw" and sent[i].op == "end"]
+    chk("probe: ends after 360 samples, marked done once per set", len(ends) == 1 and ends[0].n == 360 and L.globals().WowCompanionDB.camProbe == "cp4")
+    n = len(sent); G.t = 300.0; P.tick()
+    chk("probe: never again (no more lines)", len(sent) == n)
+    chk("probe: no CVar written", L.globals().CVAR_WRITES == 0)
     if render:
         paint(f, kids, k, out)
         print("rendered", out)

@@ -82,14 +82,15 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp1", pool = {}, used = {} }
+WC.compass = { V = "cp4", pool = {}, used = {} }
 do
     local C = WC.compass
     local PI = math.pi
     local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end     -- (the game's Lua 5.1 has math.atan2; the harness's not)
     -- the spec's sizes, in the Thor's top-screen pixels (1920 x 1080); C.k turns them into UI units
-    C.SPEC = { w = 900, h = 76, top = 16, line = 32, half = 420, tick = 8, letter = 22, letter2 = 17, dist = 12, lift = 25, near = 22,
+    C.SPEC = { w = 860, h = 76, top = 16, line = 32, half = 400, tick = 8, letter = 22, letter2 = 17, dist = 12, lift = 25, near = 22,
                edge = 48 }
+    C.BAND = "Interface\\AddOns\\WowCompanion\\Media\\compass_band"       -- our own soft band (tools/make_compass_band.py)
     C.MARK = {
         pin    = { atlas = "Waypoint-MapPin-Tracked",   size = 28, red = false },
         quest  = { atlas = "questnormal",               size = 32, red = false },
@@ -112,13 +113,12 @@ do
         return not (type(WowCompanionDB) == "table" and WowCompanionDB.compass == false)          -- default ON
     end
 
-    -- UI units per top-screen pixel
+    -- UI units per spec pixel: the spec is drawn on a 1080-tall screen, so a spec pixel is 1/1080 of the screen's height in UIParent's
+    -- own units, whatever the physical or render resolution (test13: the physical size made it 1.3x too big on the Thor)
     function C.scale()
-        local ok, _, ph = pcall(GetPhysicalScreenSize)
         local okH, uh = pcall(function() return UIParent:GetHeight() end)
-        ph = ok and num(ph) or nil
         uh = okH and num(uh) or nil
-        C.k = (ph and uh and ph > 0) and (uh / ph) or (768 / 1080)
+        C.k = (uh and uh > 0) and (uh / 1080) or (768 / 1080)
         return C.k
     end
     function C.u(px) return px * (C.k or C.scale()) end
@@ -164,15 +164,34 @@ do
         local okS, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
         local okQ, qid = pcall(function() return C_SuperTrack.GetSuperTrackedQuestID() end)
         qid = okQ and num(qid) or nil
+        -- (test13: GetNextWaypoint answers only for a quest in ANOTHER zone, and this client has no QuestPOIGetIconInfo: the
+        -- quest's spot on the player's own map comes first, through the same reads Map.lua uses for its quest markers)
+        C.qsrc = nil
         if qid and qid > 0 and not (okS and onPin == true) then
-            local okN, m, x, y = pcall(C_QuestLog.GetNextWaypoint, qid)
-            if okN and num(m) and num(x) then
-                t.quest = C.world(m, x, y)
-            elseif me and me.map then
-                local okI, _, ix, iy = pcall(QuestPOIGetIconInfo, qid)
-                if okI and num(ix) and num(iy) then t.quest = C.world(me.map, ix, iy) end
+            if me and me.map then
+                local okF, fx, fy = pcall(C_QuestLog.GetNextWaypointForMap, qid, me.map)
+                if okF and num(fx) and num(fy) then
+                    t.quest, C.qsrc = C.world(me.map, fx, fy), "wpmap"
+                else
+                    local okL, qs = pcall(C_QuestLog.GetQuestsOnMap, me.map)
+                    if okL and type(qs) == "table" then
+                        for _, q in ipairs(qs) do
+                            local okQ2, id, qx, qy = pcall(function() return q.questID, q.x, q.y end)
+                            if okQ2 and id == qid and num(qx) and num(qy) then
+                                t.quest, C.qsrc = C.world(me.map, qx, qy), "onmap"
+                                break
+                            end
+                        end
+                    end
+                end
             end
+            if not t.quest then
+                local okN, m, x, y = pcall(C_QuestLog.GetNextWaypoint, qid)
+                if okN and num(m) and num(x) then t.quest, C.qsrc = C.world(m, x, y), "wp" end
+            end
+            C.qsrc = C.qsrc or "none"
         end
+        C.qid = qid
         -- the corpse, while dead or a ghost
         local okD, dead = pcall(UnitIsDeadOrGhost, "player")
         if okD and dead == true and me and me.map then
@@ -227,7 +246,8 @@ do
             local rel = C.wrap(math.rad(deg) - facing)
             if math.abs(rel) <= PI / 2 then
                 local x = -rel / (PI / 2) * S.half
-                local fade = 1 - (math.abs(rel) / (PI / 2)) ^ 2 * 0.65
+                local q = math.abs(rel) / (PI / 2)
+                local fade = 1 - q * q * 0.8
                 local name = C.NAMES[deg]
                 if name then
                     local size = (#name == 1) and S.letter or S.letter2
@@ -252,9 +272,6 @@ do
         t:SetTexture("Interface\\Buttons\\WHITE8X8")
         return t
     end
-    local function grad(t, orient, a1, a2)
-        pcall(function() t:SetGradient(orient, CreateColor(0, 0, 0, a1), CreateColor(0, 0, 0, a2)) end)
-    end
 
     function C.build()
         if C.frame then return C.frame end
@@ -267,26 +284,11 @@ do
         local S, u = C.SPEC, C.u
         f:SetSize(u(S.w), u(S.h))
         f:SetPoint("TOP", UIParent, "TOP", 0, -u(S.top))
-        -- the ground: a soft black band; its two halves fade to the top and bottom edges, its two ends fade out
-        local A, END = 0.69, 0.14
-        C.ground = {}
-        for row = 1, 2 do
-            for col = 1, 3 do
-                local t = plain(f)
-                local x0 = (col == 1) and 0 or (col == 2) and END or (1 - END)
-                local x1 = (col == 1) and END or (col == 2) and (1 - END) or 1
-                t:SetPoint("TOPLEFT", f, "TOPLEFT", u(S.w) * x0, -(row - 1) * u(S.h) / 2)
-                t:SetPoint("BOTTOMRIGHT", f, "TOPLEFT", u(S.w) * x1, -row * u(S.h) / 2)
-                if col == 2 then
-                    if row == 1 then grad(t, "VERTICAL", A, 0) else grad(t, "VERTICAL", 0, A) end     -- (bottom, top)
-                elseif col == 1 then
-                    grad(t, "HORIZONTAL", 0, A * 0.55)
-                else
-                    grad(t, "HORIZONTAL", A * 0.55, 0)
-                end
-                C.ground[#C.ground + 1] = t
-            end
-        end
+        -- the ground: our own soft band texture, its alpha already fading smoothly to every edge
+        local g = f:CreateTexture(nil, "BACKGROUND")
+        g:SetTexture(C.BAND)
+        g:SetAllPoints(f)
+        C.ground = { g }
         -- the 30 Hz redraw, only while shown
         local acc2 = 0
         f:SetScript("OnUpdate", function(_, el)
@@ -334,8 +336,10 @@ do
         local facing = C.facing()
         if not facing then f:Hide(); return end
         local me = C.me()
-        local L = C.layout(facing, me, C.targets(me))
+        local tg = C.targets(me)
+        local L = C.layout(facing, me, tg)
         C.last = L
+        C.diag(facing, me, tg, L)
         local u, S = C.u, C.SPEC
         C.used = {}
         for _, t in ipairs(L.ticks) do
@@ -347,7 +351,7 @@ do
         for _, l in ipairs(L.letters) do
             local fs = take("font")
             fs:SetFont(C.FONT, u(l.size), "OUTLINE")
-            if l.name == "N" then fs:SetTextColor(l.fade, 0.25 * l.fade, 0.25 * l.fade, 1) else fs:SetTextColor(l.fade, 0.82 * l.fade, 0, 1) end
+            if l.name == "N" then fs:SetTextColor(1, 0.25, 0.25, l.fade) else fs:SetTextColor(1, 0.82, 0, l.fade) end
             fs:SetText(l.name)
             fs:SetPoint("CENTER", f, "TOP", u(l.x), -u(l.y))
         end
@@ -380,6 +384,28 @@ do
             end
         end
         finish()
+    end
+
+    -- test13: one line every 5 s while shown, so a short log read tells what the compass has: the pin (and whether the game has a
+    -- user waypoint at all, and Map's route pin), the focused quest and where its spot came from, how many markers it drew.
+    -- It rides the next flush: no push of its own.
+    C.diagAt = -100
+    function C.diag(facing, me, tg, L)
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        if now - C.diagAt < 5 then return end
+        C.diagAt = now
+        local okH, has = pcall(function() return C_Map.HasUserWaypoint() end)
+        local okS, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
+        local route = type(WC.routeWp) == "table" and WC.routeWp.active and true or false
+        local line = {
+            type = "cap", probe = "compass", v = C.V,
+            f = math.floor(facing * 1000 + 0.5) / 1000, map = me and me.map or nil, me = me and true or false,
+            uwp = (okH and has == true) and true or false, st = (okS and onPin == true) and true or false, route = route,
+            pin = tg.pin and true or false, qid = C.qid, qsrc = C.qsrc, quest = tg.quest and true or false,
+            corpse = tg.corpse and true or false, n = #L.marks,
+        }
+        C.lastDiag = line
+        pcall(function() WC.send(WC.encode(line)) end)
     end
 
     -- shown or not: the player's choice, outdoors, a known facing, the world map closed
@@ -435,5 +461,112 @@ do
             C.frame, C.pool, C.used = nil, {}, {}
         end
         pcall(C.refresh)
+    end)
+end
+
+-- ================================================================== CAMERA-YAW PROBE (design probe 4; the user: "Yes, run the probe")
+-- READ ONLY, ONE SHOT: can the compass follow the CAMERA? The only handle in this client is the game's own navigation diamond
+-- (C_Navigation.GetFrame: the super-tracked quest or pin, placed on screen by the engine). This logs, 4 times a second for at most
+-- 90 s of samples in the first session after the add-on set arrives (WowCompanionDB.camProbe marks it done), whether the diamond's
+-- screen position can be read (plain or secret), whether it is clamped, the character's facing, the target's true bearing and the
+-- camera's field of view (C_CVar.GetCVar, a READ). No CVar written, no binding, no secure frame, nothing of the game's touched.
+-- One {"type":"cap","probe":"camyaw"} line a second (no flush of its own), a "start" line, an "end" line.
+WC.compass.probe = { V = "cy1", DONE = "cp4", MAX = 360, n = 0, buf = {} }
+do
+    local C, P = WC.compass, WC.compass.probe
+    local num = C.num
+
+    local function tag(v)                       -- plain number, "secret", or nil
+        if type(issecretvalue) == "function" and issecretvalue(v) then return "secret" end
+        return num(v)
+    end
+    local function send(t)
+        t.type, t.probe, t.v = "cap", "camyaw", P.V
+        pcall(function() WC.send(WC.encode(t)) end)
+    end
+
+    -- one sample: the diamond, the facing, the target's bearing
+    function P.sample()
+        local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
+        if not okF or not nav then return nil end
+        local okC, x, y = pcall(function() return nav:GetCenter() end)
+        local okS, sc = pcall(function() return nav:GetEffectiveScale() end)
+        local okK, clamped = pcall(function() return C_Navigation.WasClampedToScreen() end)
+        local okV, valid = pcall(function() return C_Navigation.HasValidScreenPosition() end)
+        local okT, state = pcall(function() return C_Navigation.GetTargetState() end)
+        local okD, dist = pcall(function() return C_Navigation.GetDistance() end)
+        local f = C.facing()
+        -- the target's true bearing: our pin while it is super-tracked, else the focused quest's spot (the compass's own reads)
+        local me = C.me()
+        local tg = C.targets(me)
+        local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
+        local w = (okP and onPin == true) and tg.pin or tg.quest
+        local b, d
+        if me and w then b, d = C.bearing(me, w) end
+        local function r3(v) v = num(v); return v and math.floor(v * 1000 + 0.5) / 1000 end
+        local xs = okC and tag(x) or "err"
+        local ys = okC and tag(y) or "err"
+        return string.format("%.2f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s",
+            GetTime(), tostring(r3(f)),
+            type(xs) == "number" and string.format("%.1f", xs) or tostring(xs),
+            type(ys) == "number" and string.format("%.1f", ys) or tostring(ys),
+            tostring(okS and r3(sc)), tostring(okK and clamped), tostring(okV and valid), tostring(okT and tag(state)),
+            tostring(okD and r3(dist)), tostring(b and r3(b)), tostring(d and math.floor(d + 0.5)))
+    end
+
+    function P.start()
+        if P.on or P.over then return end
+        P.on, P.n, P.buf = true, 0, {}
+        local okW, w = pcall(function() return UIParent:GetWidth() end)
+        local okH, h = pcall(function() return UIParent:GetHeight() end)
+        local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
+        local okP, pw, ph = pcall(GetPhysicalScreenSize)
+        local okV, fov = pcall(function() return C_CVar.GetCVar("cameraFov") end)
+        local okZ, zoom = pcall(function() return GetCameraZoom() end)
+        send({ op = "start", ui = { w = okW and num(w) or nil, h = okH and num(h) or nil, s = okU and num(us) or nil },
+               phys = { w = okP and num(pw) or nil, h = okP and num(ph) or nil }, fov = okV and tostring(fov) or nil,
+               zoom = okZ and num(zoom) or nil,
+               cols = "t,facing,navX,navY,navScale,clamped,validPos,state,navDist,bearing,yd" })
+    end
+
+    function P.finish(why)
+        if not P.on then return end
+        if #P.buf > 0 then send({ op = "s", s = P.buf }); P.buf = {} end
+        send({ op = "end", why = why, n = P.n })
+        P.on, P.over = false, true
+        if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+        WowCompanionDB.camProbe = P.DONE                                   -- once per add-on set
+    end
+
+    function P.tick()
+        if P.over then return end
+        if not P.on then
+            if type(WowCompanionDB) == "table" and WowCompanionDB.camProbe == P.DONE then P.over = true; return end
+            if (GetTime() - (P.loginAt or GetTime())) < 20 then return end      -- let the login settle
+            local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
+            if not okF or not nav then return end
+            P.start()
+        end
+        local line = P.sample()
+        if line then
+            P.n = P.n + 1
+            P.buf[#P.buf + 1] = line
+            if #P.buf >= 4 then send({ op = "s", s = P.buf }); P.buf = {} end
+        end
+        if P.n >= P.MAX then P.finish("done") end
+    end
+
+    local pf = CreateFrame("Frame")
+    local acc4 = 0
+    pcall(function() pf:RegisterEvent("PLAYER_ENTERING_WORLD"); pf:RegisterEvent("PLAYER_LOGOUT") end)
+    pf:SetScript("OnEvent", function(_, ev)
+        if ev == "PLAYER_LOGOUT" then pcall(P.finish, "logout") else P.loginAt = P.loginAt or GetTime() end
+    end)
+    pf:SetScript("OnUpdate", function(_, el)
+        if P.over then return end
+        acc4 = acc4 + (el or 0)
+        if acc4 < 0.25 then return end
+        acc4 = 0
+        pcall(P.tick)
     end)
 end
