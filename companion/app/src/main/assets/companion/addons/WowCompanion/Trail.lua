@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp1", pool = {}, used = {} }
+WC.compass = { V = "cp2", pool = {}, used = {} }
 do
     local C = WC.compass
     local PI = math.pi
@@ -164,15 +164,34 @@ do
         local okS, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
         local okQ, qid = pcall(function() return C_SuperTrack.GetSuperTrackedQuestID() end)
         qid = okQ and num(qid) or nil
+        -- (test13: GetNextWaypoint answers only for a quest in ANOTHER zone, and this client has no QuestPOIGetIconInfo: the
+        -- quest's spot on the player's own map comes first, through the same reads Map.lua uses for its quest markers)
+        C.qsrc = nil
         if qid and qid > 0 and not (okS and onPin == true) then
-            local okN, m, x, y = pcall(C_QuestLog.GetNextWaypoint, qid)
-            if okN and num(m) and num(x) then
-                t.quest = C.world(m, x, y)
-            elseif me and me.map then
-                local okI, _, ix, iy = pcall(QuestPOIGetIconInfo, qid)
-                if okI and num(ix) and num(iy) then t.quest = C.world(me.map, ix, iy) end
+            if me and me.map then
+                local okF, fx, fy = pcall(C_QuestLog.GetNextWaypointForMap, qid, me.map)
+                if okF and num(fx) and num(fy) then
+                    t.quest, C.qsrc = C.world(me.map, fx, fy), "wpmap"
+                else
+                    local okL, qs = pcall(C_QuestLog.GetQuestsOnMap, me.map)
+                    if okL and type(qs) == "table" then
+                        for _, q in ipairs(qs) do
+                            local okQ2, id, qx, qy = pcall(function() return q.questID, q.x, q.y end)
+                            if okQ2 and id == qid and num(qx) and num(qy) then
+                                t.quest, C.qsrc = C.world(me.map, qx, qy), "onmap"
+                                break
+                            end
+                        end
+                    end
+                end
             end
+            if not t.quest then
+                local okN, m, x, y = pcall(C_QuestLog.GetNextWaypoint, qid)
+                if okN and num(m) and num(x) then t.quest, C.qsrc = C.world(m, x, y), "wp" end
+            end
+            C.qsrc = C.qsrc or "none"
         end
+        C.qid = qid
         -- the corpse, while dead or a ghost
         local okD, dead = pcall(UnitIsDeadOrGhost, "player")
         if okD and dead == true and me and me.map then
@@ -334,8 +353,10 @@ do
         local facing = C.facing()
         if not facing then f:Hide(); return end
         local me = C.me()
-        local L = C.layout(facing, me, C.targets(me))
+        local tg = C.targets(me)
+        local L = C.layout(facing, me, tg)
         C.last = L
+        C.diag(facing, me, tg, L)
         local u, S = C.u, C.SPEC
         C.used = {}
         for _, t in ipairs(L.ticks) do
@@ -380,6 +401,28 @@ do
             end
         end
         finish()
+    end
+
+    -- test13: one line every 5 s while shown, so a short log read tells what the compass has: the pin (and whether the game has a
+    -- user waypoint at all, and Map's route pin), the focused quest and where its spot came from, how many markers it drew.
+    -- It rides the next flush: no push of its own.
+    C.diagAt = -100
+    function C.diag(facing, me, tg, L)
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        if now - C.diagAt < 5 then return end
+        C.diagAt = now
+        local okH, has = pcall(function() return C_Map.HasUserWaypoint() end)
+        local okS, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
+        local route = type(WC.routeWp) == "table" and WC.routeWp.active and true or false
+        local line = {
+            type = "cap", probe = "compass", v = C.V,
+            f = math.floor(facing * 1000 + 0.5) / 1000, map = me and me.map or nil, me = me and true or false,
+            uwp = (okH and has == true) and true or false, st = (okS and onPin == true) and true or false, route = route,
+            pin = tg.pin and true or false, qid = C.qid, qsrc = C.qsrc, quest = tg.quest and true or false,
+            corpse = tg.corpse and true or false, n = #L.marks,
+        }
+        C.lastDiag = line
+        pcall(function() WC.send(WC.encode(line)) end)
     end
 
     -- shown or not: the player's choice, outdoors, a known facing, the world map closed

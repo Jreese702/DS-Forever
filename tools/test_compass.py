@@ -75,10 +75,23 @@ C_SuperTrack = {
     IsSuperTrackingUserWaypoint = function() return false end,
     GetSuperTrackedQuestID = function() return GAME.quest and 123 or 0 end,
 }
-C_QuestLog = { GetNextWaypoint = function(q) if GAME.quest then return GAME.map, GAME.quest[1], GAME.quest[2] end end }
+-- as on the Thor (test13): GetNextWaypoint answers only for another zone; the spot on the player's own map comes from
+-- GetQuestsOnMap (GAME.qsrc = "onmap") or GetNextWaypointForMap ("wpmap"); "wp" = another zone
+C_QuestLog = {
+    GetNextWaypoint = function(q) if GAME.quest and GAME.qsrc == "wp" then return GAME.map, GAME.quest[1], GAME.quest[2] end end,
+    GetNextWaypointForMap = function(q, m) if GAME.quest and GAME.qsrc == "wpmap" then return GAME.quest[1], GAME.quest[2] end end,
+    GetQuestsOnMap = function(m)
+        local out = { { questID = 999, x = 0.1, y = 0.1 } }
+        if GAME.quest and GAME.qsrc == "onmap" then out[2] = { questID = 123, x = GAME.quest[1], y = GAME.quest[2] } end
+        return out
+    end,
+}
+GAME.qsrc = "onmap"
+SENT = {}
+C_Map.HasUserWaypoint = function() return GAME.pin ~= nil end
 C_DeathInfo = { GetCorpseMapPosition = function() if GAME.corpse then return CreateVector2D(GAME.corpse[1], GAME.corpse[2]) end end }
 WorldMapFrame = { IsShown = function() return GAME.worldmap end }
-WowCompanion = {}
+WowCompanion = { send = function(j) SENT[#SENT + 1] = j end, encode = function(t) return t end }
 WowCompanionDB = {}
 '''
 
@@ -129,12 +142,19 @@ def main():
     ms, ls = marks(lo), letters(lo)
     chk("the pin due east sits on the centre", abs(ms["pin"].x) < 0.5 and not ms["pin"].off)
     chk("its distance: 100 yd", ms["pin"].dist == "100 yd")
-    chk("the quest NE sits on NE's spot", abs(ms["quest"].x - ls["NE"].x) < 0.5)
+    chk("the quest NE sits on NE's spot (its spot from GetQuestsOnMap, as on the Thor)", abs(ms["quest"].x - ls["NE"].x) < 0.5 and C.qsrc == "onmap")
     chk("the quest's distance rounds to 5 above 50 (141 -> 140 yd)", ms["quest"].dist == "140 yd")
     chk("LIFT: E under the pin lifts 25 px and shrinks 5", ls["E"].lifted and ls["E"].y == 32 - 25 and ls["E"].size == 17)
     chk("LIFT: NE under the quest lifts too", ls["NE"].lifted and ls["NE"].size == 12)
     chk("SE (no marker) stays on the line", not ls["SE"].lifted and ls["SE"].y == 32)
 
+    G.qsrc = "wpmap"
+    chk("the quest's spot from GetNextWaypointForMap", "quest" in marks(lay()) and C.qsrc == "wpmap")
+    G.qsrc = "wp"
+    chk("... or GetNextWaypoint (another zone)", "quest" in marks(lay()) and C.qsrc == "wp")
+    G.qsrc = "nowhere"
+    chk("no spot anywhere: no quest marker, qsrc none", "quest" not in marks(lay()) and C.qsrc == "none")
+    G.qsrc = "onmap"
     # a corpse behind (west): pinned 48 px in from the LEFT or RIGHT end, flagged off-bar
     G.dead = True
     G.corpse = L.table(0.3, 0.52)
@@ -185,6 +205,10 @@ def main():
     names = [n for n in ("SetBinding", "SetCVar", "SetRaidTarget", "SetOverrideBinding") if n in open(TRAIL, encoding="utf-8").read()]
     chk("no binding / CVar / raid mark calls in Trail.lua", not names)
 
+    sent = L.globals().SENT
+    diag = [sent[i] for i in range(1, len(sent) + 1) if sent[i].probe == "compass"]
+    chk("the diagnostic line: pin, quest and its source, the marker count (%d sent)" % len(diag),
+        len(diag) == 1 and diag[0].pin is True and diag[0].quest is True and diag[0].qsrc == "onmap" and diag[0].n == 2 and diag[0].uwp is True)
     if render:
         paint(f, kids, k, out)
         print("rendered", out)
