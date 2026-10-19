@@ -103,6 +103,13 @@ class RenderSafePath {
             // each walkway by its deck (its outdoor groups' floor triangles, the device's own WorldBuildings.deck), its box only where
             // its groups weren't dumped
             val walks = HashMap<Pair<Int, Int>, List<(Double, Double) -> Boolean>>(); val m2Said = HashSet<Int>()
+            // A CAPITAL is a city WMO standing in a capital's own map (CityExits.CITIES' rects): its streets level whatever the ground under
+            // them. Wide alone is no capital: Ashenvale's Talondeep tunnel, Desolace's caves and Hyjal's sky floors leveled the hills over or
+            // under them, routes crossing 46-75 degrees (the Kalimdor segcheck helper)
+            val capitalRects = JSONObject(File(System.getenv("RECIPE")).readText()).optJSONObject("rects").let { rr ->
+                com.jrees.wowcompanion.CityExits.CITIES.mapNotNull { c -> rr?.optJSONArray(c.toString())?.let { a -> doubleArrayOf(a.getDouble(1), a.getDouble(2), a.getDouble(3), a.getDouble(4)) } } }
+            fun capital(p: com.jrees.wowcompanion.WorldBuildings.Placement, gs: List<com.jrees.wowcompanion.WorldBuildings.Group>) =
+                com.jrees.wowcompanion.WorldBuildings.isCity(p, gs) && capitalRects.any { r -> p.ox <= r[0] && p.ox >= r[1] && p.oy <= r[2] && p.oy >= r[3] }
             val unread = HashSet<Int>()
             val capitalDecks = HashSet<com.jrees.wowcompanion.WorldBuildings.Deck>()   // a capital's read floors: leveled whatever their height (flag 2)
             val cityFeet = ArrayList<com.jrees.wowcompanion.Buildings.Foot>()   // a capital's streets leveled by their boxes (py/segcheck.py: flag 2)
@@ -154,17 +161,17 @@ class RenderSafePath {
                                 val gs = com.jrees.wowcompanion.WorldBuildings.groups(root)
                                 // ... over water or not: a dry ravine's bridge, a tunnel's floor under its hill (Wetlands' Dun Algaz: leveled, its
                                 // hillside 60-75 degrees over it was climbed) are walked at their own floor's height too
-                                if (!com.jrees.wowcompanion.WorldBuildings.isCity(p, gs) && gs.none { it.interior }) keepHeights(c, r, d, any = true)
+                                if (!capital(p, gs) && gs.none { it.interior }) keepHeights(c, r, d, any = true)
                                 // ... and a floor is the ground only where it is not buried: more than LEVEL_BURIED_YD under the terrain (Blasted
                                 // Lands' Garrison Armory mine: its outdoor floors at 0-40 under a hill to 263 leveled it, a route climbed it)
                                 // (a capital's streets level whatever the terrain under or over them: its ground reads steep or high everywhere)
-                                val capital = com.jrees.wowcompanion.WorldBuildings.isCity(p, gs)
-                                if (capital) capitalDecks.add(d)
-                                listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) && (capital || !buriedAt(c, r, d, x, y)) && d.over(x, y, Terrain.surfaceAt(wet(c, r).first, c, r, x, y)) }) }
+                                val isCapital = capital(p, gs)
+                                if (isCapital) capitalDecks.add(d)
+                                listOf<(Double, Double) -> Boolean>({ x, y -> d.holds(x, y) && (isCapital || !buriedAt(c, r, d, x, y)) && d.over(x, y, Terrain.surfaceAt(wet(c, r).first, c, r, x, y)) }) }
                             // a WMO whose floors can't be read (its groups not dumped) levels nothing - the ground under its box is the
                             // terrain's (Silithus: Cenarion Hold's outpost, undumped, let a route over a 67-90 degree step) - but a capital's
                             // streets, whose ground under them reads steep everywhere
-                            ?: if (com.jrees.wowcompanion.WorldBuildings.isCity(p, com.jrees.wowcompanion.WorldBuildings.groups(root))) { cityFeet.addAll(feet); feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } } }
+                            ?: if (capital(p, com.jrees.wowcompanion.WorldBuildings.groups(root))) { cityFeet.addAll(feet); feet.map { f -> { x: Double, y: Double -> f.holds(x, y) } } }
                             else { if (unread.add(p.fid)) println("WARNING WMO ${p.fid} at ${p.ox.toInt()},${p.oy.toInt()}: " +
                                 (if (File(dir, "wmogroup/${p.fid}_0").isFile) "its groups hold no readable floor" else "its floors not dumped (dump/dump_cavegroups.py <dir> ${p.fid})") +
                                 " - the ground under it is taken as the terrain"); emptyList() }
