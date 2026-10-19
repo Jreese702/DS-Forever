@@ -30,7 +30,6 @@ object Climb {
     const val STEP = 100.0 / 3.0 / 8.0          // the lattice: an ADT chunk's 8 cells
     private const val ORG = 32.0 * MapHarvest.ADT_YD
     /** a lattice step's water samples: every half yard along it, a side step's and a diagonal's (route's water check, as [walkable]'s) */
-    private val WATER_SIDE = Math.ceil(STEP / 0.5).toInt(); private val WATER_DIAG = Math.ceil(STEP * Math.sqrt(2.0) / 0.5).toInt()
     const val LEVEL = 0; const val CLIMB = 1; const val STEEP = 2; const val WALL = 3
     const val CLIMB_DEG = 20.0; const val STEEP_DEG = 35.0; const val WALL_DEG = 45.0
     /** THE SHORT STEEP STEP (the user, 2026-10-18: "Allow short steps to 48°"): one lattice step, or a straight line's stretch of faces no
@@ -417,12 +416,9 @@ object Climb {
                 val c = g.step(ui, uj, di, dj); if (c == WALL) continue
                 // the step's own straight line, as the final check walks it (walkable / segcheck): a turn at a vertex every face within
                 // a quarter yard of which is a wall passes the steps beside it but not the line (Tirisfal, Brill -> Agamand Mills)
-                if (g.faces != null && !g.lineClear(doubleArrayOf(g.wx(uj), g.wy(ui)), doubleArrayOf(g.wx(vj), g.wy(vi)))) continue
-                // and off deep water along it (a diagonal between two shallow vertices clips a deep cell's corner: Mulgore's route D),
-                // every half yard as [walkable] samples it (quarters, 1.5 yd apart on a diagonal, let Darkshore's route F cut a pier's
-                // corner 1.1 yd off its deck, over 30 yd of sea)
-                if (water != null && (if (di != 0 && dj != 0) WATER_DIAG else WATER_SIDE).let { n -> (1 until n).any { q ->
-                        water(g.wx(uj) + (g.wx(vj) - g.wx(uj)) * q / n, g.wy(ui) + (g.wy(vi) - g.wy(ui)) * q / n) } }) continue
+                // and off deep water along it (a diagonal between two shallow vertices clips a deep cell's corner: Mulgore's route D) - the
+                // final check's own test ([walkable]), its two vertices' water left to their own cost
+                if (!walkable(g, doubleArrayOf(g.wx(uj), g.wy(ui)), doubleArrayOf(g.wx(vj), g.wy(vi)), water, ends = false)) continue
                 val x = extraOf(vi, vj); if (x < 0) continue
                 val len = if (di != 0 && dj != 0) STEP * 1.41421356 else STEP
                 val v = id(vi, vj)
@@ -451,12 +447,10 @@ object Climb {
                 if (di == 0 && dj == 0) continue
                 val cl = g.step(ci, cj, di, dj); if (cl == WALL) return Double.MAX_VALUE
                 if (ni !in i0..i1 || nj !in j0..j1) return Double.MAX_VALUE
-                if (q == n && n > 1 && !g.lineClear(doubleArrayOf(g.wx(a[1]), g.wy(a[0])), doubleArrayOf(g.wx(b[1]), g.wy(b[0])))) return Double.MAX_VALUE
-                if (q == n && n > 1 && water != null) {                 // the straight line off deep water all along, not only at its vertices
-                    val ax = g.wx(a[1]); val ay = g.wy(a[0]); val bx = g.wx(b[1]); val by = g.wy(b[0])
-                    val m = max(1, (hypot(bx - ax, by - ay) / 0.5).toInt())        // every half yard (Redridge J clipped a 3.9 yd cell's corner between 2 yd samples)
-                    for (t in 1 until m) if (water(ax + (bx - ax) * t / m, ay + (by - ay) * t / m)) return Double.MAX_VALUE
-                }
+                // the straight line itself as the final check walks it ([walkable]: its faces, off deep water every half yard - Redridge J
+                // clipped a 3.9 yd cell's corner between 2 yd samples), for EVERY line, one step long too: a bend cut to the vertex next to
+                // its start (A* went round a step whose own line is a wall) was taken on its lattice step alone (Duskwood I, Wetlands C)
+                if (q == n && !walkable(g, doubleArrayOf(g.wx(a[1]), g.wy(a[0])), doubleArrayOf(g.wx(b[1]), g.wy(b[0])), water, ends = false)) return Double.MAX_VALUE
                 val x = extraOf(ni, nj); if (x < 0) return Double.MAX_VALUE
                 cost += (if (di != 0 && dj != 0) STEP * 1.41421356 else STEP) * (COST[cl] + x)
                 ci = ni; cj = nj
@@ -487,8 +481,9 @@ object Climb {
         // beyond (within their cell)
         // ... the start's exact point only where the hop from it crosses no wall face (as the goal's: Deadwind's route J began 47 degrees
         // up a slope): else the leg starts at its first vertex
-        if (hypot(pts[0][0] - from[0], pts[0][1] - from[1]) > 0.5) { if (g.lineClear(from, pts[0])) pts.add(0, from) }
-        else if (pts.size < 2 || g.lineClear(from, pts[1])) pts[0] = from
+        fun hop(p: DoubleArray, q: DoubleArray) = g.lineClear(p, q) && walkable(g, p, q, water)
+        if (hypot(pts[0][0] - from[0], pts[0][1] - from[1]) > 0.5) { if (hop(from, pts[0])) pts.add(0, from) }
+        else if (pts.size < 2 || hop(from, pts[1])) pts[0] = from
         val reached = end == goal
         // the goal's exact point only where the hop to it crosses no wall face (a network point 2 yd up a cliff, an unreachable goal):
         // else the leg ends at its last vertex, short of it
@@ -499,9 +494,9 @@ object Climb {
         if (reached && !inCave(pts[pts.size - 1])) {
             if (hypot(pts.last()[0] - to[0], pts.last()[1] - to[1]) <= 0.5) {
                 // even the last half yard re-checked: the point before must reach the goal itself (Darkshore's route J)
-                if (pts.size < 2 || g.lineClear(pts[pts.size - 2], to)) pts[pts.size - 1] = to else arrived = false
+                if (pts.size < 2 || hop(pts[pts.size - 2], to)) pts[pts.size - 1] = to else arrived = false
             }
-            else if (g.lineClear(pts.last(), to)) pts.add(to) else arrived = false
+            else if (hop(pts.last(), to)) pts.add(to) else arrived = false
         }
         return Leg(pts, arrived)
     }
@@ -512,14 +507,17 @@ object Climb {
     const val GOAL_DANGEROUS = 1f              // a goal's spot this dangerous (the grid's 0..4) fades its danger over twice as far
 
     /** whether the straight line from world [a] to [b] on [g] crosses no wall: the lattice's own steps along it (a way the network
-     *  drew from the 25 yd cells can still climb a cliff those cells averaged away) */
-    fun walkable(g: Grid, a: DoubleArray, b: DoubleArray, water: ((Double, Double) -> Boolean)? = null): Boolean {
+     *  drew from the 25 yd cells can still climb a cliff those cells averaged away). THE ONE CHECK: the final route's segments are judged
+     *  by it, and every producer of a straight piece (the A* steps, the leg's straightened lines and its end hops, the network's pieces,
+     *  unloop) uses it too, so the router never draws a segment its own check rejects. [ends] false leaves the water at the two ends
+     *  out (lattice vertices whose water is their own cost) */
+    fun walkable(g: Grid, a: DoubleArray, b: DoubleArray, water: ((Double, Double) -> Boolean)? = null, ends: Boolean = true): Boolean {
         if (inCave(a) || inCave(b)) return true                 // a cave's floor: walkable by its own triangles, not the hill over it
         // deep water (the user: "Pathing shouldn't be in water"): a straight piece across it is no walk either (Mulgore's Stonebull Lake:
         // a network way's hooked end cut straight across it)
         if (water != null) {
             val n = max(1, (hypot(b[0] - a[0], b[1] - a[1]) / 0.5).toInt())
-            for (q in 0..n) if (water(a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n)) return false
+            for (q in (if (ends) 0 else 1)..(if (ends) n else n - 1)) if (water(a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n)) return false
         }
         val s = g.at(a[0], a[1]); val e = g.at(b[0], b[1])
         val n = max(abs(e[0] - s[0]), abs(e[1] - s[1]))
