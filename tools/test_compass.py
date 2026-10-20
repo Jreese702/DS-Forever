@@ -300,11 +300,13 @@ def main():
     chk("cam: the compass spins the full 360 with the character (%.0f degrees)" % math.degrees(turned), math.degrees(turned) > 340)
     G.speed = 0
 
-    # the TEST16 LOG (cp7, 12:56:12 .. 12:56:32), its exact numbers: the route pin super-tracked; each nav sample's pin bearing as
-    # the log implies it (cam = f + coff, theta from nx); 12:56:22 is clamped with the character turned
+    # the TEST16 LOG (cp7, 12:56:12 .. 12:56:32), its exact f / nx / clamped, re-read for cp10: the camera FOLLOWED the character
+    # (the pin's bearing ~2.05 from the honest samples); 12:56:12 (the pin 94 degrees left, shown on the RIGHT) and 12:56:27 (the
+    # pin straight behind, shown near the centre) were MIRRORED projections of a target behind the camera: never fixes
     G.quest = None
     C.setCam(True)
     c0 = 1365.3334 / 2
+    B = 2.05
 
     def put_pin(bear):
         dx, dy = 100 * math.cos(bear), 100 * math.sin(bear)
@@ -317,29 +319,39 @@ def main():
                 C.read(True)
             step(f, 1 / 60)
 
-    log = [("12:56:12", 0.38, 1276.6, False, 2.351), ("12:56:17", 2.652, 1198.3, False, 0.042),
-           ("12:56:22", 1.804, 1357.3, True, None), ("12:56:27", 5.941, 633.1, False, 3.126), ("12:56:32", 1.956, 604.6, False, 0.091)]
+    put_pin(B)
     L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end")
-    want_prev = None
-    for ts, fac, nx, clamped, coff in log:
+    for ts, fac, nx, clamped, kind in [("12:56:12", 0.38, 1276.6, False, "mirror"), ("12:56:17", 2.652, 1198.3, False, "nav"),
+                                        ("12:56:22", 1.804, 1357.3, True, "decay"), ("12:56:27", 5.941, 633.1, False, "mirror"),
+                                        ("12:56:32", 1.956, 604.6, False, "nav")]:
         G.facing = fac
-        if coff is not None:
-            camw = C.wrap(fac + coff)
-            put_pin(camw - math.atan((nx - c0) / c0))
-            want = camw
-        else:
-            want = None                                   # cp9: off screen, the character's facing + the fading offset
         G.nav = L.table_from({"x": nx, "y": 400.0, "clamped": clamped})
-        G.speed = 7 if clamped else 0
         run_frames()
-        if want is None:
-            exp_h = C.wrap(fac + C.wrap(want_prev - log[1][1]) * math.exp(-1.5 / 1.5))
-            chk("test16 %s (clamped, the character at %.3f): the compass follows the character + the fading offset (%.3f, got %.3f)"
-                % (ts, fac, exp_h, C.wrap(C.h)), abs(C.wrap(C.wrap(C.h) - exp_h)) < 0.05)
-        else:
-            chk("test16 %s (f %.3f, nx %.1f): the compass shows the camera %.3f (got %.3f)"
-                % (ts, fac, nx, want, C.wrap(C.h)), abs(C.wrap(C.wrap(C.h) - want)) < 0.03)
-        want_prev = want if want is not None else want_prev
+        off = abs(C.wrap(C.wrap(C.h) - fac))
+        chk("test16 %s (f %.3f, nx %.1f%s): %s, the compass within 15 degrees of the character (%.0f)"
+            % (ts, fac, nx, ", clamped" if clamped else "", kind, math.degrees(off)), C.cam.src == kind and off < math.radians(15))
+
+    # test20's case: the quest fixed, the character (and the camera, which follows it) turning a FULL circle; the engine's x as a
+    # projection, mirrored when the target is behind, unclamped all the way (the worst case): the compass spins with the facing
+    G.facing = 0.0; G.nav = None; C.draw(); C.cam.off = 0      # start ON the character (no catch-up from the replay's heading)
+    hs, fixes, mirrors = [], 0, 0
+    for k in range(144):
+        fac = C.wrap(math.radians(2.5 * (k + 1)))
+        G.facing = fac
+        x = c0 + c0 * math.tan(C.wrap(fac - B))
+        G.nav = L.table_from({"x": x, "y": 400.0, "clamped": False})
+        for i in range(3):
+            G.t = G.t + 1 / 60
+            if i == 0:
+                C.read(True)
+            step(f, 1 / 60)
+        hs.append(C.wrap(C.h))
+        fixes += C.cam.src == "nav"
+        mirrors += C.cam.src == "mirror"
+    turned = sum(abs(C.wrap(hs[i] - hs[i - 1])) for i in range(1, len(hs)))
+    worst = max(abs(C.wrap(hs[i] - C.wrap(math.radians(2.5 * (i + 1))))) for i in range(len(hs)))
+    chk("test20: a full turn, the quest fixed: the compass spins %.0f degrees, never more than %.0f off the character (%d fixes, %d mirrors)"
+        % (math.degrees(turned), math.degrees(worst), fixes, mirrors), math.degrees(turned) > 340 and worst < math.radians(20) and mirrors > 0)
     L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end")
     G.pin = None; G.speed = 0
     G.speed = 0; G.quest = None; C.read(True)
