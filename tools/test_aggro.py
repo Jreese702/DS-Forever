@@ -309,6 +309,59 @@ def main():
     chk("the plate gone: its icon hidden at once", ic[s50].f.shown is False)
     A.diagAt = -100; A.diag()
     chk("the probe line: np state, the value, the icons count", A.lastDiag.np is not None and A.lastDiag.npv == "0" and A.lastDiag.icons >= 2)
+    # ag3: the app's PICKS (contract taps v2: iact keys, an octal code)
+    def acks():
+        return [Lg.SENT[i] for i in range(1, len(Lg.SENT) + 1) if getattr(Lg.SENT[i], "type", None) == "aggroack"]
+    Lg.WowCompanion.routeWp.active = False; tick()
+    chk("taps not wanted without a route", A.tapsWanted() is False)
+    Lg.WowCompanion.routeWp.active = True; tick()
+    chk("taps wanted while the route runs", A.tapsWanted() is True)
+    for t in list(A.byTok.keys()):
+        fire("NAME_PLATE_UNIT_REMOVED", t)
+    G.t = G.t + 11
+    for k in range(60, 65):
+        unit("nameplate%d" % k, d=15, lv=5)
+        fire("NAME_PLATE_UNIT_ADDED", "nameplate%d" % k)
+    s61 = A.byTok.nameplate61
+    n0 = len(acks())
+    A.tap("p1"); A.tap(str(s61 // 8)); A.tap(str(s61 % 8))
+    a = acks()[-1]
+    chk("a pick on a slot younger than 0.6 s: refused (slot gone)", a.op == "pull" and a.ok == 0 and a.why == "slot gone")
+    tick(); tick(); tick(); tick()
+    A.tap("p1"); A.tap(str(s61 // 8)); A.tap(str(s61 % 8))
+    a = acks()[-1]
+    tick()
+    m = mobs(A.last)
+    ic = A.icon[s61]
+    chk("pull #1 = slot %d (3 taps: op + 2 octal digits): ok, mk p1, the crosshair with 1 on its plate" % s61,
+        a.op == "pull" and a.k == 1 and a.s == s61 and a.ok == 1 and m[s61].mk == "p1" and ic and ic.f.shown and ic.pk.shown is not False and ic.pn.text == "1")
+    s62 = A.byTok.nameplate62
+    A.tap("p2"); A.tap(str(s62 // 8)); A.tap(str(s62 % 8)); tick()
+    chk("pull #2 on another: mk p2, its crosshair with 2", mobs(A.last)[s62].mk == "p2" and A.icon[s62].pn.text == "2")
+    A.tap("clr"); A.tap("p1"); tick()
+    a = acks()[-1]
+    chk("clr + p1: pick #1 cleared (s -1), #2 kept", a.k == 1 and a.s == -1 and mobs(A.last)[s61].mk is None and mobs(A.last)[s62].mk == "p2")
+    A.tap("clr"); A.tap("clr"); tick()
+    chk("clr twice: both cleared", all(mobs(A.last)[x].mk is None for x in (s61, s62)))
+    A.tap("p1"); G.t = G.t + 2.1; A.tap("1")
+    chk("a digit after the 2 s window: refused (no window)", acks()[-1].why == "no window")
+    A.tap("p1"); A.tap("clr")
+    chk("clr with another window open: cancelled", acks()[-1].op == "cancel" and A.win is None)
+    s63, s64 = A.byTok.nameplate63, A.byTok.nameplate64
+    mask = (1 << s63) | (1 << s64) | (1 << 23)               # slot 23 is empty: dropped
+    digits = [(mask >> (3 * i)) & 7 for i in range(8)]
+    A.tap("qm")
+    for dgt in digits:
+        A.tap(str(dgt))
+    a = acks()[-1]
+    tick()
+    chk("qmask (qm + 8 octal digits, low first): the applied mask has the live slots only (%s)" % a.mask,
+        a.op == "qmask" and int(a.mask) == ((1 << s63) | (1 << s64)) and mobs(A.last)[s63].mk == "q" and A.icon[s63].q.shown is not False)
+    A.tap("p1"); A.tap(str(s64 // 8)); A.tap(str(s64 % 8)); tick()
+    fire("NAME_PLATE_UNIT_REMOVED", "nameplate64"); tick()
+    chk("its plate gone: the pick and the quest bit go with it", A.pick[1] is None and A.qset[s64] is None)
+    Lg.WowCompanion.routeWp.active = False; tick()
+    chk("the route off: every pick dropped", A.pick[1] is None and A.pick[2] is None and len(list(A.qset.items())) == 0)
     chk("no error caught in the ticker / events (%s)" % A.err, A.err is None)
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)

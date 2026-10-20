@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i130"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i131"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1489,6 +1489,13 @@ local function assignSlots(doc)
         for _, c in ipairs(qt.cats or {}) do c.slot = slot("isell", "qtcat " .. c.i) end
     end
     if any then doc.act = { close = slot("iact", "close") } end
+    -- the live aggro layer's pull picks (Trail.lua WC.live, contract taps v2): 12 iact keys, only while the layer is on and no NPC
+    -- window is open (the tap pad has no row to spare)
+    if not any and type(WC.live) == "table" and type(WC.live.tapsWanted) == "function" and WC.live.tapsWanted() then
+        local c = { p1 = slot("iact", "ag p1"), p2 = slot("iact", "ag p2"), clr = slot("iact", "ag clr"), qm = slot("iact", "ag qm") }
+        for d = 0, 7 do c["d" .. d] = slot("iact", "ag " .. d) end
+        doc.aggro = { v = 2, cells = c }
+    end
     -- 1.0.9 Add-ons > "QuestTrail settings": its cell while QuestTrail is loaded (the app taps it; QuestTrail's own pages open here)
     -- test61: ALL of our QuestTrail handling only while the app says its mode is on (WC.qtMode, ACT.qtmode); the two cells always
     if type(SlashCmdList) == "table" and type(SlashCmdList.QUESTTRAIL) == "function" then
@@ -2207,6 +2214,7 @@ local function emitSoon()
     end)
 end
 LOOT.poke = function() N.n = N.n + 1; emitSoon() end     -- for LOOT.questFirst (declared above N and emitSoon)
+WC.interactPoke = function() N.n = N.n + 1; emitSoon() end   -- for the live aggro layer (Trail.lua): its iact cells come and go
 
 -- ---------------------------------------------------------------- events
 
@@ -2559,6 +2567,13 @@ function ACT.loottop(a)
     N.n = N.n + 1
     emitSoon()
     return true
+end
+
+-- /wci ag <0..7|p1|p2|clr|qm>   the live aggro layer's picks (Trail.lua WC.live.tap)
+function ACT.ag(a)
+    if type(WC.live) ~= "table" or type(WC.live.tap) ~= "function" then return false, "no live layer in this add-on set" end
+    local ok, why = WC.live.tap(a)
+    return ok ~= false, why
 end
 
 -- /wci compass on|off   the compass bar (Trail.lua): the player's choice, kept in WowCompanionDB.compass (our own saved data)
