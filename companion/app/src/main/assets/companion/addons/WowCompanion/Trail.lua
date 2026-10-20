@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp14" }
+WC.compass = { V = "cp16" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -389,20 +389,102 @@ do
         local okE, en = pcall(function() return C_GamePad.IsEnabled() end)
         K.gp = okE and en == true or false
         local okS, st = pcall(function() return C_GamePad.GetDeviceMappedState() end)
+        K.lx, K.ly = nil, nil
         if okS and type(st) == "table" and type(st.sticks) == "table" then
             local n = num(st.stickCount) or #st.sticks
+            local camX
             for i = 1, n do
                 local okN, name = pcall(function() return C_GamePad.StickIndexToConfigName(i - 1) end)
-                if okN and name == "Camera" then
+                if okN and name == "Movement" then              -- cp15: the movement stick, for the true-up
+                    local okM, mx, my = pcall(function() return st.sticks[i].x, st.sticks[i].y end)
+                    if okM then K.lx, K.ly = num(mx), num(my) end
+                elseif okN and name == "Camera" then
                     local okX, x = pcall(function() return st.sticks[i].x end)
-                    x = okX and num(x) or nil
-                    if x then K.from = "pad"; return x end
+                    camX = okX and num(x) or nil
                 end
             end
+            if camX then K.from = "pad"; return camX end
         end
         if K.extX and now - K.extAt < 0.3 then K.from = "app"; return K.extX end
         K.from = "none"
         return 0
+    end
+
+    -- cp16 (test26, the user: "doing a full 360 with the camera does not land it in the expected same spot"): the game turns its
+    -- camera in its own engine (no curve, ramp or acceleration CVar exists for it; GetDeviceMappedState's stick is already past its
+    -- deadzone), so the law is LEARNED: yaw rate = kb x GamePadCameraYawSpeed x sign(x) x |x|^p. Every two observations of the true
+    -- yaw (an accepted marker fix, a cp15 true-up) with the stick turned between them make a lesson: the turn they show (unwrapped
+    -- by the model's own prediction, so a long turn does not alias) against the stick's integral for each candidate exponent; the
+    -- exponent whose least-squares fit is best wins, with its kb. Kept in OUR saved data (WowCompanionDB.compassCal) across sessions.
+    C.P = { 1, 1.5, 2, 2.5, 3 }
+    function C.rateOf(x)
+        local K = C.cam
+        local a = math.abs(x)
+        if a <= 0 then return 0 end
+        return (x > 0 and 1 or -1) * (a ^ (K.p or 1)) * (K.kb or K.BASE) * K.ys
+    end
+    function C.calLoad()
+        local K = C.cam
+        local c = type(WowCompanionDB) == "table" and WowCompanionDB.compassCal or nil
+        if type(c) == "table" and tonumber(c.kb) and tonumber(c.p) then K.kb, K.p, K.calN = tonumber(c.kb), tonumber(c.p), tonumber(c.n) or 0 end
+    end
+    function C.calSave()
+        local K = C.cam
+        if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+        WowCompanionDB.compassCal = { kb = K.kb, p = K.p, n = K.calN or 0 }
+    end
+    -- the best (p, kb) over the kept lessons
+    function C.fit()
+        local K = C.cam
+        local L = K.pairs
+        if not L or #L < 3 then return end
+        local best, bp, bk
+        for _, pp in ipairs(C.P) do
+            local sdi, sii, n = 0, 0, 0
+            -- (every lesson counts for every exponent: an out-and-back that nets to nothing under the TRUE exponent is the best
+            -- evidence for it)
+            for _, e in ipairs(L) do
+                local I = e.I[pp]
+                if I then sdi, sii, n = sdi + e.d * I, sii + I * I, n + 1 end
+            end
+            if n >= 3 and sii > 0 then
+                local k = sdi / sii
+                local err = 0
+                for _, e in ipairs(L) do
+                    local I = e.I[pp]
+                    if I then err = err + (e.d - k * I) ^ 2 end
+                end
+                err = err / n
+                if k > 0 and (not best or err < best) then best, bp, bk = err, pp, k end
+            end
+        end
+        if bp then
+            K.p, K.kb = bp, bk / K.ys
+            K.calN = #L
+            K.base = K.kb                                   -- (the line's "base", deg/s at speed 1, and "learned")
+            C.calSave()
+        end
+    end
+    -- an observation of the TRUE camera yaw (cam, CCW radians): a lesson when the stick turned enough since the last one
+    function C.observe(cam)
+        local K = C.cam
+        K.I = K.I or {}
+        local G1 = K.I.g or 0                               -- the stick's GROSS integral since (an out-and-back nets to nothing)
+        if K.obsCam and G1 >= 0.3 then
+            local pred = K.predSince or 0                   -- clockwise, the model's turn since the last observation
+            local meas = -C.wrap(cam - K.obsCam)            -- clockwise, as seen (within one turn)
+            local d = pred + C.wrap(meas - pred)            -- unwrapped by the prediction
+            K.lastRes = d - pred                            -- the self-check: what the model missed by
+            K.pairs = K.pairs or {}
+            local I = {}
+            for k, v in pairs(K.I) do if k ~= "g" then I[k] = v end end
+            K.pairs[#K.pairs + 1] = { d = d, I = I }
+            while #K.pairs > 16 do table.remove(K.pairs, 1) end
+            C.fit()
+            K.obsCam, K.I, K.predSince, K.grossSince = cam, {}, 0, 0
+        elseif G1 < 0.02 then
+            K.obsCam, K.I, K.predSince, K.grossSince = cam, {}, 0, 0   -- nothing turned since: the observation moves with it
+        end
     end
 
     -- the character turns with the camera now? (GamePadTurnWithCamera, the player's own setting)
@@ -437,7 +519,7 @@ do
         local moving = okM and num(speed) and speed > 0 or false
         local x = C.stickX(now)
         K.rx = x
-        local rate = (K.base or K.BASE) * K.ys
+        if not K.calLoaded then K.calLoaded = true; C.calLoad() end
         if not K.abs then K.abs = facing end
         -- cp12 (test21, the user: "it seems to be trying to track the charactor direction at the same time ... While walking"): the
         -- CAMERA is the source at all times. The stick is integrated moving or not; while the character turns with the camera (the
@@ -447,10 +529,17 @@ do
         if K.lastF and dt > 0 and math.abs(C.wrap(facing - K.lastF)) / dt > K.STRAIGHT_RATE then K.straightSince = now end
         K.lastF = facing
         if x ~= 0 then
-            local d = x * rate * dt * (K.inv and -1 or 1)
+            local sg = K.inv and -1 or 1
+            local d = C.rateOf(x) * dt * sg                                    -- cp16: the learned law
             K.abs = C.wrap(K.abs - d)
             if K.ref then K.ref = C.wrap(K.ref - d) end                         -- the last fix, carried by the stick (cp13)
-            K.acc = K.acc + x * dt * (K.inv and -1 or 1)                     -- stick-seconds since the last fix (the rate's lesson)
+            K.acc = K.acc + x * dt * sg                                       -- stick-seconds since the last fix (the gate's allowance)
+            K.predSince = (K.predSince or 0) + d                              -- the model's clockwise turn since the last observation
+            K.grossSince = (K.grossSince or 0) + math.abs(d)                  -- and how much it turned either way (the gate's allowance)
+            K.I = K.I or {}
+            local a = math.abs(x)
+            for _, pp in ipairs(C.P) do K.I[pp] = (K.I[pp] or 0) + (x > 0 and 1 or -1) * (a ^ pp) * dt * sg end
+            K.I.g = (K.I.g or 0) + a * dt
             K.src = "stick"
         -- cp14 (test23, the user: "if I face north and begin walking south while still facing camera north, then the compass flips to
         -- south after a delay"): with a controller, walking TOWARD the camera turns the character, not the camera. So no facing anchor
@@ -468,6 +557,50 @@ do
         else
             K.src = "still"
         end
+        -- cp15, THE TRUE-UP (the user: "when ever the controls stick points directly up, we know the true direction that the camera is
+        -- currently facing ... use that data occasionally and very gently true up the compass"): with the movement stick held straight
+        -- forward, the character MOVES along the camera's yaw. Its heading is measured from the player's own positions over ~0.4 s
+        -- (at least 1.5 yd; two windows agreeing within 10 degrees; not swimming, flying or on a taxi; the camera stick idle 0.5 s,
+        -- the forward push held 0.5 s), and the estimate eases toward it (2.5 s; at most 3 degrees a frame). Never a snap.
+        if C.me_ and C.me_ ~= K.lastMe then
+            K.lastMe = C.me_
+            K.hist = K.hist or {}
+            K.hist[#K.hist + 1] = { t = now, x = C.me_.x, y = C.me_.y }
+            while #K.hist > 0 and now - K.hist[1].t > 1.2 do table.remove(K.hist, 1) end
+        end
+        local fwd = K.lx and K.ly and math.abs(K.lx) < 0.15 and K.ly > 0.8
+        if fwd then K.fwdSince = K.fwdSince or now else K.fwdSince = nil end
+        K.ferr = nil
+        if fwd and moving and now - K.fwdSince >= 0.5 and now - K.idleSince >= 0.5 and K.hist and #K.hist >= 3 then
+            local okW, wet = pcall(function() return IsSwimming() or IsFlying() or UnitOnTaxi("player") end)
+            if not (okW and wet) then
+                local function headingOver(t0, t1)
+                    local a, b
+                    for _, h in ipairs(K.hist) do
+                        if h.t <= t1 then b = h end
+                        if not a and h.t >= t0 then a = h end
+                    end
+                    if not (a and b) or a == b then return nil end
+                    local dx, dy = b.x - a.x, b.y - a.y
+                    if math.sqrt(dx * dx + dy * dy) < 1.5 then return nil end
+                    return atan2(dy, dx)
+                end
+                local h1 = headingOver(now - 0.9, now - 0.45)
+                local h2 = headingOver(now - 0.45, now)
+                if h1 and h2 and math.abs(C.wrap(h2 - h1)) < math.rad(10) then
+                    local err = C.wrap(h2 - K.abs)
+                    K.ferr = err
+                    C.observe(h2)                                       -- cp16: the true-up teaches the law too
+                    local step = err * (1 - math.exp(-dt / 2.5))
+                    local cap = math.rad(3)
+                    if step > cap then step = cap elseif step < -cap then step = -cap end
+                    K.abs = C.wrap(K.abs + step)
+                    if K.ref then K.ref = C.wrap(K.ref + step) end
+                    K.src = "fwd"
+                end
+            end
+        end
+
         -- the FIX: the engine's navigation point on screen
         K.nav, K.nx, K.cl, K.vp, K.ns = false, nil, nil, nil, nil
         local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
@@ -504,18 +637,11 @@ do
                     -- off): with the follow camera off, the camera moves ONLY with the stick, so a fix may differ from the estimate by
                     -- 15 degrees plus 40% (60% while the rate is still the guess) of what the stick turned since the last fix; more is a
                     -- mirror or junk. Never verified yet (no fix since camera mode came on), or the follow camera on and moving: 100.
-                    local tol = math.rad(15) + (K.base and 0.4 or 0.6) * math.abs(K.acc) * K.ys * (K.base or K.BASE)
+                    local tol = math.rad(15) + ((K.calN or 0) >= 6 and 0.4 or 0.6) * (K.grossSince or 0)
                     if (K.fol and moving) or not K.lastFix then tol = K.MAXOFF end     -- (never verified yet: the wide gate)
                     K.tol = tol
                     if math.abs(errRef) <= math.min(tol, K.MAXOFF) then
-                        -- the rate's lesson: the stick turned since the last fix, and the fix says by how much
-                        if K.lastFix and math.abs(K.acc) > 0.25 then
-                            local turned = -C.wrap(cam - K.lastFix)
-                            local learned = turned / (K.acc * K.ys)
-                            if learned > math.rad(20) and learned < math.rad(720) then
-                                K.base = (K.base or K.BASE) + (learned - (K.base or K.BASE)) * 0.5
-                            end
-                        end
+                        C.observe(cam)                                   -- cp16: the lesson (and the self-check)
                         K.abs = C.wrap(K.abs + err * (1 - math.exp(-dt / 0.08)))
                         K.lastFix, K.acc, K.fixAt, K.ref = cam, 0, now, cam
                         K.src = "nav"
@@ -694,8 +820,11 @@ do
             cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
             cyaw = C.cam.abs and math.floor(C.cam.abs * 1000 + 0.5) / 1000 or nil,
             wm = C.wm and C.wm.shown and true or false, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
+            lx = C.cam.lx and math.floor(C.cam.lx * 100 + 0.5) / 100 or nil, ly = C.cam.ly and math.floor(C.cam.ly * 100 + 0.5) / 100 or nil,
+            ferr = C.cam.ferr and math.floor(math.deg(C.cam.ferr) + 0.5) or nil,
             gp = C.cam.gp, from = C.cam.from, rx = C.cam.rx and math.floor(C.cam.rx * 100 + 0.5) / 100 or nil,
-            ys = C.cam.ys, base = math.floor(math.deg(C.cam.base or C.cam.BASE) + 0.5), learned = C.cam.base and true or false,
+            ys = C.cam.ys, base = math.floor(math.deg(C.cam.kb or C.cam.BASE) + 0.5), learned = C.cam.kb and true or false,
+            pexp = C.cam.p or 1, lessons = C.cam.calN or 0, res = C.cam.lastRes and math.floor(math.deg(C.cam.lastRes) + 0.5) or nil,
             tw = C.cam.tw, fol = C.cam.fol, inv = C.cam.inv,
             nav = C.cam.nav, nx = C.cam.nx and math.floor(C.cam.nx * 10 + 0.5) / 10 or nil, ncl = C.cam.cl, nvp = C.cam.vp,
             nst = C.cam.ns, fov = math.floor(math.deg(C.cam.hfov) + 0.5),
@@ -736,6 +865,7 @@ do
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
         WowCompanionDB.compassCam = on and true or false
         C.cam.off, C.cam.abs, C.cam.fixAt, C.cam.lastFix, C.cam.acc, C.cam.ref = 0, nil, -100, nil, 0, nil
+        C.cam.obsCam, C.cam.I, C.cam.predSince, C.cam.grossSince = nil, {}, 0, 0   -- (the learned law itself is kept)
         return true
     end
 
