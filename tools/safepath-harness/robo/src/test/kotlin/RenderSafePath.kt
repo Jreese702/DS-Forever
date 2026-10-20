@@ -872,19 +872,36 @@ class RenderSafePath {
             // THE ROADMAP: the coverage graph of the walkable ground, this faction's danger along each of its edges
             val rb = RoadmapBuild(cg, deep, standable, ::roomsAt, waterAt, layers, rect.t, rect.b, rect.l, rect.r)
             val built = rb.build { println("NET1 $it") }
-            val rmDanger = rb.dangerBytes(built, danger)
             val sec = ShippedNet.section(netJ, mine, level, tag, shipLinks, wetOf,
                 walk = { a, b -> legOf(a, b)?.takeIf { it.second }?.first?.map { doubleArrayOf(it[0], it[1]) } },
-                extraNodes = floorNodes, extras = extras, roadmapDanger = rmDanger)
+                extraNodes = floorNodes, extras = extras)
             val head = ShippedNet.Header(map, rect.c, Climb.RULES_VERSION, System.getenv("SAFEPATH_RULES_COMMIT") ?: "",
                 System.getenv("SAFEPATH_BUILD") ?: "", java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString())
-            val pack = ShippedNet.Pack(head, listOf(sec), built.rm)
+            // EVERY SHIPPED SEGMENT CHECKED (ShipCheck): the ways, the joins, the roadmap's edges and the stitches through py/segcheck.py and
+            // py/wetcheck.py in a folder of their own; what fails walked by its lattice leg, or dropped; anything left fails the export
+            val cdir = File(out, "ship_$tag").also { it.mkdirs() }
+            for (k2 in listOf("floors", "holes", "layers", "decks")) File(out, "${k2}_$tag.json").takeIf { it.isFile }?.copyTo(File(cdir, "${k2}_$tag.json"), true)
+            val rmLeg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b ->
+                Climb.route(cg, a, b, water = deep, edges = false, limits = Climb.Limits(RoadmapBuild.LEG_WINDOW))
+                    ?.takeIf { r -> r.reached && r.pts.zipWithNext().all { (u, v) -> Climb.walkable(cg, u, v, deep) } }?.pts }
+            val sc = ShipCheck(cg, deep, { a, b -> legOf(a, b)?.takeIf { it.second }?.first }, rmLeg, wetOf,
+                File(File(System.getProperty("user.dir")).parentFile, "py"), cdir, tag, dir.name, dir.parentFile) { println("NET1 $it") }
+            val checked = sc.run(sec.copy(stitches = sc.stitches(sec, built.rm)), built.rm)
+            cdir.deleteRecursively()
+            if (checked.left.isNotEmpty()) println("NET1 CROSSING $tag: ${checked.left.size} shipped pieces still cross a wall or deep water: ${checked.left.take(10)}")
+            // this faction's danger along each roadmap edge (the checked roadmap's): the mean along its line, a yard apart
+            val rmDanger = checked.rm?.let { r -> ByteArray(r.edges) { e -> var sum = 0.0; var n = 0
+                for ((u, v) in r.points(e).zipWithNext()) { val m = maxOf(1, Math.hypot(v[0] - u[0], v[1] - u[1]).toInt())
+                    for (q in 0 until m) { sum += danger(u[0] + (v[0] - u[0]) * q / m, u[1] + (v[1] - u[1]) * q / m); n++ } }
+                minOf(255, Math.round(sum / maxOf(1, n) * ShippedNet.ROADMAP_DANGER_SCALE).toInt()).coerceAtLeast(0).toByte() } }
+            val pack = ShippedNet.Pack(head, listOf(checked.sec.copy(roadmapDanger = rmDanger)), checked.rm)
             File(out, "net1_$tag.json").writeText(pack.toJson().toString())
-            val rmBytes = ShippedNet.pack64(built.rm.encode()).length
-            println("NET1 $tag map $map faction $mine: ${sec.net.nodes.size} nodes, ${sec.net.edges.size} ways " +
-                "(${ShippedNet.FLAG_NAMES.joinToString { (b, nm) -> "$nm ${sec.ways.count { it.flags and b != 0 }}" }}; ${sec.ways.count { it.pts != null }} walked), " +
-                "${sec.net.exits.size} exits, ${sec.links.size} links, ${sec.starts.size} starts, ${sec.checkpoints.size} checkpoints; " +
-                "roadmap ${built.rm.nodes} nodes ${built.rm.edges} edges, $rmBytes bytes (base64), danger ${ShippedNet.pack64(rmDanger).length} bytes")
+            val fin = pack.sections[0]
+            val rmBytes = checked.rm?.let { ShippedNet.pack64(it.encode()).length } ?: 0
+            println("NET1 $tag map $map faction $mine: ${fin.net.nodes.size} nodes, ${fin.net.edges.size} ways " +
+                "(${ShippedNet.FLAG_NAMES.joinToString { (b, nm) -> "$nm ${fin.ways.count { it.flags and b != 0 }}" }}; ${fin.ways.count { it.pts != null }} walked), " +
+                "${fin.net.exits.size} exits, ${fin.links.size} links, ${fin.starts.size} starts, ${fin.checkpoints.size} checkpoints, ${fin.stitches.size} stitches; " +
+                "roadmap ${(checked.rm?.nodes ?: 0)} nodes ${(checked.rm?.edges ?: 0)} edges, $rmBytes bytes (base64), danger ${ShippedNet.pack64(rmDanger ?: ByteArray(0)).length} bytes")
         }
     }
 

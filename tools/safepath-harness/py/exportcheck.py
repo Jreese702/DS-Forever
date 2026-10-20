@@ -1,6 +1,7 @@
 # THE SHIPPED NETWORK'S GATE (export.sh; NET1): which of a run folder's zones may ship their network. A zone's section
 # (net1_<tag>.json, RenderSafePath with SAFEPATH_EXPORT=1) ships only when its own log (gate_<tag>.log, gate.sh's shape) has
 #   - no WALLS line, no EMPTY route, no "GOAL ... not found";
+#   - no NET1 CROSSING line (ShipCheck: every shipped segment - ways, joins, roadmap edges, stitches - through segcheck and wetcheck);
 #   - segcheck "none" (no 45+ degree step crossed);
 #   - a wetcheck result for every route, and no swim by it (deeper than the narrow stream, 2.2 yd, at all, or deeper than the ford
 #     for more than 6 yd on end) and no WATERMAX over 2.2 yd - gate.py's own readings, without the baseline's comparisons.
@@ -42,6 +43,7 @@ for f in sorted(os.listdir(run)):
         elif line.startswith('EMPTY'): why.append(line[:120])
         elif line.startswith('GOAL') and 'not found' in line: why.append(line[:120])
         elif line.startswith('ROUTE2 '): routes += 1
+        elif line.startswith('NET1 CROSSING'): why.append(line[:200])
         m = re.match(r'WATERMAX route (\w) ([\d.]+) yd', line)
         if m and float(m.group(2)) > NARROW: why.append('route %s WATERMAX %s yd' % (m.group(1), m.group(2)))
         m = re.match(r'WET (\w): deepest ([\d.]+) yd.*?, (\d+) yd deeper than .*?longest wade (\d+) yd.*?, (\d+) yd deeper than', line)
