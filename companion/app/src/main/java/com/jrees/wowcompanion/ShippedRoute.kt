@@ -153,6 +153,8 @@ object ShippedRoute {
     /** the one graph: the net's ways along their points, the roadmap's edges, their base costs and the danger along them */
     private class Graph(val sec: ShippedNet.Section, val roadmap: Roadmap?, danger: ((Double, Double) -> Float)?,
                         @Suppress("UNUSED_PARAMETER") ground: (Double, Double) -> Float, val attacher: Attacher, stitchGround: ShippedSnap.Ground?) {
+        /** the fine ground (plan's stitchGround: ShippedSnap's), for the checks of what the device itself draws onto a shipped line */
+        val fineGround = stitchGround
         val net = sec.net
         /** a way: [via] its points after [a] up to [b] (both directions walk it), [rewalk] a rewalk way with no shipped points */
         /** [share]: the net's danger share (the cost x 1 + it with no character danger); [fixedYd]: the roadmap's shipped danger x yards
@@ -260,6 +262,31 @@ object ShippedRoute {
             stitched > 0 || refused > 0 -> "stitches at run time ($stitched; $refused refused by the fine ground)"
             else -> "no stitches"
         }
+        /**
+         * A CUT INTO WAY [w] (W's Dustwallow N30-N31: a cut mid-segment, its piece of the shipped segment failing segcheck's lattice
+         * step though the whole segment passes): at ([t], [q]) only when the fine ground ([fineGround], ShippedSnap.lineWall) clears
+         * both pieces of the segment the cut splits; else at that segment's nearer vertex whose own walk there ([walk]'s last step,
+         * re-aimed from [from]) the fine ground clears - (t, point, moved), null when neither. With no fine ground (a caller without
+         * ShippedSnap's ground: tests) the cut stays where the attacher put it.
+         */
+        fun cutAt(w: W, t: Double, q: DoubleArray, from: DoubleArray): Triple<Double, DoubleArray, Boolean>? {
+            val line = listOf(pos[w.a]!!) + w.via
+            val at = t * w.len
+            var run = 0.0; var i = 1
+            while (i < line.size - 1 && run + hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]) < at) { run += hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]); i++ }
+            val va = line[i - 1]; val vb = line[i]
+            val runB = run + hypot(vb[0] - va[0], vb[1] - va[1])
+            val g = fineGround
+            fun clear(a: DoubleArray, b: DoubleArray) = g != null && ShippedSnap.lineWall(a, b, g) == null
+            if (hypot(q[0] - va[0], q[1] - va[1]) < 0.25) return Triple(run / w.len.coerceAtLeast(1e-9), va, true)
+            if (hypot(q[0] - vb[0], q[1] - vb[1]) < 0.25) return Triple(runB / w.len.coerceAtLeast(1e-9), vb, true)
+            if (g == null || (clear(q, va) && clear(q, vb))) return Triple(t, q, false)
+            // the walk's own step at the cut re-aimed at a vertex ([from]: the walk's point beside the cut)
+            for ((v, r) in listOf(va to run, vb to runB).sortedBy { hypot(it.first[0] - q[0], it.first[1] - q[1]) }) {
+                if (clear(from, v)) return Triple((r / w.len.coerceAtLeast(1e-9)).coerceIn(0.0, 1.0), v, true)
+            }
+            return null
+        }
         fun cost(w: W, k: Double, danger: Boolean): Double = when {
             danger -> w.base + k * w.dangerYd
             w.fixedYd != null -> w.base + k * w.fixedYd
@@ -352,8 +379,13 @@ object ShippedRoute {
                     val jp = if (onFloor) j.pts.map { doubleArrayOf(it[0], it[1], Climb.IN_CAVE) } else j.pts
                     if (onFloor) floorEnd.add(j.node!! + (if (outward) OUT else IN))
                     val walk = if (outward) jp.drop(1) else jp.reversed().drop(1)
+                    var walkPts = walk
                     val id = j.node ?: run {
-                        val w = ways[j.way]; val t = j.t; val q = j.at
+                        val w = ways[j.way]
+                        // the walk's point next to the cut, on the end's side (the end itself when the walk is one step)
+                        val beside = if (outward) walk.getOrNull(walk.size - 2) ?: p else walk.firstOrNull() ?: p
+                        val (t, q, moved) = cutAt(w, j.t, j.at, beside) ?: return@run null
+                        if (moved && outward) walkPts = walk.dropLast(1) + listOf(q)          // (walked in: the arc starts at the cut itself)
                         val id = nextVirtual--
                         pos[id] = q
                         val c = cost(w, k, withDanger)
@@ -364,8 +396,8 @@ object ShippedRoute {
                         for ((oid, ow, ot) in cuts) if (ow === w) { val oq = pos[oid]!!; arc(id, oid, abs(t - ot) * c, listOf(oq)); arc(oid, id, abs(t - ot) * c, listOf(q)) }
                         cuts.add(Triple(id, w, t))
                         id
-                    }
-                    if (outward) { arc(virt, id, wc, walk); attachYd[id + OUT] = j.yd } else { arc(id, virt, wc, walk); attachYd[id + IN] = j.yd }
+                    } ?: continue
+                    if (outward) { arc(virt, id, wc, walkPts); attachYd[id + OUT] = j.yd } else { arc(id, virt, wc, walkPts); attachYd[id + IN] = j.yd }
                 }
                 return null
             }
@@ -393,7 +425,7 @@ object ShippedRoute {
             arcs.reverse()
             val pts = arrayListOf(from)
             var rmYd = 0.0
-            fun add(p: DoubleArray) { if (hypot(pts.last()[0] - p[0], pts.last()[1] - p[1]) > 0.5 || p.size != pts.last().size) pts.add(p) }
+            fun add(p: DoubleArray) { if (hypot(pts.last()[0] - p[0], pts.last()[1] - p[1]) >= SAME_PT_YD || p.size != pts.last().size) pts.add(p) }
             for ((u, a) in arcs) {
                 val w = a.way
                 if (w != null && w.roadmap) rmYd += length(listOf(pts.last()) + a.via)
@@ -500,19 +532,18 @@ object ShippedRoute {
 
     /** a way's points with no straight runs' middles (within half a yard of the line), the marks kept */
     private fun tidy(pts: List<DoubleArray>): List<DoubleArray> {
+        // SHIPPED POINTS ARE FOLLOWED EXACTLY (W's Kalimdor 70450 parity: a collinear merge within half a yard dropped walked points -
+        // Desolace's roadmap edge 1669-1720, Tanaris' 2374-2445, Thousand Needles' join 804 - and the shortcut crossed a wall): only a
+        // repeat of the same point with the same mark goes
         if (pts.size <= 2) return pts
         val out = arrayListOf(pts[0])
-        for (i in 1 until pts.size - 1) {
-            val a = out.last(); val b = pts[i]; val c = pts[i + 1]
-            if (b.size > 2 || a.size > 2 || c.size > 2) { out.add(b); continue }
-            val len = hypot(c[0] - a[0], c[1] - a[1])
-            val off = if (len < 1e-6) hypot(b[0] - a[0], b[1] - a[1]) else abs((c[0] - a[0]) * (a[1] - b[1]) - (a[0] - b[0]) * (c[1] - a[1])) / len
-            val along = (b[0] - a[0]) * (c[0] - a[0]) + (b[1] - a[1]) * (c[1] - a[1])
-            if (off > 0.5 || along < 0) out.add(b)
-        }
-        out.add(pts.last())
+        for (q in pts.drop(1)) { val l = out.last()
+            if (hypot(q[0] - l[0], q[1] - l[1]) < SAME_PT_YD && q.size == l.size && (q.size < 3 || q[2] == l[2])) continue
+            out.add(q) }
+        if (out.size == 1) out.add(pts.last())
         return out
     }
+    const val SAME_PT_YD = 0.01
 
     /**
      * THE ATTACH LEG's GROUND round [c] ([lim] yd each way, [ATTACH_STEP_YD] cells): Dijkstra from [c] over the ground's cost and the
