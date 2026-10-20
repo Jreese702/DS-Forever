@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp11" }
+WC.compass = { V = "cp12" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -374,7 +374,8 @@ do
     -- honest fix up to 100 off still corrects a poor rate guess, and teaches the rate)
     C.cam = { off = 0, src = "none", fovAt = -10, hfov = math.rad(90), abs = nil, fixAt = -100, MAXOFF = math.rad(100),
               BASE = math.rad(120), base = nil, ys = 1.3, inv = false, tw = 3, fol = false, gp = nil, rx = 0, acc = 0,
-              extX = nil, extAt = -100 }
+              extX = nil, extAt = -100, ANCHOR_TAU = 4, IDLE_S = 0.5, STRAIGHT_S = 1, STRAIGHT_RATE = 0.35,
+              idleSince = -100, straightSince = -100, lastF = nil }
 
     -- the app's own stick reading, when the game's gamepad API gives none (x: -1 .. 1, right positive)
     function C.stickIn(x)
@@ -438,13 +439,21 @@ do
         K.rx = x
         local rate = (K.base or K.BASE) * K.ys
         if not K.abs then K.abs = facing end
-        if C.turnsWith(moving) then
-            K.abs, K.src, K.acc, K.lastFix = facing, moving and "move" or "turn", 0, nil   -- the character turns with the camera
-        elseif x ~= 0 then
+        -- cp12 (test21, the user: "it seems to be trying to track the charactor direction at the same time ... While walking"): the
+        -- CAMERA is the source at all times. The stick is integrated moving or not; while the character turns with the camera (the
+        -- setting), the facing only ANCHORS it slowly (ANCHOR_TAU), and only once the stick has been idle IDLE_S and the character
+        -- has walked straight STRAIGHT_S (then the game has turned it onto the camera); never a switch to the facing.
+        if math.abs(x) > 0.05 then K.idleSince = now end
+        if K.lastF and dt > 0 and math.abs(C.wrap(facing - K.lastF)) / dt > K.STRAIGHT_RATE then K.straightSince = now end
+        K.lastF = facing
+        if x ~= 0 then
             local d = x * rate * dt * (K.inv and -1 or 1)
             K.abs = C.wrap(K.abs - d)
             K.acc = K.acc + x * dt * (K.inv and -1 or 1)                     -- stick-seconds since the last fix (the rate's lesson)
             K.src = "stick"
+        elseif C.turnsWith(moving) and now - K.idleSince >= K.IDLE_S and now - K.straightSince >= K.STRAIGHT_S then
+            K.abs = C.wrap(K.abs + C.wrap(facing - K.abs) * (1 - math.exp(-dt / K.ANCHOR_TAU)))
+            K.src = "anchor"
         else
             K.src = "still"
         end
@@ -481,7 +490,7 @@ do
                     local err = C.wrap(cam - K.abs)
                     if math.abs(err) <= K.MAXOFF then
                         -- the rate's lesson: the stick turned since the last fix, and the fix says by how much
-                        if K.lastFix and math.abs(K.acc) > 0.25 and not C.turnsWith(moving) then
+                        if K.lastFix and math.abs(K.acc) > 0.25 then
                             local turned = -C.wrap(cam - K.lastFix)
                             local learned = turned / (K.acc * K.ys)
                             if learned > math.rad(20) and learned < math.rad(720) then
