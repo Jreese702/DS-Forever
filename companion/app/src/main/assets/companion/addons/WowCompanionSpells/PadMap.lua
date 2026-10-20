@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m68"                -- bump on every change; m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m69"                -- bump on every change; m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -4137,9 +4137,94 @@ function OV.vp4(curve)
     else out[#out + 1] = "secEnv=A" end
     return out
 end
+-- m69 ROUND 5, EVENT-BASED (tracking after test37: every direct read is secret; the user: "absolutly not, we will find a way to make this
+-- work", then "can we detect incoming damage?"). Still READ ONLY: for 120 s after each load our own frame LISTENS and says, in short
+-- `vp5` cap lines as things happen (the same codes; nothing kept while secret):
+--   "r5 rate …"  at 20 s, 60 s, 120 s: how often UNIT_HEALTH / UNIT_MAXHEALTH / UNIT_POWER_UPDATE / UNIT_POWER_FREQUENT fired for the
+--                player, per 5 s, and how long since the last one (they keep firing while regenerating, stop at full?)
+--   "r5 uc …"    UNIT_COMBAT("player", action, indicator, amount, school): the first 6, each argument plain or secret
+--   "r5 cl …"    COMBAT_LOG_EVENT_UNFILTERED: can our frame register it ("cl reg="), and the first 8 damage / heal events whose
+--                destination is the player: the sub-event, the amount plain or secret
+--   "r5 au …"    the player's Food / Drink / any eating aura when it appears: name, duration, expiration, its points (C_UnitAuras)
+function OV.vp5()
+    if OV.vp5On then return end
+    OV.vp5On = true
+    local d = OV.vpDesc
+    local n, t0 = 0, GetTime()
+    local function say(t)
+        n = n + 1
+        WC.send(WC.encode({ type = "cap", padmap = PV, vp5 = n, t = t:sub(1, 200) })); WC.push()
+    end
+    local EV = { UNIT_HEALTH = "UH", UNIT_MAXHEALTH = "UMH", UNIT_POWER_UPDATE = "UPU", UNIT_POWER_FREQUENT = "UPF" }
+    local cnt, buckets, last = {}, {}, {}
+    local uc, cl, auraSeen = 0, 0, {}
+    local f = CreateFrame("Frame")
+    for e in pairs(EV) do pcall(function() f:RegisterUnitEvent(e, "player") end) end
+    pcall(function() f:RegisterUnitEvent("UNIT_COMBAT", "player") end)
+    pcall(function() f:RegisterUnitEvent("UNIT_AURA", "player") end)
+    local okR, why = pcall(function() f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") end)
+    local reg = okR and d(function() return f:IsEventRegistered("COMBAT_LOG_EVENT_UNFILTERED") end) or "E"
+    say("r5 start cl reg=" .. reg .. (okR and "" or (" err=" .. tostring(why):sub(1, 80))))
+    local pg = T(function() return UnitGUID("player") end)
+    f:SetScript("OnEvent", function(_, e, ...)
+        local now = GetTime() - t0
+        if now > 120 then return end
+        if EV[e] then
+            local k = EV[e]
+            cnt[k] = (cnt[k] or 0) + 1
+            local b = math.floor(now / 5) + 1
+            buckets[k] = buckets[k] or {}
+            buckets[k][b] = (buckets[k][b] or 0) + 1
+            last[k] = now
+        elseif e == "UNIT_COMBAT" and uc < 6 then
+            uc = uc + 1
+            local _, act, ind, amt, sch = ...                            -- locals only: a secret is never put in a table
+            say("r5 uc" .. uc .. " t=" .. math.floor(now) .. " act=" .. d(function() return act end) .. " ind=" .. d(function() return ind end)
+                .. " amt=" .. d(function() return amt end) .. " sch=" .. d(function() return sch end))
+        elseif e == "COMBAT_LOG_EVENT_UNFILTERED" and cl < 8 then
+            local okS, sub = pcall(function() return (select(2, CombatLogGetCurrentEventInfo())) end)
+            if not okS then cl = cl + 1; say("r5 cl" .. cl .. " info=E"); return end
+            local idx = type(sub) == "string" and ({ SWING_DAMAGE = 12, ENVIRONMENTAL_DAMAGE = 13, SPELL_DAMAGE = 15, SPELL_PERIODIC_DAMAGE = 15,
+                           RANGE_DAMAGE = 15, SPELL_HEAL = 15, SPELL_PERIODIC_HEAL = 15 })[sub] or nil
+            if not idx then return end
+            -- the destination: the player's (a secret one cannot be compared: said, not dropped)
+            local okm, same = pcall(function() return (select(8, CombatLogGetCurrentEventInfo())) == pg end)
+            if okm and not same then return end
+            cl = cl + 1
+            say("r5 cl" .. cl .. " t=" .. math.floor(now) .. " " .. sub .. (okm and "" or " dest=S")
+                .. " amt=" .. d(function() return (select(idx, CombatLogGetCurrentEventInfo())) end))
+        elseif e == "UNIT_AURA" then
+            for i = 1, 40 do
+                local a = T(function() return C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL") end)
+                if type(a) ~= "table" then break end
+                local nm = T(function() return a.name end)
+                if type(nm) == "string" and not auraSeen[nm] and (nm:find("Food") or nm:find("Drink") or nm:find("Refreshment")) then
+                    auraSeen[nm] = true
+                    say("r5 au " .. nm:sub(1, 20) .. " dur=" .. d(function() return a.duration end) .. " exp=" .. d(function() return a.expirationTime end)
+                        .. " p1=" .. d(function() return a.points and a.points[1] end) .. " p2=" .. d(function() return a.points and a.points[2] end)
+                        .. " id=" .. d(function() return a.spellId end))
+                end
+            end
+        end
+    end)
+    local function rate(at)
+        local parts = { "r5 rate@" .. at }
+        for _, k in ipairs({ "UH", "UMH", "UPU", "UPF" }) do
+            local b, bs = buckets[k] or {}, {}
+            for i = 1, math.floor(at / 5) do bs[#bs + 1] = tostring(b[i] or 0) end
+            parts[#parts + 1] = k .. "=" .. (cnt[k] or 0) .. (last[k] and ("/last" .. math.floor(at - last[k]) .. "s") or "")
+            if k == "UH" or k == "UPF" then parts[#parts + 1] = k .. "5s=" .. table.concat(bs, ",", math.max(1, #bs - 7)) end
+        end
+        say(table.concat(parts, " "))
+    end
+    C_Timer.After(20, function() rate(20) end)
+    C_Timer.After(60, function() rate(60) end)
+    C_Timer.After(120, function() rate(120); pcall(function() f:UnregisterAllEvents() end) end)
+end
 OV.vpF = CreateFrame("Frame")
 for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED" }) do pcall(function() OV.vpF:RegisterEvent(e) end) end
 OV.vpF:SetScript("OnEvent", function(_, e)
+    if e == "PLAYER_ENTERING_WORLD" then pcall(OV.vp5) end            -- m69: round 5 listens from the load, in fights too
     if e == "PLAYER_REGEN_ENABLED" and not OV.vpWait then return end
     OV.vpWait = nil
     C_Timer.After(8, function() pcall(OV.vitalsProbe) end)          -- the loading screen and the first frames settle first
