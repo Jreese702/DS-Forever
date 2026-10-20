@@ -952,7 +952,24 @@ class RenderSafePath {
                     ?.takeIf { r -> r.reached && r.pts.zipWithNext().all { (u, v) -> Climb.walkable(cg, u, v, deep) } }?.pts }
             val sc = ShipCheck(cg, deep, { a, b -> legOf(a, b)?.takeIf { it.second }?.first }, rmLeg, wetOf,
                 File(File(System.getProperty("user.dir")).parentFile, "py"), cdir, tag, dir.name, dir.parentFile) { println("NET1 $it") }
-            val checked = sc.run(sec.copy(stitches = sc.stitches(sec, rmShape)), rmShape)
+            // THE CHECK IS ON WHAT SHIPS (W's Kalimdor 70450 parity): the section and roadmap as the device decodes them (the JSON's
+            // rounding: nodes 0.1 yd, points 0.01 yd) checked again, nothing mended; a failure there is mended on the decoded pack and
+            // dropped there and verified again, up to 3 rounds
+            fun decoded(s0: ShippedNet.Section, r0: ShippedNet.Roadmap?): Pair<ShippedNet.Section, ShippedNet.Roadmap?> =
+                ShippedNet.Pack.fromJson(org.json.JSONObject(ShippedNet.Pack(ShippedNet.Header(map, rect.c, 0, "", "", ""), listOf(s0), r0).toJson().toString()))!!
+                    .let { it.sections[0] to it.roadmap }
+            var cur = decoded(sec.copy(stitches = sc.stitches(sec, rmShape)), rmShape)
+            var checked = sc.run(cur.first, cur.second)
+            var shipLeft: List<String> = checked.left
+            for (round in 1..3) {
+                val dec = decoded(checked.sec, checked.rm)
+                shipLeft = checked.left + sc.verify(dec.first, dec.second)
+                if (shipLeft.isEmpty() || round == 3) break
+                // (what fails as decoded is dropped there: a line walked again would only be rounded again)
+                println("NET1 SHIPCHECK $tag: the decoded pack fails ${shipLeft.size} (${shipLeft.take(5)}) - dropped from it, round ${round + 1}")
+                cur = dec; checked = sc.run(cur.first, cur.second, dropOnly = true)
+            }
+            checked = ShipCheck.Result(checked.sec, checked.rm, checked.walked, checked.dropped, shipLeft, checked.passes)
             cdir.deleteRecursively()
             if (checked.left.isNotEmpty()) println("NET1 CROSSING $tag: ${checked.left.size} shipped pieces still cross a wall or deep water: ${checked.left.take(10)}")
             // the verdict in a file of its own (py/exportcheck.py requires it: a log's lines can be cut)
