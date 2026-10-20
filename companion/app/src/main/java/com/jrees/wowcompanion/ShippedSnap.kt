@@ -112,17 +112,17 @@ object ShippedSnap {
         }
         val ground0 = if (near.isEmpty()) null else pick(p, near, ground, danger, k, reach, walkYd)
         val fl = if (floorNear.isEmpty()) null else pick(p, floorNear, Ground({ _, _ -> 1f }, ground.water), danger, k, reach, walkYd)
-        // the tiers: the floor's lead (an end on a floor), the ground's lead, then the FALLBACKS one a rank: the level lines first, nearest
-        // first, then those over a climb or a cliff's band; none over [FAR_STEEP] (W's parity: a farther line over a slope cell of 25
-        // degrees or more crossed a wall segcheck sees 78% of the time, a level one 9%)
+        // the tiers, each later one FAR_COST x its rank dearer: an end on a floor - the floor's lead, the floor's other nodes nearest
+        // first (a city's streets, a pocket's deck: often in pieces the graph joins only farther on), then the ground's; the ground's
+        // lead, then its FALLBACKS one a rank, the level lines first, nearest first, then those over a climb or a cliff's band; none
+        // over [FAR_STEEP] (W's parity: a farther line over a slope cell of 25 degrees or more crossed a wall segcheck sees 78% of the
+        // time, a level one 9%)
         val tiers = ArrayList<List<Snap>>()
-        val leadF = fl?.snaps?.filter { it.lead } ?: emptyList()
-        val leadG = ground0?.snaps?.filter { it.lead && leadF.none { f -> f.node == it.node } } ?: emptyList()
-        if (leadF.isNotEmpty()) tiers.add(leadF)
-        if (leadG.isNotEmpty()) tiers.add(leadG)
-        val taken = (leadF + leadG).map { it.node }.toHashSet()
-        val rest = ((fl?.snaps ?: emptyList()) + (ground0?.snaps ?: emptyList())).filter { !it.lead && it.steep < FAR_STEEP && taken.add(it.node) }
-        for (r in rest.sortedWith(compareBy({ it.steep > 1f }, { it.yd }))) tiers.add(listOf(r))
+        val taken = HashSet<Int>()
+        fun lead(r: Result?) = r?.snaps?.filter { it.lead && taken.add(it.node) }?.takeIf { it.isNotEmpty() }?.let { tiers.add(it) }
+        fun rest(r: Result?) = r?.snaps?.filter { !it.lead && it.steep < FAR_STEEP && it.node !in taken }
+            ?.sortedWith(compareBy({ it.steep > 1f }, { it.yd }))?.forEach { if (taken.add(it.node)) tiers.add(listOf(it)) }
+        lead(fl); rest(fl); lead(ground0); rest(ground0)
         val out = tiers.flatMapIndexed { rank, t -> t.map { it.ranked(rank) } }
         if (out.isEmpty()) return Result(emptyList(), (if (fl != null) "on a floor: ${fl.why}; " else "") + (ground0?.why ?: "no ground node within ${reach.toInt()} yd"))
         return Result(out, (if (fl != null && fl.ok) "on a floor: ${fl.why}" else ground0!!.why) + if (out.size > out.count { it.lead }) "; ${out.size - out.count { it.lead }} fallbacks" else "")
