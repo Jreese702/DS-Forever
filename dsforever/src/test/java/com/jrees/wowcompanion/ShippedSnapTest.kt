@@ -144,6 +144,26 @@ class ShippedSnapTest {
         assertEquals(listOf(rm + 3), lead(w))
     }
 
+    @Test fun theFallbacksAreRankedLevelFirstAndNoneOverSteepGround() {
+        // node 1 the lead (10 yd); the rest only as fallbacks: 3 (40 yd, level) before 2 (30 yd, over a climb); 4 over a rock field: none
+        val ground: (Double, Double) -> Float = { x, y -> if (y > 5.0 && x in -5.0..5.0) 3f else if (y < -5.0 && x in -5.0..5.0) 6f else 1f }
+        val r = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(10.0, 0.0), 2 to doubleArrayOf(0.0, 30.0), 3 to doubleArrayOf(-40.0, 0.0),
+            4 to doubleArrayOf(0.0, -35.0)), ShippedSnap.Ground(ground))
+        assertEquals(listOf(1, 3, 2), r.snaps.map { it.node })
+        assertEquals(listOf(true, false, false), r.snaps.map { it.lead })
+        assertTrue(r.snaps[2].cost > r.snaps[1].cost && r.snaps[1].cost > ShippedSnap.FAR_COST)
+    }
+
+    @Test fun aCitysStreetNodesAreSnappedToOnlyFromAnEndOnThatFloor() {
+        // a street node 4 yd off (a floor's inside node, not in the ground's nodes) and a ground node 13 yd off
+        val streets = listOf(7 to doubleArrayOf(4.0, 0.0))
+        val r = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(0.0, 13.0)), ShippedSnap.Ground(flat), floor = setOf(7), floorNodes = streets)
+        assertEquals(listOf(7), lead(r)); assertTrue(r.why, r.why.startsWith("on a floor"))
+        // off the floor (the ground node nearer): the ground's, the street node never offered
+        val off = ShippedSnap.snap(doubleArrayOf(0.0, 12.0), listOf(1 to doubleArrayOf(0.0, 13.0)), ShippedSnap.Ground(flat), floor = setOf(7), floorNodes = streets)
+        assertEquals(listOf(1), off.snaps.map { it.node })
+    }
+
     @Test fun noNodeWithin60YdSaysSo() {
         val r = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(80.0, 0.0)), ShippedSnap.Ground(flat))
         assertFalse(r.ok)
@@ -178,6 +198,14 @@ class ShippedSnapTest {
         assertTrue(r.why, r.snapped)
         val leg = r.pts.takeWhile { it[0] < 40.0 - 1e-6 } + listOf(r.pts.first { it[0] >= 40.0 - 1e-6 })
         assertTrue("the snap never crosses the wall", clear(leg, g))
+    }
+
+    @Test fun anIsolatedNodeIsNeverTheSnap() {
+        // a roadmap node 2 yd from the player that no way leaves: left out of the snap's nodes, the road's node taken
+        val rm = ShippedRoute.Roadmap(mapOf(ShippedRoute.RM_BASE to doubleArrayOf(2.0, 0.0)), emptyList())
+        val r = ShippedRoute.plan(road40(), flat, null, p0, doubleArrayOf(40.0, 1000.0), roadmap = rm)
+        assertTrue(r.why, r.reached)
+        assertEquals(40.0, r.pts[1][0], 1e-6); assertEquals(0.0, r.pts[1][1], 1e-6)
     }
 
     @Test fun theAttacherFallsBackToTheLongAttachAndSaysWhy() {

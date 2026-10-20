@@ -19,10 +19,12 @@ import kotlin.math.max
  *   wade): only dry ground, a bridge's deck, a ford ([SafePath.FORD_DEPTH]) or a NARROW STREAM ([SafePath.NARROW_DEPTH] deep at most,
  *   [SafePath.NARROW_YD] across at most: [SafePath.Water.wadeable]);
  * - an end standing in a wall (the player inside an inn, the goal in a hut) passes the walls within [DOOR_YD] of itself (its door).
- * PREFERRED: the node whose snap is the STRAIGHT line and clear (no Climb, no lattice: the line read every [LINE_STEP_YD] against the
- * walls and the water); a node reached only by bending round a wall or a pond costs [BENT] more a yard, so it wins only when it is
- * really the better way on. No node within [SNAP_YD], or none any clear walk of [WALK_YD] reaches: [Result.snaps] empty and
- * [Result.why] says why - the caller then takes the old long attach (at most ShippedRoute.ATTACH_MAX_YD) and logs it.
+ * THE CHOICE ([snap]; W's v2 parity, NET2_PARITY.md: 22 crossings on the snap legs, then 1): the NEAREST straight clear line and
+ * those [SPREAD_YD] longer lead; an end ON A FLOOR (a city's street, a walkway, the start pocket over a cave) snaps to its floor's nodes
+ * first; every other snap is only a FALLBACK, [FAR_COST] x its rank dearer (the router takes one only when the nearer ones' piece of
+ * the graph joins nothing on), the level lines before those over a climb, none over [FAR_STEEP]. No node within [SNAP_YD], or none any
+ * clear walk of [WALK_YD] reaches: [Result.snaps] empty and [Result.why] says why - the caller then takes the old long attach (at most
+ * ShippedRoute.ATTACH_MAX_YD) and logs it.
  * Pure: no Android, no files.
  */
 object ShippedSnap {
