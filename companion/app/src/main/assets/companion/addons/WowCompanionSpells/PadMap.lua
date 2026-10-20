@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m67"                -- bump on every change; m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m68"                -- bump on every change; m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -3931,8 +3931,11 @@ function OV.vitalsProbe()
                 end
             end
             -- m67: round 3's lines after round 2's ("r3 …" the answers, "d3 …" the names found)
-            local ok = pcall(OV.vp3, function(parts, found)
+            local ok = pcall(OV.vp3, function(parts, found, curve)
                 for _, l in ipairs(OV.vpPack("r3", parts, 170)) do lines[#lines + 1] = l end
+                -- m68: round 4's answers ("r4 …") before the names
+                local ok4, p4 = pcall(OV.vp4, curve)
+                for _, l in ipairs(OV.vpPack("r4", ok4 and p4 or { "failed" }, 170)) do lines[#lines + 1] = l end
                 for _, f in ipairs(found) do
                     local cut = {}
                     for piece in f:gmatch("[^,]+") do cut[#cut + 1] = piece end
@@ -4028,7 +4031,7 @@ function OV.vp3(done)
         b:SetValue(UnitHealth("player"))
         return b
     end)
-    if not okB or not bar then out[#out + 1] = "sb=E"; done(out, found) return end
+    if not okB or not bar then out[#out + 1] = "sb=E"; done(out, found, curve) return end
     local n = 0
     bar:SetScript("OnUpdate", function(self)
         n = n + 1
@@ -4040,8 +4043,99 @@ function OV.vp3(done)
             .. " sb.bl=" .. d(function() return self:GetLeft() end)
         out[#out + 1] = "sb.tc=" .. d(function() return (select(5, tex:GetTexCoord())) end)
         pcall(function() self:Hide() end)
-        done(out, found)
+        done(out, found, curve)
     end)
+end
+-- m68 ROUND 4 (tracking after test36: the curve works on plain input but its output on the secret percent is secret; the calculator
+-- listed no methods; the status bar's geometry is secret too; discovery found UnitPercentHealthFromGUID, EvaluateColorValueFromBoolean,
+-- EvaluateGameCurve, GetUnitTotalModifiedMaxHealthPercent). Still READ ONLY, the same codes, "r4 …" lines:
+--   (1) UnitPercentHealthFromGUID(UnitGUID(unit)) for the player, the target, party1;
+--   (2) the calculator: its metatable's kind, every method name it shows, and the likely ones BY NAME (a userdata's __index cannot be
+--       walked), each with no arguments and with the curve, after UnitGetDetailedHealPrediction("player", "player", calc) too;
+--   (3) GetUnitTotalModifiedMaxHealthPercent("player");
+--   (4) C_CurveUtil.EvaluateColorValueFromBoolean / EvaluateGameCurve given a secret input;
+--   (5) a secure snippet (the restricted environment, our own SecureHandler frame): does it have UnitHealth, and what does it get?
+function OV.vp4(curve)
+    local d = OV.vpDesc
+    local out = {}
+    -- (1)
+    local gf = rawget(_G, "UnitPercentHealthFromGUID")
+    for _, u in ipairs({ "player", "target", "party1" }) do
+        if type(gf) == "function" then
+            out[#out + 1] = "pctGUID." .. u .. "=" .. d(function()
+                local g = UnitGUID(u)
+                if g == nil then return nil end
+                return gf(g)
+            end)
+        end
+    end
+    out[#out + 1] = "guid=" .. d(function() return UnitGUID("player") ~= nil end)
+    -- (2)
+    local mk = rawget(_G, "CreateUnitHealPredictionCalculator")
+    if type(mk) == "function" then
+        local ok, calc = pcall(mk)
+        if ok and calc ~= nil then
+            out[#out + 1] = "calc=" .. type(calc)
+            local mt = getmetatable(calc)
+            out[#out + 1] = "calc.mt=" .. type(mt) .. (type(mt) == "table" and ("/" .. type(mt.__index)) or "")
+            local names, seen = {}, {}
+            local function add(k) if type(k) == "string" and not seen[k] then seen[k] = true; names[#names + 1] = k end end
+            if type(mt) == "table" then
+                for k in pairs(mt) do add(k) end
+                if type(mt.__index) == "table" then for k in pairs(mt.__index) do add(k) end end
+            end
+            if type(calc) == "table" then for k in pairs(calc) do add(k) end end
+            for _, k in ipairs({ "GetCurrentHealth", "GetMaximumHealth", "GetMissingHealth", "GetHealthPercent", "GetIncomingHeals",
+                                 "GetIncomingHealsFromHealer", "GetHealAbsorbs", "GetTotalDamageAbsorbs", "GetDamageAbsorbs",
+                                 "EvaluateCurrentHealthPercent", "EvaluateMissingHealthPercent", "EvaluateHealthPercent",
+                                 "GetPredictedHealth", "GetPredictedValues" }) do add(k) end
+            pcall(function() UnitGetDetailedHealPrediction("player", "player", calc) end)
+            local listed = {}
+            for _, k in ipairs(names) do
+                local f = T(function() return calc[k] end)
+                if type(f) == "function" and not k:find("^__") then
+                    listed[#listed + 1] = k
+                    local a = d(function() return f(calc) end)
+                    local b = curve and d(function() return f(calc, curve) end) or "-"
+                    out[#out + 1] = "c." .. k:gsub("^Get", "G"):gsub("^Evaluate", "E") .. "=" .. a .. (b ~= a and ("|" .. b) or "")
+                end
+            end
+            out[#out + 1] = "calc.n=" .. #listed
+        else out[#out + 1] = "calc=E" end
+    else out[#out + 1] = "calc=A" end
+    -- (3)
+    out[#out + 1] = "modMax%=" .. (type(rawget(_G, "GetUnitTotalModifiedMaxHealthPercent")) == "function"
+        and d(function() return GetUnitTotalModifiedMaxHealthPercent("player") end) or "A")
+    -- (4) the boolean / game-curve evaluators given a secret
+    local cu = rawget(_G, "C_CurveUtil")
+    if type(cu) == "table" then
+        local function sec() return UnitHealthPercent("player", true, curve) end
+        if type(cu.EvaluateColorValueFromBoolean) == "function" then
+            out[#out + 1] = "evBool=" .. d(function() return cu.EvaluateColorValueFromBoolean(sec(), 0, 1) end)
+            out[#out + 1] = "evBool2=" .. d(function() return cu.EvaluateColorValueFromBoolean(UnitHealth("player") ~= nil, 0, 1) end)
+        end
+        if type(cu.EvaluateColorFromBoolean) == "function" then
+            out[#out + 1] = "evCol=" .. d(function()
+                local c = cu.EvaluateColorFromBoolean(sec(), CreateColor(1, 0, 0), CreateColor(0, 1, 0))
+                return c and c.r
+            end)
+        end
+        if type(cu.EvaluateGameCurve) == "function" then
+            out[#out + 1] = "evGame=" .. d(function() return cu.EvaluateGameCurve(1, sec()) end)
+            out[#out + 1] = "evGame2=" .. d(function() return cu.EvaluateGameCurve(1, 0.5) end)
+        end
+    end
+    -- (5) the restricted environment: our own SecureHandler frame, out of combat only
+    local okS, fr = pcall(function() return CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate") end)
+    if okS and fr and type(SecureHandlerExecute) == "function" then
+        pcall(SecureHandlerExecute, fr, [[ self:SetAttribute("wc-has", UnitHealth and "yes" or "no") ]])
+        out[#out + 1] = "secEnv.has=" .. d(function() return fr:GetAttribute("wc-has") end)
+        local okE = pcall(SecureHandlerExecute, fr, [[ self:SetAttribute("wc-h", UnitHealth("player")) ]])
+        out[#out + 1] = "secEnv.run=" .. (okE and "T" or "F") .. " secEnv.h=" .. d(function() return fr:GetAttribute("wc-h") end)
+        local okP = pcall(SecureHandlerExecute, fr, [[ self:SetAttribute("wc-p", PlayerInCombat and "pic" or "none") ]])
+        out[#out + 1] = "secEnv.other=" .. (okP and "T" or "F") .. "," .. d(function() return fr:GetAttribute("wc-p") end)
+    else out[#out + 1] = "secEnv=A" end
+    return out
 end
 OV.vpF = CreateFrame("Frame")
 for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED" }) do pcall(function() OV.vpF:RegisterEvent(e) end) end
