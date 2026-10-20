@@ -365,31 +365,84 @@ def main():
     G.nav = L.table_from({"x": c0 + c0 * math.tan(C.wrap(truecam - Bb)), "y": 400.0, "clamped": False})
     frames(60, read=True)
     chk("cam: a mirrored projection never counts (src mirror, the yaw stays %.3f)" % C.cam.abs, C.cam.src == "mirror" and abs(C.cam.abs - truecam) < 0.02)
-    # the rate is LEARNED: the true rate 60 deg/s (base 46 at speed 1.3; the guess 120); the stick held 0.5 s off screen, then a fix
+    # cp16, THE LEARNED LAW (the user: "doing a full 360 with the camera does not land it in the expected same spot"): the game's
+    # camera turns as k x |x|^2 here (a curve, unknown to the add-on: 140 deg/s at full deflection); out-and-back turns and full
+    # circles with the quest's marker seen between them teach it; then a full circle at half deflection lands on the same spot
+    G.quest = L.table(0.6, 0.4); G.facing = 0.0; G.speed = 0; G.rx = 0
+    if L.globals().WowCompanionDB.compassCal is not None:
+        L.globals().WowCompanionDB.compassCal = None
+    C.cam.kb, C.cam.p, C.cam.calN, C.cam.pairs, C.cam.base, C.cam.calLoaded = None, None, None, None, None, True
+    C.setCam(True); C.draw()
+    Bq = math.atan2(-100, 100)
+    tk, tp = math.radians(140), 2.0
+    st = {"cam": Bq}                                     # the true camera, starting on the quest
+
+    def show_nav():
+        rel = C.wrap(st["cam"] - Bq)
+        G.nav = L.table_from({"x": c0 + c0 * math.tan(rel), "y": 400.0, "clamped": False}) if abs(rel) < math.radians(40) else None
+
+    def turn(x, secs):
+        G.rx = x
+        for i in range(int(round(secs * 60))):
+            st["cam"] = C.wrap(st["cam"] - (1 if x > 0 else -1) * abs(x) ** tp * tk / 60)
+            show_nav()
+            G.t = G.t + 1 / 60
+            if i % 6 == 0:
+                C.read(True)
+            step(f, 1 / 60)
+        G.rx = 0
+
+    def look(secs=1.0):
+        for i in range(int(secs * 60)):
+            show_nav()
+            G.t = G.t + 1 / 60
+            if i % 6 == 0:
+                C.read(True)
+            step(f, 1 / 60)
+
+    C.cam.abs = st["cam"]; look()
+    turn(1.0, 2 * math.pi / tk); look()                                          # a full circle at full deflection
+    o1, b1 = 0.6, 0.8
+    turn(o1, math.radians(120) / (tk * o1 ** tp)); turn(-b1, math.radians(120) / (tk * b1 ** tp)); look()   # out 120 at 0.6, back at 0.8
+    o2, b2 = 0.4, 1.0
+    turn(o2, math.radians(90) / (tk * o2 ** tp)); turn(-b2, math.radians(90) / (tk * b2 ** tp)); look()     # out 90 at 0.4, back at 1.0
+    turn(0.7, math.radians(100) / (tk * 0.7 ** tp)); turn(-0.5, math.radians(100) / (tk * 0.5 ** tp)); look()
+    chk("cp16: the law learned from %s lessons: exponent %s (true 2), %.0f deg/s at full (true 140)"
+        % (C.cam.calN, C.cam.p, math.degrees((C.cam.kb or 0) * 1.3)),
+        C.cam.p == 2 and abs(math.degrees(C.cam.kb * 1.3) - 140) < 7)
+    # the user's test: a full circle at half deflection, the marker NOT seen until the end: the compass lands on the same spot
+    st["cam"] = Bq; C.cam.abs = Bq; look()
+    G.quest = None; C.read(True)
+    turn(0.5, 2 * math.pi / (tk * 0.5 ** tp))
+    miss = abs(C.wrap(C.cam.abs - st["cam"]))
+    chk("cp16: a full 360 at half deflection lands within %.1f degrees of the same spot" % math.degrees(miss), miss < math.radians(5))
+    chk("cp16: the law is kept in our saved data", L.globals().WowCompanionDB.compassCal.p == 2)
+    chk("cp16: the line's self-check: the last lesson's residual (%s deg)" % (None if C.cam.lastRes is None else round(math.degrees(C.cam.lastRes))),
+        C.cam.lastRes is not None)
+    # (the next checks simulate a LINEAR camera: the learned curve and its lessons cleared)
+    L.globals().WowCompanionDB.compassCal = None
+    C.cam.kb, C.cam.p, C.cam.calN, C.cam.pairs, C.cam.base = None, None, None, None, None
     G.quest = L.table(0.6, 0.4)
-    G.nav = L.table_from({"x": c0 + c0 * math.tan(truecam - B), "y": 400.0, "clamped": False})
-    frames(30, read=True)
-    G.nav = None
-    G.rx = 1.0; frames(30, read=True); G.rx = 0
-    cam2 = truecam - math.radians(60) * 0.5
-    G.nav = L.table_from({"x": c0 + c0 * math.tan(cam2 - B), "y": 400.0, "clamped": False})
-    frames(60, read=True)
-    lb = math.degrees(C.cam.base or 0)
-    chk("cam: the yaw rate is learned from two fixes (base 120 -> %.0f deg/s, toward the true %.0f), the yaw corrected" % (lb, 60 / 1.3),
-        C.cam.base is not None and 60 / 1.3 - 1 < lb < 100 and abs(C.cam.abs - cam2) < 0.02)
     G.nav = None; G.quest = None
 
     # test20 / test21: a full turn of the CAMERA by the stick while walking, the character following it a little behind (the game's
     # turn lag), the quest's projections true to the camera (mirrored behind it): the compass spins with the camera, not the facing
+    L.globals().WowCompanionDB.compassCal = None                # (a clean law: the checks above set the camera by hand)
+    C.cam.kb, C.cam.p, C.cam.calN, C.cam.pairs, C.cam.base = None, None, None, None, None
     G.quest = L.table(0.6, 0.4); G.speed = 7; G.facing = 0.0; C.draw(); C.cam.abs = 0.0
     cam_true, hs, fs = 0.0, [], []
-    for k in range(180):
+    for k in range(540):
         G.rx = -1.0                                        # stick left: the camera turns counter-clockwise
-        cam_true = C.wrap(cam_true + (C.cam.base or C.cam.BASE) * 1.3 * (1 / 60) * 3)
+        cam_true = C.wrap(cam_true + math.radians(120) * 1.3 * (1 / 60))
         G.facing = C.wrap(cam_true - 0.6)                  # the character lags 0.6 rad behind the camera
         G.nav = L.table_from({"x": c0 + c0 * math.tan(C.wrap(cam_true - B)), "y": 400.0, "clamped": False})
-        frames(3, read=True)
-        hs.append(C.wrap(C.wrap(C.h) - cam_true)); fs.append(C.wrap(C.wrap(C.h) - G.facing))
+        G.t = G.t + 1 / 60
+        if k % 6 == 0:
+            C.read(True)
+        step(f, 1 / 60)
+        if k % 3 == 2:
+            # the camera model itself (the shown heading eases ~2v/omega behind a fast constant turn: the display, not the model)
+            hs.append(C.wrap(C.cam.abs - cam_true)); fs.append(C.wrap(C.cam.abs - G.facing))
     G.rx = 0
     worst = max(abs(h) for h in hs[10:])
     chk("test21: orbiting while walking: the compass stays on the camera (worst %.0f deg), never on the facing 34 deg behind it"
@@ -469,6 +522,8 @@ def main():
     # cp15, THE TRUE-UP (the user: "when ever the controls stick points directly up, we know the true direction that the camera is
     # currently facing ... very gently true up the compass"): the movement stick forward, the character walks along the camera's yaw
     G.nav = None; G.quest = None; G.pin = None
+    L.globals().WowCompanionDB.compassCal = None                # (the law from the hand-set checks above cleared)
+    C.cam.kb, C.cam.p, C.cam.calN, C.cam.pairs, C.cam.base = None, None, None, None, None
     C.setCam(True); G.facing = 0.5; C.draw(); C.read(True)
     srcs = set()
 
