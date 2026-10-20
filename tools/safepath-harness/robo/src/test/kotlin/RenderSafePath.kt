@@ -873,8 +873,17 @@ class RenderSafePath {
             val (netJ, jx) = NetJoins.extras(netC, nj.joins, nextId)
             extras.addAll(jx)
             // THE ROADMAP: the coverage graph of the walkable ground, this faction's danger along each of its edges
-            val rb = RoadmapBuild(cg, deep, standable, ::roomsAt, waterAt, layers, rect.t, rect.b, rect.l, rect.r)
-            val built = rb.build { println("NET1 $it") }
+            // (T3's NetRoadmap: the zone's own cells, the best vertex a cell, every edge through segcheck / wetcheck as it is built - in a
+            // folder of its own beside the zone's floors; SAFEPATH_ROADMAP=prototype: the first one, RoadmapBuild)
+            val rmShape: ShippedNet.Roadmap = if (System.getenv("SAFEPATH_ROADMAP") == "prototype")
+                RoadmapBuild(cg, deep, standable, ::roomsAt, waterAt, layers, rect.t, rect.b, rect.l, rect.r).build { println("NET1 $it") }.rm
+            else {
+                val rdir = File(out, "roadmap_$tag").also { it.mkdirs() }
+                for (k2 in listOf("floors", "holes", "layers", "decks")) File(out, "${k2}_$tag.json").takeIf { it.isFile }?.copyTo(File(rdir, "${k2}_$tag.json"), true)
+                val nb = NetRoadmap.build(NetRoadmap.Ground(cg, deep, sr::overFord, waterAt, ::roomsAt, calm, k, { x, y -> ar?.uiMap(zg.areaAt(x, y)) == map }), NetRoadmap.CELL,
+                    check = NetRoadmap.pyCheck(File(File(System.getProperty("user.dir")).parentFile, "py"), rdir, tag, dir.name, dir.parentFile)) { println("NET1 $it") }
+                rdir.deleteRecursively()
+                nb.rm }
             // NET2 (NetFloors, helper T4): the floor layers' ways, the caves' mouths joined to the ground, the far goals' spurs - all walked
             // (SAFEPATH_NETFLOORS=0: left out)
             var netS = netJ; var nodesS: List<SafePath.Node> = floorNodes; var extrasS: List<ShippedNet.Extra> = extras
@@ -943,7 +952,7 @@ class RenderSafePath {
                     ?.takeIf { r -> r.reached && r.pts.zipWithNext().all { (u, v) -> Climb.walkable(cg, u, v, deep) } }?.pts }
             val sc = ShipCheck(cg, deep, { a, b -> legOf(a, b)?.takeIf { it.second }?.first }, rmLeg, wetOf,
                 File(File(System.getProperty("user.dir")).parentFile, "py"), cdir, tag, dir.name, dir.parentFile) { println("NET1 $it") }
-            val checked = sc.run(sec.copy(stitches = sc.stitches(sec, built.rm)), built.rm)
+            val checked = sc.run(sec.copy(stitches = sc.stitches(sec, rmShape)), rmShape)
             cdir.deleteRecursively()
             if (checked.left.isNotEmpty()) println("NET1 CROSSING $tag: ${checked.left.size} shipped pieces still cross a wall or deep water: ${checked.left.take(10)}")
             // the verdict in a file of its own (py/exportcheck.py requires it: a log's lines can be cut)
