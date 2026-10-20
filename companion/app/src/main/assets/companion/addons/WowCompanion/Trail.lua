@@ -1025,7 +1025,7 @@ end
 --   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
 --   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 --   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-WC.live = { V = "ag2", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+WC.live = { V = "ag3", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -1143,6 +1143,8 @@ do
     function A.free(tok)
         local s = A.byTok[tok]
         if s == nil then return end
+        for k = 1, 2 do if A.pick and A.pick[k] and A.pick[k].s == s then A.pick[k] = nil end end
+        if A.qset then A.qset[s] = nil end
         A.slot[s], A.byTok[tok], A.freeAt[s] = nil, nil, now()
     end
 
@@ -1228,6 +1230,10 @@ do
             end
         end
         m.age = math.floor(t - st.at)
+        -- ag3: our marker on it now (the app's pull picks, the app's quest set): the app checks its taps landed by this
+        if A.pick[1] and A.pick[1].s == s and A.pick[1].tok == tok then m.mk = "p1"
+        elseif A.pick[2] and A.pick[2].s == s and A.pick[2].tok == tok then m.mk = "p2"
+        elseif A.qset[s] == tok then m.mk = "q" end
         if pv(UnitIsDead, tok) == true then m.dd = 1 end
         -- the pull detector (Forever Range's): the last CALM reading, then a calm -> on-me turn
         local onMe = m.om ~= nil and m.om >= 2
@@ -1458,6 +1464,89 @@ do
     --         not on us within 30 yd (it may turn on us);
     --   QUEST (smallquestbang, the signed-off F spec): a quest objective (qi);
     --   the pull picks p1 / p2 (TargetCrosshairs) come with the app's tap row, later.
+    -- ---------------------------------------------------------------- THE APP'S PICKS (ag3; contract taps v2)
+    -- The tap pad is full (54 of 54 rows), so the picks ride Interact's own dynamic "iact" row: 12 keys ("ag 0".."ag 7", "ag p1",
+    -- "ag p2", "ag clr", "ag qm"), present only while the live layer is on (the route runs, the layer not off) and no NPC window
+    -- is open (Interact's buildDoc: doc.aggro.cells). An op opens a 2 s digit window:
+    --   ag p1 / ag p2 + 2 octal digits (high first) = the slot 0..23: pull pick #1 / #2;
+    --   ag clr + ag p1 / ag p2 = clear that pick; ag clr twice = both; ag clr with another window open = cancel it;
+    --   ag qm + 8 octal digits (low first) = the 24-bit quest mask (replaces the last one).
+    -- A slot younger than 0.6 s (just reassigned) is refused ("slot gone"); a pick goes with its plate. Every op answers
+    -- {"type":"aggroack", op, k, s, ok, why} / {op = "qmask", mask, ok}; the next record's mk shows it.
+    A.pick, A.qset, A.WIN_S, A.YOUNG_S = {}, {}, 2, 0.6
+    function A.tapsWanted()
+        return type(WC.routeWp) == "table" and WC.routeWp.active == true and not A.off
+    end
+    local function ack(t)
+        t.type = "aggroack"
+        pcall(function() WC.send(WC.encode(t)); WC.push() end)
+        A.lastAck = t
+        return t.ok == 1 or t.ok == true, t.why
+    end
+    function A.slotOk(s)
+        local st = s and A.slot[s]
+        return st and (now() - st.at) >= A.YOUNG_S and st or nil
+    end
+    function A.tap(a)
+        local t = now()
+        local w = A.win
+        if w and t - w.at > A.WIN_S then w, A.win = nil, nil end            -- expired
+        local d = tonumber(a)
+        if d and d >= 0 and d <= 7 then
+            if not w or w.op == "clr" then return ack({ op = "digit", ok = 0, why = "no window" }) end
+            w.d[#w.d + 1] = d
+            if (w.op == "p1" or w.op == "p2") and #w.d == 2 then
+                A.win = nil
+                local k = w.op == "p1" and 1 or 2
+                local s = w.d[1] * 8 + w.d[2]
+                local st = A.slotOk(s)
+                if not st then return ack({ op = "pull", k = k, s = s, ok = 0, why = "slot gone" }) end
+                A.pick[k] = { s = s, tok = st.tok }
+                if A.pick[3 - k] and A.pick[3 - k].s == s then A.pick[3 - k] = nil end
+                return ack({ op = "pull", k = k, s = s, ok = 1 })
+            elseif w.op == "qm" and #w.d == 8 then
+                A.win = nil
+                local mask, applied = 0, 0
+                for i = 1, 8 do mask = mask + w.d[i] * 8 ^ (i - 1) end
+                A.qset = {}
+                for s = 0, A.MAX - 1 do
+                    if math.floor(mask / 2 ^ s) % 2 == 1 then
+                        local st = A.slotOk(s)
+                        if st then A.qset[s] = st.tok; applied = applied + 2 ^ s end
+                    end
+                end
+                return ack({ op = "qmask", mask = applied, ok = 1 })
+            end
+            return true
+        end
+        if a == "p1" or a == "p2" then
+            local k = a == "p1" and 1 or 2
+            if w and w.op == "clr" then
+                A.win = nil
+                A.pick[k] = nil
+                return ack({ op = "pull", k = k, s = -1, ok = 1 })
+            end
+            A.win = { op = a, d = {}, at = t }
+            return true
+        elseif a == "clr" then
+            if w and w.op == "clr" then
+                A.win = nil
+                A.pick[1], A.pick[2] = nil, nil
+                ack({ op = "pull", k = 1, s = -1, ok = 1 })
+                return ack({ op = "pull", k = 2, s = -1, ok = 1 })
+            elseif w then
+                A.win = nil                                                -- a window open: cancelled
+                return ack({ op = "cancel", ok = 1 })
+            end
+            A.win = { op = "clr", d = {}, at = t }
+            return true
+        elseif a == "qm" then
+            A.win = { op = "qm", d = {}, at = t }
+            return true
+        end
+        return ack({ op = tostring(a), ok = 0, why = "unknown" })
+    end
+
     A.icon = {}
     function A.iconFor(s)
         local o = A.icon[s]
@@ -1476,7 +1565,18 @@ do
         q:SetSize(u(30), u(30))
         q:SetPoint("LEFT", f, "CENTER", -u(14), 0)
         pcall(function() q:SetAtlas("smallquestbang") end)
-        o = { f = f, av = av, q = q }
+        -- ag3: the app's pull pick (the signed-off F spec: TargetCrosshairs 44 px, its step number at its top right)
+        local pk = f:CreateTexture(nil, "ARTWORK", nil, 2)
+        pk:SetSize(u(44), u(44))
+        pk:SetPoint("BOTTOM", f, "BOTTOM", 0, 0)
+        pcall(function() pk:SetAtlas("TargetCrosshairs") end)
+        pk:Hide()
+        local pn = f:CreateFontString(nil, "OVERLAY")
+        pcall(function() pn:SetFont("Fonts\\FRIZQT__.TTF", u(13), "OUTLINE") end)
+        pn:SetPoint("BOTTOMLEFT", pk, "TOPRIGHT", -u(8), -u(10))
+        pcall(function() pn:SetTextColor(1, 0.82, 0, 1) end)
+        pn:Hide()
+        o = { f = f, av = av, q = q, pk = pk, pn = pn }
         A.icon[s] = o
         return o
     end
@@ -1491,8 +1591,10 @@ do
         local want = {}
         for _, m in ipairs(list or {}) do
             if not m.dd and A.slot[m.s] then
-                local av, qq = A.avoidOf(m, plv), m.qi == 1
-                if av or qq then want[m.s] = { av = av, q = qq, tok = A.slot[m.s].tok } end
+                local tok = A.slot[m.s].tok
+                local av, qq = A.avoidOf(m, plv), m.qi == 1 or A.qset[m.s] == tok
+                local pk = (A.pick[1] and A.pick[1].s == m.s and 1) or (A.pick[2] and A.pick[2].s == m.s and 2) or nil
+                if av or qq or pk then want[m.s] = { av = av and not pk, q = qq and not pk, pk = pk, tok = tok } end
             end
         end
         A.iconN = 0
@@ -1514,6 +1616,7 @@ do
                 end
                 if w.av then o.av:Show() else o.av:Hide() end
                 if w.q then o.q:Show() else o.q:Hide() end
+                if w.pk then o.pk:Show(); o.pn:SetText(tostring(w.pk)); o.pn:Show() else o.pk:Hide(); o.pn:Hide() end
                 if not o.f:IsShown() then o.f:Show() end
                 A.iconN = A.iconN + 1
             end
@@ -1538,6 +1641,7 @@ do
         local line = { type = "cap", probe = "aggro", v = A.V, plates = nTok, slots = nSlot, bs = nb.s, bi = nb.i, bd = nb.d,
                        sx = A.sxPlain and true or false, off = A.off, q = A.q, full = A.sent.full, same = A.sent.same,
                        still = A.sent.still, rej = A.lastReject, err = A.err,
+                       picks = (A.pick[1] and 1 or 0) + (A.pick[2] and 1 or 0), win = A.win and A.win.op or nil,
                        np = A.np.state, npv = npGet(), npo = A.npSaved() and A.npSaved().orig or nil, icons = A.iconN or 0,
                        route = type(WC.routeWp) == "table" and WC.routeWp.active == true }
         A.lastDiag = line
@@ -1590,6 +1694,13 @@ do
             if A.covDirty and not A.covAt then A.covAt = t + 0.5 end
             A.npStep()
             A.scan()
+            -- the picks' iact cells come with the layer: Interact's document rebuilt when that changes (ag3)
+            local tw = A.tapsWanted()
+            if tw ~= A.lastTw then
+                A.lastTw = tw
+                if not tw then A.pick, A.qset, A.win = {}, {}, nil end
+                if type(WC.interactPoke) == "function" then pcall(WC.interactPoke) end
+            end
             if A.off then A.iconsClear() else A.iconsStep(A.last and A.last.m) end
             A.still()
             A.diag()
