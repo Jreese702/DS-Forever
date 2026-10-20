@@ -147,23 +147,28 @@ class RenderSafePath {
             if (map == main) levels2(net, rect, tg, zi.heightV(voidBelow), roadAt, zg, areas, here, dir, { x, y -> wg.at(x, y) }, wg,
                 zi::deckAt, ::nameOf, floorsAt = zi::floorsAt,
                 mainArea, spec, tag, mine, ar, map, otherPlaces, rawDeep = zi::rawDeep, zi = zi)
-            if (map == main) File(out, "decks_$tag.json").writeText(org.json.JSONArray(zi.deckList.flatMap { d -> d.triangles.map { org.json.JSONArray(it.toList()) } }).toString())
+            if (map == main) writeFloors(zi, tag)
+            done[map] = Done(net, rect, zg, ar, hostile)
+        }
+        if (done.containsKey(borderPair.first) && done.containsKey(borderPair.second))
+            border(art, borderPair.first, borderPair.second, done.mapValues { it.value.net }, done.mapValues { it.value.rect }, done.mapValues { it.value.zg },
+                done.mapValues { it.value.ar }, done.mapValues { it.value.hostile }, ::nameOf)
+    }
+
+    /** the walkways' decks (decks_<tag>.json) and the floors in 3D (floors_<tag>.json) for py/segcheck.py and py/wetcheck.py */
+    private fun writeFloors(zi: ZoneInputs, tag: String) {
+        File(out, "decks_$tag.json").writeText(org.json.JSONArray(zi.deckList.flatMap { d -> d.triangles.map { org.json.JSONArray(it.toList()) } }).toString())
             // and their floors in 3D for py/segcheck.py (the surface a walker is on: each triangle's corners x, y, z, and 1 where its
             // height classes the lattice's steps, 0 where it levels them - a city's, a building's porch)
             // (3: a capital's read floor - leveled whatever its height, as a street box's 2, but a real floor: a pier over the sea is a deck
             // for py/wetcheck.py, Theramore's and Auberdine's docks)
-            if (map == main) { val classed = zi.tileDecks.values.flatten().toSet()
+        run { val classed = zi.tileDecks.values.flatten().toSet()
                 File(out, "floors_$tag.json").writeText(org.json.JSONArray(zi.deckList.flatMap { d -> val hs = d.heights ?: return@flatMap emptyList<org.json.JSONArray>()
                     d.triangles.mapIndexed { k, t -> org.json.JSONArray(listOf(t[0], t[1], hs[k][0], t[2], t[3], hs[k][1], t[4], t[5], hs[k][2], if (d in classed) 1 else if (d in zi.capitalDecks) 3 else 0)) } }
                     // and a capital's street boxes (no floor read: leveled whatever their height - flag 2), two triangles a box
                     + zi.cityFeet.flatMap { f -> val c = listOf(doubleArrayOf(f.worldX(f.lx0, f.ly0), f.worldY(f.lx0, f.ly0)), doubleArrayOf(f.worldX(f.lx1, f.ly0), f.worldY(f.lx1, f.ly0)),
                         doubleArrayOf(f.worldX(f.lx1, f.ly1), f.worldY(f.lx1, f.ly1)), doubleArrayOf(f.worldX(f.lx0, f.ly1), f.worldY(f.lx0, f.ly1)))
                         listOf(listOf(0, 1, 2), listOf(0, 2, 3)).map { q -> org.json.JSONArray(q.flatMap { listOf(c[it][0], c[it][1], 0.0) } + 2) } }).toString()) }
-            done[map] = Done(net, rect, zg, ar, hostile)
-        }
-        if (done.containsKey(borderPair.first) && done.containsKey(borderPair.second))
-            border(art, borderPair.first, borderPair.second, done.mapValues { it.value.net }, done.mapValues { it.value.rect }, done.mapValues { it.value.zg },
-                done.mapValues { it.value.ar }, done.mapValues { it.value.hostile }, ::nameOf)
     }
 
     /** per 25 yd cell (Roads.grid's cells): does a road texture show at any of its 6 x 6 points */
@@ -853,24 +858,50 @@ class RenderSafePath {
             // THE JOINS: the network's pieces (the city's streets with it) joined where the lattice's leg joins them
             val netF = SafePath.Net(netC.map, netC.cont, netC.built, netC.nodes + floorNodes,
                 netC.edges + extras.map { SafePath.Edge(it.a, it.b, it.kind, SafePath.OK, it.src) }, netC.exits)
-            val js = ShippedNet.joins(netF, legOf, log = { println("NET1 $it") })
-            for ((a, b, pts) in js) extras.add(ShippedNet.Extra(a, b, SafePath.TRAIL, ShippedNet.F_JOIN or ShippedNet.F_TRAIL, pts.map { doubleArrayOf(it[0], it[1]) }, meanDanger(pts)))
+            // (T2's NetJoins: one walk over the lattice from every piece, Kruskal over the meetings, each join walked by Climb.route and
+            // re-checked by py/segcheck.py in a folder of its own - its routes file is not the zone's; the floors written first)
+            writeFloors(zi, tag)
+            val jdir = File(out, "joins_$tag").also { it.mkdirs() }
+            for (k2 in listOf("floors", "holes", "layers")) File(out, "${k2}_$tag.json").takeIf { it.isFile }?.copyTo(File(jdir, "${k2}_$tag.json"), true)
+            val nj = NetJoins.joinsChecked(netF, cg, deep, danger, k, shipLinks, edgesOn, wetOf,
+                check = NetJoins.segcheck(File(File(System.getProperty("user.dir")).parentFile, "py"), jdir, tag, dir.name, dir.parentFile)) { println("NET1 $it") }
+            println(nj.summary(tag)); nj.apart.forEach { println("NET1 APART ${it.pieces} at ${it.x.toInt()},${it.y.toInt()}: ${it.why}") }
+            jdir.deleteRecursively()
+            val (netJ, jx) = NetJoins.extras(netC, nj.joins, nextId)
+            extras.addAll(jx)
             // THE ROADMAP: the coverage graph of the walkable ground, this faction's danger along each of its edges
             val rb = RoadmapBuild(cg, deep, standable, ::roomsAt, waterAt, layers, rect.t, rect.b, rect.l, rect.r)
             val built = rb.build { println("NET1 $it") }
-            val rmDanger = rb.dangerBytes(built, danger)
-            val sec = ShippedNet.section(netC, mine, level, tag, shipLinks, wetOf,
+            val sec = ShippedNet.section(netJ, mine, level, tag, shipLinks, wetOf,
                 walk = { a, b -> legOf(a, b)?.takeIf { it.second }?.first?.map { doubleArrayOf(it[0], it[1]) } },
-                extraNodes = floorNodes, extras = extras, roadmapDanger = rmDanger)
+                extraNodes = floorNodes, extras = extras)
             val head = ShippedNet.Header(map, rect.c, Climb.RULES_VERSION, System.getenv("SAFEPATH_RULES_COMMIT") ?: "",
                 System.getenv("SAFEPATH_BUILD") ?: "", java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString())
-            val pack = ShippedNet.Pack(head, listOf(sec), built.rm)
+            // EVERY SHIPPED SEGMENT CHECKED (ShipCheck): the ways, the joins, the roadmap's edges and the stitches through py/segcheck.py and
+            // py/wetcheck.py in a folder of their own; what fails walked by its lattice leg, or dropped; anything left fails the export
+            val cdir = File(out, "ship_$tag").also { it.mkdirs() }
+            for (k2 in listOf("floors", "holes", "layers", "decks")) File(out, "${k2}_$tag.json").takeIf { it.isFile }?.copyTo(File(cdir, "${k2}_$tag.json"), true)
+            val rmLeg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b ->
+                Climb.route(cg, a, b, water = deep, edges = false, limits = Climb.Limits(RoadmapBuild.LEG_WINDOW))
+                    ?.takeIf { r -> r.reached && r.pts.zipWithNext().all { (u, v) -> Climb.walkable(cg, u, v, deep) } }?.pts }
+            val sc = ShipCheck(cg, deep, { a, b -> legOf(a, b)?.takeIf { it.second }?.first }, rmLeg, wetOf,
+                File(File(System.getProperty("user.dir")).parentFile, "py"), cdir, tag, dir.name, dir.parentFile) { println("NET1 $it") }
+            val checked = sc.run(sec.copy(stitches = sc.stitches(sec, built.rm)), built.rm)
+            cdir.deleteRecursively()
+            if (checked.left.isNotEmpty()) println("NET1 CROSSING $tag: ${checked.left.size} shipped pieces still cross a wall or deep water: ${checked.left.take(10)}")
+            // this faction's danger along each roadmap edge (the checked roadmap's): the mean along its line, a yard apart
+            val rmDanger = checked.rm?.let { r -> ByteArray(r.edges) { e -> var sum = 0.0; var n = 0
+                for ((u, v) in r.points(e).zipWithNext()) { val m = maxOf(1, Math.hypot(v[0] - u[0], v[1] - u[1]).toInt())
+                    for (q in 0 until m) { sum += danger(u[0] + (v[0] - u[0]) * q / m, u[1] + (v[1] - u[1]) * q / m); n++ } }
+                minOf(255, Math.round(sum / maxOf(1, n) * ShippedNet.ROADMAP_DANGER_SCALE).toInt()).coerceAtLeast(0).toByte() } }
+            val pack = ShippedNet.Pack(head, listOf(checked.sec.copy(roadmapDanger = rmDanger)), checked.rm)
             File(out, "net1_$tag.json").writeText(pack.toJson().toString())
-            val rmBytes = ShippedNet.pack64(built.rm.encode()).length
-            println("NET1 $tag map $map faction $mine: ${sec.net.nodes.size} nodes, ${sec.net.edges.size} ways " +
-                "(${ShippedNet.FLAG_NAMES.joinToString { (b, nm) -> "$nm ${sec.ways.count { it.flags and b != 0 }}" }}; ${sec.ways.count { it.pts != null }} walked), " +
-                "${sec.net.exits.size} exits, ${sec.links.size} links, ${sec.starts.size} starts, ${sec.checkpoints.size} checkpoints; " +
-                "roadmap ${built.rm.nodes} nodes ${built.rm.edges} edges, $rmBytes bytes (base64), danger ${ShippedNet.pack64(rmDanger).length} bytes")
+            val fin = pack.sections[0]
+            val rmBytes = checked.rm?.let { ShippedNet.pack64(it.encode()).length } ?: 0
+            println("NET1 $tag map $map faction $mine: ${fin.net.nodes.size} nodes, ${fin.net.edges.size} ways " +
+                "(${ShippedNet.FLAG_NAMES.joinToString { (b, nm) -> "$nm ${fin.ways.count { it.flags and b != 0 }}" }}; ${fin.ways.count { it.pts != null }} walked), " +
+                "${fin.net.exits.size} exits, ${fin.links.size} links, ${fin.starts.size} starts, ${fin.checkpoints.size} checkpoints, ${fin.stitches.size} stitches; " +
+                "roadmap ${(checked.rm?.nodes ?: 0)} nodes ${(checked.rm?.edges ?: 0)} edges, $rmBytes bytes (base64), danger ${ShippedNet.pack64(rmDanger ?: ByteArray(0)).length} bytes")
         }
     }
 

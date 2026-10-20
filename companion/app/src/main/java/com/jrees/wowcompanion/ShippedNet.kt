@@ -71,6 +71,13 @@ object ShippedNet {
      *  island's ground (the swim is offered only to a goal there) */
     class Link(val kind: String, val name: String, val oneWay: Boolean, val yd: Double, val pts: List<DoubleArray>, val island: DoubleArray? = null)
 
+    /** v2: a STITCH - a net node's own walk onto a [Roadmap] node: [node] the section's node id, [rm] the roadmap node's index, [flags]
+     *  (way flags: F_JOIN, and F_WADE / F_BRIDGE when it crosses them), [pts] its lattice-walked line from the net node to the roadmap
+     *  node, ends included, checked by segcheck at export. The device joins the net and the roadmap by these only (never its own leg) */
+    class Stitch(val node: Int, val rm: Int, val flags: Int, val pts: List<DoubleArray>) {
+        val yd: Double get() = pts.zipWithNext { u, v -> hypot(v[0] - u[0], v[1] - u[1]) }.sum()
+    }
+
     /** a cross-zone link's start in this zone: node [node] ([kind]: flight, dock, tram, zeppelin, boat, portal, gate...), into [toMap]
      *  (0 = several / by its own data), [name] */
     class Start(val node: Int, val kind: String, val toMap: Int, val name: String)
@@ -82,7 +89,11 @@ object ShippedNet {
      *  danger taken off) */
     class Section(val faction: Int, val level: Int, val tag: String, val net: SafePath.Net, val ways: List<Way>,
                   val links: List<Link> = emptyList(), val starts: List<Start> = emptyList(), val checkpoints: List<Int> = emptyList(),
-                  val roadmapDanger: ByteArray? = null, val tags: List<String> = listOf(tag), val wayTag: IntArray? = null, val exitTag: IntArray? = null) {
+                  val roadmapDanger: ByteArray? = null, val tags: List<String> = listOf(tag), val wayTag: IntArray? = null, val exitTag: IntArray? = null,
+                  val stitches: List<Stitch> = emptyList()) {
+        /** this section with its ways / stitches / roadmap danger replaced (the exporter's checks: a way walked or dropped) */
+        fun copy(net: SafePath.Net = this.net, ways: List<Way> = this.ways, roadmapDanger: ByteArray? = this.roadmapDanger, stitches: List<Stitch> = this.stitches,
+                 wayTag: IntArray? = this.wayTag) = Section(faction, level, tag, net, ways, links, starts, checkpoints, roadmapDanger, tags, wayTag, exitTag, stitches)
         init { require(ways.size == net.edges.size) { "ways ${ways.size} != edges ${net.edges.size}" } }
         /** v2: the spec a way / an exit came from (a map several specs cover: their union, [merge]) */
         fun wayTagOf(i: Int): String = tags.getOrElse(wayTag?.getOrNull(i) ?: 0) { tag }
@@ -105,6 +116,7 @@ object ShippedNet {
             roadmapDanger?.let { o.put("roadmapDanger", pack64(it)) }
             if (tags.size > 1 || tags.firstOrNull() != tag) o.put("tags", JSONArray(tags))
             wayTag?.let { o.put("wayTags", JSONArray(it.toList())) }
+            if (stitches.isNotEmpty()) o.put("stitches", JSONArray(stitches.map { st -> JSONArray(listOf<Any>(st.node, st.rm, st.flags, JSONArray(st.pts.flatMap { listOf(r2(it[0]), r2(it[1])) }))) }))
             exitTag?.let { o.put("exitTags", JSONArray(it.toList())) }
             return o
         }
@@ -129,7 +141,9 @@ object ShippedNet {
                 fun ints(k: String) = o.optJSONArray(k)?.let { a -> IntArray(a.length()) { a.optInt(it) } }
                 val tags = o.optJSONArray("tags")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: listOf(o.optString("tag"))
                 return Section(o.optInt("faction"), o.optInt("level"), o.optString("tag"), net, ways, links, starts, (0 until cs.length()).map { cs.optInt(it) }, rd,
-                    tags, ints("wayTags"), ints("exitTags"))
+                    tags, ints("wayTags"), ints("exitTags"),
+                    o.optJSONArray("stitches")?.let { a -> (0 until a.length()).mapNotNull { i -> a.optJSONArray(i)?.let { q -> val f = q.optJSONArray(3) ?: JSONArray()
+                        Stitch(q.optInt(0), q.optInt(1), q.optInt(2), (0 until f.length() / 2).map { k -> doubleArrayOf(f.optDouble(2 * k), f.optDouble(2 * k + 1)) }) } } } ?: emptyList())
             }
         }
     }
@@ -389,11 +403,12 @@ object ShippedNet {
      */
     fun merge(secs: List<Section>, roadmapDanger: ByteArray? = secs.firstOrNull()?.roadmapDanger): Section {
         require(secs.isNotEmpty() && secs.all { it.faction == secs[0].faction && it.net.map == secs[0].net.map }) { "one faction, one map" }
-        if (secs.size == 1) return secs[0].let { Section(it.faction, it.level, it.tag, it.net, it.ways, it.links, it.starts, it.checkpoints, roadmapDanger, it.tags, it.wayTag, it.exitTag) }
+        if (secs.size == 1) return secs[0].copy(roadmapDanger = roadmapDanger)
         val tags = ArrayList<String>()
         val nodes = ArrayList<SafePath.Node>(); val edges = ArrayList<SafePath.Edge>(); val ways = ArrayList<Way>(); val wt = ArrayList<Int>()
         val exits = ArrayList<SafePath.Exit>(); val et = ArrayList<Int>()
         val links = ArrayList<Link>(); val starts = ArrayList<Start>(); val checks = LinkedHashSet<Int>()
+        val stitches = ArrayList<Stitch>(); val stitchKeys = HashSet<String>()
         val grid = HashMap<Long, ArrayList<SafePath.Node>>()
         fun key(x: Double, y: Double) = (Math.floor(x).toLong() shl 32) xor (Math.floor(y).toLong() and 0xFFFFFFFFL)
         fun near(x: Double, y: Double, kind: String): SafePath.Node? {
@@ -429,11 +444,12 @@ object ShippedNet {
             for (l in sec.links) if (linkKeys.add("${l.kind}|${l.pts.first().map { Math.round(it) }}|${l.pts.last().map { Math.round(it) }}")) links.add(l)
             for (st in sec.starts) { val n = idMap[st.node] ?: continue; if (startKeys.add("$n-${st.kind}-${st.toMap}")) starts.add(Start(n, st.kind, st.toMap, st.name)) }
             for (c in sec.checkpoints) idMap[c]?.let { checks.add(it) }
+            for (st in sec.stitches) { val n = idMap[st.node] ?: continue; if (stitchKeys.add("$n-${st.rm}")) stitches.add(Stitch(n, st.rm, st.flags, st.pts)) }
             for (t in sec.tags) if (t !in tags) tags.add(t)
         }
         val s0 = secs[0]
         val net = SafePath.Net(s0.net.map, s0.net.cont, s0.net.built, nodes, edges, exits, secs.all { it.net.reviewed })
         return Section(s0.faction, secs.maxOf { it.level }, tags.joinToString("+"), net, ways, links, starts, checks.toList(), roadmapDanger,
-            tags, wt.toIntArray(), et.toIntArray())
+            tags, wt.toIntArray(), et.toIntArray(), stitches)
     }
 }
