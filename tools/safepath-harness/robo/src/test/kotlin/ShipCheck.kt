@@ -98,6 +98,27 @@ class ShipCheck(private val cg: Climb.Grid, private val deep: (Double, Double) -
         return sec.ways[i].pts ?: listOf(doubleArrayOf(a.wx, a.wy, mark(a)), doubleArrayOf(b.wx, b.wy, mark(b)))
     }
 
+    /** each cave mouth on a live way, as a 1.5 yd line through it: wetcheck says whether it stands in deep water (a cave way's own floor
+     *  is not checked, but its mouth is the ground's: a route walks through it) */
+    private fun mouths(sec: ShippedNet.Section): List<Item> {
+        val used = HashSet<Int>().also { u -> for (e in sec.net.edges) { u.add(e.a); u.add(e.b) } }
+        return sec.net.nodes.withIndex().filter { (_, n) -> n.kind == SafePath.MOUTH && n.id in used }.map { (i, n) ->
+            Item('M', i, listOf(doubleArrayOf(n.wx - 0.75, n.wy), doubleArrayOf(n.wx + 0.75, n.wy))) }
+    }
+
+    /** every shipped piece of [sec] and [rm] checked once, nothing mended: the failures (empty = what ships passes) */
+    fun verify(sec: ShippedNet.Section, rm: ShippedNet.Roadmap?): List<String> {
+        val byId = sec.net.nodes.associateBy { it.id }
+        val items = ArrayList<Item>()
+        for (i in sec.ways.indices) if (checked(sec, i)) items.add(Item('N', i, wayPts(sec, byId, i)))
+        rm?.let { r -> for (e in 0 until r.edges) items.add(Item('R', e, r.points(e))) }
+        for ((i, st) in sec.stitches.withIndex()) items.add(Item('S', i, st.pts))
+        items.addAll(mouths(sec))
+        val bad = check(items)
+        log("SHIPCHECK $tag verify (the decoded pack): ${items.size} pieces, ${bad.size} fail")
+        return bad.map { (it, why) -> "${when (it.layer) { 'N' -> "way"; 'R' -> "roadmap edge"; 'S' -> "stitch"; else -> "mouth" }} ${it.idx}: $why" }
+    }
+
     fun run(sec0: ShippedNet.Section, rm0: ShippedNet.Roadmap?, passes: Int = 3): Result {
         var sec = sec0; var rm = rm0
         val walked = HashMap<Char, Int>(); val dropped = HashMap<Char, Int>()
@@ -112,6 +133,7 @@ class ShipCheck(private val cg: Climb.Grid, private val deep: (Double, Double) -
             for (i in sec.ways.indices) if (checked(sec, i) && (toWays == null || i in toWays)) items.add(Item('N', i, wayPts(sec, byId, i)))
             rm?.let { r -> for (e in 0 until r.edges) if (toRm == null || e in toRm) items.add(Item('R', e, r.points(e))) }
             for ((i, st) in sec.stitches.withIndex()) if (toSt == null || i in toSt) items.add(Item('S', i, st.pts))
+            if (toWays == null) items.addAll(mouths(sec))
             val bad = check(items)
             log("SHIPCHECK $tag pass $pass: ${items.size} pieces checked (${items.count { it.layer == 'N' }} ways, ${items.count { it.layer == 'R' }} roadmap edges, " +
                 "${items.count { it.layer == 'S' }} stitches); ${bad.size} fail (${bad.keys.groupingBy { it.layer }.eachCount()})")
@@ -135,6 +157,11 @@ class ShipCheck(private val cg: Climb.Grid, private val deep: (Double, Double) -
                         walkedRm.add(it.idx); walked.merge('R', 1, Int::plus) }
                     else { dropR.add(it.idx); dropped.merge('R', 1, Int::plus)
                         log("SHIPCHECK $tag drop roadmap edge ${it.idx} (${r.x(a).toInt()},${r.y(a).toInt()} - ${r.x(b).toInt()},${r.y(b).toInt()}${if (it.idx in walkedRm) ", walked" else ""}): $why") } }
+                // a cave's mouth in deep water (Moonglade's 7967,-2471: the floor's edge over the lake): every way and stitch at it goes
+                'M' -> { val id = sec.net.nodes[it.idx].id; dropped.merge('M', 1, Int::plus)
+                    for (i in sec.net.edges.indices) if (sec.net.edges[i].a == id || sec.net.edges[i].b == id) dropW.add(i)
+                    for ((i, st) in sec.stitches.withIndex()) if (st.node == id) dropS.add(i)
+                    log("SHIPCHECK $tag drop mouth node $id (${sec.net.nodes[it.idx].wx.toInt()},${sec.net.nodes[it.idx].wy.toInt()}) and its ways: $why") }
                 else -> { dropS.add(it.idx); dropped.merge('S', 1, Int::plus)
                     log("SHIPCHECK $tag drop stitch ${it.idx} (node ${sec.stitches[it.idx].node} - roadmap node ${sec.stitches[it.idx].rm}): $why") }
             }
