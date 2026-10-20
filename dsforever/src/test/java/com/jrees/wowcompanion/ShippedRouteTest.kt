@@ -207,6 +207,24 @@ class ShippedRouteTest {
         assertTrue(n.why, !n.reached || n.why.contains("no stitches"))
     }
 
+    @Test fun aStitchedFileRoundTripsAndRoutesOnItsStitches() {
+        // a NET1 v2 pack with a roadmap row (6 nodes east from world (500, 0)) and a section stitched onto its node 0, written and read
+        val gr0 = ShippedNet.gr(500.0); val gc0 = ShippedNet.gc(0.0)
+        val rm = ShippedNet.Roadmap(gr0, gc0, 10, 6, 1, IntArray(6) { it }, IntArray(6) { gr0 }, IntArray(6) { gc0 + 10 * it }, IntArray(6),
+            IntArray(5) { it }, IntArray(5) { it + 1 }, IntArray(5), arrayOfNulls(5))
+        val n0 = doubleArrayOf(rm.x(0), rm.y(0))
+        val base = section(listOf(node(0, n0[0] + 30.0, n0[1] + 200.0), node(1, n0[0] + 30.0, n0[1] + 30.0)), listOf(road(0, 1)))
+        val sec = base.copy(stitches = listOf(ShippedNet.Stitch(1, 0, ShippedNet.F_JOIN, listOf(doubleArrayOf(n0[0] + 30.0, n0[1] + 30.0),
+            doubleArrayOf(n0[0] + 20.0, n0[1] + 5.0), n0))))
+        val bytes = ShippedNet.bytes(ShippedNet.Pack(ShippedNet.Header(1411, 1, Climb.RULES_VERSION, "abc", "b", "t", version = 2), listOf(sec), rm))
+        val l = ShippedNets.load(1411, { ByteArrayInputStream(bytes) }, null, {})!!
+        val back = ShippedNets.sectionOf(l.pack, H)!!
+        assertEquals(1, back.stitches.size)
+        val r = ShippedRoute.plan(back, flat, null, doubleArrayOf(n0[0] + 30.0, n0[1] + 230.0), doubleArrayOf(rm.x(5) + 10.0, rm.y(5)),
+            roadmap = ShippedRoute.roadmapOf(l.pack.roadmap, back))
+        assertTrue(r.why, r.reached); assertTrue(r.why, r.why.contains("stitches shipped (1)"))
+    }
+
     @Test fun anOldFilesRunTimeStitchIsCheckedOnTheFineGround() {
         // the road at x -10; a wall the fine ground sees (x -6 .. -4, every y) between it and the roadmap's first column (x 3)
         val old = section(listOf(node(0, -10.0, 0.0), node(1, -10.0, 523.0), node(2, -10.0, 1000.0)), listOf(road(0, 1), road(1, 2)))
