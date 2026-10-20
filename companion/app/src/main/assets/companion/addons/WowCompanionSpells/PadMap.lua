@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m62"                -- bump on every change; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m63"                -- bump on every change; m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -3355,24 +3355,70 @@ OV.smartPick = function(s)
     return nil
 end
 -- SMARTY-PICK-END
+-- m63: WHY food / drink picked nothing (tracking: "add a cap line saying WHY nothing was picked"): health / mana now, the food and drinks
+-- found, what an unmatched consumable's use spell read; one cap line per change
+function OV.smartWhy(s, pick)
+    local function pct(v, m) return (type(v) == "number" and type(m) == "number" and m > 0) and math.floor(v / m * 100 + 0.5) or nil end
+    local hp, mp = pct(s.hp, s.hpMax), pct(s.mp, s.mpMax)
+    local nf, nd = 0, 0
+    for _, it in ipairs(s.items or {}) do
+        if it.kind == "food" or it.kind == "both" then nf = nf + 1 end
+        if it.kind == "drink" or it.kind == "both" then nd = nd + 1 end
+    end
+    local parts = { "hp " .. (hp and (hp .. "%") or "?"), "mana " .. (mp and (mp .. "%") or "none") }
+    if pick then parts[#parts + 1] = "picked " .. pick.kind .. " " .. pick.id
+    else
+        if hp and hp < 80 then parts[#parts + 1] = s.eating and "eating already" or (nf == 0 and "no food matched" or "food above your level") end
+        if mp and mp < 80 then parts[#parts + 1] = s.drinking and "drinking already" or (nd == 0 and "no drink matched" or "drinks above your level") end
+        if (not hp or hp >= 80) and (not mp or mp >= 80) then parts[#parts + 1] = "both at or above 80%" end
+    end
+    parts[#parts + 1] = "food " .. nf .. ", drinks " .. nd
+    if s.skipped and #s.skipped > 0 then parts[#parts + 1] = "unmatched " .. table.concat(s.skipped, "; ") end
+    return table.concat(parts, " | ")
+end
+function OV.smartSayWhy(s, pick)
+    -- the percentages rounded to 10 so regeneration does not repeat the line every tick
+    local w = OV.smartWhy(s, pick)
+    local key = w:gsub("(%d+)%%", function(d) return tostring(math.floor(tonumber(d) / 10) * 10) .. "%" end)
+    if key == OV.smartWhyKey then return end
+    OV.smartWhyKey = key
+    WC.send(WC.encode({ type = "cap", padmap = PV, smartwhy = w }))
+end
 OV.SMART_FOOD, OV.SMART_DRINK = 433, 430                                  -- the game's own "Food" / "Drink" auras: their names
+-- m63 (the user on test29, a druid: "the smart buffs work, the food and water, not so much ... Nothing happens"; no "food" / "drink" pick
+-- ever): the use spell's name alone matched nothing on this client. Now an item is food / drink by, in order: its use spell's name (the
+-- game's Food 433 / Drink 430, or a name holding "food" / "drink" / "refreshment"), its tooltip (restores health / mana), and for the
+-- game's own Food & Drink consumables (class 0 / subclass 5, Bags' and the item wheel's group 1) by the tooltip alone. -> kind, and
+-- what was read (for the "why" line)
 function OV.smartKind(id)
     local sn = T(function() return (C_Item and C_Item.GetItemSpell and C_Item.GetItemSpell(id)) or GetItemSpell(id) end)
-    if type(sn) ~= "string" then return nil end
+    sn = type(sn) == "string" and sn or nil
+    local ok, _, _, _, _, _, cls, sub = pcall(function() return C_Item.GetItemInfoInstant(id) end)
+    local fd = ok and cls == 0 and sub == 5
     local function nm(sid) return T(function() return (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(sid)) or (GetSpellInfo(sid)) end) end
-    if sn == nm(OV.SMART_FOOD) then return "food" end
-    if sn == nm(OV.SMART_DRINK) then return "drink" end
-    -- "food and drink" (one item restoring both): its tooltip says it restores health AND mana
-    local lines = T(function() return C_TooltipInfo and C_TooltipInfo.GetItemByID and C_TooltipInfo.GetItemByID(id) end)
-    if type(lines) == "table" and type(lines.lines) == "table" then
-        local h, m = false, false
-        for _, l in ipairs(lines.lines) do
-            local t = type(l) == "table" and type(l.leftText) == "string" and l.leftText:lower() or ""
-            if t:find("restores", 1, true) then h = h or t:find("health", 1, true) ~= nil; m = m or t:find("mana", 1, true) ~= nil end
-        end
-        if h and m then return "both" end
+    if sn then
+        if sn == nm(OV.SMART_FOOD) then return "food", sn end
+        if sn == nm(OV.SMART_DRINK) then return "drink", sn end
+        local l = sn:lower()
+        if l:find("refreshment", 1, true) or (l:find("food", 1, true) and l:find("drink", 1, true)) then return "both", sn end
+        if l:find("drink", 1, true) then return "drink", sn end
+        if l:find("food", 1, true) then return "food", sn end
     end
-    return nil                                                           -- buff-only and everything else: never
+    -- the tooltip only for the game's Food & Drink class: a potion's "Restores N health" is never food
+    if not fd then return nil, sn end
+    -- the tooltip: "Restores N health ..." / "... mana ..." (both = food and drink)
+    local lines = T(function() return C_TooltipInfo and C_TooltipInfo.GetItemByID and C_TooltipInfo.GetItemByID(id) end)
+    local h, m = false, false
+    if type(lines) == "table" and type(lines.lines) == "table" then
+        for _, ln in ipairs(lines.lines) do
+            local t = type(ln) == "table" and type(ln.leftText) == "string" and ln.leftText:lower() or ""
+            if t:find("restore", 1, true) then h = h or t:find("health", 1, true) ~= nil; m = m or t:find("mana", 1, true) ~= nil end
+        end
+    end
+    if h and m then return "both", sn end
+    if h then return "food", sn end
+    if m then return "drink", sn end
+    return nil, (sn or "no spell") .. (fd and " (food & drink class, no restore line)" or "")      -- buff-only and the rest: never
 end
 function OV.smartState()
     local s = { hp = TN(function() return UnitHealth("player") end), hpMax = TN(function() return UnitHealthMax("player") end),
@@ -3388,8 +3434,10 @@ function OV.smartState()
             if type(id) == "number" then count[id] = (count[id] or 0) + (info.stackCount or 1) end
         end
     end
+    s.skipped = {}
     for id, n in pairs(count) do
-        local kind = OV.smartKind(id)
+        local kind, read = OV.smartKind(id)
+        if not kind and read and #s.skipped < 4 then s.skipped[#s.skipped + 1] = id .. "=" .. read end
         if kind then
             kinds[#kinds + 1] = kind
             local fn = (C_Item and C_Item.GetItemInfo) or GetItemInfo
@@ -3414,7 +3462,9 @@ end
 function OV.smartApply()
     if inCombat() then OV.smartPending = true; return end
     OV.smartPending = nil
-    local pick = OV.smartPick(OV.smartState())
+    local state = OV.smartState()
+    local pick = OV.smartPick(state)
+    pcall(OV.smartSayWhy, state, pick)
     local val = pick and ("item:" .. pick.id) or nil
     local typ = pick and "item" or nil
     OV.smarty = pick and { id = pick.id, n = pick.name, i = pick.icon, k = pick.kind } or nil
