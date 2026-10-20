@@ -35,6 +35,8 @@ object NetFloors {
     const val FLOOR = "floor"; const val JOIN = "join"; const val SPUR = "spur"
     /** a capital's NPC spot (Thunder Bluff's mesas), a place joined as a floor's (within [FLOOR_NEAR_YD]) */
     const val CITY = "city"
+    /** a link's start on the ground (an air place's portal: the ruling "Route to the portal"), a place joined as a floor's */
+    const val LINK = "link"
     /** a goal place this far from every way gets a spur (the device's attach leg is 150-200 yd at most) */
     const val FAR_YD = 150.0
     /** a place on a floor this far from every way gets a floor way (the device's attach leg can't walk a floor's layers) */
@@ -224,8 +226,15 @@ object NetFloors {
                     val short = hypot(leg.pts.last()[0] - p[0], leg.pts.last()[1] - p[1])
                     if (!leg.reached || short > 0.5) { why.add("${d.toInt()} yd: ${if (leg.reached) "ends ${short.toInt()} yd short" else "not reached"}"); continue }
                     // (a hundredth of a yard, as NET1 v2 ships a way's points and the checks' file holds them: the checks see the points shipped)
-                    val pts = leg.pts.map { doubleArrayOf(r2(it[0]), r2(it[1])) }
-                    if (pts.zipWithNext().any { (u, v) -> !Climb.walkable(cg, u, v, inp.deep) }) { why.add("${d.toInt()} yd: a wall once rounded"); continue }
+                    var pts2 = leg.pts.map { doubleArrayOf(r2(it[0]), r2(it[1])) }
+                    if (pts2.zipWithNext().any { (u, v) -> !Climb.walkable(cg, u, v, inp.deep) }) {
+                        // (a line grazing a wall's corner, the hundredth of a yard tipped it: from the start's own lattice vertex instead)
+                        val v0 = cg.at(from[0], from[1]); val f2 = doubleArrayOf(cg.wx(v0[1]), cg.wy(v0[0]))
+                        pts2 = Climb.route(cg, f2, p, water = inp.deep)?.takeIf { it.reached && hypot(it.pts.last()[0] - p[0], it.pts.last()[1] - p[1]) <= 0.5 }
+                            ?.pts?.map { doubleArrayOf(r2(it[0]), r2(it[1])) } ?: pts2
+                        if (pts2.zipWithNext().any { (u, v) -> !Climb.walkable(cg, u, v, inp.deep) }) { why.add("${d.toInt()} yd: a wall once rounded"); continue }
+                    }
+                    val pts = pts2
                     if (!inp.wayOk(pts)) { why.add("${d.toInt()} yd: off a floor's edge"); continue }
                     val l = len(pts); if (l > MAX_LEG_YD) { why.add("${d.toInt()} yd: walk ${l.toInt()} yd"); continue }
                     if (l < bl) { bl = l; best = pts to s }
@@ -282,14 +291,14 @@ object NetFloors {
         // 1. THE FLOORS: the places on a floor layer, the layers' openings and a capital's NPC spots (Thunder Bluff's mesas: their ways
         // onto the lifts' tops), each walked onto the nearest way or mouth (the ways already made count: a floor's tree grows from its
         // first way)
-        for (p in inp.places.filter { it.floor > 0 || it.why == "opening" || it.why == CITY }.sortedBy { dist(it) }) {
+        for (p in inp.places.filter { it.floor > 0 || it.why == "opening" || it.why == CITY || it.why == LINK }.sortedBy { dist(it) }) {
             if (dist(p, true, mouths = true) <= FLOOR_NEAR_YD) continue
             val from = stand(p.x, p.y, 6.0) ?: continue
             val w = walkOnto(from, mouths = true) ?: run { unreached.add("${p.why} ${p.name} at ${p.x.toInt()},${p.y.toInt()} (floor ${p.floor}): no walk onto a way ($whyNot)"); null } ?: continue
             add(FLOOR, "${p.why} ${p.name}", w.first, w.second)
         }
         // 3. THE FAR GOALS: each place more than FAR_YD from every way (a cave's ways count: a camp in a cave is reached by its way)
-        for (p in inp.places.filter { it.floor == 0 && it.why != "opening" && it.why != CITY }.sortedBy { dist(it) }) {
+        for (p in inp.places.filter { it.floor == 0 && it.why != "opening" && it.why != CITY && it.why != LINK }.sortedBy { dist(it) }) {
             if (dist(p) <= FAR_YD) continue
             val from = stand(p.x, p.y) ?: run { unreached.add("${p.why} ${p.name} at ${p.x.toInt()},${p.y.toInt()}: no standing ground within 15 yd"); null } ?: continue
             val w = walkOnto(from) ?: run { unreached.add("${p.why} ${p.name} at ${p.x.toInt()},${p.y.toInt()}: no walk onto a way ($whyNot)"); null } ?: continue
@@ -396,7 +405,8 @@ object NetFloors {
      * its mesas), one a [PLACE_GAP_YD] cluster, and the floor layers' openings
      */
     fun places(net: SafePath.Net, hostile: List<Triple<Double, Double, String>>, npcs: List<Triple<Double, Double, String>>,
-               goals: List<Pair<String, DoubleArray>>, layers: Layers, cityNpcs: List<Triple<Double, Double, String>> = emptyList()): List<Place> {
+               goals: List<Pair<String, DoubleArray>>, layers: Layers, cityNpcs: List<Triple<Double, Double, String>> = emptyList(),
+               linkStarts: List<Pair<String, DoubleArray>> = emptyList()): List<Place> {
         val out = ArrayList<Place>()
         val left = hostile.toMutableList()
         while (left.isNotEmpty()) {
@@ -418,6 +428,7 @@ object NetFloors {
         val city = ArrayList<Triple<Double, Double, String>>()
         for (n in cityNpcs) if (layers.at(n.first, n.second) == 0 && city.none { hypot(it.first - n.first, it.second - n.second) < PLACE_GAP_YD }) city.add(n)
         for (n in city) out.add(Place(n.third, n.first, n.second, CITY))
+        for ((name, p) in linkStarts) out.add(Place(name, p[0], p[1], LINK))
         for (o in layers.openings) out.add(Place("opening", o[0], o[1], "opening", o[2].toInt()))
         return out
     }

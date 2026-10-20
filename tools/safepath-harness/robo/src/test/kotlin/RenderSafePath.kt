@@ -892,7 +892,9 @@ class RenderSafePath {
                     val r = recipeRects?.optJSONArray(m.toString()) ?: return@mapNotNull null
                     val t = r.getDouble(1); val b = r.getDouble(2); val l = r.getDouble(3); val rr = r.getDouble(4)
                     Triple(t - sp.y * (t - b), l - sp.x * (l - rr), sp.name) }.filter { p -> p.first <= rect.t && p.first >= rect.b && p.second <= rect.l && p.second >= rect.r }
-                val pls = NetFloors.places(netJ, hostileW, npcW, goalsW, nl, cityW)
+                // (the links' starts on the ground: an air place's portal - its goal routes there, "Route to the portal")
+                val linkW = shipLinks.filter { it.oneWay && it.pts.isNotEmpty() && it.pts[0].size > 2 && it.pts[0][2] == 0.0 }.map { "${it.kind} ${it.name}".trim() to it.pts[0] }
+                val pls = NetFloors.places(netJ, hostileW, npcW, goalsW, nl, cityW, linkW)
                 // the floors' triangles as py/segcheck.py reads floors_<tag>.json (every deck with heights; a capital's street boxes not)
                 val deckCells = HashMap<Long, ArrayList<com.jrees.wowcompanion.WorldBuildings.Deck>>()
                 for (d in zi.deckList) { if (d.heights == null || d in zi.capitalDecks || d.triangles.isEmpty()) continue
