@@ -278,8 +278,9 @@ class CorpseRouteTest {
 
     @Test fun theGhostFollowsTheGridsLegOnlyWhenClearlyShorter() {
         assertEquals(CorpseRoute.Src.NET, CorpseRoute.pick(1000.0, 900.0, null))
-        assertEquals(CorpseRoute.Src.GRID, CorpseRoute.pick(1000.0, 700.0, null))
-        assertEquals("sticky", CorpseRoute.Src.GRID, CorpseRoute.pick(1000.0, 900.0, CorpseRoute.Src.GRID))
+        // test28 (Zephras, under a bridge): the network's leg even when the grid's is far shorter - the grid cannot see a bank
+        assertEquals(CorpseRoute.Src.NET, CorpseRoute.pick(295.0, 162.0, null))
+        assertEquals(CorpseRoute.Src.NET, CorpseRoute.pick(1000.0, 900.0, CorpseRoute.Src.GRID))
         assertEquals(CorpseRoute.Src.NET, CorpseRoute.pick(600.0, 900.0, CorpseRoute.Src.GRID))
         assertEquals(CorpseRoute.Src.GRID, CorpseRoute.pick(null, 900.0, null))
         assertEquals(CorpseRoute.Src.NET, CorpseRoute.pick(900.0, null, CorpseRoute.Src.GRID))

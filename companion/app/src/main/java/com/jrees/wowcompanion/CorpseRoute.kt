@@ -41,15 +41,18 @@ object CorpseRoute {
 
     /** which leg a ghost follows */
     enum class Src { NET, GRID }
-    /** the grid's leg is taken over the network's when this much shorter, and back only when the network's is (the hysteresis) */
-    const val GRID_GAIN = 0.8
-    /** the network's leg ([netYd]: the shipped network or the draft, null none) or the grid's ([gridYd]: drops, water, null none),
-     *  [was] the last pick: the network's (exact walls) unless the grid's is [GRID_GAIN] of it or less; sticky either way */
+    /**
+     * the network's leg ([netYd]: the shipped network or the draft, null none) or the grid's ([gridYd]: drops, water, null none): the
+     * NETWORK'S whenever there is one. The device's grid knows the ground only as 25 yd cells (their mean heights and slopes), so its
+     * shortcut over a river or down a drop cannot see a bank the ghost cannot climb (test28, Zephras: "the safepath is making me walk down
+     * this river over to a bridge, except I am under it and cant go up") - only the shipped network's ways are walls-checked. The grid's
+     * leg is for a zone with no network. ([was] kept for the callers; the choice no longer flips.)
+     */
+    @Suppress("UNUSED_PARAMETER")
     fun pick(netYd: Double?, gridYd: Double?, was: Src?): Src? = when {
-        netYd == null -> if (gridYd != null) Src.GRID else null
-        gridYd == null -> Src.NET
-        was == Src.GRID -> if (netYd < gridYd * GRID_GAIN) Src.NET else Src.GRID
-        else -> if (gridYd < netYd * GRID_GAIN) Src.GRID else Src.NET
+        netYd != null -> Src.NET
+        gridYd != null -> Src.GRID
+        else -> null
     }
 
     /** the corpse leg on the danger grid (no shipped network, no draft): the ground's walls only, never its danger */

@@ -2469,7 +2469,9 @@ class MapView(context: Context) : View(context) {
         val shipped = shippedLeg(q, route, ghost = true)
         val net = shipped?.leg ?: (if (shipped == null) netLeg(q, route, ghost = true) else null)
         val grid = gridLeg(q, route, ghost = true)
-        val gridStraight = grid == null && dangerLegs[q]?.let { it.pts.size == 2 && hypot((it.tx - corpseX) * (rect?.width ?: 1.0),
+        // the network's leg whenever there is one (CorpseRoute.pick: the grid cannot see a bank a ghost cannot climb); the grid's clear
+        // straight line only where there is no network
+        val gridStraight = net == null && grid == null && dangerLegs[q]?.let { it.pts.size == 2 && hypot((it.tx - corpseX) * (rect?.width ?: 1.0),
             (it.ty - corpseY) * (rect?.height ?: 1.0)) <= 20.0 } == true
         val ax = rect?.width ?: 1.0; val ay = rect?.height ?: 1.0
         val src = if (gridStraight) CorpseRoute.Src.GRID
