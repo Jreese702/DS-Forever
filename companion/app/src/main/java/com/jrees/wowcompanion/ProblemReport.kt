@@ -153,6 +153,7 @@ object ProblemReport {
             runCatching { FrameGen.init(ctx); add("Frame generation: ${if (FrameGen.enabled && FrameGen.hasDll()) "on ${FrameGen.multiplier}x" else "off"}${if (FrameGen.hasDll()) "" else " (no DLL)"}") }
             runCatching { Settings.init(ctx); add("Indoor maps in the background: ${if (Settings.indoorBuild) "on" else "off"}") }
             runCatching { add(IndoorSchedulerStep.readiness(ctx).label) }
+            runCatching { add("SafePath network: ${ShippedNets.line}") }         // the shipped network's word (its "may be out of date")
             runCatching { add("Game art: ${ArtHarvest.state.javaClass.simpleName}" + ((ArtHarvest.state as? ArtHarvest.State.Failed)?.let { " (${it.why})" } ?: "")) }
             add("Game running: ${LauncherHooks.gameUp()}")
             CastDiag.line()?.let { add(it) }                    // p-bars-grey (1.0.8): what Home's bars decided at their last draw
