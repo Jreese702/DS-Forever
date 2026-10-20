@@ -19,8 +19,10 @@ import kotlin.math.max
  *   wade): only dry ground, a bridge's deck, a ford ([SafePath.FORD_DEPTH]) or a NARROW STREAM ([SafePath.NARROW_DEPTH] deep at most,
  *   [SafePath.NARROW_YD] across at most: [SafePath.Water.wadeable]);
  * - an end standing in a wall (the player inside an inn, the goal in a hut) passes the walls within [DOOR_YD] of itself (its door).
- * THE CHOICE ([snap]; W's v2 parity, NET2_PARITY.md: 22 crossings on the snap legs, then 1): the NEAREST straight clear line and
- * those [SPREAD_YD] longer lead; an end ON A FLOOR (a city's street, a walkway, the start pocket over a cave) snaps to its floor's nodes
+ * THE CHOICE ([snap]; W's v2 parity, NET2_PARITY.md: 22 crossings on the snap legs, then 1; round 2: 4, then 2): the targets are
+ * the graph's nodes AND each way's nearest point (a cut into a roadmap edge or a road: the router walks the way's own points from it);
+ * the NEAREST straight clear line (and a tie within [SPREAD_YD]) leads; a ground end whose lead is within [ON_PIECE_YD] stands on that
+ * piece and gets no fallback off it; an end ON A FLOOR (a city's street, a walkway, the start pocket over a cave) snaps to its floor's nodes
  * first; every other snap is only a FALLBACK, [FAR_COST] x its rank dearer (the router takes one only when the nearer ones' piece of
  * the graph joins nothing on), the level lines before those over a climb, none over [FAR_STEEP]. No node within [SNAP_YD], or none any
  * clear walk of [WALK_YD] reaches: [Result.snaps] empty and [Result.why] says why - the caller then takes the old long attach (at most
