@@ -246,8 +246,12 @@ def main():
     chk("the band is 860 x 76 spec px in UI units (1/1080 of UIParent's height each)", abs(f.w - 860 * k) < 1e-6 and abs(f.h - 76 * k) < 1e-6)
     chk("the ground is ONE texture: our own soft band", L.eval("#WowCompanion.compass.ground") == 1
         and "compass_band" in L.eval("WowCompanion.compass.ground[1].tex"))
-    names = [n for n in ("SetBinding", "SetCVar", "SetRaidTarget", "SetOverrideBinding") if n in open(TRAIL, encoding="utf-8").read()]
-    chk("no binding / CVar / raid mark calls in Trail.lua", not names)
+    src = open(TRAIL, encoding="utf-8").read()
+    names = [n for n in ("SetBinding", "SetRaidTarget", "SetOverrideBinding") if n in src]
+    # the ONE approved game-setting exception (ag2, the user's "Add-on turns them on"): nameplateShowEnemies, written in one place
+    cvar_lines = [l for l in src.splitlines() if "SetCVar(" in l and not l.strip().startswith("--")]
+    chk("no binding / raid mark calls; the only CVar written is nameplateShowEnemies (%d lines)" % len(cvar_lines),
+        not names and cvar_lines and all('"nameplateShowEnemies"' in l for l in cvar_lines))
 
     sent = L.globals().SENT
     diag = [sent[i] for i in range(1, len(sent) + 1) if sent[i].probe == "compass"]
