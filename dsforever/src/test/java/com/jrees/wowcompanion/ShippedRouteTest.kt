@@ -107,6 +107,29 @@ class ShippedRouteTest {
         assertTrue("round the camp", r.pts.any { it[0] > 250.0 })
     }
 
+    @Test fun theRoutesDangerIsPaidAlongItsYardsAndSaid() {
+        // the camp lies BETWEEN the short road's nodes (y 300 .. 700 of a 1000 yd way): paid along the way, not at its ends
+        val r = ShippedRoute.plan(twoWays(300.0), flat, camp, from, to)
+        val calm = ShippedRoute.plan(twoWays(300.0), flat, camp, from, to, k = 0.0)
+        assertTrue(calm.pts.all { it[0] < 100.0 })
+        assertTrue("round the camp", r.pts.any { it[0] > 250.0 })
+        assertEquals(0.0, r.danger, 1e-6)
+        assertEquals("the straight way's danger: k x 4 x 400 yd", 8.0 * 4 * 400, r.avoided, 40.0)
+        assertTrue(r.why, r.why.contains("danger 0 (avoided 12"))
+        // capped: the danger it walks through is said
+        val c = ShippedRoute.plan(twoWays(2000.0), flat, camp, from, to)
+        assertTrue(c.capped); assertTrue(c.why, c.why.contains("danger 12800 (avoided 0)"))
+    }
+
+    @Test fun theAlAkethCultIsHostileThoughQuestieTagsItFriendlyToAll() {
+        // test20 (Zephras, "the sky elf place"): QuestieDB's WoW Forever rows tag the Al'Aketh "AH"
+        assertEquals(3, QuestieNpcs.hostileOf("AH", "Al'Aketh Assassin"))
+        assertEquals(3, QuestieNpcs.hostileOf("AH", "Al'Aketh Stormchaser"))
+        assertEquals(0, QuestieNpcs.hostileOf("AH", "Aamelia Windfield"))
+        assertEquals(3, QuestieNpcs.hostileOf(null, "Ornery Galestrider"))
+        assertEquals(TransportRoutes.HORDE, QuestieNpcs.hostileOf("A", "Stormwind Guard"))
+    }
+
     @Test fun aDetourLongerThanTheCapLosesToTheWayIgnoringTheDanger() {
         // round: 2000 + 1000 + 2000 + 200 yd, over 1.75 x 1200 + 500
         val r = ShippedRoute.plan(twoWays(2000.0), flat, camp, from, to)

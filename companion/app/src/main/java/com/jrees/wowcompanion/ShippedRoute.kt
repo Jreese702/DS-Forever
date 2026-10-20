@@ -52,7 +52,7 @@ object ShippedRoute {
      *  [snapped] both ends snapped to a node (no long attach) */
     class Result(val pts: List<DoubleArray>, val reached: Boolean, val why: String, val yd: Double = length(pts),
                  val attachFromYd: Double = 0.0, val attachToYd: Double = 0.0, val capped: Boolean = false, val swims: Int = 0,
-                 val snapped: Boolean = false, val roadmapYd: Double = 0.0) {
+                 val snapped: Boolean = false, val roadmapYd: Double = 0.0, val danger: Double = 0.0, val avoided: Double = 0.0) {
         val bends get() = max(0, pts.size - 2)
     }
 
@@ -125,13 +125,29 @@ object ShippedRoute {
         val g = Graph(sec, roadmap, dz, ground, attacher, stitchGround)
         val round = g.search(ground, dz, from, goal, k, attachMaxYd)
         if (round.pts.size < 2 || !round.reached) return round
-        if (k <= 0.0) return round
+        // THE DANGER TERM (the user's test20: "pathing me into hostile mobs"): the route's k x danger a yard ([dangerOf], the goal's free
+        // yards none), and what the way round avoided against the way ignoring the danger - logged on the route's line
+        fun with(r: Result, d: Double, avoided: Double, extra: String = "") = Result(r.pts, true,
+            r.why + extra + "; danger ${d.toInt()} (avoided ${avoided.toInt()})", attachFromYd = r.attachFromYd, attachToYd = r.attachToYd,
+            capped = extra.isNotEmpty(), swims = r.swims, snapped = r.snapped, roadmapYd = r.roadmapYd, danger = d, avoided = avoided)
+        if (k <= 0.0 || dz == null) return with(round, 0.0, 0.0)
+        val dRound = k * dangerOf(round.pts, dz)
         val calm = g.search(ground, dz, from, goal, 0.0, attachMaxYd).takeIf { it.reached }
+        val dCalm = calm?.let { k * dangerOf(it.pts, dz) } ?: dRound
         val pick = SafePath.capDetour(round.pts, calm?.pts)
-        if (pick === round.pts || calm == null) return round
-        return Result(calm.pts, true, calm.why + "; capped: round the danger ${round.yd.toInt()} yd, the way ignoring it ${calm.yd.toInt()} yd",
-            attachFromYd = calm.attachFromYd, attachToYd = calm.attachToYd, capped = true, swims = calm.swims, snapped = calm.snapped,
-            roadmapYd = calm.roadmapYd)
+        if (pick === round.pts || calm == null) return with(round, dRound, dCalm - dRound)
+        return with(calm, dCalm, 0.0, "; capped: round the danger ${round.yd.toInt()} yd, the way ignoring it ${calm.yd.toInt()} yd")
+    }
+
+    /** a way's danger: [danger] a yard along its points (read every [SAMPLE_YD] / 4), none inside a cave or on a floor (marked points) */
+    fun dangerOf(pts: List<DoubleArray>, danger: (Double, Double) -> Float): Double {
+        var s = 0.0
+        for ((a, b) in pts.zipWithNext()) {
+            if (Climb.inCave(a) && Climb.inCave(b)) continue
+            val len = hypot(b[0] - a[0], b[1] - a[1]); val n = max(1, ceil(len / (SAMPLE_YD / 4)).toInt())
+            for (i in 0 until n) { val t = (i + 0.5) / n; val d = danger(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t); if (!d.isNaN()) s += d * len / n }
+        }
+        return s
     }
 
     /** the one graph: the net's ways along their points, the roadmap's edges, their base costs and the danger along them */
