@@ -2433,7 +2433,6 @@ class MapView(context: Context) : View(context) {
     private var corpseX = Double.NaN
     private var corpseY = Double.NaN
     private val CORPSE_PX = 44f          // the game's 17 px pin, filtered (its world map draws it at 24)
-    private val CORPSE_ARROW_PX = 150f   // the corpse arrow's 32 px picture: its chevron then reads ~80 px, as the quest arrow
     // RED (the user, 2026-10-01: "The Corpse arrow should be red"): the game's gold chevron recoloured by its own brightness
     // (R 1.6, G 0.18, B 0.14 x luminance) -- light parts bright red, the dark rim near black -- so the picture's shading stays
     private val pCorpseArrow = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
@@ -6532,14 +6531,14 @@ class MapView(context: Context) : View(context) {
         // the focused quest's arrow points along its ROUTE (the user on test29): at the route's next way (a tram, a learned crossing, a
         // flight master, the game's waypoint, the map's edge) whenever the line goes through one; at the quest itself when it is direct
         // the small map too (the user on test31: "it's still pointing to the wrong place on the mini map" - Home's small map is this view)
-        val fRoute = if (!toCorpse && focusTq > 0) routeFor(focusTq) else null
-        val viaWay = fRoute != null && fRoute.kind != CursorRoute.Kind.GOAL
-        val rimTX = if (toCorpse) corpseX else if (viaWay) fRoute!!.x else focusTX
-        val rimTY = if (toCorpse) corpseY else if (viaWay) fRoute!!.y else focusTY
-        val rimFly0 = if (viaWay) fRoute!!.kind == CursorRoute.Kind.FLIGHT else flyStep
-        // bent round danger (b-danger-layer): the arrow points along the leg's first stretch, at its first bend
-        val bend = if (!toCorpse && !rimFly0 && fRoute != null) dangerLeg(focusTq, fRoute)?.get(1) else null
-        val rimFly = rimFly0
+        // test23 (the user: "On the minimap, I want the arrows to be anchored to the main quest objective location, its confusing how
+        // they are right now"): the arrow points at the focused quest's OWN objective (its turn-in when ready; off this map, the game's
+        // next waypoint for it: focusTX / focusTY), no longer at the route's next way or its first danger bend - the route's line
+        // still shows the way (this replaces test29 / test31 / b-danger-layer's arrow-along-the-route)
+        val rimTX = if (toCorpse) corpseX else focusTX
+        val rimTY = if (toCorpse) corpseY else focusTY
+        val rimFly = !toCorpse && flyStep
+        val bend: DoubleArray? = null
         // QuestTrail mode: no rim arrow of ours at all (the user, test58); the corpse's stays
         if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN() && !(Settings.questTracking == "questtrail" && !toCorpse)) {
             val tx = sx(bend?.get(0) ?: rimTX); val ty = sy(bend?.get(1) ?: rimTY)
@@ -6561,10 +6560,11 @@ class MapView(context: Context) : View(context) {
             // THE QUEST ARROW IS ALWAYS ON THE RIM (the user on test41: "It's confusing with the arrow moving closer. It should keep
             // the arrow on the edge of my screen relative to my position"): where the ray from the player toward the target leaves the
             // field, pointing along it, the target in view or not (it is never hidden: test31) - it moves only as the bearing turns.
-            // The corpse's arrow keeps the game's minimap rule: its stone in view, no arrow.
+            // test23 (the user: "the red arrow ... is inconsistent and I want to change that to the red version of the quest arrow"):
+            // the corpse's arrow is now the quest arrow's own rule and shape, tinted red - always on the rim, its stone in view or not
             val ox = sx(px).coerceIn(l0, r0); val oy = sy(py).coerceIn(t0, b0)
             val dx = tx - ox; val dy = ty - oy
-            if (r0 > l0 && b0 > t0 && (!seen || !toCorpse) && (abs(dx) > 0.5f || abs(dy) > 0.5f)) {
+            if (r0 > l0 && b0 > t0 && (abs(dx) > 0.5f || abs(dy) > 0.5f)) {
                 var k = Float.MAX_VALUE                    // the ray to the edge, however near the target is
                 if (dx > 0f) k = min(k, (r0 - ox) / dx) else if (dx < 0f) k = min(k, (l0 - ox) / dx)
                 if (dy > 0f) k = min(k, (b0 - oy) / dy) else if (dy < 0f) k = min(k, (t0 - oy) / dy)
@@ -6584,14 +6584,8 @@ class MapView(context: Context) : View(context) {
                 // pointing along the player's bearing to the target (slid clear of a control, it still points the way, not at a spot)
                 val deg = Math.toDegrees(atan2(dx.toDouble(), -dy.toDouble())).toFloat()   // 0 = up
                 c.save(); c.rotate(deg, ax, ay)
-                val corpseArrow = if (toCorpse) UiKit.tex("mm_corpse_arrow") else null
-                if (corpseArrow != null) {
-                    // the game's corpse arrow: pointing up, turned about its centre (UI Art); its art fills only 17 x 14 of
-                    // the 32 x 32 (centred), so it is drawn bigger to read as large as the quest arrow
-                    val hA = CORPSE_ARROW_PX / 2f
-                    corpseDst.set(ax - hA, ay - hA, ax + hA, ay + hA)
-                    c.drawBitmap(corpseArrow, null, corpseDst, pCorpseArrow)
-                } else drawIcon(c, Ic.QUEST_ARROW, ax, ay, RIM_ARROW_PX, if (toCorpse) pCorpseArrow else pArt)
+                // the quest arrow; red (the same recolour, pCorpseArrow) while it points at the corpse
+                drawIcon(c, Ic.QUEST_ARROW, ax, ay, RIM_ARROW_PX, if (toCorpse) pCorpseArrow else pArt)
                 c.restore()
                 // the step's icon (the user's pick): the winged boot just inside the arrow, upright, while the way goes by air
                 if (!toCorpse && rimFly) {
