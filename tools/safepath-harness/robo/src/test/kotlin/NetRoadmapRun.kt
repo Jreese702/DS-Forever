@@ -20,10 +20,11 @@ import java.io.File
 /**
  * THE ROADMAP'S SIZE AND PROOF RUN (NetRoadmap; NET2): one zone's ground as RenderSafePath assembles it (the app's ZoneInputs and its
  * Lattice, DangerInputs for BOTH factions at the spec's level), then [NetRoadmap.build] at each spacing of RM_SPACINGS (yards, comma
- * separated; default 30,40,60), each written to <out>/roadmap_<tag>_<S>.rm1 (RM1, ShippedNet.Roadmap) and read back. RM_ROUTES=<S>: that spacing's edges also
- * written as routes (<out>/levels_routes_<tag>.json, with the floors / holes / layers files beside it) for py/segcheck.py and
- * py/wetcheck.py. Prints ROADMAP lines.
- *   SAFEPATH_TEST=NetRoadmapRun RM_SPACINGS=30,40,60 RM_ROUTES=40 bash tools/safepath-harness/run.sh tools/safepath-harness/zones/durotar.json ROADMAP
+ * separated; default 40, the user's choice: 10 lattice steps), each checked at build time by py/segcheck.py and py/wetcheck.py
+ * (NetRoadmap.pyCheck; RM_CHECK=0 none), written to <out>/roadmap_<tag>_<S>.rm1 (RM1, ShippedNet.Roadmap), read back, and its edges
+ * checked again as routes (<out>/levels_routes_<tag>.json, the floors / holes / layers files beside it): the FINAL CHECK line.
+ * Prints ROADMAP lines (SIZE, COVERAGE, FINAL CHECK).
+ *   SAFEPATH_TEST=NetRoadmapRun RM_SPACINGS=40 bash tools/safepath-harness/run.sh tools/safepath-harness/zones/durotar.json ROADMAP
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
@@ -76,12 +77,23 @@ class NetRoadmapRun {
         val ground = NetRoadmap.Ground(cg, zi.deep, sr::overFord, { x, y -> wg.at(x, y) }, rooms, d0.calm(wading, rooms), d0.k, inZone)
         val tSetup = (System.nanoTime() - t0) / 1_000_000
         println("ROADMAP $tag: lattice ${cg.nx} x ${cg.ny} in $tLattice ms, inputs ready in $tSetup ms")
+        // the files segcheck / wetcheck read beside the routes (the floors a walker is on, the holes a floor covers, the floor layers)
+        File(out, "holes_$tag.json").writeText(JSONArray(zl.coveredHoles.map { JSONArray(listOf(it[0], it[1])) }).toString())
+        File(out, "layers_$tag.json").writeText(JSONArray(zl.layers.map { (k, z) -> JSONArray(listOf((k shr 32).toInt(), k.toInt(), z)) }).toString())
+        val classed = zi.tileDecks.values.flatten().toSet()
+        File(out, "floors_$tag.json").writeText(JSONArray(zi.deckList.flatMap { d -> val hs = d.heights ?: return@flatMap emptyList<JSONArray>()
+            d.triangles.mapIndexed { k, t -> JSONArray(listOf(t[0], t[1], hs[k][0], t[2], t[3], hs[k][1], t[4], t[5], hs[k][2], if (d in classed) 1 else if (d in zi.capitalDecks) 3 else 0)) } }
+            + zi.cityFeet.flatMap { f -> val c = listOf(doubleArrayOf(f.worldX(f.lx0, f.ly0), f.worldY(f.lx0, f.ly0)), doubleArrayOf(f.worldX(f.lx1, f.ly0), f.worldY(f.lx1, f.ly0)),
+                doubleArrayOf(f.worldX(f.lx1, f.ly1), f.worldY(f.lx1, f.ly1)), doubleArrayOf(f.worldX(f.lx0, f.ly1), f.worldY(f.lx0, f.ly1)))
+                listOf(listOf(0, 1, 2), listOf(0, 2, 3)).map { q -> JSONArray(q.flatMap { listOf(c[it][0], c[it][1], 0.0) } + 2) } }).toString())
+        // the checks at build time (RM_CHECK=0: none): py/segcheck.py and py/wetcheck.py on every edge
+        val check = if (System.getenv("RM_CHECK") == "0") null else NetRoadmap.pyCheck(File(File(System.getProperty("user.dir")).parentFile, "py"), out, tag,
+            dir.name, work) { println("ROADMAP $tag $it") }
         // the spacings in yards, each the nearest whole number of lattice steps (30: 7 = 29.2 yd, 40: 10 = 41.7, 60: 14 = 58.3)
-        val spacings = (System.getenv("RM_SPACINGS") ?: "30,40,60").split(',').map { it.trim().toDouble() }
-        val routesAt = System.getenv("RM_ROUTES")?.toDoubleOrNull()
+        val spacings = (System.getenv("RM_SPACINGS") ?: "40").split(',').map { it.trim().toDouble() }
         for (s in spacings) {
             val cell = Math.round(s / Climb.STEP).toInt()
-            val built = NetRoadmap.build(ground, cell) { println("ROADMAP $tag S=${s.toInt()} $it") }
+            val built = NetRoadmap.build(ground, cell, check) { println("ROADMAP $tag S=${s.toInt()} $it") }
             val rm = built.rm
             val raw = rm.encode()
             val back = com.jrees.wowcompanion.ShippedNet.Roadmap.decode(raw)
@@ -116,18 +128,10 @@ class NetRoadmapRun {
                 println("ROADMAP $tag S=${s.toInt()} COVERAGE ${ds.size} open vertices sampled; nearest node yd p50 ${pc(0.5)} p90 ${pc(0.9)} p99 ${pc(0.99)}; " +
                     "within 40 yd ${"%.1f".format(ds.count { it <= 40 } * 100.0 / maxOf(1, ds.size))}%")
             }
-            if (routesAt != null && routesAt.toInt() == s.toInt()) {
-                File(out, "levels_routes_$tag.json").writeText(JSONObject().put("routes", NetRoadmap.routesJson(rm)).toString())
-                File(out, "holes_$tag.json").writeText(JSONArray(zl.coveredHoles.map { JSONArray(listOf(it[0], it[1])) }).toString())
-                File(out, "layers_$tag.json").writeText(JSONArray(zl.layers.map { (k, z) -> JSONArray(listOf((k shr 32).toInt(), k.toInt(), z)) }).toString())
-                val classed = zi.tileDecks.values.flatten().toSet()
-                File(out, "floors_$tag.json").writeText(JSONArray(zi.deckList.flatMap { d -> val hs = d.heights ?: return@flatMap emptyList<JSONArray>()
-                    d.triangles.mapIndexed { k, t -> JSONArray(listOf(t[0], t[1], hs[k][0], t[2], t[3], hs[k][1], t[4], t[5], hs[k][2], if (d in classed) 1 else if (d in zi.capitalDecks) 3 else 0)) } }
-                    + zi.cityFeet.flatMap { f -> val c = listOf(doubleArrayOf(f.worldX(f.lx0, f.ly0), f.worldY(f.lx0, f.ly0)), doubleArrayOf(f.worldX(f.lx1, f.ly0), f.worldY(f.lx1, f.ly0)),
-                        doubleArrayOf(f.worldX(f.lx1, f.ly1), f.worldY(f.lx1, f.ly1)), doubleArrayOf(f.worldX(f.lx0, f.ly1), f.worldY(f.lx0, f.ly1)))
-                        listOf(listOf(0, 1, 2), listOf(0, 2, 3)).map { q -> JSONArray(q.flatMap { listOf(c[it][0], c[it][1], 0.0) } + 2) } }).toString())
-                println("ROADMAP $tag S=${s.toInt()} routes written: ${rm.edges}")
-            }
+            // THE PROOF: every edge of the final roadmap through py/segcheck.py and py/wetcheck.py once more
+            val fails = check?.invoke((0 until rm.edges).map { rm.points(it) })
+            println("ROADMAP $tag S=${s.toInt()} FINAL CHECK ${rm.edges} edges: ${fails?.let { if (it.isEmpty()) "segcheck none, wetcheck none" else "${it.size} FAIL ${it.take(20)}" } ?: "not run (RM_CHECK=0)"}")
+            File(out, "levels_routes_$tag.json").writeText(JSONObject().put("routes", NetRoadmap.routesJson(rm)).toString())
         }
     }
 }

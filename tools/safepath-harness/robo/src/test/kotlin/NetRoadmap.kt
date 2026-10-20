@@ -61,16 +61,22 @@ object NetRoadmap {
 
     /** what [build] did, for the logs */
     class Stats(var cells: Int = 0, var nodes: Int = 0, var tried: Int = 0, var kept: Int = 0, var noLeg: Int = 0, var detour: Int = 0,
-                var room: Int = 0, var wade: Int = 0, var isolated: Int = 0, var strict: Int = 0, var walked: Int = 0, var ms: Long = 0) {
+                var room: Int = 0, var wade: Int = 0, var isolated: Int = 0, var strict: Int = 0, var walked: Int = 0, var ms: Long = 0,
+                var checkFailed: Int = 0, var mended: Int = 0, var checkDropped: Int = 0) {
         override fun toString() = "$cells zone cells, $nodes nodes ($isolated without an edge dropped), $kept of $tried neighbour pairs joined " +
-            "($walked walked; not joined: no leg $noLeg, detour $detour, room $room, wade $wade; $strict by the no-wade retry), $ms ms"
+            "($walked walked; not joined: no leg $noLeg, detour $detour, room $room, wade $wade; $strict by the no-wade retry; " +
+            "segcheck/wetcheck failed $checkFailed: $mended walked again, $checkDropped dropped), $ms ms"
     }
 
     /** the roadmap and each edge's points a yard apart (for [dangerBytes]) */
     class Built(val rm: ShippedNet.Roadmap, val samples: List<List<DoubleArray>>, val stats: Stats)
 
-    /** THE ENTRY POINT: the roadmap over [ground] with cells of [cell] lattice steps (S yd = cell x Climb.STEP) */
-    fun build(ground: Ground, cell: Int = CELL, log: (String) -> Unit = {}): Built {
+    /**
+     * THE ENTRY POINT: the roadmap over [ground] with cells of [cell] lattice steps (S yd = cell x Climb.STEP). [check] (optional; e.g.
+     * [pyCheck]: py/segcheck.py and py/wetcheck.py): given every edge's points, the indices that fail - each walked again (its leg
+     * unsimplified, then the lattice's leg with no edge clearance) and checked once more, else dropped.
+     */
+    fun build(ground: Ground, cell: Int = CELL, check: ((List<List<DoubleArray>>) -> Set<Int>)? = null, log: (String) -> Unit = {}): Built {
         val t0 = System.nanoTime()
         val g = ground.g
         val nx = ceil(g.nx / cell.toDouble()).toInt(); val ny = ceil(g.ny / cell.toDouble()).toInt()
@@ -206,6 +212,20 @@ object NetRoadmap {
             return f or (et shl 2) or (min(3, climb) shl 4)
         }
         val eA = ArrayList<Int>(); val eB = ArrayList<Int>(); val eF = ArrayList<Int>(); val eP = ArrayList<IntArray?>(); val samples = ArrayList<List<DoubleArray>>()
+        val shapes = ArrayList<List<DoubleArray>>(); val raws = ArrayList<List<DoubleArray>>(); val waters = ArrayList<(Double, Double) -> Boolean>()
+        // a shape's inner points as RM1's lattice vertices, null when one is no vertex
+        fun innerOf(pts: List<DoubleArray>): IntArray? {
+            val inner = IntArray((pts.size - 2) * 2)
+            for (q in 1 until pts.size - 1) { val gr = ShippedNet.gr(pts[q][0]); val gc = ShippedNet.gc(pts[q][1])
+                if (abs(ShippedNet.vx(gr) - pts[q][0]) > 1e-6 || abs(ShippedNet.vy(gc) - pts[q][1]) > 1e-6) return null
+                inner[2 * (q - 1)] = gr; inner[2 * (q - 1) + 1] = gc }
+            return inner
+        }
+        fun shapeOf(pa: DoubleArray, pb: DoubleArray, inner: IntArray) =
+            listOf(pa) + (0 until inner.size / 2).map { q -> doubleArrayOf(ShippedNet.vx(inner[2 * q]), ShippedNet.vy(inner[2 * q + 1])) } + listOf(pb)
+        // THE GATE'S OWN RULE on every segment (no wall, no deep water), off the rooms, no long wade
+        fun fine(shape: List<DoubleArray>) = shape.zipWithNext().all { (p, q) -> Climb.walkable(g, p, q, ground.deep) && !crossesRoom(p, q) } &&
+            longestWade(shape) <= SafePath.NARROW_YD
         for (n in nCell.indices) {
             val c = nCell[n]; val pa = doubleArrayOf(g.wx(nJ[n]), g.wy(nI[n]))
             for (d in ShippedNet.DIRS) {
@@ -229,27 +249,56 @@ object NetRoadmap {
                 var pts = leg.pts.map { doubleArrayOf(it[0], it[1]) }
                 if (pts.zipWithNext { p, q -> hypot(q[0] - p[0], q[1] - p[1]) }.sum() > DETOUR * line + 1.0) { st.detour++; continue }
                 if (pts.zipWithNext().any { (p, q) -> crossesRoom(p, q) }) { st.room++; continue }
+                val raw = pts
                 pts = simplify(pts, water)
-                // the inner points are lattice vertices (the leg's bends), the ends the nodes; and THE GATE'S OWN RULE on every final segment
-                val inner = IntArray((pts.size - 2) * 2); var exact = true
-                for (q in 1 until pts.size - 1) { val gr = ShippedNet.gr(pts[q][0]); val gc = ShippedNet.gc(pts[q][1])
-                    if (abs(ShippedNet.vx(gr) - pts[q][0]) > 1e-6 || abs(ShippedNet.vy(gc) - pts[q][1]) > 1e-6) exact = false
-                    inner[2 * (q - 1)] = gr; inner[2 * (q - 1) + 1] = gc }
-                val shape = listOf(pa) + (0 until inner.size / 2).map { q -> doubleArrayOf(ShippedNet.vx(inner[2 * q]), ShippedNet.vy(inner[2 * q + 1])) } + listOf(pb)
-                if (!exact || shape.zipWithNext().any { (p, q) -> !Climb.walkable(g, p, q, ground.deep) || crossesRoom(p, q) }) { st.noLeg++; continue }
-                val sm = sample(shape)
-                eA.add(n); eB.add(m); eP.add(inner.takeIf { it.isNotEmpty() }); eF.add(flags(shape, sm)); samples.add(sm)
-                st.kept++; if (inner.isNotEmpty()) st.walked++
+                // the inner points are lattice vertices (the leg's bends), the ends the nodes
+                val inner = innerOf(pts)
+                val shape = inner?.let { shapeOf(pa, pb, it) }
+                if (inner == null || shape == null || !fine(shape)) { st.noLeg++; continue }
+                eA.add(n); eB.add(m); eP.add(inner); shapes.add(shape); raws.add(raw); waters.add(water)
             }
         }
+        // THE CHECKS (py/segcheck.py, py/wetcheck.py): a failing edge walked again, else dropped
+        val drop = BooleanArray(eA.size)
+        if (check != null && eA.isNotEmpty()) {
+            val bad = check(shapes).filter { it in eA.indices }
+            st.checkFailed = bad.size
+            var left = bad
+            fun same(u: List<DoubleArray>, v: List<DoubleArray>) = u.size == v.size && u.zip(v).all { (p, q) -> p[0] == q[0] && p[1] == q[1] }
+            val alts: List<(Int) -> List<DoubleArray>?> = listOf(
+                { e -> raws[e] },
+                { e -> val pa = shapes[e].first(); val pb = shapes[e].last()
+                    Climb.route(g, pa, pb, water = waters[e], edges = false, limits = limits)
+                        ?.takeIf { it.reached && hypot(it.pts.last()[0] - pb[0], it.pts.last()[1] - pb[1]) < 1e-6 }?.pts?.map { doubleArrayOf(it[0], it[1]) } })
+            for (alt in alts) {
+                if (left.isEmpty()) break
+                val tried = left.mapNotNull { e -> alt(e)?.let { p -> innerOf(p)?.let { inner -> shapeOf(shapes[e].first(), shapes[e].last(), inner) } }
+                    ?.takeIf { fine(it) && !same(it, shapes[e]) }?.let { e to it } }
+                if (tried.isEmpty()) continue
+                val again = check(tried.map { it.second })
+                val ok = tried.filterIndexed { q, _ -> q !in again }
+                for ((e, sh) in ok) { shapes[e] = sh; eP[e] = innerOf(sh) }
+                st.mended += ok.size
+                val okSet = ok.map { it.first }.toSet()
+                left = left.filter { it !in okSet }
+            }
+            for (e in left) drop[e] = true
+            st.checkDropped = left.size
+        }
+        val keepE = eA.indices.filter { !drop[it] }
+        for (e in keepE) {
+            val sm = sample(shapes[e]); samples.add(sm); eF.add(flags(shapes[e], sm))
+            st.kept++; if (eP[e]!!.isNotEmpty()) st.walked++
+        }
         // nodes no edge reaches: dropped (an island of one vertex, a ledge); the order kept (cell order, node a's order)
-        val used = BooleanArray(nCell.size); for (e in eA.indices) { used[eA[e]] = true; used[eB[e]] = true }
+        val used = BooleanArray(nCell.size); for (e in keepE) { used[eA[e]] = true; used[eB[e]] = true }
         val remap = IntArray(nCell.size) { -1 }; var kept = 0
         for (q in nCell.indices) if (used[q]) remap[q] = kept++ else st.isolated++
         val keepN = nCell.indices.filter { used[it] }
         val rm = ShippedNet.Roadmap(g.gr0, g.gc0, cell, nx, ny, keepN.map { nCell[it] }.toIntArray(), keepN.map { g.gr0 + nJ[it] }.toIntArray(),
             keepN.map { g.gc0 + nI[it] }.toIntArray(), keepN.map { nF[it] }.toIntArray(),
-            eA.map { remap[it] }.toIntArray(), eB.map { remap[it] }.toIntArray(), eF.toIntArray(), eP.toTypedArray())
+            keepE.map { remap[eA[it]] }.toIntArray(), keepE.map { remap[eB[it]] }.toIntArray(), eF.toIntArray(),
+            keepE.map { eP[it]!!.takeIf { p -> p.isNotEmpty() } }.toTypedArray())
         st.nodes = kept; st.ms = (System.nanoTime() - t0) / 1_000_000
         log("ROADMAP $nx x $ny cells of $cell steps (${"%.1f".format(cell * Climb.STEP)} yd): ${rm.nodes} nodes, ${rm.edges} edges; $st")
         return Built(rm, samples, st)
@@ -261,8 +310,39 @@ object NetRoadmap {
         val s = b.samples[e]; val m = s.sumOf { danger(it[0], it[1]).toDouble() } / s.size
         min(255, Math.round(m * ShippedNet.ROADMAP_DANGER_SCALE).toInt()).coerceAtLeast(0).toByte() }
 
-    /** each edge as a route ({letter, pts}: world x, y), for py/segcheck.py and py/wetcheck.py (a levels_routes_<tag>.json's "routes") */
-    fun routesJson(rm: ShippedNet.Roadmap): JSONArray = JSONArray().also { a ->
-        for (e in 0 until rm.edges) a.put(JSONObject().put("letter", "E$e").put("pts", JSONArray(rm.points(e).map { p ->
+    /** a route's letter for py/wetcheck.py's readers ([A-Z]+): R, then the index in base 26 */
+    fun letter(i: Int): String { var v = i; val sb = StringBuilder(); do { sb.append('A' + v % 26); v /= 26 } while (v > 0); return "R" + sb.reverse() }
+    private fun routes(shapes: List<List<DoubleArray>>): JSONArray = JSONArray().also { a ->
+        for ((e, sh) in shapes.withIndex()) a.put(JSONObject().put("letter", letter(e)).put("reached", true).put("pts", JSONArray(sh.map { p ->
             JSONArray(listOf(Math.round(p[0] * 1000) / 1000.0, Math.round(p[1] * 1000) / 1000.0)) }))) }
+
+    /** each edge as a route ({letter, pts}: world x, y), for py/segcheck.py and py/wetcheck.py (a levels_routes_<tag>.json's "routes") */
+    fun routesJson(rm: ShippedNet.Roadmap): JSONArray = routes((0 until rm.edges).map { rm.points(it) })
+
+    /**
+     * py/segcheck.py and py/wetcheck.py as [build]'s check: the edges written to [dir]/levels_routes_<tag>.json (the caller puts the
+     * zone's floors_ / holes_ / layers_ files beside it), run from [py] with ZDIR [zdir]; the edges with a flagged segment or a swim
+     * (deeper than 2.2 yd at all, or deeper than the ford for more than 6 yd on end)
+     */
+    fun pyCheck(py: java.io.File, dir: java.io.File, tag: String, zdir: String, work: java.io.File, log: (String) -> Unit = {}): (List<List<DoubleArray>>) -> Set<Int> = { shapes ->
+        val f = java.io.File(dir, "levels_routes_$tag.json"); f.writeText(JSONObject().put("zone", tag).put("routes", routes(shapes)).toString())
+        val idx = shapes.indices.associateBy { letter(it) }
+        val bad = HashSet<Int>()
+        val seg = ParityCompare.runPy(py, "segcheck.py", f, zdir, work, 120)
+        val last = seg.lines().lastOrNull { "crossing a" in it } ?: error("segcheck said nothing: ${seg.takeLast(300)}")
+        for (m in Regex("(R[A-Z]+)\\d+-R[A-Z]+\\d+").findAll(last.substringAfter(":"))) idx[m.groupValues[1]]?.let { bad.add(it) }
+        val nSeg = bad.size
+        val wet = ParityCompare.runPy(py, "wetcheck.py", f, zdir, work, 120)
+        var read = 0
+        for (line in wet.lines()) {
+            val m = Regex("WET (R[A-Z]+): deepest ([\\d.]+) yd.*?, (\\d+) yd deeper than .*?longest wade (\\d+) yd.*?, (\\d+) yd deeper than").find(line) ?: continue
+            read++
+            val e = idx[m.groupValues[1]] ?: continue
+            if (m.groupValues[5].toInt() > 0 || m.groupValues[4].toInt() > SafePath.NARROW_YD) bad.add(e)
+        }
+        if (read < shapes.size) error("wetcheck read $read of ${shapes.size} routes: ${wet.takeLast(300)}")
+        log("ROADMAP CHECK ${shapes.size} edges: segcheck flags $nSeg, wetcheck ${bad.size - nSeg} more")
+        f.delete()
+        bad
+    }
 }
