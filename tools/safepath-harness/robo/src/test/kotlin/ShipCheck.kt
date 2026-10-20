@@ -60,7 +60,9 @@ class ShipCheck(private val cg: Climb.Grid, private val deep: (Double, Double) -
     private class Item(val layer: Char, val idx: Int, val pts: List<DoubleArray>)
 
     /** the items' failures: segcheck's flagged segments and wetcheck's swims, by item */
-    private fun check(items: List<Item>): Map<Item, String> {
+    private fun check(items: List<Item>): Map<Item, String> = checkAll(items).filter { (it, why) -> it.layer != 'M' || !why.startsWith("wall") }
+    /** (a mouth sits at a floor's edge, often on a steep face: only its water counts) */
+    private fun checkAll(items: List<Item>): Map<Item, String> {
         if (items.isEmpty()) return emptyMap()
         val byLetter = HashMap<String, Item>()
         val counts = HashMap<Char, Int>()
@@ -98,12 +100,12 @@ class ShipCheck(private val cg: Climb.Grid, private val deep: (Double, Double) -
         return sec.ways[i].pts ?: listOf(doubleArrayOf(a.wx, a.wy, mark(a)), doubleArrayOf(b.wx, b.wy, mark(b)))
     }
 
-    /** each cave mouth on a live way, as a 1.5 yd line through it: wetcheck says whether it stands in deep water (a cave way's own floor
+    /** each cave mouth on a live way, as a small cross through it (2 yd each way): wetcheck says whether it stands in deep water (a cave way's own floor
      *  is not checked, but its mouth is the ground's: a route walks through it) */
     private fun mouths(sec: ShippedNet.Section): List<Item> {
         val used = HashSet<Int>().also { u -> for (e in sec.net.edges) { u.add(e.a); u.add(e.b) } }
         return sec.net.nodes.withIndex().filter { (_, n) -> n.kind == SafePath.MOUTH && n.id in used }.map { (i, n) ->
-            Item('M', i, listOf(doubleArrayOf(n.wx - 0.75, n.wy), doubleArrayOf(n.wx + 0.75, n.wy))) }
+            Item('M', i, listOf(doubleArrayOf(n.wx - 1.0, n.wy), doubleArrayOf(n.wx + 1.0, n.wy), doubleArrayOf(n.wx, n.wy - 1.0), doubleArrayOf(n.wx, n.wy + 1.0))) }
     }
 
     /** every shipped piece of [sec] and [rm] checked once, nothing mended: the failures (empty = what ships passes) */
@@ -119,7 +121,7 @@ class ShipCheck(private val cg: Climb.Grid, private val deep: (Double, Double) -
         return bad.map { (it, why) -> "${when (it.layer) { 'N' -> "way"; 'R' -> "roadmap edge"; 'S' -> "stitch"; else -> "mouth" }} ${it.idx}: $why" }
     }
 
-    fun run(sec0: ShippedNet.Section, rm0: ShippedNet.Roadmap?, passes: Int = 3): Result {
+    fun run(sec0: ShippedNet.Section, rm0: ShippedNet.Roadmap?, passes: Int = 3, dropOnly: Boolean = false): Result {
         var sec = sec0; var rm = rm0
         val walked = HashMap<Char, Int>(); val dropped = HashMap<Char, Int>()
         val walkedWays = HashSet<Int>(); val walkedRm = HashSet<Int>()
@@ -144,12 +146,12 @@ class ShipCheck(private val cg: Climb.Grid, private val deep: (Double, Double) -
             val dropS = HashSet<Int>()
             for ((it, why) in bad) when (it.layer) {
                 'N' -> { val p = it.pts
-                    val w = if (it.idx in walkedWays) null else leg(doubleArrayOf(p.first()[0], p.first()[1]), doubleArrayOf(p.last()[0], p.last()[1]))
+                    val w = if (dropOnly || it.idx in walkedWays) null else leg(doubleArrayOf(p.first()[0], p.first()[1]), doubleArrayOf(p.last()[0], p.last()[1]))
                     if (w != null && w.size >= 2) { newPts[it.idx] = ShippedNet.anchored(w.map { q -> doubleArrayOf(q[0], q[1]) }, p.first(), p.last()).first
                         walkedWays.add(it.idx); walked.merge('N', 1, Int::plus) }
                     else { dropW.add(it.idx); dropped.merge('N', 1, Int::plus); log("SHIPCHECK $tag drop way ${it.idx} (${sec.net.edges[it.idx].kind}, ${ShippedNet.flagNames(sec.ways[it.idx].flags)}): $why") } }
                 'R' -> { val r = rm!!; val a = r.edgeA[it.idx]; val b = r.edgeB[it.idx]
-                    val w = if (it.idx in walkedRm) null else rmLeg(doubleArrayOf(r.x(a), r.y(a)), doubleArrayOf(r.x(b), r.y(b)))
+                    val w = if (dropOnly || it.idx in walkedRm) null else rmLeg(doubleArrayOf(r.x(a), r.y(a)), doubleArrayOf(r.x(b), r.y(b)))
                     val inner = w?.takeIf { it.size >= 2 && abs(it.first()[0] - r.x(a)) < 1e-6 && abs(it.first()[1] - r.y(a)) < 1e-6 &&
                         abs(it.last()[0] - r.x(b)) < 1e-6 && abs(it.last()[1] - r.y(b)) < 1e-6 }?.let { q -> q.subList(1, q.size - 1) }
                         ?.takeIf { q -> q.all { p -> abs(ShippedNet.vx(ShippedNet.gr(p[0])) - p[0]) < 1e-6 && abs(ShippedNet.vy(ShippedNet.gc(p[1])) - p[1]) < 1e-6 } }

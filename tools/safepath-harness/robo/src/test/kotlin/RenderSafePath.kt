@@ -954,7 +954,7 @@ class RenderSafePath {
                 File(File(System.getProperty("user.dir")).parentFile, "py"), cdir, tag, dir.name, dir.parentFile) { println("NET1 $it") }
             // THE CHECK IS ON WHAT SHIPS (W's Kalimdor 70450 parity): the section and roadmap as the device decodes them (the JSON's
             // rounding: nodes 0.1 yd, points 0.01 yd) checked again, nothing mended; a failure there is mended on the decoded pack and
-            // checked again, up to 3 rounds
+            // dropped there and verified again, up to 3 rounds
             fun decoded(s0: ShippedNet.Section, r0: ShippedNet.Roadmap?): Pair<ShippedNet.Section, ShippedNet.Roadmap?> =
                 ShippedNet.Pack.fromJson(org.json.JSONObject(ShippedNet.Pack(ShippedNet.Header(map, rect.c, 0, "", "", ""), listOf(s0), r0).toJson().toString()))!!
                     .let { it.sections[0] to it.roadmap }
@@ -965,8 +965,9 @@ class RenderSafePath {
                 val dec = decoded(checked.sec, checked.rm)
                 shipLeft = checked.left + sc.verify(dec.first, dec.second)
                 if (shipLeft.isEmpty() || round == 3) break
-                println("NET1 SHIPCHECK $tag: the decoded pack fails ${shipLeft.size} (${shipLeft.take(5)}) - mended on it, round ${round + 1}")
-                cur = dec; checked = sc.run(cur.first, cur.second)
+                // (what fails as decoded is dropped there: a line walked again would only be rounded again)
+                println("NET1 SHIPCHECK $tag: the decoded pack fails ${shipLeft.size} (${shipLeft.take(5)}) - dropped from it, round ${round + 1}")
+                cur = dec; checked = sc.run(cur.first, cur.second, dropOnly = true)
             }
             checked = ShipCheck.Result(checked.sec, checked.rm, checked.walked, checked.dropped, shipLeft, checked.passes)
             cdir.deleteRecursively()
