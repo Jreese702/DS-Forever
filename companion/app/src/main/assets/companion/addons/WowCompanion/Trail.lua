@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp17" }
+WC.compass = { V = "cp18" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -378,7 +378,7 @@ do
     -- (MAXOFF 100: a mirror is ~180 degrees off the true camera, so it is rejected while the dead reckoning is within 80 of it; an
     -- honest fix up to 100 off still corrects a poor rate guess, and teaches the rate)
     C.cam = { off = 0, src = "none", fovAt = -10, hfov = math.rad(90), abs = nil, fixAt = -100, MAXOFF = math.rad(100),
-              BASE = math.rad(120), base = nil, ys = 1.3, inv = false, tw = 3, fol = false, gp = nil, rx = 0, acc = 0,
+              BASE = 3.146, KB_TUNE = 0.1, base = nil, ys = 1.3, inv = false, tw = 3, fol = false, gp = nil, rx = 0, acc = 0,
               extX = nil, extAt = -100, ANCHOR_TAU = 4, IDLE_S = 0.5, STRAIGHT_S = 1, STRAIGHT_RATE = 0.35,
               idleSince = -100, straightSince = -100, lastF = nil }
 
@@ -421,7 +421,12 @@ do
     -- yaw (an accepted marker fix, a cp15 true-up) with the stick turned between them make a lesson: the turn they show (unwrapped
     -- by the model's own prediction, so a long turn does not alias) against the stick's integral for each candidate exponent; the
     -- exponent whose least-squares fit is best wins, with its kb. Kept in OUR saved data (WowCompanionDB.compassCal) across sessions.
-    C.P = { 1, 1.5, 2, 2.5, 3 }
+    -- cp18 (cal1, test32: the user's 120 s calibration, the true yaw from the quest's marker on screen): the law is MEASURED, not
+    -- guessed. The game turns its camera LINEARLY with the stick: 3.146 rad/s (180 degrees a second) x GamePadCameraYawSpeed x x,
+    -- no deadzone past the mapped state's, no ramp, no smoothing, no lag beyond a frame (replayed: every full circle of the
+    -- recording lands within 3 degrees, 1.2 degrees rms). So the exponent is fixed at 1 and the lessons only fine-tune the rate,
+    -- within KB_TUNE (10 %) of the measured one; a law saved by cp16 / cp17 (a learned curve) is not loaded.
+    C.P = { 1 }
     function C.rateOf(x)
         local K = C.cam
         local a = math.abs(x)
@@ -431,12 +436,18 @@ do
     function C.calLoad()
         local K = C.cam
         local c = type(WowCompanionDB) == "table" and WowCompanionDB.compassCal or nil
-        if type(c) == "table" and tonumber(c.kb) and tonumber(c.p) then K.kb, K.p, K.calN = tonumber(c.kb), tonumber(c.p), tonumber(c.n) or 0 end
+        if type(c) == "table" and c.v == "cp18" and tonumber(c.kb) then K.kb, K.p, K.calN = C.tuned(tonumber(c.kb)), 1, tonumber(c.n) or 0 end
     end
     function C.calSave()
         local K = C.cam
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
-        WowCompanionDB.compassCal = { kb = K.kb, p = K.p, n = K.calN or 0 }
+        WowCompanionDB.compassCal = { v = "cp18", kb = K.kb, p = K.p, n = K.calN or 0 }
+    end
+    -- the fine-tuned rate, kept within KB_TUNE of the measured one
+    function C.tuned(kb)
+        local K = C.cam
+        local lo, hi = K.BASE * (1 - K.KB_TUNE), K.BASE * (1 + K.KB_TUNE)
+        return math.max(lo, math.min(hi, kb))
     end
     -- the best (p, kb) over the kept lessons
     function C.fit()
@@ -464,7 +475,7 @@ do
             end
         end
         if bp then
-            K.p, K.kb = bp, bk / K.ys
+            K.p, K.kb = bp, C.tuned(bk / K.ys)
             K.calN = #L
             K.base = K.kb                                   -- (the line's "base", deg/s at speed 1, and "learned")
             C.calSave()
@@ -640,9 +651,10 @@ do
                     local errRef = K.ref and C.wrap(cam - K.ref) or err   -- (the gate: against the last fix carried forward)
                     -- cp13 (test22: a chain of small "fixes" walked the yaw 120 degrees with the stick idle, then a mirror held it 180
                     -- off): with the follow camera off, the camera moves ONLY with the stick, so a fix may differ from the estimate by
-                    -- 15 degrees plus 40% (60% while the rate is still the guess) of what the stick turned since the last fix; more is a
-                    -- mirror or junk. Never verified yet (no fix since camera mode came on), or the follow camera on and moving: 100.
-                    local tol = math.rad(15) + ((K.calN or 0) >= 6 and 0.4 or 0.6) * (K.grossSince or 0)
+                    -- 15 degrees plus 20% of what the stick turned since the last fix (cp18: the measured law is good to ~3%; it was
+                    -- 40-60% while the rate was a guess); more is a mirror or junk. Never verified yet (no fix since camera mode came
+                    -- on), or the follow camera on and moving: 100.
+                    local tol = math.rad(15) + 0.2 * (K.grossSince or 0)
                     if (K.fol and moving) or not K.lastFix then tol = K.MAXOFF end     -- (never verified yet: the wide gate)
                     K.tol = tol
                     if math.abs(errRef) <= math.min(tol, K.MAXOFF) then
