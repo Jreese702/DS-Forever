@@ -60,7 +60,7 @@ object ShippedSnap {
         /** the same ground for a ghost ([allowWater]) */
         fun ghost() = Ground(terrain, water, room, allowWater = true)
         /** water a ghost walks on at world ([x], [y]): [allowWater], wet, no bridge, not lava */
-        private fun walkedWater(x: Double, y: Double): Boolean {
+        internal fun walkedWater(x: Double, y: Double): Boolean {
             if (!allowWater) return false
             val d = water?.at(x, y) ?: return false
             return !d.isNaN() && d != SafePath.Water.BRIDGE && d < DEEP_LAVA
@@ -259,7 +259,7 @@ object ShippedSnap {
         class Line(val cost: Double, val why: String?, val steep: Float = 1f)
         /** the wall at ([x], [y]) for this end's walk (null: none; the door's within [DOOR_YD] of an end standing in one) */
         fun wall(x: Double, y: Double): String? {
-            val w = g.wall(x, y) ?: (if (level) g.terrain(x, y).takeIf { !it.isNaN() && it > LEVEL }?.let { "a climb or a cliff's band" } else null) ?: return null
+            val w = g.wall(x, y) ?: (if (level && !g.walkedWater(x, y)) g.terrain(x, y).takeIf { !it.isNaN() && it > LEVEL }?.let { "a climb or a cliff's band" } else null) ?: return null
             return if (inWall && hypot(x - c[0], y - c[1]) <= DOOR_YD) null else w
         }
         fun yard(x: Double, y: Double): Double = g.yard(x, y) + k * (danger?.invoke(x, y)?.takeIf { !it.isNaN() } ?: 0f)
