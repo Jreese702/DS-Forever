@@ -321,8 +321,15 @@ def main():
     chk("cam: walking, the facing 1 rad off: no snap in 0.5 s (%.3f from the camera)" % abs(C.wrap(C.wrap(C.h) - y0)),
         abs(C.wrap(C.wrap(C.h) - y0)) < 0.05)
     frames(60 * 12)
-    chk("cam: walking straight 12 s, the stick idle: anchored to the facing (%.3f off), src anchor" % abs(C.wrap(C.wrap(C.h) - G.facing)),
+    chk("cp14: walking 12 s with the follow camera OFF: no anchor, the compass stays on the camera (%.3f from it)" % abs(C.wrap(C.wrap(C.h) - y0)),
+        abs(C.wrap(C.wrap(C.h) - y0)) < 0.02 and C.cam.src == "still")
+    CV.GamepadCameraFollowOnStick = "1"; C.cam.fovAt = -10
+    frames(60 * 12)
+    chk("cp14: the follow camera ON, walking forward-ish (1 rad off is over 45): still no anchor", abs(C.wrap(C.wrap(C.h) - y0)) < 0.02)
+    G.facing = C.wrap(y0 + 0.5); frames(60 * 14)
+    chk("cp14: the follow camera ON, walking forward (within 45): anchored slowly (%.3f off)" % abs(C.wrap(C.wrap(C.h) - G.facing)),
         abs(C.wrap(C.wrap(C.h) - G.facing)) < 0.1 and C.cam.src == "anchor")
+    CV.GamepadCameraFollowOnStick = "0"; C.cam.fovAt = -10
     y1 = C.cam.abs                                       # (the camera model itself: the shown heading eases ~0.25 s behind it)
     G.rx = 1.0; frames(60); G.rx = 0
     chk("cam: walking AND orbiting: the stick turns the camera (%.0f deg), the facing does not pull it" % math.degrees(C.wrap(y1 - C.cam.abs)),
@@ -331,9 +338,9 @@ def main():
     G.speed = 0; G.fight = True; y2 = C.cam.abs; G.facing = C.wrap(y2 + 0.8); frames(30)
     chk("cam: in a fight (setting 3): no snap to the facing either", abs(C.wrap(C.cam.abs - y2)) < 0.05)
     G.fight = False
-    CV.GamePadTurnWithCamera = "2"; C.cam.fovAt = -10; frames(60 * 14)
-    chk("cam: setting 2 (always), standing: anchored slowly too (%.3f off)" % abs(C.wrap(C.wrap(C.h) - G.facing)),
-        abs(C.wrap(C.wrap(C.h) - G.facing)) < 0.1)
+    CV.GamePadTurnWithCamera = "2"; C.cam.fovAt = -10; y3 = C.cam.abs; G.facing = C.wrap(y3 + 0.8); frames(60 * 14)
+    chk("cp14: setting 2 (always), standing, the follow camera off: no anchor (%.3f from the camera)" % abs(C.wrap(C.cam.abs - y3)),
+        abs(C.wrap(C.cam.abs - y3)) < 0.02)
     CV.GamePadTurnWithCamera = "3"; C.cam.fovAt = -10
     G.gp = False; frames(5)
     chk("cam: no game controller state: no stick (from none)", C.cam["from"] == "none")
@@ -422,11 +429,13 @@ def main():
         chk("test22 chain: a 'fix' implying %.3f is refused (the camera stays %.3f, src %s)" % (impl, C.cam.abs, C.cam.src),
             abs(C.wrap(C.cam.abs + 0.251)) < 0.02 and C.cam.src != "nav")
     G.nav = None
-    # 08:47:44: the estimate 2.69 with the character at 0.023, walking straight, the stick idle: the fast anchor closes it in ~1 s
-    G.speed = 7; G.facing = 0.023; C.cam.abs = 2.69; C.cam.ref = 2.69
-    frames(150, read=True)
-    chk("test22 08:47:44: 2.67 rad off, walking straight: within 20 degrees in 2.5 s (%.0f deg off; cp12 took ~10 s)" % math.degrees(abs(C.wrap(C.cam.abs - 0.023))),
-        abs(C.wrap(C.cam.abs - 0.023)) < math.radians(20))
+    # cp14, test23 (the user: "if I face north and begin walking south while still facing camera north, then the compass flips to
+    # south after a delay"): the camera north, the character turned south walking toward it, the stick idle: north for 30 s and more
+    G.speed = 7; G.nav = None; C.cam.abs = 0.0; C.cam.ref = 0.0; G.facing = math.pi
+    frames(60 * 32, read=True)
+    chk("test23: camera north, walking south toward it, 32 s: the compass stays north (%.3f rad)" % C.wrap(C.cam.abs), abs(C.wrap(C.cam.abs)) < 0.02)
+    G.rx = 1.0; frames(30); G.rx = 0
+    chk("test23: ... and a stick turn still turns it (%.0f deg)" % math.degrees(-C.wrap(C.cam.abs)), C.wrap(C.cam.abs) < -0.5)
     G.speed = 0
 
     # the WORLD MARKER: our own diamond on the engine's point, only with the target in front
