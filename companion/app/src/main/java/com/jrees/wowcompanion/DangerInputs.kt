@@ -50,7 +50,7 @@ object DangerInputs {
         return QuestieNpcs.townSided(spawns) { sp -> doubleArrayOf(rect.t - sp.y * ay, rect.l - sp.x * ax) }.map { sp ->
             // the placeholder level only for NPCs tagged for neither faction (the user, 2026-10-19: "Yes, other faction = danger")
             if ((sp.minLv >= rules.friendlyMinLevel && sp.hostile == 3 || rules.friendlyNames.any { it.containsMatchIn(sp.name) }) && sp.hostile != foe)
-                QuestieNpcs.Spawn(sp.area, sp.x, sp.y, sp.minLv, sp.maxLv, sp.elite, foe, sp.name, sp.sub) else sp }
+                QuestieNpcs.Spawn(sp.area, sp.x, sp.y, sp.minLv, sp.maxLv, sp.elite, foe, sp.name, sp.sub, sp.npc) else sp }
     }
 
     /** step 3's filter: the spawns hostile to [mine] (its own bit, or both); 0 = unknown, every hostile spawn */

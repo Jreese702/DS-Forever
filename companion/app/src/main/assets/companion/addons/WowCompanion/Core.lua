@@ -128,6 +128,7 @@ local function start()
             if moving then
                 moving = false
                 pos.tr = WC.drainTrail()
+                if WC.drainAggro then local okA, ag = pcall(WC.drainAggro); if okA then pos.ag = ag end end   -- the live aggro layer
                 WC.send(WC.encode({ type = "pos", map = pos }))
             end
             WC.pushThrottled()
@@ -139,6 +140,8 @@ local function start()
         -- bytes displace pad bytes one for one -- and it is what lets the app draw a smooth
         -- arrow from a slow flush instead of a stepped one from a fast flush.
         pos.tr = WC.drainTrail()
+        -- the live aggro layer's record (Trail.lua WC.live) rides along too, the same way: payload in place of padding
+        if WC.drainAggro then local okA, ag = pcall(WC.drainAggro); if okA then pos.ag = ag end end
         pos.fms = math.floor(WC.flushMs * 100 + 0.5) / 100     -- what the last pad cost, ms
         pos.fmax = math.floor(WC.flushMax * 100 + 0.5) / 100
         WC.send(WC.encode({ type = "pos", map = pos }))

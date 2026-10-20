@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q45"    -- bump on every change; the app shows it, so a stale build is visible
+local QV = "q46"    -- bump on every change; the app shows it, so a stale build is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1535,6 +1535,16 @@ local OPS = {}
 
 function OPS.track(id)
     if not id or not inLog(id) then return ack("track", id, false, "not in log") end
+    -- test22 (the user: "Track the checkpoint"): while the ROUTE's pin holds the game's super-track (Map.lua WC.routeWp), the app's
+    -- focus push must not take it back: SetSuperTrackedQuestID fired SUPER_TRACKING_CHANGED, Map read it as "the player chose
+    -- another" and cleared the route's pin, and the app set it again (a fight). The pin now just stands for the new quest
+    -- (the app re-plans the route for it and moves the pin); the quest's own super-track comes back when the route ends.
+    local R = WC.routeWp
+    if R and R.active then
+        R.qid = id
+        if type(WowCompanionDB) == "table" and type(WowCompanionDB.routeWp) == "table" then WowCompanionDB.routeWp.qid = id end
+        return result("track", id, true, nil)
+    end
     CALL(function() C_SuperTrack.SetSuperTrackedQuestID(id) end)
     local now = superTracked()
     result("track", id, now == id, now ~= id and "did not take" or nil)

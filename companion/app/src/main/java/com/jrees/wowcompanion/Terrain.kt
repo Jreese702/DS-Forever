@@ -103,6 +103,57 @@ object Terrain {
         }
     }
 
+    /**
+     * A ZONE'S HEIGHTS (the ghost's drops, CorpseRoute: the user's "Yes, add drops"): the same cells as its slope [Grid], each the MEAN
+     * height (yards) of the ground's outer heights in it, NaN where none is read (terrain/<uiMap>.hgt, built on the device by [STEP]).
+     * The slopes say a cell is a cliff; only the heights say which way it falls.
+     */
+    class Heights(val t: Double, val b: Double, val l: Double, val r: Double, val nx: Int, val ny: Int, val h: FloatArray) {
+        /** the cell's mean height at world ([wx], [wy]), NaN off the grid or unknown */
+        fun at(wx: Double, wy: Double): Float {
+            val i = floor((l - wy) / (l - r) * nx).toInt(); val j = floor((t - wx) / (t - b) * ny).toInt()
+            return if (i in 0 until nx && j in 0 until ny) h[j * nx + i] else Float.NaN
+        }
+
+        fun write(f: File) {
+            f.parentFile?.mkdirs()
+            DataOutputStream(f.outputStream().buffered()).use { o ->
+                o.writeInt(MAGIC); o.writeDouble(t); o.writeDouble(b); o.writeDouble(l); o.writeDouble(r); o.writeInt(nx); o.writeInt(ny)
+                for (v in h) o.writeFloat(v)
+            }
+        }
+
+        companion object {
+            const val MAGIC = 0x48475431                       // "HGT1"
+            fun read(f: File): Heights? = runCatching {
+                DataInputStream(f.inputStream().buffered()).use { i ->
+                    if (i.readInt() != MAGIC) return null
+                    val t = i.readDouble(); val b = i.readDouble(); val l = i.readDouble(); val r = i.readDouble()
+                    val nx = i.readInt(); val ny = i.readInt()
+                    if (nx !in 1..4096 || ny !in 1..4096) return null
+                    Heights(t, b, l, r, nx, ny, FloatArray(nx * ny) { i.readFloat() })
+                }
+            }.getOrNull()
+        }
+    }
+
+    /** zone [rect]'s [Heights]: per [Grid] cell the mean of the outer heights in it ([height] as [grid] reads it) */
+    fun heightGrid(rect: MapHarvest.Rect, height: (Int, Int) -> Float): Heights {
+        val nx = max(1, ((rect.l - rect.r) / CELL_YD).toInt()); val ny = max(1, ((rect.t - rect.b) / CELL_YD).toInt())
+        val cw = (rect.l - rect.r) / nx; val ch = (rect.t - rect.b) / ny
+        val top = 32.0 * MapHarvest.ADT_YD
+        val out = FloatArray(nx * ny) { Float.NaN }
+        for (j in 0 until ny) for (i in 0 until nx) {
+            val wx0 = rect.t - j * ch; val wy0 = rect.l - i * cw
+            val r0 = ((top - wx0) / S).toInt(); val r1 = ((top - (wx0 - ch)) / S).toInt()
+            val c0 = ((top - wy0) / S).toInt(); val c1 = ((top - (wy0 - cw)) / S).toInt()
+            var sum = 0.0; var n = 0
+            for (gr in r0..r1) for (gc in c0..c1) { val h = height(gr, gc); if (!h.isNaN()) { sum += h; n++ } }
+            if (n > 0) out[j * nx + i] = (sum / n).toFloat()
+        }
+        return Heights(rect.t, rect.b, rect.l, rect.r, nx, ny, out)
+    }
+
     // ---------------------------------------------------------------- the game's heights
 
     /** one root ADT's outer heights, [TILE_V] x [TILE_V] (rows south, columns east from the tile's north-west corner) */
@@ -349,7 +400,7 @@ object Terrain {
      */
     val STEP = object : ArtHarvest.Step {
         override val id = "terrain"
-        override val version = 3
+        override val version = 4                    // v4: the heights too (terrain/<uiMap>.hgt: the ghost's drops)
         override val beforePlay = true
         override val weight = 60
         override fun run(job: ArtHarvest.Job) {
@@ -380,7 +431,8 @@ object Terrain {
                 val (slopes, cover) = pass.zone(rect) ?: continue
                 slopes.write(job.file("terrain/$map.bin"))
                 cover.write(job.file("terrain/$map.bld"))
-                files.drop(map); buildings.drop(map)
+                pass.heights(rect)?.write(job.file("terrain/$map.hgt"))
+                files.drop(map); buildings.drop(map); heights.drop(map)
                 made.appendText("$map\n"); done.add(map.toString()); built++
                 writeCoverage(job, done.size, order.size, pass.placed.size, pass.rooms, bytes, t0)
             }
@@ -454,6 +506,9 @@ object Terrain {
             return out
         }
 
+        /** zone [rect]'s [Heights] (its tiles still cached from [zone]); null when its continent has no terrain */
+        fun heights(rect: MapHarvest.Rect): Heights? = if (!continent(rect.c)) null else heightGrid(rect) { gr, gc -> height(rect.c, gr, gc) }
+
         /** zone [rect]'s slope grid and building cover; null when its continent has no terrain */
         fun zone(rect: MapHarvest.Rect): Pair<Grid, Grid>? {
             if (!continent(rect.c)) return null
@@ -513,6 +568,9 @@ object Terrain {
     /** zone [map]'s building cover (0..9 of a cell's samples a room covers), null until the harvest built it (RouteWork.Files) */
     val buildings = RouteWork.Files { map -> Grid.read(ArtHarvest.file("terrain/$map.bld")) }
     fun buildingsOf(map: Int): Grid? = buildings.get(map)
+    /** zone [map]'s [Heights] (the ghost's drops), null until the harvest built them (RouteWork.Files) */
+    val heights = RouteWork.Files { map -> Heights.read(ArtHarvest.file("terrain/$map.hgt")) }
+    fun heightsOf(map: Int): Heights? = heights.get(map)
 
     // ---------------------------------------------------------------- the walked cells (b)
 
