@@ -17,6 +17,8 @@ import kotlin.math.hypot
 class ShippedSnapTest {
     private val flat: (Double, Double) -> Float = { _, _ -> 1f }
     private val p0 = doubleArrayOf(0.0, 0.0)
+    /** the snaps that lead (not the far fallback) */
+    private fun lead(r: ShippedSnap.Result) = r.snaps.filter { it.cost < ShippedSnap.FAR_COST }.map { it.node }
 
     /** water over world x -100..100, y -100..100 by [depth] (NaN dry) */
     private fun water(depth: (Double, Double) -> Float) = SafePath.Water.build(100.0, -100.0, 100.0, -100.0) { x, y -> depth(x, y) }
@@ -40,6 +42,7 @@ class ShippedSnapTest {
         assertEquals(2, r.best!!.pts.size)
         assertEquals(30.0, r.best!!.yd, 1e-6)
         assertFalse("70 yd is past the 60 yd snap", r.snaps.any { it.node == 3 })
+        assertEquals(listOf(1), lead(r))
     }
 
     @Test fun aThinWallTheCoarseGridMissesIsNeverCrossed() {
@@ -111,7 +114,54 @@ class ShippedSnapTest {
     @Test fun aSnapFarPastTheNearestIsDropped() {
         // the network carries the way on, not a long walk over the grass past its nearest node
         val r = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(10.0, 0.0), 2 to doubleArrayOf(0.0, 50.0), 3 to doubleArrayOf(-30.0, 0.0)), ShippedSnap.Ground(flat))
-        assertEquals(listOf(1, 3), r.snaps.map { it.node })
+        assertEquals("only the nearest clear line and those 5 yd longer lead", listOf(1), lead(r))
+        assertEquals("the rest only as the far fallback", listOf(1, 3, 2), r.snaps.map { it.node })
+        val two = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(10.0, 0.0), 3 to doubleArrayOf(-14.0, 0.0)), ShippedSnap.Ground(flat))
+        assertEquals(setOf(1, 3), lead(two).toSet())
+        // the nearest walled off: the nearest CLEAR line leads (no farther one tried past it + 5 yd)
+        val g = ShippedSnap.Ground(flat, room = room(4.0, 6.0, -3.0, 3.0))
+        val w = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(10.0, 0.0), 2 to doubleArrayOf(0.0, 30.0), 3 to doubleArrayOf(0.0, -50.0)), g)
+        assertEquals(listOf(2), lead(w))
+        assertTrue(w.best!!.straight)
+    }
+
+    @Test fun anEndOnAFloorSnapsToItsFloorFirst() {
+        // the start over a cave's pocket: a floor node 13 yd off (R_FLOOR), a ground node 8 yd off over the steep bank under the floor
+        val bank: (Double, Double) -> Float = { x, _ -> if (x in -20.0..20.0) 24f else 1f }
+        val g = ShippedSnap.Ground(bank)
+        val rm = ShippedRoute.RM_BASE
+        val nodes = listOf(rm + 1 to doubleArrayOf(0.0, 13.0), rm + 2 to doubleArrayOf(8.0, 0.0), rm + 3 to doubleArrayOf(0.0, 3.0))
+        val r = ShippedSnap.snap(p0, nodes, g, floor = setOf(rm + 1, rm + 3))
+        assertTrue(r.why, r.ok); assertTrue(r.why, r.why.startsWith("on a floor"))
+        assertTrue(lead(r).all { it == rm + 1 || it == rm + 3 })
+        assertTrue("the ground node only as the far fallback", r.snaps.any { it.node == rm + 2 && it.cost >= ShippedSnap.FAR_COST })
+        // the same end not on a floor (its nearest roadmap node a ground one): the ground's rules
+        val off = ShippedSnap.snap(p0, nodes, g, floor = setOf(rm + 1))
+        assertFalse(off.why, off.why.startsWith("on a floor"))
+        // a floor over deep water is still no snap through the water
+        val wet = ShippedSnap.Ground(flat, water { x, y -> if (x in -10.0..10.0 && y in 4.0..10.0) 5f else Float.NaN })
+        val w = ShippedSnap.snap(p0, listOf(rm + 1 to doubleArrayOf(0.0, 13.0), rm + 3 to doubleArrayOf(0.0, 2.0)), wet, floor = setOf(rm + 1, rm + 3))
+        assertEquals(listOf(rm + 3), lead(w))
+    }
+
+    @Test fun theFallbacksAreRankedLevelFirstAndNoneOverSteepGround() {
+        // node 1 the lead (10 yd); the rest only as fallbacks: 3 (40 yd, level) before 2 (30 yd, over a climb); 4 over a rock field: none
+        val ground: (Double, Double) -> Float = { x, y -> if (y > 5.0 && x in -5.0..5.0) 3f else if (y < -5.0 && x in -5.0..5.0) 6f else 1f }
+        val r = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(10.0, 0.0), 2 to doubleArrayOf(0.0, 30.0), 3 to doubleArrayOf(-40.0, 0.0),
+            4 to doubleArrayOf(0.0, -35.0)), ShippedSnap.Ground(ground))
+        assertEquals(listOf(1, 3, 2), r.snaps.map { it.node })
+        assertEquals(listOf(true, false, false), r.snaps.map { it.lead })
+        assertTrue(r.snaps[2].cost > r.snaps[1].cost && r.snaps[1].cost > ShippedSnap.FAR_COST)
+    }
+
+    @Test fun aCitysStreetNodesAreSnappedToOnlyFromAnEndOnThatFloor() {
+        // a street node 4 yd off (a floor's inside node, not in the ground's nodes) and a ground node 13 yd off
+        val streets = listOf(7 to doubleArrayOf(4.0, 0.0))
+        val r = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(0.0, 13.0)), ShippedSnap.Ground(flat), floor = setOf(7), floorNodes = streets)
+        assertEquals(listOf(7), lead(r)); assertTrue(r.why, r.why.startsWith("on a floor"))
+        // off the floor (the ground node nearer): the ground's, the street node never offered
+        val off = ShippedSnap.snap(doubleArrayOf(0.0, 12.0), listOf(1 to doubleArrayOf(0.0, 13.0)), ShippedSnap.Ground(flat), floor = setOf(7), floorNodes = streets)
+        assertEquals(listOf(1), off.snaps.map { it.node })
     }
 
     @Test fun noNodeWithin60YdSaysSo() {
@@ -148,6 +198,14 @@ class ShippedSnapTest {
         assertTrue(r.why, r.snapped)
         val leg = r.pts.takeWhile { it[0] < 40.0 - 1e-6 } + listOf(r.pts.first { it[0] >= 40.0 - 1e-6 })
         assertTrue("the snap never crosses the wall", clear(leg, g))
+    }
+
+    @Test fun anIsolatedNodeIsNeverTheSnap() {
+        // a roadmap node 2 yd from the player that no way leaves: left out of the snap's nodes, the road's node taken
+        val rm = ShippedRoute.Roadmap(mapOf(ShippedRoute.RM_BASE to doubleArrayOf(2.0, 0.0)), emptyList())
+        val r = ShippedRoute.plan(road40(), flat, null, p0, doubleArrayOf(40.0, 1000.0), roadmap = rm)
+        assertTrue(r.why, r.reached)
+        assertEquals(40.0, r.pts[1][0], 1e-6); assertEquals(0.0, r.pts[1][1], 1e-6)
     }
 
     @Test fun theAttacherFallsBackToTheLongAttachAndSaysWhy() {
