@@ -229,6 +229,20 @@ class ShippedNetTest {
         assertTrue(p.net.nodes.any { it.id == 50 && it.src == "floor" })
     }
 
+    @Test fun stitchesRoundTripAndFollowAMerge() {
+        val st = listOf(ShippedNet.Stitch(2, 3, ShippedNet.F_JOIN, listOf(doubleArrayOf(200.0, 260.0), doubleArrayOf(210.5, 270.25), doubleArrayOf(220.0, 280.0))))
+        val s = ShippedNet.section(net(1f), H, 8, "durotar").copy(stitches = st)
+        val p = ShippedNet.read(ByteArrayInputStream(ShippedNet.bytes(ShippedNet.Pack(ShippedNet.Header(1411, 1, 5, "c", "b", "t"), listOf(s), roadmap()))))!!
+        val b = p.sections[0].stitches.single()
+        assertEquals(listOf(2, 3, ShippedNet.F_JOIN), listOf(b.node, b.rm, b.flags)); assertEquals(3, b.pts.size); assertEquals(270.25, b.pts[1][1], 1e-9)
+        assertEquals(st[0].yd, b.yd, 0.02)
+        // merged after another section: the stitch's node is the merged node (the first section's own ids kept, the second's mapped)
+        val other = ShippedNet.section(SafePath.Net(1411, 1, "", listOf(SafePath.Node(70, 200.2, 260.1, SafePath.FLIGHT), SafePath.Node(71, 0.0, 0.0, SafePath.POINT)),
+            listOf(SafePath.Edge(70, 71, SafePath.ROAD)), emptyList()), H, 8, "x").copy(stitches = listOf(ShippedNet.Stitch(70, 1, 0, st[0].pts)))
+        val m = ShippedNet.merge(listOf(s, other))
+        assertEquals(listOf(2 to 3, 2 to 1), m.stitches.map { it.node to it.rm })
+    }
+
     @Test fun notNet1IsNull() {
         assertNull(ShippedNet.read(ByteArrayInputStream(byteArrayOf(1, 2, 3))))
         val later = pack().toJson().put("v", ShippedNet.VERSION + 1).toString().toByteArray()
