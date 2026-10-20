@@ -190,19 +190,20 @@ class ShippedRouteTest {
     }
 
     @Test fun shippedStitchesAreUsedAndNoneIsMadeAtRunTime() {
-        // the file's own stitch: a join way from the road's middle (-200, 500) to a node standing ON the roadmap's node (3, 483)
+        // the file's own stitch (Section.stitches): from the road's middle (-200, 500), walked by (-100, 540), to the roadmap's node (3, 483)
         val rm = grid()
-        val on = rm.nodes.values.first { it[0] == 3.0 && it[1] == 483.0 }
-        val sec = section(listOf(node(0, -200.0, 0.0), node(1, -200.0, 500.0), node(2, -200.0, 1000.0), node(3, on[0], on[1])),
-            listOf(road(0, 1), road(1, 2), SafePath.Edge(1, 3, SafePath.TRAIL, SafePath.OK, "join", 0f, 1f)))
+        val (onId, on) = rm.nodes.entries.first { it.value[0] == 3.0 && it.value[1] == 483.0 }.let { it.key to it.value }
+        val base = section(listOf(node(0, -200.0, 0.0), node(1, -200.0, 500.0), node(2, -200.0, 1000.0)), listOf(road(0, 1), road(1, 2)))
+        val sec = base.copy(stitches = listOf(ShippedNet.Stitch(1, onId - ShippedRoute.RM_BASE, ShippedNet.F_JOIN,
+            listOf(doubleArrayOf(-200.0, 500.0), doubleArrayOf(-100.0, 540.0), on))))
         val r = ShippedRoute.plan(sec, flat, null, doubleArrayOf(-200.0, -30.0), doubleArrayOf(380.0, 500.0), roadmap = rm,
             stitchGround = ShippedSnap.Ground(flat))
         assertTrue(r.why, r.reached)
         assertTrue(r.why, r.why.contains("stitches shipped (1)"))
+        assertTrue("along the stitch's own points", r.pts.any { it[0] == -100.0 && it[1] == 540.0 })
         assertTrue("on the roadmap past the stitch", r.roadmapYd > 300.0)
-        // an old file (no node on the roadmap), no fine ground: nothing stitched, the roadmap stays apart
-        val old = section(listOf(node(0, -10.0, 0.0), node(1, -10.0, 1000.0)), listOf(road(0, 1)))
-        val n = ShippedRoute.plan(old, flat, null, doubleArrayOf(-10.0, -30.0), doubleArrayOf(380.0, 500.0), roadmap = rm)
+        // the same net without its stitches and no fine ground: nothing stitched, the roadmap stays apart
+        val n = ShippedRoute.plan(base, flat, null, doubleArrayOf(-200.0, -30.0), doubleArrayOf(380.0, 500.0), roadmap = rm)
         assertTrue(n.why, !n.reached || n.why.contains("no stitches"))
     }
 

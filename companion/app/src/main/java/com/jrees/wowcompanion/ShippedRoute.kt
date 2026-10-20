@@ -40,7 +40,6 @@ object ShippedRoute {
     const val AVOID_FACTOR = 6.0           // an AVOID way's yard
     const val WADE_EXTRA_YD = 60.0         // a way that wades: this much dearer (a drier way preferred)
     const val LINK_SNAP_YD = 40.0          // a link's end joins the graph's node this near
-    const val SAME_YD = 0.6                // a shipped stitch: a net node this near a roadmap node is that node (0.1 yd rounding)
     const val STITCH_YD = 35.0             // an OLD file's run-time stitch: a net node to its nearest roadmap nodes this near ...
     const val STITCH_N = 2                 // ... this many, each where the straight line crosses no wall ([ATTACH_WALL])
     const val PULL_SAMPLE_YD = 1.0         // a pulled attach line read this often
@@ -192,9 +191,9 @@ object ShippedRoute {
                     ways.add(W(e.a, e.b, e.pts + listOf(b), len, len * NET_FAVOUR * e.tier.coerceAtLeast(1.0), dangerAlong(line), 0.0, true, true, false,
                         e.danger?.let { it * len }))
                 }
-                // THE STITCHES (net node <-> roadmap node). SHIPPED (NET1 v2, T1: pre-walked, segcheck-checked join ways): a join way's
-                // end standing on a roadmap node ([SAME_YD]) IS that node - nothing stitched at run time. An OLD file without them: a
-                // guarded run-time stitch, only over a straight step the FINE ground clears ([stitchGround], ShippedSnap.lineWall), else none
+                // THE STITCHES (net node <-> roadmap node). SHIPPED (NET1 v2 Section.stitches, T1: lattice-walked, segcheck- and
+                // wetcheck-checked at export): taken along their points, and nothing stitched at run time. An OLD file without them:
+                // a guarded run-time stitch, only over a straight step the FINE ground clears ([stitchGround], ShippedSnap.lineWall), else none
                 val cell = 40.0
                 fun key(x: Double, y: Double) = (Math.floor(x / cell).toLong() shl 32) xor (Math.floor(y / cell).toLong() and 0xffffffffL)
                 val buckets = HashMap<Long, ArrayList<Int>>()
@@ -203,13 +202,15 @@ object ShippedRoute {
                     for (dx in -1..1) for (dy in -1..1) buckets[key(p[0] + dx * cell, p[1] + dy * cell)]?.let { out.addAll(it) }
                     return out.sortedBy { hypot(pos[it]!![0] - p[0], pos[it]!![1] - p[1]) } }
                 val onLandNodes = net.nodes.filter { it.kind != SafePath.CAVE && it.kind != SafePath.LIFT }
-                for (n in onLandNodes) {
-                    val p = pos[n.id]!!
-                    val id = near(p).firstOrNull() ?: continue
-                    val q = pos[id]!!
-                    if (hypot(q[0] - p[0], q[1] - p[1]) <= SAME_YD) { ways.add(W(n.id, id, listOf(q), 0.0, 0.0, 0.0, 0.0, true, true, false, 0.0)); shipped++ }
+                for (st in sec.stitches) {
+                    val a = pos[st.node] ?: continue; val b = pos[RM_BASE + st.rm] ?: continue
+                    val inner = if (st.pts.size > 2) st.pts.subList(1, st.pts.size - 1).map { doubleArrayOf(it[0], it[1]) } else emptyList()
+                    val line = listOf(a) + inner + listOf(b); val len = length(line)
+                    val wade = if (st.flags and (ShippedNet.F_WADE or ShippedNet.F_SWIM) != 0) WADE_EXTRA_YD else 0.0
+                    ways.add(W(st.node, RM_BASE + st.rm, inner + listOf(b), len, len * NET_FAVOUR + wade, dangerAlong(line), 0.0, true, true, false, 0.0))
+                    shipped++
                 }
-                if (shipped == 0 && stitchGround != null) for (n in onLandNodes) {
+                if (sec.stitches.isEmpty() && stitchGround != null) for (n in onLandNodes) {
                     val p = pos[n.id]!!
                     var made = 0
                     for (id in near(p)) {
