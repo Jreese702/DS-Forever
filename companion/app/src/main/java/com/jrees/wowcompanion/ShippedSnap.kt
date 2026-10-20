@@ -32,6 +32,7 @@ object ShippedSnap {
     const val CANDIDATES = 8          // the nearest walled-off nodes a walk round is tried to
     const val LINE_STEP_YD = 1.0      // a straight snap read this often (the water's 4.2 yd vertices, a wall's few yards)
     const val CELL_YD = 2.5           // a bent snap's walk cells (each step's middle read too: 1.25 yd)
+    const val FAR_STEEP = 5f          // a fallback over terrain this dear a yard (a climb of ~37 degrees, a rock field): not offered
     const val FAR_COST = 1.0e6        // a snap past the spread: this much dearer (the fallback when the nearer ones lead nowhere)
     const val SPREAD_YD = 5.0         // the snaps kept: the nearest clear one's and those no more than this longer
     const val BENT = 1.15             // a bent snap's yard against a straight one's
@@ -74,7 +75,10 @@ object ShippedSnap {
     /** a snap to graph node [node]: [pts] from the end to the node (the end first), [yd] walked, [cost] its cost (the ground x the
      *  danger, x [BENT] when it bends; a fallback's [FAR_COST] x its rank more), [straight] the straight line, clear, [lead] a leading
      *  snap (not a fallback) */
-    class Snap(val node: Int, val pts: List<DoubleArray>, val yd: Double, val cost: Double, val straight: Boolean, val lead: Boolean = false)
+    class Snap(val node: Int, val pts: List<DoubleArray>, val yd: Double, val cost: Double, val straight: Boolean, val lead: Boolean = false,
+               val steep: Float = 1f) {
+        fun ranked(rank: Int) = Snap(node, pts, yd, cost + FAR_COST * rank, straight, rank == 0, steep)
+    }
     /** [snaps] cheapest first (empty: no snap, the long attach's turn); [why] the log's words */
     class Result(val snaps: List<Snap>, val why: String) {
         val ok get() = snaps.isNotEmpty()
@@ -108,14 +112,18 @@ object ShippedSnap {
         }
         val ground0 = if (near.isEmpty()) null else pick(p, near, ground, danger, k, reach, walkYd)
         val fl = if (floorNear.isEmpty()) null else pick(p, floorNear, Ground({ _, _ -> 1f }, ground.water), danger, k, reach, walkYd)
-        // the tiers: (the floor's lead, its rest,) the ground's lead, its rest - each later snap FAR_COST x its rank dearer
+        // the tiers: the floor's lead (an end on a floor), the ground's lead, then the FALLBACKS one a rank: the level lines first, nearest
+        // first, then those over a climb or a cliff's band; none over [FAR_STEEP] (W's parity: a farther line over a slope cell of 25
+        // degrees or more crossed a wall segcheck sees 78% of the time, a level one 9%)
         val tiers = ArrayList<List<Snap>>()
-        if (fl != null && fl.ok) { tiers.add(fl.snaps.filter { it.lead }); tiers.addAll(fl.snaps.filter { !it.lead }.map { listOf(it) }) }
-        if (ground0 != null && ground0.ok) { val seen = tiers.flatten().map { it.node }.toSet()
-            val g = ground0.snaps.filter { it.node !in seen }
-            if (tiers.isEmpty()) tiers.add(g.filter { it.lead }) else g.filter { it.lead }.forEach { tiers.add(listOf(it)) }
-            tiers.addAll(g.filter { !it.lead }.map { listOf(it) }) }
-        val out = tiers.filter { it.isNotEmpty() }.flatMapIndexed { rank, t -> t.map { Snap(it.node, it.pts, it.yd, it.cost + FAR_COST * rank, it.straight, rank == 0) } }
+        val leadF = fl?.snaps?.filter { it.lead } ?: emptyList()
+        val leadG = ground0?.snaps?.filter { it.lead && leadF.none { f -> f.node == it.node } } ?: emptyList()
+        if (leadF.isNotEmpty()) tiers.add(leadF)
+        if (leadG.isNotEmpty()) tiers.add(leadG)
+        val taken = (leadF + leadG).map { it.node }.toHashSet()
+        val rest = ((fl?.snaps ?: emptyList()) + (ground0?.snaps ?: emptyList())).filter { !it.lead && it.steep < FAR_STEEP && taken.add(it.node) }
+        for (r in rest.sortedWith(compareBy({ it.steep > 1f }, { it.yd }))) tiers.add(listOf(r))
+        val out = tiers.flatMapIndexed { rank, t -> t.map { it.ranked(rank) } }
         if (out.isEmpty()) return Result(emptyList(), (if (fl != null) "on a floor: ${fl.why}; " else "") + (ground0?.why ?: "no ground node within ${reach.toInt()} yd"))
         return Result(out, (if (fl != null && fl.ok) "on a floor: ${fl.why}" else ground0!!.why) + if (out.size > out.count { it.lead }) "; ${out.size - out.count { it.lead }} fallbacks" else "")
     }
@@ -130,13 +138,14 @@ object ShippedSnap {
         val bent = ArrayList<Triple<Int, DoubleArray, Double>>()
         for (c in near) {
             val line = view.line(p, c.second)
-            if (line.why == null) straight.add(Snap(c.first, listOf(p, c.second), c.third, line.cost, true))
+            if (line.why == null) straight.add(Snap(c.first, listOf(p, c.second), c.third, line.cost, true, steep = line.steep))
             else { if (bent.size < CANDIDATES) bent.add(c); blocked.add(line.why) }
         }
         val out = ArrayList<Snap>(straight)
         if (bent.isNotEmpty()) {
             val walk = Walk(view, walkYd)
-            for ((id, q, _) in bent) walk.to(q)?.let { w -> out.add(Snap(id, w.pts, w.yd, w.cost * BENT, false)) }
+            for ((id, q, _) in bent) walk.to(q)?.let { w ->
+                out.add(Snap(id, w.pts, w.yd, w.cost * BENT, false, steep = w.pts.zipWithNext { a, b -> view.line(a, b).steep }.maxOrNull() ?: 1f)) }
         }
         if (out.isEmpty()) {
             val first = blocked.groupingBy { it.substringBefore(" at ") }.eachCount().entries.sortedByDescending { it.value }.joinToString(", ") { "${it.key} x${it.value}" }
@@ -145,7 +154,7 @@ object ShippedSnap {
         }
         val pool = if (straight.isNotEmpty()) straight else out
         val shortest = pool.minOf { it.yd }
-        val lead = pool.filter { it.yd <= shortest + SPREAD_YD }.sortedBy { it.cost }.map { Snap(it.node, it.pts, it.yd, it.cost, it.straight, true) }
+        val lead = pool.filter { it.yd <= shortest + SPREAD_YD }.sortedBy { it.cost }.map { Snap(it.node, it.pts, it.yd, it.cost, it.straight, true, it.steep) }
         val rest = out.filter { s -> lead.none { it.node == s.node } }.sortedBy { it.yd }
         return Result(lead + rest, "snapped ${lead.first().yd.toInt()} yd ${if (lead.first().straight) "straight" else "round a wall or water"} " +
             "(${lead.size} leading of ${near.size} nodes within ${reach.toInt()} yd${if (blocked.isNotEmpty()) "; ${blocked.size} lines walled" else ""})")
@@ -175,7 +184,8 @@ object ShippedSnap {
     /** one end's view of the ground: [c] the end (its door rule), the cost a yard with the danger */
     private class View(val c: DoubleArray, val g: Ground, val danger: ((Double, Double) -> Float)?, val k: Double) {
         val inWall = g.wall(c[0], c[1]) != null
-        class Line(val cost: Double, val why: String?)
+        /** [steep] the line's dearest terrain a yard (1 level; the slope grid's climb, a cliff's band) */
+        class Line(val cost: Double, val why: String?, val steep: Float = 1f)
         /** the wall at ([x], [y]) for this end's walk (null: none; the door's within [DOOR_YD] of an end standing in one) */
         fun wall(x: Double, y: Double): String? {
             val w = g.wall(x, y) ?: return null
@@ -190,7 +200,9 @@ object ShippedSnap {
                 if (len * (1 - t) > END_YD) wall(x, y)?.let { return Line(Double.NaN, "$it at ${x.toInt()},${y.toInt()}") }
                 if (q < m) s += yard(x + (b[0] - a[0]) / (2 * m), y + (b[1] - a[1]) / (2 * m)) * len / m
             }
-            return Line(s, null)
+            var st = 1f
+            for (q in 0..m) { val t = q.toDouble() / m; g.terrain(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t).takeIf { !it.isNaN() }?.let { if (it > st) st = it } }
+            return Line(s, null, st)
         }
     }
 
