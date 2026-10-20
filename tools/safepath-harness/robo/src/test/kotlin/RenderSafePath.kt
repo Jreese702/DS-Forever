@@ -946,6 +946,9 @@ class RenderSafePath {
             val checked = sc.run(sec.copy(stitches = sc.stitches(sec, built.rm)), built.rm)
             cdir.deleteRecursively()
             if (checked.left.isNotEmpty()) println("NET1 CROSSING $tag: ${checked.left.size} shipped pieces still cross a wall or deep water: ${checked.left.take(10)}")
+            // the verdict in a file of its own (py/exportcheck.py requires it: a log's lines can be cut)
+            File(out, "ship_$tag.txt").writeText(if (checked.left.isEmpty()) "OK walked ${checked.walked} dropped ${checked.dropped} passes ${checked.passes}\n"
+                else "CROSSING ${checked.left.size}: ${checked.left.take(10)}\n")
             // this faction's danger along each roadmap edge (the checked roadmap's): the mean along its line, a yard apart
             val rmDanger = checked.rm?.let { r -> ByteArray(r.edges) { e -> var sum = 0.0; var n = 0
                 for ((u, v) in r.points(e).zipWithNext()) { val m = maxOf(1, Math.hypot(v[0] - u[0], v[1] - u[1]).toInt())
