@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m69"                -- bump on every change; m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m70"                -- bump on every change; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -3432,6 +3432,10 @@ function OV.smartVitals()
             v.mp, v.mpMax = bar(fr); if v.mp then v.mpSrc = "frame"; break end
         end
     end
+    -- m70: nothing plain - the model (UNIT_COMBAT's plain amounts, cast costs, regen, anchors)
+    local m = OV.HM
+    if m and not v.hp and m.hpMax > 0 then v.hp, v.hpMax, v.hpSrc = m.hp, m.hpMax, "model" end
+    if m and not v.mpSrc and m.mpMax > 0 then v.mp, v.mpMax, v.mpSrc = m.mp, m.mpMax, "model" end
     return v
 end
 -- m63: WHY food / drink picked nothing (tracking: "add a cap line saying WHY nothing was picked"): health / mana now, the food and drinks
@@ -3457,6 +3461,11 @@ function OV.smartWhy(s, pick)
         if not mp and not mpNone then parts[#parts + 1] = "mana unknown: no drink" end
     end
     parts[#parts + 1] = "food " .. nf .. ", drinks " .. nd
+    local hm = OV.HM
+    if hm and (s.hpSrc == "model" or s.mpSrc == "model") then
+        parts[#parts + 1] = "model: wounds " .. math.floor(hm.wounds) .. ", anchor " .. tostring(hm.anchor) .. " "
+            .. math.floor(GetTime() - (hm.anchorAt or GetTime())) .. "s ago"
+    end
     if s.skipped and #s.skipped > 0 then parts[#parts + 1] = "unmatched " .. table.concat(s.skipped, "; ") end
     return table.concat(parts, " | ")
 end
@@ -3553,6 +3562,7 @@ function OV.smartApply()
     local typ = pick and "item" or nil
     OV.smarty = pick and { id = pick.id, n = pick.name, i = pick.icon, k = pick.kind } or nil
     -- m62: food and water first; then the player's buff rows (their OR cells kept current either way)
+    if pick then OV.smartItem = { id = pick.id, kind = pick.kind } end      -- m70: the model's eating / drinking rate
     local okb, bv, bt, be = pcall(OV.sbStep)
     if not pick and okb and bv then
         val, typ = bv, bt
@@ -4162,6 +4172,8 @@ function OV.vp5()
     for e in pairs(EV) do pcall(function() f:RegisterUnitEvent(e, "player") end) end
     pcall(function() f:RegisterUnitEvent("UNIT_COMBAT", "player") end)
     pcall(function() f:RegisterUnitEvent("UNIT_AURA", "player") end)
+    pcall(function() f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") end)     -- m70: the cast costs, plain?
+    local casts = 0
     local okR, why = pcall(function() f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") end)
     local reg = okR and d(function() return f:IsEventRegistered("COMBAT_LOG_EVENT_UNFILTERED") end) or "E"
     say("r5 start cl reg=" .. reg .. (okR and "" or (" err=" .. tostring(why):sub(1, 80))))
@@ -4176,7 +4188,12 @@ function OV.vp5()
             buckets[k] = buckets[k] or {}
             buckets[k][b] = (buckets[k][b] or 0) + 1
             last[k] = now
-        elseif e == "UNIT_COMBAT" and uc < 6 then
+        elseif e == "UNIT_COMBAT" and (OV.vp5Act or {})[tostring(select(2, ...))] ~= "done" then
+            -- m70: up to 3 of EACH action (WOUND filled all six on test38: is HEAL / ENERGIZE plain too?)
+            OV.vp5Act = OV.vp5Act or {}
+            local an = tostring(select(2, ...))
+            OV.vp5Act[an .. "#"] = (OV.vp5Act[an .. "#"] or 0) + 1
+            if OV.vp5Act[an .. "#"] >= 3 then OV.vp5Act[an] = "done" end
             uc = uc + 1
             local _, act, ind, amt, sch = ...                            -- locals only: a secret is never put in a table
             say("r5 uc" .. uc .. " t=" .. math.floor(now) .. " act=" .. d(function() return act end) .. " ind=" .. d(function() return ind end)
@@ -4193,6 +4210,13 @@ function OV.vp5()
             cl = cl + 1
             say("r5 cl" .. cl .. " t=" .. math.floor(now) .. " " .. sub .. (okm and "" or " dest=S")
                 .. " amt=" .. d(function() return (select(idx, CombatLogGetCurrentEventInfo())) end))
+        elseif e == "UNIT_SPELLCAST_SUCCEEDED" and casts < 4 then
+            casts = casts + 1
+            local _, _, sid = ...
+            say("r5 cast" .. casts .. " id=" .. d(function() return sid end) .. " cost=" .. d(function()
+                local c = C_Spell.GetSpellPowerCost(sid)
+                return c and c[1] and c[1].cost
+            end) .. " type=" .. d(function() local c = C_Spell.GetSpellPowerCost(sid); return c and c[1] and c[1].type end))
         elseif e == "UNIT_AURA" then
             for i = 1, 40 do
                 local a = T(function() return C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL") end)
@@ -4228,6 +4252,201 @@ OV.vpF:SetScript("OnEvent", function(_, e)
     if e == "PLAYER_REGEN_ENABLED" and not OV.vpWait then return end
     OV.vpWait = nil
     C_Timer.After(8, function() pcall(OV.vitalsProbe) end)          -- the loading screen and the first frames settle first
+end)
+-- m70 SMART Y'S HEALTH / MANA MODEL (tracking after round 5, test38: current health and mana are secret by the client's base rule, every
+-- direct and indirect reader too, the combat log cannot be registered - but UNIT_COMBAT's amounts are PLAIN, and the max values are
+-- plain; the user: "we will find a way to make this work"). When no reader is plain, Smart Y's health and mana are ESTIMATED from what
+-- is: est = max - every WOUND + every HEAL (UNIT_COMBAT) + regen out of combat (the class's spirit regen, at 80 % to stay on the safe
+-- side) + food while eating; mana = max - every cast's mana cost (C_Spell.GetSpellPowerCost, plain) + spirit regen outside the
+-- 5-second rule + drink while drinking. Anchored to FULL: 3 minutes out of combat with no wound (health) / no cast (mana); a food or
+-- drink aura that ran its whole time with no rate known; a start with nothing kept = full. Death = empty, a revival = half. Kept per
+-- character (name-realm) for 10 minutes across a /reload. The 80 % rule stands on the estimate; the why line says "via model".
+-- SMARTY-MODEL-BEGIN (pure: tools/test_smarty.py)
+-- per 2 s tick out of combat: health = a * spirit + b; mana (outside the 5-second rule) = c * spirit + e (the classic class rules)
+OV.HM_REGEN = { DRUID = { 0.09, 6.5 }, HUNTER = { 0.25, 6 }, MAGE = { 0.10, 6 }, PALADIN = { 0.25, 6 }, PRIEST = { 0.10, 6 },
+                ROGUE = { 0.50, 2 }, SHAMAN = { 0.11, 7 }, WARLOCK = { 0.07, 6 }, WARRIOR = { 0.80, 6 } }
+OV.HM_MANA = { DRUID = { 0.20, 15 }, HUNTER = { 0.20, 15 }, PALADIN = { 0.20, 15 }, SHAMAN = { 0.20, 15 }, MAGE = { 0.25, 12.5 },
+               PRIEST = { 0.25, 12.5 }, WARLOCK = { 0.25, 12.5 } }
+OV.HM_SAFE, OV.HM_QUIET = 0.8, 180
+OV.hmNew = function(hpMax, mpMax, now)
+    return { hp = hpMax, hpMax = hpMax, mp = mpMax, mpMax = mpMax, at = now, quietFrom = now, castAt = nil, wounds = 0,
+             anchor = "start", anchorAt = now }
+end
+OV.hmMax = function(m, hpMax, mpMax)
+    if hpMax and hpMax > 0 then m.hpMax = hpMax; if m.hp > hpMax then m.hp = hpMax end end
+    if mpMax and mpMax >= 0 then m.mpMax = mpMax; if m.mp > mpMax then m.mp = mpMax end end
+end
+OV.hmWound = function(m, amt, now) m.hp = math.max(0, m.hp - amt); m.wounds = m.wounds + amt; m.quietFrom = now end
+OV.hmHeal = function(m, amt) m.hp = math.min(m.hpMax, m.hp + amt) end
+OV.hmCast = function(m, cost, now) if cost > 0 then m.mp = math.max(0, m.mp - cost); m.castAt = now end end
+OV.hmGain = function(m, amt) m.mp = math.min(m.mpMax, m.mp + amt) end
+OV.hmFull = function(m, why, now, hp, mp)
+    if hp then m.hp = m.hpMax end
+    if mp then m.mp = m.mpMax end
+    m.anchor, m.anchorAt = why, now
+end
+-- o = { combat, class, spirit, eatHp (per s), drinkMp (per s) }; the time since the last tick, at most 10 minutes
+OV.hmTick = function(m, now, o)
+    local dt = math.min(600, now - (m.at or now))
+    m.at = now
+    if dt <= 0 then return end
+    if o.combat then m.quietFrom = now
+    else
+        local r = OV.HM_REGEN[o.class] or { 0.10, 6 }
+        m.hp = math.min(m.hpMax, m.hp + (r[1] * (o.spirit or 0) + r[2]) / 2 * OV.HM_SAFE * dt)
+        if m.hp < m.hpMax and now - m.quietFrom >= OV.HM_QUIET then OV.hmFull(m, "quiet", now, true, false) end
+    end
+    if o.eatHp then m.hp = math.min(m.hpMax, m.hp + o.eatHp * dt) end
+    local c = OV.HM_MANA[o.class]
+    if m.mpMax > 0 then
+        if c and (not m.castAt or now - m.castAt >= 5) then
+            m.mp = math.min(m.mpMax, m.mp + (c[1] * (o.spirit or 0) + c[2]) / 2 * OV.HM_SAFE * dt)
+        end
+        if o.drinkMp then m.mp = math.min(m.mpMax, m.mp + o.drinkMp * dt) end
+        if m.mp < m.mpMax and not o.combat and now - (m.castAt or m.anchorAt) >= OV.HM_QUIET and now - m.quietFrom >= OV.HM_QUIET then
+            OV.hmFull(m, "quiet", now, false, true)
+        end
+    end
+end
+-- "Restores N health over S sec" / "... mana ..." -> per second (nil = not said)
+OV.hmRate = function(text, what)
+    if type(text) ~= "string" then return nil end
+    local n, s = text:lower():match("([%d,]+) " .. what .. " over (%d+) sec")
+    n = n and tonumber((n:gsub(",", ""))); s = tonumber(s)
+    if n and s and s > 0 then return n / s end
+    -- "Restores N health and M mana over S sec" (food and drink)
+    local a, b, s2 = text:lower():match("([%d,]+) health and ([%d,]+) mana over (%d+) sec")
+    s2 = tonumber(s2)
+    if a and s2 and s2 > 0 then return tonumber(((what == "health") and a or b):gsub(",", "")) / s2 end
+    return nil
+end
+-- SMARTY-MODEL-END
+function OV.hmPlain(v)
+    if type(issecretvalue) == "function" then local ok, q = pcall(issecretvalue, v); if not ok or q then return nil end end
+    if type(WC.isPlain) == "function" and not WC.isPlain(v) then return nil end
+    if type(v) == "number" then return v end
+    return nil
+end
+function OV.hmDB()
+    if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+    local db = _G.WowCompanionSpellsDB
+    if type(db.smartModel) ~= "table" then db.smartModel = {} end
+    return db.smartModel
+end
+function OV.hmStart()
+    local P = OV.hmPlain
+    local hx = P(T(function() return UnitHealthMax("player") end)) or 0
+    local mx = P(T(function() return UnitPowerMax("player", 0) end)) or 0
+    if hx <= 0 then return nil end
+    local now = GetTime()
+    local m = OV.hmNew(hx, mx, now)
+    -- kept from before a /reload (at most 10 minutes old): the estimate goes on from there
+    local k, kept = whoKey(), nil
+    if k then kept = OV.hmDB()[k] end
+    local st = T(function() return GetServerTime() end)
+    if type(kept) == "table" and type(kept.t) == "number" and st and st - kept.t <= 600 then
+        m.hp = math.min(hx, kept.hp or hx); m.mp = math.min(mx, kept.mp or mx); m.anchor, m.anchorAt = "kept", now
+    end
+    local okc, _, file = pcall(UnitClass, "player")
+    m.class = okc and type(file) == "string" and file or nil
+    return m
+end
+function OV.hmSpirit()
+    local ok, _, eff = pcall(UnitStat, "player", 5)
+    return ok and OV.hmPlain(eff) or nil
+end
+-- the eating / drinking auras now: { food = { endAt, rate }, drink = { ... } } by the game's Food / Drink names (plus "Refreshment")
+function OV.hmAuras()
+    local fname = OV.sbName and OV.sbName(OV.SMART_FOOD) or "Food"
+    local dname = OV.sbName and OV.sbName(OV.SMART_DRINK) or "Drink"
+    local out = {}
+    for i = 1, 40 do
+        local a = T(function() return C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL") end)
+        if type(a) ~= "table" then break end
+        local nm = T(function() return a.name end)
+        if type(nm) == "string" then
+            local e = OV.hmPlain(T(function() return a.expirationTime end))
+            local both = nm:find("Refreshment") ~= nil
+            if nm == fname or both or nm:find("Food") then out.food = { endAt = e } end
+            if nm == dname or both or nm:find("Drink") then out.drink = { endAt = e } end
+        end
+    end
+    return out
+end
+-- one second's work: regen, eating / drinking, the anchors; Smart Y told when the 80 % line is crossed
+function OV.hmStep()
+    local m = OV.HM
+    if not m then OV.HM = OV.hmStart(); m = OV.HM; if not m then return end end
+    local now = GetTime()
+    local au = OV.hmAuras()
+    -- an aura that ended: ran its whole time with no rate known -> full
+    for _, k in ipairs({ "food", "drink" }) do
+        local was = OV.hmEat and OV.hmEat[k]
+        if was and not au[k] then
+            if not was.rate and was.endAt and now >= was.endAt - 1.5 then OV.hmFull(m, k, now, k == "food", k == "drink") end
+        end
+        if au[k] then
+            au[k].rate = (was and was.rate) or (OV.smartItem and OV.hmItemRate(OV.smartItem.id, k == "food" and "health" or "mana"))
+        end
+    end
+    OV.hmEat = au
+    OV.hmTick(m, now, { combat = inCombat(), class = m.class, spirit = OV.hmSpirit(),
+                        eatHp = au.food and au.food.rate or nil, drinkMp = au.drink and au.drink.rate or nil })
+    -- kept for a /reload, every 10 s
+    if not OV.hmSavedAt or now - OV.hmSavedAt >= 10 then
+        OV.hmSavedAt = now
+        local k, st = whoKey(), T(function() return GetServerTime() end)
+        if k and st then OV.hmDB()[k] = { hp = math.floor(m.hp), mp = math.floor(m.mp), t = st } end
+    end
+    local low = (m.hp < m.hpMax * 0.8) or (m.mpMax > 0 and m.mp < m.mpMax * 0.8)
+    if low ~= OV.hmLow then OV.hmLow = low; C_Timer.After(0.1, function() pcall(OV.smartApply) end) end
+end
+function OV.hmItemRate(id, what)
+    local tip = T(function() return C_TooltipInfo and C_TooltipInfo.GetItemByID and C_TooltipInfo.GetItemByID(id) end)
+    if type(tip) ~= "table" or type(tip.lines) ~= "table" then return nil end
+    for _, ln in ipairs(tip.lines) do
+        local r = OV.hmRate(type(ln) == "table" and ln.leftText or nil, what)
+        if r then return r end
+    end
+    return nil
+end
+OV.hmF = CreateFrame("Frame")
+for _, e in ipairs({ "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST", "UNIT_MAXHEALTH", "UNIT_MAXPOWER", "PLAYER_ENTERING_WORLD" }) do
+    pcall(function() OV.hmF:RegisterEvent(e) end)
+end
+pcall(function() OV.hmF:RegisterUnitEvent("UNIT_COMBAT", "player") end)
+pcall(function() OV.hmF:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") end)
+OV.hmF:SetScript("OnEvent", function(_, e, a1, a2, a3, a4)
+    local m = OV.HM
+    if e == "PLAYER_ENTERING_WORLD" then
+        if not OV.hmTicker and C_Timer.NewTicker then OV.hmTicker = C_Timer.NewTicker(1, function() pcall(OV.hmStep) end) end
+        return
+    end
+    if not m then return end
+    local now = GetTime()
+    if e == "UNIT_COMBAT" then
+        if a1 ~= "player" then return end
+        local amt = OV.hmPlain(a4)
+        if not amt or type(a2) ~= "string" then return end
+        if a2 == "WOUND" then OV.hmWound(m, amt, now)
+        elseif a2 == "HEAL" then OV.hmHeal(m, amt)
+        elseif a2 == "ENERGIZE" and m.mpMax > 0 then OV.hmGain(m, amt) end
+        pcall(OV.hmStep)
+    elseif e == "UNIT_SPELLCAST_SUCCEEDED" then
+        local costs = T(function() return C_Spell.GetSpellPowerCost(a3) end)
+        if type(costs) == "table" then
+            for _, c in ipairs(costs) do
+                local ty, cost = T(function() return c.type end), OV.hmPlain(T(function() return c.cost end))
+                if ty == 0 and cost then OV.hmCast(m, cost, now) end
+            end
+        end
+    elseif e == "PLAYER_DEAD" then m.hp, m.mp = 0, 0; m.anchor, m.anchorAt = "dead", now
+    elseif e == "PLAYER_ALIVE" or e == "PLAYER_UNGHOST" then
+        m.hp, m.mp = math.floor(m.hpMax * 0.5), math.floor(m.mpMax * 0.5); m.anchor, m.anchorAt = "revived", now; m.quietFrom = now
+    elseif e == "UNIT_MAXHEALTH" or e == "UNIT_MAXPOWER" then
+        if a1 ~= "player" then return end
+        OV.hmMax(m, OV.hmPlain(T(function() return UnitHealthMax("player") end)), OV.hmPlain(T(function() return UnitPowerMax("player", 0) end)))
+    end
 end)
 -- m33: the bags and the Mount Journal change the Extra tab's lists: a doc soon (no router work for these)
 local fx = CreateFrame("Frame")

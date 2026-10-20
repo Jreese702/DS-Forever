@@ -254,5 +254,49 @@ check(r[0] is None and r[2] is None and r[3] is None and r[5] is None, "all secr
 r = vitals(**{"G.hp": "900", "G.hpMax": "1000", "G.mp": "0", "G.mpMax": "0"})
 check(r[5] == "none", "a plain 0 mana max: no mana pool", r)
 
+# ---------------------------------------------------------------- m70: the health / mana model (every reader secret; UNIT_COMBAT plain)
+mc = re.search(r'-- SMARTY-MODEL-BEGIN[^\n]*\n(.*?)-- SMARTY-MODEL-END', SRC, re.S).group(1)
+H = lupa.LuaRuntime(unpack_returned_tuples=True)
+H.execute('OV = {}\n' + mc)
+H.execute("""
+function run(steps)
+  local m = OV.hmNew(271, 457, 0)
+  for _, s in ipairs(steps) do s(m) end
+  return m
+end
+""")
+def model(lua_steps):
+    return H.execute('return run({' + lua_steps + '})')
+
+m = model('function(m) OV.hmWound(m, 15, 0); OV.hmWound(m, 25, 0) end')
+check(m["hp"] == 231 and m["wounds"] == 40, "wounds come off the max (271 - 15 - 25)", (m["hp"], m["wounds"]))
+m = model('function(m) OV.hmWound(m, 100, 0); OV.hmTick(m, 10, { class = "DRUID", spirit = 20 }) end')
+check(abs(m["hp"] - (171 + 10 * (0.09 * 20 + 6.5) / 2 * 0.8)) < 0.01, "out of combat: the druid's spirit regen, at 80 %", m["hp"])
+m = model('function(m) OV.hmWound(m, 100, 0); OV.hmTick(m, 10, { combat = true, class = "DRUID", spirit = 20 }) end')
+check(m["hp"] == 171, "in combat: no regen", m["hp"])
+H.execute('OV.HM_SAFE = 0')                                            # regen off: the anchor alone
+m = model('function(m) OV.hmWound(m, 200, 0); OV.hmTick(m, 100, { class = "DRUID", spirit = 0 }) end')
+check(m["hp"] == 71, "under 3 minutes: still the estimate", m["hp"])
+m = model('function(m) OV.hmWound(m, 200, 0); OV.hmTick(m, 100, { class = "DRUID", spirit = 0 }); OV.hmTick(m, 181, { class = "DRUID", spirit = 0 }) end')
+check(m["hp"] == 271 and m["anchor"] == "quiet", "3 minutes with no wound out of combat: full", (m["hp"], m["anchor"]))
+H.execute('OV.HM_SAFE = 0.8')
+m = model('function(m) OV.hmCast(m, 100, 0); OV.hmTick(m, 4, { class = "DRUID", spirit = 20 }) end')
+check(m["mp"] == 357, "a cast's cost comes off; no mana regen inside the 5-second rule", m["mp"])
+m = model('function(m) OV.hmCast(m, 100, 0); OV.hmTick(m, 4, { class = "DRUID", spirit = 20 }); OV.hmTick(m, 14, { class = "DRUID", spirit = 20 }) end')
+check(abs(m["mp"] - (357 + 10 * (0.2 * 20 + 15) / 2 * 0.8)) < 0.01, "after 5 s: spirit mana regen", m["mp"])
+m = model('function(m) OV.hmWound(m, 200, 0); OV.hmTick(m, 6, { combat = true, eatHp = 10 }) end')
+check(m["hp"] == 131, "eating: the item's rate per second", m["hp"])
+m = model('function(m) OV.hmWound(m, 300, 0) end')
+check(m["hp"] == 0, "never below 0", m["hp"])
+rate = H.eval('OV.hmRate')
+check(abs(rate("Use: Restores 61 health over 18 sec.  Must remain seated while eating.", "health") - 61 / 18) < 1e-9, "the food's rate from its tooltip", "")
+check(abs(rate("Use: Restores 151 mana over 18 sec.", "mana") - 151 / 18) < 1e-9, "the drink's rate", "")
+check(abs(rate("Use: Restores 378 health and 567 mana over 24 sec.", "mana") - 567 / 24) < 1e-9, "a food and drink's mana rate", "")
+check(rate("Use: Increases Stamina by 6 for 15 min.", "health") is None, "a buff food: no rate", "")
+# the 80 % rule on the model's numbers
+t = P.table_from({"hp": 216, "hpMax": 271, "mp": 457, "mpMax": 457, "level": 10, "items": P.table_from([P.table_from(ITEMS[0])])})
+r = pick(t)
+check(r is not None and r[1] == "food", "the model's 216 / 271 (under 80 %): food", r and r[1])
+
 print('ALL PASS' if fails == 0 else '%d FAILED' % fails)
 sys.exit(1 if fails else 0)
