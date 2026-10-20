@@ -862,9 +862,10 @@ class QuestsView(
 
         val tx = inset.left + 66f
         val col = diffColour(q)
-        val lvl = if (q.has("lv")) "[${q.optInt("lv")}] " else ""
+        // test27 (the user: "the Level number in front of the quests text is confusing, trim that from the quests"): no "[level]";
+        // its colour (diffColour) keeps the difficulty
         pRow.color = col
-        c.drawText(fit(pRow, lvl + q.optString("title", "Quest ${q.optInt("id")}"), right - tx - 8f),
+        c.drawText(fit(pRow, q.optString("title", "Quest ${q.optInt("id")}"), right - tx - 8f),
             tx, inset.top + 38f, pRow)
 
         val (sub, subCol) = summary(q)

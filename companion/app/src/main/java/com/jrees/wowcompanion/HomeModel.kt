@@ -412,8 +412,8 @@ data class HomeQuest(
     val focused: Boolean,
     val slot: Int?,
 ) {
-    /** "[5] Vile Familiars" */
-    val heading get() = if (level != null) "[$level] $title" else title
+    /** the quest's title alone (test27, the user: "the Level number in front of the quests text is confusing, trim that"): the tier's colour keeps the difficulty */
+    val heading get() = title
 
     /**
      * THE PROGRESS LINE (user, 19:30: the minimized quest shows its current objective progress at
