@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m66"                -- bump on every change; m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m67"                -- bump on every change; m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -3923,12 +3923,124 @@ function OV.vitalsProbe()
             self:SetScript("OnUpdate", nil)
             lines[#lines + 1] = OV.vpReads("up")
             for _, l in ipairs(tail) do lines[#lines + 1] = l end
-            for i, l in ipairs(lines) do
-                C_Timer.After(i - 1, function()
-                    WC.send(WC.encode({ type = "cap", padmap = PV, vp = i, of = #lines, t = l })); WC.push()
-                end)
+            local function send()
+                for i, l in ipairs(lines) do
+                    C_Timer.After(i - 1, function()
+                        WC.send(WC.encode({ type = "cap", padmap = PV, vp = i, of = #lines, t = l })); WC.push()
+                    end)
+                end
             end
+            -- m67: round 3's lines after round 2's ("r3 …" the answers, "d3 …" the names found)
+            local ok = pcall(OV.vp3, function(parts, found)
+                for _, l in ipairs(OV.vpPack("r3", parts, 170)) do lines[#lines + 1] = l end
+                for _, f in ipairs(found) do
+                    local cut = {}
+                    for piece in f:gmatch("[^,]+") do cut[#cut + 1] = piece end
+                    for _, l in ipairs(OV.vpPack("d3", cut, 170)) do lines[#lines + 1] = l end
+                end
+                send()
+            end)
+            if not ok then lines[#lines + 1] = "r3 failed"; send() end
         end)
+    end)
+end
+-- m67 ROUND 3 (tracking after test35: current health / mana are secret by the base rule, the max values plain, no restriction active;
+-- the user: "Other addons are making things like custom health bars in tools for thing to help healing like cell or heal bot. It must be
+-- available"). Still READ ONLY: what the healer add-ons' roads give an add-on here, each answer plain or secret (the same codes):
+--   (a) the heal-prediction calculator: CreateUnitHealPredictionCalculator, UnitGetDetailedHealPrediction("player", nil, calc), then
+--       every Get* / Evaluate* method of it (Evaluate* with the 0.8 step curve);
+--   (b) a C_CurveUtil step curve (0 below 0.8, 1 at and above): its Evaluate on a plain 0.5 / 0.9, and UnitHealthPercent("player",
+--       true, curve) / UnitPowerPercent("player", 0, true, curve): is the curve's OUTPUT plain?
+--   (c) a StatusBar of ours (alpha 0, off the visible area, gone after) given the secret health: a frame later its value, its fill
+--       texture's width / right edge / tex coord;
+--   (d) discovery: the names of C_CurveUtil's, C_Secrets' and the global functions that hold "HealPrediction", "Curve", "Percent",
+--       "Below", "Threshold" (so a helper we did not guess shows up).
+-- -> done(parts): the short "r3 …" parts for the lines
+function OV.vp3(done)
+    local d = OV.vpDesc
+    local out = {}
+    local curve
+    -- (b) the step curve first: (a) uses it too
+    local cu = rawget(_G, "C_CurveUtil")
+    if type(cu) == "table" and type(cu.CreateCurve) == "function" then
+        local ok, c = pcall(cu.CreateCurve)
+        if ok and (type(c) == "table" or type(c) == "userdata") then
+            curve = c
+            local step = type(Enum) == "table" and type(Enum.LuaCurveType) == "table" and Enum.LuaCurveType.Step
+            if step ~= nil then pcall(function() c:SetType(step) end) end
+            pcall(function() c:AddPoint(0, 0) end); pcall(function() c:AddPoint(0.8, 1) end); pcall(function() c:AddPoint(1, 1) end)
+            out[#out + 1] = "cv.ev0.5=" .. d(function() return c:Evaluate(0.5) end) .. " cv.ev0.9=" .. d(function() return c:Evaluate(0.9) end)
+        else out[#out + 1] = "cv=E" end
+    else out[#out + 1] = "cv=A" end
+    out[#out + 1] = "hp%c=" .. d(function() return UnitHealthPercent("player", true, curve) end)
+    out[#out + 1] = "hp%c2=" .. d(function() return UnitHealthPercent("player", false, curve) end)
+    out[#out + 1] = "mp%c=" .. d(function() return UnitPowerPercent("player", 0, true, curve) end)
+    out[#out + 1] = "mp%c2=" .. d(function() return UnitPowerPercent("player", 0, false, curve) end)
+    -- (a) the heal-prediction calculator
+    local mk = rawget(_G, "CreateUnitHealPredictionCalculator")
+    if type(mk) ~= "function" and type(rawget(_G, "C_UnitHealPrediction")) == "table" then mk = C_UnitHealPrediction.CreateCalculator end
+    if type(mk) == "function" then
+        local ok, calc = pcall(mk)
+        if ok and calc ~= nil then
+            out[#out + 1] = "hpc.fill=" .. d(function() UnitGetDetailedHealPrediction("player", nil, calc); return true end)
+            local mt = getmetatable(calc)
+            local idx = (type(mt) == "table" and type(mt.__index) == "table") and mt.__index or (type(calc) == "table" and calc or {})
+            local names = {}
+            for k, f in pairs(idx) do if type(k) == "string" and type(f) == "function" and (k:find("^Get") or k:find("^Evaluate")) then names[#names + 1] = k end end
+            table.sort(names)
+            for _, k in ipairs(names) do
+                local f = idx[k]
+                if k:find("^Evaluate") then out[#out + 1] = "hpc." .. k .. "=" .. d(function() return f(calc, curve) end)
+                else out[#out + 1] = "hpc." .. k .. "=" .. d(function() return f(calc) end) end
+            end
+        else out[#out + 1] = "hpc=E" end
+    else out[#out + 1] = "hpc=A" end
+    -- (d) discovery
+    local found = {}
+    for _, lib in ipairs({ "C_CurveUtil", "C_Secrets" }) do
+        local t = rawget(_G, lib)
+        if type(t) == "table" then
+            local ks = {}
+            for k, f in pairs(t) do if type(k) == "string" and type(f) == "function" then ks[#ks + 1] = k end end
+            table.sort(ks)
+            found[#found + 1] = lib:sub(3) .. ":" .. table.concat(ks, ",")
+        end
+    end
+    local g = {}
+    for k, f in pairs(_G) do
+        if type(k) == "string" and type(f) == "function" and (k:find("HealPrediction") or k:find("Curve") or k:find("Percent")
+            or k:find("Below") or k:find("Threshold")) and #g < 40 then g[#g + 1] = k end
+    end
+    table.sort(g)
+    found[#found + 1] = "G:" .. table.concat(g, ",")
+    if type(Enum) == "table" and type(Enum.LuaCurveType) == "table" then
+        local e = {}
+        for k, v in pairs(Enum.LuaCurveType) do e[#e + 1] = tostring(k) .. "=" .. tostring(v) end
+        table.sort(e)
+        found[#found + 1] = "LuaCurveType:" .. table.concat(e, ",")
+    end
+    -- (c) a StatusBar of ours given the secret health; read a frame later (layout), then gone
+    local okB, bar = pcall(function()
+        local b = CreateFrame("StatusBar", nil, UIParent)
+        b:SetSize(200, 8); b:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, -50); b:SetAlpha(0)
+        b:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        b:SetMinMaxValues(0, UnitHealthMax("player"))
+        b:SetValue(UnitHealth("player"))
+        return b
+    end)
+    if not okB or not bar then out[#out + 1] = "sb=E"; done(out, found) return end
+    local n = 0
+    bar:SetScript("OnUpdate", function(self)
+        n = n + 1
+        if n < 3 then return end
+        self:SetScript("OnUpdate", nil)
+        local tex = T(function() return self:GetStatusBarTexture() end)
+        out[#out + 1] = "sb.val=" .. d(function() return self:GetValue() end)
+        out[#out + 1] = "sb.tw=" .. d(function() return tex:GetWidth() end) .. " sb.tr=" .. d(function() return tex:GetRight() end)
+            .. " sb.bl=" .. d(function() return self:GetLeft() end)
+        out[#out + 1] = "sb.tc=" .. d(function() return (select(5, tex:GetTexCoord())) end)
+        pcall(function() self:Hide() end)
+        done(out, found)
     end)
 end
 OV.vpF = CreateFrame("Frame")
