@@ -267,7 +267,9 @@ object NetFloors {
 
         // 2. THE CAVES TO THE GROUND: each mouth of the net onto its nearest ground way (one join a mouth; a cave's mouths a few yards
         // apart are one opening: the nearest joined first, the next then finds that join near)
-        val mouths = net.nodes.filter { it.kind == SafePath.MOUTH && it.id in live }.map { Place("mouth", it.wx, it.wy, "mouth") }
+        // (a mouth the exporter's own joins already walk from - NetJoins' - is joined)
+        val joinedAlready = inp.extras.filter { it.src != "floor" }.flatMap { listOf(it.a, it.b) }.toHashSet()
+        val mouths = net.nodes.filter { it.kind == SafePath.MOUTH && it.id in live && it.id !in joinedAlready }.map { Place("mouth", it.wx, it.wy, "mouth") }
         for (m in mouths.sortedBy { dist(it, true) }) {
             if (dist(m, true) <= JOINED_YD) continue
             val from = stand(m.x, m.y, 8.0) ?: run { unreached.add("mouth ${m.x.toInt()},${m.y.toInt()}: no standing ground within 8 yd"); null } ?: continue

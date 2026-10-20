@@ -34,7 +34,8 @@ class PackNet {
                 "(${rms.joinToString { "${it.first.sections.first().tag} ${it.first.roadmap!!.nodes} nodes" }})")
             val secs = ps.flatMap { p -> p.sections.map { p to it } }.groupBy { it.second.faction }.toSortedMap().map { (_, l) ->
                 val danger = l.firstOrNull { it.first in sameRm }?.second?.roadmapDanger
-                ShippedNet.merge(l.map { it.second }, danger) }
+                // (a spec whose roadmap is not the map's: its stitches name another roadmap's nodes - left out)
+                ShippedNet.merge(l.map { if (it.first in sameRm) it.second else it.second.copy(stitches = emptyList()) }, danger) }
             val pack = ShippedNet.Pack(ShippedNet.Header(map, h.cont, h.rules, h.rulesCommit, h.build, ps.maxOf { it.header.exported }), secs, chosen?.first?.roadmap)
             val bytes = ShippedNet.bytes(pack)
             val f = File(dir, "$map.bin"); f.writeBytes(bytes)
