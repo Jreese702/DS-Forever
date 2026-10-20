@@ -267,6 +267,21 @@ class ShippedRouteTest {
         }
     }
 
+    @Test fun aRouteOnAFloorsRoadmapIsMarkedToItsEnds() {
+        // W round 2c, Dalaran: the city's roadmap nodes on a floor layer (R_FLOOR); the ends snapped onto them stand on that floor -
+        // every point of the route marked, so the ground's danger under the floor is never read
+        val g = grid()
+        val floor = ShippedRoute.Roadmap(g.nodes, g.edges, g.nodes.keys)
+        val everywhere: (Double, Double) -> Float = { _, _ -> 4f }
+        val r = ShippedRoute.plan(none, flat, everywhere, doubleArrayOf(205.0, 15.0), doubleArrayOf(195.0, 985.0), roadmap = floor, goalFreeYd = 0.0)
+        assertTrue(r.why, r.reached)
+        assertTrue("every point on the floor: ${r.pts.filter { !Climb.inCave(it) }.map { it.toList() }}", r.pts.all { Climb.inCave(it) })
+        assertEquals(0.0, r.danger, 1e-9)
+        // the same roadmap on the ground: the danger is read
+        val ground = ShippedRoute.plan(none, flat, everywhere, doubleArrayOf(205.0, 15.0), doubleArrayOf(195.0, 985.0), roadmap = g, goalFreeYd = 0.0)
+        assertTrue(ground.danger > 1000.0)
+    }
+
     @Test fun theRoadmapsTiersAreCosts() {
         // the grid's middle band (x 120 .. 280) a rock tier x5: a route from x 40 to x 360 at y 500 goes ... through it (no other way),
         // and along y it keeps off it

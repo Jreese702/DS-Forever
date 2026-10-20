@@ -212,11 +212,15 @@ object ShippedRoute {
                     e.danger.toDouble(), !inside, false, rewalk))
             }
             if (roadmap != null) {
-                for ((id, p) in roadmap.nodes) if (pos.putIfAbsent(id, doubleArrayOf(p[0], p[1])) == null) snapIds.add(id)
+                // a roadmap node on a floor layer (R_FLOOR: a city's street, a deck) carries the floor mark, and so does an edge's walk
+                // between two of them (Dalaran: its points read as the floor's, not the ground's under it - W's round 2c)
+                for ((id, p) in roadmap.nodes) if (pos.putIfAbsent(id, if (id in roadmap.floor) doubleArrayOf(p[0], p[1], Climb.IN_CAVE)
+                        else doubleArrayOf(p[0], p[1])) == null) snapIds.add(id)
                 for (e in roadmap.edges) {
                     val a = pos[e.a] ?: continue; val b = pos[e.b] ?: continue
-                    val line = listOf(a) + e.pts + listOf(b); val len = length(line)
-                    ways.add(W(e.a, e.b, e.pts + listOf(b), len, len * NET_FAVOUR * e.tier.coerceAtLeast(1.0), dangerAlong(line), 0.0, true, true, false,
+                    val inner = if (Climb.inCave(a) && Climb.inCave(b)) e.pts.map { doubleArrayOf(it[0], it[1], Climb.IN_CAVE) } else e.pts
+                    val line = listOf(a) + inner + listOf(b); val len = length(line)
+                    ways.add(W(e.a, e.b, inner + listOf(b), len, len * NET_FAVOUR * e.tier.coerceAtLeast(1.0), dangerAlong(line), 0.0, true, true, false,
                         e.danger?.let { it * len }))
                 }
                 // THE STITCHES (net node <-> roadmap node). SHIPPED (NET1 v2 Section.stitches, T1: lattice-walked, segcheck- and
@@ -324,6 +328,7 @@ object ShippedRoute {
             var nextVirtual = -10
             val attachYd = HashMap<Int, Double>()
             var snaps = 0
+            val floorEnd = HashSet<Int>()                  // (node + OUT / IN): an end's snap onto a floor's node
             // THE ATTACH (the seam: [attacher]): each end's joins - onto graph nodes, or cut into ways - added as arcs
             val cuts = ArrayList<Triple<Int, W, Double>>()
             // the nodes an end may snap to: only those some way or link leaves (an isolated node leads nowhere); a cave's or a
@@ -342,7 +347,11 @@ object ShippedRoute {
                 if (at.snapped) snaps++
                 for (j in at.joins) {
                     val wc = j.cost * SafePath.OFF_NET
-                    val walk = if (outward) j.pts.drop(1) else j.pts.reversed().drop(1)
+                    // an end snapped onto a floor's node (a city's street, a deck) stands on that floor: its walk there marked too
+                    val onFloor = j.node != null && pos[j.node]?.let { Climb.inCave(it) && !Climb.atSwim(it) } == true
+                    val jp = if (onFloor) j.pts.map { doubleArrayOf(it[0], it[1], Climb.IN_CAVE) } else j.pts
+                    if (onFloor) floorEnd.add(j.node!! + (if (outward) OUT else IN))
+                    val walk = if (outward) jp.drop(1) else jp.reversed().drop(1)
                     val id = j.node ?: run {
                         val w = ways[j.way]; val t = j.t; val q = j.at
                         val id = nextVirtual--
@@ -396,9 +405,15 @@ object ShippedRoute {
                     for (p in walk.pts.drop(1)) add(p)
                 } else for (p in a.via) add(p)
             }
-            if (hypot(pts.last()[0] - goal[0], pts.last()[1] - goal[1]) > 0.5) pts.add(goal)
-            val out = tidy(pts)
             val first = arcs.first(); val last = arcs.last()
+            // the ends themselves on the floor their snap reached (the harness's own ends on a floor are marked)
+            if (first.second.to + OUT in floorEnd) pts[0] = doubleArrayOf(from[0], from[1], Climb.IN_CAVE)
+            val goalFloor = last.first + IN in floorEnd
+            if (hypot(pts.last()[0] - goal[0], pts.last()[1] - goal[1]) > 0.5 || (goalFloor && !Climb.inCave(pts.last()))) {
+                if (hypot(pts.last()[0] - goal[0], pts.last()[1] - goal[1]) <= 0.5) pts.removeAt(pts.size - 1)
+                pts.add(if (goalFloor) doubleArrayOf(goal[0], goal[1], Climb.IN_CAVE) else goal)
+            }
+            val out = tidy(pts)
             val onYd = attachYd[first.second.to + OUT] ?: 0.0
             val offYd = attachYd[last.first + IN] ?: 0.0
             val direct = arcs.size == 1

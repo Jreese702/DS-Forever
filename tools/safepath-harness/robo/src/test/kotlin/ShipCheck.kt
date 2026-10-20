@@ -133,8 +133,10 @@ class ShipCheck(private val cg: Climb.Grid, private val deep: (Double, Double) -
                         ?.takeIf { q -> q.all { p -> abs(ShippedNet.vx(ShippedNet.gr(p[0])) - p[0]) < 1e-6 && abs(ShippedNet.vy(ShippedNet.gc(p[1])) - p[1]) < 1e-6 } }
                     if (inner != null) { newRm[it.idx] = inner.flatMap { p -> listOf(ShippedNet.gr(p[0]), ShippedNet.gc(p[1])) }.toIntArray().takeIf { q -> q.isNotEmpty() }
                         walkedRm.add(it.idx); walked.merge('R', 1, Int::plus) }
-                    else { dropR.add(it.idx); dropped.merge('R', 1, Int::plus) } }
-                else -> { dropS.add(it.idx); dropped.merge('S', 1, Int::plus) }
+                    else { dropR.add(it.idx); dropped.merge('R', 1, Int::plus)
+                        log("SHIPCHECK $tag drop roadmap edge ${it.idx} (${r.x(a).toInt()},${r.y(a).toInt()} - ${r.x(b).toInt()},${r.y(b).toInt()}${if (it.idx in walkedRm) ", walked" else ""}): $why") } }
+                else -> { dropS.add(it.idx); dropped.merge('S', 1, Int::plus)
+                    log("SHIPCHECK $tag drop stitch ${it.idx} (node ${sec.stitches[it.idx].node} - roadmap node ${sec.stitches[it.idx].rm}): $why") }
             }
             // the section again: walked ways' points, dropped ways out
             val keep = sec.ways.indices.filter { it !in dropW }
