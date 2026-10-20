@@ -112,7 +112,7 @@ C_GamePad = {
     StickIndexToConfigName = function(i) return ({ [0] = "Movement", [1] = "Camera" })[i] end,
     GetDeviceMappedState = function()
         if not GAME.gp then return nil end
-        return { stickCount = 2, sticks = { { x = 0, y = 0, len = 0 }, { x = GAME.rx, y = 0, len = math.abs(GAME.rx) } }, axes = {} }
+        return { stickCount = 2, sticks = { { x = GAME.lx or 0, y = GAME.ly or 0, len = 0 }, { x = GAME.rx, y = 0, len = math.abs(GAME.rx) } }, axes = {} }
     end,
 }
 function InCombatLockdown() return GAME.fight end
@@ -465,6 +465,63 @@ def main():
     C.set(False)
     chk("world marker: the compass switched off: hidden with it", W.f.shown is False)
     C.set(True); G.nav = None; G.pin = None; G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.draw()
+
+    # cp15, THE TRUE-UP (the user: "when ever the controls stick points directly up, we know the true direction that the camera is
+    # currently facing ... very gently true up the compass"): the movement stick forward, the character walks along the camera's yaw
+    G.nav = None; G.quest = None; G.pin = None
+    C.setCam(True); G.facing = 0.5; C.draw(); C.read(True)
+    srcs = set()
+
+    def walk(head, secs, lx=0.0, ly=1.0, rx=0.0, speed=7.0):
+        """move the player along world heading `head` (CCW from north) at `speed` yd/s for `secs` s, the sticks as given"""
+        G.lx, G.ly, G.rx, G.speed = lx, ly, rx, speed
+        steps, prev = [], C.cam.abs
+        for i in range(int(secs * 60)):
+            dxn, dyw = math.cos(head) * speed / 60, math.sin(head) * speed / 60
+            G.px = G.px - dyw / 1000; G.py = G.py - dxn / 1000
+            G.t = G.t + 1 / 60
+            if i % 6 == 0:
+                C.read(True)
+            step(f, 1 / 60)
+            srcs.add(C.cam.src)
+            steps.append(abs(C.wrap(C.cam.abs - prev))); prev = C.cam.abs
+        G.lx, G.ly, G.rx, G.speed = 0, 0, 0, 0
+        return steps
+
+    G.px, G.py = 0.5, 0.5
+    truec = 0.5
+    C.cam.abs = truec + math.radians(40); C.cam.ref = C.cam.abs; G.facing = truec
+    st = walk(truec, 6)
+    chk("cp15: 40 degrees of drift, walking straight forward 6 s: trued up to %.1f degrees, no step over 3 degrees a frame (max %.2f)"
+        % (math.degrees(abs(C.wrap(C.cam.abs - truec))), math.degrees(max(st))),
+        abs(C.wrap(C.cam.abs - truec)) < math.radians(5) and max(st) <= math.radians(3) + 1e-9)
+    chk("cp15: src fwd while truing up (%s)" % sorted(srcs), "fwd" in srcs)
+    C.cam.abs = truec + math.radians(40)
+    walk(truec + math.pi / 2, 4, lx=1.0, ly=0.0)
+    chk("cp15: walking SIDEWAYS (lx 1): never trues up", abs(C.wrap(C.cam.abs - truec - math.radians(40))) < 1e-6)
+    walk(truec + math.pi, 4, lx=0.0, ly=-1.0)
+    chk("cp15: walking BACKWARD (ly -1): never trues up", abs(C.wrap(C.cam.abs - truec - math.radians(40))) < 1e-6)
+    a0 = C.cam.abs
+    walk(truec, 1, rx=0.6)
+    turned = C.wrap(a0 - C.cam.abs)
+    chk("cp15: orbiting (the right stick) while walking forward: the stick turns it, no true-up (%.0f deg turned)" % math.degrees(turned),
+        C.cam.src == "stick" and turned > math.radians(60))
+    C.cam.abs = truec + math.radians(40); G.facing = truec
+    walk(truec, 0.4)
+    chk("cp15: forward only 0.4 s: not yet (0.5 s held first)", abs(C.wrap(C.cam.abs - truec - math.radians(40))) < 1e-6)
+    G.lx, G.ly = 0.0, 1.0; G.speed = 7.0
+    C.diagAt = -100
+    for i in range(60):
+        G.px = G.px - math.sin(truec) * 7 / 60 / 1000; G.py = G.py - math.cos(truec) * 7 / 60 / 1000
+        G.t = G.t + 1 / 60
+        if i % 6 == 0:
+            C.read(True)
+        step(f, 1 / 60)
+    C.diagAt = -100; C.draw()
+    G.lx, G.ly, G.speed = 0, 0, 0
+    last = L.globals().SENT[len(L.globals().SENT)]
+    chk("cp15: the compass line carries lx, ly (%s, %s)" % (last.lx, last.ly), last.probe == "compass" and last.lx == 0 and last.ly == 1)
+    G.px, G.py = 0.5, 0.5; G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.setCam(False); C.draw()
 
     # the camera-yaw probe (one shot, read only): starts 20 s after login once the game's nav diamond exists, logs 4 samples a line
     P = C.probe

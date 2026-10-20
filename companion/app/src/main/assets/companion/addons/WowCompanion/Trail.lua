@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp14" }
+WC.compass = { V = "cp15" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -389,16 +389,21 @@ do
         local okE, en = pcall(function() return C_GamePad.IsEnabled() end)
         K.gp = okE and en == true or false
         local okS, st = pcall(function() return C_GamePad.GetDeviceMappedState() end)
+        K.lx, K.ly = nil, nil
         if okS and type(st) == "table" and type(st.sticks) == "table" then
             local n = num(st.stickCount) or #st.sticks
+            local camX
             for i = 1, n do
                 local okN, name = pcall(function() return C_GamePad.StickIndexToConfigName(i - 1) end)
-                if okN and name == "Camera" then
+                if okN and name == "Movement" then              -- cp15: the movement stick, for the true-up
+                    local okM, mx, my = pcall(function() return st.sticks[i].x, st.sticks[i].y end)
+                    if okM then K.lx, K.ly = num(mx), num(my) end
+                elseif okN and name == "Camera" then
                     local okX, x = pcall(function() return st.sticks[i].x end)
-                    x = okX and num(x) or nil
-                    if x then K.from = "pad"; return x end
+                    camX = okX and num(x) or nil
                 end
             end
+            if camX then K.from = "pad"; return camX end
         end
         if K.extX and now - K.extAt < 0.3 then K.from = "app"; return K.extX end
         K.from = "none"
@@ -468,6 +473,49 @@ do
         else
             K.src = "still"
         end
+        -- cp15, THE TRUE-UP (the user: "when ever the controls stick points directly up, we know the true direction that the camera is
+        -- currently facing ... use that data occasionally and very gently true up the compass"): with the movement stick held straight
+        -- forward, the character MOVES along the camera's yaw. Its heading is measured from the player's own positions over ~0.4 s
+        -- (at least 1.5 yd; two windows agreeing within 10 degrees; not swimming, flying or on a taxi; the camera stick idle 0.5 s,
+        -- the forward push held 0.5 s), and the estimate eases toward it (2.5 s; at most 3 degrees a frame). Never a snap.
+        if C.me_ and C.me_ ~= K.lastMe then
+            K.lastMe = C.me_
+            K.hist = K.hist or {}
+            K.hist[#K.hist + 1] = { t = now, x = C.me_.x, y = C.me_.y }
+            while #K.hist > 0 and now - K.hist[1].t > 1.2 do table.remove(K.hist, 1) end
+        end
+        local fwd = K.lx and K.ly and math.abs(K.lx) < 0.15 and K.ly > 0.8
+        if fwd then K.fwdSince = K.fwdSince or now else K.fwdSince = nil end
+        K.ferr = nil
+        if fwd and moving and now - K.fwdSince >= 0.5 and now - K.idleSince >= 0.5 and K.hist and #K.hist >= 3 then
+            local okW, wet = pcall(function() return IsSwimming() or IsFlying() or UnitOnTaxi("player") end)
+            if not (okW and wet) then
+                local function headingOver(t0, t1)
+                    local a, b
+                    for _, h in ipairs(K.hist) do
+                        if h.t <= t1 then b = h end
+                        if not a and h.t >= t0 then a = h end
+                    end
+                    if not (a and b) or a == b then return nil end
+                    local dx, dy = b.x - a.x, b.y - a.y
+                    if math.sqrt(dx * dx + dy * dy) < 1.5 then return nil end
+                    return atan2(dy, dx)
+                end
+                local h1 = headingOver(now - 0.9, now - 0.45)
+                local h2 = headingOver(now - 0.45, now)
+                if h1 and h2 and math.abs(C.wrap(h2 - h1)) < math.rad(10) then
+                    local err = C.wrap(h2 - K.abs)
+                    K.ferr = err
+                    local step = err * (1 - math.exp(-dt / 2.5))
+                    local cap = math.rad(3)
+                    if step > cap then step = cap elseif step < -cap then step = -cap end
+                    K.abs = C.wrap(K.abs + step)
+                    if K.ref then K.ref = C.wrap(K.ref + step) end
+                    K.src = "fwd"
+                end
+            end
+        end
+
         -- the FIX: the engine's navigation point on screen
         K.nav, K.nx, K.cl, K.vp, K.ns = false, nil, nil, nil, nil
         local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
@@ -694,6 +742,8 @@ do
             cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
             cyaw = C.cam.abs and math.floor(C.cam.abs * 1000 + 0.5) / 1000 or nil,
             wm = C.wm and C.wm.shown and true or false, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
+            lx = C.cam.lx and math.floor(C.cam.lx * 100 + 0.5) / 100 or nil, ly = C.cam.ly and math.floor(C.cam.ly * 100 + 0.5) / 100 or nil,
+            ferr = C.cam.ferr and math.floor(math.deg(C.cam.ferr) + 0.5) or nil,
             gp = C.cam.gp, from = C.cam.from, rx = C.cam.rx and math.floor(C.cam.rx * 100 + 0.5) / 100 or nil,
             ys = C.cam.ys, base = math.floor(math.deg(C.cam.base or C.cam.BASE) + 0.5), learned = C.cam.base and true or false,
             tw = C.cam.tw, fol = C.cam.fol, inv = C.cam.inv,
