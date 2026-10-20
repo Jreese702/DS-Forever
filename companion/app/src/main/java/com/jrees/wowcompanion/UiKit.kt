@@ -2393,7 +2393,7 @@ object UiKit {
         questDisc(c, box.left + pad + 26f * s, titleMid, CARD_DISC * s, if (q.turnIn) Quest.TURN_IN else Quest.PROGRESS, q.focused,
             if (q.turnIn) null else q.number)
         val pt = bodyPaint(27f * s, q.colour)
-        val title = (if (q.level > 0) "[${q.level}] " else "") + q.title
+        val title = q.title                             // test27 (the user: "the Level number in front of the quests text is confusing, trim that from the quests"): no "[level]"; its colour keeps the difficulty
         c.drawText(TextUtils.ellipsize(title, pt, box.right - pad - tx, TextUtils.TruncateAt.END).toString(), tx,
             titleMid - (pt.ascent() + pt.descent()) / 2f, pt)
         var y = box.top + pad + CARD_TITLE * s

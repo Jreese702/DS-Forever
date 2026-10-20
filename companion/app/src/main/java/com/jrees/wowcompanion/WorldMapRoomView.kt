@@ -1947,9 +1947,8 @@ class WorldMapRoomView(context: Context) : View(context) {
     private val titleP = TextPaint(UiKit.bodyPaint(24f, Theme.gold))
     private fun titleOf(id: Int): String {
         val q = logEntry(id)
-        val lv = q?.optInt("lv", 0) ?: 0
-        val t = q?.optString("title", "")?.ifEmpty { null } ?: marks().firstOrNull { it.id == id }?.title ?: "Quest"
-        return (if (lv > 0) "[$lv] " else "") + t
+        // test27 (the user: "the Level number in front of the quests text is confusing, trim that from the quests"): no "[level]"; its colour keeps the difficulty
+        return q?.optString("title", "")?.ifEmpty { null } ?: marks().firstOrNull { it.id == id }?.title ?: "Quest"
     }
     /** the title wraps to a second line before the tick box, as the game's does */
     private fun titleLayout(id: Int, w: Float): StaticLayout =

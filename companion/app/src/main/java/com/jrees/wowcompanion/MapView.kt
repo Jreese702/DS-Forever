@@ -6679,10 +6679,11 @@ class MapView(context: Context) : View(context) {
             // the arrow on the edge of my screen relative to my position"): where the ray from the player toward the target leaves the
             // field, pointing along it, the target in view or not (it is never hidden: test31) - it moves only as the bearing turns.
             // test23 (the user: "the red arrow ... is inconsistent and I want to change that to the red version of the quest arrow"):
-            // the corpse's arrow is now the quest arrow's own rule and shape, tinted red - always on the rim, its stone in view or not
+            // the corpse's arrow is the quest arrow's own shape, tinted red. test27 (the user: "When the objective is visible on the
+            // minimap the arrow should go away. (for both quests and corpse)"): either arrow only while its target is OFF the field
             val ox = sx(px).coerceIn(l0, r0); val oy = sy(py).coerceIn(t0, b0)
             val dx = tx - ox; val dy = ty - oy
-            if (r0 > l0 && b0 > t0 && (abs(dx) > 0.5f || abs(dy) > 0.5f)) {
+            if (r0 > l0 && b0 > t0 && !seen && (abs(dx) > 0.5f || abs(dy) > 0.5f)) {
                 var k = Float.MAX_VALUE                    // the ray to the edge, however near the target is
                 if (dx > 0f) k = min(k, (r0 - ox) / dx) else if (dx < 0f) k = min(k, (l0 - ox) / dx)
                 if (dy > 0f) k = min(k, (b0 - oy) / dy) else if (dy < 0f) k = min(k, (t0 - oy) / dy)
