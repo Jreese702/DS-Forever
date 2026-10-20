@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m60"                -- bump on every change; m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m61"                -- bump on every change; m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -469,6 +469,8 @@ function WC.collectPadMap()
     doc.ff = #ffl > 0 and ffl or nil
     -- m59: X fishes while a fishing pole is in the main hand (the player's Fishing spell: id, name, icon); absent = X as it is
     doc.fish = OV.fish and { id = OV.fish.id, n = OV.fish.n, i = OV.fish.i } or nil
+    -- m61: Smart Y's pick while it would act on a bare Y (out of combat, nothing targeted): id, name, icon, k = food / drink / both
+    doc.smarty = OV.smartyShown and { id = OV.smartyShown.id, n = OV.smartyShown.n, i = OV.smartyShown.i, k = OV.smartyShown.k } or nil
     doc.macros = macroCounts()
     doc.face = faceState()
     doc.dpad = dpadState()
@@ -999,6 +1001,13 @@ local PRE = [=[
         -- the macro conditional's own unit) - so X fishes only when there is nothing there. Read through the secure conditional parser
         -- only (no unit API in the snippet); a client without @softinteract parses it as nothing: fishing as before
         if fish and SecureCmdOptionParse and SecureCmdOptionParse("[@softinteract,exists] 1") == "1" then fish = nil end
+        -- m61 SMART Y: a bare Y out of combat with nothing targeted (no target, no soft-interact target) uses the bag's pick
+        -- ("wc-smarty" = "item:<id>", set out of combat); anything else and Y is exactly as before (Forever's Inspect)
+        local smart = bare and mode ~= "room" and role ~= "back" and not sw and self:GetAttribute("wc-smarty")
+        if smart and (not SecureCmdOptionParse or SecureCmdOptionParse("[combat] 1") == "1"
+            or SecureCmdOptionParse("[@target,exists] 1") == "1" or SecureCmdOptionParse("[@softinteract,exists] 1") == "1") then
+            smart = nil
+        end
         local mb = "LeftButton"
         if mode == "room" and self:GetAttribute("wc-room-dest") then
             dest = self:GetAttribute("wc-room-dest"); mb = self:GetAttribute("wc-key") or mb; fight = false
@@ -1017,6 +1026,12 @@ local PRE = [=[
             self:SetAttribute("typerelease", nil)
             self:SetAttribute("type", "spell")
             self:SetAttribute("spell", fish)
+        elseif smart then
+            self:SetAttribute("wc-kind", "smarty")
+            self:SetAttribute("pressAndHoldAction", nil)
+            self:SetAttribute("typerelease", nil)
+            self:SetAttribute("type", "item")
+            self:SetAttribute("item", smart)
         elseif rb then
             self:SetAttribute("wc-kind", "roombar")
             self:SetAttribute("pressAndHoldAction", nil)
@@ -1198,6 +1213,7 @@ local function routerSetup(b, pos)
     pcall(SecureHandlerSetFrameRef, R.rearm, "wc-face-" .. pos, b)
     b:SetAttribute("wc-interact", pos == 5 or nil)                    -- X = Forever's Interact With Target (on an enemy: an attack)
     if pos == 5 then b:SetAttribute("wc-fish", OV.fish and OV.fish.n or nil) end      -- m59: Fishing while a pole is in the main hand
+    if pos == 6 then b:SetAttribute("wc-smarty", OV.smartVal) end                       -- m61: Smart Y's food / drink
     for p, o in pairs(face.buttons) do
         pcall(SecureHandlerSetFrameRef, b, "wc-face-" .. p, o)
         pcall(SecureHandlerSetFrameRef, o, "wc-face-" .. pos, b)
@@ -3298,6 +3314,124 @@ end
 OV.fishF:SetScript("OnEvent", function(_, e)
     if e == "PLAYER_REGEN_ENABLED" and not OV.fishPending then return end
     C_Timer.After(0.2, function() pcall(OV.fishApply) end)
+end)
+-- m61 SMART Y (the user: "I want to add a new Feature that basically turns Y into a smart button- If I am out of combat and nothing is
+-- currently targeted that I can interact with Y, if I am missing Health then it should suggest food from my bag if its available, if I am
+-- missing mana it should suggest water from my bag if its available, pressing the button does the action like a quick select. (one action
+-- per button press)"; picks: food first, below 80%, cheapest first, no prompt). Out of combat the bags, health and mana are read and the
+-- pick is put on Y's router button as ONE attribute ("wc-smarty" = "item:<id>": in memory, nothing saved, no binding, no macro, no bar
+-- write); the secure pre-click uses it only on a bare Y out of combat with no target and no soft-interact target. Read only otherwise.
+-- SMARTY-PICK-BEGIN (the pure choice, tested off-device by tools/test_smarty.py)
+-- s = { hp, hpMax, mp, mpMax, level, eating, drinking, items = { { id, kind = "food" | "drink" | "both", sell, minLv, n } } }
+OV.smartPick = function(s)
+    local function low(v, m) return type(v) == "number" and type(m) == "number" and m > 0 and v / m < 0.8 end
+    local needHp = low(s.hp, s.hpMax)
+    local needMp = low(s.mp, s.mpMax)                                   -- no mana pool (mpMax 0): never
+    local function best(want)
+        local pick
+        for _, it in ipairs(s.items or {}) do
+            local fits = (it.kind == want or it.kind == "both") and (it.n or 0) > 0 and (it.minLv or 0) <= (s.level or 0)
+            if fits and (not pick or (it.sell or 0) < (pick.sell or 0)
+                         or ((it.sell or 0) == (pick.sell or 0) and (it.id or 0) < (pick.id or 0))) then
+                pick = it
+            end
+        end
+        return pick
+    end
+    -- food first; once eating, the next press is the drink (one action per press)
+    if needHp and not s.eating then local f = best("food"); if f then return f, "food" end end
+    if needMp and not s.drinking then local d = best("drink"); if d then return d, "drink" end end
+    return nil
+end
+-- SMARTY-PICK-END
+OV.SMART_FOOD, OV.SMART_DRINK = 433, 430                                  -- the game's own "Food" / "Drink" auras: their names
+function OV.smartKind(id)
+    local sn = T(function() return (C_Item and C_Item.GetItemSpell and C_Item.GetItemSpell(id)) or GetItemSpell(id) end)
+    if type(sn) ~= "string" then return nil end
+    local function nm(sid) return T(function() return (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(sid)) or (GetSpellInfo(sid)) end) end
+    if sn == nm(OV.SMART_FOOD) then return "food" end
+    if sn == nm(OV.SMART_DRINK) then return "drink" end
+    -- "food and drink" (one item restoring both): its tooltip says it restores health AND mana
+    local lines = T(function() return C_TooltipInfo and C_TooltipInfo.GetItemByID and C_TooltipInfo.GetItemByID(id) end)
+    if type(lines) == "table" and type(lines.lines) == "table" then
+        local h, m = false, false
+        for _, l in ipairs(lines.lines) do
+            local t = type(l) == "table" and type(l.leftText) == "string" and l.leftText:lower() or ""
+            if t:find("restores", 1, true) then h = h or t:find("health", 1, true) ~= nil; m = m or t:find("mana", 1, true) ~= nil end
+        end
+        if h and m then return "both" end
+    end
+    return nil                                                           -- buff-only and everything else: never
+end
+function OV.smartState()
+    local s = { hp = TN(function() return UnitHealth("player") end), hpMax = TN(function() return UnitHealthMax("player") end),
+                mp = TN(function() return UnitPower("player", 0) end), mpMax = TN(function() return UnitPowerMax("player", 0) end),
+                level = TN(function() return UnitLevel("player") end) or 0, items = {} }
+    local count, kinds = {}, {}
+    local C = C_Container
+    for bag = 0, 5 do
+        local n = T(function() return C and C.GetContainerNumSlots(bag) or GetContainerNumSlots(bag) end) or 0
+        for slot = 1, n do
+            local info = T(function() return C and C.GetContainerItemInfo(bag, slot) end)
+            local id = type(info) == "table" and info.itemID or nil
+            if type(id) == "number" then count[id] = (count[id] or 0) + (info.stackCount or 1) end
+        end
+    end
+    for id, n in pairs(count) do
+        local kind = OV.smartKind(id)
+        if kind then
+            kinds[#kinds + 1] = kind
+            local fn = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+            local ok, name, _, _, _, minLv, _, _, _, _, icon, sell = pcall(fn, id)
+            if ok and name then
+                s.items[#s.items + 1] = { id = id, kind = kind, sell = sell or 0, minLv = minLv or 0, n = n, name = name, icon = icon or 0 }
+            end
+        end
+    end
+    -- eating / drinking now: the player wears the game's Food / Drink aura (by its name)
+    local fname = T(function() return (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(OV.SMART_FOOD)) or (GetSpellInfo(OV.SMART_FOOD)) end)
+    local dname = T(function() return (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(OV.SMART_DRINK)) or (GetSpellInfo(OV.SMART_DRINK)) end)
+    for i = 1, 40 do
+        local a = T(function() return C_UnitAuras and C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL") end)
+        local an = type(a) == "table" and a.name or T(function() return (UnitBuff("player", i)) end)
+        if type(an) ~= "string" then break end
+        if an == fname then s.eating = true end
+        if an == dname then s.drinking = true end
+    end
+    return s
+end
+function OV.smartApply()
+    if inCombat() then OV.smartPending = true; return end
+    OV.smartPending = nil
+    local pick = OV.smartPick(OV.smartState())
+    local val = pick and ("item:" .. pick.id) or nil
+    local b = face.buttons[6]
+    if b then pcall(b.SetAttribute, b, "wc-smarty", val) end
+    local hasTarget = T(function() return UnitExists("target") end) == true
+    local shown = (pick and not hasTarget) and pick.id or nil
+    OV.smarty = pick and { id = pick.id, n = pick.name, i = pick.icon, k = pick.kind } or nil
+    OV.smartyShown = shown and OV.smarty or nil
+    if val ~= OV.smartVal or shown ~= OV.smartShownId then
+        if val ~= OV.smartVal then
+            pcall(function() WC.send(WC.encode({ type = "cap", padmap = PV, smarty = pick and (pick.kind .. " " .. pick.id) or "off" })) end)
+        end
+        OV.smartVal, OV.smartShownId = val, shown
+        pcall(emit, true); WC.push()
+    end
+end
+OV.smartF = CreateFrame("Frame")
+for _, e in ipairs({ "BAG_UPDATE_DELAYED", "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_AURA",
+                     "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_TARGET_CHANGED", "PLAYER_LEVEL_UP",
+                     "PLAYER_ENTERING_WORLD", "GET_ITEM_INFO_RECEIVED" }) do
+    pcall(function() OV.smartF:RegisterEvent(e) end)
+end
+OV.smartF:SetScript("OnEvent", function(_, e, unit)
+    if (e == "UNIT_HEALTH" or e == "UNIT_MAXHEALTH" or e == "UNIT_POWER_UPDATE" or e == "UNIT_MAXPOWER" or e == "UNIT_AURA")
+       and unit ~= "player" then return end
+    if e == "PLAYER_REGEN_DISABLED" then return end                     -- the snippet's [combat] keeps Y as it is in a fight
+    if OV.smartSoon then return end                                     -- one pass per 0.3 s, however many events
+    OV.smartSoon = true
+    C_Timer.After(0.3, function() OV.smartSoon = nil; pcall(OV.smartApply) end)
 end)
 -- m33: the bags and the Mount Journal change the Extra tab's lists: a doc soon (no router work for these)
 local fx = CreateFrame("Frame")
