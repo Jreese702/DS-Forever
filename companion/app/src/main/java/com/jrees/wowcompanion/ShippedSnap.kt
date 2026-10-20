@@ -32,6 +32,7 @@ object ShippedSnap {
     const val CANDIDATES = 8          // the nearest walled-off nodes a walk round is tried to
     const val LINE_STEP_YD = 1.0      // a straight snap read this often (the water's 4.2 yd vertices, a wall's few yards)
     const val CELL_YD = 2.5           // a bent snap's walk cells (each step's middle read too: 1.25 yd)
+    const val FAR_COST = 2000.0       // a snap past the spread: this much dearer (the fallback when the nearer ones lead nowhere)
     const val SPREAD_YD = 5.0         // the snaps kept: the nearest clear one's and those no more than this longer
     const val BENT = 1.15             // a bent snap's yard against a straight one's
     const val WALL = 12f              // a steep bank (Terrain.legFactor at 45 degrees) or worse: a wall to the snap
@@ -98,14 +99,19 @@ object ShippedSnap {
             val n = nodes.minOfOrNull { (_, q) -> hypot(q[0] - p[0], q[1] - p[1]) }
             return Result(emptyList(), if (n == null) "no node to snap to" else "no node within ${reach.toInt()} yd (the nearest ${n.toInt()} yd)")
         }
+        val any = pick(p, near, ground, danger, k, reach, walkYd)
         if (floor.isNotEmpty() && nodes.filter { it.first >= ShippedRoute.RM_BASE }.minByOrNull { hypot(it.second[0] - p[0], it.second[1] - p[1]) }?.first in floor) {
             val on = near.filter { it.first in floor }
             if (on.isNotEmpty()) {
                 val r = pick(p, on, Ground({ _, _ -> 1f }, ground.water), danger, k, reach, walkYd)
-                if (r.ok) return Result(r.snaps, "on a floor: " + r.why)
+                // the floor's snaps lead; the ground's only as the far fallback (a floor piece the graph does not join on)
+                val firsts = r.snaps.filter { it.cost < FAR_COST }.map { it.node }.toSet()
+                if (firsts.isNotEmpty()) return Result(r.snaps.filter { it.node in firsts } +
+                    any.snaps.filter { it.node !in firsts }.map { Snap(it.node, it.pts, it.yd, if (it.cost < FAR_COST) it.cost + FAR_COST else it.cost, it.straight) },
+                    "on a floor: " + r.why)
             }
         }
-        return pick(p, near, ground, danger, k, reach, walkYd)
+        return any
     }
 
     private fun pick(p: DoubleArray, near: List<Triple<Int, DoubleArray, Double>>, ground: Ground, danger: ((Double, Double) -> Float)?,
@@ -115,19 +121,20 @@ object ShippedSnap {
         val blocked = ArrayList<String>()
         val bent = ArrayList<Triple<Int, DoubleArray, Double>>()
         for (c in near) {
-            // past the nearest clear line by more than the spread: not wanted, not read
-            if (straight.isNotEmpty() && c.third > straight.first().yd + SPREAD_YD) break
             val line = view.line(p, c.second)
             if (line.why == null) straight.add(Snap(c.first, listOf(p, c.second), c.third, line.cost, true))
             else { if (bent.size < CANDIDATES) bent.add(c); blocked.add(line.why) }
         }
-        val out = ArrayList<Snap>(straight)
-        if (out.isEmpty() && bent.isNotEmpty()) {
+        val out = ArrayList<Snap>()
+        if (straight.isNotEmpty()) out.addAll(straight)
+        else if (bent.isNotEmpty()) {
             val walk = Walk(view, walkYd)
             for ((id, q, _) in bent) walk.to(q)?.let { w -> out.add(Snap(id, w.pts, w.yd, w.cost * BENT, false)) }
-            val shortest = out.minOfOrNull { it.yd } ?: 0.0
-            out.removeAll { it.yd > shortest + SPREAD_YD }
         }
+        // the nearest and those [SPREAD_YD] longer lead; the rest only as the FAR fallback ([FAR_COST] dearer: taken only when the
+        // nearest ones' graph piece joins nothing on to the other end)
+        val shortest = out.minOfOrNull { it.yd } ?: 0.0
+        for (i in out.indices) if (out[i].yd > shortest + SPREAD_YD) out[i].let { out[i] = Snap(it.node, it.pts, it.yd, it.cost + FAR_COST, it.straight) }
         out.sortBy { it.cost }
         if (out.isEmpty()) {
             val first = blocked.groupingBy { it.substringBefore(" at ") }.eachCount().entries.sortedByDescending { it.value }.joinToString(", ") { "${it.key} x${it.value}" }
