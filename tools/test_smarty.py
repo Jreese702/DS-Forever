@@ -180,5 +180,35 @@ check(go(rows([9999], [465]), ALL) == (2, [465]), "a row of spells no longer kno
 check(go(rows([465, 9999]), ALL) == (1, [465]), "an OR row keeps only its known members", go(rows([465, 9999]), ALL))
 check(go(rows(), ALL) is None, "no rows: nothing", "")
 
+# ---------------------------------------------------------------- m63: food / drink by the item (test29: nothing ever matched)
+kf = re.search(r'(function OV\.smartKind\(id\).*?\nend)\n', SRC, re.S).group(1)
+K = lupa.LuaRuntime(unpack_returned_tuples=True)
+K.execute('''
+OV = { SMART_FOOD = 433, SMART_DRINK = 430 }
+function T(fn) local ok, v = pcall(fn); if ok then return v end end
+ITEMS = {}
+C_Item = { GetItemSpell = function(id) return ITEMS[id] and ITEMS[id].sp end,
+           GetItemInfoInstant = function(id) local i = ITEMS[id] or {}; return id, "", "", "", 0, i.cls or 15, i.sub or 0 end }
+C_Spell = { GetSpellName = function(id) return ({ [433] = "Food", [430] = "Drink" })[id] end }
+C_TooltipInfo = { GetItemByID = function(id) local i = ITEMS[id]; if not i or not i.tip then return nil end
+                  return { lines = { { leftText = "Use: " .. i.tip } } } end }
+''' + kf)
+kind = K.eval('function(id, t) ITEMS[id] = t; local k, r = OV.smartKind(id); return k end')
+cases = [
+    ("the game's Food spell", {"sp": "Food", "cls": 0, "sub": 5}, "food"),
+    ("the game's Drink spell", {"sp": "Drink", "cls": 0, "sub": 5}, "drink"),
+    ("a spell named Refreshment", {"sp": "Refreshment", "cls": 0, "sub": 5}, "both"),
+    ("a spell named Food & Drink", {"sp": "Food & Drink", "cls": 0, "sub": 5}, "both"),
+    ("another name, the tooltip says health", {"sp": "Tough Jerky", "cls": 0, "sub": 5, "tip": "Restores 61 health over 18 sec."}, "food"),
+    ("another name, the tooltip says mana", {"sp": "Mana Restoration", "cls": 0, "sub": 5, "tip": "Restores 151 mana over 18 sec."}, "drink"),
+    ("no spell, a food & drink item restoring both", {"cls": 0, "sub": 5, "tip": "Restores 378 health and 567 mana over 24 sec."}, "both"),
+    ("a buff-only food (no restore line)", {"sp": "Well Fed", "cls": 0, "sub": 5, "tip": "Increases Stamina by 6 for 15 min."}, None),
+    ("a potion (not food & drink, no restore name)", {"sp": "Healing Potion", "cls": 0, "sub": 1}, None),
+    ("a potion whose tooltip restores health: never food", {"sp": "Healing Potion", "cls": 0, "sub": 1, "tip": "Restores 140 to 180 health."}, None),
+]
+for i, (name, t, want) in enumerate(cases):
+    got = kind(9000 + i, K.table_from(t))
+    check(got == want, "kind: " + name, got)
+
 print('ALL PASS' if fails == 0 else '%d FAILED' % fails)
 sys.exit(1 if fails else 0)
