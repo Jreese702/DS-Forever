@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp9" }
+WC.compass = { V = "cp11" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -359,73 +359,145 @@ do
         return C.h
     end
 
-    -- THE CAMERA OFFSET (cp7, an experiment; read only). The engine places C_Navigation's frame on the super-tracked target's spot on
-    -- the screen. While it is on screen (valid, not clamped), its x against the screen's centre is the target's angle off the camera's
-    -- axis: theta = atan((x - centre) / f), f = half the width / tan(hfov / 2) (hfov from the cameraFov CVar, READ); the target's
-    -- true bearing b is ours (the compass's own reads), so the camera's yaw is b + theta (counter-clockwise: right of centre = a
-    -- smaller angle). The offset (camera - character) eases to that; off screen it is HELD while standing and settles back to the
-    -- character's facing while moving (the game camera swings behind a moving character); without a target the same.
-    -- cp8 (test16, the cp7 log): the camera is held as an ABSOLUTE world yaw between fixes, not as an offset from the character.
-    -- With a controller the CHARACTER turns to its movement (even toward the camera: offsets near pi were real) while the camera
-    -- stays where the right stick left it; cp7 held the offset and settled it to the facing while moving, so every turn of the
-    -- character swung the compass. Now: a fix sets the camera yaw; no fix keeps it; only after LOST_S without one does it ease
-    -- back to the facing (the camera may have followed, and nothing else tells).
-    -- cp9 (test18, the user: "the compass doesnt spin 360 degrees"): cp8's frozen yaw missed every right-stick turn made while the
-    -- marker was off screen (nothing can see those). Now the compass always turns live with the character's facing, plus the last
-    -- MEASURED camera-minus-character offset, which fades out over DECAY_S: a fix nudges it to the camera, and between fixes it
-    -- turns the full 360 with the character (who, with this controller, turns with the camera).
-    C.cam = { off = 0, src = "none", fovAt = -10, hfov = math.rad(90), abs = nil, fixAt = -100, DECAY_S = 1.5 }
+    -- THE CAMERA (cp11, the user: "it needs to follow the camera not the char"; read only). No add-on API reads the game camera, but
+    -- this client gives add-ons the CONTROLLER: C_GamePad.GetDeviceMappedState() (Book.lua's padProbe reads it too), and the game's
+    -- own camera settings (C_CVar.GetCVar, READ): GamePadCameraYawSpeed, gamepadInvertYaw, GamePadTurnWithCamera (0 = the character
+    -- turns with the camera while moving; 1 = + in combat; 3 = + casting (the default); 2 = always). So the camera's world yaw is:
+    --   * while the character turns WITH the camera (moving, or the setting's other cases): the character's facing;
+    --   * otherwise (standing: a right-stick orbit leaves the character alone): dead-reckoned, yaw -= stickX x rate x dt (stick
+    --     right = turning clockwise = a smaller counter-clockwise angle; inverted with gamepadInvertYaw);
+    --   * corrected by a FIX: the engine's navigation point on screen (valid, unclamped, inside 92% of the half width, the target
+    --     more than 8 yd away) gives the yaw exactly; a fix more than 100 degrees from the PREDICTED yaw is the engine's mirrored
+    --     behind-the-camera projection (cp10) and never counts. Two fixes with stick turning between them LEARN the true rate.
+    -- The app can plug in its own stick reading (C.stickIn) where C_GamePad gives none.
+    -- (MAXOFF 100: a mirror is ~180 degrees off the true camera, so it is rejected while the dead reckoning is within 80 of it; an
+    -- honest fix up to 100 off still corrects a poor rate guess, and teaches the rate)
+    C.cam = { off = 0, src = "none", fovAt = -10, hfov = math.rad(90), abs = nil, fixAt = -100, MAXOFF = math.rad(100),
+              BASE = math.rad(120), base = nil, ys = 1.3, inv = false, tw = 3, fol = false, gp = nil, rx = 0, acc = 0,
+              extX = nil, extAt = -100 }
+
+    -- the app's own stick reading, when the game's gamepad API gives none (x: -1 .. 1, right positive)
+    function C.stickIn(x)
+        x = num(x)
+        if x then C.cam.extX, C.cam.extAt = math.max(-1, math.min(1, x)), ((type(GetTime) == "function" and GetTime()) or 0) end
+    end
+
+    -- the camera stick's x: the game's mapped state, its "Camera" stick by the game's own names (inputaxisbinding.lua)
+    function C.stickX(now)
+        local K = C.cam
+        local okE, en = pcall(function() return C_GamePad.IsEnabled() end)
+        K.gp = okE and en == true or false
+        local okS, st = pcall(function() return C_GamePad.GetDeviceMappedState() end)
+        if okS and type(st) == "table" and type(st.sticks) == "table" then
+            local n = num(st.stickCount) or #st.sticks
+            for i = 1, n do
+                local okN, name = pcall(function() return C_GamePad.StickIndexToConfigName(i - 1) end)
+                if okN and name == "Camera" then
+                    local okX, x = pcall(function() return st.sticks[i].x end)
+                    x = okX and num(x) or nil
+                    if x then K.from = "pad"; return x end
+                end
+            end
+        end
+        if K.extX and now - K.extAt < 0.3 then K.from = "app"; return K.extX end
+        K.from = "none"
+        return 0
+    end
+
+    -- the character turns with the camera now? (GamePadTurnWithCamera, the player's own setting)
+    function C.turnsWith(moving)
+        local tw = C.cam.tw
+        if tw == 2 or moving then return true end
+        local okC, fight = pcall(InCombatLockdown)
+        if (tw == 1 or tw == 3) and okC and fight == true then return true end
+        if tw == 3 then
+            local okK, casting = pcall(function() return UnitCastingInfo("player") ~= nil or UnitChannelInfo("player") ~= nil end)
+            if okK and casting == true then return true end
+        end
+        return false
+    end
+
     function C.camStep(dt, facing)
         local K = C.cam
         local now = (type(GetTime) == "function" and GetTime()) or 0
-        if now - K.fovAt > 1 then                          -- the field of view, read once a second (a READ: nothing written)
+        if now - K.fovAt > 1 then                          -- the settings, read once a second (READS: nothing written)
             K.fovAt = now
-            local ok, v = pcall(function() return C_CVar.GetCVar("cameraFov") end)
-            local deg = ok and tonumber(v) or nil
+            local function cv(name) local ok, v = pcall(function() return C_CVar.GetCVar(name) end); return ok and v or nil end
+            local deg = tonumber(cv("cameraFov") or "")
             if deg and deg >= 30 and deg <= 150 then K.hfov = math.rad(deg) end
+            K.ys = tonumber(cv("GamePadCameraYawSpeed") or "") or K.ys
+            local inv = cv("gamepadInvertYaw")
+            K.inv = inv == "1" or inv == true
+            K.tw = tonumber(cv("GamePadTurnWithCamera") or "") or K.tw
+            local fol = cv("GamepadCameraFollowOnStick")
+            K.fol = fol == "1" or fol == true
         end
+        local okM, speed = pcall(GetUnitSpeed, "player")
+        local moving = okM and num(speed) and speed > 0 or false
+        local x = C.stickX(now)
+        K.rx = x
+        local rate = (K.base or K.BASE) * K.ys
+        if not K.abs then K.abs = facing end
+        if C.turnsWith(moving) then
+            K.abs, K.src, K.acc, K.lastFix = facing, moving and "move" or "turn", 0, nil   -- the character turns with the camera
+        elseif x ~= 0 then
+            local d = x * rate * dt * (K.inv and -1 or 1)
+            K.abs = C.wrap(K.abs - d)
+            K.acc = K.acc + x * dt * (K.inv and -1 or 1)                     -- stick-seconds since the last fix (the rate's lesson)
+            K.src = "stick"
+        else
+            K.src = "still"
+        end
+        -- the FIX: the engine's navigation point on screen
         K.nav, K.nx, K.cl, K.vp, K.ns = false, nil, nil, nil, nil
         local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
         local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
         local tg = C.tg_ or {}
         local w = (okP and onPin == true) and tg.pin or tg.quest
-        local b, d
-        if C.me_ and w then b, d = C.bearing(C.me_, w) end
-        local seen = false
+        local b, dd
+        if C.me_ and w then b, dd = C.bearing(C.me_, w) end
         if okF and nav then
             K.nav = true
-            local okC, x = pcall(function() return nav:GetCenter() end)
+            local okC, nx = pcall(function() return nav:GetCenter() end)
             local okS, ns = pcall(function() return nav:GetEffectiveScale() end)
             local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
             local okW, uw = pcall(function() return UIParent:GetWidth() end)
             local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
             local okV, vp = pcall(function() return C_Navigation.HasValidScreenPosition() end)
-            local okT, st = pcall(function() return C_Navigation.GetTargetState() end)
-            x = okC and num(x) or nil
+            local okT, stt = pcall(function() return C_Navigation.GetTargetState() end)
+            nx = okC and num(nx) or nil
             ns, us, uw = okS and num(ns) or 1, okU and num(us) or 1, okW and num(uw) or nil
             -- (not `ok and v or nil`: a FALSE "clamped" would turn into nil)
             if okK and type(cl) == "boolean" then K.cl = cl end
             if okV and type(vp) == "boolean" then K.vp = vp end
-            K.ns = okT and num(st) or nil
-            if x and uw and us > 0 then
-                x = x * ns / us                            -- into UIParent's units
-                K.nx = x
+            K.ns = okT and num(stt) or nil
+            if nx and uw and us > 0 then
+                nx = nx * ns / us
+                K.nx = nx
                 local half = uw / 2
-                if K.vp == true and K.cl == false and b and d and d > 8 and math.abs(x - half) < half * 0.92 then
+                if K.vp == true and K.cl == false and b and dd and dd > 8 and math.abs(nx - half) < half * 0.92 then
                     local f = half / math.tan(K.hfov / 2)
-                    local cam = b + math.atan((x - half) / f)
-                    local want = C.wrap(cam - facing)
-                    K.off = C.wrap(K.off + C.wrap(want - K.off) * (1 - math.exp(-dt / 0.08)))
-                    K.fixAt = now
-                    K.src, seen = "nav", true
+                    local cam = b + math.atan((nx - half) / f)
+                    local err = C.wrap(cam - K.abs)
+                    if math.abs(err) <= K.MAXOFF then
+                        -- the rate's lesson: the stick turned since the last fix, and the fix says by how much
+                        if K.lastFix and math.abs(K.acc) > 0.25 and not C.turnsWith(moving) then
+                            local turned = -C.wrap(cam - K.lastFix)
+                            local learned = turned / (K.acc * K.ys)
+                            if learned > math.rad(20) and learned < math.rad(720) then
+                                K.base = (K.base or K.BASE) + (learned - (K.base or K.BASE)) * 0.5
+                            end
+                        end
+                        K.abs = C.wrap(K.abs + err * (1 - math.exp(-dt / 0.08)))
+                        K.lastFix, K.acc, K.fixAt = cam, 0, now
+                        K.src = "nav"
+                    else
+                        K.src = "mirror"                    -- a mirrored (behind-the-camera) projection: never a fix
+                    end
                 end
             end
         end
-        if not seen then
-            K.off = K.off * math.exp(-dt / K.DECAY_S)         -- the last measured offset fades; the facing turns live
-            K.src = (w and K.nav) and "decay" or "none"
-        end
-        K.abs = C.wrap(facing + K.off)
+        K.off = C.wrap(K.abs - facing)
         return K.off
     end
 
@@ -521,6 +593,9 @@ do
             corpse = tg.corpse and true or false, n = #L.marks,
             cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
             cyaw = C.cam.abs and math.floor(C.cam.abs * 1000 + 0.5) / 1000 or nil,
+            gp = C.cam.gp, from = C.cam.from, rx = C.cam.rx and math.floor(C.cam.rx * 100 + 0.5) / 100 or nil,
+            ys = C.cam.ys, base = math.floor(math.deg(C.cam.base or C.cam.BASE) + 0.5), learned = C.cam.base and true or false,
+            tw = C.cam.tw, fol = C.cam.fol, inv = C.cam.inv,
             nav = C.cam.nav, nx = C.cam.nx and math.floor(C.cam.nx * 10 + 0.5) / 10 or nil, ncl = C.cam.cl, nvp = C.cam.vp,
             nst = C.cam.ns, fov = math.floor(math.deg(C.cam.hfov) + 0.5),
         }
@@ -558,7 +633,7 @@ do
     function C.setCam(on)
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
         WowCompanionDB.compassCam = on and true or false
-        C.cam.off, C.cam.abs, C.cam.fixAt = 0, nil, -100
+        C.cam.off, C.cam.abs, C.cam.fixAt, C.cam.lastFix, C.cam.acc = 0, nil, -100, nil, 0
         return true
     end
 

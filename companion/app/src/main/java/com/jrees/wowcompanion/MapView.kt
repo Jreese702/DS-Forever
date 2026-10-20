@@ -2836,6 +2836,77 @@ class MapView(context: Context) : View(context) {
             "the chain ${p.describe()} (${p.cost.toInt()} yd)")
     }
 
+    // ---- THE CHAIN OVER THE SHIPPED NETWORK (the user, 2026-10-19: "Ship our path network"; ShippedCross): for a goal on another zone
+    // or continent, TravelLinks' hop chain over the shipped nets' exits and link starts, the rides, flights, tram and portals - taken
+    // only where every zone on the chain has a shipped net (else null: continentHops' chain, as before). Planned on the route thread and
+    // kept per quest until the player walks XZ_MOVE_YD, the goal moves or the data changes; null meanwhile (the old way stands in)
+    private class SxRoute(val key: String, val map: Int, val route: CursorRoute.Route?)
+    private val sxRoutes = HashMap<Int, SxRoute>()
+    private val sxPending = HashSet<Int>()
+    private val sxSaid = HashMap<Int, String>()
+    private fun shippedChainRoute(q: Int, mapId: Int, r: PoiStore.Rect, m: JSONObject, goalW: DoubleArray): CursorRoute.Route? {
+        ShippedCrossStore.init(context)
+        if (!ShippedCrossStore.ready || mapId !in ShippedCrossStore.maps || goalW.size < 3) return null
+        val mine = TransportRoutes.factionOf(m.optString("fac", null))
+        if (mine == 0) return null
+        val pwx = m.optDouble("wx", Double.NaN); val pwy = m.optDouble("wy", Double.NaN)
+        if (pwx.isNaN() || pwy.isNaN()) return null
+        val zid = zoneIdAt ?: return null; val wo = worldOf ?: return null
+        val gc = goalW[0].toInt(); val gx = goalW[1]; val gy = goalW[2]
+        val fly = HashSet<Int>()
+        m.optJSONArray("fly")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.optInt("id", 0)?.takeIf { it != 0 }?.let { fly.add(it) } }
+        val key = "$gc:${(gx / 25).toInt()}:${(gy / 25).toInt()}:$mapId:${(pwx / XZ_MOVE_YD).toInt()}:${(pwy / XZ_MOVE_YD).toInt()}:$mine:" +
+            "$routeEpoch:$ridesStamp:${fly.size}:${ShippedCrossStore.version}"
+        val have = sxRoutes[q]
+        if (have?.key != key && sxPending.add(q)) {
+            // the main thread's data, taken now (the route thread reads only these copies and the stores)
+            val allRides = rides(); val masters = travelMasters; val learner = exitLearner()
+            val names = mapName
+            val ids = (learner?.let { runCatching { context.getSharedPreferences("cityexits", Context.MODE_PRIVATE).all.keys }.getOrNull() } ?: emptySet())
+                .mapNotNull { it.removePrefix("x:").toIntOrNull() }.filter { isZoneMap(it) }
+            val nameMap = HashMap<Int, String>()
+            RouteWork.run({
+                fun name(id: Int) = names?.invoke(id)?.takeIf { it.isNotEmpty() } ?: "map $id"
+                fun toWorld(map: Int, x: Double, y: Double): DoubleArray? = wo(map)?.takeIf { it.valid }?.let { doubleArrayOf(it.wx(y), it.wy(x)) }
+                // the portals' places: every map a QuestieDB portal could name, by the game's own names
+                for (z in ShippedCrossStore.maps + ids + CityExits.CITIES) nameMap[z] = name(z)
+                val base = TravelLinks.Inputs(
+                    mapAt = { c, x, y -> zid(c, x, y)?.takeIf { isZoneMap(it) } }, mapName = ::name,
+                    learnedMaps = ids, learned = { learner?.of(it)?.filter { e -> isZoneMap(e.toMap) } ?: emptyList() },
+                    rides = allRides, masters = masters, taxiKnown = { it in fly || TaxiNet.known(it) }, taxiConnected = TaxiNet::connected,
+                    tableAt = ::toWorld, portals = ShippedCrossStore.portals(::toWorld, nameMap))
+                val zones = ShippedCrossStore.zones(mine)
+                val gm = zid(gc, gx, gy)
+                val chain = gm?.let { ShippedCross.plan(ShippedCross.inputs(base, zones), TravelLinks.Character(mine), mapId, pwx, pwy, it, gx, gy,
+                    zones.map { z -> z.map }.toSet(), ShippedCrossStore.stale(mine), ShippedCrossStore.legYards(mine)) }
+                val first = chain?.first
+                val route = if (chain == null || !chain.covered || first == null) null else {
+                    val at = here(r, first.ax, first.ay)
+                    fun words(l: TravelLinks.Link, w: String) = ShippedCross.exitName(zones, l)?.let { "$w (${it})" } ?: w
+                    val s = chain.route.steps
+                    val label = if (s.size == 1) words(first, s[0].words) else "${words(first, s[0].words)}, then ${s[1].words.let { l ->
+                        if (l.startsWith("To ") || l.startsWith("Ride ")) l.replaceFirstChar { it.lowercase() } else l }}"
+                    CursorRoute.Route(if (first.kind == TravelLinks.Kind.FLIGHT) CursorRoute.Kind.FLIGHT else CursorRoute.Kind.EXIT, at[0], at[1],
+                        label, "sx:${first.key}", "the shipped chain ${chain.describe(::name)} (${chain.yards.toInt()} yd)" +
+                            if (chain.stale.isNotEmpty()) "; may be out of date: ${chain.stale}" else "")
+                }
+                val said = when {
+                    gm == null -> "no zone at the goal"
+                    chain == null -> "no chain"
+                    !chain.covered -> "not taken: no shipped net for ${chain.missing.joinToString { "${name(it)} ($it)" }} (the old way)"
+                    else -> "taken: ${chain.describe(::name)}"
+                }
+                route to said
+            }) { (route, said) ->
+                sxPending.remove(q)
+                sxRoutes[q] = SxRoute(key, mapId, route)
+                if (sxSaid[q] != said) { sxSaid[q] = said; android.util.Log.i("WCMAP", "shipped cross: quest $q from map $mapId: $said") }
+                invalidate()
+            }
+        }
+        return have?.takeIf { it.map == mapId }?.route
+    }
+
     /** the zones whose world rectangle meets a box (continent, x0, x1, y0, y1): the cross-zone plan's (b-route-cross-zone) */
     var zonesIn: ((Int, Double, Double, Double, Double) -> List<Int>)? = null
     private class XzRoute(val key: String, val route: CursorRoute.Route?)
@@ -4567,8 +4638,11 @@ class MapView(context: Context) : View(context) {
             }, cameFrom = backRule, keep = routeKeep[q]) { i, j -> TaxiNet.connected(i, j) }
         // MORE THAN ONE WAY OUT (b-route-multihop, test51: from Elwynn to an Ironforge quest the line went north over the mountains
         // instead of Stormwind's gate, then the tram): the continent's known ways chained, when the quest is no walk from here
-        val chained = if (planned != null && planned.kind != CursorRoute.Kind.FLIGHT && planned.kind != CursorRoute.Kind.GOAL && fw != null)
-            chainRoute(q, mapId, r, m, fw) ?: planned else planned
+        // (first the chain over the shipped network, where every zone on it is shipped: shippedChainRoute; for a quest on another
+        // continent too)
+        val farOff = if (fw == null && goals.isEmpty()) allSpots.firstOrNull { it.size >= 3 && it[0].toInt() != r.continent } else null
+        val chained = if (planned != null && planned.kind != CursorRoute.Kind.FLIGHT && planned.kind != CursorRoute.Kind.GOAL && (fw ?: farOff) != null)
+            shippedChainRoute(q, mapId, r, m, (fw ?: farOff)!!) ?: fw?.let { chainRoute(q, mapId, r, m, it) } ?: planned else planned
         // the edge toward the quest only where the ground lets anyone walk out (b-route-multihop: never over a mountain border)
         // ACROSS THE ZONES (b-route-cross-zone, test58: "it still has it sending me up a mountain"): instead of the edge toward the quest,
         // the crossing a plan over the stitched zones' ground finds (both sides walkable: the road, the bridge); the edge only meanwhile
