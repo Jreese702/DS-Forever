@@ -7,6 +7,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlin.math.abs
 import kotlin.math.hypot
 
 /**
@@ -87,6 +88,27 @@ class NetRoadmapTest {
             if (north) assertEquals(120, h[e].toInt() and 0xFF)             // 2 x ROADMAP_DANGER_SCALE
             if (south) assertEquals(0, h[e].toInt())
         }
+    }
+
+    @Test fun connectivityRepairJoinsTwoCellsAcrossACauseway() {
+        // a cell row of deep water across the whole patch, crossed only by a causeway one vertex wide: no node can stand on the
+        // causeway (2 open steps), so the main pass leaves north and south apart; the repair's two-cell leg joins them through a node
+        // on the causeway
+        val g0 = Climb.build(T, B, L, R, { _, _ -> 0f })
+        val r = (g0.ny / 10) / 2; val cc = (g0.nx / 10) / 2
+        val xHi = g0.wx(r * 10) + 3.0; val xLo = g0.wx(r * 10 + 9) - 3.0; val yC = g0.wy(cc * 10 + 4)
+        val deep = { x: Double, y: Double -> x in xLo..xHi && abs(y - yC) > 2.0 }
+        val gnd = ground({ _, _ -> 0f }, deep = deep)
+        val b = NetRoadmap.build(gnd, 10)
+        assertTrue("pieces before ${b.stats.compBefore}", b.stats.compBefore >= 2)
+        assertEquals("pieces after: ${b.stats}", 1, b.stats.compAfter)
+        assertTrue(b.stats.repaired2 >= 1)
+        for (e in 0 until b.rm.edges) {
+            for ((p, q) in b.rm.points(e).zipWithNext()) assertTrue("edge $e segment not walkable", Climb.walkable(gnd.g, p, q, deep))
+            assertTrue("edge $e enters the water", samples(b.rm, e).none { deep(it[0], it[1]) })
+        }
+        // RM1 still encodes it (nodes in cell order, edges in node order)
+        assertEquals(b.rm.edges, ShippedNet.Roadmap.decode(b.rm.encode()).edges)
     }
 
     @Test fun rm1RoundTrip() {
