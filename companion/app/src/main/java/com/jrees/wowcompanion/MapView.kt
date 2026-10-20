@@ -4274,6 +4274,23 @@ class MapView(context: Context) : View(context) {
         if (why != shipWhyLast) { shipWhyLast = why; android.util.Log.i("WCMAP", "safepath net: quest $q none: $why - the older route") }
         return null
     }
+    // ---- LIVE AGGRO (the user, 2026-10-19: "the mobs that are randomly between me and where I am going"; LiveMobs, LiveDanger):
+    // this map's QuestieDB spawns handed to the live store in world yards (once a map / danger read), its snapshot for the route
+    private val shipLive = HashMap<Int, Set<Long>>()          // quest -> the point discs its kept way was planned with
+    private var liveSpawnKey = ""
+    private fun liveSnap(mapId: Int, r: PoiStore.Rect, mine: Int): LiveDanger.Snapshot? {
+        val key = "$mapId:${DangerStore.version}:$mine:${r.width}:${r.height}:${r.top}:${r.left}"
+        if (key != liveSpawnKey) {
+            liveSpawnKey = key
+            val ax = r.width; val ay = r.height
+            LiveMobs.shared.setSpawns(mapId, DangerStore.spawns(mapId).mapIndexedNotNull { i, s -> if (s.npc == 0) null else
+                LivePlace.SpawnPt(i, s.npc, r.top - s.y * ay, r.left - s.x * ax, s.minLv, s.maxLv, s.elite, mine == 0 || s.hostile and mine != 0) })
+        }
+        return LiveMobs.shared.snapshot(mapId, questsPlv).takeIf { !it.empty }
+    }
+    /** an aggro record arrived (CompanionHost): draw, so a new mob on the way is seen within the record's second */
+    fun onAggro() = invalidate()
+
     private fun shippedLeg(q: Int, route: CursorRoute.Route): Shipped? {
         val m = map ?: return null
         val r = rect ?: return null
@@ -4305,12 +4322,19 @@ class MapView(context: Context) : View(context) {
         // unless the new way is SafePathV2.HYSTERESIS shorter than the kept one's rest)
         val walkedOn = old != null && hypot(here[0] - old.atX, here[1] - old.atY) >= ShippedPins.REPLAN_YD
         val strayed = off > SafePathV2.OFF_ROUTE_YD
-        val due = old == null || strayed || old.stamp != stamp || walkedOn
+        // LIVE AGGRO (hook): the plates' discs; a NEW mob whose disc touches the way ahead forces a replan (no 30 yd / 10% rule)
+        val live = liveSnap(mapId, r, mine)
+        val forcedBy = if (old != null && live != null) LiveDanger.newOnRoute(listOf(here) + old.world.drop(1), live, shipLive[q] ?: emptySet(), goal) else null
+        val due = old == null || strayed || old.stamp != stamp || walkedOn || forcedBy != null
         val noneKey = "$stamp:${(goal[0] / SafePathV2.GOAL_MOVED_YD).toInt()}:${(goal[1] / SafePathV2.GOAL_MOVED_YD).toInt()}:" +
             "${(here[0] / ShippedRoute.ATTACH_STEP_YD / 6).toInt()}:${(here[1] / ShippedRoute.ATTACH_STEP_YD / 6).toInt()}"
         if (shipNone[q] == noneKey) return shipOff(q, shipSaid[q] ?: "no way on the shipped network")
-        if (due && now - (shipAt[q] ?: Long.MIN_VALUE / 2) >= SafePathV2.REPLAN_MS && shipPending.add(q)) {
+        if (due && now - (shipAt[q] ?: Long.MIN_VALUE / 2) >= (if (forcedBy != null) LiveDanger.FORCE_MS else SafePathV2.REPLAN_MS) && shipPending.add(q)) {
             shipAt[q] = now
+            shipLive[q] = live?.pointIds ?: emptySet()                 // LIVE AGGRO: the discs this plan knows
+            val forced = forcedBy != null
+            if (forced) android.util.Log.i("WCMAP", "safepath net: quest $q live: a new lv ${forcedBy!!.lv ?: "?"} mob (npc ${forcedBy.npc ?: "?"}, " +
+                "${forcedBy.how.name.lowercase()}) ${forcedBy.reach.toInt()} yd round (${forcedBy.x.toInt()},${forcedBy.y.toInt()}) touches the way: planned again")
             val toExit = route.kind == CursorRoute.Kind.EXIT
             val fine = dGridSnap.takeIf { g != null }
             val stale = got.second.stale
@@ -4325,7 +4349,7 @@ class MapView(context: Context) : View(context) {
                 val danger: ((Double, Double) -> Float)? = if (g == null) null else { x, y -> g.at((r.left - y) / ax, (r.top - x) / ay) }
                 val snapLog = java.util.Collections.synchronizedList(ArrayList<String>())
                 val res = ShippedRoute.plan(sec, ground, danger, here, goal, k, toExit, roadmap = ShippedRoute.roadmapOf(got.second.pack.roadmap, sec),
-                    attacher = ShippedSnap.attacher(fine) { snapLog.add(it) }, stitchGround = fine)
+                    attacher = ShippedSnap.attacher(fine) { snapLog.add(it) }, stitchGround = fine, live = live)
                 Triple(res, if (res.reached) ShippedPins.checkpoints(res.pts, ShippedPins.named(sec)) else null, snapLog.toList())
             }) { (res, leg, snapLog) ->
                 shipPending.remove(q)
@@ -4336,7 +4360,7 @@ class MapView(context: Context) : View(context) {
                     shipNone.remove(q)
                     // the hysteresis: a replan while on the kept way takes the new one only when it is that much shorter
                     val cur = shipLegs[q]
-                    val keep = cur != null && sameStamp && !ShippedPins.takeNew(keptYd, res.yd, strayed)
+                    val keep = cur != null && sameStamp && !ShippedPins.takeNew(keptYd, res.yd, strayed || forced)   // forced: the new way
                     shipLegs[q] = if (keep) ShipLeg(cur!!.leg, cur.gx, cur.gy, stamp, mapId, here[0], here[1], stale)
                                   else ShipLeg(leg, goal[0], goal[1], stamp, mapId, here[0], here[1], stale)
                     if (keep) android.util.Log.i("WCMAP", "safepath net: quest $q kept its way (${keptYd?.toInt()} yd left; the new " +

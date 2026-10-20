@@ -52,7 +52,9 @@ object ShippedRoute {
      *  [snapped] both ends snapped to a node (no long attach) */
     class Result(val pts: List<DoubleArray>, val reached: Boolean, val why: String, val yd: Double = length(pts),
                  val attachFromYd: Double = 0.0, val attachToYd: Double = 0.0, val capped: Boolean = false, val swims: Int = 0,
-                 val snapped: Boolean = false, val roadmapYd: Double = 0.0, val danger: Double = 0.0, val avoided: Double = 0.0) {
+                 val snapped: Boolean = false, val roadmapYd: Double = 0.0, val danger: Double = 0.0, val avoided: Double = 0.0,
+                 /** LIVE AGGRO: the live part of [danger] (k x the plates' discs along the way) */
+                 val live: Double = 0.0) {
         val bends get() = max(0, pts.size - 2)
     }
 
@@ -115,7 +117,11 @@ object ShippedRoute {
     fun plan(sec: ShippedNet.Section, ground: (Double, Double) -> Float, danger: ((Double, Double) -> Float)?, from: DoubleArray, to: DoubleArray,
              k: Double = DangerGrid.strength("high"), toExit: Boolean = false, attachMaxYd: Double = ATTACH_MAX_YD,
              goalFreeYd: Double = DangerGrid.GOAL_FREE_YD, roadmap: Roadmap? = roadmapOf(sec), attacher: Attacher = ShippedSnap.attacher(),
-             stitchGround: ShippedSnap.Ground? = null): Result {
+             stitchGround: ShippedSnap.Ground? = null, live: LiveDanger.Snapshot? = null): Result {
+        // LIVE AGGRO (LiveDanger): the plates' discs over the static danger, the spawns they show absent or hold taken off - a cost
+        // like the static danger (k x it a yard), never a wall; only over a character danger (none: the net's own shares, as before)
+        @Suppress("NAME_SHADOWING") val danger = LiveDanger.combine(danger, live)
+        val liveOn = live != null && !live.empty && danger != null
         var goal = to
         if (toExit) sec.net.exits.mapNotNull { x -> sec.net.nodes.firstOrNull { it.id == x.node } }.minByOrNull { hypot(it.wx - to[0], it.wy - to[1]) }
             ?.takeIf { hypot(it.wx - to[0], it.wy - to[1]) <= SafePath.EXIT_SNAP_YD }?.let { goal = doubleArrayOf(it.wx, it.wy) }
@@ -127,9 +133,14 @@ object ShippedRoute {
         if (round.pts.size < 2 || !round.reached) return round
         // THE DANGER TERM (the user's test20: "pathing me into hostile mobs"): the route's k x danger a yard ([dangerOf], the goal's free
         // yards none), and what the way round avoided against the way ignoring the danger - logged on the route's line
-        fun with(r: Result, d: Double, avoided: Double, extra: String = "") = Result(r.pts, true,
-            r.why + extra + "; danger ${d.toInt()} (avoided ${avoided.toInt()})", attachFromYd = r.attachFromYd, attachToYd = r.attachToYd,
-            capped = extra.isNotEmpty(), swims = r.swims, snapped = r.snapped, roadmapYd = r.roadmapYd, danger = d, avoided = avoided)
+        // the live part along the way, said as "live D (n mobs)" (the goal's free yards none)
+        val lz = if (liveOn) { x: Double, y: Double -> if (hypot(x - gx, y - gy) <= goalFreeYd) 0f else live!!.at(x, y) } else null
+        fun with(r: Result, d: Double, avoided: Double, extra: String = ""): Result {
+            val lv = if (lz == null) 0.0 else k * dangerOf(r.pts, lz)
+            return Result(r.pts, true, r.why + extra + "; danger ${d.toInt()} (avoided ${avoided.toInt()})" + (if (lz != null) "; " + live!!.words(lv) else ""),
+                attachFromYd = r.attachFromYd, attachToYd = r.attachToYd, capped = extra.isNotEmpty(), swims = r.swims, snapped = r.snapped,
+                roadmapYd = r.roadmapYd, danger = d, avoided = avoided, live = lv)
+        }
         if (k <= 0.0 || dz == null) return with(round, 0.0, 0.0)
         val dRound = k * dangerOf(round.pts, dz)
         val calm = g.search(ground, dz, from, goal, 0.0, attachMaxYd).takeIf { it.reached }

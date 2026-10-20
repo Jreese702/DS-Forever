@@ -17,7 +17,9 @@ object QuestieNpcs {
     /** one hostile spawn: on area [area]'s map at ([x], [y]) (0..1), levels [minLv]..[maxLv], [elite], hostile to [hostile]
      *  (TransportRoutes.ALLIANCE / HORDE bits), the creature's name [name] */
     class Spawn(val area: Int, val x: Float, val y: Float, val minLv: Int, val maxLv: Int, val elite: Boolean, val hostile: Int,
-                val name: String, val sub: String = "")
+                val name: String, val sub: String = "",
+                /** the creature's npc id (the live aggro layer snaps a plate to its npc's spawns; 0 unknown) */
+                val npc: Int = 0)
 
     /** every hostile creature's spawns in the toc at [toc] (QuestieDB_Forever.toc / _Camelot.toc) */
     fun read(toc: File): List<Spawn> = toc.inputStream().buffered(1 shl 16).use { read(it) }
@@ -75,7 +77,7 @@ object QuestieNpcs {
                     val x = (xy.getOrNull(0) as? Number)?.toFloat() ?: continue
                     val y = (xy.getOrNull(1) as? Number)?.toFloat() ?: continue
                     if (x < 0f || y < 0f) continue                    // QuestieDB's -1, -1: an instance spawn
-                    out.add(Spawn(area, x / 100f, y / 100f, minLv, maxLv, rank == 1 || rank == 2 || rank == 3, hostile, name, sub))
+                    out.add(Spawn(area, x / 100f, y / 100f, minLv, maxLv, rank == 1 || rank == 2 || rank == 3, hostile, name, sub, id))
                 }
             }
         }
@@ -103,7 +105,7 @@ object QuestieNpcs {
             for (dx in -1..1) for (dy in -1..1) cell[key(p[0] + dx * TOWN_YD, p[1] + dy * TOWN_YD)]?.forEach { (q, h) ->
                 if (Math.hypot(q[0] - p[0], q[1] - p[1]) <= TOWN_YD) { if (h == TransportRoutes.ALLIANCE) hostileToA++ else hostileToH++ } }
             if (hostileToA == hostileToH) s
-            else Spawn(s.area, s.x, s.y, s.minLv, s.maxLv, s.elite, if (hostileToA > hostileToH) TransportRoutes.ALLIANCE else TransportRoutes.HORDE, s.name, s.sub)
+            else Spawn(s.area, s.x, s.y, s.minLv, s.maxLv, s.elite, if (hostileToA > hostileToH) TransportRoutes.ALLIANCE else TransportRoutes.HORDE, s.name, s.sub, s.npc)
         }
     }
     const val TOWN_YD = 150.0
