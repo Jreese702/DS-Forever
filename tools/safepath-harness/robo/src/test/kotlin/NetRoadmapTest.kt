@@ -90,7 +90,7 @@ class NetRoadmapTest {
         }
     }
 
-    @Test fun connectivityRepairJoinsTwoCellsAcrossACauseway() {
+    @Test fun connectivityRepairChainsAcrossACauseway() {
         // a cell row of deep water across the whole patch, crossed only by a causeway one vertex wide: no node can stand on the
         // causeway (2 open steps), so the main pass leaves north and south apart; the repair's two-cell leg joins them through a node
         // on the causeway
