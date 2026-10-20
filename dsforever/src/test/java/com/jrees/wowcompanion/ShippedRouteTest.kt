@@ -252,7 +252,7 @@ class ShippedRouteTest {
                 if (minOf(a[0], b[0]) >= 120.0 && maxOf(a[0], b[0]) <= 280.0) ShippedRoute.Roadmap.Edge(e.a, e.b, 5.0) else e }) }
         val r = ShippedRoute.plan(none, flat, null, doubleArrayOf(200.0, 20.0), doubleArrayOf(200.0, 980.0), roadmap = rocky())
         assertTrue(r.why, r.reached)
-        assertTrue("off the rock band", r.pts.subList(2, r.pts.size - 2).all { it[0] !in 130.0..270.0 })
+        assertTrue("off the rock band", r.pts.filter { it[1] in 80.0..920.0 }.all { it[0] !in 130.0..270.0 })
     }
 
     @Test fun aRewalkWayIsNeverDrawnStraight() {

@@ -332,9 +332,10 @@ object ShippedRoute {
                         val id = nextVirtual--
                         pos[id] = q
                         val c = cost(w, k, withDanger)
-                        // (the cut walks straight to the way's ends; the way's own points on either side are kept by the way's arcs)
-                        arc(id, w.a, t * c, listOf(pos[w.a]!!)); arc(w.a, id, t * c, listOf(q))
-                        arc(id, w.b, (1 - t) * c, listOf(pos[w.b]!!)); arc(w.b, id, (1 - t) * c, listOf(q))
+                        // the cut walks the way's own points to either end (a walked roadmap edge, a way's bends: never straight across)
+                        val (before, after) = splitAt(listOf(pos[w.a]!!) + w.via, t * w.len)
+                        arc(id, w.a, t * c, before.reversed()); arc(w.a, id, t * c, before.drop(1) + listOf(q))
+                        arc(id, w.b, (1 - t) * c, after.ifEmpty { listOf(pos[w.b]!!) }); arc(w.b, id, (1 - t) * c, after.reversed().drop(1) + listOf(q))
                         for ((oid, ow, ot) in cuts) if (ow === w) { val oq = pos[oid]!!; arc(id, oid, abs(t - ot) * c, listOf(oq)); arc(oid, id, abs(t - ot) * c, listOf(q)) }
                         cuts.add(Triple(id, w, t))
                         id
@@ -440,6 +441,18 @@ object ShippedRoute {
         val joins = cands.filter { it.third.first <= v.lim }.take(ATTACH_CANDIDATES).mapNotNull { (w, t, b) ->
             leg.to(b.second)?.let { walk -> Join(null, w.index, t, b.second, walk.pts, walk.cost, walk.yd) } }
         Attach(joins, false, if (joins.isEmpty()) "no walk of ${v.lim.toInt()} yd or less reaches a way (walls, deep water)" else null)
+    }
+
+    /** [line] split [at] yards along it: the points before (its first point included, the cut not), the points after (its last
+     *  included, the cut not) */
+    internal fun splitAt(line: List<DoubleArray>, at: Double): Pair<List<DoubleArray>, List<DoubleArray>> {
+        var run = 0.0
+        for (i in 1 until line.size) {
+            val seg = hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1])
+            if (run + seg >= at) return line.subList(0, i) to line.subList(i, line.size).let { if (run + seg - at < 0.25) it.drop(1).ifEmpty { it } else it }
+            run += seg
+        }
+        return line.dropLast(1) to listOf(line.last())
     }
 
     /** an edge kind of NET1 v2: a way joining the net's pieces, or a piece to a cave's mouth (costed as a spur) */
