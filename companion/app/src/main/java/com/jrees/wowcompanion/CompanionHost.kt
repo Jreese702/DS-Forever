@@ -1522,6 +1522,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
     }
 
+    /** LIVE AGGRO: one aggro record into the live store (the learned radii read from the app's files first), the map drawn */
+    private var aggroOff: String? = null
+    private fun onAggro(r: AggroDoc.Record) {
+        AggroFit.init(java.io.File(filesDir, "aggro_pulls.json"))
+        LiveMobs.shared.onRecord(r)
+        val off = (r as? AggroDoc.Off)?.why
+        if (off != aggroOff && (off != null || r is AggroDoc.Full)) { aggroOff = off; Log.i("WCMAP", if (off != null) "aggro: off ($off): cleared" else "aggro: on") }
+        mapView.onAggro()
+    }
+
     private fun handleMessage(msg: JSONObject) {
         // the problem report's log: the document summarized (types and flags, never its words; names only to hide them)
         runCatching { DiagLog.doc(msg) }
@@ -1564,6 +1574,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             "pos" -> msg.optJSONObject("map")?.let {
                 mapView.updatePos(it, msg.optLong("_gt", -1L)); worldMapRoom.updatePos(it)
+                if (current) AggroDoc.fromPos(it)?.let { r -> onAggro(r) }      // LIVE AGGRO: the record riding the pos doc (map.ag)
                 if (current) mapView.learnNow()                     // the last place on a map before a crossing is the tick's, not a stale doc's
                 if (current) routePinTick()
                 // the background minimap step builds the player's own zone first (Map's nearest-first hook)
@@ -1576,6 +1587,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                         if (it.has(k)) cur.put(k, it.get(k))
                 }
             }
+            // LIVE AGGRO (AGGRO_DOC_CONTRACT_v1, Interact's Trail.lua): the record alone while still, the coverage, the acks
+            "aggro" -> if (current) AggroDoc.record(msg)?.let { onAggro(it) }
+            "aggrocov" -> if (current) AggroDoc.coverage(msg)?.let { c -> LiveMobs.shared.onCoverage(c)
+                Log.i("WCMAP", "aggro: coverage: plates ${c.maxd?.toInt() ?: "?"} yd, offscreen ${c.offscreen}, enemies ${c.enemies}, ${c.sp.size} spells, ${c.it.size} items") }
+            "aggroack" -> if (current) AggroDoc.ack(msg)?.let { a -> Log.i("WCMAP", "aggro: ack ${a.op} k ${a.k} s ${a.s} ${if (a.ok) "ok" else "refused ${a.why ?: ""}"}") }
             // QuestieDB's pins and spawn spots for one map (Quests' q21 pair; Map draws them)
             "qdbpins" -> { mapView.onQdbPins(msg); worldMapRoom.onQdbPins(msg) }
             "qdbnodes" -> { mapView.onQdbNodes(msg); worldMapRoom.onQdbNodes(msg) }
