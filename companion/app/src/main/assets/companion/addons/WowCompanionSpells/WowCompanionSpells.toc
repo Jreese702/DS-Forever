@@ -5,7 +5,7 @@
 ## Group: WowCompanion
 ## Notes: Feeds the Spellbook and Talents rooms on the Thor's bottom screen
 ## Author: DS Forever
-## Version: Set 189
+## Version: Set 190
 ## DefaultState: enabled
 ## Dependencies: WowCompanion
 ## SavedVariables: WowCompanionSpellsDB
