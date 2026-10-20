@@ -29,7 +29,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S = WC.S
 
-local HV = "hub11"          -- hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub12"          -- hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -448,7 +448,7 @@ local barN = 0
 -- guestack answer) RIGHT BEHIND the barcmd in the same flush. ORDER MATTERS: the app opens the room on the barcmd, then the answer
 -- finds it shown; an answer first would find no room and be freed at once (the app's refree rule). The app frees it too if the
 -- command did not open that room (a toggle closing it): the same rule.
-local HOLDS = { map = "home", chat = "chat", home = "bar", radial = "radial", sradial = "radial", pause = "radial" }   -- hub8: the spell radial, hub9: the pause wheel, the same guest
+local HOLDS = { map = "home", chat = "chat", home = "bar", radial = "radial", sradial = "radial", pause = "radial", smartor = "radial" }   -- hub8: the spell radial, hub9: the pause wheel, the same guest
 local function barCmd(k)
     barN = barN + 1
     WC.send(WC.encode({ type = "barcmd", k = k, n = barN, boot = BOOT, v = HV }))
@@ -466,7 +466,9 @@ for name, k in pairs({ WowCompanionBarLeft = "left", WowCompanionBarRight = "rig
                        -- hub8 (Spells, AGENT_LOG): the SPELL RADIAL -- put on a button from the Controller room's Extra tab
                        WowCompanionPadSpellRadial = "sradial",
                        -- hub9 (Spells, AGENT_LOG e17fb7b): the PAUSE wheel -- Start on plain Home (Spells' router, PadMap m37)
-                       WowCompanionPadPause = "pause" }) do
+                       WowCompanionPadPause = "pause",
+                       -- hub12: Smart buffs' OR row (PadMap m62): Y with none of the row's buffs up opens the app's wheel of them
+                       WowCompanionPadSmartyOr = "smartor" }) do
     local b = CreateFrame("Button", name, UIParent)
     b:RegisterForClicks("AnyUp", "AnyDown")
     b:SetScript("OnClick", function() barCmd(k) end)

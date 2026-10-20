@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m61"                -- bump on every change; m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m62"                -- bump on every change; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -470,6 +470,8 @@ function WC.collectPadMap()
     -- m59: X fishes while a fishing pole is in the main hand (the player's Fishing spell: id, name, icon); absent = X as it is
     doc.fish = OV.fish and { id = OV.fish.id, n = OV.fish.n, i = OV.fish.i } or nil
     -- m61: Smart Y's pick while it would act on a bare Y (out of combat, nothing targeted): id, name, icon, k = food / drink / both
+    -- m62 SMART BUFFS: the rows ({ ids }), the self-buffs offered ({ id, n, i, k }), the first unsatisfied row (at), the cell row
+    doc.sb = (OV.sbDoc and pcall(OV.sbDoc)) and OV.sbDocNow or nil
     doc.smarty = OV.smartyShown and { id = OV.smartyShown.id, n = OV.smartyShown.n, i = OV.smartyShown.i, k = OV.smartyShown.k } or nil
     doc.macros = macroCounts()
     doc.face = faceState()
@@ -1009,6 +1011,7 @@ local PRE = [=[
             smart = nil
         end
         local mb = "LeftButton"
+        self:SetAttribute("unit", nil)                                  -- m62: only Smart Y's buff casts on yourself
         if mode == "room" and self:GetAttribute("wc-room-dest") then
             dest = self:GetAttribute("wc-room-dest"); mb = self:GetAttribute("wc-key") or mb; fight = false
         end
@@ -1027,11 +1030,18 @@ local PRE = [=[
             self:SetAttribute("type", "spell")
             self:SetAttribute("spell", fish)
         elseif smart then
+            -- m62: food / water (an item), a buff row's one buff (a spell on yourself), or an OR row (the app's wheel, by Hub's button)
+            local st = self:GetAttribute("wc-smarty-t")
             self:SetAttribute("wc-kind", "smarty")
             self:SetAttribute("pressAndHoldAction", nil)
             self:SetAttribute("typerelease", nil)
-            self:SetAttribute("type", "item")
-            self:SetAttribute("item", smart)
+            if st == "spell" then
+                self:SetAttribute("type", "spell"); self:SetAttribute("spell", smart); self:SetAttribute("unit", "player")
+            elseif st == "or" then
+                self:SetAttribute("type", "macro"); self:SetAttribute("macrotext", "/click WowCompanionPadSmartyOr")
+            else
+                self:SetAttribute("type", "item"); self:SetAttribute("item", smart)
+            end
         elseif rb then
             self:SetAttribute("wc-kind", "roombar")
             self:SetAttribute("pressAndHoldAction", nil)
@@ -1213,7 +1223,7 @@ local function routerSetup(b, pos)
     pcall(SecureHandlerSetFrameRef, R.rearm, "wc-face-" .. pos, b)
     b:SetAttribute("wc-interact", pos == 5 or nil)                    -- X = Forever's Interact With Target (on an enemy: an attack)
     if pos == 5 then b:SetAttribute("wc-fish", OV.fish and OV.fish.n or nil) end      -- m59: Fishing while a pole is in the main hand
-    if pos == 6 then b:SetAttribute("wc-smarty", OV.smartVal) end                       -- m61: Smart Y's food / drink
+    if pos == 6 then b:SetAttribute("wc-smarty", OV.smartVal); b:SetAttribute("wc-smarty-t", OV.smartTyp) end   -- m61 / m62: Smart Y
     for p, o in pairs(face.buttons) do
         pcall(SecureHandlerSetFrameRef, b, "wc-face-" .. p, o)
         pcall(SecureHandlerSetFrameRef, o, "wc-face-" .. pos, b)
@@ -2529,7 +2539,8 @@ local CLEAN = (function()
     local function knownChars()
         local db, out = _G.WowCompanionSpellsDB, {}
         if type(db) ~= "table" then return out end
-        for _, t in ipairs({ db.faceBy, db.attackBy, db.dpad, db.dpadZL, db.binds, db.ccOff, db.cmdBy, db.genUse, db.formFightBy }) do
+        for _, t in ipairs({ db.faceBy, db.attackBy, db.dpad, db.dpadZL, db.binds, db.ccOff, db.cmdBy, db.genUse, db.formFightBy,
+                             db.smartBuffs }) do
             if type(t) == "table" then
                 for k in pairs(t) do if type(k) == "string" and k:find("-", 1, true) then out[k] = true end end
             end
@@ -3405,15 +3416,23 @@ function OV.smartApply()
     OV.smartPending = nil
     local pick = OV.smartPick(OV.smartState())
     local val = pick and ("item:" .. pick.id) or nil
-    local b = face.buttons[6]
-    if b then pcall(b.SetAttribute, b, "wc-smarty", val) end
-    local hasTarget = T(function() return UnitExists("target") end) == true
-    local shown = (pick and not hasTarget) and pick.id or nil
+    local typ = pick and "item" or nil
     OV.smarty = pick and { id = pick.id, n = pick.name, i = pick.icon, k = pick.kind } or nil
+    -- m62: food and water first; then the player's buff rows (their OR cells kept current either way)
+    local okb, bv, bt, be = pcall(OV.sbStep)
+    if not pick and okb and bv then
+        val, typ = bv, bt
+        OV.smarty = { id = be.id, n = be.n, i = be.i, k = bt == "or" and "or" or "buff" }
+    end
+    local b = face.buttons[6]
+    if b then pcall(b.SetAttribute, b, "wc-smarty", val); pcall(b.SetAttribute, b, "wc-smarty-t", typ) end
+    OV.smartTyp = typ
+    local hasTarget = T(function() return UnitExists("target") end) == true
+    local shown = (OV.smarty and not hasTarget) and (OV.smarty.k .. OV.smarty.id) or nil
     OV.smartyShown = shown and OV.smarty or nil
     if val ~= OV.smartVal or shown ~= OV.smartShownId then
         if val ~= OV.smartVal then
-            pcall(function() WC.send(WC.encode({ type = "cap", padmap = PV, smarty = pick and (pick.kind .. " " .. pick.id) or "off" })) end)
+            pcall(function() WC.send(WC.encode({ type = "cap", padmap = PV, smarty = OV.smarty and (OV.smarty.k .. " " .. OV.smarty.id) or "off" })) end)
         end
         OV.smartVal, OV.smartShownId = val, shown
         pcall(emit, true); WC.push()
@@ -3433,6 +3452,213 @@ OV.smartF:SetScript("OnEvent", function(_, e, unit)
     OV.smartSoon = true
     C_Timer.After(0.3, function() OV.smartSoon = nil; pcall(OV.smartApply) end)
 end)
+-- m62 SMART BUFFS (the user: "this setting will need its own section in the settings so taht I can also layer in smart buffs. I ant to
+-- basically be able to set a buff priority following water and food ... logic rows, with the bottom row being an Add button ... on a
+-- single row I need to be able to add an "or" which would basically open a radial menu for those selected buffs and as long as one is
+-- up out of combat that line of logic is satisfied"; picks: an OR row with none up opens a radial to choose, food / water fixed at the
+-- top, yourself only). Per character (name-realm): WowCompanionSpellsDB.smartBuffs[who].rows = { { ids = { spell id, ... } }, ... },
+-- in priority order. Y (the same gate as Smart Y's food: out of combat, nothing targeted, nothing to interact with) acts on the FIRST
+-- unsatisfied row after food and water: one buff -> cast it on yourself; an OR row with none up -> /click WowCompanionPadSmartyOr (Hub's
+-- barcmd "smartor": the app opens its wheel of the row's buffs; a pick taps that buff's cast cell on the "gamemenu" row). A buff is up
+-- when an aura of its name is on the player; a weapon imbue when the main hand has a temporary enchant (GetWeaponEnchantInfo: the game
+-- does not say which). The list offered: the character's own learned self-buffs from SB_IDS, by name (any rank), cast by name (the
+-- best rank known). THE PAD IS FULL (54 of 54 for a character with a reagent bag), so Smart buffs rides Spells' own secure row
+-- "gamemenu" (Radial.lua: cols 0-5 the Game Menu's, as before): cols 8-23 select a row (fresh 2 s), 24 remove it, 25 / 26 move it
+-- up / down, 27 add a row, 28 add an "or" to the selected row, 29 take a buff out of it (27-29: the spell follows as Book's two-tap
+-- spell number, WC.smartYWants / WC.smartYSpell); cols 30-39 are the OR row's cast cells (type spell, unit player, set out of combat). Nothing saved but our own table; no macro, no binding, no bar write, no CVar.
+OV.SB_IDS = {
+    -- Paladin: auras, blessings (on yourself), seals, Righteous Fury
+    465, 7294, 19746, 19876, 19888, 19891, 20218, 19740, 19742, 20217, 1038, 19977, 20911, 21084, 21082, 20165, 20166, 20164, 20375,
+    25780,
+    -- Shaman: Lightning Shield; the weapon imbues
+    324, 8017, 8024, 8033, 8232,
+    -- Mage: Arcane Intellect, the armors, Dampen / Amplify Magic
+    1459, 168, 7302, 6117, 604, 1008,
+    -- Priest: Fortitude, Inner Fire, Divine Spirit, Shadow Protection, Fear Ward, Shadowform
+    1243, 588, 14752, 976, 6346, 15473,
+    -- Druid: Mark of the Wild, Thorns, Omen of Clarity
+    1126, 467, 16864,
+    -- Warlock: Demon Skin / Armor
+    687, 706,
+    -- Hunter: the aspects, Trueshot Aura
+    13165, 13163, 5118, 13159, 20043, 13161, 19506,
+    -- Warrior: Battle Shout
+    6673,
+}
+OV.SB_IMBUE = { [8017] = true, [8024] = true, [8033] = true, [8232] = true }
+OV.SB_SEL0, OV.SB_FIRST_CAST, OV.SB_OPS = 8, 30, { remove = 24, up = 25, down = 26, add = 27, addor = 28, out = 29 }
+function OV.sbName(id)
+    return T(function() return (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)) or (GetSpellInfo(id)) end)
+end
+function OV.sbdb()
+    if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+    local db = _G.WowCompanionSpellsDB
+    if type(db.smartBuffs) ~= "table" then db.smartBuffs = {} end
+    local k = whoKey()
+    if not k then return { rows = {} } end
+    if type(db.smartBuffs[k]) ~= "table" then db.smartBuffs[k] = { rows = {} } end
+    if type(db.smartBuffs[k].rows) ~= "table" then db.smartBuffs[k].rows = {} end
+    return db.smartBuffs[k]
+end
+-- the self-buffs this character knows (the book's spells, by name): { id, n, i, k = "aura" | "imbue" }, SB_IDS' order; byName for checks
+function OV.sbKnown()
+    local names = {}
+    local ok, list = pcall(function() return type(WC.spellsBindableList) == "function" and WC.spellsBindableList() or {} end)
+    for _, e in ipairs(ok and list or {}) do local n = e.id and OV.sbName(e.id); if n then names[n] = true end end
+    local out, byName = {}, {}
+    for _, id in ipairs(OV.SB_IDS) do
+        local n = OV.sbName(id)
+        if n and names[n] and not byName[n] then
+            local i = T(function() return (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(id)) or GetSpellTexture(id) end)
+            local e = { id = id, n = n, i = type(i) == "number" and i or 0, k = OV.SB_IMBUE[id] and "imbue" or "aura" }
+            out[#out + 1] = e; byName[n] = e
+        end
+    end
+    return out, byName
+end
+-- the player's helpful aura names now
+function OV.sbAuras()
+    local up = {}
+    for i = 1, 40 do
+        local a = T(function() return C_UnitAuras and C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL") end)
+        local an = type(a) == "table" and a.name or T(function() return (UnitBuff("player", i)) end)
+        if type(an) ~= "string" then break end
+        up[an] = true
+    end
+    return up
+end
+-- SB-EVAL-BEGIN (pure: tools/test_smarty.py) rows = { { ids } }, byName = known buffs by name, nameOf(id), auras = names up, mh = main hand
+-- enchanted; -> the first unsatisfied row (its index and its known members), or nil when every row is satisfied
+OV.sbFirst = function(rows, byName, nameOf, auras, mh)
+    for r, row in ipairs(rows or {}) do
+        local members, up = {}, false
+        for _, id in ipairs(row.ids or {}) do
+            local n = nameOf(id)
+            local e = n and byName[n]
+            if e then
+                members[#members + 1] = e
+                if (e.k == "imbue" and mh) or (e.k ~= "imbue" and auras[n]) then up = true end
+            end
+        end
+        if #members > 0 and not up then return r, members end
+    end
+    return nil
+end
+-- SB-EVAL-END
+-- the OR row's cast cells (col -> spell name), as set out of combat; the doc for the app's wheel
+OV.sbCells, OV.sbOrSig = {}, nil
+function OV.sbCellInit(btn, col)
+    local n = col >= OV.SB_FIRST_CAST and OV.sbCells[col] or nil
+    btn:SetAttribute("type", n and "spell" or nil)
+    btn:SetAttribute("spell", n)
+    btn:SetAttribute("unit", n and "player" or nil)
+end
+function OV.sbOnCell(col)
+    if col >= OV.SB_FIRST_CAST then
+        WC.send(WC.encode({ type = "smartoruse", v = PV, col = col, n = OV.sbCells[col] })); WC.push()
+        C_Timer.After(0.5, function() pcall(OV.smartApply) end)
+        return
+    end
+    if col >= OV.SB_SEL0 then OV.sbOp(col) end
+end
+WC.smartyCellInit, WC.smartyCell = OV.sbCellInit, OV.sbOnCell     -- Radial.lua's "gamemenu" row hands its cols 6-39 here
+function OV.sbBuild()
+    if inCombat() or type(WC.gameMenuRowBuild) ~= "function" then return false end
+    local ok, row = pcall(WC.gameMenuRowBuild)
+    OV.sbRow = ok and type(row) == "number" and row or nil
+    return OV.sbRow ~= nil
+end
+function OV.sbAck(op, ok, why) WC.send(WC.encode({ type = "smartyack", v = PV, op = op, ok = ok, why = why })); WC.push() end
+-- an op column from the app (no game action): a row select, or an op on the selected row, or the mode for the spell that follows
+function OV.sbOp(col)
+    local rows, now = OV.sbdb().rows, GetTime()
+    if col < OV.SB_OPS.remove then OV.sbSel = { row = col - OV.SB_SEL0 + 1, at = now } return end
+    local sel = OV.sbSel and now - OV.sbSel.at <= 2 and OV.sbSel.row or nil
+    OV.sbSel = nil
+    if col == OV.SB_OPS.add then OV.sbPick = { op = "add", at = now } return end
+    if not sel or not rows[sel] then OV.sbAck("row", false, "no row picked") return end
+    if col == OV.SB_OPS.remove then table.remove(rows, sel)
+    elseif col == OV.SB_OPS.up and sel > 1 then rows[sel], rows[sel - 1] = rows[sel - 1], rows[sel]
+    elseif col == OV.SB_OPS.down and sel < #rows then rows[sel], rows[sel + 1] = rows[sel + 1], rows[sel]
+    elseif col == OV.SB_OPS.addor or col == OV.SB_OPS.out then
+        OV.sbPick = { op = col == OV.SB_OPS.addor and "or" or "out", row = sel, at = now } return
+    else OV.sbAck("row", false, "nothing to do") return end
+    OV.sbAck(col == OV.SB_OPS.remove and "remove" or "move", true)
+    pcall(OV.smartApply); pcall(emit, true); WC.push()
+end
+WC.smartYWants = function() return OV.sbPick ~= nil and GetTime() - OV.sbPick.at <= 2 end
+WC.smartYSpell = function(id)
+    local p = OV.sbPick
+    OV.sbPick = nil
+    if not p then return end
+    local rows = OV.sbdb().rows
+    local _, byName = OV.sbKnown()
+    local n = OV.sbName(id)
+    local e = n and byName[n]
+    if not e then OV.sbAck(p.op, false, "not a self-buff this character knows") return end
+    if p.op == "add" then
+        if #rows >= 16 then OV.sbAck("add", false, "16 rows at most") return end
+        rows[#rows + 1] = { ids = { e.id } }
+    else
+        local row = rows[p.row]
+        if not row then OV.sbAck(p.op, false, "the row is gone") return end
+        local at
+        for k, x in ipairs(row.ids) do if OV.sbName(x) == n then at = k end end
+        if p.op == "or" then
+            if at then OV.sbAck("or", false, "already on the row") return end
+            if #row.ids >= 10 then OV.sbAck("or", false, "10 on a row at most") return end
+            row.ids[#row.ids + 1] = e.id
+        else
+            if not at then OV.sbAck("out", false, "not on the row") return end
+            table.remove(row.ids, at)
+            if #row.ids == 0 then table.remove(rows, p.row) end
+        end
+    end
+    OV.sbAck(p.op, true)
+    pcall(OV.smartApply); pcall(emit, true); WC.push()
+end
+-- the buff step of Smart Y (food / water come first): -> value, type ("spell" / "or"), the shown entry; sets the OR cells (out of combat)
+function OV.sbStep()
+    local known, byName = OV.sbKnown()
+    OV.sbList = known
+    local mh = T(function() return (GetWeaponEnchantInfo()) end) == true
+    local r, members = OV.sbFirst(OV.sbdb().rows, byName, OV.sbName, OV.sbAuras(), mh)
+    OV.sbAt = r
+    local cells, items, sig = {}, {}, {}
+    if r and #members > 1 then
+        for k, e in ipairs(members) do
+            local col = OV.SB_FIRST_CAST + k - 1
+            if col <= 39 then
+                cells[col] = e.n
+                items[#items + 1] = { id = e.id, n = e.n, i = e.i, col = col, s = k, c = 1 }
+                sig[#sig + 1] = col .. "=" .. e.n
+            end
+        end
+    end
+    local s = table.concat(sig, ",")
+    if s ~= OV.sbOrSig then
+        OV.sbCells = cells
+        if OV.sbBuild() then OV.sbOrSig = s end
+        WC.send(WC.encode({ type = "smartor", v = PV, r = { row = "gamemenu", pad = OV.sbRow ~= nil, items = items } }))
+    end
+    if not r then return nil end
+    if #members == 1 then return members[1].n, "spell", members[1] end
+    return "or", "or", members[1]
+end
+OV.sbF = CreateFrame("Frame")
+for _, e in ipairs({ "UNIT_INVENTORY_CHANGED", "SPELLS_CHANGED", "PLAYER_LOGIN" }) do pcall(function() OV.sbF:RegisterEvent(e) end) end
+OV.sbF:SetScript("OnEvent", function(_, e, unit)
+    if e == "UNIT_INVENTORY_CHANGED" and unit ~= "player" then return end
+    if e == "PLAYER_LOGIN" then C_Timer.After(1, function() pcall(OV.sbBuild) end) end
+    C_Timer.After(0.3, function() pcall(OV.smartApply) end)
+end)
+function OV.sbDoc()
+    local list = OV.sbList or OV.sbKnown()
+    local rows = {}
+    for _, row in ipairs(OV.sbdb().rows) do rows[#rows + 1] = { ids = row.ids } end
+    OV.sbDocNow = { rows = rows, list = list, at = OV.sbAt, row = "gamemenu", pad = OV.sbRow ~= nil,
+                    sel0 = OV.SB_SEL0, ops = OV.SB_OPS }
+end
 -- m33: the bags and the Mount Journal change the Extra tab's lists: a doc soon (no router work for these)
 local fx = CreateFrame("Frame")
 for _, e in ipairs({ "BAG_UPDATE_DELAYED", "NEW_MOUNT_ADDED", "MOUNT_JOURNAL_USABILITY_CHANGED" }) do pcall(function() fx:RegisterEvent(e) end) end

@@ -18,7 +18,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local RV = "r15"                -- bump on every change
+local RV = "r16"                -- bump on every change; r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
 local ROW, CELLS = "radial", 24 -- the secure pad row: 24 cells = 3 pages of 8
 local PLAYER_BAGS = { 0, 1, 2, 3, 4 }
 local QUARANTINE = 30           -- seconds a freed column stays unused (as the pad's own columns)
@@ -1015,11 +1015,26 @@ local function gameMenuRow()
         end
     end
     local function cellInit(btn, col)
+        -- r16: the row's cells past the Game Menu's six are Smart buffs' (PadMap m62; the pad is full: 54 of 54)
+        if col >= 6 then
+            if type(WC.smartyCellInit) == "function" then pcall(WC.smartyCellInit, btn, col)
+            else btn:SetAttribute("type", nil) end
+            return
+        end
         local c = CELLS[col]
         btn:SetAttribute("type", (c and c[2]) and "macro" or nil)
         btn:SetAttribute("macrotext", c and c[2] or nil)
     end
-    pcall(pad.secureRow, "gamemenu", 6, cellInit, function(col) pcall(onCell, col) end, { onPress = true })
+    local function onAny(col)
+        if col >= 6 then if type(WC.smartyCell) == "function" then pcall(WC.smartyCell, col) end return end
+        pcall(onCell, col)
+    end
+    -- the Game Menu's cells 0-5 exactly as before; Smart buffs rebuilds the row (out of combat) when its cast cells change
+    WC.gameMenuRowBuild = function()
+        local ok, row = pcall(pad.secureRow, "gamemenu", 40, cellInit, onAny, { onPress = true })
+        return ok and row or nil
+    end
+    WC.gameMenuRowBuild()
     local f = CreateFrame("Frame")
     for _, e in ipairs({ "PLAYER_CAMPING", "PLAYER_QUITING", "LOGOUT_CANCEL", "PLAYER_ENTERING_WORLD", "UI_ERROR_MESSAGE" }) do
         pcall(function() f:RegisterEvent(e) end)
