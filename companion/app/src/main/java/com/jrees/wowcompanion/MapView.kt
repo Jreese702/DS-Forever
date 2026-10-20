@@ -2449,8 +2449,49 @@ class MapView(context: Context) : View(context) {
         corpseX = c?.optDouble("x", Double.NaN) ?: Double.NaN
         corpseY = c?.optDouble("y", Double.NaN) ?: Double.NaN
         if (corpseX.isNaN() || corpseY.isNaN()) { corpseX = Double.NaN; corpseY = Double.NaN }
+        // THE CORPSE RUN (CorpseRoute): alive again, or the corpse gone off this map - its leg dropped at once, every store under its key
+        if (corpseRun.see(ghost, corpseX, corpseY)) dropCorpseLeg()
     }
     private fun corpseKnown() = ghost && !corpseX.isNaN()
+    // ---- THE CORPSE RUN (the user, 2026-10-20: "when im dead I want the absolute quickest path back to my body to show"; CorpseRoute):
+    // while a ghost with the corpse on this map (Quest tracking SafePath), the focused quest's machinery plans a leg from the player to
+    // the corpse under CorpseRoute.KEY - no danger, no live aggro, no detour cap, no transports, the ground's walls kept. The red rim
+    // arrow and the game's pin (routePin) follow its next checkpoint; the leg is dropped the moment the player is alive again
+    private val corpseRun = CorpseRoute.Run()
+    private fun corpseLeg(): List<DoubleArray>? {
+        if (Settings.questTracking != "safepath" || !corpseOnMap()) { corpseRun.leg = null; return null }
+        val m = map ?: return null
+        if (m.optDouble("x", Double.NaN).isNaN() || m.optDouble("y", Double.NaN).isNaN()) { corpseRun.leg = null; return null }
+        val route = CursorRoute.Route(CursorRoute.Kind.GOAL, corpseX, corpseY, "your corpse")
+        val q = CorpseRoute.KEY
+        // the network's leg (the shipped network, else the draft) and the grid's (the only one with drops and open water), both planned;
+        // the grid's followed when clearly shorter (CorpseRoute.pick); the grid's clear straight line (no wall, no cliff) wins outright
+        val shipped = shippedLeg(q, route, ghost = true)
+        val net = shipped?.leg ?: (if (shipped == null) netLeg(q, route, ghost = true) else null)
+        val grid = gridLeg(q, route, ghost = true)
+        val gridStraight = grid == null && dangerLegs[q]?.let { it.pts.size == 2 && hypot((it.tx - corpseX) * (rect?.width ?: 1.0),
+            (it.ty - corpseY) * (rect?.height ?: 1.0)) <= 20.0 } == true
+        val ax = rect?.width ?: 1.0; val ay = rect?.height ?: 1.0
+        val src = if (gridStraight) CorpseRoute.Src.GRID
+            else CorpseRoute.pick(net?.let { DangerGrid.yards(it, ax, ay) }, grid?.let { DangerGrid.yards(it, ax, ay) }, corpseSrc)
+        if (src != null && src != corpseSrc) android.util.Log.i("WCMAP", "safepath ghost: following the ${if (src == CorpseRoute.Src.GRID)
+            "grid's leg (drops, water${if (gridStraight) ", straight" else ""})" else "network's leg"}")
+        corpseSrc = src ?: corpseSrc
+        val leg = when (src) { CorpseRoute.Src.GRID -> grid; CorpseRoute.Src.NET -> net; null -> null }
+        corpseRun.leg = leg
+        return leg
+    }
+    private var corpseSrc: CorpseRoute.Src? = null
+    private fun dropCorpseLeg() {
+        val q = CorpseRoute.KEY
+        shipLegs.remove(q); shipAt.remove(q); shipNone.remove(q); shipSaid.remove(q); shipLive.remove(q)
+        netLegs.remove(q); netSaid.remove(q); dangerLegs.remove(q)
+        corpseRun.leg = null; corpseSrc = null
+        android.util.Log.i("WCMAP", "safepath ghost: alive again (or the corpse off this map): the corpse leg dropped")
+        invalidate()
+    }
+    /** a plan for the corpse leg landed after the player was alive again: thrown away */
+    private fun corpseStale(q: Int) = q == CorpseRoute.KEY && !corpseOnMap()
     private fun corpseOnMap() = corpseKnown() && corpseX in 0.0..1.0 && corpseY in 0.0..1.0
 
     /** the game's gravestone at ([x], [y]); a drawn stand-in until the picture is on the device */
@@ -3954,6 +3995,14 @@ class MapView(context: Context) : View(context) {
         if (Settings.questTracking == "polestar") return none("Quest tracking is Polestar")      // Polestar draws its own arrow (b-route-polestar)
         if (Settings.questTracking == "questtrail") return none("Quest tracking is QuestTrail")  // QuestTrail super-tracks its own pick (b-route-questtrail)
         if (Settings.questTracking == "vanilla") return none("Quest tracking is the game's own") // the game's own way: its super-track left alone (test49)
+        // THE CORPSE RUN (CorpseRoute): while a ghost with the corpse on this map, the pin / compass / world marker follow the corpse
+        // leg's next checkpoint (the corpse itself when the leg is straight)
+        if (m.optInt("onTaxi", 0) != 1 && corpseOnMap() && !m.optDouble("x", Double.NaN).isNaN() && !m.optDouble("y", Double.NaN).isNaN()) {
+            val leg = corpseLeg()
+            pinWhy = if (corpseRun.bent && leg != null) "corpse: checkpoint 1 of ${leg.size - 2} on the way to your corpse (danger off)"
+                else "corpse: straight to your corpse"
+            return corpseRun.next(corpseX, corpseY)
+        }
         if (focusQid <= 0) return none(if (focusIsDefault()) "no game focus (the app's default focus only)" else "no focused quest")
         if (m.optInt("onTaxi", 0) == 1) return none("in flight")
         val r = routeFor(focusQid) ?: return none("no route for quest $focusQid")
@@ -4046,7 +4095,8 @@ class MapView(context: Context) : View(context) {
         val bl = if (placesFor == r.continent) places else null
         Roads.of(mapId)                                             // asked for on the route thread when not in memory
         val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}:${tg != null}:${Terrain.Walked.count() / 40}:" +
-            "${Roads.version}:${Roads.files.version}:${Terrain.files.version}:${Terrain.buildings.version}:${bl?.size}:${SafePath.waters.version}"
+            "${Roads.version}:${Roads.files.version}:${Terrain.files.version}:${Terrain.buildings.version}:${bl?.size}:${SafePath.waters.version}:" +
+            "${Terrain.heights.version}"
         if (key != dGridKey) {
             dGridKey = key
             val filesDir = context.filesDir
@@ -4112,7 +4162,24 @@ class MapView(context: Context) : View(context) {
             // the shipped network's snap: the same dry ground at the spot itself, the water per vertex, the rooms' own outlines
             val snap = ShippedSnap.Ground({ wx, wy -> legAt((r.left - wy) / r.width, (r.top - wx) / r.height, wx, wy, false) }, wg,
                 if (foot.isEmpty()) null else { wx, wy -> foot.any { it.holds(wx, wy) } })
-            val g = if (sp.isEmpty() && tg == null && foot.isEmpty()) null else DangerGrid.build(sp, mine, plv, r.width, r.height, ground)
+            // THE GHOST'S GROUND (CorpseRoute: walk on water, drops): read per cell only when a ghost's leg asks (DangerGrid.GhostSrc)
+            val hg = Terrain.heightsOf(mapId)
+            val ghostSrc = DangerGrid.GhostSrc({ x, y ->
+                // world X north (top - y), world Y west (left - x): ShippedRoute's / the snap's own convention
+                val wx = r.top - y * r.height; val wy = r.left - x * r.width
+                val depth = wg?.at(wx, wy) ?: Float.NaN
+                val slope = tg?.at(wx, wy) ?: Terrain.NO_DATA
+                val built = maxOf(Buildings.cover(foot, x, y, cellX, cellY, r), bg?.at(wx, wy)?.takeIf { it != Terrain.NO_DATA }?.let { it / 9f } ?: 0f)
+                when {
+                    !depth.isNaN() && depth != SafePath.Water.BRIDGE && depth >= ShippedSnap.DEEP_LAVA -> Terrain.WALL     // lava (or a lake's deepest)
+                    built >= Buildings.WALL_COVER -> Terrain.WALL                                                            // a building
+                    !depth.isNaN() && depth != SafePath.Water.BRIDGE -> 1f                                                   // walked on
+                    Terrain.legFactor(slope) >= Terrain.WALL -> DangerGrid.CLIFF                                             // dropped down
+                    else -> legAt(x, y, wx, wy, false)
+                }
+            }, hg?.let { h -> { x, y -> h.at(r.top - y * r.height, r.left - x * r.width) } },
+                wg?.let { w -> { x, y -> val d = w.at(r.top - y * r.height, r.left - x * r.width); !d.isNaN() && d != SafePath.Water.BRIDGE } })
+            val g = if (sp.isEmpty() && tg == null && foot.isEmpty()) null else DangerGrid.build(sp, mine, plv, r.width, r.height, ground).withGhost(ghostSrc)
             val log = "terrain: grid for map $mapId ${if (tg != null) "present" else "missing"}; " +
                 "${foot.size} buildings as walls; ${Terrain.Walked.count()} walked cells kept" +
                 (Roads.of(mapId)?.let { "; roads: ${Roads.roadCells(mapId)} road cells" } ?: "")
@@ -4134,8 +4201,14 @@ class MapView(context: Context) : View(context) {
         shippedLeg(q, route)?.let { return it.leg }
         // the internal fallback (no shipped network here, or its attach legs too long; the why logged): the device's own draft, the grid's
         netLeg(q, route)?.let { return it }
-        val k = DangerGrid.strength(Settings.avoidDanger)
-        if (k <= 0.0) return null
+        return gridLeg(q, route)
+    }
+
+    /** quest [q]'s leg on the danger grid itself (no shipped network, no draft); [ghost]: the corpse run's (CorpseRoute: the ground's
+     *  walls only, danger never counted) */
+    private fun gridLeg(q: Int, route: CursorRoute.Route, ghost: Boolean = false): List<DoubleArray>? {
+        val k = if (ghost) CorpseRoute.K else DangerGrid.strength(Settings.avoidDanger)
+        if (k <= 0.0 && !ghost) return null
         val g = dangerGrid() ?: return null
         val m = map ?: return null
         val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
@@ -4156,9 +4229,11 @@ class MapView(context: Context) : View(context) {
         // still ahead is shown (or the straight line)
         if (legPending.add(q)) {
             val strength = Settings.avoidDanger
-            RouteWork.run({ planLeg(q, g, here, to, k, if (sameGoal) old else null, strength) }) { leg ->
+            val mapId = map?.optInt("mapID", 0) ?: 0
+            RouteWork.run({ planLeg(q, g, here, to, k, if (sameGoal) old else null, strength, if (ghost) mapId else null) }) { leg ->
                 legPending.remove(q)
                 if (dGrid !== g) return@run                           // the grid changed meanwhile: planned again on the next frame
+                if (corpseStale(q)) return@run                        // alive again meanwhile
                 dangerLegs[q] = leg.first
                 leg.second?.let { android.util.Log.i("WCMAP", it) }
                 invalidate()
@@ -4272,7 +4347,7 @@ class MapView(context: Context) : View(context) {
     private var shipListen = false
     private fun shipOff(q: Int, why: String): Shipped? {
         if (q == focusQid) { shipShown = false; shipPinLeg = null }
-        if (why != shipWhyLast) { shipWhyLast = why; android.util.Log.i("WCMAP", "safepath net: quest $q none: $why - the older route") }
+        if (why != shipWhyLast) { shipWhyLast = why; android.util.Log.i("WCMAP", "safepath net: ${if (q == CorpseRoute.KEY) "corpse" else "quest $q"} none: $why - the older route") }
         return null
     }
     // ---- LIVE AGGRO (the user, 2026-10-19: "the mobs that are randomly between me and where I am going"; LiveMobs, LiveDanger):
@@ -4292,7 +4367,8 @@ class MapView(context: Context) : View(context) {
     /** an aggro record arrived (CompanionHost): draw, so a new mob on the way is seen within the record's second */
     fun onAggro() = invalidate()
 
-    private fun shippedLeg(q: Int, route: CursorRoute.Route): Shipped? {
+    /** [ghost]: the corpse run's leg (CorpseRoute: no danger, no live aggro, no detour cap, no transports) */
+    private fun shippedLeg(q: Int, route: CursorRoute.Route, ghost: Boolean = false): Shipped? {
         val m = map ?: return null
         val r = rect ?: return null
         if (!r.valid || m.optInt("onTaxi", 0) == 1) return null
@@ -4311,8 +4387,8 @@ class MapView(context: Context) : View(context) {
         fun onMap(w: DoubleArray) = doubleArrayOf((r.left - w[1]) / ax, (r.top - w[0]) / ay)
         val here = world(px, py); val goal = world(route.x, route.y)
         val g = dangerGrid()
-        val k = DangerGrid.strength(Settings.avoidDanger)
-        val stamp = "$mapId:${System.identityHashCode(sec)}:${System.identityHashCode(g)}:$k:$mine"
+        val k = if (ghost) CorpseRoute.K else DangerGrid.strength(Settings.avoidDanger)
+        val stamp = "$mapId:${System.identityHashCode(sec)}:${System.identityHashCode(g)}:$k:$mine" + (if (ghost) ":ghost" else "")
         // the kept way, its passed checkpoints dropped for good (test54: never sent back to one already walked past)
         val old = shipLegs[q]?.takeIf { it.map == mapId && hypot(it.gx - goal[0], it.gy - goal[1]) <= SafePathV2.GOAL_MOVED_YD }
             ?.let { o -> val l = ShippedPins.dropPassed(o.leg, here, ::onMap, ax, ay); if (l === o.leg) o else o.with(l).also { shipLegs[q] = it } }
@@ -4324,7 +4400,7 @@ class MapView(context: Context) : View(context) {
         val walkedOn = old != null && hypot(here[0] - old.atX, here[1] - old.atY) >= ShippedPins.REPLAN_YD
         val strayed = off > SafePathV2.OFF_ROUTE_YD
         // LIVE AGGRO (hook): the plates' discs; a NEW mob whose disc touches the way ahead forces a replan (no 30 yd / 10% rule)
-        val live = liveSnap(mapId, r, mine)
+        val live = if (ghost) null else liveSnap(mapId, r, mine)      // a ghost: no live aggro either
         val forcedBy = if (old != null && live != null) LiveDanger.newOnRoute(listOf(here) + old.world.drop(1), live, shipLive[q] ?: emptySet(), goal) else null
         val due = old == null || strayed || old.stamp != stamp || walkedOn || forcedBy != null
         val noneKey = "$stamp:${(goal[0] / SafePathV2.GOAL_MOVED_YD).toInt()}:${(goal[1] / SafePathV2.GOAL_MOVED_YD).toInt()}:" +
@@ -4349,14 +4425,19 @@ class MapView(context: Context) : View(context) {
                 val ground = fine?.asCost ?: coarse
                 val danger: ((Double, Double) -> Float)? = if (g == null) null else { x, y -> g.at((r.left - y) / ax, (r.top - x) / ay) }
                 val snapLog = java.util.Collections.synchronizedList(ArrayList<String>())
-                val res = ShippedRoute.plan(sec, ground, danger, here, goal, k, toExit, roadmap = ShippedRoute.roadmapOf(got.second.pack.roadmap, sec),
-                    attacher = ShippedSnap.attacher(fine) { snapLog.add(it) }, stitchGround = fine, live = live)
+                val roadmap = ShippedRoute.roadmapOf(got.second.pack.roadmap, sec)
+                val attacher = ShippedSnap.attacher(fine) { snapLog.add(it) }
+                val ghostCoarse: (Double, Double) -> Float = if (g == null) { _, _ -> 1f } else { x, y -> g.ghostGround((r.left - y) / ax, (r.top - x) / ay) }
+                val res = if (ghost) CorpseRoute.plan(sec, ghostCoarse, here, goal, roadmap, fine) { snapLog.add(it) }
+                    else ShippedRoute.plan(sec, ground, danger, here, goal, k, toExit, roadmap = roadmap, attacher = attacher, stitchGround = fine, live = live)
                 Triple(res, if (res.reached) ShippedPins.checkpoints(res.pts, ShippedPins.named(sec)) else null, snapLog.toList())
             }) { (res, leg, snapLog) ->
                 shipPending.remove(q)
-                for (l in snapLog.distinct()) android.util.Log.i("WCMAP", "safepath net: quest $q $l")
+                if (corpseStale(q)) return@run                                  // alive again meanwhile: thrown away
+                val who = if (ghost) "corpse" else "quest $q"
+                for (l in snapLog.distinct()) android.util.Log.i("WCMAP", "safepath net: $who $l")
                 val mark = stale?.let { "; may be out of date ($it)" } ?: ""
-                val said = if (res.reached) "quest $q on map $mapId: ${res.yd.toInt()} yd, ${res.bends} bends (${res.why})$mark" else res.why
+                val said = if (res.reached) "$who on map $mapId: ${res.yd.toInt()} yd, ${res.bends} bends (${res.why})$mark" else res.why
                 if (res.reached && leg != null) {
                     shipNone.remove(q)
                     // the hysteresis: a replan while on the kept way takes the new one only when it is that much shorter
@@ -4364,7 +4445,7 @@ class MapView(context: Context) : View(context) {
                     val keep = cur != null && sameStamp && !ShippedPins.takeNew(keptYd, res.yd, strayed || forced)   // forced: the new way
                     shipLegs[q] = if (keep) ShipLeg(cur!!.leg, cur.gx, cur.gy, stamp, mapId, here[0], here[1], stale)
                                   else ShipLeg(leg, goal[0], goal[1], stamp, mapId, here[0], here[1], stale)
-                    if (keep) android.util.Log.i("WCMAP", "safepath net: quest $q kept its way (${keptYd?.toInt()} yd left; the new " +
+                    if (keep) android.util.Log.i("WCMAP", "safepath net: $who kept its way (${keptYd?.toInt()} yd left; the new " +
                         "${res.yd.toInt()} yd is not ${((SafePathV2.HYSTERESIS - 1) * 100).toInt()}% shorter)")
                 }
                 else if (shipLegs[q] != null && sameStamp && !strayed) {
@@ -4372,7 +4453,9 @@ class MapView(context: Context) : View(context) {
                     shipLegs[q]?.let { c -> shipLegs[q] = ShipLeg(c.leg, c.gx, c.gy, stamp, mapId, here[0], here[1], stale) }
                 }
                 else { shipNone[q] = noneKey; shipLegs.remove(q) }
-                if (shipSaid[q] != said) android.util.Log.i("WCMAP", if (res.reached) "safepath net: $said" else "safepath net: quest $q none: $said - the older route")
+                if (ghost) android.util.Log.i("WCMAP", if (res.reached) CorpseRoute.said(mapId, res.yd, "shipped network, ${res.bends} bends$mark")
+                    else "safepath ghost: corpse on map $mapId: none on the shipped network ($said) - the older route")
+                else if (shipSaid[q] != said) android.util.Log.i("WCMAP", if (res.reached) "safepath net: $said" else "safepath net: quest $q none: $said - the older route")
                 shipSaid[q] = said
                 invalidate()
             }
@@ -4388,7 +4471,8 @@ class MapView(context: Context) : View(context) {
     private val netLegs = HashMap<Int, DangerLeg>()
     private val netPending = HashSet<Int>()
     private var netSaid = HashMap<Int, String>()
-    private fun netLeg(q: Int, route: CursorRoute.Route): List<DoubleArray>? {
+    /** [ghost]: the corpse run's leg (CorpseRoute: the ways' danger shares not counted, no detour cap, the grid's ground only off it) */
+    private fun netLeg(q: Int, route: CursorRoute.Route, ghost: Boolean = false): List<DoubleArray>? {
         val m = map ?: return null
         val r = rect ?: return null
         if (!r.valid) return null
@@ -4407,22 +4491,26 @@ class MapView(context: Context) : View(context) {
         if (netPending.add(q)) {
             val toExit = route.kind == CursorRoute.Kind.EXIT
             // the danger grid's leg for a goal off the network (SafePath.deviceLeg: the way taken as near as it goes, the grid's leg on)
-            val dg = dangerGrid(); val dk = DangerGrid.strength(Settings.avoidDanger)
+            val dg = dangerGrid(); val dk = if (ghost) CorpseRoute.K else DangerGrid.strength(Settings.avoidDanger)
             RouteWork.run({
                 // a hooked end walked straight only over level ground (the zone's slopes, when the terrain step made them)
                 val clear = Terrain.of(mapId)?.let { tg -> SafePath.clearOf { x, y -> Terrain.factor(tg.at(x, y)) } }
-                val offNet: ((DoubleArray, DoubleArray) -> List<DoubleArray>?)? = if (dg == null || dk <= 0.0) null else { a, b ->
-                    dg.route(doubleArrayOf((r.left - a[1]) / ax, (r.top - a[0]) / ay), doubleArrayOf((r.left - b[1]) / ax, (r.top - b[0]) / ay), dk)
+                val offNet: ((DoubleArray, DoubleArray) -> List<DoubleArray>?)? = if (dg == null || (dk <= 0.0 && !ghost)) null else { a, b ->
+                    dg.route(doubleArrayOf((r.left - a[1]) / ax, (r.top - a[0]) / ay), doubleArrayOf((r.left - b[1]) / ax, (r.top - b[0]) / ay), dk, groundOnly = ghost)
                         .map { doubleArrayOf(r.top - it[1] * ay, r.left - it[0] * ax) } }
-                val w = SafePath.deviceLeg(net, r.top - py * ay, r.left - px * ax, r.top - route.y * ay, r.left - route.x * ax, toExit, clear, offNet)
+                val w = SafePath.deviceLeg(net, r.top - py * ay, r.left - px * ax, r.top - route.y * ay, r.left - route.x * ax, toExit, clear,
+                    ghost = ghost, offNet = offNet)
                 w?.map { doubleArrayOf((r.left - it[1]) / ax, (r.top - it[0]) / ay) }
             }) { pts ->
                 netPending.remove(q)
+                if (corpseStale(q)) return@run                                  // alive again meanwhile: thrown away
                 val leg = if (pts == null) listOf(here, to) else listOf(here) + pts.drop(1).dropLast(1) + listOf(pts.last())
                 netLegs[q] = DangerLeg(leg, route.x, route.y, px, py, net.edges.size.toDouble())
                 val said = if (pts == null) "off the network (the grid's way)" else "on the network: ${leg.size - 2} bends, " +
                     "${DangerGrid.yards(leg, ax, ay).toInt()} yd" + (if (toExit) " to its exit" else "")
-                if (netSaid[q] != said) { netSaid[q] = said; android.util.Log.i("WCMAP", "safepath: quest $q $said (map $mapId)") }
+                if (ghost) android.util.Log.i("WCMAP", if (pts == null) "safepath ghost: corpse on map $mapId: off the draft network (the grid's way)"
+                    else CorpseRoute.said(mapId, DangerGrid.yards(leg, ax, ay), "draft network, ${leg.size - 2} bends"))
+                else if (netSaid[q] != said) { netSaid[q] = said; android.util.Log.i("WCMAP", "safepath: quest $q $said (map $mapId)") }
                 invalidate()
             }
             // the route thread answers soon; NO DATA meanwhile, so the grid's leg does not flash first
@@ -4432,16 +4520,21 @@ class MapView(context: Context) : View(context) {
     }
 
     /** quest [q]'s leg planned from [here] to [to] on [g] (the route thread): the leg kept, and the log line when it changed */
-    private fun planLeg(q: Int, g: DangerGrid, here: DoubleArray, to: DoubleArray, k: Double, old: DangerLeg?, strength: String): Pair<DangerLeg, String?> {
+    private fun planLeg(q: Int, g: DangerGrid, here: DoubleArray, to: DoubleArray, k: Double, old: DangerLeg?, strength: String,
+                        ghostMap: Int? = null): Pair<DangerLeg, String?> {
         val ax = g.ax; val ay = g.ay
         var log: String? = null
         // the old way kept only as far as it still lies AHEAD (its passed bends dropped, never a way back to them)
-        var pts = g.route(here, to, k)
+        var pts = if (ghostMap != null) CorpseRoute.gridLeg(g, here, to) else g.route(here, to, k)
         if (old != null && old.pts.size > 2) {
             val kept = passed(listOf(here) + old.pts.drop(1), ax, ay) ?: listOf(here, to)
-            if (g.cost(kept, k, to) <= g.cost(pts, k, to) * DANGER_STICK) pts = kept
+            if (ghostMap != null) { if (DangerGrid.yards(kept, ax, ay) <= DangerGrid.yards(pts, ax, ay) * DANGER_STICK) pts = kept }
+            else if (g.cost(kept, k, to) <= g.cost(pts, k, to) * DANGER_STICK) pts = kept
         }
         val wasBent = old != null && old.pts.size > 2
+        // the corpse run: one line a plan, its own words (no danger to speak of)
+        if (ghostMap != null) return DangerLeg(pts, to[0], to[1], here[0], here[1], k) to
+            CorpseRoute.said(ghostMap, DangerGrid.yards(pts, ax, ay), "the grid's ground, ${pts.size - 2} bends")
         if (pts.size > 2 || wasBent) {
             val firstMoved = !wasBent || pts.size <= 2 || hypot((pts[1][0] - old!!.pts[1][0]) * ax, (pts[1][1] - old.pts[1][1]) * ay) > 40.0
             if (firstMoved) {
@@ -6344,6 +6437,24 @@ class MapView(context: Context) : View(context) {
                 }
             }
         }
+        // ---- THE CORPSE RUN's way (CorpseRoute): while a ghost, the leg's checkpoint flags, the stretch to the next one and faint dots
+        // past it (the quest line's look), on the full map and Home's small one; the red rim arrow leads to its next checkpoint
+        if (!morphOn && !px.isNaN() && !py.isNaN()) corpseLeg()?.takeIf { corpseRun.bent }?.let { leg ->
+            val nb = top + (if (compact) compactTop() else 0f)
+            val fb = top + fh - (if (hintsOn() && !compact) HINT_BAND else 0f)
+            val save = c.save()
+            c.clipRect(left, nb, left + fw, fb)
+            var fx = sx(px); var fy = sy(py)
+            for (i in 1 until leg.size) {
+                val dim = CHECKPOINT_DIM.getOrElse(i - 1) { 0f }
+                if (dim <= 0f) break
+                val tx = sx(leg[i][0]); val ty = sy(leg[i][1])
+                drawStretch(c, fx, fy, tx, ty, dim)
+                fx = tx; fy = ty
+            }
+            for (i in (1 until leg.size - 1).reversed()) drawFlag(c, sx(leg[i][0]), sy(leg[i][1]), next = i == 1)
+            c.restoreToCount(save)
+        }
         // the shipped network's file is for another game build (ShippedNets: still used): said, in the note's place
         if (dangerNote == null && !compact && Settings.questTracking == "safepath" && shipShown && shipStale != null)
             dangerNote = "SafePath's network for this zone may be out of date (the game was updated)"
@@ -6537,8 +6648,11 @@ class MapView(context: Context) : View(context) {
         // they are right now"): the arrow points at the focused quest's OWN objective (its turn-in when ready; off this map, the game's
         // next waypoint for it: focusTX / focusTY), no longer at the route's next way or its first danger bend - the route's line
         // still shows the way (this replaces test29 / test31 / b-danger-layer's arrow-along-the-route)
-        val rimTX = if (toCorpse) corpseX else focusTX
-        val rimTY = if (toCorpse) corpseY else focusTY
+        // THE CORPSE RUN (CorpseRoute): while its leg exists the red arrow points at the leg's next checkpoint (leg[1]); straight at
+        // the corpse otherwise, as before
+        val corpseNext = if (toCorpse && !px.isNaN() && !py.isNaN()) { corpseLeg(); corpseRun.next(corpseX, corpseY) } else null
+        val rimTX = if (toCorpse) corpseNext?.get(0) ?: corpseX else focusTX
+        val rimTY = if (toCorpse) corpseNext?.get(1) ?: corpseY else focusTY
         val rimFly = !toCorpse && flyStep
         val bend: DoubleArray? = null
         // QuestTrail mode: no rim arrow of ours at all (the user, test58); the corpse's stays
@@ -6555,9 +6669,11 @@ class MapView(context: Context) : View(context) {
             // out, the focused quest's bubble sat in the arrow's band at the edge and the arrow was drawn right on top of it;
             // the corpse had shown half a stone with its arrow beside it the same way
             val nameBar = if (compactTop() > 0f && (compact || morphOn)) compactTop() * (if (compact) 1f else 1f - mf) else 0f
-            val seen = tx >= left && tx <= left + fw && ty >= top + nameBar &&
-                ty <= top + fh - (if (hintsOn()) HINT_BAND else 0f)
-            if (toCorpse && seen) drawCorpse(c, tx, ty)
+            fun inView(x: Float, y: Float) = x >= left && x <= left + fw && y >= top + nameBar &&
+                y <= top + fh - (if (hintsOn()) HINT_BAND else 0f)
+            val seen = inView(tx, ty)
+            // the stone stands on the corpse itself (the arrow may point at the corpse leg's checkpoint instead)
+            if (toCorpse) { val gx = sx(corpseX); val gy = sy(corpseY); if (inView(gx, gy)) drawCorpse(c, gx, gy) }
             if (!toCorpse && seen && rimFly) drawFlyStep(c, tx, ty)
             // THE QUEST ARROW IS ALWAYS ON THE RIM (the user on test41: "It's confusing with the arrow moving closer. It should keep
             // the arrow on the edge of my screen relative to my position"): where the ray from the player toward the target leaves the
