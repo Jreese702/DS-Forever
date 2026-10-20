@@ -32,7 +32,7 @@ object ShippedSnap {
     const val CANDIDATES = 8          // the nearest walled-off nodes a walk round is tried to
     const val LINE_STEP_YD = 1.0      // a straight snap read this often (the water's 4.2 yd vertices, a wall's few yards)
     const val CELL_YD = 2.5           // a bent snap's walk cells (each step's middle read too: 1.25 yd)
-    const val FAR_COST = 2000.0       // a snap past the spread: this much dearer (the fallback when the nearer ones lead nowhere)
+    const val FAR_COST = 1.0e6        // a snap past the spread: this much dearer (the fallback when the nearer ones lead nowhere)
     const val SPREAD_YD = 5.0         // the snaps kept: the nearest clear one's and those no more than this longer
     const val BENT = 1.15             // a bent snap's yard against a straight one's
     const val WALL = 12f              // a steep bank (Terrain.legFactor at 45 degrees) or worse: a wall to the snap
