@@ -560,6 +560,7 @@ class HomeView(
         castView.fightFace = HomeFightFace.icons(map)
         castView.fightFaceOn = HomeFightFace.on(map)
         castView.fishName = map.fish?.name; castView.fishIcon = map.fish?.icon ?: 0        // m59: X fishes while a pole is in the main hand
+        castView.smartYIcon = map.smartY?.icon ?: 0                                          // m61: Smart Y's food / drink
         fightNow = map.fight                                            // m49: A / X / Y's switch (start attack / auto-repeat / combat)
         applyDpad()                                                      // Track C: the D-pad's In-combat spells, in fights only
         castView.commands = HomeFightFace.commandIcons(map)             // Track C: the companion's commands (overlays: the game's slot is empty)

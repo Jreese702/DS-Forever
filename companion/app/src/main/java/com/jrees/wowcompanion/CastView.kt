@@ -402,7 +402,20 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         set(v) { if (field != v) { field = v; fishBtn = null; invalidate() } }
     var fishName: String? = null
     private var fishBtn: Btn? = null
+    /** m61 Smart Y: the bag's food / drink a bare Y uses now, on the base layer's Y (game position 6); 0 = the game's own Y */
+    var smartYIcon = 0
+        set(v) { if (field != v) { field = v; smartYBtn = null; invalidate() } }
+    private var smartYBtn: Btn? = null
+
     private fun fishOverride(li: Int, src: Int): Btn? {
+        if (li == N && src == 5 && smartYIcon > 0) {
+            smartYBtn?.let { if (it.shader == null) resolve(it, true); return it }
+            val b = Btn().apply { p = 6; k = "item"; icon = smartYIcon; e = true }
+            classify(b)
+            resolve(b, true)
+            smartYBtn = b
+            return b
+        }
         if (li != N || src != 4 || fishIcon <= 0) return null
         if (castChannel && !castStartMs.isNaN() && fishName != null && castName == fishName) return null      // the bobber is out: Interact
         fishBtn?.let { if (it.shader == null) resolve(it, true); return it }
