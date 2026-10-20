@@ -107,6 +107,29 @@ class ShippedRouteTest {
         assertTrue("round the camp", r.pts.any { it[0] > 250.0 })
     }
 
+    @Test fun theRoutesDangerIsPaidAlongItsYardsAndSaid() {
+        // the camp lies BETWEEN the short road's nodes (y 300 .. 700 of a 1000 yd way): paid along the way, not at its ends
+        val r = ShippedRoute.plan(twoWays(300.0), flat, camp, from, to)
+        val calm = ShippedRoute.plan(twoWays(300.0), flat, camp, from, to, k = 0.0)
+        assertTrue(calm.pts.all { it[0] < 100.0 })
+        assertTrue("round the camp", r.pts.any { it[0] > 250.0 })
+        assertEquals(0.0, r.danger, 1e-6)
+        assertEquals("the straight way's danger: k x 4 x 400 yd", 8.0 * 4 * 400, r.avoided, 40.0)
+        assertTrue(r.why, r.why.contains("danger 0 (avoided 12"))
+        // capped: the danger it walks through is said
+        val c = ShippedRoute.plan(twoWays(2000.0), flat, camp, from, to)
+        assertTrue(c.capped); assertTrue(c.why, c.why.contains("danger 12800 (avoided 0)"))
+    }
+
+    @Test fun theAlAkethCultIsHostileThoughQuestieTagsItFriendlyToAll() {
+        // test20 (Zephras, "the sky elf place"): QuestieDB's WoW Forever rows tag the Al'Aketh "AH"
+        assertEquals(3, QuestieNpcs.hostileOf("AH", "Al'Aketh Assassin"))
+        assertEquals(3, QuestieNpcs.hostileOf("AH", "Al'Aketh Stormchaser"))
+        assertEquals(0, QuestieNpcs.hostileOf("AH", "Aamelia Windfield"))
+        assertEquals(3, QuestieNpcs.hostileOf(null, "Ornery Galestrider"))
+        assertEquals(TransportRoutes.HORDE, QuestieNpcs.hostileOf("A", "Stormwind Guard"))
+    }
+
     @Test fun aDetourLongerThanTheCapLosesToTheWayIgnoringTheDanger() {
         // round: 2000 + 1000 + 2000 + 200 yd, over 1.75 x 1200 + 500
         val r = ShippedRoute.plan(twoWays(2000.0), flat, camp, from, to)
@@ -252,7 +275,7 @@ class ShippedRouteTest {
                 if (minOf(a[0], b[0]) >= 120.0 && maxOf(a[0], b[0]) <= 280.0) ShippedRoute.Roadmap.Edge(e.a, e.b, 5.0) else e }) }
         val r = ShippedRoute.plan(none, flat, null, doubleArrayOf(200.0, 20.0), doubleArrayOf(200.0, 980.0), roadmap = rocky())
         assertTrue(r.why, r.reached)
-        assertTrue("off the rock band", r.pts.subList(2, r.pts.size - 2).all { it[0] !in 130.0..270.0 })
+        assertTrue("off the rock band", r.pts.filter { it[1] in 80.0..920.0 }.all { it[0] !in 130.0..270.0 })
     }
 
     @Test fun aRewalkWayIsNeverDrawnStraight() {
@@ -310,6 +333,33 @@ class ShippedRouteTest {
         val floor = ShippedNet.Section(H, 10, "t", net, listOf(ShippedNet.Way(ShippedNet.F_ROAD or ShippedNet.F_FLOOR, 1077.0, bend)))
         val f = ShippedRoute.plan(floor, flat, null, doubleArrayOf(0.0, -40.0), doubleArrayOf(0.0, 1040.0))
         assertTrue(f.reached); assertTrue("in-floor", f.pts.any { it[0] == 200.0 && Climb.inCave(it) })
+    }
+
+    @Test fun aCaveWayFromMouthToMouthIsMarkedInCaveAllAlong() {
+        // W round 2, Alterac J: a cave way (kind cave, flag cave) straight between two mouths: its whole stretch in-cave
+        val nodes = listOf(node(0, 0.0, 0.0), SafePath.Node(1, 0.0, 400.0, SafePath.MOUTH, "cave"), SafePath.Node(2, 0.0, 480.0, SafePath.MOUTH, "cave"),
+            node(3, 0.0, 900.0))
+        val edges = listOf(road(0, 1), SafePath.Edge(1, 2, SafePath.CAVE, SafePath.DRAFT, "cave", 0f, 1f), road(2, 3))
+        val r = ShippedRoute.plan(section(nodes, edges), flat, null, doubleArrayOf(0.0, -40.0), doubleArrayOf(0.0, 940.0))
+        assertTrue(r.why, r.reached)
+        for ((a, b) in r.pts.zipWithNext()) if (minOf(a[1], b[1]) >= 400.0 && maxOf(a[1], b[1]) <= 480.0 && hypot(b[0] - a[0], b[1] - a[1]) > 1.0)
+            assertTrue("the cave's stretch ${a.toList()} -> ${b.toList()} marked", Climb.inCave(a) && Climb.inCave(b))
+        assertTrue("its mouths' own points stay on the terrain", r.pts.any { it[1] == 400.0 && !Climb.inCave(it) })
+    }
+
+    @Test fun aChainOfLinksIsWalkedThroughTheirOwnEnds() {
+        // Zephras K: a portal from the road up to a floor (no net node there), stairs, a deck, an updraft to the top - the goal on the top
+        val sec = section(listOf(node(0, 0.0, 0.0), node(1, 0.0, 600.0)), listOf(road(0, 1)), listOf(
+            ShippedNet.Link("portal", "", true, 15.0, listOf(doubleArrayOf(0.0, 600.0, 0.0), doubleArrayOf(300.0, 900.0, 1.0))),
+            ShippedNet.Link("stairs", "", false, 140.0, listOf(doubleArrayOf(300.0, 900.0, 1.0), doubleArrayOf(400.0, 950.0, 1.0))),
+            ShippedNet.Link("deck", "", false, 170.0, listOf(doubleArrayOf(400.0, 950.0, 1.0), doubleArrayOf(450.0, 1000.0, 1.0), doubleArrayOf(500.0, 1100.0, 1.0))),
+            ShippedNet.Link("updraft", "", true, 15.0, listOf(doubleArrayOf(500.0, 1100.0, 1.0), doubleArrayOf(700.0, 1300.0, 1.0)))))
+        val r = ShippedRoute.plan(sec, flat, null, doubleArrayOf(0.0, -40.0), doubleArrayOf(705.0, 1305.0))
+        assertTrue(r.why, r.reached)
+        assertTrue("up the chain", r.pts.any { it[0] == 450.0 && it[1] == 1000.0 } && r.pts.any { it[0] == 700.0 && it[1] == 1300.0 })
+        // the updraft is one way: from the top back down there is no chain (the portal is one way too)
+        val back = ShippedRoute.plan(sec, flat, null, doubleArrayOf(705.0, 1305.0), doubleArrayOf(0.0, -40.0))
+        assertFalse(back.why, back.reached && back.pts.any { it[0] == 450.0 })
     }
 
     @Test fun aJoinCostsAsASpurNotATrail() {

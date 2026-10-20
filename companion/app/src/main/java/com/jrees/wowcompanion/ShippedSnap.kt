@@ -19,8 +19,10 @@ import kotlin.math.max
  *   wade): only dry ground, a bridge's deck, a ford ([SafePath.FORD_DEPTH]) or a NARROW STREAM ([SafePath.NARROW_DEPTH] deep at most,
  *   [SafePath.NARROW_YD] across at most: [SafePath.Water.wadeable]);
  * - an end standing in a wall (the player inside an inn, the goal in a hut) passes the walls within [DOOR_YD] of itself (its door).
- * THE CHOICE ([snap]; W's v2 parity, NET2_PARITY.md: 22 crossings on the snap legs, then 1): the NEAREST straight clear line and
- * those [SPREAD_YD] longer lead; an end ON A FLOOR (a city's street, a walkway, the start pocket over a cave) snaps to its floor's nodes
+ * THE CHOICE ([snap]; W's v2 parity, NET2_PARITY.md: 22 crossings on the snap legs, then 1; round 2: 4, then 2): the targets are
+ * the graph's nodes AND each way's nearest point (a cut into a roadmap edge or a road: the router walks the way's own points from it);
+ * the NEAREST straight clear line (and a tie within [SPREAD_YD]) leads; a ground end whose lead is within [ON_PIECE_YD] stands on that
+ * piece and gets no fallback off it; an end ON A FLOOR (a city's street, a walkway, the start pocket over a cave) snaps to its floor's nodes
  * first; every other snap is only a FALLBACK, [FAR_COST] x its rank dearer (the router takes one only when the nearer ones' piece of
  * the graph joins nothing on), the level lines before those over a climb, none over [FAR_STEEP]. No node within [SNAP_YD], or none any
  * clear walk of [WALK_YD] reaches: [Result.snaps] empty and [Result.why] says why - the caller then takes the old long attach (at most
@@ -34,9 +36,10 @@ object ShippedSnap {
     const val CANDIDATES = 8          // the nearest walled-off nodes a walk round is tried to
     const val LINE_STEP_YD = 1.0      // a straight snap read this often (the water's 4.2 yd vertices, a wall's few yards)
     const val CELL_YD = 2.5           // a bent snap's walk cells (each step's middle read too: 1.25 yd)
+    const val ON_PIECE_YD = 5.0       // a ground end its lead snap is this near stands on that piece: no fallback off it
     const val FAR_STEEP = 5f          // a fallback over terrain this dear a yard (a climb of ~37 degrees, a rock field): not offered
     const val FAR_COST = 1.0e6        // a snap past the spread: this much dearer (the fallback when the nearer ones lead nowhere)
-    const val SPREAD_YD = 5.0         // the snaps kept: the nearest clear one's and those no more than this longer
+    const val SPREAD_YD = 0.5         // the snaps kept: the nearest clear one's and those no more than this longer
     const val BENT = 1.15             // a bent snap's yard against a straight one's
     const val WALL = 12f              // a steep bank (Terrain.legFactor at 45 degrees) or worse: a wall to the snap
     const val DOOR_YD = 15.0          // an end standing in a wall passes the walls this near it (its door)
@@ -78,9 +81,13 @@ object ShippedSnap {
      *  danger, x [BENT] when it bends; a fallback's [FAR_COST] x its rank more), [straight] the straight line, clear, [lead] a leading
      *  snap (not a fallback) */
     class Snap(val node: Int, val pts: List<DoubleArray>, val yd: Double, val cost: Double, val straight: Boolean, val lead: Boolean = false,
-               val steep: Float = 1f) {
-        fun ranked(rank: Int) = Snap(node, pts, yd, cost + FAR_COST * rank, straight, rank == 0, steep)
+               val steep: Float = 1f, val way: Int = -1, val t: Double = 0.0) {
+        fun ranked(rank: Int) = Snap(node, pts, yd, cost + FAR_COST * rank, straight, rank == 0, steep, way, t)
+        /** a cut into way [way] ([ShippedRoute.WayView.index]) at [t], not a node */
+        val cut get() = way >= 0
     }
+    /** the way cuts' keys in [Snap.node]: this and down (graph node ids are never negative, the router's virtual ones -1 .. -10 000 000) */
+    const val CUT_KEY = -100_000_000
     /** [snaps] cheapest first (empty: no snap, the long attach's turn); [why] the log's words */
     class Result(val snaps: List<Snap>, val why: String) {
         val ok get() = snaps.isNotEmpty()
@@ -103,9 +110,28 @@ object ShippedSnap {
      */
     fun snap(p: DoubleArray, nodes: List<Pair<Int, DoubleArray>>, ground: Ground, danger: ((Double, Double) -> Float)? = null,
              k: Double = 0.0, reach: Double = SNAP_YD, walkYd: Double = WALK_YD, floor: Set<Int> = emptySet(),
-             floorNodes: List<Pair<Int, DoubleArray>> = emptyList()): Result {
+             floorNodes: List<Pair<Int, DoubleArray>> = emptyList(), ways: List<ShippedRoute.WayView> = emptyList()): Result {
         fun within(l: List<Pair<Int, DoubleArray>>) = l.map { (id, q) -> Triple(id, q, hypot(q[0] - p[0], q[1] - p[1])) }.filter { it.third <= reach }.sortedBy { it.third }
-        val near = within(nodes)
+        // THE WAY CUTS: each way's nearest point within reach (a roadmap edge's walked points, a road's bends), a target as a node is
+        // (keyed [CUT_KEY] - its index here; [Snap.way] / [Snap.t] say where)
+        val cutAt = HashMap<Int, Pair<Int, Double>>()
+        val cutPts = ArrayList<Pair<Int, DoubleArray>>()
+        for (w in ways) {
+            if (w.line.size < 2) continue
+            if (w.line.none { hypot(it[0] - p[0], it[1] - p[1]) <= reach + w.len }) continue
+            var best: DoubleArray? = null; var bd = Double.MAX_VALUE; var at = 0.0; var bestAt = 0.0
+            for ((a, b) in w.line.zipWithNext()) {
+                val dx = b[0] - a[0]; val dy = b[1] - a[1]; val l2 = dx * dx + dy * dy
+                val t = if (l2 <= 0.0) 0.0 else (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2).coerceIn(0.0, 1.0)
+                val q = doubleArrayOf(a[0] + t * dx, a[1] + t * dy); val d = hypot(q[0] - p[0], q[1] - p[1])
+                if (d < bd) { bd = d; best = q; bestAt = at + t * Math.sqrt(l2) }
+                at += Math.sqrt(l2)
+            }
+            if (best == null || bd > reach || w.len <= 0.0) continue
+            val key = CUT_KEY - cutAt.size
+            cutAt[key] = w.index to (bestAt / w.len).coerceIn(0.0, 1.0); cutPts.add(key to best)
+        }
+        val near = within(nodes + cutPts)
         val onFloor = floor.isNotEmpty() && (nodes + floorNodes).minByOrNull { hypot(it.second[0] - p[0], it.second[1] - p[1]) }?.first in floor
         val floorNear = if (onFloor) within(nodes.filter { it.first in floor } + floorNodes) else emptyList()
         if (near.isEmpty() && floorNear.isEmpty()) {
@@ -124,8 +150,14 @@ object ShippedSnap {
         fun lead(r: Result?) = r?.snaps?.filter { it.lead && taken.add(it.node) }?.takeIf { it.isNotEmpty() }?.let { tiers.add(it) }
         fun rest(r: Result?) = r?.snaps?.filter { !it.lead && it.steep < FAR_STEEP && it.node !in taken }
             ?.sortedWith(compareBy({ it.steep > 1f }, { it.yd }))?.forEach { if (taken.add(it.node)) tiers.add(listOf(it)) }
-        lead(fl); rest(fl); lead(ground0); rest(ground0)
+        lead(fl); rest(fl); lead(ground0)
+        // an end ON the ground's nearest piece (its lead within [ON_PIECE_YD]: a dock's deck, a ledge the graph keeps apart): no
+        // fallback onto another piece - W's round 2, Mulgore L: the goal on the airship dock, its own piece joined to nothing, the
+        // fallback's 8 yd line off the dock's edge a 90 degree face; the harness does not reach it either
+        val onPiece = fl == null && ground0?.snaps?.firstOrNull { it.lead }?.let { it.yd <= ON_PIECE_YD } == true
+        if (!onPiece) rest(ground0)
         val out = tiers.flatMapIndexed { rank, t -> t.map { it.ranked(rank) } }
+            .map { sn -> cutAt[sn.node]?.let { (w, t) -> Snap(sn.node, sn.pts, sn.yd, sn.cost, sn.straight, sn.lead, sn.steep, w, t) } ?: sn }
         if (out.isEmpty()) return Result(emptyList(), (if (fl != null) "on a floor: ${fl.why}; " else "") + (ground0?.why ?: "no ground node within ${reach.toInt()} yd"))
         return Result(out, (if (fl != null && fl.ok) "on a floor: ${fl.why}" else ground0!!.why) + if (out.size > out.count { it.lead }) "; ${out.size - out.count { it.lead }} fallbacks" else "")
     }
@@ -141,7 +173,7 @@ object ShippedSnap {
         for (c in near) {
             val line = view.line(p, c.second)
             if (line.why == null) straight.add(Snap(c.first, listOf(p, c.second), c.third, line.cost, true, steep = line.steep))
-            else { if (bent.size < CANDIDATES) bent.add(c); blocked.add(line.why) }
+            else { if (bent.size < CANDIDATES && c.first > CUT_KEY) bent.add(c); blocked.add(line.why) }
         }
         val out = ArrayList<Snap>(straight)
         if (bent.isNotEmpty()) {
@@ -170,8 +202,10 @@ object ShippedSnap {
      */
     fun attacher(ground: Ground? = null, log: ((String) -> Unit)? = null) = ShippedRoute.Attacher { v, p ->
         val g = ground ?: Ground(v.ground)
-        val s = snap(p, v.nodes, g, v.danger, v.k, floor = v.floor, floorNodes = v.floorNodes)
-        if (s.ok) return@Attacher ShippedRoute.Attach(s.snaps.map { ShippedRoute.Join(it.node, -1, 0.0, it.pts.last(), it.pts, it.cost, it.yd) }, true, s.why)
+        val s = snap(p, v.nodes, g, v.danger, v.k, floor = v.floor, floorNodes = v.floorNodes, ways = v.ways)
+        if (s.ok) return@Attacher ShippedRoute.Attach(s.snaps.map {
+            if (it.cut) ShippedRoute.Join(null, it.way, it.t, it.pts.last(), it.pts, it.cost, it.yd)
+            else ShippedRoute.Join(it.node, -1, 0.0, it.pts.last(), it.pts, it.cost, it.yd) }, true, s.why)
         log?.invoke("snap: none at ${p[0].toInt()},${p[1].toInt()} (${s.why}) - the long attach")
         val long = ShippedRoute.DefaultAttach.attach(ShippedRoute.AttachView(emptyList(), v.ways, g.asCost, v.danger, v.k, v.lim), p)
         ShippedRoute.Attach(long.joins, false, "${long.why ?: "on ${long.joins.size} ways by the long attach"} (no snap: ${s.why})")

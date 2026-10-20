@@ -114,9 +114,9 @@ class ShippedSnapTest {
     @Test fun aSnapFarPastTheNearestIsDropped() {
         // the network carries the way on, not a long walk over the grass past its nearest node
         val r = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(10.0, 0.0), 2 to doubleArrayOf(0.0, 50.0), 3 to doubleArrayOf(-30.0, 0.0)), ShippedSnap.Ground(flat))
-        assertEquals("only the nearest clear line and those 5 yd longer lead", listOf(1), lead(r))
+        assertEquals("only the nearest clear line (and a tie) leads", listOf(1), lead(r))
         assertEquals("the rest only as the far fallback", listOf(1, 3, 2), r.snaps.map { it.node })
-        val two = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(10.0, 0.0), 3 to doubleArrayOf(-14.0, 0.0)), ShippedSnap.Ground(flat))
+        val two = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(10.0, 0.0), 3 to doubleArrayOf(-10.3, 0.0)), ShippedSnap.Ground(flat))
         assertEquals(setOf(1, 3), lead(two).toSet())
         // the nearest walled off: the nearest CLEAR line leads (no farther one tried past it + 5 yd)
         val g = ShippedSnap.Ground(flat, room = room(4.0, 6.0, -3.0, 3.0))
@@ -134,7 +134,7 @@ class ShippedSnapTest {
         val r = ShippedSnap.snap(p0, nodes, g, floor = setOf(rm + 1, rm + 3))
         assertTrue(r.why, r.ok); assertTrue(r.why, r.why.startsWith("on a floor"))
         assertTrue(lead(r).all { it == rm + 1 || it == rm + 3 })
-        assertTrue("the ground node only as the far fallback", r.snaps.any { it.node == rm + 2 && it.cost >= ShippedSnap.FAR_COST })
+        assertTrue("the ground node over the steep bank: no fallback either", r.snaps.none { it.node == rm + 2 })
         // the same end not on a floor (its nearest roadmap node a ground one): the ground's rules
         val off = ShippedSnap.snap(p0, nodes, g, floor = setOf(rm + 1))
         assertFalse(off.why, off.why.startsWith("on a floor"))
@@ -198,6 +198,27 @@ class ShippedSnapTest {
         assertTrue(r.why, r.snapped)
         val leg = r.pts.takeWhile { it[0] < 40.0 - 1e-6 } + listOf(r.pts.first { it[0] >= 40.0 - 1e-6 })
         assertTrue("the snap never crosses the wall", clear(leg, g))
+    }
+
+    @Test fun aWaysNearestPointIsASnapAndTheCutWalksTheWaysOwnPoints() {
+        // a walked way bending round (40,0) -> (40,30) -> (0,60): its nearest point to the player (10, 50) is on its second stretch
+        val way = ShippedRoute.WayView(3, listOf(doubleArrayOf(40.0, 0.0), doubleArrayOf(40.0, 30.0), doubleArrayOf(0.0, 60.0)), 80.0)
+        val r = ShippedSnap.snap(doubleArrayOf(10.0, 50.0), listOf(1 to doubleArrayOf(40.0, 0.0)), ShippedSnap.Ground(flat), ways = listOf(way))
+        val b = r.best!!
+        assertTrue(b.cut); assertEquals(3, b.way); assertTrue(b.lead)
+        assertTrue("nearer than the node", b.yd < 10.0)
+        assertTrue("along its second stretch", b.t > 30.0 / 80.0 && b.t < 1.0)
+        // the router's split of a way at a cut: its own points either side
+        val (before, after) = ShippedRoute.splitAt(way.line, 50.0)
+        assertEquals(listOf(40.0, 40.0), before.map { it[0] }); assertEquals(listOf(0.0), after.map { it[0] })
+    }
+
+    @Test fun theRouteCutIntoAWayFollowsItsBends() {
+        // a road (0,0) -> (0,1000) and the player beside its middle: the cut, then along the road, never straight to a far end
+        val r = ShippedRoute.plan(road40(), flat, null, doubleArrayOf(20.0, 525.0), doubleArrayOf(40.0, 1000.0))
+        assertTrue(r.why, r.reached)
+        assertTrue(r.why, r.attachFromYd < 21.0)
+        assertTrue("on the road from the cut on", r.pts.drop(1).all { it[0] == 40.0 })
     }
 
     @Test fun anIsolatedNodeIsNeverTheSnap() {
