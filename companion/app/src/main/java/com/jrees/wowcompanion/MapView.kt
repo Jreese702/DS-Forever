@@ -4254,7 +4254,7 @@ class MapView(context: Context) : View(context) {
                 val danger: ((Double, Double) -> Float)? = if (g == null) null else { x, y -> g.at((r.left - y) / ax, (r.top - x) / ay) }
                 val snapLog = java.util.Collections.synchronizedList(ArrayList<String>())
                 val res = ShippedRoute.plan(sec, ground, danger, here, goal, k, toExit, roadmap = ShippedRoute.roadmapOf(got.second.pack.roadmap, sec),
-                    attacher = ShippedSnap.attacher(fine) { snapLog.add(it) })
+                    attacher = ShippedSnap.attacher(fine) { snapLog.add(it) }, stitchGround = fine)
                 Triple(res, if (res.reached) ShippedPins.checkpoints(res.pts, ShippedPins.named(sec)) else null, snapLog.toList())
             }) { (res, leg, snapLog) ->
                 shipPending.remove(q)

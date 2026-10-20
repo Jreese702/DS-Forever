@@ -180,12 +180,49 @@ class ShippedRouteTest {
 
     @Test fun aRoadIsPreferredUntilTheRoadmapIsNetFavourShorter() {
         // a road along x 0 (y 0 .. 1000) beside the roadmap's grid: the road for a goal along it, though the roadmap is as short
-        val r = ShippedRoute.plan(straightRoad(), flat, null, doubleArrayOf(10.0, 10.0), doubleArrayOf(10.0, 990.0), roadmap = grid())
+        val fine = ShippedSnap.Ground(flat)
+        val r = ShippedRoute.plan(straightRoad(), flat, null, doubleArrayOf(10.0, 10.0), doubleArrayOf(10.0, 990.0), roadmap = grid(), stitchGround = fine)
         assertTrue(r.why, r.reached)
         assertTrue("on the road: ${r.why}", r.roadmapYd < 100.0)
         // a goal across the grid (x 400): the roadmap's own way, the road round being far longer than 1.3x
-        val across = ShippedRoute.plan(straightRoad(), flat, null, doubleArrayOf(10.0, 10.0), doubleArrayOf(390.0, 400.0), roadmap = grid())
+        val across = ShippedRoute.plan(straightRoad(), flat, null, doubleArrayOf(10.0, 10.0), doubleArrayOf(390.0, 400.0), roadmap = grid(), stitchGround = fine)
         assertTrue(across.reached); assertTrue(across.why, across.roadmapYd > 300.0)
+    }
+
+    @Test fun shippedStitchesAreUsedAndNoneIsMadeAtRunTime() {
+        // the file's own stitch: a join way from the road's middle (-200, 500) to a node standing ON the roadmap's node (3, 483)
+        val rm = grid()
+        val on = rm.nodes.values.first { it[0] == 3.0 && it[1] == 483.0 }
+        val sec = section(listOf(node(0, -200.0, 0.0), node(1, -200.0, 500.0), node(2, -200.0, 1000.0), node(3, on[0], on[1])),
+            listOf(road(0, 1), road(1, 2), SafePath.Edge(1, 3, SafePath.TRAIL, SafePath.OK, "join", 0f, 1f)))
+        val r = ShippedRoute.plan(sec, flat, null, doubleArrayOf(-200.0, -30.0), doubleArrayOf(380.0, 500.0), roadmap = rm,
+            stitchGround = ShippedSnap.Ground(flat))
+        assertTrue(r.why, r.reached)
+        assertTrue(r.why, r.why.contains("stitches shipped (1)"))
+        assertTrue("on the roadmap past the stitch", r.roadmapYd > 300.0)
+        // an old file (no node on the roadmap), no fine ground: nothing stitched, the roadmap stays apart
+        val old = section(listOf(node(0, -10.0, 0.0), node(1, -10.0, 1000.0)), listOf(road(0, 1)))
+        val n = ShippedRoute.plan(old, flat, null, doubleArrayOf(-10.0, -30.0), doubleArrayOf(380.0, 500.0), roadmap = rm)
+        assertTrue(n.why, !n.reached || n.why.contains("no stitches"))
+    }
+
+    @Test fun anOldFilesRunTimeStitchIsCheckedOnTheFineGround() {
+        // the road at x -10; a wall the fine ground sees (x -6 .. -4, every y) between it and the roadmap's first column (x 3)
+        val old = section(listOf(node(0, -10.0, 0.0), node(1, -10.0, 523.0), node(2, -10.0, 1000.0)), listOf(road(0, 1), road(1, 2)))
+        fun wall(x: Double) = x in -6.0..-4.0
+        val coarse: (Double, Double) -> Float = flat                 // the 25 yd grid misses it
+        val fine = ShippedSnap.Ground({ x, _ -> if (wall(x)) Terrain.WALL else 1f })
+        val r = ShippedRoute.plan(old, coarse, null, doubleArrayOf(-10.0, -30.0), doubleArrayOf(-10.0, 1030.0), roadmap = grid(), stitchGround = fine)
+        assertTrue(r.why, r.why.contains("refused by the fine ground") && r.why.contains("(0;"))
+        // a gap in the wall (y 500 .. 560): stitched there only, and no stitch crosses the wall
+        val gap = ShippedSnap.Ground({ x, y -> if (wall(x) && y !in 470.0..560.0) Terrain.WALL else 1f })
+        val g = ShippedRoute.plan(old, coarse, null, doubleArrayOf(-10.0, -30.0), doubleArrayOf(380.0, 520.0), roadmap = grid(), stitchGround = gap,
+            attacher = ShippedSnap.attacher(gap))                    // the snap on the same fine ground, as MapView has it
+        assertTrue(g.why, g.reached); assertTrue(g.why, g.why.contains("stitches at run time"))
+        for ((a, b) in g.pts.zipWithNext()) for (q in 0..100) {
+            val x = a[0] + (b[0] - a[0]) * q / 100; val y = a[1] + (b[1] - a[1]) * q / 100
+            assertFalse("crosses the wall at ($x, $y)", wall(x) && y !in 470.0..560.0)
+        }
     }
 
     @Test fun theRoadmapsTiersAreCosts() {

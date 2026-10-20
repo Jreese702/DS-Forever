@@ -40,7 +40,8 @@ object ShippedRoute {
     const val AVOID_FACTOR = 6.0           // an AVOID way's yard
     const val WADE_EXTRA_YD = 60.0         // a way that wades: this much dearer (a drier way preferred)
     const val LINK_SNAP_YD = 40.0          // a link's end joins the graph's node this near
-    const val STITCH_YD = 35.0             // a net node is joined to its nearest roadmap nodes this near (a 41.7 yd cell's reach) ...
+    const val SAME_YD = 0.6                // a shipped stitch: a net node this near a roadmap node is that node (0.1 yd rounding)
+    const val STITCH_YD = 35.0             // an OLD file's run-time stitch: a net node to its nearest roadmap nodes this near ...
     const val STITCH_N = 2                 // ... this many, each where the straight line crosses no wall ([ATTACH_WALL])
     const val PULL_SAMPLE_YD = 1.0         // a pulled attach line read this often
     const val REWALK_TRIES = 4             // a rewalk way no ground walk joins is dropped and the graph searched again, this often
@@ -109,14 +110,15 @@ object ShippedRoute {
      */
     fun plan(sec: ShippedNet.Section, ground: (Double, Double) -> Float, danger: ((Double, Double) -> Float)?, from: DoubleArray, to: DoubleArray,
              k: Double = DangerGrid.strength("high"), toExit: Boolean = false, attachMaxYd: Double = ATTACH_MAX_YD,
-             goalFreeYd: Double = DangerGrid.GOAL_FREE_YD, roadmap: Roadmap? = roadmapOf(sec), attacher: Attacher = ShippedSnap.attacher()): Result {
+             goalFreeYd: Double = DangerGrid.GOAL_FREE_YD, roadmap: Roadmap? = roadmapOf(sec), attacher: Attacher = ShippedSnap.attacher(),
+             stitchGround: ShippedSnap.Ground? = null): Result {
         var goal = to
         if (toExit) sec.net.exits.mapNotNull { x -> sec.net.nodes.firstOrNull { it.id == x.node } }.minByOrNull { hypot(it.wx - to[0], it.wy - to[1]) }
             ?.takeIf { hypot(it.wx - to[0], it.wy - to[1]) <= SafePath.EXIT_SNAP_YD }?.let { goal = doubleArrayOf(it.wx, it.wy) }
         // the last yards to the goal are never danger (a kill objective, a giver among mobs: the route must reach them; DangerGrid's rule)
         val gx = goal[0]; val gy = goal[1]
         val dz = danger?.let { d -> { x: Double, y: Double -> if (hypot(x - gx, y - gy) <= goalFreeYd) 0f else d(x, y) } }
-        val g = Graph(sec, roadmap, dz, ground, attacher)
+        val g = Graph(sec, roadmap, dz, ground, attacher, stitchGround)
         val round = g.search(ground, dz, from, goal, k, attachMaxYd)
         if (round.pts.size < 2 || !round.reached) return round
         if (k <= 0.0) return round
@@ -129,8 +131,8 @@ object ShippedRoute {
     }
 
     /** the one graph: the net's ways along their points, the roadmap's edges, their base costs and the danger along them */
-    private class Graph(val sec: ShippedNet.Section, roadmap: Roadmap?, danger: ((Double, Double) -> Float)?, ground: (Double, Double) -> Float,
-                        val attacher: Attacher) {
+    private class Graph(val sec: ShippedNet.Section, val roadmap: Roadmap?, danger: ((Double, Double) -> Float)?,
+                        @Suppress("UNUSED_PARAMETER") ground: (Double, Double) -> Float, val attacher: Attacher, stitchGround: ShippedSnap.Ground?) {
         val net = sec.net
         /** a way: [via] its points after [a] up to [b] (both directions walk it), [rewalk] a rewalk way with no shipped points */
         /** [share]: the net's danger share (the cost x 1 + it with no character danger); [fixedYd]: the roadmap's shipped danger x yards
@@ -138,6 +140,8 @@ object ShippedRoute {
         class W(val a: Int, val b: Int, val via: List<DoubleArray>, val len: Double, val base: Double, val dangerYd: Double, val share: Double,
                 val onLand: Boolean, val roadmap: Boolean, val rewalk: Boolean, val fixedYd: Double? = null)
         val ways = ArrayList<W>()
+        /** the stitches: [shipped] join ends on roadmap nodes, [stitched] made at run time (an old file), [refused] by the fine ground */
+        var shipped = 0; var stitched = 0; var refused = 0
         val pos = HashMap<Int, DoubleArray>()
         /** the nodes an end may snap to (no cave's or lift's inside point: its floor is not the terrain the walk is on) */
         val snapIds = ArrayList<Int>()
@@ -188,31 +192,40 @@ object ShippedRoute {
                     ways.add(W(e.a, e.b, e.pts + listOf(b), len, len * NET_FAVOUR * e.tier.coerceAtLeast(1.0), dangerAlong(line), 0.0, true, true, false,
                         e.danger?.let { it * len }))
                 }
-                // each net node on the ground joined to its nearest roadmap nodes (a straight step crossing no wall), so the two are one graph
+                // THE STITCHES (net node <-> roadmap node). SHIPPED (NET1 v2, T1: pre-walked, segcheck-checked join ways): a join way's
+                // end standing on a roadmap node ([SAME_YD]) IS that node - nothing stitched at run time. An OLD file without them: a
+                // guarded run-time stitch, only over a straight step the FINE ground clears ([stitchGround], ShippedSnap.lineWall), else none
                 val cell = 40.0
                 fun key(x: Double, y: Double) = (Math.floor(x / cell).toLong() shl 32) xor (Math.floor(y / cell).toLong() and 0xffffffffL)
                 val buckets = HashMap<Long, ArrayList<Int>>()
                 for (id in roadmap.nodes.keys) { val p = pos[id]!!; buckets.getOrPut(key(p[0], p[1])) { ArrayList() }.add(id) }
-                fun clear(p: DoubleArray, q: DoubleArray): Boolean {
-                    val d = hypot(q[0] - p[0], q[1] - p[1]); val m = max(1, ceil(d / 2.5).toInt())
-                    for (i in 1 until m) { val t = i.toDouble() / m; val g = ground(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t); if (!g.isNaN() && g >= ATTACH_WALL) return false }
-                    return true
-                }
-                for (n in net.nodes) {
-                    if (n.kind == SafePath.CAVE || n.kind == SafePath.LIFT) continue
+                fun near(p: DoubleArray): List<Int> { val out = ArrayList<Int>()
+                    for (dx in -1..1) for (dy in -1..1) buckets[key(p[0] + dx * cell, p[1] + dy * cell)]?.let { out.addAll(it) }
+                    return out.sortedBy { hypot(pos[it]!![0] - p[0], pos[it]!![1] - p[1]) } }
+                val onLandNodes = net.nodes.filter { it.kind != SafePath.CAVE && it.kind != SafePath.LIFT }
+                for (n in onLandNodes) {
                     val p = pos[n.id]!!
-                    val near = ArrayList<Int>()
-                    for (dx in -1..1) for (dy in -1..1) buckets[key(p[0] + dx * cell, p[1] + dy * cell)]?.let { near.addAll(it) }
+                    val id = near(p).firstOrNull() ?: continue
+                    val q = pos[id]!!
+                    if (hypot(q[0] - p[0], q[1] - p[1]) <= SAME_YD) { ways.add(W(n.id, id, listOf(q), 0.0, 0.0, 0.0, 0.0, true, true, false, 0.0)); shipped++ }
+                }
+                if (shipped == 0 && stitchGround != null) for (n in onLandNodes) {
+                    val p = pos[n.id]!!
                     var made = 0
-                    for (id in near.sortedBy { hypot(pos[it]!![0] - p[0], pos[it]!![1] - p[1]) }) {
+                    for (id in near(p)) {
                         if (made >= STITCH_N) break
                         val q = pos[id]!!; val d = hypot(q[0] - p[0], q[1] - p[1])
                         if (d > STITCH_YD) break
-                        if (!clear(p, q)) continue
-                        ways.add(W(n.id, id, listOf(q), d, d * NET_FAVOUR, dangerAlong(listOf(p, q)), 0.0, true, true, false, 0.0)); made++
+                        if (ShippedSnap.lineWall(p, q, stitchGround) != null) { refused++; continue }
+                        ways.add(W(n.id, id, listOf(q), d, d * NET_FAVOUR, dangerAlong(listOf(p, q)), 0.0, true, true, false, 0.0)); made++; stitched++
                     }
                 }
             }
+        }
+        val stitchWords get() = when {
+            shipped > 0 -> "stitches shipped ($shipped)"
+            stitched > 0 || refused > 0 -> "stitches at run time ($stitched; $refused refused by the fine ground)"
+            else -> "no stitches"
         }
         fun cost(w: W, k: Double, danger: Boolean): Double = when {
             danger -> w.base + k * w.dangerYd
@@ -343,7 +356,7 @@ object ShippedRoute {
             val swims = out.count { Climb.atSwim(it) }
             return Result(out, true, (if (direct) "the ground's own walk (near)" else "on the shipped network") +
                 ": ${length(out).toInt()} yd, ${max(0, out.size - 2)} bends, attach ${onYd.toInt()} / ${offYd.toInt()} yd" +
-                (if (snaps == 2) " (snapped)" else " (long attach)") + (if (rmYd > 0.0) ", ${rmYd.toInt()} yd on the roadmap" else "") +
+                (if (snaps == 2) " (snapped)" else " (long attach)") + (if (rmYd > 0.0) ", ${rmYd.toInt()} yd on the roadmap" else "") + (if (roadmap != null) ", $stitchWords" else "") +
                 (if (swimOffered > 0) ", swim offered ($swims swum points)" else ""),
                 attachFromYd = onYd, attachToYd = offYd, swims = swims, snapped = snaps == 2, roadmapYd = rmYd) to null
         }
