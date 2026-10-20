@@ -49,7 +49,8 @@ class ShipCheck(private val cg: Climb.Grid, private val deep: (Double, Double) -
                 val d = hypot(rm.x(r) - n.wx, rm.y(r) - n.wy); if (d <= STITCH_YD) near.add(d to r) }
             for ((_, r) in near.distinctBy { it.second }.sortedBy { it.first }.take(STITCH_N)) {
                 val a = doubleArrayOf(n.wx, n.wy); val b = doubleArrayOf(rm.x(r), rm.y(r))
-                val pts = if (Climb.walkable(cg, a, b, deep)) listOf(a, b) else leg(a, b) ?: continue
+                // (its points begin at the net node and end at the roadmap node exactly: ShippedNet.anchored - the hop a leg leaves out is checked too)
+                val pts = if (Climb.walkable(cg, a, b, deep)) listOf(a, b) else leg(a, b)?.let { ShippedNet.anchored(it, a, b).first } ?: continue
                 out.add(ShippedNet.Stitch(n.id, r, ShippedNet.F_JOIN or pts.zipWithNext().fold(0) { f, (u, v) -> f or wetOf(u, v) }, pts.map { doubleArrayOf(it[0], it[1]) }))
             }
         }
@@ -122,7 +123,8 @@ class ShipCheck(private val cg: Climb.Grid, private val deep: (Double, Double) -
             for ((it, why) in bad) when (it.layer) {
                 'N' -> { val p = it.pts
                     val w = if (it.idx in walkedWays) null else leg(doubleArrayOf(p.first()[0], p.first()[1]), doubleArrayOf(p.last()[0], p.last()[1]))
-                    if (w != null && w.size >= 2) { newPts[it.idx] = w.map { q -> doubleArrayOf(q[0], q[1]) }; walkedWays.add(it.idx); walked.merge('N', 1, Int::plus) }
+                    if (w != null && w.size >= 2) { newPts[it.idx] = ShippedNet.anchored(w.map { q -> doubleArrayOf(q[0], q[1]) }, p.first(), p.last()).first
+                        walkedWays.add(it.idx); walked.merge('N', 1, Int::plus) }
                     else { dropW.add(it.idx); dropped.merge('N', 1, Int::plus); log("SHIPCHECK $tag drop way ${it.idx} (${sec.net.edges[it.idx].kind}, ${ShippedNet.flagNames(sec.ways[it.idx].flags)}): $why") } }
                 'R' -> { val r = rm!!; val a = r.edgeA[it.idx]; val b = r.edgeB[it.idx]
                     val w = if (it.idx in walkedRm) null else rmLeg(doubleArrayOf(r.x(a), r.y(a)), doubleArrayOf(r.x(b), r.y(b)))
