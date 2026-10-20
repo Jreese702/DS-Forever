@@ -34,6 +34,7 @@ object ShippedSnap {
     const val CANDIDATES = 8          // the nearest walled-off nodes a walk round is tried to
     const val LINE_STEP_YD = 1.0      // a straight snap read this often (the water's 4.2 yd vertices, a wall's few yards)
     const val CELL_YD = 2.5           // a bent snap's walk cells (each step's middle read too: 1.25 yd)
+    const val ON_PIECE_YD = 5.0       // a ground end its lead snap is this near stands on that piece: no fallback off it
     const val FAR_STEEP = 5f          // a fallback over terrain this dear a yard (a climb of ~37 degrees, a rock field): not offered
     const val FAR_COST = 1.0e6        // a snap past the spread: this much dearer (the fallback when the nearer ones lead nowhere)
     const val SPREAD_YD = 0.5         // the snaps kept: the nearest clear one's and those no more than this longer
@@ -147,7 +148,12 @@ object ShippedSnap {
         fun lead(r: Result?) = r?.snaps?.filter { it.lead && taken.add(it.node) }?.takeIf { it.isNotEmpty() }?.let { tiers.add(it) }
         fun rest(r: Result?) = r?.snaps?.filter { !it.lead && it.steep < FAR_STEEP && it.node !in taken }
             ?.sortedWith(compareBy({ it.steep > 1f }, { it.yd }))?.forEach { if (taken.add(it.node)) tiers.add(listOf(it)) }
-        lead(fl); rest(fl); lead(ground0); rest(ground0)
+        lead(fl); rest(fl); lead(ground0)
+        // an end ON the ground's nearest piece (its lead within [ON_PIECE_YD]: a dock's deck, a ledge the graph keeps apart): no
+        // fallback onto another piece - W's round 2, Mulgore L: the goal on the airship dock, its own piece joined to nothing, the
+        // fallback's 8 yd line off the dock's edge a 90 degree face; the harness does not reach it either
+        val onPiece = fl == null && ground0?.snaps?.firstOrNull { it.lead }?.let { it.yd <= ON_PIECE_YD } == true
+        if (!onPiece) rest(ground0)
         val out = tiers.flatMapIndexed { rank, t -> t.map { it.ranked(rank) } }
             .map { sn -> cutAt[sn.node]?.let { (w, t) -> Snap(sn.node, sn.pts, sn.yd, sn.cost, sn.straight, sn.lead, sn.steep, w, t) } ?: sn }
         if (out.isEmpty()) return Result(emptyList(), (if (fl != null) "on a floor: ${fl.why}; " else "") + (ground0?.why ?: "no ground node within ${reach.toInt()} yd"))
