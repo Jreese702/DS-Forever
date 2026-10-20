@@ -45,6 +45,14 @@ object NetRoadmap {
     const val MIN_OPEN = 6
     /** the A*'s window: narrowed to Climb.MIN_MARGIN_YD round the two ends (an edge is short) */
     const val LEG_WINDOW = 40_000
+    /** THE CONNECTIVITY REPAIR (the coordinator, 2026-10-19, Durotar's Dustwind Cave): two pieces of the roadmap joined by a
+     *  neighbour's lattice leg up to this x the straight line, or by a leg to a node two cells away through the cell between */
+    const val REPAIR_DETOUR = 3.0
+    /** the two-cell neighbours a repair tries (each through the forward neighbour cell between: DIRS twice) */
+    /** a chain's reach: a node this many cells away at most (Chebyshev), through the cells between */
+    const val CHAIN_CELLS = 4
+    /** a pair of pieces is tried by this many chains at most (their nearest nodes first) */
+    const val CHAIN_TRIES = 6
     /** the cells RM1 nodes use by default: 10 lattice steps, 41.7 yd */
     const val CELL = 10
 
@@ -62,10 +70,15 @@ object NetRoadmap {
     /** what [build] did, for the logs */
     class Stats(var cells: Int = 0, var nodes: Int = 0, var tried: Int = 0, var kept: Int = 0, var noLeg: Int = 0, var detour: Int = 0,
                 var room: Int = 0, var wade: Int = 0, var isolated: Int = 0, var strict: Int = 0, var walked: Int = 0, var ms: Long = 0,
-                var checkFailed: Int = 0, var mended: Int = 0, var checkDropped: Int = 0) {
+                var checkFailed: Int = 0, var mended: Int = 0, var checkDropped: Int = 0,
+                var compBefore: Int = 0, var compAfter: Int = 0, var repaired1: Int = 0, var repaired2: Int = 0, var repairDropped: Int = 0,
+                var regions: Int = 0) {
         override fun toString() = "$cells zone cells, $nodes nodes ($isolated without an edge dropped), $kept of $tried neighbour pairs joined " +
             "($walked walked; not joined: no leg $noLeg, detour $detour, room $room, wade $wade; $strict by the no-wade retry; " +
-            "segcheck/wetcheck failed $checkFailed: $mended walked again, $checkDropped dropped), $ms ms"
+            "segcheck/wetcheck failed $checkFailed: $mended walked again, $checkDropped dropped); " +
+            "CONNECTIVITY $compBefore pieces before the repair, $compAfter after ($repaired1 neighbour legs to ${REPAIR_DETOUR}x, " +
+            "$repaired2 chains of up to $CHAIN_CELLS cells through new nodes; $repairDropped repair edges dropped by the check); " +
+            "the lattice's walkable regions holding a node: $regions), $ms ms"
     }
 
     /** the roadmap and each edge's points a yard apart (for [dangerBytes]) */
@@ -226,6 +239,32 @@ object NetRoadmap {
         // THE GATE'S OWN RULE on every segment (no wall, no deep water), off the rooms, no long wade
         fun fine(shape: List<DoubleArray>) = shape.zipWithNext().all { (p, q) -> Climb.walkable(g, p, q, ground.deep) && !crossesRoom(p, q) } &&
             longestWade(shape) <= SafePath.NARROW_YD
+        class Walk(val shape: List<DoubleArray>, val raw: List<DoubleArray>, val water: (Double, Double) -> Boolean)
+        // THE EDGE'S LEG from [pa] to [pb]: the lattice's own (calm costs, edge clearance), the no-wade retry, at most [detour] x the line,
+        // off the rooms, simplified, every segment walkable; null (counted in the stats when [count]) when there is none
+        fun walk(pa: DoubleArray, pb: DoubleArray, detour: Double, count: Boolean): Walk? {
+            val line = hypot(pb[0] - pa[0], pb[1] - pa[1])
+            fun legOn(water: (Double, Double) -> Boolean) = Climb.route(g, pa, pb, ground.calm, ground.k, water, emptyList(), true, limits)
+                ?.takeIf { it.reached && it.pts.size >= 2 && hypot(it.pts.first()[0] - pa[0], it.pts.first()[1] - pa[1]) < 1e-6 &&
+                    hypot(it.pts.last()[0] - pb[0], it.pts.last()[1] - pb[1]) < 1e-6 }
+            var water: (Double, Double) -> Boolean = ground.deep
+            var leg = legOn(water)
+            if (leg == null) { if (count) st.noLeg++; return null }
+            if (longestWade(leg.pts) > SafePath.NARROW_YD) {
+                val sw = strictWater
+                val l2 = sw?.let { legOn(it) }
+                if (l2 == null || longestWade(l2.pts) > SafePath.NARROW_YD) { if (count) st.wade++; return null }
+                leg = l2; water = sw; if (count) st.strict++
+            }
+            val raw = leg.pts.map { doubleArrayOf(it[0], it[1]) }
+            if (raw.zipWithNext { p, q -> hypot(q[0] - p[0], q[1] - p[1]) }.sum() > detour * line + 1.0) { if (count) st.detour++; return null }
+            if (raw.zipWithNext().any { (p, q) -> crossesRoom(p, q) }) { if (count) st.room++; return null }
+            // the inner points are lattice vertices (the leg's bends), the ends the nodes
+            val inner = innerOf(simplify(raw, water))
+            val shape = inner?.let { shapeOf(pa, pb, it) }
+            if (inner == null || shape == null || !fine(shape)) { if (count) st.noLeg++; return null }
+            return Walk(shape, raw, water)
+        }
         for (n in nCell.indices) {
             val c = nCell[n]; val pa = doubleArrayOf(g.wx(nJ[n]), g.wy(nI[n]))
             for (d in ShippedNet.DIRS) {
@@ -233,29 +272,8 @@ object NetRoadmap {
                 if (ci !in 0 until nx || cj !in 0 until ny) continue
                 val m = at[cj * nx + ci]; if (m < 0) continue
                 st.tried++
-                val pb = doubleArrayOf(g.wx(nJ[m]), g.wy(nI[m])); val line = hypot(pb[0] - pa[0], pb[1] - pa[1])
-                fun legOn(water: (Double, Double) -> Boolean) = Climb.route(g, pa, pb, ground.calm, ground.k, water, emptyList(), true, limits)
-                    ?.takeIf { it.reached && it.pts.size >= 2 && hypot(it.pts.first()[0] - pa[0], it.pts.first()[1] - pa[1]) < 1e-6 &&
-                        hypot(it.pts.last()[0] - pb[0], it.pts.last()[1] - pb[1]) < 1e-6 }
-                var water: (Double, Double) -> Boolean = ground.deep
-                var leg = legOn(water)
-                if (leg == null) { st.noLeg++; continue }
-                if (longestWade(leg.pts) > SafePath.NARROW_YD) {
-                    val sw = strictWater
-                    val l2 = sw?.let { legOn(it) }
-                    if (l2 == null || longestWade(l2.pts) > SafePath.NARROW_YD) { st.wade++; continue }
-                    leg = l2; water = sw; st.strict++
-                }
-                var pts = leg.pts.map { doubleArrayOf(it[0], it[1]) }
-                if (pts.zipWithNext { p, q -> hypot(q[0] - p[0], q[1] - p[1]) }.sum() > DETOUR * line + 1.0) { st.detour++; continue }
-                if (pts.zipWithNext().any { (p, q) -> crossesRoom(p, q) }) { st.room++; continue }
-                val raw = pts
-                pts = simplify(pts, water)
-                // the inner points are lattice vertices (the leg's bends), the ends the nodes
-                val inner = innerOf(pts)
-                val shape = inner?.let { shapeOf(pa, pb, it) }
-                if (inner == null || shape == null || !fine(shape)) { st.noLeg++; continue }
-                eA.add(n); eB.add(m); eP.add(inner); shapes.add(shape); raws.add(raw); waters.add(water)
+                val w = walk(pa, doubleArrayOf(g.wx(nJ[m]), g.wy(nI[m])), DETOUR, true) ?: continue
+                eA.add(n); eB.add(m); eP.add(innerOf(w.shape)); shapes.add(w.shape); raws.add(w.raw); waters.add(w.water)
             }
         }
         // THE CHECKS (py/segcheck.py, py/wetcheck.py): a failing edge walked again, else dropped
@@ -285,16 +303,159 @@ object NetRoadmap {
             for (e in left) drop[e] = true
             st.checkDropped = left.size
         }
-        val keepE = eA.indices.filter { !drop[it] }
+        val keep = BooleanArray(eA.size) { !drop[it] }
+        // ---- THE CONNECTIVITY REPAIR: the roadmap's pieces (nodes with an edge) joined where the lattice joins them
+        val cap = nCell.size + nx * ny                     // room for the repair's new nodes (one a cell at most)
+        val par = IntArray(cap) { it }
+        fun find(x0: Int): Int { var x = x0; while (par[x] != x) { par[x] = par[par[x]]; x = par[x] }; return x }
+        fun union(a0: Int, b0: Int) { par[find(a0)] = find(b0) }
+        fun pieces(): Int { val deg = IntArray(nCell.size); for (e in eA.indices) if (keep.getOrElse(e) { true }) { deg[eA[e]]++; deg[eB[e]]++ }
+            return nCell.indices.filter { deg[it] > 0 }.map { find(it) }.toSet().size }
+        for (e in eA.indices) if (keep[e]) union(eA[e], eB[e])
+        st.compBefore = pieces()
+        val has = HashSet<Long>(); for (e in eA.indices) if (keep[e]) has.add(eA[e].toLong() * 1_000_000 + eB[e])
+        val deg = IntArray(cap); for (e in eA.indices) if (keep[e]) { deg[eA[e]]++; deg[eB[e]]++ }
+        val firstRepair = eA.size
+        fun addEdge(a0: Int, b0: Int, w: Walk) {
+            eA.add(a0); eB.add(b0); eP.add(innerOf(w.shape)); shapes.add(w.shape); raws.add(w.raw); waters.add(w.water)
+            has.add(a0.toLong() * 1_000_000 + b0); deg[a0]++; deg[b0]++; union(a0, b0)
+        }
+        // 1. a forward neighbour in another piece, by a leg up to REPAIR_DETOUR x the line
+        for (n in nCell.indices) {
+            val c = nCell[n]
+            for (d in ShippedNet.DIRS) {
+                val ci = c % nx + d[0]; val cj = c / nx + d[1]
+                if (ci !in 0 until nx || cj !in 0 until ny) continue
+                val m = at[cj * nx + ci]; if (m < 0 || find(m) == find(n) || has.contains(n.toLong() * 1_000_000 + m)) continue
+                val w = walk(doubleArrayOf(g.wx(nJ[n]), g.wy(nI[n])), doubleArrayOf(g.wx(nJ[m]), g.wy(nI[m])), REPAIR_DETOUR, false) ?: continue
+                addEdge(n, m, w); st.repaired1++
+            }
+        }
+        // 2. A CHAIN: a node 2 to [CHAIN_CELLS] cells away in another piece, by a lattice leg up to REPAIR_DETOUR x the line, through
+        //    cells that hold no node with an edge: a node in each (a new one, or one with no edge moved onto the leg) splits the leg
+        //    into forward edges between neighbour cells
+        fun chain(n: Int, m: Int): Boolean {
+            val pa = doubleArrayOf(g.wx(nJ[n]), g.wy(nI[n])); val pb = doubleArrayOf(g.wx(nJ[m]), g.wy(nI[m]))
+            val w = walk(pa, pb, REPAIR_DETOUR, false) ?: return false
+            // the leg a yard apart: each spot's segment, lattice vertex and cell
+            class Spot(val q: Int, val i: Int, val j: Int, val c: Int)
+            val spots = ArrayList<Spot>()
+            for (q in 0 until w.shape.size - 1) {
+                val u = w.shape[q]; val v = w.shape[q + 1]; val k2 = max(1, hypot(v[0] - u[0], v[1] - u[1]).toInt())
+                for (t in 0 until k2) { val vx = g.at(u[0] + (v[0] - u[0]) * t / k2, u[1] + (v[1] - u[1]) * t / k2)
+                    val ci = vx[0] / cell; val cj = vx[1] / cell
+                    if (ci !in 0 until nx || cj !in 0 until ny) return false
+                    spots.add(Spot(q, vx[0], vx[1], cj * nx + ci)) }
+            }
+            // the cells in the order the leg goes through them, each once (a loop back into a cell cut out: its spots join that cell's),
+            // each the neighbour of the one before
+            val runs = ArrayList<MutableList<Spot>>()
+            for (sp in spots) {
+                val k = runs.indexOfFirst { it[0].c == sp.c }
+                if (k < 0) runs.add(mutableListOf(sp)) else { while (runs.size > k + 1) runs.removeAt(runs.size - 1); runs[k].add(sp) }
+            }
+            if (runs.isEmpty() || runs.first()[0].c != nCell[n] || runs.last()[0].c != nCell[m]) return false
+            for ((r1, r2) in runs.zipWithNext()) { val c1 = r1[0].c; val c2 = r2[0].c
+                if (abs(c1 % nx - c2 % nx) > 1 || abs(c1 / nx - c2 / nx) > 1) return false }
+            if (runs.size < 3) return false
+            // a vertex for each cell between: the leg's spot nearest the cell's middle (dry, off the rooms)
+            val picks = ArrayList<Spot>()
+            for (r in runs.subList(1, runs.size - 1)) {
+                val c = r[0].c; val mid = at[c]; if (mid >= 0 && deg[mid] > 0) return false
+                val cx = (c % nx) * cell + (cell - 1) / 2.0; val cy = (c / nx) * cell + (cell - 1) / 2.0
+                picks.add(r.filter { !deepAt(it.i, it.j) && !ground.rooms(g.wx(it.j), g.wy(it.i)) }.minByOrNull { hypot(it.i - cx, it.j - cy) } ?: return false)
+            }
+            // the leg cut at each pick: the shape's own vertices between, the pick's vertex at each end
+            val cuts = ArrayList<List<DoubleArray>>()
+            var prevQ = 0; var prev = pa
+            for (pk in picks + listOf(Spot(w.shape.size - 2, -1, -1, nCell[m]))) {
+                val end = if (pk.i < 0) pb else doubleArrayOf(g.wx(pk.j), g.wy(pk.i))
+                val part = mutableListOf(prev)
+                for (q in prevQ + 1..pk.q) { val v = w.shape[q]; if (hypot(v[0] - part.last()[0], v[1] - part.last()[1]) > 1e-6) part.add(v) }
+                if (hypot(end[0] - part.last()[0], end[1] - part.last()[1]) > 1e-6) part.add(end)
+                if (part.size < 2 || innerOf(part) == null || !fine(part)) return false
+                cuts.add(part); prevQ = pk.q; prev = end
+            }
+            // commit: the nodes in the cells between, the edges each from the cell whose forward neighbour the next is
+            val chainN = ArrayList<Int>(); chainN.add(n)
+            for (pk in picks) {
+                val k = at[pk.c].takeIf { it >= 0 } ?: nCell.size.also { at[pk.c] = it; nCell.add(pk.c); nI.add(pk.i); nJ.add(pk.j); nF.add(0) }
+                nI[k] = pk.i; nJ[k] = pk.j
+                val x = g.wx(pk.j); val y = g.wy(pk.i)
+                nF[k] = (if (onDeck(pk.i, pk.j)) ShippedNet.R_FLOOR else 0) or (if (near(x, y, 3.0, ground.rooms)) ShippedNet.R_BUILDING else 0)
+                chainN.add(k)
+            }
+            chainN.add(m)
+            for ((q, part) in cuts.withIndex()) {
+                val u = chainN[q]; val v = chainN[q + 1]; val cu = nCell[u]; val cv = nCell[v]
+                val fwd = ShippedNet.DIRS.any { it[0] == cv % nx - cu % nx && it[1] == cv / nx - cu / nx }
+                if (fwd) addEdge(u, v, Walk(part, part, w.water)) else addEdge(v, u, Walk(part.reversed(), part.reversed(), w.water))
+            }
+            st.repaired2++
+            return true
+        }
+        // the candidates: every pair of nodes 2 to CHAIN_CELLS cells apart in two pieces, nearest first; each pair of pieces tried
+        // [CHAIN_TRIES] times at most
+        val triedPair = HashMap<Long, Int>()
+        val rr = (CHAIN_CELLS * cell).toDouble()
+        val cands = ArrayList<Triple<Double, Int, Int>>()
+        for (n in nCell.indices.toList()) {
+            val c = nCell[n]; val ci0 = c % nx; val cj0 = c / nx
+            for (cj in cj0..cj0 + CHAIN_CELLS) for (ci in ci0 - CHAIN_CELLS..ci0 + CHAIN_CELLS) {
+                if (ci !in 0 until nx || cj !in 0 until ny || max(abs(ci - ci0), abs(cj - cj0)) < 2 || (cj == cj0 && ci < ci0)) continue
+                val m = at[cj * nx + ci]; if (m < 0 || find(m) == find(n)) continue
+                val d = hypot((nI[m] - nI[n]).toDouble(), (nJ[m] - nJ[n]).toDouble())
+                if (d <= rr) cands.add(Triple(d, n, m))
+            }
+        }
+        cands.sortBy { it.first }
+        for ((_, n, m) in cands) {
+            val ra = find(n); val rb = find(m); if (ra == rb) continue
+            val key = min(ra, rb).toLong() * 10_000_000 + max(ra, rb)
+            val t = triedPair.getOrDefault(key, 0); if (t >= CHAIN_TRIES) continue
+            triedPair[key] = t + 1
+            chain(n, m)
+        }
+        // (the arrays grown with the new nodes)
+        val keepAll = BooleanArray(eA.size) { it >= firstRepair || keep[it] }
+        // the repairs checked as every edge is (no re-walk: a failing repair is dropped)
+        if (check != null && eA.size > firstRepair) {
+            val bad = check(shapes.subList(firstRepair, eA.size)).map { it + firstRepair }
+            for (e in bad) keepAll[e] = false
+            st.repairDropped = bad.size
+        }
+        val par2 = IntArray(nCell.size) { it }
+        fun find2(x0: Int): Int { var x = x0; while (par2[x] != x) { par2[x] = par2[par2[x]]; x = par2[x] }; return x }
+        val deg2 = IntArray(nCell.size)
+        for (e in eA.indices) if (keepAll[e]) { par2[find2(eA[e])] = find2(eB[e]); deg2[eA[e]]++; deg2[eB[e]]++ }
+        st.compAfter = nCell.indices.filter { deg2[it] > 0 }.map { find2(it) }.toSet().size
+        // the lattice's own walkable regions (its 8 steps, no wall, off deep water) that hold a node: one roadmap piece each at best
+        run {
+            val lab = IntArray(g.nx * g.ny) { -1 }; var nr = 0
+            val stack = IntArray(g.nx * g.ny)
+            for (k in nCell.indices) { if (deg2[k] == 0) continue
+                val s0 = nJ[k] * g.nx + nI[k]; if (lab[s0] >= 0) continue
+                var sp = 0; stack[sp++] = s0; lab[s0] = nr
+                while (sp > 0) { val v = stack[--sp]; val i = v % g.nx; val j = v / g.nx
+                    for (dj in -1..1) for (di in -1..1) { if (di == 0 && dj == 0) continue
+                        val a2 = i + di; val b2 = j + dj; if (a2 !in 0 until g.nx || b2 !in 0 until g.ny) continue
+                        val u = b2 * g.nx + a2; if (lab[u] >= 0 || g.step(i, j, di, dj) == Climb.WALL || deepAt(a2, b2)) continue
+                        lab[u] = nr; stack[sp++] = u } }
+                nr++ }
+            st.regions = nr
+        }
+        // ---- THE ROADMAP: the nodes with an edge in cell order, the edges in their node a's order, DIRS order within
+        val keepN = nCell.indices.filter { deg2[it] > 0 }.sortedBy { nCell[it] }
+        st.isolated = nCell.size - keepN.size
+        val remap = IntArray(nCell.size) { -1 }; for ((q, n) in keepN.withIndex()) remap[n] = q
+        fun dirOf(e: Int): Int { val ca = nCell[eA[e]]; val cb = nCell[eB[e]]; val di = cb % nx - ca % nx; val dj = cb / nx - ca / nx
+            return ShippedNet.DIRS.indexOfFirst { it[0] == di && it[1] == dj }.also { require(it >= 0) { "edge $e no forward neighbour" } } }
+        val keepE = eA.indices.filter { keepAll[it] }.sortedWith(compareBy({ remap[eA[it]] }, { dirOf(it) }))
         for (e in keepE) {
             val sm = sample(shapes[e]); samples.add(sm); eF.add(flags(shapes[e], sm))
             st.kept++; if (eP[e]!!.isNotEmpty()) st.walked++
         }
-        // nodes no edge reaches: dropped (an island of one vertex, a ledge); the order kept (cell order, node a's order)
-        val used = BooleanArray(nCell.size); for (e in keepE) { used[eA[e]] = true; used[eB[e]] = true }
-        val remap = IntArray(nCell.size) { -1 }; var kept = 0
-        for (q in nCell.indices) if (used[q]) remap[q] = kept++ else st.isolated++
-        val keepN = nCell.indices.filter { used[it] }
+        val kept = keepN.size
         val rm = ShippedNet.Roadmap(g.gr0, g.gc0, cell, nx, ny, keepN.map { nCell[it] }.toIntArray(), keepN.map { g.gr0 + nJ[it] }.toIntArray(),
             keepN.map { g.gc0 + nI[it] }.toIntArray(), keepN.map { nF[it] }.toIntArray(),
             keepE.map { remap[eA[it]] }.toIntArray(), keepE.map { remap[eB[it]] }.toIntArray(), eF.toIntArray(),
