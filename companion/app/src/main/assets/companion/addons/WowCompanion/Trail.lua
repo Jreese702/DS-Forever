@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp16" }
+WC.compass = { V = "cp17" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -341,6 +341,11 @@ do
             o.a = f:CreateTexture(nil, "ARTWORK", nil, 3)
             pcall(function() o.a:SetAtlas("Navigation-Tracked-Arrow") end)
             o.a:SetSize(u(14), u(14))
+            if key == "quest" then                         -- cp17: the quest's NUMBER on the game's own POI number disc
+                o.num = f:CreateFontString(nil, "OVERLAY", nil, 7)
+                o.num:SetFont(C.FONT, u(15), "")
+                o.num:SetTextColor(0.12, 0.08, 0.02, 1)
+            end
             C.mk[key] = o
         end
         return f
@@ -783,6 +788,22 @@ do
             drawn[m.key] = true
             o.sh:SetPoint("CENTER", f, "TOP", u(m.x), -u(S.line)); show(o.sh)
             o.tx:SetPoint("CENTER", f, "TOP", u(m.x), -u(S.line)); show(o.tx)
+            if o.num then
+                -- the test27 ask (the user: "instead of the quest Icon, we should use the quest number so its totally clear what its
+                -- tracking"): the app's number for it (its place among the watched quests, the app's own count) on the game's POI disc;
+                -- no number (an unwatched focus): the "!" as before
+                local n = C.questNo and C.questNo()
+                local atlas = n and "UI-QuestPoi-QuestNumber" or spec.atlas
+                if o.atlas ~= atlas then
+                    pcall(function() o.tx:SetAtlas(atlas) end); pcall(function() o.sh:SetAtlas(atlas) end); o.atlas = atlas
+                end
+                if n then
+                    if o.numText ~= n then o.num:SetText(tostring(n)); o.numText = n end
+                    o.num:SetPoint("CENTER", f, "TOP", u(m.x), -u(S.line)); show(o.num)
+                else
+                    hide(o.num)
+                end
+            end
             if o.text ~= m.dist then o.d:SetText(m.dist); o.text = m.dist end
             o.d:SetPoint("TOP", f, "TOP", u(m.x), -u(S.line + spec.size / 2 + 3)); show(o.d)
             if m.off then                       -- off the bar: the game's nav arrow, pointing outward
@@ -793,8 +814,40 @@ do
             end
         end
         for key, o in pairs(C.mk) do
-            if not drawn[key] then hide(o.sh); hide(o.tx); hide(o.d); hide(o.a) end
+            if not drawn[key] then hide(o.sh); hide(o.tx); hide(o.d); hide(o.a); if o.num then hide(o.num) end end
         end
+    end
+
+    -- the focused quest's NUMBER as the app counts it (MapView's trackedNo): its place among the WATCHED quests, in quest-log order
+    -- (headers and hidden ones skipped, as the Quests add-on's document lists them); nil when the focus is not watched. Once a second.
+    C.qnAt = -10
+    function C.questNo()
+        local t = (type(GetTime) == "function" and GetTime()) or 0
+        if t - C.qnAt < 1 then return C.qn end
+        C.qnAt = t
+        C.qn = nil
+        local okQ, st = pcall(function() return C_SuperTrack.GetSuperTrackedQuestID() end)
+        local focus = okQ and num(st) or nil
+        local R = WC.routeWp
+        if R and R.active and R.qid and R.qid > 0 then focus = R.qid end   -- (the route's pin stands for it, as the app's focus)
+        if not focus or focus <= 0 then return nil end
+        local okN, n = pcall(function() return C_QuestLog.GetNumQuestLogEntries() end)
+        n = okN and num(n) or 0
+        local k = 0
+        for i = 1, n do
+            local okI, info = pcall(function() return C_QuestLog.GetInfo(i) end)
+            if okI and type(info) == "table" and info.isHeader ~= true and info.isHidden ~= true then
+                local qid = num(info.questID)
+                if qid then
+                    local okW, wt = pcall(function() return C_QuestLog.GetQuestWatchType(qid) end)
+                    if okW and wt ~= nil then
+                        k = k + 1
+                        if qid == focus then C.qn = k; return k end
+                    end
+                end
+            end
+        end
+        return nil
     end
 
     -- a full draw now (the first show, the harness): fresh reads, the heading snapped to the facing
@@ -1707,4 +1760,160 @@ do
         end)
         if not ok then A.err = tostring(err):sub(1, 80) end
     end)
+end
+
+-- ================================================================== THE CALIBRATION RECORDING (cp17 "cal1"; read only, one shot)
+-- The user: "How can we really run down this compass position thing to get it as accurate as we can?" cp16's online learning does
+-- not settle in play, so the camera's turn law is fitted OFFLINE from a recording. ONE SHOT per add-on set (WowCompanionDB.calProbe):
+-- it starts by itself at the routine's first step -- the focused quest's marker CENTRED on screen (the nav point unclamped, within 4%
+-- of the half width of the centre) with the camera stick idle for 3 s -- and records 120 s at 30 Hz, a countdown "CAL n" on the
+-- compass meanwhile. Every gamepad / camera CVar is READ once at the start (C_Console's command list where the client has it, else
+-- a list of names). Lines {"type":"cap","probe":"cal1"}: "start" (the CVars, the screen, the columns), "s" (10 samples a line), "end".
+-- Nothing is written to the game.
+WC.compass.cal = { V = "cal1", DONE = "cal1", SECS = 120, HZ = 30, buf = {}, n = 0 }
+do
+    local C, Q = WC.compass, WC.compass.cal
+    local num = C.num
+    local function now() return (type(GetTime) == "function" and GetTime()) or 0 end
+    local function send(t)
+        t.type, t.probe, t.v = "cap", "cal1", Q.V
+        pcall(function() WC.send(WC.encode(t)) end)
+    end
+    Q.NAMES = { "GamePadCameraYawSpeed", "GamePadCameraPitchSpeed", "gamepadInvertYaw", "gamepadInvertPitch", "GamePadTurnWithCamera",
+                "GamepadCameraFollowOnStick", "GamepadCameraFollowPitchOffset", "GamePadCameraLookMaxYaw", "GamePadCameraLookMaxPitch",
+                "GamePadFaceMovementMaxAngle", "GamePadFaceMovementMaxAngleCombat", "GamePadRunThreshold", "GamePadBackPedalThreshold",
+                "GamePadCursorPushCamera", "GamePadStickEnabled", "cameraFov", "cameraYawSmoothSpeed", "cameraYawMoveSpeed",
+                "cameraSmoothStyle", "cameraSmoothTrackingStyle", "cameraTerrainTilt", "test_cameraDynamicPitch", "CameraKeepCharacterCentered",
+                "cameraPivot", "cameraDistanceMaxZoomFactor" }
+    function Q.cvars()
+        local names, seen = {}, {}
+        local okA, all = pcall(function() return C_Console.GetAllCommands() end)
+        if okA and type(all) == "table" then
+            for _, c in ipairs(all) do
+                local n = type(c) == "table" and c.command
+                if type(n) == "string" and (n:lower():find("gamepad") or n:lower():find("camera")) and not seen[n] then
+                    seen[n] = true; names[#names + 1] = n
+                end
+            end
+        end
+        for _, n in ipairs(Q.NAMES) do if not seen[n] then seen[n] = true; names[#names + 1] = n end end
+        local out = {}
+        for _, n in ipairs(names) do
+            local okV, v = pcall(function() return C_CVar.GetCVar(n) end)          -- READ only
+            if okV and v ~= nil and not (type(issecretvalue) == "function" and issecretvalue(v)) then out[n] = tostring(v) end
+        end
+        return out, okA and type(all) == "table"
+    end
+    local function r(v, k) v = num(v); return v and math.floor(v * k + 0.5) or "" end
+
+    function Q.sample(t, dt)
+        local K = C.cam
+        -- the sticks, raw from the game's mapped state (both)
+        local rx, ry, lx, ly
+        local okS, st = pcall(function() return C_GamePad.GetDeviceMappedState() end)
+        if okS and type(st) == "table" and type(st.sticks) == "table" then
+            for i = 1, (num(st.stickCount) or #st.sticks) do
+                local okN, name = pcall(function() return C_GamePad.StickIndexToConfigName(i - 1) end)
+                local okX, x, y = pcall(function() return st.sticks[i].x, st.sticks[i].y end)
+                if okN and okX and name == "Camera" then rx, ry = x, y elseif okN and okX and name == "Movement" then lx, ly = x, y end
+            end
+        end
+        local f = C.facing()
+        -- the nav point and the target's true bearing / distance
+        local nx, ncl, nvp
+        local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
+        if okF and nav then
+            local okC, x = pcall(function() return nav:GetCenter() end)
+            local okSc, ns = pcall(function() return nav:GetEffectiveScale() end)
+            local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
+            x = okC and num(x) or nil
+            ns, us = okSc and num(ns) or 1, okU and num(us) or 1
+            if x and us > 0 then nx = x * ns / us end
+            local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
+            local okV, vp = pcall(function() return C_Navigation.HasValidScreenPosition() end)
+            ncl = okK and type(cl) == "boolean" and (cl and 1 or 0) or ""
+            nvp = okV and type(vp) == "boolean" and (vp and 1 or 0) or ""
+        end
+        local me = C.me()
+        local tg = C.targets(me)
+        local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
+        local w = (okP and onPin == true) and tg.pin or tg.quest
+        local b, d
+        if me and w then b, d = C.bearing(me, w) end
+        local okR, fps = pcall(GetFramerate)
+        local okM, speed = pcall(GetUnitSpeed, "player")
+        return table.concat({ r(t - Q.t0, 1000), r(dt, 10000), r(rx, 1000), r(ry, 1000), r(lx, 1000), r(ly, 1000), r(f, 10000),
+            r(nx, 10), tostring(ncl or ""), tostring(nvp or ""), r(b, 10000), r(d, 10), me and r(me.x, 10) or "", me and r(me.y, 10) or "",
+            okR and r(fps, 1) or "", okM and r(speed, 100) or "", r(K and K.abs, 10000) }, ",")
+    end
+
+    function Q.start()
+        Q.on, Q.t0, Q.n, Q.buf, Q.last = true, now(), 0, {}, now()
+        Q.nextAt = Q.t0                                    -- (a fixed schedule: "time since the last" against 60 fps aliases to 20 Hz)
+        local cv, enumerated = Q.cvars()
+        local okW, uw = pcall(function() return UIParent:GetWidth() end)
+        local okH, uh = pcall(function() return UIParent:GetHeight() end)
+        send({ op = "start", cv = cv, cvAll = enumerated, ui = { w = okW and num(uw) or nil, h = okH and num(uh) or nil }, hz = Q.HZ,
+               cols = "ms,dt(1e-4s),rx,ry,lx,ly(1e-3),facing(1e-4rad),navX(0.1ui),clamped,valid,bearing(1e-4rad),dist(0.1yd),"
+                   .. "wx,wy(0.1yd),fps,speed(0.01),estYaw(1e-4rad)" })
+    end
+    function Q.finish(why)
+        if not Q.on then return end
+        if #Q.buf > 0 then send({ op = "s", s = Q.buf }); Q.buf = {} end
+        send({ op = "end", why = why, n = Q.n })
+        Q.on, Q.over = false, true
+        if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+        WowCompanionDB.calProbe = Q.DONE
+        if Q.label then Q.label:Hide() end
+    end
+    -- the trigger: the marker centred, the camera stick idle 3 s
+    function Q.armed(t)
+        local K = C.cam
+        local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
+        if not (okF and nav) then Q.calmSince = nil; return false end
+        local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
+        local okC, x = pcall(function() return nav:GetCenter() end)
+        local okSc, ns = pcall(function() return nav:GetEffectiveScale() end)
+        local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
+        local okW, uw = pcall(function() return UIParent:GetWidth() end)
+        x, uw = okC and num(x) or nil, okW and num(uw) or nil
+        ns, us = okSc and num(ns) or 1, okU and num(us) or 1
+        local centred = okK and cl == false and x and uw and us > 0 and math.abs(x * ns / us - uw / 2) < uw / 2 * 0.04
+        local stickIdle = not (K and K.rx and math.abs(K.rx) > 0.05)
+        if centred and stickIdle then Q.calmSince = Q.calmSince or t else Q.calmSince = nil end
+        return Q.calmSince ~= nil and t - Q.calmSince >= 3
+    end
+    function Q.tick(el)
+        if Q.over then return end
+        local t = now()
+        if not Q.on then
+            if type(WowCompanionDB) == "table" and WowCompanionDB.calProbe == Q.DONE then Q.over = true; return end
+            if not (C.frame and C.frame:IsShown()) then return end
+            if Q.armed(t) then Q.start() else return end
+        end
+        if t + 1e-6 < Q.nextAt then return end
+        Q.nextAt = math.max(Q.nextAt + 1 / Q.HZ, t - 0.1)
+        local dt = t - Q.last
+        Q.last = t
+        local okS, line = pcall(Q.sample, t, dt)
+        if okS and line then
+            Q.n = Q.n + 1
+            Q.buf[#Q.buf + 1] = line
+            if #Q.buf >= 10 then send({ op = "s", s = Q.buf }); Q.buf = {} end
+        end
+        -- the countdown on the compass (our own font string)
+        local left = math.max(0, math.ceil(Q.SECS - (t - Q.t0)))
+        if C.frame and not Q.label then
+            Q.label = C.frame:CreateFontString(nil, "OVERLAY")
+            Q.label:SetFont(C.FONT, C.u(14), "OUTLINE")
+            Q.label:SetTextColor(1, 0.4, 0.4, 1)
+            Q.label:SetPoint("LEFT", C.frame, "LEFT", C.u(14), 0)
+        end
+        if Q.label then Q.label:SetText("CAL " .. left); Q.label:Show() end
+        if t - Q.t0 >= Q.SECS then Q.finish("done") end
+    end
+    local qf = CreateFrame("Frame")
+    pcall(function() qf:RegisterEvent("PLAYER_LOGOUT") end)
+    qf:SetScript("OnEvent", function() pcall(Q.finish, "logout") end)
+    qf:SetScript("OnUpdate", function(_, el) if not Q.over then pcall(Q.tick, el) end end)
 end
