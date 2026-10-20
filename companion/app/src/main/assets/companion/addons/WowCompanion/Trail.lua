@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp9" }
+WC.compass = { V = "cp10" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -374,7 +374,11 @@ do
     -- marker was off screen (nothing can see those). Now the compass always turns live with the character's facing, plus the last
     -- MEASURED camera-minus-character offset, which fades out over DECAY_S: a fix nudges it to the camera, and between fixes it
     -- turns the full 360 with the character (who, with this controller, turns with the camera).
-    C.cam = { off = 0, src = "none", fovAt = -10, hfov = math.rad(90), abs = nil, fixAt = -100, DECAY_S = 1.5 }
+    -- cp10 (test20, the user: "It stays kind of locked in the direction of the quest regardless of my direction"): the engine projects
+    -- a target BEHIND the camera MIRRORED back onto the screen, unclamped (tan repeats every 180 degrees: a point straight behind
+    -- lands near the centre). Each such "fix" read the camera as pointing at the quest. A fix now counts only when the camera it
+    -- implies is within MAXOFF of the character's facing (a mirror implies ~180 degrees); the clamped / 92% rules stay.
+    C.cam = { off = 0, src = "none", fovAt = -10, hfov = math.rad(90), abs = nil, fixAt = -100, DECAY_S = 1.5, MAXOFF = math.rad(60) }
     function C.camStep(dt, facing)
         local K = C.cam
         local now = (type(GetTime) == "function" and GetTime()) or 0
@@ -391,7 +395,7 @@ do
         local w = (okP and onPin == true) and tg.pin or tg.quest
         local b, d
         if C.me_ and w then b, d = C.bearing(C.me_, w) end
-        local seen = false
+        local seen, mirrored = false, false
         if okF and nav then
             K.nav = true
             local okC, x = pcall(function() return nav:GetCenter() end)
@@ -415,15 +419,19 @@ do
                     local f = half / math.tan(K.hfov / 2)
                     local cam = b + math.atan((x - half) / f)
                     local want = C.wrap(cam - facing)
-                    K.off = C.wrap(K.off + C.wrap(want - K.off) * (1 - math.exp(-dt / 0.08)))
-                    K.fixAt = now
-                    K.src, seen = "nav", true
+                    if math.abs(want) <= K.MAXOFF then
+                        K.off = C.wrap(K.off + C.wrap(want - K.off) * (1 - math.exp(-dt / 0.08)))
+                        K.fixAt = now
+                        K.src, seen = "nav", true
+                    else
+                        mirrored = true                         -- a mirrored (behind-the-camera) projection: never a fix
+                    end
                 end
             end
         end
         if not seen then
             K.off = K.off * math.exp(-dt / K.DECAY_S)         -- the last measured offset fades; the facing turns live
-            K.src = (w and K.nav) and "decay" or "none"
+            K.src = mirrored and "mirror" or ((w and K.nav) and "decay" or "none")
         end
         K.abs = C.wrap(facing + K.off)
         return K.off
