@@ -35,4 +35,6 @@ mkdir -p "${SAFEPATH_OUT:-$SAFEPATH_WORK/out}"
 T="${SAFEPATH_TEST:-RenderSafePath}"
 (cd "$REPO" && ./gradlew -p "$HERE/robo" --offline -q test --tests "$T" --rerun-tasks) 2>&1 | grep -E "^e:|FAIL|Exception" | head -20 || true
 PAT="${2:-ROUTE2|EXIT|CAVE|WALLS|GOAL|EMPTY}"; [ "${SAFEPATH_EXPORT:-}" = "1" ] && PAT="$PAT|^NET1"
-grep -E "$PAT" "$HERE/robo/build/test-results/test/TEST-$T.xml" | head -80 || true
+# (an export's lines are all kept: its checks' verdicts come late, after a zone's many JOINS / APART lines)
+if [ "${SAFEPATH_EXPORT:-}" = "1" ]; then grep -E "$PAT" "$HERE/robo/build/test-results/test/TEST-$T.xml" || true
+else grep -E "$PAT" "$HERE/robo/build/test-results/test/TEST-$T.xml" | head -80 || true; fi
