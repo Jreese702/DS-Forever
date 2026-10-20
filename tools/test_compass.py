@@ -578,6 +578,62 @@ def main():
     chk("cp15: the compass line carries lx, ly (%s, %s)" % (last.lx, last.ly), last.probe == "compass" and last.lx == 0 and last.ly == 1)
     G.px, G.py = 0.5, 0.5; G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.setCam(False); C.draw()
 
+    # cp17: the quest's NUMBER on the compass (the app's: its place among the WATCHED quests in log order)
+    L.execute("""
+        QLOG = { { isHeader = true, title = "Elwynn" }, { questID = 10 }, { questID = 55, isHidden = true }, { questID = 77 }, { questID = 123 } }
+        QWATCH = { [10] = 0, [55] = 0, [123] = 0 }
+        C_QuestLog.GetNumQuestLogEntries = function() return #QLOG end
+        C_QuestLog.GetInfo = function(i) return QLOG[i] end
+        C_QuestLog.GetQuestWatchType = function(q) return QWATCH[q] end
+    """)
+    G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.setCam(False); C.qnAt = -10; C.draw()
+    mq = C.mk.quest
+    chk("cp17: the focused quest 123 is the 2nd watched (10, [55 hidden], 77 unwatched, 123): '%s' on the POI number disc" % mq.num.text,
+        mq.num.text == "2" and mq.num.shown is not False and mq.tx.atlas == "UI-QuestPoi-QuestNumber" and mq.d.shown is not False)
+    L.execute("QWATCH[123] = nil")
+    C.qnAt = -10; G.t = G.t + 2; C.draw()
+    chk("cp17: an unwatched focus: the '!' as before, no number", mq.tx.atlas == "questnormal" and mq.num.shown is False)
+    L.execute("QWATCH[123] = 0; C_QuestLog.GetNumQuestLogEntries = nil")
+
+    # cp17: the CALIBRATION recording (cal1): one shot, armed by the marker centred and the stick idle 3 s, 120 s at 30 Hz
+    Q = C.cal
+    L.globals().WowCompanionDB.calProbe = None
+    qf = [fr for fr in [L.globals().FRAMES[i] for i in range(1, len(L.globals().FRAMES) + 1)] if fr.scripts and fr.scripts.OnUpdate and fr.events and fr.events.PLAYER_LOGOUT and not (fr.events.PLAYER_ENTERING_WORLD)][-1]
+    def qframes(n):
+        for i in range(n):
+            G.t = G.t + 1 / 60
+            qf.scripts.OnUpdate(qf, 1 / 60)
+    G.nav = None; G.rx = 0
+    qframes(240)
+    chk("cal1: nothing without the quest's marker on screen", not Q.on)
+    G.nav = L.table_from({"x": c0 + 200, "y": 400.0, "clamped": False}); qframes(240)
+    chk("cal1: nothing while the marker is off centre", not Q.on)
+    G.nav.x = c0 + 10; qframes(120)
+    chk("cal1: centred but only 2 s: not yet", not Q.on)
+    n0 = len(L.globals().SENT)
+    qframes(70)
+    chk("cal1: centred 3 s with the stick idle: recording", Q.on is True)
+    calsent = [L.globals().SENT[i] for i in range(n0 + 1, len(L.globals().SENT) + 1) if L.globals().SENT[i].probe == "cal1"]
+    st = [x for x in calsent if x.op == "start"]
+    chk("cal1: the start line: every gamepad / camera CVar READ (GamePadCameraYawSpeed %s), the columns" % (st and st[0].cv.GamePadCameraYawSpeed),
+        st and st[0].cv.GamePadCameraYawSpeed == "1.3" and "rx" in st[0].cols)
+    G.rx = 1.0
+    qframes(60)
+    G.rx = 0
+    lines = [L.globals().SENT[i] for i in range(n0 + 1, len(L.globals().SENT) + 1) if L.globals().SENT[i].probe == "cal1" and L.globals().SENT[i].op == "s"]
+    first = lines[0].s[1].split(",") if lines else []
+    chk("cal1: ~30 samples a second, 10 a line (%d samples after ~1 s; a sample: %s)" % (Q.n, ",".join(first[:6])),
+        25 <= Q.n <= 40 and all(len(l.s) == 10 for l in lines))
+    chk("cal1: the countdown on the compass (%s)" % (Q.label and Q.label.text), Q.label is not None and Q.label.text.startswith("CAL "))
+    qframes(60 * 121)
+    ends = [L.globals().SENT[i] for i in range(n0 + 1, len(L.globals().SENT) + 1) if L.globals().SENT[i].probe == "cal1" and L.globals().SENT[i].op == "end"]
+    chk("cal1: ends after 120 s (%s samples), marked done, the countdown gone" % (ends and ends[0].n),
+        len(ends) == 1 and 3400 < ends[0].n < 3700 and L.globals().WowCompanionDB.calProbe == "cal1" and Q.label.shown is False)
+    n1 = len(L.globals().SENT); qframes(400)
+    chk("cal1: never again this set", len(L.globals().SENT) == n1)
+    chk("cal1: no CVar written", L.globals().CVAR_WRITES == 0)
+    G.nav = None; G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.draw()
+
     # the camera-yaw probe (one shot, read only): starts 20 s after login once the game's nav diamond exists, logs 4 samples a line
     P = C.probe
     L.eval("WowCompanion.compass.probe")
