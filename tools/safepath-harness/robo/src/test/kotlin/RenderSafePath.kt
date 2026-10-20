@@ -904,9 +904,19 @@ class RenderSafePath {
                 val surf = NetFloors.Surfaces(layers, { x, y -> deckCells[Math.floorDiv(x.toLong(), 64L) * 1000003L + Math.floorDiv(y.toLong(), 64L)]
                     ?.flatMap { it.heightsAt(x, y).toList() }?.toDoubleArray() ?: DoubleArray(0) }, { x, y -> zl.bil(x, y) },
                     { x, y -> zl.onFloor(x, y) || (zi.deckAt(x, y) && zi.floorsAt(x, y).isEmpty()) })
+                // the water as py/wetcheck.py reads it (the liquid's own surface over the ground, every yard; a walkway's deck none): no yard
+                // deeper than the narrow stream (2.2), no more than 6 yd on end deeper than the ford (1.5) - the water grid's wade let a join
+                // end across Alterac's stream (Dalaran W59)
+                val wetOk: (List<DoubleArray>) -> Boolean = { w -> var run = 0.0; var ok = true
+                    for ((u, v) in w.zipWithNext()) { val n = maxOf(1, Math.hypot(v[0] - u[0], v[1] - u[1]).toInt())
+                        for (q in 0..n) { val x = u[0] + (v[0] - u[0]) * q / n; val y = u[1] + (v[1] - u[1]) * q / n
+                            val d = if (zi.deckAt(x, y)) Float.NaN else SafePath.Water.depthOf(x, y, { c, r -> zi.wet(c, r).first }, { c, r -> zi.wet(c, r).second })
+                            if (!d.isNaN() && d > 2.2f) ok = false
+                            if (!d.isNaN() && d > SafePath.FORD_DEPTH) { run += 1.0; if (run > 6.0) ok = false } else run = 0.0 } }
+                    ok }
                 val t0 = System.nanoTime()
                 val plan = NetFloors.ways(NetFloors.Input(netJ, floorNodes, extras, cg, deep, nl, standable, { x, y -> danger(x, y) / DangerGrid.CAP }, pls,
-                    wayOk = surf::ok))
+                    wayOk = { w -> surf.ok(w) && wetOk(w) }))
                 val applied = NetFloors.apply(plan, netJ, floorNodes, extras, cg, deep)
                 netS = applied.first; nodesS = applied.second; extrasS = applied.third
                 println(NetFloors.summary(tag, plan) + "; ${nl.count} floor layers (${nl.openings.size} openings), ${pls.size} places " +

@@ -235,7 +235,7 @@ object NetFloors {
                         if (pts2.zipWithNext().any { (u, v) -> !Climb.walkable(cg, u, v, inp.deep) }) { why.add("${d.toInt()} yd: a wall once rounded"); continue }
                     }
                     val pts = pts2
-                    if (!inp.wayOk(pts)) { why.add("${d.toInt()} yd: off a floor's edge"); continue }
+                    if (!inp.wayOk(pts)) { why.add("${d.toInt()} yd: off a floor's edge or wet"); continue }
                     val l = len(pts); if (l > MAX_LEG_YD) { why.add("${d.toInt()} yd: walk ${l.toInt()} yd"); continue }
                     if (l < bl) { bl = l; best = pts to s }
                 }
@@ -258,7 +258,7 @@ object NetFloors {
             // every step re-checked as the device and the gate walk it: no wall, no deep water
             val bad = pts.zipWithNext().indexOfFirst { (a, b) -> !Climb.walkable(cg, a, b, inp.deep) }
             if (bad >= 0) { if (!quiet) dropped.add("$kind $name: segment $bad crosses a wall or deep water"); return false }
-            if (!inp.wayOk(pts)) { if (!quiet) dropped.add("$kind $name: off a floor's edge (the surfaces)"); return false }
+            if (!inp.wayOk(pts)) { if (!quiet) dropped.add("$kind $name: off a floor's edge (the surfaces) or wet"); return false }
             var dsum = 0.0; var dn = 0
             for ((a, b) in pts.zipWithNext()) { val n = max(1, (hypot(b[0] - a[0], b[1] - a[1]) / DANGER_SAMPLE_YD).toInt())
                 for (q in 0 until n) { dsum += inp.danger(a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n); dn++ } }
