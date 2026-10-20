@@ -4106,7 +4106,9 @@ class MapView(context: Context) : View(context) {
                     else -> f
                 }
             }
-            val ground: ((Double, Double) -> Float)? = { x, y -> legAt(x, y, r.left - x * r.width, r.top - y * r.height, true) }
+            // world (wx north, wy west) of the map's (x, y): wx from the top, wy from the left (Terrain.at's own order). 37c02b4 passed
+            // them swapped, so the grid's walls, buildings and water were read at transposed spots (found reviewing the ghost route)
+            val ground: ((Double, Double) -> Float)? = { x, y -> legAt(x, y, r.top - y * r.height, r.left - x * r.width, true) }
             // the shipped network's snap: the same dry ground at the spot itself, the water per vertex, the rooms' own outlines
             val snap = ShippedSnap.Ground({ wx, wy -> legAt((r.left - wy) / r.width, (r.top - wx) / r.height, wx, wy, false) }, wg,
                 if (foot.isEmpty()) null else { wx, wy -> foot.any { it.holds(wx, wy) } })
