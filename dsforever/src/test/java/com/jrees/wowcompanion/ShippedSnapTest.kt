@@ -111,7 +111,32 @@ class ShippedSnapTest {
     @Test fun aSnapFarPastTheNearestIsDropped() {
         // the network carries the way on, not a long walk over the grass past its nearest node
         val r = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(10.0, 0.0), 2 to doubleArrayOf(0.0, 50.0), 3 to doubleArrayOf(-30.0, 0.0)), ShippedSnap.Ground(flat))
-        assertEquals(listOf(1, 3), r.snaps.map { it.node })
+        assertEquals("only the nearest clear line and those 5 yd longer", listOf(1), r.snaps.map { it.node })
+        val two = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(10.0, 0.0), 3 to doubleArrayOf(-14.0, 0.0)), ShippedSnap.Ground(flat))
+        assertEquals(setOf(1, 3), two.snaps.map { it.node }.toSet())
+        // the nearest walled off: the nearest CLEAR line leads (no farther one tried past it + 5 yd)
+        val g = ShippedSnap.Ground(flat, room = room(4.0, 6.0, -3.0, 3.0))
+        val w = ShippedSnap.snap(p0, listOf(1 to doubleArrayOf(10.0, 0.0), 2 to doubleArrayOf(0.0, 30.0), 3 to doubleArrayOf(0.0, -50.0)), g)
+        assertEquals(listOf(2), w.snaps.map { it.node })
+        assertTrue(w.best!!.straight)
+    }
+
+    @Test fun anEndOnAFloorSnapsToItsFloorFirst() {
+        // the start over a cave's pocket: a floor node 13 yd off (R_FLOOR), a ground node 8 yd off over the steep bank under the floor
+        val bank: (Double, Double) -> Float = { x, _ -> if (x in -20.0..20.0) 24f else 1f }
+        val g = ShippedSnap.Ground(bank)
+        val rm = ShippedRoute.RM_BASE
+        val nodes = listOf(rm + 1 to doubleArrayOf(0.0, 13.0), rm + 2 to doubleArrayOf(8.0, 0.0), rm + 3 to doubleArrayOf(0.0, 3.0))
+        val r = ShippedSnap.snap(p0, nodes, g, floor = setOf(rm + 1, rm + 3))
+        assertTrue(r.why, r.ok); assertTrue(r.why, r.why.startsWith("on a floor"))
+        assertTrue(r.snaps.all { it.node == rm + 1 || it.node == rm + 3 })
+        // the same end not on a floor (its nearest roadmap node a ground one): the ground's rules
+        val off = ShippedSnap.snap(p0, nodes, g, floor = setOf(rm + 1))
+        assertFalse(off.why, off.why.startsWith("on a floor"))
+        // a floor over deep water is still no snap through the water
+        val wet = ShippedSnap.Ground(flat, water { x, y -> if (x in -10.0..10.0 && y in 4.0..10.0) 5f else Float.NaN })
+        val w = ShippedSnap.snap(p0, listOf(rm + 1 to doubleArrayOf(0.0, 13.0), rm + 3 to doubleArrayOf(0.0, 2.0)), wet, floor = setOf(rm + 1, rm + 3))
+        assertEquals(listOf(rm + 3), w.snaps.map { it.node })
     }
 
     @Test fun noNodeWithin60YdSaysSo() {
