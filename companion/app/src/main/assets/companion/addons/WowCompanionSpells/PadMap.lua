@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m64"                -- bump on every change; m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m65"                -- bump on every change; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -3793,6 +3793,119 @@ function OV.sbDoc()
     OV.sbDocNow = { rows = rows, list = list, at = OV.sbAt, row = "gamemenu", pad = OV.sbRow ~= nil,
                     sel0 = OV.SB_SEL0, ops = OV.SB_OPS }
 end
+-- m65 THE VITALS DIAGNOSTIC (tracking after test33, the user: "I really want to investigate this more, my research is saying that it should
+-- be readable"; warcraft.wiki.gg Secret_values: UnitHealth / UnitPower secret WHEN combat / encounter restrictions are in effect, the max
+-- readers exempt player units, the CVars addonCombatRestrictionsForced / addonEncounterRestrictionsForced can force them). NOT a fix:
+-- READ ONLY, once per load, out of combat, ONE cap line `vprobe`. Every value is described at once as a plain string ("plain:1234",
+-- "secret", "nil", "err", "absent") and never kept, compared or stored while secret. Read from three places, because taint may matter:
+-- an event handler of ours ("ev"), a C_Timer callback ("timer") and a frame's OnUpdate ("upd"); all are add-on code (tainted) - no
+-- untainted read exists for an add-on (a secure snippet has no unit API), which the line says. Safety.lua's own self-test (the `kernel`
+-- cap line, WowCompanion) is the core add-on's read of UnitHealth for comparison.
+function OV.vpDesc(f)
+    local ok, v = pcall(f)
+    if not ok then return "err" end
+    local okq, q = pcall(function() return type(issecretvalue) == "function" and issecretvalue(v) end)
+    if not okq then return "err" end
+    if q then return "secret" end
+    if type(WC.isPlain) == "function" and not WC.isPlain(v) then return "secret?" end
+    local t = type(v)
+    if t == "nil" then return "nil" end
+    if t == "number" then return "plain:" .. string.format("%.2f", v):gsub("%.?0+$", "") end
+    if t == "boolean" or t == "string" then return "plain:" .. tostring(v):sub(1, 40) end
+    return t
+end
+function OV.vpReads(r, where)
+    local d = OV.vpDesc
+    local function has(n) return type(_G[n]) == "function" end
+    r[where] = {
+        hp = d(function() return UnitHealth("player") end), hpMax = d(function() return UnitHealthMax("player") end),
+        mp = d(function() return UnitPower("player", 0) end), mpMax = d(function() return UnitPowerMax("player", 0) end),
+        ptype = d(function() return UnitPowerType("player") end),
+        hpPct = has("UnitHealthPercent") and d(function() return UnitHealthPercent("player") end) or "absent",
+        mpPct = has("UnitPowerPercent") and d(function() return UnitPowerPercent("player", 0) end) or "absent",
+        hpMiss = has("UnitHealthMissing") and d(function() return UnitHealthMissing("player") end) or "absent",
+        mpMiss = has("UnitPowerMissing") and d(function() return UnitPowerMissing("player", 0) end) or "absent",
+    }
+    -- the player frame's own bars, every path this client has
+    local function path(...)
+        local t = _G
+        for _, k in ipairs({ ... }) do if type(t) ~= "table" then return nil end; t = rawget(t, k) or t[k] end
+        return type(t) == "table" and t or nil
+    end
+    local bars = { hb = { "PlayerFrameHealthBar" }, hb2 = { "PlayerFrame", "healthbar" },
+                   hb3 = { "PlayerFrame", "PlayerFrameContent", "PlayerFrameContentMain", "HealthBarsContainer", "HealthBar" },
+                   mb = { "PlayerFrameManaBar" }, mb2 = { "PlayerFrame", "manabar" }, amb = { "PlayerFrameAlternateManaBar" } }
+    for k, p in pairs(bars) do
+        local fr = path((unpack or table.unpack)(p))
+        if fr and type(fr.GetValue) == "function" then
+            r[where][k] = d(function() return fr:GetValue() end) .. "/" .. d(function() return select(2, fr:GetMinMaxValues()) end)
+        end
+    end
+end
+function OV.vitalsProbe()
+    if OV.vpSent then return end
+    if inCombat() then OV.vpWait = true; return end
+    OV.vpSent = true
+    local r = { v = PV, k = WC.KERNEL }
+    OV.vpReads(r, "ev")
+    -- the restriction state: combat, instance, and any "restrictions" query this client has (only Is / Get / Should / Has / Are, no args)
+    local d = OV.vpDesc
+    r.lockdown = d(function() return InCombatLockdown() end)
+    r.affecting = d(function() return UnitAffectingCombat("player") end)
+    r.instance = d(function() return (IsInInstance()) end) .. "," .. d(function() return select(2, IsInInstance()) end)
+    r.apis = {}
+    for name, t in pairs(_G) do
+        if type(name) == "string" and type(t) == "table" and (name:find("^C_Restrict") or name:find("^C_Secret") or name:find("^C_AddOnRestrict")) then
+            for fn, f in pairs(t) do
+                if type(fn) == "string" and type(f) == "function" and (fn:find("^Is") or fn:find("^Get") or fn:find("^Should")
+                    or fn:find("^Has") or fn:find("^Are")) and #r.apis < 24 then
+                    r.apis[#r.apis + 1] = name .. "." .. fn .. "=" .. d(function() return f() end)
+                end
+            end
+        end
+    end
+    if type(Enum) == "table" and type(Enum.AddOnRestrictionType) == "table" then
+        for k, v in pairs(Enum.AddOnRestrictionType) do
+            for name, t in pairs(_G) do
+                if type(name) == "string" and name:find("^C_Restrict") and type(t) == "table" and type(t.IsAddOnRestrictionActive) == "function"
+                    and #r.apis < 40 then
+                    r.apis[#r.apis + 1] = name .. ".IsAddOnRestrictionActive(" .. tostring(k) .. ")=" .. d(function() return t.IsAddOnRestrictionActive(v) end)
+                end
+            end
+        end
+    end
+    -- the CVars, READ ONLY: the two the wiki names, and any other whose name holds "restriction" or "secret"
+    r.cvars = {}
+    local names = { addonCombatRestrictionsForced = true, addonEncounterRestrictionsForced = true }
+    local okc, list = pcall(function() return ConsoleGetAllCommands and ConsoleGetAllCommands() end)
+    if okc and type(list) == "table" then
+        for _, c in ipairs(list) do
+            local n = type(c) == "table" and c.command or nil
+            if type(n) == "string" and (n:lower():find("restriction", 1, true) or n:lower():find("secret", 1, true)) then names[n] = true end
+        end
+    end
+    for n in pairs(names) do
+        r.cvars[n] = d(function() return (C_CVar and C_CVar.GetCVar and C_CVar.GetCVar(n)) or GetCVar(n) end)
+    end
+    r.where = "ev, timer, upd: all add-on code (WowCompanionSpells); an add-on has no untainted unit read"
+    -- the same reads a moment later from a timer and from a frame's OnUpdate, then the one line
+    C_Timer.After(0.5, function()
+        pcall(OV.vpReads, r, "timer")
+        local f = CreateFrame("Frame")
+        f:SetScript("OnUpdate", function(self)
+            self:SetScript("OnUpdate", nil)
+            pcall(OV.vpReads, r, "upd")
+            WC.send(WC.encode({ type = "cap", padmap = PV, vprobe = r })); WC.push()
+        end)
+    end)
+end
+OV.vpF = CreateFrame("Frame")
+for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED" }) do pcall(function() OV.vpF:RegisterEvent(e) end) end
+OV.vpF:SetScript("OnEvent", function(_, e)
+    if e == "PLAYER_REGEN_ENABLED" and not OV.vpWait then return end
+    OV.vpWait = nil
+    C_Timer.After(8, function() pcall(OV.vitalsProbe) end)          -- the loading screen and the first frames settle first
+end)
 -- m33: the bags and the Mount Journal change the Extra tab's lists: a doc soon (no router work for these)
 local fx = CreateFrame("Frame")
 for _, e in ipairs({ "BAG_UPDATE_DELAYED", "NEW_MOUNT_ADDED", "MOUNT_JOURNAL_USABILITY_CHANGED" }) do pcall(function() fx:RegisterEvent(e) end) end
