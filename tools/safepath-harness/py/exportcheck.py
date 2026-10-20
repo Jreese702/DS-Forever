@@ -44,6 +44,7 @@ for f in sorted(os.listdir(run)):
         elif line.startswith('GOAL') and 'not found' in line: why.append(line[:120])
         elif line.startswith('ROUTE2 '): routes += 1
         elif line.startswith('NET1 CROSSING'): why.append(line[:200])
+        elif line.startswith('NET1 REFUSED'): why.append(line[:200])
         m = re.match(r'WATERMAX route (\w) ([\d.]+) yd', line)
         if m and float(m.group(2)) > NARROW: why.append('route %s WATERMAX %s yd' % (m.group(1), m.group(2)))
         m = re.match(r'WET (\w): deepest ([\d.]+) yd.*?, (\d+) yd deeper than .*?longest wade (\d+) yd.*?, (\d+) yd deeper than', line)
