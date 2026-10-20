@@ -53,7 +53,8 @@ object QuestieNpcs {
         for ((id, s) in scalar) {
             val row = runCatching { Cbor.decode(b64(s)) as? Map<*, *> }.getOrNull() ?: continue
             val friendly = (row[13L] as? ByteArray)?.toString(Charsets.UTF_8) ?: (row[13L] as? String)
-            val hostile = when (friendly) { null -> 3; "A" -> TransportRoutes.HORDE; "H" -> TransportRoutes.ALLIANCE; else -> 0 }
+            val name0 = (row[1L] as? ByteArray)?.toString(Charsets.UTF_8) ?: (row[1L] as? String) ?: ""
+            val hostile = hostileOf(friendly, name0)
             if (hostile == 0) continue                                 // "AH": a neutral (ignored) or friendly to all
             val sp = spawns[id] ?: continue
             // a creature found only in area 1 (Dun Morogh) or in areas 1..n comes as a CBOR array, not a map: Lua writes a table
@@ -106,6 +107,18 @@ object QuestieNpcs {
         }
     }
     const val TOWN_YD = 150.0
+
+    /** whom a creature is hostile to: QuestieDB's friendly-to ([friendly]: null none, "A", "H", "AH"); "AH" is friendly to all (0) -
+     *  unless its name is one of [HOSTILE_TO_ALL] (QuestieDB's WoW Forever rows tag some hostile peoples "AH") */
+    fun hostileOf(friendly: String?, name: String): Int = when (friendly) {
+        null -> 3; "A" -> TransportRoutes.HORDE; "H" -> TransportRoutes.ALLIANCE
+        else -> if (HOSTILE_TO_ALL.any { it.containsMatchIn(name) }) 3 else 0 }
+    /**
+     * PEOPLES HOSTILE TO ALL that QuestieDB (WoW Forever) tags "AH", friendly to both (the user's test20 on Zephras: "its still pathing
+     * me into hostile mobs in the sky elf place"): the Al'Aketh cult - 23 kinds, ~5000 spawns over Zephras (Al'Aketh Assassin 254626, the
+     * quest 98512's kill, among them), all dropped as friendly so the danger layer never saw their camps. Typed words, no coordinates.
+     */
+    val HOSTILE_TO_ALL = listOf(Regex("^Al'Aketh "))
     /** a guard's name: a town's own, whatever its faction field says */
     val GUARD = Regex("\\b(Guard|Guardian|Enforcer|Sentry|Sentinel|Watchman|Peacekeeper|Protector|Defender|Warden)s?\\b", RegexOption.IGNORE_CASE)
 
