@@ -377,6 +377,43 @@ class ShippedRouteTest {
         assertFalse(back.why, back.reached && back.pts.any { it[0] == 450.0 })
     }
 
+    @Test fun shippedPointsAreFollowedExactlyNeverMerged() {
+        // W's Kalimdor 70450 parity (Desolace's roadmap edge 1669-1720): a walked line's inner point 0.4 yd off the straight one between
+        // its neighbours was merged away, the shortcut over a wall. Every shipped point kept: a way's, a roadmap edge's, a join's
+        val net = SafePath.Net(1411, 1, "off-device", listOf(node(0, 0.0, 0.0), node(1, 0.0, 1000.0)), listOf(road(0, 1, SafePath.REWALK)), emptyList())
+        val line = listOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(0.4, 37.5), doubleArrayOf(0.4, 41.67), doubleArrayOf(0.2, 500.0), doubleArrayOf(0.0, 1000.0))
+        val sec = ShippedNet.Section(H, 10, "t", net, listOf(ShippedNet.Way(ShippedNet.F_ROAD or ShippedNet.F_REWALK, 1000.0, line)))
+        val r = ShippedRoute.plan(sec, flat, null, doubleArrayOf(0.0, -40.0), doubleArrayOf(0.0, 1040.0))
+        assertTrue(r.why, r.reached)
+        for (p in line) assertTrue("kept ${p.toList()}: ${r.pts.map { it.toList() }}", r.pts.any { it[0] == p[0] && it[1] == p[1] })
+        // a roadmap edge's walked points the same
+        val rm = ShippedRoute.Roadmap(mapOf(ShippedRoute.RM_BASE to doubleArrayOf(3000.0, 0.0), ShippedRoute.RM_BASE + 1 to doubleArrayOf(3000.0, 600.0)),
+            listOf(ShippedRoute.Roadmap.Edge(ShippedRoute.RM_BASE, ShippedRoute.RM_BASE + 1, 1.0, null,
+                listOf(doubleArrayOf(3000.3, 150.0), doubleArrayOf(3000.3, 154.17), doubleArrayOf(3000.1, 300.0)))))
+        val m = ShippedRoute.plan(none, flat, null, doubleArrayOf(3000.0, -40.0), doubleArrayOf(3000.0, 640.0), roadmap = rm)
+        assertTrue(m.why, m.reached)
+        assertTrue(m.pts.any { it[0] == 3000.3 && it[1] == 154.17 } && m.pts.any { it[0] == 3000.1 && it[1] == 300.0 })
+    }
+
+    @Test fun aCutIntoAWayStaysOffASegmentPieceTheFineGroundRefuses() {
+        // W's Dustwallow N30-N31: a cut mid-segment whose piece of the shipped segment fails the fine ground: the cut moves to the
+        // segment's vertex (its own walk there checked), never leaving the shipped line in the middle there
+        val sec = ShippedNet.Section(H, 10, "t", SafePath.Net(1411, 1, "off-device", listOf(node(0, 0.0, 0.0), node(1, 0.0, 1000.0)),
+            listOf(road(0, 1)), emptyList()), listOf(ShippedNet.Way(ShippedNet.F_ROAD, 1000.0,
+            listOf(doubleArrayOf(0.0, 0.0), doubleArrayOf(0.0, 500.0), doubleArrayOf(0.0, 1000.0)))))
+        val fine = ShippedSnap.Ground({ x, y -> if (x in -0.6..0.6 && y in 420.0..425.0) Terrain.WALL else 1f })
+        val r = ShippedRoute.plan(sec, fine.asCost, null, doubleArrayOf(150.0, 300.0), doubleArrayOf(-150.0, 900.0),
+            attacher = ShippedSnap.attacher(fine), stitchGround = fine)
+        assertTrue(r.why, r.reached)
+        assertFalse("no cut at (0, 300): ${r.pts.map { it.toList() }}", r.pts.any { it[0] == 0.0 && it[1] in 290.0..310.0 })
+        assertTrue("at the vertex (0, 500)", r.pts.any { it[0] == 0.0 && it[1] == 500.0 })
+        // the goal's cut, its pieces clear: kept where it was
+        assertTrue(r.pts.any { it[0] == 0.0 && it[1] in 890.0..910.0 })
+        // no fine ground: the cut stays (the attacher's own)
+        val n = ShippedRoute.plan(sec, flat, null, doubleArrayOf(150.0, 300.0), doubleArrayOf(-150.0, 900.0), attacher = ShippedRoute.DefaultAttach)
+        assertTrue(n.pts.any { it[0] == 0.0 && it[1] in 290.0..310.0 })
+    }
+
     @Test fun aJoinCostsAsASpurNotATrail() {
         // two ways round: a join (trail + join flags) out to x 300, a trail out to x 250: the join's 1.3 beats the trail's 2.2
         val net = SafePath.Net(1411, 1, "off-device", listOf(node(0, 0.0, 0.0), node(1, 0.0, 1000.0), node(2, 300.0, 500.0), node(3, -250.0, 500.0)),
