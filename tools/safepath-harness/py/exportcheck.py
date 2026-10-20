@@ -58,4 +58,7 @@ for f in sorted(os.listdir(run)):
     if routes == 0: why.append('no routes')
     elif wet < routes: why.append('wetcheck read %d of %d routes' % (wet, routes))
     if not os.path.isfile(sec): why.append('no net1_%s.json (run without SAFEPATH_EXPORT=1?)' % tag)
+    ship = os.path.join(run, 'ship_%s.txt' % tag)
+    if not os.path.isfile(ship): why.append('no ship_%s.txt (ShipCheck did not finish)' % tag)
+    elif not open(ship, encoding='utf-8').read().startswith('OK'): why.append('ShipCheck: ' + open(ship, encoding='utf-8').read().strip()[:200])
     print(('EXPORT OK %s %s' % (tag, sec)) if not why else ('EXPORT SKIP %s: %s' % (tag, '; '.join(why))))
