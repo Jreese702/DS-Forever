@@ -20,7 +20,7 @@ import java.io.File
 /**
  * THE ROADMAP'S SIZE AND PROOF RUN (NetRoadmap; NET2): one zone's ground as RenderSafePath assembles it (the app's ZoneInputs and its
  * Lattice, DangerInputs for BOTH factions at the spec's level), then [NetRoadmap.build] at each spacing of RM_SPACINGS (yards, comma
- * separated; default 30,40,60), each written to <out>/roadmap_<tag>_<S>.rdm and read back. RM_ROUTES=<S>: that spacing's edges also
+ * separated; default 30,40,60), each written to <out>/roadmap_<tag>_<S>.rm1 (RM1, ShippedNet.Roadmap) and read back. RM_ROUTES=<S>: that spacing's edges also
  * written as routes (<out>/levels_routes_<tag>.json, with the floors / holes / layers files beside it) for py/segcheck.py and
  * py/wetcheck.py. Prints ROADMAP lines.
  *   SAFEPATH_TEST=NetRoadmapRun RM_SPACINGS=30,40,60 RM_ROUTES=40 bash tools/safepath-harness/run.sh tools/safepath-harness/zones/durotar.json ROADMAP
@@ -73,42 +73,47 @@ class NetRoadmapRun {
             DangerInputs.grid(DangerInputs.sided(spawns, rect, f, rules), rect, f, level, "high", { wx, wy -> Terrain.factor(tg.at(wx, wy)) }, inZone) }
         val d0 = dangers.values.first()
         val sr = SafeRoute(cg, d0.danger(wading, rooms), d0.calm(wading, rooms), d0.k, zi.deep, { x, y -> wg.at(x, y) }, zi::deckAt, zi::rawDeep)
-        val ground = NetRoadmap.Ground(cg, zi.deep, sr::overFord, wading, rooms, d0.calm(wading, rooms), d0.k, inZone)
+        val ground = NetRoadmap.Ground(cg, zi.deep, sr::overFord, { x, y -> wg.at(x, y) }, rooms, d0.calm(wading, rooms), d0.k, inZone)
         val tSetup = (System.nanoTime() - t0) / 1_000_000
         println("ROADMAP $tag: lattice ${cg.nx} x ${cg.ny} in $tLattice ms, inputs ready in $tSetup ms")
+        // the spacings in yards, each the nearest whole number of lattice steps (30: 7 = 29.2 yd, 40: 10 = 41.7, 60: 14 = 58.3)
         val spacings = (System.getenv("RM_SPACINGS") ?: "30,40,60").split(',').map { it.trim().toDouble() }
         val routesAt = System.getenv("RM_ROUTES")?.toDoubleOrNull()
         for (s in spacings) {
-            val st = NetRoadmap.Stats()
-            val rm = NetRoadmap.build(map, ground, dangers.mapValues { (_, d) -> d::mobs }, s, st)
-            val bytes = NetRoadmap.encode(rm)
-            File(out, "roadmap_${tag}_${s.toInt()}.rdm").writeBytes(bytes)
-            val back = NetRoadmap.decode(bytes)
-            val ok = back != null && NetRoadmap.encode(back).contentEquals(bytes) && back.edges.size == rm.edges.size && back.nodes.size == rm.nodes.size
-            // a geometry-only size (one faction's tiers) for the shared-geometry estimate
-            val one = NetRoadmap.encode(NetRoadmap.Roadmap(rm.map, rm.cellV, rm.gr0, rm.gc0, rm.ncx, rm.ncy, intArrayOf(), rm.nodes,
-                rm.edges.map { NetRoadmap.Edge(it.a, it.b, it.dir, it.pts, it.cost, it.flags, IntArray(0)) })).size
-            val inner = rm.edges.sumOf { it.pts.size / 2 }
-            val yd = rm.edges.sumOf { rm.yd(it) }
-            println("ROADMAP $tag S=${s.toInt()} (${"%.1f".format(rm.spacingYd)} yd): ${rm.nodes.size} nodes, ${rm.edges.size} edges, $inner inner points, " +
-                "${(yd / 1000).toInt()} km; ${bytes.size} bytes (geometry alone $one); round trip ${if (ok) "OK" else "FAIL"}; $st; " +
-                "danger>0 H ${rm.edges.count { it.danger[0] > 0 }} A ${rm.edges.count { it.danger[1] > 0 }}; flags wade ${rm.edges.count { it.flags and NetRoadmap.F_WADE != 0 }} " +
-                "floor ${rm.edges.count { it.flags and NetRoadmap.F_FLOOR != 0 }} steep ${rm.edges.count { it.flags and NetRoadmap.F_STEEP != 0 }} lip ${rm.edges.count { it.flags and NetRoadmap.F_LIP != 0 }}")
+            val cell = Math.round(s / Climb.STEP).toInt()
+            val built = NetRoadmap.build(ground, cell) { println("ROADMAP $tag S=${s.toInt()} $it") }
+            val rm = built.rm
+            val raw = rm.encode()
+            val back = com.jrees.wowcompanion.ShippedNet.Roadmap.decode(raw)
+            val ok = back.encode().contentEquals(raw) && back.edges == rm.edges && (0 until rm.edges).all { e -> back.points(e).size == rm.points(e).size }
+            val rmB = com.jrees.wowcompanion.ShippedNet.pack64(raw).length
+            val dBytes = dangers.mapValues { (_, d) -> NetRoadmap.dangerBytes(built, d.danger(wading, rooms)) }
+            val dB = dBytes.mapValues { com.jrees.wowcompanion.ShippedNet.pack64(it.value).length }
+            val yd = (0 until rm.edges).sumOf { rm.yd(it) }
+            File(out, "roadmap_${tag}_${s.toInt()}.rm1").writeBytes(raw)
+            println("ROADMAP $tag S=${s.toInt()} SIZE cell $cell (${"%.1f".format(cell * Climb.STEP)} yd): ${rm.nodes} nodes, ${rm.edges} edges " +
+                "(${built.stats.walked} walked, ${(0 until rm.edges).sumOf { (rm.edgePts[it]?.size ?: 0) / 2 }} inner points), ${(yd / 1000).toInt()} km; " +
+                "RM1 ${raw.size} raw, ${rmB} zlib+base64; danger zlib+base64 H ${dB[TransportRoutes.HORDE]} A ${dB[TransportRoutes.ALLIANCE]}; " +
+                "round trip ${if (ok) "OK" else "FAIL"}; build ${built.stats.ms} ms; " +
+                "danger>0 H ${dBytes[TransportRoutes.HORDE]!!.count { it.toInt() != 0 }} A ${dBytes[TransportRoutes.ALLIANCE]!!.count { it.toInt() != 0 }}; " +
+                "flags wade ${rm.edgeFlags.count { it and com.jrees.wowcompanion.ShippedNet.RE_WADE != 0 }} building ${rm.edgeFlags.count { it and com.jrees.wowcompanion.ShippedNet.RE_BUILDING != 0 }} " +
+                "bridge ${rm.edgeFlags.count { it and com.jrees.wowcompanion.ShippedNet.RE_BRIDGE != 0 }} floor nodes ${rm.nodeFlags.count { it and com.jrees.wowcompanion.ShippedNet.R_FLOOR != 0 }}")
             // COVERAGE: the zone's open lattice vertices (every 4th) and the nearest node to each
             run {
                 val ds = ArrayList<Double>()
-                val byCell = HashMap<Int, ArrayList<NetRoadmap.Node>>()
-                for (n in rm.nodes) byCell.getOrPut(n.cj * rm.ncx + n.ci) { ArrayList() }.add(n)
+                val byCell = HashMap<Int, ArrayList<Int>>()
+                for (n in 0 until rm.nodes) byCell.getOrPut(rm.nodeCell[n]) { ArrayList() }.add(n)
                 for (j in 0 until cg.ny step 4) for (i in 0 until cg.nx step 4) {
                     val x = cg.wx(j); val y = cg.wy(i)
-                    if (!inZone(x, y) || zi.deep(x, y) || (0 until 8).none { q -> cg.step(i, j, listOf(1, 1, 0, -1, -1, -1, 0, 1)[q], listOf(0, 1, 1, 1, 0, -1, -1, -1)[q]) != Climb.WALL }) continue
-                    val ci = i / rm.cellV; val cj = j / rm.cellV; var best = Double.MAX_VALUE
-                    for (b in cj - 2..cj + 2) for (c in ci - 2..ci + 2) byCell[b * rm.ncx + c]?.forEach { n -> best = minOf(best, Math.hypot(rm.wx(n) - x, rm.wy(n) - y)) }
+                    if (!inZone(x, y) || zi.deep(x, y) || rooms(x, y) || (0 until 8).none { q -> cg.step(i, j, listOf(1, 1, 0, -1, -1, -1, 0, 1)[q], listOf(0, 1, 1, 1, 0, -1, -1, -1)[q]) != Climb.WALL }) continue
+                    val ci = i / rm.cell; val cj = j / rm.cell; var best = Double.MAX_VALUE
+                    for (b in cj - 2..cj + 2) for (c in ci - 2..ci + 2) { if (c !in 0 until rm.nx) continue
+                        byCell[b * rm.nx + c]?.forEach { n -> best = minOf(best, Math.hypot(rm.x(n) - x, rm.y(n) - y)) } }
                     ds.add(best)
                 }
                 ds.sort()
                 fun pc(p: Double) = ds.getOrNull(((ds.size - 1) * p).toInt())?.let { if (it == Double.MAX_VALUE) ">2 cells" else "%.0f".format(it) } ?: "-"
-                println("ROADMAP $tag S=${s.toInt()} coverage: ${ds.size} open vertices sampled; nearest node yd p50 ${pc(0.5)} p90 ${pc(0.9)} p99 ${pc(0.99)}; " +
+                println("ROADMAP $tag S=${s.toInt()} COVERAGE ${ds.size} open vertices sampled; nearest node yd p50 ${pc(0.5)} p90 ${pc(0.9)} p99 ${pc(0.99)}; " +
                     "within 40 yd ${"%.1f".format(ds.count { it <= 40 } * 100.0 / maxOf(1, ds.size))}%")
             }
             if (routesAt != null && routesAt.toInt() == s.toInt()) {
@@ -121,7 +126,7 @@ class NetRoadmapRun {
                     + zi.cityFeet.flatMap { f -> val c = listOf(doubleArrayOf(f.worldX(f.lx0, f.ly0), f.worldY(f.lx0, f.ly0)), doubleArrayOf(f.worldX(f.lx1, f.ly0), f.worldY(f.lx1, f.ly0)),
                         doubleArrayOf(f.worldX(f.lx1, f.ly1), f.worldY(f.lx1, f.ly1)), doubleArrayOf(f.worldX(f.lx0, f.ly1), f.worldY(f.lx0, f.ly1)))
                         listOf(listOf(0, 1, 2), listOf(0, 2, 3)).map { q -> JSONArray(q.flatMap { listOf(c[it][0], c[it][1], 0.0) } + 2) } }).toString())
-                println("ROADMAP $tag S=${s.toInt()} routes written: ${rm.edges.size}")
+                println("ROADMAP $tag S=${s.toInt()} routes written: ${rm.edges}")
             }
         }
     }
