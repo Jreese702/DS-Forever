@@ -1,0 +1,6 @@
+# Specs never exported into the shipped network (NET1): probes and tests of one spot, not a zone's network.
+# One regular expression a line, matched against the whole spec tag (its other side's tag too: <tag>_horde / _alliance).
+# A spec can also say "probe": true. Read by export.sh and py/exportcheck.py.
+climb_.*
+mulgore_ridge
+mulgore_rises

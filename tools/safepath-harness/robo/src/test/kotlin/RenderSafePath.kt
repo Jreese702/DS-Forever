@@ -18,6 +18,7 @@ import com.jrees.wowcompanion.QuestieNpcs
 import com.jrees.wowcompanion.Roads
 import com.jrees.wowcompanion.SafePath
 import com.jrees.wowcompanion.SafeRoute
+import com.jrees.wowcompanion.ShippedNet
 import com.jrees.wowcompanion.Terrain
 import com.jrees.wowcompanion.TransportRoutes
 import com.jrees.wowcompanion.ZoneInputs
@@ -41,6 +42,8 @@ import java.io.FileOutputStream
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class RenderSafePath {
     private val out = File(System.getProperty("out.dir") ?: "out").also { it.mkdirs() }
+    /** every QuestieDB spawn (NetFloors: a capital's own NPCs, on its own map's coordinates) */
+    private var allSpawns: List<QuestieNpcs.Spawn> = emptyList()
     @Test fun durotar() {
         val spec = System.getenv("ZONESPEC")?.let { JSONObject(File(it).readText()) }
         // the work folder (outside the repo: the client's dumps, the art, the tables, the pictures): SAFEPATH_WORK
@@ -79,6 +82,7 @@ class RenderSafePath {
         val tex = HashMap<Pair<Int, Int>, Roads.Tile?>()
         val transports = JSONObject(File(art, "transports.json").readText())
         val spawns = QuestieNpcs.read(toc)
+        allSpawns = spawns
         fun nameOf(m: Int) = runCatching { JSONObject(File(art, "worldmap/$m/index.json").readText()).optString("name") }.getOrDefault("")
         val recipe = JSONObject(File(System.getenv("RECIPE")).readText()).optJSONObject("rects")!!
         class Done(val net: SafePath.Net, val rect: MapHarvest.Rect, val zg: SafePath.Zones, val ar: SafePath.Areas, val hostile: List<DoubleArray>)
@@ -146,23 +150,28 @@ class RenderSafePath {
             if (map == main) levels2(net, rect, tg, zi.heightV(voidBelow), roadAt, zg, areas, here, dir, { x, y -> wg.at(x, y) }, wg,
                 zi::deckAt, ::nameOf, floorsAt = zi::floorsAt,
                 mainArea, spec, tag, mine, ar, map, otherPlaces, rawDeep = zi::rawDeep, zi = zi)
-            if (map == main) File(out, "decks_$tag.json").writeText(org.json.JSONArray(zi.deckList.flatMap { d -> d.triangles.map { org.json.JSONArray(it.toList()) } }).toString())
+            if (map == main) writeFloors(zi, tag)
+            done[map] = Done(net, rect, zg, ar, hostile)
+        }
+        if (done.containsKey(borderPair.first) && done.containsKey(borderPair.second))
+            border(art, borderPair.first, borderPair.second, done.mapValues { it.value.net }, done.mapValues { it.value.rect }, done.mapValues { it.value.zg },
+                done.mapValues { it.value.ar }, done.mapValues { it.value.hostile }, ::nameOf)
+    }
+
+    /** the walkways' decks (decks_<tag>.json) and the floors in 3D (floors_<tag>.json) for py/segcheck.py and py/wetcheck.py */
+    private fun writeFloors(zi: ZoneInputs, tag: String) {
+        File(out, "decks_$tag.json").writeText(org.json.JSONArray(zi.deckList.flatMap { d -> d.triangles.map { org.json.JSONArray(it.toList()) } }).toString())
             // and their floors in 3D for py/segcheck.py (the surface a walker is on: each triangle's corners x, y, z, and 1 where its
             // height classes the lattice's steps, 0 where it levels them - a city's, a building's porch)
             // (3: a capital's read floor - leveled whatever its height, as a street box's 2, but a real floor: a pier over the sea is a deck
             // for py/wetcheck.py, Theramore's and Auberdine's docks)
-            if (map == main) { val classed = zi.tileDecks.values.flatten().toSet()
+        run { val classed = zi.tileDecks.values.flatten().toSet()
                 File(out, "floors_$tag.json").writeText(org.json.JSONArray(zi.deckList.flatMap { d -> val hs = d.heights ?: return@flatMap emptyList<org.json.JSONArray>()
                     d.triangles.mapIndexed { k, t -> org.json.JSONArray(listOf(t[0], t[1], hs[k][0], t[2], t[3], hs[k][1], t[4], t[5], hs[k][2], if (d in classed) 1 else if (d in zi.capitalDecks) 3 else 0)) } }
                     // and a capital's street boxes (no floor read: leveled whatever their height - flag 2), two triangles a box
                     + zi.cityFeet.flatMap { f -> val c = listOf(doubleArrayOf(f.worldX(f.lx0, f.ly0), f.worldY(f.lx0, f.ly0)), doubleArrayOf(f.worldX(f.lx1, f.ly0), f.worldY(f.lx1, f.ly0)),
                         doubleArrayOf(f.worldX(f.lx1, f.ly1), f.worldY(f.lx1, f.ly1)), doubleArrayOf(f.worldX(f.lx0, f.ly1), f.worldY(f.lx0, f.ly1)))
                         listOf(listOf(0, 1, 2), listOf(0, 2, 3)).map { q -> org.json.JSONArray(q.flatMap { listOf(c[it][0], c[it][1], 0.0) } + 2) } }).toString()) }
-            done[map] = Done(net, rect, zg, ar, hostile)
-        }
-        if (done.containsKey(borderPair.first) && done.containsKey(borderPair.second))
-            border(art, borderPair.first, borderPair.second, done.mapValues { it.value.net }, done.mapValues { it.value.rect }, done.mapValues { it.value.zg },
-                done.mapValues { it.value.ar }, done.mapValues { it.value.hostile }, ::nameOf)
     }
 
     /** per 25 yd cell (Roads.grid's cells): does a road texture show at any of its 6 x 6 points */
@@ -283,6 +292,8 @@ class RenderSafePath {
         // place built in the air, its own floors (stairs, perimeter paths) up to a stair top, an updraft across to a platform, and the
         // way out (a portal back down). Manual links - the game keeps portals and updrafts server-side
         val manual = org.json.JSONArray()
+        // the same links for the shipped network (NET1, ShippedNet.Link): points marked ground / floor / swim, never their heights
+        val shipLinks = ArrayList<com.jrees.wowcompanion.ShippedNet.Link>()
         var platformAt: DoubleArray? = null
         spec?.optJSONObject("airChain")?.let { ac ->
             fun xyOf(k: String) = ac.optJSONArray(k)?.let { doubleArrayOf(it.getDouble(0), it.getDouble(1)) }
@@ -318,6 +329,10 @@ class RenderSafePath {
                 val yd = if (oneWay) 15.0 else fl.length(pts)                  // a portal or an updraft: a few seconds
                 links = links + Climb.Link(pts, yd, oneWay)
                 manual.put(org.json.JSONObject().put("kind", kind).put("pts", org.json.JSONArray(pts.map { org.json.JSONArray(listOf(it[0], it[1], it[2])) })))
+                // (a portal's ground end is the ground; every other point is on the place's own floors)
+                shipLinks.add(com.jrees.wowcompanion.ShippedNet.Link(kind, "", oneWay, yd, pts.mapIndexed { q, p ->
+                    val ground = (kind == "portal" && q == 0) || (kind == "portal (out)" && q == pts.size - 1)
+                    doubleArrayOf(p[0], p[1], if (ground) 0.0 else Climb.IN_CAVE) }))
             }
             platformAt = doubleArrayOf(fl.xs[plat], fl.ys[plat])
 
@@ -658,6 +673,10 @@ class RenderSafePath {
             val yd = pts.zipWithNext { u, w -> Math.hypot(w[0] - u[0], w[1] - u[1]) }.sum()
             swims.add(Swim(o.optString("name"), island, Climb.Link(pts, yd), pts.first(), pts.last()))
             println("SWIM ${o.optString("name")}: the island's ground ${island.size} vertices; the swim ${yd.toInt()} yd from ${pts.first()[0].toInt()},${pts.first()[1].toInt()} to ${pts.last()[0].toInt()},${pts.last()[1].toInt()}")
+            run { val ix = island.map { cg.wx((it shr 32).toInt()) }; val iy = island.map { cg.wy(it.toInt()) }
+                val cx = ix.average(); val cy = iy.average(); val r = ix.indices.maxOf { Math.hypot(ix[it] - cx, iy[it] - cy) }
+                shipLinks.add(com.jrees.wowcompanion.ShippedNet.Link("swim", o.optString("name"), false, yd,
+                    pts.map { doubleArrayOf(it[0], it[1], Climb.SWIM) }, doubleArrayOf(cx, cy, r))) }
             manual.put(org.json.JSONObject().put("kind", "swim").put("name", o.optString("name")).put("pts", org.json.JSONArray(pts.map { org.json.JSONArray(listOf(it[0], it[1], 0.0)) })))
         } }
         val baseLinks = links
@@ -806,6 +825,144 @@ class RenderSafePath {
         export.put("danger", org.json.JSONObject().put("t", rect.t).put("b", rect.b).put("l", rect.l).put("r", rect.r).put("nx", g.nx).put("ny", g.ny)
             .put("d", org.json.JSONArray((0 until g.nx * g.ny).map { q -> Math.round(g.cell(q % g.nx, q / g.nx) * 100) / 100.0 })))
         File(out, "levels_routes_$tag.json").writeText(export.toString())
+        // THE SHIPPED NETWORK (the user: "Ship our path network"; NET1, ShippedNet): the network the routes ran on (the draft, walls
+        // dropped, the caves' and lifts' ways, the checked exits) and the links (an air chain's, the declared swims), one faction's
+        // section, for tools/safepath-harness/export.sh to gate (segcheck / wetcheck none, no WALLS / EMPTY) and pack
+        if (System.getenv("SAFEPATH_EXPORT") == "1") {
+            val wetOf: (DoubleArray, DoubleArray) -> Int = { pa, pb ->
+                var f = 0; val n = maxOf(1, (Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) / 2).toInt())
+                for (t in 0..n) { val x = pa[0] + (pb[0] - pa[0]) * t / n; val y = pa[1] + (pb[1] - pa[1]) * t / n; val d = waterAt(x, y)
+                    f = f or when {
+                        // (the water grid's bridge: a walkway's deck over water - not any floor, a cave's mouth on its own floor)
+                        d == SafePath.Water.BRIDGE -> ShippedNet.F_BRIDGE
+                        d.isNaN() || d <= 0f -> 0
+                        deep(x, y) -> ShippedNet.F_SWIM
+                        else -> ShippedNet.F_WADE } }
+                f }
+            // the lattice's own leg between two points, as the routes walk (the danger, the edge clearance; deep water a wall), every piece
+            // of it walkable by the one check - or none
+            val legOf: (DoubleArray, DoubleArray) -> Pair<List<DoubleArray>, Boolean>? = { a, b ->
+                Climb.route(cg, a, b, danger, k, deep, edges = edgesOn)?.let { r -> r.pts to (r.reached && r.pts.zipWithNext().all { (u, v) -> Climb.walkable(cg, u, v, deep) }) } }
+            fun meanDanger(pts: List<DoubleArray>): Float { var sum = 0.0; var n = 0
+                for ((u, v) in pts.zipWithNext()) { val m = maxOf(1, Math.hypot(v[0] - u[0], v[1] - u[1]).toInt() / 4)
+                    for (q in 0 until m) { sum += danger(u[0] + (v[0] - u[0]) * q / m, u[1] + (v[1] - u[1]) * q / m); n++ } }
+                return if (n == 0) 0f else (sum / n / DangerGrid.CAP).toFloat().coerceIn(0f, 1f) }
+            // A CITY'S STREETS (the spec's floorCity: Dalaran) as ways on its own floor: their points marked in-floor; a street point at the
+            // terrain's own height, standable, is a mouth (the ground's way on)
+            val floorNodes = ArrayList<SafePath.Node>(); val extras = ArrayList<ShippedNet.Extra>()
+            var nextId = (netC.nodes.maxOfOrNull { it.id } ?: 0) + 1
+            city?.floorWays()?.let { (reps, ways) ->
+                val ids = reps.map { p -> val onGround = !height(p[0], p[1]).isNaN() && Math.abs(height(p[0], p[1]) - p[2]) < 1.5 && standable(p[0], p[1])
+                    val id = nextId++; floorNodes.add(SafePath.Node(id, p[0], p[1], if (onGround) SafePath.MOUTH else SafePath.CAVE, "floor")); id }
+                for ((a, b, pts) in ways) extras.add(ShippedNet.Extra(ids[a], ids[b], SafePath.CAVE, ShippedNet.F_FLOOR or ShippedNet.F_CAVE,
+                    pts.map { doubleArrayOf(it[0], it[1]) }, 0f, "floor"))
+                println("NET1 floor: ${floorNodes.size} street points (${floorNodes.count { it.kind == SafePath.MOUTH }} at the ground), ${extras.size} street ways")
+            }
+            // THE JOINS: the network's pieces (the city's streets with it) joined where the lattice's leg joins them
+            val netF = SafePath.Net(netC.map, netC.cont, netC.built, netC.nodes + floorNodes,
+                netC.edges + extras.map { SafePath.Edge(it.a, it.b, it.kind, SafePath.OK, it.src) }, netC.exits)
+            // (T2's NetJoins: one walk over the lattice from every piece, Kruskal over the meetings, each join walked by Climb.route and
+            // re-checked by py/segcheck.py in a folder of its own - its routes file is not the zone's; the floors written first)
+            writeFloors(zi, tag)
+            val jdir = File(out, "joins_$tag").also { it.mkdirs() }
+            for (k2 in listOf("floors", "holes", "layers")) File(out, "${k2}_$tag.json").takeIf { it.isFile }?.copyTo(File(jdir, "${k2}_$tag.json"), true)
+            val nj = NetJoins.joinsChecked(netF, cg, deep, danger, k, shipLinks, edgesOn, wetOf,
+                check = NetJoins.segcheck(File(File(System.getProperty("user.dir")).parentFile, "py"), jdir, tag, dir.name, dir.parentFile)) { println("NET1 $it") }
+            println(nj.summary(tag)); nj.apart.forEach { println("NET1 APART ${it.pieces} at ${it.x.toInt()},${it.y.toInt()}: ${it.why}") }
+            jdir.deleteRecursively()
+            val (netJ, jx) = NetJoins.extras(netC, nj.joins, nextId)
+            extras.addAll(jx)
+            // THE ROADMAP: the coverage graph of the walkable ground, this faction's danger along each of its edges
+            val rb = RoadmapBuild(cg, deep, standable, ::roomsAt, waterAt, layers, rect.t, rect.b, rect.l, rect.r)
+            val built = rb.build { println("NET1 $it") }
+            // NET2 (NetFloors, helper T4): the floor layers' ways, the caves' mouths joined to the ground, the far goals' spurs - all walked
+            // (SAFEPATH_NETFLOORS=0: left out)
+            var netS = netJ; var nodesS: List<SafePath.Node> = floorNodes; var extrasS: List<ShippedNet.Extra> = extras
+            if (System.getenv("SAFEPATH_NETFLOORS") != "0") {
+                val nl = NetFloors.Layers(layers, cg)
+                fun w(sp: QuestieNpcs.Spawn) = Triple(rect.t - sp.y * ay, rect.l - sp.x * ax, sp.name)
+                val hostileW = com.jrees.wowcompanion.DangerInputs.hostile(spawns, mine).map { w(it) }
+                val npcW = spawns.filter { it.hostile != mine && it.hostile != 3 }.map { w(it) }
+                val goalsW = trips.mapNotNull { (_, _, g) -> g.second?.let { g.first to it } } +
+                    (city?.export()?.optJSONArray("places")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { it.getString("name") to doubleArrayOf(it.getDouble("x"), it.getDouble("y")) } } ?: emptyList())
+                // (a capital's own NPCs - Thunder Bluff's on its mesas over Mulgore - by its own map's coordinates: QuestieDB's area -> the
+                // capital's uiMap -> its world rect; those inside this zone's lattice, not hostile to this side)
+                val cityW = if (ar == null) emptyList() else allSpawns.filter { it.hostile != mine && it.hostile != 3 }.mapNotNull { sp ->
+                    val m = ar.uiMap(sp.area); if (m !in com.jrees.wowcompanion.CityExits.CITIES || m == map) return@mapNotNull null
+                    val r = recipeRects?.optJSONArray(m.toString()) ?: return@mapNotNull null
+                    val t = r.getDouble(1); val b = r.getDouble(2); val l = r.getDouble(3); val rr = r.getDouble(4)
+                    Triple(t - sp.y * (t - b), l - sp.x * (l - rr), sp.name) }.filter { p -> p.first <= rect.t && p.first >= rect.b && p.second <= rect.l && p.second >= rect.r }
+                // (the links' starts on the ground: an air place's portal - its goal routes there, "Route to the portal")
+                val linkW = shipLinks.filter { it.oneWay && it.pts.isNotEmpty() && it.pts[0].size > 2 && it.pts[0][2] == 0.0 }.map { "${it.kind} ${it.name}".trim() to it.pts[0] }
+                val pls = NetFloors.places(netJ, hostileW, npcW, goalsW, nl, cityW, linkW)
+                // the floors' triangles as py/segcheck.py reads floors_<tag>.json (every deck with heights; a capital's street boxes not)
+                val deckCells = HashMap<Long, ArrayList<com.jrees.wowcompanion.WorldBuildings.Deck>>()
+                for (d in zi.deckList) { if (d.heights == null || d in zi.capitalDecks || d.triangles.isEmpty()) continue
+                    val xs = d.triangles.flatMap { listOf(it[0], it[2], it[4]) }; val ys = d.triangles.flatMap { listOf(it[1], it[3], it[5]) }
+                    for (i in Math.floorDiv(xs.min().toLong() - 2, 64L)..Math.floorDiv(xs.max().toLong() + 2, 64L))
+                        for (j in Math.floorDiv(ys.min().toLong() - 2, 64L)..Math.floorDiv(ys.max().toLong() + 2, 64L)) deckCells.getOrPut(i * 1000003L + j) { ArrayList() }.add(d) }
+                val surf = NetFloors.Surfaces(layers, { x, y -> deckCells[Math.floorDiv(x.toLong(), 64L) * 1000003L + Math.floorDiv(y.toLong(), 64L)]
+                    ?.flatMap { it.heightsAt(x, y).toList() }?.toDoubleArray() ?: DoubleArray(0) }, { x, y -> zl.bil(x, y) },
+                    { x, y -> zl.onFloor(x, y) || (zi.deckAt(x, y) && zi.floorsAt(x, y).isEmpty()) })
+                // the water as py/wetcheck.py reads it (the liquid's own surface over the ground, every yard; a walkway's deck none): no yard
+                // deeper than the narrow stream (2.2), no more than 6 yd on end deeper than the ford (1.5) - the water grid's wade let a join
+                // end across Alterac's stream (Dalaran W59)
+                val wetOk: (List<DoubleArray>) -> Boolean = { w -> var run = 0.0; var ok = true
+                    for ((u, v) in w.zipWithNext()) { val n = maxOf(1, Math.hypot(v[0] - u[0], v[1] - u[1]).toInt())
+                        for (q in 0..n) { val x = u[0] + (v[0] - u[0]) * q / n; val y = u[1] + (v[1] - u[1]) * q / n
+                            val d = if (zi.deckAt(x, y)) Float.NaN else SafePath.Water.depthOf(x, y, { c, r -> zi.wet(c, r).first }, { c, r -> zi.wet(c, r).second })
+                            if (!d.isNaN() && d > 2.2f) ok = false
+                            if (!d.isNaN() && d > SafePath.FORD_DEPTH) { run += 1.0; if (run > 6.0) ok = false } else run = 0.0 } }
+                    ok }
+                val t0 = System.nanoTime()
+                val plan = NetFloors.ways(NetFloors.Input(netJ, floorNodes, extras, cg, deep, nl, standable, { x, y -> danger(x, y) / DangerGrid.CAP }, pls,
+                    wayOk = { w -> surf.ok(w) && wetOk(w) }))
+                val applied = NetFloors.apply(plan, netJ, floorNodes, extras, cg, deep)
+                netS = applied.first; nodesS = applied.second; extrasS = applied.third
+                println(NetFloors.summary(tag, plan) + "; ${nl.count} floor layers (${nl.openings.size} openings), ${pls.size} places " +
+                    "(${pls.groupingBy { it.why }.eachCount()}); ${(System.nanoTime() - t0) / 1_000_000} ms; extras ${extras.size} -> ${extrasS.size}, " +
+                    "draft mouth spurs dropped ${netS.edges.count { it.state == SafePath.REMOVED } - netJ.edges.count { it.state == SafePath.REMOVED }}")
+                for (d in plan.dropped) println("NETFLOORS dropped $d")
+                for (u in plan.unreached) println("NETFLOORS unreached $u")
+                if (floorNodes.isNotEmpty()) NetFloors.cityCover(floorNodes.map { doubleArrayOf(it.wx, it.wy) }, pls.filter { it.why == "goal" || it.why == "npc" }).let { (n, far) ->
+                    println("NETFLOORS city streets: $n places within ${NetFloors.FLOOR_NEAR_YD.toInt()} yd of a street point; far: $far") }
+                File(out, "nf").mkdirs()
+                File(out, "nf/levels_routes_$tag.json").writeText(NetFloors.routesJson(tag, plan.ways).toString())
+            }
+            val sec = ShippedNet.section(netS, mine, level, tag, shipLinks, wetOf,
+                walk = { a, b -> legOf(a, b)?.takeIf { it.second }?.first?.map { doubleArrayOf(it[0], it[1]) } },
+                extraNodes = nodesS, extras = extrasS)
+            val head = ShippedNet.Header(map, rect.c, Climb.RULES_VERSION, System.getenv("SAFEPATH_RULES_COMMIT") ?: "",
+                System.getenv("SAFEPATH_BUILD") ?: "", java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString())
+            // EVERY SHIPPED SEGMENT CHECKED (ShipCheck): the ways, the joins, the roadmap's edges and the stitches through py/segcheck.py and
+            // py/wetcheck.py in a folder of their own; what fails walked by its lattice leg, or dropped; anything left fails the export
+            val cdir = File(out, "ship_$tag").also { it.mkdirs() }
+            for (k2 in listOf("floors", "holes", "layers", "decks")) File(out, "${k2}_$tag.json").takeIf { it.isFile }?.copyTo(File(cdir, "${k2}_$tag.json"), true)
+            val rmLeg: (DoubleArray, DoubleArray) -> List<DoubleArray>? = { a, b ->
+                Climb.route(cg, a, b, water = deep, edges = false, limits = Climb.Limits(RoadmapBuild.LEG_WINDOW))
+                    ?.takeIf { r -> r.reached && r.pts.zipWithNext().all { (u, v) -> Climb.walkable(cg, u, v, deep) } }?.pts }
+            val sc = ShipCheck(cg, deep, { a, b -> legOf(a, b)?.takeIf { it.second }?.first }, rmLeg, wetOf,
+                File(File(System.getProperty("user.dir")).parentFile, "py"), cdir, tag, dir.name, dir.parentFile) { println("NET1 $it") }
+            val checked = sc.run(sec.copy(stitches = sc.stitches(sec, built.rm)), built.rm)
+            cdir.deleteRecursively()
+            if (checked.left.isNotEmpty()) println("NET1 CROSSING $tag: ${checked.left.size} shipped pieces still cross a wall or deep water: ${checked.left.take(10)}")
+            // the verdict in a file of its own (py/exportcheck.py requires it: a log's lines can be cut)
+            File(out, "ship_$tag.txt").writeText(if (checked.left.isEmpty()) "OK walked ${checked.walked} dropped ${checked.dropped} passes ${checked.passes}\n"
+                else "CROSSING ${checked.left.size}: ${checked.left.take(10)}\n")
+            // this faction's danger along each roadmap edge (the checked roadmap's): the mean along its line, a yard apart
+            val rmDanger = checked.rm?.let { r -> ByteArray(r.edges) { e -> var sum = 0.0; var n = 0
+                for ((u, v) in r.points(e).zipWithNext()) { val m = maxOf(1, Math.hypot(v[0] - u[0], v[1] - u[1]).toInt())
+                    for (q in 0 until m) { sum += danger(u[0] + (v[0] - u[0]) * q / m, u[1] + (v[1] - u[1]) * q / m); n++ } }
+                minOf(255, Math.round(sum / maxOf(1, n) * ShippedNet.ROADMAP_DANGER_SCALE).toInt()).coerceAtLeast(0).toByte() } }
+            val pack = ShippedNet.Pack(head, listOf(checked.sec.copy(roadmapDanger = rmDanger)), checked.rm)
+            File(out, "net1_$tag.json").writeText(pack.toJson().toString())
+            val fin = pack.sections[0]
+            val rmBytes = checked.rm?.let { ShippedNet.pack64(it.encode()).length } ?: 0
+            println("NET1 $tag map $map faction $mine: ${fin.net.nodes.size} nodes, ${fin.net.edges.size} ways " +
+                "(${ShippedNet.FLAG_NAMES.joinToString { (b, nm) -> "$nm ${fin.ways.count { it.flags and b != 0 }}" }}; ${fin.ways.count { it.pts != null }} walked), " +
+                "${fin.net.exits.size} exits, ${fin.links.size} links, ${fin.starts.size} starts, ${fin.checkpoints.size} checkpoints, ${fin.stitches.size} stitches; " +
+                "roadmap ${(checked.rm?.nodes ?: 0)} nodes ${(checked.rm?.edges ?: 0)} edges, $rmBytes bytes (base64), danger ${ShippedNet.pack64(rmDanger ?: ByteArray(0)).length} bytes")
+        }
     }
 
 
