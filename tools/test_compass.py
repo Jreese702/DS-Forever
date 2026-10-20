@@ -104,7 +104,20 @@ GAME.t = 100
 function GetTime() return GAME.t end
 function GetCameraZoom() return 12.5 end
 CVAR_WRITES = 0
-C_CVar = { GetCVar = function(k) if k == "cameraFov" then return "90" end end, SetCVar = function() CVAR_WRITES = CVAR_WRITES + 1 end }
+CV = { cameraFov = "90", GamePadCameraYawSpeed = "1.3", gamepadInvertYaw = "0", GamePadTurnWithCamera = "3", GamepadCameraFollowOnStick = "0" }
+C_CVar = { GetCVar = function(k) return CV[k] end, SetCVar = function() CVAR_WRITES = CVAR_WRITES + 1 end }
+GAME.rx = 0; GAME.gp = true; GAME.fight = false
+C_GamePad = {
+    IsEnabled = function() return GAME.gp end,
+    StickIndexToConfigName = function(i) return ({ [0] = "Movement", [1] = "Camera" })[i] end,
+    GetDeviceMappedState = function()
+        if not GAME.gp then return nil end
+        return { stickCount = 2, sticks = { { x = 0, y = 0, len = 0 }, { x = GAME.rx, y = 0, len = math.abs(GAME.rx) } }, axes = {} }
+    end,
+}
+function InCombatLockdown() return GAME.fight end
+function UnitCastingInfo() return nil end
+function UnitChannelInfo() return nil end
 GAME.nav = nil         -- { x, y, clamped }
 local NAV = setmetatable({}, Region)
 function NAV:GetCenter() return GAME.nav.x, GAME.nav.y end
@@ -266,103 +279,105 @@ def main():
         path.append(C.h)
     chk("across north the short way (6.2 -> 0.1 never passes 3)", all(h > 6.0 or h < 0.2 for h in path) and abs(path[-1] - 0.1) < 0.01)
     G.facing = math.radians(270); C.draw()
-    # cp7, the camera experiment (the user: "Try the experiment"): off by default; on, the nav point's x sets the camera offset
-    G.facing = 0.0; G.pin = None; C.draw()
+    # cp11, the CAMERA (the user: "it needs to follow the camera not the char"): dead-reckoned from the game's own controller state
+    # (C_GamePad), the character's facing while it turns with the camera, fixes from the engine's navigation point
+    G.facing = 0.0; G.pin = None; G.quest = None; G.nav = None; G.speed = 0; G.rx = 0
+    C.draw()
     chk("cam: OFF by default (heading = facing)", C.camWanted() is False and C.cam.src == "off" and abs(C.h) < 1e-9)
     C.setCam(True)
-    half = 1365.3334 / 2
-    cam = -math.radians(30)                         # the camera turned 30 degrees clockwise of the character (facing north)
-    b = math.atan2(-100, 100)                       # the quest NE, as the compass computes it (CCW)
-    G.nav = L.table_from({"x": half + half * math.tan(cam - b), "y": 400.0, "clamped": False})
-    for i in range(60):
-        step(f, 1 / 60)
-    chk("cam: the nav point locks the offset to the camera (%.3f, want %.3f), src nav" % (C.cam.off, cam), abs(C.cam.off - cam) < 0.01 and C.cam.src == "nav")
-    chk("cam: the shown heading follows the camera, not the character (%.3f)" % C.wrap(C.h), abs(C.wrap(C.h) - cam) < 0.02)
-    # cp9: lost, the compass turns LIVE with the character, the last measured offset fading over 1.5 s (test18: "doesnt spin 360")
-    G.nav.clamped = True; G.facing = 2.5
-    for i in range(6):
-        G.t = G.t + 1 / 60
-        step(f, 1 / 60)
-    off1 = C.cam.off
-    chk("cam: off screen: the offset starts fading at once (%.3f, src decay)" % off1, -0.524 < off1 < -0.45 and C.cam.src == "decay")
-    for i in range(300):
-        G.t = G.t + 1 / 60
-        step(f, 1 / 60)
-    chk("cam: after 5 s the compass is on the character (%.3f)" % C.wrap(C.h), abs(C.wrap(C.h) - 2.5) < 0.02)
-    hs = []
-    for k in range(72):                                   # the character turns a full circle, 5 degrees a frame-step
-        G.facing = C.wrap(2.5 + math.radians(5 * (k + 1)))
-        for i in range(4):
-            G.t = G.t + 1 / 60
-            step(f, 1 / 60)
-        hs.append(C.wrap(C.h))
-    turned = sum(abs(C.wrap(hs[i] - hs[i - 1])) for i in range(1, len(hs)))
-    chk("cam: the compass spins the full 360 with the character (%.0f degrees)" % math.degrees(turned), math.degrees(turned) > 340)
-    G.speed = 0
 
-    # the TEST16 LOG (cp7, 12:56:12 .. 12:56:32), its exact f / nx / clamped, re-read for cp10: the camera FOLLOWED the character
-    # (the pin's bearing ~2.05 from the honest samples); 12:56:12 (the pin 94 degrees left, shown on the RIGHT) and 12:56:27 (the
-    # pin straight behind, shown near the centre) were MIRRORED projections of a target behind the camera: never fixes
-    G.quest = None
-    C.setCam(True)
-    c0 = 1365.3334 / 2
-    B = 2.05
-
-    def put_pin(bear):
-        dx, dy = 100 * math.cos(bear), 100 * math.sin(bear)
-        G.pin = L.table((500 - dy) / 1000, (500 - dx) / 1000)
-
-    def run_frames(n=90):
+    def frames(n, dt=1 / 60, read=False):
         for i in range(n):
-            G.t = G.t + 1 / 60
-            if i % 6 == 0:
+            G.t = G.t + dt
+            if read and i % 6 == 0:
                 C.read(True)
-            step(f, 1 / 60)
+            step(f, dt)
 
-    put_pin(B)
-    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end")
-    for ts, fac, nx, clamped, kind in [("12:56:12", 0.38, 1276.6, False, "mirror"), ("12:56:17", 2.652, 1198.3, False, "nav"),
-                                        ("12:56:22", 1.804, 1357.3, True, "decay"), ("12:56:27", 5.941, 633.1, False, "mirror"),
-                                        ("12:56:32", 1.956, 604.6, False, "nav")]:
-        G.facing = fac
-        G.nav = L.table_from({"x": nx, "y": 400.0, "clamped": clamped})
-        run_frames()
-        off = abs(C.wrap(C.wrap(C.h) - fac))
-        chk("test16 %s (f %.3f, nx %.1f%s): %s, the compass within 15 degrees of the character (%.0f)"
-            % (ts, fac, nx, ", clamped" if clamped else "", kind, math.degrees(off)), C.cam.src == kind and off < math.radians(15))
+    CV = L.globals().CV
+    rate = math.radians(120) * 1.3                       # the guessed base x GamePadCameraYawSpeed 1.3
+    frames(30)
+    G.rx = 1.0                                           # the right stick fully right for one second, the character standing
+    frames(60)
+    G.rx = 0
+    frames(30)
+    chk("cam: standing, the right stick orbits the camera: the compass turns clockwise %.0f degrees, the character did not turn (%.0f)"
+        % (-math.degrees(C.wrap(C.h)), math.degrees(G.facing)), abs(C.wrap(C.h) + rate) < 0.05 and C.cam.src == "still" and C.cam["from"] == "pad")
+    yaw = C.wrap(C.h)
+    frames(120)
+    chk("cam: the stick let go: the camera stays where it was (no fade back to the character)", abs(C.wrap(C.h) - yaw) < 0.01)
+    CV.gamepadInvertYaw = "1"; C.cam.fovAt = -10
+    G.rx = 1.0; frames(30); G.rx = 0; frames(30)
+    chk("cam: gamepadInvertYaw: the same stick turns it the other way", C.wrap(C.h) > yaw + 0.3)
+    CV.gamepadInvertYaw = "0"; C.cam.fovAt = -10
+    G.speed = 7; G.facing = 2.0
+    frames(30)
+    chk("cam: moving, the character turns with the camera (GamePadTurnWithCamera): the compass is the facing (%.3f)" % C.wrap(C.h),
+        abs(C.wrap(C.h) - 2.0) < 0.02 and C.cam.src == "move")
+    G.speed = 0; G.fight = True; G.facing = 2.4; frames(30)
+    chk("cam: in a fight (setting 3) it turns with the camera too", abs(C.wrap(C.h) - 2.4) < 0.02 and C.cam.src == "turn")
+    G.fight = False
+    CV.GamePadTurnWithCamera = "2"; C.cam.fovAt = -10; G.facing = 1.0; frames(30)
+    chk("cam: setting 2 (always): standing too", abs(C.wrap(C.h) - 1.0) < 0.02)
+    CV.GamePadTurnWithCamera = "3"; C.cam.fovAt = -10
+    G.gp = False; frames(5)
+    chk("cam: no game controller state: no stick (from none)", C.cam["from"] == "none")
+    C.stickIn(1.0); G.rx = 0; y0 = C.wrap(C.h); frames(6)
+    chk("cam: the app's stick reading plugs in (C.stickIn)", C.cam["from"] == "app" and C.wrap(C.h) < y0 - 0.05)
+    G.gp = True
 
-    # test20's case: the quest fixed, the character (and the camera, which follows it) turning a FULL circle; the engine's x as a
-    # projection, mirrored when the target is behind, unclamped all the way (the worst case): the compass spins with the facing
-    G.facing = 0.0; G.nav = None; C.draw(); C.cam.off = 0      # start ON the character (no catch-up from the replay's heading)
-    hs, fixes, mirrors = [], 0, 0
+    # FIXES: standing, a quest NE (CCW -45 degrees) and the camera truly at -30 degrees: the nav point corrects the dead-reckoned yaw
+    G.quest = L.table(0.6, 0.4); G.facing = 0.0
+    C.setCam(True); frames(5, read=True)
+    c0 = 1365.3334 / 2
+    B = math.atan2(-100, 100)
+    truecam = -math.radians(30)
+    C.cam.abs = -math.radians(10)                        # the dead reckoning 20 degrees off
+    G.nav = L.table_from({"x": c0 + c0 * math.tan(truecam - B), "y": 400.0, "clamped": False})
+    frames(60, read=True)
+    chk("cam: a fix corrects the dead-reckoned yaw to the true camera (%.3f, want %.3f), src nav" % (C.cam.abs, truecam),
+        abs(C.cam.abs - truecam) < 0.01 and C.cam.src == "nav")
+    # a mirrored (behind-the-camera) projection: the camera truly at -30, the quest put BEHIND it, its mirror near the centre
+    G.quest = L.table(0.4, 0.6)                          # SW: behind
+    Bb = math.atan2(100, -100)
+    G.nav = L.table_from({"x": c0 + c0 * math.tan(C.wrap(truecam - Bb)), "y": 400.0, "clamped": False})
+    frames(60, read=True)
+    chk("cam: a mirrored projection never counts (src mirror, the yaw stays %.3f)" % C.cam.abs, C.cam.src == "mirror" and abs(C.cam.abs - truecam) < 0.02)
+    # the rate is LEARNED: the true rate 60 deg/s (base 46 at speed 1.3; the guess 120); the stick held 0.5 s off screen, then a fix
+    G.quest = L.table(0.6, 0.4)
+    G.nav = L.table_from({"x": c0 + c0 * math.tan(truecam - B), "y": 400.0, "clamped": False})
+    frames(30, read=True)
+    G.nav = None
+    G.rx = 1.0; frames(30, read=True); G.rx = 0
+    cam2 = truecam - math.radians(60) * 0.5
+    G.nav = L.table_from({"x": c0 + c0 * math.tan(cam2 - B), "y": 400.0, "clamped": False})
+    frames(60, read=True)
+    lb = math.degrees(C.cam.base or 0)
+    chk("cam: the yaw rate is learned from two fixes (base 120 -> %.0f deg/s, toward the true %.0f), the yaw corrected" % (lb, 60 / 1.3),
+        C.cam.base is not None and 60 / 1.3 - 1 < lb < 100 and abs(C.cam.abs - cam2) < 0.02)
+    G.nav = None; G.quest = None
+
+    # test20's case, now as the game plays it: the character turning a full circle WHILE MOVING (it turns with the camera): the
+    # compass spins with it, the quest's mirrored projections ignored
+    G.quest = L.table(0.6, 0.4); G.speed = 7; G.facing = 0.0; C.draw()
+    hs = []
     for k in range(144):
         fac = C.wrap(math.radians(2.5 * (k + 1)))
         G.facing = fac
-        x = c0 + c0 * math.tan(C.wrap(fac - B))
-        G.nav = L.table_from({"x": x, "y": 400.0, "clamped": False})
-        for i in range(3):
-            G.t = G.t + 1 / 60
-            if i == 0:
-                C.read(True)
-            step(f, 1 / 60)
+        G.nav = L.table_from({"x": c0 + c0 * math.tan(C.wrap(fac - B)), "y": 400.0, "clamped": False})
+        frames(3, read=True)
         hs.append(C.wrap(C.h))
-        fixes += C.cam.src == "nav"
-        mirrors += C.cam.src == "mirror"
     turned = sum(abs(C.wrap(hs[i] - hs[i - 1])) for i in range(1, len(hs)))
     worst = max(abs(C.wrap(hs[i] - C.wrap(math.radians(2.5 * (i + 1))))) for i in range(len(hs)))
-    chk("test20: a full turn, the quest fixed: the compass spins %.0f degrees, never more than %.0f off the character (%d fixes, %d mirrors)"
-        % (math.degrees(turned), math.degrees(worst), fixes, mirrors), math.degrees(turned) > 340 and worst < math.radians(20) and mirrors > 0)
-    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end")
-    G.pin = None; G.speed = 0
-    G.speed = 0; G.quest = None; C.read(True)
-    step(f, 1 / 60)
-    chk("cam: no target: nothing from the nav point (src none)", C.cam.src == "none")
+    chk("test20: a full turn while moving: the compass spins %.0f degrees, never more than %.0f off" % (math.degrees(turned), math.degrees(worst)),
+        math.degrees(turned) > 340 and worst < math.radians(20))
+    G.speed = 0; G.nav = None; G.quest = None
     C.diagAt = -100; C.draw()
     last = L.globals().SENT[len(L.globals().SENT)]
-    chk("cam: the compass line carries the experiment's state (cam, csrc, coff, cyaw, nav, nx, ncl, nvp, nst, fov)",
-        last.probe == "compass" and last.cam is True and last.csrc is not None and last.fov == 90 and last.ncl is not None
-        and last.cyaw is not None)
-    C.setCam(False); G.nav = None; G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.draw()
+    chk("cam: the compass line carries the camera's state (cam csrc cyaw gp from rx ys base learned tw fol inv nav nx ncl nvp nst fov)",
+        last.probe == "compass" and last.cam is True and last.gp is True and last.tw == 3 and last.ys == 1.3 and last.base is not None
+        and last.fov == 90 and last.cyaw is not None)
+    chk("cam: still no CVar written", L.globals().CVAR_WRITES == 0)
+    C.setCam(False); G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.draw()
     # the camera-yaw probe (one shot, read only): starts 20 s after login once the game's nav diamond exists, logs 4 samples a line
     P = C.probe
     L.eval("WowCompanion.compass.probe")
