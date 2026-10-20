@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp13" }
+WC.compass = { V = "cp14" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -452,10 +452,15 @@ do
             if K.ref then K.ref = C.wrap(K.ref - d) end                         -- the last fix, carried by the stick (cp13)
             K.acc = K.acc + x * dt * (K.inv and -1 or 1)                     -- stick-seconds since the last fix (the rate's lesson)
             K.src = "stick"
-        elseif C.turnsWith(moving) and now - K.idleSince >= K.IDLE_S and now - K.straightSince >= K.STRAIGHT_S then
-            -- (cp13: far off -- over 20 degrees, after a bad start or a missed turn -- it closes fast (0.6 s), then gently (4 s))
+        -- cp14 (test23, the user: "if I face north and begin walking south while still facing camera north, then the compass flips to
+        -- south after a delay"): with a controller, walking TOWARD the camera turns the character, not the camera. So no facing anchor
+        -- at all unless the game's follow camera is on (GamepadCameraFollowOnStick: the camera then swings behind a moving character),
+        -- and even then only while walking FORWARD relative to the camera (the facing within 45 degrees of it)
+        elseif K.fol and moving and math.abs(C.wrap(facing - K.abs)) <= math.rad(45)
+            and now - K.idleSince >= K.IDLE_S and now - K.straightSince >= K.STRAIGHT_S then
+            -- (the follow camera swings behind at its own pace: gently, 4 s)
             local gap = C.wrap(facing - K.abs)
-            local tau = math.abs(gap) > math.rad(20) and 0.6 or K.ANCHOR_TAU
+            local tau = K.ANCHOR_TAU
             local step = gap * (1 - math.exp(-dt / tau))
             K.abs = C.wrap(K.abs + step)
             if K.ref then K.ref = C.wrap(K.ref + step) end
