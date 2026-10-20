@@ -890,7 +890,7 @@ end
 --   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
 --   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 --   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-WC.live = { V = "ag1", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+WC.live = { V = "ag2", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -1019,6 +1019,7 @@ do
         A.toks[tok] = nil
         local s = A.byTok[tok]
         if s == nil then return end
+        if A.icon and A.icon[s] then A.icon[s].f:Hide(); A.icon[s].tok = nil end
         if pv(UnitIsDead, tok) == true then                       -- died: one record with dd = 1, then the slot goes
             A.ghosts[#A.ghosts + 1] = { s = s, n = A.slot[s].npc, dd = 1 }
         end
@@ -1252,6 +1253,142 @@ do
         return rec
     end
 
+    -- ---------------------------------------------------------------- ENEMY NAMEPLATES ON (ag2; the ONE game-setting exception)
+    -- test22: every probe read plates 0, and the coverage line "enemies false": the game's enemy nameplates were OFF, so the layer saw
+    -- nothing. The user's ruling ("Add-on turns them on"): while SafePath routes (Map.lua's route pin, WC.routeWp.active), the add-on
+    -- sets nameplateShowEnemies to 1, remembers the player's own value in OUR saved data (WowCompanionDB.npEnemies), and puts it back
+    -- when the route has been off NP_OFF_S, at log out, and at a login that finds it left from before. Out of combat only (the
+    -- nameplate CVars are refused in a fight). Nothing else is ever written. The player switching them off meanwhile is their
+    -- choice: kept, and not undone again this session.
+    A.NP_OFF_S = 15
+    A.np = { state = "idle", offSince = nil, declined = false }
+    local function npGet()
+        local ok, v = pcall(function() return C_CVar.GetCVar("nameplateShowEnemies") end)
+        if ok and v ~= nil and not (type(issecretvalue) == "function" and issecretvalue(v)) then return tostring(v) end
+    end
+    local function npSet(v)
+        local ok = pcall(function()
+            if C_CVar and C_CVar.SetCVar then C_CVar.SetCVar("nameplateShowEnemies", v) else SetCVar("nameplateShowEnemies", v) end
+        end)
+        return ok
+    end
+    A.npGet, A.npSet = npGet, npSet
+    function A.npSaved() return type(WowCompanionDB) == "table" and type(WowCompanionDB.npEnemies) == "table" and WowCompanionDB.npEnemies or nil end
+    -- give the player's value back (when ours is still in place: a change of theirs stands)
+    function A.npRestore(why)
+        local saved = A.npSaved()
+        if not saved then return end
+        if pv(InCombatLockdown) == true and why ~= "logout" then return end
+        if npGet() == "1" and saved.orig ~= "1" then npSet(saved.orig) end
+        WowCompanionDB.npEnemies = nil
+        A.np.state, A.np.why = "restored", why
+    end
+    function A.npStep()
+        local t = now()
+        local want = type(WC.routeWp) == "table" and WC.routeWp.active == true
+        local saved = A.npSaved()
+        if want then
+            A.np.offSince = nil
+            if A.np.declined then A.np.state = "declined"; return end
+            local cur = npGet()
+            if saved and cur ~= "1" then                       -- the player switched them off meanwhile: their choice stands
+                WowCompanionDB.npEnemies = nil
+                A.np.declined, A.np.state = true, "declined"
+                return
+            end
+            if not saved and cur and cur ~= "1" then
+                if pv(InCombatLockdown) == true then A.np.state = "waiting (combat)"; return end
+                if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+                WowCompanionDB.npEnemies = { orig = cur, at = math.floor(t) }
+                if npSet("1") then A.np.state = "on (ours)" else A.np.state = "refused"; WowCompanionDB.npEnemies = nil end
+            elseif saved then
+                A.np.state = "on (ours)"
+            else
+                A.np.state = "on (already)"
+            end
+        else
+            if saved then
+                A.np.offSince = A.np.offSince or t
+                if t - A.np.offSince >= A.NP_OFF_S then A.npRestore("route off") end
+            else
+                A.np.state = A.np.state == "restored" and "restored" or "idle"
+            end
+        end
+    end
+
+    -- ---------------------------------------------------------------- THE PLATE ICONS (ag2; the user: "Build now", icons only)
+    -- Our own small frames on UIParent, ANCHORED above each slotted plate (never parented into it, nothing of the plate written),
+    -- the game's atlases at runtime, cleared when the plate goes:
+    --   AVOID (dungeonskull): an elite / rare elite / boss, a "??" (skull) level, a level >= ours + 3, or a mob in a fight that is
+    --         not on us within 30 yd (it may turn on us);
+    --   QUEST (smallquestbang, the signed-off F spec): a quest objective (qi);
+    --   the pull picks p1 / p2 (TargetCrosshairs) come with the app's tap row, later.
+    A.icon = {}
+    function A.iconFor(s)
+        local o = A.icon[s]
+        if o then return o end
+        local u = (C and C.u) or function(px) return px * 768 / 1080 end
+        local f = CreateFrame("Frame", nil, UIParent)
+        f:SetFrameStrata("MEDIUM")
+        f:EnableMouse(false)
+        f:SetSize(u(60), u(30))
+        f:Hide()
+        local av = f:CreateTexture(nil, "ARTWORK")
+        av:SetSize(u(26), u(26))
+        av:SetPoint("RIGHT", f, "CENTER", u(14), 0)
+        pcall(function() av:SetAtlas("dungeonskull") end)
+        local q = f:CreateTexture(nil, "ARTWORK")
+        q:SetSize(u(30), u(30))
+        q:SetPoint("LEFT", f, "CENTER", -u(14), 0)
+        pcall(function() q:SetAtlas("smallquestbang") end)
+        o = { f = f, av = av, q = q }
+        A.icon[s] = o
+        return o
+    end
+    function A.avoidOf(m, plv)
+        if m.c == "e" or m.c == "R" or m.c == "b" then return true end
+        if m.lv and (m.lv < 0 or (plv and m.lv >= plv + 3)) then return true end
+        if m.cb == 1 and not (m.om and m.om >= 2) and m.b and m.b <= 30 then return true end
+        return false
+    end
+    function A.iconsStep(list)
+        local plv = pv(UnitLevel, "player")
+        local want = {}
+        for _, m in ipairs(list or {}) do
+            if not m.dd and A.slot[m.s] then
+                local av, qq = A.avoidOf(m, plv), m.qi == 1
+                if av or qq then want[m.s] = { av = av, q = qq, tok = A.slot[m.s].tok } end
+            end
+        end
+        A.iconN = 0
+        for s, o in pairs(A.icon) do
+            local w = want[s]
+            if not w then
+                if o.f:IsShown() then o.f:Hide() end
+                o.tok = nil
+            end
+        end
+        for s, w in pairs(want) do
+            local okP, plate = pcall(function() return C_NamePlate.GetNamePlateForUnit(w.tok) end)
+            if okP and plate then
+                local o = A.iconFor(s)
+                if o.tok ~= w.tok then
+                    o.f:ClearAllPoints()
+                    pcall(function() o.f:SetPoint("BOTTOM", plate, "TOP", 0, 2) end)
+                    o.tok = w.tok
+                end
+                if w.av then o.av:Show() else o.av:Hide() end
+                if w.q then o.q:Show() else o.q:Hide() end
+                if not o.f:IsShown() then o.f:Show() end
+                A.iconN = A.iconN + 1
+            end
+        end
+    end
+    function A.iconsClear()
+        for _, o in pairs(A.icon) do o.f:Hide(); o.tok = nil end
+        A.iconN = 0
+    end
+
     -- ---------------------------------------------------------------- the probe line (as the compass's), every 5 s
     A.diagAt = -100
     function A.diag()
@@ -1265,7 +1402,9 @@ do
         for _, b in ipairs(A.bands) do nb[b.kind] = nb[b.kind] + 1 end
         local line = { type = "cap", probe = "aggro", v = A.V, plates = nTok, slots = nSlot, bs = nb.s, bi = nb.i, bd = nb.d,
                        sx = A.sxPlain and true or false, off = A.off, q = A.q, full = A.sent.full, same = A.sent.same,
-                       still = A.sent.still, rej = A.lastReject, err = A.err }
+                       still = A.sent.still, rej = A.lastReject, err = A.err,
+                       np = A.np.state, npv = npGet(), npo = A.npSaved() and A.npSaved().orig or nil, icons = A.iconN or 0,
+                       route = type(WC.routeWp) == "table" and WC.routeWp.active == true }
         A.lastDiag = line
         pcall(function() WC.send(WC.encode(line)) end)
     end
@@ -1274,14 +1413,17 @@ do
     local ev = CreateFrame("Frame")
     for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "SPELLS_CHANGED",
                          "ITEM_DATA_LOAD_RESULT", "CVAR_UPDATE", "ENCOUNTER_START", "ENCOUNTER_END", "UNIT_SPELLCAST_SENT",
-                         "PLAYER_ENTER_COMBAT", "START_AUTOREPEAT_SPELL", "UNIT_THREAT_LIST_UPDATE" }) do
+                         "PLAYER_ENTER_COMBAT", "START_AUTOREPEAT_SPELL", "UNIT_THREAT_LIST_UPDATE", "PLAYER_LOGOUT" }) do
         pcall(function() ev:RegisterEvent(e) end)
     end
     ev:SetScript("OnEvent", function(_, e, a1)
         local ok, err = pcall(function()
             if e == "NAME_PLATE_UNIT_ADDED" then A.onAdded(a1)
             elseif e == "NAME_PLATE_UNIT_REMOVED" then A.onRemoved(a1)
+            elseif e == "PLAYER_LOGOUT" then A.npRestore("logout")
             elseif e == "PLAYER_ENTERING_WORLD" then
+                -- a value of ours left from before (a crash): back to the player's once the route is not running (npStep's grace)
+                if A.npSaved() then A.np.offSince = now() - A.NP_OFF_S + 3 end
                 -- a reload / login: every slot cleared, q from 1 (the contract)
                 A.slot, A.byTok, A.toks, A.freeAt, A.q, A.hash, A.ghosts = {}, {}, {}, {}, 0, nil, {}
                 A.buildBands()
@@ -1311,7 +1453,9 @@ do
             if A.rebuildAt and t >= A.rebuildAt then A.rebuildAt = nil; A.buildBands() end
             if A.covAt and t >= A.covAt then A.covAt = nil; A.coverage() end
             if A.covDirty and not A.covAt then A.covAt = t + 0.5 end
+            A.npStep()
             A.scan()
+            if A.off then A.iconsClear() else A.iconsStep(A.last and A.last.m) end
             A.still()
             A.diag()
         end)

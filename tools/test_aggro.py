@@ -65,6 +65,9 @@ C_Item = {
 local CI = { [1] = 28, [2] = 8, [3] = 7, [4] = 28 }
 function CheckInteractDistance(t, i) local u = U(t); if not u then return false end; return u.d <= CI[i] end
 CV.nameplateMaxDistance = "41"; CV.nameplateShowOffscreen = "0"; CV.nameplateShowEnemies = "1"; CV.nameplateMaxVerticalDistance = "60"
+CVSET = {}
+C_CVar.SetCVar = function(k, v) CVAR_WRITES = CVAR_WRITES + 1; CVSET[#CVSET + 1] = k .. "=" .. tostring(v); CV[k] = tostring(v) end
+WowCompanion.routeWp = { active = false }
 '''
 
 
@@ -250,7 +253,62 @@ def main():
     A.diagAt = -100; A.diag()
     d = A.lastDiag
     chk("the probe line: plates, slots, bands s/i/d, sx plain, q, sent counts", d.probe == "aggro" and d.bs == 2 and d.bi == 2 and d.bd == 2 and d.sx is True)
-    chk("nothing written: no CVar", Lg.CVAR_WRITES == 0)
+    chk("no CVar written while no route runs", Lg.CVAR_WRITES == 0)
+
+    # ag2: ENEMY NAMEPLATES ON while SafePath routes (the user's ruling), the player's value kept and given back
+    CV = Lg.CV
+    CV.nameplateShowEnemies = "0"
+    Lg.WowCompanion.routeWp.active = True
+    G.fight = True; tick()
+    chk("the route starts in a fight: waits (nothing written)", Lg.CVAR_WRITES == 0 and A.np.state == "waiting (combat)")
+    G.fight = False; tick()
+    chk("out of the fight: nameplateShowEnemies = 1, the player's 0 kept in our saved data",
+        CV.nameplateShowEnemies == "1" and Lg.WowCompanionDB.npEnemies.orig == "0" and A.np.state == "on (ours)")
+    chk("only that one CVar is ever written (%s)" % list(Lg.CVSET.values()), list(Lg.CVSET.values()) == ["nameplateShowEnemies=1"])
+    Lg.WowCompanion.routeWp.active = False
+    for i in range(50):
+        tick()
+    chk("the route off 10 s: still on (the 15 s grace)", CV.nameplateShowEnemies == "1")
+    for i in range(30):
+        tick()
+    chk("the route off 16 s: the player's 0 back, our saved copy gone", CV.nameplateShowEnemies == "0" and Lg.WowCompanionDB.npEnemies is None)
+    Lg.WowCompanion.routeWp.active = True; tick()
+    CV.nameplateShowEnemies = "0"; tick()             # the player switches them off themselves
+    chk("the player switches them off meanwhile: their choice stands (declined, not set again)",
+        CV.nameplateShowEnemies == "0" and A.np.state == "declined")
+    for i in range(5):
+        tick()
+    chk("... still declined", CV.nameplateShowEnemies == "0")
+    A.np.declined = False; Lg.WowCompanionDB.npEnemies = None; tick()
+    chk("(a new session) on again", CV.nameplateShowEnemies == "1")
+    fire("PLAYER_LOGOUT")
+    chk("log out: the player's value back", CV.nameplateShowEnemies == "0" and Lg.WowCompanionDB.npEnemies is None)
+    Lg.WowCompanion.routeWp.active = False
+
+    # ag2: the plate ICONS: AVOID on the dangerous, QUEST on objectives, none on the rest, anchored above the plate
+    for t in list(A.byTok.keys()):
+        fire("NAME_PLATE_UNIT_REMOVED", t)
+    G.t = G.t + 11
+    unit("nameplate50", d=15, lv=7, cls="elite")
+    unit("nameplate51", d=15, lv=5, qi=True)
+    unit("nameplate52", d=15, lv=5)
+    unit("nameplate53", d=15, lv=9)
+    for t in ("nameplate50", "nameplate51", "nameplate52", "nameplate53"):
+        fire("NAME_PLATE_UNIT_ADDED", t)
+    tick()
+    ic = {A.byTok[t]: A.icon[A.byTok[t]] for t in ("nameplate50", "nameplate51", "nameplate52", "nameplate53")}
+    s50, s51, s52, s53 = (A.byTok[t] for t in ("nameplate50", "nameplate51", "nameplate52", "nameplate53"))
+    chk("an elite: AVOID (the skull), shown", ic[s50] is not None and ic[s50].f.shown and ic[s50].av.shown is not False and ic[s50].q.shown is False)
+    chk("a quest objective: QUEST (!) only", ic[s51] is not None and ic[s51].f.shown and ic[s51].q.shown is not False and ic[s51].av.shown is False)
+    chk("a plain mob 1 below us: no icon", ic[s52] is None or not ic[s52].f.shown)
+    chk("a mob 3 above us: AVOID", ic[s53] is not None and ic[s53].f.shown and ic[s53].av.shown is not False)
+    pt = ic[s50].f.point
+    chk("anchored above its plate (BOTTOM to the plate's TOP), on our own frame", pt[1] == "BOTTOM" and pt[3] == "TOP"
+        and L.eval("function(f) return rawequal(f.parent, UIParent) end")(ic[s50].f))
+    fire("NAME_PLATE_UNIT_REMOVED", "nameplate50")
+    chk("the plate gone: its icon hidden at once", ic[s50].f.shown is False)
+    A.diagAt = -100; A.diag()
+    chk("the probe line: np state, the value, the icons count", A.lastDiag.np is not None and A.lastDiag.npv == "0" and A.lastDiag.icons >= 2)
     chk("no error caught in the ticker / events (%s)" % A.err, A.err is None)
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
