@@ -1406,7 +1406,9 @@ object SafePath {
      * straight walk is as good): the caller keeps its own way.
      */
     fun route(net: Net, fx: Double, fy: Double, tx: Double, ty: Double, toExit: Boolean = false,
-              clear: ((DoubleArray, DoubleArray) -> Boolean)? = null, goalAttachYd: Double = ATTACH_YD): List<DoubleArray>? {
+              clear: ((DoubleArray, DoubleArray) -> Boolean)? = null, goalAttachYd: Double = ATTACH_YD,
+              /** the ways' danger shares not counted (a ghost's corpse run) */
+              noDanger: Boolean = false): List<DoubleArray>? {
         val byId = net.nodes.associateBy { it.id }
         val usable = net.edges.filter { it.state != REMOVED && byId.containsKey(it.a) && byId.containsKey(it.b) }
         if (usable.isEmpty()) return null
@@ -1415,7 +1417,7 @@ object SafePath {
             ?.takeIf { hypot(it.wx - tx, it.wy - ty) <= EXIT_SNAP_YD }?.let { gx = it.wx; gy = it.wy }
         // a road first; a trail only where no road joins the two places (its base and its climb: over the hills it costs what they do)
         fun factor(e: Edge) = (when (e.kind) { ROAD -> 1.0; SPUR, CAVE -> 1.3; else -> 2.2 }) * (if (e.state == AVOID) 6.0 else 1.0) *
-            (1.0 + e.danger) * (if (e.kind == ROAD) 1.0 else e.climb.toDouble())
+            (if (noDanger) 1.0 else 1.0 + e.danger) * (if (e.kind == ROAD) 1.0 else e.climb.toDouble())
         val pos = HashMap<Int, DoubleArray>()
         for (n in net.nodes) pos[n.id] = when (n.kind) { CAVE -> doubleArrayOf(n.wx, n.wy, Climb.IN_CAVE); LIFT -> doubleArrayOf(n.wx, n.wy, Climb.LIFT)
             else -> doubleArrayOf(n.wx, n.wy) }
@@ -1484,14 +1486,17 @@ object SafePath {
      * null = the network does not help (the caller's grid leg).
      */
     fun deviceLeg(net: Net, fx: Double, fy: Double, tx: Double, ty: Double, toExit: Boolean = false, clear: ((DoubleArray, DoubleArray) -> Boolean)? = null,
+                  /** a ghost's corpse run (CorpseRoute): the ways' danger shares not counted, and no detour cap */
+                  ghost: Boolean = false,
                   offNet: ((DoubleArray, DoubleArray) -> List<DoubleArray>?)? = null): List<DoubleArray>? {
-        route(net, fx, fy, tx, ty, toExit, clear)?.let { return it }
+        route(net, fx, fy, tx, ty, toExit, clear, noDanger = ghost)?.let { return it }
         if (toExit || hypot(tx - fx, ty - fy) < FAR_GOAL_YD) return null
-        val w = route(net, fx, fy, tx, ty, false, clear, FAR_ATTACH_YD) ?: return null
+        val w = route(net, fx, fy, tx, ty, false, clear, FAR_ATTACH_YD, noDanger = ghost) ?: return null
         if (w.size < 3) return null
         val off = w[w.size - 2]
         if (hypot(off[0] - tx, off[1] - ty) > hypot(fx - tx, fy - ty) - FAR_GAIN_YD) return null
         val way = offNet?.invoke(off, w.last())?.takeIf { it.size >= 2 }?.let { tail -> w.dropLast(1) + tail.drop(1) } ?: w
+        if (ghost) return way
         // ... and never a silly detour (the user: "Tighten to 1.75x"): no longer than DETOUR_FACTOR the straight walk + DETOUR_SLACK_YD
         // (Elwynn's and Arathi's far goals: the road's way round 2.2x the grid's own leg)
         val yd = way.zipWithNext { a, b -> hypot(b[0] - a[0], b[1] - a[1]) }.sum()

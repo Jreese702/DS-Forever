@@ -112,12 +112,14 @@ object ShippedRoute {
      * the way from [from] to [to] (world x, y) on [sec]'s graph (and [roadmap]). [ground] the ground's cost per yard at a world point
      * (NaN = unknown, 1; [Terrain.WALL] or more = a wall), [danger] the character's danger there (null: the net's own shares), [k] its
      * weight ([DangerGrid.strength]; 0 = none). [toExit]: the goal is a crossing out, snapped to the net's exit within
-     * [SafePath.EXIT_SNAP_YD]. The last [goalFreeYd] to the goal are never danger.
+     * [SafePath.EXIT_SNAP_YD]. The last [goalFreeYd] to the goal are never danger. [links]: which of the section's links may be taken
+     * (all by default; a ghost's corpse run: only the walked ones, [CorpseRoute.walkable] - no portal, no updraft, no ride).
      */
     fun plan(sec: ShippedNet.Section, ground: (Double, Double) -> Float, danger: ((Double, Double) -> Float)?, from: DoubleArray, to: DoubleArray,
              k: Double = DangerGrid.strength("high"), toExit: Boolean = false, attachMaxYd: Double = ATTACH_MAX_YD,
              goalFreeYd: Double = DangerGrid.GOAL_FREE_YD, roadmap: Roadmap? = roadmapOf(sec), attacher: Attacher = ShippedSnap.attacher(),
-             stitchGround: ShippedSnap.Ground? = null, live: LiveDanger.Snapshot? = null): Result {
+             stitchGround: ShippedSnap.Ground? = null, live: LiveDanger.Snapshot? = null,
+             links: (ShippedNet.Link) -> Boolean = { true }): Result {
         // LIVE AGGRO (LiveDanger): the plates' discs over the static danger, the spawns they show absent or hold taken off - a cost
         // like the static danger (k x it a yard), never a wall; only over a character danger (none: the net's own shares, as before)
         @Suppress("NAME_SHADOWING") val danger = LiveDanger.combine(danger, live)
@@ -128,7 +130,7 @@ object ShippedRoute {
         // the last yards to the goal are never danger (a kill objective, a giver among mobs: the route must reach them; DangerGrid's rule)
         val gx = goal[0]; val gy = goal[1]
         val dz = danger?.let { d -> { x: Double, y: Double -> if (hypot(x - gx, y - gy) <= goalFreeYd) 0f else d(x, y) } }
-        val g = Graph(sec, roadmap, dz, ground, attacher, stitchGround)
+        val g = Graph(sec, roadmap, dz, ground, attacher, stitchGround, links)
         val round = g.search(ground, dz, from, goal, k, attachMaxYd)
         if (round.pts.size < 2 || !round.reached) return round
         // THE DANGER TERM (the user's test20: "pathing me into hostile mobs"): the route's k x danger a yard ([dangerOf], the goal's free
@@ -163,7 +165,8 @@ object ShippedRoute {
 
     /** the one graph: the net's ways along their points, the roadmap's edges, their base costs and the danger along them */
     private class Graph(val sec: ShippedNet.Section, val roadmap: Roadmap?, danger: ((Double, Double) -> Float)?,
-                        @Suppress("UNUSED_PARAMETER") ground: (Double, Double) -> Float, val attacher: Attacher, stitchGround: ShippedSnap.Ground?) {
+                        @Suppress("UNUSED_PARAMETER") ground: (Double, Double) -> Float, val attacher: Attacher, stitchGround: ShippedSnap.Ground?,
+                        val linkOk: (ShippedNet.Link) -> Boolean = { true }) {
         val net = sec.net
         /** a way: [via] its points after [a] up to [b] (both directions walk it), [rewalk] a rewalk way with no shipped points */
         /** [share]: the net's danger share (the cost x 1 + it with no character danger); [fixedYd]: the roadmap's shipped danger x yards
@@ -325,7 +328,7 @@ object ShippedRoute {
                 return id
             }
             for (l in sec.links) {
-                if (l.pts.size < 2) continue
+                if (l.pts.size < 2 || !linkOk(l)) continue
                 val swim = l.kind == "swim" || l.pts.any { Climb.atSwim(it) }
                 if (swim) { val isl = l.island ?: continue; if (hypot(goal[0] - isl[0], goal[1] - isl[1]) > isl[2]) continue; swimOffered++ }
                 val pts = l.pts.map { p -> if (swim) doubleArrayOf(p[0], p[1], Climb.SWIM) else p }

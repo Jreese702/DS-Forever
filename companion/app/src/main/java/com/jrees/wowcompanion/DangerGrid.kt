@@ -78,15 +78,16 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
 
     /**
      * The way from [from] to [to] (this map's 0..1; [to] clamped onto the map) at strength [k]: the straight line when it crosses
-     * no danger, else A* over the cells, string-pulled. [from] first, [to] last.
+     * no danger, else A* over the cells, string-pulled. [from] first, [to] last. [groundOnly] (a ghost's corpse run, CorpseRoute): the
+     * ground's walls and costs alone, the danger never read (with it, k 0 still bends round a cliff; without it, k 0 is straight).
      */
-    fun route(from: DoubleArray, to: DoubleArray, k: Double): List<DoubleArray> {
+    fun route(from: DoubleArray, to: DoubleArray, k: Double, groundOnly: Boolean = false): List<DoubleArray> {
         val goal = doubleArrayOf(to[0].coerceIn(0.0, 1.0 - 1e-9), to[1].coerceIn(0.0, 1.0 - 1e-9))
         val straight = listOf(from, to)
-        if (k <= 0.0) return straight
+        if (k <= 0.0 && !groundOnly) return straight
         // calm and level: straight (the ground's cost along it no more than a few percent over its yards)
         val len = hypot((goal[0] - from[0]) * ax, (goal[1] - from[1]) * ay)
-        if (peak(from, goal) < CALM && segCost(from, goal, 0.0, goal) <= len * 1.05) return straight
+        if ((groundOnly || peak(from, goal) < CALM) && segCost(from, goal, 0.0, goal) <= len * 1.05) return straight
         val si = (from[0].coerceIn(0.0, 1.0 - 1e-9) * nx).toInt(); val sj = (from[1].coerceIn(0.0, 1.0 - 1e-9) * ny).toInt()
         val ti = (goal[0] * nx).toInt(); val tj = (goal[1] * ny).toInt()
         val n = nx * ny
@@ -125,13 +126,13 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
         while (c != -1 && c != s) { cells.add(doubleArrayOf((c % nx + 0.5) * cx, (c / nx + 0.5) * cy)); c = prev[c] }
         cells.reverse()
         val raw = ArrayList<DoubleArray>().apply { add(from); addAll(cells.dropLast(1)); add(to) }
-        val pulled = pull(raw, k, goal)
+        val pulled = pull(raw, k, goal, groundOnly)
         // a bent way only when it is clearly better than the straight one
         return if (cost(pulled, k, goal) < cost(straight, k, goal) * 0.97) pulled else straight
     }
 
     /** STRING-PULLING: from each kept point, the farthest later one a straight leg reaches for no more than the cells' way costs */
-    fun pull(pts: List<DoubleArray>, k: Double, goal: DoubleArray): List<DoubleArray> {
+    fun pull(pts: List<DoubleArray>, k: Double, goal: DoubleArray, groundOnly: Boolean = false): List<DoubleArray> {
         if (pts.size <= 2) return pts
         val legs = DoubleArray(pts.size)                                 // the cost from the start to each point, along the cells
         for (i in 1 until pts.size) legs[i] = legs[i - 1] + segCost(pts[i - 1], pts[i], k, goal)
@@ -143,7 +144,7 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
         while (i < pts.size - 1) {
             var j = pts.size - 1
             while (j > i + 1 && (segCost(pts[i], pts[j], k, goal) > (legs[j] - legs[i]) * 1.02 + 0.5 ||
-                    peak(pts[i], pts[j], goal) > cellsPeak(i, j) + CALM)) j--
+                    (!groundOnly && peak(pts[i], pts[j], goal) > cellsPeak(i, j) + CALM))) j--
             out.add(pts[j]); i = j
         }
         return out
