@@ -312,6 +312,33 @@ class ShippedRouteTest {
         assertTrue(f.reached); assertTrue("in-floor", f.pts.any { it[0] == 200.0 && Climb.inCave(it) })
     }
 
+    @Test fun aCaveWayFromMouthToMouthIsMarkedInCaveAllAlong() {
+        // W round 2, Alterac J: a cave way (kind cave, flag cave) straight between two mouths: its whole stretch in-cave
+        val nodes = listOf(node(0, 0.0, 0.0), SafePath.Node(1, 0.0, 400.0, SafePath.MOUTH, "cave"), SafePath.Node(2, 0.0, 480.0, SafePath.MOUTH, "cave"),
+            node(3, 0.0, 900.0))
+        val edges = listOf(road(0, 1), SafePath.Edge(1, 2, SafePath.CAVE, SafePath.DRAFT, "cave", 0f, 1f), road(2, 3))
+        val r = ShippedRoute.plan(section(nodes, edges), flat, null, doubleArrayOf(0.0, -40.0), doubleArrayOf(0.0, 940.0))
+        assertTrue(r.why, r.reached)
+        for ((a, b) in r.pts.zipWithNext()) if (minOf(a[1], b[1]) >= 400.0 && maxOf(a[1], b[1]) <= 480.0 && hypot(b[0] - a[0], b[1] - a[1]) > 1.0)
+            assertTrue("the cave's stretch ${a.toList()} -> ${b.toList()} marked", Climb.inCave(a) && Climb.inCave(b))
+        assertTrue("its mouths' own points stay on the terrain", r.pts.any { it[1] == 400.0 && !Climb.inCave(it) })
+    }
+
+    @Test fun aChainOfLinksIsWalkedThroughTheirOwnEnds() {
+        // Zephras K: a portal from the road up to a floor (no net node there), stairs, a deck, an updraft to the top - the goal on the top
+        val sec = section(listOf(node(0, 0.0, 0.0), node(1, 0.0, 600.0)), listOf(road(0, 1)), listOf(
+            ShippedNet.Link("portal", "", true, 15.0, listOf(doubleArrayOf(0.0, 600.0, 0.0), doubleArrayOf(300.0, 900.0, 1.0))),
+            ShippedNet.Link("stairs", "", false, 140.0, listOf(doubleArrayOf(300.0, 900.0, 1.0), doubleArrayOf(400.0, 950.0, 1.0))),
+            ShippedNet.Link("deck", "", false, 170.0, listOf(doubleArrayOf(400.0, 950.0, 1.0), doubleArrayOf(450.0, 1000.0, 1.0), doubleArrayOf(500.0, 1100.0, 1.0))),
+            ShippedNet.Link("updraft", "", true, 15.0, listOf(doubleArrayOf(500.0, 1100.0, 1.0), doubleArrayOf(700.0, 1300.0, 1.0)))))
+        val r = ShippedRoute.plan(sec, flat, null, doubleArrayOf(0.0, -40.0), doubleArrayOf(705.0, 1305.0))
+        assertTrue(r.why, r.reached)
+        assertTrue("up the chain", r.pts.any { it[0] == 450.0 && it[1] == 1000.0 } && r.pts.any { it[0] == 700.0 && it[1] == 1300.0 })
+        // the updraft is one way: from the top back down there is no chain (the portal is one way too)
+        val back = ShippedRoute.plan(sec, flat, null, doubleArrayOf(705.0, 1305.0), doubleArrayOf(0.0, -40.0))
+        assertFalse(back.why, back.reached && back.pts.any { it[0] == 450.0 })
+    }
+
     @Test fun aJoinCostsAsASpurNotATrail() {
         // two ways round: a join (trail + join flags) out to x 300, a trail out to x 250: the join's 1.3 beats the trail's 2.2
         val net = SafePath.Net(1411, 1, "off-device", listOf(node(0, 0.0, 0.0), node(1, 0.0, 1000.0), node(2, 300.0, 500.0), node(3, -250.0, 500.0)),
