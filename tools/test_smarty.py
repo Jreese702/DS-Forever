@@ -114,5 +114,71 @@ check(choose(50, 100, items=[i for i in ITEMS if i["kind"] == "drink"]) is None,
 empty = [dict(ITEMS[0], n=0)]
 check(choose(50, 100, items=empty) is None, "an empty stack is never picked", choose(50, 100, items=empty))
 
+# ---------------------------------------------------------------- m62 Smart buffs: Y's spell / OR kinds, and the first unsatisfied row
+
+
+def press_kind(kind, val):
+    L.execute('TRUE = {}')
+    attrs = L.table_from({"wc-n-top": 1, "wc-dest-top-1": "ForeverInspectButton", "wc-pos": 6, "wc-state": "idle",
+                          "wc-smarty": val, "wc-smarty-t": kind})
+    mk = L.eval('mkframe')
+    btn = mk(attrs, L.table_from({"wc-hdr": mk(L.table_from({})), "wc-bar-top-1": mk(L.table_from({}))}))
+    run(btn, "LeftButton", True)
+    return btn.a["type"], btn.a["spell"], btn.a["unit"], btn.a["macrotext"]
+
+
+k = press_kind("spell", "Arcane Intellect")
+check(k[0] == "spell" and k[1] == "Arcane Intellect" and k[2] == "player", "a buff row: Y casts it on yourself", k)
+k = press_kind("or", "or")
+check(k[0] == "macro" and "WowCompanionPadSmartyOr" in (k[3] or ""), "an OR row: Y opens the wheel (Hub's button)", k)
+k = press_kind("item", "item:117")
+check(k[0] == "item" and k[2] is None, "food: an item, no unit", k)
+L.execute('TRUE = {}')
+attrs = L.table_from({"wc-n-top": 1, "wc-dest-top-1": "ForeverInspectButton", "wc-pos": 6, "wc-state": "fight", "wc-fight-type": "spell",
+                      "wc-fight-spell": "Wrath", "unit": "player"})
+mk = L.eval('mkframe')
+btn = mk(attrs, L.table_from({"wc-hdr": mk(L.table_from({})), "wc-bar-top-1": mk(L.table_from({}))}))
+run(btn, "LeftButton", True)
+check(btn.a["unit"] is None, "a fight spell after a buff: the self unit is cleared (never cast a harmful spell on yourself)", btn.a["unit"])
+
+sb = re.search(r'-- SB-EVAL-BEGIN[^\n]*\n(.*?)-- SB-EVAL-END', SRC, re.S).group(1)
+Q = lupa.LuaRuntime(unpack_returned_tuples=True)
+Q.execute('OV = {}\n' + sb)
+first = Q.eval('OV.sbFirst')
+NAMES = {1459: "Arcane Intellect", 168: "Frost Armor", 7302: "Ice Armor", 465: "Devotion Aura", 7294: "Retribution Aura",
+         8017: "Rockbiter Weapon", 9999: "Forgotten Spell"}
+nameOf = Q.eval('function(t) return function(id) return t[id] end end')(Q.table_from(NAMES))
+
+
+def known(ids):
+    t = {}
+    for i in ids:
+        t[NAMES[i]] = Q.table_from({"id": i, "n": NAMES[i], "k": "imbue" if i == 8017 else "aura"})
+    return Q.table_from(t)
+
+
+def rows(*rs):
+    return Q.table_from([Q.table_from({"ids": Q.table_from(list(r))}) for r in rs])
+
+
+def go(rs, kn, up=(), mh=False):
+    r = first(rs, kn, nameOf, Q.table_from({n: True for n in up}), mh)
+    if r is None:
+        return None
+    idx, members = r
+    return idx, [members[i + 1]["id"] for i in range(len(members))]
+
+
+ALL = known([1459, 168, 7302, 465, 7294, 8017])
+check(go(rows([1459], [168, 7302]), ALL) == (1, [1459]), "nothing up: the first row", go(rows([1459], [168, 7302]), ALL))
+check(go(rows([1459], [168, 7302]), ALL, up=["Arcane Intellect"]) == (2, [168, 7302]), "row 1 up: the OR row next, its members",
+      go(rows([1459], [168, 7302]), ALL, up=["Arcane Intellect"]))
+check(go(rows([1459], [168, 7302]), ALL, up=["Arcane Intellect", "Ice Armor"]) is None, "one OR member up: the row is satisfied", "")
+check(go(rows([8017]), ALL, mh=True) is None, "an imbue: satisfied by the main hand's enchant", "")
+check(go(rows([8017]), ALL, mh=False) == (1, [8017]), "an imbue with no enchant: cast it", go(rows([8017]), ALL))
+check(go(rows([9999], [465]), ALL) == (2, [465]), "a row of spells no longer known is skipped", go(rows([9999], [465]), ALL))
+check(go(rows([465, 9999]), ALL) == (1, [465]), "an OR row keeps only its known members", go(rows([465, 9999]), ALL))
+check(go(rows(), ALL) is None, "no rows: nothing", "")
+
 print('ALL PASS' if fails == 0 else '%d FAILED' % fails)
 sys.exit(1 if fails else 0)

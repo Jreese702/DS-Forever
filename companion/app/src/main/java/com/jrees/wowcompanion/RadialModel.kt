@@ -88,7 +88,8 @@ object RadialModel {
 
     /** a `radial` document -> its state, or null when it is not one */
     fun parse(msg: JSONObject): Doc? {
-        val spell = msg.optString("type") == "sradial"
+        // m62: Smart buffs' OR wheel ("smartor": its buffs at places, its cast cells on Spells' gamemenu row) reads as the spell radial
+        val spell = msg.optString("type") == "sradial" || msg.optString("type") == "smartor"
         if (!spell && msg.optString("type") != "radial") return null
         val r = msg.optJSONObject("r") ?: return null
         val items = ArrayList<Item>()

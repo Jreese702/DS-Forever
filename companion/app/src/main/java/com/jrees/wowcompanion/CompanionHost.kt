@@ -127,6 +127,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     // the user's "Both" ruling after test20: the In-combat backup and the clean exit
     private lateinit var combatKeep: CombatKeepHost
     private var lastBook: SpellsModel.Book? = null
+    /** m62: the latest padmap (Settings' Smart Y section reads its Smart buffs) */
+    private var lastPadMap: PadMapModel.Map? = null
     private var lastGameMenu: JSONObject? = null
     private var lastAddonAt = 0L
     private var gmAckAt = 0L          // the game menu row's last answer (Radial.lua r12 "gmack") and its cell
@@ -552,7 +554,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // ("The full Chat room": one way into chat), up = the consumables radial (batch b; nothing yet). Down is the bar's own
         barSelect.onDpad = dpad@{ k ->
             // while the radial shows, its own reader moves round the ring; the router's map / chat / home words wait
-            if (::radialView.isInitialized && radialView.isOpen && k != "radial" && k != "sradial") return@dpad
+            if (::radialView.isInitialized && radialView.isOpen && k != "radial" && k != "sradial" && k != "smartor") return@dpad
             // the pause menu reads its own controller while it shows: only another Start ("pause") reaches it
             if (::pauseView.isInitialized && pauseView.isOpen && k != "pause") return@dpad
             when (k) {
@@ -564,6 +566,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 "chat" -> if (room != Room.CHAT) show(Room.CHAT)
                 "radial" -> radialView.toggle()
                 "sradial" -> radialView.toggle("sradial")     // Spells' spell radial (Hub's WowCompanionPadSpellRadial)
+                "smartor" -> radialView.toggle("smartor")     // m62: Smart buffs' OR row (Y with none of its buffs up; Hub's WowCompanionPadSmartyOr)
             }
         }
         barSelect.roomNow = { room }        // Select's cursor starts on the room on screen (never on Home: the user's skip-Home rule)
@@ -698,6 +701,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.onLogin = { loginPrompt.open() }
         settingsView.loginRow = true
         settingsView.onReport = { openReport() }
+        // m62 Smart buffs: the Settings section reads the latest padmap, edits by taps, names a spell by the book's two taps
+        settingsView.smartDoc = { lastPadMap?.smartBuffs }
+        settingsView.smartTaps = { cells -> TapBridge.taps(this, spellsPad ?: questsPad, cells) }
+        settingsView.smartSpellCells = { name ->
+            lastBook?.let { b -> SpellsModel.tabSpells(b).firstOrNull { it.name == name }?.let { SpellsModel.bindCells(b, it) } }
+        }
         settingsView.onReportSendNow = { DiagLog.stopRecording(); sendReport(ReportFlow.description.ifBlank { "(sent from Settings while recording)" }) }
         settingsView.onReportOpenSaved = { openSavedReport() }
         settings.pad.padOverride = { k ->
@@ -1687,7 +1696,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "mapack" -> if (current) worldMapRoom.onMapAck(msg)
             // an answer replayed from the log at start belongs to the OLD app instance's taps: only CURRENT answers act (batch 8)
             // the consumables radial (Spells' Radial.lua): its items (the latest, replays too) and the game's word that a use landed
-            "radial", "sradial" -> radialView.onDoc(msg)
+            "radial", "sradial", "smartor" -> radialView.onDoc(msg)
             "radialuse", "sradialuse" -> if (current) radialView.onUse(msg)
             // Spells' stick catch (Radial r15): shown / hidden, for whom, and what it caught (the user on test20: "The control sticks are not
             // locking on the dpad up radial"): ok = the catch can take sticks at all; n = stick events kept from the game while it showed,
@@ -1978,6 +1987,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // controller is and the answers (control documents: current only)
             // every padmap also to Home: Cast's fight faces (armed buttons only) and B's give-back cell (HomeView.onPadMap)
             "padmap" -> PadMapModel.parse(msg)?.let {
+                lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
                 spellbookView.onPadMap(it); controllerView.onPadMap(it); homeView.onPadMap(it); spellsOverlay.onPadMap(it)
                 if (current) { newSpellMap = it; it.dpad?.name?.takeIf { n -> n.isNotEmpty() }?.let { n -> newSpellWho = "$n-${it.dpad.realm ?: ""}" } }

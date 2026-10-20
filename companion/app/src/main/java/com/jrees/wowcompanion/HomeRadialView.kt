@@ -187,8 +187,9 @@ class HomeRadialView(
     /** every `radial` document (MainActivity's route): the items now; an open wheel redraws */
     fun onDoc(msg: JSONObject) {
         val d = RadialModel.parse(msg) ?: return
-        val kind = if (d.places != null) "sradial" else "radial"
+        val kind = if (msg.optString("type") == "smartor") "smartor" else if (d.places != null) "sradial" else "radial"
         docs[kind] = d; trustedOf += kind
+        if (kind == "smartor") { if (source == kind) { doc = d; trusted = true; if (isOpen) invalidate() }; return }   // never kept: the game's word is current
         docsMsg[kind] = msg.toString()
         prefs.edit().putString(if (kind == "sradial") "sdoc" else "doc", msg.toString()).apply()
         if (kind != source) return                                  // the other radial's list: kept for its next open
@@ -221,6 +222,8 @@ class HomeRadialView(
         val spell = src == "sradial"
         flow.holdOpen = !(if (spell) HomeSettings.spellTap else HomeSettings.radialTap)
         flow.pickA = if (spell) HomeSettings.spellPickA else HomeSettings.radialPickA
+        // m62: Smart buffs' OR wheel opens on a Y press and stays until a pick or B; A picks (one buff, cast on yourself)
+        if (src == "smartor") { flow.holdOpen = false; flow.pickA = true }
         flow.armMs = RadialModel.ARM_MS; flow.openAt = SystemClock.uptimeMillis(); stickWait = false; removeCallbacks(stickBack)
         openedAt = SystemClock.uptimeMillis(); closingFrom = -1f
         leaveAt = 0L; leaveSlot = null

@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b45"                -- bump on every change; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
+local BV = "b46"                -- bump on every change; b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -1224,6 +1224,8 @@ if type(pad) == "table" and type(pad.slotFor) == "function" and (secureRowOk or 
         end
         -- a spell: Bind by touch. The controller is taken for the press if the room does not hold it yet.
         if type(key) ~= "number" then report("pad-unknown") return end
+        -- b46: Settings' Smart buffs picked "add" / "add or" / "take out" just before (its fresh pick): the spell goes there, nothing else
+        if type(WC.smartYWants) == "function" and WC.smartYWants() then pcall(WC.smartYSpell, key) return end
         -- while the CONTROLLER TAB is open (the pad owner's YES: the same column), the spell goes onto the tab's chosen button
         if ctl.ctrlTab and type(WC.padTabCtl) == "table" then
             pcall(WC.padTabCtl.touchSpell, key)                -- by touch: no controller needed

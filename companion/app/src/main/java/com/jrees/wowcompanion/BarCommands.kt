@@ -9,7 +9,7 @@ package com.jrees.wowcompanion
  */
 object BarCommands {
     /** the keys the HOST opens itself (HomeBarSelect.onDpad): the map / chat rooms, the two radials, the pause wheel */
-    val HOST = setOf("map", "chat", "radial", "sradial", "pause")
+    val HOST = setOf("map", "chat", "radial", "sradial", "pause", "smartor")      // + "smartor": Smart buffs' OR wheel (Hub hub12)
 
     enum class Route { CURSOR, OPEN, HOME, HOST, UNKNOWN }
 

@@ -32,6 +32,8 @@ object SettingsTabs {
         SPELL_WHEEL(Tab.CONTROLLER, "Spell wheel (its button in Controller)", listOf("Spell wheel: open", "Spell wheel: pick")),
         CLASS_LEFT(Tab.CONTROLLER, "Left class radial (LB + LT)", listOf("Left class radial: open", "Left class radial: pick")),
         CLASS_RIGHT(Tab.CONTROLLER, "Right class radial (RB + RT)", listOf("Right class radial: open", "Right class radial: pick")),
+        // m62 SMART BUFFS (the user: "this setting will need its own section in the settings"): Y out of combat, per character
+        SMART_Y(Tab.CONTROLLER, "Smart Y (out of combat, nothing targeted)", listOf("Smart Y")),
         GAME_UI(Tab.TOP, "Game UI on the top screen", listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window",
             "NPC windows", "Cast bar", "Loot window", "Compass bar", "Compass follows the camera")),
         MAP(Tab.HOME, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "Quest tracking", "Avoid dangerous areas", "World map")),
@@ -52,7 +54,7 @@ object SettingsTabs {
 
     /** the blocks SettingsView draws itself (the others are Home's section and the two GameUiSection parts) */
     val VIEW_BLOCKS = setOf(Block.GAME, Block.MAP, Block.INDOOR, Block.CONTROLLER, Block.PAUSE_WHEEL, Block.ITEM_WHEEL, Block.SPELL_WHEEL,
-        Block.CLASS_LEFT, Block.CLASS_RIGHT,
+        Block.CLASS_LEFT, Block.CLASS_RIGHT, Block.SMART_Y,
         Block.CHAT, Block.FRAMES, Block.ADDON_SPOKEN, Block.ADDON_POLESTAR, Block.ADDON_QUESTTRAIL)
 
     /** the third-party add-on a block draws (Settings > Add-ons), or null */
