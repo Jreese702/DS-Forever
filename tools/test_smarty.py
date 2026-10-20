@@ -210,5 +210,49 @@ for i, (name, t, want) in enumerate(cases):
     got = kind(9000 + i, K.table_from(t))
     check(got == want, "kind: " + name, got)
 
+# ---------------------------------------------------------------- m64: health / mana under secret values (test32: "hp ? | mana none")
+vf = re.search(r'(function OV\.smartVitals\(\).*?\nend)\n', SRC, re.S).group(1)
+V = lupa.LuaRuntime(unpack_returned_tuples=True)
+V.execute("""
+OV, WC = {}, {}
+SECRET = setmetatable({}, { __tostring = function() error("secret") end })
+function issecretvalue(v) return v == SECRET end
+function WC.isPlain(v) return pcall(function() return tostring(v):sub(1, 1) end) end
+G = {}
+function UnitHealth() return G.hp end
+function UnitHealthMax() return G.hpMax end
+function UnitPower(_, t) return G.mp end
+function UnitPowerMax(_, t) return G.mpMax end
+function UnitPowerType() return G.ptype or 0 end
+function mkbar(v, lo, hi) return { GetValue = function() return v end, GetMinMaxValues = function() return lo, hi end } end
+""" + vf)
+vit = V.eval('OV.smartVitals')
+
+
+def vitals(**k):
+    V.execute('G = {}; UnitHealthPercent = nil; UnitPowerPercent = nil; PlayerFrameHealthBar = nil; PlayerFrameManaBar = nil; '
+              'PlayerFrameAlternateManaBar = nil')
+    for name, val in k.items():
+        V.execute('%s = %s' % (name, val))
+    v = vit()
+    return (v["hp"], v["hpMax"], v["hpSrc"], v["mp"], v["mpMax"], v["mpSrc"])
+
+
+check(vitals(**{"G.hp": "500", "G.hpMax": "1000", "G.mp": "300", "G.mpMax": "600"}) == (500, 1000, "unit", 300, 600, "unit"),
+      "plain numbers: the unit's own", vitals(**{"G.hp": "500", "G.hpMax": "1000", "G.mp": "300", "G.mpMax": "600"}))
+r = vitals(**{"G.hp": "SECRET", "G.hpMax": "SECRET", "G.mp": "SECRET", "G.mpMax": "SECRET",
+              "UnitHealthPercent": "function() return 0.62 end", "UnitPowerPercent": "function() return 45 end"})
+check(abs(r[0] - 62) < 0.01 and r[1:3] == (100, "pct") and r[3:] == (45, 100, "pct"), "secret numbers: the percent readers", r)
+r = vitals(**{"G.hp": "SECRET", "G.hpMax": "SECRET", "G.mp": "SECRET", "G.mpMax": "SECRET",
+              "PlayerFrameHealthBar": "mkbar(70, 0, 100)", "PlayerFrameManaBar": "mkbar(40, 0, 200)"})
+check(r == (70, 100, "frame", 40, 200, "frame"), "secret numbers, no percent reader: the player frame's bars", r)
+r = vitals(**{"G.hp": "SECRET", "G.hpMax": "SECRET", "G.mp": "SECRET", "G.mpMax": "SECRET", "G.ptype": "1",
+              "PlayerFrameManaBar": "mkbar(10, 0, 100)", "PlayerFrameAlternateManaBar": "mkbar(55, 0, 110)"})
+check(r[3:] == (55, 110, "frame"), "a druid in a form: mana from the alternate bar, never the rage bar", r)
+r = vitals(**{"G.hp": "SECRET", "G.hpMax": "SECRET", "G.mp": "SECRET", "G.mpMax": "SECRET", "PlayerFrameHealthBar": "mkbar(SECRET, 0, 100)"})
+check(r[0] is None and r[2] is None and r[3] is None and r[5] is None, "all secret: unknown (never full)", r)
+r = vitals(**{"G.hp": "900", "G.hpMax": "1000", "G.mp": "0", "G.mpMax": "0"})
+check(r[5] == "none", "a plain 0 mana max: no mana pool", r)
+
 print('ALL PASS' if fails == 0 else '%d FAILED' % fails)
 sys.exit(1 if fails else 0)

@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m63"                -- bump on every change; m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m64"                -- bump on every change; m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -3355,6 +3355,85 @@ OV.smartPick = function(s)
     return nil
 end
 -- SMARTY-PICK-END
+-- m64 (test32's why line: "hp ? | mana none" on a druid): this client makes UnitHealth("player") a SECRET value, in and out of combat
+-- (Safety.lua's self-test measured it), and its power readers likewise, so the plain numbers were never there and food / drink never
+-- came. Each bar is now read through the first reader this client leaves PLAIN (never compared or added while secret: issecretvalue /
+-- WC.isPlain first): the unit's own numbers, its percent reader, then the player frame's own status bar (its value and range). Mana by
+-- its own type (0) whatever the form. Nothing plain = UNKNOWN: never taken as full, said in the why line, and no item used for it.
+-- -> { hp, hpMax, hpSrc, mp, mpMax, mpSrc }; mpMax 0 (plain) = no mana pool
+function OV.smartVitals()
+    -- a secret is never compared, added or put in a table (Safety's measured rules): asked first, kept in locals only
+    local function plain(v)
+        if type(issecretvalue) == "function" then local ok, q = pcall(issecretvalue, v); if not ok or q then return nil end end
+        if type(WC.isPlain) == "function" and not WC.isPlain(v) then return nil end
+        if type(v) == "number" then return v end
+        return nil
+    end
+    local function call(f) local ok, a, b = pcall(f); if ok then return a, b end end
+    local function pair(f1, f2) local a, b = plain(call(f1)), plain(call(f2)); if a and b and b > 0 then return a, b end end
+    local function pct(f)
+        local p = plain(call(f))
+        if not p then return nil end
+        if p <= 1 then p = p * 100 end                                 -- a fraction (0-1) or a percentage (0-100)
+        return p, 100
+    end
+    local function bar(fr)
+        if type(fr) ~= "table" or type(fr.GetValue) ~= "function" then return nil end
+        local val = plain(call(function() return fr:GetValue() end))
+        local lo, hi = call(function() return fr:GetMinMaxValues() end)
+        lo, hi = plain(lo), plain(hi)
+        if val and lo and hi and hi > lo then return val - lo, hi - lo end
+    end
+    local function path(...)
+        local t = _G
+        for _, k in ipairs({ ... }) do if type(t) ~= "table" then return nil end; t = rawget(t, k) or t[k] end
+        return t
+    end
+    -- the frames that exist on this client, in order (a missing one leaves no hole)
+    local function frames(list)
+        local out = {}
+        for _, names in ipairs(list) do local fr = path((unpack or table.unpack)(names)); if type(fr) == "table" then out[#out + 1] = fr end end
+        return out
+    end
+    local v = {}
+    -- health
+    v.hp, v.hpMax = pair(function() return UnitHealth("player") end, function() return UnitHealthMax("player") end)
+    if v.hp then v.hpSrc = "unit" end
+    if not v.hp and type(UnitHealthPercent) == "function" then
+        v.hp, v.hpMax = pct(function() return UnitHealthPercent("player") end); if v.hp then v.hpSrc = "pct" end
+    end
+    if not v.hp then
+        for _, fr in ipairs(frames({ { "PlayerFrameHealthBar" }, { "PlayerFrame", "healthbar" },
+                                     { "PlayerFrame", "PlayerFrameContent", "PlayerFrameContentMain", "HealthBarsContainer", "HealthBar" } })) do
+            v.hp, v.hpMax = bar(fr); if v.hp then v.hpSrc = "frame"; break end
+        end
+    end
+    -- mana, by its own type (0) whatever the form
+    v.mp, v.mpMax = pair(function() return UnitPower("player", 0) end, function() return UnitPowerMax("player", 0) end)
+    if v.mp then v.mpSrc = "unit" end
+    if not v.mp then
+        local mx = plain(call(function() return UnitPowerMax("player", 0) end))
+        if mx == 0 then v.mp, v.mpMax, v.mpSrc = 0, 0, "none" end       -- a plain 0: no mana pool
+    end
+    if not v.mpSrc and type(UnitPowerPercent) == "function" then
+        v.mp, v.mpMax = pct(function() return UnitPowerPercent("player", 0) end); if v.mp then v.mpSrc = "pct" end
+    end
+    if not v.mpSrc then
+        -- the player frame's mana bar shows mana only while mana is the power shown (a druid out of form); its alternate bar in a form
+        local ptype = plain(call(function() return UnitPowerType("player") end))
+        local names = {}
+        if ptype == 0 then
+            names = { { "PlayerFrameManaBar" }, { "PlayerFrame", "manabar" },
+                      { "PlayerFrame", "PlayerFrameContent", "PlayerFrameContentMain", "ManaBarArea", "ManaBar" } }
+        end
+        names[#names + 1] = { "PlayerFrameAlternateManaBar" }
+        names[#names + 1] = { "PlayerFrame", "PlayerFrameContent", "PlayerFrameContentMain", "AlternatePowerBar" }
+        for _, fr in ipairs(frames(names)) do
+            v.mp, v.mpMax = bar(fr); if v.mp then v.mpSrc = "frame"; break end
+        end
+    end
+    return v
+end
 -- m63: WHY food / drink picked nothing (tracking: "add a cap line saying WHY nothing was picked"): health / mana now, the food and drinks
 -- found, what an unmatched consumable's use spell read; one cap line per change
 function OV.smartWhy(s, pick)
@@ -3365,12 +3444,17 @@ function OV.smartWhy(s, pick)
         if it.kind == "food" or it.kind == "both" then nf = nf + 1 end
         if it.kind == "drink" or it.kind == "both" then nd = nd + 1 end
     end
-    local parts = { "hp " .. (hp and (hp .. "%") or "?"), "mana " .. (mp and (mp .. "%") or "none") }
+    local mpNone = s.mpSrc == "none"
+    if mpNone then mp = nil end
+    local parts = { "hp " .. (hp and (hp .. "% via " .. (s.hpSrc or "?")) or "unreadable"),
+                    "mana " .. (mpNone and "none" or (mp and (mp .. "% via " .. (s.mpSrc or "?")) or "unreadable")) }
     if pick then parts[#parts + 1] = "picked " .. pick.kind .. " " .. pick.id
     else
         if hp and hp < 80 then parts[#parts + 1] = s.eating and "eating already" or (nf == 0 and "no food matched" or "food above your level") end
         if mp and mp < 80 then parts[#parts + 1] = s.drinking and "drinking already" or (nd == 0 and "no drink matched" or "drinks above your level") end
-        if (not hp or hp >= 80) and (not mp or mp >= 80) then parts[#parts + 1] = "both at or above 80%" end
+        if hp and hp >= 80 and (mpNone or (mp and mp >= 80)) then parts[#parts + 1] = "both at or above 80%" end
+        if not hp then parts[#parts + 1] = "health unknown: no food" end
+        if not mp and not mpNone then parts[#parts + 1] = "mana unknown: no drink" end
     end
     parts[#parts + 1] = "food " .. nf .. ", drinks " .. nd
     if s.skipped and #s.skipped > 0 then parts[#parts + 1] = "unmatched " .. table.concat(s.skipped, "; ") end
@@ -3421,8 +3505,8 @@ function OV.smartKind(id)
     return nil, (sn or "no spell") .. (fd and " (food & drink class, no restore line)" or "")      -- buff-only and the rest: never
 end
 function OV.smartState()
-    local s = { hp = TN(function() return UnitHealth("player") end), hpMax = TN(function() return UnitHealthMax("player") end),
-                mp = TN(function() return UnitPower("player", 0) end), mpMax = TN(function() return UnitPowerMax("player", 0) end),
+    local v = OV.smartVitals()
+    local s = { hp = v.hp, hpMax = v.hpMax, hpSrc = v.hpSrc, mp = v.mp, mpMax = v.mpMax, mpSrc = v.mpSrc,
                 level = TN(function() return UnitLevel("player") end) or 0, items = {} }
     local count, kinds = {}, {}
     local C = C_Container
