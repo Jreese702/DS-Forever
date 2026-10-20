@@ -15,9 +15,44 @@ import kotlin.math.min
  */
 class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Double, val ay: Double,
                  /** the ground's cost per cell (b-route-terrain: Terrain.factor x the walked discount; 1 = flat, unknown) */
-                 private val terr: FloatArray = FloatArray(nx * ny) { 1f }) {
+                 private val terr: FloatArray = FloatArray(nx * ny) { 1f },
+                 /** the ghost's own ground (CorpseRoute), read per cell the first time a ghost's leg asks; null: [terr] */
+                 private val ghostSrc: GhostSrc? = null) {
     val cx get() = 1.0 / nx            // a cell, in the map's 0..1
     val cy get() = 1.0 / ny
+
+    /**
+     * THE GHOST'S GROUND (CorpseRoute; the user's rulings "Walk on water" and "Yes, add drops"), at the map's (x, y): [ground] the cost
+     * a yard - [Terrain.WALL] for a wall a ghost never passes (a building, lava), [CLIFF] for a cliff (a slope wall: passed DOWN only,
+     * by more than a step, when the [height]s say so), else the ground's cost with deep water walked as dry ground; [height] the
+     * ground's height there (NaN unknown; null: no heights, a cliff is a wall); [wet] water there (a drop never lands on water only)
+     */
+    class GhostSrc(val ground: (Double, Double) -> Float, val height: ((Double, Double) -> Float)? = null,
+                   val wet: ((Double, Double) -> Boolean)? = null)
+    private class Ghost(val cost: FloatArray, val cliff: BooleanArray, val h: FloatArray?, val wet: BooleanArray?)
+    private val ghost: Ghost? by lazy {
+        val src = ghostSrc ?: return@lazy null
+        val n = nx * ny
+        val cost = FloatArray(n); val cliff = BooleanArray(n)
+        val h = src.height?.let { FloatArray(n) }; val wet = src.wet?.let { BooleanArray(n) }
+        for (j in 0 until ny) for (i in 0 until nx) {
+            val x = (i + 0.5) / nx; val y = (j + 0.5) / ny; val c = j * nx + i
+            val g = src.ground(x, y)
+            if (g == CLIFF) { cliff[c] = true; cost[c] = 1f } else cost[c] = if (g.isNaN()) 1f else g
+            h?.set(c, src.height!!(x, y)); wet?.set(c, src.wet!!(x, y))
+        }
+        Ghost(cost, cliff, h, wet)
+    }
+    /** this grid with the ghost's ground [src] (its danger and living ground the same arrays) */
+    fun withGhost(src: GhostSrc?): DangerGrid = if (src == null) this else DangerGrid(nx, ny, d, ax, ay, terr, src)
+    /** the ghost's ground cost at the map's ([x], [y]) for a router with no drops (a cliff a wall); [ground] with no ghost ground */
+    fun ghostGround(x: Double, y: Double): Float {
+        val gh = ghost ?: return ground(x, y)
+        val i = (x * nx).toInt(); val j = (y * ny).toInt()
+        if (i !in 0 until nx || j !in 0 until ny) return 1f
+        val c = j * nx + i
+        return if (gh.cliff[c]) Terrain.WALL else gh.cost[c]
+    }
 
     /** the danger at the map's ([x], [y]) (0 off the map) */
     fun at(x: Double, y: Double): Float {
@@ -82,12 +117,13 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
      * ground's walls and costs alone, the danger never read (with it, k 0 still bends round a cliff; without it, k 0 is straight).
      */
     fun route(from: DoubleArray, to: DoubleArray, k: Double, groundOnly: Boolean = false): List<DoubleArray> {
+        if (groundOnly) return ghostRoute(from, to)
         val goal = doubleArrayOf(to[0].coerceIn(0.0, 1.0 - 1e-9), to[1].coerceIn(0.0, 1.0 - 1e-9))
         val straight = listOf(from, to)
-        if (k <= 0.0 && !groundOnly) return straight
+        if (k <= 0.0) return straight
         // calm and level: straight (the ground's cost along it no more than a few percent over its yards)
         val len = hypot((goal[0] - from[0]) * ax, (goal[1] - from[1]) * ay)
-        if ((groundOnly || peak(from, goal) < CALM) && segCost(from, goal, 0.0, goal) <= len * 1.05) return straight
+        if (peak(from, goal) < CALM && segCost(from, goal, 0.0, goal) <= len * 1.05) return straight
         val si = (from[0].coerceIn(0.0, 1.0 - 1e-9) * nx).toInt(); val sj = (from[1].coerceIn(0.0, 1.0 - 1e-9) * ny).toInt()
         val ti = (goal[0] * nx).toInt(); val tj = (goal[1] * ny).toInt()
         val n = nx * ny
@@ -126,13 +162,13 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
         while (c != -1 && c != s) { cells.add(doubleArrayOf((c % nx + 0.5) * cx, (c / nx + 0.5) * cy)); c = prev[c] }
         cells.reverse()
         val raw = ArrayList<DoubleArray>().apply { add(from); addAll(cells.dropLast(1)); add(to) }
-        val pulled = pull(raw, k, goal, groundOnly)
+        val pulled = pull(raw, k, goal)
         // a bent way only when it is clearly better than the straight one
         return if (cost(pulled, k, goal) < cost(straight, k, goal) * 0.97) pulled else straight
     }
 
     /** STRING-PULLING: from each kept point, the farthest later one a straight leg reaches for no more than the cells' way costs */
-    fun pull(pts: List<DoubleArray>, k: Double, goal: DoubleArray, groundOnly: Boolean = false): List<DoubleArray> {
+    fun pull(pts: List<DoubleArray>, k: Double, goal: DoubleArray): List<DoubleArray> {
         if (pts.size <= 2) return pts
         val legs = DoubleArray(pts.size)                                 // the cost from the start to each point, along the cells
         for (i in 1 until pts.size) legs[i] = legs[i - 1] + segCost(pts[i - 1], pts[i], k, goal)
@@ -144,7 +180,93 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
         while (i < pts.size - 1) {
             var j = pts.size - 1
             while (j > i + 1 && (segCost(pts[i], pts[j], k, goal) > (legs[j] - legs[i]) * 1.02 + 0.5 ||
-                    (!groundOnly && peak(pts[i], pts[j], goal) > cellsPeak(i, j) + CALM))) j--
+                    peak(pts[i], pts[j], goal) > cellsPeak(i, j) + CALM)) j--
+            out.add(pts[j]); i = j
+        }
+        return out
+    }
+
+    /**
+     * THE GHOST'S WAY (CorpseRoute): A* over the ghost's ground ([GhostSrc]; none: [terr]) with no danger - walls (buildings, lava; a
+     * cliff with no heights) never passed, water walked, and a CLIFF only DOWN: into or out of a cliff cell only to a cell lower by more
+     * than [DROP_YD], never up, never landing on water only. A drop is reached only on a way that goes on to the goal (the A* ends
+     * there: no dead-end pit). String-pulled over straight lines that meet no wall or cliff cell. [from] first, [to] last.
+     */
+    private fun ghostRoute(from: DoubleArray, to: DoubleArray): List<DoubleArray> {
+        val gh = ghost
+        val tc = gh?.cost ?: terr
+        val cliff = gh?.cliff; val hs = gh?.h; val wet = gh?.wet
+        val goal = doubleArrayOf(to[0].coerceIn(0.0, 1.0 - 1e-9), to[1].coerceIn(0.0, 1.0 - 1e-9))
+        val straight = listOf(from, to)
+        val si = (from[0].coerceIn(0.0, 1.0 - 1e-9) * nx).toInt(); val sj = (from[1].coerceIn(0.0, 1.0 - 1e-9) * ny).toInt()
+        val ti = (goal[0] * nx).toInt(); val tj = (goal[1] * ny).toInt()
+        fun freeCell(i: Int, j: Int) = hypot((i - si) * cx * ax, (j - sj) * cy * ay) <= WALL_FREE_YD ||
+            hypot((i - ti) * cx * ax, (j - tj) * cy * ay) <= WALL_FREE_YD
+        fun cellOf(x: Double, y: Double) = ((y.coerceIn(0.0, 1.0 - 1e-9) * ny).toInt()) * nx + (x.coerceIn(0.0, 1.0 - 1e-9) * nx).toInt()
+        // a straight line: clear of every wall and cliff cell (the free cells by the ends aside), and its cost
+        fun clear(a: DoubleArray, b: DoubleArray): Boolean {
+            val len = hypot((b[0] - a[0]) * ax, (b[1] - a[1]) * ay); val n = max(1, (len / (CELL_YD / 4.0)).toInt())
+            for (q in 0..n) {
+                val t = q.toDouble() / n; val c = cellOf(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+                if ((tc[c] >= Terrain.WALL || cliff?.get(c) == true) && !freeCell(c % nx, c / nx)) return false
+            }
+            return true
+        }
+        fun lineCost(a: DoubleArray, b: DoubleArray): Double {
+            val len = hypot((b[0] - a[0]) * ax, (b[1] - a[1]) * ay); if (len < 1e-6) return 0.0
+            val n = max(1, (len / (CELL_YD / 3.0)).toInt()); var c = 0.0
+            for (q in 0 until n) { val t = (q + 0.5) / n; c += (len / n) * minOf(tc[cellOf(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)], Terrain.WALL) }
+            return c
+        }
+        val len0 = hypot((goal[0] - from[0]) * ax, (goal[1] - from[1]) * ay)
+        if (clear(from, goal) && lineCost(from, goal) <= len0 * 1.05) return straight
+        val n = nx * ny
+        val g = DoubleArray(n) { Double.MAX_VALUE }
+        val prev = IntArray(n) { -1 }
+        fun h(i: Int, j: Int) = hypot((i - ti) * cx * ax, (j - tj) * cy * ay) * minOf(Roads.ROAD, Terrain.Walked.WALKED)
+        val open = PriorityQueue<DoubleArray>(compareBy { it[0] })
+        val s = sj * nx + si; val t = tj * nx + ti
+        g[s] = 0.0; open.add(doubleArrayOf(h(si, sj), s.toDouble()))
+        while (open.isNotEmpty()) {
+            val top = open.poll()
+            val u = top[1].toInt()
+            if (u == t) break
+            if (top[0] - h(u % nx, u / nx) > g[u] + 1e-6) continue
+            val ui = u % nx; val uj = u / nx
+            val cu = cliff?.get(u) == true && !freeCell(ui, uj)
+            for (dj in -1..1) for (di in -1..1) {
+                if (di == 0 && dj == 0) continue
+                val vi = ui + di; val vj = uj + dj
+                if (vi !in 0 until nx || vj !in 0 until ny) continue
+                val v = vj * nx + vi
+                val vFree = v == t || freeCell(vi, vj)
+                val cv = cliff?.get(v) == true && !vFree
+                if (cu || cv) {
+                    // A DROP: down only, by more than a step, never up; never landing on water only; no heights, no drop
+                    if (hs == null) continue
+                    val hu = hs[u]; val hv = hs[v]
+                    if (hu.isNaN() || hv.isNaN() || hv > hu - DROP_YD) continue
+                    if (!cv && wet?.get(v) == true) continue
+                } else if (tc[v] >= Terrain.WALL && !vFree) continue
+                val c = g[u] + hypot(di * cx * ax, dj * cy * ay) * minOf(tc[v], Terrain.WALL)
+                if (c < g[v]) { g[v] = c; prev[v] = u; open.add(doubleArrayOf(c + h(vi, vj), v.toDouble())) }
+            }
+        }
+        if (prev[t] == -1 && s != t) return straight
+        val cells = ArrayList<DoubleArray>()
+        var c = t
+        while (c != -1 && c != s) { cells.add(doubleArrayOf((c % nx + 0.5) * cx, (c / nx + 0.5) * cy)); c = prev[c] }
+        cells.reverse()
+        val pts = ArrayList<DoubleArray>().apply { add(from); addAll(cells.dropLast(1)); add(to) }
+        // string-pulled: the farthest later point a CLEAR straight line reaches for no more than the cells' way costs (a drop's cells
+        // are kept as they are: no straight line crosses a cliff)
+        val legs = DoubleArray(pts.size)
+        for (i in 1 until pts.size) legs[i] = legs[i - 1] + lineCost(pts[i - 1], pts[i])
+        val out = arrayListOf(pts[0])
+        var i = 0
+        while (i < pts.size - 1) {
+            var j = pts.size - 1
+            while (j > i + 1 && (!clear(pts[i], pts[j]) || lineCost(pts[i], pts[j]) > (legs[j] - legs[i]) * 1.02 + 0.5)) j--
             out.add(pts[j]); i = j
         }
         return out
@@ -159,6 +281,10 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
         /** walls (cliffs, buildings) do not hold within this of the start or the goal: a building's door, a quest giver inside */
         const val WALL_FREE_YD = 40.0
         const val CALM = 0.05f          // a straight line crossing no more than this is left alone
+        /** [GhostSrc.ground]'s mark for a cliff cell (a ghost drops down it, never climbs it) */
+        const val CLIFF = -1f
+        /** a ghost's drop: the far cell lower by more than this (a step: Climb's drop) */
+        const val DROP_YD = Climb.DROP_YD
         const val CAP = 4f              // a cell's danger at most (a dense camp is a wall, not an infinity)
         /** the user's strengths: "Avoid dangerous areas" Off / Low / High */
         fun strength(setting: String): Double = when (setting) { "off" -> 0.0; "low" -> 1.5; else -> 8.0 }

@@ -67,7 +67,9 @@ object ShippedRoute {
     class Roadmap(val nodes: Map<Int, DoubleArray>, val edges: List<Edge>,
                   /** the nodes on a floor layer (ShippedNet.R_FLOOR: a walkway's, a building's deck): an end on one snaps to its floor first */
                   val floor: Set<Int> = emptySet()) {
-        class Edge(val a: Int, val b: Int, val tier: Double = 1.0, val danger: Double? = null, val pts: List<DoubleArray> = emptyList())
+        class Edge(val a: Int, val b: Int, val tier: Double = 1.0, val danger: Double? = null, val pts: List<DoubleArray> = emptyList(),
+                   /** it crosses a ford ([tier] holds its [RM_WADE_COST]; a ghost's way does not pay it) */
+                   val wade: Boolean = false)
     }
     const val RM_BASE = 1_000_000
 
@@ -91,7 +93,8 @@ object ShippedRoute {
             val tier = Climb.COST[ShippedNet.climbTier(f).coerceIn(0, 2)] + ShippedNet.edgeTier(f) * ShippedNet.EDGE_TIER_COST +
                 (if (f and ShippedNet.RE_BUILDING != 0) RM_BUILDING_COST else 0.0) + (if (f and ShippedNet.RE_WADE != 0) RM_WADE_COST else 0.0)
             val pts = if (rm.edgePts[e] == null) emptyList() else rm.points(e).let { it.subList(1, it.size - 1) }
-            Roadmap.Edge(RM_BASE + rm.edgeA[e], RM_BASE + rm.edgeB[e], tier, sec.roadmapDanger?.let { sec.roadmapDangerOf(e).toDouble() }, pts)
+            Roadmap.Edge(RM_BASE + rm.edgeA[e], RM_BASE + rm.edgeB[e], tier, sec.roadmapDanger?.let { sec.roadmapDangerOf(e).toDouble() }, pts,
+                f and ShippedNet.RE_WADE != 0)
         }
         val floor = (0 until rm.nodes).filter { rm.nodeFlags[it] and ShippedNet.R_FLOOR != 0 }.map { RM_BASE + it }.toHashSet()
         return Roadmap(nodes, edges, floor).also { synchronized(rmCache) { rmCache[sec] = rm to it } }
@@ -119,7 +122,9 @@ object ShippedRoute {
              k: Double = DangerGrid.strength("high"), toExit: Boolean = false, attachMaxYd: Double = ATTACH_MAX_YD,
              goalFreeYd: Double = DangerGrid.GOAL_FREE_YD, roadmap: Roadmap? = roadmapOf(sec), attacher: Attacher = ShippedSnap.attacher(),
              stitchGround: ShippedSnap.Ground? = null, live: LiveDanger.Snapshot? = null,
-             links: (ShippedNet.Link) -> Boolean = { true }): Result {
+             links: (ShippedNet.Link) -> Boolean = { true },
+             /** a ghost's corpse run (CorpseRoute): no AVOID way's x6, no wade's surcharge, a swim whatever the goal */
+             ghost: Boolean = false): Result {
         // LIVE AGGRO (LiveDanger): the plates' discs over the static danger, the spawns they show absent or hold taken off - a cost
         // like the static danger (k x it a yard), never a wall; only over a character danger (none: the net's own shares, as before)
         @Suppress("NAME_SHADOWING") val danger = LiveDanger.combine(danger, live)
@@ -130,7 +135,7 @@ object ShippedRoute {
         // the last yards to the goal are never danger (a kill objective, a giver among mobs: the route must reach them; DangerGrid's rule)
         val gx = goal[0]; val gy = goal[1]
         val dz = danger?.let { d -> { x: Double, y: Double -> if (hypot(x - gx, y - gy) <= goalFreeYd) 0f else d(x, y) } }
-        val g = Graph(sec, roadmap, dz, ground, attacher, stitchGround, links)
+        val g = Graph(sec, roadmap, dz, ground, attacher, stitchGround, links, ghost)
         val round = g.search(ground, dz, from, goal, k, attachMaxYd)
         if (round.pts.size < 2 || !round.reached) return round
         // THE DANGER TERM (the user's test20: "pathing me into hostile mobs"): the route's k x danger a yard ([dangerOf], the goal's free
@@ -166,7 +171,7 @@ object ShippedRoute {
     /** the one graph: the net's ways along their points, the roadmap's edges, their base costs and the danger along them */
     private class Graph(val sec: ShippedNet.Section, val roadmap: Roadmap?, danger: ((Double, Double) -> Float)?,
                         @Suppress("UNUSED_PARAMETER") ground: (Double, Double) -> Float, val attacher: Attacher, stitchGround: ShippedSnap.Ground?,
-                        val linkOk: (ShippedNet.Link) -> Boolean = { true }) {
+                        val linkOk: (ShippedNet.Link) -> Boolean = { true }, val ghost: Boolean = false) {
         /** the fine ground (plan's stitchGround: ShippedSnap's), for the checks of what the device itself draws onto a shipped line */
         val fineGround = stitchGround
         val net = sec.net
@@ -211,9 +216,9 @@ object ShippedRoute {
                         e.kind == JOIN || e.src == JOIN -> 1.3
                     else -> 2.2 }
                 val climb = if (kindF == 1.0) 1.0 else e.climb.toDouble().coerceAtLeast(1.0)
-                val avoid = if (flags and ShippedNet.F_AVOID != 0 || e.state == SafePath.AVOID) AVOID_FACTOR else 1.0
+                val avoid = if (!ghost && (flags and ShippedNet.F_AVOID != 0 || e.state == SafePath.AVOID)) AVOID_FACTOR else 1.0
                 val lift = flags and ShippedNet.F_LIFT != 0 || e.kind == SafePath.LIFT
-                val extra = (if (flags and (ShippedNet.F_WADE or ShippedNet.F_SWIM) != 0) WADE_EXTRA_YD else 0.0) + (if (lift) Caves.LIFT_WAIT_YD else 0.0)
+                val extra = (if (!ghost && flags and (ShippedNet.F_WADE or ShippedNet.F_SWIM) != 0) WADE_EXTRA_YD else 0.0) + (if (lift) Caves.LIFT_WAIT_YD else 0.0)
                 // the character's danger along the way (none inside a cave or on a lift: their floor is not the ground the mobs stand on)
                 val inside = e.kind == SafePath.CAVE || lift || flags and (ShippedNet.F_CAVE or ShippedNet.F_FLOOR) != 0
                 val rewalk = mid.isEmpty() && (flags and ShippedNet.F_REWALK != 0 || e.state == SafePath.REWALK) && !inside
@@ -236,7 +241,8 @@ object ShippedRoute {
                     val a = pos[e.a] ?: continue; val b = pos[e.b] ?: continue
                     val inner = if (Climb.inCave(a) && Climb.inCave(b)) e.pts.map { doubleArrayOf(it[0], it[1], Climb.IN_CAVE) } else e.pts
                     val line = listOf(a) + inner + listOf(b); val len = length(line)
-                    ways.add(W(e.a, e.b, inner + listOf(b), len, len * NET_FAVOUR * e.tier.coerceAtLeast(1.0), dangerAlong(line), 0.0, true, true, false,
+                    val tier = if (ghost && e.wade) e.tier - RM_WADE_COST else e.tier        // a ghost walks the ford's water
+                    ways.add(W(e.a, e.b, inner + listOf(b), len, len * NET_FAVOUR * tier.coerceAtLeast(1.0), dangerAlong(line), 0.0, true, true, false,
                         e.danger?.let { it * len }))
                 }
                 // THE STITCHES (net node <-> roadmap node). SHIPPED (NET1 v2 Section.stitches, T1: lattice-walked, segcheck- and
@@ -254,7 +260,7 @@ object ShippedRoute {
                     val a = pos[st.node] ?: continue; val b = pos[RM_BASE + st.rm] ?: continue
                     val inner = if (st.pts.size > 2) st.pts.subList(1, st.pts.size - 1).map { doubleArrayOf(it[0], it[1]) } else emptyList()
                     val line = listOf(a) + inner + listOf(b); val len = length(line)
-                    val wade = if (st.flags and (ShippedNet.F_WADE or ShippedNet.F_SWIM) != 0) WADE_EXTRA_YD else 0.0
+                    val wade = if (!ghost && st.flags and (ShippedNet.F_WADE or ShippedNet.F_SWIM) != 0) WADE_EXTRA_YD else 0.0
                     ways.add(W(st.node, RM_BASE + st.rm, inner + listOf(b), len, len * NET_FAVOUR + wade, dangerAlong(line), 0.0, true, true, false, 0.0))
                     shipped++
                 }
@@ -357,7 +363,8 @@ object ShippedRoute {
             for (l in sec.links) {
                 if (l.pts.size < 2 || !linkOk(l)) continue
                 val swim = l.kind == "swim" || l.pts.any { Climb.atSwim(it) }
-                if (swim) { val isl = l.island ?: continue; if (hypot(goal[0] - isl[0], goal[1] - isl[1]) > isl[2]) continue; swimOffered++ }
+                if (swim && !ghost) { val isl = l.island ?: continue; if (hypot(goal[0] - isl[0], goal[1] - isl[1]) > isl[2]) continue }
+                if (swim) swimOffered++                            // a ghost: whatever the goal (it walks on the water)
                 val pts = l.pts.map { p -> if (swim) doubleArrayOf(p[0], p[1], Climb.SWIM) else p }
                 val a = linkEnd(pts.first()); val b = linkEnd(pts.last())
                 if (a == b) continue

@@ -2463,19 +2463,30 @@ class MapView(context: Context) : View(context) {
         val m = map ?: return null
         if (m.optDouble("x", Double.NaN).isNaN() || m.optDouble("y", Double.NaN).isNaN()) { corpseRun.leg = null; return null }
         val route = CursorRoute.Route(CursorRoute.Kind.GOAL, corpseX, corpseY, "your corpse")
-        val leg = run {
-            shippedLeg(CorpseRoute.KEY, route, ghost = true)?.let { return@run it.leg }
-            netLeg(CorpseRoute.KEY, route, ghost = true)?.let { return@run it }
-            gridLeg(CorpseRoute.KEY, route, ghost = true)
-        }
+        val q = CorpseRoute.KEY
+        // the network's leg (the shipped network, else the draft) and the grid's (the only one with drops and open water), both planned;
+        // the grid's followed when clearly shorter (CorpseRoute.pick); the grid's clear straight line (no wall, no cliff) wins outright
+        val shipped = shippedLeg(q, route, ghost = true)
+        val net = shipped?.leg ?: (if (shipped == null) netLeg(q, route, ghost = true) else null)
+        val grid = gridLeg(q, route, ghost = true)
+        val gridStraight = grid == null && dangerLegs[q]?.let { it.pts.size == 2 && hypot((it.tx - corpseX) * (rect?.width ?: 1.0),
+            (it.ty - corpseY) * (rect?.height ?: 1.0)) <= 20.0 } == true
+        val ax = rect?.width ?: 1.0; val ay = rect?.height ?: 1.0
+        val src = if (gridStraight) CorpseRoute.Src.GRID
+            else CorpseRoute.pick(net?.let { DangerGrid.yards(it, ax, ay) }, grid?.let { DangerGrid.yards(it, ax, ay) }, corpseSrc)
+        if (src != null && src != corpseSrc) android.util.Log.i("WCMAP", "safepath ghost: following the ${if (src == CorpseRoute.Src.GRID)
+            "grid's leg (drops, water${if (gridStraight) ", straight" else ""})" else "network's leg"}")
+        corpseSrc = src ?: corpseSrc
+        val leg = when (src) { CorpseRoute.Src.GRID -> grid; CorpseRoute.Src.NET -> net; null -> null }
         corpseRun.leg = leg
         return leg
     }
+    private var corpseSrc: CorpseRoute.Src? = null
     private fun dropCorpseLeg() {
         val q = CorpseRoute.KEY
         shipLegs.remove(q); shipAt.remove(q); shipNone.remove(q); shipSaid.remove(q); shipLive.remove(q)
         netLegs.remove(q); netSaid.remove(q); dangerLegs.remove(q)
-        corpseRun.leg = null
+        corpseRun.leg = null; corpseSrc = null
         android.util.Log.i("WCMAP", "safepath ghost: alive again (or the corpse off this map): the corpse leg dropped")
         invalidate()
     }
@@ -4084,7 +4095,8 @@ class MapView(context: Context) : View(context) {
         val bl = if (placesFor == r.continent) places else null
         Roads.of(mapId)                                             // asked for on the route thread when not in memory
         val key = "$mapId:$plv:$mine:${DangerStore.version}:${r.width.toInt()}:${r.height.toInt()}:${tg != null}:${Terrain.Walked.count() / 40}:" +
-            "${Roads.version}:${Roads.files.version}:${Terrain.files.version}:${Terrain.buildings.version}:${bl?.size}:${SafePath.waters.version}"
+            "${Roads.version}:${Roads.files.version}:${Terrain.files.version}:${Terrain.buildings.version}:${bl?.size}:${SafePath.waters.version}:" +
+            "${Terrain.heights.version}"
         if (key != dGridKey) {
             dGridKey = key
             val filesDir = context.filesDir
@@ -4148,7 +4160,24 @@ class MapView(context: Context) : View(context) {
             // the shipped network's snap: the same dry ground at the spot itself, the water per vertex, the rooms' own outlines
             val snap = ShippedSnap.Ground({ wx, wy -> legAt((r.left - wy) / r.width, (r.top - wx) / r.height, wx, wy, false) }, wg,
                 if (foot.isEmpty()) null else { wx, wy -> foot.any { it.holds(wx, wy) } })
-            val g = if (sp.isEmpty() && tg == null && foot.isEmpty()) null else DangerGrid.build(sp, mine, plv, r.width, r.height, ground)
+            // THE GHOST'S GROUND (CorpseRoute: walk on water, drops): read per cell only when a ghost's leg asks (DangerGrid.GhostSrc)
+            val hg = Terrain.heightsOf(mapId)
+            val ghostSrc = DangerGrid.GhostSrc({ x, y ->
+                // world X north (top - y), world Y west (left - x): ShippedRoute's / the snap's own convention
+                val wx = r.top - y * r.height; val wy = r.left - x * r.width
+                val depth = wg?.at(wx, wy) ?: Float.NaN
+                val slope = tg?.at(wx, wy) ?: Terrain.NO_DATA
+                val built = maxOf(Buildings.cover(foot, x, y, cellX, cellY, r), bg?.at(wx, wy)?.takeIf { it != Terrain.NO_DATA }?.let { it / 9f } ?: 0f)
+                when {
+                    !depth.isNaN() && depth != SafePath.Water.BRIDGE && depth >= ShippedSnap.DEEP_LAVA -> Terrain.WALL     // lava (or a lake's deepest)
+                    built >= Buildings.WALL_COVER -> Terrain.WALL                                                            // a building
+                    !depth.isNaN() && depth != SafePath.Water.BRIDGE -> 1f                                                   // walked on
+                    Terrain.legFactor(slope) >= Terrain.WALL -> DangerGrid.CLIFF                                             // dropped down
+                    else -> legAt(x, y, wx, wy, false)
+                }
+            }, hg?.let { h -> { x, y -> h.at(r.top - y * r.height, r.left - x * r.width) } },
+                wg?.let { w -> { x, y -> val d = w.at(r.top - y * r.height, r.left - x * r.width); !d.isNaN() && d != SafePath.Water.BRIDGE } })
+            val g = if (sp.isEmpty() && tg == null && foot.isEmpty()) null else DangerGrid.build(sp, mine, plv, r.width, r.height, ground).withGhost(ghostSrc)
             val log = "terrain: grid for map $mapId ${if (tg != null) "present" else "missing"}; " +
                 "${foot.size} buildings as walls; ${Terrain.Walked.count()} walked cells kept" +
                 (Roads.of(mapId)?.let { "; roads: ${Roads.roadCells(mapId)} road cells" } ?: "")
@@ -4396,7 +4425,8 @@ class MapView(context: Context) : View(context) {
                 val snapLog = java.util.Collections.synchronizedList(ArrayList<String>())
                 val roadmap = ShippedRoute.roadmapOf(got.second.pack.roadmap, sec)
                 val attacher = ShippedSnap.attacher(fine) { snapLog.add(it) }
-                val res = if (ghost) CorpseRoute.plan(sec, ground, here, goal, roadmap, attacher, fine)
+                val ghostCoarse: (Double, Double) -> Float = if (g == null) { _, _ -> 1f } else { x, y -> g.ghostGround((r.left - y) / ax, (r.top - x) / ay) }
+                val res = if (ghost) CorpseRoute.plan(sec, ghostCoarse, here, goal, roadmap, fine) { snapLog.add(it) }
                     else ShippedRoute.plan(sec, ground, danger, here, goal, k, toExit, roadmap = roadmap, attacher = attacher, stitchGround = fine, live = live)
                 Triple(res, if (res.reached) ShippedPins.checkpoints(res.pts, ShippedPins.named(sec)) else null, snapLog.toList())
             }) { (res, leg, snapLog) ->
@@ -4496,7 +4526,8 @@ class MapView(context: Context) : View(context) {
         var pts = if (ghostMap != null) CorpseRoute.gridLeg(g, here, to) else g.route(here, to, k)
         if (old != null && old.pts.size > 2) {
             val kept = passed(listOf(here) + old.pts.drop(1), ax, ay) ?: listOf(here, to)
-            if (g.cost(kept, k, to) <= g.cost(pts, k, to) * DANGER_STICK) pts = kept
+            if (ghostMap != null) { if (DangerGrid.yards(kept, ax, ay) <= DangerGrid.yards(pts, ax, ay) * DANGER_STICK) pts = kept }
+            else if (g.cost(kept, k, to) <= g.cost(pts, k, to) * DANGER_STICK) pts = kept
         }
         val wasBent = old != null && old.pts.size > 2
         // the corpse run: one line a plan, its own words (no danger to speak of)

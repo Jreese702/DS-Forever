@@ -1416,7 +1416,7 @@ object SafePath {
         if (toExit) net.exits.mapNotNull { x -> byId[x.node] }.minByOrNull { hypot(it.wx - tx, it.wy - ty) }
             ?.takeIf { hypot(it.wx - tx, it.wy - ty) <= EXIT_SNAP_YD }?.let { gx = it.wx; gy = it.wy }
         // a road first; a trail only where no road joins the two places (its base and its climb: over the hills it costs what they do)
-        fun factor(e: Edge) = (when (e.kind) { ROAD -> 1.0; SPUR, CAVE -> 1.3; else -> 2.2 }) * (if (e.state == AVOID) 6.0 else 1.0) *
+        fun factor(e: Edge) = (when (e.kind) { ROAD -> 1.0; SPUR, CAVE -> 1.3; else -> 2.2 }) * (if (e.state == AVOID && !noDanger) 6.0 else 1.0) *
             (if (noDanger) 1.0 else 1.0 + e.danger) * (if (e.kind == ROAD) 1.0 else e.climb.toDouble())
         val pos = HashMap<Int, DoubleArray>()
         for (n in net.nodes) pos[n.id] = when (n.kind) { CAVE -> doubleArrayOf(n.wx, n.wy, Climb.IN_CAVE); LIFT -> doubleArrayOf(n.wx, n.wy, Climb.LIFT)

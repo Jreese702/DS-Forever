@@ -52,12 +52,26 @@ object ShippedSnap {
      * [water] the zone's WTR2 depths (null: none read); [room] whether a placed building's room holds the spot (its own outline, finer
      * than the 25 yd cover grid; null: none).
      */
-    class Ground(val terrain: (Double, Double) -> Float, val water: SafePath.Water? = null, val room: ((Double, Double) -> Boolean)? = null) {
+    class Ground(val terrain: (Double, Double) -> Float, val water: SafePath.Water? = null, val room: ((Double, Double) -> Boolean)? = null,
+                 /** a ghost's ground (CorpseRoute; the user: "Walk on water"): water of any depth is walked on its surface (no wall, no
+                  *  ford's cost, the bed's slope under it not read); lava (WTR2's [DEEP_LAVA] and deeper) stays a wall */
+                 val allowWater: Boolean = false) {
+        /** the same ground for a ghost ([allowWater]) */
+        fun ghost() = Ground(terrain, water, room, allowWater = true)
+        /** water a ghost walks on at world ([x], [y]): [allowWater], wet, no bridge, not lava */
+        private fun walkedWater(x: Double, y: Double): Boolean {
+            if (!allowWater) return false
+            val d = water?.at(x, y) ?: return false
+            return !d.isNaN() && d != SafePath.Water.BRIDGE && d < DEEP_LAVA
+        }
         /** why a walker may not stand at world ([x], [y]): null = it may */
         fun wall(x: Double, y: Double): String? {
             water?.let { w ->
                 val d = w.at(x, y)
-                if (!d.isNaN() && d != SafePath.Water.BRIDGE && d > SafePath.FORD_DEPTH && !w.wadeable(x, y))
+                if (allowWater) {
+                    if (!d.isNaN() && d != SafePath.Water.BRIDGE && d >= DEEP_LAVA) return "deep water or lava"
+                    if (walkedWater(x, y)) return if (room?.invoke(x, y) == true) "a building" else null
+                } else if (!d.isNaN() && d != SafePath.Water.BRIDGE && d > SafePath.FORD_DEPTH && !w.wadeable(x, y))
                     return if (d >= DEEP_LAVA) "deep water or lava" else "deep water (${"%.1f".format(d)} yd)"
             }
             if (room?.invoke(x, y) == true) return "a building"
@@ -68,6 +82,7 @@ object ShippedSnap {
         }
         /** the cost of a yard at world ([x], [y]) where a walker may stand: the terrain's, a ford's or a narrow stream's [SafePath.FORD_COST] */
         fun yard(x: Double, y: Double): Double {
+            if (walkedWater(x, y)) return 1.0                      // a ghost on the water's surface: level going
             val t = terrain(x, y).let { if (it.isNaN()) 1f else it }.coerceAtMost(WALL).toDouble()
             val d = water?.at(x, y) ?: Float.NaN
             return if (!d.isNaN() && d != SafePath.Water.BRIDGE) max(t, 1.0) * SafePath.FORD_COST else t
@@ -139,7 +154,7 @@ object ShippedSnap {
             return Result(emptyList(), if (n == null) "no node to snap to" else "no node within ${reach.toInt()} yd (the nearest ${n.toInt()} yd)")
         }
         val ground0 = if (near.isEmpty()) null else pick(p, near, ground, danger, k, reach, walkYd)
-        val fl = if (floorNear.isEmpty()) null else pick(p, floorNear, Ground({ _, _ -> 1f }, ground.water), danger, k, reach, walkYd)
+        val fl = if (floorNear.isEmpty()) null else pick(p, floorNear, Ground({ _, _ -> 1f }, ground.water, allowWater = ground.allowWater), danger, k, reach, walkYd)
         // the tiers, each later one FAR_COST x its rank dearer: an end on a floor - the floor's lead, the floor's other nodes nearest
         // first (a city's streets, a pocket's deck: often in pieces the graph joins only farther on), then the ground's; the ground's
         // lead, then its FALLBACKS one a rank, the level lines first, nearest first, then those over a climb or a cliff's band; none
