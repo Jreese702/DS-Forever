@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp11" }
+WC.compass = { V = "cp12" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -374,7 +374,8 @@ do
     -- honest fix up to 100 off still corrects a poor rate guess, and teaches the rate)
     C.cam = { off = 0, src = "none", fovAt = -10, hfov = math.rad(90), abs = nil, fixAt = -100, MAXOFF = math.rad(100),
               BASE = math.rad(120), base = nil, ys = 1.3, inv = false, tw = 3, fol = false, gp = nil, rx = 0, acc = 0,
-              extX = nil, extAt = -100 }
+              extX = nil, extAt = -100, ANCHOR_TAU = 4, IDLE_S = 0.5, STRAIGHT_S = 1, STRAIGHT_RATE = 0.35,
+              idleSince = -100, straightSince = -100, lastF = nil }
 
     -- the app's own stick reading, when the game's gamepad API gives none (x: -1 .. 1, right positive)
     function C.stickIn(x)
@@ -438,13 +439,21 @@ do
         K.rx = x
         local rate = (K.base or K.BASE) * K.ys
         if not K.abs then K.abs = facing end
-        if C.turnsWith(moving) then
-            K.abs, K.src, K.acc, K.lastFix = facing, moving and "move" or "turn", 0, nil   -- the character turns with the camera
-        elseif x ~= 0 then
+        -- cp12 (test21, the user: "it seems to be trying to track the charactor direction at the same time ... While walking"): the
+        -- CAMERA is the source at all times. The stick is integrated moving or not; while the character turns with the camera (the
+        -- setting), the facing only ANCHORS it slowly (ANCHOR_TAU), and only once the stick has been idle IDLE_S and the character
+        -- has walked straight STRAIGHT_S (then the game has turned it onto the camera); never a switch to the facing.
+        if math.abs(x) > 0.05 then K.idleSince = now end
+        if K.lastF and dt > 0 and math.abs(C.wrap(facing - K.lastF)) / dt > K.STRAIGHT_RATE then K.straightSince = now end
+        K.lastF = facing
+        if x ~= 0 then
             local d = x * rate * dt * (K.inv and -1 or 1)
             K.abs = C.wrap(K.abs - d)
             K.acc = K.acc + x * dt * (K.inv and -1 or 1)                     -- stick-seconds since the last fix (the rate's lesson)
             K.src = "stick"
+        elseif C.turnsWith(moving) and now - K.idleSince >= K.IDLE_S and now - K.straightSince >= K.STRAIGHT_S then
+            K.abs = C.wrap(K.abs + C.wrap(facing - K.abs) * (1 - math.exp(-dt / K.ANCHOR_TAU)))
+            K.src = "anchor"
         else
             K.src = "still"
         end
@@ -481,7 +490,7 @@ do
                     local err = C.wrap(cam - K.abs)
                     if math.abs(err) <= K.MAXOFF then
                         -- the rate's lesson: the stick turned since the last fix, and the fix says by how much
-                        if K.lastFix and math.abs(K.acc) > 0.25 and not C.turnsWith(moving) then
+                        if K.lastFix and math.abs(K.acc) > 0.25 then
                             local turned = -C.wrap(cam - K.lastFix)
                             local learned = turned / (K.acc * K.ys)
                             if learned > math.rad(20) and learned < math.rad(720) then
@@ -771,5 +780,453 @@ do
         if acc4 < 0.25 then return end
         acc4 = 0
         pcall(P.tick)
+    end)
+end
+
+-- ================================================================== THE LIVE AGGRO LAYER, first slice (ag1)
+-- The user: "My thing didn't account for the mobs that are randomly between me and where I am going" ... "Start now". The add-on's
+-- side of safepath-work/docs/AGGRO_DOC_CONTRACT_v1.md: every hostile nameplate in view (UnitCanAttack, reaction <= 4, not a player),
+-- at most 24, in stable slots; its level, class, reaction, combat and threat, a DISTANCE BRACKET from our own range checks (spells,
+-- then items, then CheckInteractDistance), its npc id and creature type read out of combat, dead / tapped flags; and, to help the
+-- router place it, the plate's screen x turned into a world BEARING with the compass's camera yaw (cp11). One record every 0.2 s:
+-- riding the pos doc while moving (Core.lua: pos.ag), a standalone {"type":"aggro"} while still (at most 1 a second, on a change).
+-- Off in instances, encounters and PvP. READ ONLY: no CVar written, no secure frame, no raid mark, no plate touched.
+--
+-- Adapted from Forever Range by Tarolg (the spell / item range-bracket builder, its secret checks, its pull detector):
+--   Copyright (c) 2026 Tarolg
+--   Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files
+--   (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify,
+--   merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+--   furnished to do so, subject to the following conditions: The above copyright notice and this permission notice shall be included
+--   in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+--   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+--   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+--   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+WC.live = { V = "ag1", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+            q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
+do
+    local A = WC.live
+    local C = WC.compass
+    local function now() return (type(GetTime) == "function" and GetTime()) or 0 end
+    -- a plain value or nil (a secret, an error, a NaN)
+    local function pv(fn, ...)
+        local ok, v = pcall(fn, ...)
+        if not ok or v == nil then return nil end
+        if type(issecretvalue) == "function" and issecretvalue(v) then return nil end
+        if type(v) == "number" and v ~= v then return nil end
+        return v
+    end
+    A.pv = pv
+    local function b01(v) if v == true then return 1 elseif v == false then return 0 end end
+
+    -- ---------------------------------------------------------------- the range bands (Forever Range's builder, adapted)
+    -- every distinct max range from 0 we can check: our harmful spells' (the spellbook's own metadata), then the candidate items'
+    -- (their ranges read at runtime: nothing hard-coded), then CheckInteractDistance's (28 / 8 yd) where nothing else covers them
+    A.ITEMS = { 8149, 22432, 9606, 10699, 4559, 1191, 4388, 13289, 835, 18904, 4945 }       -- Forever Range's enemy candidates
+    A.CI = { [1] = 28, [2] = 8, [3] = 7, [4] = 28 }
+    function A.buildBands()
+        local list, have = {}, {}
+        local function add(max, kind, id, check)
+            max = math.floor(max + 0.5)
+            if max <= 0 or have[max] then return end
+            have[max] = true
+            list[#list + 1] = { max = max, kind = kind, id = id, check = check }
+        end
+        -- spells
+        local okN, nLines = pcall(function() return C_SpellBook.GetNumSpellBookSkillLines() end)
+        local bank = (type(Enum) == "table" and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player) or 0
+        for i = 1, (okN and tonumber(nLines) or 0) do
+            local okL, li = pcall(function() return C_SpellBook.GetSpellBookSkillLineInfo(i) end)
+            if okL and type(li) == "table" and not li.offSpecID and not li.isOffSpec then
+                local off, cnt = tonumber(li.itemIndexOffset) or 0, tonumber(li.numSpellBookItems) or 0
+                for slot = off + 1, off + cnt do
+                    local okI, it = pcall(function() return C_SpellBook.GetSpellBookItemInfo(slot, bank) end)
+                    local id = okI and type(it) == "table" and pv(function() return it.spellID end)
+                    if id and not it.isPassive and not it.isOffSpec then
+                        local okS, si = pcall(function() return C_Spell.GetSpellInfo(id) end)
+                        local okH, harm = pcall(function() return C_Spell.IsSpellHarmful(id) end)
+                        local mx = okS and type(si) == "table" and pv(function() return si.maxRange end)
+                        local mn = okS and type(si) == "table" and pv(function() return si.minRange end) or 0
+                        if mx and mx > 0 and mn == 0 and okH and harm == true then
+                            add(mx, "s", id, function(tok) return C_Spell.IsSpellInRange(id, tok) end)
+                        end
+                    end
+                end
+            end
+        end
+        -- items (their range from their own spell; loaded on demand: ITEM_DATA_LOAD_RESULT rebuilds)
+        for _, id in ipairs(A.ITEMS) do
+            local okC, cached = pcall(function() return C_Item.IsItemDataCachedByID(id) end)
+            if okC and cached == false then
+                pcall(function() C_Item.RequestLoadItemDataByID(id) end)
+            else
+                local okG, _, sid = pcall(function() return C_Item.GetItemSpell(id) end)
+                sid = okG and pv(function() return sid end)
+                local okS, si = pcall(function() return C_Spell.GetSpellInfo(sid) end)
+                local mx = sid and okS and type(si) == "table" and pv(function() return si.maxRange end)
+                local mn = sid and okS and type(si) == "table" and pv(function() return si.minRange end) or 0
+                if mx and mx > 0 and mn == 0 then add(mx, "i", id, function(tok) return C_Item.IsItemInRange(id, tok) end) end
+            end
+        end
+        -- CheckInteractDistance, the last fallback (8 and 28 yd), only where no spell or item band sits within a yard
+        for i, yd in pairs({ [2] = 8, [4] = 28 }) do
+            local near = false
+            for _, b in ipairs(list) do if math.abs(b.max - yd) <= 1 then near = true end end
+            if not near then add(yd, "d", i, function(tok) return CheckInteractDistance(tok, i) end) end
+        end
+        table.sort(list, function(x, y) return x.max < y.max end)
+        A.bands = list
+        A.covDirty = true
+        return list
+    end
+
+    -- the bracket: the smallest band that says "in range" is b; the largest one below it that says "out" is a (FSR's reading)
+    function A.bracket(tok)
+        local a, kind = 0, nil
+        for _, band in ipairs(A.bands) do
+            local ok, inr = pcall(band.check, tok)
+            if ok and not (type(issecretvalue) == "function" and issecretvalue(inr)) then
+                if inr == true then return a, band.max, band.kind end
+                if inr == false then a, kind = band.max, band.kind end
+            end
+        end
+        return a, nil, kind
+    end
+
+    -- ---------------------------------------------------------------- the plates and their slots
+    function A.eligible(tok)
+        if pv(UnitExists, tok) ~= true then return false end
+        if pv(UnitIsPlayer, tok) == true then return false end
+        if pv(UnitCanAttack, "player", tok) ~= true then return false end
+        local r = pv(UnitReaction, tok, "player")
+        return r ~= nil and r <= 4
+    end
+
+    -- the lowest slot free for 10 s, else the lowest free one; nil when all 24 are taken
+    function A.alloc(tok)
+        local t, best, anyFree = now(), nil, nil
+        for s = 0, A.MAX - 1 do
+            if not A.slot[s] then
+                anyFree = anyFree or s
+                if not best and (A.freeAt[s] == nil or t - A.freeAt[s] >= A.REUSE_S) then best = s end
+            end
+        end
+        local s = best or anyFree
+        if s == nil then return nil end
+        A.slot[s] = { tok = tok, at = t }
+        A.byTok[tok] = s
+        return s
+    end
+    function A.free(tok)
+        local s = A.byTok[tok]
+        if s == nil then return end
+        A.slot[s], A.byTok[tok], A.freeAt[s] = nil, nil, now()
+    end
+
+    function A.onAdded(tok)
+        A.toks[tok] = true
+        if A.byTok[tok] == nil and A.eligible(tok) then A.alloc(tok) end
+    end
+    function A.onRemoved(tok)
+        A.toks[tok] = nil
+        local s = A.byTok[tok]
+        if s == nil then return end
+        if pv(UnitIsDead, tok) == true then                       -- died: one record with dd = 1, then the slot goes
+            A.ghosts[#A.ghosts + 1] = { s = s, n = A.slot[s].npc, dd = 1 }
+        end
+        A.free(tok)
+    end
+
+    -- the npc id from the GUID ("Creature-0-x-x-x-<npc>-<spawn>"), out of combat only (the GUID is secret in combat)
+    function A.npcOf(tok)
+        local g = pv(UnitGUID, tok)
+        if type(g) ~= "string" then return nil end
+        local kind, id = g:match("^(%a+)%-%d+%-%d+%-%d+%-%d+%-(%d+)")
+        if kind == "Creature" or kind == "Vehicle" then return tonumber(id) end
+        return nil
+    end
+
+    -- the camera's world yaw for a bearing: the compass's dead-reckoned camera when camera mode runs, else the character's facing
+    function A.camYaw()
+        if C and C.camWanted and C.camWanted() and C.cam and C.cam.abs then return C.cam.abs, "c" end
+        local f = C and C.facing and C.facing()
+        if f then return f, "f" end
+        return nil
+    end
+
+    -- the plate's screen x as -1..1 of the half width, and clamped (at an edge); nil when the read is secret / missing
+    function A.screenX(tok)
+        local okP, plate = pcall(function() return C_NamePlate.GetNamePlateForUnit(tok) end)
+        if not okP or not plate then return nil end
+        local x = pv(function() return (plate:GetCenter()) end)
+        local ps = pv(function() return plate:GetEffectiveScale() end) or 1
+        local us = pv(function() return UIParent:GetEffectiveScale() end) or 1
+        local uw = pv(function() return UIParent:GetWidth() end)
+        if not (x and uw and us > 0) then return nil end
+        local half = uw / 2
+        local sx = (x * ps / us - half) / half
+        local cl = math.abs(sx) > 0.97
+        return math.max(-1, math.min(1, sx)), cl
+    end
+
+    local CLS = { normal = "n", elite = "e", rare = "r", rareelite = "R", worldboss = "b", trivial = "t", minus = "m" }
+
+    -- one plate's record (and its calm reading for the pull detector)
+    function A.read(s, st, t, playerFight)
+        local tok = st.tok
+        local m = { s = s }
+        if not playerFight and not st.npc then st.npc = A.npcOf(tok) end
+        if not playerFight and not st.ct then
+            local okT, _, ct = pcall(UnitCreatureType, tok)
+            if okT and type(ct) == "number" and not (type(issecretvalue) == "function" and issecretvalue(ct)) then st.ct = ct end
+        end
+        m.n, m.ct = st.npc, st.ct
+        m.lv = pv(UnitLevel, tok)
+        m.c = CLS[pv(UnitClassification, tok) or ""]
+        m.r = pv(UnitReaction, tok, "player")
+        m.cb = b01(pv(UnitAffectingCombat, tok))
+        m.om = pv(UnitThreatSituation, "player", tok)
+        local a, b, rk = A.bracket(tok)
+        m.a, m.b, m.rk = a, b, rk
+        if C_QuestLog and C_QuestLog.UnitIsRelatedToActiveQuest then m.qi = b01(pv(C_QuestLog.UnitIsRelatedToActiveQuest, tok)) end
+        if pv(UnitIsTapDenied, tok) == true then m.td = 1 end
+        local sx, cl = A.screenX(tok)
+        if sx then
+            m.sx = math.floor(sx * 1000 + 0.5) / 1000
+            if cl then m.cl = 1 end
+            A.sxPlain = true
+            -- the BEARING (additive to v1): the camera's yaw, less the plate's angle off the screen's centre (the compass's FOV)
+            local yaw, src = A.camYaw()
+            if yaw and not cl then
+                local hfov = (C and C.cam and C.cam.hfov) or math.rad(90)
+                m.br = math.floor(C.wrap(yaw - math.atan(sx * math.tan(hfov / 2))) * 1000 + 0.5) / 1000
+                m.bs = src
+            end
+        end
+        m.age = math.floor(t - st.at)
+        if pv(UnitIsDead, tok) == true then m.dd = 1 end
+        -- the pull detector (Forever Range's): the last CALM reading, then a calm -> on-me turn
+        local onMe = m.om ~= nil and m.om >= 2
+        if not onMe and m.cb ~= 1 then
+            st.calm = { b = b, t = t }
+        elseif onMe and not st.engaged then
+            A.pullCheck(s, st, m, t)
+        end
+        st.engaged = onMe
+        return m
+    end
+
+    -- a pull (the mob noticed us by itself): the interval [lower now, upper of the last calm reading], Forever Range's rejects
+    A.lastAction = -100
+    function A.pullCheck(s, st, m, t)
+        local calm = st.calm
+        local why
+        if t - A.lastAction < 2 then why = "own action"
+        elseif pv(UnitAffectingCombat, "pet") == true then why = "pet"
+        elseif not calm or t - calm.t > 0.5 then why = "stale"
+        elseif not m.lv or m.lv <= 0 then why = "level"
+        else
+            local plv = pv(UnitLevel, "player")
+            local def = plv and (20 + (m.lv - plv)) or nil
+            if not def or def <= 10 or def >= 40 then why = "near clamp"
+            elseif not calm.b or not m.a then why = "no bracket"
+            elseif m.a > calm.b then why = "moving away"
+            elseif calm.b - m.a > 15 then why = "too wide"
+            else
+                A.pulls[#A.pulls + 1] = { s = s, n = st.npc, ct = st.ct, lv = m.lv, plv = plv, lo = m.a, hi = calm.b,
+                                          t = math.floor(t * 10 + 0.5) / 10 }
+                return true
+            end
+        end
+        A.lastReject = why
+        return false
+    end
+
+    -- ---------------------------------------------------------------- the off states
+    A.enc = false
+    function A.offWhy()
+        local okI, inInst, kind = pcall(IsInInstance)
+        if okI and inInst == true then
+            if kind == "pvp" or kind == "arena" then return "pvp" end
+            return "inst"
+        end
+        if A.enc then return "enc" end
+        return nil
+    end
+
+    -- ---------------------------------------------------------------- the record
+    local function hashOf(rec)
+        local parts = { tostring(rec.comb), tostring(rec.me and rec.me.lv), tostring(rec.me and rec.me.map) }
+        for _, m in ipairs(rec.m) do
+            parts[#parts + 1] = table.concat({ m.s, tostring(m.n), tostring(m.ct), tostring(m.lv), tostring(m.c), tostring(m.r),
+                tostring(m.cb), tostring(m.om), tostring(m.a), tostring(m.b), tostring(m.rk), tostring(m.qi), tostring(m.dd),
+                tostring(m.td), tostring(m.sx), tostring(m.cl), tostring(m.br), tostring(m.mk) }, ",")
+        end
+        for _, p in ipairs(rec.pl or {}) do parts[#parts + 1] = "pl" .. p.s .. "," .. p.t end
+        return table.concat(parts, ";")
+    end
+
+    function A.scan()
+        local t = now()
+        local off = A.offWhy()
+        if off then
+            if A.off ~= off then                                   -- one record, then nothing until the layer is back
+                A.off = off
+                for tok in pairs(A.byTok) do A.free(tok) end
+                A.q = A.q + 1
+                A.pending = { v = 1, q = A.q, off = off, t = math.floor(t * 10 + 0.5) / 10 }
+                A.pendingFull = true
+            end
+            return
+        end
+        if A.off then A.off = nil; A.hash = nil end
+        local playerFight = pv(InCombatLockdown) == true
+        -- slots for the plates in view (eligibility can change: a plate turning friendly lets its slot go)
+        for tok in pairs(A.toks) do
+            local el = A.eligible(tok)
+            if el and A.byTok[tok] == nil then A.alloc(tok)
+            elseif not el and A.byTok[tok] ~= nil then A.free(tok) end
+        end
+        local list = {}
+        for s = 0, A.MAX - 1 do
+            local st = A.slot[s]
+            if st then list[#list + 1] = A.read(s, st, t, playerFight) end
+        end
+        for _, g in ipairs(A.ghosts) do list[#list + 1] = g end
+        A.ghosts = {}
+        local me = C and C.me and C.me()
+        local rec = { v = 1, t = math.floor(t * 10 + 0.5) / 10, comb = b01(playerFight), m = list }
+        if me then
+            rec.me = { lv = pv(UnitLevel, "player"), map = me.map, x = math.floor(me.x * 10 + 0.5) / 10, y = math.floor(me.y * 10 + 0.5) / 10 }
+            local f = C.facing()
+            if f then rec.me.f = math.floor(f * 1000 + 0.5) / 1000 end
+        end
+        if #A.pulls > 0 then rec.pl = A.pulls; A.pulls = {} end
+        local h = hashOf(rec)
+        if h ~= A.hash or not A.fullAt or t - A.fullAt >= A.FULL_S then
+            A.hash, A.fullAt = h, t
+            A.q = A.q + 1
+            rec.q = A.q
+            A.pending, A.pendingFull = rec, true
+        else
+            A.pending, A.pendingFull = { v = 1, q = A.q, same = 1, t = rec.t }, false
+        end
+        A.last = rec
+        A.scanAt = t
+    end
+
+    -- Core.lua's pos send while MOVING: the pending record rides it (its bytes take the place of padding)
+    A.drainAt = -100
+    function WC.drainAggro()
+        A.drainAt = now()
+        local r = A.pending
+        A.pending = nil
+        if r then
+            if A.pendingFull then A.sent.full = A.sent.full + 1 else A.sent.same = A.sent.same + 1 end
+            if r.off then A.sent.off = A.sent.off + 1 end
+        end
+        return r
+    end
+
+    -- STILL (no pos send drained it): a standalone record, at most once a second, and only a FULL one (a change)
+    A.stillAt = -100
+    function A.still()
+        local t = now()
+        if not A.pending or t - A.drainAt < 0.3 then return end
+        if not A.pendingFull then A.pending = nil; return end
+        if t - A.stillAt < A.STILL_S then return end
+        A.stillAt = t
+        local r = A.pending
+        A.pending = nil
+        r.type = "aggro"
+        A.sent.still = A.sent.still + 1
+        if r.off then A.sent.off = A.sent.off + 1 end
+        pcall(function() WC.send(WC.encode(r)) end)
+    end
+
+    -- ---------------------------------------------------------------- the coverage record
+    A.CV = { maxd = "nameplateMaxDistance", off = "nameplateShowOffscreen", ena = "nameplateShowEnemies",
+             vmax = "nameplateMaxVerticalDistance" }
+    function A.coverage()
+        local cv = {}
+        for k, name in pairs(A.CV) do
+            local okV, v = pcall(function() return C_CVar.GetCVar(name) end)       -- READ only
+            if okV and v ~= nil and not (type(issecretvalue) == "function" and issecretvalue(v)) then cv[k] = tostring(v) end
+        end
+        local sp, it = {}, {}
+        for _, b in ipairs(A.bands) do
+            if b.kind == "s" then sp[#sp + 1] = { b.id, b.max } elseif b.kind == "i" then it[#it + 1] = { b.id, b.max } end
+        end
+        local rec = { type = "aggrocov", v = 1, cv = cv, sp = sp, it = it, ci = { 28, 8, 7, 28 } }
+        A.covDirty = false
+        A.lastCov = rec
+        pcall(function() WC.send(WC.encode(rec)) end)
+        return rec
+    end
+
+    -- ---------------------------------------------------------------- the probe line (as the compass's), every 5 s
+    A.diagAt = -100
+    function A.diag()
+        local t = now()
+        if t - A.diagAt < 5 then return end
+        A.diagAt = t
+        local nTok, nSlot = 0, 0
+        for _ in pairs(A.toks) do nTok = nTok + 1 end
+        for s = 0, A.MAX - 1 do if A.slot[s] then nSlot = nSlot + 1 end end
+        local nb = { s = 0, i = 0, d = 0 }
+        for _, b in ipairs(A.bands) do nb[b.kind] = nb[b.kind] + 1 end
+        local line = { type = "cap", probe = "aggro", v = A.V, plates = nTok, slots = nSlot, bs = nb.s, bi = nb.i, bd = nb.d,
+                       sx = A.sxPlain and true or false, off = A.off, q = A.q, full = A.sent.full, same = A.sent.same,
+                       still = A.sent.still, rej = A.lastReject, err = A.err }
+        A.lastDiag = line
+        pcall(function() WC.send(WC.encode(line)) end)
+    end
+
+    -- ---------------------------------------------------------------- events and the ticker
+    local ev = CreateFrame("Frame")
+    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "SPELLS_CHANGED",
+                         "ITEM_DATA_LOAD_RESULT", "CVAR_UPDATE", "ENCOUNTER_START", "ENCOUNTER_END", "UNIT_SPELLCAST_SENT",
+                         "PLAYER_ENTER_COMBAT", "START_AUTOREPEAT_SPELL", "UNIT_THREAT_LIST_UPDATE" }) do
+        pcall(function() ev:RegisterEvent(e) end)
+    end
+    ev:SetScript("OnEvent", function(_, e, a1)
+        local ok, err = pcall(function()
+            if e == "NAME_PLATE_UNIT_ADDED" then A.onAdded(a1)
+            elseif e == "NAME_PLATE_UNIT_REMOVED" then A.onRemoved(a1)
+            elseif e == "PLAYER_ENTERING_WORLD" then
+                -- a reload / login: every slot cleared, q from 1 (the contract)
+                A.slot, A.byTok, A.toks, A.freeAt, A.q, A.hash, A.ghosts = {}, {}, {}, {}, 0, nil, {}
+                A.buildBands()
+                A.covAt = now() + 2
+            elseif e == "SPELLS_CHANGED" or e == "ITEM_DATA_LOAD_RESULT" then A.rebuildAt = now() + 0.5
+            elseif e == "CVAR_UPDATE" then
+                for _, name in pairs(A.CV) do if a1 == name then A.covAt = now() end end
+            elseif e == "ENCOUNTER_START" then A.enc = true
+            elseif e == "ENCOUNTER_END" then A.enc = false
+            elseif e == "UNIT_SPELLCAST_SENT" then if a1 == "player" then A.lastAction = now() end
+            elseif e == "PLAYER_ENTER_COMBAT" or e == "START_AUTOREPEAT_SPELL" then A.lastAction = now()
+            elseif e == "UNIT_THREAT_LIST_UPDATE" then
+                -- a plate's threat changed: read it now (the calm reading is at most one poll old, FSR's re-read)
+                local s = a1 and A.byTok[a1]
+                if s ~= nil and A.slot[s] then A.read(s, A.slot[s], now(), pv(InCombatLockdown) == true) end
+            end
+        end)
+        if not ok then A.err = tostring(err):sub(1, 80) end
+    end)
+    local acc = 0
+    ev:SetScript("OnUpdate", function(_, el)
+        acc = acc + (el or 0)
+        if acc < A.SCAN_S then return end
+        acc = 0
+        local ok, err = pcall(function()
+            local t = now()
+            if A.rebuildAt and t >= A.rebuildAt then A.rebuildAt = nil; A.buildBands() end
+            if A.covAt and t >= A.covAt then A.covAt = nil; A.coverage() end
+            if A.covDirty and not A.covAt then A.covAt = t + 0.5 end
+            A.scan()
+            A.still()
+            A.diag()
+        end)
+        if not ok then A.err = tostring(err):sub(1, 80) end
     end)
 end
