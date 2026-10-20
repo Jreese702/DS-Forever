@@ -400,6 +400,59 @@ def main():
         and last.fov == 90 and last.cyaw is not None)
     chk("cam: still no CVar written", L.globals().CVAR_WRITES == 0)
     C.setCam(False); G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.draw()
+    # cp13: TEST22's chain (08:44:52 .. 08:45:17): standing, the stick idle, f 5.474, a verified camera at -0.251 (cyaw then);
+    # the nav x drifting 986.8 1037.2 1074.4 958.6 986.9 implied 0.79 1.049 1.627 1.886: each "fix" was small against the last
+    # one, and the yaw walked 120 degrees and then sat on a mirror. Now a fix may differ from the last fix (carried by the stick)
+    # by 15 degrees + the stick's share: none of these count
+    CV.GamePadTurnWithCamera = "1"; C.cam.fovAt = -10
+    G.speed = 0; G.rx = 0; G.facing = 5.474; G.pin = None
+    G.quest = L.table(0.6, 0.4)
+    C.setCam(True); C.draw()
+    C.cam.abs, C.cam.ref, C.cam.lastFix, C.cam.acc = -0.251, -0.251, -0.251, 0
+    for impl, nx in ((0.79, 1037.2), (1.049, 1074.4), (1.627, 958.6), (1.886, 986.9)):
+        # the quest put where that nav x implies a camera at `impl`
+        bq = C.wrap(impl - math.atan((nx - c0) / c0))
+        G.quest = L.table((500 - 100 * math.sin(bq)) / 1000, (500 - 100 * math.cos(bq)) / 1000)
+        G.nav = L.table_from({"x": nx, "y": 400.0, "clamped": False})
+        frames(60, read=True)
+        chk("test22 chain: a 'fix' implying %.3f is refused (the camera stays %.3f, src %s)" % (impl, C.cam.abs, C.cam.src),
+            abs(C.wrap(C.cam.abs + 0.251)) < 0.02 and C.cam.src != "nav")
+    G.nav = None
+    # 08:47:44: the estimate 2.69 with the character at 0.023, walking straight, the stick idle: the fast anchor closes it in ~1 s
+    G.speed = 7; G.facing = 0.023; C.cam.abs = 2.69; C.cam.ref = 2.69
+    frames(150, read=True)
+    chk("test22 08:47:44: 2.67 rad off, walking straight: within 20 degrees in 2.5 s (%.0f deg off; cp12 took ~10 s)" % math.degrees(abs(C.wrap(C.cam.abs - 0.023))),
+        abs(C.wrap(C.cam.abs - 0.023)) < math.radians(20))
+    G.speed = 0
+
+    # the WORLD MARKER: our own diamond on the engine's point, only with the target in front
+    G.facing = 0.0; C.setCam(False); C.draw()
+    G.quest = L.table(0.6, 0.4)                          # NE: 45 degrees right of north
+    C.read(True)
+    G.nav = L.table_from({"x": c0 + c0 * math.tan(math.radians(45) * 0.5), "y": 500.0, "clamped": False})
+    G.facing = -math.radians(22.5)                       # the quest 22.5 degrees right of the camera
+    frames(3, read=True)
+    W = C.wm
+    pt = W.f.point if W.f else None
+    chk("world marker: shown on the point (x %.1f, y %.1f), the quest's atlas, its distance" % ((pt[4], pt[5]) if pt else (-1, -1)),
+        W.shown is True and pt is not None and abs(pt[4] - G.nav.x) < 0.01 and abs(pt[5] - 500) < 0.01
+        and W.tx.atlas == "Navigation-Tracked-Icon" and W.d.text == "140 yd")
+    G.facing = C.wrap(-math.radians(22.5) + math.pi)    # turned round: the quest behind, its mirror unclamped near the centre
+    frames(3, read=True)
+    chk("world marker: hidden while the quest is behind (a mirrored point)", W.shown is False and W.f.shown is False)
+    G.facing = -math.radians(22.5); G.nav.clamped = True
+    frames(3, read=True)
+    chk("world marker: hidden while the point is clamped", W.shown is False)
+    G.nav.clamped = False
+    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end")
+    G.pin = L.table(0.6, 0.4)
+    frames(3, read=True)
+    chk("world marker: the route's pin super-tracked: the pin's atlas", W.shown is True and W.tx.atlas == "Waypoint-MapPin-Tracked")
+    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end")
+    C.set(False)
+    chk("world marker: the compass switched off: hidden with it", W.f.shown is False)
+    C.set(True); G.nav = None; G.pin = None; G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.draw()
+
     # the camera-yaw probe (one shot, read only): starts 20 s after login once the game's nav diamond exists, logs 4 samples a line
     P = C.probe
     L.eval("WowCompanion.compass.probe")

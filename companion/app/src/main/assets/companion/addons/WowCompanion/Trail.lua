@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp12" }
+WC.compass = { V = "cp13" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -449,10 +449,16 @@ do
         if x ~= 0 then
             local d = x * rate * dt * (K.inv and -1 or 1)
             K.abs = C.wrap(K.abs - d)
+            if K.ref then K.ref = C.wrap(K.ref - d) end                         -- the last fix, carried by the stick (cp13)
             K.acc = K.acc + x * dt * (K.inv and -1 or 1)                     -- stick-seconds since the last fix (the rate's lesson)
             K.src = "stick"
         elseif C.turnsWith(moving) and now - K.idleSince >= K.IDLE_S and now - K.straightSince >= K.STRAIGHT_S then
-            K.abs = C.wrap(K.abs + C.wrap(facing - K.abs) * (1 - math.exp(-dt / K.ANCHOR_TAU)))
+            -- (cp13: far off -- over 20 degrees, after a bad start or a missed turn -- it closes fast (0.6 s), then gently (4 s))
+            local gap = C.wrap(facing - K.abs)
+            local tau = math.abs(gap) > math.rad(20) and 0.6 or K.ANCHOR_TAU
+            local step = gap * (1 - math.exp(-dt / tau))
+            K.abs = C.wrap(K.abs + step)
+            if K.ref then K.ref = C.wrap(K.ref + step) end
             K.src = "anchor"
         else
             K.src = "still"
@@ -488,7 +494,15 @@ do
                     local f = half / math.tan(K.hfov / 2)
                     local cam = b + math.atan((nx - half) / f)
                     local err = C.wrap(cam - K.abs)
-                    if math.abs(err) <= K.MAXOFF then
+                    local errRef = K.ref and C.wrap(cam - K.ref) or err   -- (the gate: against the last fix carried forward)
+                    -- cp13 (test22: a chain of small "fixes" walked the yaw 120 degrees with the stick idle, then a mirror held it 180
+                    -- off): with the follow camera off, the camera moves ONLY with the stick, so a fix may differ from the estimate by
+                    -- 15 degrees plus 40% (60% while the rate is still the guess) of what the stick turned since the last fix; more is a
+                    -- mirror or junk. Never verified yet (no fix since camera mode came on), or the follow camera on and moving: 100.
+                    local tol = math.rad(15) + (K.base and 0.4 or 0.6) * math.abs(K.acc) * K.ys * (K.base or K.BASE)
+                    if (K.fol and moving) or not K.lastFix then tol = K.MAXOFF end     -- (never verified yet: the wide gate)
+                    K.tol = tol
+                    if math.abs(errRef) <= math.min(tol, K.MAXOFF) then
                         -- the rate's lesson: the stick turned since the last fix, and the fix says by how much
                         if K.lastFix and math.abs(K.acc) > 0.25 then
                             local turned = -C.wrap(cam - K.lastFix)
@@ -498,7 +512,7 @@ do
                             end
                         end
                         K.abs = C.wrap(K.abs + err * (1 - math.exp(-dt / 0.08)))
-                        K.lastFix, K.acc, K.fixAt = cam, 0, now
+                        K.lastFix, K.acc, K.fixAt, K.ref = cam, 0, now, cam
                         K.src = "nav"
                     else
                         K.src = "mirror"                    -- a mirrored (behind-the-camera) projection: never a fix
@@ -508,6 +522,77 @@ do
         end
         K.off = C.wrap(K.abs - facing)
         return K.off
+    end
+
+    -- THE WORLD MARKER (test22, the user: "I still don't have in world markers" ... "Track the checkpoint"). This client never shows
+    -- the game's own diamond: GetTargetState reads Invalid (0) in every sample, and the game's SuperTrackedFrame sets its alpha to
+    -- 0 for Invalid. The engine still projects the super-tracked spot (the route's pin, else the focused quest) onto the screen,
+    -- and that point is readable (cy1, cp7). So our OWN marker (a texture on our own frame, the game's atlas) sits there: only
+    -- while the point is valid, unclamped, and the target truly IN FRONT of the camera (its bearing within the half FOV + 10
+    -- degrees of the camera's yaw: a point behind the camera is projected mirrored, cp10), with the distance under it.
+    -- Shown with the compass bar (the same switch); read only.
+    C.wm = { SIZE = 34 }
+    function C.wmBuild()
+        if C.wm.f then return C.wm.f end
+        local f = CreateFrame("Frame", nil, UIParent)
+        f:SetFrameStrata("MEDIUM")
+        f:EnableMouse(false)
+        f:SetSize(C.u(C.wm.SIZE), C.u(C.wm.SIZE))
+        f:Hide()
+        local sh = f:CreateTexture(nil, "ARTWORK", nil, 1)
+        sh:SetPoint("CENTER", f, "CENTER", 0, 0)
+        sh:SetSize(C.u(C.wm.SIZE + 4), C.u(C.wm.SIZE + 4))
+        sh:SetVertexColor(0, 0, 0, 0.85)
+        local tx = f:CreateTexture(nil, "ARTWORK", nil, 3)
+        tx:SetAllPoints(f)
+        local d = f:CreateFontString(nil, "OVERLAY")
+        d:SetFont(C.FONT, C.u(13), "OUTLINE")
+        d:SetPoint("TOP", f, "BOTTOM", 0, -C.u(2))
+        C.wm.f, C.wm.sh, C.wm.tx, C.wm.d = f, sh, tx, d
+        return f
+    end
+    function C.wmStep(facing)
+        local W = C.wm
+        local show = false
+        if C.wanted() and C.frame and C.frame:IsShown() then
+            local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
+            local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
+            onPin = okP and onPin == true
+            local tg = C.tg_ or {}
+            local w = onPin and tg.pin or tg.quest
+            if okF and nav and w and C.me_ then
+                local okV, vp = pcall(function() return C_Navigation.HasValidScreenPosition() end)
+                local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
+                local okC, x, y = pcall(function() return nav:GetCenter() end)
+                local okS, ns = pcall(function() return nav:GetEffectiveScale() end)
+                local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
+                local okW, uw = pcall(function() return UIParent:GetWidth() end)
+                x, y = okC and num(x) or nil, okC and num(y) or nil
+                ns, us, uw = okS and num(ns) or 1, okU and num(us) or 1, okW and num(uw) or nil
+                if okV and vp == true and okK and cl == false and x and y and uw and us > 0 then
+                    local b, d = C.bearing(C.me_, w)
+                    local yaw = (C.camWanted() and C.cam.abs) or facing
+                    local hfov = C.cam.hfov or math.rad(90)
+                    if math.abs(C.wrap(b - yaw)) < hfov / 2 + math.rad(10) then
+                        local f = C.wmBuild()
+                        f:ClearAllPoints()
+                        f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x * ns / us, y * ns / us)
+                        local atlas = onPin and "Waypoint-MapPin-Tracked" or "Navigation-Tracked-Icon"
+                        if W.atlas ~= atlas then
+                            pcall(function() W.tx:SetAtlas(atlas) end)
+                            pcall(function() W.sh:SetAtlas(atlas) end)
+                            W.atlas = atlas
+                        end
+                        local txt = C.distText(d)
+                        if W.text ~= txt then W.d:SetText(txt); W.text = txt end
+                        if not f:IsShown() then f:Show() end
+                        show = true
+                    end
+                end
+            end
+        end
+        W.shown = show
+        if not show and W.f and W.f:IsShown() then W.f:Hide() end
     end
 
     -- the world reads (player, pin, quest, corpse) ten times a second; the strip itself every frame
@@ -532,8 +617,9 @@ do
         local fresh = C.read(snap)
         if snap then C.h = nil end
         local target = raw
-        if C.camWanted() then target = C.wrap(raw + C.camStep(dt, raw)) else C.cam.off, C.cam.src, C.cam.abs = 0, "off", nil end
+        if C.camWanted() then target = C.wrap(raw + C.camStep(dt, raw)) else C.cam.off, C.cam.src, C.cam.abs, C.cam.ref, C.cam.lastFix = 0, "off", nil, nil, nil end
         local heading = C.ease(target, dt)
+        pcall(C.wmStep, raw)
         local L = C.layout(heading, C.me_, C.tg_ or {})
         C.last = L
         if fresh then C.diag(raw, C.me_, C.tg_ or {}, L) end
@@ -602,6 +688,7 @@ do
             corpse = tg.corpse and true or false, n = #L.marks,
             cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
             cyaw = C.cam.abs and math.floor(C.cam.abs * 1000 + 0.5) / 1000 or nil,
+            wm = C.wm and C.wm.shown and true or false, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
             gp = C.cam.gp, from = C.cam.from, rx = C.cam.rx and math.floor(C.cam.rx * 100 + 0.5) / 100 or nil,
             ys = C.cam.ys, base = math.floor(math.deg(C.cam.base or C.cam.BASE) + 0.5), learned = C.cam.base and true or false,
             tw = C.cam.tw, fol = C.cam.fol, inv = C.cam.inv,
@@ -634,6 +721,7 @@ do
             end
         elseif C.frame and C.frame:IsShown() then
             C.frame:Hide()
+            if C.wm and C.wm.f then C.wm.f:Hide() end
         end
         return show
     end
@@ -642,7 +730,7 @@ do
     function C.setCam(on)
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
         WowCompanionDB.compassCam = on and true or false
-        C.cam.off, C.cam.abs, C.cam.fixAt, C.cam.lastFix, C.cam.acc = 0, nil, -100, nil, 0
+        C.cam.off, C.cam.abs, C.cam.fixAt, C.cam.lastFix, C.cam.acc, C.cam.ref = 0, nil, -100, nil, 0, nil
         return true
     end
 
