@@ -80,6 +80,6 @@ class FightLeave {
         /** Interact 2026-10-09: the next window of a chain lands a server round trip later */
         const val SETTLE_MS = 300L
         /** an interact document's window keys (InteractView.update's kinds) */
-        val WINDOW_KEYS = listOf("quest", "merchant", "trainer", "stable", "petition", "mail", "auction", "taxi", "bank", "loot", "gossip")
+        val WINDOW_KEYS = listOf("quest", "merchant", "trainer", "stable", "petition", "book", "mail", "auction", "taxi", "bank", "loot", "gossip")
     }
 }
