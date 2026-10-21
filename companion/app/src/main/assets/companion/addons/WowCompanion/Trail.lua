@@ -2201,7 +2201,11 @@ end
 -- inner shadow at the opening's top. One texel scale for both bars (the health opening's 8 texels = HH), so the rim is one width;
 -- nothing of the fill, the chunk, the cost, the heals, the shield or the spark can reach the rim (each inside the bar, the lip
 -- over all). The texture's own coordinates from C_Texture.GetAtlasInfo; without it, the whole piece behind the bar as prd4 had it.
-WC.prd = { V = "prd5", LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -300, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 220, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
+-- prd6 (the user on prd7: "it doesn't fill all the way in"; the left end dark and square, the right round): the PlayerFrame fills are
+-- made to butt against the portrait - a square, darker left end, a bevelled right one - so the two ends never mirrored. The fill
+-- is now the PRD's OWN (UI-HUD-CoolDownManager-Bar-c60: rounded at both ends, its gloss in grey, sized for this frame), tinted with
+-- the bar's colour, edge to edge in the opening; the spark is gone (it showed at an empty bar's left end, and the value is secret).
+WC.prd = { V = "prd6", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -300, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 220, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
            ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.15, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
            alpha = 0, shown = false, why = "off" }
 -- (the names Hub's hub15 row reads: y, on, min, max, step, def, nudge)
@@ -2217,7 +2221,7 @@ do
         return px * ((ok and num(h) and h > 0) and h / 1080 or 768 / 1080)
     end
     -- the game's power colours, by token (the client's PowerBarColor when it is there)
-    P.POWER = { MANA = { 0, 0, 1 }, RAGE = { 1, 0, 0 }, FOCUS = { 1, 0.5, 0.25 }, ENERGY = { 1, 1, 0 }, RUNIC_POWER = { 0, 0.82, 1 },
+    P.POWER = { MANA = { 0, 0.45, 1 }, RAGE = { 1, 0, 0 }, FOCUS = { 1, 0.5, 0.25 }, ENERGY = { 1, 1, 0 }, RUNIC_POWER = { 0, 0.82, 1 },
                 COMBO_POINTS = { 1, 0.96, 0.41 }, HAPPINESS = { 0, 1, 1 } }
     P.DEBUFF = { Magic = { 0.2, 0.6, 1 }, Curse = { 0.6, 0, 1 }, Disease = { 0.6, 0.4, 0 }, Poison = { 0, 0.6, 0 }, none = { 0.8, 0, 0 } }
 
@@ -2254,15 +2258,14 @@ do
 
     -- ---------------------------------------------------------------- the frames
     -- the PlayerFrame's own fills by the power's token (their colour and gloss in the art)
-    P.FILL = { HEALTH = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health", MANA = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Mana",
-               RAGE = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Rage", ENERGY = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Energy",
-               FOCUS = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Focus", RUNIC_POWER = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-RunicPower" }
-    -- the bar's fill: the game's atlas for this token (true), else the plain status bar to be tinted (false)
-    local function setFill(b, tok)
-        local ok = P.FILL[tok] and pcall(function() b.fill:SetAtlas(P.FILL[tok]) end)
-        if not ok then pcall(function() b.fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar") end) end
-        b.fillTok = ok and tok or nil
-        return ok and true or false
+    -- the bar's fill: the PRD's own (rounded at both ends), else the plain status bar; tinted by the caller either way
+    local function setFill(b)
+        for _, a in ipairs(P.FILL_ATLAS) do
+            if pcall(function() b.fill:SetAtlas(a) end) then b.fillAtlas = a; return true end
+        end
+        pcall(function() b.fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar") end)
+        b.fillAtlas = nil
+        return false
     end
     P.setFill = setFill
     local function bar(parent, h)
@@ -2277,14 +2280,7 @@ do
         b:SetMinMaxValues(0, 1)
         b:SetValue(1)
         bg:SetColorTexture(0, 0, 0, 0)                          -- prd4: the PRD frame is the ground (P.frameFor)
-        -- a soft spark at the fill's moving edge (the cast bar's own spark, added light)
-        local sp = b:CreateTexture(nil, "OVERLAY")
-        sp:SetTexture("Interface\\CastingBar\\UI-CastingBar-Spark")
-        pcall(function() sp:SetBlendMode("ADD") end)
-        sp:SetSize(u(10), u(h))                                 -- (inside the opening: the lip covers its ends)
-        sp:SetPoint("CENTER", fill, "RIGHT", 0, 0)
-        sp:SetAlpha(0.55)
-        b.spark = sp
+        setFill(b)
         return b
     end
     -- prd4: the PRD's own bar BG round a bar, on the layer UNDER every bar (so the lag chunk shows above it): the template's margins
@@ -2325,15 +2321,24 @@ do
         local tr = sub(P.g, "BACKGROUND", -4, 0, 3, P.BG_W, 11)
         tr:SetPoint("TOPLEFT", b, "TOPLEFT", -3 * k, 0)
         tr:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 7 * k, 0)
-        -- the lip over the bar: the top rows, the bottom rows, the columns beside the opening
-        local top = sub(P.lip, "ARTWORK", 1, 0, 0, P.BG_W, 3)
-        top:SetPoint("BOTTOMLEFT", b, "TOPLEFT", -3 * k, 0)
-        top:SetPoint("BOTTOMRIGHT", b, "TOPRIGHT", 7 * k, 0)
-        top:SetHeight(3 * k)
-        local bot = sub(P.lip, "ARTWORK", 1, 0, 11, P.BG_W, P.BG_H)
-        bot:SetPoint("TOPLEFT", b, "BOTTOMLEFT", -3 * k, 0)
-        bot:SetPoint("TOPRIGHT", b, "BOTTOMRIGHT", 7 * k, 0)
-        bot:SetHeight(8 * k)
+        -- the lip over the bar: the top rows and the bottom rows IN THREE - the art's end caps (columns 0..11, 118..132) and a
+        -- middle stretched from a MARK-FREE span (31..50: the art's notches at 57 / 52 / 116 would sit at the same spot on both bars:
+        -- prd6, the user: "The markings on the borders being in the same spots makes them seem a bit lazy") - then the sides
+        local function rim(r0, r1, h, edge, sideL, sideR)
+            local l = sub(P.lip, "ARTWORK", 1, 0, r0, 11, r1)
+            l:SetPoint(edge == "top" and "BOTTOMLEFT" or "TOPLEFT", b, sideL, -3 * k, 0)
+            l:SetSize(11 * k, h)
+            local r = sub(P.lip, "ARTWORK", 1, 118, r0, P.BG_W, r1)
+            r:SetPoint(edge == "top" and "BOTTOMRIGHT" or "TOPRIGHT", b, sideR, 7 * k, 0)
+            r:SetSize(14 * k, h)
+            local m = sub(P.lip, "ARTWORK", 1, 31, r0, 50, r1)
+            m:SetPoint(edge == "top" and "BOTTOMLEFT" or "TOPLEFT", l, edge == "top" and "BOTTOMRIGHT" or "TOPRIGHT", 0, 0)
+            m:SetPoint(edge == "top" and "BOTTOMRIGHT" or "TOPRIGHT", r, edge == "top" and "BOTTOMLEFT" or "TOPLEFT", 0, 0)
+            m:SetHeight(h)
+            return { l = l, m = m, r = r, h = h }
+        end
+        local top = rim(0, 3, 3 * k, "top", "TOPLEFT", "TOPRIGHT")
+        local bot = rim(11, P.BG_H, 8 * k, "bottom", "BOTTOMLEFT", "BOTTOMRIGHT")
         local lf = sub(P.lip, "ARTWORK", 1, 0, 3, 3, 11)
         lf:SetPoint("TOPRIGHT", b, "TOPLEFT", 0, 0)
         lf:SetPoint("BOTTOMRIGHT", b, "BOTTOMLEFT", 0, 0)
@@ -2417,7 +2422,7 @@ do
         P.shadow = sh
         P.hp = bar(f, P.HH)
         P.hp:SetPoint("TOP", f, "TOP", 0, 0)
-        if not setFill(P.hp, "HEALTH") then pcall(function() P.hp:SetStatusBarColor(0, 0.8, 0) end) end
+        pcall(function() P.hp:SetStatusBarColor(P.HEALTH_RGB[1], P.HEALTH_RGB[2], P.HEALTH_RGB[3]) end)
         P.pw = bar(f, P.PH)
         P.pw:SetPoint("TOP", P.hp, "BOTTOM", 0, -u(P.BAR_GAP))
         P.extras(f)
@@ -2555,13 +2560,14 @@ do
         pt = okT and num(pt) or 0
         if pt ~= P.ptype then
             P.ptype = pt
+            -- (prd6: our table first - its mana the PRD's own lighter blue on this fill - then the game's, then mana's)
             local c = (type(PowerBarColor) == "table" and type(tok) == "string" and PowerBarColor[tok]) or nil
             local r, g, b
-            if type(c) == "table" and num(c.r) then r, g, b = c.r, c.g, c.b
-            else local cc = P.POWER[tok] or P.POWER.MANA; r, g, b = cc[1], cc[2], cc[3] end
+            if P.POWER[tok] then local cc = P.POWER[tok]; r, g, b = cc[1], cc[2], cc[3]
+            elseif type(c) == "table" and num(c.r) then r, g, b = c.r, c.g, c.b
+            else local cc = P.POWER.MANA; r, g, b = cc[1], cc[2], cc[3] end
             -- the game's own fill for this power (its colour in the art), else the plain bar in the power's colour
-            if setFill(P.pw, tok) then pcall(function() P.pw:SetStatusBarColor(1, 1, 1) end)
-            else pcall(function() P.pw:SetStatusBarColor(r, g, b) end) end
+            pcall(function() P.pw:SetStatusBarColor(r, g, b) end)
             P.ptok = tok
         end
         pcall(function() P.pw:SetMinMaxValues(0, UnitPowerMax("player", pt)) end)

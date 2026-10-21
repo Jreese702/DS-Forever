@@ -124,22 +124,21 @@ def main():
     chk("starting combat: shown at once (alpha %.2f, %s)" % (P.alpha, P.why), P.alpha == 1 and P.f.shown is True and P.why == "fight")
     chk("health FED: the secret value itself to SetValue, the plain max to SetMinMaxValues",
         Lg.issecretvalue(P.hp.value) and P.hp.max == 1000 and P.hp.min == 0)
-    chk("power FED the same way, the PlayerFrame's own mana fill (its colour in the art: no tint)", Lg.issecretvalue(P.pw.value)
-        and P.pw.max == 100 and P.pw.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Mana" and list(P.pw.color.values()) == [1, 1, 1])
-    chk("prd4: health the PlayerFrame's own fill, 220 x 15 (spec px), in the PRD's own bar BG (c60) on the layer below, a spark",
-        P.hp.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health" and abs(P.hp.w - 220 * 768 / 1080) < 1e-6
+    chk("power FED the same way, the PRD's own fill tinted mana's blue (0, 0.45, 1)", Lg.issecretvalue(P.pw.value)
+        and P.pw.max == 100 and P.pw.fill.atlas == "UI-HUD-CoolDownManager-Bar-c60" and list(P.pw.color.values()) == [0, 0.45, 1])
+    chk("prd6: health the PRD's own fill (rounded at both ends) tinted green, 220 x 15 (spec px), in the PRD's bar BG (c60), no spark",
+        P.hp.fill.atlas == "UI-HUD-CoolDownManager-Bar-c60" and list(P.hp.color.values()) == [0.12, 0.86, 0.12] and P.hp.spark is None and abs(P.hp.w - 220 * 768 / 1080) < 1e-6
         and abs(P.hp.h - 15 * 768 / 1080) < 1e-6 and P.shadow.tex.endswith("compass_band")
         and P.hpFrame.atlas == "UI-HUD-CoolDownManager-Bar-BG-c60" and P.pwFrame.atlas == "UI-HUD-CoolDownManager-Bar-BG-c60"
-        and P.hpFrame.whole is not None and P.hp.spark.tex.endswith("UI-CastingBar-Spark"))
+        and P.hpFrame.whole is not None)
     ME.ptype, ME.tok = 1, "RAGE"
     fire("UNIT_DISPLAYPOWER", "player")
     run(0.3)
-    chk("a warrior's rage: its own fill", P.pw.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Rage")
+    chk("a warrior's rage: red", list(P.pw.color.values()) == [1, 0, 0])
     ME.ptype, ME.tok = 3, "ENERGY"; run(0.3)
-    chk("energy: its own fill", P.pw.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Energy")
+    chk("energy: yellow", list(P.pw.color.values()) == [1, 1, 0])
     ME.ptype, ME.tok = 4, "HAPPINESS"; run(0.3)
-    chk("a power with no fill of its own: the plain bar in the power's colour (0, 1, 1)", list(P.pw.color.values()) == [0, 1, 1]
-        and P.pw.fill.tex == "Interface\\TargetingFrame\\UI-StatusBar")
+    chk("another power: its colour (0, 1, 1) on the same fill", list(P.pw.color.values()) == [0, 1, 1])
     ME.ptype, ME.tok = 0, "MANA"; run(0.3)
 
     # the auras, in combat
@@ -335,13 +334,16 @@ def main():
     chk("prd5: the lip OVER every bar: its own frame above the health bar (levels %s > %s)" % (P.lip.level, P.hp.level),
         P.lip.level > P.hp.level and L.eval("rawequal(WowCompanion.prd.hpFrame.top.parent, nil)") is not None)
     chk("prd5: the top lip: the art's rows 0..3, 3 texels tall, sitting ON the opening's top edge",
-        near(hf.top.coord[3], 0.25) and near(hf.top.coord[4], 0.25 + 0.25 * 3 / 19) and near(hf.top.h, 3 * k)
-        and hf.top.point[1] == "BOTTOMRIGHT")
+        near(hf.top.l.coord[3], 0.25) and near(hf.top.l.coord[4], 0.25 + 0.25 * 3 / 19) and near(hf.top.h, 3 * k)
+        and hf.top.l.point[1] == "BOTTOMLEFT")
+    chk("prd6: the rims in three: the art's end caps (0..11, 118..132) and a MIDDLE from the mark-free span 31..50 (no tick repeats)",
+        near(hf.top.l.coord[2], 0.5 + 0.5 * 11 / 132) and near(hf.top.r.coord[1], 0.5 + 0.5 * 118 / 132)
+        and near(hf.top.m.coord[1], 0.5 + 0.5 * 31 / 132) and near(hf.top.m.coord[2], 0.5 + 0.5 * 50 / 132)
+        and near(hf.top.l.w, 11 * k) and near(hf.top.r.w, 14 * k) and near(hf.bot.m.coord[1], 0.5 + 0.5 * 31 / 132))
     chk("prd5: the bottom lip rows 11..19, 8 texels; the sides: 3 texels left, 7 right, beside the opening only",
-        near(hf.bot.coord[3], 0.25 + 0.25 * 11 / 19) and near(hf.bot.h, 8 * k) and near(hf.left.w, 3 * k) and near(hf.right.w, 7 * k)
+        near(hf.bot.l.coord[3], 0.25 + 0.25 * 11 / 19) and near(hf.bot.h, 8 * k) and near(hf.left.w, 3 * k) and near(hf.right.w, 7 * k)
         and near(hf.left.coord[2], 0.5 + 0.5 * 3 / 132) and near(hf.right.coord[1], 0.5 + 0.5 * 125 / 132))
     chk("prd5: one texel scale for both bars (the power bar's lip the same thickness)", near(P.pwFrame.top.h, 3 * k) and near(P.pwFrame.bot.h, 8 * k))
-    chk("prd5: the spark inside the opening's height (%.2f)" % P.hp.spark.h, near(P.hp.spark.h, 15 * 768 / 1080))
     chk("prd5: the inner shadow over the opening's top", hf.shade is not None)
     chk("nothing of the game's written (no CVar)", Lg.CVAR_WRITES == 0)
     print("failed: %d" % len(fails))
