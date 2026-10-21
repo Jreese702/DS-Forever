@@ -114,9 +114,9 @@ def main():
     Lg.WowCompanion.npWant = L.table_from({"hud": True})
     run(1)
     chk("HUD mode on, out of combat, no health signal, no fight yet: nothing shown (%s)" % P.why, P.f is not None and P.shown is False)
-    chk("our own frame on UIParent, MEDIUM, mouse off, anchored below the centre (y %.1f = -250 spec px)" % P.f.point[5],
+    chk("our own frame on UIParent, MEDIUM, mouse off, anchored below the centre (y %.1f = -300 spec px)" % P.f.point[5],
         L.eval("rawequal(WowCompanion.prd.f.parent, UIParent)") and P.f.strata == "MEDIUM" and P.f.mouse is False
-        and P.f.point[1] == "TOP" and P.f.point[3] == "CENTER" and abs(P.f.point[5] + 250 * 768 / 1080) < 1e-6)
+        and P.f.point[1] == "TOP" and P.f.point[3] == "CENTER" and abs(P.f.point[5] + 300 * 768 / 1080) < 1e-6)
 
     # a fight starts (PLAYER_REGEN_DISABLED before UnitAffectingCombat reads true): in 0.15 s
     fire("PLAYER_REGEN_DISABLED")
@@ -126,9 +126,11 @@ def main():
         Lg.issecretvalue(P.hp.value) and P.hp.max == 1000 and P.hp.min == 0)
     chk("power FED the same way, the PlayerFrame's own mana fill (its colour in the art: no tint)", Lg.issecretvalue(P.pw.value)
         and P.pw.max == 100 and P.pw.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Mana" and list(P.pw.color.values()) == [1, 1, 1])
-    chk("prd2: health the PlayerFrame's own fill, 200 x 11 (spec px), a crisp border, the empty part see-through",
-        P.hp.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health" and abs(P.hp.w - 200 * 768 / 1080) < 1e-6
-        and abs(P.hp.h - 11 * 768 / 1080) < 1e-6 and P.shadow.tex.endswith("compass_band"))
+    chk("prd4: health the PlayerFrame's own fill, 220 x 15 (spec px), in the PRD's own bar BG (c60) on the layer below, a spark",
+        P.hp.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health" and abs(P.hp.w - 220 * 768 / 1080) < 1e-6
+        and abs(P.hp.h - 15 * 768 / 1080) < 1e-6 and P.shadow.tex.endswith("compass_band")
+        and P.hpFrame.atlas == "UI-HUD-CoolDownManager-Bar-BG-c60" and P.pwFrame.atlas == "UI-HUD-CoolDownManager-Bar-BG-c60"
+        and L.eval("rawequal(WowCompanion.prd.hpFrame.parent, WowCompanion.prd.g)") is not False and P.hp.spark.tex.endswith("UI-CastingBar-Spark"))
     ME.ptype, ME.tok = 1, "RAGE"
     fire("UNIT_DISPLAYPOWER", "player")
     run(0.3)
@@ -209,19 +211,23 @@ def main():
     # the height: the app's steps (10 spec px), its range, the default, per character in our saved data
     y0 = P.y
     P.nudge(1)
-    chk("a step up: -240 (%s), saved for Yes-Lander" % P.y, P.y == -240 and Lg.WowCompanionDB.prdY["Yes-Lander"] == -240
-        and abs(P.f.point[5] + 240 * 768 / 1080) < 1e-6)
+    chk("a step up: -290 (%s), saved for Yes-Lander" % P.y, P.y == -290 and Lg.WowCompanionDB.prdY["Yes-Lander"] == -290
+        and abs(P.f.point[5] + 290 * 768 / 1080) < 1e-6)
     for _ in range(30):
         P.nudge(1)
-    chk("the top of the range: -120 (%s)" % P.y, P.y == -120)
+    chk("the top of the range: -170 (%s)" % P.y, P.y == -170)
     for _ in range(60):
         P.nudge(-1)
-    chk("the bottom of the range: -420 (%s)" % P.y, P.y == -420)
+    chk("the bottom of the range: -470 (%s)" % P.y, P.y == -470)
     P.nudge(0)
-    chk("back to the default: -250, nothing kept (%s)" % P.y, P.y == -250 and Lg.WowCompanionDB.prdY["Yes-Lander"] is None and y0 == -250)
+    chk("back to the default: -300, nothing kept (%s)" % P.y, P.y == -300 and Lg.WowCompanionDB.prdY["Yes-Lander"] is None and y0 == -300)
     P.nudge(-1); P.y = None; P.loadY()
-    chk("read back at log in (%s)" % P.y, P.y == -260)
-    chk("Hub's names: y, on, min, max, step, def, nudge", P.min == -420 and P.max == -120 and P.step == 10 and P["def"] == -250
+    chk("read back at log in (%s)" % P.y, P.y == -310)
+    # prd4: a height saved on the OLD default (prdYv not yet 2) moves down with it, once
+    Lg.WowCompanionDB.prdY["Yes-Lander"] = -230; Lg.WowCompanionDB.prdYv = None; P.loadY()
+    y1 = P.y; P.loadY()
+    chk("prd4: an old saved height (-230) shifted once with the default: %s, then %s" % (y1, P.y), y1 == -280 and P.y == -280)
+    chk("Hub's names: y, on, min, max, step, def, nudge", P.min == -470 and P.max == -170 and P.step == 10 and P["def"] == -300
         and P.on is True and callable(P.nudge))
     chk("this client has no curve route in the stub: tried once, off, the read stands (%s)" % P.curveBad, P.curveBad is not None)
 
@@ -303,7 +309,7 @@ def main():
     # THE COST: the spell's own cost over the plain max, on the power fill's right edge, gone when the cast ends
     ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_START", "player", "guid", 8936)
     chk("prd3: casting a 25-mana spell of 100: the cost segment a quarter of the bar (%.2f), on the power fill's edge" % (P.cost.w or -1),
-        P.cost.shown is True and abs(P.cost.w - 0.25 * 200 * 768 / 1080) < 1e-6 and P.cost.point[1] in ("TOPRIGHT", "BOTTOMRIGHT")
+        P.cost.shown is True and abs(P.cost.w - 0.25 * 220 * 768 / 1080) < 1e-6 and P.cost.point[1] in ("TOPRIGHT", "BOTTOMRIGHT")
         and L.eval("rawequal(WowCompanion.prd.cost.point[2], WowCompanion.prd.pw.fill)"))
     ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_STOP", "player", "guid", 8936)
     chk("prd3: the cast over: gone", P.cost.shown is False and P.ex.cost is None)

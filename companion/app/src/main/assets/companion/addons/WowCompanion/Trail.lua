@@ -2188,8 +2188,14 @@ end
 --   anchored to the power fill's own right edge (it follows the secret value without our reading it), drawn leftward.
 --   INCOMING HEALS / ABSORBS: StatusBars the width of the bar, anchored at the health fill's right edge (heals) and then at the heal
 --   fill's (the shield), fed the game's incoming heals and total absorbs; a clipping frame the size of the bar keeps them inside it.
-WC.prd = { V = "prd3", LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -250, Y_MIN = -420, Y_MAX = -120, STEP = 10, W = 200, HH = 11, PH = 5, BAR_GAP = 3, ICON = 24, IGAP = 4,
-           ROW_GAP = 6, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.15, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
+-- prd4 (test48, the user: "The health bar needs to be lower down a bit and changed to a polished version of the PRD bar"): LOWER
+-- (300 spec px under the centre, a standing character's feet at the default zoom; a saved height moves with it once), and the PRD's
+-- own look made to sit in the world: each bar in its own frame of the PRD's bar BG (the bronze -c60 edge; nine-sliced where the client
+-- slices textures, so the edge is one width on both bars; placed by the PRD template's own margins round the bar), with N's polish:
+-- the soft shadow, the rest alpha, the fills' gloss and a soft spark at each fill's edge, the bars 4 px apart, small auras tucked
+-- under, no panel. Everything of prd3 stays.
+WC.prd = { V = "prd4", LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -300, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 220, HH = 15, PH = 9, BAR_GAP = 4, ICON = 26, IGAP = 4,
+           ROW_GAP = 8, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.15, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
            alpha = 0, shown = false, why = "off" }
 -- (the names Hub's hub15 row reads: y, on, min, max, step, def, nudge)
 WC.prd.min, WC.prd.max, WC.prd.step, WC.prd.def = WC.prd.Y_MIN, WC.prd.Y_MAX, WC.prd.STEP, WC.prd.Y_DEF
@@ -2215,6 +2221,13 @@ do
         return "?"
     end
     function P.loadY()
+        -- prd4: a height the player set on the old default moves down with it, once (prdYv 2)
+        if type(WowCompanionDB) == "table" and type(WowCompanionDB.prdY) == "table" and WowCompanionDB.prdYv ~= 2 then
+            for k, v in pairs(WowCompanionDB.prdY) do
+                if num(v) then WowCompanionDB.prdY[k] = math.max(P.Y_MIN, math.min(P.Y_MAX, v + P.Y_SHIFT)) end
+            end
+            WowCompanionDB.prdYv = 2
+        end
         local t = type(WowCompanionDB) == "table" and WowCompanionDB.prdY
         local y = type(t) == "table" and num(t[who()]) or nil
         P.y = y and math.max(P.Y_MIN, math.min(P.Y_MAX, y)) or P.Y_DEF
@@ -2227,27 +2240,12 @@ do
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
         if type(WowCompanionDB.prdY) ~= "table" then WowCompanionDB.prdY = {} end
         WowCompanionDB.prdY[who()] = P.y ~= P.Y_DEF and P.y or nil
+        WowCompanionDB.prdYv = 2                                   -- (a height on today's scale: never shifted)
         P.place()
         return P.y
     end
 
     -- ---------------------------------------------------------------- the frames
-    local function edges(parent, f)
-        for _, s in ipairs({ { "TOPLEFT", "TOPRIGHT", 0, 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", 0, -1 } }) do
-            local t = parent:CreateTexture(nil, "OVERLAY")
-            t:SetColorTexture(0, 0, 0, 1)
-            t:SetPoint(s[1], f, s[1], -1, s[4])
-            t:SetPoint(s[2], f, s[2], 1, s[4])
-            t:SetHeight(1)
-        end
-        for _, s in ipairs({ { "TOPLEFT", "BOTTOMLEFT", -1 }, { "TOPRIGHT", "BOTTOMRIGHT", 1 } }) do
-            local t = parent:CreateTexture(nil, "OVERLAY")
-            t:SetColorTexture(0, 0, 0, 1)
-            t:SetPoint(s[1], f, s[1], s[3], 0)
-            t:SetPoint(s[2], f, s[2], s[3], 0)
-            t:SetWidth(1)
-        end
-    end
     -- the PlayerFrame's own fills by the power's token (their colour and gloss in the art)
     P.FILL = { HEALTH = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health", MANA = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Mana",
                RAGE = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Rage", ENERGY = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Energy",
@@ -2271,8 +2269,30 @@ do
         b:SetStatusBarTexture(fill)
         b:SetMinMaxValues(0, 1)
         b:SetValue(1)
-        edges(b, b)
+        bg:SetColorTexture(0, 0, 0, 0)                          -- prd4: the PRD frame is the ground (P.frameFor)
+        -- a soft spark at the fill's moving edge (the cast bar's own spark, added light)
+        local sp = b:CreateTexture(nil, "OVERLAY")
+        sp:SetTexture("Interface\\CastingBar\\UI-CastingBar-Spark")
+        pcall(function() sp:SetBlendMode("ADD") end)
+        sp:SetSize(u(10), u(h * 2.2))
+        sp:SetPoint("CENTER", fill, "RIGHT", 0, 0)
+        sp:SetAlpha(0.55)
+        b.spark = sp
         return b
+    end
+    -- prd4: the PRD's own bar BG round a bar, on the layer UNDER every bar (so the lag chunk shows above it): the template's margins
+    -- (TOPLEFT -2,3 / BOTTOMRIGHT 6,-7 round its 10 px bar) at the health bar's scale for both, so the edge is one width
+    function P.frameFor(b)
+        local t = P.g:CreateTexture(nil, "BACKGROUND", nil, -4)
+        local ok = false
+        for _, a in ipairs(P.BG) do if pcall(function() t:SetAtlas(a) end) then ok = true; break end end
+        if not ok then t:SetColorTexture(0, 0, 0, 0.59) end
+        pcall(function() t:SetTextureSliceMargins(5, 5, 9, 9) end)
+        pcall(function() t:SetTextureSliceMode(Enum.UITextureSliceMode.Stretched) end)
+        local k = P.HH / 10
+        t:SetPoint("TOPLEFT", b, "TOPLEFT", -u(2 * k), u(3 * k))
+        t:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", u(6 * k), -u(7 * k))
+        return t
     end
     local function icon(parent, i)
         local o = { f = CreateFrame("Frame", nil, parent) }
@@ -2333,8 +2353,8 @@ do
         -- a faint soft shadow under the bars (our own compass band: a black band fading to every edge), no panel
         local sh = f:CreateTexture(nil, "BACKGROUND", nil, -8)
         sh:SetTexture("Interface\\AddOns\\WowCompanion\\Media\\compass_band")
-        sh:SetPoint("TOPLEFT", f, "TOPLEFT", -u(14), u(8))
-        sh:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", u(14), -u(P.HH + P.BAR_GAP + P.PH + 12))
+        sh:SetPoint("TOPLEFT", f, "TOPLEFT", -u(16), u(10))
+        sh:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", u(16), -u(P.HH + P.BAR_GAP + P.PH + 16))
         sh:SetAlpha(0.9)
         P.shadow = sh
         P.hp = bar(f, P.HH)
@@ -2342,6 +2362,7 @@ do
         if not setFill(P.hp, "HEALTH") then pcall(function() P.hp:SetStatusBarColor(0, 0.8, 0) end) end
         P.pw = bar(f, P.PH)
         P.pw:SetPoint("TOP", P.hp, "BOTTOM", 0, -u(P.BAR_GAP))
+        P.hpFrame, P.pwFrame = P.frameFor(P.hp), P.frameFor(P.pw)
         P.extras(f)
         P.buffs, P.debuffs = {}, {}
         for i = 1, P.BUFF_MAX do P.buffs[i] = icon(f, i) end
@@ -2377,10 +2398,7 @@ do
             lag:SetFrameLevel(P.hp:GetFrameLevel())
             P.hp:SetFrameLevel(lag:GetFrameLevel() + 1)
         end)
-        local lagBg = lag:CreateTexture(nil, "BACKGROUND")
-        lagBg:SetAllPoints(lag)
-        lagBg:SetColorTexture(0, 0, 0, 0.59)
-        pcall(function() P.hp.bg:SetColorTexture(0, 0, 0, 0) end)      -- (the ground is the lag bar's now)
+        -- (the ground under both is the PRD frame on the layer below: prd4)
         P.lag, P.lagQ = lag, {}
         P.ex.interp = type(Enum) == "table" and type(Enum.StatusBarInterpolation) == "table"
             and Enum.StatusBarInterpolation.ExponentialEaseOut ~= nil or false
