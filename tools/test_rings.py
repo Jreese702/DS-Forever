@@ -20,10 +20,12 @@ PLATES = r'''
 PLATE_WRITES, PLATE_READS = 0, 0
 -- a plate: only read (GetCenter, GetEffectiveScale); anything written to it is counted
 local function plateFor(u)
-    local p = { GetCenter = function() PLATE_READS = PLATE_READS + 1; return u.px or 682.6667, u.py or 400 end,
+    local p = { GetCenter = function() PLATE_READS = PLATE_READS + 1; if u.secretPos then return SECRET, SECRET end; return u.px or 682.6667, u.py or 400 end,
                 GetEffectiveScale = function() return 1 end }
     return setmetatable(p, { __newindex = function(t, k, v) PLATE_WRITES = PLATE_WRITES + 1; rawset(t, k, v) end })
 end
+-- "is it targeting me" (the pull's fallback when the threat read is secret)
+function UnitIsUnit(a, b) local tok = a:match("^(.-)target$"); local u = tok and UNITS[tok]; return u ~= nil and u.onMe == true and b == "player" end
 C_NamePlate = { GetNamePlateForUnit = function(t) local u = UNITS[t]; if u then u.plate = u.plate or plateFor(u); return u.plate end end }
 '''
 
@@ -159,6 +161,47 @@ def main():
     lines = [Lg.SENT[i] for i in range(n0 + 1, len(Lg.SENT) + 1) if getattr(Lg.SENT[i], "probe", None) == "pull"]
     chk("a measured pull is logged: 20..25 yd for a level 7 on a level 6, the rule says %s" % (lines[0].rule if lines else None),
         ok is True and len(lines) == 1 and lines[0].lo == 20 and lines[0].hi == 25 and lines[0].rule == 21 and lines[0].lv == 7)
+    # ar2 (test52: plates 2, slots 2, icons 2 - and no ring): the plate's position SECRET, as on Forever
+    Lg.UNITS.nameplate1.secretPos = True
+    run(1.0)
+    o = R.list[A.byTok.nameplate1]
+    chk("ar2: the plate's position secret: the ring still shown, ANCHORED to the plate (%s)" % R.whyLine(),
+        o.f.shown is True and o.anchored is True and L.eval("rawequal(WowCompanion.rings.list[%d].f.point[2], UNITS.nameplate1.plate)" % A.byTok.nameplate1)
+        and "shown (anchored)" in (R.whyLine() or ""))
+    mrec = [A.last.m[i] for i in range(1, len(A.last.m) + 1) if A.last.m[i].s == A.byTok.nameplate1][0]
+    chk("ar2: ... its distance from the range bracket instead (%.1f in %s..%s)" % (o.d, mrec.a, mrec.b), mrec.a - 1e-6 <= o.d <= mrec.b + 1e-6)
+    chk("ar2: anchoring wrote nothing to the plate (%d)" % Lg.PLATE_WRITES, Lg.PLATE_WRITES == 0)
+    # no upper bracket (beyond our largest check): lo + 10
+    unit("nameplate1", 50, secretPos=True); run(5.0)
+    chk("ar2: beyond the largest range check (30, no upper): 40 yd stands in (%.1f)" % o.d, abs(o.d - 40) < 0.5)
+    unit("nameplate1", 30, py=CY + proj(30, PH)); run(3.0)
+    # the reaction: one read plainly is kept for the plate (a record whose reaction is missing keeps its ring); never read: the reason
+    R.react.cachedtok = 2
+    okA = R.eligible(L.table_from({"s": 0}), "cachedtok")
+    okB, whyB = R.eligible(L.table_from({"s": 0}), "nevertok")
+    chk("ar2: a missing reaction: the plate's last plain one stands (%s); never read: no ring, \"%s\"" % (okA, whyB),
+        okA is True and okB is False and whyB == "reaction secret")
+    chk("ar2: every slot's reason in the probe: %s" % R.whyLine(), ("%d:not aggressive (4)" % A.byTok.nameplate2) in (R.whyLine() or "")
+        and ("%d:dead" % A.byTok.nameplate3) in (R.whyLine() or "") and ("%d:tapped" % A.byTok.nameplate4) in (R.whyLine() or ""))
+    line = None
+    Lg.WowCompanion.live.probeAt = -100
+    # ag7: the pull detector when the threat read is secret: "on me" = in combat and targeting the player; every check logged
+    n0 = len(Lg.SENT)
+    unit("nameplate9", 22, px=CX + 120); fire("NAME_PLATE_UNIT_ADDED", "nameplate9"); run(0.6)
+    Lg.UNITS.nameplate9.d = 18; Lg.UNITS.nameplate9.cb = True; Lg.UNITS.nameplate9.om = Lg.SECRET; Lg.UNITS.nameplate9.onMe = True
+    A.lastAction = -100
+    run(0.3)
+    lines = [Lg.SENT[i] for i in range(n0 + 1, len(Lg.SENT) + 1) if getattr(Lg.SENT[i], "probe", None) == "pull"]
+    chk("ag7: a pull with the threat read secret is still caught (targeting us, in combat): %s"
+        % [(l.ok, l.why, l.lo, l.hi) for l in lines], len(lines) == 1 and lines[0].ok is True and lines[0].lo == 10 and lines[0].hi == 25)
+    n0 = len(Lg.SENT)
+    unit("nameplate10", 22, px=CX + 220); fire("NAME_PLATE_UNIT_ADDED", "nameplate10"); run(0.6)
+    A.lastAction = G.t                                   # the player attacked: a fight the player started
+    Lg.UNITS.nameplate10.cb = True; Lg.UNITS.nameplate10.om = 3
+    run(0.3)
+    lines = [Lg.SENT[i] for i in range(n0 + 1, len(Lg.SENT) + 1) if getattr(Lg.SENT[i], "probe", None) == "pull"]
+    chk("ag7: a refused check is logged too, with why (%s)" % [(l.ok, l.why) for l in lines],
+        len(lines) == 1 and lines[0].ok is False and lines[0].why == "own action")
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
 
