@@ -2779,12 +2779,17 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (shook) { val sh = CastFx.shake(fa); c.save(); c.translate(sh[0] * u, -sh[1] * u) }
         // the user (test42): "Is there any way that we could make the sides of the cast bar more rounded?": the whole bar - groove, fill,
         // spark, glows, the game's border - is cut to a pill (its ends a half-circle of the bar's own height), the art kit's pieces as before
-        pillPath.reset(); pillR.set(-u, y0 - u, w + u, y1 + u)
-        pillPath.addRoundRect(pillR, (y1 - y0) / 2f + u, (y1 - y0) / 2f + u, Path.Direction.CW)
-        c.save(); c.clipPath(pillPath)
+        // test43 (the user: "It still looks blocky on the right side. Can you smooth the left side some more?", then "Both ends should
+        // match"): the pill now lies wholly INSIDE the view (it ran 1 unit past both edges, so at rest - a full-width bar - its round caps
+        // were cut square by the view's edges), and it is an ANTI-ALIASED mask (the whole bar drawn in a layer, then kept only under the
+        // smooth pill, DST_IN), not a hard path clip (jagged). Both caps the same half-circle, mirror images; the rim follows the curve
+        pillR.set(PILL_MARGIN, y0 - u, w - PILL_MARGIN, y1 + u)
+        val pillRad = pillR.height() / 2f
+        val pillLayer = c.saveLayer(pillR.left - 2f, pillR.top - 2f, pillR.right + 2f, pillR.bottom + 2f, null)
         // the groove
         val groove = aBarGroove
-        if (groove != null) drawBox(c, groove, 0f, y0, w, y1)
+        // drawn past both ends: its own square end pieces fall outside the pill, which alone shapes the caps (both the same)
+        if (groove != null) drawBox(c, groove, -PILL_OVER * u, y0, w + PILL_OVER * u, y1)
         else { pSwing.color = Color.rgb(24, 20, 16); pSwing.alpha = 230; c.drawRect(0f, y0, w, y1, pSwing) }
         fun fill(a: Art?, p: Float, cf: ColorFilter?, flat: Int) {
             if (p <= 0f) return
@@ -2863,20 +2868,37 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             next = 0L
         }
         // the Border over everything (2 units beyond the fill: 1 beyond the Background)
-        aBarFrame?.let { drawBox(c, it, -u, y0 - u, w + u, y1 + u) }
-        c.restore()
-        // the border's line round the rounded ends (the game's square border is cut there): a thin dark rim on the pill
-        pPillRim.strokeWidth = u; pPillRim.alpha = 200
-        c.drawRoundRect(RectF(pillR.left + u / 2f, pillR.top + u / 2f, pillR.right - u / 2f, pillR.bottom - u / 2f),
-            pillR.height() / 2f - u / 2f, pillR.height() / 2f - u / 2f, pPillRim)
+        // test43, again (the user: "This doesn't look finished to me"): NOTHING of the bar outside the pill - everything in the layer
+        // that lies outside it is cut away (the layer's box minus the pill, even-odd, anti-aliased, DST_OUT; a DST_IN pill alone left the
+        // outside untouched), so only the band behind shows past the caps. The game's square border art is not drawn: ONE continuous
+        // rim in its metal tone follows the pill all the way round, the straight edges flowing into the caps
+        pillCut.reset(); pillCut.fillType = Path.FillType.EVEN_ODD
+        pillCut.addRect(pillR.left - 3f, pillR.top - 3f, pillR.right + 3f, pillR.bottom + 3f, Path.Direction.CW)
+        pillCut.addRoundRect(pillR, pillRad, pillRad, Path.Direction.CW)
+        c.drawPath(pillCut, pPillCut)
+        c.restoreToCount(pillLayer)
+        val rimW = 1.5f * u
+        pPillRim.strokeWidth = rimW; pPillRim.alpha = 255
+        pillRim.set(pillR.left + rimW / 2f, pillR.top + rimW / 2f, pillR.right - rimW / 2f, pillR.bottom - rimW / 2f)
+        c.drawRoundRect(pillRim, pillRad - rimW / 2f, pillRad - rimW / 2f, pPillRim)
         if (shook) c.restore()
         if (layered) c.restore()
         return next
     }
 
-    private val pillPath = Path()
     private val pillR = RectF()
-    private val pPillRim = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Color.rgb(16, 12, 8) }
+    private val pillRim = RectF()
+    /** the cut: everything of the bar's layer outside the pill goes (anti-aliased) */
+    private val pPillCut = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK; xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT)
+    }
+    private val pillCut = Path()
+    /** the pill's distance from the view's sides (px): the caps whole on screen, the same at both ends */
+    private val PILL_MARGIN = 2f
+    /** the rim: the game border's own metal tone, all round the pill (so the curve shows the same line as the long edges) */
+    private val pPillRim = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Color.rgb(132, 124, 108) }
+    /** how far (bar units) the groove and the border run past the pill's ends, so their square end pieces are never seen */
+    private val PILL_OVER = 8f
 
     /** f-cast-bar-art: draw [body] clipped to the bar (the game's BorderMask: its effects show only inside the bar) */
     private inline fun barClip(c: Canvas, y0: Float, y1: Float, w: Float, body: () -> Unit) {
