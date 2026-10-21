@@ -116,7 +116,7 @@ C_GamePad = {
     StickIndexToConfigName = function(i) return ({ [0] = "Movement", [1] = "Camera" })[i] end,
     GetDeviceMappedState = function()
         if not GAME.gp then return nil end
-        return { stickCount = 2, sticks = { { x = GAME.lx or 0, y = GAME.ly or 0, len = 0 }, { x = GAME.rx, y = 0, len = math.abs(GAME.rx) } }, axes = {} }
+        return { stickCount = 2, sticks = { { x = GAME.lx or 0, y = GAME.ly or 0, len = 0 }, { x = GAME.rx, y = GAME.ry or 0, len = math.abs(GAME.rx) } }, axes = {} }
     end,
 }
 function InCombatLockdown() return GAME.fight end
@@ -612,15 +612,45 @@ def main():
     frames(3, read=True)
     m2 = W.list[2]
     want = c0 - c0 * math.tan(math.atan2(-200, 150) + math.radians(22.5))     # flag A: 250 yd at -53 degrees, the camera at -22.5
-    chk("cp19: the next flag after the pin's: our marker at x %.1f (want %.1f), y %.1f (the engine's 500), smaller, fainter, '%s'"
-        % (m2.f.point[4] if m2 else -1, want, m2.f.point[5] if m2 else -1, m2.d.text if m2 else ""),
-        m2 is not None and m2.f.shown is True and abs(m2.f.point[4] - want) < 0.5 and abs(m2.f.point[5] - 500) < 0.1
+    relA = math.atan2(-200, 150) + math.radians(22.5)
+    wantY = 384 + C.wmProj(W.pitch, 12.5, 1.9, 250 * math.cos(relA), 0, c0) if W.pitch else -1
+    chk("cp19/cp20: the next flag after the pin's: x %.1f (want %.1f), y %.1f ON THE GROUND (want %.1f), smaller, fainter, '%s'"
+        % (m2.f.point[4] if m2 else -1, want, m2.f.point[5] if m2 else -1, wantY, m2.d.text if m2 else ""),
+        m2 is not None and m2.f.shown is True and abs(m2.f.point[4] - want) < 0.5 and abs(m2.f.point[5] - wantY) < 0.5
         and m2.f.w < W.f.w and m2.f.alpha < 1 and m2.d.text == "250 yd")
     chk("cp19: the flag out of view (49 degrees left) has none; markers %d" % W.n, (W.list[3] is None or W.list[3].f.shown is False) and W.n == 2)
+    # cp20, THE GROUND (the user: "other times they float in the air ... Try to ground them all"): the pitch solved from the
+    # engine's point (a camera pitched 0.35 rad over a pivot 1.9 yd up, 12.5 yd out), the flags placed by their own heights
+    def proj(phi, dfwd, dz, D=12.5, H=1.9):
+        vf = dfwd + D * math.cos(phi)
+        vu = dz - H - D * math.sin(phi)
+        return c0 * (vf * math.sin(phi) + vu * math.cos(phi)) / (vf * math.cos(phi) - vu * math.sin(phi))
+    dpin = math.hypot(100, 100) * math.cos(math.radians(22.5))
+    G.nav.y = 384 + proj(0.35, dpin, 0)
+    frames(120, read=True)                               # (past the earlier jump's landing ease)
+    chk("cp20: the pitch from the engine's point: %.4f rad (true 0.35)" % (W.pitch or -1), W.pitch is not None and abs(W.pitch - 0.35) < 1e-3)
+    L.execute("WowCompanion.routeWp.more[1].dz = 6")
+    frames(2, read=True)
+    m2 = W.list[2]
+    wantY = 384 + proj(0.35, 250 * math.cos(relA), 6)
+    chk("cp20: a flag 6 yd above us, 250 yd out: y %.1f (the true projection %.1f)" % (m2.f.point[5], wantY), abs(m2.f.point[5] - wantY) < 0.5)
+    L.execute("WowCompanion.routeWp.pinZ = { dz = -3 }")
+    frames(2, read=True)
+    wantP = 384 + proj(0.35, dpin, -3)
+    chk("cp20: the pin's own ground 3 yd below us: the main marker moved onto it (y %.1f, the projection %.1f; the engine's %.1f)"
+        % (W.f.point[5], wantP, G.nav.y), abs(W.f.point[5] - wantP) < 0.5 and W.pinDz == -3)
+    L.execute("WowCompanion.routeWp.pinZ = nil; WowCompanion.routeWp.more[1].dz = nil")
     G.nav = None; frames(3, read=True)
     m2 = W.list[2]
-    chk("cp19: the engine's point gone: the flag stays, placed by the camera's estimate (x %.1f)" % m2.f.point[4],
+    chk("cp19: the engine's point gone: the flag stays a moment, placed by the camera's estimate (x %.1f)" % m2.f.point[4],
         W.shown is False and m2.f.shown is True and abs(m2.f.point[4] - want) < 15)
+    G.ry = 0.6; frames(2, read=True); G.ry = 0
+    chk("cp20: the camera tilted since the pitch was read: the flags hide rather than float", W.list[2].f.shown is False and W.tilted is True)
+    G.nav = L.table_from({"x": c0 + c0 * math.tan(math.radians(22.5)), "y": 384 + proj(0.35, dpin, 0), "clamped": False})
+    frames(3, read=True)
+    chk("cp20: a new pitch from the engine's point: back", W.list[2].f.shown is True and W.tilted is False)
+    G.nav = None; frames(60 * 4, read=True)
+    chk("cp20: no pitch for over 3 s: hidden", W.list[2].f.shown is False)
     L.execute("WowCompanion.routeWp.active = false")
     frames(3, read=True)
     chk("cp19: the route's pin gone: no flags", W.n == 0 and W.list[2].f.shown is False)
@@ -767,6 +797,16 @@ def main():
     chk("cp19: at most 3", len(M.eval("WC.routeWp").more) == 3)
     tapm(39)
     chk("cp19: CLEAR drops them with the pin", len(M.eval("WC.routeWp").more) == 0 and M.eval("WC.routeWp").active is False)
+    # cp20: 2 height digits may follow a point's 4 (relative to the player, 0.25 yd steps, +648; 1295 unknown)
+    tapm(36, 24, 30, 11, 5, 18, 8)                       # the pin 2 yd above us (656 = 18 * 36 + 8)
+    tapm(38, 25, 0, 12, 0, 17, 36 - 1)                   # a flag at 647 (17 * 36 + 35): -0.25 yd
+    tapm(38, 26, 0, 13, 0, 35, 35)                       # a flag of unknown height (1295)
+    tapm(38, 26, 1, 13, 1)                               # an older app: no height digits
+    R = M.eval("WC.routeWp")
+    chk("cp20: the pin's height %s, the flags' %s / %s / %s (4 points kept, the 4-digit one too)"
+        % (R.pinZ and R.pinZ.dz, R.more[1].dz, R.more[2].dz, R.more[3] and R.more[3].dz),
+        R.pinZ.dz == 2.0 and R.more[1].dz == -0.25 and R.more[2].dz is None and len(R.more) == 3 and R.more[3].dz is None)
+    tapm(39)
     # ag5: the app ROUTING with no pin up (a direct route, a refused pin): its KEEP says so for 60 s; CLEAR ends it
     chk("ag5: no pin, no word: not routing", M.eval("WC.routeWp.routing()") is False)
     M.execute("T = 100"); tapm(37)

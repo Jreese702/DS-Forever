@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp19" }
+WC.compass = { V = "cp20" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -404,8 +404,9 @@ do
                     local okM, mx, my = pcall(function() return st.sticks[i].x, st.sticks[i].y end)
                     if okM then K.lx, K.ly = num(mx), num(my) end
                 elseif okN and name == "Camera" then
-                    local okX, x = pcall(function() return st.sticks[i].x end)
+                    local okX, x, y = pcall(function() return st.sticks[i].x, st.sticks[i].y end)
                     camX = okX and num(x) or nil
+                    K.ry = okX and num(y) or nil                    -- cp20: a tilt moves the pitch
                 end
             end
             if camX then K.from = "pad"; return camX end
@@ -690,7 +691,53 @@ do
     --   camera pitch is readable: the horizon band), the middle of the screen when the engine's point is not to be seen.
     --   IN FRONT: tested against the camera's yaw, also with the bar on the facing (the estimate runs always, cp19).
     C.wm = { SIZE = 34, HOLD_S = 1.2, EASE_S = 0.12, LAND_S = 0.5, MORE_K = { 0.8, 0.68, 0.58 }, MORE_A = { 0.85, 0.65, 0.5 },
-             list = {}, airAt = -100, n = 0 }
+             list = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 3, TILT = 0.1 }
+    -- cp20 (the user: "Sometimes they are perfectly glued to the ground, other times they float in the air ... Try to ground them
+    -- all"): the CAMERA'S PITCH, solved from the engine's own point. The camera orbits a pivot CAM_H above the player's feet at the
+    -- zoom distance (GetCameraZoom, read), tilted down by the pitch; the engine projects the pin (a map point with no height) at the
+    -- player's own height (the cp19 jump bob showed it). Its screen height then says the pitch (one unknown, a bisection). With the
+    -- pitch, any point's screen height follows from its distance and its height relative to the player: the further flags (and the
+    -- pin itself) are drawn ON THE GROUND from the heights the app sends (Map.lua's uwp z digits: the app's terrain, a hint; the
+    -- player's climb since then taken off when UnitPosition's z is plain). A pitch older than PITCH_S, or a tilt of the camera stick
+    -- since, is no pitch: the further flags hide rather than float.
+    -- the screen height (UI units above the centre) of a point dfwd ahead and dz above the player's feet, or nil behind the camera
+    function C.wmProj(phi, D, H, dfwd, dz, fl)
+        local vf = dfwd + D * math.cos(phi)
+        local vu = dz - H - D * math.sin(phi)
+        local depth = vf * math.cos(phi) - vu * math.sin(phi)
+        if depth < 0.5 then return nil end
+        return fl * (vf * math.sin(phi) + vu * math.cos(phi)) / depth
+    end
+    -- the pitch that puts a point dfwd ahead at the player's height yOff above the centre (nil: none fits)
+    function C.wmPitch(yOff, dfwd, D, H, fl)
+        local lo, hi = -0.5, 1.45
+        local glo, ghi = C.wmProj(lo, D, H, dfwd, 0, fl), C.wmProj(hi, D, H, dfwd, 0, fl)
+        if not glo or not ghi or glo > yOff or ghi < yOff then return nil end
+        for _ = 1, 40 do
+            local mid = (lo + hi) / 2
+            local g = C.wmProj(mid, D, H, dfwd, 0, fl)
+            if not g then return nil end
+            if g < yOff then lo = mid else hi = mid end
+        end
+        return (lo + hi) / 2
+    end
+    function C.wmZoom()
+        local ok, z = pcall(GetCameraZoom)
+        z = ok and num(z) or nil
+        return (z and z >= 0 and z <= 60) and z or C.wm.ZOOM
+    end
+    -- the player's height when UnitPosition gives it plainly
+    function C.wmPz()
+        local ok, _, _, z = pcall(UnitPosition, "player")
+        return ok and num(z) or nil
+    end
+    -- a point's height relative to the player NOW (its sent height less the climb since), nil = unknown
+    function C.wmDz(p)
+        if type(p) ~= "table" or not num(p.dz) then return nil end
+        local pz = C.wmPz()
+        if pz and num(p.zAt) then return p.dz - (pz - p.zAt) end
+        return p.dz
+    end
     function C.wmBuild(i)
         local W = C.wm
         i = i or 1
@@ -732,6 +779,12 @@ do
         if not o.f:IsShown() then o.f:Show() end
         o.x, o.y = x, y
     end
+    -- a pitch to place by: fresh, and the camera not tilted since
+    function C.wmPitchOk(now)
+        local W = C.wm
+        if C.cam.ry and math.abs(C.cam.ry) > W.TILT then W.tilted = true end
+        return W.pitch ~= nil and now - (W.pitchAt or -100) < W.PITCH_S and not W.tilted
+    end
     function C.wmStep(facing, dt)
         local W = C.wm
         dt = num(dt) or 0
@@ -769,6 +822,13 @@ do
                         if math.abs(C.wrap(b - yaw)) < hfov / 2 + math.rad(10) then
                             x, y = x * ns / us, y * ns / us
                             yaw = C.wrap(b + math.atan((x - half) / fl))         -- (exact while the point is on screen)
+                            -- cp20: the pitch from this point (not in the air: it rises with the player then)
+                            local dfwd = d * math.cos(math.atan((x - half) / fl))
+                            W.pinFwd = dfwd
+                            if not air and uh then
+                                local ph = C.wmPitch(y - uh / 2, dfwd, C.wmZoom(), W.CAM_H, fl)
+                                if ph then W.pitch, W.pitchAt, W.tilted = ph, now, false end
+                            end
                             if air and W.yG and now - W.airSince < W.HOLD_S then
                                 y = W.yG                                         -- in the air: the ground's height held
                             elseif W.yS and now - W.airAt < W.HOLD_S + W.LAND_S then
@@ -776,6 +836,16 @@ do
                             end
                             W.yS, W.yAt = y, now
                             if not air then W.yG = y end
+                            -- cp20: the pin ON ITS GROUND when its height came (the engine's point is at the player's height)
+                            local R0 = WC.routeWp
+                            local pdz = onPin and type(R0) == "table" and C.wmDz(R0.pinZ) or nil
+                            W.pinDz = pdz
+                            if pdz and C.wmPitchOk(now) then
+                                local D = C.wmZoom()
+                                local a0 = C.wmProj(W.pitch, D, W.CAM_H, dfwd, 0, fl)
+                                local a1 = C.wmProj(W.pitch, D, W.CAM_H, dfwd, pdz, fl)
+                                if a0 and a1 then y = y + (a1 - a0) end
+                            end
                             wmPut(1, x, y, onPin and "Waypoint-MapPin-Tracked" or "Navigation-Tracked-Icon", C.distText(d), 1)
                             on[1] = true
                         end
@@ -784,9 +854,10 @@ do
                 -- 2..: the route's further checkpoints (the app's, after the pin's)
                 local R = WC.routeWp
                 if onPin and type(R) == "table" and R.active == true and type(R.more) == "table" then
-                    local yb = (W.yS and now - (W.yAt or -100) < 3) and W.yS or (uh and uh * 0.5) or nil
+                    local okP = C.wmPitchOk(now) and uh
+                    local D = C.wmZoom()
                     for i, c in ipairs(R.more) do
-                        if i > #W.MORE_K or not yb then break end
+                        if i > #W.MORE_K or not okP then break end            -- cp20: no pitch, no flags (never floating)
                         if c.w == nil then c.w = C.world(c.m, c.x, c.y) or false end
                         local wk = c.w
                         if wk and not (wk.cont and C.me_.cont and wk.cont ~= C.me_.cont) then
@@ -794,8 +865,10 @@ do
                             local rel = C.wrap(b - yaw)
                             if d > 8 and math.abs(rel) < hfov / 2 then
                                 local x = half - fl * math.tan(rel)
-                                if math.abs(x - half) < half * 0.95 then
-                                    wmPut(i + 1, x, yb, "Waypoint-MapPin-Tracked", C.distText(d), W.MORE_A[i])
+                                local yo = C.wmProj(W.pitch, D, W.CAM_H, d * math.cos(rel), C.wmDz(c) or 0, fl)
+                                local y = yo and uh / 2 + yo or nil
+                                if y and math.abs(x - half) < half * 0.95 and y > 0 and y < uh then
+                                    wmPut(i + 1, x, y, "Waypoint-MapPin-Tracked", C.distText(d), W.MORE_A[i])
                                     on[i + 1] = true
                                 end
                             end
@@ -955,6 +1028,10 @@ do
             cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
             cyaw = C.cam.abs and math.floor(C.cam.abs * 1000 + 0.5) / 1000 or nil,
             wm = C.wm and C.wm.shown and true or false, wmn = C.wm and C.wm.n or 0, air = C.wm and C.wm.air or nil,
+            pitch = (C.wm and C.wm.pitch) and math.floor(math.deg(C.wm.pitch) * 10 + 0.5) / 10 or nil,
+            pAge = (C.wm and C.wm.pitchAt) and math.floor(((type(GetTime) == "function" and GetTime()) or 0) - C.wm.pitchAt) or nil,
+            tilt = C.wm and C.wm.tilted or nil, zoom = C.wmZoom and math.floor(C.wmZoom() * 10 + 0.5) / 10 or nil,
+            pdz = C.wm and C.wm.pinDz or nil,
             more = type(WC.routeWp) == "table" and type(WC.routeWp.more) == "table" and #WC.routeWp.more or 0,
             prd = (type(WC.prd) == "table" and WC.prd.f) and { a = math.floor((WC.prd.alpha or 0) * 100 + 0.5), why = WC.prd.why,
                 src = WC.prd.src, y = WC.prd.y, nb = WC.prd.nb, nd = WC.prd.nd, pt = WC.prd.ptok, cbad = WC.prd.curveBad } or nil, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,

@@ -2592,6 +2592,9 @@ WC.mmp.init()
 --                        ag5: it also says "the app ROUTES the focused quest" with NO pin up (a direct route, a refused pin): the live
 --                        aggro layer's wish (WC.routeWp.routing()) is the pin OR a KEEP / SET within KEEP_S; CLEAR ends both
 --   39                   CLEAR: the pin goes and the quest's own super-track comes back
+--   cp20: a SET or a further checkpoint may carry 2 more digits, zh zl: its ground height RELATIVE to the player when sent, in
+--   0.25 yd steps offset by 648 (1295 = unknown; Map's terrain heights, a hint). Stored on the point at once, the height when it
+--   comes (an older app sends none: the point stands without a height)
 --   38, xh, xl, yh, yl   cp19: a FURTHER checkpoint after the pin's (up to 3, in order; the world marker draws them); 38, 38 drops
 --                        them all. A new SET drops them too (the app sends the ones after it again).
 -- Plain engine calls only (C_Map / C_SuperTrack, not protected; no Blizzard frame touched). NEVER STALE: cleared on the CLEAR tap, on
@@ -2663,7 +2666,7 @@ function RWP.clear(restore, why)
     end)
     RWP.ours = false
     RWP.active, RWP.qid, RWP.m, RWP.x, RWP.y = false, nil, nil, nil, nil
-    RWP.more = {}
+    RWP.more, RWP.pinZ = {}, nil
     if type(WowCompanionDB) == "table" then WowCompanionDB.routeWp = nil end
     RWP.say("clear", true, why)
     snapshotSoon("waypoint")
@@ -2684,6 +2687,7 @@ end
 if WC.pad and type(WC.pad.op) == "function" then
     WC.pad.op("uwp", "uwp", function(_, col)
         if type(col) ~= "number" then return end
+        if col >= 36 then RWP.zFor, RWP.zd = nil, nil end                     -- (any op ends a height's window)
         if col == 39 then RWP.digits, RWP.mdigits, RWP.routeAt = nil, nil, nil; return RWP.clear(true, "asked") end
         if col == 37 then RWP.keepAt = GetTime(); RWP.routeAt = GetTime(); return end
         if col == 36 then RWP.digits = {}; RWP.digitsAt = GetTime(); RWP.mdigits = nil; RWP.routeAt = GetTime(); return end
@@ -2696,6 +2700,19 @@ if WC.pad and type(WC.pad.op) == "function" then
             end
             return
         end
+        -- cp20: the 2 height digits after a point's 4
+        if col <= 35 and RWP.zFor and GetTime() - RWP.digitsAt <= RWP.DIGITS_S then
+            local zd = RWP.zd
+            zd[#zd + 1] = col
+            if #zd == 2 then
+                local n = zd[1] * 36 + zd[2]
+                local okP, _, _, pz = pcall(UnitPosition, "player")
+                pz = (okP and type(pz) == "number" and not (type(issecretvalue) == "function" and issecretvalue(pz))) and pz or nil
+                if n < 1295 then RWP.zFor.dz, RWP.zFor.zAt = (n - 648) * 0.25, pz end
+                RWP.zFor, RWP.zd = nil, nil
+            end
+            return
+        end
         if col <= 35 and RWP.mdigits and GetTime() - RWP.digitsAt <= RWP.DIGITS_S then
             local d = RWP.mdigits
             d[#d + 1] = col
@@ -2703,7 +2720,9 @@ if WC.pad and type(WC.pad.op) == "function" then
                 RWP.mdigits = nil
                 local m = currentMap()
                 if m and #RWP.more < RWP.MORE_MAX then
-                    RWP.more[#RWP.more + 1] = { m = m, x = (d[1] * 36 + d[2]) / 1295, y = (d[3] * 36 + d[4]) / 1295 }
+                    local p = { m = m, x = (d[1] * 36 + d[2]) / 1295, y = (d[3] * 36 + d[4]) / 1295 }
+                    RWP.more[#RWP.more + 1] = p
+                    RWP.zFor, RWP.zd = p, {}
                 end
                 RWP.say("more", m ~= nil, m and tostring(#RWP.more) or "no map")
             end
@@ -2715,6 +2734,7 @@ if WC.pad and type(WC.pad.op) == "function" then
             if #d == 4 then
                 RWP.digits = nil
                 RWP.set((d[1] * 36 + d[2]) / 1295, (d[3] * 36 + d[4]) / 1295)
+                if RWP.active then RWP.pinZ = {}; RWP.zFor, RWP.zd = RWP.pinZ, {} end     -- cp20: the pin's own height may follow
             end
         end
     end)
