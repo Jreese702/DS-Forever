@@ -724,7 +724,7 @@ class RenderSafePath {
         val devGrid = DangerGrid.build(spawns, mine, level, ax, ay, devGround)
         fun deviceWay(f: DoubleArray, gp: DoubleArray): Pair<String, List<DoubleArray>> {
             val offNet = { a: DoubleArray, b: DoubleArray -> devGrid.route(uv(a[0], a[1]), uv(b[0], b[1]), k).map { doubleArrayOf(rect.t - it[1] * ay, rect.l - it[0] * ax) } }
-            (if (devNew) SafePath.deviceLeg(net, f[0], f[1], gp[0], gp[1], false, clear, offNet) else SafePath.route(net, f[0], f[1], gp[0], gp[1], false, clear))
+            (if (devNew) SafePath.deviceLeg(net, f[0], f[1], gp[0], gp[1], false, clear, offNet = offNet) else SafePath.route(net, f[0], f[1], gp[0], gp[1], false, clear))
                 ?.let { return "network" to (listOf(f) + it.drop(1).dropLast(1) + listOf(it.last())) }
             val pts = devGrid.route(uv(f[0], f[1]), uv(gp[0], gp[1]), k)
             return "grid" to pts.map { doubleArrayOf(rect.t - it[1] * ay, rect.l - it[0] * ax) }
