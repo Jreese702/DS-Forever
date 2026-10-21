@@ -1161,7 +1161,7 @@ end
 --   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
 --   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 --   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-WC.live = { V = "ag3", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+WC.live = { V = "ag4", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -1562,7 +1562,9 @@ do
     end
     function A.npStep()
         local t = now()
-        local want = type(WC.routeWp) == "table" and WC.routeWp.active == true
+        -- ag4: or HUD mode (Hub hub14, the user's "Yes, force them on"): ONE owner here, two reasons (WC.npWant.hud); restored only when
+        -- neither wants them
+        local want = (type(WC.routeWp) == "table" and WC.routeWp.active == true) or (type(WC.npWant) == "table" and WC.npWant.hud == true)
         local saved = A.npSaved()
         if want then
             A.np.offSince = nil
@@ -1586,7 +1588,7 @@ do
         else
             if saved then
                 A.np.offSince = A.np.offSince or t
-                if t - A.np.offSince >= A.NP_OFF_S then A.npRestore("route off") end
+                if t - A.np.offSince >= A.NP_OFF_S then A.npRestore("not wanted") end
             else
                 A.np.state = A.np.state == "restored" and "restored" or "idle"
             end
