@@ -955,7 +955,9 @@ do
             cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
             cyaw = C.cam.abs and math.floor(C.cam.abs * 1000 + 0.5) / 1000 or nil,
             wm = C.wm and C.wm.shown and true or false, wmn = C.wm and C.wm.n or 0, air = C.wm and C.wm.air or nil,
-            more = type(WC.routeWp) == "table" and type(WC.routeWp.more) == "table" and #WC.routeWp.more or 0, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
+            more = type(WC.routeWp) == "table" and type(WC.routeWp.more) == "table" and #WC.routeWp.more or 0,
+            prd = (type(WC.prd) == "table" and WC.prd.f) and { a = math.floor((WC.prd.alpha or 0) * 100 + 0.5), why = WC.prd.why,
+                src = WC.prd.src, y = WC.prd.y, nb = WC.prd.nb, nd = WC.prd.nd, pt = WC.prd.ptok, cbad = WC.prd.curveBad } or nil, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
             lx = C.cam.lx and math.floor(C.cam.lx * 100 + 0.5) / 100 or nil, ly = C.cam.ly and math.floor(C.cam.ly * 100 + 0.5) / 100 or nil,
             ferr = C.cam.ferr and math.floor(math.deg(C.cam.ferr) + 0.5) or nil,
             gp = C.cam.gp, from = C.cam.from, rx = C.cam.rx and math.floor(C.cam.rx * 100 + 0.5) / 100 or nil,
@@ -2001,4 +2003,367 @@ do
     pcall(function() qf:RegisterEvent("PLAYER_LOGOUT") end)
     qf:SetScript("OnEvent", function() pcall(Q.finish, "logout") end)
     qf:SetScript("OnUpdate", function(_, el) if not Q.over then pcall(Q.tick, el) end end)
+end
+
+-- ================================================================== THE PERSONAL RESOURCE BAR (prd1; HUD mode)
+-- The user (2026-10-20, approved from the render: "Yes, build it"): "With the hud display we need a personal resource bar that shows
+-- when in combat, starting combat, or not at full hp. When out of combat and at full hp it should fade away. It should appear below
+-- the charactor similar to how the enemy one floats over top them. It should display combat buffs and debuffs like hots or dots if
+-- they appear in combat with their duration displayed as a radial fade." Answers: every power type; buffs of 5 min or less from
+-- anyone; a height slider.
+--   ONLY in HUD mode (Hub's hmSet: WC.npWant.hud), alive. OUR OWN frames on UIParent (mouse off, no template but the game's
+--   plain CooldownFrameTemplate on the icons): nothing of the game's is written, shown, hidden or hooked.
+--   WHERE: we cannot project the player, so screen space: the centre, Y_DEF spec px below it (a standing character's feet at the
+--   default zoom); the player's own height (the app's slider, 10 px steps, per character in OUR saved data: WowCompanionDB.prdY).
+--   THE BARS: health and the current power type, StatusBars FED the game's own values (secret on Forever: SetMinMaxValues /
+--   SetValue take them; no number of them is ever read here), the game's colours (PowerBarColor by the power's token).
+--   SHOWN in combat (or starting it: PLAYER_REGEN_DISABLED) or while not at full health; out of combat and full: HOLD_S, then a
+--   FADE_S fade to nothing; back in IN_S. "Full" without reading the secret: P.hurt() - Controller's health model (WC.hpModel:
+--   est / max < FULL) when the add-on set has it; with no signal at all, the bar fades HOLD_S after the fight (never stuck on).
+--   THE AURAS (in combat only): HELPFUL with a duration of BUFF_DUR or less from anyone (HoTs, short self-buffs), at most BUFF_MAX,
+--   from the bar's left edge; HARMFUL with a duration, at most DEBUFF_MAX, from its right edge in the debuff type's colour (the
+--   game's UI-Debuff-Overlays border); each with the game's radial swipe (a Cooldown, reversed: the time gone darkens) and the
+--   seconds left under it, gold under 5. Auras are plain on Forever (ShouldAurasBeSecret false).
+WC.prd = { V = "prd1", Y_DEF = -250, Y_MIN = -420, Y_MAX = -120, STEP = 10, W = 236, HH = 16, PH = 8, BAR_GAP = 2, ICON = 34, IGAP = 6,
+           ROW_GAP = 8, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.15, FULL = 0.99, POLL_S = 0.2, AURA_S = 0.5,
+           alpha = 0, shown = false, why = "off" }
+-- (the names Hub's hub15 row reads: y, on, min, max, step, def, nudge)
+WC.prd.min, WC.prd.max, WC.prd.step, WC.prd.def = WC.prd.Y_MIN, WC.prd.Y_MAX, WC.prd.STEP, WC.prd.Y_DEF
+do
+    local P = WC.prd
+    local function now() return (type(GetTime) == "function" and GetTime()) or 0 end
+    local function num(v) if type(v) == "number" and v == v and not (type(issecretvalue) == "function" and issecretvalue(v)) then return v end end
+    local function u(px)
+        local C = WC.compass
+        if C and type(C.u) == "function" then return C.u(px) end
+        local ok, h = pcall(function() return UIParent:GetHeight() end)
+        return px * ((ok and num(h) and h > 0) and h / 1080 or 768 / 1080)
+    end
+    -- the game's power colours, by token (the client's PowerBarColor when it is there)
+    P.POWER = { MANA = { 0, 0, 1 }, RAGE = { 1, 0, 0 }, FOCUS = { 1, 0.5, 0.25 }, ENERGY = { 1, 1, 0 }, RUNIC_POWER = { 0, 0.82, 1 },
+                COMBO_POINTS = { 1, 0.96, 0.41 }, HAPPINESS = { 0, 1, 1 } }
+    P.DEBUFF = { Magic = { 0.2, 0.6, 1 }, Curse = { 0.6, 0, 1 }, Disease = { 0.6, 0.4, 0 }, Poison = { 0, 0.6, 0 }, none = { 0.8, 0, 0 } }
+
+    -- ---------------------------------------------------------------- the place (the app's slider)
+    local function who()
+        local ok, n, r = pcall(function() return UnitName("player"), GetRealmName() end)
+        if ok and type(n) == "string" then return n .. "-" .. tostring(r or "") end
+        return "?"
+    end
+    function P.loadY()
+        local t = type(WowCompanionDB) == "table" and WowCompanionDB.prdY
+        local y = type(t) == "table" and num(t[who()]) or nil
+        P.y = y and math.max(P.Y_MIN, math.min(P.Y_MAX, y)) or P.Y_DEF
+        return P.y
+    end
+    -- the app's slider: one step down (-1) / up (+1), or back to the default (0)
+    function P.nudge(d)
+        P.y = P.y or P.loadY()
+        if d == 0 then P.y = P.Y_DEF else P.y = math.max(P.Y_MIN, math.min(P.Y_MAX, P.y + (d > 0 and P.STEP or -P.STEP))) end
+        if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+        if type(WowCompanionDB.prdY) ~= "table" then WowCompanionDB.prdY = {} end
+        WowCompanionDB.prdY[who()] = P.y ~= P.Y_DEF and P.y or nil
+        P.place()
+        return P.y
+    end
+
+    -- ---------------------------------------------------------------- the frames
+    local function edges(parent, f)
+        for _, s in ipairs({ { "TOPLEFT", "TOPRIGHT", 0, 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", 0, -1 } }) do
+            local t = parent:CreateTexture(nil, "OVERLAY")
+            t:SetColorTexture(0, 0, 0, 0.92)
+            t:SetPoint(s[1], f, s[1], -1, s[4])
+            t:SetPoint(s[2], f, s[2], 1, s[4])
+            t:SetHeight(1)
+        end
+        for _, s in ipairs({ { "TOPLEFT", "BOTTOMLEFT", -1 }, { "TOPRIGHT", "BOTTOMRIGHT", 1 } }) do
+            local t = parent:CreateTexture(nil, "OVERLAY")
+            t:SetColorTexture(0, 0, 0, 0.92)
+            t:SetPoint(s[1], f, s[1], s[3], 0)
+            t:SetPoint(s[2], f, s[2], s[3], 0)
+            t:SetWidth(1)
+        end
+    end
+    local function bar(parent, h)
+        local b = CreateFrame("StatusBar", nil, parent)
+        b:SetSize(u(P.W), u(h))
+        local bg = b:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints(b)
+        bg:SetColorTexture(0, 0, 0, 0.75)
+        local fill = b:CreateTexture(nil, "ARTWORK")
+        if not pcall(function() fill:SetAtlas("nameplates-bar-fill") end) then fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar") end
+        b:SetStatusBarTexture(fill)
+        b:SetMinMaxValues(0, 1)
+        b:SetValue(1)
+        edges(b, b)
+        return b
+    end
+    local function icon(parent, i)
+        local o = { f = CreateFrame("Frame", nil, parent) }
+        o.f:SetSize(u(P.ICON), u(P.ICON))
+        o.f:EnableMouse(false)
+        o.tx = o.f:CreateTexture(nil, "ARTWORK")
+        o.tx:SetAllPoints(o.f)
+        o.tx:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        o.cd = CreateFrame("Cooldown", nil, o.f, "CooldownFrameTemplate")
+        o.cd:SetAllPoints(o.f)
+        pcall(function() o.cd:SetReverse(true) end)                -- the time GONE darkens (the aura's look)
+        pcall(function() o.cd:SetDrawEdge(true) end)
+        pcall(function() o.cd:SetHideCountdownNumbers(true) end)    -- our own seconds under it
+        o.bd = o.f:CreateTexture(nil, "OVERLAY")
+        o.bd:SetTexture("Interface\\Buttons\\UI-Debuff-Overlays")
+        o.bd:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
+        o.bd:SetPoint("TOPLEFT", o.f, "TOPLEFT", -u(2), u(2))
+        o.bd:SetPoint("BOTTOMRIGHT", o.f, "BOTTOMRIGHT", u(2), -u(2))
+        o.t = o.f:CreateFontString(nil, "OVERLAY")
+        o.t:SetFont("Fonts\\FRIZQT__.TTF", u(15), "OUTLINE")
+        o.t:SetPoint("TOP", o.f, "BOTTOM", 0, -u(2))
+        o.n = o.f:CreateFontString(nil, "OVERLAY")
+        o.n:SetFont("Fonts\\FRIZQT__.TTF", u(13), "OUTLINE")
+        o.n:SetPoint("BOTTOMRIGHT", o.f, "BOTTOMRIGHT", -u(1), u(1))
+        o.f:Hide()
+        return o
+    end
+    function P.build()
+        if P.f then return P.f end
+        local f = CreateFrame("Frame", nil, UIParent)
+        f:SetFrameStrata("MEDIUM")
+        f:EnableMouse(false)
+        f:SetSize(u(P.W), u(P.HH + P.BAR_GAP + P.PH))
+        f:SetAlpha(0)
+        f:Hide()
+        P.f = f
+        -- the LAYER the curve may drive (out of combat: the engine's own alpha from the health percent); f keeps our timing
+        local g = CreateFrame("Frame", nil, f)
+        g:SetAllPoints(f)
+        g:EnableMouse(false)
+        P.g = g
+        f = g
+        P.hp = bar(f, P.HH)
+        P.hp:SetPoint("TOP", f, "TOP", 0, 0)
+        pcall(function() P.hp:SetStatusBarColor(0, 0.8, 0) end)
+        P.pw = bar(f, P.PH)
+        P.pw:SetPoint("TOP", P.hp, "BOTTOM", 0, -u(P.BAR_GAP))
+        P.buffs, P.debuffs = {}, {}
+        for i = 1, P.BUFF_MAX do P.buffs[i] = icon(f, i) end
+        for i = 1, P.DEBUFF_MAX do P.debuffs[i] = icon(f, i) end
+        P.place()
+        return f
+    end
+    function P.place()
+        if not P.f then return end
+        P.f:ClearAllPoints()
+        P.f:SetPoint("TOP", UIParent, "CENTER", 0, u(P.y or P.loadY()))
+    end
+
+    -- ---------------------------------------------------------------- the values (fed, never read)
+    function P.values()
+        pcall(function() P.hp:SetMinMaxValues(0, UnitHealthMax("player")) end)
+        pcall(function() P.hp:SetValue(UnitHealth("player")) end)
+        local okT, pt, tok = pcall(function() return UnitPowerType("player") end)
+        pt = okT and num(pt) or 0
+        if pt ~= P.ptype then
+            P.ptype = pt
+            local c = (type(PowerBarColor) == "table" and type(tok) == "string" and PowerBarColor[tok]) or nil
+            local r, g, b
+            if type(c) == "table" and num(c.r) then r, g, b = c.r, c.g, c.b
+            else local cc = P.POWER[tok] or P.POWER.MANA; r, g, b = cc[1], cc[2], cc[3] end
+            pcall(function() P.pw:SetStatusBarColor(r, g, b) end)
+            P.ptok = tok
+        end
+        pcall(function() P.pw:SetMinMaxValues(0, UnitPowerMax("player", pt)) end)
+        pcall(function() P.pw:SetValue(UnitPower("player", pt)) end)
+    end
+
+    -- ---------------------------------------------------------------- the auras
+    local function auraAt(i, filter)
+        if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+            local ok, a = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, filter)
+            if ok then return a end
+            return nil
+        end
+        local ok, name, ic, count, dtype, dur, exp = pcall(UnitAura, "player", i, filter)
+        if ok and name then return { name = name, icon = ic, applications = count, dispelName = dtype, duration = dur, expirationTime = exp } end
+    end
+    -- the auras worth showing: { icon, dur, exp, n, kind (debuffs) }
+    function P.auras()
+        local b, d = {}, {}
+        for i = 1, 40 do
+            local a = auraAt(i, "HELPFUL")
+            if type(a) ~= "table" then break end
+            local dur, exp = num(a.duration), num(a.expirationTime)
+            if dur and exp and dur > 0 and dur <= P.BUFF_DUR and #b < P.BUFF_MAX then
+                b[#b + 1] = { icon = a.icon, dur = dur, exp = exp, n = num(a.applications) }
+            end
+        end
+        for i = 1, 40 do
+            local a = auraAt(i, "HARMFUL")
+            if type(a) ~= "table" then break end
+            local dur, exp = num(a.duration), num(a.expirationTime)
+            if dur and exp and dur > 0 and #d < P.DEBUFF_MAX then
+                d[#d + 1] = { icon = a.icon, dur = dur, exp = exp, n = num(a.applications), kind = type(a.dispelName) == "string" and a.dispelName or "none" }
+            end
+        end
+        return b, d
+    end
+    local function secs(left)
+        if left >= 60 then return math.ceil(left / 60) .. "m" end
+        return tostring(math.max(0, math.ceil(left)))
+    end
+    function P.drawAuras(show)
+        local b, d = {}, {}
+        if show then
+            -- the aura list re-read on UNIT_AURA and at most every AURA_S; the seconds every frame
+            if P.auraDirty or not P.cache or now() - (P.auraAt or -100) >= P.AURA_S then
+                P.cache = { P.auras() }; P.auraAt = now(); P.auraDirty = false
+            end
+            b, d = P.cache[1], P.cache[2]
+        end
+        P.nb, P.nd = #b, #d
+        local step = u(P.ICON + P.IGAP)
+        local top = -u(P.HH + P.BAR_GAP + P.PH + P.ROW_GAP)
+        -- one row when both fit across the bar, else the debuffs on a second row (right aligned)
+        local fits = (#b + #d) * (P.ICON + P.IGAP) - P.IGAP <= P.W
+        local dTop = fits and top or top - u(P.ICON + 22)
+        local t = now()
+        local function put(list, objs, fromRight, y)
+            for i, o in ipairs(objs) do
+                local a = list[i]
+                if a then
+                    o.f:ClearAllPoints()
+                    if fromRight then o.f:SetPoint("TOPRIGHT", P.f, "TOPRIGHT", -(i - 1) * step, y)
+                    else o.f:SetPoint("TOPLEFT", P.f, "TOPLEFT", (i - 1) * step, y) end
+                    if o.icon ~= a.icon then pcall(function() o.tx:SetTexture(a.icon) end); o.icon = a.icon end
+                    if o.exp ~= a.exp or o.dur ~= a.dur then
+                        pcall(function() o.cd:SetCooldown(a.exp - a.dur, a.dur) end)
+                        o.exp, o.dur = a.exp, a.dur
+                    end
+                    if a.kind then
+                        local c = (type(DebuffTypeColor) == "table" and DebuffTypeColor[a.kind]) or nil
+                        local r, g, bb
+                        if type(c) == "table" and num(c.r) then r, g, bb = c.r, c.g, c.b else local cc = P.DEBUFF[a.kind] or P.DEBUFF.none; r, g, bb = cc[1], cc[2], cc[3] end
+                        o.bd:SetVertexColor(r, g, bb)
+                        o.bd:Show()
+                    else
+                        o.bd:Hide()
+                    end
+                    local left = a.exp - t
+                    o.t:SetText(secs(left))
+                    if left < 5 then o.t:SetTextColor(1, 0.82, 0) else o.t:SetTextColor(1, 1, 1) end
+                    o.n:SetText((a.n and a.n > 1) and tostring(a.n) or "")
+                    if not o.f:IsShown() then o.f:Show() end
+                elseif o.f:IsShown() then
+                    o.f:Hide(); o.icon, o.exp, o.dur = nil, nil, nil
+                end
+            end
+        end
+        put(b, P.buffs, false, top)
+        put(d, P.debuffs, true, dTop)
+    end
+
+    -- ---------------------------------------------------------------- when it shows
+    function P.wanted()
+        if not (type(WC.npWant) == "table" and WC.npWant.hud == true) then return false, "hud off" end
+        local okD, dead = pcall(UnitIsDeadOrGhost, "player")
+        if okD and dead == true then return false, "dead" end
+        return true
+    end
+    -- not at full health, read: Controller's vitals (PadMap m73 WC.vitals: a plain reader if one ever answers, else m70's model,
+    -- which errs LOW on purpose: the bar may stay a little longer); nil = no signal
+    function P.hurt()
+        if type(WC.vitals) == "function" then
+            local ok, v = pcall(WC.vitals)
+            if ok and type(v) == "table" and num(v.hp) and num(v.hpMax) and v.hpMax > 0 then
+                return v.hp < v.hpMax * P.FULL, type(v.hpSrc) == "string" and v.hpSrc or "vitals"
+            end
+        end
+        return nil, "none"
+    end
+    -- not at full health, EXACT (Controller's rounds 3-4: no curve route gives a PLAIN number; a widget setter taking the secret
+    -- was never tried): the layer's alpha = UnitHealthPercent through a step curve (1 below FULL, 0 at it), so the engine itself
+    -- shows the bars while hurt. Tried in plain code under pcall; any refusal and it is off for the session (P.curveBad says why),
+    -- the read above stands. WowCompanionDB.prdCurve = false switches it off for good.
+    function P.curveSet()
+        if P.curveBad then return false end
+        if type(WowCompanionDB) == "table" and WowCompanionDB.prdCurve == false then P.curveBad = "off"; return false end
+        local ok, err = pcall(function()
+            if not P.curve then
+                local c = C_CurveUtil.CreateCurve()
+                pcall(function() c:SetType(Enum.LuaCurveType.Step) end)
+                -- (the same answer as a linear curve too: flat 1 up to just under FULL, flat 0 from it)
+                c:AddPoint(0, 1); c:AddPoint(P.FULL - 0.005, 1); c:AddPoint(P.FULL, 0); c:AddPoint(1, 0)
+                P.curve = c
+            end
+            local a = UnitHealthPercent("player", false, P.curve)
+            if a == nil then error("no value") end
+            P.g:SetAlpha(a)
+        end)
+        if not ok then
+            P.curveBad = tostring(err):sub(1, 80)
+            pcall(function() P.g:SetAlpha(1) end)
+        end
+        return ok
+    end
+    function P.fight()
+        if P.regen == false then return true end                       -- PLAYER_REGEN_DISABLED: starting combat
+        local ok, c = pcall(UnitAffectingCombat, "player")
+        return ok and c == true
+    end
+    function P.tick(dt)
+        local want, whyNot = P.wanted()
+        P.on = false
+        if not want then
+            if P.f and P.f:IsShown() then P.f:SetAlpha(0); P.f:Hide() end
+            P.alpha, P.shown, P.why, P.offAt = 0, false, whyNot, nil
+            return
+        end
+        P.build()
+        local t = now()
+        P.on = true
+        local fight = P.fight()
+        local hurt, src = P.hurt()
+        if fight then P.lastFight = t end
+        -- out of combat, past the fight's hold: the engine's curve, when it takes (the bars' layer shows exactly while hurt)
+        local settled = not fight and (not P.lastFight or t - P.lastFight >= P.HOLD_S)
+        if settled and P.curveSet() then
+            hurt, src = true, "curve"                                    -- (our timing stays on: the layer itself shows or not)
+        else
+            pcall(function() P.g:SetAlpha(1) end)
+        end
+        P.src = src
+        local on = fight or hurt == true
+        if on then P.offAt = nil
+        elseif not P.offAt then P.offAt = t end
+        -- the target: 1 while wanted; out of combat and full (or no signal), HOLD_S then a FADE_S fade
+        local target = 1
+        if not on then target = (t - P.offAt >= P.HOLD_S) and 0 or 1 end
+        if hurt == nil and not fight and not P.lastFight then target = 0 end   -- no signal and no fight yet: nothing to show
+        local rate = target > P.alpha and (1 / P.IN_S) or (1 / P.FADE_S)
+        if target > P.alpha then P.alpha = math.min(target, P.alpha + rate * dt) else P.alpha = math.max(target, P.alpha - rate * dt) end
+        P.why = fight and "fight" or (src == "curve" and "curve") or (hurt and "hurt") or (P.alpha > 0 and "fading") or "full"
+        if P.alpha > 0 then
+            if not P.f:IsShown() then P.f:Show() end
+            P.f:SetAlpha(P.alpha)
+            P.pollAt = P.pollAt or 0
+            if t - P.pollAt >= P.POLL_S then P.pollAt = t; P.values() end
+            P.drawAuras(fight)
+        elseif P.f:IsShown() then
+            P.f:SetAlpha(0); P.f:Hide()
+        end
+        P.shown = P.alpha > 0
+    end
+
+    local ev = CreateFrame("Frame")
+    for _, e in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD" }) do pcall(function() ev:RegisterEvent(e) end) end
+    for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER", "UNIT_AURA" }) do
+        pcall(function() ev:RegisterUnitEvent(e, "player") end)
+    end
+    ev:SetScript("OnEvent", function(_, e)
+        if e == "PLAYER_REGEN_DISABLED" then P.regen = false
+        elseif e == "PLAYER_REGEN_ENABLED" then P.regen = true
+        elseif e == "PLAYER_ENTERING_WORLD" then P.regen = nil; P.loadY(); P.place()
+        elseif e == "UNIT_AURA" then P.auraDirty = true
+        elseif P.f and P.shown then P.pollAt = 0 end                     -- a change: the bars fed at the next frame
+    end)
+    ev:SetScript("OnUpdate", function(_, elapsed) pcall(P.tick, elapsed) end)
 end
