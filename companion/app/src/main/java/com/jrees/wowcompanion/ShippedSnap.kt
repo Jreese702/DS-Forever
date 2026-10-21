@@ -255,6 +255,7 @@ object ShippedSnap {
         return Result(lead + rest, "snapped ${lead.first().yd.toInt()} yd ${if (lead.first().straight) "straight" else "round"} on the shipped lattice " +
             "(${lead.size} leading of ${near.size} nodes within ${reach.toInt()} yd; $walled lines walled)")
     }
+    const val UNCHECKED_COST = 3.0          // an unchecked end's straight pointer: a yard of it this dear (the nearest node, not a far one)
     const val LATTICE_WINDOW = 120_000      // the lattice leg's scratch at most (vertices): ~ 340 x 340 steps
 
     /**
@@ -278,8 +279,16 @@ object ShippedSnap {
                 if (far.ok) return ShippedRoute.Attach(far.snaps.map {
                     if (it.cut) ShippedRoute.Join(null, it.way, it.t, it.pts.last(), it.pts, it.cost, it.yd)
                     else ShippedRoute.Join(it.node, -1, 0.0, it.pts.last(), it.pts, it.cost, it.yd) }, false, "long on the lattice: ${far.why}")
-                log?.invoke("snap: none at ${p[0].toInt()},${p[1].toInt()} on the lattice within ${v.lim.toInt()} yd (${far.why})")
-                return ShippedRoute.Attach(emptyList(), false, "no walk on the shipped lattice within ${v.lim.toInt()} yd (${s.why})")
+                // THE UNCHECKED END (the user, 2026-10-21: "Point straight at it"): the way goes as far as the network safely goes - the
+                // node nearest this end - and a plain straight pointer covers the rest, marked unchecked (logged, drawn dashed, the pin's
+                // last leg direct). Never the coarse walk drawn as if it were safe
+                val n = v.nodes.minByOrNull { hypot(it.second[0] - p[0], it.second[1] - p[1]) }
+                    ?: return ShippedRoute.Attach(emptyList(), false, "no node to point from (${s.why})")
+                val yd = hypot(n.second[0] - p[0], n.second[1] - p[1])
+                log?.invoke("snap: UNCHECKED at ${p[0].toInt()},${p[1].toInt()}: no walk on the lattice within ${v.lim.toInt()} yd (${far.why}); " +
+                    "pointed straight ${yd.toInt()} yd to node ${n.first}")
+                return ShippedRoute.Attach(listOf(ShippedRoute.Join(n.first, -1, 0.0, n.second, listOf(p, n.second), yd * UNCHECKED_COST, yd)), false,
+                    "unchecked: pointed straight ${yd.toInt()} yd (no walk on the shipped lattice within ${v.lim.toInt()} yd)", unchecked = true)
             }
             log?.invoke("snap: none at ${p[0].toInt()},${p[1].toInt()} (${s.why}) - the long attach")
             val long = ShippedRoute.DefaultAttach.attach(ShippedRoute.AttachView(emptyList(), v.ways, g.asCost, v.danger, v.k, v.lim), p)
