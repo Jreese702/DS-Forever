@@ -38,6 +38,7 @@ end }
 -- the widgets the bar uses, recorded (the stub's own Region: a frame's metatable)
 local Region = getmetatable(CreateFrame("Frame"))
 function Region:SetStatusBarTexture(t) self.bartex = t end
+function Region:GetStatusBarTexture() return self.bartex end
 function Region:SetMinMaxValues(a, b) self.min, self.max = a, b end
 function Region:SetValue(v) self.value = v; READS = READS + 1 end
 function Region:SetStatusBarColor(r, g, b) self.color = { r, g, b } end
@@ -345,6 +346,35 @@ def main():
         and near(hf.left.coord[2], 0.5 + 0.5 * 3 / 132) and near(hf.right.coord[1], 0.5 + 0.5 * 125 / 132))
     chk("prd5: one texel scale for both bars (the power bar's lip the same thickness)", near(P.pwFrame.top.h, 3 * k) and near(P.pwFrame.bot.h, 8 * k))
     chk("prd5: the inner shadow over the opening's top", hf.shade is not None)
+    # prd7 (test49, "The hud is gray for hp and invisible for mana"): three points
+    def rebuild():
+        P.lag = None; P.f = None; P.lip = None; P.build(); run(0.3)
+    def vc(tex):
+        return [round(v, 3) for v in list(tex.col.values())[:3]] if tex.col else None
+    # (1) an atlas the client LACKS: GetAtlasInfo knows nothing, SetAtlas refuses quietly (false, no error) -> the plain bar, tinted
+    L.execute("""C_Texture = { GetAtlasInfo = function(n) return nil end }
+        local R = getmetatable(CreateFrame("Frame"))
+        R.SetAtlasOld = R.SetAtlas
+        R.SetAtlas = function(self, a) if a:find("CoolDownManager%-Bar") and not a:find("BG") then return false end self.atlas = a end""")
+    ME.ptype, ME.tok = 0, "MANA"
+    rebuild()
+    chk("prd7 (1): the fill's atlas missing on this client: the plain UI-StatusBar, not a blank texture (%s / %s)"
+        % (P.hp.fill.tex, P.ex.pwFill), P.hp.fill.tex == "Interface\\TargetingFrame\\UI-StatusBar" and P.hp.fillAtlas is None
+        and P.pw.fill.tex == "Interface\\TargetingFrame\\UI-StatusBar" and P.ex.hpFill == "plain" and P.ex.pwFill == "plain")
+    chk("prd7 (2): the health colour ON the bar's own texture (%s), not only the bar's" % vc(P.hp.fill),
+        vc(P.hp.fill) == [0.12, 0.86, 0.12] and L.eval("rawequal(WowCompanion.prd.hp.fill, WowCompanion.prd.hp.bartex)"))
+    chk("prd7 (3): a mana user from the first poll (type 0, no change of type): the power bar tinted (%s)" % vc(P.pw.fill),
+        vc(P.pw.fill) == [0.0, 0.45, 1.0])
+    # the atlas present: used, set BEFORE the bar took the texture, tinted the same
+    L.execute("""local R = getmetatable(CreateFrame("Frame")); R.SetAtlas = R.SetAtlasOld
+        C_Texture = { GetAtlasInfo = function(n) return { file = 1, leftTexCoord = 0, rightTexCoord = 1, topTexCoord = 0, bottomTexCoord = 1 } end }""")
+    rebuild()
+    chk("prd7: the PRD fill present: used (%s), tinted on its texture (%s)" % (P.ex.hpFill, vc(P.hp.fill)),
+        P.ex.hpFill == "UI-HUD-CoolDownManager-Bar-c60" and vc(P.hp.fill) == [0.12, 0.86, 0.12] and vc(P.pw.fill) == [0.0, 0.45, 1.0])
+    # something resets the texture's colour: the next poll puts it back
+    L.execute("WowCompanion.prd.hp.fill:SetVertexColor(1, 1, 1)")
+    run(0.2)
+    chk("prd7: a grey reset of the texture is undone at the next poll (%s)" % vc(P.hp.fill), vc(P.hp.fill) == [0.12, 0.86, 0.12])
     chk("nothing of the game's written (no CVar)", Lg.CVAR_WRITES == 0)
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
