@@ -767,6 +767,15 @@ def main():
     chk("cp19: at most 3", len(M.eval("WC.routeWp").more) == 3)
     tapm(39)
     chk("cp19: CLEAR drops them with the pin", len(M.eval("WC.routeWp").more) == 0 and M.eval("WC.routeWp").active is False)
+    # ag5: the app ROUTING with no pin up (a direct route, a refused pin): its KEEP says so for 60 s; CLEAR ends it
+    chk("ag5: no pin, no word: not routing", M.eval("WC.routeWp.routing()") is False)
+    M.execute("T = 100"); tapm(37)
+    chk("ag5: a KEEP with no pin: routing", M.eval("WC.routeWp.routing()") is True and M.eval("WC.routeWp").active is False)
+    M.execute("T = 159"); r59 = M.eval("WC.routeWp.routing()")
+    M.execute("T = 161")
+    chk("ag5: ... for 60 s (59 s: %s, 61 s: %s)" % (r59, M.eval("WC.routeWp.routing()")), r59 is True and M.eval("WC.routeWp.routing()") is False)
+    tapm(37); tapm(39)
+    chk("ag5: CLEAR ends it at once", M.eval("WC.routeWp.routing()") is False)
 
     # the camera-yaw probe (one shot, read only): starts 20 s after login once the game's nav diamond exists, logs 4 samples a line
     P = C.probe

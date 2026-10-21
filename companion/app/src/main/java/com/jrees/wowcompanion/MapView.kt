@@ -3994,6 +3994,7 @@ class MapView(context: Context) : View(context) {
     fun routePin(): DoubleArray? {
         fun none(why: String): DoubleArray? { pinWhy = "none: $why"; return null }
         pinMore = emptyList()
+        pinRouting = false
         val m = map ?: return none("no map yet")
         if (Settings.questTracking == "polestar") return none("Quest tracking is Polestar")      // Polestar draws its own arrow (b-route-polestar)
         if (Settings.questTracking == "questtrail") return none("Quest tracking is QuestTrail")  // QuestTrail super-tracks its own pick (b-route-questtrail)
@@ -4004,11 +4005,13 @@ class MapView(context: Context) : View(context) {
             val leg = corpseLeg()
             pinWhy = if (corpseRun.bent && leg != null) "corpse: checkpoint 1 of ${leg.size - 2} on the way to your corpse (danger off)"
                 else "corpse: straight to your corpse"
+            pinRouting = true
             return corpseRun.next(corpseX, corpseY)
         }
         if (focusQid <= 0) return none(if (focusIsDefault()) "no game focus (the app's default focus only)" else "no focused quest")
         if (m.optInt("onTaxi", 0) == 1) return none("in flight")
         val r = routeFor(focusQid) ?: return none("no route for quest $focusQid")
+        pinRouting = Settings.questTracking == "safepath"          // ag5: the app routes this quest, pin or no pin
         // test48 (the user: "The tracker wants me to go off the safe path straight into mobs"): the game's pin stands on the NEXT
         // CHECKPOINT - the first bend round danger or a slope - so the top screen's arrow follows the safe way; on to the next as
         // each is passed (DangerGrid.passed). No bend: the step's own way, as before.
@@ -4029,6 +4032,8 @@ class MapView(context: Context) : View(context) {
     var pinWhy = ""; private set
     /** cp19: the checkpoints after the pin's, as [routePin] found them last (this map's 0..1; the world marker's further flags) */
     var pinMore: List<DoubleArray> = emptyList(); private set
+    /** ag5: [routePin] found the app ROUTING the game-focused quest (SafePath, or the corpse run), whether or not a pin goes up */
+    var pinRouting = false; private set
 
     // ---- POLESTAR AS THE ROUTER (b-route-polestar; Settings' "Quest tracking: Polestar"): the host taps the goal to Polestar
     // (PolestarNav, Map.lua's row "pnav") and hands its route back here; the line follows Polestar's walking route for the focused

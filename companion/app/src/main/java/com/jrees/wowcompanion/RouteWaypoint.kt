@@ -17,23 +17,35 @@ class RouteWaypoint {
     private var refusedUntil = Long.MIN_VALUE / 2
     private var noneSince = Long.MIN_VALUE
     private var sentMore: List<DoubleArray> = emptyList(); private var moreAt = Long.MIN_VALUE / 2
+    private var wasRouting = false
 
     /**
      * One look at the route at [nowMs]: [want] = the pin's place on the player's map (0..1), null = no pin; [more] = the checkpoints
      * after it (cp19: the world marker draws them too; the first [MORE_MAX] go). Returns the row's columns to tap, in order (empty =
      * nothing to send).
      */
-    fun tick(want: DoubleArray?, nowMs: Long, more: List<DoubleArray> = emptyList()): List<Int> {
+    fun tick(want: DoubleArray?, nowMs: Long, more: List<DoubleArray> = emptyList(), routing: Boolean = false): List<Int> {
+        // ag5 (test45: the app routed for minutes with no pin up, and the add-on's live aggro layer never started): while the app ROUTES
+        // the focused quest, a KEEP every KEEP_EVERY_MS even with no pin (Map.lua: a KEEP within its KEEP_S = routing); one CLEAR when
+        // the routing stops with no pin up
+        fun routeKeep(): List<Int> {
+            if (routing) { wasRouting = true; if (nowMs - keepAt >= KEEP_EVERY_MS) { keepAt = nowMs; return listOf(KEEP) } }
+            else if (wasRouting && !active) { wasRouting = false; return listOf(CLEAR) }
+            return emptyList()
+        }
         if (want == null) {
-            if (!active) return emptyList()
+            if (!active) return routeKeep()
             // test48: not cleared at the first empty look (a route flickering for a moment); only after CLEAR_GRACE_MS of none
             if (noneSince == Long.MIN_VALUE) noneSince = nowMs
             if (nowMs - noneSince < CLEAR_GRACE_MS) return emptyList()
             active = false; sentX = Double.NaN; sentY = Double.NaN; noneSince = Long.MIN_VALUE; sentMore = emptyList()
+            // (the CLEAR ends the add-on's routing too: still routing, the KEEP right behind it)
+            if (routing) { keepAt = nowMs; return listOf(CLEAR, KEEP) }
+            wasRouting = false
             return listOf(CLEAR)
         }
         noneSince = Long.MIN_VALUE
-        if (nowMs < refusedUntil) return emptyList()
+        if (nowMs < refusedUntil) return routeKeep()
         val further = more.take(MORE_MAX)
         val moved = !active || abs(want[0] - sentX) > MOVE || abs(want[1] - sentY) > MOVE
         if (moved && nowMs - setAt >= SET_EVERY_MS) {
