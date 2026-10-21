@@ -277,7 +277,7 @@ object PadMapModel {
     fun parseCd(msg: JSONObject): kotlin.collections.Map<Int, FaceCd>? {
         if (msg.optString("type") != "facecd") return null
         val k = msg.optJSONObject("k") ?: return emptyMap()
-        return FACES.mapNotNull { p ->
+        return FIGHT_POS.mapNotNull { p ->
             k.optJSONObject(p.toString())?.let { o ->
                 val d = o.optDouble("d", 0.0); val l = o.optDouble("l", 0.0)
                 if (d > 0 && l > 0 && l <= d + 0.001) p to FaceCd(d, l, o.optBoolean("g", false), o.optBoolean("e", false)) else null
@@ -325,6 +325,8 @@ object PadMapModel {
     /** A base X / Y / A (the game's Interact / Inspect / Jump): the combat view gives it a spell for fights. B (7) stays the game's Back. */
     fun isFace(slot: Slot?): Boolean = slot != null && slot.kind == Kind.FIXED && slot.pos in FACES
     val FACES = setOf(5, 6, 8)
+    /** m75: every base position a fight spell is drawn on (the D-pad's In-combat spells and X / Y / A): their cooldowns come in `facecd` */
+    val FIGHT_POS = setOf(1, 2, 3, 4, 5, 6, 8)
 
     /** A face button has a fight spell but the game had no key on it when the addon set it up: it will not cast (the room says so). */
     fun faceUnbound(map: Map, slot: Slot?): Boolean = isFace(slot) && slot!!.fight != null && !map.facePending && map.faceKeys[slot.pos] == null

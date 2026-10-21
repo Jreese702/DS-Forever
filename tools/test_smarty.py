@@ -382,5 +382,39 @@ check(qm_('{ obj = 7000 }') == (2, "soft"), "an object by its id: soft", qm_('{ 
 check(qm_('{ npc = 999, name = "infected wolf" }') == (1, "target"), "no ids (no QuestieDB): the name in the objective's words", qm_('{ npc = 999, name = "infected wolf" }'))
 check(qm_('{ npc = 999, name = "kobold" }') is None, "no match: nothing", "")
 
+# ---------------------------------------------------------------- m75: a due buff before food / drink when the mana covers it
+oc = re.search(r'-- SMARTY-ORDER-BEGIN[^\n]*\n(.*?)-- SMARTY-ORDER-END', SRC, re.S).group(1)
+O = lupa.LuaRuntime(unpack_returned_tuples=True)
+O.execute('OV = {}\n' + oc)
+order = O.eval('OV.smartOrder')
+check(order(True, 50, 200) is True, "food due, the buff costs 50, mana 200: the buff first", "")
+check(order(True, 50, 30) is False, "food due, mana 30 under the buff's 50: food / drink first", "")
+check(order(True, 50, 50) is True, "mana exactly the cost: the buff", "")
+check(order(False, 50, 10) is True, "no food due: the buff (as before)", "")
+check(order(True, None, 10) is True, "a buff with no mana cost (a shout, an aura): it never waits", "")
+check(order(True, 50, None) is True, "mana unknown: the buff", "")
+
+# ---------------------------------------------------------------- m75: the bars' "not enough mana" in a fight (ActionBar.lua)
+AB = open(os.path.join(HERE, '..', 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons', 'WowCompanion', 'ActionBar.lua'),
+          encoding='utf-8').read()
+ub = AB[AB.index('local function bit01(b)'):AB.index('-- Raw read of a field')]
+U = lupa.LuaRuntime(unpack_returned_tuples=True)
+U.execute("""
+WC = { SECRET = "" }
+function WC.isPlain(v) return true end
+MP = 30
+function WC.vitals() return { mp = MP, mpSrc = "model" } end
+C_Spell = { GetSpellPowerCost = function(id) return { { type = 0, cost = 50 } } end }
+""" + ub + """
+function um(u, m) local o = {}; usableMana(o, u, m, 774); return o.u, o.m end
+""")
+um = U.eval('um')
+check(tuple(um(True, False)) == (1, 0), "plain flags: the game's own", "")
+check(tuple(um(True, True)) == (1, 1), "plain not-enough-mana: marked", "")
+check(tuple(um("", "")) == (1, 1), "secret flags in a fight: usable, and the estimate (30) under the cost (50): marked", tuple(um("", "")))
+U.execute('MP = 400')
+check(tuple(um("", "")) == (1, 0), "secret flags, enough mana by the estimate: not marked", tuple(um("", "")))
+check(tuple(um(None, None))[0] == 0, "no answer at all (nil): unusable, as before", "")
+
 print('ALL PASS' if fails == 0 else '%d FAILED' % fails)
 sys.exit(1 if fails else 0)

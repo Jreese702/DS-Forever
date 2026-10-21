@@ -86,7 +86,7 @@ object HomeFightFace {
      * face X / Y / A the (start, length) Cast's fightCooldown takes; a face not in it gets (0, 0) = cleared.
      */
     fun cooldowns(cds: Map<Int, PadMapModel.FaceCd>, arrivalMs: Long): Map<Int, Pair<Long, Long>> =
-        PadMapModel.FACES.associateWith { pos ->
+        PadMapModel.FIGHT_POS.associateWith { pos ->
             cds[pos]?.let { PadMapModel.cdStartMs(it, arrivalMs) to PadMapModel.cdDurMs(it) } ?: (0L to 0L)
         }
 }
