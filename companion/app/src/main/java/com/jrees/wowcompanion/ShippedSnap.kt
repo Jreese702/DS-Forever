@@ -238,7 +238,7 @@ object ShippedSnap {
      * line when it is clear, else the walk round ([Walk], [lim] at most). Null: none walks clean - the net's way only.
      */
     fun directWalk(from: DoubleArray, to: DoubleArray, ground: Ground, danger: ((Double, Double) -> Float)? = null, k: Double = 0.0,
-                   lim: Double = ShippedRoute.DIRECT_MAX_YD * 1.5): Snap? {
+                   lim: Double = ShippedRoute.DIRECT_WALK_YD): Snap? {
         val view = View(from, ground, danger, k, level = true)
         val line = view.line(from, to)
         if (line.why == null) return Snap(-1, listOf(from, to), hypot(to[0] - from[0], to[1] - from[1]), line.cost, true)
