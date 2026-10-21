@@ -35,7 +35,7 @@ object SettingsTabs {
         // m62 SMART BUFFS (the user: "this setting will need its own section in the settings"): Y out of combat, per character
         SMART_Y(Tab.CONTROLLER, "Smart Y (out of combat, nothing targeted)", listOf("Smart Y")),
         GAME_UI(Tab.TOP, "Game UI on the top screen", listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window",
-            "NPC windows", "Cast bar", "HUD mode", "HUD height", "Loot window", "Compass bar", "Compass follows the camera")),
+            "NPC windows", "Cast bar", "HUD mode", "HUD height", "HUD width", "HUD scale", "Loot window", "Compass bar", "Compass follows the camera", "Hide game tooltips")),
         MAP(Tab.HOME, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "Quest tracking", "Avoid dangerous areas", "World map")),
         CHAT(Tab.HOME, "Chat", listOf("Message input")),
         // 1.0.9 (the user, on Spoken: "make an addon section of our settings"): one block per third-party add-on (ThirdPartyAddons)

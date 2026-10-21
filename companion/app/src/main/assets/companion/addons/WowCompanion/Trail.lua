@@ -1096,7 +1096,7 @@ do
             pdz = C.wm and C.wm.pinDz or nil,
             more = type(WC.routeWp) == "table" and type(WC.routeWp.more) == "table" and #WC.routeWp.more or 0,
             prd = (type(WC.prd) == "table" and WC.prd.f) and { a = math.floor((WC.prd.alpha or 0) * 100 + 0.5), why = WC.prd.why,
-                src = WC.prd.src, y = WC.prd.y, nb = WC.prd.nb, nd = WC.prd.nd, pt = WC.prd.ptok, cbad = WC.prd.curveBad, ab = WC.prd.ab, ex = WC.prd.ex } or nil, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
+                src = WC.prd.src, y = WC.prd.y, nb = WC.prd.nb, nd = WC.prd.nd, pt = WC.prd.ptok, cbad = WC.prd.curveBad, ab = WC.prd.ab, ex = WC.prd.ex, w = WC.prd.wd, s = WC.prd.sc, sel = WC.prd.sel, prest = WC.prd.prest } or nil, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
             lx = C.cam.lx and math.floor(C.cam.lx * 100 + 0.5) / 100 or nil, ly = C.cam.ly and math.floor(C.cam.ly * 100 + 0.5) / 100 or nil,
             ferr = C.cam.ferr and math.floor(math.deg(C.cam.ferr) + 0.5) or nil,
             gp = C.cam.gp, from = C.cam.from, rx = C.cam.rx and math.floor(C.cam.rx * 100 + 0.5) / 100 or nil,
@@ -2211,10 +2211,24 @@ end
 -- to the StatusBar (prd1's order, which tinted in game; prd6 set it after); the colour goes both ways (SetStatusBarColor and the
 -- texture's own vertex colour) and again at every poll; the power's colour no longer waits for a CHANGE of power type (a mana user
 -- starting at type 0). The probe says which fill each bar got (prd.ex.hpFill / pwFill).
-WC.prd = { V = "prd7", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -300, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 220, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
-           ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.15, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
+-- prd8 (test50, the user: "it should Fade when Mana is full as well"; "the HUD still feels a bit small, maybe it just needs to be a bit
+-- wider? can we add some scaling settings so that I can tweak it and tell you what I like"):
+--   THE POWER TOO: out of combat the bar stays until health AND power are at rest - mana full (Controller's WC.vitals: its plain or
+--   modelled mana), energy / focus full (no plain reader: ENERGY_S after the last fight or spend, the time a full refill takes),
+--   rage / runic power empty (RAGE_S after the fight: they decay to nothing); either one off its rest brings the bar back at once.
+--   While the power is off its rest the bars' layer is plainly shown (the health curve would hide it when only the power is low).
+--   WIDTH AND SCALE: two more of the app's settings beside the height, stepped on Hub's same row: Hub's column 39 SELECTS which one
+--   its step columns move (height, width, scale; back to height SEL_S after the last tap, so an app that only knows the height
+--   still works); per character in our saved data (prdW / prdS); the bar redrawn at once (the app's live preview). Wider by default.
+-- prd8 also (the user: "a more animated Fade effect, Fading up and in when entering, and then fading down and out when leaving"): one
+-- visibility value P.vis moves at IN_S / OUT_S toward shown or hidden, and both the alpha and a slide offset follow it through the
+-- same eased curve (1 - (1 - v)^2: an ease-out as it comes in, an ease-in as it goes), TRAVEL spec px from below; a hide that turns
+-- into a show turns round where it is. The slide is an offset on the player's height, never written to it.
+WC.prd = { V = "prd8", TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 260, W_MIN = 180, W_MAX = 400, W_STEP = 20,
+           S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -300, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 260, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
+           ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.25, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
            alpha = 0, shown = false, why = "off" }
--- (the names Hub's hub15 row reads: y, on, min, max, step, def, nudge)
+-- (the names Hub's hub15 row reads: y, on, min, max, step, def, nudge; hub16 adds w / s and their ranges, sel and select)
 WC.prd.min, WC.prd.max, WC.prd.step, WC.prd.def = WC.prd.Y_MIN, WC.prd.Y_MAX, WC.prd.STEP, WC.prd.Y_DEF
 do
     local P = WC.prd
@@ -2251,7 +2265,44 @@ do
         return P.y
     end
     -- the app's slider: one step down (-1) / up (+1), or back to the default (0)
+    -- prd8: the width and the scale, per character
+    local function kept(key, def, lo, hi)
+        local t = type(WowCompanionDB) == "table" and WowCompanionDB[key]
+        local v = type(t) == "table" and num(t[who()]) or nil
+        return v and math.max(lo, math.min(hi, v)) or def
+    end
+    local function keep(key, v, def)
+        if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+        if type(WowCompanionDB[key]) ~= "table" then WowCompanionDB[key] = {} end
+        WowCompanionDB[key][who()] = v ~= def and v or nil
+    end
+    function P.loadSize()
+        P.wd = kept("prdW", P.W_DEF, P.W_MIN, P.W_MAX)
+        P.sc = kept("prdS", P.S_DEF, P.S_MIN, P.S_MAX)
+        P.W = P.wd
+        return P.wd, P.sc
+    end
+    -- Hub's column 39: the next setting the step columns move (height -> width -> scale -> height)
+    function P.select()
+        P.sel = ({ y = "w", w = "s", s = "y" })[P.sel or "y"] or "y"
+        P.selAt = now()
+        return P.sel
+    end
     function P.nudge(d)
+        if P.sel ~= "y" and P.selAt and now() - P.selAt <= P.SEL_S then
+            P.selAt = now()
+            if not P.wd then P.loadSize() end
+            if P.sel == "w" then
+                P.wd = d == 0 and P.W_DEF or math.max(P.W_MIN, math.min(P.W_MAX, P.wd + (d > 0 and P.W_STEP or -P.W_STEP)))
+                keep("prdW", P.wd, P.W_DEF)
+            else
+                P.sc = d == 0 and P.S_DEF or math.max(P.S_MIN, math.min(P.S_MAX, P.sc + (d > 0 and P.S_STEP or -P.S_STEP)))
+                keep("prdS", P.sc, P.S_DEF)
+            end
+            P.resize()
+            return P.sel == "w" and P.wd or P.sc
+        end
+        P.sel = "y"
         P.y = P.y or P.loadY()
         if d == 0 then P.y = P.Y_DEF else P.y = math.max(P.Y_MIN, math.min(P.Y_MAX, P.y + (d > 0 and P.STEP or -P.STEP))) end
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
@@ -2425,10 +2476,12 @@ do
     end
     function P.build()
         if P.f then return P.f end
+        P.loadSize()
         local f = CreateFrame("Frame", nil, UIParent)
         f:SetFrameStrata("MEDIUM")
         f:EnableMouse(false)
         f:SetSize(u(P.W), u(P.HH + P.BAR_GAP + P.PH))
+        pcall(function() f:SetScale(P.sc / 100) end)
         f:SetAlpha(0)
         f:Hide()
         P.f = f
@@ -2462,10 +2515,22 @@ do
         P.place()
         return f
     end
+    -- prd8: the width and the scale applied to what is built (the app's live preview)
+    function P.resize()
+        if not P.wd then P.loadSize() end
+        P.W = P.wd
+        if not P.f then return end
+        P.f:SetSize(u(P.W), u(P.HH + P.BAR_GAP + P.PH))
+        pcall(function() P.f:SetScale(P.sc / 100) end)
+        for _, b in ipairs({ P.hp, P.pw, P.lag }) do if b then b:SetWidth(u(P.W)) end end
+        for _, b in ipairs({ P.heal, P.shield }) do if b then b:SetWidth(u(P.W)) end end
+        if P.lag then P.lag:SetAllPoints(P.hp) end
+        P.cache = nil
+    end
     function P.place()
         if not P.f then return end
         P.f:ClearAllPoints()
-        P.f:SetPoint("TOP", UIParent, "CENTER", 0, u(P.y or P.loadY()))
+        P.f:SetPoint("TOP", UIParent, "CENTER", 0, u((P.y or P.loadY()) + (P.dy or 0)))
     end
 
     -- ---------------------------------------------------------------- the values (fed, never read)
@@ -2771,6 +2836,25 @@ do
         end
         return ok
     end
+    -- prd8: is the power at rest (nil = no word: counted as at rest, so the bar is never stuck on)?
+    function P.powerRest(t, fight)
+        if fight then return false, "fight" end
+        local tok = P.ptok
+        if tok == nil or tok == "MANA" then
+            if type(WC.vitals) == "function" then
+                local ok, v = pcall(WC.vitals)
+                if ok and type(v) == "table" then
+                    if v.mpSrc == "none" then return true, "no pool" end
+                    if num(v.mp) and num(v.mpMax) and v.mpMax > 0 then return v.mp >= v.mpMax * P.FULL, "mana" end
+                end
+            end
+            return nil, "mana?"
+        end
+        local since = math.max(P.lastFight or -1e9, P.spentAt or -1e9)
+        if tok == "ENERGY" or tok == "FOCUS" then return t - since >= P.ENERGY_S, "refill" end
+        if tok == "RAGE" or tok == "RUNIC_POWER" then return t - (P.lastFight or -1e9) >= P.RAGE_S, "decay" end
+        return nil, "other"
+    end
     function P.fight()
         if P.regen == false then return true end                       -- PLAYER_REGEN_DISABLED: starting combat
         local ok, c = pcall(UnitAffectingCombat, "player")
@@ -2781,7 +2865,7 @@ do
         P.on = false
         if not want then
             if P.f and P.f:IsShown() then P.f:SetAlpha(0); P.f:Hide() end
-            P.alpha, P.shown, P.why, P.offAt = 0, false, whyNot, nil
+            P.alpha, P.shown, P.why, P.offAt, P.vis, P.dy = 0, false, whyNot, nil, 0, 0
             return
         end
         P.build()
@@ -2792,22 +2876,31 @@ do
         if fight then P.lastFight = t end
         -- out of combat, past the fight's hold: the engine's curve, when it takes (the bars' layer shows exactly while hurt)
         local settled = not fight and (not P.lastFight or t - P.lastFight >= P.HOLD_S)
-        if settled and P.curveSet() then
+        local rest, rwhy = P.powerRest(t, fight)
+        P.prest = rwhy
+        local powerOff = rest == false and not fight
+        if powerOff then
+            pcall(function() P.g:SetAlpha(1) end)                       -- (the power keeps it up: the health curve may not hide it)
+        elseif settled and P.curveSet() then
             hurt, src = true, "curve"                                    -- (our timing stays on: the layer itself shows or not)
         else
             pcall(function() P.g:SetAlpha(1) end)
         end
         P.src = src
-        local on = fight or hurt == true
+        local on = fight or hurt == true or powerOff
         if on then P.offAt = nil
         elseif not P.offAt then P.offAt = t end
         -- the target: 1 while wanted; out of combat and full (or no signal), HOLD_S then a FADE_S fade
         local target = 1
         if not on then target = (t - P.offAt >= P.HOLD_S) and 0 or 1 end
-        if hurt == nil and not fight and not P.lastFight then target = 0 end   -- no signal and no fight yet: nothing to show
-        local rate = target > P.alpha and (1 / P.IN_S) or (1 / P.FADE_S)
-        if target > P.alpha then P.alpha = math.min(target, P.alpha + rate * dt) else P.alpha = math.max(target, P.alpha - rate * dt) end
-        P.why = fight and "fight" or (src == "curve" and "curve") or (hurt and "hurt") or (P.alpha > 0 and "fading") or "full"
+        if hurt == nil and not fight and not P.lastFight and not powerOff then target = 0 end   -- no signal and no fight yet: nothing to show
+        -- the eased fade-and-slide: P.vis linear in time, the alpha and the offset on one curve (continuous both ways)
+        if target > P.vis then P.vis = math.min(target, P.vis + dt / P.IN_S) else P.vis = math.max(target, P.vis - dt / P.OUT_S) end
+        local e = 1 - (1 - P.vis) ^ 2
+        P.alpha = e
+        local dy = -P.TRAVEL * (1 - e)
+        if dy ~= P.dy then P.dy = dy; P.place() end
+        P.why = fight and "fight" or (powerOff and "power") or (src == "curve" and "curve") or (hurt and "hurt") or (P.alpha > 0 and "fading") or "full"
         if P.alpha > 0 then
             if not P.f:IsShown() then P.f:Show() end
             P.f:SetAlpha(P.alpha * P.REST)
@@ -2824,7 +2917,7 @@ do
     for _, e in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD" }) do pcall(function() ev:RegisterEvent(e) end) end
     for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER", "UNIT_AURA",
                          "UNIT_HEAL_PREDICTION", "UNIT_ABSORB_AMOUNT_CHANGED", "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START",
-                         "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_CHANNEL_STOP" }) do
+                         "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_CHANNEL_STOP" }) do
         pcall(function() ev:RegisterUnitEvent(e, "player") end)
     end
     ev:SetScript("OnEvent", function(_, e, unit, _, spellID)
@@ -2832,11 +2925,59 @@ do
             if P.f then pcall(P.castCost, spellID) end
         elseif e == "UNIT_SPELLCAST_STOP" or e == "UNIT_SPELLCAST_FAILED" or e == "UNIT_SPELLCAST_INTERRUPTED" or e == "UNIT_SPELLCAST_CHANNEL_STOP" then
             P.castEnd()
+        elseif e == "UNIT_SPELLCAST_SUCCEEDED" then P.spentAt = now()
         elseif e == "PLAYER_REGEN_DISABLED" then P.regen = false
         elseif e == "PLAYER_REGEN_ENABLED" then P.regen = true
-        elseif e == "PLAYER_ENTERING_WORLD" then P.regen = nil; P.loadY(); P.place()
+        elseif e == "PLAYER_ENTERING_WORLD" then P.regen = nil; P.loadY(); P.loadSize(); P.place()
         elseif e == "UNIT_AURA" then P.auraDirty = true
         elseif P.f and P.shown then P.pollAt = 0 end                     -- a change: the bars fed at the next frame
     end)
     ev:SetScript("OnUpdate", function(_, elapsed) pcall(P.tick, elapsed) end)
+end
+
+-- ================================================================== HIDE THE GAME'S TOOLTIPS (tt1; Settings > Top screen)
+-- The user (test50): "I need a setting to hide top screen tooltips". While the app's "Hide game tooltips" is on, the game's tooltips
+-- on the top screen are INVISIBLE - alpha 0 only, held there by hooks on their OnShow and OnUpdate (the game fades them itself) -
+-- never hidden, cleared or moved: whatever reads a tooltip's text still reads it (Map's minimap probe uses C_TooltipInfo, Interact's
+-- own dimTip only sets alpha too). The choice lives only in our saved data (WowCompanionDB.hideTips); off, the alpha is 1 again. No CVar.
+WC.tips = { V = "tt1", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ItemRefShoppingTooltip1",
+                                  "ItemRefShoppingTooltip2", "EmbeddedItemTooltip", "NamePlateTooltip", "GameNoHeaderTooltip" },
+            hooked = {}, on = false }
+do
+    local T = WC.tips
+    function T.wanted() return type(WowCompanionDB) == "table" and WowCompanionDB.hideTips == true end
+    local function zero(fr)
+        if not T.on then return end
+        local ok, a = pcall(fr.GetAlpha, fr)
+        if not ok or type(a) ~= "number" or a > 0 then pcall(fr.SetAlpha, fr, 0) end
+    end
+    -- hook the tooltips the client has (once each; a frame made later is picked up at the next apply)
+    function T.hook()
+        for _, n in ipairs(T.FRAMES) do
+            local fr = _G[n]
+            if type(fr) == "table" and not T.hooked[n] and type(fr.HookScript) == "function" then
+                T.hooked[n] = true
+                pcall(fr.HookScript, fr, "OnShow", zero)
+                pcall(fr.HookScript, fr, "OnUpdate", zero)
+            end
+        end
+    end
+    function T.apply()
+        T.on = T.wanted()
+        T.hook()
+        for _, n in ipairs(T.FRAMES) do
+            local fr = _G[n]
+            if type(fr) == "table" and type(fr.SetAlpha) == "function" then pcall(fr.SetAlpha, fr, T.on and 0 or 1) end
+        end
+        return T.on
+    end
+    -- the app's switch (Interact's ACT.tips)
+    function T.set(on)
+        if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+        WowCompanionDB.hideTips = on and true or nil
+        return T.apply()
+    end
+    local f = CreateFrame("Frame")
+    for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD" }) do pcall(function() f:RegisterEvent(e) end) end
+    f:SetScript("OnEvent", function() pcall(T.apply) end)
 end
