@@ -814,8 +814,20 @@ class HomeView(
     }
 
     fun ack(msg: JSONObject) {
-        val note = quests.ack(msg, System.currentTimeMillis()) ?: return
+        // every answer to a focus is logged (test50: 92860's refusal was only drawn, so the log could not say why it never took)
+        if (msg.optString("op") == "track" && quests.wanted != null)
+            Log.i(TAG, "focus ${quests.wanted}: the game answered ${if (msg.optBoolean("ok")) "ok" else "refused"} for " +
+                "${if (msg.has("id")) msg.optInt("id") else "no quest"}${msg.optString("why", "").let { if (it.isEmpty()) "" else " ($it)" }}")
+        val asked = quests.wanted
+        val note = quests.ack(msg, System.currentTimeMillis())
+        if (asked != null && quests.wanted == null && note == "") Log.i(TAG, "focus $asked: took (the game's answer)")
+        if (note == null) {
+            // a refusal of a focus: the check retries once the fresh list is in (or after its short wait)
+            if (quests.wanted != null) postDelayed({ focusCheck() }, HomeQuests.DOC_WAIT_MS + 50L)
+            return
+        }
         if (note.isNotEmpty()) questPane.note(note)
+        focusCheck()
         questPane.invalidate()
     }
 
@@ -825,6 +837,7 @@ class HomeView(
      */
     fun tick() {
         val now = System.currentTimeMillis()
+        focusCheck()
         if (quests.expire(now)) questPane.note("No answer from the game")
         if (auras.expire(now)) auraPane.note("No answer from the game")
         if (auraPane.open != null) auraPane.invalidate()                 // time left counts down
@@ -867,21 +880,53 @@ class HomeView(
     fun focusQuest(id: Int, note: (String) -> Unit) {
         when (val t = quests.tapDisc(id, GameInput.live(), System.currentTimeMillis())) {
             is FocusTap.Send -> {
-                // the cells of ONE focus, in order (q5: the no-action pick, then the act; an older pad: its focus row), in one
-                // shell session through quests' TapBridge.taps, all or nothing
-                val cells = QuestPad.cells(pad, QuestPad.Act.FOCUS, t.slot)
-                Log.i(TAG, "focus $id: send ${cells ?: "no cells"}")
-                val ok = cells != null && TapBridge.taps(context, pad, cells) { why ->
-                    Log.i(TAG, "focus $id: tap failed: $why")
-                    post { quests.sendFailed(); note(why) }
-                }
-                if (!ok) { quests.sendFailed(); note("The game has not published its tap pad") }
+                focusNote = note
+                sendFocus(id, t.slot, "send", note)
             }
             // every refusal goes to logcat too (tag WCHOME): the note is only drawn, so a test could not be read afterwards
             is FocusTap.Refused -> { Log.i(TAG, "focus $id: refused: ${t.why}"); note(t.why) }
             FocusTap.Already -> Log.i(TAG, "focus $id: already focused, nothing sent")
         }
         questPane.invalidate()
+    }
+
+    /** where the waiting focus's give-up is shown (the room its tap came from) */
+    private var focusNote: (String) -> Unit = { questPane.note(it) }
+
+    /**
+     * ONE FOCUS PAIR for quest [id] at column [slot] (q5: the no-action pick, then the act; an older pad: its focus row), in one shell
+     * session through quests' TapBridge.taps, all or nothing; [what] names it in the WCHOME line. The focus check looks again
+     * [HomeQuests.CHECK_MS] later.
+     */
+    private fun sendFocus(id: Int, slot: Int, what: String, note: (String) -> Unit) {
+        val cells = QuestPad.cells(pad, QuestPad.Act.FOCUS, slot)
+        Log.i(TAG, "focus $id: $what ${cells ?: "no cells"}")
+        val ok = cells != null && TapBridge.taps(context, pad, cells) { why ->
+            Log.i(TAG, "focus $id: tap failed: $why")
+            post { quests.sendFailed(); note(why) }
+        }
+        if (!ok) { quests.sendFailed(); note("The game has not published its tap pad"); return }
+        postDelayed({ focusCheck() }, HomeQuests.CHECK_MS + 50L)
+    }
+
+    /**
+     * THE FOCUS CHECK ([FocusCheck]; fix/focus-latency): after each quests document, each answer, each tick and [HomeQuests.CHECK_MS]
+     * after each send. A focus that did not take goes again by quest id (its column afresh from the newest list); a give-up is said.
+     */
+    private fun focusCheck() {
+        when (val c = quests.check(System.currentTimeMillis())) {
+            is FocusCheck.Took -> Log.i(TAG, "focus ${c.questId}: took (the game's focus) ${c.ms} ms after the first send, send ${c.tries}")
+            is FocusCheck.Retry -> {
+                Log.i(TAG, "focus ${c.questId} did not take (game focus ${c.gameFocus ?: "none"}: ${c.why}); retry ${c.n} by id")
+                sendFocus(c.questId, c.slot, "retry ${c.n} by id, column ${c.slot}", focusNote)
+            }
+            is FocusCheck.GaveUp -> {
+                Log.i(TAG, "focus ${c.questId}: gave up after ${c.tries} sends (game focus ${c.gameFocus ?: "none"}; last: ${c.why})")
+                focusNote("The game did not change the focus")
+                questPane.invalidate()
+            }
+            FocusCheck.Idle -> {}
+        }
     }
 
     /** UNTRACK quest [id] (the Map room's X on its list; map session): ONE action, the game's tracker drops it; refusals to [note] */

@@ -3522,6 +3522,9 @@ class MapView(context: Context) : View(context) {
     }
     /** the quest shown as focused (the game's, else the default), 0 = none */
     fun shownFocusQuest(): Int = shownFocus()
+    /** the GAME's focused quest (map.superTracked, else the quests document's flag), 0 = none: what the route's pin stands for, and
+     *  what Home's focus check reads back */
+    fun gameFocusQuest(): Int = focusQid
 
     /**
      * Called (on the UI thread) whenever the SHOWN focus changes -- the game's focus or the default. Home's quest card reads

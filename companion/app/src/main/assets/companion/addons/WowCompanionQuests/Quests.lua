@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q47"    -- bump on every change; the app shows it, so a stale build is visible
+local QV = "q48"    -- bump on every change; the app shows it, so a stale build is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1553,6 +1553,10 @@ local function ack(op, id, ok, why, extra)
     local out = { type = "questack", op = op, id = id, ok = ok and true or false, why = why, v = QV }
     if extra then for k, v in pairs(extra) do out[k] = v end end
     WC.send(WC.encode(out))
+    -- q48 (fix/focus-latency, test50): the quests document right behind the answer, in the same flush, instead of 0.25 s later: the
+    -- app's focus and the route's pin follow the answer at once. After a REFUSAL it goes even when unchanged, so the app's retry reads
+    -- its columns from a fresh list (a stale column is the usual reason). soon() still follows the game's own events.
+    pcall(emitQuests, not ok)
     soon()
     WC.push()
     if not quiet then
@@ -1586,6 +1590,8 @@ function OPS.track(id)
     if R and R.active then
         R.qid = id
         if type(WowCompanionDB) == "table" and type(WowCompanionDB.routeWp) == "table" then WowCompanionDB.routeWp.qid = id end
+        -- q48: no SUPER_TRACKING_CHANGED fires for this, so the map document (superTracked) is sent at once too
+        if type(WC.snapshotSoon) == "function" then pcall(WC.snapshotSoon, "supertrack") end
         return result("track", id, true, nil)
     end
     CALL(function() C_SuperTrack.SetSuperTrackedQuestID(id) end)
@@ -2316,9 +2322,10 @@ hf:SetScript("OnEvent", function() hookWorldMap(); hookMicro() end)
 pcall(function() hf:RegisterEvent("PLAYER_LOGIN") end)
 
 if WC.pad then
-    WC.pad.op("qpick", "quest", function(key)
-        -- a column no quest holds (a tap made from a stale document) picks nothing, and clears an older pick
-        picked = key ~= nil and { id = key, at = GetTime() } or nil
+    WC.pad.op("qpick", "quest", function(key, col)
+        -- a column no quest holds (a tap made from a stale document) picks nothing, and clears an older pick; q48: it is remembered
+        -- as such, so the action's refusal says "a stale column" instead of "no quest picked" (a lost pick)
+        picked = { id = key, col = col, at = GetTime() }
     end)
     WC.pad.op("qact", "questact", function(_, col)
         -- the generic guests' columns: no quest pick is read or spent here
@@ -2333,6 +2340,8 @@ if WC.pad then
             pcall(a.fn)
         elseif not p then
             ack(a.op, nil, false, "no quest picked")
+        elseif p.id == nil then
+            ack(a.op, nil, false, "column " .. tostring(p.col) .. " holds no quest (a stale document)", { col = p.col })
         elseif GetTime() - p.at > PICK_SECONDS then
             ack(a.op, p.id, false, "the pick was too old")
         else

@@ -73,6 +73,36 @@ class RouteWaypointTest {
         assertTrue(w.tick(null, 70_000L, routing = true).isEmpty())
     }
 
+    @Test fun aSwitchToAnotherQuestMovesThePinAtOnce() {
+        // fix/focus-latency (test50: "it just took like 6 seconds"): the player's new focus skips the 5 s pace
+        val w = RouteWaypoint()
+        assertEquals(36, w.tick(doubleArrayOf(0.5, 0.5), 0L, quest = 92703).first())
+        assertTrue(w.tick(doubleArrayOf(0.6, 0.6), 1_000L, quest = 92703).isEmpty())          // the same quest: the pace holds
+        assertEquals(36, w.tick(doubleArrayOf(0.2, 0.8), 1_200L, quest = 94896).first())     // another quest: at once
+        assertTrue(w.tick(doubleArrayOf(0.25, 0.8), 1_400L, quest = 94896).isEmpty())        // and the pace again after it
+        assertEquals(36, w.tick(doubleArrayOf(0.25, 0.8), 6_200L, quest = 94896).first())
+    }
+
+    @Test fun aSwitchToAQuestWithADirectRouteClearsAtOnce() {
+        // the new quest's route is direct: the CLEAR without the 8 s grace (it gives the game's super-track to the new quest)
+        val w = RouteWaypoint()
+        assertEquals(36, w.tick(doubleArrayOf(0.5, 0.5), 0L, quest = 92703).first())
+        assertTrue(w.tick(null, 1_000L, quest = 92703).isEmpty())                               // the same quest: the grace holds
+        assertEquals(listOf(39), w.tick(null, 1_500L, quest = 92860))
+        assertTrue(w.tick(null, 2_000L, quest = 92860).isEmpty())
+        // a switch with no pin up owes nothing later: the next pin keeps its pace rules
+        assertTrue(w.tick(doubleArrayOf(0.3, 0.3), 3_000L, quest = 92860).isEmpty())          // 5 s from the last SET, as ever
+        assertEquals(36, w.tick(doubleArrayOf(0.3, 0.3), 5_000L, quest = 92860).first())
+    }
+
+    @Test fun theFirstQuestSeenIsNoSwitch() {
+        // an app start (no quest seen before): the old rules, a fresh pin at once as ever, the grace for none
+        val w = RouteWaypoint()
+        assertEquals(36, w.tick(doubleArrayOf(0.5, 0.5), 0L).first())
+        assertTrue(w.tick(null, 1_000L, quest = 92703).isEmpty())
+        assertEquals(listOf(39), w.tick(null, 9_500L, quest = 92703))
+    }
+
     @Test fun digitsRoundTrip() {
         for (v in listOf(0.0, 0.31, 0.69, 1.0)) {
             val d = RouteWaypoint.digits(v)

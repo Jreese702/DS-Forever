@@ -442,6 +442,23 @@ sealed class FocusTap {
 }
 
 /**
+ * THE FOCUS CHECK (fix/focus-latency, test50: quest 92860 was sent twice and never became the game's focus, and nothing said why).
+ * After a focus pair goes out, the game's focus is read back from the add-on: its questack ("track": ok, or why not) and the next
+ * quests document's `focus`. Not the wanted quest within [HomeQuests.CHECK_MS] (or a refusal) = it did not take: the pair goes again
+ * BY QUEST ID, its column looked up afresh in the newest quests list (a stale column is the usual reason), at most
+ * [HomeQuests.MAX_TRIES] sends in all. Focusing the same quest twice is harmless, so a retry can never do damage.
+ */
+sealed class FocusCheck {
+    object Idle : FocusCheck()
+    /** the game's focus is [questId], [ms] after the first send, at send number [tries] */
+    data class Took(val questId: Int, val tries: Int, val ms: Long) : FocusCheck()
+    /** send the pair again: column [slot] (from the newest list); retry number [n]; [gameFocus] the game's focus now (null none) */
+    data class Retry(val questId: Int, val slot: Int, val n: Int, val gameFocus: Int?, val why: String) : FocusCheck()
+    /** no more tries: [why] is the last thing heard (the add-on's answer, or the silence) */
+    data class GaveUp(val questId: Int, val tries: Int, val gameFocus: Int?, val why: String) : FocusCheck()
+}
+
+/**
  * THE QUESTS PART OF HOME, from the `quests` doc (WowCompanionQuests). The doc is the WHOLE quest
  * log; TRACKED = has "watch" (the game's objective tracker), FOCUSED = "focus" (super-tracking, the
  * single quest with the on-screen waypoint). They are different things (AGENT_LOG 09-27 11:xx).
@@ -464,6 +481,14 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
     /** what the waiting tap asked for, as the questack names it: "track" (focus) or "unwatch" (untrack) */
     private var pendingOp = "track"
     private var currentAt = -1L
+    // the focus check ([FocusCheck]): the quest a focus tap wants, its sends, and what the add-on said
+    private var want: Int? = null
+    private var wantTries = 0
+    private var wantFirstAt = 0L
+    private var wantSentAt = 0L
+    private var wantWhy: String? = null
+    private var wantFailedAt = 0L
+    private var docAt = -1L
 
     /**
      * A quests doc arrived at [now]; [current] is InputGate's verdict (written by the game moments
@@ -473,7 +498,7 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
      * room today.
      */
     fun update(q: JSONObject, current: Boolean = false, now: Long = 0L) {
-        if (current) currentAt = now
+        if (current) { currentAt = now; docAt = now }
         val plv = if (q.has("plv")) q.optInt("plv") else null
         val triv = if (q.has("trivRange")) q.optInt("trivRange") else 5
         val all = ArrayList<HomeQuest>()
@@ -510,11 +535,46 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
         if (!live) return FocusTap.Refused("Waiting for the game")
         if (currentAt < 0 || now - currentAt >= freshMs) return FocusTap.Refused("Waiting for the game's quest list")
         if (inCombat) return FocusTap.Refused("In combat")
-        if (pending(now) != null) return FocusTap.Refused("Waiting for the game's answer")
+        // a waiting FOCUS does not hold a newer one back (test50: the app's default focus push, refused by the game, blocked the
+        // player's own tap for the whole 8 s wait): the newer choice replaces it. Any other waiting action still does.
+        val waiting = pending(now)
+        if (waiting != null && (pendingOp != "track" || waiting == questId)) return FocusTap.Refused("Waiting for the game's answer")
         if (!hasFocusRow) return FocusTap.Refused("Focus is not on the tap pad yet")
         val slot = q.slot ?: return FocusTap.Refused("This quest has no tap column")
         pendingId = questId; pendingAt = now; pendingOp = "track"
+        want = questId; wantTries = 1; wantFirstAt = now; wantSentAt = now; wantWhy = null; wantFailedAt = 0L
         return FocusTap.Send(questId, slot)
+    }
+
+    /**
+     * THE FOCUS CHECK, after a document, an answer or a tick at [now] ([FocusCheck]). Took / GaveUp end the wait; Retry has
+     * already counted its send (the caller taps its column; a failed send is [sendFailed]).
+     */
+    fun check(now: Long): FocusCheck {
+        val w = want ?: return FocusCheck.Idle
+        if (focusId == w) {
+            endWant()
+            return FocusCheck.Took(w, wantTries, now - wantFirstAt)
+        }
+        val refused = wantWhy != null
+        if (!refused && now - wantSentAt < CHECK_MS) return FocusCheck.Idle
+        // a refusal: the add-on sends a fresh quests list behind it (q48); the retry waits for it (a little), so the column is new
+        if (refused && docAt < wantFailedAt && now - wantFailedAt < DOC_WAIT_MS) return FocusCheck.Idle
+        val why = wantWhy ?: "no change ${now - wantSentAt} ms after the send"
+        if (wantTries >= MAX_TRIES) { endWant(); return FocusCheck.GaveUp(w, wantTries, focusId, why) }
+        val q = inLog(w) ?: run { endWant(); return FocusCheck.GaveUp(w, wantTries, focusId, "$why; not in the game's quest list any more") }
+        val slot = q.slot ?: run { endWant(); return FocusCheck.GaveUp(w, wantTries, focusId, "$why; no tap column any more") }
+        wantTries++; wantSentAt = now; wantWhy = null; wantFailedAt = 0L
+        pendingId = w; pendingAt = now; pendingOp = "track"
+        return FocusCheck.Retry(w, slot, wantTries - 1, focusId, why)
+    }
+
+    /** the quest a focus tap still wants (sent, not confirmed, not given up), or null */
+    val wanted: Int? get() = want
+
+    private fun endWant() {
+        if (pendingOp == "track" && pendingId == want) pendingId = null
+        want = null
     }
 
     /**
@@ -600,6 +660,16 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
     fun ack(msg: JSONObject, now: Long): String? {
         if (msg.optString("op") != pendingOp) return null
         val id = if (msg.has("id")) msg.optInt("id") else null
+        // a FOCUS answer feeds the focus check: ok for our quest = it took (the add-on read the game's focus back); anything else is
+        // kept as the reason and the check retries (no note yet: only a give-up is shown)
+        val w = want
+        if (pendingOp == "track" && w != null && pending(now) != null) {
+            if (msg.optBoolean("ok") && id == w) { endWant(); return "" }
+            wantWhy = if (msg.optBoolean("ok") && id != null) "the game focused $id instead (a stale column)"
+                else msg.optString("why", "").ifEmpty { "refused" } + (if (id != null && id != w) " (for quest $id)" else "")
+            wantFailedAt = now
+            return null
+        }
         // an answer after the wait ran out is nobody's: an id-less one must not land on a newer tap
         if (pending(now) == null || (id != null && id != pendingId)) return null
         pendingId = null
@@ -615,7 +685,7 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
     }
 
     /** the tap could not be sent (no pad geometry, device busy): nothing is waiting for an answer */
-    fun sendFailed() { pendingId = null }
+    fun sendFailed() { pendingId = null; want = null }
 
     /** the quest whose focus tap is waiting for the game's answer, while the wait lasts */
     fun pending(now: Long): Int? = if (pendingId != null && now - pendingAt < pendingMs) pendingId else null
@@ -624,10 +694,19 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
     fun expire(now: Long): Boolean {
         if (pendingId == null || now - pendingAt < pendingMs) return false
         pendingId = null
+        want = null
         return true
     }
 
     companion object {
+        /** a focus not confirmed this long after its send did not take (the answer and the document come in ~0.5 s: tap ~0.2 s, the
+         *  add-on's flush <= 0.2 s, LogTail's 50 ms poll) */
+        const val CHECK_MS = 1_500L
+        /** after a refusal, how long the retry waits for the fresh quests list the add-on sends behind it */
+        const val DOC_WAIT_MS = 1_000L
+        /** sends of one focus in all: the first and two retries */
+        const val MAX_TRIES = 3
+
         /** the game's rule (difficultyutil / GetDifficultyColor), as the Quests room already applies it */
         fun tier(level: Int?, plv: Int?, trivRange: Int, trivial: Boolean): QuestTier {
             if (trivial) return QuestTier.TRIVIAL
