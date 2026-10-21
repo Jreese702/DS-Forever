@@ -2709,6 +2709,21 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             if (tb != null) drawBox(c, tb, pg[0], pg[1], pg[2], pg[3], ai)
             else { pSwing.color = Color.argb((200 * a).toInt(), 0, 0, 0); c.drawRoundRect(pg[0], pg[1], pg[2], pg[3], 8f * s, 8f * s, pSwing) }
             c.drawText(text, (pg[0] + pg[2]) / 2f, (pg[1] + pg[3]) / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
+        } else if (restGap(s)) {
+            // the user (test42): "when casting out of combat could we make the spell text appear above the bar with the same font size as in
+            // combat?": the fight's TextBox plate and type, standing on the bar, centred in the free gap between the two button groups
+            // (never over a button: the plate is at most the gap's width; the gap measured from the band's own slot boxes)
+            tp.textSize = CastBarPlace.NAME_PX * s
+            tp.setShadowLayer(2f * s, s, s, Color.BLACK); tp.alpha = ai
+            val maxW = minOf(gapR - gapL - 8f * s, CastBarPlace.PLATE_MAX * s)
+            val text = CastFx.fit(name, maxW - CastBarPlace.PLATE_PAD * s) { tp.measureText(it) }
+            val pw = minOf(tp.measureText(text) + CastBarPlace.PLATE_PAD * s, maxW)
+            val mx = (gapL + gapR) / 2f
+            val b0 = height - bh - 2f * s; val t0 = b0 - CastBarPlace.PLATE_H * s
+            val tb = aBarTextBox
+            if (tb != null) drawBox(c, tb, mx - pw / 2f, t0, mx + pw / 2f, b0, ai)
+            else { pSwing.color = Color.argb((200 * a).toInt(), 0, 0, 0); c.drawRoundRect(mx - pw / 2f, t0, mx + pw / 2f, b0, 8f * s, 8f * s, pSwing) }
+            c.drawText(text, mx, (t0 + b0) / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
         } else {
             tp.textSize = bh * CastFx.NAME_SIZE
             tp.setShadowLayer(1.5f * u, u, u, Color.BLACK); tp.alpha = ai
@@ -2718,6 +2733,20 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         return next
     }
     private var castNamePaint: Paint? = null
+    /** the free gap between the D-pad group's right edge and the face group's left edge (view px), set by [restGap] */
+    private var gapL = 0f
+    private var gapR = 0f
+    /** at rest: is the gap between the two button groups wide enough for the name plate (120 frame px)? Sets [gapL] / [gapR] */
+    private fun restGap(s: Float): Boolean {
+        var l = 0f; var r = width.toFloat()
+        for (pos in 0 until 8) {
+            bandSlot(pos, bandBox)
+            val half = bandBox[2] / 2f
+            if (pos < 4) l = maxOf(l, bandBox[0] + half) else r = minOf(r, bandBox[0] - half)
+        }
+        gapL = l; gapR = r
+        return r - l >= 120f * s
+    }
     private var aBarTextBox: Art? = null
 
     private fun drawCastBar(c: Canvas, now: Long, w: Float, castStartMs: Double, castEndMs: Double): Long {
@@ -2748,6 +2777,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (layered) c.saveLayerAlpha(0f, y0 - 30f * u, w, y1, (barA * 255f).toInt())
         val shook = finishing && flashKind == FLASH_FAIL
         if (shook) { val sh = CastFx.shake(fa); c.save(); c.translate(sh[0] * u, -sh[1] * u) }
+        // the user (test42): "Is there any way that we could make the sides of the cast bar more rounded?": the whole bar - groove, fill,
+        // spark, glows, the game's border - is cut to a pill (its ends a half-circle of the bar's own height), the art kit's pieces as before
+        pillPath.reset(); pillR.set(-u, y0 - u, w + u, y1 + u)
+        pillPath.addRoundRect(pillR, (y1 - y0) / 2f + u, (y1 - y0) / 2f + u, Path.Direction.CW)
+        c.save(); c.clipPath(pillPath)
         // the groove
         val groove = aBarGroove
         if (groove != null) drawBox(c, groove, 0f, y0, w, y1)
@@ -2830,10 +2864,19 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
         // the Border over everything (2 units beyond the fill: 1 beyond the Background)
         aBarFrame?.let { drawBox(c, it, -u, y0 - u, w + u, y1 + u) }
+        c.restore()
+        // the border's line round the rounded ends (the game's square border is cut there): a thin dark rim on the pill
+        pPillRim.strokeWidth = u; pPillRim.alpha = 200
+        c.drawRoundRect(RectF(pillR.left + u / 2f, pillR.top + u / 2f, pillR.right - u / 2f, pillR.bottom - u / 2f),
+            pillR.height() / 2f - u / 2f, pillR.height() / 2f - u / 2f, pPillRim)
         if (shook) c.restore()
         if (layered) c.restore()
         return next
     }
+
+    private val pillPath = Path()
+    private val pillR = RectF()
+    private val pPillRim = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Color.rgb(16, 12, 8) }
 
     /** f-cast-bar-art: draw [body] clipped to the bar (the game's BorderMask: its effects show only inside the bar) */
     private inline fun barClip(c: Canvas, y0: Float, y1: Float, w: Float, body: () -> Unit) {
