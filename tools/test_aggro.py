@@ -272,6 +272,18 @@ def main():
     for i in range(30):
         tick()
     chk("the route off 16 s: the player's 0 back, our saved copy gone", CV.nameplateShowEnemies == "0" and Lg.WowCompanionDB.npEnemies is None)
+    # ag4: HUD mode (Hub hub14) wants them too: one owner, two reasons; given back only when neither wants them
+    L.execute('WowCompanion.npWant = { hud = true }')
+    tick()
+    chk("HUD mode on, no route: nameplateShowEnemies = 1, the player's 0 kept", CV.nameplateShowEnemies == "1" and Lg.WowCompanionDB.npEnemies.orig == "0")
+    Lg.WowCompanion.routeWp.active = True; tick(); Lg.WowCompanion.routeWp.active = False
+    for i in range(80):
+        tick()
+    chk("the route ends while HUD mode is on: still on", CV.nameplateShowEnemies == "1")
+    L.execute('WowCompanion.npWant.hud = nil')
+    for i in range(80):
+        tick()
+    chk("HUD mode off too: the player's 0 back", CV.nameplateShowEnemies == "0" and Lg.WowCompanionDB.npEnemies is None)
     Lg.WowCompanion.routeWp.active = True; tick()
     CV.nameplateShowEnemies = "0"; tick()             # the player switches them off themselves
     chk("the player switches them off meanwhile: their choice stands (declined, not set again)",
