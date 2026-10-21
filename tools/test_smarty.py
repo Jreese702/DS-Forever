@@ -333,5 +333,54 @@ check(nm('[1] = SECRET, [2] = SECRET, [3] = SECRET', mana=40) == ([1, 2], "model
       "the flag secret: the estimate (40) against each cost (50, 150, 0)", nm('[1] = SECRET, [2] = SECRET, [3] = SECRET', mana=41))
 check(nm('[1] = SECRET, [2] = SECRET, [3] = SECRET', mana=500) == ([], "none"), "enough for all: an empty set", "")
 
+# ---------------------------------------------------------------- m74: the quest item on Y (armed out of combat; used when its target exists)
+def press_q(conds=(), qi="item:12345", qu="target", fight=False, smart=None):
+    L.execute('TRUE = {}')
+    for c in conds:
+        L.execute('TRUE["%s"] = true' % c)
+    attrs = L.table_from({"wc-n-top": 1, "wc-dest-top-1": "ForeverInspectButton", "wc-pos": 6, "wc-state": "fight" if fight else "idle",
+                          "wc-fight-type": "spell", "wc-fight-spell": "Wrath"})
+    if qi: attrs["wc-qitem"] = qi; attrs["wc-qitem-u"] = qu
+    if smart: attrs["wc-smarty"] = smart
+    mk = L.eval('mkframe')
+    btn = mk(attrs, L.table_from({"wc-hdr": mk(L.table_from({})), "wc-bar-top-1": mk(L.table_from({}))}))
+    run(btn, "LeftButton", True)
+    return btn.a["wc-kind"], btn.a["type"], btn.a["item"], btn.a["unit"]
+
+k = press_q(["@target,exists,nodead", "@target,exists"])
+check(k == ("qitem", "item", "item:12345", "target"), "armed, its NPC targeted: the item ON the target", k)
+k = press_q(["@target,exists,nodead", "@target,exists", "combat"], fight=True)
+check(k[0] == "qitem", "in a fight too: the quest item before the fight spell", k[0])
+k = press_q([], fight=True)
+check(k[0] == "fight", "armed but no target: Y's fight spell as before", k[0])
+k = press_q(["@softinteract,exists"], qu="soft")
+check(k[0] == "qitem" and k[3] is None, "an object (soft-interact): the item, no unit", k)
+k = press_q(["@target,exists"], qu="soft")
+check(k[0] == "native", "an object's item with only an NPC targeted: Y as before", k[0])
+k = press_q(["@target,exists,nodead", "@target,exists"], smart="item:117")
+check(k[0] == "qitem", "the quest item beats Smart Y's food", k[0])
+k = press_q([], qi=None)
+check(k[0] == "native", "nothing armed: Y as before", k[0])
+
+qm = re.search(r'-- QI-MATCH-BEGIN[^\n]*\n(.*?)-- QI-MATCH-END', SRC, re.S).group(1)
+M = lupa.LuaRuntime(unpack_returned_tuples=True)
+M.execute('OV = {}\n' + qm)
+M.execute("""
+CANDS = {
+  { q = 1, item = 100, npc = { [500] = true }, obj = {}, words = { "infected wolves weakened: 0/5" } },
+  { q = 2, item = 200, npc = { [600] = true }, obj = { [7000] = true }, words = { "use the totem at the shrine" }, focus = true },
+  { q = 3, item = 300, npc = { [500] = true }, obj = {}, words = {} , focus = true },
+}
+function m(t) local e, how = OV.qiMatch(CANDS, t); if e then return e.q, how end end
+""")
+def qm_(t):
+    r = M.eval('m(%s)' % t)
+    return r
+check(qm_('{ npc = 600 }') == (2, "target"), "the target's npc id in a quest's objectives", qm_('{ npc = 600 }'))
+check(qm_('{ npc = 500 }') == (3, "target"), "two quests match: the focused one", qm_('{ npc = 500 }'))
+check(qm_('{ obj = 7000 }') == (2, "soft"), "an object by its id: soft", qm_('{ obj = 7000 }'))
+check(qm_('{ npc = 999, name = "infected wolf" }') == (1, "target"), "no ids (no QuestieDB): the name in the objective's words", qm_('{ npc = 999, name = "infected wolf" }'))
+check(qm_('{ npc = 999, name = "kobold" }') is None, "no match: nothing", "")
+
 print('ALL PASS' if fails == 0 else '%d FAILED' % fails)
 sys.exit(1 if fails else 0)

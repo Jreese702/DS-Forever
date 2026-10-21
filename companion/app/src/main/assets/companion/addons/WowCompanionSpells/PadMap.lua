@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m73"                -- bump on every change; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m74"                -- bump on every change; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -472,6 +472,8 @@ function WC.collectPadMap()
     -- m61: Smart Y's pick while it would act on a bare Y (out of combat, nothing targeted): id, name, icon, k = food / drink / both
     -- m62 SMART BUFFS: the rows ({ ids }), the self-buffs offered ({ id, n, i, k }), the first unsatisfied row (at), the cell row
     doc.sb = (OV.sbDoc and pcall(OV.sbDoc)) and OV.sbDocNow or nil
+    -- m74: the quest item armed on Y (Home's Y shows it): id, name, icon, the quest
+    doc.qitem = OV.qiNow and { id = OV.qiNow.item, i = OV.qiNow.icon, q = OV.qiNow.q, n = OV.qiNow.name } or nil
     doc.smarty = OV.smartyShown and { id = OV.smartyShown.id, n = OV.smartyShown.n, i = OV.smartyShown.i, k = OV.smartyShown.k } or nil
     doc.macros = macroCounts()
     doc.face = faceState()
@@ -1005,7 +1007,17 @@ local PRE = [=[
         if fish and SecureCmdOptionParse and SecureCmdOptionParse("[@softinteract,exists] 1") == "1" then fish = nil end
         -- m61 SMART Y: a bare Y out of combat with nothing targeted (no target, no soft-interact target) uses the bag's pick
         -- ("wc-smarty" = "item:<id>", set out of combat); anything else and Y is exactly as before (Forever's Inspect)
-        local smart = bare and mode ~= "room" and role ~= "back" and not sw and self:GetAttribute("wc-smarty")
+        -- m74 QUEST ITEM ON Y (the user: "if there is a quest Item that I am supposed to use on them and map that to the smart y
+        -- automatically"; "Any time it matches", fights too): armed OUT of combat for the target that matched ("wc-qitem" = the item,
+        -- "wc-qitem-u" = "target" for an NPC / "soft" for an object); used on a bare Y while such a target exists, before anything else
+        local qi = bare and mode ~= "room" and role ~= "back" and self:GetAttribute("wc-qitem")
+        if qi and SecureCmdOptionParse then
+            local qu = self:GetAttribute("wc-qitem-u")
+            if not ((qu == "soft" and SecureCmdOptionParse("[@softinteract,exists] 1") == "1")
+                or (qu ~= "soft" and SecureCmdOptionParse("[@target,exists,nodead] 1") == "1")) then qi = nil end
+        elseif qi then qi = nil end
+        if qi then fight = false end
+        local smart = bare and mode ~= "room" and role ~= "back" and not sw and not qi and self:GetAttribute("wc-smarty")
         if smart and (not SecureCmdOptionParse or SecureCmdOptionParse("[combat] 1") == "1"
             or SecureCmdOptionParse("[@target,exists] 1") == "1" or SecureCmdOptionParse("[@softinteract,exists] 1") == "1") then
             smart = nil
@@ -1016,7 +1028,13 @@ local PRE = [=[
             dest = self:GetAttribute("wc-room-dest"); mb = self:GetAttribute("wc-key") or mb; fight = false
         end
         self:SetAttribute("wc-mb", mb)
-        if fight then
+        if qi then
+            self:SetAttribute("wc-kind", "qitem")
+            self:SetAttribute("pressAndHoldAction", nil)
+            self:SetAttribute("typerelease", nil)
+            self:SetAttribute("type", "item"); self:SetAttribute("item", qi)
+            if self:GetAttribute("wc-qitem-u") ~= "soft" then self:SetAttribute("unit", "target") end
+        elseif fight then
             self:SetAttribute("wc-kind", "fight")
             self:SetAttribute("pressAndHoldAction", nil)
             self:SetAttribute("typerelease", nil)
@@ -1224,6 +1242,7 @@ local function routerSetup(b, pos)
     b:SetAttribute("wc-interact", pos == 5 or nil)                    -- X = Forever's Interact With Target (on an enemy: an attack)
     if pos == 5 then b:SetAttribute("wc-fish", OV.fish and OV.fish.n or nil) end      -- m59: Fishing while a pole is in the main hand
     if pos == 6 then b:SetAttribute("wc-smarty", OV.smartVal); b:SetAttribute("wc-smarty-t", OV.smartTyp) end   -- m61 / m62: Smart Y
+    if pos == 6 then b:SetAttribute("wc-qitem", OV.qiVal); b:SetAttribute("wc-qitem-u", OV.qiUnit) end             -- m74: the quest item
     for p, o in pairs(face.buttons) do
         pcall(SecureHandlerSetFrameRef, b, "wc-face-" .. p, o)
         pcall(SecureHandlerSetFrameRef, o, "wc-face-" .. pos, b)
@@ -4011,6 +4030,83 @@ WC.vitals = function()
     if not ok or type(v) ~= "table" then return nil end
     return { hp = v.hp, hpMax = v.hpMax, hpSrc = v.hpSrc, mp = v.mp, mpMax = v.mpMax, mpSrc = v.mpSrc }
 end
+-- m74 QUEST ITEM ON Y: the target (an NPC by the npc id in its GUID; else the soft-interact object by its object id) matched against the
+-- active quests that carry a usable item (Quests' WC.questItemTargets: QuestieDB's objective ids, or the objectives' own words naming the
+-- target); the focused quest first. Armed on Y's router button OUT of combat only (a secure button cannot change in a fight): a target
+-- that first matches in a fight is not armed until it ends; what was armed stays through the fight - also for another target of the
+-- fight (its use then fails, "Invalid target", and Y does nothing for that press). Read only; one attribute pair of our own.
+-- QI-MATCH-BEGIN (pure: tools/test_smarty.py) cands = WC.questItemTargets(); t = { npc, obj, name (lower) }; -> the entry, "target" / "soft"
+OV.qiMatch = function(cands, t)
+    local best, how
+    for _, e in ipairs(cands or {}) do
+        local hit
+        if t.npc and e.npc and e.npc[t.npc] then hit = "target"
+        elseif t.obj and e.obj and e.obj[t.obj] then hit = "soft"
+        elseif t.name and t.name ~= "" then
+            -- the whole name, else its stem without the last letter ("infected wolf" in "infected wolves"; 5 letters or more)
+            local stem = #t.name >= 5 and t.name:sub(1, -2) or nil
+            for _, w in ipairs(e.words or {}) do
+                if w:find(t.name, 1, true) or (stem and w:find(stem, 1, true)) then hit = t.npc and "target" or (t.obj and "soft" or "target"); break end
+            end
+        end
+        if hit and (not best or (e.focus and not best.focus)) then best, how = e, hit end
+    end
+    return best, how
+end
+-- QI-MATCH-END
+function OV.qiTarget()
+    local function guidId(unit)
+        local g = T(function() return UnitGUID(unit) end)
+        if type(g) ~= "string" or (type(WC.isPlain) == "function" and not WC.isPlain(g)) then return nil end
+        local kind, id = g:match("^(%a+)%-%d+%-%d+%-%d+%-%d+%-(%d+)%-")
+        return kind, tonumber(id)
+    end
+    local t = {}
+    local k, id = guidId("target")
+    if k == "Creature" or k == "Vehicle" then
+        t.npc = id
+        local n = T(function() return UnitName("target") end)
+        if type(n) == "string" and (type(WC.isPlain) ~= "function" or WC.isPlain(n)) then t.name = n:lower() end
+    end
+    local sk, sid = guidId("softinteract")
+    if sk == "GameObject" then t.obj = sid end
+    return t
+end
+function OV.qiApply()
+    if inCombat() then return end
+    local ok, cands = pcall(function() return type(WC.questItemTargets) == "function" and WC.questItemTargets() or {} end)
+    local t = OV.qiTarget()
+    local e, how = nil, nil
+    if ok and (t.npc or t.obj) then e, how = OV.qiMatch(cands, t) end
+    if e then
+        local cnt = T(function() return (C_Item and C_Item.GetItemCount or GetItemCount)(e.item) end)
+        if type(cnt) == "number" and cnt <= 0 then e = nil end
+    end
+    local val = e and ("item:" .. e.item) or nil
+    local unit = e and how or nil
+    local b = face.buttons[6]
+    if b then pcall(b.SetAttribute, b, "wc-qitem", val); pcall(b.SetAttribute, b, "wc-qitem-u", unit) end
+    if val ~= OV.qiVal or unit ~= OV.qiUnit then
+        OV.qiVal, OV.qiUnit = val, unit
+        if e then
+            e.name = T(function() return (C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(e.item)) or GetItemInfo(e.item) end)
+        end
+        OV.qiNow = e
+        pcall(function() WC.send(WC.encode({ type = "cap", padmap = PV,
+            smarty = e and ("qitem " .. e.item .. " on " .. tostring(how == "soft" and ("obj " .. tostring(t.obj)) or t.npc) .. " for q" .. e.q) or "qitem off" })) end)
+        pcall(emit, true); WC.push()
+    end
+end
+OV.qiF = CreateFrame("Frame")
+for _, e in ipairs({ "PLAYER_TARGET_CHANGED", "PLAYER_SOFT_INTERACT_CHANGED", "QUEST_LOG_UPDATE", "BAG_UPDATE_DELAYED",
+                     "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD", "SUPER_TRACKING_CHANGED" }) do
+    pcall(function() OV.qiF:RegisterEvent(e) end)
+end
+OV.qiF:SetScript("OnEvent", function()
+    if OV.qiSoon then return end
+    OV.qiSoon = true
+    C_Timer.After(0.15, function() OV.qiSoon = nil; pcall(OV.qiApply) end)
+end)
 -- m71 NOT ENOUGH MANA, MARKED (the user: "Now that we have an Idea of my mana, can we better track when I am too low on mama for spells?",
 -- then "Mark spells"). The app's own spell pictures (the spell wheel, the Spellbook, the class radials, Smart buffs' rows) get the
 -- game's blue out-of-mana look; the bars already have it (the game's own IsUsableAction notEnoughMana, plain on this client). Here:

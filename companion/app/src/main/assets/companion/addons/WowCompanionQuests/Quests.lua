@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q46"    -- bump on every change; the app shows it, so a stale build is visible
+local QV = "q47"    -- bump on every change; the app shows it, so a stale build is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -488,6 +488,49 @@ local function attachQdb(doc)
     if next(names) then doc.qdbMaps = names end
 end
 WC.questieAttach = attachQdb        -- for the harness
+
+-- q47 (Spells' Smart Y, PadMap m74; the user: "if there is a quest Item that I am supposed to use on them and map that to the smart y
+-- automatically"): READ ONLY. The active quests that carry a usable quest item (the game's own: GetQuestLogSpecialItemInfo), each with
+-- the NPCs / objects its objectives name - QuestieDB's ids when it is installed (the npcs, the objects, the kill-credit groups) - and
+-- the objectives' own words (a name to match when QuestieDB is not there). -> { { q, i (log index), item, icon, focus, npc = {id=true},
+-- obj = {id=true}, words = {"lower text", ...} }, ... }
+WC.questItemTargets = function()
+    local out = {}
+    local focus = superTracked()
+    local okN, nEntries = CALL(function() return C_QuestLog.GetNumQuestLogEntries() end)
+    if not (okN and type(nEntries) == "number") then return out end
+    local have = qdbReady()
+    for i = 1, nEntries do
+        local ok, info = CALL(function() return C_QuestLog.GetInfo(i) end)
+        local qid = ok and type(info) == "table" and not TB(function() return info.isHeader end) and TN(function() return info.questID end)
+        if qid then
+            local okI, link, icon = CALL(function() return GetQuestLogSpecialItemInfo(i) end)
+            local item = okI and type(link) == "string" and tonumber(link:match("item:(%d+)")) or nil
+            if item then
+                local e = { q = qid, i = i, item = item, icon = type(icon) == "number" and icon or nil, focus = (qid == focus) or nil,
+                            npc = {}, obj = {}, words = {} }
+                if have then
+                    local qo = qdbCall(qdb.Q, "objectives", qid)
+                    if type(qo) == "table" then
+                        for _, c in ipairs(type(qo[1]) == "table" and qo[1] or {}) do if c[1] then e.npc[c[1]] = true end end
+                        for _, c in ipairs(type(qo[2]) == "table" and qo[2] or {}) do if c[1] then e.obj[c[1]] = true end end
+                        for _, c in ipairs(type(qo[5]) == "table" and qo[5] or {}) do
+                            if type(c[1]) == "table" then for _, n in ipairs(c[1]) do e.npc[n] = true end end
+                            if c[2] then e.npc[c[2]] = true end
+                        end
+                    end
+                end
+                local okO, objs = CALL(function() return C_QuestLog.GetQuestObjectives(qid) end)
+                for _, o in ipairs(okO and type(objs) == "table" and objs or {}) do
+                    local t = TS(function() return o.text end)
+                    if t then e.words[#e.words + 1] = t:lower() end
+                end
+                out[#out + 1] = e
+            end
+        end
+    end
+    return out
+end
 WC.questieReset = function() qdb.ok = nil; qdb.cache = {}; for k in pairs(mapSize) do mapSize[k] = nil end end
 
 -- ---------------------------------------------------------------- emission
