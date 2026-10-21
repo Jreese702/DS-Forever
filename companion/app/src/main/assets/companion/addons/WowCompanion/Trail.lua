@@ -1096,7 +1096,7 @@ do
             pdz = C.wm and C.wm.pinDz or nil,
             more = type(WC.routeWp) == "table" and type(WC.routeWp.more) == "table" and #WC.routeWp.more or 0,
             prd = (type(WC.prd) == "table" and WC.prd.f) and { a = math.floor((WC.prd.alpha or 0) * 100 + 0.5), why = WC.prd.why,
-                src = WC.prd.src, y = WC.prd.y, nb = WC.prd.nb, nd = WC.prd.nd, pt = WC.prd.ptok, cbad = WC.prd.curveBad, ab = WC.prd.ab } or nil, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
+                src = WC.prd.src, y = WC.prd.y, nb = WC.prd.nb, nd = WC.prd.nd, pt = WC.prd.ptok, cbad = WC.prd.curveBad, ab = WC.prd.ab, ex = WC.prd.ex } or nil, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
             lx = C.cam.lx and math.floor(C.cam.lx * 100 + 0.5) / 100 or nil, ly = C.cam.ly and math.floor(C.cam.ly * 100 + 0.5) / 100 or nil,
             ferr = C.cam.ferr and math.floor(math.deg(C.cam.ferr) + 0.5) or nil,
             gp = C.cam.gp, from = C.cam.from, rx = C.cam.rx and math.floor(C.cam.rx * 100 + 0.5) / 100 or nil,
@@ -2179,8 +2179,17 @@ end
 -- debuff type borders, and the BuffFrame's timers ("8 s", gold; white under a minute). And (test45, "buffs did not show for my own
 -- heals"): the aura row shows whenever the BAR does, not only in combat; the probe counts what the scan saw and why any was left
 -- out (prd.ab); an aura whose duration is secret still shows (its swipe from the secrets, no seconds).
-WC.prd = { V = "prd2", Y_DEF = -250, Y_MIN = -420, Y_MAX = -120, STEP = 10, W = 200, HH = 11, PH = 5, BAR_GAP = 3, ICON = 24, IGAP = 4,
-           ROW_GAP = 6, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.15, FULL = 0.99, POLL_S = 0.2, AURA_S = 0.5,
+-- prd3 (the user: "When getting hit make sure to have an animated chunk of hp chunk away ... When casting a spell visualize the cost as
+-- well. Make sure you are also visualizing incoming heals"; "Yes, build them"), every piece secret-safe (no number of health or power
+-- read or compared: the game's own values handed to widgets) and quietly absent where the client lacks a call (P.ex says which):
+--   THE HIT CHUNK: a LAG bar under the health fill, fed the same values LAG_S late (a queue of the polled values); its move is the
+--   StatusBar's own interpolation when this client has it (a shrink), else a step. Under the fill, it only shows what was LOST.
+--   THE COST: while casting, the spell's cost (C_Spell.GetSpellPowerCost, plain) over the plain max power, as a bright segment
+--   anchored to the power fill's own right edge (it follows the secret value without our reading it), drawn leftward.
+--   INCOMING HEALS / ABSORBS: StatusBars the width of the bar, anchored at the health fill's right edge (heals) and then at the heal
+--   fill's (the shield), fed the game's incoming heals and total absorbs; a clipping frame the size of the bar keeps them inside it.
+WC.prd = { V = "prd3", LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -250, Y_MIN = -420, Y_MAX = -120, STEP = 10, W = 200, HH = 11, PH = 5, BAR_GAP = 3, ICON = 24, IGAP = 4,
+           ROW_GAP = 6, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.15, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
            alpha = 0, shown = false, why = "off" }
 -- (the names Hub's hub15 row reads: y, on, min, max, step, def, nudge)
 WC.prd.min, WC.prd.max, WC.prd.step, WC.prd.def = WC.prd.Y_MIN, WC.prd.Y_MAX, WC.prd.STEP, WC.prd.Y_DEF
@@ -2258,7 +2267,7 @@ do
         bg:SetAllPoints(b)
         bg:SetColorTexture(0, 0, 0, 0.59)                       -- the empty part: dark, the world through it a little
         local fill = b:CreateTexture(nil, "ARTWORK")
-        b.fill = fill
+        b.fill, b.bg = fill, bg
         b:SetStatusBarTexture(fill)
         b:SetMinMaxValues(0, 1)
         b:SetValue(1)
@@ -2333,6 +2342,7 @@ do
         if not setFill(P.hp, "HEALTH") then pcall(function() P.hp:SetStatusBarColor(0, 0.8, 0) end) end
         P.pw = bar(f, P.PH)
         P.pw:SetPoint("TOP", P.hp, "BOTTOM", 0, -u(P.BAR_GAP))
+        P.extras(f)
         P.buffs, P.debuffs = {}, {}
         for i = 1, P.BUFF_MAX do P.buffs[i] = icon(f, i) end
         for i = 1, P.DEBUFF_MAX do P.debuffs[i] = icon(f, i) end
@@ -2346,9 +2356,123 @@ do
     end
 
     -- ---------------------------------------------------------------- the values (fed, never read)
+    -- prd3: the lag bar (under the health fill), the heals and the shield (past it, clipped to the bar), the cost (on the power fill)
+    P.ex = {}
+    function P.extras(parent)
+        local function plainBar(par, rgba, tex)
+            local b = CreateFrame("StatusBar", nil, par)
+            local t = b:CreateTexture(nil, "ARTWORK")
+            t:SetTexture(tex or "Interface\\TargetingFrame\\UI-StatusBar")
+            b.fill = t
+            b:SetStatusBarTexture(t)
+            pcall(function() b:SetStatusBarColor(rgba[1], rgba[2], rgba[3], rgba[4] or 1) end)
+            b:SetMinMaxValues(0, 1)
+            b:SetValue(0)
+            return b
+        end
+        -- the lag bar: the health bar's own ground moves under it, so the lost part shows through the empty part
+        local lag = plainBar(parent, P.LAG_RGB)
+        lag:SetAllPoints(P.hp)
+        pcall(function()
+            lag:SetFrameLevel(P.hp:GetFrameLevel())
+            P.hp:SetFrameLevel(lag:GetFrameLevel() + 1)
+        end)
+        local lagBg = lag:CreateTexture(nil, "BACKGROUND")
+        lagBg:SetAllPoints(lag)
+        lagBg:SetColorTexture(0, 0, 0, 0.59)
+        pcall(function() P.hp.bg:SetColorTexture(0, 0, 0, 0) end)      -- (the ground is the lag bar's now)
+        P.lag, P.lagQ = lag, {}
+        P.ex.interp = type(Enum) == "table" and type(Enum.StatusBarInterpolation) == "table"
+            and Enum.StatusBarInterpolation.ExponentialEaseOut ~= nil or false
+        -- heals and the shield, clipped to the bar
+        local clip = CreateFrame("Frame", nil, P.hp)
+        clip:SetAllPoints(P.hp)
+        pcall(function() clip:SetClipsChildren(true) end)
+        local heal = plainBar(clip, P.HEAL_RGB)
+        heal:SetPoint("TOPLEFT", P.hp.fill, "TOPRIGHT", 0, 0)
+        heal:SetPoint("BOTTOMLEFT", P.hp.fill, "BOTTOMRIGHT", 0, 0)
+        heal:SetWidth(u(P.W))
+        local shield = plainBar(clip, { 1, 1, 1, 0.7 }, "Interface\\RaidFrame\\Shield-Fill")
+        shield:SetPoint("TOPLEFT", heal.fill, "TOPRIGHT", 0, 0)
+        shield:SetPoint("BOTTOMLEFT", heal.fill, "BOTTOMRIGHT", 0, 0)
+        shield:SetWidth(u(P.W))
+        P.clip, P.heal, P.shield = clip, heal, shield
+        -- the cost, on the power fill's right edge
+        local cost = P.pw:CreateTexture(nil, "OVERLAY")
+        cost:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+        pcall(function() cost:SetBlendMode("ADD") end)
+        cost:SetVertexColor(0.6, 0.85, 1, 0.9)
+        cost:SetPoint("TOPRIGHT", P.pw.fill, "TOPRIGHT", 0, 0)
+        cost:SetPoint("BOTTOMRIGHT", P.pw.fill, "BOTTOMRIGHT", 0, 0)
+        cost:Hide()
+        P.cost = cost
+    end
+    -- the incoming heals, by the client's own path (the calculator, else UnitGetIncomingHeals); the value as the game gives it
+    function P.incoming()
+        if type(CreateUnitHealPredictionCalculator) == "function" and type(UnitGetDetailedHealPrediction) == "function" then
+            local ok, v = pcall(function()
+                P.calc = P.calc or CreateUnitHealPredictionCalculator()
+                UnitGetDetailedHealPrediction("player", nil, P.calc)
+                return P.calc:GetIncomingHeals()
+            end)
+            if ok and v ~= nil then return v, "calc" end
+        end
+        local ok, v = pcall(UnitGetIncomingHeals, "player")
+        if ok and v ~= nil then return v, "uih" end
+        return nil, "none"
+    end
+    -- the extras fed: the lag bar LAG_S late, the heals, the shield
+    function P.feedExtras(hpMax)
+        local t = now()
+        local okH, hpv = pcall(UnitHealth, "player")
+        if okH and hpv ~= nil then
+            local q = P.lagQ
+            q[#q + 1] = { t = t, v = hpv }
+            local pick
+            while #q > 0 and t - q[1].t >= P.LAG_S do pick = table.remove(q, 1) end
+            if pick then
+                pcall(function() P.lag:SetMinMaxValues(0, hpMax) end)
+                if not (P.ex.interp and pcall(function() P.lag:SetValue(pick.v, Enum.StatusBarInterpolation.ExponentialEaseOut) end)) then
+                    pcall(function() P.lag:SetValue(pick.v) end)
+                end
+            end
+        end
+        local inc, src = P.incoming()
+        P.ex.heal = src
+        pcall(function() P.heal:SetMinMaxValues(0, hpMax) end)
+        if inc ~= nil then pcall(function() P.heal:SetValue(inc) end) else pcall(function() P.heal:SetValue(0) end) end
+        local okA, ab = pcall(UnitGetTotalAbsorbs, "player")
+        P.ex.abs = okA and ab ~= nil or false
+        pcall(function() P.shield:SetMinMaxValues(0, hpMax) end)
+        pcall(function() P.shield:SetValue(okA and ab ~= nil and ab or 0) end)
+    end
+    -- the cast's cost on the power bar: the spell's own cost (plain) of the current power over its plain max
+    function P.castCost(spellID)
+        if not (P.cost and P.pw) then return end
+        local okM, mx = pcall(UnitPowerMax, "player", P.ptype or 0)
+        mx = okM and num(mx) or nil
+        local cost
+        local okC, list = pcall(function() return C_Spell.GetSpellPowerCost(spellID) end)
+        if okC and type(list) == "table" then
+            for _, c in ipairs(list) do
+                if type(c) == "table" and num(c.type) == (P.ptype or 0) and num(c.cost) then cost = c.cost; break end
+            end
+        end
+        if cost and mx and mx > 0 and cost > 0 then
+            P.cost:SetWidth(math.min(1, cost / mx) * u(P.W))
+            P.cost:Show()
+            P.ex.cost = cost
+        else
+            P.cost:Hide()
+            P.ex.cost = nil
+        end
+    end
+    function P.castEnd() if P.cost then P.cost:Hide() end; P.ex.cost = nil end
     function P.values()
-        pcall(function() P.hp:SetMinMaxValues(0, UnitHealthMax("player")) end)
+        local okX, hpMax = pcall(UnitHealthMax, "player")
+        pcall(function() P.hp:SetMinMaxValues(0, hpMax) end)
         pcall(function() P.hp:SetValue(UnitHealth("player")) end)
+        if okX and P.lag then pcall(P.feedExtras, hpMax) end
         local okT, pt, tok = pcall(function() return UnitPowerType("player") end)
         pt = okT and num(pt) or 0
         if pt ~= P.ptype then
@@ -2583,11 +2707,17 @@ do
 
     local ev = CreateFrame("Frame")
     for _, e in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD" }) do pcall(function() ev:RegisterEvent(e) end) end
-    for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER", "UNIT_AURA" }) do
+    for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER", "UNIT_AURA",
+                         "UNIT_HEAL_PREDICTION", "UNIT_ABSORB_AMOUNT_CHANGED", "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START",
+                         "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_CHANNEL_STOP" }) do
         pcall(function() ev:RegisterUnitEvent(e, "player") end)
     end
-    ev:SetScript("OnEvent", function(_, e)
-        if e == "PLAYER_REGEN_DISABLED" then P.regen = false
+    ev:SetScript("OnEvent", function(_, e, unit, _, spellID)
+        if e == "UNIT_SPELLCAST_START" or e == "UNIT_SPELLCAST_CHANNEL_START" then
+            if P.f then pcall(P.castCost, spellID) end
+        elseif e == "UNIT_SPELLCAST_STOP" or e == "UNIT_SPELLCAST_FAILED" or e == "UNIT_SPELLCAST_INTERRUPTED" or e == "UNIT_SPELLCAST_CHANNEL_STOP" then
+            P.castEnd()
+        elseif e == "PLAYER_REGEN_DISABLED" then P.regen = false
         elseif e == "PLAYER_REGEN_ENABLED" then P.regen = true
         elseif e == "PLAYER_ENTERING_WORLD" then P.regen = nil; P.loadY(); P.place()
         elseif e == "UNIT_AURA" then P.auraDirty = true

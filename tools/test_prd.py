@@ -52,6 +52,17 @@ function Region:SetHideCountdownNumbers(h) self.nonum = h end
 function Region:RegisterUnitEvent(e, u) self.events = self.events or {}; self.events[e] = u end
 function Region:GetAlpha() return self.alpha or 1 end
 function Region:SetTextColor(r, g, b, a) self.tcolor = { r, g, b } end
+function Region:SetValue(v, interp) self.value = v; self.interp = interp; READS = READS + 1 end
+function Region:GetFrameLevel() return self.level or 1 end
+function Region:SetFrameLevel(l) self.level = l end
+function Region:SetClipsChildren(c) self.clips = c end
+function Region:SetBlendMode(m) self.blend = m end
+Enum = Enum or {}
+Enum.StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 }
+INC, ABS = nil, nil
+function UnitGetIncomingHeals(u) return INC end
+function UnitGetTotalAbsorbs(u) return ABS end
+C_Spell = { GetSpellPowerCost = function(id) if id == 8936 then return { { type = 0, cost = 25 } } end end }
 function Region:CreateMaskTexture() return CreateFrame("Texture") end
 function Region:AddMaskTexture(m) self.masked = m end
 function Region:Clear() self.cdStart = nil end
@@ -268,6 +279,41 @@ def main():
     chk("(c) a secret duration: shown after the plain ones, no seconds, the swipe handed the secrets (%s)" % P.ab.sec,
         P.nb == 2 and s2.f.shown and s2.t.text == "" and Lg.issecretvalue(s2.cd.cdExp) and P.ab.sec == 1 and P.ab.long == 1 and P.ab.nodur == 1)
     chk("prd2: the group at its rest alpha (%.2f)" % P.f.alpha, abs(P.f.alpha - 0.92) < 1e-6)
+
+    # prd3, THE HIT CHUNK: the lag bar under the health fill, the same SECRET values 0.3 s late, moved by the bar's own interpolation
+    ME.hp = 620; run(0.5)
+    ME.hp = 400; run(0.15)
+    chk("prd3: hit: the health bar at the new value at once, the lag bar still at the old (%s / %s)" % (P.hp.value.n, P.lag.value.n),
+        P.hp.value.n == 400 and P.lag.value.n == 620 and Lg.issecretvalue(P.lag.value))
+    run(0.45)
+    chk("prd3: ... a beat later (0.3 s after the poll that saw it) the lag bar follows, by the StatusBar's own ease (the chunk shrinks away)",
+        P.lag.value.n == 400 and P.lag.interp == 1 and P.ex.interp is True)
+    chk("prd3: the lag bar UNDER the health fill (frame levels %s < %s), the ground its own" % (P.lag.level, P.hp.level),
+        P.lag.level < P.hp.level)
+    # INCOMING HEALS and the SHIELD: fed straight, anchored at the fill's edge, clipped to the bar
+    Lg.INC = L.eval("setmetatable({ n = 150 }, { secret = true })")
+    Lg.ABS = L.eval("setmetatable({ n = 80 }, { secret = true })")
+    run(0.15)
+    chk("prd3: incoming heals: the secret fed to a bar anchored at the health fill's right edge (%s)" % P.ex.heal,
+        P.heal.value.n == 150 and P.ex.heal == "uih" and P.heal.point[1] in ("TOPLEFT", "BOTTOMLEFT")
+        and L.eval("rawequal(WowCompanion.prd.heal.point[2], WowCompanion.prd.hp.fill)") and P.clip.clips is True)
+    chk("prd3: the shield after the heal's own edge", P.shield.value.n == 80 and P.ex.abs is True
+        and L.eval("rawequal(WowCompanion.prd.shield.point[2], WowCompanion.prd.heal.fill)"))
+    Lg.INC, Lg.ABS = None, None
+    # THE COST: the spell's own cost over the plain max, on the power fill's right edge, gone when the cast ends
+    ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_START", "player", "guid", 8936)
+    chk("prd3: casting a 25-mana spell of 100: the cost segment a quarter of the bar (%.2f), on the power fill's edge" % (P.cost.w or -1),
+        P.cost.shown is True and abs(P.cost.w - 0.25 * 200 * 768 / 1080) < 1e-6 and P.cost.point[1] in ("TOPRIGHT", "BOTTOMRIGHT")
+        and L.eval("rawequal(WowCompanion.prd.cost.point[2], WowCompanion.prd.pw.fill)"))
+    ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_STOP", "player", "guid", 8936)
+    chk("prd3: the cast over: gone", P.cost.shown is False and P.ex.cost is None)
+    ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_START", "player", "guid", 1)
+    chk("prd3: a spell with no cost: no segment", P.cost.shown is False)
+    # a client without the interpolation: a step after the hold, no error
+    Lg.Enum.StatusBarInterpolation = None
+    P.lag = None; P.f = None; P.build(); run(0.2)
+    ME.hp = 300; run(0.8)
+    chk("prd3: no interpolation in this client: the lag bar steps (no error)", P.ex.interp is False and P.lag.value.n == 300 and P.lag.interp is None)
     chk("nothing of the game's written (no CVar)", Lg.CVAR_WRITES == 0)
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
