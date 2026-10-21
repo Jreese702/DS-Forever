@@ -5,7 +5,7 @@
 ## Group: WowCompanion
 ## Notes: Feeds the Professions room on the Thor's bottom screen
 ## Author: DS Forever
-## Version: Set 213
+## Version: Set 214
 ## DefaultState: enabled
 ## Dependencies: WowCompanion
 Professions.lua
