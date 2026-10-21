@@ -230,9 +230,12 @@ object ShippedSnap {
         val fl: ((Double, Double) -> Boolean)? = if (g.deckZ != null) { x, y -> ShippedNet.Walk.onFloor(g, x, y) } else null
         val view = View(p, ground, view0.danger, view0.k, floor = fl)
         val deep = ground.deepOff(fl)
+        val whyNot = HashMap<String, Int>()
         fun clear(a: DoubleArray, b: DoubleArray): View.Line? {
             val soft = view.line(a, b, terrain = false, rooms = hypot(b[0] - a[0], b[1] - a[1]) > Climb.SOLID_LINE_YD)
-            return if (soft.why == null && Climb.walkable(g, a, b)) soft else null
+            if (soft.why != null) { whyNot.merge(soft.why.substringBefore(" at ").substringBefore(" ("), 1, Int::plus); return null }
+            if (!Climb.walkable(g, a, b)) { whyNot.merge("the lattice's steps or faces", 1, Int::plus); return null }
+            return soft
         }
         val straight = ArrayList<Snap>(); val bent = ArrayList<Triple<Int, DoubleArray, Double>>(); var walled = 0
         for (c in near) {
@@ -247,7 +250,8 @@ object ShippedSnap {
             out.add(Snap(id, w.pts, w.yd, w.cost * BENT, false, steep = w.steep))
         }
         if (out.isEmpty()) return Result(emptyList(), "the ${near.size} nodes within ${reach.toInt()} yd (nearest ${near.first().third.toInt()} yd): " +
-            "no walk of ${walkYd.toInt()} yd on the shipped lattice")
+            "no walk of ${walkYd.toInt()} yd on the shipped lattice (lines: ${whyNot.entries.sortedByDescending { it.value }.joinToString(", ") { "${it.key} x${it.value}" }}; " +
+            "${if (ground.deep(p[0], p[1])) "the end reads deep water" else "the end dry"}${if (g.deckZ != null && ShippedNet.Walk.onFloor(g, p[0], p[1])) ", on a deck" else ""})")
         val pool = if (straight.isNotEmpty()) straight else out
         val shortest = pool.minOf { it.yd }
         val lead = pool.filter { it.yd <= shortest + SPREAD_YD }.sortedBy { it.cost }.map { Snap(it.node, it.pts, it.yd, it.cost, it.straight, true, it.steep) }
