@@ -2205,7 +2205,13 @@ end
 -- made to butt against the portrait - a square, darker left end, a bevelled right one - so the two ends never mirrored. The fill
 -- is now the PRD's OWN (UI-HUD-CoolDownManager-Bar-c60: rounded at both ends, its gloss in grey, sized for this frame), tinted with
 -- the bar's colour, edge to edge in the opening; the spark is gone (it showed at an empty bar's left end, and the value is secret).
-WC.prd = { V = "prd6", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -300, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 220, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
+-- prd7 (test49, the user: "The hud is gray for hp and invisible for mana"): the fill made robust - SetAtlas does NOT error on an atlas
+-- this client lacks (it returns false and leaves the texture blank: mana invisible), so an atlas is used only when
+-- C_Texture.GetAtlasInfo knows it AND SetAtlas says yes, else the plain UI-StatusBar; the asset is set BEFORE the texture is handed
+-- to the StatusBar (prd1's order, which tinted in game; prd6 set it after); the colour goes both ways (SetStatusBarColor and the
+-- texture's own vertex colour) and again at every poll; the power's colour no longer waits for a CHANGE of power type (a mana user
+-- starting at type 0). The probe says which fill each bar got (prd.ex.hpFill / pwFill).
+WC.prd = { V = "prd7", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -300, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 220, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
            ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.15, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
            alpha = 0, shown = false, why = "off" }
 -- (the names Hub's hub15 row reads: y, on, min, max, step, def, nudge)
@@ -2259,15 +2265,31 @@ do
     -- ---------------------------------------------------------------- the frames
     -- the PlayerFrame's own fills by the power's token (their colour and gloss in the art)
     -- the bar's fill: the PRD's own (rounded at both ends), else the plain status bar; tinted by the caller either way
+    -- an atlas this client really has: known to GetAtlasInfo (when the call exists) and taken by SetAtlas (false = refused)
+    local function atlasOn(tex, a)
+        if C_Texture and type(C_Texture.GetAtlasInfo) == "function" then
+            local okI, info = pcall(C_Texture.GetAtlasInfo, a)
+            if not (okI and type(info) == "table") then return false end
+        end
+        local ok, r = pcall(function() return tex:SetAtlas(a) end)
+        return ok and r ~= false
+    end
+    P.atlasOn = atlasOn
     local function setFill(b)
         for _, a in ipairs(P.FILL_ATLAS) do
-            if pcall(function() b.fill:SetAtlas(a) end) then b.fillAtlas = a; return true end
+            if atlasOn(b.fill, a) then b.fillAtlas = a; return true end
         end
         pcall(function() b.fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar") end)
         b.fillAtlas = nil
         return false
     end
     P.setFill = setFill
+    -- the colour, both ways (the bar's, and the texture's own), remembered for the polls
+    function P.paint(b, r, g, bb)
+        b.rgb = { r, g, bb }
+        pcall(function() b:SetStatusBarColor(r, g, bb) end)
+        pcall(function() b.fill:SetVertexColor(r, g, bb) end)
+    end
     local function bar(parent, h)
         local b = CreateFrame("StatusBar", nil, parent)
         b:SetSize(u(P.W), u(h))
@@ -2276,11 +2298,14 @@ do
         bg:SetColorTexture(0, 0, 0, 0.59)                       -- the empty part: dark, the world through it a little
         local fill = b:CreateTexture(nil, "ARTWORK")
         b.fill, b.bg = fill, bg
+        setFill(b)                                              -- (prd7: the asset BEFORE the bar takes the texture)
         b:SetStatusBarTexture(fill)
+        -- (the bar's own texture from here on: every anchor on its edge, every colour)
+        local okT, real = pcall(function() return b:GetStatusBarTexture() end)
+        if okT and type(real) == "table" then b.fill = real end
         b:SetMinMaxValues(0, 1)
         b:SetValue(1)
         bg:SetColorTexture(0, 0, 0, 0)                          -- prd4: the PRD frame is the ground (P.frameFor)
-        setFill(b)
         return b
     end
     -- prd4: the PRD's own bar BG round a bar, on the layer UNDER every bar (so the lag chunk shows above it): the template's margins
@@ -2422,7 +2447,9 @@ do
         P.shadow = sh
         P.hp = bar(f, P.HH)
         P.hp:SetPoint("TOP", f, "TOP", 0, 0)
-        pcall(function() P.hp:SetStatusBarColor(P.HEALTH_RGB[1], P.HEALTH_RGB[2], P.HEALTH_RGB[3]) end)
+        P.paint(P.hp, P.HEALTH_RGB[1], P.HEALTH_RGB[2], P.HEALTH_RGB[3])
+        P.ptype = nil                                           -- (a new power bar: its colour at the next poll)
+        P.ex.hpFill = P.hp.fillAtlas or "plain"
         P.pw = bar(f, P.PH)
         P.pw:SetPoint("TOP", P.hp, "BOTTOM", 0, -u(P.BAR_GAP))
         P.extras(f)
@@ -2567,9 +2594,13 @@ do
             elseif type(c) == "table" and num(c.r) then r, g, b = c.r, c.g, c.b
             else local cc = P.POWER.MANA; r, g, b = cc[1], cc[2], cc[3] end
             -- the game's own fill for this power (its colour in the art), else the plain bar in the power's colour
-            pcall(function() P.pw:SetStatusBarColor(r, g, b) end)
+            P.paint(P.pw, r, g, b)
             P.ptok = tok
+            P.ex.pwFill = P.pw.fillAtlas or "plain"
         end
+        -- (again each poll: nothing the game does to the textures leaves them grey)
+        if P.hp.rgb then pcall(function() P.hp.fill:SetVertexColor(P.hp.rgb[1], P.hp.rgb[2], P.hp.rgb[3]) end) end
+        if P.pw.rgb then pcall(function() P.pw.fill:SetVertexColor(P.pw.rgb[1], P.pw.rgb[2], P.pw.rgb[3]) end) end
         pcall(function() P.pw:SetMinMaxValues(0, UnitPowerMax("player", pt)) end)
         pcall(function() P.pw:SetValue(UnitPower("player", pt)) end)
     end
