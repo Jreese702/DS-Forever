@@ -61,7 +61,7 @@ import kotlin.math.*
  */
 class InteractView(context: Context) : View(context) {
 
-    private enum class Kind { NONE, GOSSIP, QUEST, MERCHANT, TRAINER, STABLE, MAIL, AUCTION, TAXI, BANK, LOOT, PETITION, QTSETUP }
+    private enum class Kind { NONE, GOSSIP, QUEST, MERCHANT, TRAINER, STABLE, MAIL, AUCTION, TAXI, BANK, LOOT, PETITION, BOOK, QTSETUP }
     private enum class Tab { BUY, SELL, BACK }
 
     /** one tappable or selectable thing: the command is its identity and what a tap sends */
@@ -142,6 +142,7 @@ class InteractView(context: Context) : View(context) {
             msg.has("trainer") -> Kind.TRAINER
             msg.has("stable") -> Kind.STABLE
             msg.has("petition") -> Kind.PETITION
+            msg.has("book") -> Kind.BOOK                   // a book, letter or plaque (the game's ItemTextFrame), mirrored
             msg.has("mail") -> Kind.MAIL
             msg.has("auction") -> Kind.AUCTION
             msg.has("taxi") -> Kind.TAXI
@@ -547,6 +548,7 @@ class InteractView(context: Context) : View(context) {
         Kind.TRAINER -> "t|${d.optJSONObject("trainer")!!.optJSONObject("npc")?.optString("name")}"
         Kind.STABLE -> "s|${d.optJSONObject("stable")!!.optJSONObject("npc")?.optString("name")}"
         Kind.PETITION -> "pe|${d.optJSONObject("petition")!!.optString("title")}"
+        Kind.BOOK -> "it|${d.optJSONObject("book")!!.optString("title")}"
         Kind.QTSETUP -> "qt|${d.optJSONObject("qtsetup")!!.optString("kind")}|${d.optJSONObject("qtsetup")!!.optInt("i")}"
         Kind.MAIL -> d.optJSONObject("mail")!!.let { "ml|${it.optString("tab")}|${it.optJSONObject("send")?.has("bags") == true}" }
         Kind.TAXI -> "tx|${d.optJSONObject("taxi")!!.optInt("map")}"
@@ -685,7 +687,7 @@ class InteractView(context: Context) : View(context) {
                     }
                 }
             }
-            Kind.NONE, Kind.PETITION, Kind.QTSETUP -> {}
+            Kind.NONE, Kind.PETITION, Kind.BOOK, Kind.QTSETUP -> {}
         }
         return out
     }
@@ -1142,6 +1144,10 @@ class InteractView(context: Context) : View(context) {
             Kind.PETITION -> {
                 val pe = d.optJSONObject("petition") ?: return
                 petitionWindow(c, r, pe)
+            }
+            Kind.BOOK -> {
+                val bk = d.optJSONObject("book") ?: return
+                bookWindow(c, r, bk)
             }
             Kind.QTSETUP -> {
                 val q = d.optJSONObject("qtsetup") ?: return
@@ -1945,6 +1951,55 @@ class InteractView(context: Context) : View(context) {
         }
         UiKit.windowFrame(c, r, p.optJSONObject("npc")?.optString("name", "")?.ifEmpty { null } ?: "Guild Charter",
             UiKit.tex("portrait_quest"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
+        hits.add(UiKit.windowClose(r) to "x")
+    }
+
+    /**
+     * A BOOK (the user, test41: "I just picked up a book and it opened it on the top screen"): the game's ItemTextFrame mirrored, as
+     * its own window shows it: the item's name, the page's text on parchment (the largest size that fits), the page number, the
+     * writer of a player's letter; Prev Page / Next Page in the strip (the game's own paging calls), X closes it.
+     */
+    private fun bookWindow(c: Canvas, r: RectF, b: JSONObject) {
+        val inner = UiKit.windowGround(c, r)
+        val strip = UiKit.strip(c, inner)
+        page(c, inner, strip.top - 6f)
+        val lx = inner.left + 44f
+        val w = (inner.width() - 88f).toInt()
+        var y = r.top + UiKit.WINDOW_UNDER_RING
+        val title = b.optString("title", "")
+        c.drawText(fit(UiKit.inkPaint(44f, heading = true), title, w.toFloat()), lx, y + 44f, UiKit.inkPaint(44f, heading = true)); y += 74f
+        val by = b.optString("by", "")
+        val bottom = strip.top - 60f
+        val text = b.optString("text", "")
+        var l: StaticLayout? = null
+        for (sz in listOf(30f, 27f, 24f, 21f)) {
+            l = layout(text, UiKit.inkPaint(sz), w)
+            if (y + l.height <= bottom) break
+        }
+        c.save(); c.clipRect(inner.left, y, inner.right, bottom)
+        l?.let { drawLayout(c, it, lx, y) }
+        c.restore()
+        val dim = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
+        if (by.isNotEmpty()) c.drawText("Written by $by", lx, strip.top - 22f, dim)
+        val pg = b.optInt("page", 1)
+        if (pg > 1 || b.optBoolean("more")) {
+            val pp = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim; textAlign = Paint.Align.RIGHT }
+            c.drawText("Page $pg", inner.right - 44f, strip.top - 22f, pp)
+        }
+        // the strip: Prev Page on the left, Next Page on the right (the game's own buttons' places)
+        val act = b.optJSONObject("act")
+        val bh = strip.height() - 30f
+        fun hitOf(cmd: String, key: String): String {
+            val cell = act?.let { slotOf(it, key) } ?: -1
+            return if (cell >= 0) "act:$cmd|$cell" else "why:The game gave this no tap cell"
+        }
+        val prev = RectF(strip.left + 8f, strip.centerY() - bh / 2f + 2f, strip.left + 308f, strip.centerY() + bh / 2f + 2f)
+        val next = RectF(strip.right - 308f, prev.top, strip.right - 8f, prev.bottom)
+        stripButton(c, prev, "Prev Page", hitOf("bookprev", "prev"), b.optBoolean("prev"), false,
+            glyph = "rev_a".takeIf { cur == "bookprev" }, id = "bookprev")
+        stripButton(c, next, "Next Page", hitOf("booknext", "next"), b.optBoolean("more"), false,
+            glyph = "rev_a".takeIf { cur == "booknext" }, id = "booknext")
+        UiKit.windowFrame(c, r, title.ifEmpty { "Book" }, UiKit.tex("portrait_quest"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
         hits.add(UiKit.windowClose(r) to "x")
     }
 

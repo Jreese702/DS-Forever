@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i131"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i132"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -364,7 +364,7 @@ end
 -- A window is taken over (hidden on top, the controller taken, its document sent) only once its app half
 -- ships: an addon on the Thor ahead of its app must never hide a window with nothing on the bottom screen.
 -- Switch one on in the same build as its app view.
-local WINDOWS = { trainer = true, stable = true, mail = true, auction = true, taxi = true, bank = true, loot = true, petition = true }
+local WINDOWS = { trainer = true, stable = true, mail = true, auction = true, taxi = true, bank = true, loot = true, petition = true, book = true }
 WC.interactWindows = WINDOWS     -- the harness switches a dormant window on (never the game)
 WC.interactWindows = WINDOWS      -- the harness switches them on
 
@@ -1131,10 +1131,10 @@ end
 
 local FRAME = { gossip = "GossipFrame", quest = "QuestFrame", merchant = "MerchantFrame", trainer = "ClassTrainerFrame",
                 stable = "PetStableFrame", mail = "MailFrame", auction = "AuctionHouseFrame", taxi = "FlightMapFrame",
-                bank = "BankFrame", loot = "LootFrame", petition = "PetitionFrame" }
+                bank = "BankFrame", loot = "LootFrame", petition = "PetitionFrame", book = "ItemTextFrame" }
 local ev = 0
-local shownAt = { gossip = 0, quest = 0, merchant = 0, trainer = 0, stable = 0, mail = 0, auction = 0, taxi = 0, bank = 0, loot = 0, petition = 0 }
-local hiddenAt = { gossip = 0, quest = 0, merchant = 0, trainer = 0, stable = 0, mail = 0, auction = 0, taxi = 0, bank = 0, loot = 0, petition = 0 }
+local shownAt = { gossip = 0, quest = 0, merchant = 0, trainer = 0, stable = 0, mail = 0, auction = 0, taxi = 0, bank = 0, loot = 0, petition = 0, book = 0 }
+local hiddenAt = { gossip = 0, quest = 0, merchant = 0, trainer = 0, stable = 0, mail = 0, auction = 0, taxi = 0, bank = 0, loot = 0, petition = 0, book = 0 }
 -- 1.0.9: QuestTrail's setup assistant and its Shared Trail intro (N.qt below): windows like the game's, opened by hooks on their frames
 FRAME.qtsetup, FRAME.qtintro = "QuestTrailSetup", "QuestTrailSharedIntro"
 shownAt.qtsetup, shownAt.qtintro, hiddenAt.qtsetup, hiddenAt.qtintro = 0, 0, 0, 0
@@ -1196,6 +1196,32 @@ local ROLLCELLS = {}            -- rollID -> { need, greed, pass, de, transmog }
 -- minimum ("Not yet signed" after them); Sign (not the originator), Request Signature + Rename (the originator). Its buttons are
 -- the GAME'S, pressed by secure clicks (Dialogs d18: touch cells and A as a binding click), so its own confirm / rename boxes come
 -- from its own code; Close = ClosePetition, as the other windows close.
+-- A BOOK (the user, test41: "I just picked up a book and it opened it on the top screen"): the game's ItemTextFrame (books, letters,
+-- plaques), on ITEM_TEXT_BEGIN / READY / CLOSED. What its own window shows (itemtextframe.lua): the item's name as the title, the
+-- page's text (plain, or the game's simple HTML: its tags made plain lines here), the page number, Prev / Next while there is one,
+-- the writer of a player's letter, its material (parchment, stone, ...). Paging and closing are the game's C calls the frame's
+-- own buttons make (ItemTextPrevPage / ItemTextNextPage / CloseItemText); nothing of the frame is pressed or written.
+function LOOT.bookText(t)
+    if type(t) ~= "string" then return "" end
+    t = t:gsub("\r", "")
+    if t:sub(1, 6):upper() == "<HTML>" then
+        t = t:gsub("<[Bb][Rr]%s*/?>", "\n"):gsub("</[Pp]>", "\n"):gsub("</[Hh]%d>", "\n"):gsub("<[^>]+>", "")
+        t = t:gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&quot;", '"'):gsub("&nbsp;", " "):gsub("&amp;", "&")
+    end
+    t = t:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("\n\n\n+", "\n\n")
+    return (t:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+function LOOT.collectBook()
+    local b = { title = TS(function() return ItemTextGetItem() end) or "",
+                text = LOOT.bookText(TS(function() return ItemTextGetText() end)),
+                page = TN(function() return ItemTextGetPage() end) or 1,
+                by = TS(function() return ItemTextGetCreator() end),
+                material = TS(function() return ItemTextGetMaterial() end) }
+    b.more = TB(function() return ItemTextHasNextPage() end) == true
+    b.prev = b.page > 1
+    return b
+end
+
 function LOOT.collectPetition()
     local p = { npc = { name = TS(function() return UnitName("npc") end) } }
     local r = R(function() return GetPetitionInfo() end)
@@ -1451,6 +1477,10 @@ local function assignSlots(doc)
         end
     end
     if doc.petition then any = true end
+    if doc.book then
+        any = true
+        doc.book.act = { prev = slot("iact", "bookprev"), ["next"] = slot("iact", "booknext") }
+    end
     -- 1.0.8: the keyboard's field (Send Mail, the auction-house search): its close cell
     if doc.kbd then doc.kbd.off = slot("iact", "kbd off") end
     local st = doc.stable
@@ -1875,6 +1905,14 @@ function N.build(doc)
         if pt.btn.rename ~= nil then navAdd(z, "petrename", pt.btn.rename) end
         N.zones = { z }
         first = navFirst(z) or "none"
+    elseif doc.book then
+        local bk = doc.book
+        sig = "it|" .. tostring(bk.title)
+        local z = navZone("bookacts", 2)
+        navAdd(z, "bookprev", bk.prev)
+        navAdd(z, "booknext", bk.more)
+        N.zones = { z }
+        first = (bk.more and "booknext") or (bk.prev and "bookprev") or "none"
     elseif doc.stable then
         local st = doc.stable
         sig = "s|" .. tostring(st.npc and st.npc.name)
@@ -2034,6 +2072,7 @@ local function buildDoc()
     if WINDOWS.trainer and isOpen("trainer") then doc.trainer = collectTrainer() end
     if WINDOWS.stable and isOpen("stable") then doc.stable = collectStable() end
     if WINDOWS.petition and isOpen("petition") then doc.petition = LOOT.collectPetition() end
+    if WINDOWS.book and isOpen("book") then doc.book = LOOT.collectBook() end
     if N.qt.open() and not N.qt.top and not N.qt.auto then
         doc.qtsetup = N.qt.collect()                                               -- 1.0.9: QuestTrail's setup / intro
         N.qt.lastDoc, N.qt.lastItems = doc.qtsetup, doc.qtsetup and doc.qtsetup.items
@@ -2061,7 +2100,7 @@ local function buildDoc()
     assignSlots(doc)
     -- The controller takes the buttons only while a window is open and the companion is in charge.
     -- sync() binds or lets go BEFORE the document is built, so `nav.on` is what is true now.
-    local open = (doc.gossip or doc.quest or doc.merchant or doc.trainer or doc.stable or doc.mail or doc.auction or doc.taxi or doc.bank or doc.loot or doc.petition or doc.qtsetup) and true or false
+    local open = (doc.gossip or doc.quest or doc.merchant or doc.trainer or doc.stable or doc.mail or doc.auction or doc.taxi or doc.bank or doc.loot or doc.petition or doc.book or doc.qtsetup) and true or false
     if N.sync then N.sync(open, doc) end
     if N.grantWait then N.grantWait() end       -- v11: the queued take, once nobody holds
     doc.rel = N.rel
@@ -2241,6 +2280,8 @@ local ON = {
     PET_STABLE_SHOW = function() mark("stable", true) end,
     PETITION_SHOW = function() mark("petition", true) end,
     PETITION_CLOSED = function() mark("petition", false) end,
+    ITEM_TEXT_BEGIN = function() mark("book", true) end,
+    ITEM_TEXT_CLOSED = function() mark("book", false) end,
     PET_STABLE_CLOSED = function() mark("stable", false) end,
     MAIL_SHOW = function() MAIL.open = nil; MAIL.tab, MAIL.pick = "inbox", false; mark("mail", true) end,
     MAIL_CLOSED = function()
@@ -2347,7 +2388,7 @@ local ON = {
 -- Content refreshes: these change what an OPEN window shows, and are ignored otherwise.
 -- GET_ITEM_INFO_RECEIVED fires constantly all over the game, so this gate matters.
 local REFRESH = {
-    "GOSSIP_OPTIONS_REFRESHED", "QUEST_ITEM_UPDATE", "MERCHANT_UPDATE", "BAG_UPDATE_DELAYED",
+    "GOSSIP_OPTIONS_REFRESHED", "ITEM_TEXT_READY", "QUEST_ITEM_UPDATE", "MERCHANT_UPDATE", "BAG_UPDATE_DELAYED",
     "UPDATE_INVENTORY_DURABILITY", "PLAYER_MONEY", "GET_ITEM_INFO_RECEIVED",
     "PLAYER_INTERACTION_MANAGER_FRAME_HIDE", "TRAINER_UPDATE", "PET_STABLE_UPDATE", "MAIL_INBOX_UPDATE",
     "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED", "COMMODITY_SEARCH_RESULTS_UPDATED",
@@ -2358,7 +2399,7 @@ local REFRESH = {
 local OPENS = {
     GOSSIP_SHOW = "gossip", QUEST_GREETING = "quest", QUEST_DETAIL = "quest", QUEST_PROGRESS = "quest",
     QUEST_COMPLETE = "quest", MERCHANT_SHOW = "merchant", TRAINER_SHOW = "trainer", PET_STABLE_SHOW = "stable", MAIL_SHOW = "mail", AUCTION_HOUSE_SHOW = "auction",
-    TAXIMAP_OPENED = "taxi", BANKFRAME_OPENED = "bank", LOOT_OPENED = "loot", PETITION_SHOW = "petition",
+    TAXIMAP_OPENED = "taxi", BANKFRAME_OPENED = "bank", LOOT_OPENED = "loot", PETITION_SHOW = "petition", ITEM_TEXT_BEGIN = "book",
 }
 
 local f = CreateFrame("Frame")
@@ -3451,6 +3492,18 @@ function ACT.spkopt(which, v)
     return true
 end
 
+-- /wci bookprev | booknext   a book's pages (the game's own calls, as its Prev / Next buttons)
+function ACT.bookprev()
+    if not isOpen("book") then return false, "no book open" end
+    if (TN(function() return ItemTextGetPage() end) or 1) <= 1 then return false, "the first page" end
+    return run(function() ItemTextPrevPage() end)
+end
+function ACT.booknext()
+    if not isOpen("book") then return false, "no book open" end
+    if TB(function() return ItemTextHasNextPage() end) ~= true then return false, "the last page" end
+    return run(function() ItemTextNextPage() end)
+end
+
 function ACT.close()
     N.spk.stop("close")
     local any = false
@@ -3460,6 +3513,7 @@ function ACT.close()
     if isOpen("trainer") then any = true; CALL(function() CloseTrainer() end) end
     if isOpen("stable") then any = true; CALL(function() C_StableInfo.ClosePetStables() end) end
     if isOpen("petition") then any = true; CALL(function() ClosePetition() end) end
+    if isOpen("book") then any = true; CALL(function() CloseItemText() end) end
     if isOpen("mail") then any = true; CALL(function() CloseMail() end) end
     if isOpen("auction") then any = true; ahCancelBuy(); CALL(function() C_AuctionHouse.CloseAuctionHouse() end) end
     if isOpen("taxi") then any = true; CALL(function() CloseTaxiMap() end) end
@@ -4822,6 +4876,7 @@ local HIDE = {
     trainer = { "ClassTrainerFrame" },
     stable = { "PetStableFrame" },
     petition = { "PetitionFrame" },
+    book = { "ItemTextFrame" },
     -- the game opens the bags with the mailbox and the auction house as it does at a vendor (user, 2026-09-30:
     -- "it opens backpack in the top screen"): hidden by alpha the same way, never closed
     mail = { "MailFrame", "OpenMailFrame", "ContainerFrameCombinedBags", "GamepadBagBar" },
