@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m74"                -- bump on every change; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m75"                -- bump on every change; m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -1922,14 +1922,41 @@ local function cdSend()
         WC.push()
     end)
 end
+-- m75: the fight spell Home draws at base position [pos] now: in a form its own In-combat spell (m55); else X / Y / A's fight spell;
+-- else the D-pad's In-combat spell (the overlay, m43) -> { n, id, i, tcd? } or nil
+function OV.fightAt(pos)
+    local f
+    for _, fo in ipairs(OV.forms()) do if fo.on then f = fo end end
+    if f then local e = OV.ffAt(f.id, pos); if e then return e end end
+    if FACE[pos] then
+        local c = faceStore()[pos]
+        return (type(c) == "table" and type(c.n) == "string") and c or nil
+    end
+    if pos >= 1 and pos <= 4 then
+        local s = storage(gamePage(), 1, pos)
+        local e = s and OV.ftAt(s)
+        return (type(e) == "table" and type(e.n) == "string") and e or nil
+    end
+    return nil
+end
+-- a spell's tooltip cooldown, read once per spell (the fight faces keep theirs as tcd)
+OV.tcd = {}
+function OV.tcdOf(id)
+    if type(id) ~= "number" then return nil end
+    if OV.tcd[id] == nil then OV.tcd[id] = (tooltipCd and tooltipCd(id)) or false end
+    return OV.tcd[id] or nil
+end
 -- SPELL_UPDATE_COOLDOWN: read each fight spell's cooldown flags NOW (the only time isOnGCD is trusted)
 local function faceCooldowns()
     local now = GetTime()
     local learned = cdLearned()
     local changed = false
-    for pos in pairs(FACE) do
-        local c = faceStore()[pos]
+    -- m75 (the user: "Some spells on my bar are ... not showing their cooldown if they have one"): every position Home draws a fight
+    -- spell on - X / Y / A and the D-pad's In-combat spells - and the spell it really draws there (a form's own one in a form, m55)
+    for _, pos in ipairs({ 1, 2, 3, 4, 5, 6, 8 }) do
+        local c = OV.fightAt(pos)
         local cur = cdNow[pos]
+        if cur and type(c) == "table" and cur.n ~= c.n then cdNow[pos] = nil; cur = nil; changed = true end    -- another spell there now
         if type(c) == "table" and type(c.n) == "string" then
             local ok, info = pcall(C_Spell.GetSpellCooldown, c.id or c.n)
             local active = ok and type(info) == "table" and TB(function() return info.isActive end) == true
@@ -1944,13 +1971,13 @@ local function faceCooldowns()
                     if gcd then learned["@gcd"] = dur else learned[c.n] = dur end
                 end
                 if not cur or (cur.g or false) ~= gcd or (real and math.abs((cur.t0 + cur.d) - ((st or now) + dur)) > 0.05) then
-                    local d = real and dur or (gcd and (learned["@gcd"] or 1.5) or (learned[c.n] or c.tcd))
+                    local d = real and dur or (gcd and (learned["@gcd"] or 1.5) or (learned[c.n] or c.tcd or OV.tcdOf(c.id)))
                     -- MEASURED on the Thor (08:30, m12): a cast's first SPELL_UPDATE_COOLDOWN shows the spell on the GCD, its own cooldown comes
                     -- about 0.2 s later; that own cooldown started with the cast, so it is counted from the GCD's start
                     local t0 = (real and st) or now
                     if not real and not gcd and cur and cur.g and now - cur.t0 < cur.d then t0 = cur.t0 end
                     if d and d > 0 then
-                        cdNow[pos] = { d = d, t0 = t0, g = gcd or nil, e = (not real) or nil }
+                        cdNow[pos] = { d = d, t0 = t0, g = gcd or nil, e = (not real) or nil, n = c.n }
                     else
                         cdNow[pos] = nil                                -- running, but no length known: drawn as nothing rather than a guess
                     end
@@ -3374,6 +3401,35 @@ OV.smartPick = function(s)
     return nil
 end
 -- SMARTY-PICK-END
+-- SMARTY-ORDER-BEGIN (pure: tools/test_smarty.py) m75: may a due buff go before food / drink? [food] = food or drink is due; [cost] = the
+-- buff's mana cost (nil = none / not mana: it never waits), [mana] = the mana now (nil = unknown: the buff goes, as it would without food)
+OV.smartOrder = function(food, cost, mana)
+    if not food then return true end
+    if not cost or cost <= 0 then return true end
+    if not mana then return true end
+    return mana >= cost
+end
+-- SMARTY-ORDER-END
+-- the mana now (plain or modelled), nil = unknown; a character without a mana pool: nil
+function OV.smartMana()
+    local okv, v = pcall(OV.smartVitals)
+    if not okv or type(v) ~= "table" or v.mpSrc == "none" then return nil end
+    return v.mp
+end
+-- a buff step's mana cost: one buff's, or an OR row's cheapest member's (nil = no mana cost)
+function OV.sbCost(kind, e)
+    if type(e) ~= "table" then return nil end
+    if kind == "or" and OV.sbAt then
+        local row = OV.sbdb().rows[OV.sbAt]
+        local best
+        for _, id in ipairs(row and row.ids or {}) do
+            local c = OV.nmCost and OV.nmCost(id)
+            if c and (not best or c < best) then best = c end
+        end
+        return best
+    end
+    return OV.nmCost and OV.nmCost(e.id) or nil
+end
 -- m64 (test32's why line: "hp ? | mana none" on a druid): this client makes UnitHealth("player") a SECRET value, in and out of combat
 -- (Safety.lua's self-test measured it), and its power readers likewise, so the plain numbers were never there and food / drink never
 -- came. Each bar is now read through the first reader this client leaves PLAIN (never compared or added while secret: issecretvalue /
@@ -3583,7 +3639,10 @@ function OV.smartApply()
     -- m62: food and water first; then the player's buff rows (their OR cells kept current either way)
     if pick then OV.smartItem = { id = pick.id, kind = pick.kind } end      -- m70: the model's eating / drinking rate
     local okb, bv, bt, be = pcall(OV.sbStep)
-    if not pick and okb and bv then
+    -- m75 (the user: "the buffs should probably come before food/Water if I have enough Mana for it"): a due buff the mana covers comes
+    -- FIRST; food / drink first only when the mana is short for it (or no buff is due)
+    local buffFirst = okb and bv and OV.smartOrder(pick ~= nil, OV.sbCost(bt, be), OV.smartMana())
+    if okb and bv and (not pick or buffFirst) then
         val, typ = bv, bt
         OV.smarty = { id = be.id, n = be.n, i = be.i, k = bt == "or" and "or" or "buff" }
     end

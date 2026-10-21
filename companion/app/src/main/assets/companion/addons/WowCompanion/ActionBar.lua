@@ -126,6 +126,30 @@ local function bit01(b)
     return 0
 end
 
+-- m75 (Spells' PadMap; the user: "Some spells on my bar are still behaving weird in combat, not showing when I don't have enough mana"):
+-- the game's own "not enough mana" can read SECRET in a fight; then the mana estimate (WC.vitals: plain or Smart Y's model) against
+-- the spell's mana cost decides. -> true / false, or nil (no answer)
+local function manaShort(id)
+    if type(id) ~= "number" or type(WC.vitals) ~= "function" then return nil end
+    local okv, v = pcall(WC.vitals)
+    if not okv or type(v) ~= "table" or type(v.mp) ~= "number" or v.mpSrc == "none" then return nil end
+    local okc, costs = pcall(function() return C_Spell.GetSpellPowerCost(id) end)
+    if not okc or type(costs) ~= "table" then return nil end
+    for _, c in ipairs(costs) do
+        local okt, ty = pcall(function() return c.type end)
+        local okn, cost = pcall(function() return c.cost end)
+        if okt and ty == 0 and okn and type(cost) == "number" and WC.isPlain(cost) then return cost > v.mp end
+    end
+    return nil
+end
+-- the game's usable / not-enough-mana pair, each plain or not: a secret "usable" counts as usable, a secret mana flag asks [manaShort]
+local function usableMana(o, u, m, id)
+    if u == true or u == false then o.u = bit01(u) else o.u = bit01(u == WC.SECRET) end      -- nil / absent: unusable, as before
+    if m == true or m == false then o.m = bit01(m)
+    elseif m == WC.SECRET or m == nil then o.m = bit01(manaShort(id) == true)
+    else o.m = 0 end
+end
+
 -- Raw read of a field (frame references only; NEVER put the result on the wire unsanitised).
 local function field(obj, key)
     if obj == nil then return nil end
@@ -799,10 +823,7 @@ local function buttonState(d, combat, hasTarget)
     end
     local s = d.s
     local r = PCALL(A("IsUsableAction"), s)            -- isUsable, isLackingResources
-    if r[1] then
-        o.u = bit01(SV(r[2]) == true)
-        o.m = bit01(SV(r[3]) == true)
-    end
+    if r[1] then usableMana(o, SV(r[2]), SV(r[3]), spellIdOf(d)) end
     if hasTarget then
         local v = S(A("IsActionInRange"), s)
         if v == true then o.r = 1 elseif v == false then o.r = 0 end
@@ -954,10 +975,7 @@ end
 local function spellState(id, hasTarget)
     local o = { i = id, ct = castMs(id) }
     local r = PCALL(api("C_Spell", "IsSpellUsable") or _G.IsUsableSpell, id)          -- isUsable, insufficientPower
-    if r[1] then
-        o.u = bit01(SV(r[2]) == true)
-        o.m = bit01(SV(r[3]) == true)
-    end
+    if r[1] then usableMana(o, SV(r[2]), SV(r[3]), id) end
     if hasTarget then
         local v = S(api("C_Spell", "IsSpellInRange") or _G.IsSpellInRange, id, "target")
         if v == true or v == 1 then o.r = 1 elseif v == false or v == 0 then o.r = 0 end
