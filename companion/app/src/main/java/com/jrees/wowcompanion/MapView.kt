@@ -4021,6 +4021,7 @@ class MapView(context: Context) : View(context) {
                 else "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}" + (if (SafePathV2.enabled && v2Shown) " (SafePath v2)" else "")
             // cp19: the flags after it (as the map draws them: every bend, and the step's point unless it is the goal) for the world marker
             pinMore = leg.drop(2).let { if (r.kind == CursorRoute.Kind.GOAL) it.dropLast(1) else it }.take(RouteWaypoint.MORE_MAX)
+                .map { p -> doubleArrayOf(p[0], p[1], flagDz(m, p[0], p[1])) }
             return leg[1]
         }
         if (r.kind == CursorRoute.Kind.GOAL) return none("the route is direct (no checkpoint, no way)")
@@ -4030,7 +4031,18 @@ class MapView(context: Context) : View(context) {
     }
     /** why the pin stands where [routePin] said last (the host logs it with each tap) */
     var pinWhy = ""; private set
-    /** cp19: the checkpoints after the pin's, as [routePin] found them last (this map's 0..1; the world marker's further flags) */
+    /**
+     * a further flag's ground height against the player's (yards; NaN unknown), for the world marker ("Try to ground them all"): the
+     * terrain step's cell MEAN height there (Terrain.heightsOf: about 25 yd cells - a few yards off on a steep slope, the ground under
+     * a bridge or deck) less the player's own UnitPosition z (the map doc's wz). The shipped network carries no heights (the ruling).
+     */
+    private fun flagDz(m: JSONObject, x: Double, y: Double): Double {
+        val r = rect ?: return Double.NaN
+        val pz = m.optDouble("wz", Double.NaN); if (pz.isNaN()) return Double.NaN
+        val h = Terrain.heightsOf(m.optInt("mapID", 0))?.at(r.top - y * r.height, r.left - x * r.width) ?: return Double.NaN
+        return if (h.isNaN()) Double.NaN else h - pz
+    }
+    /** cp19: the checkpoints after the pin's, as [routePin] found them last (this map's 0..1, and [flagDz] third; the world marker's flags) */
     var pinMore: List<DoubleArray> = emptyList(); private set
     /** ag5: [routePin] found the app ROUTING the game-focused quest (SafePath, or the corpse run), whether or not a pin goes up */
     var pinRouting = false; private set
