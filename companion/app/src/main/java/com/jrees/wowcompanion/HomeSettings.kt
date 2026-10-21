@@ -337,6 +337,44 @@ object CompassSwitch {
 }
 
 /**
+ * ar1 (the user's "Both" / "Keep separate"): Settings > Top screen's "Aggro rings" (default on): the add-on's rings on the ground under
+ * hostile mobs not yet pulled (Trail.lua's WC.rings). The row follows the add-on's word (proof.ringc.show); one tap, tried once more.
+ */
+object RingsSwitch {
+    data class State(val show: Boolean, val colOn: Int, val colOff: Int)
+    var state: State? = null
+        private set
+    private var pad: JSONObject? = null
+    private val listeners = ArrayList<() -> Unit>()
+    private val main = Handler(Looper.getMainLooper())
+
+    fun onChange(l: () -> Unit) { listeners.add(l) }
+
+    fun note(msg: JSONObject) {
+        msg.optJSONObject("pad")?.let { pad = it }
+        val c = msg.optJSONObject("proof")?.optJSONObject("ringc") ?: return
+        val s = State(c.optBoolean("show", true), c.optInt("on", -1), c.optInt("off", -1))
+        if (s.colOn < 0 || s.colOff < 0 || s == state) return
+        state = s
+        for (l in listeners) l()
+    }
+
+    fun turn(ctx: Context, on: Boolean): Boolean {
+        val sent = tap(ctx, on)
+        main.removeCallbacksAndMessages(null)
+        if (sent) main.postDelayed({ val s = state; if (s != null && s.show != on) tap(ctx, on) }, RETRY_MS)
+        return sent
+    }
+
+    private fun tap(ctx: Context, on: Boolean): Boolean {
+        val s = state ?: return false
+        return TapBridge.tap(ctx, pad ?: HomeAttackSwitch.pad, "iact", if (on) s.colOn else s.colOff) { }
+    }
+
+    private const val RETRY_MS = 450L
+}
+
+/**
  * tt1 (test50, the user: "I need a setting to hide top screen tooltips"): Settings > Top screen's "Hide game tooltips" (default off).
  * The add-on hides the game's tooltips by alpha only (Trail.lua's WC.tips) and says so in every interact document (proof.tipc.hide);
  * the row follows that word. One tap per touch, tried once more if the word does not change, as the compass switch.
