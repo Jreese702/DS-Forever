@@ -293,7 +293,7 @@ class SpellbookView(
             val st = SpellsModel.status(b, e)
             UiKit.bookEntry(c, entryRect(i, h), Icons.get(e.icon), e.name, SpellsModel.sub(b, e), kitState(st),
                 onBar = SpellsModel.onBar(b, e), chosen = !onTabs && isChosen(b, e), passive = e.passive,
-                autoCast = SpellsModel.autoCast(e))
+                autoCast = SpellsModel.autoCast(e), noMana = NoMana.has(e.spellId))
         }
         val pages = pagesOf(tab)
         if (pages > 1) UiKit.bookPaging(c, 330f, (Y0 + 5f * rh(h) + h) / 2f, page, pages)
@@ -362,7 +362,8 @@ class SpellbookView(
         val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
         val st = SpellsModel.status(b, e)
         val onBar = SpellsModel.onBar(b, e)
-        UiKit.spell(c, Icons.get(e.icon), x0 + 36f, top + 16f, 96f, kitState(st), onBar, e.passive, autoCast = SpellsModel.autoCast(e))
+        UiKit.spell(c, Icons.get(e.icon), x0 + 36f, top + 16f, 96f, kitState(st), onBar, e.passive, autoCast = SpellsModel.autoCast(e),
+            noMana = NoMana.has(e.spellId))
 
         // the name: 42 px, smaller down to 30 to stay on one line, then two lines
         val nameLeft = x0 + 158f; val nameW = x1 - nameLeft

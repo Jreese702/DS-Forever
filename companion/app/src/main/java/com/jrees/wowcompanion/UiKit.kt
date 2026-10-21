@@ -3247,7 +3247,7 @@ object UiKit {
      * may (the game's gold corners, quiet), 2 = it does (the corners bright and the game's ring).
      */
     fun spell(c: Canvas, icon: Bitmap?, x: Float, y: Float, size: Float, state: Spell = Spell.KNOWN, onBar: Boolean = true,
-              passive: Boolean = false, chosen: Boolean = false, onDark: Boolean = false, autoCast: Int = 0) {
+              passive: Boolean = false, chosen: Boolean = false, onDark: Boolean = false, autoCast: Int = 0, noMana: Boolean = false) {
         val known = state == Spell.KNOWN
         val ir = RectF(x, y, x + size, y + size)
         val pIcon = if (known) pBmp else pFaint.apply { alpha = if (onDark) 204 else 153 }
@@ -3282,6 +3282,7 @@ object UiKit {
                 fr.top - 3f * k + it.height * k), pBmp)
         }
         if (icon != null) c.drawBitmap(icon, null, ir, pIcon)
+        if (noMana && icon != null) manaTint(c, ir)                   // m71: the game's out-of-mana blue, under the frame
         c.drawBitmap(frame, null, fr, pBmp)
         if (known && !onBar) tex("book_glow")?.let {
             // the game's "missing from all bars" glow (SpellBookItem's ActionBarHighlight): ADDED and PULSING, alpha 0.5 -> 1 -> 0.5
@@ -3320,7 +3321,7 @@ object UiKit {
      */
     fun bookEntry(c: Canvas, r: RectF, icon: Bitmap?, name: String, sub: String?, state: Spell = Spell.KNOWN,
                   onBar: Boolean = true, chosen: Boolean = false, passive: Boolean = false, size: Float = 80f,
-                  autoCast: Int = 0) {
+                  autoCast: Int = 0, noMana: Boolean = false) {
         if (chosen) {
             val band = RectF(r.left, r.top + 5f, r.right, r.bottom - 5f)
             pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(51, 110, 60, 14)
@@ -3330,7 +3331,7 @@ object UiKit {
             c.drawRect(band, pFlat)
         }
         val ix = r.left + 24f; val iy = r.top + (r.height() - size) / 2f - 2f
-        spell(c, icon, ix, iy, size, state, onBar, passive, chosen, autoCast = autoCast)
+        spell(c, icon, ix, iy, size, state, onBar, passive, chosen, autoCast = autoCast, noMana = noMana)
         val tx = ix + size + 16f
         val room = r.right - 8f - tx
         val known = state == Spell.KNOWN
@@ -3801,7 +3802,18 @@ object UiKit {
                      /** PINNED to its slice by the player (the game's gold pin on the icon's top-right corner) */
                      val pinned: Boolean = false,
                      /** a pin whose item RAN OUT: the icon greyed, the pin grey; it keeps its slice (pass count 0) */
-                     val ranOut: Boolean = false)
+                     val ranOut: Boolean = false,
+                     /** m71: a spell the player cannot afford now: the game's blue out-of-mana look */
+                     val noMana: Boolean = false)
+
+    /** m71: the game's out-of-mana look over an icon already drawn in [r]: its colours times (0.5, 0.5, 1.0), the action button's own */
+    fun manaTint(c: Canvas, r: RectF, round: Float = 0f) {
+        if (r.isEmpty) return
+        if (round > 0f) c.drawRoundRect(r, round, round, pManaTint) else c.drawRect(r, pManaTint)
+    }
+    private val pManaTint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(128, 128, 255); xfermode = android.graphics.PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
+    }
 
     /**
      * THE SLICE CHOOSER (the user's pin sheet, signed off 2026-10-06 "Build as drawn"): the item picked in the bag picker floats over the
@@ -4188,7 +4200,7 @@ object UiKit {
                 c.clipPath(android.graphics.Path().apply { addRoundRect(r, 8f * g.s, 8f * g.s, android.graphics.Path.Direction.CW) })
                 // a pin that ran out: greyed and darkened
                 if (it.ranOut) { pCrGrey.colorFilter = crGreyFilter(0f, 0.55f); pCrGrey.alpha = al; c.drawBitmap(b, null, r, pCrGrey) }
-                else { pBmp.alpha = al; c.drawBitmap(b, null, r, pBmp); pBmp.alpha = 255 }
+                else { pBmp.alpha = al; c.drawBitmap(b, null, r, pBmp); pBmp.alpha = 255; if (it.noMana) manaTint(c, r) }
                 val shade = if (on) (70 * (1f - selK)).toInt() else 70
                 if (shade > 0) { pFlat.color = Color.argb((shade * k * fade).toInt(), 0, 0, 0); c.drawRect(r, pFlat) }
                 c.restoreToCount(save)

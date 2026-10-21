@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m70"                -- bump on every change; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m71"                -- bump on every change; m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -4398,6 +4398,7 @@ function OV.hmStep()
         local k, st = whoKey(), T(function() return GetServerTime() end)
         if k and st then OV.hmDB()[k] = { hp = math.floor(m.hp), mp = math.floor(m.mp), t = st } end
     end
+    pcall(OV.nmCheck)                                                   -- m71: the spells out of mana, once a second
     local low = (m.hp < m.hpMax * 0.8) or (m.mpMax > 0 and m.mp < m.mpMax * 0.8)
     if low ~= OV.hmLow then OV.hmLow = low; C_Timer.After(0.1, function() pcall(OV.smartApply) end) end
 end
@@ -4447,6 +4448,64 @@ OV.hmF:SetScript("OnEvent", function(_, e, a1, a2, a3, a4)
         if a1 ~= "player" then return end
         OV.hmMax(m, OV.hmPlain(T(function() return UnitHealthMax("player") end)), OV.hmPlain(T(function() return UnitPowerMax("player", 0) end)))
     end
+end)
+-- m71 NOT ENOUGH MANA, MARKED (the user: "Now that we have an Idea of my mana, can we better track when I am too low on mama for spells?",
+-- then "Mark spells"). The app's own spell pictures (the spell wheel, the Spellbook, the class radials, Smart buffs' rows) get the
+-- game's blue out-of-mana look; the bars already have it (the game's own IsUsableAction notEnoughMana, plain on this client). Here:
+-- every spell those surfaces show - the book's spells, Smart buffs' list - checked once a second and on SPELL_UPDATE_USABLE:
+-- C_Spell.IsSpellUsable's noMana when it is plain (the game's own answer), else m70's mana (plain or modelled) against the spell's
+-- mana cost (C_Spell.GetSpellPowerCost). ONE `nomana` document { ids, src } only when the set changes. Read only.
+function OV.nmBool(v)
+    if type(issecretvalue) == "function" then local ok, q = pcall(issecretvalue, v); if not ok or q then return nil end end
+    if type(WC.isPlain) == "function" and not WC.isPlain(v) then return nil end
+    if type(v) == "boolean" then return v end
+    return nil
+end
+function OV.nmCost(id)
+    local costs = T(function() return C_Spell.GetSpellPowerCost(id) end)
+    if type(costs) ~= "table" then return nil end
+    for _, c in ipairs(costs) do
+        local ty, cost = T(function() return c.type end), OV.hmPlain(T(function() return c.cost end))
+        if ty == 0 and cost then return cost end
+    end
+    return nil
+end
+function OV.nmCheck()
+    local ids, seen = {}, {}
+    local ok, list = pcall(function() return type(WC.spellsBindableList) == "function" and WC.spellsBindableList() or {} end)
+    for _, e in ipairs(ok and type(list) == "table" and list or {}) do if e.id and not seen[e.id] then seen[e.id] = true; ids[#ids + 1] = e.id end end
+    for _, e in ipairs(OV.sbList or {}) do if e.id and not seen[e.id] then seen[e.id] = true; ids[#ids + 1] = e.id end end
+    local v = OV.smartVitals()
+    local mana = (v.mpSrc and v.mpSrc ~= "none") and v.mp or nil
+    local usable = (C_Spell and C_Spell.IsSpellUsable) or _G.IsUsableSpell
+    local out, game, model = {}, false, false
+    for _, id in ipairs(ids) do
+        local nm
+        if usable then
+            local okU, _, noMana = pcall(usable, id)
+            if okU then nm = OV.nmBool(noMana) end
+        end
+        if nm ~= nil then
+            game = true
+            if nm then out[#out + 1] = id end
+        elseif mana then
+            local cost = OV.nmCost(id)
+            if cost and cost > mana then out[#out + 1] = id; model = true end
+        end
+    end
+    table.sort(out)
+    local sig = table.concat(out, ",")
+    if sig == OV.nmSig then return end
+    OV.nmSig = sig
+    WC.send(WC.encode({ type = "nomana", v = PV, ids = out, src = game and (model and "mixed" or "game") or (model and "model" or "none") }))
+    WC.push()
+end
+OV.nmF = CreateFrame("Frame")
+for _, e in ipairs({ "SPELL_UPDATE_USABLE", "ACTIONBAR_UPDATE_USABLE", "SPELLS_CHANGED" }) do pcall(function() OV.nmF:RegisterEvent(e) end) end
+OV.nmF:SetScript("OnEvent", function()
+    if OV.nmSoon then return end
+    OV.nmSoon = true
+    C_Timer.After(0.3, function() OV.nmSoon = nil; pcall(OV.nmCheck) end)
 end)
 -- m33: the bags and the Mount Journal change the Extra tab's lists: a doc soon (no router work for these)
 local fx = CreateFrame("Frame")

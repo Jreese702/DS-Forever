@@ -298,5 +298,40 @@ t = P.table_from({"hp": 216, "hpMax": 271, "mp": 457, "mpMax": 457, "level": 10,
 r = pick(t)
 check(r is not None and r[1] == "food", "the model's 216 / 271 (under 80 %): food", r and r[1])
 
+# ---------------------------------------------------------------- m71: the spells out of mana (the game's flag, else the estimate)
+nb = SRC[SRC.index('function OV.nmBool(v)'):SRC.index('OV.nmF = CreateFrame("Frame")')]
+N = lupa.LuaRuntime(unpack_returned_tuples=True)
+N.execute("""
+OV, WC, PV = {}, {}, "m71"
+SECRET = setmetatable({}, {})
+issecretvalue = function(v) return rawequal(v, SECRET) end
+function WC.isPlain(v) return not rawequal(v, SECRET) end
+function T(fn) local ok, v = pcall(fn); if ok then return v end end
+function OV.hmPlain(v) if rawequal(v, SECRET) then return nil end; if type(v) == "number" then return v end end
+SENT = {}
+function WC.encode(t) return t end
+function WC.send(t) SENT[#SENT + 1] = t end
+function WC.push() end
+MANA = 100; FLAG = {}
+function OV.smartVitals() return { mp = MANA, mpSrc = "model" } end
+WC.spellsBindableList = function() return { { id = 1 }, { id = 2 }, { id = 3 } } end
+COST = { [1] = 50, [2] = 150, [3] = 0 }
+C_Spell = { IsSpellUsable = function(id) return true, FLAG[id] end, GetSpellPowerCost = function(id) return { { type = 0, cost = COST[id] } } end }
+""" + nb)
+def nm(flags, mana=100):
+    N.execute('SENT = {}; MANA = %d; FLAG = {%s}' % (mana, flags))
+    N.execute('OV.nmCheck()')
+    sent = N.eval('SENT')
+    if len(sent) == 0:
+        return None
+    t = sent[1]
+    return (sorted(t["ids"][i] for i in range(1, len(t["ids"]) + 1)), t["src"])
+
+check(nm('[1] = false, [2] = true, [3] = false') == ([2], "game"), "the game's own plain noMana", "")
+check(nm('[1] = false, [2] = true, [3] = false') is None, "the same set again: nothing sent", "")
+check(nm('[1] = SECRET, [2] = SECRET, [3] = SECRET', mana=40) == ([1, 2], "model"),
+      "the flag secret: the estimate (40) against each cost (50, 150, 0)", nm('[1] = SECRET, [2] = SECRET, [3] = SECRET', mana=41))
+check(nm('[1] = SECRET, [2] = SECRET, [3] = SECRET', mana=500) == ([], "none"), "enough for all: an empty set", "")
+
 print('ALL PASS' if fails == 0 else '%d FAILED' % fails)
 sys.exit(1 if fails else 0)
