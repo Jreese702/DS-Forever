@@ -639,12 +639,35 @@ def main():
     wantP = 384 + proj(0.35, dpin, -3)
     chk("cp20: the pin's own ground 3 yd below us: the main marker moved onto it (y %.1f, the projection %.1f; the engine's %.1f)"
         % (W.f.point[5], wantP, G.nav.y), abs(W.f.point[5] - wantP) < 0.5 and W.pinDz == -3)
+    # cp21 (the user's pick "D: beam + rings"): with the pitch, the next checkpoint a beam + a ground ring, the others rings
+    o1, o2 = W.list[1], W.list[2]
+    dA = 250 * math.cos(relA)
+
+    def depth(phi, dfwd, dz, D=12.5, H=1.9):
+        vf = dfwd + D * math.cos(phi)
+        vu = dz - H - D * math.sin(phi)
+        return vf * math.cos(phi) - vu * math.sin(phi)
+    rwA = 2 * 1.8 * c0 / depth(0.35, dA, 6) / 0.78
+    rhA = max(3 * 768 / 1080, proj(0.35, dA + 1.8, 6) - proj(0.35, dA - 1.8, 6)) / 0.78     # (at least 3 spec px tall)
+    chk("cp21: a further flag is a RING on the ground, no pin (%.1f x %.1f, the projection %.1f x %.1f; squashed by the pitch)"
+        % (o2.ring.w or -1, o2.ring.h or -1, rwA, rhA),
+        o2.ring.shown is True and o2.tx.shown is False and o2.beam.shown is False and abs(o2.ring.w - rwA) < 0.05
+        and abs(o2.ring.h - rhA) < 0.05 and o2.ring.h < o2.ring.w and o2.ring.tex.endswith("marker_ring"))
+    bh = proj(0.35, dpin, -3 + 26) - proj(0.35, dpin, -3)
+    chk("cp21: the NEXT one: a beam 26 yd up from its ground (%.1f px, the projection %.1f) and a ring at its foot, no pin"
+        % (o1.beam.h or -1, bh), o1.beam.shown is True and o1.ring.shown is True and o1.tx.shown is False
+        and abs(o1.beam.h - bh) < 0.05 and o1.beam.point[1] == "BOTTOM" and o1.beam.tex.endswith("marker_beam"))
     L.execute("WowCompanion.routeWp.pinZ = nil; WowCompanion.routeWp.more[1].dz = nil")
     G.nav = None; frames(3, read=True)
     m2 = W.list[2]
     chk("cp19: the engine's point gone: the flag stays a moment, placed by the camera's estimate (x %.1f)" % m2.f.point[4],
         W.shown is False and m2.f.shown is True and abs(m2.f.point[4] - want) < 15)
     G.ry = 0.6; frames(2, read=True); G.ry = 0
+    G.nav = L.table_from({"x": c0 + c0 * math.tan(math.radians(22.5)), "y": 384 + proj(0.35, dpin, 0), "clamped": False})
+    G.ry = 0.6; C.wm.pitchAt = -100; frames(1, read=True)
+    chk("cp21: no pitch: the next one is the pin again (no beam, no ring)", W.list[1].tx.shown is True and W.list[1].beam.shown is False
+        and W.list[1].ring.shown is False)
+    G.ry = 0; G.nav = None; C.wm.tilted = True; frames(1, read=True)
     chk("cp20: the camera tilted since the pitch was read: the flags hide rather than float", W.list[2].f.shown is False and W.tilted is True)
     G.nav = L.table_from({"x": c0 + c0 * math.tan(math.radians(22.5)), "y": 384 + proj(0.35, dpin, 0), "clamped": False})
     frames(3, read=True)

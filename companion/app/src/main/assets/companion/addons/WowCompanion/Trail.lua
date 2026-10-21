@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp20" }
+WC.compass = { V = "cp21" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -691,7 +691,15 @@ do
     --   camera pitch is readable: the horizon band), the middle of the screen when the engine's point is not to be seen.
     --   IN FRONT: tested against the camera's yaw, also with the bar on the facing (the estimate runs always, cp19).
     C.wm = { SIZE = 34, HOLD_S = 1.2, EASE_S = 0.12, LAND_S = 0.5, MORE_K = { 0.8, 0.68, 0.58 }, MORE_A = { 0.85, 0.65, 0.5 },
-             list = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 3, TILT = 0.1 }
+             list = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 3, TILT = 0.1,
+             RING_R = { 2.6, 1.8, 1.6, 1.4 }, BEAM_H = 26, BEAM_W = 1.2, GOLD = { 1, 0.82, 0.3 },
+             RING = "Interface\\AddOns\\WowCompanion\\Media\\marker_ring", BEAM = "Interface\\AddOns\\WowCompanion\\Media\\marker_beam" }
+    -- cp21 (the user's pick, "D: beam + rings"): with a pitch, the route's checkpoints are drawn IN the world instead of as pins: the
+    -- NEXT one a soft light beam BEAM_H yd tall rising from its ground point, with a glowing ring on the ground at its foot; the ones
+    -- after it smaller, fainter rings. The ring is the ground circle's projection (its width from the lateral extent at its depth,
+    -- its height from its near and far edges: squashed by the pitch); the beam's height is the projection of BEAM_H above the foot.
+    -- Our own textures (tools/make_world_markers.py), added light, tinted gold. No pitch: the next one is the pin as before, the
+    -- others hide (cp20). The focused quest's own point (no route) keeps its pin.
     -- cp20 (the user: "Sometimes they are perfectly glued to the ground, other times they float in the air ... Try to ground them
     -- all"): the CAMERA'S PITCH, solved from the engine's own point. The camera orbits a pivot CAM_H above the player's feet at the
     -- zoom distance (GetCameraZoom, read), tilted down by the pitch; the engine projects the pin (a map point with no height) at the
@@ -731,6 +739,26 @@ do
         local ok, _, _, z = pcall(UnitPosition, "player")
         return ok and num(z) or nil
     end
+    -- cp21: a checkpoint's ring (and beam) on the ground: dfwd ahead, dz above the player's feet, radius r yd; the screen sizes in UI
+    -- units around its foot (nil when it is behind the camera)
+    function C.wmGround(dfwd, dz, r, beam, fl)
+        local W = C.wm
+        local D, H, phi = C.wmZoom(), W.CAM_H, W.pitch
+        local y0 = C.wmProj(phi, D, H, dfwd, dz, fl)
+        local yn = C.wmProj(phi, D, H, dfwd - r, dz, fl)
+        local yf = C.wmProj(phi, D, H, dfwd + r, dz, fl)
+        if not (y0 and yn and yf) then return nil end
+        local vf = dfwd + D * math.cos(phi)
+        local vu = dz - H - D * math.sin(phi)
+        local depth = vf * math.cos(phi) - vu * math.sin(phi)
+        local g = { rw = 2 * r * fl / depth, rh = math.max(C.u(3), yf - yn), roff = (yn + yf) / 2 - y0 }
+        g.rw, g.rh = g.rw / 0.78, g.rh / 0.78                -- (the texture's ring sits at 0.78 of its half size)
+        if beam then
+            local yt = C.wmProj(phi, D, H, dfwd, dz + W.BEAM_H, fl)
+            if yt and yt > y0 then g.bh, g.bw = yt - y0, math.max(C.u(8), 2 * W.BEAM_W * fl / depth) end
+        end
+        return g
+    end
     -- a point's height relative to the player NOW (its sent height less the climb since), nil = unknown
     function C.wmDz(p)
         if type(p) ~= "table" or not num(p.dz) then return nil end
@@ -757,16 +785,47 @@ do
         local d = f:CreateFontString(nil, "OVERLAY")
         d:SetFont(C.FONT, C.u(i == 1 and 13 or 11), "OUTLINE")
         d:SetPoint("TOP", f, "BOTTOM", 0, -C.u(2))
-        W.list[i] = { f = f, sh = sh, tx = tx, d = d }
+        -- cp21: the ground ring and the beam (hidden until a pitch places them)
+        local ring = f:CreateTexture(nil, "ARTWORK", nil, 2)
+        ring:SetTexture(W.RING)
+        pcall(function() ring:SetBlendMode("ADD") end)
+        ring:SetVertexColor(W.GOLD[1], W.GOLD[2], W.GOLD[3])
+        ring:Hide()
+        local beam = f:CreateTexture(nil, "ARTWORK", nil, 4)
+        beam:SetTexture(W.BEAM)
+        pcall(function() beam:SetBlendMode("ADD") end)
+        beam:SetVertexColor(W.GOLD[1], W.GOLD[2], W.GOLD[3])
+        beam:Hide()
+        W.list[i] = { f = f, sh = sh, tx = tx, d = d, ring = ring, beam = beam }
         if i == 1 then W.f, W.sh, W.tx, W.d = f, sh, tx, d end
         return f
     end
     function C.wmHide()
         for _, o in pairs(C.wm.list) do if o.f:IsShown() then o.f:Hide() end end
     end
-    local function wmPut(i, x, y, atlas, txt, alpha)
+    -- g (cp21): nil = the pin; else { rw, rh, roff (the ring's middle above the foot), bh, bw (the beam; nil = no beam) }
+    local function wmPut(i, x, y, atlas, txt, alpha, g)
         C.wmBuild(i)
         local o = C.wm.list[i]
+        if g then
+            o.tx:Hide(); o.sh:Hide()
+            o.ring:ClearAllPoints()
+            o.ring:SetPoint("CENTER", o.f, "CENTER", 0, g.roff)
+            o.ring:SetSize(g.rw, g.rh)
+            o.ring:Show()
+            if g.bh then
+                o.beam:ClearAllPoints()
+                o.beam:SetPoint("BOTTOM", o.f, "CENTER", 0, 0)
+                o.beam:SetSize(g.bw, g.bh)
+                o.beam:Show()
+            else
+                o.beam:Hide()
+            end
+            o.ground = true
+        elseif o.ground then
+            o.tx:Show(); o.sh:Show(); o.ring:Hide(); o.beam:Hide()
+            o.ground = false
+        end
         o.f:ClearAllPoints()
         o.f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
         if o.atlas ~= atlas then
@@ -846,7 +905,9 @@ do
                                 local a1 = C.wmProj(W.pitch, D, W.CAM_H, dfwd, pdz, fl)
                                 if a0 and a1 then y = y + (a1 - a0) end
                             end
-                            wmPut(1, x, y, onPin and "Waypoint-MapPin-Tracked" or "Navigation-Tracked-Icon", C.distText(d), 1)
+                            local g = nil
+                            if onPin and C.wmPitchOk(now) then g = C.wmGround(dfwd, pdz or 0, W.RING_R[1], true, fl) end
+                            wmPut(1, x, y, onPin and "Waypoint-MapPin-Tracked" or "Navigation-Tracked-Icon", C.distText(d), 1, g)
                             on[1] = true
                         end
                     end
@@ -867,8 +928,9 @@ do
                                 local x = half - fl * math.tan(rel)
                                 local yo = C.wmProj(W.pitch, D, W.CAM_H, d * math.cos(rel), C.wmDz(c) or 0, fl)
                                 local y = yo and uh / 2 + yo or nil
-                                if y and math.abs(x - half) < half * 0.95 and y > 0 and y < uh then
-                                    wmPut(i + 1, x, y, "Waypoint-MapPin-Tracked", C.distText(d), W.MORE_A[i])
+                                local g = C.wmGround(d * math.cos(rel), C.wmDz(c) or 0, W.RING_R[i + 1] or 1.4, false, fl)
+                                if y and g and math.abs(x - half) < half * 0.95 and y > 0 and y < uh then
+                                    wmPut(i + 1, x, y, "Waypoint-MapPin-Tracked", C.distText(d), W.MORE_A[i], g)
                                     on[i + 1] = true
                                 end
                             end
