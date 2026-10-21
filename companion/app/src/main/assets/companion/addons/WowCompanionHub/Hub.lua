@@ -29,7 +29,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S = WC.S
 
-local HV = "hub14"          -- hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub15"          -- hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -343,6 +343,18 @@ local function hmCheck()
         end
     end
 end
+-- hub15 HUD MODE'S BAR HEIGHT (tracking / Interact: the personal resource bar HUD mode shows, Trail.lua's WC.prd; the user: "Yes, add a
+-- slider", per character): Interact's bar owns its place (WC.prd.y, its steps, kept in WowCompanionDB.prdY); the row's last spare columns
+-- only pass the app's step on: HUD_LOWER one step down, HUD_HIGHER one up, HUD_HDEF back to the default (WC.prd.nudge(-1 / 1 / 0)). The
+-- hub document says where it is (`prd`), and the app steps until that matches the player's choice.
+local HUD_LOWER, HUD_HIGHER, HUD_HDEF = 36, 37, 38
+local function prdDoc()
+    local p = WC.prd
+    if type(p) ~= "table" then return nil end
+    return { y = tonumber(p.y), on = p.on and true or nil, min = tonumber(p.min), max = tonumber(p.max), step = tonumber(p.step),
+             def = tonumber(p.def) }
+end
+
 local function hmDoc()
     local have = {}
     for _, name in ipairs(HUD_FRAMES) do if riderFrame(name) then have[#have + 1] = name end end
@@ -374,6 +386,7 @@ local function document()
         els = els,
         cb = cbDoc(),                -- hub11: the game's cast bar (Show / Hide on columns CB_SHOW / CB_HIDE)
         hud = hmDoc(),               -- hub13: HUD mode, the player / target frames (Show / Hide on columns HUD_SHOW / HUD_HIDE)
+        prd = prdDoc(),              -- hub15: HUD mode's own bar's place (Interact's WC.prd), stepped on columns 36 / 37 / 38
         row = hub.row and ROW or nil,
         pad = hub.row and WC.pad and WC.pad.describe() or nil,
     }
@@ -402,6 +415,10 @@ local function onTap(_, col)
         cbSet(col == CB_HIDE)
     elseif col == HUD_SHOW or col == HUD_HIDE then
         hmSet(col == HUD_HIDE)
+    elseif col == HUD_LOWER or col == HUD_HIGHER or col == HUD_HDEF then
+        if type(WC.prd) == "table" and type(WC.prd.nudge) == "function" then
+            pcall(WC.prd.nudge, col == HUD_HIGHER and 1 or (col == HUD_LOWER and -1 or 0))
+        end
     end
     emitHub(true)
     WC.push()

@@ -28,6 +28,14 @@ object GameUi {
     /** hub13 HUD MODE: the game's player / target frames hidden, per character; the hub document's hud.hidden (null = no row) */
     private val hud = CastBarPolicy(CastBarPolicy.HUD_SHOW, CastBarPolicy.HUD_HIDE)
     @Volatile private var hudHidden: Boolean? = null
+    /** hub15: HUD mode's bar place now (the hub document's prd: y, its range and step, Interact's WC.prd); null = no bar */
+    @Volatile private var prdY: Int? = null
+    @Volatile private var prdMin = -420
+    @Volatile private var prdMax = -120
+    @Volatile private var prdStep = 10
+    @Volatile private var prdDef = -250
+    private var hudHTapAt = 0L
+    private var hudHTapN = -1
     /** the character now ("Name-Realm", the host's from the padmap); null = not known yet: no HUD row */
     @Volatile var character: String? = null
         set(v) { if (field != v) { field = v; reconcile(); changed() } }
@@ -91,6 +99,35 @@ object GameUi {
     }
     const val HUD_ID = "hudmode"
 
+    /** hub15: HUD mode's bar place for this character (the player's choice; the bar's own until one is made), Interact's y px */
+    fun hudHeight(): Int? {
+        val who = character ?: return null
+        val p = prefs?.getInt("prdy.$who", Int.MIN_VALUE) ?: Int.MIN_VALUE
+        return if (p != Int.MIN_VALUE) p else prdY
+    }
+    /** one step down ([d] -1), up (+1), or back to the default (0); the taps follow until the game says it */
+    fun stepHudHeight(d: Int) {
+        val who = character ?: return
+        val now = hudHeight() ?: return
+        val next = if (d == 0) prdDef else (now + d * prdStep).coerceIn(prdMin, prdMax)
+        prefs?.edit()?.putInt("prdy.$who", next)?.apply()
+        reconcile()
+        changed()
+    }
+    /** the step the row shows: 0 = the lowest place */
+    fun hudHeightStep(): Int? = hudHeight()?.let { (it - prdMin) / prdStep }
+    fun hudHeightSteps(): Int = (prdMax - prdMin) / prdStep
+    /** the Settings row under HUD mode, while HUD mode is on and Interact's bar is there */
+    fun hudHeightRow(): Row? {
+        if (hudRow() == null || !hudOn()) return null
+        val y = prdY ?: return null
+        val want = hudHeight() ?: y
+        val st = (y - prdMin) / prdStep; val n = hudHeightSteps()
+        return Row(HUD_H_ID, "HUD height", null, UiMode.ON, true, false,
+            if (want == y) "Step $st of $n" + (if (y == prdDef) " (the default)" else "") else "Step $st of $n, going to ${(want - prdMin) / prdStep}")
+    }
+    const val HUD_H_ID = "hudheight"
+
     /** f-top-castbar-toggle: the user's Hide for the game's cast bar. Default HIDE (1.0.10-test3, the user: "The cast bar needs to be
      *  hidden": Home's bottom bar shows every cast); a player who picked Show keeps it */
     fun castBarHide(): Boolean = prefs?.getBoolean("castbar.hide", true) ?: true
@@ -129,6 +166,12 @@ object GameUi {
         pad = h.optJSONObject("pad")
         castBarHidden = h.optJSONObject("cb")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         hudHidden = h.optJSONObject("hud")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
+        val prd = h.optJSONObject("prd")
+        prdY = prd?.let { if (it.has("y")) it.optInt("y") else null }
+        if (prd != null) {
+            prdMin = prd.optInt("min", prdMin); prdMax = prd.optInt("max", prdMax)
+            prdStep = prd.optInt("step", prdStep).coerceAtLeast(1); prdDef = prd.optInt("def", prdDef)
+        }
         state = HubState(
             boot = h.optLong("boot", 0L), n = h.optInt("n", 0),
             want = if (h.has("want")) h.optInt("want") else null,
@@ -181,6 +224,18 @@ object GameUi {
             else if (character != null) {
                 val hc = hud.step(hudHidden, hudOn(), visible, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
                 if (hc != null) GameInput.tap(ctx, pad, ROW, hc)
+                else {
+                    // hub15: HUD height, one step a tap toward the choice; the next only after the game's answer (or 1.5 s)
+                    val cur = prdY; val want = hudHeight()
+                    if (cur != null && want != null && cur != want && s != null && live && s.current && s.hasRow &&
+                        (s.n != hudHTapN || now - hudHTapAt > 1500L) && now >= helloAt + GameUiPolicy.SETTLE_MS) {
+                        hudHTapN = s.n; hudHTapAt = now
+                        // the default is one tap (col 38); otherwise one step toward the choice
+                        val col = if (want == prdDef && kotlin.math.abs(want - cur) > prdStep) CastBarPolicy.HUD_HDEF
+                            else if (want > cur) CastBarPolicy.HUD_HIGHER else CastBarPolicy.HUD_LOWER
+                        GameInput.tap(ctx, pad, ROW, col)
+                    }
+                }
             }
         }
     }

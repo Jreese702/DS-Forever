@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m72"                -- bump on every change; m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m73"                -- bump on every change; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -4002,6 +4002,14 @@ function OV.hmOnEvent(e, a1, a2, a3, a4)
         if a1 ~= "player" then return end
         OV.hmMax(m, OV.hmPlain(T(function() return UnitHealthMax("player") end)), OV.hmPlain(T(function() return UnitPowerMax("player", 0) end)))
     end
+end
+-- m73 (tracking: Interact's HUD resource bar fades out of combat at full and may use the model): Smart Y's health / mana for any add-on of
+-- ours - the first plain reader, else m70's model - as { hp, hpMax, hpSrc ("unit" / "pct" / "frame" / "model"), mp, mpMax, mpSrc }
+-- (nil fields = unknown; mpSrc "none" = no mana pool). Read only, cheap enough for a few calls a second.
+WC.vitals = function()
+    local ok, v = pcall(OV.smartVitals)
+    if not ok or type(v) ~= "table" then return nil end
+    return { hp = v.hp, hpMax = v.hpMax, hpSrc = v.hpSrc, mp = v.mp, mpMax = v.mpMax, mpSrc = v.mpSrc }
 end
 -- m71 NOT ENOUGH MANA, MARKED (the user: "Now that we have an Idea of my mana, can we better track when I am too low on mama for spells?",
 -- then "Mark spells"). The app's own spell pictures (the spell wheel, the Spellbook, the class radials, Smart buffs' rows) get the
