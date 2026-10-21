@@ -326,6 +326,12 @@ def main():
         return [Lg.SENT[i] for i in range(1, len(Lg.SENT) + 1) if getattr(Lg.SENT[i], "type", None) == "aggroack"]
     Lg.WowCompanion.routeWp.active = False; tick()
     chk("taps not wanted without a route", A.tapsWanted() is False)
+    # ag5 (test45: the app routed for minutes with no pin up; the layer read route=false): the app's KEEP / SET within 60 s is a route
+    L.execute("WowCompanion.routeWp.routing = function() return ROUTING == true end")
+    Lg.ROUTING = True; tick()
+    chk("ag5: no pin, but the app routing (its KEEP): taps wanted, the probe's route true", A.tapsWanted() is True and A.routing() is True)
+    Lg.ROUTING = False; tick()
+    chk("ag5: the app's word gone: not wanted", A.tapsWanted() is False)
     Lg.WowCompanion.routeWp.active = True; tick()
     chk("taps wanted while the route runs", A.tapsWanted() is True)
     for t in list(A.byTok.keys()):

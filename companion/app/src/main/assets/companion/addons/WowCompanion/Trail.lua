@@ -1163,7 +1163,7 @@ end
 --   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
 --   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 --   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-WC.live = { V = "ag4", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+WC.live = { V = "ag5", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -1178,6 +1178,15 @@ do
         return v
     end
     A.pv = pv
+    -- ag5: the app ROUTES (Map.lua's pin up, or its KEEP / SET within KEEP_S: a direct route or a refused pin has no pin); test45's
+    -- route=false came from reading the pin alone
+    function A.routing()
+        local R = WC.routeWp
+        if type(R) ~= "table" then return false end
+        if R.active == true then return true end
+        if type(R.routing) == "function" then local ok, v = pcall(R.routing); return ok and v == true end
+        return false
+    end
     local function b01(v) if v == true then return 1 elseif v == false then return 0 end end
 
     -- ---------------------------------------------------------------- the range bands (Forever Range's builder, adapted)
@@ -1566,7 +1575,7 @@ do
         local t = now()
         -- ag4: or HUD mode (Hub hub14, the user's "Yes, force them on"): ONE owner here, two reasons (WC.npWant.hud); restored only when
         -- neither wants them
-        local want = (type(WC.routeWp) == "table" and WC.routeWp.active == true) or (type(WC.npWant) == "table" and WC.npWant.hud == true)
+        local want = A.routing() or (type(WC.npWant) == "table" and WC.npWant.hud == true)
         local saved = A.npSaved()
         if want then
             A.np.offSince = nil
@@ -1615,7 +1624,7 @@ do
     -- {"type":"aggroack", op, k, s, ok, why} / {op = "qmask", mask, ok}; the next record's mk shows it.
     A.pick, A.qset, A.WIN_S, A.YOUNG_S = {}, {}, 2, 0.6
     function A.tapsWanted()
-        return type(WC.routeWp) == "table" and WC.routeWp.active == true and not A.off
+        return A.routing() and not A.off
     end
     local function ack(t)
         t.type = "aggroack"
@@ -1783,7 +1792,7 @@ do
                        still = A.sent.still, rej = A.lastReject, err = A.err,
                        picks = (A.pick[1] and 1 or 0) + (A.pick[2] and 1 or 0), win = A.win and A.win.op or nil,
                        np = A.np.state, npv = npGet(), npo = A.npSaved() and A.npSaved().orig or nil, icons = A.iconN or 0,
-                       route = type(WC.routeWp) == "table" and WC.routeWp.active == true }
+                       route = A.routing(), pin = type(WC.routeWp) == "table" and WC.routeWp.active == true }
         A.lastDiag = line
         pcall(function() WC.send(WC.encode(line)) end)
     end

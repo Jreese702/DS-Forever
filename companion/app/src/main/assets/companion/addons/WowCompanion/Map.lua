@@ -2588,7 +2588,9 @@ WC.mmp.init()
 -- GAME's own arrow (the top screen's minimap / navigation) points at the route's next way - the tram, a gate, a flight master - while
 -- the focused quest's route goes through one. The app works the route out and taps the pad row "uwp":
 --   36, xh, xl, yh, yl   SET the pin at (x, y) on the player's map (base-36 digits: 1296 steps across); super-track it
---   37                   KEEP: the app is still routing (without one in KEEP_S the pin is cleared: an app that went away leaves none)
+--   37                   KEEP: the app is still routing (without one in KEEP_S the pin is cleared: an app that went away leaves none).
+--                        ag5: it also says "the app ROUTES the focused quest" with NO pin up (a direct route, a refused pin): the live
+--                        aggro layer's wish (WC.routeWp.routing()) is the pin OR a KEEP / SET within KEEP_S; CLEAR ends both
 --   39                   CLEAR: the pin goes and the quest's own super-track comes back
 --   38, xh, xl, yh, yl   cp19: a FURTHER checkpoint after the pin's (up to 3, in order; the world marker draws them); 38, 38 drops
 --                        them all. A new SET drops them too (the app sends the ones after it again).
@@ -2601,6 +2603,12 @@ WC.routeWp = { active = false, qid = nil, m = nil, x = nil, y = nil, keepAt = 0,
                more = {}, mdigits = nil, MORE_MAX = 3 }
 local RWP = WC.routeWp
 RWP.KEEP_S, RWP.DIGITS_S = 60, 2
+-- ag5 (test45: the app routed quest 92840 for minutes, no pin was up, and the live layer read route=false and never started): the app
+-- is routing while the pin stands or while its KEEP / SET came within KEEP_S
+function RWP.routing()
+    if RWP.active then return true end
+    return RWP.routeAt ~= nil and GetTime() - RWP.routeAt <= RWP.KEEP_S
+end
 
 function RWP.say(op, ok, why)
     pcall(function() WC.send(WC.encode({ type = "routewp", v = "rw1", op = op, ok = ok and true or false, why = why })); WC.push() end)
@@ -2676,9 +2684,9 @@ end
 if WC.pad and type(WC.pad.op) == "function" then
     WC.pad.op("uwp", "uwp", function(_, col)
         if type(col) ~= "number" then return end
-        if col == 39 then RWP.digits, RWP.mdigits = nil, nil; return RWP.clear(true, "asked") end
-        if col == 37 then RWP.keepAt = GetTime(); return end
-        if col == 36 then RWP.digits = {}; RWP.digitsAt = GetTime(); RWP.mdigits = nil; return end
+        if col == 39 then RWP.digits, RWP.mdigits, RWP.routeAt = nil, nil, nil; return RWP.clear(true, "asked") end
+        if col == 37 then RWP.keepAt = GetTime(); RWP.routeAt = GetTime(); return end
+        if col == 36 then RWP.digits = {}; RWP.digitsAt = GetTime(); RWP.mdigits = nil; RWP.routeAt = GetTime(); return end
         if col == 38 then
             RWP.digits = nil
             if RWP.mdigits and #RWP.mdigits == 0 and GetTime() - RWP.digitsAt <= RWP.DIGITS_S then

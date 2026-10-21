@@ -3075,7 +3075,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val pad = questsPad ?: return pinState("none: no quests pad yet")
         if (pad.optJSONObject("rows")?.has(RouteWaypoint.ROW) != true) return pinState("none: the add-on has no \"${RouteWaypoint.ROW}\" row (an older add-on, or the pad's row budget full)")
         val want = mapView.routePin(); pinState(mapView.pinWhy)
-        val cols = routeWp.tick(want, SystemClock.elapsedRealtime(), mapView.pinMore)
+        val cols = routeWp.tick(want, SystemClock.elapsedRealtime(), mapView.pinMore, mapView.pinRouting)
         if (cols.isEmpty()) return
         Log.i("WCMAP", "route pin: tap $cols (${mapView.pinWhy})")
         TapBridge.taps(this, pad, cols.map { RouteWaypoint.ROW to it }) { why -> Log.i("WCMAP", "route pin: tap failed: $why") }

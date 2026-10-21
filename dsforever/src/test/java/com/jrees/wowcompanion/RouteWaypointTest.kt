@@ -43,6 +43,21 @@ class RouteWaypointTest {
         assertEquals(listOf(37), w.tick(pin, 30_000L, emptyList()))               // the keep-alive as ever
     }
 
+    @Test fun routingWithNoPinKeepsTheAddonsWordAlive() {
+        val w = RouteWaypoint()
+        // ag5: a direct route (no pin): the KEEP at once, then every 20 s; the route gone: one CLEAR
+        assertEquals(listOf(37), w.tick(null, 0L, routing = true))
+        assertTrue(w.tick(null, 10_000L, routing = true).isEmpty())
+        assertEquals(listOf(37), w.tick(null, 20_000L, routing = true))
+        assertEquals(listOf(39), w.tick(null, 21_000L, routing = false))
+        assertTrue(w.tick(null, 50_000L, routing = false).isEmpty())
+        // a pin, then the route turns direct: after the grace the pin's CLEAR and the KEEP right behind it
+        assertEquals(36, w.tick(doubleArrayOf(0.5, 0.5), 60_000L, routing = true).first())
+        assertTrue(w.tick(null, 61_000L, routing = true).isEmpty())
+        assertEquals(listOf(39, 37), w.tick(null, 69_500L, routing = true))
+        assertTrue(w.tick(null, 70_000L, routing = true).isEmpty())
+    }
+
     @Test fun digitsRoundTrip() {
         for (v in listOf(0.0, 0.31, 0.69, 1.0)) {
             val d = RouteWaypoint.digits(v)
