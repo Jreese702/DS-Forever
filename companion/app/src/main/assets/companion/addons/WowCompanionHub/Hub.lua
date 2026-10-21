@@ -29,7 +29,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S = WC.S
 
-local HV = "hub12"          -- hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub13"          -- hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -294,6 +294,56 @@ local function cbCheck()
 end
 hub.cbCheck = cbCheck
 
+-- hub13 HUD MODE (the user: "I want to add a "HUD" mode where we turn off the player and the target action bars and rely on the I game
+-- head up display and bar over top the mobs"; their pick: "Player frame, Target frame"): the game's PlayerFrame and TargetFrame and the
+-- frames that hang off them (the target's target, the pet's frame) hidden ALPHA ONLY, as the cast bar (never Hide / Show / SetParent:
+-- they are secure unit frames; SetAlpha is allowed in fights and taints nothing), on two more spare columns of the row: HUD_SHOW /
+-- HUD_HIDE. The game shows / fades them itself (a new target, Edit Mode's opacity): an OnShow hook, the opacity post-hook and the
+-- heartbeat put the 0 back. Shown again = alpha 1 (or Edit Mode's own opacity). Nothing saved; the app keeps the choice per character.
+-- An invisible frame still takes a mouse click where it stands (a touch there on the top screen would still target yourself).
+local HUD_FRAMES = { "PlayerFrame", "TargetFrame", "TargetFrameToT", "PetFrame" }
+local HUD_SHOW, HUD_HIDE = 34, 35
+local hm = { hidden = false, hooked = {}, fix = 0 }
+local function hmZero(fr) pcall(fr.SetAlpha, fr, 0) end
+local function hmHook(name, fr)
+    if hm.hooked[name] then return end
+    hm.hooked[name] = true
+    if type(fr.HookScript) == "function" then pcall(fr.HookScript, fr, "OnShow", function(self) if hm.hidden then hmZero(self) end end) end
+    if type(fr.UpdateSystemSettingOpacity) == "function" then
+        hooksecurefunc(fr, "UpdateSystemSettingOpacity", function(self) if hm.hidden then hmZero(self) end end)
+    end
+end
+local function hmSet(hide)
+    hm.hidden = hide
+    for _, name in ipairs(HUD_FRAMES) do
+        local fr = riderFrame(name)
+        if fr then
+            hmHook(name, fr)
+            if hide then hmZero(fr)
+            elseif type(fr.UpdateSystemSettingOpacity) == "function" then
+                if not pcall(fr.UpdateSystemSettingOpacity, fr) then pcall(fr.SetAlpha, fr, 1) end
+            else pcall(fr.SetAlpha, fr, 1) end
+        end
+    end
+end
+hub.hmSet = hmSet               -- for the harness
+local function hmCheck()
+    if not hm.hidden then return end
+    for _, name in ipairs(HUD_FRAMES) do
+        local fr = riderFrame(name)
+        if fr then
+            hmHook(name, fr)
+            local ok, a = pcall(fr.GetAlpha, fr)
+            if ok and type(a) == "number" and a > 0.01 then hm.fix = hm.fix + 1; hmZero(fr) end
+        end
+    end
+end
+local function hmDoc()
+    local have = {}
+    for _, name in ipairs(HUD_FRAMES) do if riderFrame(name) then have[#have + 1] = name end end
+    return { hidden = hm.hidden, have = #have > 0 and have or nil, fix = hm.fix > 0 and hm.fix or nil }
+end
+
 local function cbDoc()
     local have = {}
     for _, name in ipairs(CASTBARS) do if riderFrame(name) then have[#have + 1] = name end end
@@ -318,6 +368,7 @@ local function document()
         typing = typing(),           -- a text box has the keyboard: keys would be typed into it
         els = els,
         cb = cbDoc(),                -- hub11: the game's cast bar (Show / Hide on columns CB_SHOW / CB_HIDE)
+        hud = hmDoc(),               -- hub13: HUD mode, the player / target frames (Show / Hide on columns HUD_SHOW / HUD_HIDE)
         row = hub.row and ROW or nil,
         pad = hub.row and WC.pad and WC.pad.describe() or nil,
     }
@@ -344,6 +395,8 @@ local function onTap(_, col)
         apply()
     elseif col == CB_SHOW or col == CB_HIDE then
         cbSet(col == CB_HIDE)
+    elseif col == HUD_SHOW or col == HUD_HIDE then
+        hmSet(col == HUD_HIDE)
     end
     emitHub(true)
     WC.push()
@@ -432,7 +485,7 @@ end)
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 if type(WC.snapshot) == "function" then
     hooksecurefunc(WC, "snapshot", function(reason)
-        if RIDE[reason] then setup(); ridersCheck(); cbCheck(); emitHub(true) end
+        if RIDE[reason] then setup(); ridersCheck(); cbCheck(); hmCheck(); emitHub(true) end
     end)
 end
 

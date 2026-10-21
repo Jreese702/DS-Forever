@@ -2001,6 +2001,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current && !d.name.isNullOrEmpty() && ::radialView.isInitialized) radialView.character("${d.name}-${d.realm ?: ""}")
                     if (current && !d.name.isNullOrEmpty()) QuestWatchKeep.character("${d.name}-${d.realm ?: ""}")
                     if (!d.name.isNullOrEmpty()) TaxiNet.character("${d.name}-${d.realm ?: ""}")
+                    if (current && !d.name.isNullOrEmpty()) GameUi.character = "${d.name}-${d.realm ?: ""}"     // hub13: HUD mode per character
                     lastDpad = d; settings.homeSection.dpadChanged()
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state

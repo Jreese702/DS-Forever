@@ -102,7 +102,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         GameUi.Row(COMPASS_CAM_ID, "Compass follows the camera", null, if (s.cam == true) UiMode.ON else UiMode.OFF, true, s.cam != true,
             if (s.cam == true) "Experiment: while the quest's marker is on screen" else "Off: it follows your character")
     }
-    private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(GameUi.castBarRow(), lootRow(), compassRow(), compassCamRow())
+    private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), lootRow(), compassRow(), compassCamRow())
     private var selected: String? = null
     private val rowBoxes = ArrayList<Pair<RectF, String>>()
     private val segBoxes = ArrayList<Pair<RectF, UiMode>>()
@@ -168,6 +168,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                             COMPASS_ID -> CompassSwitch.turn(context, m == UiMode.ON)
                             COMPASS_CAM_ID -> CompassSwitch.turnCam(context, m == UiMode.ON)
                             GameUi.CASTBAR_ID -> GameUi.setCastBar(m == UiMode.ON)
+                            GameUi.HUD_ID -> GameUi.setHud(m == UiMode.ON)
                             else -> GameUi.setMode(it, m)
                         }
                     }
@@ -242,7 +243,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     private fun bar(c: Canvas, r: GameUi.Row, top: Float) {
         val left = 16f; val right = width - 16f
         val gap = 10f
-        val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == GameUi.CASTBAR_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
+        val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.HUD_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
         val sw = (right - left - gap * (modes.size - 1)) / modes.size
         var x = left
         for (m in modes) {
@@ -279,6 +280,9 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         if (r.id == COMPASS_ID) return if (r.mode == UiMode.ON)
             "A compass along the top of the game screen: your heading, the next checkpoint, the focused quest and your corpse, with distances."
             else "No compass bar on the top screen."
+        if (r.id == GameUi.HUD_ID) return if (r.mode == UiMode.ON)
+            "The game's player and target frames are hidden: its own head-up display and the bars over the mobs remain. For this character."
+            else "The game's player and target frames stay on the top screen."
         if (r.id == GameUi.CASTBAR_ID) return if (r.mode == UiMode.ON) "The game's own cast bar stays on the top screen."
             else "Hidden while the companion is on this screen; Home's bar shows every cast."
         val room = r.home?.label?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "its"
@@ -330,6 +334,12 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                 c.drawRoundRect(RectF(X(2f), Y(9f), X(22f), Y(15f)), 3f, 3f, p)
                 pFill.color = p.color
                 c.drawRoundRect(RectF(X(3.5f), Y(10.5f), X(15f), Y(13.5f)), 1.5f, 1.5f, pFill)
+            }
+            // HUD mode: a portrait frame crossed out
+            GameUi.HUD_ID -> {
+                c.drawRoundRect(RectF(X(3f), Y(6f), X(21f), Y(18f)), 3f, 3f, p)
+                c.drawCircle(X(8.5f), Y(12f), 3f * s, p)
+                c.drawLine(X(13f), Y(10f), X(19f), Y(10f), p); c.drawLine(X(13f), Y(14f), X(17f), Y(14f), p)
             }
             // the compass bar: a ring and its needle
             COMPASS_ID, COMPASS_CAM_ID -> {

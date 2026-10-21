@@ -25,6 +25,12 @@ object GameUi {
     private val policy = GameUiPolicy({ tracking }) { id -> mode(id) }
     /** hub11: the game's cast bar (its own Show / Hide, not a layout bit) */
     private val castBar = CastBarPolicy()
+    /** hub13 HUD MODE: the game's player / target frames hidden, per character; the hub document's hud.hidden (null = no row) */
+    private val hud = CastBarPolicy(CastBarPolicy.HUD_SHOW, CastBarPolicy.HUD_HIDE)
+    @Volatile private var hudHidden: Boolean? = null
+    /** the character now ("Name-Realm", the host's from the padmap); null = not known yet: no HUD row */
+    @Volatile var character: String? = null
+        set(v) { if (field != v) { field = v; reconcile(); changed() } }
     /** the hub document's cb.hidden; null = an add-on without it (no row) */
     @Volatile private var castBarHidden: Boolean? = null
     /** LATER 25: one of the game's tracking abilities is on (the map document's track: h / m / t = 1) */
@@ -64,7 +70,26 @@ object GameUi {
 
     /** when the last CURRENT hello came (a login or a reload): the first hide waits for the loading screen (GameUiPolicy.SETTLE_MS) */
     @Volatile private var helloAt = 0L
-    fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin() }
+    fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin(); hud.freshLogin() }
+
+    /** HUD mode for this character (the user's pick; off until chosen) */
+    fun hudOn(): Boolean = character?.let { prefs?.getBoolean("hud.$it", false) } ?: false
+    fun setHud(on: Boolean) {
+        val who = character ?: return
+        prefs?.edit()?.putBoolean("hud.$who", on)?.apply()
+        reconcile()
+        changed()
+    }
+    /** the Settings row; null while the add-on does not offer it or the character is not known */
+    fun hudRow(): Row? {
+        val h = hudHidden ?: return null
+        if (character == null) return null
+        val on = hudOn()
+        val want = hud.wantsHidden(on, visible)
+        val note = if (h == want) (if (h) "Hidden now" else "On the top screen now") else "Sent"
+        return Row(HUD_ID, "HUD mode", null, if (on) UiMode.ON else UiMode.OFF, true, h, note)
+    }
+    const val HUD_ID = "hudmode"
 
     /** f-top-castbar-toggle: the user's Hide for the game's cast bar. Default HIDE (1.0.10-test3, the user: "The cast bar needs to be
      *  hidden": Home's bottom bar shows every cast); a player who picked Show keeps it */
@@ -103,6 +128,7 @@ object GameUi {
         }
         pad = h.optJSONObject("pad")
         castBarHidden = h.optJSONObject("cb")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
+        hudHidden = h.optJSONObject("hud")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         state = HubState(
             boot = h.optLong("boot", 0L), n = h.optInt("n", 0),
             want = if (h.has("want")) h.optInt("want") else null,
@@ -151,6 +177,11 @@ object GameUi {
         if (step !is UiStep.Tap) {
             val col = castBar.step(castBarHidden, castBarHide(), visible, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
             if (col != null) GameInput.tap(ctx, pad, ROW, col)
+            // hub13: HUD mode's own tap, never in the same moment as another (one tap at a time); no character known = nothing
+            else if (character != null) {
+                val hc = hud.step(hudHidden, hudOn(), visible, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
+                if (hc != null) GameInput.tap(ctx, pad, ROW, hc)
+            }
         }
     }
 

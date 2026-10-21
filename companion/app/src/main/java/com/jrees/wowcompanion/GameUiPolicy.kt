@@ -84,7 +84,9 @@ data class HubState(
  * [COL_HIDE], one absolute tap each. Like an element, Hide holds only while the companion is on the bottom screen. The same tap rules
  * as the layout: after the loading screen settles, a reply waited for, the ask tried once more, then slowly while still silent.
  */
-class CastBarPolicy {
+class CastBarPolicy(
+    /** the row's Show / Hide columns: the cast bar's (hub11) by default; HUD mode's are [HUD_SHOW] / [HUD_HIDE] (hub13) */
+    private val colShow: Int = COL_SHOW, private val colHide: Int = COL_HIDE) {
     private var tapCol = -1
     private var tapBoot = -1L
     private var tapN = -1
@@ -102,7 +104,7 @@ class CastBarPolicy {
         val want = wantsHidden(hide, visible)
         if (hidden == want) { tries = 0; tapCol = -1; return null }
         if (now < settleUntil) return null
-        val col = if (want) COL_HIDE else COL_SHOW
+        val col = if (want) colHide else colShow
         val same = tapCol == col && tapBoot == s.boot
         if (!same) tries = 0
         if (same && s.n == tapN && now - tapAt < GameUiPolicy.REPLY_MS) return null
@@ -114,6 +116,8 @@ class CastBarPolicy {
     companion object {
         const val COL_SHOW = 32            // Hub.lua CB_SHOW / CB_HIDE: past the 32 layouts, inside the row's 40 columns
         const val COL_HIDE = 33
+        const val HUD_SHOW = 34            // hub13: HUD mode, the player / target frames
+        const val HUD_HIDE = 35
     }
 }
 
