@@ -37,6 +37,7 @@ object ShippedSnap {
     const val LINE_STEP_YD = 1.0      // a straight snap read this often (the water's 4.2 yd vertices, a wall's few yards)
     const val CELL_YD = 2.5           // a bent snap's walk cells (each step's middle read too: 1.25 yd)
     const val ON_PIECE_YD = 5.0       // a ground end its lead snap is this near stands on that piece: no fallback off it
+    const val LEVEL = 1.05f           // the near-goal walk's ground: no dearer a yard than this (level; a road's, a walked cell's less)
     const val FAR_STEEP = 5f          // a fallback over terrain this dear a yard (a climb of ~37 degrees, a rock field): not offered
     const val FAR_COST = 1.0e6        // a snap past the spread: this much dearer (the fallback when the nearer ones lead nowhere)
     const val SPREAD_YD = 0.5         // the snaps kept: the nearest clear one's and those no more than this longer
@@ -59,7 +60,7 @@ object ShippedSnap {
         /** the same ground for a ghost ([allowWater]) */
         fun ghost() = Ground(terrain, water, room, allowWater = true)
         /** water a ghost walks on at world ([x], [y]): [allowWater], wet, no bridge, not lava */
-        private fun walkedWater(x: Double, y: Double): Boolean {
+        internal fun walkedWater(x: Double, y: Double): Boolean {
             if (!allowWater) return false
             val d = water?.at(x, y) ?: return false
             return !d.isNaN() && d != SafePath.Water.BRIDGE && d < DEEP_LAVA
@@ -215,15 +216,34 @@ object ShippedSnap {
      * ([ShippedRoute.DefaultAttach]: a walk onto the nearest ways, [ShippedRoute.AttachView.lim] at most) over the same ground with
      * the water and the rooms folded in as walls ([Ground.asCost]), its why the snap's own - logged by the caller.
      */
-    fun attacher(ground: Ground? = null, log: ((String) -> Unit)? = null) = ShippedRoute.Attacher { v, p ->
-        val g = ground ?: Ground(v.ground)
-        val s = snap(p, v.nodes, g, v.danger, v.k, floor = v.floor, floorNodes = v.floorNodes, ways = v.ways)
-        if (s.ok) return@Attacher ShippedRoute.Attach(s.snaps.map {
-            if (it.cut) ShippedRoute.Join(null, it.way, it.t, it.pts.last(), it.pts, it.cost, it.yd)
-            else ShippedRoute.Join(it.node, -1, 0.0, it.pts.last(), it.pts, it.cost, it.yd) }, true, s.why)
-        log?.invoke("snap: none at ${p[0].toInt()},${p[1].toInt()} (${s.why}) - the long attach")
-        val long = ShippedRoute.DefaultAttach.attach(ShippedRoute.AttachView(emptyList(), v.ways, g.asCost, v.danger, v.k, v.lim), p)
-        ShippedRoute.Attach(long.joins, false, "${long.why ?: "on ${long.joins.size} ways by the long attach"} (no snap: ${s.why})")
+    fun attacher(ground: Ground? = null, log: ((String) -> Unit)? = null) = object : ShippedRoute.Attacher {
+        override fun attach(v: ShippedRoute.AttachView, p: DoubleArray): ShippedRoute.Attach {
+            val g = ground ?: Ground(v.ground)
+            val s = snap(p, v.nodes, g, v.danger, v.k, floor = v.floor, floorNodes = v.floorNodes, ways = v.ways)
+            if (s.ok) return ShippedRoute.Attach(s.snaps.map {
+                if (it.cut) ShippedRoute.Join(null, it.way, it.t, it.pts.last(), it.pts, it.cost, it.yd)
+                else ShippedRoute.Join(it.node, -1, 0.0, it.pts.last(), it.pts, it.cost, it.yd) }, true, s.why)
+            log?.invoke("snap: none at ${p[0].toInt()},${p[1].toInt()} (${s.why}) - the long attach")
+            val long = ShippedRoute.DefaultAttach.attach(ShippedRoute.AttachView(emptyList(), v.ways, g.asCost, v.danger, v.k, v.lim), p)
+            return ShippedRoute.Attach(long.joins, false, "${long.why ?: "on ${long.joins.size} ways by the long attach"} (no snap: ${s.why})")
+        }
+        override fun direct(v: ShippedRoute.AttachView, from: DoubleArray, to: DoubleArray): ShippedRoute.Join? =
+            directWalk(from, to, ground ?: Ground(v.ground), v.danger, v.k)?.let { ShippedRoute.Join(null, -1, 0.0, to, it.pts, it.cost, it.yd) }
+    }
+
+    /**
+     * THE NEAR-GOAL WALK with no net (the graph's rival for a goal within ShippedRoute.DIRECT_MAX_YD): over the fine ground with the
+     * snap's refusals AND only on LEVEL ground ([LEVEL]: no slope cell of 25 degrees or more, no cliff's band - W's Kalimdor parity,
+     * Felwood J and Moonglade C: the old walk crossed a 70 degree face over 24 yd the 25 yd slope grid read as a climb): the straight
+     * line when it is clear, else the walk round ([Walk], [lim] at most). Null: none walks clean - the net's way only.
+     */
+    fun directWalk(from: DoubleArray, to: DoubleArray, ground: Ground, danger: ((Double, Double) -> Float)? = null, k: Double = 0.0,
+                   lim: Double = ShippedRoute.DIRECT_MAX_YD * 1.5): Snap? {
+        val view = View(from, ground, danger, k, level = true)
+        val line = view.line(from, to)
+        if (line.why == null) return Snap(-1, listOf(from, to), hypot(to[0] - from[0], to[1] - from[1]), line.cost, true)
+        val w = Walk(view, lim).to(to) ?: return null
+        return Snap(-1, w.pts, w.yd, w.cost, false)
     }
 
     /** the straight line from [a] to [b] read every [LINE_STEP_YD] over [ground] (an end in a wall passes those within [DOOR_YD] of
@@ -233,13 +253,13 @@ object ShippedSnap {
     // ---------------------------------------------------------------- the fine reads
 
     /** one end's view of the ground: [c] the end (its door rule), the cost a yard with the danger */
-    private class View(val c: DoubleArray, val g: Ground, val danger: ((Double, Double) -> Float)?, val k: Double) {
-        val inWall = g.wall(c[0], c[1]) != null
+    private class View(val c: DoubleArray, val g: Ground, val danger: ((Double, Double) -> Float)?, val k: Double, val level: Boolean = false) {
+        val inWall = g.wall(c[0], c[1]) != null || (level && g.terrain(c[0], c[1]).let { !it.isNaN() && it > LEVEL })
         /** [steep] the line's dearest terrain a yard (1 level; the slope grid's climb, a cliff's band) */
         class Line(val cost: Double, val why: String?, val steep: Float = 1f)
         /** the wall at ([x], [y]) for this end's walk (null: none; the door's within [DOOR_YD] of an end standing in one) */
         fun wall(x: Double, y: Double): String? {
-            val w = g.wall(x, y) ?: return null
+            val w = g.wall(x, y) ?: (if (level && !g.walkedWater(x, y)) g.terrain(x, y).takeIf { !it.isNaN() && it > LEVEL }?.let { "a climb or a cliff's band" } else null) ?: return null
             return if (inWall && hypot(x - c[0], y - c[1]) <= DOOR_YD) null else w
         }
         fun yard(x: Double, y: Double): Double = g.yard(x, y) + k * (danger?.invoke(x, y)?.takeIf { !it.isNaN() } ?: 0f)

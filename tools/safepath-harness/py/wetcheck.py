@@ -59,7 +59,7 @@ def surface(x, y):
     return float(surface_tile(c, r)[min(127, int((gy - r) * 128)), min(127, int((gx - c) * 128))])
 # the decks bucketed by 16 yd
 grid = {}
-decks = [[t[0], t[1], t[3], t[4], t[6], t[7], min(t[2], t[5], t[8])] for t in decks if len(t) < 10 or t[9] != 2]   # a capital's box: no deck (a capital's read floor, 3, is one: a city's pier)      # 2D corners and the floor's lowest height
+decks = [[t[0], t[1], t[3], t[4], t[6], t[7], min(t[2], t[5], t[8]), t[2], t[5], t[8]] for t in decks if len(t) < 10 or t[9] != 2]   # a capital's box: no deck (a capital's read floor, 3, is one: a city's pier)      # 2D corners, the floor's lowest height and its corners' heights
 for k, t in enumerate(decks):
     for i in range(int(math.floor(min(t[0], t[2], t[4]) / 16)) - 1, int(math.floor(max(t[0], t[2], t[4]) / 16)) + 2):
         for j in range(int(math.floor(min(t[1], t[3], t[5]) / 16)) - 1, int(math.floor(max(t[1], t[3], t[5]) / 16)) + 2):
@@ -67,11 +67,23 @@ for k, t in enumerate(decks):
 def seg(ax, ay, bx, by, x, y):
     dx, dy = bx - ax, by - ay; l2 = dx * dx + dy * dy; u = 0 if l2 <= 0 else max(0, min(1, ((x - ax) * dx + (y - ay) * dy) / l2))
     return math.hypot(ax + u * dx - x, ay + u * dy - y)
+def plane_at(t, x, y):
+    """the triangle's floor height at world (x, y): on its own plane at the nearest point of it (a spot in the margin takes its edge's
+    height) - WorldBuildings.Deck.heightsAt's own reading"""
+    det = (t[3] - t[5]) * (t[0] - t[4]) + (t[4] - t[2]) * (t[1] - t[5])
+    if abs(det) < 1e-9: return (t[7] + t[8] + t[9]) / 3
+    a = ((t[3] - t[5]) * (x - t[4]) + (t[4] - t[2]) * (y - t[5])) / det
+    b = ((t[5] - t[1]) * (x - t[4]) + (t[0] - t[4]) * (y - t[5])) / det
+    a = min(1.0, max(0.0, a)); b = min(1.0 - a, max(0.0, b))
+    return a * t[7] + b * t[8] + (1 - a - b) * t[9]
 def on_deck(x, y, m=1.0):
     sf = surface(x, y)
     for k in grid.get((int(math.floor(x / 16)), int(math.floor(y / 16))), []):
         t = decks[k]
-        if not math.isnan(sf) and sf < 1e5 and t[6] < sf - 0.5: continue          # a floor under the water's surface is no deck over it
+        # a floor under the water's surface AT THE SPOT is no deck over it (WorldBuildings.Deck.over: its height there at or over the
+        # surface - 0.5). Not its lowest corner: a ramp into the sea (Azshara's Temple of Arkkoran, 24 degrees from 1.8 down to -9.8) stands
+        # 1.3 yd over the water where a route walks it, and read by its foot it was 2.7 yd of water
+        if not math.isnan(sf) and sf < 1e5 and plane_at(t, x, y) < sf - 0.5: continue
         if sf >= 1e5 and t[6] < HT.height(x, y) + 2.0: continue                   # over lava: only a floor well over the ground
         d0 = (t[2] - t[0]) * (y - t[1]) - (t[3] - t[1]) * (x - t[0]); d1 = (t[4] - t[2]) * (y - t[3]) - (t[5] - t[3]) * (x - t[2]); d2 = (t[0] - t[4]) * (y - t[5]) - (t[1] - t[5]) * (x - t[4])
         if not ((d0 < 0 or d1 < 0 or d2 < 0) and (d0 > 0 or d1 > 0 or d2 > 0)): return True

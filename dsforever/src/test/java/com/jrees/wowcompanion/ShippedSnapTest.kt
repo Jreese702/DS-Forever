@@ -221,6 +221,33 @@ class ShippedSnapTest {
         assertTrue("on the road from the cut on", r.pts.drop(1).all { it[0] == 40.0 })
     }
 
+    @Test fun theNearGoalWalkKeepsToLevelGroundOrIsNone() {
+        val to = doubleArrayOf(0.0, 100.0)
+        // level: the straight line
+        val flatWalk = ShippedSnap.directWalk(p0, to, ShippedSnap.Ground(flat))!!
+        assertTrue(flatWalk.straight); assertEquals(100.0, flatWalk.yd, 1e-6)
+        // a climb band (3x: a 37 degree slope cell, what a 70 degree face 24 yd long reads as on the 25 yd grid) across the way, with a
+        // gap at x 40..50: round it, never over it
+        val band: (Double, Double) -> Float = { x, y -> if (y in 45.0..55.0 && x !in 40.0..50.0) 3f else 1f }
+        val round = ShippedSnap.directWalk(p0, to, ShippedSnap.Ground(band))!!
+        assertFalse(round.straight)
+        for ((a, b) in round.pts.zipWithNext()) for (q in 0..50) { val x = a[0] + (b[0] - a[0]) * q / 50; val y = a[1] + (b[1] - a[1]) * q / 50
+            assertTrue("on the band at $x,$y", band(x, y) <= 1f) }
+        // a cliff's band (1.6) right across: none - the net's way only
+        val shut: (Double, Double) -> Float = { _, y -> if (y in 45.0..55.0) 1.6f else 1f }
+        assertNull(ShippedSnap.directWalk(p0, to, ShippedSnap.Ground(shut)))
+    }
+
+    @Test fun aNearGoalTheWalkCannotReachCleanGoesByTheNet() {
+        // the goal 100 yd up the road's side, a climb band between: the router's direct walk (the snap's) refuses it, the road carries it
+        val shut: (Double, Double) -> Float = { _, y -> if (y in 545.0..555.0) 3f else 1f }
+        val g = ShippedSnap.Ground(shut)
+        val r = ShippedRoute.plan(road40(), g.asCost, null, doubleArrayOf(20.0, 500.0), doubleArrayOf(20.0, 600.0), attacher = ShippedSnap.attacher(g))
+        assertTrue(r.why, r.reached)
+        assertFalse(r.why, r.why.startsWith("the ground's own walk"))
+        assertTrue("never over the band", r.pts.none { it[1] in 545.0..555.0 && it[0] < 35.0 })
+    }
+
     @Test fun anIsolatedNodeIsNeverTheSnap() {
         // a roadmap node 2 yd from the player that no way leaves: left out of the snap's nodes, the road's node taken
         val rm = ShippedRoute.Roadmap(mapOf(ShippedRoute.RM_BASE to doubleArrayOf(2.0, 0.0)), emptyList())

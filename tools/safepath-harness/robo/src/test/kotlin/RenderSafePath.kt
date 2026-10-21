@@ -724,7 +724,7 @@ class RenderSafePath {
         val devGrid = DangerGrid.build(spawns, mine, level, ax, ay, devGround)
         fun deviceWay(f: DoubleArray, gp: DoubleArray): Pair<String, List<DoubleArray>> {
             val offNet = { a: DoubleArray, b: DoubleArray -> devGrid.route(uv(a[0], a[1]), uv(b[0], b[1]), k).map { doubleArrayOf(rect.t - it[1] * ay, rect.l - it[0] * ax) } }
-            (if (devNew) SafePath.deviceLeg(net, f[0], f[1], gp[0], gp[1], false, clear, offNet) else SafePath.route(net, f[0], f[1], gp[0], gp[1], false, clear))
+            (if (devNew) SafePath.deviceLeg(net, f[0], f[1], gp[0], gp[1], false, clear, offNet = offNet) else SafePath.route(net, f[0], f[1], gp[0], gp[1], false, clear))
                 ?.let { return "network" to (listOf(f) + it.drop(1).dropLast(1) + listOf(it.last())) }
             val pts = devGrid.route(uv(f[0], f[1]), uv(gp[0], gp[1]), k)
             return "grid" to pts.map { doubleArrayOf(rect.t - it[1] * ay, rect.l - it[0] * ax) }
@@ -873,8 +873,17 @@ class RenderSafePath {
             val (netJ, jx) = NetJoins.extras(netC, nj.joins, nextId)
             extras.addAll(jx)
             // THE ROADMAP: the coverage graph of the walkable ground, this faction's danger along each of its edges
-            val rb = RoadmapBuild(cg, deep, standable, ::roomsAt, waterAt, layers, rect.t, rect.b, rect.l, rect.r)
-            val built = rb.build { println("NET1 $it") }
+            // (T3's NetRoadmap: the zone's own cells, the best vertex a cell, every edge through segcheck / wetcheck as it is built - in a
+            // folder of its own beside the zone's floors; SAFEPATH_ROADMAP=prototype: the first one, RoadmapBuild)
+            val rmShape: ShippedNet.Roadmap = if (System.getenv("SAFEPATH_ROADMAP") == "prototype")
+                RoadmapBuild(cg, deep, standable, ::roomsAt, waterAt, layers, rect.t, rect.b, rect.l, rect.r).build { println("NET1 $it") }.rm
+            else {
+                val rdir = File(out, "roadmap_$tag").also { it.mkdirs() }
+                for (k2 in listOf("floors", "holes", "layers", "decks")) File(out, "${k2}_$tag.json").takeIf { it.isFile }?.copyTo(File(rdir, "${k2}_$tag.json"), true)
+                val nb = NetRoadmap.build(NetRoadmap.Ground(cg, deep, sr::overFord, waterAt, ::roomsAt, calm, k, { x, y -> ar?.uiMap(zg.areaAt(x, y)) == map }), NetRoadmap.CELL,
+                    check = NetRoadmap.pyCheck(File(File(System.getProperty("user.dir")).parentFile, "py"), rdir, tag, dir.name, dir.parentFile)) { println("NET1 $it") }
+                rdir.deleteRecursively()
+                nb.rm }
             // NET2 (NetFloors, helper T4): the floor layers' ways, the caves' mouths joined to the ground, the far goals' spurs - all walked
             // (SAFEPATH_NETFLOORS=0: left out)
             var netS = netJ; var nodesS: List<SafePath.Node> = floorNodes; var extrasS: List<ShippedNet.Extra> = extras
@@ -943,7 +952,24 @@ class RenderSafePath {
                     ?.takeIf { r -> r.reached && r.pts.zipWithNext().all { (u, v) -> Climb.walkable(cg, u, v, deep) } }?.pts }
             val sc = ShipCheck(cg, deep, { a, b -> legOf(a, b)?.takeIf { it.second }?.first }, rmLeg, wetOf,
                 File(File(System.getProperty("user.dir")).parentFile, "py"), cdir, tag, dir.name, dir.parentFile) { println("NET1 $it") }
-            val checked = sc.run(sec.copy(stitches = sc.stitches(sec, built.rm)), built.rm)
+            // THE CHECK IS ON WHAT SHIPS (W's Kalimdor 70450 parity): the section and roadmap as the device decodes them (the JSON's
+            // rounding: nodes 0.1 yd, points 0.01 yd) checked again, nothing mended; a failure there is mended on the decoded pack and
+            // dropped there and verified again, up to 3 rounds
+            fun decoded(s0: ShippedNet.Section, r0: ShippedNet.Roadmap?): Pair<ShippedNet.Section, ShippedNet.Roadmap?> =
+                ShippedNet.Pack.fromJson(org.json.JSONObject(ShippedNet.Pack(ShippedNet.Header(map, rect.c, 0, "", "", ""), listOf(s0), r0).toJson().toString()))!!
+                    .let { it.sections[0] to it.roadmap }
+            var cur = decoded(sec.copy(stitches = sc.stitches(sec, rmShape)), rmShape)
+            var checked = sc.run(cur.first, cur.second)
+            var shipLeft: List<String> = checked.left
+            for (round in 1..3) {
+                val dec = decoded(checked.sec, checked.rm)
+                shipLeft = checked.left + sc.verify(dec.first, dec.second)
+                if (shipLeft.isEmpty() || round == 3) break
+                // (what fails as decoded is dropped there: a line walked again would only be rounded again)
+                println("NET1 SHIPCHECK $tag: the decoded pack fails ${shipLeft.size} (${shipLeft.take(5)}) - dropped from it, round ${round + 1}")
+                cur = dec; checked = sc.run(cur.first, cur.second, dropOnly = true)
+            }
+            checked = ShipCheck.Result(checked.sec, checked.rm, checked.walked, checked.dropped, shipLeft, checked.passes)
             cdir.deleteRecursively()
             if (checked.left.isNotEmpty()) println("NET1 CROSSING $tag: ${checked.left.size} shipped pieces still cross a wall or deep water: ${checked.left.take(10)}")
             // the verdict in a file of its own (py/exportcheck.py requires it: a log's lines can be cut)

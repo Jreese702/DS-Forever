@@ -147,8 +147,10 @@ SAFEPATH_EXPORT=1 bash tools/safepath-harness/gate.sh              # the whole g
 
 - `SAFEPATH_EXPORT=1 run.sh` makes RenderSafePath write `net1_<tag>.json`: one faction's section of the network the routes ran on
   (the draft, walled ways dropped, caves and lifts, the checked exits, the air chain's and swims' links). It is stamped with the
-  checkout's commit (`SAFEPATH_RULES_COMMIT`, `-dirty` with uncommitted sources) and the client's Build Key (`SAFEPATH_BUILD`, read
-  from `.build.info` for `WOW_PRODUCT`).
+  checkout's commit (`SAFEPATH_RULES_COMMIT`, `-dirty` with uncommitted sources) and the build THE DUMPS came from: the
+  `BUILD.txt` (`build_key=<hex>`, `version=<x.y.z.n>`) in the zone's dump folder and in `db2/`. A missing `BUILD.txt`, or two folders
+  of different builds, refuses the export (`NET1 REFUSED`). `SAFEPATH_BUILD=<key>` overrides it. The live client's `.build.info` is never
+  read: it moves on with the launcher while the dumps stay as they were.
 - `py/exportcheck.py` lets a side ship only when its routes have no WALLS / EMPTY / GOAL not found, segcheck says "none" and wetcheck
   finds no swim (gate.py's own readings; no baseline comparison).
 - The `PackNet` test packs the passing sections one file a map and reads each back (a byte-identical round trip) - `NET1PACK OK`.

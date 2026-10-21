@@ -243,6 +243,21 @@ class ShippedNetTest {
         assertEquals(listOf(2 to 3, 2 to 1), m.stitches.map { it.node to it.rm })
     }
 
+    @Test fun walkedLinesBeginAndEndOnTheirNodes() {
+        val a = doubleArrayOf(645.8, -4743.4); val b = doubleArrayOf(658.33, -4733.33)
+        // a leg that began at the vertex beside its start (the hop from the start crossed a wall): the node put before it
+        val (p, _) = ShippedNet.anchored(listOf(doubleArrayOf(645.83, -4741.67), doubleArrayOf(658.33, -4733.33)), a, b)
+        assertEquals(3, p.size); assertArrayEquals(a, p[0], 0.0); assertArrayEquals(doubleArrayOf(645.83, -4741.67), p[1], 0.0); assertArrayEquals(b, p[2], 0.0)
+        // ends within ANCHOR_YD moved onto the nodes; the layers follow
+        val (q, ly) = ShippedNet.anchored(listOf(doubleArrayOf(645.81, -4743.41), doubleArrayOf(650.0, -4740.0), doubleArrayOf(660.0, -4730.0)), a, b, intArrayOf(0, 1, 2))
+        assertEquals(4, q.size); assertArrayEquals(a, q[0], 0.0); assertArrayEquals(b, q[3], 0.0); assertArrayEquals(intArrayOf(0, 1, 2, 2), ly)
+        // a section's extra way: anchored on its nodes
+        val s = ShippedNet.section(net(1f), H, 8, "durotar", extras = listOf(ShippedNet.Extra(5, 7, SafePath.TRAIL, ShippedNet.F_JOIN,
+            listOf(doubleArrayOf(301.0, 101.0), doubleArrayOf(51.0, 401.0)))))
+        val w = s.ways.last().pts!!
+        assertEquals(4, w.size); assertArrayEquals(doubleArrayOf(300.0, 100.0), w[0], 0.0); assertArrayEquals(doubleArrayOf(50.0, 400.0), w[3], 0.0)
+    }
+
     @Test fun notNet1IsNull() {
         assertNull(ShippedNet.read(ByteArrayInputStream(byteArrayOf(1, 2, 3))))
         val later = pack().toJson().put("v", ShippedNet.VERSION + 1).toString().toByteArray()
