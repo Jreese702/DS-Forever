@@ -16,39 +16,54 @@ class RouteWaypoint {
     private var setAt = Long.MIN_VALUE / 2; private var keepAt = Long.MIN_VALUE / 2
     private var refusedUntil = Long.MIN_VALUE / 2
     private var noneSince = Long.MIN_VALUE
+    private var sentMore: List<DoubleArray> = emptyList(); private var moreAt = Long.MIN_VALUE / 2
 
     /**
-     * One look at the route at [nowMs]: [want] = the pin's place on the player's map (0..1), null = no pin. Returns the row's columns
-     * to tap, in order (empty = nothing to send).
+     * One look at the route at [nowMs]: [want] = the pin's place on the player's map (0..1), null = no pin; [more] = the checkpoints
+     * after it (cp19: the world marker draws them too; the first [MORE_MAX] go). Returns the row's columns to tap, in order (empty =
+     * nothing to send).
      */
-    fun tick(want: DoubleArray?, nowMs: Long): List<Int> {
+    fun tick(want: DoubleArray?, nowMs: Long, more: List<DoubleArray> = emptyList()): List<Int> {
         if (want == null) {
             if (!active) return emptyList()
             // test48: not cleared at the first empty look (a route flickering for a moment); only after CLEAR_GRACE_MS of none
             if (noneSince == Long.MIN_VALUE) noneSince = nowMs
             if (nowMs - noneSince < CLEAR_GRACE_MS) return emptyList()
-            active = false; sentX = Double.NaN; sentY = Double.NaN; noneSince = Long.MIN_VALUE
+            active = false; sentX = Double.NaN; sentY = Double.NaN; noneSince = Long.MIN_VALUE; sentMore = emptyList()
             return listOf(CLEAR)
         }
         noneSince = Long.MIN_VALUE
         if (nowMs < refusedUntil) return emptyList()
+        val further = more.take(MORE_MAX)
         val moved = !active || abs(want[0] - sentX) > MOVE || abs(want[1] - sentY) > MOVE
         if (moved && nowMs - setAt >= SET_EVERY_MS) {
             active = true; sentX = want[0]; sentY = want[1]; setAt = nowMs; keepAt = nowMs
-            return listOf(SET) + digits(want[0]) + digits(want[1])
+            sentMore = further; moreAt = nowMs
+            return listOf(SET) + digits(want[0]) + digits(want[1]) + moreCols(further)    // (a SET drops the old ones in the add-on)
+        }
+        // the pin stays, the checkpoints after it changed (a new leg): dropped and sent again, at the pin's own pace
+        if (active && !moved && changed(further, sentMore) && nowMs - moreAt >= SET_EVERY_MS) {
+            sentMore = further; moreAt = nowMs; keepAt = nowMs
+            return listOf(MORE, MORE) + moreCols(further)
         }
         if (active && nowMs - keepAt >= KEEP_EVERY_MS) { keepAt = nowMs; return listOf(KEEP) }
         return emptyList()
     }
 
+    private fun moreCols(pts: List<DoubleArray>): List<Int> = pts.flatMap { listOf(MORE) + digits(it[0]) + digits(it[1]) }
+    private fun changed(a: List<DoubleArray>, b: List<DoubleArray>): Boolean =
+        a.size != b.size || a.indices.any { abs(a[it][0] - b[it][0]) > MOVE || abs(a[it][1] - b[it][1]) > MOVE }
+
     /** the add-on's answer ({"type":"routewp"}): a refused SET (the player's own pin, no pins here) is not tried again for a while */
     fun onAnswer(op: String, ok: Boolean, nowMs: Long) {
-        if (op == "set" && !ok) { active = false; sentX = Double.NaN; sentY = Double.NaN; refusedUntil = nowMs + REFUSED_MS }
-        if (op == "clear") { active = false; sentX = Double.NaN; sentY = Double.NaN }
+        if (op == "set" && !ok) { active = false; sentX = Double.NaN; sentY = Double.NaN; sentMore = emptyList(); refusedUntil = nowMs + REFUSED_MS }
+        if (op == "clear") { active = false; sentX = Double.NaN; sentY = Double.NaN; sentMore = emptyList() }
     }
 
     companion object {
         const val SET = 36; const val KEEP = 37; const val CLEAR = 39
+        const val MORE = 38                  // cp19: a further checkpoint (4 digits after it); MORE, MORE drops them
+        const val MORE_MAX = 2
         const val ROW = "uwp"
         const val MOVE = 0.004               // of the map: a smaller change is not worth a new pin
         const val SET_EVERY_MS = 5_000L      // test48: a pin moves at most every 5 s (it was 2: it churned)

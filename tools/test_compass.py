@@ -15,6 +15,7 @@ import lupa
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CAL1 = os.path.join(ROOT, "tools", "cal1_replay.csv")
 KB = 3.146                                                  # cp18: the measured camera rate (rad/s per GamePadCameraYawSpeed)
+MAPLUA = os.path.join(ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanion", "Map.lua")
 TRAIL = os.path.join(ROOT, "companion", "app", "src", "main", "assets", "companion", "addons", "WowCompanion", "Trail.lua")
 
 STUB = r'''
@@ -73,6 +74,7 @@ function GetPhysicalScreenSize() return 1920, GAME.physH end
 function GetPlayerFacing() return GAME.facing end
 function IsInInstance() return GAME.inst end
 function UnitIsDeadOrGhost() return GAME.dead end
+function IsFalling() return GAME.air == true end
 -- the stub's map: 1000 x 1000 yards, map x right = EAST, map y down = SOUTH; world x = north, y = west
 local function toWorld(mx, my) return 500 - my * 1000, 500 - mx * 1000 end
 C_Map = {
@@ -133,6 +135,18 @@ C_Navigation = {
 }
 WowCompanion = { send = function(j) SENT[#SENT + 1] = j end, encode = function(t) return t end }
 WowCompanionDB = {}
+'''
+
+
+# Map.lua's route-pin section, run alone (cp19): just what it calls
+MAPSTUB = r'''
+WC = { pad = { op = function(r, k, fn) UWP = fn end }, send = function() end, encode = function(t) SAID = t end, push = function() end }
+T = 0; function GetTime() return T end; CALL = pcall; function currentMap() return 1429 end; function snapshotSoon() end
+function superTrackedQuest() return 77 end; WowCompanionDB = {}; PIN = nil
+C_Map = { HasUserWaypoint = function() return PIN ~= nil end, GetUserWaypoint = function() return PIN end,
+          CanSetUserWaypointOnMap = function() return true end, SetUserWaypoint = function(p) PIN = p end, ClearUserWaypoint = function() PIN = nil end }
+C_SuperTrack = { SetSuperTrackedUserWaypoint = function() end, SetSuperTrackedQuestID = function() end }
+UiMapPoint = { CreateFromCoordinates = function(m, x, y) return { uiMapID = m, position = { x = x, y = y } } end }
 '''
 
 
@@ -564,9 +578,11 @@ def main():
         W.shown is True and pt is not None and abs(pt[4] - G.nav.x) < 0.01 and abs(pt[5] - 500) < 0.01
         and W.tx.atlas == "Navigation-Tracked-Icon" and W.d.text == "140 yd")
     G.facing = C.wrap(-math.radians(22.5) + math.pi)    # turned round: the quest behind, its mirror unclamped near the centre
+    C.cam.abs = C.cam.ref = G.facing                     # (cp19: the camera's estimate runs with the bar on the facing too)
     frames(3, read=True)
     chk("world marker: hidden while the quest is behind (a mirrored point)", W.shown is False and W.f.shown is False)
     G.facing = -math.radians(22.5); G.nav.clamped = True
+    C.cam.abs = C.cam.ref = G.facing
     frames(3, read=True)
     chk("world marker: hidden while the point is clamped", W.shown is False)
     G.nav.clamped = False
@@ -574,6 +590,42 @@ def main():
     G.pin = L.table(0.6, 0.4)
     frames(3, read=True)
     chk("world marker: the route's pin super-tracked: the pin's atlas", W.shown is True and W.tx.atlas == "Waypoint-MapPin-Tracked")
+    # cp19, THE JUMP (test33, the user: "when I jump it moves up and down"): the engine's point rises with the player; the marker's
+    # height is held while airborne, eased back on landing, and a long fall is followed after 1.2 s
+    G.nav.y = 500.0; frames(10, read=True)
+    G.air = True; G.nav.y = 540.0; frames(30, read=True)
+    chk("cp19: in a jump the marker's height is held (y %.1f, the engine's 540)" % W.f.point[5], abs(W.f.point[5] - 500) < 0.01 and W.air is True)
+    chk("cp19: ... across it stays the engine's (x %.1f)" % W.f.point[4], abs(W.f.point[4] - G.nav.x) < 0.01)
+    G.air = False; G.nav.y = 520.0; frames(1, read=True)
+    y1 = W.f.point[5]
+    frames(30, read=True)
+    chk("cp19: landed (on a slope, the point now 520): eased, not snapped (%.1f after a frame, %.1f after 0.5 s)" % (y1, W.f.point[5]),
+        500 < y1 < 510 and abs(W.f.point[5] - 520) < 0.5)
+    G.air = True; G.nav.y = 600.0; frames(60, read=True)
+    yh = W.f.point[5]
+    frames(60, read=True)
+    chk("cp19: a long fall is followed after the hold (%.1f at 1 s, %.1f at 2 s)" % (yh, W.f.point[5]), abs(yh - 520) < 0.5 and abs(W.f.point[5] - 600) < 1)
+    G.air = False; G.nav.y = 500.0; frames(60, read=True)
+    # cp19, THE FLAGS (the user: "they don't always show where the flags are at"): the app's further checkpoints (Map.lua's uwp 38)
+    # get our own markers, across by the camera's yaw (exact from the engine's point) and the FOV, at the engine point's height
+    L.execute("WowCompanion.routeWp = { active = true, more = { { m = GAME.map, x = 0.7, y = 0.35 }, { m = GAME.map, x = 0.4, y = 0.3 } } }")
+    frames(3, read=True)
+    m2 = W.list[2]
+    want = c0 - c0 * math.tan(math.atan2(-200, 150) + math.radians(22.5))     # flag A: 250 yd at -53 degrees, the camera at -22.5
+    chk("cp19: the next flag after the pin's: our marker at x %.1f (want %.1f), y %.1f (the engine's 500), smaller, fainter, '%s'"
+        % (m2.f.point[4] if m2 else -1, want, m2.f.point[5] if m2 else -1, m2.d.text if m2 else ""),
+        m2 is not None and m2.f.shown is True and abs(m2.f.point[4] - want) < 0.5 and abs(m2.f.point[5] - 500) < 0.1
+        and m2.f.w < W.f.w and m2.f.alpha < 1 and m2.d.text == "250 yd")
+    chk("cp19: the flag out of view (49 degrees left) has none; markers %d" % W.n, (W.list[3] is None or W.list[3].f.shown is False) and W.n == 2)
+    G.nav = None; frames(3, read=True)
+    m2 = W.list[2]
+    chk("cp19: the engine's point gone: the flag stays, placed by the camera's estimate (x %.1f)" % m2.f.point[4],
+        W.shown is False and m2.f.shown is True and abs(m2.f.point[4] - want) < 15)
+    L.execute("WowCompanion.routeWp.active = false")
+    frames(3, read=True)
+    chk("cp19: the route's pin gone: no flags", W.n == 0 and W.list[2].f.shown is False)
+    L.execute("WowCompanion.routeWp = nil")
+    G.nav = L.table_from({"x": c0 + c0 * math.tan(math.radians(22.5)), "y": 500.0, "clamped": False})
     L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end")
     C.set(False)
     chk("world marker: the compass switched off: hidden with it", W.f.shown is False)
@@ -693,6 +745,28 @@ def main():
     chk("cal1: never again this set", len(L.globals().SENT) == n1)
     chk("cal1: no CVar written", L.globals().CVAR_WRITES == 0)
     G.nav = None; G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.draw()
+
+    # cp19: Map.lua's route-pin row, the further checkpoints (38 + 4 digits each; 38 38 drops them; a new SET drops them)
+    src = open(MAPLUA, encoding="utf-8").read()
+    a0 = src.index("WC.routeWp = {")
+    b0 = src.index("do" + chr(10) + "    local f = CreateFrame", a0)
+    M = lupa.LuaRuntime()
+    M.execute(MAPSTUB + src[a0:b0])
+    tapm = lambda *cols: [M.eval("UWP")(None, c) for c in cols]
+    tapm(36, 24, 30, 11, 5)
+    tapm(38, 25, 0, 12, 0, 38, 26, 0, 13, 0)
+    R = M.eval("WC.routeWp")
+    mv = [(R.more[i].x, R.more[i].y, R.more[i].m) for i in range(1, len(R.more) + 1)]
+    chk("cp19: uwp 38: two further checkpoints after the pin, in order (%s)" % [(round(x, 3), round(y, 3)) for x, y, _ in mv],
+        R.active is True and len(mv) == 2 and abs(mv[0][0] - 900 / 1295) < 1e-9 and abs(mv[1][1] - 468 / 1295) < 1e-9 and mv[0][2] == 1429)
+    tapm(38, 38)
+    chk("cp19: uwp 38 38 drops them", len(R.more) == 0 and R.active is True)
+    tapm(38, 25, 0, 12, 0); tapm(36, 24, 31, 11, 5)
+    chk("cp19: a new SET drops them (the app sends the ones after it again)", len(M.eval("WC.routeWp").more) == 0)
+    tapm(38, 1, 2, 3, 4, 38, 1, 2, 3, 5, 38, 1, 2, 3, 6, 38, 1, 2, 3, 7)
+    chk("cp19: at most 3", len(M.eval("WC.routeWp").more) == 3)
+    tapm(39)
+    chk("cp19: CLEAR drops them with the pin", len(M.eval("WC.routeWp").more) == 0 and M.eval("WC.routeWp").active is False)
 
     # the camera-yaw probe (one shot, read only): starts 20 s after login once the game's nav diamond exists, logs 4 samples a line
     P = C.probe
