@@ -306,8 +306,28 @@ object ShippedNet {
         const val ENC = "CLB3-walk+zlib+base64"
         /** [g]'s classes only: steps, faces, the 45-48 degree faces */
         fun strip(g: Climb.Grid): Climb.Grid = Climb.Grid(g.gr0, g.gc0, g.nx, g.ny, g.cls, g.faces).also { it.faces48 = g.faces48 }
-        fun encode(g: Climb.Grid): ByteArray = ByteArrayOutputStream().also { b -> java.io.DataOutputStream(b).use { strip(g).write(it) } }.toByteArray()
-        fun decode(b: ByteArray): Climb.Grid? = java.io.DataInputStream(ByteArrayInputStream(b)).use { Climb.Grid.read(it) }
+        /** the CLB3 bytes of [strip], then THE FLOORS' VERTICES as a bit each (the vertices on a deck, a walkway, a dock - [Climb.Grid.deckZ]
+         *  not NaN; never their heights): a deck over water is walked, not swum (the walk-grid parity's Menethil docks) */
+        fun encode(g: Climb.Grid): ByteArray = ByteArrayOutputStream().also { b -> java.io.DataOutputStream(b).use { o ->
+            strip(g).write(o)
+            val dz = g.deckZ
+            o.writeByte(if (dz != null) 1 else 0)
+            if (dz != null) o.write(ByteArray((g.nx * g.ny + 7) / 8) { k -> var v = 0; for (t in 0 until 8) { val i = k * 8 + t; if (i < dz.size && !dz[i].isNaN()) v = v or (1 shl t) }; v.toByte() })
+        } }.toByteArray()
+        /** the grid of [encode]; the floors' vertices as [Climb.Grid.deckZ] 0 (no height kept: a floor's own rise is not read) */
+        fun decode(b: ByteArray): Climb.Grid? = java.io.DataInputStream(ByteArrayInputStream(b)).use { i ->
+            val g = Climb.Grid.read(i) ?: return null
+            if (i.available() > 0 && i.readUnsignedByte() == 1) {
+                val bits = ByteArray((g.nx * g.ny + 7) / 8).also { i.readFully(it) }
+                g.deckZ = FloatArray(g.nx * g.ny) { k -> if ((bits[k / 8].toInt() shr (k % 8)) and 1 != 0) 0f else Float.NaN }
+            }
+            g
+        }
+        /** whether world ([x], [y])'s nearest vertex of [g] stands on a floor ([decode]'s bits) */
+        fun onFloor(g: Climb.Grid, x: Double, y: Double): Boolean {
+            val dz = g.deckZ ?: return false
+            val a = g.at(x, y); return !dz[a[1] * g.nx + a[0]].isNaN()
+        }
     }
 
     // ---------------------------------------------------------------- building a section (the harness's exporter)

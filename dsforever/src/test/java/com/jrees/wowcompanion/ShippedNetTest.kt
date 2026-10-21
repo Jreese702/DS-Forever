@@ -156,7 +156,12 @@ class ShippedNetTest {
         val w = p.walk!!
         assertEquals(listOf(g.gr0, g.gc0, g.nx, g.ny), listOf(w.gr0, w.gc0, w.nx, w.ny))
         assertArrayEquals(g.cls, w.cls)
-        assertNull(w.deckZ); assertNull(w.dropD); assertNull(w.rooms)
+        assertNull(w.dropD); assertNull(w.rooms)
+        // the floors' vertices kept as a bit each, never their heights (5 yd in, 0 out)
+        assertTrue(w.deckZ!!.all { it == 0f }); assertTrue(ShippedNet.Walk.onFloor(w, 0.0, 0.0))
+        val g2 = Climb.build(60.0, -60.0, 60.0, -60.0, { _, _ -> 0f }).also { it.deckZ = FloatArray(it.nx * it.ny) { k -> if (k % 3 == 0) 7f else Float.NaN } }
+        val w2 = ShippedNet.Walk.decode(ShippedNet.Walk.encode(g2))!!
+        for (k in 0 until g2.nx * g2.ny) assertEquals(k % 3 == 0, !w2.deckZ!![k].isNaN())
         assertSame(w, p.roadmap!!.walk)
         assertArrayEquals(bytes, ShippedNet.bytes(p))
         assertNull(ShippedNet.read(ByteArrayInputStream(ShippedNet.bytes(pack())))!!.walk)

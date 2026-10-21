@@ -59,6 +59,8 @@ object ShippedSnap {
                  val allowWater: Boolean = false) {
         /** deep water or lava at world ([x], [y]) a walker may not cross (the lattice walk's water) */
         fun deep(x: Double, y: Double): Boolean = wall(x, y, false)?.let { it != "a building" } == true
+        /** [deep] save where [floor] says a deck stands (the shipped lattice's floor bits) */
+        fun deepOff(floor: ((Double, Double) -> Boolean)?): (Double, Double) -> Boolean = { x, y -> floor?.invoke(x, y) != true && deep(x, y) }
         /** the same ground for a ghost ([allowWater]) */
         fun ghost() = Ground(terrain, water, room, allowWater = true)
         /** water a ghost walks on at world ([x], [y]): [allowWater], wet, no bridge, not lava */
@@ -69,8 +71,8 @@ object ShippedSnap {
         }
         /** why a walker may not stand at world ([x], [y]): null = it may; [terrain] false: the water and the rooms only (the shipped
          *  lattice's classes judge the ground: [ShippedNet.Walk]) */
-        fun wall(x: Double, y: Double, terrain: Boolean = true): String? {
-            water?.let { w ->
+        fun wall(x: Double, y: Double, terrain: Boolean = true, dry: Boolean = false): String? {
+            if (!dry) water?.let { w ->
                 val d = w.at(x, y)
                 if (allowWater) {
                     if (!d.isNaN() && d != SafePath.Water.BRIDGE && d >= DEEP_LAVA) return "deep water or lava"
@@ -223,9 +225,11 @@ object ShippedSnap {
      * a wall), every piece of it held to the same. Leading and fallbacks as [pick]'s: the nearest clear straight line (and those
      * [SPREAD_YD] longer), else the shortest walk; the rest nearest first.
      */
-    private fun pickOnLattice(p: DoubleArray, near: List<Triple<Int, DoubleArray, Double>>, ground: Ground, view: View, g: Climb.Grid,
+    private fun pickOnLattice(p: DoubleArray, near: List<Triple<Int, DoubleArray, Double>>, ground: Ground, view0: View, g: Climb.Grid,
                               reach: Double, walkYd: Double): Result {
-        val deep: (Double, Double) -> Boolean = { x, y -> ground.deep(x, y) }
+        val fl: ((Double, Double) -> Boolean)? = if (g.deckZ != null) { x, y -> ShippedNet.Walk.onFloor(g, x, y) } else null
+        val view = View(p, ground, view0.danger, view0.k, floor = fl)
+        val deep = ground.deepOff(fl)
         fun clear(a: DoubleArray, b: DoubleArray): View.Line? {
             val soft = view.line(a, b, terrain = false)
             return if (soft.why == null && Climb.walkable(g, a, b)) soft else null
@@ -285,7 +289,7 @@ object ShippedSnap {
         for (v in near.sortedBy { hypot(it[0] - p[0], it[1] - p[1]) }) tryFrom(v)?.let { return it }
         return null
     }
-    const val END_HOP_YD = 6.0              // an end's own hop onto the lattice: only the water and the rooms read
+    const val END_HOP_YD = 3.0              // an end's own hop onto its nearest vertex (2.95 yd at most): only the water and the rooms read
     const val UNCHECKED_COST = 3.0          // an unchecked end's straight pointer: a yard of it this dear (the nearest node, not a far one)
     const val LATTICE_WINDOW = 120_000      // the lattice leg's scratch at most (vertices): ~ 340 x 340 steps
 
@@ -339,10 +343,11 @@ object ShippedSnap {
                    lim: Double = ShippedRoute.DIRECT_WALK_YD, lattice: Climb.Grid? = null): Snap? {
         if (lattice != null) {
             // the shipped lattice: its own rule, straight when it passes, else its leg (deep water a wall)
-            val view = View(from, ground, danger, k)
+            val fl: ((Double, Double) -> Boolean)? = if (lattice.deckZ != null) { x, y -> ShippedNet.Walk.onFloor(lattice, x, y) } else null
+            val view = View(from, ground, danger, k, floor = fl)
             fun clear(a: DoubleArray, b: DoubleArray) = view.line(a, b, terrain = false).takeIf { it.why == null && Climb.walkable(lattice, a, b) }
             clear(from, to)?.let { return Snap(-1, listOf(from, to), hypot(to[0] - from[0], to[1] - from[1]), it.cost, true) }
-            val w = latticeLeg(lattice, from, to, { x, y -> ground.deep(x, y) }, view) ?: return null
+            val w = latticeLeg(lattice, from, to, ground.deepOff(fl), view) ?: return null
             if (w.yd > lim) return null
             return Snap(-1, w.pts, w.yd, w.cost, false)
         }
@@ -360,13 +365,15 @@ object ShippedSnap {
     // ---------------------------------------------------------------- the fine reads
 
     /** one end's view of the ground: [c] the end (its door rule), the cost a yard with the danger */
-    private class View(val c: DoubleArray, val g: Ground, val danger: ((Double, Double) -> Float)?, val k: Double, val level: Boolean = false) {
+    private class View(val c: DoubleArray, val g: Ground, val danger: ((Double, Double) -> Float)?, val k: Double, val level: Boolean = false,
+                       /** the shipped lattice's floor vertices: no water read under a deck */
+                       val floor: ((Double, Double) -> Boolean)? = null) {
         val inWall = g.wall(c[0], c[1]) != null || (level && g.terrain(c[0], c[1]).let { !it.isNaN() && it > LEVEL })
         /** [steep] the line's dearest terrain a yard (1 level; the slope grid's climb, a cliff's band) */
         class Line(val cost: Double, val why: String?, val steep: Float = 1f)
         /** the wall at ([x], [y]) for this end's walk (null: none; the door's within [DOOR_YD] of an end standing in one) */
         fun wall(x: Double, y: Double, terrain: Boolean = true): String? {
-            if (!terrain) return g.wall(x, y, false)?.let { w -> if (inWall && hypot(x - c[0], y - c[1]) <= DOOR_YD) null else w }
+            if (!terrain) return g.wall(x, y, false, floor?.invoke(x, y) == true)?.let { w -> if (inWall && hypot(x - c[0], y - c[1]) <= DOOR_YD) null else w }
             val w = g.wall(x, y) ?: (if (level && !g.walkedWater(x, y)) g.terrain(x, y).takeIf { !it.isNaN() && it > LEVEL }?.let { "a climb or a cliff's band" } else null) ?: return null
             return if (inWall && hypot(x - c[0], y - c[1]) <= DOOR_YD) null else w
         }
