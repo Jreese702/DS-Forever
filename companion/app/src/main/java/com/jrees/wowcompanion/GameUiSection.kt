@@ -107,7 +107,12 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         GameUi.Row(TIPS_ID, "Hide game tooltips", null, if (s.hide) UiMode.ON else UiMode.OFF, true, s.hide,
             if (s.hide) "Hidden: the game's tooltips are invisible on the top screen" else "Off: the game's tooltips show as usual")
     }
-    private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), tipsRow())
+    /** ar1: "Aggro rings" (default on), shown once the add-on set has them */
+    private fun ringsRow(): GameUi.Row? = RingsSwitch.state?.let { s ->
+        GameUi.Row(RINGS_ID, "Aggro rings", null, if (s.show) UiMode.ON else UiMode.OFF, true, !s.show,
+            if (s.show) "On: a ring on the ground under hostile mobs, their aggro range" else "Off: no rings on the top screen")
+    }
+    private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
     private var selected: String? = null
     private val rowBoxes = ArrayList<Pair<RectF, String>>()
     private val segBoxes = ArrayList<Pair<RectF, UiMode>>()
@@ -122,6 +127,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         HomeLootSwitch.onChange { post { refresh() } }
         CompassSwitch.onChange { post { refresh() } }
         TipsSwitch.onChange { post { refresh() } }
+        RingsSwitch.onChange { post { refresh() } }
         if (hasStatus) StatusLine.onChange = { post { invalidate() } }
     }
 
@@ -184,6 +190,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                             COMPASS_ID -> CompassSwitch.turn(context, m == UiMode.ON)
                             COMPASS_CAM_ID -> CompassSwitch.turnCam(context, m == UiMode.ON)
                             TIPS_ID -> TipsSwitch.turn(context, m == UiMode.ON)
+                            RINGS_ID -> RingsSwitch.turn(context, m == UiMode.ON)
                             GameUi.CASTBAR_ID -> GameUi.setCastBar(m == UiMode.ON)
                             GameUi.HUD_ID -> GameUi.setHud(m == UiMode.ON)
                             else -> GameUi.setMode(it, m)
@@ -278,7 +285,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             c.drawText(hint, left + 6f, top + SEG_H + 34f, pSub)
             return
         }
-        val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == TIPS_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.HUD_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
+        val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == TIPS_ID || r.id == RINGS_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.HUD_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
         val sw = (right - left - gap * (modes.size - 1)) / modes.size
         var x = left
         for (m in modes) {
@@ -458,6 +465,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         /** cp7: the compass's camera experiment */
         const val COMPASS_CAM_ID = "compasscam"
         const val TIPS_ID = "hidetips"
+        const val RINGS_ID = "aggrorings"
         // SettingsView's own metrics: a section heading 16 px above its first row, 96 px rows
         const val HEAD_TEXT = 26f
         const val HEAD_H = 42f

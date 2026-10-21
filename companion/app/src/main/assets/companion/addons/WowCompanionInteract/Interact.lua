@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i133"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i134"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1292,10 +1292,13 @@ local function assignSlots(doc)
     local ccOn, ccOff = slot("iact", "compass camon"), slot("iact", "compass camoff")     -- cp7: follow the camera (experiment)
     -- tt1: Settings > Top screen's "Hide game tooltips" (Trail.lua's WC.tips); `hide` is the add-on's word
     local tpOn, tpOff = slot("iact", "tips on"), slot("iact", "tips off")
+    -- ar1: Settings > Top screen's "Aggro rings" (Trail.lua's WC.rings); `show` is the add-on's word
+    local arOn, arOff = slot("iact", "rings on"), slot("iact", "rings off")
     if GB and trustCol then
         doc.proof = { gb = GB, cv = CAPV, boot = BOOT, col = trustCol }
         if selOn and selOff then doc.proof.selc = { on = selOn, off = selOff } end
         if ltOn and ltOff then doc.proof.lootc = { on = ltOn, off = ltOff, top = LOOT.top() } end
+        if arOn and arOff and type(WC.rings) == "table" then doc.proof.ringc = { on = arOn, off = arOff, show = WC.rings.wanted() and true or false } end
         if tpOn and tpOff and type(WC.tips) == "table" then doc.proof.tipc = { on = tpOn, off = tpOff, hide = WC.tips.on and true or false } end
         if cpOn and cpOff and type(WC.compass) == "table" then
             doc.proof.compc = { on = cpOn, off = cpOff, show = WC.compass.wanted() and true or false, why = WC.compass.why, v = WC.compass.V }
@@ -2630,6 +2633,16 @@ function ACT.compass(a)
     else
         WC.compass.set(a == "on")
     end
+    N.n = N.n + 1
+    emitSoon()
+    return true
+end
+
+-- /wci rings on|off   ar1: the aggro rings on the ground (Trail.lua's WC.rings)
+function ACT.rings(a)
+    if a ~= "on" and a ~= "off" then return false, "on or off" end
+    if type(WC.rings) ~= "table" or type(WC.rings.set) ~= "function" then return false, "no aggro rings in this add-on set" end
+    WC.rings.set(a == "on")
     N.n = N.n + 1
     emitSoon()
     return true

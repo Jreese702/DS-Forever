@@ -1302,7 +1302,7 @@ end
 --   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
 --   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 --   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-WC.live = { V = "ag5", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+WC.live = { V = "ag6", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -1551,6 +1551,13 @@ do
             else
                 A.pulls[#A.pulls + 1] = { s = s, n = st.npc, ct = st.ct, lv = m.lv, plv = plv, lo = m.a, hi = calm.b,
                                           t = math.floor(t * 10 + 0.5) / 10 }
+                -- ag6 (the aggro rings): every measured pull logged with the radius the rule gives, so the rule can be checked against
+                -- real pulls ({"type":"cap","probe":"pull"}: the pull happened between lo and hi yd; rule = the ring's radius)
+                A.pullN = (A.pullN or 0) + 1
+                pcall(function()
+                    WC.send(WC.encode({ type = "cap", probe = "pull", v = A.V, n = st.npc, lv = m.lv, plv = plv, lo = m.a, hi = calm.b,
+                        cls = m.c, rule = (type(WC.rings) == "table" and WC.rings.radius) and WC.rings.radius(m.lv, plv) or nil, k = A.pullN }))
+                end)
                 return true
             end
         end
@@ -1931,7 +1938,9 @@ do
                        still = A.sent.still, rej = A.lastReject, err = A.err,
                        picks = (A.pick[1] and 1 or 0) + (A.pick[2] and 1 or 0), win = A.win and A.win.op or nil,
                        np = A.np.state, npv = npGet(), npo = A.npSaved() and A.npSaved().orig or nil, icons = A.iconN or 0,
-                       route = A.routing(), pin = type(WC.routeWp) == "table" and WC.routeWp.active == true }
+                       route = A.routing(), pin = type(WC.routeWp) == "table" and WC.routeWp.active == true,
+                       rings = type(WC.rings) == "table" and { on = WC.rings.wanted(), n = WC.rings.n, src = WC.rings.src } or nil,
+                       pulls = A.pullN }
         A.lastDiag = line
         pcall(function() WC.send(WC.encode(line)) end)
     end
@@ -2980,4 +2989,173 @@ do
     local f = CreateFrame("Frame")
     for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD" }) do pcall(function() f:RegisterEvent(e) end) end
     f:SetScript("OnEvent", function() pcall(T.apply) end)
+end
+
+-- ================================================================== AGGRO RINGS ON THE GROUND (ar1; the user's "Both" / "Keep separate")
+-- The user: "is it possible to increase the size of mobs bottom unit circle before they are aggroed to show their aggro radius?" The
+-- game's selection circle cannot be resized (the engine draws it), so these are OUR rings: one under each hostile mob that is not
+-- yet pulled, radius = its aggro radius by the classic rule, agreed with Map for both screens: clamp(20 + (mob level - yours), 5, 45)
+-- yd, elites the same, a "??" mob as yours + 10. Yellow while you are outside it, red for a ring you stand in; each ring on its own
+-- ("Keep separate": no merging up here). Gone (a FADE_S fade) while the mob is in combat; back when it resets.
+--   WHO: WC.live's slotted plates (hostile, attackable NPCs) with reaction 1-3 (the user's "Aggressive = Hostile + unfriendly"),
+--   not dead, not tapped by others. Neutral / passive mobs and players never get one.
+--   WHERE: the ring is anchored to the plate's own live screen point (the engine places it exactly every frame: no jumping, turning
+--   the camera moves the ring with the mob); only the mob's DISTANCE is estimated - from the plate's height on screen through the
+--   compass's camera model (cp20's pitch, the zoom, PLATE_H above the feet), clamped into the range bracket (A.bracket), smoothed
+--   (TAU, and at most VMAX yd/s of change, so a noisy read cannot throw it). The distance gives the ring's size, its squash and the
+--   drop from the plate to the feet. Without a pitch read yet, DEF_PITCH stands in (the probe says so).
+--   Our own frames on UIParent (BACKGROUND, mouse off), our own art (marker_ring.tga): the plates are only READ (GetCenter), never
+--   parented to, written or hooked. No CVar. The app's Settings > Top screen "Aggro rings" (default on): WowCompanionDB.aggroRings.
+WC.rings = { V = "ar1", BASE = 20, MIN = 5, MAX = 45, SKULL = 10, PLATE_H = 3.0, TAU = 0.4, VMAX = 10, FADE_S = 0.3, DEF_PITCH = 0.35,
+             RGB_OUT = { 1, 0.84, 0.27 }, RGB_IN = { 0.92, 0.2, 0.12 }, ALPHA = 0.85, list = {}, n = 0,
+             TEX = "Interface\\AddOns\\WowCompanion\\Media\\marker_ring" }
+do
+    local R, A, C = WC.rings, WC.live, WC.compass
+    local function now() return (type(GetTime) == "function" and GetTime()) or 0 end
+    local function num(v) if type(v) == "number" and v == v and not (type(issecretvalue) == "function" and issecretvalue(v)) then return v end end
+
+    -- the aggro radius (yd) of a mob of level lv for a player of level plv; lv < 0 (or nil) is a "??" mob
+    function R.radius(lv, plv)
+        if not plv then return R.BASE end
+        if not lv or lv < 0 then lv = plv + R.SKULL end
+        return math.max(R.MIN, math.min(R.MAX, R.BASE + (lv - plv)))
+    end
+    function R.wanted() return not (type(WowCompanionDB) == "table" and WowCompanionDB.aggroRings == false) end
+    function R.set(on)
+        if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+        if on then WowCompanionDB.aggroRings = nil else WowCompanionDB.aggroRings = false end
+        return R.wanted()
+    end
+    -- a record's mob gets a ring: aggressive, not dead, not tapped
+    function R.eligible(m)
+        return type(m) == "table" and num(m.r) ~= nil and m.r <= 3 and m.dd ~= 1 and m.td ~= 1
+    end
+
+    local function ring(s)
+        local o = R.list[s]
+        if o then return o end
+        local f = CreateFrame("Frame", nil, UIParent)
+        f:SetFrameStrata("BACKGROUND")
+        f:EnableMouse(false)
+        f:Hide()
+        local t = f:CreateTexture(nil, "ARTWORK")
+        t:SetTexture(R.TEX)
+        t:SetAllPoints(f)
+        o = { f = f, t = t, a = 0 }
+        R.list[s] = o
+        return o
+    end
+
+    -- the distance (yd, along the ground) that puts a point PLATE_H above the feet at screen height yOff above the centre, at the
+    -- screen angle rel off the middle; nil when no distance fits
+    function R.solve(yOff, rel, phi, D, H, fl)
+        local function g(df) return C.wmProj(phi, D, H, df, R.PLATE_H, fl) end
+        local lo, hi = 1, 80
+        local glo, ghi = g(lo), g(hi)
+        if not (glo and ghi) then return nil end
+        if (glo - yOff) * (ghi - yOff) > 0 then return nil end
+        for _ = 1, 30 do
+            local mid = (lo + hi) / 2
+            local gm = g(mid)
+            if not gm then return nil end
+            if (glo - yOff) * (gm - yOff) <= 0 then hi = mid else lo, glo = mid, gm end
+        end
+        return ((lo + hi) / 2) / math.max(0.2, math.cos(rel))
+    end
+
+    function R.tick(dt)
+        local t = now()
+        local rec = A and A.last
+        local on = R.wanted() and rec and type(rec.m) == "table" and not A.off
+        local seen = {}
+        R.n = 0
+        if on then
+            local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
+            local okW, uw = pcall(function() return UIParent:GetWidth() end)
+            local okH, uh = pcall(function() return UIParent:GetHeight() end)
+            us, uw, uh = okU and num(us) or 1, okW and num(uw) or nil, okH and num(uh) or nil
+            local plv = A.pv and A.pv(UnitLevel, "player")
+            if uw and uh then
+                local half, cy = uw / 2, uh / 2
+                local hfov = (C.cam and C.cam.hfov) or math.rad(90)
+                local fl = half / math.tan(hfov / 2)
+                local phi = C.wm and C.wm.pitch
+                R.src = phi and ((C.wm.tilted and "stale") or "pitch") or "guess"
+                phi = phi or R.DEF_PITCH
+                local D, H = C.wmZoom(), (C.wm and C.wm.CAM_H) or 1.9
+                for _, m in ipairs(rec.m) do
+                    local st = A.slot[m.s]
+                    if st and R.eligible(m) then
+                        local okP, plate = pcall(function() return C_NamePlate.GetNamePlateForUnit(st.tok) end)
+                        local x, y, ps
+                        if okP and plate then
+                            local okC, cx, cyy = pcall(function() return plate:GetCenter() end)
+                            local okS, s2 = pcall(function() return plate:GetEffectiveScale() end)
+                            x, y, ps = okC and num(cx) or nil, okC and num(cyy) or nil, okS and num(s2) or 1
+                        end
+                        if x and y then
+                            x, y = x * ps / us, y * ps / us
+                            local rel = math.atan((x - half) / fl)
+                            -- the raw distance: the plate's height on screen, clamped into the range bracket
+                            local raw = R.solve(y - cy, rel, phi, D, H, fl)
+                            local lo, hi = num(m.a) or 0, num(m.b)
+                            if not raw then raw = hi and (lo + hi) / 2 or lo + 10 end
+                            raw = math.max(lo, hi and math.min(hi, raw) or raw)
+                            -- smoothed per slot (a new plate in the slot starts fresh), at most VMAX yd/s of change
+                            local e = R.est and R.est[m.s]
+                            if not e or e.tok ~= st.tok or e.at ~= st.at then
+                                e = { tok = st.tok, at = st.at, d = raw }
+                                R.est = R.est or {}
+                                R.est[m.s] = e
+                            else
+                                local step = (raw - e.d) * (1 - math.exp(-dt / R.TAU))
+                                local cap = R.VMAX * dt
+                                e.d = e.d + math.max(-cap, math.min(cap, step))
+                            end
+                            local d = e.d
+                            local dfwd = d * math.cos(rel)
+                            local r = R.radius(num(m.lv), plv)
+                            local up = C.wmProj(phi, D, H, dfwd, R.PLATE_H, fl)
+                            local ft = C.wmProj(phi, D, H, dfwd, 0, fl)
+                            local wm = C.wm.pitch
+                            C.wm.pitch = phi                                   -- (wmGround reads the pitch it is given here)
+                            local g = C.wmGround(dfwd, 0, r, false, fl)
+                            C.wm.pitch = wm
+                            if up and ft and g then
+                                local o = ring(m.s)
+                                local footY = y - (up - ft)
+                                o.f:ClearAllPoints()
+                                o.f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, footY + g.roff)
+                                o.f:SetSize(g.rw, g.rh)
+                                local inside = d < r
+                                local c = inside and R.RGB_IN or R.RGB_OUT
+                                o.t:SetVertexColor(c[1], c[2], c[3])
+                                o.inside, o.r, o.d = inside, r, d
+                                -- in combat: fading out; out of it: back
+                                local want = (m.cb == 1) and 0 or R.ALPHA
+                                local k = dt / R.FADE_S * R.ALPHA
+                                if o.a < want then o.a = math.min(want, o.a + k) else o.a = math.max(want, o.a - k) end
+                                o.f:SetAlpha(o.a)
+                                if o.a > 0 then
+                                    if not o.f:IsShown() then o.f:Show() end
+                                    R.n = R.n + 1
+                                elseif o.f:IsShown() then o.f:Hide() end
+                                seen[m.s] = true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        for s, o in pairs(R.list) do
+            if not seen[s] then
+                if o.f:IsShown() then o.f:Hide() end
+                o.a = 0
+                if R.est then R.est[s] = nil end
+            end
+        end
+    end
+
+    local f = CreateFrame("Frame")
+    f:SetScript("OnUpdate", function(_, elapsed) pcall(R.tick, elapsed) end)
 end
