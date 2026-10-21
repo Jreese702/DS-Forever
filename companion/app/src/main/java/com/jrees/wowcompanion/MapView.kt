@@ -4384,6 +4384,14 @@ class MapView(context: Context) : View(context) {
     private val shipLive = HashMap<Int, Set<Long>>()          // quest -> the point discs its kept way was planned with
     private var liveSpawnKey = ""
     private fun liveSnap(mapId: Int, r: PoiStore.Rect, mine: Int): LiveDanger.Snapshot? {
+        liveSpawns(mapId, r, mine)
+        // always the snapshot, empty or not: the route's line then says "live 0 (0 mobs)" and shows the live pass runs (test45: no
+        // live words at all, so an empty layer and a missing one looked the same)
+        return LiveMobs.shared.snapshot(mapId, questsPlv)
+    }
+    /** this map's QuestieDB spawns handed to the live store (once a map / danger read): the route's live pass and the aggro rings
+     *  both (test52: a plate snaps to its spawn only once they are in - with no route running, the rings had none) */
+    private fun liveSpawns(mapId: Int, r: PoiStore.Rect, mine: Int) {
         val key = "$mapId:${DangerStore.version}:$mine:${r.width}:${r.height}:${r.top}:${r.left}"
         if (key != liveSpawnKey) {
             liveSpawnKey = key
@@ -4391,9 +4399,6 @@ class MapView(context: Context) : View(context) {
             LiveMobs.shared.setSpawns(mapId, DangerStore.spawns(mapId).mapIndexedNotNull { i, s -> if (s.npc == 0) null else
                 LivePlace.SpawnPt(i, s.npc, r.top - s.y * ay, r.left - s.x * ax, s.minLv, s.maxLv, s.elite, mine == 0 || s.hostile and mine != 0) })
         }
-        // always the snapshot, empty or not: the route's line then says "live 0 (0 mobs)" and shows the live pass runs (test45: no
-        // live words at all, so an empty layer and a missing one looked the same)
-        return LiveMobs.shared.snapshot(mapId, questsPlv)
     }
     // THE AGGRO RINGS (the user, 2026-10-21, "Both"; AggroRings): each unpulled hostile plate's reach, a pack's rings ONE shape (one
     // fill that never darkens where they overlap, one outline round them), soft yellow; the rings the player stands in red; under the
@@ -4401,11 +4406,21 @@ class MapView(context: Context) : View(context) {
     private val pAggroFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val pAggroEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
     private val aggroPath = Path(); private val aggroOne = Path()
+    private var ringsLogAt = 0L
     private fun drawAggroRings(c: Canvas, r: PoiStore.Rect, sx: (Double) -> Float, sy: (Double) -> Float) {
         val m = map ?: return
         val mapId = m.optInt("mapID", 0)
         val pwx = m.optDouble("wx", Double.NaN); val pwy = m.optDouble("wy", Double.NaN)
-        val rings = LiveMobs.shared.rings(mapId, questsPlv, pwx, pwy)
+        liveSpawns(mapId, r, TransportRoutes.factionOf(m.optString("fac", null)))
+        val look = LiveMobs.shared.rings(mapId, questsPlv, pwx, pwy)
+        // the log (every 5 s while plates are read): the counts, and each ring's placement inputs (a device read checks them)
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (look != null && look.plates > 0 && now - ringsLogAt >= 5_000L) {
+            ringsLogAt = now
+            android.util.Log.i("WCMAP", "aggro rings: ${look.words()}; me ${pwx.toInt()},${pwy.toInt()}" +
+                look.rings.joinToString("") { "; ring ${it.id}: ${it.why}${if (it.inside) " (inside)" else ""}" })
+        }
+        val rings = look?.rings ?: return
         if (rings.isEmpty()) return
         // yards to pixels here (the map's scale along its width; the art is square to the world)
         val y0 = rings[0].y
