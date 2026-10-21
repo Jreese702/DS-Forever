@@ -45,6 +45,27 @@ class ShippedSnapTest {
         assertEquals(listOf(1), lead(r))
     }
 
+    @Test fun onTheShippedLatticeAFaceTheCoarseGroundMissesIsWalkedRound() {
+        // a 20 yd ridge across world x 9..14 (north of the end), level ground both sides, a gap at y 30..40; the coarse ground reads it
+        // all level
+        val org = 32.0 * MapHarvest.ADT_YD
+        val lat = Climb.build(100.0, -100.0, 100.0, -100.0, { gr, gc ->
+            val wx = org - gr * Climb.STEP; val wy = org - gc * Climb.STEP
+            if (wx in 9.0..14.0 && wy !in 30.0..40.0) 20f else 0f })
+        val nodes = listOf(1 to doubleArrayOf(25.0, 0.0))
+        // the coarse ground alone: straight over the cliff
+        assertTrue(ShippedSnap.snap(p0, nodes, ShippedSnap.Ground(flat)).best!!.straight)
+        // the lattice: round by the gap, every piece walkable on it
+        val r = ShippedSnap.snap(p0, nodes, ShippedSnap.Ground(flat), reach = 60.0, walkYd = 120.0, lattice = lat)
+        assertTrue(r.why, r.ok); val b = r.best!!
+        assertFalse(b.straight); assertEquals(1, b.node)
+        for ((u, v) in b.pts.zipWithNext()) assertTrue("${u.toList()} -> ${v.toList()}", Climb.walkable(lat, u, v))
+        assertTrue("round by the gap: ${b.pts.map { it.toList() }}", b.pts.any { it[1] in 28.0..42.0 })
+        // the near-goal walk on it: the same
+        val d = ShippedSnap.directWalk(p0, doubleArrayOf(25.0, 0.0), ShippedSnap.Ground(flat), lattice = lat)!!
+        assertFalse(d.straight); for ((u, v) in d.pts.zipWithNext()) assertTrue(Climb.walkable(lat, u, v))
+    }
+
     @Test fun aThinWallTheCoarseGridMissesIsNeverCrossed() {
         // a building's wall 2 yd thick across the way to the nearer node (the 25 yd grid reads only cell middles: never sees it)
         val g = ShippedSnap.Ground(flat, room = room(14.0, 16.0, -30.0, 30.0))

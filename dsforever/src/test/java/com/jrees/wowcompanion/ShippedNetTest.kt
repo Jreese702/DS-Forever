@@ -4,6 +4,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
@@ -144,6 +145,21 @@ class ShippedNetTest {
         val n = SafePath.Net.fromJson(o)
         assertNotNull(n)
         assertEquals(7, n!!.edges.size); assertEquals(2, n.exits.size)
+    }
+
+    @Test fun theWalkClassesRoundTripWithNoHeights() {
+        val p0 = pack()
+        val g = Climb.build(60.0, -60.0, 60.0, -60.0, { gr, gc -> ((gr * 7 + gc * 3) % 11).toFloat() })
+        g.deckZ = FloatArray(g.nx * g.ny) { 5f }; g.dropD = ByteArray(g.nx * g.ny) { 9 }      // left out: heights, drops
+        val bytes = ShippedNet.bytes(ShippedNet.Pack(p0.header, p0.sections, p0.roadmap, g))
+        val p = ShippedNet.read(ByteArrayInputStream(bytes))!!
+        val w = p.walk!!
+        assertEquals(listOf(g.gr0, g.gc0, g.nx, g.ny), listOf(w.gr0, w.gc0, w.nx, w.ny))
+        assertArrayEquals(g.cls, w.cls)
+        assertNull(w.deckZ); assertNull(w.dropD); assertNull(w.rooms)
+        assertSame(w, p.roadmap!!.walk)
+        assertArrayEquals(bytes, ShippedNet.bytes(p))
+        assertNull(ShippedNet.read(ByteArrayInputStream(ShippedNet.bytes(pack())))!!.walk)
     }
 
     @Test fun aVersion1FileStillReads() {

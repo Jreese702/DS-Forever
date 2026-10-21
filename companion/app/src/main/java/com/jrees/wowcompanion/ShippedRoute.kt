@@ -71,7 +71,9 @@ object ShippedRoute {
      */
     class Roadmap(val nodes: Map<Int, DoubleArray>, val edges: List<Edge>,
                   /** the nodes on a floor layer (ShippedNet.R_FLOOR: a walkway's, a building's deck): an end on one snaps to its floor first */
-                  val floor: Set<Int> = emptySet()) {
+                  val floor: Set<Int> = emptySet(),
+                  /** the pack's lattice walk classes (ShippedNet.Walk), null = none shipped */
+                  val walk: Climb.Grid? = null) {
         class Edge(val a: Int, val b: Int, val tier: Double = 1.0, val danger: Double? = null, val pts: List<DoubleArray> = emptyList(),
                    /** it crosses a ford ([tier] holds its [RM_WADE_COST]; a ghost's way does not pay it) */
                    val wade: Boolean = false)
@@ -102,7 +104,7 @@ object ShippedRoute {
                 f and ShippedNet.RE_WADE != 0)
         }
         val floor = (0 until rm.nodes).filter { rm.nodeFlags[it] and ShippedNet.R_FLOOR != 0 }.map { RM_BASE + it }.toHashSet()
-        return Roadmap(nodes, edges, floor).also { synchronized(rmCache) { rmCache[sec] = rm to it } }
+        return Roadmap(nodes, edges, floor, rm.walk).also { synchronized(rmCache) { rmCache[sec] = rm to it } }
     }
     const val RM_BUILDING_COST = 0.5       // a roadmap edge within 2 yd of a building's rooms: this much dearer a yard
     const val RM_WADE_COST = SafePath.FORD_COST - 1.0   // ... one that crosses a ford
@@ -393,7 +395,7 @@ object ShippedRoute {
             val view = AttachView(snapIds.filter { it in linked }.map { it to pos[it]!! } + groundEnds.map { it.first to doubleArrayOf(it.second[0], it.second[1]) },
                 ways.withIndex().filter { (_, w) -> w.onLand && w !in banned && !w.rewalk }.map { (i, w) -> WayView(i, listOf(pos[w.a]!!) + w.via, w.len) },
                 ground, danger, k, lim, (roadmap?.floor ?: emptySet()) + caveIds + floorEnds.map { it.first },
-                (caveIds + floorEnds.map { it.first }).map { it to doubleArrayOf(pos[it]!![0], pos[it]!![1]) })
+                (caveIds + floorEnds.map { it.first }).map { it to doubleArrayOf(pos[it]!![0], pos[it]!![1]) }, roadmap?.walk)
             fun join(p: DoubleArray, virt: Int, outward: Boolean, who: String): Result? {
                 val at = attacher.attach(view, p)
                 if (at.joins.isEmpty()) return Result(straight, false, "$who is ${at.why ?: "joined to nothing"}")
@@ -494,7 +496,9 @@ object ShippedRoute {
      *  nodes), [floorNodes] those inside nodes (id, world point; not in [nodes]: snapped to only from an end on their floor) */
     class AttachView(val nodes: List<Pair<Int, DoubleArray>>, val ways: List<WayView>, val ground: (Double, Double) -> Float,
                      val danger: ((Double, Double) -> Float)?, val k: Double, val lim: Double, val floor: Set<Int> = emptySet(),
-                     val floorNodes: List<Pair<Int, DoubleArray>> = emptyList())
+                     val floorNodes: List<Pair<Int, DoubleArray>> = emptyList(),
+                     /** the pack's lattice walk classes (ShippedNet.Walk): an end's snap walked on them, null = none shipped */
+                     val lattice: Climb.Grid? = null)
     /** one join of an end: onto graph node [node], or (node null) cut into way [way] ([WayView.index]) at [t] (0..1 of its yards) at
      *  [at]; [pts] the walk from the end to it (the end first, the joined point last), [cost] its cost (the ground's and the danger's;
      *  the router adds SafePath.OFF_NET), [yd] its walked yards */
