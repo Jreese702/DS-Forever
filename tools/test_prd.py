@@ -39,6 +39,13 @@ end }
 local Region = getmetatable(CreateFrame("Frame"))
 function Region:SetStatusBarTexture(t) self.bartex = t end
 function Region:GetStatusBarTexture() return self.bartex end
+function Region:SetScale(s) self.scale = s end
+function Region:HookScript(ev, fn) self.hooks = self.hooks or {}; self.hooks[ev] = fn end
+function Region:GetAlpha() return self.alpha or 1 end
+-- the game's tooltip, with its lines (a reader reads them whatever the alpha)
+GameTooltip = CreateFrame("Frame"); GameTooltip.lines = { "Peacebloom", "Herbalism" }
+function GameTooltip:NumLines() return #self.lines end
+ItemRefTooltip = CreateFrame("Frame")
 function Region:SetMinMaxValues(a, b) self.min, self.max = a, b end
 function Region:SetValue(v) self.value = v; READS = READS + 1 end
 function Region:SetStatusBarColor(r, g, b) self.color = { r, g, b } end
@@ -115,20 +122,27 @@ def main():
     Lg.WowCompanion.npWant = L.table_from({"hud": True})
     run(1)
     chk("HUD mode on, out of combat, no health signal, no fight yet: nothing shown (%s)" % P.why, P.f is not None and P.shown is False)
-    chk("our own frame on UIParent, MEDIUM, mouse off, anchored below the centre (y %.1f = -300 spec px)" % P.f.point[5],
+    chk("our own frame on UIParent, MEDIUM, mouse off, anchored below the centre (y %.1f = -300 spec px, hidden 14 lower)" % P.f.point[5],
         L.eval("rawequal(WowCompanion.prd.f.parent, UIParent)") and P.f.strata == "MEDIUM" and P.f.mouse is False
-        and P.f.point[1] == "TOP" and P.f.point[3] == "CENTER" and abs(P.f.point[5] + 300 * 768 / 1080) < 1e-6)
+        and P.f.point[1] == "TOP" and P.f.point[3] == "CENTER" and abs(P.f.point[5] + (300 + 14) * 768 / 1080) < 1e-6 and P.y == -300)
 
     # a fight starts (PLAYER_REGEN_DISABLED before UnitAffectingCombat reads true): in 0.15 s
     fire("PLAYER_REGEN_DISABLED")
-    run(0.2)
+    # prd8: the eased fade-and-slide in: up from 14 below, the alpha rising, both on one curve; at rest the offset is 0
+    ys, als = [], []
+    for _ in range(9):
+        run(1 / 30)
+        ys.append(P.dy); als.append(P.alpha)
+    chk("prd8: entering: slides UP into place while fading in (offset %.1f -> %.1f, alpha %.2f -> %.2f), eased out" % (ys[0], ys[-1], als[0], als[-1]),
+        ys[0] < ys[-1] <= 0 and als[0] < als[-1] and (ys[1] - ys[0]) > (ys[-1] - ys[-2]))
+    run(0.1)
     chk("starting combat: shown at once (alpha %.2f, %s)" % (P.alpha, P.why), P.alpha == 1 and P.f.shown is True and P.why == "fight")
     chk("health FED: the secret value itself to SetValue, the plain max to SetMinMaxValues",
         Lg.issecretvalue(P.hp.value) and P.hp.max == 1000 and P.hp.min == 0)
     chk("power FED the same way, the PRD's own fill tinted mana's blue (0, 0.45, 1)", Lg.issecretvalue(P.pw.value)
         and P.pw.max == 100 and P.pw.fill.atlas == "UI-HUD-CoolDownManager-Bar-c60" and list(P.pw.color.values()) == [0, 0.45, 1])
-    chk("prd6: health the PRD's own fill (rounded at both ends) tinted green, 220 x 15 (spec px), in the PRD's bar BG (c60), no spark",
-        P.hp.fill.atlas == "UI-HUD-CoolDownManager-Bar-c60" and list(P.hp.color.values()) == [0.12, 0.86, 0.12] and P.hp.spark is None and abs(P.hp.w - 220 * 768 / 1080) < 1e-6
+    chk("prd6: health the PRD's own fill (rounded at both ends) tinted green, 260 x 15 (spec px; prd8: wider), in the PRD's bar BG (c60), no spark",
+        P.hp.fill.atlas == "UI-HUD-CoolDownManager-Bar-c60" and list(P.hp.color.values()) == [0.12, 0.86, 0.12] and P.hp.spark is None and abs(P.hp.w - 260 * 768 / 1080) < 1e-6
         and abs(P.hp.h - 15 * 768 / 1080) < 1e-6 and P.shadow.tex.endswith("compass_band")
         and P.hpFrame.atlas == "UI-HUD-CoolDownManager-Bar-BG-c60" and P.pwFrame.atlas == "UI-HUD-CoolDownManager-Bar-BG-c60"
         and P.hpFrame.whole is not None)
@@ -181,8 +195,8 @@ def main():
     chk("(a) out of combat the row STAYS while the bar shows (test45: a HoT after the fight)", P.nb == 6 and P.buffs[1].f.shown)
     run(1.6)
     chk("full and out of combat: held 2 s (alpha %.2f at 1.8 s)" % P.alpha, P.alpha == 1)
-    run(1.0)
-    chk("... then fading (alpha %.2f at 2.8 s)" % P.alpha, 0.2 < P.alpha < 0.8 and P.why == "fading")
+    run(0.5)
+    chk("... then fading down and out (alpha %.2f, offset %.1f, 0.4 s into the fade)" % (P.alpha, P.dy), 0.2 < P.alpha < 0.8 and P.why == "fading" and P.dy < 0)
     run(1.0)
     chk("... gone by 3.5 s (%s)" % P.why, P.alpha == 0 and P.f.shown is False and P.why == "full")
     # hurt out of combat (the model below 99 %): shown, no aura row; full again: fades
@@ -309,7 +323,7 @@ def main():
     # THE COST: the spell's own cost over the plain max, on the power fill's right edge, gone when the cast ends
     ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_START", "player", "guid", 8936)
     chk("prd3: casting a 25-mana spell of 100: the cost segment a quarter of the bar (%.2f), on the power fill's edge" % (P.cost.w or -1),
-        P.cost.shown is True and abs(P.cost.w - 0.25 * 220 * 768 / 1080) < 1e-6 and P.cost.point[1] in ("TOPRIGHT", "BOTTOMRIGHT")
+        P.cost.shown is True and abs(P.cost.w - 0.25 * 260 * 768 / 1080) < 1e-6 and P.cost.point[1] in ("TOPRIGHT", "BOTTOMRIGHT")
         and L.eval("rawequal(WowCompanion.prd.cost.point[2], WowCompanion.prd.pw.fill)"))
     ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_STOP", "player", "guid", 8936)
     chk("prd3: the cast over: gone", P.cost.shown is False and P.ex.cost is None)
@@ -375,6 +389,86 @@ def main():
     L.execute("WowCompanion.prd.hp.fill:SetVertexColor(1, 1, 1)")
     run(0.2)
     chk("prd7: a grey reset of the texture is undone at the next poll (%s)" % vc(P.hp.fill), vc(P.hp.fill) == [0.12, 0.86, 0.12])
+    # prd8: the animation: at rest the offset is 0; a hide turned into a show reverses where it is; the saved height untouched
+    Lg.WowCompanion.vitals = None
+    fire("PLAYER_REGEN_DISABLED"); ME.fight = True; run(1.0)
+    y0, db0 = P.y, (Lg.WowCompanionDB.prdY and Lg.WowCompanionDB.prdY["Yes-Lander"])
+    chk("prd8: shown and at rest: the slide offset is 0 (%s), the bar at the player's height" % P.dy,
+        P.dy == 0 and abs(P.f.point[5] - P.y * 768 / 1080) < 1e-6)
+    ME.fight = False; fire("PLAYER_REGEN_ENABLED"); run(2.0)            # (the hold)
+    trail = []
+    for _ in range(6):
+        run(1 / 30); trail.append(P.dy)                                   # going: sliding down
+    fire("PLAYER_REGEN_DISABLED"); ME.fight = True
+    for _ in range(12):
+        run(1 / 30); trail.append(P.dy)                                   # turned round mid-way: coming back up
+    steps = [abs(trail[i] - trail[i - 1]) for i in range(1, len(trail))]
+    chk("prd8: a hide turned into a show turns round where it is (largest step %.2f spec px a frame, the lowest %.1f)" % (max(steps), min(trail)),
+        max(steps) < 2.5 and min(trail) > -14 and trail[5] < 0 and trail[-1] > trail[6])
+    chk("prd8: the slide never touches the saved height (%s, %s)" % (P.y, db0),
+        P.y == y0 and ((Lg.WowCompanionDB.prdY and Lg.WowCompanionDB.prdY["Yes-Lander"]) == db0))
+    # prd8, THE POWER TOO (the user: "it should Fade when Mana is full as well"): out of combat the bar stays until health AND power rest
+    Lg.HPM = L.table_from({"hp": 1000, "max": 1000, "mp": 400, "mpMax": 1000})
+    Lg.WowCompanion.vitals = L.eval("function() return { hp = HPM.hp, hpMax = HPM.max, hpSrc = 'model', mp = HPM.mp, mpMax = HPM.mpMax, mpSrc = 'model' } end")
+    ME.ptype, ME.tok = 0, "MANA"; run(0.3)
+    ME.fight = False; fire("PLAYER_REGEN_ENABLED"); run(4)
+    chk("prd8: full health, mana at 40 %%, out of combat: still shown (%s, %s)" % (P.why, P.prest), P.alpha > 0.9 and P.why == "power" and P.prest == "mana")
+    Lg.HPM.mp = 1000; run(3.5)
+    chk("prd8: the mana full too: faded away (%s)" % P.why, P.alpha == 0)
+    Lg.HPM.mp = 900; run(0.4)
+    chk("prd8: the mana drops (a cast): back at once", P.alpha > 0.9 and P.why == "power")
+    Lg.HPM.mp = 1000; run(3.5)
+    # energy: no reader - full ENERGY_S after the fight or the last spend; rage: at rest RAGE_S after the fight
+    ME.ptype, ME.tok = 3, "ENERGY"; fire("UNIT_DISPLAYPOWER", "player")
+    fire("PLAYER_REGEN_DISABLED"); ME.fight = True; run(0.5); ME.fight = False; fire("PLAYER_REGEN_ENABLED"); run(4)
+    chk("prd8: a rogue 4 s after the fight: energy refilling, still shown (%s)" % P.prest, P.alpha > 0.9 and P.prest == "refill")
+    ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_SUCCEEDED", "player", "g", 1752); run(8)
+    chk("prd8: a spend restarts the refill (8 s after it: still shown)", P.alpha > 0.9)
+    run(5)
+    chk("prd8: refilled: faded", P.alpha == 0)
+    ME.ptype, ME.tok = 1, "RAGE"; fire("UNIT_DISPLAYPOWER", "player")
+    fire("PLAYER_REGEN_DISABLED"); ME.fight = True; run(0.5); ME.fight = False; fire("PLAYER_REGEN_ENABLED"); run(10)
+    chk("prd8: a warrior 10 s after the fight: rage decaying, still shown (%s)" % P.prest, P.alpha > 0.9 and P.prest == "decay")
+    run(24)
+    chk("prd8: rage at rest after 30 s: faded", P.alpha == 0)
+    ME.ptype, ME.tok = 0, "MANA"; fire("UNIT_DISPLAYPOWER", "player")
+
+    # prd8, WIDTH AND SCALE (the user: "can we add some scaling settings"): Hub's column 39 selects, its step columns move it
+    fire("PLAYER_REGEN_DISABLED"); ME.fight = True; run(0.5)
+    chk("prd8: wider by default: 260 spec px, scale 100 %, the step columns on the height", P.wd == 260 and P.sc == 100 and P.sel == "y")
+    P.select(); P.nudge(1)
+    chk("prd8: select -> width; a step up: 280 (%s), the bars that wide at once (the live preview), kept for Yes-Lander" % P.wd,
+        P.wd == 280 and abs(P.hp.w - 280 * 768 / 1080) < 1e-6 and abs(P.f.w - 280 * 768 / 1080) < 1e-6 and Lg.WowCompanionDB.prdW["Yes-Lander"] == 280)
+    P.select(); P.nudge(1); P.nudge(1)
+    chk("prd8: select -> scale; two steps: 120 %% (%s), the whole bar scaled" % P.sc, P.sc == 120 and abs(P.f.scale - 1.2) < 1e-9
+        and Lg.WowCompanionDB.prdS["Yes-Lander"] == 120)
+    P.nudge(0)
+    chk("prd8: default on the scale: 100, nothing kept", P.sc == 100 and Lg.WowCompanionDB.prdS["Yes-Lander"] is None)
+    y0 = P.y; run(5); P.nudge(1)
+    chk("prd8: 4 s with no tap: the step columns back on the height (an app that only knows the height still works): %s -> %s" % (y0, P.y),
+        P.sel == "y" and P.y == y0 + 10 and P.wd == 280)
+    P.nudge(-1)
+    P.wd, P.sc = None, None; P.loadSize()
+    chk("prd8: read back at log in: 280 wide, 100 %%", P.wd == 280 and P.sc == 100)
+    P.select(); P.nudge(0); P.sel = "y"
+    # tt1, HIDE THE GAME'S TOOLTIPS (the user: "I need a setting to hide top screen tooltips"): alpha only, held by hooks
+    TT = Lg.WowCompanion.tips
+    tip = Lg.GameTooltip
+    TT.apply()
+    chk("tt1: off by default: the tooltips as the game has them (alpha %s)" % tip.alpha, TT.on is False and tip.alpha == 1)
+    TT.set(True)
+    chk("tt1: on: alpha 0, nothing hidden or cleared, kept in our saved data", tip.alpha == 0 and tip.shown is True
+        and Lg.WowCompanionDB.hideTips is True and Lg.ItemRefTooltip.alpha == 0)
+    L.execute("GameTooltip:SetAlpha(1)")                                 # the game shows / fades it again
+    tip.hooks.OnShow(tip)
+    chk("tt1: the game shows it again: our OnShow hook puts it to 0", tip.alpha == 0)
+    L.execute("GameTooltip:SetAlpha(0.6)"); tip.hooks.OnUpdate(tip)
+    chk("tt1: the game's own fade: held at 0 by the OnUpdate hook", tip.alpha == 0)
+    chk("tt1: a reader still gets the tooltip's lines (%d)" % tip.NumLines(tip), tip.NumLines(tip) == 2 and tip.lines[1] == "Peacebloom")
+    TT.set(False)
+    chk("tt1: off again: alpha 1 back, the saved choice gone", tip.alpha == 1 and Lg.ItemRefTooltip.alpha == 1 and Lg.WowCompanionDB.hideTips is None)
+    L.execute("GameTooltip:SetAlpha(1)"); tip.hooks.OnShow(tip)
+    chk("tt1: off: the hooks leave it alone", tip.alpha == 1)
     chk("nothing of the game's written (no CVar)", Lg.CVAR_WRITES == 0)
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)

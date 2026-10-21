@@ -156,6 +156,11 @@ class InteractView(context: Context) : View(context) {
         if (s != sig) {
             // a different window: start at the top, with nothing selected
             scrollA = 0f; scrollB = 0f; selected = null; qty = 1
+            // test50 (the user: "some quests are showing grey on accept and decline but they still accept the inputs"): a window
+            // that opened from a tap in the last one (a quest picked from the gossip list) arrives before that tap's answer; the
+            // wait for it greyed this window's buttons (blocked) for up to PENDING_TIMEOUT_MS, though the game - and the controller -
+            // took them all along. The new window IS the answer: the wait ends here
+            pendingCmd = null
             if (k != kind || k != Kind.MERCHANT) tab = Tab.BUY
             if (dismissedSig != null && dismissedSig != s) dismissedSig = null
         }

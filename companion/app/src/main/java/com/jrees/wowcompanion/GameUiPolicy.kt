@@ -121,6 +121,7 @@ class CastBarPolicy(
         const val HUD_LOWER = 36           // hub15: HUD mode's Height, one step a tap
         const val HUD_HIGHER = 37
         const val HUD_HDEF = 38            // back to Interact's default place
+        const val HUD_SEL = 39             // hub16: which setting 36 / 37 / 38 move (height -> width -> scale; height again 4 s after)
     }
 }
 

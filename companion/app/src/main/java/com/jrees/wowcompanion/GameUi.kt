@@ -34,6 +34,12 @@ object GameUi {
     @Volatile private var prdMax = -120
     @Volatile private var prdStep = 10
     @Volatile private var prdDef = -250
+    /** hub16: the bar's width (spec px) and scale (%) now, their ranges, and which setting the step columns move ("y" / "w" / "s") */
+    @Volatile private var prdW: Int? = null
+    @Volatile private var prdS: Int? = null
+    @Volatile private var prdSel: String? = null
+    @Volatile private var wMin = 180; @Volatile private var wMax = 400; @Volatile private var wStep = 20; @Volatile private var wDef = 260
+    @Volatile private var sMin = 70; @Volatile private var sMax = 160; @Volatile private var sStep = 10; @Volatile private var sDef = 100
     private var hudHTapAt = 0L
     private var hudHTapN = -1
     /** the character now ("Name-Realm", the host's from the padmap); null = not known yet: no HUD row */
@@ -114,6 +120,45 @@ object GameUi {
         reconcile()
         changed()
     }
+    /** hub16: the width / scale for this character (the player's choice; the bar's own until one is made) */
+    fun hudWidth(): Int? = character?.let { who -> prefs?.getInt("prdw.$who", Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE } } ?: prdW
+    fun hudScale(): Int? = character?.let { who -> prefs?.getInt("prds.$who", Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE } } ?: prdS
+    /** one step narrower / smaller ([d] -1), wider / larger (+1), or back to the default (0); the taps follow (the bar redraws live) */
+    fun stepHudWidth(d: Int) {
+        val who = character ?: return
+        val now = hudWidth() ?: return
+        prefs?.edit()?.putInt("prdw.$who", if (d == 0) wDef else (now + d * wStep).coerceIn(wMin, wMax))?.apply()
+        reconcile(); changed()
+    }
+    fun stepHudScale(d: Int) {
+        val who = character ?: return
+        val now = hudScale() ?: return
+        prefs?.edit()?.putInt("prds.$who", if (d == 0) sDef else (now + d * sStep).coerceIn(sMin, sMax))?.apply()
+        reconcile(); changed()
+    }
+    /** the value a row shows on its right: the height in px under the centre, the width in px, the scale in % */
+    fun hudValue(id: String): String = when (id) {
+        HUD_H_ID -> prdY?.let { "${-it}" } ?: "-"
+        HUD_W_ID -> prdW?.let { "$it" } ?: "-"
+        HUD_S_ID -> prdS?.let { "$it%" } ?: "-"
+        else -> ""
+    }
+    fun hudWidthRow(): Row? {
+        if (hudRow() == null || !hudOn()) return null
+        val w = prdW ?: return null
+        val want = hudWidth() ?: w
+        return Row(HUD_W_ID, "HUD width", null, UiMode.ON, true, false,
+            (if (want == w) "$w px" else "$w px, going to $want") + (if (w == wDef) " (the default)" else " (default $wDef)"))
+    }
+    fun hudScaleRow(): Row? {
+        if (hudRow() == null || !hudOn()) return null
+        val sc = prdS ?: return null
+        val want = hudScale() ?: sc
+        return Row(HUD_S_ID, "HUD scale", null, UiMode.ON, true, false,
+            (if (want == sc) "$sc %" else "$sc %, going to $want %") + (if (sc == sDef) " (the default)" else " (default $sDef %)"))
+    }
+    const val HUD_W_ID = "hudwidth"
+    const val HUD_S_ID = "hudscale"
     /** the step the row shows: 0 = the lowest place */
     fun hudHeightStep(): Int? = hudHeight()?.let { (it - prdMin) / prdStep }
     fun hudHeightSteps(): Int = (prdMax - prdMin) / prdStep
@@ -124,7 +169,8 @@ object GameUi {
         val want = hudHeight() ?: y
         val st = (y - prdMin) / prdStep; val n = hudHeightSteps()
         return Row(HUD_H_ID, "HUD height", null, UiMode.ON, true, false,
-            if (want == y) "Step $st of $n" + (if (y == prdDef) " (the default)" else "") else "Step $st of $n, going to ${(want - prdMin) / prdStep}")
+            (if (want == y) "Step $st of $n" + (if (y == prdDef) " (the default)" else "") else "Step $st of $n, going to ${(want - prdMin) / prdStep}") +
+                ", ${-y} px under the centre")
     }
     const val HUD_H_ID = "hudheight"
 
@@ -171,7 +217,13 @@ object GameUi {
         if (prd != null) {
             prdMin = prd.optInt("min", prdMin); prdMax = prd.optInt("max", prdMax)
             prdStep = prd.optInt("step", prdStep).coerceAtLeast(1); prdDef = prd.optInt("def", prdDef)
-        }
+            // hub16: the width and the scale (absent from an older add-on: no rows)
+            prdW = if (prd.has("w")) prd.optInt("w") else null
+            prdS = if (prd.has("s")) prd.optInt("s") else null
+            prdSel = if (prd.has("sel")) prd.optString("sel") else null
+            wMin = prd.optInt("wmin", wMin); wMax = prd.optInt("wmax", wMax); wStep = prd.optInt("wstep", wStep).coerceAtLeast(1); wDef = prd.optInt("wdef", wDef)
+            sMin = prd.optInt("smin", sMin); sMax = prd.optInt("smax", sMax); sStep = prd.optInt("sstep", sStep).coerceAtLeast(1); sDef = prd.optInt("sdef", sDef)
+        } else { prdW = null; prdS = null; prdSel = null }
         state = HubState(
             boot = h.optLong("boot", 0L), n = h.optInt("n", 0),
             want = if (h.has("want")) h.optInt("want") else null,
@@ -225,13 +277,20 @@ object GameUi {
                 val hc = hud.step(hudHidden, hudOn(), visible, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
                 if (hc != null) GameInput.tap(ctx, pad, ROW, hc)
                 else {
-                    // hub15: HUD height, one step a tap toward the choice; the next only after the game's answer (or 1.5 s)
-                    val cur = prdY; val want = hudHeight()
-                    if (cur != null && want != null && cur != want && s != null && live && s.current && s.hasRow &&
+                    // hub15 / hub16: HUD height, then width, then scale - one step a tap toward the choice; the next only after the
+                    // game's answer (or 1.5 s). The step columns move the setting the add-on has SELECTED (its doc's sel): when it is
+                    // not the one to move, the tap is column 39 (the next setting) first
+                    data class Want(val sel: String, val cur: Int?, val want: Int?, val def: Int, val step: Int)
+                    val todo = listOf(Want("y", prdY, hudHeight(), prdDef, prdStep), Want("w", prdW, hudWidth(), wDef, wStep),
+                        Want("s", prdS, hudScale(), sDef, sStep)).firstOrNull { it.cur != null && it.want != null && it.cur != it.want }
+                    if (todo != null && s != null && live && s.current && s.hasRow &&
                         (s.n != hudHTapN || now - hudHTapAt > 1500L) && now >= helloAt + GameUiPolicy.SETTLE_MS) {
                         hudHTapN = s.n; hudHTapAt = now
+                        val cur = todo.cur!!; val want = todo.want!!
+                        val selNow = prdSel ?: "y"
                         // the default is one tap (col 38); otherwise one step toward the choice
-                        val col = if (want == prdDef && kotlin.math.abs(want - cur) > prdStep) CastBarPolicy.HUD_HDEF
+                        val col = if (selNow != todo.sel) CastBarPolicy.HUD_SEL
+                            else if (want == todo.def && kotlin.math.abs(want - cur) > todo.step) CastBarPolicy.HUD_HDEF
                             else if (want > cur) CastBarPolicy.HUD_HIGHER else CastBarPolicy.HUD_LOWER
                         GameInput.tap(ctx, pad, ROW, col)
                     }
