@@ -2868,13 +2868,19 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             next = 0L
         }
         // the Border over everything (2 units beyond the fill: 1 beyond the Background)
-        aBarFrame?.let { drawBox(c, it, -(PILL_OVER + 1f) * u, y0 - u, w + (PILL_OVER + 1f) * u, y1 + u) }
-        c.drawRoundRect(pillR, pillRad, pillRad, pPillMask)              // keep only what lies under the smooth pill
+        // test43, again (the user: "This doesn't look finished to me"): NOTHING of the bar outside the pill - everything in the layer
+        // that lies outside it is cut away (the layer's box minus the pill, even-odd, anti-aliased, DST_OUT; a DST_IN pill alone left the
+        // outside untouched), so only the band behind shows past the caps. The game's square border art is not drawn: ONE continuous
+        // rim in its metal tone follows the pill all the way round, the straight edges flowing into the caps
+        pillCut.reset(); pillCut.fillType = Path.FillType.EVEN_ODD
+        pillCut.addRect(pillR.left - 3f, pillR.top - 3f, pillR.right + 3f, pillR.bottom + 3f, Path.Direction.CW)
+        pillCut.addRoundRect(pillR, pillRad, pillRad, Path.Direction.CW)
+        c.drawPath(pillCut, pPillCut)
         c.restoreToCount(pillLayer)
-        // the border's line all round the pill (the game's square border is cut at the caps): a thin dark rim, the same at both ends
-        pPillRim.strokeWidth = u; pPillRim.alpha = 230
-        pillRim.set(pillR.left + u / 2f, pillR.top + u / 2f, pillR.right - u / 2f, pillR.bottom - u / 2f)
-        c.drawRoundRect(pillRim, pillRad - u / 2f, pillRad - u / 2f, pPillRim)
+        val rimW = 1.5f * u
+        pPillRim.strokeWidth = rimW; pPillRim.alpha = 255
+        pillRim.set(pillR.left + rimW / 2f, pillR.top + rimW / 2f, pillR.right - rimW / 2f, pillR.bottom - rimW / 2f)
+        c.drawRoundRect(pillRim, pillRad - rimW / 2f, pillRad - rimW / 2f, pPillRim)
         if (shook) c.restore()
         if (layered) c.restore()
         return next
@@ -2882,10 +2888,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
     private val pillR = RectF()
     private val pillRim = RectF()
-    /** the anti-aliased pill mask: the bar's layer kept only under it */
-    private val pPillMask = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.BLACK; xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN)
+    /** the cut: everything of the bar's layer outside the pill goes (anti-aliased) */
+    private val pPillCut = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK; xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT)
     }
+    private val pillCut = Path()
     /** the pill's distance from the view's sides (px): the caps whole on screen, the same at both ends */
     private val PILL_MARGIN = 2f
     /** the rim: the game border's own metal tone, all round the pill (so the curve shows the same line as the long edges) */
