@@ -230,7 +230,7 @@ object ShippedSnap {
         val fl: ((Double, Double) -> Boolean)? = if (g.deckZ != null) { x, y -> ShippedNet.Walk.onFloor(g, x, y) } else null
         val view = View(p, ground, view0.danger, view0.k, floor = fl)
         roomsOn(g, ground)
-        val deep = ground.deepOff(fl)
+        val deep = endDry(p, ground.deepOff(fl))
         val whyNot = HashMap<String, Int>()
         fun clear(a: DoubleArray, b: DoubleArray): View.Line? {
             val soft = view.line(a, b, terrain = false, rooms = hypot(b[0] - a[0], b[1] - a[1]) > Climb.SOLID_LINE_YD)
@@ -260,6 +260,11 @@ object ShippedSnap {
         return Result(lead + rest, "snapped ${lead.first().yd.toInt()} yd ${if (lead.first().straight) "straight" else "round"} on the shipped lattice " +
             "(${lead.size} leading of ${near.size} nodes within ${reach.toInt()} yd; $walled lines walled)")
     }
+    /** [deep] save within [END_WET_YD] of the end [p] (its own spot in a water cell's edge, a lava field's rim: the walk leaves it;
+     *  Burning Steppes I's goal) */
+    private fun endDry(p: DoubleArray, deep: (Double, Double) -> Boolean): (Double, Double) -> Boolean = { x, y -> hypot(x - p[0], y - p[1]) > END_WET_YD && deep(x, y) }
+    const val END_WET_YD = 8.0
+
     /** the shipped lattice's rooms ([Climb.Grid.solid]: no straight line longer than SOLID_LINE_YD through one, its legs' straightening
      *  too) - the device's own room outlines ([Ground.room]), as the harness's lattice carries its own (the walk-grid parity's Menethil
      *  docks: the legs straightened through the buildings, then refused) */
@@ -361,7 +366,7 @@ object ShippedSnap {
             fun clear(a: DoubleArray, b: DoubleArray) = view.line(a, b, terrain = false, rooms = hypot(b[0] - a[0], b[1] - a[1]) > Climb.SOLID_LINE_YD)
                 .takeIf { it.why == null && Climb.walkable(lattice, a, b) }
             clear(from, to)?.let { return Snap(-1, listOf(from, to), hypot(to[0] - from[0], to[1] - from[1]), it.cost, true) }
-            val w = latticeLeg(lattice, from, to, ground.deepOff(fl), view) ?: return null
+            val w = latticeLeg(lattice, from, to, endDry(from, ground.deepOff(fl)), view) ?: return null
             if (w.yd > lim) return null
             return Snap(-1, w.pts, w.yd, w.cost, false)
         }
