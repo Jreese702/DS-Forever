@@ -3993,6 +3993,7 @@ class MapView(context: Context) : View(context) {
      */
     fun routePin(): DoubleArray? {
         fun none(why: String): DoubleArray? { pinWhy = "none: $why"; return null }
+        pinMore = emptyList()
         val m = map ?: return none("no map yet")
         if (Settings.questTracking == "polestar") return none("Quest tracking is Polestar")      // Polestar draws its own arrow (b-route-polestar)
         if (Settings.questTracking == "questtrail") return none("Quest tracking is QuestTrail")  // QuestTrail super-tracks its own pick (b-route-questtrail)
@@ -4015,6 +4016,8 @@ class MapView(context: Context) : View(context) {
             val sl = shipPinLeg
             pinWhy = if (shipShown && sl != null && !(SafePathV2.enabled && v2Shown)) ShippedPins.pinWhy(sl, r.label ?: "the quest", shipStale)
                 else "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}" + (if (SafePathV2.enabled && v2Shown) " (SafePath v2)" else "")
+            // cp19: the flags after it (as the map draws them: every bend, and the step's point unless it is the goal) for the world marker
+            pinMore = leg.drop(2).let { if (r.kind == CursorRoute.Kind.GOAL) it.dropLast(1) else it }.take(RouteWaypoint.MORE_MAX)
             return leg[1]
         }
         if (r.kind == CursorRoute.Kind.GOAL) return none("the route is direct (no checkpoint, no way)")
@@ -4024,6 +4027,8 @@ class MapView(context: Context) : View(context) {
     }
     /** why the pin stands where [routePin] said last (the host logs it with each tap) */
     var pinWhy = ""; private set
+    /** cp19: the checkpoints after the pin's, as [routePin] found them last (this map's 0..1; the world marker's further flags) */
+    var pinMore: List<DoubleArray> = emptyList(); private set
 
     // ---- POLESTAR AS THE ROUTER (b-route-polestar; Settings' "Quest tracking: Polestar"): the host taps the goal to Polestar
     // (PolestarNav, Map.lua's row "pnav") and hands its route back here; the line follows Polestar's walking route for the focused

@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp18" }
+WC.compass = { V = "cp19" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -679,68 +679,136 @@ do
     -- while the point is valid, unclamped, and the target truly IN FRONT of the camera (its bearing within the half FOV + 10
     -- degrees of the camera's yaw: a point behind the camera is projected mirrored, cp10), with the distance under it.
     -- Shown with the compass bar (the same switch); read only.
-    C.wm = { SIZE = 34 }
-    function C.wmBuild()
-        if C.wm.f then return C.wm.f end
+    -- cp19 (test33, the user: "when I jump it moves up and down. It doesn't feel like its properly anchored and they don't always
+    -- show where the flags are at"):
+    --   THE JUMP: the pin is a map point with no height, and the engine projects it at the player's own height, so it rose and fell
+    --   with every jump while the ground stood still. The marker's HEIGHT is held while the player is airborne (IsFalling, at most
+    --   HOLD_S: a long fall is followed), then eases back (EASE_S); across, it stays the engine's.
+    --   THE FLAGS: the app's map shows the checkpoints AFTER the pin's too. The app sends them (Map.lua's uwp 38, WC.routeWp.more)
+    --   and each gets our own marker, smaller and fainter the further along it is, placed across by the camera's yaw (exact from the
+    --   engine's point when that is on screen, else cp18's estimate) and the FOV; up and down at the engine point's height (no
+    --   camera pitch is readable: the horizon band), the middle of the screen when the engine's point is not to be seen.
+    --   IN FRONT: tested against the camera's yaw, also with the bar on the facing (the estimate runs always, cp19).
+    C.wm = { SIZE = 34, HOLD_S = 1.2, EASE_S = 0.12, LAND_S = 0.5, MORE_K = { 0.8, 0.68, 0.58 }, MORE_A = { 0.85, 0.65, 0.5 },
+             list = {}, airAt = -100, n = 0 }
+    function C.wmBuild(i)
+        local W = C.wm
+        i = i or 1
+        if W.list[i] then return W.list[i].f end
+        local k = i == 1 and 1 or (W.MORE_K[i - 1] or 0.5)
         local f = CreateFrame("Frame", nil, UIParent)
         f:SetFrameStrata("MEDIUM")
         f:EnableMouse(false)
-        f:SetSize(C.u(C.wm.SIZE), C.u(C.wm.SIZE))
+        f:SetSize(C.u(W.SIZE * k), C.u(W.SIZE * k))
         f:Hide()
         local sh = f:CreateTexture(nil, "ARTWORK", nil, 1)
         sh:SetPoint("CENTER", f, "CENTER", 0, 0)
-        sh:SetSize(C.u(C.wm.SIZE + 4), C.u(C.wm.SIZE + 4))
+        sh:SetSize(C.u(W.SIZE * k + 4), C.u(W.SIZE * k + 4))
         sh:SetVertexColor(0, 0, 0, 0.85)
         local tx = f:CreateTexture(nil, "ARTWORK", nil, 3)
         tx:SetAllPoints(f)
         local d = f:CreateFontString(nil, "OVERLAY")
-        d:SetFont(C.FONT, C.u(13), "OUTLINE")
+        d:SetFont(C.FONT, C.u(i == 1 and 13 or 11), "OUTLINE")
         d:SetPoint("TOP", f, "BOTTOM", 0, -C.u(2))
-        C.wm.f, C.wm.sh, C.wm.tx, C.wm.d = f, sh, tx, d
+        W.list[i] = { f = f, sh = sh, tx = tx, d = d }
+        if i == 1 then W.f, W.sh, W.tx, W.d = f, sh, tx, d end
         return f
     end
-    function C.wmStep(facing)
+    function C.wmHide()
+        for _, o in pairs(C.wm.list) do if o.f:IsShown() then o.f:Hide() end end
+    end
+    local function wmPut(i, x, y, atlas, txt, alpha)
+        C.wmBuild(i)
+        local o = C.wm.list[i]
+        o.f:ClearAllPoints()
+        o.f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+        if o.atlas ~= atlas then
+            pcall(function() o.tx:SetAtlas(atlas) end)
+            pcall(function() o.sh:SetAtlas(atlas) end)
+            o.atlas = atlas
+        end
+        if o.text ~= txt then o.d:SetText(txt); o.text = txt end
+        if o.alpha ~= alpha then pcall(function() o.f:SetAlpha(alpha) end); o.alpha = alpha end
+        if not o.f:IsShown() then o.f:Show() end
+        o.x, o.y = x, y
+    end
+    function C.wmStep(facing, dt)
         local W = C.wm
-        local show = false
-        if C.wanted() and C.frame and C.frame:IsShown() then
+        dt = num(dt) or 0
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        local on = {}
+        if C.wanted() and C.frame and C.frame:IsShown() and C.me_ then
+            local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
+            local okW, uw = pcall(function() return UIParent:GetWidth() end)
+            local okH, uh = pcall(function() return UIParent:GetHeight() end)
+            us, uw, uh = okU and num(us) or 1, okW and num(uw) or nil, okH and num(uh) or nil
+            local okA, air = pcall(function() return IsFalling() end)
+            air = okA and air == true
+            if air then W.airAt = now; W.airSince = W.airSince or now else W.airSince = nil end
+            W.air = air
+            local hfov = C.cam.hfov or math.rad(90)
+            local yaw = C.cam.abs or facing
             local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
             local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
             onPin = okP and onPin == true
             local tg = C.tg_ or {}
             local w = onPin and tg.pin or tg.quest
-            if okF and nav and w and C.me_ then
-                local okV, vp = pcall(function() return C_Navigation.HasValidScreenPosition() end)
-                local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
-                local okC, x, y = pcall(function() return nav:GetCenter() end)
-                local okS, ns = pcall(function() return nav:GetEffectiveScale() end)
-                local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
-                local okW, uw = pcall(function() return UIParent:GetWidth() end)
-                x, y = okC and num(x) or nil, okC and num(y) or nil
-                ns, us, uw = okS and num(ns) or 1, okU and num(us) or 1, okW and num(uw) or nil
-                if okV and vp == true and okK and cl == false and x and y and uw and us > 0 then
-                    local b, d = C.bearing(C.me_, w)
-                    local yaw = (C.camWanted() and C.cam.abs) or facing
-                    local hfov = C.cam.hfov or math.rad(90)
-                    if math.abs(C.wrap(b - yaw)) < hfov / 2 + math.rad(10) then
-                        local f = C.wmBuild()
-                        f:ClearAllPoints()
-                        f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x * ns / us, y * ns / us)
-                        local atlas = onPin and "Waypoint-MapPin-Tracked" or "Navigation-Tracked-Icon"
-                        if W.atlas ~= atlas then
-                            pcall(function() W.tx:SetAtlas(atlas) end)
-                            pcall(function() W.sh:SetAtlas(atlas) end)
-                            W.atlas = atlas
+            if uw and us > 0 then
+                local half = uw / 2
+                local fl = half / math.tan(hfov / 2)
+                -- 1: the engine's own point (the pin, else the focused quest)
+                if okF and nav and w then
+                    local okV, vp = pcall(function() return C_Navigation.HasValidScreenPosition() end)
+                    local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
+                    local okC, x, y = pcall(function() return nav:GetCenter() end)
+                    local okS, ns = pcall(function() return nav:GetEffectiveScale() end)
+                    x, y = okC and num(x) or nil, okC and num(y) or nil
+                    ns = okS and num(ns) or 1
+                    if okV and vp == true and okK and cl == false and x and y then
+                        local b, d = C.bearing(C.me_, w)
+                        if math.abs(C.wrap(b - yaw)) < hfov / 2 + math.rad(10) then
+                            x, y = x * ns / us, y * ns / us
+                            yaw = C.wrap(b + math.atan((x - half) / fl))         -- (exact while the point is on screen)
+                            if air and W.yG and now - W.airSince < W.HOLD_S then
+                                y = W.yG                                         -- in the air: the ground's height held
+                            elseif W.yS and now - W.airAt < W.HOLD_S + W.LAND_S then
+                                y = W.yS + (y - W.yS) * (1 - math.exp(-dt / W.EASE_S))   -- landed (or a long fall): eased back
+                            end
+                            W.yS, W.yAt = y, now
+                            if not air then W.yG = y end
+                            wmPut(1, x, y, onPin and "Waypoint-MapPin-Tracked" or "Navigation-Tracked-Icon", C.distText(d), 1)
+                            on[1] = true
                         end
-                        local txt = C.distText(d)
-                        if W.text ~= txt then W.d:SetText(txt); W.text = txt end
-                        if not f:IsShown() then f:Show() end
-                        show = true
+                    end
+                end
+                -- 2..: the route's further checkpoints (the app's, after the pin's)
+                local R = WC.routeWp
+                if onPin and type(R) == "table" and R.active == true and type(R.more) == "table" then
+                    local yb = (W.yS and now - (W.yAt or -100) < 3) and W.yS or (uh and uh * 0.5) or nil
+                    for i, c in ipairs(R.more) do
+                        if i > #W.MORE_K or not yb then break end
+                        if c.w == nil then c.w = C.world(c.m, c.x, c.y) or false end
+                        local wk = c.w
+                        if wk and not (wk.cont and C.me_.cont and wk.cont ~= C.me_.cont) then
+                            local b, d = C.bearing(C.me_, wk)
+                            local rel = C.wrap(b - yaw)
+                            if d > 8 and math.abs(rel) < hfov / 2 then
+                                local x = half - fl * math.tan(rel)
+                                if math.abs(x - half) < half * 0.95 then
+                                    wmPut(i + 1, x, yb, "Waypoint-MapPin-Tracked", C.distText(d), W.MORE_A[i])
+                                    on[i + 1] = true
+                                end
+                            end
+                        end
                     end
                 end
             end
         end
-        W.shown = show
-        if not show and W.f and W.f:IsShown() then W.f:Hide() end
+        local n = 0
+        for i, o in pairs(W.list) do
+            if on[i] then n = n + 1 elseif o.f:IsShown() then o.f:Hide() end
+        end
+        W.shown, W.n = on[1] == true, n
     end
 
     -- the world reads (player, pin, quest, corpse) ten times a second; the strip itself every frame
@@ -765,9 +833,11 @@ do
         local fresh = C.read(snap)
         if snap then C.h = nil end
         local target = raw
-        if C.camWanted() then target = C.wrap(raw + C.camStep(dt, raw)) else C.cam.off, C.cam.src, C.cam.abs, C.cam.ref, C.cam.lastFix = 0, "off", nil, nil, nil end
+        -- cp19: the camera's estimate runs with the bar on the facing too (the world marker's in-front test and its flags need it)
+        local camOff = C.camStep(dt, raw)
+        if C.camWanted() then target = C.wrap(raw + camOff) else C.cam.off, C.cam.src = 0, "off" end
         local heading = C.ease(target, dt)
-        pcall(C.wmStep, raw)
+        pcall(C.wmStep, raw, dt)
         local L = C.layout(heading, C.me_, C.tg_ or {})
         C.last = L
         if fresh then C.diag(raw, C.me_, C.tg_ or {}, L) end
@@ -884,7 +954,8 @@ do
             corpse = tg.corpse and true or false, n = #L.marks,
             cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
             cyaw = C.cam.abs and math.floor(C.cam.abs * 1000 + 0.5) / 1000 or nil,
-            wm = C.wm and C.wm.shown and true or false, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
+            wm = C.wm and C.wm.shown and true or false, wmn = C.wm and C.wm.n or 0, air = C.wm and C.wm.air or nil,
+            more = type(WC.routeWp) == "table" and type(WC.routeWp.more) == "table" and #WC.routeWp.more or 0, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
             lx = C.cam.lx and math.floor(C.cam.lx * 100 + 0.5) / 100 or nil, ly = C.cam.ly and math.floor(C.cam.ly * 100 + 0.5) / 100 or nil,
             ferr = C.cam.ferr and math.floor(math.deg(C.cam.ferr) + 0.5) or nil,
             gp = C.cam.gp, from = C.cam.from, rx = C.cam.rx and math.floor(C.cam.rx * 100 + 0.5) / 100 or nil,
@@ -920,7 +991,7 @@ do
             end
         elseif C.frame and C.frame:IsShown() then
             C.frame:Hide()
-            if C.wm and C.wm.f then C.wm.f:Hide() end
+            if C.wm then C.wmHide() end
         end
         return show
     end

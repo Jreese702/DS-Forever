@@ -2590,12 +2590,15 @@ WC.mmp.init()
 --   36, xh, xl, yh, yl   SET the pin at (x, y) on the player's map (base-36 digits: 1296 steps across); super-track it
 --   37                   KEEP: the app is still routing (without one in KEEP_S the pin is cleared: an app that went away leaves none)
 --   39                   CLEAR: the pin goes and the quest's own super-track comes back
+--   38, xh, xl, yh, yl   cp19: a FURTHER checkpoint after the pin's (up to 3, in order; the world marker draws them); 38, 38 drops
+--                        them all. A new SET drops them too (the app sends the ones after it again).
 -- Plain engine calls only (C_Map / C_SuperTrack, not protected; no Blizzard frame touched). NEVER STALE: cleared on the CLEAR tap, on
 -- the KEEP timeout, when the player focuses something else in the game, at log out; and a pin of ours found at log in (the game kept
 -- it through a crash) is cleared then (WowCompanionDB.routeWp names it). Never takes over the player's OWN pin.
 -- While it stands, the map / quests documents keep reporting the quest it stands for as the focus (WC.routeWp.qid), and map.uwp
 -- carries ours = 1. Every tap answers {"type":"routewp", op, ok, why}.
-WC.routeWp = { active = false, qid = nil, m = nil, x = nil, y = nil, keepAt = 0, digits = nil, digitsAt = 0, ours = false }
+WC.routeWp = { active = false, qid = nil, m = nil, x = nil, y = nil, keepAt = 0, digits = nil, digitsAt = 0, ours = false,
+               more = {}, mdigits = nil, MORE_MAX = 3 }
 local RWP = WC.routeWp
 RWP.KEEP_S, RWP.DIGITS_S = 60, 2
 
@@ -2631,6 +2634,7 @@ function RWP.set(x, y)
     RWP.ours = false
     if not ok then return RWP.say("set", false, "the game refused") end
     RWP.active, RWP.m, RWP.x, RWP.y, RWP.keepAt = true, m, x, y, GetTime()
+    RWP.more = {}
     if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
     WowCompanionDB.routeWp = { m = m, x = x, y = y, qid = RWP.qid }
     RWP.say("set", true)
@@ -2651,6 +2655,7 @@ function RWP.clear(restore, why)
     end)
     RWP.ours = false
     RWP.active, RWP.qid, RWP.m, RWP.x, RWP.y = false, nil, nil, nil, nil
+    RWP.more = {}
     if type(WowCompanionDB) == "table" then WowCompanionDB.routeWp = nil end
     RWP.say("clear", true, why)
     snapshotSoon("waypoint")
@@ -2671,9 +2676,31 @@ end
 if WC.pad and type(WC.pad.op) == "function" then
     WC.pad.op("uwp", "uwp", function(_, col)
         if type(col) ~= "number" then return end
-        if col == 39 then RWP.digits = nil; return RWP.clear(true, "asked") end
+        if col == 39 then RWP.digits, RWP.mdigits = nil, nil; return RWP.clear(true, "asked") end
         if col == 37 then RWP.keepAt = GetTime(); return end
-        if col == 36 then RWP.digits = {}; RWP.digitsAt = GetTime(); return end
+        if col == 36 then RWP.digits = {}; RWP.digitsAt = GetTime(); RWP.mdigits = nil; return end
+        if col == 38 then
+            RWP.digits = nil
+            if RWP.mdigits and #RWP.mdigits == 0 and GetTime() - RWP.digitsAt <= RWP.DIGITS_S then
+                RWP.mdigits, RWP.more = nil, {}                                    -- 38, 38: the further checkpoints go
+            else
+                RWP.mdigits, RWP.digitsAt = {}, GetTime()
+            end
+            return
+        end
+        if col <= 35 and RWP.mdigits and GetTime() - RWP.digitsAt <= RWP.DIGITS_S then
+            local d = RWP.mdigits
+            d[#d + 1] = col
+            if #d == 4 then
+                RWP.mdigits = nil
+                local m = currentMap()
+                if m and #RWP.more < RWP.MORE_MAX then
+                    RWP.more[#RWP.more + 1] = { m = m, x = (d[1] * 36 + d[2]) / 1295, y = (d[3] * 36 + d[4]) / 1295 }
+                end
+                RWP.say("more", m ~= nil, m and tostring(#RWP.more) or "no map")
+            end
+            return
+        end
         if col <= 35 and RWP.digits and GetTime() - RWP.digitsAt <= RWP.DIGITS_S then
             local d = RWP.digits
             d[#d + 1] = col
