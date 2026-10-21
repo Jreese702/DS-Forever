@@ -144,7 +144,7 @@ object ShippedRoute {
         val lz = if (liveOn) { x: Double, y: Double -> if (hypot(x - gx, y - gy) <= goalFreeYd) 0f else live!!.at(x, y) } else null
         fun with(r: Result, d: Double, avoided: Double, extra: String = ""): Result {
             val lv = if (lz == null) 0.0 else k * dangerOf(r.pts, lz)
-            return Result(r.pts, true, r.why + extra + "; danger ${d.toInt()} (avoided ${avoided.toInt()})" + (if (lz != null) "; " + live!!.words(lv) else ""),
+            return Result(r.pts, true, r.why + extra + "; danger ${d.toInt()} (avoided ${avoided.toInt()})" + (if (live != null) "; " + live.words(lv) else ""),
                 attachFromYd = r.attachFromYd, attachToYd = r.attachToYd, capped = extra.isNotEmpty(), swims = r.swims, snapped = r.snapped,
                 roadmapYd = r.roadmapYd, danger = d, avoided = avoided, live = lv)
         }

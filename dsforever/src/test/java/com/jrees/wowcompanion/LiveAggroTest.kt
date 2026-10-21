@@ -367,6 +367,9 @@ class LiveAggroTest {
         val quiet: (Double, Double) -> Float = { _, _ -> 0f }
         val before = ShippedRoute.plan(twoWays(), flat, quiet, from, to)
         assertTrue(before.pts.all { it[0] < 10.0 })
+        // test45: an EMPTY live layer is still said on the route's line (an empty layer and a missing one told apart)
+        val empty = ShippedRoute.plan(twoWays(), flat, quiet, from, to, live = LiveDanger.NONE)
+        assertTrue(empty.why, empty.why.contains("; live 0 (0 mobs)"))
         // a pack of three lv 12 Bristlebacks on the road at y 500 (plates, sure snaps), for a level 10
         val spawns = (0 until 3).map { spawn(it, 3098, -15.0 + 15 * it, 500.0, 12) }
         store.setSpawns(1411, spawns)
