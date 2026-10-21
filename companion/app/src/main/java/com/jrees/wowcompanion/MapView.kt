@@ -4369,7 +4369,9 @@ class MapView(context: Context) : View(context) {
             LiveMobs.shared.setSpawns(mapId, DangerStore.spawns(mapId).mapIndexedNotNull { i, s -> if (s.npc == 0) null else
                 LivePlace.SpawnPt(i, s.npc, r.top - s.y * ay, r.left - s.x * ax, s.minLv, s.maxLv, s.elite, mine == 0 || s.hostile and mine != 0) })
         }
-        return LiveMobs.shared.snapshot(mapId, questsPlv).takeIf { !it.empty }
+        // always the snapshot, empty or not: the route's line then says "live 0 (0 mobs)" and shows the live pass runs (test45: no
+        // live words at all, so an empty layer and a missing one looked the same)
+        return LiveMobs.shared.snapshot(mapId, questsPlv)
     }
     /** an aggro record arrived (CompanionHost): draw, so a new mob on the way is seen within the record's second */
     fun onAggro() = invalidate()
