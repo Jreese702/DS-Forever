@@ -238,13 +238,9 @@ object ShippedSnap {
         }
         val out = ArrayList<Snap>(straight)
         for ((id, q, _) in bent) {
-            val leg = Climb.route(g, p, q, water = deep, edges = false, limits = Climb.Limits(LATTICE_WINDOW)) ?: continue
-            if (!leg.reached || leg.pts.size < 2) continue
-            val pts = ShippedNet.anchored(leg.pts.map { doubleArrayOf(it[0], it[1]) }, p, q).first
-            val yd = ShippedRoute.length(pts); if (yd > walkYd) continue
-            val ls = pts.zipWithNext { a, b -> clear(a, b) }
-            if (ls.any { it == null }) continue
-            out.add(Snap(id, pts, yd, ls.sumOf { it!!.cost } * BENT, false, steep = ls.maxOf { it!!.steep }))
+            val w = latticeLeg(g, p, q, deep, view) ?: continue
+            if (w.yd > walkYd) continue
+            out.add(Snap(id, w.pts, w.yd, w.cost * BENT, false, steep = w.steep))
         }
         if (out.isEmpty()) return Result(emptyList(), "the ${near.size} nodes within ${reach.toInt()} yd (nearest ${near.first().third.toInt()} yd): " +
             "no walk of ${walkYd.toInt()} yd on the shipped lattice")
@@ -255,6 +251,41 @@ object ShippedSnap {
         return Result(lead + rest, "snapped ${lead.first().yd.toInt()} yd ${if (lead.first().straight) "straight" else "round"} on the shipped lattice " +
             "(${lead.size} leading of ${near.size} nodes within ${reach.toInt()} yd; $walled lines walled)")
     }
+    /** a lattice leg: [pts] from the end to the node, [yd], [cost] (the device's yards), [steep] its dearest terrain */
+    private class LatLeg(val pts: List<DoubleArray>, val yd: Double, val cost: Double, val steep: Float)
+    /**
+     * the shipped lattice's own leg from end [p] to node [q] (deep water a wall), every piece held to [Climb.walkable] and the device's
+     * water and rooms - but THE END'S OWN HOP ([END_HOP_YD] at most) to the lattice only to the water and the rooms, as the harness's
+     * legs begin at the vertex nearest their start (an end standing on a deck, a face's edge, a wall cell: the walk-grid trial's
+     * Menethil docks); and when no leg leaves the end's own vertex, from the nearest within two steps that one does
+     */
+    private fun latticeLeg(g: Climb.Grid, p: DoubleArray, q: DoubleArray, deep: (Double, Double) -> Boolean, view: View): LatLeg? {
+        fun tryFrom(s: DoubleArray): LatLeg? {
+            val leg = Climb.route(g, s, q, water = deep, edges = false, limits = Climb.Limits(LATTICE_WINDOW)) ?: return null
+            if (!leg.reached || leg.pts.size < 2) return null
+            val pts = ShippedNet.anchored(listOf(p) + leg.pts.map { doubleArrayOf(it[0], it[1]) }.let { if (s === p) it else listOf(s) + it }, p, q).first
+                .fold(ArrayList<DoubleArray>()) { acc, x -> if (acc.isEmpty() || hypot(acc.last()[0] - x[0], acc.last()[1] - x[1]) > 1e-6) acc.add(x); acc }
+            var cost = 0.0; var steep = 1f
+            for ((k, ab) in pts.zipWithNext().withIndex()) {
+                val (a, b) = ab
+                val soft = view.line(a, b, terrain = false)
+                if (soft.why != null) return null
+                val endHop = k == 0 && hypot(b[0] - a[0], b[1] - a[1]) <= END_HOP_YD
+                if (!endHop && !Climb.walkable(g, a, b)) return null
+                cost += soft.cost; if (soft.steep > steep) steep = soft.steep
+            }
+            return LatLeg(pts, ShippedRoute.length(pts), cost, steep)
+        }
+        tryFrom(p)?.let { return it }
+        val at = g.at(p[0], p[1])
+        val near = ArrayList<DoubleArray>()
+        for (dj in -2..2) for (di in -2..2) { if (di == 0 && dj == 0) continue
+            val i = at[0] + di; val j = at[1] + dj; if (i !in 0 until g.nx || j !in 0 until g.ny) continue
+            val v = doubleArrayOf(g.wx(j), g.wy(i)); if (hypot(v[0] - p[0], v[1] - p[1]) <= END_HOP_YD) near.add(v) }
+        for (v in near.sortedBy { hypot(it[0] - p[0], it[1] - p[1]) }) tryFrom(v)?.let { return it }
+        return null
+    }
+    const val END_HOP_YD = 6.0              // an end's own hop onto the lattice: only the water and the rooms read
     const val UNCHECKED_COST = 3.0          // an unchecked end's straight pointer: a yard of it this dear (the nearest node, not a far one)
     const val LATTICE_WINDOW = 120_000      // the lattice leg's scratch at most (vertices): ~ 340 x 340 steps
 
@@ -311,12 +342,9 @@ object ShippedSnap {
             val view = View(from, ground, danger, k)
             fun clear(a: DoubleArray, b: DoubleArray) = view.line(a, b, terrain = false).takeIf { it.why == null && Climb.walkable(lattice, a, b) }
             clear(from, to)?.let { return Snap(-1, listOf(from, to), hypot(to[0] - from[0], to[1] - from[1]), it.cost, true) }
-            val leg = Climb.route(lattice, from, to, water = { x, y -> ground.deep(x, y) }, edges = false, limits = Climb.Limits(LATTICE_WINDOW))
-                ?.takeIf { it.reached && it.pts.size >= 2 } ?: return null
-            val pts = ShippedNet.anchored(leg.pts.map { doubleArrayOf(it[0], it[1]) }, from, to).first
-            val ls = pts.zipWithNext { a, b -> clear(a, b) }; if (ls.any { it == null }) return null
-            val yd = ShippedRoute.length(pts); if (yd > lim) return null
-            return Snap(-1, pts, yd, ls.sumOf { it!!.cost }, false)
+            val w = latticeLeg(lattice, from, to, { x, y -> ground.deep(x, y) }, view) ?: return null
+            if (w.yd > lim) return null
+            return Snap(-1, w.pts, w.yd, w.cost, false)
         }
         val view = View(from, ground, danger, k, level = true)
         val line = view.line(from, to)
