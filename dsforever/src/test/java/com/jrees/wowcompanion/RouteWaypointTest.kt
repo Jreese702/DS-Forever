@@ -9,7 +9,7 @@ class RouteWaypointTest {
     @Test fun setKeepMoveClear() {
         val w = RouteWaypoint()
         val tram = doubleArrayOf(0.690, 0.310)
-        assertEquals(listOf(36, 24, 30, 11, 5), w.tick(tram, 0L))                // 894 = 24*36+30, 401 = 11*36+5
+        assertEquals(listOf(36, 24, 30, 11, 5, 35, 35), w.tick(tram, 0L))      // 894 = 24*36+30, 401 = 11*36+5; z unknown
         assertTrue(w.tick(tram, 1_000L).isEmpty())                               // unchanged: nothing
         assertTrue(w.tick(doubleArrayOf(0.70, 0.31), 1_500L).isEmpty())          // moved, but within the 5 s pace (test48: it churned)
         assertEquals(36, w.tick(doubleArrayOf(0.70, 0.31), 5_500L).first())      // moved: a new pin
@@ -38,8 +38,9 @@ class RouteWaypointTest {
         assertEquals(listOf(0, 0), RouteWaypoint.zDigits(-500.0))
         assertEquals(listOf(35, 35), RouteWaypoint.zDigits(Double.NaN))              // unknown
         val w = RouteWaypoint()
-        val cols = w.tick(doubleArrayOf(0.5, 0.5), 0L, listOf(doubleArrayOf(0.6, 0.6, 10.0)))
-        assertEquals(listOf(38, 21, 21, 21, 21, 19, 4), cols.drop(5))
+        val cols = w.tick(doubleArrayOf(0.5, 0.5, -2.0), 0L, listOf(doubleArrayOf(0.6, 0.6, 10.0)))
+        assertEquals("the SET carries the pin's own height (cp20)", listOf(36, 18, 0, 18, 0, 17, 28), cols.take(7))
+        assertEquals(listOf(38, 21, 21, 21, 21, 19, 4), cols.drop(7))
     }
 
     @Test fun furtherCheckpointsRideTheSetAndFollowANewLeg() {
@@ -48,7 +49,7 @@ class RouteWaypointTest {
         val a = doubleArrayOf(900 / 1295.0, 432 / 1295.0); val b = doubleArrayOf(936 / 1295.0, 468 / 1295.0); val c = doubleArrayOf(0.8, 0.4)
         // cp19: the SET, then each further flag as 38 + 4 digits (only the first two)
         // (no height given: z 1295 = unknown, 35 35)
-        assertEquals(listOf(36, 24, 30, 11, 5, 38, 25, 0, 12, 0, 35, 35, 38, 26, 0, 13, 0, 35, 35), w.tick(pin, 0L, listOf(a, b, c)))
+        assertEquals(listOf(36, 24, 30, 11, 5, 35, 35, 38, 25, 0, 12, 0, 35, 35, 38, 26, 0, 13, 0, 35, 35), w.tick(pin, 0L, listOf(a, b, c)))
         assertTrue(w.tick(pin, 1_000L, listOf(a, b, c)).isEmpty())                // unchanged: nothing
         assertTrue(w.tick(pin, 2_000L, listOf(b)).isEmpty())                     // the leg changed, within the 5 s pace
         assertEquals(listOf(38, 38, 38, 26, 0, 13, 0, 35, 35), w.tick(pin, 5_000L, listOf(b)))   // dropped and sent again
