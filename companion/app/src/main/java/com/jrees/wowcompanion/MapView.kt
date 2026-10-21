@@ -4395,6 +4395,35 @@ class MapView(context: Context) : View(context) {
         // live words at all, so an empty layer and a missing one looked the same)
         return LiveMobs.shared.snapshot(mapId, questsPlv)
     }
+    // THE AGGRO RINGS (the user, 2026-10-21, "Both"; AggroRings): each unpulled hostile plate's reach, a pack's rings ONE shape (one
+    // fill that never darkens where they overlap, one outline round them), soft yellow; the rings the player stands in red; under the
+    // route's line, which keeps its dark halo over them
+    private val pAggroFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val pAggroEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
+    private val aggroPath = Path(); private val aggroOne = Path()
+    private fun drawAggroRings(c: Canvas, r: PoiStore.Rect, sx: (Double) -> Float, sy: (Double) -> Float) {
+        val m = map ?: return
+        val mapId = m.optInt("mapID", 0)
+        val pwx = m.optDouble("wx", Double.NaN); val pwy = m.optDouble("wy", Double.NaN)
+        val rings = LiveMobs.shared.rings(mapId, questsPlv, pwx, pwy)
+        if (rings.isEmpty()) return
+        // yards to pixels here (the map's scale along its width; the art is square to the world)
+        val y0 = rings[0].y
+        val pxYd = abs(sx(r.nx(y0 + 100.0)) - sx(r.nx(y0))) / 100f
+        if (pxYd <= 0f || pxYd.isNaN()) return
+        for (inside in listOf(false, true)) {
+            aggroPath.reset()
+            for (g in rings) if (g.inside == inside) {
+                aggroOne.reset(); aggroOne.addCircle(sx(r.nx(g.y)), sy(r.ny(g.x)), (g.r * pxYd).toFloat(), Path.Direction.CW)
+                aggroPath.op(aggroOne, Path.Op.UNION)
+            }
+            if (aggroPath.isEmpty) continue
+            pAggroFill.color = if (inside) Color.argb(70, 230, 50, 40) else Color.argb(46, 255, 214, 64)
+            pAggroEdge.color = if (inside) Color.argb(230, 230, 50, 40) else Color.argb(190, 255, 214, 64)
+            c.drawPath(aggroPath, pAggroFill); c.drawPath(aggroPath, pAggroEdge)
+        }
+    }
+
     /** an aggro record arrived (CompanionHost): draw, so a new mob on the way is seen within the record's second */
     fun onAggro() = invalidate()
 
@@ -6332,6 +6361,10 @@ class MapView(context: Context) : View(context) {
             val save = c.save(); c.clipRect(left, top, left + fw, top + fh); drawDangerTint(c, ::sx, ::sy); c.restoreToCount(save)
         }
         dangerNote = null
+        // ---- THE AGGRO RINGS (AggroRings; the "Aggro rings" filter, on by default): under the line and the markers
+        if (!morphOn && on(QuestLayers.Layer.AGGRO)) rect?.takeIf { it.valid }?.let { r ->
+            val save = c.save(); c.clipRect(left, top, left + fw, top + fh); drawAggroRings(c, r, ::sx, ::sy); c.restoreToCount(save)
+        }
         // ---- TRAVEL (b-travel-layer; the "Travel" filter): the docks and crossings, the tram, flight masters and known flights, under the
         // line and the markers; Home's small map: only the points near the player, no lines
         travelHits = emptyList()
@@ -7070,6 +7103,9 @@ class MapView(context: Context) : View(context) {
                 QuestLayers.Layer.OTHER -> objDot(c, x0 + 116f, cy, 0.5f)
                 QuestLayers.Layer.DANGER -> { pFill.color = Color.argb(150, 210, 40, 30); c.drawRoundRect(x0 + 94f, cy - 20f, x0 + 138f, cy + 20f, 10f, 10f, pFill) }
                 QuestLayers.Layer.TRAVEL -> TravelPaint.icon(c, Travel.Kind.BOAT, x0 + 116f, cy, true)
+                QuestLayers.Layer.AGGRO -> { pAggroFill.color = Color.argb(70, 255, 214, 64); pAggroEdge.color = Color.argb(220, 255, 214, 64)
+                    c.drawCircle(x0 + 116f, cy, 22f, pAggroFill); c.drawCircle(x0 + 116f, cy, 22f, pAggroEdge)
+                    pFill.color = Color.rgb(214, 74, 58); c.drawCircle(x0 + 116f, cy, 6f, pFill) }
             }
             name.color = if (on) cGold else cDim
             val hasSub = l.sub.isNotEmpty() && rowH >= 84f

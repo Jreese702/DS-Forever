@@ -19,6 +19,8 @@ class QuestLayers(private val get: (String, Boolean) -> Boolean, private val put
         DANGER("q_danger", "Danger areas", "hostile mobs at or above your level, tinted red (QuestieDB)", false),
         // b-travel-layer (the user, via tracking on test53): the game's own docks, the tram, flight masters, known flights
         TRAVEL("q_travel", "Travel", "docks and crossings, the tram, flight masters, your known flights", true),
+        // the user, 2026-10-21 ("Both": the map's aggro rings as rendered; AggroRings): on by default
+        AGGRO("q_aggro", "Aggro rings", "hostile mobs the game shows, how near before they pull: yellow, red when you are inside", true),
     }
 
     fun on(l: Layer): Boolean = get(l.key, l.default)

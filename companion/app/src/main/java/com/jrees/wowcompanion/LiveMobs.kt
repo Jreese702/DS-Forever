@@ -184,6 +184,16 @@ class LiveMobs(private val clock: () -> Long) {
 
     @Synchronized fun tracks(): List<Track> = live.values.sortedBy { it.slot }
 
+    /** THE AGGRO RINGS ([AggroRings]) of uiMap [map]'s live plates for a player of level [plv] (the record's me.lv first) standing at
+     *  world ([px], [py]): none while the layer is off, on another map, or with no record yet */
+    @Synchronized fun rings(map: Int, plv: Int?, px: Double, py: Double, now: Long = clock()): List<AggroRings.Ring> {
+        if (offWhy != null) return emptyList()
+        val me = me ?: return emptyList()
+        if (me.map != null && map != 0 && me.map != map) return emptyList()
+        val lp = me.lv ?: plv ?: return emptyList()
+        return AggroRings.of(live.values.map { AggroRings.Plate(it.id, it.mob, it.placed, it.lastMs) }, lp, px, py, now)
+    }
+
     /**
      * the live layer for uiMap [map] for a player of level [plv] (the record's me.lv first): its discs (aggressive plates, by their
      * placement, fading once gone), the static shares to drop, the plates counted. [NONE][LiveDanger.NONE] off, on another map, or
