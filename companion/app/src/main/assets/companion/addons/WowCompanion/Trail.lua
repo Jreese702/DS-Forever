@@ -1302,7 +1302,7 @@ end
 --   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
 --   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 --   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-WC.live = { V = "ag6", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+WC.live = { V = "ag7", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -1523,6 +1523,8 @@ do
         if pv(UnitIsDead, tok) == true then m.dd = 1 end
         -- the pull detector (Forever Range's): the last CALM reading, then a calm -> on-me turn
         local onMe = m.om ~= nil and m.om >= 2
+        -- ag7 (test52: a real fight and no pull line): the threat read can be secret; then "on me" = in combat and targeting us
+        if m.om == nil and m.cb == 1 then onMe = pv(UnitIsUnit, tok .. "target", "player") == true end
         if not onMe and m.cb ~= 1 then
             st.calm = { b = b, t = t }
         elseif onMe and not st.engaged then
@@ -1555,13 +1557,20 @@ do
                 -- real pulls ({"type":"cap","probe":"pull"}: the pull happened between lo and hi yd; rule = the ring's radius)
                 A.pullN = (A.pullN or 0) + 1
                 pcall(function()
-                    WC.send(WC.encode({ type = "cap", probe = "pull", v = A.V, n = st.npc, lv = m.lv, plv = plv, lo = m.a, hi = calm.b,
+                    WC.send(WC.encode({ type = "cap", probe = "pull", v = A.V, ok = true, n = st.npc, lv = m.lv, plv = plv, lo = m.a, hi = calm.b,
                         cls = m.c, rule = (type(WC.rings) == "table" and WC.rings.radius) and WC.rings.radius(m.lv, plv) or nil, k = A.pullN }))
                 end)
                 return true
             end
         end
         A.lastReject = why
+        -- ag7: every check is logged, a refusal too (test52 had none: a fight the player started is "own action" by design - only
+        -- a mob that noticed us by itself measures its aggro range), so a session shows what the detector saw
+        A.pullRej = (A.pullRej or 0) + 1
+        pcall(function()
+            WC.send(WC.encode({ type = "cap", probe = "pull", v = A.V, ok = false, why = why, n = st.npc, lv = m.lv, lo = m.a,
+                hi = calm and calm.b or nil, k = A.pullRej }))
+        end)
         return false
     end
 
@@ -1939,8 +1948,9 @@ do
                        picks = (A.pick[1] and 1 or 0) + (A.pick[2] and 1 or 0), win = A.win and A.win.op or nil,
                        np = A.np.state, npv = npGet(), npo = A.npSaved() and A.npSaved().orig or nil, icons = A.iconN or 0,
                        route = A.routing(), pin = type(WC.routeWp) == "table" and WC.routeWp.active == true,
-                       rings = type(WC.rings) == "table" and { on = WC.rings.wanted(), n = WC.rings.n, src = WC.rings.src } or nil,
-                       pulls = A.pullN }
+                       rings = type(WC.rings) == "table" and { on = WC.rings.wanted(), n = WC.rings.n, src = WC.rings.src,
+                                                                   why = WC.rings.whyLine and WC.rings.whyLine() or nil } or nil,
+                       pulls = A.pullN, pullRej = A.pullRej }
         A.lastDiag = line
         pcall(function() WC.send(WC.encode(line)) end)
     end
@@ -3006,7 +3016,12 @@ end
 --   drop from the plate to the feet. Without a pitch read yet, DEF_PITCH stands in (the probe says so).
 --   Our own frames on UIParent (BACKGROUND, mouse off), our own art (marker_ring.tga): the plates are only READ (GetCenter), never
 --   parented to, written or hooked. No CVar. The app's Settings > Top screen "Aggro rings" (default on): WowCompanionDB.aggroRings.
-WC.rings = { V = "ar1", BASE = 20, MIN = 5, MAX = 45, SKULL = 10, PLATE_H = 3.0, TAU = 0.4, VMAX = 10, FADE_S = 0.3, DEF_PITCH = 0.35,
+-- ar2 (test52: plates 2, slots 2, icons 2 - and NO ring): the plate's screen position is SECRET on Forever (the probe's sx was false
+-- all along; ag2's icons work because they ANCHOR to the plate without reading it), so every ring bailed. Now: with the position
+-- plain, as ar1; secret, the ring is ANCHORED to the plate (SetPoint to it, nothing of it written) and placed under it by the
+-- estimated distance - the range bracket's middle (no screen height to read), smoothed as before. The reaction a plate had when it
+-- was plain is kept (a later secret read no longer drops the ring). Every slot's reason is in the probe (rings.why: "slot:why").
+WC.rings = { V = "ar2", react = {}, why = {}, BASE = 20, MIN = 5, MAX = 45, SKULL = 10, PLATE_H = 3.0, TAU = 0.4, VMAX = 10, FADE_S = 0.3, DEF_PITCH = 0.35,
              RGB_OUT = { 1, 0.84, 0.27 }, RGB_IN = { 0.92, 0.2, 0.12 }, ALPHA = 0.85, list = {}, n = 0,
              TEX = "Interface\\AddOns\\WowCompanion\\Media\\marker_ring" }
 do
@@ -3026,9 +3041,23 @@ do
         if on then WowCompanionDB.aggroRings = nil else WowCompanionDB.aggroRings = false end
         return R.wanted()
     end
-    -- a record's mob gets a ring: aggressive, not dead, not tapped
-    function R.eligible(m)
-        return type(m) == "table" and num(m.r) ~= nil and m.r <= 3 and m.dd ~= 1 and m.td ~= 1
+    -- a record's mob gets a ring: aggressive, not dead, not tapped; the reason when not (the reaction last read plainly kept per plate)
+    function R.eligible(m, tok)
+        if type(m) ~= "table" then return false, "no record" end
+        local r = num(m.r)
+        if r and tok then R.react[tok] = r end
+        r = r or (tok and R.react[tok])
+        if not r then return false, "reaction secret" end
+        if r > 3 then return false, "not aggressive (" .. r .. ")" end
+        if m.dd == 1 then return false, "dead" end
+        if m.td == 1 then return false, "tapped" end
+        return true
+    end
+    function R.whyLine()
+        local parts = {}
+        for s2, w in pairs(R.why) do parts[#parts + 1] = s2 .. ":" .. w end
+        table.sort(parts)
+        return #parts > 0 and table.concat(parts, ",") or nil
     end
 
     local function ring(s)
@@ -3083,21 +3112,31 @@ do
                 R.src = phi and ((C.wm.tilted and "stale") or "pitch") or "guess"
                 phi = phi or R.DEF_PITCH
                 local D, H = C.wmZoom(), (C.wm and C.wm.CAM_H) or 1.9
+                R.why = {}
                 for _, m in ipairs(rec.m) do
                     local st = A.slot[m.s]
-                    if st and R.eligible(m) then
+                    local okE, whyE = false, "no slot"
+                    if st then okE, whyE = R.eligible(m, st.tok) end
+                    if not okE then R.why[m.s] = whyE end
+                    if okE then
                         local okP, plate = pcall(function() return C_NamePlate.GetNamePlateForUnit(st.tok) end)
+                        if not (okP and plate) then plate = nil; R.why[m.s] = "no plate" end
                         local x, y, ps
-                        if okP and plate then
+                        if plate then
                             local okC, cx, cyy = pcall(function() return plate:GetCenter() end)
                             local okS, s2 = pcall(function() return plate:GetEffectiveScale() end)
                             x, y, ps = okC and num(cx) or nil, okC and num(cyy) or nil, okS and num(s2) or 1
                         end
-                        if x and y then
-                            x, y = x * ps / us, y * ps / us
-                            local rel = math.atan((x - half) / fl)
-                            -- the raw distance: the plate's height on screen, clamped into the range bracket
-                            local raw = R.solve(y - cy, rel, phi, D, H, fl)
+                        local anchored = plate and not (x and y)               -- ar2: the position secret: anchored to the plate
+                        if plate then
+                            local rel = 0
+                            local raw
+                            if x and y then
+                                x, y = x * ps / us, y * ps / us
+                                rel = math.atan((x - half) / fl)
+                                -- the raw distance: the plate's height on screen, clamped into the range bracket
+                                raw = R.solve(y - cy, rel, phi, D, H, fl)
+                            end
                             local lo, hi = num(m.a) or 0, num(m.b)
                             if not raw then raw = hi and (lo + hi) / 2 or lo + 10 end
                             raw = math.max(lo, hi and math.min(hi, raw) or raw)
@@ -3121,11 +3160,19 @@ do
                             C.wm.pitch = phi                                   -- (wmGround reads the pitch it is given here)
                             local g = C.wmGround(dfwd, 0, r, false, fl)
                             C.wm.pitch = wm
+                            if not (up and ft and g) then R.why[m.s] = "no size" end
                             if up and ft and g then
                                 local o = ring(m.s)
-                                local footY = y - (up - ft)
                                 o.f:ClearAllPoints()
-                                o.f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, footY + g.roff)
+                                if anchored then
+                                    -- under the plate by the projected drop to the feet (the plate read nowhere: only anchored to)
+                                    o.f:SetPoint("CENTER", plate, "CENTER", 0, -(up - ft) + g.roff)
+                                else
+                                    local footY = y - (up - ft)
+                                    o.f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, footY + g.roff)
+                                end
+                                o.anchored = anchored and true or false
+                                R.why[m.s] = (m.cb == 1) and "combat" or (anchored and "shown (anchored)" or "shown")
                                 o.f:SetSize(g.rw, g.rh)
                                 local inside = d < r
                                 local c = inside and R.RGB_IN or R.RGB_OUT
