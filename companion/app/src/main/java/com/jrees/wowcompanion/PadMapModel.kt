@@ -121,6 +121,8 @@ object PadMapModel {
         val fish: Ref? = null,
         /** m61 Smart Y: the bag's food / drink a bare Y would use now (out of combat, nothing targeted); null = Y as it is */
         val smartY: Ref? = null,
+        /** m74: the quest item armed on Y for the target now (id, its name, icon); null = none */
+        val qitem: Ref? = null,
         /** m62 Smart buffs: the rows, the self-buffs offered, the cell row (Settings' Smart Y section); null = an add-on before m62 */
         val smartBuffs: SmartYModel.Doc? = null,
     ) {
@@ -200,6 +202,7 @@ object PadMapModel {
                 if (f > 0 && p in 1..8) FormBar(f, p, o.optInt("i", 0), textOrNull(o, "n")) else null
             },
             smartBuffs = SmartYModel.parse(m.optJSONObject("sb")),
+            qitem = m.optJSONObject("qitem")?.let { o -> Ref(intOrNull(o, "id"), textOrNull(o, "n") ?: "Quest item", o.optInt("i", 0), item = true) },
             smartY = m.optJSONObject("smarty")?.let { o -> textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0), item = true) } },
             fish = m.optJSONObject("fish")?.let { o -> textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0)) } },
             formFights = objects(m.optJSONArray("ff")).mapNotNull { o ->
