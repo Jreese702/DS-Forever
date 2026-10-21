@@ -1698,6 +1698,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the consumables radial (Spells' Radial.lua): its items (the latest, replays too) and the game's word that a use landed
             "radial", "sradial", "smartor" -> radialView.onDoc(msg)
             "radialuse", "sradialuse" -> if (current) radialView.onUse(msg)
+            // m71: the spells out of mana now (Spells' PadMap): the app's spell pictures wear the game's blue
+            "nomana" -> if (current && NoMana.onDoc(msg)) {
+                spellbookView.invalidate(); radialView.invalidate(); castView.invalidate(); homeView.wheelRedraw(); settingsView.invalidate()
+            }
             // Spells' stick catch (Radial r15): shown / hidden, for whom, and what it caught (the user on test20: "The control sticks are not
             // locking on the dpad up radial"): ok = the catch can take sticks at all; n = stick events kept from the game while it showed,
             // pass = the left stick's events let through (the class wheel)

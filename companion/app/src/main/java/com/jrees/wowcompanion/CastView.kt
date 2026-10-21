@@ -131,6 +131,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      *  place, 4 empty), each with the add-on's touch cell on row "classr" ([cell]) and, for a pet spell, its autocast cell ([auto]) */
     private class Radial {
         val has = BooleanArray(8); val names = arrayOfNulls<String>(8); val icons = IntArray(8); val lit = BooleanArray(8)
+        /** m71: each place's spell id (0 = none): the out-of-mana look */
+        val ids = IntArray(8)
         val cell = arrayOfNulls<Int>(8); val auto = arrayOfNulls<Int>(8)
         /** b-class-radial-slots: the places it HAS, in order: only these are drawn, evenly round the wheel */
         val order: List<Int> get() = (0 until 8).filter { has[it] }
@@ -804,6 +806,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             r.has[i] = true
             r.names[i] = str(e.opt("n")) ?: ""
             r.icons[i] = when (val ic = e.opt("i")) { is Number -> ic.toInt(); else -> 0 }
+            r.ids[i] = if (str(e.opt("k")) == "spell") ji(e.opt("id"), 0) else 0
             // a pet command whose mode is on, or a pet spell that casts itself: the gold ring (UI Art)
             r.lit[i] = ji(e.opt("act"), 0) == 1 || ji(e.opt("auto"), 0) == 1
             r.cell[i] = ji(e.opt("c"), -1).takeIf { it in 0..39 }
@@ -2302,6 +2305,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                     srcRect.set((w * 0.07f).toInt(), (hh * 0.07f).toInt(), (w * 0.93f).toInt(), (hh * 0.93f).toInt())
                     rect.set(px - ir, py - ir, px + ir, py + ir)
                     c.drawBitmap(bmp, srcRect, rect, pArt)
+                    if (NoMana.has(r.ids[i])) UiKit.manaTint(c, rect)        // m71: the game's out-of-mana blue
                     c.restore()
                 }
             }

@@ -387,7 +387,8 @@ class HomeRadialView(
     /** f-settings-previews: the player's own wheel, page 1 (the Settings panel's picture) */
     fun previewItems(spell: Boolean): List<UiKit.RadialItem?> = itemsOf(RadialModel.slices(docs[if (spell) "sradial" else "radial"], 0))
     private fun itemsOf(src: List<RadialModel.Item?>) =
-        src.map { it?.let { i -> UiKit.RadialItem(Icons.get(i.icon), i.name, i.count, pinned = i.pinned, ranOut = i.ranOut) } }
+        src.map { it?.let { i -> UiKit.RadialItem(Icons.get(i.icon), i.name, i.count, pinned = i.pinned, ranOut = i.ranOut,
+            noMana = source != "radial" && NoMana.has(i.id)) } }        // m71: a spell wheel's spell out of mana
 
     /** the stick goes back only from neutral, or [RadialModel.STICK_BACK_MS] after the close (the user 2026-10-09; the pause wheel's rule) */
     private val mag = DoubleArray(2)

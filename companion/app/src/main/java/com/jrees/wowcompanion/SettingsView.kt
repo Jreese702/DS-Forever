@@ -788,7 +788,12 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                     if (sbSel == r) UiKit.selectedRow(c, box)
                     val or = SmartYModel.isOr(d, r)
                     row(c, y, "${r + 3}. " + SmartYModel.label(d, r),
-                        if (or) "One of them up is enough. None up: Y opens a wheel to choose." else "Cast on yourself when it is not up.",
+                        when {
+                            d.rows[r].any { NoMana.has(it) } -> "Not enough mana now for " +
+                                SmartYModel.names(d, r).filterIndexed { k, _ -> NoMana.has(d.rows[r][k]) }.joinToString(" or ") + "."
+                            or -> "One of them up is enough. None up: Y opens a wheel to choose."
+                            else -> "Cast on yourself when it is not up."
+                        },
                         enabled = true) { RectF(it.right - 16f, it.top, it.right - 16f, it.bottom) }
                     sbHits += RectF(box) to { sbSel = if (sbSel == r) null else r; sbChoose = null; sbNote = null }
                 }
