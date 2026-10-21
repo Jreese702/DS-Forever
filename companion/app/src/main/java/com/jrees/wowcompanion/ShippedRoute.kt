@@ -59,8 +59,12 @@ object ShippedRoute {
                  val attachFromYd: Double = 0.0, val attachToYd: Double = 0.0, val capped: Boolean = false, val swims: Int = 0,
                  val snapped: Boolean = false, val roadmapYd: Double = 0.0, val danger: Double = 0.0, val avoided: Double = 0.0,
                  /** LIVE AGGRO: the live part of [danger] (k x the plates' discs along the way) */
-                 val live: Double = 0.0) {
+                 val live: Double = 0.0,
+                 /** an UNCHECKED END (the user, 2026-10-21: "Point straight at it"): the player's first / the goal's last leg is a plain
+                  *  straight pointer - no walk on the shipped lattice leaves that end; the way's other pieces are checked as ever */
+                 val uncheckedFrom: Boolean = false, val uncheckedTo: Boolean = false) {
         val bends get() = max(0, pts.size - 2)
+        val unchecked get() = uncheckedFrom || uncheckedTo
     }
 
     /**
@@ -71,7 +75,9 @@ object ShippedRoute {
      */
     class Roadmap(val nodes: Map<Int, DoubleArray>, val edges: List<Edge>,
                   /** the nodes on a floor layer (ShippedNet.R_FLOOR: a walkway's, a building's deck): an end on one snaps to its floor first */
-                  val floor: Set<Int> = emptySet()) {
+                  val floor: Set<Int> = emptySet(),
+                  /** the pack's lattice walk classes (ShippedNet.Walk), null = none shipped */
+                  val walk: Climb.Grid? = null) {
         class Edge(val a: Int, val b: Int, val tier: Double = 1.0, val danger: Double? = null, val pts: List<DoubleArray> = emptyList(),
                    /** it crosses a ford ([tier] holds its [RM_WADE_COST]; a ghost's way does not pay it) */
                    val wade: Boolean = false)
@@ -102,7 +108,7 @@ object ShippedRoute {
                 f and ShippedNet.RE_WADE != 0)
         }
         val floor = (0 until rm.nodes).filter { rm.nodeFlags[it] and ShippedNet.R_FLOOR != 0 }.map { RM_BASE + it }.toHashSet()
-        return Roadmap(nodes, edges, floor).also { synchronized(rmCache) { rmCache[sec] = rm to it } }
+        return Roadmap(nodes, edges, floor, rm.walk).also { synchronized(rmCache) { rmCache[sec] = rm to it } }
     }
     const val RM_BUILDING_COST = 0.5       // a roadmap edge within 2 yd of a building's rooms: this much dearer a yard
     const val RM_WADE_COST = SafePath.FORD_COST - 1.0   // ... one that crosses a ford
@@ -151,7 +157,7 @@ object ShippedRoute {
             val lv = if (lz == null) 0.0 else k * dangerOf(r.pts, lz)
             return Result(r.pts, true, r.why + extra + "; danger ${d.toInt()} (avoided ${avoided.toInt()})" + (if (live != null) "; " + live.words(lv) else ""),
                 attachFromYd = r.attachFromYd, attachToYd = r.attachToYd, capped = extra.isNotEmpty(), swims = r.swims, snapped = r.snapped,
-                roadmapYd = r.roadmapYd, danger = d, avoided = avoided, live = lv)
+                roadmapYd = r.roadmapYd, danger = d, avoided = avoided, live = lv, uncheckedFrom = r.uncheckedFrom, uncheckedTo = r.uncheckedTo)
         }
         if (k <= 0.0 || dz == null) return with(round, 0.0, 0.0)
         val dRound = k * dangerOf(round.pts, dz)
@@ -380,7 +386,7 @@ object ShippedRoute {
             val start = -1; val end = -2
             var nextVirtual = -10
             val attachYd = HashMap<Int, Double>()
-            var snaps = 0
+            var snaps = 0; var uncheckedFrom = false; var uncheckedTo = false
             val floorEnd = HashSet<Int>()                  // (node + OUT / IN): an end's snap onto a floor's node
             // THE ATTACH (the seam: [attacher]): each end's joins - onto graph nodes, or cut into ways - added as arcs
             val cuts = ArrayList<Triple<Int, W, Double>>()
@@ -393,11 +399,12 @@ object ShippedRoute {
             val view = AttachView(snapIds.filter { it in linked }.map { it to pos[it]!! } + groundEnds.map { it.first to doubleArrayOf(it.second[0], it.second[1]) },
                 ways.withIndex().filter { (_, w) -> w.onLand && w !in banned && !w.rewalk }.map { (i, w) -> WayView(i, listOf(pos[w.a]!!) + w.via, w.len) },
                 ground, danger, k, lim, (roadmap?.floor ?: emptySet()) + caveIds + floorEnds.map { it.first },
-                (caveIds + floorEnds.map { it.first }).map { it to doubleArrayOf(pos[it]!![0], pos[it]!![1]) })
+                (caveIds + floorEnds.map { it.first }).map { it to doubleArrayOf(pos[it]!![0], pos[it]!![1]) }, roadmap?.walk)
             fun join(p: DoubleArray, virt: Int, outward: Boolean, who: String): Result? {
                 val at = attacher.attach(view, p)
                 if (at.joins.isEmpty()) return Result(straight, false, "$who is ${at.why ?: "joined to nothing"}")
                 if (at.snapped) snaps++
+                if (at.unchecked) { if (outward) uncheckedFrom = true else uncheckedTo = true }
                 for (j in at.joins) {
                     val wc = j.cost * SafePath.OFF_NET
                     // an end snapped onto a floor's node (a city's street, a deck) stands on that floor: its walk there marked too
@@ -479,8 +486,11 @@ object ShippedRoute {
             return Result(out, true, (if (direct) "the ground's own walk (near)" else "on the shipped network") +
                 ": ${length(out).toInt()} yd, ${max(0, out.size - 2)} bends, attach ${onYd.toInt()} / ${offYd.toInt()} yd" +
                 (if (snaps == 2) " (snapped)" else " (long attach)") + (if (rmYd > 0.0) ", ${rmYd.toInt()} yd on the roadmap" else "") + (if (roadmap != null) ", $stitchWords" else "") +
-                (if (swimOffered > 0) ", swim offered ($swims swum points)" else ""),
-                attachFromYd = onYd, attachToYd = offYd, swims = swims, snapped = snaps == 2, roadmapYd = rmYd) to null
+                (if (swimOffered > 0) ", swim offered ($swims swum points)" else "") +
+                (if (uncheckedFrom) ", UNCHECKED START: the first ${onYd.toInt()} yd pointed straight (no walk on the shipped lattice)" else "") +
+                (if (uncheckedTo) ", UNCHECKED END: the last ${offYd.toInt()} yd pointed straight (no walk on the shipped lattice)" else ""),
+                attachFromYd = onYd, attachToYd = offYd, swims = swims, snapped = snaps == 2, roadmapYd = rmYd,
+                uncheckedFrom = uncheckedFrom, uncheckedTo = uncheckedTo) to null
         }
     }
 
@@ -494,13 +504,17 @@ object ShippedRoute {
      *  nodes), [floorNodes] those inside nodes (id, world point; not in [nodes]: snapped to only from an end on their floor) */
     class AttachView(val nodes: List<Pair<Int, DoubleArray>>, val ways: List<WayView>, val ground: (Double, Double) -> Float,
                      val danger: ((Double, Double) -> Float)?, val k: Double, val lim: Double, val floor: Set<Int> = emptySet(),
-                     val floorNodes: List<Pair<Int, DoubleArray>> = emptyList())
+                     val floorNodes: List<Pair<Int, DoubleArray>> = emptyList(),
+                     /** the pack's lattice walk classes (ShippedNet.Walk): an end's snap walked on them, null = none shipped */
+                     val lattice: Climb.Grid? = null)
     /** one join of an end: onto graph node [node], or (node null) cut into way [way] ([WayView.index]) at [t] (0..1 of its yards) at
      *  [at]; [pts] the walk from the end to it (the end first, the joined point last), [cost] its cost (the ground's and the danger's;
      *  the router adds SafePath.OFF_NET), [yd] its walked yards */
     class Join(val node: Int?, val way: Int, val t: Double, val at: DoubleArray, val pts: List<DoubleArray>, val cost: Double, val yd: Double)
     /** an end's joins (none: no route, [why] said); [snapped]: a short snap (no long attach) */
-    class Attach(val joins: List<Join>, val snapped: Boolean, val why: String? = null)
+    class Attach(val joins: List<Join>, val snapped: Boolean, val why: String? = null,
+                 /** the joins are plain straight pointers no check passed ([Result.uncheckedFrom] / [Result.uncheckedTo]) */
+                 val unchecked: Boolean = false)
     /** THE SEAM: how an end ([p], world) joins the graph; called for the player (walked out from p) and the goal (walked in to p) */
     fun interface Attacher {
         fun attach(v: AttachView, p: DoubleArray): Attach

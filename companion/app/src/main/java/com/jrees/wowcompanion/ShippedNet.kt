@@ -148,13 +148,16 @@ object ShippedNet {
         }
     }
 
-    /** one map's file: its [header], its [roadmap] (v2; null in v1) and a [Section] a faction */
-    class Pack(val header: Header, val sections: List<Section>, val roadmap: Roadmap? = null) {
+    /** one map's file: its [header], its [roadmap] (v2; null in v1) and a [Section] a faction; [walk] (v2, optional) the lattice's
+     *  WALK CLASSES ([Walk]) */
+    class Pack(val header: Header, val sections: List<Section>, val roadmap: Roadmap? = null, val walk: Climb.Grid? = null) {
+        init { if (walk != null) roadmap?.walk = walk }
         fun section(faction: Int): Section? = sections.firstOrNull { it.faction == faction }
         fun toJson(): JSONObject = JSONObject().put("fmt", header.format).put("v", header.version).put("map", header.map).put("cont", header.cont)
             .put("rules", header.rules).put("rulesCommit", header.rulesCommit).put("build", header.build).put("exported", header.exported)
             .put("sections", JSONArray(sections.map { it.toJson() }))
             .also { o -> roadmap?.let { o.put("roadmap", JSONObject().put("enc", Roadmap.ENC).put("data", pack64(it.encode()))) } }
+            .also { o -> walk?.let { o.put("walk", JSONObject().put("enc", Walk.ENC).put("data", pack64(Walk.encode(it)))) } }
         companion object {
             /** null when it is not NET1, or of a later version than this reader */
             fun fromJson(o: JSONObject): Pack? {
@@ -163,7 +166,8 @@ object ShippedNet {
                     o.optString("exported"), o.optString("fmt"), o.optInt("v"))
                 val ss = o.optJSONArray("sections") ?: JSONArray()
                 val rm = o.optJSONObject("roadmap")?.takeIf { it.optString("enc") == Roadmap.ENC }?.let { Roadmap.decode(unpack64(it.getString("data"))) }
-                return Pack(h, (0 until ss.length()).mapNotNull { i -> ss.optJSONObject(i)?.let { Section.fromJson(it) } }, rm)
+                val walk = o.optJSONObject("walk")?.takeIf { it.optString("enc") == Walk.ENC }?.let { j -> runCatching { Walk.decode(unpack64(j.getString("data"))) }.getOrNull() }
+                return Pack(h, (0 until ss.length()).mapNotNull { i -> ss.optJSONObject(i)?.let { Section.fromJson(it) } }, rm, walk)
             }
         }
     }
@@ -211,6 +215,8 @@ object ShippedNet {
     class Roadmap(val gr0: Int, val gc0: Int, val cell: Int, val nx: Int, val ny: Int,
                   val nodeCell: IntArray, val nodeGr: IntArray, val nodeGc: IntArray, val nodeFlags: IntArray,
                   val edgeA: IntArray, val edgeB: IntArray, val edgeFlags: IntArray, val edgePts: Array<IntArray?>) {
+        /** the pack's [Walk] grid, set by its [Pack] (not in the RM1 bytes) */
+        var walk: Climb.Grid? = null
         val nodes get() = nodeGr.size
         val edges get() = edgeA.size
         fun x(n: Int) = vx(nodeGr[n]); fun y(n: Int) = vy(nodeGc[n])
@@ -284,6 +290,43 @@ object ShippedNet {
                 return Roadmap(gr0, gc0, cell, nx, ny, nc.toIntArray(), ngr.toIntArray(), ngc.toIntArray(), nf.toIntArray(),
                     ea.toIntArray(), eb.toIntArray(), ef, ep)
             }
+        }
+    }
+
+    // ---------------------------------------------------------------- the walk classes (v2, optional)
+
+    /**
+     * THE LATTICE'S WALK CLASSES (the user, 2026-10-21: "Yes, try it"; under "Ship our path network"): the harness's own lattice for the
+     * map ([Climb.Grid]) stripped to its classes - each vertex's east and south step (Climb.LEVEL .. WALL, 2 bits each), each cell's four
+     * triangles' classes, the 45-48 degree faces' bits - so the device walks an end's first and last yards on the same rule the gate
+     * judges by. NO heights (the floors' deck heights are left out), no room outlines, no drop distances, no file ids. CLB3 bytes
+     * (Climb.Grid.write) with those parts only, zlib + base64 in the pack's JSON.
+     */
+    object Walk {
+        const val ENC = "CLB3-walk+zlib+base64"
+        /** [g]'s classes only: steps, faces, the 45-48 degree faces */
+        fun strip(g: Climb.Grid): Climb.Grid = Climb.Grid(g.gr0, g.gc0, g.nx, g.ny, g.cls, g.faces).also { it.faces48 = g.faces48 }
+        /** the CLB3 bytes of [strip], then THE FLOORS' VERTICES as a bit each (the vertices on a deck, a walkway, a dock - [Climb.Grid.deckZ]
+         *  not NaN; never their heights): a deck over water is walked, not swum (the walk-grid parity's Menethil docks) */
+        fun encode(g: Climb.Grid): ByteArray = ByteArrayOutputStream().also { b -> java.io.DataOutputStream(b).use { o ->
+            strip(g).write(o)
+            val dz = g.deckZ
+            o.writeByte(if (dz != null) 1 else 0)
+            if (dz != null) o.write(ByteArray((g.nx * g.ny + 7) / 8) { k -> var v = 0; for (t in 0 until 8) { val i = k * 8 + t; if (i < dz.size && !dz[i].isNaN()) v = v or (1 shl t) }; v.toByte() })
+        } }.toByteArray()
+        /** the grid of [encode]; the floors' vertices as [Climb.Grid.deckZ] 0 (no height kept: a floor's own rise is not read) */
+        fun decode(b: ByteArray): Climb.Grid? = java.io.DataInputStream(ByteArrayInputStream(b)).use { i ->
+            val g = Climb.Grid.read(i) ?: return null
+            if (i.available() > 0 && i.readUnsignedByte() == 1) {
+                val bits = ByteArray((g.nx * g.ny + 7) / 8).also { i.readFully(it) }
+                g.deckZ = FloatArray(g.nx * g.ny) { k -> if ((bits[k / 8].toInt() shr (k % 8)) and 1 != 0) 0f else Float.NaN }
+            }
+            g
+        }
+        /** whether world ([x], [y])'s nearest vertex of [g] stands on a floor ([decode]'s bits) */
+        fun onFloor(g: Climb.Grid, x: Double, y: Double): Boolean {
+            val dz = g.deckZ ?: return false
+            val a = g.at(x, y); return !dz[a[1] * g.nx + a[0]].isNaN()
         }
     }
 

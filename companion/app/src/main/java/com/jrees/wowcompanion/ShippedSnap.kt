@@ -57,6 +57,10 @@ object ShippedSnap {
                  /** a ghost's ground (CorpseRoute; the user: "Walk on water"): water of any depth is walked on its surface (no wall, no
                   *  ford's cost, the bed's slope under it not read); lava (WTR2's [DEEP_LAVA] and deeper) stays a wall */
                  val allowWater: Boolean = false) {
+        /** deep water or lava at world ([x], [y]) a walker may not cross (the lattice walk's water) */
+        fun deep(x: Double, y: Double): Boolean = wall(x, y, false)?.let { it != "a building" } == true
+        /** [deep] save where [floor] says a deck stands (the shipped lattice's floor bits) */
+        fun deepOff(floor: ((Double, Double) -> Boolean)?): (Double, Double) -> Boolean = { x, y -> floor?.invoke(x, y) != true && deep(x, y) }
         /** the same ground for a ghost ([allowWater]) */
         fun ghost() = Ground(terrain, water, room, allowWater = true)
         /** water a ghost walks on at world ([x], [y]): [allowWater], wet, no bridge, not lava */
@@ -65,17 +69,19 @@ object ShippedSnap {
             val d = water?.at(x, y) ?: return false
             return !d.isNaN() && d != SafePath.Water.BRIDGE && d < DEEP_LAVA
         }
-        /** why a walker may not stand at world ([x], [y]): null = it may */
-        fun wall(x: Double, y: Double): String? {
-            water?.let { w ->
+        /** why a walker may not stand at world ([x], [y]): null = it may; [terrain] false: the water and the rooms only (the shipped
+         *  lattice's classes judge the ground: [ShippedNet.Walk]) */
+        fun wall(x: Double, y: Double, terrain: Boolean = true, dry: Boolean = false, rooms: Boolean = true): String? {
+            if (!dry) water?.let { w ->
                 val d = w.at(x, y)
                 if (allowWater) {
                     if (!d.isNaN() && d != SafePath.Water.BRIDGE && d >= DEEP_LAVA) return "deep water or lava"
-                    if (walkedWater(x, y)) return if (room?.invoke(x, y) == true) "a building" else null
+                    if (walkedWater(x, y)) return if (rooms && room?.invoke(x, y) == true) "a building" else null
                 } else if (!d.isNaN() && d != SafePath.Water.BRIDGE && d > SafePath.FORD_DEPTH && !w.wadeable(x, y))
                     return if (d >= DEEP_LAVA) "deep water or lava" else "deep water (${"%.1f".format(d)} yd)"
             }
-            if (room?.invoke(x, y) == true) return "a building"
+            if (rooms && room?.invoke(x, y) == true) return "a building"
+            if (!terrain) return null
             val t = terrain(x, y)
             if (!t.isNaN() && t >= Terrain.WALL) return "a cliff or a building"
             if (!t.isNaN() && t >= WALL) return "a steep bank"
@@ -126,7 +132,8 @@ object ShippedSnap {
      */
     fun snap(p: DoubleArray, nodes: List<Pair<Int, DoubleArray>>, ground: Ground, danger: ((Double, Double) -> Float)? = null,
              k: Double = 0.0, reach: Double = SNAP_YD, walkYd: Double = WALK_YD, floor: Set<Int> = emptySet(),
-             floorNodes: List<Pair<Int, DoubleArray>> = emptyList(), ways: List<ShippedRoute.WayView> = emptyList()): Result {
+             floorNodes: List<Pair<Int, DoubleArray>> = emptyList(), ways: List<ShippedRoute.WayView> = emptyList(),
+             lattice: Climb.Grid? = null): Result {
         fun within(l: List<Pair<Int, DoubleArray>>) = l.map { (id, q) -> Triple(id, q, hypot(q[0] - p[0], q[1] - p[1])) }.filter { it.third <= reach }.sortedBy { it.third }
         // THE WAY CUTS: each way's nearest point within reach (a roadmap edge's walked points, a road's bends), a target as a node is
         // (keyed [CUT_KEY] - its index here; [Snap.way] / [Snap.t] say where)
@@ -154,7 +161,7 @@ object ShippedSnap {
             val n = nodes.minOfOrNull { (_, q) -> hypot(q[0] - p[0], q[1] - p[1]) }
             return Result(emptyList(), if (n == null) "no node to snap to" else "no node within ${reach.toInt()} yd (the nearest ${n.toInt()} yd)")
         }
-        val ground0 = if (near.isEmpty()) null else pick(p, near, ground, danger, k, reach, walkYd)
+        val ground0 = if (near.isEmpty()) null else pick(p, near, ground, danger, k, reach, walkYd, lattice)
         val fl = if (floorNear.isEmpty()) null else pick(p, floorNear, Ground({ _, _ -> 1f }, ground.water, allowWater = ground.allowWater), danger, k, reach, walkYd)
         // the tiers, each later one FAR_COST x its rank dearer: an end on a floor - the floor's lead, the floor's other nodes nearest
         // first (a city's streets, a pocket's deck: often in pieces the graph joins only farther on), then the ground's; the ground's
@@ -181,8 +188,9 @@ object ShippedSnap {
     /** [near]'s snaps over [ground]: the lead ones ([Snap.lead]: the nearest clear line and those [SPREAD_YD] longer, else the bent
      *  walks' shortest and those [SPREAD_YD] longer), then the rest nearest first */
     private fun pick(p: DoubleArray, near: List<Triple<Int, DoubleArray, Double>>, ground: Ground, danger: ((Double, Double) -> Float)?,
-                     k: Double, reach: Double, walkYd: Double): Result {
+                     k: Double, reach: Double, walkYd: Double, lattice: Climb.Grid? = null): Result {
         val view = View(p, ground, danger, k)
+        if (lattice != null) return pickOnLattice(p, near, ground, view, lattice, reach, walkYd)
         val straight = ArrayList<Snap>()
         val blocked = ArrayList<String>()
         val bent = ArrayList<Triple<Int, DoubleArray, Double>>()
@@ -211,6 +219,98 @@ object ShippedSnap {
     }
 
     /**
+     * THE SNAP ON THE SHIPPED LATTICE ([ShippedNet.Walk]; the user's "Yes, try it"): the ground judged by the gate's own rule instead of
+     * the 25 yd slope grid - a straight line to a node only when [Climb.walkable] passes it on the lattice (its steps and its faces, as
+     * py/segcheck.py reads them) and the device's own water and rooms let it; else the lattice's own leg round ([Climb.route], deep water
+     * a wall), every piece of it held to the same. Leading and fallbacks as [pick]'s: the nearest clear straight line (and those
+     * [SPREAD_YD] longer), else the shortest walk; the rest nearest first.
+     */
+    private fun pickOnLattice(p: DoubleArray, near: List<Triple<Int, DoubleArray, Double>>, ground: Ground, view0: View, g: Climb.Grid,
+                              reach: Double, walkYd: Double): Result {
+        val fl: ((Double, Double) -> Boolean)? = if (g.deckZ != null) { x, y -> ShippedNet.Walk.onFloor(g, x, y) } else null
+        val view = View(p, ground, view0.danger, view0.k, floor = fl)
+        roomsOn(g, ground)
+        val deep = endDry(p, ground.deepOff(fl))
+        val whyNot = HashMap<String, Int>()
+        fun clear(a: DoubleArray, b: DoubleArray): View.Line? {
+            val soft = view.line(a, b, terrain = false, rooms = hypot(b[0] - a[0], b[1] - a[1]) > Climb.SOLID_LINE_YD)
+            if (soft.why != null) { whyNot.merge(soft.why.substringBefore(" at ").substringBefore(" ("), 1, Int::plus); return null }
+            if (!Climb.walkable(g, a, b)) { whyNot.merge("the lattice's steps or faces", 1, Int::plus); return null }
+            return soft
+        }
+        val straight = ArrayList<Snap>(); val bent = ArrayList<Triple<Int, DoubleArray, Double>>(); var walled = 0
+        for (c in near) {
+            val l = clear(p, c.second)
+            if (l != null) straight.add(Snap(c.first, listOf(p, c.second), c.third, l.cost, true, steep = l.steep))
+            else { walled++; if (bent.size < CANDIDATES && c.first > CUT_KEY) bent.add(c) }
+        }
+        val out = ArrayList<Snap>(straight)
+        for ((id, q, _) in bent) {
+            val w = latticeLeg(g, p, q, deep, view) ?: continue
+            if (w.yd > walkYd) continue
+            out.add(Snap(id, w.pts, w.yd, w.cost * BENT, false, steep = w.steep))
+        }
+        if (out.isEmpty()) return Result(emptyList(), "the ${near.size} nodes within ${reach.toInt()} yd (nearest ${near.first().third.toInt()} yd): " +
+            "no walk of ${walkYd.toInt()} yd on the shipped lattice (lines: ${whyNot.entries.sortedByDescending { it.value }.joinToString(", ") { "${it.key} x${it.value}" }}; " +
+            "${if (ground.deep(p[0], p[1])) "the end reads deep water" else "the end dry"}${if (g.deckZ != null && ShippedNet.Walk.onFloor(g, p[0], p[1])) ", on a deck" else ""})")
+        val pool = if (straight.isNotEmpty()) straight else out
+        val shortest = pool.minOf { it.yd }
+        val lead = pool.filter { it.yd <= shortest + SPREAD_YD }.sortedBy { it.cost }.map { Snap(it.node, it.pts, it.yd, it.cost, it.straight, true, it.steep) }
+        val rest = out.filter { s -> lead.none { it.node == s.node } }.sortedBy { it.yd }
+        return Result(lead + rest, "snapped ${lead.first().yd.toInt()} yd ${if (lead.first().straight) "straight" else "round"} on the shipped lattice " +
+            "(${lead.size} leading of ${near.size} nodes within ${reach.toInt()} yd; $walled lines walled)")
+    }
+    /** [deep] save within [END_WET_YD] of the end [p] (its own spot in a water cell's edge, a lava field's rim: the walk leaves it;
+     *  Burning Steppes I's goal) */
+    private fun endDry(p: DoubleArray, deep: (Double, Double) -> Boolean): (Double, Double) -> Boolean = { x, y -> hypot(x - p[0], y - p[1]) > END_WET_YD && deep(x, y) }
+    const val END_WET_YD = 8.0
+
+    /** the shipped lattice's rooms ([Climb.Grid.solid]: no straight line longer than SOLID_LINE_YD through one, its legs' straightening
+     *  too) - the device's own room outlines ([Ground.room]), as the harness's lattice carries its own (the walk-grid parity's Menethil
+     *  docks: the legs straightened through the buildings, then refused) */
+    private fun roomsOn(g: Climb.Grid, ground: Ground) { val r = ground.room ?: return; if (g.solid !== r) g.solid = r }
+
+    /** a lattice leg: [pts] from the end to the node, [yd], [cost] (the device's yards), [steep] its dearest terrain */
+    private class LatLeg(val pts: List<DoubleArray>, val yd: Double, val cost: Double, val steep: Float)
+    /**
+     * the shipped lattice's own leg from end [p] to node [q] (deep water a wall), every piece held to [Climb.walkable] and the device's
+     * water and rooms - but THE END'S OWN HOP ([END_HOP_YD] at most) to the lattice only to the water and the rooms, as the harness's
+     * legs begin at the vertex nearest their start (an end standing on a deck, a face's edge, a wall cell: the walk-grid trial's
+     * Menethil docks); and when no leg leaves the end's own vertex, from the nearest within two steps that one does
+     */
+    private fun latticeLeg(g: Climb.Grid, p: DoubleArray, q: DoubleArray, deep: (Double, Double) -> Boolean, view: View): LatLeg? {
+        fun tryFrom(s: DoubleArray): LatLeg? {
+            val leg = Climb.route(g, s, q, water = deep, edges = false, limits = Climb.Limits(LATTICE_WINDOW)) ?: return null
+            if (!leg.reached || leg.pts.size < 2) return null
+            val pts = ShippedNet.anchored(listOf(p) + leg.pts.map { doubleArrayOf(it[0], it[1]) }.let { if (s === p) it else listOf(s) + it }, p, q).first
+                .fold(ArrayList<DoubleArray>()) { acc, x -> if (acc.isEmpty() || hypot(acc.last()[0] - x[0], acc.last()[1] - x[1]) > 1e-6) acc.add(x); acc }
+            var cost = 0.0; var steep = 1f
+            for ((k, ab) in pts.zipWithNext().withIndex()) {
+                val (a, b) = ab
+                // the rooms as the harness's lattice reads them (Climb.Grid.solid): a straight piece longer than SOLID_LINE_YD never
+                // through one, the steps into one open (Menethil's docks inside their outlines)
+                val soft = view.line(a, b, terrain = false, rooms = hypot(b[0] - a[0], b[1] - a[1]) > Climb.SOLID_LINE_YD)
+                if (soft.why != null) return null
+                val endHop = k == 0 && hypot(b[0] - a[0], b[1] - a[1]) <= END_HOP_YD
+                if (!endHop && !Climb.walkable(g, a, b)) return null
+                cost += soft.cost; if (soft.steep > steep) steep = soft.steep
+            }
+            return LatLeg(pts, ShippedRoute.length(pts), cost, steep)
+        }
+        tryFrom(p)?.let { return it }
+        val at = g.at(p[0], p[1])
+        val near = ArrayList<DoubleArray>()
+        for (dj in -2..2) for (di in -2..2) { if (di == 0 && dj == 0) continue
+            val i = at[0] + di; val j = at[1] + dj; if (i !in 0 until g.nx || j !in 0 until g.ny) continue
+            val v = doubleArrayOf(g.wx(j), g.wy(i)); if (hypot(v[0] - p[0], v[1] - p[1]) <= END_HOP_YD) near.add(v) }
+        for (v in near.sortedBy { hypot(it[0] - p[0], it[1] - p[1]) }) tryFrom(v)?.let { return it }
+        return null
+    }
+    const val END_HOP_YD = 3.0              // an end's own hop onto its nearest vertex (2.95 yd at most): only the water and the rooms read
+    const val UNCHECKED_COST = 3.0          // an unchecked end's straight pointer: a yard of it this dear (the nearest node, not a far one)
+    const val LATTICE_WINDOW = 120_000      // the lattice leg's scratch at most (vertices): ~ 340 x 340 steps
+
+    /**
      * THE SNAP AS ShippedRoute's ATTACH ([ShippedRoute.Attacher], the seam): each end's [snap]s onto the graph's nodes over [ground]
      * (null: the router's own ground, [ShippedRoute.AttachView.ground], read as the terrain); with none, the old long attach
      * ([ShippedRoute.DefaultAttach]: a walk onto the nearest ways, [ShippedRoute.AttachView.lim] at most) over the same ground with
@@ -219,16 +319,35 @@ object ShippedSnap {
     fun attacher(ground: Ground? = null, log: ((String) -> Unit)? = null) = object : ShippedRoute.Attacher {
         override fun attach(v: ShippedRoute.AttachView, p: DoubleArray): ShippedRoute.Attach {
             val g = ground ?: Ground(v.ground)
-            val s = snap(p, v.nodes, g, v.danger, v.k, floor = v.floor, floorNodes = v.floorNodes, ways = v.ways)
+            val s = snap(p, v.nodes, g, v.danger, v.k, floor = v.floor, floorNodes = v.floorNodes, ways = v.ways, lattice = v.lattice)
             if (s.ok) return ShippedRoute.Attach(s.snaps.map {
                 if (it.cut) ShippedRoute.Join(null, it.way, it.t, it.pts.last(), it.pts, it.cost, it.yd)
                 else ShippedRoute.Join(it.node, -1, 0.0, it.pts.last(), it.pts, it.cost, it.yd) }, true, s.why)
+            // the shipped lattice: the long attach on it too (the coarse one crossed what the lattice walls: parity's Loch Modan A,
+            // Un'Goro H, Silithus H) - its nodes out to the long attach's reach, walked on the lattice
+            if (v.lattice != null) {
+                val far = snap(p, v.nodes, g, v.danger, v.k, reach = v.lim, walkYd = v.lim * 1.5, floor = v.floor, floorNodes = v.floorNodes,
+                    ways = v.ways, lattice = v.lattice)
+                if (far.ok) return ShippedRoute.Attach(far.snaps.map {
+                    if (it.cut) ShippedRoute.Join(null, it.way, it.t, it.pts.last(), it.pts, it.cost, it.yd)
+                    else ShippedRoute.Join(it.node, -1, 0.0, it.pts.last(), it.pts, it.cost, it.yd) }, false, "long on the lattice: ${far.why}")
+                // THE UNCHECKED END (the user, 2026-10-21: "Point straight at it"): the way goes as far as the network safely goes - the
+                // node nearest this end - and a plain straight pointer covers the rest, marked unchecked (logged, drawn dashed, the pin's
+                // last leg direct). Never the coarse walk drawn as if it were safe
+                val n = v.nodes.minByOrNull { hypot(it.second[0] - p[0], it.second[1] - p[1]) }
+                    ?: return ShippedRoute.Attach(emptyList(), false, "no node to point from (${s.why})")
+                val yd = hypot(n.second[0] - p[0], n.second[1] - p[1])
+                log?.invoke("snap: UNCHECKED at ${p[0].toInt()},${p[1].toInt()}: no walk on the lattice within ${v.lim.toInt()} yd (${far.why}); " +
+                    "pointed straight ${yd.toInt()} yd to node ${n.first}")
+                return ShippedRoute.Attach(listOf(ShippedRoute.Join(n.first, -1, 0.0, n.second, listOf(p, n.second), yd * UNCHECKED_COST, yd)), false,
+                    "unchecked: pointed straight ${yd.toInt()} yd (no walk on the shipped lattice within ${v.lim.toInt()} yd)", unchecked = true)
+            }
             log?.invoke("snap: none at ${p[0].toInt()},${p[1].toInt()} (${s.why}) - the long attach")
             val long = ShippedRoute.DefaultAttach.attach(ShippedRoute.AttachView(emptyList(), v.ways, g.asCost, v.danger, v.k, v.lim), p)
             return ShippedRoute.Attach(long.joins, false, "${long.why ?: "on ${long.joins.size} ways by the long attach"} (no snap: ${s.why})")
         }
         override fun direct(v: ShippedRoute.AttachView, from: DoubleArray, to: DoubleArray): ShippedRoute.Join? =
-            directWalk(from, to, ground ?: Ground(v.ground), v.danger, v.k)?.let { ShippedRoute.Join(null, -1, 0.0, to, it.pts, it.cost, it.yd) }
+            directWalk(from, to, ground ?: Ground(v.ground), v.danger, v.k, lattice = v.lattice)?.let { ShippedRoute.Join(null, -1, 0.0, to, it.pts, it.cost, it.yd) }
     }
 
     /**
@@ -238,7 +357,19 @@ object ShippedSnap {
      * line when it is clear, else the walk round ([Walk], [lim] at most). Null: none walks clean - the net's way only.
      */
     fun directWalk(from: DoubleArray, to: DoubleArray, ground: Ground, danger: ((Double, Double) -> Float)? = null, k: Double = 0.0,
-                   lim: Double = ShippedRoute.DIRECT_WALK_YD): Snap? {
+                   lim: Double = ShippedRoute.DIRECT_WALK_YD, lattice: Climb.Grid? = null): Snap? {
+        if (lattice != null) {
+            // the shipped lattice: its own rule, straight when it passes, else its leg (deep water a wall)
+            val fl: ((Double, Double) -> Boolean)? = if (lattice.deckZ != null) { x, y -> ShippedNet.Walk.onFloor(lattice, x, y) } else null
+            val view = View(from, ground, danger, k, floor = fl)
+            roomsOn(lattice, ground)
+            fun clear(a: DoubleArray, b: DoubleArray) = view.line(a, b, terrain = false, rooms = hypot(b[0] - a[0], b[1] - a[1]) > Climb.SOLID_LINE_YD)
+                .takeIf { it.why == null && Climb.walkable(lattice, a, b) }
+            clear(from, to)?.let { return Snap(-1, listOf(from, to), hypot(to[0] - from[0], to[1] - from[1]), it.cost, true) }
+            val w = latticeLeg(lattice, from, to, endDry(from, ground.deepOff(fl)), view) ?: return null
+            if (w.yd > lim) return null
+            return Snap(-1, w.pts, w.yd, w.cost, false)
+        }
         val view = View(from, ground, danger, k, level = true)
         val line = view.line(from, to)
         if (line.why == null) return Snap(-1, listOf(from, to), hypot(to[0] - from[0], to[1] - from[1]), line.cost, true)
@@ -253,22 +384,25 @@ object ShippedSnap {
     // ---------------------------------------------------------------- the fine reads
 
     /** one end's view of the ground: [c] the end (its door rule), the cost a yard with the danger */
-    private class View(val c: DoubleArray, val g: Ground, val danger: ((Double, Double) -> Float)?, val k: Double, val level: Boolean = false) {
+    private class View(val c: DoubleArray, val g: Ground, val danger: ((Double, Double) -> Float)?, val k: Double, val level: Boolean = false,
+                       /** the shipped lattice's floor vertices: no water read under a deck */
+                       val floor: ((Double, Double) -> Boolean)? = null) {
         val inWall = g.wall(c[0], c[1]) != null || (level && g.terrain(c[0], c[1]).let { !it.isNaN() && it > LEVEL })
         /** [steep] the line's dearest terrain a yard (1 level; the slope grid's climb, a cliff's band) */
         class Line(val cost: Double, val why: String?, val steep: Float = 1f)
         /** the wall at ([x], [y]) for this end's walk (null: none; the door's within [DOOR_YD] of an end standing in one) */
-        fun wall(x: Double, y: Double): String? {
+        fun wall(x: Double, y: Double, terrain: Boolean = true, rooms: Boolean = true): String? {
+            if (!terrain) return g.wall(x, y, false, floor?.invoke(x, y) == true, rooms)?.let { w -> if (inWall && hypot(x - c[0], y - c[1]) <= DOOR_YD) null else w }
             val w = g.wall(x, y) ?: (if (level && !g.walkedWater(x, y)) g.terrain(x, y).takeIf { !it.isNaN() && it > LEVEL }?.let { "a climb or a cliff's band" } else null) ?: return null
             return if (inWall && hypot(x - c[0], y - c[1]) <= DOOR_YD) null else w
         }
         fun yard(x: Double, y: Double): Double = g.yard(x, y) + k * (danger?.invoke(x, y)?.takeIf { !it.isNaN() } ?: 0f)
         /** the straight line [a] -> [b], every [LINE_STEP_YD]; its last [END_YD] (the node's own spot) never a wall */
-        fun line(a: DoubleArray, b: DoubleArray): Line {
+        fun line(a: DoubleArray, b: DoubleArray, terrain: Boolean = true, rooms: Boolean = true): Line {
             val len = hypot(b[0] - a[0], b[1] - a[1]); val m = max(1, ceil(len / LINE_STEP_YD).toInt()); var s = 0.0
             for (q in 0..m) {
                 val t = q.toDouble() / m; val x = a[0] + (b[0] - a[0]) * t; val y = a[1] + (b[1] - a[1]) * t
-                if (len * (1 - t) > END_YD) wall(x, y)?.let { return Line(Double.NaN, "$it at ${x.toInt()},${y.toInt()}") }
+                if (len * (1 - t) > END_YD) wall(x, y, terrain, rooms)?.let { return Line(Double.NaN, "$it at ${x.toInt()},${y.toInt()}") }
                 if (q < m) s += yard(x + (b[0] - a[0]) / (2 * m), y + (b[1] - a[1]) / (2 * m)) * len / m
             }
             var st = 1f

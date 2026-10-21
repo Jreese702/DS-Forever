@@ -4363,6 +4363,10 @@ class MapView(context: Context) : View(context) {
     /** [leg]: the way in the map's 0..1, the player first (null: straight on to the goal while the first plan is made) */
     private class Shipped(val leg: List<DoubleArray>?)
     private val shipLegs = HashMap<Int, ShipLeg>()
+    /** a quest's kept way's UNCHECKED ENDS (ShippedRoute.Result.uncheckedFrom / uncheckedTo; the user's "Point straight at it"): its
+     *  first / last stretch a plain pointer no check passed, drawn thin and dashed */
+    private val shipUnchecked = HashMap<Int, Pair<Boolean, Boolean>>()
+    private fun uncheckedOf(q: Int): Pair<Boolean, Boolean> = if (shipLegs[q] != null) shipUnchecked[q] ?: (false to false) else (false to false)
     private val shipPending = HashSet<Int>()
     private val shipAt = HashMap<Int, Long>()
     private val shipNone = HashMap<Int, String>()          // quest -> the stamp and goal the network gave no way for (the older route's)
@@ -4520,6 +4524,14 @@ class MapView(context: Context) : View(context) {
                     val keep = cur != null && sameStamp && !ShippedPins.takeNew(keptYd, res.yd, strayed || forced)   // forced: the new way
                     shipLegs[q] = if (keep) ShipLeg(cur!!.leg, cur.gx, cur.gy, stamp, mapId, here[0], here[1], stale)
                                   else ShipLeg(leg, goal[0], goal[1], stamp, mapId, here[0], here[1], stale)
+                    if (!keep) {
+                        val was = shipUnchecked[q]
+                        shipUnchecked[q] = res.uncheckedFrom to res.uncheckedTo
+                        if (res.unchecked && was != (res.uncheckedFrom to res.uncheckedTo)) android.util.Log.i("WCMAP", "safepath net: $who UNCHECKED " +
+                            listOfNotNull(if (res.uncheckedFrom) "start (the first ${res.attachFromYd.toInt()} yd)" else null,
+                                if (res.uncheckedTo) "end (the last ${res.attachToYd.toInt()} yd)" else null).joinToString(" and ") +
+                            ": pointed straight, no walk on the shipped lattice from there - drawn dashed, the pin's last leg direct")
+                    }
                     if (keep) android.util.Log.i("WCMAP", "safepath net: $who kept its way (${keptYd?.toInt()} yd left; the new " +
                         "${res.yd.toInt()} yd is not ${((SafePathV2.HYSTERESIS - 1) * 100).toInt()}% shorter)")
                 }
@@ -4527,7 +4539,7 @@ class MapView(context: Context) : View(context) {
                     // a walked-on replan found none from here: the kept way stays (the player is still on it)
                     shipLegs[q]?.let { c -> shipLegs[q] = ShipLeg(c.leg, c.gx, c.gy, stamp, mapId, here[0], here[1], stale) }
                 }
-                else { shipNone[q] = noneKey; shipLegs.remove(q) }
+                else { shipNone[q] = noneKey; shipLegs.remove(q); shipUnchecked.remove(q) }
                 if (ghost) android.util.Log.i("WCMAP", if (res.reached) CorpseRoute.said(mapId, res.yd, "shipped network, ${res.bends} bends$mark")
                     else "safepath ghost: corpse on map $mapId: none on the shipped network ($said) - the older route")
                 else if (shipSaid[q] != said) android.util.Log.i("WCMAP", if (res.reached) "safepath net: $said" else "safepath net: quest $q none: $said - the older route")
@@ -4690,13 +4702,22 @@ class MapView(context: Context) : View(context) {
     }
 
     /** one stretch of the route's dots, at [dim] of their strength (1 = the stretch to the next checkpoint, less beyond it) */
-    private fun drawStretch(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, dim: Float) {
+    private fun drawStretch(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, dim: Float, unchecked: Boolean = false) {
         pathTmp.reset(); pathTmp.moveTo(x0, y0); pathTmp.lineTo(x1, y1)
+        if (unchecked) { drawUnchecked(c, dim); return }
         val phase = -(android.os.SystemClock.elapsedRealtime() / 1000f * 24f) % 16f
         pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
         pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * dim).toInt(), 0, 0, 0); c.drawPath(pathTmp, pPath)
         pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * dim).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
         c.drawPath(pathTmp, pPath)
+        pPath.pathEffect = null
+    }
+
+    /** an UNCHECKED stretch ([pathTmp]; the user's "Point straight at it"): thin long dashes, pale - never the safe way's moving dots */
+    private fun drawUnchecked(c: Canvas, dim: Float) {
+        pPath.pathEffect = DashPathEffect(floatArrayOf(14f, 12f), 0f)
+        pPath.strokeWidth = 6f; pPath.color = Color.argb((140 * dim).toInt(), 0, 0, 0); c.drawPath(pathTmp, pPath)
+        pPath.strokeWidth = 3f; pPath.color = Color.argb((200 * dim).toInt(), 255, 241, 178); c.drawPath(pathTmp, pPath)
         pPath.pathEffect = null
     }
 
@@ -6463,12 +6484,14 @@ class MapView(context: Context) : View(context) {
             val yd = if (rr != null && rr.valid) (leg?.let { DangerGrid.yards(it, rr.width, rr.height) }
                 ?: CursorRoute.yards(px, py, route.x, route.y, rr.width, rr.height).toDouble()).toInt() else 0
             var fx = sx(px); var fy = sy(py)
+            val unc = if (leg != null) uncheckedOf(cursor.sel) else (false to false)
             for ((i, cp) in cps.withIndex()) {
                 val dim = CHECKPOINT_DIM.getOrElse(i) { 0f }.let { if (i == stepAt) max(it, CHECKPOINT_DIM.last()) else it }
                 if (dim <= 0f) break
                 val tx = sx(cp[0]); val ty = sy(cp[1])
-                if (i == stepAt) drawCursorPath(c, cursor.sel, route, yd, fx, fy, tx, ty, left, top, left + fw, fb, dim)
-                else drawStretch(c, fx, fy, tx, ty, dim)
+                val plain = (i == 0 && unc.first) || (i == stepAt && unc.second)
+                if (i == stepAt && !plain) drawCursorPath(c, cursor.sel, route, yd, fx, fy, tx, ty, left, top, left + fw, fb, dim)
+                else drawStretch(c, fx, fy, tx, ty, if (i == stepAt) max(dim, 0.8f) else dim, unchecked = plain)
                 fx = tx; fy = ty
             }
             // the flags: every bend, and the step's point when it is a way (the goal wears its own mark); the next one in front
@@ -6495,10 +6518,11 @@ class MapView(context: Context) : View(context) {
                     val save = c.save()
                     c.clipRect(left, nb, left + fw, top + fh)
                     var fx = sx(px); var fy = sy(py)
+                    val unc = if (leg != null) uncheckedOf(focusQid) else (false to false)
                     for ((i, cp) in cps.withIndex()) {
                         val dim = CHECKPOINT_DIM.getOrElse(i) { 0f }
                         if (dim <= 0f) break
-                        drawStretch(c, fx, fy, sx(cp[0]), sy(cp[1]), dim)
+                        drawStretch(c, fx, fy, sx(cp[0]), sy(cp[1]), dim, unchecked = (i == 0 && unc.first) || (i == stepAt && unc.second))
                         fx = sx(cp[0]); fy = sy(cp[1])
                     }
                     for (i in (0..stepAt).reversed()) {
