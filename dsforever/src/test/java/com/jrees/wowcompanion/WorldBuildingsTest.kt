@@ -105,6 +105,18 @@ class WorldBuildingsTest {
         assertTrue(WorldBuildings.m2BridgeFloor(m2("")) != null)
     }
 
+    @Test fun aRampIntoTheWaterIsADeckWhereItStandsOverTheSurface() {
+        // Azshara's Temple of Arkkoran (gate run 10, route H): a 24 degree ramp from 1.76 down to -9.77 into the sea (surface 0). Over
+        // the water where the floor AT THE SPOT is (Deck.over, surface - 0.5), not by its lowest corner - py/wetcheck.py reads it so too
+        val d = WorldBuildings.Deck(listOf(doubleArrayOf(4061.40, -7267.23, 4061.81, -7266.26, 4038.10, -7256.19),
+            doubleArrayOf(4038.10, -7256.19, 4037.69, -7257.17, 4061.40, -7267.23)),
+            listOf(doubleArrayOf(-9.77, -9.77, 1.76), doubleArrayOf(1.76, 1.76, -9.77)))
+        assertTrue(d.holds(4039.0, -7256.8))
+        assertEquals(1.28, d.heightsAt(4039.0, -7256.8).max(), 0.05)
+        assertTrue(d.over(4039.0, -7256.8, 0f))                      // its top end: 1.3 yd over the water, walked dry
+        assertFalse(d.over(4055.0, -7264.0, 0f))                     // its foot: under the water, no deck over it
+    }
+
     @Test fun anM2BridgesDeckIsItsCollisionFloor() {
         val t = WorldBuildings.m2FloorTris(m2("DuskwoodCoveredBridge"))
         assertEquals(2 * 9, t.size)                          // the two flat faces; the upright one is a wall

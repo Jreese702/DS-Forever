@@ -47,6 +47,8 @@ for tag in $TAGS; do
     (cd "$HERE/py" && PYTHONIOENCODING=utf-8 ZDIR=$dir python wetcheck.py "$OUT/levels_routes_$t.json" 2>&1 | grep -E "^WET|Error") >> "$OUT/gate_$t.log"
     grep -E "^NET1 |^WALLS|^EMPTY|segments; crossing|^e:|Exception" "$OUT/gate_$t.log" | cut -c1-300
     # the bulky intermediates go (disk E: is tight): the pictures, the renders' layers; the floors; the routes and the section stay
+    # (EXPORT_KEEP=1: the floors, holes, layers and decks kept, gzipped into <out>/keep/, for a parity check's segcheck / wetcheck)
+    if [ -n "${EXPORT_KEEP:-}" ]; then mkdir -p "$OUT/keep"; for k2 in floors holes layers decks; do [ -f "$OUT/${k2}_$t.json" ] && gzip -c "$OUT/${k2}_$t.json" > "$OUT/keep/${k2}_$t.json.gz"; done; fi
     rm -f "$OUT"/*.png "$OUT/layers_$t.json" "$OUT/drops_$t.json" "$OUT/decks_$t.json" "$OUT/rooms_$t.json" "$OUT/floors_$t.json" "$OUT/holes_$t.json"
   done
 done

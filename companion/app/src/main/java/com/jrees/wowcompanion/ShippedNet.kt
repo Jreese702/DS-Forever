@@ -299,6 +299,24 @@ object ShippedNet {
         return f
     }
 
+    /** a way's points made to begin exactly at [a] and end exactly at [b] (its nodes): an end within [ANCHOR_YD] is moved onto the node,
+     *  else the node is put before (after) it - the hop between them then part of the way, checked with the rest (a lattice leg begins at
+     *  the vertex nearest its start when the hop from the start itself crosses a wall: W's Durotar stitch at 645,-4743). [layers] kept
+     *  one a point (an added end takes its neighbour's) */
+    fun anchored(pts: List<DoubleArray>, a: DoubleArray, b: DoubleArray, layers: IntArray? = null): Pair<List<DoubleArray>, IntArray?> {
+        if (pts.isEmpty()) return listOf(a, b) to null
+        val out = ArrayList<DoubleArray>(pts.size + 2); val ly = ArrayList<Int>()
+        if (hypot(pts[0][0] - a[0], pts[0][1] - a[1]) <= ANCHOR_YD) { out.add(doubleArrayOf(a[0], a[1])); layers?.let { ly.add(it[0]) } }
+        else { out.add(doubleArrayOf(a[0], a[1])); out.add(pts[0]); layers?.let { ly.add(it[0]); ly.add(it[0]) } }
+        for (k in 1 until pts.size - 1) { out.add(pts[k]); layers?.let { ly.add(it[k]) } }
+        if (pts.size >= 2) { val last = pts.last()
+            if (hypot(last[0] - b[0], last[1] - b[1]) <= ANCHOR_YD) { out.add(doubleArrayOf(b[0], b[1])); layers?.let { ly.add(it.last()) } }
+            else { out.add(last); out.add(doubleArrayOf(b[0], b[1])); layers?.let { ly.add(it.last()); ly.add(it.last()) } } }
+        else if (hypot(pts[0][0] - b[0], pts[0][1] - b[1]) > ANCHOR_YD) { out.add(doubleArrayOf(b[0], b[1])); layers?.let { ly.add(it.last()) } }
+        return out to layers?.let { ly.toIntArray() }
+    }
+    const val ANCHOR_YD = 0.02
+
     /** the node kinds a cross-zone link starts at (TravelLinks: flights, rides) and the exits that are rides, not walks */
     val START_NODES = setOf(SafePath.FLIGHT, SafePath.DOCK, SafePath.TRAM)
 
@@ -325,11 +343,13 @@ object ShippedNet {
         fun len(p: List<DoubleArray>) = p.zipWithNext { u, v -> hypot(v[0] - u[0], v[1] - u[1]) }.sum()
         val ways = edges0.map { e -> val a = byId[e.a]!!; val b = byId[e.b]!!
             val pa = doubleArrayOf(a.wx, a.wy); val pb = doubleArrayOf(b.wx, b.wy)
-            val pts = if (e.state == SafePath.REWALK) walk?.invoke(pa, pb)?.takeIf { it.size > 2 } else null
+            val pts = if (e.state == SafePath.REWALK) walk?.invoke(pa, pb)?.takeIf { it.size > 2 }?.let { anchored(it, pa, pb).first } else null
             val wet = if (e.kind == SafePath.CAVE || e.kind == SafePath.LIFT) 0
                 else pts?.zipWithNext()?.fold(0) { f, (u, v) -> f or wetOf(u, v) } ?: wetOf(pa, pb)
             Way(flagsOf(e, wet), pts?.let { len(it) } ?: hypot(a.wx - b.wx, a.wy - b.wy), pts) } +
-            extras.map { x -> Way(x.flags or x.pts.zipWithNext().fold(0) { f, (u, v) -> f or (if (x.flags and F_FLOOR != 0) 0 else wetOf(u, v)) }, len(x.pts), x.pts, x.layers) }
+            extras.map { x -> val a = byId[x.a]; val b = byId[x.b]
+                val (p, ly) = if (a != null && b != null) anchored(x.pts, doubleArrayOf(a.wx, a.wy), doubleArrayOf(b.wx, b.wy), x.layers) else x.pts to x.layers
+                Way(x.flags or p.zipWithNext().fold(0) { f, (u, v) -> f or (if (x.flags and F_FLOOR != 0) 0 else wetOf(u, v)) }, len(p), p, ly) }
         val starts = nodes.filter { it.kind in START_NODES }.map { n -> val x = exits.firstOrNull { it.node == n.id }
             Start(n.id, n.kind, x?.toMap ?: 0, n.name ?: x?.name ?: "") } +
             exits.filter { it.how !in TravelLinks.FOOT && nodes.firstOrNull { n -> n.id == it.node }?.kind !in START_NODES }
