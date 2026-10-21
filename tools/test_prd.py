@@ -114,9 +114,9 @@ def main():
     Lg.WowCompanion.npWant = L.table_from({"hud": True})
     run(1)
     chk("HUD mode on, out of combat, no health signal, no fight yet: nothing shown (%s)" % P.why, P.f is not None and P.shown is False)
-    chk("our own frame on UIParent, MEDIUM, mouse off, anchored below the centre (y %.1f = -250 spec px)" % P.f.point[5],
+    chk("our own frame on UIParent, MEDIUM, mouse off, anchored below the centre (y %.1f = -300 spec px)" % P.f.point[5],
         L.eval("rawequal(WowCompanion.prd.f.parent, UIParent)") and P.f.strata == "MEDIUM" and P.f.mouse is False
-        and P.f.point[1] == "TOP" and P.f.point[3] == "CENTER" and abs(P.f.point[5] + 250 * 768 / 1080) < 1e-6)
+        and P.f.point[1] == "TOP" and P.f.point[3] == "CENTER" and abs(P.f.point[5] + 300 * 768 / 1080) < 1e-6)
 
     # a fight starts (PLAYER_REGEN_DISABLED before UnitAffectingCombat reads true): in 0.15 s
     fire("PLAYER_REGEN_DISABLED")
@@ -124,20 +124,21 @@ def main():
     chk("starting combat: shown at once (alpha %.2f, %s)" % (P.alpha, P.why), P.alpha == 1 and P.f.shown is True and P.why == "fight")
     chk("health FED: the secret value itself to SetValue, the plain max to SetMinMaxValues",
         Lg.issecretvalue(P.hp.value) and P.hp.max == 1000 and P.hp.min == 0)
-    chk("power FED the same way, the PlayerFrame's own mana fill (its colour in the art: no tint)", Lg.issecretvalue(P.pw.value)
-        and P.pw.max == 100 and P.pw.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Mana" and list(P.pw.color.values()) == [1, 1, 1])
-    chk("prd2: health the PlayerFrame's own fill, 200 x 11 (spec px), a crisp border, the empty part see-through",
-        P.hp.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health" and abs(P.hp.w - 200 * 768 / 1080) < 1e-6
-        and abs(P.hp.h - 11 * 768 / 1080) < 1e-6 and P.shadow.tex.endswith("compass_band"))
+    chk("power FED the same way, the PRD's own fill tinted mana's blue (0, 0.45, 1)", Lg.issecretvalue(P.pw.value)
+        and P.pw.max == 100 and P.pw.fill.atlas == "UI-HUD-CoolDownManager-Bar-c60" and list(P.pw.color.values()) == [0, 0.45, 1])
+    chk("prd6: health the PRD's own fill (rounded at both ends) tinted green, 220 x 15 (spec px), in the PRD's bar BG (c60), no spark",
+        P.hp.fill.atlas == "UI-HUD-CoolDownManager-Bar-c60" and list(P.hp.color.values()) == [0.12, 0.86, 0.12] and P.hp.spark is None and abs(P.hp.w - 220 * 768 / 1080) < 1e-6
+        and abs(P.hp.h - 15 * 768 / 1080) < 1e-6 and P.shadow.tex.endswith("compass_band")
+        and P.hpFrame.atlas == "UI-HUD-CoolDownManager-Bar-BG-c60" and P.pwFrame.atlas == "UI-HUD-CoolDownManager-Bar-BG-c60"
+        and P.hpFrame.whole is not None)
     ME.ptype, ME.tok = 1, "RAGE"
     fire("UNIT_DISPLAYPOWER", "player")
     run(0.3)
-    chk("a warrior's rage: its own fill", P.pw.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Rage")
+    chk("a warrior's rage: red", list(P.pw.color.values()) == [1, 0, 0])
     ME.ptype, ME.tok = 3, "ENERGY"; run(0.3)
-    chk("energy: its own fill", P.pw.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Energy")
+    chk("energy: yellow", list(P.pw.color.values()) == [1, 1, 0])
     ME.ptype, ME.tok = 4, "HAPPINESS"; run(0.3)
-    chk("a power with no fill of its own: the plain bar in the power's colour (0, 1, 1)", list(P.pw.color.values()) == [0, 1, 1]
-        and P.pw.fill.tex == "Interface\\TargetingFrame\\UI-StatusBar")
+    chk("another power: its colour (0, 1, 1) on the same fill", list(P.pw.color.values()) == [0, 1, 1])
     ME.ptype, ME.tok = 0, "MANA"; run(0.3)
 
     # the auras, in combat
@@ -209,19 +210,23 @@ def main():
     # the height: the app's steps (10 spec px), its range, the default, per character in our saved data
     y0 = P.y
     P.nudge(1)
-    chk("a step up: -240 (%s), saved for Yes-Lander" % P.y, P.y == -240 and Lg.WowCompanionDB.prdY["Yes-Lander"] == -240
-        and abs(P.f.point[5] + 240 * 768 / 1080) < 1e-6)
+    chk("a step up: -290 (%s), saved for Yes-Lander" % P.y, P.y == -290 and Lg.WowCompanionDB.prdY["Yes-Lander"] == -290
+        and abs(P.f.point[5] + 290 * 768 / 1080) < 1e-6)
     for _ in range(30):
         P.nudge(1)
-    chk("the top of the range: -120 (%s)" % P.y, P.y == -120)
+    chk("the top of the range: -170 (%s)" % P.y, P.y == -170)
     for _ in range(60):
         P.nudge(-1)
-    chk("the bottom of the range: -420 (%s)" % P.y, P.y == -420)
+    chk("the bottom of the range: -470 (%s)" % P.y, P.y == -470)
     P.nudge(0)
-    chk("back to the default: -250, nothing kept (%s)" % P.y, P.y == -250 and Lg.WowCompanionDB.prdY["Yes-Lander"] is None and y0 == -250)
+    chk("back to the default: -300, nothing kept (%s)" % P.y, P.y == -300 and Lg.WowCompanionDB.prdY["Yes-Lander"] is None and y0 == -300)
     P.nudge(-1); P.y = None; P.loadY()
-    chk("read back at log in (%s)" % P.y, P.y == -260)
-    chk("Hub's names: y, on, min, max, step, def, nudge", P.min == -420 and P.max == -120 and P.step == 10 and P["def"] == -250
+    chk("read back at log in (%s)" % P.y, P.y == -310)
+    # prd4: a height saved on the OLD default (prdYv not yet 2) moves down with it, once
+    Lg.WowCompanionDB.prdY["Yes-Lander"] = -230; Lg.WowCompanionDB.prdYv = None; P.loadY()
+    y1 = P.y; P.loadY()
+    chk("prd4: an old saved height (-230) shifted once with the default: %s, then %s" % (y1, P.y), y1 == -280 and P.y == -280)
+    chk("Hub's names: y, on, min, max, step, def, nudge", P.min == -470 and P.max == -170 and P.step == 10 and P["def"] == -300
         and P.on is True and callable(P.nudge))
     chk("this client has no curve route in the stub: tried once, off, the read stands (%s)" % P.curveBad, P.curveBad is not None)
 
@@ -303,7 +308,7 @@ def main():
     # THE COST: the spell's own cost over the plain max, on the power fill's right edge, gone when the cast ends
     ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_START", "player", "guid", 8936)
     chk("prd3: casting a 25-mana spell of 100: the cost segment a quarter of the bar (%.2f), on the power fill's edge" % (P.cost.w or -1),
-        P.cost.shown is True and abs(P.cost.w - 0.25 * 200 * 768 / 1080) < 1e-6 and P.cost.point[1] in ("TOPRIGHT", "BOTTOMRIGHT")
+        P.cost.shown is True and abs(P.cost.w - 0.25 * 220 * 768 / 1080) < 1e-6 and P.cost.point[1] in ("TOPRIGHT", "BOTTOMRIGHT")
         and L.eval("rawequal(WowCompanion.prd.cost.point[2], WowCompanion.prd.pw.fill)"))
     ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_STOP", "player", "guid", 8936)
     chk("prd3: the cast over: gone", P.cost.shown is False and P.ex.cost is None)
@@ -314,6 +319,32 @@ def main():
     P.lag = None; P.f = None; P.build(); run(0.2)
     ME.hp = 300; run(0.8)
     chk("prd3: no interpolation in this client: the lag bar steps (no error)", P.ex.interp is False and P.lag.value.n == 300 and P.lag.interp is None)
+    # prd5, THE CHANNEL (the user: "It overlaps the border instead of looking like a 3d polished fill part of the asset"): with the
+    # atlas's own coordinates, the frame cut along its art: the track under the bar, the lip (top, bottom, sides) over it
+    L.execute("""C_Texture = { GetAtlasInfo = function(n) if n == "UI-HUD-CoolDownManager-Bar-BG-c60" then
+        return { file = 4242, leftTexCoord = 0.5, rightTexCoord = 1.0, topTexCoord = 0.25, bottomTexCoord = 0.5 } end end }""")
+    Lg.Enum.StatusBarInterpolation = L.eval("{ ExponentialEaseOut = 1 }")
+    P.lag = None; P.f = None; P.lip = None; P.build(); run(0.2)
+    hf = P.hpFrame
+    k = 15 / 8 * 768 / 1080
+    def near(a, b): return abs(a - b) < 1e-6
+    chk("prd5: the track = the art's rows 3..11, the full width, UNDER the bar (on the layer)",
+        hf.track.tex == 4242 and near(hf.track.coord[1], 0.5) and near(hf.track.coord[2], 1.0) and near(hf.track.coord[3], 0.25 + 0.25 * 3 / 19)
+        and near(hf.track.coord[4], 0.25 + 0.25 * 11 / 19))
+    chk("prd5: the lip OVER every bar: its own frame above the health bar (levels %s > %s)" % (P.lip.level, P.hp.level),
+        P.lip.level > P.hp.level and L.eval("rawequal(WowCompanion.prd.hpFrame.top.parent, nil)") is not None)
+    chk("prd5: the top lip: the art's rows 0..3, 3 texels tall, sitting ON the opening's top edge",
+        near(hf.top.l.coord[3], 0.25) and near(hf.top.l.coord[4], 0.25 + 0.25 * 3 / 19) and near(hf.top.h, 3 * k)
+        and hf.top.l.point[1] == "BOTTOMLEFT")
+    chk("prd6: the rims in three: the art's end caps (0..11, 118..132) and a MIDDLE from the mark-free span 31..50 (no tick repeats)",
+        near(hf.top.l.coord[2], 0.5 + 0.5 * 11 / 132) and near(hf.top.r.coord[1], 0.5 + 0.5 * 118 / 132)
+        and near(hf.top.m.coord[1], 0.5 + 0.5 * 31 / 132) and near(hf.top.m.coord[2], 0.5 + 0.5 * 50 / 132)
+        and near(hf.top.l.w, 11 * k) and near(hf.top.r.w, 14 * k) and near(hf.bot.m.coord[1], 0.5 + 0.5 * 31 / 132))
+    chk("prd5: the bottom lip rows 11..19, 8 texels; the sides: 3 texels left, 7 right, beside the opening only",
+        near(hf.bot.l.coord[3], 0.25 + 0.25 * 11 / 19) and near(hf.bot.h, 8 * k) and near(hf.left.w, 3 * k) and near(hf.right.w, 7 * k)
+        and near(hf.left.coord[2], 0.5 + 0.5 * 3 / 132) and near(hf.right.coord[1], 0.5 + 0.5 * 125 / 132))
+    chk("prd5: one texel scale for both bars (the power bar's lip the same thickness)", near(P.pwFrame.top.h, 3 * k) and near(P.pwFrame.bot.h, 8 * k))
+    chk("prd5: the inner shadow over the opening's top", hf.shade is not None)
     chk("nothing of the game's written (no CVar)", Lg.CVAR_WRITES == 0)
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
