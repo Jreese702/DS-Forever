@@ -176,8 +176,11 @@ class ShippedRouteTest {
     }
 
     @Test fun aNearGoalIsTheGroundsOwnWalk() {
-        val r = ShippedRoute.plan(straightRoad(), flat, null, doubleArrayOf(100.0, 300.0), doubleArrayOf(100.0, 400.0))
+        val r = ShippedRoute.plan(straightRoad(), flat, null, doubleArrayOf(100.0, 300.0), doubleArrayOf(100.0, 350.0))
         assertTrue(r.reached); assertEquals(2, r.pts.size)
+        // parity A: past DIRECT_MAX_YD (60) the living go by the net - the ground's walk read level over faces the 25 yd grid cannot see
+        val far = ShippedRoute.plan(straightRoad(), flat, null, doubleArrayOf(100.0, 300.0), doubleArrayOf(100.0, 400.0))
+        assertTrue(far.reached); assertTrue(far.pts.size > 2)
     }
 
     // ---------------------------------------------------------------- one graph: the net, its joins and the roadmap

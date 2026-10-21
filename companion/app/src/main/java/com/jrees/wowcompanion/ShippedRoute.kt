@@ -34,7 +34,12 @@ object ShippedRoute {
     const val ATTACH_CANDIDATES = 6        // the nearest ways tried at each end (the long attach)
     const val ATTACH_WALL = 12f            // the attach leg's wall: a steep bank (Terrain.legFactor at 45 degrees) or worse
     const val DOOR_YD = 15.0               // an end standing in a wall (in a building): walls this near it are passed (its door)
-    const val DIRECT_MAX_YD = 120.0        // the ground's own walk straight to a goal this near, the graph's rival
+    // the ground's own walk straight to a goal this near, the graph's rival. All-zones parity A (2026-10-21): the walk's three
+    // crossings (Stormwind B, D: a 90 degree curb; Dun Morogh I: 62 degrees over 8.5 yd) were 73-115 yd walks over faces the 25 yd
+    // slope grid reads level; at 60 yd every one takes the net, and no zone of six lost a safe route
+    const val DIRECT_MAX_YD = 60.0
+    const val GHOST_DIRECT_MAX_YD = 120.0  // a ghost's (CorpseRoute: no danger, walks on water, drops down): the old reach
+    const val DIRECT_WALK_YD = 180.0       // the near-goal walk's own yards at most (round a wall)
     const val NET_FAVOUR = 1.3             // a roadmap edge's yard against a road's (the harness's NET_FAVOUR)
     const val SAMPLE_YD = 10.0             // the character's danger read along a way this often
     const val AVOID_FACTOR = 6.0           // an AVOID way's yard
@@ -425,7 +430,7 @@ object ShippedRoute {
             join(from, start, true, "the player")?.let { return it to null }
             join(goal, end, false, "the goal")?.let { return it to null }
             // the ground's own walk straight there, the graph's rival for a goal this near
-            if (hypot(goal[0] - from[0], goal[1] - from[1]) <= DIRECT_MAX_YD)
+            if (hypot(goal[0] - from[0], goal[1] - from[1]) <= if (ghost) GHOST_DIRECT_MAX_YD else DIRECT_MAX_YD)
                 attacher.direct(view, from, goal)?.let { arc(start, end, it.cost * SafePath.DIRECT, it.pts.drop(1)) }
             // Dijkstra
             val dist = HashMap<Int, Double>(); val prev = HashMap<Int, Pair<Int, Arc>>()
@@ -502,7 +507,7 @@ object ShippedRoute {
         /** THE NEAR-GOAL WALK, the graph's rival for a goal within [DIRECT_MAX_YD]: the ground's own walk from [from] to [to] (its
          *  points from first, to last; the router adds SafePath.DIRECT), null = none (the graph's way only). U1's default: [Leg] */
         fun direct(v: AttachView, from: DoubleArray, to: DoubleArray): Join? =
-            Leg(v.ground, v.danger, v.k, from, DIRECT_MAX_YD * 1.5).to(to)?.let { Join(null, -1, 0.0, to, it.pts, it.cost, it.yd) }
+            Leg(v.ground, v.danger, v.k, from, DIRECT_WALK_YD).to(to)?.let { Join(null, -1, 0.0, to, it.pts, it.cost, it.yd) }
     }
 
     /** the attach as built by U1: the nearest nodes within [SNAP_YD] by the ground's walk ([Leg]); with none, a walk onto each of the
