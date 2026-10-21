@@ -229,6 +229,7 @@ object ShippedSnap {
                               reach: Double, walkYd: Double): Result {
         val fl: ((Double, Double) -> Boolean)? = if (g.deckZ != null) { x, y -> ShippedNet.Walk.onFloor(g, x, y) } else null
         val view = View(p, ground, view0.danger, view0.k, floor = fl)
+        roomsOn(g, ground)
         val deep = ground.deepOff(fl)
         val whyNot = HashMap<String, Int>()
         fun clear(a: DoubleArray, b: DoubleArray): View.Line? {
@@ -259,6 +260,11 @@ object ShippedSnap {
         return Result(lead + rest, "snapped ${lead.first().yd.toInt()} yd ${if (lead.first().straight) "straight" else "round"} on the shipped lattice " +
             "(${lead.size} leading of ${near.size} nodes within ${reach.toInt()} yd; $walled lines walled)")
     }
+    /** the shipped lattice's rooms ([Climb.Grid.solid]: no straight line longer than SOLID_LINE_YD through one, its legs' straightening
+     *  too) - the device's own room outlines ([Ground.room]), as the harness's lattice carries its own (the walk-grid parity's Menethil
+     *  docks: the legs straightened through the buildings, then refused) */
+    private fun roomsOn(g: Climb.Grid, ground: Ground) { val r = ground.room ?: return; if (g.solid !== r) g.solid = r }
+
     /** a lattice leg: [pts] from the end to the node, [yd], [cost] (the device's yards), [steep] its dearest terrain */
     private class LatLeg(val pts: List<DoubleArray>, val yd: Double, val cost: Double, val steep: Float)
     /**
@@ -351,6 +357,7 @@ object ShippedSnap {
             // the shipped lattice: its own rule, straight when it passes, else its leg (deep water a wall)
             val fl: ((Double, Double) -> Boolean)? = if (lattice.deckZ != null) { x, y -> ShippedNet.Walk.onFloor(lattice, x, y) } else null
             val view = View(from, ground, danger, k, floor = fl)
+            roomsOn(lattice, ground)
             fun clear(a: DoubleArray, b: DoubleArray) = view.line(a, b, terrain = false, rooms = hypot(b[0] - a[0], b[1] - a[1]) > Climb.SOLID_LINE_YD)
                 .takeIf { it.why == null && Climb.walkable(lattice, a, b) }
             clear(from, to)?.let { return Snap(-1, listOf(from, to), hypot(to[0] - from[0], to[1] - from[1]), it.cost, true) }
