@@ -1096,7 +1096,7 @@ do
             pdz = C.wm and C.wm.pinDz or nil,
             more = type(WC.routeWp) == "table" and type(WC.routeWp.more) == "table" and #WC.routeWp.more or 0,
             prd = (type(WC.prd) == "table" and WC.prd.f) and { a = math.floor((WC.prd.alpha or 0) * 100 + 0.5), why = WC.prd.why,
-                src = WC.prd.src, y = WC.prd.y, nb = WC.prd.nb, nd = WC.prd.nd, pt = WC.prd.ptok, cbad = WC.prd.curveBad } or nil, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
+                src = WC.prd.src, y = WC.prd.y, nb = WC.prd.nb, nd = WC.prd.nd, pt = WC.prd.ptok, cbad = WC.prd.curveBad, ab = WC.prd.ab } or nil, tol = C.cam.tol and math.floor(math.deg(C.cam.tol) + 0.5) or nil,
             lx = C.cam.lx and math.floor(C.cam.lx * 100 + 0.5) / 100 or nil, ly = C.cam.ly and math.floor(C.cam.ly * 100 + 0.5) / 100 or nil,
             ferr = C.cam.ferr and math.floor(math.deg(C.cam.ferr) + 0.5) or nil,
             gp = C.cam.gp, from = C.cam.from, rx = C.cam.rx and math.floor(C.cam.rx * 100 + 0.5) / 100 or nil,
@@ -2172,8 +2172,15 @@ end
 --   from the bar's left edge; HARMFUL with a duration, at most DEBUFF_MAX, from its right edge in the debuff type's colour (the
 --   game's UI-Debuff-Overlays border); each with the game's radial swipe (a Cooldown, reversed: the time gone darkens) and the
 --   seconds left under it, gold under 5. Auras are plain on Forever (ShouldAurasBeSecret false).
-WC.prd = { V = "prd1", Y_DEF = -250, Y_MIN = -420, Y_MAX = -120, STEP = 10, W = 236, HH = 16, PH = 8, BAR_GAP = 2, ICON = 34, IGAP = 6,
-           ROW_GAP = 8, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.15, FULL = 0.99, POLL_S = 0.2, AURA_S = 0.5,
+-- prd2 (the user's pick on the v4 renders, "N: nameplate-thin"; v3: "Still looks glued on ... they don't look like fit in the fram"):
+-- separate thin bars as the game's own nameplates are, each with a crisp 1 px border ON its edge, the PlayerFrame's own health /
+-- power fills (their colour and gloss: no tint), the empty part dark and see-through, a faint soft shadow under the group (our own
+-- compass band texture) and no panel; the whole at REST alpha; the auras smaller with the cooldown manager's rounded mask, the game's
+-- debuff type borders, and the BuffFrame's timers ("8 s", gold; white under a minute). And (test45, "buffs did not show for my own
+-- heals"): the aura row shows whenever the BAR does, not only in combat; the probe counts what the scan saw and why any was left
+-- out (prd.ab); an aura whose duration is secret still shows (its swipe from the secrets, no seconds).
+WC.prd = { V = "prd2", Y_DEF = -250, Y_MIN = -420, Y_MAX = -120, STEP = 10, W = 200, HH = 11, PH = 5, BAR_GAP = 3, ICON = 24, IGAP = 4,
+           ROW_GAP = 6, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.15, FULL = 0.99, POLL_S = 0.2, AURA_S = 0.5,
            alpha = 0, shown = false, why = "off" }
 -- (the names Hub's hub15 row reads: y, on, min, max, step, def, nudge)
 WC.prd.min, WC.prd.max, WC.prd.step, WC.prd.def = WC.prd.Y_MIN, WC.prd.Y_MAX, WC.prd.STEP, WC.prd.Y_DEF
@@ -2219,27 +2226,39 @@ do
     local function edges(parent, f)
         for _, s in ipairs({ { "TOPLEFT", "TOPRIGHT", 0, 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", 0, -1 } }) do
             local t = parent:CreateTexture(nil, "OVERLAY")
-            t:SetColorTexture(0, 0, 0, 0.92)
+            t:SetColorTexture(0, 0, 0, 1)
             t:SetPoint(s[1], f, s[1], -1, s[4])
             t:SetPoint(s[2], f, s[2], 1, s[4])
             t:SetHeight(1)
         end
         for _, s in ipairs({ { "TOPLEFT", "BOTTOMLEFT", -1 }, { "TOPRIGHT", "BOTTOMRIGHT", 1 } }) do
             local t = parent:CreateTexture(nil, "OVERLAY")
-            t:SetColorTexture(0, 0, 0, 0.92)
+            t:SetColorTexture(0, 0, 0, 1)
             t:SetPoint(s[1], f, s[1], s[3], 0)
             t:SetPoint(s[2], f, s[2], s[3], 0)
             t:SetWidth(1)
         end
     end
+    -- the PlayerFrame's own fills by the power's token (their colour and gloss in the art)
+    P.FILL = { HEALTH = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health", MANA = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Mana",
+               RAGE = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Rage", ENERGY = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Energy",
+               FOCUS = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Focus", RUNIC_POWER = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-RunicPower" }
+    -- the bar's fill: the game's atlas for this token (true), else the plain status bar to be tinted (false)
+    local function setFill(b, tok)
+        local ok = P.FILL[tok] and pcall(function() b.fill:SetAtlas(P.FILL[tok]) end)
+        if not ok then pcall(function() b.fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar") end) end
+        b.fillTok = ok and tok or nil
+        return ok and true or false
+    end
+    P.setFill = setFill
     local function bar(parent, h)
         local b = CreateFrame("StatusBar", nil, parent)
         b:SetSize(u(P.W), u(h))
         local bg = b:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints(b)
-        bg:SetColorTexture(0, 0, 0, 0.75)
+        bg:SetColorTexture(0, 0, 0, 0.59)                       -- the empty part: dark, the world through it a little
         local fill = b:CreateTexture(nil, "ARTWORK")
-        if not pcall(function() fill:SetAtlas("nameplates-bar-fill") end) then fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar") end
+        b.fill = fill
         b:SetStatusBarTexture(fill)
         b:SetMinMaxValues(0, 1)
         b:SetValue(1)
@@ -2253,18 +2272,33 @@ do
         o.tx = o.f:CreateTexture(nil, "ARTWORK")
         o.tx:SetAllPoints(o.f)
         o.tx:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        -- the cooldown manager's rounded icon (its mask and overlay), when the client has them
+        pcall(function()
+            local m = o.f:CreateMaskTexture()
+            m:SetAtlas("UI-HUD-CoolDownManager-Mask")
+            m:SetAllPoints(o.f)
+            o.tx:AddMaskTexture(m)
+            o.mask = m
+        end)
+        pcall(function()
+            local ov = o.f:CreateTexture(nil, "OVERLAY", nil, 1)
+            ov:SetAtlas("UI-HUD-CoolDownManager-IconOverlay-c60")
+            ov:SetPoint("CENTER", o.f, "CENTER", 0, 0)
+            ov:SetSize(u(P.ICON * 86 / 64), u(P.ICON * 86 / 64))
+            o.ov = ov
+        end)
         o.cd = CreateFrame("Cooldown", nil, o.f, "CooldownFrameTemplate")
         o.cd:SetAllPoints(o.f)
         pcall(function() o.cd:SetReverse(true) end)                -- the time GONE darkens (the aura's look)
         pcall(function() o.cd:SetDrawEdge(true) end)
         pcall(function() o.cd:SetHideCountdownNumbers(true) end)    -- our own seconds under it
-        o.bd = o.f:CreateTexture(nil, "OVERLAY")
+        o.bd = o.f:CreateTexture(nil, "OVERLAY", nil, 2)
         o.bd:SetTexture("Interface\\Buttons\\UI-Debuff-Overlays")
         o.bd:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
-        o.bd:SetPoint("TOPLEFT", o.f, "TOPLEFT", -u(2), u(2))
-        o.bd:SetPoint("BOTTOMRIGHT", o.f, "BOTTOMRIGHT", u(2), -u(2))
+        o.bd:SetPoint("TOPLEFT", o.f, "TOPLEFT", -u(4), u(4))
+        o.bd:SetPoint("BOTTOMRIGHT", o.f, "BOTTOMRIGHT", u(4), -u(4))
         o.t = o.f:CreateFontString(nil, "OVERLAY")
-        o.t:SetFont("Fonts\\FRIZQT__.TTF", u(15), "OUTLINE")
+        o.t:SetFont("Fonts\\FRIZQT__.TTF", u(13), "OUTLINE")
         o.t:SetPoint("TOP", o.f, "BOTTOM", 0, -u(2))
         o.n = o.f:CreateFontString(nil, "OVERLAY")
         o.n:SetFont("Fonts\\FRIZQT__.TTF", u(13), "OUTLINE")
@@ -2287,9 +2321,16 @@ do
         g:EnableMouse(false)
         P.g = g
         f = g
+        -- a faint soft shadow under the bars (our own compass band: a black band fading to every edge), no panel
+        local sh = f:CreateTexture(nil, "BACKGROUND", nil, -8)
+        sh:SetTexture("Interface\\AddOns\\WowCompanion\\Media\\compass_band")
+        sh:SetPoint("TOPLEFT", f, "TOPLEFT", -u(14), u(8))
+        sh:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", u(14), -u(P.HH + P.BAR_GAP + P.PH + 12))
+        sh:SetAlpha(0.9)
+        P.shadow = sh
         P.hp = bar(f, P.HH)
         P.hp:SetPoint("TOP", f, "TOP", 0, 0)
-        pcall(function() P.hp:SetStatusBarColor(0, 0.8, 0) end)
+        if not setFill(P.hp, "HEALTH") then pcall(function() P.hp:SetStatusBarColor(0, 0.8, 0) end) end
         P.pw = bar(f, P.PH)
         P.pw:SetPoint("TOP", P.hp, "BOTTOM", 0, -u(P.BAR_GAP))
         P.buffs, P.debuffs = {}, {}
@@ -2316,7 +2357,9 @@ do
             local r, g, b
             if type(c) == "table" and num(c.r) then r, g, b = c.r, c.g, c.b
             else local cc = P.POWER[tok] or P.POWER.MANA; r, g, b = cc[1], cc[2], cc[3] end
-            pcall(function() P.pw:SetStatusBarColor(r, g, b) end)
+            -- the game's own fill for this power (its colour in the art), else the plain bar in the power's colour
+            if setFill(P.pw, tok) then pcall(function() P.pw:SetStatusBarColor(1, 1, 1) end)
+            else pcall(function() P.pw:SetStatusBarColor(r, g, b) end) end
             P.ptok = tok
         end
         pcall(function() P.pw:SetMinMaxValues(0, UnitPowerMax("player", pt)) end)
@@ -2334,30 +2377,47 @@ do
         if ok and name then return { name = name, icon = ic, applications = count, dispelName = dtype, duration = dur, expirationTime = exp } end
     end
     -- the auras worth showing: { icon, dur, exp, n, kind (debuffs) }
+    local function secret(v) return type(issecretvalue) == "function" and issecretvalue(v) or false end
     function P.auras()
-        local b, d = {}, {}
+        local b, d, sb, sd = {}, {}, {}, {}
+        local ab = { seen = 0, sec = 0, long = 0, nodur = 0, hseen = 0 }
         for i = 1, 40 do
             local a = auraAt(i, "HELPFUL")
             if type(a) ~= "table" then break end
+            ab.seen = ab.seen + 1
             local dur, exp = num(a.duration), num(a.expirationTime)
-            if dur and exp and dur > 0 and dur <= P.BUFF_DUR and #b < P.BUFF_MAX then
+            if secret(a.duration) or secret(a.expirationTime) then
+                ab.sec = ab.sec + 1                                          -- (c) shown, after the plain ones; no seconds
+                sb[#sb + 1] = { icon = a.icon, sdur = a.duration, sexp = a.expirationTime, secret = true }
+            elseif not (dur and exp and dur > 0) then ab.nodur = ab.nodur + 1
+            elseif dur > P.BUFF_DUR then ab.long = ab.long + 1
+            elseif #b < P.BUFF_MAX then
                 b[#b + 1] = { icon = a.icon, dur = dur, exp = exp, n = num(a.applications) }
             end
         end
+        for _, a in ipairs(sb) do if #b < P.BUFF_MAX then b[#b + 1] = a end end
         for i = 1, 40 do
             local a = auraAt(i, "HARMFUL")
             if type(a) ~= "table" then break end
+            ab.hseen = ab.hseen + 1
             local dur, exp = num(a.duration), num(a.expirationTime)
-            if dur and exp and dur > 0 and #d < P.DEBUFF_MAX then
-                d[#d + 1] = { icon = a.icon, dur = dur, exp = exp, n = num(a.applications), kind = type(a.dispelName) == "string" and a.dispelName or "none" }
+            local kind = (type(a.dispelName) == "string" and not secret(a.dispelName) and a.dispelName ~= "") and a.dispelName or "none"
+            if secret(a.duration) or secret(a.expirationTime) then
+                sd[#sd + 1] = { icon = a.icon, sdur = a.duration, sexp = a.expirationTime, secret = true, kind = kind }
+            elseif dur and exp and dur > 0 and #d < P.DEBUFF_MAX then
+                d[#d + 1] = { icon = a.icon, dur = dur, exp = exp, n = num(a.applications), kind = kind }
             end
         end
+        for _, a in ipairs(sd) do if #d < P.DEBUFF_MAX then d[#d + 1] = a end end
+        P.ab = ab
         return b, d
     end
+    -- the BuffFrame's own way: "2 m" / "8 s"
     local function secs(left)
-        if left >= 60 then return math.ceil(left / 60) .. "m" end
-        return tostring(math.max(0, math.ceil(left)))
+        if left >= 60 then return math.ceil(left / 60) .. " m" end
+        return math.max(0, math.ceil(left)) .. " s"
     end
+    P.DEBUFF_ATLAS = { Magic = "magic", Curse = "curse", Disease = "disease", Poison = "poison", Bleed = "bleed", none = "default" }
     function P.drawAuras(show)
         local b, d = {}, {}
         if show then
@@ -2372,7 +2432,7 @@ do
         local top = -u(P.HH + P.BAR_GAP + P.PH + P.ROW_GAP)
         -- one row when both fit across the bar, else the debuffs on a second row (right aligned)
         local fits = (#b + #d) * (P.ICON + P.IGAP) - P.IGAP <= P.W
-        local dTop = fits and top or top - u(P.ICON + 22)
+        local dTop = fits and top or top - u(P.ICON + 18)
         local t = now()
         local function put(list, objs, fromRight, y)
             for i, o in ipairs(objs) do
@@ -2382,26 +2442,46 @@ do
                     if fromRight then o.f:SetPoint("TOPRIGHT", P.f, "TOPRIGHT", -(i - 1) * step, y)
                     else o.f:SetPoint("TOPLEFT", P.f, "TOPLEFT", (i - 1) * step, y) end
                     if o.icon ~= a.icon then pcall(function() o.tx:SetTexture(a.icon) end); o.icon = a.icon end
-                    if o.exp ~= a.exp or o.dur ~= a.dur then
+                    if a.secret then
+                        -- (c) the secret times straight to the swipe (a widget setter takes them), no arithmetic, no seconds
+                        if o.sexp ~= a.sexp then
+                            if not pcall(function() o.cd:SetCooldownFromExpirationTime(a.sexp, a.sdur) end) then o.cd:Clear() end
+                            o.sexp, o.exp, o.dur = a.sexp, nil, nil
+                        end
+                    elseif o.exp ~= a.exp or o.dur ~= a.dur then
                         pcall(function() o.cd:SetCooldown(a.exp - a.dur, a.dur) end)
-                        o.exp, o.dur = a.exp, a.dur
+                        o.exp, o.dur, o.sexp = a.exp, a.dur, nil
                     end
                     if a.kind then
-                        local c = (type(DebuffTypeColor) == "table" and DebuffTypeColor[a.kind]) or nil
-                        local r, g, bb
-                        if type(c) == "table" and num(c.r) then r, g, bb = c.r, c.g, c.b else local cc = P.DEBUFF[a.kind] or P.DEBUFF.none; r, g, bb = cc[1], cc[2], cc[3] end
-                        o.bd:SetVertexColor(r, g, bb)
+                        -- the game's own type border (UI-Debuff-Border-<type>-NoIcon), else the old overlay in the type's colour
+                        local atl = "UI-Debuff-Border-" .. (P.DEBUFF_ATLAS[a.kind] or "default") .. "-NoIcon"
+                        if o.bdAtlas ~= atl then
+                            if pcall(function() o.bd:SetAtlas(atl) end) then
+                                o.bd:SetTexCoord(0, 1, 0, 1); o.bd:SetVertexColor(1, 1, 1)
+                            else
+                                local c = (type(DebuffTypeColor) == "table" and DebuffTypeColor[a.kind]) or nil
+                                local r, g, bb
+                                if type(c) == "table" and num(c.r) then r, g, bb = c.r, c.g, c.b else local cc = P.DEBUFF[a.kind] or P.DEBUFF.none; r, g, bb = cc[1], cc[2], cc[3] end
+                                o.bd:SetVertexColor(r, g, bb)
+                            end
+                            o.bdAtlas = atl
+                        end
                         o.bd:Show()
                     else
                         o.bd:Hide()
                     end
-                    local left = a.exp - t
-                    o.t:SetText(secs(left))
-                    if left < 5 then o.t:SetTextColor(1, 0.82, 0) else o.t:SetTextColor(1, 1, 1) end
+                    if a.secret then
+                        o.t:SetText("")
+                    else
+                        local left = a.exp - t
+                        o.t:SetText(secs(left))
+                        -- the BuffFrame's colours: gold, white under a minute
+                        if left < 60 then o.t:SetTextColor(1, 1, 1) else o.t:SetTextColor(1, 0.82, 0) end
+                    end
                     o.n:SetText((a.n and a.n > 1) and tostring(a.n) or "")
                     if not o.f:IsShown() then o.f:Show() end
                 elseif o.f:IsShown() then
-                    o.f:Hide(); o.icon, o.exp, o.dur = nil, nil, nil
+                    o.f:Hide(); o.icon, o.exp, o.dur, o.sexp = nil, nil, nil, nil
                 end
             end
         end
@@ -2491,10 +2571,10 @@ do
         P.why = fight and "fight" or (src == "curve" and "curve") or (hurt and "hurt") or (P.alpha > 0 and "fading") or "full"
         if P.alpha > 0 then
             if not P.f:IsShown() then P.f:Show() end
-            P.f:SetAlpha(P.alpha)
+            P.f:SetAlpha(P.alpha * P.REST)
             P.pollAt = P.pollAt or 0
             if t - P.pollAt >= P.POLL_S then P.pollAt = t; P.values() end
-            P.drawAuras(fight)
+            P.drawAuras(true)                                -- (a) test45: whenever the bar shows (a HoT after the fight too)
         elseif P.f:IsShown() then
             P.f:SetAlpha(0); P.f:Hide()
         end

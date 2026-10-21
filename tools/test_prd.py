@@ -51,6 +51,11 @@ function Region:SetDrawEdge(e) self.edge = e end
 function Region:SetHideCountdownNumbers(h) self.nonum = h end
 function Region:RegisterUnitEvent(e, u) self.events = self.events or {}; self.events[e] = u end
 function Region:GetAlpha() return self.alpha or 1 end
+function Region:SetTextColor(r, g, b, a) self.tcolor = { r, g, b } end
+function Region:CreateMaskTexture() return CreateFrame("Texture") end
+function Region:AddMaskTexture(m) self.masked = m end
+function Region:Clear() self.cdStart = nil end
+function Region:SetCooldownFromExpirationTime(e, d) self.cdExp, self.cdDur = e, d end
 '''
 
 
@@ -108,16 +113,20 @@ def main():
     chk("starting combat: shown at once (alpha %.2f, %s)" % (P.alpha, P.why), P.alpha == 1 and P.f.shown is True and P.why == "fight")
     chk("health FED: the secret value itself to SetValue, the plain max to SetMinMaxValues",
         Lg.issecretvalue(P.hp.value) and P.hp.max == 1000 and P.hp.min == 0)
-    chk("power FED the same way, mana's colour (0, 0, 1)", Lg.issecretvalue(P.pw.value) and P.pw.max == 100
-        and list(P.pw.color.values()) == [0, 0, 1])
+    chk("power FED the same way, the PlayerFrame's own mana fill (its colour in the art: no tint)", Lg.issecretvalue(P.pw.value)
+        and P.pw.max == 100 and P.pw.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Mana" and list(P.pw.color.values()) == [1, 1, 1])
+    chk("prd2: health the PlayerFrame's own fill, 200 x 11 (spec px), a crisp border, the empty part see-through",
+        P.hp.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health" and abs(P.hp.w - 200 * 768 / 1080) < 1e-6
+        and abs(P.hp.h - 11 * 768 / 1080) < 1e-6 and P.shadow.tex.endswith("compass_band"))
     ME.ptype, ME.tok = 1, "RAGE"
     fire("UNIT_DISPLAYPOWER", "player")
     run(0.3)
-    chk("a warrior's rage: red (the game's PowerBarColor)", list(P.pw.color.values()) == [1, 0, 0])
+    chk("a warrior's rage: its own fill", P.pw.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Rage")
     ME.ptype, ME.tok = 3, "ENERGY"; run(0.3)
-    chk("energy: yellow", list(P.pw.color.values()) == [1, 1, 0])
-    ME.ptype, ME.tok = 2, "FOCUS"; Lg.PowerBarColor.FOCUS = None; run(0.3)
-    chk("focus with no game colour: our own orange (1, 0.5, 0.25)", list(P.pw.color.values()) == [1, 0.5, 0.25])
+    chk("energy: its own fill", P.pw.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Energy")
+    ME.ptype, ME.tok = 4, "HAPPINESS"; run(0.3)
+    chk("a power with no fill of its own: the plain bar in the power's colour (0, 1, 1)", list(P.pw.color.values()) == [0, 1, 1]
+        and P.pw.fill.tex == "Interface\\TargetingFrame\\UI-StatusBar")
     ME.ptype, ME.tok = 0, "MANA"; run(0.3)
 
     # the auras, in combat
@@ -132,14 +141,15 @@ def main():
         P.nb == 3 and b1.f.shown and b2.f.shown and b3.f.shown and not b4.f.shown and b1.icon == 135953 and b3.icon == 132333)
     chk("the swipe: the game's Cooldown, reversed (the time gone darkens), from the aura's start for its duration",
         b1.cd.reverse is True and abs(b1.cd.cdStart - (G.t - 0.1 - 6)) < 0.05 and b1.cd.cdDur == 15 and b1.cd.template == "CooldownFrameTemplate")
-    chk("the seconds under each: '%s', '%s' (gold under 5), '%s'" % (b1.t.text, b2.t.text, b3.t.text),
-        b1.t.text == "9" and b2.t.text == "4" and b3.t.text == "2m")
+    chk("the BuffFrame's timers: '%s', '%s', '%s' (gold, white under a minute)" % (b1.t.text, b2.t.text, b3.t.text),
+        b1.t.text == "9 s" and b2.t.text == "4 s" and b3.t.text == "2 m" and list(b1.t.tcolor.values()) == [1, 1, 1]
+        and list(b3.t.tcolor.values()) == [1, 0.82, 0])
     chk("the debuff with a duration only, from the right edge, in its type's colour, its stack count (%s)" % P.debuffs[1].n.text,
         P.nd == 1 and P.debuffs[1].f.shown and P.debuffs[1].bd.shown is True and P.debuffs[1].f.point[1] == "TOPRIGHT"
         and P.debuffs[1].n.text == "2" and not P.debuffs[2].f.shown)
     chk("a buff wears no debuff border", b1.bd.shown is False)
     run(1.0)
-    chk("the seconds run down (Renew %s)" % b1.t.text, b1.t.text == "8")
+    chk("the seconds run down (Renew %s)" % b1.t.text, b1.t.text == "8 s")
     # crowded: 6 buffs + 4 debuffs do not fit across 236: the debuffs take a second row
     ME.buffs = lst(*[aura(1000 + i, 30, 20) for i in range(8)])
     ME.debuffs = lst(*[aura(2000 + i, 30, 20, "none") for i in range(5)])
@@ -155,7 +165,7 @@ def main():
     ME.fight = False
     fire("PLAYER_REGEN_ENABLED")
     run(0.2)
-    chk("out of combat: the aura row goes at once", P.nb == 0 and not P.buffs[1].f.shown)
+    chk("(a) out of combat the row STAYS while the bar shows (test45: a HoT after the fight)", P.nb == 6 and P.buffs[1].f.shown)
     run(1.6)
     chk("full and out of combat: held 2 s (alpha %.2f at 1.8 s)" % P.alpha, P.alpha == 1)
     run(1.0)
@@ -165,7 +175,8 @@ def main():
     # hurt out of combat (the model below 99 %): shown, no aura row; full again: fades
     Lg.HPM.hp = 700
     run(0.3)
-    chk("not at full health (the model, %s): shown out of combat, no auras" % P.src, P.alpha == 1 and P.why == "hurt" and P.src == "model" and P.nb == 0)
+    chk("not at full health (the model, %s): shown out of combat, its auras with it" % P.src, P.alpha == 1 and P.why == "hurt" and P.src == "model" and P.nb == 6)
+    chk("(b) the probe: %s HELPFUL seen" % (P.ab and P.ab.seen), P.ab is not None and P.ab.seen == 8 and P.ab.sec == 0 and P.ab.long == 0)
     Lg.HPM.hp = 995
     run(4)
     chk("99.5 % counts as full: faded again", P.alpha == 0)
@@ -247,6 +258,16 @@ def main():
     run(0.3)
     chk("SetAlpha refuses the secret: the curve is off (%s), the model's read shows it (%s, %s)" % (P.curveBad, P.src, P.why),
         P.curveBad is not None and "secret refused" in P.curveBad and P.src == "model" and P.why == "hurt" and P.g.alpha == 1)
+    # (c) an aura whose times are secret: still shown, its swipe from the secrets, no seconds; the probe counts it
+    fire("PLAYER_REGEN_DISABLED"); ME.fight = True
+    ME.buffs = lst(aura(135953, 15, 9), L.table_from({"icon": 136081, "duration": L.eval("setmetatable({ n = 12 }, { secret = true })"),
+                                                     "expirationTime": L.eval("setmetatable({ n = 2000 }, { secret = true })")}),
+                   aura(135987, 1800, 1500), L.table_from({"icon": 1}))
+    fire("UNIT_AURA", "player"); run(0.2)
+    s2 = P.buffs[2]
+    chk("(c) a secret duration: shown after the plain ones, no seconds, the swipe handed the secrets (%s)" % P.ab.sec,
+        P.nb == 2 and s2.f.shown and s2.t.text == "" and Lg.issecretvalue(s2.cd.cdExp) and P.ab.sec == 1 and P.ab.long == 1 and P.ab.nodur == 1)
+    chk("prd2: the group at its rest alpha (%.2f)" % P.f.alpha, abs(P.f.alpha - 0.92) < 1e-6)
     chk("nothing of the game's written (no CVar)", Lg.CVAR_WRITES == 0)
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
