@@ -18,13 +18,23 @@ class RouteWaypoint {
     private var noneSince = Long.MIN_VALUE
     private var sentMore: List<DoubleArray> = emptyList(); private var moreAt = Long.MIN_VALUE / 2
     private var wasRouting = false
+    /** the quest the route is for at the last look, and whether a switch to another quest still waits for its SET / CLEAR */
+    private var forQuest = 0
+    private var switched = false
 
     /**
      * One look at the route at [nowMs]: [want] = the pin's place on the player's map (0..1), null = no pin; [more] = the checkpoints
-     * after it (cp19: the world marker draws them too; the first [MORE_MAX] go). Returns the row's columns to tap, in order (empty =
-     * nothing to send).
+     * after it (cp19: the world marker draws them too; the first [MORE_MAX] go); [quest] = the focused quest the route is for (0 =
+     * unknown / none). Returns the row's columns to tap, in order (empty = nothing to send).
+     *
+     * A SWITCH TO ANOTHER QUEST (fix/focus-latency, test50: "it just took like 6 seconds"): while the pin stands, the add-on's focus
+     * only renames the quest the pin stands for (Quests.lua OPS.track), so the game's arrow keeps pointing at the OLD quest's way until
+     * this moves the pin or clears it. The pace ([SET_EVERY_MS]) and the grace ([CLEAR_GRACE_MS]) are there against a route that
+     * churns or flickers, not against the player's own choice: the first look at a new quest's route SETs (or CLEARs, giving the game's
+     * super-track to the new quest) at once.
      */
-    fun tick(want: DoubleArray?, nowMs: Long, more: List<DoubleArray> = emptyList(), routing: Boolean = false): List<Int> {
+    fun tick(want: DoubleArray?, nowMs: Long, more: List<DoubleArray> = emptyList(), routing: Boolean = false, quest: Int = 0): List<Int> {
+        if (quest > 0 && quest != forQuest) { if (forQuest != 0) switched = true; forQuest = quest }
         // ag5 (test45: the app routed for minutes with no pin up, and the add-on's live aggro layer never started): while the app ROUTES
         // the focused quest, a KEEP every KEEP_EVERY_MS even with no pin (Map.lua: a KEEP within its KEEP_S = routing); one CLEAR when
         // the routing stops with no pin up
@@ -34,10 +44,12 @@ class RouteWaypoint {
             return emptyList()
         }
         if (want == null) {
-            if (!active) return routeKeep()
+            if (!active) { switched = false; return routeKeep() }
             // test48: not cleared at the first empty look (a route flickering for a moment); only after CLEAR_GRACE_MS of none
+            // (a new quest's direct route: at once, see above)
             if (noneSince == Long.MIN_VALUE) noneSince = nowMs
-            if (nowMs - noneSince < CLEAR_GRACE_MS) return emptyList()
+            if (!switched && nowMs - noneSince < CLEAR_GRACE_MS) return emptyList()
+            switched = false
             active = false; sentX = Double.NaN; sentY = Double.NaN; noneSince = Long.MIN_VALUE; sentMore = emptyList()
             // (the CLEAR ends the add-on's routing too: still routing, the KEEP right behind it)
             if (routing) { keepAt = nowMs; return listOf(CLEAR, KEEP) }
@@ -48,12 +60,14 @@ class RouteWaypoint {
         if (nowMs < refusedUntil) return routeKeep()
         val further = more.take(MORE_MAX)
         val moved = !active || abs(want[0] - sentX) > MOVE || abs(want[1] - sentY) > MOVE
-        if (moved && nowMs - setAt >= SET_EVERY_MS) {
+        if (moved && (switched || nowMs - setAt >= SET_EVERY_MS)) {
+            switched = false
             active = true; sentX = want[0]; sentY = want[1]; setAt = nowMs; keepAt = nowMs
             sentMore = further; moreAt = nowMs
             // (cp20: the pin's own ground height after its x / y, as the further flags'; a SET drops the old flags in the add-on)
             return listOf(SET) + digits(want[0]) + digits(want[1]) + zDigits(want.getOrElse(2) { Double.NaN }) + moreCols(further)
         }
+        if (!moved) switched = false                     // the new quest's pin stands where the old one did: nothing owed
         // the pin stays, the checkpoints after it changed (a new leg): dropped and sent again, at the pin's own pace
         if (active && !moved && changed(further, sentMore) && nowMs - moreAt >= SET_EVERY_MS) {
             sentMore = further; moreAt = nowMs; keepAt = nowMs

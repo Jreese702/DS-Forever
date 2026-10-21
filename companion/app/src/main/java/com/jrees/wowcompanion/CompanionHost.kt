@@ -1649,6 +1649,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 it.optJSONObject("pad")?.let { p -> questsPad = p }
                 questsView.update(it); homeView.onQuests(it, current); mapView.onQuests(it); worldMapRoom.onQuests(it)
                 if (current) PreviewStage.feedQuests(it)
+                // fix/focus-latency (test50): the focus a tap just changed rides THIS document; the game's pin follows it now, not at the next
+                // pos / full document (standing still that was the 15 s heartbeat)
+                if (current) routePinTick()
                 if (current) {
                     val back = QuestWatchKeep.onQuests(QuestWatchKeep.parse(it), canAct = questsPad != null && GameInput.live() && !homeView.inFight())
                     if (back.isNotEmpty()) restoreWatches(back)
@@ -3076,7 +3079,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val pad = questsPad ?: return pinState("none: no quests pad yet")
         if (pad.optJSONObject("rows")?.has(RouteWaypoint.ROW) != true) return pinState("none: the add-on has no \"${RouteWaypoint.ROW}\" row (an older add-on, or the pad's row budget full)")
         val want = mapView.routePin(); pinState(mapView.pinWhy)
-        val cols = routeWp.tick(want, SystemClock.elapsedRealtime(), mapView.pinMore, mapView.pinRouting)
+        val cols = routeWp.tick(want, SystemClock.elapsedRealtime(), mapView.pinMore, mapView.pinRouting, quest = mapView.gameFocusQuest())
         if (cols.isEmpty()) return
         Log.i("WCMAP", "route pin: tap $cols (${mapView.pinWhy})")
         TapBridge.taps(this, pad, cols.map { RouteWaypoint.ROW to it }) { why -> Log.i("WCMAP", "route pin: tap failed: $why") }
