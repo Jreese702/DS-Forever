@@ -51,7 +51,8 @@ class RouteWaypoint {
         if (moved && nowMs - setAt >= SET_EVERY_MS) {
             active = true; sentX = want[0]; sentY = want[1]; setAt = nowMs; keepAt = nowMs
             sentMore = further; moreAt = nowMs
-            return listOf(SET) + digits(want[0]) + digits(want[1]) + moreCols(further)    // (a SET drops the old ones in the add-on)
+            // (cp20: the pin's own ground height after its x / y, as the further flags'; a SET drops the old flags in the add-on)
+            return listOf(SET) + digits(want[0]) + digits(want[1]) + zDigits(want.getOrElse(2) { Double.NaN }) + moreCols(further)
         }
         // the pin stays, the checkpoints after it changed (a new leg): dropped and sent again, at the pin's own pace
         if (active && !moved && changed(further, sentMore) && nowMs - moreAt >= SET_EVERY_MS) {

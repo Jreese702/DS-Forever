@@ -3991,7 +3991,9 @@ class MapView(context: Context) : View(context) {
      * WHERE THE GAME'S PIN GOES (b-route-waypoint): the game-focused quest's route's next way on the player's map while the route goes
      * through one; null when the route is direct, there is no game focus (a default focus is the app's own), or the player is in flight
      */
-    fun routePin(): DoubleArray? {
+    fun routePin(): DoubleArray? = routePin0()?.let { p -> map?.let { m -> doubleArrayOf(p[0], p[1], flagDz(m, p[0], p[1])) } ?: p }
+    /** [routePin]'s place on the map (0..1); routePin adds its ground height against the player's (cp20: the main marker grounded) */
+    private fun routePin0(): DoubleArray? {
         fun none(why: String): DoubleArray? { pinWhy = "none: $why"; return null }
         pinMore = emptyList()
         pinRouting = false
