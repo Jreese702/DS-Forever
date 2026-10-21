@@ -130,7 +130,7 @@ def main():
         P.hp.fill.atlas == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health" and abs(P.hp.w - 220 * 768 / 1080) < 1e-6
         and abs(P.hp.h - 15 * 768 / 1080) < 1e-6 and P.shadow.tex.endswith("compass_band")
         and P.hpFrame.atlas == "UI-HUD-CoolDownManager-Bar-BG-c60" and P.pwFrame.atlas == "UI-HUD-CoolDownManager-Bar-BG-c60"
-        and L.eval("rawequal(WowCompanion.prd.hpFrame.parent, WowCompanion.prd.g)") is not False and P.hp.spark.tex.endswith("UI-CastingBar-Spark"))
+        and P.hpFrame.whole is not None and P.hp.spark.tex.endswith("UI-CastingBar-Spark"))
     ME.ptype, ME.tok = 1, "RAGE"
     fire("UNIT_DISPLAYPOWER", "player")
     run(0.3)
@@ -320,6 +320,29 @@ def main():
     P.lag = None; P.f = None; P.build(); run(0.2)
     ME.hp = 300; run(0.8)
     chk("prd3: no interpolation in this client: the lag bar steps (no error)", P.ex.interp is False and P.lag.value.n == 300 and P.lag.interp is None)
+    # prd5, THE CHANNEL (the user: "It overlaps the border instead of looking like a 3d polished fill part of the asset"): with the
+    # atlas's own coordinates, the frame cut along its art: the track under the bar, the lip (top, bottom, sides) over it
+    L.execute("""C_Texture = { GetAtlasInfo = function(n) if n == "UI-HUD-CoolDownManager-Bar-BG-c60" then
+        return { file = 4242, leftTexCoord = 0.5, rightTexCoord = 1.0, topTexCoord = 0.25, bottomTexCoord = 0.5 } end end }""")
+    Lg.Enum.StatusBarInterpolation = L.eval("{ ExponentialEaseOut = 1 }")
+    P.lag = None; P.f = None; P.lip = None; P.build(); run(0.2)
+    hf = P.hpFrame
+    k = 15 / 8 * 768 / 1080
+    def near(a, b): return abs(a - b) < 1e-6
+    chk("prd5: the track = the art's rows 3..11, the full width, UNDER the bar (on the layer)",
+        hf.track.tex == 4242 and near(hf.track.coord[1], 0.5) and near(hf.track.coord[2], 1.0) and near(hf.track.coord[3], 0.25 + 0.25 * 3 / 19)
+        and near(hf.track.coord[4], 0.25 + 0.25 * 11 / 19))
+    chk("prd5: the lip OVER every bar: its own frame above the health bar (levels %s > %s)" % (P.lip.level, P.hp.level),
+        P.lip.level > P.hp.level and L.eval("rawequal(WowCompanion.prd.hpFrame.top.parent, nil)") is not None)
+    chk("prd5: the top lip: the art's rows 0..3, 3 texels tall, sitting ON the opening's top edge",
+        near(hf.top.coord[3], 0.25) and near(hf.top.coord[4], 0.25 + 0.25 * 3 / 19) and near(hf.top.h, 3 * k)
+        and hf.top.point[1] == "BOTTOMRIGHT")
+    chk("prd5: the bottom lip rows 11..19, 8 texels; the sides: 3 texels left, 7 right, beside the opening only",
+        near(hf.bot.coord[3], 0.25 + 0.25 * 11 / 19) and near(hf.bot.h, 8 * k) and near(hf.left.w, 3 * k) and near(hf.right.w, 7 * k)
+        and near(hf.left.coord[2], 0.5 + 0.5 * 3 / 132) and near(hf.right.coord[1], 0.5 + 0.5 * 125 / 132))
+    chk("prd5: one texel scale for both bars (the power bar's lip the same thickness)", near(P.pwFrame.top.h, 3 * k) and near(P.pwFrame.bot.h, 8 * k))
+    chk("prd5: the spark inside the opening's height (%.2f)" % P.hp.spark.h, near(P.hp.spark.h, 15 * 768 / 1080))
+    chk("prd5: the inner shadow over the opening's top", hf.shade is not None)
     chk("nothing of the game's written (no CVar)", Lg.CVAR_WRITES == 0)
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)

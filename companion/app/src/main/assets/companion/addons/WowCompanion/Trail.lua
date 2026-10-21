@@ -2194,8 +2194,15 @@ end
 -- slices textures, so the edge is one width on both bars; placed by the PRD template's own margins round the bar), with N's polish:
 -- the soft shadow, the rest alpha, the fills' gloss and a soft spark at each fill's edge, the bars 4 px apart, small auras tucked
 -- under, no panel. Everything of prd3 stays.
-WC.prd = { V = "prd4", LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -300, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 220, HH = 15, PH = 9, BAR_GAP = 4, ICON = 26, IGAP = 4,
-           ROW_GAP = 8, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.15, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
+-- prd5 (the user on prd6: "It overlaps the border instead of looking like a 3d polished fill part of the asset"): the PRD bar BG
+-- (-c60) taken apart along its OWN art (measured: a 132 x 19 texel piece, the bronze rim at column 1 / 126 and row 1 / 12, a black
+-- line inside it, the OPENING columns 3..124, rows 3..10) and rebuilt as a RECESSED channel: each bar IS the opening; under it the
+-- art's own dark middle (the track); OVER it the lip (the art's top rows, bottom rows and the columns beside the opening) and an
+-- inner shadow at the opening's top. One texel scale for both bars (the health opening's 8 texels = HH), so the rim is one width;
+-- nothing of the fill, the chunk, the cost, the heals, the shield or the spark can reach the rim (each inside the bar, the lip
+-- over all). The texture's own coordinates from C_Texture.GetAtlasInfo; without it, the whole piece behind the bar as prd4 had it.
+WC.prd = { V = "prd5", LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -300, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 220, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
+           ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.15, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
            alpha = 0, shown = false, why = "off" }
 -- (the names Hub's hub15 row reads: y, on, min, max, step, def, nudge)
 WC.prd.min, WC.prd.max, WC.prd.step, WC.prd.def = WC.prd.Y_MIN, WC.prd.Y_MAX, WC.prd.STEP, WC.prd.Y_DEF
@@ -2274,7 +2281,7 @@ do
         local sp = b:CreateTexture(nil, "OVERLAY")
         sp:SetTexture("Interface\\CastingBar\\UI-CastingBar-Spark")
         pcall(function() sp:SetBlendMode("ADD") end)
-        sp:SetSize(u(10), u(h * 2.2))
+        sp:SetSize(u(10), u(h))                                 -- (inside the opening: the lip covers its ends)
         sp:SetPoint("CENTER", fill, "RIGHT", 0, 0)
         sp:SetAlpha(0.55)
         b.spark = sp
@@ -2282,17 +2289,68 @@ do
     end
     -- prd4: the PRD's own bar BG round a bar, on the layer UNDER every bar (so the lag chunk shows above it): the template's margins
     -- (TOPLEFT -2,3 / BOTTOMRIGHT 6,-7 round its 10 px bar) at the health bar's scale for both, so the edge is one width
+    -- prd5: the PRD frame as a channel round the bar b (b's rect is the opening); returns its pieces
     function P.frameFor(b)
-        local t = P.g:CreateTexture(nil, "BACKGROUND", nil, -4)
-        local ok = false
-        for _, a in ipairs(P.BG) do if pcall(function() t:SetAtlas(a) end) then ok = true; break end end
-        if not ok then t:SetColorTexture(0, 0, 0, 0.59) end
-        pcall(function() t:SetTextureSliceMargins(5, 5, 9, 9) end)
-        pcall(function() t:SetTextureSliceMode(Enum.UITextureSliceMode.Stretched) end)
-        local k = P.HH / 10
-        t:SetPoint("TOPLEFT", b, "TOPLEFT", -u(2 * k), u(3 * k))
-        t:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", u(6 * k), -u(7 * k))
-        return t
+        local k = u(P.HH / 8)                                   -- UI units per texel (one scale for both bars)
+        local info, atlas
+        for _, a in ipairs(P.BG) do
+            local ok, i = pcall(function() return C_Texture.GetAtlasInfo(a) end)
+            if ok and type(i) == "table" and i.file and num(i.leftTexCoord) then info, atlas = i, a; break end
+        end
+        local pieces = { atlas = atlas }
+        if not info then
+            -- no atlas coordinates: the whole piece behind the bar (prd4's way), by its measured margins
+            local t = P.g:CreateTexture(nil, "BACKGROUND", nil, -4)
+            local ok = false
+            for _, a in ipairs(P.BG) do if pcall(function() t:SetAtlas(a) end) then ok = true; pieces.atlas = a; break end end
+            if not ok then t:SetColorTexture(0, 0, 0, 0.59) end
+            t:SetPoint("TOPLEFT", b, "TOPLEFT", -3 * k, 3 * k)
+            t:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 7 * k, -8 * k)
+            pieces.whole = t
+            return pieces
+        end
+        local L, R, Tt, B = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
+        local function sub(parent, layer, level, c0, r0, c1, r1)
+            local t = parent:CreateTexture(nil, layer, nil, level)
+            t:SetTexture(info.file)
+            t:SetTexCoord(L + (R - L) * c0 / P.BG_W, L + (R - L) * c1 / P.BG_W, Tt + (B - Tt) * r0 / P.BG_H, Tt + (B - Tt) * r1 / P.BG_H)
+            return t
+        end
+        if not P.lip then
+            P.lip = CreateFrame("Frame", nil, P.g)
+            P.lip:SetAllPoints(P.g)
+            P.lip:EnableMouse(false)
+        end
+        -- the track: the art's dark middle (rows 3..11) under the bar, the full width
+        local tr = sub(P.g, "BACKGROUND", -4, 0, 3, P.BG_W, 11)
+        tr:SetPoint("TOPLEFT", b, "TOPLEFT", -3 * k, 0)
+        tr:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 7 * k, 0)
+        -- the lip over the bar: the top rows, the bottom rows, the columns beside the opening
+        local top = sub(P.lip, "ARTWORK", 1, 0, 0, P.BG_W, 3)
+        top:SetPoint("BOTTOMLEFT", b, "TOPLEFT", -3 * k, 0)
+        top:SetPoint("BOTTOMRIGHT", b, "TOPRIGHT", 7 * k, 0)
+        top:SetHeight(3 * k)
+        local bot = sub(P.lip, "ARTWORK", 1, 0, 11, P.BG_W, P.BG_H)
+        bot:SetPoint("TOPLEFT", b, "BOTTOMLEFT", -3 * k, 0)
+        bot:SetPoint("TOPRIGHT", b, "BOTTOMRIGHT", 7 * k, 0)
+        bot:SetHeight(8 * k)
+        local lf = sub(P.lip, "ARTWORK", 1, 0, 3, 3, 11)
+        lf:SetPoint("TOPRIGHT", b, "TOPLEFT", 0, 0)
+        lf:SetPoint("BOTTOMRIGHT", b, "BOTTOMLEFT", 0, 0)
+        lf:SetWidth(3 * k)
+        local rt = sub(P.lip, "ARTWORK", 1, 125, 3, P.BG_W, 11)
+        rt:SetPoint("TOPLEFT", b, "TOPRIGHT", 0, 0)
+        rt:SetPoint("BOTTOMLEFT", b, "BOTTOMRIGHT", 0, 0)
+        rt:SetWidth(7 * k)
+        -- the inner shadow: the lip's shade over the opening's top
+        local sh = P.lip:CreateTexture(nil, "ARTWORK", nil, 0)
+        sh:SetColorTexture(0, 0, 0, 1)
+        sh:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+        sh:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0)
+        sh:SetHeight(b:GetHeight() * 0.45)
+        if not pcall(function() sh:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.47)) end) then sh:SetAlpha(0.2) end
+        pieces.track, pieces.top, pieces.bot, pieces.left, pieces.right, pieces.shade = tr, top, bot, lf, rt, sh
+        return pieces
     end
     local function icon(parent, i)
         local o = { f = CreateFrame("Frame", nil, parent) }
@@ -2362,8 +2420,10 @@ do
         if not setFill(P.hp, "HEALTH") then pcall(function() P.hp:SetStatusBarColor(0, 0.8, 0) end) end
         P.pw = bar(f, P.PH)
         P.pw:SetPoint("TOP", P.hp, "BOTTOM", 0, -u(P.BAR_GAP))
-        P.hpFrame, P.pwFrame = P.frameFor(P.hp), P.frameFor(P.pw)
         P.extras(f)
+        P.hpFrame, P.pwFrame = P.frameFor(P.hp), P.frameFor(P.pw)
+        -- the lip over every bar and overlay (the extras' clip frames are the bars' children)
+        if P.lip then pcall(function() P.lip:SetFrameLevel(P.hp:GetFrameLevel() + 20) end) end
         P.buffs, P.debuffs = {}, {}
         for i = 1, P.BUFF_MAX do P.buffs[i] = icon(f, i) end
         for i = 1, P.DEBUFF_MAX do P.debuffs[i] = icon(f, i) end
