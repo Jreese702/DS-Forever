@@ -270,6 +270,17 @@ object ShippedSnap {
             if (s.ok) return ShippedRoute.Attach(s.snaps.map {
                 if (it.cut) ShippedRoute.Join(null, it.way, it.t, it.pts.last(), it.pts, it.cost, it.yd)
                 else ShippedRoute.Join(it.node, -1, 0.0, it.pts.last(), it.pts, it.cost, it.yd) }, true, s.why)
+            // the shipped lattice: the long attach on it too (the coarse one crossed what the lattice walls: parity's Loch Modan A,
+            // Un'Goro H, Silithus H) - its nodes out to the long attach's reach, walked on the lattice
+            if (v.lattice != null) {
+                val far = snap(p, v.nodes, g, v.danger, v.k, reach = v.lim, walkYd = v.lim * 1.5, floor = v.floor, floorNodes = v.floorNodes,
+                    ways = v.ways, lattice = v.lattice)
+                if (far.ok) return ShippedRoute.Attach(far.snaps.map {
+                    if (it.cut) ShippedRoute.Join(null, it.way, it.t, it.pts.last(), it.pts, it.cost, it.yd)
+                    else ShippedRoute.Join(it.node, -1, 0.0, it.pts.last(), it.pts, it.cost, it.yd) }, false, "long on the lattice: ${far.why}")
+                log?.invoke("snap: none at ${p[0].toInt()},${p[1].toInt()} on the lattice within ${v.lim.toInt()} yd (${far.why})")
+                return ShippedRoute.Attach(emptyList(), false, "no walk on the shipped lattice within ${v.lim.toInt()} yd (${s.why})")
+            }
             log?.invoke("snap: none at ${p[0].toInt()},${p[1].toInt()} (${s.why}) - the long attach")
             val long = ShippedRoute.DefaultAttach.attach(ShippedRoute.AttachView(emptyList(), v.ways, g.asCost, v.danger, v.k, v.lim), p)
             return ShippedRoute.Attach(long.joins, false, "${long.why ?: "on ${long.joins.size} ways by the long attach"} (no snap: ${s.why})")
