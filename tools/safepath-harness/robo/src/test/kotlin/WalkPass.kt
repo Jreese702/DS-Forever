@@ -40,7 +40,12 @@ class WalkPass {
         val pack = packF.inputStream().use { ShippedNet.read(it) } ?: run { println("WALKPACK FAIL ${packF.name}: not NET1"); return }
         if (pack.header.map != map) { println("WALKPACK FAIL ${packF.name}: map ${pack.header.map}, the spec's $map"); return }
         val before = packF.length()
-        val out = ShippedNet.Pack(pack.header, pack.sections, pack.roadmap, ShippedNet.Walk.strip(cg))
+        // THE FLOORS' VERTICES: the walkways' decks the harness's own deep water skips (ZoneInputs.deckAt: piers, docks, bridges) - a bit
+        // a vertex, no height
+        val walk = ShippedNet.Walk.strip(cg)
+        var onDeck = 0
+        walk.deckZ = FloatArray(cg.nx * cg.ny) { k -> if (zi.deckAt(cg.wx(k / cg.nx), cg.wy(k % cg.nx))) { onDeck++; 0f } else Float.NaN }
+        val out = ShippedNet.Pack(pack.header, pack.sections, pack.roadmap, walk)
         val bytes = ShippedNet.bytes(out)
         packF.writeBytes(bytes)
         val back = packF.inputStream().use { ShippedNet.read(it) }
@@ -50,7 +55,7 @@ class WalkPass {
             ShippedNet.bytes(back).contentEquals(bytes)
         val walls = (0 until cg.nx * cg.ny).count { (cg.cls[it].toInt() and 3) == Climb.WALL }
         println("WALKPACK ${if (ok) "OK" else "FAIL (did not round-trip)"} map $map ${spec.optString("tag")} -> ${packF.path}: lattice ${cg.nx} x ${cg.ny} " +
-            "(faces ${cg.faces != null}, 45-48 ${cg.faces48 != null}), ${walls * 100 / maxOf(1, cg.nx * cg.ny)}% east steps walled; pack $before -> ${bytes.size} bytes " +
-            "(walk ${ShippedNet.pack64(ShippedNet.Walk.encode(cg)).length} base64); ${(System.nanoTime() - t0) / 1_000_000} ms")
+            "(faces ${cg.faces != null}, 45-48 ${cg.faces48 != null}, $onDeck vertices on a deck), ${walls * 100 / maxOf(1, cg.nx * cg.ny)}% east steps walled; pack $before -> ${bytes.size} bytes " +
+            "(walk ${ShippedNet.pack64(ShippedNet.Walk.encode(walk)).length} base64); ${(System.nanoTime() - t0) / 1_000_000} ms")
     }
 }
