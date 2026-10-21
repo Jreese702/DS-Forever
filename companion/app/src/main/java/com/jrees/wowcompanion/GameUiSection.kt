@@ -102,10 +102,12 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         GameUi.Row(COMPASS_CAM_ID, "Compass follows the camera", null, if (s.cam == true) UiMode.ON else UiMode.OFF, true, s.cam != true,
             if (s.cam == true) "Experiment: while the quest's marker is on screen" else "Off: it follows your character")
     }
-    private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), lootRow(), compassRow(), compassCamRow())
+    private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.hudHeightRow(), lootRow(), compassRow(), compassCamRow())
     private var selected: String? = null
     private val rowBoxes = ArrayList<Pair<RectF, String>>()
     private val segBoxes = ArrayList<Pair<RectF, UiMode>>()
+    /** hub15: the HUD height row's two buttons (lower -1 / higher +1) */
+    private val stepBoxes = ArrayList<Pair<RectF, Int>>()
 
     private var downX = 0f
     private var downY = 0f
@@ -141,7 +143,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         val out = ArrayList<RectF>()
         for ((box, id) in rowBoxes) {
             out.add(RectF(box))
-            if (id == selected) segBoxes.forEach { out.add(RectF(it.first)) }
+            if (id == selected) { segBoxes.forEach { out.add(RectF(it.first)) }; stepBoxes.forEach { out.add(RectF(it.first)) } }
         }
         return out
     }
@@ -161,6 +163,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             MotionEvent.ACTION_DOWN -> { downX = e.x; downY = e.y }
             MotionEvent.ACTION_UP -> {
                 if (abs(e.x - downX) > SLOP || abs(e.y - downY) > SLOP) return true
+                for ((box, d) in stepBoxes) if (box.contains(e.x, e.y)) { GameUi.stepHudHeight(d); refresh(); return true }
                 for ((box, m) in segBoxes) if (box.contains(e.x, e.y)) {
                     selected?.let {
                         when (it) {
@@ -195,7 +198,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     override fun onDraw(c: Canvas) {
         fonts()
         c.drawColor(Theme.ink)
-        rowBoxes.clear(); segBoxes.clear()
+        rowBoxes.clear(); segBoxes.clear(); stepBoxes.clear()
         var y = 0f
         if (hasUi) {
         c.drawText("Game UI on the top screen", 28f, HEAD_TEXT + 4f, pSection)
@@ -216,7 +219,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             pSub.color = if (r.known) Theme.textDim else Theme.dim
             c.drawText(r.note, box.left + 116f, box.top + 75f, pSub)
             pMode.color = if (r.known) Theme.gold else Theme.dim
-            c.drawText(word(r.mode), box.right - 24f, box.centerY() + 10f, pMode)
+            c.drawText(if (r.id == GameUi.HUD_H_ID) "${GameUi.hudHeightStep() ?: "-"}" else word(r.mode), box.right - 24f, box.centerY() + 10f, pMode)
             rowBoxes.add(box to r.id)
             y += ROW_H + GAP
 
@@ -243,6 +246,18 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     private fun bar(c: Canvas, r: GameUi.Row, top: Float) {
         val left = 16f; val right = width - 16f
         val gap = 10f
+        if (r.id == GameUi.HUD_H_ID) {
+            // hub15: Lower / Higher, one step each (the game's red buttons); the step shown on the row
+            val sw = (right - left - 2f * gap) / 3f
+            for ((k, pair) in listOf("Lower" to -1, "Default" to 0, "Higher" to 1).withIndex()) {
+                val b = RectF(left + k * (sw + gap), top, left + k * (sw + gap) + sw, top + SEG_H)
+                UiKit.choice(c, b, pair.first, false)
+                stepBoxes.add(b to pair.second)
+            }
+            pSub.color = Theme.textDim
+            c.drawText("Where HUD mode's own bar sits under your character, for this character.", left + 6f, top + SEG_H + 34f, pSub)
+            return
+        }
         val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.HUD_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
         val sw = (right - left - gap * (modes.size - 1)) / modes.size
         var x = left
@@ -334,6 +349,12 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                 c.drawRoundRect(RectF(X(2f), Y(9f), X(22f), Y(15f)), 3f, 3f, p)
                 pFill.color = p.color
                 c.drawRoundRect(RectF(X(3.5f), Y(10.5f), X(15f), Y(13.5f)), 1.5f, 1.5f, pFill)
+            }
+            // HUD height: an up / down arrow pair
+            GameUi.HUD_H_ID -> {
+                c.drawLine(X(12f), Y(3f), X(12f), Y(21f), p)
+                c.drawLine(X(8f), Y(7f), X(12f), Y(3f), p); c.drawLine(X(16f), Y(7f), X(12f), Y(3f), p)
+                c.drawLine(X(8f), Y(17f), X(12f), Y(21f), p); c.drawLine(X(16f), Y(17f), X(12f), Y(21f), p)
             }
             // HUD mode: a portrait frame crossed out
             GameUi.HUD_ID -> {

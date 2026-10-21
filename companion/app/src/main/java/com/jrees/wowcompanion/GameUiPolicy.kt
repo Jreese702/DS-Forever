@@ -118,6 +118,9 @@ class CastBarPolicy(
         const val COL_HIDE = 33
         const val HUD_SHOW = 34            // hub13: HUD mode, the player / target frames
         const val HUD_HIDE = 35
+        const val HUD_LOWER = 36           // hub15: HUD mode's Height, one step a tap
+        const val HUD_HIGHER = 37
+        const val HUD_HDEF = 38            // back to Interact's default place
     }
 }
 
