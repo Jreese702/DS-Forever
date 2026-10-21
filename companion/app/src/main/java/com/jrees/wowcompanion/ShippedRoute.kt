@@ -426,7 +426,7 @@ object ShippedRoute {
             join(goal, end, false, "the goal")?.let { return it to null }
             // the ground's own walk straight there, the graph's rival for a goal this near
             if (hypot(goal[0] - from[0], goal[1] - from[1]) <= DIRECT_MAX_YD)
-                Leg(ground, danger, k, from, DIRECT_MAX_YD * 1.5).to(goal)?.let { arc(start, end, it.cost * SafePath.DIRECT, it.pts.drop(1)) }
+                attacher.direct(view, from, goal)?.let { arc(start, end, it.cost * SafePath.DIRECT, it.pts.drop(1)) }
             // Dijkstra
             val dist = HashMap<Int, Double>(); val prev = HashMap<Int, Pair<Int, Arc>>()
             val q = PriorityQueue<Pair<Double, Int>>(compareBy { it.first })
@@ -497,7 +497,13 @@ object ShippedRoute {
     /** an end's joins (none: no route, [why] said); [snapped]: a short snap (no long attach) */
     class Attach(val joins: List<Join>, val snapped: Boolean, val why: String? = null)
     /** THE SEAM: how an end ([p], world) joins the graph; called for the player (walked out from p) and the goal (walked in to p) */
-    fun interface Attacher { fun attach(v: AttachView, p: DoubleArray): Attach }
+    fun interface Attacher {
+        fun attach(v: AttachView, p: DoubleArray): Attach
+        /** THE NEAR-GOAL WALK, the graph's rival for a goal within [DIRECT_MAX_YD]: the ground's own walk from [from] to [to] (its
+         *  points from first, to last; the router adds SafePath.DIRECT), null = none (the graph's way only). U1's default: [Leg] */
+        fun direct(v: AttachView, from: DoubleArray, to: DoubleArray): Join? =
+            Leg(v.ground, v.danger, v.k, from, DIRECT_MAX_YD * 1.5).to(to)?.let { Join(null, -1, 0.0, to, it.pts, it.cost, it.yd) }
+    }
 
     /** the attach as built by U1: the nearest nodes within [SNAP_YD] by the ground's walk ([Leg]); with none, a walk onto each of the
      *  nearest ways, [AttachView.lim] walked at most */
