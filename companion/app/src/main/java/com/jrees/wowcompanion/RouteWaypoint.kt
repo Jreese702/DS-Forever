@@ -62,7 +62,10 @@ class RouteWaypoint {
         return emptyList()
     }
 
-    private fun moreCols(pts: List<DoubleArray>): List<Int> = pts.flatMap { listOf(MORE) + digits(it[0]) + digits(it[1]) }
+    // each further flag: 38, x (2 digits), y (2 digits), and its ground height against the player's (2 digits, [zDigits]; Interact's
+    // "Try to ground them all" - an older add-on reads the 4 and drops the 2)
+    private fun moreCols(pts: List<DoubleArray>): List<Int> =
+        pts.flatMap { listOf(MORE) + digits(it[0]) + digits(it[1]) + zDigits(it.getOrElse(2) { Double.NaN }) }
     private fun changed(a: List<DoubleArray>, b: List<DoubleArray>): Boolean =
         a.size != b.size || a.indices.any { abs(a[it][0] - b[it][0]) > MOVE || abs(a[it][1] - b[it][1]) > MOVE }
 
@@ -82,6 +85,18 @@ class RouteWaypoint {
         const val CLEAR_GRACE_MS = 8_000L    // no target this long before the pin is cleared
         const val KEEP_EVERY_MS = 20_000L    // well inside Map.lua's 60 s KEEP_S
         const val REFUSED_MS = 60_000L
+
+        /** the step of a further flag's height (yards) and the offset that makes 0 the player's own height: n = dz / Z_STEP + Z_ZERO */
+        const val Z_STEP = 0.25
+        const val Z_ZERO = 648
+        /** n for "height unknown" */
+        const val Z_UNKNOWN = 1295
+
+        /** a flag's ground height [dz] (yards, relative to the player; NaN unknown) as two base-36 digits: about +/-162 yd in 0.25 yd */
+        fun zDigits(dz: Double): List<Int> {
+            val n = if (dz.isNaN()) Z_UNKNOWN else ((dz / Z_STEP).roundToInt() + Z_ZERO).coerceIn(0, Z_UNKNOWN - 1)
+            return listOf(n / 36, n % 36)
+        }
 
         /** a 0..1 coordinate as two base-36 digits (1296 steps across; Map.lua divides by 1295) */
         fun digits(v: Double): List<Int> {
