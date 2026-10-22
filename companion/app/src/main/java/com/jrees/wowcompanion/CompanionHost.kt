@@ -1582,6 +1582,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     it.optJSONObject("equipped")?.let { eq -> homeView.durability(eq.optJSONObject("durw")) }; if (ProfessionsStore.onBags(it)) professionsView.refresh() }   // old = no room switch, no tap (bags)
                 status.text = "gaps ${tail?.gapCount() ?: 0}   v${msg.optString("v", "?")}"
             }
+            // (a) the Bags room's light document: a press that moved only the cursor (Bags.lua sendCtlSoon)
+            "bagsctl" -> msg.optJSONObject("ctl")?.let { bagsView.updateCtl(it, current) }
             "pos" -> msg.optJSONObject("map")?.let {
                 mapView.updatePos(it, msg.optLong("_gt", -1L)); worldMapRoom.updatePos(it)
                 if (current) AggroDoc.fromPos(it)?.let { r -> onAggro(r) }      // LIVE AGGRO: the record riding the pos doc (map.ag)
