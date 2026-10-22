@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp24" }
+WC.compass = { V = "cp25" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -701,8 +701,8 @@ do
              list = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 3, TILT = 0.1, PITCH0 = 0.3,
              JUMP_V = 7.9558, MOUNT_V = 7.9558, GRAV = 19.2911, PRESS_S = 0.3, jumpAt = -100, jumpN = 0, LOG_S = 5, logAt = -100,
              GOLD = { 1, 0.82, 0.3 }, QUEST = { 1, 0.93, 0.5 }, PIN = "Interface\\AddOns\\WowCompanion\\Media\\marker_pin",
-             HOLD_S = 0.6, IN_S = 0.15, OUT_S = 0.25, FLIP_S = 0.4, FRONT_IN = 10, FRONT_OUT = 16, VIS_S = 10, visAt = -100,
-             pinAt = -100, vis = { show = 0, hide = 0, held = 0, why = {} } }
+             HOLD_S = 0.6, IN_S = 0.15, OUT_S = 0.25, FRONT_IN = 10, FRONT_OUT = 16, VIS_S = 10, visAt = -100,
+             vis = { show = 0, hide = 0, held = 0, why = {} } }
     -- cp24 (test60, the user: "a little glitchy and temperamental, sometimes flashing in and out of existence"): a marker was shown
     -- only on frames when every read agreed, and hidden at once on any other - so ONE bad frame was a blink. The causes found:
     --   the engine's point read for a frame invalid, clamped, or not there (C_Navigation); the in-front gate (the camera estimate's
@@ -714,7 +714,8 @@ do
     -- "arrived" clears the pin; the route gone; the compass off) fades at once; a show fades in (IN_S). The gates keep a margin
     -- once shown (in front: FRONT_IN degrees past the half FOV to show, FRONT_OUT to keep; the flags' FOV, distance and edge alike).
     -- A marker changing what it marks (our pin <-> the quest) fades out where it was, then in at the new point: never a blink.
-    -- A super-track off our pin while the route is active is a flip for FLIP_S (held), not a change. One "wmvis" cap line per
+    -- A super-track off our pin while the route is active is a flip (cp25: the goal stays the checkpoint, placed by the estimate,
+    -- else held). One "wmvis" cap line per
     -- VIS_S with any change: shows, hides, held frames, and the hides' and holds' reasons.
     -- cp22 (the user: "The world markers for the quests can go back to just being the pin icon ... when I jump they need to stay
     -- anchored"):
@@ -966,20 +967,17 @@ do
             local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
             local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
             onPin = okP and onPin == true
-            local R1 = WC.routeWp
-            -- cp24: off our pin for a moment while the route is active: a flip (held), not a change to the quest
-            local flip = false
-            if onPin then W.pinAt = now
-            elseif type(R1) == "table" and R1.active == true and now - W.pinAt < W.FLIP_S then flip = true end
-            local tg = C.tg_ or {}
-            local w = onPin and tg.pin or tg.quest
-            if flip then w = nil end
+            -- cp25: the goal (C.goal); the engine's point is its place only when the engine marks it (our pin super-tracked for a
+            -- pin, not for the quest); else it is placed like a flag (the camera's yaw and pitch)
+            local g = C.goal_
+            local w = g and g.w
+            local engineOn = g ~= nil and ((g.kind == "pin") == onPin)
             if uw and us > 0 then
                 local half = uw / 2
                 local fl = half / math.tan(hfov / 2)
                 -- 1: the engine's own point (the pin, else the focused quest)
-                lost[1] = (flip and "flip") or (not w and "notarget") or (not (okF and nav) and "nonav") or nil
-                if okF and nav and w then
+                lost[1] = (not w and "notarget") or (not engineOn and "flip") or (not (okF and nav) and "nonav") or nil
+                if engineOn and okF and nav and w then
                     local okV, vp = pcall(function() return C_Navigation.HasValidScreenPosition() end)
                     local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
                     local okC, x, y = pcall(function() return nav:GetCenter() end)
@@ -1010,7 +1008,7 @@ do
                             local yE = (air and W.yG) or y
                             if not air then W.yG = y end
                             local R0 = WC.routeWp
-                            local pdz = onPin and type(R0) == "table" and C.wmDz(R0.pinZ) or nil
+                            local pdz = g.route and type(R0) == "table" and C.wmDz(R0.pinZ) or nil
                             W.pinDz = pdz
                             local usePdz = pdz ~= nil and C.wmPitchOk(now)
                             local dz = C.wmDzAir(usePdz and R0.pinZ or nil)
@@ -1025,13 +1023,33 @@ do
                                 y = W.yOut + (y - W.yOut) * (1 - math.exp(-dt / W.EASE_S))   -- landed: eased, not snapped
                             end
                             W.yOut = y
-                            on[1] = wmPut(1, x, y, onPin and W.GOLD or W.QUEST, C.distText(d), 1, onPin and "pin" or "quest")
+                            on[1] = wmPut(1, x, y, g.kind == "pin" and W.GOLD or W.QUEST, C.distText(d), 1, g.id)
+                        end
+                    end
+                end
+                -- cp25: the engine marks something else (the quest while the route's checkpoint is the goal): the estimate
+                if w and not engineOn and uh and C.wmPitchOk(now) then
+                    local b, d = C.bearing(C.me_, w)
+                    local rel = C.wrap(b - yaw)
+                    local o1 = W.list[1]
+                    local gate = ((o1 and (o1.a or 0) > 0) and W.FRONT_OUT or W.FRONT_IN)
+                    if math.abs(rel) >= hfov / 2 + math.rad(gate) then
+                        lost[1] = "behind"
+                    else
+                        local x = half - fl * math.tan(rel)
+                        local R0 = WC.routeWp
+                        local yo = C.wmProj(W.pitch, C.wmZoom(), W.CAM_H, d * math.cos(rel),
+                            C.wmDzAir(g.route and type(R0) == "table" and R0.pinZ or nil), fl)
+                        if yo and math.abs(x - half) < half * 0.99 then
+                            on[1] = wmPut(1, x, uh / 2 + yo, g.kind == "pin" and W.GOLD or W.QUEST, C.distText(d), 1, g.id)
+                        else
+                            lost[1] = "edge"
                         end
                     end
                 end
                 -- 2..: the route's further checkpoints (the app's, after the pin's)
                 local R = WC.routeWp
-                if (onPin or flip) and type(R) == "table" and R.active == true and type(R.more) == "table" then
+                if g and g.route and type(R) == "table" and type(R.more) == "table" then
                     local okP = C.wmPitchOk(now) and uh
                     local D = C.wmZoom()
                     for i, c in ipairs(R.more) do
@@ -1080,7 +1098,60 @@ do
         C.readAt = now
         C.me_ = C.me()
         C.tg_ = C.targets(C.me_)
+        C.goal_ = C.goal(C.tg_)
         return true
+    end
+
+    -- cp25 (test62, the user: "not being set at the same distances shown on the compass" ... "Both = checkpoint"): ONE target for
+    -- the compass's marker and the world marker, so they cannot disagree. While a route is active (Map's pin), the route's NEXT
+    -- CHECKPOINT (the pin), whatever the game super-tracks (the compass's disc keeps the quest's number, at the checkpoint); else the
+    -- player's own super-tracked pin; else the focused quest's objective. id names it (a checkpoint by its spot): a change of id
+    -- (the route advancing, arriving) fades the old out where it was and the new in, on both (C.cg here, cp24's keyed put there).
+    function C.goal(tg)
+        tg = tg or {}
+        local R = WC.routeWp
+        local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
+        onPin = okP and onPin == true
+        local function at(w) return math.floor(w.x + 0.5) .. ":" .. math.floor(w.y + 0.5) end
+        if type(R) == "table" and R.active == true and tg.pin then
+            return { w = tg.pin, kind = "pin", route = true, id = "cp:" .. at(tg.pin) }
+        end
+        if onPin and tg.pin then return { w = tg.pin, kind = "pin", id = "pin:" .. at(tg.pin) } end
+        if tg.quest then return { w = tg.quest, kind = "quest", id = "quest:" .. tostring(C.qid) .. ":" .. at(tg.quest) } end
+        return nil
+    end
+    -- the compass's shown goal: { id, w, kind, a (its alpha) }, faded across a change of id like the world marker (cp24's times)
+    C.cg = { a = 0 }
+    function C.goalStep(dt, snap)
+        local g, cg = C.goal_, C.cg
+        local W = C.wm
+        if snap then
+            C.cg = g and { id = g.id, w = g.w, kind = g.kind, route = g.route, a = 1 } or { a = 0 }
+            return
+        end
+        if cg.id ~= (g and g.id) then
+            if cg.id and cg.a > 0 then
+                cg.a = math.max(0, cg.a - dt / W.OUT_S)                  -- the old one fading out where it was
+            else
+                C.cg = g and { id = g.id, w = g.w, kind = g.kind, route = g.route, a = 0 } or { a = 0 }
+            end
+        elseif g then
+            cg.w, cg.a = g.w, math.min(1, cg.a + dt / W.IN_S)
+        end
+    end
+    -- the compass's targets: the shown goal (on the quest's disc when it has a number, else as itself), the player's own pin when
+    -- it is not the goal, the corpse
+    function C.marks()
+        local tg, cg = C.tg_ or {}, C.cg
+        local t = { corpse = tg.corpse }
+        local key
+        if cg.id then
+            key = (cg.kind == "quest" or (cg.route and C.questNo and C.questNo())) and "quest" or "pin"
+            t[key] = cg.w
+        end
+        if key ~= "pin" and tg.pin and not (cg.id and cg.kind == "pin") then t.pin = tg.pin end
+        C.cgKey = key
+        return t
     end
 
     local function hide(o) if o:IsShown() then o:Hide() end end
@@ -1098,8 +1169,9 @@ do
         local camOff = C.camStep(dt, raw)
         if C.camWanted() then target = C.wrap(raw + camOff) else C.cam.off, C.cam.src = 0, "off" end
         local heading = C.ease(target, dt)
+        C.goalStep(dt, snap)
         pcall(C.wmStep, raw, dt)
-        local L = C.layout(heading, C.me_, C.tg_ or {})
+        local L = C.layout(heading, C.me_, C.marks())
         C.last = L
         if fresh then C.diag(raw, C.me_, C.tg_ or {}, L) end
         local u, S = C.u, C.SPEC
@@ -1129,6 +1201,11 @@ do
         for _, m in ipairs(L.marks) do
             local o, spec = C.mk[m.key], C.MARK[m.key]
             drawn[m.key] = true
+            local al = (m.key == C.cgKey) and C.cg.a or 1                    -- cp25: the goal's fade
+            if o.al ~= al then
+                for _, p in ipairs({ o.sh, o.tx, o.d, o.a, o.num }) do pcall(function() p:SetAlpha(al) end) end
+                o.al = al
+            end
             o.sh:SetPoint("CENTER", f, "TOP", u(m.x), -u(S.line)); show(o.sh)
             o.tx:SetPoint("CENTER", f, "TOP", u(m.x), -u(S.line)); show(o.tx)
             if o.num then
@@ -1213,6 +1290,7 @@ do
             uwp = (okH and has == true) and true or false, st = (okS and onPin == true) and true or false, route = route,
             pin = tg.pin and true or false, qid = C.qid, qsrc = C.qsrc, quest = tg.quest and true or false,
             corpse = tg.corpse and true or false, n = #L.marks,
+            goal = C.goal_ and C.goal_.id or nil, gk = C.cgKey, ga = C.cg and math.floor((C.cg.a or 0) * 100 + 0.5) or nil,
             cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
             cyaw = C.cam.abs and math.floor(C.cam.abs * 1000 + 0.5) / 1000 or nil,
             wm = C.wm and C.wm.shown and true or false, wmn = C.wm and C.wm.n or 0, air = C.wm and C.wm.air or nil,

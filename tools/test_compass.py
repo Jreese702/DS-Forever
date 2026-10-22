@@ -843,6 +843,74 @@ def main():
     chk("cp24: ... and from hidden, 59 deg does not show it (the show gate is 55): %s" % (not e6), not e6)
     G.facing, C.cam.abs, C.cam.ref = fk
     frames(60, read=True)
+    # cp25 (test62, the user: "not being set at the same distances shown on the compass" ... "Both = checkpoint"): ONE target.
+    # The quest's objective moved away from the route's checkpoint; the quest watched (its number 1)
+    L.execute("""
+        QLOG = { { questID = 123 } }
+        QWATCH = { [123] = 0 }
+        C_QuestLog.GetNumQuestLogEntries = function() return #QLOG end
+        C_QuestLog.GetInfo = function(i) return QLOG[i] end
+        C_QuestLog.GetQuestWatchType = function(q) return QWATCH[q] end
+    """)
+    G.quest = L.table(0.35, 0.45)
+    C.qnAt = -10
+    frames(40, read=True)
+
+    def cmarks():
+        return {C.last.marks[i].key: C.last.marks[i] for i in range(1, len(C.last.marks) + 1)}
+    cm = cmarks()
+    bp, dp = C.bearing(C.me_, C.tg_.pin)
+    mq = cm.get("quest")
+    chk("cp25: route on: the compass's ONE marker is the quest's disc (number '%s') at the CHECKPOINT: %s, the world marker's %s"
+        % (C.mk.quest.num.text, mq.dist if mq else None, W.d.text),
+        mq is not None and "pin" not in cm and C.mk.quest.num.text == "1" and C.mk.quest.tx.atlas == "UI-QuestPoi-QuestNumber"
+        and mq.dist == W.d.text == C.distText(dp) and abs(C.wrap(mq.rel - C.wrap(bp - C.h))) < 1e-9
+        and L.eval("rawequal(WowCompanion.compass.cg.w, WowCompanion.compass.tg_.pin)") and abs(W.f.point[4] - nx) < 0.1)
+    # the route advances: Map's pin moves to the next checkpoint (the engine's point with it): both fade out there, in at the next
+    G.pin = L.table(0.68, 0.33)
+    C.read(True)
+    bp2, dp2 = C.bearing(C.me_, C.tg_.pin)
+    nx2 = c0 - c0 * math.tan(C.wrap(bp2 - C.cam.abs))
+    navset(nx2)
+    ca, wa = [], []
+    for _ in range(40):
+        frames(1, read=True)
+        ca.append(C.cg.a)
+        wa.append(W.f.alpha if W.f.shown else 0.0)
+    k0, k1 = ca.index(0.0) if 0.0 in ca else None, wa.index(0.0) if 0.0 in wa else None
+    cm = cmarks()
+    chk("cp25: a checkpoint advance: the compass (%s) and the world marker (%s) both fade out and in, both on the NEXT one (%s / %s)"
+        % (", ".join("%.2f" % a for a in ca[::6]), ", ".join("%.2f" % a for a in wa[::6]), cm["quest"].dist, W.d.text),
+        k0 is not None and k1 is not None and all(ca[i] >= ca[i + 1] for i in range(k0)) and all(ca[i] <= ca[i + 1] for i in range(k0, 39))
+        and ca[-1] == 1 and wa[-1] == 1 and cm["quest"].dist == W.d.text == C.distText(dp2) and abs(W.f.point[4] - nx2) < 0.1)
+    # the game super-tracks the QUEST while the route is active (its engine point there): both stay on the checkpoint, the world
+    # marker placed by the camera's yaw and pitch instead of the engine's (wrong) point
+    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end")
+    navset(nx2 - 300)
+    frames(20, read=True)
+    cm = cmarks()
+    xe = c0 - c0 * math.tan(C.wrap(bp2 - C.cam.abs))
+    chk("cp25: the game on the quest meanwhile: both still on the checkpoint (world x %.1f by the estimate %.1f, not the engine's %.1f; %s / %s)"
+        % (W.f.point[4], xe, G.nav.x, cm["quest"].dist, W.d.text),
+        W.f.shown is True and abs(W.f.point[4] - xe) < 0.5 and cm["quest"].dist == W.d.text == C.distText(dp2))
+    # NO ROUTE (none, or arrived): both on the quest's objective
+    L.execute("WowCompanion.routeWp.active = false")
+    bq2, dq2 = C.bearing(C.me_, C.tg_.quest)
+    fk2 = (G.facing, C.cam.abs, C.cam.ref)
+    G.facing = C.wrap(bq2 - math.radians(10)); C.cam.abs = C.cam.ref = G.facing     # (the camera turned toward the quest)
+    navset(c0 - c0 * math.tan(math.radians(10)))
+    frames(60, read=True)
+    cm = cmarks()
+    chk("cp25: no route: both on the QUEST's objective (%s / %s, the quest's %s), the world marker pale gold"
+        % (cm["quest"].dist, W.d.text, C.distText(dq2)),
+        cm["quest"].dist == W.d.text == C.distText(dq2) and "pin" in cm and abs(W.tx.col[2] - 0.93) < 1e-9
+        and L.eval("rawequal(WowCompanion.compass.cg.w, WowCompanion.compass.tg_.quest)"))
+    G.facing, C.cam.abs, C.cam.ref = fk2
+    L.execute("""C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end; WowCompanion.routeWp.active = true
+                 C_QuestLog.GetNumQuestLogEntries = nil""")
+    G.pin = L.table(0.6, 0.4); G.quest = L.table(0.6, 0.4); C.qnAt = -10
+    navset()
+    frames(60, read=True)
     G.nav = None; frames(60 * 4, read=True)
     chk("cp20: no pitch for over 3 s: hidden", W.list[2].f.shown is False)
     L.execute("WowCompanion.routeWp.active = false")
