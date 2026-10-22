@@ -41,9 +41,13 @@ object ShippedSnap {
     const val FAR_STEEP = 5f          // a fallback over terrain this dear a yard (a climb of ~37 degrees, a rock field): not offered
     const val FAR_COST = 1.0e6        // a snap past the spread: this much dearer (the fallback when the nearer ones lead nowhere)
     const val SPREAD_YD = 0.5         // the snaps kept: the nearest clear one's and those no more than this longer
-    /** test70: a straight cut onto a shipped NET way (a trail beside the end) leads too when no more than this longer than the nearest -
-     *  the router then weighs it against the roadmap node by cost (the trail 16 yd away against a roadmap node 2 yd away) */
-    const val NET_CUT_SPREAD_YD = 20.0
+    /** test70: a straight clear line onto the shipped NET (a node, or a cut into a way: a trail beside the end) leads too when no more
+     *  than this longer than the nearest roadmap snap - the router then weighs it against the roadmap by cost (Zephras 92645: the trail
+     *  16 yd away against a roadmap node 2 yd away; test71's start, a net cut 21 yd away against a roadmap node under the player that
+     *  went 482 yd back round a hill where the net goes 110 yd) */
+    const val NET_CUT_SPREAD_YD = 40.0
+    /** a snap target on the shipped net: a net node (under the roadmap's [ShippedRoute.RM_BASE], not a cut) or a cut into a net way */
+    private fun onNet(node: Int, netCuts: Set<Int>) = node in netCuts || (node in 0 until ShippedRoute.RM_BASE)
     const val BENT = 1.15             // a bent snap's yard against a straight one's
     const val WALL = 12f              // a steep bank (Terrain.legFactor at 45 degrees) or worse: a wall to the snap
     const val DOOR_YD = 15.0          // an end standing in a wall passes the walls this near it (its door)
@@ -218,8 +222,8 @@ object ShippedSnap {
         val pool = if (straight.isNotEmpty()) straight else out
         val shortest = pool.minOf { it.yd }
         // (only when the nearest is the ROADMAP's - a node or a cut into its edge: one on the shipped network already leads as before)
-        val nearestRm = pool.minByOrNull { it.yd }?.let { it.node >= ShippedRoute.RM_BASE || (it.node <= CUT_KEY && it.node !in netCuts) } == true
-        val lead = pool.filter { it.yd <= shortest + SPREAD_YD || (nearestRm && it.node in netCuts && it.yd <= shortest + NET_CUT_SPREAD_YD) }
+        val nearestRm = pool.minByOrNull { it.yd }?.let { !onNet(it.node, netCuts) } == true
+        val lead = pool.filter { it.yd <= shortest + SPREAD_YD || (nearestRm && onNet(it.node, netCuts) && it.yd <= shortest + NET_CUT_SPREAD_YD) }
             .sortedBy { it.cost }.map { Snap(it.node, it.pts, it.yd, it.cost, it.straight, true, it.steep) }
         val rest = out.filter { s -> lead.none { it.node == s.node } }.sortedBy { it.yd }
         return Result(lead + rest, "snapped ${lead.first().yd.toInt()} yd ${if (lead.first().straight) "straight" else "round a wall or water"} " +
@@ -264,8 +268,8 @@ object ShippedSnap {
         val pool = if (straight.isNotEmpty()) straight else out
         val shortest = pool.minOf { it.yd }
         // (only when the nearest is the ROADMAP's - a node or a cut into its edge: one on the shipped network already leads as before)
-        val nearestRm = pool.minByOrNull { it.yd }?.let { it.node >= ShippedRoute.RM_BASE || (it.node <= CUT_KEY && it.node !in netCuts) } == true
-        val lead = pool.filter { it.yd <= shortest + SPREAD_YD || (nearestRm && it.node in netCuts && it.yd <= shortest + NET_CUT_SPREAD_YD) }
+        val nearestRm = pool.minByOrNull { it.yd }?.let { !onNet(it.node, netCuts) } == true
+        val lead = pool.filter { it.yd <= shortest + SPREAD_YD || (nearestRm && onNet(it.node, netCuts) && it.yd <= shortest + NET_CUT_SPREAD_YD) }
             .sortedBy { it.cost }.map { Snap(it.node, it.pts, it.yd, it.cost, it.straight, true, it.steep) }
         val rest = out.filter { s -> lead.none { it.node == s.node } }.sortedBy { it.yd }
         return Result(lead + rest, "snapped ${lead.first().yd.toInt()} yd ${if (lead.first().straight) "straight" else "round"} on the shipped lattice " +

@@ -286,6 +286,21 @@ class ShippedSnapTest {
         assertTrue("never over the band", r.pts.none { it[1] in 545.0..555.0 && it[0] < 35.0 })
     }
 
+    @Test fun theNetBesideTheEndIsWeighedAgainstTheRoadmapUnderIt() {
+        // test71 (the user: "it's sending me backwards and around a hill"; Zephras 92645, a roadmap node under the player whose edges
+        // went 482 yd back round a hill, a net way 21 yd away going 110 yd): the player 21 yd beside the road, a roadmap node right
+        // under them that leads away round a loop to the goal - the cut onto the road leads too, and the router takes it by cost
+        val n = ShippedRoute.RM_BASE
+        val rm = ShippedRoute.Roadmap(mapOf(n to doubleArrayOf(19.0, 500.0), n + 1 to doubleArrayOf(-150.0, 500.0),
+            n + 2 to doubleArrayOf(-150.0, 600.0), n + 3 to doubleArrayOf(40.0, 600.3)),
+            listOf(ShippedRoute.Roadmap.Edge(n, n + 1), ShippedRoute.Roadmap.Edge(n + 1, n + 2), ShippedRoute.Roadmap.Edge(n + 2, n + 3)))
+        val r = ShippedRoute.plan(road40(), flat, null, doubleArrayOf(19.0, 500.0), doubleArrayOf(40.0, 600.0), roadmap = rm)
+        assertTrue(r.why, r.reached)
+        assertEquals(r.why, 0.0, r.roadmapYd, 1e-6)
+        assertTrue(r.why, r.yd < 130.0)
+        assertEquals(21.0, r.attachFromYd, 0.5)
+    }
+
     @Test fun anIsolatedNodeIsNeverTheSnap() {
         // a roadmap node 2 yd from the player that no way leaves: left out of the snap's nodes, the road's node taken
         val rm = ShippedRoute.Roadmap(mapOf(ShippedRoute.RM_BASE to doubleArrayOf(2.0, 0.0)), emptyList())
