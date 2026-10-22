@@ -2912,6 +2912,20 @@ object UiKit {
                   number: Int? = null, ghost: Boolean = false, glow: Boolean = focus) {
         val r = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
         if (ghost) { questGhost(c, cx, cy, size, state, focus, number, r); return }
+        // THE ONE MARKER LOOK (cp27; the user on test65): the focused quest's objective wears the world's and the compass's own disc
+        // (MarkerArt: the add-on's quest_disc.tga), its number in the spec's dark brown, no outline
+        if (focus && state == Quest.PROGRESS) MarkerArt.discLoaded()?.let { d ->
+            if (glow) tex("poi_glow")?.let {
+                val k = size * 0.78f
+                pGlow.colorFilter = null; pGlow.alpha = 204
+                c.drawBitmap(it, null, RectF(cx - k, cy - k, cx + k, cy + k), pGlow)
+                pGlow.alpha = 255
+            }
+            c.drawBitmap(d, null, r, pBmp)
+            val p = numberPaint(size * 0.46f, MarkerArt.DISC_NUMBER, shadow = false).apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+            c.drawText(number?.toString() ?: "!", cx, cy - (p.ascent() + p.descent()) / 2f, p)
+            return
+        }
         val disc = tex(if (focus) "poi_disc_focus" else "poi_disc")
         if (disc == null) {
             pFlat.style = Paint.Style.FILL; pFlat.color = if (focus) Theme.gold else Color.rgb(70, 30, 20)
