@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp32" }
+WC.compass = { V = "cp33" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -1028,8 +1028,18 @@ do
         if C.cam.ry and math.abs(C.cam.ry) > W.TILT then W.tilted = true end
         return W.pitch ~= nil and now - (W.pitchAt or -100) < W.PITCH_S and not W.tilted
     end
+    -- cp33 (the user: "the world markers should be a toggle, off by default"): the in-world markers have their own switch, apart from
+    -- the compass bar: Hub's row "uisw" 8 / 9 (WC.npWant.wm), the app's choice per character (default off). Off: nothing is drawn or
+    -- placed in the world (the compass's own reads and markers go on)
+    function C.wmWanted() return type(WC.npWant) == "table" and WC.npWant.wm == true end
     function C.wmStep(facing, dt)
         local W = C.wm
+        if not C.wmWanted() then
+            if W.wasOn then C.wmHide(); W.wasOn = false end
+            W.shown, W.n = false, 0
+            return
+        end
+        W.wasOn = true
         dt = num(dt) or 0
         local now = (type(GetTime) == "function" and GetTime()) or 0
         local on, lost = {}, {}
@@ -1595,7 +1605,7 @@ do
             end)(), rtn = C.rt_ and #C.rt_ or 0, rtbad = (#C.RT.bad > 0) and table.concat(C.RT.bad, ",") or nil,
             cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
             cyaw = C.cam.abs and math.floor(C.cam.abs * 1000 + 0.5) / 1000 or nil,
-            wm = C.wm and C.wm.shown and true or false, wmn = C.wm and C.wm.n or 0, air = C.wm and C.wm.air or nil,
+            wm = C.wm and C.wm.shown and true or false, wmn = C.wm and C.wm.n or 0, wmon = C.wmWanted and C.wmWanted() or false, air = C.wm and C.wm.air or nil,
             pitch = (C.wm and C.wm.pitch) and math.floor(math.deg(C.wm.pitch) * 10 + 0.5) / 10 or nil,
             pAge = (C.wm and C.wm.pitchAt) and math.floor(((type(GetTime) == "function" and GetTime()) or 0) - C.wm.pitchAt) or nil,
             tilt = C.wm and C.wm.tilted or nil, zoom = C.wmZoom and math.floor(C.wmZoom() * 10 + 0.5) / 10 or nil,
