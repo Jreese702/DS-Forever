@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp28" }
+WC.compass = { V = "cp29" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -723,7 +723,7 @@ do
     --   camera pitch is readable: the horizon band), the middle of the screen when the engine's point is not to be seen.
     --   IN FRONT: tested against the camera's yaw, also with the bar on the facing (the estimate runs always, cp19).
     C.wm = { SIZE = 34, EASE_S = 0.12, LAND_S = 0.5,
-             list = {}, obj = {}, free = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 60, MK_S = 1, mkAt = -100, TILT = 0.1, PITCH0 = 0.3,
+             list = {}, obj = {}, free = {}, raw = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 60, MK_S = 1, mkAt = -100, TILT = 0.1, PITCH0 = 0.3,
              JUMP_V = 7.9558, MOUNT_V = 7.9558, GRAV = 19.2911, PRESS_S = 0.3, jumpAt = -100, jumpN = 0, LOG_S = 5, logAt = -100,
              GOLD = { 1, 0.82, 0.3 }, QUEST = { 1, 0.93, 0.5 }, PIN = "Interface\\AddOns\\WowCompanion\\Media\\marker_pin",
              HOLD_S = 0.6, IN_S = 0.15, OUT_S = 0.25, FRONT_IN = 10, FRONT_OUT = 16, VIS_S = 10, visAt = -100,
@@ -1010,7 +1010,10 @@ do
         local now = (type(GetTime) == "function" and GetTime()) or 0
         local on, lost = {}, {}
         local S = C.RT.st
-        if C.wanted() and C.frame and C.frame:IsShown() and C.me_ then
+        -- cp29: the player's place read THIS frame (the engine's point is this frame's; with the 10 Hz read the solved pitch
+        -- wobbled at every read and the markers placed by it bobbed 15-30 px)
+        local me = (C.wanted() and C.frame and C.frame:IsShown() and C.me_) and (C.me() or C.me_) or nil
+        if me then
             local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
             local okW, uw = pcall(function() return UIParent:GetWidth() end)
             local okH, uh = pcall(function() return UIParent:GetHeight() end)
@@ -1063,7 +1066,7 @@ do
                     engWhy = (not (okV and vp == true) and "novp") or (not (okK and cl == false) and "clamp") or (not (x and y) and "novp")
                         or nil
                     if not engWhy then
-                        local b, d = C.bearing(C.me_, engW)
+                        local b, d = C.bearing(me, engW)
                         -- cp24: a margin once shown (the camera estimate's yaw at the FOV's edge)
                         local o1 = engId and W.obj[engId]
                         local gate = ((o1 and (o1.a or 0) > 0) and W.FRONT_OUT or W.FRONT_IN)
@@ -1121,8 +1124,8 @@ do
                         local w = st.w
                         if not okPitch then
                             lost[id] = W.tilted and "tilt" or "pitch"
-                        elseif not (w.cont and C.me_.cont and w.cont ~= C.me_.cont) then
-                            local b, d = C.bearing(C.me_, w)
+                        elseif not (w.cont and me.cont and w.cont ~= me.cont) then
+                            local b, d = C.bearing(me, w)
                             local rel = C.wrap(b - yaw)
                             -- cp24: the gates with a margin once shown
                             local oi = W.obj[id]
@@ -1131,8 +1134,20 @@ do
                             elseif math.abs(rel) >= hfov / 2 + (seen and math.rad(4) or 0) then lost[id] = "fov"
                             else
                                 local x = half - fl * math.tan(rel)
-                                local yo = C.wmProj(W.pitch, D, W.CAM_H, d * math.cos(rel), C.wmDzAir(st.it and st.it.p or nil), fl)
+                                -- cp29 (test68: the second marker "EDGE" ~95 times, standing still at 113 yd with a fresh 19.6 deg
+                                -- pitch - which puts a point on its own ground there well on screen, near the horizon): the app's
+                                -- height for a checkpoint (Map.lua's uwp z digits: its terrain cell less the player's z) can be far off
+                                -- and lifted it over the screen's top. A height that puts the point off screen is not used: the point
+                                -- is placed at the player's own ground (less only a jump's rise), and the bad height counted (dzBad)
+                                local dzp = C.wmDzAir(st.it and st.it.p or nil)
+                                local yo = C.wmProj(W.pitch, D, W.CAM_H, d * math.cos(rel), dzp, fl)
                                 local y = yo and uh / 2 + yo or nil
+                                local raw = { x = x, y = y, dz = dzp, rel = rel }
+                                if not (y and y > 0 and y < uh) and dzp ~= -(W.lift or 0) then
+                                    local yo0 = C.wmProj(W.pitch, D, W.CAM_H, d * math.cos(rel), -(W.lift or 0), fl)
+                                    if yo0 then y, raw.dzBad = uh / 2 + yo0, true end
+                                end
+                                W.raw[id] = raw
                                 local m = seen and 0.99 or 0.95
                                 if y and math.abs(x - half) < half * m and y > 0 and y < uh then
                                     on[id] = wmPut(id, x, y, st.kind == "goal" and W.QUEST or W.GOLD, C.distText(d), (C.rtLook(st)))
@@ -1152,12 +1167,21 @@ do
         if now - W.mkAt >= W.MK_S and ((type(R0) == "table" and R0.active == true) or next(S) ~= nil) and WC.send and WC.encode then
             W.mkAt = now
             local m = {}
+            for id in pairs(W.raw) do if not S[id] then W.raw[id] = nil end end
             for id, st in pairs(S) do
                 local o = W.obj[id]
                 m[#m + 1] = { id = id, d = st.d and math.floor(st.d + 0.5) or nil, a = math.floor(st.a * 100 + 0.5), r = st.rank,
                               wa = o and math.floor((o.alpha or 0) * 100 + 0.5) or 0,
                               x = (o and on[id] and o.x) and math.floor(o.x + 0.5) or nil, y = (o and on[id] and o.y) and math.floor(o.y + 0.5) or nil,
                               how = on[id] and ((id == W.engId) and "eng" or "est") or (lost[id] or (st.rank and "?" or "fading")) }
+                local rw = W.raw[id]                                         -- cp29: the estimate's own numbers, shown or not
+                if rw and id ~= W.engId then
+                    local e = m[#m]
+                    e.rx, e.ry = rw.x and math.floor(rw.x + 0.5) or nil, rw.y and math.floor(rw.y + 0.5) or nil
+                    e.dz = rw.dz and math.floor(rw.dz * 10 + 0.5) / 10 or nil
+                    e.rel = rw.rel and math.floor(math.deg(rw.rel) + 0.5) or nil
+                    e.dzBad = rw.dzBad or nil
+                end
             end
             pcall(WC.send, WC.encode({ type = "cap", probe = "wmk", v = C.V, m = m, eng = W.engKind, ew = W.engWhy,
                 st = W.engKind == "pin", route = type(R0) == "table" and R0.active == true or nil,
@@ -1197,13 +1221,15 @@ do
     --   swaps them on an advance, its moreOld for MORE_OLD_S: never emptied for a moment), then the quest's objective once the app
     --   sent every checkpoint left (fewer than its most). No route: the player's own super-tracked pin, else the quest's objective.
     --   Each by its spot (id), so a marker keeps its identity as the list shifts.
-    --   THE PAIR: the first two not passed. A checkpoint is passed at NEAR (25 yd: the app's own DangerGrid.PASS_YD, when it moves
-    --   the pin on). The nearer one FADES BY DISTANCE (full at FAR, 0 at NEAR: gone exactly when it is passed); the second is full.
+    --   THE PAIR: the first two not passed. A checkpoint is passed at NEAR (the app's own DangerGrid.PASS_YD, when it moves the pin
+    --   on: cp29 4 yd). The nearer one FADES BY DISTANCE (full at FAR, 0 at NEAR: gone exactly when it is passed); the second is full.
     --   When the first has gone, the second is the nearer (no jump: its rank eases over RANK_S, a little larger and stronger) and the
     --   next fades in behind it (IN_S) - only once nothing else is still fading out (never three, k+2 only after k is gone).
     --   Anything leaving the pair (passed, or dropped by the app earlier) fades out over OUT_S where it was.
     --   The objective is never faded by distance (arrived: the quest's marker as before); the further flags beyond the two are gone.
-    C.RT = { FAR = 45, NEAR = 25, IN_S = 0.4, OUT_S = 0.25, DOWN1_S = 0.6, RANK_S = 0.4, K2 = 0.8, A2 = 0.75, MORE_OLD_S = 2,
+    -- cp29 (test68, the user: "the fade out should be 25 to 0 yards"): full to FAR 25 yd, gone at NEAR - the app's pass radius
+    -- (DangerGrid.PASS_YD), which Map moves down to match (4 yd): keep the two the same
+    C.RT = { FAR = 25, NEAR = 4, IN_S = 0.4, OUT_S = 0.25, DOWN1_S = 0.6, RANK_S = 0.4, K2 = 0.8, A2 = 0.75, MORE_OLD_S = 2,
              SAME_YD = 4, GOAL_NEAR = 8, GOAL_ON = 40, MORE_MAX = 2, st = {}, passed = {} }
     local function rtAt(w) return math.floor(w.x + 0.5) .. ":" .. math.floor(w.y + 0.5) end
     function C.route(tg)

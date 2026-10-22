@@ -905,13 +905,17 @@ def main():
     frames(60, read=True)                                # (standing a moment: the earlier markers out, these in, the heading north)
     for i in range(60 * 48):
         X, Y = me_xy()
-        if X < GOAL[0] - 2:
-            G.py = G.py - 7 / 60 / 1000                  # north at 7 yd/s
         R = L.globals().WowCompanion.routeWp
-        # the app: the pin moves on 0.3 s after the player is within 25 yd of it; past the last, the route ends
+        # cp29: the player walks the route (toward the pin, then the objective) at 7 yd/s
+        tx, ty = CPS[st["k"]] if R.active else GOAL
+        dd = math.hypot(tx - X, ty - Y)
+        if dd > 2:
+            G.py = G.py - (tx - X) / dd * 7 / 60 / 1000
+            G.px = G.px - (ty - Y) / dd * 7 / 60 / 1000
+        # the app: the pin moves on 0.3 s after the player is within its pass radius (cp29: 4 yd) of it; past the last, the route ends
         if R.active:
             pc = CPS[st["k"]]
-            if math.hypot(pc[0] - X, pc[1] - Y) <= 25 and st["passAt"] is None:
+            if math.hypot(pc[0] - X, pc[1] - Y) <= 4 and st["passAt"] is None:
                 st["passAt"] = G.t + 0.3
             if st["passAt"] is not None and G.t >= st["passAt"]:
                 st["passAt"] = None
@@ -942,7 +946,7 @@ def main():
         log.append(row)
     ids = ["cp:%d:%d" % (math.floor(x + 0.5), math.floor(y + 0.5)) for x, y in CPS]
     gid = "goal:123"
-    mid = [r for r in log if r["X"] < CPS[-1][0] - 26]                       # mid-route: before the last checkpoint is passed
+    mid = [r for r in log if r["X"] < CPS[-1][0] - 5]                       # mid-route: before the last checkpoint is passed
     two = sum(1 for r in mid if len(r["pair"]) == 2)
     one = min(sum(1 for v in r["st"].values() if v["a"] > 0.02) for r in mid)
     chk("cp26: mid-route, always TWO in the pair (%d of %d frames) and never fewer than one shown (at least %d)" % (two, len(mid), one),
@@ -962,9 +966,9 @@ def main():
             elif seen:
                 zeroAt[cid] = (r["t"], last)
                 break
-    chk("cp26: the nearer one fades with distance, monotonically, to 0 at the app's 25 yd (gone at %s yd)"
+    chk("cp26: the nearer one fades with distance, monotonically, to 0 at the app's pass radius, 4 yd (cp29: full to 25 yd; gone at %s yd)"
         % ", ".join("%.1f" % v[1] if v else "-" for v in zeroAt.values()),
-        mono and all(v is not None and 24 <= v[1] <= 26 for v in zeroAt.values()))       # (positions read at 10 Hz: ~0.7 yd steps)
+        mono and all(v is not None and 3 <= v[1] <= 5.5 for v in zeroAt.values()))       # (positions read at 10 Hz: ~0.7 yd steps)
     order = True
     for j in range(2, len(ids)):
         first = [r["t"] for r in log if ids[j] in r["st"] and r["st"][ids[j]]["a"] > 0]
@@ -1062,6 +1066,55 @@ def main():
         [(k_, v.d, v.a, v.wa, v.x, v.how) for k_, v in ms.items()]),
         10 <= len(mk) <= 13 and ms.get(i1) and ms[i1].d == 80 and ms[i1].a == 100 and ms[i1].wa == 100 and ms[i1].how == "est"
         and ms[i1].x is not None and ms.get(i2) and ms[i2].wa == 75 and last.eng == "quest")
+    # cp29 (test68: the second marker "EDGE" standing still: rank 1 at 58 yd on the engine's point, rank 2 at 113 yd, pitch 19.6):
+    # the 113 yd one ON screen at its spot; an app height far off (40 yd up) is not allowed to lift it over the top
+    G.px, G.py = 0.5, 0.5
+    G.facing = 0.0; C.cam.abs = C.cam.ref = 0.0
+    PH = math.radians(19.6)
+    A1, A2 = (58, -14), (113, 20)
+    G.pin = L.table(*mp(*A1))
+    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end")
+    L.execute("WowCompanion.routeWp = { active = true, qid = 123, more = { { m = GAME.map, x = %r, y = %r } } }" % mp(*A2))
+
+    def at(t, ph):
+        rel = math.atan2(t[1], t[0])
+        return c0 - c0 * math.tan(rel), 384 + proj(ph, math.hypot(*t) * math.cos(rel), 0)
+    ex, ey = at(A1, PH)
+    G.nav = L.table_from({"x": ex, "y": ey, "clamped": False})
+    frames(90, read=True)
+    j1, j2 = "cp:58:-14", "cp:113:20"
+    q1, q2 = W.obj[j1], W.obj[j2]
+    w2 = at(A2, PH)
+    chk("cp29: pitch 19.6 (solved %.2f): the 113 yd second marker ON screen at its spot (%.1f, %.1f; want %.1f, %.1f), 0.75; the first on the engine's"
+        % (math.degrees(W.pitch), q2.f.point[4] if q2 else -1, q2.f.point[5] if q2 else -1, w2[0], w2[1]),
+        q2 is not None and q2.f.shown is True and abs(q2.f.point[4] - w2[0]) < 0.5 and abs(q2.f.point[5] - w2[1]) < 0.5
+        and abs(q2.f.alpha - 0.75) < 1e-9 and q1.f.shown is True and abs(q1.f.point[4] - ex) < 0.5 and W.engId == j1)
+    L.execute("WowCompanion.routeWp.more[1].dz = 40")
+    n0 = len(L.globals().SENT)
+    frames(70, read=True)
+    mk = [L.globals().SENT[i] for i in range(n0 + 1, len(L.globals().SENT) + 1) if getattr(L.globals().SENT[i], "probe", None) == "wmk"]
+    e2 = None
+    if mk:
+        for i in range(1, len(mk[-1].m) + 1):
+            if mk[-1].m[i].id == j2:
+                e2 = mk[-1].m[i]
+    chk("cp29: an app height 40 yd up (it would put it at y %s, over the top): placed on our own ground instead (%.1f), shown, logged dzBad"
+        % (e2.ry if e2 else None, q2.f.point[5]), q2.f.shown is True and abs(q2.f.point[5] - w2[1]) < 0.5 and e2 is not None
+        and e2.dzBad is True and e2.dz == 40 and e2.how == "est")
+    L.execute("WowCompanion.routeWp.more[1].dz = nil")
+    # THE FADE (the user: "the fade out should be 25 to 0 yards"): full to 25 yd, gone at the pass radius (4 yd)
+    L.execute("WowCompanion.routeWp.more = {}")
+    fa = []
+    for dd in (40, 25, 14.5, 8, 4.6):
+        G.py = (500 - (A1[0] - dd)) / 1000; G.px = (500 - A1[1]) / 1000
+        C.read(True)
+        frames(90, read=True)
+        stj = C.RT.st[j1]
+        fa.append((dd, round(stj.a, 3) if stj else None))
+    G.py = (500 - (A1[0] - 3.5)) / 1000; C.read(True); frames(30, read=True)
+    chk("cp29: the nearer one full to 25 yd, then fading to 0 at 4 yd (%s; at 3.5 yd passed: %s)" % (fa, C.RT.st[j1] is None),
+        fa[0][1] == 1 and fa[1][1] == 1 and abs(fa[2][1] - 0.5) < 0.01 and abs(fa[3][1] - 4 / 21) < 0.01 and fa[4][1] < 0.05
+        and C.RT.st[j1] is None)
     G.px, G.py, G.facing, C.cam.abs, C.cam.ref, G.pin, G.quest = keepW
     L.execute("""C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end
                  WowCompanion.routeWp = { active = true, more = { { m = GAME.map, x = 0.7, y = 0.35 }, { m = GAME.map, x = 0.4, y = 0.3 } } }
