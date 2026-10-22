@@ -679,8 +679,12 @@ class HomeView(
         }
         if (mapWanted) {
             when (msg.optString("op")) {
-                "hold" -> if (msg.optBoolean("ok")) { mapHeld = true; mapBSaid = null; mapView.padHints = true; mapView.hostStart(); syncMapB() }
-                    else { Log.i(TAG, "map module: hold refused (${msg.optString("why")})"); homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false)) }
+                "hold" -> if (msg.optBoolean("ok")) { mapHeld = true; mapBSaid = null; mapView.padHints = true; mapView.hostStart(); syncMapB(); mapFallbackOff() }
+                    else {
+                        Log.i(TAG, "map module: hold refused (${msg.optString("why")})"); homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))
+                        // never a module the player cannot leave: B read by Home closes it (MapExitGuard), the hold asked again after the fight
+                        mapRefused = true; mapFallbackOn(); removeCallbacks(mapWatch); postDelayed(mapWatch, 1000L)
+                    }
                 "free", "leave" -> { mapHeld = false; mapView.padHints = false }
             }
             return
@@ -708,6 +712,44 @@ class HomeView(
     private var chatHeld = false
     private var mapWanted = false
     private var mapHeld = false
+    /** the map module's exit guard (MapExitGuard): when the hold was asked, whether the game refused it, Home's own reader for B */
+    private var mapAskAt = 0L
+    private var mapRefused = false
+    private var mapFallbackReader: PadInput? = null
+    private var mapFallbackHeld = 0
+    private val mapWatch = Runnable { mapWatchStep() }
+    private fun mapAsk() {
+        mapAskAt = android.os.SystemClock.uptimeMillis(); mapRefused = false
+        if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = true))) Log.i(TAG, "map module: hold")
+        removeCallbacks(mapWatch); postDelayed(mapWatch, MapExitGuard.ANSWER_MS)
+    }
+    /** once a second while the module is open without the controller: the fallback reader, and the hold asked again after the fight */
+    private fun mapWatchStep() {
+        if (!mapWanted) { mapFallbackOff(); return }
+        val since = android.os.SystemClock.uptimeMillis() - mapAskAt
+        if (MapExitGuard.fallback(mapWanted, mapHeld, mapRefused, since)) mapFallbackOn()
+        if (MapExitGuard.retry(mapWanted, mapHeld, inFight(), since)) { Log.i("WCLOG", "map module: the hold asked again (out of the fight)"); mapAsk(); return }
+        if (!mapHeld) postDelayed(mapWatch, 1000L)
+    }
+    private fun mapFallbackOn() {
+        if (mapFallbackReader != null) return
+        Log.i("WCLOG", "map module: no controller hold (${if (mapRefused) "refused: a fight" else "no answer"}): B closes it")
+        auraPane.note("In a fight the game keeps the controller: press B to close the map")
+        mapFallbackHeld = 0
+        mapFallbackReader = PadInput(onPad = { _, _, _, _ -> }, onStatus = { _, _ -> }, onButtons = { h ->
+            post {
+                val was = mapFallbackHeld; mapFallbackHeld = h
+                if (mapWanted && !mapHeld && MapExitGuard.bPressed(was, h)) {
+                    Log.i("WCLOG", "map module: B read by Home: closed")
+                    if (flow.close()) { changed(); onBHome?.invoke() }
+                }
+            }
+        }).also { it.start() }
+    }
+    private fun mapFallbackOff() {
+        mapFallbackReader?.stop(); mapFallbackReader = null; mapFallbackHeld = 0
+        removeCallbacks(mapWatch)
+    }
     private var mapBSaid: String? = null
     private var homePadN = -1
     private fun homeGuestTap(cells: List<Pair<String, Int>>?): Boolean = cells != null && pad != null && TapBridge.taps(context, pad, cells) { }
@@ -1119,8 +1161,8 @@ class HomeView(
         val mapFull = s.full == HomeModule.MAP && !s.takeover && lent(mapView)
         if (mapFull != mapWanted) {
             mapWanted = mapFull
-            if (mapFull) { auraPane.close(); homePadN = -1; if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = true))) Log.i(TAG, "map module: hold") }
-            else { if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))) Log.i(TAG, "map module: free"); mapHeld = false; mapBSaid = null; mapView.padHints = false; auraPane.leaveFull() }
+            if (mapFull) { auraPane.close(); homePadN = -1; mapAsk() }
+            else { if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))) Log.i(TAG, "map module: free"); mapHeld = false; mapBSaid = null; mapView.padHints = false; auraPane.leaveFull(); mapFallbackOff() }
         }
         // only while Home holds it: a fight that starts in the Map room must not shrink that room's map
         // the bars: one thin row at rest, the takeover in combat, the Cast room's own layout full screen
