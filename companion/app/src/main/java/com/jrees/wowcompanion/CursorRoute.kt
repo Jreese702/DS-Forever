@@ -57,6 +57,20 @@ object CursorRoute {
         return out
     }
 
+    /** where [goals] took a quest's goal from, for the route's log line (test70: one line must reproduce a plan): a done quest's
+     *  turn-in - the game's own (the map entry's tx / ty) or QuestieDB's ender - else its objective (the game's point, QuestieDB's) */
+    fun goalSource(mq: JSONObject?, e: JSONObject?): String {
+        val ready = e?.optBoolean("ready") == true || e?.optBoolean("done") == true || mq?.optBoolean("done") == true
+        val gameT = mq != null && !mq.optDouble("tx", Double.NaN).isNaN()
+        return when {
+            ready && gameT -> "turn-in (the game's)"
+            ready && e?.optJSONObject("qdb")?.optJSONArray("turnin")?.length()?.let { it > 0 } == true -> "turn-in (QuestieDB's ender)"
+            ready -> "turn-in (no spot: the quest's point)"
+            mq != null && !mq.optDouble("x", Double.NaN).isNaN() -> "objective (the game's)"
+            else -> "objective (QuestieDB)"
+        }
+    }
+
     /**
      * The step for the line. [px] / [py] the player; [goals] this map's still-needed goals ([goals]); [far] the quest's place when it
      * is not on this map (this map's coordinates, outside 0..1), null = unknown; [way] / [wayText] the game's next waypoint for it on

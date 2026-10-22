@@ -4495,6 +4495,13 @@ class MapView(context: Context) : View(context) {
     /** an aggro record arrived (CompanionHost): draw, so a new mob on the way is seen within the record's second */
     fun onAggro() = invalidate()
 
+    /** where quest [q]'s goal comes from on this map (CursorRoute.goalSource), for the route's log line */
+    private fun goalWordsOf(q: Int): String {
+        var mq: JSONObject? = null
+        map?.optJSONArray("quests")?.let { qs -> for (i in 0 until qs.length()) qs.optJSONObject(i)?.let { if (it.optInt("questID", 0) == q) mq = it } }
+        return "goal: " + CursorRoute.goalSource(mq, questById[q])
+    }
+
     /** [ghost]: the corpse run's leg (CorpseRoute: no danger, no live aggro, no detour cap, no transports) */
     private fun shippedLeg(q: Int, route: CursorRoute.Route, ghost: Boolean = false): Shipped? {
         val m = map ?: return null
@@ -4565,7 +4572,9 @@ class MapView(context: Context) : View(context) {
                 val who = if (ghost) "corpse" else "quest $q"
                 for (l in snapLog.distinct()) android.util.Log.i("WCMAP", "safepath net: $who $l")
                 val mark = stale?.let { "; may be out of date ($it)" } ?: ""
-                val said = if (res.reached) "$who on map $mapId: ${res.yd.toInt()} yd, ${res.bends} bends (${res.why})$mark" else res.why
+                // test70: the plan reproducible from this one line - the player's and the goal's map spots, and where the goal came from
+                val repro = "from %.4f,%.4f to %.4f,%.4f (%s)".format(px, py, route.x, route.y, if (ghost) "the corpse" else goalWordsOf(q))
+                val said = if (res.reached) "$who on map $mapId: ${res.yd.toInt()} yd, ${res.bends} bends, $repro (${res.why})$mark" else "${res.why}; $repro"
                 if (res.reached && leg != null) {
                     shipNone.remove(q)
                     // the hysteresis: a replan while on the kept way takes the new one only when it is that much shorter
