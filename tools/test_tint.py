@@ -22,7 +22,9 @@ local function plateFor(u)
                 GetEffectiveScale = function() PLATE_READS = PLATE_READS + 1; return 1 end }
     return setmetatable(p, { __newindex = function(t, k, v) PLATE_WRITES = PLATE_WRITES + 1; rawset(t, k, v) end })
 end
-function UnitIsUnit(a, b) local tok = a:match("^(.-)target$"); local u = tok and UNITS[tok]; return u ~= nil and u.onMe == true and b == "player" end
+TARGET = nil
+function UnitIsUnit(a, b) if b == "target" then return TARGET ~= nil and a == TARGET end
+    local tok = a:match("^(.-)target$"); local u = tok and UNITS[tok]; return u ~= nil and u.onMe == true and b == "player" end
 C_NamePlate = { GetNamePlateForUnit = function(t) local u = UNITS[t]; if u then u.plate = u.plate or plateFor(u); return u.plate end end }
 '''
 
@@ -72,9 +74,12 @@ def main():
         s = A.byTok[tok]
         return R.list[s] if s is not None else None
 
-    cases = [((6, 6), 20), ((9, 6), 23), ((60, 6), 45), ((1, 20), 5), ((5, 6), 19), ((-1, 6), 30), ((None, 6), 30)]
+    # at2: Map's fit (2.2 yd per level under; at or above 1 yd per level; clamps 5..45; "??" = +10)
+    cases = [((6, 6), 20), ((9, 6), 23), ((60, 6), 45), ((1, 20), 5), ((5, 6), 17.8), ((3, 6), 13.4), ((1, 6), 9.0),
+             ((-1, 6), 30), ((None, 6), 30)]
     got = [R.radius(lv, plv) for (lv, plv), _ in cases]
-    chk("the radius rule (shared with Map): %s" % got, got == [w for _, w in cases])
+    chk("the radius rule (shared with Map, at2): %s" % got, all(abs(g - w) < 1e-9 for g, (_, w) in zip(got, cases)))
+    chk("at2: 7 under is the floor (5), 6 under 6.8", R.radius(6, 13) == 5 and abs(R.radius(7, 13) - 6.8) < 1e-9)
 
     G.t = 100.0
     G.facing = 0.0
@@ -165,12 +170,48 @@ def main():
         % [(l.ok, l.why, l.lo, l.hi) for l in lines], len(lines) == 1 and lines[0].ok is True and lines[0].lo == 10 and lines[0].hi == 25)
     n0 = len(Lg.SENT)
     unit("nameplate10", 22); fire("NAME_PLATE_UNIT_ADDED", "nameplate10"); run(0.6)
-    A.lastAction = G.t                                   # the player attacked: a fight the player started
+    Lg.TARGET = "nameplate10"
+    A.noteAction(G.t)                                    # the player attacked IT: a fight the player started
+    Lg.TARGET = None
     Lg.UNITS.nameplate10.cb = True; Lg.UNITS.nameplate10.om = 3
     run(0.3)
     lines = [Lg.SENT[i] for i in range(n0 + 1, len(Lg.SENT) + 1) if getattr(Lg.SENT[i], "probe", None) == "pull"]
     chk("ag7: a refused check is logged too, with why (%s)" % [(l.ok, l.why) for l in lines],
         len(lines) == 1 and lines[0].ok is False and lines[0].why == "own action")
+    # ag8: an attack / cast on ANOTHER mob (or none: a self-heal) no longer refuses this mob's pull
+    n0 = len(Lg.SENT)
+    unit("nameplate11", 22); fire("NAME_PLATE_UNIT_ADDED", "nameplate11")
+    unit("nameplate12", 40); fire("NAME_PLATE_UNIT_ADDED", "nameplate12"); run(0.6)
+    Lg.TARGET = "nameplate12"
+    A.noteAction(G.t)
+    Lg.TARGET = None
+    A.noteAction(G.t)                                    # and a self-cast with no target
+    Lg.UNITS.nameplate11.d = 18; Lg.UNITS.nameplate11.cb = True; Lg.UNITS.nameplate11.om = 3
+    run(0.3)
+    lines = [Lg.SENT[i] for i in range(n0 + 1, len(Lg.SENT) + 1) if getattr(Lg.SENT[i], "probe", None) == "pull"
+             and Lg.SENT[i].n == A.slot[A.byTok.nameplate11].npc]
+    chk("ag8: a cast on another mob / a self-cast does not refuse this pull: %s" % [(l.ok, l.why) for l in lines],
+        len(lines) == 1 and lines[0].ok is True)
+    # ag8: the mob enters combat, then turns on us 0.8 s later (was "stale" past 0.5 s): kept, measured from the onset
+    n0 = len(Lg.SENT)
+    unit("nameplate13", 22); fire("NAME_PLATE_UNIT_ADDED", "nameplate13"); run(0.6)
+    Lg.UNITS.nameplate13.d = 18; Lg.UNITS.nameplate13.cb = True
+    run(0.8)
+    Lg.UNITS.nameplate13.d = 9; Lg.UNITS.nameplate13.om = 3
+    run(0.3)
+    lines = [Lg.SENT[i] for i in range(n0 + 1, len(Lg.SENT) + 1) if getattr(Lg.SENT[i], "probe", None) == "pull"]
+    chk("ag8: a turn 0.8 s after combat starts is kept (not stale), the near end at the onset: %s"
+        % [(l.ok, l.why, l.lo, l.hi) for l in lines], len(lines) == 1 and lines[0].ok is True and lines[0].lo == 10 and lines[0].hi == 25)
+    # a turn long after (2 s) is still stale
+    n0 = len(Lg.SENT)
+    unit("nameplate14", 22); fire("NAME_PLATE_UNIT_ADDED", "nameplate14"); run(0.6)
+    Lg.UNITS.nameplate14.cb = True
+    run(2.0)
+    Lg.UNITS.nameplate14.om = 3
+    run(0.3)
+    lines = [Lg.SENT[i] for i in range(n0 + 1, len(Lg.SENT) + 1) if getattr(Lg.SENT[i], "probe", None) == "pull"]
+    chk("ag8: a turn 2 s after is still refused as stale: %s" % [(l.ok, l.why) for l in lines],
+        len(lines) == 1 and lines[0].why == "stale")
     print("failed: %d" % len(fails))
     sys.exit(1 if fails else 0)
 
