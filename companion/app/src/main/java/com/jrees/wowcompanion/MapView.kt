@@ -4425,7 +4425,8 @@ class MapView(context: Context) : View(context) {
         liveSpawns(mapId, r, mine)
         // always the snapshot, empty or not: the route's line then says "live 0 (0 mobs)" and shows the live pass runs (test45: no
         // live words at all, so an empty layer and a missing one looked the same)
-        return LiveMobs.shared.snapshot(mapId, questsPlv)
+        // the user's "Only if sure" (test71): the route takes the confirmed mobs only (a sure spawn snap, a fix)
+        return LiveMobs.shared.snapshot(mapId, questsPlv).confirmed()
     }
     /** this map's QuestieDB spawns handed to the live store (once a map / danger read): the route's live pass and the aggro rings
      *  both (test52: a plate snaps to its spawn only once they are in - with no route running, the rings had none) */

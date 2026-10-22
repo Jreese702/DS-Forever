@@ -68,7 +68,9 @@ object LiveDanger {
      *  [a] - r to [b] + r, in the half-plane facing [half] when set) */
     class Disc(val id: Long, val x: Double, val y: Double, val r: Double, val u: Double, val w: Float, val ring: Boolean = false,
                val a: Double = 0.0, val b: Double = 0.0, val half: Double? = null, val how: LivePlace.How = LivePlace.How.SPAWN,
-               val npc: Int? = null, val lv: Int? = null) {
+               val npc: Int? = null, val lv: Int? = null,
+               /** its place CONFIRMED: a sure spawn snap or a fix from the rings (the user's "Only if sure": only these move the route) */
+               val sure: Boolean = false) {
         val reach get() = r + u
         fun at(px: Double, py: Double): Float {
             val d = hypot(px - x, py - y)
@@ -90,6 +92,9 @@ object LiveDanger {
     /** the live layer at one moment: [discs], [drops], [mobs] the aggressive plates counted (placed or not), [off] the off record's why */
     class Snapshot(val discs: List<Disc>, val drops: List<Drop>, val mobs: Int, val off: String? = null) {
         val empty get() = discs.isEmpty() && drops.isEmpty()
+        /** THE ROUTE'S SHARE (the user's routing strategy, test71: "Only if sure"): the discs whose place is confirmed ([Disc.sure]); a
+         *  band or an unclear plate is display only (the tint, the bottom map's circles), never a cost or a forced replan */
+        fun confirmed(): Snapshot = if (discs.all { it.sure }) this else Snapshot(discs.filter { it.sure }, drops, discs.count { it.sure }, off)
         /** the live danger at a world point (capped [LIVE_CAP]) */
         fun at(x: Double, y: Double): Float { var s = 0f; for (d in discs) s += d.at(x, y); return min(LIVE_CAP, s) }
         /** the static danger to take off at a world point */

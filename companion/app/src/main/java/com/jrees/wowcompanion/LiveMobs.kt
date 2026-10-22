@@ -231,8 +231,9 @@ class LiveMobs(private val clock: () -> Long) {
             if (w <= 0f) return
             // the shared rule (AggroFit.radius: fitted, learned); a skull keeps the route's own 45 yd (LiveDanger.SKULL_R)
             val r = if (lm == -1) LiveDanger.SKULL_R else AggroFit.radius(lm, lp, m.n, m.ct)
+            val sure = (p.how == LivePlace.How.SPAWN && p.sure) || p.how == LivePlace.How.FIX
             discs.add(if (p.how == LivePlace.How.RING) LiveDanger.Disc(t.id, p.x, p.y, r, 0.0, w, true, p.a, p.b, p.half, p.how, m.n, lm)
-                      else LiveDanger.Disc(t.id, p.x, p.y, r, p.u, w, how = p.how, npc = m.n, lv = lm))
+                      else LiveDanger.Disc(t.id, p.x, p.y, r, p.u, w, how = p.how, npc = m.n, lv = lm, sure = sure))
         }
         for (t in live.values) {
             val since = if (stale) t.lastMs else -1L
