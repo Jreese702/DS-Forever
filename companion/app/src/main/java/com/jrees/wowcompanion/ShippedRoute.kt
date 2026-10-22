@@ -40,10 +40,10 @@ object ShippedRoute {
     const val DIRECT_MAX_YD = 60.0
     const val GHOST_DIRECT_MAX_YD = 120.0  // a ghost's (CorpseRoute: no danger, walks on water, drops down): the old reach
     const val DIRECT_WALK_YD = 180.0       // the near-goal walk's own yards at most (round a wall)
-    // a roadmap edge's yard against a road's. test70 (the user: "a very very weird path through danger instead of staying on a trail"):
-    // 1.3 tied the roadmap with a join's or a spur's yard (x1.3), so the coverage grid ran 30-43 yd beside Zephras's trail through the
-    // Al'Aketh camp; 1.6 (the off-net rate) and the roadmap only fills the gaps between the shipped ways
-    const val NET_FAVOUR = 1.6
+    // a roadmap edge's yard against a road's (the harness's NET_FAVOUR). fix/trail-first tried 1.6: the all-zones parity lost Swamp of
+    // Sorrows A H (a shipped trail+join across a 70 degree face the roadmap went round) and the test70/71 repros need only the attach's
+    // net lead (ShippedSnap.NET_CUT_SPREAD_YD) - kept at 1.3
+    const val NET_FAVOUR = 1.3
     const val SAMPLE_YD = 10.0             // the character's danger read along a way this often
     const val AVOID_FACTOR = 6.0           // an AVOID way's yard
     const val WADE_EXTRA_YD = 60.0         // a way that wades: this much dearer (a drier way preferred)
@@ -404,7 +404,7 @@ object ShippedRoute {
                 ground, danger, k, lim, (roadmap?.floor ?: emptySet()) + caveIds + floorEnds.map { it.first },
                 (caveIds + floorEnds.map { it.first }).map { it to doubleArrayOf(pos[it]!![0], pos[it]!![1]) }, roadmap?.walk)
             fun join(p: DoubleArray, virt: Int, outward: Boolean, who: String): Result? {
-                val at = attacher.attach(view, p)
+                val at = attacher.attach(view, p, outward)
                 if (at.joins.isEmpty()) return Result(straight, false, "$who is ${at.why ?: "joined to nothing"}")
                 if (at.snapped) snaps++
                 if (at.unchecked) { if (outward) uncheckedFrom = true else uncheckedTo = true }
@@ -523,6 +523,8 @@ object ShippedRoute {
     /** THE SEAM: how an end ([p], world) joins the graph; called for the player (walked out from p) and the goal (walked in to p) */
     fun interface Attacher {
         fun attach(v: AttachView, p: DoubleArray): Attach
+        /** the same, told which end: [outward] the player's (walked out from p), else the goal's (walked in to p) */
+        fun attach(v: AttachView, p: DoubleArray, outward: Boolean): Attach = attach(v, p)
         /** THE NEAR-GOAL WALK, the graph's rival for a goal within [DIRECT_MAX_YD]: the ground's own walk from [from] to [to] (its
          *  points from first, to last; the router adds SafePath.DIRECT), null = none (the graph's way only). U1's default: [Leg] */
         fun direct(v: AttachView, from: DoubleArray, to: DoubleArray): Join? =
