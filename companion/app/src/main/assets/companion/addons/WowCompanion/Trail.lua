@@ -3547,7 +3547,12 @@ end
 --   from the client - with a soft glow outside; drawn at the bar's own aspect (TEX_V of the texture's height used).
 --   THE COLOUR: every eligible plate has one: GREEN beyond APPROACH yd past the edge, then yellow, orange, red as before. In combat
 --   still none (the game's own threat colours the plate then).
-WC.rings = { V = "at3", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
+-- at4 (test74, the user: "our aggro highlight is in front of the mob text, it should be behind it"): our frame was on UIParent,
+-- which draws over the nameplates (they live under WorldFrame). Now it is WorldFrame's child (the plates' own parent: also their
+-- scale, so the 9 out matches the bar's units) in the plate's own strata, one frame level UNDER the plate's UnitFrame - so under its
+-- name, level and health bar fill. Only our own frame is parented / levelled (legal in combat); the plate's level and strata are
+-- READ (no taint), nothing of it is written; forbidden plates (enemies in instances) never reach us (GetNamePlateForUnit).
+WC.rings = { V = "at4", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
              ALPHA = 0.95, OUTSET = 6, PAD = 9, TEX_V = 53 / 64, list = {}, est = {}, react = {}, why = {}, n = 0,
              COL = { far = { 0.32, 0.86, 0.36 }, approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
              TEX = "Interface\\AddOns\\WowCompanion\\Media\\tint_glow" }
@@ -3605,11 +3610,11 @@ do
     local function tint(s)
         local o = R.list[s]
         if o then return o end
-        local f = CreateFrame("Frame", nil, UIParent)
+        local f = CreateFrame("Frame", nil, (type(WorldFrame) == "table" and WorldFrame) or UIParent)
         f:SetFrameStrata("BACKGROUND")
         f:EnableMouse(false)
         f:Hide()
-        local t = f:CreateTexture(nil, "ARTWORK")
+        local t = f:CreateTexture(nil, "BACKGROUND")
         t:SetTexture(R.TEX)
         t:SetAllPoints(f)
         t:SetTexCoord(0, 1, 0, R.TEX_V)                  -- at3: the art's used rows (the bar's own aspect)
@@ -3665,6 +3670,17 @@ do
                         o.f:SetPoint("BOTTOMRIGHT", to, "BOTTOMRIGHT", pad, -pad)
                         o.plate, o.bar = plate, bar
                     end
+                    -- at4: under the plate's UnitFrame (its name, level, bar fill): its strata, one level below (re-read each
+                    -- tick: a targeted plate is raised)
+                    local okU, uf = pcall(function() return plate.UnitFrame end)
+                    local ref = (okU and type(uf) == "table" and uf) or plate
+                    local okS, strata = pcall(function() return ref:GetFrameStrata() end)
+                    local okL, lvl = pcall(function() return ref:GetFrameLevel() end)
+                    strata = okS and type(strata) == "string" and strata or "BACKGROUND"
+                    lvl = okL and num(lvl) or 1
+                    if o.strata ~= strata then o.f:SetFrameStrata(strata); o.strata = strata end
+                    local want = math.max(0, lvl - 1)
+                    if o.lvl ~= want then o.f:SetFrameLevel(want); o.lvl = want end
                     local c = R.COL[e.st]
                     if c then o.t:SetVertexColor(c[1], c[2], c[3]); o.col = e.st end
                     -- the alpha: up in a tinted state out of combat, down far away or in combat
