@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp30" }
+WC.compass = { V = "cp31" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -1223,14 +1223,15 @@ do
     --   sent every checkpoint left (fewer than its most). No route: the player's own super-tracked pin, else the quest's objective.
     --   Each by its spot (id), so a marker keeps its identity as the list shifts.
     --   THE PAIR: the first two not passed. A checkpoint is passed at NEAR (the app's own DangerGrid.PASS_YD, when it moves the pin
-    --   on: cp29 4 yd). The nearer one FADES BY DISTANCE (full at FAR, 0 at NEAR: gone exactly when it is passed); the second is full.
+    --   on: cp31 10 yd). The nearer one FADES BY DISTANCE (full at FAR, 0 at NEAR: gone exactly when it is passed); the second is full.
     --   When the first has gone, the second is the nearer (no jump: its rank eases over RANK_S, a little larger and stronger) and the
     --   next fades in behind it (IN_S) - only once nothing else is still fading out (never three, k+2 only after k is gone).
     --   Anything leaving the pair (passed, or dropped by the app earlier) fades out over OUT_S where it was.
     --   The objective is never faded by distance (arrived: the quest's marker as before); the further flags beyond the two are gone.
     -- cp29 (test68, the user: "the fade out should be 25 to 0 yards"): full to FAR 25 yd, gone at NEAR - the app's pass radius
-    -- (DangerGrid.PASS_YD), which Map moves down to match (4 yd): keep the two the same
-    C.RT = { FAR = 25, NEAR = 4, IN_S = 0.4, OUT_S = 0.25, DOWN1_S = 0.6, RANK_S = 0.4, K2 = 0.8, A2 = 0.75, MORE_OLD_S = 2,
+    -- (DangerGrid.PASS_YD), which Map moves down to match (4 yd): keep the two the same. cp31 (test70, the user: "from 25-0 to 25-10"):
+    -- gone at 10 yd, Map's pass radius 10 to match
+    C.RT = { FAR = 25, NEAR = 10, IN_S = 0.4, OUT_S = 0.25, DOWN1_S = 0.6, RANK_S = 0.4, K2 = 0.8, A2 = 0.75, MORE_OLD_S = 2,
              SAME_YD = 4, GOAL_NEAR = 8, GOAL_ON = 40, MORE_MAX = 2, STEP_YD = 300, st = {}, bad = {} }
     local function rtAt(w) return math.floor(w.x + 0.5) .. ":" .. math.floor(w.y + 0.5) end
     function C.route(tg)

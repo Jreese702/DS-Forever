@@ -912,10 +912,10 @@ def main():
         if dd > 2:
             G.py = G.py - (tx - X) / dd * 7 / 60 / 1000
             G.px = G.px - (ty - Y) / dd * 7 / 60 / 1000
-        # the app: the pin moves on 0.3 s after the player is within its pass radius (cp29: 4 yd) of it; past the last, the route ends
+        # the app: the pin moves on 0.3 s after the player is within its pass radius (cp31: 10 yd) of it; past the last, the route ends
         if R.active:
             pc = CPS[st["k"]]
-            if math.hypot(pc[0] - X, pc[1] - Y) <= 4 and st["passAt"] is None:
+            if math.hypot(pc[0] - X, pc[1] - Y) <= 10 and st["passAt"] is None:
                 st["passAt"] = G.t + 0.3
             if st["passAt"] is not None and G.t >= st["passAt"]:
                 st["passAt"] = None
@@ -946,7 +946,7 @@ def main():
         log.append(row)
     ids = ["cp:%d:%d" % (math.floor(x + 0.5), math.floor(y + 0.5)) for x, y in CPS]
     gid = "goal:123"
-    mid = [r for r in log if r["X"] < CPS[-1][0] - 5]                       # mid-route: before the last checkpoint is passed
+    mid = [r for r in log if r["X"] < CPS[-1][0] - 11]                       # mid-route: before the last checkpoint is passed
     two = sum(1 for r in mid if len(r["pair"]) == 2)
     one = min(sum(1 for v in r["st"].values() if v["a"] > 0.02) for r in mid)
     chk("cp26: mid-route, always TWO in the pair (%d of %d frames) and never fewer than one shown (at least %d)" % (two, len(mid), one),
@@ -966,9 +966,9 @@ def main():
             elif seen:
                 zeroAt[cid] = (r["t"], last)
                 break
-    chk("cp26: the nearer one fades with distance, monotonically, to 0 at the app's pass radius, 4 yd (cp29: full to 25 yd; gone at %s yd)"
+    chk("cp26: the nearer one fades with distance, monotonically, to 0 at the app's pass radius, 10 yd (cp31: full to 25 yd; gone at %s yd)"
         % ", ".join("%.1f" % v[1] if v else "-" for v in zeroAt.values()),
-        mono and all(v is not None and 3 <= v[1] <= 5.5 for v in zeroAt.values()))       # (positions read at 10 Hz: ~0.7 yd steps)
+        mono and all(v is not None and 9 <= v[1] <= 11.5 for v in zeroAt.values()))       # (positions read at 10 Hz: ~0.7 yd steps)
     order = True
     for j in range(2, len(ids)):
         first = [r["t"] for r in log if ids[j] in r["st"] and r["st"][ids[j]]["a"] > 0]
@@ -1105,27 +1105,27 @@ def main():
     # THE FADE (the user: "the fade out should be 25 to 0 yards"): full to 25 yd, gone at the pass radius (4 yd)
     L.execute("WowCompanion.routeWp.more = {}")
     fa = []
-    for dd in (40, 25, 14.5, 8, 4.6):
+    for dd in (40, 25, 17.5, 12, 10.6):
         G.py = (500 - (A1[0] - dd)) / 1000; G.px = (500 - A1[1]) / 1000
         C.read(True)
         frames(90, read=True)
         stj = C.RT.st[j1]
         fa.append((dd, round(stj.a, 3) if stj else None))
-    G.py = (500 - (A1[0] - 3.5)) / 1000; C.read(True); frames(30, read=True)
+    G.py = (500 - (A1[0] - 9.5)) / 1000; C.read(True); frames(30, read=True)
     a35 = C.RT.st[j1].a
-    chk("cp29: the nearer one full to 25 yd, then fading to 0 at 4 yd (%s; at 3.5 yd %.2f, cp30: still the first until the app moves on)"
-        % (fa, a35), fa[0][1] == 1 and fa[1][1] == 1 and abs(fa[2][1] - 0.5) < 0.01 and abs(fa[3][1] - 4 / 21) < 0.01 and fa[4][1] < 0.05
+    chk("cp31: the nearer one full to 25 yd, then fading to 0 at 10 yd (%s; at 9.5 yd %.2f, cp30: still the first until the app moves on)"
+        % (fa, a35), fa[0][1] == 1 and fa[1][1] == 1 and abs(fa[2][1] - 0.5) < 0.01 and abs(fa[3][1] - 2 / 15) < 0.01 and fa[4][1] < 0.05
         and a35 == 0 and C.RT.pair[1].id == j1)
     # cp30 (test69: "first pin 55 yards, the next one after 1555 yards"; the pin 23 -> 7 yd away missing): the player overshoots
-    # the pin (within 4 yd) and the app keeps it (a re-plan onto the same bend): walking back it shows again, still the FIRST
+    # the pin (within its pass radius) and the app keeps it (a re-plan onto the same bend): walking back it shows again, still the FIRST
     L.execute("WowCompanion.routeWp.more = { { m = GAME.map, x = %r, y = %r } }" % mp(*A2))
     G.py = (500 - (A1[0] - 23)) / 1000; C.read(True); frames(60, read=True)
     p23 = [C.RT.pair[i].id for i in range(1, len(C.RT.pair) + 1)]
     a23 = C.RT.st[j1].a
-    G.py = (500 - (A1[0] - 7)) / 1000; C.read(True); frames(60, read=True)
+    G.py = (500 - (A1[0] - 13)) / 1000; C.read(True); frames(60, read=True)
     a7 = C.RT.st[j1].a
-    chk("cp30: an overshot pin the app keeps: back at 23 yd it is the first again (%s, alpha %.2f; at 7 yd %.2f) - never a further one first"
-        % (p23, a23, a7), p23 == [j1, j2] and abs(a23 - 19 / 21) < 0.01 and abs(a7 - 3 / 21) < 0.01)
+    chk("cp30: an overshot pin the app keeps: back at 23 yd it is the first again (%s, alpha %.2f; at 13 yd %.2f) - never a further one first"
+        % (p23, a23, a7), p23 == [j1, j2] and abs(a23 - 13 / 15) < 0.01 and abs(a7 - 3 / 15) < 0.01)
     # a PHANTOM further point (1555 yd off, from the pin's 58 yd) between two good ones: skipped, logged; the good one after kept
     L.execute("WowCompanion.routeWp.more = { { m = GAME.map, x = %r, y = %r }, { m = GAME.map, x = %r, y = %r } }"
               % (mp(1600, 30) + mp(*A2)))
