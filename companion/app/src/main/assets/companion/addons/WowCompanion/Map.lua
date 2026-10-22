@@ -2645,6 +2645,8 @@ function RWP.set(x, y)
     RWP.ours = false
     if not ok then return RWP.say("set", false, "the game refused") end
     RWP.active, RWP.m, RWP.x, RWP.y, RWP.keepAt = true, m, x, y, GetTime()
+    -- cp26: the old further checkpoints kept a moment (Trail.lua's markers read them until the new ones come in the same SET)
+    RWP.moreOld, RWP.moreOldAt = RWP.more, GetTime()
     RWP.more = {}
     if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
     WowCompanionDB.routeWp = { m = m, x = x, y = y, qid = RWP.qid }
@@ -2666,7 +2668,7 @@ function RWP.clear(restore, why)
     end)
     RWP.ours = false
     RWP.active, RWP.qid, RWP.m, RWP.x, RWP.y = false, nil, nil, nil, nil
-    RWP.more, RWP.pinZ = {}, nil
+    RWP.more, RWP.pinZ, RWP.moreOld = {}, nil, nil
     if type(WowCompanionDB) == "table" then WowCompanionDB.routeWp = nil end
     RWP.say("clear", true, why)
     snapshotSoon("waypoint")
@@ -2694,6 +2696,7 @@ if WC.pad and type(WC.pad.op) == "function" then
         if col == 38 then
             RWP.digits = nil
             if RWP.mdigits and #RWP.mdigits == 0 and GetTime() - RWP.digitsAt <= RWP.DIGITS_S then
+                RWP.moreOld, RWP.moreOldAt = RWP.more, GetTime()                   -- (cp26: kept a moment, as on a SET)
                 RWP.mdigits, RWP.more = nil, {}                                    -- 38, 38: the further checkpoints go
             else
                 RWP.mdigits, RWP.digitsAt = {}, GetTime()

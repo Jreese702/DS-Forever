@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp25" }
+WC.compass = { V = "cp26" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -185,10 +185,15 @@ do
         local okS, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
         local okQ, qid = pcall(function() return C_SuperTrack.GetSuperTrackedQuestID() end)
         qid = okQ and num(qid) or nil
+        -- cp26: during a route the game super-tracks our pin (no quest): the route's quest, whose objective ends the route's markers
+        local R = WC.routeWp
+        local routeQ = type(R) == "table" and R.active == true and num(R.qid) or nil
+        if routeQ and routeQ <= 0 then routeQ = nil end
+        if (not qid or qid <= 0) and routeQ then qid = routeQ end
         -- (test13: GetNextWaypoint answers only for a quest in ANOTHER zone, and this client has no QuestPOIGetIconInfo: the
         -- quest's spot on the player's own map comes first, through the same reads Map.lua uses for its quest markers)
         C.qsrc = nil
-        if qid and qid > 0 and not (okS and onPin == true) then
+        if qid and qid > 0 and (not (okS and onPin == true) or routeQ) then
             if me and me.map then
                 local okF, fx, fy = pcall(C_QuestLog.GetNextWaypointForMap, qid, me.map)
                 if okF and num(fx) and num(fy) then
@@ -245,11 +250,18 @@ do
     end
 
     -- the layout, pure (the harness checks it): facing + me + targets -> what goes where, in spec pixels from the band's centre
-    function C.layout(facing, me, targets)
+    function C.layout(facing, me, targets, shown)
         local S = C.SPEC
         local out = { ticks = {}, letters = {}, marks = {} }
-        for _, key in ipairs(C.ORDER) do
-            local w = targets[key]
+        -- cp26: the route's shown ones (C.RT.st by id), further first (drawn back to front), as key "rt"
+        local order = {}
+        for _, key in ipairs(C.ORDER) do order[#order + 1] = { key = key, w = targets[key] } end
+        local rts = {}
+        for id, st in pairs(shown or {}) do rts[#rts + 1] = { key = "rt", id = id, w = st.w, st = st } end
+        table.sort(rts, function(p, q) return (p.st.r or 9) > (q.st.r or 9) end)
+        for _, e in ipairs(rts) do order[#order + 1] = e end
+        for _, e in ipairs(order) do
+            local key, w = e.key, e.w
             if w and me then
                 local b, d = C.bearing(me, w)
                 local rel = C.wrap(b - facing)
@@ -260,7 +272,8 @@ do
                 else
                     x = -rel / (PI / 2) * S.half
                 end
-                out.marks[#out.marks + 1] = { key = key, x = x, off = off, side = (rel > 0) and -1 or 1, dist = C.distText(d), rel = rel }
+                out.marks[#out.marks + 1] = { key = key, x = x, off = off, side = (rel > 0) and -1 or 1, dist = C.distText(d), rel = rel,
+                                              id = e.id, st = e.st }
             end
         end
         for deg = 0, 345, 15 do
@@ -697,8 +710,8 @@ do
     --   engine's point when that is on screen, else cp18's estimate) and the FOV; up and down at the engine point's height (no
     --   camera pitch is readable: the horizon band), the middle of the screen when the engine's point is not to be seen.
     --   IN FRONT: tested against the camera's yaw, also with the bar on the facing (the estimate runs always, cp19).
-    C.wm = { SIZE = 34, EASE_S = 0.12, LAND_S = 0.5, MORE_K = { 0.8, 0.68, 0.58 }, MORE_A = { 0.85, 0.65, 0.5 },
-             list = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 3, TILT = 0.1, PITCH0 = 0.3,
+    C.wm = { SIZE = 34, EASE_S = 0.12, LAND_S = 0.5,
+             list = {}, obj = {}, free = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 3, TILT = 0.1, PITCH0 = 0.3,
              JUMP_V = 7.9558, MOUNT_V = 7.9558, GRAV = 19.2911, PRESS_S = 0.3, jumpAt = -100, jumpN = 0, LOG_S = 5, logAt = -100,
              GOLD = { 1, 0.82, 0.3 }, QUEST = { 1, 0.93, 0.5 }, PIN = "Interface\\AddOns\\WowCompanion\\Media\\marker_pin",
              HOLD_S = 0.6, IN_S = 0.15, OUT_S = 0.25, FRONT_IN = 10, FRONT_OUT = 16, VIS_S = 10, visAt = -100,
@@ -843,95 +856,103 @@ do
         if pz and num(p.zAt) then return p.dz - (pz - p.zAt) end
         return p.dz
     end
-    function C.wmBuild(i)
+    -- cp26: one marker object per shown one (by its id), from a pool
+    function C.wmBuild(id)
         local W = C.wm
-        i = i or 1
-        if W.list[i] then return W.list[i].f end
-        local k = i == 1 and 1 or (W.MORE_K[i - 1] or 0.5)
-        local f = CreateFrame("Frame", nil, UIParent)
-        f:SetFrameStrata("MEDIUM")
-        f:EnableMouse(false)
-        f:SetSize(C.u(W.SIZE * k), C.u(W.SIZE * k))
-        f:Hide()
-        local sh = f:CreateTexture(nil, "ARTWORK", nil, 1)
-        sh:SetTexture(W.PIN)
-        sh:SetPoint("CENTER", f, "CENTER", 0, 0)
-        sh:SetSize(C.u(W.SIZE * k + 4), C.u(W.SIZE * k + 4))
-        sh:SetVertexColor(0, 0, 0, 0.85)
-        local tx = f:CreateTexture(nil, "ARTWORK", nil, 3)
-        tx:SetTexture(W.PIN)
-        tx:SetAllPoints(f)
-        local d = f:CreateFontString(nil, "OVERLAY")
-        d:SetFont(C.FONT, C.u(i == 1 and 13 or 11), "OUTLINE")
-        d:SetPoint("TOP", f, "BOTTOM", 0, -C.u(2))
-        W.list[i] = { f = f, sh = sh, tx = tx, d = d }
-        if i == 1 then W.f, W.sh, W.tx, W.d = f, sh, tx, d end
-        return f
+        local o = W.obj[id]
+        if o then return o end
+        o = table.remove(W.free)
+        if not o then
+            local f = CreateFrame("Frame", nil, UIParent)
+            f:SetFrameStrata("MEDIUM")
+            f:EnableMouse(false)
+            f:Hide()
+            local sh = f:CreateTexture(nil, "ARTWORK", nil, 1)
+            sh:SetTexture(W.PIN)
+            sh:SetPoint("CENTER", f, "CENTER", 0, 0)
+            sh:SetVertexColor(0, 0, 0, 0.85)
+            local tx = f:CreateTexture(nil, "ARTWORK", nil, 3)
+            tx:SetTexture(W.PIN)
+            tx:SetAllPoints(f)
+            local d = f:CreateFontString(nil, "OVERLAY")
+            d:SetFont(C.FONT, C.u(13), "OUTLINE")
+            d:SetPoint("TOP", f, "BOTTOM", 0, -C.u(2))
+            o = { f = f, sh = sh, tx = tx, d = d }
+        end
+        o.a, o.pend, o.goodAt, o.key, o.scale, o.alpha, o.col, o.text, o.holdWhy, o.lostWhy = 0, nil, nil, id, nil, nil, nil, nil, nil, nil
+        W.obj[id] = o
+        return o
     end
     function C.wmHide()
-        for _, o in pairs(C.wm.list) do
+        for _, o in pairs(C.wm.obj) do
             if o.f:IsShown() then o.f:Hide() end
-            o.a, o.pend, o.goodAt = 0, nil, nil
+            o.a, o.goodAt = 0, nil
         end
     end
-    -- cp22: our pin, its TIP (the frame's bottom) at x, y; col its tint. cp24: placed, not shown (the visibility pass shows it); a
-    -- marker changing what it marks (key) while seen is not moved: the new place waits until it has faded out
-    local function wmPut(i, x, y, col, txt, alpha, key)
-        C.wmBuild(i)
-        local o = C.wm.list[i]
-        if o.key ~= nil and o.key ~= key and (o.a or 0) > 0 then
-            o.pend = { x = x, y = y, col = col, txt = txt, alpha = alpha, key = key }
-            return false
+    -- cp22: our pin, its TIP (the frame's bottom) at x, y; col its tint; cp26: its size by its rank
+    local function wmPut(id, x, y, col, txt, scale)
+        local o = C.wmBuild(id)
+        if o.scale ~= scale then
+            local W = C.wm
+            o.f:SetSize(C.u(W.SIZE * scale), C.u(W.SIZE * scale))
+            o.sh:SetSize(C.u(W.SIZE * scale + 4), C.u(W.SIZE * scale + 4))
+            o.scale = scale
         end
-        o.pend, o.key = nil, key
         o.f:ClearAllPoints()
         o.f:SetPoint("BOTTOM", UIParent, "BOTTOMLEFT", x, y)
         if o.col ~= col then o.tx:SetVertexColor(col[1], col[2], col[3]); o.col = col end
         if o.text ~= txt then o.d:SetText(txt); o.text = txt end
-        o.base = alpha
         o.x, o.y = x, y
         return true
     end
     -- cp24: the reasons a marker may only be dropping out for a moment (held HOLD_S); any other fades at once
     C.wmDROP = { nonav = true, novp = true, clamp = true, behind = true, flip = true, pitch = true, tilt = true, fov = true,
                  edge = true, near = true }
-    -- cp24: every marker's alpha toward shown or not, held through a dropout, the transitions counted
+    -- cp24: every marker's visibility (o.a) toward shown or not, held through a dropout, the transitions counted; cp26: its alpha
+    -- the visibility times the shared fade and its rank's (C.RT)
     function C.wmVis(on, lost, now, dt)
         local W = C.wm
         local V = W.vis
+        local S = C.RT.st
         local n = 0
-        for i, o in pairs(W.list) do
+        for id, o in pairs(W.obj) do
+            local st = S[id]
             local want = 0
-            if on[i] then
+            if on[id] then
                 want, o.goodAt, o.holdWhy = 1, now, nil
-            elseif o.pend then
-                want, o.lostWhy = 0, "swap"                                -- (fading out before the new place)
             else
-                local why = lost[i] or "gone"
-                if C.wmDROP[why] and o.goodAt and now - o.goodAt < W.HOLD_S and (o.a or 0) > 0 then
+                local why = (st and lost[id]) or (st and "gone") or "passed"
+                if st and C.wmDROP[why] and o.goodAt and now - o.goodAt < W.HOLD_S and (o.a or 0) > 0 then
                     want = 1
                     V.held = V.held + 1
                     if o.holdWhy ~= why then V.why["hold:" .. why] = (V.why["hold:" .. why] or 0) + 1; o.holdWhy = why end
+                elseif st and why == "gone" then
+                    want = o.a or 0                     -- (leaving the pair: where it was, its own fade - C.RT - takes it out)
                 end
                 o.lostWhy = why
             end
             local a0 = o.a or 0
             if want > a0 then o.a = math.min(1, a0 + dt / W.IN_S) elseif want < a0 then o.a = math.max(0, a0 - dt / W.OUT_S) end
-            if o.a <= 0 and o.pend then                                    -- faded out: now the new place
-                local p = o.pend
-                o.key = nil
-                wmPut(i, p.x, p.y, p.col, p.txt, p.alpha, p.key)
+            local _, af = 0, 1
+            if st then _, af = C.rtLook(st) end
+            if st and st.d then                                              -- (its distance the shared one, held or not)
+                local t = C.distText(st.d)
+                if o.text ~= t then o.d:SetText(t); o.text = t end
             end
-            local al = o.a * (o.base or 1)
+            local al = st and (o.a * st.a * af) or 0
             if o.alpha ~= al then pcall(function() o.f:SetAlpha(al) end); o.alpha = al end
-            if o.a > 0 then
+            if al > 0 then
                 if not o.f:IsShown() then o.f:Show(); V.show = V.show + 1 end
                 n = n + 1
             elseif o.f:IsShown() then
                 o.f:Hide()
                 V.hide = V.hide + 1
-                local why = o.lostWhy or "swap"
+                local why = o.lostWhy or "faded"
                 V.why[why] = (V.why[why] or 0) + 1
+            end
+            if not st and not o.f:IsShown() then                            -- gone from the list and faded: back to the pool
+                W.obj[id] = nil
+                W.free[#W.free + 1] = o
             end
         end
         W.vn = n
@@ -955,6 +976,7 @@ do
         dt = num(dt) or 0
         local now = (type(GetTime) == "function" and GetTime()) or 0
         local on, lost = {}, {}
+        local S = C.RT.st
         if C.wanted() and C.frame and C.frame:IsShown() and C.me_ then
             local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
             local okW, uw = pcall(function() return UIParent:GetWidth() end)
@@ -967,116 +989,96 @@ do
             local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
             local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
             onPin = okP and onPin == true
-            -- cp25: the goal (C.goal); the engine's point is its place only when the engine marks it (our pin super-tracked for a
-            -- pin, not for the quest); else it is placed like a flag (the camera's yaw and pitch)
-            local g = C.goal_
-            local w = g and g.w
-            local engineOn = g ~= nil and ((g.kind == "pin") == onPin)
+            -- cp26: the one the engine marks (our pin while super-tracked, else the quest's objective): placed on the engine's own
+            -- point (and the camera's pitch and exact yaw read from it); every other shown one by the camera's yaw and pitch
+            local engId
+            for id, st in pairs(S) do
+                if st.rank and st.it and ((onPin and st.it.pin) or (not onPin and st.kind == "goal")) then engId = id end
+            end
+            W.engId = engId
             if uw and us > 0 then
                 local half = uw / 2
                 local fl = half / math.tan(hfov / 2)
-                -- 1: the engine's own point (the pin, else the focused quest)
-                lost[1] = (not w and "notarget") or (not engineOn and "flip") or (not (okF and nav) and "nonav") or nil
-                if engineOn and okF and nav and w then
-                    local okV, vp = pcall(function() return C_Navigation.HasValidScreenPosition() end)
-                    local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
-                    local okC, x, y = pcall(function() return nav:GetCenter() end)
-                    local okS, ns = pcall(function() return nav:GetEffectiveScale() end)
-                    x, y = okC and num(x) or nil, okC and num(y) or nil
-                    ns = okS and num(ns) or 1
-                    lost[1] = (not (okV and vp == true) and "novp") or (not (okK and cl == false) and "clamp") or (not (x and y) and "novp")
-                        or nil
-                    if okV and vp == true and okK and cl == false and x and y then
-                        local b, d = C.bearing(C.me_, w)
-                        -- cp24: a margin once shown (the camera estimate's yaw at the FOV's edge)
-                        local o1 = W.list[1]
-                        local gate = ((o1 and (o1.a or 0) > 0) and W.FRONT_OUT or W.FRONT_IN)
-                        if math.abs(C.wrap(b - yaw)) >= hfov / 2 + math.rad(gate) then lost[1] = "behind" end
-                        if not lost[1] then
-                            x, y = x * ns / us, y * ns / us
-                            yaw = C.wrap(b + math.atan((x - half) / fl))         -- (exact while the point is on screen)
-                            -- cp20: the pitch from this point (not in the air: it rises with the player then)
-                            local dfwd = d * math.cos(math.atan((x - half) / fl))
-                            W.pinFwd = dfwd
-                            if not air and uh then
-                                local ph = C.wmPitch(y - uh / 2, dfwd, C.wmZoom(), W.CAM_H, fl)
-                                if ph then W.pitch, W.pitchAt, W.tilted = ph, now, false end
+                if engId then
+                    local st = S[engId]
+                    local w = st.w
+                    lost[engId] = (not (okF and nav) and "nonav") or nil
+                    if okF and nav then
+                        local okV, vp = pcall(function() return C_Navigation.HasValidScreenPosition() end)
+                        local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
+                        local okC, x, y = pcall(function() return nav:GetCenter() end)
+                        local okS, ns = pcall(function() return nav:GetEffectiveScale() end)
+                        x, y = okC and num(x) or nil, okC and num(y) or nil
+                        ns = okS and num(ns) or 1
+                        lost[engId] = (not (okV and vp == true) and "novp") or (not (okK and cl == false) and "clamp") or (not (x and y) and "novp")
+                            or nil
+                        if okV and vp == true and okK and cl == false and x and y then
+                            local b, d = C.bearing(C.me_, w)
+                            -- cp24: a margin once shown (the camera estimate's yaw at the FOV's edge)
+                            local o1 = W.obj[engId]
+                            local gate = ((o1 and (o1.a or 0) > 0) and W.FRONT_OUT or W.FRONT_IN)
+                            if math.abs(C.wrap(b - yaw)) >= hfov / 2 + math.rad(gate) then lost[engId] = "behind" end
+                            if not lost[engId] then
+                                x, y = x * ns / us, y * ns / us
+                                yaw = C.wrap(b + math.atan((x - half) / fl))         -- (exact while the point is on screen)
+                                -- cp20: the pitch from this point (not in the air: it rises with the player then)
+                                local dfwd = d * math.cos(math.atan((x - half) / fl))
+                                W.pinFwd = dfwd
+                                if not air and uh then
+                                    local ph = C.wmPitch(y - uh / 2, dfwd, C.wmZoom(), W.CAM_H, fl)
+                                    if ph then W.pitch, W.pitchAt, W.tilted = ph, now, false end
+                                end
+                                W.ny = y                                             -- (the engine's own, for the jump log)
+                                -- cp22: in the air the engine's point rises with us: the ground's height held, then its own
+                                -- ground (cp20) and the camera's rise (the jump) projected with the pitch
+                                local yE = (air and W.yG) or y
+                                if not air then W.yG = y end
+                                local pz = st.it and st.it.p
+                                local pdz = pz and C.wmDz(pz) or nil
+                                W.pinDz = pdz
+                                local usePdz = pdz ~= nil and C.wmPitchOk(now)
+                                local dz = C.wmDzAir(usePdz and pz or nil)
+                                y = yE
+                                if dz ~= 0 then
+                                    local D, phi = C.wmZoom(), W.pitch or W.PITCH0
+                                    local a0 = C.wmProj(phi, D, W.CAM_H, dfwd, 0, fl)
+                                    local a1 = C.wmProj(phi, D, W.CAM_H, dfwd, dz, fl)
+                                    if a0 and a1 then y = yE + (a1 - a0) end
+                                end
+                                if not air and W.yOut and now - W.airAt < W.LAND_S then
+                                    y = W.yOut + (y - W.yOut) * (1 - math.exp(-dt / W.EASE_S))   -- landed: eased, not snapped
+                                end
+                                W.yOut = y
+                                on[engId] = wmPut(engId, x, y, st.kind == "goal" and W.QUEST or W.GOLD, C.distText(d), (C.rtLook(st)))
                             end
-                            W.ny = y                                             -- (the engine's own, for the jump log)
-                            -- cp22: in the air the engine's point rises with us: the ground's height held, then the pin's own
-                            -- ground (cp20) and the camera's rise (the jump) projected with the pitch
-                            local yE = (air and W.yG) or y
-                            if not air then W.yG = y end
-                            local R0 = WC.routeWp
-                            local pdz = g.route and type(R0) == "table" and C.wmDz(R0.pinZ) or nil
-                            W.pinDz = pdz
-                            local usePdz = pdz ~= nil and C.wmPitchOk(now)
-                            local dz = C.wmDzAir(usePdz and R0.pinZ or nil)
-                            y = yE
-                            if dz ~= 0 then
-                                local D, phi = C.wmZoom(), W.pitch or W.PITCH0
-                                local a0 = C.wmProj(phi, D, W.CAM_H, dfwd, 0, fl)
-                                local a1 = C.wmProj(phi, D, W.CAM_H, dfwd, dz, fl)
-                                if a0 and a1 then y = yE + (a1 - a0) end
-                            end
-                            if not air and W.yOut and now - W.airAt < W.LAND_S then
-                                y = W.yOut + (y - W.yOut) * (1 - math.exp(-dt / W.EASE_S))   -- landed: eased, not snapped
-                            end
-                            W.yOut = y
-                            on[1] = wmPut(1, x, y, g.kind == "pin" and W.GOLD or W.QUEST, C.distText(d), 1, g.id)
                         end
                     end
                 end
-                -- cp25: the engine marks something else (the quest while the route's checkpoint is the goal): the estimate
-                if w and not engineOn and uh and C.wmPitchOk(now) then
-                    local b, d = C.bearing(C.me_, w)
-                    local rel = C.wrap(b - yaw)
-                    local o1 = W.list[1]
-                    local gate = ((o1 and (o1.a or 0) > 0) and W.FRONT_OUT or W.FRONT_IN)
-                    if math.abs(rel) >= hfov / 2 + math.rad(gate) then
-                        lost[1] = "behind"
-                    else
-                        local x = half - fl * math.tan(rel)
-                        local R0 = WC.routeWp
-                        local yo = C.wmProj(W.pitch, C.wmZoom(), W.CAM_H, d * math.cos(rel),
-                            C.wmDzAir(g.route and type(R0) == "table" and R0.pinZ or nil), fl)
-                        if yo and math.abs(x - half) < half * 0.99 then
-                            on[1] = wmPut(1, x, uh / 2 + yo, g.kind == "pin" and W.GOLD or W.QUEST, C.distText(d), 1, g.id)
-                        else
-                            lost[1] = "edge"
-                        end
-                    end
-                end
-                -- 2..: the route's further checkpoints (the app's, after the pin's)
-                local R = WC.routeWp
-                if g and g.route and type(R) == "table" and type(R.more) == "table" then
-                    local okP = C.wmPitchOk(now) and uh
-                    local D = C.wmZoom()
-                    for i, c in ipairs(R.more) do
-                        if i > #W.MORE_K then break end
-                        if not okP then                                       -- cp20: no pitch, no flags (cp24: held, then a fade)
-                            for j = i, #W.MORE_K do lost[j + 1] = W.tilted and "tilt" or "pitch" end
-                            break
-                        end
-                        if c.w == nil then c.w = C.world(c.m, c.x, c.y) or false end
-                        local wk = c.w
-                        if wk and not (wk.cont and C.me_.cont and wk.cont ~= C.me_.cont) then
-                            local b, d = C.bearing(C.me_, wk)
+                -- the others: by the camera's yaw and pitch (cp20: no pitch, none - held a moment, then a fade; never floating)
+                local okPitch = C.wmPitchOk(now) and uh
+                local D = C.wmZoom()
+                for id, st in pairs(S) do
+                    if id ~= engId and st.rank then
+                        local w = st.w
+                        if not okPitch then
+                            lost[id] = W.tilted and "tilt" or "pitch"
+                        elseif not (w.cont and C.me_.cont and w.cont ~= C.me_.cont) then
+                            local b, d = C.bearing(C.me_, w)
                             local rel = C.wrap(b - yaw)
                             -- cp24: the gates with a margin once shown
-                            local oi = W.list[i + 1]
+                            local oi = W.obj[id]
                             local seen = oi and (oi.a or 0) > 0
-                            if d <= (seen and 6 or 8) then lost[i + 1] = "near"
-                            elseif math.abs(rel) >= hfov / 2 + (seen and math.rad(4) or 0) then lost[i + 1] = "fov"
+                            if d <= (seen and 6 or 8) then lost[id] = "near"
+                            elseif math.abs(rel) >= hfov / 2 + (seen and math.rad(4) or 0) then lost[id] = "fov"
                             else
                                 local x = half - fl * math.tan(rel)
-                                local yo = C.wmProj(W.pitch, D, W.CAM_H, d * math.cos(rel), C.wmDzAir(c), fl)
+                                local yo = C.wmProj(W.pitch, D, W.CAM_H, d * math.cos(rel), C.wmDzAir(st.it and st.it.p or nil), fl)
                                 local y = yo and uh / 2 + yo or nil
                                 local m = seen and 0.99 or 0.95
                                 if y and math.abs(x - half) < half * m and y > 0 and y < uh then
-                                    on[i + 1] = wmPut(i + 1, x, y, W.GOLD, C.distText(d), W.MORE_A[i], "flag")
+                                    on[id] = wmPut(id, x, y, st.kind == "goal" and W.QUEST or W.GOLD, C.distText(d), (C.rtLook(st)))
                                 else
-                                    lost[i + 1] = "edge"
+                                    lost[id] = "edge"
                                 end
                             end
                         end
@@ -1085,9 +1087,17 @@ do
             end
         end
         C.wmVis(on, lost, now, dt)
+        -- (by rank, for the diag and the harness: list[1] the nearer one's marker, list[2] the second's; kept when none)
         local n = 0
-        for i in pairs(on) do n = n + 1 end
-        W.shown, W.n = on[1] == true, n
+        for _ in pairs(on) do n = n + 1 end
+        for r, it in ipairs(C.RT.pair or {}) do
+            local o = W.obj[it.id]
+            if o then W.list[r] = o end
+        end
+        local o1 = W.list[1]
+        if o1 then W.f, W.sh, W.tx, W.d = o1.f, o1.sh, o1.tx, o1.d end
+        local p1 = (C.RT.pair or {})[1]
+        W.shown, W.n = (p1 and on[p1.id]) == true, n
     end
 
     -- the world reads (player, pin, quest, corpse) ten times a second; the strip itself every frame
@@ -1098,59 +1108,120 @@ do
         C.readAt = now
         C.me_ = C.me()
         C.tg_ = C.targets(C.me_)
-        C.goal_ = C.goal(C.tg_)
+        C.rt_ = C.route(C.tg_)
         return true
     end
 
-    -- cp25 (test62, the user: "not being set at the same distances shown on the compass" ... "Both = checkpoint"): ONE target for
-    -- the compass's marker and the world marker, so they cannot disagree. While a route is active (Map's pin), the route's NEXT
-    -- CHECKPOINT (the pin), whatever the game super-tracks (the compass's disc keeps the quest's number, at the checkpoint); else the
-    -- player's own super-tracked pin; else the focused quest's objective. id names it (a checkpoint by its spot): a change of id
-    -- (the route advancing, arriving) fades the old out where it was and the new in, on both (C.cg here, cp24's keyed put there).
-    function C.goal(tg)
+    -- cp26 (test63, the user: "I always want the world and the compass to show the next two markers. Instead of making the closest
+    -- one just vanish I want it to fade as I get closer to it and then once it vanishes fully the next one after begins to fade in
+    -- beyond the 2nd marker"). ONE list for the compass and the world (C.route, with the reads), ONE state for both (C.rtStep, each
+    -- frame), so they always show the same markers at the same distances:
+    --   THE LIST: during a route, the game's pin (the next checkpoint) and the app's further ones (Map.lua's RWP.more; while Map
+    --   swaps them on an advance, its moreOld for MORE_OLD_S: never emptied for a moment), then the quest's objective once the app
+    --   sent every checkpoint left (fewer than its most). No route: the player's own super-tracked pin, else the quest's objective.
+    --   Each by its spot (id), so a marker keeps its identity as the list shifts.
+    --   THE PAIR: the first two not passed. A checkpoint is passed at NEAR (25 yd: the app's own DangerGrid.PASS_YD, when it moves
+    --   the pin on). The nearer one FADES BY DISTANCE (full at FAR, 0 at NEAR: gone exactly when it is passed); the second is full.
+    --   When the first has gone, the second is the nearer (no jump: its rank eases over RANK_S, a little larger and stronger) and the
+    --   next fades in behind it (IN_S) - only once nothing else is still fading out (never three, k+2 only after k is gone).
+    --   Anything leaving the pair (passed, or dropped by the app earlier) fades out over OUT_S where it was.
+    --   The objective is never faded by distance (arrived: the quest's marker as before); the further flags beyond the two are gone.
+    C.RT = { FAR = 45, NEAR = 25, IN_S = 0.4, OUT_S = 0.25, DOWN1_S = 0.6, RANK_S = 0.4, K2 = 0.8, A2 = 0.75, MORE_OLD_S = 2,
+             SAME_YD = 4, GOAL_NEAR = 8, MORE_MAX = 2, st = {}, passed = {} }
+    local function rtAt(w) return math.floor(w.x + 0.5) .. ":" .. math.floor(w.y + 0.5) end
+    function C.route(tg)
         tg = tg or {}
-        local R = WC.routeWp
-        local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
-        onPin = okP and onPin == true
-        local function at(w) return math.floor(w.x + 0.5) .. ":" .. math.floor(w.y + 0.5) end
-        if type(R) == "table" and R.active == true and tg.pin then
-            return { w = tg.pin, kind = "pin", route = true, id = "cp:" .. at(tg.pin) }
-        end
-        if onPin and tg.pin then return { w = tg.pin, kind = "pin", id = "pin:" .. at(tg.pin) } end
-        if tg.quest then return { w = tg.quest, kind = "quest", id = "quest:" .. tostring(C.qid) .. ":" .. at(tg.quest) } end
-        return nil
-    end
-    -- the compass's shown goal: { id, w, kind, a (its alpha) }, faded across a change of id like the world marker (cp24's times)
-    C.cg = { a = 0 }
-    function C.goalStep(dt, snap)
-        local g, cg = C.goal_, C.cg
-        local W = C.wm
-        if snap then
-            C.cg = g and { id = g.id, w = g.w, kind = g.kind, route = g.route, a = 1 } or { a = 0 }
-            return
-        end
-        if cg.id ~= (g and g.id) then
-            if cg.id and cg.a > 0 then
-                cg.a = math.max(0, cg.a - dt / W.OUT_S)                  -- the old one fading out where it was
-            else
-                C.cg = g and { id = g.id, w = g.w, kind = g.kind, route = g.route, a = 0 } or { a = 0 }
+        local RT, R = C.RT, WC.routeWp
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        local items = {}
+        local function dup(w, yd)
+            for _, it in ipairs(items) do
+                if math.sqrt((it.w.x - w.x) ^ 2 + (it.w.y - w.y) ^ 2) < yd then return true end
             end
-        elseif g then
-            cg.w, cg.a = g.w, math.min(1, cg.a + dt / W.IN_S)
+            return false
         end
+        if type(R) == "table" and R.active == true and tg.pin then
+            items[1] = { id = "cp:" .. rtAt(tg.pin), w = tg.pin, kind = "cp", pin = true, p = R.pinZ }
+            local more = (type(R.more) == "table" and #R.more > 0) and R.more or nil
+            if not more and type(R.moreOld) == "table" and now - (R.moreOldAt or -100) < RT.MORE_OLD_S then more = R.moreOld end
+            more = more or {}
+            local onGoal = false
+            for _, c in ipairs(more) do
+                if c.w == nil then c.w = C.world(c.m, c.x, c.y) or false end
+                if c.w and tg.quest and math.sqrt((c.w.x - tg.quest.x) ^ 2 + (c.w.y - tg.quest.y) ^ 2) < RT.GOAL_NEAR then
+                    onGoal = true                                            -- (a checkpoint on the objective: the objective stands for it)
+                elseif c.w and not dup(c.w, RT.SAME_YD) then
+                    items[#items + 1] = { id = "cp:" .. rtAt(c.w), w = c.w, kind = "cp", p = c }
+                end
+            end
+            -- (the app sends at most MORE_MAX further ones - RouteWaypoint.MORE_MAX; Map.lua keeps up to 3 - so fewer means the last)
+            if tg.quest and (onGoal or #more < RT.MORE_MAX) and not dup(tg.quest, RT.GOAL_NEAR) then
+                items[#items + 1] = { id = "goal:" .. tostring(C.qid), w = tg.quest, kind = "goal" }
+            end
+        else
+            local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
+            if okP and onPin == true and tg.pin then
+                items[1] = { id = "cp:" .. rtAt(tg.pin), w = tg.pin, kind = "pin", pin = true }   -- (the same id as in a route)
+            elseif tg.quest then
+                items[1] = { id = "goal:" .. tostring(C.qid), w = tg.quest, kind = "goal" }
+            end
+        end
+        return items
     end
-    -- the compass's targets: the shown goal (on the quest's disc when it has a number, else as itself), the player's own pin when
-    -- it is not the goal, the corpse
-    function C.marks()
-        local tg, cg = C.tg_ or {}, C.cg
-        local t = { corpse = tg.corpse }
-        local key
-        if cg.id then
-            key = (cg.kind == "quest" or (cg.route and C.questNo and C.questNo())) and "quest" or "pin"
-            t[key] = cg.w
+    -- each frame: the pair, every shown one's alpha (a), eased rank (r) and distance (d), in C.RT.st by id
+    function C.rtStep(dt, snap)
+        local RT = C.RT
+        local S, me = RT.st, C.me_
+        local inList, pair, rank = {}, {}, {}
+        for _, it in ipairs(C.rt_ or {}) do
+            inList[it.id] = true
+            local d
+            if me then local _, dd = C.bearing(me, it.w); d = dd end
+            it.d = d
+            if it.kind == "cp" and d and d <= RT.NEAR then RT.passed[it.id] = true end
+            if not RT.passed[it.id] and #pair < 2 then pair[#pair + 1] = it; rank[it.id] = #pair end
         end
-        if key ~= "pin" and tg.pin and not (cg.id and cg.kind == "pin") then t.pin = tg.pin end
-        C.cgKey = key
+        for id in pairs(RT.passed) do if not inList[id] then RT.passed[id] = nil end end
+        local busy = false                                           -- something still fading out: nothing new fades in yet
+        for id, st in pairs(S) do if not rank[id] and st.a > 0 then busy = true end end
+        for i, it in ipairs(pair) do
+            local st = S[it.id]
+            if not st then st = { a = 0, r = i }; S[it.id] = st end
+            st.it, st.w, st.d, st.kind, st.rank = it, it.w, it.d or st.d, it.kind, i
+            local want = 1
+            if i == 1 and it.kind == "cp" and it.d then want = math.max(0, math.min(1, (it.d - RT.NEAR) / (RT.FAR - RT.NEAR))) end
+            if snap then
+                st.a, st.r = want, i
+            else
+                if want > st.a then
+                    if not (busy and st.a <= 0) then st.a = math.min(want, st.a + dt / RT.IN_S) end
+                else
+                    st.a = math.max(want, st.a - dt / RT.DOWN1_S)
+                end
+                if st.r < i then st.r = math.min(i, st.r + dt / RT.RANK_S) else st.r = math.max(i, st.r - dt / RT.RANK_S) end
+            end
+        end
+        for id, st in pairs(S) do
+            if not rank[id] then
+                st.rank = nil
+                st.a = snap and 0 or math.max(0, st.a - dt / RT.OUT_S)
+                if st.a <= 0 then S[id] = nil end
+            end
+        end
+        RT.pair = pair
+    end
+    -- a shown one's look by its eased rank: { scale, alpha factor }
+    function C.rtLook(st)
+        local RT, k = C.RT, math.max(0, math.min(1, (st.r or 1) - 1))
+        return 1 + (RT.K2 - 1) * k, 1 + (RT.A2 - 1) * k
+    end
+    -- the compass's own targets beside the list: the player's own pin when it is not in the list, the corpse
+    function C.marks()
+        local tg = C.tg_ or {}
+        local t = { corpse = tg.corpse }
+        local listed = false
+        for _, it in ipairs(C.rt_ or {}) do if it.pin then listed = true end end
+        if tg.pin and not listed then t.pin = tg.pin end
         return t
     end
 
@@ -1169,9 +1240,9 @@ do
         local camOff = C.camStep(dt, raw)
         if C.camWanted() then target = C.wrap(raw + camOff) else C.cam.off, C.cam.src = 0, "off" end
         local heading = C.ease(target, dt)
-        C.goalStep(dt, snap)
+        C.rtStep(dt, snap)
         pcall(C.wmStep, raw, dt)
-        local L = C.layout(heading, C.me_, C.marks())
+        local L = C.layout(heading, C.me_, C.marks(), C.RT.st)
         C.last = L
         if fresh then C.diag(raw, C.me_, C.tg_ or {}, L) end
         local u, S = C.u, C.SPEC
@@ -1198,14 +1269,14 @@ do
             if not seen[deg] then hide(s.fs or s.tick) end
         end
         local drawn = {}
+        local rdrawn = {}
         for _, m in ipairs(L.marks) do
+          if m.key == "rt" then
+            C.rkDraw(m)
+            rdrawn[m.id] = true
+          else
             local o, spec = C.mk[m.key], C.MARK[m.key]
             drawn[m.key] = true
-            local al = (m.key == C.cgKey) and C.cg.a or 1                    -- cp25: the goal's fade
-            if o.al ~= al then
-                for _, p in ipairs({ o.sh, o.tx, o.d, o.a, o.num }) do pcall(function() p:SetAlpha(al) end) end
-                o.al = al
-            end
             o.sh:SetPoint("CENTER", f, "TOP", u(m.x), -u(S.line)); show(o.sh)
             o.tx:SetPoint("CENTER", f, "TOP", u(m.x), -u(S.line)); show(o.tx)
             if o.num then
@@ -1232,10 +1303,91 @@ do
             else
                 hide(o.a)
             end
+          end
         end
         for key, o in pairs(C.mk) do
             if not drawn[key] then hide(o.sh); hide(o.tx); hide(o.d); hide(o.a); if o.num then hide(o.num) end end
         end
+        for id, o in pairs(C.rk) do
+            if not rdrawn[id] then
+                for _, p in ipairs(o.all) do hide(p) end
+                C.rk[id] = nil
+                C.rkFree[#C.rkFree + 1] = o
+            end
+        end
+    end
+
+    -- cp26: a route marker on the band: the pin (our route's checkpoint) and the quest's number disc, cross-faded by its rank (the
+    -- nearer one the disc with the quest's number; the second the pin, a little smaller and dimmer); the objective the disc (or the
+    -- "!" with no number); the player's own pin the pin; alpha the shared fade (C.RT)
+    C.rk, C.rkFree = {}, {}
+    function C.rkGet(id)
+        local o = C.rk[id]
+        if o then return o end
+        o = table.remove(C.rkFree)
+        if not o then
+            local f, u = C.frame, C.u
+            o = {}
+            o.psh = f:CreateTexture(nil, "ARTWORK", nil, 1); pcall(function() o.psh:SetAtlas(C.MARK.pin.atlas) end)
+            o.psh:SetVertexColor(0, 0, 0, 0.85)
+            o.pin = f:CreateTexture(nil, "ARTWORK", nil, 3); pcall(function() o.pin:SetAtlas(C.MARK.pin.atlas) end)
+            o.dsh = f:CreateTexture(nil, "ARTWORK", nil, 4); o.dsh:SetVertexColor(0, 0, 0, 0.85)
+            o.disc = f:CreateTexture(nil, "ARTWORK", nil, 5)
+            o.num = f:CreateFontString(nil, "OVERLAY", nil, 7)
+            o.num:SetFont(C.FONT, u(14), "OUTLINE")
+            o.num:SetTextColor(1, 0.92, 0.7, 1)
+            o.d = f:CreateFontString(nil, "OVERLAY")
+            o.d:SetFont(C.FONT, u(C.SPEC.dist), "OUTLINE")
+            o.d:SetTextColor(1, 1, 1, 1)
+            o.ar = f:CreateTexture(nil, "ARTWORK", nil, 3); pcall(function() o.ar:SetAtlas("Navigation-Tracked-Arrow") end)
+            o.ar:SetSize(u(14), u(14))
+            o.all = { o.psh, o.pin, o.dsh, o.disc, o.num, o.d, o.ar }
+        end
+        C.rk[id] = o
+        return o
+    end
+    function C.rkDraw(m)
+        local f, u, S = C.frame, C.u, C.SPEC
+        local st = m.st
+        local o = C.rkGet(m.id)
+        local scale, af = C.rtLook(st)
+        local a = st.a * af
+        local n = C.questNo and C.questNo()
+        -- the disc's share: the objective always; a checkpoint at rank 1 when the quest has a number (eased with the rank)
+        local dw = 0
+        if st.kind == "goal" then dw = 1
+        elseif st.kind == "cp" and n then dw = math.max(0, math.min(1, 2 - (st.r or 1))) end
+        local atlas = (n and "UI-QuestPoi-QuestNumber") or C.MARK.quest.atlas
+        if o.atlas ~= atlas then
+            pcall(function() o.disc:SetAtlas(atlas) end); pcall(function() o.dsh:SetAtlas(atlas) end); o.atlas = atlas
+        end
+        local ps, ds = u(C.MARK.pin.size * scale), u(32 * scale)
+        o.psh:SetSize(ps + u(3), ps + u(3)); o.pin:SetSize(ps, ps)
+        o.dsh:SetSize(ds + u(3), ds + u(3)); o.disc:SetSize(ds, ds)
+        local x, y = u(m.x), -u(S.line)
+        for _, p in ipairs({ o.psh, o.pin, o.dsh, o.disc, o.num }) do p:SetPoint("CENTER", f, "TOP", x, y) end
+        local pa, da = a * (1 - dw), a * dw
+        o.pin:SetAlpha(pa); o.psh:SetAlpha(pa); o.disc:SetAlpha(da); o.dsh:SetAlpha(da)
+        if pa > 0 then show(o.pin); show(o.psh) else hide(o.pin); hide(o.psh) end
+        if da > 0 then show(o.disc); show(o.dsh) else hide(o.disc); hide(o.dsh) end
+        if n and da > 0 then
+            if o.numText ~= n then o.num:SetText(tostring(n)); o.numText = n end
+            o.num:SetAlpha(da); show(o.num)
+        else
+            hide(o.num)
+        end
+        if o.text ~= m.dist then o.d:SetText(m.dist); o.text = m.dist end
+        o.d:SetAlpha(a)
+        o.d:SetPoint("TOP", f, "TOP", x, -u(S.line + 16 * scale + 3))
+        if a > 0 then show(o.d) else hide(o.d) end
+        if m.off and a > 0 then
+            if o.side ~= m.side then pcall(function() o.ar:SetRotation(m.side > 0 and -PI / 2 or PI / 2) end); o.side = m.side end
+            o.ar:SetAlpha(a)
+            o.ar:SetPoint("CENTER", f, "TOP", u(m.x + m.side * (16 * scale + 10)), -u(S.line)); show(o.ar)
+        else
+            hide(o.ar)
+        end
+        o.st, o.kind = st, st.kind
     end
 
     -- the focused quest's NUMBER as the app counts it (MapView's trackedNo): its place among the WATCHED quests, in quest-log order
@@ -1290,7 +1442,14 @@ do
             uwp = (okH and has == true) and true or false, st = (okS and onPin == true) and true or false, route = route,
             pin = tg.pin and true or false, qid = C.qid, qsrc = C.qsrc, quest = tg.quest and true or false,
             corpse = tg.corpse and true or false, n = #L.marks,
-            goal = C.goal_ and C.goal_.id or nil, gk = C.cgKey, ga = C.cg and math.floor((C.cg.a or 0) * 100 + 0.5) or nil,
+            rt = (function()
+                local p = {}
+                for _, it in ipairs(C.RT.pair or {}) do
+                    local st = C.RT.st[it.id]
+                    p[#p + 1] = it.id .. "@" .. (st and math.floor(st.a * 100 + 0.5) or 0)
+                end
+                return #p > 0 and table.concat(p, ",") or nil
+            end)(), rtn = C.rt_ and #C.rt_ or 0,
             cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
             cyaw = C.cam.abs and math.floor(C.cam.abs * 1000 + 0.5) / 1000 or nil,
             wm = C.wm and C.wm.shown and true or false, wmn = C.wm and C.wm.n or 0, air = C.wm and C.wm.air or nil,
