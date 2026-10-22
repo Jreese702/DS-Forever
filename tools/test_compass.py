@@ -1112,9 +1112,28 @@ def main():
         stj = C.RT.st[j1]
         fa.append((dd, round(stj.a, 3) if stj else None))
     G.py = (500 - (A1[0] - 3.5)) / 1000; C.read(True); frames(30, read=True)
-    chk("cp29: the nearer one full to 25 yd, then fading to 0 at 4 yd (%s; at 3.5 yd passed: %s)" % (fa, C.RT.st[j1] is None),
-        fa[0][1] == 1 and fa[1][1] == 1 and abs(fa[2][1] - 0.5) < 0.01 and abs(fa[3][1] - 4 / 21) < 0.01 and fa[4][1] < 0.05
-        and C.RT.st[j1] is None)
+    a35 = C.RT.st[j1].a
+    chk("cp29: the nearer one full to 25 yd, then fading to 0 at 4 yd (%s; at 3.5 yd %.2f, cp30: still the first until the app moves on)"
+        % (fa, a35), fa[0][1] == 1 and fa[1][1] == 1 and abs(fa[2][1] - 0.5) < 0.01 and abs(fa[3][1] - 4 / 21) < 0.01 and fa[4][1] < 0.05
+        and a35 == 0 and C.RT.pair[1].id == j1)
+    # cp30 (test69: "first pin 55 yards, the next one after 1555 yards"; the pin 23 -> 7 yd away missing): the player overshoots
+    # the pin (within 4 yd) and the app keeps it (a re-plan onto the same bend): walking back it shows again, still the FIRST
+    L.execute("WowCompanion.routeWp.more = { { m = GAME.map, x = %r, y = %r } }" % mp(*A2))
+    G.py = (500 - (A1[0] - 23)) / 1000; C.read(True); frames(60, read=True)
+    p23 = [C.RT.pair[i].id for i in range(1, len(C.RT.pair) + 1)]
+    a23 = C.RT.st[j1].a
+    G.py = (500 - (A1[0] - 7)) / 1000; C.read(True); frames(60, read=True)
+    a7 = C.RT.st[j1].a
+    chk("cp30: an overshot pin the app keeps: back at 23 yd it is the first again (%s, alpha %.2f; at 7 yd %.2f) - never a further one first"
+        % (p23, a23, a7), p23 == [j1, j2] and abs(a23 - 19 / 21) < 0.01 and abs(a7 - 3 / 21) < 0.01)
+    # a PHANTOM further point (1555 yd off, from the pin's 58 yd) between two good ones: skipped, logged; the good one after kept
+    L.execute("WowCompanion.routeWp.more = { { m = GAME.map, x = %r, y = %r }, { m = GAME.map, x = %r, y = %r } }"
+              % (mp(1600, 30) + mp(*A2)))
+    C.read(True); frames(10, read=True)
+    ids30 = [C.rt_[i].id for i in range(1, len(C.rt_) + 1)]
+    bad = [C.RT.bad[i] for i in range(1, len(C.RT.bad) + 1)]
+    chk("cp30: a phantom further point (1542 yd past the pin) is dropped and logged (%s); the good one after it kept: %s" % (bad, ids30),
+        ids30 == [j1, j2] and len(bad) == 1 and bad[0].startswith("cp:1600:30@") and C.lastDiag is not None)
     G.px, G.py, G.facing, C.cam.abs, C.cam.ref, G.pin, G.quest = keepW
     L.execute("""C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end
                  WowCompanion.routeWp = { active = true, more = { { m = GAME.map, x = 0.7, y = 0.35 }, { m = GAME.map, x = 0.4, y = 0.3 } } }

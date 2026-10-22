@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp29" }
+WC.compass = { V = "cp30" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -1184,6 +1184,7 @@ do
                 end
             end
             pcall(WC.send, WC.encode({ type = "cap", probe = "wmk", v = C.V, m = m, eng = W.engKind, ew = W.engWhy,
+                bad = (#C.RT.bad > 0) and table.concat(C.RT.bad, ",") or nil,
                 st = W.engKind == "pin", route = type(R0) == "table" and R0.active == true or nil,
                 pAge = W.pitchAt and math.floor(now - W.pitchAt + 0.5) or nil, tilt = W.tilted or nil,
                 pitch = W.pitch and math.floor(math.deg(W.pitch) * 10 + 0.5) / 10 or nil }))
@@ -1230,13 +1231,14 @@ do
     -- cp29 (test68, the user: "the fade out should be 25 to 0 yards"): full to FAR 25 yd, gone at NEAR - the app's pass radius
     -- (DangerGrid.PASS_YD), which Map moves down to match (4 yd): keep the two the same
     C.RT = { FAR = 25, NEAR = 4, IN_S = 0.4, OUT_S = 0.25, DOWN1_S = 0.6, RANK_S = 0.4, K2 = 0.8, A2 = 0.75, MORE_OLD_S = 2,
-             SAME_YD = 4, GOAL_NEAR = 8, GOAL_ON = 40, MORE_MAX = 2, st = {}, passed = {} }
+             SAME_YD = 4, GOAL_NEAR = 8, GOAL_ON = 40, MORE_MAX = 2, STEP_YD = 300, st = {}, bad = {} }
     local function rtAt(w) return math.floor(w.x + 0.5) .. ":" .. math.floor(w.y + 0.5) end
     function C.route(tg)
         tg = tg or {}
         local RT, R = C.RT, WC.routeWp
         local now = (type(GetTime) == "function" and GetTime()) or 0
         local items = {}
+        RT.bad = {}
         local function dup(w, yd)
             for _, it in ipairs(items) do
                 if math.sqrt((it.w.x - w.x) ^ 2 + (it.w.y - w.y) ^ 2) < yd then return true end
@@ -1256,6 +1258,14 @@ do
             more = more or {}
             for i, c in ipairs(more) do
                 if c.w == nil then c.w = C.world(c.m, c.x, c.y) or false end
+                -- cp30 (test69: a further point 1555 yd off on a 541 yd route): a step over STEP_YD from the last good point before it
+                -- is implausible - that one is skipped (the next judged from the last good one) and logged (the diag's rtbad)
+                local prev = items[#items].w
+                local step = c.w and math.sqrt((c.w.x - prev.x) ^ 2 + (c.w.y - prev.y) ^ 2) or 0
+                if c.w and step > RT.STEP_YD then
+                    RT.bad[#RT.bad + 1] = "cp:" .. rtAt(c.w) .. "@" .. math.floor(step + 0.5) .. ":" .. src .. i
+                    c = { w = false }
+                end
                 if c.w and tg.quest and math.sqrt((c.w.x - tg.quest.x) ^ 2 + (c.w.y - tg.quest.y) ^ 2) < RT.GOAL_ON then
                     if not dup(tg.quest, RT.GOAL_NEAR) then
                         items[#items + 1] = { id = "goal:" .. tostring(C.qid), w = tg.quest, kind = "goal", why = "on" .. src .. i }
@@ -1285,10 +1295,11 @@ do
             local d
             if me then local _, dd = C.bearing(me, it.w); d = dd end
             it.d = d
-            if it.kind == "cp" and d and d <= RT.NEAR then RT.passed[it.id] = true end
-            if not RT.passed[it.id] and #pair < 2 then pair[#pair + 1] = it; rank[it.id] = #pair end
+            -- cp30 (test69: the pin 7 yd away missing, a further point ranked first): no pass of our own - a checkpoint leaves only
+            -- when the app moves the pin on (Map's list); it is faded out by then (0 at NEAR, the app's pass radius). The pair is the
+            -- list's first two, in ROUTE order: a further point never ahead of the pin
+            if #pair < 2 then pair[#pair + 1] = it; rank[it.id] = #pair end
         end
-        for id in pairs(RT.passed) do if not inList[id] then RT.passed[id] = nil end end
         local busy = false                                           -- something still fading out: nothing new fades in yet
         for id, st in pairs(S) do if not rank[id] and st.a > 0 then busy = true end end
         for i, it in ipairs(pair) do
@@ -1549,7 +1560,7 @@ do
                     p[#p + 1] = it.id .. "@" .. (st and math.floor(st.a * 100 + 0.5) or 0) .. ":" .. tostring(it.why)
                 end
                 return #p > 0 and table.concat(p, ",") or nil
-            end)(), rtn = C.rt_ and #C.rt_ or 0,
+            end)(), rtn = C.rt_ and #C.rt_ or 0, rtbad = (#C.RT.bad > 0) and table.concat(C.RT.bad, ",") or nil,
             cam = C.camWanted(), csrc = C.cam.src, coff = math.floor((C.cam.off or 0) * 1000 + 0.5) / 1000,
             cyaw = C.cam.abs and math.floor(C.cam.abs * 1000 + 0.5) / 1000 or nil,
             wm = C.wm and C.wm.shown and true or false, wmn = C.wm and C.wm.n or 0, air = C.wm and C.wm.air or nil,
