@@ -12,12 +12,29 @@ import kotlin.math.hypot
 object ShippedPins {
     const val ON_ROUTE_YD = 8.0        // a named checkpoint this near a stretch of the route is on it
     const val REPLAN_YD = 30.0         // walked this far since the last plan: planned again (the danger leg's DANGER_MOVE_YD)
+    /**
+     * THE CLOSEST TWO ALWAYS (the user on test65: "sometimes I see the marker all the way at the very end, like 1000 yards away. I should
+     * always see the closest two checkpoints"): a stretch longer than [STRAIGHT_MAX_YD] gets a WAYMARK every [WAYMARK_YD] from its own
+     * start (fixed points: they never move with the player; passed and dropped as any checkpoint), so the pin and the next one are
+     * never a long straight away and the objective is never shown in their place mid-route
+     */
+    const val WAYMARK_YD = 100.0
+    const val STRAIGHT_MAX_YD = 150.0
+    /** a waymark's name in [Leg.names] (not a place: the pin's log says "waymark") */
+    const val WAYMARK = ""
+
 
     /** a route's checkpoints: [pts] world (the player first, the goal last), [names] beside them (null: a bend, the player, the goal) */
     class Leg(val pts: List<DoubleArray>, val names: List<String?>) {
         init { require(pts.size == names.size) }
         /** the next checkpoint's words for the pin's log: its name, else "bend i of n" */
-        fun nextWords(): String? = if (pts.size <= 2) null else names[1]?.let { "\"$it\"" } ?: "bend 1 of ${pts.size - 2}"
+        fun nextWords(): String? = if (pts.size <= 2) null else when (val n = names[1]) {
+            null -> "bend 1 of ${pts.size - 2}"
+            WAYMARK -> "a waymark on a long straight (1 of ${pts.size - 2})"
+            else -> "\"$n\""
+        }
+        /** the yards from [player] to the next checkpoint (the pin), or to the goal when none is left */
+        fun nextYd(player: DoubleArray): Double = pts.getOrNull(1)?.let { hypot(it[0] - player[0], it[1] - player[1]) } ?: 0.0
     }
 
     /** [sec]'s named checkpoints (id, name, world point); a v1 file with none listed: its named nodes */
@@ -59,6 +76,27 @@ object ShippedPins {
         return Leg(outP, outN)
     }
 
+    /** [leg] with a [WAYMARK] every [WAYMARK_YD] along each stretch longer than [STRAIGHT_MAX_YD] (from the stretch's start; none within
+     *  half a spacing of its end) */
+    fun waymarks(leg: Leg): Leg {
+        if (leg.pts.size < 2) return leg
+        val outP = ArrayList<DoubleArray>(); val outN = ArrayList<String?>()
+        outP.add(leg.pts[0]); outN.add(leg.names[0])
+        for (i in 1 until leg.pts.size) {
+            val a = leg.pts[i - 1]; val b = leg.pts[i]
+            val len = hypot(b[0] - a[0], b[1] - a[1])
+            if (len > STRAIGHT_MAX_YD) {
+                var k = 1
+                while (len - k * WAYMARK_YD >= WAYMARK_YD / 2) {
+                    val t = k * WAYMARK_YD / len
+                    outP.add(doubleArrayOf(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)); outN.add(WAYMARK); k++
+                }
+            }
+            outP.add(b); outN.add(leg.names[i])
+        }
+        return Leg(outP, outN)
+    }
+
     /**
      * [leg] less the checkpoints [player] has passed ([DangerGrid.passed], on a map of [ax] x [ay] yd through [onMap]): the same leg when
      * none is, else a new one (its first point kept: the plan's start). Never one already dropped comes back.
@@ -80,6 +118,7 @@ object ShippedPins {
     fun takeNew(keptYd: Double?, newYd: Double, strayed: Boolean): Boolean = strayed || keptYd == null || SafePathV2.takeNew(keptYd, newYd)
 
     /** the pin's log words for the shipped route: the next checkpoint, "(shipped network)" and the file's "may be out of date" mark */
-    fun pinWhy(leg: Leg, to: String, stale: String?): String =
-        "checkpoint: ${leg.nextWords() ?: "none"} on the way to $to (shipped network)" + (stale?.let { "; may be out of date ($it)" } ?: "")
+    fun pinWhy(leg: Leg, to: String, stale: String?, player: DoubleArray? = null): String =
+        "checkpoint: ${leg.nextWords() ?: "none"}" + (player?.let { ", ${leg.nextYd(it).toInt()} yd ahead" } ?: "") +
+            " on the way to $to (shipped network)" + (stale?.let { "; may be out of date ($it)" } ?: "")
 }

@@ -4042,7 +4042,9 @@ class MapView(context: Context) : View(context) {
         // each is passed (DangerGrid.passed). No bend: the step's own way, as before.
         dangerLeg(focusQid, r)?.let { leg ->
             val sl = shipPinLeg
-            pinWhy = if (shipShown && sl != null && !(SafePathV2.enabled && v2Shown)) ShippedPins.pinWhy(sl, r.label ?: "the quest", shipStale)
+            // test65: each pin's choice logged with how far ahead it stands (the closest checkpoint, never the route's end mid-route)
+            val here = rect?.takeIf { it.valid }?.let { rr -> doubleArrayOf(rr.top - m.optDouble("y", Double.NaN) * rr.height, rr.left - m.optDouble("x", Double.NaN) * rr.width) }
+            pinWhy = if (shipShown && sl != null && !(SafePathV2.enabled && v2Shown)) ShippedPins.pinWhy(sl, r.label ?: "the quest", shipStale, here)
                 else "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}" + (if (SafePathV2.enabled && v2Shown) " (SafePath v2)" else "")
             // cp19: the flags after it (as the map draws them: every bend, and the step's point unless it is the goal) for the world marker
             pinMore = leg.drop(2).let { if (r.kind == CursorRoute.Kind.GOAL) it.dropLast(1) else it }.take(RouteWaypoint.MORE_MAX)
@@ -4545,7 +4547,7 @@ class MapView(context: Context) : View(context) {
                 val ghostCoarse: (Double, Double) -> Float = if (g == null) { _, _ -> 1f } else { x, y -> g.ghostGround((r.left - y) / ax, (r.top - x) / ay) }
                 val res = if (ghost) CorpseRoute.plan(sec, ghostCoarse, here, goal, roadmap, fine) { snapLog.add(it) }
                     else ShippedRoute.plan(sec, ground, danger, here, goal, k, toExit, roadmap = roadmap, attacher = attacher, stitchGround = fine, live = live)
-                Triple(res, if (res.reached) ShippedPins.checkpoints(res.pts, ShippedPins.named(sec)) else null, snapLog.toList())
+                Triple(res, if (res.reached) ShippedPins.waymarks(ShippedPins.checkpoints(res.pts, ShippedPins.named(sec))) else null, snapLog.toList())
             }) { (res, leg, snapLog) ->
                 shipPending.remove(q)
                 if (corpseStale(q)) return@run                                  // alive again meanwhile: thrown away

@@ -70,4 +70,31 @@ class ShippedPinsTest {
         assertEquals(listOf("Town"), ShippedPins.named(ShippedNet.Section(TransportRoutes.HORDE, 10, "t", net, ways, checkpoints = listOf(1))).map { it.first })
         assertEquals(listOf("Town", "Not listed"), ShippedPins.named(ShippedNet.Section(TransportRoutes.HORDE, 10, "t", net, ways)).map { it.first })
     }
+
+    // ---- test65 (the user: "sometimes I see the marker all the way at the very end, like 1000 yards away")
+    @Test fun aLongStraightGetsAWaymarkEveryHundredYardsSoThePinIsAlwaysNear() {
+        // 1000 yd straight to the goal (no bend): before, no checkpoint - the pin went and the objective 1000 yd off showed
+        val leg = ShippedPins.waymarks(ShippedPins.checkpoints(listOf(p(0.0, 0.0), p(0.0, 1000.0)), emptyList()))
+        assertEquals(11, leg.pts.size)                                              // the start, 9 waymarks (100..900), the goal
+        assertEquals(100.0, leg.pts[1][1], 1e-6); assertEquals(900.0, leg.pts[9][1], 1e-6)
+        assertEquals(ShippedPins.WAYMARK, leg.names[1]); assertNull(leg.names.last())
+        assertEquals("a waymark on a long straight (1 of 9)", leg.nextWords())
+        assertEquals(100.0, leg.nextYd(p(0.0, 0.0)), 1e-6)
+        // walked 360 yd on: the passed ones dropped (100..300), the pin 40 yd ahead, the next 140
+        val on = ShippedPins.dropPassed(leg, p(0.0, 360.0), onMap, 1000.0, 1000.0)
+        assertEquals(400.0, on.pts[1][1], 1e-6); assertEquals(500.0, on.pts[2][1], 1e-6)
+        assertTrue(on.nextYd(p(0.0, 360.0)) <= ShippedPins.WAYMARK_YD)
+        assertTrue(ShippedPins.pinWhy(on, "q", null, p(0.0, 360.0)), ShippedPins.pinWhy(on, "q", null, p(0.0, 360.0))
+            .startsWith("checkpoint: a waymark on a long straight (1 of 6), 40 yd ahead"))
+    }
+
+    @Test fun aShortStretchAndTheBendsKeepTheirOwnCheckpoints() {
+        // 140 yd and 120 yd stretches: no waymark; a bend stays a bend
+        val leg = ShippedPins.waymarks(ShippedPins.checkpoints(listOf(p(0.0, 0.0), p(0.0, 140.0), p(120.0, 140.0)), emptyList()))
+        assertEquals(3, leg.pts.size); assertEquals("bend 1 of 1", leg.nextWords())
+        // a 160 yd stretch: one at 100 (the end's 60 yd left are more than half a spacing)
+        assertEquals(3, ShippedPins.waymarks(ShippedPins.checkpoints(listOf(p(0.0, 0.0), p(0.0, 160.0)), emptyList())).pts.size)
+        // a 140 yd one: none (not over STRAIGHT_MAX_YD)
+        assertEquals(2, ShippedPins.waymarks(ShippedPins.checkpoints(listOf(p(0.0, 0.0), p(0.0, 140.0)), emptyList())).pts.size)
+    }
 }
