@@ -3,6 +3,8 @@
   WowCompanion/Media/marker_beam.tga  a soft vertical light beam: a bright core in a wide halo, fading upward, a soft foot
   WowCompanion/Media/marker_pin.tga   (cp22: the world markers are a pin again) a map pin, white shaded for the add-on's tint: a
                                       round head with a hole, tapering to its TIP at the texture's bottom middle, a dark rim
+  WowCompanion/Media/quest_disc.tga   (cp27: the quest's objective on the compass) the classic quest-number disc: a gold-filled
+                                      circle, lit from the top, a dark rim; the number drawn dark on it by the add-on
   (marker_ring / marker_beam: cp21's, unused since cp22)
   WowCompanion/Media/tint_glow.tga    (at1, the aggro tint) a soft glow round a nameplate: a bright edge line where the plate's box
                                       is, a halo fading outward, the middle faint (the plate stays readable over it)
@@ -127,6 +129,35 @@ def pin():
     return out
 
 
+def disc():
+    n, ss = 64, 4
+    N = n * ss
+    c, r = N / 2, N / 2 - 1.5 * ss
+    rim = 3.0 * ss
+    big = Image.new("RGBA", (N, N), (0, 0, 0, 0))
+    px = big.load()
+    for q in range(N):
+        for p in range(N):
+            x, y = p + 0.5, q + 0.5
+            dd = math.hypot(x - c, y - c)
+            if dd > r:
+                continue
+            if dd > r - rim:
+                px[p, q] = (74, 44, 8, 255)                                       # the dark rim
+                continue
+            t = (y - (c - r)) / (2 * r)                                           # 0 top .. 1 bottom
+            top, bot = (255, 226, 92), (226, 150, 12)
+            col = [top[k] + (bot[k] - top[k]) * t for k in range(3)]
+            lx, ly = (x - (c - r * 0.3)) / r, (y - (c - r * 0.45)) / r          # a soft highlight, top left
+            h = 0.35 * math.exp(-(lx * lx + ly * ly) * 3.0)
+            col = [min(255, v + (255 - v) * h) for v in col]
+            px[p, q] = (int(col[0]), int(col[1]), int(col[2]), 255)
+    img = big.resize((n, n), Image.BOX)
+    out = os.path.join(MEDIA, "quest_disc.tga")
+    img.save(out, compression=None)
+    return out
+
+
 if __name__ == "__main__":
-    for p in (ring(), beam(), tint(), pin()):
+    for p in (ring(), beam(), tint(), pin(), disc()):
         print(p, os.path.getsize(p))
