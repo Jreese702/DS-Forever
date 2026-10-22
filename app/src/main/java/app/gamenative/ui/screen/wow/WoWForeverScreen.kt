@@ -190,7 +190,11 @@ fun WoWForeverScreen(
         }
     }
 
+    // the launch switch (switchIfDue, below harvestArt: it uses it); set at every composition before any check runs
+    var switchFn: (suspend () -> Boolean)? = null
+
     suspend fun fetchVersionStatus() {
+        switchFn?.invoke()
         isCheckingVersion = true
         versionStatus = withContext(Dispatchers.IO) { WowClientDownloader.checkVersion(File(gamePath)) }
         isCheckingVersion = false
@@ -410,6 +414,53 @@ fun WoWForeverScreen(
             }
         }
     }
+
+    /**
+     * THE BETA IS OVER: the folder moves to World of Warcraft: Forever by itself (WowSwitch: the folder runs the beta, the date is
+     * past its last day, and wowf's patch server answers). Its progress is the updater's line; a stop part-way goes on at the next
+     * start. True = the folder now runs the launch client.
+     */
+    suspend fun switchIfDue(): Boolean {
+        val root = File(gamePath)
+        if (isUpdating || isLaunching || !files.hasStorageAccess) return false
+        if (!withContext(Dispatchers.IO) { runCatching { com.jrees.wowcompanion.WowSwitch.due(root) }.getOrDefault(false) }) return false
+        PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)        // minutes of download: the player sees the line, not the splash
+        isUpdating = true
+        updateStatusText = com.jrees.wowcompanion.WowSwitch.STATUS
+        errorMessage = null
+        val result = try {
+            withContext(Dispatchers.IO) {
+                WowClientDownloader.switchToLaunch(root, { msg -> scope.launch(Dispatchers.Main) { updateStatusText = msg } })
+            }
+        } catch (e: CancellationException) {
+            isUpdating = false
+            throw e
+        } catch (e: Exception) {
+            Timber.e(e, "Moving to World of Warcraft: Forever stopped")
+            if (e.isPermissionDenied()) denyStorageAccess()
+            errorMessage = "Moving to World of Warcraft: Forever stopped (${e.message}). It goes on from there at the next start."
+            isUpdating = false
+            return false
+        }
+        isUpdating = false
+        return when (result) {
+            is WowClientDownloader.Switch.Done -> {
+                Timber.i("Moved to World of Warcraft: Forever ${result.version}")
+                checkFiles()
+                dependencies = null              // QuestieDB again, into _forever_'s add-ons
+                harvestArt()                     // the new build's art (it is keyed by the build)
+                true
+            }
+            is WowClientDownloader.Switch.NoAnswer -> {
+                errorMessage = "The beta has closed. DS Forever moves you to World of Warcraft: Forever as soon as Blizzard's servers " +
+                    "answer: check the internet connection, then open DS Forever again. Nothing was changed."
+                false
+            }
+            WowClientDownloader.Switch.NotDue -> false
+        }
+    }
+
+    switchFn = { switchIfDue() }
 
     // the art starts BY ITSELF as soon as the game folder is usable (and re-checks silently at every start: nothing pending = Ready)
     LaunchedEffect(gamePath, files.dataExists, files.buildInfoExists, files.hasStorageAccess, files.isWrongGame) { harvestArt() }
@@ -811,11 +862,19 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
     runCatching { com.jrees.wowcompanion.DxvkLogs.cacheDir(context.dataDir).mkdirs() }       // issue #12: DXVK's state cache
 
     check(File(gameRoot, BUILD_INFO).exists()) { "Missing $BUILD_INFO in $gameRoot. Copy it from your WoW install." }
+    // the beta is over: Play itself moves the folder to the launch client first (when the screen's check could not: it goes on from
+    // where the last one stopped). No answer from Blizzard = the folder as it is; a stop part-way is said and Play stops
+    try {
+        WowClientDownloader.switchToLaunch(gameRoot, onStatus)
+    } catch (e: Exception) {
+        if (e.isPermissionDenied()) throw StorageAccessDeniedException(e)
+        throw IllegalStateException("Moving to World of Warcraft: Forever stopped (${e.message}). Play again to go on.", e)
+    }
     // launch support: the client this folder runs (the beta or the launch client, from its .build.info), for every path below
     val choice = WowProduct.choose(gameRoot)
     val product = choice?.product ?: WowProduct.of(gameRoot)
     try {
-        ensureGameConfig(gameRoot, product, choice?.row)
+        com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row)
     } catch (e: Exception) {
         if (e.isPermissionDenied()) throw StorageAccessDeniedException(e)
         throw e
@@ -887,89 +946,6 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, executablePath: Str
         // online game for 11 s ("manual" policy); 13 s after the SIGCONT a thread froze and the game died (ERROR #109, 20 s freeze)
         put("suspendPolicy", Container.SUSPEND_POLICY_NEVER)
         put("wincomponents", "direct3d=0,directsound=0,directinput8=0,directinput=0,directmusic=0,directshow=0,directplay=0,vcrun2010=0,wmdecoder=0,opengl=0")
-    }
-}
-
-/** Config.wtf's defaults for [product]: its portal (the beta's "test", else the install's region) and agentUID, then the rest */
-private fun configDefaults(product: WowProduct, row: Map<String, String>?): Map<String, String> =
-    linkedMapOf("portal" to "\"${product.portalFor(row)}\"", "agentUID" to "\"${product.code}\"") + CONFIG_DEFAULTS
-
-private val CONFIG_DEFAULTS = linkedMapOf(
-    "gxApi" to "\"D3D11\"",
-    "textLocale" to "\"enUS\"",
-    "audioLocale" to "\"enUS\"",
-    "gxMaximize" to "\"1\"",
-    "gxWindowedResolution" to "\"1920x1080\"",
-    "graphicsQuality" to "\"0\"",
-    "ResampleQuality" to "\"0\"",
-    "RenderScale" to "\"1\"",
-    "farclip" to "\"1200\"",
-    "horizonClip" to "\"1200\"",
-    "RAIDfarclip" to "\"1200\"",
-    "RAIDhorizonClip" to "\"1200\"",
-    "shadowMode" to "\"0\"",
-    "graphicsShadowQuality" to "\"0\"",
-    "raidGraphicsShadowQuality" to "\"0\"",
-    "worldBaseMip" to "\"0\"",
-    "RAIDworldBaseMip" to "\"0\"",
-    "graphicsTextureResolution" to "\"2\"",
-    "raidGraphicsTextureResolution" to "\"2\"",
-    "componentTextureLevel" to "\"0\"",
-    "RAIDcomponentTextureLevel" to "\"0\"",
-    "entityShadowFadeScale" to "\"0\"",
-    "refraction" to "\"0\"",
-    "groundEffectDensity" to "\"16\"",
-    "GamePadEnable" to "\"1\"",
-    "InputDeviceInterfaceStyle" to "\"1\"",
-)
-
-private val FORCED_CONFIG_KEYS = listOf("gxApi", "RenderScale", "ResampleQuality", "GamePadEnable", "InputDeviceInterfaceStyle")
-
-private val LEGACY_CONFIG_VALUES = mapOf(
-    "farclip" to "\"3000\"",
-    "horizonClip" to "\"3000\"",
-    "RAIDfarclip" to "\"3000\"",
-    "RAIDhorizonClip" to "\"3000\"",
-    "worldBaseMip" to "\"2\"",
-    "RAIDworldBaseMip" to "\"2\"",
-    "graphicsTextureResolution" to "\"0\"",
-    "raidGraphicsTextureResolution" to "\"0\"",
-    "componentTextureLevel" to "\"1\"",
-    "RAIDcomponentTextureLevel" to "\"1\"",
-)
-
-private fun ensureGameConfig(root: File, product: WowProduct, row: Map<String, String>?) {
-    val defaults = configDefaults(product, row)
-    val flavorDir = File(root, product.flavorDir)
-    flavorDir.mkdirs()
-    val flavorInfo = File(flavorDir, ".flavor.info")
-    if (!flavorInfo.exists()) {
-        flavorInfo.writeText("Product Flavor!STRING:0\n${product.code}\n")
-    }
-    val configWtf = File(flavorDir, "WTF/Config.wtf")
-    if (!configWtf.exists()) {
-        configWtf.parentFile?.mkdirs()
-        configWtf.writeText(defaults.entries.joinToString("\n") { "SET ${it.key} ${it.value}" } + "\n")
-        return
-    }
-
-    val original = configWtf.readLines().filterNot { it.startsWith("SET ResampleSharpness", ignoreCase = true) }
-    val existingKeys = mutableSetOf<String>()
-    val updated = original.map { line ->
-        val parts = line.takeIf { it.startsWith("SET ", ignoreCase = true) }?.removePrefix("SET ")?.trim()?.split(" ", limit = 2)
-        if (parts?.size != 2) return@map line
-        val (key, value) = parts
-        existingKeys.add(key)
-        val forcedKey = FORCED_CONFIG_KEYS.firstOrNull { it.equals(key, ignoreCase = true) }
-        when {
-            forcedKey != null && value != defaults.getValue(forcedKey) -> "SET $forcedKey ${defaults.getValue(forcedKey)}"
-            LEGACY_CONFIG_VALUES[key] == value -> "SET $key ${defaults.getValue(key)}"
-            else -> line
-        }
-    } + defaults.filterKeys { it !in existingKeys }.map { (k, v) -> "SET $k $v" }
-
-    if (updated != original) {
-        configWtf.writeText(updated.joinToString("\n") + "\n")
     }
 }
 

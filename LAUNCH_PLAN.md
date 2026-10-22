@@ -70,6 +70,18 @@ Other probes: `wow_forever*`, `wowfb` and `wow_classic_forever` all return 404.
 - **Lua:** a dead realm fix keyed on "Yes-Classic Beta PvE", and a guarded `GetScriptsDisallowedForBeta()`. Both are harmless.
 - **README "beta" wording** should be updated with the release notes for the release that ships this.
 
+## 2b. The beta closed: the app moves the player itself (2026-10-21)
+
+`WowProduct.choose()` kept a beta-only folder on the beta for ever, so players saw "no realms". Now:
+
+- **Trigger (`companion/.../WowSwitch.kt`):** the folder runs the beta **and** the beta is over (`WowProduct.betaOver`: local date on or after 21 Oct 2026) **and** `wowf/versions` answers for the install's region. No answer = nothing changes, and the screen says so.
+- **The move (`WowClientDownloader.switchToLaunch`):** the wowf row is added to `.build.info` (the beta row byte for byte, the line ending kept), then the wowf client is synced through `updateGame`: configs, the `_forever_` client files (a file identical to the beta's is copied, not downloaded; **the exe last**), the CDN config's indices, then the row's keys (Install Key from the build config). Every file is a temp file renamed into place.
+- **Resume:** until `_forever_/Wow-arm64.exe` exists, `choose()` still picks the beta, so a killed app finds the move still due and goes on; files already right are skipped.
+- **Tie-break:** both clients installed: the launch client from 21 Oct on (was: from 22 Oct). `expected()` (a new folder) is the launch client from 21 Oct.
+- **Status:** "Moving to World of Warcraft: Forever… NN% · step" on the updater's line (`WoWForeverScreen.switchIfDue`, run before every client check, and again from Play).
+- **Config.wtf (`companion/.../GameConfigWtf.kt`, moved from the screen):** `_forever_` gets `portal` = region and `agentUID "wowf"`; a beta `portal "test"` or beta agentUID in a `_forever_` file is corrected.
+- **SvKeep:** `SvKeep.carryOver` copies the beta's `WowCompanion*.lua` SavedVariables into the same account folder under `_forever_/WTF`, once (marker `.dsf-carried-from-beta`), never over a newer file. That account folder also lets `beforeStart` restore the kept copies.
+
 ## 3. Off-device tests (pass)
 
 - **`dsforever/src/test/.../WowProductTest.kt`, 14 tests:**

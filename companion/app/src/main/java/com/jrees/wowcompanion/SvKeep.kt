@@ -76,6 +76,42 @@ object SvKeep {
         }
     }
 
+    /** the marker in the new client's WTF folder: the beta's settings were carried across (once) */
+    const val CARRIED = ".dsf-carried-from-beta"
+
+    /**
+     * THE LAUNCH SWITCH (2026-10-21): the beta's OWN add-on settings into the launch client's WTF, ONCE. For every account folder under
+     * [fromWtf] (the beta's) our add-ons' SavedVariables (WowCompanion*.lua) are copied into the same account folder under [toWtf]
+     * (_forever_'s; the game names it by the Battle.net account, the same on both clients), each only when the target is missing or
+     * older (never over a newer one), with the source's time. The account folder it makes is also what [beforeStart] needs to write
+     * the kept copies. The game's own files (bindings, macros, layout) and other add-ons' files are not touched. One [log] line each.
+     */
+    fun carryOver(fromWtf: File, toWtf: File, log: (String) -> Unit) {
+        val marker = File(toWtf, CARRIED)
+        if (marker.exists()) return
+        val accounts = File(fromWtf, "Account").listFiles()?.filter { it.isDirectory && File(it, "SavedVariables").isDirectory }.orEmpty()
+        var n = 0
+        for (account in accounts) {
+            File(toWtf, "Account/${account.name}/SavedVariables").mkdirs()
+            val ours = File(account, "SavedVariables").listFiles()
+                ?.filter { it.isFile && it.name.startsWith("WowCompanion") && it.name.endsWith(".lua") }.orEmpty()
+            for (src in ours) {
+                val target = File(toWtf, "Account/${account.name}/SavedVariables/${src.name}")
+                if (target.isFile && target.lastModified() >= src.lastModified()) {
+                    log("settings carry-over: ${src.name} not copied (the new client's own is newer)"); continue
+                }
+                runCatching {
+                    WowSwitch.replace(target, src.readBytes())
+                    target.setLastModified(src.lastModified())
+                    n++
+                }.onFailure { log("settings carry-over: ${src.name} NOT copied (${it.message})") }
+            }
+        }
+        toWtf.mkdirs()
+        runCatching { WowSwitch.replace(marker, "carried $n file(s) from ${fromWtf.path}\n".toByteArray()) }
+        log("settings carry-over: $n of the beta's DS Forever settings file(s) copied to ${toWtf.parentFile?.name}")
+    }
+
     /** the kept copy of [d] in [keptDir] (the previous one as .bak), unless [keep] says no; one line for the log */
     fun store(keptDir: File, d: Doc, armed: Boolean): String {
         val f = keptFile(keptDir, d.variable)

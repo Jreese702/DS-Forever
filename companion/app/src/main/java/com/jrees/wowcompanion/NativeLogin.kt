@@ -110,6 +110,10 @@ object NativeLogin {
         // test23 (SvKeep, the user's pick): our OWN SavedVariables from the kept copy, before the client starts, when the game has nothing newer
         runCatching {
             val docs = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS)
+            // the launch switch: the beta's own DS Forever settings into the launch client's WTF, once (never over newer ones)
+            if (flavor == WowProduct.LAUNCH.flavorDir) {
+                SvKeep.carryOver(File(gameRoot, "${WowProduct.BETA.flavorDir}/WTF"), File(gameRoot, "$flavor/WTF")) { logEvent(it); Log.i("WCSETUP", it) }
+            }
             SvKeep.beforeStart(File(gameRoot, "$flavor/WTF"), File(docs, "DS Forever/settings"),
                 File(docs, "WoW-AddOns-backup/settings-" + java.text.SimpleDateFormat("yyyy-MM-dd_HHmmss", java.util.Locale.US).format(java.util.Date()))) {
                 logEvent(it); Log.i("WCSETUP", it)

@@ -63,7 +63,8 @@ class WowProductTest {
     @Test fun bothActiveAndInstalledFollowTheCalendar() {
         val text = info(row("wowf", 1), row("wow_classic_beta", 1))
         assertEquals(WowProduct.BETA, pick(text, today = during)!!.product)
-        assertEquals(WowProduct.BETA, pick(text, today = WowProduct.BETA_LAST_DAY)!!.product)
+        assertEquals(WowProduct.BETA, pick(text, today = WowProduct.BETA_LAST_DAY.minusDays(1))!!.product)
+        assertEquals(WowProduct.LAUNCH, pick(text, today = WowProduct.BETA_LAST_DAY)!!.product)   // the beta closed that day
         assertEquals(WowProduct.LAUNCH, pick(text, today = WowProduct.BETA_LAST_DAY.plusDays(1))!!.product)
         assertEquals(WowProduct.LAUNCH, pick(text, today = after)!!.product)
     }

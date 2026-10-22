@@ -12,6 +12,8 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import java.util.zip.Inflater
 import com.jrees.wowcompanion.WowProduct
+import com.jrees.wowcompanion.WowSwitch
+import java.time.LocalDate
 import timber.log.Timber
 
 /**
@@ -24,6 +26,9 @@ object WowClientDownloader {
     private const val EXCLUDED_ARCH = "x86_64"
     private const val DEFAULT_CDN_PATH = "tpr/wow"
     private val DEFAULT_CDN_HOSTS = listOf("level3.blizzard.com", "us.cdn.blizzard.com")
+
+    /** a product's patch server (versions, cdns); the tests point it at a local server */
+    @Volatile internal var patchUrlFor: (WowProduct) -> String = { it.patchUrl }
 
     private val patchHttp by lazy {
         Net.http.newBuilder()
@@ -43,6 +48,9 @@ object WowClientDownloader {
         val remoteCdnPath: String = DEFAULT_CDN_PATH,
         /** the client this check was for (its .build.info row is the one [updateGame] rewrites) */
         val product: WowProduct = WowProduct.BETA,
+        /** the cdns row's Servers and the versions row's KeyRing (the launch row's columns at the switch) */
+        val remoteCdnServers: String? = null,
+        val remoteKeyRing: String? = null,
     )
 
     /** the client the game folder [gameRoot] runs ([WowProduct.of]) */
@@ -77,7 +85,12 @@ object WowClientDownloader {
             return null
         }
 
-        val versions = runCatching { fetchText("${product.patchUrl}/versions") }.getOrElse {
+        return remoteCheck(product, row, localVersion, localBuildKey)
+    }
+
+    /** [product]'s build on its patch server for the install whose .build.info row is [row]; null = no answer */
+    private fun remoteCheck(product: WowProduct, row: Map<String, String>, localVersion: String, localBuildKey: String): VersionCheckResult? {
+        val versions = runCatching { fetchText("${patchUrlFor(product)}/versions") }.getOrElse {
             Timber.w(it, "checkVersion: http call failed")
             return null
         } ?: run {
@@ -96,7 +109,7 @@ object WowClientDownloader {
             }
         val remoteBuildKey = remoteRow["BuildConfig"].orEmpty()
 
-        val cdns = runCatching { fetchText("${product.patchUrl}/cdns") }.getOrNull()?.let(::parsePsv).orEmpty()
+        val cdns = runCatching { fetchText("${patchUrlFor(product)}/cdns") }.getOrNull()?.let(::parsePsv).orEmpty()
         val cdnsRow = remoteRow(cdns, "Name", row["Branch"])
 
         val isOutdated = localVersion != remoteVersion || (remoteBuildKey.isNotBlank() && localBuildKey != remoteBuildKey)
@@ -110,7 +123,60 @@ object WowClientDownloader {
             remoteCdnHosts = (cdnsRow?.get("Hosts") ?: row["CDN Hosts"])?.let(::splitHosts) ?: DEFAULT_CDN_HOSTS,
             remoteCdnPath = cdnsRow?.get("Path") ?: row["CDN Path"] ?: DEFAULT_CDN_PATH,
             product = product,
+            remoteCdnServers = cdnsRow?.get("Servers"),
+            remoteKeyRing = remoteRow["KeyRing"],
         )
+    }
+
+    /** what [switchToLaunch] did */
+    sealed class Switch {
+        /** nothing to do: the folder does not run the beta, or the beta is not over yet */
+        object NotDue : Switch()
+        /** the launch client's patch server did not answer (no network, or no wowf build yet): nothing was changed */
+        data class NoAnswer(val why: String) : Switch()
+        /** the folder now runs the launch client */
+        data class Done(val version: String) : Switch()
+    }
+
+    private val switchLock = Any()
+
+    /**
+     * THE BETA IS OVER: MOVE THIS FOLDER TO THE LAUNCH CLIENT (WowSwitch's trigger and design). When [WowSwitch.due] and wowf/versions
+     * answers: the wowf row goes into .build.info beside the beta's, then the wowf client is synced as a game update is ([updateGame]:
+     * the configs, the _forever_ files with the exe last, the indices, the row's keys). A failure part-way throws; the folder still runs
+     * the beta and the next call goes on from where this one stopped. One move at a time (Play and the screen's check may both ask).
+     */
+    fun switchToLaunch(gameRoot: File, onStatus: (String) -> Unit, today: LocalDate = LocalDate.now()): Switch = synchronized(switchLock) {
+        val choice = runCatching { activeBuild(gameRoot) }.getOrNull()
+        if (!WowSwitch.due(choice, today)) return Switch.NotDue
+        val row = choice!!.row
+        val status: (String) -> Unit = { onStatus(WowSwitch.line(it)) }
+        status("Checking World of Warcraft: Forever's patch server...")
+        val target = remoteCheck(WowProduct.LAUNCH, row, row["Version"].orEmpty(), row["Build Key"].orEmpty())
+            ?.takeIf { it.remoteBuildConfig.isNotBlank() && it.remoteCdnConfig.isNotBlank() }
+            ?: return Switch.NoAnswer("Blizzard's World of Warcraft: Forever patch server did not answer").also {
+                Timber.w("switchToLaunch: wowf/versions gave no build; the folder stays as it is")
+            }
+        Timber.i("switchToLaunch: the beta is over; moving ${row["Version"]} -> wowf ${target.remoteVersion}")
+        val buildInfo = File(gameRoot, BUILD_INFO)
+        val text = buildInfo.readText()
+        // a resumed move whose row is already this build's keeps it as it is
+        val rowNow = WowProduct.parse(text).firstOrNull { it["Product"] == WowProduct.LAUNCH.code }
+        if (rowNow?.get("Build Key") != target.remoteBuildConfig || rowNow["CDN Key"] != target.remoteCdnConfig || rowNow["Active"] != "1") {
+            val remote = WowSwitch.Remote(
+                version = target.remoteVersion,
+                buildConfig = target.remoteBuildConfig,
+                cdnConfig = target.remoteCdnConfig,
+                cdnHosts = target.remoteCdnHosts,
+                cdnPath = target.remoteCdnPath,
+                cdnServers = target.remoteCdnServers,
+                keyRing = target.remoteKeyRing,
+            )
+            WowSwitch.replace(buildInfo, WowSwitch.withLaunchRow(text, remote).toByteArray())
+        }
+        updateGame(gameRoot, target, status)
+        check(WowProduct.choose(gameRoot, today)?.product == WowProduct.LAUNCH) { "the World of Warcraft: Forever client is not complete" }
+        Switch.Done(target.remoteVersion)
     }
 
     /** the patch server's row for the install's region ([key] = its region column; .build.info's Branch), else us's, else the first */
@@ -130,19 +196,20 @@ object WowClientDownloader {
         saveConfig(gameRoot, target.remoteBuildConfig, buildConfigRaw)
         cdnConfigRaw?.let { saveConfig(gameRoot, target.remoteCdnConfig, it) }
 
+        val buildConfig = parseConfig(String(buildConfigRaw))
         val cdnConfig = cdnConfigRaw?.let { parseConfig(String(it)) }
         syncClient(
             gameRoot = gameRoot,
             product = target.product,
             cdn = cdn,
-            buildConfig = parseConfig(String(buildConfigRaw)),
+            buildConfig = buildConfig,
             archives = lazy { cdnConfig?.let { ArchiveLocator(cdn, gameRoot, it.getValue("archives")) } },
             onStatus = onStatus,
         )
         cdnConfig?.let { syncIndices(gameRoot, cdn, it, onStatus) }
 
         onStatus("Updating build information...")
-        updateBuildInfo(gameRoot, target)
+        updateBuildInfo(gameRoot, target, buildConfig)
     }
 
     fun download(gameRoot: File, onStatus: (String) -> Unit) {
@@ -180,7 +247,25 @@ object WowClientDownloader {
         check(files.isNotEmpty()) { "No Windows ARM64 client files in this build" }
 
         val clientDir = File(gameRoot, product.flavorDir)
-        val pending = files.filter { md5Hex(File(clientDir, it.relativePath)) != it.ckey }
+        // the exe LAST: it is what makes the folder run this client (WowProduct.choose), so a stop before it leaves the old one running
+        var pending = files.filter { md5Hex(File(clientDir, it.relativePath)) != it.ckey }
+            .sortedBy { it.relativePath.equals(product.exeName, ignoreCase = true) }
+        if (pending.isEmpty()) return
+
+        // the same file in the other client's folder (the beta's DLLs at the switch) is copied, not downloaded
+        val copies = pending.mapNotNull { entry ->
+            WowProduct.values().filter { it != product }.map { File(gameRoot, "${it.flavorDir}/${entry.relativePath}") }
+                .firstOrNull { md5Hex(it) == entry.ckey }?.let { entry to it }
+        }
+        copies.forEachIndexed { index, (entry, from) ->
+            onStatus("Copying ${entry.name} (${index + 1}/${copies.size})...")
+            val dest = File(clientDir, entry.relativePath)
+            dest.parentFile?.mkdirs()
+            val temp = File(dest.parentFile, "${dest.name}.download")
+            from.copyTo(temp, overwrite = true)
+            if (md5Hex(temp) == entry.ckey) WowSwitch.move(temp, dest) else temp.delete()
+        }
+        pending = pending.filter { md5Hex(File(clientDir, it.relativePath)) != it.ckey }
         if (pending.isEmpty()) return
 
         onStatus("Looking up client files...")
@@ -202,14 +287,11 @@ object WowClientDownloader {
             temp.delete()
             throw IOException("Checksum mismatch for ${entry.name}")
         }
-        dest.delete()
-        check(temp.renameTo(dest)) { "Could not write ${dest.path}" }
+        WowSwitch.move(temp, dest)
     }
 
     private fun saveConfig(gameRoot: File, key: String, bytes: ByteArray) {
-        val dir = File(gameRoot, "Data/config/${key.substring(0, 2)}/${key.substring(2, 4)}")
-        dir.mkdirs()
-        File(dir, key).writeBytes(bytes)
+        WowSwitch.replace(File(gameRoot, "Data/config/${key.substring(0, 2)}/${key.substring(2, 4)}/$key"), bytes)
     }
 
     private fun syncIndices(gameRoot: File, cdn: Cdn, cdnConfig: Map<String, List<String>>, onStatus: (String) -> Unit) {
@@ -220,14 +302,16 @@ object WowClientDownloader {
         val missing = required.distinct().filter { !File(indicesDir, "$it.index").isFile }
         missing.forEachIndexed { index, hash ->
             onStatus("Syncing index archive (${index + 1}/${missing.size})...")
-            cdn.fetch("data", "$hash.index")?.let { File(indicesDir, "$hash.index").writeBytes(it) }
+            cdn.fetch("data", "$hash.index")?.let { WowSwitch.replace(File(indicesDir, "$hash.index"), it) }
         }
     }
 
-    private fun updateBuildInfo(gameRoot: File, target: VersionCheckResult) {
+    private fun updateBuildInfo(gameRoot: File, target: VersionCheckResult, buildConfig: Map<String, List<String>> = emptyMap()) {
         val buildInfo = File(gameRoot, BUILD_INFO)
         if (!buildInfo.isFile) return
-        val lines = buildInfo.readLines()
+        val raw = buildInfo.readText()
+        val nl = if (raw.contains("\r\n")) "\r\n" else "\n"
+        val lines = raw.split(nl).dropLastWhile { it.isEmpty() }
         if (lines.isEmpty()) return
         val header = psvHeader(lines.first())
         val productIdx = header.indexOf("Product")
@@ -238,6 +322,8 @@ object WowClientDownloader {
             "CDN Key" to target.remoteCdnConfig,
             "CDN Hosts" to target.remoteCdnHosts.joinToString(" "),
             "CDN Path" to target.remoteCdnPath,
+            "Install Key" to buildConfig["install"]?.getOrNull(1).orEmpty(),
+            "IM Size" to buildConfig["install-size"]?.getOrNull(1).orEmpty(),
         ).mapNotNull { (column, value) -> header.indexOf(column).takeIf { it >= 0 && value.isNotBlank() }?.to(value) }
 
         val updated = lines.mapIndexed { idx, line ->
@@ -248,7 +334,8 @@ object WowClientDownloader {
             if (matchesProduct && isActive) updates.forEach { (i, value) -> if (i in cols.indices) cols[i] = value }
             cols.joinToString("|")
         }
-        buildInfo.writeText(updated.joinToString("\n") + "\n")
+        // whole or not at all, the other rows and the line ending as they were
+        if (updated != lines) WowSwitch.replace(buildInfo, (updated.joinToString(nl) + nl).toByteArray())
     }
 
     private data class InstallEntry(val name: String, val ckey: String, val tags: Set<String>) {
@@ -381,8 +468,7 @@ object WowClientDownloader {
                     local.readBytes()
                 } else {
                     val fetched = cdn.fetch("data", "$archive.index") ?: continue
-                    local.parentFile?.mkdirs()
-                    local.writeBytes(fetched)
+                    WowSwitch.replace(local, fetched)
                     fetched
                 }
                 val buffer = ByteBuffer.wrap(index)
