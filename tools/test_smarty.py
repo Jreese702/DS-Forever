@@ -416,5 +416,16 @@ U.execute('MP = 400')
 check(tuple(um("", "")) == (1, 0), "secret flags, enough mana by the estimate: not marked", tuple(um("", "")))
 check(tuple(um(None, None))[0] == 0, "no answer at all (nil): unusable, as before", "")
 
+# ---------------------------------------------------------------- m76: Smart Y On / Off, per character, OFF by default
+so = SRC[SRC.index('function OV.smartOn()'):SRC.index('function OV.setSmartOn(on)')]
+S2 = lupa.LuaRuntime(unpack_returned_tuples=True)
+S2.execute('OV = {}; WHO = "Me-Realm"; function whoKey() return WHO end\n' + so)
+on = S2.eval('OV.smartOn')
+check(on() is False, "no saved choice: Smart Y is OFF", on())
+S2.execute('WowCompanionSpellsDB = { smartOn = { ["Me-Realm"] = true } }')
+check(on() is True, "turned on for this character: on", "")
+S2.execute('WHO = "Alt-Realm"')
+check(on() is False, "another character: still off (per character)", "")
+
 print('ALL PASS' if fails == 0 else '%d FAILED' % fails)
 sys.exit(1 if fails else 0)
