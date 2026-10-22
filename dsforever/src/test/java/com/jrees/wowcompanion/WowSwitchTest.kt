@@ -27,8 +27,8 @@ class WowSwitchTest {
     private val remote = WowSwitch.Remote("1.60.1.70532", "2582289d81e380163c7a13472df4cb81", "6bff2e685995b214c2ff5d08f3344542",
         listOf("level3.blizzard.com", "us.cdn.blizzard.com"), "tpr/wow", "http://us.cdn.blizzard.com/?maxhosts=4", null)
 
-    private val closed = LocalDate.of(2026, 10, 21)
-    private val before = LocalDate.of(2026, 10, 20)
+    private val closed = WowProduct.LAUNCH_DAY
+    private val before = WowProduct.LAUNCH_DAY.minusDays(1)
 
     private lateinit var root: File
     @Before fun setUp() { root = Files.createTempDirectory("dsf-switch").toFile() }
@@ -158,6 +158,11 @@ class WowSwitchTest {
         folder(WowSwitch.withLaunchRow(betaOnly, remote), WowProduct.BETA)
         assertEquals("${root.path}/_classic_beta_/Logs/General.log", GamePaths.log(root.path))     // mid-move: still the beta
         File(root, "_forever_/Wow-arm64.exe").apply { parentFile.mkdirs() }.writeText("exe")                                      // the move's last file
+        // "Beta until launch": both installed before launch day - still the beta (the Thor test55 switched goes back by itself)
+        if (java.time.LocalDate.now().isBefore(WowProduct.LAUNCH_DAY)) {
+            assertEquals("${root.path}/_classic_beta_/Logs/General.log", GamePaths.log(root.path))
+            File(root, "_classic_beta_/WowB-ARM64.exe").delete()                                    // a wowf-only folder runs wowf any day
+        }
         assertEquals("${root.path}/_forever_/Logs/General.log", GamePaths.log(root.path))
         assertEquals(File(root, "_forever_"), WowProduct.flavorDir(root))                          // WTF, AddOns, login.txt live here
         assertEquals(File(root, "_forever_/Interface/AddOns"), File(WowProduct.flavorDir(root), "Interface/AddOns"))

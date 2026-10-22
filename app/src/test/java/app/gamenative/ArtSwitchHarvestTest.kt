@@ -54,6 +54,7 @@ class ArtSwitchHarvestTest {
         // the switch: the wowf row added (the beta's kept) and the launch client's exe on disk
         File(root, ".build.info").writeText("$header\n$beta\n$wowf\n")
         File(root, "_forever_").mkdirs(); File(root, "_forever_/Wow-arm64.exe").writeText("exe")
+        File(root, "_classic_beta_/WowB-ARM64.exe").delete()      // the folder runs wowf (before launch day both installed stay the beta)
         assertEquals("2582289d81e380163c7a13472df4cb81", GameFiles.activeBuild(root)!!.second)
         val now = ArtHarvest.pending(ctx, beforePlay = true).map { it.id }
         assertTrue("every before-Play step pending for the new build: $now", now.containsAll(beforePlay))

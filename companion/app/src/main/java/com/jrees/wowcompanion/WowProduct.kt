@@ -4,14 +4,14 @@ import java.io.File
 import java.time.LocalDate
 
 /**
- * WHICH WOW: FOREVER CLIENT THE GAME FOLDER HOLDS (launch support, 2026-10-13): the beta (wow_classic_beta, ends 21 Oct 2026) and the
+ * WHICH WOW: FOREVER CLIENT THE GAME FOLDER HOLDS (launch support, 2026-10-13): the beta (wow_classic_beta, the client until launch day, 4 Nov 2026) and the
  * launch client (wowf, from 4 Nov 2026). Both come from Blizzard's own ProductConfig (us.patch.battle.net:1119/<product>/versions ->
  * tpr/configs/data/<ProductConfig>): `shared_container_default_subfolder` is the flavor folder, the win `relative_path_arm64` the exe.
  * Both use the same CDN path (tpr/wow) and the same 1.60.1 client line.
  *
  * The choice is read from the folder's .build.info, never assumed: the rows of a supported product, Active first (the launcher's
  * activeBuild order). A folder holding BOTH (a launch pre-install next to the beta, one shared Data) prefers the product whose exe is
- * installed; when both are, the beta before [BETA_LAST_DAY] and the launch client from that day on ([betaOver]). Pure apart from [of]
+ * installed; when both are, the beta before [LAUNCH_DAY] and the launch client from that day on ([betaOver]). Pure apart from [of]
  * (reads two files).
  *
  * THE BETA HAS CLOSED (21 Oct 2026, the user: players were left on "no realms"): a folder whose .build.info holds only the beta row stays
@@ -50,11 +50,12 @@ enum class WowProduct(
 
     companion object {
         const val BUILD_INFO = ".build.info"
-        /** the beta's last day (Blizzard: the beta ends 21 Oct 2026; its realms were closed that day). From it on, the launch client */
-        val BETA_LAST_DAY: LocalDate = LocalDate.of(2026, 10, 21)
+        /** LAUNCH DAY (the user, 2026-10-21: "Beta until launch" - the beta's realms were only down during the stress test; the PC
+         *  beta still reached them): World of Warcraft: Forever opens 4 Nov 2026. The one date the client choice follows */
+        val LAUNCH_DAY: LocalDate = LocalDate.of(2026, 11, 4)
 
-        /** the beta is over on [today] (its last day included: on 21 Oct 2026 its realms were already gone) */
-        fun betaOver(today: LocalDate = LocalDate.now()): Boolean = !today.isBefore(BETA_LAST_DAY)
+        /** the beta is the client no longer on [today]: launch day and after (local date) */
+        fun betaOver(today: LocalDate = LocalDate.now()): Boolean = !today.isBefore(LAUNCH_DAY)
 
         fun forCode(code: String?): WowProduct? = values().firstOrNull { it.code == code }
 
