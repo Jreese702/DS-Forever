@@ -184,28 +184,6 @@ class LiveMobs(private val clock: () -> Long) {
 
     @Synchronized fun tracks(): List<Track> = live.values.sortedBy { it.slot }
 
-    /** THE SPAWN CIRCLES ([AggroRings.spawnRings]) of uiMap [map]'s known hostile spawns round world ([px], [py]) for a player of
-     *  level [plv] (the record's me.lv first): this map's spawns only (none handed in: none); the live plates confirm them; [liveKeys]
-     *  the spawns a live ring stands on */
-    @Synchronized fun spawnRings(map: Int, plv: Int?, px: Double, py: Double, liveKeys: Set<Int> = emptySet()): List<AggroRings.SpawnRing> {
-        if (map == 0 || map != spawnMap || all.isEmpty()) return emptyList()
-        val lp = me?.takeIf { it.map == null || it.map == map }?.lv ?: plv ?: return emptyList()
-        val plates = if (offWhy == null) live.values.map { AggroRings.Plate(it.id, it.mob, it.placed, it.lastMs) } else emptyList()
-        return AggroRings.spawnRings(all, plates, lp, px, py, cov?.maxd, liveKeys)
-    }
-
-    /** THE AGGRO RINGS ([AggroRings]) of uiMap [map]'s live plates for a player of level [plv] (the record's me.lv first) standing at
-     *  world ([px], [py]): none while the layer is off, on another map, with no record yet, or stale (no full record in [STALE_MS]:
-     *  the add-on forces one every 5 s; a plate it no longer reports leaves [live] at the next) */
-    @Synchronized fun rings(map: Int, plv: Int?, px: Double, py: Double, now: Long = clock()): AggroRings.Look? {
-        if (offWhy != null) return null
-        val me = me ?: return null
-        if (me.map != null && map != 0 && me.map != map) return null
-        if (now - lastFullMs > STALE_MS) return null
-        val lp = me.lv ?: plv ?: return null
-        return AggroRings.look(live.values.map { AggroRings.Plate(it.id, it.mob, it.placed, it.lastMs) }, lp, px, py)
-    }
-
     /**
      * the live layer for uiMap [map] for a player of level [plv] (the record's me.lv first): its discs (aggressive plates, by their
      * placement, fading once gone), the static shares to drop, the plates counted. [NONE][LiveDanger.NONE] off, on another map, or

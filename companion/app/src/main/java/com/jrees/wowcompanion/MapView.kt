@@ -1266,7 +1266,13 @@ class MapView(context: Context) : View(context) {
     private var seed: List<PoiStore.Pin> = emptyList()
     // the filter panel's Show switches are KEPT across app lives (b-map-filters-persist): the role bits here, Chests / Rares
     // ([showChests], [showRares]) beside them, app-wide like the probe's three ("mapprobe") and the Map room's ("maproom")
-    private val filterPrefs by lazy { context.getSharedPreferences("mapfilters", Context.MODE_PRIVATE) }
+    private val filterPrefs by lazy {
+        context.getSharedPreferences("mapfilters", Context.MODE_PRIVATE).also { p ->
+            // test73 (the user: "let's remove the aggro circles from the bottom screen (and from the options if it's there)"): the
+            // "Aggro rings" filter's saved switch goes quietly
+            runCatching { if (p.contains("q_aggro")) p.edit().remove("q_aggro").apply() }
+        }
+    }
     private var mask = runCatching { filterPrefs.getInt("mask", PoiStore.DEFAULT_MASK) }.getOrDefault(PoiStore.DEFAULT_MASK)
     private var filterOpen = false
         set(v) { if (v && !field) filterTab = 0; field = v }
@@ -4438,8 +4444,8 @@ class MapView(context: Context) : View(context) {
         // the user's "Only if sure" (test71): the route takes the confirmed mobs only (a sure spawn snap, a fix)
         return LiveMobs.shared.snapshot(mapId, questsPlv).confirmed()
     }
-    /** this map's QuestieDB spawns handed to the live store (once a map / danger read): the route's live pass and the aggro rings
-     *  both (test52: a plate snaps to its spawn only once they are in - with no route running, the rings had none) */
+    /** this map's QuestieDB spawns handed to the live store (once a map / danger read): the route's live pass (test52: a plate snaps
+     *  to its spawn only once they are in) */
     private fun liveSpawns(mapId: Int, r: PoiStore.Rect, mine: Int) {
         val key = "$mapId:${DangerStore.version}:$mine:${r.width}:${r.height}:${r.top}:${r.left}"
         if (key != liveSpawnKey) {
@@ -4449,61 +4455,6 @@ class MapView(context: Context) : View(context) {
                 LivePlace.SpawnPt(i, s.npc, r.top - s.y * ay, r.left - s.x * ax, s.minLv, s.maxLv, s.elite, mine == 0 || s.hostile and mine != 0) })
         }
     }
-    // THE AGGRO RINGS (the user, 2026-10-21, "Both"; AggroRings): each unpulled hostile plate's reach, a pack's rings ONE shape (one
-    // fill that never darkens where they overlap, one outline round them), soft yellow; the rings the player stands in red; under the
-    // route's line, which keeps its dark halo over them
-    private val pAggroFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val pAggroEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
-    private val aggroPath = Path(); private val aggroOne = Path()
-    private var ringsLogAt = 0L
-    private var spawnsLogAt = 0L
-    private fun drawAggroRings(c: Canvas, r: PoiStore.Rect, sx: (Double) -> Float, sy: (Double) -> Float) {
-        val m = map ?: return
-        val mapId = m.optInt("mapID", 0)
-        val pwx = m.optDouble("wx", Double.NaN); val pwy = m.optDouble("wy", Double.NaN)
-        liveSpawns(mapId, r, TransportRoutes.factionOf(m.optString("fac", null)))
-        val look = LiveMobs.shared.rings(mapId, questsPlv, pwx, pwy)
-        // the log (every 5 s while plates are read): the counts, and each ring's placement inputs (a device read checks them)
-        val now = android.os.SystemClock.elapsedRealtime()
-        if (look != null && look.plates > 0 && now - ringsLogAt >= 5_000L) {
-            ringsLogAt = now
-            android.util.Log.i("WCMAP", "aggro rings: ${look.words()}; me ${pwx.toInt()},${pwy.toInt()}" +
-                look.rings.joinToString("") { "; ring ${it.id}: ${it.why}${if (it.inside) " (inside)" else ""}" })
-        }
-        val rings = look?.rings.orEmpty()
-        // THE SPAWN CIRCLES (the user's "Spawn circles"): the known hostile spawns near, faint; solid where a live plate confirms one
-        val spawns = LiveMobs.shared.spawnRings(mapId, questsPlv, pwx, pwy, rings.mapNotNull { it.spawnKey }.toSet())
-        if (now - spawnsLogAt >= 15_000L && spawns.isNotEmpty()) {
-            spawnsLogAt = now
-            android.util.Log.i("WCMAP", "aggro spawn circles: ${spawns.size} (${spawns.count { it.solid }} confirmed by a plate, " +
-                "${spawns.count { it.inside }} you stand in); ${AggroFit.words()}")
-        }
-        if (rings.isEmpty() && spawns.isEmpty()) return
-        // yards to pixels here (the map's scale along its width; the art is square to the world)
-        val y0 = rings.firstOrNull()?.y ?: spawns.first().y
-        val pxYd = abs(sx(r.nx(y0 + 100.0)) - sx(r.nx(y0))) / 100f
-        if (pxYd <= 0f || pxYd.isNaN()) return
-        // (x, y, r, inside): the faint layer first, the solid one over it - each merged into one shape, red where the player stands
-        class C(val x: Double, val y: Double, val r: Double, val inside: Boolean)
-        val faint = spawns.filter { !it.solid }.map { C(it.x, it.y, it.r, it.inside) }
-        val solid = rings.map { C(it.x, it.y, it.r, it.inside) } + spawns.filter { it.solid }.map { C(it.x, it.y, it.r, it.inside) }
-        for ((layer, strong) in listOf(faint to false, solid to true)) for (inside in listOf(false, true)) {
-            aggroPath.reset()
-            for (g in layer) if (g.inside == inside) {
-                aggroOne.reset(); aggroOne.addCircle(sx(r.nx(g.y)), sy(r.ny(g.x)), (g.r * pxYd).toFloat(), Path.Direction.CW)
-                aggroPath.op(aggroOne, Path.Op.UNION)
-            }
-            if (aggroPath.isEmpty) continue
-            pAggroFill.color = when { strong && inside -> Color.argb(70, 230, 50, 40); strong -> Color.argb(46, 255, 214, 64)
-                inside -> Color.argb(30, 230, 50, 40); else -> Color.argb(16, 255, 214, 64) }
-            pAggroEdge.color = when { strong && inside -> Color.argb(230, 230, 50, 40); strong -> Color.argb(190, 255, 214, 64)
-                inside -> Color.argb(120, 230, 50, 40); else -> Color.argb(70, 255, 214, 64) }
-            pAggroEdge.strokeWidth = if (strong) 3f else 2f
-            c.drawPath(aggroPath, pAggroFill); c.drawPath(aggroPath, pAggroEdge)
-        }
-        pAggroEdge.strokeWidth = 3f
-    }
-
     /** an aggro record arrived (CompanionHost): draw, so a new mob on the way is seen within the record's second */
     fun onAggro() = invalidate()
 
@@ -6521,10 +6472,6 @@ class MapView(context: Context) : View(context) {
             val save = c.save(); c.clipRect(left, top, left + fw, top + fh); drawDangerTint(c, ::sx, ::sy); c.restoreToCount(save)
         }
         dangerNote = null
-        // ---- THE AGGRO RINGS (AggroRings; the "Aggro rings" filter, on by default): under the line and the markers
-        if (!morphOn && on(QuestLayers.Layer.AGGRO)) rect?.takeIf { it.valid }?.let { r ->
-            val save = c.save(); c.clipRect(left, top, left + fw, top + fh); drawAggroRings(c, r, ::sx, ::sy); c.restoreToCount(save)
-        }
         // ---- TRAVEL (b-travel-layer; the "Travel" filter): the docks and crossings, the tram, flight masters and known flights, under the
         // line and the markers; Home's small map: only the points near the player, no lines
         travelHits = emptyList()
@@ -7274,9 +7221,6 @@ class MapView(context: Context) : View(context) {
                 QuestLayers.Layer.OTHER -> objDot(c, x0 + 116f, cy, 0.5f)
                 QuestLayers.Layer.DANGER -> { pFill.color = Color.argb(150, 210, 40, 30); c.drawRoundRect(x0 + 94f, cy - 20f, x0 + 138f, cy + 20f, 10f, 10f, pFill) }
                 QuestLayers.Layer.TRAVEL -> TravelPaint.icon(c, Travel.Kind.BOAT, x0 + 116f, cy, true)
-                QuestLayers.Layer.AGGRO -> { pAggroFill.color = Color.argb(70, 255, 214, 64); pAggroEdge.color = Color.argb(220, 255, 214, 64)
-                    c.drawCircle(x0 + 116f, cy, 22f, pAggroFill); c.drawCircle(x0 + 116f, cy, 22f, pAggroEdge)
-                    pFill.color = Color.rgb(214, 74, 58); c.drawCircle(x0 + 116f, cy, 6f, pFill) }
             }
             name.color = if (on) cGold else cDim
             val hasSub = l.sub.isNotEmpty() && rowH >= 84f
