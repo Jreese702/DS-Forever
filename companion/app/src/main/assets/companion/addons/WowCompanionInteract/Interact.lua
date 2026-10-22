@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i134"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i135"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2044,6 +2044,7 @@ function N.build(doc)
 
     local rects = (WC.shield and WC.shield.rects()) or {}     -- defined further down
     return { on = N.holding, n = N.n, last = N.last, via = N.via, hid = N.hid > 0 and N.hid or nil,
+             hidec = next(N.hideDiag) and N.hideDiag or nil,          -- i135: per window, what the hide did (N.hideNote)
              shield = #rects > 0 and rects or nil,
              proven = N.frameSeen or nil, lost = N.lost > 0 and N.lost or nil,
              lostKey = N.lostKey, lostTo = N.lostTo, lostBy = next(N.lostBy) and N.lostBy or nil,
@@ -5662,14 +5663,14 @@ end
 -- in PROVEN in this session, the keys are taken and the window dimmed inside the event. Until the
 -- document has built the highlight for THIS window, presses are swallowed (N.stale).
 function N.early(slot)
-    if WINDOWS[slot] == false then return end      -- not switched on yet: the game keeps its window
+    if WINDOWS[slot] == false then N.hideNote(slot, "early") return end      -- not switched on yet: the game keeps its window
     if slot == "loot" and LOOT.top() then return end   -- r-loot-on-top: the game keeps its loot window
     -- an NPC window opens: it comes first, whoever is in charge of it. The guest lets go.
     if G.holder then
         guestLost("npc")
         if not N.mode then N.release("npc", "npc") end
     end
-    if not (N.mode and (N.frameSeen or N.trusted)) or inCombat() then return end
+    if not (N.mode and (N.frameSeen or N.trusted)) or inCombat() then N.hideNote(slot, "early") return end
     if not N.holding then
         N.hold()
         N.stale = N.holding
@@ -5680,11 +5681,43 @@ function N.early(slot)
     elseif slot == "loot" and type(_G.LootFrame) == "table" and hidden[_G.LootFrame] ~= nil then
         N.unhide()          -- the OnShow hook dimmed it, but the controller is not ours: the game's window must stay usable
     end
+    N.hideNote(slot, "early")
 end
 
 -- THE WATCHDOG. Whatever says that the game may be hearing the controller while its window is
 -- invisible: the window comes back at once, the proof is dropped for this session, and the
 -- document says so (`proof.bad`), which makes the app forget it.
+-- i135: why an NPC window opening now would NOT be hidden (nil: it is): the gates of N.early / N.sync, in their order
+function N.hideWhy(slot)
+    if WINDOWS[slot] == false then return "off" end
+    if slot == "loot" and LOOT.top() then return "top" end
+    if not N.mode then return "mode" end
+    if N.distrust then return "distrust:" .. tostring(N.distrust) end
+    if not (N.frameSeen or N.trusted) then return "proof" end
+    if inCombat() then return "combat" end
+    if not N.holding then return "hold" end
+    return nil
+end
+-- i135: what the hide did for a window that opened (by "early" = inside its opening event, "doc" = at its document): the game frames
+-- dimmed, or why none; kept per window (the document's nav.hidec) and one {"type":"cap","probe":"npchide"} line per open and change
+N.hideDiag, N.hideNoted = {}, {}
+function N.hideNote(slot, how)
+    if not HIDE[slot] then return end
+    local why = N.hideWhy(slot)
+    local fr = {}
+    for _, name in ipairs(HIDE[slot]) do
+        local o = _G[name]
+        if type(o) == "table" and hidden[o] ~= nil then fr[#fr + 1] = name end
+    end
+    local ok = #fr > 0
+    if not why and not ok then why = "noframe" end
+    N.hideDiag[slot] = { how = how, ok = ok, why = why, fr = ok and fr or nil, open = shownAt[slot] }
+    local key = tostring(shownAt[slot]) .. "|" .. tostring(ok) .. "|" .. tostring(why) .. "|" .. #fr
+    if N.hideNoted[slot] == key then return end
+    N.hideNoted[slot] = key
+    pcall(function() WC.send(WC.encode({ type = "cap", probe = "npchide", v = IV, w = slot, how = how, ok = ok, why = why, fr = fr })) end)
+end
+
 function N.distrustNow(why)
     N.distrust = N.distrust or why
     N.trusted, N.frameSeen = false, false
@@ -5692,8 +5725,13 @@ function N.distrustNow(why)
 end
 
 -- money moved at a vendor we hide on the app's word alone, and no action of ours moved it
+-- i135 (test74, the user: "NPC windows I have set to hidden, but a lot of that stuff is popping up on the top screen again"): the
+-- watchdog ran while ANY window of ours was hidden - gold picked up by the game's own auto-loot while the loot window was hidden (no
+-- action of ours) dropped the proof for the whole session, and from then on every NPC window (the vendor, the trainer, ...) stayed on
+-- the top screen. It judges a vendor's money only, as it was written for: only while the vendor's window is open.
 function N.watchMoney()
     if not (N.holding and N.hid > 0 and N.trusted and not N.frameSeen) then return end
+    if not isOpen("merchant") then return end
     local now = TN(function() return GetTime() end) or 0
     if now - lastActAt > 2 then N.distrustNow("money") end
 end
@@ -5715,6 +5753,7 @@ function N.sync(open, doc)
             if doc.loot and N.lootDiag then N.lootDiag.by = N.lootDiag.by or "doc" end
             N.hide(doc)
         end
+        if doc then for kind in pairs(HIDE) do if doc[kind] then N.hideNote(kind, "doc") end end end
         -- a window's own extra keys (the trainer: + = its Settings menu, as the game's footer shows)
         -- THE LOOT WINDOW LEAVES THE STICKS ALONE (the user on 1.0.2.9-batch2: "looting locks the walking stick, it should remain
         -- unlocked and walking away should close the window as normal"): the grab's stick input took the left stick too while loot
