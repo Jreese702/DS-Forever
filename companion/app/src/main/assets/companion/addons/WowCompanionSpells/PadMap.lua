@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m75"                -- bump on every change; m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m76"                -- bump on every change; m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -3627,6 +3627,25 @@ function OV.smartState()
     end
     return s
 end
+-- m76 SMART Y ON / OFF (the user: "The Smart Y button should be a toggle, OFF by default"): per character in WowCompanionSpellsDB.smartOn;
+-- OFF = nothing of Smart Y is armed (no food / drink, no buff, no quest item): Y is Forever's own Inspect out of a fight and its fight spell
+-- in one, exactly as before Smart Y. Set from Settings by the gamemenu row's spare cells 6 (on) / 7 (off), absolute (a repeat is harmless)
+OV.SMART_ON_COL, OV.SMART_OFF_COL = 6, 7
+function OV.smartOn()
+    local db = _G.WowCompanionSpellsDB
+    local k = whoKey()
+    return k ~= nil and type(db) == "table" and type(db.smartOn) == "table" and db.smartOn[k] == true
+end
+function OV.setSmartOn(on)
+    local k = whoKey()
+    if not k then return end
+    if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+    local db = _G.WowCompanionSpellsDB
+    if type(db.smartOn) ~= "table" then db.smartOn = {} end
+    db.smartOn[k] = on and true or nil
+    pcall(function() WC.send(WC.encode({ type = "smartyack", v = PV, op = on and "on" or "off", ok = true })) end)
+    pcall(OV.smartApply); pcall(OV.qiApply); pcall(emit, true); WC.push()
+end
 function OV.smartApply()
     if inCombat() then OV.smartPending = true; return end
     OV.smartPending = nil
@@ -3646,6 +3665,7 @@ function OV.smartApply()
         val, typ = bv, bt
         OV.smarty = { id = be.id, n = be.n, i = be.i, k = bt == "or" and "or" or "buff" }
     end
+    if not OV.smartOn() then val, typ, OV.smarty = nil, nil, nil end    -- m76: off = nothing armed, Y as before Smart Y
     local b = face.buttons[6]
     if b then pcall(b.SetAttribute, b, "wc-smarty", val); pcall(b.SetAttribute, b, "wc-smarty-t", typ) end
     OV.smartTyp = typ
@@ -3781,6 +3801,7 @@ function OV.sbOnCell(col)
         C_Timer.After(0.5, function() pcall(OV.smartApply) end)
         return
     end
+    if col == OV.SMART_ON_COL or col == OV.SMART_OFF_COL then OV.setSmartOn(col == OV.SMART_ON_COL) return end   -- m76
     if col >= OV.SB_SEL0 then OV.sbOp(col) end
 end
 WC.smartyCellInit, WC.smartyCell = OV.sbCellInit, OV.sbOnCell     -- Radial.lua's "gamemenu" row hands its cols 6-39 here
@@ -3879,7 +3900,7 @@ function OV.sbDoc()
     local rows = {}
     for _, row in ipairs(OV.sbdb().rows) do rows[#rows + 1] = { ids = row.ids } end
     OV.sbDocNow = { rows = rows, list = list, at = OV.sbAt, row = "gamemenu", pad = OV.sbRow ~= nil,
-                    sel0 = OV.SB_SEL0, ops = OV.SB_OPS }
+                    sel0 = OV.SB_SEL0, ops = OV.SB_OPS, on = OV.smartOn(), onCol = OV.SMART_ON_COL, offCol = OV.SMART_OFF_COL }
 end
 -- m72: the vitals DIAGNOSTIC (m65-m69, rounds 2-5) is GONE (the user on test41: "I keep getting lua errors from wow companion": round 4's
 -- secure snippet called UnitHealth, which the restricted environment does not have). What it found built m70's model below.
@@ -4137,6 +4158,7 @@ function OV.qiApply()
     local t = OV.qiTarget()
     local e, how = nil, nil
     if ok and (t.npc or t.obj) then e, how = OV.qiMatch(cands, t) end
+    if e and not OV.smartOn() then e = nil end                             -- m76: the quest item is Smart Y's too
     if e then
         local cnt = T(function() return (C_Item and C_Item.GetItemCount or GetItemCount)(e.item) end)
         if type(cnt) == "number" and cnt <= 0 then e = nil end

@@ -31,6 +31,17 @@ class SmartYModelTest {
         assertEquals(listOf(168, 7302), SmartYModel.outChoices(doc, 1).map { it.id })
     }
 
+    /** m76: Smart Y is OFF by default (an add-on that sends no `on` too); off = only the On / Off row; one absolute tap each way */
+    @Test fun onOff() {
+        assertTrue(!doc.on)                                                  // the test doc has no "on": off
+        assertTrue(!SmartYModel.rowsShown(doc))
+        assertTrue(!SmartYModel.rowsShown(null))
+        val on = SmartYModel.parse(JSONObject(sb.toString()).put("on", true))!!
+        assertTrue(SmartYModel.rowsShown(on))
+        assertEquals(listOf("gamemenu" to 6), SmartYModel.toggleTaps(doc, true))
+        assertEquals(listOf("gamemenu" to 7), SmartYModel.toggleTaps(on, false))
+    }
+
     @Test fun taps() {
         assertEquals(listOf("gamemenu" to 27) + spell, SmartYModel.addTaps(doc, spell))
         assertEquals(listOf("gamemenu" to 9, "gamemenu" to 28) + spell, SmartYModel.spellTaps(doc, 1, "addor", spell))

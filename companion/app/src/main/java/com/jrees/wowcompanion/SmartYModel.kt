@@ -15,7 +15,9 @@ object SmartYModel {
     data class Buff(val id: Int, val name: String, val icon: Int, val imbue: Boolean)
 
     data class Doc(val rows: List<List<Int>>, val list: List<Buff>, val at: Int?, val row: String, val pad: Boolean, val sel0: Int,
-                   val ops: Map<String, Int>)
+                   val ops: Map<String, Int>,
+                   /** m76: Smart Y on for this character (off by default: Y as before Smart Y); its two absolute cells */
+                   val on: Boolean = false, val onCol: Int = 6, val offCol: Int = 7)
 
     /** the padmap's `sb` (null = an add-on before m62: no section) */
     fun parse(o: JSONObject?): Doc? {
@@ -38,7 +40,7 @@ object SmartYModel {
         val ops = HashMap<String, Int>()
         o.optJSONObject("ops")?.let { m -> for (k in m.keys()) ops[k] = m.optInt(k, -1) }
         return Doc(rows, list, if (o.has("at")) o.optInt("at") else null, o.optString("row", "gamemenu"), o.optBoolean("pad", false),
-            o.optInt("sel0", 8), ops)
+            o.optInt("sel0", 8), ops, o.optBoolean("on", false), o.optInt("onCol", 6), o.optInt("offCol", 7))
     }
 
     /** a row's buff names, in its order ("Devotion Aura or Retribution Aura" when joined); a spell this character no longer has is named by id */
@@ -88,6 +90,12 @@ object SmartYModel {
         if (kind == "up" && row == 0 || kind == "down" && row == doc.rows.size - 1) return null
         return listOf(pick(doc, row), doc.row to o)
     }
+
+    /** m76: Smart Y on / off: ONE absolute tap */
+    fun toggleTaps(doc: Doc, on: Boolean): List<Pair<String, Int>> = listOf(doc.row to (if (on) doc.onCol else doc.offCol))
+
+    /** m76: the section shows its food / water / buff rows and Add only while Smart Y is on */
+    fun rowsShown(doc: Doc?): Boolean = doc?.on == true
 
     const val MAX_ROWS = 16
     const val MAX_OR = 10

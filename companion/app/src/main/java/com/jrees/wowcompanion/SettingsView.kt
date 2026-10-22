@@ -721,7 +721,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** the section's lines, in order: "none", "food", "water", a row's index, "act" (the selected row's actions), "add", a Buff, "cancel" */
     private fun sbLines(): List<Any> {
         val d = smartDoc() ?: return listOf("none")
-        val out = ArrayList<Any>(listOf("food", "water"))
+        // m76: the On / Off row first; the rest only while Smart Y is on (the user: "hide the other settings until it's turned on")
+        if (!SmartYModel.rowsShown(d)) return listOf("toggle")
+        val out = ArrayList<Any>(listOf("toggle", "food", "water"))
         val choose = sbChoose
         for (r in d.rows.indices) { out += r; if (sbSel == r && choose == null) out += "act" }
         if (choose == null) { out += "add"; return out }
@@ -759,6 +761,22 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             val box = RectF(16f, y, width - 16f, y + ROW_H)
             when {
                 line == "none" -> row(c, y, "Smart Y", "Needs the game running with the newer Spells add-on.", enabled = false) { RectF(it.right - 16f, it.top, it.right - 16f, it.bottom) }
+                line == "toggle" && d != null -> {
+                    row(c, y, "Smart Y", if (d.on) "Y uses food, water, your buffs and quest items when it has nothing else to do."
+                        else "Off: Y is the game's own Y (Inspect; its fight spell in a fight).", enabled = true) { b ->
+                        val bw = 300f
+                        val bb = RectF(b.right - 16f - bw, b.centerY() - 30f, b.right - 16f, b.centerY() + 30f)
+                        val hw = bw / 2f
+                        for ((k, pair) in listOf("On" to true, "Off" to false).withIndex()) {
+                            val sb = RectF(bb.left + k * hw, bb.top, bb.left + (k + 1) * hw, bb.bottom)
+                            UiKit.choice(c, RectF(sb.left + 2f, sb.top - 6f, sb.right - 2f, sb.bottom + 6f), pair.first, d.on == pair.second, textSize = SEG_TEXT)
+                            sbHits += RectF(sb) to {
+                                if (d.on != pair.second) sbSend(SmartYModel.toggleTaps(d, pair.second), if (pair.second) "Smart Y is on." else "Smart Y is off.")
+                            }
+                        }
+                        bb
+                    }
+                }
                 line == "food" -> row(c, y, "1. Food", "Health below 80%: the cheapest food in your bags.", enabled = true) { RectF(it.right - 16f, it.top, it.right - 16f, it.bottom) }
                 line == "water" -> row(c, y, "2. Water", "Mana below 80%: the cheapest drink in your bags.", enabled = true) { RectF(it.right - 16f, it.top, it.right - 16f, it.bottom) }
                 line is Int && d != null -> {
