@@ -3317,6 +3317,24 @@ class MapView(context: Context) : View(context) {
     private val qAreas = ArrayList<QArea>()
     private val qCircles = ArrayList<QCircle>()
     private val AREA_CIRCLE_YD = 50.0
+    /** ARRIVED (QuestArrival; the user on test60: the arrow stayed up "even when I am in the quests blue zone"): the player stands in the
+     *  FOCUSED quest's blue area - any of its shapes - with the edge's hysteresis. No rim arrow, no route line, no pin while so */
+    private val arrival = QuestArrival.Gate()
+    private var arrivalSaid: Boolean? = null
+    private fun arrivedInFocusArea(): Boolean {
+        val m = map ?: return false
+        val r = rect ?: return false
+        if (!r.valid) return false
+        val shapes = qAreas.filter { it.focused }.map { QuestArrival.Shape.Poly(it.xs, it.ys) } +
+            qCircles.filter { it.focused }.map { QuestArrival.Shape.Circle(it.x, it.y, AREA_CIRCLE_YD) }
+        val a = arrival.look(shapes, m.optDouble("x", Double.NaN), m.optDouble("y", Double.NaN), r.width, r.height)
+        if (arrivalSaid != a) {
+            arrivalSaid = a
+            android.util.Log.i("WCMAP", if (a) "arrived: inside the focused quest's area (${(-arrival.lastOutside).toInt()} yd in) - no arrow, line or pin"
+                else "arrival: outside the focused quest's area (${arrival.lastOutside.let { if (it == Double.MAX_VALUE) "no area" else "${it.toInt()} yd out" }})")
+        }
+        return a
+    }
     private val qPath = Path()
     private val pAreaFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL; color = Color.argb(128, 57, 109, 255)
@@ -4015,6 +4033,8 @@ class MapView(context: Context) : View(context) {
         }
         if (focusQid <= 0) return none(if (focusIsDefault()) "no game focus (the app's default focus only)" else "no focused quest")
         if (m.optInt("onTaxi", 0) == 1) return none("in flight")
+        // test60: inside the quest's own area the player has arrived - no pin (the game's own objective marks show it)
+        if (arrivedInFocusArea()) return none("arrived: inside quest $focusQid's area")
         val r = routeFor(focusQid) ?: return none("no route for quest $focusQid")
         pinRouting = Settings.questTracking == "safepath"          // ag5: the app routes this quest, pin or no pin
         // test48 (the user: "The tracker wants me to go off the safe path straight into mobs"): the game's pin stands on the NEXT
@@ -6471,6 +6491,8 @@ class MapView(context: Context) : View(context) {
                 ok
             }) {
             pathFor = 0
+        } else if (route != null && cursor.sel == shownFocus() && arrivedInFocusArea()) {
+            pathFor = 0                       // test60: inside the focused quest's area - arrived, no line, no flags
         } else if (route != null) {
             // Polestar chosen but not routing: the app's own route, and why
             if (poleOn) polestar.why?.let { w ->
@@ -6523,7 +6545,8 @@ class MapView(context: Context) : View(context) {
         } else pathFor = 0
         // ---- HOME'S SMALL MAP: the focused quest's checkpoints too (test48: "I cannot see the checkpoint flags when the map module
         // is not full screen") - the flags, the stretch to the next one, faint dots past it; no words (the arrow and the module say them)
-        if (compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN() && focusQid > 0 && Settings.questTracking == "safepath") {
+        if (compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN() && focusQid > 0 && Settings.questTracking == "safepath" &&
+            !arrivedInFocusArea()) {
             routeFor(focusQid)?.let { r0 ->
                 val leg = dangerLeg(focusQid, r0)
                 val cps = ArrayList<DoubleArray>()
@@ -6775,7 +6798,9 @@ class MapView(context: Context) : View(context) {
         val rimFly = !toCorpse && flyStep
         val bend: DoubleArray? = null
         // QuestTrail mode: no rim arrow of ours at all (the user, test58); the corpse's stays
-        if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN() && !(Settings.questTracking == "questtrail" && !toCorpse)) {
+        // test60: inside the focused quest's area the arrow goes (arrived); the corpse's stays
+        if (!rimTX.isNaN() && !px.isNaN() && !py.isNaN() && !(Settings.questTracking == "questtrail" && !toCorpse) &&
+            (toCorpse || !arrivedInFocusArea())) {
             val tx = sx(bend?.get(0) ?: rimTX); val ty = sy(bend?.get(1) ?: rimTY)
             val inset = RIM_R + 6f
             val l0 = left + inset; val r0 = left + fw - inset
