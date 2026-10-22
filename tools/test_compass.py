@@ -75,6 +75,10 @@ function GetPlayerFacing() return GAME.facing end
 function IsInInstance() return GAME.inst end
 function UnitIsDeadOrGhost() return GAME.dead end
 function IsFalling() return GAME.air == true end
+-- cp22: the jump press (a binding's function) and the add-ons' hook on it (as the client's: the original, then the hook)
+JUMPS = 0
+function JumpOrAscendStart() JUMPS = JUMPS + 1 end
+function hooksecurefunc(name, fn) local o = _G[name]; _G[name] = function(...) local r = o(...); fn(...); return r end end
 -- the stub's map: 1000 x 1000 yards, map x right = EAST, map y down = SOUTH; world x = north, y = west
 local function toWorld(mx, my) return 500 - my * 1000, 500 - mx * 1000 end
 C_Map = {
@@ -576,7 +580,7 @@ def main():
     pt = W.f.point if W.f else None
     chk("world marker: shown on the point (x %.1f, y %.1f), the quest's atlas, its distance" % ((pt[4], pt[5]) if pt else (-1, -1)),
         W.shown is True and pt is not None and abs(pt[4] - G.nav.x) < 0.01 and abs(pt[5] - 500) < 0.01
-        and W.tx.atlas == "Navigation-Tracked-Icon" and W.d.text == "140 yd")
+        and W.tx.tex.endswith("marker_pin") and W.f.point[1] == "BOTTOM" and abs(W.tx.col[2] - 0.93) < 1e-9 and W.d.text == "140 yd")
     G.facing = C.wrap(-math.radians(22.5) + math.pi)    # turned round: the quest behind, its mirror unclamped near the centre
     C.cam.abs = C.cam.ref = G.facing                     # (cp19: the camera's estimate runs with the bar on the facing too)
     frames(3, read=True)
@@ -589,23 +593,8 @@ def main():
     L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end")
     G.pin = L.table(0.6, 0.4)
     frames(3, read=True)
-    chk("world marker: the route's pin super-tracked: the pin's atlas", W.shown is True and W.tx.atlas == "Waypoint-MapPin-Tracked")
-    # cp19, THE JUMP (test33, the user: "when I jump it moves up and down"): the engine's point rises with the player; the marker's
-    # height is held while airborne, eased back on landing, and a long fall is followed after 1.2 s
-    G.nav.y = 500.0; frames(10, read=True)
-    G.air = True; G.nav.y = 540.0; frames(30, read=True)
-    chk("cp19: in a jump the marker's height is held (y %.1f, the engine's 540)" % W.f.point[5], abs(W.f.point[5] - 500) < 0.01 and W.air is True)
-    chk("cp19: ... across it stays the engine's (x %.1f)" % W.f.point[4], abs(W.f.point[4] - G.nav.x) < 0.01)
-    G.air = False; G.nav.y = 520.0; frames(1, read=True)
-    y1 = W.f.point[5]
-    frames(30, read=True)
-    chk("cp19: landed (on a slope, the point now 520): eased, not snapped (%.1f after a frame, %.1f after 0.5 s)" % (y1, W.f.point[5]),
-        500 < y1 < 510 and abs(W.f.point[5] - 520) < 0.5)
-    G.air = True; G.nav.y = 600.0; frames(60, read=True)
-    yh = W.f.point[5]
-    frames(60, read=True)
-    chk("cp19: a long fall is followed after the hold (%.1f at 1 s, %.1f at 2 s)" % (yh, W.f.point[5]), abs(yh - 520) < 0.5 and abs(W.f.point[5] - 600) < 1)
-    G.air = False; G.nav.y = 500.0; frames(60, read=True)
+    chk("cp22: the route's pin super-tracked: our pin, gold, its tip on the point", W.shown is True and W.tx.tex.endswith("marker_pin")
+        and abs(W.tx.col[2] - 0.82) < 1e-9 and W.f.point[1] == "BOTTOM")
     # cp19, THE FLAGS (the user: "they don't always show where the flags are at"): the app's further checkpoints (Map.lua's uwp 38)
     # get our own markers, across by the camera's yaw (exact from the engine's point) and the FOV, at the engine point's height
     L.execute("WowCompanion.routeWp = { active = true, more = { { m = GAME.map, x = 0.7, y = 0.35 }, { m = GAME.map, x = 0.4, y = 0.3 } } }")
@@ -629,6 +618,83 @@ def main():
     G.nav.y = 384 + proj(0.35, dpin, 0)
     frames(120, read=True)                               # (past the earlier jump's landing ease)
     chk("cp20: the pitch from the engine's point: %.4f rad (true 0.35)" % (W.pitch or -1), W.pitch is not None and abs(W.pitch - 0.35) < 1e-3)
+    # cp22, THE JUMP (the user: "when I jump they need to stay anchored"): the camera rises with the character; the engine's point is
+    # at the player's height (it rises too: on screen it stays, or wanders), the ground does not. Each marker must stay on its own
+    # ground point: the true projection with the camera risen h(t) (WoW's arc: 7.9558 yd/s up, 19.2911 down)
+    VJ, GJ = 7.9558, 19.2911
+    yStand = 384 + proj(0.35, dpin, 0)
+    camKeep = (C.cam.abs, C.cam.ref)                    # (this block's seconds must not move the camera estimate the later checks use)
+    fA = 250 * math.cos(relA)
+    frames(10, read=True)
+    L.execute("JumpOrAscendStart()")
+    G.air = True
+    errs, errsF, oldErr, ts = [], [], [], []
+    for i in range(48):                                  # 0.8 s: up to the apex and down
+        G.nav.y = yStand + (25 if i % 8 < 4 else -15)    # (the engine's point wandering in the air: it must not matter)
+        frames(1, read=True)
+        t = G.t - W.airSince
+        h = max(0.0, VJ * t - GJ * t * t / 2)
+        wantJ = 384 + proj(0.35, dpin, -h)
+        errs.append(abs(W.f.point[5] - wantJ))
+        oldErr.append(abs(yStand - wantJ))                # cp21 held the standing height: off by this
+        wantF = 384 + proj(0.35, fA, -h)
+        errsF.append(abs(W.list[2].f.point[5] - wantF))
+        ts.append(h)
+    chk("cp22: a jump (apex %.2f yd): the pin on its ground point all through (largest error %.3f px; the old hold was off %.1f px)"
+        % (max(ts), max(errs), max(oldErr)), W.kind == "jump" and abs(max(ts) - 1.64) < 0.02 and max(errs) < 0.05 and max(oldErr) > 5)
+    chk("cp22: ... the further flag on its own ground too (largest error %.3f px)" % max(errsF), max(errsF) < 0.05)
+    chk("cp22: ... across, the engine's (yaw) as before (x %.1f)" % W.f.point[4], abs(W.f.point[4] - G.nav.x) < 0.01)
+    n0 = len(L.globals().SENT)
+    frames(1, read=True)
+    G.air = False; G.nav.y = yStand; frames(1, read=True)
+    yL = W.f.point[5]
+    frames(12, read=True)
+    jl = [L.globals().SENT[i] for i in range(n0 + 1, len(L.globals().SENT) + 1) if getattr(L.globals().SENT[i], "probe", None) == "jump"]
+    chk("cp22: landed at the arc's end: on the ground, no hop (%.2f px off on landing, %.3f 0.2 s later)" % (abs(yL - yStand), abs(W.f.point[5] - yStand)),
+        abs(yL - yStand) < 1.5 and abs(W.f.point[5] - yStand) < 0.25)
+    chk("cp22: the landing logs the jump for the device (air %.2f s, kind %s, press %s)"
+        % ((jl[0].air, jl[0].kind, jl[0].press) if jl else (-1, None, None)), len(jl) == 1 and abs(jl[0].air - 0.82) < 0.04
+        and jl[0].kind == "jump" and jl[0].press == L.globals().JUMPS)
+    frames(60, read=True)
+    # A FALL (a step off a ledge: no press): no arc; the ground's height held all the way down, not followed
+    G.air = True
+    ys = []
+    for i in range(120):
+        G.nav.y = yStand + 60 * i / 120                  # (the engine's point rides down with us)
+        frames(1, read=True)
+        ys.append(W.f.point[5])
+    chk("cp22: a 2 s fall off a ledge: held (%.2f..%.2f px, the engine's went to %.0f)" % (min(ys), max(ys), G.nav.y),
+        W.kind == "fall" and max(ys) - min(ys) < 0.01 and abs(ys[0] - yStand) < 0.01)
+    G.air = False; G.nav.y = yStand + 40; frames(1, read=True)
+    y1 = W.f.point[5]
+    frames(30, read=True)
+    chk("cp22: the fall's landing: eased to the new ground (%.1f after a frame, %.1f after 0.5 s; the point %.1f)"
+        % (y1, W.f.point[5], G.nav.y), yStand < y1 < yStand + 10 and abs(W.f.point[5] - G.nav.y) < 0.5)
+    G.nav.y = yStand; frames(60, read=True)
+    # LANDING EARLY on a slope: up 0.3 s (1.5 yd high), then down on ground 20 px further up the screen: no snap, eased there
+    L.execute("JumpOrAscendStart()")
+    G.air = True; frames(18, read=True)
+    yAir = W.f.point[5]
+    G.air = False; G.nav.y = yStand + 20; frames(1, read=True)
+    y1 = W.f.point[5]
+    frames(30, read=True)
+    chk("cp22: an early landing on a slope (in the air %.1f, a frame after %.1f, 0.5 s after %.1f; the ground %.1f): eased"
+        % (yAir, y1, W.f.point[5], G.nav.y), yAir < yStand - 5 and yAir < y1 < yAir + 0.25 * (G.nav.y - yAir) + 1
+        and abs(W.f.point[5] - G.nav.y) < 0.5)
+    G.nav.y = yStand; frames(60, read=True)
+    # SWIMMING: no compensation (not airborne); MOUNTED: the arc (its own constant)
+    L.execute("function IsSwimming() return true end; JumpOrAscendStart()")
+    G.air = True; frames(12, read=True)
+    chk("cp22: swimming: no compensation (y %.1f, the engine's %.1f)" % (W.f.point[5], G.nav.y), W.air is False and abs(W.f.point[5] - yStand) < 0.01)
+    G.air = False; L.execute("IsSwimming = nil; function IsMounted() return true end"); frames(30, read=True)
+    L.execute("JumpOrAscendStart()")
+    G.air = True; frames(25, read=True)
+    t = G.t - W.airSince
+    h = 7.9558 * t - GJ * t * t / 2
+    chk("cp22: mounted: the mount's arc (%.2f px off its ground)" % abs(W.f.point[5] - 384 - proj(0.35, dpin, -h)),
+        W.mounted is True and abs(W.f.point[5] - 384 - proj(0.35, dpin, -h)) < 0.05)
+    G.air = False; L.execute("IsMounted = nil"); frames(60, read=True)
+    C.cam.abs, C.cam.ref = camKeep
     L.execute("WowCompanion.routeWp.more[1].dz = 6")
     frames(2, read=True)
     m2 = W.list[2]
@@ -639,24 +705,8 @@ def main():
     wantP = 384 + proj(0.35, dpin, -3)
     chk("cp20: the pin's own ground 3 yd below us: the main marker moved onto it (y %.1f, the projection %.1f; the engine's %.1f)"
         % (W.f.point[5], wantP, G.nav.y), abs(W.f.point[5] - wantP) < 0.5 and W.pinDz == -3)
-    # cp21 (the user's pick "D: beam + rings"): with the pitch, the next checkpoint a beam + a ground ring, the others rings
-    o1, o2 = W.list[1], W.list[2]
-    dA = 250 * math.cos(relA)
-
-    def depth(phi, dfwd, dz, D=12.5, H=1.9):
-        vf = dfwd + D * math.cos(phi)
-        vu = dz - H - D * math.sin(phi)
-        return vf * math.cos(phi) - vu * math.sin(phi)
-    rwA = 2 * 1.8 * c0 / depth(0.35, dA, 6) / 0.78
-    rhA = max(3 * 768 / 1080, proj(0.35, dA + 1.8, 6) - proj(0.35, dA - 1.8, 6)) / 0.78     # (at least 3 spec px tall)
-    chk("cp21: a further flag is a RING on the ground, no pin (%.1f x %.1f, the projection %.1f x %.1f; squashed by the pitch)"
-        % (o2.ring.w or -1, o2.ring.h or -1, rwA, rhA),
-        o2.ring.shown is True and o2.tx.shown is False and o2.beam.shown is False and abs(o2.ring.w - rwA) < 0.05
-        and abs(o2.ring.h - rhA) < 0.05 and o2.ring.h < o2.ring.w and o2.ring.tex.endswith("marker_ring"))
-    bh = proj(0.35, dpin, -3 + 26) - proj(0.35, dpin, -3)
-    chk("cp21: the NEXT one: a beam 26 yd up from its ground (%.1f px, the projection %.1f) and a ring at its foot, no pin"
-        % (o1.beam.h or -1, bh), o1.beam.shown is True and o1.ring.shown is True and o1.tx.shown is False
-        and abs(o1.beam.h - bh) < 0.05 and o1.beam.point[1] == "BOTTOM" and o1.beam.tex.endswith("marker_beam"))
+    chk("cp22: the further flags are our pin too (gold, faint)", W.list[2].tx.tex.endswith("marker_pin") and W.list[2].f.alpha < 1
+        and W.list[2].f.point[1] == "BOTTOM")
     L.execute("WowCompanion.routeWp.pinZ = nil; WowCompanion.routeWp.more[1].dz = nil")
     G.nav = None; frames(3, read=True)
     m2 = W.list[2]
@@ -665,8 +715,6 @@ def main():
     G.ry = 0.6; frames(2, read=True); G.ry = 0
     G.nav = L.table_from({"x": c0 + c0 * math.tan(math.radians(22.5)), "y": 384 + proj(0.35, dpin, 0), "clamped": False})
     G.ry = 0.6; C.wm.pitchAt = -100; frames(1, read=True)
-    chk("cp21: no pitch: the next one is the pin again (no beam, no ring)", W.list[1].tx.shown is True and W.list[1].beam.shown is False
-        and W.list[1].ring.shown is False)
     G.ry = 0; G.nav = None; C.wm.tilted = True; frames(1, read=True)
     chk("cp20: the camera tilted since the pitch was read: the flags hide rather than float", W.list[2].f.shown is False and W.tilted is True)
     G.nav = L.table_from({"x": c0 + c0 * math.tan(math.radians(22.5)), "y": 384 + proj(0.35, dpin, 0), "clamped": False})

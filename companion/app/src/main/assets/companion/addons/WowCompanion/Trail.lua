@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp21" }
+WC.compass = { V = "cp22" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -684,22 +684,27 @@ do
     -- show where the flags are at"):
     --   THE JUMP: the pin is a map point with no height, and the engine projects it at the player's own height, so it rose and fell
     --   with every jump while the ground stood still. The marker's HEIGHT is held while the player is airborne (IsFalling, at most
-    --   HOLD_S: a long fall is followed), then eases back (EASE_S); across, it stays the engine's.
+    --   HOLD_S: a long fall is followed), then eases back (EASE_S); across, it stays the engine's.  (cp22 below replaces the hold.)
     --   THE FLAGS: the app's map shows the checkpoints AFTER the pin's too. The app sends them (Map.lua's uwp 38, WC.routeWp.more)
     --   and each gets our own marker, smaller and fainter the further along it is, placed across by the camera's yaw (exact from the
     --   engine's point when that is on screen, else cp18's estimate) and the FOV; up and down at the engine point's height (no
     --   camera pitch is readable: the horizon band), the middle of the screen when the engine's point is not to be seen.
     --   IN FRONT: tested against the camera's yaw, also with the bar on the facing (the estimate runs always, cp19).
-    C.wm = { SIZE = 34, HOLD_S = 1.2, EASE_S = 0.12, LAND_S = 0.5, MORE_K = { 0.8, 0.68, 0.58 }, MORE_A = { 0.85, 0.65, 0.5 },
-             list = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 3, TILT = 0.1,
-             RING_R = { 2.6, 1.8, 1.6, 1.4 }, BEAM_H = 26, BEAM_W = 1.2, GOLD = { 1, 0.82, 0.3 },
-             RING = "Interface\\AddOns\\WowCompanion\\Media\\marker_ring", BEAM = "Interface\\AddOns\\WowCompanion\\Media\\marker_beam" }
-    -- cp21 (the user's pick, "D: beam + rings"): with a pitch, the route's checkpoints are drawn IN the world instead of as pins: the
-    -- NEXT one a soft light beam BEAM_H yd tall rising from its ground point, with a glowing ring on the ground at its foot; the ones
-    -- after it smaller, fainter rings. The ring is the ground circle's projection (its width from the lateral extent at its depth,
-    -- its height from its near and far edges: squashed by the pitch); the beam's height is the projection of BEAM_H above the foot.
-    -- Our own textures (tools/make_world_markers.py), added light, tinted gold. No pitch: the next one is the pin as before, the
-    -- others hide (cp20). The focused quest's own point (no route) keeps its pin.
+    C.wm = { SIZE = 34, EASE_S = 0.12, LAND_S = 0.5, MORE_K = { 0.8, 0.68, 0.58 }, MORE_A = { 0.85, 0.65, 0.5 },
+             list = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 3, TILT = 0.1, PITCH0 = 0.3,
+             JUMP_V = 7.9558, MOUNT_V = 7.9558, GRAV = 19.2911, PRESS_S = 0.3, jumpAt = -100, jumpN = 0, LOG_S = 5, logAt = -100,
+             GOLD = { 1, 0.82, 0.3 }, QUEST = { 1, 0.93, 0.5 }, PIN = "Interface\\AddOns\\WowCompanion\\Media\\marker_pin" }
+    -- cp22 (the user: "The world markers for the quests can go back to just being the pin icon ... when I jump they need to stay
+    -- anchored"):
+    --   THE LOOK: cp21's beam + rings are gone; every marker is OUR pin (Media/marker_pin.tga, tools/make_world_markers.py, tinted
+    --   gold for the route, pale gold for a quest) with its TIP on the ground point (anchored by its bottom), the same sizes.
+    --   THE JUMP: cp19 held the engine point's screen height in the air, but the camera rises with the character, so the ground
+    --   point drops on screen while a held marker stays: the bob. Now, airborne (IsFalling; never swimming or flying), the ground
+    --   height held is moved by the camera's RISE above the takeoff (C.wmLift), projected with the pitch: UnitPosition's z when it
+    --   really moves, else WoW's jump arc (JUMP_V up, GRAV down: 1.64 yd at 0.41 s, down at 0.82 s; MOUNT_V mounted) from the
+    --   jump press (JumpOrAscendStart, hooked: read only) - a step off a ledge has no arc. Past the arc (a long fall) the last
+    --   ground height is HELD, not followed. Landing (early on a slope too) eases to the engine's point (EASE_S, for LAND_S).
+    --   Each landing logs a "jump" cap line (time in the air, the press, z, the engine point's travel) to measure the arc on device.
     -- cp20 (the user: "Sometimes they are perfectly glued to the ground, other times they float in the air ... Try to ground them
     -- all"): the CAMERA'S PITCH, solved from the engine's own point. The camera orbits a pivot CAM_H above the player's feet at the
     -- zoom distance (GetCameraZoom, read), tilted down by the pitch; the engine projects the pin (a map point with no height) at the
@@ -729,6 +734,75 @@ do
         end
         return (lo + hi) / 2
     end
+    -- cp22: the camera's rise (yd) above where the player left the ground; 0 on the ground, past the arc, or with no arc
+    function C.wmLift(now)
+        local W = C.wm
+        if not W.air then return 0 end
+        if W.zReal and W.pz0 then
+            local pz = C.wmPz()
+            if pz then return pz - W.pz0 end
+        end
+        if W.kind ~= "jump" then return 0 end
+        local v, t = W.mounted and W.MOUNT_V or W.JUMP_V, now - (W.airSince or now)
+        if t >= 2 * v / W.GRAV then return 0 end
+        return v * t - W.GRAV * t * t / 2
+    end
+    -- cp22: airborne or not this frame (not swimming, not flying); the takeoff's kind, the landing's log line
+    function C.wmAir(now)
+        local W = C.wm
+        local okA, air = pcall(function() return IsFalling() end)
+        air = okA and air == true
+        local okS, sw = pcall(function() return IsSwimming() end)
+        local okF, fly = pcall(function() return IsFlying() end)
+        if (okS and sw == true) or (okF and fly == true) then air = false end
+        local pz = C.wmPz()
+        if pz then
+            W.zFirst = W.zFirst or pz
+            if math.abs(pz - W.zFirst) > 0.05 then W.zReal = true end      -- (z read plainly AND moving: a real height)
+        end
+        if air and not W.air then
+            local okM, mt = pcall(function() return IsMounted() end)
+            W.airSince, W.pz0, W.mounted = now, pz, okM and mt == true
+            -- a jump when the press came just before (or the press was never seen: the hook may not fire), else a step off a ledge
+            W.kind = (now - W.jumpAt < W.PRESS_S or W.jumpN == 0) and "jump" or "fall"
+            W.jl = { ny0 = W.ny, nyLo = W.ny, nyHi = W.ny, pzHi = pz, pzLo = pz }
+        elseif W.air and not air then
+            local jl = W.jl
+            if jl and now - W.logAt > W.LOG_S and WC.send and WC.encode then
+                W.logAt = now
+                pcall(WC.send, WC.encode({ type = "cap", probe = "jump", v = C.V, air = now - (W.airSince or now), kind = W.kind,
+                    press = W.jumpN, mount = W.mounted or nil, zreal = W.zReal or nil, pz0 = W.pz0, pzHi = jl.pzHi, pzLo = jl.pzLo,
+                    ny0 = jl.ny0, nyHi = jl.nyHi, nyLo = jl.nyLo }))
+            end
+            W.jl = nil
+        end
+        if air then
+            W.airAt = now
+            local jl = W.jl
+            if jl then
+                if pz then jl.pzHi = math.max(jl.pzHi or pz, pz); jl.pzLo = math.min(jl.pzLo or pz, pz) end
+                if W.ny then jl.nyHi = math.max(jl.nyHi or W.ny, W.ny); jl.nyLo = math.min(jl.nyLo or W.ny, W.ny) end
+            end
+        else
+            W.airSince = nil
+        end
+        W.air = air
+        return air
+    end
+    if type(hooksecurefunc) == "function" and type(rawget(_G, "JumpOrAscendStart")) == "function" then
+        pcall(hooksecurefunc, "JumpOrAscendStart", function()
+            local W = C.wm
+            W.jumpAt, W.jumpN = (type(GetTime) == "function" and GetTime()) or 0, W.jumpN + 1
+        end)
+    end
+    -- cp22: a point's height relative to the player's feet in the air too (its height less the camera's rise; UnitPosition's z
+    -- already counts it when real)
+    function C.wmDzAir(p)
+        local W = C.wm
+        local b = C.wmDz(p)
+        if W.zReal and b and type(p) == "table" and num(p.zAt) then return b end
+        return (b or 0) - (W.lift or 0)
+    end
     function C.wmZoom()
         local ok, z = pcall(GetCameraZoom)
         z = ok and num(z) or nil
@@ -738,26 +812,6 @@ do
     function C.wmPz()
         local ok, _, _, z = pcall(UnitPosition, "player")
         return ok and num(z) or nil
-    end
-    -- cp21: a checkpoint's ring (and beam) on the ground: dfwd ahead, dz above the player's feet, radius r yd; the screen sizes in UI
-    -- units around its foot (nil when it is behind the camera)
-    function C.wmGround(dfwd, dz, r, beam, fl)
-        local W = C.wm
-        local D, H, phi = C.wmZoom(), W.CAM_H, W.pitch
-        local y0 = C.wmProj(phi, D, H, dfwd, dz, fl)
-        local yn = C.wmProj(phi, D, H, dfwd - r, dz, fl)
-        local yf = C.wmProj(phi, D, H, dfwd + r, dz, fl)
-        if not (y0 and yn and yf) then return nil end
-        local vf = dfwd + D * math.cos(phi)
-        local vu = dz - H - D * math.sin(phi)
-        local depth = vf * math.cos(phi) - vu * math.sin(phi)
-        local g = { rw = 2 * r * fl / depth, rh = math.max(C.u(3), yf - yn), roff = (yn + yf) / 2 - y0 }
-        g.rw, g.rh = g.rw / 0.78, g.rh / 0.78                -- (the texture's ring sits at 0.78 of its half size)
-        if beam then
-            local yt = C.wmProj(phi, D, H, dfwd, dz + W.BEAM_H, fl)
-            if yt and yt > y0 then g.bh, g.bw = yt - y0, math.max(C.u(8), 2 * W.BEAM_W * fl / depth) end
-        end
-        return g
     end
     -- a point's height relative to the player NOW (its sent height less the climb since), nil = unknown
     function C.wmDz(p)
@@ -777,62 +831,30 @@ do
         f:SetSize(C.u(W.SIZE * k), C.u(W.SIZE * k))
         f:Hide()
         local sh = f:CreateTexture(nil, "ARTWORK", nil, 1)
+        sh:SetTexture(W.PIN)
         sh:SetPoint("CENTER", f, "CENTER", 0, 0)
         sh:SetSize(C.u(W.SIZE * k + 4), C.u(W.SIZE * k + 4))
         sh:SetVertexColor(0, 0, 0, 0.85)
         local tx = f:CreateTexture(nil, "ARTWORK", nil, 3)
+        tx:SetTexture(W.PIN)
         tx:SetAllPoints(f)
         local d = f:CreateFontString(nil, "OVERLAY")
         d:SetFont(C.FONT, C.u(i == 1 and 13 or 11), "OUTLINE")
         d:SetPoint("TOP", f, "BOTTOM", 0, -C.u(2))
-        -- cp21: the ground ring and the beam (hidden until a pitch places them)
-        local ring = f:CreateTexture(nil, "ARTWORK", nil, 2)
-        ring:SetTexture(W.RING)
-        pcall(function() ring:SetBlendMode("ADD") end)
-        ring:SetVertexColor(W.GOLD[1], W.GOLD[2], W.GOLD[3])
-        ring:Hide()
-        local beam = f:CreateTexture(nil, "ARTWORK", nil, 4)
-        beam:SetTexture(W.BEAM)
-        pcall(function() beam:SetBlendMode("ADD") end)
-        beam:SetVertexColor(W.GOLD[1], W.GOLD[2], W.GOLD[3])
-        beam:Hide()
-        W.list[i] = { f = f, sh = sh, tx = tx, d = d, ring = ring, beam = beam }
+        W.list[i] = { f = f, sh = sh, tx = tx, d = d }
         if i == 1 then W.f, W.sh, W.tx, W.d = f, sh, tx, d end
         return f
     end
     function C.wmHide()
         for _, o in pairs(C.wm.list) do if o.f:IsShown() then o.f:Hide() end end
     end
-    -- g (cp21): nil = the pin; else { rw, rh, roff (the ring's middle above the foot), bh, bw (the beam; nil = no beam) }
-    local function wmPut(i, x, y, atlas, txt, alpha, g)
+    -- cp22: our pin, its TIP (the frame's bottom) at x, y; col its tint
+    local function wmPut(i, x, y, col, txt, alpha)
         C.wmBuild(i)
         local o = C.wm.list[i]
-        if g then
-            o.tx:Hide(); o.sh:Hide()
-            o.ring:ClearAllPoints()
-            o.ring:SetPoint("CENTER", o.f, "CENTER", 0, g.roff)
-            o.ring:SetSize(g.rw, g.rh)
-            o.ring:Show()
-            if g.bh then
-                o.beam:ClearAllPoints()
-                o.beam:SetPoint("BOTTOM", o.f, "CENTER", 0, 0)
-                o.beam:SetSize(g.bw, g.bh)
-                o.beam:Show()
-            else
-                o.beam:Hide()
-            end
-            o.ground = true
-        elseif o.ground then
-            o.tx:Show(); o.sh:Show(); o.ring:Hide(); o.beam:Hide()
-            o.ground = false
-        end
         o.f:ClearAllPoints()
-        o.f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
-        if o.atlas ~= atlas then
-            pcall(function() o.tx:SetAtlas(atlas) end)
-            pcall(function() o.sh:SetAtlas(atlas) end)
-            o.atlas = atlas
-        end
+        o.f:SetPoint("BOTTOM", UIParent, "BOTTOMLEFT", x, y)
+        if o.col ~= col then o.tx:SetVertexColor(col[1], col[2], col[3]); o.col = col end
         if o.text ~= txt then o.d:SetText(txt); o.text = txt end
         if o.alpha ~= alpha then pcall(function() o.f:SetAlpha(alpha) end); o.alpha = alpha end
         if not o.f:IsShown() then o.f:Show() end
@@ -854,10 +876,8 @@ do
             local okW, uw = pcall(function() return UIParent:GetWidth() end)
             local okH, uh = pcall(function() return UIParent:GetHeight() end)
             us, uw, uh = okU and num(us) or 1, okW and num(uw) or nil, okH and num(uh) or nil
-            local okA, air = pcall(function() return IsFalling() end)
-            air = okA and air == true
-            if air then W.airAt = now; W.airSince = W.airSince or now else W.airSince = nil end
-            W.air = air
+            local air = C.wmAir(now)
+            W.lift = C.wmLift(now)
             local hfov = C.cam.hfov or math.rad(90)
             local yaw = C.cam.abs or facing
             local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
@@ -888,26 +908,28 @@ do
                                 local ph = C.wmPitch(y - uh / 2, dfwd, C.wmZoom(), W.CAM_H, fl)
                                 if ph then W.pitch, W.pitchAt, W.tilted = ph, now, false end
                             end
-                            if air and W.yG and now - W.airSince < W.HOLD_S then
-                                y = W.yG                                         -- in the air: the ground's height held
-                            elseif W.yS and now - W.airAt < W.HOLD_S + W.LAND_S then
-                                y = W.yS + (y - W.yS) * (1 - math.exp(-dt / W.EASE_S))   -- landed (or a long fall): eased back
-                            end
-                            W.yS, W.yAt = y, now
+                            W.ny = y                                             -- (the engine's own, for the jump log)
+                            -- cp22: in the air the engine's point rises with us: the ground's height held, then the pin's own
+                            -- ground (cp20) and the camera's rise (the jump) projected with the pitch
+                            local yE = (air and W.yG) or y
                             if not air then W.yG = y end
-                            -- cp20: the pin ON ITS GROUND when its height came (the engine's point is at the player's height)
                             local R0 = WC.routeWp
                             local pdz = onPin and type(R0) == "table" and C.wmDz(R0.pinZ) or nil
                             W.pinDz = pdz
-                            if pdz and C.wmPitchOk(now) then
-                                local D = C.wmZoom()
-                                local a0 = C.wmProj(W.pitch, D, W.CAM_H, dfwd, 0, fl)
-                                local a1 = C.wmProj(W.pitch, D, W.CAM_H, dfwd, pdz, fl)
-                                if a0 and a1 then y = y + (a1 - a0) end
+                            local usePdz = pdz ~= nil and C.wmPitchOk(now)
+                            local dz = C.wmDzAir(usePdz and R0.pinZ or nil)
+                            y = yE
+                            if dz ~= 0 then
+                                local D, phi = C.wmZoom(), W.pitch or W.PITCH0
+                                local a0 = C.wmProj(phi, D, W.CAM_H, dfwd, 0, fl)
+                                local a1 = C.wmProj(phi, D, W.CAM_H, dfwd, dz, fl)
+                                if a0 and a1 then y = yE + (a1 - a0) end
                             end
-                            local g = nil
-                            if onPin and C.wmPitchOk(now) then g = C.wmGround(dfwd, pdz or 0, W.RING_R[1], true, fl) end
-                            wmPut(1, x, y, onPin and "Waypoint-MapPin-Tracked" or "Navigation-Tracked-Icon", C.distText(d), 1, g)
+                            if not air and W.yOut and now - W.airAt < W.LAND_S then
+                                y = W.yOut + (y - W.yOut) * (1 - math.exp(-dt / W.EASE_S))   -- landed: eased, not snapped
+                            end
+                            W.yOut = y
+                            wmPut(1, x, y, onPin and W.GOLD or W.QUEST, C.distText(d), 1)
                             on[1] = true
                         end
                     end
@@ -926,11 +948,10 @@ do
                             local rel = C.wrap(b - yaw)
                             if d > 8 and math.abs(rel) < hfov / 2 then
                                 local x = half - fl * math.tan(rel)
-                                local yo = C.wmProj(W.pitch, D, W.CAM_H, d * math.cos(rel), C.wmDz(c) or 0, fl)
+                                local yo = C.wmProj(W.pitch, D, W.CAM_H, d * math.cos(rel), C.wmDzAir(c), fl)
                                 local y = yo and uh / 2 + yo or nil
-                                local g = C.wmGround(d * math.cos(rel), C.wmDz(c) or 0, W.RING_R[i + 1] or 1.4, false, fl)
-                                if y and g and math.abs(x - half) < half * 0.95 and y > 0 and y < uh then
-                                    wmPut(i + 1, x, y, "Waypoint-MapPin-Tracked", C.distText(d), W.MORE_A[i], g)
+                                if y and math.abs(x - half) < half * 0.95 and y > 0 and y < uh then
+                                    wmPut(i + 1, x, y, W.GOLD, C.distText(d), W.MORE_A[i])
                                     on[i + 1] = true
                                 end
                             end
