@@ -192,8 +192,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         private val at = IntArray(2); private val gat = IntArray(2); private val sat = IntArray(2)
         private var bindAt = -1L; private var unbindAt = -1L
         private var lastBind: JSONObject? = null; private var lastBindItem: JSONObject? = null
-        private val tips = TipStack(this)
-        private val gearFade = UiKit.TipFade()               // gear's pair has its own quarter second (not TipStack's)
+        private val warm = BagsCursor.WarmFade()           // the quarter second before the FIRST tooltip only (d)
 
         companion object {
             const val OPEN_MS = 220L; const val CLOSE_MS = 160L
@@ -207,6 +206,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             const val MORE = -3          // a finger's More: the cursor to the shown slot, then Y
             const val EQUIP = -4         // a finger's Equip on a BAG: the cursor to the shown slot, then bmvq 22 (= X: into the hand)
             const val EQUIP_OFF = -5     // the same cell, faint (a fight): nothing
+            const val MIN_CMP_W = 300f                          // Currently Equipped narrowed to a side's room, never under this
             const val PRESS_MIN_MS = 160L                       // a press stays visibly in at least this long (Interact's recipe)
             val PRESS_KEYS = setOf("PAD1", "PAD2", "PAD3", "PAD4")
         }
@@ -285,14 +285,20 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 if (owning) { pressX = e.x; pressY = e.y; invalidate() }
             }
             if (!owning) return false
+            val inCut = cut?.contains(pressX, pressY) == true
             when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> if (inCut) dragY = e.y
+                MotionEvent.ACTION_MOVE -> if (dragY >= 0f) {
+                    scrolled = (scrolled + dragY - e.y).coerceIn(0f, cutMax); dragY = e.y; invalidate()
+                }
                 MotionEvent.ACTION_UP -> {
+                    if (dragY >= 0f) { dragY = -1f; owning = false; pressX = -1f; pressY = -1f; invalidate(); return true }
                     val now = android.os.SystemClock.uptimeMillis()
                     val hit = hits.firstOrNull { it.first.contains(e.x, e.y) && it.first.contains(pressX, pressY) }
                     if (hit != null && now - tapAt > 400) { tapAt = now; act(hit.second) }
                     owning = false; pressX = -1f; pressY = -1f; invalidate()
                 }
-                MotionEvent.ACTION_CANCEL -> { owning = false; pressX = -1f; pressY = -1f; invalidate() }
+                MotionEvent.ACTION_CANCEL -> { dragY = -1f; owning = false; pressX = -1f; pressY = -1f; invalidate() }
             }
             return true
         }
@@ -377,6 +383,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             return Triple(x, tw, cmpX.coerceIn(16f, maxOf(16f, width - cw - 16f)))
         }
 
+        /** the game's tooltip only for the slot shown: one for a slot the cursor has left is stale (dropped by its key) */
+        private fun tipFor(t: JSONObject?, key: String): JSONObject? = tipOfSlot(t, key)
+
         /** an addon without Interact's WC.tipOf: the item's own name and type, so the tooltip is never empty */
         private fun fallbackTip(key: String, it: JSONObject): JSONObject {
             val lines = JSONArray().put(JSONObject().put("t", it.optString("name")))
@@ -426,9 +435,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
 
         /** the highlighted item's tooltip and its actions under it; gear also shows what it would replace, always */
         private fun tooltip(c: Canvas, gx: Float, gy: Float, top: Float, bottom: Float) {
-            // THE GAME'S HOVER WAIT every time (b-bag-tooltip-instant): a frame with no tooltip forgets both fades, so coming
-            // back to an item (from an empty slot, the bar, a menu, a non-gear item) waits out the quarter second again
-            if (!tooltipShown(c, gx, gy, top, bottom)) { tips.forget(); gearFade.alpha(null) }
+            // THE HOVER WAIT ONCE (d, tracking 2026-10-22): the game's quarter second before the first tooltip only; moving on shows
+            // each next item at once (BagsCursor.WarmFade)
+            if (!tooltipShown(c, gx, gy, top, bottom)) { warm.alpha(null, clock()); cut = null }
         }
         private fun tooltipShown(c: Canvas, gx: Float, gy: Float, top: Float, bottom: Float): Boolean {
             val (bag, slot) = shownSlot() ?: return false
@@ -438,72 +447,118 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             val name = it.optString("name").takeIf { s -> real(s) } ?: "Loading…"
             val q = if (it.has("quality")) it.optInt("quality") else 1
             val key = "bag $bag $slot ${it.optInt("id")}"
-            val tip = st.ctl?.optJSONObject("tip")?.takeIf { j -> st.ctlOn && j.optString("key") == key } ?: fallbackTip(key, it)
+            // (c) the detail at once from the bags already here (the item's own name and type); the game's full tooltip replaces it
+            // when ITS key is this slot's: a late one for a slot the cursor has left is dropped
+            val tip = tipFor(st.ctl?.optJSONObject("tip")?.takeIf { st.ctlOn }, key) ?: fallbackTip(key, it)
             val (acts, what) = actions(it, bag, slot)
-            val cmp = tip.optJSONArray("cmp")
-            if (cmp != null && cmp.length() > 0) { tips.forget(); gear(c, cur, name, q, tip, cmp, acts, what, gy, top, bottom); return true }
-            gearFade.alpha(null)
-            val (tx, tw, cmpX) = place(cur)
-            // not gear: TipStack, its own Compare hint off (Bags compares by itself); the plate's 62 px stay in the room
-            val d = tips.draw(c, tx, maxOf(top, cur.top), tw, name, q, tip, top, bottom - 64f, cmpX, false, 0, hint = false)
-            if (d.alpha > 0 || anyDown()) plate(c, RectF(d.box.left, d.box.top, d.box.right, d.bottom), acts, what, d.alpha)
+            card(c, cur, name, q, tip, tip.optJSONArray("cmp"), acts, what, top, bottom)
             return true
         }
 
+        /** the tooltip box cut at the room's foot this frame (its row pinned under it), and how far it scrolls: a finger drags it */
+        private var cut: RectF? = null
+        private var cutMax = 0f
+        private var cutKey: String? = null
+        private var scrolled = 0f
+        private var dragY = -1f
+
         /**
-         * GEAR (the user: "it should just always auto compare"; UI Art's rule, SHEET_bags_v4: "cover as little of the grid
-         * as possible"). The item (its cells under it) and each worn item it would replace ("Currently Equipped", the game's
-         * stat-change lines last):
-         *  - the bags leave room under the grid: SIDE BY SIDE there, each (w - 56) / 2 wide, rising only as far as they must;
-         *  - the bags fill the room (the band under the grid is less than half the pair): STACKED on the half away from the
-         *    cursor, (half - 30) wide, the item and its cells, then Currently Equipped 6 px under.
+         * THE ITEM BY THE CURSOR (the user, 2026-10-09: "tooltip should stay by the cursor"), its cells under it, and for GEAR each worn
+         * item it would replace ("Currently Equipped", the game's stat-change lines last; the user: "it should just always auto compare"):
+         * beside the item's tooltip on the side AWAY from the cursor (Thor batch2: "I dont want it to cover the cursor"), or under the
+         * item's cells where that side has no room. Currently Equipped at the game's compare size ([UiKit.COMPARE_SCALE]).
+         *
+         * THE ROW OF GLYPHS ALWAYS SHOWS (the user, 2026-10-22: "the tooltip on some of the gear in my bag is too big, so I can't see
+         * the button glyph options"): [BagsCursor.fit] keeps the tooltip and its row inside the room. A tall one shrinks; one still too
+         * tall is cut at the room's foot with its row pinned there under it, never over it, and a finger scrolls it in its box.
          */
-        private fun gear(c: Canvas, cur: RectF, name: String, q: Int, tip: JSONObject, cmp: JSONArray,
-                         acts: List<Pair<String?, String>>, what: List<Int>, gy: Float, top: Float, bottom: Float) {
-            val fade = gearFade.alpha(tip.optString("key"))
-            if (gearFade.animating) postInvalidateOnAnimation()
+        private fun card(c: Canvas, cur: RectF, name: String, q: Int, tip: JSONObject, cmp: JSONArray?,
+                         acts: List<Pair<String?, String>>, what: List<Int>, top: Float, bottom: Float) {
+            val key = tip.optString("key")
+            val fade = warm.alpha(key, clock())
+            if (warm.animating) postInvalidateOnAnimation()
             val lines = tip.optJSONArray("lines")
             val first = lines?.optJSONObject(0)
             val body = TipStack.lines(lines, first != null && first.optString("t") == name)
             data class Eq(val name: String, val colour: Int, val lines: List<UiKit.TipLine>)
-            val eq = (0 until cmp.length()).mapNotNull { n ->
+            val eq = if (cmp == null) emptyList() else (0 until cmp.length()).mapNotNull { n ->
                 val el = cmp.optJSONObject(n)?.optJSONArray("lines") ?: return@mapNotNull null
                 val head = el.optJSONObject(0) ?: return@mapNotNull null
                 Eq(TipStack.strip(head.optString("t")), TipStack.colour(head.optString("c").takeIf { s -> s.isNotEmpty() }, Color.WHITE),
                     TipStack.lines(el, true))
             }
-            // BY THE CURSOR too (the user, 2026-10-09): the item beside the cursor's tile with its cells under it, Currently Equipped
-            // beside it (place's compare x), both level with the cursor's row, lifted only as far as they must to stay in the room
-            // Currently Equipped at the game's compare size (b-bag-tooltip-size: it was the item's own full size): its shopping
-            // tooltip's smaller fonts, and as much narrower
             val sc = UiKit.COMPARE_SCALE
             val plateH = if (acts.isEmpty()) 0f else 62f
             val (x, tw, _) = place(cur, sc)
-            val cw = tw * sc
-            val itemH = UiKit.tooltip(c, 0f, -9999f, tw, name, Theme.quality(q), body, alpha = 0).height() + plateH
-            val eqH = eq.sumOf { e ->
-                UiKit.tooltip(c, 0f, -9999f, cw, e.name, e.colour, e.lines, header = "Currently Equipped", alpha = 0, scale = sc).height().toDouble() + 6.0
-            }.toFloat()
-            // CURRENTLY EQUIPPED NEVER OVER THE CURSOR (Thor batch2, the user: "I dont want it to cover the cursor. it would be nice below
-            // or beside the text of the Item I am looking at"): beside the item's tooltip on the side AWAY from the cursor, as the game's
-            // compare stands beside its main tooltip; where that side has no room, under the item's tooltip and its cells
             val itemRight = x >= cur.right
-            val besideX = if (itemRight) x + tw + 6f else x - 6f - cw
-            val beside = besideX >= 16f && besideX + cw <= width - 16f
+            // beside the item on the side away from the cursor; where that has no room, beside the cursor on its other side (never
+            // over it), narrowed to that side's room if it must (not under MIN_CMP_W); else under the item's row
+            val awayX = if (itemRight) x + tw + 6f else x - 6f - tw * sc
+            val awayRoom = if (itemRight) width - 16f - (x + tw + 6f) else x - 6f - 16f
+            val otherRoom = if (itemRight) cur.left - 18f - 16f else width - 16f - (cur.right + 18f)
+            val cwFull = tw * sc
+            val cw = when {
+                eq.isEmpty() || awayRoom >= cwFull || otherRoom >= cwFull -> cwFull
+                maxOf(awayRoom, otherRoom) >= MIN_CMP_W -> maxOf(awayRoom, otherRoom)
+                else -> cwFull
+            }
+            val besideX = when {
+                awayRoom >= cw -> if (itemRight) awayX else x - 6f - cw
+                otherRoom >= cw -> if (itemRight) cur.left - 18f - cw else cur.right + 18f
+                else -> -1f
+            }
+            val beside = eq.isEmpty() || besideX >= 16f
             val cmpX = if (beside) besideX else x
-            val needH = if (beside) maxOf(itemH, eqH) else itemH + 6f + eqH
-            val y0 = maxOf(top - 90f, minOf(maxOf(top, cur.top), bottom - needH))   // up over the bag bar only if it must
-            // a press on the pair's OWN cells shows it at once (b116); any other press, or the finger choosing the slot, waits
-            // out the quarter second like the game's hover (it was any press at all, so a tapped gear item showed at once)
-            val probe = UiKit.tooltip(c, x, y0, tw, name, Theme.quality(q), body, alpha = 0)
+            val colour = Theme.quality(q)
+            fun itemH(s: Float) = UiKit.tooltip(c, 0f, -9999f, tw, name, colour, body, alpha = 0, scale = s).height()
+            fun eqH(s: Float) = eq.sumOf { e ->
+                UiKit.tooltip(c, 0f, -9999f, cw, e.name, e.colour, e.lines, header = "Currently Equipped", alpha = 0, scale = sc * s).height().toDouble() + 6.0
+            }.toFloat()
+            // up over the bag bar only if it must. The item and its row decide; a compare beside is cut at the room's foot if it is
+            // taller. Stacked under the row: the whole stack if it fits, else the item and its row alone (the compare then cut)
+            val roomTop = top - 90f; val rowY = maxOf(top, cur.top)
+            val whole = BagsCursor.fit(roomTop, bottom, rowY, plateH) { s -> if (beside) itemH(s) else itemH(s) + 6f + eqH(s) }
+            val f = if (whole.scrollMax <= 0f || beside) whole else BagsCursor.fit(roomTop, bottom, rowY, plateH) { s -> itemH(s) }
+            val s = f.scale
+            // the scroll belongs to one item; a new item starts at its top
+            if (key != cutKey) { cutKey = key; scrolled = 0f }
+            scrolled = scrolled.coerceIn(0f, maxOf(0f, f.scrollMax))
+            // a press on the item's OWN cells shows it at once (b116); the first tooltip waits out the game's quarter second
+            val boxNow = RectF(x, f.y, x + tw, f.y + (if (f.scrollMax > 0f) f.h else itemH(s)))
             val pressed = acts.isNotEmpty() &&
-                downIn(UiKit.tooltipActions(c, probe, acts, alpha = 0), what.map { w -> if (w == EQUIP_OFF) null else keyOf(w) }) >= 0
+                downIn(UiKit.tooltipActions(c, boxNow, acts, alpha = 0), what.map { w -> if (w == EQUIP_OFF) null else keyOf(w) }) >= 0
             val a = if (pressed) 255 else fade
-            if (a <= 0) return                                // the quarter second: measured, nothing shown yet
-            val box = UiKit.tooltip(c, x, y0, tw, name, Theme.quality(q), body, alpha = a)
-            plate(c, box, acts, what, a)
-            var y = if (beside) y0 else y0 + itemH + 6f
-            for (e in eq) y = UiKit.tooltip(c, cmpX, y, cw, e.name, e.colour, e.lines, header = "Currently Equipped", alpha = a, scale = sc).bottom + 6f
+            if (a <= 0) { cut = null; return }               // the first quarter second: measured, nothing shown yet
+            if (f.scrollMax > 0f) {
+                c.save(); c.clipRect(x - 4f, f.y, x + tw + 4f, f.y + f.h)
+                UiKit.tooltip(c, x, f.y - scrolled, tw, name, colour, body, alpha = a, scale = s)
+                c.restore()
+                cut = RectF(boxNow); cutMax = f.scrollMax
+                zones.add(RectF(boxNow))
+            } else {
+                UiKit.tooltip(c, x, f.y, tw, name, colour, body, alpha = a, scale = s)
+                cut = null
+            }
+            plate(c, boxNow, acts, what, a)
+            if (f.scrollMax > 0f) moreMark(c, boxNow, scrolled > 0f, scrolled < f.scrollMax, a)
+            var y = if (beside) f.y else boxNow.bottom + plateH + 6f
+            c.save(); c.clipRect(0f, roomTop, width.toFloat(), bottom)
+            for (e in eq) y = UiKit.tooltip(c, cmpX, y, cw, e.name, e.colour, e.lines, header = "Currently Equipped", alpha = a,
+                scale = sc * s).bottom + 6f
+            c.restore()
+        }
+
+        private val pMore = Paint(Paint.ANTI_ALIAS_FLAG)
+        /** a cut tooltip: a small gold chevron at the edge that has more (up at the top, down over its row) */
+        private fun moreMark(c: Canvas, box: RectF, up: Boolean, down: Boolean, alpha: Int) {
+            pMore.color = Theme.gold; pMore.alpha = alpha; pMore.style = Paint.Style.FILL
+            val cx = box.right - 34f
+            fun chevron(y: Float, dir: Float) {
+                val p = Path().apply { moveTo(cx - 12f, y - 6f * dir); lineTo(cx + 12f, y - 6f * dir); lineTo(cx, y + 8f * dir); close() }
+                c.drawPath(p, pMore)
+            }
+            if (up) chevron(box.top + 18f, -1f)
+            if (down) chevron(box.bottom - 22f, 1f)
         }
 
         private val bat = IntArray(2)
@@ -866,9 +921,23 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         val c = if (current && bags.has("ctl")) bags.optJSONObject("ctl") else state.ctl
         state.ctl = c
         val changed = state.set(bags)
+        if (current) state.feed(android.os.SystemClock.uptimeMillis())
         if (state.ctlOn) state.follow()          // the item panel shows what the cursor is on
         if (changed) layoutAll()
         if (current) onCtl(c)
+    }
+
+    /**
+     * (a) THE LIGHT DOCUMENT (tracking 2026-10-22, the bags lag): a press that moves only the cursor / menu sends just bags.ctl
+     * ({type: "bagsctl", ctl}); the bags themselves come only when they change. Old documents say nothing about the controller now.
+     */
+    fun updateCtl(c: JSONObject, current: Boolean) {
+        if (!current) return
+        state.ctl = c
+        state.feed(android.os.SystemClock.uptimeMillis())
+        if (state.ctlOn) state.follow()
+        layoutAll()
+        onCtl(c)
     }
 
     // ------------------------------------------------------------------ controller mode
@@ -926,7 +995,17 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
      */
     fun onPadKey(k: String, down: Boolean) {
         if (kbOpen) { keyboardKey(k, down); return }
+        // (b) THE CURSOR AT ONCE (tracking's yes 2026-10-22: PadInput read only, reconciled by seq with the game's cursor, the game
+        // still gets every press): the D-pad moves the app's copy by the add-on's own rules (BagsCursor), in the order pressed
+        if (down && state.drag == null && state.predict.press(k, android.os.SystemClock.uptimeMillis())) {
+            state.follow(); grid.invalidate(); ctlLayer.invalidate()
+            removeCallbacks(staleTick); postDelayed(staleTick, BagsCursor.STALE_MS + 20L)
+        }
         ctlLayer.padKey(k, down)
+    }
+    /** no answer from the game: its own cursor shows again */
+    private val staleTick = Runnable {
+        if (state.predict.expire(android.os.SystemClock.uptimeMillis())) { state.follow(); grid.invalidate(); ctlLayer.invalidate() }
     }
 
     // ------------------------------------------------------------------ the search keyboard
@@ -1006,7 +1085,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             "one more take, bmvq col 29 sent=$sent")
     }
 
-    override fun onDetachedFromWindow() { removeCallbacks(takeCheck); super.onDetachedFromWindow() }
+    override fun onDetachedFromWindow() { removeCallbacks(takeCheck); removeCallbacks(staleTick); super.onDetachedFromWindow() }
 
     /**
      * RC3 (Bags session's condition): B leaves for Home only in mode "grid" with nothing in the hand, no touch drag, no keyboard,
@@ -1104,6 +1183,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         }
 
         /** a bag (or quiver) item: X equips it on the bag bar (Bags.lua EQ) */
+        /** (c) the game's tooltip [t] when it is about [key] (bag slot item), else null: a late one for a slot already left is dropped */
+        fun tipOfSlot(t: JSONObject?, key: String): JSONObject? = t?.takeIf { it.optString("key") == key }
+
         fun isBag(it: JSONObject) = it.optString("equip").let { e -> e == "INVTYPE_BAG" || e == "INVTYPE_QUIVER" }
 
         /** the game-art slot tile, shared by the grid, the bag bar and the panel */
@@ -1291,7 +1373,16 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         val equipping get() = ctlOn && ctl?.optString("mode").let { m -> m == "equip" || m == "equipping" || m == "bindask" }
         fun ctlEq(): JSONObject? = if (equipping) ctl?.optJSONObject("eq") else null
         /** the grid's cursor; none while equipping (it is on the bag bar then) */
-        fun ctlCur(): Pair<Int, Int>? = if (ctlOn && !equipping && !onBar) at(ctl?.optJSONObject("cur")) else null
+        fun ctlCur(): Pair<Int, Int>? = if (ctlOn && !equipping && !onBar) predict.shown ?: at(ctl?.optJSONObject("cur")) else null
+        /** (b) the app's copy of the cursor, ahead of the game's documents (BagsCursor) */
+        val predict = BagsCursor.Predictor()
+        /** the game's bags.ctl to the copy: its seq, its cursor, the open bags in order, something in the hand */
+        fun feed(now: Long) {
+            val c = ctl
+            val grid = ctlOn && c?.optString("mode") == "grid" && !onBar && !equipping
+            predict.game(grid, c?.optInt("seq", -1) ?: -1, at(c?.optJSONObject("cur")),
+                bags.filter { !shut(it.id) }.map { BagsCursor.Bag(it.id, it.slots) }, c?.has("pick") == true && !c.isNull("pick"), now)
+        }
         fun ctlPick(): Pair<Int, Int>? = if (ctlOn) at(ctl?.optJSONObject("pick")) else null
         /** select whatever the controller's cursor is on (an empty slot = nothing selected) */
         fun follow() {

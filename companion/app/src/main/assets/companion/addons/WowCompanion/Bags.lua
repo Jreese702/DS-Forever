@@ -669,8 +669,9 @@ end
 -- change is sent only when the encoded bags actually differ, so standing still is free and a
 -- loot costs at most one flush it would probably have shared with the position stream anyway.
 local lastBags = nil
-local lastDoc = nil         -- the last bags table sent: a controller press re-sends it with a new ctl
+local lastDoc = nil         -- the last bags table sent: a controller press sends its new ctl alone ("bagsctl")
 local queued = false
+local lastCtl = nil         -- the last ctl the app was sent, in either document
 
 local function sendBags(reason)
     queued = false
@@ -679,6 +680,7 @@ local function sendBags(reason)
     local json = WC.encode(b)
     if json == lastBags then return end
     lastBags = json; lastDoc = b
+    lastCtl = b.ctl and WC.encode(b.ctl) or nil
     WC.emit({ type = "full", v = WC.VERSION, reason = reason, bags = b })
 end
 
@@ -690,8 +692,9 @@ local function sendSoon(reason)
     C_Timer.After(0, function() sendBags(reason) end)
 end
 
--- a controller press changes only the cursor / menu, not the bags: re-send the last table with the
--- new ctl instead of collecting every slot again (once per frame, however many presses land in it)
+-- a controller press changes only the cursor / menu, not the bags: send the new ctl ALONE, a light "bagsctl" document (the bags
+-- lag, tracking 2026-10-22: re-encoding every slot of every bag on each press was most of it), once per frame however many presses
+-- land in it. The last bags table keeps the new ctl, so the next full send carries it too.
 local ctlQueued = false
 local function sendCtlSoon()
     if ctlQueued or queued then return end
@@ -700,11 +703,13 @@ local function sendCtlSoon()
         ctlQueued = false
         if queued then return end                   -- a full collect is on its way anyway
         if not lastDoc then sendBags("ctl"); return end
-        lastDoc.ctl = WC._bagsCtlDoc()
-        local json = WC.encode(lastDoc)
-        if json == lastBags then return end
-        lastBags = json
-        WC.emit({ type = "full", v = WC.VERSION, reason = "ctl", bags = lastDoc })
+        local c = WC._bagsCtlDoc()
+        lastDoc.ctl = c
+        local json = WC.encode(c)
+        if json == lastCtl then return end
+        lastCtl = json
+        lastBags = nil                              -- the bags table's ctl moved on: the next collect is sent whatever it holds
+        WC.emit({ type = "bagsctl", v = WC.VERSION, ctl = c })
     end)
 end
 
@@ -1003,19 +1008,36 @@ local BAR = {}              -- below: the cursor on the room's top strip, closed
 -- stat changes for gear (cmp: the app shows it by itself, the user's ruling). Read once per cursor position / item (the cache empties on every bags collect), never
 -- while an item is in the hand or a menu / dialog is open. An Interact without WC.tipOf: no tooltip lines (the app
 -- falls back to the item's name).
+-- (c) ONLY WHERE THE CURSOR RESTS (tracking 2026-10-22, the bags lag): reading the game's tooltip on every press cost each step;
+-- now a new slot's tooltip is read TIP_REST after the cursor reached it, if it is still there, and sent then (the app shows the
+-- item's own name and type meanwhile, and drops a tooltip whose key is not its slot's).
+local TIP_REST = 0.12
 local tipCache = { key = nil, val = nil }
-function WC._bagsTip()
+local tipWant = nil
+local function tipKey()
     if not (ctl.on and ctl.mode == "grid" and not ctl.pick) or type(WC.tipOf) ~= "function" then return nil end
     local id = bagItemID(ctl.bag, ctl.slot)
     if not id then return nil end
-    local key = "bag " .. ctl.bag .. " " .. ctl.slot .. " " .. id
-    if tipCache.key ~= key then
-        local ok, t = pcall(WC.tipOf, key)
-        tipCache.key = key; tipCache.val = (ok and type(t) == "table") and t or nil
-    end
-    return tipCache.val
+    return "bag " .. ctl.bag .. " " .. ctl.slot .. " " .. id
 end
-function WC._bagsTipForget() tipCache.key = nil; tipCache.val = nil end
+function WC._bagsTip()
+    local key = tipKey()
+    if not key then return nil end
+    if tipCache.key == key then return tipCache.val end
+    if tipWant ~= key then
+        tipWant = key
+        C_Timer.After(TIP_REST, function()
+            if tipWant ~= key then return end           -- the cursor moved on: that slot's own timer reads it
+            tipWant = nil
+            if tipKey() ~= key then return end
+            local ok, t = pcall(WC.tipOf, key)
+            tipCache.key = key; tipCache.val = (ok and type(t) == "table") and t or nil
+            sendCtlSoon()
+        end)
+    end
+    return nil
+end
+function WC._bagsTipForget() tipCache.key = nil; tipCache.val = nil; tipWant = nil end
 
 function WC._bagsCtlDoc()
     -- off, the last note still rides along: a refused take ("take-refused-npc", "-no way in", ...) or a
