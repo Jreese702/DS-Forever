@@ -31,7 +31,7 @@ class MarkerArtTest {
 
     @Test fun theShippedPinAndDiscRead() {
         val root = generateSequence(File("").absoluteFile) { it.parentFile }.firstOrNull { File(it, "companion/app/src/main/assets").isDirectory } ?: return
-        for ((path, size) in listOf(MarkerArt.PIN to 128, MarkerArt.DISC to 64)) {
+        for ((path, size) in listOf(MarkerArt.PIN to 128, MarkerArt.DISC to 64, MarkerArt.DIAMOND to 128)) {
             val d = MarkerArt.decode(File(root, "companion/app/src/main/assets/$path").readBytes())
             assertNotNull(path, d); assertEquals(size, d!!.first); assertEquals(size, d.second)
         }

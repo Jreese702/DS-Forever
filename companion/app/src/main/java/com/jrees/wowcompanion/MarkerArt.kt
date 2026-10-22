@@ -12,6 +12,9 @@ import android.graphics.Bitmap
 object MarkerArt {
     const val PIN = "companion/addons/WowCompanion/Media/marker_pin.tga"
     const val DISC = "companion/addons/WowCompanion/Media/quest_disc.tga"
+    /** test72 / cp32 (the user: "the current checkpoint should be the old diamond"): the CURRENT checkpoint's diamond - Interact's
+     *  art, the compass's and the world's own: white-shaded, tinted [PIN_GOLD], a black rim copy under it, its bottom tip on the point */
+    const val DIAMOND = "companion/addons/WowCompanion/Media/marker_diamond.tga"
     /** the spec's colours: the pin's gold #FFD14D, the disc's number #291700 */
     const val PIN_GOLD = 0xFFFFD14D.toInt()
     const val DISC_NUMBER = 0xFF291700.toInt()
@@ -50,6 +53,7 @@ object MarkerArt {
 
     @Volatile private var pinBmp: Bitmap? = null
     @Volatile private var discBmp: Bitmap? = null
+    @Volatile private var diamondBmp: Bitmap? = null
     @Volatile private var tried = false
 
     private fun load(ctx: Context, path: String): Bitmap? = runCatching {
@@ -59,10 +63,12 @@ object MarkerArt {
 
     private fun ensure(ctx: Context) {
         if (tried) return
-        synchronized(this) { if (tried) return; pinBmp = load(ctx, PIN); discBmp = load(ctx, DISC); tried = true }
+        synchronized(this) { if (tried) return; pinBmp = load(ctx, PIN); discBmp = load(ctx, DISC); diamondBmp = load(ctx, DIAMOND); tried = true }
     }
     /** the checkpoint pin (white-shaded: tint it), null when the asset could not be read */
     fun pin(ctx: Context): Bitmap? { ensure(ctx); return pinBmp }
+    /** the current checkpoint's diamond (white-shaded: tint it), null when the asset could not be read */
+    fun diamond(ctx: Context): Bitmap? { ensure(ctx); return diamondBmp }
     /** the quest objective's disc (coloured), null when the asset could not be read */
     fun disc(ctx: Context): Bitmap? { ensure(ctx); return discBmp }
     /** the disc when it is already loaded (UiKit draws without a Context: MapView loads it first) */
