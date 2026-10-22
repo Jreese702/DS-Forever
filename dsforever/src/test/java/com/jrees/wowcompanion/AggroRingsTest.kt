@@ -122,12 +122,16 @@ class AggroRingsTest {
         assertTrue(AggroFit.words(), AggroFit.words().contains("2.00 yd a level under (10 pulls"))
         // pulls that would say k = 6 (radius 0 at 5 under... wider than any bound): held at K_MAX
         AggroFit.reset()
-        repeat(5) { AggroFit.add(pull(16, 20, 0.0, 1.0)) }               // 4 under, r 0..1: k 4.75..5
+        repeat(AggroFit.MIN_PULLS) { AggroFit.add(pull(16, 20, 0.0, 1.0)) }   // 4 under, r 0..1: k 4.75..5
         assertEquals(AggroFit.K_MAX, AggroFit.kBelow(), 1e-9)
     }
 
     @Test fun pullsNearTheLevelTeachTheBaseNotTheSlope() {
-        repeat(3) { AggroFit.add(pull(14, 14, 22.0, 24.0)) }
+        // test70: a few pulls teach nothing (4 had moved the base to 11 yd)
+        repeat(4) { AggroFit.add(pull(14, 14, 10.0, 11.0)) }
+        assertEquals(20.0, AggroFit.base(500, null), 1e-9)
+        AggroFit.reset()
+        repeat(AggroFit.MIN_PULLS) { AggroFit.add(pull(14, 14, 22.0, 24.0)) }
         assertEquals(22.0, AggroFit.base(500, null), 1e-9)
         assertEquals(AggroFit.K_BELOW_PRIOR, AggroFit.kBelow(), 1e-9)
         assertEquals(22.0 - 2 * AggroFit.K_BELOW_PRIOR, AggroFit.radius(12, 14, 500), 1e-9)

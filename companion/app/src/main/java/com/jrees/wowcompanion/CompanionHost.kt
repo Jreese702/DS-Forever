@@ -3088,7 +3088,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     // why the game's pin is or isn't set, logged once per change (test13: no checkpoint marker on the compass, and no line said why)
     private var pinStateLast = ""
-    private fun pinState(why: String) { if (why != pinStateLast) { pinStateLast = why; Log.i("WCMAP", "route pin: $why") } }
+    private var pinStateAt = 0L
+    /** the pin's why, logged when it CHANGES (its "N yd ahead" aside: test70 logged it 4-5 times a second while walking) or every 5 s */
+    private fun pinState(why: String) {
+        val key = why.replace(Regex(""", \d+ yd ahead"""), "")
+        val now = SystemClock.elapsedRealtime()
+        if (key != pinStateLast || now - pinStateAt >= 5_000L) { pinStateLast = key; pinStateAt = now; Log.i("WCMAP", "route pin: $why") }
+    }
 
     // POLESTAR AS THE ROUTER (b-route-polestar): PolestarNav decides the taps of Map.lua's row "pnav" (only while the setting is Polestar;
     // switching away cancels its guidance)

@@ -44,9 +44,12 @@ object AggroFit {
     const val K_BELOW_PRIOR = 2.2
     const val K_MIN = 1.0
     const val K_MAX = 3.5
-    /** the equal-level base's bounds whatever the pulls say */
-    const val BASE_MIN = 12.0
-    const val BASE_MAX = 30.0
+    /** the equal-level base's bounds whatever the pulls say (test70: 4 near-level pulls had moved it to 11 yd) */
+    const val BASE_MIN = 15.0
+    const val BASE_MAX = 26.0
+    /** a tier (all, a creature type, an npc; the slope) moves off its prior only with this many pulls - a few social pulls or links
+     *  must not teach it (test70's base 11 from 4 pulls) */
+    const val MIN_PULLS = 8
     /** pulls this near the player's level (and above) teach the base; those [BELOW] levels or more under it teach the slope */
     const val NEAR = -1
     const val BELOW = -2
@@ -144,15 +147,15 @@ object AggroFit {
         // the BASE from the pulls at or near the player's level (classic's yard a level there); the SLOPE from those well under it
         val near = recs.filter { it.lv - it.plv >= NEAR }
         fun iv(r: Rec): Pair<Double, Double> { val diff = (r.lv - r.plv).toDouble(); return (r.lo - diff) to (r.hi - diff) }
-        val all = if (near.isEmpty()) null else fit(near.map(::iv), DEFAULT_BASE)
+        val all = if (near.size < MIN_PULLS) null else fit(near.map(::iv), DEFAULT_BASE)
         val prior0 = all?.base ?: DEFAULT_BASE
-        val types = near.filter { it.ct != null }.groupBy { it.ct!! }.mapValues { (_, rs) -> fit(rs.map(::iv), prior0) }
-        val npcs = near.filter { it.n != null }.groupBy { it.n!! }.mapValues { (_, rs) ->
+        val types = near.filter { it.ct != null }.groupBy { it.ct!! }.filterValues { it.size >= MIN_PULLS }.mapValues { (_, rs) -> fit(rs.map(::iv), prior0) }
+        val npcs = near.filter { it.n != null }.groupBy { it.n!! }.filterValues { it.size >= MIN_PULLS }.mapValues { (_, rs) ->
             val ct = rs.firstNotNullOfOrNull { it.ct }
             fit(rs.map(::iv), ct?.let { types[it]?.base } ?: prior0) }
         // k: each pull under the player's level, r in [lo, hi] at r = b + diff x k (b its tier's base): k in [(b - hi) / -diff, (b - lo) / -diff]
         val below = recs.filter { it.lv - it.plv <= BELOW }
-        val kFit = if (below.isEmpty()) null else fit(below.map { r ->
+        val kFit = if (below.size < MIN_PULLS) null else fit(below.map { r ->
             val b = (r.n?.let { npcs[it]?.base } ?: r.ct?.let { types[it]?.base } ?: prior0).coerceIn(BASE_MIN, BASE_MAX)
             val dd = (r.plv - r.lv).toDouble(); (b - r.hi) / dd to (b - r.lo) / dd }, K_BELOW_PRIOR)
         return Model(all, types, npcs, (kFit?.base ?: K_BELOW_PRIOR).coerceIn(K_MIN, K_MAX), kFit)

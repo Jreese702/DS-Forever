@@ -20,7 +20,7 @@ object MarkerArt {
     const val SECOND_SIZE = 0.8f
     const val SECOND_ALPHA = 0.75f
     const val FADE_FAR_YD = 25.0
-    const val FADE_NEAR_YD = 0.0                  // reached (DangerGrid.PASS_YD 4 yd passes it: 0.16 then gone)
+    const val FADE_NEAR_YD = 10.0                 // test70: gone at 10 yd, exactly when DangerGrid.PASS_YD passes it
 
     /** the nearer checkpoint's alpha at [yd] from the player: full at [FADE_FAR_YD] and beyond, 0 at [FADE_NEAR_YD] */
     fun nearAlpha(yd: Double): Float = ((yd - FADE_NEAR_YD) / (FADE_FAR_YD - FADE_NEAR_YD)).coerceIn(0.0, 1.0).toFloat()
