@@ -336,11 +336,14 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
             return DangerGrid(nx, ny, d, ax, ay, terr)
         }
 
-        /** a checkpoint within this many yards of the player is passed (the user on test45: the next one then leads) */
-        const val PASS_YD = 25.0
+        /** a checkpoint within this many yards of the player is passed (the user on test45: the next one then leads). test68 (the user:
+         *  the nearer marker full until 25 yd, gone when you reach it): REACHED, not near - 4 yd (the add-on's C.RT.NEAR, cp29). A
+         *  runner (about 7 yd between position updates) who steps over it between two reads is caught by [PAST_YD] at the next one; one
+         *  walking a few yards beside it too */
+        const val PASS_YD = 4.0
         /** past the line across the leg through the checkpoint by this much (the next stretch's way): passed (a margin, so a player
-         *  coming up beside a sharp bend is not taken as past it) */
-        const val PAST_YD = 8.0
+         *  coming up beside a sharp bend is not taken as past it; 8 -> 5 yd with test68's reached radius) */
+        const val PAST_YD = 5.0
         /** nearer the next point than the checkpoint is by this much, while within [SKIRT_YD] of it: passed (skirted, the right way) */
         const val NEARER_YD = 15.0
         const val SKIRT_YD = 80.0

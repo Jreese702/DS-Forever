@@ -4066,10 +4066,20 @@ class MapView(context: Context) : View(context) {
      */
     private fun flagDz(m: JSONObject, x: Double, y: Double): Double {
         val r = rect ?: return Double.NaN
-        val pz = m.optDouble("wz", Double.NaN); if (pz.isNaN()) return Double.NaN
-        val h = Terrain.heightsOf(m.optInt("mapID", 0))?.at(r.top - y * r.height, r.left - x * r.width) ?: return Double.NaN
-        return if (h.isNaN()) Double.NaN else h - pz
+        val hg = Terrain.heightsOf(m.optInt("mapID", 0)) ?: return Double.NaN
+        val h = hg.at(r.top - y * r.height, r.left - x * r.width).toDouble()
+        // cp29 (Interact: the second world marker lifted off screen, its height tens of yards off): the flag's terrain cell against the
+        // PLAYER'S OWN terrain cell - not the player's z: on a deck, a floor, a bridge, in a cave the player stands yards off the
+        // terrain's 25 yd cell mean under them, and that offset went into every flag. Terrain to terrain cancels it (both cell means);
+        // an implausible step ([FLAG_DZ_MAX]) is "unknown"
+        val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
+        val h0 = if (px.isNaN() || py.isNaN()) Double.NaN else hg.at(r.top - py * r.height, r.left - px * r.width).toDouble()
+        if (h.isNaN() || h0.isNaN()) return Double.NaN
+        val dz = h - h0
+        return if (kotlin.math.abs(dz) > FLAG_DZ_MAX) Double.NaN else dz
     }
+    /** a flag more than this above or below the player's own ground: unknown (a cell mean across a cliff, a void) */
+    private val FLAG_DZ_MAX = 60.0
     /** cp19: the checkpoints after the pin's, as [routePin] found them last (this map's 0..1, and [flagDz] third; the world marker's flags) */
     var pinMore: List<DoubleArray> = emptyList(); private set
     /** ag5: [routePin] found the app ROUTING the game-focused quest (SafePath, or the corpse run), whether or not a pin goes up */
@@ -4767,7 +4777,7 @@ class MapView(context: Context) : View(context) {
     /**
      * A ROUTE CHECKPOINT (cp27, the user on test65: "can we make the checkpoint markers consistent on all areas?"): the world's and the
      * compass's own gold pin (MarkerArt: marker_pin.tga tinted #FFD14D over a black rim), its tip on the point; the [next] one full size,
-     * the second at MarkerArt.SECOND_SIZE / SECOND_ALPHA; [alpha] the nearer one's fade (45 yd full, 0 at 25 yd: gone when passed). The
+     * the second at MarkerArt.SECOND_SIZE / SECOND_ALPHA; [alpha] the nearer one's fade (25 yd full, 0 as it is reached: test68). The
      * old pennant only while the art cannot be read
      */
     private fun drawFlag(c: Canvas, x: Float, y: Float, next: Boolean, alpha: Float = 1f) {

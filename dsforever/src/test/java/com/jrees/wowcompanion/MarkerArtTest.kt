@@ -37,12 +37,12 @@ class MarkerArtTest {
         }
     }
 
-    @Test fun theNearerOneFadesFrom45To25Yards() {
+    @Test fun theNearerOneFadesFrom25YardsToNothingAsItIsReached() {
         assertEquals(1f, MarkerArt.nearAlpha(80.0), 0f)
-        assertEquals(1f, MarkerArt.nearAlpha(45.0), 0f)
-        assertEquals(0.5f, MarkerArt.nearAlpha(35.0), 1e-6f)
-        assertEquals(0f, MarkerArt.nearAlpha(25.0), 0f)                // gone exactly when passed
-        assertEquals(0f, MarkerArt.nearAlpha(5.0), 0f)
+        assertEquals(1f, MarkerArt.nearAlpha(25.0), 0f)                // test68: full until 25 yd
+        assertEquals(0.5f, MarkerArt.nearAlpha(12.5), 1e-6f)
+        assertEquals(0.16f, MarkerArt.nearAlpha(DangerGrid.PASS_YD), 1e-6f)  // reached: passed at 4 yd
+        assertEquals(0f, MarkerArt.nearAlpha(0.0), 0f)
         assertEquals(0.8f, MarkerArt.SECOND_SIZE, 0f); assertEquals(0.75f, MarkerArt.SECOND_ALPHA, 0f)
     }
 }
