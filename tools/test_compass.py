@@ -746,7 +746,7 @@ def main():
         all(a is True and abs(b - 1) < 1e-9 and c is True and abs(x - nx) < 0.01 for a, b, c, x in seq))
     # a super-track flip (a moment off our pin while the route is active): held at the pin, never jumping to the quest's point
     L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end")
-    navset(nx - 300)                                     # (the engine now projecting the quest, elsewhere)
+    navset()                                             # (the engine now projecting the quest - here on the pin's own spot)
     xs = []
     for _ in range(6):
         frames(1, read=True)
@@ -1021,6 +1021,47 @@ def main():
     gLook = [(v["cpin"], v["cdisc"]) for r in log for id_, v in r["st"].items() if id_ == gid and v["ca"] > 0]
     chk("cp27: on the compass every checkpoint is our pin, never the disc (%d marker-frames); the objective the disc, never a pin (%d)"
         % (len(cpLook), len(gLook)), cpLook and all(p and not d for p, d in cpLook) and gLook and all(d and not p for p, d in gLook))
+    # cp28 (test66: "most times I can't see anything"; the log: st false, n 0-1): mid-route with the game super-tracking the QUEST
+    # (not our pin) - the engine's point is the quest's, neither of the two shown. The camera's yaw and pitch come from it anyway:
+    # checkpoints 80 and 130 yd ahead are shown at once, at their projections, the nearer at full alpha, the second at 0.75
+    G.px, G.py = 0.5, 0.5
+    G.facing = 0.0; C.cam.abs = C.cam.ref = 0.0
+    P1, P2, Q = (80, 5), (130, -8), (300, 40)
+    G.quest = L.table(*mp(*Q)); G.pin = L.table(*mp(*P1))
+    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end")
+    L.execute("WowCompanion.routeWp = { active = true, qid = 123, more = { { m = GAME.map, x = %r, y = %r } } }" % mp(*P2))
+
+    def navAt(t):
+        rel = math.atan2(t[1], t[0])
+        d = math.hypot(*t)
+        G.nav = L.table_from({"x": c0 - c0 * math.tan(rel), "y": 384 + proj(0.35, d * math.cos(rel), 0), "clamped": False})
+    navAt(Q)
+    n0 = len(L.globals().SENT)
+    frames(90, read=True)
+    i1, i2 = "cp:80:5", "cp:130:-8"
+    o1, o2 = W.obj[i1], W.obj[i2]
+
+    def want(t):
+        rel = math.atan2(t[1], t[0])
+        return c0 - c0 * math.tan(rel), 384 + proj(0.35, math.hypot(*t) * math.cos(rel), 0)
+    w1, w2 = want(P1), want(P2)
+    chk("cp28: st false mid-route: the 80 yd checkpoint SHOWN at full alpha (%.2f) at its spot (%.1f, %.1f; want %.1f, %.1f)"
+        % (o1.f.alpha if o1 else -1, o1.f.point[4] if o1 else -1, o1.f.point[5] if o1 else -1, w1[0], w1[1]),
+        o1 is not None and o1.f.shown is True and abs(o1.f.alpha - 1) < 1e-9 and abs(o1.f.point[4] - w1[0]) < 0.5
+        and abs(o1.f.point[5] - w1[1]) < 0.5 and W.engKind == "quest" and W.engId is None)
+    chk("cp28: ... the 130 yd one shown too at 0.75 (%.2f) at its spot (%.1f; want %.1f)" % (o2.f.alpha if o2 else -1,
+        o2.f.point[4] if o2 else -1, w2[0]), o2 is not None and o2.f.shown is True and abs(o2.f.alpha - 0.75) < 1e-9
+        and abs(o2.f.point[4] - w2[0]) < 0.5 and abs(o2.f.point[5] - w2[1]) < 0.5)
+    G.nav = None
+    frames(60 * 10, read=True)
+    chk("cp28: ... and still both shown 10 s after the engine's point left the screen (the pitch kept)", o1.f.shown is True and o2.f.shown is True)
+    mk = [L.globals().SENT[i] for i in range(n0 + 1, len(L.globals().SENT) + 1) if getattr(L.globals().SENT[i], "probe", None) == "wmk"]
+    last = mk[-1] if mk else None
+    ms = {last.m[i].id: last.m[i] for i in range(1, len(last.m) + 1)} if last else {}
+    chk("cp28: a 'wmk' line a second (%d in 11.5 s) with each one's distance, alphas, spot and how: %s" % (len(mk),
+        [(k_, v.d, v.a, v.wa, v.x, v.how) for k_, v in ms.items()]),
+        10 <= len(mk) <= 13 and ms.get(i1) and ms[i1].d == 80 and ms[i1].a == 100 and ms[i1].wa == 100 and ms[i1].how == "est"
+        and ms[i1].x is not None and ms.get(i2) and ms[i2].wa == 75 and last.eng == "quest")
     G.px, G.py, G.facing, C.cam.abs, C.cam.ref, G.pin, G.quest = keepW
     L.execute("""C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end
                  WowCompanion.routeWp = { active = true, more = { { m = GAME.map, x = 0.7, y = 0.35 }, { m = GAME.map, x = 0.4, y = 0.3 } } }
@@ -1029,9 +1070,11 @@ def main():
     navset()
     frames(60, read=True)
     G.nav = None; frames(60 * 4, read=True)
-    chk("cp20: no pitch for over 3 s: hidden", W.list[2].f.shown is False)
+    chk("cp28: the engine's point gone 4 s: the pitch keeps (only a tilt moves it), the second still shown", W.list[2].f.shown is True)
+    G.ry = 0.6; frames(60, read=True); G.ry = 0
+    chk("cp20: ... a tilt of the camera since: hidden (held, then a fade) rather than floating", W.list[2].f.shown is False and W.tilted is True)
     L.execute("WowCompanion.routeWp.active = false")
-    frames(3, read=True)
+    frames(30, read=True)
     chk("cp19: the route's pin gone: no flags", W.n == 0 and W.list[2].f.shown is False)
     L.execute("WowCompanion.routeWp = nil")
     G.nav = L.table_from({"x": c0 + c0 * math.tan(math.radians(22.5)), "y": 500.0, "clamped": False})
