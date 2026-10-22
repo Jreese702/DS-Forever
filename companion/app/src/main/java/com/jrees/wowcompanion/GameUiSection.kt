@@ -107,10 +107,10 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         GameUi.Row(TIPS_ID, "Hide game tooltips", null, if (s.hide) UiMode.ON else UiMode.OFF, true, s.hide,
             if (s.hide) "Hidden: the game's tooltips are invisible on the top screen" else "Off: the game's tooltips show as usual")
     }
-    /** ar1: "Aggro rings" (default on), shown once the add-on set has them */
+    /** at1: "Aggro tint" (default on; ar1's "Aggro rings" switch), shown once the add-on set has it */
     private fun ringsRow(): GameUi.Row? = RingsSwitch.state?.let { s ->
-        GameUi.Row(RINGS_ID, "Aggro rings", null, if (s.show) UiMode.ON else UiMode.OFF, true, !s.show,
-            if (s.show) "On: a ring on the ground under hostile mobs, their aggro range" else "Off: no rings on the top screen")
+        GameUi.Row(RINGS_ID, "Aggro tint", null, if (s.show) UiMode.ON else UiMode.OFF, true, !s.show,
+            if (s.show) "On: hostile nameplates glow yellow, orange, then red as you near their aggro range" else "Off: no tint on the nameplates")
     }
     private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
     private var selected: String? = null

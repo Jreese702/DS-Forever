@@ -337,8 +337,8 @@ object CompassSwitch {
 }
 
 /**
- * ar1 (the user's "Both" / "Keep separate"): Settings > Top screen's "Aggro rings" (default on): the add-on's rings on the ground under
- * hostile mobs not yet pulled (Trail.lua's WC.rings). The row follows the add-on's word (proof.ringc.show); one tap, tried once more.
+ * at1 (the user's "Nameplate tint plus bottom map"; ar1's "Aggro rings" switch): Settings > Top screen's "Aggro tint" (default on): the
+ * add-on's tint round the nameplates of hostile mobs not yet pulled (Trail.lua's WC.rings). The row follows the add-on's word (proof.ringc.show); one tap, tried once more.
  */
 object RingsSwitch {
     data class State(val show: Boolean, val colOn: Int, val colOff: Int)
