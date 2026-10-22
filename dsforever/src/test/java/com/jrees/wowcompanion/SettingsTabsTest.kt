@@ -27,6 +27,12 @@ class SettingsTabsTest {
         val reloaded = done.copy(set = mapOf("player" to true, "target" to true, "np" to true))
         val n3 = GameUi.swNext(reloaded) { defaults[it]!! }
         assertEquals(GameUi.SW_PRD to true, n3); assertEquals(7, GameUi.swCol(reloaded, n3!!.first, n3.second))
+        // the world markers: off by default; a fresh add-on showing them gets WM_OFF once the rest is as chosen
+        assertEquals(false, GameUi.swWant(GameUi.SW_WM))
+        val wmCols = cols + mapOf("WM_OFF" to 8, "WM_ON" to 9)
+        val wm = GameUi.Sw("uisw", wmCols, false, false, true, true, mapOf("player" to true, "target" to true, "np" to true, "prd" to true), wm = true)
+        val n4 = GameUi.swNext(wm) { (defaults + (GameUi.SW_WM to false))[it]!! }
+        assertEquals(GameUi.SW_WM to false, n4); assertEquals(8, GameUi.swCol(wm, n4!!.first, n4.second))
         // an add-on without a part (null): never tapped for it
         val older = GameUi.Sw("uisw", cols, null, null, null, null, emptyMap())
         assertEquals(null, GameUi.swNext(older) { defaults[it]!! })
@@ -52,7 +58,7 @@ class SettingsTabsTest {
     @Test fun qolTabInTheApprovedOrder() {
         assertEquals(listOf(B.SMART_Y, B.QOL_HUD, B.QOL_NAV, B.QOL_COMBAT), SettingsTabs.blocks(T.QOL))
         assertEquals(listOf("Resource bar", "HUD height", "HUD width", "HUD scale"), B.QOL_HUD.rows)
-        assertEquals(listOf("Compass bar", "Compass follows the camera", "Avoid dangerous areas"), B.QOL_NAV.rows)
+        assertEquals(listOf("Compass bar", "World markers", "Compass follows the camera", "Avoid dangerous areas"), B.QOL_NAV.rows)
         assertEquals(listOf("Aggro tint"), B.QOL_COMBAT.rows)
         assertEquals(listOf(B.SMART_Y), SettingsTabs.viewBlocks(T.QOL))   // Smart Y by SettingsView, the groups by GameUiSection's QOL part
         // Top screen keeps only the game's own windows

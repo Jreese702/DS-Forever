@@ -118,7 +118,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             GameUi.nameplatesRow(), tipsRow())
         // QOL: three groups, each under its heading (a "#" row); the rows, their ids and taps are the ones Top screen had
         Part.QOL -> group("HUD", listOfNotNull(GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow())) +
-            group("Navigation", listOfNotNull(compassRow(), compassCamRow(), dangerRow())) +
+            group("Navigation", listOfNotNull(compassRow(), GameUi.worldMarkersRow(), compassCamRow(), dangerRow())) +
             group("Combat", listOfNotNull(ringsRow()))
         else -> GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
     }
@@ -225,6 +225,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                             GameUi.PLAYER_ID -> GameUi.setSwitch(GameUi.SW_PLAYER, m == UiMode.ON)
                             GameUi.TARGET_ID -> GameUi.setSwitch(GameUi.SW_TARGET, m == UiMode.ON)
                             GameUi.NP_ID -> GameUi.setSwitch(GameUi.SW_NP, m == UiMode.ON)
+                            GameUi.WM_ID -> GameUi.setSwitch(GameUi.SW_WM, m == UiMode.ON)
                             else -> GameUi.setMode(it, m)
                         }
                     }
@@ -338,7 +339,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             return
         }
         val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == TIPS_ID || r.id == RINGS_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.HUD_ID ||
-            r.id == GameUi.PLAYER_ID || r.id == GameUi.TARGET_ID || r.id == GameUi.NP_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
+            r.id == GameUi.PLAYER_ID || r.id == GameUi.TARGET_ID || r.id == GameUi.NP_ID || r.id == GameUi.WM_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
         val sw = (right - left - gap * (modes.size - 1)) / modes.size
         var x = left
         for (m in modes) {
@@ -378,6 +379,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         if (r.id == GameUi.HUD_ID) return if (r.mode == UiMode.ON)
             "The resource bar under your character: health, power, buffs and debuffs. For this character."
             else "No resource bar under your character."
+        if (r.id == GameUi.WM_ID) return if (r.mode == UiMode.ON) "Markers stand in the 3D world on the next checkpoint and the quest. For this character."
+            else "No markers in the 3D world; the compass bar still shows them. For this character."
         if (r.id == GameUi.PLAYER_ID) return if (r.mode == UiMode.ON) "The game's player frame stays on the top screen. For this character."
             else "The game's player frame (and its pet frame) is hidden. For this character."
         if (r.id == GameUi.TARGET_ID) return if (r.mode == UiMode.ON) "The game's target frame stays on the top screen. For this character."
