@@ -20,19 +20,46 @@ object AggroRings {
      *  draw a crisp ring (it stays in the route's danger, weighted by its trust) */
     const val MAX_U_YD = 8.0
 
-    /** the reach (yd) of a mob of level [lm] (-1 a skull; null unknown: [bracket]'s midpoint, else the player's level) for a player of [lp] */
-    fun radius(lm: Int?, lp: Int, bracket: IntRange? = null): Double {
-        val l = when {
-            lm == -1 -> lp + SKULL_PLUS
-            lm != null -> lm
-            bracket != null -> (bracket.first + bracket.last + 1) / 2
-            else -> lp
+    /** the reach (yd) of a mob of level [lm] (-1 a skull; null unknown: [bracket]'s midpoint, else the player's level) for a player of
+     *  [lp]: THE SHARED RULE, fitted and learned ([AggroFit.radius]: the user's "Fit it"); [n] / [ct] its npc / type (their learned base) */
+    fun radius(lm: Int?, lp: Int, bracket: IntRange? = null, n: Int? = null, ct: Int? = null): Double = AggroFit.radius(lm, lp, n, ct, bracket)
+
+    // ---------------------------------------------------------------- the spawn circles
+
+    /** the user, 2026-10-22 ("Spawn circles"): spawns this near the player get a circle, at most [SPAWN_CAP] (the nearest) */
+    const val SPAWN_NEAR_YD = 125.0
+    const val SPAWN_CAP = 40
+
+    /** a known spawn's circle: [key] the spawn, world ([x], [y]), [r] yd (the shared rule at its level range's middle), [inside] the
+     *  player stands in it, [solid] a live plate of its npc is confirmed there (else faint: a mob may or may not stand there now) */
+    class SpawnRing(val key: Int, val x: Double, val y: Double, val r: Double, val inside: Boolean, val solid: Boolean)
+
+    /**
+     * THE SPAWN CIRCLES (the user's "Spawn circles"): round each KNOWN SPAWN of a creature hostile to the player (QuestieDB's, this map's)
+     * within [SPAWN_NEAR_YD], its aggro reach by the shared rule ([radius] at its level range's middle, its npc's learned base) - FAINT
+     * by default (a spawn, not a mob seen); SOLID when a live plate of that npc is CONFIRMED there: its distance bands from the player's
+     * spots hold the spawn ([LivePlace.bracket] widened by the wander), the plate unpulled. A spawn a live ring already stands on
+     * ([liveKeys]: a sure snap) is left to that ring. The nearest [SPAWN_CAP].
+     */
+    fun spawnRings(spawns: List<LivePlace.SpawnPt>, plates: List<Plate>, lp: Int, px: Double, py: Double, maxd: Double? = null,
+                   liveKeys: Set<Int> = emptySet()): List<SpawnRing> {
+        if (px.isNaN() || py.isNaN()) return emptyList()
+        val near = spawns.asSequence().filter { it.hostileToMe && it.key !in liveKeys }
+            .map { it to hypot(it.x - px, it.y - py) }.filter { it.second <= SPAWN_NEAR_YD }
+            .sortedBy { it.second }.take(SPAWN_CAP).toList()
+        val live = plates.filter { t -> t.mob.aggressive && !t.mob.dd && t.mob.td != true && t.mob.cb != true && t.mob.n != null }
+        return near.map { (s, d) ->
+            val r = radius(null, lp, s.minLv..s.maxLv, s.npc)
+            val solid = live.any { t -> t.mob.n == s.npc && (t.placed?.spawn?.key == s.key ||
+                LivePlace.bracket(t.mob, maxd).let { (a, b) -> d >= a - LivePlace.WANDER_YD && d <= b + LivePlace.WANDER_YD }) }
+            SpawnRing(s.key, s.x, s.y, r, d <= r, solid)
         }
-        return (BASE_YD + (l - lp)).coerceIn(MIN_YD, MAX_YD)
     }
 
     /** one ring: [id] the plate's track, world ([x], [y]), [r] yd, [inside] the player stands in it; [why] its placement's inputs (the log) */
-    class Ring(val id: Long, val x: Double, val y: Double, val r: Double, val inside: Boolean, val why: String = "")
+    class Ring(val id: Long, val x: Double, val y: Double, val r: Double, val inside: Boolean, val why: String = "",
+               /** the spawn it stands on (a sure snap), null none: that spawn's own circle is left to it */
+               val spawnKey: Int? = null)
     /** the rings of a look, and the plates left out by reason (the log's counts) */
     class Look(val rings: List<Ring>, val plates: Int, val combat: Int, val band: Int, val vague: Int, val other: Int) {
         fun words() = "${rings.size} rings of $plates plates (in combat $combat, distance band only $band, place too vague $vague, other $other)"
@@ -69,10 +96,11 @@ object AggroRings {
                 !honest(m, p) -> { vague++; continue }
             }
             p!!
-            val r = radius(m.lv, lp, p.spawn?.let { it.minLv..it.maxLv })
+            val r = radius(m.lv, lp, p.spawn?.let { it.minLv..it.maxLv }, m.n, m.ct)
             val why = "${p.how}${if (p.spawn != null) " spawn ${p.spawn.key}${if (p.sure) " sure" else ""}" else ""} at ${p.x.toInt()},${p.y.toInt()} " +
                 "u ${"%.1f".format(p.u)} yd; band ${m.a?.toInt() ?: "-"}..${m.b?.toInt() ?: "-"}, br ${m.br?.let { "%.2f".format(it) } ?: "-"} (${m.bs ?: "-"}), lv ${m.lv ?: "-"} -> ${r.toInt()} yd"
-            out.add(Ring(t.id, p.x, p.y, r, !px.isNaN() && !py.isNaN() && hypot(px - p.x, py - p.y) <= r, why))
+            out.add(Ring(t.id, p.x, p.y, r, !px.isNaN() && !py.isNaN() && hypot(px - p.x, py - p.y) <= r, why,
+                p.spawn?.key?.takeIf { p.how == LivePlace.How.SPAWN && p.sure }))
         }
         return Look(out, plates.size, combat, band, vague, other)
     }
