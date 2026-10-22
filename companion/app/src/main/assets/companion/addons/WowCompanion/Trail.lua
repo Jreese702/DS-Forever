@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp27" }
+WC.compass = { V = "cp28" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -723,7 +723,7 @@ do
     --   camera pitch is readable: the horizon band), the middle of the screen when the engine's point is not to be seen.
     --   IN FRONT: tested against the camera's yaw, also with the bar on the facing (the estimate runs always, cp19).
     C.wm = { SIZE = 34, EASE_S = 0.12, LAND_S = 0.5,
-             list = {}, obj = {}, free = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 3, TILT = 0.1, PITCH0 = 0.3,
+             list = {}, obj = {}, free = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 60, MK_S = 1, mkAt = -100, TILT = 0.1, PITCH0 = 0.3,
              JUMP_V = 7.9558, MOUNT_V = 7.9558, GRAV = 19.2911, PRESS_S = 0.3, jumpAt = -100, jumpN = 0, LOG_S = 5, logAt = -100,
              GOLD = { 1, 0.82, 0.3 }, QUEST = { 1, 0.93, 0.5 }, PIN = "Interface\\AddOns\\WowCompanion\\Media\\marker_pin",
              HOLD_S = 0.6, IN_S = 0.15, OUT_S = 0.25, FRONT_IN = 10, FRONT_OUT = 16, VIS_S = 10, visAt = -100,
@@ -954,7 +954,7 @@ do
             if on[id] then
                 want, o.goodAt, o.holdWhy = 1, now, nil
             else
-                local why = (st and lost[id]) or (st and "gone") or "passed"
+                local why = (st and lost[id]) or (st and "gone") or "left"          -- (left: no longer one of C.RT's shown)
                 if st and C.wmDROP[why] and o.goodAt and now - o.goodAt < W.HOLD_S and (o.a or 0) > 0 then
                     want = 1
                     V.held = V.held + 1
@@ -1023,68 +1023,94 @@ do
             local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
             onPin = okP and onPin == true
             -- cp26: the one the engine marks (our pin while super-tracked, else the quest's objective): placed on the engine's own
-            -- point (and the camera's pitch and exact yaw read from it); every other shown one by the camera's yaw and pitch
+            -- point; every other shown one by the camera's yaw and pitch.
+            -- cp28 (test66, the user: "most times I can't see anything, and they fade in only as I get close to one"; the log: st
+            -- false, n 0-1): the camera's exact yaw and its PITCH were read from the engine's point only while the engine's target was
+            -- one of the two shown - with the game super-tracking the quest (not our pin) mid-route it was neither, the pitch went stale
+            -- in PITCH_S (3 s) and every marker placed by the estimate hid ("pitch"). Now the engine's point is READ whatever it marks
+            -- (our pin, else the super-tracked quest's spot - the compass's own reads), for the yaw and the pitch, and a marker is put
+            -- on it only when it is one of the two. The pitch keeps until the camera stick tilts (PITCH_S 60: only a tilt moves it).
+            local tg = C.tg_ or {}
+            local engW = (onPin and tg.pin) or ((not onPin) and tg.quest) or nil
+            if onPin then                                  -- (our pin read NOW: the engine's point moves with it the same frame)
+                local okW, wp = pcall(C_Map.GetUserWaypoint)
+                if okW and type(wp) == "table" and wp.position then
+                    local px, py = C.xy(wp.position)
+                    if px then engW = C.world(wp.uiMapID, px, py) or engW end
+                end
+            end
+            -- the shown one the engine marks: ITS spot the engine's (not a list a read behind: the old pin's marker never put on
+            -- the new pin's point)
             local engId
             for id, st in pairs(S) do
-                if st.rank and st.it and ((onPin and st.it.pin) or (not onPin and st.kind == "goal")) then engId = id end
+                if st.rank and st.it and engW and ((onPin and st.it.pin) or (not onPin and st.kind == "goal"))
+                    and math.abs(st.w.x - engW.x) < 2 and math.abs(st.w.y - engW.y) < 2 then engId = id end
             end
             W.engId = engId
+            W.engKind = (engW and (onPin and "pin" or "quest")) or nil
             if uw and us > 0 then
                 local half = uw / 2
                 local fl = half / math.tan(hfov / 2)
+                -- the engine's point: read, judged, the camera's yaw and pitch from it
+                local eng, engWhy = nil, (not engW and "notarget") or (not (okF and nav) and "nonav") or nil
+                if engW and okF and nav then
+                    local okV, vp = pcall(function() return C_Navigation.HasValidScreenPosition() end)
+                    local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
+                    local okC, x, y = pcall(function() return nav:GetCenter() end)
+                    local okS, ns = pcall(function() return nav:GetEffectiveScale() end)
+                    x, y = okC and num(x) or nil, okC and num(y) or nil
+                    ns = okS and num(ns) or 1
+                    engWhy = (not (okV and vp == true) and "novp") or (not (okK and cl == false) and "clamp") or (not (x and y) and "novp")
+                        or nil
+                    if not engWhy then
+                        local b, d = C.bearing(C.me_, engW)
+                        -- cp24: a margin once shown (the camera estimate's yaw at the FOV's edge)
+                        local o1 = engId and W.obj[engId]
+                        local gate = ((o1 and (o1.a or 0) > 0) and W.FRONT_OUT or W.FRONT_IN)
+                        if math.abs(C.wrap(b - yaw)) >= hfov / 2 + math.rad(gate) then
+                            engWhy = "behind"
+                        else
+                            x, y = x * ns / us, y * ns / us
+                            yaw = C.wrap(b + math.atan((x - half) / fl))         -- (exact while the point is on screen)
+                            -- cp20: the pitch from this point (not in the air: it rises with the player then)
+                            local dfwd = d * math.cos(math.atan((x - half) / fl))
+                            W.pinFwd = dfwd
+                            if not air and uh then
+                                local ph = C.wmPitch(y - uh / 2, dfwd, C.wmZoom(), W.CAM_H, fl)
+                                if ph then W.pitch, W.pitchAt, W.tilted = ph, now, false end
+                            end
+                            W.ny = y                                             -- (the engine's own, for the jump log)
+                            eng = { x = x, y = y, d = d, dfwd = dfwd }
+                        end
+                    end
+                end
+                W.engWhy = engWhy
                 if engId then
                     local st = S[engId]
-                    local w = st.w
-                    lost[engId] = (not (okF and nav) and "nonav") or nil
-                    if okF and nav then
-                        local okV, vp = pcall(function() return C_Navigation.HasValidScreenPosition() end)
-                        local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
-                        local okC, x, y = pcall(function() return nav:GetCenter() end)
-                        local okS, ns = pcall(function() return nav:GetEffectiveScale() end)
-                        x, y = okC and num(x) or nil, okC and num(y) or nil
-                        ns = okS and num(ns) or 1
-                        lost[engId] = (not (okV and vp == true) and "novp") or (not (okK and cl == false) and "clamp") or (not (x and y) and "novp")
-                            or nil
-                        if okV and vp == true and okK and cl == false and x and y then
-                            local b, d = C.bearing(C.me_, w)
-                            -- cp24: a margin once shown (the camera estimate's yaw at the FOV's edge)
-                            local o1 = W.obj[engId]
-                            local gate = ((o1 and (o1.a or 0) > 0) and W.FRONT_OUT or W.FRONT_IN)
-                            if math.abs(C.wrap(b - yaw)) >= hfov / 2 + math.rad(gate) then lost[engId] = "behind" end
-                            if not lost[engId] then
-                                x, y = x * ns / us, y * ns / us
-                                yaw = C.wrap(b + math.atan((x - half) / fl))         -- (exact while the point is on screen)
-                                -- cp20: the pitch from this point (not in the air: it rises with the player then)
-                                local dfwd = d * math.cos(math.atan((x - half) / fl))
-                                W.pinFwd = dfwd
-                                if not air and uh then
-                                    local ph = C.wmPitch(y - uh / 2, dfwd, C.wmZoom(), W.CAM_H, fl)
-                                    if ph then W.pitch, W.pitchAt, W.tilted = ph, now, false end
-                                end
-                                W.ny = y                                             -- (the engine's own, for the jump log)
-                                -- cp22: in the air the engine's point rises with us: the ground's height held, then its own
-                                -- ground (cp20) and the camera's rise (the jump) projected with the pitch
-                                local yE = (air and W.yG) or y
-                                if not air then W.yG = y end
-                                local pz = st.it and st.it.p
-                                local pdz = pz and C.wmDz(pz) or nil
-                                W.pinDz = pdz
-                                local usePdz = pdz ~= nil and C.wmPitchOk(now)
-                                local dz = C.wmDzAir(usePdz and pz or nil)
-                                y = yE
-                                if dz ~= 0 then
-                                    local D, phi = C.wmZoom(), W.pitch or W.PITCH0
-                                    local a0 = C.wmProj(phi, D, W.CAM_H, dfwd, 0, fl)
-                                    local a1 = C.wmProj(phi, D, W.CAM_H, dfwd, dz, fl)
-                                    if a0 and a1 then y = yE + (a1 - a0) end
-                                end
-                                if not air and W.yOut and now - W.airAt < W.LAND_S then
-                                    y = W.yOut + (y - W.yOut) * (1 - math.exp(-dt / W.EASE_S))   -- landed: eased, not snapped
-                                end
-                                W.yOut = y
-                                on[engId] = wmPut(engId, x, y, st.kind == "goal" and W.QUEST or W.GOLD, C.distText(d), (C.rtLook(st)))
-                            end
+                    lost[engId] = engWhy
+                    if eng then
+                        local x, y, d, dfwd = eng.x, eng.y, eng.d, eng.dfwd
+                        -- cp22: in the air the engine's point rises with us: the ground's height held, then its own
+                        -- ground (cp20) and the camera's rise (the jump) projected with the pitch
+                        local yE = (air and W.yG) or y
+                        if not air then W.yG = y end
+                        local pz = st.it and st.it.p
+                        local pdz = pz and C.wmDz(pz) or nil
+                        W.pinDz = pdz
+                        local usePdz = pdz ~= nil and C.wmPitchOk(now)
+                        local dz = C.wmDzAir(usePdz and pz or nil)
+                        y = yE
+                        if dz ~= 0 then
+                            local D, phi = C.wmZoom(), W.pitch or W.PITCH0
+                            local a0 = C.wmProj(phi, D, W.CAM_H, dfwd, 0, fl)
+                            local a1 = C.wmProj(phi, D, W.CAM_H, dfwd, dz, fl)
+                            if a0 and a1 then y = yE + (a1 - a0) end
                         end
+                        if not air and W.yOut and now - W.airAt < W.LAND_S then
+                            y = W.yOut + (y - W.yOut) * (1 - math.exp(-dt / W.EASE_S))   -- landed: eased, not snapped
+                        end
+                        W.yOut = y
+                        on[engId] = wmPut(engId, x, y, st.kind == "goal" and W.QUEST or W.GOLD, C.distText(d), (C.rtLook(st)))
                     end
                 end
                 -- the others: by the camera's yaw and pitch (cp20: no pitch, none - held a moment, then a fade; never floating)
@@ -1120,6 +1146,24 @@ do
             end
         end
         C.wmVis(on, lost, now, dt)
+        -- cp28: one "wmk" cap line a second while a route runs (or anything is listed): each of C.RT's shown ones with its distance,
+        -- its shared alpha (a) and the world's (wa), where it was put (x, y) and how (eng / est) or why not
+        local R0 = WC.routeWp
+        if now - W.mkAt >= W.MK_S and ((type(R0) == "table" and R0.active == true) or next(S) ~= nil) and WC.send and WC.encode then
+            W.mkAt = now
+            local m = {}
+            for id, st in pairs(S) do
+                local o = W.obj[id]
+                m[#m + 1] = { id = id, d = st.d and math.floor(st.d + 0.5) or nil, a = math.floor(st.a * 100 + 0.5), r = st.rank,
+                              wa = o and math.floor((o.alpha or 0) * 100 + 0.5) or 0,
+                              x = (o and on[id] and o.x) and math.floor(o.x + 0.5) or nil, y = (o and on[id] and o.y) and math.floor(o.y + 0.5) or nil,
+                              how = on[id] and ((id == W.engId) and "eng" or "est") or (lost[id] or (st.rank and "?" or "fading")) }
+            end
+            pcall(WC.send, WC.encode({ type = "cap", probe = "wmk", v = C.V, m = m, eng = W.engKind, ew = W.engWhy,
+                st = W.engKind == "pin", route = type(R0) == "table" and R0.active == true or nil,
+                pAge = W.pitchAt and math.floor(now - W.pitchAt + 0.5) or nil, tilt = W.tilted or nil,
+                pitch = W.pitch and math.floor(math.deg(W.pitch) * 10 + 0.5) / 10 or nil }))
+        end
         -- (by rank, for the diag and the harness: list[1] the nearer one's marker, list[2] the second's; kept when none)
         local n = 0
         for _ in pairs(on) do n = n + 1 end
