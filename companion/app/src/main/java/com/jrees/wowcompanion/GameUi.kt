@@ -33,12 +33,12 @@ object GameUi {
     @Volatile private var prdMin = -420
     @Volatile private var prdMax = -120
     @Volatile private var prdStep = 10
-    @Volatile private var prdDef = -250
+    @Volatile private var prdDef = -350
     /** hub16: the bar's width (spec px) and scale (%) now, their ranges, and which setting the step columns move ("y" / "w" / "s") */
     @Volatile private var prdW: Int? = null
     @Volatile private var prdS: Int? = null
     @Volatile private var prdSel: String? = null
-    @Volatile private var wMin = 180; @Volatile private var wMax = 400; @Volatile private var wStep = 20; @Volatile private var wDef = 260
+    @Volatile private var wMin = 180; @Volatile private var wMax = 400; @Volatile private var wStep = 20; @Volatile private var wDef = 280
     @Volatile private var sMin = 70; @Volatile private var sMax = 160; @Volatile private var sStep = 10; @Volatile private var sDef = 100
     private var hudHTapAt = 0L
     private var hudHTapN = -1
@@ -87,7 +87,8 @@ object GameUi {
     fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin(); hud.freshLogin() }
 
     /** HUD mode for this character (the user's pick; off until chosen) */
-    fun hudOn(): Boolean = character?.let { prefs?.getBoolean("hud.$it", false) } ?: false
+    // (the user's new default: HUD mode ON for a character that never chose; a saved choice stays)
+    fun hudOn(): Boolean = character?.let { prefs?.getBoolean("hud.$it", true) } ?: false
     fun setHud(on: Boolean) {
         val who = character ?: return
         prefs?.edit()?.putBoolean("hud.$who", on)?.apply()
