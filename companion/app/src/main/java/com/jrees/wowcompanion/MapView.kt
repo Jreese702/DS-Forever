@@ -4047,7 +4047,8 @@ class MapView(context: Context) : View(context) {
             pinWhy = if (shipShown && sl != null && !(SafePathV2.enabled && v2Shown)) ShippedPins.pinWhy(sl, r.label ?: "the quest", shipStale, here)
                 else "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}" + (if (SafePathV2.enabled && v2Shown) " (SafePath v2)" else "")
             // cp19: the flags after it (as the map draws them: every bend, and the step's point unless it is the goal) for the world marker
-            pinMore = leg.drop(2).let { if (r.kind == CursorRoute.Kind.GOAL) it.dropLast(1) else it }.take(RouteWaypoint.MORE_MAX)
+            // cp27 (Interact): the objective joins one step early on a GOAL route (the end's own point among the further two)
+            pinMore = leg.drop(2).take(RouteWaypoint.MORE_MAX)
                 .map { p -> doubleArrayOf(p[0], p[1], flagDz(m, p[0], p[1])) }
             return leg[1]
         }
@@ -4763,9 +4764,27 @@ class MapView(context: Context) : View(context) {
      * A CHECKPOINT FLAG (the user on test45): a pole and a gold pennant standing at ([x], [y]) (the flag's foot on the point); the
      * [next] one (the arrow leads to it) full size, the later ones smaller and fainter
      */
-    private fun drawFlag(c: Canvas, x: Float, y: Float, next: Boolean) {
+    /**
+     * A ROUTE CHECKPOINT (cp27, the user on test65: "can we make the checkpoint markers consistent on all areas?"): the world's and the
+     * compass's own gold pin (MarkerArt: marker_pin.tga tinted #FFD14D over a black rim), its tip on the point; the [next] one full size,
+     * the second at MarkerArt.SECOND_SIZE / SECOND_ALPHA; [alpha] the nearer one's fade (45 yd full, 0 at 25 yd: gone when passed). The
+     * old pennant only while the art cannot be read
+     */
+    private fun drawFlag(c: Canvas, x: Float, y: Float, next: Boolean, alpha: Float = 1f) {
+        if (alpha <= 0f) return
+        MarkerArt.pin(context)?.let { pin ->
+            val k = if (next) 1f else MarkerArt.SECOND_SIZE
+            val a = (255 * alpha * (if (next) 1f else MarkerArt.SECOND_ALPHA)).toInt().coerceIn(0, 255)
+            val h = PIN_PX * k; val w = h
+            // the rim: a black copy 3-4 px larger at 85 %, then the gold pin
+            pPin.colorFilter = rimFilter; pPin.alpha = a * 217 / 255
+            c.drawBitmap(pin, null, RectF(x - w / 2f - 2f, y - h - 2f, x + w / 2f + 2f, y + 1.5f), pPin)
+            pPin.colorFilter = goldFilter; pPin.alpha = a
+            c.drawBitmap(pin, null, RectF(x - w / 2f, y - h, x + w / 2f, y), pPin)
+            return
+        }
         val k = if (next) 1f else 0.8f
-        val a = if (next) 255 else 150
+        val a = ((if (next) 255 else 150) * alpha).toInt()
         val h = 38f * k
         // its shadow on the ground, the pole, the pennant (dark edge, gold fill)
         pFill.color = Color.argb(a * 90 / 255, 0, 0, 0); c.drawOval(x - 9f * k, y - 3.5f * k, x + 9f * k, y + 3.5f * k, pFill)
@@ -4778,6 +4797,15 @@ class MapView(context: Context) : View(context) {
         pArrowEdge.color = Color.argb(a * 220 / 255, 0, 0, 0); c.drawPath(flagPath, pArrowEdge)
     }
     private val flagPath = Path()
+    private val PIN_PX = 40f
+    private val pPin = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private val goldFilter = PorterDuffColorFilter(MarkerArt.PIN_GOLD, PorterDuff.Mode.MULTIPLY)
+    private val rimFilter = PorterDuffColorFilter(Color.BLACK, PorterDuff.Mode.SRC_IN)
+    /** the nearer checkpoint's fade by the player's yards to it (MarkerArt.nearAlpha), 1 when the map's scale is not known */
+    private fun nearFade(cp: DoubleArray, px: Double, py: Double): Float {
+        val r = rect?.takeIf { it.valid } ?: return 1f
+        return MarkerArt.nearAlpha(hypot((cp[0] - px) * r.width, (cp[1] - py) * r.height))
+    }
 
     /** Polestar's live route on this continent, drawn as the line's dots (true = drawn) */
     private fun drawPolestarRoute(c: Canvas, x0: Float, y0: Float, sx: (Double) -> Float, sy: (Double) -> Float): Boolean {
@@ -5909,6 +5937,7 @@ class MapView(context: Context) : View(context) {
     }
 
     override fun onDraw(c: Canvas) {
+        MarkerArt.pin(context)                 // cp27: the route's pin and the objective's disc read once (UiKit draws the disc)
         fonts()
         val w = width.toFloat(); val h = height.toFloat()
         // the ground as a rect, not drawColor: while Home's card flies its parents do not clip, and drawColor fills the clip
@@ -6535,11 +6564,12 @@ class MapView(context: Context) : View(context) {
                 fx = tx; fy = ty
             }
             // the flags: every bend, and the step's point when it is a way (the goal wears its own mark); the next one in front
-            val flagged = (0..stepAt).filter { it < stepAt || route.kind != CursorRoute.Kind.GOAL }
+            // cp27: the NEXT TWO only (the world's and the compass's rule), the nearer one fading as it is reached
+            val flagged = (0..stepAt).filter { (it < stepAt || route.kind != CursorRoute.Kind.GOAL) && it <= 1 }
             for (i in flagged.reversed()) {
                 val cp = cps[i]
                 if (i == stepAt && !stepOn) continue
-                drawFlag(c, sx(cp[0]), sy(cp[1]), next = i == 0)
+                drawFlag(c, sx(cp[0]), sy(cp[1]), next = i == 0, alpha = if (i == 0) nearFade(cp, px, py) else 1f)
             }
             // QuestTrail's line straight to its point: its dangerous stretch warned
             if (leg == null && qtOn && cursor.sel == qtOrGameFocus()) dangerWarn(c, listOf(doubleArrayOf(px, py), doubleArrayOf(route.x, route.y)), "QuestTrail", ::sx, ::sy)
@@ -6566,15 +6596,15 @@ class MapView(context: Context) : View(context) {
                         drawStretch(c, fx, fy, sx(cp[0]), sy(cp[1]), dim, unchecked = (i == 0 && unc.first) || (i == stepAt && unc.second))
                         fx = sx(cp[0]); fy = sy(cp[1])
                     }
-                    for (i in (0..stepAt).reversed()) {
+                    for (i in (0..minOf(stepAt, 1)).reversed()) {             // cp27: the next two only
                         if (i == stepAt && r0.kind == CursorRoute.Kind.GOAL) continue
                         val x = sx(cps[i][0]); val y = sy(cps[i][1])
-                        if (x in left..(left + fw) && y in nb..(top + fh)) drawFlag(c, x, y, next = i == 0)
+                        if (x in left..(left + fw) && y in nb..(top + fh)) drawFlag(c, x, y, next = i == 0, alpha = if (i == 0) nearFade(cps[i], px, py) else 1f)
                         else if (i == 0) {
                             // the NEXT flag off this small field (test54: "I still can't see the checkpoints on the normal map module
                             // when it's not open"): pinned just inside the rim on the way to it, so a flag always shows
                             rimPoint(sx(px), sy(py), x, y, left + RIM_FLAG_IN, nb + RIM_FLAG_IN, left + fw - RIM_FLAG_IN, top + fh - RIM_FLAG_IN)
-                                ?.let { drawFlag(c, it[0], it[1], next = true) }
+                                ?.let { drawFlag(c, it[0], it[1], next = true, alpha = nearFade(cps[0], px, py)) }
                         }
                     }
                     c.restoreToCount(save)
@@ -6596,7 +6626,8 @@ class MapView(context: Context) : View(context) {
                 drawStretch(c, fx, fy, tx, ty, dim)
                 fx = tx; fy = ty
             }
-            for (i in (1 until leg.size - 1).reversed()) drawFlag(c, sx(leg[i][0]), sy(leg[i][1]), next = i == 1)
+            for (i in (1 until minOf(leg.size - 1, 3)).reversed()) drawFlag(c, sx(leg[i][0]), sy(leg[i][1]), next = i == 1,
+                alpha = if (i == 1) nearFade(leg[1], px, py) else 1f)
             c.restoreToCount(save)
         }
         // the shipped network's file is for another game build (ShippedNets: still used): said, in the note's place
