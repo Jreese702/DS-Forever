@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i135"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i136"     -- bump on every change; the app shows it, so a stale addon is visible
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2045,6 +2045,7 @@ function N.build(doc)
     local rects = (WC.shield and WC.shield.rects()) or {}     -- defined further down
     return { on = N.holding, n = N.n, last = N.last, via = N.via, hid = N.hid > 0 and N.hid or nil,
              hidec = next(N.hideDiag) and N.hideDiag or nil,          -- i135: per window, what the hide did (N.hideNote)
+             fight = N.fightDoc and N.fightDoc() or nil,                -- i136: dimmed in a fight, the game's A: { a, w }
              shield = #rects > 0 and rects or nil,
              proven = N.frameSeen or nil, lost = N.lost > 0 and N.lost or nil,
              lostKey = N.lostKey, lostTo = N.lostTo, lostBy = next(N.lostBy) and N.lostBy or nil,
@@ -5134,7 +5135,7 @@ function N.lootHideWanted()
     if LOOT.top() then return false, "top" end
     if not N.mode then return false, "mode" end
     if not (N.frameSeen or N.trusted) then return false, "proof" end
-    if inCombat() then return false, "combat" end
+    -- i136: in a fight too (the user's "Hide the game's"): N.fightDim's rule
     return true
 end
 function N.lootDim(by)
@@ -5670,6 +5671,11 @@ function N.early(slot)
         guestLost("npc")
         if not N.mode then N.release("npc", "npc") end
     end
+    if N.mode and (N.frameSeen or N.trusted) and inCombat() and not N.holding then          -- i136: dimmed in the fight
+        N.fightDim(slot)
+        N.hideNote(slot, "fight")
+        return
+    end
     if not (N.mode and (N.frameSeen or N.trusted)) or inCombat() then N.hideNote(slot, "early") return end
     if not N.holding then
         N.hold()
@@ -5687,6 +5693,51 @@ end
 -- THE WATCHDOG. Whatever says that the game may be hearing the controller while its window is
 -- invisible: the window comes back at once, the proof is dropped for this session, and the
 -- document says so (`proof.bad`), which makes the app forget it.
+-- i136 (test76, the user: "the loot is popping up in both places" ... "I think that's what's happening to a lot of the windows that
+-- were popping up today actually: they were opening in combat"; their answer: "Hide the game's"): a window the NPC-windows setting
+-- covers that opens while the game still counts a fight (InCombatLockdown lingers a few seconds after the kill) could not be taken -
+-- bindings are locked - so the game kept it on the top screen beside ours. Now it is DIMMED there anyway (alpha only, which a fight
+-- allows) and ours shows; the controller stays the game's (its A acts on the game's invisible window) until the app's ENTER tap
+-- (v10) or PLAYER_REGEN_ENABLED hands it to us, and meanwhile the document says what A will do: the game's own selection
+-- (nav.fight.a, from the frame under the game's cursor). Gated as ever: the setting, the proof, the loot window's own switch.
+N.fightDimmed = {}
+function N.fightDim(slot)
+    if WINDOWS[slot] == false or (slot == "loot" and LOOT.top()) then return false end
+    if not (N.mode and (N.frameSeen or N.trusted)) or not inCombat() or N.holding or G.holder then return false end
+    N.hide({ [slot] = true })
+    N.fightDimmed[slot] = true
+    return true
+end
+-- what the game's A will act on now: the text of the frame under its cursor (a gossip option, a quest's button, an item), or a loot
+-- slot's item; nil when nothing readable is there
+function N.fightA()
+    local function first(fn) local r = R(fn); return r and r[1] or nil end
+    local foci = first(function() return GetMouseFoci() end)
+    local fr = (type(foci) == "table" and type(foci[1]) == "table") and foci[1] or first(function() return GetMouseFocus() end)
+    for _ = 1, 5 do
+        if type(fr) ~= "table" then return nil end
+        local slot = TN(function() return fr:GetSlotIndex() end) or TN(function() return fr.slotIndex end)
+            or TN(function() return fr:GetElementData().slotIndex end)
+        if slot then
+            local info = R(function() return GetLootSlotInfo(slot) end)
+            local name = info and PS(info[2]) or nil
+            if name then return name end
+        end
+        local t = TS(function() return fr:GetText() end)
+            or TS(function() return fr.Text:GetText() end) or TS(function() return fr.Name:GetText() end)
+        if t and t ~= "" then return t end
+        fr = first(function() return fr:GetParent() end)
+    end
+    return nil
+end
+function N.fightDoc()
+    if N.holding or not next(N.fightDimmed) or not inCombat() then return nil end
+    local kinds = {}
+    for k in pairs(N.fightDimmed) do kinds[#kinds + 1] = k end
+    table.sort(kinds)
+    return { a = N.fightA(), w = kinds }
+end
+
 -- i135: why an NPC window opening now would NOT be hidden (nil: it is): the gates of N.early / N.sync, in their order
 function N.hideWhy(slot)
     if WINDOWS[slot] == false then return "off" end
@@ -5711,6 +5762,7 @@ function N.hideNote(slot, how)
     end
     local ok = #fr > 0
     if not why and not ok then why = "noframe" end
+    if ok and why == "combat" then why = "combat: dimmed in fight" end         -- i136
     N.hideDiag[slot] = { how = how, ok = ok, why = why, fr = ok and fr or nil, open = shownAt[slot] }
     local key = tostring(shownAt[slot]) .. "|" .. tostring(ok) .. "|" .. tostring(why) .. "|" .. #fr
     if N.hideNoted[slot] == key then return end
@@ -5775,9 +5827,14 @@ function N.sync(open, doc)
             for k in pairs(want) do if not N.npcExtra[k] then padBind(k) end end
             N.npcExtra = want
         end
+    elseif N.mode and open and doc and inCombat() and not N.holding and not G.holder and not letGo and (N.frameSeen or N.trusted) then
+        -- i136: a window open in a fight that we do not hold: dimmed (ours shows), the controller the game's until the ENTER tap or the
+        -- fight's end; never released here (a release puts the game's window back)
+        for kind in pairs(HIDE) do if doc[kind] then N.fightDim(kind) end end
     elseif not G.holder then
         N.release(letGo and "confirm" or nil)
     end
+    if not inCombat() or N.holding then N.fightDimmed = {} end
     -- v10: an NPC / loot window opens in a fight: it waits for the ENTER tap (the app taps when its pop-up shows)
     if N.mode and open and inCombat() and not N.holding and not G.holder and not N.npcLeft then N.wantEnter("npc") end
     if not open then

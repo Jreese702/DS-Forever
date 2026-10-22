@@ -1187,6 +1187,29 @@ class InteractView(context: Context) : View(context) {
         if (!noX) hits.add(UiKit.windowClose(r) to "x")
         if (pendingCmd != null || (noteText != null && now - noteAt < NOTE_MS)) postInvalidateDelayed(250)
         typingLine(c, r, now)
+        fightLine(c, r, d)
+    }
+
+    /**
+     * i136 (test76, the user: "Hide the game's"): a window that opened in a fight is dimmed on the top screen while the controller is
+     * still the game's (bindings are locked until the fight ends or the ENTER tap lands), so the game's A acts on its invisible window:
+     * the line says what it will do (the add-on reads the game's own selection: nav.fight.a). Gone once the controller is ours.
+     */
+    private fun fightLine(c: Canvas, r: RectF, d: JSONObject) {
+        val f = d.optJSONObject("nav")?.optJSONObject("fight") ?: return
+        val a = f.optString("a", "")
+        val text = if (a.isNotEmpty()) "A: $a" else "A acts on the game's selection"
+        val lp = UiKit.bodyPaint(26f, Theme.gold)
+        val tp = UiKit.bodyPaint(26f, Color.WHITE)
+        val lab = "In combat"
+        val w = minOf(r.width() - 40f, lp.measureText(lab) + tp.measureText(text) + 90f)
+        val box = RectF(r.centerX() - w / 2f, r.top + 10f, r.centerX() + w / 2f, r.top + 66f)
+        UiKit.menu(c, box, solid = true)
+        c.drawText(lab, box.left + 24f, box.centerY() + 9f, lp)
+        val x = box.left + 48f + lp.measureText(lab)
+        val maxW = box.right - 20f - x
+        val drawn = if (tp.measureText(text) > maxW) text.take(tp.breakText(text, true, maxW - 24f, null)) + "…" else text
+        c.drawText(drawn, x, box.centerY() + 9f, tp)
     }
 
     /** the field each keyboard field types, by the add-on's name: its words over the keyboard */
