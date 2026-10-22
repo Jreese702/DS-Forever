@@ -123,7 +123,7 @@ object AggroFit {
     @Synchronized fun kBelow(): Double = (model ?: build().also { model = it }).k
 
     /**
-     * THE SHARED RADIUS RULE (the bottom map's rings, the route's live discs; the contract's - Interact mirrors the constants): a mob of
+     * THE SHARED RADIUS RULE (the route's live discs; the contract's - Interact mirrors the constants): a mob of
      * level [lm] (-1 a skull: the player's level + [SKULL_PLUS]; null unknown: [bracket]'s midpoint, else the player's level) against a
      * player of [lp]: base + diff at or above the player's level, base + diff x [kBelow] under it, clamped 5..45; base the learned one
      * for npc [n] / type [ct]
