@@ -24,7 +24,7 @@ class ShadowRepairTest {
         File(game, ".build.info").apply { parentFile.mkdirs() }.writeText("rows")
         File(game, "Data/data.000").apply { parentFile.mkdirs() }.writeText("data")
         File(game, "_classic_beta_/WowB-ARM64.exe").apply { parentFile.mkdirs() }.writeText("beta exe")
-        File(game, "_classic_beta_/WTF/Account/52042#1/SavedVariables/WowCompanion.lua").apply { parentFile.mkdirs() }.writeText("sv")
+        File(game, "_classic_beta_/WTF/Account/12345#1/SavedVariables/WowCompanion.lua").apply { parentFile.mkdirs() }.writeText("sv")
         File(game, "_classic_beta_/Interface/AddOns/WowCompanion/WowCompanion.toc").apply { parentFile.mkdirs() }.writeText("toc")
         File(game, "_forever_/Wow-arm64.exe").apply { parentFile.mkdirs() }.writeText("wowf exe")
         return snapshot()
