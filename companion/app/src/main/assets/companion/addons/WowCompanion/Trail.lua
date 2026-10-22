@@ -82,14 +82,18 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp22" }
+WC.compass = { V = "cp23" }
 do
     local C = WC.compass
     local PI = math.pi
     local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end     -- (the game's Lua 5.1 has math.atan2; the harness's not)
     -- the spec's sizes, in the Thor's top-screen pixels (1920 x 1080); C.k turns them into UI units
-    C.SPEC = { w = 860, h = 76, top = 4, line = 32, half = 400, tick = 8, letter = 22, letter2 = 17, dist = 12, lift = 25, near = 22,
-               edge = 48 }
+    -- cp23 (test60, the user: "the north east west south should be light gray like the tick marks and smaller"): the letters 14 / 12
+    -- (were 22 / 17), a lifted one 2 smaller, all in the ticks' own colour (C.TICK; N no longer red), LETTER_A over their fade
+    C.SPEC = { w = 860, h = 76, top = 4, line = 32, half = 400, tick = 8, letter = 14, letter2 = 12, dist = 12, lift = 25, near = 22,
+               edge = 48, liftK = 2 }
+    C.TICK = { 200 / 255, 180 / 255, 120 / 255 }
+    C.LETTER_A = 0.9
     C.BAND = "Interface\\AddOns\\WowCompanion\\Media\\compass_band"       -- our own soft band (tools/make_compass_band.py)
     C.MARK = {
         pin    = { atlas = "Waypoint-MapPin-Tracked",   size = 28, red = false },
@@ -273,7 +277,7 @@ do
                     for _, m in ipairs(out.marks) do
                         if math.abs(m.x - x) < S.near + (m.off and 14 or 0) then lift = true end
                     end
-                    out.letters[#out.letters + 1] = { deg = deg, name = name, x = x, fade = fade, size = lift and (size - 5) or size,
+                    out.letters[#out.letters + 1] = { deg = deg, name = name, x = x, fade = fade, size = lift and (size - S.liftK) or size,
                                                       y = lift and (S.line - S.lift) or S.line, lifted = lift }
                 else
                     out.ticks[#out.ticks + 1] = { deg = deg, x = x, fade = fade }
@@ -315,7 +319,7 @@ do
                 local fs = f:CreateFontString(nil, "OVERLAY")
                 fs:SetFont(C.FONT, u(#C.NAMES[deg] == 1 and S.letter or S.letter2), "OUTLINE")
                 fs:SetText(C.NAMES[deg])
-                if deg == 0 then fs:SetTextColor(1, 0.25, 0.25, 1) else fs:SetTextColor(1, 0.82, 0, 1) end
+                fs:SetTextColor(C.TICK[1], C.TICK[2], C.TICK[3], 1)
                 C.slot[deg] = { fs = fs, lifted = false }
             else
                 local t = plain(f, "ARTWORK", 0)
@@ -342,9 +346,12 @@ do
             pcall(function() o.a:SetAtlas("Navigation-Tracked-Arrow") end)
             o.a:SetSize(u(14), u(14))
             if key == "quest" then                         -- cp17: the quest's NUMBER on the game's own POI number disc
+                -- cp23 (test60, the user: "missing the number in the circle"): this client's UI-QuestPoi-QuestNumber is a DARK
+                -- brown disc (read from its atlas: the modern style, numbers drawn light on it); cp17's dark brown number was there
+                -- but invisible on it. Now light, outlined, over the disc (OVERLAY over its ARTWORK)
                 o.num = f:CreateFontString(nil, "OVERLAY", nil, 7)
-                o.num:SetFont(C.FONT, u(15), "")
-                o.num:SetTextColor(0.12, 0.08, 0.02, 1)
+                o.num:SetFont(C.FONT, u(14), "OUTLINE")
+                o.num:SetTextColor(1, 0.92, 0.7, 1)
             end
             C.mk[key] = o
         end
@@ -1002,7 +1009,7 @@ do
         for _, t in ipairs(L.ticks) do
             local o = C.slot[t.deg].tick
             seen[t.deg] = true
-            o:SetVertexColor(200 / 255, 180 / 255, 120 / 255, 0.67 * t.fade)
+            o:SetVertexColor(C.TICK[1], C.TICK[2], C.TICK[3], 0.67 * t.fade)
             o:SetPoint("CENTER", f, "TOP", u(t.x), -u(S.line))
             show(o)
         end
@@ -1013,7 +1020,7 @@ do
                 s.fs:SetFont(C.FONT, u(l.size), "OUTLINE")
                 s.lifted = l.lifted
             end
-            s.fs:SetAlpha(l.fade)
+            s.fs:SetAlpha(C.LETTER_A * l.fade)
             s.fs:SetPoint("CENTER", f, "TOP", u(l.x), -u(l.y))
             show(s.fs)
         end
