@@ -97,6 +97,8 @@ class RouteWaypoint {
         const val SET = 36; const val KEEP = 37; const val CLEAR = 39
         const val MORE = 38                  // cp19: a further checkpoint (4 digits after it); MORE, MORE drops them
         const val MORE_MAX = 2
+        /** test70: a further flag this far from the point before it is never sent (the add-on refuses it: Map.lua RWP.MORE_JUMP_YD) */
+        const val MORE_JUMP_YD = 300.0
         const val ROW = "uwp"
         const val MOVE = 0.004               // of the map: a smaller change is not worth a new pin
         const val SET_EVERY_MS = 5_000L      // test48: a pin moves at most every 5 s (it was 2: it churned)

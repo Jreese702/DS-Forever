@@ -92,7 +92,7 @@ class DangerLayerTest {
     }
 
     /** test45 ("At every bend I want a checkpoint flag which the arrow leads to"): a REACHED bend is passed, the next leads (test68:
-     *  reached = within DangerGrid.PASS_YD, 5 yd - no longer 25) */
+     *  reached = within DangerGrid.PASS_YD: 10 yd since test70 - no longer 25) */
     @Test fun aReachedCheckpointIsPassed() {
         val leg = listOf(doubleArrayOf(0.100, 0.5), doubleArrayOf(0.1015, 0.5), doubleArrayOf(0.3, 0.6), doubleArrayOf(0.8, 0.5))
         val p = DangerGrid.passed(leg, 2000.0, 2000.0)!!                      // the first bend 3 yd away: reached
@@ -113,7 +113,7 @@ class DangerLayerTest {
         assertTrue(DangerGrid.isPassed(doubleArrayOf(0.475, 0.485), c, n, ax, ay))
         // coming up to a sharp corner from the west, 30 yd short and a few yards north of the line: NOT passed
         assertFalse(DangerGrid.isPassed(doubleArrayOf(0.485, 0.498), c, n, ax, ay))
-        // test68: 24 yd short is no longer passed; reached (3 yd, inside PASS_YD 4): passed
+        // test68: 24 yd short is no longer passed; reached (3 yd, inside PASS_YD): passed
         assertFalse(DangerGrid.isPassed(doubleArrayOf(0.488, 0.5), c, n, ax, ay))
         assertTrue(DangerGrid.isPassed(doubleArrayOf(0.4985, 0.5), c, n, ax, ay))          // 3 yd
         // a runner stepping over it between two position reads (7 yd apart: 3 yd short, then 4 yd on): the next read is past its line

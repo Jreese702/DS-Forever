@@ -325,6 +325,9 @@ class LiveAggroTest {
         assertTrue(AggroFit.add(pull(3098, 1, 24.0, 27.0, 1.0)))
         assertFalse("each pull once", AggroFit.add(pull(3098, 1, 24.0, 27.0, 1.0)))
         assertTrue(AggroFit.add(pull(3098, 1, 25.0, 28.0, 2.0)))
+        // (test70: a tier moves only with AggroFit.MIN_PULLS pulls: the same two pulls again till it has them)
+        assertEquals("too few pulls yet", 20.0, AggroFit.base(3098, 1), 0.0)
+        for (k in 0 until AggroFit.MIN_PULLS - 2) AggroFit.add(pull(3098, 1, if (k % 2 == 0) 24.0 else 25.0, if (k % 2 == 0) 27.0 else 28.0, 10.0 + k))
         // the level gap (12 - 10) taken off: 22-25 and 23-26 agree on 23-25, the prior 20 moved into it: 23
         assertEquals(23.0, AggroFit.base(3098, 1), 0.0)
         assertEquals("its type's", 23.0, AggroFit.base(9999, 1), 0.0)
@@ -341,9 +344,9 @@ class LiveAggroTest {
         val dir = java.nio.file.Files.createTempDirectory("aggro").toFile()
         val f = java.io.File(dir, "aggro_pulls.json")
         AggroFit.init(f)
-        assertTrue(AggroFit.add(AggroDoc.Pull(0, 3098, 1, 12, 10, 24.0, 27.0, 1.0)))
+        for (k in 0 until AggroFit.MIN_PULLS) assertTrue(AggroFit.add(AggroDoc.Pull(0, 3098, 1, 12, 10, 24.0, 27.0, 1.0 + k)))
         AggroFit.reset(); AggroFit.init(f)
-        assertEquals(1, AggroFit.count()); assertEquals(22.0, AggroFit.base(3098, null), 0.0)
+        assertEquals(AggroFit.MIN_PULLS, AggroFit.count()); assertEquals(22.0, AggroFit.base(3098, null), 0.0)
         val bad = java.io.File(dir, "bad.json").apply { writeText("{\"schema\":1,\"records\":[{\"lo\":5,\"hi\":2,\"lv\":1,\"plv\":1}]}") }
         AggroFit.reset(); AggroFit.init(bad)
         assertTrue(AggroFit.paused)

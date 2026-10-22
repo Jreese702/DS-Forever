@@ -4048,8 +4048,18 @@ class MapView(context: Context) : View(context) {
                 else "checkpoint: bend 1 of ${leg.size - 2} on the way to ${r.label ?: "the quest"}" + (if (SafePathV2.enabled && v2Shown) " (SafePath v2)" else "")
             // cp19: the flags after it (as the map draws them: every bend, and the step's point unless it is the goal) for the world marker
             // cp27 (Interact): the objective joins one step early on a GOAL route (the end's own point among the further two)
-            pinMore = leg.drop(2).take(RouteWaypoint.MORE_MAX)
-                .map { p -> doubleArrayOf(p[0], p[1], flagDz(m, p[0], p[1])) }
+            // test70 (the add-on refused a flag 617 yd from the point before it): the flags stop at the map's edge (an off-map point is
+            // clamped to the edge in the row's digits) and at a jump over RouteWaypoint.MORE_JUMP_YD (logged) - never one the add-on refuses
+            if (leg[1][0] !in 0.0..1.0 || leg[1][1] !in 0.0..1.0) return none("the next checkpoint is off this map")
+            val rr = rect?.takeIf { it.valid }
+            var prev = leg[1]
+            pinMore = leg.drop(2).take(RouteWaypoint.MORE_MAX).takeWhile { p ->
+                val on = p[0] in 0.0..1.0 && p[1] in 0.0..1.0
+                val jump = rr?.let { hypot((p[0] - prev[0]) * it.width, (p[1] - prev[1]) * it.height) } ?: 0.0
+                if (on && jump > RouteWaypoint.MORE_JUMP_YD) android.util.Log.w("WCMAP", "route pin: a further flag ${jump.toInt()} yd from the point " +
+                    "before it, dropped (%.4f,%.4f after %.4f,%.4f)".format(p[0], p[1], prev[0], prev[1]))
+                (on && jump <= RouteWaypoint.MORE_JUMP_YD).also { prev = p }
+            }.map { p -> doubleArrayOf(p[0], p[1], flagDz(m, p[0], p[1])) }
             return leg[1]
         }
         if (r.kind == CursorRoute.Kind.GOAL) return none("the route is direct (no checkpoint, no way)")
