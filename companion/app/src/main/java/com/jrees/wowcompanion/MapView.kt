@@ -4811,11 +4811,25 @@ class MapView(context: Context) : View(context) {
      * the second at MarkerArt.SECOND_SIZE / SECOND_ALPHA; [alpha] the nearer one's fade (25 yd full, 0 as it is reached: test68). The
      * old pennant only while the art cannot be read
      */
-    private fun drawFlag(c: Canvas, x: Float, y: Float, next: Boolean, alpha: Float = 1f) {
+    private fun drawFlag(c: Canvas, x: Float, y: Float, rank: Int, alpha: Float = 1f) {
         if (alpha <= 0f) return
-        MarkerArt.pin(context)?.let { pin ->
-            val k = if (next) 1f else MarkerArt.SECOND_SIZE
-            val a = (255 * alpha * (if (next) 1f else MarkerArt.SECOND_ALPHA)).toInt().coerceIn(0, 255)
+        // test72 (the user: "the current checkpoint should be the old diamond, the next checkpoint should be the current icon, the rest
+        // of the checkpoints on the minimap should be the flags"; "Everywhere"): rank 0 the DIAMOND centred on its point, rank 1 the
+        // gold pin, every further one the pennant below. cp32's spec (Interact's art, the compass's and the world's): gold #FFD14D over
+        // a black rim copy 3-4 px larger at 85 %, the diamond's bottom tip on the point
+        if (rank == 0) MarkerArt.diamond(context)?.let { dm ->
+            val a = (255 * alpha).toInt().coerceIn(0, 255)
+            val h = DIAMOND_PX; val w = h * dm.width / dm.height
+            pPin.colorFilter = rimFilter; pPin.alpha = a * 217 / 255
+            c.drawBitmap(dm, null, RectF(x - w / 2f - 2f, y - h - 2f, x + w / 2f + 2f, y + 1.5f), pPin)
+            pPin.colorFilter = goldFilter; pPin.alpha = a
+            c.drawBitmap(dm, null, RectF(x - w / 2f, y - h, x + w / 2f, y), pPin)
+            return
+        }
+        val next = rank <= 1
+        if (next) MarkerArt.pin(context)?.let { pin ->
+            val k = MarkerArt.SECOND_SIZE
+            val a = (255 * alpha).toInt().coerceIn(0, 255)
             val h = PIN_PX * k; val w = h
             // the rim: a black copy 3-4 px larger at 85 %, then the gold pin
             pPin.colorFilter = rimFilter; pPin.alpha = a * 217 / 255
@@ -4824,8 +4838,8 @@ class MapView(context: Context) : View(context) {
             c.drawBitmap(pin, null, RectF(x - w / 2f, y - h, x + w / 2f, y), pPin)
             return
         }
-        val k = if (next) 1f else 0.8f
-        val a = ((if (next) 255 else 150) * alpha).toInt()
+        val k = if (next) 1f else FLAG_SIZE
+        val a = ((if (next) 255 else 200) * alpha).toInt()
         val h = 38f * k
         // its shadow on the ground, the pole, the pennant (dark edge, gold fill)
         pFill.color = Color.argb(a * 90 / 255, 0, 0, 0); c.drawOval(x - 9f * k, y - 3.5f * k, x + 9f * k, y + 3.5f * k, pFill)
@@ -4839,6 +4853,8 @@ class MapView(context: Context) : View(context) {
     }
     private val flagPath = Path()
     private val PIN_PX = 40f
+    private val DIAMOND_PX = 36f
+    private val FLAG_SIZE = 0.7f                       // the further checkpoints' pennants
     private val pPin = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val goldFilter = PorterDuffColorFilter(MarkerArt.PIN_GOLD, PorterDuff.Mode.MULTIPLY)
     private val rimFilter = PorterDuffColorFilter(Color.BLACK, PorterDuff.Mode.SRC_IN)
@@ -6605,12 +6621,13 @@ class MapView(context: Context) : View(context) {
                 fx = tx; fy = ty
             }
             // the flags: every bend, and the step's point when it is a way (the goal wears its own mark); the next one in front
-            // cp27: the NEXT TWO only (the world's and the compass's rule), the nearer one fading as it is reached
-            val flagged = (0..stepAt).filter { (it < stepAt || route.kind != CursorRoute.Kind.GOAL) && it <= 1 }
+            // test72: ALL of them (the user: "it should show them all") - the current the diamond fading as it is reached, the next
+            // the gold pin, the rest the pennants
+            val flagged = (0..stepAt).filter { it < stepAt || route.kind != CursorRoute.Kind.GOAL }
             for (i in flagged.reversed()) {
                 val cp = cps[i]
                 if (i == stepAt && !stepOn) continue
-                drawFlag(c, sx(cp[0]), sy(cp[1]), next = i == 0, alpha = if (i == 0) nearFade(cp, px, py) else 1f)
+                drawFlag(c, sx(cp[0]), sy(cp[1]), rank = i, alpha = if (i == 0) nearFade(cp, px, py) else 1f)
             }
             // QuestTrail's line straight to its point: its dangerous stretch warned
             if (leg == null && qtOn && cursor.sel == qtOrGameFocus()) dangerWarn(c, listOf(doubleArrayOf(px, py), doubleArrayOf(route.x, route.y)), "QuestTrail", ::sx, ::sy)
@@ -6637,15 +6654,15 @@ class MapView(context: Context) : View(context) {
                         drawStretch(c, fx, fy, sx(cp[0]), sy(cp[1]), dim, unchecked = (i == 0 && unc.first) || (i == stepAt && unc.second))
                         fx = sx(cp[0]); fy = sy(cp[1])
                     }
-                    for (i in (0..minOf(stepAt, 1)).reversed()) {             // cp27: the next two only
+                    for (i in (0..stepAt).reversed()) {                       // test72: all of them
                         if (i == stepAt && r0.kind == CursorRoute.Kind.GOAL) continue
                         val x = sx(cps[i][0]); val y = sy(cps[i][1])
-                        if (x in left..(left + fw) && y in nb..(top + fh)) drawFlag(c, x, y, next = i == 0, alpha = if (i == 0) nearFade(cps[i], px, py) else 1f)
+                        if (x in left..(left + fw) && y in nb..(top + fh)) drawFlag(c, x, y, rank = i, alpha = if (i == 0) nearFade(cps[i], px, py) else 1f)
                         else if (i == 0) {
                             // the NEXT flag off this small field (test54: "I still can't see the checkpoints on the normal map module
                             // when it's not open"): pinned just inside the rim on the way to it, so a flag always shows
                             rimPoint(sx(px), sy(py), x, y, left + RIM_FLAG_IN, nb + RIM_FLAG_IN, left + fw - RIM_FLAG_IN, top + fh - RIM_FLAG_IN)
-                                ?.let { drawFlag(c, it[0], it[1], next = true, alpha = nearFade(cps[0], px, py)) }
+                                ?.let { drawFlag(c, it[0], it[1], rank = 0, alpha = nearFade(cps[0], px, py)) }
                         }
                     }
                     c.restoreToCount(save)
@@ -6667,7 +6684,7 @@ class MapView(context: Context) : View(context) {
                 drawStretch(c, fx, fy, tx, ty, dim)
                 fx = tx; fy = ty
             }
-            for (i in (1 until minOf(leg.size - 1, 3)).reversed()) drawFlag(c, sx(leg[i][0]), sy(leg[i][1]), next = i == 1,
+            for (i in (1 until leg.size - 1).reversed()) drawFlag(c, sx(leg[i][0]), sy(leg[i][1]), rank = i - 1,
                 alpha = if (i == 1) nearFade(leg[1], px, py) else 1f)
             c.restoreToCount(save)
         }
