@@ -123,6 +123,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
 
     /** stop cleanly (the companion is closing): the bake ends at its next yield point; finished buildings are kept */
     fun stop() { stopping = true }
+    override fun stopDetached() = stop()
 
     // ------------------------------------------------------------------ running
 

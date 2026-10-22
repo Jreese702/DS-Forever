@@ -41,6 +41,8 @@ object ArtHarvest {
          */
         val detached: Boolean get() = false
         fun begin(ctx: Context) { error("$id is not a detached step") }
+        /** a detached step's thread asked to end at its next yield point (the game folder moved to another build: [restart]) */
+        fun stopDetached() {}
         fun run(job: Job)
     }
 
@@ -210,6 +212,8 @@ object ArtHarvest {
     @Volatile private var worker: Thread? = null
     /** this run's before-Play result (null = not known yet) and who waits for it */
     @Volatile private var firstResult: Boolean? = null
+    /** [restart] while a run was alive: that run's answer goes to nobody, and it runs again (the new build) when it ends */
+    @Volatile private var rerun = false
     private val waiters = ArrayList<(Boolean) -> Unit>()
 
     /**
@@ -221,28 +225,48 @@ object ArtHarvest {
         init(app)
         synchronized(waiters) {
             if (worker?.isAlive == true) {
-                firstResult?.let { r -> onBeforePlayDone(r); return }
+                if (!rerun) firstResult?.let { r -> onBeforePlayDone(r); return }
                 waiters.add(onBeforePlayDone); return
             }
             firstResult = null
             waiters.add(onBeforePlayDone)
             worker = Thread({
-                try {
-                    work(app) { r -> beforePlayDone(r) }
-                } catch (e: Exception) {
-                    Log.w(TAG, "harvest failed", e)
-                    val requiredReady = runCatching {
-                        GameFiles.activeBuild(GameFiles.gameRoot(app)) != null && !needsBeforePlay(app)
-                    }.getOrDefault(false)
-                    set(State.Failed(e.message ?: "the game files could not be read", beforePlay = !requiredReady))
-                    beforePlayDone(requiredReady)
+                while (true) {
+                    try {
+                        work(app) { r -> beforePlayDone(r) }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "harvest failed", e)
+                        val requiredReady = runCatching {
+                            GameFiles.activeBuild(GameFiles.gameRoot(app)) != null && !needsBeforePlay(app)
+                        }.getOrDefault(false)
+                        set(State.Failed(e.message ?: "the game files could not be read", beforePlay = !requiredReady))
+                        beforePlayDone(requiredReady)
+                    }
+                    // the folder moved to another build while this run read the old one ([restart]): once more, on the new build
+                    val again = synchronized(waiters) { if (rerun) { rerun = false; firstResult = null; true } else false }
+                    if (!again) break
+                    Log.i(TAG, "harvest: running again for the game folder's new build")
                 }
             }, "art-harvest").apply { priority = Thread.NORM_PRIORITY - 1; start() }
         }
     }
 
+    /**
+     * THE GAME FOLDER MOVED TO ANOTHER BUILD (the launch switch, test55: the art never started for the new build - the run from the
+     * start, on the old build, had finished Ready and its detached interiors bake was still baking the old one): the detached steps
+     * asked to stop, this run's before-Play answer and state forgotten, so the next [start] is a fresh run that finds every step
+     * pending for the new build. A worker still running (it opened the old build) is left to end; [start] then waits for it.
+     */
+    fun restart(ctx: Context) {
+        for (s in STEPS) if (s.detached) runCatching { s.stopDetached() }
+        synchronized(waiters) { if (worker?.isAlive == true) rerun = true else { worker = null; firstResult = null } }
+        set(State.Idle)
+        Log.i(TAG, "harvest: restarted for the game folder's build (${runCatching { GameFiles.activeBuild(GameFiles.gameRoot(ctx)) }.getOrNull() ?: "none"})")
+    }
+
     private fun beforePlayDone(r: Boolean) {
-        val ws = synchronized(waiters) { firstResult = r; ArrayList(waiters).also { waiters.clear() } }
+        // a run [restart] made stale answers nobody: its waiters wait for the run on the new build
+        val ws = synchronized(waiters) { if (rerun) return; firstResult = r; ArrayList(waiters).also { waiters.clear() } }
         for (w in ws) runCatching { w(r) }
     }
 
