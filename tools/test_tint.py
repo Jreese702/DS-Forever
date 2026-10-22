@@ -74,9 +74,12 @@ def main():
         s = A.byTok[tok]
         return R.list[s] if s is not None else None
 
-    cases = [((6, 6), 20), ((9, 6), 23), ((60, 6), 45), ((1, 20), 5), ((5, 6), 19), ((-1, 6), 30), ((None, 6), 30)]
+    # at2: Map's fit (2.2 yd per level under; at or above 1 yd per level; clamps 5..45; "??" = +10)
+    cases = [((6, 6), 20), ((9, 6), 23), ((60, 6), 45), ((1, 20), 5), ((5, 6), 17.8), ((3, 6), 13.4), ((1, 6), 9.0),
+             ((-1, 6), 30), ((None, 6), 30)]
     got = [R.radius(lv, plv) for (lv, plv), _ in cases]
-    chk("the radius rule (shared with Map): %s" % got, got == [w for _, w in cases])
+    chk("the radius rule (shared with Map, at2): %s" % got, all(abs(g - w) < 1e-9 for g, (_, w) in zip(got, cases)))
+    chk("at2: 7 under is the floor (5), 6 under 6.8", R.radius(6, 13) == 5 and abs(R.radius(7, 13) - 6.8) < 1e-9)
 
     G.t = 100.0
     G.facing = 0.0

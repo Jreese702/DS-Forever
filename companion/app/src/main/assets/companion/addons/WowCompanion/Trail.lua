@@ -3033,7 +3033,7 @@ end
 --   LEAVE NO TRACE: our own frame on UIParent (mouse off, our own art: tint_glow.tga, a soft glow with a crisp border), ANCHORED to
 --   the plate (SetPoint to it, as ag2's icons): the plate is never read, written, hooked or recoloured (its health bar untouched).
 --   Settings > Top screen "Aggro tint" (default on): WowCompanionDB.aggroRings (the key ar1 used; Interact's ACT.rings).
-WC.rings = { V = "at1", BASE = 20, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
+WC.rings = { V = "at2", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
              ALPHA = 0.95, OUTSET = 6, list = {}, est = {}, react = {}, why = {}, n = 0,
              COL = { approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
              TEX = "Interface\\AddOns\\WowCompanion\\Media\\tint_glow" }
@@ -3043,10 +3043,13 @@ do
     local function num(v) if type(v) == "number" and v == v and not (type(issecretvalue) == "function" and issecretvalue(v)) then return v end end
 
     -- the aggro radius (yd) of a mob of level lv for a player of level plv; lv < 0 (or nil) is a "??" mob
+    -- at2 (the user: "Fit it"; Map's fit to test58's pulls, AGGRO_DOC_CONTRACT_v1 "The shared radius rule, fitted"): Forever's
+    -- radius shrinks K_BELOW (2.2) yd per level a mob is under the player (classic: 1); at or above, 1 yd per level as before
     function R.radius(lv, plv)
         if not plv then return R.BASE end
         if not lv or lv < 0 then lv = plv + R.SKULL end
-        return math.max(R.MIN, math.min(R.MAX, R.BASE + (lv - plv)))
+        local d = lv - plv
+        return math.max(R.MIN, math.min(R.MAX, R.BASE + (d < 0 and d * R.K_BELOW or d)))
     end
     function R.wanted() return not (type(WowCompanionDB) == "table" and WowCompanionDB.aggroRings == false) end
     function R.set(on)
