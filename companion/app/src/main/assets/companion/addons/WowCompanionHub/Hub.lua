@@ -29,7 +29,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S = WC.S
 
-local HV = "hub16"          -- hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub17"          -- hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -304,13 +304,32 @@ hub.cbCheck = cbCheck
 local HUD_FRAMES = { "PlayerFrame", "TargetFrame", "TargetFrameToT", "PetFrame" }
 local HUD_SHOW, HUD_HIDE = 34, 35
 local hm = { hidden = false, hooked = {}, fix = 0 }
+-- hub17 (the user: "we need to split out the HUD mode into the visible things that should be in the top menu, like the cast bar and the
+-- unit frames for myself and my target ... with the unit frames over the enemies' heads ON by default"): HUD mode's bundle as its OWN
+-- switches, on a row of their own ("uisw": the "ui" row is full), two columns each, absolute (a repeated or stale tap changes nothing):
+--   SW.PLAYER_SHOW / SW.PLAYER_HIDE   the player frame (and the pet's, which hangs off it), alpha only as before
+--   SW.TARGET_SHOW / SW.TARGET_HIDE   the target frame (and the target's target)
+--   SW.NP_OFF / SW.NP_ON              the enemy nameplates wanted (Trail.lua's ag2 owns the CVar: WC.npWant.np)
+--   SW.PRD_OFF / SW.PRD_ON            the personal resource bar (Trail.lua's WC.prd: WC.npWant.prd)
+-- The app keeps each choice per character and taps it at every connect (its defaults: the frames hidden, the nameplates and the bar on).
+-- A switch once set wins over the bundle's columns 34 / 35 for its own part; those still move every part for an older app.
+local SW_ROW = "uisw"
+local SW = { PLAYER_SHOW = 0, PLAYER_HIDE = 1, TARGET_SHOW = 2, TARGET_HIDE = 3, NP_OFF = 4, NP_ON = 5, PRD_OFF = 6, PRD_ON = 7 }
+local GROUP = { PlayerFrame = "player", PetFrame = "player", TargetFrame = "target", TargetFrameToT = "target" }
+hm.g = { player = nil, target = nil }       -- per group: true hidden / false shown / nil as the bundle says
+hub.SW = SW
+local function groupHidden(name)
+    local g = hm.g[GROUP[name]]
+    if g == nil then return hm.hidden end
+    return g
+end
 local function hmZero(fr) pcall(fr.SetAlpha, fr, 0) end
 local function hmHook(name, fr)
     if hm.hooked[name] then return end
     hm.hooked[name] = true
-    if type(fr.HookScript) == "function" then pcall(fr.HookScript, fr, "OnShow", function(self) if hm.hidden then hmZero(self) end end) end
+    if type(fr.HookScript) == "function" then pcall(fr.HookScript, fr, "OnShow", function(self) if groupHidden(name) then hmZero(self) end end) end
     if type(fr.UpdateSystemSettingOpacity) == "function" then
-        hooksecurefunc(fr, "UpdateSystemSettingOpacity", function(self) if hm.hidden then hmZero(self) end end)
+        hooksecurefunc(fr, "UpdateSystemSettingOpacity", function(self) if groupHidden(name) then hmZero(self) end end)
     end
 end
 local function hmSet(hide)
@@ -320,22 +339,35 @@ local function hmSet(hide)
     -- the route nor HUD mode wants it, and at log out); here only the wish
     WC.npWant = type(WC.npWant) == "table" and WC.npWant or {}
     WC.npWant.hud = hide or nil
+    hub.hmApply()
+end
+-- every frame as its group says (hidden: alpha 0; shown: Edit Mode's own opacity, else 1)
+function hub.hmApply()
     for _, name in ipairs(HUD_FRAMES) do
         local fr = riderFrame(name)
         if fr then
             hmHook(name, fr)
-            if hide then hmZero(fr)
+            if groupHidden(name) then hmZero(fr)
             elseif type(fr.UpdateSystemSettingOpacity) == "function" then
                 if not pcall(fr.UpdateSystemSettingOpacity, fr) then pcall(fr.SetAlpha, fr, 1) end
             else pcall(fr.SetAlpha, fr, 1) end
         end
     end
 end
+-- hub17: one switch column of the row "uisw"
+function hub.swTap(col)
+    WC.npWant = type(WC.npWant) == "table" and WC.npWant or {}
+    if col == SW.PLAYER_SHOW or col == SW.PLAYER_HIDE then hm.g.player = (col == SW.PLAYER_HIDE); hub.hmApply()
+    elseif col == SW.TARGET_SHOW or col == SW.TARGET_HIDE then hm.g.target = (col == SW.TARGET_HIDE); hub.hmApply()
+    elseif col == SW.NP_OFF or col == SW.NP_ON then WC.npWant.np = (col == SW.NP_ON)
+    elseif col == SW.PRD_OFF or col == SW.PRD_ON then WC.npWant.prd = (col == SW.PRD_ON)
+    else return false end
+    return true
+end
 hub.hmSet = hmSet               -- for the harness
 local function hmCheck()
-    if not hm.hidden then return end
     for _, name in ipairs(HUD_FRAMES) do
-        local fr = riderFrame(name)
+        local fr = groupHidden(name) and riderFrame(name)
         if fr then
             hmHook(name, fr)
             local ok, a = pcall(fr.GetAlpha, fr)
@@ -367,6 +399,16 @@ local function hmDoc()
     for _, name in ipairs(HUD_FRAMES) do if riderFrame(name) then have[#have + 1] = name end end
     return { hidden = hm.hidden, have = #have > 0 and have or nil, fix = hm.fix > 0 and hm.fix or nil }
 end
+-- hub17: the switches as they stand (each: what it does NOW, the bundle's answer where the switch was never set), the row's name
+local function swDoc()
+    local np = type(WC.npWant) == "table" and WC.npWant or {}
+    local function either(v, b) if v == nil then return b == true end return v == true end
+    return { row = hub.swRow and SW_ROW or nil, cols = SW,
+             player = either(hm.g.player, hm.hidden) and "hidden" or "shown",
+             target = either(hm.g.target, hm.hidden) and "hidden" or "shown",
+             np = either(np.np, np.hud), prd = either(np.prd, np.hud),
+             set = { player = hm.g.player ~= nil or nil, target = hm.g.target ~= nil or nil, np = np.np ~= nil or nil, prd = np.prd ~= nil or nil } }
+end
 
 local function cbDoc()
     local have = {}
@@ -393,6 +435,7 @@ local function document()
         els = els,
         cb = cbDoc(),                -- hub11: the game's cast bar (Show / Hide on columns CB_SHOW / CB_HIDE)
         hud = hmDoc(),               -- hub13: HUD mode, the player / target frames (Show / Hide on columns HUD_SHOW / HUD_HIDE)
+        sw = swDoc(),                -- hub17: HUD mode's own switches (the row "uisw")
         prd = prdDoc(),              -- hub15: HUD mode's own bar's place (Interact's WC.prd), stepped on columns 36 / 37 / 38
         row = hub.row and ROW or nil,
         pad = hub.row and WC.pad and WC.pad.describe() or nil,
@@ -463,6 +506,14 @@ local function setup()
             hidden = function() return WC.hudHidden == true end,
             combatOk = true,         -- alpha only, which combat does not lock
         })
+    end
+    if not hub.swRow and WC.pad and type(WC.pad.op) == "function" then
+        hub.swRow = WC.pad.op(SW_ROW, SW_ROW, function(_, col)
+            hub.taps = hub.taps + 1
+            hub.swTap(col)
+            emitHub(true)
+            WC.push()
+        end)
     end
     if not hub.row and WC.pad and type(WC.pad.op) == "function" then
         hub.row = WC.pad.op(ROW, ROW, onTap)
