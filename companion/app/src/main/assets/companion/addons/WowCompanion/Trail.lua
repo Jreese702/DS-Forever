@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp26" }
+WC.compass = { V = "cp27" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -95,6 +95,13 @@ do
     C.TICK = { 200 / 255, 180 / 255, 120 / 255 }
     C.LETTER_A = 0.9
     C.BAND = "Interface\\AddOns\\WowCompanion\\Media\\compass_band"       -- our own soft band (tools/make_compass_band.py)
+    -- cp27 (test65, the user: "Can we make the checkpoint markers consistent on all areas?" ... "does not have the yellow fill"):
+    -- a CHECKPOINT is our pin everywhere (the world's marker_pin, gold, on the band too; the player's own pin likewise); the QUEST
+    -- NUMBER DISC is the quest's objective only: our own gold-filled disc (quest_disc.tga) with the number dark on it, the classic look
+    C.PIN_TEX = "Interface\\AddOns\\WowCompanion\\Media\\marker_pin"
+    C.DISC_TEX = "Interface\\AddOns\\WowCompanion\\Media\\quest_disc"
+    C.GOLD = { 1, 0.82, 0.3 }
+    C.NUM_RGB = { 0.16, 0.09, 0.0 }
     C.MARK = {
         pin    = { atlas = "Waypoint-MapPin-Tracked",   size = 28, red = false },
         quest  = { atlas = "questnormal",               size = 32, red = false },
@@ -346,11 +353,16 @@ do
             local o = {}
             -- its edge: the same art in black, a little larger, under it (the silhouette's dark rim, as the game outlines text)
             o.sh = f:CreateTexture(nil, "ARTWORK", nil, 1)
-            pcall(function() o.sh:SetAtlas(spec.atlas) end)
+            o.tx = f:CreateTexture(nil, "ARTWORK", nil, 3)
+            if key == "pin" then                           -- cp27: a pin is our pin (the world's), gold
+                o.sh:SetTexture(C.PIN_TEX); o.tx:SetTexture(C.PIN_TEX)
+                o.tx:SetVertexColor(C.GOLD[1], C.GOLD[2], C.GOLD[3])
+            else
+                pcall(function() o.sh:SetAtlas(spec.atlas) end)
+                pcall(function() o.tx:SetAtlas(spec.atlas) end)
+            end
             o.sh:SetVertexColor(0, 0, 0, 0.85)
             o.sh:SetSize(sz + u(3), sz + u(3))
-            o.tx = f:CreateTexture(nil, "ARTWORK", nil, 3)
-            pcall(function() o.tx:SetAtlas(spec.atlas) end)
             o.tx:SetSize(sz, sz)
             o.d = f:CreateFontString(nil, "OVERLAY")
             o.d:SetFont(C.FONT, u(S.dist), "OUTLINE")
@@ -363,8 +375,8 @@ do
                 -- brown disc (read from its atlas: the modern style, numbers drawn light on it); cp17's dark brown number was there
                 -- but invisible on it. Now light, outlined, over the disc (OVERLAY over its ARTWORK)
                 o.num = f:CreateFontString(nil, "OVERLAY", nil, 7)
-                o.num:SetFont(C.FONT, u(14), "OUTLINE")
-                o.num:SetTextColor(1, 0.92, 0.7, 1)
+                o.num:SetFont(C.FONT, u(15), "")
+                o.num:SetTextColor(C.NUM_RGB[1], C.NUM_RGB[2], C.NUM_RGB[3], 1)   -- cp27: dark on our gold disc
             end
             C.mk[key] = o
         end
@@ -877,9 +889,14 @@ do
             local d = f:CreateFontString(nil, "OVERLAY")
             d:SetFont(C.FONT, C.u(13), "OUTLINE")
             d:SetPoint("TOP", f, "BOTTOM", 0, -C.u(2))
-            o = { f = f, sh = sh, tx = tx, d = d }
+            local nm = f:CreateFontString(nil, "OVERLAY", nil, 7)            -- cp27: the objective's number on its disc
+            nm:SetFont(C.FONT, C.u(16), "")
+            nm:SetTextColor(C.NUM_RGB[1], C.NUM_RGB[2], C.NUM_RGB[3], 1)
+            nm:SetPoint("CENTER", f, "CENTER", 0, 0)
+            nm:Hide()
+            o = { f = f, sh = sh, tx = tx, d = d, num = nm }
         end
-        o.a, o.pend, o.goodAt, o.key, o.scale, o.alpha, o.col, o.text, o.holdWhy, o.lostWhy = 0, nil, nil, id, nil, nil, nil, nil, nil, nil
+        o.a, o.pend, o.goodAt, o.key, o.scale, o.alpha, o.col, o.text, o.holdWhy, o.lostWhy, o.look = 0, nil, nil, id, nil, nil, nil, nil, nil, nil, nil
         W.obj[id] = o
         return o
     end
@@ -889,9 +906,25 @@ do
             o.a, o.goodAt = 0, nil
         end
     end
-    -- cp22: our pin, its TIP (the frame's bottom) at x, y; col its tint; cp26: its size by its rank
+    -- cp22: our pin, its TIP (the frame's bottom) at x, y; col its tint; cp26: its size by its rank. cp27: the quest's objective is
+    -- the gold number disc (as on the band), its bottom on the point, the number (or "!") dark on it; a checkpoint the gold pin
     local function wmPut(id, x, y, col, txt, scale)
         local o = C.wmBuild(id)
+        local st = C.RT.st[id]
+        local look = (st and st.kind == "goal") and "disc" or "pin"
+        if o.look ~= look then
+            local tex = look == "disc" and C.DISC_TEX or C.wm.PIN
+            o.tx:SetTexture(tex); o.sh:SetTexture(tex)
+            o.sh:SetVertexColor(0, 0, 0, look == "disc" and 0.6 or 0.85)
+            if look == "disc" then o.tx:SetVertexColor(1, 1, 1); o.col = nil; o.num:Show() else o.num:Hide() end
+            o.look, o.scale = look, nil
+        end
+        if look == "disc" then
+            col = nil
+            local n = tostring((C.questNo and C.questNo()) or "!")
+            if o.numText ~= n then o.num:SetText(n); o.numText = n end
+            scale = scale * 0.85
+        end
         if o.scale ~= scale then
             local W = C.wm
             o.f:SetSize(C.u(W.SIZE * scale), C.u(W.SIZE * scale))
@@ -900,7 +933,7 @@ do
         end
         o.f:ClearAllPoints()
         o.f:SetPoint("BOTTOM", UIParent, "BOTTOMLEFT", x, y)
-        if o.col ~= col then o.tx:SetVertexColor(col[1], col[2], col[3]); o.col = col end
+        if col and o.col ~= col then o.tx:SetVertexColor(col[1], col[2], col[3]); o.col = col end
         if o.text ~= txt then o.d:SetText(txt); o.text = txt end
         o.x, o.y = x, y
         return true
@@ -1127,7 +1160,7 @@ do
     --   Anything leaving the pair (passed, or dropped by the app earlier) fades out over OUT_S where it was.
     --   The objective is never faded by distance (arrived: the quest's marker as before); the further flags beyond the two are gone.
     C.RT = { FAR = 45, NEAR = 25, IN_S = 0.4, OUT_S = 0.25, DOWN1_S = 0.6, RANK_S = 0.4, K2 = 0.8, A2 = 0.75, MORE_OLD_S = 2,
-             SAME_YD = 4, GOAL_NEAR = 8, MORE_MAX = 2, st = {}, passed = {} }
+             SAME_YD = 4, GOAL_NEAR = 8, GOAL_ON = 40, MORE_MAX = 2, st = {}, passed = {} }
     local function rtAt(w) return math.floor(w.x + 0.5) .. ":" .. math.floor(w.y + 0.5) end
     function C.route(tg)
         tg = tg or {}
@@ -1140,30 +1173,34 @@ do
             end
             return false
         end
+        -- cp27 (test65, the user: "Sometimes I see the marker all the way at the very end, like 1000 yards away. I should always see
+        -- the closest two checkpoints"): cp26 let the objective join when the app's list was SHORT - but it is short on every leg
+        -- that ends at a way (a flight master, a tram, the map's edge: the app's MapView.routePin sends that way as the last
+        -- checkpoint, the objective far beyond it), and while Map swaps it. Now the objective joins a route's list ONLY where the
+        -- app's own list reaches it: a checkpoint of the list standing on it (within GOAL_ON) - it stands for that one. Every item
+        -- carries why it is there (the diag's rt).
         if type(R) == "table" and R.active == true and tg.pin then
-            items[1] = { id = "cp:" .. rtAt(tg.pin), w = tg.pin, kind = "cp", pin = true, p = R.pinZ }
-            local more = (type(R.more) == "table" and #R.more > 0) and R.more or nil
-            if not more and type(R.moreOld) == "table" and now - (R.moreOldAt or -100) < RT.MORE_OLD_S then more = R.moreOld end
+            items[1] = { id = "cp:" .. rtAt(tg.pin), w = tg.pin, kind = "cp", pin = true, p = R.pinZ, why = "pin" }
+            local more, src = (type(R.more) == "table" and #R.more > 0) and R.more or nil, "more"
+            if not more and type(R.moreOld) == "table" and now - (R.moreOldAt or -100) < RT.MORE_OLD_S then more, src = R.moreOld, "old" end
             more = more or {}
-            local onGoal = false
-            for _, c in ipairs(more) do
+            for i, c in ipairs(more) do
                 if c.w == nil then c.w = C.world(c.m, c.x, c.y) or false end
-                if c.w and tg.quest and math.sqrt((c.w.x - tg.quest.x) ^ 2 + (c.w.y - tg.quest.y) ^ 2) < RT.GOAL_NEAR then
-                    onGoal = true                                            -- (a checkpoint on the objective: the objective stands for it)
+                if c.w and tg.quest and math.sqrt((c.w.x - tg.quest.x) ^ 2 + (c.w.y - tg.quest.y) ^ 2) < RT.GOAL_ON then
+                    if not dup(tg.quest, RT.GOAL_NEAR) then
+                        items[#items + 1] = { id = "goal:" .. tostring(C.qid), w = tg.quest, kind = "goal", why = "on" .. src .. i }
+                    end
+                    break                                                    -- (the objective ends the route)
                 elseif c.w and not dup(c.w, RT.SAME_YD) then
-                    items[#items + 1] = { id = "cp:" .. rtAt(c.w), w = c.w, kind = "cp", p = c }
+                    items[#items + 1] = { id = "cp:" .. rtAt(c.w), w = c.w, kind = "cp", p = c, why = src .. i }
                 end
-            end
-            -- (the app sends at most MORE_MAX further ones - RouteWaypoint.MORE_MAX; Map.lua keeps up to 3 - so fewer means the last)
-            if tg.quest and (onGoal or #more < RT.MORE_MAX) and not dup(tg.quest, RT.GOAL_NEAR) then
-                items[#items + 1] = { id = "goal:" .. tostring(C.qid), w = tg.quest, kind = "goal" }
             end
         else
             local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
             if okP and onPin == true and tg.pin then
-                items[1] = { id = "cp:" .. rtAt(tg.pin), w = tg.pin, kind = "pin", pin = true }   -- (the same id as in a route)
+                items[1] = { id = "cp:" .. rtAt(tg.pin), w = tg.pin, kind = "pin", pin = true, why = "ownpin" }   -- (the same id as in a route)
             elseif tg.quest then
-                items[1] = { id = "goal:" .. tostring(C.qid), w = tg.quest, kind = "goal" }
+                items[1] = { id = "goal:" .. tostring(C.qid), w = tg.quest, kind = "goal", why = "noroute" }
             end
         end
         return items
@@ -1283,10 +1320,9 @@ do
                 -- the test27 ask (the user: "instead of the quest Icon, we should use the quest number so its totally clear what its
                 -- tracking"): the app's number for it (its place among the watched quests, the app's own count) on the game's POI disc;
                 -- no number (an unwatched focus): the "!" as before
-                local n = C.questNo and C.questNo()
-                local atlas = n and "UI-QuestPoi-QuestNumber" or spec.atlas
-                if o.atlas ~= atlas then
-                    pcall(function() o.tx:SetAtlas(atlas) end); pcall(function() o.sh:SetAtlas(atlas) end); o.atlas = atlas
+                local n = (C.questNo and C.questNo()) or "!"
+                if o.atlas ~= C.DISC_TEX then                               -- cp27: our gold disc, the number (or "!") on it
+                    o.tx:SetTexture(C.DISC_TEX); o.sh:SetTexture(C.DISC_TEX); o.atlas = C.DISC_TEX
                 end
                 if n then
                     if o.numText ~= n then o.num:SetText(tostring(n)); o.numText = n end
@@ -1317,9 +1353,8 @@ do
         end
     end
 
-    -- cp26: a route marker on the band: the pin (our route's checkpoint) and the quest's number disc, cross-faded by its rank (the
-    -- nearer one the disc with the quest's number; the second the pin, a little smaller and dimmer); the objective the disc (or the
-    -- "!" with no number); the player's own pin the pin; alpha the shared fade (C.RT)
+    -- cp26: a route marker on the band, alpha the shared fade (C.RT), the second a little smaller and dimmer. cp27: a checkpoint
+    -- (and the player's own pin) our gold pin, as in the world; the objective our gold disc with the quest's number (a "!" with none)
     C.rk, C.rkFree = {}, {}
     function C.rkGet(id)
         local o = C.rk[id]
@@ -1328,14 +1363,15 @@ do
         if not o then
             local f, u = C.frame, C.u
             o = {}
-            o.psh = f:CreateTexture(nil, "ARTWORK", nil, 1); pcall(function() o.psh:SetAtlas(C.MARK.pin.atlas) end)
+            o.psh = f:CreateTexture(nil, "ARTWORK", nil, 1); o.psh:SetTexture(C.PIN_TEX)
             o.psh:SetVertexColor(0, 0, 0, 0.85)
-            o.pin = f:CreateTexture(nil, "ARTWORK", nil, 3); pcall(function() o.pin:SetAtlas(C.MARK.pin.atlas) end)
-            o.dsh = f:CreateTexture(nil, "ARTWORK", nil, 4); o.dsh:SetVertexColor(0, 0, 0, 0.85)
-            o.disc = f:CreateTexture(nil, "ARTWORK", nil, 5)
+            o.pin = f:CreateTexture(nil, "ARTWORK", nil, 3); o.pin:SetTexture(C.PIN_TEX)
+            o.pin:SetVertexColor(C.GOLD[1], C.GOLD[2], C.GOLD[3])
+            o.dsh = f:CreateTexture(nil, "ARTWORK", nil, 4); o.dsh:SetTexture(C.DISC_TEX); o.dsh:SetVertexColor(0, 0, 0, 0.6)
+            o.disc = f:CreateTexture(nil, "ARTWORK", nil, 5); o.disc:SetTexture(C.DISC_TEX)
             o.num = f:CreateFontString(nil, "OVERLAY", nil, 7)
-            o.num:SetFont(C.FONT, u(14), "OUTLINE")
-            o.num:SetTextColor(1, 0.92, 0.7, 1)
+            o.num:SetFont(C.FONT, u(15), "")
+            o.num:SetTextColor(C.NUM_RGB[1], C.NUM_RGB[2], C.NUM_RGB[3], 1)
             o.d = f:CreateFontString(nil, "OVERLAY")
             o.d:SetFont(C.FONT, u(C.SPEC.dist), "OUTLINE")
             o.d:SetTextColor(1, 1, 1, 1)
@@ -1353,15 +1389,9 @@ do
         local scale, af = C.rtLook(st)
         local a = st.a * af
         local n = C.questNo and C.questNo()
-        -- the disc's share: the objective always; a checkpoint at rank 1 when the quest has a number (eased with the rank)
-        local dw = 0
-        if st.kind == "goal" then dw = 1
-        elseif st.kind == "cp" and n then dw = math.max(0, math.min(1, 2 - (st.r or 1))) end
-        local atlas = (n and "UI-QuestPoi-QuestNumber") or C.MARK.quest.atlas
-        if o.atlas ~= atlas then
-            pcall(function() o.disc:SetAtlas(atlas) end); pcall(function() o.dsh:SetAtlas(atlas) end); o.atlas = atlas
-        end
-        local ps, ds = u(C.MARK.pin.size * scale), u(32 * scale)
+        local dw = (st.kind == "goal") and 1 or 0                            -- cp27: the disc is the objective's only
+        n = n or (dw == 1 and "!") or nil
+        local ps, ds = u(30 * scale), u(28 * scale)
         o.psh:SetSize(ps + u(3), ps + u(3)); o.pin:SetSize(ps, ps)
         o.dsh:SetSize(ds + u(3), ds + u(3)); o.disc:SetSize(ds, ds)
         local x, y = u(m.x), -u(S.line)
@@ -1446,7 +1476,7 @@ do
                 local p = {}
                 for _, it in ipairs(C.RT.pair or {}) do
                     local st = C.RT.st[it.id]
-                    p[#p + 1] = it.id .. "@" .. (st and math.floor(st.a * 100 + 0.5) or 0)
+                    p[#p + 1] = it.id .. "@" .. (st and math.floor(st.a * 100 + 0.5) or 0) .. ":" .. tostring(it.why)
                 end
                 return #p > 0 and table.concat(p, ",") or nil
             end)(), rtn = C.rt_ and #C.rt_ or 0,

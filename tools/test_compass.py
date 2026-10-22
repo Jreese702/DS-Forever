@@ -253,9 +253,9 @@ def main():
     C.draw()
     kids = [f.kids[i] for i in range(1, len(f.kids) + 1)]
     shown = [k for k in kids if k.shown]
-    atl = sorted({k.atlas for k in shown if k.atlas})
-    chk("markers use the game's atlases: " + ", ".join(atl),
-        set(atl) == {"Waypoint-MapPin-Tracked", "questnormal"})
+    tex = sorted({k.tex.split("\\")[-1] for k in shown if getattr(k, "tex", None)})
+    chk("cp27: the markers are our art: the player's pin our gold pin, the quest's objective our gold disc (%s)" % ", ".join(tex),
+        {"marker_pin", "quest_disc"} <= set(tex))
     fs = [k for k in shown if k.kind == "fs" and k.text in ("N", "NE", "E", "SE", "S")]
     endN = [k for k in fs if k.text == "N"]
     midE = [k for k in fs if k.text == "E"]
@@ -582,9 +582,9 @@ def main():
     frames(3, read=True)
     W = C.wm
     pt = W.f.point if W.f else None
-    chk("world marker: shown on the point (x %.1f, y %.1f), the quest's atlas, its distance" % ((pt[4], pt[5]) if pt else (-1, -1)),
+    chk("world marker: shown on the point (x %.1f, y %.1f), cp27: the quest's objective our gold number disc, its distance" % ((pt[4], pt[5]) if pt else (-1, -1)),
         W.shown is True and pt is not None and abs(pt[4] - G.nav.x) < 0.01 and abs(pt[5] - 500) < 0.01
-        and W.tx.tex.endswith("marker_pin") and W.f.point[1] == "BOTTOM" and abs(W.tx.col[2] - 0.93) < 1e-9 and W.d.text == "140 yd")
+        and W.tx.tex.endswith("quest_disc") and W.f.point[1] == "BOTTOM" and W.list[1].num.shown is True and W.d.text == "140 yd")
     G.facing = C.wrap(-math.radians(22.5) + math.pi)    # turned round: the quest behind, its mirror unclamped near the centre
     C.cam.abs = C.cam.ref = G.facing                     # (cp19: the camera's estimate runs with the bar on the facing too)
     frames(60, read=True)                                # (cp24: held 0.6 s, then a 0.25 s fade)
@@ -810,7 +810,7 @@ def main():
         % (sw[0][1], sw[-1][1]),
         k0 is not None and all(abs(x - nx) < 0.1 for a, x in sw[:k0])
         and all(sw[i][0] >= sw[i + 1][0] for i in range(k0 - 1)) and all(sw[i][0] <= sw[i + 1][0] for i in range(k0, len(sw) - 1))
-        and abs(sw[-1][1] - (nx - 200)) < 0.1 and abs(sw[-1][0] - 1) < 1e-9 and abs(W.tx.col[2] - 0.93) < 1e-9)
+        and abs(sw[-1][1] - (nx - 200)) < 0.1 and abs(sw[-1][0] - 1) < 1e-9 and W.tx.tex.endswith("quest_disc"))
     # no target at all: a fade at once (no hold)
     G.quest = None
     C.read(True)
@@ -868,7 +868,7 @@ def main():
 
     def setRoute(k, swap):
         L.globals().GAME.pin = L.table(*mp(*CPS[k]))
-        more = CPS[k + 1:k + 3]
+        more = (CPS + [GOAL])[k + 1:k + 3]                # (the app keeping a GOAL route's end as its last point: cp27's ask)
         lst = "{" + ",".join("{ m = GAME.map, x = %r, y = %r }" % mp(*c) for c in more) + "}"
         if swap:
             L.execute("local R = WowCompanion.routeWp; R.moreOld, R.moreOldAt, R.more = R.more, GetTime(), {}")
@@ -937,7 +937,8 @@ def main():
                               "wa": (o.f.alpha if (o and o.f.shown) else 0.0), "wx": (o.f.point[4] if (o and o.f.point) else None),
                               "wy": (o.f.point[5] if (o and o.f.point) else None), "wt": (o.d.text if o else None),
                               "ca": (k_.d.alpha if (k_ and k_.d.shown) else 0.0), "ct": (k_.d.text if k_ else None),
-                              "cx": (k_.pin.point[4] if (k_ and k_.pin.point) else None)}
+                              "cx": (k_.pin.point[4] if (k_ and k_.pin.point) else None),
+                              "cdisc": bool(k_ and k_.disc.shown), "cpin": bool(k_ and k_.pin.shown)}
         log.append(row)
     ids = ["cp:%d:%d" % (math.floor(x + 0.5), math.floor(y + 0.5)) for x, y in CPS]
     gid = "goal:123"
@@ -1000,9 +1001,9 @@ def main():
         % (len(lastTwo), len(onlyG)), lastTwo and onlyG and gStart is not None and min(ga[gStart:]) == 1.0
         and not L.globals().WowCompanion.routeWp.active)
     k1 = C.rk[gid]
-    chk("cp26: at the end the objective is the quest's disc with its number on the compass ('%s'), pale gold in the world"
+    chk("cp26: at the end the objective is the quest's disc with its number on the compass ('%s'), the same disc in the world"
         % (k1.num.text if k1 else None), k1 is not None and k1.disc.shown is True and k1.num.text == "1"
-        and abs(W.obj[gid].tx.col[2] - 0.93) < 1e-9)
+        and W.obj[gid].tx.tex.endswith("quest_disc") and W.obj[gid].num.shown is True and W.obj[gid].num.text == "1")
     # the objective joins the list only when the app sent every checkpoint left (fewer than its 2), or one stands on it
     L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end")
     G.pin = L.table(*mp(*CPS[0]))
@@ -1012,9 +1013,14 @@ def main():
                   ",".join("{ m = GAME.map, x = %r, y = %r }" % mp(*c) for c in more) + "} }")
         C.read(True)
         return [C.rt_[i].id for i in range(1, len(C.rt_) + 1)]
-    l2, l1, lg = lst(CPS[1:3]), lst(CPS[1:2]), lst([CPS[1], (GOAL[0] + 3, GOAL[1])])
-    chk("cp26: the objective last only when the list is complete: 2 sent %s; 1 sent %s; one ON the objective %s" % (l2, l1, lg),
-        gid not in l2 and l1[-1] == gid and len(l1) == 3 and lg == [ids[0], ids[1], gid])
+    l2, l1, l0, lg = lst(CPS[1:3]), lst(CPS[1:2]), lst([]), lst([CPS[1], (GOAL[0] + 25, GOAL[1])])
+    chk("cp27: the objective joins ONLY where the app's list reaches it: 2 sent %s; 1 sent (a way's leg) %s; none %s; the last ON it %s"
+        % (l2, l1, l0, lg), gid not in l2 and gid not in l1 and gid not in l0 and lg == [ids[0], ids[1], gid]
+        and C.rt_[3].why == "onmore2")
+    cpLook = [(v["cpin"], v["cdisc"]) for r in log for id_, v in r["st"].items() if id_ != gid and v["ca"] > 0]
+    gLook = [(v["cpin"], v["cdisc"]) for r in log for id_, v in r["st"].items() if id_ == gid and v["ca"] > 0]
+    chk("cp27: on the compass every checkpoint is our pin, never the disc (%d marker-frames); the objective the disc, never a pin (%d)"
+        % (len(cpLook), len(gLook)), cpLook and all(p and not d for p, d in cpLook) and gLook and all(d and not p for p, d in gLook))
     G.px, G.py, G.facing, C.cam.abs, C.cam.ref, G.pin, G.quest = keepW
     L.execute("""C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end
                  WowCompanion.routeWp = { active = true, more = { { m = GAME.map, x = 0.7, y = 0.35 }, { m = GAME.map, x = 0.4, y = 0.3 } } }
@@ -1104,18 +1110,19 @@ def main():
     G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.setCam(False); C.qnAt = -10; C.draw()
     mq = C.rk["goal:123"]                                # (cp26: the objective on the band: the route markers' disc)
     chk("cp17: the focused quest 123 is the 2nd watched (10, [55 hidden], 77 unwatched, 123): '%s' on the POI number disc" % mq.num.text,
-        mq.num.text == "2" and mq.num.shown is not False and mq.disc.atlas == "UI-QuestPoi-QuestNumber" and mq.d.shown is not False)
+        mq.num.text == "2" and mq.num.shown is not False and mq.disc.tex.endswith("quest_disc") and mq.d.shown is not False)
     # cp23 (test60: "missing the number in the circle"): this client's number disc is DARK brown; the number must be light on it,
     # outlined, over the disc's layer, its text set and shown
     nc = [mq.num.col[i] for i in (1, 2, 3)]
     lum = 0.2126 * nc[0] + 0.7152 * nc[1] + 0.0722 * nc[2]
-    chk("cp23: the number is LIGHT on the dark disc (luminance %.2f; the disc's ~0.2), outlined, OVERLAY over the disc, '%s' shown"
-        % (lum, mq.num.text), lum > 0.7 and mq.num.flags == "OUTLINE" and mq.num.layer == "OVERLAY" and mq.disc.layer == "ARTWORK"
+    chk("cp27: the number DARK on our gold disc, the classic look (luminance %.2f), OVERLAY over the disc, '%s' shown"
+        % (lum, mq.num.text), lum < 0.15 and mq.num.flags == "" and mq.num.layer == "OVERLAY" and mq.disc.layer == "ARTWORK"
         and mq.num.text == "2" and mq.num.shown is True and mq.num.fsize and mq.num.fsize > 0
         and mq.num.point and abs(mq.num.point[4] - mq.disc.point[4]) < 1e-9 and abs(mq.num.point[5] - mq.disc.point[5]) < 1e-9)
     L.execute("QWATCH[123] = nil")
     C.qnAt = -10; G.t = G.t + 2; C.draw()
-    chk("cp17: an unwatched focus: the '!' as before, no number", mq.disc.atlas == "questnormal" and mq.num.shown is False)
+    chk("cp27: an unwatched focus: a '!' on the gold disc ('%s')" % mq.num.text, mq.num.text == "!" and mq.num.shown is True
+        and mq.disc.tex.endswith("quest_disc"))
     L.execute("QWATCH[123] = 0; C_QuestLog.GetNumQuestLogEntries = nil")
 
     # cp17: the CALIBRATION recording (cal1): one shot, armed by the marker centred and the stick idle 3 s, 120 s at 30 Hz
