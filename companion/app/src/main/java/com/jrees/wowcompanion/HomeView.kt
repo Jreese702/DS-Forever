@@ -746,6 +746,20 @@ class HomeView(
             }
         }).also { it.start() }
     }
+    /** ExitGuard (the host's): the map module guards itself */
+    fun mapGuarding(): Boolean = mapWanted
+    /** ExitGuard's B: one step back out of Home's own controller layer - the aura list, the type tool, a module full screen */
+    fun guardBack(): Boolean {
+        if (auraPane.open != null) { auraPane.close(); changed(); return true }
+        if (typeWanted) { closeTypeTool(); return true }
+        if (flow.close()) { changed(); onBHome?.invoke(); return true }
+        return false
+    }
+    /** ExitGuard: ask the guest "home" (or the tool's) again, out of the fight */
+    fun guardReask() {
+        if (typeWanted) return                                         // the tool asks for its own hold when it opens again
+        if (homeOwnGuestWanted() && homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = true))) Log.i("WCLOG", "exit guard: Home's hold asked again")
+    }
     private fun mapFallbackOff() {
         mapFallbackReader?.stop(); mapFallbackReader = null; mapFallbackHeld = 0
         removeCallbacks(mapWatch)
