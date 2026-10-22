@@ -247,12 +247,9 @@ fun WoWForeverScreen(
             PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
             return
         }
-        if (!artReady) {
-            refused("art not ready")
-            errorMessage = "Game art is required before Play"
-            PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
-            return
-        }
+        // art not ready: Play waits for it (awaitArtHarvest below starts or joins the harvest and shows its progress) instead of
+        // refusing - test55: after the launch switch Play said "Game art is required before Play" and no harvest ran
+        if (!artReady) Timber.i("WoWForeverScreen: Play by $by waits for the game art (not ready)")
         if (!files.hasStorageAccess) return                // the bottom asks for it
         isLaunching = true
         errorMessage = null
@@ -396,8 +393,10 @@ fun WoWForeverScreen(
     val filesMissing = !(files.dataExists && files.buildInfoExists)
 
     /** the art build, BY ITSELF once the game folder is found (the user's pick "Automatic, no button"); [retry] = the bottom's Try again */
-    fun harvestArt(retry: Boolean = false) {
-        if (isLaunching || isUpdating || isHarvesting || files.isWrongGame || filesMissing || !files.hasStorageAccess) return
+    fun harvestArt(retry: Boolean = false, force: Boolean = false) {
+        // [force]: the launch switch's own start (the screen's flags may still be the old build's, or Play's)
+        if (!force && (isLaunching || isUpdating || isHarvesting || files.isWrongGame || filesMissing)) return
+        if (!files.hasStorageAccess) return
         if (artFailed != null && !retry) return
         GamePath.save(context, gamePath)
         artFailed = null
@@ -448,7 +447,11 @@ fun WoWForeverScreen(
                 Timber.i("Moved to World of Warcraft: Forever ${result.version}")
                 checkFiles()
                 dependencies = null              // QuestieDB again, into _forever_'s add-ons
-                harvestArt()                     // the new build's art (it is keyed by the build)
+                // THE NEW BUILD'S ART, for sure (test55: harvestArt's early returns and the start's finished run left none): the old
+                // run forgotten and its interiors bake stopped, the screen's art flags reset, the harvest started whatever they said
+                withContext(Dispatchers.IO) { com.jrees.wowcompanion.ArtHarvest.restart(context) }
+                artReady = false; artFailed = null; isHarvesting = false
+                harvestArt(retry = true, force = true)
                 true
             }
             is WowClientDownloader.Switch.NoAnswer -> {
