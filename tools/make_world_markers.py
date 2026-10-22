@@ -5,6 +5,9 @@
                                       round head with a hole, tapering to its TIP at the texture's bottom middle, a dark rim
   WowCompanion/Media/quest_disc.tga   (cp27: the quest's objective on the compass) the classic quest-number disc: a gold-filled
                                       circle, lit from the top, a dark rim; the number drawn dark on it by the add-on
+  WowCompanion/Media/marker_diamond.tga (cp32: the CURRENT checkpoint) a waypoint diamond, white shaded for the add-on's gold tint: a
+                                      faceted rhombus (lit top left) with a dark rim, an inner bevel and a bright gem dot; its BOTTOM tip at
+                                      the texture's bottom middle (the ground point)
   (marker_ring / marker_beam: cp21's, unused since cp22)
   WowCompanion/Media/tint_glow.tga    (at1, the aggro tint) a soft glow round a nameplate: a bright edge line where the plate's box
                                       is, a halo fading outward, the middle faint (the plate stays readable over it)
@@ -158,6 +161,43 @@ def disc():
     return out
 
 
+def diamond():
+    n, ss = 128, 4
+    N = n * ss
+    cx, cy = N / 2, N / 2
+    hw, hh = N * 0.36, N / 2 - 1.0 * ss               # half width, half height (tips at the top and bottom edges)
+
+    def inside(x, y, k):                              # inside the rhombus scaled by k about its centre
+        return abs(x - cx) / (hw * k) + abs(y - cy) / (hh * k) <= 1
+
+    big = Image.new("RGBA", (N, N), (0, 0, 0, 0))
+    px = big.load()
+    for q in range(N):
+        for p in range(N):
+            x, y = p + 0.5, q + 0.5
+            if not inside(x, y, 1.0):
+                continue
+            if not inside(x, y, 0.88):
+                v = 0.30                                                     # the dark rim
+            elif not inside(x, y, 0.80):
+                v = 0.98                                                     # the bright bevel edge
+            elif inside(x, y, 0.22):
+                d = math.hypot(x - cx, y - cy) / (0.22 * hw)
+                v = 1.0 - 0.25 * d                                           # the gem dot, bright
+            elif not inside(x, y, 0.30):
+                # the facets: the four quarters lit differently (top-left brightest), a soft fall-off to the edge
+                left, top = x < cx, y < cy
+                v = {(True, True): 0.95, (False, True): 0.80, (True, False): 0.72, (False, False): 0.58}[(left, top)]
+            else:
+                v = 0.40                                                     # the dark ring round the dot
+            g = int(round(255 * v))
+            px[p, q] = (g, g, g, 255)
+    img = big.resize((n, n), Image.BOX)
+    out = os.path.join(MEDIA, "marker_diamond.tga")
+    img.save(out, compression=None)
+    return out
+
+
 if __name__ == "__main__":
-    for p in (ring(), beam(), tint(), pin(), disc()):
+    for p in (ring(), beam(), tint(), pin(), disc(), diamond()):
         print(p, os.path.getsize(p))

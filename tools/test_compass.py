@@ -942,7 +942,8 @@ def main():
                               "wy": (o.f.point[5] if (o and o.f.point) else None), "wt": (o.d.text if o else None),
                               "ca": (k_.d.alpha if (k_ and k_.d.shown) else 0.0), "ct": (k_.d.text if k_ else None),
                               "cx": (k_.pin.point[4] if (k_ and k_.pin.point) else None),
-                              "cdisc": bool(k_ and k_.disc.shown), "cpin": bool(k_ and k_.pin.shown)}
+                              "cdisc": bool(k_ and k_.disc.shown), "cpin": bool(k_ and k_.pin.shown),
+                              "cdia": bool(k_ and k_.dia.shown), "wdia": bool(o and o.dia.shown), "wpin": bool(o and o.tx.shown)}
         log.append(row)
     ids = ["cp:%d:%d" % (math.floor(x + 0.5), math.floor(y + 0.5)) for x, y in CPS]
     gid = "goal:123"
@@ -1021,10 +1022,15 @@ def main():
     chk("cp27: the objective joins ONLY where the app's list reaches it: 2 sent %s; 1 sent (a way's leg) %s; none %s; the last ON it %s"
         % (l2, l1, l0, lg), gid not in l2 and gid not in l1 and gid not in l0 and lg == [ids[0], ids[1], gid]
         and C.rt_[3].why == "onmore2")
-    cpLook = [(v["cpin"], v["cdisc"]) for r in log for id_, v in r["st"].items() if id_ != gid and v["ca"] > 0]
-    gLook = [(v["cpin"], v["cdisc"]) for r in log for id_, v in r["st"].items() if id_ == gid and v["ca"] > 0]
-    chk("cp27: on the compass every checkpoint is our pin, never the disc (%d marker-frames); the objective the disc, never a pin (%d)"
-        % (len(cpLook), len(gLook)), cpLook and all(p and not d for p, d in cpLook) and gLook and all(d and not p for p, d in gLook))
+    cpLook = [(v["r"], v["cpin"], v["cdia"], v["cdisc"]) for r in log for id_, v in r["st"].items() if id_ != gid and v["ca"] > 0]
+    gLook = [(v["cpin"], v["cdia"], v["cdisc"]) for r in log for id_, v in r["st"].items() if id_ == gid and v["ca"] > 0]
+    chk("cp32: on the compass the CURRENT checkpoint the diamond, the NEXT the pin (both only while the rank eases), never the disc "
+        "(%d marker-frames); the objective the disc only (%d)" % (len(cpLook), len(gLook)),
+        cpLook and all((dia and not pin) if r_ == 1 else (pin and not dia) if r_ == 2 else (pin and dia) for r_, pin, dia, disc in cpLook)
+        and not any(disc for *_, disc in cpLook) and gLook and all(d and not p and not i for p, i, d in gLook))
+    wLook = [(v["r"], v["wpin"], v["wdia"]) for r in log for id_, v in r["st"].items() if id_ != gid and v["wa"] > 0]
+    chk("cp32: in the world the same: the current the diamond, the next the pin (%d marker-frames)" % len(wLook),
+        wLook and all((dia and not pin) if r_ == 1 else (pin and not dia) if r_ == 2 else (pin and dia) for r_, pin, dia in wLook))
     # cp28 (test66: "most times I can't see anything"; the log: st false, n 0-1): mid-route with the game super-tracking the QUEST
     # (not our pin) - the engine's point is the quest's, neither of the two shown. The camera's yaw and pitch come from it anyway:
     # checkpoints 80 and 130 yd ahead are shown at once, at their projections, the nearer at full alpha, the second at 0.75
