@@ -122,9 +122,9 @@ def main():
     Lg.WowCompanion.npWant = L.table_from({"hud": True})
     run(1)
     chk("HUD mode on, out of combat, no health signal, no fight yet: nothing shown (%s)" % P.why, P.f is not None and P.shown is False)
-    chk("our own frame on UIParent, MEDIUM, mouse off, anchored below the centre (y %.1f = -300 spec px, hidden 14 lower)" % P.f.point[5],
+    chk("our own frame on UIParent, MEDIUM, mouse off, anchored below the centre (y %.1f = -350 spec px, hidden 14 lower)" % P.f.point[5],
         L.eval("rawequal(WowCompanion.prd.f.parent, UIParent)") and P.f.strata == "MEDIUM" and P.f.mouse is False
-        and P.f.point[1] == "TOP" and P.f.point[3] == "CENTER" and abs(P.f.point[5] + (300 + 14) * 768 / 1080) < 1e-6 and P.y == -300)
+        and P.f.point[1] == "TOP" and P.f.point[3] == "CENTER" and abs(P.f.point[5] + (350 + 14) * 768 / 1080) < 1e-6 and P.y == -350)
 
     # a fight starts (PLAYER_REGEN_DISABLED before UnitAffectingCombat reads true): in 0.15 s
     fire("PLAYER_REGEN_DISABLED")
@@ -141,8 +141,8 @@ def main():
         Lg.issecretvalue(P.hp.value) and P.hp.max == 1000 and P.hp.min == 0)
     chk("power FED the same way, the PRD's own fill tinted mana's blue (0, 0.45, 1)", Lg.issecretvalue(P.pw.value)
         and P.pw.max == 100 and P.pw.fill.atlas == "UI-HUD-CoolDownManager-Bar-c60" and list(P.pw.color.values()) == [0, 0.45, 1])
-    chk("prd6: health the PRD's own fill (rounded at both ends) tinted green, 260 x 15 (spec px; prd8: wider), in the PRD's bar BG (c60), no spark",
-        P.hp.fill.atlas == "UI-HUD-CoolDownManager-Bar-c60" and list(P.hp.color.values()) == [0.12, 0.86, 0.12] and P.hp.spark is None and abs(P.hp.w - 260 * 768 / 1080) < 1e-6
+    chk("prd6: health the PRD's own fill (rounded at both ends) tinted green, 280 x 15 (spec px; prd8: wider), in the PRD's bar BG (c60), no spark",
+        P.hp.fill.atlas == "UI-HUD-CoolDownManager-Bar-c60" and list(P.hp.color.values()) == [0.12, 0.86, 0.12] and P.hp.spark is None and abs(P.hp.w - 280 * 768 / 1080) < 1e-6
         and abs(P.hp.h - 15 * 768 / 1080) < 1e-6 and P.shadow.tex.endswith("compass_band")
         and P.hpFrame.atlas == "UI-HUD-CoolDownManager-Bar-BG-c60" and P.pwFrame.atlas == "UI-HUD-CoolDownManager-Bar-BG-c60"
         and P.hpFrame.whole is not None)
@@ -225,8 +225,8 @@ def main():
     # the height: the app's steps (10 spec px), its range, the default, per character in our saved data
     y0 = P.y
     P.nudge(1)
-    chk("a step up: -290 (%s), saved for Yes-Lander" % P.y, P.y == -290 and Lg.WowCompanionDB.prdY["Yes-Lander"] == -290
-        and abs(P.f.point[5] + 290 * 768 / 1080) < 1e-6)
+    chk("a step up: -340 (%s), saved for Yes-Lander" % P.y, P.y == -340 and Lg.WowCompanionDB.prdY["Yes-Lander"] == -340
+        and abs(P.f.point[5] + 340 * 768 / 1080) < 1e-6)
     for _ in range(30):
         P.nudge(1)
     chk("the top of the range: -170 (%s)" % P.y, P.y == -170)
@@ -234,14 +234,14 @@ def main():
         P.nudge(-1)
     chk("the bottom of the range: -470 (%s)" % P.y, P.y == -470)
     P.nudge(0)
-    chk("back to the default: -300, nothing kept (%s)" % P.y, P.y == -300 and Lg.WowCompanionDB.prdY["Yes-Lander"] is None and y0 == -300)
+    chk("back to the default: -350, nothing kept (%s)" % P.y, P.y == -350 and Lg.WowCompanionDB.prdY["Yes-Lander"] is None and y0 == -350)
     P.nudge(-1); P.y = None; P.loadY()
-    chk("read back at log in (%s)" % P.y, P.y == -310)
+    chk("read back at log in (%s)" % P.y, P.y == -360)
     # prd4: a height saved on the OLD default (prdYv not yet 2) moves down with it, once
     Lg.WowCompanionDB.prdY["Yes-Lander"] = -230; Lg.WowCompanionDB.prdYv = None; P.loadY()
     y1 = P.y; P.loadY()
     chk("prd4: an old saved height (-230) shifted once with the default: %s, then %s" % (y1, P.y), y1 == -280 and P.y == -280)
-    chk("Hub's names: y, on, min, max, step, def, nudge", P.min == -470 and P.max == -170 and P.step == 10 and P["def"] == -300
+    chk("Hub's names: y, on, min, max, step, def, nudge", P.min == -470 and P.max == -170 and P.step == 10 and P["def"] == -350
         and P.on is True and callable(P.nudge))
     chk("this client has no curve route in the stub: tried once, off, the read stands (%s)" % P.curveBad, P.curveBad is not None)
 
@@ -323,7 +323,7 @@ def main():
     # THE COST: the spell's own cost over the plain max, on the power fill's right edge, gone when the cast ends
     ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_START", "player", "guid", 8936)
     chk("prd3: casting a 25-mana spell of 100: the cost segment a quarter of the bar (%.2f), on the power fill's edge" % (P.cost.w or -1),
-        P.cost.shown is True and abs(P.cost.w - 0.25 * 260 * 768 / 1080) < 1e-6 and P.cost.point[1] in ("TOPRIGHT", "BOTTOMRIGHT")
+        P.cost.shown is True and abs(P.cost.w - 0.25 * 280 * 768 / 1080) < 1e-6 and P.cost.point[1] in ("TOPRIGHT", "BOTTOMRIGHT")
         and L.eval("rawequal(WowCompanion.prd.cost.point[2], WowCompanion.prd.pw.fill)"))
     ev.scripts.OnEvent(ev, "UNIT_SPELLCAST_STOP", "player", "guid", 8936)
     chk("prd3: the cast over: gone", P.cost.shown is False and P.ex.cost is None)
@@ -435,10 +435,10 @@ def main():
 
     # prd8, WIDTH AND SCALE (the user: "can we add some scaling settings"): Hub's column 39 selects, its step columns move it
     fire("PLAYER_REGEN_DISABLED"); ME.fight = True; run(0.5)
-    chk("prd8: wider by default: 260 spec px, scale 100 %, the step columns on the height", P.wd == 260 and P.sc == 100 and P.sel == "y")
+    chk("prd8: wider by default: 280 spec px (prd9), scale 100 %, the step columns on the height", P.wd == 280 and P.sc == 100 and P.sel == "y")
     P.select(); P.nudge(1)
-    chk("prd8: select -> width; a step up: 280 (%s), the bars that wide at once (the live preview), kept for Yes-Lander" % P.wd,
-        P.wd == 280 and abs(P.hp.w - 280 * 768 / 1080) < 1e-6 and abs(P.f.w - 280 * 768 / 1080) < 1e-6 and Lg.WowCompanionDB.prdW["Yes-Lander"] == 280)
+    chk("prd8: select -> width; a step up: 300 (%s), the bars that wide at once (the live preview), kept for Yes-Lander" % P.wd,
+        P.wd == 300 and abs(P.hp.w - 300 * 768 / 1080) < 1e-6 and abs(P.f.w - 300 * 768 / 1080) < 1e-6 and Lg.WowCompanionDB.prdW["Yes-Lander"] == 300)
     P.select(); P.nudge(1); P.nudge(1)
     chk("prd8: select -> scale; two steps: 120 %% (%s), the whole bar scaled" % P.sc, P.sc == 120 and abs(P.f.scale - 1.2) < 1e-9
         and Lg.WowCompanionDB.prdS["Yes-Lander"] == 120)
@@ -446,10 +446,10 @@ def main():
     chk("prd8: default on the scale: 100, nothing kept", P.sc == 100 and Lg.WowCompanionDB.prdS["Yes-Lander"] is None)
     y0 = P.y; run(5); P.nudge(1)
     chk("prd8: 4 s with no tap: the step columns back on the height (an app that only knows the height still works): %s -> %s" % (y0, P.y),
-        P.sel == "y" and P.y == y0 + 10 and P.wd == 280)
+        P.sel == "y" and P.y == y0 + 10 and P.wd == 300)
     P.nudge(-1)
     P.wd, P.sc = None, None; P.loadSize()
-    chk("prd8: read back at log in: 280 wide, 100 %%", P.wd == 280 and P.sc == 100)
+    chk("prd8: read back at log in: 300 wide, 100 %%", P.wd == 300 and P.sc == 100)
     P.select(); P.nudge(0); P.sel = "y"
     # tt1, HIDE THE GAME'S TOOLTIPS (the user: "I need a setting to hide top screen tooltips"): alpha only, held by hooks
     TT = Lg.WowCompanion.tips

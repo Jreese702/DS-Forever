@@ -16,12 +16,18 @@ import test_compass as tc  # noqa: E402
 
 PLATES = r'''
 PLATE_WRITES, PLATE_READS = 0, 0
+WorldFrame = setmetatable({ name = "WorldFrame" }, getmetatable(UIParent))
 -- a plate: anything read or written on it is counted (the tint may only ANCHOR to it)
 local function plateFor(u)
     local p = { GetCenter = function() PLATE_READS = PLATE_READS + 1; return 600, 400 end,
                 GetEffectiveScale = function() PLATE_READS = PLATE_READS + 1; return 1 end }
     -- (at3: Forever's plate: its UnitFrame's health bar container - u.nobar: a plate without one)
-    if not u.nobar then p.UnitFrame = { HealthBarsContainer = { name = "bar" } } end
+    -- (at4: its UnitFrame in the plate's strata at its level; any write to it counted too)
+    if not u.nobar then
+        p.UnitFrame = setmetatable({ HealthBarsContainer = { name = "bar" },
+                                     GetFrameStrata = function() return "LOW" end, GetFrameLevel = function() return 7 end },
+                                   { __newindex = function(t, k, v) PLATE_WRITES = PLATE_WRITES + 1; rawset(t, k, v) end })
+    end
     return setmetatable(p, { __newindex = function(t, k, v) PLATE_WRITES = PLATE_WRITES + 1; rawset(t, k, v) end })
 end
 TARGET = nil
@@ -101,7 +107,7 @@ def main():
     o = tint("nameplate4")
     chk("at3: our own frame on UIParent, BACKGROUND, mouse off, our art (its bar-aspect rows %.3f), ANCHORED to the plate's HEALTH BAR, 9 out"
         % (o.t.tc[4] if o.t.tc else -1),
-        L.eval("rawequal(WowCompanion.rings.list[%d].f.parent, UIParent)" % A.byTok.nameplate4) and o.f.strata == "BACKGROUND"
+        L.eval("rawequal(WowCompanion.rings.list[%d].f.parent, WorldFrame)" % A.byTok.nameplate4) and o.f.strata == "LOW"
         and o.f.mouse is False and o.t.tex.endswith("tint_glow") and abs(o.t.tc[4] - 53 / 64) < 1e-9
         and L.eval("rawequal(WowCompanion.rings.list[%d].f.point[2], UNITS.nameplate4.plate.UnitFrame.HealthBarsContainer)" % A.byTok.nameplate4)
         and o.f.point[1] == "BOTTOMRIGHT" and o.f.point[4] == 9 and o.f.point[5] == -9)
@@ -111,6 +117,9 @@ def main():
         o15 is not None and L.eval("rawequal(WowCompanion.rings.list[%d].f.point[2], UNITS.nameplate15.plate)" % A.byTok.nameplate15)
         and o15.f.point[4] == 6)
     Lg.UNITS.nameplate15 = None; fire("NAME_PLATE_UNIT_REMOVED", "nameplate15"); run(0.2)
+    chk("at4: BEHIND the plate's text and bar: WorldFrame's child (the plates' parent), the UnitFrame's strata (%s), one level under it (%s < 7), its texture in BACKGROUND"
+        % (o.f.strata, o.f.level), L.eval("rawequal(WowCompanion.rings.list[%d].f.parent, WorldFrame)" % A.byTok.nameplate4)
+        and o.f.strata == "LOW" and o.f.level == 6 and o.t.layer == "BACKGROUND")
     chk("the tint never READS or WRITES a plate (only anchors to it): %d reads, %d writes" % (tread[0], Lg.PLATE_WRITES),
         tread[0] == 0 and Lg.PLATE_WRITES == 0)
     # the margin: a state changes only HYST (1) yd past its line on the way out; at once on the way in

@@ -2253,7 +2253,11 @@ do
         local t = now()
         -- ag4: or HUD mode (Hub hub14, the user's "Yes, force them on"): ONE owner here, two reasons (WC.npWant.hud); restored only when
         -- neither wants them
-        local want = A.routing() or (type(WC.npWant) == "table" and WC.npWant.hud == true)
+        -- hub17: the enemy nameplates' own switch (npWant.np) once set, else HUD mode's bundle (npWant.hud)
+        local npw = type(WC.npWant) == "table" and WC.npWant or {}
+        local npOn = npw.np
+        if npOn == nil then npOn = npw.hud == true end
+        local want = A.routing() or npOn == true
         local saved = A.npSaved()
         if want then
             A.np.offSince = nil
@@ -2766,8 +2770,10 @@ end
 -- visibility value P.vis moves at IN_S / OUT_S toward shown or hidden, and both the alpha and a slide offset follow it through the
 -- same eased curve (1 - (1 - v)^2: an ease-out as it comes in, an ease-in as it goes), TRAVEL spec px from below; a hide that turns
 -- into a show turns round where it is. The slide is an offset on the player's height, never written to it.
-WC.prd = { V = "prd8", TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 260, W_MIN = 180, W_MAX = 400, W_STEP = 20,
-           S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -300, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 260, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
+-- prd9 (the user's new defaults, for anyone who never changed them - a saved value stays): the height Y_DEF -350 (was -300), the
+-- width W_DEF 280 (was 260); the scale 100 % as before
+WC.prd = { V = "prd9", TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
+           S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
            ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.25, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
            alpha = 0, shown = false, why = "off" }
 -- (the names Hub's hub15 row reads: y, on, min, max, step, def, nudge; hub16 adds w / s and their ranges, sel and select)
@@ -3337,7 +3343,11 @@ do
 
     -- ---------------------------------------------------------------- when it shows
     function P.wanted()
-        if not (type(WC.npWant) == "table" and WC.npWant.hud == true) then return false, "hud off" end
+        -- hub17: the bar's own switch (npWant.prd) once set, else HUD mode's bundle (npWant.hud)
+        local npw = type(WC.npWant) == "table" and WC.npWant or {}
+        local on = npw.prd
+        if on == nil then on = npw.hud == true end
+        if not on then return false, "hud off" end
         local okD, dead = pcall(UnitIsDeadOrGhost, "player")
         if okD and dead == true then return false, "dead" end
         return true
@@ -3547,7 +3557,12 @@ end
 --   from the client - with a soft glow outside; drawn at the bar's own aspect (TEX_V of the texture's height used).
 --   THE COLOUR: every eligible plate has one: GREEN beyond APPROACH yd past the edge, then yellow, orange, red as before. In combat
 --   still none (the game's own threat colours the plate then).
-WC.rings = { V = "at3", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
+-- at4 (test74, the user: "our aggro highlight is in front of the mob text, it should be behind it"): our frame was on UIParent,
+-- which draws over the nameplates (they live under WorldFrame). Now it is WorldFrame's child (the plates' own parent: also their
+-- scale, so the 9 out matches the bar's units) in the plate's own strata, one frame level UNDER the plate's UnitFrame - so under its
+-- name, level and health bar fill. Only our own frame is parented / levelled (legal in combat); the plate's level and strata are
+-- READ (no taint), nothing of it is written; forbidden plates (enemies in instances) never reach us (GetNamePlateForUnit).
+WC.rings = { V = "at4", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
              ALPHA = 0.95, OUTSET = 6, PAD = 9, TEX_V = 53 / 64, list = {}, est = {}, react = {}, why = {}, n = 0,
              COL = { far = { 0.32, 0.86, 0.36 }, approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
              TEX = "Interface\\AddOns\\WowCompanion\\Media\\tint_glow" }
@@ -3605,11 +3620,11 @@ do
     local function tint(s)
         local o = R.list[s]
         if o then return o end
-        local f = CreateFrame("Frame", nil, UIParent)
+        local f = CreateFrame("Frame", nil, (type(WorldFrame) == "table" and WorldFrame) or UIParent)
         f:SetFrameStrata("BACKGROUND")
         f:EnableMouse(false)
         f:Hide()
-        local t = f:CreateTexture(nil, "ARTWORK")
+        local t = f:CreateTexture(nil, "BACKGROUND")
         t:SetTexture(R.TEX)
         t:SetAllPoints(f)
         t:SetTexCoord(0, 1, 0, R.TEX_V)                  -- at3: the art's used rows (the bar's own aspect)
@@ -3665,6 +3680,17 @@ do
                         o.f:SetPoint("BOTTOMRIGHT", to, "BOTTOMRIGHT", pad, -pad)
                         o.plate, o.bar = plate, bar
                     end
+                    -- at4: under the plate's UnitFrame (its name, level, bar fill): its strata, one level below (re-read each
+                    -- tick: a targeted plate is raised)
+                    local okU, uf = pcall(function() return plate.UnitFrame end)
+                    local ref = (okU and type(uf) == "table" and uf) or plate
+                    local okS, strata = pcall(function() return ref:GetFrameStrata() end)
+                    local okL, lvl = pcall(function() return ref:GetFrameLevel() end)
+                    strata = okS and type(strata) == "string" and strata or "BACKGROUND"
+                    lvl = okL and num(lvl) or 1
+                    if o.strata ~= strata then o.f:SetFrameStrata(strata); o.strata = strata end
+                    local want = math.max(0, lvl - 1)
+                    if o.lvl ~= want then o.f:SetFrameLevel(want); o.lvl = want end
                     local c = R.COL[e.st]
                     if c then o.t:SetVertexColor(c[1], c[2], c[3]); o.col = e.st end
                     -- the alpha: up in a tinted state out of combat, down far away or in combat
