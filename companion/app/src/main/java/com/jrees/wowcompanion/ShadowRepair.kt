@@ -21,14 +21,36 @@ object ShadowRepair {
             (if (failed > 0) ", $failed NOT moved: kept in place" else "") + ")" else ""
     }
 
-    /** [at] the entry in the shadow; [shared] the same entry in the shared game folder */
-    fun repair(at: File, shared: File, backupRoot: File, isLink: (File) -> Boolean): Result {
+    /**
+     * NEVER THE SHARED FOLDER'S OWN FILES (test57, the launch plan's hazard live: the repair walked a shadow folder that was a LINK into
+     * the shared game folder and moved the real game - WowB-ARM64.exe, WTF, Interface - into the backup): whether [f]'s real path lies
+     * inside [sharedRoot]'s (links and junctions resolved). Unknown counts as inside: refused.
+     */
+    fun inside(f: File, sharedRoot: File): Boolean = runCatching {
+        real(f).startsWith(real(sharedRoot))
+    }.getOrDefault(true)
+
+    /** [f]'s real path: every link and junction on the way resolved (toRealPath; for a path not there yet, its nearest existing parent's
+     *  real path and the rest - canonicalFile alone does not resolve a Windows junction) */
+    private fun real(f: File): java.nio.file.Path {
+        var p = f.absoluteFile.toPath(); val rest = ArrayList<String>()
+        while (!java.nio.file.Files.exists(p)) { rest.add(0, p.fileName.toString()); p = p.parent ?: return f.canonicalFile.toPath() }
+        var r = p.toRealPath(); for (n in rest) r = r.resolve(n)
+        return r.normalize()
+    }
+
+    /** [at] the entry in the shadow; [shared] the same entry in the shared game folder; [sharedRoot] the shared game folder itself:
+     *  an [at] whose real path is inside it is REFUSED (never moved, never deleted) */
+    fun repair(at: File, shared: File, backupRoot: File, isLink: (File) -> Boolean, sharedRoot: File? = null): Result {
         val name = at.name
         if (isLink(at)) return Result(name, "link")
         if (!at.exists()) return Result(name, "missing")
+        if (sharedRoot != null && inside(at, sharedRoot)) return Result(name, "REFUSED: it is the shared game folder's own (nothing moved)")
         var merged = 0; var backed = 0; var failed = 0
         fun one(src: File, dst: File, rel: String) {
             try {
+                // the same file by two names (a link on the way): never a copy of itself, never a delete
+                if (dst.exists() && runCatching { java.nio.file.Files.isSameFile(src.toPath(), dst.toPath()) }.getOrDefault(true)) { failed++; return }
                 val bak = File(backupRoot, "$name/$rel")
                 when {
                     !dst.exists() -> { copy(src, dst); merged++ }
@@ -55,6 +77,27 @@ object ShadowRepair {
         if (dst.exists() && !dst.delete()) { tmp.delete(); error("replace") }
         check(tmp.renameTo(dst)) { "rename" }
     }
+
+    /**
+     * THE SHADOW'S OWN FLAVOR FOLDER, made safe before anything walks it ([NativeLogin.prepare]): a flavor folder in the shadow [root]
+     * that is a link ([isLink]) is unlinked (the link only - test55's launch run linked the beta's SHARED folder in as an ordinary
+     * entry); one whose real path is inside [gameRoot] all the same (a junction, a bind) is REFUSED - an exception, the shadow not
+     * built, nothing touched. Returns the private folder for [flavor].
+     */
+    fun flavorFolder(root: File, flavor: String, gameRoot: File, flavors: Set<String>, isLink: (File) -> Boolean): File {
+        for (n in flavors + flavor) {
+            val f = File(root, n)
+            if (isLink(f)) f.delete()                                              // the link itself (File.delete never follows one)
+            if (f.exists() && inside(f, gameRoot)) error("the shadow's $n is the shared game folder's own (${f.canonicalPath}): not built")
+        }
+        val fl = File(root, flavor).apply { mkdirs() }
+        if (inside(fl, gameRoot)) error("the shadow's $flavor resolves into the shared game folder: not built")
+        return fl
+    }
+
+    /** the shared game folder's entries the shadow root links: all but the clients' own flavor folders (only the running client's is
+     *  in the shadow, as a private folder of links - never a link to a shared flavor folder) */
+    fun rootLinks(gameRoot: File, flavors: Set<String>): List<File> = gameRoot.listFiles()?.filter { it.name !in flavors }.orEmpty()
 
     /** the backup folder for a repair started at [nowMs] */
     fun backupRoot(documents: File, nowMs: Long): File =
