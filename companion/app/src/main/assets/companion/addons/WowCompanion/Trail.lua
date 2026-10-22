@@ -2253,7 +2253,11 @@ do
         local t = now()
         -- ag4: or HUD mode (Hub hub14, the user's "Yes, force them on"): ONE owner here, two reasons (WC.npWant.hud); restored only when
         -- neither wants them
-        local want = A.routing() or (type(WC.npWant) == "table" and WC.npWant.hud == true)
+        -- hub17: the enemy nameplates' own switch (npWant.np) once set, else HUD mode's bundle (npWant.hud)
+        local npw = type(WC.npWant) == "table" and WC.npWant or {}
+        local npOn = npw.np
+        if npOn == nil then npOn = npw.hud == true end
+        local want = A.routing() or npOn == true
         local saved = A.npSaved()
         if want then
             A.np.offSince = nil
@@ -3339,7 +3343,11 @@ do
 
     -- ---------------------------------------------------------------- when it shows
     function P.wanted()
-        if not (type(WC.npWant) == "table" and WC.npWant.hud == true) then return false, "hud off" end
+        -- hub17: the bar's own switch (npWant.prd) once set, else HUD mode's bundle (npWant.hud)
+        local npw = type(WC.npWant) == "table" and WC.npWant or {}
+        local on = npw.prd
+        if on == nil then on = npw.hud == true end
+        if not on then return false, "hud off" end
         local okD, dead = pcall(UnitIsDeadOrGhost, "player")
         if okD and dead == true then return false, "dead" end
         return true
