@@ -15,11 +15,12 @@ object MarkerArt {
     /** the spec's colours: the pin's gold #FFD14D, the disc's number #291700 */
     const val PIN_GOLD = 0xFFFFD14D.toInt()
     const val DISC_NUMBER = 0xFF291700.toInt()
-    /** the spec's ranks: the second of the two at this size and alpha; the nearer fades from [FADE_FAR_YD] to [FADE_NEAR_YD] */
+    /** the spec's ranks: the second of the two at this size and alpha; the nearer fades from [FADE_FAR_YD] to [FADE_NEAR_YD] (test68:
+     *  full until 25 yd, gone as it is reached) */
     const val SECOND_SIZE = 0.8f
     const val SECOND_ALPHA = 0.75f
-    const val FADE_FAR_YD = 45.0
-    const val FADE_NEAR_YD = 25.0                 // DangerGrid.PASS_YD: gone exactly when it is passed
+    const val FADE_FAR_YD = 25.0
+    const val FADE_NEAR_YD = 0.0                  // reached (DangerGrid.PASS_YD 4 yd passes it: 0.16 then gone)
 
     /** the nearer checkpoint's alpha at [yd] from the player: full at [FADE_FAR_YD] and beyond, 0 at [FADE_NEAR_YD] */
     fun nearAlpha(yd: Double): Float = ((yd - FADE_NEAR_YD) / (FADE_FAR_YD - FADE_NEAR_YD)).coerceIn(0.0, 1.0).toFloat()

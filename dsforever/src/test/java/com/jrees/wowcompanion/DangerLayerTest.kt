@@ -91,12 +91,15 @@ class DangerLayerTest {
         assertEquals(2, r.size)
     }
 
-    /** test45 ("At every bend I want a checkpoint flag which the arrow leads to"): a bend within 18 yd is passed, the next leads */
+    /** test45 ("At every bend I want a checkpoint flag which the arrow leads to"): a REACHED bend is passed, the next leads (test68:
+     *  reached = within DangerGrid.PASS_YD, 5 yd - no longer 25) */
     @Test fun aReachedCheckpointIsPassed() {
-        val leg = listOf(doubleArrayOf(0.100, 0.5), doubleArrayOf(0.108, 0.5), doubleArrayOf(0.3, 0.6), doubleArrayOf(0.8, 0.5))
-        val p = DangerGrid.passed(leg, 2000.0, 2000.0)!!                      // the first bend 16 yd away: passed
+        val leg = listOf(doubleArrayOf(0.100, 0.5), doubleArrayOf(0.1015, 0.5), doubleArrayOf(0.3, 0.6), doubleArrayOf(0.8, 0.5))
+        val p = DangerGrid.passed(leg, 2000.0, 2000.0)!!                      // the first bend 3 yd away: reached
         assertEquals(3, p.size); assertEquals(0.3, p[1][0], 1e-9)
-        assertEquals(null, DangerGrid.passed(listOf(leg[0], doubleArrayOf(0.105, 0.5), leg[3]), 2000.0, 2000.0))   // none left
+        assertEquals(null, DangerGrid.passed(listOf(leg[0], doubleArrayOf(0.1015, 0.5), leg[3]), 2000.0, 2000.0))   // none left
+        // 16 yd short (the old rule's pass): not yet - the marker stays until it is reached
+        assertEquals(4, DangerGrid.passed(listOf(leg[0], doubleArrayOf(0.108, 0.5), leg[2], leg[3]), 2000.0, 2000.0)!!.size)
         assertEquals(4, DangerGrid.passed(listOf(leg[0], doubleArrayOf(0.2, 0.5), leg[2], leg[3]), 2000.0, 2000.0)!!.size)
     }
 
@@ -110,8 +113,13 @@ class DangerLayerTest {
         assertTrue(DangerGrid.isPassed(doubleArrayOf(0.475, 0.485), c, n, ax, ay))
         // coming up to a sharp corner from the west, 30 yd short and a few yards north of the line: NOT passed
         assertFalse(DangerGrid.isPassed(doubleArrayOf(0.485, 0.498), c, n, ax, ay))
-        // within 25 yd: passed
-        assertTrue(DangerGrid.isPassed(doubleArrayOf(0.488, 0.5), c, n, ax, ay))
+        // test68: 24 yd short is no longer passed; reached (3 yd, inside PASS_YD 4): passed
+        assertFalse(DangerGrid.isPassed(doubleArrayOf(0.488, 0.5), c, n, ax, ay))
+        assertTrue(DangerGrid.isPassed(doubleArrayOf(0.4985, 0.5), c, n, ax, ay))          // 3 yd
+        // a runner stepping over it between two position reads (7 yd apart: 3 yd short, then 4 yd on): the next read is past its line
+        assertTrue(DangerGrid.isPassed(doubleArrayOf(0.5, 0.497), c, n, ax, ay))
+        // walking 4 yd beside it, then 6 yd on past its line: passed
+        assertTrue(DangerGrid.isPassed(doubleArrayOf(0.502, 0.497), c, n, ax, ay))
         // 150 yd off to the side and not yet up to it: not passed; the same 100 yd on past its line: passed (progress along the leg)
         assertFalse(DangerGrid.isPassed(doubleArrayOf(0.425, 0.51), c, n, ax, ay))
         assertTrue(DangerGrid.isPassed(doubleArrayOf(0.425, 0.45), c, n, ax, ay))
