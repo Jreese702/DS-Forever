@@ -60,7 +60,10 @@ class RouteWaypoint {
         if (nowMs < refusedUntil) return routeKeep()
         val further = more.take(MORE_MAX)
         val moved = !active || abs(want[0] - sentX) > MOVE || abs(want[1] - sentY) > MOVE
-        if (moved && (switched || nowMs - setAt >= SET_EVERY_MS)) {
+        // A PASS (cp26, the user's "always show the next two markers"): the new pin stands where the first further flag stood - the
+        // player walked past a checkpoint and the route advanced; it moves at once (the pace is against churn and re-plans only)
+        val advance = active && sentMore.isNotEmpty() && abs(want[0] - sentMore[0][0]) <= MOVE && abs(want[1] - sentMore[0][1]) <= MOVE
+        if (moved && (switched || advance || nowMs - setAt >= SET_EVERY_MS)) {
             switched = false
             active = true; sentX = want[0]; sentY = want[1]; setAt = nowMs; keepAt = nowMs
             sentMore = further; moreAt = nowMs

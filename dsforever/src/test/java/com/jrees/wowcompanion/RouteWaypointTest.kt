@@ -109,4 +109,17 @@ class RouteWaypointTest {
             assertEquals(v, (d[0] * 36 + d[1]) / 1295.0, 0.001)
         }
     }
+
+    @Test fun aPassedCheckpointAdvancesThePinAtOnceAChurnStillWaitsItsPace() {
+        val w = RouteWaypoint()
+        val a = doubleArrayOf(0.30, 0.30); val b = doubleArrayOf(0.35, 0.30); val c = doubleArrayOf(0.40, 0.30); val d = doubleArrayOf(0.45, 0.30)
+        assertEquals(RouteWaypoint.SET, w.tick(a, 0L, listOf(b, c)).first())
+        // 1 s later the player passed A: the pin is B (the first further flag), the flags C and D - sent at once
+        val adv = w.tick(b, 1_000L, listOf(c, d))
+        assertEquals(RouteWaypoint.SET, adv.first())
+        assertEquals(2, adv.count { it == RouteWaypoint.MORE })                    // the next two markers with it (MORE_MAX = 2)
+        // a re-plan moving the pin somewhere else 1 s later: paced (nothing until SET_EVERY_MS)
+        assertTrue(w.tick(doubleArrayOf(0.60, 0.60), 2_000L, listOf(d)).isEmpty())
+        assertEquals(RouteWaypoint.SET, w.tick(doubleArrayOf(0.60, 0.60), 1_000L + RouteWaypoint.SET_EVERY_MS, listOf(d)).first())
+    }
 }
