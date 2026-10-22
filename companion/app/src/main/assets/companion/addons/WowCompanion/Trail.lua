@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp23" }
+WC.compass = { V = "cp24" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -700,7 +700,22 @@ do
     C.wm = { SIZE = 34, EASE_S = 0.12, LAND_S = 0.5, MORE_K = { 0.8, 0.68, 0.58 }, MORE_A = { 0.85, 0.65, 0.5 },
              list = {}, airAt = -100, n = 0, CAM_H = 1.9, ZOOM = 12, PITCH_S = 3, TILT = 0.1, PITCH0 = 0.3,
              JUMP_V = 7.9558, MOUNT_V = 7.9558, GRAV = 19.2911, PRESS_S = 0.3, jumpAt = -100, jumpN = 0, LOG_S = 5, logAt = -100,
-             GOLD = { 1, 0.82, 0.3 }, QUEST = { 1, 0.93, 0.5 }, PIN = "Interface\\AddOns\\WowCompanion\\Media\\marker_pin" }
+             GOLD = { 1, 0.82, 0.3 }, QUEST = { 1, 0.93, 0.5 }, PIN = "Interface\\AddOns\\WowCompanion\\Media\\marker_pin",
+             HOLD_S = 0.6, IN_S = 0.15, OUT_S = 0.25, FLIP_S = 0.4, FRONT_IN = 10, FRONT_OUT = 16, VIS_S = 10, visAt = -100,
+             pinAt = -100, vis = { show = 0, hide = 0, held = 0, why = {} } }
+    -- cp24 (test60, the user: "a little glitchy and temperamental, sometimes flashing in and out of existence"): a marker was shown
+    -- only on frames when every read agreed, and hidden at once on any other - so ONE bad frame was a blink. The causes found:
+    --   the engine's point read for a frame invalid, clamped, or not there (C_Navigation); the in-front gate (the camera estimate's
+    --   yaw at the FOV's edge, no margin); the super-track flipping off our pin for a moment (the marker jumping to the quest's
+    --   point and back); a tilt of the camera stick hiding every flag each frame though the pitch was solved that same frame; the
+    --   flags' FOV / distance / screen-edge gates without margin; Map's pin advancing (the further flags' list emptied and resent).
+    -- Now: a marker that loses its reading for a reason that can be a DROPOUT (no point, invalid, clamped, behind, a super-track
+    -- flip, no pitch, a tilt, out of the FOV) is HELD where it was for HOLD_S, then fades (OUT_S); a deliberate end (no target: Map's
+    -- "arrived" clears the pin; the route gone; the compass off) fades at once; a show fades in (IN_S). The gates keep a margin
+    -- once shown (in front: FRONT_IN degrees past the half FOV to show, FRONT_OUT to keep; the flags' FOV, distance and edge alike).
+    -- A marker changing what it marks (our pin <-> the quest) fades out where it was, then in at the new point: never a blink.
+    -- A super-track off our pin while the route is active is a flip for FLIP_S (held), not a change. One "wmvis" cap line per
+    -- VIS_S with any change: shows, hides, held frames, and the hides' and holds' reasons.
     -- cp22 (the user: "The world markers for the quests can go back to just being the pin icon ... when I jump they need to stay
     -- anchored"):
     --   THE LOOK: cp21's beam + rings are gone; every marker is OUR pin (Media/marker_pin.tga, tools/make_world_markers.py, tinted
@@ -853,23 +868,84 @@ do
         return f
     end
     function C.wmHide()
-        for _, o in pairs(C.wm.list) do if o.f:IsShown() then o.f:Hide() end end
+        for _, o in pairs(C.wm.list) do
+            if o.f:IsShown() then o.f:Hide() end
+            o.a, o.pend, o.goodAt = 0, nil, nil
+        end
     end
-    -- cp22: our pin, its TIP (the frame's bottom) at x, y; col its tint
-    local function wmPut(i, x, y, col, txt, alpha)
+    -- cp22: our pin, its TIP (the frame's bottom) at x, y; col its tint. cp24: placed, not shown (the visibility pass shows it); a
+    -- marker changing what it marks (key) while seen is not moved: the new place waits until it has faded out
+    local function wmPut(i, x, y, col, txt, alpha, key)
         C.wmBuild(i)
         local o = C.wm.list[i]
+        if o.key ~= nil and o.key ~= key and (o.a or 0) > 0 then
+            o.pend = { x = x, y = y, col = col, txt = txt, alpha = alpha, key = key }
+            return false
+        end
+        o.pend, o.key = nil, key
         o.f:ClearAllPoints()
         o.f:SetPoint("BOTTOM", UIParent, "BOTTOMLEFT", x, y)
         if o.col ~= col then o.tx:SetVertexColor(col[1], col[2], col[3]); o.col = col end
         if o.text ~= txt then o.d:SetText(txt); o.text = txt end
-        if o.alpha ~= alpha then pcall(function() o.f:SetAlpha(alpha) end); o.alpha = alpha end
-        if not o.f:IsShown() then o.f:Show() end
+        o.base = alpha
         o.x, o.y = x, y
+        return true
+    end
+    -- cp24: the reasons a marker may only be dropping out for a moment (held HOLD_S); any other fades at once
+    C.wmDROP = { nonav = true, novp = true, clamp = true, behind = true, flip = true, pitch = true, tilt = true, fov = true,
+                 edge = true, near = true }
+    -- cp24: every marker's alpha toward shown or not, held through a dropout, the transitions counted
+    function C.wmVis(on, lost, now, dt)
+        local W = C.wm
+        local V = W.vis
+        local n = 0
+        for i, o in pairs(W.list) do
+            local want = 0
+            if on[i] then
+                want, o.goodAt, o.holdWhy = 1, now, nil
+            elseif o.pend then
+                want, o.lostWhy = 0, "swap"                                -- (fading out before the new place)
+            else
+                local why = lost[i] or "gone"
+                if C.wmDROP[why] and o.goodAt and now - o.goodAt < W.HOLD_S and (o.a or 0) > 0 then
+                    want = 1
+                    V.held = V.held + 1
+                    if o.holdWhy ~= why then V.why["hold:" .. why] = (V.why["hold:" .. why] or 0) + 1; o.holdWhy = why end
+                end
+                o.lostWhy = why
+            end
+            local a0 = o.a or 0
+            if want > a0 then o.a = math.min(1, a0 + dt / W.IN_S) elseif want < a0 then o.a = math.max(0, a0 - dt / W.OUT_S) end
+            if o.a <= 0 and o.pend then                                    -- faded out: now the new place
+                local p = o.pend
+                o.key = nil
+                wmPut(i, p.x, p.y, p.col, p.txt, p.alpha, p.key)
+            end
+            local al = o.a * (o.base or 1)
+            if o.alpha ~= al then pcall(function() o.f:SetAlpha(al) end); o.alpha = al end
+            if o.a > 0 then
+                if not o.f:IsShown() then o.f:Show(); V.show = V.show + 1 end
+                n = n + 1
+            elseif o.f:IsShown() then
+                o.f:Hide()
+                V.hide = V.hide + 1
+                local why = o.lostWhy or "swap"
+                V.why[why] = (V.why[why] or 0) + 1
+            end
+        end
+        W.vn = n
+        if now - W.visAt >= W.VIS_S then
+            if (V.show + V.hide + V.held) > 0 and WC.send and WC.encode then
+                pcall(WC.send, WC.encode({ type = "cap", probe = "wmvis", v = C.V, show = V.show, hide = V.hide, held = V.held, why = V.why,
+                                           n = n }))
+            end
+            W.visAt, W.vis = now, { show = 0, hide = 0, held = 0, why = {} }
+        end
     end
     -- a pitch to place by: fresh, and the camera not tilted since
     function C.wmPitchOk(now)
         local W = C.wm
+        if W.pitch ~= nil and W.pitchAt == now then return true end   -- cp24: solved THIS frame: good through a tilt
         if C.cam.ry and math.abs(C.cam.ry) > W.TILT then W.tilted = true end
         return W.pitch ~= nil and now - (W.pitchAt or -100) < W.PITCH_S and not W.tilted
     end
@@ -877,7 +953,7 @@ do
         local W = C.wm
         dt = num(dt) or 0
         local now = (type(GetTime) == "function" and GetTime()) or 0
-        local on = {}
+        local on, lost = {}, {}
         if C.wanted() and C.frame and C.frame:IsShown() and C.me_ then
             local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
             local okW, uw = pcall(function() return UIParent:GetWidth() end)
@@ -890,12 +966,19 @@ do
             local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
             local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
             onPin = okP and onPin == true
+            local R1 = WC.routeWp
+            -- cp24: off our pin for a moment while the route is active: a flip (held), not a change to the quest
+            local flip = false
+            if onPin then W.pinAt = now
+            elseif type(R1) == "table" and R1.active == true and now - W.pinAt < W.FLIP_S then flip = true end
             local tg = C.tg_ or {}
             local w = onPin and tg.pin or tg.quest
+            if flip then w = nil end
             if uw and us > 0 then
                 local half = uw / 2
                 local fl = half / math.tan(hfov / 2)
                 -- 1: the engine's own point (the pin, else the focused quest)
+                lost[1] = (flip and "flip") or (not w and "notarget") or (not (okF and nav) and "nonav") or nil
                 if okF and nav and w then
                     local okV, vp = pcall(function() return C_Navigation.HasValidScreenPosition() end)
                     local okK, cl = pcall(function() return C_Navigation.WasClampedToScreen() end)
@@ -903,9 +986,15 @@ do
                     local okS, ns = pcall(function() return nav:GetEffectiveScale() end)
                     x, y = okC and num(x) or nil, okC and num(y) or nil
                     ns = okS and num(ns) or 1
+                    lost[1] = (not (okV and vp == true) and "novp") or (not (okK and cl == false) and "clamp") or (not (x and y) and "novp")
+                        or nil
                     if okV and vp == true and okK and cl == false and x and y then
                         local b, d = C.bearing(C.me_, w)
-                        if math.abs(C.wrap(b - yaw)) < hfov / 2 + math.rad(10) then
+                        -- cp24: a margin once shown (the camera estimate's yaw at the FOV's edge)
+                        local o1 = W.list[1]
+                        local gate = ((o1 and (o1.a or 0) > 0) and W.FRONT_OUT or W.FRONT_IN)
+                        if math.abs(C.wrap(b - yaw)) >= hfov / 2 + math.rad(gate) then lost[1] = "behind" end
+                        if not lost[1] then
                             x, y = x * ns / us, y * ns / us
                             yaw = C.wrap(b + math.atan((x - half) / fl))         -- (exact while the point is on screen)
                             -- cp20: the pitch from this point (not in the air: it rises with the player then)
@@ -936,30 +1025,40 @@ do
                                 y = W.yOut + (y - W.yOut) * (1 - math.exp(-dt / W.EASE_S))   -- landed: eased, not snapped
                             end
                             W.yOut = y
-                            wmPut(1, x, y, onPin and W.GOLD or W.QUEST, C.distText(d), 1)
-                            on[1] = true
+                            on[1] = wmPut(1, x, y, onPin and W.GOLD or W.QUEST, C.distText(d), 1, onPin and "pin" or "quest")
                         end
                     end
                 end
                 -- 2..: the route's further checkpoints (the app's, after the pin's)
                 local R = WC.routeWp
-                if onPin and type(R) == "table" and R.active == true and type(R.more) == "table" then
+                if (onPin or flip) and type(R) == "table" and R.active == true and type(R.more) == "table" then
                     local okP = C.wmPitchOk(now) and uh
                     local D = C.wmZoom()
                     for i, c in ipairs(R.more) do
-                        if i > #W.MORE_K or not okP then break end            -- cp20: no pitch, no flags (never floating)
+                        if i > #W.MORE_K then break end
+                        if not okP then                                       -- cp20: no pitch, no flags (cp24: held, then a fade)
+                            for j = i, #W.MORE_K do lost[j + 1] = W.tilted and "tilt" or "pitch" end
+                            break
+                        end
                         if c.w == nil then c.w = C.world(c.m, c.x, c.y) or false end
                         local wk = c.w
                         if wk and not (wk.cont and C.me_.cont and wk.cont ~= C.me_.cont) then
                             local b, d = C.bearing(C.me_, wk)
                             local rel = C.wrap(b - yaw)
-                            if d > 8 and math.abs(rel) < hfov / 2 then
+                            -- cp24: the gates with a margin once shown
+                            local oi = W.list[i + 1]
+                            local seen = oi and (oi.a or 0) > 0
+                            if d <= (seen and 6 or 8) then lost[i + 1] = "near"
+                            elseif math.abs(rel) >= hfov / 2 + (seen and math.rad(4) or 0) then lost[i + 1] = "fov"
+                            else
                                 local x = half - fl * math.tan(rel)
                                 local yo = C.wmProj(W.pitch, D, W.CAM_H, d * math.cos(rel), C.wmDzAir(c), fl)
                                 local y = yo and uh / 2 + yo or nil
-                                if y and math.abs(x - half) < half * 0.95 and y > 0 and y < uh then
-                                    wmPut(i + 1, x, y, W.GOLD, C.distText(d), W.MORE_A[i])
-                                    on[i + 1] = true
+                                local m = seen and 0.99 or 0.95
+                                if y and math.abs(x - half) < half * m and y > 0 and y < uh then
+                                    on[i + 1] = wmPut(i + 1, x, y, W.GOLD, C.distText(d), W.MORE_A[i], "flag")
+                                else
+                                    lost[i + 1] = "edge"
                                 end
                             end
                         end
@@ -967,10 +1066,9 @@ do
                 end
             end
         end
+        C.wmVis(on, lost, now, dt)
         local n = 0
-        for i, o in pairs(W.list) do
-            if on[i] then n = n + 1 elseif o.f:IsShown() then o.f:Hide() end
-        end
+        for i in pairs(on) do n = n + 1 end
         W.shown, W.n = on[1] == true, n
     end
 

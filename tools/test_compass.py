@@ -587,7 +587,7 @@ def main():
         and W.tx.tex.endswith("marker_pin") and W.f.point[1] == "BOTTOM" and abs(W.tx.col[2] - 0.93) < 1e-9 and W.d.text == "140 yd")
     G.facing = C.wrap(-math.radians(22.5) + math.pi)    # turned round: the quest behind, its mirror unclamped near the centre
     C.cam.abs = C.cam.ref = G.facing                     # (cp19: the camera's estimate runs with the bar on the facing too)
-    frames(3, read=True)
+    frames(60, read=True)                                # (cp24: held 0.6 s, then a 0.25 s fade)
     chk("world marker: hidden while the quest is behind (a mirrored point)", W.shown is False and W.f.shown is False)
     G.facing = -math.radians(22.5); G.nav.clamped = True
     C.cam.abs = C.cam.ref = G.facing
@@ -596,7 +596,7 @@ def main():
     G.nav.clamped = False
     L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end")
     G.pin = L.table(0.6, 0.4)
-    frames(3, read=True)
+    frames(40, read=True)                                # (cp24: the quest's marker fades out, then the pin's in)
     chk("cp22: the route's pin super-tracked: our pin, gold, its tip on the point", W.shown is True and W.tx.tex.endswith("marker_pin")
         and abs(W.tx.col[2] - 0.82) < 1e-9 and W.f.point[1] == "BOTTOM")
     # cp19, THE FLAGS (the user: "they don't always show where the flags are at"): the app's further checkpoints (Map.lua's uwp 38)
@@ -719,11 +719,130 @@ def main():
     G.ry = 0.6; frames(2, read=True); G.ry = 0
     G.nav = L.table_from({"x": c0 + c0 * math.tan(math.radians(22.5)), "y": 384 + proj(0.35, dpin, 0), "clamped": False})
     G.ry = 0.6; C.wm.pitchAt = -100; frames(1, read=True)
-    G.ry = 0; G.nav = None; C.wm.tilted = True; frames(1, read=True)
+    G.ry = 0; G.nav = None; C.wm.tilted = True; frames(60, read=True)                  # (cp24: held, then a fade)
     chk("cp20: the camera tilted since the pitch was read: the flags hide rather than float", W.list[2].f.shown is False and W.tilted is True)
     G.nav = L.table_from({"x": c0 + c0 * math.tan(math.radians(22.5)), "y": 384 + proj(0.35, dpin, 0), "clamped": False})
     frames(3, read=True)
     chk("cp20: a new pitch from the engine's point: back", W.list[2].f.shown is True and W.tilted is False)
+    # cp24, STABLE (test60, the user: "a little glitchy and temperamental, sometimes flashing in and out of existence")
+    nx, ny = G.nav.x, G.nav.y
+
+    def navset(x=None):
+        G.nav = L.table_from({"x": nx if x is None else x, "y": ny, "clamped": False})
+    frames(30, read=True)
+    seq = []
+    for kind in ("nil", "clamp", "nil", "clamp", "nil"):
+        if kind == "nil":
+            G.nav = None
+        else:
+            G.nav.clamped = True
+        frames(1, read=True)
+        seq.append((W.f.shown, W.f.alpha, W.list[2].f.shown, W.f.point[4]))
+        navset()
+        frames(4, read=True)
+        seq.append((W.f.shown, W.f.alpha, W.list[2].f.shown, W.f.point[4]))
+    chk("cp24: one-frame dropouts (no point, clamped) never blink the markers: %s"
+        % sorted({(a, round(b, 2), c) for a, b, c, _ in seq}),
+        all(a is True and abs(b - 1) < 1e-9 and c is True and abs(x - nx) < 0.01 for a, b, c, x in seq))
+    # a super-track flip (a moment off our pin while the route is active): held at the pin, never jumping to the quest's point
+    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end")
+    navset(nx - 300)                                     # (the engine now projecting the quest, elsewhere)
+    xs = []
+    for _ in range(6):
+        frames(1, read=True)
+        xs.append((W.f.shown, round(W.f.point[4], 1), W.list[2].f.shown))
+    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end")
+    navset()
+    frames(10, read=True)
+    chk("cp24: a 0.1 s super-track flip: the pin held where it was, the flags too (%s)" % (xs[0],),
+        all(a is True and abs(x - nx) < 0.1 and c is True for a, x, c in xs))
+    # a tilt of the camera stick with the pin on screen: the pitch is solved each frame, the flags stay
+    G.ry = 0.6
+    tl = []
+    for _ in range(20):
+        frames(1, read=True)
+        tl.append(W.list[2].f.shown is True and abs(W.list[2].f.alpha - 0.85) < 1e-9)
+    G.ry = 0
+    chk("cp24: tilting the camera with the pin on screen: the flags stay (%d of 20 frames)" % sum(tl), all(tl))
+    # a SUSTAINED loss: held HOLD_S (0.6 s), then a 0.25 s fade, then hidden; the hide's reason counted; a wmvis line
+    frames(10, read=True)
+    W.visAt = G.t
+    W.vis = L.table_from({"show": 0, "hide": 0, "held": 0, "why": L.table()})
+    G.nav = None
+    al = []
+    for _ in range(60):
+        frames(1, read=True)
+        al.append((round(G.t - W.visAt, 3), W.f.alpha if W.f.shown else 0.0))
+    held = [a for t, a in al if t < 0.58]
+    fade = [a for t, a in al if 0.62 < t < 0.84]
+    chk("cp24: the point gone for 1 s: held at full for 0.6 s (%d frames), then fading (%s), then hidden"
+        % (len(held), ", ".join("%.2f" % a for a in fade[::4])),
+        all(abs(a - 1) < 1e-9 for a in held) and fade and all(0 < a < 1 for a in fade)
+        and all(fade[i] >= fade[i + 1] for i in range(len(fade) - 1)) and al[-1][1] == 0 and W.f.shown is False)
+    chk("cp24: ... the hide counted with its reason (%s, %d held frames)" % (W.vis.why.nonav, W.vis.held),
+        W.vis.hide >= 1 and W.vis.why.nonav == 1 and W.vis.held > 30)
+    n0 = len(L.globals().SENT)
+    navset()
+    frames(60 * 10, read=True)
+    vl = [L.globals().SENT[i] for i in range(n0 + 1, len(L.globals().SENT) + 1) if getattr(L.globals().SENT[i], "probe", None) == "wmvis"]
+    chk("cp24: one 'wmvis' line per 10 s: shows %s, hides %s, why %s" % ((vl[0].show, vl[0].hide, dict(vl[0].why)) if vl else (None,) * 3),
+        len(vl) == 1 and vl[0].hide >= 1 and vl[0].show >= 1 and vl[0].why.nonav == 1)
+    # Map's pin advancing: the further flags' list emptied (and resent): they fade, never blink
+    L.execute("SAVEDMORE = WowCompanion.routeWp.more; WowCompanion.routeWp.more = {}")
+    fl = []
+    for _ in range(24):
+        frames(1, read=True)
+        fl.append(W.list[2].f.alpha if W.list[2].f.shown else 0.0)
+    L.execute("WowCompanion.routeWp.more = SAVEDMORE")
+    frames(30, read=True)
+    chk("cp24: the flags' list emptied (the pin advanced): a fade (%s), not a blink; back after" % ", ".join("%.2f" % a for a in fl[::4]),
+        0.5 < fl[0] < 0.85 and fl[-1] == 0 and all(fl[i] >= fl[i + 1] for i in range(len(fl) - 1)) and W.list[2].f.shown is True)
+    # Map's "arrived" (the route's pin CLEARED on purpose, the quest super-tracked): the pin fades out WHERE IT WAS, then the quest's
+    # own marker fades in at its point: never shown-hidden-shown in a frame, never a jump while seen
+    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end; WowCompanion.routeWp.active = false")
+    navset(nx - 200)
+    sw = []
+    for _ in range(40):
+        frames(1, read=True)
+        sw.append((W.f.alpha if W.f.shown else 0.0, round(W.f.point[4], 1)))
+    k0 = next((i for i, (a, _) in enumerate(sw) if a == 0), None)
+    chk("cp24: the pin cleared (arrived): out at the pin (%.0f), in at the quest (%.0f), alpha down then up"
+        % (sw[0][1], sw[-1][1]),
+        k0 is not None and all(abs(x - nx) < 0.1 for a, x in sw[:k0])
+        and all(sw[i][0] >= sw[i + 1][0] for i in range(k0 - 1)) and all(sw[i][0] <= sw[i + 1][0] for i in range(k0, len(sw) - 1))
+        and abs(sw[-1][1] - (nx - 200)) < 0.1 and abs(sw[-1][0] - 1) < 1e-9 and abs(W.tx.col[2] - 0.93) < 1e-9)
+    # no target at all: a fade at once (no hold)
+    G.quest = None
+    C.read(True)
+    nt = []
+    for _ in range(20):
+        frames(1, read=True)
+        nt.append(W.f.alpha if W.f.shown else 0.0)
+    chk("cp24: no target at all: a fade at once, no hold (%s)" % ", ".join("%.2f" % a for a in nt[::4]),
+        nt[0] < 1 and nt[-1] == 0)
+    G.quest = L.table(0.6, 0.4)
+    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end; WowCompanion.routeWp.active = true")
+    navset()
+    frames(60, read=True)
+    # the in-front gate's margin: shown within 45 + 10 degrees of the camera, KEPT to 45 + 16 (the estimate's yaw wobbling at the
+    # edge no longer blinks it), lost past that
+    fk = (G.facing, C.cam.abs, C.cam.ref)
+    bq = C.bearing(C.me_, C.tg_.pin)[0]
+
+    def at(deg, n=3):
+        G.facing = C.wrap(bq - math.radians(deg)); C.cam.abs = C.cam.ref = G.facing
+        frames(n, read=True)
+        return W.f.shown is True and W.shown is True
+    e1, e2, e3 = at(52), at(59), at(52)
+    e4 = at(64)
+    e5 = W.f.shown is True                               # (lost: held a moment first)
+    frames(60, read=True)
+    chk("cp24: the in-front margin: 52 deg shown %s, 59 kept %s, 52 %s; 64 lost %s (held %s, then gone %s)"
+        % (e1, e2, e3, not e4, e5, W.f.shown is False), e1 and e2 and e3 and not e4 and e5 and W.f.shown is False)
+    e6 = at(59, 30)
+    chk("cp24: ... and from hidden, 59 deg does not show it (the show gate is 55): %s" % (not e6), not e6)
+    G.facing, C.cam.abs, C.cam.ref = fk
+    frames(60, read=True)
     G.nav = None; frames(60 * 4, read=True)
     chk("cp20: no pitch for over 3 s: hidden", W.list[2].f.shown is False)
     L.execute("WowCompanion.routeWp.active = false")
