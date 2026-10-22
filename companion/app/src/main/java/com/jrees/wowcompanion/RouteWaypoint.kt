@@ -17,6 +17,7 @@ class RouteWaypoint {
     private var refusedUntil = Long.MIN_VALUE / 2
     private var noneSince = Long.MIN_VALUE
     private var sentMore: List<DoubleArray> = emptyList(); private var moreAt = Long.MIN_VALUE / 2
+    private var moreRetries = 0
     private var wasRouting = false
     /** the quest the route is for at the last look, and whether a switch to another quest still waits for its SET / CLEAR */
     private var forQuest = 0
@@ -66,7 +67,7 @@ class RouteWaypoint {
         if (moved && (switched || advance || nowMs - setAt >= SET_EVERY_MS)) {
             switched = false
             active = true; sentX = want[0]; sentY = want[1]; setAt = nowMs; keepAt = nowMs
-            sentMore = further; moreAt = nowMs
+            sentMore = further; moreAt = nowMs; moreRetries = 0
             // (cp20: the pin's own ground height after its x / y, as the further flags'; a SET drops the old flags in the add-on)
             return listOf(SET) + digits(want[0]) + digits(want[1]) + zDigits(want.getOrElse(2) { Double.NaN }) + moreCols(further)
         }
@@ -89,6 +90,10 @@ class RouteWaypoint {
 
     /** the add-on's answer ({"type":"routewp"}): a refused SET (the player's own pin, no pins here) is not tried again for a while */
     fun onAnswer(op: String, ok: Boolean, nowMs: Long) {
+        // test72 ("more refused: 2514 yd from the point before it"): a flag the add-on refused is one whose taps did not all land (the
+        // app never sends one over MORE_JUMP_YD: a lost "25" shifted the next digits, y 0.6950 read as 0.0139) - the list sent again
+        // (MORE, MORE and the flags, at the pin's pace), at most [MORE_RETRIES] times for one pin
+        if (op == "more" && !ok && active && sentMore.isNotEmpty() && moreRetries < MORE_RETRIES) { moreRetries++; sentMore = emptyList() }
         if (op == "set" && !ok) { active = false; sentX = Double.NaN; sentY = Double.NaN; sentMore = emptyList(); refusedUntil = nowMs + REFUSED_MS }
         if (op == "clear") { active = false; sentX = Double.NaN; sentY = Double.NaN; sentMore = emptyList() }
     }
@@ -97,6 +102,7 @@ class RouteWaypoint {
         const val SET = 36; const val KEEP = 37; const val CLEAR = 39
         const val MORE = 38                  // cp19: a further checkpoint (4 digits after it); MORE, MORE drops them
         const val MORE_MAX = 2
+        const val MORE_RETRIES = 2
         /** test70: a further flag this far from the point before it is never sent (the add-on refuses it: Map.lua RWP.MORE_JUMP_YD) */
         const val MORE_JUMP_YD = 300.0
         const val ROW = "uwp"

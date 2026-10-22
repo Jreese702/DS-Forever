@@ -2777,7 +2777,9 @@ if WC.pad and type(WC.pad.op) == "function" then
                 -- and a flag more than MORE_JUMP_YD from the point before it (the pin, or the flag before it) is refused, logged
                 local far = p and RWP.jumpYd(p) or nil
                 if p and far and far > RWP.MORE_JUMP_YD then
-                    RWP.say("more", false, string.format("refused: %d yd from the point before it (map %s)", math.floor(far), tostring(m)))
+                    -- (test72: the decoded point said too - a lost tap shifts the digits, and the app sends the list again)
+                    RWP.say("more", false, string.format("refused: %d yd from the point before it (map %s, read %.4f,%.4f)", math.floor(far),
+                        tostring(m), p.x, p.y))
                 elseif p and #RWP.more < RWP.MORE_MAX then
                     RWP.more[#RWP.more + 1] = p
                     RWP.zFor, RWP.zd = p, {}
