@@ -696,6 +696,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             NativeLogin.onTrafficSample = { rx, tx -> signInCheck.traffic(NativeLogin.firstReadAt, rx, tx) }
             ui.post(signInTick)
         }
+        ui.postDelayed(guardTick, 3000L)                                 // the exit guard: no room ever without a working B
         // the saved login is changed in Settings (the user 2026-10-08: "Change saved login" moves there)
         settingsView.loginSaved = { HomeLoginStore.has(this) }
         settingsView.onLogin = { loginPrompt.open() }
@@ -2223,7 +2224,47 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         ).also { it.start() }
     }
 
+    // ---------------------------------------------------------------- EXIT GUARD: no room ever without a working B (ExitGuard)
+    private var guardUnheldSince = 0L
+    private var guardReader: PadInput? = null
+    private var guardHeld = 0
+    private var guardAskAt = 0L
+    private val guardTick = object : Runnable {
+        override fun run() { try { guardStep() } catch (t: Throwable) { Log.w("WCLOG", "exit guard: ${t.message}") }; ui.postDelayed(this, 500L) }
+    }
+    private fun guardStep() {
+        val wheel = (::radialView.isInitialized && radialView.isOpen) || (::pauseView.isInitialized && pauseView.isOpen)
+        val needs = ExitGuard.needs(room == Room.HOME, homeView.homeGuestWanted(), wheel, homeView.mapGuarding())
+        val now = SystemClock.uptimeMillis()
+        if (!needs || capHolder.isNotEmpty()) { guardUnheldSince = 0L; guardOff(); return }
+        if (guardUnheldSince == 0L) guardUnheldSince = now
+        if (!ExitGuard.on(needs, capHolder, now - guardUnheldSince)) return
+        guardOn()
+        if (room == Room.HOME && ExitGuard.retry(true, homeView.inFight(), now - guardAskAt)) { guardAskAt = now; homeView.guardReask() }
+    }
+    private fun guardOn() {
+        if (guardReader != null) return
+        Log.i("WCLOG", "exit guard: ${if (room == Room.HOME) "Home's module / list / tool" else room.name} has no controller hold: B goes back")
+        guardHeld = 0; guardAskAt = SystemClock.uptimeMillis()
+        guardReader = PadInput(onPad = { _, _, _, _ -> }, onStatus = { _, _ -> }, onButtons = { h ->
+            ui.post {
+                val was = guardHeld; guardHeld = h
+                if (guardReader != null && MapExitGuard.bPressed(was, h)) {
+                    if (room != Room.HOME) { Log.i("WCLOG", "exit guard: B read by Home: ${room.name} -> Home"); show(Room.HOME) }
+                    else if (homeView.guardBack()) Log.i("WCLOG", "exit guard: B read by Home: Home's layer closed")
+                }
+            }
+        }).also { it.start() }
+    }
+    private fun guardOff() {
+        val r = guardReader ?: return
+        guardReader = null; guardHeld = 0
+        r.stop()
+        Log.i("WCLOG", "exit guard: off (the controller is held, or nothing needs it)")
+    }
+
     fun onDestroy() {
+        ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
         ArtHarvest.offState(iconArtState)
         IndoorSchedulerStep.stop()
         ui.removeCallbacks(signInTick)
