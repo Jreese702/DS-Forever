@@ -3498,7 +3498,7 @@ end
 -- is a layer over the finished 3D frame), so they floated in front of everything and through walls. Instead each unpulled hostile's
 -- nameplate gets OUR tint, by how close you are to its aggro radius (the rule shared with Map's bottom-map circles: clamp(20 + (mob
 -- level - yours), 5, 45) yd, elites the same, a "??" mob as yours + 10):
---   none      more than APPROACH yd outside the radius;
+--   none      more than APPROACH yd outside the radius (at3: green);
 --   yellow    within APPROACH (10) yd of its edge;
 --   orange    within NEAR (5) yd of it;
 --   red       inside it.
@@ -3508,9 +3508,17 @@ end
 --   LEAVE NO TRACE: our own frame on UIParent (mouse off, our own art: tint_glow.tga, a soft glow with a crisp border), ANCHORED to
 --   the plate (SetPoint to it, as ag2's icons): the plate is never read, written, hooked or recoloured (its health bar untouched).
 --   Settings > Top screen "Aggro tint" (default on): WowCompanionDB.aggroRings (the key ar1 used; Interact's ACT.rings).
-WC.rings = { V = "at2", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
-             ALPHA = 0.95, OUTSET = 6, list = {}, est = {}, react = {}, why = {}, n = 0,
-             COL = { approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
+-- at3 (test72, the user: "I don't like its shape around the bar, it should be more conformed to the whole shape" ... "If the enemy
+-- bar is visible then it should have a colour, even if it's green for being too far"):
+--   THE SHAPE: our frame is anchored to the plate's own HEALTH BAR (its UnitFrame.HealthBarsContainer: only anchored to, never read
+--   or written; the plate itself when it has none), PAD out on every side, and our art (tint_glow.tga, tools/make_world_markers.py)
+--   is that bar's outline as Forever draws it - the chamfered frame of UI-HUD-CoolDownManager-Bar-BG, ~3 px out (4 on top), measured
+--   from the client - with a soft glow outside; drawn at the bar's own aspect (TEX_V of the texture's height used).
+--   THE COLOUR: every eligible plate has one: GREEN beyond APPROACH yd past the edge, then yellow, orange, red as before. In combat
+--   still none (the game's own threat colours the plate then).
+WC.rings = { V = "at3", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
+             ALPHA = 0.95, OUTSET = 6, PAD = 9, TEX_V = 53 / 64, list = {}, est = {}, react = {}, why = {}, n = 0,
+             COL = { far = { 0.32, 0.86, 0.36 }, approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
              TEX = "Interface\\AddOns\\WowCompanion\\Media\\tint_glow" }
 do
     local R, A = WC.rings, WC.live
@@ -3573,6 +3581,7 @@ do
         local t = f:CreateTexture(nil, "ARTWORK")
         t:SetTexture(R.TEX)
         t:SetAllPoints(f)
+        t:SetTexCoord(0, 1, 0, R.TEX_V)                  -- at3: the art's used rows (the bar's own aspect)
         o = { f = f, t = t, a = 0 }
         R.list[s] = o
         return o
@@ -3616,10 +3625,14 @@ do
                     local o = tint(m.s)
                     if o.plate ~= plate then
                         o.f:ClearAllPoints()
-                        -- anchored to the plate, a little bigger than it (the plate only anchored to: never read or written)
-                        o.f:SetPoint("TOPLEFT", plate, "TOPLEFT", -R.OUTSET, R.OUTSET)
-                        o.f:SetPoint("BOTTOMRIGHT", plate, "BOTTOMRIGHT", R.OUTSET, -R.OUTSET)
-                        o.plate = plate
+                        -- at3: anchored to the plate's health bar, PAD out (only anchored to: never read or written); a plate
+                        -- without one (another style, another add-on's plates): the plate itself, OUTSET out, as before
+                        local okB, bar = pcall(function() return plate.UnitFrame and plate.UnitFrame.HealthBarsContainer end)
+                        bar = okB and type(bar) == "table" and bar or nil
+                        local to, pad = bar or plate, bar and R.PAD or R.OUTSET
+                        o.f:SetPoint("TOPLEFT", to, "TOPLEFT", -pad, pad)
+                        o.f:SetPoint("BOTTOMRIGHT", to, "BOTTOMRIGHT", pad, -pad)
+                        o.plate, o.bar = plate, bar
                     end
                     local c = R.COL[e.st]
                     if c then o.t:SetVertexColor(c[1], c[2], c[3]); o.col = e.st end

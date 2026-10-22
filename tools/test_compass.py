@@ -42,6 +42,7 @@ function Region:SetVertexColor(r, g, b, a) self.col = { r, g, b, a } end
 function Region:SetAtlas(a) self.atlas = a end
 function Region:SetTexture(t) self.tex = t end
 function Region:SetRotation(r) self.rot = r end
+function Region:SetTexCoord(...) self.tc = { ... } end
 function Region:SetFrameStrata(s) self.strata = s end
 function Region:EnableMouse(m) self.mouse = m end
 function Region:SetScript(k, fn) self.scripts = self.scripts or {}; self.scripts[k] = fn end

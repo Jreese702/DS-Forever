@@ -6,8 +6,8 @@
   WowCompanion/Media/quest_disc.tga   (cp27: the quest's objective on the compass) the classic quest-number disc: a gold-filled
                                       circle, lit from the top, a dark rim; the number drawn dark on it by the add-on
   (marker_ring / marker_beam: cp21's, unused since cp22)
-  WowCompanion/Media/tint_glow.tga    (at1, the aggro tint) a soft glow round a nameplate: a bright edge line where the plate's box
-                                      is, a halo fading outward, the middle faint (the plate stays readable over it)
+  WowCompanion/Media/tint_glow.tga    (at3, the aggro tint) the outline of Forever's nameplate health bar (chamfered corners, ~3 px
+                                      out) with a soft glow outside, white for the add-on's tint; TINT_H of its 64 rows used
 
     python tools/make_world_markers.py
 """
@@ -59,26 +59,50 @@ def beam():
     return out
 
 
+# at3 (test72, the user: "it should be more conformed to the whole shape"): the glow follows Forever's nameplate health bar - its
+# frame (UI-HUD-CoolDownManager-Bar-BG and the game's own selected border, read from the client: CHAMFERED corners, the outline about
+# 3 px outside the bar, 4 on top). The texture covers the bar plus TINT_PAD on every side, at the bar's medium-size aspect
+# (166 x 20 + 2 x 9: 184 x 38), so it is not distorted: drawn 256 wide, TINT_H of its 64 rows used (the add-on crops the rest).
+TINT_BAR = (166.0, 20.0)                             # the health bar, UI units (NAME_PLATE_WIDTH 190 less 2 x 12; LARGE height 20)
+TINT_PAD = 9.0                                       # the add-on's anchor outset (each side)
+TINT_OUT = (3.0, 3.0, 3.0, 4.0)                      # the outline's outset from the bar: left, right, bottom, top
+TINT_CHAMFER = 4.0                                   # the corner cut (UI units)
+TINT_W = 256
+TINT_H = int(round(TINT_W * (TINT_BAR[1] + 2 * TINT_PAD) / (TINT_BAR[0] + 2 * TINT_PAD)))
+
+
 def tint():
-    w, h = 256, 64
-    inset = 10                                       # the plate's box inside the texture (the add-on's OUTSET, scaled)
+    w, h = TINT_W, 64
+    k = w / (TINT_BAR[0] + 2 * TINT_PAD)            # texture pixels per UI unit
+    ss = 4
+    # the outline's box in UI units, the frame's top-left at 0, 0 (y down)
+    x0, x1 = TINT_PAD - TINT_OUT[0], TINT_PAD + TINT_BAR[0] + TINT_OUT[1]
+    y0, y1 = TINT_PAD - TINT_OUT[3], TINT_PAD + TINT_BAR[1] + TINT_OUT[2]
+    cx, cy, hx, hy = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2
+    c = TINT_CHAMFER
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     px = img.load()
-    for y in range(h):
-        for x in range(w):
-            # the distance outside the inner rounded box (negative inside it)
-            dx = max(inset - x, 0, x - (w - 1 - inset))
-            dy = max(inset - y, 0, y - (h - 1 - inset))
-            out = math.hypot(dx, dy)
-            if out > 0:
-                a = 0.85 * math.exp(-(out / 5.0) ** 2)            # the halo outside
-            else:
-                inside = min(x - inset, w - 1 - inset - x, y - inset, h - 1 - inset - y)
-                a = 0.22 + 0.7 * math.exp(-(inside / 1.6) ** 2)    # the bright edge, the faint middle
-            edge = min(x, w - 1 - x, y, h - 1 - y)
-            if edge < 2:
-                a *= edge / 2.0                                    # nothing at the texture's own edge
-            px[x, y] = (255, 255, 255, int(round(255 * min(1.0, a))))
+    for py in range(TINT_H):
+        for qx in range(w):
+            acc = 0.0
+            for sy in range(ss):
+                for sx in range(ss):
+                    x = (qx + (sx + 0.5) / ss) / k
+                    y = (py + (sy + 0.5) / ss) / k
+                    ax, ay = abs(x - cx), abs(y - cy)
+                    # the signed distance to the chamfered box (UI units; > 0 outside)
+                    d = max(ax - hx, ay - hy, (ax + ay - (hx + hy - c)) / math.sqrt(2))
+                    line = math.exp(-(d / 0.8) ** 2)                       # the crisp outline, ~1.5 units
+                    if d > 0:
+                        glow = 0.6 * math.exp(-d / 2.6)                     # the soft glow outside
+                    else:
+                        glow = 0.18 * math.exp(d / 1.4)                     # a faint lip just inside
+                    acc += min(1.0, line + glow)
+            a = acc / (ss * ss)
+            edge = min(qx, w - 1 - qx, py, TINT_H - 1 - py) / k
+            if edge < 1.5:
+                a *= max(0.0, edge / 1.5)                                  # nothing at the frame's own edge
+            px[qx, py] = (255, 255, 255, int(round(255 * min(1.0, a))))
     out = os.path.join(MEDIA, "tint_glow.tga")
     img.save(out, compression=None)
     return out
