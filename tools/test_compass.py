@@ -191,7 +191,7 @@ def main():
     chk("nothing behind shown (no W)", "W" not in ls)
     chk("ticks every 15 degrees between the letters (8 in +-90)", len(lo.ticks) == 8)
     chk("the ends fade (N dimmer than E)", ls["N"].fade < ls["E"].fade and abs(ls["E"].fade - 1) < 1e-6)
-    chk("letter sizes 22 / 17", ls["E"].size == 22 and ls["NE"].size == 17)
+    chk("cp23: letter sizes 14 / 12 (were 22 / 17)", ls["E"].size == 14 and ls["NE"].size == 12)
 
     # a pin 100 yd due east of the player: in the middle, "100 yd"; the quest 141 yd north-east
     G.pin = L.table(0.6, 0.5)
@@ -202,8 +202,8 @@ def main():
     chk("its distance: 100 yd", ms["pin"].dist == "100 yd")
     chk("the quest NE sits on NE's spot (its spot from GetQuestsOnMap, as on the Thor)", abs(ms["quest"].x - ls["NE"].x) < 0.5 and C.qsrc == "onmap")
     chk("the quest's distance rounds to 5 above 50 (141 -> 140 yd)", ms["quest"].dist == "140 yd")
-    chk("LIFT: E under the pin lifts 25 px and shrinks 5", ls["E"].lifted and ls["E"].y == 32 - 25 and ls["E"].size == 17)
-    chk("LIFT: NE under the quest lifts too", ls["NE"].lifted and ls["NE"].size == 12)
+    chk("LIFT: E under the pin lifts 25 px and shrinks 2 (cp23)", ls["E"].lifted and ls["E"].y == 32 - 25 and ls["E"].size == 12)
+    chk("LIFT: NE under the quest lifts too", ls["NE"].lifted and ls["NE"].size == 10)
     chk("SE (no marker) stays on the line", not ls["SE"].lifted and ls["SE"].y == 32)
 
     G.qsrc = "wpmap"
@@ -260,7 +260,11 @@ def main():
     endN = [k for k in fs if k.text == "N"]
     midE = [k for k in fs if k.text == "E"]
     chk("letters fade by ALPHA toward the ends (N at the end %.2f, E centred %.2f)" % (endN[0].alpha, midE[0].alpha),
-        endN and midE and endN[0].alpha < 0.25 and midE[0].alpha > 0.99 and endN[0].col[1] == 1)
+        endN and midE and endN[0].alpha < 0.25 and abs(midE[0].alpha - 0.9) < 1e-9)
+    tick = [kk for kk in shown if kk.kind != "fs" and not kk.atlas and kk.w and kk.col]
+    tc = tuple(round(tick[0].col[i], 4) for i in (1, 2, 3)) if tick else None
+    chk("cp23: every letter (N too) in the ticks' own light colour %s" % (tc,),
+        tc is not None and all(tuple(round(kk.col[i], 4) for i in (1, 2, 3)) == tc for kk in fs))
     chk("letters in FRIZQT, OUTLINE", fs and all(k.font == "Fonts\\FRIZQT__.TTF" and k.flags == "OUTLINE" for k in fs))
     k = 768 / 1080
     chk("the band is 860 x 76 spec px in UI units (1/1080 of UIParent's height each)", abs(f.w - 860 * k) < 1e-6 and abs(f.h - 76 * k) < 1e-6)
@@ -803,6 +807,14 @@ def main():
     mq = C.mk.quest
     chk("cp17: the focused quest 123 is the 2nd watched (10, [55 hidden], 77 unwatched, 123): '%s' on the POI number disc" % mq.num.text,
         mq.num.text == "2" and mq.num.shown is not False and mq.tx.atlas == "UI-QuestPoi-QuestNumber" and mq.d.shown is not False)
+    # cp23 (test60: "missing the number in the circle"): this client's number disc is DARK brown; the number must be light on it,
+    # outlined, over the disc's layer, its text set and shown
+    nc = [mq.num.col[i] for i in (1, 2, 3)]
+    lum = 0.2126 * nc[0] + 0.7152 * nc[1] + 0.0722 * nc[2]
+    chk("cp23: the number is LIGHT on the dark disc (luminance %.2f; the disc's ~0.2), outlined, OVERLAY over the disc, '%s' shown"
+        % (lum, mq.num.text), lum > 0.7 and mq.num.flags == "OUTLINE" and mq.num.layer == "OVERLAY" and mq.tx.layer == "ARTWORK"
+        and mq.num.text == "2" and mq.num.shown is True and mq.num.fsize and mq.num.fsize > 0
+        and mq.num.point and abs(mq.num.point[4] - mq.tx.point[4]) < 1e-9 and abs(mq.num.point[5] - mq.tx.point[5]) < 1e-9)
     L.execute("QWATCH[123] = nil")
     C.qnAt = -10; G.t = G.t + 2; C.draw()
     chk("cp17: an unwatched focus: the '!' as before, no number", mq.tx.atlas == "questnormal" and mq.num.shown is False)
