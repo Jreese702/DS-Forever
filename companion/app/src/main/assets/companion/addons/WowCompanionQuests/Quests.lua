@@ -1594,12 +1594,14 @@ function OPS.track(id)
         if type(WC.snapshotSoon) == "function" then pcall(WC.snapshotSoon, "supertrack") end
         return result("track", id, true, nil)
     end
+    if type(WC.stTag) == "function" then WC.stTag("the app's focus push") end
     CALL(function() C_SuperTrack.SetSuperTrackedQuestID(id) end)
     local now = superTracked()
     result("track", id, now == id, now ~= id and "did not take" or nil)
 end
 
 function OPS.untrack()
+    if type(WC.stTag) == "function" then WC.stTag("the app's untrack") end
     CALL(function() C_SuperTrack.SetSuperTrackedQuestID(0) end)
     if superTracked() then CALL(function() C_SuperTrack.ClearAllSuperTracked() end) end
     local now = superTracked()
@@ -1624,6 +1626,7 @@ end
 function OPS.unfocus(id)
     if not id or not inLog(id) then return ack("untrack", id, false, "not in log") end
     if superTracked() ~= id then return ack("untrack", id, false, "not the focused quest") end
+    if type(WC.stTag) == "function" then WC.stTag("the app's unfocus") end
     CALL(function() C_SuperTrack.SetSuperTrackedQuestID(0) end)
     if superTracked() then CALL(function() C_SuperTrack.ClearAllSuperTracked() end) end
     local now = superTracked()

@@ -2009,6 +2009,13 @@ local function stPin()
     local ok, v = CALL(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
     return (ok and type(v) == "boolean" and WC.isPlain(v) and v) and true or false
 end
+-- test66: WHO changed the game's super-track last, for the route pin's log (WC.stBy within ST_BY_S of the change; else "the game")
+WC.ST_BY_S = 1.5
+function WC.stTag(by) WC.stBy, WC.stByAt = by, GetTime() end
+function WC.stSource()
+    if WC.stBy and GetTime() - (WC.stByAt or -100) <= WC.ST_BY_S then return WC.stBy end
+    return "the game"
+end
 local function pinUntracked()
     if stPin() then CALL(function() C_SuperTrack.SetSuperTrackedUserWaypoint(false) end) end
 end
@@ -2039,7 +2046,7 @@ local function pinAt(m, x, y)
     end)
     if not okS then return mrAck("pin", false, "the game refused the pin", { m = m }) end
     pinUntracked()
-    if prev ~= 0 and stQuest() ~= prev then CALL(function() C_SuperTrack.SetSuperTrackedQuestID(prev) end) end
+    if prev ~= 0 and stQuest() ~= prev then WC.stTag("the map room's pin"); CALL(function() C_SuperTrack.SetSuperTrackedQuestID(prev) end) end
     CALL(function() PlaySound(SOUNDKIT.UI_MAP_WAYPOINT_CLICK_TO_PLACE) end)
     mrAck("pin", true, nil, { m = m, x = x, y = y })
 end
@@ -2674,6 +2681,21 @@ function RWP.clear(restore, why)
     snapshotSoon("waypoint")
 end
 
+-- test66: our pin super-tracked again while the route runs and the game is on the route's own quest (a flip that was no choice, or one a
+-- KEEP finds); [why] said in a "retrack" answer and counted (RWP.flips)
+function RWP.retrack(why)
+    if not RWP.active or not pinHere(RWP.x, RWP.y) then return end
+    local okU, onPin = CALL(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
+    if okU and onPin == true then return end
+    local q = stQuest()
+    if q ~= 0 and RWP.qid and q ~= RWP.qid then return end                -- another quest: the player's choice (the handler ends it)
+    RWP.ours = true
+    local ok = pcall(function() C_SuperTrack.SetSuperTrackedUserWaypoint(true) end)
+    RWP.ours = false
+    RWP.flips = (RWP.flips or 0) + 1
+    RWP.say("retrack", ok, why .. "; flip " .. RWP.flips)
+end
+
 -- a pin of ours the game kept through a crash or a kill: cleared at log in, the quest's super-track given back
 function RWP.stale()
     local s = type(WowCompanionDB) == "table" and WowCompanionDB.routeWp or nil
@@ -2691,7 +2713,7 @@ if WC.pad and type(WC.pad.op) == "function" then
         if type(col) ~= "number" then return end
         if col >= 36 then RWP.zFor, RWP.zd = nil, nil end                     -- (any op ends a height's window)
         if col == 39 then RWP.digits, RWP.mdigits, RWP.routeAt = nil, nil, nil; return RWP.clear(true, "asked") end
-        if col == 37 then RWP.keepAt = GetTime(); RWP.routeAt = GetTime(); return end
+        if col == 37 then RWP.keepAt = GetTime(); RWP.routeAt = GetTime(); pcall(RWP.retrack, "keep"); return end
         if col == 36 then RWP.digits = {}; RWP.digitsAt = GetTime(); RWP.mdigits = nil; RWP.routeAt = GetTime(); return end
         if col == 38 then
             RWP.digits = nil
@@ -2752,9 +2774,18 @@ do
         elseif e == "PLAYER_LOGOUT" then
             pcall(RWP.clear, true, "log out")
         elseif e == "SUPER_TRACKING_CHANGED" and RWP.active and not RWP.ours then
-            -- the player focused something else in the game (or cleared the pin): ours goes, their choice stands
             local okU, onPin = CALL(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
-            if not (okU and onPin == true) then pcall(RWP.clear, false, "the player chose another") end
+            if okU and onPin == true then return end
+            -- test66 (st=false mid-route, the game on the quest itself): a flip to the SAME quest the route stands for is no choice - the
+            -- game's own auto-track on an objective update, a focus push - the route stays and our pin is tracked again; only another
+            -- quest, another waypoint or nothing at all is the player's choice and ends it. Each flip logged with its source
+            local q = stQuest()
+            local src = WC.stSource()
+            if q ~= 0 and RWP.qid and q == RWP.qid then
+                pcall(RWP.retrack, "flip to quest " .. q .. " by " .. src)
+            else
+                pcall(RWP.clear, false, "the player chose another (" .. (q ~= 0 and ("quest " .. q) or "none") .. ", by " .. src .. ")")
+            end
         end
     end)
     -- the KEEP timeout: an app that stopped routing (closed, killed) leaves no pin
