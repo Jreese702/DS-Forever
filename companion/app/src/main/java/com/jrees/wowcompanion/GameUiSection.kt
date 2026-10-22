@@ -62,7 +62,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
      * THE SETTINGS TABS (board f-settings-tabs): the game's elements are the "Top screen" tab ([Part.GAME_UI]) and the companion's
      * status is on "System" ([Part.COMPANION]); [Part.ALL] is both, as before the tabs.
      */
-    enum class Part { ALL, GAME_UI, COMPANION }
+    enum class Part { ALL, GAME_UI, COMPANION, QOL }
     private val hasUi get() = part != Part.COMPANION
     private val hasStatus get() = part != Part.GAME_UI
 
@@ -112,7 +112,30 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         GameUi.Row(RINGS_ID, "Aggro tint", null, if (s.show) UiMode.ON else UiMode.OFF, true, !s.show,
             if (s.show) "On: hostile nameplates glow yellow, orange, then red as you near their aggro range" else "Off: no tint on the nameplates")
     }
-    private fun allRows(): List<GameUi.Row> = GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
+    private fun allRows(): List<GameUi.Row> = when (part) {
+        // Top screen: the game's own windows only (the housekeeping pass)
+        Part.GAME_UI -> GameUi.rows() + listOfNotNull(lootRow())
+        // QOL: three groups, each under its heading (a "#" row); the rows, their ids and taps are the ones Top screen had
+        Part.QOL -> group("HUD", listOfNotNull(GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), tipsRow())) +
+            group("Navigation", listOfNotNull(compassRow(), compassCamRow(), dangerRow())) +
+            group("Combat", listOfNotNull(ringsRow(), GameUi.castBarRow()))
+        else -> GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
+    }
+    /** a heading row ("#" + its words) over [rows], none when the group is empty */
+    private fun group(heading: String, rows: List<GameUi.Row>): List<GameUi.Row> =
+        if (rows.isEmpty()) emptyList() else listOf(GameUi.Row("#$heading", heading, null, UiMode.ON, true, false, "")) + rows
+    /** QOL > Navigation: SafePath's "Avoid dangerous areas" (moved from Home > Map: the same Settings.avoidDanger), Off / Low / High */
+    private fun dangerRow(): GameUi.Row {
+        val safe = Settings.ROUTE_MODES_ON && Settings.questTracking == "safepath"
+        val note = when {
+            !Settings.ROUTE_MODES_ON -> "Comes with SafePath in a later update"
+            Settings.questTracking != "safepath" -> "SafePath only: choose SafePath in Home > Map > Quest tracking"
+            Settings.avoidDanger == "off" -> "The line goes straight, through hostile mobs"
+            Settings.avoidDanger == "low" -> "The line bends round dense or high-level hostile mobs"
+            else -> "The line bends round hostile mobs at or above your level"
+        }
+        return GameUi.Row(DANGER_ID, "Avoid dangerous areas", null, UiMode.ON, safe, false, note)
+    }
     private var selected: String? = null
     private val rowBoxes = ArrayList<Pair<RectF, String>>()
     private val segBoxes = ArrayList<Pair<RectF, UiMode>>()
@@ -140,7 +163,9 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     }
 
     private fun wantedHeight(): Int {
-        var h = (if (hasUi) HEAD_H + rows.size * (ROW_H + GAP) else 0f) + BOTTOM + (if (hasStatus) STATUS_H else 0f)
+        val heads = rows.count { it.id.startsWith("#") }
+        var h = (if (hasUi) (if (part == Part.QOL) QOL_TOP else HEAD_H) + (rows.size - heads) * (ROW_H + GAP) + heads * SUBHEAD_H else 0f) +
+            BOTTOM + (if (hasStatus) STATUS_H else 0f)
         if (hasUi && selected != null) h += BAR_H + GAP
         return h.toInt()
     }
@@ -177,6 +202,9 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                 if (abs(e.x - downX) > SLOP || abs(e.y - downY) > SLOP) return true
                 for ((box, sd) in stepBoxes) if (box.contains(e.x, e.y)) {
                     when (sd.first) {
+                        // QOL > Navigation: the same Settings.avoidDanger Home > Map set (SafePath only)
+                        DANGER_ID -> if (Settings.ROUTE_MODES_ON && Settings.questTracking == "safepath")
+                            Settings.avoidDanger = Settings.AVOID_DANGER[sd.second]
                         GameUi.HUD_W_ID -> GameUi.stepHudWidth(sd.second)
                         GameUi.HUD_S_ID -> GameUi.stepHudScale(sd.second)
                         else -> GameUi.stepHudHeight(sd.second)
@@ -222,9 +250,15 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         rowBoxes.clear(); segBoxes.clear(); stepBoxes.clear()
         var y = 0f
         if (hasUi) {
-        c.drawText("Game UI on the top screen", 28f, HEAD_TEXT + 4f, pSection)
-        y = HEAD_H
+        if (part == Part.QOL) y = QOL_TOP
+        else { c.drawText("Game UI on the top screen", 28f, HEAD_TEXT + 4f, pSection); y = HEAD_H }
         for (r in rows) {
+            if (r.id.startsWith("#")) {
+                // a QOL group's heading (the page's block headings' look)
+                c.drawText(r.label, 28f, y + SUBHEAD_TEXT, pSection)
+                y += SUBHEAD_H
+                continue
+            }
             val box = RectF(16f, y, width - 16f, y + ROW_H)
             val sel = r.id == selected
             pFill.color = if (sel) Theme.selected else Theme.raised
@@ -240,7 +274,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             pSub.color = if (r.known) Theme.textDim else Theme.dim
             c.drawText(r.note, box.left + 116f, box.top + 75f, pSub)
             pMode.color = if (r.known) Theme.gold else Theme.dim
-            c.drawText(if (r.id == GameUi.HUD_H_ID || r.id == GameUi.HUD_W_ID || r.id == GameUi.HUD_S_ID) GameUi.hudValue(r.id) else word(r.mode),
+            c.drawText(if (r.id == GameUi.HUD_H_ID || r.id == GameUi.HUD_W_ID || r.id == GameUi.HUD_S_ID) GameUi.hudValue(r.id)
+                else if (r.id == DANGER_ID) Settings.avoidDanger.replaceFirstChar { it.uppercase() } else word(r.mode),
                 box.right - 24f, box.centerY() + 10f, pMode)
             rowBoxes.add(box to r.id)
             y += ROW_H + GAP
@@ -268,6 +303,19 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     private fun bar(c: Canvas, r: GameUi.Row, top: Float) {
         val left = 16f; val right = width - 16f
         val gap = 10f
+        if (r.id == DANGER_ID) {
+            // Off / Low / High, the chosen one lit (greyed outside SafePath)
+            val sw = (right - left - 2f * gap) / 3f
+            val sel = Settings.AVOID_DANGER.indexOf(Settings.avoidDanger)
+            for ((k, w) in listOf("Off", "Low", "High").withIndex()) {
+                val b = RectF(left + k * (sw + gap), top, left + k * (sw + gap) + sw, top + SEG_H)
+                UiKit.choice(c, b, w, k == sel, enabled = r.known)
+                stepBoxes.add(b to (DANGER_ID to k))
+            }
+            pSub.color = Theme.textDim
+            c.drawText("How hard SafePath's line bends round hostile mobs.", left + 6f, top + SEG_H + 34f, pSub)
+            return
+        }
         if (r.id == GameUi.HUD_H_ID || r.id == GameUi.HUD_W_ID || r.id == GameUi.HUD_S_ID) {
             // hub15 / hub16: one step each way and the default (the game's red buttons); the value shown on the row, the bar redrawn live
             val (words, hint) = when (r.id) {
@@ -465,6 +513,12 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         /** cp7: the compass's camera experiment */
         const val COMPASS_CAM_ID = "compasscam"
         const val TIPS_ID = "hidetips"
+        /** QOL > Navigation: Avoid dangerous areas (Settings.avoidDanger) */
+        const val DANGER_ID = "avoiddanger"
+        /** QOL: the page's top before its first group, a group heading's height and its text's baseline */
+        const val QOL_TOP = 20f
+        const val SUBHEAD_H = 64f
+        const val SUBHEAD_TEXT = 44f
         const val RINGS_ID = "aggrorings"
         // SettingsView's own metrics: a section heading 16 px above its first row, 96 px rows
         const val HEAD_TEXT = 26f
