@@ -403,6 +403,22 @@ class LiveAggroTest {
         assertEquals(setOf(7L, 8L, 9L), s.pointIds)
         assertNull("off the way, at the goal, a band: none forces", LiveDanger.newOnRoute(rest,
             LiveDanger.Snapshot(listOf(offWay, atGoal, band), emptyList(), 3), emptySet(), goal))
+        // test71: a mob whose forced replan found the same way, re-tracked under a new id near the same place: answered, no force again;
+        // another npc there, or the same npc 30 yd on, still forces
+        val again = LiveDanger.Disc(70, 13.0, 203.0, 20.0, 4.0, 1f, npc = 253782)
+        val ans = listOf(LiveDanger.Answered(253782, 10.0, 200.0))
+        assertNull(LiveDanger.newOnRoute(rest, LiveDanger.Snapshot(listOf(again), emptyList(), 1), emptySet(), goal, answered = ans))
+        assertEquals(71L, LiveDanger.newOnRoute(rest, LiveDanger.Snapshot(listOf(LiveDanger.Disc(71, 13.0, 203.0, 20.0, 4.0, 1f, npc = 999)),
+            emptyList(), 1), emptySet(), goal, answered = ans)!!.id)
+        assertEquals(72L, LiveDanger.newOnRoute(rest, LiveDanger.Snapshot(listOf(LiveDanger.Disc(72, 10.0, 230.0, 20.0, 4.0, 1f, npc = 253782)),
+            emptyList(), 1), emptySet(), goal, answered = ans)!!.id)
+        // the user's "Only if sure": the route's share keeps the confirmed discs only - an unclear one forces nothing and costs nothing
+        val sureOne = LiveDanger.Disc(80, 10.0, 200.0, 20.0, 4.0, 1f, sure = true)
+        val unclear = LiveDanger.Disc(81, 10.0, 250.0, 20.0, 8.0, 1f)
+        val c = LiveDanger.Snapshot(listOf(sureOne, unclear), emptyList(), 2).confirmed()
+        assertEquals(setOf(80L), c.pointIds)
+        assertEquals(0f, c.at(10.0, 260.0)); assertTrue(c.at(10.0, 200.0) > 0f)
+        assertNull(LiveDanger.newOnRoute(rest, LiveDanger.Snapshot(listOf(unclear), emptyList(), 1).confirmed(), emptySet(), goal))
         // the forced answer takes the new way past the 10% rule
         assertFalse(ShippedPins.takeNew(500.0, 520.0, false)); assertTrue(ShippedPins.takeNew(500.0, 520.0, true))
         assertTrue(LiveDanger.FORCE_MS < SafePathV2.REPLAN_MS)

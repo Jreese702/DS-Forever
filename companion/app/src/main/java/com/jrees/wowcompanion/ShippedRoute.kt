@@ -40,7 +40,10 @@ object ShippedRoute {
     const val DIRECT_MAX_YD = 60.0
     const val GHOST_DIRECT_MAX_YD = 120.0  // a ghost's (CorpseRoute: no danger, walks on water, drops down): the old reach
     const val DIRECT_WALK_YD = 180.0       // the near-goal walk's own yards at most (round a wall)
-    const val NET_FAVOUR = 1.3             // a roadmap edge's yard against a road's (the harness's NET_FAVOUR)
+    // a roadmap edge's yard against a road's (the harness's NET_FAVOUR). fix/trail-first tried 1.6: the all-zones parity lost Swamp of
+    // Sorrows A H (a shipped trail+join across a 70 degree face the roadmap went round) and the test70/71 repros need only the attach's
+    // net lead (ShippedSnap.NET_CUT_SPREAD_YD) - kept at 1.3
+    const val NET_FAVOUR = 1.3
     const val SAMPLE_YD = 10.0             // the character's danger read along a way this often
     const val AVOID_FACTOR = 6.0           // an AVOID way's yard
     const val WADE_EXTRA_YD = 60.0         // a way that wades: this much dearer (a drier way preferred)
@@ -397,11 +400,11 @@ object ShippedRoute {
             // the links' ends: on the ground an end may snap to them; on a floor (a deck, the stairs' top) only from that floor
             val groundEnds = linkEnds.filter { !Climb.inCave(it.second) }; val floorEnds = linkEnds.filter { Climb.inCave(it.second) }
             val view = AttachView(snapIds.filter { it in linked }.map { it to pos[it]!! } + groundEnds.map { it.first to doubleArrayOf(it.second[0], it.second[1]) },
-                ways.withIndex().filter { (_, w) -> w.onLand && w !in banned && !w.rewalk }.map { (i, w) -> WayView(i, listOf(pos[w.a]!!) + w.via, w.len) },
+                ways.withIndex().filter { (_, w) -> w.onLand && w !in banned && !w.rewalk }.map { (i, w) -> WayView(i, listOf(pos[w.a]!!) + w.via, w.len, !w.roadmap) },
                 ground, danger, k, lim, (roadmap?.floor ?: emptySet()) + caveIds + floorEnds.map { it.first },
                 (caveIds + floorEnds.map { it.first }).map { it to doubleArrayOf(pos[it]!![0], pos[it]!![1]) }, roadmap?.walk)
             fun join(p: DoubleArray, virt: Int, outward: Boolean, who: String): Result? {
-                val at = attacher.attach(view, p)
+                val at = attacher.attach(view, p, outward)
                 if (at.joins.isEmpty()) return Result(straight, false, "$who is ${at.why ?: "joined to nothing"}")
                 if (at.snapped) snaps++
                 if (at.unchecked) { if (outward) uncheckedFrom = true else uncheckedTo = true }
@@ -497,7 +500,9 @@ object ShippedRoute {
     // ---------------------------------------------------------------- THE ATTACH SEAM (helper U2 owns the attach; U1 the graph)
 
     /** a way an end may be cut into: [index] the graph's way, [line] its points from its node a to its node b, [len] its yards */
-    class WayView(val index: Int, val line: List<DoubleArray>, val len: Double)
+    class WayView(val index: Int, val line: List<DoubleArray>, val len: Double,
+                  /** a shipped NET way (a road, a trail, a join, a spur), not a roadmap edge: a cut into it may lead the snap */
+                  val net: Boolean = false)
     /** what an [Attacher] sees: the nodes an end may snap to (id, world point; no cave's or lift's inside point), the ways it may be
      *  cut into (no cave, lift or unwalked rewalk way), the ground and danger the router has ([k] the danger's weight), and the long
      *  attach's limit [lim] (yd walked); [floor] the nodes on a floor layer (the roadmap's R_FLOOR, the caves' and city floors' inside
@@ -518,6 +523,8 @@ object ShippedRoute {
     /** THE SEAM: how an end ([p], world) joins the graph; called for the player (walked out from p) and the goal (walked in to p) */
     fun interface Attacher {
         fun attach(v: AttachView, p: DoubleArray): Attach
+        /** the same, told which end: [outward] the player's (walked out from p), else the goal's (walked in to p) */
+        fun attach(v: AttachView, p: DoubleArray, outward: Boolean): Attach = attach(v, p)
         /** THE NEAR-GOAL WALK, the graph's rival for a goal within [DIRECT_MAX_YD]: the ground's own walk from [from] to [to] (its
          *  points from first, to last; the router adds SafePath.DIRECT), null = none (the graph's way only). U1's default: [Leg] */
         fun direct(v: AttachView, from: DoubleArray, to: DoubleArray): Join? =

@@ -68,7 +68,9 @@ object LiveDanger {
      *  [a] - r to [b] + r, in the half-plane facing [half] when set) */
     class Disc(val id: Long, val x: Double, val y: Double, val r: Double, val u: Double, val w: Float, val ring: Boolean = false,
                val a: Double = 0.0, val b: Double = 0.0, val half: Double? = null, val how: LivePlace.How = LivePlace.How.SPAWN,
-               val npc: Int? = null, val lv: Int? = null) {
+               val npc: Int? = null, val lv: Int? = null,
+               /** its place CONFIRMED: a sure spawn snap or a fix from the rings (the user's "Only if sure": only these move the route) */
+               val sure: Boolean = false) {
         val reach get() = r + u
         fun at(px: Double, py: Double): Float {
             val d = hypot(px - x, py - y)
@@ -90,6 +92,9 @@ object LiveDanger {
     /** the live layer at one moment: [discs], [drops], [mobs] the aggressive plates counted (placed or not), [off] the off record's why */
     class Snapshot(val discs: List<Disc>, val drops: List<Drop>, val mobs: Int, val off: String? = null) {
         val empty get() = discs.isEmpty() && drops.isEmpty()
+        /** THE ROUTE'S SHARE (the user's routing strategy, test71: "Only if sure"): the discs whose place is confirmed ([Disc.sure]); a
+         *  band or an unclear plate is display only (the tint, the bottom map's circles), never a cost or a forced replan */
+        fun confirmed(): Snapshot = if (discs.all { it.sure }) this else Snapshot(discs.filter { it.sure }, drops, discs.count { it.sure }, off)
         /** the live danger at a world point (capped [LIVE_CAP]) */
         fun at(x: Double, y: Double): Float { var s = 0f; for (d in discs) s += d.at(x, y); return min(LIVE_CAP, s) }
         /** the static danger to take off at a world point */
@@ -109,14 +114,29 @@ object LiveDanger {
     }
 
     /**
+     * A MOB ALREADY ANSWERED (test71: "a new lv 10 mob (npc 253782, spawn) 18 yd round (2436,447) touches the way: planned again" every
+     * 20-30 s, the same 482 yd plan each time - its plate re-tracked under a new id, so "new" again): a forced replan that found the
+     * same way keeps the mob that forced it, by its npc and place, not its track id; a disc of the same npc within [ANSWERED_YD] of
+     * that place forces no replan again (until the way changes: the caller drops its list)
+     */
+    class Answered(val npc: Int?, val x: Double, val y: Double) {
+        fun matches(d: Disc): Boolean = d.npc == npc && hypot(d.x - x, d.y - y) <= ANSWERED_YD
+    }
+    const val ANSWERED_YD = 10.0
+    /** a forced replan's way is the kept one's when its yards are within this of the kept way's rest */
+    const val SAME_WAY_YD = 5.0
+
+    /**
      * THE FORCED REPLAN (the user's ask: react to a mob that walks between me and where I am going): a point disc of [live] not in
      * [known] (the discs the kept way was planned with) whose reach touches the way still ahead ([rest], the player first) - not one
      * within the goal's free yards ([goal]; the route may walk through those). The first such disc, or null.
      */
-    fun newOnRoute(rest: List<DoubleArray>, live: Snapshot, known: Set<Long>, goal: DoubleArray?, goalFreeYd: Double = DangerGrid.GOAL_FREE_YD): Disc? {
+    fun newOnRoute(rest: List<DoubleArray>, live: Snapshot, known: Set<Long>, goal: DoubleArray?, goalFreeYd: Double = DangerGrid.GOAL_FREE_YD,
+                   answered: List<Answered> = emptyList()): Disc? {
         if (rest.size < 2) return null
         for (d in live.discs) {
             if (d.ring || d.id in known || d.w <= 0f) continue
+            if (answered.any { it.matches(d) }) continue
             if (goal != null && hypot(d.x - goal[0], d.y - goal[1]) <= goalFreeYd) continue
             if (SafePathV2.offWay(doubleArrayOf(d.x, d.y), rest) <= d.reach) return d
         }

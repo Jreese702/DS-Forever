@@ -78,8 +78,16 @@ class DangerLayerTest {
         // nothing on the way: straight; Off: straight
         assertEquals(2, g.route(doubleArrayOf(0.2, 0.1), doubleArrayOf(0.8, 0.1), 5.0).size)
         assertEquals(2, g.route(from, to, DangerGrid.strength("off")).size)
-        // grey to a level 30: no danger at all
-        assertEquals(0f, DangerGrid.build(camp(0.5f, 0.5f, 16, 13), 0, 30, 2000.0, 2000.0).max)
+        // grey to a level 30: no cell danger (no tint, the cell router straight) - only a little at a point among them (test70: greys
+        // still aggro, close in), never more than GREY_CAP, nothing a few yards off
+        val gg = DangerGrid.build(camp(0.5f, 0.5f, 16, 13), 0, 30, 2000.0, 2000.0)
+        assertEquals(0f, gg.max)
+        assertEquals(2, gg.route(from, to, DangerGrid.strength("high")).size)
+        val among = gg.at(0.5 + 0.004, 0.5 + 0.004)
+        assertTrue("among the greys $among", among > 0f && among <= DangerGrid.GREY_CAP)
+        assertEquals(0f, gg.at(0.5 - 0.01, 0.5 - 0.01))                                       // 28 yd off
+        // a level unknown (0) is not grey
+        assertEquals(0f, DangerGrid.build(camp(0.5f, 0.5f, 16, 0), 0, 30, 2000.0, 2000.0).at(0.5 + 0.004, 0.5 + 0.004))
         // friendly to this character's side ("A": hostile to the Horde only): no danger for an Alliance one
         assertEquals(0f, DangerGrid.build(camp(0.5f, 0.5f, 16, 13, hostile = TransportRoutes.HORDE), TransportRoutes.ALLIANCE, 12, 2000.0, 2000.0).max)
     }

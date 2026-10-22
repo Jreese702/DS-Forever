@@ -2486,7 +2486,7 @@ class MapView(context: Context) : View(context) {
     private var corpseSrc: CorpseRoute.Src? = null
     private fun dropCorpseLeg() {
         val q = CorpseRoute.KEY
-        shipLegs.remove(q); shipAt.remove(q); shipNone.remove(q); shipSaid.remove(q); shipLive.remove(q)
+        shipLegs.remove(q); shipAt.remove(q); shipNone.remove(q); shipSaid.remove(q); shipLive.remove(q); shipAnswered.remove(q)
         netLegs.remove(q); netSaid.remove(q); dangerLegs.remove(q)
         corpseRun.leg = null; corpseSrc = null
         android.util.Log.i("WCMAP", "safepath ghost: alive again (or the corpse off this map): the corpse leg dropped")
@@ -4429,12 +4429,14 @@ class MapView(context: Context) : View(context) {
     // ---- LIVE AGGRO (the user, 2026-10-19: "the mobs that are randomly between me and where I am going"; LiveMobs, LiveDanger):
     // this map's QuestieDB spawns handed to the live store in world yards (once a map / danger read), its snapshot for the route
     private val shipLive = HashMap<Int, Set<Long>>()          // quest -> the point discs its kept way was planned with
+    private val shipAnswered = HashMap<Int, MutableList<LiveDanger.Answered>>()   // quest -> the mobs whose forced replan found the same way
     private var liveSpawnKey = ""
     private fun liveSnap(mapId: Int, r: PoiStore.Rect, mine: Int): LiveDanger.Snapshot? {
         liveSpawns(mapId, r, mine)
         // always the snapshot, empty or not: the route's line then says "live 0 (0 mobs)" and shows the live pass runs (test45: no
         // live words at all, so an empty layer and a missing one looked the same)
-        return LiveMobs.shared.snapshot(mapId, questsPlv)
+        // the user's "Only if sure" (test71): the route takes the confirmed mobs only (a sure spawn snap, a fix)
+        return LiveMobs.shared.snapshot(mapId, questsPlv).confirmed()
     }
     /** this map's QuestieDB spawns handed to the live store (once a map / danger read): the route's live pass and the aggro rings
      *  both (test52: a plate snaps to its spawn only once they are in - with no route running, the rings had none) */
@@ -4546,7 +4548,8 @@ class MapView(context: Context) : View(context) {
         val strayed = off > SafePathV2.OFF_ROUTE_YD
         // LIVE AGGRO (hook): the plates' discs; a NEW mob whose disc touches the way ahead forces a replan (no 30 yd / 10% rule)
         val live = if (ghost) null else liveSnap(mapId, r, mine)      // a ghost: no live aggro either
-        val forcedBy = if (old != null && live != null) LiveDanger.newOnRoute(listOf(here) + old.world.drop(1), live, shipLive[q] ?: emptySet(), goal) else null
+        val forcedBy = if (old != null && live != null) LiveDanger.newOnRoute(listOf(here) + old.world.drop(1), live, shipLive[q] ?: emptySet(), goal,
+            answered = shipAnswered[q] ?: emptyList()) else null
         val due = old == null || strayed || old.stamp != stamp || walkedOn || forcedBy != null
         val noneKey = "$stamp:${(goal[0] / SafePathV2.GOAL_MOVED_YD).toInt()}:${(goal[1] / SafePathV2.GOAL_MOVED_YD).toInt()}:" +
             "${(here[0] / ShippedRoute.ATTACH_STEP_YD / 6).toInt()}:${(here[1] / ShippedRoute.ATTACH_STEP_YD / 6).toInt()}"
@@ -4556,7 +4559,8 @@ class MapView(context: Context) : View(context) {
             shipLive[q] = live?.pointIds ?: emptySet()                 // LIVE AGGRO: the discs this plan knows
             val forced = forcedBy != null
             if (forced) android.util.Log.i("WCMAP", "safepath net: quest $q live: a new lv ${forcedBy!!.lv ?: "?"} mob (npc ${forcedBy.npc ?: "?"}, " +
-                "${forcedBy.how.name.lowercase()}) ${forcedBy.reach.toInt()} yd round (${forcedBy.x.toInt()},${forcedBy.y.toInt()}) touches the way: planned again")
+                "${forcedBy.how.name.lowercase()}) ${forcedBy.reach.toInt()} yd round (${forcedBy.x.toInt()},${forcedBy.y.toInt()}) - the fit's " +
+                "${"%.1f".format(forcedBy.r)} yd + ${forcedBy.u.toInt()} yd placement - touches the way: planned again")
             val toExit = route.kind == CursorRoute.Kind.EXIT
             val fine = dGridSnap.takeIf { g != null }
             val stale = got.second.stale
@@ -4589,7 +4593,15 @@ class MapView(context: Context) : View(context) {
                     shipNone.remove(q)
                     // the hysteresis: a replan while on the kept way takes the new one only when it is that much shorter
                     val cur = shipLegs[q]
-                    val keep = cur != null && sameStamp && !ShippedPins.takeNew(keptYd, res.yd, strayed || forced)   // forced: the new way
+                    // test71: a forced replan that found the same way - its mob answered (no forcing again by it); the way changed: the list goes
+                    val same = forced && cur != null && sameStamp && keptYd != null && abs(res.yd - keptYd) <= LiveDanger.SAME_WAY_YD
+                    if (same) {
+                        shipAnswered.getOrPut(q) { ArrayList() }.add(LiveDanger.Answered(forcedBy!!.npc, forcedBy.x, forcedBy.y))
+                        android.util.Log.i("WCMAP", "safepath net: $who live: the same way (${res.yd.toInt()} yd) - npc ${forcedBy.npc ?: "?"} " +
+                            "at (${forcedBy.x.toInt()},${forcedBy.y.toInt()}) answered, it forces no replan again")
+                    }
+                    val keep = cur != null && sameStamp && (same || !ShippedPins.takeNew(keptYd, res.yd, strayed || forced))   // forced: the new way
+                    if (!keep) shipAnswered.remove(q)
                     shipLegs[q] = if (keep) ShipLeg(cur!!.leg, cur.gx, cur.gy, stamp, mapId, here[0], here[1], stale)
                                   else ShipLeg(leg, goal[0], goal[1], stamp, mapId, here[0], here[1], stale)
                     if (!keep) {
