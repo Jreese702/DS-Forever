@@ -45,7 +45,9 @@ object ProblemReport {
     /** the report from its parts: pure (the tests build one from strings) */
     fun build(now: Long, description: String, facts: Facts, diag: List<String>, logcat: List<String>,
               crashes: List<Pair<String, String>>, recorded: Boolean, names: Collection<String>, dxvk: String = "",
-              gameCrashes: List<Pair<String, String>> = emptyList()): Report {
+              gameCrashes: List<Pair<String, String>> = emptyList(),
+              /** the start-up diagnostics ([StartupDiag]: already sanitized and capped), "" = none */
+              startup: String = ""): Report {
         val pattern = Redact.namePattern(names)                       // compiled once for the whole report
         val r = { s: String -> Redact.text(s, pattern) }
         val head = buildString {
@@ -59,6 +61,7 @@ object ProblemReport {
             appendLine("Game: ${r(facts.game)}")
             appendLine("Device: ${facts.device}")
             appendLine("Recorded in detail: ${if (recorded) "yes (Record 5 minutes)" else "no"}")
+            if (startup.isNotBlank()) appendLine("Diagnostics: diagnostics.txt (device, game folder, art, start-up stages, our log)")
             if (facts.settings.isNotEmpty()) { appendLine(); appendLine("Settings and state:"); facts.settings.forEach { appendLine("  ${r(it)}") } }
             appendLine()
             appendLine("Everything here went through DS Forever's privacy pass: logins, BattleTags, character, realm, guild and party names,")
@@ -69,6 +72,7 @@ object ProblemReport {
             .lineSequence().joinToString("\n") { r(it) }
         val files = ArrayList<Pair<String, String>>()
         files += "report.txt" to head
+        if (startup.isNotBlank()) files += "diagnostics.txt" to r(startup)
         files += "logs.txt" to logs.ifEmpty { "(no log lines in the last ${WINDOW_MS / 60_000} minutes)" }
         for ((n, t) in crashes.take(MAX_CRASHES)) files += "crashes/$n" to r(t)
         // the GAME's own crash reports (its Errors folder): their head only (time, command, exception, the first stack lines)
@@ -125,7 +129,8 @@ object ProblemReport {
             .map { it.name to runCatching { it.readText().take(200_000) }.getOrDefault("") }
         return build(now, description, facts(ctx), DiagLog.lines(WINDOW_MS, now), logcat(now - WINDOW_MS), crashes,
             DiagLog.recording(now) || DiagLog.lines(WINDOW_MS, now).any { it.contains("report: recording started") }, Redact.names(),
-            runCatching { DxvkLogs.forReport(DxvkLogs.dir(ctx.dataDir)) }.getOrDefault(""), gameCrashes(ctx, now))
+            runCatching { DxvkLogs.forReport(DxvkLogs.dir(ctx.dataDir)) }.getOrDefault(""), gameCrashes(ctx, now),
+            runCatching { StartupDiag.text(ctx) }.getOrElse { "(the diagnostics could not be made: ${it.message})" })
     }
 
     /** the game's newest crash reports (the "Crash" .txt files in <game>/<flavor>/Errors, the last 7 days): issue #9 had none of them */
@@ -165,7 +170,7 @@ object ProblemReport {
      * DS Forever's logcat since [sinceMs]: EVERY process of the app (an app reads its own user's lines without a permission), not just
      * this one: a run of DS Forever that crashed and restarted, and its FATAL EXCEPTION, were cut out by --pid (issue #9)
      */
-    private fun logcat(sinceMs: Long): List<String> = runCatching {
+    fun logcat(sinceMs: Long): List<String> = runCatching {
         val since = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(Date(sinceMs))
         val p = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "threadtime", "-T", since))
         try { p.inputStream.bufferedReader().readLines() } finally { p.destroy() }

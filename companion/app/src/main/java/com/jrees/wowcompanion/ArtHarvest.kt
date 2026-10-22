@@ -166,9 +166,24 @@ object ArtHarvest {
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<(State) -> Unit>()
     fun onState(l: (State) -> Unit) { listeners.add(l) }
     fun offState(l: (State) -> Unit) { listeners.remove(l) }
-    private fun set(s: State) { state = s; for (l in listeners) runCatching { l(s) } }
+    private fun set(s: State) {
+        state = s
+        if (s is State.Failed) lastFailure = s.why to System.currentTimeMillis()
+        for (l in listeners) runCatching { l(s) }
+    }
 
     // ------------------------------------------------------------------ the stamp
+
+    // ------------------------------------------------------------------ the report's trace (StartupDiag)
+
+    /** what each step did in this process: id -> "running since +N s" / "done in N ms" / "retry n: why" / "failed: why" */
+    val stepLog = java.util.concurrent.ConcurrentHashMap<String, String>()
+    /** the step running now, or null */
+    @Volatile var currentStep: String? = null
+    /** the last failure: "step: why" and when (wall clock), or null */
+    @Volatile var lastFailure: Pair<String, Long>? = null
+    /** the stamp as on disk: step id -> {build, v, inputs, at} (the report's per-step versions and builds) */
+    fun stampOf(ctx: Context): JSONObject = stamp(ctx)
 
     private fun stampFile(ctx: Context) = File(root(ctx), "stamp.json")
     private fun stamp(ctx: Context): JSONObject = runCatching { JSONObject(stampFile(ctx).readText()) }.getOrElse { JSONObject() }
@@ -324,10 +339,12 @@ object ArtHarvest {
             val base = before
             set(State.Running(beforePlay, base / total, s.id))
             val t0 = System.currentTimeMillis()
+            currentStep = s.id; stepLog[s.id] = "running (started ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date(t0))})"
             var job = Job(ctx, g, root(ctx), s.id) { f, what -> set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
             // a failure (often a CDN hiccup on a table) is tried again before the art says so (HarvestRetry); the last reason is shown
             val result = HarvestRetry.run(onRetry = { n, d, why ->
                 Log.w(TAG, "harvest step ${s.id} failed ($why), try ${n + 1} in ${d / 1000} s")
+                stepLog[s.id] = "retry ${n + 1} after: $why"
                 set(State.Running(beforePlay, base / total, "${s.id}: trying again in ${d / 1000} s"))
             }) {
                 job = Job(ctx, g, root(ctx), s.id) { f, what -> set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
@@ -335,11 +352,13 @@ object ArtHarvest {
             }.onFailure { Log.w(TAG, "harvest step ${s.id} failed", it) }
             if (result.isFailure) {
                 val reason = result.exceptionOrNull()?.message ?: "unknown reason"
+                stepLog[s.id] = "failed after ${System.currentTimeMillis() - t0} ms: $reason"; currentStep = null
                 set(State.Failed("could not build ${s.id}: $reason", beforePlay))
                 return false
             }
             markDone(ctx, s, g.buildKey, job.inputKey)
             Log.i(TAG, "harvest step ${s.id} v${s.version} done in ${System.currentTimeMillis() - t0} ms")
+            stepLog[s.id] = "done in ${System.currentTimeMillis() - t0} ms"; currentStep = null
             before += w
         }
         return true

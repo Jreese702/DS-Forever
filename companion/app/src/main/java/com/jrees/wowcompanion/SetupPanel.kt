@@ -28,6 +28,12 @@ class SetupPanel(context: Context) : View(context) {
 
     private val refresh: () -> Unit = { post { update() } }
 
+    init {
+        androidx.core.view.ViewCompat.addAccessibilityAction(this, SPEAKER_LABEL) { _, _ ->
+            screen?.report?.takeIf { it.enabled }?.let { SetupBridge.press(it.action); true } ?: false
+        }
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         SetupBridge.onChange(refresh)
@@ -54,6 +60,7 @@ class SetupPanel(context: Context) : View(context) {
         screen = s
         if (s?.prompt?.id != was) focus = 0          // a new pop-up: the box starts on its first button
         visibility = if (s != null && (s.prompt != null || s.play != null)) VISIBLE else GONE
+        contentDescription = if (s?.report != null) "DS Forever start-up. $SPEAKER_LABEL" else null
         invalidate()
     }
 
@@ -79,9 +86,11 @@ class SetupPanel(context: Context) : View(context) {
         // the one pop-up, above Play
         cardRect.setEmpty()
         s.prompt?.let { p -> drawPrompt(c, p, bottom) }
-        // "Report a problem" (board f-problem-report): small, in the bottom-left corner, last in the box's order
+        // "Report a problem" (board f-problem-report): the user, 2026-10-23: "change the report button on the screen to a little
+        // speakerphone button in the bottom left" - our own vector, a touch-sized square, last in the box's order; the controller's
+        // Select / View opens it (the cursor never lands on it: b-setup-report-cursor)
         s.report?.let { rb ->
-            val r = RectF(MARGIN, height - MARGIN - REPORT_H, MARGIN + REPORT_W, height - MARGIN.toFloat())
+            val r = RectF(MARGIN, height - MARGIN - SPEAKER, MARGIN + SPEAKER, height - MARGIN.toFloat())
             buttons += r to rb
         }
         // the box's order: the pop-up's buttons first, Play last (a new pop-up starts the box on its first button)
@@ -100,9 +109,42 @@ class SetupPanel(context: Context) : View(context) {
             val boxed = padUi && live.isNotEmpty() && live[focus] == i
             if (boxed) box(c, r)
             val state = when { !b.enabled -> UiKit.Button.DISABLED; pressed == i -> UiKit.Button.DOWN; else -> UiKit.Button.UP }
+            if (b.action == SetupFlow.Action.REPORT) { drawSpeaker(c, r, pressed == i); return@forEachIndexed }
             if (boxed) UiKit.button(c, r, b.label, StartView.GLYPH_A, state) else UiKit.button(c, r, b.label, state)
         }
     }
+
+    /**
+     * THE SPEAKERPHONE (the report's button): a dark round plate with a gold rim, a megaphone facing right (its mouth, its body, the
+     * handle under it) and two sound arcs; [down] while it is pressed; the controller's Select glyph small in its corner
+     */
+    private fun drawSpeaker(c: Canvas, r: RectF, down: Boolean) {
+        val cx = r.centerX(); val cy = r.centerY(); val k = r.width() / 111f
+        pFill.style = Paint.Style.FILL
+        pFill.color = if (down) Color.argb(235, 70, 52, 24) else Color.argb(215, 18, 14, 10)
+        c.drawCircle(cx, cy, r.width() / 2f, pFill)
+        pFill.style = Paint.Style.STROKE; pFill.strokeWidth = 3f * k; pFill.color = Theme.gold
+        c.drawCircle(cx, cy, r.width() / 2f - 2f * k, pFill)
+        // the megaphone: a small back box, the flaring cone, the handle
+        val gold = Theme.gold
+        pFill.style = Paint.Style.FILL; pFill.color = gold
+        speaker.reset()
+        speaker.moveTo(cx - 26f * k, cy - 9f * k); speaker.lineTo(cx - 12f * k, cy - 9f * k)
+        speaker.lineTo(cx + 12f * k, cy - 24f * k); speaker.lineTo(cx + 12f * k, cy + 24f * k)
+        speaker.lineTo(cx - 12f * k, cy + 9f * k); speaker.lineTo(cx - 26f * k, cy + 9f * k); speaker.close()
+        c.drawPath(speaker, pFill)
+        c.drawRoundRect(RectF(cx - 21f * k, cy + 9f * k, cx - 13f * k, cy + 25f * k), 3f * k, 3f * k, pFill)
+        // the sound
+        pFill.style = Paint.Style.STROKE; pFill.strokeWidth = 4f * k; pFill.strokeCap = Paint.Cap.ROUND
+        for ((i, rad) in listOf(10f, 19f).withIndex()) {
+            pFill.alpha = if (i == 0) 255 else 170
+            c.drawArc(RectF(cx + 14f * k - rad * k, cy - rad * k, cx + 14f * k + rad * k, cy + rad * k), -45f, 90f, false, pFill)
+        }
+        pFill.alpha = 255; pFill.style = Paint.Style.FILL; pFill.strokeCap = Paint.Cap.BUTT
+        // the controller's way to it: its Select glyph's name, small, beside the plate
+        UiKit.bodyPaint(20f * k, Theme.textDim).let { p -> c.drawText(Glyphs.name("select"), r.right + 10f * k, r.bottom - 8f * k, p) }
+    }
+    private val speaker = android.graphics.Path()
 
     /** the pop-up's card as last drawn (a touch inside it is the panel's) */
     private val cardRect = RectF()
@@ -156,6 +198,8 @@ class SetupPanel(context: Context) : View(context) {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_LEFT -> if (live.isNotEmpty()) { focus = (focus - 1 + live.size) % live.size; invalidate() }
             KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT -> if (live.isNotEmpty()) { focus = (focus + 1) % live.size; invalidate() }
             KeyEvent.KEYCODE_BUTTON_A -> live.getOrNull(focus)?.let { SetupBridge.press(buttons[it].second.action) }
+            // the speakerphone's own key (the cursor never lands on it: b-setup-report-cursor)
+            KeyEvent.KEYCODE_BUTTON_SELECT -> screen?.report?.takeIf { it.enabled }?.let { SetupBridge.press(it.action) }
         }
         return true
     }
@@ -195,11 +239,13 @@ class SetupPanel(context: Context) : View(context) {
         const val BUTTON_H = 111f        // 48 dp on the Thor's bottom screen, the touch minimum (StartView's row)
         const val PLAY_W = 560f
         const val PLAY_H = 130f
-        const val REPORT_W = 300f
-        const val REPORT_H = 76f
+        /** the speakerphone's square: 48 dp on the Thor's bottom screen (the touch minimum, as BUTTON_H) */
+        const val SPEAKER = 111f
+        /** its accessibility label (the long one) */
+        const val SPEAKER_LABEL = "Report a problem: send DS Forever a problem report (the speakerphone, bottom left)"
         const val LINE_H = 52f
         private val KEYS = setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
-            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_BUTTON_A)
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_SELECT)
         private val PAD_KEYS = listOf(PadInput.SLOT_DPAD_UP to KeyEvent.KEYCODE_DPAD_UP, PadInput.SLOT_DPAD_DOWN to KeyEvent.KEYCODE_DPAD_DOWN,
             PadInput.SLOT_DPAD_LEFT to KeyEvent.KEYCODE_DPAD_LEFT, PadInput.SLOT_DPAD_RIGHT to KeyEvent.KEYCODE_DPAD_RIGHT,
             PadInput.SLOT_FACE_BOTTOM to KeyEvent.KEYCODE_BUTTON_A)

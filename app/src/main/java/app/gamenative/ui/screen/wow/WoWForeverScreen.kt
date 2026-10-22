@@ -86,6 +86,14 @@ fun WoWForeverScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val gpu = remember { GpuProfile.detect(context) }
+    // the problem report's GPU / driver line (StartupDiag): the profile picked, the GPU as the driver names it, the container's versions
+    LaunchedEffect(gpu) {
+        val renderer = withContext(Dispatchers.IO) {
+            runCatching { "${com.winlator.core.GPUInformation.getRenderer(context)} (${com.winlator.core.GPUInformation.getVersion(context)})" }.getOrDefault("?")
+        }
+        com.jrees.wowcompanion.LauncherHooks.gpuLine = "${gpu.edition}: driver ${gpu.driver}, TU_DEBUG ${gpu.tuDebug}, screen ${gpu.screenSize}; " +
+            "GPU $renderer; DXVK $DXVK_VERSION, Wine $PROTON_VERSION"
+    }
 
     var gamePath by remember { mutableStateOf(GamePath.load(context)) }
     var files by remember { mutableStateOf(GamePath.Status()) }
@@ -279,22 +287,26 @@ fun WoWForeverScreen(
                             fetchSmall = false, by = "launch by $by")
                     }.onFailure { android.util.Log.w("WCSETUP", "add-ons at launch: ${it.message}") }
                 }
+                com.jrees.wowcompanion.LauncherHooks.launchEvent("preparing the container (${gpu.label}, by $by)")
                 val containerId = withContext(Dispatchers.IO) {
                     prepareLaunch(context, File(gamePath), gpu) { msg ->
                         scope.launch(Dispatchers.Main) { statusText = msg }
                     }
                 }
                 statusText = "Booting into World of Warcraft..."
+                com.jrees.wowcompanion.LauncherHooks.launchEvent("booting the game (container $containerId)")
                 if (restart) com.jrees.wowcompanion.SetupBridge.log?.invoke("restart: container launching (by $by)")
                 onLaunch(containerId)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: StorageAccessDeniedException) {
+                com.jrees.wowcompanion.LauncherHooks.launchEvent("launch stopped: storage access denied")
                 isLaunching = false
                 statusText = READY_STATUS
                 denyStorageAccess()
             } catch (e: Exception) {
                 refused("launch failed: ${e.message}")
+                com.jrees.wowcompanion.LauncherHooks.launchEvent("launch failed: ${e.javaClass.simpleName}: ${e.message}")
                 Timber.e(e, "Error launching WoW Forever")
                 errorMessage = e.message ?: "Launch failed"
                 statusText = "Launch failed"

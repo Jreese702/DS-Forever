@@ -77,7 +77,7 @@ object SetupBridge {
     fun offChange(l: () -> Unit) { listeners.remove(l) }
     private fun changed() { for (l in listeners) runCatching { l() } }
 
-    fun publish(i: SetupFlow.Inputs?) { if (i != inputs) { inputs = i; changed() } }
+    fun publish(i: SetupFlow.Inputs?) { if (i != inputs) { inputs = i; runCatching { StartupTrace.observe(i) }; changed() } }
     fun signIn(s: SetupFlow.SignIn, restart: Boolean = false) {
         if (s != signIn || restart != restartOffered) { signIn = s; restartOffered = restart; changed() }
     }

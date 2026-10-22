@@ -12,6 +12,7 @@ export const LIMITS = {
   maxWords: 2_000,            // the player's description
   maxReport: 60_000,          // report.txt
   maxLogs: 150_000,           // logs.txt
+  maxDiag: 45_000,            // diagnostics.txt (the app's start-up diagnostics, StartupDiag; optional: older apps send none)
   perIpPerHour: 5,
   globalPerDay: 100,
   issueBody: 65_536,          // GitHub's body limit (characters)
@@ -37,9 +38,11 @@ export function validate(body) {
     words: str("words", 3, LIMITS.maxWords),
     report: str("report", 1, LIMITS.maxReport),
     logs: typeof body.logs === "string" ? body.logs : "",
+    diag: typeof body.diag === "string" ? body.diag : "",
     recorded: body.recorded === true,
   };
   if (report.logs.length > LIMITS.maxLogs) errors.push(`logs: too long (${report.logs.length} > ${LIMITS.maxLogs})`);
+  if (report.diag.length > LIMITS.maxDiag) errors.push(`diag: too long (${report.diag.length} > ${LIMITS.maxDiag})`);
   if (report.version && !VERSION.test(report.version)) errors.push("version: not a DS Forever version");
   if (report.words && !/[\p{L}\p{N}]/u.test(report.words)) errors.push("words: nothing said");
   return errors.length ? { errors } : { report };
@@ -62,8 +65,10 @@ export function safe(s) {
 export function buildIssue(r) {
   const words = safe(r.words.trim());
   const first = words.split("\n")[0].slice(0, 70) || "DS Forever";
-  const title = `Player report: ${first}`;
-  const head = [
+  // the version in the title (the user: the reports must say which build at a glance)
+  const title = `Player report (${safe(r.version)}): ${first}`;
+  const diag = r.diag ? safe(r.diag).slice(0, LIMITS.maxDiag) : "";
+  const top = [
     "**What happened** (the player's words)",
     "",
     words.split("\n").map((l) => `> ${l}`).join("\n"),
@@ -72,14 +77,14 @@ export function buildIssue(r) {
     `|---|---|---|---|`,
     `| ${safe(r.version)} | ${safe(r.addons)} | ${safe(r.device).replace(/\|/g, "/")} | ${r.recorded ? "yes" : "no"} |`,
     "",
-    "<details><summary>report.txt</summary>",
-    "",
-    "```text",
-    safe(r.report),
-    "```",
-    "</details>",
-    "",
+    // the app's start-up diagnostics (device, game folder, art, start-up stages, its own log), collapsed - always whole in the body
+    ...(diag ? ["<details><summary>Diagnostics</summary>", "", "```text", diag, "```", "</details>", ""] : []),
   ].join("\n");
+  // report.txt gets what the body has left (keeping some room for the newest log lines); its rest is cut, never the body's limit broken
+  const reportRoom = Math.max(2_000, LIMITS.issueBody - top.length - 8_000);
+  let report = safe(r.report);
+  if (report.length > reportRoom) report = report.slice(0, reportRoom - 40) + "\n[cut: the rest is in the report file]";
+  const head = top + "\n" + ["<details><summary>report.txt</summary>", "", "```text", report, "```", "</details>", ""].join("\n");
   const logs = safe(r.logs);
   const open = "<details><summary>logs.txt</summary>\n\n```text\n";
   const close = "\n```\n</details>\n";

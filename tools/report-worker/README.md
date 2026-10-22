@@ -3,6 +3,7 @@
 A small Cloudflare Worker that turns DS Forever's in-game "Send report" into a GitHub issue, so players never leave the game.
 
 - The app sends the report it already **redacted on the device** (no logins, BattleTags, names or chat). The receiver scrubs it once more (e-mails, BattleTags, IP addresses).
+- The issue's title carries the app version, and its body has a collapsed **Diagnostics** section: the app's start-up diagnostics (device, game folder, art, start-up stages, its own log; optional `diag`, 45 000 characters at most).
 - `POST /report` checks the size (200 KB at most), the shape and the version. It limits each address to 5 reports an hour and everyone to 100 a day, opens an issue labelled `player-report` in `Jreese702/DS-Forever`, and answers `{"number": N, "url": "..."}`.
 - The GitHub token is a **Worker secret**. It is never in git and never in the APK.
 - `APP_KEY` (optional) ships inside the APK, so anyone can extract it. It only keeps casual traffic out. The real protection is the limits above, plus the label, which lets you filter or bulk-close the issues.

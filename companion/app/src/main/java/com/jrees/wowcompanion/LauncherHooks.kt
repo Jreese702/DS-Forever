@@ -19,4 +19,10 @@ object LauncherHooks {
     @Volatile var cleanExit: ((why: String, done: (forceNeeded: Boolean) -> Unit) -> Unit)? = null
     /** the clean exit's last route line ("clean exit (safe close): ..."), for the safe close's "done" line */
     @Volatile var lastCleanExit: String = ""
+    /** the container's graphics profile as the launcher picked it (the problem report's GPU / driver line), "" = not known yet */
+    @Volatile var gpuLine: String = ""
+    /** the launch's last step and its result ("preparing the container", "booting", "launch failed: ..."), "" = no launch yet */
+    @Volatile var launchState: String = ""
+    /** a launch step (the launcher's): kept as [launchState] and as a start-up stage ([StartupTrace]) */
+    fun launchEvent(what: String) { launchState = what; StartupTrace.mark("launch: ${what.take(60)}", what) }
 }

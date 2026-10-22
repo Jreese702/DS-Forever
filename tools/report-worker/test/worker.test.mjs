@@ -55,7 +55,7 @@ test("the second privacy pass and safe markdown", () => {
 
 test("the issue: title, label, collapsed blocks, within GitHub's limit", () => {
   const i = buildIssue(validate(good()).report);
-  assert.equal(i.title, "Player report: bars went blank after a fight");
+  assert.equal(i.title, "Player report (1.0.7 (107)): bars went blank after a fight");
   assert.deepEqual(i.labels, ["player-report"]);
   assert.ok(i.body.includes("<details><summary>report.txt</summary>"));
   assert.ok(i.body.includes("<details><summary>logs.txt</summary>"));
@@ -107,4 +107,24 @@ test("a GitHub failure says so", async () => {
   const res = await handle(req(good()), env());
   assert.equal(res.status, 502);
   assert.match((await res.json()).error, /401/);
+});
+
+test("the start-up diagnostics: collapsed in the body, scrubbed, the body within GitHub's limit at every maximum", () => {
+  const diag = ["=== App ===", "DS Forever 1.0.9 (1045)", "=== Game folder ===", "row: product wow_classic_beta",
+    "seen from 10.1.2.3 by a@b.co"].join("\n");
+  const i = buildIssue(validate({ ...good(), diag }).report);
+  assert.ok(i.body.includes("<details><summary>Diagnostics</summary>"));
+  assert.ok(i.body.indexOf("Diagnostics") < i.body.indexOf("report.txt"), "the diagnostics above report.txt");
+  assert.ok(i.body.includes("=== Game folder ==="));
+  assert.ok(!i.body.includes("10.1.2.3") && !i.body.includes("a@b.co"), "scrubbed");
+  // none sent (an older app): no section
+  assert.ok(!buildIssue(validate(good()).report).body.includes("Diagnostics"));
+  // everything at its maximum: the body still fits; the diagnostics whole, report.txt cut
+  const max = buildIssue(validate({ ...good(), diag: "d".repeat(LIMITS.maxDiag), report: "r".repeat(LIMITS.maxReport),
+    logs: "line\n".repeat(29_000), words: "w ".repeat(900) }).report);
+  assert.ok(max.body.length <= LIMITS.issueBody, `body ${max.body.length}`);
+  assert.ok(max.body.includes("d".repeat(LIMITS.maxDiag)), "the diagnostics whole");
+  assert.ok(max.body.includes("[cut: the rest is in the report file]"));
+  // too long: refused
+  assert.ok(validate({ ...good(), diag: "x".repeat(LIMITS.maxDiag + 1) }).errors);
 });
