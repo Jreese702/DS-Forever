@@ -5,7 +5,7 @@
 ## Group: WowCompanion
 ## Notes: Feeds the Social room (party / raid, friends, ignore, guild, Who) on the Thor's bottom screen
 ## Author: DS Forever
-## Version: Set 238
+## Version: Set 239
 ## DefaultState: enabled
 ## Dependencies: WowCompanion
 Social.lua
