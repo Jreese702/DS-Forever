@@ -602,7 +602,7 @@ def main():
     # cp19, THE FLAGS (the user: "they don't always show where the flags are at"): the app's further checkpoints (Map.lua's uwp 38)
     # get our own markers, across by the camera's yaw (exact from the engine's point) and the FOV, at the engine point's height
     L.execute("WowCompanion.routeWp = { active = true, more = { { m = GAME.map, x = 0.7, y = 0.35 }, { m = GAME.map, x = 0.4, y = 0.3 } } }")
-    frames(3, read=True)
+    frames(30, read=True)                                # (cp26: the second fades in over 0.4 s)
     m2 = W.list[2]
     want = c0 - c0 * math.tan(math.atan2(-200, 150) + math.radians(22.5))     # flag A: 250 yd at -53 degrees, the camera at -22.5
     relA = math.atan2(-200, 150) + math.radians(22.5)
@@ -761,7 +761,7 @@ def main():
     tl = []
     for _ in range(20):
         frames(1, read=True)
-        tl.append(W.list[2].f.shown is True and abs(W.list[2].f.alpha - 0.85) < 1e-9)
+        tl.append(W.list[2].f.shown is True and abs(W.list[2].f.alpha - 0.75) < 1e-9)
     G.ry = 0
     chk("cp24: tilting the camera with the pin on screen: the flags stay (%d of 20 frames)" % sum(tl), all(tl))
     # a SUSTAINED loss: held HOLD_S (0.6 s), then a 0.25 s fade, then hidden; the hide's reason counted; a wmvis line
@@ -843,70 +843,181 @@ def main():
     chk("cp24: ... and from hidden, 59 deg does not show it (the show gate is 55): %s" % (not e6), not e6)
     G.facing, C.cam.abs, C.cam.ref = fk
     frames(60, read=True)
-    # cp25 (test62, the user: "not being set at the same distances shown on the compass" ... "Both = checkpoint"): ONE target.
-    # The quest's objective moved away from the route's checkpoint; the quest watched (its number 1)
+    # cp26 (test63, the user: "I always want the world and the compass to show the next two markers ... fade as I get closer to it
+    # and then once it vanishes fully the next one after begins to fade in beyond the 2nd marker"). A WALK down a route: the player
+    # walks north at 7 yd/s through four checkpoints to the quest's objective; the app's own rule moves the pin on (DangerGrid's
+    # 25 yd, 0.3 s later), and Map.lua swaps its further list the way it does (the old kept as moreOld, the new a moment later)
     L.execute("""
         QLOG = { { questID = 123 } }
         QWATCH = { [123] = 0 }
         C_QuestLog.GetNumQuestLogEntries = function() return #QLOG end
         C_QuestLog.GetInfo = function(i) return QLOG[i] end
         C_QuestLog.GetQuestWatchType = function(q) return QWATCH[q] end
+        C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end
     """)
-    G.quest = L.table(0.35, 0.45)
-    C.qnAt = -10
-    frames(40, read=True)
+    keepW = (G.px, G.py, G.facing, C.cam.abs, C.cam.ref, G.pin, G.quest)
+    G.facing = 0.0; C.cam.abs = C.cam.ref = 0.0
+    G.px, G.py = 0.5, 0.5                                # world (0, 0)
 
-    def cmarks():
-        return {C.last.marks[i].key: C.last.marks[i] for i in range(1, len(C.last.marks) + 1)}
-    cm = cmarks()
-    bp, dp = C.bearing(C.me_, C.tg_.pin)
-    mq = cm.get("quest")
-    chk("cp25: route on: the compass's ONE marker is the quest's disc (number '%s') at the CHECKPOINT: %s, the world marker's %s"
-        % (C.mk.quest.num.text, mq.dist if mq else None, W.d.text),
-        mq is not None and "pin" not in cm and C.mk.quest.num.text == "1" and C.mk.quest.tx.atlas == "UI-QuestPoi-QuestNumber"
-        and mq.dist == W.d.text == C.distText(dp) and abs(C.wrap(mq.rel - C.wrap(bp - C.h))) < 1e-9
-        and L.eval("rawequal(WowCompanion.compass.cg.w, WowCompanion.compass.tg_.pin)") and abs(W.f.point[4] - nx) < 0.1)
-    # the route advances: Map's pin moves to the next checkpoint (the engine's point with it): both fade out there, in at the next
-    G.pin = L.table(0.68, 0.33)
+    def mp(X, Y):                                        # world (x north, y west) -> the stub map's (x, y)
+        return ((500 - Y) / 1000, (500 - X) / 1000)
+    CPS = [(70, 10), (130, -12), (190, 8), (250, -10)]
+    GOAL = (310, 0)
+    G.quest = L.table(*mp(*GOAL))
+    st = {"k": 0, "passAt": None, "moreAt": None}
+
+    def setRoute(k, swap):
+        L.globals().GAME.pin = L.table(*mp(*CPS[k]))
+        more = CPS[k + 1:k + 3]
+        lst = "{" + ",".join("{ m = GAME.map, x = %r, y = %r }" % mp(*c) for c in more) + "}"
+        if swap:
+            L.execute("local R = WowCompanion.routeWp; R.moreOld, R.moreOldAt, R.more = R.more, GetTime(), {}")
+            st["moreAt"], st["lst"] = G.t + 0.2, lst
+        else:
+            L.execute("WowCompanion.routeWp.more = " + lst)
+    L.execute("WowCompanion.routeWp = { active = true, qid = 123, MORE_MAX = 2, more = {} }")
+    setRoute(0, False)
+
+    def me_xy():
+        return (500 - G.py * 1000, 500 - G.px * 1000)
+
+    def engine():
+        R = L.globals().WowCompanion.routeWp
+        tgt = None
+        if R.active and G.pin:
+            tgt = CPS[st["k"]]
+        elif G.quest:
+            tgt = GOAL
+        if tgt is None:
+            G.nav = None
+            return
+        X, Y = me_xy()
+        dx, dy = tgt[0] - X, tgt[1] - Y
+        d = math.hypot(dx, dy)
+        rel = math.atan2(dy, dx) - C.cam.abs
+        if abs(rel) > math.radians(40) or d < 3:
+            G.nav = None
+            return
+        G.nav = L.table_from({"x": c0 - c0 * math.tan(rel), "y": 384 + proj(0.35, d * math.cos(rel), 0), "clamped": False})
+    log = []
     C.read(True)
-    bp2, dp2 = C.bearing(C.me_, C.tg_.pin)
-    nx2 = c0 - c0 * math.tan(C.wrap(bp2 - C.cam.abs))
-    navset(nx2)
-    ca, wa = [], []
-    for _ in range(40):
-        frames(1, read=True)
-        ca.append(C.cg.a)
-        wa.append(W.f.alpha if W.f.shown else 0.0)
-    k0, k1 = ca.index(0.0) if 0.0 in ca else None, wa.index(0.0) if 0.0 in wa else None
-    cm = cmarks()
-    chk("cp25: a checkpoint advance: the compass (%s) and the world marker (%s) both fade out and in, both on the NEXT one (%s / %s)"
-        % (", ".join("%.2f" % a for a in ca[::6]), ", ".join("%.2f" % a for a in wa[::6]), cm["quest"].dist, W.d.text),
-        k0 is not None and k1 is not None and all(ca[i] >= ca[i + 1] for i in range(k0)) and all(ca[i] <= ca[i + 1] for i in range(k0, 39))
-        and ca[-1] == 1 and wa[-1] == 1 and cm["quest"].dist == W.d.text == C.distText(dp2) and abs(W.f.point[4] - nx2) < 0.1)
-    # the game super-tracks the QUEST while the route is active (its engine point there): both stay on the checkpoint, the world
-    # marker placed by the camera's yaw and pitch instead of the engine's (wrong) point
-    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end")
-    navset(nx2 - 300)
-    frames(20, read=True)
-    cm = cmarks()
-    xe = c0 - c0 * math.tan(C.wrap(bp2 - C.cam.abs))
-    chk("cp25: the game on the quest meanwhile: both still on the checkpoint (world x %.1f by the estimate %.1f, not the engine's %.1f; %s / %s)"
-        % (W.f.point[4], xe, G.nav.x, cm["quest"].dist, W.d.text),
-        W.f.shown is True and abs(W.f.point[4] - xe) < 0.5 and cm["quest"].dist == W.d.text == C.distText(dp2))
-    # NO ROUTE (none, or arrived): both on the quest's objective
-    L.execute("WowCompanion.routeWp.active = false")
-    bq2, dq2 = C.bearing(C.me_, C.tg_.quest)
-    fk2 = (G.facing, C.cam.abs, C.cam.ref)
-    G.facing = C.wrap(bq2 - math.radians(10)); C.cam.abs = C.cam.ref = G.facing     # (the camera turned toward the quest)
-    navset(c0 - c0 * math.tan(math.radians(10)))
-    frames(60, read=True)
-    cm = cmarks()
-    chk("cp25: no route: both on the QUEST's objective (%s / %s, the quest's %s), the world marker pale gold"
-        % (cm["quest"].dist, W.d.text, C.distText(dq2)),
-        cm["quest"].dist == W.d.text == C.distText(dq2) and "pin" in cm and abs(W.tx.col[2] - 0.93) < 1e-9
-        and L.eval("rawequal(WowCompanion.compass.cg.w, WowCompanion.compass.tg_.quest)"))
-    G.facing, C.cam.abs, C.cam.ref = fk2
-    L.execute("""C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end; WowCompanion.routeWp.active = true
+    engine()
+    frames(60, read=True)                                # (standing a moment: the earlier markers out, these in, the heading north)
+    for i in range(60 * 48):
+        X, Y = me_xy()
+        if X < GOAL[0] - 2:
+            G.py = G.py - 7 / 60 / 1000                  # north at 7 yd/s
+        R = L.globals().WowCompanion.routeWp
+        # the app: the pin moves on 0.3 s after the player is within 25 yd of it; past the last, the route ends
+        if R.active:
+            pc = CPS[st["k"]]
+            if math.hypot(pc[0] - X, pc[1] - Y) <= 25 and st["passAt"] is None:
+                st["passAt"] = G.t + 0.3
+            if st["passAt"] is not None and G.t >= st["passAt"]:
+                st["passAt"] = None
+                if st["k"] + 1 < len(CPS):
+                    st["k"] += 1
+                    setRoute(st["k"], True)
+                else:
+                    L.execute("WowCompanion.routeWp.active = false; WowCompanion.routeWp.more = {}; "
+                              "C_SuperTrack.IsSuperTrackingUserWaypoint = function() return false end")
+                    G.pin = None
+        if st["moreAt"] is not None and G.t >= st["moreAt"]:
+            L.execute("WowCompanion.routeWp.more = " + st["lst"])
+            st["moreAt"] = None
+        engine()
+        frames(1, read=(i % 6 == 0))
+        S = C.RT.st
+        row = {"t": G.t, "X": me_xy()[0], "pair": [C.RT.pair[j].id for j in range(1, len(C.RT.pair) + 1)] if C.RT.pair else [], "st": {}}
+        for id_ in list(S.keys()):
+            s_ = S[id_]
+            o = W.obj[id_]
+            k_ = C.rk[id_]
+            row["st"][id_] = {"a": s_.a, "r": s_.r, "rank": s_.rank, "d": s_.d, "kind": s_.kind,
+                              "wa": (o.f.alpha if (o and o.f.shown) else 0.0), "wx": (o.f.point[4] if (o and o.f.point) else None),
+                              "wy": (o.f.point[5] if (o and o.f.point) else None), "wt": (o.d.text if o else None),
+                              "ca": (k_.d.alpha if (k_ and k_.d.shown) else 0.0), "ct": (k_.d.text if k_ else None),
+                              "cx": (k_.pin.point[4] if (k_ and k_.pin.point) else None)}
+        log.append(row)
+    ids = ["cp:%d:%d" % (math.floor(x + 0.5), math.floor(y + 0.5)) for x, y in CPS]
+    gid = "goal:123"
+    mid = [r for r in log if r["X"] < CPS[-1][0] - 26]                       # mid-route: before the last checkpoint is passed
+    two = sum(1 for r in mid if len(r["pair"]) == 2)
+    one = min(sum(1 for v in r["st"].values() if v["a"] > 0.02) for r in mid)
+    chk("cp26: mid-route, always TWO in the pair (%d of %d frames) and never fewer than one shown (at least %d)" % (two, len(mid), one),
+        two == len(mid) and one >= 1)
+    mono = True
+    zeroAt = {}
+    for cid in ids:
+        seq = [(r["st"][cid]["d"], r["st"][cid]["a"]) for r in log if cid in r["st"] and r["st"][cid]["rank"] == 1]
+        for (d0, a0), (d1, a1) in zip(seq, seq[1:]):
+            if d1 < d0 - 1e-9 and a1 > a0 + 1e-9:
+                mono = False
+        zeroAt[cid], seen, last = None, False, None       # (gone: the first frame after being shown with it at 0 or dropped)
+        for r in log:
+            v = r["st"].get(cid)
+            if v and v["a"] > 0:
+                seen, last = True, v["d"]
+            elif seen:
+                zeroAt[cid] = (r["t"], last)
+                break
+    chk("cp26: the nearer one fades with distance, monotonically, to 0 at the app's 25 yd (gone at %s yd)"
+        % ", ".join("%.1f" % v[1] if v else "-" for v in zeroAt.values()),
+        mono and all(v is not None and 24 <= v[1] <= 26 for v in zeroAt.values()))       # (positions read at 10 Hz: ~0.7 yd steps)
+    order = True
+    for j in range(2, len(ids)):
+        first = [r["t"] for r in log if ids[j] in r["st"] and r["st"][ids[j]]["a"] > 0]
+        gone = zeroAt.get(ids[j - 2])
+        if not first or not gone or first[0] < gone[0] - 1e-9:
+            order = False
+    chk("cp26: each new one (k+2) fades in only once k has gone", order)
+    fadeIn = [r["st"][ids[2]]["a"] for r in log if ids[2] in r["st"] and r["st"][ids[2]]["rank"] == 2][:30]
+    chk("cp26: ... and it fades in (over 0.4 s: %s)" % ", ".join("%.2f" % v for v in fadeIn[::6]),
+        fadeIn and fadeIn[0] < 0.1 and fadeIn[-1] >= 0.99 and all(fadeIn[i] <= fadeIn[i + 1] for i in range(len(fadeIn) - 1)))
+    jumpW = jumpC = 0.0
+    for r0, r1 in zip(log, log[1:]):
+        for id_, v1 in r1["st"].items():
+            v0 = r0["st"].get(id_)
+            if v0 and v0["wa"] > 0 and v1["wa"] > 0 and v0["wx"] is not None and v1["wx"] is not None:
+                jumpW = max(jumpW, abs(v1["wx"] - v0["wx"]), abs(v1["wy"] - v0["wy"]))
+            if v0 and v0["ca"] > 0 and v1["ca"] > 0 and v0["cx"] is not None and v1["cx"] is not None:
+                jumpC = max(jumpC, abs(v1["cx"] - v0["cx"]))
+    chk("cp26: no jumps: a shown marker moves at most %.1f px a frame in the world, %.2f on the compass" % (jumpW, jumpC),
+        jumpW < 12 and jumpC < 3)
+    agree = all(v["wt"] == v["ct"] for r in log for v in r["st"].values() if v["wa"] > 0 and v["ca"] > 0)
+    both = sum(1 for r in log for v in r["st"].values() if v["wa"] > 0 and v["ca"] > 0)
+    chk("cp26: the compass and the world agree: the same ones, the same distances (%d marker-frames compared)" % both, agree and both > 1000)
+    ranks = [r["st"][ids[1]]["r"] for r in log if ids[1] in r["st"]]
+    chk("cp26: k+1 becomes the nearer without a jump (its rank eased %.2f .. %.2f)" % (max(ranks), min(ranks)),
+        max(ranks) == 2 and min(ranks) == 1 and all(abs(b_ - a_) <= 1 / 60 / 0.4 + 1e-9 for a_, b_ in zip(ranks, ranks[1:])))
+    # the END: the last checkpoint and the objective; then the objective only (the route ended: the same marker, never faded out)
+    endp = [r for r in log if gid in r["pair"]]
+    lastTwo = [r for r in endp if r["pair"] == [ids[-1], gid]]
+    onlyG = [r for r in log if r["pair"] == [gid]]
+    ga = [r["st"][gid]["a"] for r in log if gid in r["st"] and r["st"][gid]["rank"]]
+    gStart = ga.index(1.0) if 1.0 in ga else None
+    chk("cp26: the end: the last checkpoint + the objective (%d frames), then the objective only (%d frames), never faded once full"
+        % (len(lastTwo), len(onlyG)), lastTwo and onlyG and gStart is not None and min(ga[gStart:]) == 1.0
+        and not L.globals().WowCompanion.routeWp.active)
+    k1 = C.rk[gid]
+    chk("cp26: at the end the objective is the quest's disc with its number on the compass ('%s'), pale gold in the world"
+        % (k1.num.text if k1 else None), k1 is not None and k1.disc.shown is True and k1.num.text == "1"
+        and abs(W.obj[gid].tx.col[2] - 0.93) < 1e-9)
+    # the objective joins the list only when the app sent every checkpoint left (fewer than its 2), or one stands on it
+    L.execute("C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end")
+    G.pin = L.table(*mp(*CPS[0]))
+
+    def lst(more):
+        L.execute("WowCompanion.routeWp = { active = true, qid = 123, MORE_MAX = 3, more = {" +
+                  ",".join("{ m = GAME.map, x = %r, y = %r }" % mp(*c) for c in more) + "} }")
+        C.read(True)
+        return [C.rt_[i].id for i in range(1, len(C.rt_) + 1)]
+    l2, l1, lg = lst(CPS[1:3]), lst(CPS[1:2]), lst([CPS[1], (GOAL[0] + 3, GOAL[1])])
+    chk("cp26: the objective last only when the list is complete: 2 sent %s; 1 sent %s; one ON the objective %s" % (l2, l1, lg),
+        gid not in l2 and l1[-1] == gid and len(l1) == 3 and lg == [ids[0], ids[1], gid])
+    G.px, G.py, G.facing, C.cam.abs, C.cam.ref, G.pin, G.quest = keepW
+    L.execute("""C_SuperTrack.IsSuperTrackingUserWaypoint = function() return true end
+                 WowCompanion.routeWp = { active = true, more = { { m = GAME.map, x = 0.7, y = 0.35 }, { m = GAME.map, x = 0.4, y = 0.3 } } }
                  C_QuestLog.GetNumQuestLogEntries = nil""")
     G.pin = L.table(0.6, 0.4); G.quest = L.table(0.6, 0.4); C.qnAt = -10
     navset()
@@ -991,20 +1102,20 @@ def main():
         C_QuestLog.GetQuestWatchType = function(q) return QWATCH[q] end
     """)
     G.quest = L.table(0.6, 0.4); G.facing = math.radians(270); C.setCam(False); C.qnAt = -10; C.draw()
-    mq = C.mk.quest
+    mq = C.rk["goal:123"]                                # (cp26: the objective on the band: the route markers' disc)
     chk("cp17: the focused quest 123 is the 2nd watched (10, [55 hidden], 77 unwatched, 123): '%s' on the POI number disc" % mq.num.text,
-        mq.num.text == "2" and mq.num.shown is not False and mq.tx.atlas == "UI-QuestPoi-QuestNumber" and mq.d.shown is not False)
+        mq.num.text == "2" and mq.num.shown is not False and mq.disc.atlas == "UI-QuestPoi-QuestNumber" and mq.d.shown is not False)
     # cp23 (test60: "missing the number in the circle"): this client's number disc is DARK brown; the number must be light on it,
     # outlined, over the disc's layer, its text set and shown
     nc = [mq.num.col[i] for i in (1, 2, 3)]
     lum = 0.2126 * nc[0] + 0.7152 * nc[1] + 0.0722 * nc[2]
     chk("cp23: the number is LIGHT on the dark disc (luminance %.2f; the disc's ~0.2), outlined, OVERLAY over the disc, '%s' shown"
-        % (lum, mq.num.text), lum > 0.7 and mq.num.flags == "OUTLINE" and mq.num.layer == "OVERLAY" and mq.tx.layer == "ARTWORK"
+        % (lum, mq.num.text), lum > 0.7 and mq.num.flags == "OUTLINE" and mq.num.layer == "OVERLAY" and mq.disc.layer == "ARTWORK"
         and mq.num.text == "2" and mq.num.shown is True and mq.num.fsize and mq.num.fsize > 0
-        and mq.num.point and abs(mq.num.point[4] - mq.tx.point[4]) < 1e-9 and abs(mq.num.point[5] - mq.tx.point[5]) < 1e-9)
+        and mq.num.point and abs(mq.num.point[4] - mq.disc.point[4]) < 1e-9 and abs(mq.num.point[5] - mq.disc.point[5]) < 1e-9)
     L.execute("QWATCH[123] = nil")
     C.qnAt = -10; G.t = G.t + 2; C.draw()
-    chk("cp17: an unwatched focus: the '!' as before, no number", mq.tx.atlas == "questnormal" and mq.num.shown is False)
+    chk("cp17: an unwatched focus: the '!' as before, no number", mq.disc.atlas == "questnormal" and mq.num.shown is False)
     L.execute("QWATCH[123] = 0; C_QuestLog.GetNumQuestLogEntries = nil")
 
     # cp17: the CALIBRATION recording (cal1): one shot, armed by the marker centred and the stick idle 3 s, 120 s at 30 Hz
@@ -1061,12 +1172,16 @@ def main():
         R.active is True and len(mv) == 2 and abs(mv[0][0] - 900 / 1295) < 1e-9 and abs(mv[1][1] - 468 / 1295) < 1e-9 and mv[0][2] == 1429)
     tapm(38, 38)
     chk("cp19: uwp 38 38 drops them", len(R.more) == 0 and R.active is True)
+    chk("cp26: ... the dropped ones kept a moment as moreOld (%d)" % len(R.moreOld), len(R.moreOld) == 2)
     tapm(38, 25, 0, 12, 0); tapm(36, 24, 31, 11, 5)
-    chk("cp19: a new SET drops them (the app sends the ones after it again)", len(M.eval("WC.routeWp").more) == 0)
+    R = M.eval("WC.routeWp")
+    chk("cp19: a new SET drops them (the app sends the ones after it again); cp26: kept a moment as moreOld (%d)" % len(R.moreOld),
+        len(R.more) == 0 and len(R.moreOld) == 1)
     tapm(38, 1, 2, 3, 4, 38, 1, 2, 3, 5, 38, 1, 2, 3, 6, 38, 1, 2, 3, 7)
     chk("cp19: at most 3", len(M.eval("WC.routeWp").more) == 3)
     tapm(39)
-    chk("cp19: CLEAR drops them with the pin", len(M.eval("WC.routeWp").more) == 0 and M.eval("WC.routeWp").active is False)
+    chk("cp19: CLEAR drops them with the pin (cp26: moreOld too)", len(M.eval("WC.routeWp").more) == 0 and M.eval("WC.routeWp").active is False
+        and M.eval("WC.routeWp").moreOld is None)
     # cp20: 2 height digits may follow a point's 4 (relative to the player, 0.25 yd steps, +648; 1295 unknown)
     tapm(36, 24, 30, 11, 5, 18, 8)                       # the pin 2 yd above us (656 = 18 * 36 + 8)
     tapm(38, 25, 0, 12, 0, 17, 36 - 1)                   # a flag at 647 (17 * 36 + 35): -0.25 yd
