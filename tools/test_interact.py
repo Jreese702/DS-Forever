@@ -4,11 +4,10 @@
 
 Each test script returns its PASS / FAIL lines. Needs lupa. Exit code 1 on any failure."""
 import lupa, sys, os
-L = lupa.LuaRuntime()
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 addons = os.path.join(ROOT, 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons')
 HERE = os.path.join(ROOT, 'tools', 'interact_tests')
-L.execute(r'''
+STUB = r'''
 local dummy
 local mt = {}
 mt.__index = function() return dummy end
@@ -68,16 +67,18 @@ function TYPE(s)
   end
 end
 function LASTT() for i = #SENT, 1, -1 do if SENT[i].type == "chatt" then return SENT[i] end end end
-''')
+'''
 chat = open(os.path.join(addons, "WowCompanion", "Chat.lua"), encoding="utf-8").read()
-L.execute(chat.replace("local ADDON = ...", "local ADDON = 'WowCompanion'", 1))
 src = open(os.path.join(addons, "WowCompanionInteract", "Interact.lua"), encoding="utf-8").read()
 src = src.replace("local ADDON = ...", "local ADDON = 'x'", 1)
 src += "\n_G.__N = N; _G.__ACT = ACT; _G.__ON = ON; _G.__MAIL = MAIL; _G.__AH = AH; _G.__build = buildDoc\n"
-L.execute(src)
 names = sys.argv[1:] or sorted(n for n in os.listdir(HERE) if n.startswith("t_") and n.endswith(".lua"))
 fails = 0
 for n in names:
+    L = lupa.LuaRuntime()                    # each test file in a fresh game: no state leaks from one to the next
+    L.execute(STUB)
+    L.execute(chat.replace("local ADDON = ...", "local ADDON = 'WowCompanion'", 1))
+    L.execute(src)
     res = L.execute(open(os.path.join(HERE, n), encoding="utf-8").read())
     print(res)
     fails += str(res).count("FAIL ")

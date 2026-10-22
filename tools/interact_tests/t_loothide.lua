@@ -1,6 +1,6 @@
 -- test76 ("the loot is popping up in both places"): with the Loot window hidden on the top screen (lootTop off) and the companion in
 -- charge (mode, proof), a loot window that opens is dimmed on the top screen by the opening event, by the window's own show and by
--- its fade; in a fight it is not (the controller cannot be taken: v10's ENTER wait) and the log says "combat"
+-- its fade; i136: in a fight too (the user's "Hide the game's"), logged "combat: dimmed in fight"
 local N, ACT, ON = __N, __ACT, __ON
 local out = {}
 local function chk(n, c) out[#out + 1] = (c and "PASS " or "FAIL ") .. n end
@@ -55,7 +55,7 @@ LootFrame.shown = true
 if hooks.OnShow then hooks.OnShow(LootFrame) end
 N.early("loot")
 c = cap()
-chk("looting while still flagged in combat: the game keeps its window (" .. tostring(LootFrame.alpha) .. "), logged why ("
-    .. tostring(c and c.why) .. ")", LootFrame.alpha == 1 and c and c.ok == false and c.why == "combat")
+chk("i136: looting while still flagged in combat: the game's window dimmed anyway (" .. tostring(LootFrame.alpha) .. "), logged ("
+    .. tostring(c and c.why) .. ")", LootFrame.alpha == 0 and c and c.ok == true and c.why == "combat: dimmed in fight")
 InCombatLockdown = function() return false end
 return table.concat(out, "\n")
