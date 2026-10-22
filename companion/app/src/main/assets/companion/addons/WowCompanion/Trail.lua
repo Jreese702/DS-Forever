@@ -1948,7 +1948,7 @@ do
                        picks = (A.pick[1] and 1 or 0) + (A.pick[2] and 1 or 0), win = A.win and A.win.op or nil,
                        np = A.np.state, npv = npGet(), npo = A.npSaved() and A.npSaved().orig or nil, icons = A.iconN or 0,
                        route = A.routing(), pin = type(WC.routeWp) == "table" and WC.routeWp.active == true,
-                       rings = type(WC.rings) == "table" and { on = WC.rings.wanted(), n = WC.rings.n, src = WC.rings.src,
+                       rings = type(WC.rings) == "table" and { v = WC.rings.V, on = WC.rings.wanted(), n = WC.rings.n,
                                                                    why = WC.rings.whyLine and WC.rings.whyLine() or nil } or nil,
                        pulls = A.pullN, pullRej = A.pullRej }
         A.lastDiag = line
@@ -3001,31 +3001,27 @@ do
     f:SetScript("OnEvent", function() pcall(T.apply) end)
 end
 
--- ================================================================== AGGRO RINGS ON THE GROUND (ar1; the user's "Both" / "Keep separate")
--- The user: "is it possible to increase the size of mobs bottom unit circle before they are aggroed to show their aggro radius?" The
--- game's selection circle cannot be resized (the engine draws it), so these are OUR rings: one under each hostile mob that is not
--- yet pulled, radius = its aggro radius by the classic rule, agreed with Map for both screens: clamp(20 + (mob level - yours), 5, 45)
--- yd, elites the same, a "??" mob as yours + 10. Yellow while you are outside it, red for a ring you stand in; each ring on its own
--- ("Keep separate": no merging up here). Gone (a FADE_S fade) while the mob is in combat; back when it resets.
---   WHO: WC.live's slotted plates (hostile, attackable NPCs) with reaction 1-3 (the user's "Aggressive = Hostile + unfriendly"),
---   not dead, not tapped by others. Neutral / passive mobs and players never get one.
---   WHERE: the ring is anchored to the plate's own live screen point (the engine places it exactly every frame: no jumping, turning
---   the camera moves the ring with the mob); only the mob's DISTANCE is estimated - from the plate's height on screen through the
---   compass's camera model (cp20's pitch, the zoom, PLATE_H above the feet), clamped into the range bracket (A.bracket), smoothed
---   (TAU, and at most VMAX yd/s of change, so a noisy read cannot throw it). The distance gives the ring's size, its squash and the
---   drop from the plate to the feet. Without a pitch read yet, DEF_PITCH stands in (the probe says so).
---   Our own frames on UIParent (BACKGROUND, mouse off), our own art (marker_ring.tga): the plates are only READ (GetCenter), never
---   parented to, written or hooked. No CVar. The app's Settings > Top screen "Aggro rings" (default on): WowCompanionDB.aggroRings.
--- ar2 (test52: plates 2, slots 2, icons 2 - and NO ring): the plate's screen position is SECRET on Forever (the probe's sx was false
--- all along; ag2's icons work because they ANCHOR to the plate without reading it), so every ring bailed. Now: with the position
--- plain, as ar1; secret, the ring is ANCHORED to the plate (SetPoint to it, nothing of it written) and placed under it by the
--- estimated distance - the range bracket's middle (no screen height to read), smoothed as before. The reaction a plate had when it
--- was plain is kept (a later secret read no longer drops the ring). Every slot's reason is in the probe (rings.why: "slot:why").
-WC.rings = { V = "ar2", react = {}, why = {}, BASE = 20, MIN = 5, MAX = 45, SKULL = 10, PLATE_H = 3.0, TAU = 0.4, VMAX = 10, FADE_S = 0.3, DEF_PITCH = 0.35,
-             RGB_OUT = { 1, 0.84, 0.27 }, RGB_IN = { 0.92, 0.2, 0.12 }, ALPHA = 0.85, list = {}, n = 0,
-             TEX = "Interface\\AddOns\\WowCompanion\\Media\\marker_ring" }
+-- ================================================================== THE AGGRO TINT ON NAMEPLATES (at1; the user's "Nameplate tint plus bottom map")
+-- The ground rings (ar1 / ar2) are GONE: an add-on cannot draw on the terrain (E:/safepath-work/research/ground: every add-on drawing
+-- is a layer over the finished 3D frame), so they floated in front of everything and through walls. Instead each unpulled hostile's
+-- nameplate gets OUR tint, by how close you are to its aggro radius (the rule shared with Map's bottom-map circles: clamp(20 + (mob
+-- level - yours), 5, 45) yd, elites the same, a "??" mob as yours + 10):
+--   none      more than APPROACH yd outside the radius;
+--   yellow    within APPROACH (10) yd of its edge;
+--   orange    within NEAR (5) yd of it;
+--   red       inside it.
+--   Never for a mob in combat (a FADE_S fade), neutral / passive mobs (reaction 4+), dead ones, ones tapped by others, or players.
+--   THE DISTANCE: the range bracket (A.bracket) - its middle, smoothed (TAU, at most VMAX yd/s) - and a state changes only past a
+--   HYST yd margin, so a bracket boundary cannot make it flicker.
+--   LEAVE NO TRACE: our own frame on UIParent (mouse off, our own art: tint_glow.tga, a soft glow with a crisp border), ANCHORED to
+--   the plate (SetPoint to it, as ag2's icons): the plate is never read, written, hooked or recoloured (its health bar untouched).
+--   Settings > Top screen "Aggro tint" (default on): WowCompanionDB.aggroRings (the key ar1 used; Interact's ACT.rings).
+WC.rings = { V = "at1", BASE = 20, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
+             ALPHA = 0.95, OUTSET = 6, list = {}, est = {}, react = {}, why = {}, n = 0,
+             COL = { approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
+             TEX = "Interface\\AddOns\\WowCompanion\\Media\\tint_glow" }
 do
-    local R, A, C = WC.rings, WC.live, WC.compass
+    local R, A = WC.rings, WC.live
     local function now() return (type(GetTime) == "function" and GetTime()) or 0 end
     local function num(v) if type(v) == "number" and v == v and not (type(issecretvalue) == "function" and issecretvalue(v)) then return v end end
 
@@ -3041,7 +3037,7 @@ do
         if on then WowCompanionDB.aggroRings = nil else WowCompanionDB.aggroRings = false end
         return R.wanted()
     end
-    -- a record's mob gets a ring: aggressive, not dead, not tapped; the reason when not (the reaction last read plainly kept per plate)
+    -- a record's mob may be tinted: aggressive, not dead, not tapped (the reaction last read plainly kept per plate)
     function R.eligible(m, tok)
         if type(m) ~= "table" then return false, "no record" end
         local r = num(m.r)
@@ -3053,6 +3049,18 @@ do
         if m.td == 1 then return false, "tapped" end
         return true
     end
+    -- the state for a distance d and a radius r, with the last state's margin (a state changes only HYST yd past its line)
+    function R.state(d, r, last)
+        local e = d - r
+        local function at(st) return st == "inside" and 0 or st == "near" and R.NEAR or st == "approach" and R.APPROACH or nil end
+        local raw = (e <= 0 and "inside") or (e <= R.NEAR and "near") or (e <= R.APPROACH and "approach") or "far"
+        if last and last ~= raw then
+            -- leaving a closer state for a farther one needs HYST more; a closer state is taken at once
+            local order = { inside = 1, near = 2, approach = 3, far = 4 }
+            if order[raw] > order[last] and at(last) and e <= at(last) + R.HYST then return last end
+        end
+        return raw
+    end
     function R.whyLine()
         local parts = {}
         for s2, w in pairs(R.why) do parts[#parts + 1] = s2 .. ":" .. w end
@@ -3060,7 +3068,7 @@ do
         return #parts > 0 and table.concat(parts, ",") or nil
     end
 
-    local function ring(s)
+    local function tint(s)
         local o = R.list[s]
         if o then return o end
         local f = CreateFrame("Frame", nil, UIParent)
@@ -3075,130 +3083,72 @@ do
         return o
     end
 
-    -- the distance (yd, along the ground) that puts a point PLATE_H above the feet at screen height yOff above the centre, at the
-    -- screen angle rel off the middle; nil when no distance fits
-    function R.solve(yOff, rel, phi, D, H, fl)
-        local function g(df) return C.wmProj(phi, D, H, df, R.PLATE_H, fl) end
-        local lo, hi = 1, 80
-        local glo, ghi = g(lo), g(hi)
-        if not (glo and ghi) then return nil end
-        if (glo - yOff) * (ghi - yOff) > 0 then return nil end
-        for _ = 1, 30 do
-            local mid = (lo + hi) / 2
-            local gm = g(mid)
-            if not gm then return nil end
-            if (glo - yOff) * (gm - yOff) <= 0 then hi = mid else lo, glo = mid, gm end
-        end
-        return ((lo + hi) / 2) / math.max(0.2, math.cos(rel))
-    end
-
     function R.tick(dt)
-        local t = now()
         local rec = A and A.last
         local on = R.wanted() and rec and type(rec.m) == "table" and not A.off
         local seen = {}
         R.n = 0
+        R.why = {}
         if on then
-            local okU, us = pcall(function() return UIParent:GetEffectiveScale() end)
-            local okW, uw = pcall(function() return UIParent:GetWidth() end)
-            local okH, uh = pcall(function() return UIParent:GetHeight() end)
-            us, uw, uh = okU and num(us) or 1, okW and num(uw) or nil, okH and num(uh) or nil
             local plv = A.pv and A.pv(UnitLevel, "player")
-            if uw and uh then
-                local half, cy = uw / 2, uh / 2
-                local hfov = (C.cam and C.cam.hfov) or math.rad(90)
-                local fl = half / math.tan(hfov / 2)
-                local phi = C.wm and C.wm.pitch
-                R.src = phi and ((C.wm.tilted and "stale") or "pitch") or "guess"
-                phi = phi or R.DEF_PITCH
-                local D, H = C.wmZoom(), (C.wm and C.wm.CAM_H) or 1.9
-                R.why = {}
-                for _, m in ipairs(rec.m) do
-                    local st = A.slot[m.s]
-                    local okE, whyE = false, "no slot"
-                    if st then okE, whyE = R.eligible(m, st.tok) end
-                    if not okE then R.why[m.s] = whyE end
-                    if okE then
-                        local okP, plate = pcall(function() return C_NamePlate.GetNamePlateForUnit(st.tok) end)
-                        if not (okP and plate) then plate = nil; R.why[m.s] = "no plate" end
-                        local x, y, ps
-                        if plate then
-                            local okC, cx, cyy = pcall(function() return plate:GetCenter() end)
-                            local okS, s2 = pcall(function() return plate:GetEffectiveScale() end)
-                            x, y, ps = okC and num(cx) or nil, okC and num(cyy) or nil, okS and num(s2) or 1
-                        end
-                        local anchored = plate and not (x and y)               -- ar2: the position secret: anchored to the plate
-                        if plate then
-                            local rel = 0
-                            local raw
-                            if x and y then
-                                x, y = x * ps / us, y * ps / us
-                                rel = math.atan((x - half) / fl)
-                                -- the raw distance: the plate's height on screen, clamped into the range bracket
-                                raw = R.solve(y - cy, rel, phi, D, H, fl)
-                            end
-                            local lo, hi = num(m.a) or 0, num(m.b)
-                            if not raw then raw = hi and (lo + hi) / 2 or lo + 10 end
-                            raw = math.max(lo, hi and math.min(hi, raw) or raw)
-                            -- smoothed per slot (a new plate in the slot starts fresh), at most VMAX yd/s of change
-                            local e = R.est and R.est[m.s]
-                            if not e or e.tok ~= st.tok or e.at ~= st.at then
-                                e = { tok = st.tok, at = st.at, d = raw }
-                                R.est = R.est or {}
-                                R.est[m.s] = e
-                            else
-                                local step = (raw - e.d) * (1 - math.exp(-dt / R.TAU))
-                                local cap = R.VMAX * dt
-                                e.d = e.d + math.max(-cap, math.min(cap, step))
-                            end
-                            local d = e.d
-                            local dfwd = d * math.cos(rel)
-                            local r = R.radius(num(m.lv), plv)
-                            local up = C.wmProj(phi, D, H, dfwd, R.PLATE_H, fl)
-                            local ft = C.wmProj(phi, D, H, dfwd, 0, fl)
-                            local wm = C.wm.pitch
-                            C.wm.pitch = phi                                   -- (wmGround reads the pitch it is given here)
-                            local g = C.wmGround(dfwd, 0, r, false, fl)
-                            C.wm.pitch = wm
-                            if not (up and ft and g) then R.why[m.s] = "no size" end
-                            if up and ft and g then
-                                local o = ring(m.s)
-                                o.f:ClearAllPoints()
-                                if anchored then
-                                    -- under the plate by the projected drop to the feet (the plate read nowhere: only anchored to)
-                                    o.f:SetPoint("CENTER", plate, "CENTER", 0, -(up - ft) + g.roff)
-                                else
-                                    local footY = y - (up - ft)
-                                    o.f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, footY + g.roff)
-                                end
-                                o.anchored = anchored and true or false
-                                R.why[m.s] = (m.cb == 1) and "combat" or (anchored and "shown (anchored)" or "shown")
-                                o.f:SetSize(g.rw, g.rh)
-                                local inside = d < r
-                                local c = inside and R.RGB_IN or R.RGB_OUT
-                                o.t:SetVertexColor(c[1], c[2], c[3])
-                                o.inside, o.r, o.d = inside, r, d
-                                -- in combat: fading out; out of it: back
-                                local want = (m.cb == 1) and 0 or R.ALPHA
-                                local k = dt / R.FADE_S * R.ALPHA
-                                if o.a < want then o.a = math.min(want, o.a + k) else o.a = math.max(want, o.a - k) end
-                                o.f:SetAlpha(o.a)
-                                if o.a > 0 then
-                                    if not o.f:IsShown() then o.f:Show() end
-                                    R.n = R.n + 1
-                                elseif o.f:IsShown() then o.f:Hide() end
-                                seen[m.s] = true
-                            end
-                        end
+            for _, m in ipairs(rec.m) do
+                local st = A.slot[m.s]
+                local okE, whyE = false, "no slot"
+                if st then okE, whyE = R.eligible(m, st.tok) end
+                local plate
+                if okE then
+                    local okP, p = pcall(function() return C_NamePlate.GetNamePlateForUnit(st.tok) end)
+                    plate = okP and p or nil
+                    if not plate then okE, whyE = false, "no plate" end
+                end
+                if not okE then
+                    R.why[m.s] = whyE
+                else
+                    -- the distance: the range bracket's middle (lo + 10 past our largest check), smoothed, a new plate starts fresh
+                    local lo, hi = num(m.a) or 0, num(m.b)
+                    local raw = hi and (lo + hi) / 2 or lo + 10
+                    local e = R.est[m.s]
+                    if not e or e.tok ~= st.tok or e.at ~= st.at then
+                        e = { tok = st.tok, at = st.at, d = raw }
+                        R.est[m.s] = e
+                    else
+                        local step = (raw - e.d) * (1 - math.exp(-dt / R.TAU))
+                        local cap = R.VMAX * dt
+                        e.d = e.d + math.max(-cap, math.min(cap, step))
                     end
+                    local r = R.radius(num(m.lv), plv)
+                    e.st = R.state(e.d, r, e.st)
+                    local o = tint(m.s)
+                    if o.plate ~= plate then
+                        o.f:ClearAllPoints()
+                        -- anchored to the plate, a little bigger than it (the plate only anchored to: never read or written)
+                        o.f:SetPoint("TOPLEFT", plate, "TOPLEFT", -R.OUTSET, R.OUTSET)
+                        o.f:SetPoint("BOTTOMRIGHT", plate, "BOTTOMRIGHT", R.OUTSET, -R.OUTSET)
+                        o.plate = plate
+                    end
+                    local c = R.COL[e.st]
+                    if c then o.t:SetVertexColor(c[1], c[2], c[3]); o.col = e.st end
+                    -- the alpha: up in a tinted state out of combat, down far away or in combat
+                    local want = (m.cb ~= 1 and c) and R.ALPHA or 0
+                    local k = dt / R.FADE_S * R.ALPHA
+                    if o.a < want then o.a = math.min(want, o.a + k) else o.a = math.max(want, o.a - k) end
+                    o.f:SetAlpha(o.a)
+                    o.state, o.d, o.r = e.st, e.d, r
+                    if o.a > 0 then
+                        if not o.f:IsShown() then o.f:Show() end
+                        R.n = R.n + 1
+                    elseif o.f:IsShown() then o.f:Hide() end
+                    R.why[m.s] = (m.cb == 1) and "combat" or e.st
+                    seen[m.s] = true
                 end
             end
         end
         for s, o in pairs(R.list) do
             if not seen[s] then
                 if o.f:IsShown() then o.f:Hide() end
-                o.a = 0
-                if R.est then R.est[s] = nil end
+                o.a, o.plate = 0, nil
+                o.f:ClearAllPoints()
+                R.est[s] = nil
             end
         end
     end
