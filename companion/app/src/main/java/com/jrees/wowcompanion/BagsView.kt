@@ -438,7 +438,24 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             // THE HOVER WAIT ONCE (d, tracking 2026-10-22): the game's quarter second before the first tooltip only; moving on shows
             // each next item at once (BagsCursor.WarmFade)
             if (!tooltipShown(c, gx, gy, top, bottom)) { warm.alpha(null, clock()); cut = null }
+            stickWanted(cut != null)
         }
+
+        // THE RIGHT STICK over a cut tooltip (the user, 2026-10-22: "Right stick"): read only (PadInput; the game still gets it and turns
+        // its camera), only while a cut tooltip shows; it scrolls that tooltip and nothing else (never the Bags cursor)
+        private var stickY = 0f
+        private var stickAt = 0L
+        private var stickReader: PadInput? = null
+        private fun stickWanted(on: Boolean) {
+            if (on && stickReader == null) stickReader = PadInput(onPad = { _, _, _, _ -> }, onStatus = { _, _ -> },
+                onStickVector = { st, _, y -> if (st == 1) { stickY = y; stickAt = clock(); invalidate() } }).also { it.start() }
+            else if (!on && stickReader != null) { val r = stickReader; stickReader = null; r?.stop(); stickY = 0f }
+        }
+        override fun onVisibilityAggregated(isVisible: Boolean) {
+            super.onVisibilityAggregated(isVisible)
+            if (!isVisible) stickWanted(false)
+        }
+        override fun onDetachedFromWindow() { stickWanted(false); super.onDetachedFromWindow() }
         private fun tooltipShown(c: Canvas, gx: Float, gy: Float, top: Float, bottom: Float): Boolean {
             val (bag, slot) = shownSlot() ?: return false
             val it = st.items[st.key(bag, slot)] ?: return false
@@ -523,6 +540,12 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             // the scroll belongs to one item; a new item starts at its top
             if (key != cutKey) { cutKey = key; scrolled = 0f }
             scrolled = scrolled.coerceIn(0f, maxOf(0f, f.scrollMax))
+            if (f.scrollMax > 0f && kotlin.math.abs(stickY) > BagsCursor.STICK_DEADZONE) {
+                val now = clock()
+                scrolled = BagsCursor.stickScroll(scrolled, f.scrollMax, stickY, (now - stickAt).coerceIn(0L, 50L))
+                stickAt = now
+                postInvalidateOnAnimation()                     // the stick held still sends nothing: each frame steps on
+            }
             // a press on the item's OWN cells shows it at once (b116); the first tooltip waits out the game's quarter second
             val boxNow = RectF(x, f.y, x + tw, f.y + (if (f.scrollMax > 0f) f.h else itemH(s)))
             val pressed = acts.isNotEmpty() &&

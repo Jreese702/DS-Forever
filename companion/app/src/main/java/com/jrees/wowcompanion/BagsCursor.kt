@@ -160,6 +160,21 @@ object BagsCursor {
      */
     data class Fit(val scale: Float, val y: Float, val h: Float, val scrollMax: Float)
 
+    /**
+     * THE RIGHT STICK SCROLLS A CUT TOOLTIP (the user's answer, 2026-10-22: "Right stick"; read only, the game still turns its camera):
+     * past [STICK_DEADZONE] the vertical deflection [y] (down +, evdev's) scrolls smoothly, proportional, [STICK_SPEED] px a second at
+     * full; [dtMs] since the last step; clamped to 0..[max]. A tooltip that fits ([max] 0) never scrolls.
+     */
+    const val STICK_DEADZONE = 0.25f
+    const val STICK_SPEED = 1200f
+    fun stickScroll(scrolled: Float, max: Float, y: Float, dtMs: Long): Float {
+        if (max <= 0f) return 0f
+        val a = kotlin.math.abs(y)
+        if (a <= STICK_DEADZONE) return scrolled.coerceIn(0f, max)
+        val k = (a - STICK_DEADZONE) / (1f - STICK_DEADZONE) * kotlin.math.sign(y)
+        return (scrolled + k * STICK_SPEED * dtMs / 1000f).coerceIn(0f, max)
+    }
+
     const val MIN_SCALE = 0.62f
     private const val SCALE_STEP = 0.04f
 

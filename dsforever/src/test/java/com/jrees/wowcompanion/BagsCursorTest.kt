@@ -123,4 +123,23 @@ class BagsCursorTest {
         // a short tooltip stays level with the cursor's row
         assertEquals(600f, BagsCursor.fit(top, bottom, 600f, plate) { 300f * it }.y)
     }
+
+    /** the user: "Right stick": a cut tooltip scrolls with it, read only; never the cursor */
+    @Test fun theRightStickScrollsACutTooltip() {
+        val dz = BagsCursor.STICK_DEADZONE
+        assertEquals(100f, BagsCursor.stickScroll(100f, 500f, dz, 16), 0f)             // inside the dead-zone: still
+        assertEquals(100f, BagsCursor.stickScroll(100f, 500f, -dz * 0.9f, 16), 0f)
+        val slow = BagsCursor.stickScroll(100f, 500f, 0.5f, 100) - 100f
+        val fast = BagsCursor.stickScroll(100f, 500f, 1f, 100) - 100f
+        assertTrue(slow > 0f && fast > slow)                                           // down scrolls down, proportional
+        assertEquals(BagsCursor.STICK_SPEED * 0.1f, fast, 0.5f)
+        assertTrue(BagsCursor.stickScroll(100f, 500f, -1f, 50) < 100f)                  // up scrolls back up
+        assertEquals(500f, BagsCursor.stickScroll(490f, 500f, 1f, 1000), 0f)            // clamped to the tooltip's end
+        assertEquals(0f, BagsCursor.stickScroll(10f, 500f, -1f, 1000), 0f)              // ... and its top
+        assertEquals(0f, BagsCursor.stickScroll(0f, 0f, 1f, 1000), 0f)                  // a tooltip that fits: none
+        // the stick is no press: the cursor's copy never moves for it
+        val p = BagsCursor.Predictor()
+        p.game(true, 1, 0 to 1, open, false, 0)
+        assertFalse(p.press("PADRSTICK", 10)); assertNull(p.shown)
+    }
 }
