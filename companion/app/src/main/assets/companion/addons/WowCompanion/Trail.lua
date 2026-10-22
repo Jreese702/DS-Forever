@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp31" }
+WC.compass = { V = "cp32" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -100,6 +100,10 @@ do
     -- NUMBER DISC is the quest's objective only: our own gold-filled disc (quest_disc.tga) with the number dark on it, the classic look
     C.PIN_TEX = "Interface\\AddOns\\WowCompanion\\Media\\marker_pin"
     C.DISC_TEX = "Interface\\AddOns\\WowCompanion\\Media\\quest_disc"
+    -- cp32 (test72, the user: "the current checkpoint should be the old diamond, the next checkpoint should be the current icon ...
+    -- Everywhere"): the CURRENT (nearer) checkpoint our gold diamond (marker_diamond.tga), the NEXT our gold pin, cross-faded by the
+    -- eased rank as it moves up (the band and the world); the objective the disc as before
+    C.DIA_TEX = "Interface\\AddOns\\WowCompanion\\Media\\marker_diamond"
     C.GOLD = { 1, 0.82, 0.3 }
     C.NUM_RGB = { 0.16, 0.09, 0.0 }
     C.MARK = {
@@ -886,6 +890,17 @@ do
             local tx = f:CreateTexture(nil, "ARTWORK", nil, 3)
             tx:SetTexture(W.PIN)
             tx:SetAllPoints(f)
+            -- cp32: the current checkpoint's diamond over the pin, cross-faded by the eased rank
+            local ish = f:CreateTexture(nil, "ARTWORK", nil, 2)
+            ish:SetTexture(C.DIA_TEX)
+            ish:SetPoint("CENTER", f, "CENTER", 0, 0)
+            ish:SetVertexColor(0, 0, 0, 0.85)
+            ish:Hide()
+            local dia = f:CreateTexture(nil, "ARTWORK", nil, 4)
+            dia:SetTexture(C.DIA_TEX)
+            dia:SetAllPoints(f)
+            dia:SetVertexColor(C.GOLD[1], C.GOLD[2], C.GOLD[3])
+            dia:Hide()
             local d = f:CreateFontString(nil, "OVERLAY")
             d:SetFont(C.FONT, C.u(13), "OUTLINE")
             d:SetPoint("TOP", f, "BOTTOM", 0, -C.u(2))
@@ -894,9 +909,9 @@ do
             nm:SetTextColor(C.NUM_RGB[1], C.NUM_RGB[2], C.NUM_RGB[3], 1)
             nm:SetPoint("CENTER", f, "CENTER", 0, 0)
             nm:Hide()
-            o = { f = f, sh = sh, tx = tx, d = d, num = nm }
+            o = { f = f, sh = sh, tx = tx, d = d, num = nm, dia = dia, ish = ish }
         end
-        o.a, o.pend, o.goodAt, o.key, o.scale, o.alpha, o.col, o.text, o.holdWhy, o.lostWhy, o.look = 0, nil, nil, id, nil, nil, nil, nil, nil, nil, nil
+        o.a, o.pend, o.goodAt, o.key, o.scale, o.alpha, o.col, o.text, o.holdWhy, o.lostWhy, o.look, o.iw = 0, nil, nil, id, nil, nil, nil, nil, nil, nil, nil, nil
         W.obj[id] = o
         return o
     end
@@ -929,7 +944,16 @@ do
             local W = C.wm
             o.f:SetSize(C.u(W.SIZE * scale), C.u(W.SIZE * scale))
             o.sh:SetSize(C.u(W.SIZE * scale + 4), C.u(W.SIZE * scale + 4))
+            o.ish:SetSize(C.u(W.SIZE * scale + 4), C.u(W.SIZE * scale + 4))
             o.scale = scale
+        end
+        -- cp32: a checkpoint's diamond share (1 the current, 0 the next), the pin's the rest; the disc (the objective) none
+        local iw = (look == "pin" and st and st.kind == "cp") and math.max(0, math.min(1, 2 - (st.r or 1))) or 0
+        if o.iw ~= iw then
+            o.dia:SetAlpha(iw); o.ish:SetAlpha(iw); o.tx:SetAlpha(1 - iw); o.sh:SetAlpha(1 - iw)
+            if iw > 0 then o.dia:Show(); o.ish:Show() else o.dia:Hide(); o.ish:Hide() end
+            if iw < 1 then o.tx:Show(); o.sh:Show() else o.tx:Hide(); o.sh:Hide() end
+            o.iw = iw
         end
         o.f:ClearAllPoints()
         o.f:SetPoint("BOTTOM", UIParent, "BOTTOMLEFT", x, y)
@@ -1449,6 +1473,9 @@ do
             o.psh:SetVertexColor(0, 0, 0, 0.85)
             o.pin = f:CreateTexture(nil, "ARTWORK", nil, 3); o.pin:SetTexture(C.PIN_TEX)
             o.pin:SetVertexColor(C.GOLD[1], C.GOLD[2], C.GOLD[3])
+            o.ish = f:CreateTexture(nil, "ARTWORK", nil, 1); o.ish:SetTexture(C.DIA_TEX); o.ish:SetVertexColor(0, 0, 0, 0.85)
+            o.dia = f:CreateTexture(nil, "ARTWORK", nil, 3); o.dia:SetTexture(C.DIA_TEX)
+            o.dia:SetVertexColor(C.GOLD[1], C.GOLD[2], C.GOLD[3])
             o.dsh = f:CreateTexture(nil, "ARTWORK", nil, 4); o.dsh:SetTexture(C.DISC_TEX); o.dsh:SetVertexColor(0, 0, 0, 0.6)
             o.disc = f:CreateTexture(nil, "ARTWORK", nil, 5); o.disc:SetTexture(C.DISC_TEX)
             o.num = f:CreateFontString(nil, "OVERLAY", nil, 7)
@@ -1459,7 +1486,7 @@ do
             o.d:SetTextColor(1, 1, 1, 1)
             o.ar = f:CreateTexture(nil, "ARTWORK", nil, 3); pcall(function() o.ar:SetAtlas("Navigation-Tracked-Arrow") end)
             o.ar:SetSize(u(14), u(14))
-            o.all = { o.psh, o.pin, o.dsh, o.disc, o.num, o.d, o.ar }
+            o.all = { o.psh, o.pin, o.ish, o.dia, o.dsh, o.disc, o.num, o.d, o.ar }
         end
         C.rk[id] = o
         return o
@@ -1476,11 +1503,15 @@ do
         local ps, ds = u(30 * scale), u(28 * scale)
         o.psh:SetSize(ps + u(3), ps + u(3)); o.pin:SetSize(ps, ps)
         o.dsh:SetSize(ds + u(3), ds + u(3)); o.disc:SetSize(ds, ds)
+        o.ish:SetSize(ps + u(3), ps + u(3)); o.dia:SetSize(ps, ps)
         local x, y = u(m.x), -u(S.line)
-        for _, p in ipairs({ o.psh, o.pin, o.dsh, o.disc, o.num }) do p:SetPoint("CENTER", f, "TOP", x, y) end
-        local pa, da = a * (1 - dw), a * dw
-        o.pin:SetAlpha(pa); o.psh:SetAlpha(pa); o.disc:SetAlpha(da); o.dsh:SetAlpha(da)
+        for _, p in ipairs({ o.psh, o.pin, o.ish, o.dia, o.dsh, o.disc, o.num }) do p:SetPoint("CENTER", f, "TOP", x, y) end
+        -- cp32: a checkpoint's diamond share by its eased rank (1 the current, 0 the next)
+        local iw = (st.kind == "cp") and math.max(0, math.min(1, 2 - (st.r or 1))) or 0
+        local pa, da, ia = a * (1 - dw) * (1 - iw), a * dw, a * (1 - dw) * iw
+        o.pin:SetAlpha(pa); o.psh:SetAlpha(pa); o.disc:SetAlpha(da); o.dsh:SetAlpha(da); o.dia:SetAlpha(ia); o.ish:SetAlpha(ia)
         if pa > 0 then show(o.pin); show(o.psh) else hide(o.pin); hide(o.psh) end
+        if ia > 0 then show(o.dia); show(o.ish) else hide(o.dia); hide(o.ish) end
         if da > 0 then show(o.disc); show(o.dsh) else hide(o.disc); hide(o.dsh) end
         if n and da > 0 then
             if o.numText ~= n then o.num:SetText(tostring(n)); o.numText = n end
