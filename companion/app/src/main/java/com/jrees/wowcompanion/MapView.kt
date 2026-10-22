@@ -4411,6 +4411,7 @@ class MapView(context: Context) : View(context) {
     private val pAggroEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
     private val aggroPath = Path(); private val aggroOne = Path()
     private var ringsLogAt = 0L
+    private var spawnsLogAt = 0L
     private fun drawAggroRings(c: Canvas, r: PoiStore.Rect, sx: (Double) -> Float, sy: (Double) -> Float) {
         val m = map ?: return
         val mapId = m.optInt("mapID", 0)
@@ -4424,23 +4425,38 @@ class MapView(context: Context) : View(context) {
             android.util.Log.i("WCMAP", "aggro rings: ${look.words()}; me ${pwx.toInt()},${pwy.toInt()}" +
                 look.rings.joinToString("") { "; ring ${it.id}: ${it.why}${if (it.inside) " (inside)" else ""}" })
         }
-        val rings = look?.rings ?: return
-        if (rings.isEmpty()) return
+        val rings = look?.rings.orEmpty()
+        // THE SPAWN CIRCLES (the user's "Spawn circles"): the known hostile spawns near, faint; solid where a live plate confirms one
+        val spawns = LiveMobs.shared.spawnRings(mapId, questsPlv, pwx, pwy, rings.mapNotNull { it.spawnKey }.toSet())
+        if (now - spawnsLogAt >= 15_000L && spawns.isNotEmpty()) {
+            spawnsLogAt = now
+            android.util.Log.i("WCMAP", "aggro spawn circles: ${spawns.size} (${spawns.count { it.solid }} confirmed by a plate, " +
+                "${spawns.count { it.inside }} you stand in); ${AggroFit.words()}")
+        }
+        if (rings.isEmpty() && spawns.isEmpty()) return
         // yards to pixels here (the map's scale along its width; the art is square to the world)
-        val y0 = rings[0].y
+        val y0 = rings.firstOrNull()?.y ?: spawns.first().y
         val pxYd = abs(sx(r.nx(y0 + 100.0)) - sx(r.nx(y0))) / 100f
         if (pxYd <= 0f || pxYd.isNaN()) return
-        for (inside in listOf(false, true)) {
+        // (x, y, r, inside): the faint layer first, the solid one over it - each merged into one shape, red where the player stands
+        class C(val x: Double, val y: Double, val r: Double, val inside: Boolean)
+        val faint = spawns.filter { !it.solid }.map { C(it.x, it.y, it.r, it.inside) }
+        val solid = rings.map { C(it.x, it.y, it.r, it.inside) } + spawns.filter { it.solid }.map { C(it.x, it.y, it.r, it.inside) }
+        for ((layer, strong) in listOf(faint to false, solid to true)) for (inside in listOf(false, true)) {
             aggroPath.reset()
-            for (g in rings) if (g.inside == inside) {
+            for (g in layer) if (g.inside == inside) {
                 aggroOne.reset(); aggroOne.addCircle(sx(r.nx(g.y)), sy(r.ny(g.x)), (g.r * pxYd).toFloat(), Path.Direction.CW)
                 aggroPath.op(aggroOne, Path.Op.UNION)
             }
             if (aggroPath.isEmpty) continue
-            pAggroFill.color = if (inside) Color.argb(70, 230, 50, 40) else Color.argb(46, 255, 214, 64)
-            pAggroEdge.color = if (inside) Color.argb(230, 230, 50, 40) else Color.argb(190, 255, 214, 64)
+            pAggroFill.color = when { strong && inside -> Color.argb(70, 230, 50, 40); strong -> Color.argb(46, 255, 214, 64)
+                inside -> Color.argb(30, 230, 50, 40); else -> Color.argb(16, 255, 214, 64) }
+            pAggroEdge.color = when { strong && inside -> Color.argb(230, 230, 50, 40); strong -> Color.argb(190, 255, 214, 64)
+                inside -> Color.argb(120, 230, 50, 40); else -> Color.argb(70, 255, 214, 64) }
+            pAggroEdge.strokeWidth = if (strong) 3f else 2f
             c.drawPath(aggroPath, pAggroFill); c.drawPath(aggroPath, pAggroEdge)
         }
+        pAggroEdge.strokeWidth = 3f
     }
 
     /** an aggro record arrived (CompanionHost): draw, so a new mob on the way is seen within the record's second */

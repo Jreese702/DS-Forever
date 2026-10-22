@@ -184,6 +184,16 @@ class LiveMobs(private val clock: () -> Long) {
 
     @Synchronized fun tracks(): List<Track> = live.values.sortedBy { it.slot }
 
+    /** THE SPAWN CIRCLES ([AggroRings.spawnRings]) of uiMap [map]'s known hostile spawns round world ([px], [py]) for a player of
+     *  level [plv] (the record's me.lv first): this map's spawns only (none handed in: none); the live plates confirm them; [liveKeys]
+     *  the spawns a live ring stands on */
+    @Synchronized fun spawnRings(map: Int, plv: Int?, px: Double, py: Double, liveKeys: Set<Int> = emptySet()): List<AggroRings.SpawnRing> {
+        if (map == 0 || map != spawnMap || all.isEmpty()) return emptyList()
+        val lp = me?.takeIf { it.map == null || it.map == map }?.lv ?: plv ?: return emptyList()
+        val plates = if (offWhy == null) live.values.map { AggroRings.Plate(it.id, it.mob, it.placed, it.lastMs) } else emptyList()
+        return AggroRings.spawnRings(all, plates, lp, px, py, cov?.maxd, liveKeys)
+    }
+
     /** THE AGGRO RINGS ([AggroRings]) of uiMap [map]'s live plates for a player of level [plv] (the record's me.lv first) standing at
      *  world ([px], [py]): none while the layer is off, on another map, with no record yet, or stale (no full record in [STALE_MS]:
      *  the add-on forces one every 5 s; a plate it no longer reports leaves [live] at the next) */
@@ -219,7 +229,8 @@ class LiveMobs(private val clock: () -> Long) {
             if (m.cb == true && m.om == null) w *= LiveDanger.OTHER_WEIGHT.toFloat()
             w *= (LiveDanger.trust(p) * fade).toFloat() * LiveDanger.LIVE_GAIN
             if (w <= 0f) return
-            val r = LiveDanger.radius(lm, lp, AggroFit.base(m.n, m.ct))
+            // the shared rule (AggroFit.radius: fitted, learned); a skull keeps the route's own 45 yd (LiveDanger.SKULL_R)
+            val r = if (lm == -1) LiveDanger.SKULL_R else AggroFit.radius(lm, lp, m.n, m.ct)
             discs.add(if (p.how == LivePlace.How.RING) LiveDanger.Disc(t.id, p.x, p.y, r, 0.0, w, true, p.a, p.b, p.half, p.how, m.n, lm)
                       else LiveDanger.Disc(t.id, p.x, p.y, r, p.u, w, how = p.how, npc = m.n, lv = lm))
         }

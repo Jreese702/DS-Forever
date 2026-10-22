@@ -34,6 +34,23 @@ import java.io.File
  */
 object AggroFit {
     const val DEFAULT_BASE = 20.0
+    /**
+     * THE SLOPE BELOW THE PLAYER'S LEVEL (the user, 2026-10-22: "Fit it"; test58's ten ok pulls, mobs 8-10 against a player 13-14):
+     * World of Warcraft: Forever's radius falls faster under the player's level than classic's yard a level - measured 0..5 to 15..20
+     * where classic says 15-17. FSR's vote over k = (base - r) / (player level - mob level) put 6 of the 10 at k = 2.22 (0..5, 15..20
+     * and 30..35 outvoted: a social pull, a link). The prior, bounded [K_MIN, K_MAX]; the device's own pulls under the player's level move
+     * it ([kBelow]). At and above the player's level classic's yard a level stands (no data there yet)
+     */
+    const val K_BELOW_PRIOR = 2.2
+    const val K_MIN = 1.0
+    const val K_MAX = 3.5
+    /** the equal-level base's bounds whatever the pulls say */
+    const val BASE_MIN = 12.0
+    const val BASE_MAX = 30.0
+    /** pulls this near the player's level (and above) teach the base; those [BELOW] levels or more under it teach the slope */
+    const val NEAR = -1
+    const val BELOW = -2
+    const val SKULL_PLUS = 10
     const val MAX_RECORDS = 500
     /** the add-on already rejects these (FSR's Record); checked again so a bad line never teaches */
     const val MAX_WIDTH = 15.0
@@ -95,23 +112,57 @@ object AggroFit {
     /** the equal-level base for a mob (npc [n], creature type [ct]): the most specific tier with pulls, else [DEFAULT_BASE] */
     @Synchronized fun base(n: Int?, ct: Int?): Double {
         val m = model ?: build().also { model = it }
-        n?.let { m.npcs[it]?.let { f -> return f.base } }
-        ct?.let { m.types[it]?.let { f -> return f.base } }
-        return m.all?.base ?: DEFAULT_BASE
+        val b = n?.let { m.npcs[it]?.base } ?: ct?.let { m.types[it]?.base } ?: m.all?.base ?: DEFAULT_BASE
+        return b.coerceIn(BASE_MIN, BASE_MAX)
+    }
+
+    /** the yards a level under the player's the radius falls ([K_BELOW_PRIOR], moved by the pulls under the player's level) */
+    @Synchronized fun kBelow(): Double = (model ?: build().also { model = it }).k
+
+    /**
+     * THE SHARED RADIUS RULE (the bottom map's rings, the route's live discs; the contract's - Interact mirrors the constants): a mob of
+     * level [lm] (-1 a skull: the player's level + [SKULL_PLUS]; null unknown: [bracket]'s midpoint, else the player's level) against a
+     * player of [lp]: base + diff at or above the player's level, base + diff x [kBelow] under it, clamped 5..45; base the learned one
+     * for npc [n] / type [ct]
+     */
+    fun radius(lm: Int?, lp: Int, n: Int? = null, ct: Int? = null, bracket: IntRange? = null): Double {
+        val l = when {
+            lm == -1 -> lp + SKULL_PLUS
+            lm != null -> lm
+            bracket != null -> (bracket.first + bracket.last + 1) / 2
+            else -> lp
+        }
+        val d = (l - lp).toDouble()
+        val r = base(n, ct) + if (d >= 0) d else d * kBelow()
+        return r.coerceIn(5.0, 45.0)
     }
 
     @Synchronized fun count() = recs.size
 
-    private class Model(val all: Fit?, val types: Map<Int, Fit>, val npcs: Map<Int, Fit>)
+    private class Model(val all: Fit?, val types: Map<Int, Fit>, val npcs: Map<Int, Fit>, val k: Double, val kFit: Fit?)
     private fun build(): Model {
+        // the BASE from the pulls at or near the player's level (classic's yard a level there); the SLOPE from those well under it
+        val near = recs.filter { it.lv - it.plv >= NEAR }
         fun iv(r: Rec): Pair<Double, Double> { val diff = (r.lv - r.plv).toDouble(); return (r.lo - diff) to (r.hi - diff) }
-        val all = if (recs.isEmpty()) null else fit(recs.map(::iv), DEFAULT_BASE)
+        val all = if (near.isEmpty()) null else fit(near.map(::iv), DEFAULT_BASE)
         val prior0 = all?.base ?: DEFAULT_BASE
-        val types = recs.filter { it.ct != null }.groupBy { it.ct!! }.mapValues { (_, rs) -> fit(rs.map(::iv), prior0) }
-        val npcs = recs.filter { it.n != null }.groupBy { it.n!! }.mapValues { (_, rs) ->
+        val types = near.filter { it.ct != null }.groupBy { it.ct!! }.mapValues { (_, rs) -> fit(rs.map(::iv), prior0) }
+        val npcs = near.filter { it.n != null }.groupBy { it.n!! }.mapValues { (_, rs) ->
             val ct = rs.firstNotNullOfOrNull { it.ct }
             fit(rs.map(::iv), ct?.let { types[it]?.base } ?: prior0) }
-        return Model(all, types, npcs)
+        // k: each pull under the player's level, r in [lo, hi] at r = b + diff x k (b its tier's base): k in [(b - hi) / -diff, (b - lo) / -diff]
+        val below = recs.filter { it.lv - it.plv <= BELOW }
+        val kFit = if (below.isEmpty()) null else fit(below.map { r ->
+            val b = (r.n?.let { npcs[it]?.base } ?: r.ct?.let { types[it]?.base } ?: prior0).coerceIn(BASE_MIN, BASE_MAX)
+            val dd = (r.plv - r.lv).toDouble(); (b - r.hi) / dd to (b - r.lo) / dd }, K_BELOW_PRIOR)
+        return Model(all, types, npcs, (kFit?.base ?: K_BELOW_PRIOR).coerceIn(K_MIN, K_MAX), kFit)
+    }
+
+    /** the fit's words for the log: the base, the slope under the player's level, and how many pulls taught each */
+    @Synchronized fun words(): String {
+        val m = model ?: build().also { model = it }
+        return "aggro fit: base ${"%.1f".format(m.all?.base ?: DEFAULT_BASE)} yd (${m.all?.pulls ?: 0} pulls near level), " +
+            "${"%.2f".format(m.k)} yd a level under (${m.kFit?.pulls ?: 0} pulls; prior $K_BELOW_PRIOR)"
     }
 
     /**
