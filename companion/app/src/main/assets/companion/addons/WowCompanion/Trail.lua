@@ -1302,7 +1302,7 @@ end
 --   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
 --   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 --   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-WC.live = { V = "ag7", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+WC.live = { V = "ag8", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -1432,6 +1432,7 @@ do
         for k = 1, 2 do if A.pick and A.pick[k] and A.pick[k].s == s then A.pick[k] = nil end end
         if A.qset then A.qset[s] = nil end
         A.slot[s], A.byTok[tok], A.freeAt[s] = nil, nil, now()
+        if A.actOn then A.actOn[tok] = nil end
     end
 
     function A.onAdded(tok)
@@ -1522,6 +1523,10 @@ do
         elseif A.qset[s] == tok then m.mk = "q" end
         if pv(UnitIsDead, tok) == true then m.dd = 1 end
         -- the pull detector (Forever Range's): the last CALM reading, then a calm -> on-me turn
+        -- ag8: the bracket when the mob ENTERED combat (it may turn on us a scan or two later: the calm reading then aged past the
+        -- old 0.5 s window - 9 of test52's refusals were "stale"); the pull's near end is that onset, not where it has run to since
+        if m.cb == 1 and not st.cbWas then st.onset = { a = m.a, t = t } end
+        st.cbWas = m.cb == 1
         local onMe = m.om ~= nil and m.om >= 2
         -- ag7 (test52: a real fight and no pull line): the threat read can be secret; then "on me" = in combat and targeting us
         if m.om == nil and m.cb == 1 then onMe = pv(UnitIsUnit, tok .. "target", "player") == true end
@@ -1536,28 +1541,40 @@ do
 
     -- a pull (the mob noticed us by itself): the interval [lower now, upper of the last calm reading], Forever Range's rejects
     A.lastAction = -100
+    A.actOn = {}                  -- ag8: plate token -> when the player last attacked / cast with IT as the target
+    A.STALE_S = 1.2               -- ag8: the calm reading may be this old (6 scans; was 0.5)
+    -- ag8: the player acted (a cast sent, auto-attack, auto-repeat): on the mob that is the player's target now, if any
+    function A.noteAction(t)
+        A.lastAction = t
+        for tok in pairs(A.byTok) do
+            if pv(UnitIsUnit, tok, "target") == true then A.actOn[tok] = t end
+        end
+    end
     function A.pullCheck(s, st, m, t)
         local calm = st.calm
         local why
-        if t - A.lastAction < 2 then why = "own action"
+        -- ag8: "own action" only for an attack / cast on THIS mob within 2 s (a self-heal, a buff, a cast on another mob no longer
+        -- throws a real pull away)
+        if t - (A.actOn[st.tok] or -100) < 2 then why = "own action"
         elseif pv(UnitAffectingCombat, "pet") == true then why = "pet"
-        elseif not calm or t - calm.t > 0.5 then why = "stale"
+        elseif not calm or t - calm.t > A.STALE_S then why = "stale"
         elseif not m.lv or m.lv <= 0 then why = "level"
         else
             local plv = pv(UnitLevel, "player")
             local def = plv and (20 + (m.lv - plv)) or nil
             if not def or def <= 10 or def >= 40 then why = "near clamp"
             elseif not calm.b or not m.a then why = "no bracket"
-            elseif m.a > calm.b then why = "moving away"
-            elseif calm.b - m.a > 15 then why = "too wide"
+            elseif ((st.onset and t - st.onset.t <= A.STALE_S and st.onset.a) or m.a) > calm.b then why = "moving away"
+            elseif calm.b - ((st.onset and t - st.onset.t <= A.STALE_S and st.onset.a) or m.a) > 15 then why = "too wide"
             else
-                A.pulls[#A.pulls + 1] = { s = s, n = st.npc, ct = st.ct, lv = m.lv, plv = plv, lo = m.a, hi = calm.b,
+                local lo = (st.onset and t - st.onset.t <= A.STALE_S and st.onset.a) or m.a
+                A.pulls[#A.pulls + 1] = { s = s, n = st.npc, ct = st.ct, lv = m.lv, plv = plv, lo = lo, hi = calm.b,
                                           t = math.floor(t * 10 + 0.5) / 10 }
                 -- ag6 (the aggro rings): every measured pull logged with the radius the rule gives, so the rule can be checked against
                 -- real pulls ({"type":"cap","probe":"pull"}: the pull happened between lo and hi yd; rule = the ring's radius)
                 A.pullN = (A.pullN or 0) + 1
                 pcall(function()
-                    WC.send(WC.encode({ type = "cap", probe = "pull", v = A.V, ok = true, n = st.npc, lv = m.lv, plv = plv, lo = m.a, hi = calm.b,
+                    WC.send(WC.encode({ type = "cap", probe = "pull", v = A.V, ok = true, n = st.npc, lv = m.lv, plv = plv, lo = lo, hi = calm.b,
                         cls = m.c, rule = (type(WC.rings) == "table" and WC.rings.radius) and WC.rings.radius(m.lv, plv) or nil, k = A.pullN }))
                 end)
                 return true
@@ -1979,8 +1996,8 @@ do
                 for _, name in pairs(A.CV) do if a1 == name then A.covAt = now() end end
             elseif e == "ENCOUNTER_START" then A.enc = true
             elseif e == "ENCOUNTER_END" then A.enc = false
-            elseif e == "UNIT_SPELLCAST_SENT" then if a1 == "player" then A.lastAction = now() end
-            elseif e == "PLAYER_ENTER_COMBAT" or e == "START_AUTOREPEAT_SPELL" then A.lastAction = now()
+            elseif e == "UNIT_SPELLCAST_SENT" then if a1 == "player" then A.noteAction(now()) end
+            elseif e == "PLAYER_ENTER_COMBAT" or e == "START_AUTOREPEAT_SPELL" then A.noteAction(now())
             elseif e == "UNIT_THREAT_LIST_UPDATE" then
                 -- a plate's threat changed: read it now (the calm reading is at most one poll old, FSR's re-read)
                 local s = a1 and A.byTok[a1]

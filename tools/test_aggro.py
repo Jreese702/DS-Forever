@@ -214,10 +214,13 @@ def main():
     chk("a pull: [lo 10 .. hi 20] for slot %s, npc 3098, levels 7 / 6" % s9,
         pl is not None and pl[1].s == s9 and pl[1].lo == 10 and pl[1].hi == 20 and pl[1].n == 3098 and pl[1].plv == 6)
     unit("nameplate11", d=19); fire("NAME_PLATE_UNIT_ADDED", "nameplate11"); tick()
+    # ag8: only a cast / attack ON THIS MOB (the player's target) refuses its pull
+    L.execute('function UnitIsUnit(a, b) return b == "target" and a == "nameplate11" end')
     fire("UNIT_SPELLCAST_SENT", "player")
+    L.execute('UnitIsUnit = nil')
     Lg.UNITS.nameplate11.om = 3; Lg.UNITS.nameplate11.cb = True
     tick()
-    chk("a pull right after our own cast is rejected (%s)" % A.lastReject, A.last.pl is None and A.lastReject == "own action")
+    chk("a pull right after our own cast on it is rejected (%s)" % A.lastReject, A.last.pl is None and A.lastReject == "own action")
     # the encoded record is valid JSON with no null
     bad = []
 
