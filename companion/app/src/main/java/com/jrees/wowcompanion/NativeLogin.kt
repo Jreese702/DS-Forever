@@ -100,7 +100,10 @@ object NativeLogin {
         outOfWorld = false; reachedWorld = false; lifeMs = MAX_LIFE_MS; appCtx = ctx.applicationContext; changed()
         playAt = System.currentTimeMillis(); windowArmed = false
         val root = shadowRoot(ctx).apply { mkdirs() }
-        val fl = File(root, flavor).apply { mkdirs() }
+        val isLinkF = { f: File -> Files.isSymbolicLink(f.toPath()) }
+        // test57: a flavor folder in the shadow that is a LINK into the shared game folder is unlinked first, and one that still resolves
+        // into it is refused (ShadowRepair.flavorFolder): the repair below must never walk the shared game's own files
+        val fl = ShadowRepair.flavorFolder(root, flavor, gameRoot, FLAVORS, isLinkF)
         // launch support: after a client switch (beta -> launch) the OTHER client's old shadow folder is a real folder of links into the
         // shared one. Its links go first, so the repair below merges only what that client really wrote there (walking a link would
         // reach, and move, the shared files themselves)
@@ -121,7 +124,7 @@ object NativeLogin {
         }.onFailure { logEvent("settings backup: NOT written (${it.message})") }
         removeLinks(root, keep = flavor)
         removeLinks(fl, keep = null)
-        gameRoot.listFiles()?.forEach { e -> if (e.name != flavor) link(e, File(root, e.name)) }
+        ShadowRepair.rootLinks(gameRoot, FLAVORS).forEach { e -> link(e, File(root, e.name)) }      // never a shared flavor folder (test57)
         File(gameRoot, flavor).listFiles()?.forEach { e -> if (e.name != FILE) link(e, File(fl, e.name)) }
         flavorDir = fl
         val login = HomeLoginStore.load(ctx)
@@ -373,15 +376,19 @@ object NativeLogin {
         fun each(dir: File, shared: File, skip: Set<String>) {
             dir.listFiles()?.forEach { e ->
                 if (e.name in skip || isLink(e)) { if (e.name == "WTF" && dir == fl) { logEvent(ShadowRepair.Result("WTF", "link").line()); wtfSaid = true }; return@forEach }
-                val r = runCatching { ShadowRepair.repair(e, File(shared, e.name), bak(), isLink) }.getOrElse { ShadowRepair.Result(e.name, "real (repair failed: ${it.message})") }
+                val r = runCatching { ShadowRepair.repair(e, File(shared, e.name), bak(), isLink, gameRoot) }.getOrElse { ShadowRepair.Result(e.name, "real (repair failed: ${it.message})") }
                 logEvent(r.line()); Log.i(TAG, r.line())
                 if (e.name == "WTF" && dir == fl) wtfSaid = true
             }
         }
-        each(root, gameRoot, setOf(flavor))
-        each(fl, File(gameRoot, flavor), setOf(FILE))
+        // (a folder that is the shared one's is never walked: test57)
+        if (!ShadowRepair.inside(root, gameRoot)) each(root, gameRoot, setOf(flavor)) else logEvent("shadow: REFUSED - the shadow root is inside the shared game folder")
+        if (!ShadowRepair.inside(fl, gameRoot)) each(fl, File(gameRoot, flavor), setOf(FILE)) else logEvent("shadow $flavor: REFUSED - it is the shared game folder's own")
         if (!wtfSaid) logEvent(ShadowRepair.Result("WTF", "missing").line())
     }
+
+    /** the clients' flavor folders (never linked into the shadow root, never repaired from it) */
+    private val FLAVORS = WowProduct.values().map { it.flavorDir }.toSet()
 
     private fun link(target: File, at: File) {
         if (Files.isSymbolicLink(at.toPath())) at.delete()
