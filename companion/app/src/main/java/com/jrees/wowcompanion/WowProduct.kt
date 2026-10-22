@@ -11,7 +11,11 @@ import java.time.LocalDate
  *
  * The choice is read from the folder's .build.info, never assumed: the rows of a supported product, Active first (the launcher's
  * activeBuild order). A folder holding BOTH (a launch pre-install next to the beta, one shared Data) prefers the product whose exe is
- * installed; when both are, the beta until [BETA_LAST_DAY] and the launch client after it. Pure apart from [of] (reads two files).
+ * installed; when both are, the beta before [BETA_LAST_DAY] and the launch client from that day on ([betaOver]). Pure apart from [of]
+ * (reads two files).
+ *
+ * THE BETA HAS CLOSED (21 Oct 2026, the user: players were left on "no realms"): a folder whose .build.info holds only the beta row stays
+ * the beta here; [WowSwitch] adds the launch row and the updater fetches the launch client, after which the installed exe decides.
  */
 enum class WowProduct(
     /** .build.info's Product, the patch server's product code, CascLib's code name, .flavor.info, Config.wtf agentUID */
@@ -46,13 +50,16 @@ enum class WowProduct(
 
     companion object {
         const val BUILD_INFO = ".build.info"
-        /** the beta's last day (Blizzard: the beta ends 21 Oct 2026); only breaks a tie between two installed clients */
+        /** the beta's last day (Blizzard: the beta ends 21 Oct 2026; its realms were closed that day). From it on, the launch client */
         val BETA_LAST_DAY: LocalDate = LocalDate.of(2026, 10, 21)
+
+        /** the beta is over on [today] (its last day included: on 21 Oct 2026 its realms were already gone) */
+        fun betaOver(today: LocalDate = LocalDate.now()): Boolean = !today.isBefore(BETA_LAST_DAY)
 
         fun forCode(code: String?): WowProduct? = values().firstOrNull { it.code == code }
 
-        /** the one to expect when the folder says nothing (a new folder): the beta while it runs, the launch client after */
-        fun expected(today: LocalDate = LocalDate.now()): WowProduct = if (today.isAfter(BETA_LAST_DAY)) LAUNCH else BETA
+        /** the one to expect when the folder says nothing (a new folder): the beta while it runs, the launch client once it is over */
+        fun expected(today: LocalDate = LocalDate.now()): WowProduct = if (betaOver(today)) LAUNCH else BETA
 
         /** .build.info text -> its rows, column (without the !TYPE) -> value; a short row is padded with "" */
         fun parse(text: String): List<Map<String, String>> {

@@ -59,9 +59,22 @@ object ShippedNets {
 
     fun init(ctx: Context) { if (appCtx == null) appCtx = ctx.applicationContext }
 
-    /** the game's Build Key (.build.info's), read once on the route thread */
+    @Volatile private var buildStamp = 0L
+
+    /**
+     * the game's Build Key (.build.info's row the game runs: the beta's, or wowf's after the launch switch), read on the route thread
+     * once, and again when .build.info changes (the switch rewrites it while the app runs): a zone's mark then follows the new build
+     */
     private fun game(ctx: Context): String? {
-        if (!buildRead) { gameBuild = runCatching { GameFiles.activeBuild(GameFiles.gameRoot(ctx))?.second }.getOrNull(); buildRead = true }
+        val root = runCatching { GameFiles.gameRoot(ctx) }.getOrNull()
+        val stamp = runCatching { java.io.File(root, WowProduct.BUILD_INFO).lastModified() }.getOrDefault(0L)
+        if (!buildRead || stamp != buildStamp) {
+            val was = gameBuild
+            gameBuild = runCatching { root?.let { GameFiles.activeBuild(it)?.second } }.getOrNull()
+            buildStamp = stamp
+            if (buildRead && was != gameBuild) { staleSaid.clear(); stale.clear(); files.trim() }    // the kept zones' marks were the old build's
+            buildRead = true
+        }
         return gameBuild
     }
 

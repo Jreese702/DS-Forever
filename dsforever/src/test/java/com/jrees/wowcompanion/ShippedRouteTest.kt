@@ -30,6 +30,29 @@ class ShippedRouteTest {
 
     // ---------------------------------------------------------------- NetStore
 
+    @Test fun afterTheLaunchSwitchTheBetasNetIsStillUsedAndSaidOutOfDate() {
+        // the shipped nets are stamped with the beta's Build Key; after the switch the game runs wowf 1.60.1.70532's
+        val beta = "84bea4233331e390fda8724c6f91ffa5"; val wowf = "2582289d81e380163c7a13472df4cb81"
+        val bytes = ShippedNet.bytes(pack(beta))
+        val open: (String) -> java.io.InputStream? = { p -> if (p == "safepath/net/1411.bin") ByteArrayInputStream(bytes) else null }
+        val log = ArrayList<String>()
+        val l = ShippedNets.load(1411, open, wowf, { log.add(it) })!!
+        assertEquals("exported for build $beta, game is $wowf", l.stale)
+        assertEquals(listOf("net 1411: may be out of date (exported for build $beta, game is $wowf)"), log)
+        assertNotNull("still used", ShippedNets.sectionOf(l.pack, H))
+        // the build key a wowf folder gives (GameFiles.activeBuild: wowf's row once its exe is there)
+        val root = java.nio.file.Files.createTempDirectory("dsf-net-wowf").toFile()
+        try {
+            val head = "Branch!STRING:0|Active!DEC:1|Build Key!HEX:16|Version!STRING:0|Product!STRING:0"
+            java.io.File(root, ".build.info").writeText("$head\nus|1|$beta|1.60.1.70450|wow_classic_beta\nus|1|$wowf|1.60.1.70532|wowf\n")
+            java.io.File(root, "_classic_beta_").mkdirs(); java.io.File(root, "_classic_beta_/WowB-ARM64.exe").writeText("x")
+            assertEquals("wow_classic_beta" to beta, GameFiles.activeBuild(root))           // mid-switch: the beta's key, no mark
+            assertNull(ShippedNets.load(1411, open, GameFiles.activeBuild(root)!!.second, {})!!.stale)
+            java.io.File(root, "_forever_").mkdirs(); java.io.File(root, "_forever_/Wow-arm64.exe").writeText("x")
+            assertEquals("wowf" to wowf, GameFiles.activeBuild(root))
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun theStoreReadsAZonesFileAndMarksAnotherBuildOnce() {
         val bytes = ShippedNet.bytes(pack("aaaa"))
         val log = ArrayList<String>(); val said = HashSet<Int>()
