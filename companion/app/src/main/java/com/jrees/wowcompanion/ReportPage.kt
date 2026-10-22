@@ -402,8 +402,8 @@ class ReportPage(c: Context) : FrameLayout(c) {
         val note = status.ifEmpty {
             when {
                 !can -> "Say what happened first (a few words)."
-                ReportUpload.enabled -> "Sends a report with names and chat removed to the DS Forever team. ${Glyphs.name("b")} closes."
-                else -> "Logins, names and chat are taken out. ${Glyphs.name("b")} closes."
+                ReportUpload.enabled -> "Sends a report with names and chat removed to the DS Forever team. ${Glyphs.name("b")} closes.\n" + StartupDiag.INCLUDED
+                else -> "Logins, names and chat are taken out. ${Glyphs.name("b")} closes.\n" + StartupDiag.INCLUDED
             }
         }
         val small = UiKit.bodyPaint(24f, Theme.textDim)

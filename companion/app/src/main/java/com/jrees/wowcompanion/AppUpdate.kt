@@ -53,7 +53,13 @@ object AppUpdate {
     }
 
     /** the release repo's latest release against [current]; never throws (offline / any error = Skipped) */
-    fun check(repo: String, current: String, userAgent: String, log: (String) -> Unit = {}): Check {
+    /** the last [check]'s answer and when (wall clock): the problem report's "app update" line */
+    @Volatile var lastCheck: Pair<Check, Long>? = null
+
+    fun check(repo: String, current: String, userAgent: String, log: (String) -> Unit = {}): Check =
+        check0(repo, current, userAgent, log).also { lastCheck = it to System.currentTimeMillis() }
+
+    private fun check0(repo: String, current: String, userAgent: String, log: (String) -> Unit): Check {
         if (!repo.matches(Regex("""[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"""))) return Check.Skipped("no release repo yet").also { log("update: no release repo set") }
         return try {
             val body = get("$api/repos/$repo/releases/latest", userAgent).toString(Charsets.UTF_8)

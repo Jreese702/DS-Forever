@@ -22,6 +22,8 @@ object ReportUpload {
     const val MAX_WORDS = 2_000
     const val MAX_REPORT = 58_000
     const val MAX_LOGS = 140_000
+    /** the start-up diagnostics ([StartupDiag.MAX] and a margin; the receiver's LIMITS.maxDiag) */
+    const val MAX_DIAG = 42_000
 
     data class Sent(val number: Int, val url: String)
 
@@ -39,12 +41,14 @@ object ReportUpload {
             .joinToString("") { (n, t) -> "\n\n===== $n =====\n" + t.take(15_000) }.takeLast(30_000)
         logs = logs.takeLast(MAX_LOGS - crashText.length) + crashText
         val head = file("report.txt").let { if (it.length > MAX_REPORT) it.take(MAX_REPORT) + "\n[cut]" else it }
+        val diag = file("diagnostics.txt").let { if (it.length > MAX_DIAG) it.take(MAX_DIAG - 8) + "\n[cut]" else it }
         fun json() = JSONObject()
             .put("version", facts.app)
             .put("addons", facts.addons.take(40))
             .put("device", facts.device.take(120))
             .put("words", Redact.text(words.trim(), names).take(MAX_WORDS))       // the same names as the report's own pass
             .put("report", head)
+            .put("diag", diag)
             .put("logs", logs)
             .put("recorded", recorded)
             .toString()
