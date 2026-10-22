@@ -36,7 +36,7 @@ FAIL=0
 if [ -n "$BAD" ]; then echo "GAME-DERIVED (must not ship):"; printf '%s\n' "$BAD" | sed 's#/[^/]*$#/…#' | sort | uniq -c | head -20; FAIL=1; fi
 if [ -n "$PICS" ]; then echo "NOT ON THE ALLOW-LIST (check each, then allow it here if it is ours):"; printf '%s\n' "$PICS" | head -30; FAIL=1; fi
 # the add-on's own Media: our D icon, the compass band and the world markers (our own art: tools/make_compass_band.py, tools/make_world_markers.py)
-MEDIA=$(printf '%s\n' "$LIST" | grep -E '^assets/companion/addons/[^/]+/Media/' | grep -vE '(ds_forever_icon|compass_band|marker_ring|marker_beam|tint_glow)\.tga$' || true)
+MEDIA=$(printf '%s\n' "$LIST" | grep -E '^assets/companion/addons/[^/]+/Media/' | grep -vE '(ds_forever_icon|compass_band|marker_ring|marker_beam|marker_pin|tint_glow)\.tga$' || true)
 if [ -n "$MEDIA" ]; then echo "ADD-ON MEDIA other than ours:"; printf '%s\n' "$MEDIA"; FAIL=1; fi
 # OUR OWN required art must BE in the APK (the user on h1: the swirl was missing on a fresh install): tools/harvest/own_art.txt
 OWN=$(dirname "$0")/own_art.txt

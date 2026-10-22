@@ -1,6 +1,9 @@
 """The world markers' textures (cp21, the user's pick "D: beam + rings"): OUR OWN art, white, tinted by the add-on.
   WowCompanion/Media/marker_ring.tga  a glowing ring with a faint filled middle (stretched to the ground ellipse)
   WowCompanion/Media/marker_beam.tga  a soft vertical light beam: a bright core in a wide halo, fading upward, a soft foot
+  WowCompanion/Media/marker_pin.tga   (cp22: the world markers are a pin again) a map pin, white shaded for the add-on's tint: a
+                                      round head with a hole, tapering to its TIP at the texture's bottom middle, a dark rim
+  (marker_ring / marker_beam: cp21's, unused since cp22)
   WowCompanion/Media/tint_glow.tga    (at1, the aggro tint) a soft glow round a nameplate: a bright edge line where the plate's box
                                       is, a halo fading outward, the middle faint (the plate stays readable over it)
 
@@ -79,6 +82,51 @@ def tint():
     return out
 
 
+def pin():
+    n, ss = 128, 4                                   # drawn at 4x, box-filtered down (a crisp antialiased edge)
+    N = n * ss
+    cx, cy, r = N / 2, N * 0.36, N * 0.29           # the head
+    tip = (N / 2, N - 0.5)                           # the tip: the bottom middle
+
+    def shape(p, q, rr, ty):
+        # inside the head circle or the triangle from the tip to its tangent points
+        if (p - cx) ** 2 + (q - cy) ** 2 <= rr * rr:
+            return True
+        if q < cy or q > ty:
+            return False
+        dd = ty - cy
+        half = rr * math.sqrt(max(0.0, 1 - (rr / dd) ** 2))          # the tangent chord's half width, at its height
+        qt = cy + rr * rr / dd                                         # the tangent points' height
+        if q < qt:
+            return False
+        return abs(p - cx) <= half * (ty - q) / (ty - qt)
+
+    big = Image.new("RGBA", (N, N), (0, 0, 0, 0))
+    px = big.load()
+    rim = 3.2 * ss
+    for q in range(N):
+        for p in range(N):
+            x, y = p + 0.5, q + 0.5
+            if not shape(x, y, r, tip[1]):
+                continue
+            hole = (x - cx) ** 2 + (y - cy) ** 2 <= (r * 0.36) ** 2
+            inner = shape(x, y, r - rim, tip[1] - rim * 2.6)
+            if hole:
+                v = 0.30
+            elif not inner:
+                v = 0.32                                                         # the dark rim
+            else:
+                lx, ly = (x - (cx - r * 0.35)) / r, (y - (cy - r * 0.4)) / r     # lit from the top left
+                v = 0.72 + 0.28 * math.exp(-(lx * lx + ly * ly) * 1.6)
+                v *= 1 - 0.18 * max(0.0, (y - cy) / (tip[1] - cy))               # darker toward the tip
+            g = int(round(255 * v))
+            px[p, q] = (g, g, g, 255)
+    img = big.resize((n, n), Image.BOX)
+    out = os.path.join(MEDIA, "marker_pin.tga")
+    img.save(out, compression=None)
+    return out
+
+
 if __name__ == "__main__":
-    for p in (ring(), beam(), tint()):
+    for p in (ring(), beam(), tint(), pin()):
         print(p, os.path.getsize(p))
