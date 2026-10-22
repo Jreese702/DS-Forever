@@ -42,12 +42,14 @@ object SettingsTabs {
         // m62 SMART BUFFS (the user: "this setting will need its own section in the settings"): Y out of combat, per character; on QOL
         SMART_Y(Tab.QOL, "Smart Y (out of combat, nothing targeted)", listOf("Smart Y")),
         // QOL's quality-of-life groups (GameUiSection's QOL part draws them, the same rows, ids, taps and channels as before)
-        QOL_HUD(Tab.QOL, "HUD", listOf("HUD mode", "HUD height", "HUD width", "HUD scale", "Hide game tooltips")),
+        QOL_HUD(Tab.QOL, "HUD", listOf("Resource bar", "HUD height", "HUD width", "HUD scale")),
         QOL_NAV(Tab.QOL, "Navigation", listOf("Compass bar", "Compass follows the camera", "Avoid dangerous areas")),
-        QOL_COMBAT(Tab.QOL, "Combat", listOf("Aggro tint", "Cast bar")),
+        QOL_COMBAT(Tab.QOL, "Combat", listOf("Aggro tint")),
         // Top screen: the game's own windows only
         GAME_UI(Tab.TOP, "Game UI on the top screen", listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window",
-            "NPC windows", "Loot window")),
+            "NPC windows", "Loot window",
+            // hub17 (the HUD-mode split): the game's own frames and nameplates, the cast bar and the tooltips, as switches
+            "Player frame", "Target frame", "Cast bar", "Enemy nameplates", "Hide game tooltips")),
         MAP(Tab.HOME, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "Quest tracking", "World map")),
         CHAT(Tab.HOME, "Chat", listOf("Message input")),
         // 1.0.9 (the user, on Spoken: "make an addon section of our settings"): one block per third-party add-on (ThirdPartyAddons)

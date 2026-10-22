@@ -86,24 +86,67 @@ object GameUi {
     @Volatile private var helloAt = 0L
     fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin(); hud.freshLogin() }
 
-    /** HUD mode for this character (the user's pick; off until chosen) */
-    // (the user's new default: HUD mode ON for a character that never chose; a saved choice stays)
-    fun hudOn(): Boolean = character?.let { prefs?.getBoolean("hud.$it", true) } ?: false
-    fun setHud(on: Boolean) {
+    /**
+     * HUB17 THE HUD-MODE SPLIT (the user: the player frame, the target frame and the enemy nameplates on Top screen, the resource bar on
+     * QOL; Interact's Hub.lua hub17): each part its own switch on the pad row "uisw", two ABSOLUTE columns each, the state in the hub
+     * document's `sw`. The add-on keeps nothing: the app keeps each choice per character and taps it whenever the game's word differs or
+     * the switch was not set since the game's last /reload (`sw.set`). Defaults (the user's): the player frame and the target frame
+     * HIDDEN, the enemy nameplates ON, the resource bar ON. HUD mode's old columns 34 / 35 are not tapped any more.
+     */
+    data class Sw(val row: String, val cols: Map<String, Int>, val player: Boolean?, val target: Boolean?, val np: Boolean?, val prd: Boolean?,
+                  val set: Map<String, Boolean>)
+    @Volatile private var sw: Sw? = null
+    private var swTapAt = 0L
+    private var swTapN = -1
+    /** parts: "player" / "target" shown (true) or hidden; "np" nameplates on; "prd" the resource bar on */
+    const val SW_PLAYER = "player"; const val SW_TARGET = "target"; const val SW_NP = "np"; const val SW_PRD = "prd"
+    private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true)
+    /** this character's choice for [part] (its default until one is made); the resource bar's old "HUD mode" choice carries over */
+    fun swWant(part: String): Boolean {
+        val who = character ?: return SW_DEFAULT[part] ?: false
+        val def = if (part == SW_PRD) prefs?.getBoolean("hud.$who", true) ?: true else SW_DEFAULT[part] ?: false
+        return prefs?.getBoolean("sw.$part.$who", def) ?: def
+    }
+    fun setSwitch(part: String, on: Boolean) {
         val who = character ?: return
-        prefs?.edit()?.putBoolean("hud.$who", on)?.apply()
+        prefs?.edit()?.putBoolean("sw.$part.$who", on)?.apply()
         reconcile()
         changed()
     }
-    /** the Settings row; null while the add-on does not offer it or the character is not known */
-    fun hudRow(): Row? {
-        val h = hudHidden ?: return null
+    /** the game's word for [part] now (null = not said / no add-on with it) */
+    fun swNow(part: String): Boolean? = sw?.let { when (part) { SW_PLAYER -> it.player; SW_TARGET -> it.target; SW_NP -> it.np; else -> it.prd } }
+    /** the absolute column that makes [part] [on] */
+    fun swCol(s: Sw, part: String, on: Boolean): Int? = s.cols[when (part) {
+        SW_PLAYER -> if (on) "PLAYER_SHOW" else "PLAYER_HIDE"
+        SW_TARGET -> if (on) "TARGET_SHOW" else "TARGET_HIDE"
+        SW_NP -> if (on) "NP_ON" else "NP_OFF"
+        else -> if (on) "PRD_ON" else "PRD_OFF"
+    }]
+    /** the switch to tap now: the first whose game word differs from the choice, or which the game has not had since its /reload */
+    fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? =
+        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD).firstOrNull { p ->
+            val now = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; else -> s.prd }
+            now != null && (now != want(p) || s.set[p] != true)
+        }?.let { it to want(it) }
+    private fun swRow(id: String, part: String, label: String, onWord: String, offWord: String): Row? {
         if (character == null) return null
-        val on = hudOn()
-        val want = hud.wantsHidden(on, visible)
-        val note = if (h == want) (if (h) "Hidden now" else "On the top screen now") else "Sent"
-        return Row(HUD_ID, "HUD mode", null, if (on) UiMode.ON else UiMode.OFF, true, h, note)
+        val now = swNow(part) ?: return null
+        val want = swWant(part)
+        return Row(id, label, null, if (want) UiMode.ON else UiMode.OFF, true, !now,
+            if (now == want) (if (now) onWord else offWord) else "Sent")
     }
+    fun playerRow(): Row? = swRow(PLAYER_ID, SW_PLAYER, "Player frame", "Shown on the top screen", "Hidden: the resource bar and the HUD instead")
+    fun targetRow(): Row? = swRow(TARGET_ID, SW_TARGET, "Target frame", "Shown on the top screen", "Hidden: the bars over the mobs instead")
+    fun nameplatesRow(): Row? = swRow(NP_ID, SW_NP, "Enemy nameplates", "On: the bars over hostile mobs", "The game's own setting")
+    const val PLAYER_ID = "playerframe"
+    const val TARGET_ID = "targetframe"
+    const val NP_ID = "nameplates"
+
+    /** the resource bar for this character (QOL > HUD; was "HUD mode"): its own switch now, on by default */
+    fun hudOn(): Boolean = swWant(SW_PRD)
+    fun setHud(on: Boolean) = setSwitch(SW_PRD, on)
+    /** the Settings row; null while the add-on does not offer it or the character is not known */
+    fun hudRow(): Row? = swRow(HUD_ID, SW_PRD, "Resource bar", "Under your character: health, power, buffs", "Off")
     const val HUD_ID = "hudmode"
 
     /** hub15: HUD mode's bar place for this character (the player's choice; the bar's own until one is made), Interact's y px */
@@ -213,6 +256,16 @@ object GameUi {
         pad = h.optJSONObject("pad")
         castBarHidden = h.optJSONObject("cb")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         hudHidden = h.optJSONObject("hud")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
+        // hub17: the split switches (absent from an older add-on: no rows, no taps)
+        sw = h.optJSONObject("sw")?.let { o ->
+            val cols = HashMap<String, Int>()
+            o.optJSONObject("cols")?.let { c -> for (k in c.keys()) cols[k] = c.optInt(k, -1) }
+            val set = HashMap<String, Boolean>()
+            o.optJSONObject("set")?.let { c -> for (k in c.keys()) set[k] = c.optBoolean(k, false) }
+            fun shown(k: String) = if (o.has(k)) o.optString(k) == "shown" else null
+            fun flag(k: String) = if (o.has(k)) o.optBoolean(k) else null
+            Sw(o.optString("row", "uisw"), cols, shown("player"), shown("target"), flag("np"), flag("prd"), set)
+        }
         val prd = h.optJSONObject("prd")
         prdY = prd?.let { if (it.has("y")) it.optInt("y") else null }
         if (prd != null) {
@@ -275,9 +328,18 @@ object GameUi {
             if (col != null) GameInput.tap(ctx, pad, ROW, col)
             // hub13: HUD mode's own tap, never in the same moment as another (one tap at a time); no character known = nothing
             else if (character != null) {
-                val hc = hud.step(hudHidden, hudOn(), visible, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
-                if (hc != null) GameInput.tap(ctx, pad, ROW, hc)
-                else {
+                // hub17: the split switches first, one absolute tap at a time on their own row, the next after the game's answer (or 1.5 s)
+                val sws = sw
+                val next = sws?.let { swNext(it) { p -> swWant(p) } }
+                val swCol = if (sws != null && next != null) swCol(sws, next.first, next.second) else null
+                if (sws != null && swCol != null && swCol >= 0 && s != null && live && s.current &&
+                    now >= helloAt + GameUiPolicy.SETTLE_MS) {
+                    if (s.n != swTapN || now - swTapAt > 1500L) {
+                        swTapN = s.n; swTapAt = now
+                        GameInput.tap(ctx, pad, sws.row, swCol)
+                    }
+                }
+                else if (hudOn()) {
                     // hub15 / hub16: HUD height, then width, then scale - one step a tap toward the choice; the next only after the
                     // game's answer (or 1.5 s). The step columns move the setting the add-on has SELECTED (its doc's sel): when it is
                     // not the one to move, the tap is column 39 (the next setting) first

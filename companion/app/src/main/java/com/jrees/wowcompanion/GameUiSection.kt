@@ -114,11 +114,12 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     }
     private fun allRows(): List<GameUi.Row> = when (part) {
         // Top screen: the game's own windows only (the housekeeping pass)
-        Part.GAME_UI -> GameUi.rows() + listOfNotNull(lootRow())
+        Part.GAME_UI -> GameUi.rows() + listOfNotNull(lootRow(), GameUi.playerRow(), GameUi.targetRow(), GameUi.castBarRow(),
+            GameUi.nameplatesRow(), tipsRow())
         // QOL: three groups, each under its heading (a "#" row); the rows, their ids and taps are the ones Top screen had
-        Part.QOL -> group("HUD", listOfNotNull(GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), tipsRow())) +
+        Part.QOL -> group("HUD", listOfNotNull(GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow())) +
             group("Navigation", listOfNotNull(compassRow(), compassCamRow(), dangerRow())) +
-            group("Combat", listOfNotNull(ringsRow(), GameUi.castBarRow()))
+            group("Combat", listOfNotNull(ringsRow()))
         else -> GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
     }
     /** a heading row ("#" + its words) over [rows], none when the group is empty */
@@ -221,6 +222,9 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                             RINGS_ID -> RingsSwitch.turn(context, m == UiMode.ON)
                             GameUi.CASTBAR_ID -> GameUi.setCastBar(m == UiMode.ON)
                             GameUi.HUD_ID -> GameUi.setHud(m == UiMode.ON)
+                            GameUi.PLAYER_ID -> GameUi.setSwitch(GameUi.SW_PLAYER, m == UiMode.ON)
+                            GameUi.TARGET_ID -> GameUi.setSwitch(GameUi.SW_TARGET, m == UiMode.ON)
+                            GameUi.NP_ID -> GameUi.setSwitch(GameUi.SW_NP, m == UiMode.ON)
                             else -> GameUi.setMode(it, m)
                         }
                     }
@@ -333,7 +337,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             c.drawText(hint, left + 6f, top + SEG_H + 34f, pSub)
             return
         }
-        val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == TIPS_ID || r.id == RINGS_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.HUD_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
+        val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == TIPS_ID || r.id == RINGS_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.HUD_ID ||
+            r.id == GameUi.PLAYER_ID || r.id == GameUi.TARGET_ID || r.id == GameUi.NP_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
         val sw = (right - left - gap * (modes.size - 1)) / modes.size
         var x = left
         for (m in modes) {
@@ -371,8 +376,14 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             "A compass along the top of the game screen: your heading, the next checkpoint, the focused quest and your corpse, with distances."
             else "No compass bar on the top screen."
         if (r.id == GameUi.HUD_ID) return if (r.mode == UiMode.ON)
-            "The game's player and target frames are hidden: its own head-up display and the bars over the mobs remain. For this character."
-            else "The game's player and target frames stay on the top screen."
+            "The resource bar under your character: health, power, buffs and debuffs. For this character."
+            else "No resource bar under your character."
+        if (r.id == GameUi.PLAYER_ID) return if (r.mode == UiMode.ON) "The game's player frame stays on the top screen. For this character."
+            else "The game's player frame (and its pet frame) is hidden. For this character."
+        if (r.id == GameUi.TARGET_ID) return if (r.mode == UiMode.ON) "The game's target frame stays on the top screen. For this character."
+            else "The game's target frame (and the target's target) is hidden. For this character."
+        if (r.id == GameUi.NP_ID) return if (r.mode == UiMode.ON) "The bars over hostile mobs are on. Off gives the game's own setting back."
+            else "The game's own nameplate setting, as you had it."
         if (r.id == GameUi.CASTBAR_ID) return if (r.mode == UiMode.ON) "The game's own cast bar stays on the top screen."
             else "Hidden while the companion is on this screen; Home's bar shows every cast."
         val room = r.home?.label?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "its"

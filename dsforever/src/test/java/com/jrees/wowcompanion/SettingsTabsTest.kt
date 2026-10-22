@@ -9,6 +9,29 @@ private typealias T = SettingsTabs.Tab
 private typealias B = SettingsTabs.Block
 
 class SettingsTabsTest {
+    /** hub17 THE HUD-MODE SPLIT: the user's defaults (player / target frames hidden, nameplates on, the resource bar on), and the taps:
+     *  a switch is tapped when the game's word differs from the choice or the game has not had it since its /reload, absolutely */
+    @Test fun hudSplitDefaultsAndTaps() {
+        val cols = mapOf("PLAYER_SHOW" to 0, "PLAYER_HIDE" to 1, "TARGET_SHOW" to 2, "TARGET_HIDE" to 3, "NP_OFF" to 4, "NP_ON" to 5,
+            "PRD_OFF" to 6, "PRD_ON" to 7)
+        val defaults = mapOf(GameUi.SW_PLAYER to false, GameUi.SW_TARGET to false, GameUi.SW_NP to true, GameUi.SW_PRD to true)
+        for ((p, v) in defaults) assertEquals(p, v, GameUi.swWant(p))      // no character known: the defaults
+        // before any tap the add-on shows the frames and wants neither: player first, hidden (column 1)
+        val fresh = GameUi.Sw("uisw", cols, player = true, target = true, np = false, prd = false, set = emptyMap())
+        val n1 = GameUi.swNext(fresh) { defaults[it]!! }
+        assertEquals(GameUi.SW_PLAYER to false, n1); assertEquals(1, GameUi.swCol(fresh, n1!!.first, n1.second))
+        // all as chosen and set since the reload: nothing to tap
+        val done = GameUi.Sw("uisw", cols, false, false, true, true, mapOf("player" to true, "target" to true, "np" to true, "prd" to true))
+        assertEquals(null, GameUi.swNext(done) { defaults[it]!! })
+        // as chosen but not set since a /reload (an older app's HUD mode may move it): tapped again, absolutely
+        val reloaded = done.copy(set = mapOf("player" to true, "target" to true, "np" to true))
+        val n3 = GameUi.swNext(reloaded) { defaults[it]!! }
+        assertEquals(GameUi.SW_PRD to true, n3); assertEquals(7, GameUi.swCol(reloaded, n3!!.first, n3.second))
+        // an add-on without a part (null): never tapped for it
+        val older = GameUi.Sw("uisw", cols, null, null, null, null, emptyMap())
+        assertEquals(null, GameUi.swNext(older) { defaults[it]!! })
+    }
+
     /** test40: the Rooms tab is gone (the user: "move those settings to the home tab and put them under home module settings") */
     @Test fun sixTabsInTheApprovedOrder() =
         // the housekeeping pass: QOL after Controller; Performance hidden (still a tab of data: its settings keep their values)
@@ -28,12 +51,13 @@ class SettingsTabsTest {
     /** QOL "Build it": Smart Y, then HUD / Navigation / Combat, each row in the approved order (the D-pad walks them in this order) */
     @Test fun qolTabInTheApprovedOrder() {
         assertEquals(listOf(B.SMART_Y, B.QOL_HUD, B.QOL_NAV, B.QOL_COMBAT), SettingsTabs.blocks(T.QOL))
-        assertEquals(listOf("HUD mode", "HUD height", "HUD width", "HUD scale", "Hide game tooltips"), B.QOL_HUD.rows)
+        assertEquals(listOf("Resource bar", "HUD height", "HUD width", "HUD scale"), B.QOL_HUD.rows)
         assertEquals(listOf("Compass bar", "Compass follows the camera", "Avoid dangerous areas"), B.QOL_NAV.rows)
-        assertEquals(listOf("Aggro tint", "Cast bar"), B.QOL_COMBAT.rows)
+        assertEquals(listOf("Aggro tint"), B.QOL_COMBAT.rows)
         assertEquals(listOf(B.SMART_Y), SettingsTabs.viewBlocks(T.QOL))   // Smart Y by SettingsView, the groups by GameUiSection's QOL part
         // Top screen keeps only the game's own windows
-        assertEquals(listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window", "NPC windows", "Loot window"), B.GAME_UI.rows)
+        assertEquals(listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window", "NPC windows", "Loot window",
+            "Player frame", "Target frame", "Cast bar", "Enemy nameplates", "Hide game tooltips"), B.GAME_UI.rows)    // + hub17's split
         assertTrue("Avoid dangerous areas" !in B.MAP.rows)
     }
 
@@ -75,7 +99,7 @@ class SettingsTabsTest {
         assertEquals("Home module settings", SettingsTabs.HOME_MODULES)
         assertEquals(listOf(B.FRAMES, B.INDOOR), SettingsTabs.blocks(T.PERFORMANCE))
         assertEquals(listOf(B.GAME, B.COMPANION), SettingsTabs.blocks(T.SYSTEM))
-        assertTrue("Cast bar" in B.QOL_COMBAT.rows && B.QOL_COMBAT.tab == T.QOL)   // the housekeeping pass: the cast bar is QOL's
+        assertTrue("Cast bar" in B.GAME_UI.rows && B.GAME_UI.tab == T.TOP)   // the HUD-mode split: the cast bar back on Top screen
         assertTrue("Frame limit" in B.FRAMES.rows)
     }
 
