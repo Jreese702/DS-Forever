@@ -2633,8 +2633,15 @@ local function pinHere(x, y)
     return okP and type(px) == "number" and math.abs(px - x) < 0.002 and math.abs(py - y) < 0.002
 end
 
+-- test69: the map the APP plans on - the one the position ticker last reported to it (its map doc's mapID); the game's best map this
+-- instant only when none was reported yet (near a town's edge GetBestMapForUnit flips to a micro-map, and 0..1 means another place)
+function RWP.frame()
+    local ok, t = pcall(function() return tickMap end)
+    return (ok and type(t) == "number" and t) or currentMap()
+end
+
 function RWP.set(x, y)
-    local m = currentMap()
+    local m = RWP.frame()
     if not m then return RWP.say("set", false, "no map") end
     -- the player's own pin is theirs: never moved or replaced
     local okH, has = CALL(function() return C_Map.HasUserWaypoint() end)
@@ -2696,6 +2703,25 @@ function RWP.retrack(why)
     RWP.say("retrack", ok, why .. "; flip " .. RWP.flips)
 end
 
+-- test69: a further flag this far from the point before it is refused (the app's checkpoints are at most ~100 yd apart: its waymarks)
+RWP.MORE_JUMP_YD = 300
+function RWP.worldOf(m, x, y)
+    local ok, _, v = pcall(function() return C_Map.GetWorldPosFromMapPos(m, CreateVector2D(x, y)) end)
+    if not ok or type(v) ~= "table" then return nil end
+    local okX, wx, wy = pcall(function() return v.x, v.y end)
+    if not okX or type(wx) ~= "number" or type(wy) ~= "number" then return nil end
+    return wx, wy
+end
+-- the yards from [p] (a further flag being decoded) to the point before it: the pin, or the last flag; nil when not known
+function RWP.jumpYd(p)
+    local prev = (#RWP.more > 0) and RWP.more[#RWP.more] or (RWP.active and { m = RWP.m, x = RWP.x, y = RWP.y }) or nil
+    if not prev or not prev.m then return nil end
+    local ax, ay = RWP.worldOf(prev.m, prev.x, prev.y)
+    local bx, by = RWP.worldOf(p.m, p.x, p.y)
+    if not ax or not bx then return nil end
+    return math.sqrt((ax - bx) ^ 2 + (ay - by) ^ 2)
+end
+
 -- a pin of ours the game kept through a crash or a kill: cleared at log in, the quest's super-track given back
 function RWP.stale()
     local s = type(WowCompanionDB) == "table" and WowCompanionDB.routeWp or nil
@@ -2743,13 +2769,22 @@ if WC.pad and type(WC.pad.op) == "function" then
             d[#d + 1] = col
             if #d == 4 then
                 RWP.mdigits = nil
-                local m = currentMap()
-                if m and #RWP.more < RWP.MORE_MAX then
-                    local p = { m = m, x = (d[1] * 36 + d[2]) / 1295, y = (d[3] * 36 + d[4]) / 1295 }
+                -- test69 (a further flag 1500 yd off on a 541 yd route): the app sends them in the PIN'S map frame - decoded on the pin's
+                -- own map (RWP.m), never on whatever map the game names this instant (GetBestMapForUnit flips to a town's or a building's
+                -- micro-map near its edge, and the same 0..1 lands far away on another map)
+                local m = RWP.m or RWP.frame()
+                local p = m and { m = m, x = (d[1] * 36 + d[2]) / 1295, y = (d[3] * 36 + d[4]) / 1295 } or nil
+                -- and a flag more than MORE_JUMP_YD from the point before it (the pin, or the flag before it) is refused, logged
+                local far = p and RWP.jumpYd(p) or nil
+                if p and far and far > RWP.MORE_JUMP_YD then
+                    RWP.say("more", false, string.format("refused: %d yd from the point before it (map %s)", math.floor(far), tostring(m)))
+                elseif p and #RWP.more < RWP.MORE_MAX then
                     RWP.more[#RWP.more + 1] = p
                     RWP.zFor, RWP.zd = p, {}
+                    RWP.say("more", true, tostring(#RWP.more))
+                else
+                    RWP.say("more", m ~= nil, m and tostring(#RWP.more) or "no map")
                 end
-                RWP.say("more", m ~= nil, m and tostring(#RWP.more) or "no map")
             end
             return
         end
