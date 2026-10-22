@@ -596,7 +596,7 @@ class InteractView(context: Context) : View(context) {
         val want = (kind != Kind.NONE && sig != dismissedSig && ageMs() < STALE_MS && !silent) || lootClosing() || landing != null
         val v = if (want) VISIBLE else GONE
         if (visibility != v) visibility = v
-        padSubSync(want && doc?.optJSONObject("nav")?.optBoolean("on") == true)
+        padSubSync(want && (doc?.optJSONObject("nav")?.optBoolean("on") == true || doc?.optJSONObject("nav")?.optJSONObject("fight") != null))
         if (kind != Kind.NONE) postDelayed(ticker, 1000)
         if (lootClosing()) postDelayed(ticker, Motion.MODULE_CLOSE + 20)
         if (landing != null) postDelayed(ticker, LAND_ALL + 40 + landExtra(landing))
@@ -993,9 +993,29 @@ class InteractView(context: Context) : View(context) {
         val p = padSub ?: PadInput({ _, _, _, _ -> }, { _, _ -> }, { m -> padSubHeld(m) }).also { padSub = it }
         p.start()
     }
+    // the loot window's cards and Loot All cell as last drawn, for the controller in a fight (compactLoot)
+    private var fightLootCmds: List<String> = emptyList()
+    private var fightLootAll = -1
+    /** a press read by the app in a fight while the loot window shows: true = handled here */
+    private fun fightLootPress(down: Int): Boolean {
+        if (kind != Kind.LOOT || doc?.optJSONObject("nav")?.optJSONObject("fight") == null || fightLootCmds.isEmpty()) return false
+        val i = fightLootCmds.indexOf(selected).coerceAtLeast(0)
+        when {
+            PadInput.isHeld(down, PadInput.SLOT_DPAD_UP) -> selected = fightLootCmds[max(0, i - 1)]
+            PadInput.isHeld(down, PadInput.SLOT_DPAD_DOWN) -> selected = fightLootCmds[min(fightLootCmds.size - 1, i + 1)]
+            PadInput.isHeld(down, PadInput.SLOT_FACE_BOTTOM) -> entries().firstOrNull { it.cmd == selected }?.let { send(it.cmd, it.slot) }
+            PadInput.isHeld(down, PadInput.SLOT_FACE_LEFT) -> if (fightLootAll >= 0) send("lootall", fightLootAll)
+            PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT) -> close()
+            else -> return false
+        }
+        selected?.let { look(it) }
+        invalidate()
+        return true
+    }
     private fun padSubHeld(mask: Int) {
         val down = mask and padSubMask.inv()
         padSubMask = mask
+        if (down != 0 && fightLootPress(down)) return
         if (down == 0 || doc?.optJSONObject("nav")?.optBoolean("on") != true) return
         for ((slot, key) in FACE_SLOTS) if (PadInput.isHeld(down, slot)) {
             padEdgeAt[key] = System.currentTimeMillis()
@@ -3314,8 +3334,9 @@ class InteractView(context: Context) : View(context) {
         val shownN = min(5, max(1, items.size))
         if (lootOpenAt != fxOpenSeen) { fxOpenSeen = lootOpenAt; slides.clear() }
         val ch = 84f; val gap = 10f; val cardsTop = 150f
-        // CENTERED on the bottom screen (the user, 2026-10-02: "The main loot window that pops up should be centered")
-        val wl = ((full.width() - 600f) / 2f).coerceAtLeast(24f)
+        // AT THE LEFT (the user, 2026-10-22: "The loot window needs to shift left to make space for the larger tooltips"; was centred
+        // since 10-02): the room at its right is the tooltip's
+        val wl = 24f
         val r = RectF(wl, 30f, wl + 600f, 30f + cardsTop + shownN * (ch + gap) + 64f + 22f)
         lootRect = r
         val save = c.save()
@@ -3327,8 +3348,16 @@ class InteractView(context: Context) : View(context) {
         val view = RectF(inner.left, r.top + cardsTop - 8f, inner.right, r.top + cardsTop + shownN * (ch + gap))
         viewA = view; contentA = items.size * (ch + gap)
         scrollA = scrollA.coerceIn(0f, max(0f, contentA - view.height()))
-        if (!closing) follow(items.indexOfFirst { "loot ${it.optInt("i")}" == cur }, ch + gap, view.height())
-        val shown = cur?.takeIf { it.startsWith("loot ") } ?: selected?.takeIf { it.startsWith("loot ") }
+        // IN A FIGHT (the user, 10-22: "When I'm in combat I am not able to control the loot window"): the game won't hand us the
+        // controller until the fight ends, so the app reads the pad itself (read only: padSubHeld) and drives THIS window like a finger:
+        // Up / Down choose the card, A loots it, X loots all, B closes; its highlight is our own selection
+        fightLootCmds = items.map { "loot ${it.optInt("i")}" }
+        fightLootAll = lt.optJSONObject("act")?.let { slotOf(it, "all") } ?: -1
+        val inFight = doc?.optJSONObject("nav")?.optJSONObject("fight") != null
+        if (inFight && (selected == null || selected !in fightLootCmds)) selected = fightLootCmds.firstOrNull()
+        val curNow = if (inFight) selected else cur
+        if (!closing) follow(items.indexOfFirst { "loot ${it.optInt("i")}" == curNow }, ch + gap, view.height())
+        val shown = curNow?.takeIf { it.startsWith("loot ") } ?: selected?.takeIf { it.startsWith("loot ") }
         var cardAt: RectF? = null; var shownItem: JSONObject? = null
         c.save(); c.clipRect(view)
         for ((i, it) in items.withIndex()) {
@@ -3379,8 +3408,8 @@ class InteractView(context: Context) : View(context) {
         val ta = if (closing) (1f - x * 2f).coerceIn(0f, 1f) else ((x - 0.6f) / 0.4f).coerceIn(0f, 1f)    // full when the open ends
         val ca = cardAt
         if (ta > 0f && ca != null && shown != null) tipFor(shown)?.let { tp ->
-            // the tooltip beside the window: at its right where it fits, else at its left
-            val tw = 280f
+            // the tooltip beside the window: at its right, as wide as the room there allows (larger gear tooltips, 10-22)
+            val tw = (full.right - 10f - (r.right + 14f)).coerceIn(280f, 560f)
             val tx = if (r.right + 14f + tw <= full.right - 10f) r.right + 14f else max(10f, r.left - 14f - tw)
             val ty = max(r.top + 60f, ca.top - 10f)
             val layer = c.saveLayerAlpha(RectF(0f, 0f, full.width(), full.height()), (255 * ta).toInt())
