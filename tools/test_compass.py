@@ -575,6 +575,26 @@ def main():
     chk("test23: ... and a stick turn still turns it (%.0f deg)" % math.degrees(-C.wrap(C.cam.abs)), C.wrap(C.cam.abs) < -0.5)
     G.speed = 0
 
+    # cp33 (the user: "the world markers should be a toggle, off by default"): before any tap, none; the switch on, they come
+    G.facing = 0.0; C.setCam(False); C.draw()
+    G.quest = L.table(0.6, 0.4)
+    C.read(True)
+    G.nav = L.table_from({"x": c0 + c0 * math.tan(math.radians(45) * 0.5), "y": 500.0, "clamped": False})
+    G.facing = -math.radians(22.5)
+    frames(30, read=True)
+    W = C.wm
+    n0 = sum(1 for _ in W.obj.items()) if W.obj else 0
+    chk("cp33: the world markers OFF by default: nothing drawn or placed (%d markers; the compass's quest still on the band: %s)"
+        % (n0, any(C.last.marks[i].key == "rt" for i in range(1, len(C.last.marks) + 1))),
+        n0 == 0 and W.shown is False and C.wmWanted() is False and any(C.last.marks[i].key == "rt" for i in range(1, len(C.last.marks) + 1)))
+    L.execute("WowCompanion.npWant = { wm = true }")
+    frames(30, read=True)
+    chk("cp33: the switch on (Hub's uisw 9: npWant.wm): the world marker shown", W.shown is True and W.f.shown is True)
+    L.execute("WowCompanion.npWant.wm = false")
+    frames(2, read=True)
+    chk("cp33: off again: every world marker hidden at once", all(not o.f.shown for o in W.obj.values()) and W.shown is False)
+    L.execute("WowCompanion.npWant.wm = true")
+    G.nav = None; G.quest = None; C.read(True); frames(60, read=True)
     # the WORLD MARKER: our own diamond on the engine's point, only with the target in front
     G.facing = 0.0; C.setCam(False); C.draw()
     G.quest = L.table(0.6, 0.4)                          # NE: 45 degrees right of north

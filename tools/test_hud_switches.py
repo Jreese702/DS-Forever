@@ -110,6 +110,15 @@ def main():
         G.WowCompanion.npWant.prd is False and G.WowCompanion.npWant.np is True)
     sw(None, SW.NP_ON); sw(None, SW.NP_ON)
     chk("absolute: a repeated tap changes nothing", G.WowCompanion.npWant.np is True)
+    dw0 = doc()
+    sw(None, SW.WM_ON)
+    dw1 = doc()
+    sw(None, SW.WM_OFF)
+    dw2 = doc()
+    chk("hub18: the world markers' switch: off before any tap (%s), 9 on (%s, wm %s), 8 off (%s); the doc's cols name them"
+        % (dw0.sw.wm, dw1.sw.wm, G.WowCompanion.npWant.wm, dw2.sw.wm),
+        dw0.sw.wm is False and dw1.sw.wm is True and dw2.sw.wm is False and dw2.sw.set.wm is True
+        and dw2.sw.cols.WM_OFF == 8 and dw2.sw.cols.WM_ON == 9)
     chk("alpha only: no Show / Hide on any game frame (%d / %d)" % (G.CALLS.show, G.CALLS.hide), G.CALLS.show == 0 and G.CALLS.hide == 0)
     # THE BUNDLE (an older app's columns 34 / 35): moves every part a switch never set; a set switch wins
     L3 = tc.lupa.LuaRuntime()
