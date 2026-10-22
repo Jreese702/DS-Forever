@@ -17,7 +17,9 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
                  /** the ground's cost per cell (b-route-terrain: Terrain.factor x the walked discount; 1 = flat, unknown) */
                  private val terr: FloatArray = FloatArray(nx * ny) { 1f },
                  /** the ghost's own ground (CorpseRoute), read per cell the first time a ghost's leg asks; null: [terr] */
-                 private val ghostSrc: GhostSrc? = null) {
+                 private val ghostSrc: GhostSrc? = null,
+                 /** the GREY spawns (map 0..1 x, y pairs) by cell, read at a point only ([at]: [GREY_W] each within [GREY_YD]); null: none */
+                 private val grey: Array<FloatArray?>? = null) {
     val cx get() = 1.0 / nx            // a cell, in the map's 0..1
     val cy get() = 1.0 / ny
 
@@ -44,7 +46,7 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
         Ghost(cost, cliff, h, wet)
     }
     /** this grid with the ghost's ground [src] (its danger and living ground the same arrays) */
-    fun withGhost(src: GhostSrc?): DangerGrid = if (src == null) this else DangerGrid(nx, ny, d, ax, ay, terr, src)
+    fun withGhost(src: GhostSrc?): DangerGrid = if (src == null) this else DangerGrid(nx, ny, d, ax, ay, terr, src, grey)
     /** the ghost's ground cost at the map's ([x], [y]) for a router with no drops (a cliff a wall); [ground] with no ghost ground */
     fun ghostGround(x: Double, y: Double): Float {
         val gh = ghost ?: return ground(x, y)
@@ -54,10 +56,23 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
         return if (gh.cliff[c]) Terrain.WALL else gh.cost[c]
     }
 
-    /** the danger at the map's ([x], [y]) (0 off the map) */
+    /** the danger at the map's ([x], [y]) (0 off the map): its cell's, and the grey spawns' within [GREY_YD] of the point itself */
     fun at(x: Double, y: Double): Float {
         val i = (x * nx).toInt(); val j = (y * ny).toInt()
-        return if (i in 0 until nx && j in 0 until ny) d[j * nx + i] else 0f
+        if (i !in 0 until nx || j !in 0 until ny) return 0f
+        val c = d[j * nx + i]
+        return if (grey == null) c else min(CAP, c + greyAt(x, y, i, j))
+    }
+    /** the grey spawns' share at a point: [GREY_W] each within [GREY_YD], at most [GREY_CAP] (a cell is wider than the disc: 3 x 3) */
+    private fun greyAt(x: Double, y: Double, i: Int, j: Int): Float {
+        val g = grey ?: return 0f
+        var n = 0
+        for (jj in max(0, j - 1)..min(ny - 1, j + 1)) for (ii in max(0, i - 1)..min(nx - 1, i + 1)) {
+            val p = g[jj * nx + ii] ?: continue
+            var k = 0
+            while (k < p.size) { if (hypot((p[k] - x) * ax, (p[k + 1] - y) * ay) <= GREY_YD) n++; k += 2 }
+        }
+        return min(GREY_CAP, n * GREY_W)
     }
     fun cell(i: Int, j: Int): Float = d[j * nx + i]
     /** the ground's cost at the map's ([x], [y]) (1 off the map) */
@@ -286,6 +301,16 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
         /** a ghost's drop: the far cell lower by more than this (a step: Climb's drop) */
         const val DROP_YD = Climb.DROP_YD
         const val CAP = 4f              // a cell's danger at most (a dense camp is a wall, not an infinity)
+        /**
+         * a GREY spawn (test70, the ag7 pull log 10-21: plates 8-10 against a player of 13-14 pulled on their own at 5-10 yd - Forever
+         * does not scale them, but grey still aggroes, close in): [GREY_W] at a point within [GREY_YD] of it (AggroFit's 5 yd floor),
+         * a point's greys together at most [GREY_CAP]. Read at the point ([at]: what the shipped router samples along a way, every
+         * 2.5 yd), never spread over a cell: a 25 yd cell took the trail beside the Al'Aketh camp for as grey as the camp itself. Not in
+         * the cells' own danger ([max], [typical], the tint, the cell router), and [weight] stays 0 for them (no disc, no live share)
+         */
+        const val GREY_W = 0.1f
+        const val GREY_YD = 5.0
+        const val GREY_CAP = 0.5f
         /** the user's strengths: "Avoid dangerous areas" Off / Low / High */
         fun strength(setting: String): Double = when (setting) { "off" -> 0.0; "low" -> 1.5; else -> 8.0 }
 
@@ -323,17 +348,25 @@ class DangerGrid(val nx: Int, val ny: Int, private val d: FloatArray, val ax: Do
             val terr = FloatArray(nx * ny) { 1f }
             if (ground != null) for (j in 0 until ny) for (i in 0 until nx) terr[j * nx + i] = ground((i + 0.5) / nx, (j + 0.5) / ny)
             val rx = (AGGRO_YD / ax * nx).toInt() + 1; val ry = (AGGRO_YD / ay * ny).toInt() + 1
+            val greyBy = HashMap<Int, ArrayList<Float>>()
             for (s in spawns) {
                 if (mine != 0 && s.hostile and mine == 0) continue
                 val w = weight(s.minLv, s.maxLv, s.elite, plv)
-                if (w <= 0f) continue
+                if (w <= 0f) {
+                    // a grey one (a level known): kept for [at]
+                    val gi = (s.x * nx).toInt(); val gj = (s.y * ny).toInt()
+                    if (plv > 0 && max(s.minLv, s.maxLv) > 0 && gi in 0 until nx && gj in 0 until ny)
+                        greyBy.getOrPut(gj * nx + gi) { ArrayList() }.apply { add(s.x); add(s.y) }
+                    continue
+                }
                 val ci = (s.x * nx).toInt(); val cj = (s.y * ny).toInt()
                 for (j in max(0, cj - ry)..min(ny - 1, cj + ry)) for (i in max(0, ci - rx)..min(nx - 1, ci + rx)) {
                     val dist = hypot(((i + 0.5) / nx - s.x) * ax, ((j + 0.5) / ny - s.y) * ay)
                     if (dist < AGGRO_YD) d[j * nx + i] = min(CAP, d[j * nx + i] + w * (1f - (dist / AGGRO_YD).toFloat() * 0.5f))
                 }
             }
-            return DangerGrid(nx, ny, d, ax, ay, terr)
+            val grey = if (greyBy.isEmpty()) null else arrayOfNulls<FloatArray>(nx * ny).also { a -> for ((k, v) in greyBy) a[k] = v.toFloatArray() }
+            return DangerGrid(nx, ny, d, ax, ay, terr, null, grey)
         }
 
         /** a checkpoint within this many yards of the player is passed (the user on test45: the next one then leads). test68 (the user:

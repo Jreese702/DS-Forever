@@ -41,6 +41,9 @@ object ShippedSnap {
     const val FAR_STEEP = 5f          // a fallback over terrain this dear a yard (a climb of ~37 degrees, a rock field): not offered
     const val FAR_COST = 1.0e6        // a snap past the spread: this much dearer (the fallback when the nearer ones lead nowhere)
     const val SPREAD_YD = 0.5         // the snaps kept: the nearest clear one's and those no more than this longer
+    /** test70: a straight cut onto a shipped NET way (a trail beside the end) leads too when no more than this longer than the nearest -
+     *  the router then weighs it against the roadmap node by cost (the trail 16 yd away against a roadmap node 2 yd away) */
+    const val NET_CUT_SPREAD_YD = 20.0
     const val BENT = 1.15             // a bent snap's yard against a straight one's
     const val WALL = 12f              // a steep bank (Terrain.legFactor at 45 degrees) or worse: a wall to the snap
     const val DOOR_YD = 15.0          // an end standing in a wall passes the walls this near it (its door)
@@ -139,6 +142,7 @@ object ShippedSnap {
         // (keyed [CUT_KEY] - its index here; [Snap.way] / [Snap.t] say where)
         val cutAt = HashMap<Int, Pair<Int, Double>>()
         val cutPts = ArrayList<Pair<Int, DoubleArray>>()
+        val netCuts = HashSet<Int>()
         for (w in ways) {
             if (w.line.size < 2) continue
             if (w.line.none { hypot(it[0] - p[0], it[1] - p[1]) <= reach + w.len }) continue
@@ -153,6 +157,7 @@ object ShippedSnap {
             if (best == null || bd > reach || w.len <= 0.0) continue
             val key = CUT_KEY - cutAt.size
             cutAt[key] = w.index to (bestAt / w.len).coerceIn(0.0, 1.0); cutPts.add(key to best)
+            if (w.net) netCuts.add(key)
         }
         val near = within(nodes + cutPts)
         val onFloor = floor.isNotEmpty() && (nodes + floorNodes).minByOrNull { hypot(it.second[0] - p[0], it.second[1] - p[1]) }?.first in floor
@@ -161,7 +166,7 @@ object ShippedSnap {
             val n = nodes.minOfOrNull { (_, q) -> hypot(q[0] - p[0], q[1] - p[1]) }
             return Result(emptyList(), if (n == null) "no node to snap to" else "no node within ${reach.toInt()} yd (the nearest ${n.toInt()} yd)")
         }
-        val ground0 = if (near.isEmpty()) null else pick(p, near, ground, danger, k, reach, walkYd, lattice)
+        val ground0 = if (near.isEmpty()) null else pick(p, near, ground, danger, k, reach, walkYd, lattice, netCuts)
         val fl = if (floorNear.isEmpty()) null else pick(p, floorNear, Ground({ _, _ -> 1f }, ground.water, allowWater = ground.allowWater), danger, k, reach, walkYd)
         // the tiers, each later one FAR_COST x its rank dearer: an end on a floor - the floor's lead, the floor's other nodes nearest
         // first (a city's streets, a pocket's deck: often in pieces the graph joins only farther on), then the ground's; the ground's
@@ -188,9 +193,9 @@ object ShippedSnap {
     /** [near]'s snaps over [ground]: the lead ones ([Snap.lead]: the nearest clear line and those [SPREAD_YD] longer, else the bent
      *  walks' shortest and those [SPREAD_YD] longer), then the rest nearest first */
     private fun pick(p: DoubleArray, near: List<Triple<Int, DoubleArray, Double>>, ground: Ground, danger: ((Double, Double) -> Float)?,
-                     k: Double, reach: Double, walkYd: Double, lattice: Climb.Grid? = null): Result {
+                     k: Double, reach: Double, walkYd: Double, lattice: Climb.Grid? = null, netCuts: Set<Int> = emptySet()): Result {
         val view = View(p, ground, danger, k)
-        if (lattice != null) return pickOnLattice(p, near, ground, view, lattice, reach, walkYd)
+        if (lattice != null) return pickOnLattice(p, near, ground, view, lattice, reach, walkYd, netCuts)
         val straight = ArrayList<Snap>()
         val blocked = ArrayList<String>()
         val bent = ArrayList<Triple<Int, DoubleArray, Double>>()
@@ -212,7 +217,10 @@ object ShippedSnap {
         }
         val pool = if (straight.isNotEmpty()) straight else out
         val shortest = pool.minOf { it.yd }
-        val lead = pool.filter { it.yd <= shortest + SPREAD_YD }.sortedBy { it.cost }.map { Snap(it.node, it.pts, it.yd, it.cost, it.straight, true, it.steep) }
+        // (only when the nearest is the ROADMAP's - a node or a cut into its edge: one on the shipped network already leads as before)
+        val nearestRm = pool.minByOrNull { it.yd }?.let { it.node >= ShippedRoute.RM_BASE || (it.node <= CUT_KEY && it.node !in netCuts) } == true
+        val lead = pool.filter { it.yd <= shortest + SPREAD_YD || (nearestRm && it.node in netCuts && it.yd <= shortest + NET_CUT_SPREAD_YD) }
+            .sortedBy { it.cost }.map { Snap(it.node, it.pts, it.yd, it.cost, it.straight, true, it.steep) }
         val rest = out.filter { s -> lead.none { it.node == s.node } }.sortedBy { it.yd }
         return Result(lead + rest, "snapped ${lead.first().yd.toInt()} yd ${if (lead.first().straight) "straight" else "round a wall or water"} " +
             "(${lead.size} leading of ${near.size} nodes within ${reach.toInt()} yd${if (blocked.isNotEmpty()) "; ${blocked.size} lines walled" else ""})")
@@ -226,7 +234,7 @@ object ShippedSnap {
      * [SPREAD_YD] longer), else the shortest walk; the rest nearest first.
      */
     private fun pickOnLattice(p: DoubleArray, near: List<Triple<Int, DoubleArray, Double>>, ground: Ground, view0: View, g: Climb.Grid,
-                              reach: Double, walkYd: Double): Result {
+                              reach: Double, walkYd: Double, netCuts: Set<Int> = emptySet()): Result {
         val fl: ((Double, Double) -> Boolean)? = if (g.deckZ != null) { x, y -> ShippedNet.Walk.onFloor(g, x, y) } else null
         val view = View(p, ground, view0.danger, view0.k, floor = fl)
         roomsOn(g, ground)
@@ -255,7 +263,10 @@ object ShippedSnap {
             "${if (ground.deep(p[0], p[1])) "the end reads deep water" else "the end dry"}${if (g.deckZ != null && ShippedNet.Walk.onFloor(g, p[0], p[1])) ", on a deck" else ""})")
         val pool = if (straight.isNotEmpty()) straight else out
         val shortest = pool.minOf { it.yd }
-        val lead = pool.filter { it.yd <= shortest + SPREAD_YD }.sortedBy { it.cost }.map { Snap(it.node, it.pts, it.yd, it.cost, it.straight, true, it.steep) }
+        // (only when the nearest is the ROADMAP's - a node or a cut into its edge: one on the shipped network already leads as before)
+        val nearestRm = pool.minByOrNull { it.yd }?.let { it.node >= ShippedRoute.RM_BASE || (it.node <= CUT_KEY && it.node !in netCuts) } == true
+        val lead = pool.filter { it.yd <= shortest + SPREAD_YD || (nearestRm && it.node in netCuts && it.yd <= shortest + NET_CUT_SPREAD_YD) }
+            .sortedBy { it.cost }.map { Snap(it.node, it.pts, it.yd, it.cost, it.straight, true, it.steep) }
         val rest = out.filter { s -> lead.none { it.node == s.node } }.sortedBy { it.yd }
         return Result(lead + rest, "snapped ${lead.first().yd.toInt()} yd ${if (lead.first().straight) "straight" else "round"} on the shipped lattice " +
             "(${lead.size} leading of ${near.size} nodes within ${reach.toInt()} yd; $walled lines walled)")
