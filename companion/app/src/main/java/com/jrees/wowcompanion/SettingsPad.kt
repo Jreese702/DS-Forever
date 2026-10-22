@@ -21,6 +21,8 @@ import org.json.JSONObject
  */
 class SettingsRoom(context: Context, private val view: SettingsView, padSource: () -> JSONObject?) : LinearLayout(context) {
     val gameUi = GameUiSection(context, GameUiSection.Part.GAME_UI)
+    /** the QOL tab's groups (HUD, Navigation, Combat): the same rows as before, drawn by their own part */
+    val qolUi = GameUiSection(context, GameUiSection.Part.QOL)
     val homeSection = HomeSettingsSection(context)
     /** the companion's status (System); built after [gameUi] so the status line's one listener is its */
     val companion = GameUiSection(context, GameUiSection.Part.COMPANION)
@@ -45,6 +47,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             // Home's own rows first: on the Home tab the modules' blocks (SettingsView's Map / Chat) come below them
             addView(homeSection, wrap())
             addView(view, wrap())
+            addView(qolUi, wrap())                                        // QOL: under Smart Y (SettingsView's block)
             addView(gameUi, wrap())
             addView(companion, wrap())
         }
@@ -58,7 +61,8 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
             SettingsPad.Section(view, { view.focusTargets() }, noStart = { view.isReload(it) }),
             SettingsPad.Section(homeSection, targets = { homeSection.focusTargets() }),
             SettingsPad.Section(gameUi, targets = { gameUi.focusTargets() }),
-        ), gameUi, padSource, tabBar, { dir -> show(SettingsTabs.step(tab, dir)) }, { v, r -> rowOf(v, r.centerX(), r.centerY()) })
+            SettingsPad.Section(qolUi, targets = { qolUi.focusTargets() }),
+        ), listOf(gameUi, qolUi), padSource, tabBar, { dir -> show(SettingsTabs.step(tab, dir)) }, { v, r -> rowOf(v, r.centerX(), r.centerY()) })
         page.addView(pad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         body.addView(page, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         body.addView(preview, LinearLayout.LayoutParams(PREVIEW_W, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -72,11 +76,12 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         if (t == tab && !force) return
         tab = t
         SettingsTabs.last = t
-        gameUi.closeSelection()
+        gameUi.closeSelection(); qolUi.closeSelection()
         view.tab = t
         view.visibility = if (SettingsTabs.viewBlocks(t).isEmpty()) View.GONE else View.VISIBLE
         homeSection.visibility = if (SettingsTabs.Block.HOME_SECTION.tab == t) View.VISIBLE else View.GONE
         gameUi.visibility = if (SettingsTabs.Block.GAME_UI.tab == t) View.VISIBLE else View.GONE
+        qolUi.visibility = if (SettingsTabs.Block.QOL_HUD.tab == t) View.VISIBLE else View.GONE
         companion.visibility = if (SettingsTabs.Block.COMPANION.tab == t) View.VISIBLE else View.GONE
         tabBar.tab = t
         scroll.scrollTo(0, 0)
@@ -127,7 +132,8 @@ class SettingsPad(
     context: Context,
     private val scroll: ScrollView,
     private val sections: List<Section>,
-    private val gameUi: GameUiSection,
+    /** the sections with an On / Off bar that B closes first (Top screen's and QOL's) */
+    private val gameUis: List<GameUiSection>,
     private val padSource: () -> JSONObject?,
     /** the tab row (board f-settings-tabs): the cursor lands on it */
     private val tabBar: SettingsTabBar? = null,
@@ -286,7 +292,7 @@ class SettingsPad(
             "PADDLEFT", "PADDRIGHT" -> horizontal(all, here, if (k == "PADDLEFT") -1 else 1)?.let { moveTo(it) }
             "PAD1" -> if (focus != null) here?.let { press(it) } else moveTo(all.first())
             "PAD2" -> when {
-                gameUi.closeSelection() -> { post { focus = focus?.let { f -> nearest(targets(), f)?.let { centre(it.box) } }; invalidate() } }
+                gameUis.any { it.closeSelection() } -> { post { focus = focus?.let { f -> nearest(targets(), f)?.let { centre(it.box) } }; invalidate() } }
                 // B in the page: back to the tab row (rows -> tabs -> Home); without a tab row it leaves
                 tabBar != null -> toTabs()
                 else -> if (!tap(GuestPad.leaveB(padSource()))) onLeave?.invoke()
@@ -346,7 +352,7 @@ class SettingsPad(
     private fun syncB() {
         if (!held) return
         // B leads Home only from the tab row (or with no tab row and no bar open)
-        val where = if (gameUi.hasSelection || (tabBar != null && !onTabs)) "back" else "home"
+        val where = if (gameUis.any { it.hasSelection } || (tabBar != null && !onTabs)) "back" else "home"
         if (where != bSaid && tap(GuestPad.bnext(padSource(), home = where == "home"))) bSaid = where
     }
 

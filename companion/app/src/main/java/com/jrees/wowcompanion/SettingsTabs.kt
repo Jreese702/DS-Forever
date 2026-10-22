@@ -13,11 +13,18 @@ import android.content.SharedPreferences
  * tab's blocks only. [Block.rows] are the rows' own words, so the off-device test proves every row is on exactly one tab.
  */
 object SettingsTabs {
-    enum class Tab(val label: String) {
+    enum class Tab(val label: String, val hidden: Boolean = false) {
         // test40 (the user: "Rather than renaming, move those settings to the home tab and put them under home module settings"): the
         // Rooms tab is gone, its Map and Chat rows on Home under [HOME_MODULES] (a saved "ROOMS" opens on Home: [last])
-        HOME("Home"), CONTROLLER("Controller"), TOP("Top screen"), ADDONS("Add-ons"), PERFORMANCE("Performance"), SYSTEM("System")
+        // the housekeeping pass (the user: "I want to hide the performance tab and add a QOL tab where we move all of our quality of life
+        // enhancements to"; "Build it" / "Hide it all"): QOL after Controller; PERFORMANCE HIDDEN - its settings keep their saved values
+        // and keep working, the tab is never shown nor stepped onto (a saved "PERFORMANCE" opens on Home: [last])
+        HOME("Home"), CONTROLLER("Controller"), QOL("QOL"), TOP("Top screen"), ADDONS("Add-ons"), PERFORMANCE("Performance", hidden = true),
+        SYSTEM("System")
     }
+
+    /** the tabs the room shows, in order (a hidden one is never on the row, never stepped onto) */
+    val visible: List<Tab> get() = Tab.values().filter { !it.hidden }
 
     /** the order within a tab is this enum's order */
     enum class Block(val tab: Tab, val heading: String, val rows: List<String>) {
@@ -32,11 +39,16 @@ object SettingsTabs {
         SPELL_WHEEL(Tab.CONTROLLER, "Spell wheel (its button in Controller)", listOf("Spell wheel: open", "Spell wheel: pick")),
         CLASS_LEFT(Tab.CONTROLLER, "Left class radial (LB + LT)", listOf("Left class radial: open", "Left class radial: pick")),
         CLASS_RIGHT(Tab.CONTROLLER, "Right class radial (RB + RT)", listOf("Right class radial: open", "Right class radial: pick")),
-        // m62 SMART BUFFS (the user: "this setting will need its own section in the settings"): Y out of combat, per character
-        SMART_Y(Tab.CONTROLLER, "Smart Y (out of combat, nothing targeted)", listOf("Smart Y")),
+        // m62 SMART BUFFS (the user: "this setting will need its own section in the settings"): Y out of combat, per character; on QOL
+        SMART_Y(Tab.QOL, "Smart Y (out of combat, nothing targeted)", listOf("Smart Y")),
+        // QOL's quality-of-life groups (GameUiSection's QOL part draws them, the same rows, ids, taps and channels as before)
+        QOL_HUD(Tab.QOL, "HUD", listOf("HUD mode", "HUD height", "HUD width", "HUD scale", "Hide game tooltips")),
+        QOL_NAV(Tab.QOL, "Navigation", listOf("Compass bar", "Compass follows the camera", "Avoid dangerous areas")),
+        QOL_COMBAT(Tab.QOL, "Combat", listOf("Aggro tint", "Cast bar")),
+        // Top screen: the game's own windows only
         GAME_UI(Tab.TOP, "Game UI on the top screen", listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window",
-            "NPC windows", "Cast bar", "HUD mode", "HUD height", "HUD width", "HUD scale", "Loot window", "Compass bar", "Compass follows the camera", "Aggro tint", "Hide game tooltips")),
-        MAP(Tab.HOME, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "Quest tracking", "Avoid dangerous areas", "World map")),
+            "NPC windows", "Loot window")),
+        MAP(Tab.HOME, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "Quest tracking", "World map")),
         CHAT(Tab.HOME, "Chat", listOf("Message input")),
         // 1.0.9 (the user, on Spoken: "make an addon section of our settings"): one block per third-party add-on (ThirdPartyAddons)
         ADDON_SPOKEN(Tab.ADDONS, "Spoken", ThirdPartyAddons.SPOKEN.rowWords()),
@@ -69,10 +81,11 @@ object SettingsTabs {
     fun shown(b: Block): Boolean = Settings.ROUTE_MODES_ON || (b != Block.ADDON_POLESTAR && b != Block.ADDON_QUESTTRAIL)
     fun viewBlocks(tab: Tab): List<Block> = blocks(tab).filter { it in VIEW_BLOCKS }
 
-    /** the tab [dir] (-1 / +1) steps from [tab], wrapping (L on the first goes to the last) */
+    /** the tab [dir] (-1 / +1) steps from [tab] among the VISIBLE tabs, wrapping (L on the first goes to the last) */
     fun step(tab: Tab, dir: Int): Tab {
-        val all = Tab.values()
-        return all[Math.floorMod(tab.ordinal + dir, all.size)]
+        val all = visible
+        val i = all.indexOf(tab).let { if (it < 0) 0 else it }
+        return all[Math.floorMod(i + dir, all.size)]
     }
 
     // ---- the last tab used (the user's pick: the room opens on it); Home before any
@@ -80,7 +93,7 @@ object SettingsTabs {
     fun init(c: Context) { if (prefs == null) prefs = c.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE) }
 
     var last: Tab
-        get() = runCatching { Tab.valueOf(prefs?.getString(KEY_TAB, null) ?: Tab.HOME.name) }.getOrDefault(Tab.HOME)
+        get() = runCatching { Tab.valueOf(prefs?.getString(KEY_TAB, null) ?: Tab.HOME.name) }.getOrDefault(Tab.HOME).let { if (it.hidden) Tab.HOME else it }
         set(v) { prefs?.edit()?.putString(KEY_TAB, v.name)?.apply() }
 
     private const val KEY_TAB = "settingsTab"

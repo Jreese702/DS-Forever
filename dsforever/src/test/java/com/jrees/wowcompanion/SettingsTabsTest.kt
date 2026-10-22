@@ -11,7 +11,42 @@ private typealias B = SettingsTabs.Block
 class SettingsTabsTest {
     /** test40: the Rooms tab is gone (the user: "move those settings to the home tab and put them under home module settings") */
     @Test fun sixTabsInTheApprovedOrder() =
-        assertEquals(listOf("Home", "Controller", "Top screen", "Add-ons", "Performance", "System"), T.values().map { it.label })
+        // the housekeeping pass: QOL after Controller; Performance hidden (still a tab of data: its settings keep their values)
+        assertEquals(listOf("Home", "Controller", "QOL", "Top screen", "Add-ons", "System"), SettingsTabs.visible.map { it.label })
+
+    /** "Hide it all": Performance is never on the row and never stepped onto, whichever way and from wherever */
+    @Test fun performanceIsNeverReachable() {
+        assertTrue(T.PERFORMANCE.hidden)
+        assertTrue(T.PERFORMANCE !in SettingsTabs.visible)
+        for (start in SettingsTabs.visible) for (dir in listOf(-1, 1)) {
+            var t = start
+            repeat(10) { t = SettingsTabs.step(t, dir); assertTrue("$start $dir reached $t", t != T.PERFORMANCE) }
+        }
+        assertEquals(listOf(B.FRAMES, B.INDOOR), SettingsTabs.blocks(T.PERFORMANCE))     // its rows are kept, as data
+    }
+
+    /** QOL "Build it": Smart Y, then HUD / Navigation / Combat, each row in the approved order (the D-pad walks them in this order) */
+    @Test fun qolTabInTheApprovedOrder() {
+        assertEquals(listOf(B.SMART_Y, B.QOL_HUD, B.QOL_NAV, B.QOL_COMBAT), SettingsTabs.blocks(T.QOL))
+        assertEquals(listOf("HUD mode", "HUD height", "HUD width", "HUD scale", "Hide game tooltips"), B.QOL_HUD.rows)
+        assertEquals(listOf("Compass bar", "Compass follows the camera", "Avoid dangerous areas"), B.QOL_NAV.rows)
+        assertEquals(listOf("Aggro tint", "Cast bar"), B.QOL_COMBAT.rows)
+        assertEquals(listOf(B.SMART_Y), SettingsTabs.viewBlocks(T.QOL))   // Smart Y by SettingsView, the groups by GameUiSection's QOL part
+        // Top screen keeps only the game's own windows
+        assertEquals(listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window", "NPC windows", "Loot window"), B.GAME_UI.rows)
+        assertTrue("Avoid dangerous areas" !in B.MAP.rows)
+    }
+
+    /** moving a row changes only the tab that draws it: the ids its taps go by and the hub columns are the ones they were */
+    @Test fun movedRowsKeepTheirChannels() {
+        assertEquals("castbar", GameUi.CASTBAR_ID); assertEquals("hudmode", GameUi.HUD_ID)
+        assertEquals("hudheight", GameUi.HUD_H_ID); assertEquals("hudwidth", GameUi.HUD_W_ID); assertEquals("hudscale", GameUi.HUD_S_ID)
+        assertEquals("compass", GameUiSection.COMPASS_ID); assertEquals("compasscam", GameUiSection.COMPASS_CAM_ID)
+        assertEquals("hidetips", GameUiSection.TIPS_ID); assertEquals("aggrorings", GameUiSection.RINGS_ID)
+        assertEquals(listOf(32, 33, 34, 35, 36, 37, 38, 39), listOf(CastBarPolicy.COL_SHOW, CastBarPolicy.COL_HIDE, CastBarPolicy.HUD_SHOW,
+            CastBarPolicy.HUD_HIDE, CastBarPolicy.HUD_LOWER, CastBarPolicy.HUD_HIGHER, CastBarPolicy.HUD_HDEF, CastBarPolicy.HUD_SEL))
+        assertEquals(listOf("off", "low", "high"), Settings.AVOID_DANGER)       // QOL's danger row sets the same value Home > Map did
+    }
 
     /** 1.0.9 Add-ons: every third-party add-on has its block there, its rows its own (title, modules, options) */
     @Test fun addOnsHaveTheirOwnTab() {
@@ -40,7 +75,7 @@ class SettingsTabsTest {
         assertEquals("Home module settings", SettingsTabs.HOME_MODULES)
         assertEquals(listOf(B.FRAMES, B.INDOOR), SettingsTabs.blocks(T.PERFORMANCE))
         assertEquals(listOf(B.GAME, B.COMPANION), SettingsTabs.blocks(T.SYSTEM))
-        assertTrue("Cast bar" in B.GAME_UI.rows && B.GAME_UI.tab == T.TOP)   // the Controller session's new row lands on Top screen
+        assertTrue("Cast bar" in B.QOL_COMBAT.rows && B.QOL_COMBAT.tab == T.QOL)   // the housekeeping pass: the cast bar is QOL's
         assertTrue("Frame limit" in B.FRAMES.rows)
     }
 
@@ -48,7 +83,7 @@ class SettingsTabsTest {
         assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.HOME))   // under Home's section (HomeSettingsSection)
         assertTrue(SettingsTabs.viewBlocks(T.TOP).isEmpty())           // the game's elements
         assertEquals(listOf(B.GAME), SettingsTabs.viewBlocks(T.SYSTEM))   // + the companion's status (GameUiSection)
-        assertEquals(listOf(B.CONTROLLER, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT, B.SMART_Y),
+        assertEquals(listOf(B.CONTROLLER, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT),
             SettingsTabs.viewBlocks(T.CONTROLLER))
     }
 
@@ -69,7 +104,9 @@ class SettingsTabsTest {
         assertEquals(T.HOME, SettingsTabs.step(T.SYSTEM, 1))
         assertEquals(T.CONTROLLER, SettingsTabs.step(T.HOME, 1))
         var t = T.HOME
-        repeat(T.values().size) { t = SettingsTabs.step(t, 1) }
+        assertEquals(T.QOL, SettingsTabs.step(T.CONTROLLER, 1))
+        assertEquals(T.SYSTEM, SettingsTabs.step(T.ADDONS, 1))           // over the hidden Performance
+        repeat(SettingsTabs.visible.size) { t = SettingsTabs.step(t, 1) }
         assertEquals(T.HOME, t)
     }
 }
@@ -108,7 +145,7 @@ class SettingsTabBarLayoutTest {
     private val w: (String) -> Float = { it.length * 15f }          // a stand-in font: 15 px a letter
 
     @Test fun everyLabelFitsItsTab() {
-        val labels = SettingsTabs.Tab.values().map { it.label }
+        val labels = SettingsTabs.visible.map { it.label }             // the tabs the bar draws (Performance hidden)
         val lay = SettingsTabBar.layout(labels, 1080f, 0, w)
         for ((i, l) in labels.withIndex()) {
             val (x0, x1) = lay.xs[i]

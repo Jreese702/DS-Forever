@@ -53,10 +53,10 @@ class SettingsTabBar(context: Context, private val onPick: (SettingsTabs.Tab) ->
         UiKit.asTitle(pTitle)
         c.drawColor(Theme.ink)
         c.drawText("Settings", 28f, TITLE_BASE, pTitle)
-        val all = SettingsTabs.Tab.values()
+        val all = SettingsTabs.visible
         val room = UiKit.TAB_END_W
         val left = 16f + room; val right = width - 16f - room
-        val lay = layout(all.map { it.label }, right - left, tab.ordinal)
+        val lay = layout(all.map { it.label }, right - left, all.indexOf(tab).coerceAtLeast(0))
         // the strip's glide toward keeping the chosen tab in view
         val now = android.os.SystemClock.uptimeMillis()
         if (!offSeen) { offSeen = true; offFrom = lay.offset; offTo = lay.offset; offT0 = now }
@@ -77,7 +77,7 @@ class SettingsTabBar(context: Context, private val onPick: (SettingsTabs.Tab) ->
         if (tabs.isNotEmpty()) UiKit.tabEnds(c, RectF(left, TAB_TOP, left + 1f, TAB_TOP + TAB_H), RectF(right - 1f, TAB_TOP, right, TAB_TOP + TAB_H), room)
         if (now - offT0 < GLIDE_MS) postInvalidateOnAnimation()
         // the cursor's A (the user: the cursor "appears with the A glyph"): A goes into this tab's page
-        if (cursor) tabs.getOrNull(tab.ordinal)?.let { r ->
+        if (cursor) tabs.getOrNull(SettingsTabs.visible.indexOf(tab))?.let { r ->
             val gs = A_GLYPH
             UiKit.pad(c, UiKit.okGlyph(), r.left - 0.35f * gs + gs / 2f, r.top - 0.2f * gs + gs / 2f, gs)
         }
@@ -105,7 +105,7 @@ class SettingsTabBar(context: Context, private val onPick: (SettingsTabs.Tab) ->
                 if (abs(e.x - downX) > SLOP || abs(e.y - downY) > SLOP) return true
                 val room = UiKit.TAB_END_W
                 val i = tabs.indexOfFirst { it.contains(e.x, e.y) && e.x >= 16f + room && e.x <= width - 16f - room }
-                if (i >= 0) onPick(SettingsTabs.Tab.values()[i])
+                if (i >= 0) SettingsTabs.visible.getOrNull(i)?.let { onPick(it) }
             }
         }
         return true

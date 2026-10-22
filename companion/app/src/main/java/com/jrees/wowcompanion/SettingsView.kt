@@ -259,7 +259,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
-        SettingsTabs.Block.MAP -> 16f + 6 * ROW_H + 5 * 10f
+        SettingsTabs.Block.MAP -> 16f + 5 * ROW_H + 4 * 10f     // zoom out, zoom in, Quest tracking, World map, SafePath network
         SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
         SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
@@ -578,32 +578,10 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             qtSegmented(c, b, Settings.QUEST_TRACKING.indexOf(Settings.questTracking))
             b
         }
-        // AVOID DANGEROUS AREAS (b-danger-layer): how hard the route bends round hostile mobs (QuestieDB's); High by default
+        // AVOID DANGEROUS AREAS moved to QOL > Navigation (the housekeeping pass; GameUiSection's QOL part, the same Settings.avoidDanger)
         y += ROW_H + 10f
-        // SafePath's own: greyed in the other modes, and says so
         val safe = Settings.questTracking == "safepath"
-        val dsub = when {
-            !Settings.ROUTE_MODES_ON -> "Comes with SafePath in a later update"
-            !safe -> "SafePath only: choose SafePath in Quest tracking"
-            Settings.avoidDanger == "off" -> "The line goes straight, through hostile mobs"
-            Settings.avoidDanger == "low" -> "The line bends round dense or high-level hostile mobs"
-            else -> "The line bends round hostile mobs at or above your level"
-        }
-        row(c, y, "Avoid dangerous areas", dsub, enabled = safe) { box ->
-            // never under the row's own words (it ran over "Avoid dangerous areas" at the page's segment width)
-            val bw = minOf(segW() * 3, box.width() * 0.44f)
-            val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-            val sel = Settings.AVOID_DANGER.indexOf(Settings.avoidDanger)
-            val w = b.width() / 3
-            for ((i, l) in listOf("Off", "Low", "High").withIndex()) {
-                segDanger[i].set(b.left + i * w, b.top, b.left + (i + 1) * w, b.bottom)
-                UiKit.choice(c, RectF(segDanger[i].left + 2f, b.top - 6f, segDanger[i].right - 2f, b.bottom + 6f), l, i == sel,
-                    enabled = safe, textSize = SEG_TEXT)
-            }
-            b
-        }
         // WORLD MAP (b-seamless-map; the user: "Give an option in settings"): the stitched continent, every zone or only the explored
-        y += ROW_H + 10f
         val all = Settings.worldMapFog == "all"
         row(c, y, "World map", if (all) "The Map room's continents show every zone, revealed" else "The Map room's continents show what you have explored",
             enabled = true) { box ->
