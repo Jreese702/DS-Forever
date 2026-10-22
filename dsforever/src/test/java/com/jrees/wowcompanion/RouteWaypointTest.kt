@@ -43,6 +43,23 @@ class RouteWaypointTest {
         assertEquals(listOf(38, 21, 21, 21, 21, 19, 4), cols.drop(7))
     }
 
+    @Test fun aRefusedFlagIsSentAgainAtThePinsPaceTwiceAtMost() {
+        // test72: a lost tap made the add-on read a flag 2514 yd off and refuse it - the list goes again, twice at most for one pin
+        val w = RouteWaypoint()
+        val pin = doubleArrayOf(0.690, 0.310)
+        val a = doubleArrayOf(900 / 1295.0, 432 / 1295.0); val b = doubleArrayOf(936 / 1295.0, 468 / 1295.0)
+        assertEquals(36, w.tick(pin, 0L, listOf(a, b)).first())
+        w.onAnswer("more", false, 500L)
+        assertTrue("at the pin's pace", w.tick(pin, 1_000L, listOf(a, b)).isEmpty())
+        assertEquals(listOf(38, 38, 38, 25, 0, 12, 0, 35, 35, 38, 26, 0, 13, 0, 35, 35), w.tick(pin, 5_000L, listOf(a, b)))
+        w.onAnswer("more", false, 5_500L)
+        assertEquals(listOf(38, 38), w.tick(pin, 10_000L, listOf(a, b)).take(2))
+        w.onAnswer("more", false, 10_500L)
+        assertTrue("twice at most", w.tick(pin, 15_000L, listOf(a, b)).none { it == 38 })
+        // a refused SET is no flag's matter
+        w.onAnswer("more", true, 16_000L)
+    }
+
     @Test fun furtherCheckpointsRideTheSetAndFollowANewLeg() {
         val w = RouteWaypoint()
         val pin = doubleArrayOf(0.690, 0.310)
