@@ -147,7 +147,7 @@ object WowClientDownloader {
      * the beta and the next call goes on from where this one stopped. One move at a time (Play and the screen's check may both ask).
      */
     fun switchToLaunch(gameRoot: File, onStatus: (String) -> Unit, today: LocalDate = LocalDate.now()): Switch = synchronized(switchLock) {
-        val choice = runCatching { activeBuild(gameRoot) }.getOrNull()
+        val choice = runCatching { activeBuild(gameRoot, today) }.getOrNull()          // the same day [WowSwitch.due] reads
         if (!WowSwitch.due(choice, today)) return Switch.NotDue
         val row = choice!!.row
         val status: (String) -> Unit = { onStatus(WowSwitch.line(it)) }
@@ -494,9 +494,9 @@ object WowClientDownloader {
         }
 
     /** the row the game runs and its client: [WowProduct.choose], the one order the launcher and the companion share */
-    private fun activeBuild(gameRoot: File): WowProduct.Choice {
+    private fun activeBuild(gameRoot: File, today: java.time.LocalDate = java.time.LocalDate.now()): WowProduct.Choice {
         check(File(gameRoot, BUILD_INFO).isFile) { "Missing $BUILD_INFO in $gameRoot" }
-        return WowProduct.choose(gameRoot) ?: throw IllegalStateException("No build in $BUILD_INFO")
+        return WowProduct.choose(gameRoot, today) ?: throw IllegalStateException("No build in $BUILD_INFO")
     }
 
     private fun parsePsv(text: String): List<Map<String, String>> {

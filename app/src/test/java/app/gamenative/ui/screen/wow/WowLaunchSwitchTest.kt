@@ -29,7 +29,7 @@ class WowLaunchSwitchTest {
         "CDN Hosts!STRING:0|CDN Servers!STRING:0|Tags!STRING:0|Armadillo!STRING:0|Last Activated!STRING:0|Version!STRING:0|" +
         "KeyRing!HEX:16|Product!STRING:0"
     private lateinit var betaRow: String
-    private val closed = LocalDate.of(2026, 10, 21)
+    private val closed = com.jrees.wowcompanion.WowProduct.LAUNCH_DAY
 
     private lateinit var server: MockWebServer
     private lateinit var root: File
@@ -142,7 +142,8 @@ class WowLaunchSwitchTest {
 
     @Test fun beforeTheDateNothingHappens() {
         val before = File(root, ".build.info").readText()
-        assertEquals(WowClientDownloader.Switch.NotDue, switch(LocalDate.of(2026, 10, 20)))
+        assertEquals(WowClientDownloader.Switch.NotDue, switch(LocalDate.of(2026, 11, 3)))
+        assertEquals(WowClientDownloader.Switch.NotDue, switch(LocalDate.of(2026, 10, 22)))     // "Beta until launch": the beta's realms are up
         assertEquals(before, File(root, ".build.info").readText())
         assertTrue(requests.isEmpty())
     }
@@ -190,7 +191,8 @@ class WowLaunchSwitchTest {
         File(root, "_forever_/Wow-arm64.exe").writeText("installed by Battle.net")
         assertEquals(WowClientDownloader.Switch.NotDue, switch())
         assertEquals("installed by Battle.net", File(root, "_forever_/Wow-arm64.exe").readText())
-        assertEquals(WowProduct.LAUNCH, WowClientDownloader.product(root))
+        // "Beta until launch": both installed run the beta before launch day, wowf from it
+        assertEquals(if (java.time.LocalDate.now().isBefore(WowProduct.LAUNCH_DAY)) WowProduct.BETA else WowProduct.LAUNCH, WowClientDownloader.product(root))
     }
 
     // ---------------------------------------------------------------- made-up CASC files

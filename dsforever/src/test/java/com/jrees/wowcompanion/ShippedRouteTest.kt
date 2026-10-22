@@ -49,6 +49,7 @@ class ShippedRouteTest {
             assertEquals("wow_classic_beta" to beta, GameFiles.activeBuild(root))           // mid-switch: the beta's key, no mark
             assertNull(ShippedNets.load(1411, open, GameFiles.activeBuild(root)!!.second, {})!!.stale)
             java.io.File(root, "_forever_").mkdirs(); java.io.File(root, "_forever_/Wow-arm64.exe").writeText("x")
+            java.io.File(root, "_classic_beta_/WowB-ARM64.exe").delete()      // a folder that runs wowf (both installed: the beta till launch day)
             assertEquals("wowf" to wowf, GameFiles.activeBuild(root))
         } finally { root.deleteRecursively() }
     }

@@ -11,7 +11,7 @@ import java.time.LocalDate
  * THE APP MOVES THE PLAYER FROM THE BETA TO THE LAUNCH CLIENT BY ITSELF (2026-10-21, the user's pick "App switches itself": the beta
  * closed, players saw "no realms", and [WowProduct.choose] kept a beta-only folder on the beta for ever).
  *
- * THE TRIGGER ([due]): the folder runs the beta, and the beta is over ([WowProduct.betaOver], from 21 Oct 2026 local date). The
+ * THE TRIGGER ([due]): the folder runs the beta, and it is launch day or after ([WowProduct.betaOver]: [WowProduct.LAUNCH_DAY], 4 Nov 2026 local date; the user's "Beta until launch"). The
  * updater then also needs the launch client's patch server to ANSWER (wowf/versions has a row): no answer, no change. Both together:
  * the date alone would switch a player whose wowf is not there yet; the answer alone would switch during the beta.
  *
