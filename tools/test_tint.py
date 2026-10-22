@@ -20,6 +20,8 @@ PLATE_WRITES, PLATE_READS = 0, 0
 local function plateFor(u)
     local p = { GetCenter = function() PLATE_READS = PLATE_READS + 1; return 600, 400 end,
                 GetEffectiveScale = function() PLATE_READS = PLATE_READS + 1; return 1 end }
+    -- (at3: Forever's plate: its UnitFrame's health bar container - u.nobar: a plate without one)
+    if not u.nobar then p.UnitFrame = { HealthBarsContainer = { name = "bar" } } end
     return setmetatable(p, { __newindex = function(t, k, v) PLATE_WRITES = PLATE_WRITES + 1; rawset(t, k, v) end })
 end
 TARGET = nil
@@ -28,7 +30,7 @@ function UnitIsUnit(a, b) if b == "target" then return TARGET ~= nil and a == TA
 C_NamePlate = { GetNamePlateForUnit = function(t) local u = UNITS[t]; if u then u.plate = u.plate or plateFor(u); return u.plate end end }
 '''
 
-STATES = [("nameplate1", 50, "far", None), ("nameplate2", 27, "approach", [1, 0.84, 0.24]),
+STATES = [("nameplate1", 50, "far", [0.32, 0.86, 0.36]), ("nameplate2", 27, "approach", [1, 0.84, 0.24]),
           ("nameplate3", 22, "near", [1, 0.55, 0.12]), ("nameplate4", 15, "inside", [0.93, 0.16, 0.12])]
 
 
@@ -95,12 +97,20 @@ def main():
         shown = o is not None and o.f.shown is True
         okc = col is None or (o is not None and [round(v, 2) for v in list(o.t.col.values())[:3]] == col)
         chk("%s yd -> %s (%.1f yd estimated, shown %s)" % (d, want, o.d if o else -1, shown),
-            o is not None and o.state == want and (shown == (want != "far")) and okc)
+            o is not None and o.state == want and shown and okc)
     o = tint("nameplate4")
-    chk("our own frame on UIParent, BACKGROUND, mouse off, our art, ANCHORED to the plate",
+    chk("at3: our own frame on UIParent, BACKGROUND, mouse off, our art (its bar-aspect rows %.3f), ANCHORED to the plate's HEALTH BAR, 9 out"
+        % (o.t.tc[4] if o.t.tc else -1),
         L.eval("rawequal(WowCompanion.rings.list[%d].f.parent, UIParent)" % A.byTok.nameplate4) and o.f.strata == "BACKGROUND"
-        and o.f.mouse is False and o.t.tex.endswith("tint_glow")
-        and L.eval("rawequal(WowCompanion.rings.list[%d].f.point[2], UNITS.nameplate4.plate)" % A.byTok.nameplate4))
+        and o.f.mouse is False and o.t.tex.endswith("tint_glow") and abs(o.t.tc[4] - 53 / 64) < 1e-9
+        and L.eval("rawequal(WowCompanion.rings.list[%d].f.point[2], UNITS.nameplate4.plate.UnitFrame.HealthBarsContainer)" % A.byTok.nameplate4)
+        and o.f.point[1] == "BOTTOMRIGHT" and o.f.point[4] == 9 and o.f.point[5] == -9)
+    unit("nameplate15", 15, nobar=True); fire("NAME_PLATE_UNIT_ADDED", "nameplate15"); run(0.5)
+    o15 = tint("nameplate15")
+    chk("at3: a plate with no health bar container: anchored to the plate itself, 6 out (as before)",
+        o15 is not None and L.eval("rawequal(WowCompanion.rings.list[%d].f.point[2], UNITS.nameplate15.plate)" % A.byTok.nameplate15)
+        and o15.f.point[4] == 6)
+    Lg.UNITS.nameplate15 = None; fire("NAME_PLATE_UNIT_REMOVED", "nameplate15"); run(0.2)
     chk("the tint never READS or WRITES a plate (only anchors to it): %d reads, %d writes" % (tread[0], Lg.PLATE_WRITES),
         tread[0] == 0 and Lg.PLATE_WRITES == 0)
     # the margin: a state changes only HYST (1) yd past its line on the way out; at once on the way in
@@ -146,7 +156,7 @@ def main():
         and Lg.WowCompanionDB.aggroRings is False)
     R.set(True)
     run(0.5)
-    chk("on again: back (%d tinted)" % R.n, R.n == 3 and Lg.WowCompanionDB.aggroRings is None)
+    chk("on again: back (%d tinted: at3 the far one green too)" % R.n, R.n == 4 and Lg.WowCompanionDB.aggroRings is None)
     chk("no plate read by the tint or written all along (%d / %d); no CVar beyond the layer's own" % (tread[0], Lg.PLATE_WRITES),
         tread[0] == 0 and Lg.PLATE_WRITES == 0 and all(str(v).startswith("nameplateShowEnemies") for v in Lg.CVSET.values()))
 
