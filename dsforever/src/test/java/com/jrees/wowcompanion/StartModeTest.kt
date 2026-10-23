@@ -15,7 +15,10 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** the start-up chooser's routing (S1 "Chooser", streaming phase 2): shortcut extra -> mode, the remembered pick, the chooser */
+/**
+ * The start-up chooser's routing (S1 "Chooser", streaming phase 2). The user's ruling (2026-10-23): the normal icon ALWAYS opens the
+ * chooser; only a shortcut's dsf.mode skips it; nothing is remembered.
+ */
 class StartModeTest {
     @Test fun parsesTheShortcutExtra() {
         assertEquals(Mode.LOCAL, StartMode.parse("local"))
@@ -27,38 +30,52 @@ class StartModeTest {
     }
 
     @Test fun shortcutSkipsTheChooser() {
-        assertEquals(Route.Into(Mode.STREAM, By.SHORTCUT), StartMode.resolve("stream", null))
-        assertEquals(Route.Into(Mode.LOCAL, By.SHORTCUT), StartMode.resolve("local", null))
-        // the shortcut wins over the remembered pick
-        assertEquals(Route.Into(Mode.STREAM, By.SHORTCUT), StartMode.resolve("stream", "local"))
-        assertEquals(Route.Into(Mode.LOCAL, By.SHORTCUT), StartMode.resolve("local", "stream"))
+        assertEquals(Route.Into(Mode.STREAM, By.SHORTCUT), StartMode.resolve("stream"))
+        assertEquals(Route.Into(Mode.LOCAL, By.SHORTCUT), StartMode.resolve("local"))
+        assertEquals(Route.Into(Mode.STREAM, By.SHORTCUT), StartMode.onCreate(null, "stream", recreated = false, gameUp = false, restarting = false))
+        assertEquals(Route.Into(Mode.LOCAL, By.SHORTCUT), StartMode.onCreate(null, "local", recreated = false, gameUp = false, restarting = false))
     }
 
-    @Test fun rememberedPickGoesStraightIn() {
-        assertEquals(Route.Into(Mode.LOCAL, By.REMEMBERED), StartMode.resolve(null, "local"))
-        assertEquals(Route.Into(Mode.STREAM, By.REMEMBERED), StartMode.resolve(null, "stream"))
-        // a junk extra is no shortcut: the remembered pick still holds
-        assertEquals(Route.Into(Mode.STREAM, By.REMEMBERED), StartMode.resolve("bogus", "stream"))
+    @Test fun iconAlwaysOpensTheChooser() {
+        assertEquals(Route.Chooser, StartMode.resolve(null))
+        assertEquals(Route.Chooser, StartMode.resolve(""))
+        assertEquals(Route.Chooser, StartMode.resolve("bogus"))
+        // a fresh process: the chooser
+        assertEquals(Route.Chooser, StartMode.onCreate(null, null, recreated = false, gameUp = false, restarting = false))
+        // the process still alive after Local or Streaming was used (picked or by a shortcut): the icon's new activity = the chooser
+        for (mode in Mode.values()) for (by in By.values()) {
+            assertEquals(Route.Chooser, StartMode.onCreate(Route.Into(mode, by), null, recreated = false, gameUp = false, restarting = false))
+        }
+        // already on the chooser: stays
+        assertNull(StartMode.onCreate(Route.Chooser, null, recreated = false, gameUp = false, restarting = false))
     }
 
-    @Test fun chooserWhenNoMode() {
-        assertEquals(Route.Chooser, StartMode.resolve(null, null))
-        assertEquals(Route.Chooser, StartMode.resolve("", ""))
-        assertEquals(Route.Chooser, StartMode.resolve("bogus", "old-value"))
+    @Test fun nothingIsRemembered() {
+        // the start's only input is the intent's extra: no prefs key, no "remembered" way in, the cursor never on a "last" mode
+        val fields = StartMode::class.java.declaredFields.map { it.name }
+        assertFalse("KEY_LAST" in fields)
+        assertFalse("PREFS" in fields)
+        assertEquals(listOf("SHORTCUT", "PICKED"), By.values().map { it.name })
+        assertEquals(Cell(Mode.LOCAL, Row.CARD), StartMode.startCell())
     }
 
-    @Test fun whatIsRemembered() {
-        assertEquals("local", StartMode.remember(Route.Into(Mode.LOCAL, By.PICKED)))
-        assertEquals("stream", StartMode.remember(Route.Into(Mode.STREAM, By.SHORTCUT)))
-        assertNull(StartMode.remember(Route.Into(Mode.LOCAL, By.REMEMBERED)))   // nothing new to write
-        assertNull(StartMode.remember(Route.Chooser))                          // the chooser never forgets the last pick
+    @Test fun recreatedActivityKeepsItsMode() {
+        val local = Route.Into(Mode.LOCAL, By.PICKED)
+        assertNull(StartMode.onCreate(local, null, recreated = true, gameUp = false, restarting = false))
+        // a running game, a restart or a busy launch is never taken away by an icon tap
+        assertNull(StartMode.onCreate(local, null, recreated = false, gameUp = true, restarting = false))
+        assertNull(StartMode.onCreate(local, null, recreated = false, gameUp = false, restarting = true))
+        assertNull(StartMode.onCreate(local, null, recreated = false, gameUp = false, restarting = false, busy = true))
+        // a shortcut's new activity over an existing route: the shortcut's guards
+        assertEquals(Route.Into(Mode.STREAM, By.SHORTCUT), StartMode.onCreate(local, "stream", recreated = false, gameUp = false, restarting = false))
+        assertNull(StartMode.onCreate(local, "stream", recreated = false, gameUp = true, restarting = false))
     }
 
     @Test fun shortcutWhileRunning() {
         // from the chooser, or the other mode: into the shortcut's mode
         assertEquals(Route.Into(Mode.STREAM, By.SHORTCUT), StartMode.onShortcut(Route.Chooser, "stream", gameUp = false, restarting = false))
         assertEquals(Route.Into(Mode.STREAM, By.SHORTCUT),
-            StartMode.onShortcut(Route.Into(Mode.LOCAL, By.REMEMBERED), "stream", gameUp = false, restarting = false))
+            StartMode.onShortcut(Route.Into(Mode.LOCAL, By.PICKED), "stream", gameUp = false, restarting = false))
         // never away from a running game, a restart or a busy launch; nothing for the mode already in, or no extra
         assertNull(StartMode.onShortcut(Route.Into(Mode.LOCAL, By.PICKED), "stream", gameUp = true, restarting = false))
         assertNull(StartMode.onShortcut(Route.Into(Mode.LOCAL, By.PICKED), "stream", gameUp = false, restarting = true))
@@ -67,17 +84,15 @@ class StartModeTest {
         assertNull(StartMode.onShortcut(Route.Chooser, null, gameUp = false, restarting = false))
     }
 
-    /** LOCAL'S START-UP IS TODAY'S: the cold-start splash keeps the old rule (auto-launch && the game folder ready) */
+    /** LOCAL'S START-UP IS TODAY'S: a shortcut start into Local keeps the old splash rule (auto-launch && the game folder ready) */
     @Test fun localStartUpUnchanged() {
         for (auto in listOf(false, true)) for (ready in listOf(false, true)) {
-            val today = auto && ready
-            assertEquals(today, StartMode.splashAtStart(auto, ready, Route.Into(Mode.LOCAL, By.REMEMBERED)))
-            assertEquals(today, StartMode.splashAtStart(auto, ready, Route.Into(Mode.LOCAL, By.SHORTCUT)))
-            assertEquals(today, StartMode.splashAtStart(auto, ready, Route.Into(Mode.LOCAL, By.PICKED)))
-            assertEquals(today, StartMode.splashAtStart(auto, ready, null))          // the mode never started: as before
-            // nothing boots behind the chooser or in Streaming
+            assertEquals(auto && ready, StartMode.splashAtStart(auto, ready, Route.Into(Mode.LOCAL, By.SHORTCUT)))
+            // the icon's chooser, a pick on it, Streaming: nothing boots behind them
             assertFalse(StartMode.splashAtStart(auto, ready, Route.Chooser))
-            assertFalse(StartMode.splashAtStart(auto, ready, Route.Into(Mode.STREAM, By.REMEMBERED)))
+            assertFalse(StartMode.splashAtStart(auto, ready, Route.Into(Mode.LOCAL, By.PICKED)))
+            assertFalse(StartMode.splashAtStart(auto, ready, Route.Into(Mode.STREAM, By.SHORTCUT)))
+            assertFalse(StartMode.splashAtStart(auto, ready, null))
         }
         // Local's routes all show today's start screen; the chooser and Streaming do not
         for (by in By.values()) assertTrue(StartMode.showsLocal(Route.Into(Mode.LOCAL, by)))
@@ -108,7 +123,7 @@ class StartModeTest {
     }
 
     @Test fun backToTheChooser() {
-        val local = Route.Into(Mode.LOCAL, By.REMEMBERED)
+        val local = Route.Into(Mode.LOCAL, By.SHORTCUT)
         assertTrue(StartMode.canGoBack(local, gameUp = false, busy = false, restarting = false, loginFormOpen = false))
         assertTrue(StartMode.canGoBack(Route.Into(Mode.STREAM, By.PICKED), false, false, false, false))
         assertFalse(StartMode.canGoBack(local, gameUp = true, busy = false, restarting = false, loginFormOpen = false))
@@ -120,11 +135,9 @@ class StartModeTest {
     }
 
     @Test fun chooserCursor() {
-        // starts on the remembered pick's card (Local when none)
-        assertEquals(Cell(Mode.LOCAL, Row.CARD), StartMode.startCell(null))
-        assertEquals(Cell(Mode.STREAM, Row.CARD), StartMode.startCell("stream"))
+        val a = StartMode.startCell()
+        assertEquals(Cell(Mode.LOCAL, Row.CARD), a)
         // the D-pad: the two cards and their shortcut buttons, no wrap
-        val a = Cell(Mode.LOCAL, Row.CARD)
         assertEquals(Cell(Mode.STREAM, Row.CARD), StartMode.move(a, Dir.RIGHT))
         assertEquals(Cell(Mode.STREAM, Row.CARD), StartMode.move(StartMode.move(a, Dir.RIGHT), Dir.RIGHT))
         assertEquals(a, StartMode.move(a, Dir.LEFT))

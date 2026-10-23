@@ -11,7 +11,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 /**
  * THE START-UP MODE, LIVE (S1 "Chooser"; the rules are [StartMode]'s). The launcher's activity starts it ([start] in onCreate, with the
  * intent's [StartMode.EXTRA]; [onIntent] for a shortcut tapped while the app runs); the launcher's top screen follows [route] (the
- * chooser's top, today's Local start screen, or the Streaming entry); the bottom screen's [ChooserPanel] draws the chooser and presses
+ * chooser's top, today's Local start screen, or the Streaming entry; nothing is stored: the icon always opens the chooser); the bottom screen's [ChooserPanel] draws the chooser and presses
  * [pick] / [addShortcut]; B or the swirl on a mode's start screen calls [back]. Main thread.
  */
 object ModeBridge {
@@ -21,33 +21,22 @@ object ModeBridge {
     @Volatile var route: StartMode.Route? = null
         private set
 
-    private var app: Context? = null
-
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     fun onChange(l: () -> Unit) { listeners.add(l) }
     fun offChange(l: () -> Unit) { listeners.remove(l) }
     private fun changed() { for (l in listeners) runCatching { l() } }
 
-    /** the last mode entered (prefs), or null */
-    fun remembered(ctx: Context): String? =
-        runCatching { ctx.getSharedPreferences(StartMode.PREFS, Context.MODE_PRIVATE).getString(StartMode.KEY_LAST, null) }.getOrNull()
-
-    /** the remembered pick as the chooser's cursor start (null before [start]) */
-    fun rememberedNow(): String? = app?.let { remembered(it) }
-
     /**
-     * The launcher's activity was created ([extra] its intent's dsf.mode, or null). The first start in this process resolves the route
-     * (shortcut -> remembered -> chooser); a recreated activity keeps its mode, and one carrying a shortcut's extra is [onIntent]'s.
+     * The launcher's activity was created ([extra] its intent's dsf.mode, or null; [recreated] = Android rebuilt the same activity, or
+     * our move to the top screen relaunched it): [StartMode.onCreate] decides (the icon = the chooser, a shortcut = its mode).
      */
-    fun start(ctx: Context, extra: String?) {
-        app = ctx.applicationContext
-        if (route != null) { onIntent(ctx, extra); return }
-        go(StartMode.resolve(extra, remembered(ctx)))
+    fun start(ctx: Context, extra: String?, recreated: Boolean = false) {
+        StartMode.onCreate(route, extra, recreated, LauncherHooks.gameUp(), SetupBridge.restarting, SetupBridge.inputs?.busy != null)
+            ?.let { go(it) }
     }
 
     /** a new intent for the running activity (a shortcut tapped with the app open) */
     fun onIntent(ctx: Context, extra: String?) {
-        app = ctx.applicationContext
         val next = StartMode.onShortcut(route, extra, LauncherHooks.gameUp(), SetupBridge.restarting, SetupBridge.inputs?.busy != null)
         if (next == null) { if (StartMode.parse(extra) != null) Log.i(TAG, "shortcut ${extra} ignored (route $route, game up ${LauncherHooks.gameUp()})"); return }
         go(next)
@@ -78,9 +67,6 @@ object ModeBridge {
             SetupBridge.publish(null)
         }
         route = r
-        StartMode.remember(r)?.let { id ->
-            runCatching { app?.getSharedPreferences(StartMode.PREFS, Context.MODE_PRIVATE)?.edit()?.putString(StartMode.KEY_LAST, id)?.apply() }
-        }
         runCatching { StartupTrace.mark("mode: $r") }
         Log.i(TAG, "route $was -> $r")
         changed()
@@ -136,5 +122,5 @@ object ModeBridge {
     }
 
     /** the tests' clean slate */
-    fun reset() { route = null; app = null; keyHandler = null; streamCovers = true; streamNote = ""; listeners.clear() }
+    fun reset() { route = null; keyHandler = null; streamCovers = true; streamNote = ""; listeners.clear() }
 }

@@ -23,7 +23,7 @@ class ChooserPanel(context: Context) : View(context) {
     private enum class Page { NONE, CHOOSER, STREAM }
 
     private var page = Page.NONE
-    private var cell = StartMode.startCell(null)
+    private var cell = StartMode.startCell()
     private var pressed: Any? = null
     /** the last shortcut request's line ("" = none) */
     private var note = ""
@@ -59,8 +59,8 @@ class ChooserPanel(context: Context) : View(context) {
             r is StartMode.Route.Into && r.mode == StartMode.Mode.STREAM && ModeBridge.streamCovers && !LauncherHooks.gameUp() -> Page.STREAM
             else -> Page.NONE
         }
-        // the chooser comes (back): the box starts on the remembered pick's card, no old line
-        if (page == Page.CHOOSER && was != Page.CHOOSER) { cell = StartMode.startCell(ModeBridge.rememberedNow()); note = "" }
+        // the chooser comes (back): the box starts on Local's card, no old line
+        if (page == Page.CHOOSER && was != Page.CHOOSER) { cell = StartMode.startCell(); note = "" }
         visibility = if (page == Page.NONE) GONE else VISIBLE
         contentDescription = when (page) {
             Page.CHOOSER -> "DS Forever: choose Local or Streaming"
