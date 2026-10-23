@@ -75,8 +75,11 @@ namespace DsfDesktop.Wow
             // the game exe ITSELF first (the user's test 2026-10-23: Battle.net's --exec="launch_uid <uid>" only SELECTS the game in its
             // window, "Selecting game by uid ... prioritizeUpdate", and never presses Play); WoW started directly opens its own login
             var exe = GameExe(inst.FlavorDir(flavor));
+            // with Battle.net running the game signs in through it, as Battle.net's own Play does: -launcherlogin -uid <product>
+            // (the user's test 2026-10-23: the beta logged in by itself; no credentials ever pass through us); without Battle.net, plain
             if (exe != null)
-                return new LaunchPlan { Flavor = flavor, Product = product, Exe = exe, Args = "", WorkDir = inst.FlavorDir(flavor) };
+                return new LaunchPlan { Flavor = flavor, Product = product, Exe = exe,
+                    Args = battleNet != null && product != null ? "-launcherlogin -uid " + product : "", WorkDir = inst.FlavorDir(flavor) };
             if (battleNet != null && product != null)
                 return new LaunchPlan { Flavor = flavor, Product = product, Exe = battleNet, Args = "--exec=\"launch_uid " + product + "\"", WorkDir = Path.GetDirectoryName(battleNet), ViaBattleNet = true };
             return null;
