@@ -73,6 +73,7 @@ class InteractView(context: Context) : View(context) {
     private var kind = Kind.NONE
     private var sig = ""
     private var dismissedSig: String? = null
+    private var dismissedAt = 0L                        // when close() hid this window (the game's own may refuse to close)
 
     private var tab = Tab.BUY
     private var selected: String? = null        // a command: the selected vendor row or reward
@@ -593,6 +594,13 @@ class InteractView(context: Context) : View(context) {
         // the user, 2026-10-07: "I dont like when the context menu stays open after making a selection": an action that got no
         // document at all for PENDING_FOLD_MS (the top screen is loading) folds the window away; the next document brings it back
         val silent = pendingCmd != null && now0 - pendingAt > PENDING_FOLD_MS && lastDocAt < pendingAt
+        // NEVER A HIDDEN WINDOW HOLDING THE CONTROLLER (the user, 10-22: "I've soft locked myself inside of the AH twice"): B hid
+        // ours, but the game's window (dimmed on the top screen, holding the controller) is still open DISMISS_BACK_MS later: ours
+        // comes back so the player can see it and close it again
+        if (dismissedSig != null && dismissedSig == sig && kind != Kind.NONE && now0 - dismissedAt > DISMISS_BACK_MS && lastDocAt > dismissedAt) {
+            dismissedSig = null
+            note("The game kept this window open: B closes it", false)
+        }
         val want = (kind != Kind.NONE && sig != dismissedSig && ageMs() < STALE_MS && !silent) || lootClosing() || landing != null
         val v = if (want) VISIBLE else GONE
         if (visibility != v) visibility = v
@@ -908,6 +916,7 @@ class InteractView(context: Context) : View(context) {
             lastTapAt = System.currentTimeMillis()
         }
         dismissedSig = sig
+        dismissedAt = System.currentTimeMillis()
         pendingCmd = null
         refresh()
     }
@@ -4713,6 +4722,7 @@ class InteractView(context: Context) : View(context) {
         const val LINE_H = 111f           // a line of a gossip page: 48 dp, the touch floor
         const val VROW = 132f             // a vendor row and the gap under it
 
+        const val DISMISS_BACK_MS = 2_500L
         const val STALE_MS = 40_000L      // the addon re-sends every 15 s; two missed = the game is gone
         const val TRUST_TRIES = 3             // taps of the trust cell per load of the addon
         const val TRUST_GAP_MS = 6_000L       // and the least time between two of them
