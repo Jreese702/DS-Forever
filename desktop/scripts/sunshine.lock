@@ -1,0 +1,5 @@
+# The Sunshine release DS Forever Desktop bundles (LizardByte/Sunshine, GPL-3.0). fetch_sunshine.ps1 reads this file.
+# Change all three lines together, then run the tests with --sunshine against the new build before shipping it.
+version=v2026.914.233613
+asset=Sunshine-Windows-AMD64-lite.zip
+sha256=233008e46f4c0e501a586cbfd6c4fd4a4c0d414a0b5fc7f13c070eb92ec3824b

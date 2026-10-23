@@ -1,0 +1,46 @@
+# DS Forever Desktop: Third-Party Notices
+
+DS Forever Desktop is part of DS Forever and is licensed under the GNU General Public License v3.0 or later (see LICENSE.txt,
+the same licence as DS Forever). Its own code uses only the .NET Framework 4.8 that ships with Windows; it bundles no NuGet
+packages.
+
+This file lists what the Desktop download carries that DS Forever did not write.
+
+---
+
+## Sunshine (bundled, unmodified)
+
+- Project: Sunshine, a self-hosted game-stream host for Moonlight, by LizardByte
+- Upstream: https://github.com/LizardByte/Sunshine
+- Version: v2026.914.233613 (pinned in scripts/sunshine.lock)
+- File: Sunshine-Windows-AMD64-lite.zip, SHA-256 233008e46f4c0e501a586cbfd6c4fd4a4c0d414a0b5fc7f13c070eb92ec3824b,
+  from https://github.com/LizardByte/Sunshine/releases/tag/v2026.914.233613
+- Licence: GNU General Public License v3.0 (GPL-3.0), compatible with DS Forever's GPL-3.0-or-later.
+- Where: the `sunshine\` folder next to DsForeverDesktop.exe. DS Forever Desktop runs it as a separate program with its own
+  configuration file; Sunshine's code is not changed or linked into DS Forever Desktop.
+
+Corresponding source: the Sunshine source for exactly this version is the tag `v2026.914.233613` of
+https://github.com/LizardByte/Sunshine (archive: https://github.com/LizardByte/Sunshine/archive/refs/tags/v2026.914.233613.zip).
+A release of DS Forever Desktop ships that archive next to the binaries (scripts/build_release.ps1 -WithSource); on request we
+provide it, for at least three years from the release, in the same way the rest of DS Forever's corresponding source is offered.
+
+Sunshine's Windows build itself includes third-party components (among them FFmpeg, Boost, OpenSSL, Qt, miniupnpc, ViGEmClient,
+nlohmann/json and others) under their own licences (LGPL, BSL-1.0, Apache-2.0, MIT, BSD and others). Their notices and sources
+are part of Sunshine's source tree at the tag above (its `third-party` folder and licence files). Where a component is under a
+copyleft licence, its terms apply regardless of whether it is named here.
+
+## Not bundled, needed for the controller
+
+- ViGEmBus (Nefarius Software Solutions, BSD-3-Clause), the virtual gamepad driver Sunshine uses for the Thor's controller. It is
+  a Windows kernel driver, so DS Forever Desktop does not install it; the user installs it from
+  https://github.com/nefarius/ViGEmBus/releases if it is not already there.
+
+## The DS Forever add-on set
+
+- The add-ons in `companion\addons\` (with `companion\manifest.txt`) are DS Forever's own, the same set the Android app ships, under
+  DS Forever's licence. They contain no Blizzard game files or art.
+
+## World of Warcraft
+
+- DS Forever Desktop ships no Blizzard files. It reads the game's own log (Logs/General.log) and Config.wtf on the user's PC, and
+  writes only DS Forever's add-on folders under Interface/AddOns.

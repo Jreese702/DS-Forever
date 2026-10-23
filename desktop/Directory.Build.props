@@ -1,0 +1,19 @@
+<Project>
+  <!-- DS Forever Desktop. GPL-3.0-or-later, the same licence as DS Forever (see ../LICENSE). -->
+  <PropertyGroup>
+    <!-- .NET Framework 4.8 ships inside Windows 10 (1903+) and 11, so the app needs no runtime of its own: the exe stays tiny and the
+         installer is our ~1 MB plus the bundled Sunshine. Built with any .NET SDK (6+) or MSBuild that has the 4.8 targeting pack. -->
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>10</LangVersion>
+    <Nullable>disable</Nullable>
+    <Version>0.1.0</Version>
+    <Product>DS Forever Desktop</Product>
+    <Company>DS Forever</Company>
+    <Copyright>DS Forever contributors, GPL-3.0-or-later</Copyright>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+</Project>
