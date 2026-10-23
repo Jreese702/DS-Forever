@@ -32,12 +32,12 @@ namespace DsfDesktop.Tests
                 var inst = Install(t);
                 var bnet = @"C:\Program Files (x86)\Battle.net\Battle.net.exe";
                 var before = WowLaunch.Plan(inst, new DateTime(2026, 11, 3), bnet);
-                A.True(before.ViaBattleNet);
+                A.False(before.ViaBattleNet, "the game exe itself, not Battle.net's select-only launch_uid");
                 A.Eq("_classic_beta_", before.Flavor, "the beta until launch day");
-                A.Eq("--exec=\"launch_uid wow_classic_beta\"", before.Args);
+                A.Eq(Path.Combine(inst.Root, "_classic_beta_", "WowB.exe"), before.Exe);
                 var after = WowLaunch.Plan(inst, new DateTime(2026, 11, 4), bnet);
                 A.Eq("_forever_", after.Flavor, "wowf from launch day");
-                A.Eq("--exec=\"launch_uid wowf\"", after.Args);
+                A.Eq(Path.Combine(inst.Root, "_forever_", "Wow.exe"), after.Exe);
             }
         }
 

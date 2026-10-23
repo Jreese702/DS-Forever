@@ -72,11 +72,14 @@ namespace DsfDesktop.Wow
             if (flavor == null) return null;
             var product = BuildInfo.Read(inst.Root).Where(r => WowFlavors.FolderForProduct(r.Product) == flavor).Select(r => r.Product).FirstOrDefault()
                           ?? DefaultProduct(flavor);
+            // the game exe ITSELF first (the user's test 2026-10-23: Battle.net's --exec="launch_uid <uid>" only SELECTS the game in its
+            // window, "Selecting game by uid ... prioritizeUpdate", and never presses Play); WoW started directly opens its own login
+            var exe = GameExe(inst.FlavorDir(flavor));
+            if (exe != null)
+                return new LaunchPlan { Flavor = flavor, Product = product, Exe = exe, Args = "", WorkDir = inst.FlavorDir(flavor) };
             if (battleNet != null && product != null)
                 return new LaunchPlan { Flavor = flavor, Product = product, Exe = battleNet, Args = "--exec=\"launch_uid " + product + "\"", WorkDir = Path.GetDirectoryName(battleNet), ViaBattleNet = true };
-            var exe = GameExe(inst.FlavorDir(flavor));
-            if (exe == null) return null;
-            return new LaunchPlan { Flavor = flavor, Product = product, Exe = exe, Args = "", WorkDir = inst.FlavorDir(flavor) };
+            return null;
         }
     }
 
