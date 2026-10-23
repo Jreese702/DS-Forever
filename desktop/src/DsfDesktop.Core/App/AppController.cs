@@ -266,7 +266,7 @@ namespace DsfDesktop.App
             if (port < 0) { Log.I("sunshine: no free port set"); return; }
             if (port != Settings.SunshinePort) { Settings.SunshinePort = port; SaveSettings(); }
             SunshinePort = port;
-            SunshineConfig.Write(SunshineLayout, new SunshineOptions { Port = port, Encoder = Settings.Encoder, EventExe = Paths.Exe, HostName = Environment.MachineName, BindAddress = Loopback ? "127.0.0.1" : "" });
+            SunshineConfig.Write(SunshineLayout, new SunshineOptions { Port = port, Encoder = Settings.Encoder, EventExe = "", HostName = Environment.MachineName, BindAddress = Loopback ? "127.0.0.1" : "" });
             if (!File.Exists(SunshineLayout.Credentials) && !Sunshine.SetCredentials(Settings.SunshineUser, Pass))
                 Log.I("sunshine: setting its login failed");
             api = new SunshineApi(port, Settings.SunshineUser, Pass, SunshineLayout.Cert);
