@@ -101,6 +101,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private lateinit var loginPrompt: HomeLoginPrompt
     /** the launcher's setup on the bottom screen (Track C): Play + one pop-up at a time ([SetupBridge]) */
     private lateinit var setupPanel: SetupPanel
+    /** the start-up chooser (Local / Streaming, S1 of the streaming phase) and Streaming's placeholder page: over the setup */
+    private lateinit var chooserPanel: ChooserPanel
     private lateinit var loginWatch: HomeLoginWatch
     private var lineBeforeLogin: String? = null
     private var loginPadHeld = 0
@@ -662,6 +664,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         setupPanel = SetupPanel(this)
+        chooserPanel = ChooserPanel(this)
         SetupBridge.openReport = { ui.post { if (!shell.hostGone()) openReport() } }
         SetupBridge.openSavedReport = { ui.post { if (!shell.hostGone()) openSavedReport() } }
         SetupBridge.reportKey = { code, down ->
@@ -884,6 +887,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             // the launcher's setup (Track C): over the start screen before Play, its sign-in pop-ups over the rooms in the game
             addView(setupPanel, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            // the start-up chooser (Local / Streaming): over the setup; only before a mode is entered (or Streaming's page)
+            addView(chooserPanel, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             // our own Battle.net sign-in's prompt (LATER 29): over the start screen, whose gear / first button opens it
             addView(loginPrompt, FrameLayout.LayoutParams(
