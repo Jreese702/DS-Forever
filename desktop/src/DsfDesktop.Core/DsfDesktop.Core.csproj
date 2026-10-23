@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>DsfDesktop</RootNamespace>
+    <AssemblyName>DsfDesktop.Core</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Security" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Bridge\testpage.html" LogicalName="DsfDesktop.testpage.html" />
+  </ItemGroup>
+</Project>

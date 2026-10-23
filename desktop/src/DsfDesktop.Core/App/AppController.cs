@@ -1,0 +1,459 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using DsfDesktop.Bridge;
+using DsfDesktop.GameLog;
+using DsfDesktop.Pairing;
+using DsfDesktop.Sunshine;
+using DsfDesktop.Wow;
+
+namespace DsfDesktop.App
+{
+    public enum StreamState { Unknown, Idle, Streaming }
+
+    /// <summary>
+    /// Everything Desktop does, without UI: the WoW folder and the log it follows, the bridge and its mDNS name, the bundled Sunshine
+    /// (config, login, process, pairing), the add-ons, and "Focus WoW" when a stream starts. The window and tray only read this.
+    /// </summary>
+    public sealed class AppController : IBridgeHost, IDisposable
+    {
+        public readonly AppPaths Paths;
+        public readonly AppSettings Settings;
+        public PairingCodes Codes { get; } = new PairingCodes();
+        public DeviceStore Devices { get; }
+        public BridgeServer Bridge { get; private set; }
+        public SunshineHost Sunshine { get; private set; }
+        public SunshineLayout SunshineLayout { get; }
+        public int SunshinePort { get; private set; } = -1;
+
+        public WowInstall Wow { get; private set; }
+        public string Flavor { get; private set; }
+        public string LogPath => tailer?.Path;
+        public string LogStatus { get; private set; } = "starting";
+        public long DocsSeen;
+        public DateTime? LastDocAt { get; private set; }
+        public int Gaps => tailer?.Gaps ?? 0;
+        public StreamState Stream { get; private set; } = StreamState.Unknown;
+        public string AddonLine { get; private set; } = "";
+        public AddonStatus Addons { get; private set; }
+        public List<string> Notices { get; private set; } = new List<string>();
+        public string BridgeStatus { get; private set; } = "starting";
+
+        public event Action Changed;
+
+        /// <summary>DSF_LOOPBACK=1: everything on 127.0.0.1 and no mDNS (a dev run that opens nothing on the LAN, so no firewall prompt)</summary>
+        public static bool Loopback => Environment.GetEnvironmentVariable("DSF_LOOPBACK") == "1";
+
+        LogTailer tailer;
+        MdnsResponder mdns;
+        SunshineApi api;
+        Thread pollThread;
+        Timer slowTimer;
+        volatile bool running;
+        DateTime followAt = DateTime.MinValue;
+        readonly object gate = new object();
+
+        public AppController(AppPaths paths)
+        {
+            Paths = paths;
+            Directory.CreateDirectory(paths.DataDir);
+            Log.Init(paths.LogFile);
+            Settings = AppSettings.Load(paths.Settings);
+            // the desktop id: 32 lowercase hex, made once (protocol: TXT "id", welcome "desktop")
+            if (string.IsNullOrEmpty(Settings.HostId) || Settings.HostId.Length != 32) Settings.HostId = Guid.NewGuid().ToString("N");
+            if (string.IsNullOrEmpty(Settings.SunshineUser)) Settings.SunshineUser = "dsforever";
+            if (string.IsNullOrEmpty(Settings.SunshinePass) || Crypto.Unprotect(Settings.SunshinePass) == null)
+                Settings.SunshinePass = Crypto.Protect(Crypto.Base64Url(Crypto.RandomBytes(18)).Replace("-", "a").Replace("_", "b"));
+            SaveSettings();
+            Devices = new DeviceStore(paths.Devices);
+            SunshineLayout = new SunshineLayout { ExeDir = paths.SunshineExeDir, DataDir = paths.SunshineData };
+            Codes.Changed += Fire;
+            Devices.Changed += Fire;
+        }
+
+        public void SaveSettings() { try { Settings.Save(Paths.Settings); } catch (Exception e) { Log.I("settings not saved: " + e.Message); } }
+
+        void Fire() { try { Changed?.Invoke(); } catch (Exception) { } }
+
+        string Pass => Crypto.Unprotect(Settings.SunshinePass);
+
+        // ---------------------------------------------------------------- start / stop
+
+        public void Start()
+        {
+            running = true;
+            Log.I("DS Forever Desktop starting; data " + Paths.DataDir);
+            LocateWow();
+            StartBridge();
+            StartSunshine();
+            StartMdns();
+            pollThread = new Thread(PollLoop) { IsBackground = true, Name = "log-poll" };
+            pollThread.Start();
+            slowTimer = new Timer(_ => SlowTick(), null, 1000, 1000);
+            if (Settings.AutoAddons) Task.Run(() => AddonsAuto());
+            Fire();
+        }
+
+        public void Dispose()
+        {
+            running = false;
+            slowTimer?.Dispose();
+            try { mdns?.Dispose(); } catch (Exception) { }
+            try { Bridge?.Stop(); } catch (Exception) { }
+            try { Sunshine?.Dispose(); } catch (Exception) { }
+            api?.Dispose();
+            Log.I("stopped");
+        }
+
+        // ---------------------------------------------------------------- WoW + the log
+
+        public void LocateWow()
+        {
+            var inst = WowLocator.Find(Settings.WowRoot, DateTime.Now);
+            lock (gate)
+            {
+                Wow = inst;
+                Flavor = WowLocator.ChooseFlavor(inst, DateTime.Now);
+                var path = inst != null && Flavor != null ? inst.LogPath(Flavor) : null;
+                if (tailer == null) tailer = new LogTailer(path);
+                else tailer.SetPath(path);
+                Notices = inst != null && Flavor != null ? ConfigCheck.Notices(inst.FlavorDir(Flavor)) : new List<string>();
+            }
+            Log.I(inst == null ? "WoW Forever not found" : "WoW at " + inst.Root + " (" + string.Join(", ", inst.Flavors) + "), following " + Flavor);
+            RefreshAddons();
+            Fire();
+        }
+
+        /// <summary>the user picked a folder (asked once when none was found); false when it isn't a WoW Forever install</summary>
+        public bool SetWowFolder(string chosen)
+        {
+            var root = WowLocator.NormalizeRoot(chosen);
+            if (root == null || WowLocator.Describe(root, DateTime.Now) == null) return false;
+            Settings.WowRoot = root;
+            SaveSettings();
+            LocateWow();
+            if (Settings.AutoAddons) Task.Run(() => AddonsAuto());
+            return true;
+        }
+
+        void PollLoop()
+        {
+            while (running)
+            {
+                try
+                {
+                    if (DateTime.UtcNow - followAt > TimeSpan.FromSeconds(3)) { followAt = DateTime.UtcNow; Follow(); }
+                    List<LogEvent> evs;
+                    lock (gate) evs = tailer?.Poll() ?? new List<LogEvent>();
+                    bool changed = false;
+                    foreach (var e in evs)
+                    {
+                        switch (e.Kind)
+                        {
+                            case LogEventKind.Doc:
+                                Interlocked.Increment(ref DocsSeen);
+                                LastDocAt = DateTime.Now;
+                                Bridge?.PublishDoc(e);
+                                break;
+                            case LogEventKind.Gap:
+                                Bridge?.Publish(new Dictionary<string, object> { ["t"] = "gap", ["seq"] = e.Seq, ["expected"] = e.Expected });
+                                Log.I(e.Text);
+                                changed = true;
+                                break;
+                            case LogEventKind.Restart:
+                                Bridge?.PublishLog("restart", LogPath, Flavor);
+                                LogStatus = e.Text; Log.I(e.Text); changed = true;
+                                break;
+                            case LogEventKind.Status:
+                                Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = e.Text });
+                                LogStatus = e.Text; changed = true;
+                                break;
+                        }
+                    }
+                    if (changed) Fire();
+                }
+                catch (Exception e) { LogStatus = "tail error: " + e.Message; }
+                Thread.Sleep(50);
+            }
+        }
+
+        /// <summary>LogFollow: switch to the other flavor's log when that one is the one being written</summary>
+        void Follow()
+        {
+            var inst = Wow;
+            if (inst == null) return;
+            var f = WowLocator.ChooseFlavor(inst, DateTime.Now);
+            if (f == null || f == Flavor) return;
+            lock (gate)
+            {
+                Flavor = f;
+                tailer.SetPath(inst.LogPath(f));
+                Notices = ConfigCheck.Notices(inst.FlavorDir(f));
+            }
+            Log.I("following the game's log: " + f);
+            Bridge?.PublishLog("switch", LogPath, Flavor);
+            RefreshAddons();
+            Fire();
+        }
+
+        // ---------------------------------------------------------------- add-ons
+
+        AddonManifest Manifest()
+        {
+            var f = Path.Combine(Paths.AddonSource ?? "", "manifest.txt");
+            return File.Exists(f) ? AddonManifest.Parse(File.ReadAllText(f)) : null;
+        }
+
+        public void RefreshAddons()
+        {
+            var m = Manifest();
+            if (m == null) { AddonLine = "the add-on set isn't bundled (" + Paths.AddonSource + ")"; Addons = null; return; }
+            Addons = AddonInstaller.Compare(m, Wow != null && Flavor != null ? Wow.AddOnsDir(Flavor) : null);
+            AddonLine = Addons.ToString();
+        }
+
+        /// <summary>install into every WoW Forever flavor present (both folders exist around the launch)</summary>
+        string InstallAll(bool force)
+        {
+            var m = Manifest();
+            if (m == null) return "the add-on set isn't bundled";
+            if (Wow == null) return "game folder not found";
+            var lines = Wow.Flavors.Select(f => f + ": " + AddonInstaller.Install(m, Path.Combine(Paths.AddonSource, "addons"), Wow.AddOnsDir(f), Paths.Backups, force)).ToList();
+            var line = string.Join("; ", lines);
+            Log.I(line);
+            RefreshAddons();
+            Fire();
+            return line;
+        }
+
+        void AddonsAuto() { try { InstallAll(false); } catch (Exception e) { Log.I("add-ons: " + e.Message); } }
+
+        public string InstallAddons() => InstallAll(true);
+
+        public Dictionary<string, object> AddonsStatus()
+        {
+            RefreshAddons();
+            var s = Addons;
+            return new Dictionary<string, object>
+            {
+                ["state"] = s == null ? "not_bundled" : s.State.ToString().ToLowerInvariant(),
+                ["app_set"] = s?.AppSet, ["game_set"] = s?.GameSet, ["differ"] = s?.Differ ?? 0, ["text"] = AddonLine,
+            };
+        }
+
+        public Dictionary<string, object> AddonsInstall()
+        {
+            var line = InstallAll(true);
+            var d = AddonsStatus();
+            d["result"] = line;
+            return d;
+        }
+
+        // ---------------------------------------------------------------- Sunshine
+
+        void StartSunshine()
+        {
+            Sunshine = new SunshineHost(SunshineLayout);
+            Sunshine.Status += _ => Fire();
+            if (!Sunshine.Available) { Log.I("sunshine not bundled at " + SunshineLayout.Exe); return; }
+            int port = PortPlanner.Pick(Settings.SunshinePort, PortPlanner.TcpFree, PortPlanner.UdpFree);
+            if (port < 0) { Log.I("sunshine: no free port set"); return; }
+            if (port != Settings.SunshinePort) { Settings.SunshinePort = port; SaveSettings(); }
+            SunshinePort = port;
+            SunshineConfig.Write(SunshineLayout, new SunshineOptions { Port = port, Encoder = Settings.Encoder, EventExe = Paths.Exe, HostName = Environment.MachineName, BindAddress = Loopback ? "127.0.0.1" : "" });
+            if (!File.Exists(SunshineLayout.Credentials) && !Sunshine.SetCredentials(Settings.SunshineUser, Pass))
+                Log.I("sunshine: setting its login failed");
+            api = new SunshineApi(port, Settings.SunshineUser, Pass, SunshineLayout.Cert);
+            Sunshine.Start();
+        }
+
+        public void RestartSunshine()
+        {
+            Sunshine?.Stop();
+            Sunshine?.Start();
+        }
+
+        public void StreamPair(string deviceId, string name, string pin, string peerIp, Action<string> done)
+        {
+            Task.Run(async () =>
+            {
+                string err;
+                try
+                {
+                    if (api == null || Sunshine == null || !Sunshine.Running) err = "the streaming host isn't running";
+                    else err = await api.CompletePairing(pin, SunshineClientName(deviceId, name), peerIp, TimeSpan.FromSeconds(Bridge?.StreamPairSeconds ?? 90), CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception e) { err = e.Message; }
+                Log.I("stream pairing for " + name + ": " + (err ?? "done"));
+                done(err);
+            });
+        }
+
+        static readonly HttpClient Local = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+
+        /// <summary>Sunshine's uniqueid (its serverinfo / _nvstream advert): TXT "sid", so the Thor ties the two adverts together</summary>
+        public string SunshineId { get; private set; }
+        int tickN;
+        DateTime lastEventAt = DateTime.MinValue;
+
+        /// <summary>every second: the window refresh; every 2 s Sunshine's own state (BUSY = streaming) and its uniqueid</summary>
+        void SlowTick()
+        {
+            try
+            {
+                if (tickN++ % 2 == 0)
+                {
+                    if (SunshinePort > 0 && Sunshine != null && Sunshine.Running)
+                    {
+                        var xml = Local.GetStringAsync("http://127.0.0.1:" + SunshinePort + "/serverinfo?uniqueid=0123456789ABCDEF").Result;
+                        var st = Regex.Match(xml, "<state>([^<]*)</state>").Groups[1].Value;
+                        var id = Regex.Match(xml, "<uniqueid>([^<]*)</uniqueid>").Groups[1].Value;
+                        if (id.Length > 0) SunshineId = id;
+                        // Sunshine's prep commands (OnEvent) land a moment before its serverinfo changes: they win for a few seconds
+                        if (DateTime.UtcNow - lastEventAt > TimeSpan.FromSeconds(10))
+                            SetStream(st.IndexOf("BUSY", StringComparison.OrdinalIgnoreCase) >= 0 ? StreamState.Streaming : StreamState.Idle);
+                    }
+                    else SetStream(StreamState.Unknown);
+                }
+            }
+            catch (Exception) { }
+            Fire();
+        }
+
+        string StreamWord => Stream == StreamState.Streaming ? "started" : Stream == StreamState.Idle ? "stopped" : "unknown";
+
+        void SetStream(StreamState s)
+        {
+            if (s == Stream) return;
+            var was = Stream;
+            Stream = s;
+            Log.I("stream: " + s);
+            Bridge?.Publish(new Dictionary<string, object> { ["t"] = "stream", ["state"] = StreamWord });
+            if (s == StreamState.Streaming && was != StreamState.Streaming && Settings.FocusOnStream) Task.Run(() => FocusWow());
+        }
+
+        /// <summary>from Sunshine's prep commands (--event stream-start / stream-stop, through the single-instance pipe)</summary>
+        public void OnEvent(string evt)
+        {
+            Log.I("event: " + evt);
+            lastEventAt = DateTime.UtcNow;
+            if (evt == "stream-start") SetStream(StreamState.Streaming);
+            else if (evt == "stream-stop") SetStream(StreamState.Idle);
+            Fire();
+        }
+
+        public string FocusWow()
+        {
+            var why = WowWindow.Focus(Wow != null && Flavor != null ? Wow.FlavorDir(Flavor) : null);
+            Log.I("focus WoW: " + (why ?? "done"));
+            return why;
+        }
+
+        public Dictionary<string, object> Focus()
+        {
+            var why = FocusWow();
+            var d = new Dictionary<string, object> { ["ok"] = why == null };
+            if (why != null) d["why"] = why;
+            return d;
+        }
+
+        // ---------------------------------------------------------------- bridge + mDNS
+
+        System.Security.Cryptography.X509Certificates.X509Certificate2 cert;
+
+        void StartBridge()
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                try
+                {
+                    cert = cert ?? BridgeCert.LoadOrCreate(Paths.DataDir, Settings.HostId);
+                    Bridge = new BridgeServer(this, cert, Settings.BridgePort + i, Loopback ? IPAddress.Loopback : IPAddress.Any);
+                    Bridge.SessionsChanged += Fire;
+                    Bridge.Start();
+                    BridgeStatus = "listening on port " + Bridge.Port;
+                    return;
+                }
+                catch (Exception e) { Log.I("bridge port " + (Settings.BridgePort + i) + ": " + e.Message); Bridge = null; }
+            }
+            BridgeStatus = "couldn't open a port";
+        }
+
+        void StartMdns()
+        {
+            if (Bridge == null || Loopback) return;
+            try
+            {
+                mdns = new MdnsResponder(Environment.MachineName, (ushort)Bridge.Port, () =>
+                {
+                    var txt = new Dictionary<string, string>
+                    {
+                        ["proto"] = BridgeServer.Proto.ToString(),
+                        ["id"] = Settings.HostId,
+                        ["pc"] = Environment.MachineName,
+                        ["sunshine"] = SunshinePort.ToString(),
+                        ["ver"] = Version,
+                    };
+                    if (Bridge.Tls) { txt["tls"] = "1"; txt["fp"] = Bridge.Fingerprint; }
+                    if (SunshineId != null) txt["sid"] = SunshineId;
+                    return txt;
+                });
+                mdns.Start();
+            }
+            catch (Exception e) { Log.I("mdns: " + e.Message); }
+        }
+
+        public static string Version => typeof(AppController).Assembly.GetName().Version.ToString(3);
+
+        /// <summary>/v1/info and the welcome: no secrets</summary>
+        public Dictionary<string, object> Info() => new Dictionary<string, object>
+        {
+            ["app"] = "DS Forever Desktop",
+            ["version"] = Version,
+            ["host_id"] = Settings.HostId,
+            ["pc_name"] = Environment.MachineName,
+            ["sunshine"] = new Dictionary<string, object>
+            {
+                ["running"] = Sunshine?.Running ?? false,
+                ["http_port"] = SunshinePort,
+                ["https_port"] = SunshinePort > 0 ? SunshinePort - 5 : -1,
+                ["app_name"] = "WoW Forever",
+                ["uniqueid"] = SunshineId,
+            },
+            ["stream"] = StreamWord,
+            ["wow"] = new Dictionary<string, object> { ["found"] = Wow != null, ["flavor"] = Flavor, ["running"] = WowWindow.IsRunning(), ["focused"] = WowWindow.IsForeground() },
+            ["pairing_open"] = !Codes.Locked,
+        };
+
+        /// <summary>the name the device's Moonlight pairing gets inside Sunshine, unique per device so Remove can unpair it there too</summary>
+        public static string SunshineClientName(string id, string name)
+            => DeviceStore.Clean(name, 40) + " (" + new string((id ?? "").Where(char.IsLetterOrDigit).Take(8).ToArray()) + ")";
+
+        public void RemoveDevice(string id)
+        {
+            var dev = Devices.All().FirstOrDefault(d => d.Id == id);
+            if (dev != null && api != null)
+            {
+                var want = SunshineClientName(dev.Id, dev.Name);
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        foreach (var c in await api.Clients(CancellationToken.None).ConfigureAwait(false))
+                            if (c.Str("name") == want && c.Str("uuid") != null) await api.Unpair(c.Str("uuid"), CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception e) { Log.I("sunshine unpair: " + e.Message); }
+                });
+            }
+            Devices.Remove(id);
+            foreach (var s in Bridge?.Sessions() ?? new List<BridgeSession>())
+                if (s.DeviceId == id) { s.Enqueue(new Dictionary<string, object> { ["t"] = "unpaired" }); Thread.Sleep(100); s.Ws.Close(4401); }
+        }
+    }
+}

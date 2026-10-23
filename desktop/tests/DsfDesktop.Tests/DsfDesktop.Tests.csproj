@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A console test runner (no NuGet test framework: the build stays offline). Exit code = number of failures. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DsfDesktop.Tests</RootNamespace>
+    <AssemblyName>DsfDesktop.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DsfDesktop.Core\DsfDesktop.Core.csproj" />
+  </ItemGroup>
+</Project>
