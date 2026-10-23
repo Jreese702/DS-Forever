@@ -267,7 +267,7 @@ object InputSink {
     }
 
     private fun refuse(line: String): RootShell.Result {
-        android.util.Log.w("InputSink", "not sent (the launcher takes taps and keys only): $line")
+        try { android.util.Log.w("InputSink", "not sent (the launcher takes taps and keys only): $line") } catch (_: Throwable) {}
         return RootShell.Result(1, listOf("unsupported: $line"))
     }
 }

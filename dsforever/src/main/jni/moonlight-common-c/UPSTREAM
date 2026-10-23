@@ -1,0 +1,4 @@
+moonlight-common-c https://github.com/moonlight-stream/moonlight-common-c 874ac9548f1bd6f095ef2b435c42cdde460e7821 (GPL-3.0)
+enet               https://github.com/cgutman/enet                       aca87840b57f045a1f7f9299e4b1b9b8e2a5e2f1 (MIT)
+nanors             https://github.com/sleepybishop/nanors                b1e3c22ca0cdc0bb83e3cd6ed1a2fc77869ed99a (MIT)
+Copied unmodified by tools/stream/vendor_moonlight.sh (only the files the Android build needs).

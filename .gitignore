@@ -108,3 +108,7 @@ tools/safepath-harness/robo/build/
 tools/safepath-harness/robo/.gradle/
 __pycache__/
 *.pyc
+
+# Streaming mode (S2): moonlight-android's prebuilt OpenSSL / Opus, copied by tools/stream/vendor_moonlight.sh
+dsforever/src/main/jni/prebuilt/
+dsforever/.cxx/

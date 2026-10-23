@@ -21,6 +21,9 @@ import com.jrees.wowcompanion.CompanionHost
 import com.jrees.wowcompanion.HostShell
 import com.jrees.wowcompanion.InputSink
 import com.jrees.wowcompanion.LauncherHooks
+import com.jrees.wowcompanion.PlayMode
+import com.jrees.wowcompanion.TapSink
+import com.jrees.wowcompanion.TapSinks
 import com.jrees.wowcompanion.RootPolicy
 
 /**
@@ -82,12 +85,28 @@ class DsForeverScreen(private val context: Context) {
 
     /** the game screen is up: its X server becomes DS Forever's input, the traffic measurement runs */
     fun attachGame(sink: InputSink.Sink) {
-        input = sink; InputSink.sink = sink
+        input = sink
+        // Local: the container's X server behind ContainerKeys (TapSinks; every call passes straight through, as before)
+        val route = TapSinks.wire(PlayMode.LOCAL, sink, null)
         gameOn = true
         LauncherHooks.gameStartSec = System.currentTimeMillis() / 1000
         lastRx = -1L; note("game screen up"); main.removeCallbacks(traffic); main.post(traffic)
         com.jrees.wowcompanion.GameLife.started()             // issue #12: the game's life in DS Forever's own log
-        Log.i(TAG, "game attached")
+        Log.i(TAG, "game attached (input: $route)")
+    }
+
+    /**
+     * STREAMING (S2): the stream to the PC is up: its keyboard + mouse channel (StreamKeys) becomes DS Forever's input. No traffic
+     * measurement (that is the sign-in detector for the LOCAL game; here the bytes are the video stream's) and no native sign-in
+     * (the player signs in on the PC).
+     */
+    fun attachStream(sink: TapSink) {
+        input = sink
+        val route = TapSinks.wire(PlayMode.STREAM, null, sink)
+        gameOn = true
+        LauncherHooks.gameStartSec = System.currentTimeMillis() / 1000
+        note("stream up")
+        Log.i(TAG, "stream attached (input: $route)")
     }
 
     /** the game screen went: no input until the next one */
@@ -98,6 +117,15 @@ class DsForeverScreen(private val context: Context) {
         main.removeCallbacks(traffic)
         note("game screen gone")
         Log.i(TAG, "game detached")
+    }
+
+    /** back from Streaming: the launcher's hooks and (a local game's) input are this screen's again; [show] comes with its resume */
+    private fun reclaim() {
+        LauncherHooks.pkg = context.packageName
+        LauncherHooks.gameUp = { gameOn }
+        LauncherHooks.inFront = { (context as? Activity)?.hasWindowFocus() == true }
+        RootPolicy.allowed = false
+        TapSinks.wire(PlayMode.LOCAL, if (gameOn) input else null, null)
     }
 
     /** the launcher came back to the front: the bottom screen is DS Forever's again */
@@ -166,6 +194,31 @@ class DsForeverScreen(private val context: Context) {
         @Volatile var current: DsForeverScreen? = null; private set
         fun begin(activity: Activity) { if (current == null) current = DsForeverScreen(activity).also { it.start() } }
         fun end(activity: Activity) { current?.takeIf { it.context === activity }?.stop(); if (current?.context === activity) current = null }
+
+        /** the launcher's own DS Forever while Streaming's activity has the screens (restored by [endStream]) */
+        @Volatile private var beforeStream: DsForeverScreen? = null
+
+        /**
+         * STREAMING (S2): Streaming's activity on the top screen takes the bottom screen over. The launcher's DS Forever (if any) is
+         * hidden, not stopped (its activity is paused under ours; a local game, if one ran, keeps its state), and comes back at
+         * [endStream].
+         */
+        fun beginStream(activity: Activity) {
+            val prev = current
+            if (prev?.context === activity) return
+            prev?.hide()
+            beforeStream = prev
+            current = DsForeverScreen(activity).also { it.start() }
+        }
+
+        fun endStream(activity: Activity) {
+            val mine = current?.takeIf { it.context === activity } ?: return
+            mine.stop()
+            val prev = beforeStream
+            beforeStream = null
+            current = prev
+            prev?.reclaim()
+        }
         const val SHOW_AFTER_MS = 1_500L
         private const val EXTRA_MOVED = "dsforever_moved_to_top"
 

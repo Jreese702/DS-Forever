@@ -153,7 +153,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the bar selector (home session, LATER item 7): Select puts a controller cursor on the bar */
     private lateinit var barSelect: HomeBarSelect
 
-    private var tail: LogTail? = null
+    private var tail: LogSource? = null
     /** WoW Forever as GameLocator found it on this device (the log, the setup's folders); set once at start */
     @Volatile private var game: GameLocator.Found? = null
         set(v) { field = v; if (::setupRunner.isInitialized) setupRunner.wowForever = v }
@@ -2207,24 +2207,29 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** (re)starts following the game's log at [gameLog] when it is a new path (a new chosen root stops the old follow first) */
     private var tailLog: String? = null
     private fun startTail() {
-        val log = gameLog()
+        // Streaming (S2): the PC's log through the Desktop bridge (PlayModes.pick); Local: the game's own log, as before
+        val streaming = PlayModes.current == PlayMode.STREAM && PlayModes.bridgeLog != null
+        val log = if (streaming) "bridge:${PlayModes.bridgeKey}" else gameLog()
         if (log == tailLog && tail != null) return          // the launcher saves the same folder on every check: no restart then
         tailLog = log
         tail?.stop()
         // inside the launcher there is only its own game: no GameNative log ahead of it
         val follow = if (BuildConfig.SHARE || LauncherHooks.pkg != null) listOf(log) else listOf(LogTail.DEFAULT_PATH, log)
-        Log.i("WCLOG", "game log: $log (located ${game?.root ?: "none"}, share ${BuildConfig.SHARE})")
-        tail = LogTail(
-            follow.first(),
-            onMessage = { msg -> ui.post { handleMessage(msg) } },
-            onStatus = { s -> ui.post {
-                status.text = s.take(110)
-                // the other game started: is IT set up for the companion?
-                if (s.startsWith("following the game's log")) ui.postDelayed({ setupCheck() }, 3_000L)
-            } },
-            follow = follow,
-        ).also { it.start() }
+        Log.i("WCLOG", "game log: $log (located ${game?.root ?: "none"}, share ${BuildConfig.SHARE}, mode ${PlayModes.current})")
+        val onMessage: (org.json.JSONObject) -> Unit = { msg -> ui.post { handleMessage(msg) } }
+        val onStatus: (String) -> Unit = { s -> ui.post {
+            status.text = s.take(110)
+            // the other game started: is IT set up for the companion?
+            if (s.startsWith("following the game's log")) ui.postDelayed({ setupCheck() }, 3_000L)
+        } }
+        tail = PlayModes.pick(PlayModes.current, PlayModes.bridgeLog, onMessage, onStatus) {
+            LogTail(follow.first(), onMessage = onMessage, onStatus = onStatus, follow = follow)
+        }.also { it.start() }
+        PlayModes.onChanged = sourceChanged
     }
+
+    /** Streaming (S2): the mode or the bridge's PC changed (paired, or another PC): follow the new source */
+    private val sourceChanged: () -> Unit = { ui.post { if (!shell.hostGone()) { tailLog = null; startTail() } } }
 
     // ---------------------------------------------------------------- EXIT GUARD: no room ever without a working B (ExitGuard)
     private var guardUnheldSince = 0L
@@ -2273,6 +2278,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         NativeLogin.onTrafficSample = null
         SetupBridge.keyboard(false)
         ui.removeCallbacks(rootCheck)
+        if (PlayModes.onChanged === sourceChanged) PlayModes.onChanged = null
         tail?.stop()
         getSharedPreferences(GameFiles.PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(gameRootChanged)
         if (::loginWatch.isInitialized) loginWatch.stop()

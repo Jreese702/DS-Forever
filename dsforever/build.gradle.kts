@@ -12,6 +12,8 @@ require(file("$dsAppDir/java/com/jrees/wowcompanion/ArtHarvest.kt").isFile) {
     "Companion sources are missing: expected companion/app/src/main, or set -PdsAppDir explicitly"
 }
 val sharedDir = layout.buildDirectory.dir("shared")
+val streamCore = file("src/main/jni/prebuilt/openssl/arm64-v8a/libcrypto.a").isFile
+if (!streamCore) logger.warn("DS Forever: no streaming core (run tools/stream/vendor_moonlight.sh): Streaming mode will be unavailable")
 val syncShared = tasks.register<Sync>("syncShared") {
     from("$dsAppDir/java/com/jrees/wowcompanion") { exclude("MainActivity.kt") }
     into(sharedDir.map { it.dir("com/jrees/wowcompanion") })
@@ -29,6 +31,14 @@ android {
         buildConfigField("String", "REPORT_KEY", "\"${(findProperty("dsfReportKey") as String?).orEmpty()}\"")
     }
     buildFeatures { buildConfig = true }
+    // STREAMING MODE (S2): Moonlight's core (moonlight-common-c + our JNI glue, src/main/jni) built with the repo's NDK. Its
+    // prebuilt OpenSSL / Opus are git-ignored inputs (tools/stream/vendor_moonlight.sh); without them the APK has no streaming core
+    // (MoonBridge.loaded = false: Streaming then says so) and the build warns, so a plain clone still builds and tests
+    ndkVersion = "27.2.12479018"
+    if (streamCore) {
+        defaultConfig.ndk.abiFilters += listOf("arm64-v8a")
+        externalNativeBuild { ndkBuild { path = file("src/main/jni/Android.mk") } }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
