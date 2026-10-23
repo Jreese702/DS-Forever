@@ -97,7 +97,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         host = store.host()
         // the companion on the bottom screen, reading the PC's log through the bridge (Local is untouched: PlayModes defaults to it)
         applyMode()
-        discovery = Discovery(activity) { pcs -> found = pcs; onFound() }.also { it.start() }
+        discovery = Discovery(activity, preferSubnet = { NetProbe.subnet(activity) }) { pcs -> found = pcs; onFound() }.also { it.start() }
         watchNetwork()
         if (!MoonBridge.loaded) { problem("Streaming isn't in this build", "This DS Forever was built without Moonlight's core.", auto = false); return }
         if (host == null) show(Screen.PAIRING) else { show(Screen.CONNECTING); status.show("Connecting to ${host!!.name}…", "", "", withButtons = false); connect() }
@@ -251,10 +251,11 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         // the paired PC under a new address (DHCP): follow it, by Desktop's id or Sunshine's
         val h = host
         if (h != null && screen != Screen.STREAMING) {
-            val same = found.firstOrNull { (h.desktopId.isNotEmpty() && it.desktopId == h.desktopId) || (h.uuid.isNotEmpty() && it.sunshineId == h.uuid) }
+            val same = found.firstOrNull { (h.desktopId.isNotEmpty() && it.desktopId == h.desktopId) || (h.uuid.isNotEmpty() && it.sunshineId == h.uuid) ||
+                it.name.equals(h.name, ignoreCase = true) }
             if (same != null && same.address != h.address) {
                 Log.i(TAG, "${h.name} moved: ${h.address} -> ${same.address}")
-                host = h.copy(address = same.address).also { store.save(it) }
+                host = h.copy(address = same.address, subnet = NetProbe.subnet(activity).ifEmpty { h.subnet }).also { store.save(it) }
                 applyMode()
                 if (screen == Screen.PROBLEM) retryNow()
             }

@@ -12,16 +12,26 @@ import java.net.SocketTimeoutException
 
 /** the measurements behind [Diagnosis] on the device (no permission beyond ACCESS_NETWORK_STATE, which the app has) */
 object NetProbe {
-    fun onWifi(ctx: Context): Boolean {
-        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return false
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
-        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    /**
+     * The home network itself: a Wi-Fi (or Ethernet) network that is NOT a VPN. The active network is not the answer: with Tailscale
+     * on (stream2: the Thor had wlan 192.168.1.25 AND tun0 100.71.133.93) the active network is the tunnel.
+     */
+    @Suppress("DEPRECATION")
+    private fun lan(ctx: Context): android.net.Network? {
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return null
+        return cm.allNetworks.firstOrNull { n ->
+            val c = cm.getNetworkCapabilities(n) ?: return@firstOrNull false
+            !c.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+                (c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
+        }
     }
 
-    /** the Thor's own IPv4 /24 on the active network ("" = none) */
+    fun onWifi(ctx: Context): Boolean = lan(ctx) != null
+
+    /** the Thor's own IPv4 /24 on its Wi-Fi ("" = none) */
     fun subnet(ctx: Context): String {
         val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return ""
-        val lp = cm.getLinkProperties(cm.activeNetwork) ?: return ""
+        val lp = cm.getLinkProperties(lan(ctx) ?: return "") ?: return ""
         val v4 = lp.linkAddresses.map { it.address }.firstOrNull { it is Inet4Address } ?: return ""
         return PairedHost.subnetOf(v4.hostAddress)
     }

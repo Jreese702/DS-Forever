@@ -36,7 +36,7 @@ object FoundPcs {
      * instance name) is the PC's name; Sunshine's is used when no bridge answered. Desktop PCs (with a bridge) first, then by name.
      * The bridge's TXT (Desktop v1): proto, id (Desktop's host id), pc, sunshine (Sunshine's http port), ver; fp / sid / tls when given.
      */
-    fun merge(ads: Collection<Advert>): List<FoundPc> {
+    fun merge(ads: Collection<Advert>, preferSubnet: String = ""): List<FoundPc> {
         val byAddr = LinkedHashMap<String, FoundPc>()
         for (a in ads) {
             val t = a.type.trim('.').removeSuffix(".local").trim('.')
@@ -51,8 +51,31 @@ object FoundPcs {
                 else -> cur
             }
         }
-        return byAddr.values.sortedWith(compareBy<FoundPc>({ !it.hasBridge }, { it.name.lowercase() }))
+        // ONE PC SEEN AT TWO ADDRESSES (stream2, 2026-10-23: the bridge answered on the PC's Tailscale 100.x, Sunshine on its LAN
+        // 192.168.1.x): the same name (Desktop's TXT "pc" = Sunshine's instance name = the PC's name) is one PC. Its ports combine; its
+        // address is the one on the Thor's own Wi-Fi /24 when there is one (the home LAN, not a VPN tunnel), else the bridge's
+        val byName = LinkedHashMap<String, FoundPc>()
+        for (pc in byAddr.values) {
+            val k = pc.name.lowercase()
+            val cur = byName[k]
+            if (cur == null) { byName[k] = pc; continue }
+            val onLan = listOf(cur, pc).firstOrNull { preferSubnet.isNotEmpty() && PairedHost.subnetOf(it.address) == preferSubnet }
+            val base = onLan ?: (if (pc.hasBridge && !cur.hasBridge) pc else cur)
+            val other = if (base === cur) pc else cur
+            byName[k] = base.copy(
+                sunshinePort = if (base.sunshinePort > 0) base.sunshinePort else other.sunshinePort,
+                bridgePort = if (base.bridgePort > 0) base.bridgePort else other.bridgePort,
+                desktopId = base.desktopId.ifEmpty { other.desktopId }, sunshineId = base.sunshineId.ifEmpty { other.sunshineId },
+                bridgeFingerprint = base.bridgeFingerprint.ifEmpty { other.bridgeFingerprint }, bridgeTls = base.bridgeTls || other.bridgeTls,
+                name = if (base.hasBridge || !other.hasBridge) base.name else other.name,
+            )
+        }
+        return byName.values.sortedWith(compareBy<FoundPc>({ !it.hasBridge }, { it.name.lowercase() }))
     }
+
+    /** of a PC's IPv4 addresses, the one on the Thor's Wi-Fi /24 when there is one, else the first */
+    fun pickAddress(addresses: List<String>, preferSubnet: String): String? =
+        addresses.firstOrNull { preferSubnet.isNotEmpty() && PairedHost.subnetOf(it) == preferSubnet } ?: addresses.firstOrNull()
 }
 
 /**
@@ -60,7 +83,7 @@ object FoundPcs {
  * is resolved ONE AT A TIME (before Android 14 a second resolve while one runs fails with "already active"). [onChange] gets the
  * merged list on the main thread after every resolve or loss.
  */
-class Discovery(context: Context, private val onChange: (List<FoundPc>) -> Unit) {
+class Discovery(context: Context, private val preferSubnet: () -> String = { "" }, private val onChange: (List<FoundPc>) -> Unit) {
     private val nsd = context.applicationContext.getSystemService(NsdManager::class.java)
     private val main = Handler(Looper.getMainLooper())
     private val ads = LinkedHashMap<String, Advert>()           // "type/name" -> resolved advert
@@ -94,7 +117,7 @@ class Discovery(context: Context, private val onChange: (List<FoundPc>) -> Unit)
         listeners.clear(); queue.clear()
     }
 
-    fun current(): List<FoundPc> = FoundPcs.merge(ads.values)
+    fun current(): List<FoundPc> = FoundPcs.merge(ads.values, preferSubnet())
 
     private fun key(type: String, name: String) = type.trim('.') + "/" + name
 
@@ -109,13 +132,17 @@ class Discovery(context: Context, private val onChange: (List<FoundPc>) -> Unit)
                     main.post { resolving = false; if (errorCode == NsdManager.FAILURE_ALREADY_ACTIVE) queue.addLast(si); main.postDelayed({ next() }, 200) }
                 }
                 override fun onServiceResolved(si: NsdServiceInfo) {
-                    val host = si.host
+                    // every IPv4 address the PC answered with (Android 14+ lists them all), the home LAN's first
+                    val all = try {
+                        if (android.os.Build.VERSION.SDK_INT >= 34) si.hostAddresses.filterIsInstance<Inet4Address>() else listOfNotNull(si.host as? Inet4Address)
+                    } catch (_: Throwable) { listOfNotNull(si.host as? Inet4Address) }
+                    val pick = FoundPcs.pickAddress(all.mapNotNull { it.hostAddress }, try { preferSubnet() } catch (_: Throwable) { "" })
                     val txt = HashMap<String, String>()
                     try { for ((k, v) in si.attributes) txt[k] = v?.toString(Charsets.UTF_8).orEmpty() } catch (_: Throwable) {}
                     main.post {
                         resolving = false
-                        if (host is Inet4Address) {
-                            ads[key(si.serviceType, si.serviceName)] = Advert(si.serviceType, si.serviceName, host.hostAddress ?: "", si.port, txt)
+                        if (pick != null) {
+                            ads[key(si.serviceType, si.serviceName)] = Advert(si.serviceType, si.serviceName, pick, si.port, txt)
                             publish()
                         }
                         next()
