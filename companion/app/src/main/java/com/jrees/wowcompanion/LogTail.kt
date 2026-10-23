@@ -31,7 +31,7 @@ class LogTail(
     /** the logs to follow (LogFollow), the first read first; null = DEFAULT_PATH's pair (GameNative + WoW Forever's usual folder).
      *  The private share passes the ONE log GameLocator found on the device (Home, 2026-10-02: no hard-coded paths there). */
     follow: List<String>? = null,
-) {
+) : LogSource {
     /** the log being read: DEFAULT_PATH follows whichever game wrote last (LogFollow); any other path is read as given */
     private var path = initialPath
     private val candidates = follow?.takeIf { it.isNotEmpty() }
@@ -43,16 +43,17 @@ class LogTail(
     private var carry = ""                       // partial trailing line between reads
     private var running = false
 
-    private val frags = HashMap<Int, MutableList<String?>>()   // seq of part 1 -> parts
-    private var lastSeq = -1
-    private var gaps = 0
+    /** the WCB1 parser (Wcb1Assembler: shared with Streaming's bridge copy of the PC's log) */
+    private val docs = Wcb1Assembler(onMessage, onStatus)
 
-    fun start() {
+    override val kind get() = "local"
+
+    override fun start() {
         running = true
         handler.post(pump)
     }
 
-    fun stop() {
+    override fun stop() {
         running = false
         try { shell?.destroy() } catch (_: Throwable) {}
         shell = null
@@ -99,7 +100,7 @@ class LogTail(
         val next = LogFollow.pick(path, mt)
         if (next == path) return
         path = next
-        offset = 0; carry = ""; frags.clear(); lastSeq = -1
+        offset = 0; carry = ""; docs.reset()
         reclaimedTo = -1; reclaimAt = 0
         onStatus("following the game's log: ${if (next == DEFAULT_PATH) "GameNative" else "WoW Forever"}")
         android.util.Log.i("WCLOG", "following $next (mtimes $mt)")
@@ -239,7 +240,7 @@ class LogTail(
         if (!f.exists()) { onStatus("waiting for game"); return }
         val len = f.length()
         if (len < offset) {                       // client relaunched: file truncated
-            offset = 0; carry = ""; frags.clear(); lastSeq = -1
+            offset = 0; carry = ""; docs.reset()
             onStatus("client restarted, resyncing")
         }
         if (len == offset) return
@@ -306,7 +307,7 @@ class LogTail(
             // there would throw away the offset that is about to become correct again.
             val since = android.os.SystemClock.elapsedRealtime() - reclaimAt
             if (reclaimAt != 0L && since < 5_000L) return
-            offset = 0; carry = ""; frags.clear(); lastSeq = -1
+            offset = 0; carry = ""; docs.reset()
             // NOT 0: the next read's apparent size (a sparse ~90 MB right after a reclaim) would reclaim AGAIN at once, and again
             // after every 5 s guard - measured 2026-09-30 20:33-20:35, the log read as 0 bytes for 2.5 min and the app saw nothing.
             // "Unknown": the next read takes the length it sees, and the next reclaim needs RECLAIM_BYTES of real growth
@@ -338,91 +339,12 @@ class LogTail(
         }
     }
 
-    private fun handleLine(rawIn: String) {
-        // The client is a Windows app under Wine, so General.log uses CRLF. Splitting on '\n'
-        // leaves a '\r' on the tail of every line -- invisible, and it lands exactly at each
-        // fragment boundary, corrupting the reassembled JSON there. Strip it.
-        val raw = rawIn.trimEnd('\r', '\n')
-        val i = raw.indexOf(MAGIC)
-        if (i < 0) return                          // engine chatter, ignore
-        val body = raw.substring(i + MAGIC.length) // "<seq>|<part>/<n>|<payload>"
-        if (body.startsWith("pad|")) return        // flush padding
+    private fun handleLine(raw: String) = docs.line(raw)
 
-        val p1 = body.indexOf('|'); if (p1 < 0) return
-        val seq = body.substring(0, p1).toIntOrNull() ?: return
-        val p2 = body.indexOf('|', p1 + 1); if (p2 < 0) return
-        val partSpec = body.substring(p1 + 1, p2)
-        val payload = body.substring(p2 + 1)
-
-        if (lastSeq >= 0 && seq != lastSeq + 1) {
-            gaps++
-            onStatus("gap at seq $seq (expected ${lastSeq + 1})")
-        }
-        lastSeq = seq
-
-        val slash = partSpec.indexOf('/')
-        if (slash < 0) return
-        val idx = partSpec.substring(0, slash).toIntOrNull() ?: return
-        val total = partSpec.substring(slash + 1).toIntOrNull() ?: return
-
-        val gt = gameTime(raw, i)
-        if (total == 1) { emit(payload, gt); return }
-
-        val key = seq - (idx - 1)                  // all parts of one document share this
-        val slots = frags.getOrPut(key) { MutableList(total) { null } }
-        if (idx in 1..slots.size) slots[idx - 1] = payload
-        if (slots.all { it != null }) {
-            frags.remove(key)
-            emit(slots.joinToString("") { it!! }, gt)
-        }
-    }
-
-    /**
-     * The line's own timestamp from the log prefix ("9/27 08:41:53.221  [N][Lua] "), as ms on a
-     * day-of-year + time-of-day scale, or -1 if it does not parse.
-     *
-     * WHY THE APP NEEDS THE GAME'S CLOCK. The addon writes a position line every ~107 ms but
-     * the log only reaches us when a flush forces it out, ~every 216 ms, so 95% of position
-     * lines arrive TWO AT A TIME in one read (measured 2026-09-27 over a real session). Timed
-     * by arrival, both lines look simultaneous: the map kept the older one stamped as current
-     * and threw most of the newer one away, and the arrow's speed estimate was wrong by half
-     * again -- which the prediction turned into overshoot and snap-back. The log stamps every
-     * line when the game wrote it, to the millisecond; that is the real spacing.
-     * Only differences matter (the map maps it onto its own clock), so the year is not needed;
-     * a year boundary is one backwards jump the map treats as a clock reset.
-     */
-    private fun gameTime(raw: String, magicAt: Int): Long {
-        return try {
-            val head = raw.substring(0, magicAt).trim()
-            val sp = head.indexOf(' ')
-            val date = head.substring(0, sp)
-            val time = head.substring(sp + 1).trim().substringBefore(' ')
-            val slash = date.indexOf('/')
-            val mon = date.substring(0, slash).toInt()
-            val day = date.substring(slash + 1).toInt()
-            val c1 = time.indexOf(':'); val c2 = time.indexOf(':', c1 + 1)
-            val h = time.substring(0, c1).toInt()
-            val mi = time.substring(c1 + 1, c2).toInt()
-            val secMs = (time.substring(c2 + 1).toDouble() * 1000.0).toLong()
-            val doy = DAYS_BEFORE[(mon - 1).coerceIn(0, 11)] + day
-            ((doy * 24L + h) * 60L + mi) * 60_000L + secMs
-        } catch (t: Throwable) { -1L }
-    }
-
-    private fun emit(json: String, gt: Long) {
-        try {
-            val o = JSONObject(json)
-            if (gt >= 0) o.put("_gt", gt)
-            onMessage(o)
-        }
-        catch (t: Throwable) { onStatus("bad json (${json.length}b): ${t.message}") }
-    }
-
-    fun gapCount() = gaps
+    override fun gapCount() = docs.gaps
 
     companion object {
-        const val MAGIC = "WCB1|"
-        private val DAYS_BEFORE = intArrayOf(0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)
+        const val MAGIC = Wcb1Assembler.MAGIC
         /** 100 ms: the addon flushes every 0.15 s, so a slower poll would be the ceiling
          *  rather than the flush. Affordable only because the root shell is persistent. */
         // 50 ms. It was 100 while each read cost 400 ms reading through a sparse hole, so a

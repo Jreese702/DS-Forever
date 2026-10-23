@@ -457,3 +457,29 @@ This project bundles `app/src/main/lib/perfsdk-v1.0.0.jar`, the Samsung Performa
 power-control feature. The SDK is proprietary to Samsung Electronics and is NOT covered by
 this project's GPL-3.0 license; it is used under the terms of Samsung's SDK license
 agreement. If you redistribute this project, verify your right to redistribute the SDK.
+
+---
+
+## Moonlight streaming core (Streaming mode)
+
+**Component:** `libdsf-moonlight.so` (built from source by the `:dsforever` module's ndk-build, `dsforever/src/main/jni/`)
+**Used for:** Streaming mode: video / audio / controller / keyboard between the Thor and the PC's Sunshine (GameStream protocol).
+
+| Part | Upstream | Revision | Licence |
+|---|---|---|---|
+| moonlight-common-c | https://github.com/moonlight-stream/moonlight-common-c | `874ac9548f1bd6f095ef2b435c42cdde460e7821` | GPL-3.0 (`licenses/moonlight/moonlight-common-c-GPL-3.0.txt`) |
+| enet (moonlight-common-c's submodule, cgutman's fork) | https://github.com/cgutman/enet | `aca87840b57f045a1f7f9299e4b1b9b8e2a5e2f1` | MIT (`licenses/moonlight/enet-MIT.txt`) |
+| nanors (moonlight-common-c's submodule) | https://github.com/sleepybishop/nanors | `b1e3c22ca0cdc0bb83e3cd6ed1a2fc77869ed99a` | MIT (`licenses/moonlight/nanors-MIT.txt`) |
+| JNI glue, pairing, decoder approach | https://github.com/moonlight-stream/moonlight-android | `b48494cb96bff23d8886c4775cc4f39a1075495d` | GPL-3.0 |
+| OpenSSL `libcrypto.a` (prebuilt, arm64-v8a, OpenSSL 4.0.2) | moonlight-android `app/src/main/jni/moonlight-core/openssl/` (built by https://github.com/cgutman/moonlight-mobile-deps) | moonlight-android `b48494cb` | Apache-2.0 (`licenses/moonlight/OpenSSL-Apache-2.0-notice.txt`; the licence text is the Apache-2.0 text in `licenses/ndk/NDK-NOTICE.txt`) |
+| Opus `libopus.a` (prebuilt, arm64-v8a) | moonlight-android `app/src/main/jni/moonlight-core/opus/` (same builder) | moonlight-android `b48494cb` | BSD-3-Clause (`licenses/moonlight/Opus-BSD-3-Clause.txt`) |
+
+- The moonlight-common-c, enet and nanors sources under `dsforever/src/main/jni/moonlight-common-c/` are copied unmodified
+  (`tools/stream/vendor_moonlight.sh`; `UPSTREAM` lists the revisions).
+- `dsforever/src/main/jni/dsf/dsf_bridge.c` is derived from moonlight-android's `callbacks.c` / `simplejni.c` (GPL-3.0).
+  `MoonPairing.kt` is a port of moonlight-android's `PairingManager.java`; `MoonBridge.java`, `NvHttp.kt`, `StreamSession.kt`
+  and `VideoDecoder` follow moonlight-android's `MoonBridge`, `NvHTTP`, `NvConnection` and `MediaCodecDecoderRenderer` (GPL-3.0).
+  Copyright (C) Moonlight Game Streaming Project and contributors; DS Forever is GPL-3.0, so these combine under GPL-3.0.
+- The prebuilt OpenSSL / Opus static libraries are git-ignored build inputs (`dsforever/src/main/jni/prebuilt/`), copied from
+  the moonlight-android revision above by `tools/stream/vendor_moonlight.sh`. A release's source bundle must include them (or
+  that revision's link) next to this notice.

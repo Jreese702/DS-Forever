@@ -1,0 +1,84 @@
+package com.jrees.wowcompanion.stream
+
+import android.view.KeyEvent
+import kotlin.math.abs
+import kotlin.math.roundToInt
+
+/**
+ * THE THOR'S CONTROLLER AS AN XBOX PAD ON THE PC ("Controller: goes to the PC"; Sunshine makes a virtual Xbox pad with ViGEm, so
+ * WoW's gamepad mode works as it does on the Thor). Android's gamepad keys and axes -> GameStream's button flags, 0..255 triggers
+ * and -32768..32767 sticks (y UP positive: Android's is down). Pure state; the activity sends [snapshot] whenever [key] or [axes]
+ * changed something.
+ *
+ * NEVER SENT: the Guide / Home button (KEYCODE_BUTTON_MODE: on Windows it opens the Game Bar over WoW).
+ */
+class StreamPad {
+    data class Snapshot(val buttons: Int, val lt: Int, val rt: Int, val lx: Int, val ly: Int, val rx: Int, val ry: Int)
+
+    private var keyButtons = 0
+    private var hatButtons = 0
+    private var ltKey = false; private var rtKey = false
+    private var lt = 0; private var rt = 0
+    private var lx = 0; private var ly = 0; private var rx = 0; private var ry = 0
+
+    fun snapshot() = Snapshot(keyButtons or hatButtons, if (ltKey) 255 else lt, if (rtKey) 255 else rt, lx, ly, rx, ry)
+
+    /** a pad key; true = the state changed (send it). Unknown keys and the Guide button change nothing */
+    fun key(keyCode: Int, down: Boolean): Boolean {
+        val before = snapshot()
+        when (keyCode) {
+            KeyEvent.KEYCODE_BUTTON_L2 -> ltKey = down
+            KeyEvent.KEYCODE_BUTTON_R2 -> rtKey = down
+            else -> {
+                val f = FLAGS[keyCode] ?: return false
+                keyButtons = if (down) keyButtons or f else keyButtons and f.inv()
+            }
+        }
+        return snapshot() != before
+    }
+
+    /** the sticks (-1..1, y down as Android gives it), the analog triggers (0..1) and the hat (-1..1); true = changed */
+    fun axes(x: Float, y: Float, z: Float, rz: Float, lTrig: Float, rTrig: Float, hatX: Float, hatY: Float): Boolean {
+        val before = snapshot()
+        lx = stick(x); ly = stick(-y); rx = stick(z); ry = stick(-rz)
+        lt = trigger(lTrig); rt = trigger(rTrig)
+        var h = 0
+        if (hatX < -0.5f) h = h or LEFT
+        if (hatX > 0.5f) h = h or RIGHT
+        if (hatY < -0.5f) h = h or UP
+        if (hatY > 0.5f) h = h or DOWN
+        hatButtons = h
+        return snapshot() != before
+    }
+
+    /** everything let go (the stream ends, or a pop-up of ours takes the pad) */
+    fun clear() { keyButtons = 0; hatButtons = 0; ltKey = false; rtKey = false; lt = 0; rt = 0; lx = 0; ly = 0; rx = 0; ry = 0 }
+
+    companion object {
+        const val UP = 0x0001; const val DOWN = 0x0002; const val LEFT = 0x0004; const val RIGHT = 0x0008
+        const val PLAY = 0x0010; const val BACK = 0x0020; const val LS_CLK = 0x0040; const val RS_CLK = 0x0080
+        const val LB = 0x0100; const val RB = 0x0200
+        const val A = 0x1000; const val B = 0x2000; const val X = 0x4000; const val Y = 0x8000
+        /** what the pad has (the arrival event): everything above, no Guide, no paddles */
+        const val SUPPORTED = UP or DOWN or LEFT or RIGHT or PLAY or BACK or LS_CLK or RS_CLK or LB or RB or A or B or X or Y
+
+        private val FLAGS: Map<Int, Int> = mapOf(
+            KeyEvent.KEYCODE_BUTTON_A to A, KeyEvent.KEYCODE_BUTTON_B to B, KeyEvent.KEYCODE_BUTTON_X to X, KeyEvent.KEYCODE_BUTTON_Y to Y,
+            KeyEvent.KEYCODE_BUTTON_L1 to LB, KeyEvent.KEYCODE_BUTTON_R1 to RB,
+            KeyEvent.KEYCODE_BUTTON_START to PLAY, KeyEvent.KEYCODE_BUTTON_SELECT to BACK, KeyEvent.KEYCODE_BACK to BACK,
+            KeyEvent.KEYCODE_BUTTON_THUMBL to LS_CLK, KeyEvent.KEYCODE_BUTTON_THUMBR to RS_CLK,
+            KeyEvent.KEYCODE_DPAD_UP to UP, KeyEvent.KEYCODE_DPAD_DOWN to DOWN, KeyEvent.KEYCODE_DPAD_LEFT to LEFT, KeyEvent.KEYCODE_DPAD_RIGHT to RIGHT,
+        )
+
+        /** a pad key Streaming forwards (the activity keeps the rest, e.g. volume) */
+        fun isPadKey(keyCode: Int) = keyCode in FLAGS || keyCode == KeyEvent.KEYCODE_BUTTON_L2 || keyCode == KeyEvent.KEYCODE_BUTTON_R2 ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_MODE
+
+        private const val DEADZONE = 0.07f
+        fun stick(v: Float): Int {
+            if (v.isNaN() || abs(v) < DEADZONE) return 0
+            return (v.coerceIn(-1f, 1f) * 32767f).roundToInt().coerceIn(-32768, 32767)
+        }
+        fun trigger(v: Float): Int = if (v.isNaN() || v < 0.02f) 0 else (v.coerceIn(0f, 1f) * 255f).roundToInt()
+    }
+}
