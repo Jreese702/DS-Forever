@@ -20,8 +20,8 @@ namespace DsfDesktop.Ui
         readonly Label code = new Label(), codeHint = new Label();
         readonly ListView devices = new ListView();
         readonly Button remove = new Button(), newCode = new Button(), chooseFolder = new Button(), addons = new Button(), focus = new Button(), testPage = new Button();
-        readonly CheckBox autostart = new CheckBox();
-        readonly Label sunshine = new Label(), stream = new Label(), bridge = new Label(), game = new Label(), log = new Label(), addonLine = new Label(), notices = new Label();
+        readonly CheckBox autostart = new CheckBox(), startWow = new CheckBox();
+        readonly Label sunshine = new Label(), stream = new Label(), wowState = new Label(), capture = new Label(), bridge = new Label(), game = new Label(), log = new Label(), addonLine = new Label(), notices = new Label();
         readonly Timer tick = new Timer { Interval = 1000 };
         bool reallyClose, asked;
 
@@ -89,7 +89,7 @@ namespace DsfDesktop.Ui
 
             // -- status
             root.Controls.Add(Heading("Status"));
-            foreach (var l in new[] { sunshine, stream, bridge, game, log, addonLine, notices })
+            foreach (var l in new[] { sunshine, stream, wowState, capture, bridge, game, log, addonLine, notices })
             {
                 l.AutoSize = true;
                 l.MaximumSize = new Size(600, 0);
@@ -125,6 +125,13 @@ namespace DsfDesktop.Ui
                 catch (Exception ex) { MessageBox.Show(this, "Couldn't change Start with Windows: " + ex.Message, Text); }
             };
             root.Controls.Add(autostart);
+
+            startWow.Text = "Start WoW when streaming";
+            startWow.AutoSize = true;
+            startWow.Margin = new Padding(0, 4, 0, 0);
+            startWow.Checked = ctl.Settings.StartWowOnStream;
+            startWow.CheckedChanged += (s, e) => { ctl.Settings.StartWowOnStream = startWow.Checked; ctl.SaveSettings(); };
+            root.Controls.Add(startWow);
 
             tick.Tick += (s, e) => RefreshAll();
             Shown += (s, e) =>
@@ -210,6 +217,10 @@ namespace DsfDesktop.Ui
             var sh = ctl.Sunshine;
             sunshine.Text = "Streaming host: " + (sh == null ? "starting" : !sh.Available ? "not installed with this copy (Sunshine missing)" : sh.Running ? "ready (port " + ctl.SunshinePort + ")" : sh.LastStatus);
             stream.Text = "Stream: " + (ctl.Stream == StreamState.Streaming ? "streaming to your device" : ctl.Stream == StreamState.Idle ? "not streaming" : "-");
+            var st = ctl.WowUp() ? WowState.Running : ctl.Starter.State;
+            wowState.Text = "WoW on this PC: " + (st == WowState.Running ? "running" : st == WowState.Starting ? "starting (" + ctl.Starter.Why + ")"
+                          : st == WowState.StartFailed ? "didn't start: " + ctl.Starter.Why : "not running");
+            capture.Text = "Streamed monitor: " + (ctl.CaptureStatus.Length > 0 ? ctl.CaptureStatus : "the primary display");
             bridge.Text = "Companion link: " + ctl.BridgeStatus + (online.Count > 0 ? ", " + online.Count + " connected" : "");
             game.Text = ctl.Wow == null ? "Game: WoW Forever not found" : "Game: " + ctl.Wow.Root + " (" + ctl.Flavor + ")";
             log.Text = "Game log: " + ctl.LogStatus + (ctl.DocsSeen > 0 ? ", " + ctl.DocsSeen + " updates, last " + ctl.LastDocAt?.ToString("HH:mm:ss") : "") + (ctl.Gaps > 0 ? ", " + ctl.Gaps + " gaps" : "");

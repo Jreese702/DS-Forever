@@ -72,6 +72,7 @@ namespace DsfDesktop.App
                 Settings.SunshinePass = Crypto.Protect(Crypto.Base64Url(Crypto.RandomBytes(18)).Replace("-", "a").Replace("_", "b"));
             SaveSettings();
             Devices = new DeviceStore(paths.Devices);
+            MakeStarter();
             SunshineLayout = new SunshineLayout { ExeDir = paths.SunshineExeDir, DataDir = paths.SunshineData };
             Codes.Changed += Fire;
             Devices.Changed += Fire;
@@ -266,12 +267,19 @@ namespace DsfDesktop.App
             if (port < 0) { Log.I("sunshine: no free port set"); return; }
             if (port != Settings.SunshinePort) { Settings.SunshinePort = port; SaveSettings(); }
             SunshinePort = port;
-            SunshineConfig.Write(SunshineLayout, new SunshineOptions { Port = port, Encoder = Settings.Encoder, EventExe = "", HostName = Environment.MachineName, BindAddress = Loopback ? "127.0.0.1" : "" });
+            WriteSunshineConfig();
             if (!File.Exists(SunshineLayout.Credentials) && !Sunshine.SetCredentials(Settings.SunshineUser, Pass))
                 Log.I("sunshine: setting its login failed");
             api = new SunshineApi(port, Settings.SunshineUser, Pass, SunshineLayout.Cert);
             Sunshine.Start();
         }
+
+        // no prep command: the portable Sunshine can't start ours (error 5, tracking 252f5ec7); the Thor's bridge "focus" covers it
+        void WriteSunshineConfig() => SunshineConfig.Write(SunshineLayout, new SunshineOptions
+        {
+            Port = SunshinePort, Encoder = Settings.Encoder, EventExe = "", HostName = Environment.MachineName,
+            BindAddress = Loopback ? "127.0.0.1" : "", OutputName = Settings.CaptureDevice,
+        });
 
         public void RestartSunshine()
         {
@@ -320,9 +328,11 @@ namespace DsfDesktop.App
                             SetStream(st.IndexOf("BUSY", StringComparison.OrdinalIgnoreCase) >= 0 ? StreamState.Streaming : StreamState.Idle);
                     }
                     else SetStream(StreamState.Unknown);
+                    CheckCapture();
                 }
             }
             catch (Exception) { }
+            try { Starter.Tick(); } catch (Exception) { }
             Fire();
         }
 
@@ -335,7 +345,13 @@ namespace DsfDesktop.App
             Stream = s;
             Log.I("stream: " + s);
             Bridge?.Publish(new Dictionary<string, object> { ["t"] = "stream", ["state"] = StreamWord });
-            if (s == StreamState.Streaming && was != StreamState.Streaming && Settings.FocusOnStream) Task.Run(() => FocusWow());
+            if (s == StreamState.Streaming && was != StreamState.Streaming)
+                Task.Run(() =>
+                {
+                    // the stream shows the real desktop: WoW must be up and in front (started first when it isn't)
+                    if (Settings.StartWowOnStream && !WowUp()) Starter.Ensure();
+                    else if (Settings.FocusOnStream) { CheckCapture(); FocusWow(); }
+                });
         }
 
         /// <summary>from Sunshine's prep commands (--event stream-start / stream-stop, through the single-instance pipe)</summary>
@@ -357,10 +373,116 @@ namespace DsfDesktop.App
 
         public Dictionary<string, object> Focus()
         {
+            if (Settings.StartWowOnStream && !WowUp())
+            {
+                Starter.Ensure();
+                var s = new Dictionary<string, object> { ["ok"] = false, ["state"] = WowStarter.Word(Starter.State) };
+                s["why"] = Starter.State == WowState.Starting ? "starting WoW" : Starter.Why ?? "WoW isn't running";
+                return s;
+            }
+            CheckCapture();
             var why = FocusWow();
             var d = new Dictionary<string, object> { ["ok"] = why == null };
             if (why != null) d["why"] = why;
             return d;
+        }
+
+        // ---------------------------------------------------------------- starting WoW, and the monitor Sunshine captures
+
+        public WowStarter Starter { get; private set; }
+
+        string FlavorDirOrNull => Wow != null && Flavor != null ? Wow.FlavorDir(Flavor) : null;
+
+        /// <summary>a WoW window is up (any flavor)</summary>
+        public bool WowUp() => WowWindow.Find(FlavorDirOrNull) != null;
+
+        void MakeStarter()
+        {
+            Starter = new WowStarter(
+                windowUp: WowUp,
+                processUp: WowWindow.ProcessRunning,
+                plan: () => WowLaunch.Plan(Wow, DateTime.Now, WowLaunch.FindBattleNet()),
+                start: WowStarter.StartProcess);
+            Starter.Changed += (state, why) =>
+            {
+                var word = WowStarter.Word(state);
+                var msg = new Dictionary<string, object> { ["t"] = "wow", ["state"] = word };
+                if (why != null) msg["why"] = why;
+                Bridge?.Publish(msg);
+                var text = state == WowState.Starting ? "Starting WoW on your PC…" : state == WowState.StartFailed ? "WoW didn't start: " + why
+                         : state == WowState.Running ? "WoW is running on your PC" : "WoW was closed on your PC";
+                Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = text });
+                if (state == WowState.Running)
+                    Task.Run(() =>
+                    {
+                        Thread.Sleep(2000);   // let the new window settle before it is moved or raised
+                        CheckCapture();
+                        FocusWow();
+                    });
+                Fire();
+            };
+        }
+
+        public string CaptureStatus { get; private set; } = "";
+        DateTime lastRecapture = DateTime.MinValue, lastMove = DateTime.MinValue;
+        readonly object captureGate = new object();
+
+        List<SunshineDisplay> SunshineDisplays()
+        {
+            try
+            {
+                using (var fs = new FileStream(SunshineLayout.LogFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (var r = new StreamReader(fs)) return Displays.ParseSunshineLog(r.ReadToEnd());
+            }
+            catch (Exception) { return new List<SunshineDisplay>(); }
+        }
+
+        /// <summary>
+        /// Keeps the captured monitor and WoW's together: no stream running, Sunshine is pointed at WoW's monitor (output_name, a
+        /// Sunshine restart, remembered in settings); during a stream WoW's window is moved to the captured monitor instead.
+        /// </summary>
+        void CheckCapture()
+        {
+            if (!Monitor.TryEnter(captureGate)) return;
+            try
+            {
+                if (Sunshine == null || !Sunshine.Running) return;
+                var p = WowWindow.Find(FlavorDirOrNull);
+                if (p == null) return;
+                var wowDisplay = Displays.MonitorOf(p.MainWindowHandle);
+                var list = SunshineDisplays();
+                if (list.Count == 0) return;
+                var captured = Displays.Captured(list, Settings.CaptureDevice);
+                var target = list.FirstOrDefault(d => string.Equals(d.DisplayName, wowDisplay, StringComparison.OrdinalIgnoreCase));
+                switch (Displays.Decide(wowDisplay, captured, Stream == StreamState.Streaming, target?.DeviceId != null))
+                {
+                    case Displays.Fix.RecaptureSunshine:
+                        if (DateTime.UtcNow - lastRecapture < TimeSpan.FromSeconds(90)) return;
+                        lastRecapture = DateTime.UtcNow;
+                        Settings.CaptureDevice = target.DeviceId;
+                        SaveSettings();
+                        CaptureStatus = "capturing " + (target.Friendly ?? target.DisplayName) + ", the monitor WoW is on";
+                        Log.I("capture: WoW is on " + wowDisplay + ", Sunshine captured " + captured + ": now " + target.DeviceId + " (restart)");
+                        Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = "Switching the stream to the monitor WoW is on" });
+                        WriteSunshineConfig();
+                        RestartSunshine();
+                        break;
+                    case Displays.Fix.MoveWow:
+                        if (DateTime.UtcNow - lastMove < TimeSpan.FromSeconds(15)) return;
+                        lastMove = DateTime.UtcNow;
+                        var why = Displays.MoveTo(p.MainWindowHandle, captured);
+                        CaptureStatus = why == null ? "moved WoW to the streamed monitor" : "couldn't move WoW to the streamed monitor: " + why;
+                        Log.I("capture: stream running, WoW on " + wowDisplay + ", captured " + captured + ": " + CaptureStatus);
+                        FocusWow();
+                        break;
+                    default:
+                        var cap = list.FirstOrDefault(d => d.DisplayName == captured);
+                        CaptureStatus = "capturing " + (cap?.Friendly ?? captured) + (wowDisplay == captured ? ", where WoW is" : "");
+                        break;
+                }
+            }
+            catch (Exception e) { Log.I("capture: " + e.Message); }
+            finally { Monitor.Exit(captureGate); }
         }
 
         // ---------------------------------------------------------------- bridge + mDNS
@@ -427,7 +549,12 @@ namespace DsfDesktop.App
                 ["uniqueid"] = SunshineId,
             },
             ["stream"] = StreamWord,
-            ["wow"] = new Dictionary<string, object> { ["found"] = Wow != null, ["flavor"] = Flavor, ["running"] = WowWindow.IsRunning(), ["focused"] = WowWindow.IsForeground() },
+            ["wow"] = new Dictionary<string, object>
+            {
+                ["found"] = Wow != null, ["flavor"] = Flavor, ["running"] = WowWindow.IsRunning(), ["focused"] = WowWindow.IsForeground(),
+                // running / starting / stopped / start_failed (+ why): "Starting WoW on your PC..." on the Thor
+                ["state"] = WowStarter.Word(WowUp() ? WowState.Running : Starter.State), ["why"] = Starter.Why,
+            },
             ["pairing_open"] = !Codes.Locked,
         };
 

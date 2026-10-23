@@ -37,6 +37,8 @@ namespace DsfDesktop.Sunshine
         public string BindAddress = "";
         /// <summary>the exe Sunshine runs when a stream of the WoW app starts and stops (our own, with --event)</summary>
         public string EventExe;
+        /// <summary>the display device id Sunshine captures ("{...}", from its own display list); null = the primary display</summary>
+        public string OutputName;
         public string AppName = "WoW Forever";
     }
 
@@ -79,6 +81,7 @@ namespace DsfDesktop.Sunshine
                 new KeyValuePair<string, string>("log_path", P(l.LogFile)),
             };
             if (!string.IsNullOrWhiteSpace(o.Encoder)) kv.Add(new KeyValuePair<string, string>("encoder", o.Encoder.Trim()));
+            if (!string.IsNullOrWhiteSpace(o.OutputName)) kv.Add(new KeyValuePair<string, string>("output_name", o.OutputName.Trim()));
             if (!string.IsNullOrWhiteSpace(o.BindAddress)) kv.Add(new KeyValuePair<string, string>("bind_address", o.BindAddress.Trim()));
             var sb = new StringBuilder("# Written by DS Forever Desktop. Edits are replaced at the next start.\n");
             foreach (var p in kv) sb.Append(p.Key).Append(" = ").Append(p.Value).Append('\n');

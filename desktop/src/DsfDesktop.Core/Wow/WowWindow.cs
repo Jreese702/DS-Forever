@@ -35,6 +35,23 @@ namespace DsfDesktop.Wow
 
         public static bool IsRunning() => Find() != null;
 
+        /// <summary>a WoW process exists (it may not have a window yet while it loads)</summary>
+        public static bool ProcessRunning()
+        {
+            foreach (var n in Names)
+            {
+                try
+                {
+                    var ps = Process.GetProcessesByName(n);
+                    bool any = ps.Length > 0;
+                    foreach (var x in ps) x.Dispose();
+                    if (any) return true;
+                }
+                catch (Exception) { }
+            }
+            return false;
+        }
+
         /// <summary>is a WoW client the foreground window (protocol status "focus")</summary>
         public static bool IsForeground()
         {

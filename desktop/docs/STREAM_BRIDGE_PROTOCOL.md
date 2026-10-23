@@ -96,6 +96,20 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - `{"t":"status","text":"..."}` — a line for the companion's status bar.
 - `{"t":"stream","state":"started"|"stopped"|"unknown"}` — Sunshine's own state.
 - `{"t":"focus_result","ok":bool,"why":"..."}` — the answer to `focus`.
+- **[S3] Starting WoW.** Desktop starts WoW Forever when a stream starts (Sunshine reports a client streaming) or the Thor sends
+  `focus`, and WoW isn't running, unless the user turned off "Start WoW when streaming" (default on). It uses Battle.net's own launch
+  (`Battle.net.exe --exec="launch_uid <product>"`, product `wow_classic_beta` until 2026-11-04, `wowf` from then, as the APK's
+  WowProduct picks), or the game exe when Battle.net isn't installed; it never touches credentials. When the window appears Desktop
+  brings it to the front (and onto the streamed monitor).
+  - `{"t":"wow","state":"starting"|"running"|"stopped"|"start_failed","why":"..."}` on every change, plus a `status` text
+    ("Starting WoW on your PC…", "WoW didn't start: <why>", "WoW is running on your PC").
+  - `welcome` / `/v1/info`: `wow.state` (same words) and `wow.why`, beside `wow.running`.
+  - `focus_result` while WoW starts: `{"ok":false,"state":"starting","why":"starting WoW"}`; the Thor shows "Starting WoW on your
+    PC…" and needs no second `focus` (Desktop focuses WoW itself when its window appears).
+  - `start_failed` after 3 minutes without a WoW window usually means Battle.net is waiting for the player to sign in on the PC.
+- **[S3] The streamed monitor.** Sunshine captures one monitor (the primary unless told otherwise). When no stream is running and WoW
+  is on another monitor, Desktop points Sunshine at WoW's monitor (Sunshine restarts, ~25 s, and a `status` says so); during a stream
+  it moves the WoW window onto the streamed monitor instead.
 
 ## 7. Control (Thor → bridge)
 
