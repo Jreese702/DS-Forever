@@ -72,15 +72,16 @@ class StreamSession(
         val http = NvHttp(host.address, host.httpPort, host.httpsPort, identity, cert)
         try {
             events.stage("Asking ${host.name}…")
+            // http first: proves the PC's http port answers, and its HttpsPort (the stored one may be stale) is the one used next
+            val plain = http.serverInfo(false)
+            XmlFields.get(plain, "HttpsPort")?.toIntOrNull()?.takeIf { it > 0 }?.let { if (it != http.httpsPort) { Log.i(TAG, "https port ${http.httpsPort} -> $it (serverinfo)"); http.httpsPort = it } }
             val info = try { http.serverInfo(true) } catch (e: HostHttpException) {
-                // https refused our certificate: look over http whether the PC still lists us as paired
-                val plain = http.serverInfo(false)
-                if (XmlFields.get(plain, "PairStatus") != "1") { events.ended(-1, true, "${host.name} doesn't know this Thor any more."); return }
+                // Sunshine answers an unknown client certificate with 401 over https (its http PairStatus is always 0: no proof there)
+                if (e.code == 401) { events.ended(-1, true, "${host.name} doesn't know this Thor any more."); return }
                 throw e
-            } catch (e: javax.net.ssl.SSLException) {
-                val plain = http.serverInfo(false)
-                if (XmlFields.get(plain, "PairStatus") != "1") { events.ended(-1, true, "${host.name} doesn't know this Thor any more."); return }
-                events.ended(-1, true, "${host.name} answered with a different certificate: pair again."); return
+            } catch (e: NvHttpStageException) {
+                if (e.stage != "tls") throw e
+                events.ended(ERROR_TLS, StreamDiag.isPinMismatch(e), StreamDiag.tlsText(host.name, e)); return
             }
             if (XmlFields.get(info, "PairStatus") != "1") { events.ended(-1, true, "${host.name} doesn't know this Thor any more."); return }
             val appVersion = XmlFields.get(info, "appversion") ?: run { events.ended(-1, false, "${host.name} sent no version."); return }
@@ -113,6 +114,8 @@ class StreamSession(
             if (stopped) stopCore() else events.started(quality.width, quality.height)
         } catch (e: HostHttpException) {
             events.ended(-1, e.code == 401, "${host.name}: ${e.message}")
+        } catch (e: NvHttpStageException) {
+            events.ended(-2, false, StreamDiag.stageText(host.name, e))
         } catch (t: Throwable) {
             events.ended(-2, false, "${host.name} didn't answer (${t.message ?: t.javaClass.simpleName}).")
         }
@@ -149,6 +152,8 @@ class StreamSession(
 
     companion object {
         const val TAG = "DSFSTREAM"
+        /** the https handshake failed (see [StreamDiag.tlsText]) */
+        const val ERROR_TLS = -3
         /** Moonlight's LAN packet size (moonlight-android's Game.java) */
         const val PACKET_SIZE = 1392
 
@@ -158,5 +163,28 @@ class StreamSession(
             MoonBridge.ML_ERROR_NO_VIDEO_FRAME -> "The stream stopped sending pictures."
             else -> "The connection to the PC was lost (error $code)."
         }
+    }
+}
+
+/** what the player reads for a request that failed at one stage (pure: the tests drive it) */
+object StreamDiag {
+    /** the TLS failed because the PC showed a different certificate than the paired one */
+    fun isPinMismatch(e: Throwable): Boolean {
+        var c: Throwable? = e
+        while (c != null) { if (c is java.security.cert.CertificateException && c.message?.contains("paired PC") == true) return true; c = c.cause }
+        return false
+    }
+
+    fun tlsText(pc: String, e: NvHttpStageException): String = when {
+        isPinMismatch(e) -> "$pc answered with a different certificate than the paired one: pair again."
+        e.timedOut -> "$pc took the connection on its secure streaming port (${e.port}) but never answered the TLS handshake. " +
+            "Its streaming service looks stuck: restart DS Forever Desktop on the PC."
+        else -> "$pc refused the secure connection on port ${e.port} (${e.cause?.javaClass?.simpleName}: ${e.cause?.message})."
+    }
+
+    fun stageText(pc: String, e: NvHttpStageException): String = when (e.stage) {
+        "connect" -> "$pc didn't answer on port ${e.port} (${e.cause?.message ?: "no connection"})."
+        "tls" -> tlsText(pc, e)
+        else -> "$pc stopped answering on port ${e.port} (${if (e.timedOut) "no answer in ${e.elapsedMs / 1000} s" else e.cause?.message})."
     }
 }
