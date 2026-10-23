@@ -1566,7 +1566,7 @@ public class InputControlsView extends View {
                             );
                             if (delta != null) {
                                 if (touchpadView != null) touchpadView.movePointerFromLookThrough(delta.x, delta.y);
-                                else movePointer(delta.x, delta.y);
+                                else movePointer(Math.round(delta.x), Math.round(delta.y));
                             }
                         }
                     }
