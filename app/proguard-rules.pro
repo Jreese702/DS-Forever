@@ -67,3 +67,8 @@
 
 # DS Forever streaming (S1 "Chooser"): Streaming's entry is found by name (StreamEntries.PLUGIN, a Kotlin object's INSTANCE)
 -keep class app.gamenative.stream.DsStreamEntry { *; }
+
+# Streaming (stream1 on the Thor: "no static method MoonBridge.bridgeDrSetup"): the Moonlight core's native code finds MoonBridge by
+# name and calls its static bridge* callbacks; R8 must keep the class, its names and every member (native and callbacks alike)
+-keep class com.jrees.wowcompanion.stream.MoonBridge { *; }
+-keepclasseswithmembernames,includedescriptorclasses class com.jrees.wowcompanion.stream.** { native <methods>; }

@@ -20,6 +20,24 @@ import zipfile
 CALLBACKS = [
     ("Lcom/jrees/wowcompanion/IndoorGeneratorNative$Source;", "read", "(I)[B"),
     ("Lcom/jrees/wowcompanion/IndoorGenerator$Yield;", "point", "()V"),
+    # the streaming core (dsforever/src/main/jni/dsf/dsf_bridge.c) calls these statics by name (stream1: R8 had dropped them)
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeDrSetup", "(IIII)I"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeDrStart", "()V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeDrStop", "()V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeDrCleanup", "()V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeDrSubmitDecodeUnit", "([BIIIIJ)I"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeArInit", "(III)I"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeArStart", "()V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeArStop", "()V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeArCleanup", "()V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeArPlaySample", "([SI)V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeClStageStarting", "(I)V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeClStageComplete", "(I)V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeClStageFailed", "(II)V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeClConnectionStarted", "()V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeClConnectionTerminated", "(I)V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeClRumble", "(SSS)V"),
+    ("Lcom/jrees/wowcompanion/stream/MoonBridge;", "bridgeClConnectionStatusUpdate", "(I)V"),
 ]
 
 
