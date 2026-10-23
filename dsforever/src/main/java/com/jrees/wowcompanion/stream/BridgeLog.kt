@@ -27,6 +27,8 @@ class BridgeLog(
     private val onMessage: (JSONObject) -> Unit,
     private val onStatus: (String) -> Unit,
     private val onAuthLost: (code: String) -> Unit = {},
+    /** WoW's state on the PC as Desktop reports it (S3's "wow" message, the welcome's wow.state, a focus_result while it starts) */
+    private val onWow: (state: String, why: String) -> Unit = { _, _ -> },
     /** the waits between tries (the tests pass a fake that also ends the loop) */
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
 ) : LogSource {
@@ -95,6 +97,7 @@ class BridgeLog(
                     // a new connection replays the backlog: half-assembled documents of the old one would only glue onto it
                     docs.reset()
                     onStatus("PC: connected to ${m.pcName.ifEmpty { "DS Forever Desktop" }}${if (m.wowRunning) "" else " (WoW isn't running)"}")
+                    onWow(m.wowState.ifEmpty { if (m.wowRunning) "running" else "stopped" }, m.wowWhy)
                     c.send(BridgeProtocol.focus())
                 }
                 is BridgeMsg.Doc -> emit(m)
@@ -102,7 +105,14 @@ class BridgeLog(
                 is BridgeMsg.Gap -> { bridgeGaps++; onStatus("gap at seq ${m.seq} (expected ${m.expected})") }
                 is BridgeMsg.Log -> { docs.reset(); onStatus(if (m.event == "switch") "PC: following another WoW log" else "client restarted, resyncing") }
                 is BridgeMsg.Status -> if (m.text.isNotEmpty()) onStatus("PC: ${m.text}")
-                is BridgeMsg.FocusResult -> if (!m.ok && m.why.isNotEmpty()) onStatus("PC: ${m.why}")
+                is BridgeMsg.FocusResult -> {
+                    if (m.state.isNotEmpty()) onWow(m.state, m.why)
+                    if (!m.ok && m.why.isNotEmpty()) onStatus("PC: ${m.why}")
+                }
+                is BridgeMsg.Wow -> {
+                    onWow(m.state, m.why)
+                    BridgeProtocol.wowText(m.state, m.why).takeIf { it.isNotEmpty() }?.let { onStatus("PC: $it") }
+                }
                 is BridgeMsg.Unpaired -> { onAuthLost("revoked"); return End.AUTH_LOST }
                 is BridgeMsg.Error -> {
                     try { Log.w(TAG, "bridge error ${m.code}") } catch (_: Throwable) {}

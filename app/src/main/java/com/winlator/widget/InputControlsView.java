@@ -42,6 +42,7 @@ import com.winlator.winhandler.MouseEventFlags;
 import com.winlator.winhandler.WinHandler;
 import com.winlator.xserver.Pointer;
 import com.winlator.xserver.XServer;
+import com.winlator.xserver.XKeycode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -78,6 +79,71 @@ public class InputControlsView extends View {
     private ControlsProfile gyroProfile;
     private float overlayOpacity = DEFAULT_OVERLAY_OPACITY;
     private TouchpadView touchpadView;
+    /**
+     * DS FOREVER STREAMING: where this overlay's output goes instead of the container's X server (null = the X server, as in Local).
+     * Its gamepad goes to the stream's controller, its keys and mouse to Moonlight's keyboard / mouse channel, and touches on no
+     * element go to {@link #touchFallback} (Streaming's touch = mouse) in place of the TouchpadView.
+     */
+    public interface RemoteSink {
+        void gamepad(GamepadState state);
+        /** an X keycode (XKeycode.id), the same ids DS Forever's InputSink speaks */
+        void key(int xKeycode, boolean down);
+        void pointerButton(Pointer.Button button, boolean down);
+        void pointerMove(int dx, int dy);
+    }
+    public interface TouchFallback {
+        boolean onTouchEvent(MotionEvent event);
+        void cancelTouchInput();
+    }
+    private RemoteSink remoteSink;
+    private TouchFallback touchFallback;
+
+    /** Streaming: route everything to [sink] / [fallback] (both null = back to the X server) */
+    public void setRemote(RemoteSink sink, TouchFallback fallback) {
+        cancelTouchRouting();
+        this.remoteSink = sink;
+        this.touchFallback = fallback;
+    }
+
+    public boolean isRemote() { return remoteSink != null; }
+
+    private boolean tpTouchscreenMode() {
+        if (touchpadView != null) return touchpadView.isTouchscreenMode();
+        return touchFallback != null;
+    }
+    private void tpButtonsEnabled(Boolean left, Boolean right) {
+        if (touchpadView == null) return;
+        if (left != null) touchpadView.setPointerButtonLeftEnabled(left);
+        if (right != null) touchpadView.setPointerButtonRightEnabled(right);
+    }
+    private void tpTouch(MotionEvent event) {
+        if (touchpadView != null) touchpadView.onTouchEvent(event);
+        else if (touchFallback != null) touchFallback.onTouchEvent(event);
+    }
+    private void sendVirtualPad(GamepadState state) {
+        if (remoteSink != null) { remoteSink.gamepad(state); return; }
+        WinHandler winHandler = xServer != null ? xServer.getWinHandler() : null;
+        if (winHandler != null) {
+            winHandler.sendGamepadState();
+            winHandler.sendVirtualGamepadState(state);
+        }
+    }
+    private void movePointer(int dx, int dy) {
+        if (remoteSink != null) { remoteSink.pointerMove(dx, dy); return; }
+        if (xServer == null) return;
+        if (xServer.isRelativeMouseMovement()) xServer.getWinHandler().mouseEvent(MouseEventFlags.MOVE, dx, dy, 0);
+        else xServer.injectPointerMoveDelta(dx, dy);
+    }
+    private void injectBinding(Binding binding, boolean down) {
+        if (remoteSink == null) { binding.inject(xServer, down); return; }
+        if (binding == Binding.KEY_TILDE) {
+            // ~ = Shift + `
+            if (down) { remoteSink.key(XKeycode.KEY_SHIFT_L.getId() & 0xFF, true); remoteSink.key(XKeycode.KEY_GRAVE.getId() & 0xFF, true); }
+            else { remoteSink.key(XKeycode.KEY_GRAVE.getId() & 0xFF, false); remoteSink.key(XKeycode.KEY_SHIFT_L.getId() & 0xFF, false); }
+            return;
+        }
+        if (binding.keycode != null && binding.keycode != XKeycode.KEY_NONE) remoteSink.key(binding.keycode.getId() & 0xFF, down);
+    }
     private XServer xServer;
     private final Bitmap[] icons = new Bitmap[40];
     private Timer mouseMoveTimer;
@@ -215,6 +281,7 @@ public class InputControlsView extends View {
         releaseAllShooterInputs();
         commitGamepadState();
         if (touchpadView != null) touchpadView.cancelTouchInput();
+        if (touchFallback != null) touchFallback.cancelTouchInput();
         touchpadPointers.clear();
         lookThroughPointerState.clear();
     }
@@ -577,7 +644,9 @@ public class InputControlsView extends View {
             mouseMoveTimer.schedule(new TimerTask() {
                 @Override
                 public void run() {
-                    xServer.injectPointerMoveDelta((int)(mouseMoveOffset.x * 10 * cursorSpeed), (int)(mouseMoveOffset.y * 10 * cursorSpeed));
+                    int dx = (int)(mouseMoveOffset.x * 10 * cursorSpeed), dy = (int)(mouseMoveOffset.y * 10 * cursorSpeed);
+                    if (remoteSink != null) { if (dx != 0 || dy != 0) remoteSink.pointerMove(dx, dy); }
+                    else xServer.injectPointerMoveDelta(dx, dy);
                 }
             }, 0, 1000 / 60);
         }
@@ -914,13 +983,8 @@ public class InputControlsView extends View {
     }
 
     private void commitGamepadState() {
-        if (xServer == null || profile == null) return;
-        WinHandler winHandler = xServer.getWinHandler();
-        if (winHandler != null) {
-            GamepadState state = profile.getGamepadState();
-            winHandler.sendGamepadState();
-            winHandler.sendVirtualGamepadState(state);
-        }
+        if ((xServer == null && remoteSink == null) || profile == null) return;
+        sendVirtualPad(profile.getGamepadState());
     }
 
     private void releaseShooterSprint() {
@@ -1336,13 +1400,7 @@ public class InputControlsView extends View {
             int moveY = (int)lookAccumY;
             lookAccumX -= moveX;
             lookAccumY -= moveY;
-            if (moveX != 0 || moveY != 0) {
-                if (xServer.isRelativeMouseMovement()) {
-                    xServer.getWinHandler().mouseEvent(MouseEventFlags.MOVE, moveX, moveY, 0);
-                } else {
-                    xServer.injectPointerMoveDelta(moveX, moveY);
-                }
-            }
+            if (moveX != 0 || moveY != 0) movePointer(moveX, moveY);
             return true;
         }
         return false;
@@ -1424,7 +1482,7 @@ public class InputControlsView extends View {
             int pointerId = event.getPointerId(actionIndex);
             int actionMasked = event.getActionMasked();
             boolean handled = false;
-            boolean touchscreenMode = touchpadView.isTouchscreenMode();
+            boolean touchscreenMode = tpTouchscreenMode();
             if (touchscreenMode && lookThroughPointerState.isActive()) {
                 cancelTouchRouting();
             }
@@ -1441,8 +1499,7 @@ public class InputControlsView extends View {
                         break;
                     }
 
-                    touchpadView.setPointerButtonLeftEnabled(true);
-                    touchpadView.setPointerButtonRightEnabled(true);
+                    tpButtonsEnabled(true, true);
                     boolean lookThroughCandidate = false;
                     for (ControlElement element : profile.getElements()) {
                         if (element.handleTouchDown(pointerId, x, y)) {
@@ -1456,10 +1513,10 @@ public class InputControlsView extends View {
                             }
                         }
                         if (element.getBindingAt(0) == Binding.MOUSE_LEFT_BUTTON) {
-                            touchpadView.setPointerButtonLeftEnabled(false);
+                            tpButtonsEnabled(false, null);
                         }
                         if (element.getBindingAt(0) == Binding.MOUSE_RIGHT_BUTTON) {
-                            touchpadView.setPointerButtonRightEnabled(false);
+                            tpButtonsEnabled(null, false);
                         }
                     }
                     if (lookThroughCandidate) {
@@ -1473,7 +1530,7 @@ public class InputControlsView extends View {
                     if (!handled) {
                         if (!lookThroughPointerState.isActive()) {
                             touchpadPointers.put(pointerId, true);
-                            touchpadView.onTouchEvent(event);
+                            tpTouch(event);
                         }
                     }
                     break;
@@ -1508,12 +1565,13 @@ public class InputControlsView extends View {
                                     lookThroughTouchSlop
                             );
                             if (delta != null) {
-                                touchpadView.movePointerFromLookThrough(delta.x, delta.y);
+                                if (touchpadView != null) touchpadView.movePointerFromLookThrough(delta.x, delta.y);
+                                else movePointer(delta.x, delta.y);
                             }
                         }
                     }
                     if (!(shooterModeActive || containerShooterModeRuntime) && touchpadPointers.size() > 0) {
-                        touchpadView.onTouchEvent(event);
+                        tpTouch(event);
                     }
                     break;
                 }
@@ -1545,19 +1603,14 @@ public class InputControlsView extends View {
                         }
                     }
                     for (ControlElement element : profile.getElements()) if (element.handleTouchUp(pointerId)) handled = true;
-                    if (touchpadPointers.get(pointerId)) touchpadView.onTouchEvent(event);
+                    if (touchpadPointers.get(pointerId)) tpTouch(event);
                     lookThroughPointerState.release(pointerId);
                     touchpadPointers.delete(pointerId);
                     break;
             }
 
             // commit on-screen joystick state
-            WinHandler winHandler = xServer != null ? xServer.getWinHandler() : null;
-            if (winHandler != null) {
-                GamepadState state = profile.getGamepadState();
-                winHandler.sendGamepadState();
-                winHandler.sendVirtualGamepadState(state);
-            }
+            if (xServer != null || remoteSink != null) sendVirtualPad(profile.getGamepadState());
         }
         return true;
     }
@@ -1751,6 +1804,7 @@ public class InputControlsView extends View {
                 return;
             }
             else if (binding == Binding.ALT_ENTER) {
+                if (remoteSink != null) return;     // never Alt on the PC (Streaming's key rules)
                 if (isActionDown) {
                     xServer.injectKeyPress(Binding.KEY_ALT_L.keycode);
                     xServer.injectKeyPress(Binding.KEY_ENTER.keycode);
@@ -1771,17 +1825,18 @@ public class InputControlsView extends View {
             }
             else {
                 Pointer.Button pointerButton = binding.getPointerButton();
-                if (isActionDown) {
+                if (remoteSink != null && pointerButton != null) remoteSink.pointerButton(pointerButton, isActionDown);
+                else if (isActionDown) {
                     if (pointerButton != null) {
                         xServer.injectPointerButtonPress(pointerButton);
                     }
-                    else binding.inject(xServer, true);
+                    else injectBinding(binding, true);
                 }
                 else {
                     if (pointerButton != null) {
                         xServer.injectPointerButtonRelease(pointerButton);
                     }
-                    else binding.inject(xServer, false);
+                    else injectBinding(binding, false);
                 }
             }
         }
@@ -1919,13 +1974,8 @@ public class InputControlsView extends View {
     }
 
     private void updateGyroMouse(int x, int y) {
-        if (xServer == null || (x == 0 && y == 0)) return;
-        if (xServer.isRelativeMouseMovement()) {
-            xServer.getWinHandler().mouseEvent(MouseEventFlags.MOVE, x, y, 0);
-        }
-        else {
-            xServer.injectPointerMoveDelta(x, y);
-        }
+        if ((xServer == null && remoteSink == null) || (x == 0 && y == 0)) return;
+        movePointer(x, y);
     }
 
     private synchronized void updateGyroStick(boolean rightStick, float x, float y) {
@@ -1947,6 +1997,7 @@ public class InputControlsView extends View {
         }
         if (!state.updateThumbstick(rightStick, mixedX, mixedY)) return;
 
+        if (remoteSink != null) { remoteSink.gamepad(state); return; }
         WinHandler winHandler = xServer != null ? xServer.getWinHandler() : null;
         if (winHandler != null) {
             ExternalController controller = winHandler.getCurrentController();
@@ -1974,11 +2025,7 @@ public class InputControlsView extends View {
         state.thumbRX = 0f;
         state.thumbRY = 0f;
 
-        WinHandler winHandler = xServer != null ? xServer.getWinHandler() : null;
-        if (winHandler != null) {
-            winHandler.sendGamepadState();
-            winHandler.sendVirtualGamepadState(state);
-        }
+        sendVirtualPad(state);
     }
 
     public Bitmap getIcon(byte id) {

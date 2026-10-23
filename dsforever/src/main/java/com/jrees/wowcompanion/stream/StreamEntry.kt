@@ -10,9 +10,8 @@ import android.view.Display
  * HOW THE APP ENTERS STREAMING.
  *
  * The start-up chooser is S1's: its interface app.gamenative.ui.screen.wow.StreamEntry (in :app, branch feat/stream-chooser) finds
- * S2's object app.gamenative.stream.DsStreamEntry by name. That object is a thin adapter over [StreamTop] and is kept, ready, in
- * tools/stream/integration/DsStreamEntry.kt: it cannot be compiled on S2's branch (S1's interface is not here, and :dsforever cannot
- * see :app), so it is copied into :app at the merge. It was compiled against S1's interface (ef31346d) before hand-over.
+ * S2's object app.gamenative.stream.DsStreamEntry by name (in :app since stream-int): a thin adapter over [StreamTop] that also lays
+ * the launcher's on-screen controls (InputControlsView) over the stream.
  *
  * [Streaming] is the same thing without the chooser: [StreamActivity] on the top screen (the first tests, or a future shortcut).
  */

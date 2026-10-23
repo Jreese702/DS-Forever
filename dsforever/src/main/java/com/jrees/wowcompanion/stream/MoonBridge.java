@@ -120,6 +120,7 @@ public final class MoonBridge {
     public static native void sendMousePosition(short x, short y, short referenceWidth, short referenceHeight);
     public static native void sendMouseMove(short deltaX, short deltaY);
     public static native void sendMouseButton(byte buttonEvent, byte mouseButton);
+    public static native void sendMouseHighResScroll(short scrollAmount);
     public static native void sendMultiControllerInput(short controllerNumber, short activeGamepadMask, int buttonFlags,
                                                        byte leftTrigger, byte rightTrigger, short leftStickX, short leftStickY,
                                                        short rightStickX, short rightStickY);
@@ -135,5 +136,6 @@ public final class MoonBridge {
         @Override public void mousePosition(int x, int y, int refW, int refH) { if (loaded) sendMousePosition((short) x, (short) y, (short) refW, (short) refH); }
         @Override public void mouseMove(int dx, int dy) { if (loaded) sendMouseMove((short) dx, (short) dy); }
         @Override public void mouseButton(boolean down, int button) { if (loaded) sendMouseButton(down ? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE, (byte) button); }
+        @Override public void scroll(int amount) { if (loaded) sendMouseHighResScroll((short) Math.max(-32768, Math.min(32767, amount))); }
     };
 }

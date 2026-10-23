@@ -88,3 +88,24 @@ class HostStore(context: Context) {
         private const val KEY_KEY = "client_key"
     }
 }
+
+/**
+ * WHERE THE PAIRED PC IS (stream3, 2026-10-23: "moved: 192.168.1.11 -> 100.69.36.86" flipped twice in a second, then a stream went
+ * over Tailscale). mDNS may answer with the PC's VPN address or its LAN one, one advert at a time. The home LAN wins and STICKS:
+ *  - a candidate on the Thor's Wi-Fi /24: move there (from a VPN address, or a LAN address that changed by DHCP);
+ *  - the current address is on the LAN and the candidate is not: PROBE_FIRST (stay while the LAN address answers);
+ *  - neither on the LAN: follow the candidate.
+ */
+object AddressPolicy {
+    enum class Move { STAY, MOVE, PROBE_FIRST }
+
+    fun decide(current: String, candidate: String, thorSubnet: String): Move {
+        if (candidate.isEmpty() || candidate == current) return Move.STAY
+        fun lan(a: String) = thorSubnet.isNotEmpty() && PairedHost.subnetOf(a) == thorSubnet
+        return when {
+            lan(candidate) -> Move.MOVE
+            lan(current) -> Move.PROBE_FIRST
+            else -> Move.MOVE
+        }
+    }
+}

@@ -44,6 +44,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         fun back()
         /** the bottom screen: [covers] = Streaming's placeholder page still covers the companion (no PC paired yet); [note] = status */
         fun bottom(covers: Boolean, note: String) {}
+        /** the stream is (no longer) on the top screen: the on-screen touch controls show only while it is, and only when [touchControls] */
+        fun streaming(on: Boolean, touchControls: Boolean) {}
     }
 
     enum class Screen { PAIRING, PIN, CONNECTING, STREAMING, PROBLEM, QUALITY }
@@ -77,6 +79,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     /** the top screen's view (the stream's Surface under Streaming's own screens) */
     val view: FrameLayout = FrameLayout(activity).apply { setBackgroundColor(Color.BLACK) }
     private var isOpen = false
+    private lateinit var banner: android.widget.TextView
 
     init {
         quality = StreamQuality.load(activity)
@@ -88,6 +91,30 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         status = StatusView(activity, onRetry = { retryNow() }, onPairAgain = { show(Screen.PAIRING) }, onQuality = { openQuality() }, onBack = { back() })
         overlay.centered(pairing, 640f)
         overlay.centered(status, 760f)
+        // "Starting WoW on your PC…" over the stream (S3's wow message)
+        banner = StreamLook.text(activity, 18f, StreamLook.GOLD, bold = true).apply {
+            background = StreamLook.rounded(StreamLook.PANEL, StreamLook.dp(activity, 12f).toFloat())
+            val p = StreamLook.dp(activity, 12f); setPadding(p * 2, p, p * 2, p)
+            visibility = View.GONE
+        }
+        view.addView(banner, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+            android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL).apply { topMargin = StreamLook.dp(activity, 24f) })
+        // touch = mouse straight on the picture when no on-screen controls sit above it (the host's overlay calls [touch] itself)
+        surface.setOnTouchListener { _, e -> touch(e) }
+    }
+
+    private val hideBanner = Runnable { banner.visibility = View.GONE }
+
+    /** WoW's state on the PC: "starting" stays up until it runs; a failure shows for a while */
+    private fun wowState(state: String, why: String) {
+        val text = BridgeProtocol.wowText(state, why)
+        main.removeCallbacks(hideBanner)
+        if (text.isEmpty()) { banner.visibility = View.GONE; return }
+        banner.text = text
+        banner.visibility = View.VISIBLE
+        banner.bringToFront()
+        if (state == "start_failed") main.postDelayed(hideBanner, 12_000)
+        if (screen == Screen.CONNECTING) status.show("Connecting to ${host?.name ?: "the PC"}…", text, "", withButtons = false)
     }
 
     /** Streaming's top screen came up: the mode, discovery, then the pairing screen or straight to the PC */
@@ -126,7 +153,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         val clientId = store.clientId()
         PlayModes.set(PlayMode.STREAM, { onMsg, onStatus ->
             BridgeLog(h.address, h.bridgePort, h.bridgeTls, h.bridgeFingerprint, h.bridgeToken, clientId, WsClient, onMsg, onStatus,
-                onAuthLost = { why -> main.post { authLost(why) } }).also { bridge = it }
+                onAuthLost = { why -> main.post { authLost(why) } },
+                onWow = { state, why -> main.post { wowState(state, why) } }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
 
@@ -173,6 +201,9 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         show(Screen.STREAMING)
         val k = StreamKeys(MoonBridge.INPUT, w, h).also { keys = it }
         DsForeverScreen.current?.attachStream(k)
+        touchMouse = StreamTouch(MoonBridge.INPUT, view.width, view.height, w, h,
+            android.view.ViewConfiguration.get(activity).scaledTouchSlop.toFloat()) { ms, r -> main.postDelayed(r, ms) }
+        shell.streaming(true, quality.touchControls)
         try { MoonBridge.sendControllerArrivalEvent(0, 1, MoonBridge.LI_CTYPE_XBOX, StreamPad.SUPPORTED,
             (MoonBridge.LI_CCAP_ANALOG_TRIGGERS.toInt() or MoonBridge.LI_CCAP_RUMBLE.toInt()).toShort()) } catch (t: Throwable) { Log.w(TAG, "arrival: ${t.message}") }
         worker.execute { bridge?.focusWow() }
@@ -236,6 +267,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     private fun teardown() {
+        touchMouse?.cancel(); touchMouse = null
+        if (screen == Screen.STREAMING || keys != null) shell.streaming(false, quality.touchControls)
         session = null
         keys?.releaseAll()
         if (keys != null) { pad.clear(); try { sendPad() } catch (_: Throwable) {} }
@@ -253,14 +286,36 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (h != null && screen != Screen.STREAMING) {
             val same = found.firstOrNull { (h.desktopId.isNotEmpty() && it.desktopId == h.desktopId) || (h.uuid.isNotEmpty() && it.sunshineId == h.uuid) ||
                 it.name.equals(h.name, ignoreCase = true) }
-            if (same != null && same.address != h.address) {
-                Log.i(TAG, "${h.name} moved: ${h.address} -> ${same.address}")
-                host = h.copy(address = same.address, subnet = NetProbe.subnet(activity).ifEmpty { h.subnet }).also { store.save(it) }
-                applyMode()
-                if (screen == Screen.PROBLEM) retryNow()
+            // never while a stream is being set up, and the home LAN's address sticks (AddressPolicy)
+            if (same != null && session == null) {
+                val thorNet = NetProbe.subnet(activity)
+                when (AddressPolicy.decide(h.address, same.address, thorNet)) {
+                    AddressPolicy.Move.STAY -> {}
+                    AddressPolicy.Move.MOVE -> moveHost(h, same.address, thorNet)
+                    AddressPolicy.Move.PROBE_FIRST -> if (!probingMove) {
+                        probingMove = true
+                        worker.execute {
+                            val ok = NetProbe.port(h.address, h.httpPort) == Diagnosis.Port.OPEN
+                            main.post {
+                                probingMove = false
+                                if (ok) Log.i(TAG, "${h.name}: staying on the LAN address ${h.address} (seen also at ${same.address})")
+                                else if (host == h && session == null) moveHost(h, same.address, thorNet)
+                            }
+                        }
+                    }
+                }
             }
         }
         if (screen == Screen.PAIRING) showPc()
+    }
+
+    private var probingMove = false
+
+    private fun moveHost(h: PairedHost, to: String, thorNet: String) {
+        Log.i(TAG, "${h.name} moved: ${h.address} -> $to")
+        host = h.copy(address = to, subnet = thorNet.ifEmpty { h.subnet }).also { store.save(it) }
+        applyMode()
+        if (screen == Screen.PROBLEM) retryNow()
     }
 
     private fun showPc() {
@@ -331,7 +386,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun openQuality() {
         if (screen == Screen.QUALITY) return
         beforeQuality = screen
-        val v = qualityView ?: QualityView(activity, quality, onChange = { q -> quality = q; StreamQuality.save(activity, q) }, onClose = { show(beforeQuality) })
+        val v = qualityView ?: QualityView(activity, quality, onChange = { q -> val was = quality.touchControls; quality = q; StreamQuality.save(activity, q)
+            if (was != q.touchControls && screen == Screen.STREAMING) shell.streaming(true, q.touchControls) }, onClose = { show(beforeQuality) })
             .also { qualityView = it; overlay.centered(it, 560f) }
         show(Screen.QUALITY)
         v.bringToFront()
@@ -402,6 +458,48 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (h != 0 && h != lastHat) overlayKey(h)
         lastHat = h
     }
+
+    // ---------------------------------------------------------------- touch: the on-screen controls (the host's overlay) and touch = mouse
+    private var touchMouse: StreamTouch? = null
+    private val touchIds = HashSet<Int>()
+
+    /** a touch on the picture (no on-screen control under it): the PC's mouse. Only while streaming; true = taken */
+    fun touch(e: MotionEvent): Boolean {
+        val t = touchMouse
+        if (screen != Screen.STREAMING || t == null) return false
+        t.viewW = view.width; t.viewH = view.height
+        val i = e.actionIndex
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                val id = e.getPointerId(i); touchIds.add(id); t.down(id, e.getX(i), e.getY(i), e.eventTime)
+            }
+            MotionEvent.ACTION_MOVE -> for (k in 0 until e.pointerCount) {
+                val id = e.getPointerId(k); if (id in touchIds) t.move(id, e.getX(k), e.getY(k), e.eventTime)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> { val id = e.getPointerId(i); if (touchIds.remove(id)) t.up(id, e.eventTime) }
+            MotionEvent.ACTION_CANCEL -> cancelTouch()
+        }
+        return true
+    }
+
+    fun cancelTouch() { touchIds.clear(); touchMouse?.cancel() }
+
+    /** the on-screen controls' virtual pad (Winlator's GamepadState fields), merged with the physical pad */
+    fun virtualPad(winlatorButtons: Int, dpad: BooleanArray, lt: Float, rt: Float, lx: Float, ly: Float, rx: Float, ry: Float) {
+        if (screen != Screen.STREAMING) return
+        if (pad.virtual(winlatorButtons, dpad, lt, rt, lx, ly, rx, ry)) sendPad()
+    }
+
+    /** the on-screen controls' keys: an X keycode, through StreamKeys' rules (no Alt, F-keys, Win ... on the PC) */
+    fun remoteKey(xKeycode: Int, down: Boolean) { keys?.key(xKeycode, down) }
+
+    /** the on-screen controls' mouse buttons: 1 left, 2 middle, 3 right (Moonlight's numbering); wheel buttons scroll */
+    fun remoteButton(button: Int, down: Boolean) { if (keys != null) MoonBridge.INPUT.mouseButton(down, button) }
+    fun remoteScroll(amount: Int) { if (keys != null) MoonBridge.INPUT.scroll(amount) }
+    fun remoteMove(dx: Int, dy: Int) { keys?.moveBy(dx, dy) }
+
+    /** "Touch controls" in Stream quality */
+    val touchControls: Boolean get() = quality.touchControls
 
     private fun sendPad() {
         if (!MoonBridge.loaded) return

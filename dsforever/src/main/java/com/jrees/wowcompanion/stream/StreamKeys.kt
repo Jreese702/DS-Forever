@@ -10,6 +10,8 @@ interface MoonInput {
     fun mousePosition(x: Int, y: Int, refW: Int, refH: Int)
     fun mouseMove(dx: Int, dy: Int)
     fun mouseButton(down: Boolean, button: Int)
+    /** the wheel, high resolution (120 = one notch; positive = up) */
+    fun scroll(amount: Int) {}
 }
 
 /**
