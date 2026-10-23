@@ -257,6 +257,7 @@ JNIEXPORT void JNICALL JNI_FN(sendMousePosition)(JNIEnv* env, jclass clazz, jsho
 }
 JNIEXPORT void JNICALL JNI_FN(sendMouseMove)(JNIEnv* env, jclass clazz, jshort dx, jshort dy) { LiSendMouseMoveEvent(dx, dy); }
 JNIEXPORT void JNICALL JNI_FN(sendMouseButton)(JNIEnv* env, jclass clazz, jbyte action, jbyte button) { LiSendMouseButtonEvent(action, button); }
+JNIEXPORT void JNICALL JNI_FN(sendMouseHighResScroll)(JNIEnv* env, jclass clazz, jshort amount) { LiSendHighResScrollEvent(amount); }
 JNIEXPORT void JNICALL JNI_FN(sendMultiControllerInput)(JNIEnv* env, jclass clazz, jshort controllerNumber, jshort activeGamepadMask,
         jint buttonFlags, jbyte leftTrigger, jbyte rightTrigger, jshort leftStickX, jshort leftStickY, jshort rightStickX, jshort rightStickY) {
     LiSendMultiControllerEvent(controllerNumber, activeGamepadMask, buttonFlags, leftTrigger, rightTrigger,

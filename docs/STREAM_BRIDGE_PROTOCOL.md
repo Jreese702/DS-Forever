@@ -81,6 +81,9 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
 - `{"t":"status","text":"..."}` — a line for the companion's status bar.
 - `{"t":"stream","state":"started"|"stopped"|"unknown"}` — Sunshine's own state.
 - `{"t":"focus_result","ok":bool,"why":"..."}` — the answer to `focus`.
+- `{"t":"wow","state":"starting"|"running"|"stopped"|"start_failed","why":"..."}` — Desktop starting WoW on the PC (S3,
+  feat/stream-desktop f1c653d6); also `welcome.wow.state` / `.why`, and `focus_result.state` while it starts. The Thor shows
+  "Starting WoW on your PC…" over the stream (and while connecting) until `running`, and "WoW didn't start: <why>" for a failure.
 
 ## 7. Control (Thor → bridge)
 

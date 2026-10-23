@@ -10,7 +10,10 @@ import javax.crypto.spec.SecretKeySpec
  * object per WebSocket text frame, typed by "t". Unknown types and fields are ignored.
  */
 sealed class BridgeMsg {
-    data class Welcome(val hostId: String, val pcName: String, val wowRunning: Boolean, val httpPort: Int, val httpsPort: Int) : BridgeMsg()
+    data class Welcome(val hostId: String, val pcName: String, val wowRunning: Boolean, val httpPort: Int, val httpsPort: Int,
+                       val wowState: String = "", val wowWhy: String = "") : BridgeMsg()
+    /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed" */
+    data class Wow(val state: String, val why: String) : BridgeMsg()
     data class Error(val code: String, val detail: String = "") : BridgeMsg()
     /** one add-on document, already joined by the bridge (its own WCB1 reassembly of the PC's General.log) */
     data class Doc(val seq: Int, val gt: Long, val text: String) : BridgeMsg()
@@ -22,7 +25,7 @@ sealed class BridgeMsg {
     data class Log(val event: String) : BridgeMsg()
     data class BacklogEnd(val count: Int) : BridgeMsg()
     data class Stream(val state: String) : BridgeMsg()
-    data class FocusResult(val ok: Boolean, val why: String) : BridgeMsg()
+    data class FocusResult(val ok: Boolean, val why: String, val state: String = "") : BridgeMsg()
     data class PairChallenge(val nonce: String, val attemptsLeft: Int, val locked: Boolean) : BridgeMsg()
     data class PairOk(val token: String, val deviceId: String, val hostId: String, val pcName: String, val moonlightPin: String,
                       val httpPort: Int, val httpsPort: Int) : BridgeMsg()
@@ -67,7 +70,9 @@ object BridgeProtocol {
         val sun = o.optJSONObject("sunshine")
         return when (val t = o.optString("t")) {
             "welcome" -> BridgeMsg.Welcome(o.optString("host_id"), o.optString("pc_name"),
-                o.optJSONObject("wow")?.optBoolean("running") ?: false, sun?.optInt("http_port", 0) ?: 0, sun?.optInt("https_port", 0) ?: 0)
+                o.optJSONObject("wow")?.optBoolean("running") ?: false, sun?.optInt("http_port", 0) ?: 0, sun?.optInt("https_port", 0) ?: 0,
+                o.optJSONObject("wow")?.optString("state").orEmpty(), o.optJSONObject("wow")?.optString("why").orEmpty())
+            "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"))
             "error" -> BridgeMsg.Error(o.err(), o.optString("detail"))
             "doc" -> BridgeMsg.Doc(o.optInt("seq", -1), o.optLong("gt", -1L), o.optString("doc"))
             "lines" -> BridgeMsg.Lines((o.optJSONArray("l") ?: JSONArray()).let { a -> List(a.length()) { a.optString(it) } })
@@ -77,7 +82,7 @@ object BridgeProtocol {
             "reset" -> BridgeMsg.Log("restart")
             "backlog_end" -> BridgeMsg.BacklogEnd(o.optInt("count", 0))
             "stream" -> BridgeMsg.Stream(o.optString("state"))
-            "focus_result" -> BridgeMsg.FocusResult(o.optBoolean("ok"), o.optString("why"))
+            "focus_result" -> BridgeMsg.FocusResult(o.optBoolean("ok"), o.optString("why"), o.optString("state"))
             "pair_challenge" -> BridgeMsg.PairChallenge(o.optString("nonce"), o.optInt("attempts_left", -1), o.optBoolean("locked"))
             "pair_ok" -> BridgeMsg.PairOk(o.optString("token"), o.optString("device_id"), o.optString("host_id"), o.optString("pc_name"),
                 o.optString("moonlight_pin"), sun?.optInt("http_port", 0) ?: 0, sun?.optInt("https_port", 0) ?: 0)
@@ -86,6 +91,13 @@ object BridgeProtocol {
             "unpaired" -> BridgeMsg.Unpaired
             else -> BridgeMsg.Unknown(t)
         }
+    }
+
+    /** what the top screen says for WoW's state on the PC ("" = nothing to show) */
+    fun wowText(state: String, why: String): String = when (state) {
+        "starting" -> "Starting WoW on your PC…"
+        "start_failed" -> "WoW didn't start${if (why.isNotEmpty()) ": $why" else ""}. If Battle.net is waiting for you to sign in, sign in on the PC."
+        else -> ""
     }
 
     /** a token as the bridge makes them: 32 random bytes, base64url without padding */
