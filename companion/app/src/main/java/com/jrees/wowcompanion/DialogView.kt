@@ -134,6 +134,7 @@ class DialogView(context: Context) : View(context) {
                     else -> null
                 } ?: continue
                 padHit = hit; padKey = key; changed = true
+                rollPadPress[r.optInt("id")] = hit.substring(5) to gameNow()
                 chose(hit, null, r.optInt("id"))
             }
         }
@@ -245,6 +246,7 @@ class DialogView(context: Context) : View(context) {
         rolls = if (ra == null) emptyList() else (0 until ra.length()).mapNotNull { ra.optJSONObject(it) }
         rollsMore = msg.optInt("rollsMore", 0)
         rollsAt = System.currentTimeMillis()
+        rollPadRefused()
         val gameSel = rolls.firstOrNull { it.optBoolean("sel") }?.optInt("id") ?: -1
         if (gameSel != rollGameSel) { rollGameSel = gameSel; rollPick = -1 }     // the controller moved: its choice wins
         if (rolls.none { it.optInt("id") == rollPick }) rollPick = -1
@@ -392,10 +394,13 @@ class DialogView(context: Context) : View(context) {
             }
             MotionEvent.ACTION_CANCEL -> { pressed = ""; invalidate() }
         }
+        if (rollsMin && active() == null && !rollsPill.contains(e.x, e.y)) return false    // folded: the rest of the screen is Home's
         return true       // the dialog owns every touch: nothing reaches what is behind it
     }
 
     private fun tap(hit: String) {
+        if (hit == "rolls:min") { rollsMin = true; invalidate(); return }
+        if (hit == "rolls:open") { rollsMin = false; invalidate(); return }
         if (hit.startsWith("card:")) { rollPick = hit.substring(5).toIntOrNull() ?: -1; invalidate(); return }
         if (hit.startsWith("roll:")) {
             // "roll:<kind>:<cell>": the game's own RollOnLoot through Interact's cell on the isell row
@@ -567,7 +572,8 @@ class DialogView(context: Context) : View(context) {
 
     override fun onDraw(c: Canvas) {
         hits.clear()
-        if (rolls.isNotEmpty()) drawRolls(c)
+        if (rolls.isEmpty()) rollsMin = false
+        if (rolls.isNotEmpty()) { if (rollsMin && active() == null) drawRollsPill(c) else drawRolls(c) }
         val d = active()
         if (d == null) { if (rolls.isNotEmpty()) { rollNote(c); signOfLife() }; return }
         if (rolls.isNotEmpty()) hits.clear()        // a game dialog over the rolls owns the touches
@@ -717,6 +723,41 @@ class DialogView(context: Context) : View(context) {
         return out
     }
 
+    // ---- A ROLL THE GAME DID NOT TAKE (the user, 10-22, an event's loot rolls in combat: "my selections aren't triggering"): the
+    // controller's Need / Greed / Pass is the game's first (its GamepadGroupLootRollFrame); a document written PAD_FALLBACK_MS or more
+    // after it that still lists that roll means the game never got it: the roll's own cell is tapped then, as a finger's press, once
+    private val rollPadPress = HashMap<Int, Pair<String, Long>>()
+    private fun rollPadRefused() {
+        if (docGt < 0) return
+        val it = rollPadPress.entries.iterator()
+        while (it.hasNext()) {
+            val (id, kp) = it.next()
+            val (kind, gt) = kp
+            val roll = rolls.firstOrNull { r -> r.optInt("id") == id }
+            if (roll == null || docGt - gt > PAD_FALLBACK_MAX_MS) { it.remove(); continue }
+            if (docGt < gt + PAD_FALLBACK_MS) continue
+            it.remove()
+            val cell = roll.optJSONObject("cells")?.optInt(kind, -1) ?: -1
+            android.util.Log.w("WCDLG", "the game did not take the controller's $kind on roll $id (${docGt - gt} ms): tapping its cell $cell")
+            if (cell >= 0) rollSend(kind, cell)
+        }
+    }
+
+    // ---- MINIMISED ROLLS (the user, 10-22: "I can't minimize the menu"): the roll window folds into a small pill at the bottom left;
+    // a tap on the pill opens it again; while folded every touch outside the pill reaches what is behind
+    private var rollsMin = false
+    private var rollsPill = RectF()
+    private fun drawRollsPill(c: Canvas) {
+        val n = rolls.size + rollsMore
+        val text = "Loot rolls ($n)"
+        val p = UiKit.bodyPaint(26f, Theme.gold)
+        val w = p.measureText(text) + 60f
+        rollsPill = RectF(16f, height - 86f, 16f + w, height - 22f)
+        UiKit.menu(c, rollsPill, solid = true)
+        c.drawText(text, rollsPill.left + 30f, rollsPill.centerY() + 9f, p)
+        hits.add(rollsPill to "rolls:open")
+    }
+
     private fun shownRoll(): JSONObject? =
         rolls.firstOrNull { it.optInt("id") == rollPick } ?: rolls.firstOrNull { it.optBoolean("sel") } ?: rolls.firstOrNull()
 
@@ -787,6 +828,11 @@ class DialogView(context: Context) : View(context) {
             }
         }
         UiKit.windowFrame(c, r, "Loot Rolls", UiKit.tex("loot_dice"), Theme.gold, close = false)
+        // the fold button (top right): the window becomes a pill
+        val mb = RectF(r.right - 110f, r.top + 20f, r.right - 24f, r.top + 92f)
+        UiKit.menu(c, mb, solid = true)
+        c.drawLine(mb.left + 24f, mb.centerY(), mb.right - 24f, mb.centerY(), UiKit.bodyPaint(26f, Theme.gold).apply { strokeWidth = 6f })
+        hits.add(mb to "rolls:min")
     }
 
     /** why a tap on a roll did nothing, over the strip */
