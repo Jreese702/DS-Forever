@@ -95,6 +95,8 @@ class MainActivity : ComponentActivity() {
         if (com.jrees.wowcompanion.fork.DsForeverScreen.moveToTop(this, PluviaApp.xEnvironment != null)) return
         // DS Forever S5: the bottom screen is DS Forever's from the launcher's start (its start screens); the game screen attaches its input
         com.jrees.wowcompanion.fork.DsForeverScreen.begin(this)
+        // the start-up mode (Local / Streaming, or the chooser): a home-screen shortcut's dsf.mode, else the remembered pick
+        com.jrees.wowcompanion.ModeBridge.start(this, intent?.getStringExtra(com.jrees.wowcompanion.StartMode.EXTRA))
 
         // stale keepAlive from a prior crash/swipe — no container is actually running
         if (PluviaApp.keepAlive && PluviaApp.xEnvironment == null) {
@@ -124,6 +126,13 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    // a home-screen shortcut tapped while DS Forever runs (singleTop): its mode, unless the game runs (ModeBridge decides)
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        com.jrees.wowcompanion.ModeBridge.onIntent(this, intent.getStringExtra(com.jrees.wowcompanion.StartMode.EXTRA))
+    }
+
     override fun onDestroy() {
         com.jrees.wowcompanion.fork.DsForeverScreen.end(this)
         // emit before super so Compose DisposableEffects (which unregister

@@ -64,6 +64,7 @@ import app.gamenative.ui.enums.DialogType
 import app.gamenative.ui.enums.Orientation
 import app.gamenative.ui.model.MainViewModel
 import app.gamenative.ui.screen.PluviaScreen
+import app.gamenative.ui.screen.wow.DsStartScreen
 import app.gamenative.ui.screen.wow.GamePath
 import app.gamenative.ui.screen.wow.WoWForeverScreen
 import app.gamenative.ui.screen.wow.WoWLauncherState
@@ -270,7 +271,9 @@ fun PluviaMain(
             )
 
             var initialSplash by remember {
-                mutableStateOf(WoWLauncherState.shouldAutoLaunch && GamePath.isReady(context))
+                // today's rule, and only when the start goes straight into Local (the start-up chooser / Streaming boot nothing)
+                mutableStateOf(com.jrees.wowcompanion.StartMode.splashAtStart(WoWLauncherState.shouldAutoLaunch,
+                    GamePath.isReady(context), com.jrees.wowcompanion.ModeBridge.route))
             }
             var preLaunchJob by remember { mutableStateOf<Job?>(null) }
 
@@ -312,7 +315,8 @@ fun PluviaMain(
                 startDestination = startDestination,
             ) {
                 composable(route = PluviaScreen.WoWLauncher.route) {
-                    WoWForeverScreen(
+                    // the start-up chooser (Local / Streaming) first; Local = today's start screen, unchanged
+                    DsStartScreen { WoWForeverScreen(
                         onLaunch = { appId ->
                             viewModel.setLaunchedAppId(appId)
                             viewModel.setOffline(true)
@@ -327,7 +331,7 @@ fun PluviaMain(
                                 onSuccess = viewModel::launchApp,
                             )
                         },
-                    )
+                    ) }
                 }
                 /** Game Screen **/
                 composable(route = PluviaScreen.XServer.route) {

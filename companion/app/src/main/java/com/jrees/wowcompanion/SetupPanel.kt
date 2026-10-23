@@ -99,6 +99,9 @@ class SetupPanel(context: Context) : View(context) {
             if (buttons.size > 1) buttons.add(buttons.removeAt(0))
             report?.let { buttons.add(it) }
         }
+        // the swirl, top left (S1 of the streaming phase): back to the start-up chooser, as B does; touch, before Play only
+        swirlRect.setEmpty()
+        if (s.play != null && ModeBridge.canGoBack()) drawSwirl(c)
         // the buttons, the box under the focused one
         val live = buttons.indices.filter { SetupFlow.padTarget(buttons[it].second) }      // "Report a problem" is touch only
         if (live.isNotEmpty()) focus = focus.coerceIn(0, live.size - 1)
@@ -145,6 +148,29 @@ class SetupPanel(context: Context) : View(context) {
         UiKit.bodyPaint(20f * k, Theme.textDim).let { p -> c.drawText(Glyphs.name("select"), r.right + 10f * k, r.bottom - 8f * k, p) }
     }
     private val speaker = android.graphics.Path()
+
+    /** the swirl's square as last drawn (empty = not shown) */
+    private val swirlRect = RectF()
+    private var swirlDown = false
+    private val pSwirl = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+
+    /** the bar Home button's face (the kit's stone, or a drawn disc before the kit exists), the B glyph on its corner */
+    private fun drawSwirl(c: Canvas) {
+        swirlRect.set(MARGIN, MARGIN, MARGIN + SPEAKER, MARGIN + SPEAKER)
+        val r = if (swirlDown) RectF(swirlRect).apply { inset(width() * 0.03f, height() * 0.03f) } else swirlRect
+        val face = UiKit.tex("home_stone_rough")
+        if (face != null) c.drawBitmap(face, null, r, pSwirl)
+        else {
+            pFill.style = Paint.Style.FILL; pFill.color = Color.argb(215, 18, 14, 10)
+            c.drawCircle(r.centerX(), r.centerY(), r.width() / 2f, pFill)
+            pFill.style = Paint.Style.STROKE; pFill.strokeWidth = 4f; pFill.color = Theme.gold
+            c.drawCircle(r.centerX(), r.centerY(), r.width() / 2f - 3f, pFill)
+            c.drawArc(RectF(r.centerX() - r.width() * 0.25f, r.centerY() - r.height() * 0.25f, r.centerX() + r.width() * 0.25f,
+                r.centerY() + r.height() * 0.25f), 0f, 270f, false, pFill)
+            pFill.style = Paint.Style.FILL
+        }
+        UiKit.pad(c, UiKit.backGlyph(), r.right - 14f, r.bottom - 14f, 44f)
+    }
 
     /** the pop-up's card as last drawn (a touch inside it is the panel's) */
     private val cardRect = RectF()
@@ -214,6 +240,16 @@ class SetupPanel(context: Context) : View(context) {
 
     @Suppress("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        // the swirl: back to the start-up chooser
+        if (!swirlRect.isEmpty && (swirlDown || (e.actionMasked == MotionEvent.ACTION_DOWN && swirlRect.contains(e.x, e.y)))) {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> swirlDown = true
+                MotionEvent.ACTION_UP -> { swirlDown = false; if (swirlRect.contains(e.x, e.y)) ModeBridge.back("the swirl") }
+                MotionEvent.ACTION_CANCEL -> swirlDown = false
+            }
+            invalidate()
+            return true
+        }
         val hit = buttons.indexOfFirst { it.first.contains(e.x, e.y) && it.second.enabled }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> { pressed = hit; invalidate() }

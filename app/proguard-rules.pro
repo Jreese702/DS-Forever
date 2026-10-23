@@ -64,3 +64,6 @@
 -keep class com.samsung.sdk.sperf.** { *; }
 -dontwarn com.samsung.sdk.sperf.**
 
+
+# DS Forever streaming (S1 "Chooser"): Streaming's entry is found by name (StreamEntries.PLUGIN, a Kotlin object's INSTANCE)
+-keep class app.gamenative.stream.DsStreamEntry { *; }

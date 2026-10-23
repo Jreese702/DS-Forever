@@ -118,5 +118,17 @@ object SetupBridge {
 
     @Volatile var keyHandler: ((keyCode: Int, down: Boolean) -> Boolean)? = null
     fun key(keyCode: Int, down: Boolean): Boolean =
-        reportKey?.invoke(keyCode, down)?.takeIf { it } ?: (keyHandler?.invoke(keyCode, down) ?: false)
+        reportKey?.invoke(keyCode, down)?.takeIf { it } ?: keyHandler?.invoke(keyCode, down)?.takeIf { it } ?: backKey(keyCode, down)
+
+    /**
+     * B that nothing above took (the report page, the panel): back to the start-up chooser (S1 of the streaming phase), when
+     * [ModeBridge.canGoBack] allows it (no game, nothing busy, no login form). The release that follows is swallowed too.
+     */
+    private fun backKey(keyCode: Int, down: Boolean): Boolean {
+        if (keyCode != android.view.KeyEvent.KEYCODE_BUTTON_B) return false
+        if (!down) return backTaken.also { backTaken = false }
+        backTaken = ModeBridge.back("B on the Local start screen")
+        return backTaken
+    }
+    private var backTaken = false
 }
