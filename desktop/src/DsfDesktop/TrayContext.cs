@@ -19,18 +19,27 @@ namespace DsfDesktop.Ui
             this.ctl = ctl;
             invoker = new Control();
             invoker.CreateControl();
-            form = new MainForm(ctl) { Icon = MakeIcon(32) };
+            form = new MainForm(() => ViewBuilder.From(ctl), new ControllerActions(ctl)) { Icon = Theme.AppIcon(32) };
             form.FormClosing += (s, e) =>
             {
                 if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; form.Hide(); }
             };
-            var menu = new ContextMenuStrip();
+            var menu = new ContextMenuStrip { Renderer = new DarkMenuRenderer(), Font = Theme.Body(9.75f), ShowImageMargin = false };
             menu.Items.Add("Open DS Forever Desktop", null, (s, e) => ShowForm());
             menu.Items.Add("Focus WoW", null, (s, e) => ctl.FocusWow());
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Quit", null, (s, e) => Quit());
-            icon = new NotifyIcon { Icon = MakeIcon(16), Text = "DS Forever Desktop", Visible = true, ContextMenuStrip = menu };
+            icon = new NotifyIcon { Icon = Theme.AppIcon(16), Text = "DS Forever Desktop", Visible = true, ContextMenuStrip = menu };
             icon.DoubleClick += (s, e) => ShowForm();
+            icon.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowForm(); };
+            // the tray's hover text says what Desktop is doing
+            var hover = new Timer { Interval = 3000 };
+            hover.Tick += (s, e) =>
+            {
+                var t = ctl.Stream == App.StreamState.Streaming ? "streaming to your Thor" : (ctl.Bridge?.Sessions().Count ?? 0) > 0 ? "your Thor is connected" : "ready";
+                icon.Text = "DS Forever Desktop: " + t;
+            };
+            hover.Start();
             if (show) ShowForm();
         }
 
@@ -56,27 +65,6 @@ namespace DsfDesktop.Ui
             icon.Visible = false;
             form.ReallyClose();
             ExitThread();
-        }
-
-        /// <summary>the app's mark drawn at run time (no image files shipped): a gold ring with "DS"</summary>
-        public static Icon MakeIcon(int size)
-        {
-            using (var bmp = new Bitmap(size, size))
-            using (var g = Graphics.FromImage(bmp))
-            {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-                g.Clear(Color.Transparent);
-                using (var bg = new SolidBrush(Color.FromArgb(28, 30, 36))) g.FillEllipse(bg, 0, 0, size - 1, size - 1);
-                using (var pen = new Pen(Color.FromArgb(224, 176, 74), Math.Max(1.5f, size / 12f))) g.DrawEllipse(pen, 1, 1, size - 3, size - 3);
-                using (var f = new Font("Segoe UI", size * 0.36f, FontStyle.Bold, GraphicsUnit.Pixel))
-                using (var fg = new SolidBrush(Color.FromArgb(240, 232, 214)))
-                {
-                    var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                    g.DrawString("DS", f, fg, new RectangleF(0, 0, size, size), sf);
-                }
-                return Icon.FromHandle(bmp.GetHicon());
-            }
         }
     }
 }

@@ -73,6 +73,9 @@ namespace DsfDesktop.App
             SaveSettings();
             Devices = new DeviceStore(paths.Devices);
             MakeStarter();
+            var adbPath = DsfDesktop.Thor.AdbProcess.Locate(paths.AppDir);
+            this.Thor = new DsfDesktop.Thor.ThorManager(adbPath != null ? new DsfDesktop.Thor.AdbProcess(adbPath) : null, new DsfDesktop.Thor.ReleaseFeed(), Path.Combine(paths.DataDir, "apk"));
+            this.Thor.Changed += Fire;
             SunshineLayout = new SunshineLayout { ExeDir = paths.SunshineExeDir, DataDir = paths.SunshineData };
             Codes.Changed += Fire;
             Devices.Changed += Fire;
@@ -333,6 +336,11 @@ namespace DsfDesktop.App
             }
             catch (Exception) { }
             try { Starter.Tick(); } catch (Exception) { }
+            if (ThorWatching && DateTime.UtcNow - thorPolledAt > TimeSpan.FromSeconds(3) && !Thor.Busy)
+            {
+                thorPolledAt = DateTime.UtcNow;
+                Task.Run(async () => { await Thor.CheckRelease().ConfigureAwait(false); Thor.Refresh(); });
+            }
             Fire();
         }
 
@@ -390,6 +398,12 @@ namespace DsfDesktop.App
         // ---------------------------------------------------------------- starting WoW, and the monitor Sunshine captures
 
         public WowStarter Starter { get; private set; }
+
+        /// <summary>the USB install of DS Forever on the Thor (the Thor card)</summary>
+        public DsfDesktop.Thor.ThorManager Thor { get; private set; }
+        /// <summary>the window is showing the Thor card: only then is adb asked for devices (every 3 s)</summary>
+        public bool ThorWatching { get; set; }
+        DateTime thorPolledAt = DateTime.MinValue;
 
         string FlavorDirOrNull => Wow != null && Flavor != null ? Wow.FlavorDir(Flavor) : null;
 

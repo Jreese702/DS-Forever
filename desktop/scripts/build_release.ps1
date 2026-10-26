@@ -28,6 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw "test build failed" }
 if ($LASTEXITCODE -ne 0) { throw "app build failed" }
 
 $sunshineDir = & (Join-Path $PSScriptRoot "fetch_sunshine.ps1") -CacheDir $CacheDir -WithSource:$WithSource | Select-Object -Last 1
+$adbDir = & (Join-Path $PSScriptRoot "fetch_platform_tools.ps1") -CacheDir $CacheDir | Select-Object -Last 1
 
 $testExe = Join-Path $desktop "tests\DsfDesktop.Tests\bin\Release\DsfDesktop.Tests.exe"
 if ($LiveSunshine) { & $testExe --sunshine $sunshineDir } else { & $testExe }
@@ -46,6 +47,8 @@ Copy-Item (Join-Path $desktop "src\DsfDesktop\bin\Release\DsForeverDesktop.exe")
           (Join-Path $desktop "src\DsfDesktop\bin\Release\DsForeverDesktop.exe.config"), `
           (Join-Path $desktop "src\DsfDesktop\bin\Release\DsfDesktop.Core.dll") $stage
 Copy-Item -Recurse $sunshineDir (Join-Path $stage "sunshine")
+# adb for the Thor's USB install (only the three files it needs, with Google's notices)
+Copy-Item -Recurse $adbDir (Join-Path $stage "platform-tools")
 # the same add-on set the APK ships
 $companion = Join-Path $repo "companion\app\src\main\assets\companion"
 New-Item -ItemType Directory -Force (Join-Path $stage "companion") | Out-Null

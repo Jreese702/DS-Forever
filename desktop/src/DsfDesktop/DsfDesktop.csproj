@@ -12,6 +12,10 @@
     <Reference Include="System.Net.Http" />
   </ItemGroup>
   <ItemGroup>
+    <!-- DS Forever's own mark (the app's launcher icon), embedded from the repo: the header and the tray -->
+    <EmbeddedResource Include="../../../app/src/main/ic_launcher-playstore.png" LogicalName="DsfDesktop.mark.png" Link="Ui/mark.png" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\DsfDesktop.Core\DsfDesktop.Core.csproj" />
   </ItemGroup>
 </Project>

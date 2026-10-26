@@ -13,6 +13,10 @@ stream WoW Forever from this PC. One tray app that
 - installs and updates DS Forever's add-ons in the PC game's `Interface/AddOns` from the APK's own set (`manifest.txt`), asking for
   the WoW folder once when it can't find it. Nothing else in the game folder is written: no macros, bindings or CVars;
 - brings the WoW window to the front when a stream starts; Start with Windows (HKCU Run, only when ticked).
+- **Your Thor (USB):** detects an Android device on the cable (adb), shows what DS Forever it has, and installs or updates it with
+  one button from the latest public GitHub release (checked against SHA256SUMS), after the app's safe close when the game runs.
+  Never uninstalls, never clears data. A file picker installs a tester's own APK.
+- Looks like DS Forever on the Thor (dark panels, bronze frames, the game's gold, the gold box cursor; DS Forever's own mark).
 
 ## Build
 
@@ -28,8 +32,8 @@ desktop/tests/DsfDesktop.Tests/bin/Debug/DsfDesktop.Tests.exe --serve --sunshine
 powershell -File desktop/scripts/build_release.ps1                                 # release: tests, pinned Sunshine, zip, installer
 ```
 
-Sunshine is never committed: `scripts/fetch_sunshine.ps1` downloads the release pinned in `scripts/sunshine.lock` and checks its
-SHA-256. `installer/DsForeverDesktop.iss` (Inno Setup 6) makes a per-user installer from the staged folder.
+Sunshine and adb are never committed: `scripts/fetch_sunshine.ps1` and `scripts/fetch_platform_tools.ps1` download the builds
+pinned in `scripts/sunshine.lock` / `scripts/platform-tools.lock` and check their SHA-256. `installer/DsForeverDesktop.iss` (Inno Setup 6) makes a per-user installer from the staged folder.
 
 Development switches: `DSF_LOOPBACK=1` (bridge and Sunshine on 127.0.0.1, no mDNS: no firewall prompt), `DSF_DESKTOP_DATA`,
 `DSF_SUNSHINE_DIR`, `DSF_ADDON_SOURCE`. The bridge's test page is `http://localhost:48210/test` (this PC only).

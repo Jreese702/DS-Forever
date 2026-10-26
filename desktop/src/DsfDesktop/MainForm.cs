@@ -1,171 +1,274 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
-using System.Linq;
+using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.Windows.Forms;
-using DsfDesktop.App;
-using DsfDesktop.Wow;
 
 namespace DsfDesktop.Ui
 {
     /// <summary>
-    /// The status window: the pairing code (with New code), the paired devices (select one, then Remove), the stream and bridge
-    /// state, the game folder and its log, the add-ons, Start with Windows and Focus WoW. Refreshed from the controller once a second.
+    /// The DS Forever Desktop window, in DS Forever's own look (Theme): a header with the mark, four cards (Pairing, Your Thor,
+    /// Streaming, Game and add-ons) and the two settings in the footer. It shows a <see cref="ViewState"/> snapshot once a second;
+    /// the buttons go to <see cref="IDesktopActions"/>.
     /// </summary>
     sealed class MainForm : Form
     {
-        static readonly Color Ink = Color.FromArgb(32, 33, 36), Muted = Color.FromArgb(104, 106, 112), Accent = Color.FromArgb(176, 122, 24);
+        readonly Func<ViewState> state;
+        readonly IDesktopActions act;
+        ViewState v = new ViewState();
+        bool reallyClose, applying;
 
-        readonly AppController ctl;
-        readonly Label code = new Label(), codeHint = new Label();
-        readonly ListView devices = new ListView();
-        readonly Button remove = new Button(), newCode = new Button(), chooseFolder = new Button(), addons = new Button(), focus = new Button(), testPage = new Button();
-        readonly CheckBox autostart = new CheckBox(), startWow = new CheckBox();
-        readonly Label sunshine = new Label(), stream = new Label(), wowState = new Label(), capture = new Label(), bridge = new Label(), game = new Label(), log = new Label(), addonLine = new Label(), notices = new Label();
+        // pairing
+        readonly Label code = new Label();
+        readonly Note codeHint = new Note();
+        readonly GoldButton newCode = new GoldButton("New code");
+        readonly DeviceList devices = new DeviceList();
+        readonly GoldButton remove = new GoldButton("Remove device");
+        readonly Card pairCard = new Card("Pair a device");
+        // thor
+        readonly Card thorCard = new Card("Your Thor");
+        readonly Label thorTitle = new Label();
+        readonly Note thorDetail = new Note(), thorProgress = new Note("", 9.75f, Theme.Gold);
+        readonly GoldButton thorInstall = new GoldButton("Install DS Forever", primary: true);
+        readonly GoldButton thorFile = new GoldButton("Install a file...");
+        // streaming
+        readonly StatusLine host = new StatusLine("Streaming host"), stream = new StatusLine("Stream"), wow = new StatusLine("WoW on this PC"),
+                            monitor = new StatusLine("Streamed monitor"), link = new StatusLine("Companion link");
+        readonly GoldButton focus = new GoldButton("Focus WoW");
+        // game + add-ons
+        readonly StatusLine game = new StatusLine("Game folder"), gameLog = new StatusLine("Game log"), addons = new StatusLine("Add-ons");
+        readonly Note notices = new Note("", 9.5f, Theme.Warn);
+        readonly GoldButton addonsBtn = new GoldButton("Install / update add-ons"), folderBtn = new GoldButton("Choose WoW folder...");
+        // footer
+        readonly Toggle startWindows = new Toggle("Start with Windows"), startWow = new Toggle("Start WoW when streaming");
+        readonly LinkLabel testPage = new LinkLabel();
         readonly Timer tick = new Timer { Interval = 1000 };
-        bool reallyClose, asked;
 
-        public MainForm(AppController ctl)
+        public MainForm(Func<ViewState> state, IDesktopActions act)
         {
-            this.ctl = ctl;
+            this.state = state;
+            this.act = act;
             Text = "DS Forever Desktop";
-            Font = new Font("Segoe UI", 10f);
-            ForeColor = Ink;
-            BackColor = Color.FromArgb(250, 249, 246);
+            Font = Theme.Body(10f);
+            ForeColor = Theme.Text;
+            BackColor = Theme.Ink;
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(640, 700);
-            MinimumSize = new Size(560, 600);
+            ClientSize = new Size(1060, 760);
+            MinimumSize = new Size(940, 700);
             StartPosition = FormStartPosition.CenterScreen;
+            DoubleBuffered = true;
 
-            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, Padding = new Padding(18), AutoScroll = true };
-            Controls.Add(root);
+            var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Padding = new Padding(10, 6, 10, 0), BackColor = Theme.Ink };
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48));
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 54));
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 46));
 
-            // -- pairing
-            root.Controls.Add(Heading("Pair a device"));
-            code.Font = new Font("Segoe UI Semibold", 30f);
-            code.ForeColor = Accent;
+            // Pairing
             code.AutoSize = true;
-            code.Margin = new Padding(0, 0, 0, 0);
-            var codeRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+            code.Font = Theme.Head(38f);
+            code.ForeColor = Theme.Gold;
+            code.BackColor = Color.Transparent;
+            code.Margin = new Padding(0, 0, 18, 0);
+            var codeRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0) };
             codeRow.Controls.Add(code);
-            newCode.Text = "New code";
-            newCode.AutoSize = true;
-            newCode.Margin = new Padding(18, 18, 0, 0);
-            newCode.Click += (s, e) => { ctl.Codes.Refresh(); RefreshAll(); };
+            newCode.Margin = new Padding(0, 20, 0, 0);
             codeRow.Controls.Add(newCode);
-            root.Controls.Add(codeRow);
-            codeHint.AutoSize = true;
-            codeHint.ForeColor = Muted;
-            codeHint.MaximumSize = new Size(600, 0);
-            root.Controls.Add(codeHint);
-
-            // -- devices
-            root.Controls.Add(Heading("Paired devices"));
-            devices.View = View.Details;
-            devices.FullRowSelect = true;
-            devices.MultiSelect = false;
-            devices.HideSelection = false;
-            devices.Height = 120;
-            devices.Dock = DockStyle.Top;
-            devices.Columns.Add("Device", 170);
-            devices.Columns.Add("Paired", 120);
-            devices.Columns.Add("Last seen", 120);
-            devices.Columns.Add("Stream", 70);
-            devices.Columns.Add("Now", 90);
-            devices.SelectedIndexChanged += (s, e) => remove.Enabled = devices.SelectedItems.Count == 1;
-            root.Controls.Add(devices);
-            remove.Text = "Remove device";
-            remove.AutoSize = true;
+            pairCard.Add(codeRow);
+            pairCard.Add(codeHint);
+            pairCard.Add(new Note("Paired devices", 9.5f, Theme.Bronze) { Font = Theme.Head(10.5f), Margin = new Padding(0, 6, 0, 0) });
+            pairCard.Add(devices);
             remove.Enabled = false;
-            remove.Click += (s, e) =>
-            {
-                if (devices.SelectedItems.Count != 1) return;
-                var id = (string)devices.SelectedItems[0].Tag;
-                if (MessageBox.Show(this, "Remove " + devices.SelectedItems[0].Text + "? It will need a new code to connect again.", Text, MessageBoxButtons.OKCancel) == DialogResult.OK)
-                    ctl.RemoveDevice(id);
-                RefreshAll();
-            };
-            root.Controls.Add(remove);
+            pairCard.Add(remove);
 
-            // -- status
-            root.Controls.Add(Heading("Status"));
-            foreach (var l in new[] { sunshine, stream, wowState, capture, bridge, game, log, addonLine, notices })
-            {
-                l.AutoSize = true;
-                l.MaximumSize = new Size(600, 0);
-                l.Margin = new Padding(0, 2, 0, 2);
-                root.Controls.Add(l);
-            }
-            notices.ForeColor = Color.FromArgb(160, 70, 40);
+            // Thor
+            thorTitle.AutoSize = true;
+            thorTitle.Font = Theme.Body(14f, FontStyle.Bold);
+            thorTitle.ForeColor = Theme.Text;
+            thorTitle.BackColor = Color.Transparent;
+            thorTitle.Margin = new Padding(0, 4, 0, 2);
+            thorCard.Add(thorTitle);
+            thorCard.Add(thorDetail);
+            thorCard.Add(thorProgress);
+            var thorButtons = new FlowLayoutPanel { AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 6, 0, 0) };
+            thorButtons.Controls.Add(thorInstall);
+            thorButtons.Controls.Add(thorFile);
+            thorCard.Add(thorButtons);
+            thorCard.Add(new Note("Over the USB cable, from DS Forever's public release (checked against its SHA256SUMS). Your app data stays: " +
+                                  "Desktop updates in place and never uninstalls.", 8.75f, Theme.Dim) { Margin = new Padding(0, 10, 0, 0) });
 
-            var buttons = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 10, 0, 0) };
-            chooseFolder.Text = "Choose WoW folder...";
-            addons.Text = "Install / update add-ons";
-            focus.Text = "Focus WoW";
+            // Streaming
+            var streamCard = new Card("Streaming");
+            foreach (var l in new[] { host, stream, wow, monitor, link }) streamCard.Add(l);
+            var sb = new FlowLayoutPanel { AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 8, 0, 0) };
+            sb.Controls.Add(focus);
+            streamCard.Add(sb);
+
+            // Game + add-ons
+            var gameCard = new Card("Game and add-ons");
+            foreach (var l in new[] { game, gameLog, addons }) gameCard.Add(l);
+            gameCard.Add(notices);
+            var gb = new FlowLayoutPanel { AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 6, 0, 0) };
+            gb.Controls.Add(addonsBtn);
+            gb.Controls.Add(folderBtn);
+            gameCard.Add(gb);
+
+            grid.Controls.Add(pairCard, 0, 0);
+            grid.Controls.Add(thorCard, 1, 0);
+            grid.Controls.Add(streamCard, 0, 1);
+            grid.Controls.Add(gameCard, 1, 1);
+
+            var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 46, Padding = new Padding(22, 6, 18, 0), BackColor = Theme.Ink };
+            footer.Controls.Add(startWindows);
+            footer.Controls.Add(startWow);
             testPage.Text = "Bridge test page";
-            foreach (var b in new[] { chooseFolder, addons, focus, testPage }) { b.AutoSize = true; buttons.Controls.Add(b); }
-            chooseFolder.Click += (s, e) => AskFolder();
-            addons.Click += (s, e) =>
-            {
-                var line = ctl.InstallAddons();
-                MessageBox.Show(this, line, Text);
-                RefreshAll();
-            };
-            focus.Click += (s, e) => { var why = ctl.FocusWow(); if (why != null) MessageBox.Show(this, why, Text); };
-            testPage.Click += (s, e) => { if (ctl.Bridge != null) Process.Start("http://localhost:" + ctl.Bridge.Port + "/test"); };
-            root.Controls.Add(buttons);
+            testPage.AutoSize = true;
+            testPage.LinkColor = Theme.SoftGold;
+            testPage.ActiveLinkColor = Theme.Gold;
+            testPage.Font = Theme.Body(9.5f);
+            testPage.Margin = new Padding(16, 8, 0, 0);
+            footer.Controls.Add(testPage);
 
-            autostart.Text = "Start with Windows";
-            autostart.AutoSize = true;
-            autostart.Margin = new Padding(0, 12, 0, 0);
-            try { autostart.Checked = AutoStart.IsOn(); } catch (Exception) { }
-            autostart.CheckedChanged += (s, e) =>
-            {
-                try { AutoStart.Set(autostart.Checked, ctl.Paths.Exe); }
-                catch (Exception ex) { MessageBox.Show(this, "Couldn't change Start with Windows: " + ex.Message, Text); }
-            };
-            root.Controls.Add(autostart);
+            Controls.Add(grid);
+            Controls.Add(footer);
+            Controls.Add(new Header(this));
 
-            startWow.Text = "Start WoW when streaming";
-            startWow.AutoSize = true;
-            startWow.Margin = new Padding(0, 4, 0, 0);
-            startWow.Checked = ctl.Settings.StartWowOnStream;
-            startWow.CheckedChanged += (s, e) => { ctl.Settings.StartWowOnStream = startWow.Checked; ctl.SaveSettings(); };
-            root.Controls.Add(startWow);
-
-            tick.Tick += (s, e) => RefreshAll();
+            Wire();
+            tick.Tick += (s, e) => Pull();
             Shown += (s, e) =>
             {
-                RefreshAll();
+                Pull();
                 tick.Start();
-                // the folder question, once, when nothing was found
-                if (!asked && ctl.Wow == null && !ctl.Settings.AskedForFolder)
-                {
-                    asked = true;
-                    ctl.Settings.AskedForFolder = true;
-                    ctl.SaveSettings();
-                    BeginInvoke((Action)AskFolder);
-                }
+                act?.ThorWatching(true);
+                if (act != null && act.AskForFolderOnce()) BeginInvoke((Action)AskFolder);
             };
+            VisibleChanged += (s, e) => act?.ThorWatching(Visible);
         }
 
-        static Label Heading(string text) => new Label
+        void Wire()
         {
-            Text = text,
-            AutoSize = true,
-            Font = new Font("Segoe UI Semibold", 12f),
-            Margin = new Padding(0, 14, 0, 4),
-        };
+            newCode.Click += (s, e) => { act?.NewCode(); Pull(); };
+            devices.SelectionChanged += () => remove.Enabled = devices.SelectedId != null;
+            remove.Click += (s, e) =>
+            {
+                if (act == null || devices.SelectedId == null) return;
+                var row = v.Devices.Find(d => d.Id == devices.SelectedId);
+                if (MessageBox.Show(this, "Remove " + row?.Name + "? It needs a new code to connect again.", Text, MessageBoxButtons.OKCancel) == DialogResult.OK)
+                    act.RemoveDevice(devices.SelectedId);
+                Pull();
+            };
+            thorInstall.Click += async (s, e) =>
+            {
+                if (act == null) return;
+                thorInstall.Enabled = thorFile.Enabled = false;
+                var err = await act.ThorInstall();
+                if (err != null) MessageBox.Show(this, err, "DS Forever on your Thor");
+                Pull();
+            };
+            thorFile.Click += async (s, e) =>
+            {
+                if (act == null) return;
+                using (var d = new OpenFileDialog { Title = "Install an APK on the Thor (for testers)", Filter = "Android app (*.apk)|*.apk" })
+                {
+                    if (d.ShowDialog(this) != DialogResult.OK) return;
+                    thorInstall.Enabled = thorFile.Enabled = false;
+                    var err = await act.ThorInstallFile(d.FileName);
+                    if (err != null) MessageBox.Show(this, err, "DS Forever on your Thor");
+                }
+                Pull();
+            };
+            focus.Click += (s, e) => { var why = act?.FocusWow(); if (why != null) MessageBox.Show(this, why, Text); };
+            addonsBtn.Click += (s, e) => { if (act != null) { MessageBox.Show(this, act.InstallAddons(), Text); Pull(); } };
+            folderBtn.Click += (s, e) => AskFolder();
+            startWindows.CheckedChanged += (s, e) =>
+            {
+                if (applying || act == null) return;
+                try { act.SetStartWithWindows(startWindows.Checked); }
+                catch (Exception ex) { MessageBox.Show(this, "Couldn't change Start with Windows: " + ex.Message, Text); }
+            };
+            startWow.CheckedChanged += (s, e) => { if (!applying) act?.SetStartWow(startWow.Checked); };
+            testPage.LinkClicked += (s, e) => { if (v.BridgePort > 0) Process.Start("http://localhost:" + v.BridgePort + "/test"); };
+        }
 
         void AskFolder()
         {
+            if (act == null) return;
             using (var d = new FolderBrowserDialog { Description = "Where is World of Warcraft installed? (the folder with _classic_beta_ or _forever_ in it)", ShowNewFolderButton = false })
             {
                 if (d.ShowDialog(this) != DialogResult.OK) return;
-                if (!ctl.SetWowFolder(d.SelectedPath))
+                if (!act.SetWowFolder(d.SelectedPath))
                     MessageBox.Show(this, "That folder doesn't hold WoW Forever (no _classic_beta_ or _forever_ game folder found).", Text);
             }
-            RefreshAll();
+            Pull();
+        }
+
+        void Pull()
+        {
+            if (!Visible && act != null) return;
+            try { Apply(state()); } catch (Exception) { }
+        }
+
+        /// <summary>shows a snapshot (also how the mockups are drawn)</summary>
+        public void Apply(ViewState s)
+        {
+            v = s;
+            applying = true;
+            SuspendLayout();
+            code.Text = s.Code;
+            code.Font = s.CodeLocked ? Theme.Head(24f) : Theme.Head(38f);
+            codeHint.Text = s.CodeHint;
+            devices.SetRows(s.Devices);
+            remove.Enabled = devices.SelectedId != null;
+            pairCard.Tag2 = s.Devices.Count == 0 ? "" : s.Online + " of " + s.Devices.Count + " connected";
+
+            var t = s.Thor;
+            thorTitle.Text = t.Title ?? "";
+            thorDetail.Text = t.Detail ?? "";
+            thorProgress.Text = s.ThorProgress ?? "";
+            thorProgress.Visible = !string.IsNullOrEmpty(s.ThorProgress);
+            thorInstall.Text = t.Button ?? (t.Phase == Thor.ThorPhase.Ready ? "Up to date" : "Install DS Forever");
+            thorInstall.Enabled = t.CanInstall && !s.ThorBusy;
+            thorFile.Enabled = t.Phase == Thor.ThorPhase.Ready && !s.ThorBusy;
+            thorCard.Tag2 = t.Serial != null ? "USB " + t.Serial : "";
+
+            host.Set(s.Host, s.HostDot);
+            stream.Set(s.Stream, s.StreamDot);
+            wow.Set(s.Wow, s.WowDot);
+            monitor.Set(s.Monitor, Theme.Dim);
+            link.Set(s.Link, s.LinkDot);
+            game.Set(s.Game, s.GameDot);
+            gameLog.Set(s.GameLog, s.LogDot);
+            addons.Set(s.Addons, s.AddonsDot);
+            notices.Text = string.Join(Environment.NewLine, s.Notices);
+            notices.Visible = s.Notices.Count > 0;
+            addonsBtn.Enabled = s.AddonsAction;
+            startWindows.Checked = s.StartWithWindows;
+            startWow.Checked = s.StartWow;
+            ResumeLayout(true);
+            foreach (Control c in new Control[] { pairCard, thorCard }) c.Invalidate();
+            applying = false;
+        }
+
+        // a dark title bar to match (Windows 10 20H1+ / 11), and on 11 the caption in the header's colour
+        [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+        static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+        static int Ref(Color c) => c.R | (c.G << 8) | (c.B << 16);   // a COLORREF is 0x00BBGGRR
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            try
+            {
+                int on = 1;
+                DwmSetWindowAttribute(Handle, 20, ref on, 4);                     // DWMWA_USE_IMMERSIVE_DARK_MODE
+                int caption = Ref(Color.FromArgb(30, 24, 15)), text = Ref(Theme.Text), border = Ref(Theme.BronzeDim);
+                DwmSetWindowAttribute(Handle, 35, ref caption, 4);                 // DWMWA_CAPTION_COLOR
+                DwmSetWindowAttribute(Handle, 36, ref text, 4);                    // DWMWA_TEXT_COLOR
+                DwmSetWindowAttribute(Handle, 34, ref border, 4);                  // DWMWA_BORDER_COLOR
+            }
+            catch (Exception) { }
         }
 
         public void ReallyClose() { reallyClose = true; tick.Stop(); Close(); }
@@ -176,57 +279,51 @@ namespace DsfDesktop.Ui
             base.OnFormClosing(e);
         }
 
-        static string Ago(long ms)
+        /// <summary>the band across the top: the DS Forever mark, the name, what the app is for</summary>
+        sealed class Header : Control
         {
-            if (ms <= 0) return "-";
-            var t = DateTimeOffset.FromUnixTimeMilliseconds(ms).LocalDateTime;
-            return t.Date == DateTime.Today ? t.ToString("HH:mm") : t.ToString("d MMM");
-        }
-
-        void RefreshAll()
-        {
-            if (!Visible) return;
-            var codes = ctl.Codes;
-            if (codes.Locked)
+            readonly MainForm form;
+            public Header(MainForm f)
             {
-                code.Text = "paused";
-                codeHint.Text = "Pairing paused after too many wrong codes. Press New code to start again.";
-            }
-            else
-            {
-                code.Text = codes.Display;
-                var r = codes.Remaining;
-                codeHint.Text = "Type this code in DS Forever on your Thor (Streaming). A new code comes in " + (int)r.TotalMinutes + ":" + r.Seconds.ToString("00") + ".";
+                form = f;
+                Dock = DockStyle.Top;
+                Height = 88;
+                DoubleBuffered = true;
+                SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             }
 
-            var online = (ctl.Bridge?.Sessions() ?? new System.Collections.Generic.List<Bridge.BridgeSession>()).Select(s => s.DeviceId).ToList();
-            var selected = devices.SelectedItems.Count == 1 ? (string)devices.SelectedItems[0].Tag : null;
-            var all = ctl.Devices.All();
-            devices.BeginUpdate();
-            devices.Items.Clear();
-            foreach (var d in all.OrderByDescending(x => x.LastSeenMs))
+            protected override void OnPaint(PaintEventArgs e)
             {
-                var it = new ListViewItem(new[] { d.Name, Ago(d.PairedMs), Ago(d.LastSeenMs), d.StreamPaired ? "yes" : "not yet", online.Contains(d.Id) ? "connected" : "" }) { Tag = d.Id };
-                devices.Items.Add(it);
-                if (d.Id == selected) it.Selected = true;
+                var g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+                using (var b = new LinearGradientBrush(ClientRectangle, Color.FromArgb(30, 24, 15), Theme.Ink, LinearGradientMode.Vertical)) g.FillRectangle(b, ClientRectangle);
+                if (Theme.Mark != null)
+                {
+                    var r = new Rectangle(24, 14, 60, 60);
+                    using (var path = Theme.Round(r, 10)) { g.SetClip(path); g.DrawImage(Theme.Mark, r); g.ResetClip(); using (var p = new Pen(Theme.Bronze, 1.5f)) g.DrawPath(p, path); }
+                }
+                using (var f = Theme.Head(21f))
+                using (var gold = new SolidBrush(Theme.Gold))
+                    g.DrawString("DS Forever Desktop", f, gold, 98, 14);
+                using (var f = Theme.Body(10f))
+                using (var dim = new SolidBrush(Theme.TextDim))
+                    g.DrawString("Stream WoW Forever from this PC to your Thor", f, dim, 101, 52);
+                using (var f = Theme.Body(9f))
+                using (var dim = new SolidBrush(Theme.Dim))
+                {
+                    var ver = "version " + form.v.Version;
+                    var sz = g.MeasureString(ver, f);
+                    g.DrawString(ver, f, dim, Width - sz.Width - 26, 20);
+                }
+                using (var b = new LinearGradientBrush(new Rectangle(0, Height - 2, Width, 2), Color.FromArgb(0, 255, 209, 0), Theme.Gold, LinearGradientMode.Horizontal))
+                {
+                    var blend = new ColorBlend { Colors = new[] { Color.FromArgb(0, 200, 170, 110), Theme.Bronze, Color.FromArgb(0, 200, 170, 110) }, Positions = new[] { 0f, 0.5f, 1f } };
+                    b.InterpolationColors = blend;
+                    g.FillRectangle(b, 0, Height - 2, Width, 2);
+                }
             }
-            if (all.Count == 0) devices.Items.Add(new ListViewItem("No devices yet") { ForeColor = Muted, Tag = null });
-            devices.EndUpdate();
-            remove.Enabled = devices.SelectedItems.Count == 1 && devices.SelectedItems[0].Tag != null;
-
-            var sh = ctl.Sunshine;
-            sunshine.Text = "Streaming host: " + (sh == null ? "starting" : !sh.Available ? "not installed with this copy (Sunshine missing)" : sh.Running ? "ready (port " + ctl.SunshinePort + ")" : sh.LastStatus);
-            stream.Text = "Stream: " + (ctl.Stream == StreamState.Streaming ? "streaming to your device" : ctl.Stream == StreamState.Idle ? "not streaming" : "-");
-            var st = ctl.WowUp() ? WowState.Running : ctl.Starter.State;
-            wowState.Text = "WoW on this PC: " + (st == WowState.Running ? "running" : st == WowState.Starting ? "starting (" + ctl.Starter.Why + ")"
-                          : st == WowState.StartFailed ? "didn't start: " + ctl.Starter.Why : "not running");
-            capture.Text = "Streamed monitor: " + (ctl.CaptureStatus.Length > 0 ? ctl.CaptureStatus : "the primary display");
-            bridge.Text = "Companion link: " + ctl.BridgeStatus + (online.Count > 0 ? ", " + online.Count + " connected" : "");
-            game.Text = ctl.Wow == null ? "Game: WoW Forever not found" : "Game: " + ctl.Wow.Root + " (" + ctl.Flavor + ")";
-            log.Text = "Game log: " + ctl.LogStatus + (ctl.DocsSeen > 0 ? ", " + ctl.DocsSeen + " updates, last " + ctl.LastDocAt?.ToString("HH:mm:ss") : "") + (ctl.Gaps > 0 ? ", " + ctl.Gaps + " gaps" : "");
-            addonLine.Text = "Add-ons: " + ctl.AddonLine;
-            notices.Text = string.Join(Environment.NewLine, ctl.Notices);
-            notices.Visible = ctl.Notices.Count > 0;
         }
     }
 }
