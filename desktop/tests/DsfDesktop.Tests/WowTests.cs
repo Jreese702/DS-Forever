@@ -215,8 +215,8 @@ namespace DsfDesktop.Tests
         [Test]
         public static void BetaUntilLaunchThenForever()
         {
-            A.Eq(WowFlavors.Beta, WowFlavors.Preferred(new DateTime(2026, 11, 3))[0]);
-            A.Eq(WowFlavors.Forever, WowFlavors.Preferred(new DateTime(2026, 11, 4))[0]);
+            A.Eq(WowFlavors.Beta, WowFlavors.Preferred(new DateTime(2026, 10, 26))[0]);
+            A.Eq(WowFlavors.Forever, WowFlavors.Preferred(new DateTime(2026, 10, 27))[0]);
         }
 
         static KeyValuePair<string, DateTime?> C(string f, DateTime? t) => new KeyValuePair<string, DateTime?>(f, t);

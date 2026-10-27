@@ -31,12 +31,12 @@ namespace DsfDesktop.Tests
             {
                 var inst = Install(t);
                 var bnet = @"C:\Program Files (x86)\Battle.net\Battle.net.exe";
-                var before = WowLaunch.Plan(inst, new DateTime(2026, 11, 3), bnet);
+                var before = WowLaunch.Plan(inst, new DateTime(2026, 10, 26), bnet);
                 A.False(before.ViaBattleNet, "the game exe itself, not Battle.net's select-only launch_uid");
                 A.Eq("_classic_beta_", before.Flavor, "the beta until launch day");
                 A.Eq(Path.Combine(inst.Root, "_classic_beta_", "WowB.exe"), before.Exe);
                 A.Eq("-launcherlogin -uid wow_classic_beta", before.Args, "signs in through Battle.net, no credentials");
-                var after = WowLaunch.Plan(inst, new DateTime(2026, 11, 4), bnet);
+                var after = WowLaunch.Plan(inst, new DateTime(2026, 10, 27), bnet);
                 A.Eq("_forever_", after.Flavor, "wowf from launch day");
                 A.Eq(Path.Combine(inst.Root, "_forever_", "Wow.exe"), after.Exe);
                 A.Eq("-launcherlogin -uid wowf", after.Args);
