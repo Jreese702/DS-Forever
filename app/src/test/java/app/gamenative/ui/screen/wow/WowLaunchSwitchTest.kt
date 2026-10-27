@@ -142,7 +142,7 @@ class WowLaunchSwitchTest {
 
     @Test fun beforeTheDateNothingHappens() {
         val before = File(root, ".build.info").readText()
-        assertEquals(WowClientDownloader.Switch.NotDue, switch(LocalDate.of(2026, 11, 3)))
+        assertEquals(WowClientDownloader.Switch.NotDue, switch(LocalDate.of(2026, 10, 26)))
         assertEquals(WowClientDownloader.Switch.NotDue, switch(LocalDate.of(2026, 10, 22)))     // "Beta until launch": the beta's realms are up
         assertEquals(before, File(root, ".build.info").readText())
         assertTrue(requests.isEmpty())
