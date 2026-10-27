@@ -24,6 +24,8 @@ namespace DsfDesktop.Ui
             {
                 if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; form.Hide(); }
             };
+            // minimise hides to the tray (the user, 2026-10-26): no taskbar button while minimised; the tray icon brings it back
+            form.Resize += (s, e) => { if (form.WindowState == FormWindowState.Minimized) form.Hide(); };
             var menu = new ContextMenuStrip { Renderer = new DarkMenuRenderer(), Font = Theme.Body(9.75f), ShowImageMargin = false };
             menu.Items.Add("Open DS Forever Desktop", null, (s, e) => ShowForm());
             menu.Items.Add("Focus WoW", null, (s, e) => ctl.FocusWow());
