@@ -50,9 +50,10 @@ enum class WowProduct(
 
     companion object {
         const val BUILD_INFO = ".build.info"
-        /** LAUNCH DAY (the user, 2026-10-21: "Beta until launch" - the beta's realms were only down during the stress test; the PC
-         *  beta still reached them): World of Warcraft: Forever opens 4 Nov 2026. The one date the client choice follows */
-        val LAUNCH_DAY: LocalDate = LocalDate.of(2026, 11, 4)
+        /** LAUNCH DAY: the day the client choice moves to World of Warcraft: Forever. Was 4 Nov 2026 ("Beta until launch", the user
+         *  2026-10-21); the user 2026-10-27: "The Beta is officially over ... make the change pointed at the Production environment"
+         *  (wowf's realms are up for name reservation). The one date the client choice follows */
+        val LAUNCH_DAY: LocalDate = LocalDate.of(2026, 10, 27)
 
         /** the beta is the client no longer on [today]: launch day and after (local date) */
         fun betaOver(today: LocalDate = LocalDate.now()): Boolean = !today.isBefore(LAUNCH_DAY)
