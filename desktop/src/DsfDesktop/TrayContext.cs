@@ -30,7 +30,7 @@ namespace DsfDesktop.Ui
             menu.Items.Add("Open DS Forever Desktop", null, (s, e) => ShowForm());
             menu.Items.Add("Focus WoW", null, (s, e) => ctl.FocusWow());
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Quit", null, (s, e) => Quit());
+            menu.Items.Add("Close DS Forever Desktop", null, (s, e) => Quit());
             icon = new NotifyIcon { Icon = Theme.AppIcon(16), Text = "DS Forever Desktop", Visible = true, ContextMenuStrip = menu };
             icon.DoubleClick += (s, e) => ShowForm();
             icon.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowForm(); };
