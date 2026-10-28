@@ -1599,7 +1599,8 @@ local function routerBind(why, fightStart)
     end
     -- m34 THE BINDINGS ON A BUTTON: the chord points at the game's binding (Jump, Interact, Auto Run, Walk / Run)
     R.cbound = {}
-    if not aside then
+    -- m77: not while Party mode is on (a ZL+A binding would beat the chord the party pad reads)
+    if not aside and not (OV.pm and OV.pm.on()) then
         for chord, k in pairs(bindPlan()) do
             pcall(SetOverrideBinding, hdr, true, chord, k)
             R.cbound[chord] = TS(function() return GetBindingAction(chord, true) end) == k or nil
@@ -1618,6 +1619,8 @@ local function routerBind(why, fightStart)
             if b and key and not R.cbound[key] then carry(b, key) end
         end
     end
+    -- m77 PARTY MODE: on = all 8 router keys carried; Select to the party toggle (PARTY_BUILD.md 3.5)
+    if OV.pm and OV.pm.bind then pcall(OV.pm.bind, aside, fightStart, carry) end
     local want = 0
     for pos in pairs(face.keys) do if face.buttons[pos] and type(faceStore()[pos]) == "table" then want = want + 1 end end
     local got = 0
@@ -1657,11 +1660,12 @@ local function routerCheck()
             if not (b and key and TS(function() return GetBindingAction(key, true) end) == routerAct(b:GetName())) then lost = true end
         end
     end
-    if not aside then                                                   -- m34: the bindings on buttons
+    if not aside and not (OV.pm and OV.pm.on()) then                   -- m34: the bindings on buttons (m77: not in Party mode)
         for chord, k in pairs(bindPlan()) do
             if TS(function() return GetBindingAction(chord, true) end) ~= k then lost = true end
         end
     end
+    if not aside and OV.pm and OV.pm.lost and OV.pm.lost() then lost = true end   -- m77: Party mode's keys and Select
     -- m37: the menu arm is spent once the Game Menu shows (the router is aside then) or MENU_S pass; Start goes back to our wheel
     if R.menuAt and (not menuArmed() or windowOpen() == "GameMenuFrame") then R.menuAt = nil; lost = true; R.lastBind = 0 end
     if (not aside or R.startInRoom(roomHolder())) and dpadWant() == true then   -- m38: the DS WoW toolbar only; m43: in rooms too
@@ -4648,6 +4652,71 @@ local function partyMode()
     function PM.flipped()
         if not inCombat() then pcall(routerBind, "party") end
         if PM.changed then pcall(PM.changed, "onoff") end
+    end
+
+    -- ---------------------------------------------------------------- the bindings (routerBind calls this, out of combat / before the lockdown)
+    -- Select = the key of the game's TOGGLEUIFOCUS (PADBACK on the Thor)
+    function PM.selKey()
+        local ctx = bindCtx()
+        return TS(function() return GetBindingKey("TOGGLEUIFOCUS", nil, ctx) end) or TS(function() return GetBindingKey("TOGGLEUIFOCUS") end)
+            or "PADBACK"
+    end
+    function PM.unfocused()
+        if type(WC.dialogs) == "table" and type(WC.dialogs.unfocused) == "function" then
+            local ok, n = pcall(WC.dialogs.unfocused)
+            if ok and type(n) == "number" then return n end
+        end
+        return 0
+    end
+    function PM.grouped() return T(function() return IsInGroup() end) == true end
+    -- what Select should be now: "bound" (Select toggles Party mode), "dialog" (an unfocused invite waits: the game's key), "aside",
+    -- "off" (a fight's start, neither grouped nor already in Party mode: the game's UI-focus key is kept for that fight)
+    function PM.selWant(aside, fightStart)
+        if aside then return "aside" end
+        if PM.unfocused() > 0 then return "dialog" end
+        if fightStart and not (PM.on() or PM.grouped()) then return "off" end
+        return "bound"
+    end
+    function PM.bind(aside, fightStart, carry)
+        PM.sel = PM.selWant(aside, fightStart)
+        PM.fightBound = fightStart and true or nil
+        if aside then
+            -- THE ONE SWITCH: suspended (the lead's default), or off for good (out of combat only)
+            if PM.OFF_WHEN_ASIDE and PM.on() and not fightStart and PM.set(nil) and PM.changed then pcall(PM.changed, "aside") end
+            return
+        end
+        if PM.on() then
+            -- all 8 router keys, whatever their fight spells or the toolbar: faces 5 / 6 / 8, B, the D-pad
+            for pos in pairs(FACE) do local b = face.buttons[pos]; if b then pcall(routerSetup, b, pos) end end
+            pcall(routerB); pcall(routerD)
+            for _, x in ipairs(routerAll()) do
+                local key = R.keys[x.pos] or routerKey(x.pos)
+                R.keys[x.pos] = key
+                if key then carry(x.b, key) end
+            end
+        end
+        if PM.sel == "bound" then
+            local key = PM.selKey()
+            PM.selBound = (PM.f and key and carry(PM.f.toggle, key)) and key or nil
+            if not PM.selBound then PM.sel = "off" end
+        else
+            PM.selBound = nil
+        end
+    end
+    -- routerCheck (every 0.1 s out of combat, nobody holding): a key of ours lost, or Select's state to change -> bind again (once a second)
+    function PM.lost()
+        if PM.on() then
+            for _, x in ipairs(routerAll()) do
+                local key = R.keys[x.pos]
+                if key and TS(function() return GetBindingAction(key, true) end) ~= routerAct(x.b:GetName()) then return true end
+            end
+        end
+        local want = PM.selWant(nil, false)
+        if want ~= PM.sel then return true end
+        if want == "bound" and PM.selBound and TS(function() return GetBindingAction(PM.selBound, true) end) ~= routerAct(PM.TOGGLE) then
+            return true
+        end
+        return false
     end
 
     PM.ev = CreateFrame("Frame")

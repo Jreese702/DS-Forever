@@ -366,7 +366,7 @@ end
 WowCompanion.spellsBookSlotOf = function(id) for i, x in ipairs(BOOK) do if x == id then return i end end end
 -- the shared capture (Interact): its holder (nil = nobody)
 HOLDER = nil
-WowCompanion.capture = { version = 13, state = function() return { holder = HOLDER } end, onChange = function() return false end }
+WowCompanion.capture = { version = 13, state = function() return { holder = rawget(_G, "HOLDER") } end, onChange = function() return false end }
 UNFOCUSED = 0
 WowCompanion.dialogs = { unfocused = function() return UNFOCUSED end }
 '''
@@ -752,6 +752,83 @@ check(W.eval('PADA("wc-k")') == "off" and all(a[0] != "spell" or a[2] is None fo
       "after B the next A is the router's own again (not the pad's)", acts(W, a0))
 W.execute('COMBAT = false')
 check(W.eval('#SNIPERR') == 0 and W.eval('#SPY') == 0, "no snippet error, no spied call", (W.eval('SNIPERR[1]'), W.eval('SPY[1]')))
+
+# ================================================================ 4. THE BINDINGS (the binding table is a spy: only overrides on our owners)
+OURKEYS = ["PAD1", "PAD2", "PAD3", "PAD4", "PADDLEFT", "PADDUP", "PADDRIGHT", "PADDDOWN", "PADBACK", "SHIFT-PAD1", "PADFORWARD"]
+
+
+def keys(L):
+    b = dict(L.eval('BIND'))
+    return {k: v for k, v in b.items() if k in OURKEYS}
+
+
+def router_on(L):
+    return {k: "CLICK %s:LeftButton" % ROUTER_NAME[KEY_POS[k]] for k in KEY_POS}
+
+
+W4 = world(pre='WowCompanionSpellsDB.binds = { ["Korvash-Realm"] = { ["2:8"] = "JUMP", ["1:1"] = "TOGGLEAUTORUN" } }')
+k = keys(W4)
+check(k.get("PADBACK") == "CLICK WowCompanionPartyToggle:LeftButton" and k.get("SHIFT-PAD1") == "JUMP" and k.get("PADDLEFT") == "TOGGLEAUTORUN"
+      and "PAD1" not in k, "Party mode OFF, out of combat: Select -> the toggle; today's plan otherwise (the m34 chords bound)", k)
+W4.execute('tapKey("PADBACK"); advance(0.3)')
+k = keys(W4)
+want = router_on(W4)
+want["PADBACK"] = "CLICK WowCompanionPartyToggle:LeftButton"
+check(W4.eval('PADA("wc-party")') is True and k == want, "Select ON: all 8 router keys carried + Select; NO m34 chord (SHIFT-PAD1, PADDLEFT)", k)
+W4.execute('NOW = NOW + 2; tick(0.1)')
+check(keys(W4) == want, "routerCheck keeps it (nothing lost)", keys(W4))
+W4.execute('BIND["PAD3"] = "INTERACTTARGET"; NOW = NOW + 2; tick(0.1)')
+check(keys(W4).get("PAD3") == "CLICK WowCompanionCombatFace5:LeftButton", "a key taken from us is bound again by routerCheck", keys(W4).get("PAD3"))
+# the whole road by keys: D-pad Down, A, B
+W4.eval('party')(W4.table_from([W4.table_from(m) for m in MEMBERS[:2]]))
+setps(W4, a="Healing Wave")
+W4.execute('rawget(_G, "WowCompanionPartyPad").a["wc-box"] = 1')
+a0 = nact(W4)
+W4.execute('tapKey("PADDDOWN"); tapKey("PAD1")')
+check(acts(W4, a0) == [("spell", "Healing Wave", "party1")], "by keys: Down boxes party1, A heals party1", acts(W4, a0))
+W4.execute('tapKey("PAD2"); advance(0.3)')
+k = keys(W4)
+check(W4.eval('PADA("wc-party")') is None and k.get("SHIFT-PAD1") == "JUMP" and k.get("PADDLEFT") == "TOGGLEAUTORUN" and "PAD1" not in k
+      and k.get("PADBACK") == "CLICK WowCompanionPartyToggle:LeftButton", "B: off, today's plan back (chords bound, A the game's)", k)
+# an unfocused dialog keeps Select the game's; routerCheck follows it
+W4.execute('UNFOCUSED = 1; NOW = NOW + 2; tick(0.1)')
+check("PADBACK" not in keys(W4), "an unfocused dialog waits: Select is left to the game", keys(W4).get("PADBACK"))
+W4.execute('UNFOCUSED = 0; NOW = NOW + 2; tick(0.1)')
+check(keys(W4).get("PADBACK") == "CLICK WowCompanionPartyToggle:LeftButton", "the dialog gone: Select is the toggle's again")
+# aside: a room holds -> nothing of Party mode is bound (Party mode stays as it was: suspended)
+W4.execute('tapKey("PADBACK"); advance(0.3); HOLDER = "spells"; NOW = NOW + 2; tick(0.1)')
+k = keys(W4)
+check(not any(v.startswith("CLICK WowCompanion") for v in k.values()) and W4.eval('PADA("wc-party")') is True,
+      "a room holds: nothing of ours bound; Party mode stays on (suspended)", k)
+W4.execute('HOLDER = nil; NOW = NOW + 2; tick(0.1)')
+check(keys(W4) == want, "the room let go: the 8 keys and Select again", keys(W4))
+W4.execute('tapKey("PADBACK"); advance(0.3)')
+# a fight's start: Select only while grouped or already in Party mode
+W4.eval('party')(W4.table_from([]))
+W4.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true')
+k = keys(W4)
+check("PADBACK" not in k and k.get("PAD2") == "CLICK WowCompanionFaceB:LeftButton", "a fight's start, solo, Party mode off: Select stays the game's (the router carries its keys)", k)
+W4.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1)')
+W4.eval('party')(W4.table_from([W4.table_from(MEMBERS[0])]))
+W4.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true')
+k = keys(W4)
+check(k.get("PADBACK") == "CLICK WowCompanionPartyToggle:LeftButton", "a fight's start, grouped: Select carried to the toggle", k.get("PADBACK"))
+W4.execute('tapKey("PADBACK")')
+check(W4.eval('PADA("wc-party")') is True and W4.eval('#VIOL') == 0, "in the fight Select switches Party mode on (secure only)", list(W4.eval('VIOL').values()))
+a0 = nact(W4)
+W4.execute('rawget(_G, "WowCompanionPartyPad").a["wc-box"] = 1; tapKey("PADDDOWN"); tapKey("PAD1")')
+check(acts(W4, a0) == [("spell", "Healing Wave", "party1")], "... and its presses reach the party pad mid-fight (carried keys)", acts(W4, a0))
+W4.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1)')
+W4.eval('party')(W4.table_from([]))
+W4.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true')
+check(keys(W4).get("PADBACK") == "CLICK WowCompanionPartyToggle:LeftButton", "a fight's start, solo but Party mode already on: Select carried",
+      keys(W4).get("PADBACK"))
+W4.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1)')
+W4.execute('UNFOCUSED = 1; fire("PLAYER_REGEN_DISABLED"); COMBAT = true')
+check("PADBACK" not in keys(W4), "a fight's start with an unfocused dialog: Select stays the game's", keys(W4).get("PADBACK"))
+W4.execute('COMBAT = false; UNFOCUSED = 0; fire("PLAYER_REGEN_ENABLED"); advance(1)')
+check(W4.eval('#SPY') == 0 and W4.eval('#VIOL') == 0, "the spy: no SetBinding / SaveBindings / macro / CVar / bar write / Blizzard window call; no lockdown breach",
+      (list(W4.eval('SPY').values())[:3], list(W4.eval('VIOL').values())[:3]))
 
 # ================================================================ THE NO-TRACE SCAN (new code only: the diff against the contract's base)
 import subprocess
