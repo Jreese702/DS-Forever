@@ -80,6 +80,41 @@ class PlayerMenuTest {
         assertEquals(PlayerMenu.Do.None, m.key("PAD1"))
     }
 
+    /** Quests q49: a party unit's menu (which = PARTY, src = party): Set Focus on the party row, Whisper's app step, Inspect greyed */
+    private val party = JSONObject("""{"type":"pmenu","unit":"party2","which":"PARTY","nm":"Brannoc","src":"party","items":[
+        {"t":"Brannoc","ttl":1},
+        {"t":"Set Focus","k":"SetFocus","sc":14,"scr":"party","en":1},
+        {"t":"Whisper","k":"Whisper","i":5,"ap":"whisper","en":1},
+        {"t":"Inspect","k":"Inspect","i":6,"en":1},
+        {"t":"Interact","k":"Interact","i":7,"en":1},
+        {"t":"Add Friend","en":1,"sub":[{"t":"Character","k":"AddFriend","i":9,"en":1}]}]}""")
+
+    private fun partyMenu() = PlayerMenu(greyKeys = PlayerMenu.PARTY_GREY).apply { openReading(); onDoc(party) }
+
+    @Test fun aPartyUnitsEntries() {
+        val m = partyMenu()
+        assertEquals("Brannoc", m.heading())
+        assertEquals(listOf("Brannoc", "Set Focus", "Whisper", "Inspect", "Interact", "Add Friend"), m.rows().map { it.text })
+        // Set Focus: the PARTY row's column (Do.Secure carries the row)
+        assertEquals(PlayerMenu.Do.Secure(14, "Set Focus", "party"), m.key("PAD1"))
+        // Whisper: run, then the app's step
+        val w = partyMenu(); w.key("PADDDOWN")
+        assertEquals(PlayerMenu.Do.Run(5, "Whisper", "whisper"), w.key("PAD1"))
+        // Inspect greyed (taint), the others run
+        val i = partyMenu(); i.key("PADDDOWN"); i.key("PADDDOWN")
+        assertFalse(i.rows()[3].enabled)
+        assertEquals(PlayerMenu.Do.Refused("Not available now"), i.key("PAD1"))
+        i.key("PADDDOWN")
+        assertEquals(PlayerMenu.Do.Run(7, "Interact"), i.key("PAD1"))
+        // the map's own menu is unchanged: Inspect not greyed there, Focus on pfocus
+        val map = PlayerMenu().apply { openReading(); onDoc(party) }
+        assertTrue(map.rows()[3].enabled)
+        assertEquals("pfocus", PlayerMenu.parse(doc.optJSONArray("items"))[2].secureRow)
+        // an app step with nothing to tap
+        val only = PlayerMenu().apply { openReading(); onDoc(JSONObject("""{"items":[{"t":"Whisper","ap":"whisper","en":1}]}""")) }
+        assertEquals(PlayerMenu.Do.Run(-1, "Whisper", "whisper"), only.key("PAD1"))
+    }
+
     @Test fun nothingRunsWhileTheRunPathIsOff() {
         assertTrue(PlayerMenu.RUNS)
         val m = opened(runs = false)

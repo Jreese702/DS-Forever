@@ -82,6 +82,8 @@ class HomeView(
     /** PARTY MODE's module (PARTY_BUILD.md 4.2): the game's raid-style cells over the left column, never hidden while `party` comes */
     private val party = PartyModel.live
     private val partyView = PartyModuleView(context, party)
+    /** the player menu for a party member (PARTY_BUILD.md 4.6), over the left column; the host drives it */
+    val partyMenu = PartyMenuView(context)
     /**
      * THE CHAT'S GLIDE (b-chat-slide; the user's pick: chat going full screen should move like the map's morph). The full chat is laid
      * out ONCE at its full size and its box glides between the chat pane's place and the frame, as the map's does: a rounded window
@@ -118,6 +120,7 @@ class HomeView(
         setBackgroundColor(Theme.ink)
         setWillNotDraw(false)
         for ((_, v) in views) { addView(v); v.visibility = View.GONE }
+        addView(partyMenu); partyMenu.visibility = View.GONE; partyMenu.translationZ = PARTY_MENU_Z
         mapView.onCompactTap = { if (flow.tapMap()) changed() }
         partyView.onCellTap = { i -> onPartyCell?.invoke(i) }
         partyView.onCellLong = { i -> onPartyLong?.invoke(i) }
@@ -1548,6 +1551,7 @@ class HomeView(
         // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint
         if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
         wheelLayer?.layout(0, 0, r - l, b - t)                              // f-radial-behind: the whole page, under the columns
+        PartyMenuView.PLACE.let { m -> partyMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
             val f = now[p] ?: continue
@@ -2545,6 +2549,8 @@ class HomeView(
         const val TAG = "WCHOME"
         /** f-trackpad-keyboard: the tool's lift, above the quest card (2) and the class wheel's cover */
         private const val TYPE_Z = 50f
+        /** the party member's player menu: over every module (the card at CARD_Z, a sliding column at CLASS_COVER_Z), under the tool */
+        private const val PARTY_MENU_Z = 10f
         /** B's give-back is retried once after this when the faces are still armed (the bar cursor's hold retry, the same reason) */
         const val GIVEBACK_RETRY_MS = 450L
         const val NOTE_MS = 2500L
