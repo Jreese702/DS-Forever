@@ -912,7 +912,8 @@ class HomeView(
         if (auraPane.open != null) auraPane.invalidate()                 // time left counts down
         // v17: in a fight with Party mode on there is NO takeover (switched on mid-fight, the takeover shrinks back: COMBAT_SHRINK)
         if (flow.combat(grow.shown(now) && !partyOnHere())) { if (flow.takeover) grewAt = System.currentTimeMillis(); changed() }
-        else if (partyModeNow(flow.screen) != laidPartyMode && party.party != null) changed()   // a fight began / ended with Party mode on
+        // a fight began / ended with Party mode on (only where the module is placed: not under a full-screen module)
+        else if (party.party != null && (flow.full == null || flow.takeover) && partyModeNow(flow.screen) != laidPartyMode) changed()
         val red = grow.red(now) && !flow.takeover && flow.full == null
         if (red != redShown) {
             redShown = red
@@ -1117,7 +1118,8 @@ class HomeView(
         // Party mode on in a fight: the takeover goes (v17); off again: it comes back
         val combat = flow.combat(grow.shown(now) && !partyOnHere())
         if (combat && flow.takeover) grewAt = now
-        if (shown != null && (combat || n != laidPartyN || on != laidPartyOn || partyModeNow(flow.screen) != laidPartyMode)) changed()
+        val placed = flow.full == null || flow.takeover
+        if (shown != null && (combat || placed && (n != laidPartyN || on != laidPartyOn || partyModeNow(flow.screen) != laidPartyMode))) changed()
         partyView.invalidate()
         shown?.let { partyStripSync(it) }
         onStateChanged?.invoke()                                          // the disc's red B follows
