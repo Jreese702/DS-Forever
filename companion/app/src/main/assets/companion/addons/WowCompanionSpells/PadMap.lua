@@ -926,6 +926,9 @@ local PRE = [=[
         end
         if not dest then dest = self:GetAttribute("wc-dest-" .. anchor .. "-1"); at = 1 end
         local mode = self:GetAttribute("wc-mode")
+        -- m77 PARTY MODE: while "wc-party" is set (and no room holds: room mode first) every press goes to the party pad, as room mode delivers
+        local pdest = mode ~= "room" and self:GetAttribute("wc-party") and self:GetAttribute("wc-party-dest") or nil
+        if pdest then mode = "room" end
         -- m26 (the user 2026-10-05: "the non combat skill bars wont use my spells"): A MACRO CANNOT RUN ANOTHER MACRO on this client
         -- (ControllerForever's author measured it too), so a "/click" of Forever's button that holds a macro (the start-attack "DS Attack"
         -- macros, the combat buttons, the player's own) does nothing. Its macro text, kept per action slot on the header out of combat,
@@ -1024,8 +1027,8 @@ local PRE = [=[
         end
         local mb = "LeftButton"
         self:SetAttribute("unit", nil)                                  -- m62: only Smart Y's buff casts on yourself
-        if mode == "room" and self:GetAttribute("wc-room-dest") then
-            dest = self:GetAttribute("wc-room-dest"); mb = self:GetAttribute("wc-key") or mb; fight = false
+        if mode == "room" and (pdest or self:GetAttribute("wc-room-dest")) then
+            dest = pdest or self:GetAttribute("wc-room-dest"); mb = self:GetAttribute("wc-key") or mb; fight = false
         end
         self:SetAttribute("wc-mb", mb)
         if qi then

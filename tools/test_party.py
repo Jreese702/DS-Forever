@@ -439,6 +439,82 @@ hidden = L10.eval('(function() local r = WowCompanion.pad.rows["r54"]; local s =
                   'return (r.cells[0]._shown == false) and (s.cells[0]._shown == false) end)()')
 check(hidden is True, "rows 54-55 are hidden at the smallest scale (never inside a dialog)", hidden)
 
+# ================================================================ 1. PRE + Party mode (the router's real snippet, restricted)
+PRE = re.search(r'local PRE = \[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
+G1 = boot([])
+prefn = G1.eval('function(body) return compileSnippet(body, "self, button, down") end')(PRE)
+G1.globals().PREFN = prefn
+G1.execute('''
+function mk(attrs)
+    local f = setmetatable({ a = attrs, refs = {}, hooks = {}, scripts = {}, wraps = {}, clicks = {}, _name = "R" }, Frame)
+    f.refs["wc-hdr"] = setmetatable({ a = {}, refs = {} }, Frame)
+    f.refs["wc-bar-top-1"] = setmetatable({ a = {}, refs = {}, _shown = true }, Frame)
+    f.refs["wc-btn-top-1"] = setmetatable({ a = {}, refs = {}, _id = 5 }, Frame)
+    for _, p in ipairs({ 1, 2, 3, 4, 5, 6, 8 }) do f.refs["wc-face-" .. p] = setmetatable({ a = {}, refs = {} }, Frame) end
+    return f
+end
+-- one router button per role, with EVERYTHING that could take a press armed: a fight spell in the fight state, fishing, Smart Y, the
+-- quest item, the D-pad toolbar, a slot macro / fight spell, start attack, B's give-back
+function routerBtn(pos, key, party, roomMode)
+    local role = (pos == 7 and "back") or (pos <= 4 and "dpad") or nil
+    local f = mk({ ["wc-n-top"] = 1, ["wc-dest-top-1"] = "GPTop" .. pos, ["wc-pos"] = pos, ["wc-key"] = key, ["wc-role"] = role,
+                   ["wc-state"] = "fight", ["wc-fight-type"] = "spell", ["wc-fight-spell"] = "Lightning Bolt", ["wc-fish"] = (pos == 5) and "Fishing" or nil,
+                   ["wc-smarty"] = (pos == 6) and "item:117" or nil, ["wc-qitem"] = (pos == 6) and "item:1" or nil, ["wc-qitem-u"] = "target", ["wc-roombar"] = "WowCompanionPadMap",
+                   ["wc-interact"] = (pos == 5) or nil, ["wc-party"] = party, ["wc-party-dest"] = "WowCompanionPartyPad",
+                   ["wc-mode"] = roomMode and "room" or nil, ["wc-room-dest"] = "WowCompanionInteractPad" })
+    f.refs["wc-hdr"].a["wc-mt-5"] = "/cast Slot Macro"; f.refs["wc-hdr"].a["wc-ft-5"] = "/cast Slot Fight"; f.refs["wc-hdr"].a["wc-sa-5"] = "/startattack\\n"
+    return f
+end
+function pressPre(f, down)
+    TRUE_TARGET = true
+    runSecure(PREFN, f, "LeftButton", down)
+    return f.a["wc-kind"], f.a["type"], f.a["macrotext"], f.a["spell"], f.a["item"], f.a["unit"]
+end
+UNITS.target = { alive = true, foe = true }
+''')
+ROUTER8 = [(8, "PAD1"), (7, "PAD2"), (5, "PAD3"), (6, "PAD4"), (1, "PADDLEFT"), (2, "PADDUP"), (3, "PADDRIGHT"), (4, "PADDDOWN")]
+for combat in (False, True):
+    G1.execute('COMBAT = %s' % ('true' if combat else 'false'))
+    for pos, key in ROUTER8:
+        f = G1.eval('routerBtn')(pos, key, True, False)
+        k = G1.eval('pressPre')(f, True)
+        given = any(G1.eval('function(f) for _, p in ipairs({1,2,3,4,5,6,8}) do if f.refs["wc-face-" .. p].a["wc-given"] then return true end end return false end')(f) for _ in [0])
+        check(k[0] == "native" and k[1] == "macro" and k[2] == "/click WowCompanionPartyPad %s 1" % key and k[3] is None and k[4] is None
+              and k[5] is None and not given,
+              "PRE, Party mode, %s%s: the key-down is /click WowCompanionPartyPad %s 1, nothing else" % (key, " in combat" if combat else "", key),
+              (k[0], k[2], given))
+        k = G1.eval('pressPre')(f, False)
+        check(k[2] == "/click WowCompanionPartyPad %s 0" % key, "PRE, Party mode, %s: the key-up is ... %s 0" % (key, key), k[2])
+G1.execute('COMBAT = true')
+for pos, key in ROUTER8:
+    f = G1.eval('routerBtn')(pos, key, True, True)
+    k = G1.eval('pressPre')(f, True)
+    check(k[2] == "/click WowCompanionInteractPad %s 1" % key, "PRE: wc-mode \"room\" beats wc-party (%s goes to the room)" % key, k[2])
+# unset = today (the fight spell / the toolbar / B's give-back), and test_smarty.py's own cases below
+f = G1.eval('routerBtn')(5, "PAD3", None, False)
+f.a["wc-qitem"] = None
+k = G1.eval('pressPre')(f, True)
+check(k[0] == "fight" and k[3] == "Lightning Bolt", "PRE without wc-party: X in the fight state is its fight spell, as today", k[:4])
+f = G1.eval('routerBtn')(7, "PAD2", None, False)
+k = G1.eval('pressPre')(f, True)
+given = G1.eval('function(f) return f.refs["wc-face-5"].a["wc-given"] end')(f)
+check(given is True, "PRE without wc-party: B in a fight gives A / X / Y back, as today", given)
+G1.execute('COMBAT = false')
+f = G1.eval('routerBtn')(2, "PADDUP", None, False)
+f.a["wc-state"] = "idle"; f.a["wc-qitem"] = None
+k = G1.eval('pressPre')(f, True)
+check(k[0] == "roombar", "PRE without wc-party: the bare D-pad is the DS toolbar, as today", k[0])
+f = G1.eval('routerBtn')(2, "PADDUP", True, False)
+f.a["wc-party-dest"] = None; f.a["wc-state"] = "idle"; f.a["wc-qitem"] = None
+k = G1.eval('pressPre')(f, True)
+check(k[0] == "roombar", "PRE: wc-party with no wc-party-dest changes nothing", k[0])
+check(G1.eval('#SNIPERR') == 0, "PRE ran in the restricted environment without an error", G1.eval('SNIPERR[1]'))
+import subprocess
+r = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'test_smarty.py')], capture_output=True, text=True)
+check(r.returncode == 0 and r.stdout.strip().endswith('ALL PASS'), "tools/test_smarty.py passes UNCHANGED", r.stdout.strip()[-60:])
+smarty_git = subprocess.run(['git', '-C', ROOT, 'diff', '--quiet', '5ee1ff22', '--', 'tools/test_smarty.py']).returncode
+check(smarty_git == 0, "tools/test_smarty.py is byte for byte the contract's base", smarty_git)
+
 # ================================================================ THE NO-TRACE SCAN (new code only: the diff against the contract's base)
 import subprocess
 try:
