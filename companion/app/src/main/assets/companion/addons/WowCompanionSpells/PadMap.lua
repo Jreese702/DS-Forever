@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m76"                -- bump on every change; m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m77"                -- bump on every change; m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -1224,6 +1224,7 @@ R.linkAll = function()
     for _, h in pairs(holders) do
         if h then for p, o in pairs(all) do pcall(SecureHandlerSetFrameRef, h, "wc-face-" .. p, o) end end
     end
+    if OV.pm and OV.pm.link then pcall(OV.pm.link) end            -- m77: Party mode's pad and flips refer to every router button
 end
 local function routerSetup(b, pos)
     if inCombat() or not b then return false end
@@ -4348,3 +4349,313 @@ do
         pcall(C_Timer.NewTicker, 5, function() pcall(send, false) end)
     end
 end
+
+-- ---------------------------------------------------------------- m77 PARTY MODE (the lead's contract PARTY_BUILD.md; the ADD-ON half)
+-- The user's rulings (party_mode/SPEC_DRAFT.md, v10 / v13 / v17 / v18; FEASIBILITY.md "DESIGN CHANGES FORCED"): Select toggles Party
+-- mode; while it is on every press of the 8 router keys goes to OUR secure button WowCompanionPartyPad (the router's PRE, room mode
+-- first): the D-pad moves the box over the party (you first, then party1..4), A / X and the ZL / ZR chords cast the slot's spell ON the
+-- boxed member (CastSpellByName(spell, unit): the game's target never changes), Y opens the member's player menu (the app's mirror) or
+-- casts its in-combat spell / Smart Y's party buff, B turns Party mode off. No trace: our own secure buttons, override bindings on our
+-- own owner (the router's header), data only in WowCompanionSpellsDB.partyBy[name-realm]; nothing of Blizzard's window code is run.
+-- One main-chunk local (the chunk is at Lua's 200): everything lives in partyMode()'s own scope and on OV.pm.
+local function partyMode()
+    local PM = { n = 0, rs = 0 }
+    OV.pm = PM
+    -- F.ROUTER's order (Interact.lua): the 8 router buttons by position; the pad's frame refs wc-r-1..8 follow it
+    PM.ORDER = { 8, 7, 5, 6, 1, 2, 3, 4 }
+    PM.KEYNAME = { [1] = "PADDLEFT", [2] = "PADDUP", [3] = "PADDRIGHT", [4] = "PADDDOWN", [5] = "PAD3", [6] = "PAD4", [7] = "PAD2", [8] = "PAD1" }
+    PM.PAD, PM.TOGGLE, PM.ON, PM.OFF, PM.MDONE = "WowCompanionPartyPad", "WowCompanionPartyToggle", "WowCompanionPartyOn",
+        "WowCompanionPartyOff", "WowCompanionPartyMenuDone"
+    -- THE ONE SWITCH (an open question; the lead's default: no): true = the add-on itself turns Party mode off when a room / a game
+    -- window takes the controller (out of combat); false = it is only SUSPENDED there (`aside`), and the app decides
+    PM.OFF_WHEN_ASIDE = false
+
+    -- PARTY-NAV-BEGIN (pure; tools/test_party.py checks it against PARTY_BUILD.md 3.4 and against the PARTYPAD snippet's copy)
+    -- the box's move: n members (1 = you), box = the boxed index, dir = "up" / "down" / "left" / "right"; -> the new index (= box: no move)
+    OV.partyNav = function(n, box, dir)
+        local nb = box
+        if n == 2 then
+            if dir == "down" and box == 1 then nb = 2 elseif dir == "up" and box == 2 then nb = 1 end
+        elseif n >= 3 then
+            if box == 1 then
+                if dir == "down" then nb = 2 end
+            elseif n == 5 and box >= 4 then
+                if dir == "up" then nb = box - 2 elseif dir == "left" and box == 5 then nb = 4 elseif dir == "right" and box == 4 then nb = 5 end
+            else
+                local last = (n == 5) and 3 or n
+                if dir == "up" then nb = 1
+                elseif dir == "down" and n == 5 then nb = box + 2
+                elseif dir == "left" and box > 2 then nb = box - 1
+                elseif dir == "right" and box < last then nb = box + 1 end
+            end
+        end
+        return nb
+    end
+    -- PARTY-NAV-END
+
+    -- THE PARTY PAD (restricted Lua; the router's /click delivers the key's name as the button, "1" / "0" as the edge). The key-down only:
+    -- the key-up changes nothing, so whichever edge the secure template acts on, it acts ONCE.
+    PM.PARTYPAD = [=[
+    if not down then return end
+    self:SetAttribute("type", nil)
+    self:SetAttribute("spell", nil)
+    self:SetAttribute("unit", nil)
+    self:SetAttribute("wc-k", "none")
+    local pos = self:GetAttribute("wc-kp-" .. tostring(button)) or 0
+    self:SetAttribute("wc-key", self:GetAttribute("wc-kn-" .. pos))
+    local lt, rt = false, false
+    local st = GetGamePadState and GetGamePadState()
+    local bt = st and st.buttons
+    if bt then
+        local li, ri = self:GetAttribute("wc-lt"), self:GetAttribute("wc-rt")
+        lt = (li and bt[li]) and true or false
+        rt = (ri and bt[ri]) and true or false
+    end
+    local ly = ""
+    if lt and not rt then ly = "zl" elseif rt and not lt then ly = "zr" end
+    self:SetAttribute("wc-ly", ly)
+    local n = 1
+    for i = 1, 4 do
+        if SecureCmdOptionParse("[@party" .. i .. ",exists] 1") == "1" then n = n + 1 end
+    end
+    local box = self:GetAttribute("wc-box") or 1
+    if box > n then box = n end
+    if box < 1 then box = 1 end
+    local menu = self:GetAttribute("wc-pmenu")
+    local kind = nil
+    if pos >= 1 and pos <= 4 then
+        if menu then
+            kind = "key"
+        else
+            local dir = (pos == 1 and "left") or (pos == 2 and "up") or (pos == 3 and "right") or "down"
+            -- PARTY-NAV-BODY-BEGIN
+        local nb = box
+        if n == 2 then
+            if dir == "down" and box == 1 then nb = 2 elseif dir == "up" and box == 2 then nb = 1 end
+        elseif n >= 3 then
+            if box == 1 then
+                if dir == "down" then nb = 2 end
+            elseif n == 5 and box >= 4 then
+                if dir == "up" then nb = box - 2 elseif dir == "left" and box == 5 then nb = 4 elseif dir == "right" and box == 4 then nb = 5 end
+            else
+                local last = (n == 5) and 3 or n
+                if dir == "up" then nb = 1
+                elseif dir == "down" and n == 5 then nb = box + 2
+                elseif dir == "left" and box > 2 then nb = box - 1
+                elseif dir == "right" and box < last then nb = box + 1 end
+            end
+        end
+            -- PARTY-NAV-BODY-END
+            box = nb
+            kind = "move"
+        end
+    end
+    self:SetAttribute("wc-box", box)
+    self:SetAttribute("wc-cnt", n)
+    local u, c = "player", 1
+    for i = 1, 4 do
+        if SecureCmdOptionParse("[@party" .. i .. ",exists] 1") == "1" then
+            c = c + 1
+            if c == box then u = "party" .. i end
+        end
+    end
+    if kind then
+        self:SetAttribute("wc-k", kind)
+        if kind == "move" then self:SetAttribute("wc-u", u) end
+        return
+    end
+    if pos == 7 then
+        if menu then self:SetAttribute("wc-k", "key") return end
+        local rn = self:GetAttribute("wc-rn") or 0
+        for i = 1, rn do
+            local r = self:GetFrameRef("wc-r-" .. i)
+            if r then r:SetAttribute("wc-party", nil) end
+        end
+        self:SetAttribute("wc-party", nil)
+        self:SetAttribute("wc-k", "off")
+        return
+    end
+    local b = (pos == 8 and "a") or (pos == 5 and "x") or (pos == 6 and "y") or nil
+    if not b then return end
+    if lt and rt then return end
+    if menu then self:SetAttribute("wc-k", "key") return end
+    local spell = nil
+    if b == "y" and ly == "" then
+        if SecureCmdOptionParse("[combat] 1") == "1" then
+            local py = self:GetAttribute("wc-py")
+            if py and SecureCmdOptionParse("[@" .. u .. ",help,nodead] 1") == "1" then spell = py end
+        else
+            local pb = self:GetAttribute("wc-pb-" .. u)
+            if pb and SecureCmdOptionParse("[@" .. u .. ",nodead] 1") == "1" then spell = pb end
+        end
+        if not spell then
+            self:SetAttribute("wc-pmenu", true)
+            self:SetAttribute("wc-u", u)
+            self:SetAttribute("wc-k", "menu")
+            return
+        end
+    else
+        spell = self:GetAttribute("wc-ps-" .. ly .. b)
+    end
+    self:SetAttribute("wc-u", u)
+    if spell then
+        self:SetAttribute("type", "spell")
+        self:SetAttribute("spell", spell)
+        self:SetAttribute("unit", u)
+        self:SetAttribute("wc-k", "cast")
+    end
+]=]
+    -- Select's toggle and the party row's ON / OFF cells: "wc-party" on the 8 router buttons and on the pad (toggle reads the PAD's)
+    PM.PARTYFLIP = [=[
+    local set = self:GetAttribute("wc-set")
+    local pad = self:GetFrameRef("wc-pad")
+    local v = nil
+    if set == "on" then v = true
+    elseif set == "toggle" then
+        if not (pad and pad:GetAttribute("wc-party")) then v = true end
+    end
+    local rn = self:GetAttribute("wc-rn") or 0
+    for i = 1, rn do
+        local r = self:GetFrameRef("wc-r-" .. i)
+        if r then r:SetAttribute("wc-party", v) end
+    end
+    if pad then
+        pad:SetAttribute("wc-party", v)
+        pad:SetAttribute("wc-pmenu", nil)
+        pad:SetAttribute("wc-k", v and "on" or "off")
+    end
+]=]
+    PM.MENUDONE = [=[ local pad = self:GetFrameRef("wc-pad"); if pad then pad:SetAttribute("wc-pmenu", nil) end ]=]
+
+    local function A(f, k) return f and T(function() return f:GetAttribute(k) end) or nil end
+    PM.A = A
+    function PM.pad() return PM.f and PM.f.pad or nil end
+    function PM.on() return A(PM.pad(), "wc-party") == true end
+
+    -- the frames: made once, out of combat (a load inside a fight makes them at its end), never destroyed
+    function PM.make()
+        if PM.f then return true end
+        if inCombat() then PM.makePending = true return false end
+        local hdr = routerHeader()
+        if not hdr then return false end
+        local ok = pcall(function()
+            local f = {}
+            f.pad = CreateFrame("Button", PM.PAD, UIParent, "SecureActionButtonTemplate")
+            f.pad:RegisterForClicks("AnyDown", "AnyUp")
+            f.pad:SetAttribute("wc-box", 1)
+            SecureHandlerWrapScript(f.pad, "OnClick", hdr, PM.PARTYPAD)
+            f.pad:HookScript("PostClick", function(_, button, down) pcall(PM.afterPad, button, down) end)
+            for _, x in ipairs({ { "toggle", PM.TOGGLE, false }, { "on", PM.ON, true }, { "off", PM.OFF, true } }) do
+                local b = CreateFrame("Button", x[2], UIParent, "SecureActionButtonTemplate")
+                -- Select's key: its down only (a toggle must not run twice); the cells' clicks (type "click"): both edges, the snippet is
+                -- absolute there (a repeat is harmless)
+                if x[3] then b:RegisterForClicks("AnyDown", "AnyUp") else b:RegisterForClicks("AnyDown") end
+                b:SetAttribute("wc-set", x[1])
+                SecureHandlerWrapScript(b, "OnClick", hdr, PM.PARTYFLIP)
+                local set = x[1]
+                b:HookScript("PostClick", function(_, _, down) pcall(PM.afterFlip, set, down) end)
+                f[x[1]] = b
+            end
+            f.mdone = CreateFrame("Button", PM.MDONE, UIParent, "SecureActionButtonTemplate")
+            f.mdone:RegisterForClicks("AnyDown", "AnyUp")
+            SecureHandlerWrapScript(f.mdone, "OnClick", hdr, PM.MENUDONE)
+            PM.f = f
+        end)
+        PM.makePending = nil
+        if ok and PM.f then pcall(PM.link) end
+        return ok and PM.f ~= nil
+    end
+
+    -- frame refs and the static attributes (out of combat; again whenever a router button is made: R.linkAll calls this)
+    function PM.link()
+        if inCombat() or not PM.f then return false end
+        local f = PM.f
+        local byPos = {}
+        for _, x in ipairs(routerAll()) do byPos[x.pos] = x.b end
+        local on = PM.on() or nil
+        for _, h in ipairs({ f.pad, f.toggle, f.on, f.off, f.mdone }) do
+            for i, pos in ipairs(PM.ORDER) do
+                if byPos[pos] then pcall(SecureHandlerSetFrameRef, h, "wc-r-" .. i, byPos[pos]) end
+            end
+            h:SetAttribute("wc-rn", #PM.ORDER)
+            pcall(SecureHandlerSetFrameRef, h, "wc-pad", f.pad)
+        end
+        -- the key's name -> its position (the player's own keys first, the game's names as the fallback), and each position's own name
+        for pos = 1, 8 do
+            f.pad:SetAttribute("wc-kp-" .. PM.KEYNAME[pos], pos)
+            f.pad:SetAttribute("wc-kn-" .. pos, PM.KEYNAME[pos])
+        end
+        for pos = 1, 8 do if R.keys[pos] then f.pad:SetAttribute("wc-kp-" .. R.keys[pos], pos) end end
+        f.pad:SetAttribute("wc-lt", padIndex("PADLTRIGGER"))
+        f.pad:SetAttribute("wc-rt", padIndex("PADRTRIGGER"))
+        for _, b in pairs(byPos) do
+            b:SetAttribute("wc-party-dest", PM.PAD)
+            b:SetAttribute("wc-party", on)
+        end
+        return true
+    end
+
+    -- Party mode set from insecure code (out of combat only: PM.OFF_WHEN_ASIDE)
+    function PM.set(v)
+        if inCombat() or not PM.f then return false end
+        v = v and true or nil
+        for _, x in ipairs(routerAll()) do x.b:SetAttribute("wc-party", v) end
+        PM.f.pad:SetAttribute("wc-party", v)
+        PM.f.pad:SetAttribute("wc-pmenu", nil)
+        return true
+    end
+
+    -- ---------------------------------------------------------------- partybox: every press Party mode takes, every on / off
+    function PM.count()
+        local n = 1
+        for i = 1, 4 do if T(function() return UnitExists("party" .. i) end) == true then n = n + 1 end end
+        return n
+    end
+    function PM.box()
+        local pad = PM.pad()
+        return {
+            n = PM.n, on = PM.on(), box = A(pad, "wc-box") or 1, cnt = A(pad, "wc-cnt") or PM.count(), u = A(pad, "wc-u"),
+            k = A(pad, "wc-k") or "none", key = A(pad, "wc-key"), ly = A(pad, "wc-ly") or "",
+            sp = (A(pad, "type") == "spell") and A(pad, "spell") or nil, fight = fighting(), pm = A(pad, "wc-pmenu") == true,
+        }
+    end
+    function PM.sendBox(kind)
+        PM.n = PM.n + 1
+        local b = PM.box()
+        if kind then b.k = kind end
+        WC.send(WC.encode({ type = "partybox", v = PV, b = b }))
+        WC.push()
+        return b
+    end
+    -- the pad's post-click (insecure, plain, in fights too): the press (down) only
+    function PM.afterPad(button, down)
+        if not down then return end
+        local b = PM.sendBox()
+        if b.k == "menu" and b.u and type(WC.pmenu) == "table" and type(WC.pmenu.read) == "function" then
+            pcall(WC.pmenu.read, b.u, "party")
+        end
+        if b.k == "off" then PM.flipped() end
+    end
+    function PM.afterFlip(set, down)
+        -- a cell's click may come as one edge or two: one partybox per flip (the toggle hears its down only)
+        local now = GetTime()
+        if PM.flipAt and now - PM.flipAt < 0.25 and PM.flipSet == set then return end
+        PM.flipAt, PM.flipSet = now, set
+        PM.sendBox()
+        PM.flipped()
+    end
+    -- Party mode turned on or off: the bindings follow (out of combat), the documents say it
+    function PM.flipped()
+        if not inCombat() then pcall(routerBind, "party") end
+        if PM.changed then pcall(PM.changed, "onoff") end
+    end
+
+    PM.ev = CreateFrame("Frame")
+    for _, e in ipairs({ "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD" }) do pcall(function() PM.ev:RegisterEvent(e) end) end
+    PM.ev:SetScript("OnEvent", function(_, e, ...)
+        if not PM.f then pcall(PM.make) end
+        if PM.onEvent then pcall(PM.onEvent, e, ...) end
+    end)
+    pcall(PM.make)
+end
+partyMode()

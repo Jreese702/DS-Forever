@@ -515,6 +515,244 @@ check(r.returncode == 0 and r.stdout.strip().endswith('ALL PASS'), "tools/test_s
 smarty_git = subprocess.run(['git', '-C', ROOT, 'diff', '--quiet', '5ee1ff22', '--', 'tools/test_smarty.py']).returncode
 check(smarty_git == 0, "tools/test_smarty.py is byte for byte the contract's base", smarty_git)
 
+# ================================================================ THE WORLD: the real Spells files (and TapPad) logged in
+ROUTER_NAME = {8: "WowCompanionCombatFace8", 7: "WowCompanionFaceB", 5: "WowCompanionCombatFace5", 6: "WowCompanionCombatFace6",
+               1: "WowCompanionFaceD1", 2: "WowCompanionFaceD2", 3: "WowCompanionFaceD3", 4: "WowCompanionFaceD4"}
+KEY_POS = {"PAD1": 8, "PAD2": 7, "PAD3": 5, "PAD4": 6, "PADDLEFT": 1, "PADDUP": 2, "PADDRIGHT": 3, "PADDDOWN": 4}
+WORLD_HELPERS = r'''
+function party(spec)            -- spec = { {name, cls, alive, role, pt, off, foe}, ... } for party1..
+    for k in pairs(UNITS) do if k:match("^party%d$") then UNITS[k] = nil end end
+    for i, m in ipairs(spec or {}) do
+        UNITS["party" .. i] = { name = m[1], cls = m[2] or "WARRIOR", alive = m[3] ~= false, role = m[4] or "NONE", pt = m[5] or "RAGE",
+                                off = m[6], foe = m[7], guid = "Player-1-" .. m[1] }
+    end
+end
+function router(pos) return rawget(_G, ({ [8] = "WowCompanionCombatFace8", [7] = "WowCompanionFaceB", [5] = "WowCompanionCombatFace5",
+    [6] = "WowCompanionCombatFace6", [1] = "WowCompanionFaceD1", [2] = "WowCompanionFaceD2", [3] = "WowCompanionFaceD3",
+    [4] = "WowCompanionFaceD4" })[pos]) end
+-- a hardware press of the router button for `pos` (what its override binding delivers), both edges
+function hit(pos) local b = router(pos); doClick(b, "LeftButton", true); doClick(b, "LeftButton", false) end
+function trig(lt, rt) PADSTATE = {}; if lt then PADSTATE[LT_I] = true end; if rt then PADSTATE[RT_I] = true end end
+function PADA(k) return rawget(_G, "WowCompanionPartyPad").a[k] end
+function lastAction() return ACTIONS[#ACTIONS] end
+function clickName(n, down) doClick(rawget(_G, n), "LeftButton", down) end
+'''
+
+
+def world(pre='', files=("safety", "tappad", "book", "padmap", "padtabctl")):
+    L = boot(list(files), pre=pre)
+    L.execute(WORLD_HELPERS)
+    L.execute('fire("PLAYER_LOGIN"); fire("PLAYER_ENTERING_WORLD", true, false); runTimers(NOW + 10)')
+    return L
+
+
+def nact(L):
+    return int(L.eval('#ACTIONS'))
+
+
+def acts(L, start):
+    out = []
+    for i in range(start + 1, nact(L) + 1):
+        a = L.eval('ACTIONS[%d]' % i)
+        out.append((a.kind, a.spell, a.unit))
+    return out
+
+
+W = world()
+check(list(W.eval('ERRS').values()) == [] and W.eval('#SNIPERR') == 0, "the world loads (Safety, TapPad, Book, PadMap, PadTabCtl) with no error",
+      list(W.eval('ERRS').values())[:2])
+check(all(W.eval('rawget(_G, "%s") ~= nil' % n) for n in ("WowCompanionPartyPad", "WowCompanionPartyToggle", "WowCompanionPartyOn",
+                                                             "WowCompanionPartyOff", "WowCompanionPartyMenuDone")),
+      "the five secure frames exist by their contract names")
+padf = W.eval('rawget(_G, "WowCompanionPartyPad")')
+refs = dict(padf.refs)
+check(all(refs.get('wc-r-%d' % (i + 1)) is not None and refs['wc-r-%d' % (i + 1)]._name == ROUTER_NAME[p]
+          for i, p in enumerate([8, 7, 5, 6, 1, 2, 3, 4])) and padf.a['wc-rn'] == 8 and refs.get('wc-pad') is not None,
+      "the pad's refs: wc-r-1..8 in F.ROUTER's order (A B X Y, D-pad L U R D), wc-rn 8, wc-pad")
+for n in ("WowCompanionPartyToggle", "WowCompanionPartyOn", "WowCompanionPartyOff", "WowCompanionPartyMenuDone"):
+    fr = W.eval('rawget(_G, "%s")' % n)
+    check(fr.refs['wc-pad'] is not None and fr.refs['wc-r-8'] is not None and fr.a['wc-rn'] == 8, n + ": wc-pad + wc-r-1..8 refs")
+check(all(W.eval('router(%d)' % p).a['wc-party-dest'] == "WowCompanionPartyPad" for p in range(1, 9)),
+      "every router button carries wc-party-dest = WowCompanionPartyPad")
+
+# ================================================================ 3. PARTYFLIP
+def flip(L, name):
+    L.execute('clickName("%s", true); clickName("%s", false); advance(0.3)' % (name, name))
+
+
+def party_on_all(L):
+    return [L.eval('router(%d)' % p).a['wc-party'] for p in range(1, 9)] + [L.eval('PADA("wc-party")')]
+
+
+W.execute('PADA = PADA; rawget(_G, "WowCompanionPartyPad").a["wc-pmenu"] = true')
+flip(W, "WowCompanionPartyOn")
+check(party_on_all(W) == [True] * 9 and W.eval('PADA("wc-pmenu")') is None, "ON: wc-party on all 8 router buttons and the pad; wc-pmenu cleared",
+      party_on_all(W))
+flip(W, "WowCompanionPartyOn")
+check(party_on_all(W) == [True] * 9, "ON again: still on (absolute)")
+W.execute('rawget(_G, "WowCompanionPartyPad").a["wc-pmenu"] = true')
+flip(W, "WowCompanionPartyOff")
+check(party_on_all(W) == [None] * 9 and W.eval('PADA("wc-pmenu")') is None, "OFF: wc-party nil everywhere; wc-pmenu cleared", party_on_all(W))
+flip(W, "WowCompanionPartyOff")
+check(party_on_all(W) == [None] * 9, "OFF again: still off (absolute)")
+W.execute('clickName("WowCompanionPartyToggle", true); clickName("WowCompanionPartyToggle", false); advance(0.3)')
+check(party_on_all(W) == [True] * 9, "TOGGLE from off: on (its key-down only: the up does not toggle back)", party_on_all(W))
+W.execute('rawget(_G, "WowCompanionPartyPad").a["wc-pmenu"] = true; clickName("WowCompanionPartyToggle", true); clickName("WowCompanionPartyToggle", false); advance(0.3)')
+check(party_on_all(W) == [None] * 9 and W.eval('PADA("wc-pmenu")') is None, "TOGGLE from on: off, wc-pmenu cleared", party_on_all(W))
+W.execute('COMBAT = true')
+W.execute('clickName("WowCompanionPartyToggle", true); NOW = NOW + 0.3')
+check(party_on_all(W) == [True] * 9 and W.eval('#VIOL') == 0, "TOGGLE in a fight: on (secure snippets only, no lockdown breach)",
+      list(W.eval('VIOL').values()))
+W.execute('COMBAT = false')
+flip(W, "WowCompanionPartyOff")
+d = docs(W, 0, 'partybox')
+check(len(d) >= 5 and [x['b']['k'] for x in d[-3:]] == ['off', 'on', 'off'], "every flip sends ONE partybox (k on / off)",
+      [x['b']['k'] for x in d])
+
+# ================================================================ 2. PARTYPAD
+NAV = {  # PARTY_BUILD.md 3.4: (n, from) -> (Up, Down, Left, Right); None = no move
+    (1, 1): (None, None, None, None), (2, 1): (None, 2, None, None), (2, 2): (1, None, None, None),
+    (3, 1): (None, 2, None, None), (3, 2): (1, None, None, 3), (3, 3): (1, None, 2, None),
+    (4, 1): (None, 2, None, None), (4, 2): (1, None, None, 3), (4, 3): (1, None, 2, 4), (4, 4): (1, None, 3, None),
+    (5, 1): (None, 2, None, None), (5, 2): (1, 4, None, 3), (5, 3): (1, 5, 2, None), (5, 4): (2, None, None, 5), (5, 5): (3, None, 4, None),
+}
+DIRS = ("up", "down", "left", "right")
+DPOS = {"up": 2, "down": 4, "left": 1, "right": 3}
+NAVL = lupa.LuaRuntime(unpack_returned_tuples=True)
+NAVL.execute('OV = {}\n' + re.search(r'-- PARTY-NAV-BEGIN[^\n]*\n(.*?)-- PARTY-NAV-END', SRC["padmap"], re.S).group(1))
+nav = NAVL.eval('OV.partyNav')
+bad = []
+for (n, fr), want in NAV.items():
+    for dname, w in zip(DIRS, want):
+        got = nav(n, fr, dname)
+        if got != (w if w is not None else fr):
+            bad.append((n, fr, dname, got))
+check(not bad, "OV.partyNav = the 3.4 table, all 15 rows x 4 directions", bad[:4])
+nav_lua = re.search(r'-- PARTY-NAV-BEGIN.*?OV\.partyNav = function\(n, box, dir\)\n(.*?)\n\s*return nb\n\s*end\n\s*-- PARTY-NAV-END', SRC_PM := open(F["padmap"], encoding="utf-8").read(), re.S)
+nav_snip = re.search(r'-- PARTY-NAV-BODY-BEGIN\n(.*?)\n\s*-- PARTY-NAV-BODY-END', SRC_PM, re.S)
+norm = lambda t: re.sub(r'\s+', ' ', t).strip()
+check(nav_lua is not None and nav_snip is not None and norm(nav_lua.group(1)) == norm(nav_snip.group(1)),
+      "the PARTYPAD snippet carries the same NAV body as OV.partyNav")
+# the snippet itself, member counts 1..5, every row and direction, through the router (Party mode on)
+flip(W, "WowCompanionPartyOn")
+MEMBERS = [["Brannoc", "WARRIOR", True, "TANK"], ["Iselle", "MAGE"], ["Doran", "ROGUE", True, "DAMAGER", "ENERGY"], ["Mira", "PRIEST", True, "HEALER", "MANA"]]
+bad = []
+for (n, fr), want in NAV.items():
+    W.eval('party')(W.table_from([W.table_from(m) for m in MEMBERS[:n - 1]]))
+    for dname, w in zip(DIRS, want):
+        W.execute('rawget(_G, "WowCompanionPartyPad").a["wc-box"] = %d' % fr)
+        a0 = nact(W)
+        W.execute('hit(%d)' % DPOS[dname])
+        got = W.eval('PADA("wc-box")')
+        if got != (w if w is not None else fr) or nact(W) != a0 or W.eval('PADA("wc-k")') != "move":
+            bad.append((n, fr, dname, got, W.eval('PADA("wc-k")')))
+check(not bad, "PARTYPAD's D-pad = the 3.4 table for n = 1..5 (through the router; never a game action)", bad[:4])
+W.execute('party({}); rawget(_G, "WowCompanionPartyPad").a["wc-box"] = 4')
+W.execute('hit(2)')
+check(W.eval('PADA("wc-box")') == 1, "a box past n (someone left) clamps to n", W.eval('PADA("wc-box")'))
+check(W.eval('#SNIPERR') == 0, "PARTYPAD runs in the restricted environment without an error", W.eval('SNIPERR[1]'))
+
+
+def setps(L, **kv):
+    L.execute('local p = rawget(_G, "WowCompanionPartyPad"); for _, k in ipairs({"a","x","zla","zlx","zly","zra","zrx","zry"}) do p.a["wc-ps-" .. k] = nil end')
+    for k, v in kv.items():
+        L.execute('rawget(_G, "WowCompanionPartyPad").a["%s"] = %s' % ("wc-ps-" + k, json.dumps(v)))
+
+
+W.eval('party')(W.table_from([W.table_from(m) for m in MEMBERS[:2]]))
+setps(W, a="Healing Wave", x="Lesser Healing Wave", zla="Cure Poison", zlx="Cure Disease", zra="Ancestral Spirit")
+W.execute('rawget(_G, "WowCompanionPartyPad").a["wc-box"] = 1; hit(4)')         # box 2 = party1
+cases = [((False, False), 8, ("spell", "Healing Wave", "party1")), ((False, False), 5, ("spell", "Lesser Healing Wave", "party1")),
+         ((True, False), 8, ("spell", "Cure Poison", "party1")), ((True, False), 5, ("spell", "Cure Disease", "party1")),
+         ((False, True), 8, ("spell", "Ancestral Spirit", "party1"))]
+for (lt, rt), pos, want in cases:
+    W.execute('trig(%s, %s)' % ('true' if lt else 'false', 'true' if rt else 'false'))
+    a0 = nact(W)
+    W.execute('hit(%d)' % pos)
+    got = acts(W, a0)
+    check(got == [want], "%s%s: casts %s on %s, once" % ({(False, False): "", (True, False): "ZL+", (False, True): "ZR+"}[(lt, rt)],
+                                                          {8: "A", 5: "X"}[pos], want[1], want[2]), got)
+for lt, rt, pos, why in ((False, True, 5, "ZR+X Empty"), (True, False, 6, "ZL+Y Empty"), (True, True, 8, "ZL+ZR+A (both triggers)")):
+    W.execute('trig(%s, %s)' % ('true' if lt else 'false', 'true' if rt else 'false'))
+    a0 = nact(W)
+    W.execute('hit(%d)' % pos)
+    check(acts(W, a0) == [] and W.eval('PADA("wc-k")') == "none", why + ": nothing", (acts(W, a0), W.eval('PADA("wc-k")')))
+W.execute('trig(false, false); party({}); rawget(_G, "WowCompanionPartyPad").a["wc-box"] = 1')
+a0 = nact(W)
+W.execute('hit(8)')
+check(acts(W, a0) == [("spell", "Healing Wave", "player")], "solo: A casts on yourself (player)", acts(W, a0))
+# the key-up changes nothing (whichever edge the template acts on)
+W.execute('ACT_ON_DOWN = false')
+a0 = nact(W)
+W.execute('hit(8)')
+check(acts(W, a0) == [("spell", "Healing Wave", "player")], "the template acting on the RELEASE: still one cast, the down's", acts(W, a0))
+W.execute('ACT_ON_DOWN = true')
+W.execute('local b = router(8); doClick(b, "LeftButton", true)')
+before = dict(W.eval('rawget(_G, "WowCompanionPartyPad")').a)
+W.execute('local b = router(8); doClick(b, "LeftButton", false)')
+after = dict(W.eval('rawget(_G, "WowCompanionPartyPad")').a)
+check(before == after, "the key-up leaves every pad attribute as the key-down set it")
+
+# Y out of combat: Smart Y's pick on a living member; dead / no pick -> the menu
+W.eval('party')(W.table_from([W.table_from(m) for m in MEMBERS[:2]]))
+W.execute('local p = rawget(_G, "WowCompanionPartyPad"); p.a["wc-box"] = 2; p.a["wc-pb-party1"] = "Water Breathing"; p.a["wc-pmenu"] = nil')
+a0 = nact(W)
+W.execute('hit(6)')
+check(acts(W, a0) == [("spell", "Water Breathing", "party1")] and W.eval('PADA("wc-k")') == "cast", "Y out of combat: Smart Y's pick on the member",
+      acts(W, a0))
+W.execute('UNITS.party1.alive = false')
+a0 = nact(W)
+W.execute('hit(6)')
+check(acts(W, a0) == [] and W.eval('PADA("wc-k")') == "menu" and W.eval('PADA("wc-pmenu")') is True and W.eval('PADA("wc-u")') == "party1",
+      "Y out of combat, the member dead: the player menu (wc-pmenu, wc-u)", (acts(W, a0), W.eval('PADA("wc-k")')))
+W.execute('UNITS.party1.alive = true; rawget(_G, "WowCompanionPartyPad").a["wc-pmenu"] = nil; rawget(_G, "WowCompanionPartyPad").a["wc-pb-party1"] = nil')
+a0 = nact(W)
+W.execute('hit(6)')
+check(acts(W, a0) == [] and W.eval('PADA("wc-k")') == "menu", "Y out of combat, no pick: the menu", W.eval('PADA("wc-k")'))
+# the menu sub-state swallows every press as "key"
+W.execute('rawget(_G, "WowCompanionPartyPad").a["wc-box"] = 2')
+bad = []
+for pos in (1, 2, 3, 4, 8, 5, 6, 7):
+    for lt, rt in ((False, False), (True, False)):
+        W.execute('trig(%s, %s)' % ('true' if lt else 'false', 'true' if rt else 'false'))
+        a0 = nact(W)
+        W.execute('hit(%d)' % pos)
+        if acts(W, a0) != [] or W.eval('PADA("wc-k")') != "key" or W.eval('PADA("wc-box")') != 2 or W.eval('PADA("wc-party")') is not True:
+            bad.append((pos, lt, W.eval('PADA("wc-k")')))
+check(not bad, "the menu sub-state: D-pad, A, X, Y, B and chords are each a \"key\" press (no game action, box kept, Party mode kept)", bad[:3])
+W.execute('trig(false, false)')
+W.execute('hit(2)')
+check(W.eval('PADA("wc-key")') == "PADDUP", "a key press says which key (wc-key PADDUP)", W.eval('PADA("wc-key")'))
+d = docs(W, 0, 'partybox')[-1]['b']
+check(d['k'] == 'key' and d['key'] == 'PADDUP' and d['pm'] is True and d['box'] == 2, "its partybox: k key, key PADDUP, pm true", d)
+flip(W, "WowCompanionPartyMenuDone")
+check(W.eval('PADA("wc-pmenu")') is None and W.eval('PADA("wc-party")') is True, "MENU DONE clears the sub-state (Party mode stays on)")
+# Y in combat: wc-py on a help,nodead member, else the menu
+W.execute('COMBAT = true; rawget(_G, "WowCompanionPartyPad").a["wc-py"] = "Healing Wave"; rawget(_G, "WowCompanionPartyPad").a["wc-pb-party1"] = "Water Breathing"')
+a0 = nact(W)
+W.execute('hit(6)')
+check(acts(W, a0) == [("spell", "Healing Wave", "party1")], "Y in combat: its in-combat spell on the member (never Smart Y's buff)", acts(W, a0))
+for why, setup in (("dead", 'UNITS.party1.alive = false'), ("not assistable", 'UNITS.party1.foe = true')):
+    W.execute('UNITS.party1.alive = true; UNITS.party1.foe = nil; rawget(_G, "WowCompanionPartyPad").a["wc-pmenu"] = nil; ' + setup)
+    a0 = nact(W)
+    W.execute('hit(6)')
+    check(acts(W, a0) == [] and W.eval('PADA("wc-k")') == "menu", "Y in combat, the member " + why + ": the menu", W.eval('PADA("wc-k")'))
+W.execute('UNITS.party1.alive = true; UNITS.party1.foe = nil; local p = rawget(_G, "WowCompanionPartyPad"); p.a["wc-pmenu"] = nil; p.a["wc-py"] = nil')
+a0 = nact(W)
+W.execute('hit(6)')
+check(acts(W, a0) == [] and W.eval('PADA("wc-k")') == "menu", "Y in combat, Inspect chosen (no wc-py): the menu", W.eval('PADA("wc-k")'))
+W.execute('rawget(_G, "WowCompanionPartyPad").a["wc-pmenu"] = nil')
+# B = Party mode off on all 8 refs, in a fight too
+W.execute('hit(7)')
+check(party_on_all(W) == [None] * 9 and W.eval('PADA("wc-k")') == "off" and W.eval('#VIOL') == 0, "B: Party mode off on all 8 router buttons and the pad (in a fight)",
+      party_on_all(W))
+a0 = nact(W)
+W.execute('hit(8)')
+check(W.eval('PADA("wc-k")') == "off" and all(a[0] != "spell" or a[2] is None for a in acts(W, a0)),
+      "after B the next A is the router's own again (not the pad's)", acts(W, a0))
+W.execute('COMBAT = false')
+check(W.eval('#SNIPERR') == 0 and W.eval('#SPY') == 0, "no snippet error, no spied call", (W.eval('SNIPERR[1]'), W.eval('SPY[1]')))
+
 # ================================================================ THE NO-TRACE SCAN (new code only: the diff against the contract's base)
 import subprocess
 try:
