@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q48"    -- bump on every change; the app shows it, so a stale build is visible
+local QV = "q49"    -- bump on every change; the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2077,10 +2077,16 @@ end
 -- (`cf`); Set / Clear Focus through the secure row "pfocus" (a SecureActionButton, type focus / clearfocus, unit player; no macro).
 -- Self Highlight is a CVar: not offered (hidden). Any other entry is shown greyed with its key (`k`) so it can be mapped later.
 -- {"type":"pmenu", v, shape, items = {{t, k, i?, en, ck?, ttl?, sub?, cf?, sc?}, ...}} ; a run answers guestack op "pmenurun".
+-- q49 PARTY MODE (PARTY_BUILD.md 1.6, the lead's contract): read(unit, src) - a party member's menu ("PARTY", unit "party1".."party4"),
+-- read for Party mode (src "party": the app routes it to its party menu) or the map module's portrait (no src, "SELF"). The doc gains
+-- unit, which, nm (the member's name), src. Set Focus on a party unit = the PARTY row's focus cell (scr "party", sc = its column);
+-- Whisper = WC.chatLastTell set to the member (the Chat room's typed Reply goes there; ap "whisper": the app opens the Chat room);
+-- Trade / Follow / Promote / Uninvite are the game's plain engine calls with that unit; Inspect stays greyed (InspectUnit taints).
 WC.pmenu = { list = {}, d1 = nil, d1at = 0, mix = nil }
-function WC.pmenu.ctx()
-    return { unit = "player", which = "SELF", name = TS(function() return (UnitName("player")) end),
-             guid = TS(function() return UnitGUID("player") end) }
+function WC.pmenu.ctx(unit)
+    unit = (type(unit) == "string" and unit ~= "") and unit or "player"
+    return { unit = unit, which = unit == "player" and "SELF" or "PARTY", name = TS(function() return (UnitName(unit)) end),
+             guid = TS(function() return UnitGUID(unit) end) }
 end
 function WC.pmenu.entries(obj, ctx)
     for _, fn in ipairs({ "GetEntries", "GetMenuButtons" }) do
@@ -2115,23 +2121,51 @@ function WC.pmenu.keyOf(e)
 end
 -- what the companion does for an entry with key [key]: { fn, ck?, cf? } (a plain engine call), { sc = col } (the secure row),
 -- "hide", or nil (not known: greyed)
-function WC.pmenu.actFor(key, text)
+function WC.pmenu.actFor(key, text, unit, src)
     if not key then return nil end
     local k = key:lower()
+    unit = (type(unit) == "string" and unit ~= "") and unit or "player"
+    local isSelf = unit == "player"
     local function onOff(set, get)
         if k:find("enable") or k:find("on$") or k:find("yes") then return { fn = function() set(true) end, ck = function() return get() == true end } end
         if k:find("disable") or k:find("off$") or k:find("no$") then return { fn = function() set(false) end, ck = function() return get() == false end } end
         return { fn = function() set(not get()) end, ck = function() return get() == true end }
     end
     if k:find("selfhighlight") or k:find("findyourself") then return "hide" end
+    if k:find("inspect") then return nil end                -- q49: InspectUnit is Blizzard Lua that taints: always greyed
     local n = k:match("raidtarget(%d)") or k:match("raidtargeticon(%d)")
     if n then
         n = tonumber(n)
-        return { fn = function() SetRaidTarget("player", n) end, ck = function() return GetRaidTargetIndex("player") == n end }
+        return { fn = function() SetRaidTarget(unit, n) end, ck = function() return GetRaidTargetIndex(unit) == n end }
     end
-    if k:find("raidtarget") and k:find("none") then return { fn = function() SetRaidTarget("player", 0) end } end
+    if k:find("raidtarget") and k:find("none") then return { fn = function() SetRaidTarget(unit, 0) end } end
     if k:find("clearfocus") then return { sc = 1 } end
-    if k:find("setfocus") or k == "focus" then return { sc = 0 } end
+    if k:find("setfocus") or k == "focus" then
+        -- q49: on a party unit (or read for Party mode) the PARTY row's focus cell for that unit (PadMap m77's; FocusUnit is protected)
+        if not isSelf or src == "party" then
+            local cols = type(WC.padMap) == "table" and type(WC.padMap.party) == "table" and WC.padMap.party.cols or nil
+            local base = cols and type(cols.focus) == "number" and cols.focus or 12
+            local i = isSelf and 0 or tonumber(unit:match("^party(%d)$"))
+            if i then return { sc = base + i, scr = "party" } end
+            return nil
+        end
+        return { sc = 0 }
+    end
+    if not isSelf then
+        local nm = TS(function() return (UnitName(unit)) end)
+        if k:find("whisper") then
+            return { fn = function() WC.chatLastTell = nm end, ap = "whisper" }
+        end
+        if k:find("trade") then return { fn = function() InitiateTrade(unit) end } end
+        if k:find("follow") then return { fn = function() FollowUnit(unit) end } end
+        if k:find("promote") then return { fn = function() PromoteToLeader(unit) end, cf = (text or "Promote to Party Leader") .. "?" } end
+        if k:find("uninvite") or k:find("removefromgroup") or k == "kick" then
+            return { fn = function()
+                         if C_PartyInfo and type(C_PartyInfo.UninviteUnit) == "function" then C_PartyInfo.UninviteUnit(nm or unit) else UninviteUnit(nm or unit) end
+                     end, cf = (text or "Uninvite") .. "?" }
+        end
+        return nil                                          -- the self-only entries below are never offered for another unit
+    end
     if k:find("pvp") then
         return onOff(function(on) SetPVP(on and 1 or 0) end, function() local ok, v = pcall(GetPVPDesired); return ok and (v == true or v == 1) end)
     end
@@ -2157,16 +2191,18 @@ function WC.pmenu.actFor(key, text)
     end
     return nil
 end
-function WC.pmenu.read()
+function WC.pmenu.read(unit, src)
     local P = WC.pmenu
     P.list = {}; P.d1 = nil
-    local ctx = P.ctx()
+    local ctx = P.ctx(unit)
+    src = (src == "party") and "party" or nil
+    P.lastUnit, P.lastSrc = ctx.unit, src                    -- q49: a run / a focus re-reads THIS menu
     local menu, shape = nil, "none"
     local mgr = _G.UnitPopupManager
     if type(mgr) == "table" and type(mgr.GetMenu) == "function" then
-        local ok, m = pcall(mgr.GetMenu, mgr, "SELF"); if ok and type(m) == "table" then menu = m end
+        local ok, m = pcall(mgr.GetMenu, mgr, ctx.which); if ok and type(m) == "table" then menu = m end
     end
-    if not menu and type(_G.UnitPopupMenus) == "table" and type(_G.UnitPopupMenus.SELF) == "table" then menu = _G.UnitPopupMenus.SELF end
+    if not menu and type(_G.UnitPopupMenus) == "table" and type(_G.UnitPopupMenus[ctx.which]) == "table" then menu = _G.UnitPopupMenus[ctx.which] end
     local function call(e, fn, dflt)
         if type(e[fn]) ~= "function" then return dflt end
         local ok, v = pcall(e[fn], e, ctx)
@@ -2184,13 +2220,13 @@ function WC.pmenu.read()
                     if call(e, "IsTitle", false) == true then row.ttl = 1; out[#out + 1] = row
                     else
                         local sub = (depth < 2 and call(e, "IsMenu", false) == true) and P.entries(e, ctx) or nil
-                        local act = (not sub) and P.actFor(row.k, t) or nil
+                        local act = (not sub) and P.actFor(row.k, t, ctx.unit, src) or nil
                         if act ~= "hide" then
                             local live = call(e, "IsEnabled", true) == true
                             if sub then row.sub = walk(sub, depth + 1); row.en = live and 1 or 0
-                            elseif type(act) == "table" and act.sc then row.sc = act.sc; row.en = live and 1 or 0
+                            elseif type(act) == "table" and act.sc then row.sc = act.sc; row.scr = act.scr; row.en = live and 1 or 0
                             elseif type(act) == "table" then
-                                P.list[#P.list + 1] = act; row.i = #P.list - 1; row.cf = act.cf; row.en = live and 1 or 0
+                                P.list[#P.list + 1] = act; row.i = #P.list - 1; row.cf = act.cf; row.ap = act.ap; row.en = live and 1 or 0
                             else row.en = 0 end
                             local ck = nil
                             if type(act) == "table" and act.ck then local okC, v = pcall(act.ck); if okC then ck = v end
@@ -2209,7 +2245,8 @@ function WC.pmenu.read()
         local es, how = P.entries(menu, ctx)
         if es then shape = how; items = walk(es, 0) end
     end
-    pcall(function() WC.send(WC.encode({ type = "pmenu", v = QV, shape = shape, items = items, focus = WC.pmenu.focusRow and 1 or nil })); WC.push() end)
+    pcall(function() WC.send(WC.encode({ type = "pmenu", v = QV, shape = shape, items = items, focus = WC.pmenu.focusRow and 1 or nil,
+                                         unit = ctx.unit, which = ctx.which, nm = ctx.name, src = src })); WC.push() end)
 end
 -- an entry the app chose: its plain engine call (never Blizzard's menu code)
 function WC.pmenu.run(id)
@@ -2218,14 +2255,14 @@ function WC.pmenu.run(id)
     if type(a) ~= "table" or type(a.fn) ~= "function" then return gack(nil, "pmenurun", false, "the menu changed") end
     local ok, err = pcall(a.fn)
     gack(nil, "pmenurun", ok and true or false, (not ok) and tostring(err):sub(1, 120) or nil)
-    C_Timer.After(0.3, function() pcall(P.read) end)      -- the checks follow what it did
+    C_Timer.After(0.3, function() pcall(P.read, P.lastUnit, P.lastSrc) end)      -- the checks follow what it did (q49: that unit's menu)
 end
 -- Set / Clear Focus: FocusUnit is protected, so a SECURE cell does it (the click on it is the hardware event), static attributes
 if WC.pad and type(WC.pad.secureRow) == "function" then
     WC.pmenu.focusRow = WC.pad.secureRow("pfocus", 2, function(btn, col)
         btn:SetAttribute("type", col == 0 and "focus" or "clearfocus")
         btn:SetAttribute("unit", "player")
-    end, function(col) C_Timer.After(0.3, function() pcall(WC.pmenu.read) end) end)
+    end, function(col) C_Timer.After(0.3, function() pcall(WC.pmenu.read, WC.pmenu.lastUnit, WC.pmenu.lastSrc) end) end)
 end
 GACT[G_PLAYER_MENU] = function() WC.pmenu.read() end
 for d = 0, 7 do

@@ -156,7 +156,7 @@ ERRS = {}
 
 -- ---------------------------------------------------------------- the restricted environment (only what the snippets may use)
 local function newtable(...) return { ... } end
-RESTRICTED = { newtable = newtable, ipairs = ipairs, pairs = pairs, tostring = tostring, tonumber = tonumber, type = type,
+RESTRICTED = { newtable = newtable, ipairs = ipairs, pairs = pairs, tonumber = tonumber, type = type,
                select = select, GetGamePadState = function() return { buttons = PADSTATE } end,
                SecureCmdOptionParse = function(s) return SecureCmdOptionParse(s) end }
 PADSTATE = {}
@@ -1304,6 +1304,78 @@ W8.execute('COMBAT = false')
 W8.execute('ptab(0)')
 check(ctlDoc(W8)['view'] == 'normal' and 'ppos' not in ctlDoc(W8), "padtab 0: back to WoW Defaults (no party fields)", ctlDoc(W8)['view'])
 check(W8.eval('#SPY') == 0 and W8.eval('#VIOL') == 0 and list(W8.eval('ERRS').values()) == [], "no spied call, no lockdown breach, no error")
+
+# ================================================================ 11. QUESTS: THE PLAYER MENU FOR A PARTY UNIT (q49)
+check('local QV = "q49"' in SRC["quests"], "Quests says q49")
+MENU = r'''
+CALLS, CLICKED = {}, {}
+local function mixin(name, text, enabled)
+    local m = { GetText = function() return text end, CanShow = function() return true end,
+                IsEnabled = function() return enabled ~= false end }
+    m.OnClick = function() CLICKED[#CLICKED + 1] = name end
+    rawset(_G, "UnitPopup" .. name .. "ButtonMixin", m)
+    return m
+end
+ENTRIES = { mixin("SetFocus", "Set Focus"), mixin("Whisper", "Whisper"), mixin("Inspect", "Inspect"), mixin("Trade", "Trade"),
+            mixin("Follow", "Follow"), mixin("Duel", "Duel"), mixin("PromoteToLeader", "Promote to Party Leader"),
+            mixin("Uninvite", "Uninvite"), mixin("RaidTarget8", "Skull"), mixin("ClearFocus", "Clear Focus") }
+UnitPopupManager = { GetMenu = function(_, which) MENUWHICH = which; return { GetEntries = function() return ENTRIES end } end }
+for _, n in ipairs({ "InitiateTrade", "FollowUnit", "PromoteToLeader", "SetRaidTarget", "UninviteUnit" }) do
+    _G[n] = function(...) CALLS[#CALLS + 1] = { n, ... } end
+end
+C_PartyInfo = { UninviteUnit = function(...) CALLS[#CALLS + 1] = { "UninviteUnit", ... } end }
+function GetRaidTargetIndex() return 0 end
+'''
+Q = boot(["safety", "tappad", "quests"], pre=MENU)
+Q.execute(WORLD_HELPERS)
+Q.eval('party')(Q.table_from([Q.table_from(["Brannoc", "WARRIOR"]), Q.table_from(["Iselle", "MAGE"])]))
+n0 = nsent(Q)
+Q.eval('WowCompanion.pmenu.read')("party2", "party")
+pm = docs(Q, n0, 'pmenu')
+check(len(pm) == 1 and pm[0]['unit'] == 'party2' and pm[0]['which'] == 'PARTY' and pm[0]['src'] == 'party' and pm[0]['nm'] == 'Iselle'
+      and pm[0]['v'] == 'q49' and Q.eval('MENUWHICH') == 'PARTY', "read(\"party2\", \"party\"): the PARTY menu; doc unit, which PARTY, nm, src party",
+      pm and {k: pm[0].get(k) for k in ('unit', 'which', 'nm', 'src')})
+items = {x['t']: x for x in pm[0]['items']}
+check(items['Set Focus'].get('sc') == 14 and items['Set Focus'].get('scr') == 'party', "Set Focus = the PARTY row's focus cell for party2 (col 12 + 2)",
+      items['Set Focus'])
+check(items['Clear Focus'].get('sc') == 1 and 'scr' not in items['Clear Focus'], "Clear Focus stays Quests' pfocus col 1", items['Clear Focus'])
+check(items['Inspect']['en'] == 0 and 'i' not in items['Inspect'], "Inspect is greyed (InspectUnit taints)", items['Inspect'])
+check(items['Duel']['en'] == 0, "an entry not known (Duel) is greyed", items['Duel'])
+check(items['Whisper'].get('ap') == 'whisper' and 'i' in items['Whisper'], "Whisper: ap whisper (and runnable: it sets the reply target)", items['Whisper'])
+Q.eval('WowCompanion.pmenu.run')(items['Whisper']['i'])
+check(Q.eval('WowCompanion.chatLastTell') == 'Iselle', "running Whisper sets WC.chatLastTell = the member", Q.eval('WowCompanion.chatLastTell'))
+for t, want in (("Trade", ["InitiateTrade", "party2"]), ("Follow", ["FollowUnit", "party2"]), ("Skull", ["SetRaidTarget", "party2", 8])):
+    c0 = int(Q.eval('#CALLS'))
+    Q.eval('WowCompanion.pmenu.run')(items[t]['i'])
+    got = list(Q.eval('CALLS[#CALLS]').values()) if int(Q.eval('#CALLS')) > c0 else None
+    check(got == want, "%s runs the game's plain call on the unit: %s" % (t, want), got)
+check(items['Uninvite'].get('cf') is not None and items['Promote to Party Leader'].get('cf') is not None, "Uninvite / Promote ask first (cf)")
+check(int(Q.eval('#CLICKED')) == 0, "no Blizzard menu code (an entry's OnClick) ever ran")
+Q.execute('advance(1)')
+pm2 = docs(Q, n0, 'pmenu')
+check(len(pm2) >= 2 and pm2[-1]['unit'] == 'party2', "after a run the SAME unit's menu is read again", pm2[-1].get('unit'))
+n0 = nsent(Q)
+Q.eval('WowCompanion.pmenu.read')()
+pm = docs(Q, n0, 'pmenu')[0]
+items = {x['t']: x for x in pm['items']}
+check(pm['unit'] == 'player' and pm['which'] == 'SELF' and 'src' not in pm and Q.eval('MENUWHICH') == 'SELF' and items['Set Focus'].get('sc') == 0
+      and 'scr' not in items['Set Focus'], "read() as before (the map's portrait): SELF, no src, Set Focus = pfocus col 0", pm.get('which'))
+n0 = nsent(Q)
+Q.eval('WowCompanion.pmenu.read')("player", "party")
+items = {x['t']: x for x in docs(Q, n0, 'pmenu')[0]['items']}
+check(items['Set Focus'].get('sc') == 12 and items['Set Focus'].get('scr') == 'party', "your own cell's menu in Party mode: Set Focus = party col 12",
+      items['Set Focus'])
+# the party pad's Y and the party row's MENU cells read the menu for the unit, src "party"
+W11 = world()
+W11.execute('PMREADS = {}; WowCompanion.pmenu = { read = function(u, s) PMREADS[#PMREADS + 1] = { u, s } end }')
+W11.eval('party')(W11.table_from([W11.table_from(m) for m in MEMBERS[:2]]))
+flip(W11, "WowCompanionPartyOn")
+W11.execute('rawget(_G, "WowCompanionPartyPad").a["wc-box"] = 3; hit(6)')
+r = W11.eval('PMREADS[#PMREADS]')
+check(r is not None and list(r.values()) == ["party2", "party"], "Y (no pick): WC.pmenu.read(\"party2\", \"party\")", r and list(r.values()))
+W11.execute('local c = WowCompanion.pad.rows.party.cells[18]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false)')
+r = W11.eval('PMREADS[#PMREADS]')
+check(list(r.values()) == ["party1", "party"], "party row col 18 (MENU party1): WC.pmenu.read(\"party1\", \"party\")", list(r.values()))
 
 # ================================================================ THE NO-TRACE SCAN (new code only: the diff against the contract's base)
 import subprocess

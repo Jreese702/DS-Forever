@@ -4407,7 +4407,7 @@ local function partyMode()
     self:SetAttribute("spell", nil)
     self:SetAttribute("unit", nil)
     self:SetAttribute("wc-k", "none")
-    local pos = self:GetAttribute("wc-kp-" .. tostring(button)) or 0
+    local pos = self:GetAttribute("wc-kp-" .. (button or "")) or 0
     self:SetAttribute("wc-key", self:GetAttribute("wc-kn-" .. pos))
     local lt, rt = false, false
     local st = GetGamePadState and GetGamePadState()
