@@ -260,6 +260,21 @@ object PartyArt {
         p.style = Paint.Style.FILL
     }
 
+    /** Touch = Target's picture: the game's "target a friend" green ring (the friendly reticle), drawn (no kit piece of its own) */
+    fun targetRing(c: Canvas, cx: Float, cy: Float, r: Float) {
+        p.shader = null; p.colorFilter = null; p.style = Paint.Style.STROKE
+        p.strokeWidth = r * 0.28f; p.color = Color.rgb(20, 40, 20)
+        c.drawCircle(cx, cy, r, p)
+        p.strokeWidth = r * 0.18f; p.color = Color.rgb(96, 214, 90)
+        c.drawCircle(cx, cy, r, p)
+        p.style = Paint.Style.FILL
+        for (k in 0 until 4) {
+            c.save(); c.rotate(90f * k, cx, cy)
+            c.drawRect(cx - r * 0.09f, cy - r * 1.25f, cx + r * 0.09f, cy - r * 0.78f, p)
+            c.restore()
+        }
+    }
+
     /** the game's pointing gauntlet (the Touch row's glyph), else a drawn pointing hand */
     fun gauntlet(c: Canvas, cx: Float, cy: Float, size: Float) {
         UiKit.tex(GAUNTLET)?.let { bmp ->

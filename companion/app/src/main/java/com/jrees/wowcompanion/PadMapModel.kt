@@ -425,6 +425,11 @@ object PadMapModel {
         /** p29 (f-combat-forms): the In combat tab's chosen form (its spell id; null = Caster) and the form row's cursor (0 = Caster) */
         val form: Int? = null,
         val fcur: Int? = null,
+        /** PARTY MODE's tab (PadTabCtl p33, PARTY_BUILD.md 4.4): the left page's row (1..12), the focus ("rows" / "right"), the right
+         *  page's row (0-based) */
+        val ppos: Int = 2,
+        val pfocus: String = "rows",
+        val pright: Int = 0,
     )
     /** the button Move carries: its set (1-4), its place (1-8), its bar page */
     data class Carry(val set: Int, val pos: Int, val page: Int)
@@ -447,8 +452,8 @@ object PadMapModel {
             box = bx?.let { b -> textOrNull(b, "kind")?.let { Box(it, textOrNull(b, "what"), textOrNull(b, "thing")) } },
             swap = c.optString("lay", "swap") != "plain",
             note = textOrNull(c, "note"),
-            view = when (c.optString("view", "normal")) { "combat" -> "combat"; "ds" -> "ds"; "radial" -> "radial"; else -> "normal" },
-            tcur = c.optInt("tcur", 1).coerceIn(1, 4),
+            view = when (c.optString("view", "normal")) { "combat" -> "combat"; "ds" -> "ds"; "radial" -> "radial"; "party" -> "party"; else -> "normal" },
+            tcur = c.optInt("tcur", 1).coerceIn(1, TABS.size),
             sw = c.optInt("sw", 1).coerceAtLeast(1),
             scur = c.optInt("scur", 2).coerceIn(2, 4),
             dpos = c.optInt("dpos", 2).coerceIn(1, 4),
@@ -458,6 +463,9 @@ object PadMapModel {
             rad = c.optJSONArray("rad")?.let { a -> List(minOf(8, a.length())) { i -> a.optInt(i, 0) } } ?: emptyList(),
             form = intOrNull(c, "form")?.takeIf { it > 0 },
             fcur = intOrNull(c, "fcur"),
+            ppos = c.optInt("ppos", 2).coerceIn(1, 12),
+            pfocus = c.optString("pfocus", "rows").ifEmpty { "rows" },
+            pright = c.optInt("pright", 0).coerceAtLeast(0),
         )
     }
 
@@ -500,7 +508,9 @@ object PadMapModel {
     // game action (refused in a fight with an ack), the rest are no-action picks
     const val ROW_PADTAB = "padtab"
     /** 0-2: WoW Defaults, DS, In combat; p16 / b29: 10 = the 4th tab, the spell radial (the pad owner's YES: 11-39 stay refused) */
-    fun colTab(tab: Int) = if (tab >= 4) 10 else tab.coerceIn(1, 3) - 1
+    fun colTab(tab: Int) = if (tab >= 5) COL_PARTY_TAB else if (tab >= 4) 10 else tab.coerceIn(1, 3) - 1
+    /** PARTY MODE (Book b47, PARTY_BUILD.md 2.3): padtab 26 shows the Party mode tab (the app taps partycfg.pad.ptab.tab when it has it) */
+    const val COL_PARTY_TAB = 26
     const val COL_CARRY = 3                                     // pick up the chosen button (Move)
     const val COL_PLACE = 4                                     // place / swap onto the chosen button (ONE game action)
     const val COL_CANCEL = 5                                    // put the carried button back (p20: also closes the controller's clean-up box)
@@ -522,9 +532,9 @@ object PadMapModel {
     const val ROW_EXTRA = "extra"
     fun extraCells(index: Int): List<Pair<String, Int>> = listOf(ROW_PADTAB to 6 + (index / 40).coerceIn(0, 2), ROW_EXTRA to index % 40)
     /** the tab's index (1-4) by its name */
-    fun tabOf(view: String) = when (view) { "ds" -> 2; "combat" -> 3; "radial" -> 4; else -> 1 }
-    /** the room's tabs in order (PadTabCtl's TABS) */
-    val TABS = listOf("normal", "ds", "combat", "radial")
+    fun tabOf(view: String) = when (view) { "ds" -> 2; "combat" -> 3; "radial" -> 4; "party" -> 5; else -> 1 }
+    /** the room's tabs in order (PadTabCtl's TABS; p33: the 5th, Party mode) */
+    val TABS = listOf("normal", "ds", "combat", "radial", "party")
 
     /** The cells that put command [index] (1-based, the list's order): a pick first for 12 and up, then the ONE action */
     fun commandCells(index: Int): List<Pair<String, Int>> =

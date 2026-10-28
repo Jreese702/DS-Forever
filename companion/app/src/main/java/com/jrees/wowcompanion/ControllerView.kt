@@ -75,6 +75,14 @@ class ControllerView(
 
     private val page = PadTabPage(this, { cells -> onPadCells(cells) }, { e -> onBind(e) }, otherReader, cursorOnTabs = { false },
         cellsOf = { e -> book?.let { SpellsModel.bindCells(it, e) } })       // b-druid-forms-bind: Book b38's two taps
+    /** PARTY MODE's tab (PARTY_BUILD.md 4.4): the 5th tab, its own page */
+    private val partyPage = PartyTabPage(this, { cells -> onPadCells(cells) }, { id ->
+        book?.let { b -> SpellsModel.tabSpells(b).firstOrNull { it.spellId == id }?.let { SpellsModel.bindCells(b, it) } } })
+
+    /** Party mode's documents changed (partycfg, party): the tab redraws */
+    fun partyChanged() { if (tab() == "party") invalidate() }
+    /** partyack: a refusal said on the page */
+    fun onPartyAck(a: PartyModel.Ack) { partyPage.onAck(a); invalidate() }
 
     /** true while the addon holds the controller for THIS room */
     val held: Boolean get() = ctl?.on == true && ctl?.croom == true
@@ -143,7 +151,7 @@ class ControllerView(
     }
 
     fun onPadMap(m: PadMapModel.Map) { map = m; page.onMap(m); invalidate() }
-    fun onPadTabCtl(c: PadMapModel.Ctl) { tabCtl = c; if (c.on) dsSel = c.dpos; page.onCtl(c); invalidate() }
+    fun onPadTabCtl(c: PadMapModel.Ctl) { tabCtl = c; if (c.on) dsSel = c.dpos; page.onCtl(c); partyPage.onCtl(c); invalidate() }
     /** m41 S1: the clean-up's plan (at login, on the box's request, after a run) */
     fun onClean(c: PadMapModel.Clean) {
         clean = c
@@ -295,13 +303,17 @@ class ControllerView(
         // L and R on the row's outsides, always (the user, 15 Oct), the chooser open too (PadTabCtl p30: LB / RB stay the room's tabs)
         gaps.badges(c)
         // p17: the cursor on the tab row: the game's gold arrows on both sides of its tab (no wrap: none past the ends), in the gaps
-        if (k != null && k.focus == "tabs" && !page.chooserOpen())
+        if (k != null && k.focus == "tabs" && !page.chooserOpen() && !partyPage.chooserOpen(k))
             UiKit.moveArrows(c, tabRect(k.tcur - 1, w), left = k.tcur > 1, right = k.tcur < TAB_NAMES.size, words = false)
 
         UiKit.bookPage(c, RectF(8f, 158f, SPLIT, h - 4f))
         UiKit.bookPage(c, RectF(SPLIT, 158f, w - 8f, h - 4f), right = true)
         UiKit.bookFold(c, SPLIT, 166f, h - 12f)
-        if (tab() == "ds") drawDs(c, w, h) else page.draw(c, w, h, book)
+        when (tab()) {
+            "ds" -> drawDs(c, w, h)
+            "party" -> partyPage.draw(c, w, h, tabCtl)
+            else -> page.draw(c, w, h, book)
+        }
         drawSwitches(c, k)
         if (cleanBoxShown()) drawCleanBox(c, w, h)
     }
@@ -487,6 +499,11 @@ class ControllerView(
             downSw = sw.indices.firstOrNull { swRect(it, sw.size).let { r -> RectF(r.left, r.top - 8f, r.right, r.bottom + 8f) }.contains(ev.x, ev.y) } ?: -1
             padDown = downTab < 0 && downSw < 0 && ev.y > 173f && tab() != "ds"
         }
+        if (padDown && tab() == "party") {
+            partyPage.onTouch(ev, tabCtl)
+            if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) padDown = false
+            return true
+        }
         if (padDown) {
             page.onTouch(ev, w, h, book)
             if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) padDown = false
@@ -497,7 +514,10 @@ class ControllerView(
         if (downTab >= 0 && tabRect(downTab, w).let { r -> RectF(r.left, 62f, r.right, 158f) }.contains(ev.x, ev.y)) {
             val v = PadMapModel.TABS[downTab]
             page.showTabLocal(v)
-            val sent = onPadCells(listOf(PadMapModel.ROW_PADTAB to PadMapModel.colTab(downTab + 1)))
+            // the Party mode tab: partycfg's own column when it came (PartyTaps.tab), else Book b47's padtab 26
+            val cells = (if (v == "party") PartyTaps.tab(PartyModel.live.cfg) else null)
+                ?: listOf(PadMapModel.ROW_PADTAB to PadMapModel.colTab(downTab + 1))
+            val sent = onPadCells(cells)
             Log.i(TAG, "tab '$v': padtab ${PadMapModel.colTab(downTab + 1)} ${if (sent) "tapped" else "not sent"}")
             downTab = -1; invalidate(); return true
         }
@@ -640,7 +660,7 @@ class ControllerView(
         private val TOGGLE_OPS = setOf("dpad-on", "dpad-off", "cc-on", "cc-off", "attack")
         private val PBMP = Paint(Paint.FILTER_BITMAP_FLAG)
         /** p16 the room's tabs, in PadTabCtl's order */
-        private val TAB_NAMES = listOf("WoW Defaults", "DS", "In combat", "Spell radial")
+        private val TAB_NAMES = listOf("WoW Defaults", "DS", "In combat", "Spell radial", "Party mode")
         /** the tab's word, measured for the swords' room (UiKit.tab's size) */
         private val PTABW = UiKit.bodyPaint(28f, Theme.text)
         /** the clean-up buttons' small lines stay this far from the Home bar's frame */
