@@ -4678,6 +4678,10 @@ local function partyMode()
         return "bound"
     end
     function PM.bind(aside, fightStart, carry)
+        PM.bind0(aside, fightStart, carry)
+        if PM.changed then pcall(PM.changed, "bind") end                -- `sel` / `aside` in the party document
+    end
+    function PM.bind0(aside, fightStart, carry)
         PM.sel = PM.selWant(aside, fightStart)
         PM.fightBound = fightStart and true or nil
         if aside then
@@ -4912,21 +4916,227 @@ local function partyMode()
     WC.padMap.party = { cfg = function() return PM.cfgNow and PM.cfgNow() or PM.resolve() end, put = PM.put, on = PM.on,
                         slots = PM.SLOTS, cols = PM.COL }
 
-    function PM.onEvent(e)
+    -- ---------------------------------------------------------------- the documents (section 1)
+    PM.PADMAP = { row = "party", tgt = PM.COL.tgt, tsp = PM.COL.tsp, on = PM.COL.on, off = PM.COL.off, focus = PM.COL.focus,
+                  menu = PM.COL.menu, resend = PM.COL.resend, pbsel = PM.COL.pbsel, pbops = PM.COL.pbops, mdone = PM.COL.mdone,
+                  ptab = { row = "padtab", tab = 26, slot0 = 27, none = 37 } }
+    -- partycfg's `c`: what every button / touch does, the chooser, Smart Y's party list and picks, the pad's columns
+    function PM.cfgNow()
+        local c, st, names = PM.resolve()
+        local list = {}
+        for _, id in ipairs(st.buffs) do
+            local o = PM.spellObj(id, names)
+            if o then o.res = nil; list[#list + 1] = o end
+        end
+        local known = {}
+        for _, id in ipairs(OV.PARTY_BUFFS) do
+            local n = OV.sbName(id)
+            if n and names[n] then known[#known + 1] = { id = id, n = n, i = PM.icon(id) } end
+        end
+        local pick = nil
+        if not fighting() then
+            for u, e in pairs(PM.picks or {}) do pick = pick or {}; pick[u] = { id = e.id, n = e.n, i = e.i } end
+        end
+        c.sy = { on = OV.smartOn(), list = list, known = known, pick = pick }
+        c.pad = PM.PADMAP
+        return c
+    end
+    function PM.sendCfg(why, noPush)
+        WC.send(WC.encode({ type = "partycfg", v = PV, c = PM.cfgNow() }))
+        if not noPush then WC.push() end
+    end
+
+    -- PARTY-EST-BEGIN (pure; tools/test_party.py) THE HEALTH ESTIMATE per member (FEASIBILITY 5: party health is secret, always).
+    -- m = { max, cur, full, pulse, dead }; new / a /reload = full; UNIT_MAXHEALTH -> max; UNIT_COMBAT WOUND / HEAL with a PLAIN amount
+    -- moves it (clamped 0..max); out of combat, alive, no UNIT_HEALTH pulse for 6 s -> full (the anchor); dead -> 0; alive again -> 50 %
+    OV.PE_QUIET = 6
+    OV.peNew = function(max, now)
+        max = (type(max) == "number" and max > 0) and max or 100
+        return { max = max, cur = max, full = true, pulse = now, dead = false }
+    end
+    OV.peMax = function(m, max)
+        if type(max) ~= "number" or max <= 0 then return end
+        m.max = max
+        if m.full or m.cur > max then m.cur = max end
+    end
+    OV.pePulse = function(m, now) m.pulse = now end
+    OV.peHit = function(m, kind, amt, now)
+        if type(amt) ~= "number" or m.dead then return false end
+        if kind == "WOUND" then m.cur = math.max(0, m.cur - amt)
+        elseif kind == "HEAL" then m.cur = math.min(m.max, m.cur + amt)
+        else return false end
+        m.full = m.cur >= m.max
+        m.pulse = now
+        return true
+    end
+    OV.peTick = function(m, now, combat, dead)
+        if dead then m.cur, m.dead, m.full = 0, true, false return end
+        if m.dead then m.dead, m.cur, m.full, m.pulse = false, m.max * 0.5, false, now return end
+        if not combat and not m.full and now - m.pulse >= OV.PE_QUIET then m.cur, m.full = m.max, true end
+    end
+    OV.pePct = function(m)
+        if m.max <= 0 then return 0 end
+        local p = math.floor(m.cur * 100 / m.max + 0.5)
+        if p < 0 then p = 0 elseif p > 100 then p = 100 end
+        return p
+    end
+    -- PARTY-EST-END
+    PM.est = {}
+    function PM.units()
+        local out = { "player" }
+        for i = 1, 4 do if T(function() return UnitExists("party" .. i) end) == true then out[#out + 1] = "party" .. i end end
+        return out
+    end
+    function PM.guid(u)
+        local g = TS(function() return UnitGUID(u) end)
+        return g or u
+    end
+    function PM.plainNum(fn)
+        local v = T(fn)
+        if type(v) == "number" and OV.hmPlain(v) then return v end
+        return nil
+    end
+    function PM.model(u)
+        local g = PM.guid(u)
+        local m = PM.est[g]
+        if not m then
+            m = OV.peNew(PM.plainNum(function() return UnitHealthMax(u) end), GetTime())
+            PM.est[g] = m
+        end
+        return m
+    end
+    function PM.member(u, aName)
+        local idx = u == "player" and 0 or tonumber(u:match("%d+"))
+        local n = TS(function() return UnitName(u) end)
+        local ok, _, cls = CALL(function() return UnitClass(u) end)
+        cls = ok and type(cls) == "string" and WC.isPlain(cls) and cls or nil
+        local col = cls and _G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[cls] and _G.RAID_CLASS_COLORS[cls].colorStr or nil
+        local okp, _, ptok = CALL(function() return UnitPowerType(u) end)
+        local m = { u = u, i = idx, n = n or "?", c = cls, col = (type(col) == "string" and WC.isPlain(col)) and col or nil,
+                    role = TS(function() return UnitGroupRolesAssigned(u) end) or "NONE",
+                    dead = T(function() return UnitIsDeadOrGhost(u) end) == true,
+                    off = T(function() return UnitIsConnected(u) end) == false,
+                    pt = (okp and type(ptok) == "string" and WC.isPlain(ptok)) and ptok or nil,
+                    hpMax = PM.plainNum(function() return UnitHealthMax(u) end),
+                    pmMax = PM.plainNum(function() return UnitPowerMax(u) end) }
+        local e = PM.model(u)
+        OV.peTick(e, GetTime(), fighting(), m.dead)
+        OV.peMax(e, m.hpMax)
+        local pct, full = OV.pePct(e), e.full
+        if u == "player" and type(WC.vitals) == "function" then            -- your own cell: the vitals' value when it has one
+            local okv, v = pcall(WC.vitals)
+            if okv and type(v) == "table" and type(v.hp) == "number" and type(v.hpMax) == "number" and v.hpMax > 0 then
+                pct = math.max(0, math.min(100, math.floor(v.hp * 100 / v.hpMax + 0.5)))
+                full = v.hp >= v.hpMax
+            end
+        end
+        if m.dead then pct, full = 0, false end
+        m.hp, m.full = pct, full and true or false
+        if aName then
+            local r = T(function() return C_Spell.IsSpellInRange(aName, u) end)
+            if type(r) == "boolean" and WC.isPlain(r) then m.rng = r end
+        end
+        return m
+    end
+    -- party's `p`
+    function PM.state()
+        local a = PM.f and A(PM.f.pad, "wc-ps-a") or nil
+        local m = {}
+        for _, u in ipairs(PM.units()) do m[#m + 1] = PM.member(u, a) end
+        local on = PM.on()
+        local box = nil
+        if on then box = math.max(1, math.min(#m, A(PM.pad(), "wc-box") or 1)) end
+        return { on = on, aside = R.aside or nil, box = box, fight = fighting(), grp = PM.grouped(), sel = PM.sel or PM.selWant(R.aside, false),
+                 m = m }
+    end
+    PM.lastParty = nil
+    -- force = send even when nothing changed (the resend, the heartbeat); push: "flush" (WC.push), "throttle", or nil (rides a snapshot)
+    function PM.sendParty(force, push)
+        local doc = { type = "party", v = PV, rs = PM.rs, p = PM.state() }
+        local key = WC.encode(doc)
+        if key == PM.lastParty and not force then return false end
+        PM.lastParty = key
+        WC.send(key)
+        if push == "flush" then WC.push() elseif push == "throttle" then WC.pushThrottled() end
+        return true
+    end
+    -- a field may have changed: one party document per 0.5 s at most (coalesced), then throttled. The roster and on / off: at once, flushed
+    function PM.changed(why)
+        if why == "roster" or why == "onoff" then
+            if why == "roster" then
+                PM.rs = PM.rs + 1
+                local keep = {}                                         -- a member who left: gone (back later = new = full)
+                for _, u in ipairs(PM.units()) do local g = PM.guid(u); keep[g] = PM.est[g] end
+                PM.est = keep
+            end
+            pcall(PM.sendParty, true, "flush")
+            return
+        end
+        if PM.partySoon then return end
+        PM.partySoon = true
+        C_Timer.After(0.5, function() PM.partySoon = nil; pcall(PM.sendParty, false, "throttle") end)
+    end
+    -- RESEND (party col 22): everything the app needs after its own restart, flushed
+    function PM.resend()
+        PM.sendCfg("resend", true)
+        PM.sendParty(true, nil)
+        PM.n = PM.n + 1
+        local b = PM.box()
+        b.k = "state"
+        WC.send(WC.encode({ type = "partybox", v = PV, b = b }))
+        PM.ack("resend", true)                                          -- (its push flushes all four)
+    end
+    -- RIDE THE CORE HEARTBEAT (Chat.lua's pattern): an app restart loses nothing; they land in that snapshot's own push
+    PM.RIDE = { heartbeat = true, login = true, zone = true, manual = true }
+    if type(WC.snapshot) == "function" and type(hooksecurefunc) == "function" then
+        hooksecurefunc(WC, "snapshot", function(reason)
+            if PM.RIDE[reason] then
+                pcall(PM.sendCfg, reason, true)
+                pcall(PM.sendParty, true, nil)
+            end
+        end)
+    end
+
+    function PM.onEvent(e, a1, a2, a3, a4)
         if e == "PLAYER_REGEN_ENABLED" then
             if not PM.rowBuilt or PM.applyPending then pcall(PM.apply, "fight-end") end
             if PM.f then pcall(PM.link) end
+            PM.changed("fight")
+        elseif e == "PLAYER_REGEN_DISABLED" then
+            PM.changed("fight")
         elseif e == "PLAYER_ENTERING_WORLD" or e == "SPELLS_CHANGED" or e == "PLAYER_LOGIN" then
             if not PM.applySoon then
                 PM.applySoon = true
                 C_Timer.After(0.3, function() PM.applySoon = nil; pcall(PM.apply, e == "SPELLS_CHANGED" and "spells" or "login") end)
             end
+            if e == "PLAYER_ENTERING_WORLD" then PM.changed("roster") end
+        elseif e == "GROUP_ROSTER_UPDATE" then
+            PM.changed("roster")
+        elseif e == "UNIT_COMBAT" then
+            if a1 == "player" or (type(a1) == "string" and a1:match("^party%d$")) then
+                if OV.peHit(PM.model(a1), a2, OV.hmPlain(a4), GetTime()) then PM.changed("health") end
+            end
+        elseif e == "UNIT_HEALTH" or e == "UNIT_MAXHEALTH" then
+            if a1 == "player" or (type(a1) == "string" and a1:match("^party%d$")) then
+                local m = PM.model(a1)
+                if e == "UNIT_HEALTH" then OV.pePulse(m, GetTime()) else OV.peMax(m, PM.plainNum(function() return UnitHealthMax(a1) end)) end
+                PM.changed("health")
+            end
+        elseif e == "UNIT_CONNECTION" or e == "PLAYER_ROLES_ASSIGNED" or e == "UNIT_DISPLAYPOWER" or e == "PLAYER_DEAD"
+            or e == "PLAYER_ALIVE" or e == "PLAYER_UNGHOST" or e == "UNIT_MAXPOWER" then
+            PM.changed(e)
         end
     end
 
     PM.ev = CreateFrame("Frame")
-    for _, e in ipairs({ "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD", "SPELLS_CHANGED", "PLAYER_LOGIN" }) do
+    for _, e in ipairs({ "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ENTERING_WORLD", "SPELLS_CHANGED", "PLAYER_LOGIN",
+                         "GROUP_ROSTER_UPDATE", "UNIT_COMBAT", "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_CONNECTION", "PLAYER_ROLES_ASSIGNED",
+                         "UNIT_DISPLAYPOWER", "UNIT_MAXPOWER", "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST" }) do
         pcall(function() PM.ev:RegisterEvent(e) end)
+    end
+    -- the anchors (6 s quiet -> full) and dead / alive need a clock: once a second, and a document only when something moved
+    if type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then
+        pcall(C_Timer.NewTicker, 1, function() pcall(PM.changed, "tick") end)
     end
     PM.ev:SetScript("OnEvent", function(_, e, ...)
         if not PM.f then pcall(PM.make) end

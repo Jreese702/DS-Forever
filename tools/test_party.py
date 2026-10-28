@@ -959,6 +959,136 @@ W5.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1)')
 check(W5.eval('PADA("wc-ps-x")') == "Lesser Healing Wave", "... applied at PLAYER_REGEN_ENABLED (x = Lesser Healing Wave)", W5.eval('PADA("wc-ps-x")'))
 check(W5.eval('#VIOL') == 0 and W5.eval('#SPY') == 0, "no lockdown breach, no spied call", (list(W5.eval('VIOL').values())[:2], list(W5.eval('SPY').values())[:2]))
 
+# ================================================================ 8. THE HEALTH ESTIMATE (the pure PARTY-EST block)
+E = lupa.LuaRuntime(unpack_returned_tuples=True)
+E.execute('OV = {}\n' + re.search(r'-- PARTY-EST-BEGIN[^\n]*\n(.*?)-- PARTY-EST-END', SRC["padmap"], re.S).group(1))
+E.execute('m = OV.peNew(400, 0)')
+check(E.eval('OV.pePct(m)') == 100 and E.eval('m.full') is True, "a new member (or a /reload): full, anchored")
+E.execute('OV.peHit(m, "WOUND", 100, 1)')
+check(E.eval('OV.pePct(m)') == 75 and E.eval('m.full') is False, "a plain WOUND of 100 / 400: 75 %, not full", E.eval('OV.pePct(m)'))
+E.execute('OV.peHit(m, "HEAL", 50, 2)')
+check(E.eval('OV.pePct(m)') == 88, "a plain HEAL of 50: 350 / 400 = 88 %", E.eval('OV.pePct(m)'))
+E.execute('OV.peHit(m, "HEAL", 900, 3)')
+check(E.eval('OV.pePct(m)') == 100 and E.eval('m.full') is True, "healed past max: clamped to 100 (full)")
+E.execute('OV.peHit(m, "WOUND", 9000, 4)')
+check(E.eval('OV.pePct(m)') == 0, "wounded past 0: clamped to 0")
+E.execute('m = OV.peNew(400, 0); OV.peHit(m, "WOUND", 200, 10)')
+check(E.eval('OV.peHit(m, "WOUND", nil, 11)') is False and E.eval('OV.pePct(m)') == 50, "a SECRET amount (not plain: nil): no change")
+E.execute('OV.peTick(m, 15.9, false, false)')
+check(E.eval('OV.pePct(m)') == 50, "out of combat, 5.9 s quiet: still the estimate")
+E.execute('OV.peTick(m, 16, true, false)')
+check(E.eval('OV.pePct(m)') == 50, "IN combat, 6 s quiet: no anchor")
+E.execute('OV.pePulse(m, 16); OV.peTick(m, 21.9, false, false)')
+check(E.eval('OV.pePct(m)') == 50, "a UNIT_HEALTH pulse restarts the 6 s")
+E.execute('OV.peTick(m, 22, false, false)')
+check(E.eval('OV.pePct(m)') == 100 and E.eval('m.full') is True, "out of combat, alive, 6 s with no pulse: full (the anchor)")
+E.execute('OV.peTick(m, 30, true, true)')
+check(E.eval('OV.pePct(m)') == 0 and E.eval('m.dead') is True, "dead: 0")
+check(E.eval('OV.peHit(m, "HEAL", 100, 31)') is False and E.eval('OV.pePct(m)') == 0, "dead: a heal does not move it")
+E.execute('OV.peTick(m, 40, false, false)')
+check(E.eval('OV.pePct(m)') == 50 and E.eval('m.full') is False, "alive again after dead: 50 %")
+E.execute('OV.peMax(m, 800)')
+check(E.eval('m.max') == 800, "UNIT_MAXHEALTH: the new max")
+
+# ================================================================ 7. THE DOCUMENTS (key for key with PARTY_BUILD.md section 1)
+W7 = world()
+W7.eval('party')(W7.table_from([W7.table_from(["Brannoc", "WARRIOR", True, "TANK", "RAGE"])]))
+W7.execute('fire("GROUP_ROSTER_UPDATE")')
+P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
+M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng"}
+d = docs(W7, 0, 'party')[-1]
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm77' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+      "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
+check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
+      "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
+m = d['p']['m']
+check(len(m) == 2 and [x['u'] for x in m] == ['player', 'party1'] and [x['i'] for x in m] == [0, 1], "m[]: you first, then party1 (i = the tap offset)",
+      [(x['u'], x['i']) for x in m])
+check(all(set(x) <= M_KEYS for x in m) and m[1]['n'] == 'Brannoc' and m[1]['c'] == 'WARRIOR' and m[1]['col'] == 'ffc69b6d'
+      and m[1]['role'] == 'TANK' and m[1]['pt'] == 'RAGE' and m[1]['hpMax'] == 400 and m[1]['hp'] == 100 and m[1]['full'] is True
+      and m[1]['dead'] is False and m[1]['off'] is False, "a member: n c col role dead off pt hpMax pmMax hp full", m[1])
+check(m[0]['n'] == 'Korvash' and m[0]['c'] == 'SHAMAN' and m[0]['pt'] == 'MANA', "your own cell", m[0])
+check(all(not isinstance(v, (dict, list)) or k == 'm' for k, v in d['p'].items()), "no secret value can ride: plain fields only")
+rs0 = d['rs']
+n0, p0 = nsent(W7), int(W7.eval('PUSHES'))
+W7.eval('party')(W7.table_from([W7.table_from(["Brannoc", "WARRIOR", True, "TANK", "RAGE"]), W7.table_from(["Iselle", "MAGE", True, "DAMAGER", "MANA"])]))
+W7.execute('fire("GROUP_ROSTER_UPDATE")')
+d = docs(W7, n0, 'party')
+check(len(d) == 1 and d[0]['rs'] == rs0 + 1 and len(d[0]['p']['m']) == 3 and int(W7.eval('PUSHES')) > p0,
+      "a roster change: a party document AT ONCE (no timer), rs + 1, flushed", (len(d), d and d[0]['rs'], rs0))
+# health changes are coalesced: ten events, one document at most in 0.5 s
+n0 = nsent(W7)
+for i in range(10):
+    W7.execute('fire("UNIT_COMBAT", "party1", "WOUND", "", 10, 1)')
+d_now = docs(W7, n0, 'party')
+W7.execute('advance(0.6)')
+d_later = docs(W7, n0, 'party')
+check(len(d_now) == 0 and len(d_later) == 1 and d_later[0]['p']['m'][1]['hp'] == 75 and d_later[0]['p']['m'][1]['full'] is False,
+      "ten plain wounds (10 each of 400): no document per event; ONE after 0.5 s, hp 75, not full", (len(d_now), len(d_later)))
+n0 = nsent(W7)
+W7.execute('fire("UNIT_COMBAT", "party1", "WOUND", "", SECRETV, 1); advance(0.6)')
+check(docs(W7, n0, 'party') == [], "a SECRET amount: nothing moves, nothing sent")
+W7.execute('fire("PLAYER_REGEN_ENABLED"); NOW = NOW + 7; tick(1); advance(0.6)')
+d = docs(W7, 0, 'party')[-1]
+check(d['p']['m'][1]['hp'] == 100 and d['p']['m'][1]['full'] is True, "out of combat, 6 s quiet: back to full (the anchor)", d['p']['m'][1]['hp'])
+W7.execute('UNITS.party2.alive = false; tick(1); advance(0.6)')
+d = docs(W7, 0, 'party')[-1]
+check(d['p']['m'][2]['dead'] is True and d['p']['m'][2]['hp'] == 0, "a dead member: dead, 0 %", d['p']['m'][2])
+W7.execute('UNITS.party2.alive = true; tick(1); advance(0.6)')
+d = docs(W7, 0, 'party')[-1]
+check(d['p']['m'][2]['dead'] is False and d['p']['m'][2]['hp'] == 50, "alive again: 50 %", d['p']['m'][2]['hp'])
+# Party mode on: box present (1-based into m)
+flip(W7, "WowCompanionPartyOn")
+d = docs(W7, 0, 'party')[-1]
+check(d['p']['on'] is True and d['p']['box'] == 1, "Party mode on: box 1 (you, the first time)", (d['p']['on'], d['p'].get('box')))
+W7.execute('hit(4); advance(0.6)')
+pb = docs(W7, 0, 'partybox')[-1]
+B_KEYS = {"n", "on", "box", "cnt", "u", "k", "key", "ly", "sp", "fight", "pm"}
+check(set(pb) == {"type", "v", "b"} and set(pb['b']) <= B_KEYS and pb['b']['k'] == 'move' and pb['b']['box'] == 2 and pb['b']['u'] == 'party1'
+      and pb['b']['cnt'] == 3 and pb['b']['key'] == 'PADDDOWN' and pb['b']['ly'] == '' and pb['b']['on'] is True and pb['b']['pm'] is False,
+      "partybox: n on box cnt u k key ly sp? fight pm", pb['b'])
+W7.execute('trig(true, false); hit(8); trig(false, false)')
+pb2 = docs(W7, 0, 'partybox')[-1]['b']
+check(pb2['n'] == pb['b']['n'] + 1 and pb2['ly'] == 'zl' and pb2['k'] == 'none' and 'sp' not in pb2,
+      "the press counter goes up by one per press; ZL+A with Cure Poison not learned: ly zl, k none, no sp", pb2)
+W7.execute('hit(8)')
+pb3 = docs(W7, 0, 'partybox')[-1]['b']
+check(pb3['k'] == 'cast' and pb3['sp'] == 'Healing Wave' and pb3['u'] == 'party1' and pb3['ly'] == '', "A: k cast, sp Healing Wave, u party1", pb3)
+d = docs(W7, 0, 'party')[-1]
+check(d['p']['box'] == 2, "the party document follows the box (2)", d['p'].get('box'))
+# partycfg: key for key
+c = docs(W7, 0, 'partycfg')[-1]
+C_KEYS = {"slots", "yc", "touch", "spells", "sy", "pad"}
+check(set(c) == {"type", "v", "c"} and set(c['c']) <= C_KEYS and {"slots", "spells", "sy", "pad"} <= set(c['c']), "partycfg: c{slots yc? touch? spells sy pad}",
+      sorted(c['c']))
+check(c['c']['pad'] == {"row": "party", "tgt": 0, "tsp": 5, "on": 10, "off": 11, "focus": 12, "menu": 17, "resend": 22, "pbsel": 23,
+                        "pbops": {"remove": 31, "up": 32, "down": 33, "add": 34}, "mdone": 35,
+                        "ptab": {"row": "padtab", "tab": 26, "slot0": 27, "none": 37}}, "partycfg.pad = the contract's column map", c['c']['pad'])
+check(set(c['c']['sy']) <= {"on", "list", "known", "pick"} and c['c']['sy']['on'] is False and c['c']['sy']['list'] == [],
+      "sy: on (Smart Y off), list (EMPTY at first), known, pick", c['c']['sy'])
+check(all(set(v) <= {"id", "n", "i", "k", "d", "res"} for v in c['c']['slots'].values()) and c['c']['slots']['a']['n'] == 'Healing Wave'
+      and isinstance(c['c']['slots']['a']['i'], int), "slots.<s>: id n i k d res?", c['c']['slots']['a'])
+check(all(set(v) == {"id", "n", "i"} for v in c['c']['spells']) and [v['id'] for v in c['c']['spells']] == [331],
+      "spells (the chooser): Healing Wave only (Lightning Bolt harmful, Lightning Shield self-only)", c['c']['spells'])
+# the heartbeat ride: partycfg + party on heartbeat / login / zone / manual, no push of their own
+for reason in ("heartbeat", "login", "zone", "manual", "harvest"):
+    n0, p0 = nsent(W7), int(W7.eval('PUSHES'))
+    W7.eval('WowCompanion.snapshot')(reason)
+    t = [x['type'] for x in docs(W7, n0) if x.get('type') in ('party', 'partycfg')]
+    want = ['partycfg', 'party'] if reason != "harvest" else []
+    check(t == want and int(W7.eval('PUSHES')) == p0, "WC.snapshot(%s): %s, riding its push" % (reason, want or "nothing"), (t, int(W7.eval('PUSHES')) - p0))
+# RESEND: party col 22
+n0, p0 = nsent(W7), int(W7.eval('PUSHES'))
+W7.execute('local c = WowCompanion.pad.rows.party.cells[22]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false)')
+t = [x['type'] for x in docs(W7, n0)]
+st = [x for x in docs(W7, n0, 'partybox')]
+ack = docs(W7, n0, 'partyack')
+check(t[:4] == ['partycfg', 'party', 'partybox', 'partyack'] and st[0]['b']['k'] == 'state' and ack[0]['op'] == 'resend' and ack[0]['ok'] is True
+      and int(W7.eval('PUSHES')) > p0, "RESEND (col 22): partycfg + party + partybox{k state} + partyack resend, flushed", t)
+A_KEYS = {"type", "v", "op", "ok", "why", "slot", "id"}
+check(set(ack[0]) <= A_KEYS, "partyack: type v op ok why? slot? id?", ack[0])
+check(W7.eval('#SPY') == 0 and W7.eval('#VIOL') == 0 and W7.eval('#SNIPERR') == 0, "no spied call, no lockdown breach, no snippet error")
+
 # ================================================================ THE NO-TRACE SCAN (new code only: the diff against the contract's base)
 import subprocess
 try:
