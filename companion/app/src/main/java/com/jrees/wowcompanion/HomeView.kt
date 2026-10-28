@@ -229,6 +229,7 @@ class HomeView(
             castView.layout = CastView.Layout.FULL; castView.bottomLine = false; castView.onPadButtons = null
             castView.onClassRadial = null; castView.onClassStick = null; classLayerShow(false)   // the Cast room draws its own radial
             castView.groundPainter = null; castView.triggerStrip = false; redShown = false
+            castView.partyStrip = false
         }
         if (lent(mapView)) mapView.rimKeepOut = emptyList()
         while (loans.isNotEmpty()) giveBack(loans.last().view)
@@ -1113,7 +1114,18 @@ class HomeView(
         if (combat && flow.takeover) grewAt = now
         if (shown != null && (combat || n != laidPartyN || on != laidPartyOn || partyModeNow(flow.screen) != laidPartyMode)) changed()
         partyView.invalidate()
+        shown?.let { partyStripSync(it) }
         onStateChanged?.invoke()                                          // the disc's red B follows
+    }
+
+    /** the strip's party layout (PARTY_BUILD.md 4.3) while Party mode is on and Home's rest page shows (no takeover then) */
+    private fun partyStripSync(s: HomeScreen) {
+        if (!lent(castView)) return
+        castView.partyStrip = partyOnHere() && !s.takeover && s.full == null
+        castView.partyFight = grow.fighting(System.currentTimeMillis())
+        // the trigger plates at frame y 124 (v13), in the band's own px (the band starts at y 8 at rest)
+        castView.partyPlateTop = (124f - (if (big(s)) 10f else 8f)) * (width.takeIf { it > 0 }?.let { it / 1240f } ?: 1f)
+        castView.partyChanged()
     }
 
     /** the app's own pad reader: a D-pad press moves the box at once while Party mode is on and Home's rest page holds it */
@@ -1126,7 +1138,7 @@ class HomeView(
         val fresh = mask and partyDpadWas.inv()
         partyDpadWas = mask
         if (fresh == 0 || !partyOnHere() || flow.full != null || !isShown || typeWanted) return
-        for ((k, d) in dirs.withIndex()) if ((fresh and (1 shl k)) != 0 && party.move(d.second) != null) partyView.invalidate()
+        for ((k, d) in dirs.withIndex()) if ((fresh and (1 shl k)) != 0 && party.move(d.second) != null) { partyView.invalidate(); castView.partyChanged() }
     }
 
     /** the module's touches: Home's host taps them (a tap = Target / the touch spell, a hold = the player menu, the tag = on) */
@@ -1281,6 +1293,7 @@ class HomeView(
             // they get pressed but dimmed when they arent"): Cast's trigger strip under the diamonds (cast 197ec48, DIAMONDS only)
             castView.triggerStrip = true
         }
+        partyStripSync(s)
         if (lent(mapView)) {
             mapView.compact = !(s.full == HomeModule.MAP && !s.takeover)
             // the small map's + and - step Settings' "Minimap zoom" itself (user, 09-29 16:35: "these buttons should directly
