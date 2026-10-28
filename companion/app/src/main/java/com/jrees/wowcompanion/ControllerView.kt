@@ -182,10 +182,10 @@ class ControllerView(
     private fun tab(): String = page.currentView()
     /** the four tabs (p16), the gaps ONLY round the chosen one, where its LB / RB glyphs stand; they move over when the tab changes (the user
      *  after b118: "the spacing should only be between the currently selected tab. swaping between tabs should animate this spacing";
-     *  UI Art art-kit 494b1830) */
+     *  UI Art art-kit 494b1830). Party mode (the 5th tab): the row from the screen edges (the row keeps its L / R room itself) */
     private val gaps = UiKit.TabGaps(vertical = false)
     private fun tabRect(i: Int, w: Float): RectF =
-        gaps.row(TAB_NAMES.size, 60f, w - 60f, 76f, 70f, 260f, PadMapModel.tabOf(tab()) - 1, this)[i]     // UI Art: four fit as words
+        gaps.row(TAB_NAMES.size, 0f, w, 76f, 70f, 260f, PadMapModel.tabOf(tab()) - 1, this)[i]     // UI Art: four fit as words
 
     /** a switch: label, state as SHOWN (null = this addon cannot switch it yet), the column that sets the OTHER state, its key */
     private class Sw(val label: String, val on: Boolean?, val col: Int?, val key: String,
@@ -292,7 +292,14 @@ class ControllerView(
         // THE TABS (p9), the game's tab look, LB / RB in the chosen tab's gaps
         val cur = PadMapModel.tabOf(tab())
         val k = tabCtl?.takeIf { it.on }
-        for (i in TAB_NAMES.indices) UiKit.tab(c, tabRect(i, w), TAB_NAMES[i], i + 1 == cur, cursor = k != null && k.focus == "tabs" && k.tcur == i + 1)
+        // five tabs (Party mode, the 5th): each label set smaller to fit its tab (UI Art: "WoW Defaults" about 26), drawn as UiKit.tab does
+        for (i in TAB_NAMES.indices) {
+            val r = tabRect(i, w)
+            UiKit.tab(c, r, "", i + 1 == cur, cursor = k != null && k.focus == "tabs" && k.tcur == i + 1)
+            val p = UiKit.bodyPaint(28f, if (i + 1 == cur) android.graphics.Color.WHITE else Theme.gold).apply { textAlign = Paint.Align.CENTER }
+            while (p.textSize > 20f && p.measureText(TAB_NAMES[i]) > r.width() - 24f) p.textSize -= 1f
+            c.drawText(TAB_NAMES[i], r.centerX(), r.centerY() + 8f - (p.ascent() + p.descent()) / 2f, p)
+        }
         // the In combat tab carries the game's gold crossed swords (UI Art's sheet): the fight set at a glance, where the narrower four-tab
         // row leaves it room beside the word
         UiKit.tex("combat_swords")?.let { sw ->

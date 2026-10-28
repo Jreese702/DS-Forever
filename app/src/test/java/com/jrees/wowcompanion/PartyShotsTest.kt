@@ -135,6 +135,55 @@ class PartyShotsTest {
         strip("strip_party5_on_boxed_dead.png", 5, 4)
     }
 
+    /** P6: the player menu over the left column (a party of 3), the party module under it */
+    @Test fun playerMenu() {
+        assumeTrue(out != null)
+        artRoot()
+        val (bmp, c) = page()
+        val st = PartyModel.State()
+        st.onParty(PartyModel.parseParty(party(3, true, 2))!!, true, 0L)
+        val mod = PartyModuleView(RuntimeEnvironment.getApplication(), st)
+        val m = PartyLayout.module(PartyLayout.Mode.REST, 3, tagShown = false)
+        UiKit.module(c, android.graphics.RectF(8f, m.chatTop, 616f, 927f))
+        draw(c, mod, 8f, 216f - PartyModuleView.RISE, 615f, m.well.b)
+        val v = PartyMenuView(RuntimeEnvironment.getApplication())
+        v.open(1, "Brannoc Ironhelm", byPad = true)
+        v.onDoc(JSONObject("""{"type":"pmenu","unit":"party1","which":"PARTY","nm":"Brannoc Ironhelm","src":"party","items":[
+            {"t":"Brannoc Ironhelm","ttl":1},{"t":"Set Focus","k":"SetFocus","sc":13,"scr":"party","en":1},
+            {"t":"Add Friend","en":1,"sub":[{"t":"Character","i":9,"en":1}]},{"t":"Interact","ttl":1},
+            {"t":"Whisper","k":"Whisper","i":5,"ap":"whisper","en":1},{"t":"Inspect","k":"Inspect","i":6,"en":1},
+            {"t":"Trade","i":7,"en":1},{"t":"Follow","i":8,"en":1},{"t":"Duel","i":10,"en":1},{"t":"Promote to Party Leader","i":11,"en":1},
+            {"t":"Uninvite","i":12,"en":1}]}"""))
+        val pl = PartyMenuView.PLACE
+        draw(c, v, pl.left, pl.top, pl.right, pl.bottom)
+        save(bmp, "home_player_menu.png")
+    }
+
+    /** P4 / P4Y / P4S: the Controller room on its Party mode tab (the room's 1240 x 935 above the bar) */
+    private fun tab(name: String, ppos: Int, smartY: Boolean, yc: Boolean, pfocus: String = "rows", pright: Int = 0) {
+        val live = PartyModel.live
+        var cfg = JSONObject(cfgJson)
+        if (smartY) cfg.getJSONObject("c").getJSONObject("sy").put("on", true)
+        if (yc) cfg.getJSONObject("c").put("yc", JSONObject("""{"id":331,"n":"Healing Wave","i":136052}"""))
+        live.onCfg(PartyModel.parseCfg(cfg)!!, true)
+        live.onParty(PartyModel.parseParty(party(3, true, 1))!!, true, 0L)
+        val v = ControllerView(RuntimeEnvironment.getApplication(), onPadCells = { true })
+        v.onPadTabCtl(PadMapModel.parseCtl(JSONObject("""{"type":"padtabctl","c":{"on":true,"view":"party","focus":"buttons","tcur":5,
+            "ppos":$ppos,"pfocus":"$pfocus","pright":$pright}}"""))!!)
+        val (bmp, c) = page()
+        draw(c, v, 0f, 0f, 1240f, 935f)
+        save(bmp, name)
+    }
+
+    @Test fun controllerTab() {
+        assumeTrue(out != null)
+        artRoot()
+        tab("controller_party_tab_a.png", 2, smartY = false, yc = false)
+        tab("controller_party_tab_y.png", 4, smartY = false, yc = true)
+        tab("controller_party_tab_y_smart.png", 4, smartY = true, yc = false, pfocus = "right", pright = 0)
+        tab("controller_party_tab_touch.png", 5, smartY = false, yc = false)
+    }
+
     @Test fun homeModule() {
         assumeTrue(out != null)
         artRoot()

@@ -117,6 +117,13 @@ class PartyTabPage(
     }
 
     private val pFlat = Paint(Paint.ANTI_ALIAS_FLAG)
+    /** UiKit.bookEntry's chosen band (the row stays chosen while the right page has the cursor) */
+    private fun chosenBand(c: Canvas, r: RectF) {
+        val band = RectF(r.left, r.top + 5f, r.right, r.bottom - 5f)
+        pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(51, 110, 60, 14); c.drawRect(band, pFlat)
+        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Color.rgb(122, 84, 36); c.drawRect(band, pFlat)
+        pFlat.style = Paint.Style.FILL
+    }
     private fun dpadCross(c: Canvas, cx: Float, cy: Float, s: Float) {
         pFlat.style = Paint.Style.FILL; pFlat.color = Color.WHITE
         val a = s * 0.18f
@@ -149,7 +156,8 @@ class PartyTabPage(
         for (p in 1..12) {
             val r = rowRect(p)
             val wd = words(p, cfg) ?: continue
-            if (p == chosen && cursorOnRows) UiKit.focus(c, r, onPaper = true)
+            // the cursor's gold on the chosen row; while the cursor works in the right page, the book's chosen band (P4S)
+            if (p == chosen && cursorOnRows) { if (rightFocus(ctl)) chosenBand(c, r) else UiKit.focus(c, r, onPaper = true) }
             val cy = r.centerY()
             drawGlyph(c, p, r.left + 30f, cy)
             val ix = r.left + 96f; val iy = cy - 29f
@@ -157,14 +165,40 @@ class PartyTabPage(
             if (wd.icon == null) drawFrameArt(c, p, ix, iy, 58f)
             if (p == 1) UiKit.tex("talent_lock")?.let { c.drawBitmap(it, null, RectF(ix + 40f, iy + 34f, ix + 60f, iy + 62f), null) }
             val nx = r.left + 166f; val room = r.right - nx - 6f
-            fitLine(c, wd.name, nx, cy - 6f, room, pn, 27f, 20f)
-            fitLine(c, wd.line, nx, cy + 26f, room, pl, 22f, 16f)
+            // the name set smaller down to 23, then two lines (P4: "Lesser Healing / Wave"); the line smaller, then two at its colon
+            val nameLines = wrap(wd.name, room, pn, 27f, 23f)
+            val nameSize = wrapSize
+            val subLines = wrap(wd.line, room, pl, 22f, 20f, splitAt = ':')
+            val all = nameLines.size + subLines.size
+            var y = cy - (all - 1) * 14f + 4f
+            pn.textSize = nameSize; for (t in nameLines) { c.drawText(t, nx, y, pn); y += 28f }
+            for (t in subLines) { c.drawText(t, nx, y, pl); y += 25f }
         }
         drawRight(c, w, h, ctl, cfg, chosen)
         flash?.takeIf { SystemClock.uptimeMillis() < flashUntil }?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
             c.drawText(it, act.centerX(), act.top - 24f, pw)
         }
+    }
+
+    private var wrapSize = 27f
+
+    /** [s] in one line from [size] down to [min]; else two lines (at the space that keeps the longer shortest, or after [splitAt]),
+     *  each set smaller to fit if it must. The size it took stays in [p]. Never more than two lines (the second cut with "...") */
+    private fun wrap(s: String, room: Float, p: TextPaint, size: Float, min: Float, splitAt: Char? = null): List<String> {
+        p.textSize = size
+        while (p.textSize > min && p.measureText(s) > room) p.textSize -= 1f
+        if (p.measureText(s) <= room || !s.contains(' ')) { wrapSize = p.textSize; return listOf(s) }
+        val cut = splitAt?.let { ch -> s.indexOf(ch).takeIf { it > 0 }?.let { it + 1 } }
+        val (a, b) = if (cut != null) s.substring(0, cut).trim() to s.substring(cut).trim() else {
+            val w = s.split(' ')
+            (1 until w.size).map { k -> w.subList(0, k).joinToString(" ") to w.subList(k, w.size).joinToString(" ") }
+                .minByOrNull { (x, y) -> maxOf(p.measureText(x), p.measureText(y)) }!!
+        }
+        p.textSize = min
+        while (p.textSize > 14f && (p.measureText(a) > room || p.measureText(b) > room)) p.textSize -= 1f
+        wrapSize = p.textSize
+        return listOf(a, TextUtils.ellipsize(b, p, room, TextUtils.TruncateAt.END).toString())
     }
 
     private fun fitLine(c: Canvas, s: String, x: Float, y: Float, room: Float, p: TextPaint, size: Float, min: Float) {
@@ -199,7 +233,7 @@ class PartyTabPage(
         title(c, {
             UiKit.spell(c, wd.icon, 820f, 206f - 0f, 96f, UiKit.Spell.KNOWN)
             if (wd.icon == null) drawFrameArt(c, pos, 820f, 206f, 96f)
-        }, if (pos == 4) wd.name else if (pos == 5) "Touch" else wd.name, if (pos == 1) "D-pad, in Party mode" else "$faceWord, in Party mode")
+        }, if (pos == 4) wd.name else if (pos == 5) "Touch" else wd.name, when (pos) { 1 -> "D-pad, in Party mode"; 5 -> "A party cell, any time"; else -> "$faceWord, in Party mode" })
         val ink = UiKit.inkPaint(27f)
         val dim = UiKit.inkPaint(21f).apply { color = Theme.parchmentInkDim }
         when (pos) {
