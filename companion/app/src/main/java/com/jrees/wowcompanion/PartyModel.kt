@@ -179,6 +179,15 @@ object PartyModel {
     /** the resend (party row col 22) at most this often */
     const val RESEND_MS = 10_000L
 
+    /** THE app's one live state (CompanionHost feeds it; Home, the strip, the Controller tab and Settings read it) */
+    val live = State()
+
+    /**
+     * Open question 4's switch (the user's default 2026-10-28: Party mode does NOT turn off when you leave Home or open a Home module
+     * full screen; it is suspended by the add-on while a room holds). true = the contract's proposal: the app taps `off` first.
+     */
+    const val OFF_ON_LEAVE = false
+
     /** why the app asks for a resend (1.1) */
     enum class Ask { FIRST_DOC, HOME_SHOWN, PARTY_ON }
 

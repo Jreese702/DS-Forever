@@ -71,7 +71,7 @@ class HomeView(
     /** the controller layout has come at least once: until then the Cast view says "Waiting" where the clock would stand */
     private var barsSeen = false
 
-    private enum class Part { BARS, QUESTS, CHAT, MAP, AURAS, CHAT_FULL }
+    private enum class Part { BARS, QUESTS, CHAT, PARTY, MAP, AURAS, CHAT_FULL }
 
     private val questPane = QuestPane(context)
     private val chatPane = ChatPane(context)
@@ -79,6 +79,9 @@ class HomeView(
     private val auraPane = AuraPane(context)
     private val barsSlot = FrameLayout(context)
     private val chatSlot = FrameLayout(context)
+    /** PARTY MODE's module (PARTY_BUILD.md 4.2): the game's raid-style cells over the left column, never hidden while `party` comes */
+    private val party = PartyModel.live
+    private val partyView = PartyModuleView(context, party)
     /**
      * THE CHAT'S GLIDE (b-chat-slide; the user's pick: chat going full screen should move like the map's morph). The full chat is laid
      * out ONCE at its full size and its box glides between the chat pane's place and the frame, as the map's does: a rounded window
@@ -88,7 +91,7 @@ class HomeView(
     private val chatGlideBox = RectF()
     // CLOSE is added last, so it is drawn above the module it closes
     private val views: Map<Part, View> = linkedMapOf(
-        Part.BARS to barsSlot, Part.QUESTS to questPane, Part.CHAT to chatPane, Part.MAP to mapSlot,
+        Part.BARS to barsSlot, Part.QUESTS to questPane, Part.CHAT to chatPane, Part.PARTY to partyView, Part.MAP to mapSlot,
         Part.AURAS to auraPane, Part.CHAT_FULL to chatSlot,
     )
 
@@ -116,6 +119,9 @@ class HomeView(
         setWillNotDraw(false)
         for ((_, v) in views) { addView(v); v.visibility = View.GONE }
         mapView.onCompactTap = { if (flow.tapMap()) changed() }
+        partyView.onCellTap = { i -> onPartyCell?.invoke(i) }
+        partyView.onCellLong = { i -> onPartyLong?.invoke(i) }
+        partyView.onTag = { onPartyTag?.invoke() }
         // the card's CONTENT is the map's (its focus, its default focus): a change there re-lays Home when the card comes or goes
         // (p-card-invisible: it only redrew, and a pane laid without a card stayed GONE until a later quests document)
         mapView.onShownFocusChanged = { questPane.invalidate(); cardCheck("focus") }
@@ -250,7 +256,9 @@ class HomeView(
 
     fun bGoesHome(): Boolean = bGlyph.shown(System.currentTimeMillis()) || (flow.full != null && !flow.takeover) ||
         // the buff / debuff list open: B returns Home at any time there (the user, 2026-09-30: "the red with the b button")
-        auraPane.open != null
+        auraPane.open != null ||
+        // PARTY MODE (4.2; the user v4: "When in Party mode the Home button at the bottom should show red with the B"): B closes it
+        partyOnHere()
 
     /** called after every change of Home's state, so the strip's glyph follows at once (MainActivity sets it) */
     var onStateChanged: (() -> Unit)? = null
@@ -518,6 +526,7 @@ class HomeView(
     /** the held D-pad / face buttons from whichever reader runs: B's press, once */
     private fun onPadHeld(held: Int) {
         onPadHeldAny?.invoke(held)
+        partyPad(held)
         val b = PadInput.isHeld(held, PadInput.SLOT_FACE_RIGHT)
         val was = bWasHeld
         bWasHeld = b                                           // before acting: onB may stop the reader that called us
@@ -897,7 +906,9 @@ class HomeView(
         if (quests.expire(now)) questPane.note("No answer from the game")
         if (auras.expire(now)) auraPane.note("No answer from the game")
         if (auraPane.open != null) auraPane.invalidate()                 // time left counts down
-        if (flow.combat(grow.shown(now))) { if (flow.takeover) grewAt = System.currentTimeMillis(); changed() }
+        // v17: in a fight with Party mode on there is NO takeover (switched on mid-fight, the takeover shrinks back: COMBAT_SHRINK)
+        if (flow.combat(grow.shown(now) && !partyOnHere())) { if (flow.takeover) grewAt = System.currentTimeMillis(); changed() }
+        else if (partyModeNow(flow.screen) != laidPartyMode && party.party != null) changed()   // a fight began / ended with Party mode on
         val red = grow.red(now) && !flow.takeover && flow.full == null
         if (red != redShown) {
             redShown = red
@@ -1076,7 +1087,75 @@ class HomeView(
      *  the small map would (refused in a fight's takeover, as the tap is); false = nothing changed */
     fun openMapModule(): Boolean = flow.tapMap().also { if (it) changed() }
 
+    // ---------------------------------------------------------------- PARTY MODE (PARTY_BUILD.md 4.2)
+
+    /** Party mode on and routing, while Home's rest page shows (a full module = the add-on suspends it; drawn as off) */
+    private fun partyOnHere(): Boolean = party.party?.onLive == true
+
+    /** the module's mode for [s]: the takeover = the fight with Party mode off; a fight with it on = 150 px rows; else at rest */
+    private fun partyModeNow(s: HomeScreen): PartyLayout.Mode = when {
+        s.takeover -> PartyLayout.Mode.FIGHT_OFF
+        partyOnHere() && grow.fighting(System.currentTimeMillis()) -> PartyLayout.Mode.FIGHT_ON
+        else -> PartyLayout.Mode.REST
+    }
+    private var laidPartyMode = PartyLayout.Mode.REST
+    private var laidPartyN = 0
+    private var laidPartyOn = false
+
+    /** a party document (or a box) changed what Home draws: re-placed when the module's size changed, else redrawn */
+    fun partyChanged() {
+        val p = party.party
+        val n = p?.n ?: 0
+        val on = p?.onLive == true
+        val now = System.currentTimeMillis()
+        // Party mode on in a fight: the takeover goes (v17); off again: it comes back
+        val combat = flow.combat(grow.shown(now) && !partyOnHere())
+        if (combat && flow.takeover) grewAt = now
+        if (shown != null && (combat || n != laidPartyN || on != laidPartyOn || partyModeNow(flow.screen) != laidPartyMode)) changed()
+        partyView.invalidate()
+        onStateChanged?.invoke()                                          // the disc's red B follows
+    }
+
+    /** the app's own pad reader: a D-pad press moves the box at once while Party mode is on and Home's rest page holds it */
+    private var partyDpadWas = 0
+    private fun partyPad(held: Int) {
+        val dirs = listOf(PadInput.SLOT_DPAD_UP to PartyModel.Dir.UP, PadInput.SLOT_DPAD_DOWN to PartyModel.Dir.DOWN,
+            PadInput.SLOT_DPAD_LEFT to PartyModel.Dir.LEFT, PadInput.SLOT_DPAD_RIGHT to PartyModel.Dir.RIGHT)
+        var mask = 0
+        for ((k, _) in dirs.withIndex()) if (PadInput.isHeld(held, dirs[k].first)) mask = mask or (1 shl k)
+        val fresh = mask and partyDpadWas.inv()
+        partyDpadWas = mask
+        if (fresh == 0 || !partyOnHere() || flow.full != null || !isShown || typeWanted) return
+        for ((k, d) in dirs.withIndex()) if ((fresh and (1 shl k)) != 0 && party.move(d.second) != null) partyView.invalidate()
+    }
+
+    /** the module's touches: Home's host taps them (a tap = Target / the touch spell, a hold = the player menu, the tag = on) */
+    var onPartyCell: ((Int) -> Unit)? = null
+    var onPartyLong: ((Int) -> Unit)? = null
+    var onPartyTag: (() -> Unit)? = null
+
+    /** places [base] with the party module: it takes the top of the chat's place (under the card when the card is above chat) */
+    private fun withParty(base: Map<Part, RectF>, s: HomeScreen, w: Float): Map<Part, RectF> {
+        val p = party.party ?: return base
+        val chat = base[Part.CHAT] ?: return base
+        val mode = partyModeNow(s)
+        laidPartyMode = mode; laidPartyN = p.n; laidPartyOn = p.onLive
+        val right = w / 2f - 5f
+        val m = PartyLayout.module(mode, p.n, top = chat.top, tagShown = !p.onLive, left = chat.left, right = right)
+        partyView.mode = mode
+        val out = LinkedHashMap(base)
+        out[Part.PARTY] = RectF(chat.left, chat.top - PartyModuleView.RISE, right, m.well.b)
+        out[Part.CHAT] = RectF(chat.left, minOf(m.chatTop, chat.bottom - 1f), chat.right, chat.bottom)
+        return out
+    }
+
     private fun places(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
+        val base = placesBase(s, w, h)
+        if (s.full != null && !s.takeover) return base
+        return withParty(base, s, w)
+    }
+
+    private fun placesBase(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
         val c = w / 2f
         if (!s.takeover) s.full?.let { m ->
             // NO bar and no close button on top (user, 2026-09-29 15:08: "get rid of the ugly top bars and use the B
@@ -1536,7 +1615,7 @@ class HomeView(
         for ((p, v) in views) {
             val o = when (p) {
                 Part.BARS -> pauseTop
-                Part.CHAT, Part.CHAT_FULL -> left
+                Part.CHAT, Part.CHAT_FULL, Part.PARTY -> left
                 Part.QUESTS -> if (cardOverMap()) pauseMap else left
                 Part.MAP, Part.AURAS -> pauseMap
             }
@@ -1605,7 +1684,9 @@ class HomeView(
         // f-trackpad-keyboard: the tool's touches are the tool's (a drag starting where the bars lie was taken as a tap on the bars)
         if (typeWanted) { barsDown = false; return false }
         if (flow.full == HomeModule.BARS || barsSlot.visibility != View.VISIBLE) return false
-        if (e.actionMasked == MotionEvent.ACTION_DOWN) barsDown = inBars(e)
+        // the (-) Party mode tag stands over the bars' foot: its touch is the tag's
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) barsDown = inBars(e) &&
+            !(partyView.visibility == View.VISIBLE && partyView.tagAt(e.x - partyView.left - partyView.translationX, e.y - partyView.top))
         return barsDown
     }
 
