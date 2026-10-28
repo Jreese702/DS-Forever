@@ -616,3 +616,50 @@ the device after the PRE edit (FEASIBILITY risk 4).
    two-rows-per-row change?
 7. In a fight with Party mode on, the spec sizes 5 members (150 high); 2-4 members use the same 150 rows. OK?
 8. Kit art: UI Art adds the raid-frame bar fills, the skull and the pointing gauntlet to the kit; plain fills until then. OK?
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+## ADD-ON DEVIATIONS (the ADD-ON worker, branch `feat/party-addon`; every document stays compatible with section 1)
+
+Built: PadMap m77, PadTabCtl p33, Book b47, TapPad pad11, Quests q49, `tools/test_party.py` (groups 1-11 + the Party tab + the
+no-trace scan). Where the contract could not be followed to the letter, the closest correct thing:
+
+1. **JSON `null` = the key is ABSENT.** Safety.lua's encoder drops nil fields, so `aside`, `box` (Party mode off), `yc`, `touch`, a
+   null slot (`zly` ...), `hpMax` / `pmMax` / `rng` when not plain, `why`, `sp`, `u` (before any press) are missing rather than
+   `null`. The app treats a missing key exactly as `null`.
+2. **An empty object encodes as `[]`** (the same encoder: an empty table is an array). `c.slots` with every slot Empty and no class
+   default (a Hunter / Rogue / Warrior with nothing chosen) arrives as `"slots":[]`: read it as "all Empty". `sy.pick` is OMITTED (not
+   `{}`) when no unit has a pick, which is always the case in a fight.
+3. **`partyack` ops beyond the list:** `op "cell"` (why `"unknown column"`) answers the spare party cols 36-39; `op "touch"` (why
+   `"target"`) answers a stale tap on a TSP cell (5-9) while Touch = Target. PB ops, Add and Remove all answer `op "pb"` with `id`.
+4. **The flips' clicks:** `WowCompanionPartyOn` / `Off` / `MenuDone` are registered for BOTH edges (a `type="click"` cell clicks them
+   with `Click(button)`, one edge whose `down` is not guaranteed); their snippets are absolute, so a repeat is harmless.
+   `WowCompanionPartyToggle` (Select's key) is `AnyDown` only, as written. One `partybox` per flip (a 0.25 s de-dupe), whatever edge
+   arrived, so "on the press (down) only" holds for the pad, not literally for a cell's click.
+5. **The Party tab's chooser has a second list, `"pbuff"`** (rows = `sy.known` not listed yet, by id; no pseudo row): the controller's
+   Add on Y's right page with Smart Y on. Y's right page rows with Smart Y on = the list's rows, then Add, then "In combat" (open
+   question 2, the lead's proposal, taken). By touch the contract's route stands (PBSEL / ops / add on the party row).
+6. **`padtabctl.ppos` / `pfocus` / `pright` are sent only while `view == "party"`** (absent on the other four tabs).
+7. **`partybox.key` is the position's STANDARD name** (`PAD1` ... `PADDDOWN`) even when the player re-bound `GAMEPADACTIONBUTTONn`: the
+   pad maps whatever key arrives through its own `wc-kp-<key>` attributes (set out of combat from the router's keys, the game's names as
+   the fallback).
+8. **NAV's direction names** (both copies, Lua and the snippet): `"up"` / `"down"` / `"left"` / `"right"`.
+9. **The `party` document on an on / off is sent at once and flushed** (like a roster change), not coalesced; `rs` moves only on a
+   roster change (and on a loading screen: a new world = everyone re-read).
+10. **`full`** is true at the two anchors AND when a plain heal brings the estimate back to max.
+11. **`sel = "off"`** also when Select could not be carried (the override did not take), so the app never shows a Select that is not ours.
+12. **Settings never change in a fight, the party list included:** PB select is accepted (a pick), but Remove / Up / Down / Add answer
+    `partyack op "pb" why "combat"`; a `padd` spell in a fight is refused the same way. Applies that were due in a fight (SPELLS_CHANGED,
+    a login in a fight) run at PLAYER_REGEN_ENABLED.
+13. **Quests q49:** Whisper is a RUNNABLE entry (`i`, the qact digits) whose run sets `WC.chatLastTell`; it also carries `ap
+    "whisper"`, so the app runs it and then opens the Chat room. Promote / Uninvite carry `cf` (the app asks first). The self-only
+    entries (PvP, loot, Reset instances, Leave) are never offered for a party unit (greyed). Read for Party mode, YOUR OWN menu's Set
+    Focus is the party row's col 12 (`scr "party"`); the map's portrait keeps `pfocus` col 0. A run / a focus re-reads the SAME unit's menu.
+14. **The router's header is made at load** (Party mode's frames need it; it used to be made at the first PLAYER_ENTERING_WORLD).
+15. **THE ONE SWITCH** for open question 4 on the add-on side: `PM.OFF_WHEN_ASIDE = false` (PadMap, partyMode()): Party mode is only
+    SUSPENDED while a room / a game window holds (`aside`); set true and the add-on itself turns it off then (out of combat). The app's
+    own "off when leaving Home" (4.2) is the app's switch; the lead's default for it is: Party mode does NOT turn off.
+
+Known limits (by the contract, recorded): a fight that STARTS with Party mode off keeps an m34 D-pad binding (set 1) on its key for
+that fight, so switching Party mode on mid-fight leaves that one direction the binding's. TapPad's repeat guard (0.25 s) swallows the
+same party cell tapped twice within 0.25 s: one op per batch, or `tapsSpaced`.
