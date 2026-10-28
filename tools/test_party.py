@@ -802,13 +802,36 @@ W4.execute('UNFOCUSED = 1; NOW = NOW + 2; tick(0.1)')
 check("PADBACK" not in keys(W4), "an unfocused dialog waits: Select is left to the game", keys(W4).get("PADBACK"))
 W4.execute('UNFOCUSED = 0; NOW = NOW + 2; tick(0.1)')
 check(keys(W4).get("PADBACK") == "CLICK WowCompanionPartyToggle:LeftButton", "the dialog gone: Select is the toggle's again")
-# aside: a room holds -> nothing of Party mode is bound (Party mode stays as it was: suspended)
-W4.execute('tapKey("PADBACK"); advance(0.3); HOLDER = "spells"; NOW = NOW + 2; tick(0.1)')
+# aside under one of Home's own pickers (the pause wheel "pad:radial"): nothing of Party mode is bound; Party mode stays on (suspended)
+W4.execute('tapKey("PADBACK"); advance(0.3); HOLDER = "pad:radial"; NOW = NOW + 2; tick(0.1)')
 k = keys(W4)
 check(not any(v.startswith("CLICK WowCompanion") for v in k.values()) and W4.eval('PADA("wc-party")') is True,
-      "a room holds: nothing of ours bound; Party mode stays on (suspended)", k)
+      "Home's pause wheel holds: nothing of ours bound; Party mode stays on (suspended, a Home picker)", k)
 W4.execute('HOLDER = nil; NOW = NOW + 2; tick(0.1)')
-check(keys(W4) == want, "the room let go: the 8 keys and Select again", keys(W4))
+check(keys(W4) == want, "the wheel let go: the 8 keys and Select again", keys(W4))
+# THE USER'S RULING (INTEGRATION, PM.OFF_WHEN_ASIDE = true): a ROOM (or a Home module full screen, "pad:home") holding turns it OFF
+check('PM.OFF_WHEN_ASIDE = true' in SRC["padmap"], "PM.OFF_WHEN_ASIDE is true (the user's ruling: off when you leave Home)")
+for holder in ("spells", "pad:home"):
+    W4.execute('if not PADA("wc-party") then tapKey("PADBACK"); advance(0.3) end')
+    n0 = nsent(W4)
+    W4.execute('HOLDER = "%s"; NOW = NOW + 2; tick(0.1); advance(0.6)' % holder)
+    pd = docs(W4, n0, 'party')
+    check(party_on_all(W4) == [None] * 9 and pd and pd[-1]['p']['on'] is False and not any(v.startswith("CLICK WowCompanion") for v in keys(W4).values()),
+          "%s holds: Party mode OFF on all 8 refs and the pad, a party document says on false, nothing of ours bound" % holder,
+          (party_on_all(W4), pd and pd[-1]['p']))
+    W4.execute('HOLDER = nil; NOW = NOW + 2; tick(0.1)')
+    k = keys(W4)
+    check(W4.eval('PADA("wc-party")') is None and k.get("SHIFT-PAD1") == "JUMP" and "PAD1" not in k
+          and k.get("PADBACK") == "CLICK WowCompanionPartyToggle:LeftButton",
+          "%s let go: Party mode is still OFF (today's plan, Select the toggle's)" % holder, k)
+# in a fight the add-on cannot flip it (secure attributes are locked): it stays suspended, and goes off at the fight's end if still aside
+W4.execute('tapKey("PADBACK"); advance(0.3); COMBAT = true; HOLDER = "spells"; NOW = NOW + 2; tick(0.1)')
+check(W4.eval('PADA("wc-party")') is True and W4.eval('#VIOL') == 0, "a room holds in a fight: suspended (no insecure flip in the lockdown)",
+      list(W4.eval('VIOL').values())[:2])
+W4.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1); NOW = NOW + 2; tick(0.1)')
+check(W4.eval('PADA("wc-party")') is None, "... the fight ends with the room still holding: OFF", W4.eval('PADA("wc-party")'))
+W4.execute('HOLDER = nil; NOW = NOW + 2; tick(0.1); tapKey("PADBACK"); advance(0.3)')
+check(W4.eval('PADA("wc-party")') is True, "back on by Select after the room let go")
 W4.execute('tapKey("PADBACK"); advance(0.3)')
 # a fight's start: Select only while grouped or already in Party mode
 W4.eval('party')(W4.table_from([]))
@@ -1225,7 +1248,7 @@ W8.execute('pp("PAD1")')
 check(ctlDoc(W8)['note'] == 'locked' and ctlDoc(W8)['pfocus'] == 'rows', "A on the D-pad row: locked (fixed)", ctlDoc(W8)['note'])
 W8.execute('pp("PADDDOWN"); pp("PAD1")')
 c = ctlDoc(W8)
-check(c['pfocus'] == 'right' and c['pright'] == 1, "A on the A row: the right page", c)
+check(c['pfocus'] == 'right' and c['pright'] == 0, "A on the A row: the right page (pright 0-based: its first row)", c)
 W8.execute('pp("PAD1")')
 c = ctlDoc(W8)
 check(c['chooser'] == {"list": "party", "row": 1, "id": "empty"}, "its red Change: the chooser, list party, the no-spell row first (empty)", c['chooser'])
@@ -1257,7 +1280,7 @@ W8.execute('WowCompanionSpellsDB.smartOn = { ["Korvash-Realm"] = true }; WowComp
 W8.execute('pp("PAD1")')
 W8.execute('pp("PADDDOWN")')
 c = ctlDoc(W8)
-check(c['pfocus'] == 'right' and c['pright'] == 2, "Smart Y on: Y's right page has rows (the buff, Add, In combat)", c)
+check(c['pfocus'] == 'right' and c['pright'] == 1, "Smart Y on: Y's right page has rows (the buff, Add, In combat): Add = pright 1 (0-based)", c)
 W8.execute('pp("PAD1")')
 c = ctlDoc(W8)
 check(c['chooser']['list'] == 'pbuff' and c['chooser']['id'] == 546, "Add: the chooser of party buffs known and not listed (Water Walking)", c['chooser'])
@@ -1376,6 +1399,127 @@ check(r is not None and list(r.values()) == ["party2", "party"], "Y (no pick): W
 W11.execute('local c = WowCompanion.pad.rows.party.cells[18]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false)')
 r = W11.eval('PMREADS[#PMREADS]')
 check(list(r.values()) == ["party1", "party"], "party row col 18 (MENU party1): WC.pmenu.read(\"party1\", \"party\")", list(r.values()))
+
+# ================================================================ CROSS-SIDE FIXTURES (INTEGRATION): the documents the Lua REALLY sends
+# The raw strings out of Safety.lua's encoder (nil = absent, {} = [] as the add-on encodes them), kept for the app's JVM test
+# (dsforever/src/test/.../PartyFixturesTest.kt reads dsforever/src/test/resources/party-fixtures/*.json). The committed files must equal
+# what this run emits: PARTY_FIXTURES_WRITE=1 rewrites them.
+FIXDIR = os.path.join(ROOT, "dsforever", "src", "test", "resources", "party-fixtures")
+FIX = {}
+
+
+def raw(L, start, typ):
+    out = []
+    for i in range(start + 1, int(L.eval('#SENT')) + 1):
+        t = L.eval('SENT[%d]' % i)
+        try:
+            d = json.loads(t)
+        except Exception:
+            continue
+        if isinstance(d, dict) and d.get('type') == typ:
+            out.append(t)
+    return out
+
+
+def keep(name, L, start, typ, which=-1):
+    r = raw(L, start, typ)
+    check(bool(r), "fixture %s: the add-on sent a %s" % (name, typ))
+    if r:
+        FIX[name] = r[which]
+
+
+def tap_party(col):
+    return 'local c = WowCompanion.pad.rows.party.cells[%d]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false)' % col
+
+
+# a solo Shaman, Party mode off; the heartbeat ride: party + partycfg (class defaults, Smart Y's list empty, no yc / touch / pick)
+FX = world()
+n0 = nsent(FX)
+FX.eval('WowCompanion.snapshot')("heartbeat")
+keep("party_solo_off", FX, n0, 'party')
+keep("partycfg_shaman_default", FX, n0, 'partycfg')
+# a Warrior with nothing chosen and no class default: every slot Empty ("slots":[]), no party spell
+FW = world(pre='CLASS = "WARRIOR"; BOOK = { 78 }')
+n0 = nsent(FW)
+FW.eval('WowCompanion.snapshot')("heartbeat")
+keep("partycfg_warrior_empty", FW, n0, 'partycfg')
+check('"slots":[]' in FIX.get("partycfg_warrior_empty", ""), "the Warrior's partycfg says \"slots\":[] (an empty table)",
+      FIX.get("partycfg_warrior_empty", "")[:160])
+# a party of three; Party mode on; the presses: Down (move), A (cast), ZL+A Empty (none), Y with no pick (menu), a press in the menu
+# (key), B in the menu (key PAD2), MENU DONE, B (off)
+FX.eval('party')(FX.table_from([FX.table_from(["Brannoc", "WARRIOR", True, "TANK", "RAGE"]),
+                                FX.table_from(["Iselle", "MAGE", True, "DAMAGER", "MANA"])]))
+FX.execute('fire("GROUP_ROSTER_UPDATE"); advance(1)')
+n0 = nsent(FX)
+flip(FX, "WowCompanionPartyOn")
+keep("partybox_on", FX, n0, 'partybox')
+keep("party_three_on", FX, n0, 'party')
+for name, lua in (("partybox_move", 'hit(4)'), ("partybox_cast", 'hit(8)'), ("partybox_none_zl", 'trig(true, false); hit(8); trig(false, false)'),
+                  ("partybox_menu", 'hit(6)'), ("partybox_key_down", 'hit(4)'), ("partybox_key_b", 'hit(7)')):
+    n0 = nsent(FX)
+    FX.execute(lua + '; advance(0.6)')
+    keep(name, FX, n0, 'partybox')
+FX.execute('clickName("WowCompanionPartyMenuDone", true); clickName("WowCompanionPartyMenuDone", false); advance(0.3)')
+n0 = nsent(FX)
+FX.execute('hit(7); advance(0.6)')
+keep("partybox_off", FX, n0, 'partybox')
+keep("party_three_off", FX, n0, 'party')
+# the answers: RESEND, a spare column (op cell), a stale TSP tap (op touch why target), a setting in a fight (why combat), a slot set
+for name, lua in (("partyack_resend", tap_party(22)), ("partyack_cell", tap_party(37)), ("partyack_touch_target", tap_party(6)),
+                  ("partyack_combat", 'COMBAT = true; WowCompanion.padMap.party.put("a", 331); COMBAT = false'),
+                  ("partyack_slot_ok", 'WowCompanion.padMap.party.put("a", 331)')):
+    n0 = nsent(FX)
+    FX.execute(lua + '; NOW = NOW + 0.3')
+    keep(name, FX, n0, 'partyack', 0)
+# partycfg with everything set: Smart Y on, a party list with picks, Y's In combat, Touch = a spell, a chosen Empty
+FB = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
+FB.eval('party')(FB.table_from([FB.table_from(["Brannoc", "WARRIOR"]), FB.table_from(["Iselle", "MAGE"])]))
+FB.execute('fire("GROUP_ROSTER_UPDATE"); advance(1)')
+FB.execute('WowCompanion.padMap.party.put("yc", 331); WowCompanion.padMap.party.put("touch", 8004); WowCompanion.padMap.party.put("x", false)')
+FB.execute('WowCompanionSpellsDB.smartOn = { ["Korvash-Realm"] = true }; WowCompanionSpellsDB.partyBy["Korvash-Realm"].buffs = { 131, 546 }')
+FB.execute('AURAS = { player = { "Water Breathing", "Water Walking" }, party2 = { "Water Breathing" } }')
+n0 = nsent(FB)
+FB.execute('fire("UNIT_AURA", "party2"); advance(1); WowCompanion.snapshot("manual")')
+keep("partycfg_full", FB, n0, 'partycfg')
+n0 = nsent(FB)
+FB.execute(tap_party(23) + '; NOW = NOW + 0.3')
+FB.execute(tap_party(33) + '; NOW = NOW + 0.3')
+keep("partyack_pb", FB, n0, 'partyack', 0)
+# the Controller room's Party tab (padtabctl): the A row's right page, the chooser "party", Y's page with Smart Y on (pright = Add),
+# the chooser "pbuff"
+FB.execute('local ctl = WowCompanion._spellsBook.ctl; ctl.croom, ctl.ctrlTab, ctl.onTabs = true, true, true; '
+           'WowCompanion.padTabCtl.enter("tabs"); WowCompanion.pad.rows.padtab.handler(nil, 26); NOW = NOW + 0.05')
+
+
+def pp(k):
+    FB.execute('WowCompanion.padTabCtl.press("%s")' % k)
+
+
+pp("PADDUP"); pp("PADDDOWN")                                              # the tab row, then the rows (A)
+n0 = nsent(FB); pp("PAD1"); keep("padtabctl_party_right", FB, n0, 'padtabctl')
+n0 = nsent(FB); pp("PAD1"); pp("PADDDOWN"); keep("padtabctl_party_chooser", FB, n0, 'padtabctl')
+pp("PAD2"); pp("PAD2"); pp("PADDDOWN"); pp("PADDDOWN")
+n0 = nsent(FB); pp("PAD1"); pp("PADDDOWN"); pp("PADDDOWN"); keep("padtabctl_party_y_add", FB, n0, 'padtabctl')
+n0 = nsent(FB); pp("PAD1"); keep("padtabctl_party_pbuff", FB, n0, 'padtabctl')
+FX2 = json.loads(FIX.get("padtabctl_party_y_add", "{}")).get('c', {})
+check(FX2.get('ppos') == 4 and FX2.get('pfocus') == 'right' and FX2.get('pright') == 2,
+      "the fixture's Y page: ppos 4, pfocus right, pright 2 (0-based: buff, buff, ADD)", {k: FX2.get(k) for k in ('ppos', 'pfocus', 'pright')})
+# the player menu for a party member (Quests q49)
+n0 = nsent(Q)
+Q.eval('WowCompanion.pmenu.read')("party2", "party")
+keep("pmenu_party2", Q, n0, 'pmenu')
+
+os.makedirs(FIXDIR, exist_ok=True)
+stale = []
+for name, text in sorted(FIX.items()):
+    fp = os.path.join(FIXDIR, name + ".json")
+    old = open(fp, encoding='utf-8').read() if os.path.isfile(fp) else None
+    if os.environ.get("PARTY_FIXTURES_WRITE") == "1":
+        with open(fp, 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(text)
+    elif old != text:
+        stale.append(name)
+check(not stale, "the committed fixtures equal what the add-on sends now (%d files; PARTY_FIXTURES_WRITE=1 rewrites)" % len(FIX), stale[:4])
 
 # ================================================================ THE NO-TRACE SCAN (new code only: the diff against the contract's base)
 import subprocess

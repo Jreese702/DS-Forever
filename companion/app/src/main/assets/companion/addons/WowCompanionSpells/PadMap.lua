@@ -4372,9 +4372,19 @@ local function partyMode()
     PM.KEYNAME = { [1] = "PADDLEFT", [2] = "PADDUP", [3] = "PADDRIGHT", [4] = "PADDDOWN", [5] = "PAD3", [6] = "PAD4", [7] = "PAD2", [8] = "PAD1" }
     PM.PAD, PM.TOGGLE, PM.ON, PM.OFF, PM.MDONE = "WowCompanionPartyPad", "WowCompanionPartyToggle", "WowCompanionPartyOn",
         "WowCompanionPartyOff", "WowCompanionPartyMenuDone"
-    -- THE ONE SWITCH (an open question; the lead's default: no): true = the add-on itself turns Party mode off when a room / a game
-    -- window takes the controller (out of combat); false = it is only SUSPENDED there (`aside`), and the app decides
-    PM.OFF_WHEN_ASIDE = false
+    -- THE ONE SWITCH (open question 4; THE USER'S RULING 2026-10-28: Party mode turns OFF when you leave Home - a room, or a Home
+    -- module full screen). true = the add-on itself turns Party mode off (out of combat) when a ROOM or a Home module full screen
+    -- holds the controller (any capture holder but Home's own pickers below, which close back to Home's rest page). A game window
+    -- with nobody holding only SUSPENDS it (`aside`): the app taps OFF itself when it leaves Home for that window. The app's tap of
+    -- party col 11 on leaving Home is the first word (it works in fights too); this is the backstop. false = suspended only
+    PM.OFF_WHEN_ASIDE = true
+    -- Home's own pickers: the bar cursor, the pause / consumables wheel, the class wheel, the track pad & keyboard (Quests' guests)
+    PM.HOME_GUESTS = { ["pad:bar"] = true, ["pad:radial"] = true, ["pad:class"] = true, ["pad:tool"] = true }
+    function PM.offAside()
+        local ok, st = pcall(function() return WC.capture.state() end)
+        local h = ok and type(st) == "table" and st.holder or nil
+        return type(h) == "string" and not PM.HOME_GUESTS[h]
+    end
 
     -- PARTY-NAV-BEGIN (pure; tools/test_party.py checks it against PARTY_BUILD.md 3.4 and against the PARTYPAD snippet's copy)
     -- the box's move: n members (1 = you), box = the boxed index, dir = "up" / "down" / "left" / "right"; -> the new index (= box: no move)
@@ -4687,8 +4697,8 @@ local function partyMode()
         PM.sel = PM.selWant(aside, fightStart)
         PM.fightBound = fightStart and true or nil
         if aside then
-            -- THE ONE SWITCH: suspended (the lead's default), or off for good (out of combat only)
-            if PM.OFF_WHEN_ASIDE and PM.on() and not fightStart and PM.set(nil) and PM.changed then pcall(PM.changed, "aside") end
+            -- THE ONE SWITCH (the user's ruling: on): a room / a Home module full screen turns it off (out of combat only); else suspended
+            if PM.OFF_WHEN_ASIDE and PM.on() and not fightStart and PM.offAside() and PM.set(nil) and PM.changed then pcall(PM.changed, "aside") end
             return
         end
         if PM.on() then

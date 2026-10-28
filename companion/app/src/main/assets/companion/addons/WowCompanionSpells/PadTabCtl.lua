@@ -133,7 +133,7 @@ local function report(note)
         carry = tc.carry and { set = tc.carry.set, pos = tc.carry.pos, page = tc.carry.page } or nil,
         rpage = tc.view == "radial" and tc.rpage or nil, rad = tc.view == "radial" and radialPage() or nil,
         form = tc.form ~= 0 and tc.form or nil, fcur = tc.view == "combat" and tc.fcur or nil,
-        ppos = tc.view == "party" and tc.ppos or nil, pright = tc.view == "party" and tc.pright or nil,
+        ppos = tc.view == "party" and tc.ppos or nil, pright = tc.view == "party" and (tc.pright - 1) or nil,   -- 0-based (the app's)
         pfocus = tc.view == "party" and (tc.focus == "pright" and "right" or "rows") or nil } }))
     WC.push()
 end
