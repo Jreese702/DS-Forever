@@ -17,6 +17,9 @@ object PartyModel {
     val SLOTS = listOf("a", "x", "zla", "zlx", "zly", "zra", "zrx", "zry")
     /** padtab pick k (1..10) -> the slot's name (section 2.3) */
     val PICKS = listOf("a", "x", "yc", "touch", "zla", "zlx", "zly", "zra", "zrx", "zry")
+    /** the Controller tab's chooser lists from the add-on (PadTabCtl p33 `padtabctl.chooser.list`): "party" = a slot's spell (row 1 =
+     *  the pseudo row Empty / Inspect / Target, then partycfg.spells), "pbuff" = Smart Y's Add (sy.known minus the list, no pseudo row) */
+    val CTL_LISTS = setOf("party", "pbuff")
 
     data class Member(
         val u: String, val i: Int, val n: String, val c: String, val col: String?, val role: String,
@@ -183,10 +186,31 @@ object PartyModel {
     val live = State()
 
     /**
-     * Open question 4's switch (the user's default 2026-10-28: Party mode does NOT turn off when you leave Home or open a Home module
-     * full screen; it is suspended by the add-on while a room holds). true = the contract's proposal: the app taps `off` first.
+     * Open question 4's switch. THE USER'S RULING (2026-10-28, applied at integration): Party mode TURNS OFF when you leave Home (a
+     * room opens, or a Home module goes full screen): the app taps party `off` (col 11, a secure click: in fights too) first, so the
+     * router releases the pad and Home is found with Party mode off. The add-on's PM.OFF_WHEN_ASIDE (true) is the backstop when a
+     * room / a full module holds the controller. false = suspended only (the add-on's `aside`), drawn as off.
      */
-    const val OFF_ON_LEAVE = false
+    const val OFF_ON_LEAVE = true
+
+    /** leaving Home's rest page: tap `off` when Party mode is ON at all (on, or on but suspended by an `aside`: off is absolute) */
+    fun offOnLeave(p: Party?): Boolean = OFF_ON_LEAVE && p?.on == true
+
+    /** Home's screen went from its rest page (no module full screen; a fight's takeover counts as rest) to a module full screen */
+    fun leftRest(wasFull: Boolean, nowFull: Boolean): Boolean = nowFull && !wasFull
+
+    /**
+     * A `partyack` the SETTINGS pages answer to (the Controller tab, Settings' Smart Y): `slot` / `yc` / `pb`, and `touch` when it
+     * names a slot (a Touch setting). Not `resend`, `cell` (a spare column) or a stale TSP tap (`touch` why `target`, no slot): those
+     * are logged only.
+     */
+    fun forSettings(a: Ack): Boolean = a.op == "slot" || a.op == "yc" || a.op == "pb" || (a.op == "touch" && a.slot != null)
+
+    /**
+     * The PartyPad's menu sub-state is on (`pm`) but the app has no player menu the pad drives (a lost `partybox k=menu`, an app
+     * restart, Home left): every press is swallowed as `key` until MENU DONE, so the app taps it (once per press counter).
+     */
+    fun strandedMenu(b: Box, padMenuOpen: Boolean): Boolean = b.pm && !padMenuOpen && (b.k == "key" || b.k == "state")
 
     /** why the app asks for a resend (1.1) */
     enum class Ask { FIRST_DOC, HOME_SHOWN, PARTY_ON }

@@ -1152,6 +1152,8 @@ class HomeView(
     var onPartyCell: ((Int) -> Unit)? = null
     var onPartyLong: ((Int) -> Unit)? = null
     var onPartyTag: (() -> Unit)? = null
+    /** a Home module went full screen (Home's rest page left): the host taps Party mode off (PartyModel.OFF_ON_LEAVE) */
+    var onPartyLeaveRest: (() -> Unit)? = null
 
     /** places [base] with the party module: it takes the top of the chat's place (under the card when the card is above chat) */
     private fun withParty(base: Map<Part, RectF>, s: HomeScreen, w: Float): Map<Part, RectF> {
@@ -1252,6 +1254,8 @@ class HomeView(
         val before = shown
         shown = s
         val open = s.full != null && !s.takeover
+        // PARTY MODE (the user's ruling): a Home module going full screen leaves Home's rest page: the host turns Party mode off
+        if (PartyModel.leftRest(before?.let { it.full != null && !it.takeover } ?: false, open)) onPartyLeaveRest?.invoke()
         // the full-screen chat is the real ChatView, lent only for as long as it shows
         val chatFull = s.full == HomeModule.CHAT && !s.takeover && lent(mapView)
         // THE CHAT MODULE WITH THE CONTROLLER (the user 2026-09-30: "the chat room, and the shortcut in the chat modual should function

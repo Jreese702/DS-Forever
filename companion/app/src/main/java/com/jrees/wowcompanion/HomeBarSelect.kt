@@ -116,12 +116,15 @@ class HomeBarSelect(
             if (col >= 0 && tap(interactPad ?: padSource(), listOf("iact" to col))) { selAskedAt = now; Log.i(TAG, "bar: sel on (iact $col)") }
             return
         }
-        if (msg.optJSONObject("sel")?.optBoolean("want") != true) { staleOffSent = false; return }
-        if (staleOffSent || selOffCol < 0) return
-        if (tap(interactPad ?: padSource(), listOf("iact" to selOffCol))) { staleOffSent = true; Log.i(TAG, "bar: a stale Select want: sel off (iact $selOffCol)") }
+        if (msg.optJSONObject("sel")?.optBoolean("want") != true) { staleOffAt = 0L; return }
+        // INTEGRATION: a `sel off` that did not take (a lost tap) would leave Interact's Select listener bound against Party mode's
+        // toggle: while the want stays, it is tapped again at most every ASK_EVERY
+        val now = SystemClock.uptimeMillis()
+        if (selOffCol < 0 || (staleOffAt != 0L && now - staleOffAt < ASK_EVERY)) return
+        if (tap(interactPad ?: padSource(), listOf("iact" to selOffCol))) { staleOffAt = now; Log.i(TAG, "bar: a stale Select want: sel off (iact $selOffCol)") }
     }
-    /** the one `sel off` for a stale want went out (again only after a document without the want) */
-    private var staleOffSent = false
+    /** when the last `sel off` for a stale want went out (0 = none since a document without the want) */
+    private var staleOffAt = 0L
 
     /** the last current interact document said the bar holds the capture ([holderAt] when it was read) */
     private var barHolds = false

@@ -57,7 +57,7 @@ class PartyTabPage(
         say(when (a.why) { "combat" -> "Not in a fight: try again after it"; null -> "The game did not take it"; else -> "The game did not take it" })
     }
 
-    fun chooserOpen(ctl: PadMapModel.Ctl?): Boolean = chooser != null || ctl?.chooser?.list == "party"
+    fun chooserOpen(ctl: PadMapModel.Ctl?): Boolean = chooser != null || ctl?.chooser?.list in PartyModel.CTL_LISTS
 
     // ------------------------------------------------------------------------------------------------ geometry
 
@@ -218,8 +218,8 @@ class PartyTabPage(
     private fun section(c: Canvas, s: String, y: Float) = c.drawText(s, 790f, y, UiKit.inkPaint(32f, heading = true))
 
     private fun drawRight(c: Canvas, w: Float, h: Float, ctl: PadMapModel.Ctl?, cfg: PartyModel.Cfg?, pos: Int) {
-        // the chooser (a finger's, or the controller's list "party") stands over the right page
-        val ctlCh = ctl?.chooser?.takeIf { it.list == "party" && ctl.on }
+        // the chooser (a finger's, or the controller's list "party" / "pbuff") stands over the right page
+        val ctlCh = ctl?.chooser?.takeIf { it.list in PartyModel.CTL_LISTS && ctl.on }
         if (chooser != null || ctlCh != null) { drawChooser(c, ctlCh, cfg); return }
         if (cfg == null) {
             c.drawText("Waiting for the game", 790f, 400f, UiKit.inkPaint(27f).apply { color = Theme.parchmentInkDim })
@@ -319,9 +319,11 @@ class PartyTabPage(
 
     private fun drawChooser(c: Canvas, ctlCh: PadMapModel.Chooser?, cfg: PartyModel.Cfg?) {
         val ch = chooser
-        val rows = ch?.rows ?: chooserRows(ctlSlot(), cfg)
+        // the controller's "pbuff" (Smart Y's Add, PadTabCtl p33): sy.known minus the list, no pseudo row; "party": the pseudo row first
+        val pbuff = ch == null && ctlCh?.list == "pbuff"
+        val rows = ch?.rows ?: chooserRows(if (pbuff) null else ctlSlot(), cfg)
         val sel = ch?.sel ?: ((ctlCh?.row ?: 1) - 1)
-        section(c, if (ch?.slot == null && ch != null) "Add a party buff" else "Change", 240f)
+        section(c, if ((ch?.slot == null && ch != null) || pbuff) "Add a party buff" else "Change", 240f)
         val fit = ((900f - CHOOSE_TOP) / CHOOSE_H).toInt()
         val first = (sel - fit + 1).coerceIn(0, maxOf(0, rows.size - fit))
         ch?.top = first
@@ -340,7 +342,7 @@ class PartyTabPage(
     private var lastCtl: PadMapModel.Ctl? = null
     private fun ctlSlot(): String? = lastCtl?.let { slotOf(it.ppos) }
 
-    fun onCtl(c: PadMapModel.Ctl) { lastCtl = c; if (c.chooser?.list == "party") chooser = null }
+    fun onCtl(c: PadMapModel.Ctl) { lastCtl = c; if (c.chooser?.list in PartyModel.CTL_LISTS) chooser = null }
 
     // ------------------------------------------------------------------------------------------------ touch
 
@@ -418,6 +420,7 @@ class PartyTabPage(
         const val CHOOSE_TOP = 280f
         const val CHOOSE_H = 96f
         const val ECHO_MS = 1500L
+
         /**
          * Open question 2's switch (the user's default 2026-10-28): with Smart Y on, Y's In-combat action is changed from a LAST ROW of
          * the right page ("In combat: <yc>") with the one red Change. false = no such row (Y's in-combat action only with Smart Y off).

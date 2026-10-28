@@ -574,6 +574,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         homeView.onStateChanged = { discB("Home's state") }
         homeView.onBHome = { strip.homePressed() }
         partyWire()
+        homeView.onPartyLeaveRest = { partyLeaveHome("a Home module full screen") }
         // Home's controller reader passes each held mask to Interact's pop-up while it shows: its Make Space ring follows the real A
         // press (display only; one getevent). In a room no reader of Home's runs: the ring falls back to Interact's document
         homeView.onPadHeldAny = { m ->
@@ -991,7 +992,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         flushBLeave()
         // PARTY MODE (1.1, 4.2): Home shown again re-asks the add-on's documents; leaving Home turns Party mode off only by the switch
         if (r == Room.HOME && room != Room.HOME) partyAsk(PartyModel.Ask.HOME_SHOWN)
-        if (r != Room.HOME && room == Room.HOME) partyLeaveHome()
+        if (r != Room.HOME && room == Room.HOME) partyLeaveHome("room $r")
         if (r == Room.HOME) ui.postDelayed({ newSpellAsk() }, 800L)          // f-new-spell-prompt: back Home, the next one
         // the pause menu never stays over a room change (a whisper's jump, a game window); its own picks run after it has folded
         if (::pauseView.isInitialized && pauseView.isOpen) pauseView.shut()
@@ -1285,20 +1286,32 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "key" -> if (menu.isOpen && menu.byPad) b.key?.let { menu.key(it) }
             "off" -> if (menu.isOpen && menu.byPad) menu.close()
         }
+        // the pad's menu sub-state with no menu of ours driving it (a lost k=menu, an app restart): MENU DONE frees the presses
+        if (PartyModel.strandedMenu(b, menu.isOpen && menu.byPad)) {
+            val sent = PartyTaps.menuDone(live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } } == true
+            Log.i("WCHOME", "party: the pad's menu sub-state with no menu here: menu done ${if (sent) "tapped" else "not sent"}")
+        }
         partyRedraw()
     }
 
     private fun partyAck(a: PartyModel.Ack) {
         Log.i("WCHOME", "party: ack ${a.op} ${if (a.ok) "ok" else "refused ${a.why ?: ""}"}")
+        // only a settings answer reaches the pages (op resend / cell / a stale touch tap are logged, never said)
+        if (!PartyModel.forSettings(a)) return
         controllerView.onPartyAck(a)
         settingsView.onPartyAck(a)
     }
 
-    /** leaving Home's rest page while Party mode is on: off first only by the switch (the user's default: it stays on, suspended) */
-    private fun partyLeaveHome() {
+    /**
+     * Leaving Home's rest page (a room opens, or a Home module goes full screen: [why]): THE USER'S RULING, Party mode turns OFF
+     * (PartyModel.OFF_ON_LEAVE). The party menu closes (MENU DONE when the pad's Y opened it), then party `off` (absolute, in fights
+     * too) so the router releases the pad; Home shown again finds it off (the add-on's party / partybox say so; the resend re-asks).
+     */
+    private fun partyLeaveHome(why: String) {
         if (homeView.partyMenu.isOpen) homeView.partyMenu.close()
-        if (!PartyModel.OFF_ON_LEAVE || PartyModel.live.party?.onLive != true) return
-        PartyTaps.off(PartyModel.live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } }
+        if (!PartyModel.offOnLeave(PartyModel.live.party)) return
+        val sent = PartyTaps.off(PartyModel.live.cfg)?.let { TapBridge.taps(this, questsPad, it) { w -> Log.i("WCHOME", "party: off not sent: $w") } } == true
+        Log.i("WCHOME", "party: left Home ($why): off ${if (sent) "tapped" else "not sent"}")
     }
 
     /**
