@@ -266,7 +266,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.CLASS_LEFT, SettingsTabs.Block.CLASS_RIGHT -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.CHAT -> 16f + ROW_H
         SettingsTabs.Block.FRAMES -> 16f + fgHeight()
-        SettingsTabs.Block.SMART_Y -> sbLines().size.let { n -> 16f + n * ROW_H + (n - 1) * 10f }
+        SettingsTabs.Block.SMART_Y -> sbLines().size.let { n -> 16f + n * ROW_H + (n - 1) * 10f } + pbHeight()
         else -> SettingsTabs.addonOf(b)?.let { a -> val n = addonRows(a); 16f + n * ROW_H + (n - 1) * 10f } ?: 0f
     }
 
@@ -840,6 +840,102 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 }
             }
         }
+        if (pbShown()) return drawPartyBuffs(c, y + ROW_H)
+        return y + ROW_H
+    }
+
+    // ---- PARTY MODE'S SUB-SECTION (PARTY_BUILD.md 4.5; P5): only while Smart Y is on and the add-on sends partycfg. The list shown is
+    // always partycfg.sy.list (the add-on keeps it per character); a row is SELECTED by a press, its Up / Down / Remove on the line under
+    // it; every change is ONE batch on the party row (PartyTaps); the answer is partyack op "pb".
+    private var pbSel: Int? = null
+    private var pbChoose = false
+    private var pbNote: String? = null
+
+    /** Party mode's documents changed: the sub-section follows */
+    fun partyChanged() { if (pbShown() || pbSel != null) { requestLayout(); invalidate() } }
+    fun onPartyAck(a: PartyModel.Ack) {
+        if (a.op != "pb") return
+        pbNote = if (a.ok) null else if (a.why == "combat") "Not in a fight: try again after it." else "The game did not take it."
+        invalidate()
+    }
+
+    private fun pbShown(): Boolean = smartDoc()?.let { SmartYModel.rowsShown(it) } == true && PartyModel.live.cfg != null
+
+    /** the sub-section's rows: a list row's index, "act" under the selected one, "add"; while choosing: the buffs to add, "cancel" */
+    private fun pbLines(): List<Any> {
+        if (!pbShown()) return emptyList()
+        val cfg = PartyModel.live.cfg ?: return emptyList()
+        val out = ArrayList<Any>()
+        for (k in cfg.sy.list.indices) { out += k; if (pbSel == k && !pbChoose) out += "act" }
+        if (!pbChoose) { out += "add"; return out }
+        out.addAll(cfg.sy.known.filter { k -> cfg.sy.list.none { it.id == k.id } })
+        out += "cancel"
+        return out
+    }
+
+    private fun pbHeight(): Float = pbLines().size.let { n -> if (n == 0) 0f else PB_HEAD + n * ROW_H + (n - 1) * 10f }
+
+    private fun pbSend(taps: List<Pair<String, Int>>?, done: String) {
+        pbNote = when {
+            taps == null -> "Not on the tap pad yet."
+            smartTaps(taps) -> done
+            else -> "Nothing was sent: the game is not live."
+        }
+        pbSel = null; pbChoose = false
+    }
+
+    private fun drawPartyBuffs(c: Canvas, top: Float): Float {
+        val cfg = PartyModel.live.cfg ?: return top
+        // the sub-heading (Morpheus 27 gold) and its one line (Friz 22 dim), then the rows
+        c.drawText("Party mode (the boxed member)", 28f, top + 46f, UiKit.titlePaint(27f, Theme.gold))
+        c.drawText("Out of combat, on the boxed member.", 28f, top + 76f, UiKit.bodyPaint(22f, Theme.textDim))
+        var y = top + PB_HEAD
+        for ((i, line) in pbLines().withIndex()) {
+            if (i > 0) y += ROW_H + 10f
+            val box = RectF(16f, y, width - 16f, y + ROW_H)
+            when {
+                line is Int -> {
+                    val b = cfg.sy.list.getOrNull(line) ?: continue
+                    if (pbSel == line) UiKit.selectedRow(c, box)
+                    row(c, y, "${line + 1}. ${b.n}", "Cast on the boxed member when it is not up.", enabled = b.k) {
+                        RectF(it.right - 16f, it.top, it.right - 16f, it.bottom) }
+                    sbHits += RectF(box) to { pbSel = if (pbSel == line) null else line; pbChoose = false; pbNote = null }
+                }
+                line == "act" -> {
+                    val k = pbSel ?: continue
+                    val acts = ArrayList<Pair<String, () -> Unit>>()
+                    if (k > 0) acts += "Up" to { pbSend(PartyTaps.pbOp(cfg, k + 1, PartyTaps.PbOp.UP), "Moved up.") }
+                    if (k < cfg.sy.list.size - 1) acts += "Down" to { pbSend(PartyTaps.pbOp(cfg, k + 1, PartyTaps.PbOp.DOWN), "Moved down.") }
+                    acts += "Remove" to { pbSend(PartyTaps.pbOp(cfg, k + 1, PartyTaps.PbOp.REMOVE), "Removed.") }
+                    pFill.color = Theme.raised; c.drawRoundRect(box, 8f, 8f, pFill)
+                    pLabel.color = Theme.textDim
+                    c.drawText("Row ${k + 1}:", box.left + 22f, box.centerY() + 10f, pLabel)
+                    val bw = 150f
+                    var x = box.right - 16f - bw * acts.size
+                    for ((label, act) in acts) { sbButton(c, RectF(x, box.centerY() - 30f, x + bw - 6f, box.centerY() + 30f), label, act); x += bw }
+                }
+                line == "add" -> {
+                    val full = cfg.sy.list.size >= 8
+                    val none = cfg.sy.known.none { k -> cfg.sy.list.none { it.id == k.id } }
+                    row(c, y, "Add a party buff", pbNote ?: if (full) "8 at most." else "One of your buffs you can cast on others.",
+                        enabled = !full && !none) { b ->
+                        val bb = RectF(b.right - 16f - 150f, b.centerY() - 30f, b.right - 16f, b.centerY() + 30f)
+                        if (!full && !none) sbButton(c, bb, "Add") { pbChoose = true; pbNote = null }
+                        bb
+                    }
+                }
+                line is PartyModel.Spell -> row(c, y, line.n, "", enabled = true) { bx ->
+                    val bb = RectF(bx.right - 16f - 150f, bx.centerY() - 30f, bx.right - 16f, bx.centerY() + 30f)
+                    sbButton(c, bb, "Pick") { pbSend(PartyTaps.pbAdd(cfg, smartSpellCells(line.n)), "Added.") }
+                    bb
+                }
+                line == "cancel" -> row(c, y, "Cancel", "", enabled = true) { b ->
+                    val bb = RectF(b.right - 16f - 150f, b.centerY() - 30f, b.right - 16f, b.centerY() + 30f)
+                    sbButton(c, bb, "Cancel") { pbChoose = false }
+                    bb
+                }
+            }
+        }
         return y + ROW_H
     }
 
@@ -1087,6 +1183,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     // sat cut off at the bottom looking like a layout bug. At 96 it all fits (~960); the scrolling
     // stays for whatever section comes next.
     private val ROW_H = 96f
+    /** Party mode's sub-section: from the last Smart Y row's foot to its first row (the heading and its line between; P5) */
+    private val PB_HEAD = 88f
 
     /** a labelled row; [control] draws the right-hand control and returns its hit box */
     private fun row(c: Canvas, top: Float, label: String, sub: String, enabled: Boolean,

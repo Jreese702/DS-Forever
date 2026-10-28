@@ -1,0 +1,85 @@
+package com.jrees.wowcompanion
+
+/**
+ * PARTY MODE'S TAPS (PARTY_BUILD.md 2.2-2.4): the cells of every action, from `partycfg.pad` only (never a constant of the app's).
+ * Each function returns ONE batch for TapBridge.taps, or null when a column (or the cfg) is missing: that action is unavailable.
+ * Pure, JVM-tested (PartyTapsTest). `i` = the member's unit index (0 = player, 1..4 = partyN).
+ */
+typealias PartyCells = List<Pair<String, Int>>
+
+object PartyTaps {
+
+
+    private fun at(row: String?, col: Int?, plus: Int = 0): Pair<String, Int>? =
+        if (row == null || col == null) null else row to (col + plus)
+
+    private fun one(c: Pair<String, Int>?): PartyCells? = c?.let { listOf(it) }
+
+    /** a TAP on a cell: Target (touch null) = `tgt + i`, else the touch spell = `tsp + i` */
+    fun touch(cfg: PartyModel.Cfg?, i: Int): PartyCells? {
+        val p = cfg?.pad ?: return null
+        if (i !in 0..4) return null
+        return one(if (cfg.touch == null) at(p.row, p.tgt, i) else at(p.row, p.tsp, i))
+    }
+
+    /** the (-) tag: Party mode ON (absolute) */
+    fun on(cfg: PartyModel.Cfg?): PartyCells? = cfg?.pad?.let { one(at(it.row, it.on)) }
+    /** Home's red disc / leaving Home: Party mode OFF (absolute) */
+    fun off(cfg: PartyModel.Cfg?): PartyCells? = cfg?.pad?.let { one(at(it.row, it.off)) }
+    /** a LONG PRESS: read the player menu for member [i] */
+    fun menu(cfg: PartyModel.Cfg?, i: Int): PartyCells? = if (i !in 0..4) null else cfg?.pad?.let { one(at(it.row, it.menu, i)) }
+    /** the player menu's Set Focus on member [i] */
+    fun focus(cfg: PartyModel.Cfg?, i: Int): PartyCells? = if (i !in 0..4) null else cfg?.pad?.let { one(at(it.row, it.focus, i)) }
+    /** RESEND: partycfg + party + partybox{k=state} */
+    fun resend(cfg: PartyModel.Cfg?): PartyCells? = cfg?.pad?.let { one(at(it.row, it.resend)) }
+    /** the player menu closed (only when the PartyPad opened it: partybox.pm) */
+    fun menuDone(cfg: PartyModel.Cfg?): PartyCells? = cfg?.pad?.let { one(at(it.row, it.mdone)) }
+
+    enum class PbOp { REMOVE, UP, DOWN }
+
+    /** Smart Y's party list: select row [k] (1..8) then [op], ONE batch */
+    fun pbOp(cfg: PartyModel.Cfg?, k: Int, op: PbOp): PartyCells? {
+        val p = cfg?.pad ?: return null
+        if (k !in 1..8) return null
+        val sel = at(p.row, p.pbsel, k - 1) ?: return null
+        val col = when (op) { PbOp.REMOVE -> p.pbRemove; PbOp.UP -> p.pbUp; PbOp.DOWN -> p.pbDown }
+        val act = at(p.row, col) ?: return null
+        return listOf(sel, act)
+    }
+
+    /** Smart Y's party list: Add = the fresh add pick, then the spell's two Book taps, ONE batch */
+    fun pbAdd(cfg: PartyModel.Cfg?, spellCells: PartyCells?): PartyCells? {
+        val p = cfg?.pad ?: return null
+        if (spellCells.isNullOrEmpty()) return null
+        val add = at(p.row, p.pbAdd) ?: return null
+        return listOf(add) + spellCells
+    }
+
+    // ------------------------------------------------------------------------------------------------ the Controller room's tab
+
+    /** the Party mode tab (padtab 26) */
+    fun tab(cfg: PartyModel.Cfg?): PartyCells? = cfg?.pad?.let { one(at(it.tabRow, it.tab)) }
+
+    /** pick [slot] ("a", "x", "yc", "touch", "zla" .. "zry") alone: padtab slot0 + k - 1 (it also moves the tab's cursor) */
+    fun pick(cfg: PartyModel.Cfg?, slot: String): PartyCells? {
+        val p = cfg?.pad ?: return null
+        val k = PartyModel.PICKS.indexOf(slot) + 1
+        if (k <= 0) return null
+        return one(at(p.tabRow, p.slot0, k - 1))
+    }
+
+    /** [slot] gets its no-spell value (Empty; Inspect for yc; Target for touch): the pick, then padtab none */
+    fun setNone(cfg: PartyModel.Cfg?, slot: String): PartyCells? {
+        val pk = pick(cfg, slot) ?: return null
+        val none = at(cfg?.pad?.tabRow, cfg?.pad?.none) ?: return null
+        return pk + none
+    }
+
+    /** [slot] gets a spell: the pick, then Book's two taps for it; a spell not in `partycfg.spells` is refused (null) */
+    fun setSpell(cfg: PartyModel.Cfg?, slot: String, spellId: Int, spellCells: PartyCells?): PartyCells? {
+        if (cfg == null || cfg.spells.none { it.id == spellId }) return null
+        if (spellCells.isNullOrEmpty()) return null
+        val pk = pick(cfg, slot) ?: return null
+        return pk + spellCells
+    }
+}

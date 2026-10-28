@@ -94,6 +94,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         var kitScale = 0.62f       // ... its size inside the slot
         var wheel = false          // the D-pad toolbar's consumables radial: a mini radial wheel
         var kitCut = false         // draw only the swirl cut out of the kit picture (the Home tile)
+        var kitRot = 0f            // Party mode: the kit picture turned (the gold arrow up / down)
+        var drawAlpha = 255        // Party mode: the whole slot faded (an Empty place: the ring alone at 45 %)
+        var kitAlpha = 255         // Party mode: the kit picture alone faded (an arrow the box cannot take: 28 %)
+        var noBadge = false        // Party mode: the D-pad slots are emptied (no glyph badge, no toolbar mark)
         var bmp: Bitmap? = null
         var shader: BitmapShader? = null
         val empty get() = k.isEmpty()
@@ -243,6 +247,105 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     var fightFaceOn = false
         set(v) { if (field != v) { field = v; invalidate() } }
     private val fightBtns = arrayOfNulls<Btn>(8)
+
+    // =================================================================== PARTY MODE'S STRIP (PARTY_BUILD.md 4.3)
+
+    /**
+     * Home sets this while Party mode is on and routing (at rest, and in a fight: there is no takeover then). Off = today's strip,
+     * untouched. The pictures come from [PartyStrip] over [PartyModel.live]; the held trigger from this view's own reader (padLt / padRt).
+     */
+    var partyStrip = false
+        set(v) { if (field != v) { field = v; partyBtns.clear(); invalidate() } }
+    /** the trigger plates' top in this view's px (Home: frame y 124 less the band's own top) */
+    var partyPlateTop = 116f
+        set(v) { if (field != v) { field = v; invalidate() } }
+    /** Home's fight state for the strip's Y (the in-combat action only shows in a fight) */
+    var partyFight = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+    private val partyBtns = HashMap<String, Btn>()
+
+    /** something Party mode draws changed (a cfg, the box, a roster): the strip redraws */
+    fun partyChanged() { if (partyStrip) invalidate() }
+
+    private fun partyOverride(h: Hud, src: Int): Btn? {
+        if (!partyStrip) return null
+        val live = PartyModel.live
+        val party = live.party
+        val cfg = live.cfg
+        if (src < 4) {
+            // the D-pad: emptied, the game's gold arrow inside, a direction the box cannot go dimmed to 28 %
+            val dir = when (src) { 0 -> PartyModel.Dir.LEFT; 1 -> PartyModel.Dir.UP; 2 -> PartyModel.Dir.RIGHT; else -> PartyModel.Dir.DOWN }
+            val lit = PartyStrip.arrows(party?.n ?: 1, live.box)[dir] == true
+            return partyBtns.getOrPut("d$src$lit") {
+                Btn().apply {
+                    p = src + 1; k = "fixed"; e = true
+                    kit = if (src == 0) "move_arrow_left" else "move_arrow_right"
+                    kitRot = when (src) { 1 -> -90f; 3 -> 90f; else -> 0f }
+                    kitScale = 0.66f; noBadge = true
+                    kitAlpha = if (lit) 255 else (255 * 0.28f).toInt()
+                }
+            }
+        }
+        val face = when (src) { 4 -> "x"; 5 -> "y"; 6 -> "b"; else -> "a" }
+        val pic = PartyStrip.face(face, PartyStrip.layer(padLt, padRt), cfg, party, live.box, partyFight)
+        return when (pic.kind) {
+            // the game's own Y (Inspect) and its red Back: the game's base buttons, whatever layer is held
+            PartyStrip.Kind.INSPECT, PartyStrip.Kind.BACK -> h.layers[N][src] ?: partyBtns.getOrPut("f$src") {
+                Btn().apply { p = src + 1; k = "fixed"; e = true; fx = if (pic.kind == PartyStrip.Kind.BACK) "back" else "inspect"; classify(this) }
+            }
+            PartyStrip.Kind.EMPTY -> partyBtns.getOrPut("e$src") { Btn().apply { p = src + 1; k = ""; e = true; drawAlpha = (255 * 0.45f).toInt() } }
+            PartyStrip.Kind.SPELL, PartyStrip.Kind.SMART -> {
+                val s = pic.spell!!
+                val b = partyBtns.getOrPut("s$src:${s.i}:${pic.lit}") {
+                    Btn().apply { p = src + 1; k = "spell"; id = s.id; icon = s.i; e = true; classify(this); unable = !pic.lit }
+                }
+                if (b.icon > 0 && b.shader == null) resolve(b, true)
+                b
+            }
+        }
+    }
+
+    private val platePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val plateRect = RectF()
+    private val plateMatrix = android.graphics.Matrix()
+
+    /** the ZL / ZR plates (v13): 126 x 78 in Home's well look, the trigger's glyph 50 px 34 in, the chord spells 30 px round, 33 apart */
+    private fun drawPartyPlates(c: Canvas) {
+        val ps = width / FRAME_W
+        val cfg = PartyModel.live.cfg
+        for (left in booleanArrayOf(true, false)) {
+            val l = if (left) 14f * ps else width - 140f * ps
+            plateRect.set(l, partyPlateTop, l + 126f * ps, partyPlateTop + 78f * ps)
+            val lit = PartyStrip.plateLit(left, padLt, padRt)
+            UiKit.module(c, plateRect, scale = ps)
+            if (lit) {
+                platePaint.style = Paint.Style.FILL; platePaint.color = UiKit.SOFT_GOLD; platePaint.alpha = 120
+                platePaint.maskFilter = android.graphics.BlurMaskFilter(6f * ps, android.graphics.BlurMaskFilter.Blur.NORMAL)
+                c.drawRoundRect(plateRect.left + 6f * ps, plateRect.top + 6f * ps, plateRect.right - 6f * ps, plateRect.bottom - 6f * ps,
+                    8f * ps, 8f * ps, platePaint)
+                platePaint.maskFilter = null; platePaint.alpha = 255
+            }
+            UiKit.pad(c, "${padSet()}_${if (left) "ltrigger" else "rtrigger"}", plateRect.left + 34f * ps, plateRect.centerY(), 50f * ps)
+            for ((i, s) in PartyStrip.plateIcons(cfg, left).withIndex()) {
+                val r = 15f * ps
+                val cx = plateRect.left + 66f * ps + r + 33f * ps * i
+                val cy = plateRect.centerY()
+                val bmp = Icons.get(s.i)
+                if (bmp != null) {
+                    val sh = BitmapShader(bmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+                    plateMatrix.setScale(2f * r / bmp.width, 2f * r / bmp.height); plateMatrix.postTranslate(cx - r, cy - r)
+                    sh.setLocalMatrix(plateMatrix)
+                    platePaint.style = Paint.Style.FILL; platePaint.shader = sh
+                    platePaint.alpha = if (s.k) 255 else 130
+                    c.drawCircle(cx, cy, r, platePaint)
+                    platePaint.shader = null; platePaint.alpha = 255
+                } else {
+                    platePaint.style = Paint.Style.FILL; platePaint.color = Color.rgb(60, 52, 40)
+                    c.drawCircle(cx, cy, r, platePaint)
+                }
+            }
+        }
+    }
 
     /**
      * THE ROOM BAR on the D-pad (user 2026-10-02: "I want this to work just like the in combat bar, and have its own group
@@ -1994,7 +2097,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 val ar = bmp.width.toFloat() / bmp.height
                 val hw = if (ar >= 1f) hs else hs * ar; val hh = if (ar >= 1f) hs / ar else hs
                 rect.set(cx - hw, cy - hh, cx + hw, cy + hh)
+                if (b.kitRot != 0f) { c.save(); c.rotate(b.kitRot, cx, cy) }
+                val pa = pArt.alpha
+                if (b.kitAlpha < 255) pArt.alpha = b.kitAlpha
                 c.drawBitmap(bmp, null, rect, pArt)
+                pArt.alpha = pa
+                if (b.kitRot != 0f) c.restore()
             }
         }
 
@@ -2067,7 +2175,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val gy = cy - (if (circle) 8.5f else 11.5f) * k
         val outOfRange = st != null && st.r == 0 && !empty
         // a collapsed bar hides its prompts (mainactionbarframe.lua HideButtonIcons)
-        if (!(drawCollapsed && keyText == null)) drawGlyphBadge(c, gx, gy, pos, keyText, outOfRange, pressed)
+        if (!(drawCollapsed && keyText == null) && b?.noBadge != true) drawGlyphBadge(c, gx, gy, pos, keyText, outOfRange, pressed)
         // the companion mark: a small gold "two screens" tag in the lower-left corner (the slot drives the bottom screen)
         if (b != null && b.ds) drawDsMark(c, cx - iconHalf * 0.62f, cy + iconHalf * 0.62f, iconHalf * 0.34f)
         return next
@@ -2519,7 +2627,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         for (pos in 0 until 8) {
             val src = srcOf[pos]
             // in a fight a D-pad In-combat spell beats DS Forever's layout picture (that press casts it)
-            val fb = dpadFightOverride(li, src) ?: roomOverride(li, src) ?: fightOverride(li, src) ?: commandOverride(li, src) ?: fishOverride(li, src)
+            // PARTY MODE first (PARTY_BUILD.md 4.3): its pictures beat every other override while it is on
+            val fb = partyOverride(h, src) ?: dpadFightOverride(li, src) ?: roomOverride(li, src) ?: fightOverride(li, src) ?: commandOverride(li, src) ?: fishOverride(li, src)
             if (fb != null && fb.icon > 0 && fb.shader == null) resolve(fb, pos >= 4)   // built now, at this frame's scale
             val b = fb ?: h.layers[li][src]
             val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else fightStateOf(fb, src)
@@ -2530,13 +2639,14 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             bandSlot(pos, bandBox)
             val circle = pos >= 4
             val scale = bandBox[2] / ((if (circle) 38f else 40f) * k)
-            c.save()
+            val slotSave = c.save()
             c.translate(bandBox[0], bandBox[1])
             c.scale(scale, scale)
+            if (fb != null && fb.drawAlpha < 255) c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, fb.drawAlpha)
             next = min(next, drawSlot(c, pos, 0f, 0f, circle, b, st,
                 if (li < STATE_LAYERS) li * 8 + src else -1, now, pressed, flash, null,
                 if (fb != null && fb.k == "spell") fightCdLeft(src, now) else -1f))
-            c.restore()
+            c.restoreToCount(slotSave)
         }
         val t = bandT()
         val sx = bandScale(); val xo = bandXo(); val yo = bandYo()
@@ -2561,7 +2671,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 }
             } else drawPlate(c, h, side, xo + (left + wFrame / 2f) * sx, yo + (cyFrame - top) * sx, wFrame * sx / 39f)
         }
-        if (triggerStrip && layout == Layout.DIAMONDS) next = min(next, drawTriggerStrip(c, now))
+        // Party mode: the ZL / ZR trigger PLATES (v13) in place of today's trigger words
+        if (partyStrip && layout == Layout.DIAMONDS) drawPartyPlates(c)
+        else if (triggerStrip && layout == Layout.DIAMONDS) next = min(next, drawTriggerStrip(c, now))
         if (bottomLine) next = min(next, drawSwingLine(c, now))
         val focusLeft = FOCUS_MS - (now - focusAtMs)
         if (focusLeft > 0 || flashing) next = 0

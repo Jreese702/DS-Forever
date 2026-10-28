@@ -663,3 +663,48 @@ no-trace scan). Where the contract could not be followed to the letter, the clos
 Known limits (by the contract, recorded): a fight that STARTS with Party mode off keeps an m34 D-pad binding (set 1) on its key for
 that fight, so switching Party mode on mid-fight leaves that one direction the binding's. TapPad's repeat guard (0.25 s) swallows the
 same party cell tapped twice within 0.25 s: one op per batch, or `tapsSpaced`.
+
+## APP DEVIATIONS (the APP worker, branch `feat/party-app`, 2026-10-28)
+
+Documents, fields, pad11 columns and file ownership are unchanged. What the app does differently from the letter of this file, and why:
+
+1. The user's defaults for the open questions, each one switch in code: Q2 `PartyTabPage.YC_ROW_IN_SMART_Y = true` (with Smart Y on,
+   the Y right page ends with a row "In combat: <yc>"; its one red Change sets `yc`); Q4 `PartyModel.OFF_ON_LEAVE = false` (leaving
+   Home or opening a Home module full screen does NOT tap `off`; the add-on's `aside` suspends Party mode, drawn as off); Q7 2-4 members
+   in a fight use the 150 px rows (as 4.2); Q8 `PartyArt` (in PartyModuleView.kt) draws plain fills, a drawn skull, a drawn gauntlet
+   and a drawn target ring until `UiKit.tex` has the kit pieces.
+2. The (-) tag in a fight: 208 x 42 with its foot 20 under the well's top edge, so x 392..600, y 376..418 (4.2's "378..418" is 40 high).
+3. The module's top is Home's real left-column top (`barsBottom + MODULE_GAP`, or under the card when the card is above chat), not a
+   fixed 216 / 398: on the device those are the numbers; the rows, gaps and sizes are 4.2's exactly (PartyLayoutTest).
+4. The module appears once a `party` document has come (shown from a replay too). An older add-on sends none: no module, no crash.
+5. In a fight with Party mode on, the 150 px rows follow Home's own fight read (`HomeGrow.fighting`: quests `cb` / `hudS.c`), the same
+   read that drives the takeover, not `party.fight`.
+6. The resend (col 22) is tapped only with a known `partycfg.pad.resend` (a replayed partycfg counts for the column); before any
+   partycfg the first-document ask waits for one (the heartbeat ride brings it within 15 s) instead of tapping a constant.
+7. PlayerMenu: no new `Do` subclass (MapView, read-only, has an exhaustive `when` on `PlayerMenu.Do`). `ap = "whisper"` rides
+   `Do.Run(id, text, app)` (id -1 = nothing to tap); `Do.Secure(col, text, row)` with row defaulting to "pfocus". Whisper also opens the
+   Chat room with `chatView.whisperTo(nm)` (as Social's Whisper), besides Quests' `WC.chatLastTell`. Inspect is greyed by the app when an
+   item's `k` (or text) is "Inspect" / "InspectUnit", on top of what the game greys.
+8. The Controller tab's tab tap uses `partycfg.pad.ptab.tab` when a partycfg came, else `PadMapModel.COL_PARTY_TAB` (26, Book b47):
+   the tab row exists before any partycfg. `padtabctl.tcur` is read 1..5.
+9. The Controller tab by touch: the app shows its own chooser on the right page (the pseudo row first, then `partycfg.spells`; for
+   Smart Y's Add: `sy.known` minus the list) and taps `padtab` pick + 37, pick + Book's two taps, or the party row's Add / Remove. The
+   controller's chooser (`chooser.list == "party"`, `row` 1-based, row 1 = the pseudo row) is drawn from `padtabctl` with the same rows.
+10. The five tabs' labels are fitted by ControllerView (drawn over `UiKit.tab` with an empty label: UiKit is read-only); the tab row now
+    runs from the screen edges (it keeps its own L / R room).
+11. Settings' sub-heading keeps ONE short line ("Out of combat, on the boxed member.") instead of P5's sentence (the terse-text rule).
+12. The strip: an Empty face = the slot at 45 %; a not-lit spell = the slot's faded (`unable`) look; the trigger plates are drawn only in
+    the diamonds band (Home's default rest look); the arrows / faces follow in the thin-row look too. An offline member's whole cell is
+    drawn at 50 % with "Offline" for the %.
+13. HomeBarSelect: a stale `sel.want` gets one `sel off`, armed again after a document without the want (`SELECT_RETIRED`).
+14. The party menu closes when Home is left (with MENU DONE when the PartyPad's Y opened it), and when its member leaves the group.
+
+For the ADD-ON worker: the app reads `padtabctl.c.view == "party"`, `ppos` (1..12, 4.4's numbering), `pfocus` ("rows" / "right"),
+`pright` (0-based: the buff rows, then the Add row, then the In combat row while Smart Y is on), `chooser.list == "party"`; `partybox`
+`k = "menu"` opens the menu for `u`, `k = "key"` with `key` = PADDUP / PADDDOWN / PADDLEFT / PADDRIGHT / PAD1 / PAD2 drives it while
+`pm`, `k = "off"` closes it; `pmenu` with `src = "party"`, `nm`, items' `k`, `sc` + `scr`, `ap`. Every app tap's column is read from
+`partycfg.pad` except the tab fallback above.
+
+Render check (no device): `app/src/test/java/com/jrees/wowcompanion/PartyShotsTest.kt` (Robolectric native graphics), run only with
+`PARTY_SHOTS_DIR` set (and `PARTY_ART_ROOT` = an art root such as a release export's `runtime`): the module's states, the strip, the
+player menu and the Controller tab at real size. Home's other modules and the Settings sub-section are not drawn by it.
