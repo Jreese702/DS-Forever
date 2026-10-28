@@ -90,7 +90,11 @@ class HomeBarSelect(
 
     // ---------------------------------------------------------------- capture v5: Select reaches the app
 
-    /** a CURRENT interact document: keep the capture's Select listener wanted (one `sel on` tap, again at most every 10 s) */
+    /**
+     * A CURRENT interact document. PARTY MODE (PARTY_BUILD.md 4.7; the user's ruling: the bar selector RETIRES, Select is Party mode's):
+     * the app never asks for the capture's Select listener again (no `sel on`); a document that still says `sel.want` (a stale want,
+     * from an older app) gets ONE `sel off`, as [appAway] does. Was: one `sel on` tap, again at most every 10 s.
+     */
     fun onInteract(msg: JSONObject) {
         // not every interact document carries the pad: the last one seen, else the quests documents' (the same shared grid)
         msg.optJSONObject("pad")?.let { interactPad = it }
@@ -104,12 +108,20 @@ class HomeBarSelect(
         }
         val selc = msg.optJSONObject("proof")?.optJSONObject("selc") ?: return
         selOffCol = selc.optInt("off", -1)
-        if (msg.optJSONObject("sel")?.optBoolean("want") == true) return
-        val now = SystemClock.uptimeMillis()
-        if (selAskedAt != 0L && now - selAskedAt < ASK_EVERY) return
-        val col = selc.optInt("on", -1)
-        if (col >= 0 && tap(interactPad ?: padSource(), listOf("iact" to col))) { selAskedAt = now; Log.i(TAG, "bar: sel on (iact $col)") }
+        if (!SELECT_RETIRED) {
+            if (msg.optJSONObject("sel")?.optBoolean("want") == true) return
+            val now = SystemClock.uptimeMillis()
+            if (selAskedAt != 0L && now - selAskedAt < ASK_EVERY) return
+            val col = selc.optInt("on", -1)
+            if (col >= 0 && tap(interactPad ?: padSource(), listOf("iact" to col))) { selAskedAt = now; Log.i(TAG, "bar: sel on (iact $col)") }
+            return
+        }
+        if (msg.optJSONObject("sel")?.optBoolean("want") != true) { staleOffSent = false; return }
+        if (staleOffSent || selOffCol < 0) return
+        if (tap(interactPad ?: padSource(), listOf("iact" to selOffCol))) { staleOffSent = true; Log.i(TAG, "bar: a stale Select want: sel off (iact $selOffCol)") }
     }
+    /** the one `sel off` for a stale want went out (again only after a document without the want) */
+    private var staleOffSent = false
 
     /** the last current interact document said the bar holds the capture ([holderAt] when it was read) */
     private var barHolds = false
@@ -555,6 +567,8 @@ class HomeBarSelect(
         const val ID = "bar"
         const val TAG = HomeView.TAG
         private const val ASK_EVERY = 10_000L
+        /** PARTY MODE (PARTY_BUILD.md 4.7): the bar selector no longer asks for Select (Party mode owns it) */
+        const val SELECT_RETIRED = true
         private const val HOLD_WAIT = 3_000L
         /** a hold normally answers in 0.15-0.35 s (measured): unanswered this long, it is asked again, at most HOLD_TRIES more times */
         private const val HOLD_RETRY = 450L
