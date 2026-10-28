@@ -1307,6 +1307,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * (PartyModel.OFF_ON_LEAVE). The party menu closes (MENU DONE when the pad's Y opened it), then party `off` (absolute, in fights
      * too) so the router releases the pad; Home shown again finds it off (the add-on's party / partybox say so; the resend re-asks).
      */
+    /** the capture's holder (a current interact document): a taker while Party mode is on -> off (PartyModel.State.takerSeen) */
+    private fun partyTaker(holder: String) {
+        if (!PartyModel.live.takerSeen(holder, SystemClock.uptimeMillis())) return
+        if (homeView.partyMenu.isOpen) homeView.partyMenu.close()
+        val sent = PartyTaps.off(PartyModel.live.cfg)?.let { TapBridge.taps(this, questsPad, it) { w -> Log.i("WCHOME", "party: off not sent: $w") } } == true
+        Log.i("WCHOME", "party: $holder took the controller: off ${if (sent) "tapped" else "not sent"}")
+    }
+
     private fun partyLeaveHome(why: String) {
         if (homeView.partyMenu.isOpen) homeView.partyMenu.close()
         if (!PartyModel.offOnLeave(PartyModel.live.party)) return
@@ -1901,6 +1909,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "auraack" -> homeView.auraAck(msg)
             "interact" -> {
                 interactView.update(msg, current)
+                // PARTY MODE (the user's ruling): anything that takes the controller ends it - in fights too (the app's tap is the route)
+                if (current) partyTaker(msg.optString("holder", ""))
                 // Home > Settings' loot window row (r-loot-on-top): the add-on's word; a replayed document only draws
                 if (current) HomeLootSwitch.note(msg)
                 // Settings > Top screen's compass bar row: the add-on's word (Trail.lua's WC.compass, through Interact's proof.compc)
@@ -2528,6 +2538,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (::pauseView.isInitialized && pauseView.isOpen) return       // its own reader closes it
         if (startView.visibility == View.VISIBLE || setupView.visibility == View.VISIBLE || loginPrompt.isOpen) return
         Log.i("WCHOME", "pause: the wheel over ${room.name} ($why)")
+        if (room == Room.HOME) partyLeaveHome("the pause wheel")          // the user's ruling: the wheel takes the controller: Party mode off
         roomMotionEnd()                                              // a room still moving lands first: the wheel moves it itself
         // a reverse still playing: stopped, and the open goes on from where the panels are (no jump)
         val from = if (pauseBack?.isRunning == true) slideT else 0f

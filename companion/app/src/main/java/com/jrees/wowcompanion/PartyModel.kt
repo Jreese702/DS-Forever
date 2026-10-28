@@ -181,15 +181,18 @@ object PartyModel {
     const val RS_GUARD_MS = 500L
     /** the resend (party row col 22) at most this often */
     const val RESEND_MS = 10_000L
+    /** a taker's off tap again after this while Party mode still says on */
+    const val TAKER_RETRY_MS = 2_000L
 
     /** THE app's one live state (CompanionHost feeds it; Home, the strip, the Controller tab and Settings read it) */
     val live = State()
 
     /**
-     * Open question 4's switch. THE USER'S RULING (2026-10-28, applied at integration): Party mode TURNS OFF when you leave Home (a
-     * room opens, or a Home module goes full screen): the app taps party `off` (col 11, a secure click: in fights too) first, so the
-     * router releases the pad and Home is found with Party mode off. The add-on's PM.OFF_WHEN_ASIDE (true) is the backstop when a
-     * room / a full module holds the controller. false = suspended only (the add-on's `aside`), drawn as off.
+     * Open question 4's switch. THE USER'S RULINGS (2026-10-28, applied at integration): Party mode TURNS OFF when you leave Home (a
+     * room opens, or a Home module goes full screen), and ANYTHING that takes the controller ends it (the pause wheel, the bar cursor,
+     * a game window: [State.takerSeen] on the interact document's holder): the app taps party `off` (col 11, a secure click: in fights
+     * too), so the router releases the pad and Home is found with Party mode off. The add-on's PM.OFF_WHEN_ASIDE (true) does the same
+     * itself out of combat, and at a fight's end when something took the controller during it. false = suspended only.
      */
     const val OFF_ON_LEAVE = true
 
@@ -273,6 +276,22 @@ object PartyModel {
 
         /** the game session ended (logout / world closed): the cfg must be asked again */
         fun newSession() { currentCfg = false; firstAskDone = false }
+
+        private var takerTapped: String? = null
+        private var takerAt = 0L
+
+        /**
+         * THE USER'S RULING (anything that takes the controller ends Party mode): a CURRENT interact document names the capture's
+         * [holder] (a room, a Home module full screen, the pause wheel, the bar cursor, an NPC / vendor / loot window in a fight).
+         * True = tap party `off` now: Party mode is on and someone holds; once per holder, again after [TAKER_RETRY_MS] while it still
+         * says on (a lost tap). This is the route IN A FIGHT, where the add-on cannot flip it itself.
+         */
+        fun takerSeen(holder: String?, now: Long): Boolean {
+            if (!OFF_ON_LEAVE || holder.isNullOrEmpty() || party?.on != true) { if (holder.isNullOrEmpty()) takerTapped = null; return false }
+            if (holder == takerTapped && now - takerAt < TAKER_RETRY_MS) return false
+            takerTapped = holder; takerAt = now
+            return true
+        }
 
         /** the app's own pad reader moved the box (optimistic; the add-on's partybox corrects it); null = no move */
         fun move(dir: Dir): Int? {

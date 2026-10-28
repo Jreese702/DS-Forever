@@ -201,4 +201,24 @@ class PartyFixturesTest {
         assertFalse(st.party!!.onLive)
         assertNull(st.move(PartyModel.Dir.DOWN))                        // no optimistic box move with Party mode off
     }
+    /** THE USER'S RULING: anything that takes the controller (a holder in a current interact document) ends Party mode, fights too */
+    @Test fun takerEndsPartyMode() {
+        val st = PartyModel.State()
+        val on = PartyModel.parseParty(fx("party_three_on"))!!
+        st.onParty(on, current = true, now = 0L)
+        assertFalse(st.takerSeen("", 0L))                              // nobody holds
+        for (h in listOf("pad:radial", "pad:bar", "npc", "spells", "pad:home")) {
+            val s2 = PartyModel.State(); s2.onParty(on, current = true, now = 0L)
+            assertTrue(h, s2.takerSeen(h, 100L))
+        }
+        assertTrue(st.takerSeen("npc", 100L))                          // a vendor / loot window granted in a fight
+        assertFalse(st.takerSeen("npc", 600L))                         // once per holder ...
+        assertTrue(st.takerSeen("npc", 100L + PartyModel.TAKER_RETRY_MS))   // ... again while Party mode still says on (a lost tap)
+        st.onParty(PartyModel.parseParty(fx("party_three_off"))!!, current = true, now = 3000L)
+        assertFalse(st.takerSeen("npc", 9000L))                        // off: nothing to do
+        // the fight's own state does not matter: the tap (party col 11, a secure click) is the route in a fight
+        val fight = PartyModel.State(); fight.onParty(on.copy(fight = true), current = true, now = 0L)
+        assertTrue(fight.takerSeen("spells", 10L))
+        assertEquals(listOf("party" to 11), PartyTaps.off(PartyModel.parseCfg(fx("partycfg_full"))))
+    }
 }

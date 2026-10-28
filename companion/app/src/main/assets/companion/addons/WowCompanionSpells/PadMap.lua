@@ -4372,18 +4372,23 @@ local function partyMode()
     PM.KEYNAME = { [1] = "PADDLEFT", [2] = "PADDUP", [3] = "PADDRIGHT", [4] = "PADDDOWN", [5] = "PAD3", [6] = "PAD4", [7] = "PAD2", [8] = "PAD1" }
     PM.PAD, PM.TOGGLE, PM.ON, PM.OFF, PM.MDONE = "WowCompanionPartyPad", "WowCompanionPartyToggle", "WowCompanionPartyOn",
         "WowCompanionPartyOff", "WowCompanionPartyMenuDone"
-    -- THE ONE SWITCH (open question 4; THE USER'S RULING 2026-10-28: Party mode turns OFF when you leave Home - a room, or a Home
-    -- module full screen). true = the add-on itself turns Party mode off (out of combat) when a ROOM or a Home module full screen
-    -- holds the controller (any capture holder but Home's own pickers below, which close back to Home's rest page). A game window
-    -- with nobody holding only SUSPENDS it (`aside`): the app taps OFF itself when it leaves Home for that window. The app's tap of
-    -- party col 11 on leaving Home is the first word (it works in fights too); this is the backstop. false = suspended only
+    -- THE ONE SWITCH (THE USER'S RULINGS 2026-10-28: Party mode turns OFF when you leave Home - a room, a Home module full screen -
+    -- and ANYTHING that takes the controller ends it: the pause wheel, the bar cursor, a game window such as a vendor or loot).
+    -- true = out of combat, whenever the router steps aside (any capture holder, or a game window), the add-on turns Party mode off
+    -- (PM.set(nil): the 8 router buttons and the pad lose wc-party; the party document says on false; the router binds today's plan
+    -- when the taker lets go). IN A FIGHT secure attributes are locked, so the add-on cannot flip it: a room that takes the controller
+    -- wins through room mode (PRE: room mode first), and the APP taps party col 11 (a secure click, works in fights) when it sees the
+    -- taker; the add-on marks the fight as "taken" (any holder, or a game window, seen while Party mode is on) and turns Party mode
+    -- off at PLAYER_REGEN_ENABLED if the app's tap did not. false = suspended only (`aside`)
     PM.OFF_WHEN_ASIDE = true
-    -- Home's own pickers: the bar cursor, the pause / consumables wheel, the class wheel, the track pad & keyboard (Quests' guests)
-    PM.HOME_GUESTS = { ["pad:bar"] = true, ["pad:radial"] = true, ["pad:class"] = true, ["pad:tool"] = true }
-    function PM.offAside()
+    -- a holder / a game window while Party mode is on (in a fight: noted for its end); `win` = windowOpen()
+    function PM.takerNow(win)
         local ok, st = pcall(function() return WC.capture.state() end)
         local h = ok and type(st) == "table" and st.holder or nil
-        return type(h) == "string" and not PM.HOME_GUESTS[h]
+        return (type(h) == "string" and h ~= "") or win ~= nil
+    end
+    function PM.noteFightTaker()
+        if PM.OFF_WHEN_ASIDE and inCombat() and PM.on() and PM.takerNow(windowOpen()) then PM.fightTaken = true end
     end
 
     -- PARTY-NAV-BEGIN (pure; tools/test_party.py checks it against PARTY_BUILD.md 3.4 and against the PARTYPAD snippet's copy)
@@ -4697,8 +4702,9 @@ local function partyMode()
         PM.sel = PM.selWant(aside, fightStart)
         PM.fightBound = fightStart and true or nil
         if aside then
-            -- THE ONE SWITCH (the user's ruling: on): a room / a Home module full screen turns it off (out of combat only); else suspended
-            if PM.OFF_WHEN_ASIDE and PM.on() and not fightStart and PM.offAside() and PM.set(nil) and PM.changed then pcall(PM.changed, "aside") end
+            -- THE ONE SWITCH (the user's rulings: on): anything that takes the controller ends Party mode (out of combat; at a fight's
+            -- start too, before the lockdown: only a game window keeps the router aside then)
+            if PM.OFF_WHEN_ASIDE and PM.on() and PM.set(nil) and PM.changed then pcall(PM.changed, "aside") end
             return
         end
         if PM.on() then
@@ -5221,11 +5227,17 @@ local function partyMode()
 
     function PM.onEvent(e, a1, a2, a3, a4)
         if e == "PLAYER_REGEN_ENABLED" then
+            -- something took the controller during the fight and Party mode is still on (the app's off tap did not come): off now
+            if PM.fightTaken then
+                PM.fightTaken = nil
+                if PM.on() and PM.set(nil) then pcall(PM.flipped) end
+            end
             if not PM.rowBuilt or PM.applyPending then pcall(PM.apply, "fight-end") end
             if PM.f then pcall(PM.link) end
             PM.smartSoon()                                              -- the auras read plain again; the picks may be set again
             PM.changed("fight")
         elseif e == "PLAYER_REGEN_DISABLED" then
+            PM.fightTaken = nil
             PM.changed("fight")
         elseif e == "PLAYER_ENTERING_WORLD" or e == "SPELLS_CHANGED" or e == "PLAYER_LOGIN" then
             if not PM.applySoon then
@@ -5262,10 +5274,17 @@ local function partyMode()
     end
     -- the anchors (6 s quiet -> full) and dead / alive need a clock: once a second, and a document only when something moved
     if type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then
-        pcall(C_Timer.NewTicker, 1, function() pcall(PM.changed, "tick") end)
+        pcall(C_Timer.NewTicker, 1, function() pcall(PM.noteFightTaker); pcall(PM.changed, "tick") end)
+    end
+    -- the capture's holder changes at once (v13 onChange; joined when the capture is there): a taker in a fight is noted
+    function PM.joinCapture()
+        if PM.capJoined or type(WC.capture) ~= "table" or type(WC.capture.onChange) ~= "function" then return end
+        local ok, got = pcall(WC.capture.onChange, function() pcall(PM.noteFightTaker) end)
+        PM.capJoined = ok and got == true
     end
     PM.ev:SetScript("OnEvent", function(_, e, ...)
         if not PM.f then pcall(PM.make) end
+        if not PM.capJoined then pcall(PM.joinCapture) end
         if PM.onEvent then pcall(PM.onEvent, e, ...) end
     end)
     pcall(PM.make)

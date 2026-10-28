@@ -709,7 +709,7 @@ Render check (no device): `app/src/test/java/com/jrees/wowcompanion/PartyShotsTe
 `PARTY_SHOTS_DIR` set (and `PARTY_ART_ROOT` = an art root such as a release export's `runtime`): the module's states, the strip, the
 player menu and the Controller tab at real size. Home's other modules and the Settings sub-section are not drawn by it.
 
-## INTEGRATION (the integration worker, branch `feat/party-mode`, 2026-10-28; commits 7368e333 add-on, e11d9295 app)
+## INTEGRATION (the integration worker, branch `feat/party-mode`, 2026-10-28; commits 7368e333 add-on, e11d9295 app; the second ruling: see the git log)
 
 Both halves read end to end, document by document and tap column by tap column, against the deviation lists above. Offline only.
 
@@ -725,27 +725,44 @@ Both halves read end to end, document by document and tap column by tap column, 
 | 6 | Select | | verified: `HomeBarSelect.SELECT_RETIRED = true`, no `iact sel on` anywhere in the app. Hardened: a stale `sel.want`'s `sel off` is tapped again at most every 10 s while the want stays (a lost tap would have left Interact's listener on Select) |
 | 7 | `pmenu` q49 | | agreed: `src "party"` routes to PartyMenuView; `sc` + `scr "party"` -> `Do.Secure` on the party row (Set Focus col 12 + i), Clear Focus `sc 1` on `pfocus`; `cf` -> asked first (No under the cursor); Whisper has `i` AND `ap` -> `Do.Run(id, text, "whisper")`: digits, then the Chat room with `whisperTo(nm)`; Inspect `en 0` (and greyed by key). Tested on the real document |
 | 8 | `partybox` | | agreed: `k "menu"` + `u` opens the menu by pad; `k "key"` with PADDUP / PADDDOWN / PADDLEFT / PADDRIGHT / PAD1 / PAD2 drives it while `pm` (Left / Right are no-ops in PlayerMenu); `k "off"` closes it; the document's `key` uses the STANDARD names, NAV's own `"up"`... names stay inside Lua. NEW: a STRANDED sub-state (`pm` true on a `key` / `state` press and no menu of the app's driving the pad: a lost `k=menu`, an app restart) made every press a `key` forever, B included. The app now taps MENU DONE then (`PartyModel.strandedMenu`) |
-| 9 | the user's ruling | Q4 defaults: app `OFF_ON_LEAVE = false`, add-on `OFF_WHEN_ASIDE = false`, and the app only handled a ROOM (never a Home module full screen), and only while `onLive` | see below |
+| 9 | the user's rulings | Q4 defaults: app `OFF_ON_LEAVE = false`, add-on `OFF_WHEN_ASIDE = false`, and the app only handled a ROOM (never a Home module full screen, a wheel, the bar cursor or a window), and only while `onLive` | see below |
 
 Nothing else in the two deviation lists affects the other side (flip edges / de-dupe, `full`, `sel "off"`, combat refusals, the tab tap fallback, the module's real top, the resend waiting for a column: all checked).
 
-### The user's ruling: Party mode turns OFF when you leave Home
+### The user's rulings: Party mode turns OFF when you leave Home, and ANYTHING that takes the controller ends it
 
-- APP (first word, works in fights: party col 11 is a secure click): `PartyModel.OFF_ON_LEAVE = true`. `CompanionHost.show()` leaving
-  Home and, new, `HomeView.apply()` going from the rest page to a module full screen (`onPartyLeaveRest`) call `partyLeaveHome(why)`:
-  the party menu closes (MENU DONE when the pad opened it), then `off` is tapped whenever Party mode is ON (`offOnLeave`: suspended
-  `aside` included; off is absolute). Coming back to Home re-asks (col 22); the add-on's `party` (on false) and `partybox` (k off)
-  have already set the app's state, so Home is drawn with Party mode off.
-- ADD-ON (backstop): `PM.OFF_WHEN_ASIDE = true` actually controlled "turn off on ANY aside", which includes Home's own pickers (the
-  pause wheel on Start, the class wheel, the bar cursor, the track pad) and every game window. Scoped to the ruling: out of combat, a
-  capture holder that is a room or a Home module full screen (`pad:home`, `pad:chat`, any room) turns it off (`PM.set(nil)`, the
-  party document follows; the router releases the pad and binds today's plan when the holder lets go); Home's pickers
-  (`PM.HOME_GUESTS`: pad:bar, pad:radial, pad:class, pad:tool) and a game window with nobody holding only SUSPEND it. In a fight the
-  add-on cannot flip (lockdown): suspended, and off at PLAYER_REGEN_ENABLED if the room still holds.
-- Tests: add-on `test_party.py` group 4 (pause wheel = suspended and back; `spells` and `pad:home` = off on all 8 refs + pad, party
-  doc on false, still off after the holder lets go; fight = suspended then off at its end); app `PartyFixturesTest.offWhenLeavingHome`.
-- Open for the user (one line): should Home's pause wheel / bar cursor also turn it off, and a game window (vendor, loot) opened from
-  Party mode? Today: they suspend it; the app turns it off only if it leaves Home for that window.
+Second ruling (2026-10-28, answering the open question): the pause wheel, the bar cursor and a game window (vendor, loot ...) opened
+in Party mode END it, as leaving Home does; nothing only suspends it any more.
+
+- APP (the first word; party col 11 is a secure click, so it works in fights): `PartyModel.OFF_ON_LEAVE = true`.
+  1. Leaving Home: `CompanionHost.show()` to a room, and `HomeView.apply()` going from the rest page to a module full screen
+     (`onPartyLeaveRest`), call `partyLeaveHome(why)`: the party menu closes (MENU DONE when the pad opened it), then `off` is tapped
+     whenever Party mode is ON (`offOnLeave`: suspended included; off is absolute).
+  2. The pause wheel: `openPause()` on Home does the same before the wheel opens.
+  3. ANY TAKER: every CURRENT `interact` document's `holder` (rooms, `pad:home`, `pad:radial` = the pause / consumables wheel,
+     `pad:bar` = the bar cursor, `pad:class`, `npc` = an NPC / vendor / loot window that took the controller, in fights after the
+     enter tap) -> `PartyModel.State.takerSeen` -> `off` tapped, once per holder, again after 2 s while Party mode still says on.
+  Coming back to Home re-asks (col 22); the add-on's `party` (on false) and `partybox` (k off) have set the app's state already.
+- ADD-ON: `PM.OFF_WHEN_ASIDE = true` back to "any aside": out of combat, any capture holder OR a game window (`windowOpen()`: the
+  managed frames, a UI panel, the WINDOWS list incl. MerchantFrame / LootFrame) turns Party mode off (`PM.set(nil)`; the party
+  document follows; the router binds today's plan when the taker lets go). At a fight's start (before the lockdown) too. Turning it
+  ON while something holds is undone at once (the flip re-binds and finds the router aside).
+- IN A FIGHT, exactly: secure attributes are locked, so the add-on never flips Party mode from insecure code there.
+  - A room / window that takes the controller in the fight wins at once through room mode (the PRE edit: room mode first), so no
+    press reaches the party pad while it holds.
+  - The app sees the holder and taps party col 11: PARTYFLIP clears `wc-party` on the 8 router buttons and the pad (secure, no
+    lockdown breach). The 8 keys stay carried to the router buttons for the rest of the fight (every fight's carry; bindings cannot
+    change in the lockdown), and with `wc-party` gone they act as today's fight router (fight spells, give-back...). Select stays the
+    party toggle for that fight (as before). At PLAYER_REGEN_ENABLED the router binds today's plan.
+  - Backstop if the app's tap is lost: the add-on notes a taker during the fight (its 1 s tick and the capture's `onChange`: any
+    holder, or a game window, while Party mode is on -> `PM.fightTaken`) and turns Party mode off at PLAYER_REGEN_ENABLED, even if
+    the taker let go earlier. Until then (tap lost, taker gone mid-fight) the presses would reach the party pad again. A fight with no
+    taker leaves Party mode on.
+- Tests: add-on `test_party.py` group 4: off out of combat for `spells`, `pad:home`, `pad:radial`, `pad:bar`, MerchantFrame,
+  LootFrame (all 8 refs + pad, party doc on false, nothing of ours bound, still off after the taker lets go); in a fight: (a) the
+  app's col 11 tap = off at once, no breach, A still the fight router's; (b) no tap = still set in the fight, off at its end though the
+  room let go first; (c) a loot window in the fight = off at its end; (d) no taker = stays on with its keys. App:
+  `PartyFixturesTest.offWhenLeavingHome` and `takerEndsPartyMode`.
 
 ### Cross-side fixtures (new)
 
@@ -753,17 +770,17 @@ Nothing else in the two deviation lists affects the other side (flip edges / de-
 `dsforever/src/test/resources/party-fixtures/*.json` (party solo / three on / off; partycfg Shaman defaults, Warrior `"slots":[]`,
 everything set with Smart Y picks; partybox on / move / cast / ZL none / menu / key Down / key B / off; partyack resend / cell /
 touch-target / combat / slot / pb; padtabctl right page / party chooser / Y page on Add / pbuff chooser; pmenu party2). The harness
-fails when the committed copies differ from what the Lua sends now (`PARTY_FIXTURES_WRITE=1` rewrites). `PartyFixturesTest.kt` (10
+fails when the committed copies differ from what the Lua sends now (`PARTY_FIXTURES_WRITE=1` rewrites). `PartyFixturesTest.kt` (11
 tests) feeds them to `PartyModel` parse + State, `PartyTaps`, `PadMapModel.parseCtl` and `PlayerMenu`.
 
 ### Results (exit codes)
 
 | run | result |
 |---|---|
-| `python tools/test_party.py` | exit 0, ALL PASS (310 checks; was 274) |
+| `python tools/test_party.py` | exit 0, ALL PASS (319 checks; was 274) |
 | `python tools/test_smarty.py` (unchanged) | exit 0, ALL PASS (91) |
 | `test_aggro` / `test_compass` / `test_hud_switches` / `test_interact` / `test_more_decode` / `test_prd` / `test_quests_focus` / `test_route_supertrack` / `test_tint` | all exit 0 (67 / 177 / 16 / 47 / 6 / 93 / 16 / 7 / 24 passes, 0 failed) |
-| `gradlew --offline :dsforever:testDebugUnitTest` | exit 0, BUILD SUCCESSFUL: 787 tests, 0 failed (Party: Fixtures 10, Model 10, Layout 7, Strip 5, Taps 4, PlayerMenu 9) |
+| `gradlew --offline :dsforever:testDebugUnitTest` | exit 0, BUILD SUCCESSFUL: 788 tests, 0 failed (Party: Fixtures 11, Model 10, Layout 7, Strip 5, Taps 4, PlayerMenu 9) |
 | `gradlew --offline :app:assembleModernDebug` | exit 0, BUILD SUCCESSFUL |
 | PartyShotsTest (`PARTY_SHOTS_DIR=E:/wow-build/party-app/shots-int`, `PARTY_ART_ROOT=E:/wow-build/runtime-art/r1/files`) | exit 0; 17 PNGs in `E:/wow-build/party-app/shots-int` (looked at: Controller tab Y with Smart Y, Home n5 on, the player menu: as before, no regressions). No shot of the controller's `pbuff` chooser (JVM-tested only) |
 
@@ -773,4 +790,5 @@ FEASIBILITY P1 unit switch in a fight; P2 secret survey; P3 UNIT_COMBAT / UNIT_H
 tap; P6 secure target cell in a fight; P7 secure togglemenu; P8 trigger chords reach the party pad; P9 menu read for a party unit;
 P10 range. Plus the add-on worker's P11 (one tap on party cells 0, 10, 11, 22 at the Thor's UI scale: pad11 rows 54-55 land), the
 fight-spell regression after the PRE edit (FEASIBILITY risk 4), and for this ruling: open a room and a Home module full screen with
-Party mode on (in and out of a fight), come back, Party mode off and the keys the game's again.
+Party mode on (in and out of a fight), and the pause wheel, the bar cursor, a vendor and a loot window (a loot window in a fight too);
+come back, Party mode off and the keys the game's again.

@@ -802,36 +802,58 @@ W4.execute('UNFOCUSED = 1; NOW = NOW + 2; tick(0.1)')
 check("PADBACK" not in keys(W4), "an unfocused dialog waits: Select is left to the game", keys(W4).get("PADBACK"))
 W4.execute('UNFOCUSED = 0; NOW = NOW + 2; tick(0.1)')
 check(keys(W4).get("PADBACK") == "CLICK WowCompanionPartyToggle:LeftButton", "the dialog gone: Select is the toggle's again")
-# aside under one of Home's own pickers (the pause wheel "pad:radial"): nothing of Party mode is bound; Party mode stays on (suspended)
-W4.execute('tapKey("PADBACK"); advance(0.3); HOLDER = "pad:radial"; NOW = NOW + 2; tick(0.1)')
-k = keys(W4)
-check(not any(v.startswith("CLICK WowCompanion") for v in k.values()) and W4.eval('PADA("wc-party")') is True,
-      "Home's pause wheel holds: nothing of ours bound; Party mode stays on (suspended, a Home picker)", k)
-W4.execute('HOLDER = nil; NOW = NOW + 2; tick(0.1)')
-check(keys(W4) == want, "the wheel let go: the 8 keys and Select again", keys(W4))
-# THE USER'S RULING (INTEGRATION, PM.OFF_WHEN_ASIDE = true): a ROOM (or a Home module full screen, "pad:home") holding turns it OFF
-check('PM.OFF_WHEN_ASIDE = true' in SRC["padmap"], "PM.OFF_WHEN_ASIDE is true (the user's ruling: off when you leave Home)")
-for holder in ("spells", "pad:home"):
+# THE USER'S RULINGS (INTEGRATION, PM.OFF_WHEN_ASIDE = true): ANYTHING that takes the controller ends Party mode - a room, a Home
+# module full screen ("pad:home"), Home's pause wheel ("pad:radial"), the bar cursor ("pad:bar"), a game window (a vendor) with nobody
+# holding
+check('PM.OFF_WHEN_ASIDE = true' in SRC["padmap"], "PM.OFF_WHEN_ASIDE is true (the user's rulings: anything that takes the controller)")
+for holder, win in (("spells", None), ("pad:home", None), ("pad:radial", None), ("pad:bar", None), (None, "MerchantFrame"), (None, "LootFrame")):
+    what = holder or win
     W4.execute('if not PADA("wc-party") then tapKey("PADBACK"); advance(0.3) end')
+    on0 = W4.eval('PADA("wc-party")')
     n0 = nsent(W4)
-    W4.execute('HOLDER = "%s"; NOW = NOW + 2; tick(0.1); advance(0.6)' % holder)
+    if holder:
+        W4.execute('HOLDER = "%s"' % holder)
+    else:
+        W4.execute('%s = { IsShown = function() return true end }' % win)
+    W4.execute('NOW = NOW + 2; tick(0.1); advance(0.6)')
     pd = docs(W4, n0, 'party')
-    check(party_on_all(W4) == [None] * 9 and pd and pd[-1]['p']['on'] is False and not any(v.startswith("CLICK WowCompanion") for v in keys(W4).values()),
-          "%s holds: Party mode OFF on all 8 refs and the pad, a party document says on false, nothing of ours bound" % holder,
-          (party_on_all(W4), pd and pd[-1]['p']))
-    W4.execute('HOLDER = nil; NOW = NOW + 2; tick(0.1)')
+    check(on0 is True and party_on_all(W4) == [None] * 9 and pd and pd[-1]['p']['on'] is False
+          and not any(v.startswith("CLICK WowCompanion") for v in keys(W4).values()),
+          "%s takes the controller: Party mode OFF on all 8 refs and the pad, a party document says on false, nothing of ours bound" % what,
+          (on0, party_on_all(W4), pd and pd[-1]['p']))
+    W4.execute('HOLDER = nil; %s NOW = NOW + 2; tick(0.1)' % (('%s = nil;' % win) if win else ''))
     k = keys(W4)
     check(W4.eval('PADA("wc-party")') is None and k.get("SHIFT-PAD1") == "JUMP" and "PAD1" not in k
           and k.get("PADBACK") == "CLICK WowCompanionPartyToggle:LeftButton",
-          "%s let go: Party mode is still OFF (today's plan, Select the toggle's)" % holder, k)
-# in a fight the add-on cannot flip it (secure attributes are locked): it stays suspended, and goes off at the fight's end if still aside
-W4.execute('tapKey("PADBACK"); advance(0.3); COMBAT = true; HOLDER = "spells"; NOW = NOW + 2; tick(0.1)')
-check(W4.eval('PADA("wc-party")') is True and W4.eval('#VIOL') == 0, "a room holds in a fight: suspended (no insecure flip in the lockdown)",
+          "%s let go: Party mode is still OFF (today's plan, Select the toggle's)" % what, k)
+# IN A FIGHT (secure attributes locked): the add-on cannot flip it. (a) the APP's tap on party col 11 (a secure click) ends it at once,
+# with no lockdown breach; the 8 keys stay carried to the router buttons for the fight (today's fight carry), which now act as today
+W4.execute('tapKey("PADBACK"); advance(0.3); fire("PLAYER_REGEN_DISABLED"); COMBAT = true; HOLDER = "spells"')
+W4.execute('local c = WowCompanion.pad.rows.party.cells[11]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false); NOW = NOW + 0.3')
+k = keys(W4)
+check(party_on_all(W4) == [None] * 9 and W4.eval('#VIOL') == 0 and k.get("PAD1") == "CLICK WowCompanionCombatFace8:LeftButton",
+      "a room takes the controller in a fight, the app taps party col 11: OFF at once (secure, no breach); A stays the fight router's", k.get("PAD1"))
+W4.execute('HOLDER = nil; COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1); NOW = NOW + 2; tick(0.1)')
+check(W4.eval('PADA("wc-party")') is None and "PAD1" not in keys(W4), "... the fight ends: still off, today's plan", keys(W4).get("PAD1"))
+# (b) the app's tap lost: the add-on notes the taker (its 1 s tick / the capture's onChange) and turns Party mode off at the fight's end,
+# even when the taker let go before it
+W4.execute('tapKey("PADBACK"); advance(0.3); fire("PLAYER_REGEN_DISABLED"); COMBAT = true; HOLDER = "spells"; tick(1)')
+check(W4.eval('PADA("wc-party")') is True and W4.eval('#VIOL') == 0, "a room takes it in a fight, no tap from the app: still set (no insecure flip)",
       list(W4.eval('VIOL').values())[:2])
+W4.execute('HOLDER = nil; tick(1)')
+n0 = nsent(W4)
 W4.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1); NOW = NOW + 2; tick(0.1)')
-check(W4.eval('PADA("wc-party")') is None, "... the fight ends with the room still holding: OFF", W4.eval('PADA("wc-party")'))
-W4.execute('HOLDER = nil; NOW = NOW + 2; tick(0.1); tapKey("PADBACK"); advance(0.3)')
-check(W4.eval('PADA("wc-party")') is True, "back on by Select after the room let go")
+pd = docs(W4, n0, 'party')
+check(party_on_all(W4) == [None] * 9 and pd and pd[-1]['p']['on'] is False and "PAD1" not in keys(W4),
+      "... the fight ends (the room already let go): OFF, the party document says so, today's plan", (party_on_all(W4), keys(W4).get("PAD1")))
+# (c) a game window seen in the fight (a loot window): the same at the fight's end
+W4.execute('tapKey("PADBACK"); advance(0.3); fire("PLAYER_REGEN_DISABLED"); COMBAT = true; LootFrame = { IsShown = function() return true end }; tick(1)')
+W4.execute('LootFrame = nil; COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1); NOW = NOW + 2; tick(0.1)')
+check(W4.eval('PADA("wc-party")') is None, "a loot window in a fight: OFF at the fight's end", W4.eval('PADA("wc-party")'))
+# (d) nothing took the controller: a fight leaves Party mode on
+W4.execute('tapKey("PADBACK"); advance(0.3); fire("PLAYER_REGEN_DISABLED"); COMBAT = true; tick(1)')
+W4.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1); NOW = NOW + 2; tick(0.1)')
+check(W4.eval('PADA("wc-party")') is True and keys(W4) == want, "a fight with no taker: Party mode stays on, its keys bound", keys(W4))
 W4.execute('tapKey("PADBACK"); advance(0.3)')
 # a fight's start: Select only while grouped or already in Party mode
 W4.eval('party')(W4.table_from([]))
