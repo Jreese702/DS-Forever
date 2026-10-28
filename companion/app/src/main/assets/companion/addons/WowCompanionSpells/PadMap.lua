@@ -4916,7 +4916,8 @@ local function partyMode()
         return true
     end
     WC.padMap.party = { cfg = function() return PM.cfgNow and PM.cfgNow() or PM.resolve() end, put = PM.put, on = PM.on,
-                        slots = PM.SLOTS, cols = PM.COL }
+                        slots = PM.SLOTS, cols = PM.COL,
+                        pbRemove = function(k) return PM.pbRemove and PM.pbRemove(k) end, padd = function(id) return PM.padd and PM.padd(id) end }
 
     -- ---------------------------------------------------------------- Smart Y's party buffs (3.6, 4.5): picks per unit, the list's ops
     -- the helpful aura names on `u` now; secret = a name could not be read (in a dungeon, a fight): no pick for that unit
@@ -5015,6 +5016,16 @@ local function partyMode()
     function PM.listChanged()
         pcall(PM.smartApply, true)
         pcall(PM.sendCfg, "list")
+    end
+    -- the Controller room's Party tab (PadTabCtl p33, by the controller): Remove list row k; Add = PM.padd(id)
+    function PM.pbRemove(k)
+        if inCombat() then PM.ack("pb", false, "combat") return false end
+        local list = PM.store().buffs
+        if type(k) ~= "number" or not list[k] then PM.ack("pb", false, "no row picked") return false end
+        local id = table.remove(list, k)
+        PM.ack("pb", true, nil, nil, id)
+        PM.listChanged()
+        return true
     end
 
     -- ---------------------------------------------------------------- the documents (section 1)

@@ -1182,6 +1182,129 @@ W9.execute('WowCompanionSpellsDB.smartOn = {}; fire("UNIT_AURA", "party1"); adva
 check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y off: every pick cleared", picks(W9))
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
+# ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
+check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b47"' in SRC["book"] and 'local PV = "m77"' in SRC["padmap"],
+      "the versions: PadMap m77, PadTabCtl p33, Book b47")
+W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
+W8.execute('''
+local ctl = WowCompanion._spellsBook.ctl
+ctl.croom, ctl.ctrlTab, ctl.onTabs = true, true, true
+WowCompanion.padTabCtl.enter("tabs")
+function ptab(col) WowCompanion.pad.rows.padtab.handler(nil, col); NOW = NOW + 0.05 end
+function pp(key) return WowCompanion.padTabCtl.press(key) end
+function spellTaps(id)                  -- Book's two taps for a spell (the spells row: vb<group> then vo<offset>)
+    local v = WowCompanion.spellsPadNumbers({ id })[id]
+    local cols = WowCompanion.spellsWinCols
+    local on = WowCompanion.pad.rows.spells.onClick
+    on(cols["vb" .. math.floor(v / 13)]); on(cols["vo" .. (v % 13)])
+end
+''')
+
+
+def ctlDoc(L):
+    return docs(L, 0, 'padtabctl')[-1]['c']
+
+
+W8.execute('ptab(26)')
+c = ctlDoc(W8)
+check(c['view'] == 'party' and c['ppos'] == 2 and c['pfocus'] == 'rows', "padtab 26: the 5th tab (Party mode); ppos 2 (A), pfocus rows", c)
+W8.execute('pp("PADDUP")')
+check(ctlDoc(W8)['focus'] == 'tabs', "Up from the first row: the tab row", ctlDoc(W8)['focus'])
+W8.execute('pp("PADDDOWN")')
+c = ctlDoc(W8)
+check(c['focus'] == 'prows' and c['ppos'] == 2, "Down from the tabs: the rows (A)", c)
+moves = []
+for k in ("PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDDOWN", "PADDRIGHT", "PADDDOWN", "PADDLEFT", "PADDRIGHT", "PADDUP"):
+    W8.execute('pp("%s")' % k)
+    moves.append(ctlDoc(W8)['ppos'])
+check(moves == [3, 4, 5, 5, 11, 12, 5, 11, 10], "the left page's D-pad: two columns of six (6 an empty place), across at the same row",
+      moves)
+W8.execute('pp("PADDLEFT"); pp("PADDUP"); pp("PADDUP"); pp("PADDUP")')
+check(ctlDoc(W8)['ppos'] == 1, "the D-pad row (1)", ctlDoc(W8)['ppos'])
+W8.execute('pp("PAD1")')
+check(ctlDoc(W8)['note'] == 'locked' and ctlDoc(W8)['pfocus'] == 'rows', "A on the D-pad row: locked (fixed)", ctlDoc(W8)['note'])
+W8.execute('pp("PADDDOWN"); pp("PAD1")')
+c = ctlDoc(W8)
+check(c['pfocus'] == 'right' and c['pright'] == 1, "A on the A row: the right page", c)
+W8.execute('pp("PAD1")')
+c = ctlDoc(W8)
+check(c['chooser'] == {"list": "party", "row": 1, "id": "empty"}, "its red Change: the chooser, list party, the no-spell row first (empty)", c['chooser'])
+W8.execute('pp("PADDDOWN")')
+c = ctlDoc(W8)
+check(c['chooser']['row'] == 2 and c['chooser']['id'] == 331, "Down: Healing Wave (partycfg.spells by id)", c['chooser'])
+W8.execute('pp("PADDDOWN")')
+check(ctlDoc(W8)['chooser']['id'] == 8004, "Down: Lesser Healing Wave", ctlDoc(W8)['chooser'])
+n0 = nsent(W8)
+W8.execute('pp("PAD1")')
+ack = docs(W8, n0, 'partyack')
+check(ack and ack[0]['op'] == 'slot' and ack[0]['slot'] == 'a' and ack[0]['id'] == 8004 and ack[0]['ok'] is True and ctlDoc(W8).get('chooser') is None
+      and W8.eval('PADA("wc-ps-a")') == "Lesser Healing Wave", "A: A = Lesser Healing Wave (partyack slot ok; the chooser closes)", ack)
+W8.execute('pp("PAD1")')
+n0 = nsent(W8)
+W8.execute('pp("PAD1")')
+check(docs(W8, n0, 'partyack')[0]['ok'] is True and cfg(W8)['slots']['a'] is None, "the no-spell row: A = Empty", cfg(W8)['slots']['a'])
+W8.execute('pp("PAD2")')
+check(ctlDoc(W8)['pfocus'] == 'rows', "B on the right page: back to the rows")
+# Y: Smart Y off -> one row (In combat: Change), the chooser's first row "inspect"
+W8.execute('pp("PADDDOWN"); pp("PADDDOWN"); pp("PAD1"); pp("PAD1")')
+check(ctlDoc(W8)['ppos'] == 4 and ctlDoc(W8)['chooser']['id'] == 'inspect', "Y (Smart Y off): Change = the In combat action, first row inspect",
+      ctlDoc(W8).get('chooser'))
+W8.execute('pp("PADDDOWN"); pp("PAD1")')
+check(cfg(W8)['yc'] is not None and int(cfg(W8)['yc']['id']) == 331, "Y's In combat = Healing Wave", cfg(W8)['yc'])
+W8.execute('pp("PAD2")')
+# Y with Smart Y on: the party list's rows, Add, In combat
+W8.execute('WowCompanionSpellsDB.smartOn = { ["Korvash-Realm"] = true }; WowCompanionSpellsDB.partyBy["Korvash-Realm"].buffs = { 131 }')
+W8.execute('pp("PAD1")')
+W8.execute('pp("PADDDOWN")')
+c = ctlDoc(W8)
+check(c['pfocus'] == 'right' and c['pright'] == 2, "Smart Y on: Y's right page has rows (the buff, Add, In combat)", c)
+W8.execute('pp("PAD1")')
+c = ctlDoc(W8)
+check(c['chooser']['list'] == 'pbuff' and c['chooser']['id'] == 546, "Add: the chooser of party buffs known and not listed (Water Walking)", c['chooser'])
+W8.execute('pp("PAD1")')
+check(buffs(W8) == [131, 546], "A: Water Walking added", buffs(W8))
+W8.execute('pp("PADDUP"); pp("PADDUP"); pp("PADDUP")')
+n0 = nsent(W8)
+W8.execute('pp("PAD1")')
+check(buffs(W8) == [546] and docs(W8, n0, 'partyack')[0]['op'] == 'pb', "on the first buff row the red action is Remove", buffs(W8))
+W8.execute('pp("PADDDOWN"); pp("PADDDOWN"); pp("PAD1")')
+check(ctlDoc(W8)['chooser']['list'] == 'party' and ctlDoc(W8)['chooser']['id'] == 'inspect', "the last row: In combat (Change)", ctlDoc(W8)['chooser'])
+W8.execute('pp("PAD2"); pp("PAD2"); WowCompanionSpellsDB.smartOn = {}')
+# TOUCH: padtab 27-36 picks + 37 / Book's two-tap spell
+n0 = nsent(W8)
+W8.execute('ptab(27 + 8); spellTaps(331)')              # slot 9 = zrx, then Healing Wave by the two taps
+ack = docs(W8, n0, 'partyack')
+check(ack and ack[0]['slot'] == 'zrx' and ack[0]['id'] == 331 and ack[0]['ok'] is True and W8.eval('PADA("wc-ps-zrx")') == "Healing Wave",
+      "padtab 35 (slot zrx) + Book's two taps for Healing Wave: ZR+X = Healing Wave", ack)
+check(ctlDoc(W8)['ppos'] == 11, "the pick moved the cursor (ppos 11)", ctlDoc(W8)['ppos'])
+W8.execute('ptab(30)')
+W8.execute('spellTaps(8004)')
+check(int(cfg(W8)['touch']['id']) == 8004 and W8.eval('WowCompanion.pad.rows.party.cells[5].a.spell') == "Lesser Healing Wave",
+      "padtab 30 (touch) + a spell: Touch = Lesser Healing Wave (the TSP cells follow)", cfg(W8)['touch'])
+W8.execute('ptab(30); ptab(37)')
+check(cfg(W8)['touch'] is None and W8.eval('WowCompanion.pad.rows.party.cells[5].a.type') is None, "padtab 30 + 37: Touch = Target", cfg(W8)['touch'])
+W8.execute('ptab(28); ptab(37)')
+check(cfg(W8)['slots']['x'] is None and W8.eval('WowCompanionSpellsDB.partyBy["Korvash-Realm"].slots.x') is False, "padtab 28 + 37: X = Empty")
+n0 = nsent(W8)
+W8.execute('ptab(27); NOW = NOW + 2.5; spellTaps(331)')
+check(docs(W8, n0, 'partyack') == [] and ctlDoc(W8)['note'] == 'pslot-no-pick', "a slot pick older than 2 s: the spell is refused (no pick)",
+      ctlDoc(W8)['note'])
+W8.execute('ptab(37)')
+check(ctlDoc(W8)['note'] == 'pslot-no-pick', "37 with no fresh pick: nothing", ctlDoc(W8)['note'])
+n0 = nsent(W8)
+W8.execute('ptab(38)')
+pa = docs(W8, n0, 'padack')
+check(pa and pa[0]['ok'] is False and pa[0]['why'] == 'unknown column', "padtab 38: refused (unknown column)", pa)
+W8.execute('ptab(29); COMBAT = true')
+n0 = nsent(W8)
+W8.execute('spellTaps(331)')
+ack = docs(W8, n0, 'partyack')
+check(ack and ack[0]['why'] == 'combat' and ack[0]['slot'] == 'yc', "a touch put in a fight: partyack why combat", ack)
+W8.execute('COMBAT = false')
+W8.execute('ptab(0)')
+check(ctlDoc(W8)['view'] == 'normal' and 'ppos' not in ctlDoc(W8), "padtab 0: back to WoW Defaults (no party fields)", ctlDoc(W8)['view'])
+check(W8.eval('#SPY') == 0 and W8.eval('#VIOL') == 0 and list(W8.eval('ERRS').values()) == [], "no spied call, no lockdown breach, no error")
+
 # ================================================================ THE NO-TRACE SCAN (new code only: the diff against the contract's base)
 import subprocess
 try:

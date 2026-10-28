@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b46"                -- bump on every change; b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
+local BV = "b47"                -- bump on every change; b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -1335,6 +1335,12 @@ local PADTAB = {
     [15] = function(pt) if type(pt.touchForm) == "function" then pt.touchForm(0) end end,
 }
 for k = 1, 10 do PADTAB[15 + k] = function(pt) if type(pt.touchForm) == "function" then pt.touchForm(k) end end end
+-- b47 PARTY MODE (PadTabCtl p33; PARTY_BUILD.md 2.3, the lead's contract): 26 the 5th tab (Party mode), 27-36 pick party slot k = col - 26
+-- (1 a, 2 x, 3 yc, 4 touch, 5 zla, 6 zlx, 7 zly, 8 zra, 9 zrx, 10 zry; a no-action pick, fresh 2 s), 37 ONE action: the picked slot's
+-- no-spell value (Empty; Inspect for yc; Target for touch). A spell for it = the spells row's two taps (it reaches pt.touchSpell). 38-39 refused
+PADTAB[26] = function(pt) pt.touchTab(5) end
+for k = 1, 10 do PADTAB[26 + k] = function(pt) if type(pt.touchPartySlot) == "function" then pt.touchPartySlot(k) end end end
+PADTAB[37] = function(pt) if type(pt.touchPartyNone) == "function" then pt.touchPartyNone() end end
 if type(pad) == "table" and type(pad.op) == "function" then
     pcall(pad.op, "padtab", "padtab", function(_, col)
         local fn = type(col) == "number" and PADTAB[col]
