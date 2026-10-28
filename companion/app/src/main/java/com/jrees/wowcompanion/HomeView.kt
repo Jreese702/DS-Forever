@@ -1095,6 +1095,8 @@ class HomeView(
 
     /** Party mode on and routing, while Home's rest page shows (a full module = the add-on suspends it; drawn as off) */
     private fun partyOnHere(): Boolean = party.party?.onLive == true
+    /** Party mode on with Home's rest page shown (no module full screen): the disc's touch = Party mode off */
+    fun partyOnRest(): Boolean = partyOnHere() && flow.full == null
 
     /** the module's mode for [s]: the takeover = the fight with Party mode off; a fight with it on = 150 px rows; else at rest */
     private fun partyModeNow(s: HomeScreen): PartyLayout.Mode = when {
