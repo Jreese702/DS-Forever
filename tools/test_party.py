@@ -536,6 +536,13 @@ function trig(lt, rt) PADSTATE = {}; if lt then PADSTATE[LT_I] = true end; if rt
 function PADA(k) return rawget(_G, "WowCompanionPartyPad").a[k] end
 function lastAction() return ACTIONS[#ACTIONS] end
 function clickName(n, down) doClick(rawget(_G, n), "LeftButton", down) end
+-- the book (Book.lua reads the game's own spellbook, stubbed empty here): the character's spells are BOOK's
+WowCompanion.spellsBindableList = function()
+    local out = {}
+    for i, id in ipairs(BOOK) do out[#out + 1] = { id = id, slot = i } end
+    return out
+end
+WowCompanion.spellsBookSlotOf = function(id) for i, x in ipairs(BOOK) do if x == id then return i end end end
 '''
 
 
@@ -829,6 +836,128 @@ check("PADBACK" not in keys(W4), "a fight's start with an unfocused dialog: Sele
 W4.execute('COMBAT = false; UNFOCUSED = 0; fire("PLAYER_REGEN_ENABLED"); advance(1)')
 check(W4.eval('#SPY') == 0 and W4.eval('#VIOL') == 0, "the spy: no SetBinding / SaveBindings / macro / CVar / bar write / Blizzard window call; no lockdown breach",
       (list(W4.eval('SPY').values())[:3], list(W4.eval('VIOL').values())[:3]))
+
+# ================================================================ 6. THE STORE AND THE CLASS DEFAULTS
+DEFAULTS = {  # PARTY_BUILD.md 3.6
+    "SHAMAN": {"a": 331, "x": 8004, "zla": 526, "zlx": 2870, "zra": 2008},
+    "PRIEST": {"a": 2050, "x": 17, "zla": 527, "zlx": 528, "zra": 2006, "zrx": 139},
+    "DRUID": {"a": 5185, "x": 774, "zla": 8946, "zlx": 2782, "zra": 20484, "zrx": 8936},
+    "PALADIN": {"a": 635, "x": 19750, "zla": 1152, "zlx": 4987, "zra": 7328, "zrx": 633},
+    "MAGE": {"a": 475, "zla": 604, "zlx": 1008}, "WARLOCK": {"a": 5697}, "HUNTER": {}, "ROGUE": {}, "WARRIOR": {},
+}
+SLOTS = ["a", "x", "zla", "zlx", "zly", "zra", "zrx", "zry"]
+
+
+def cfg(L):
+    return L.eval('WowCompanion.padMap.party.cfg()')
+
+
+def slot_ids(c):
+    s = c['slots']
+    return {k: int(s[k]['id']) for k in SLOTS if s[k] is not None}
+
+
+W6 = world()
+c = cfg(W6)
+check(slot_ids(c) == DEFAULTS["SHAMAN"], "a level 6 Shaman with nothing chosen: the class defaults", slot_ids(c))
+check(c['slots']['a']['k'] is True and c['slots']['a']['d'] is True and c['slots']['x']['k'] is False and c['slots']['zra']['res'] is True,
+      "Healing Wave learned (k), Lesser Healing Wave not yet (k false, drawn dim), Ancestral Spirit res", "")
+check(W6.eval('PADA("wc-ps-a")') == "Healing Wave" and W6.eval('PADA("wc-ps-x")') is None and W6.eval('PADA("wc-ps-zra")') is None,
+      "the pad casts only learned spells: wc-ps-a Healing Wave; x / zra (not learned) nil", (W6.eval('PADA("wc-ps-x")'),))
+bad = []
+for cls, want in DEFAULTS.items():
+    W6.execute('CLASS = "%s"' % cls)
+    got = slot_ids(cfg(W6))
+    if got != want:
+        bad.append((cls, got))
+check(not bad, "the class defaults for all 9 classes (the contract's table)", bad[:2])
+W6.execute('CLASS = "SHAMAN"')
+n0 = nsent(W6)
+ok = W6.eval('WowCompanion.padMap.party.put')("x", False)
+check(ok is True and W6.eval('WowCompanionSpellsDB.partyBy["Korvash-Realm"].slots.x') is False and cfg(W6)['slots']['x'] is None,
+      "put x = Empty: stored as false (chosen), the document's x is null", W6.eval('WowCompanionSpellsDB.partyBy["Korvash-Realm"].slots.x'))
+ack = docs(W6, n0, 'partyack')
+check(len(ack) == 1 and ack[0]['op'] == 'slot' and ack[0]['ok'] is True and ack[0]['slot'] == 'x', "answered partyack op slot ok", ack)
+check(W6.eval('WowCompanionSpellsDB.partyBy["Korvash-Realm"].slots.a') is None, "a not chosen stays nil (the class default)")
+for sid, why in ((324, "Lightning Shield: a self-only buff"), (403, "Lightning Bolt: harmful")):
+    n0 = nsent(W6)
+    W6.eval('WowCompanion.padMap.party.put')("a", sid)
+    ack = docs(W6, n0, 'partyack')
+    check(ack and ack[0]['ok'] is False and ack[0]['why'] == 'not a party spell', "a spell not in the chooser is refused (%s)" % why, ack)
+W6.execute('BOOK = { 403, 331, 324, 8004 }; fire("SPELLS_CHANGED"); advance(1)')
+check(W6.eval('PADA("wc-ps-x")') is None, "x stays Empty when its default is learned later (Empty was CHOSEN)")
+W6.eval('WowCompanion.padMap.party.put')("zry", 8004)
+check(W6.eval('PADA("wc-ps-zry")') == "Lesser Healing Wave" and int(cfg(W6)['slots']['zry']['id']) == 8004 and cfg(W6)['slots']['zry']['d'] is False,
+      "put zry = Lesser Healing Wave (learned now): the pad casts it, d false", W6.eval('PADA("wc-ps-zry")'))
+W6.eval('WowCompanion.padMap.party.put')("yc", 331)
+W6.eval('WowCompanion.padMap.party.put')("touch", 8004)
+check(W6.eval('PADA("wc-py")') == "Healing Wave" and W6.eval('WowCompanionSpellsDB.partyBy["Korvash-Realm"].yc') == 331,
+      "yc = Healing Wave: wc-py set, stored by id", W6.eval('PADA("wc-py")'))
+W6.eval('WowCompanion.padMap.party.put')("yc", False)
+check(W6.eval('PADA("wc-py")') is None and W6.eval('WowCompanionSpellsDB.partyBy["Korvash-Realm"].yc') is None, "yc back to Inspect: nil")
+W6.execute('WHO = "Alt"')
+c2 = cfg(W6)
+check(slot_ids(c2) == DEFAULTS["SHAMAN"] and W6.eval('WowCompanionSpellsDB.partyBy["Alt-Realm"].slots.x') is None
+      and W6.eval('WowCompanionSpellsDB.partyBy["Korvash-Realm"].slots.x') is False, "another character (name-realm) never shares: its own defaults",
+      slot_ids(c2))
+W6.execute('WHO = "Korvash"')
+check(W6.eval('WowCompanionSpellsDB.partyBy["Korvash-Realm"].v') == 1 and len(W6.eval('WowCompanionSpellsDB.partyBy["Korvash-Realm"].buffs')) == 0,
+      "the record: v = 1, Smart Y's party list starts EMPTY")
+
+# ================================================================ 10b. THE PARTY ROW (2.2)
+row = W6.eval('WowCompanion.pad.rows.party')
+check(row is not None and row.secure and row.n == 40 and row.onPress is True, "the party row: secure, 40 columns, opts.onPress", row and row.n)
+cell = lambda col: row.cells[col]
+U = ["player", "party1", "party2", "party3", "party4"]
+bad = []
+for col in range(40):
+    a = cell(col).a
+    t, sp, un, cb = a['type'], a['spell'], a['unit'], a['clickbutton']
+    if col <= 4: want = ("target", None, U[col], None)
+    elif col <= 9: want = ("spell", "Lesser Healing Wave", U[col - 5], None)
+    elif col == 10: want = ("click", None, None, "WowCompanionPartyOn")
+    elif col == 11: want = ("click", None, None, "WowCompanionPartyOff")
+    elif col <= 16: want = ("focus", None, U[col - 12], None)
+    elif col == 35: want = ("click", None, None, "WowCompanionPartyMenuDone")
+    else: want = (None, None, None, None)
+    got = (t, sp, un, cb._name if cb is not None else None)
+    if got != want:
+        bad.append((col, got, want))
+check(not bad, "every party row cell as 2.2 says (TGT 0-4, TSP 5-9 with Touch = Lesser Healing Wave, ON 10, OFF 11, FOCUS 12-16, MENU DONE 35)", bad[:3])
+W6.eval('WowCompanion.padMap.party.put')("touch", False)
+row = W6.eval('WowCompanion.pad.rows.party')
+check(all(row.cells[c].a['type'] is None for c in range(5, 10)), "Touch = Target: the TSP cells have no action (type nil)")
+d = W6.eval('WowCompanion.pad.describe()')
+check(d['rows']['party'] is not None and int(d['sizes']['party']) == 40, "describe() publishes the party row (40 columns)", d['rows']['party'])
+# a tap on cell 10 / 11: Party mode on / off by the secure click
+W6.execute('local c = WowCompanion.pad.rows.party.cells[10]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false); advance(0.3)')
+check(W6.eval('PADA("wc-party")') is True, "a tap on party col 10: Party mode ON", W6.eval('PADA("wc-party")'))
+W6.execute('local c = WowCompanion.pad.rows.party.cells[11]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false); advance(0.3)')
+check(W6.eval('PADA("wc-party")') is None, "a tap on party col 11: Party mode OFF")
+n0 = nsent(W6)
+W6.execute('local c = WowCompanion.pad.rows.party.cells[37]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false)')
+ack = docs(W6, n0, 'partyack')
+check(len(ack) == 1 and ack[0]['ok'] is False and ack[0]['why'] == 'unknown column', "a spare column (37) is refused: unknown column", ack)
+
+# ================================================================ 5. THE COMBAT LOCKDOWN (secure work from insecure code in a fight errors)
+W5 = world()
+W5.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true')
+n0 = nsent(W5)
+r = W5.eval('WowCompanion.padMap.party.put')("a", 331)
+ack = docs(W5, n0, 'partyack')
+check(r[0] is False and ack and ack[0]['ok'] is False and ack[0]['why'] == 'combat' and ack[0]['op'] == 'slot', "a setting in a fight: partyack ok false, why combat", ack)
+for slot, op in (("yc", "yc"), ("touch", "touch")):
+    n0 = nsent(W5)
+    W5.eval('WowCompanion.padMap.party.put')(slot, 331)
+    ack = docs(W5, n0, 'partyack')
+    check(ack and ack[0]['op'] == op and ack[0]['why'] == 'combat', "... and for " + op, ack)
+check(W5.eval('WowCompanionSpellsDB.partyBy["Korvash-Realm"].yc') is None, "nothing stored in the fight")
+W5.execute('BOOK = { 403, 331, 324, 8004 }; fire("SPELLS_CHANGED"); advance(1)')
+check(W5.eval('PADA("wc-ps-x")') is None and W5.eval('#VIOL') == 0, "a spell learned in the fight: nothing applied yet, no lockdown breach",
+      list(W5.eval('VIOL').values())[:2])
+W5.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1)')
+check(W5.eval('PADA("wc-ps-x")') == "Lesser Healing Wave", "... applied at PLAYER_REGEN_ENABLED (x = Lesser Healing Wave)", W5.eval('PADA("wc-ps-x")'))
+check(W5.eval('#VIOL') == 0 and W5.eval('#SPY') == 0, "no lockdown breach, no spied call", (list(W5.eval('VIOL').values())[:2], list(W5.eval('SPY').values())[:2]))
 
 # ================================================================ THE NO-TRACE SCAN (new code only: the diff against the contract's base)
 import subprocess

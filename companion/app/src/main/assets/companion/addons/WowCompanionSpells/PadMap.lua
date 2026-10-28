@@ -4719,12 +4719,220 @@ local function partyMode()
         return false
     end
 
+    -- ---------------------------------------------------------------- the per-character store and the class defaults (3.6)
+    -- WowCompanionSpellsDB.partyBy[name-realm] = { v = 1, slots = { a = id | false (Empty, chosen) | nil (the class default) },
+    -- yc = id | nil (Inspect), touch = id | nil (Target), buffs = { id, ... } (Smart Y's party list: EMPTY at first, max 8) }
+    PM.SLOTS = { "a", "x", "zla", "zlx", "zly", "zra", "zrx", "zry" }
+    OV.PARTY_DEFAULTS = {
+        SHAMAN = { a = 331, x = 8004, zla = 526, zlx = 2870, zra = 2008 },
+        PRIEST = { a = 2050, x = 17, zla = 527, zlx = 528, zra = 2006, zrx = 139 },
+        DRUID = { a = 5185, x = 774, zla = 8946, zlx = 2782, zra = 20484, zrx = 8936 },
+        PALADIN = { a = 635, x = 19750, zla = 1152, zlx = 4987, zra = 7328, zrx = 633 },
+        MAGE = { a = 475, zla = 604, zlx = 1008 },
+        WARLOCK = { a = 5697 },
+        HUNTER = {}, ROGUE = {}, WARRIOR = {},
+    }
+    OV.PARTY_RES = { 2008, 2006, 7328, 20484 }
+    OV.PARTY_BUFFS = { 1243, 14752, 976, 6346, 1126, 467, 1459, 604, 1008, 19740, 19742, 20217, 19977, 1038, 20911, 131, 546, 5697, 132 }
+    PM.BUFFS_MAX = 8
+    PM.scratch = nil
+    function PM.store()
+        if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+        local db = _G.WowCompanionSpellsDB
+        local k = whoKey()
+        local st
+        if not k then                                                   -- no character yet: a scratch record, never saved
+            PM.scratch = PM.scratch or {}
+            st = PM.scratch
+        else
+            if type(db.partyBy) ~= "table" then db.partyBy = {} end
+            if type(db.partyBy[k]) ~= "table" then db.partyBy[k] = {} end
+            st = db.partyBy[k]
+        end
+        st.v = 1
+        if type(st.slots) ~= "table" then st.slots = {} end
+        if type(st.buffs) ~= "table" then st.buffs = {} end
+        return st
+    end
+    function PM.class()
+        local ok, _, token = CALL(function() return UnitClass("player") end)
+        return ok and WC.isPlain(token) and type(token) == "string" and token or nil
+    end
+    function PM.icon(id)
+        local i = T(function() return (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(id)) or GetSpellTexture(id) end)
+        return type(i) == "number" and WC.isPlain(i) and i or 0
+    end
+    -- the book's spells by name (any rank is the spell: cast by name = the best rank known), book order
+    function PM.book()
+        local names, order = {}, {}
+        local ok, list = pcall(function() return type(WC.spellsBindableList) == "function" and WC.spellsBindableList() or {} end)
+        for _, e in ipairs(ok and type(list) == "table" and list or {}) do
+            local n = e.id and OV.sbName(e.id)
+            if n and WC.isPlain(n) and not names[n] then names[n] = e.id; order[#order + 1] = { id = e.id, n = n } end
+        end
+        return names, order
+    end
+    function PM.nameSet(ids)
+        local out = {}
+        for _, id in ipairs(ids) do local n = OV.sbName(id); if n then out[n] = id end end
+        return out
+    end
+    -- a spell id -> the document's spell object { id, n, i, k = learned now, res }
+    function PM.spellObj(id, names, extra)
+        if type(id) ~= "number" then return nil end
+        local n = OV.sbName(id)
+        local o = { id = id, n = n or "?", i = PM.icon(id), k = (n and names[n]) and true or false }
+        if PM.resNames[n or ""] or PM.resIds[id] then o.res = true end
+        if extra then for k, v in pairs(extra) do o[k] = v end end
+        return o
+    end
+    PM.resIds = {}
+    for _, id in ipairs(OV.PARTY_RES) do PM.resIds[id] = true end
+    PM.resNames = {}
+    -- the chooser: the book's bindable spells the game calls helpful (plain), less Smart buffs' self-only ones, plus every known
+    -- class default and party buff; book order
+    function PM.chooser(names, order)
+        local selfOnly, party, defs = {}, PM.nameSet(OV.PARTY_BUFFS), {}
+        for _, id in ipairs(OV.SB_IDS) do local n = OV.sbName(id); if n and not party[n] then selfOnly[n] = true end end
+        for _, t in pairs(OV.PARTY_DEFAULTS) do for _, id in pairs(t) do local n = OV.sbName(id); if n then defs[n] = true end end end
+        local out = {}
+        for _, e in ipairs(order) do
+            local helpful = T(function() return C_Spell.IsSpellHelpful(e.id) end)
+            local plainHelp = helpful == true and WC.isPlain(helpful)
+            if (plainHelp and not selfOnly[e.n]) or defs[e.n] or party[e.n] then out[#out + 1] = { id = e.id, n = e.n, i = PM.icon(e.id) } end
+        end
+        return out
+    end
+    -- everything the document and the apply need, resolved now
+    function PM.resolve()
+        PM.resNames = PM.nameSet(OV.PARTY_RES)
+        local st = PM.store()
+        local names, order = PM.book()
+        local def = OV.PARTY_DEFAULTS[PM.class() or ""] or {}
+        local c = { slots = {}, spells = PM.chooser(names, order) }
+        for _, s in ipairs(PM.SLOTS) do
+            local v = st.slots[s]
+            if v == nil then c.slots[s] = PM.spellObj(def[s], names, { d = true })
+            elseif type(v) == "number" then c.slots[s] = PM.spellObj(v, names, { d = false }) end      -- false: Empty, chosen
+        end
+        c.yc = type(st.yc) == "number" and PM.spellObj(st.yc, names) or nil
+        c.touch = type(st.touch) == "number" and PM.spellObj(st.touch, names) or nil
+        return c, st, names
+    end
+
+    -- the pad's spells and the party row's touch cells from the store (out of combat; in a fight: at its end)
+    function PM.apply(why)
+        if inCombat() or not PM.f then PM.applyPending = true return false end
+        PM.applyPending = nil
+        local c = PM.resolve()
+        local pad = PM.f.pad
+        for _, s in ipairs(PM.SLOTS) do
+            local e = c.slots[s]
+            pad:SetAttribute("wc-ps-" .. s, (e and e.k and e.n ~= "?") and e.n or nil)            -- not learned: drawn dim, never cast
+        end
+        pad:SetAttribute("wc-py", (c.yc and c.yc.k) and c.yc.n or nil)
+        local tn = (c.touch and c.touch.k) and c.touch.n or nil
+        if tn ~= PM.touchName or not PM.rowBuilt then
+            PM.touchName = tn
+            PM.buildRow()
+        end
+        if PM.smartApply then pcall(PM.smartApply) end
+        if PM.sendCfg then pcall(PM.sendCfg, why) end
+        return true
+    end
+
+    -- ---------------------------------------------------------------- the party row (2.2): 40 secure cells, opts.onPress
+    PM.COL = { tgt = 0, tsp = 5, on = 10, off = 11, focus = 12, menu = 17, resend = 22, pbsel = 23,
+               pbops = { remove = 31, up = 32, down = 33, add = 34 }, mdone = 35 }
+    PM.U = { [0] = "player", "party1", "party2", "party3", "party4" }
+    function PM.cellInit(btn, col)
+        for _, k in ipairs({ "type", "spell", "unit", "clickbutton" }) do btn:SetAttribute(k, nil) end
+        local f = PM.f
+        if col <= 4 then
+            btn:SetAttribute("type", "target"); btn:SetAttribute("unit", PM.U[col])
+        elseif col <= 9 then
+            if PM.touchName then btn:SetAttribute("type", "spell"); btn:SetAttribute("spell", PM.touchName); btn:SetAttribute("unit", PM.U[col - 5]) end
+        elseif (col == PM.COL.on or col == PM.COL.off or col == PM.COL.mdone) and f then
+            btn:SetAttribute("type", "click")
+            btn:SetAttribute("clickbutton", (col == PM.COL.on and f.on) or (col == PM.COL.off and f.off) or f.mdone)
+        elseif col >= PM.COL.focus and col <= PM.COL.focus + 4 then
+            btn:SetAttribute("type", "focus"); btn:SetAttribute("unit", PM.U[col - PM.COL.focus])
+        end
+    end
+    function PM.ack(op, ok, why, slot, id)
+        WC.send(WC.encode({ type = "partyack", v = PV, op = op, ok = ok and true or false, why = why, slot = slot, id = id }))
+        WC.push()
+        if why == "combat" and type(WC.spellsRefusedCombat) == "function" then pcall(WC.spellsRefusedCombat) end
+    end
+    function PM.onCell(col)
+        if type(col) ~= "number" then return end
+        if col >= PM.COL.menu and col <= PM.COL.menu + 4 then
+            if type(WC.pmenu) == "table" and type(WC.pmenu.read) == "function" then pcall(WC.pmenu.read, PM.U[col - PM.COL.menu], "party") end
+        elseif col == PM.COL.resend then
+            if PM.resend then PM.resend() end
+        elseif col >= PM.COL.pbsel and col <= PM.COL.pbops.add then
+            if PM.pbOp then PM.pbOp(col) end
+        elseif col >= PM.COL.tsp and col <= PM.COL.tsp + 4 then
+            if not PM.touchName then PM.ack("touch", false, "target") end   -- a stale tap: Touch is Target (its cells are the tgt ones)
+        elseif col > PM.COL.mdone then
+            PM.ack("cell", false, "unknown column")
+        end
+    end
+    function PM.buildRow()
+        if not (WC.pad and type(WC.pad.secureRow) == "function") then return nil end
+        PM.row = WC.pad.secureRow("party", 40, PM.cellInit, PM.onCell, { onPress = true })
+        PM.rowBuilt = not inCombat()
+        return PM.row
+    end
+
+    -- a setting (the Controller room's Party tab; Book's padtab 26-37): slot "a" .. "zry" = id | false (Empty); "yc" = id | false
+    -- (Inspect); "touch" = id | false (Target). A spell must be in the chooser. Refused in a fight (secure attributes are locked)
+    function PM.put(slot, v)
+        local op = (slot == "yc" or slot == "touch") and slot or "slot"
+        local id = type(v) == "number" and v or nil
+        if inCombat() then PM.ack(op, false, "combat", slot, id) return false, "combat" end
+        local isSlot = false
+        for _, s in ipairs(PM.SLOTS) do if s == slot then isSlot = true end end
+        if op == "slot" and not isSlot then PM.ack(op, false, "no such slot", slot, id) return false, "no such slot" end
+        if v ~= false and not id then PM.ack(op, false, "nothing to set", slot) return false, "nothing to set" end
+        local c = PM.resolve()
+        if id then
+            local found = false
+            for _, e in ipairs(c.spells) do if e.id == id then found = true end end
+            if not found then PM.ack(op, false, "not a party spell", slot, id) return false, "not a party spell" end
+        end
+        local st = PM.store()
+        if op == "slot" then st.slots[slot] = id or false
+        elseif op == "yc" then st.yc = id
+        else st.touch = id end
+        PM.ack(op, true, nil, slot, id)
+        PM.apply("set")
+        return true
+    end
+    WC.padMap.party = { cfg = function() return PM.cfgNow and PM.cfgNow() or PM.resolve() end, put = PM.put, on = PM.on,
+                        slots = PM.SLOTS, cols = PM.COL }
+
+    function PM.onEvent(e)
+        if e == "PLAYER_REGEN_ENABLED" then
+            if not PM.rowBuilt or PM.applyPending then pcall(PM.apply, "fight-end") end
+            if PM.f then pcall(PM.link) end
+        elseif e == "PLAYER_ENTERING_WORLD" or e == "SPELLS_CHANGED" or e == "PLAYER_LOGIN" then
+            if not PM.applySoon then
+                PM.applySoon = true
+                C_Timer.After(0.3, function() PM.applySoon = nil; pcall(PM.apply, e == "SPELLS_CHANGED" and "spells" or "login") end)
+            end
+        end
+    end
+
     PM.ev = CreateFrame("Frame")
-    for _, e in ipairs({ "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD" }) do pcall(function() PM.ev:RegisterEvent(e) end) end
+    for _, e in ipairs({ "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD", "SPELLS_CHANGED", "PLAYER_LOGIN" }) do
+        pcall(function() PM.ev:RegisterEvent(e) end)
+    end
     PM.ev:SetScript("OnEvent", function(_, e, ...)
         if not PM.f then pcall(PM.make) end
         if PM.onEvent then pcall(PM.onEvent, e, ...) end
     end)
     pcall(PM.make)
+    pcall(PM.buildRow)                  -- registered at Spells' LOAD: numbered before the bag rows Bags adds at runtime (2.1)
 end
 partyMode()
