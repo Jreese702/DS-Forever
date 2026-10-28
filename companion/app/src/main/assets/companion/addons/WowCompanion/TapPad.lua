@@ -80,9 +80,9 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad10c"
+local PADV = "pad11"     -- pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
-local ROWS_MAX = 54      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9, see below)
+local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
 local CELL_W = 6         -- game pixels per cell, across (12 display px on the Thor)
 local CELL_H = 2         -- game pixels per cell, down (4 display px) -- see below
@@ -111,6 +111,10 @@ local TOP_GAP = 12       -- game pixels between the screen's top edge and the fi
 -- while it ends at least POPUP_MARGIN above it, so row 53 (ending at 12 + 54 x 2 = 120) is the last that fits at EVERY UI scale --
 -- all 54 are placed whatever scale the player picks (the Thor's own scale fits 56). Nothing else changed: same cells, same rules.
 -- pad10 / pad10c (2026-10-09, L1 THE KEY CHANNEL: the user's pick "L1 key channel" via Home): see THE KEY CHANNEL below.
+-- pad11 (2026-10-28, Party mode's ONE secure row "party"; the pad was full at 54 with every bag and the reagent bag): ROWS_MAX 56.
+-- On the Thor's own UI scale (popupTop 126.6 game px) rows 0-55 fit (row 55 ends at 12 + 56 x 2 = 124); at the SMALLEST scale (121.5)
+-- rows 54-55 are neither placed nor described, exactly as pad8 / pad9 drop rows, and the app finds those cells missing. Same cells,
+-- same geometry, same fits() and describe(). One real tap test on the device is owed before release (probe P11).
 local POPUP_TOP_UNITS = 135
 
 local pad = { rows = {}, byRow = {}, nrows = 0, ns = {}, geom = nil, info = nil, visible = false,

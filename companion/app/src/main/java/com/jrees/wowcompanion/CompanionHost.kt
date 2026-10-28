@@ -575,6 +575,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the Home button's B follows Home's own state at once (a module full screen shows B; user 15:08)
         homeView.onStateChanged = { discB("Home's state") }
         homeView.onBHome = { strip.homePressed() }
+        partyWire()
+        homeView.onPartyLeaveRest = { partyLeaveHome("a Home module full screen") }
         // Home's controller reader passes each held mask to Interact's pop-up while it shows: its Make Space ring follows the real A
         // press (display only; one getevent). In a room no reader of Home's runs: the ring falls back to Interact's document
         homeView.onPadHeldAny = { m ->
@@ -971,6 +973,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     fun onStart() {
         DirectPad.start()
+        if (room == Room.HOME) ui.post { partyAsk(PartyModel.Ask.HOME_SHOWN) }     // back from the background: Party mode's documents
         TapBridge.watchPad()        // the quiet pad's clock from the start (Quests, step 0): the first tap already knows the last press
         if (unpacking) return
         GameUi.onVisible(true)
@@ -993,6 +996,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     private fun show(r: Room, byB: Boolean = false, motion: Boolean = true) {
         flushBLeave()
+        // PARTY MODE (1.1, 4.2): Home shown again re-asks the add-on's documents; leaving Home turns Party mode off only by the switch
+        if (r == Room.HOME && room != Room.HOME) partyAsk(PartyModel.Ask.HOME_SHOWN)
+        if (r != Room.HOME && room == Room.HOME) partyLeaveHome("room $r")
         if (r == Room.HOME) ui.postDelayed({ newSpellAsk() }, 800L)          // f-new-spell-prompt: back Home, the next one
         // the pause menu never stays over a room change (a whisper's jump, a game window); its own picks run after it has folded
         if (::pauseView.isInitialized && pauseView.isOpen) pauseView.shut()
@@ -1209,6 +1215,119 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
     }
 
+    // ================================================================ PARTY MODE (PARTY_BUILD.md 1.1, 2.4, 4.2, 4.6, 4.7)
+
+    /** the module's touches and the player menu's outcomes: every tap from `partycfg.pad` (PartyTaps), on the pad the app holds */
+    private fun partyWire() {
+        val live = PartyModel.live
+        homeView.onPartyCell = { i ->
+            val cells = PartyTaps.touch(live.cfg, i)
+            when {
+                !live.tapsAllowed(SystemClock.uptimeMillis()) -> Log.i("WCHOME", "party: touch on $i refused (the roster just changed)")
+                cells == null -> Log.i("WCHOME", "party: touch on $i: no cell (no partycfg / column)")
+                else -> TapBridge.taps(this, questsPad, cells) { why -> Log.i("WCHOME", "party: touch on $i not sent: $why") }
+            }
+        }
+        homeView.onPartyLong = { i ->
+            val cells = PartyTaps.menu(live.cfg, i)
+            if (cells != null && live.tapsAllowed(SystemClock.uptimeMillis()) && TapBridge.taps(this, questsPad, cells) { }) {
+                homeView.partyMenu.open(i, live.party?.m?.firstOrNull { it.i == i }?.n ?: "", byPad = false)
+            } else Log.i("WCHOME", "party: hold on $i: the menu was not asked")
+        }
+        homeView.onPartyTag = {
+            val sent = PartyTaps.on(live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } } == true
+            Log.i("WCHOME", "party: the (-) tag: on ${if (sent) "tapped" else "not sent"}")
+        }
+        homeView.partyMenu.onDo = { d, byPad ->
+            val menu = homeView.partyMenu
+            when (d) {
+                is PlayerMenu.Do.Run -> {
+                    if (d.id >= 0) GuestPad.playerMenuRun(questsPad, d.id)?.let { TapBridge.taps(this, questsPad, it) { } }
+                    // q49 ap = "whisper": the Chat room, replying to the member (as Social's Whisper opens it)
+                    if (d.app == "whisper" && menu.name.isNotEmpty()) { val n = menu.name; ui.post { show(Room.CHAT); chatView.whisperTo(n) } }
+                }
+                is PlayerMenu.Do.Secure -> TapBridge.taps(this, questsPad, listOf((if (d.row == "party") PartyModel.live.cfg?.pad?.row ?: "party" else d.row) to d.col)) { }
+                is PlayerMenu.Do.Refused -> Log.i("WCHOME", "party menu: ${d.why}")
+                PlayerMenu.Do.Close, PlayerMenu.Do.None -> {}
+            }
+            // the PartyPad's menu sub-state ends with the menu (only when its Y opened it)
+            if (byPad && !menu.isOpen) PartyTaps.menuDone(live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } }
+        }
+    }
+
+    /** 1.1's re-ask (party row col 22): only with a known column, live, at most once per 10 s */
+    private fun partyAsk(why: PartyModel.Ask) {
+        val cells = PartyTaps.resend(PartyModel.live.cfg) ?: return
+        if (!PartyModel.live.shouldAsk(why, GameInput.live(), SystemClock.uptimeMillis())) return
+        val sent = TapBridge.taps(this, questsPad, cells) { }
+        Log.i("WCHOME", "party: resend ($why) ${if (sent) "tapped" else "not sent"}")
+    }
+
+    private fun partyRedraw() {
+        homeView.partyChanged()
+        castView.partyChanged()
+        controllerView.partyChanged()
+        settingsView.partyChanged()
+    }
+
+    private fun partyDoc(p: PartyModel.Party, current: Boolean) {
+        val live = PartyModel.live
+        val wasOn = live.party?.on == true
+        if (live.onParty(p, current, SystemClock.uptimeMillis())) partyRedraw()
+        if (current && p.on && !wasOn) partyAsk(PartyModel.Ask.PARTY_ON)
+        // the menu's member left the group: it closes
+        val menu = homeView.partyMenu
+        if (menu.isOpen && p.m.none { it.i == menu.unit }) menu.close()
+    }
+
+    private fun partyBox(b: PartyModel.Box) {
+        val live = PartyModel.live
+        if (!live.onBox(b, true)) return
+        val menu = homeView.partyMenu
+        when (b.k) {
+            // Y opened the player menu for b.u: the PartyPad's next presses are the menu's
+            "menu" -> PartyModel.unitIndex(b.u)?.let { i ->
+                menu.open(i, live.party?.m?.firstOrNull { it.i == i }?.n ?: "", byPad = true)
+            }
+            "key" -> if (menu.isOpen && menu.byPad) b.key?.let { menu.key(it) }
+            "off" -> if (menu.isOpen && menu.byPad) menu.close()
+        }
+        // the pad's menu sub-state with no menu of ours driving it (a lost k=menu, an app restart): MENU DONE frees the presses
+        if (PartyModel.strandedMenu(b, menu.isOpen && menu.byPad)) {
+            val sent = PartyTaps.menuDone(live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } } == true
+            Log.i("WCHOME", "party: the pad's menu sub-state with no menu here: menu done ${if (sent) "tapped" else "not sent"}")
+        }
+        partyRedraw()
+    }
+
+    private fun partyAck(a: PartyModel.Ack) {
+        Log.i("WCHOME", "party: ack ${a.op} ${if (a.ok) "ok" else "refused ${a.why ?: ""}"}")
+        // only a settings answer reaches the pages (op resend / cell / a stale touch tap are logged, never said)
+        if (!PartyModel.forSettings(a)) return
+        controllerView.onPartyAck(a)
+        settingsView.onPartyAck(a)
+    }
+
+    /**
+     * Leaving Home's rest page (a room opens, or a Home module goes full screen: [why]): THE USER'S RULING, Party mode turns OFF
+     * (PartyModel.OFF_ON_LEAVE). The party menu closes (MENU DONE when the pad's Y opened it), then party `off` (absolute, in fights
+     * too) so the router releases the pad; Home shown again finds it off (the add-on's party / partybox say so; the resend re-asks).
+     */
+    /** the capture's holder (a current interact document): a taker while Party mode is on -> off (PartyModel.State.takerSeen) */
+    private fun partyTaker(holder: String) {
+        if (!PartyModel.live.takerSeen(holder, SystemClock.uptimeMillis())) return
+        if (homeView.partyMenu.isOpen) homeView.partyMenu.close()
+        val sent = PartyTaps.off(PartyModel.live.cfg)?.let { TapBridge.taps(this, questsPad, it) { w -> Log.i("WCHOME", "party: off not sent: $w") } } == true
+        Log.i("WCHOME", "party: $holder took the controller: off ${if (sent) "tapped" else "not sent"}")
+    }
+
+    private fun partyLeaveHome(why: String) {
+        if (homeView.partyMenu.isOpen) homeView.partyMenu.close()
+        if (!PartyModel.offOnLeave(PartyModel.live.party)) return
+        val sent = PartyTaps.off(PartyModel.live.cfg)?.let { TapBridge.taps(this, questsPad, it) { w -> Log.i("WCHOME", "party: off not sent: $w") } } == true
+        Log.i("WCHOME", "party: left Home ($why): off ${if (sent) "tapped" else "not sent"}")
+    }
+
     /**
      * A TOUCH ON THE SWIRL = THE BAR CURSOR'S PICK OF IT (the user on RC4: "tapping on the swirl should do the same thing as picking it
      * with the controller"): the pause wheel on Home's plain disc; where the disc shows B (test51) it is B: Home. What the cursor can never reach keeps the disc's B: a game window
@@ -1216,6 +1335,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * steps back (the B the disc shows there, the user 15:08).
      */
     private fun swirlTouched() {
+        // PARTY MODE (4.2): on Home the disc shows red with B while Party mode is on; a touch on it is B: Party mode OFF
+        if (room == Room.HOME && homeView.partyOnRest()) {
+            val sent = PartyTaps.off(PartyModel.live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } } == true
+            Log.i("WCHOME", "home disc: touched in Party mode: off ${if (sent) "tapped" else "not sent"}")
+            return
+        }
         if (strip.bGoesHome && ::interactView.isInitialized && interactView.closeByTouch()) {
             Log.i("WCHOME", "swirl touched while it shows B: the game window closes (its own close)")
             pickRoom(Room.HOME); return
@@ -1560,6 +1685,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // smoothness A: an answer document's arrival, for the latency chain (inside the launcher only)
         if (LatLog.on) msg.optString("type").let { t -> if (t.endsWith("ack") || t.endsWith("use")) LatLog.mark("doc", "$t gt=${msg.optLong("_gt", -1L)}") }
         if (current && !docFlowSeen) { docFlowSeen = true; Log.i("WCHOME", "docs: first current document (${msg.optString("type")})") }
+        if (current) partyAsk(PartyModel.Ask.FIRST_DOC)
         if (current) GameLife.inWorld()                      // issue #12: the first current document = the game is in the world
         // the interiors bake (Track C) runs while the game is there and quiet; it waits while it fights or loads
         if (current) IndoorSchedulerStep.noteAlive(homeView.inFight() || setupLoading || startView.visibility == View.VISIBLE)
@@ -1626,7 +1752,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // Hub hub6's logout word: the world closed (character select, or the game quitting): the waiting screen at once
             // a flight master's map (Map.lua taxinet): which known nodes connect (b-route-unknown-taxi); replays too (they stay true)
             // the game's player menu, read for the map module's bottom-screen copy (Quests q41): only a current one is the game's now
-            "pmenu" -> if (current) mapView.onPlayerMenuDoc(msg)
+            // ... and Party mode's menu for a party member (q49 src = "party"): its own view over Home's left column
+            "pmenu" -> if (current) { if (msg.optString("src") == "party") homeView.partyMenu.onDoc(msg) else mapView.onPlayerMenuDoc(msg) }
+            // PARTY MODE (PARTY_BUILD.md 1, 4.7): the roster and the settings may be SHOWN from a replay; a box press and an answer only
+            // count when current; nothing is ever tapped because of a replayed document
+            "party" -> PartyModel.parseParty(msg)?.let { partyDoc(it, current) }
+            "partycfg" -> PartyModel.parseCfg(msg)?.let { if (PartyModel.live.onCfg(it, current)) partyRedraw() }
+            "partybox" -> if (current) PartyModel.parseBox(msg)?.let { partyBox(it) }
+            "partyack" -> if (current) PartyModel.parseAck(msg)?.let { partyAck(it) }
             // the route's pin's answer (Map.lua b-route-waypoint): a refused one is not tried again for a while
             // Polestar's answer and its route (Map.lua b-route-polestar)
             "pnav" -> if (current) {
@@ -1646,7 +1779,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val cur = msg.optInt("cur", 0)
                 if (cur != 0) { TaxiNet.onTaxiNet(cur, reach); Log.i("WCMAP", "taxinet: at $cur, ${reach.size} reachable") }
             }
-            "bye" -> if (current) { QuestWatchKeep.cleanEnd(); byeShow() }     // a logout: the game writes its state (the watch list)
+            "bye" -> if (current) { QuestWatchKeep.cleanEnd(); byeShow(); PartyModel.live.newSession() }     // a logout: the game writes its state (the watch list)
             "chat" -> msg.optJSONObject("chat")?.let { chatView.update(it); homeView.onChat(it); PreviewStage.feedChat(it) }
             // the game's world notice (Chat chat21: the shard transfer's countdown) over Home's chat: current only (a replayed one is old)
             "notice" -> if (current) homeView.onNotice(msg)
@@ -1782,6 +1915,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "auraack" -> homeView.auraAck(msg)
             "interact" -> {
                 interactView.update(msg, current)
+                // PARTY MODE (the user's ruling): anything that takes the controller ends it - in fights too (the app's tap is the route)
+                if (current) partyTaker(msg.optString("holder", ""))
                 // Home > Settings' loot window row (r-loot-on-top): the add-on's word; a replayed document only draws
                 if (current) HomeLootSwitch.note(msg)
                 // Settings > Top screen's compass bar row: the add-on's word (Trail.lua's WC.compass, through Interact's proof.compc)
@@ -2415,6 +2550,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (::pauseView.isInitialized && pauseView.isOpen) return       // its own reader closes it
         if (startView.visibility == View.VISIBLE || setupView.visibility == View.VISIBLE || loginPrompt.isOpen) return
         Log.i("WCHOME", "pause: the wheel over ${room.name} ($why)")
+        if (room == Room.HOME) partyLeaveHome("the pause wheel")          // the user's ruling: the wheel takes the controller: Party mode off
         roomMotionEnd()                                              // a room still moving lands first: the wheel moves it itself
         // a reverse still playing: stopped, and the open goes on from where the panels are (no jump)
         val from = if (pauseBack?.isRunning == true) slideT else 0f

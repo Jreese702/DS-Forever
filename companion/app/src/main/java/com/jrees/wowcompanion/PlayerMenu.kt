@@ -11,18 +11,21 @@ import org.json.JSONObject
  * map module: the D-pad walks the rows, A opens a sub-menu or runs an entry (the menu closes, as the game's does), B goes back a
  * level or closes. A title row (the game's own heading, the player's name) is no stop.
  */
-class PlayerMenu(private val runs: Boolean = RUNS) {
+class PlayerMenu(private val runs: Boolean = RUNS, private val greyKeys: Set<String> = emptySet()) {
     /** [confirm]: the question the game would ask first (asked here, on the bottom screen); [secure]: a column of the add-on's secure
-     *  "pfocus" row (Set / Clear Focus) instead of an [id] */
+     *  row [secureRow] (Quests' "pfocus": Set / Clear Focus; Party mode's "party": Set Focus on that member, q49 `scr`) instead of an
+     *  [id]; [app]: what the APP does after the entry runs (q49 `ap`: "whisper" = the Chat room, replying to the member) */
     data class Entry(val text: String, val id: Int?, val enabled: Boolean, val checked: Boolean?, val title: Boolean, val sub: List<Entry>?,
-                     val confirm: String? = null, val secure: Int? = null)
+                     val confirm: String? = null, val secure: Int? = null, val secureRow: String = "pfocus", val app: String? = null,
+                     val key: String? = null)
 
     sealed class Do {
         object None : Do()
         object Close : Do()
-        data class Run(val id: Int, val text: String) : Do()
-        /** a tap on the add-on's secure "pfocus" row, column [col] */
-        data class Secure(val col: Int, val text: String) : Do()
+        /** run entry [id] (the add-on's two digit taps); [app] = the app's own step after it ("whisper"); [id] -1 = nothing to tap */
+        data class Run(val id: Int, val text: String, val app: String? = null) : Do()
+        /** a tap on the add-on's secure row [row] ("pfocus" / "party"), column [col] */
+        data class Secure(val col: Int, val text: String, val row: String = "pfocus") : Do()
         data class Refused(val why: String) : Do()
     }
 
@@ -47,7 +50,7 @@ class PlayerMenu(private val runs: Boolean = RUNS) {
 
     /** the game's document; the open levels stay where they are while they still exist */
     fun onDoc(d: JSONObject) {
-        root = parse(d.optJSONArray("items"))
+        root = parse(d.optJSONArray("items"), greyKeys)
         loading = false
         empty = root.none { !it.title }
         while (path.isNotEmpty() && level(path.size).isEmpty()) { path.removeAt(path.size - 1); sels.removeAt(sels.size - 1) }
@@ -125,11 +128,12 @@ class PlayerMenu(private val runs: Boolean = RUNS) {
                     return Do.None
                 }
                 if (!runs) return Do.Refused("Not available yet")
-                e.secure?.let { col -> close(); return Do.Secure(col, e.text) }
+                e.secure?.let { col -> close(); return Do.Secure(col, e.text, e.secureRow) }
+                if (e.id == null && e.app != null) { close(); return Do.Run(-1, e.text, e.app) }
                 val id = e.id ?: return Do.Refused("Not available yet")
                 if (e.confirm != null) { asking = e; askSel = 1; return Do.None }     // the game asks first: No is where the cursor starts
                 close()
-                return Do.Run(id, e.text)
+                return Do.Run(id, e.text, e.app)
             }
         }
         return Do.None
@@ -145,17 +149,23 @@ class PlayerMenu(private val runs: Boolean = RUNS) {
         /** an entry's id as the add-on's two digit taps: the first digit's column, then the second's (Quests.lua q41: 33 - digit) */
         fun digitCols(id: Int): List<Int> = listOf(33 - (id / 8) % 8, 33 - id % 8)
 
-        fun parse(a: JSONArray?): List<Entry> {
+        /** Party mode's menu (q49 which = PARTY): Inspect is greyed (Blizzard's InspectUnit taints) */
+        val PARTY_GREY = setOf("Inspect", "InspectUnit")
+
+        fun parse(a: JSONArray?, greyKeys: Set<String> = emptySet()): List<Entry> {
             if (a == null) return emptyList()
             val out = ArrayList<Entry>(a.length())
             for (i in 0 until a.length()) {
                 val o = a.optJSONObject(i) ?: continue
                 val t = o.optString("t", "")
                 if (t.isEmpty()) continue
-                out.add(Entry(t, if (o.has("i")) o.optInt("i") else null, o.optInt("en", 1) == 1,
+                val k = o.optString("k", "").ifEmpty { null }
+                val grey = k != null && k in greyKeys || greyKeys.isNotEmpty() && t in greyKeys
+                out.add(Entry(t, if (o.has("i")) o.optInt("i") else null, o.optInt("en", 1) == 1 && !grey,
                     if (o.has("ck")) o.optInt("ck") == 1 else null, o.optInt("ttl", 0) == 1,
-                    if (o.has("sub")) parse(o.optJSONArray("sub")) else null,
-                    o.optString("cf", "").ifEmpty { null }, if (o.has("sc")) o.optInt("sc") else null))
+                    if (o.has("sub")) parse(o.optJSONArray("sub"), greyKeys) else null,
+                    o.optString("cf", "").ifEmpty { null }, if (o.has("sc")) o.optInt("sc") else null,
+                    o.optString("scr", "").ifEmpty { "pfocus" }, o.optString("ap", "").ifEmpty { null }, k))
             }
             return out
         }

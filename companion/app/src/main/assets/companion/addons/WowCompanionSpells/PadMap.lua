@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m76"                -- bump on every change; m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m77"                -- bump on every change; m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -926,6 +926,9 @@ local PRE = [=[
         end
         if not dest then dest = self:GetAttribute("wc-dest-" .. anchor .. "-1"); at = 1 end
         local mode = self:GetAttribute("wc-mode")
+        -- m77 PARTY MODE: while "wc-party" is set (and no room holds: room mode first) every press goes to the party pad, as room mode delivers
+        local pdest = mode ~= "room" and self:GetAttribute("wc-party") and self:GetAttribute("wc-party-dest") or nil
+        if pdest then mode = "room" end
         -- m26 (the user 2026-10-05: "the non combat skill bars wont use my spells"): A MACRO CANNOT RUN ANOTHER MACRO on this client
         -- (ControllerForever's author measured it too), so a "/click" of Forever's button that holds a macro (the start-attack "DS Attack"
         -- macros, the combat buttons, the player's own) does nothing. Its macro text, kept per action slot on the header out of combat,
@@ -1024,8 +1027,8 @@ local PRE = [=[
         end
         local mb = "LeftButton"
         self:SetAttribute("unit", nil)                                  -- m62: only Smart Y's buff casts on yourself
-        if mode == "room" and self:GetAttribute("wc-room-dest") then
-            dest = self:GetAttribute("wc-room-dest"); mb = self:GetAttribute("wc-key") or mb; fight = false
+        if mode == "room" and (pdest or self:GetAttribute("wc-room-dest")) then
+            dest = pdest or self:GetAttribute("wc-room-dest"); mb = self:GetAttribute("wc-key") or mb; fight = false
         end
         self:SetAttribute("wc-mb", mb)
         if qi then
@@ -1221,6 +1224,7 @@ R.linkAll = function()
     for _, h in pairs(holders) do
         if h then for p, o in pairs(all) do pcall(SecureHandlerSetFrameRef, h, "wc-face-" .. p, o) end end
     end
+    if OV.pm and OV.pm.link then pcall(OV.pm.link) end            -- m77: Party mode's pad and flips refer to every router button
 end
 local function routerSetup(b, pos)
     if inCombat() or not b then return false end
@@ -1595,7 +1599,8 @@ local function routerBind(why, fightStart)
     end
     -- m34 THE BINDINGS ON A BUTTON: the chord points at the game's binding (Jump, Interact, Auto Run, Walk / Run)
     R.cbound = {}
-    if not aside then
+    -- m77: not while Party mode is on (a ZL+A binding would beat the chord the party pad reads)
+    if not aside and not (OV.pm and OV.pm.on()) then
         for chord, k in pairs(bindPlan()) do
             pcall(SetOverrideBinding, hdr, true, chord, k)
             R.cbound[chord] = TS(function() return GetBindingAction(chord, true) end) == k or nil
@@ -1614,6 +1619,8 @@ local function routerBind(why, fightStart)
             if b and key and not R.cbound[key] then carry(b, key) end
         end
     end
+    -- m77 PARTY MODE: on = all 8 router keys carried; Select to the party toggle (PARTY_BUILD.md 3.5)
+    if OV.pm and OV.pm.bind then pcall(OV.pm.bind, aside, fightStart, carry) end
     local want = 0
     for pos in pairs(face.keys) do if face.buttons[pos] and type(faceStore()[pos]) == "table" then want = want + 1 end end
     local got = 0
@@ -1653,11 +1660,12 @@ local function routerCheck()
             if not (b and key and TS(function() return GetBindingAction(key, true) end) == routerAct(b:GetName())) then lost = true end
         end
     end
-    if not aside then                                                   -- m34: the bindings on buttons
+    if not aside and not (OV.pm and OV.pm.on()) then                   -- m34: the bindings on buttons (m77: not in Party mode)
         for chord, k in pairs(bindPlan()) do
             if TS(function() return GetBindingAction(chord, true) end) ~= k then lost = true end
         end
     end
+    if not aside and OV.pm and OV.pm.lost and OV.pm.lost() then lost = true end   -- m77: Party mode's keys and Select
     -- m37: the menu arm is spent once the Game Menu shows (the router is aside then) or MENU_S pass; Start goes back to our wheel
     if R.menuAt and (not menuArmed() or windowOpen() == "GameMenuFrame") then R.menuAt = nil; lost = true; R.lastBind = 0 end
     if (not aside or R.startInRoom(roomHolder())) and dpadWant() == true then   -- m38: the DS WoW toolbar only; m43: in rooms too
@@ -3645,6 +3653,7 @@ function OV.setSmartOn(on)
     db.smartOn[k] = on and true or nil
     pcall(function() WC.send(WC.encode({ type = "smartyack", v = PV, op = on and "on" or "off", ok = true })) end)
     pcall(OV.smartApply); pcall(OV.qiApply); pcall(emit, true); WC.push()
+    if OV.pm and OV.pm.smartChanged then pcall(OV.pm.smartChanged) end   -- m77: Smart Y's party picks follow the switch
 end
 function OV.smartApply()
     if inCombat() then OV.smartPending = true; return end
@@ -3834,6 +3843,7 @@ WC.smartYSpell = function(id)
     local p = OV.sbPick
     OV.sbPick = nil
     if not p then return end
+    if p.op == "padd" then if OV.pm and OV.pm.padd then OV.pm.padd(id) end return end    -- m77: Party mode's party buff list (col 34)
     local rows = OV.sbdb().rows
     local _, byName = OV.sbKnown()
     local n = OV.sbName(id)
@@ -4345,3 +4355,939 @@ do
         pcall(C_Timer.NewTicker, 5, function() pcall(send, false) end)
     end
 end
+
+-- ---------------------------------------------------------------- m77 PARTY MODE (the lead's contract PARTY_BUILD.md; the ADD-ON half)
+-- The user's rulings (party_mode/SPEC_DRAFT.md, v10 / v13 / v17 / v18; FEASIBILITY.md "DESIGN CHANGES FORCED"): Select toggles Party
+-- mode; while it is on every press of the 8 router keys goes to OUR secure button WowCompanionPartyPad (the router's PRE, room mode
+-- first): the D-pad moves the box over the party (you first, then party1..4), A / X and the ZL / ZR chords cast the slot's spell ON the
+-- boxed member (CastSpellByName(spell, unit): the game's target never changes), Y opens the member's player menu (the app's mirror) or
+-- casts its in-combat spell / Smart Y's party buff, B turns Party mode off. No trace: our own secure buttons, override bindings on our
+-- own owner (the router's header), data only in WowCompanionSpellsDB.partyBy[name-realm]; nothing of Blizzard's window code is run.
+-- One main-chunk local (the chunk is at Lua's 200): everything lives in partyMode()'s own scope and on OV.pm.
+local function partyMode()
+    local PM = { n = 0, rs = 0 }
+    OV.pm = PM
+    -- F.ROUTER's order (Interact.lua): the 8 router buttons by position; the pad's frame refs wc-r-1..8 follow it
+    PM.ORDER = { 8, 7, 5, 6, 1, 2, 3, 4 }
+    PM.KEYNAME = { [1] = "PADDLEFT", [2] = "PADDUP", [3] = "PADDRIGHT", [4] = "PADDDOWN", [5] = "PAD3", [6] = "PAD4", [7] = "PAD2", [8] = "PAD1" }
+    PM.PAD, PM.TOGGLE, PM.ON, PM.OFF, PM.MDONE = "WowCompanionPartyPad", "WowCompanionPartyToggle", "WowCompanionPartyOn",
+        "WowCompanionPartyOff", "WowCompanionPartyMenuDone"
+    -- THE ONE SWITCH (THE USER'S RULINGS 2026-10-28: Party mode turns OFF when you leave Home - a room, a Home module full screen -
+    -- and ANYTHING that takes the controller ends it: the pause wheel, the bar cursor, a game window such as a vendor or loot).
+    -- true = out of combat, whenever the router steps aside (any capture holder, or a game window), the add-on turns Party mode off
+    -- (PM.set(nil): the 8 router buttons and the pad lose wc-party; the party document says on false; the router binds today's plan
+    -- when the taker lets go). IN A FIGHT secure attributes are locked, so the add-on cannot flip it: a room that takes the controller
+    -- wins through room mode (PRE: room mode first), and the APP taps party col 11 (a secure click, works in fights) when it sees the
+    -- taker; the add-on marks the fight as "taken" (any holder, or a game window, seen while Party mode is on) and turns Party mode
+    -- off at PLAYER_REGEN_ENABLED if the app's tap did not. false = suspended only (`aside`)
+    PM.OFF_WHEN_ASIDE = true
+    -- a holder / a game window while Party mode is on (in a fight: noted for its end); `win` = windowOpen()
+    function PM.takerNow(win)
+        local ok, st = pcall(function() return WC.capture.state() end)
+        local h = ok and type(st) == "table" and st.holder or nil
+        return (type(h) == "string" and h ~= "") or win ~= nil
+    end
+    function PM.noteFightTaker()
+        if PM.OFF_WHEN_ASIDE and inCombat() and PM.on() and PM.takerNow(windowOpen()) then PM.fightTaken = true end
+    end
+
+    -- PARTY-NAV-BEGIN (pure; tools/test_party.py checks it against PARTY_BUILD.md 3.4 and against the PARTYPAD snippet's copy)
+    -- the box's move: n members (1 = you), box = the boxed index, dir = "up" / "down" / "left" / "right"; -> the new index (= box: no move)
+    OV.partyNav = function(n, box, dir)
+        local nb = box
+        if n == 2 then
+            if dir == "down" and box == 1 then nb = 2 elseif dir == "up" and box == 2 then nb = 1 end
+        elseif n >= 3 then
+            if box == 1 then
+                if dir == "down" then nb = 2 end
+            elseif n == 5 and box >= 4 then
+                if dir == "up" then nb = box - 2 elseif dir == "left" and box == 5 then nb = 4 elseif dir == "right" and box == 4 then nb = 5 end
+            else
+                local last = (n == 5) and 3 or n
+                if dir == "up" then nb = 1
+                elseif dir == "down" and n == 5 then nb = box + 2
+                elseif dir == "left" and box > 2 then nb = box - 1
+                elseif dir == "right" and box < last then nb = box + 1 end
+            end
+        end
+        return nb
+    end
+    -- PARTY-NAV-END
+
+    -- THE PARTY PAD (restricted Lua; the router's /click delivers the key's name as the button, "1" / "0" as the edge). The key-down only:
+    -- the key-up changes nothing, so whichever edge the secure template acts on, it acts ONCE.
+    PM.PARTYPAD = [=[
+    if not down then return end
+    self:SetAttribute("type", nil)
+    self:SetAttribute("spell", nil)
+    self:SetAttribute("unit", nil)
+    self:SetAttribute("wc-k", "none")
+    local pos = self:GetAttribute("wc-kp-" .. (button or "")) or 0
+    self:SetAttribute("wc-key", self:GetAttribute("wc-kn-" .. pos))
+    local lt, rt = false, false
+    local st = GetGamePadState and GetGamePadState()
+    local bt = st and st.buttons
+    if bt then
+        local li, ri = self:GetAttribute("wc-lt"), self:GetAttribute("wc-rt")
+        lt = (li and bt[li]) and true or false
+        rt = (ri and bt[ri]) and true or false
+    end
+    local ly = ""
+    if lt and not rt then ly = "zl" elseif rt and not lt then ly = "zr" end
+    self:SetAttribute("wc-ly", ly)
+    local n = 1
+    for i = 1, 4 do
+        if SecureCmdOptionParse("[@party" .. i .. ",exists] 1") == "1" then n = n + 1 end
+    end
+    local box = self:GetAttribute("wc-box") or 1
+    if box > n then box = n end
+    if box < 1 then box = 1 end
+    local menu = self:GetAttribute("wc-pmenu")
+    local kind = nil
+    if pos >= 1 and pos <= 4 then
+        if menu then
+            kind = "key"
+        else
+            local dir = (pos == 1 and "left") or (pos == 2 and "up") or (pos == 3 and "right") or "down"
+            -- PARTY-NAV-BODY-BEGIN
+        local nb = box
+        if n == 2 then
+            if dir == "down" and box == 1 then nb = 2 elseif dir == "up" and box == 2 then nb = 1 end
+        elseif n >= 3 then
+            if box == 1 then
+                if dir == "down" then nb = 2 end
+            elseif n == 5 and box >= 4 then
+                if dir == "up" then nb = box - 2 elseif dir == "left" and box == 5 then nb = 4 elseif dir == "right" and box == 4 then nb = 5 end
+            else
+                local last = (n == 5) and 3 or n
+                if dir == "up" then nb = 1
+                elseif dir == "down" and n == 5 then nb = box + 2
+                elseif dir == "left" and box > 2 then nb = box - 1
+                elseif dir == "right" and box < last then nb = box + 1 end
+            end
+        end
+            -- PARTY-NAV-BODY-END
+            box = nb
+            kind = "move"
+        end
+    end
+    self:SetAttribute("wc-box", box)
+    self:SetAttribute("wc-cnt", n)
+    local u, c = "player", 1
+    for i = 1, 4 do
+        if SecureCmdOptionParse("[@party" .. i .. ",exists] 1") == "1" then
+            c = c + 1
+            if c == box then u = "party" .. i end
+        end
+    end
+    if kind then
+        self:SetAttribute("wc-k", kind)
+        if kind == "move" then self:SetAttribute("wc-u", u) end
+        return
+    end
+    if pos == 7 then
+        if menu then self:SetAttribute("wc-k", "key") return end
+        local rn = self:GetAttribute("wc-rn") or 0
+        for i = 1, rn do
+            local r = self:GetFrameRef("wc-r-" .. i)
+            if r then r:SetAttribute("wc-party", nil) end
+        end
+        self:SetAttribute("wc-party", nil)
+        self:SetAttribute("wc-k", "off")
+        return
+    end
+    local b = (pos == 8 and "a") or (pos == 5 and "x") or (pos == 6 and "y") or nil
+    if not b then return end
+    if lt and rt then return end
+    if menu then self:SetAttribute("wc-k", "key") return end
+    local spell = nil
+    if b == "y" and ly == "" then
+        if SecureCmdOptionParse("[combat] 1") == "1" then
+            local py = self:GetAttribute("wc-py")
+            if py and SecureCmdOptionParse("[@" .. u .. ",help,nodead] 1") == "1" then spell = py end
+        else
+            local pb = self:GetAttribute("wc-pb-" .. u)
+            if pb and SecureCmdOptionParse("[@" .. u .. ",nodead] 1") == "1" then spell = pb end
+        end
+        if not spell then
+            self:SetAttribute("wc-pmenu", true)
+            self:SetAttribute("wc-u", u)
+            self:SetAttribute("wc-k", "menu")
+            return
+        end
+    else
+        spell = self:GetAttribute("wc-ps-" .. ly .. b)
+    end
+    self:SetAttribute("wc-u", u)
+    if spell then
+        self:SetAttribute("type", "spell")
+        self:SetAttribute("spell", spell)
+        self:SetAttribute("unit", u)
+        self:SetAttribute("wc-k", "cast")
+    end
+]=]
+    -- Select's toggle and the party row's ON / OFF cells: "wc-party" on the 8 router buttons and on the pad (toggle reads the PAD's)
+    PM.PARTYFLIP = [=[
+    local set = self:GetAttribute("wc-set")
+    local pad = self:GetFrameRef("wc-pad")
+    local v = nil
+    if set == "on" then v = true
+    elseif set == "toggle" then
+        if not (pad and pad:GetAttribute("wc-party")) then v = true end
+    end
+    local rn = self:GetAttribute("wc-rn") or 0
+    for i = 1, rn do
+        local r = self:GetFrameRef("wc-r-" .. i)
+        if r then r:SetAttribute("wc-party", v) end
+    end
+    if pad then
+        pad:SetAttribute("wc-party", v)
+        pad:SetAttribute("wc-pmenu", nil)
+        pad:SetAttribute("wc-k", v and "on" or "off")
+    end
+]=]
+    PM.MENUDONE = [=[ local pad = self:GetFrameRef("wc-pad"); if pad then pad:SetAttribute("wc-pmenu", nil) end ]=]
+
+    local function A(f, k) return f and T(function() return f:GetAttribute(k) end) or nil end
+    PM.A = A
+    function PM.pad() return PM.f and PM.f.pad or nil end
+    function PM.on() return A(PM.pad(), "wc-party") == true end
+
+    -- the frames: made once, out of combat (a load inside a fight makes them at its end), never destroyed
+    function PM.make()
+        if PM.f then return true end
+        if inCombat() then PM.makePending = true return false end
+        local hdr = routerHeader()
+        if not hdr then return false end
+        local ok = pcall(function()
+            local f = {}
+            f.pad = CreateFrame("Button", PM.PAD, UIParent, "SecureActionButtonTemplate")
+            f.pad:RegisterForClicks("AnyDown", "AnyUp")
+            f.pad:SetAttribute("wc-box", 1)
+            SecureHandlerWrapScript(f.pad, "OnClick", hdr, PM.PARTYPAD)
+            f.pad:HookScript("PostClick", function(_, button, down) pcall(PM.afterPad, button, down) end)
+            for _, x in ipairs({ { "toggle", PM.TOGGLE, false }, { "on", PM.ON, true }, { "off", PM.OFF, true } }) do
+                local b = CreateFrame("Button", x[2], UIParent, "SecureActionButtonTemplate")
+                -- Select's key: its down only (a toggle must not run twice); the cells' clicks (type "click"): both edges, the snippet is
+                -- absolute there (a repeat is harmless)
+                if x[3] then b:RegisterForClicks("AnyDown", "AnyUp") else b:RegisterForClicks("AnyDown") end
+                b:SetAttribute("wc-set", x[1])
+                SecureHandlerWrapScript(b, "OnClick", hdr, PM.PARTYFLIP)
+                local set = x[1]
+                b:HookScript("PostClick", function(_, _, down) pcall(PM.afterFlip, set, down) end)
+                f[x[1]] = b
+            end
+            f.mdone = CreateFrame("Button", PM.MDONE, UIParent, "SecureActionButtonTemplate")
+            f.mdone:RegisterForClicks("AnyDown", "AnyUp")
+            SecureHandlerWrapScript(f.mdone, "OnClick", hdr, PM.MENUDONE)
+            PM.f = f
+        end)
+        PM.makePending = nil
+        if ok and PM.f then pcall(PM.link) end
+        return ok and PM.f ~= nil
+    end
+
+    -- frame refs and the static attributes (out of combat; again whenever a router button is made: R.linkAll calls this)
+    function PM.link()
+        if inCombat() or not PM.f then return false end
+        local f = PM.f
+        local byPos = {}
+        for _, x in ipairs(routerAll()) do byPos[x.pos] = x.b end
+        local on = PM.on() or nil
+        for _, h in ipairs({ f.pad, f.toggle, f.on, f.off, f.mdone }) do
+            for i, pos in ipairs(PM.ORDER) do
+                if byPos[pos] then pcall(SecureHandlerSetFrameRef, h, "wc-r-" .. i, byPos[pos]) end
+            end
+            h:SetAttribute("wc-rn", #PM.ORDER)
+            pcall(SecureHandlerSetFrameRef, h, "wc-pad", f.pad)
+        end
+        -- the key's name -> its position (the player's own keys first, the game's names as the fallback), and each position's own name
+        for pos = 1, 8 do
+            f.pad:SetAttribute("wc-kp-" .. PM.KEYNAME[pos], pos)
+            f.pad:SetAttribute("wc-kn-" .. pos, PM.KEYNAME[pos])
+        end
+        for pos = 1, 8 do if R.keys[pos] then f.pad:SetAttribute("wc-kp-" .. R.keys[pos], pos) end end
+        f.pad:SetAttribute("wc-lt", padIndex("PADLTRIGGER"))
+        f.pad:SetAttribute("wc-rt", padIndex("PADRTRIGGER"))
+        for _, b in pairs(byPos) do
+            b:SetAttribute("wc-party-dest", PM.PAD)
+            b:SetAttribute("wc-party", on)
+        end
+        return true
+    end
+
+    -- Party mode set from insecure code (out of combat only: PM.OFF_WHEN_ASIDE)
+    function PM.set(v)
+        if inCombat() or not PM.f then return false end
+        v = v and true or nil
+        for _, x in ipairs(routerAll()) do x.b:SetAttribute("wc-party", v) end
+        PM.f.pad:SetAttribute("wc-party", v)
+        PM.f.pad:SetAttribute("wc-pmenu", nil)
+        return true
+    end
+
+    -- ---------------------------------------------------------------- partybox: every press Party mode takes, every on / off
+    function PM.count()
+        local n = 1
+        for i = 1, 4 do if T(function() return UnitExists("party" .. i) end) == true then n = n + 1 end end
+        return n
+    end
+    function PM.box()
+        local pad = PM.pad()
+        return {
+            n = PM.n, on = PM.on(), box = A(pad, "wc-box") or 1, cnt = A(pad, "wc-cnt") or PM.count(), u = A(pad, "wc-u"),
+            k = A(pad, "wc-k") or "none", key = A(pad, "wc-key"), ly = A(pad, "wc-ly") or "",
+            sp = (A(pad, "type") == "spell") and A(pad, "spell") or nil, fight = fighting(), pm = A(pad, "wc-pmenu") == true,
+        }
+    end
+    function PM.sendBox(kind)
+        PM.n = PM.n + 1
+        local b = PM.box()
+        if kind then b.k = kind end
+        WC.send(WC.encode({ type = "partybox", v = PV, b = b }))
+        WC.push()
+        return b
+    end
+    -- the pad's post-click (insecure, plain, in fights too): the press (down) only
+    function PM.afterPad(button, down)
+        if not down then return end
+        local b = PM.sendBox()
+        if b.k == "menu" and b.u and type(WC.pmenu) == "table" and type(WC.pmenu.read) == "function" then
+            pcall(WC.pmenu.read, b.u, "party")
+        end
+        if b.k == "off" then PM.flipped() end
+    end
+    function PM.afterFlip(set, down)
+        -- a cell's click may come as one edge or two: one partybox per flip (the toggle hears its down only)
+        local now = GetTime()
+        if PM.flipAt and now - PM.flipAt < 0.25 and PM.flipSet == set then return end
+        PM.flipAt, PM.flipSet = now, set
+        PM.sendBox()
+        PM.flipped()
+    end
+    -- Party mode turned on or off: the bindings follow (out of combat), the documents say it
+    function PM.flipped()
+        if not inCombat() then pcall(routerBind, "party") end
+        if PM.changed then pcall(PM.changed, "onoff") end
+    end
+
+    -- ---------------------------------------------------------------- the bindings (routerBind calls this, out of combat / before the lockdown)
+    -- Select = the key of the game's TOGGLEUIFOCUS (PADBACK on the Thor)
+    function PM.selKey()
+        local ctx = bindCtx()
+        return TS(function() return GetBindingKey("TOGGLEUIFOCUS", nil, ctx) end) or TS(function() return GetBindingKey("TOGGLEUIFOCUS") end)
+            or "PADBACK"
+    end
+    function PM.unfocused()
+        if type(WC.dialogs) == "table" and type(WC.dialogs.unfocused) == "function" then
+            local ok, n = pcall(WC.dialogs.unfocused)
+            if ok and type(n) == "number" then return n end
+        end
+        return 0
+    end
+    function PM.grouped() return T(function() return IsInGroup() end) == true end
+    -- what Select should be now: "bound" (Select toggles Party mode), "dialog" (an unfocused invite waits: the game's key), "aside",
+    -- "off" (a fight's start, neither grouped nor already in Party mode: the game's UI-focus key is kept for that fight)
+    function PM.selWant(aside, fightStart)
+        if aside then return "aside" end
+        if PM.unfocused() > 0 then return "dialog" end
+        if fightStart and not (PM.on() or PM.grouped()) then return "off" end
+        return "bound"
+    end
+    function PM.bind(aside, fightStart, carry)
+        PM.bind0(aside, fightStart, carry)
+        if PM.changed then pcall(PM.changed, "bind") end                -- `sel` / `aside` in the party document
+    end
+    function PM.bind0(aside, fightStart, carry)
+        PM.sel = PM.selWant(aside, fightStart)
+        PM.fightBound = fightStart and true or nil
+        if aside then
+            -- THE ONE SWITCH (the user's rulings: on): anything that takes the controller ends Party mode (out of combat; at a fight's
+            -- start too, before the lockdown: only a game window keeps the router aside then)
+            if PM.OFF_WHEN_ASIDE and PM.on() and PM.set(nil) and PM.changed then pcall(PM.changed, "aside") end
+            return
+        end
+        if PM.on() then
+            -- all 8 router keys, whatever their fight spells or the toolbar: faces 5 / 6 / 8, B, the D-pad
+            for pos in pairs(FACE) do local b = face.buttons[pos]; if b then pcall(routerSetup, b, pos) end end
+            pcall(routerB); pcall(routerD)
+            for _, x in ipairs(routerAll()) do
+                local key = R.keys[x.pos] or routerKey(x.pos)
+                R.keys[x.pos] = key
+                if key then carry(x.b, key) end
+            end
+        end
+        if PM.sel == "bound" then
+            local key = PM.selKey()
+            PM.selBound = (PM.f and key and carry(PM.f.toggle, key)) and key or nil
+            if not PM.selBound then PM.sel = "off" end
+        else
+            PM.selBound = nil
+        end
+    end
+    -- routerCheck (every 0.1 s out of combat, nobody holding): a key of ours lost, or Select's state to change -> bind again (once a second)
+    function PM.lost()
+        if PM.on() then
+            for _, x in ipairs(routerAll()) do
+                local key = R.keys[x.pos]
+                if key and TS(function() return GetBindingAction(key, true) end) ~= routerAct(x.b:GetName()) then return true end
+            end
+        end
+        local want = PM.selWant(nil, false)
+        if want ~= PM.sel then return true end
+        if want == "bound" and PM.selBound and TS(function() return GetBindingAction(PM.selBound, true) end) ~= routerAct(PM.TOGGLE) then
+            return true
+        end
+        return false
+    end
+
+    -- ---------------------------------------------------------------- the per-character store and the class defaults (3.6)
+    -- WowCompanionSpellsDB.partyBy[name-realm] = { v = 1, slots = { a = id | false (Empty, chosen) | nil (the class default) },
+    -- yc = id | nil (Inspect), touch = id | nil (Target), buffs = { id, ... } (Smart Y's party list: EMPTY at first, max 8) }
+    PM.SLOTS = { "a", "x", "zla", "zlx", "zly", "zra", "zrx", "zry" }
+    OV.PARTY_DEFAULTS = {
+        SHAMAN = { a = 331, x = 8004, zla = 526, zlx = 2870, zra = 2008 },
+        PRIEST = { a = 2050, x = 17, zla = 527, zlx = 528, zra = 2006, zrx = 139 },
+        DRUID = { a = 5185, x = 774, zla = 8946, zlx = 2782, zra = 20484, zrx = 8936 },
+        PALADIN = { a = 635, x = 19750, zla = 1152, zlx = 4987, zra = 7328, zrx = 633 },
+        MAGE = { a = 475, zla = 604, zlx = 1008 },
+        WARLOCK = { a = 5697 },
+        HUNTER = {}, ROGUE = {}, WARRIOR = {},
+    }
+    OV.PARTY_RES = { 2008, 2006, 7328, 20484 }
+    OV.PARTY_BUFFS = { 1243, 14752, 976, 6346, 1126, 467, 1459, 604, 1008, 19740, 19742, 20217, 19977, 1038, 20911, 131, 546, 5697, 132 }
+    PM.BUFFS_MAX = 8
+    PM.scratch = nil
+    function PM.store()
+        if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+        local db = _G.WowCompanionSpellsDB
+        local k = whoKey()
+        local st
+        if not k then                                                   -- no character yet: a scratch record, never saved
+            PM.scratch = PM.scratch or {}
+            st = PM.scratch
+        else
+            if type(db.partyBy) ~= "table" then db.partyBy = {} end
+            if type(db.partyBy[k]) ~= "table" then db.partyBy[k] = {} end
+            st = db.partyBy[k]
+        end
+        st.v = 1
+        if type(st.slots) ~= "table" then st.slots = {} end
+        if type(st.buffs) ~= "table" then st.buffs = {} end
+        return st
+    end
+    function PM.class()
+        local ok, _, token = CALL(function() return UnitClass("player") end)
+        return ok and WC.isPlain(token) and type(token) == "string" and token or nil
+    end
+    function PM.icon(id)
+        local i = T(function() return (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(id)) or GetSpellTexture(id) end)
+        return type(i) == "number" and WC.isPlain(i) and i or 0
+    end
+    -- the book's spells by name (any rank is the spell: cast by name = the best rank known), book order
+    function PM.book()
+        local names, order = {}, {}
+        local ok, list = pcall(function() return type(WC.spellsBindableList) == "function" and WC.spellsBindableList() or {} end)
+        for _, e in ipairs(ok and type(list) == "table" and list or {}) do
+            local n = e.id and OV.sbName(e.id)
+            if n and WC.isPlain(n) and not names[n] then names[n] = e.id; order[#order + 1] = { id = e.id, n = n } end
+        end
+        return names, order
+    end
+    function PM.nameSet(ids)
+        local out = {}
+        for _, id in ipairs(ids) do local n = OV.sbName(id); if n then out[n] = id end end
+        return out
+    end
+    -- a spell id -> the document's spell object { id, n, i, k = learned now, res }
+    function PM.spellObj(id, names, extra)
+        if type(id) ~= "number" then return nil end
+        local n = OV.sbName(id)
+        local o = { id = id, n = n or "?", i = PM.icon(id), k = (n and names[n]) and true or false }
+        if PM.resNames[n or ""] or PM.resIds[id] then o.res = true end
+        if extra then for k, v in pairs(extra) do o[k] = v end end
+        return o
+    end
+    PM.resIds = {}
+    for _, id in ipairs(OV.PARTY_RES) do PM.resIds[id] = true end
+    PM.resNames = {}
+    -- the chooser: the book's bindable spells the game calls helpful (plain), less Smart buffs' self-only ones, plus every known
+    -- class default and party buff; book order
+    function PM.chooser(names, order)
+        local selfOnly, party, defs = {}, PM.nameSet(OV.PARTY_BUFFS), {}
+        for _, id in ipairs(OV.SB_IDS) do local n = OV.sbName(id); if n and not party[n] then selfOnly[n] = true end end
+        for _, t in pairs(OV.PARTY_DEFAULTS) do for _, id in pairs(t) do local n = OV.sbName(id); if n then defs[n] = true end end end
+        local out = {}
+        for _, e in ipairs(order) do
+            local helpful = T(function() return C_Spell.IsSpellHelpful(e.id) end)
+            local plainHelp = helpful == true and WC.isPlain(helpful)
+            if (plainHelp and not selfOnly[e.n]) or defs[e.n] or party[e.n] then out[#out + 1] = { id = e.id, n = e.n, i = PM.icon(e.id) } end
+        end
+        return out
+    end
+    -- everything the document and the apply need, resolved now
+    function PM.resolve()
+        PM.resNames = PM.nameSet(OV.PARTY_RES)
+        local st = PM.store()
+        local names, order = PM.book()
+        local def = OV.PARTY_DEFAULTS[PM.class() or ""] or {}
+        local c = { slots = {}, spells = PM.chooser(names, order) }
+        for _, s in ipairs(PM.SLOTS) do
+            local v = st.slots[s]
+            if v == nil then c.slots[s] = PM.spellObj(def[s], names, { d = true })
+            elseif type(v) == "number" then c.slots[s] = PM.spellObj(v, names, { d = false }) end      -- false: Empty, chosen
+        end
+        c.yc = type(st.yc) == "number" and PM.spellObj(st.yc, names) or nil
+        c.touch = type(st.touch) == "number" and PM.spellObj(st.touch, names) or nil
+        return c, st, names
+    end
+
+    -- the pad's spells and the party row's touch cells from the store (out of combat; in a fight: at its end)
+    function PM.apply(why)
+        if inCombat() or not PM.f then PM.applyPending = true return false end
+        PM.applyPending = nil
+        local c = PM.resolve()
+        local pad = PM.f.pad
+        for _, s in ipairs(PM.SLOTS) do
+            local e = c.slots[s]
+            pad:SetAttribute("wc-ps-" .. s, (e and e.k and e.n ~= "?") and e.n or nil)            -- not learned: drawn dim, never cast
+        end
+        pad:SetAttribute("wc-py", (c.yc and c.yc.k) and c.yc.n or nil)
+        local tn = (c.touch and c.touch.k) and c.touch.n or nil
+        if tn ~= PM.touchName or not PM.rowBuilt then
+            PM.touchName = tn
+            PM.buildRow()
+        end
+        if PM.smartApply then pcall(PM.smartApply, true) end                -- (its picks ride the partycfg below)
+        if PM.sendCfg then pcall(PM.sendCfg, why) end
+        return true
+    end
+
+    -- ---------------------------------------------------------------- the party row (2.2): 40 secure cells, opts.onPress
+    PM.COL = { tgt = 0, tsp = 5, on = 10, off = 11, focus = 12, menu = 17, resend = 22, pbsel = 23,
+               pbops = { remove = 31, up = 32, down = 33, add = 34 }, mdone = 35 }
+    PM.U = { [0] = "player", "party1", "party2", "party3", "party4" }
+    function PM.cellInit(btn, col)
+        for _, k in ipairs({ "type", "spell", "unit", "clickbutton" }) do btn:SetAttribute(k, nil) end
+        local f = PM.f
+        if col <= 4 then
+            btn:SetAttribute("type", "target"); btn:SetAttribute("unit", PM.U[col])
+        elseif col <= 9 then
+            if PM.touchName then btn:SetAttribute("type", "spell"); btn:SetAttribute("spell", PM.touchName); btn:SetAttribute("unit", PM.U[col - 5]) end
+        elseif (col == PM.COL.on or col == PM.COL.off or col == PM.COL.mdone) and f then
+            btn:SetAttribute("type", "click")
+            btn:SetAttribute("clickbutton", (col == PM.COL.on and f.on) or (col == PM.COL.off and f.off) or f.mdone)
+        elseif col >= PM.COL.focus and col <= PM.COL.focus + 4 then
+            btn:SetAttribute("type", "focus"); btn:SetAttribute("unit", PM.U[col - PM.COL.focus])
+        end
+    end
+    function PM.ack(op, ok, why, slot, id)
+        WC.send(WC.encode({ type = "partyack", v = PV, op = op, ok = ok and true or false, why = why, slot = slot, id = id }))
+        WC.push()
+        if why == "combat" and type(WC.spellsRefusedCombat) == "function" then pcall(WC.spellsRefusedCombat) end
+    end
+    function PM.onCell(col)
+        if type(col) ~= "number" then return end
+        if col >= PM.COL.menu and col <= PM.COL.menu + 4 then
+            if type(WC.pmenu) == "table" and type(WC.pmenu.read) == "function" then pcall(WC.pmenu.read, PM.U[col - PM.COL.menu], "party") end
+        elseif col == PM.COL.resend then
+            if PM.resend then PM.resend() end
+        elseif col >= PM.COL.pbsel and col <= PM.COL.pbops.add then
+            if PM.pbOp then PM.pbOp(col) end
+        elseif col >= PM.COL.tsp and col <= PM.COL.tsp + 4 then
+            if not PM.touchName then PM.ack("touch", false, "target") end   -- a stale tap: Touch is Target (its cells are the tgt ones)
+        elseif col > PM.COL.mdone then
+            PM.ack("cell", false, "unknown column")
+        end
+    end
+    function PM.buildRow()
+        if not (WC.pad and type(WC.pad.secureRow) == "function") then return nil end
+        PM.row = WC.pad.secureRow("party", 40, PM.cellInit, PM.onCell, { onPress = true })
+        PM.rowBuilt = not inCombat()
+        return PM.row
+    end
+
+    -- a setting (the Controller room's Party tab; Book's padtab 26-37): slot "a" .. "zry" = id | false (Empty); "yc" = id | false
+    -- (Inspect); "touch" = id | false (Target). A spell must be in the chooser. Refused in a fight (secure attributes are locked)
+    function PM.put(slot, v)
+        local op = (slot == "yc" or slot == "touch") and slot or "slot"
+        local id = type(v) == "number" and v or nil
+        if inCombat() then PM.ack(op, false, "combat", slot, id) return false, "combat" end
+        local isSlot = false
+        for _, s in ipairs(PM.SLOTS) do if s == slot then isSlot = true end end
+        if op == "slot" and not isSlot then PM.ack(op, false, "no such slot", slot, id) return false, "no such slot" end
+        if v ~= false and not id then PM.ack(op, false, "nothing to set", slot) return false, "nothing to set" end
+        local c = PM.resolve()
+        if id then
+            local found = false
+            for _, e in ipairs(c.spells) do if e.id == id then found = true end end
+            if not found then PM.ack(op, false, "not a party spell", slot, id) return false, "not a party spell" end
+        end
+        local st = PM.store()
+        if op == "slot" then st.slots[slot] = id or false
+        elseif op == "yc" then st.yc = id
+        else st.touch = id end
+        PM.ack(op, true, nil, slot, id)
+        PM.apply("set")
+        return true
+    end
+    WC.padMap.party = { cfg = function() return PM.cfgNow and PM.cfgNow() or PM.resolve() end, put = PM.put, on = PM.on,
+                        slots = PM.SLOTS, cols = PM.COL,
+                        pbRemove = function(k) return PM.pbRemove and PM.pbRemove(k) end, padd = function(id) return PM.padd and PM.padd(id) end }
+
+    -- ---------------------------------------------------------------- Smart Y's party buffs (3.6, 4.5): picks per unit, the list's ops
+    -- the helpful aura names on `u` now; secret = a name could not be read (in a dungeon, a fight): no pick for that unit
+    function PM.auras(u)
+        local up, secret = {}, false
+        for i = 1, 40 do
+            local a = T(function() return C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL") end)
+            if type(a) ~= "table" then break end
+            local n = T(function() return a.name end)
+            if n == nil then break end
+            if type(n) ~= "string" or not WC.isPlain(n) then secret = true break end
+            up[n] = true
+        end
+        return up, secret
+    end
+    PM.PB_UNITS = { "player", "party1", "party2", "party3", "party4" }
+    -- out of combat only, Smart Y on: per unit the first buff of the list this character knows and the unit lacks -> "wc-pb-<unit>"
+    function PM.smartApply(quiet)
+        if inCombat() or not PM.f then PM.smartPending = true return false end
+        PM.smartPending = nil
+        local picks = {}
+        if OV.smartOn() then
+            local st = PM.store()
+            local names = PM.book()
+            for _, u in ipairs(PM.units()) do
+                local up, secret = PM.auras(u)
+                if not secret then
+                    for _, id in ipairs(st.buffs) do
+                        local n = OV.sbName(id)
+                        if n and names[n] and not up[n] then picks[u] = { id = id, n = n, i = PM.icon(id) } break end
+                    end
+                end
+            end
+        end
+        local sig = {}
+        for _, u in ipairs(PM.PB_UNITS) do
+            local want = picks[u] and picks[u].n or nil
+            if A(PM.f.pad, "wc-pb-" .. u) ~= want then PM.f.pad:SetAttribute("wc-pb-" .. u, want) end
+            if picks[u] then sig[#sig + 1] = u .. "=" .. picks[u].id end
+        end
+        local s = table.concat(sig, ",")
+        PM.picks = picks
+        if s ~= PM.pickSig then
+            PM.pickSig = s
+            if not quiet then pcall(PM.sendCfg, "pick") end
+        end
+        return true
+    end
+    function PM.smartSoon()
+        if PM.smartQueued then return end
+        PM.smartQueued = true
+        C_Timer.After(0.3, function() PM.smartQueued = nil; pcall(PM.smartApply) end)
+    end
+    -- Smart Y switched on / off (OV.setSmartOn): the picks and the document follow
+    function PM.smartChanged()
+        pcall(PM.smartApply, true)
+        pcall(PM.sendCfg, "smart")
+    end
+    -- party row cols 23-30: select list row k = col - 22 (fresh 2 s); 31 / 32 / 33 remove / up / down on it; 34 a fresh "add" pick
+    -- (the spell follows as Book's two taps: WC.smartYWants / WC.smartYSpell, op "padd"). Answered partyack op "pb".
+    PM.PB_FRESH = 2
+    function PM.pbOp(col)
+        local now = GetTime()
+        local ops = PM.COL.pbops
+        if col < ops.remove then PM.pbSel = { row = col - PM.COL.pbsel + 1, at = now } return end
+        local sel = PM.pbSel and now - PM.pbSel.at <= PM.PB_FRESH and PM.pbSel.row or nil
+        PM.pbSel = nil
+        if inCombat() then PM.ack("pb", false, "combat") return end
+        if col == ops.add then OV.sbPick = { op = "padd", at = now } return end
+        local list = PM.store().buffs
+        if not sel or not list[sel] then PM.ack("pb", false, "no row picked") return end
+        local id = list[sel]
+        if col == ops.remove then table.remove(list, sel)
+        elseif col == ops.up and sel > 1 then list[sel], list[sel - 1] = list[sel - 1], list[sel]
+        elseif col == ops.down and sel < #list then list[sel], list[sel + 1] = list[sel + 1], list[sel]
+        else PM.ack("pb", false, "nothing to do", nil, id) return end
+        PM.ack("pb", true, nil, nil, id)
+        PM.listChanged()
+    end
+    -- the spell after a fresh "add" pick (WC.smartYSpell's op "padd"): one of this character's party buffs, not listed yet, 8 at most
+    function PM.padd(id)
+        if inCombat() then PM.ack("pb", false, "combat", nil, id) return false end
+        local names = PM.book()
+        local n = type(id) == "number" and OV.sbName(id) or nil
+        local pid = nil
+        for _, b in ipairs(OV.PARTY_BUFFS) do if OV.sbName(b) == n then pid = b end end
+        if not (n and pid and names[n]) then PM.ack("pb", false, "not a party buff this character knows", nil, id) return false end
+        local list = PM.store().buffs
+        for _, x in ipairs(list) do if OV.sbName(x) == n then PM.ack("pb", false, "already listed", nil, id) return false end end
+        if #list >= PM.BUFFS_MAX then PM.ack("pb", false, PM.BUFFS_MAX .. " at most", nil, id) return false end
+        list[#list + 1] = pid
+        PM.ack("pb", true, nil, nil, pid)
+        PM.listChanged()
+        return true
+    end
+    function PM.listChanged()
+        pcall(PM.smartApply, true)
+        pcall(PM.sendCfg, "list")
+    end
+    -- the Controller room's Party tab (PadTabCtl p33, by the controller): Remove list row k; Add = PM.padd(id)
+    function PM.pbRemove(k)
+        if inCombat() then PM.ack("pb", false, "combat") return false end
+        local list = PM.store().buffs
+        if type(k) ~= "number" or not list[k] then PM.ack("pb", false, "no row picked") return false end
+        local id = table.remove(list, k)
+        PM.ack("pb", true, nil, nil, id)
+        PM.listChanged()
+        return true
+    end
+
+    -- ---------------------------------------------------------------- the documents (section 1)
+    PM.PADMAP = { row = "party", tgt = PM.COL.tgt, tsp = PM.COL.tsp, on = PM.COL.on, off = PM.COL.off, focus = PM.COL.focus,
+                  menu = PM.COL.menu, resend = PM.COL.resend, pbsel = PM.COL.pbsel, pbops = PM.COL.pbops, mdone = PM.COL.mdone,
+                  ptab = { row = "padtab", tab = 26, slot0 = 27, none = 37 } }
+    -- partycfg's `c`: what every button / touch does, the chooser, Smart Y's party list and picks, the pad's columns
+    function PM.cfgNow()
+        local c, st, names = PM.resolve()
+        local list = {}
+        for _, id in ipairs(st.buffs) do
+            local o = PM.spellObj(id, names)
+            if o then o.res = nil; list[#list + 1] = o end
+        end
+        local known = {}
+        for _, id in ipairs(OV.PARTY_BUFFS) do
+            local n = OV.sbName(id)
+            if n and names[n] then known[#known + 1] = { id = id, n = n, i = PM.icon(id) } end
+        end
+        local pick = nil
+        if not fighting() then
+            for u, e in pairs(PM.picks or {}) do pick = pick or {}; pick[u] = { id = e.id, n = e.n, i = e.i } end
+        end
+        c.sy = { on = OV.smartOn(), list = list, known = known, pick = pick }
+        c.pad = PM.PADMAP
+        return c
+    end
+    function PM.sendCfg(why, noPush)
+        WC.send(WC.encode({ type = "partycfg", v = PV, c = PM.cfgNow() }))
+        if not noPush then WC.push() end
+    end
+
+    -- PARTY-EST-BEGIN (pure; tools/test_party.py) THE HEALTH ESTIMATE per member (FEASIBILITY 5: party health is secret, always).
+    -- m = { max, cur, full, pulse, dead }; new / a /reload = full; UNIT_MAXHEALTH -> max; UNIT_COMBAT WOUND / HEAL with a PLAIN amount
+    -- moves it (clamped 0..max); out of combat, alive, no UNIT_HEALTH pulse for 6 s -> full (the anchor); dead -> 0; alive again -> 50 %
+    OV.PE_QUIET = 6
+    OV.peNew = function(max, now)
+        max = (type(max) == "number" and max > 0) and max or 100
+        return { max = max, cur = max, full = true, pulse = now, dead = false }
+    end
+    OV.peMax = function(m, max)
+        if type(max) ~= "number" or max <= 0 then return end
+        m.max = max
+        if m.full or m.cur > max then m.cur = max end
+    end
+    OV.pePulse = function(m, now) m.pulse = now end
+    OV.peHit = function(m, kind, amt, now)
+        if type(amt) ~= "number" or m.dead then return false end
+        if kind == "WOUND" then m.cur = math.max(0, m.cur - amt)
+        elseif kind == "HEAL" then m.cur = math.min(m.max, m.cur + amt)
+        else return false end
+        m.full = m.cur >= m.max
+        m.pulse = now
+        return true
+    end
+    OV.peTick = function(m, now, combat, dead)
+        if dead then m.cur, m.dead, m.full = 0, true, false return end
+        if m.dead then m.dead, m.cur, m.full, m.pulse = false, m.max * 0.5, false, now return end
+        if not combat and not m.full and now - m.pulse >= OV.PE_QUIET then m.cur, m.full = m.max, true end
+    end
+    OV.pePct = function(m)
+        if m.max <= 0 then return 0 end
+        local p = math.floor(m.cur * 100 / m.max + 0.5)
+        if p < 0 then p = 0 elseif p > 100 then p = 100 end
+        return p
+    end
+    -- PARTY-EST-END
+    PM.est = {}
+    function PM.units()
+        local out = { "player" }
+        for i = 1, 4 do if T(function() return UnitExists("party" .. i) end) == true then out[#out + 1] = "party" .. i end end
+        return out
+    end
+    function PM.guid(u)
+        local g = TS(function() return UnitGUID(u) end)
+        return g or u
+    end
+    function PM.plainNum(fn)
+        local v = T(fn)
+        if type(v) == "number" and OV.hmPlain(v) then return v end
+        return nil
+    end
+    function PM.model(u)
+        local g = PM.guid(u)
+        local m = PM.est[g]
+        if not m then
+            m = OV.peNew(PM.plainNum(function() return UnitHealthMax(u) end), GetTime())
+            PM.est[g] = m
+        end
+        return m
+    end
+    function PM.member(u, aName)
+        local idx = u == "player" and 0 or tonumber(u:match("%d+"))
+        local n = TS(function() return UnitName(u) end)
+        local ok, _, cls = CALL(function() return UnitClass(u) end)
+        cls = ok and type(cls) == "string" and WC.isPlain(cls) and cls or nil
+        local col = cls and _G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[cls] and _G.RAID_CLASS_COLORS[cls].colorStr or nil
+        local okp, _, ptok = CALL(function() return UnitPowerType(u) end)
+        local m = { u = u, i = idx, n = n or "?", c = cls, col = (type(col) == "string" and WC.isPlain(col)) and col or nil,
+                    role = TS(function() return UnitGroupRolesAssigned(u) end) or "NONE",
+                    dead = T(function() return UnitIsDeadOrGhost(u) end) == true,
+                    off = T(function() return UnitIsConnected(u) end) == false,
+                    pt = (okp and type(ptok) == "string" and WC.isPlain(ptok)) and ptok or nil,
+                    hpMax = PM.plainNum(function() return UnitHealthMax(u) end),
+                    pmMax = PM.plainNum(function() return UnitPowerMax(u) end) }
+        local e = PM.model(u)
+        OV.peTick(e, GetTime(), fighting(), m.dead)
+        OV.peMax(e, m.hpMax)
+        local pct, full = OV.pePct(e), e.full
+        if u == "player" and type(WC.vitals) == "function" then            -- your own cell: the vitals' value when it has one
+            local okv, v = pcall(WC.vitals)
+            if okv and type(v) == "table" and type(v.hp) == "number" and type(v.hpMax) == "number" and v.hpMax > 0 then
+                pct = math.max(0, math.min(100, math.floor(v.hp * 100 / v.hpMax + 0.5)))
+                full = v.hp >= v.hpMax
+            end
+        end
+        if m.dead then pct, full = 0, false end
+        m.hp, m.full = pct, full and true or false
+        if aName then
+            local r = T(function() return C_Spell.IsSpellInRange(aName, u) end)
+            if type(r) == "boolean" and WC.isPlain(r) then m.rng = r end
+        end
+        return m
+    end
+    -- party's `p`
+    function PM.state()
+        local a = PM.f and A(PM.f.pad, "wc-ps-a") or nil
+        local m = {}
+        for _, u in ipairs(PM.units()) do m[#m + 1] = PM.member(u, a) end
+        local on = PM.on()
+        local box = nil
+        if on then box = math.max(1, math.min(#m, A(PM.pad(), "wc-box") or 1)) end
+        return { on = on, aside = R.aside or nil, box = box, fight = fighting(), grp = PM.grouped(), sel = PM.sel or PM.selWant(R.aside, false),
+                 m = m }
+    end
+    PM.lastParty = nil
+    -- force = send even when nothing changed (the resend, the heartbeat); push: "flush" (WC.push), "throttle", or nil (rides a snapshot)
+    function PM.sendParty(force, push)
+        local doc = { type = "party", v = PV, rs = PM.rs, p = PM.state() }
+        local key = WC.encode(doc)
+        if key == PM.lastParty and not force then return false end
+        PM.lastParty = key
+        WC.send(key)
+        if push == "flush" then WC.push() elseif push == "throttle" then WC.pushThrottled() end
+        return true
+    end
+    -- a field may have changed: one party document per 0.5 s at most (coalesced), then throttled. The roster and on / off: at once, flushed
+    function PM.changed(why)
+        if why == "roster" or why == "onoff" then
+            if why == "roster" then
+                PM.rs = PM.rs + 1
+                local keep = {}                                         -- a member who left: gone (back later = new = full)
+                for _, u in ipairs(PM.units()) do local g = PM.guid(u); keep[g] = PM.est[g] end
+                PM.est = keep
+            end
+            pcall(PM.sendParty, true, "flush")
+            return
+        end
+        if PM.partySoon then return end
+        PM.partySoon = true
+        C_Timer.After(0.5, function() PM.partySoon = nil; pcall(PM.sendParty, false, "throttle") end)
+    end
+    -- RESEND (party col 22): everything the app needs after its own restart, flushed
+    function PM.resend()
+        PM.sendCfg("resend", true)
+        PM.sendParty(true, nil)
+        PM.n = PM.n + 1
+        local b = PM.box()
+        b.k = "state"
+        WC.send(WC.encode({ type = "partybox", v = PV, b = b }))
+        PM.ack("resend", true)                                          -- (its push flushes all four)
+    end
+    -- RIDE THE CORE HEARTBEAT (Chat.lua's pattern): an app restart loses nothing; they land in that snapshot's own push
+    PM.RIDE = { heartbeat = true, login = true, zone = true, manual = true }
+    if type(WC.snapshot) == "function" and type(hooksecurefunc) == "function" then
+        hooksecurefunc(WC, "snapshot", function(reason)
+            if PM.RIDE[reason] then
+                pcall(PM.sendCfg, reason, true)
+                pcall(PM.sendParty, true, nil)
+            end
+        end)
+    end
+
+    function PM.onEvent(e, a1, a2, a3, a4)
+        if e == "PLAYER_REGEN_ENABLED" then
+            -- something took the controller during the fight and Party mode is still on (the app's off tap did not come): off now
+            if PM.fightTaken then
+                PM.fightTaken = nil
+                if PM.on() and PM.set(nil) then pcall(PM.flipped) end
+            end
+            if not PM.rowBuilt or PM.applyPending then pcall(PM.apply, "fight-end") end
+            if PM.f then pcall(PM.link) end
+            PM.smartSoon()                                              -- the auras read plain again; the picks may be set again
+            PM.changed("fight")
+        elseif e == "PLAYER_REGEN_DISABLED" then
+            PM.fightTaken = nil
+            PM.changed("fight")
+        elseif e == "PLAYER_ENTERING_WORLD" or e == "SPELLS_CHANGED" or e == "PLAYER_LOGIN" then
+            if not PM.applySoon then
+                PM.applySoon = true
+                C_Timer.After(0.3, function() PM.applySoon = nil; pcall(PM.apply, e == "SPELLS_CHANGED" and "spells" or "login") end)
+            end
+            if e == "PLAYER_ENTERING_WORLD" then PM.changed("roster") end
+        elseif e == "GROUP_ROSTER_UPDATE" then
+            PM.changed("roster")
+            PM.smartSoon()
+        elseif e == "UNIT_AURA" then
+            if (a1 == "player" or (type(a1) == "string" and a1:match("^party%d$"))) and not inCombat() then PM.smartSoon() end
+        elseif e == "UNIT_COMBAT" then
+            if a1 == "player" or (type(a1) == "string" and a1:match("^party%d$")) then
+                if OV.peHit(PM.model(a1), a2, OV.hmPlain(a4), GetTime()) then PM.changed("health") end
+            end
+        elseif e == "UNIT_HEALTH" or e == "UNIT_MAXHEALTH" then
+            if a1 == "player" or (type(a1) == "string" and a1:match("^party%d$")) then
+                local m = PM.model(a1)
+                if e == "UNIT_HEALTH" then OV.pePulse(m, GetTime()) else OV.peMax(m, PM.plainNum(function() return UnitHealthMax(a1) end)) end
+                PM.changed("health")
+            end
+        elseif e == "UNIT_CONNECTION" or e == "PLAYER_ROLES_ASSIGNED" or e == "UNIT_DISPLAYPOWER" or e == "PLAYER_DEAD"
+            or e == "PLAYER_ALIVE" or e == "PLAYER_UNGHOST" or e == "UNIT_MAXPOWER" then
+            PM.changed(e)
+        end
+    end
+
+    PM.ev = CreateFrame("Frame")
+    for _, e in ipairs({ "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ENTERING_WORLD", "SPELLS_CHANGED", "PLAYER_LOGIN",
+                         "GROUP_ROSTER_UPDATE", "UNIT_COMBAT", "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_CONNECTION", "PLAYER_ROLES_ASSIGNED",
+                         "UNIT_DISPLAYPOWER", "UNIT_MAXPOWER", "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST", "UNIT_AURA" }) do
+        pcall(function() PM.ev:RegisterEvent(e) end)
+    end
+    -- the anchors (6 s quiet -> full) and dead / alive need a clock: once a second, and a document only when something moved
+    if type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then
+        pcall(C_Timer.NewTicker, 1, function() pcall(PM.noteFightTaker); pcall(PM.changed, "tick") end)
+    end
+    -- the capture's holder changes at once (v13 onChange; joined when the capture is there): a taker in a fight is noted
+    function PM.joinCapture()
+        if PM.capJoined or type(WC.capture) ~= "table" or type(WC.capture.onChange) ~= "function" then return end
+        local ok, got = pcall(WC.capture.onChange, function() pcall(PM.noteFightTaker) end)
+        PM.capJoined = ok and got == true
+    end
+    PM.ev:SetScript("OnEvent", function(_, e, ...)
+        if not PM.f then pcall(PM.make) end
+        if not PM.capJoined then pcall(PM.joinCapture) end
+        if PM.onEvent then pcall(PM.onEvent, e, ...) end
+    end)
+    pcall(PM.make)
+    pcall(PM.buildRow)                  -- registered at Spells' LOAD: numbered before the bag rows Bags adds at runtime (2.1)
+end
+partyMode()
