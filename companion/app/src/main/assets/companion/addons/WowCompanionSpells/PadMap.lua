@@ -3653,6 +3653,7 @@ function OV.setSmartOn(on)
     db.smartOn[k] = on and true or nil
     pcall(function() WC.send(WC.encode({ type = "smartyack", v = PV, op = on and "on" or "off", ok = true })) end)
     pcall(OV.smartApply); pcall(OV.qiApply); pcall(emit, true); WC.push()
+    if OV.pm and OV.pm.smartChanged then pcall(OV.pm.smartChanged) end   -- m77: Smart Y's party picks follow the switch
 end
 function OV.smartApply()
     if inCombat() then OV.smartPending = true; return end
@@ -3842,6 +3843,7 @@ WC.smartYSpell = function(id)
     local p = OV.sbPick
     OV.sbPick = nil
     if not p then return end
+    if p.op == "padd" then if OV.pm and OV.pm.padd then OV.pm.padd(id) end return end    -- m77: Party mode's party buff list (col 34)
     local rows = OV.sbdb().rows
     local _, byName = OV.sbKnown()
     local n = OV.sbName(id)
@@ -4840,7 +4842,7 @@ local function partyMode()
             PM.touchName = tn
             PM.buildRow()
         end
-        if PM.smartApply then pcall(PM.smartApply) end
+        if PM.smartApply then pcall(PM.smartApply, true) end                -- (its picks ride the partycfg below)
         if PM.sendCfg then pcall(PM.sendCfg, why) end
         return true
     end
@@ -4915,6 +4917,105 @@ local function partyMode()
     end
     WC.padMap.party = { cfg = function() return PM.cfgNow and PM.cfgNow() or PM.resolve() end, put = PM.put, on = PM.on,
                         slots = PM.SLOTS, cols = PM.COL }
+
+    -- ---------------------------------------------------------------- Smart Y's party buffs (3.6, 4.5): picks per unit, the list's ops
+    -- the helpful aura names on `u` now; secret = a name could not be read (in a dungeon, a fight): no pick for that unit
+    function PM.auras(u)
+        local up, secret = {}, false
+        for i = 1, 40 do
+            local a = T(function() return C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL") end)
+            if type(a) ~= "table" then break end
+            local n = T(function() return a.name end)
+            if n == nil then break end
+            if type(n) ~= "string" or not WC.isPlain(n) then secret = true break end
+            up[n] = true
+        end
+        return up, secret
+    end
+    PM.PB_UNITS = { "player", "party1", "party2", "party3", "party4" }
+    -- out of combat only, Smart Y on: per unit the first buff of the list this character knows and the unit lacks -> "wc-pb-<unit>"
+    function PM.smartApply(quiet)
+        if inCombat() or not PM.f then PM.smartPending = true return false end
+        PM.smartPending = nil
+        local picks = {}
+        if OV.smartOn() then
+            local st = PM.store()
+            local names = PM.book()
+            for _, u in ipairs(PM.units()) do
+                local up, secret = PM.auras(u)
+                if not secret then
+                    for _, id in ipairs(st.buffs) do
+                        local n = OV.sbName(id)
+                        if n and names[n] and not up[n] then picks[u] = { id = id, n = n, i = PM.icon(id) } break end
+                    end
+                end
+            end
+        end
+        local sig = {}
+        for _, u in ipairs(PM.PB_UNITS) do
+            local want = picks[u] and picks[u].n or nil
+            if A(PM.f.pad, "wc-pb-" .. u) ~= want then PM.f.pad:SetAttribute("wc-pb-" .. u, want) end
+            if picks[u] then sig[#sig + 1] = u .. "=" .. picks[u].id end
+        end
+        local s = table.concat(sig, ",")
+        PM.picks = picks
+        if s ~= PM.pickSig then
+            PM.pickSig = s
+            if not quiet then pcall(PM.sendCfg, "pick") end
+        end
+        return true
+    end
+    function PM.smartSoon()
+        if PM.smartQueued then return end
+        PM.smartQueued = true
+        C_Timer.After(0.3, function() PM.smartQueued = nil; pcall(PM.smartApply) end)
+    end
+    -- Smart Y switched on / off (OV.setSmartOn): the picks and the document follow
+    function PM.smartChanged()
+        pcall(PM.smartApply, true)
+        pcall(PM.sendCfg, "smart")
+    end
+    -- party row cols 23-30: select list row k = col - 22 (fresh 2 s); 31 / 32 / 33 remove / up / down on it; 34 a fresh "add" pick
+    -- (the spell follows as Book's two taps: WC.smartYWants / WC.smartYSpell, op "padd"). Answered partyack op "pb".
+    PM.PB_FRESH = 2
+    function PM.pbOp(col)
+        local now = GetTime()
+        local ops = PM.COL.pbops
+        if col < ops.remove then PM.pbSel = { row = col - PM.COL.pbsel + 1, at = now } return end
+        local sel = PM.pbSel and now - PM.pbSel.at <= PM.PB_FRESH and PM.pbSel.row or nil
+        PM.pbSel = nil
+        if inCombat() then PM.ack("pb", false, "combat") return end
+        if col == ops.add then OV.sbPick = { op = "padd", at = now } return end
+        local list = PM.store().buffs
+        if not sel or not list[sel] then PM.ack("pb", false, "no row picked") return end
+        local id = list[sel]
+        if col == ops.remove then table.remove(list, sel)
+        elseif col == ops.up and sel > 1 then list[sel], list[sel - 1] = list[sel - 1], list[sel]
+        elseif col == ops.down and sel < #list then list[sel], list[sel + 1] = list[sel + 1], list[sel]
+        else PM.ack("pb", false, "nothing to do", nil, id) return end
+        PM.ack("pb", true, nil, nil, id)
+        PM.listChanged()
+    end
+    -- the spell after a fresh "add" pick (WC.smartYSpell's op "padd"): one of this character's party buffs, not listed yet, 8 at most
+    function PM.padd(id)
+        if inCombat() then PM.ack("pb", false, "combat", nil, id) return false end
+        local names = PM.book()
+        local n = type(id) == "number" and OV.sbName(id) or nil
+        local pid = nil
+        for _, b in ipairs(OV.PARTY_BUFFS) do if OV.sbName(b) == n then pid = b end end
+        if not (n and pid and names[n]) then PM.ack("pb", false, "not a party buff this character knows", nil, id) return false end
+        local list = PM.store().buffs
+        for _, x in ipairs(list) do if OV.sbName(x) == n then PM.ack("pb", false, "already listed", nil, id) return false end end
+        if #list >= PM.BUFFS_MAX then PM.ack("pb", false, PM.BUFFS_MAX .. " at most", nil, id) return false end
+        list[#list + 1] = pid
+        PM.ack("pb", true, nil, nil, pid)
+        PM.listChanged()
+        return true
+    end
+    function PM.listChanged()
+        pcall(PM.smartApply, true)
+        pcall(PM.sendCfg, "list")
+    end
 
     -- ---------------------------------------------------------------- the documents (section 1)
     PM.PADMAP = { row = "party", tgt = PM.COL.tgt, tsp = PM.COL.tsp, on = PM.COL.on, off = PM.COL.off, focus = PM.COL.focus,
@@ -5101,6 +5202,7 @@ local function partyMode()
         if e == "PLAYER_REGEN_ENABLED" then
             if not PM.rowBuilt or PM.applyPending then pcall(PM.apply, "fight-end") end
             if PM.f then pcall(PM.link) end
+            PM.smartSoon()                                              -- the auras read plain again; the picks may be set again
             PM.changed("fight")
         elseif e == "PLAYER_REGEN_DISABLED" then
             PM.changed("fight")
@@ -5112,6 +5214,9 @@ local function partyMode()
             if e == "PLAYER_ENTERING_WORLD" then PM.changed("roster") end
         elseif e == "GROUP_ROSTER_UPDATE" then
             PM.changed("roster")
+            PM.smartSoon()
+        elseif e == "UNIT_AURA" then
+            if (a1 == "player" or (type(a1) == "string" and a1:match("^party%d$"))) and not inCombat() then PM.smartSoon() end
         elseif e == "UNIT_COMBAT" then
             if a1 == "player" or (type(a1) == "string" and a1:match("^party%d$")) then
                 if OV.peHit(PM.model(a1), a2, OV.hmPlain(a4), GetTime()) then PM.changed("health") end
@@ -5131,7 +5236,7 @@ local function partyMode()
     PM.ev = CreateFrame("Frame")
     for _, e in ipairs({ "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ENTERING_WORLD", "SPELLS_CHANGED", "PLAYER_LOGIN",
                          "GROUP_ROSTER_UPDATE", "UNIT_COMBAT", "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_CONNECTION", "PLAYER_ROLES_ASSIGNED",
-                         "UNIT_DISPLAYPOWER", "UNIT_MAXPOWER", "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST" }) do
+                         "UNIT_DISPLAYPOWER", "UNIT_MAXPOWER", "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST", "UNIT_AURA" }) do
         pcall(function() PM.ev:RegisterEvent(e) end)
     end
     -- the anchors (6 s quiet -> full) and dead / alive need a clock: once a second, and a document only when something moved

@@ -1089,6 +1089,99 @@ A_KEYS = {"type", "v", "op", "ok", "why", "slot", "id"}
 check(set(ack[0]) <= A_KEYS, "partyack: type v op ok why? slot? id?", ack[0])
 check(W7.eval('#SPY') == 0 and W7.eval('#VIOL') == 0 and W7.eval('#SNIPERR') == 0, "no spied call, no lockdown breach, no snippet error")
 
+# ================================================================ 9. SMART Y'S PARTY BUFFS: picks per unit, PB select / ops / add
+W9 = world(pre='BOOK = { 403, 331, 324, 131, 546 }')
+W9.eval('party')(W9.table_from([W9.table_from(["Brannoc", "WARRIOR"]), W9.table_from(["Iselle", "MAGE"])]))
+W9.execute('fire("GROUP_ROSTER_UPDATE"); advance(1)')
+
+
+def tapcell(L, col):
+    L.execute('local c = WowCompanion.pad.rows.party.cells[%d]; doClick(c, "LeftButton", true); doClick(c, "LeftButton", false); NOW = NOW + 0.3' % col)
+
+
+def picks(L):
+    return {u: L.eval('PADA("wc-pb-%s")' % u) for u in ("player", "party1", "party2")}
+
+
+def buffs(L):
+    t = L.eval('WowCompanionSpellsDB.partyBy["Korvash-Realm"].buffs')
+    return [int(t[i]) for i in range(1, len(t) + 1)]
+
+
+# the list by the app's taps: col 34 (a fresh add pick) then the spell (Book's two taps -> WC.smartYSpell)
+for sid in (131, 546):
+    tapcell(W9, 34)
+    check(W9.eval('WowCompanion.smartYWants()') is True, "col 34: a fresh add pick (Book's next spell goes to the party list)")
+    n0 = nsent(W9)
+    W9.eval('WowCompanion.smartYSpell')(sid)
+    ack = docs(W9, n0, 'partyack')
+    check(ack and ack[0]['op'] == 'pb' and ack[0]['ok'] is True and ack[0]['id'] == sid, "add %d: partyack pb ok" % sid, ack)
+check(buffs(W9) == [131, 546], "the party list: Water Breathing, Water Walking (priority order)", buffs(W9))
+for sid, why in ((131, "already listed"), (1243, "not a party buff this character knows"), (331, "not a party buff this character knows")):
+    tapcell(W9, 34)
+    n0 = nsent(W9)
+    W9.eval('WowCompanion.smartYSpell')(sid)
+    ack = docs(W9, n0, 'partyack')
+    check(ack and ack[0]['ok'] is False and ack[0]['why'] == why, "add %d refused: %s" % (sid, why), ack)
+tapcell(W9, 34)
+W9.execute('NOW = NOW + 2.5')
+check(W9.eval('WowCompanion.smartYWants()') is False, "an add pick older than 2 s is stale (the spell is not taken)")
+# Smart Y off: nothing picked
+check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y OFF: no party pick at all", picks(W9))
+W9.execute('WowCompanionSpellsDB.smartOn = { ["Korvash-Realm"] = true }')
+W9.execute('AURAS = { player = { "Water Breathing", "Water Walking" }, party2 = { "Water Breathing" } }')
+n0 = nsent(W9)
+W9.execute('fire("UNIT_AURA", "party2"); advance(1)')
+check(picks(W9) == {"player": None, "party1": "Water Breathing", "party2": "Water Walking"},
+      "Smart Y ON: per unit the first listed buff it lacks (you have both: none; party2 has Water Breathing: Water Walking)", picks(W9))
+c = docs(W9, n0, 'partycfg')
+check(c and set(c[-1]['c']['sy']['pick']) == {"party1", "party2"} and c[-1]['c']['sy']['pick']['party1']['id'] == 131 and c[-1]['c']['sy']['on'] is True,
+      "partycfg sy.pick per unit token, sent when the picks change", c and c[-1]['c']['sy'].get('pick'))
+W9.execute('WowCompanionSpellsDB.partyBy["Korvash-Realm"].buffs = { 1243, 131 }; fire("UNIT_AURA", "party1"); advance(1)')
+check(picks(W9)["party1"] == "Water Breathing", "a listed buff this character does not know (Fortitude) is skipped", picks(W9))
+W9.execute('WowCompanionSpellsDB.partyBy["Korvash-Realm"].buffs = { 131, 546 }')
+W9.execute('AURAS.party1 = { "x", secret = true }; fire("UNIT_AURA", "party1"); advance(1)')
+check(picks(W9)["party1"] is None, "a secret aura read: no pick for that unit", picks(W9))
+W9.execute('AURAS.party1 = nil; fire("UNIT_AURA", "party1"); advance(1)')
+# in a fight: no new picks, sy.pick absent; Y there casts the in-combat spell (group 2)
+W9.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; AURAS.party1 = { "Water Breathing", "Water Walking" }; fire("UNIT_AURA", "party1"); advance(1)')
+check(picks(W9)["party1"] == "Water Breathing" and W9.eval('#VIOL') == 0, "in a fight the picks are not touched (no lockdown breach)", picks(W9))
+n0 = nsent(W9)
+W9.execute('fire("SPELLS_CHANGED"); advance(1)')
+c = docs(W9, n0, 'partycfg')
+check(not c or 'pick' not in c[-1]['c']['sy'], "in a fight partycfg has no sy.pick (an empty object is absent)", c and c[-1]['c']['sy'])
+W9.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); advance(1)')
+check(picks(W9)["party1"] is None, "the fight's end: picks again (party1 now has both: none)", picks(W9))
+# PB select + ops, with the 2 s rule
+W9.execute('WowCompanionSpellsDB.partyBy["Korvash-Realm"].buffs = { 131, 546 }')
+tapcell(W9, 24); tapcell(W9, 32)                   # select row 2, up
+check(buffs(W9) == [546, 131], "select row 2 (col 24) + Up (col 32): moved up", buffs(W9))
+tapcell(W9, 23); tapcell(W9, 33)                   # select row 1, down
+check(buffs(W9) == [131, 546], "select row 1 (col 23) + Down (col 33): moved down", buffs(W9))
+tapcell(W9, 23); W9.execute('NOW = NOW + 2.5'); n0 = nsent(W9); tapcell(W9, 31)
+ack = docs(W9, n0, 'partyack')
+check(buffs(W9) == [131, 546] and ack and ack[0]['why'] == 'no row picked', "a select older than 2 s: Remove refused (no row picked)", ack)
+tapcell(W9, 23); tapcell(W9, 23 + 5)               # a select of an empty row (6)
+n0 = nsent(W9); tapcell(W9, 31)
+ack = docs(W9, n0, 'partyack')
+check(buffs(W9) == [131, 546] and ack and ack[0]['ok'] is False, "a select of an empty row: Remove refused", ack)
+tapcell(W9, 23); n0 = nsent(W9); tapcell(W9, 31)
+ack = docs(W9, n0, 'partyack')
+check(buffs(W9) == [546] and ack and ack[0]['ok'] is True and ack[0]['op'] == 'pb' and ack[0]['id'] == 131, "select row 1 + Remove (col 31)", ack)
+cfgs = docs(W9, n0, 'partycfg')
+check(cfgs and [x['id'] for x in cfgs[-1]['c']['sy']['list']] == [546], "the list shown is partycfg.sy.list, sent after the op", cfgs and cfgs[-1]['c']['sy']['list'])
+W9.execute('COMBAT = true')
+n0 = nsent(W9); tapcell(W9, 23); tapcell(W9, 31)
+ack = docs(W9, n0, 'partyack')
+check(buffs(W9) == [546] and ack and ack[0]['why'] == 'combat', "a list op in a fight: refused (combat)", ack)
+W9.execute('COMBAT = false')
+# Smart Y off again: the picks go
+W9.execute('WowCompanionSpellsDB.partyBy["Korvash-Realm"].buffs = { 131 }; AURAS = {}; fire("UNIT_AURA", "party1"); advance(1)')
+check(picks(W9)["party1"] == "Water Breathing", "(on: party1 picked)")
+W9.execute('WowCompanionSpellsDB.smartOn = {}; fire("UNIT_AURA", "party1"); advance(1)')
+check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y off: every pick cleared", picks(W9))
+check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
+
 # ================================================================ THE NO-TRACE SCAN (new code only: the diff against the contract's base)
 import subprocess
 try:
