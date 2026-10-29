@@ -150,5 +150,18 @@ namespace DsfDesktop.Tests
             pc.Bnet = BnetState.SignedIn; s.Step();
             A.Eq("bnet,signin,start", string.Join(",", pc.Did), "signed in: WoW starts the normal way");
         }
+
+        /// <summary>the welcome's "lan": home networks only, never Tailscale (the user, 2026-10-28: "Yes, Wi-Fi first")</summary>
+        [Test]
+        public static void LanAddressesAreHomeNetworksOnly()
+        {
+            A.True(DsfDesktop.App.AppController.IsLan(new byte[] { 192, 168, 1, 11 }));
+            A.True(DsfDesktop.App.AppController.IsLan(new byte[] { 10, 0, 0, 5 }));
+            A.True(DsfDesktop.App.AppController.IsLan(new byte[] { 172, 20, 1, 1 }));
+            A.False(DsfDesktop.App.AppController.IsLan(new byte[] { 100, 69, 36, 86 }), "Tailscale");
+            A.False(DsfDesktop.App.AppController.IsLan(new byte[] { 169, 254, 3, 4 }), "link-local");
+            A.False(DsfDesktop.App.AppController.IsLan(new byte[] { 8, 8, 8, 8 }));
+            foreach (var a in DsfDesktop.App.AppController.LanAddresses()) A.True(a is string, "plain strings in the welcome");
+        }
     }
 }

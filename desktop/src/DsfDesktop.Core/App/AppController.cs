@@ -687,12 +687,42 @@ namespace DsfDesktop.App
         public static string Version => typeof(AppController).Assembly.GetName().Version.ToString(3);
 
         /// <summary>/v1/info and the welcome: no secrets</summary>
+        /// <summary>the PC's up, non-loopback IPv4s on its own networks (Ethernet / Wi-Fi), Tailscale's CGNAT range left out</summary>
+        public static List<object> LanAddresses()
+        {
+            var out_ = new List<object>();
+            try
+            {
+                foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                    if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback ||
+                        ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Tunnel) continue;
+                    foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+                    {
+                        var a = ua.Address;
+                        if (a.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork || IPAddress.IsLoopback(a)) continue;
+                        if (IsLan(a.GetAddressBytes())) out_.Add(a.ToString());
+                    }
+                }
+            }
+            catch (Exception) { }
+            return out_;
+        }
+
+        /// <summary>a private home-network IPv4 (10/8, 172.16/12, 192.168/16); never Tailscale (100.64/10) or link-local</summary>
+        public static bool IsLan(byte[] b) =>
+            b.Length == 4 && (b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168));
+
         public Dictionary<string, object> Info() => new Dictionary<string, object>
         {
             ["app"] = "DS Forever Desktop",
             ["version"] = Version,
             ["host_id"] = Settings.HostId,
             ["pc_name"] = Environment.MachineName,
+            // the PC's home-network IPv4s (not loopback, not Tailscale's 100.64/10): the Thor tries these first, Tailscale after
+            // (the user, 2026-10-28: "Yes, Wi-Fi first" - with the Thor's Tailscale off it only knew the Tailscale address)
+            ["lan"] = LanAddresses(),
             ["sunshine"] = new Dictionary<string, object>
             {
                 ["running"] = Sunshine?.Running ?? false,
