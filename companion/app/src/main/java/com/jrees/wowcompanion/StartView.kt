@@ -3,7 +3,6 @@ package com.jrees.wowcompanion
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.RectF
-import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 
@@ -12,8 +11,9 @@ import android.view.View
  * from the app's start until the game has answered, and says in ONE line what it waits for.
  *
  * THE LOADING SWIRL (the user, 2026-10-02: the "DS Forever" title scrapped; then "the swirl alone" as a loading effect, "A, move it to
- * the lower middle above the text"): UI Art's UiKit.swirlLoader, style "travel" (a bright band runs along the arm), redrawn about 30
- * times a second. A redraw is asked only from onDraw, so it stops by itself once the screen is gone.
+ * the lower middle above the text"): UI Art's UiKit.swirlLoader, style "travel". REPLACED 2026-10-28 by the loading reveal on both
+ * screens ([LoadingScene]: "I love this"), redrawn about 30 times a second. A redraw is asked only from onDraw, so it stops by itself once
+ * the screen is gone.
  *
  * NO TOUCH TO CONTINUE (the user, 2026-10-02: "also remove the ability to touch continue"): it leaves only when the game is ready
  * (its first current word) or a reload's new hello. It still takes every touch while it shows, so nothing under it is pressed by
@@ -50,20 +50,18 @@ class StartView(context: Context) : View(context) {
     var onLoginButton: ((gear: Boolean) -> Unit)? = null
 
     private val area = RectF()
-    private val swirl = RectF()
     private val hits = ArrayList<Pair<RectF, Int>>()
     private var pressed = -1
 
     override fun onDraw(c: Canvas) {
         area.set(0f, 0f, width.toFloat(), height.toFloat())
-        Scene.draw(c, area)
+        // THE LOADING REVEAL (the user, 2026-10-28): the scene behind both screens replaces the game's still scene and the small swirl.
+        // Every 33 ms, NOT every vsync: on a software GPU (the emulator, ~1 s a frame) a per-vsync redraw starved the main thread and,
+        // with a document backlog decoding icons, hung the app (Map's ANR on integ-b40 + mapset; UI Art's measure). 30 fps is plenty
+        LoadingScene.draw(c, area, top = false)
+        postInvalidateDelayed(FRAME_MS)
         val cx = width / 2f
         val row = login != Login.NONE
-        val cy = height - if (row) SWIRL_UP_ROW else SWIRL_UP
-        swirl.set(cx - SWIRL_D / 2f, cy - SWIRL_D / 2f, cx + SWIRL_D / 2f, cy + SWIRL_D / 2f)
-        // every 33 ms, NOT every vsync: on a software GPU (the emulator, ~1 s a frame) a per-vsync redraw starved the main thread and,
-        // with a document backlog decoding icons, hung the app (Map's ANR on integ-b40 + mapset; UI Art's measure). 30 fps is plenty
-        if (UiKit.swirlLoader(c, swirl, SystemClock.uptimeMillis(), STYLE)) postInvalidateDelayed(FRAME_MS)
         UiKit.outlined(c, line, cx, height - if (row) LINE_UP_ROW else LINE_UP, 34f, Theme.text)
         hits.clear()
         if (!row) return

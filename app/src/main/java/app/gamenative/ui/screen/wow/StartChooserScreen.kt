@@ -3,10 +3,7 @@ package app.gamenative.ui.screen.wow
 import android.view.InputDevice
 import android.view.KeyEvent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,8 +28,11 @@ import com.jrees.wowcompanion.StartMode
 
 /**
  * THE LAUNCHER'S START ROUTE (S1 "Chooser"): the start-up chooser, then the mode's own start screen. [local] is TODAY'S start screen
- * (WoWForeverScreen with its onLaunch), composed unchanged whenever the route is Local (auto-launch and all); the chooser's top and
- * Streaming's entry ([StreamEntries]) otherwise. The bottom screen's ChooserPanel has the controller (gold box) on the chooser.
+ * (WoWForeverScreen with its onLaunch): composed for Local AND, since 2026-10-28, for the chooser too, so the start-up checks run
+ * before the choice (the user: "the App loading all needs to still be completed for the Streaming option"); its launch waits for Local.
+ * The chooser itself is the bottom screen's only ("the streaming vs local deal has a top screen selection AND a bottom screen
+ * selection. this needs to be consistent. I really like the way that the bottom looks"): the ChooserPanel, once the checks pass. The
+ * top screen keeps the loading screen meanwhile. Streaming's entry ([StreamEntries]) otherwise.
  */
 @Composable
 fun DsStartScreen(local: @Composable () -> Unit) {
@@ -45,98 +45,29 @@ fun DsStartScreen(local: @Composable () -> Unit) {
         onDispose { ModeBridge.offChange(l) }
     }
     val r = route
-    // not started (no onCreate ran ModeBridge.start) or Local: today's start screen
-    if (r == null || StartMode.showsLocal(r)) { local(); return }
+    // not started (no onCreate ran ModeBridge.start), Local or the chooser: today's start screen (its keys reach the chooser first)
+    if (r == null || StartMode.runsChecks(r)) { local(); return }
 
-    // the chooser and Streaming: the launcher's pad keys go to the bottom screen's panel (and Streaming's entry first)
-    val stream = (r as? StartMode.Route.Into)?.mode == StartMode.Mode.STREAM
-    DisposableEffect(stream) {
+    // Streaming: the launcher's pad keys go to Streaming's entry first, then the bottom screen's page
+    DisposableEffect(Unit) {
         PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
         val keys: (AndroidEvent.KeyEvent) -> Boolean = { e ->
             val k = e.event
             val pad = k.source and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD ||
                 k.source and InputDevice.SOURCE_DPAD == InputDevice.SOURCE_DPAD
             pad && (k.action == KeyEvent.ACTION_DOWN || k.action == KeyEvent.ACTION_UP) &&
-                ((stream && StreamEntries.current.key(k)) ||
+                (StreamEntries.current.key(k) ||
                     ModeBridge.key(k.keyCode, k.action == KeyEvent.ACTION_DOWN && k.repeatCount == 0))
         }
         PluviaApp.events.on<AndroidEvent.KeyEvent, Boolean>(keys)
         onDispose { PluviaApp.events.off<AndroidEvent.KeyEvent, Boolean>(keys) }
     }
-    if (stream) {
-        val entry = remember { StreamEntries.current }
-        DisposableEffect(entry) {
-            entry.opened(context)
-            onDispose { entry.closed(context) }
-        }
-        entry.TopScreen(onBack = { ModeBridge.back("the top screen's Back") })
-    } else {
-        ChooserTop()
+    val entry = remember { StreamEntries.current }
+    DisposableEffect(entry) {
+        entry.opened(context)
+        onDispose { entry.closed(context) }
     }
-}
-
-/**
- * The chooser's TOP screen: the same two options, touchable (the controller's gold box is on the bottom screen's chooser; this is
- * also the way in with no second screen).
- */
-@Composable
-private fun ChooserTop() {
-    val context = LocalContext.current
-    var note by remember { mutableStateOf("") }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(WowBackgroundGradient))
-            .padding(horizontal = 24.dp, vertical = 16.dp),
-    ) {
-        Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text("DS FOREVER", fontSize = 24.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Serif, letterSpacing = 3.sp,
-                color = Color(0xFFF0E6D2))
-            Text("How do you want to play? Choose on the bottom screen, or here.", fontSize = 12.sp, color = WowSubtle,
-                textAlign = TextAlign.Center)
-            Spacer(Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(18.dp), modifier = Modifier.fillMaxWidth(0.9f)) {
-                for (mode in StartMode.Mode.values()) {
-                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        ModeCard(mode) { ModeBridge.pick(mode) }
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(onClick = { note = ModeBridge.addShortcut(context, mode) }) {
-                            Text("Add home-screen shortcut", fontSize = 12.sp, color = WowGold)
-                        }
-                    }
-                }
-            }
-            if (note.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text(note, fontSize = 12.sp, color = Color(0xFFE2E8F0))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModeCard(mode: StartMode.Mode, onPick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(120.dp)
-            .border(1.dp, WowGold.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
-            .clickable(onClick = onPick),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF131D2E).copy(alpha = 0.9f)),
-        shape = RoundedCornerShape(14.dp),
-    ) {
-        Column(Modifier.fillMaxSize().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text(mode.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Serif, color = WowGold)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                when (mode) {
-                    StartMode.Mode.LOCAL -> "WoW Forever runs on this device."
-                    StartMode.Mode.STREAM -> "WoW runs on your PC. DS Forever Desktop streams it here."
-                },
-                fontSize = 12.sp, color = WowSubtle, textAlign = TextAlign.Center,
-            )
-        }
-    }
+    entry.TopScreen(onBack = { ModeBridge.back("the top screen's Back") })
 }
 
 /**

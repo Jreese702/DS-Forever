@@ -70,15 +70,18 @@ class SetupPanel(context: Context) : View(context) {
     override fun onDraw(c: Canvas) {
         val s = screen ?: return
         area.set(0f, 0f, width.toFloat(), height.toFloat())
-        if (s.play != null) Scene.draw(c, area)
+        // before Play: the loading reveal's bottom part (2026-10-28), moving; in the game: the dimmed ground under the sign-in pop-ups
+        if (s.play != null) { LoadingScene.draw(c, area, top = false); postInvalidateDelayed(LoadingScene.FRAME_MS) }
         else { pFill.color = Color.argb(200, 6, 5, 4); c.drawRect(area, pFill) }
         buttons.clear()
         val cx = width / 2f
         var bottom = height - MARGIN
-        // Play and its line, at the foot
+        // Play and its line, at the foot. In the start-up chooser's route the checks run here first (the user, 2026-10-28: the chooser
+        // comes after them): their line and pop-ups, no Play (the chooser's Local is the way in)
         s.play?.let { play ->
             if (s.line.isNotEmpty()) UiKit.outlined(c, s.line, cx, bottom - 6f, 30f, Theme.text)
             if (s.line.isNotEmpty()) bottom -= LINE_H
+            if (ModeBridge.route == StartMode.Route.Chooser) return@let
             val r = RectF(cx - PLAY_W / 2f, bottom - PLAY_H, cx + PLAY_W / 2f, bottom)
             buttons += r to play
             bottom = r.top - GAP * 2
@@ -86,19 +89,10 @@ class SetupPanel(context: Context) : View(context) {
         // the one pop-up, above Play
         cardRect.setEmpty()
         s.prompt?.let { p -> drawPrompt(c, p, bottom) }
-        // "Report a problem" (board f-problem-report): the user, 2026-10-23: "change the report button on the screen to a little
-        // speakerphone button in the bottom left" - our own vector, a touch-sized square, last in the box's order; the controller's
-        // Select / View opens it (the cursor never lands on it: b-setup-report-cursor)
-        s.report?.let { rb ->
-            val r = RectF(MARGIN, height - MARGIN - SPEAKER, MARGIN + SPEAKER, height - MARGIN.toFloat())
-            buttons += r to rb
-        }
+        // "Report a problem" (board f-problem-report) is no longer drawn here: the user, 2026-10-28, "make the report button consistent
+        // with the other junk" - a kit button at the foot of the top screen's checks ([LoadingTopView]). Select / View still opens it.
         // the box's order: the pop-up's buttons first, Play last (a new pop-up starts the box on its first button)
-        if (s.play != null && buttons.size > 1) {
-            val report = buttons.lastOrNull()?.takeIf { it.second.action == SetupFlow.Action.REPORT }?.also { buttons.removeAt(buttons.size - 1) }
-            if (buttons.size > 1) buttons.add(buttons.removeAt(0))
-            report?.let { buttons.add(it) }
-        }
+        if (s.play != null && buttons.size > 1 && buttons.first().second.action == SetupFlow.Action.PLAY) buttons.add(buttons.removeAt(0))
         // the swirl, top left (S1 of the streaming phase): back to the start-up chooser, as B does; touch, before Play only
         swirlRect.setEmpty()
         if (s.play != null && ModeBridge.canGoBack()) drawSwirl(c)
@@ -112,42 +106,9 @@ class SetupPanel(context: Context) : View(context) {
             val boxed = padUi && live.isNotEmpty() && live[focus] == i
             if (boxed) box(c, r)
             val state = when { !b.enabled -> UiKit.Button.DISABLED; pressed == i -> UiKit.Button.DOWN; else -> UiKit.Button.UP }
-            if (b.action == SetupFlow.Action.REPORT) { drawSpeaker(c, r, pressed == i); return@forEachIndexed }
             if (boxed) UiKit.button(c, r, b.label, StartView.GLYPH_A, state) else UiKit.button(c, r, b.label, state)
         }
     }
-
-    /**
-     * THE SPEAKERPHONE (the report's button): a dark round plate with a gold rim, a megaphone facing right (its mouth, its body, the
-     * handle under it) and two sound arcs; [down] while it is pressed; the controller's Select glyph small in its corner
-     */
-    private fun drawSpeaker(c: Canvas, r: RectF, down: Boolean) {
-        val cx = r.centerX(); val cy = r.centerY(); val k = r.width() / 111f
-        pFill.style = Paint.Style.FILL
-        pFill.color = if (down) Color.argb(235, 70, 52, 24) else Color.argb(215, 18, 14, 10)
-        c.drawCircle(cx, cy, r.width() / 2f, pFill)
-        pFill.style = Paint.Style.STROKE; pFill.strokeWidth = 3f * k; pFill.color = Theme.gold
-        c.drawCircle(cx, cy, r.width() / 2f - 2f * k, pFill)
-        // the megaphone: a small back box, the flaring cone, the handle
-        val gold = Theme.gold
-        pFill.style = Paint.Style.FILL; pFill.color = gold
-        speaker.reset()
-        speaker.moveTo(cx - 26f * k, cy - 9f * k); speaker.lineTo(cx - 12f * k, cy - 9f * k)
-        speaker.lineTo(cx + 12f * k, cy - 24f * k); speaker.lineTo(cx + 12f * k, cy + 24f * k)
-        speaker.lineTo(cx - 12f * k, cy + 9f * k); speaker.lineTo(cx - 26f * k, cy + 9f * k); speaker.close()
-        c.drawPath(speaker, pFill)
-        c.drawRoundRect(RectF(cx - 21f * k, cy + 9f * k, cx - 13f * k, cy + 25f * k), 3f * k, 3f * k, pFill)
-        // the sound
-        pFill.style = Paint.Style.STROKE; pFill.strokeWidth = 4f * k; pFill.strokeCap = Paint.Cap.ROUND
-        for ((i, rad) in listOf(10f, 19f).withIndex()) {
-            pFill.alpha = if (i == 0) 255 else 170
-            c.drawArc(RectF(cx + 14f * k - rad * k, cy - rad * k, cx + 14f * k + rad * k, cy + rad * k), -45f, 90f, false, pFill)
-        }
-        pFill.alpha = 255; pFill.style = Paint.Style.FILL; pFill.strokeCap = Paint.Cap.BUTT
-        // the controller's way to it: its Select glyph's name, small, beside the plate
-        UiKit.bodyPaint(20f * k, Theme.textDim).let { p -> c.drawText(Glyphs.name("select"), r.right + 10f * k, r.bottom - 8f * k, p) }
-    }
-    private val speaker = android.graphics.Path()
 
     /** the swirl's square as last drawn (empty = not shown) */
     private val swirlRect = RectF()
@@ -224,7 +185,7 @@ class SetupPanel(context: Context) : View(context) {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_LEFT -> if (live.isNotEmpty()) { focus = (focus - 1 + live.size) % live.size; invalidate() }
             KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT -> if (live.isNotEmpty()) { focus = (focus + 1) % live.size; invalidate() }
             KeyEvent.KEYCODE_BUTTON_A -> live.getOrNull(focus)?.let { SetupBridge.press(buttons[it].second.action) }
-            // the speakerphone's own key (the cursor never lands on it: b-setup-report-cursor)
+            // the report's own key (the cursor never lands on it: b-setup-report-cursor; its button is on the top screen)
             KeyEvent.KEYCODE_BUTTON_SELECT -> screen?.report?.takeIf { it.enabled }?.let { SetupBridge.press(it.action) }
         }
         return true
@@ -275,10 +236,10 @@ class SetupPanel(context: Context) : View(context) {
         const val BUTTON_H = 111f        // 48 dp on the Thor's bottom screen, the touch minimum (StartView's row)
         const val PLAY_W = 560f
         const val PLAY_H = 130f
-        /** the speakerphone's square: 48 dp on the Thor's bottom screen (the touch minimum, as BUTTON_H) */
+        /** the swirl's square (back to the chooser): 48 dp on the Thor's bottom screen (the touch minimum, as BUTTON_H) */
         const val SPEAKER = 111f
-        /** its accessibility label (the long one) */
-        const val SPEAKER_LABEL = "Report a problem: send DS Forever a problem report (the speakerphone, bottom left)"
+        /** the report's accessibility label (the button itself is on the top screen's checks since 2026-10-28) */
+        const val SPEAKER_LABEL = "Report a problem: send DS Forever a problem report (the button under the top screen's checks, or Select)"
         const val LINE_H = 52f
         private val KEYS = setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_SELECT)

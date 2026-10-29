@@ -5,7 +5,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
-import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 
@@ -15,7 +14,7 @@ import android.view.View
  *  - THE PROMPT: one game dialog, what the game lacks and what will happen ("The game closes, ... and the game starts again"), and two
  *    buttons, Set up / Not now. TOUCH ONLY: the controller drives the game at the same time, and an A meant for this would also press
  *    whatever the game shows (Enter World on the character screen).
- *  - THE WORK: the game's scene, the loading swirl and ONE line ("Closing the game…" / "Installing the companion…" / "Starting the
+ *  - THE WORK: the loading reveal ([LoadingScene]) and ONE line ("Closing the game…" / "Installing the companion…" / "Starting the
  *    game…"; the user: "it should say installing or something while it does that"); a failure says why in one line, with an OK.
  */
 class SetupView(context: Context) : View(context) {
@@ -34,7 +33,6 @@ class SetupView(context: Context) : View(context) {
     private var pressed: String? = null
     private val hits = ArrayList<Pair<RectF, String>>()
     private val area = RectF()
-    private val swirl = RectF()
 
     /** the setup's prompt: [Set up] -> onSetUp, [Not now] -> onNotNow */
     fun prompt(p: CompanionSetup.Prompt) = ask(p, "Set up", "Not now", { onSetUp() }, { onNotNow() })
@@ -84,14 +82,12 @@ class SetupView(context: Context) : View(context) {
         val w = width.toFloat(); val h = height.toFloat(); val cx = w / 2f
         if (face == Face.PROMPT) { drawPrompt(c, w, h, cx); return }
         area.set(0f, 0f, w, h)
-        Scene.draw(c, area)
-        // the start screen's loading swirl, in the same place (StartView's constants, UI Art's spec)
+        // the loading reveal's bottom part (2026-10-28: it replaces the scene and the small swirl on every loading page)
+        LoadingScene.draw(c, area, top = false)
+        postInvalidateDelayed(LoadingScene.FRAME_MS)
         val lineY = h - StartView.LINE_UP
         val cy = h - StartView.SWIRL_UP
-        val r = StartView.SWIRL_D / 2f
-        swirl.set(cx - r, cy - r, cx + r, cy + r)
         if (face == Face.WORK) {
-            if (UiKit.swirlLoader(c, swirl, SystemClock.uptimeMillis(), StartView.STYLE)) postInvalidateDelayed(StartView.FRAME_MS)
             UiKit.outlined(c, line, cx, lineY, 34f, Theme.text)
         } else {
             UiKit.outlined(c, line, cx, cy, 34f, Theme.text)

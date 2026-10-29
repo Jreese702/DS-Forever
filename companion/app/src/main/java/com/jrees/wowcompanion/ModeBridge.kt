@@ -62,8 +62,9 @@ object ModeBridge {
 
     private fun go(r: StartMode.Route) {
         val was = route
-        if (StartMode.showsLocal(was) && !StartMode.showsLocal(r)) {
-            // the Local start screen goes: its setup state goes with it (the bottom's setup panel hides; Local publishes it again)
+        if (StartMode.runsChecks(was) && !StartMode.runsChecks(r)) {
+            // the start-up checks' screen goes (Streaming): its setup state goes with it (the bottom's setup panel hides; it publishes
+            // again when it comes back). The chooser and Local share it, so a pick of Local keeps the checks already done
             SetupBridge.publish(null)
         }
         route = r

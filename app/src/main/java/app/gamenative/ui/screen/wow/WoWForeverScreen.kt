@@ -533,6 +533,22 @@ fun WoWForeverScreen(
         }
     }
 
+    // the auto-launch held back in the chooser's route: it goes when Local is picked (the chooser's card launched at once before, when
+    // this screen first came with Local; the same now that the screen is already up)
+    var launchOnLocal by remember { mutableStateOf(false) }
+    var route by remember { mutableStateOf(com.jrees.wowcompanion.ModeBridge.route) }
+    DisposableEffect(Unit) {
+        val l: () -> Unit = { route = com.jrees.wowcompanion.ModeBridge.route }
+        com.jrees.wowcompanion.ModeBridge.onChange(l)
+        onDispose { com.jrees.wowcompanion.ModeBridge.offChange(l) }
+    }
+    LaunchedEffect(route, launchOnLocal) {
+        if (launchOnLocal && com.jrees.wowcompanion.StartMode.showsLocal(route)) {
+            launchOnLocal = false
+            if (versionStatus?.isOutdated != true) launchGame()
+        }
+    }
+
     LaunchedEffect(gamePath) {
         val ready = checkFiles()
         Timber.i("WoWForeverScreen LaunchedEffect: gamePath=$gamePath, ready=$ready, shouldAutoLaunch=${WoWLauncherState.shouldAutoLaunch}")
@@ -559,6 +575,10 @@ fun WoWForeverScreen(
                 WoWLauncherState.shouldAutoLaunch = false
                 if (versionStatus?.isOutdated == true) {
                     PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
+                } else if (!com.jrees.wowcompanion.StartMode.showsLocal(com.jrees.wowcompanion.ModeBridge.route)) {
+                    // the start-up chooser's route (2026-10-28: the checks run before the choice): the launch waits for Local's pick
+                    PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
+                    launchOnLocal = true
                 } else {
                     launchGame()
                 }
@@ -677,7 +697,9 @@ fun WoWForeverScreen(
             val pad = k.source and android.view.InputDevice.SOURCE_GAMEPAD == android.view.InputDevice.SOURCE_GAMEPAD ||
                 k.source and android.view.InputDevice.SOURCE_DPAD == android.view.InputDevice.SOURCE_DPAD
             pad && (k.action == android.view.KeyEvent.ACTION_DOWN || k.action == android.view.KeyEvent.ACTION_UP) &&
-                com.jrees.wowcompanion.SetupBridge.key(k.keyCode, k.action == android.view.KeyEvent.ACTION_DOWN && k.repeatCount == 0)
+                // the start-up chooser's panel first while it shows (it is composed over this screen's checks since 2026-10-28)
+                (com.jrees.wowcompanion.ModeBridge.key(k.keyCode, k.action == android.view.KeyEvent.ACTION_DOWN && k.repeatCount == 0) ||
+                    com.jrees.wowcompanion.SetupBridge.key(k.keyCode, k.action == android.view.KeyEvent.ACTION_DOWN && k.repeatCount == 0))
         }
         PluviaApp.events.on<AndroidEvent.KeyEvent, Boolean>(keys)
         onDispose {
@@ -687,79 +709,14 @@ fun WoWForeverScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(WowBackgroundGradient))
-            .padding(horizontal = 24.dp, vertical = 16.dp)
-    ) {
-        // one screen, no scrolling (the user 2026-10-12): no logo (it was the upstream launcher's game art); the title sits
-        // left of the checks so the whole list fits the top screen's landscape height
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            Column(modifier = Modifier.weight(0.38f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "WORLD OF WARCRAFT",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Serif,
-                    letterSpacing = 3.sp,
-                    color = Color(0xFFF0E6D2)
-                )
-                Text(
-                    text = "FOREVER BETA (ARM64 NATIVE)",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp,
-                    color = WowGold
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(text = "${gpu.edition} Edition", fontSize = 11.sp, color = WowSubtle)
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Play and the choices are on the bottom screen", fontSize = 12.sp, color = WowSubtle,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            }
-
-            Card(
-                modifier = Modifier
-                    .weight(0.62f)
-                    .border(1.dp, Color(0xFF2A3C54), RoundedCornerShape(16.dp)),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF131D2E).copy(alpha = 0.85f)),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
-                    SectionTitle("ENVIRONMENT READINESS", WowGold)
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        // the checks only (Track C): Play and every button are on the bottom screen
-                        for (check in com.jrees.wowcompanion.SetupFlow.checks(setupInputs)) {
-                            CheckItem(label = check.label, mark = check.mark)
-                            if (check.label.startsWith("Game art:") && setupInputs.art == com.jrees.wowcompanion.SetupFlow.Art.RUNNING) {
-                                LinearProgressIndicator(progress = { artProgress }, modifier = Modifier.fillMaxWidth(), color = WowGold)
-                            }
-                        }
-                        setupInputs.busy?.let { Text(it, fontSize = 13.sp, color = Color(0xFFE2E8F0)) }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-                    HorizontalDivider(color = Color(0xFF1E2D44))
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(text = "Target Path: $gamePath", fontSize = 11.sp, color = WowSubtle, maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-
-                    errorMessage?.let {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(text = "Error: $it", fontSize = 12.sp, color = WowError, fontWeight = FontWeight.Medium, maxLines = 2)
-                    }
-                }
-            }
-        }
-    }
+    // THE TOP SCREEN (the user, 2026-10-28): the loading reveal behind the checks, in one framed box centred on the screen, the game's
+    // own look ("formal instead of like AI"); the problem report at the box's foot. The companion draws it (LoadingTopView: the kit,
+    // the fonts, the scene shared with the bottom screen); the checks reach it through SetupBridge (published above)
+    androidx.compose.ui.viewinterop.AndroidView(
+        factory = { com.jrees.wowcompanion.LoadingTopView(it) },
+        update = { it.error = errorMessage },
+        modifier = Modifier.fillMaxSize(),
+    )
 
 }
 
@@ -810,35 +767,6 @@ object GamePath {
             .firstOrNull { File(it, BUILD_INFO).isFile }
 
     private fun productOf(root: File) = WowClientDownloader.readBuildInfo(File(root, BUILD_INFO))?.get("Product")
-}
-
-@Composable
-private fun SectionTitle(text: String, color: Color) {
-    Text(text = text, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = color)
-}
-
-@Composable
-private fun CheckItem(label: String, mark: com.jrees.wowcompanion.SetupFlow.Mark) {
-    // OK green tick; WAIT and OPTIONAL neutral (not done yet is not a warning); BAD orange
-    val colour = when (mark) {
-        com.jrees.wowcompanion.SetupFlow.Mark.OK -> Color(0xFF48BB78)
-        com.jrees.wowcompanion.SetupFlow.Mark.BAD -> Color(0xFFED8936)
-        else -> Color(0xFF94A3B8)
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = when (mark) {
-                com.jrees.wowcompanion.SetupFlow.Mark.OK -> Icons.Default.CheckCircle
-                com.jrees.wowcompanion.SetupFlow.Mark.BAD -> Icons.Default.Warning
-                else -> Icons.Default.Refresh
-            },
-            contentDescription = null,
-            tint = colour,
-            modifier = Modifier.size(18.dp)
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Text(text = label, fontSize = 13.sp, color = if (mark == com.jrees.wowcompanion.SetupFlow.Mark.OK) Color(0xFFCBD5E1) else colour)
-    }
 }
 
 private class StorageAccessDeniedException(cause: Throwable) : Exception(cause)

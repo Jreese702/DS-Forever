@@ -73,6 +73,12 @@ object StartMode {
     fun showsLocal(route: Route?): Boolean = (route as? Route.Into)?.mode == Mode.LOCAL
 
     /**
+     * The start-up checks run (WoWForeverScreen is composed) on this route: Local, and the chooser too (the user, 2026-10-28: the app's
+     * loading must finish before the choice, Streaming included). Its launch waits for Local ([showsLocal]).
+     */
+    fun runsChecks(route: Route?): Boolean = route == Route.Chooser || showsLocal(route)
+
+    /**
      * B (or the swirl) on a mode's start screen goes back to the chooser: never while the game runs, a launch / update is busy, a
      * restart is under way, or our login form is open (its own B closes it).
      */
@@ -86,7 +92,7 @@ object StartMode {
     /**
      * What a mode needs before it can play. LOCAL = today's start-up checks (SetupFlow: file access, the game folder, the art, our
      * add-ons in the game folder); STREAM = the PC link only (S2's pairing: the code shown in DS Forever Desktop). The chooser itself
-     * comes first and needs nothing, so a player with no local game folder can still pick Streaming.
+     * comes after the start-up checks (2026-10-28, [runsChecks]; [SetupFlow.checksPass]).
      */
     fun needs(mode: Mode): List<Need> = when (mode) {
         Mode.LOCAL -> listOf(Need.STORAGE, Need.GAME_FOLDER, Need.GAME_ART, Need.ADDONS)

@@ -41,12 +41,14 @@ class ChooserPanel(context: Context) : View(context) {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ModeBridge.onChange(refresh)
+        SetupBridge.onChange(refresh)
         ModeBridge.keyHandler = { code, down -> key(code, down) }
         update()
     }
 
     override fun onDetachedFromWindow() {
         ModeBridge.offChange(refresh)
+        SetupBridge.offChange(refresh)
         if (ModeBridge.keyHandler != null) ModeBridge.keyHandler = null
         super.onDetachedFromWindow()
     }
@@ -55,7 +57,8 @@ class ChooserPanel(context: Context) : View(context) {
         val r = ModeBridge.route
         val was = page
         page = when {
-            r == StartMode.Route.Chooser -> Page.CHOOSER
+            // the chooser comes only once the start-up checks have passed (the user, 2026-10-28); meanwhile the setup's own page shows
+            r == StartMode.Route.Chooser && SetupBridge.checksPass() -> Page.CHOOSER
             r is StartMode.Route.Into && r.mode == StartMode.Mode.STREAM && ModeBridge.streamCovers && !LauncherHooks.gameUp() -> Page.STREAM
             else -> Page.NONE
         }
@@ -77,7 +80,9 @@ class ChooserPanel(context: Context) : View(context) {
 
     override fun onDraw(c: Canvas) {
         area.set(0f, 0f, width.toFloat(), height.toFloat())
-        Scene.draw(c, area)
+        // the loading reveal's bottom part (the scene behind both screens), moving while the chooser shows
+        LoadingScene.draw(c, area, top = false)
+        if (page != Page.NONE) postInvalidateDelayed(LoadingScene.FRAME_MS)
         hits.clear()
         when (page) {
             Page.CHOOSER -> drawChooser(c)

@@ -105,6 +105,24 @@ object SetupFlow {
      */
     fun padTarget(b: Button): Boolean = b.enabled && b.action != Action.REPORT && b.action != Action.GAME_CLOSED_OK
 
+    /**
+     * THE START-UP CHOOSER WAITS FOR THE CHECKS (the user, 2026-10-28: "the App loading all needs to still be completed for the Streaming
+     * option, so it almost doesn't make sense having that screen before the dependency checks"; "If a check fails ... the chooser waits
+     * until every check passes"): a red row, the art not ready, something busy or an out-of-date game hold it. The Battle.net login
+     * (asked at Play), our add-ons (installed with the first Play) and the optional rows (indoor maps, the app's own update, all icons)
+     * never do. [i] = the inputs as the bottom screen sees them (an OK'd out-of-date folder no longer holds it: [SetupBridge.checksPass]).
+     */
+    fun checksPass(i: Inputs): Boolean =
+        !i.installedExternal && i.folderFound && !i.wrongGame && i.storage && i.staleData == null && i.art == Art.READY &&
+            i.busy == null && i.gameOutdated == null
+
+    /**
+     * The checks as the top screen's box shows them (2026-10-28, terse: "verbiage ... too much"): an OK, waiting or optional row is its
+     * name, the words before the first ':' ("Game folder", "Client build"); a red row keeps all its words (what is wrong).
+     */
+    fun terse(checks: List<Check>): List<Check> =
+        checks.map { if (it.mark == Mark.BAD) it else it.copy(label = it.label.substringBefore(':').trim()) }
+
     fun canPlay(i: Inputs): Boolean =
         i.folderFound && !i.wrongGame && i.storage && i.art == Art.READY && i.busy == null && !i.gameRunning && i.appUpdate == null
 

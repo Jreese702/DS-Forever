@@ -91,6 +91,12 @@ object SetupBridge {
             gameClosed = GameLife.note))
     }
 
+    /** the start-up checks have passed (the chooser may show); false while the launcher hasn't published them */
+    fun checksPass(): Boolean {
+        val i = inputs ?: return false
+        return SetupFlow.checksPass(i.copy(staleData = i.staleData?.takeIf { !staleOk }))
+    }
+
     /** the sign-in's lean log (NativeLogin.logEvent): each sign-in button, never anything typed */
     @Volatile var log: ((String) -> Unit)? = null
 
