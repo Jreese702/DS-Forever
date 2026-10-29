@@ -13,7 +13,8 @@ import android.view.View
  * checks, in ONE framed box CENTRED on the screen ("the Text centered on the top screen"), in the game's own look instead of the old
  * card ("can we make that Wow install screen look a little more like..... formal instead of like AI?"): the gold border, the Morpheus
  * title, a divider, one row per check with the kit's tick, a dim diamond while it waits, red when it is wrong. Terse ("verbiage ... too
- * much"): an OK row is its name only; a red row says what is wrong. The step under way in gold, then at the box's foot the problem
+ * much"): an OK row is its name only; a red row says what is wrong. The status line in gold, ALWAYS (the step, "Ready", or "Loading"
+ * with moving dots: "so it's clear it isn't stuck"), then at the box's foot the problem
  * report as the kit's own button with the controller's - glyph ("make the report button consistent with the other junk and add it
  * there so its not sticking out somewhere else"); Select opens it too ([SetupPanel]).
  *
@@ -43,11 +44,12 @@ class LoadingTopView(context: Context) : View(context) {
         val inputs = SetupBridge.inputs
         val rows = inputs?.let { SetupFlow.terse(SetupFlow.checks(it)) } ?: emptyList()
         val screen = SetupBridge.screen()
-        val line = listOfNotNull(screen?.line?.takeIf { it.isNotEmpty() }).firstOrNull()
+        // the status line is ALWAYS there, just above the report (the user, 2026-10-28): the step, "Ready", or "Loading" with dots
+        val line = SetupFlow.status(screen?.line, SetupBridge.checksPass(), LoadingScene.now())
         drawPanel(c, k, rows, line, error, screen?.report != null)
     }
 
-    private fun drawPanel(c: Canvas, k: Float, rows: List<SetupFlow.Check>, line: String?, err: String?, report: Boolean) {
+    private fun drawPanel(c: Canvas, k: Float, rows: List<SetupFlow.Check>, line: String, err: String?, report: Boolean) {
         val w = PANEL_W * k
         val rowP = UiKit.bodyPaint(32f * k, Theme.text)
         val textW = w - (ROW_X + 64f + 60f) * k
@@ -55,7 +57,7 @@ class LoadingTopView(context: Context) : View(context) {
         val laid = rows.map { r -> r to if (r.mark == SetupFlow.Mark.BAD) SetupPanel.wrap(r.label, rowP, textW) else listOf(r.label) }
         val errLines = err?.let { SetupPanel.wrap("Error: $it", rowP, textW) } ?: emptyList()
         var h = TITLE_H * k + laid.sumOf { it.second.size } * ROW_H * k + 24f * k
-        if (line != null) h += LINE_H * k
+        h += LINE_H * k
         h += errLines.size * ROW_H * k
         if (report) h += FOOT_H * k
         h += 30f * k
@@ -79,10 +81,8 @@ class LoadingTopView(context: Context) : View(context) {
             for (l in lines) { c.drawText(l, x + 64f * k, y, p); y += ROW_H * k }
         }
         for (l in errLines) { c.drawText(l, x + 64f * k, y, UiKit.bodyPaint(32f * k, BAD)); y += ROW_H * k }
-        line?.let {
-            val p = UiKit.bodyPaint(28f * k, Theme.gold).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(it, box.centerX(), y + 10f * k, p)
-        }
+        val lp = UiKit.bodyPaint(28f * k, Theme.gold).apply { textAlign = Paint.Align.CENTER }
+        c.drawText(line, box.centerX(), y + 10f * k, lp)
         reportRect.setEmpty()
         if (report) {
             UiKit.divider(c, box.left + 70f * k, box.bottom - 150f * k, box.right - 70f * k, box.bottom - 150f * k)

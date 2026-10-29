@@ -114,7 +114,9 @@ class ChooserPanel(context: Context) : View(context) {
             if (cell == btnCell) UiKit.button(c, btn, "Add home-screen shortcut", StartView.GLYPH_A, state)
             else UiKit.button(c, btn, "Add home-screen shortcut", state)
         }
-        if (note.isNotEmpty()) UiKit.outlined(c, note, cx, height - MARGIN - 12f, 30f, Theme.text)
+        // the shortcut's line, else the status line ("Ready": the checks have passed; the user, 2026-10-28, a status line always)
+        val foot = note.ifEmpty { SetupFlow.status(null, SetupBridge.checksPass(), LoadingScene.now()) }
+        UiKit.outlined(c, foot, cx, height - MARGIN - 12f, 30f, Theme.text)
     }
 
     /** one option: the game's window ground and gold border, the mode's name, its picture and one plain line */

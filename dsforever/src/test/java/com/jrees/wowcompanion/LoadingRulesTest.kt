@@ -48,6 +48,18 @@ class LoadingRulesTest {
         assertFalse(StartMode.runsChecks(null))
     }
 
+    @Test fun theStatusLineIsAlwaysThere() {
+        // the step under way wins; then "Ready" once the checks pass; else "Loading" with dots cycling every half second
+        assertEquals("Preparing the game art: 42%", SetupFlow.status("Preparing the game art: 42%", false, 3f))
+        assertEquals("Updating the game", SetupFlow.status("Updating the game", true, 3f))
+        assertEquals("Ready", SetupFlow.status("", true, 3f))
+        assertEquals("Ready", SetupFlow.status(null, true, 0f))
+        assertEquals(listOf("Loading.", "Loading..", "Loading...", "Loading."),
+            listOf(0f, 0.5f, 1.0f, 1.5f).map { SetupFlow.status(null, false, it + 0.01f) })
+        // never empty
+        for (t in 0 until 40) assertTrue(SetupFlow.status(null, false, t * 0.137f).isNotEmpty())
+    }
+
     @Test fun theChecksBoxIsTerse() {
         val rows = SetupFlow.terse(listOf(
             SetupFlow.Check("Game folder: /storage/emulated/0/WoW Forever", SetupFlow.Mark.OK),

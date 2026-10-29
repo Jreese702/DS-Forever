@@ -79,8 +79,11 @@ class SetupPanel(context: Context) : View(context) {
         // Play and its line, at the foot. In the start-up chooser's route the checks run here first (the user, 2026-10-28: the chooser
         // comes after them): their line and pop-ups, no Play (the chooser's Local is the way in)
         s.play?.let { play ->
-            if (s.line.isNotEmpty()) UiKit.outlined(c, s.line, cx, bottom - 6f, 30f, Theme.text)
-            if (s.line.isNotEmpty()) bottom -= LINE_H
+            // the status line, always there while the setup has no pop-up of its own (the user, 2026-10-28: "so it's clear it isn't
+            // stuck"); with a pop-up only the step itself, as before
+            val status = if (s.prompt == null) SetupFlow.status(s.line, SetupBridge.checksPass(), LoadingScene.now()) else s.line
+            if (status.isNotEmpty()) UiKit.outlined(c, status, cx, bottom - 6f, 30f, Theme.text)
+            if (status.isNotEmpty()) bottom -= LINE_H
             if (ModeBridge.route == StartMode.Route.Chooser) return@let
             val r = RectF(cx - PLAY_W / 2f, bottom - PLAY_H, cx + PLAY_W / 2f, bottom)
             buttons += r to play

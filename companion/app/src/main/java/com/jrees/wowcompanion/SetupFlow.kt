@@ -117,6 +117,17 @@ object SetupFlow {
             i.busy == null && i.gameOutdated == null
 
     /**
+     * THE STATUS LINE THAT IS ALWAYS THERE (the user, 2026-10-28: "there must always be a visible status line so it's clear it isn't
+     * stuck"): the step under way ([line]: the setup's busy / art line), else "Ready" once the checks have passed ([pass]), else
+     * "Loading" with dots that cycle . .. ... every half second ([t] = the scene's clock, s).
+     */
+    fun status(line: String?, pass: Boolean, t: Float): String = when {
+        !line.isNullOrEmpty() -> line
+        pass -> "Ready"
+        else -> "Loading" + ".".repeat(((t / 0.5f).toInt() % 3 + 3) % 3 + 1)
+    }
+
+    /**
      * The checks as the top screen's box shows them (2026-10-28, terse: "verbiage ... too much"): an OK, waiting or optional row is its
      * name, the words before the first ':' ("Game folder", "Client build"); a red row keeps all its words (what is wrong).
      */

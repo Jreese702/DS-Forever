@@ -65,15 +65,20 @@ class LoadingShotsTest {
     private val passed = checking.copy(art = SetupFlow.Art.READY)
     private val broken = checking.copy(folderFound = false, art = SetupFlow.Art.IDLE)
 
-    private fun pair(name: String, t: Float, inputs: SetupFlow.Inputs, r: StartMode.Route) {
+    private fun pair(name: String, t: Float, inputs: SetupFlow.Inputs?, r: StartMode.Route) {
         LoadingScene.pin(t, 11L, 1)
         route(r)
         SetupBridge.publish(inputs)
         val ctx = RuntimeEnvironment.getApplication()
         val top = render(LoadingTopView(ctx), 1920, 1080)
         val chooser = ChooserPanel(ctx).also { it.update() }
-        val bottom = if (chooser.visibility == View.VISIBLE) render(chooser, 1240, 1080)
-        else render(SetupPanel(ctx).also { it.update() }, 1240, 1080)
+        val setup = SetupPanel(ctx).also { it.update() }
+        // the bottom as the device stacks it: the chooser over the setup over the start screen (before anything is published)
+        val bottom = when {
+            chooser.visibility == View.VISIBLE -> render(chooser, 1240, 1080)
+            setup.visibility == View.VISIBLE -> render(setup, 1240, 1080)
+            else -> render(StartView(ctx).also { it.line = "Waiting for the game." }, 1240, 1080)
+        }
         device(top, bottom, name)
     }
 
@@ -81,6 +86,7 @@ class LoadingShotsTest {
         out?.mkdirs() ?: return
         artRoot()
         try {
+            pair("L0_nothing_published_loading", 0.6f, null, StartMode.Route.Chooser)
             pair("L1_start_checking", 0.4f, checking, StartMode.Route.Chooser)
             pair("L2_spark_travels", 2.2f, checking, StartMode.Route.Chooser)
             pair("L3_checks_passed_chooser", 4.0f, passed, StartMode.Route.Chooser)
