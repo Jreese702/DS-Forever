@@ -133,6 +133,8 @@ fun WoWForeverScreen(
     var versionStatus by remember { mutableStateOf<WowClientDownloader.VersionCheckResult?>(null) }
     var isCheckingVersion by remember { mutableStateOf(false) }
     var isUpdating by remember { mutableStateOf(false) }
+    /** Update was pressed while an art step or a launch ran: it starts by itself when they end (SetupFlow.updateGate) */
+    var updateQueued by remember { mutableStateOf(false) }
     var updateStatusText by remember { mutableStateOf("") }
     // DS Forever's self-update (Track C): the startup check's answer; the release when one is newer
     var appCheck by remember { mutableStateOf<com.jrees.wowcompanion.AppUpdate.Check?>(null) }
@@ -161,8 +163,9 @@ fun WoWForeverScreen(
     }
 
     fun performAppUpdate() {
-        val target = appUpdate ?: return
-        if (isDownloadingAppUpdate) return
+        val target = appUpdate ?: run { android.util.Log.i("WCSETUP", "app update: refused (no update known)"); return }
+        if (isDownloadingAppUpdate) { android.util.Log.i("WCSETUP", "app update: refused (already downloading)"); return }
+        android.util.Log.i("WCSETUP", "app update: starting v${target.version}")
         // never while the game runs (the same rule as QuestieDB)
         if (com.jrees.wowcompanion.LauncherHooks.gameUp()) { errorMessage = "Close the game first, then update"; return }
         downloadedApk?.takeIf { it.exists() && it.length() == target.size }?.let { apk ->
@@ -503,10 +506,28 @@ fun WoWForeverScreen(
         }
     }
 
+    /** the setup's own log line (WCSETUP), also to the report's log when it is attached */
+    fun setupLog(msg: String) {
+        android.util.Log.i("WCSETUP", msg)
+        com.jrees.wowcompanion.SetupBridge.log?.invoke(msg)
+    }
+
     fun performUpdate() {
+        // never silent (the user, 2026-10-28: A on Update did nothing while a background art step ran): go, queue, or say why not
+        val gate = com.jrees.wowcompanion.SetupFlow.updateGate(versionStatus != null, isUpdating, isLaunching, isHarvesting, files.hasStorageAccess)
+        val pct = (com.jrees.wowcompanion.ArtHarvest.state as? com.jrees.wowcompanion.ArtHarvest.State.Running)?.let { (it.fraction * 100).toInt() } ?: -1
+        val line = com.jrees.wowcompanion.SetupFlow.updateGateLine(gate, pct)
+        when (gate) {
+            com.jrees.wowcompanion.SetupFlow.UpdateGate.GO -> { updateQueued = false; setupLog("update: starting") }
+            com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_ART, com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_LAUNCH -> {
+                if (!updateQueued) setupLog("update: waiting (${gate.name.lowercase()}): $line")
+                updateQueued = true
+                return
+            }
+            com.jrees.wowcompanion.SetupFlow.UpdateGate.BUSY -> { setupLog("update: refused (already updating)"); return }
+            else -> { setupLog("update: refused (${gate.name.lowercase()}): $line"); errorMessage = line; return }
+        }
         val target = versionStatus ?: return
-        if (isUpdating || isLaunching || isHarvesting) return
-        if (!files.hasStorageAccess) return                // the bottom asks for it
         isUpdating = true
         updateStatusText = "Connecting to Blizzard CDN..."
         errorMessage = null
@@ -523,14 +544,22 @@ fun WoWForeverScreen(
                 // a new game build needs its art built again (it is keyed by the build): start the check now, not at the next app
                 // start (13 Oct, 70338 -> 70374: Play stayed on "Game art: checking" until the app was restarted)
                 harvestArt()
-                launchGame()
+                setupLog("update: done (${target.remoteVersion})")
+                // only in Local: in the start-up chooser's route the chooser comes once the checks pass (the user's order, 2026-10-28)
+                if (com.jrees.wowcompanion.StartMode.showsLocal(com.jrees.wowcompanion.ModeBridge.route)) launchGame()
             } catch (e: Exception) {
                 Timber.e(e, "Error updating game")
+                setupLog("update: failed: ${e.message}")
                 if (e.isPermissionDenied()) denyStorageAccess()
                 errorMessage = "Update failed: ${e.message}"
                 isUpdating = false
             }
         }
+    }
+
+    // the queued Update goes as soon as nothing holds it (an art step's end, a launch's end)
+    LaunchedEffect(updateQueued, isHarvesting, isLaunching) {
+        if (updateQueued && !isHarvesting && !isLaunching) performUpdate()
     }
 
     // the auto-launch held back in the chooser's route: it goes when Local is picked (the chooser's card launched at once before, when
@@ -617,8 +646,12 @@ fun WoWForeverScreen(
         // issues #8 / #9: the game folder's Data older than its build (the art's reads say so), on the top screen's checks
         staleData = remember { com.jrees.wowcompanion.DataStaleness.init(context); 0 }.let { com.jrees.wowcompanion.DataStaleness.current() },
         iconsLine = com.jrees.wowcompanion.AllIcons.line(com.jrees.wowcompanion.ArtHarvest.state is com.jrees.wowcompanion.ArtHarvest.State.Ready),
+        updating = isUpdating,
         busy = when {
             isUpdating -> updateStatusText
+            updateQueued -> com.jrees.wowcompanion.SetupFlow.updateGateLine(
+                if (isHarvesting) com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_ART else com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_LAUNCH,
+                (harvestState as? com.jrees.wowcompanion.ArtHarvest.State.Running)?.let { (it.fraction * 100).toInt() } ?: -1)
             isDownloadingAppUpdate -> "Downloading the update: ${(appUpdateProgress * 100).toInt()}%"
             isLaunching -> statusText
             else -> null
@@ -692,15 +725,9 @@ fun WoWForeverScreen(
         com.jrees.wowcompanion.SetupBridge.launcherActions = { a -> scope.launch(Dispatchers.Main) { onSetupAction(a) } }
         com.jrees.wowcompanion.SetupBridge.launcherRefresh = { scope.launch(Dispatchers.Main) { onSetupRefresh() } }
         // the pad belongs to the bottom screen's buttons while this screen is up (the top shows checks only)
-        val keys: (AndroidEvent.KeyEvent) -> Boolean = { e ->
-            val k = e.event
-            val pad = k.source and android.view.InputDevice.SOURCE_GAMEPAD == android.view.InputDevice.SOURCE_GAMEPAD ||
-                k.source and android.view.InputDevice.SOURCE_DPAD == android.view.InputDevice.SOURCE_DPAD
-            pad && (k.action == android.view.KeyEvent.ACTION_DOWN || k.action == android.view.KeyEvent.ACTION_UP) &&
-                // the start-up chooser's panel first while it shows (it is composed over this screen's checks since 2026-10-28)
-                (com.jrees.wowcompanion.ModeBridge.key(k.keyCode, k.action == android.view.KeyEvent.ACTION_DOWN && k.repeatCount == 0) ||
-                    com.jrees.wowcompanion.SetupBridge.key(k.keyCode, k.action == android.view.KeyEvent.ACTION_DOWN && k.repeatCount == 0))
-        }
+        // the start-up chooser's panel first while it shows (it is composed over this screen's checks since 2026-10-28), then the
+        // setup's buttons: one route (StartKeys), the same the bottom window uses when it holds the focus
+        val keys: (AndroidEvent.KeyEvent) -> Boolean = { e -> com.jrees.wowcompanion.StartKeys.route(e.event) }
         PluviaApp.events.on<AndroidEvent.KeyEvent, Boolean>(keys)
         onDispose {
             PluviaApp.events.off<AndroidEvent.KeyEvent, Boolean>(keys)

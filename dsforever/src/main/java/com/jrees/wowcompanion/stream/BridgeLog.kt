@@ -31,6 +31,8 @@ class BridgeLog(
     private val onWow: (state: String, why: String) -> Unit = { _, _ -> },
     /** all of WoW and Battle.net on the PC (Desktop 0.2.1's fields; an older Desktop gives the state alone): the stream's curtain */
     private val onPc: (PcWow) -> Unit = {},
+    /** the bridge answered (a welcome): the PC's home-network addresses it reported (Wi-Fi first next time) */
+    private val onWelcome: (lan: List<String>) -> Unit = {},
     /** the waits between tries (the tests pass a fake that also ends the loop) */
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
 ) : LogSource {
@@ -96,6 +98,7 @@ class BridgeLog(
             when (val m = BridgeProtocol.parse(text) ?: continue) {
                 is BridgeMsg.Welcome -> {
                     welcomed = true
+                    onWelcome(m.lan)
                     // a new connection replays the backlog: half-assembled documents of the old one would only glue onto it
                     docs.reset()
                     onStatus("PC: connected to ${m.pcName.ifEmpty { "DS Forever Desktop" }}${if (m.wowRunning) "" else " (WoW isn't running)"}")

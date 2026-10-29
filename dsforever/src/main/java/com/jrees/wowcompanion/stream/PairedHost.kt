@@ -27,6 +27,10 @@ data class PairedHost(
     /** the Wi-Fi's IPv4 /24 at pairing time ("192.168.1"), for "the PC is on another network" */
     val subnet: String = "",
     val lastSeenMs: Long = 0L,
+    /** the PC's last home-network address that worked or that Desktop reported ("" = none): tried FIRST (Wi-Fi first, 10-28) */
+    val lanAddress: String = "",
+    /** its last Tailscale / other address that worked ("" = none): tried after the home network */
+    val vpnAddress: String = "",
 ) {
     val hasBridge: Boolean get() = bridgePort > 0 && bridgeToken.isNotEmpty() && (!bridgeTls || bridgeFingerprint.isNotEmpty())
 
@@ -34,6 +38,7 @@ data class PairedHost(
         put("v", 1); put("name", name); put("address", address); put("httpPort", httpPort); put("httpsPort", httpsPort)
         put("uuid", uuid); put("serverCert", serverCertPem); put("bridgePort", bridgePort); put("bridgeTls", bridgeTls); put("bridgeFp", bridgeFingerprint)
         put("bridgeToken", bridgeToken); put("desktopId", desktopId); put("subnet", subnet); put("lastSeen", lastSeenMs)
+        put("lan", lanAddress); put("vpn", vpnAddress)
     }
 
     companion object {
@@ -47,6 +52,7 @@ data class PairedHost(
                 bridgePort = o.optInt("bridgePort", 0), bridgeTls = o.optBoolean("bridgeTls", false), bridgeFingerprint = o.optString("bridgeFp"),
                 bridgeToken = o.optString("bridgeToken"), desktopId = o.optString("desktopId"),
                 subnet = o.optString("subnet"), lastSeenMs = o.optLong("lastSeen", 0L),
+                lanAddress = o.optString("lan"), vpnAddress = o.optString("vpn"),
             )
         }
 
@@ -107,5 +113,80 @@ object AddressPolicy {
             lan(current) -> Move.PROBE_FIRST
             else -> Move.MOVE
         }
+    }
+}
+
+/**
+ * WHICH OF THE PAIRED PC'S ADDRESSES TO DIAL, IN ORDER (the user, 2026-10-28: "Yes, Wi-Fi first" - the Thor's Tailscale was off and it
+ * only knew the PC's Tailscale address). Pure. The home network first (an address on the Thor's own Wi-Fi /24: what mDNS sees for this
+ * PC now, the last home address that worked or that Desktop reported, the stored one), then the rest (Tailscale's 100.64/10 ...).
+ * Each is tried briefly ([PROBE_MS]); the first that answers is used and remembered ([after]). The bridge's certificate pin and
+ * Sunshine's pinned certificate stay exactly the same on every route: an address is only where to dial, never what to trust.
+ */
+object Route {
+    enum class Kind(val label: String) { HOME("home Wi-Fi"), TAILSCALE("Tailscale"), OTHER("another network") }
+
+    const val PROBE_MS = 1_500
+
+    /** Tailscale's CGNAT range 100.64.0.0/10 */
+    fun tailscale(a: String): Boolean {
+        val p = a.split('.').mapNotNull { it.toIntOrNull() }
+        return p.size == 4 && p[0] == 100 && p[1] in 64..127
+    }
+
+    /** a private home-network IPv4 (10/8, 172.16/12, 192.168/16) */
+    fun privateLan(a: String): Boolean {
+        val p = a.split('.').mapNotNull { it.toIntOrNull() }
+        if (p.size != 4) return false
+        return p[0] == 10 || (p[0] == 172 && p[1] in 16..31) || (p[0] == 192 && p[1] == 168)
+    }
+
+    fun kind(a: String, thorSubnet: String): Kind = when {
+        thorSubnet.isNotEmpty() && PairedHost.subnetOf(a) == thorSubnet -> Kind.HOME
+        thorSubnet.isEmpty() && privateLan(a) -> Kind.HOME
+        tailscale(a) -> Kind.TAILSCALE
+        else -> Kind.OTHER
+    }
+
+    /**
+     * The addresses to try for [h], in order: [seen] = this PC's addresses mDNS sees now, [reported] = the home addresses Desktop's
+     * welcome listed. Home-network ones first (seen, then the remembered / reported ones, then the stored address), the others after.
+     */
+    fun candidates(h: PairedHost, seen: List<String>, reported: List<String>, thorSubnet: String): List<String> {
+        val all = (seen + listOf(h.lanAddress) + reported + listOf(h.address, h.vpnAddress)).filter { it.isNotEmpty() }.distinct()
+        val home = all.filter { kind(it, thorSubnet) == Kind.HOME }
+        // a home address of ANOTHER /24 than the Thor's can't be reached from here; it stays last (a DHCP change is seen by mDNS)
+        val vpn = all.filter { kind(it, thorSubnet) == Kind.TAILSCALE }
+        val rest = all - home.toSet() - vpn.toSet()
+        return home + vpn + rest
+    }
+
+    /** the first of [cands] that [answers] (a short TCP probe of the PC's port), or null */
+    fun pick(cands: List<String>, answers: (String) -> Boolean): String? = cands.firstOrNull(answers)
+
+    /** [h] after [worked] answered: dialled there from now on, and remembered as its home or other address */
+    fun after(h: PairedHost, worked: String, thorSubnet: String): PairedHost {
+        val k = kind(worked, thorSubnet)
+        // the address it leaves is kept as the other route (Tailscale stays known while at home, home stays known while away)
+        val old = h.address.takeIf { it.isNotEmpty() && it != worked }
+        val oldHome = old != null && (privateLan(old) && !tailscale(old))
+        return h.copy(
+            address = worked,
+            lanAddress = if (k == Kind.HOME) worked else h.lanAddress.ifEmpty { if (oldHome) old!! else "" },
+            vpnAddress = if (k != Kind.HOME) worked else h.vpnAddress.ifEmpty { if (old != null && !oldHome) old else "" },
+            subnet = if (k == Kind.HOME) thorSubnet.ifEmpty { h.subnet } else h.subnet,
+        )
+    }
+
+    /** Desktop's welcome listed [lan]: remember the one on the Thor's Wi-Fi (else the first) as the home address */
+    fun reported(h: PairedHost, lan: List<String>, thorSubnet: String): PairedHost {
+        val best = lan.firstOrNull { thorSubnet.isNotEmpty() && PairedHost.subnetOf(it) == thorSubnet } ?: lan.firstOrNull() ?: return h
+        return if (best == h.lanAddress) h else h.copy(lanAddress = best)
+    }
+
+    /** the curtain's line when no address answered ([vpnUp] = the Thor's Tailscale is on; [tried] = what was dialled) */
+    fun unreachable(tried: List<String>, vpnUp: Boolean): String {
+        val base = "Can't reach your PC - is DS Forever Desktop running?"
+        return if (!vpnUp && tried.any(::tailscale) && tried.none { privateLan(it) }) "$base (Tailscale is off)" else base
     }
 }

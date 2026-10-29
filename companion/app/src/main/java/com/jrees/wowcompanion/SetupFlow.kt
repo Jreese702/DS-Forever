@@ -59,6 +59,8 @@ object SetupFlow {
         val installedExternal: Boolean = false,
         /** launching / updating / downloading: what is happening (Play waits) */
         val busy: String? = null,
+        /** the game's own update is running ([busy] is its step's line) */
+        val updating: Boolean = false,
         val signIn: SignIn = SignIn.NONE,
         /** "Restart the game to sign in" applied in this sign-in: its button stays until past the login screen */
         val restartOffered: Boolean = false,
@@ -117,6 +119,32 @@ object SetupFlow {
             i.busy == null && i.gameOutdated == null
 
     /**
+     * WHAT A PRESS OF UPDATE (the game's) DOES NOW (the user on the Thor, 2026-10-28: "my update button is not working when I press A" -
+     * the press reached the launcher, which returned without a word while a background art step ran). Never silent: [GO] starts it,
+     * the WAIT_ ones queue it (it starts by itself when the step ends; the status line says so), the rest are refusals said plainly.
+     */
+    enum class UpdateGate { GO, WAIT_ART, WAIT_LAUNCH, BUSY, NO_STORAGE, NO_VERSION }
+
+    fun updateGate(hasVersion: Boolean, updating: Boolean, launching: Boolean, harvesting: Boolean, storage: Boolean): UpdateGate = when {
+        updating -> UpdateGate.BUSY
+        !hasVersion -> UpdateGate.NO_VERSION
+        !storage -> UpdateGate.NO_STORAGE
+        harvesting -> UpdateGate.WAIT_ART
+        launching -> UpdateGate.WAIT_LAUNCH
+        else -> UpdateGate.GO
+    }
+
+    /** the status line / log words for a gate ([artPercent] = the running art step's %, < 0 = unknown) */
+    fun updateGateLine(g: UpdateGate, artPercent: Int): String = when (g) {
+        UpdateGate.GO -> "Updating the game"
+        UpdateGate.WAIT_ART -> "Update starts after the art step" + if (artPercent >= 0) ": $artPercent%" else ""
+        UpdateGate.WAIT_LAUNCH -> "Update starts when the launch is done"
+        UpdateGate.BUSY -> "Already updating"
+        UpdateGate.NO_STORAGE -> "Update needs access to the game folder"
+        UpdateGate.NO_VERSION -> "Checking the game's version - press Update again in a moment"
+    }
+
+    /**
      * THE STATUS LINE THAT IS ALWAYS THERE (the user, 2026-10-28: "there must always be a visible status line so it's clear it isn't
      * stuck"): the step under way ([line]: the setup's busy / art line), else "Ready" once the checks have passed ([pass]), else
      * "Loading" with dots that cycle . .. ... every half second ([t] = the scene's clock, s).
@@ -131,6 +159,37 @@ object SetupFlow {
      * The checks as the top screen's box shows them (2026-10-28, terse: "verbiage ... too much"): an OK, waiting or optional row is its
      * name, the words before the first ':' ("Game folder", "Client build"); a red row keeps all its words (what is wrong).
      */
+    /** a bar that moves without a known amount (the game's update before its files are counted) */
+    const val BAR_MOVING = -1f
+
+    /**
+     * THE TOP BOX'S PROGRESS BARS (the user, 2026-10-28: "I still want the progress bars by the things on the top"): the bar of the check
+     * [c] (the full, not terse, row), 0..1, [BAR_MOVING], or null = no bar. Only a step under way has one: the game art, the game's
+     * update, the app's download, the background icons, the indoor maps.
+     */
+    fun bar(c: Check, i: Inputs): Float? {
+        val l = c.label
+        return when {
+            l.startsWith("Game art:") -> if (i.art == Art.RUNNING) (i.artPercent / 100f).coerceIn(0f, 1f) else null
+            l.startsWith("Client build:") -> if (i.updating) fraction(i.busy) ?: BAR_MOVING else null
+            l.startsWith("DS Forever") -> i.busy?.takeIf { it.startsWith("Downloading the update") }?.let { fraction(it) }
+            l.startsWith("Icons:") -> if (c.mark == Mark.OK || l.contains("all icons ready")) null else fraction(l.substringAfter(':'))
+            l.startsWith("Indoor maps") -> if (c.mark == Mark.OK) null else fraction(l.substringAfter(':'))
+            else -> null
+        }
+    }
+
+    /** "42%" -> 0.42, "(3/10)" or "300 / 1000" -> its share; null = no amount in [s] */
+    fun fraction(s: String?): Float? {
+        if (s == null) return null
+        Regex("""(\d+)\s*%""").find(s)?.let { return (it.groupValues[1].toFloat() / 100f).coerceIn(0f, 1f) }
+        Regex("""(\d+)\s*/\s*(\d+)""").find(s)?.let {
+            val d = it.groupValues[2].toFloat()
+            return if (d > 0f) (it.groupValues[1].toFloat() / d).coerceIn(0f, 1f) else null
+        }
+        return null
+    }
+
     fun terse(checks: List<Check>): List<Check> =
         checks.map { if (it.mark == Mark.BAD) it else it.copy(label = it.label.substringBefore(':').trim()) }
 

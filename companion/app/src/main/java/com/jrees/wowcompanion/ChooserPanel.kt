@@ -42,14 +42,21 @@ class ChooserPanel(context: Context) : View(context) {
         super.onAttachedToWindow()
         ModeBridge.onChange(refresh)
         SetupBridge.onChange(refresh)
-        ModeBridge.keyHandler = { code, down -> key(code, down) }
+        ModeBridge.keyHandler = keys
         update()
     }
+
+    /**
+     * This panel's hold on the pad. Released only if it is still THIS panel's (the user on the Thor, 10-28: "Controller inputs need to be
+     * able to change the Local vs Streaming mode" - the bottom's host is rebuilt (a move to the top screen recreates it): the new panel
+     * took the pad, then the old one's detach cleared it, and nothing on the bottom heard the pad again)
+     */
+    private val keys: (Int, Boolean) -> Boolean = { code, down -> key(code, down) }
 
     override fun onDetachedFromWindow() {
         ModeBridge.offChange(refresh)
         SetupBridge.offChange(refresh)
-        if (ModeBridge.keyHandler != null) ModeBridge.keyHandler = null
+        if (ModeBridge.keyHandler === keys) ModeBridge.keyHandler = null
         super.onDetachedFromWindow()
     }
 
@@ -99,6 +106,8 @@ class ChooserPanel(context: Context) : View(context) {
         val noteH = LINE_H
         val btnTop = height - MARGIN - noteH - BUTTON_H
         val colW = (width - MARGIN * 2 - GAP * 2) / 2f
+        val now = android.os.SystemClock.uptimeMillis()
+        if (feedback.animating(now, false)) postInvalidateDelayed(LoadingScene.FRAME_MS)
         for ((i, mode) in StartMode.Mode.values().withIndex()) {
             val left = MARGIN + i * (colW + GAP * 2)
             val card = RectF(left, top, left + colW, btnTop - GAP * 2)
@@ -108,9 +117,11 @@ class ChooserPanel(context: Context) : View(context) {
             hits += card to cardCell
             hits += btn to btnCell
             if (cell == cardCell) box(c, card)
-            drawCard(c, card, mode, pressed == cardCell)
+            drawCard(c, card, mode, pressed == cardCell || feedback.down(cardCell, now))
+            // the selection always wears A (the user, 10-28: "the A glyph needs to be added to the current selection")
+            if (cell == cardCell) UiKit.pad(c, StartView.GLYPH_A, card.left + 58f, card.top + 58f, 76f)
             if (cell == btnCell) box(c, btn)
-            val state = if (pressed == btnCell) UiKit.Button.DOWN else UiKit.Button.UP
+            val state = if (pressed == btnCell || feedback.down(btnCell, now)) UiKit.Button.DOWN else UiKit.Button.UP
             if (cell == btnCell) UiKit.button(c, btn, "Add home-screen shortcut", StartView.GLYPH_A, state)
             else UiKit.button(c, btn, "Add home-screen shortcut", state)
         }
@@ -202,7 +213,8 @@ class ChooserPanel(context: Context) : View(context) {
         val btn = RectF(card.left + PAD, card.bottom - PAD - BUTTON_H, card.right - PAD, card.bottom - PAD)
         hits += btn to Back
         box(c, btn)
-        UiKit.button(c, btn, "Back to the chooser", UiKit.backGlyph(), if (pressed == Back) UiKit.Button.DOWN else UiKit.Button.UP)
+        UiKit.button(c, btn, "Back to the chooser", UiKit.backGlyph(),
+            if (pressed == Back || feedback.down(Back, android.os.SystemClock.uptimeMillis())) UiKit.Button.DOWN else UiKit.Button.UP)
     }
 
     /** the gold box, as SetupPanel's: before the kit's highlight art exists (a fresh install) a plain warm wash under the gold edge */
@@ -215,6 +227,16 @@ class ChooserPanel(context: Context) : View(context) {
     }
 
     // ------------------------------------------------------------------ input
+
+    /** the last pad press: pushed in for a moment before it acts (the user, 2026-10-28: "actual feedback when I press the A button") */
+    private val feedback = StartPress()
+
+    /** a pad press: the pushed-in look first, the action [StartPress.DOWN_MS] later (a pick replaces the page at once) */
+    private fun padAct(what: Any) {
+        feedback.press(what, android.os.SystemClock.uptimeMillis())
+        invalidate()
+        postDelayed({ feedback.clear(); act(what); invalidate() }, StartPress.DOWN_MS)
+    }
 
     private fun act(what: Any) {
         when (what) {
@@ -237,10 +259,10 @@ class ChooserPanel(context: Context) : View(context) {
                 KeyEvent.KEYCODE_DPAD_RIGHT -> cell = StartMode.move(cell, StartMode.Dir.RIGHT)
                 KeyEvent.KEYCODE_DPAD_UP -> cell = StartMode.move(cell, StartMode.Dir.UP)
                 KeyEvent.KEYCODE_DPAD_DOWN -> cell = StartMode.move(cell, StartMode.Dir.DOWN)
-                KeyEvent.KEYCODE_BUTTON_A -> act(cell)
+                KeyEvent.KEYCODE_BUTTON_A -> padAct(cell)
                 // B on the chooser: nothing to go back to (swallowed: never an accidental exit of the app)
             }
-            Page.STREAM -> if (code == KeyEvent.KEYCODE_BUTTON_A || code == KeyEvent.KEYCODE_BUTTON_B) act(Back)
+            Page.STREAM -> if (code == KeyEvent.KEYCODE_BUTTON_A || code == KeyEvent.KEYCODE_BUTTON_B) padAct(Back)
             Page.NONE -> return false
         }
         invalidate()

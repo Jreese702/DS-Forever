@@ -117,7 +117,14 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     /** what the top screen shows over the stream now (StreamCurtain's rule) */
     private fun shows(): StreamCurtain.Shows = StreamCurtain.decide(screen == Screen.STREAMING, host?.hasBridge == true, pc,
-        ((android.os.SystemClock.uptimeMillis() / 500) % 4).toInt())
+        ((android.os.SystemClock.uptimeMillis() / 500) % 4).toInt(), route?.label.orEmpty(), reachProblem)
+
+    /** the way the PC was reached this time (home Wi-Fi / Tailscale), null = not yet */
+    private var route: Route.Kind? = null
+    /** why no address of the PC answered (the curtain's line), null = none */
+    private var reachProblem: String? = null
+    /** the addresses are being tried (one connect at a time) */
+    private var routing = false
 
     /** the curtain up or down, Battle.net's sign-in line, as the rule says (on every word from Desktop and every screen change) */
     private fun applyCurtain() {
@@ -180,13 +187,23 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             PlayModes.set(PlayMode.STREAM, null, h?.address.orEmpty()); return
         }
         shell.bottom(covers = false, note = "")
+        // a new bridge (a new address): Desktop's word is the new connection's, "PC found" waits for its welcome
+        pc = null
         val clientId = store.clientId()
         PlayModes.set(PlayMode.STREAM, { onMsg, onStatus ->
             BridgeLog(h.address, h.bridgePort, h.bridgeTls, h.bridgeFingerprint, h.bridgeToken, clientId, WsClient, onMsg, onStatus,
                 onAuthLost = { why -> main.post { authLost(why) } },
                 onWow = { state, why -> main.post { wowState(state, why) } },
-                onPc = { w -> main.post { pcWord(w) } }).also { bridge = it }
+                onPc = { w -> main.post { pcWord(w) } },
+                onWelcome = { lan -> main.post { lanReported(lan) } }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
+    }
+
+    /** Desktop listed the PC's home-network addresses: the one on this Wi-Fi is tried first next time (Route) */
+    private fun lanReported(lan: List<String>) {
+        val h = host ?: return
+        val n = Route.reported(h, lan, NetProbe.subnet(activity))
+        if (n != h) { host = n; store.save(n); Log.i(TAG, "${h.name}: home address ${n.lanAddress}") }
     }
 
     private fun authLost(why: String) {
@@ -203,12 +220,52 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
     override fun surfaceDestroyed(holder: SurfaceHolder) { surfaceReady = false; stopStream("surface gone") }
 
+    /**
+     * Wi-Fi first (the user, 2026-10-28): the PC's addresses in [Route]'s order, each tried briefly; the first that answers is dialled
+     * (the bridge too) and remembered. None: the curtain says why ([Route.unreachable]) and it tries again by the policy.
+     */
     private fun connect() {
         val h = host ?: return show(Screen.PAIRING)
-        if (session != null || !surfaceReady) return
+        if (session != null || !surfaceReady || routing) return
         main.removeCallbacks(retryTick)
+        main.removeCallbacks(retryRoute)
         show(Screen.CONNECTING)
         status.show("Connecting to ${h.name}…", quality.label, "", withButtons = false)
+        val thorNet = NetProbe.subnet(activity)
+        val seen = found.filter { (h.desktopId.isNotEmpty() && it.desktopId == h.desktopId) || (h.uuid.isNotEmpty() && it.sunshineId == h.uuid) }
+            .map { it.address }
+        val cands = Route.candidates(h, seen, emptyList(), thorNet)
+        val port = if (h.hasBridge) h.bridgePort else h.httpPort
+        routing = true
+        worker.execute {
+            val ok = Route.pick(cands) { NetProbe.port(it, port, Route.PROBE_MS) == Diagnosis.Port.OPEN }
+            val vpn = NetProbe.vpnUp(activity)
+            main.post {
+                routing = false
+                if (!isOpen || session != null) return@post
+                if (ok == null) {
+                    route = null
+                    reachProblem = Route.unreachable(cands, vpn)
+                    Log.i(TAG, "route: nothing answered (tried ${cands.joinToString()}, vpn $vpn)")
+                    applyCurtain()
+                    main.postDelayed(retryRoute, policy.nextDelayMs(Diagnosis.Reason.PC_OFF).coerceAtLeast(3_000L))
+                    return@post
+                }
+                reachProblem = null
+                route = Route.kind(ok, thorNet)
+                val n = Route.after(h, ok, thorNet)
+                Log.i(TAG, "route: $ok (${route?.label})")
+                if (n != h) { host = n; store.save(n) }
+                if (n.address != h.address) applyMode()          // the bridge dials the address that answered (same pin)
+                applyCurtain()
+                startSession(n)
+            }
+        }
+    }
+
+    private val retryRoute = Runnable { if (isOpen && session == null && screen == Screen.CONNECTING) connect() }
+
+    private fun startSession(h: PairedHost) {
         val q = quality
         worker.execute {
             val id = store.identity()
@@ -395,7 +452,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 pairing.setMessage(s.message) }
             is StreamPairing.State.Paired -> {
                 pairing.busy = false; pairing.reset()
-                host = s.host; store.save(s.host)
+                // the pairing's address is where it was found (mDNS on this Wi-Fi): remembered as the home route (Route; most players
+                // have no Tailscale at all - the home network is THE route, anything else only a fallback)
+                val paired = Route.after(s.host.copy(address = ""), s.host.address, NetProbe.subnet(activity))
+                host = paired; store.save(paired)
                 Log.i(TAG, "paired with ${s.host.name} (${s.host.address}, bridge ${s.host.hasBridge})")
                 applyMode()
                 policy.reset()

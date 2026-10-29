@@ -31,7 +31,9 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
 
 sealed class BridgeMsg {
     data class Welcome(val hostId: String, val pcName: String, val wowRunning: Boolean, val httpPort: Int, val httpsPort: Int,
-                       val wowState: String = "", val wowWhy: String = "", val pc: PcWow? = null) : BridgeMsg()
+                       val wowState: String = "", val wowWhy: String = "", val pc: PcWow? = null,
+                       /** the PC's home-network IPv4s (Desktop 0.2.1+: "Wi-Fi first"); empty from an older Desktop */
+                       val lan: List<String> = emptyList()) : BridgeMsg()
     /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed"; [pc] = all of it (0.2.1) */
     data class Wow(val state: String, val why: String, val pc: PcWow? = null) : BridgeMsg()
     data class Error(val code: String, val detail: String = "") : BridgeMsg()
@@ -92,7 +94,8 @@ object BridgeProtocol {
             "welcome" -> BridgeMsg.Welcome(o.optString("host_id"), o.optString("pc_name"),
                 o.optJSONObject("wow")?.optBoolean("running") ?: false, sun?.optInt("http_port", 0) ?: 0, sun?.optInt("https_port", 0) ?: 0,
                 o.optJSONObject("wow")?.optString("state").orEmpty(), o.optJSONObject("wow")?.optString("why").orEmpty(),
-                PcWow.of(o.optJSONObject("wow")))
+                PcWow.of(o.optJSONObject("wow")),
+                o.optJSONArray("lan")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() } } ?: emptyList())
             "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"), PcWow.of(o))
             "error" -> BridgeMsg.Error(o.err(), o.optString("detail"))
             "doc" -> BridgeMsg.Doc(o.optInt("seq", -1), o.optLong("gt", -1L), o.optString("doc"))

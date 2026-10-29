@@ -26,6 +26,7 @@ class StreamCurtainTest {
     @Test fun rowsSayWhereItIs() {
         val c = curtain(StreamCurtain.decide(true, true, PcWow(state = "running", screen = "login", focused = true, bnet = "signed_in", loginError = "308")))
         assertEquals(listOf("PC found", "Battle.net", "WoW starting", "Signing in"), c.rows.map { it.label })
+        assertEquals(SetupFlow.Mark.OK, c.rows.first().mark)
         assertEquals(listOf(SetupFlow.Mark.OK, SetupFlow.Mark.OK, SetupFlow.Mark.OK, SetupFlow.Mark.BAD), c.rows.map { it.mark })
         val b = curtain(StreamCurtain.decide(true, true, PcWow(state = "stopped", screen = "none", bnet = "not_running")))
         assertEquals("Starting Battle.net on your PC", b.line)
@@ -66,5 +67,18 @@ class StreamCurtainTest {
         assertEquals("login", fr.pc?.screen)
         val old = BridgeProtocol.parse(JSONObject().put("t", "focus_result").put("ok", true).toString()) as BridgeMsg.FocusResult
         assertEquals(null, old.pc)
+    }
+
+    /** party3 said "PC found" while the PC never got a connection: it ticks only once the PC answered, with the route; a failure says why */
+    @Test fun pcFoundOnlyWhenThePcAnswered() {
+        val looking = curtain(StreamCurtain.decide(false, true, null))
+        assertEquals(listOf(StreamCurtain.LOOKING), looking.rows.map { it.label })
+        assertEquals(SetupFlow.Mark.WAIT, looking.rows.first().mark)
+        val why = "Can't reach your PC - is DS Forever Desktop running? (Tailscale is off)"
+        assertEquals(why, curtain(StreamCurtain.decide(false, true, null, problem = why)).line)
+        val home = curtain(StreamCurtain.decide(false, true, PcWow(state = "starting", screen = "none", bnet = "signed_in"), route = "home Wi-Fi"))
+        assertEquals("PC found (home Wi-Fi)", home.rows.first().label)
+        assertEquals(SetupFlow.Mark.OK, home.rows.first().mark)
+        assertEquals(listOf(StreamCurtain.LOOKING), curtain(StreamCurtain.decide(false, false, null)).rows.map { it.label })
     }
 }

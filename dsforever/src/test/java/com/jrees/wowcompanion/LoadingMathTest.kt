@@ -8,8 +8,8 @@ import org.junit.Test
 import java.io.File
 
 /**
- * The loading reveal's math on the JVM (the user's rulings, 2026-10-28): the spark follows the arm, one pass lights nearly all of both
- * screens ("travel the full black space"), and no screen is black longer than ~50 ms ("at no point do I want more than like .050 MS
+ * The loading reveal's math on the JVM (the user's rulings, 2026-10-28): the spark follows the arm, one pass reaches most of both
+ * screens with dark left between the turns and its light widening along the arm (v8), and no screen is black longer than ~50 ms ("at no point do I want more than like .050 MS
  * with a black screen"), measured at 30 fps over a long run with the drawing's own math.
  */
 class LoadingMathTest {
@@ -88,7 +88,8 @@ class LoadingMathTest {
         assertTrue(m.time.all { it in 0f..1f })
     }
 
-    @Test fun onePassLightsNearlyBothScreens() {
+    /** v8 ("some darkness between the sides of each spiral"): a pass lights much of both screens but leaves dark between the turns */
+    @Test fun onePassLeavesDarkBetweenTheTurns() {
         val tmp = FloatArray(3)
         val shares = ArrayList<Float>()
         for (k in 0 until 12) {
@@ -102,8 +103,28 @@ class LoadingMathTest {
             shares += lit.toFloat() / all
         }
         val mean = shares.average()
-        assertTrue("mean share $mean (each: $shares)", mean >= 0.9)
-        assertTrue("worst share ${shares.min()}", shares.min() >= 0.8f)
+        println("v8 lit share per pass: mean $mean, each $shares")
+        assertTrue("mean share $mean: most of the screens are reached", mean >= 0.4)
+        assertTrue("mean share $mean: dark stays between the turns", mean <= 0.85)
+    }
+
+    /** v8 ("start smaller and tighter and get bigger and wider"): the light round the arm is wider near the tail than near the middle */
+    @Test fun theLightWidensAlongTheArm() {
+        val m = maps
+        // the lit area per equal stretch of the arm (pos is the walk's length along it, so equal pos spans are equal lengths)
+        // the light's halo past the arm itself (the arm is thicker in places; the halo is what the blur adds)
+        fun band(lo: Float, hi: Float): Float {
+            var lit = 0; var arm = 0
+            for (i in m.cover.indices) {
+                if (m.cover[i] > 0.35f && m.time[i] in lo..hi) lit++
+                if (m.pos[i] < 2f && m.pos[i] in lo..hi) arm++
+            }
+            println("  band $lo..$hi: lit $lit, arm $arm")
+            return (lit - arm).toFloat()
+        }
+        val inner = band(0.05f, 0.25f); val outer = band(0.75f, 0.95f)
+        println("v8 lit area per stretch: inner $inner, outer $outer")
+        assertTrue("inner $inner < outer $outer", inner * 1.5f < outer)
     }
 
     /** a screen shows something: a lit place of the picture, or the spark / its tail / a mote on it */
@@ -151,6 +172,7 @@ class LoadingMathTest {
     @Test fun lifeRisesHoldsAndDies() {
         assertEquals(0f, LoadingMath.life(-0.1f))
         assertEquals(1f, LoadingMath.life(1.0f))
+        assertTrue("an eased rise", LoadingMath.life(LoadingMath.RISE / 2) < 0.5f)
         assertEquals(0f, LoadingMath.life(LoadingMath.HOLD + LoadingMath.FADE + 0.01f))
         assertTrue(LoadingMath.life(LoadingMath.HOLD + LoadingMath.FADE / 2) in 0.4f..0.6f)
     }

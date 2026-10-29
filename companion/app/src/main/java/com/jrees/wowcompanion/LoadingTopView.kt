@@ -18,7 +18,9 @@ import android.view.View
  * report as the kit's own button with the controller's - glyph ("make the report button consistent with the other junk and add it
  * there so its not sticking out somewhere else"); Select opens it too ([SetupPanel]).
  *
- * The checks are the launcher's ([SetupBridge]); [error] = the launcher's own error line (a failed update ...), null = none.
+ * The checks are the launcher's ([SetupBridge]); [error] = the launcher's own error line (a failed update ...), null = none. A step under
+ * way has a thin gold bar under its row ([SetupFlow.bar]: "I still want the progress bars by the things on the top"); the report's
+ * press shows by the pad (Select) as by a finger ([reportPress]).
  */
 class LoadingTopView(context: Context) : View(context) {
     var error: String? = null
@@ -47,21 +49,24 @@ class LoadingTopView(context: Context) : View(context) {
         val k = height / 1080f
         curtain?.invoke()?.let { (rows, line) -> drawPanel(c, k, rows, line, null, false); return }
         val inputs = SetupBridge.inputs
-        val rows = inputs?.let { SetupFlow.terse(SetupFlow.checks(it)) } ?: emptyList()
+        val full = inputs?.let { SetupFlow.checks(it) } ?: emptyList()
+        val rows = SetupFlow.terse(full)
+        val bars = full.map { ch -> inputs?.let { SetupFlow.bar(ch, it) } }
         val screen = SetupBridge.screen()
         // the status line is ALWAYS there, just above the report (the user, 2026-10-28): the step, "Ready", or "Loading" with dots
         val line = SetupFlow.status(screen?.line, SetupBridge.checksPass(), LoadingScene.now())
-        drawPanel(c, k, rows, line, error, screen?.report != null)
+        drawPanel(c, k, rows, line, error, screen?.report != null, bars)
     }
 
-    private fun drawPanel(c: Canvas, k: Float, rows: List<SetupFlow.Check>, line: String, err: String?, report: Boolean) {
+    private fun drawPanel(c: Canvas, k: Float, rows: List<SetupFlow.Check>, line: String, err: String?, report: Boolean,
+                          bars: List<Float?> = emptyList()) {
         val w = PANEL_W * k
         val rowP = UiKit.bodyPaint(32f * k, Theme.text)
         val textW = w - (ROW_X + 64f + 60f) * k
         // each row's lines (a red row wraps; an OK / waiting row is one line)
         val laid = rows.map { r -> r to if (r.mark == SetupFlow.Mark.BAD) SetupPanel.wrap(r.label, rowP, textW) else listOf(r.label) }
         val errLines = err?.let { SetupPanel.wrap("Error: $it", rowP, textW) } ?: emptyList()
-        var h = TITLE_H * k + laid.sumOf { it.second.size } * ROW_H * k + 24f * k
+        var h = TITLE_H * k + laid.sumOf { it.second.size } * ROW_H * k + 24f * k + bars.count { it != null } * BAR_ROW * k
         h += LINE_H * k
         h += errLines.size * ROW_H * k
         if (report) h += FOOT_H * k
@@ -76,7 +81,8 @@ class LoadingTopView(context: Context) : View(context) {
         UiKit.divider(c, box.left + 70f * k, box.top + 124f * k, box.right - 70f * k, box.top + 124f * k)
         var y = box.top + 186f * k
         val x = box.left + ROW_X * k
-        for ((r, lines) in laid) {
+        for ((n, rl) in laid.withIndex()) {
+            val (r, lines) = rl
             mark(c, r.mark, x, y, k)
             val p = UiKit.bodyPaint(32f * k, when (r.mark) {
                 SetupFlow.Mark.OK -> Theme.text
@@ -84,6 +90,10 @@ class LoadingTopView(context: Context) : View(context) {
                 else -> Theme.textDim
             })
             for (l in lines) { c.drawText(l, x + 64f * k, y, p); y += ROW_H * k }
+            bars.getOrNull(n)?.let { f ->
+                bar(c, RectF(x + 64f * k, y - ROW_H * k + 18f * k, box.right - 90f * k, y - ROW_H * k + 30f * k), f)
+                y += BAR_ROW * k
+            }
         }
         for (l in errLines) { c.drawText(l, x + 64f * k, y, UiKit.bodyPaint(32f * k, BAD)); y += ROW_H * k }
         val lp = UiKit.bodyPaint(28f * k, Theme.gold).apply { textAlign = Paint.Align.CENTER }
@@ -92,8 +102,38 @@ class LoadingTopView(context: Context) : View(context) {
         if (report) {
             UiKit.divider(c, box.left + 70f * k, box.bottom - 150f * k, box.right - 70f * k, box.bottom - 150f * k)
             reportRect.set(box.centerX() - 230f * k, box.bottom - 124f * k, box.centerX() + 230f * k, box.bottom - 52f * k)
-            UiKit.button(c, reportRect, REPORT, REPORT_GLYPH, if (reportDown) UiKit.Button.DOWN else UiKit.Button.UP)
+            val now = android.os.SystemClock.uptimeMillis()
+            UiKit.button(c, reportRect, REPORT, REPORT_GLYPH,
+                if (reportDown || reportPress.down(REPORT, now)) UiKit.Button.DOWN else UiKit.Button.UP, reportPress.waiting(REPORT, now, false))
         }
+    }
+
+    private val pBar = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /**
+     * A row's thin bar, gold (the user: the game's look, not Material): the kit's bar ground, the filled share in gold, the kit's
+     * border; [f] = [SetupFlow.BAR_MOVING] = a gold stretch running along it (an amount not known yet).
+     */
+    private fun bar(c: Canvas, r: RectF, f: Float) {
+        pBar.style = Paint.Style.FILL; pBar.color = Color.argb(220, 6, 5, 4)
+        c.drawRoundRect(r, r.height() / 2f, r.height() / 2f, pBar)
+        val inner = RectF(r.left + 2f, r.top + 2f, r.right - 2f, r.bottom - 2f)
+        pBar.shader = android.graphics.LinearGradient(0f, inner.top, 0f, inner.bottom, Color.rgb(255, 222, 120), Color.rgb(196, 140, 20),
+            android.graphics.Shader.TileMode.CLAMP)
+        if (f == SetupFlow.BAR_MOVING) {
+            val ph = (android.os.SystemClock.uptimeMillis() % 1600L) / 1600f
+            val w = inner.width() * 0.25f
+            val l = inner.left - w + (inner.width() + w) * ph
+            c.save(); c.clipRect(inner)
+            c.drawRoundRect(RectF(l, inner.top, l + w, inner.bottom), inner.height() / 2f, inner.height() / 2f, pBar)
+            c.restore()
+        } else if (f > 0f) {
+            c.drawRoundRect(RectF(inner.left, inner.top, inner.left + inner.width() * f.coerceIn(0f, 1f), inner.bottom),
+                inner.height() / 2f, inner.height() / 2f, pBar)
+        }
+        pBar.shader = null
+        pBar.style = Paint.Style.STROKE; pBar.strokeWidth = 2f; pBar.color = Theme.bronze
+        c.drawRoundRect(r, r.height() / 2f, r.height() / 2f, pBar)
     }
 
     /** a row's mark: the kit's tick (OK), a dim diamond (waiting / optional), a red disc (wrong) */
@@ -125,7 +165,9 @@ class LoadingTopView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN -> { reportDown = inside; invalidate(); return inside }
             MotionEvent.ACTION_UP -> {
                 val was = reportDown; reportDown = false; invalidate()
-                if (was && inside) SetupBridge.screen()?.report?.takeIf { it.enabled }?.let { SetupBridge.press(it.action) }
+                if (was && inside) SetupBridge.screen()?.report?.takeIf { it.enabled }?.let {
+                    reportPress.press(REPORT, android.os.SystemClock.uptimeMillis()); SetupBridge.press(it.action)
+                }
                 return was
             }
             MotionEvent.ACTION_CANCEL -> { reportDown = false; invalidate() }
@@ -134,6 +176,9 @@ class LoadingTopView(context: Context) : View(context) {
     }
 
     companion object {
+        /** the report's last press, by a finger here or Select on the bottom (SetupPanel): its pushed-in look, then a short wait */
+        val reportPress = StartPress()
+        const val BAR_ROW = 22f
         const val TITLE = "World of Warcraft: Forever"
         const val REPORT = "Report a problem"
         const val REPORT_GLYPH = "rev_minus"

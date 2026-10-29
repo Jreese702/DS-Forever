@@ -169,8 +169,17 @@ object UiKit {
      * so the host only keeps redrawing while something waits (PressWait asks for the frames). Art: kit `wait_ring` / `wait_sparks`.
      */
     fun waitSpinner(c: Canvas, cx: Float, cy: Float, size: Float, alpha: Int = 255) {
-        val ring = tex("wait_ring") ?: return
         val box = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
+        val ring = tex("wait_ring") ?: run {
+            // before the kit has the game's spinner (an older harvest): a gold arc turning the same way, so a wait still shows
+            val deg = -360f * ((SystemClock.uptimeMillis() % 2000L) / 2000f)
+            pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = size * 0.12f; pFlat.strokeCap = Paint.Cap.ROUND
+            pFlat.color = Theme.gold; pFlat.alpha = alpha
+            val r = RectF(box); r.inset(size * 0.12f, size * 0.12f)
+            c.drawArc(r, deg, 270f, false, pFlat)
+            pFlat.alpha = 255; pFlat.strokeCap = Paint.Cap.BUTT; pFlat.style = Paint.Style.FILL
+            return
+        }
         val deg = -360f * ((SystemClock.uptimeMillis() % 2000L) / 2000f)
         c.save(); c.rotate(deg, cx, cy)
         pBmp.alpha = alpha

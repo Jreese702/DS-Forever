@@ -307,6 +307,15 @@ private class HostPresentation(outer: Context, display: Display, private val onR
         return super.dispatchTouchEvent(ev)
     }
 
+    /**
+     * A pad key that reaches THIS window (it holds the focus while a text field types) still goes to the start-up pages first, as the
+     * launcher's activity sends them (the user on the Thor, 10-28: the chooser and Update did not answer the controller)
+     */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (com.jrees.wowcompanion.StartKeys.route(event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     private fun focusable(on: Boolean) {
         typing = on
         val w = window ?: return

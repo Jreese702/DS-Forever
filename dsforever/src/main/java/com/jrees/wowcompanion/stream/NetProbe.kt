@@ -28,6 +28,13 @@ object NetProbe {
 
     fun onWifi(ctx: Context): Boolean = lan(ctx) != null
 
+    /** a VPN (the Thor's Tailscale) is up */
+    @Suppress("DEPRECATION")
+    fun vpnUp(ctx: Context): Boolean {
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return false
+        return cm.allNetworks.any { n -> cm.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true }
+    }
+
     /** the Thor's own IPv4 /24 on its Wi-Fi ("" = none) */
     fun subnet(ctx: Context): String {
         val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return ""

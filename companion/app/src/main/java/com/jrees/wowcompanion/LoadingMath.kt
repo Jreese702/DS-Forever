@@ -23,15 +23,21 @@ import kotlin.math.sin
  *
  * The light is cheap per frame: two maps in the swirl's own square, built once from our own home_swirl picture ([Maps]): COVERAGE
  * (the passed arm, blurred: how lit a place gets) and TIME (when the spark passes near it), so lit = coverage * w(now - time).
+ *
+ * v8 (the user, 2026-10-28: "the spiral is a bit too fast. It should start smaller and tighter and get bigger and wider, there should be
+ * some darkness between the sides of each spiral and the glowing effect is a bit too strong ... the tail needs to fade out a touch
+ * faster"; study src/trail3.py): a slower spark, the light NARROW at the inner end and WIDE at the tail (two blurs blended along the
+ * arm, [SIGMA_NARROW] / [SIGMA_WIDE]) with dark left between the turns, a softer glow, a short squared tail.
  */
 object LoadingMath {
-    const val TRAVEL = 4.6f
+    const val TRAVEL = 6.2f
     const val HOLD = 2.2f
     const val FADE = 2.6f
-    const val TAIL = 1.0f
-    const val RISE = 0.3f
-    /** a new pass this often: the black-frame test (LoadingMathTest) passes at 5.9; 6.3 left 267 ms of black on the bottom screen */
-    const val EVERY = 5.9f
+    const val TAIL = 0.55f
+    /** the light comes up over [RISE] s after the spark passed (a soft leading edge, eased ^1.5) */
+    const val RISE = 0.7f
+    /** a new pass this often (the v8 study: 0 black frames at 6.6; LoadingMathTest measures it) */
+    const val EVERY = 6.6f
     /** the first spark has already started when the app shows (no black bottom screen at launch) */
     const val LEAD = 1.5f
     const val SWIRL = 4000f
@@ -51,11 +57,15 @@ object LoadingMath {
 
     /** the maps' square: the swirl at [N] px plus [PAD] px round it (the light reaches past the arm) */
     const val N = 280
-    /** the light's spread round the arm, as in the study (a blur of 220 / 4000 of the swirl) */
-    const val SIGMA = N * 0.055f
-    const val PAD = 48
+    /** the light's spread round the arm: narrow at the inner end (60 / 4000 of the swirl), wide at the tail (150 / 4000), as the study */
+    const val SIGMA_NARROW = N * 60f / 4000f
+    const val SIGMA_WIDE = N * 150f / 4000f
+    const val GAIN_NARROW = 2.2f
+    const val GAIN_WIDE = 2.4f
+    /** the light's curve (^1.3: the thin light between the turns stays dark) */
+    const val CURVE = 1.3f
+    const val PAD = 32
     const val M = N + 2 * PAD
-    const val GAIN = 3.6f
 
     class Maps(
         /** the arm's light, 0..1 (M x M) */
@@ -102,11 +112,17 @@ object LoadingMath {
         for (v in d) if (v > dmax) dmax = v
         val pos = FloatArray(M * M) { if (d[it] >= 0f && dmax > 0f) d[it] / dmax else 2f }
         val lit = FloatArray(M * M) { if (pos[it] < 2f) min(1f, arm[it] * 1.4f) else 0f }
-        val litPos = FloatArray(M * M) { lit[it] * (if (pos[it] < 2f) pos[it] else 0f) }
-        val bl = blur(lit, SIGMA)
-        val bp = blur(litPos, SIGMA)
-        val cover = FloatArray(M * M) { min(1f, bl[it] * GAIN) }
-        val time = FloatArray(M * M) { if (bl[it] > 1e-4f) (bp[it] / bl[it]).coerceIn(0f, 1f) else 1f }
+        fun p(i: Int) = if (pos[i] < 2f) pos[i] else 0f
+        // narrow light weighted by (1 - pos), wide by pos: small and tight at the middle, bigger and wider towards the tail
+        val ln = blur(FloatArray(M * M) { lit[it] * (1f - p(it)) }, SIGMA_NARROW)
+        val lw = blur(FloatArray(M * M) { lit[it] * p(it) }, SIGMA_WIDE)
+        val tn = blur(FloatArray(M * M) { lit[it] * (1f - p(it)) * p(it) }, SIGMA_NARROW)
+        val tw = blur(FloatArray(M * M) { lit[it] * p(it) * p(it) }, SIGMA_WIDE)
+        val cover = FloatArray(M * M) { Math.pow(min(1f, ln[it] * GAIN_NARROW + lw[it] * GAIN_WIDE).toDouble(), CURVE.toDouble()).toFloat() }
+        val time = FloatArray(M * M) {
+            val wsum = ln[it] + lw[it]
+            if (wsum > 1e-5f) ((tn[it] + tw[it]) / wsum).coerceIn(0f, 1f) else 1f
+        }
         // the spark's path: the mean place of the arm pixels at each step along it
         val sx = FloatArray(HEADS + 1); val sy = FloatArray(HEADS + 1); val sn = IntArray(HEADS + 1)
         for (i in pos.indices) if (pos[i] < 2f) {
@@ -209,10 +225,10 @@ object LoadingMath {
         return out
     }
 
-    /** the light's life at [age] s after the spark passed: rises in [RISE], holds [HOLD], dies in [FADE] */
+    /** the light's life at [age] s after the spark passed: rises in [RISE] (eased), holds [HOLD], dies in [FADE] */
     fun life(age: Float): Float {
         if (age < 0f) return 0f
-        val up = min(1f, age / RISE)
+        val up = Math.pow(min(1f, age / RISE).toDouble(), 1.5).toFloat()
         val down = (1f - (age - HOLD) / FADE).coerceIn(0f, 1f)
         return up * down
     }

@@ -37,14 +37,18 @@ class SetupPanel(context: Context) : View(context) {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         SetupBridge.onChange(refresh)
-        SetupBridge.keyHandler = { code, down -> if (visibility == VISIBLE) key(code, down) else false }
+        SetupBridge.keyHandler = keys
         update()
     }
+
+    /** this panel's hold on the pad, released only while it is still this panel's (see ChooserPanel.keys: a rebuilt host's old panel
+     *  cleared the new one's, and A on Update did nothing) */
+    private val keys: (Int, Boolean) -> Boolean = { code, down -> if (visibility == VISIBLE) key(code, down) else false }
 
     override fun onDetachedFromWindow() {
         SetupBridge.offChange(refresh)
         removeCallbacks(tick)
-        SetupBridge.keyHandler = null
+        if (SetupBridge.keyHandler === keys) SetupBridge.keyHandler = null
         super.onDetachedFromWindow()
     }
 
@@ -105,12 +109,34 @@ class SetupPanel(context: Context) : View(context) {
         // b-login-a-input (the user, 15 Oct: the login screen's cursor, glyph and A "cause issues with inputting on both screens"): in
         // the game (no Play) the sign-in pop-up has no gold box and no A glyph, and takes no pad presses; its buttons are touch only
         val padUi = SetupFlow.padDriven(s)
+        // the press shows the same by the pad as by a finger (StartPress: pushed in, then the spinner while it is under way)
+        val now = android.os.SystemClock.uptimeMillis()
+        val busy = SetupBridge.inputs?.busy != null
         buttons.forEachIndexed { i, (r, b) ->
             val boxed = padUi && live.isNotEmpty() && live[focus] == i
             if (boxed) box(c, r)
-            val state = when { !b.enabled -> UiKit.Button.DISABLED; pressed == i -> UiKit.Button.DOWN; else -> UiKit.Button.UP }
-            if (boxed) UiKit.button(c, r, b.label, StartView.GLYPH_A, state) else UiKit.button(c, r, b.label, state)
+            // the pressed button keeps its own look while its action runs (the page greys its buttons while busy: not this one)
+            val waiting = feedback.waiting(b.action, now, busy)
+            val state = when {
+                feedback.down(b.action, now) || pressed == i -> UiKit.Button.DOWN
+                waiting -> UiKit.Button.UP
+                !b.enabled -> UiKit.Button.DISABLED
+                else -> UiKit.Button.UP
+            }
+            if (boxed) UiKit.button(c, r, b.label, StartView.GLYPH_A, state, waiting) else UiKit.button(c, r, b.label, state, waiting = waiting)
         }
+        if (feedback.animating(now, busy)) postInvalidateDelayed(LoadingScene.FRAME_MS)
+    }
+
+    /** the last press, by the pad or a finger (its pushed-in look, then its wait) */
+    private val feedback = StartPress()
+
+    /** a button pressed (pad or touch): its look, then its action */
+    private fun act(i: Int) {
+        val a = buttons[i].second.action
+        feedback.press(a, android.os.SystemClock.uptimeMillis())
+        invalidate()
+        SetupBridge.press(a)
     }
 
     /** the swirl's square as last drawn (empty = not shown) */
@@ -187,9 +213,12 @@ class SetupPanel(context: Context) : View(context) {
         when (code) {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_LEFT -> if (live.isNotEmpty()) { focus = (focus - 1 + live.size) % live.size; invalidate() }
             KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT -> if (live.isNotEmpty()) { focus = (focus + 1) % live.size; invalidate() }
-            KeyEvent.KEYCODE_BUTTON_A -> live.getOrNull(focus)?.let { SetupBridge.press(buttons[it].second.action) }
+            KeyEvent.KEYCODE_BUTTON_A -> live.getOrNull(focus)?.let { act(it) }
             // the report's own key (the cursor never lands on it: b-setup-report-cursor; its button is on the top screen)
-            KeyEvent.KEYCODE_BUTTON_SELECT -> screen?.report?.takeIf { it.enabled }?.let { SetupBridge.press(it.action) }
+            KeyEvent.KEYCODE_BUTTON_SELECT -> screen?.report?.takeIf { it.enabled }?.let {
+                LoadingTopView.reportPress.press(LoadingTopView.REPORT, android.os.SystemClock.uptimeMillis())
+                SetupBridge.press(it.action)
+            }
         }
         return true
     }
@@ -221,7 +250,7 @@ class SetupPanel(context: Context) : View(context) {
                 val was = pressed; pressed = -1; invalidate()
                 if (was >= 0 && was == hit) {
                     live().indexOf(hit).takeIf { it >= 0 }?.let { focus = it }
-                    SetupBridge.press(buttons[hit].second.action)
+                    act(hit)
                 }
             }
             MotionEvent.ACTION_CANCEL -> { pressed = -1; invalidate() }

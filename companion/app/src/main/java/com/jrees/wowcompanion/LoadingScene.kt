@@ -163,7 +163,7 @@ object LoadingScene {
                 mx.postTranslate(r.left, r.top)
                 pAdd.shader = null
                 pAdd.colorFilter = PorterDuffColorFilter(col, PorterDuff.Mode.SRC_IN)
-                pAdd.alpha = 205
+                pAdd.alpha = 128          // v8: the arm's tint 0.5 ("the glowing effect is a bit too strong")
                 c.drawBitmap(tb, mx, pAdd)
                 pAdd.colorFilter = null; pAdd.alpha = 255
             }
@@ -171,9 +171,10 @@ object LoadingScene {
             if (q in 0f..1f) {
                 LoadingMath.head(m, p, q, tmp)
                 val hx = r.left + (tmp[0] - reg.left) * sx; val hy = r.top + (tmp[1] - reg.top) * sy
-                val rad = 420f * sx
-                val glow = Color.rgb(((0.6f * tint[0] + 0.5f).coerceAtMost(1f) * 255).toInt(), ((0.6f * tint[1] + 0.5f).coerceAtMost(1f) * 255).toInt(),
-                    ((0.6f * tint[2] + 0.5f).coerceAtMost(1f) * 255).toInt())
+                // v8: the glow small at the middle and growing along the arm (the study's sigma 30 + 40 q), and softer (0.35 tint + 0.3)
+                val rad = (210f + 280f * q) * sx
+                val glow = Color.rgb(((0.35f * tint[0] + 0.3f).coerceAtMost(1f) * 255).toInt(), ((0.35f * tint[1] + 0.3f).coerceAtMost(1f) * 255).toInt(),
+                    ((0.35f * tint[2] + 0.3f).coerceAtMost(1f) * 255).toInt())
                 if (hx > r.left - rad && hx < r.right + rad && hy > r.top - rad && hy < r.bottom + rad) {
                     pAdd.shader = RadialGradient(hx, hy, rad, intArrayOf(glow, Color.argb(120, Color.red(glow), Color.green(glow), Color.blue(glow)),
                         Color.TRANSPARENT), floatArrayOf(0f, 0.25f, 1f), Shader.TileMode.CLAMP)
@@ -189,7 +190,7 @@ object LoadingScene {
                 val mx = r.left + (tmp[0] - reg.left) * sx; val my = r.top + (tmp[1] - reg.top) * sy
                 val rr = (25f * tmp[2] + 3f) * sx * 2.5f
                 if (mx < r.left - rr || mx > r.right + rr || my < r.top - rr || my > r.bottom + rr) continue
-                val a = (255 * tmp[2]).toInt()
+                val a = (255 * 0.6f * tmp[2]).toInt()          // v8: the motes at 0.6
                 pAdd.shader = RadialGradient(mx, my, rr, intArrayOf(Color.argb(a, 255, 255, 255), Color.argb(a / 2, Color.red(col), Color.green(col), Color.blue(col)),
                     Color.TRANSPARENT), floatArrayOf(0f, 0.35f, 1f), Shader.TileMode.CLAMP)
                 c.drawCircle(mx, my, rr, pAdd)
@@ -205,7 +206,8 @@ object LoadingScene {
     private var tailPx: IntArray? = null
     private var tailKey = Long.MIN_VALUE
 
-    /** the arm behind the spark: brightest where it just passed, gone [LoadingMath.TAIL] s later; null = none now */
+    /** the arm behind the spark: brightest where it just passed, gone [LoadingMath.TAIL] s later on a squared curve (v8: "a true tail
+     *  fade"); null = none now */
     private fun tail(m: LoadingMath.Maps, p: LoadingMath.Pass, tc: Float): Bitmap? {
         if (tc < 0f || tc > LoadingMath.TRAVEL + LoadingMath.TAIL) return null
         val key = p.k.toLong() * 100_000L + (tc * 1000f / FRAME_MS).toLong()
@@ -217,7 +219,8 @@ object LoadingScene {
             px[i] = if (pos >= 2f) 0 else {
                 val age = tc - pos * LoadingMath.TRAVEL
                 if (age < 0f || age > LoadingMath.TAIL) 0 else {
-                    val a = (min(1f, m.arm[i] * 1.4f) * (0.25f + 0.75f * (1f - age / LoadingMath.TAIL)) * 255f).toInt().coerceIn(0, 255)
+                    val f = 1f - age / LoadingMath.TAIL
+                    val a = (min(1f, m.arm[i] * 1.4f) * f * f * 255f).toInt().coerceIn(0, 255)
                     (a shl 24) or 0xFFFFFF
                 }
             }

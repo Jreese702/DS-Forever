@@ -24,6 +24,7 @@ object StreamCurtain {
     }
 
     const val SIGN_IN = "Sign in to Battle.net"
+    const val LOOKING = "Looking for your PC"
     const val NEEDS_YOU = "Sign-in needs you on the PC's Battle.net"
 
     /**
@@ -31,9 +32,15 @@ object StreamCurtain {
      * alone says nothing about WoW: the stream shows as before); [pc] = Desktop's last word, null = none yet; [dots] = 0..3 for
      * "Loading" while nothing more precise is known.
      */
-    fun decide(connected: Boolean, bridged: Boolean, pc: PcWow?, dots: Int = 3): Shows {
-        if (!bridged) return if (connected) Shows.Stream else curtain(listOf(row("PC found", false)), "Connecting to your PC")
-        if (pc == null) return curtain(listOf(row("PC found", connected)), if (connected) loading(dots) else "Connecting to your PC")
+    fun decide(connected: Boolean, bridged: Boolean, pc: PcWow?, dots: Int = 3, route: String = "", problem: String? = null): Shows {
+        // "PC found" only once the PC ANSWERED (the bridge's welcome: [pc] set; Sunshine alone: the stream up), with the way it was
+        // reached ([route]: "home Wi-Fi" / "Tailscale"); before that "Looking for your PC" (party3 said "PC found" while the PC never
+        // got a connection: the Thor's Tailscale was off); [problem] = why no address answered (Route.unreachable)
+        val found = if (route.isEmpty()) "PC found" else "PC found ($route)"
+        if (!bridged) return if (connected) Shows.Stream
+            else curtain(listOf(row(LOOKING, false)), problem ?: "Connecting to your PC")
+        if (pc == null) return if (connected) curtain(listOf(row(found, true)), loading(dots))      // the stream answered, Desktop not yet
+            else curtain(listOf(row(LOOKING, false)), problem ?: "Connecting to your PC")
         if (pc.bnet == "signin_needed") return Shows.SignIn(SIGN_IN)
         if (pc.needsYou) return Shows.SignIn(NEEDS_YOU)
         val known = pc.screen.isNotEmpty()
@@ -42,7 +49,7 @@ object StreamCurtain {
         val bnetOk = pc.bnet.isEmpty() || pc.bnet == "signed_in" || pc.bnet == "unknown"
         val running = pc.state == "running"
         val rows = buildList {
-            add(row("PC found", connected))
+            add(row(found, true))
             if (pc.bnet.isNotEmpty() && pc.bnet != "unknown") add(row("Battle.net", bnetOk))
             add(row("WoW starting", running))
             if (known) add(SetupFlow.Check("Signing in", when {
