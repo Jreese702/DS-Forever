@@ -21,13 +21,19 @@ import kotlin.math.sin
  * red spark). A new pass every [EVERY] s; the newer covers the older (the user: not "overlapping each other so heavily") and the screens
  * are never black longer than ~50 ms ("at no point do I want more than like .050 MS with a black screen").
  *
- * The light is cheap per frame: two maps in the swirl's own square, built once from our own home_swirl picture ([Maps]): COVERAGE
- * (the passed arm, blurred: how lit a place gets) and TIME (when the spark passes near it), so lit = coverage * w(now - time).
+ * The light is cheap per frame: two maps in the swirl's own square, built once from our own home_swirl picture ([Maps]): the DISTANCE
+ * from the arm and WHEN the spark passes the nearest arm point (v9; v1-v8 used a blurred coverage), so lit = band(distance, age) *
+ * life(age).
  *
  * v8 (the user, 2026-10-28: "the spiral is a bit too fast. It should start smaller and tighter and get bigger and wider, there should be
  * some darkness between the sides of each spiral and the glowing effect is a bit too strong ... the tail needs to fade out a touch
- * faster"; study src/trail3.py): a slower spark, the light NARROW at the inner end and WIDE at the tail (two blurs blended along the
- * arm, [SIGMA_NARROW] / [SIGMA_WIDE]) with dark left between the turns, a softer glow, a short squared tail.
+ * faster"; study src/trail3.py): a slower spark, the light NARROW at the inner end and WIDE at the tail, with dark left between the
+ * turns, a softer glow, a short squared tail.
+ *
+ * v9 (the user, 2026-10-28: "the spiral needs to like slightly grow and ripple into the dark space before fading out, not stay the same
+ * size"; study src/trail4.py, loading_v9_30fps.mp4): the light round each stretch of arm is a band whose half-width ([R0_IN] + tn *
+ * [R0_OUT]) GROWS after the spark passed (to x(1 + [GROW]) over HOLD + FADE, quickly at first), with a soft ripple ring at its edge,
+ * then fades. The maps are now the DISTANCE from the (smoothed) arm and the arm position of the nearest arm point.
  */
 object LoadingMath {
     const val TRAVEL = 6.2f
@@ -57,13 +63,15 @@ object LoadingMath {
 
     /** the maps' square: the swirl at [N] px plus [PAD] px round it (the light reaches past the arm) */
     const val N = 280
-    /** the light's spread round the arm: narrow at the inner end (60 / 4000 of the swirl), wide at the tail (150 / 4000), as the study */
-    const val SIGMA_NARROW = N * 60f / 4000f
-    const val SIGMA_WIDE = N * 150f / 4000f
-    const val GAIN_NARROW = 2.2f
-    const val GAIN_WIDE = 2.4f
-    /** the light's curve (^1.3: the thin light between the turns stays dark) */
-    const val CURVE = 1.3f
+    /** v9: the band's half-width round the arm (virtual px) at the inner end, and the extra at the tail (the study's 38 + 85 tn) */
+    const val R0_IN = 38f
+    const val R0_OUT = 85f
+    /** v9: the band grows to x(1 + GROW) of its start over HOLD + FADE */
+    const val GROW = 0.9f
+    /** v9: the ripple ring at the band's edge: its strength, and its width (virtual px + a share of the band) */
+    const val RING = 0.45f
+    const val RING_W = 16f
+    const val RING_K = 0.12f
     const val PAD = 32
     const val M = N + 2 * PAD
 
@@ -72,10 +80,10 @@ object LoadingMath {
         val arm: FloatArray,
         /** how far along the arm, inner end 0 .. tail 1; 2 = not the arm */
         val pos: FloatArray,
-        /** how lit a place gets when the spark has passed (the arm, blurred, x GAIN, clipped) */
-        val cover: FloatArray,
-        /** when (0..1 of the journey) the spark passes near a place */
-        val time: FloatArray,
+        /** v9: the distance (map px) from the arm, its outline smoothed so the band's edge has no spikes */
+        val dist: FloatArray,
+        /** v9: the arm position (0..1) of the nearest arm point: when the spark passes near a place */
+        val near: FloatArray,
         /** the spark's place on the arm for p = i / HEADS (map px), x then y */
         val head: FloatArray,
     )
@@ -111,18 +119,14 @@ object LoadingMath {
         var dmax = 0f
         for (v in d) if (v > dmax) dmax = v
         val pos = FloatArray(M * M) { if (d[it] >= 0f && dmax > 0f) d[it] / dmax else 2f }
-        val lit = FloatArray(M * M) { if (pos[it] < 2f) min(1f, arm[it] * 1.4f) else 0f }
-        fun p(i: Int) = if (pos[i] < 2f) pos[i] else 0f
-        // narrow light weighted by (1 - pos), wide by pos: small and tight at the middle, bigger and wider towards the tail
-        val ln = blur(FloatArray(M * M) { lit[it] * (1f - p(it)) }, SIGMA_NARROW)
-        val lw = blur(FloatArray(M * M) { lit[it] * p(it) }, SIGMA_WIDE)
-        val tn = blur(FloatArray(M * M) { lit[it] * (1f - p(it)) * p(it) }, SIGMA_NARROW)
-        val tw = blur(FloatArray(M * M) { lit[it] * p(it) * p(it) }, SIGMA_WIDE)
-        val cover = FloatArray(M * M) { Math.pow(min(1f, ln[it] * GAIN_NARROW + lw[it] * GAIN_WIDE).toDouble(), CURVE.toDouble()).toFloat() }
-        val time = FloatArray(M * M) {
-            val wsum = ln[it] + lw[it]
-            if (wsum > 1e-5f) ((tn[it] + tw[it]) / wsum).coerceIn(0f, 1f) else 1f
-        }
+        // v9 (study trail4.py): the distance from the arm, its outline smoothed (blurred ~10 virtual px, > 0.5: no spiky edge), and the
+        // timing from the nearest REAL arm point (the nearest smoothed-outline point can be off the arm: black needles in the study)
+        val kv = N / SWIRL                         // map px per virtual px
+        val solid = FloatArray(M * M) { if (pos[it] < 2f && arm[it] > 0.25f) 1f else 0f }
+        val smooth = blur(solid, max(0.6f, 10f * kv))
+        val dist = edt(BooleanArray(M * M) { smooth[it] > 0.5f }).first
+        val nearest = edt(BooleanArray(M * M) { pos[it] < 2f }).second
+        val near = blur(FloatArray(M * M) { if (nearest[it] >= 0) pos[nearest[it]] else 1f }, max(0.6f, 8f * kv))
         // the spark's path: the mean place of the arm pixels at each step along it
         val sx = FloatArray(HEADS + 1); val sy = FloatArray(HEADS + 1); val sn = IntArray(HEADS + 1)
         for (i in pos.indices) if (pos[i] < 2f) {
@@ -135,7 +139,7 @@ object LoadingMath {
             if (sn[b] > 0) { lx = sx[b] / sn[b]; ly = sy[b] / sn[b] }
             head[b * 2] = lx; head[b * 2 + 1] = ly
         }
-        return Maps(arm, pos, cover, time, head)
+        return Maps(arm, pos, dist, near, head)
     }
 
     /** the walk through the arm's pixels (8 neighbours, a diagonal 1.414): its length from [start]; -1 = not reached */
@@ -159,6 +163,58 @@ object LoadingMath {
     }
 
     private fun farthest(d: FloatArray): Int { var b = 0; for (i in d.indices) if (d[i] > d[b]) b = i; return b }
+
+    /**
+     * The exact euclidean distance transform of an M x M map (Felzenszwalb & Huttenlocher, separable): for each pixel its distance
+     * (map px) to the nearest [feature] pixel and that pixel's index (-1 and a huge distance = no feature at all).
+     */
+    fun edt(feature: BooleanArray): Pair<FloatArray, IntArray> {
+        val colD = FloatArray(M * M); val colI = IntArray(M * M)
+        val f = FloatArray(M); val d = FloatArray(M); val a = IntArray(M)
+        for (x in 0 until M) {
+            for (y in 0 until M) f[y] = if (feature[y * M + x]) 0f else FAR
+            dt1(f, d, a)
+            for (y in 0 until M) { colD[y * M + x] = d[y]; colI[y * M + x] = if (a[y] >= 0) a[y] * M + x else -1 }
+        }
+        val dist = FloatArray(M * M); val idx = IntArray(M * M)
+        for (y in 0 until M) {
+            for (x in 0 until M) f[x] = colD[y * M + x]
+            dt1(f, d, a)
+            for (x in 0 until M) {
+                val src = if (a[x] >= 0) colI[y * M + a[x]] else -1
+                idx[y * M + x] = src
+                dist[y * M + x] = if (src >= 0) kotlin.math.sqrt(d[x]) else FAR
+            }
+        }
+        return dist to idx
+    }
+    private const val FAR = 1e20f
+
+    /** the 1-D squared distance transform of [f] into [d] (lower envelope of parabolas), the winning sample's index in [arg] */
+    private fun dt1(f: FloatArray, d: FloatArray, arg: IntArray) {
+        val n = f.size
+        val v = IntArray(n); val z = FloatArray(n + 1)
+        var k = -1
+        for (q in 0 until n) {
+            if (f[q] >= FAR) continue
+            if (k < 0) { k = 0; v[0] = q; z[0] = -Float.MAX_VALUE; z[1] = Float.MAX_VALUE; continue }
+            var s: Float
+            while (true) {
+                val p = v[k]
+                s = ((f[q] + q.toFloat() * q) - (f[p] + p.toFloat() * p)) / (2f * q - 2f * p)
+                if (s <= z[k] && k > 0) k-- else break
+            }
+            if (s <= z[k]) { v[k] = q; z[k + 1] = Float.MAX_VALUE }
+            else { k++; v[k] = q; z[k] = s; z[k + 1] = Float.MAX_VALUE }
+        }
+        if (k < 0) { for (q in 0 until n) { d[q] = FAR; arg[q] = -1 }; return }
+        var j = 0
+        for (q in 0 until n) {
+            while (z[j + 1] < q) j++
+            val p = v[j]
+            d[q] = (q - p).toFloat() * (q - p) + f[p]; arg[q] = p
+        }
+    }
 
     /** a gaussian blur of an M x M map (separable) */
     fun blur(a: FloatArray, sigma: Float): FloatArray {
@@ -244,13 +300,34 @@ object LoadingMath {
         return (a[i] * (1 - fx) + a[i + 1] * fx) * (1 - fy) + (a[i + M] * (1 - fx) + a[i + M + 1] * fx) * fy
     }
 
-    /** how lit the virtual point (x, y) is by pass [p] at [t] (0..1) */
+    /** the band's widest reach (map px): no light past it */
+    private val REACH = (R0_IN + R0_OUT) * (1f + GROW) * 1.6f * N / SWIRL + 3f
+
+    /**
+     * How lit the virtual point (x, y) is by pass [p] at [t] (0..1). v9: a band round the arm, its half-width growing after the spark
+     * passed (quickly at first), a soft ripple ring at its edge while it grows, the whole fading with [life].
+     */
     fun lit(m: Maps, p: Pass, t: Float, x: Float, y: Float, tmp: FloatArray): Float {
         p.toMap(x, y, tmp)
-        val c = sample(m.cover, tmp[0], tmp[1], 0f)
-        if (c <= 0.002f) return 0f
-        val when_ = sample(m.time, tmp[0], tmp[1], 1f)
-        return c * life(t - p.start - when_ * TRAVEL)
+        val d = sample(m.dist, tmp[0], tmp[1], FAR)
+        if (d > REACH) return 0f
+        val tn = sample(m.near, tmp[0], tmp[1], 1f)
+        val a2 = t - p.start - tn * TRAVEL
+        val w = life(a2)
+        if (w <= 0f) return 0f
+        return w * band(d, tn, a2)
+    }
+
+    /** v9: the band's light (0..1) at [d] map px from the arm, [tn] along it, [age] s after the spark passed */
+    fun band(d: Float, tn: Float, age: Float): Float {
+        val k = N / SWIRL
+        val r0 = (R0_IN + tn * R0_OUT) * k
+        val grow = (age / (HOLD + FADE)).coerceIn(0f, 1f)
+        val r = r0 * (1f + GROW * (1f - (1f - grow) * (1f - grow)))
+        val core = Math.pow(((r - d) / (0.8f * r + 2.5f * k)).coerceIn(0f, 1f).toDouble(), 1.1).toFloat()
+        val q = (d - r) / (RING_W * k + RING_K * r)
+        val ring = exp(-q * q) * RING * (1f - grow)
+        return (core + ring).coerceIn(0f, 1f)
     }
 
     /** the spark's place (virtual) at progress [q] (0..1) */

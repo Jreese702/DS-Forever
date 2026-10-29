@@ -63,7 +63,7 @@ class LoadingV8ShotsTest {
 
     private val base = SetupFlow.Inputs(path = "/storage/emulated/0/WoW Forever", folderFound = true, loginSaved = true,
         art = SetupFlow.Art.READY, addonsInstalled = true, client = "1.60.1.70685 (up to date)",
-        appLine = "DS Forever 1.0.13-party4: up to date")
+        appLine = "DS Forever 1.0.13-party5: up to date")
 
     @Test fun shots() {
         out?.mkdirs() ?: return
@@ -105,9 +105,10 @@ class LoadingV8ShotsTest {
             device(render(LoadingTopView(ctx), 1920, 1080), render(chooser, 1240, 1080), "V5_chooser_local_boxed")
             pad(KeyEvent.KEYCODE_DPAD_RIGHT)
             device(render(LoadingTopView(ctx), 1920, 1080), render(chooser, 1240, 1080), "V6_chooser_streaming_boxed")
-            // 4. the v8 reveal through a pass (narrow at the middle, wide at the tail, dark between the turns)
+            // 4. the reveal through a pass (v8: narrow at the middle, wide at the tail, dark between the turns; v9 since party5: the band
+            // grows and ripples into the dark after the spark passed)
             SetupBridge.publish(bars)
-            for ((i, t) in listOf(1.0f, 3.0f, 5.0f, 7.5f).withIndex()) {
+            for ((i, t) in listOf(1.0f, 3.0f, 5.0f, 7.5f, 9.0f).withIndex()) {
                 LoadingScene.pin(t, 11L, 1)
                 device(render(LoadingTopView(ctx), 1920, 1080), render(SetupPanel(ctx).also { it.update() }, 1240, 1080), "V7_reveal_${i}_${t}s")
             }

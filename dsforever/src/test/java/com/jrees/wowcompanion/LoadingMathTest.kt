@@ -84,47 +84,91 @@ class LoadingMathTest {
         val c = LoadingMath.M / 2f
         fun r(b: Int) = kotlin.math.hypot(m.head[b * 2] - c, m.head[b * 2 + 1] - c)
         assertTrue("starts inside (${r(0)}) ends outside (${r(LoadingMath.HEADS)})", r(0) < r(LoadingMath.HEADS))
-        // the time map grows along the arm
-        assertTrue(m.time.all { it in 0f..1f })
+        // the nearest-arm-point timing is a position along the arm; the distance is 0 on the (smoothed) arm
+        assertTrue(m.near.all { it in 0f..1f })
+        assertTrue(m.pos.indices.count { m.pos[it] < 2f && m.arm[it] > 0.5f && m.dist[it] <= 1.5f } > 1000)
     }
 
-    /** v8 ("some darkness between the sides of each spiral"): a pass lights much of both screens but leaves dark between the turns */
-    @Test fun onePassLeavesDarkBetweenTheTurns() {
+    /** the share of both screens one pass [p] lights (> 0.35) at [t] */
+    private fun share(p: LoadingMath.Pass, t: Float): Float {
         val tmp = FloatArray(3)
-        val shares = ArrayList<Float>()
-        for (k in 0 until 12) {
-            val p = LoadingMath.pass(7L, k, 8, 0)
-            var lit = 0; var all = 0
-            for (s in screens) for ((x, y) in grid(s)) {
-                p.toMap(x, y, tmp)
-                if (LoadingMath.sample(maps.cover, tmp[0], tmp[1], 0f) > 0.35f) lit++
-                all++
-            }
-            shares += lit.toFloat() / all
-        }
+        var lit = 0; var all = 0
+        for (s in screens) for ((x, y) in grid(s)) { if (LoadingMath.lit(maps, p, t, x, y, tmp) > 0.35f) lit++; all++ }
+        return lit.toFloat() / all
+    }
+
+    /** the most of both screens a pass ever lights (sampled through its life) */
+    private fun peak(p: LoadingMath.Pass): Float {
+        var best = 0f
+        var t = p.start
+        while (t < p.end()) { best = maxOf(best, share(p, t)); t += 0.5f }
+        return best
+    }
+
+    /** v8/v9 ("some darkness between the sides of each spiral"): a pass lights much of both screens but leaves dark between the turns */
+    @Test fun onePassLeavesDarkBetweenTheTurns() {
+        val shares = (0 until 8).map { peak(LoadingMath.pass(7L, it, 8, 0)) }
         val mean = shares.average()
-        println("v8 lit share per pass: mean $mean, each $shares")
-        assertTrue("mean share $mean: most of the screens are reached", mean >= 0.4)
+        println("v9 peak lit share per pass: mean $mean, each $shares")
+        assertTrue("mean share $mean: most of the screens are reached", mean >= 0.3)
         assertTrue("mean share $mean: dark stays between the turns", mean <= 0.85)
     }
 
-    /** v8 ("start smaller and tighter and get bigger and wider"): the light round the arm is wider near the tail than near the middle */
+    /** v8 ("start smaller and tighter and get bigger and wider"): the band round the arm is wider near the tail than near the middle */
     @Test fun theLightWidensAlongTheArm() {
-        val m = maps
-        // the lit area per equal stretch of the arm (pos is the walk's length along it, so equal pos spans are equal lengths)
-        // the light's halo past the arm itself (the arm is thicker in places; the halo is what the blur adds)
-        fun band(lo: Float, hi: Float): Float {
-            var lit = 0; var arm = 0
-            for (i in m.cover.indices) {
-                if (m.cover[i] > 0.35f && m.time[i] in lo..hi) lit++
-                if (m.pos[i] < 2f && m.pos[i] in lo..hi) arm++
-            }
-            println("  band $lo..$hi: lit $lit, arm $arm")
-            return (lit - arm).toFloat()
+        val k = LoadingMath.N / LoadingMath.SWIRL
+        // the band's half-width = where band() falls under 0.35, at the same age
+        fun width(tn: Float): Float {
+            var d = 0f
+            while (LoadingMath.band(d, tn, 1f) > 0.35f) d += 0.05f
+            return d / k
         }
-        val inner = band(0.05f, 0.25f); val outer = band(0.75f, 0.95f)
-        println("v8 lit area per stretch: inner $inner, outer $outer")
-        assertTrue("inner $inner < outer $outer", inner * 1.5f < outer)
+        val inner = width(0.1f); val outer = width(0.9f)
+        println("v9 band half-width at age 1 s: inner $inner, outer $outer virtual px")
+        assertTrue("inner $inner < outer $outer", inner * 2f < outer)
+    }
+
+    /** v9 ("slightly grow and ripple into the dark space before fading out, not stay the same size"): the band grows with age, a ripple at
+     *  its edge while it grows, and the whole fades */
+    @Test fun theLightGrowsAndRipplesThenFades() {
+        val k = LoadingMath.N / LoadingMath.SWIRL
+        fun width(age: Float): Float { var d = 0f; while (LoadingMath.band(d, 0.5f, age) > 0.35f) d += 0.02f; return d / k }
+        val w0 = width(0.2f); val w1 = width(2f); val w2 = width(LoadingMath.HOLD + LoadingMath.FADE)
+        println("v9 band half-width by age: 0.2 s $w0, 2 s $w1, end $w2 virtual px")
+        assertTrue("grows: $w0 < $w1 < $w2", w0 < w1 && w1 < w2)
+        assertTrue("slightly: ends under 2.2x ($w2 vs $w0)", w2 < w0 * 2.2f)
+        // the ripple: just past the band's edge it is brighter than a plain soft edge (a ring), early on; gone at the end
+        val r0 = (LoadingMath.R0_IN + 0.5f * LoadingMath.R0_OUT) * k
+        val early = LoadingMath.band(r0 * 1.15f, 0.5f, 0.3f)
+        assertTrue("a ripple at the edge early on ($early)", early > 0.15f)
+        // the light's life fades it out in the end, in the order it was lit
+        assertEquals(0f, LoadingMath.life(LoadingMath.HOLD + LoadingMath.FADE + 0.01f), 0f)
+        // and it grows through the pass's own frames too: the lit share rises after the spark has gone
+        val p = LoadingMath.pass(7L, 2, 8, 0)
+        val atEnd = share(p, p.start + LoadingMath.TRAVEL)
+        val later = share(p, p.start + LoadingMath.TRAVEL + 1.2f)
+        println("v9 lit share: spark at the tail $atEnd, 1.2 s later $later")
+        assertTrue("the light keeps spreading after the spark ($atEnd -> $later)", later > atEnd)
+    }
+
+    /** the per-frame cost: both screens' light grids (8 px cells, as LoadingScene) for every live pass, 30 frames in a hand-over */
+    @Test fun aFrameStaysCheap() {
+        val tmp = FloatArray(3)
+        fun frame(t: Float): Int {
+            var n = 0
+            for (p in LoadingMath.passes(3L, t, 8, 0)) for (r in screens) {
+                var y = r.top + 4f
+                while (y < r.bottom) { var x = r.left + 4f; while (x < r.right) { if (LoadingMath.lit(maps, p, t, x, y, tmp) > 0f) n++; x += 8f }; y += 8f }
+            }
+            return n
+        }
+        val t0 = LoadingMath.EVERY * 2 - 0.5f
+        repeat(30) { frame(t0 + it / 30f) }                          // warm up
+        val start = System.nanoTime()
+        repeat(60) { frame(t0 + it / 30f) }
+        val ms = (System.nanoTime() - start) / 1e6 / 60
+        println("v9 light grids per frame (both screens, all passes): %.2f ms on this PC".format(ms))
+        assertTrue("a frame's light costs $ms ms on the PC (the phone is ~3-5x slower; 33 ms per frame)", ms < 6.0)
     }
 
     /** a screen shows something: a lit place of the picture, or the spark / its tail / a mote on it */
