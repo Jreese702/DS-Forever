@@ -36,11 +36,16 @@ class LoadingTopView(context: Context) : View(context) {
     override fun onAttachedToWindow() { super.onAttachedToWindow(); SetupBridge.onChange(refresh) }
     override fun onDetachedFromWindow() { SetupBridge.offChange(refresh); super.onDetachedFromWindow() }
 
+    /** the box's own rows and status line instead of the start-up checks (Streaming's curtain over the stream: StreamCurtain); no
+     *  report button then. null = the start-up checks */
+    var curtain: (() -> Pair<List<SetupFlow.Check>, String>?)? = null
+
     override fun onDraw(c: Canvas) {
         area.set(0f, 0f, width.toFloat(), height.toFloat())
         LoadingScene.draw(c, area, top = true)
         postInvalidateDelayed(LoadingScene.FRAME_MS)
         val k = height / 1080f
+        curtain?.invoke()?.let { (rows, line) -> drawPanel(c, k, rows, line, null, false); return }
         val inputs = SetupBridge.inputs
         val rows = inputs?.let { SetupFlow.terse(SetupFlow.checks(it)) } ?: emptyList()
         val screen = SetupBridge.screen()

@@ -9,11 +9,31 @@ import javax.crypto.spec.SecretKeySpec
  * The bridge's messages (docs/STREAM_BRIDGE_PROTOCOL.md v1, as S3's DS Forever Desktop implements it: BridgeServer.cs): one JSON
  * object per WebSocket text frame, typed by "t". Unknown types and fields are ignored.
  */
+/**
+ * WoW and Battle.net on the PC as Desktop 0.2.1 reports them (the "wow" message, the welcome's wow, a focus_result): [screen] none |
+ * starting | login | signing_in | charselect | world ("" = an older Desktop that does not say); [focused] = WoW is the PC's foreground
+ * window (null = not said); [bnet] unknown | not_running | starting | signin_needed | signed_in ("" = not said); [needsYou] = Desktop's
+ * one retry is spent; [loginError] = the game's own reason ("308")
+ */
+data class PcWow(val state: String = "", val why: String = "", val screen: String = "", val focused: Boolean? = null,
+                 val bnet: String = "", val needsYou: Boolean = false, val loginError: String = "") {
+    /** signed in: at character select or in the world */
+    val signedIn get() = screen == "charselect" || screen == "world"
+
+    companion object {
+        fun of(o: JSONObject?): PcWow? = o?.let {
+            PcWow(it.optString("state"), it.optString("why"), it.optString("screen"),
+                if (it.has("focused")) it.optBoolean("focused") else null, it.optString("bnet"), it.optBoolean("needs_you"),
+                it.optString("login_error"))
+        }
+    }
+}
+
 sealed class BridgeMsg {
     data class Welcome(val hostId: String, val pcName: String, val wowRunning: Boolean, val httpPort: Int, val httpsPort: Int,
-                       val wowState: String = "", val wowWhy: String = "") : BridgeMsg()
-    /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed" */
-    data class Wow(val state: String, val why: String) : BridgeMsg()
+                       val wowState: String = "", val wowWhy: String = "", val pc: PcWow? = null) : BridgeMsg()
+    /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed"; [pc] = all of it (0.2.1) */
+    data class Wow(val state: String, val why: String, val pc: PcWow? = null) : BridgeMsg()
     data class Error(val code: String, val detail: String = "") : BridgeMsg()
     /** one add-on document, already joined by the bridge (its own WCB1 reassembly of the PC's General.log) */
     data class Doc(val seq: Int, val gt: Long, val text: String) : BridgeMsg()
@@ -25,7 +45,7 @@ sealed class BridgeMsg {
     data class Log(val event: String) : BridgeMsg()
     data class BacklogEnd(val count: Int) : BridgeMsg()
     data class Stream(val state: String) : BridgeMsg()
-    data class FocusResult(val ok: Boolean, val why: String, val state: String = "") : BridgeMsg()
+    data class FocusResult(val ok: Boolean, val why: String, val state: String = "", val pc: PcWow? = null) : BridgeMsg()
     data class PairChallenge(val nonce: String, val attemptsLeft: Int, val locked: Boolean) : BridgeMsg()
     data class PairOk(val token: String, val deviceId: String, val hostId: String, val pcName: String, val moonlightPin: String,
                       val httpPort: Int, val httpsPort: Int) : BridgeMsg()
@@ -71,8 +91,9 @@ object BridgeProtocol {
         return when (val t = o.optString("t")) {
             "welcome" -> BridgeMsg.Welcome(o.optString("host_id"), o.optString("pc_name"),
                 o.optJSONObject("wow")?.optBoolean("running") ?: false, sun?.optInt("http_port", 0) ?: 0, sun?.optInt("https_port", 0) ?: 0,
-                o.optJSONObject("wow")?.optString("state").orEmpty(), o.optJSONObject("wow")?.optString("why").orEmpty())
-            "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"))
+                o.optJSONObject("wow")?.optString("state").orEmpty(), o.optJSONObject("wow")?.optString("why").orEmpty(),
+                PcWow.of(o.optJSONObject("wow")))
+            "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"), PcWow.of(o))
             "error" -> BridgeMsg.Error(o.err(), o.optString("detail"))
             "doc" -> BridgeMsg.Doc(o.optInt("seq", -1), o.optLong("gt", -1L), o.optString("doc"))
             "lines" -> BridgeMsg.Lines((o.optJSONArray("l") ?: JSONArray()).let { a -> List(a.length()) { a.optString(it) } })
@@ -82,7 +103,8 @@ object BridgeProtocol {
             "reset" -> BridgeMsg.Log("restart")
             "backlog_end" -> BridgeMsg.BacklogEnd(o.optInt("count", 0))
             "stream" -> BridgeMsg.Stream(o.optString("state"))
-            "focus_result" -> BridgeMsg.FocusResult(o.optBoolean("ok"), o.optString("why"), o.optString("state"))
+            "focus_result" -> BridgeMsg.FocusResult(o.optBoolean("ok"), o.optString("why"), o.optString("state"),
+                if (o.has("screen")) PcWow.of(o) else null)
             "pair_challenge" -> BridgeMsg.PairChallenge(o.optString("nonce"), o.optInt("attempts_left", -1), o.optBoolean("locked"))
             "pair_ok" -> BridgeMsg.PairOk(o.optString("token"), o.optString("device_id"), o.optString("host_id"), o.optString("pc_name"),
                 o.optString("moonlight_pin"), sun?.optInt("http_port", 0) ?: 0, sun?.optInt("https_port", 0) ?: 0)

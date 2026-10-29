@@ -29,6 +29,8 @@ class BridgeLog(
     private val onAuthLost: (code: String) -> Unit = {},
     /** WoW's state on the PC as Desktop reports it (S3's "wow" message, the welcome's wow.state, a focus_result while it starts) */
     private val onWow: (state: String, why: String) -> Unit = { _, _ -> },
+    /** all of WoW and Battle.net on the PC (Desktop 0.2.1's fields; an older Desktop gives the state alone): the stream's curtain */
+    private val onPc: (PcWow) -> Unit = {},
     /** the waits between tries (the tests pass a fake that also ends the loop) */
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
 ) : LogSource {
@@ -98,6 +100,8 @@ class BridgeLog(
                     docs.reset()
                     onStatus("PC: connected to ${m.pcName.ifEmpty { "DS Forever Desktop" }}${if (m.wowRunning) "" else " (WoW isn't running)"}")
                     onWow(m.wowState.ifEmpty { if (m.wowRunning) "running" else "stopped" }, m.wowWhy)
+                    onPc(m.pc?.let { if (it.state.isEmpty()) it.copy(state = if (m.wowRunning) "running" else "stopped") else it }
+                        ?: PcWow(state = m.wowState.ifEmpty { if (m.wowRunning) "running" else "stopped" }, why = m.wowWhy))
                     c.send(BridgeProtocol.focus())
                 }
                 is BridgeMsg.Doc -> emit(m)
@@ -107,10 +111,12 @@ class BridgeLog(
                 is BridgeMsg.Status -> if (m.text.isNotEmpty()) onStatus("PC: ${m.text}")
                 is BridgeMsg.FocusResult -> {
                     if (m.state.isNotEmpty()) onWow(m.state, m.why)
+                    m.pc?.let(onPc)
                     if (!m.ok && m.why.isNotEmpty()) onStatus("PC: ${m.why}")
                 }
                 is BridgeMsg.Wow -> {
                     onWow(m.state, m.why)
+                    onPc(m.pc ?: PcWow(m.state, m.why))
                     BridgeProtocol.wowText(m.state, m.why).takeIf { it.isNotEmpty() }?.let { onStatus("PC: $it") }
                 }
                 is BridgeMsg.Unpaired -> { onAuthLost("revoked"); return End.AUTH_LOST }

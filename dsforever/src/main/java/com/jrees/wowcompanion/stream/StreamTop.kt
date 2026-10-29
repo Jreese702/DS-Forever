@@ -80,11 +80,21 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     val view: FrameLayout = FrameLayout(activity).apply { setBackgroundColor(Color.BLACK) }
     private var isOpen = false
     private lateinit var banner: android.widget.TextView
+    /** the loading reveal and its box over the picture until WoW is signed in and in front (StreamCurtain); it takes every touch */
+    private lateinit var curtainView: com.jrees.wowcompanion.LoadingTopView
+    /** Desktop's last word on WoW and Battle.net (null = none yet) */
+    private var pc: PcWow? = null
 
     init {
         quality = StreamQuality.load(activity)
         surface = SurfaceView(activity).also { it.holder.addCallback(this) }
         view.addView(surface, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        curtainView = com.jrees.wowcompanion.LoadingTopView(activity).apply {
+            curtain = { (shows() as? StreamCurtain.Shows.Curtain)?.let { it.rows to it.line } }
+            setOnTouchListener { _, _ -> true }
+            contentDescription = "Starting WoW on your PC"
+        }
+        view.addView(curtainView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         overlay = FrameLayout(activity)
         view.addView(overlay, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         pairing = PairingView(activity, onPair = { pair(it) }, onBack = { back() }, onQuality = { openQuality() }, onPcStep = { stepPc(it) })
@@ -105,11 +115,31 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private val hideBanner = Runnable { banner.visibility = View.GONE }
 
+    /** what the top screen shows over the stream now (StreamCurtain's rule) */
+    private fun shows(): StreamCurtain.Shows = StreamCurtain.decide(screen == Screen.STREAMING, host?.hasBridge == true, pc,
+        ((android.os.SystemClock.uptimeMillis() / 500) % 4).toInt())
+
+    /** the curtain up or down, Battle.net's sign-in line, as the rule says (on every word from Desktop and every screen change) */
+    private fun applyCurtain() {
+        val starting = screen == Screen.STREAMING || screen == Screen.CONNECTING
+        val s = shows()
+        val up = starting && s is StreamCurtain.Shows.Curtain
+        curtainView.visibility = if (up) View.VISIBLE else View.GONE
+        // the connecting card would sit on the curtain: the curtain says it ("Connecting to your PC")
+        if (screen == Screen.CONNECTING) status.visibility = if (up) View.GONE else View.VISIBLE
+        if (s is StreamCurtain.Shows.SignIn && screen == Screen.STREAMING) {
+            main.removeCallbacks(hideBanner)
+            banner.text = s.line; banner.visibility = View.VISIBLE; banner.bringToFront()
+        } else if (up || (banner.text == StreamCurtain.SIGN_IN || banner.text == StreamCurtain.NEEDS_YOU)) banner.visibility = View.GONE
+    }
+
+    private fun pcWord(w: PcWow) { pc = w; applyCurtain() }
+
     /** WoW's state on the PC: "starting" stays up until it runs; a failure shows for a while */
     private fun wowState(state: String, why: String) {
         val text = BridgeProtocol.wowText(state, why)
         main.removeCallbacks(hideBanner)
-        if (text.isEmpty()) { banner.visibility = View.GONE; return }
+        if (text.isEmpty() || host?.hasBridge == true) { if (host?.hasBridge != true) banner.visibility = View.GONE; applyCurtain(); return }
         banner.text = text
         banner.visibility = View.VISIBLE
         banner.bringToFront()
@@ -154,7 +184,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         PlayModes.set(PlayMode.STREAM, { onMsg, onStatus ->
             BridgeLog(h.address, h.bridgePort, h.bridgeTls, h.bridgeFingerprint, h.bridgeToken, clientId, WsClient, onMsg, onStatus,
                 onAuthLost = { why -> main.post { authLost(why) } },
-                onWow = { state, why -> main.post { wowState(state, why) } }).also { bridge = it }
+                onWow = { state, why -> main.post { wowState(state, why) } },
+                onPc = { w -> main.post { pcWord(w) } }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
 
@@ -381,6 +412,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         status.visibility = if (s == Screen.CONNECTING || s == Screen.PROBLEM || s == Screen.PIN) View.VISIBLE else View.GONE
         qualityView?.visibility = if (s == Screen.QUALITY) View.VISIBLE else View.GONE
         if (s == Screen.PAIRING) { main.removeCallbacks(retryTick); showPc() }
+        applyCurtain()
     }
 
     private fun openQuality() {

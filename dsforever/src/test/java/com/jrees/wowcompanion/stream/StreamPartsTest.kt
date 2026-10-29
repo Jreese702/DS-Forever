@@ -228,7 +228,7 @@ class StreamPartsTest {
     @Test fun bridgeMessages() {
         fun o(vararg kv: Pair<String, Any>) = JSONObject().apply { for ((k, v) in kv) put(k, v) }.toString()
         val sun = JSONObject().put("running", true).put("http_port", 47989).put("https_port", 47984)
-        assertEquals(BridgeMsg.Welcome("d1", "Den", true, 47989, 47984),
+        assertEquals(BridgeMsg.Welcome("d1", "Den", true, 47989, 47984, pc = PcWow()),
             BridgeProtocol.parse(o("t" to "welcome", "proto" to 1, "host_id" to "d1", "pc_name" to "Den", "wow" to JSONObject().put("running", true), "sunshine" to sun)))
         assertEquals(BridgeMsg.Error("unauthorized", "pair again"), BridgeProtocol.parse(o("t" to "error", "error" to "unauthorized", "detail" to "pair again")))
         assertEquals(BridgeMsg.Doc(7, 99L, "{}"), BridgeProtocol.parse(o("t" to "doc", "seq" to 7, "gt" to 99, "doc" to "{}")))

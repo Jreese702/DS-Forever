@@ -97,7 +97,7 @@ class StreamTouchTest {
     }
 
     @Test fun wowStartingOnThePc() {
-        assertEquals(BridgeMsg.Wow("starting", ""), BridgeProtocol.parse(JSONObject().put("t", "wow").put("state", "starting").toString()))
+        assertEquals(BridgeMsg.Wow("starting", "", PcWow("starting")), BridgeProtocol.parse(JSONObject().put("t", "wow").put("state", "starting").toString()))
         val w = BridgeProtocol.parse(JSONObject().put("t", "welcome").put("pc_name", "DEN")
             .put("wow", JSONObject().put("running", false).put("state", "starting")).toString()) as BridgeMsg.Welcome
         assertEquals("starting", w.wowState)

@@ -39,7 +39,8 @@ class StreamKeys(
     @Volatile private var py = 0
 
     @Synchronized override fun key(xKeycode: Int, down: Boolean) {
-        val vk = XToVk.vk(xKeycode) ?: run { refused("unknown key $xKeycode"); return }
+        // never the key itself in the log: the player may be typing a Battle.net password through the stream (the user, 2026-10-28)
+        val vk = XToVk.vk(xKeycode) ?: run { refused("unknown key"); return }
         if (down && blocked(vk)) { refused("blocked key 0x${Integer.toHexString(vk)}"); return }
         if (!down && vk !in held) return                       // the release of a refused (or never pressed) key
         if (down) held.add(vk) else held.remove(vk)
