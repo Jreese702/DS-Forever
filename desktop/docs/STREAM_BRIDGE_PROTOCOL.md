@@ -107,6 +107,18 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   - `focus_result` while WoW starts: `{"ok":false,"state":"starting","why":"starting WoW"}`; the Thor shows "Starting WoW on your
     PC…" and needs no second `focus` (Desktop focuses WoW itself when its window appears).
   - `start_failed` after 3 minutes without a WoW window usually means Battle.net is waiting for the player to sign in on the PC.
+- **[0.2.1] Signed in, not just running (the user, 2026-10-28).** The `wow` message, the welcome's / `/v1/info`'s `wow` and a
+  `focus_result` also carry: `screen` = `none` | `starting` | `login` | `signing_in` | `charselect` | `world` (from the game's
+  connections, its General.log's sign-in lines and the add-on's documents), `focused` (WoW is the foreground window), `bnet` =
+  `unknown` | `not_running` | `starting` | `signin_needed` | `signed_in` (Battle.net's "Battle.net Login" window = signed out; its
+  titles only, never its files), `needs_you` (bool), `login_error` (the game's own reason, e.g. `308`). A `wow` message is sent
+  whenever any of them changes. On a connect (stream start or `focus`) Desktop: starts Battle.net plainly if it isn't running; if it is
+  signed out, brings its sign-in window to the front (the player signs in through the stream; Desktop never sees, stores or types
+  credentials); then no WoW = start it; WoW at the login screen or showing a sign-in error = close it (WM_CLOSE, ended only if
+  still at the login screen after 15 s) and start a fresh one; signed in = focus it. One automatic retry per connect: a second client
+  that does not sign in gives `needs_you` true and a `status` "Sign-in needs you on the PC's Battle.net", and no new attempt for 2
+  minutes. The Thor keeps its loading curtain over the stream until `screen` is `charselect` / `world` and `focused` (an older
+  Desktop without `screen`: `focused` alone), and lifts it only for Battle.net's sign-in while `bnet` is `signin_needed`.
 - **[S3] The streamed monitor.** Sunshine captures one monitor (the primary unless told otherwise). When no stream is running and WoW
   is on another monitor, Desktop points Sunshine at WoW's monitor (Sunshine restarts, ~25 s, and a `status` says so); during a stream
   it moves the WoW window onto the streamed monitor instead.

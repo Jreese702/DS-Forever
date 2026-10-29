@@ -35,6 +35,23 @@ namespace DsfDesktop.Wow
 
         public static bool IsRunning() => Find() != null;
 
+        /// <summary>a WoW client process, with or without its window yet (the one in [preferDir] first); null = none</summary>
+        public static Process FindAny(string preferDir = null)
+        {
+            var all = Names.SelectMany(n => { try { return Process.GetProcessesByName(n); } catch (Exception) { return new Process[0]; } }).ToList();
+            if (all.Count == 0) return null;
+            if (preferDir != null)
+            {
+                var hit = all.FirstOrDefault(p =>
+                {
+                    try { return string.Equals(Path.GetDirectoryName(p.MainModule.FileName), preferDir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase); }
+                    catch (Exception) { return false; }
+                });
+                if (hit != null) return hit;
+            }
+            return all[0];
+        }
+
         /// <summary>a WoW process exists (it may not have a window yet while it loads)</summary>
         public static bool ProcessRunning()
         {
@@ -70,7 +87,13 @@ namespace DsfDesktop.Wow
         {
             var p = Find(preferDir);
             if (p == null) return "WoW isn't running";
-            var h = p.MainWindowHandle;
+            return FocusHandle(p.MainWindowHandle);
+        }
+
+        /// <summary>any top-level window to the front (WoW's, or Battle.net's sign-in window); null = it is in front, else why not</summary>
+        public static string FocusHandle(IntPtr h)
+        {
+            if (h == IntPtr.Zero) return "no window";
             if (IsIconic(h)) ShowWindow(h, 9 /* SW_RESTORE */);
             if (SetForegroundWindow(h)) return null;
             var fg = GetForegroundWindow();
