@@ -26,6 +26,7 @@ object StreamCurtain {
     }
 
     const val SIGN_IN = "Sign in to Battle.net"
+    const val SIGNING_IN = "Signing in to Battle.net"
     const val LOOKING = "Looking for your PC"
     const val NEEDS_YOU = "Sign-in needs you on the PC's Battle.net"
     /** WoW crashed on the PC because its files are older than the game's data (the user's PC 2026-10-29: a black stream behind it) */
@@ -37,7 +38,8 @@ object StreamCurtain {
      * alone says nothing about WoW: the stream shows as before); [pc] = Desktop's last word, null = none yet; [dots] = 0..3 for
      * "Loading" while nothing more precise is known.
      */
-    fun decide(connected: Boolean, bridged: Boolean, pc: PcWow?, dots: Int = 3, route: String = "", problem: String? = null): Shows {
+    fun decide(connected: Boolean, bridged: Boolean, pc: PcWow?, dots: Int = 3, route: String = "", problem: String? = null,
+               signingIn: Boolean = false): Shows {
         // "PC found" only once the PC ANSWERED (the bridge's welcome: [pc] set; Sunshine alone: the stream up), with the way it was
         // reached ([route]: "home Wi-Fi" / "Tailscale"); before that "Looking for your PC" (party3 said "PC found" while the PC never
         // got a connection: the Thor's Tailscale was off); [problem] = why no address answered (Route.unreachable)
@@ -55,6 +57,8 @@ object StreamCurtain {
             pc.needsYou -> NEEDS_YOU
             else -> null
         }
+        // the saved login is going in ([StreamSignIn]): nothing to see or do
+        if (bnetLine != null && signingIn) return curtain(listOf(row(found, true), row("Battle.net", false)), SIGNING_IN)
         if (bnetLine != null) return if (connected && pc.show.size == 4) Shows.SignIn(bnetLine, pc.show)
             else curtain(listOf(row(found, true), row("Battle.net", false)), bnetLine)
         val known = pc.screen.isNotEmpty()

@@ -19,10 +19,13 @@ import android.view.View
  * with the kit's pieces (the game's tooltip border on each key, its glyphs, the gold box cursor) and takes
  * a finger on a key. The look is UI Art's to refine.
  */
-class ChatKeyboard(c: Context, swap: Boolean = true) : View(c) {
+class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false) : View(c) {
 
     /** [swap] false: no "(X) Quick chat" key (Space takes its width), for a box that only wants a line (Bags' search) */
-    val keys = ChatKeys(if (swap) ChatKeys.Layout.DEFAULT else ChatKeys.Layout.NO_SWAP)
+    val keys = if (signIn) ChatKeys(ChatKeys.Layout.SIGN_IN, pipe = true) else ChatKeys(if (swap) ChatKeys.Layout.DEFAULT else ChatKeys.Layout.NO_SWAP)
+
+    /** the swap key's word ("Tab" on Streaming's sign-in board) */
+    var swapWord = "Quick chat"
 
     /** the Send key's word (Start / the Enter key): Bags' search says "Search" */
     var sendWord = "Send"
@@ -182,7 +185,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true) : View(c) {
             ChatKeys.Key.Page -> UiKit.keyCap(c, r, if (keys.page == 0) "?123" else "abc", LOOK, mod = true, on = keys.page != 0)
             ChatKeys.Key.Space -> UiKit.keyCap(c, r, "Space", LOOK, glyph = "rev_y")
             ChatKeys.Key.Back -> UiKit.keyCap(c, r, "", LOOK, mod = true, glyph = "rev_ltrigger", icon = "backspace")
-            ChatKeys.Key.Swap -> UiKit.keyCap(c, r, "Quick chat", LOOK, mod = true, glyph = "rev_x")
+            ChatKeys.Key.Swap -> UiKit.keyCap(c, r, swapWord, LOOK, mod = true, glyph = "rev_x")
             ChatKeys.Key.Send -> {
                 // the ONE send while the keyboard is up; faint while the game cannot take it or nothing is written
                 val can = sendEnabled && text().isNotBlank()

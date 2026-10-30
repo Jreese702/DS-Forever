@@ -15,7 +15,7 @@ package com.jrees.wowcompanion
  * ?123 key. X, LB and RB are NOT the keyboard's ([Act.Pass]): X swaps to quick chat, LB / RB change the chat type. Typed chat
  * carries printable ASCII only (32..126) and the game takes 255 characters in one message.
  */
-class ChatKeys(private val layout: Layout = Layout.DEFAULT) {
+class ChatKeys(private val layout: Layout = Layout.DEFAULT, private val pipe: Boolean = false) {
 
     sealed class Key {
         data class Ch(val c: Char) : Key()
@@ -49,8 +49,10 @@ class ChatKeys(private val layout: Layout = Layout.DEFAULT) {
             val DEFAULT = build(swap = true)
             /** the same keys without "(X) Quick chat" (Space takes its width): a box that only wants a line typed (Bags' search) */
             val NO_SWAP = build(swap = false)
+            /** a password may hold any sign: "|" is back on the signs page, whose row fills the width (Streaming's Battle.net sign-in) */
+            val SIGN_IN = build(swap = true, pipe = true)
 
-            private fun build(swap: Boolean): Layout {
+            private fun build(swap: Boolean, pipe: Boolean = false): Layout {
                 fun bottom(mid: List<Cell>, space: Float) =
                     row(listOf(Cell(Key.Page, 1.5f)) + (if (swap) listOf(Cell(Key.Swap, 2f)) else emptyList()) + mid.dropLast(1)
                         + Cell(Key.Space, if (swap) space else space + 2f) + mid.last() + Cell(Key.Send, 1.5f))
@@ -69,7 +71,7 @@ class ChatKeys(private val layout: Layout = Layout.DEFAULT) {
                         row(chars("!@#$%^&*()")),
                         row(chars("-_=+[]{}\\'")),
                         // no "|" (chat13: its add-on cell shows the top screen's chat now): the row half a key in, as the A-L row
-                        row(listOf(Cell(Key.Ch('`'), 1.5f)) + chars("~\"/:;<") + listOf(Cell(Key.Back, 1.5f)), 0.5f),
+                        row(listOf(Cell(Key.Ch('`'), 1.5f)) + chars(if (pipe) "~\"/:;<|" else "~\"/:;<") + listOf(Cell(Key.Back, 1.5f)), if (pipe) 0f else 0.5f),
                         bottom(listOf(Cell(Key.Ch('?')), Cell(Key.Ch('>')), Cell(Key.Ch('.'))), 2f),
                     ),
                 ))
@@ -156,7 +158,7 @@ class ChatKeys(private val layout: Layout = Layout.DEFAULT) {
     }
 
     private fun type(ch: Char, text: String): Act =
-        if (ch.code !in 32..126 || ch == '|' || text.length >= MAX) Act.Refused else Act.Text(text + ch)
+        if (ch.code !in 32..126 || (ch == '|' && !pipe) || text.length >= MAX) Act.Refused else Act.Text(text + ch)
 
     // up / down keep the cursor over the same place on the row, by the keys' centres
     private fun moveRow(step: Int) {

@@ -57,6 +57,8 @@ sealed class BridgeMsg {
     data class Log(val event: String) : BridgeMsg()
     data class BacklogEnd(val count: Int) : BridgeMsg()
     data class Stream(val state: String) : BridgeMsg()
+    /** Desktop's answer to [BridgeProtocol.bnetReady]: [form] = Battle.net's sign-in in front and found; null = do not type */
+    data class BnetReady(val form: BnetFormAt?, val why: String) : BridgeMsg()
     data class FocusResult(val ok: Boolean, val why: String, val state: String = "", val pc: PcWow? = null) : BridgeMsg()
     data class PairChallenge(val nonce: String, val attemptsLeft: Int, val locked: Boolean) : BridgeMsg()
     data class PairOk(val token: String, val deviceId: String, val hostId: String, val pcName: String, val moonlightPin: String,
@@ -92,6 +94,13 @@ object BridgeProtocol {
     }
 
     fun focus(): String = JSONObject().put("t", "focus").toString()
+    fun bnetReady(): String = JSONObject().put("t", "bnet_ready").toString()
+
+    /** "x,y" (shares) -> a point; anything else -> null */
+    fun point(s: String): Pair<Float, Float>? {
+        val v = s.split(',').mapNotNull { it.trim().toFloatOrNull() }
+        return if (v.size == 2 && v.all { it in 0f..1f }) v[0] to v[1] else null
+    }
     fun unpair(): String = JSONObject().put("t", "unpair").toString()
 
     private fun JSONObject.err() = optString("error", optString("code", "error"))
@@ -116,6 +125,11 @@ object BridgeProtocol {
             "reset" -> BridgeMsg.Log("restart")
             "backlog_end" -> BridgeMsg.BacklogEnd(o.optInt("count", 0))
             "stream" -> BridgeMsg.Stream(o.optString("state"))
+            "bnet_ready_result" -> {
+                val pass = point(o.optString("password")); val button = point(o.optString("button"))
+                BridgeMsg.BnetReady(if (o.optBoolean("ok") && pass != null && button != null) BnetFormAt(point(o.optString("email")), pass, button) else null,
+                    o.optString("why"))
+            }
             "focus_result" -> BridgeMsg.FocusResult(o.optBoolean("ok"), o.optString("why"), o.optString("state"),
                 if (o.has("screen")) PcWow.of(o) else null)
             "pair_challenge" -> BridgeMsg.PairChallenge(o.optString("nonce"), o.optInt("attempts_left", -1), o.optBoolean("locked"))

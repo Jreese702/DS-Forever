@@ -119,7 +119,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     /** what the top screen shows over the stream now (StreamCurtain's rule) */
     private fun shows(): StreamCurtain.Shows = StreamCurtain.decide(screen == Screen.STREAMING, host?.hasBridge == true, pc,
-        ((android.os.SystemClock.uptimeMillis() / 500) % 4).toInt(), route?.label.orEmpty(), reachProblem)
+        ((android.os.SystemClock.uptimeMillis() / 500) % 4).toInt(), route?.label.orEmpty(), reachProblem, signIn.working)
 
     /** the way the PC was reached this time (home Wi-Fi / Tailscale), null = not yet */
     private var route: Route.Kind? = null
@@ -137,13 +137,58 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         // the connecting card would sit on the curtain: the curtain says it ("Connecting to your PC")
         if (screen == Screen.CONNECTING) status.visibility = if (up) View.GONE else View.VISIBLE
         zoom(if (s is StreamCurtain.Shows.SignIn && screen == Screen.STREAMING) s.show else null)
+        board(s is StreamCurtain.Shows.SignIn && screen == Screen.STREAMING)
         if (s is StreamCurtain.Shows.SignIn && screen == Screen.STREAMING) {
             main.removeCallbacks(hideBanner)
             banner.text = s.line; banner.visibility = View.VISIBLE; banner.bringToFront()
         } else if (up || banner.text in SIGN_IN_LINES) banner.visibility = View.GONE
     }
 
-    private fun pcWord(w: PcWow) { pc = w; applyCurtain() }
+    private fun pcWord(w: PcWow) { pc = w; signInTick() }
+
+    /** the saved login into the PC's Battle.net (the user, 2026-10-30), then what the top and bottom screens show for it */
+    private val signIn = StreamSignIn(
+        hasLogin = { com.jrees.wowcompanion.HomeLoginStore.has(activity) },
+        formOpen = { SetupBridge.loginFormOpen },
+        openForm = { SetupBridge.openLoginForm?.invoke() },
+        ask = { worker.execute { bridge?.askBnetReady() } },
+        type = { form -> typeLogin(form) },
+        now = { System.currentTimeMillis() })
+
+    private val signInLoop = Runnable { signInTick() }
+
+    private fun signInTick() {
+        main.removeCallbacks(signInLoop)
+        signIn.tick(screen == Screen.STREAMING && pc?.bnet == "signin_needed")
+        applyCurtain()
+        if (signIn.working) main.postDelayed(signInLoop, 1_000L)
+    }
+
+    /** the login from its sealed store to the stream's keys, and no further: nothing of it is logged */
+    private fun typeLogin(form: BnetFormAt) {
+        Thread({
+            val login = com.jrees.wowcompanion.HomeLoginStore.load(activity)
+            val stream = (com.jrees.wowcompanion.InputSink.sink as? com.jrees.wowcompanion.TapSink)?.route == "stream"
+            val why = when {
+                login == null -> "no login"
+                !stream -> "no stream"
+                else -> com.jrees.wowcompanion.InputSink.signIn(login.email, login.password, form.email, form.password, form.button, CLEAR_KEYS)
+            }
+            Log.i(TAG, "saved sign-in: " + (why ?: "typed"))
+            if (why != null) main.post { signIn.failed(); signInTick() }
+        }, "stream-signin").start()
+    }
+
+    /** the keyboard on the bottom screen and the pad on it, while Battle.net's window shows */
+    private var boardUp = false
+    private val boardPad = SignInPad()
+
+    private fun board(up: Boolean) {
+        if (up == boardUp) return
+        boardUp = up
+        if (up && keys != null) { pad.clear(); try { sendPad() } catch (_: Throwable) {} }
+        DsForeverScreen.current?.signInBoard(up)
+    }
 
     /** WoW's state on the PC: "starting" stays up until it runs; a failure shows for a while */
     private fun wowState(state: String, why: String) {
@@ -198,7 +243,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 onAuthLost = { why -> main.post { authLost(why) } },
                 onWow = { state, why -> main.post { wowState(state, why) } },
                 onPc = { w -> main.post { pcWord(w) } },
-                onWelcome = { lan -> main.post { lanReported(lan) } }).also { bridge = it }
+                onWelcome = { lan -> main.post { lanReported(lan) } },
+                onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
 
@@ -357,6 +403,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     private fun teardown() {
+        board(false)
         touchMouse?.cancel(); touchMouse = null
         session = null
         keys?.releaseAll()
@@ -527,6 +574,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     /** a key from the host's activity; true = Streaming took it (its own screens, or sent to the PC) */
     fun key(e: KeyEvent): Boolean {
         val gamepad = isPad(e)
+        if (boardUp && gamepad && StreamPad.isPadKey(e.keyCode)) {           // Battle.net's keyboard holds the pad, nothing behind it hears
+            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) boardPad.name(e.keyCode)?.let { DsForeverScreen.current?.signInPress(it) }
+            return true
+        }
         if (gamepad) PadFeed.key(e)                          // DS Forever's own readers: a copy of every press, as in Local
         val down = e.action == KeyEvent.ACTION_DOWN
         if (screen != Screen.STREAMING) {
@@ -559,8 +610,13 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     /** a motion event from the host's activity (sticks, hat, triggers); true = taken */
     fun motion(e: MotionEvent): Boolean {
         if ((e.source and InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK || e.action != MotionEvent.ACTION_MOVE) return false
-        PadFeed.motion(e)
         val hx = e.getAxisValue(MotionEvent.AXIS_HAT_X); val hy = e.getAxisValue(MotionEvent.AXIS_HAT_Y)
+        if (boardUp) {
+            boardPad.axes(hx, hy, maxOf(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE)),
+                maxOf(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS))).forEach { DsForeverScreen.current?.signInPress(it) }
+            return true
+        }
+        PadFeed.motion(e)
         if (screen != Screen.STREAMING) {
             // the hat as the D-pad on our own screens (the Thor's D-pad may come as a hat)
             hatToKeys(hx, hy)
@@ -629,6 +685,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         /** a zoomed window fills this share of the screen at most, and is magnified at most [ZOOM_MAX] x */
         const val ZOOM_FILL = 0.92f
         const val ZOOM_MAX = 3f
+        /** Backspaces before each box is typed (the box may hold what the player started) */
+        const val CLEAR_KEYS = 16
         private val SIGN_IN_LINES = setOf(StreamCurtain.SIGN_IN, StreamCurtain.NEEDS_YOU, StreamCurtain.UPDATE, StreamCurtain.CRASHED)
     }
 }

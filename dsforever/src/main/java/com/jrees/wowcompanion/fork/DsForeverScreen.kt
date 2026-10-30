@@ -109,6 +109,11 @@ class DsForeverScreen(private val context: Context) {
         Log.i(TAG, "stream attached (input: $route)")
     }
 
+    /** Streaming's Battle.net keyboard on or off (it survives a new Presentation) */
+    fun signInBoard(on: Boolean) { boardWanted = on; shown?.board(on) }
+    fun signInPress(button: String) { shown?.boardPress(button) }
+    private var boardWanted = false
+
     /** the game screen went: no input until the next one */
     fun detachGame() {
         if (!gameOn) return
@@ -181,7 +186,7 @@ class DsForeverScreen(private val context: Context) {
         if (target == null) { shown?.dismiss(); shown = null; Log.i(TAG, "no other screen than the game's ($game)"); return }
         if (shown?.display?.displayId == target.displayId) return
         shown?.dismiss()
-        shown = try { HostPresentation(context, target) { rebuild() }.also { it.show() } } catch (t: Throwable) { Log.w(TAG, "presentation: ${t.message}"); null }
+        shown = try { HostPresentation(context, target) { rebuild() }.also { it.show(); it.board(boardWanted) } } catch (t: Throwable) { Log.w(TAG, "presentation: ${t.message}"); null }
         Log.i(TAG, "DS Forever on display ${target.displayId} (game on $game)")
     }
 
@@ -276,6 +281,15 @@ class DsForeverScreen(private val context: Context) {
 /** the bottom screen's window: hosts the shared [CompanionHost] exactly as the app's MainActivity does */
 private class HostPresentation(outer: Context, display: Display, private val onRecreate: () -> Unit) : Presentation(outer, display), HostShell {
     private var host: CompanionHost? = null
+    private var board: com.jrees.wowcompanion.stream.SignInBoard? = null
+
+    /** Streaming's Battle.net keyboard over the whole screen */
+    fun board(on: Boolean) {
+        if (on && board == null) board = com.jrees.wowcompanion.stream.SignInBoard(context).also {
+            addContentView(it, android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT))
+        } else if (!on) { board?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }; board = null }
+    }
+    fun boardPress(button: String) { board?.press(button) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

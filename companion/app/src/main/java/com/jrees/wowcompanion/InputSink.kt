@@ -44,6 +44,14 @@ object InputSink {
         }
     }
 
+    /** Streaming's sign-in keyboard: one character, whatever a password may hold, as keys; never logged */
+    fun signInChar(c: Char) { if (sink != null) gameIo.execute { typeText(c.toString()) } }
+    fun signInBack() = gameKeys(1, "")
+    fun signInTab() {
+        val s = sink ?: return
+        gameIo.execute { s.key(X_TAB, true); Thread.sleep(CHAR_GAP_MS); s.key(X_TAB, false) }
+    }
+
     /** Enter, pressed and let go (the game's text box takes the line) */
     fun gameEnter() {
         val s = sink ?: return
@@ -108,6 +116,7 @@ object InputSink {
     @Volatile var displayH = 0
 
     private const val KEY_GAP_MS = 40L
+    private const val X_TAB = 23
     /**
      * a rest after every click: the root `input tap` it replaces cost ~60 ms, and the game takes one touch per frame (b61: two actions'
      * taps close together lost one). Without it two cells of one batch could land in the same frame (Chat measured the instant taps
@@ -192,12 +201,13 @@ object InputSink {
     /**
      * DS FOREVER'S OWN SIGN-IN INSIDE THE LAUNCHER (S4; the user's login pick, no credential file): the same steps as HomeLogin.script
      * (each field: tap it, End, clear, type; then the Log In button), typed from memory through the X server. Null = done, else why not.
+     * [emailAt] null: the email is not asked for (Streaming: Battle.net's "Welcome back" remembers the account).
      */
-    fun signIn(email: String, password: String, emailAt: Pair<Float, Float>, passwordAt: Pair<Float, Float>,
+    fun signIn(email: String, password: String, emailAt: Pair<Float, Float>?, passwordAt: Pair<Float, Float>,
                logInAt: Pair<Float, Float>, clearKeys: Int): String? {
         if (sink == null) return "The launcher's input is not ready"
         if ((email + password).any { charKey(it) == null }) return "The login has a character the launcher cannot type"
-        for ((at, text) in listOf(emailAt to email, passwordAt to password)) {
+        for ((at, text) in listOfNotNull(emailAt?.let { it to email }, passwordAt to password)) {
             click(at); Thread.sleep(120)
             keyTap(115)                                                  // End
             repeat(clearKeys) { keyTap(22) }                             // Backspace

@@ -33,6 +33,8 @@ class BridgeLog(
     private val onPc: (PcWow) -> Unit = {},
     /** the bridge answered (a welcome): the PC's home-network addresses it reported (Wi-Fi first next time) */
     private val onWelcome: (lan: List<String>) -> Unit = {},
+    /** Desktop's answer before the saved login is typed (null = do not type) */
+    private val onBnetReady: (BnetFormAt?) -> Unit = {},
     /** the waits between tries (the tests pass a fake that also ends the loop) */
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
 ) : LogSource {
@@ -63,6 +65,9 @@ class BridgeLog(
 
     /** "focus WoW" (sent when the stream starts and after a reconnect); false = no connection right now */
     fun focusWow(): Boolean = try { conn?.send(BridgeProtocol.focus()); conn != null } catch (_: Throwable) { false }
+
+    /** "is Battle.net's sign-in in front, and where is its form?" (StreamSignIn); false = no connection right now */
+    fun askBnetReady(): Boolean = try { conn?.send(BridgeProtocol.bnetReady()); conn != null } catch (_: Throwable) { false }
 
     /** how a session ended */
     enum class End { DROPPED, AUTH_LOST, STOPPED }
@@ -112,6 +117,10 @@ class BridgeLog(
                 is BridgeMsg.Gap -> { bridgeGaps++; onStatus("gap at seq ${m.seq} (expected ${m.expected})") }
                 is BridgeMsg.Log -> { docs.reset(); onStatus(if (m.event == "switch") "PC: following another WoW log" else "client restarted, resyncing") }
                 is BridgeMsg.Status -> if (m.text.isNotEmpty()) onStatus("PC: ${m.text}")
+                is BridgeMsg.BnetReady -> {
+                    if (m.form == null && m.why.isNotEmpty()) onStatus("PC: ${m.why}")
+                    onBnetReady(m.form)
+                }
                 is BridgeMsg.FocusResult -> {
                     if (m.state.isNotEmpty()) onWow(m.state, m.why)
                     m.pc?.let(onPc)

@@ -51,6 +51,35 @@ class StreamCurtainTest {
         assertEquals(emptyList<Float>(), PcWow.of(JSONObject().put("show", "0.42,0.29,2,0.43"))!!.show)
     }
 
+    @Test fun theSavedLoginGoesInBehindTheCurtain() {
+        val r = listOf(0.42f, 0.29f, 0.16f, 0.43f)
+        val s = StreamCurtain.decide(true, true, PcWow(state = "stopped", screen = "none", bnet = "signin_needed", show = r), signingIn = true)
+        assertEquals(StreamCurtain.SIGNING_IN, (s as StreamCurtain.Shows.Curtain).line)
+        val form = BridgeProtocol.parse("""{"t":"bnet_ready_result","ok":true,"password":"0.14,0.18","button":"0.14,0.25"}""") as BridgeMsg.BnetReady
+        assertEquals(BnetFormAt(null, 0.14f to 0.18f, 0.14f to 0.25f), form.form)
+        assertEquals(null, (BridgeProtocol.parse("""{"t":"bnet_ready_result","ok":false,"why":"x"}""") as BridgeMsg.BnetReady).form)
+    }
+
+    @Test fun oneAttemptThenThePlayer() {
+        var t = 0L; var has = true; var open = false; var asks = 0; var forms = 0; val typed = ArrayList<BnetFormAt>()
+        val s = StreamSignIn({ has }, { open }, { forms++; open = true }, { asks++ }, { typed += it }, { t })
+        val form = BnetFormAt(null, 0.1f to 0.2f, 0.1f to 0.3f)
+        s.tick(true); assertEquals(StreamSignIn.Phase.ASKING, s.phase); assertEquals(1, asks)
+        s.answer(form); assertEquals(listOf(form), typed); assertTrue(s.working)
+        t += StreamSignIn.TYPED_MS + 1; s.tick(true)
+        assertEquals("a refused login is never typed again", StreamSignIn.Phase.MANUAL, s.phase)
+        s.tick(true); assertEquals(1, asks); assertEquals(1, typed.size)
+        s.tick(false); assertEquals(StreamSignIn.Phase.IDLE, s.phase)
+        // an unknown form, or an old Desktop that never answers: the player, nothing typed
+        s.tick(true); s.answer(null); assertEquals(StreamSignIn.Phase.MANUAL, s.phase); assertEquals(1, typed.size)
+        s.tick(false); s.tick(true); t += StreamSignIn.ASK_MS + 1; s.tick(true); assertEquals(StreamSignIn.Phase.MANUAL, s.phase)
+        // nothing saved: the form once; saved -> asks; closed unsaved -> the player
+        s.tick(false); has = false; s.tick(true); assertEquals(StreamSignIn.Phase.FORM, s.phase); assertEquals(1, forms)
+        has = true; s.tick(true); assertEquals(StreamSignIn.Phase.ASKING, s.phase)
+        s.tick(false); has = false; open = false; s.tick(true); open = false
+        t += StreamSignIn.FORM_GRACE_MS + 1; s.tick(true); assertEquals(StreamSignIn.Phase.MANUAL, s.phase)
+    }
+
     @Test fun olderDesktopAndSunshineOnly() {
         // Desktop 0.2.0: no screen; running and (when said) focused opens it
         assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, PcWow(state = "running")))
