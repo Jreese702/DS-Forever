@@ -143,10 +143,11 @@ class LoadingMathTest {
         while (d < 60f) { val v = LoadingMath.band(d, 0.5f, 0.3f); assertTrue("no ring at $d", v <= last + 1e-4f); last = v; d += 0.25f }
         assertEquals(0f, LoadingMath.life(LoadingMath.HOLD + LoadingMath.FADE + 0.01f), 0f)
         val p = LoadingMath.pass(7L, 2, 8, 0)
-        val atEnd = share(p, p.start + LoadingMath.TRAVEL)
-        val later = share(p, p.start + LoadingMath.TRAVEL + 1.2f)
-        println("v10 lit share: spark at the tail $atEnd, 1.2 s later $later")
-        assertTrue("the light keeps spreading after the spark ($atEnd -> $later)", later > atEnd)
+        // v11: the painting grows through the journey and is at its widest as the spark reaches the tail (the inner light then fades)
+        val half = share(p, p.start + LoadingMath.JOURNEY * 0.5f)
+        val atEnd = share(p, p.start + LoadingMath.JOURNEY)
+        println("v11 lit share: half way $half, spark at the tail $atEnd")
+        assertTrue("the light keeps spreading while the spark runs ($half -> $atEnd)", atEnd > half)
     }
 
     /** the per-frame cost: both screens' light grids (8 px cells, as LoadingScene) for every live pass, 30 frames in a hand-over */
@@ -224,5 +225,17 @@ class LoadingMathTest {
         assertTrue(red[0] == 1f && red[2] < 0.5f)
         val blue = LoadingMath.tint(87 / 255f, 115 / 255f, 160 / 255f)
         assertTrue(blue[2] == 1f && blue[0] < 0.5f)
+    }
+
+    /** v11 ("speed up on the last big circle ... to finish the full screen painting as the fade begins") */
+    @Test fun theSparkSpeedsUpOnTheLastTurn() {
+        val inner = LoadingMath.arrive(0.2f) - LoadingMath.arrive(0.1f)
+        val outer = LoadingMath.arrive(1f) - LoadingMath.arrive(0.9f)
+        println("v11 a tenth of the arm: inner ${inner}s, outer ${outer}s; journey ${LoadingMath.JOURNEY}s")
+        assertTrue("faster at the tail ($inner vs $outer)", outer * 2f < inner)
+        assertEquals(0.1f * LoadingMath.TRAVEL, LoadingMath.arrive(0.1f), 1e-3f)
+        // the tail is reached about when the first light starts to fade (HOLD after the inner end)
+        assertTrue("journey ${LoadingMath.JOURNEY}", LoadingMath.JOURNEY > LoadingMath.HOLD && LoadingMath.JOURNEY < LoadingMath.HOLD + LoadingMath.FADE)
+        for (q in listOf(0f, 0.25f, 0.5f, 0.8f, 1f)) assertEquals(q, LoadingMath.along(LoadingMath.arrive(q)), 2e-3f)
     }
 }

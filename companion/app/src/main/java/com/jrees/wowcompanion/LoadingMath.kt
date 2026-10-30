@@ -41,14 +41,50 @@ import kotlin.math.sin
  * two turns meet is soft.
  */
 object LoadingMath {
+    /** the spark's speed through the inner turns: 1 / TRAVEL of the arm per second */
     const val TRAVEL = 6.2f
+    /**
+     * v11 (the user, 2026-10-29: "they should speed up on the last big circle of the spiral to finish the full screen painting as the
+     * fade begins"): from [ACCEL_FROM] along the arm (the last full turn starts at ~0.27, measured on swirl_arclen) the spark speeds up
+     * smoothly to [ACCEL] x by the tail, so the outer turn is painted while the inner light begins to fade.
+     */
+    const val ACCEL_FROM = 0.3f
+    const val ACCEL = 2.6f
+    private const val ARRIVE_N = 256
+    /** when the spark reaches each 1 / ARRIVE_N of the arm (s from the pass's start) */
+    private val ARRIVE = FloatArray(ARRIVE_N + 1).also { a ->
+        for (i in 1..ARRIVE_N) {
+            val mid = (i - 0.5f) / ARRIVE_N
+            val e = ((mid - ACCEL_FROM) / (1f - ACCEL_FROM)).coerceIn(0f, 1f)
+            val speed = 1f + (ACCEL - 1f) * e * e * (3f - 2f * e)
+            a[i] = a[i - 1] + TRAVEL / ARRIVE_N / speed
+        }
+    }
+    /** the spark's whole journey, inner end to tail (s) */
+    val JOURNEY = ARRIVE[ARRIVE_N]
+
+    /** when the spark passes [tn] along the arm (s from the pass's start) */
+    fun arrive(tn: Float): Float {
+        val f = tn.coerceIn(0f, 1f) * ARRIVE_N
+        val i = min(ARRIVE_N - 1, f.toInt())
+        return ARRIVE[i] + (ARRIVE[i + 1] - ARRIVE[i]) * (f - i)
+    }
+
+    /** how far along the arm the spark is [s] seconds into its journey (0..1; < 0 before, > 1 after) */
+    fun along(s: Float): Float {
+        if (s <= 0f) return s / TRAVEL
+        if (s >= JOURNEY) return 1f + (s - JOURNEY) / TRAVEL
+        var lo = 0; var hi = ARRIVE_N
+        while (hi - lo > 1) { val mid = (lo + hi) / 2; if (ARRIVE[mid] <= s) lo = mid else hi = mid }
+        return (lo + (s - ARRIVE[lo]) / (ARRIVE[hi] - ARRIVE[lo])) / ARRIVE_N
+    }
     const val HOLD = 2.2f
     const val FADE = 2.6f
     const val TAIL = 0.55f
     /** the light comes up over [RISE] s after the spark passed (a soft leading edge, eased ^1.5) */
     const val RISE = 0.7f
-    /** a new pass this often (the v8 study: 0 black frames at 6.6; LoadingMathTest measures it) */
-    const val EVERY = 6.6f
+    /** a new pass this often (the v8 study: 0 black frames at 6.6; v11 5.0 for its shorter journey, the same hand-over; LoadingMathTest measures it) */
+    const val EVERY = 5.0f
     /** the first spark has already started when the app shows (no black bottom screen at launch) */
     const val LEAD = 1.5f
     const val SWIRL = 4000f
@@ -262,7 +298,7 @@ object LoadingMath {
             out[0] = cx + px * ca - py * sa; out[1] = cy + px * sa + py * ca
         }
 
-        fun end() = start + TRAVEL + HOLD + FADE
+        fun end() = start + JOURNEY + HOLD + FADE
         fun alive(t: Float) = t >= start && t < end()
     }
 
@@ -293,7 +329,7 @@ object LoadingMath {
     }
 
     /** how far along the arm the spark is at [t] (0..1), or < 0 / > 1 outside its journey */
-    fun progress(p: Pass, t: Float) = (t - p.start) / TRAVEL
+    fun progress(p: Pass, t: Float) = along(t - p.start)
 
     /** bilinear sample of an M x M map at (u, v); [outside] past the edge */
     fun sample(a: FloatArray, u: Float, v: Float, outside: Float): Float {
@@ -315,7 +351,7 @@ object LoadingMath {
         val d = sample(m.dist, tmp[0], tmp[1], FAR)
         if (d > REACH) return 0f
         val tn = sample(m.near, tmp[0], tmp[1], 1f)
-        val a2 = t - p.start - tn * TRAVEL
+        val a2 = t - p.start - arrive(tn)
         val w = life(a2)
         if (w <= 0f) return 0f
         return w * band(d, tn, a2)
@@ -350,10 +386,10 @@ object LoadingMath {
      */
     fun mote(m: Maps, p: Pass, i: Int, t: Float, out: FloatArray): Boolean {
         val born = i / MOTES_PER_S
-        if (born > TRAVEL) return false
+        if (born > JOURNEY) return false
         val age = t - p.start - born
         if (age < 0f || age >= MOTE_LIFE) return false
-        head(m, p, born / TRAVEL, out)
+        head(m, p, along(born), out)
         val r = java.util.Random(p.k * 92821L + i * 31L + 17L)
         val a = r.nextFloat() * 2f * PI.toFloat(); val v = 100f + r.nextFloat() * 225f
         out[0] += cos(a) * v * age; out[1] += sin(a) * v * age

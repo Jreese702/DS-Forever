@@ -148,7 +148,7 @@ object LoadingScene {
         // 2. the arm's comet tail, the spark and its motes, in the picture's colour, added
         for (p in passes) {
             val tc = t - p.start
-            if (tc > LoadingMath.TRAVEL + LoadingMath.TAIL + LoadingMath.MOTE_LIFE) continue
+            if (tc > LoadingMath.JOURNEY + LoadingMath.TAIL + LoadingMath.MOTE_LIFE) continue
             val tint = tint(p.picture)
             val col = Color.rgb((tint[0] * 255).toInt(), (tint[1] * 255).toInt(), (tint[2] * 255).toInt())
             tail(m, p, tc)?.let { tb ->
@@ -209,7 +209,7 @@ object LoadingScene {
     /** the arm behind the spark: brightest where it just passed, gone [LoadingMath.TAIL] s later on a squared curve (v8: "a true tail
      *  fade"); null = none now */
     private fun tail(m: LoadingMath.Maps, p: LoadingMath.Pass, tc: Float): Bitmap? {
-        if (tc < 0f || tc > LoadingMath.TRAVEL + LoadingMath.TAIL) return null
+        if (tc < 0f || tc > LoadingMath.JOURNEY + LoadingMath.TAIL) return null
         val key = p.k.toLong() * 100_000L + (tc * 1000f / FRAME_MS).toLong()
         val mm = LoadingMath.M
         if (key == tailKey) return tailBmp
@@ -217,7 +217,7 @@ object LoadingScene {
         for (i in 0 until mm * mm) {
             val pos = m.pos[i]
             px[i] = if (pos >= 2f) 0 else {
-                val age = tc - pos * LoadingMath.TRAVEL
+                val age = tc - LoadingMath.arrive(pos)
                 if (age < 0f || age > LoadingMath.TAIL) 0 else {
                     val f = 1f - age / LoadingMath.TAIL
                     val a = (min(1f, m.arm[i] * 1.4f) * f * f * 255f).toInt().coerceIn(0, 255)
