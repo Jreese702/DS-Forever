@@ -55,6 +55,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private var quality = StreamQuality()
 
     private lateinit var surface: SurfaceView
+    /** black round the zoomed window; a touch on the black goes nowhere */
+    private lateinit var mask: ZoomMask
     private lateinit var overlay: FrameLayout
     private lateinit var pairing: PairingView
     private lateinit var status: StatusView
@@ -87,6 +89,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         quality = StreamQuality.load(activity)
         surface = SurfaceView(activity).also { it.holder.addCallback(this) }
         view.addView(surface, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        mask = ZoomMask(activity)
+        view.addView(mask, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         curtainView = com.jrees.wowcompanion.LoadingTopView(activity).apply {
             curtain = { (shows() as? StreamCurtain.Shows.Curtain)?.let { it.rows to it.line } }
             setOnTouchListener { _, _ -> true }
@@ -132,6 +136,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         curtainView.visibility = if (up) View.VISIBLE else View.GONE
         // the connecting card would sit on the curtain: the curtain says it ("Connecting to your PC")
         if (screen == Screen.CONNECTING) status.visibility = if (up) View.GONE else View.VISIBLE
+        zoom(if (s is StreamCurtain.Shows.SignIn && screen == Screen.STREAMING) s.show else null)
         if (s is StreamCurtain.Shows.SignIn && screen == Screen.STREAMING) {
             main.removeCallbacks(hideBanner)
             banner.text = s.line; banner.visibility = View.VISIBLE; banner.bringToFront()
@@ -435,6 +440,39 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         }
     }
 
+    /** the part of the PC's screen the top screen shows now (x, y, w, h shares), null = all of it */
+    private var zoomed: List<Float>? = null
+
+    /**
+     * The stream zoomed onto [show] (shares of the PC's screen) and centred, black round it ([ZoomMask]); null = the whole picture.
+     * The surface is laid out larger than the screen and shifted (the window clips it), so the decoder and touch = mouse need no change:
+     * a touch maps through the surface's own size.
+     */
+    private fun zoom(show: List<Float>?) {
+        val vw = view.width; val vh = view.height
+        if (show == zoomed || vw == 0 || vh == 0) return
+        zoomed = show
+        val lp = surface.layoutParams as FrameLayout.LayoutParams
+        lp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+        if (show == null) {
+            lp.width = FrameLayout.LayoutParams.MATCH_PARENT; lp.height = FrameLayout.LayoutParams.MATCH_PARENT
+            lp.leftMargin = 0; lp.topMargin = 0
+            mask.hole = null
+        } else {
+            val k = minOf(ZOOM_FILL / show[2], ZOOM_FILL / show[3], ZOOM_MAX).coerceAtLeast(1f)
+            val sw = vw * k; val sh = vh * k
+            val hw = show[2] * sw; val hh = show[3] * sh
+            val hl = (vw - hw) / 2f; val ht = (vh - hh) / 2f
+            lp.width = sw.toInt(); lp.height = sh.toInt()
+            lp.leftMargin = (hl - show[0] * sw).toInt(); lp.topMargin = (ht - show[1] * sh).toInt()
+            mask.hole = android.graphics.RectF(hl, ht, hl + hw, ht + hh)
+        }
+        surface.layoutParams = lp
+        mask.visibility = if (show == null) View.GONE else View.VISIBLE
+        mask.invalidate()
+        Log.i(TAG, "zoom ${show ?: "off"}")
+    }
+
     private fun pairState(s: StreamPairing.State) {
         when (s) {
             is StreamPairing.State.Working -> pairing.setMessage(s.what)
@@ -554,7 +592,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     fun touch(e: MotionEvent): Boolean {
         val t = touchMouse
         if (screen != Screen.STREAMING || t == null) return false
-        t.viewW = view.width; t.viewH = view.height
+        t.viewW = surface.width; t.viewH = surface.height     // the surface's own size: right when zoomed too
         val i = e.actionIndex
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
@@ -588,6 +626,27 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     companion object {
         const val TAG = "DSFSTREAM"
+        /** a zoomed window fills this share of the screen at most, and is magnified at most [ZOOM_MAX] x */
+        const val ZOOM_FILL = 0.92f
+        const val ZOOM_MAX = 3f
         private val SIGN_IN_LINES = setOf(StreamCurtain.SIGN_IN, StreamCurtain.NEEDS_YOU, StreamCurtain.UPDATE, StreamCurtain.CRASHED)
     }
+}
+
+/** black everywhere but [hole] (the zoomed window); takes every touch outside the hole so nothing reaches the PC's desktop */
+internal class ZoomMask(ctx: android.content.Context) : View(ctx) {
+    var hole: android.graphics.RectF? = null
+    private val paint = android.graphics.Paint().apply { color = android.graphics.Color.BLACK }
+
+    init { visibility = GONE }
+
+    override fun onDraw(c: android.graphics.Canvas) {
+        val h = hole ?: return
+        val w = width.toFloat(); val ht = height.toFloat()
+        c.drawRect(0f, 0f, w, h.top, paint); c.drawRect(0f, h.bottom, w, ht, paint)
+        c.drawRect(0f, h.top, h.left, h.bottom, paint); c.drawRect(h.right, h.top, w, h.bottom, paint)
+    }
+
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(e: MotionEvent): Boolean = hole?.contains(e.x, e.y) == false
 }

@@ -36,13 +36,19 @@ class StreamCurtainTest {
         assertEquals("Connecting to your PC", curtain(StreamCurtain.decide(false, true, null)).line)
     }
 
-    @Test fun battleNetSignInLiftsTheCurtainOnly() {
-        assertEquals(StreamCurtain.Shows.SignIn(StreamCurtain.SIGN_IN),
-            StreamCurtain.decide(true, true, PcWow(state = "stopped", screen = "none", bnet = "signin_needed")))
-        assertEquals(StreamCurtain.Shows.SignIn(StreamCurtain.NEEDS_YOU),
-            StreamCurtain.decide(true, true, PcWow(state = "running", screen = "login", focused = true, bnet = "signed_in", needsYou = true)))
+    @Test fun battleNetSignInShowsItsWindowOnly() {
+        val r = listOf(0.42f, 0.29f, 0.16f, 0.43f)
+        assertEquals(StreamCurtain.Shows.SignIn(StreamCurtain.SIGN_IN, r),
+            StreamCurtain.decide(true, true, PcWow(state = "stopped", screen = "none", bnet = "signin_needed", show = r)))
+        assertEquals(StreamCurtain.Shows.SignIn(StreamCurtain.NEEDS_YOU, r),
+            StreamCurtain.decide(true, true, PcWow(state = "running", screen = "login", focused = true, bnet = "signed_in", needsYou = true, show = r)))
+        // where the window is isn't known yet: the curtain says it, the desktop never shows (the user, 2026-10-30)
+        val c = StreamCurtain.decide(true, true, PcWow(state = "stopped", screen = "none", bnet = "signin_needed"))
+        assertEquals(StreamCurtain.SIGN_IN, (c as StreamCurtain.Shows.Curtain).line)
         // signed in to Battle.net again: the curtain comes back until WoW is in
         assertTrue(StreamCurtain.decide(true, true, PcWow(state = "starting", screen = "none", bnet = "signed_in")) is StreamCurtain.Shows.Curtain)
+        assertEquals(r, PcWow.of(JSONObject().put("show", "0.42,0.29,0.16,0.43"))!!.show)
+        assertEquals(emptyList<Float>(), PcWow.of(JSONObject().put("show", "0.42,0.29,2,0.43"))!!.show)
     }
 
     @Test fun olderDesktopAndSunshineOnly() {
@@ -85,8 +91,10 @@ class StreamCurtainTest {
     /** the user's PC 2026-10-29: WoW crashed on start (its files older than the game's data) behind a black stream: say so, show Battle.net */
     @Test fun aCrashedClientShowsBattleNetWithWhy() {
         val upd = PcWow(state = "running", screen = "login", bnet = "signed_in", crash = "update")
-        assertEquals(StreamCurtain.Shows.SignIn(StreamCurtain.UPDATE), StreamCurtain.decide(true, true, upd))
-        assertEquals(StreamCurtain.Shows.SignIn(StreamCurtain.CRASHED), StreamCurtain.decide(true, true, upd.copy(crash = "crash")))
+        val r = listOf(0.4f, 0.1f, 0.5f, 0.7f)
+        assertEquals(StreamCurtain.Shows.SignIn(StreamCurtain.UPDATE, r), StreamCurtain.decide(true, true, upd.copy(show = r)))
+        assertEquals(StreamCurtain.Shows.SignIn(StreamCurtain.CRASHED, r), StreamCurtain.decide(true, true, upd.copy(crash = "crash", show = r)))
+        assertEquals(StreamCurtain.UPDATE, (StreamCurtain.decide(true, true, upd) as StreamCurtain.Shows.Curtain).line)
         assertEquals("update", PcWow.of(org.json.JSONObject().put("state", "running").put("crash", "update"))!!.crash)
     }
 }

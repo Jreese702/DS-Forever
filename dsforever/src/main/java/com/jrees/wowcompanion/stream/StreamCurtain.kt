@@ -17,8 +17,10 @@ object StreamCurtain {
     sealed class Shows {
         /** the curtain: the box's rows and its gold status line */
         data class Curtain(val rows: List<SetupFlow.Check>, val line: String) : Shows()
-        /** the stream, with [line] small at the top (Battle.net's sign-in) */
-        data class SignIn(val line: String) : Shows()
+        /** ONLY Battle.net's window out of the stream ([show]: x, y, w, h as shares of the PC's screen), black round it, with [line] small
+         *  at the top (the user, 2026-10-30: "I kind of expected a simple sign in window for bnet to appear on the top screen. I dont
+         *  really want to see my desktop screen for any reason until the game is launched and logging in") */
+        data class SignIn(val line: String, val show: List<Float>) : Shows()
         /** the stream itself */
         object Stream : Shows()
     }
@@ -44,11 +46,17 @@ object StreamCurtain {
             else curtain(listOf(row(LOOKING, false)), problem ?: "Connecting to your PC")
         if (pc == null) return if (connected) curtain(listOf(row(found, true)), loading(dots))      // the stream answered, Desktop not yet
             else curtain(listOf(row(LOOKING, false)), problem ?: "Connecting to your PC")
-        // a crash: the curtain lifts on Battle.net (Desktop brings it to the front) so the player can update or start WoW through the stream
-        if (pc.crash == "update") return Shows.SignIn(UPDATE)
-        if (pc.crash.isNotEmpty()) return Shows.SignIn(CRASHED)
-        if (pc.bnet == "signin_needed") return Shows.SignIn(SIGN_IN)
-        if (pc.needsYou) return Shows.SignIn(NEEDS_YOU)
+        // the player must use Battle.net (its sign-in; an update after a crash; a sign-in that needs them): its window alone, zoomed, once
+        // Desktop says where it is; until then the curtain with the same line (never the desktop)
+        val bnetLine = when {
+            pc.crash == "update" -> UPDATE
+            pc.crash.isNotEmpty() -> CRASHED
+            pc.bnet == "signin_needed" -> SIGN_IN
+            pc.needsYou -> NEEDS_YOU
+            else -> null
+        }
+        if (bnetLine != null) return if (connected && pc.show.size == 4) Shows.SignIn(bnetLine, pc.show)
+            else curtain(listOf(row(found, true), row("Battle.net", false)), bnetLine)
         val known = pc.screen.isNotEmpty()
         val open = if (known) pc.signedIn && pc.focused == true else pc.state == "running" && pc.focused != false
         if (connected && open) return Shows.Stream

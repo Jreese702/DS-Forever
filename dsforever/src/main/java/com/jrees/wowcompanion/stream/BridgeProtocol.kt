@@ -18,7 +18,9 @@ import javax.crypto.spec.SecretKeySpec
 data class PcWow(val state: String = "", val why: String = "", val screen: String = "", val focused: Boolean? = null,
                  val bnet: String = "", val needsYou: Boolean = false, val loginError: String = "",
                  /** the client crashed (Desktop 0.2.2): "update" = Battle.net has an update for it, "crash" = anything else; "" = none */
-                 val crash: String = "") {
+                 val crash: String = "",
+                 /** Desktop 0.2.3: Battle.net's window on the streamed screen as shares (x, y, w, h) while the player must use it; empty = none */
+                 val show: List<Float> = emptyList()) {
     /** signed in: at character select or in the world */
     val signedIn get() = screen == "charselect" || screen == "world"
 
@@ -26,7 +28,13 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
         fun of(o: JSONObject?): PcWow? = o?.let {
             PcWow(it.optString("state"), it.optString("why"), it.optString("screen"),
                 if (it.has("focused")) it.optBoolean("focused") else null, it.optString("bnet"), it.optBoolean("needs_you"),
-                it.optString("login_error"), it.optString("crash"))
+                it.optString("login_error"), it.optString("crash"), rect(it.optString("show")))
+        }
+
+        /** "x,y,w,h" (shares of the screen) -> 4 floats; anything else -> empty */
+        fun rect(s: String): List<Float> {
+            val v = s.split(',').mapNotNull { it.trim().toFloatOrNull() }
+            return if (v.size == 4 && v[2] > 0.01f && v[3] > 0.01f && v.all { it in 0f..1f }) v else emptyList()
         }
     }
 }
