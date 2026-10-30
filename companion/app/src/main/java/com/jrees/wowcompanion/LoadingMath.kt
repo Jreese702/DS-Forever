@@ -45,10 +45,10 @@ object LoadingMath {
     const val TRAVEL = 6.2f
     /**
      * v11 (the user, 2026-10-29: "they should speed up on the last big circle of the spiral to finish the full screen painting as the
-     * fade begins"): from [ACCEL_FROM] along the arm (the last full turn starts at ~0.27, measured on swirl_arclen) the spark speeds up
+     * fade begins"; 10-30 "start picking up speed a tiny bit sooner"): from [ACCEL_FROM] along the arm (the last full turn starts at ~0.27) the spark speeds up
      * smoothly to [ACCEL] x by the tail, so the outer turn is painted while the inner light begins to fade.
      */
-    const val ACCEL_FROM = 0.3f
+    const val ACCEL_FROM = 0.2f
     const val ACCEL = 2.6f
     private const val ARRIVE_N = 256
     /** when the spark reaches each 1 / ARRIVE_N of the arm (s from the pass's start) */
