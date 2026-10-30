@@ -153,7 +153,7 @@ internal class StatusView(ctx: Context, onRetry: () -> Unit, onPairAgain: () -> 
 internal class QualityView(ctx: Context, private var q: StreamQuality, private val onChange: (StreamQuality) -> Unit,
                            private val onClose: () -> Unit) : LinearLayout(ctx) {
     private var row = 0
-    private val rows = List(6) { StreamLook.text(ctx, 20f) }
+    private val rows = List(5) { StreamLook.text(ctx, 20f) }
 
     init {
         orientation = VERTICAL; gravity = Gravity.CENTER
@@ -176,16 +176,14 @@ internal class QualityView(ctx: Context, private var q: StreamQuality, private v
             1 -> q.copy(height = StreamQuality.step(StreamQuality.HEIGHTS, q.height, by))
             2 -> q.copy(fps = StreamQuality.step(StreamQuality.FPS, q.fps, by))
             3 -> q.copy(bitrateKbps = StreamQuality.step(StreamQuality.BITRATES_KBPS, q.bitrateKbps, by))
-            4 -> q.copy(audioOnThor = !q.audioOnThor)
-            else -> q.copy(touchControls = !q.touchControls)
+            else -> q.copy(audioOnThor = !q.audioOnThor)
         }
         onChange(q); refresh()
     }
 
     private fun refresh() {
         val v = listOf("Video: ${q.codec.label}", "Resolution: ${q.height}p", "Frame rate: ${q.fps} fps", "Bit rate: ${q.bitrateKbps / 1000} Mbps",
-            "Sound: ${if (q.audioOnThor) "on the Thor" else "on the PC"}",
-            "Touch controls: ${if (q.touchControls) "on (as in Local)" else "off (touch = mouse only)"}")
+            "Sound: ${if (q.audioOnThor) "on the Thor" else "on the PC"}")
         rows.forEachIndexed { i, t -> t.text = (if (i == row) "‹  " else "") + v[i] + (if (i == row) "  ›" else ""); t.setTextColor(if (i == row) StreamLook.GOLD else StreamLook.INK) }
     }
 

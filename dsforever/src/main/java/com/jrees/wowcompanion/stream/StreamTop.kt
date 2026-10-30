@@ -44,8 +44,6 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         fun back()
         /** the bottom screen: [covers] = Streaming's placeholder page still covers the companion (no PC paired yet); [note] = status */
         fun bottom(covers: Boolean, note: String) {}
-        /** the stream is (no longer) on the top screen: the on-screen touch controls show only while it is, and only when [touchControls] */
-        fun streaming(on: Boolean, touchControls: Boolean) {}
     }
 
     enum class Screen { PAIRING, PIN, CONNECTING, STREAMING, PROBLEM, QUALITY }
@@ -109,7 +107,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         }
         view.addView(banner, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
             android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL).apply { topMargin = StreamLook.dp(activity, 24f) })
-        // touch = mouse straight on the picture when no on-screen controls sit above it (the host's overlay calls [touch] itself)
+        // touch = the PC's mouse on the picture (no on-screen controls over the stream: "there's a controller overlay? Remove that")
         surface.setOnTouchListener { _, e -> touch(e) }
     }
 
@@ -137,7 +135,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (s is StreamCurtain.Shows.SignIn && screen == Screen.STREAMING) {
             main.removeCallbacks(hideBanner)
             banner.text = s.line; banner.visibility = View.VISIBLE; banner.bringToFront()
-        } else if (up || (banner.text == StreamCurtain.SIGN_IN || banner.text == StreamCurtain.NEEDS_YOU)) banner.visibility = View.GONE
+        } else if (up || banner.text in SIGN_IN_LINES) banner.visibility = View.GONE
     }
 
     private fun pcWord(w: PcWow) { pc = w; applyCurtain() }
@@ -291,7 +289,6 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         DsForeverScreen.current?.attachStream(k)
         touchMouse = StreamTouch(MoonBridge.INPUT, view.width, view.height, w, h,
             android.view.ViewConfiguration.get(activity).scaledTouchSlop.toFloat()) { ms, r -> main.postDelayed(r, ms) }
-        shell.streaming(true, quality.touchControls)
         try { MoonBridge.sendControllerArrivalEvent(0, 1, MoonBridge.LI_CTYPE_XBOX, StreamPad.SUPPORTED,
             (MoonBridge.LI_CCAP_ANALOG_TRIGGERS.toInt() or MoonBridge.LI_CCAP_RUMBLE.toInt()).toShort()) } catch (t: Throwable) { Log.w(TAG, "arrival: ${t.message}") }
         worker.execute { bridge?.focusWow() }
@@ -356,7 +353,6 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private fun teardown() {
         touchMouse?.cancel(); touchMouse = null
-        if (screen == Screen.STREAMING || keys != null) shell.streaming(false, quality.touchControls)
         session = null
         keys?.releaseAll()
         if (keys != null) { pad.clear(); try { sendPad() } catch (_: Throwable) {} }
@@ -478,8 +474,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun openQuality() {
         if (screen == Screen.QUALITY) return
         beforeQuality = screen
-        val v = qualityView ?: QualityView(activity, quality, onChange = { q -> val was = quality.touchControls; quality = q; StreamQuality.save(activity, q)
-            if (was != q.touchControls && screen == Screen.STREAMING) shell.streaming(true, q.touchControls) }, onClose = { show(beforeQuality) })
+        val v = qualityView ?: QualityView(activity, quality, onChange = { q -> quality = q; StreamQuality.save(activity, q) }, onClose = { show(beforeQuality) })
             .also { qualityView = it; overlay.centered(it, 560f) }
         show(Screen.QUALITY)
         v.bringToFront()
@@ -551,7 +546,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         lastHat = h
     }
 
-    // ---------------------------------------------------------------- touch: the on-screen controls (the host's overlay) and touch = mouse
+    // ---------------------------------------------------------------- touch = mouse (no on-screen controls over the stream: the user, 2026-10-29)
     private var touchMouse: StreamTouch? = null
     private val touchIds = HashSet<Int>()
 
@@ -576,23 +571,6 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     fun cancelTouch() { touchIds.clear(); touchMouse?.cancel() }
 
-    /** the on-screen controls' virtual pad (Winlator's GamepadState fields), merged with the physical pad */
-    fun virtualPad(winlatorButtons: Int, dpad: BooleanArray, lt: Float, rt: Float, lx: Float, ly: Float, rx: Float, ry: Float) {
-        if (screen != Screen.STREAMING) return
-        if (pad.virtual(winlatorButtons, dpad, lt, rt, lx, ly, rx, ry)) sendPad()
-    }
-
-    /** the on-screen controls' keys: an X keycode, through StreamKeys' rules (no Alt, F-keys, Win ... on the PC) */
-    fun remoteKey(xKeycode: Int, down: Boolean) { keys?.key(xKeycode, down) }
-
-    /** the on-screen controls' mouse buttons: 1 left, 2 middle, 3 right (Moonlight's numbering); wheel buttons scroll */
-    fun remoteButton(button: Int, down: Boolean) { if (keys != null) MoonBridge.INPUT.mouseButton(down, button) }
-    fun remoteScroll(amount: Int) { if (keys != null) MoonBridge.INPUT.scroll(amount) }
-    fun remoteMove(dx: Int, dy: Int) { keys?.moveBy(dx, dy) }
-
-    /** "Touch controls" in Stream quality */
-    val touchControls: Boolean get() = quality.touchControls
-
     private fun sendPad() {
         if (!MoonBridge.loaded) return
         val s = pad.snapshot()
@@ -610,5 +588,6 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     companion object {
         const val TAG = "DSFSTREAM"
+        private val SIGN_IN_LINES = setOf(StreamCurtain.SIGN_IN, StreamCurtain.NEEDS_YOU, StreamCurtain.UPDATE, StreamCurtain.CRASHED)
     }
 }

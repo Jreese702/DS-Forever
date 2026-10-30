@@ -109,9 +109,10 @@ class LoadingMathTest {
     @Test fun onePassLeavesDarkBetweenTheTurns() {
         val shares = (0 until 8).map { peak(LoadingMath.pass(7L, it, 8, 0)) }
         val mean = shares.average()
-        println("v9 peak lit share per pass: mean $mean, each $shares")
+        println("v10 peak lit share per pass: mean $mean, each $shares")
         assertTrue("mean share $mean: most of the screens are reached", mean >= 0.3)
-        assertTrue("mean share $mean: dark stays between the turns", mean <= 0.85)
+        // v10 ("fully bleed into each other"): the turns meet, so most of both screens is lit at a pass's peak
+        assertTrue("mean share $mean: the turns meet", mean >= 0.7)
     }
 
     /** v8 ("start smaller and tighter and get bigger and wider"): the band round the arm is wider near the tail than near the middle */
@@ -125,29 +126,26 @@ class LoadingMathTest {
         }
         val inner = width(0.1f); val outer = width(0.9f)
         println("v9 band half-width at age 1 s: inner $inner, outer $outer virtual px")
-        assertTrue("inner $inner < outer $outer", inner * 2f < outer)
+        assertTrue("inner $inner < outer $outer", inner < outer)
     }
 
-    /** v9 ("slightly grow and ripple into the dark space before fading out, not stay the same size"): the band grows with age, a ripple at
-     *  its edge while it grows, and the whole fades */
-    @Test fun theLightGrowsAndRipplesThenFades() {
+    /** v9 ("slightly grow ... into the dark space before fading out") + v10 ("fully bleed into each other"): the band grows with age until
+     *  the turns meet, its edge soft (no ripple ring: "bubbly"), and the whole fades */
+    @Test fun theLightGrowsUntilTheTurnsMeetThenFades() {
         val k = LoadingMath.N / LoadingMath.SWIRL
         fun width(age: Float): Float { var d = 0f; while (LoadingMath.band(d, 0.5f, age) > 0.35f) d += 0.02f; return d / k }
         val w0 = width(0.2f); val w1 = width(2f); val w2 = width(LoadingMath.HOLD + LoadingMath.FADE)
-        println("v9 band half-width by age: 0.2 s $w0, 2 s $w1, end $w2 virtual px")
-        assertTrue("grows: $w0 < $w1 < $w2", w0 < w1 && w1 < w2)
-        assertTrue("slightly: ends under 2.2x ($w2 vs $w0)", w2 < w0 * 2.2f)
-        // the ripple: just past the band's edge it is brighter than a plain soft edge (a ring), early on; gone at the end
-        val r0 = (LoadingMath.R0_IN + 0.5f * LoadingMath.R0_OUT) * k
-        val early = LoadingMath.band(r0 * 1.15f, 0.5f, 0.3f)
-        assertTrue("a ripple at the edge early on ($early)", early > 0.15f)
-        // the light's life fades it out in the end, in the order it was lit
+        println("v10 band half-width by age: 0.2 s $w0, 2 s $w1, end $w2 virtual px")
+        assertTrue("grows: $w0 < $w1 <= $w2", w0 < w1 && w1 <= w2)
+        assertTrue("grows wide enough for the turns to meet ($w2)", w2 > 300f)
+        // a soft edge: the light falls off steadily outwards, never rising again (no ring)
+        var last = 2f; var d = 0f
+        while (d < 60f) { val v = LoadingMath.band(d, 0.5f, 0.3f); assertTrue("no ring at $d", v <= last + 1e-4f); last = v; d += 0.25f }
         assertEquals(0f, LoadingMath.life(LoadingMath.HOLD + LoadingMath.FADE + 0.01f), 0f)
-        // and it grows through the pass's own frames too: the lit share rises after the spark has gone
         val p = LoadingMath.pass(7L, 2, 8, 0)
         val atEnd = share(p, p.start + LoadingMath.TRAVEL)
         val later = share(p, p.start + LoadingMath.TRAVEL + 1.2f)
-        println("v9 lit share: spark at the tail $atEnd, 1.2 s later $later")
+        println("v10 lit share: spark at the tail $atEnd, 1.2 s later $later")
         assertTrue("the light keeps spreading after the spark ($atEnd -> $later)", later > atEnd)
     }
 

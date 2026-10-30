@@ -69,24 +69,6 @@ class StreamTouchTest {
         assertEquals("pos 959,539", r.log.first())
     }
 
-    @Test fun theOnScreenPadMergesWithThePhysicalOne() {
-        val p = StreamPad()
-        // Winlator: A (0) + Start (7), the D-pad's up, L2 by its button bit, the left stick pushed up (y down positive)
-        assertTrue(p.virtual((1 shl 0) or (1 shl 7) or (1 shl 10), booleanArrayOf(true, false, false, false), 0f, 0.5f, 0f, -1f, 0f, 0f))
-        var s = p.snapshot()
-        assertEquals(StreamPad.A or StreamPad.PLAY or StreamPad.UP, s.buttons)
-        assertEquals(255, s.lt); assertEquals(128, s.rt); assertEquals(32767, s.ly)
-        // the physical pad's B is OR-ed in; its weaker stick loses to the overlay's stronger one
-        p.key(android.view.KeyEvent.KEYCODE_BUTTON_B, true)
-        p.axes(0.1f, 0.1f, 0f, 0f, 0f, 0f, 0f, 0f)
-        s = p.snapshot()
-        assertEquals(StreamPad.A or StreamPad.B or StreamPad.PLAY or StreamPad.UP, s.buttons)
-        assertEquals(32767, s.ly)
-        assertFalse(p.virtual((1 shl 0) or (1 shl 7) or (1 shl 10), booleanArrayOf(true, false, false, false), 0f, 0.5f, 0f, -1f, 0f, 0f))
-        p.virtual(0, BooleanArray(4), 0f, 0f, 0f, 0f, 0f, 0f)
-        assertEquals(StreamPad.B, p.snapshot().buttons)
-    }
-
     @Test fun theLanAddressSticks() {
         val lan = "192.168.1.11"; val vpn = "100.69.36.86"; val net = "192.168.1"
         assertEquals(AddressPolicy.Move.MOVE, AddressPolicy.decide(vpn, lan, net))           // to the LAN
@@ -125,11 +107,5 @@ class StreamTouchTest {
             onMessage = {}, onStatus = { status.add(it) }, onWow = { s, _ -> states.add(s) }, sleeper = { log!!.stop() })
         log.runHere()
         assertEquals(listOf("starting", "starting", "running"), states)
-    }
-
-    @Test fun touchControlsAreAQualitySetting() {
-        assertTrue(StreamQuality().touchControls)
-        val off = StreamQuality(touchControls = false)
-        assertEquals(off, StreamQuality.fromJson(JSONObject(off.toJson().toString())))
     }
 }

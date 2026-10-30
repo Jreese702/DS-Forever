@@ -15,8 +15,6 @@ data class StreamQuality(
     val bitrateKbps: Int = 20_000,
     /** the PC's sound on the Thor (the default) or kept on the PC */
     val audioOnThor: Boolean = true,
-    /** the launcher's on-screen controls over the stream ("same as Local"); touch = mouse works either way */
-    val touchControls: Boolean = true,
 ) {
     enum class Codec(val label: String) { HEVC("HEVC"), H264("H.264"), AV1("AV1") }
 
@@ -33,7 +31,7 @@ data class StreamQuality(
     val label: String get() = "${codec.label} ${height}p$fps, ${bitrateKbps / 1000} Mbps"
 
     fun toJson(): JSONObject = JSONObject().put("codec", codec.name).put("height", height).put("fps", fps)
-        .put("kbps", bitrateKbps).put("audioOnThor", audioOnThor).put("touchControls", touchControls)
+        .put("kbps", bitrateKbps).put("audioOnThor", audioOnThor)
 
     companion object {
         const val VIDEO_FORMAT_H264 = 0x0001
@@ -54,7 +52,6 @@ data class StreamQuality(
                 fps = o.optInt("fps", d.fps).takeIf { it in FPS } ?: d.fps,
                 bitrateKbps = o.optInt("kbps", d.bitrateKbps).takeIf { it in BITRATES_KBPS } ?: d.bitrateKbps,
                 audioOnThor = o.optBoolean("audioOnThor", d.audioOnThor),
-                touchControls = o.optBoolean("touchControls", d.touchControls),
             )
         }
 

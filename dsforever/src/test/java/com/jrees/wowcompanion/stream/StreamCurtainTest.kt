@@ -81,4 +81,12 @@ class StreamCurtainTest {
         assertEquals(SetupFlow.Mark.OK, home.rows.first().mark)
         assertEquals(listOf(StreamCurtain.LOOKING), curtain(StreamCurtain.decide(false, false, null)).rows.map { it.label })
     }
+
+    /** the user's PC 2026-10-29: WoW crashed on start (its files older than the game's data) behind a black stream: say so, show Battle.net */
+    @Test fun aCrashedClientShowsBattleNetWithWhy() {
+        val upd = PcWow(state = "running", screen = "login", bnet = "signed_in", crash = "update")
+        assertEquals(StreamCurtain.Shows.SignIn(StreamCurtain.UPDATE), StreamCurtain.decide(true, true, upd))
+        assertEquals(StreamCurtain.Shows.SignIn(StreamCurtain.CRASHED), StreamCurtain.decide(true, true, upd.copy(crash = "crash")))
+        assertEquals("update", PcWow.of(org.json.JSONObject().put("state", "running").put("crash", "update"))!!.crash)
+    }
 }

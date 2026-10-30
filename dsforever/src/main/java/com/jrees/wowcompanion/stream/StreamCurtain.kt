@@ -26,6 +26,9 @@ object StreamCurtain {
     const val SIGN_IN = "Sign in to Battle.net"
     const val LOOKING = "Looking for your PC"
     const val NEEDS_YOU = "Sign-in needs you on the PC's Battle.net"
+    /** WoW crashed on the PC because its files are older than the game's data (the user's PC 2026-10-29: a black stream behind it) */
+    const val UPDATE = "Update WoW in Battle.net"
+    const val CRASHED = "WoW crashed on your PC"
 
     /**
      * [connected] = the stream is up (Moonlight's picture arrived); [bridged] = this PC has DS Forever Desktop's bridge (Sunshine
@@ -41,6 +44,9 @@ object StreamCurtain {
             else curtain(listOf(row(LOOKING, false)), problem ?: "Connecting to your PC")
         if (pc == null) return if (connected) curtain(listOf(row(found, true)), loading(dots))      // the stream answered, Desktop not yet
             else curtain(listOf(row(LOOKING, false)), problem ?: "Connecting to your PC")
+        // a crash: the curtain lifts on Battle.net (Desktop brings it to the front) so the player can update or start WoW through the stream
+        if (pc.crash == "update") return Shows.SignIn(UPDATE)
+        if (pc.crash.isNotEmpty()) return Shows.SignIn(CRASHED)
         if (pc.bnet == "signin_needed") return Shows.SignIn(SIGN_IN)
         if (pc.needsYou) return Shows.SignIn(NEEDS_YOU)
         val known = pc.screen.isNotEmpty()

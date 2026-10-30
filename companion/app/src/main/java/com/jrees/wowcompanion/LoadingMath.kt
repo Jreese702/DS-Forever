@@ -32,8 +32,13 @@ import kotlin.math.sin
  *
  * v9 (the user, 2026-10-28: "the spiral needs to like slightly grow and ripple into the dark space before fading out, not stay the same
  * size"; study src/trail4.py, loading_v9_30fps.mp4): the light round each stretch of arm is a band whose half-width ([R0_IN] + tn *
- * [R0_OUT]) GROWS after the spark passed (to x(1 + [GROW]) over HOLD + FADE, quickly at first), with a soft ripple ring at its edge,
+ * R0_OUT) GROWS after the spark passed (to x1.9 over HOLD + FADE, quickly at first), with a soft ripple ring at its edge,
  * then fades. The maps are now the DISTANCE from the (smoothed) arm and the arm position of the nearest arm point.
+ *
+ * v10 (the user, 2026-10-29: "The black gaps in the spiral are way too big and bubbly ... I do think I want it to fully bleed into each
+ * other"; study src/trail5.py, loading_v10_30fps.mp4): the band keeps growing by [SPREAD] until the turns MEET, with a long soft edge
+ * (a smoothstep over the whole width) instead of a disc's rim, and no ripple ring; the timing map is blurred wider so the seam where
+ * two turns meet is soft.
  */
 object LoadingMath {
     const val TRAVEL = 6.2f
@@ -63,15 +68,13 @@ object LoadingMath {
 
     /** the maps' square: the swirl at [N] px plus [PAD] px round it (the light reaches past the arm) */
     const val N = 280
-    /** v9: the band's half-width round the arm (virtual px) at the inner end, and the extra at the tail (the study's 38 + 85 tn) */
-    const val R0_IN = 38f
-    const val R0_OUT = 85f
-    /** v9: the band grows to x(1 + GROW) of its start over HOLD + FADE */
-    const val GROW = 0.9f
-    /** v9: the ripple ring at the band's edge: its strength, and its width (virtual px + a share of the band) */
-    const val RING = 0.45f
-    const val RING_W = 16f
-    const val RING_K = 0.12f
+    /** v10: the band's half-width round the arm (virtual px) at the inner end, and the extra at the tail (the study's 60 + 110 tn) */
+    const val R0_IN = 60f
+    const val R0_OUT = 110f
+    /** v10: the band grows by SPREAD virtual px (quickly at first) over HOLD + FADE / 2: wide enough for the turns to meet */
+    const val SPREAD = 520f
+    /** v10: the timing map's blur (virtual px): a soft seam where two turns meet */
+    const val NEAR_BLUR = 36f
     const val PAD = 32
     const val M = N + 2 * PAD
 
@@ -126,7 +129,7 @@ object LoadingMath {
         val smooth = blur(solid, max(0.6f, 10f * kv))
         val dist = edt(BooleanArray(M * M) { smooth[it] > 0.5f }).first
         val nearest = edt(BooleanArray(M * M) { pos[it] < 2f }).second
-        val near = blur(FloatArray(M * M) { if (nearest[it] >= 0) pos[nearest[it]] else 1f }, max(0.6f, 8f * kv))
+        val near = blur(FloatArray(M * M) { if (nearest[it] >= 0) pos[nearest[it]] else 1f }, max(0.6f, NEAR_BLUR * kv))
         // the spark's path: the mean place of the arm pixels at each step along it
         val sx = FloatArray(HEADS + 1); val sy = FloatArray(HEADS + 1); val sn = IntArray(HEADS + 1)
         for (i in pos.indices) if (pos[i] < 2f) {
@@ -301,11 +304,11 @@ object LoadingMath {
     }
 
     /** the band's widest reach (map px): no light past it */
-    private val REACH = (R0_IN + R0_OUT) * (1f + GROW) * 1.6f * N / SWIRL + 3f
+    private val REACH = (R0_IN + R0_OUT + SPREAD) * N / SWIRL + 3f
 
     /**
-     * How lit the virtual point (x, y) is by pass [p] at [t] (0..1). v9: a band round the arm, its half-width growing after the spark
-     * passed (quickly at first), a soft ripple ring at its edge while it grows, the whole fading with [life].
+     * How lit the virtual point (x, y) is by pass [p] at [t] (0..1). v10: a band round the arm, its half-width growing after the spark
+     * passed (quickly at first) until the turns meet, a soft edge, the whole fading with [life].
      */
     fun lit(m: Maps, p: Pass, t: Float, x: Float, y: Float, tmp: FloatArray): Float {
         p.toMap(x, y, tmp)
@@ -318,16 +321,13 @@ object LoadingMath {
         return w * band(d, tn, a2)
     }
 
-    /** v9: the band's light (0..1) at [d] map px from the arm, [tn] along it, [age] s after the spark passed */
+    /** v10: the band's light (0..1) at [d] map px from the arm, [tn] along it, [age] s after the spark passed */
     fun band(d: Float, tn: Float, age: Float): Float {
         val k = N / SWIRL
-        val r0 = (R0_IN + tn * R0_OUT) * k
-        val grow = (age / (HOLD + FADE)).coerceIn(0f, 1f)
-        val r = r0 * (1f + GROW * (1f - (1f - grow) * (1f - grow)))
-        val core = Math.pow(((r - d) / (0.8f * r + 2.5f * k)).coerceIn(0f, 1f).toDouble(), 1.1).toFloat()
-        val q = (d - r) / (RING_W * k + RING_K * r)
-        val ring = exp(-q * q) * RING * (1f - grow)
-        return (core + ring).coerceIn(0f, 1f)
+        val grow = (age / (HOLD + FADE * 0.5f)).coerceIn(0f, 1f)
+        val r = (R0_IN + tn * R0_OUT + SPREAD * (1f - (1f - grow) * (1f - grow))) * k
+        val e = (1f - d / r).coerceIn(0f, 1f)
+        return Math.pow((e * e * (3f - 2f * e)).toDouble(), 0.8).toFloat()
     }
 
     /** the spark's place (virtual) at progress [q] (0..1) */
