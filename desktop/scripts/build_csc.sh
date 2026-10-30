@@ -19,7 +19,7 @@ cat > "$OUT/AssemblyInfo.cs" <<EOF2
 EOF2
 COMMON=(-nologo -noconfig -nostdlib -langversion:10 -optimize+ -debug:portable -nowarn:1591,CS1998,CS0649,CS0169,CS0414
   "-r:$REF/mscorlib.dll" "-r:$REF/System.dll" "-r:$REF/System.Core.dll" "-r:$REF/System.Xml.dll" "-r:$REF/System.Xml.Linq.dll"
-  "-r:$REF/System.Web.Extensions.dll" "-r:$REF/System.Net.Http.dll" "-r:$REF/System.Security.dll" "-r:$REF/Facades/netstandard.dll"
+  "-r:$REF/System.Drawing.dll" "-r:$REF/System.Web.Extensions.dll" "-r:$REF/System.Net.Http.dll" "-r:$REF/System.Security.dll" "-r:$REF/Facades/netstandard.dll"
   "-r:$REF/Facades/System.Runtime.dll" "-r:$REF/Facades/System.ValueTuple.dll")
 cd "$D/src/DsfDesktop.Core"
 "$CSC" "${COMMON[@]}" -target:library -out:"$W\\DsfDesktop.Core.dll" -resource:"Bridge\\testpage.html,DsfDesktop.testpage.html" \

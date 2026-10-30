@@ -158,6 +158,9 @@ namespace DsfDesktop.Wow
             return GetWindowRect(hwnd, out r) ? r : (RECT?)null;
         }
 
+        /// <summary>the window's whole rectangle (what PrintWindow draws)</summary>
+        public static bool GetRect(IntPtr hwnd, out RECT r) => GetWindowRect(hwnd, out r);
+
         public static RECT? MonitorRect(string display) => display != null && Monitors().TryGetValue(display, out var r) ? r : (RECT?)null;
 
         [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT r, int size);

@@ -135,6 +135,39 @@ namespace DsfDesktop.Tests
             pc.Crash = null; pc.Screen = WowScreen.None; s.Connect(); A.Eq(null, s.Crash, "a new connect starts clean");
         }
 
+        // Battle.net's sign-in as measured 2026-10-30 (362 x 713): box lines, the eye at the right, the blue button
+        static int[] Sheet(bool eye, params int[] boxes)
+        {
+            const int w = 362, h = 713;
+            var px = new int[w * h];
+            for (int i = 0; i < px.Length; i++) px[i] = unchecked((int)0xFF14161C);
+            Action<int> line = y => { for (int x = 23; x < 337; x++) px[y * w + x] = unchecked((int)0xFF6B6C70); };
+            foreach (var top in boxes)
+            {
+                line(top); line(top + 39);
+                if (eye && top == boxes[boxes.Length - 1])
+                    for (int y = top + 15; y < top + 25; y++) for (int x = 308; x < 324; x++) px[y * w + x] = unchecked((int)0xFF0074E0);
+            }
+            for (int y = 349; y < 389; y++) for (int x = 23; x < 337; x++) px[y * w + x] = unchecked((int)0xFF0074E0);
+            return px;
+        }
+
+        [Test]
+        public static void TheSignInFormIsReadFromItsPicture()
+        {
+            var back = BnetForm.Detect(Sheet(true, 241), 362, 713);
+            A.True(back != null, "Welcome back");
+            A.True(back.Email == null, "the account is remembered");
+            A.Eq(260, back.Password.Y);
+            A.Eq(369, back.Button.Y);
+            var fresh = BnetForm.Detect(Sheet(true, 180, 241), 362, 713);
+            A.True(fresh != null && fresh.Email.HasValue, "email and password");
+            A.Eq(199, fresh.Email.Value.Y);
+            A.True(BnetForm.Detect(Sheet(false, 241), 362, 713) == null, "a box with no eye is never a password box");
+            A.True(BnetForm.Detect(Sheet(true, 120, 180, 241), 362, 713) == null, "three boxes: not a form we know");
+            A.True(BnetForm.Detect(new int[362 * 713], 362, 713) == null, "nothing there");
+        }
+
         [Test]
         public static void ShowRectIsTheWindowOnTheCapturedMonitor()
         {

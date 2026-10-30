@@ -537,6 +537,44 @@ namespace DsfDesktop.App
             return mon.HasValue && win.HasValue ? Displays.ShowRect(win.Value, mon.Value) : null;
         }
 
+        /// <summary>
+        /// The Thor is about to type its saved login (the user's ruling 2026-10-30): keys go to whichever window has the focus, so "ok" means
+        /// Battle.net's sign-in window is in front on the streamed monitor, NOW, and its form was found; the answer gives the Thor's clicks.
+        /// </summary>
+        public Dictionary<string, object> BnetReady()
+        {
+            var no = new Func<string, Dictionary<string, object>>(why => { Log.I("sign-in form: " + why); return new Dictionary<string, object> { ["ok"] = false, ["why"] = why }; });
+            var h = WowProbe.Bnet().Login;
+            if (h == IntPtr.Zero) return no("no sign-in window");
+            var list = SunshineDisplays();
+            var captured = list.Count > 0 ? Displays.Captured(list, Settings.CaptureDevice) : null;
+            if (captured == null) return no("no captured monitor");
+            if (!string.Equals(Displays.MonitorOf(h), captured, StringComparison.OrdinalIgnoreCase))
+            {
+                var moved = Displays.MoveTo(h, captured);
+                if (moved != null) return no(moved);
+                System.Threading.Thread.Sleep(300);
+            }
+            var focus = WowWindow.FocusHandle(h);
+            if (focus != null) return no(focus);
+            System.Threading.Thread.Sleep(150);
+            var px = BnetForm.Read(h, out int w, out int ht);
+            var form = BnetForm.Detect(px, w, ht);
+            if (form == null) return no("the form is not one we know");
+            var mon = Displays.MonitorRect(captured);
+            if (!mon.HasValue || !Displays.GetRect(h, out var win)) return no("no window rectangle");
+            if (!WowWindow.IsForegroundHandle(h)) return no("another window took the front");
+            var d = new Dictionary<string, object>
+            {
+                ["ok"] = true,
+                ["password"] = BnetForm.Share(form.Password, win, mon.Value),
+                ["button"] = BnetForm.Share(form.Button, win, mon.Value),
+            };
+            if (form.Email.HasValue) d["email"] = BnetForm.Share(form.Email.Value, win, mon.Value);
+            Log.I("sign-in form found (" + (form.Email.HasValue ? "email and password" : "password") + ")");
+            return d;
+        }
+
         static DateTime SafeStart(System.Diagnostics.Process p) { try { return p.StartTime; } catch (Exception) { return DateTime.Now; } }
 
         /// <summary>after a crash: the dead client (its crash window) goes, Battle.net comes to the front so the player can update WoW

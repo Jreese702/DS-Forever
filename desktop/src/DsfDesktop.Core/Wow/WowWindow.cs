@@ -110,6 +110,8 @@ namespace DsfDesktop.Wow
             return GetForegroundWindow() == h ? null : "Windows kept another window in front";
         }
 
+        public static bool IsForegroundHandle(IntPtr h) => h != IntPtr.Zero && GetForegroundWindow() == h;
+
         [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
