@@ -79,12 +79,12 @@ object LoadingMath {
         return (lo + (s - ARRIVE[lo]) / (ARRIVE[hi] - ARRIVE[lo])) / ARRIVE_N
     }
     const val HOLD = 2.2f
-    const val FADE = 2.6f
+    const val FADE = 3.0f
     const val TAIL = 0.55f
     /** the light comes up over [RISE] s after the spark passed (a soft leading edge, eased ^1.5) */
     const val RISE = 0.7f
     /** a new pass this often (the v8 study: 0 black frames at 6.6; v11 5.0 for its shorter journey, the same hand-over; LoadingMathTest measures it) */
-    const val EVERY = 5.0f
+    const val EVERY = 5.6f
     /** the first spark has already started when the app shows (no black bottom screen at launch) */
     const val LEAD = 1.5f
     const val SWIRL = 4000f
