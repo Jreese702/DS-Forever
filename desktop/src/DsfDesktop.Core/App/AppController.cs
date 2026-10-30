@@ -484,6 +484,49 @@ namespace DsfDesktop.App
             return WowFlow.Bnet(WowLaunch.FindBattleNet() != null, w.Running, w.UptimeS, w.Login != IntPtr.Zero, w.Any);
         }
 
+        DateTime wantedAt = DateTime.MaxValue;
+        int crashedPid = -1;
+
+        /// <summary>
+        /// The client crashed (the user's PC 2026-10-29: "Fatal Error - Wow.exe", the client older than the game's data): its crash
+        /// window is up, or it is gone and wrote a crash report since the Thor asked for it. "update" / "crash", null = no crash.
+        /// </summary>
+        string CrashNow()
+        {
+            var p = WowWindow.FindAny(FlavorDirOrNull);
+            try
+            {
+                if (p != null && !WowProbe.FatalErrorShown(p.Id)) return null;
+                var since = p != null ? SafeStart(p).AddSeconds(-5) : wantedAt;
+                if (since == DateTime.MaxValue) return null;
+                var report = WowProbe.CrashReport(FlavorDirOrNull, since);
+                if (report == null && p == null) return null;
+                if (p != null) crashedPid = p.Id;
+                Log.I("WoW crashed: " + WowFlow.CrashLine(report));
+                return WowFlow.CrashKind(report);
+            }
+            finally { p?.Dispose(); }
+        }
+
+        static DateTime SafeStart(System.Diagnostics.Process p) { try { return p.StartTime; } catch (Exception) { return DateTime.Now; } }
+
+        /// <summary>after a crash: the dead client (its crash window) goes, Battle.net comes to the front so the player can update WoW
+        /// through the stream (nothing is pressed for them)</summary>
+        void AfterCrash()
+        {
+            try
+            {
+                if (crashedPid > 0)
+                    using (var p = System.Diagnostics.Process.GetProcessById(crashedPid))
+                        if (WowProbe.FatalErrorShown(p.Id)) { Log.I("WoW crashed: closing its crash window (pid " + p.Id + ")"); p.Kill(); p.WaitForExit(5000); }
+            }
+            catch (Exception) { }
+            var b = WowProbe.Bnet();
+            if (!b.Running) { WowProbe.StartBattleNet(WowLaunch.FindBattleNet()); return; }
+            var h = b.Login != IntPtr.Zero ? b.Login : WowProbe.BnetMain();
+            if (h != IntPtr.Zero) Log.I("WoW crashed: Battle.net to the front: " + (WowWindow.FocusHandle(h) ?? "done"));
+        }
+
         /// <summary>a stream (the Thor) wants WoW: start the supervisor unless it is already at work; never again for 2 minutes after
         /// it gave up (a flaky bridge reconnecting must not loop the game)</summary>
         void Want(string why)
@@ -491,6 +534,7 @@ namespace DsfDesktop.App
             if (Supervisor.Active) { Supervisor.Step(); return; }
             if (Supervisor.NeedsYou && DateTime.UtcNow - needsYouAt < TimeSpan.FromMinutes(2)) return;
             Log.I("WoW wanted: " + why);
+            wantedAt = DateTime.Now;
             Supervisor.Connect();
         }
 
@@ -525,14 +569,17 @@ namespace DsfDesktop.App
                 startWow: () => { Starter.Ensure(); return Starter.State == WowState.StartFailed ? Starter.Why : null; },
                 startPending: () => Starter.State == WowState.Starting,
                 closeWow: CloseForRestart,
-                focusWow: () => { CheckCapture(); return FocusWow(); });
+                focusWow: () => { CheckCapture(); return FocusWow(); },
+                crash: CrashNow);
             Supervisor.Changed += (a, detail) =>
             {
                 if (a == WowAction.NeedsYou) needsYouAt = DateTime.UtcNow;
+                if (a == WowAction.Crashed) { needsYouAt = DateTime.UtcNow; Task.Run(AfterCrash); }
                 var text = a == WowAction.StartBattleNet ? "Starting Battle.net on your PC…"
                          : a == WowAction.ShowBattleNetSignIn ? "Sign in to Battle.net"
                          : a == WowAction.RestartWow ? "WoW was at its login screen: starting it again…"
-                         : a == WowAction.NeedsYou ? WowFlow.NeedsYouText : null;
+                         : a == WowAction.NeedsYou ? WowFlow.NeedsYouText
+                         : a == WowAction.Crashed ? (detail == "update" ? WowFlow.UpdateText : WowFlow.CrashText) : null;
                 if (text != null) Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = text });
                 PublishWow(force: true);
             };
@@ -551,6 +598,7 @@ namespace DsfDesktop.App
                 ["bnet"] = WowFlow.Word(LastBnet),
                 ["needs_you"] = Supervisor?.NeedsYou ?? false,
             };
+            if (Supervisor?.Crash != null) d["crash"] = Supervisor.Crash;
             if (Starter.Why != null) d["why"] = Starter.Why;
             if (err != null) d["login_error"] = err;
             return d;
@@ -561,6 +609,10 @@ namespace DsfDesktop.App
         {
             LastScreen = ScreenNow();
             LastBnet = BnetNow();
+            // the player updated and started WoW again (a client that is not the crashed one, without a crash window)
+            if (Supervisor.Crash != null && LastScreen != WowScreen.None)
+                using (var p = WowWindow.FindAny(FlavorDirOrNull))
+                    if (p != null && p.Id != crashedPid && !WowProbe.FatalErrorShown(p.Id)) Supervisor.CrashOver();
             if (Supervisor.Active) Supervisor.Step();
             PublishWow(force: false);
         }

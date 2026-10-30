@@ -90,6 +90,7 @@ namespace DsfDesktop.Tests
             public readonly List<string> Did = new List<string>();
             /// <summary>where a freshly started client goes</summary>
             public WowScreen FreshGoesTo = WowScreen.Starting;
+            public string Crash;
 
             public WowSupervisor Make() => new WowSupervisor(
                 screen: () => Screen, bnet: () => Bnet,
@@ -99,7 +100,7 @@ namespace DsfDesktop.Tests
                 startPending: () => Pending,
                 closeWow: () => { Did.Add("close"); Screen = WowScreen.None; return null; },
                 focusWow: () => { Did.Add("focus"); return null; },
-                run: a => a());
+                run: a => a(), crash: () => Crash);
         }
 
         [Test]
@@ -114,6 +115,24 @@ namespace DsfDesktop.Tests
             pc.Screen = WowScreen.Login; s.Step();                      // the fresh one lands at the login screen too
             A.True(s.NeedsYou, "never a loop"); A.False(s.Active);
             A.Eq("close,start", string.Join(",", pc.Did), "no second restart");
+        }
+
+        [Test]
+        public static void ACrashStopsTheStartsAndSaysWhy()
+        {
+            // the user's PC 2026-10-29: the client crashed on start (older than the game's data) - never started again in a loop
+            var report = "Error: ERROR #134 (0x85100086) Fatal condition!\r\nDescription: Invalid schema WOWSTATIC_12_1_5_70077 for Table StartupFiles\r\n";
+            A.Eq("update", WowFlow.CrashKind(report));
+            A.Eq("crash", WowFlow.CrashKind("Error: ERROR #132 (0x85100084) Fatal exception!"));
+            A.Eq("Invalid schema WOWSTATIC_12_1_5_70077 for Table StartupFiles", WowFlow.CrashLine(report));
+            var pc = new Pc { Screen = WowScreen.None };
+            var s = pc.Make();
+            s.Connect(); A.Eq("start", string.Join(",", pc.Did));
+            pc.Crash = "update"; pc.Screen = WowScreen.Login; s.Step();
+            A.Eq(WowAction.Crashed, s.Last); A.Eq("update", s.Crash); A.False(s.Active);
+            A.Eq("start", string.Join(",", pc.Did), "no restart after a crash");
+            s.CrashOver(); A.Eq(null, s.Crash);
+            pc.Crash = null; pc.Screen = WowScreen.None; s.Connect(); A.Eq(null, s.Crash, "a new connect starts clean");
         }
 
         [Test]

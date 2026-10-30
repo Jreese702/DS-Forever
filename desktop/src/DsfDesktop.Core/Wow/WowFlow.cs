@@ -10,7 +10,7 @@ namespace DsfDesktop.Wow
     public enum BnetState { Unknown, NotRunning, Starting, SignInNeeded, SignedIn }
 
     /// <summary>what to do now, for a stream that wants WoW (the user, 2026-10-28)</summary>
-    public enum WowAction { Wait, StartBattleNet, ShowBattleNetSignIn, StartWow, RestartWow, Focus, NeedsYou }
+    public enum WowAction { Wait, StartBattleNet, ShowBattleNetSignIn, StartWow, RestartWow, Focus, NeedsYou, Crashed }
 
     /// <summary>
     /// What the game wrote, as far as signing in goes. WoW's General.log is block-buffered (~48 KiB): on the PC, a client at the
@@ -170,6 +170,33 @@ namespace DsfDesktop.Wow
                 default: return "unknown";
             }
         }
+
+        /// <summary>
+        /// A crash report (the game's Errors\*.txt, 2026-10-29 on the user's PC: "ERROR #134 (0x85100086) Fatal condition! ... Invalid
+        /// schema WOWSTATIC_12_1_5_70077 for Table StartupFiles" = the client's files are older than the game's data: Battle.net has an
+        /// update for it) -> "update"; any other crash -> "crash".
+        /// </summary>
+        public static string CrashKind(string report)
+        {
+            var r = report ?? "";
+            return r.IndexOf("Invalid schema", StringComparison.OrdinalIgnoreCase) >= 0 ? "update" : "crash";
+        }
+
+        /// <summary>the report's one line worth logging (its Description, else its Error line)</summary>
+        public static string CrashLine(string report)
+        {
+            string err = null;
+            foreach (var raw in (report ?? "").Split('\n'))
+            {
+                var l = raw.Trim();
+                if (l.StartsWith("Description:")) return l.Substring(12).Trim();
+                if (err == null && l.StartsWith("Error:")) err = l.Substring(6).Trim();
+            }
+            return err ?? "";
+        }
+
+        public const string UpdateText = "Update WoW in Battle.net";
+        public const string CrashText = "WoW crashed on your PC";
 
         /// <summary>the message for the player when the one retry did not get WoW signed in</summary>
         public const string NeedsYouText = "Sign-in needs you on the PC's Battle.net";

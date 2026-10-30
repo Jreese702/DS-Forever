@@ -131,6 +131,62 @@ namespace DsfDesktop.Wow
             catch (Exception e) { return e.Message; }
         }
 
+        // ---------------------------------------------------------------- the game's crash
+
+        /// <summary>the game's crash window ("Fatal Error - Wow.exe", 2026-10-29 on the user's PC): its client is dead behind it</summary>
+        public const string FatalTitle = "Fatal Error";
+
+        /// <summary>process [pid] shows the game's crash window</summary>
+        public static bool FatalErrorShown(int pid)
+        {
+            bool found = false;
+            EnumWindows((h, l) =>
+            {
+                GetWindowThreadProcessId(h, out uint wp);
+                if (wp != (uint)pid || !IsWindowVisible(h)) return true;
+                var sb = new StringBuilder(256);
+                GetWindowText(h, sb, sb.Capacity);
+                if (sb.ToString().StartsWith(FatalTitle, StringComparison.OrdinalIgnoreCase)) { found = true; return false; }
+                return true;
+            }, IntPtr.Zero);
+            return found;
+        }
+
+        /// <summary>the newest crash report in [flavorDir]\Errors written since [since] (its text), null = none</summary>
+        public static string CrashReport(string flavorDir, DateTime since)
+        {
+            try
+            {
+                if (flavorDir == null) return null;
+                var dir = System.IO.Path.Combine(flavorDir, "Errors");
+                if (!System.IO.Directory.Exists(dir)) return null;
+                var f = new System.IO.DirectoryInfo(dir).GetFiles("*.txt").Where(x => x.LastWriteTime >= since)
+                    .OrderByDescending(x => x.LastWriteTime).FirstOrDefault();
+                return f == null ? null : System.IO.File.ReadAllText(f.FullName);
+            }
+            catch (Exception) { return null; }
+        }
+
+        /// <summary>Battle.net's main window (titled "Battle.net", visible), Zero = none</summary>
+        public static IntPtr BnetMain()
+        {
+            IntPtr found = IntPtr.Zero;
+            Process[] ps;
+            try { ps = Process.GetProcessesByName("Battle.net"); } catch (Exception) { return found; }
+            var pids = new HashSet<uint>(ps.Select(p => (uint)p.Id));
+            foreach (var p in ps) p.Dispose();
+            EnumWindows((h, l) =>
+            {
+                GetWindowThreadProcessId(h, out uint pid);
+                if (!pids.Contains(pid) || !IsWindowVisible(h)) return true;
+                var sb = new StringBuilder(256);
+                GetWindowText(h, sb, sb.Capacity);
+                if (sb.ToString() == "Battle.net") { found = h; return false; }
+                return true;
+            }, IntPtr.Zero);
+            return found;
+        }
+
         delegate bool EnumProc(IntPtr h, IntPtr l);
         [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc p, IntPtr l);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);

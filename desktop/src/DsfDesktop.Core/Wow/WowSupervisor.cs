@@ -19,6 +19,7 @@ namespace DsfDesktop.Wow
         readonly Func<string> closeWow;
         readonly Func<string> focusWow;
         readonly Func<DateTime> now;
+        readonly Func<string> crash;
         readonly Action<Action> run;
         readonly object gate = new object();
 
@@ -30,6 +31,9 @@ namespace DsfDesktop.Wow
         public WowAction Last { get; private set; } = WowAction.Wait;
         /// <summary>the one retry is spent and WoW is still not signed in</summary>
         public bool NeedsYou { get; private set; }
+        /// <summary>the client crashed during this connect: "update" (Battle.net has an update for it) / "crash"; null = none. Nothing
+        /// is started again then (a client that cannot start would crash in a loop): the player updates it in Battle.net</summary>
+        public string Crash { get; private set; }
         public bool Active { get { lock (gate) return active; } }
         /// <summary>(action, detail) when the action changes</summary>
         public event Action<WowAction, string> Changed;
@@ -39,12 +43,13 @@ namespace DsfDesktop.Wow
         /// <param name="run">how a blocking restart runs (a background task; the tests run it inline)</param>
         public WowSupervisor(Func<WowScreen> screen, Func<BnetState> bnet, Func<string> startBnet, Func<string> showBnetSignIn,
                              Func<string> startWow, Func<bool> startPending, Func<string> closeWow, Func<string> focusWow,
-                             Func<DateTime> now = null, Action<Action> run = null)
+                             Func<DateTime> now = null, Action<Action> run = null, Func<string> crash = null)
         {
             this.screen = screen; this.bnet = bnet; this.startBnet = startBnet; this.showBnetSignIn = showBnetSignIn;
             this.startWow = startWow; this.startPending = startPending; this.closeWow = closeWow; this.focusWow = focusWow;
             this.now = now ?? (() => DateTime.UtcNow);
             this.run = run ?? (a => Task.Run(a));
+            this.crash = crash ?? (() => null);
         }
 
         /// <summary>the Thor connected (a stream starts): a client already sitting at the login screen counts as the first try</summary>
@@ -52,7 +57,7 @@ namespace DsfDesktop.Wow
         {
             lock (gate)
             {
-                active = true; NeedsYou = false; restarting = false;
+                active = true; NeedsYou = false; restarting = false; Crash = null;
                 var s = screen();
                 Tries = s == WowScreen.Login || s == WowScreen.SigningIn || s == WowScreen.Starting ? 1 : 0;
                 Last = WowAction.Wait;
@@ -61,6 +66,9 @@ namespace DsfDesktop.Wow
         }
 
         public void Disconnect() { lock (gate) active = false; }
+
+        /// <summary>a healthy client runs again (the player updated and started it): the crash is behind us</summary>
+        public void CrashOver() { lock (gate) Crash = null; }
 
         void Set(WowAction a, string detail)
         {
@@ -76,6 +84,14 @@ namespace DsfDesktop.Wow
             lock (gate)
             {
                 if (!active) return;
+                var c = crash();
+                if (c != null)
+                {
+                    active = false;
+                    Crash = c;
+                    Set(WowAction.Crashed, c);
+                    return;
+                }
                 var b = bnet();
                 var s = screen();
                 var a = WowFlow.Decide(b, s, Tries, restarting || startPending());
