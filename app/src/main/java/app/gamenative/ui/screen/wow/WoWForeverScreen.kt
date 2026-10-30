@@ -728,9 +728,12 @@ fun WoWForeverScreen(
         // the start-up chooser's panel first while it shows (it is composed over this screen's checks since 2026-10-28), then the
         // setup's buttons: one route (StartKeys), the same the bottom window uses when it holds the focus
         val keys: (AndroidEvent.KeyEvent) -> Boolean = { e -> com.jrees.wowcompanion.StartKeys.route(e.event) }
+        val motion: (AndroidEvent.MotionEvent) -> Boolean = { e -> e.event?.let { com.jrees.wowcompanion.StartKeys.motion(it) } == true }
         PluviaApp.events.on<AndroidEvent.KeyEvent, Boolean>(keys)
+        PluviaApp.events.on<AndroidEvent.MotionEvent, Boolean>(motion)
         onDispose {
             PluviaApp.events.off<AndroidEvent.KeyEvent, Boolean>(keys)
+            PluviaApp.events.off<AndroidEvent.MotionEvent, Boolean>(motion)
             com.jrees.wowcompanion.SetupBridge.launcherActions = null
             com.jrees.wowcompanion.SetupBridge.launcherRefresh = null
         }

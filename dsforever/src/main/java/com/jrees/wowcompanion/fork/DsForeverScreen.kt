@@ -330,6 +330,9 @@ private class HostPresentation(outer: Context, display: Display, private val onR
         return super.dispatchKeyEvent(event)
     }
 
+    override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean =
+        com.jrees.wowcompanion.StartKeys.motion(ev) || super.dispatchGenericMotionEvent(ev)
+
     private fun focusable(on: Boolean) {
         typing = on
         val w = window ?: return
