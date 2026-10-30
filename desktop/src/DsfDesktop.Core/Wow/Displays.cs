@@ -132,6 +132,36 @@ namespace DsfDesktop.Wow
             return new RECT { Left = x, Top = y, Right = x + w, Bottom = y + h };
         }
 
+        /// <summary>
+        /// The window's place on the captured monitor as the Thor's "show" word: "x,y,w,h", each a share (0..1) of the monitor, with a
+        /// small margin round it; null = not on that monitor. The Thor zooms the stream onto it and blacks out the rest (the user,
+        /// 2026-10-30: "I kind of expected a simple sign in window for bnet to appear on the top screen. I dont really want to see my
+        /// desktop screen for any reason").
+        /// </summary>
+        public static string ShowRect(RECT win, RECT mon)
+        {
+            if (mon.W <= 0 || mon.H <= 0 || win.W <= 0 || win.H <= 0) return null;
+            if (win.Right <= mon.Left || win.Left >= mon.Right || win.Bottom <= mon.Top || win.Top >= mon.Bottom) return null;
+            double m = 6;
+            double l = Math.Max(mon.Left, win.Left - m), t = Math.Max(mon.Top, win.Top - m);
+            double r = Math.Min(mon.Right, win.Right + m), b = Math.Min(mon.Bottom, win.Bottom + m);
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            return string.Join(",", new[] { (l - mon.Left) / mon.W, (t - mon.Top) / mon.H, (r - l) / mon.W, (b - t) / mon.H }
+                .Select(v => v.ToString("0.0000", ci)));
+        }
+
+        /// <summary>the window's VISIBLE rectangle (without the invisible resize borders round it), null = none</summary>
+        public static RECT? Visible(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return null;
+            if (DwmGetWindowAttribute(hwnd, 9 /* DWMWA_EXTENDED_FRAME_BOUNDS */, out RECT r, Marshal.SizeOf(typeof(RECT))) == 0 && r.W > 0) return r;
+            return GetWindowRect(hwnd, out r) ? r : (RECT?)null;
+        }
+
+        public static RECT? MonitorRect(string display) => display != null && Monitors().TryGetValue(display, out var r) ? r : (RECT?)null;
+
+        [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT r, int size);
+
         /// <summary>moves the window to the named monitor; null = done, else why not</summary>
         public static string MoveTo(IntPtr hwnd, string display)
         {

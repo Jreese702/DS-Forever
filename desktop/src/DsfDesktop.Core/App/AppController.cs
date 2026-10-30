@@ -508,6 +508,35 @@ namespace DsfDesktop.App
             finally { p?.Dispose(); }
         }
 
+        DateTime lastShowMove = DateTime.MinValue;
+
+        /// <summary>
+        /// While the player has to use Battle.net through the stream (its sign-in, an update after a crash, a sign-in that needs them):
+        /// Battle.net's window on the captured monitor (moved there if it is elsewhere) as the Thor's "show" rectangle, so the Thor shows
+        /// THAT window alone, never the desktop round it. null = nothing to show.
+        /// </summary>
+        string ShowRectNow()
+        {
+            var sv = Supervisor;
+            if (sv == null) return null;
+            bool wanted = LastBnet == BnetState.SignInNeeded || sv.Crash != null || sv.NeedsYou;
+            if (!wanted) return null;
+            var b = WowProbe.Bnet();
+            var h = b.Login != IntPtr.Zero ? b.Login : WowProbe.BnetMain();
+            if (h == IntPtr.Zero) return null;
+            var list = SunshineDisplays();
+            var captured = list.Count > 0 ? Displays.Captured(list, Settings.CaptureDevice) : null;
+            if (captured == null) return null;
+            if (!string.Equals(Displays.MonitorOf(h), captured, StringComparison.OrdinalIgnoreCase) && DateTime.UtcNow - lastShowMove > TimeSpan.FromSeconds(5))
+            {
+                lastShowMove = DateTime.UtcNow;
+                Log.I("Battle.net to the captured monitor " + captured + ": " + (Displays.MoveTo(h, captured) ?? "done"));
+            }
+            var mon = Displays.MonitorRect(captured);
+            var win = Displays.Visible(h);
+            return mon.HasValue && win.HasValue ? Displays.ShowRect(win.Value, mon.Value) : null;
+        }
+
         static DateTime SafeStart(System.Diagnostics.Process p) { try { return p.StartTime; } catch (Exception) { return DateTime.Now; } }
 
         /// <summary>after a crash: the dead client (its crash window) goes, Battle.net comes to the front so the player can update WoW
@@ -599,6 +628,8 @@ namespace DsfDesktop.App
                 ["needs_you"] = Supervisor?.NeedsYou ?? false,
             };
             if (Supervisor?.Crash != null) d["crash"] = Supervisor.Crash;
+            var show = ShowRectNow();
+            if (show != null) d["show"] = show;
             if (Starter.Why != null) d["why"] = Starter.Why;
             if (err != null) d["login_error"] = err;
             return d;

@@ -136,6 +136,16 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
+        public static void ShowRectIsTheWindowOnTheCapturedMonitor()
+        {
+            // the captured monitor at 1920,0 (2560 x 1440); Battle.net's sign-in 400 x 600 at its middle
+            var mon = new Displays.RECT { Left = 1920, Top = 0, Right = 4480, Bottom = 1440 };
+            var win = new Displays.RECT { Left = 1920 + 1080, Top = 420, Right = 1920 + 1480, Bottom = 1020 };
+            A.Eq("0.4195,0.2875,0.1609,0.4250", Displays.ShowRect(win, mon));
+            A.Eq(null, Displays.ShowRect(new Displays.RECT { Left = 0, Top = 0, Right = 400, Bottom = 600 }, mon), "on another monitor");
+        }
+
+        [Test]
         public static void NotRunningStartsAndRetriesOnce()
         {
             var pc = new Pc { Screen = WowScreen.None };
