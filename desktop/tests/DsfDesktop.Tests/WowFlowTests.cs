@@ -153,6 +153,14 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
+        public static void TheControllerSettingsAreOnOnce()
+        {
+            var a = WowConfig.Apply("SET locale \"enUS\"\r\nSET GamePadEnable \"0\"\r\n");
+            A.Eq("SET locale \"enUS\"\r\nSET GamePadEnable \"1\"\r\nSET InputDeviceInterfaceStyle \"1\"\r\n", a);
+            A.Eq(a, WowConfig.Apply(a));
+        }
+
+        [Test]
         public static void TheSignInFormIsReadFromItsPicture()
         {
             var back = BnetForm.Detect(Sheet(true, 241), 362, 713);

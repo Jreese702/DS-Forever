@@ -120,6 +120,7 @@ namespace DsfDesktop.Wow
         {
             try
             {
+                WowConfig.Ensure(Path.Combine(p.WorkDir ?? "", "WTF", "Config.wtf"));
                 // through the shell: the game must not inherit Desktop's handles (2026-10-30: a crashed Wow.exe kept the bridge port 48210)
                 Process.Start(new ProcessStartInfo(p.Exe, p.Args) { WorkingDirectory = p.WorkDir, UseShellExecute = true })?.Dispose();
                 return null;
