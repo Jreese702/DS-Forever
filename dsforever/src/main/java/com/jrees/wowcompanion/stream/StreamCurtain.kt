@@ -60,7 +60,7 @@ object StreamCurtain {
             else curtain(listOf(row(LOOKING, false)), problem ?: "Connecting to your PC")
         // WoW itself is up and refused the sign-in: the whole of WoW, its own message and its buttons (the user, 2026-10-30: "why doesn't
         // it show the full wow window when it shows this login error?"), not Battle.net's window
-        if (connected && atLogin(pc) && (pc.loginError.isNotEmpty() || pc.needsYou) && pc.crash.isEmpty() && pc.bnet != "signin_needed")
+        if (connected && atLogin(pc) && pc.loginError.isNotEmpty() && pc.needsYou && pc.crash.isEmpty() && pc.bnet != "signin_needed")
             return Shows.Stream
         // the player must use Battle.net (its sign-in; an update after a crash; a sign-in that needs them): its window alone, zoomed, once
         // Desktop says where it is; until then the curtain with the same line (never the desktop)
