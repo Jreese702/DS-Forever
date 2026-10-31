@@ -119,7 +119,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     /** what the top screen shows over the stream now (StreamCurtain's rule) */
     private fun shows(): StreamCurtain.Shows = StreamCurtain.decide(screen == Screen.STREAMING, host?.hasBridge == true, pc,
-        ((android.os.SystemClock.uptimeMillis() / 500) % 4).toInt(), route?.label.orEmpty(), reachProblem, signIn.working, loginLong())
+        ((android.os.SystemClock.uptimeMillis() / 500) % 4).toInt(), route?.label.orEmpty(), reachProblem, signIn.working, loginLong(), seen)
+
+    /** WoW has shown in this stream: losing the front no longer hides it */
+    private var seen = false
 
     /** the way the PC was reached this time (home Wi-Fi / Tailscale), null = not yet */
     private var route: Route.Kind? = null
@@ -132,6 +135,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun applyCurtain() {
         val starting = screen == Screen.STREAMING || screen == Screen.CONNECTING
         val s = shows()
+        if (s === StreamCurtain.Shows.Stream && screen == Screen.STREAMING) seen = true
         val up = starting && s is StreamCurtain.Shows.Curtain
         curtainView.visibility = if (up) View.VISIBLE else View.GONE
         // the connecting card would sit on the curtain: the curtain says it ("Connecting to your PC")
@@ -428,6 +432,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     private fun teardown() {
+        seen = false
         SetupBridge.openPcKeyboard = null
         boardByHand = false
         board(false)

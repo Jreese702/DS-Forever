@@ -14,6 +14,9 @@ import com.jrees.wowcompanion.SetupFlow
  *
  * WoW can stop before character select and wait for the player (the user, 2026-10-30, its gameplay rules after an update: "I should see
  * wow on my game now"), so WoW in front and still at its login steps after [LOGIN_SHOW_MS] shows ([atLoginLong]).
+ *
+ * Once shown it stays ([seen], the user, 2026-10-30: "When something else takes the screen focus it hides wow completely"): losing the
+ * front never brings the curtain back; WoW closing, a crash or Battle.net needing the player still do.
  */
 object StreamCurtain {
 
@@ -46,7 +49,7 @@ object StreamCurtain {
      * "Loading" while nothing more precise is known.
      */
     fun decide(connected: Boolean, bridged: Boolean, pc: PcWow?, dots: Int = 3, route: String = "", problem: String? = null,
-               signingIn: Boolean = false, atLoginLong: Boolean = false): Shows {
+               signingIn: Boolean = false, atLoginLong: Boolean = false, seen: Boolean = false): Shows {
         // "PC found" only once the PC ANSWERED (the bridge's welcome: [pc] set; Sunshine alone: the stream up), with the way it was
         // reached ([route]: "home Wi-Fi" / "Tailscale"); before that "Looking for your PC" (party3 said "PC found" while the PC never
         // got a connection: the Thor's Tailscale was off); [problem] = why no address answered (Route.unreachable)
@@ -69,7 +72,7 @@ object StreamCurtain {
         if (bnetLine != null) return if (connected && pc.show.size == 4) Shows.SignIn(bnetLine, pc.show)
             else curtain(listOf(row(found, true), row("Battle.net", false)), bnetLine)
         val known = pc.screen.isNotEmpty()
-        val open = if (known) (pc.signedIn || (atLoginLong && atLogin(pc))) && pc.focused == true else pc.state == "running" && pc.focused != false
+        val open = if (known) (pc.signedIn || (atLoginLong && atLogin(pc))) && (pc.focused == true || seen) else pc.state == "running" && pc.focused != false
         if (connected && open) return Shows.Stream
         val bnetOk = pc.bnet.isEmpty() || pc.bnet == "signed_in" || pc.bnet == "unknown"
         val running = pc.state == "running"

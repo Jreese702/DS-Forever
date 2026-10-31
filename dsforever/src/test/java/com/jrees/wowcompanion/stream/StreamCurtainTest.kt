@@ -133,4 +133,11 @@ class StreamCurtainTest {
         assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, rules, atLoginLong = true))
         assertEquals("Signing in", curtain(StreamCurtain.decide(true, true, rules.copy(focused = false), atLoginLong = true)).line)
     }
+
+    @Test fun wowOnceShownStaysWhenItLosesTheFront() {
+        val behind = PcWow(state = "running", focused = false, screen = "world", bnet = "signed_in")
+        assertEquals("Bringing WoW to the front", curtain(StreamCurtain.decide(true, true, behind)).line)
+        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, behind, seen = true))
+        assertEquals("Starting WoW on your PC", curtain(StreamCurtain.decide(true, true, behind.copy(state = "stopped", screen = "none"), seen = true)).line)
+    }
 }
