@@ -29,7 +29,7 @@ object SetupBridge {
     @Volatile var updateLogin: (() -> Unit)? = null
     /** "Report a problem" on the setup screen (board f-problem-report): the companion opens its report screen */
     @Volatile var openReport: (() -> Unit)? = null
-    /** the keyboard / trackpad that drives the PC, on the bottom screen; null = no stream to send it to */
+    /** the keyboard / trackpad on the bottom screen; null = no game or stream to send it to */
     @Volatile var openPcKeyboard: (() -> Unit)? = null
     /** the out-of-date folder's pop-up was OK'd: not again this run (the red check line stays) */
     @Volatile var staleOk = false

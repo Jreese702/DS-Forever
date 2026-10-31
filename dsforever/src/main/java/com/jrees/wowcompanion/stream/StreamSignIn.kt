@@ -10,6 +10,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import com.jrees.wowcompanion.ChatKeyboard
+import com.jrees.wowcompanion.GameTyping
 import com.jrees.wowcompanion.InputSink
 import com.jrees.wowcompanion.TapSink
 import com.jrees.wowcompanion.TrackpadView
@@ -123,13 +124,12 @@ class SignInBoard(c: Context, private val onClose: () -> Unit) : FrameLayout(c) 
         sendWord = "Enter"; swapWord = "Tab"; fillHeight = BOARD_H
         text = { HELD }
         onText = { new ->
-            if (toPc()) {
-                if (new.length < HELD.length) { InputSink.signInBack(); count = (count - 1).coerceAtLeast(0) }
-                else { InputSink.signInChar(new.last()); count++ }
-                dots.invalidate()
-            }
+            // a local game: only what the key-safety ruling allows (GameTyping); the stream's Battle.net takes any character
+            if (new.length < HELD.length) { InputSink.signInBack(); count = (count - 1).coerceAtLeast(0) }
+            else if (toPc() || GameTyping.allowed(new.last())) { InputSink.signInChar(new.last()); count++ }
+            dots.invalidate()
         }
-        onSend = { if (toPc()) { InputSink.gameEnter(); clear() } }
+        onSend = { InputSink.gameEnter(); clear() }
         onSwap = { tab() }
     }
 
@@ -149,10 +149,13 @@ class SignInBoard(c: Context, private val onClose: () -> Unit) : FrameLayout(c) 
         dots.visibility = if (t == 0) View.VISIBLE else View.GONE
         kb.visibility = if (t == 0) View.VISIBLE else View.GONE
         pad.visibility = if (t == 1) View.VISIBLE else View.GONE
+        InputSink.gamePointer(t == 1)                  // a local game hides its cursor in gamepad mode
         head.invalidate()
     }
 
-    /** only ever the stream, never a local game */
+    override fun onDetachedFromWindow() { InputSink.gamePointer(false); super.onDetachedFromWindow() }
+
+    /** Tab goes only to the stream, never a local game (the key-safety ruling) */
     private fun toPc() = (InputSink.sink as? TapSink)?.route == "stream"
     private fun clear() { count = 0; dots.invalidate() }
     private fun tab() { if (toPc()) { InputSink.signInTab(); clear() } }

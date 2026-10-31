@@ -92,6 +92,9 @@ class DsForeverScreen(private val context: Context) {
         LauncherHooks.gameStartSec = System.currentTimeMillis() / 1000
         lastRx = -1L; note("game screen up"); main.removeCallbacks(traffic); main.post(traffic)
         com.jrees.wowcompanion.GameLife.started()             // issue #12: the game's life in DS Forever's own log
+        // the waiting screen's Keyboard, as in Streaming (the user, 2026-10-30: "On the local side I want that same keyboard button")
+        signInClose = { signInBoard(false) }
+        com.jrees.wowcompanion.SetupBridge.openPcKeyboard = { signInBoard(true) }
         Log.i(TAG, "game attached (input: $route)")
     }
 
@@ -119,6 +122,8 @@ class DsForeverScreen(private val context: Context) {
     fun detachGame() {
         if (!gameOn) return
         gameOn = false; input = null; InputSink.sink = null
+        com.jrees.wowcompanion.SetupBridge.openPcKeyboard = null
+        signInBoard(false)
         com.jrees.wowcompanion.NativeLogin.end(context)        // the native sign-in's backstop: never a login.txt after the game screen; the probe stops
         main.removeCallbacks(traffic)
         note("game screen gone")

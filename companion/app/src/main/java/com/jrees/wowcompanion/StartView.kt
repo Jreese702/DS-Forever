@@ -67,7 +67,7 @@ class StartView(context: Context) : View(context) {
         val row = login != Login.NONE
         hits.clear()
         // the line in one metal panel, framed by Report and the PC's keyboard (the user, 2026-10-30: "framed between the two buttons in
-        // like a fancy looking one part panel"); the keyboard only while a PC's stream can take it
+        // like a fancy looking one part panel"); the keyboard only while a game or stream can take it
         val sideTop = height - ROW_DOWN - BUTTON_H
         val panel = RectF(SIDE_M + SIDE_W + GAP, sideTop, width - SIDE_M - SIDE_W - GAP, sideTop + BUTTON_H)
         UiKit.module(c, panel)
