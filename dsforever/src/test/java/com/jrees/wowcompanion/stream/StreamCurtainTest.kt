@@ -140,4 +140,11 @@ class StreamCurtainTest {
         assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, behind, seen = true))
         assertEquals("Starting WoW on your PC", curtain(StreamCurtain.decide(true, true, behind.copy(state = "stopped", screen = "none"), seen = true)).line)
     }
+
+    @Test fun wowsOwnLoginErrorShowsWholeWow() {
+        val refused = PcWow(state = "running", focused = true, screen = "login", bnet = "signed_in", needsYou = true, loginError = "308",
+            show = listOf(0.1f, 0.1f, 0.2f, 0.4f))
+        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, refused))
+        assertEquals(true, StreamCurtain.decide(true, true, refused.copy(bnet = "signin_needed")) is StreamCurtain.Shows.SignIn)
+    }
 }
