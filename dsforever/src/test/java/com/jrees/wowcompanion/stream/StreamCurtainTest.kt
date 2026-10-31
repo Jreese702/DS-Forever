@@ -126,4 +126,11 @@ class StreamCurtainTest {
         assertEquals(StreamCurtain.UPDATE, (StreamCurtain.decide(true, true, upd) as StreamCurtain.Shows.Curtain).line)
         assertEquals("update", PcWow.of(org.json.JSONObject().put("state", "running").put("crash", "update"))!!.crash)
     }
+
+    @Test fun wowHoldingAtItsLoginStepsShowsOnceInFront() {
+        val rules = PcWow(state = "running", focused = true, screen = "signing_in", bnet = "signed_in")
+        assertEquals("Signing in", curtain(StreamCurtain.decide(true, true, rules)).line)
+        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, rules, atLoginLong = true))
+        assertEquals("Signing in", curtain(StreamCurtain.decide(true, true, rules.copy(focused = false), atLoginLong = true)).line)
+    }
 }

@@ -46,6 +46,9 @@ class StartView(context: Context) : View(context) {
     var firstW = FIRST_W
         set(v) { if (field != v) { field = v; invalidate() } }
 
+    /** the Report button at the bottom left */
+    var onReport: (() -> Unit)? = null
+
     /** a press of the row: true = the gear (touch only) or FIRST's one button (touch or A), false = Login (touch or A) */
     var onLoginButton: ((gear: Boolean) -> Unit)? = null
 
@@ -64,6 +67,16 @@ class StartView(context: Context) : View(context) {
         val row = login != Login.NONE
         UiKit.outlined(c, line, cx, height - if (row) LINE_UP_ROW else LINE_UP, 34f, Theme.text)
         hits.clear()
+        // framed by Report and the PC's keyboard (the user, 2026-10-30); the keyboard only while a PC's stream can take it
+        val sideTop = height - ROW_DOWN - BUTTON_H
+        val report = RectF(SIDE_M, sideTop, SIDE_M + SIDE_W, sideTop + BUTTON_H)
+        UiKit.button(c, report, "Report", if (pressed == CURSOR_REPORT) UiKit.Button.DOWN else UiKit.Button.UP)
+        hits += report to CURSOR_REPORT
+        if (SetupBridge.openPcKeyboard != null) {
+            val keys = RectF(width - SIDE_M - SIDE_W, sideTop, width - SIDE_M, sideTop + BUTTON_H)
+            UiKit.button(c, keys, "Keyboard", if (pressed == CURSOR_KEYS) UiKit.Button.DOWN else UiKit.Button.UP)
+            hits += keys to CURSOR_KEYS
+        }
         if (!row) return
         val top = height - ROW_DOWN - BUTTON_H
         if (login == Login.FIRST) {
@@ -111,8 +124,11 @@ class StartView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN -> { pressed = hit; invalidate() }
             MotionEvent.ACTION_UP -> {
                 val was = pressed; pressed = -1; invalidate()
-                if (was >= 0 && was == hit) {
-                    if (hit == CURSOR_GEAR) onLoginButton?.invoke(true) else if (!loginBusy) onLoginButton?.invoke(false)
+                if (was >= 0 && was == hit) when (hit) {
+                    CURSOR_REPORT -> onReport?.invoke()
+                    CURSOR_KEYS -> SetupBridge.openPcKeyboard?.invoke()
+                    CURSOR_GEAR -> onLoginButton?.invoke(true)
+                    else -> if (!loginBusy) onLoginButton?.invoke(false)
                 }
             }
             MotionEvent.ACTION_CANCEL -> { pressed = -1; invalidate() }
@@ -125,6 +141,11 @@ class StartView(context: Context) : View(context) {
         const val GLYPH_A = "rev_a"
         const val CURSOR_GEAR = 0
         const val CURSOR_LOGIN = 1
+        const val CURSOR_REPORT = 2
+        const val CURSOR_KEYS = 3
+        /** Report and Keyboard, in the row's line at the screen's two ends */
+        const val SIDE_M = 40f
+        const val SIDE_W = 220f
         // the sign-in row (LATER 29): buttons 111 px high (48 dp on the Thor's bottom screen, the touch minimum), 40 px off the bottom;
         // the swirl and the line move up 60 / 30 px to make room
         const val BUTTON_H = 111f

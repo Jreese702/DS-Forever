@@ -119,7 +119,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     /** what the top screen shows over the stream now (StreamCurtain's rule) */
     private fun shows(): StreamCurtain.Shows = StreamCurtain.decide(screen == Screen.STREAMING, host?.hasBridge == true, pc,
-        ((android.os.SystemClock.uptimeMillis() / 500) % 4).toInt(), route?.label.orEmpty(), reachProblem, signIn.working)
+        ((android.os.SystemClock.uptimeMillis() / 500) % 4).toInt(), route?.label.orEmpty(), reachProblem, signIn.working, loginLong())
 
     /** the way the PC was reached this time (home Wi-Fi / Tailscale), null = not yet */
     private var route: Route.Kind? = null
@@ -144,7 +144,25 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         } else if (up || banner.text in SIGN_IN_LINES) banner.visibility = View.GONE
     }
 
-    private fun pcWord(w: PcWow) { pc = w; signInTick() }
+    private fun pcWord(w: PcWow) {
+        pc = w
+        if (!StreamCurtain.atLogin(w)) { loginSince = 0L; main.removeCallbacks(loginShow) }
+        else if (loginSince == 0L) { loginSince = System.currentTimeMillis(); main.postDelayed(loginShow, StreamCurtain.LOGIN_SHOW_MS + 100L) }
+        signInTick()
+    }
+
+    /** since when WoW has held at its login steps, 0 = it is not there */
+    private var loginSince = 0L
+    private fun loginLong() = loginSince != 0L && System.currentTimeMillis() - loginSince >= StreamCurtain.LOGIN_SHOW_MS
+
+    /** WoW waits for the player: to the front, then the curtain's rule shows it */
+    private val loginShow = object : Runnable {
+        override fun run() {
+            if (loginSince == 0L) return
+            if (pc?.focused != true) { worker.execute { bridge?.focusWow() }; main.postDelayed(this, 5_000L) }
+            signInTick()
+        }
+    }
 
     /** the saved login into the PC's Battle.net (the user, 2026-10-30), then what the top and bottom screens show for it */
     private val signIn = StreamSignIn(
@@ -182,8 +200,13 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     /** the keyboard on the bottom screen and the pad on it, while Battle.net's window shows */
     private var boardUp = false
     private val boardPad = SignInPad()
+    /** the player opened it (the waiting screen's Keyboard) / closed it */
+    private var boardByHand = false
+    private var boardShut = false
 
-    private fun board(up: Boolean) {
+    private fun board(needed: Boolean) {
+        if (!needed) boardShut = false
+        val up = boardByHand || (needed && !boardShut)
         if (up == boardUp) return
         boardUp = up
         if (up && keys != null) { pad.clear(); try { sendPad() } catch (_: Throwable) {} }
@@ -338,6 +361,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         show(Screen.STREAMING)
         val k = StreamKeys(MoonBridge.INPUT, w, h).also { keys = it }
         DsForeverScreen.current?.attachStream(k)
+        DsForeverScreen.current?.signInClose = { boardByHand = false; boardShut = true; applyCurtain() }
+        SetupBridge.openPcKeyboard = { boardByHand = true; boardShut = false; applyCurtain() }
         touchMouse = StreamTouch(MoonBridge.INPUT, view.width, view.height, w, h,
             android.view.ViewConfiguration.get(activity).scaledTouchSlop.toFloat()) { ms, r -> main.postDelayed(r, ms) }
         try { MoonBridge.sendControllerArrivalEvent(0, 1, MoonBridge.LI_CTYPE_XBOX, StreamPad.SUPPORTED,
@@ -403,6 +428,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     private fun teardown() {
+        SetupBridge.openPcKeyboard = null
+        boardByHand = false
         board(false)
         touchMouse?.cancel(); touchMouse = null
         session = null

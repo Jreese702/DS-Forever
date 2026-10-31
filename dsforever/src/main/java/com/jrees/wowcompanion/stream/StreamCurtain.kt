@@ -11,6 +11,9 @@ import com.jrees.wowcompanion.SetupFlow
  * The one exception (the user's ruling "Show its sign-in on the Thor"): while the PC's Battle.net is signed out, or Desktop's one retry
  * is spent and the sign-in needs the player, the curtain lifts so the player can sign in on the PC through the stream (the stream's
  * keyboard; DS Forever never sees, logs or stores what is typed), with one small gold line; then the curtain comes back until WoW is in.
+ *
+ * WoW can stop before character select and wait for the player (the user, 2026-10-30, its gameplay rules after an update: "I should see
+ * wow on my game now"), so WoW in front and still at its login steps after [LOGIN_SHOW_MS] shows ([atLoginLong]).
  */
 object StreamCurtain {
 
@@ -32,6 +35,10 @@ object StreamCurtain {
     /** WoW crashed on the PC because its files are older than the game's data (the user's PC 2026-10-29: a black stream behind it) */
     const val UPDATE = "Update WoW in Battle.net"
     const val CRASHED = "WoW crashed on your PC"
+    const val LOGIN_SHOW_MS = 10_000L
+
+    /** WoW is up and between its login screen and character select */
+    fun atLogin(pc: PcWow?) = pc != null && (pc.screen == "login" || pc.screen == "signing_in")
 
     /**
      * [connected] = the stream is up (Moonlight's picture arrived); [bridged] = this PC has DS Forever Desktop's bridge (Sunshine
@@ -39,7 +46,7 @@ object StreamCurtain {
      * "Loading" while nothing more precise is known.
      */
     fun decide(connected: Boolean, bridged: Boolean, pc: PcWow?, dots: Int = 3, route: String = "", problem: String? = null,
-               signingIn: Boolean = false): Shows {
+               signingIn: Boolean = false, atLoginLong: Boolean = false): Shows {
         // "PC found" only once the PC ANSWERED (the bridge's welcome: [pc] set; Sunshine alone: the stream up), with the way it was
         // reached ([route]: "home Wi-Fi" / "Tailscale"); before that "Looking for your PC" (party3 said "PC found" while the PC never
         // got a connection: the Thor's Tailscale was off); [problem] = why no address answered (Route.unreachable)
@@ -62,7 +69,7 @@ object StreamCurtain {
         if (bnetLine != null) return if (connected && pc.show.size == 4) Shows.SignIn(bnetLine, pc.show)
             else curtain(listOf(row(found, true), row("Battle.net", false)), bnetLine)
         val known = pc.screen.isNotEmpty()
-        val open = if (known) pc.signedIn && pc.focused == true else pc.state == "running" && pc.focused != false
+        val open = if (known) (pc.signedIn || (atLoginLong && atLogin(pc))) && pc.focused == true else pc.state == "running" && pc.focused != false
         if (connected && open) return Shows.Stream
         val bnetOk = pc.bnet.isEmpty() || pc.bnet == "signed_in" || pc.bnet == "unknown"
         val running = pc.state == "running"

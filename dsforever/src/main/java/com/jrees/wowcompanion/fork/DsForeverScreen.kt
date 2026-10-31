@@ -111,6 +111,7 @@ class DsForeverScreen(private val context: Context) {
 
     /** Streaming's Battle.net keyboard on or off (it survives a new Presentation) */
     fun signInBoard(on: Boolean) { boardWanted = on; shown?.board(on) }
+    var signInClose: (() -> Unit)? = null
     fun signInPress(button: String) { shown?.boardPress(button) }
     private var boardWanted = false
 
@@ -285,7 +286,7 @@ private class HostPresentation(outer: Context, display: Display, private val onR
 
     /** Streaming's Battle.net keyboard over the whole screen */
     fun board(on: Boolean) {
-        if (on && board == null) board = com.jrees.wowcompanion.stream.SignInBoard(context).also {
+        if (on && board == null) board = com.jrees.wowcompanion.stream.SignInBoard(context) { DsForeverScreen.current?.signInClose?.invoke() }.also {
             addContentView(it, android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT))
         } else if (!on) { board?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }; board = null }
     }

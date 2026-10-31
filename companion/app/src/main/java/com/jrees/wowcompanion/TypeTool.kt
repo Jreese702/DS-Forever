@@ -51,7 +51,7 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
     private var tab = 0                       // 0 TRACKPAD, 1 KEYBOARD
     private var typed = ""
     private val head = Head(context)
-    private val pad = Pad(context)
+    private val pad = TrackpadView(context)
     private val kb = ChatKeyboard(context, swap = false).apply {
         sendWord = "Enter"
         text = { typed }
@@ -96,13 +96,7 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
             "PADRSHOULDER" -> { if (tab == 0) showTab(1); return }
             "PAD2" -> { onClose(); return }
         }
-        if (tab == 1) { kb.press(k); return }
-        when (k) {
-            "PADLTRIGGER" -> InputSink.gameClick(right = false)
-            "PADRTRIGGER" -> InputSink.gameClick(right = true)
-            "PADDUP" -> InputSink.gameMove(0, -NUDGE); "PADDDOWN" -> InputSink.gameMove(0, NUDGE)
-            "PADDLEFT" -> InputSink.gameMove(-NUDGE, 0); "PADDRIGHT" -> InputSink.gameMove(NUDGE, 0)
-        }
+        if (tab == 1) kb.press(k) else pad.press(k)
     }
 
     /** the tabs (the game's tab look) and, on the keyboard, what has been typed into the game since it opened */
@@ -111,8 +105,8 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
         override fun onDraw(c: Canvas) {
             UiKit.tab(c, tabRect(0), "Trackpad", tab == 0)
             UiKit.tab(c, tabRect(1), "Keyboard", tab == 1)
-            UiKit.pad(c, "${glyphSet()}_lshoulder", tabRect(0).left + 40f, tabRect(0).centerY(), 44f)
-            UiKit.pad(c, "${glyphSet()}_rshoulder", tabRect(1).right - 40f, tabRect(1).centerY(), 44f)
+            UiKit.pad(c, "${TrackpadView.glyphSet()}_lshoulder", tabRect(0).left + 40f, tabRect(0).centerY(), 44f)
+            UiKit.pad(c, "${TrackpadView.glyphSet()}_rshoulder", tabRect(1).right - 40f, tabRect(1).centerY(), 44f)
             val p = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
             // the user (1.0.8): "remove the text on it" - the trackpad has no words; the keyboard keeps what it typed
             if (tab == 1) c.drawText(if (typed.isEmpty()) "Typing into the game's text box" else "Typed: $typed", width / 2f, 140f, p)
@@ -123,60 +117,75 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
         }
     }
 
-    private fun glyphSet() = when (CastSettings.buttonLayout) {
-        CastSettings.ButtonLayout.XBOX -> "ltr"; CastSettings.ButtonLayout.PLAYSTATION -> "shp"; else -> "rev"
+    companion object {
+        private const val HEAD_H = 160
+    }
+}
+
+/** the pad itself: a well, Left click / Right click under it; the controller: ZL left click, ZR right click, the D-pad nudges */
+class TrackpadView(c: Context) : View(c) {
+    private var lastX = 0f; private var lastY = 0f; private var downX = 0f; private var downY = 0f
+    private var downAt = 0L; private var onButton = -1; private var accX = 0f; private var accY = 0f
+    private var moves = 0; private var sumX = 0; private var sumY = 0
+    private fun well() = RectF(40f, 70f, width - 40f, height - 170f)
+    private fun button(i: Int): RectF { val w = (width - 100f) / 2f; val l = 40f + i * (w + 20f); return RectF(l, height - 150f, l + w, height - 40f) }
+
+    /** one controller press (the button's name) */
+    fun press(k: String) {
+        when (k) {
+            "PADLTRIGGER" -> InputSink.gameClick(right = false)
+            "PADRTRIGGER" -> InputSink.gameClick(right = true)
+            "PADDUP" -> InputSink.gameMove(0, -NUDGE); "PADDDOWN" -> InputSink.gameMove(0, NUDGE)
+            "PADDLEFT" -> InputSink.gameMove(-NUDGE, 0); "PADDRIGHT" -> InputSink.gameMove(NUDGE, 0)
+        }
     }
 
-    /** the pad itself: a well, Left click / Right click under it */
-    private inner class Pad(c: Context) : View(c) {
-        private var lastX = 0f; private var lastY = 0f; private var downX = 0f; private var downY = 0f
-        private var downAt = 0L; private var onButton = -1; private var accX = 0f; private var accY = 0f
-        private var moves = 0; private var sumX = 0; private var sumY = 0
-        private fun well() = RectF(40f, 70f, width - 40f, height - 170f)
-        private fun button(i: Int): RectF { val w = (width - 100f) / 2f; val l = 40f + i * (w + 20f); return RectF(l, height - 150f, l + w, height - 40f) }
-        override fun onDraw(c: Canvas) {
-            UiKit.module(c, well())
-            val g = glyphSet()
-            // no words (the user): each click button is its plate and its glyph, centred
-            for (i in 0..1) {
-                val r = button(i)
-                UiKit.button(c, r, "", if (onButton == i) UiKit.Button.DOWN else UiKit.Button.UP)
-                UiKit.pad(c, "${g}_" + if (i == 0) "ltrigger" else "rtrigger", r.centerX(), r.centerY(), r.height() * 0.62f)
-            }
+    override fun onDraw(c: Canvas) {
+        UiKit.module(c, well())
+        val g = glyphSet()
+        // no words (the user): each click button is its plate and its glyph, centred
+        for (i in 0..1) {
+            val r = button(i)
+            UiKit.button(c, r, "", if (onButton == i) UiKit.Button.DOWN else UiKit.Button.UP)
+            UiKit.pad(c, "${g}_" + if (i == 0) "ltrigger" else "rtrigger", r.centerX(), r.centerY(), r.height() * 0.62f)
         }
-        override fun onTouchEvent(e: MotionEvent): Boolean {
-            when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    onButton = (0..1).firstOrNull { button(it).contains(e.x, e.y) } ?: -1
-                    lastX = e.x; lastY = e.y; downX = e.x; downY = e.y; downAt = SystemClock.uptimeMillis(); accX = 0f; accY = 0f
-                    moves = 0; sumX = 0; sumY = 0
-                    invalidate()
-                }
-                MotionEvent.ACTION_MOVE -> if (onButton < 0) {
-                    accX += (e.x - lastX) * SPEED; accY += (e.y - lastY) * SPEED
-                    lastX = e.x; lastY = e.y
-                    val dx = accX.toInt(); val dy = accY.toInt()
-                    if (dx != 0 || dy != 0) { InputSink.gameMove(dx, dy); accX -= dx; accY -= dy; moves++; sumX += dx; sumY += dy }
-                }
-                MotionEvent.ACTION_UP -> {
-                    if (moves > 0) InputSink.dragNote(moves, sumX, sumY)
-                    val b = onButton; onButton = -1
-                    if (b >= 0 && button(b).contains(e.x, e.y)) InputSink.gameClick(right = b == 1)
-                    else if (b < 0 && SystemClock.uptimeMillis() - downAt < TAP_MS && hypot(e.x - downX, e.y - downY) < TAP_SLOP) InputSink.gameClick(right = false)
-                    invalidate()
-                }
-                MotionEvent.ACTION_CANCEL -> { onButton = -1; invalidate() }
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                onButton = (0..1).firstOrNull { button(it).contains(e.x, e.y) } ?: -1
+                lastX = e.x; lastY = e.y; downX = e.x; downY = e.y; downAt = SystemClock.uptimeMillis(); accX = 0f; accY = 0f
+                moves = 0; sumX = 0; sumY = 0
+                invalidate()
             }
-            return true
+            MotionEvent.ACTION_MOVE -> if (onButton < 0) {
+                accX += (e.x - lastX) * SPEED; accY += (e.y - lastY) * SPEED
+                lastX = e.x; lastY = e.y
+                val dx = accX.toInt(); val dy = accY.toInt()
+                if (dx != 0 || dy != 0) { InputSink.gameMove(dx, dy); accX -= dx; accY -= dy; moves++; sumX += dx; sumY += dy }
+            }
+            MotionEvent.ACTION_UP -> {
+                if (moves > 0) InputSink.dragNote(moves, sumX, sumY)
+                val b = onButton; onButton = -1
+                if (b >= 0 && button(b).contains(e.x, e.y)) InputSink.gameClick(right = b == 1)
+                else if (b < 0 && SystemClock.uptimeMillis() - downAt < TAP_MS && hypot(e.x - downX, e.y - downY) < TAP_SLOP) InputSink.gameClick(right = false)
+                invalidate()
+            }
+            MotionEvent.ACTION_CANCEL -> { onButton = -1; invalidate() }
         }
+        return true
     }
 
     companion object {
-        private const val HEAD_H = 160
         /** pad px -> game pointer px (the top screen is larger than the pad) */
         private const val SPEED = 1.6f
         private const val NUDGE = 24
         private const val TAP_MS = 220L
         private const val TAP_SLOP = 14f
+
+        fun glyphSet() = when (CastSettings.buttonLayout) {
+            CastSettings.ButtonLayout.XBOX -> "ltr"; CastSettings.ButtonLayout.PLAYSTATION -> "shp"; else -> "rev"
+        }
     }
 }

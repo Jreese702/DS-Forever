@@ -3,13 +3,16 @@ package com.jrees.wowcompanion.stream
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.RectF
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import com.jrees.wowcompanion.ChatKeyboard
 import com.jrees.wowcompanion.InputSink
 import com.jrees.wowcompanion.TapSink
+import com.jrees.wowcompanion.TrackpadView
 import com.jrees.wowcompanion.Theme
 import com.jrees.wowcompanion.UiKit
 
@@ -78,7 +81,9 @@ class SignInPad {
     fun name(code: Int): String? = when (code) {
         KeyEvent.KEYCODE_DPAD_UP -> "PADDUP"; KeyEvent.KEYCODE_DPAD_DOWN -> "PADDDOWN"
         KeyEvent.KEYCODE_DPAD_LEFT -> "PADDLEFT"; KeyEvent.KEYCODE_DPAD_RIGHT -> "PADDRIGHT"
-        KeyEvent.KEYCODE_BUTTON_A -> "PAD1"; KeyEvent.KEYCODE_BUTTON_X -> "PAD3"; KeyEvent.KEYCODE_BUTTON_Y -> "PAD4"
+        KeyEvent.KEYCODE_BUTTON_A -> "PAD1"; KeyEvent.KEYCODE_BUTTON_B -> "PAD2"
+        KeyEvent.KEYCODE_BUTTON_X -> "PAD3"; KeyEvent.KEYCODE_BUTTON_Y -> "PAD4"
+        KeyEvent.KEYCODE_BUTTON_L1 -> "PADLSHOULDER"; KeyEvent.KEYCODE_BUTTON_R1 -> "PADRSHOULDER"
         KeyEvent.KEYCODE_BUTTON_L2 -> "PADLTRIGGER"; KeyEvent.KEYCODE_BUTTON_R2 -> "PADRTRIGGER"
         KeyEvent.KEYCODE_BUTTON_START -> "PADFORWARD"
         else -> null
@@ -103,11 +108,17 @@ class SignInPad {
  * THE BOTTOM SCREEN WHILE BATTLE.NET NEEDS THE PLAYER (the user, 2026-10-30: "I need the keyboard on the bottom screen to sign in to
  * Battle.net"): Chat's keyboard, every key straight to the focused box on the PC. What is typed may be a password: NOTHING of it is kept
  * here, the keyboard writes onto a one-character stand-in ([HELD]) and each change goes out as one key; only a count of dots shows.
- * X / the Tab key = next box, Start / the Enter key = Enter. It goes by itself when Battle.net is done; B does nothing.
+ * X / the Tab key = next box, Start / the Enter key = Enter. It goes by itself when Battle.net is done.
+ *
+ * Tabs at the top (the user, 2026-10-30: "when the keyboard is open give me a toggle at the top to like swap to track pad mode"): Keyboard
+ * and Trackpad, a finger or LB / RB. Close or B = [onClose]. The waiting screen's Keyboard button opens it too.
  */
-class SignInBoard(c: Context) : FrameLayout(c) {
+class SignInBoard(c: Context, private val onClose: () -> Unit) : FrameLayout(c) {
     private var count = 0
+    private var tab = 0                       // 0 KEYBOARD, 1 TRACKPAD
     private val dots = Dots(c)
+    private val head = Head(c)
+    private val pad = TrackpadView(c)
     private val kb = ChatKeyboard(c, signIn = true).apply {
         sendWord = "Enter"; swapWord = "Tab"; fillHeight = BOARD_H
         text = { HELD }
@@ -127,7 +138,18 @@ class SignInBoard(c: Context) : FrameLayout(c) {
         isClickable = true
         addView(dots, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(kb, LayoutParams(LayoutParams.MATCH_PARENT, BOARD_H, Gravity.BOTTOM))
+        addView(pad, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply { topMargin = HEAD_H })
+        addView(head, LayoutParams(LayoutParams.MATCH_PARENT, HEAD_H))
         kb.open()
+        show(0)
+    }
+
+    private fun show(t: Int) {
+        tab = t
+        dots.visibility = if (t == 0) View.VISIBLE else View.GONE
+        kb.visibility = if (t == 0) View.VISIBLE else View.GONE
+        pad.visibility = if (t == 1) View.VISIBLE else View.GONE
+        head.invalidate()
     }
 
     /** only ever the stream, never a local game */
@@ -136,18 +158,49 @@ class SignInBoard(c: Context) : FrameLayout(c) {
     private fun tab() { if (toPc()) { InputSink.signInTab(); clear() } }
 
     /** one controller press */
-    fun press(button: String) { if (button == "PAD3") tab() else kb.press(button) }
+    fun press(button: String) {
+        when {
+            button == "PAD2" -> onClose()
+            button == "PADLSHOULDER" -> show(0)
+            button == "PADRSHOULDER" -> show(1)
+            tab == 1 -> pad.press(button)
+            button == "PAD3" -> tab()
+            else -> kb.press(button)
+        }
+    }
+
+    private inner class Head(c: Context) : View(c) {
+        private fun tabRect(i: Int) = RectF(width / 2f - 360f + i * 370f, 18f, width / 2f - 10f + i * 370f, 98f)
+        private fun close() = RectF(width - 40f - CLOSE_W, 18f, width - 40f, 98f)
+        override fun onDraw(g: Canvas) {
+            UiKit.tab(g, tabRect(0), "Keyboard", tab == 0)
+            UiKit.tab(g, tabRect(1), "Trackpad", tab == 1)
+            UiKit.pad(g, "${TrackpadView.glyphSet()}_lshoulder", tabRect(0).left + 40f, tabRect(0).centerY(), 44f)
+            UiKit.pad(g, "${TrackpadView.glyphSet()}_rshoulder", tabRect(1).right - 40f, tabRect(1).centerY(), 44f)
+            UiKit.button(g, close(), "Close")
+        }
+        override fun onTouchEvent(e: MotionEvent): Boolean {
+            if (e.actionMasked == MotionEvent.ACTION_UP) when {
+                close().contains(e.x, e.y) -> onClose()
+                tabRect(0).contains(e.x, e.y) -> show(0)
+                tabRect(1).contains(e.x, e.y) -> show(1)
+            }
+            return true
+        }
+    }
 
     private inner class Dots(c: Context) : View(c) {
         override fun onDraw(g: Canvas) {
             if (count == 0) return
             val p = UiKit.bodyPaint(44f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
-            g.drawText("•".repeat(count.coerceAtMost(32)), width / 2f, (height - BOARD_H) / 2f + 16f, p)
+            g.drawText("•".repeat(count.coerceAtMost(32)), width / 2f, (height - BOARD_H + HEAD_H) / 2f + 16f, p)
         }
     }
 
     companion object {
         private const val HELD = "x"
         private const val BOARD_H = 780
+        private const val HEAD_H = 116
+        private const val CLOSE_W = 160f
     }
 }

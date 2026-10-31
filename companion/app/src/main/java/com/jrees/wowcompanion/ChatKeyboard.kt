@@ -66,8 +66,9 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false) : 
      * THE KEY POP-UP (the user: "The keyboard needs some button feedback with actually showing the button's letter that you are pressing
      * above your press so you know which letter you are hitting"): a phone keyboard's bubble - the key's character, enlarged on the
      * board's own keycap with a gold rim, ABOVE the key - while it is pressed (a finger held on it; A: [POP_SHOW_MS]), the key itself
-     * pressed in; it fades over [POP_FADE_MS] after. Letters, digits and signs only (the word keys say what they are). Kept inside the
-     * board at its edges, so a top-row or end key's bubble stays on screen.
+     * pressed in; then it is gone at once, no fade (the user, 2026-10-30: "They should just instantly disappear the fade is weird").
+     * Letters, digits and signs only (the word keys say what they are). Kept inside the board at its edges, so a top-row or end key's
+     * bubble stays on screen.
      */
     private var popRow = -1
     private var popCol = -1
@@ -85,13 +86,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false) : 
         invalidate()
     }
 
-    /** the pop-up's alpha now, 0..1 (0 = none) */
-    private fun popAlpha(now: Long): Float {
-        if (popRow < 0) return 0f
-        if (popHeld) return 1f
-        val dt = now - popUpAt
-        return if (dt < 0) 1f else (1f - dt.toFloat() / POP_FADE_MS).coerceIn(0f, 1f)
-    }
+    private fun popShown(now: Long) = popRow >= 0 && (popHeld || now < popUpAt)
 
     private fun apply(a: ChatKeys.Act): Boolean {
         when (a) {
@@ -135,7 +130,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false) : 
             for ((ci, cell) in row.cells.withIndex()) {
                 val w = unit * cell.w + GAP * (cell.w - 1f)
                 val r = RectF(x, y, x + w, y + keyH)
-                drawKey(c, r, cell.key, down = ri == popRow && ci == popCol && popAlpha(android.os.SystemClock.uptimeMillis()) > 0.5f)
+                drawKey(c, r, cell.key, down = ri == popRow && ci == popCol && popShown(android.os.SystemClock.uptimeMillis()))
                 places += Triple(ri, ci, r)
                 if (ri == keys.row && ci == keys.col) UiKit.focus(c, r)       // the gold box: the cursor
                 x += w + GAP
@@ -151,8 +146,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false) : 
     /** the pressed key's bubble over it (see [popFor]), inside the board [kb] */
     private fun drawPop(c: Canvas, kb: RectF) {
         val now = android.os.SystemClock.uptimeMillis()
-        val a = popAlpha(now)
-        if (a <= 0f) { popRow = -1; return }
+        if (!popShown(now)) { popRow = -1; return }
         val key = places.firstOrNull { it.first == popRow && it.second == popCol }?.third ?: return
         val w = maxOf(key.width() * 1.45f, key.height() * 1.1f); val h = key.height() * 1.35f
         var left = key.centerX() - w / 2f
@@ -160,7 +154,6 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false) : 
         // over the key, its foot overlapping the key's top; never above the board (a top-row key's bubble stays on screen)
         val top = (key.top - h + key.height() * 0.30f).coerceAtLeast(kb.top + 2f)
         val bub = RectF(left, top, left + w, top + h)
-        val layer = c.saveLayerAlpha(bub.left - 8f, bub.top - 8f, bub.right + 8f, bub.bottom + 8f, (255 * a).toInt())
         shadow.color = Color.argb(150, 0, 0, 0)
         c.drawRoundRect(bub.left + 3f, bub.top + 6f, bub.right + 3f, bub.bottom + 6f, h * 0.16f, h * 0.16f, shadow)
         UiKit.keyCap(c, bub, "", LOOK)
@@ -168,8 +161,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false) : 
         c.drawRoundRect(bub, h * 0.14f, h * 0.14f, rim)
         val p = UiKit.bodyPaint(h * 0.52f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
         c.drawText(popLabel, bub.centerX(), bub.centerY() - (p.ascent() + p.descent()) / 2f, p)
-        c.restoreToCount(layer)
-        if (!popHeld) postInvalidateOnAnimation()
+        if (!popHeld) postInvalidateDelayed(popUpAt - now)
     }
     private val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
@@ -240,8 +232,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false) : 
         const val KEY_H = 92f
         const val GAP = 8f
         const val INSET = 16f
-        /** the key pop-up: how long A's shows before it fades, and the fade (a finger's shows while held) */
+        /** the key pop-up: how long A's shows (a finger's shows while held) */
         const val POP_SHOW_MS = 160L
-        const val POP_FADE_MS = 180f
     }
 }
