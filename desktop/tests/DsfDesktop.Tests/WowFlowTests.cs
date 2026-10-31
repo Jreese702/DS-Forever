@@ -153,6 +153,14 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
+        public static void WowGoesFiveMinutesAfterTheStreamUnlessThePcIsInUse()
+        {
+            A.True(!WowFlow.CloseAfterStream(299, 1000), "not yet");
+            A.True(!WowFlow.CloseAfterStream(1000, 10), "someone is at the PC");
+            A.True(WowFlow.CloseAfterStream(300, 300), "gone");
+        }
+
+        [Test]
         public static void TheControllerSettingsAreOnOnce()
         {
             var a = WowConfig.Apply("SET locale \"enUS\"\r\nSET GamePadEnable \"0\"\r\n");

@@ -79,6 +79,11 @@ namespace DsfDesktop.Wow
         public const double LoadGraceS = 25;
         /// <summary>the add-on writes a document every few seconds in the world (addons do not run before it)</summary>
         public const double WorldDocS = 90;
+        /// <summary>how long WoW stays after the stream ended, and how long the PC itself must have sat untouched</summary>
+        public const double StreamGoneS = 300;
+
+        public static bool CloseAfterStream(double sinceStreamS, double pcIdleS) => sinceStreamS >= StreamGoneS && pcIdleS >= StreamGoneS;
+
         /// <summary>Battle.net just started: its sign-in window (or its main one) takes a moment to appear</summary>
         public const double BnetGraceS = 20;
 

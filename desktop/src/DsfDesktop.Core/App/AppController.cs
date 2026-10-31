@@ -320,8 +320,28 @@ namespace DsfDesktop.App
         DateTime lastEventAt = DateTime.MinValue;
 
         /// <summary>every second: the window refresh; every 2 s Sunshine's own state (BUSY = streaming) and its uniqueid</summary>
+        /// <summary>
+        /// WoW goes when the stream has (the user, 2026-10-30: "Wow should close itself when disconnecting the stream after like 5 minutes
+        /// of being disconnected"): asked once, by its window, as its X. Someone using the PC keeps it open.
+        /// </summary>
+        DateTime? streamEndedAt;
+
+        void CloseAfterStream()
+        {
+            if (!streamEndedAt.HasValue) return;
+            if (!WowFlow.CloseAfterStream((DateTime.UtcNow - streamEndedAt.Value).TotalSeconds, WowWindow.PcIdleSeconds())) return;
+            streamEndedAt = null;
+            Supervisor?.Disconnect();
+            var p = WowWindow.FindAny(FlavorDirOrNull);
+            if (p == null) return;
+            try { Log.I("WoW: no stream for 5 minutes, closing it (pid " + p.Id + ")"); p.CloseMainWindow(); }
+            catch (Exception) { }
+            finally { p.Dispose(); }
+        }
+
         void SlowTick()
         {
+            CloseAfterStream();
             try
             {
                 if (tickN++ % 2 == 0)
@@ -359,6 +379,7 @@ namespace DsfDesktop.App
             var was = Stream;
             Stream = s;
             Log.I("stream: " + s);
+            streamEndedAt = s == StreamState.Idle && was == StreamState.Streaming ? DateTime.UtcNow : (DateTime?)null;
             Bridge?.Publish(new Dictionary<string, object> { ["t"] = "stream", ["state"] = StreamWord });
             if (s == StreamState.Streaming && was != StreamState.Streaming)
                 Task.Run(() =>

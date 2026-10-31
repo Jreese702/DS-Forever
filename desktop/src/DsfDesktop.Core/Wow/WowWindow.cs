@@ -110,6 +110,16 @@ namespace DsfDesktop.Wow
             return GetForegroundWindow() == h ? null : "Windows kept another window in front";
         }
 
+        /// <summary>seconds since anyone touched the PC's own keyboard or mouse</summary>
+        public static double PcIdleSeconds()
+        {
+            var i = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf(typeof(LASTINPUTINFO)) };
+            return GetLastInputInfo(ref i) ? unchecked((uint)Environment.TickCount - i.dwTime) / 1000.0 : 0;
+        }
+
+        [StructLayout(LayoutKind.Sequential)] struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
+        [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO i);
+
         public static bool IsForegroundHandle(IntPtr h) => h != IntPtr.Zero && GetForegroundWindow() == h;
 
         [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
