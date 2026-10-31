@@ -155,6 +155,16 @@ class MainActivity : ComponentActivity() {
         controllerInputManager?.unregisterInputDeviceListener(controllerDeviceListener)
         controllerInputManager = null
 
+        // closed for good: no idle process is left for a launcher to count as still playing (the user on CocoonShell, 2026-10-30:
+        // "still shows now playing ... won't close"; measured: no task, the process alive). A moment later, so a relaunch keeps it
+        if (isFinishing && !isChangingConfigurations) {
+            val app = applicationContext
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                val am = app.getSystemService(android.app.ActivityManager::class.java)
+                if (am?.appTasks.isNullOrEmpty() && !PluviaApp.keepAlive) android.os.Process.killProcess(android.os.Process.myPid())
+            }, 1_500L)
+        }
+
         PluviaApp.events.off<AndroidEvent.SetSystemUIVisibility, Unit>(onSetSystemUi)
         PluviaApp.events.off<AndroidEvent.SetAllowedOrientation, Unit>(onSetAllowedOrientation)
         PluviaApp.events.off<AndroidEvent.EndProcess, Unit>(onEndProcess)
