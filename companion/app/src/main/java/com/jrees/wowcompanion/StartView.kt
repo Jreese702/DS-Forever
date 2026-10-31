@@ -65,10 +65,15 @@ class StartView(context: Context) : View(context) {
         postInvalidateDelayed(FRAME_MS)
         val cx = width / 2f
         val row = login != Login.NONE
-        UiKit.outlined(c, line, cx, height - if (row) LINE_UP_ROW else LINE_UP, 34f, Theme.text)
         hits.clear()
-        // framed by Report and the PC's keyboard (the user, 2026-10-30); the keyboard only while a PC's stream can take it
+        // the line in one metal panel, framed by Report and the PC's keyboard (the user, 2026-10-30: "framed between the two buttons in
+        // like a fancy looking one part panel"); the keyboard only while a PC's stream can take it
         val sideTop = height - ROW_DOWN - BUTTON_H
+        val panel = RectF(SIDE_M + SIDE_W + GAP, sideTop, width - SIDE_M - SIDE_W - GAP, sideTop + BUTTON_H)
+        UiKit.module(c, panel)
+        val words = UiKit.bodyPaint(LINE_SIZE)
+        while (words.measureText(line) > panel.width() - LINE_PAD * 2 && words.textSize > LINE_MIN) words.textSize -= 1f
+        UiKit.outlined(c, line, cx, panel.centerY() - (words.ascent() + words.descent()) / 2f, words.textSize, Theme.text)
         val report = RectF(SIDE_M, sideTop, SIDE_M + SIDE_W, sideTop + BUTTON_H)
         UiKit.button(c, report, "Report", if (pressed == CURSOR_REPORT) UiKit.Button.DOWN else UiKit.Button.UP)
         hits += report to CURSOR_REPORT
@@ -78,7 +83,7 @@ class StartView(context: Context) : View(context) {
             hits += keys to CURSOR_KEYS
         }
         if (!row) return
-        val top = height - ROW_DOWN - BUTTON_H
+        val top = sideTop - GAP - BUTTON_H
         if (login == Login.FIRST) {
             val r = RectF(cx - firstW / 2f, top, cx + firstW / 2f, top + BUTTON_H)
             // the one button, with the A that presses it (no gold box on this row: the user, 2026-10-05)
@@ -146,6 +151,10 @@ class StartView(context: Context) : View(context) {
         /** Report and Keyboard, in the row's line at the screen's two ends */
         const val SIDE_M = 40f
         const val SIDE_W = 220f
+        /** the status line in its panel: its size, the smallest a long line shrinks to, its room from the panel's ends */
+        const val LINE_SIZE = 34f
+        const val LINE_MIN = 22f
+        const val LINE_PAD = 32f
         // the sign-in row (LATER 29): buttons 111 px high (48 dp on the Thor's bottom screen, the touch minimum), 40 px off the bottom;
         // the swirl and the line move up 60 / 30 px to make room
         const val BUTTON_H = 111f
@@ -154,12 +163,11 @@ class StartView(context: Context) : View(context) {
         const val LOGIN_W = 360f
         const val FIRST_W = 480f
         const val SWIRL_UP_ROW = 463f
-        const val LINE_UP_ROW = 205f
         // UI Art's spec (START_final.png): a 440 px box centred 403 px above the bottom, so it ends just above the line
         const val STYLE = "travel"       // the user's pick "A" (UI Art's SHEET_loader)
         const val SWIRL_D = 440f         // the swirl's box, px
         const val SWIRL_UP = 403f        // the box's centre above the bottom edge
-        const val LINE_UP = 175f         // the line's baseline above the bottom edge (as before), 34 px
+        const val LINE_UP = 175f         // the setup screen's line: its baseline above the bottom edge, 34 px
         const val FRAME_MS = 33L         // the swirl's redraw (see onDraw)
     }
 }
