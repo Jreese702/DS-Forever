@@ -112,7 +112,7 @@ class SettingsTabsTest {
     @Test fun settingsViewDrawsItsOwnBlocksOnly() {
         assertEquals(listOf(B.MAP, B.CHAT), SettingsTabs.viewBlocks(T.HOME))   // under Home's section (HomeSettingsSection)
         assertTrue(SettingsTabs.viewBlocks(T.TOP).isEmpty())           // the game's elements
-        assertEquals(listOf(B.GAME), SettingsTabs.viewBlocks(T.SYSTEM))   // + the companion's status (GameUiSection)
+        assertEquals(listOf(B.GAME, B.STREAMING), SettingsTabs.viewBlocks(T.SYSTEM))   // + the companion's status (GameUiSection)
         assertEquals(listOf(B.CONTROLLER, B.PAUSE_WHEEL, B.ITEM_WHEEL, B.SPELL_WHEEL, B.CLASS_LEFT, B.CLASS_RIGHT),
             SettingsTabs.viewBlocks(T.CONTROLLER))
     }
