@@ -423,7 +423,7 @@ fun WoWForeverScreen(
         val root = File(gamePath)
         WoWLauncherState.seeding = true
         com.jrees.wowcompanion.SetupBridge.seeding = true
-        setupLog("seed: starting the game once")
+        com.jrees.wowcompanion.SetupBridge.log?.invoke("seed: starting the game once")
         artFailed = null
         launchGame(by = SEED_RUN)
         CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
@@ -433,7 +433,7 @@ fun WoWForeverScreen(
                 delay(1_000)
                 made = withContext(Dispatchers.IO) { com.jrees.wowcompanion.DataStaleness.indexesMade(root) }
             }
-            setupLog("seed: indexes ${if (made) "made" else "not made"} after ${(System.currentTimeMillis() - t0) / 1000} s")
+            com.jrees.wowcompanion.SetupBridge.log?.invoke("seed: indexes ${if (made) "made" else "not made"} after ${(System.currentTimeMillis() - t0) / 1000} s")
             delay(SEED_SETTLE_MS)                       // the client finishes writing them
             PluviaApp.events.emit(AndroidEvent.ForceCloseApp)
             var clear = 0
@@ -445,7 +445,7 @@ fun WoWForeverScreen(
             }
             com.jrees.wowcompanion.SetupBridge.seeding = false
             WoWLauncherState.seeding = false
-            setupLog("seed: game closed")
+            com.jrees.wowcompanion.SetupBridge.log?.invoke("seed: game closed")
             if (!made) artFailed = "The game could not prepare its files. Try again."
             com.jrees.wowcompanion.SetupBridge.launcherRefresh?.invoke()
             if (made) com.jrees.wowcompanion.SetupBridge.launcherActions?.invoke(com.jrees.wowcompanion.SetupFlow.Action.RETRY_ART)
