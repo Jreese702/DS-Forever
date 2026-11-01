@@ -65,6 +65,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     var onReportSendNow: () -> Unit = {}
     var onReportOpenSaved: () -> Unit = {}
     private var btnReport = RectF()
+    private var btnStream = RectF()
     private var btnReportDismiss = RectF()
     private var btnMiniMinus = RectF(); private var btnMiniPlus = RectF()
     private var btnMiniInMinus = RectF(); private var btnMiniInPlus = RectF()
@@ -203,7 +204,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      * order. Read-only: the cursor presses a button with a touch at its centre, so this view's own logic decides.
      */
     fun focusTargets(): List<RectF> =
-        (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss) +
+        (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segDanger.toList() + segFog.toList() + segChat.toList() +
             segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
@@ -236,7 +237,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun clearBoxes() {
         rowHits.clear(); sbHits.clear()
         addonModuleBoxes.clear(); addonOptionSegs.clear(); addonCoreBtn.clear(); addonRestart.setEmpty(); addonSettingsBtn.clear()
-        for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
+        for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
                          segClassROpen, segClassRPick, segChat, segQt, segDanger, segFog,
@@ -259,6 +260,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
+        SettingsTabs.Block.STREAMING -> 16f + ROW_H
         SettingsTabs.Block.MAP -> 16f + 5 * ROW_H + 4 * 10f     // zoom out, zoom in, Quest tracking, World map, SafePath network
         SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
         SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 10f + ROW_H
@@ -332,6 +334,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 else -> onReport()
             }
             btnReportDismiss.contains(x, y) -> ReportFlow.clearPending()
+            btnStream.contains(x, y) -> SetupBridge.openStreamSettings?.invoke()
             btnReload.contains(x, y) -> {
                 if (reloadArmedAt != 0L && now - reloadArmedAt < ARM_MS) {
                     reloadArmedAt = 0L; reloadSentAt = now
@@ -434,6 +437,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             y += 16f
             y = when (b) {
                 SettingsTabs.Block.GAME -> drawGame(c, y)
+                SettingsTabs.Block.STREAMING -> drawStreaming(c, y)
                 SettingsTabs.Block.MAP -> drawMap(c, y)
                 SettingsTabs.Block.INDOOR -> drawIndoor(c, y)
                 SettingsTabs.Block.CONTROLLER -> drawController(c, y)
@@ -536,6 +540,18 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     }
 
     // ---- MAP (Rooms): the small map's two widths
+    private fun drawStreaming(c: Canvas, top: Float): Float {
+        val y = top + 16f
+        val on = SetupBridge.openStreamSettings != null
+        val box = row(c, y, "Stream settings", if (on) "Resolution, frame rate, bit rate and sound." else "While streaming.", enabled = on) { b ->
+            val r = RectF(b.right - 260f, b.centerY() - 34f, b.right - 16f, b.centerY() + 34f)
+            UiKit.button(c, r, "Open", if (on) UiKit.Button.UP else UiKit.Button.DISABLED)
+            r
+        }
+        btnStream = if (on) box else RectF()
+        return y + ROW_H
+    }
+
     private fun drawMap(c: Canvas, top: Float): Float {
         var y = top
         // the map always frames itself now (the user, 2026-10-02: "remove the dynamic map toggle, as I REALLY love the way that it

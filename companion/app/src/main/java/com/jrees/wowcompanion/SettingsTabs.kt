@@ -60,6 +60,7 @@ object SettingsTabs {
             "Flow scale", "Performance mode", "Restart the game")),
         INDOOR(Tab.PERFORMANCE, "Indoor maps", listOf("Build in the background", "Progress", "Route data")),
         GAME(Tab.SYSTEM, "Game", listOf("Reload game UI", "Battle.net login", "Problem report")),
+        STREAMING(Tab.SYSTEM, "Streaming", listOf("Stream settings")),
         COMPANION(Tab.SYSTEM, "Companion", listOf("Status")),
     }
 
@@ -67,7 +68,7 @@ object SettingsTabs {
     const val HOME_MODULES = "Home module settings"
 
     /** the blocks SettingsView draws itself (the others are Home's section and the two GameUiSection parts) */
-    val VIEW_BLOCKS = setOf(Block.GAME, Block.MAP, Block.INDOOR, Block.CONTROLLER, Block.PAUSE_WHEEL, Block.ITEM_WHEEL, Block.SPELL_WHEEL,
+    val VIEW_BLOCKS = setOf(Block.GAME, Block.STREAMING, Block.MAP, Block.INDOOR, Block.CONTROLLER, Block.PAUSE_WHEEL, Block.ITEM_WHEEL, Block.SPELL_WHEEL,
         Block.CLASS_LEFT, Block.CLASS_RIGHT, Block.SMART_Y,
         Block.CHAT, Block.FRAMES, Block.ADDON_SPOKEN, Block.ADDON_POLESTAR, Block.ADDON_QUESTTRAIL)
 

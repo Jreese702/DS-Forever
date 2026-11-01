@@ -653,6 +653,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         startView.onChangeLogin = { restartOnSave = LauncherHooks.gameUp() && HomeLoginStore.autoLogin(this); loginPrompt.open() }
         startView.canExit = { SetupBridge.exitStream != null || LauncherHooks.gameUp() }
         startView.onExit = { (SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
+        startView.canForget = { HomeLoginStore.has(this) }
+        startView.onForgetLogin = { HomeLoginStore.clear(this); NativeLogin.clear() }
+        startView.canRestart = { LauncherHooks.gameUp() }
+        startView.onRestart = { settingsRest.onRestart() }
+        startView.canSwitch = { SetupBridge.exitStream != null || ModeBridge.canGoBack() }
+        startView.onSwitch = { if (SetupBridge.exitStream != null) SetupBridge.exitStream?.invoke() else ModeBridge.back("the Menu") }
         startView.onLoginButton = { gear -> if (gear || LauncherHooks.pkg != null) loginPrompt.open() else signIn() }
         loginPrompt = HomeLoginPrompt(this) { login ->
             settingsView.invalidate()

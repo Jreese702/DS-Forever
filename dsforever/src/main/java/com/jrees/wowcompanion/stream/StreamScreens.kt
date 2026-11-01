@@ -165,7 +165,7 @@ internal class QualityView(ctx: Context, private var q: StreamQuality, private v
             t.setOnClickListener { row = i; change(1) }
             addView(t)
         }
-        addView(StreamLook.text(ctx, 14f, StreamLook.DIM).apply { text = "Applies from the next connection. Defaults: HEVC, 1080p 60, 20 Mbps." })
+        addView(StreamLook.text(ctx, 14f, StreamLook.DIM).apply { text = "Defaults: HEVC, 1080p 60, 20 Mbps." })
         addView(StreamLook.row(ctx, StreamLook.button(ctx, "Defaults") { q = StreamQuality(); onChange(q); refresh() }, StreamLook.button(ctx, "Done (B)") { onClose() }))
         refresh()
     }

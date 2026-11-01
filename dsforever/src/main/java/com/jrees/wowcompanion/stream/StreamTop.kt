@@ -61,6 +61,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private lateinit var pairing: PairingView
     private lateinit var status: StatusView
     private var qualityView: QualityView? = null
+    private var qualityAtOpen = StreamQuality()
     private var screen = Screen.CONNECTING
     private var beforeQuality = Screen.CONNECTING
 
@@ -369,6 +370,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         DsForeverScreen.current?.signInClose = { boardByHand = false; boardShut = true; applyCurtain() }
         SetupBridge.openPcKeyboard = { boardByHand = true; boardShut = false; applyCurtain() }
         SetupBridge.exitStream = { main.post { stopStream("menu"); back() } }
+        SetupBridge.openStreamSettings = { main.post { openQuality() } }
         touchMouse = StreamTouch(MoonBridge.INPUT, view.width, view.height, w, h,
             android.view.ViewConfiguration.get(activity).scaledTouchSlop.toFloat()) { ms, r -> main.postDelayed(r, ms) }
         try { MoonBridge.sendControllerArrivalEvent(0, 1, MoonBridge.LI_CTYPE_XBOX, StreamPad.SUPPORTED,
@@ -437,6 +439,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         seen = false
         SetupBridge.openPcKeyboard = null
         SetupBridge.exitStream = null
+        SetupBridge.openStreamSettings = null
         boardByHand = false
         board(false)
         touchMouse?.cancel(); touchMouse = null
@@ -594,10 +597,19 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun openQuality() {
         if (screen == Screen.QUALITY) return
         beforeQuality = screen
-        val v = qualityView ?: QualityView(activity, quality, onChange = { q -> quality = q; StreamQuality.save(activity, q) }, onClose = { show(beforeQuality) })
+        qualityAtOpen = quality
+        val v = qualityView ?: QualityView(activity, quality, onChange = { q -> quality = q; StreamQuality.save(activity, q) }, onClose = { qualityDone() })
             .also { qualityView = it; overlay.centered(it, 560f) }
         show(Screen.QUALITY)
         v.bringToFront()
+    }
+
+    /** a change made while streaming applies now: the stream connects again (the game on the PC keeps running) */
+    private fun qualityDone() {
+        if (beforeQuality == Screen.STREAMING && quality != qualityAtOpen && session != null) {
+            stopStream("stream settings changed")
+            retryNow()
+        } else show(beforeQuality)
     }
 
     private fun back() = shell.back()

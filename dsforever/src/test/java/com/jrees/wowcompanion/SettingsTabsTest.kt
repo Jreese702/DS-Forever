@@ -104,7 +104,7 @@ class SettingsTabsTest {
         assertEquals(listOf(B.HOME_SECTION, B.MAP, B.CHAT), SettingsTabs.blocks(T.HOME))   // Home's rows, then its modules' (test40)
         assertEquals("Home module settings", SettingsTabs.HOME_MODULES)
         assertEquals(listOf(B.FRAMES, B.INDOOR), SettingsTabs.blocks(T.PERFORMANCE))
-        assertEquals(listOf(B.GAME, B.COMPANION), SettingsTabs.blocks(T.SYSTEM))
+        assertEquals(listOf(B.GAME, B.STREAMING, B.COMPANION), SettingsTabs.blocks(T.SYSTEM))
         assertTrue("Cast bar" in B.GAME_UI.rows && B.GAME_UI.tab == T.TOP)   // the HUD-mode split: the cast bar back on Top screen
         assertTrue("Frame limit" in B.FRAMES.rows)
     }
