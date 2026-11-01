@@ -1,3 +1,4 @@
+using System.IO;
 using System;
 using System.Collections.Generic;
 using DsfDesktop.Wow;
@@ -155,13 +156,31 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
-        public static void TheLoginGoesInOncePerClient()
+        public static void TheLoginFileIsShortLived()
         {
-            A.True(WowFlow.LoginReady(WowScreen.Login, null, 7, 0));
-            A.True(!WowFlow.LoginReady(WowScreen.Login, null, 7, 7), "this client had its attempt");
-            A.True(!WowFlow.LoginReady(WowScreen.Login, "308", 7, 0), "an error: the player's");
-            A.True(!WowFlow.LoginReady(WowScreen.Starting, null, 7, 0), "no form yet");
-            A.True(WowFlow.LoginReady(WowScreen.Login, null, 8, 7), "a new client");
+            A.True(WowFlow.LoginFileWanted(WowScreen.None)); A.True(WowFlow.LoginFileWanted(WowScreen.Starting));
+            A.True(!WowFlow.LoginFileWanted(WowScreen.Login), "the client has passed its read");
+            A.True(!WowFlow.LoginFileWanted(WowScreen.World));
+            A.True(!WowFlow.LoginFileGoes(10, null, true), "waiting for the client");
+            A.True(!WowFlow.LoginFileGoes(30, 19, true), "the client reads it twice");
+            A.True(WowFlow.LoginFileGoes(30, 20, true));
+            A.True(WowFlow.LoginFileGoes(300, null, true), "never read");
+            A.True(WowFlow.LoginFileGoes(1, null, false), "the Thor left");
+        }
+
+        [Test]
+        public static void TheLoginFileIsWrittenAndGoes()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "dsf-login-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                A.Eq(null, WowLoginFile.Write(dir, "a@b.c", "p w"));
+                A.Eq("a@b.c\np w\n", File.ReadAllText(Path.Combine(dir, "login.txt")));
+                WowLoginFile.Delete(dir);
+                A.True(!File.Exists(Path.Combine(dir, "login.txt")));
+            }
+            finally { Directory.Delete(dir, true); }
         }
 
         [Test]
