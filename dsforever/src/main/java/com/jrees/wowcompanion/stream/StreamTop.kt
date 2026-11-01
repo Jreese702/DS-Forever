@@ -181,7 +181,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private fun signInTick() {
         main.removeCallbacks(signInLoop)
-        signIn.tick(screen == Screen.STREAMING && pc?.bnet == "signin_needed")
+        signIn.tick(screen == Screen.STREAMING && (pc?.bnet == "signin_needed" || StreamCurtain.loginWaits(pc)))
         applyCurtain()
         if (signIn.working) main.postDelayed(signInLoop, 1_000L)
     }
