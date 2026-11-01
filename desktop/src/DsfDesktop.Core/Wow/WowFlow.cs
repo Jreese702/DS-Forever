@@ -122,32 +122,20 @@ namespace DsfDesktop.Wow
         }
 
         /// <summary>
-        /// The user's rules (2026-10-28): no WoW = start it; WoW sitting at the login screen (or showing a sign-in error) = close it
-        /// and start a fresh one; signed in (character select or the world) = leave it and bring it to the front. ONE automatic retry
-        /// per connect, never a loop: [tries] = clients that have tried to sign in during this connect (a client found at the login
-        /// screen when the Thor connected counts as the first; every start adds one); from 2, a client that is not signed in (closed,
-        /// or at the login screen again) needs the player on the PC. Battle.net first: not running = start it plainly; signed out =
-        /// its sign-in window in front (the player signs in through the stream; DS Forever never sees what is typed). [busy] = a
-        /// start or a restart is under way.
+        /// No WoW = start it; WoW at its login screen = bring it to the front, the player signs in there (the user's pick 2026-10-31,
+        /// as in Local; a restart would only clear what they typed); signed in = bring it to the front. [tries] = clients started
+        /// during this connect (a client found at the login screen counts as the first); from 2, a client that closed itself needs
+        /// the player. Battle.net plays no part: WoW starts without it. [busy] = a start is under way.
         /// </summary>
         public static WowAction Decide(BnetState bnet, WowScreen screen, int tries, bool busy)
         {
             if (busy) return WowAction.Wait;
             switch (screen)
             {
-                case WowScreen.CharSelect:
-                case WowScreen.World:
-                    return WowAction.Focus;
-            }
-            if (bnet == BnetState.NotRunning) return WowAction.StartBattleNet;
-            if (bnet == BnetState.Starting) return WowAction.Wait;
-            if (bnet == BnetState.SignInNeeded) return WowAction.ShowBattleNetSignIn;
-            switch (screen)
-            {
                 case WowScreen.None: return tries < 2 ? WowAction.StartWow : WowAction.NeedsYou;
                 case WowScreen.Starting:
                 case WowScreen.SigningIn: return WowAction.Wait;
-                default: return tries < 2 ? WowAction.RestartWow : WowAction.NeedsYou;   // the login screen
+                default: return WowAction.Focus;   // the login screen, character select, the world
             }
         }
 

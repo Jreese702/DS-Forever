@@ -691,7 +691,7 @@ namespace DsfDesktop.App
                 ["state"] = WowStarter.Word(WowUp() ? WowState.Running : Starter.State),
                 ["screen"] = WowFlow.Word(LastScreen),
                 ["focused"] = WowWindow.IsForeground(),
-                ["bnet"] = WowFlow.Word(LastBnet),
+                ["bnet"] = WowFlow.Word(BnetState.Unknown),
                 ["needs_you"] = Supervisor?.NeedsYou ?? false,
             };
             if (Supervisor?.Crash != null) d["crash"] = Supervisor.Crash;
@@ -888,7 +888,7 @@ namespace DsfDesktop.App
                 // running / starting / stopped / start_failed (+ why): "Starting WoW on your PC..." on the Thor
                 ["state"] = WowStarter.Word(WowUp() ? WowState.Running : Starter.State), ["why"] = Starter.Why,
                 // where it is and what Battle.net needs (0.2.1): the Thor keeps its curtain until charselect / world + focused
-                ["screen"] = WowFlow.Word(LastScreen), ["bnet"] = WowFlow.Word(LastBnet), ["needs_you"] = Supervisor?.NeedsYou ?? false,
+                ["screen"] = WowFlow.Word(LastScreen), ["bnet"] = WowFlow.Word(BnetState.Unknown), ["needs_you"] = Supervisor?.NeedsYou ?? false,
             },
             ["pairing_open"] = !Codes.Locked,
         };

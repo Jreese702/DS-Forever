@@ -70,16 +70,14 @@ namespace DsfDesktop.Tests
             A.Eq(WowAction.Focus, WowFlow.Decide(ok, WowScreen.CharSelect, 0, false), "signed in: leave it, focus");
             A.Eq(WowAction.Focus, WowFlow.Decide(ok, WowScreen.World, 1, false));
             A.Eq(WowAction.Focus, WowFlow.Decide(BnetState.SignInNeeded, WowScreen.World, 0, false), "a game in the world never waits for Battle.net");
-            A.Eq(WowAction.RestartWow, WowFlow.Decide(ok, WowScreen.Login, 1, false), "at the login screen: close it, start a fresh one");
-            A.Eq(WowAction.NeedsYou, WowFlow.Decide(ok, WowScreen.Login, 2, false), "the fresh one at the login screen too: stop");
+            A.Eq(WowAction.Focus, WowFlow.Decide(ok, WowScreen.Login, 1, false), "at the login screen: the player signs in, never a restart");
+            A.Eq(WowAction.Focus, WowFlow.Decide(ok, WowScreen.Login, 2, false));
             A.Eq(WowAction.NeedsYou, WowFlow.Decide(ok, WowScreen.None, 2, false), "the fresh one closed itself: stop");
             A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.Starting, 1, false));
             A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.SigningIn, 1, false), "Blizzard's queue: never restart it");
-            A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.Login, 0, true), "a restart is under way");
-            A.Eq(WowAction.StartBattleNet, WowFlow.Decide(BnetState.NotRunning, WowScreen.None, 0, false));
-            A.Eq(WowAction.Wait, WowFlow.Decide(BnetState.Starting, WowScreen.None, 0, false));
-            A.Eq(WowAction.ShowBattleNetSignIn, WowFlow.Decide(BnetState.SignInNeeded, WowScreen.Login, 1, false), "signed out: its sign-in first");
-            A.Eq(WowAction.StartWow, WowFlow.Decide(BnetState.Unknown, WowScreen.None, 0, false), "no Battle.net: the plain start");
+            A.Eq(WowAction.Wait, WowFlow.Decide(ok, WowScreen.Login, 0, true), "a start is under way");
+            A.Eq(WowAction.StartWow, WowFlow.Decide(BnetState.NotRunning, WowScreen.None, 0, false), "Battle.net plays no part");
+            A.Eq(WowAction.StartWow, WowFlow.Decide(BnetState.SignInNeeded, WowScreen.None, 0, false));
         }
 
         sealed class Pc
@@ -104,17 +102,13 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
-        public static void AtTheLoginScreenRestartsOnceThenGivesUp()
+        public static void AtTheLoginScreenThePlayerSignsIn()
         {
-            var pc = new Pc { Screen = WowScreen.Login, FreshGoesTo = WowScreen.Starting };
+            var pc = new Pc { Screen = WowScreen.Login };
             var s = pc.Make();
             s.Connect();
-            A.Eq("close,start", string.Join(",", pc.Did), "the old client closed, a fresh one started");
-            A.Eq(2, s.Tries);
-            pc.Screen = WowScreen.SigningIn; s.Step(); A.Eq(WowAction.Wait, s.Last);
-            pc.Screen = WowScreen.Login; s.Step();                      // the fresh one lands at the login screen too
-            A.True(s.NeedsYou, "never a loop"); A.False(s.Active);
-            A.Eq("close,start", string.Join(",", pc.Did), "no second restart");
+            A.Eq("focus", string.Join(",", pc.Did), "WoW in front, never closed");
+            A.False(s.NeedsYou); A.False(s.Active);
         }
 
         [Test]
@@ -195,15 +189,13 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
-        public static void NotRunningStartsAndRetriesOnce()
+        public static void NotRunningStartsThenWaitsForThePlayer()
         {
             var pc = new Pc { Screen = WowScreen.None };
             var s = pc.Make();
             s.Connect(); A.Eq("start", string.Join(",", pc.Did));
             pc.Screen = WowScreen.Login; s.Step();
-            A.Eq("start,close,start", string.Join(",", pc.Did), "the one retry");
-            pc.Screen = WowScreen.CharSelect; s.Step();
-            A.Eq("start,close,start,focus", string.Join(",", pc.Did)); A.False(s.NeedsYou); A.False(s.Active, "done: signed in and in front");
+            A.Eq("start,focus", string.Join(",", pc.Did), "no restart"); A.False(s.NeedsYou); A.False(s.Active);
         }
 
         [Test]
@@ -216,17 +208,11 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
-        public static void BattleNetSignInComesFirst()
+        public static void BattleNetPlaysNoPart()
         {
             var pc = new Pc { Screen = WowScreen.None, Bnet = BnetState.NotRunning };
-            var s = pc.Make();
-            s.Connect(); A.Eq("bnet", string.Join(",", pc.Did), "Battle.net started plainly");
-            s.Step(); A.Eq("bnet", string.Join(",", pc.Did), "not again at once");
-            pc.Bnet = BnetState.SignInNeeded; s.Step(); s.Step();
-            A.Eq("bnet,signin", string.Join(",", pc.Did), "its sign-in window in front, once");
-            A.Eq(WowAction.ShowBattleNetSignIn, s.Last);
-            pc.Bnet = BnetState.SignedIn; s.Step();
-            A.Eq("bnet,signin,start", string.Join(",", pc.Did), "signed in: WoW starts the normal way");
+            pc.Make().Connect();
+            A.Eq("start", string.Join(",", pc.Did), "signed out or closed, WoW still starts");
         }
 
         /// <summary>the welcome's "lan": home networks only, never Tailscale (the user, 2026-10-28: "Yes, Wi-Fi first")</summary>
