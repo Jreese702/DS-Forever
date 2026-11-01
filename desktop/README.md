@@ -18,6 +18,10 @@ stream WoW Forever from this PC. One tray app that
   Never uninstalls, never clears data. A file picker installs a tester's own APK.
 - Looks like DS Forever on the Thor (dark panels, bronze frames, the game's gold, the gold box cursor; DS Forever's own mark).
 
+- **Updates itself** from the latest public release (the `DsForeverDesktop-<version>-win-x64.zip` listed in SHA256SUMS), once no Thor
+  is connected; a failed swap starts the old folder again.
+- **Signs in with the Thor's saved login:** WoW's own `login.txt`, short-lived and readable by this Windows user only. No keys are typed.
+
 ## Build
 
 Needs a .NET SDK (6 or newer) and the .NET Framework 4.8 targeting pack; the app runs on the .NET Framework 4.8 that ships with

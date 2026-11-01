@@ -13,7 +13,7 @@ No Blizzard client files, extracted art or QuestieDB are bundled.
 ## Tested Scope
 
 **AYN Thor only**; other devices are unverified. Android10/API29+, arm64-v8a.
-Package `app.dsforever.companion`; version1.0.0/code1000. Same-package, same-key
+Package `app.dsforever.companion`. Same-package, same-key
 DS builds update in place. Do not uninstall or clear data for signing conflicts;
 developer builds with another key cannot update an official installation.
 
@@ -43,6 +43,27 @@ The companion shows observed NPCs, not database-only ghosts. No suggested spells
 Old DS-created macros are removed silently, preserving user-created macros.
 Map probe defaults ON, tracking auto-switch OFF, sparkles OFF. Indoor legend:
 **red main exit, green up, blue down**. Outdoors remains visible while a plan loads.
+
+## Streaming From Your PC
+
+DS Forever can play WoW Forever from your Windows PC instead of on the Thor,
+with the companion on the bottom screen. It needs DS Forever Desktop on the PC:
+
+1. Download `DsForeverDesktop-<version>-win-x64.zip` from the same release as
+   the APK, unzip it to a folder you keep, and run `DsForeverDesktop.exe`.
+2. Pick Streaming on the Thor and enter the code Desktop shows.
+3. Connect on your home Wi-Fi. Desktop starts WoW and signs in with the login
+   saved on your Thor.
+
+Your saved login stays sealed on the Thor. When a stream starts it goes to the
+PC over the paired, encrypted link and is written to WoW's own `login.txt`,
+readable by your Windows account only and deleted about 20 seconds after
+sign-in starts (5 minutes at most, or as soon as the Thor disconnects). No keys
+are typed. Authenticator challenges stay manual.
+
+Desktop updates itself from these releases once no Thor is connected, checked
+against `SHA256SUMS`. It is not code-signed, so Windows may warn on first run.
+WoW closes itself 5 minutes after the stream ends, unless the PC is in use.
 
 ## Updates
 
