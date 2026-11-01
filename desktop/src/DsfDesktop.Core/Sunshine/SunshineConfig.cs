@@ -40,6 +40,8 @@ namespace DsfDesktop.Sunshine
         /// <summary>the display device id Sunshine captures ("{...}", from its own display list); null = the primary display</summary>
         public string OutputName;
         public string AppName = "WoW Forever";
+        /// <summary>Sunshine sets the streamed screen to the client's resolution and rate, and back when the client disconnects</summary>
+        public bool MatchStream;
     }
 
     /// <summary>
@@ -69,7 +71,7 @@ namespace DsfDesktop.Sunshine
                 new KeyValuePair<string, string>("notify_pre_releases", "disabled"),
                 new KeyValuePair<string, string>("install_steam_audio_drivers", "disabled"),
                 new KeyValuePair<string, string>("nvenc_opengl_vulkan_on_dxgi", "disabled"),
-                new KeyValuePair<string, string>("dd_configuration_option", "disabled"),
+                new KeyValuePair<string, string>("dd_configuration_option", o.MatchStream ? "ensure_active" : "disabled"),
                 new KeyValuePair<string, string>("hevc_mode", "0"),
                 new KeyValuePair<string, string>("av1_mode", "0"),
                 new KeyValuePair<string, string>("min_log_level", "2"),
@@ -80,6 +82,12 @@ namespace DsfDesktop.Sunshine
                 new KeyValuePair<string, string>("pkey", P(l.Pkey)),
                 new KeyValuePair<string, string>("log_path", P(l.LogFile)),
             };
+            if (o.MatchStream)
+            {
+                kv.Add(new KeyValuePair<string, string>("dd_resolution_option", "auto"));
+                kv.Add(new KeyValuePair<string, string>("dd_refresh_rate_option", "auto"));
+                kv.Add(new KeyValuePair<string, string>("dd_config_revert_on_disconnect", "enabled"));
+            }
             if (!string.IsNullOrWhiteSpace(o.Encoder)) kv.Add(new KeyValuePair<string, string>("encoder", o.Encoder.Trim()));
             if (!string.IsNullOrWhiteSpace(o.OutputName)) kv.Add(new KeyValuePair<string, string>("output_name", o.OutputName.Trim()));
             if (!string.IsNullOrWhiteSpace(o.BindAddress)) kv.Add(new KeyValuePair<string, string>("bind_address", o.BindAddress.Trim()));

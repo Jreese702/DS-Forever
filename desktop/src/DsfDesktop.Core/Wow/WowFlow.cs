@@ -79,6 +79,13 @@ namespace DsfDesktop.Wow
         public const double LoadGraceS = 25;
         /// <summary>the add-on writes a document every few seconds in the world (addons do not run before it)</summary>
         public const double WorldDocS = 90;
+        public const double FocusRetryEveryS = 5;
+        public const int FocusRetryMax = 12;
+
+        /// <summary>WoW has a window, is behind something, and the tries are not used up</summary>
+        public static bool FocusRetryWanted(WowScreen s, bool inFront, int tries, bool due) =>
+            s != WowScreen.None && s != WowScreen.Starting && !inFront && tries < FocusRetryMax && due;
+
         /// <summary>login.txt: 20 s after the sign-in began (the client reads it twice, as measured on the Thor), 5 minutes at the most</summary>
         public const double LoginFileAfterS = 20, LoginFileMaxS = 300;
 

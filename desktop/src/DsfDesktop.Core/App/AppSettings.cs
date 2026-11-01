@@ -21,6 +21,9 @@ namespace DsfDesktop.App
         public bool FocusOnStream { get; set; } = true;
         /// <summary>"Start WoW when streaming": a stream (or the Thor's focus) starts WoW Forever when it isn't running</summary>
         public bool StartWowOnStream { get; set; } = true;
+        /// <summary>"Match the PC's screen to the stream": the streamed screen takes the Thor's resolution while it is connected, then goes back
+        /// (the user 2026-11-01: "Everything just looks so tiny on my thor")</summary>
+        public bool MatchStreamResolution { get; set; } = true;
         /// <summary>the display device id Sunshine captures (the monitor WoW was last seen on); null = the primary display</summary>
         public string CaptureDevice { get; set; }
         /// <summary>the folder question is asked once; after that the user uses "Choose folder" themselves</summary>
