@@ -5,8 +5,8 @@ import android.graphics.RectF
 
 /**
  * THE MENU (the user 2026-11-01), on the waiting screen ([StartView]) and the chooser ([ChooserPanel]): Auto login's tick and Change login,
- * Forget login, Stream settings or Restart game, Report issue, Switch mode, the controller's two settings, Exit game; X, B or a touch
- * outside shuts it. The host fills in the actions; one app, one menu. Main thread.
+ * Forget login, Stream settings or Restart game, Report issue, Switch mode (not on the chooser), the controller's two settings, Exit game; the Menu button turned
+ * into an X, B or a touch outside shuts it. The host fills in the actions; one app, one menu. Main thread.
  */
 object StartMenu {
     var open = false
@@ -25,27 +25,26 @@ object StartMenu {
     var onSwitch: (() -> Unit)? = null
     private var forgetArmedAt = -FORGET_ARM_MS
 
-    /** the panel over [w] x [h]; [hits] gets what a touch can press, [pressed] the id held down */
-    fun draw(c: Canvas, w: Int, h: Int, pressed: Int, hits: ArrayList<Pair<RectF, Int>>) {
+    /** the panel over [w] x [h]; [menuButton] = where the Menu button is, the X now; [hits] gets what a touch can press, [pressed] the id held down */
+    fun draw(c: Canvas, w: Int, h: Int, pressed: Int, hits: ArrayList<Pair<RectF, Int>>, menuButton: RectF, switchMode: Boolean) {
         hits.clear()
         val bh = StartView.BUTTON_H; val gap = StartView.GAP
-        val height = PAD * 2 + CLOSE_H + gap + bh * 5 + gap * 4
+        val height = PAD * 2 + bh * 5 + gap * 4
         val left = (w - WIDTH) / 2f
         val top = (h - height) / 2f
         val panel = RectF(left, top, left + WIDTH, top + height)
         UiKit.module(c, panel)
         val inL = panel.left + PAD; val inR = panel.right - PAD
         val mid = (inL + inR) / 2f
-        fun rowTop(i: Int) = panel.top + PAD + CLOSE_H + gap + i * (bh + gap)
+        fun rowTop(i: Int) = panel.top + PAD + i * (bh + gap)
         fun cell(i: Int, right: Boolean) = RectF(if (right) mid + gap / 2f else inL, rowTop(i), if (right) inR else mid - gap / 2f, rowTop(i) + bh)
         fun put(r: RectF, word: String, id: Int, on: Boolean) {
             if (!on) { UiKit.button(c, r, word, UiKit.Button.DISABLED); return }
             UiKit.button(c, r, word, if (pressed == id) UiKit.Button.DOWN else UiKit.Button.UP)
             hits += r to id
         }
-        val close = RectF(inR - CLOSE_W, panel.top + PAD, inR, panel.top + PAD + CLOSE_H)
-        UiKit.button(c, close, "X", StartView.GLYPH_B, if (pressed == CLOSE) UiKit.Button.DOWN else UiKit.Button.UP)
-        hits += close to CLOSE
+        UiKit.button(c, menuButton, "X", StartView.GLYPH_B, if (pressed == CLOSE) UiKit.Button.DOWN else UiKit.Button.UP)
+        hits += RectF(menuButton) to CLOSE
         val auto = cell(0, false)
         UiKit.check(c, auto.left + CHECK / 2f, auto.centerY(), CHECK, autoLogin())
         val words = UiKit.bodyPaint(StartView.LINE_SIZE)
@@ -56,8 +55,10 @@ object StartMenu {
         put(cell(1, false), if (armed) "Tap again" else "Forget login", FORGET, canForget())
         if (SetupBridge.openStreamSettings != null) put(cell(1, true), "Stream settings", STREAM, true)
         else put(cell(1, true), "Restart game", RESTART, canRestart())
-        put(cell(2, false), "Report issue", REPORT, true)
-        put(cell(2, true), "Switch mode", SWITCH, canSwitch())
+        if (switchMode) {
+            put(cell(2, false), "Report issue", REPORT, true)
+            put(cell(2, true), "Switch mode", SWITCH, canSwitch())
+        } else put(RectF(inL, rowTop(2), inR, rowTop(2) + bh), "Report issue", REPORT, true)
         // the Settings room's two controller rows, a press steps to the next choice
         put(cell(3, false), "ABXY: ${CastSettings.abxyLocation.label}", ABXY, true)
         put(cell(3, true), "Glyphs: ${CastSettings.buttonLayout.label}", GLYPHS, true)
@@ -99,7 +100,5 @@ object StartMenu {
     private const val FORGET_ARM_MS = 4000L
     private const val WIDTH = 1000f
     private const val PAD = 32f
-    private const val CLOSE_W = 170f
-    private const val CLOSE_H = 84f
     private const val CHECK = 76f
 }

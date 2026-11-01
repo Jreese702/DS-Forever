@@ -104,7 +104,10 @@ class ChooserPanel(context: Context) : View(context) {
             Page.STREAM -> drawStream(c)
             Page.NONE -> Unit
         }
-        if (StartMenu.open && page == Page.CHOOSER) StartMenu.draw(c, width, height, menuPressed, menuHits)
+        if (StartMenu.open && page == Page.CHOOSER) {
+            val top = footTop()
+            StartMenu.draw(c, width, height, menuPressed, menuHits, RectF(MARGIN, top, MARGIN + SIDE_W, top + BUTTON_H), switchMode = false)
+        }
     }
 
     /** the foot's row: the status line in its panel, framed by the two side buttons, as on the waiting screen (StartView) */

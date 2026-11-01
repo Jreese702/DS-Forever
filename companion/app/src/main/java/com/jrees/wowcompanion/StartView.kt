@@ -66,7 +66,10 @@ class StartView(context: Context) : View(context) {
         LoadingScene.draw(c, area, top = false)
         postInvalidateDelayed(FRAME_MS)
         drawRow(c)
-        if (menuOpen) StartMenu.draw(c, width, height, pressed, hits)
+        if (menuOpen) {
+            val top = height - ROW_DOWN - BUTTON_H
+            StartMenu.draw(c, width, height, pressed, hits, RectF(SIDE_M, top, SIDE_M + SIDE_W, top + BUTTON_H), switchMode = true)
+        }
     }
 
     private fun drawRow(c: Canvas) {
