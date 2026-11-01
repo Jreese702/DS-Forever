@@ -231,10 +231,9 @@ class DsForeverScreen(private val context: Context) {
             prev?.reclaim()
         }
         const val SHOW_AFTER_MS = 1_500L
-        private const val EXTRA_MOVED = "dsforever_moved_to_top"
 
         /** what a start or a resume does about the display it landed on (pure: the tests drive it) */
-        enum class Move { NONE, RELAUNCH, BRING_TO_TOP }
+        enum class Move { NONE, BRING_TO_TOP }
 
         /** a second move within this long is skipped (no loop if Android insists) */
         const val MOVE_GUARD_MS = 5_000L
@@ -245,14 +244,14 @@ class DsForeverScreen(private val context: Context) {
          * screen (display 0), DS Forever's Presentation on the other one. Before: no move at all while a game ran, and only ONCE per
          * launch (the relaunched intent kept its "moved" mark, so a later resume on the bottom stayed there).
          * - on the top screen: nothing;
-         * - no game: RELAUNCH (finish this task, start again on display 0: nothing is lost);
-         * - a game running: BRING_TO_TOP (the SAME task brought to display 0, nothing finished: the game keeps running).
+         * - anywhere else: BRING_TO_TOP (the SAME task brought to display 0, nothing finished: a game keeps running, and the task the
+         *   launcher started stays the one it tracks. Finishing it for a new one left CocoonShell's Now Playing unable to close us:
+         *   the user 2026-10-31, measured: bottom-grid start, RELAUNCH, no close request ever reached Android).
          */
         fun decide(display: Int, gameRunning: Boolean, sinceLastMoveMs: Long): Move = when {
             display == Display.DEFAULT_DISPLAY -> Move.NONE
             sinceLastMoveMs < MOVE_GUARD_MS -> Move.NONE
-            gameRunning -> Move.BRING_TO_TOP
-            else -> Move.RELAUNCH
+            else -> Move.BRING_TO_TOP
         }
 
         @Volatile private var lastMoveAt = 0L
@@ -267,18 +266,10 @@ class DsForeverScreen(private val context: Context) {
             lastMoveAt = now
             val top = ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY).toBundle()
             return try {
-                if (move == Move.RELAUNCH) {
-                    val again = Intent(activity.intent).putExtra(EXTRA_MOVED, true)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-                    activity.finishAndRemoveTask()
-                    activity.startActivity(again, top)
-                    true
-                } else {
-                    // the existing task (the running game in it) to the top screen: no new task, nothing finished
-                    activity.startActivity(Intent(activity, activity.javaClass)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP), top)
-                    false
-                }
+                // the existing task to the top screen: no new task, nothing finished
+                activity.startActivity(Intent(activity, activity.javaClass)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP), top)
+                false
             } catch (t: Throwable) { Log.w(TAG, "move to top: ${t.message}"); false }
         }
     }
