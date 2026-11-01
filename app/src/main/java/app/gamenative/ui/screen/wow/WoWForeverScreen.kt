@@ -219,7 +219,9 @@ fun WoWForeverScreen(
     fun checkFiles(): Boolean {
         GamePath.save(context, gamePath)
         files = GamePath.status(context, gamePath)
-        artReady = runCatching { com.jrees.wowcompanion.ArtHarvest.beforePlayReady(context) }.getOrDefault(false)
+        val firstRun = com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath))
+        if (firstRun) artFailed = null
+        artReady = firstRun || runCatching { com.jrees.wowcompanion.ArtHarvest.beforePlayReady(context) }.getOrDefault(false)
         loginSaved = com.jrees.wowcompanion.HomeLoginStore.has(context)
         addonsInstalled = File(WowClientDownloader.flavorDir(File(gamePath)), "Interface/AddOns/WowCompanion").isDirectory
         if (files.isWrongGame) {
@@ -271,7 +273,8 @@ fun WoWForeverScreen(
                 // DS FOREVER'S ART HARVEST (the user 2026-10-09, "Mostly before Play"): the companion's pictures are built from this
                 // install's own game files before the game starts (the kit, the icons, the world maps); the rest builds in the background.
                 // Required art must still be ready for the active build when Play is pressed.
-                if (!awaitArtHarvest(context) { msg -> scope.launch(Dispatchers.Main) { statusText = msg } }) {
+                if (!com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath)) &&
+                    !awaitArtHarvest(context) { msg -> scope.launch(Dispatchers.Main) { statusText = msg } }) {
                     checkFiles()
                     errorMessage = artStatusText ?: "Game art is required before Play"
                     statusText = "Game art is not ready"
@@ -414,6 +417,7 @@ fun WoWForeverScreen(
     fun harvestArt(retry: Boolean = false, force: Boolean = false) {
         // [force]: the launch switch's own start (the screen's flags may still be the old build's, or Play's)
         if (!force && (isLaunching || isUpdating || isHarvesting || files.isWrongGame || filesMissing)) return
+        if (com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath))) return
         if (!files.hasStorageAccess) return
         if (artFailed != null && !retry) return
         GamePath.save(context, gamePath)

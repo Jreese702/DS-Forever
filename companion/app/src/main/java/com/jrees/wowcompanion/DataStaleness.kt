@@ -21,6 +21,13 @@ object DataStaleness {
     /** in a directly installed game folder: its Data fills as the game streams it, so a read that misses says nothing about its age */
     const val STREAMED = ".ds-streamed"
     const val MIN_SAMPLE = 40
+
+    /**
+     * A DIRECT INSTALL BEFORE THE GAME'S FIRST RUN (direct3 on the Thor: CascLib error 2 at "loading index files"): the client makes
+     * Data/data's .idx files as it starts, and the art cannot open the folder without them. So this one Play goes without the art, and
+     * the art builds at the next start.
+     */
+    fun firstRun(gameRoot: File): Boolean = File(gameRoot, STREAMED).exists() && fingerprint(gameRoot).isEmpty()
     const val STALE_RATIO = 0.5
 
     /** STALE (true), fine (false), or not enough reads yet (null) */
