@@ -42,6 +42,17 @@ class DirectInstallTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun theIndexesAreMadeWithAllSixteenBuckets() {
+        val root = java.nio.file.Files.createTempDirectory("direct").toFile()
+        try {
+            val data = java.io.File(root, "Data/data").apply { mkdirs() }
+            for (b in 0 until 15) java.io.File(data, "%02x00000001.idx".format(b)).writeText("x")
+            assertTrue(!DataStaleness.indexesMade(root))
+            java.io.File(data, "0f00000001.idx").writeText("x")
+            assertTrue(DataStaleness.indexesMade(root))
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun aFreshBuildInfoIsTheLaunchClient() {
         val text = WowSwitch.freshBuildInfo(WowSwitch.Remote(version = "1.60.1.70707", buildConfig = "b", cdnConfig = "c",
             cdnHosts = listOf("h1", "h2"), cdnPath = "tpr/wow", cdnServers = "s", keyRing = "k"), "us")

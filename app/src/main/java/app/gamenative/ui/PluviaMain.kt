@@ -295,8 +295,9 @@ fun PluviaMain(
 
             Box(modifier = Modifier.zIndex(10f)) {
                 BootingSplash(
-                    visible = state.showBootingSplash || initialSplash,
-                    text = if (state.showBootingSplash) state.bootingSplashText else "Booting into World of Warcraft...",
+                    visible = state.showBootingSplash || initialSplash || app.gamenative.ui.screen.wow.WoWLauncherState.seeding,
+                    text = if (app.gamenative.ui.screen.wow.WoWLauncherState.seeding) "Preparing game files..."
+                        else if (state.showBootingSplash) state.bootingSplashText else "Booting into World of Warcraft...",
                     onAbort = {
                         initialSplash = false
                         preLaunchJob?.cancel()

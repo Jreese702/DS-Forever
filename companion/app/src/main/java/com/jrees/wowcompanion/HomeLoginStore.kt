@@ -34,7 +34,7 @@ object HomeLoginStore {
     fun setAutoLogin(ctx: Context, on: Boolean) { ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_AUTO, on).apply() }
 
     /** the saved login for a login.txt; null while Auto login is off */
-    fun forAutoLogin(ctx: Context): Login? = if (autoLogin(ctx)) load(ctx) else null
+    fun forAutoLogin(ctx: Context): Login? = if (autoLogin(ctx) && !SetupBridge.seeding) load(ctx) else null
 
     fun save(ctx: Context, login: Login): Boolean = try {
         val c = Cipher.getInstance("AES/GCM/NoPadding")

@@ -6,5 +6,5 @@ package com.jrees.wowcompanion
  */
 object DirectTest {
     const val ON = true
-    const val FOLDER = "WoW Forever Direct"
+    const val FOLDER = "WoW Forever Direct 2"
 }

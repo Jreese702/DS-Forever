@@ -31,6 +31,8 @@ object SetupBridge {
     @Volatile var openReport: (() -> Unit)? = null
     /** the keyboard / trackpad on the bottom screen; null = no game or stream to send it to */
     @Volatile var openPcKeyboard: (() -> Unit)? = null
+    /** the setup's one run of the game after a direct install (DataStaleness.firstRun): no sign-in */
+    @Volatile var seeding = false
     /** the waiting screen's Menu > Exit game: the stream's end while one runs, else the local game's */
     @Volatile var exitStream: (() -> Unit)? = null
     /** the stream's Stream quality page on the top screen, while a stream runs */

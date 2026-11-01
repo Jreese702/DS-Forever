@@ -24,10 +24,15 @@ object DataStaleness {
 
     /**
      * A DIRECT INSTALL BEFORE THE GAME'S FIRST RUN (direct3 on the Thor: CascLib error 2 at "loading index files"): the client makes
-     * Data/data's .idx files as it starts, and the art cannot open the folder without them. So this one Play goes without the art, and
-     * the art builds at the next start.
+     * Data/data's .idx files as it starts, and the art cannot open the folder without them. So the setup starts the game once by itself,
+     * behind the loading screen and with no sign-in, closes it when they exist, and goes on to the art (the user 2026-11-01). Local and
+     * Streaming stay hidden until the art is done.
      */
     fun firstRun(gameRoot: File): Boolean = File(gameRoot, STREAMED).exists() && fingerprint(gameRoot).isEmpty()
+
+    /** every one of the client's 16 index buckets has its file */
+    fun indexesMade(gameRoot: File): Boolean =
+        File(gameRoot, "Data/data").listFiles { f -> f.isFile && f.name.endsWith(".idx") }.orEmpty().map { it.name.take(2) }.toSet().size >= 16
     const val STALE_RATIO = 0.5
 
     /** STALE (true), fine (false), or not enough reads yet (null) */

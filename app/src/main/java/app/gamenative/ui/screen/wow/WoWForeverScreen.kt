@@ -72,6 +72,8 @@ import java.io.File
 
 object WoWLauncherState {
     var shouldAutoLaunch = true
+    /** a direct install's one run of the game: the booting splash covers it */
+    var seeding by mutableStateOf(false)
 }
 
 private const val CONTAINER_ID = "wow_forever"
@@ -219,9 +221,7 @@ fun WoWForeverScreen(
     fun checkFiles(): Boolean {
         GamePath.save(context, gamePath)
         files = GamePath.status(context, gamePath)
-        val firstRun = com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath))
-        if (firstRun) artFailed = null
-        artReady = firstRun || runCatching { com.jrees.wowcompanion.ArtHarvest.beforePlayReady(context) }.getOrDefault(false)
+        artReady = runCatching { com.jrees.wowcompanion.ArtHarvest.beforePlayReady(context) }.getOrDefault(false)
         loginSaved = com.jrees.wowcompanion.HomeLoginStore.has(context)
         addonsInstalled = File(WowClientDownloader.flavorDir(File(gamePath)), "Interface/AddOns/WowCompanion").isDirectory
         if (files.isWrongGame) {
@@ -254,7 +254,7 @@ fun WoWForeverScreen(
         }
         // the "DS Forever vX is out" pop-up waits for Update or Later before any launch (board b-update-blocks-play). The state
         // itself, not the composition's appUpdate val: the auto-launch calls the first composition's launchGame
-        if (appCheck is com.jrees.wowcompanion.AppUpdate.Check.Available && !appUpdateLater) {
+        if (by != SEED_RUN && appCheck is com.jrees.wowcompanion.AppUpdate.Check.Available && !appUpdateLater) {
             refused("app update pop-up waits for Update or Later")
             launchAfterAppChoice = true
             PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
@@ -414,10 +414,48 @@ fun WoWForeverScreen(
     val filesMissing = !(files.dataExists && files.buildInfoExists) || !directChosen
 
     /** the art build, BY ITSELF once the game folder is found (the user's pick "Automatic, no button"); [retry] = the bottom's Try again */
+    /**
+     * A direct install's one run of the game ([com.jrees.wowcompanion.DataStaleness.firstRun]), covered by the booting splash: closed once
+     * its indexes exist, and the art follows. Runs on past this screen, as the restart does. Not done in time: said, with Try again.
+     */
+    fun seedGame() {
+        if (WoWLauncherState.seeding) return
+        val root = File(gamePath)
+        WoWLauncherState.seeding = true
+        com.jrees.wowcompanion.SetupBridge.seeding = true
+        setupLog("seed: starting the game once")
+        artFailed = null
+        launchGame(by = SEED_RUN)
+        CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
+            val t0 = System.currentTimeMillis()
+            var made = false
+            while (!made && System.currentTimeMillis() - t0 < SEED_WAIT_MS) {
+                delay(1_000)
+                made = withContext(Dispatchers.IO) { com.jrees.wowcompanion.DataStaleness.indexesMade(root) }
+            }
+            setupLog("seed: indexes ${if (made) "made" else "not made"} after ${(System.currentTimeMillis() - t0) / 1000} s")
+            delay(SEED_SETTLE_MS)                       // the client finishes writing them
+            PluviaApp.events.emit(AndroidEvent.ForceCloseApp)
+            var clear = 0
+            val t1 = System.currentTimeMillis()
+            while (clear < 2 && System.currentTimeMillis() - t1 < 30_000) {
+                delay(1_000)
+                val left = withContext(Dispatchers.IO) { runCatching { app.gamenative.utils.WineProcessSnapshotHelper.readFromProc().size }.getOrDefault(-1) }
+                clear = if (left == 0) clear + 1 else 0
+            }
+            com.jrees.wowcompanion.SetupBridge.seeding = false
+            WoWLauncherState.seeding = false
+            setupLog("seed: game closed")
+            if (!made) artFailed = "The game could not prepare its files. Try again."
+            com.jrees.wowcompanion.SetupBridge.launcherRefresh?.invoke()
+            if (made) com.jrees.wowcompanion.SetupBridge.launcherActions?.invoke(com.jrees.wowcompanion.SetupFlow.Action.RETRY_ART)
+        }
+    }
+
     fun harvestArt(retry: Boolean = false, force: Boolean = false) {
         // [force]: the launch switch's own start (the screen's flags may still be the old build's, or Play's)
         if (!force && (isLaunching || isUpdating || isHarvesting || files.isWrongGame || filesMissing)) return
-        if (com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath))) return
+        if (com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath))) { if (retry || artFailed == null) seedGame(); return }
         if (!files.hasStorageAccess) return
         if (artFailed != null && !retry) return
         GamePath.save(context, gamePath)
@@ -802,6 +840,10 @@ fun WoWForeverScreen(
 
 }
 
+private const val SEED_RUN = "seed"
+private const val SEED_WAIT_MS = 300_000L
+private const val SEED_SETTLE_MS = 5_000L
+
 object GamePath {
     private const val PREFS = "wow_forever"
     private const val KEY_GAME_PATH = "game_path"
@@ -840,7 +882,7 @@ object GamePath {
     fun installDir(): File = if (com.jrees.wowcompanion.DirectTest.ON)
         File(Environment.getExternalStorageDirectory(), com.jrees.wowcompanion.DirectTest.FOLDER) else defaultPath
 
-    private const val KEY_DIRECT_CHOSEN = "direct_test_chosen"
+    private const val KEY_DIRECT_CHOSEN = "direct_test_chosen2"
     fun directChosen(context: Context) = !com.jrees.wowcompanion.DirectTest.ON ||
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_DIRECT_CHOSEN, false)
     fun saveDirectChosen(context: Context) {

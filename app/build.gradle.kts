@@ -55,8 +55,8 @@ android {
         manifestPlaceholders["screenOrientation"] = "unspecified"
         buildConfigField("boolean", "XR_BUILD", "false")
 
-        versionCode = 1238
-        versionName = "1.0.13-direct4"
+        versionCode = 1239
+        versionName = "1.0.13-direct5"
 
         buildConfigField("boolean", "GOLD", "false")
         // DS Forever's self-update (Track C, the user's rulings 2026-10-12): the PUBLIC release repo "owner/repo" whose latest GitHub
