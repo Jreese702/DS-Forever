@@ -121,32 +121,46 @@ object StartMode {
     // ------------------------------------------------------------------ the chooser's cursor
 
     enum class Dir { UP, DOWN, LEFT, RIGHT }
-    enum class Row { CARD, SHORTCUT, MAIN }
+    enum class Row { CARD, FOOT, MAIN }
 
-    /** a place of the gold box: the column is the mode (Local left, Streaming right), the row the big card or its shortcut button */
+    /** a place of the gold box: the column is the mode (Local left, Streaming right), the row the big card or the foot's button under it
+     *  (the chooser's Report left, Shortcuts right); on the Shortcuts page MAIN is the DS Forever card under both */
     data class Cell(val mode: Mode, val row: Row)
 
     /** where the box starts: on Local's card, every time (nothing is remembered) */
     fun startCell(): Cell = Cell(Mode.LOCAL, Row.CARD)
 
-    /** the D-pad: left / right between the two columns (same row), up / down between a card and its shortcut button; no wrap */
+    /** the D-pad: left / right between the two columns (same row), up / down between a card and the foot's button; no wrap */
     fun move(c: Cell, d: Dir): Cell = when (d) {
-        Dir.LEFT -> if (c.row == Row.MAIN) c else c.copy(mode = Mode.LOCAL)
-        Dir.RIGHT -> if (c.row == Row.MAIN) c else c.copy(mode = Mode.STREAM)
-        Dir.UP -> c.copy(row = if (c.row == Row.MAIN) Row.SHORTCUT else Row.CARD)
-        Dir.DOWN -> if (c.row == Row.CARD) c.copy(row = Row.SHORTCUT) else Cell(Mode.LOCAL, Row.MAIN)
+        Dir.LEFT -> c.copy(mode = Mode.LOCAL)
+        Dir.RIGHT -> c.copy(mode = Mode.STREAM)
+        Dir.UP -> c.copy(row = Row.CARD)
+        Dir.DOWN -> c.copy(row = Row.FOOT)
+    }
+
+    /** the same on the Shortcuts page: the two cards, DS Forever's under both */
+    fun moveShortcuts(c: Cell, d: Dir): Cell = when {
+        d == Dir.DOWN -> Cell(Mode.LOCAL, Row.MAIN)
+        d == Dir.UP -> Cell(Mode.LOCAL, Row.CARD)
+        c.row == Row.MAIN -> c
+        else -> move(c, d)
     }
 
     sealed class Press {
         data class Pick(val mode: Mode) : Press()
         data class AddShortcut(val mode: Mode) : Press()
         object AddMain : Press()
+        object Report : Press()
+        object OpenShortcuts : Press()
     }
 
-    /** A on the box: a card enters its mode, a shortcut button asks the home screen to pin that mode's shortcut */
-    fun press(c: Cell): Press = when (c.row) {
-        Row.CARD -> Press.Pick(c.mode)
-        Row.SHORTCUT -> Press.AddShortcut(c.mode)
-        Row.MAIN -> Press.AddMain
+    /** A on the box: a card enters its mode, the foot's buttons Report and Shortcuts */
+    fun press(c: Cell): Press = when {
+        c.row == Row.CARD -> Press.Pick(c.mode)
+        c.mode == Mode.LOCAL -> Press.Report
+        else -> Press.OpenShortcuts
     }
+
+    /** A on the Shortcuts page: the home screen is asked to pin that card's shortcut */
+    fun pressShortcut(c: Cell): Press = if (c.row == Row.MAIN) Press.AddMain else Press.AddShortcut(c.mode)
 }

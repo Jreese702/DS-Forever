@@ -20,9 +20,11 @@ import android.view.View
  * back to the chooser. Touch presses any. The keys come through [ModeBridge.key] (the launcher's activity has them before Play).
  */
 class ChooserPanel(context: Context) : View(context) {
-    private enum class Page { NONE, CHOOSER, STREAM }
+    private enum class Page { NONE, CHOOSER, SHORTCUTS, STREAM }
 
     private var page = Page.NONE
+    /** the chooser's Shortcuts page is open */
+    private var shortcuts = false
     private var cell = StartMode.startCell()
     private var pressed: Any? = null
     /** the last shortcut request's line ("" = none) */
@@ -65,15 +67,18 @@ class ChooserPanel(context: Context) : View(context) {
         val was = page
         page = when {
             // the chooser comes only once the start-up checks have passed (the user, 2026-10-28); meanwhile the setup's own page shows
-            r == StartMode.Route.Chooser && SetupBridge.checksPass() -> Page.CHOOSER
+            r == StartMode.Route.Chooser && SetupBridge.checksPass() -> if (shortcuts) Page.SHORTCUTS else Page.CHOOSER
             r is StartMode.Route.Into && r.mode == StartMode.Mode.STREAM && ModeBridge.streamCovers && !LauncherHooks.gameUp() -> Page.STREAM
             else -> Page.NONE
         }
         // the chooser comes (back): the box starts on Local's card, no old line
         if (page == Page.CHOOSER && was != Page.CHOOSER) { cell = StartMode.startCell(); note = "" }
+        if (page == Page.SHORTCUTS && was != Page.SHORTCUTS) { cell = StartMode.startCell(); note = "" }
+        if (page != Page.SHORTCUTS && page != Page.CHOOSER) shortcuts = false
         visibility = if (page == Page.NONE) GONE else VISIBLE
         contentDescription = when (page) {
             Page.CHOOSER -> "DS Forever: choose Local or Streaming"
+            Page.SHORTCUTS -> "DS Forever: add a home-screen shortcut"
             Page.STREAM -> "DS Forever Streaming: connect to DS Forever Desktop"
             Page.NONE -> null
         }
@@ -93,9 +98,28 @@ class ChooserPanel(context: Context) : View(context) {
         hits.clear()
         when (page) {
             Page.CHOOSER -> drawChooser(c)
+            Page.SHORTCUTS -> drawShortcuts(c)
             Page.STREAM -> drawStream(c)
             Page.NONE -> Unit
         }
+    }
+
+    /** the foot's row: the status line in its panel, framed by the two side buttons, as on the waiting screen (StartView) */
+    private fun footTop() = height - MARGIN - BUTTON_H
+
+    private fun footPanel(c: Canvas, left: Float, right: Float, words: String) {
+        val top = footTop()
+        val panel = RectF(left, top, right, top + BUTTON_H)
+        UiKit.module(c, panel)
+        val p = UiKit.bodyPaint(StartView.LINE_SIZE)
+        while (p.measureText(words) > panel.width() - StartView.LINE_PAD * 2 && p.textSize > StartView.LINE_MIN) p.textSize -= 1f
+        UiKit.outlined(c, words, panel.centerX(), panel.centerY() - (p.ascent() + p.descent()) / 2f, p.textSize, Theme.text)
+    }
+
+    private fun footButton(c: Canvas, r: RectF, word: String, what: Any, now: Long) {
+        hits += r to what
+        val state = if (pressed == what || feedback.down(what, now)) UiKit.Button.DOWN else UiKit.Button.UP
+        if (cell == what) { box(c, r); UiKit.button(c, r, word, StartView.GLYPH_A, state) } else UiKit.button(c, r, word, state)
     }
 
     private fun drawChooser(c: Canvas) {
@@ -103,39 +127,61 @@ class ChooserPanel(context: Context) : View(context) {
         val title = UiKit.titlePaint(56f).apply { textAlign = Paint.Align.CENTER }
         c.drawText("How do you want to play?", cx, MARGIN + 62f, title)
         val top = MARGIN + 110f
-        val noteH = LINE_H
-        val mainTop = height - MARGIN - noteH - BUTTON_H
-        val btnTop = mainTop - GAP - BUTTON_H
+        val footY = footTop()
         val colW = (width - MARGIN * 2 - GAP * 2) / 2f
         val now = android.os.SystemClock.uptimeMillis()
         if (feedback.animating(now, false)) postInvalidateDelayed(LoadingScene.FRAME_MS)
         for ((i, mode) in StartMode.Mode.values().withIndex()) {
             val left = MARGIN + i * (colW + GAP * 2)
-            val card = RectF(left, top, left + colW, btnTop - GAP * 2)
-            val btn = RectF(left, btnTop, left + colW, btnTop + BUTTON_H)
-            val cardCell = StartMode.Cell(mode, StartMode.Row.CARD)
-            val btnCell = StartMode.Cell(mode, StartMode.Row.SHORTCUT)
-            hits += card to cardCell
-            hits += btn to btnCell
-            if (cell == cardCell) box(c, card)
-            drawCard(c, card, mode, pressed == cardCell || feedback.down(cardCell, now))
-            // the selection always wears A (the user, 10-28: "the A glyph needs to be added to the current selection")
-            if (cell == cardCell) UiKit.pad(c, StartView.GLYPH_A, card.left + 58f, card.top + 58f, 76f)
-            if (cell == btnCell) box(c, btn)
-            val state = if (pressed == btnCell || feedback.down(btnCell, now)) UiKit.Button.DOWN else UiKit.Button.UP
-            if (cell == btnCell) UiKit.button(c, btn, "Add home-screen shortcut", StartView.GLYPH_A, state)
-            else UiKit.button(c, btn, "Add home-screen shortcut", state)
+            modeCard(c, RectF(left, top, left + colW, footY - GAP * 2), mode, now)
         }
-        val main = RectF(MARGIN, mainTop, width - MARGIN, mainTop + BUTTON_H)
+        val report = RectF(MARGIN, footY, MARGIN + SIDE_W, footY + BUTTON_H)
+        val shortcuts = RectF(width - MARGIN - SIDE_W, footY, width - MARGIN, footY + BUTTON_H)
+        footButton(c, report, "Report", StartMode.Cell(StartMode.Mode.LOCAL, StartMode.Row.FOOT), now)
+        footButton(c, shortcuts, "Shortcuts", StartMode.Cell(StartMode.Mode.STREAM, StartMode.Row.FOOT), now)
+        // the status line ("Ready": the checks have passed; the user, 2026-10-28, a status line always)
+        footPanel(c, report.right + GAP, shortcuts.left - GAP, SetupFlow.status(null, SetupBridge.checksPass(), LoadingScene.now()))
+    }
+
+    private fun modeCard(c: Canvas, card: RectF, mode: StartMode.Mode, now: Long) {
+        val cardCell = StartMode.Cell(mode, StartMode.Row.CARD)
+        hits += card to cardCell
+        if (cell == cardCell) box(c, card)
+        drawCard(c, card, mode, pressed == cardCell || feedback.down(cardCell, now))
+        // the selection always wears A (the user, 10-28: "the A glyph needs to be added to the current selection")
+        if (cell == cardCell) UiKit.pad(c, StartView.GLYPH_A, card.left + 58f, card.top + 58f, 76f)
+    }
+
+    /** Shortcuts (the user 2026-11-01): the big cards, Local left, Streaming right, DS Forever under both; a press pins that shortcut */
+    private fun drawShortcuts(c: Canvas) {
+        val title = UiKit.titlePaint(56f).apply { textAlign = Paint.Align.CENTER }
+        c.drawText("Add a shortcut", width / 2f, MARGIN + 62f, title)
+        val top = MARGIN + 110f
+        val footY = footTop()
+        val mainTop = footY - GAP * 2 - MAIN_H
+        val colW = (width - MARGIN * 2 - GAP * 2) / 2f
+        val now = android.os.SystemClock.uptimeMillis()
+        if (feedback.animating(now, false)) postInvalidateDelayed(LoadingScene.FRAME_MS)
+        for ((i, mode) in StartMode.Mode.values().withIndex()) {
+            val left = MARGIN + i * (colW + GAP * 2)
+            modeCard(c, RectF(left, top, left + colW, mainTop - GAP * 2), mode, now)
+        }
+        val main = RectF(MARGIN, mainTop, width - MARGIN, mainTop + MAIN_H)
         val mainCell = StartMode.Cell(StartMode.Mode.LOCAL, StartMode.Row.MAIN)
         hits += main to mainCell
         if (cell == mainCell) box(c, main)
-        val mainState = if (pressed == mainCell || feedback.down(mainCell, now)) UiKit.Button.DOWN else UiKit.Button.UP
-        if (cell == mainCell) UiKit.button(c, main, "Add DS Forever shortcut", StartView.GLYPH_A, mainState)
-        else UiKit.button(c, main, "Add DS Forever shortcut", mainState)
-        // the shortcut's line, else the status line ("Ready": the checks have passed; the user, 2026-10-28, a status line always)
-        val foot = note.ifEmpty { SetupFlow.status(null, SetupBridge.checksPass(), LoadingScene.now()) }
-        UiKit.outlined(c, foot, cx, height - MARGIN - 12f, 30f, Theme.text)
+        val down = pressed == mainCell || feedback.down(mainCell, now)
+        pFill.style = Paint.Style.FILL
+        pFill.color = Color.argb(if (down) 245 else 230, 18, 14, 10)
+        c.drawRoundRect(main, 14f, 14f, pFill)
+        UiKit.border(c, main)
+        val name = UiKit.titlePaint(64f).apply { textAlign = Paint.Align.CENTER }
+        c.drawText("DS Forever", main.centerX(), main.centerY() + 22f, name)
+        if (cell == mainCell) UiKit.pad(c, StartView.GLYPH_A, main.left + 58f, main.top + 58f, 76f)
+        val back = RectF(MARGIN, footY, MARGIN + SIDE_W, footY + BUTTON_H)
+        hits += back to Back
+        UiKit.button(c, back, "Back", StartView.GLYPH_B, if (pressed == Back || feedback.down(Back, now)) UiKit.Button.DOWN else UiKit.Button.UP)
+        footPanel(c, back.right + GAP, width - MARGIN, note)
     }
 
     /** one option: the game's window ground and gold border, the mode's name, its picture and one plain line */
@@ -248,9 +294,11 @@ class ChooserPanel(context: Context) : View(context) {
 
     private fun act(what: Any) {
         when (what) {
-            Back -> ModeBridge.back("the Streaming page's Back")
-            is StartMode.Cell -> when (val p = StartMode.press(what)) {
+            Back -> if (page == Page.SHORTCUTS) { shortcuts = false; update() } else ModeBridge.back("the Streaming page's Back")
+            is StartMode.Cell -> when (val p = if (page == Page.SHORTCUTS) StartMode.pressShortcut(what) else StartMode.press(what)) {
                 is StartMode.Press.Pick -> ModeBridge.pick(p.mode)
+                StartMode.Press.Report -> SetupBridge.press(SetupFlow.Action.REPORT)
+                StartMode.Press.OpenShortcuts -> { shortcuts = true; update() }
                 is StartMode.Press.AddShortcut -> { note = ModeBridge.addShortcut(context, p.mode); invalidate() }
                 StartMode.Press.AddMain -> { note = ModeBridge.addMainShortcut(context); invalidate() }
             }
@@ -270,6 +318,14 @@ class ChooserPanel(context: Context) : View(context) {
                 KeyEvent.KEYCODE_DPAD_DOWN -> cell = StartMode.move(cell, StartMode.Dir.DOWN)
                 KeyEvent.KEYCODE_BUTTON_A -> padAct(cell)
                 // B on the chooser: nothing to go back to (swallowed: never an accidental exit of the app)
+            }
+            Page.SHORTCUTS -> when (code) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> cell = StartMode.moveShortcuts(cell, StartMode.Dir.LEFT)
+                KeyEvent.KEYCODE_DPAD_RIGHT -> cell = StartMode.moveShortcuts(cell, StartMode.Dir.RIGHT)
+                KeyEvent.KEYCODE_DPAD_UP -> cell = StartMode.moveShortcuts(cell, StartMode.Dir.UP)
+                KeyEvent.KEYCODE_DPAD_DOWN -> cell = StartMode.moveShortcuts(cell, StartMode.Dir.DOWN)
+                KeyEvent.KEYCODE_BUTTON_A -> padAct(cell)
+                KeyEvent.KEYCODE_BUTTON_B -> padAct(Back)
             }
             Page.STREAM -> if (code == KeyEvent.KEYCODE_BUTTON_A || code == KeyEvent.KEYCODE_BUTTON_B) padAct(Back)
             Page.NONE -> return false
@@ -303,6 +359,8 @@ class ChooserPanel(context: Context) : View(context) {
         const val CARD_W = 980f
         const val BUTTON_H = SetupPanel.BUTTON_H
         const val LINE_H = 56f
+        const val SIDE_W = StartView.SIDE_W
+        const val MAIN_H = 200f
         private val KEYS = setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B)
     }

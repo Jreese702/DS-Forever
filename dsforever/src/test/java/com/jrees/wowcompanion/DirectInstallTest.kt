@@ -61,10 +61,13 @@ class DirectInstallTest {
     @Test fun theMainShortcutOpensTheChooser() {
         assertEquals(StartMode.Route.Chooser, StartMode.resolve(StartMode.MAIN_SHORTCUT.extra))
         val main = StartMode.Cell(StartMode.Mode.LOCAL, StartMode.Row.MAIN)
-        assertEquals(main, StartMode.move(StartMode.Cell(StartMode.Mode.STREAM, StartMode.Row.SHORTCUT), StartMode.Dir.DOWN))
-        assertEquals(main, StartMode.move(main, StartMode.Dir.RIGHT))
-        assertEquals(StartMode.Row.SHORTCUT, StartMode.move(main, StartMode.Dir.UP).row)
-        assertEquals(StartMode.Press.AddMain, StartMode.press(main))
+        assertEquals(main, StartMode.moveShortcuts(StartMode.Cell(StartMode.Mode.STREAM, StartMode.Row.CARD), StartMode.Dir.DOWN))
+        assertEquals(main, StartMode.moveShortcuts(main, StartMode.Dir.RIGHT))
+        assertEquals(StartMode.Row.CARD, StartMode.moveShortcuts(main, StartMode.Dir.UP).row)
+        assertEquals(StartMode.Press.AddMain, StartMode.pressShortcut(main))
+        assertEquals(StartMode.Press.AddShortcut(StartMode.Mode.STREAM), StartMode.pressShortcut(StartMode.Cell(StartMode.Mode.STREAM, StartMode.Row.CARD)))
+        assertEquals(StartMode.Press.Report, StartMode.press(StartMode.Cell(StartMode.Mode.LOCAL, StartMode.Row.FOOT)))
+        assertEquals(StartMode.Press.OpenShortcuts, StartMode.press(StartMode.Cell(StartMode.Mode.STREAM, StartMode.Row.FOOT)))
     }
 
     @Test fun aFreshBuildInfoIsTheLaunchClient() {

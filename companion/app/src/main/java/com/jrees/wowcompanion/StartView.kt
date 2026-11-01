@@ -84,20 +84,23 @@ class StartView(context: Context) : View(context) {
 
     private fun drawMenu(c: Canvas) {
         hits.clear()
-        val h = MENU_PAD * 2 + BUTTON_H * 4 + GAP * 3
+        val h = MENU_PAD * 2 + CLOSE_H + GAP + BUTTON_H * 4 + GAP * 3
         val left = (width - MENU_W) / 2f
         val top = (height - h) / 2f
         val panel = RectF(left, top, left + MENU_W, top + h)
         UiKit.module(c, panel)
         val inL = panel.left + MENU_PAD; val inR = panel.right - MENU_PAD
         val mid = (inL + inR) / 2f
-        fun rowTop(i: Int) = panel.top + MENU_PAD + i * (BUTTON_H + GAP)
+        fun rowTop(i: Int) = panel.top + MENU_PAD + CLOSE_H + GAP + i * (BUTTON_H + GAP)
         fun cell(i: Int, right: Boolean) = RectF(if (right) mid + GAP / 2f else inL, rowTop(i), if (right) inR else mid - GAP / 2f, rowTop(i) + BUTTON_H)
         fun put(r: RectF, word: String, id: Int, on: Boolean) {
             if (!on) { UiKit.button(c, r, word, UiKit.Button.DISABLED); return }
             UiKit.button(c, r, word, if (pressed == id) UiKit.Button.DOWN else UiKit.Button.UP)
             hits += r to id
         }
+        val close = RectF(inR - CLOSE_W, panel.top + MENU_PAD, inR, panel.top + MENU_PAD + CLOSE_H)
+        UiKit.button(c, close, "X", GLYPH_B, if (pressed == MENU_CLOSE) UiKit.Button.DOWN else UiKit.Button.UP)
+        hits += close to MENU_CLOSE
         val auto = cell(0, false)
         UiKit.check(c, auto.left + CHECK / 2f, auto.centerY(), CHECK, autoLogin())
         val words = UiKit.bodyPaint(LINE_SIZE)
@@ -182,6 +185,7 @@ class StartView(context: Context) : View(context) {
                 val was = pressed; pressed = -1; invalidate()
                 if (menuOpen && was < 0 && hit < 0) menuOpen = false      // a touch outside it
                 else if (was >= 0 && was == hit) when (hit) {
+                    MENU_CLOSE -> menuOpen = false
                     MENU_AUTO -> onAutoLogin?.invoke(!autoLogin())
                     MENU_CHANGE -> { menuOpen = false; onChangeLogin?.invoke() }
                     MENU_FORGET -> {
@@ -207,6 +211,7 @@ class StartView(context: Context) : View(context) {
     companion object {
         /** the kit's A glyph (the face button the game calls PAD1), as on the other rooms' buttons */
         const val GLYPH_A = "rev_a"
+        const val GLYPH_B = "rev_b"
         const val CURSOR_GEAR = 0
         const val CURSOR_LOGIN = 1
         const val CURSOR_REPORT = 2
@@ -215,6 +220,9 @@ class StartView(context: Context) : View(context) {
         const val MENU_CHANGE = 5
         const val MENU_REPORT = 6
         const val MENU_EXIT = 7
+        const val MENU_CLOSE = 12
+        const val CLOSE_W = 170f
+        const val CLOSE_H = 84f
         const val MENU_FORGET = 8
         const val MENU_STREAM = 9
         const val MENU_RESTART = 10

@@ -55,7 +55,8 @@ class LoadingTopView(context: Context) : View(context) {
         val screen = SetupBridge.screen()
         // the status line is ALWAYS there, just above the report (the user, 2026-10-28): the step, "Ready", or "Loading" with dots
         val line = SetupFlow.status(screen?.line, SetupBridge.checksPass(), LoadingScene.now())
-        drawPanel(c, k, rows, line, error, screen?.report != null, bars)
+        // the report is on the chooser's foot now (the user 2026-11-01), Select still opens it while the checks run
+        drawPanel(c, k, rows, line, error, false, bars)
     }
 
     private fun drawPanel(c: Canvas, k: Float, rows: List<SetupFlow.Check>, line: String, err: String?, report: Boolean,
