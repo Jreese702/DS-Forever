@@ -205,6 +205,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             // h2's stage probe (2026-10-09): after the launcher's update the build's DOWNLOAD / INSTALL / VFS tables are only on the CDN,
             // and CascLib's own sockets cannot fetch them on Android. So: CascLib names the file it needs, the phone's HTTPS fetches it
             // into the cache, and the open runs again (a handful of files, once per game build)
+            if (File(root, DataStaleness.STREAMED).exists()) fetchVfs(root, cache, key)
             var h = 0L
             var downloadFailure: String? = null
             for (attempt in 0 until MAX_FETCHES) {
@@ -227,6 +228,30 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             lastWhy = null
             return GameFiles(h, root, product, key, cache)
         }
+        /**
+         * THE ROOT'S VFS PARTS OF A DIRECT INSTALL (direct6 on the Thor: "table 996357: not in this game build's index"): CascLib treats
+         * them as optional and goes on without them when they are neither in the local storage nor fetched, and the files they name are
+         * then unknown. Its open only names one file at a time, so all of them (584 files, 140 MB, 70707) come here, once per build.
+         */
+        private fun fetchVfs(root: File, cache: File, key: String) {
+            val config = File(root, "Data/config/${key.take(2)}/${key.drop(2).take(2)}/$key")
+            val missing = runCatching { vfsKeys(config.readText()) }.getOrDefault(emptyList())
+                .map { File(cache, "data/${it.take(2)}/${it.drop(2).take(2)}/$it") }.filter { !it.isFile }
+            if (missing.isEmpty()) return
+            onTables?.invoke("Downloading the game's tables")
+            android.util.Log.i("WCHARVEST", "vfs: fetching ${missing.size} files")
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL)
+            val bad = java.util.concurrent.atomic.AtomicInteger()
+            missing.forEach { f -> pool.execute { if (!runCatching { fetch(root, cache, f) }.getOrDefault(false)) bad.incrementAndGet() } }
+            pool.shutdown()
+            pool.awaitTermination(30, java.util.concurrent.TimeUnit.MINUTES)
+            android.util.Log.i("WCHARVEST", "vfs: done, ${bad.get()} failed")
+        }
+
+        /** the encoding keys of a build config's vfs-root / vfs-N lines (each "content key, encoding key"; the -size lines are not keys) */
+        internal fun vfsKeys(config: String): List<String> = config.lineSequence()
+            .mapNotNull { Regex("""^vfs-[a-z0-9]+ = (.+)$""").find(it.trim())?.groupValues?.get(1)?.trim()?.split(' ')?.last() }.toList()
+
         private const val MAX_FETCHES = 40          // the build's DOWNLOAD / INSTALL tables + the root's VFS parts: a handful, once per game build
 
         /**

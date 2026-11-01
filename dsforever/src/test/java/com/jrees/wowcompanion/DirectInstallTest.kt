@@ -53,6 +53,17 @@ class DirectInstallTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun theVfsKeysAreTheEncodingKeysOnly() {
+        val config = "root = aa
+vfs-root = c0 e0
+vfs-root-size = 1 2
+vfs-1 = c1 e1
+vfs-1-size = 3 4
+vfs-583 = c2 e2
+"
+        assertEquals(listOf("e0", "e1", "e2"), GameFiles.vfsKeys(config))
+    }
+
     @Test fun aFreshBuildInfoIsTheLaunchClient() {
         val text = WowSwitch.freshBuildInfo(WowSwitch.Remote(version = "1.60.1.70707", buildConfig = "b", cdnConfig = "c",
             cdnHosts = listOf("h1", "h2"), cdnPath = "tpr/wow", cdnServers = "s", keyRing = "k"), "us")
