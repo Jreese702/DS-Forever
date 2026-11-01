@@ -256,13 +256,19 @@ class DsForeverScreen(private val context: Context) {
         }
 
         @Volatile private var lastMoveAt = 0L
+        /**
+         * this run of the app is up: a reopen from the launcher, on the bottom screen, brings it back as it is. The user 2026-11-01 on
+         * Cocoon: going Home and reopening started the app over (a RELAUNCH each time, a running stream with it)
+         */
+        @Volatile private var up = false
 
         /** called on every start and resume; true = this activity is going away (the caller returns) */
         fun moveToTop(activity: Activity, gameRunning: Boolean): Boolean {
             val d = activity.display?.displayId ?: Display.DEFAULT_DISPLAY
             val now = android.os.SystemClock.elapsedRealtime()
-            val move = decide(d, gameRunning, now - lastMoveAt)
-            Log.i(TAG, "resume: launcher on display $d (game running $gameRunning) -> $move")
+            val move = decide(d, gameRunning || up, now - lastMoveAt)
+            Log.i(TAG, "resume: launcher on display $d (game running $gameRunning, up $up) -> $move")
+            if (d == Display.DEFAULT_DISPLAY) up = true
             if (move == Move.NONE) return false
             lastMoveAt = now
             val top = ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY).toBundle()
