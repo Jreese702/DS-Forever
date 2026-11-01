@@ -148,13 +148,10 @@ class StreamCurtainTest {
         assertEquals(true, StreamCurtain.decide(true, true, refused.copy(bnet = "signin_needed")) is StreamCurtain.Shows.SignIn)
     }
 
-    @Test fun theSavedLoginGoesIntoWowsOwnForm() {
-        val form = PcWow(state = "running", focused = true, screen = "login", bnet = "unknown")
-        assertEquals(true, StreamCurtain.loginWaits(form))
-        assertEquals(false, StreamCurtain.loginWaits(form.copy(loginError = "308")))
-        assertEquals(false, StreamCurtain.loginWaits(form.copy(focused = false)))
-        assertEquals(false, StreamCurtain.loginWaits(form.copy(screen = "signing_in")))
-        assertEquals(true, StreamCurtain.decide(true, true, form, signingIn = true, atLoginLong = true) is StreamCurtain.Shows.Curtain)
-        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, form, atLoginLong = true))
+    @Test fun theLoginFileMessageCarriesBothFields() {
+        val o = org.json.JSONObject(BridgeProtocol.loginFile("a@b.c", "p\"w"))
+        assertEquals("login_file", o.getString("t"))
+        assertEquals("a@b.c", o.getString("email"))
+        assertEquals("p\"w", o.getString("password"))
     }
 }

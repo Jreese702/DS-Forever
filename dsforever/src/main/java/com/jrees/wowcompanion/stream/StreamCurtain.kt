@@ -40,9 +40,6 @@ object StreamCurtain {
     const val CRASHED = "WoW crashed on your PC"
     const val LOGIN_SHOW_MS = 10_000L
 
-    /** WoW is in front at its own login form with no error: the saved login goes in, as in Local (the user, 2026-10-31) */
-    fun loginWaits(pc: PcWow?) = pc != null && pc.screen == "login" && pc.focused == true && pc.loginError.isEmpty()
-
     /** WoW is up and between its login screen and character select */
     fun atLogin(pc: PcWow?) = pc != null && (pc.screen == "login" || pc.screen == "signing_in")
 
@@ -79,7 +76,7 @@ object StreamCurtain {
         if (bnetLine != null) return if (connected && pc.show.size == 4) Shows.SignIn(bnetLine, pc.show)
             else curtain(listOf(row(found, true), row("Battle.net", false)), bnetLine)
         val known = pc.screen.isNotEmpty()
-        val open = if (known) (pc.signedIn || (atLoginLong && atLogin(pc) && !signingIn)) && (pc.focused == true || seen) else pc.state == "running" && pc.focused != false
+        val open = if (known) (pc.signedIn || (atLoginLong && atLogin(pc))) && (pc.focused == true || seen) else pc.state == "running" && pc.focused != false
         if (connected && open) return Shows.Stream
         val bnetOk = pc.bnet.isEmpty() || pc.bnet == "signed_in" || pc.bnet == "unknown"
         val running = pc.state == "running"

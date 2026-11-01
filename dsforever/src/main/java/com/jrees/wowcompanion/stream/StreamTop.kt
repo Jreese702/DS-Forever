@@ -181,7 +181,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private fun signInTick() {
         main.removeCallbacks(signInLoop)
-        signIn.tick(screen == Screen.STREAMING && (pc?.bnet == "signin_needed" || StreamCurtain.loginWaits(pc)))
+        signIn.tick(screen == Screen.STREAMING && pc?.bnet == "signin_needed")
         applyCurtain()
         if (signIn.working) main.postDelayed(signInLoop, 1_000L)
     }
@@ -271,7 +271,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 onWow = { state, why -> main.post { wowState(state, why) } },
                 onPc = { w -> main.post { pcWord(w) } },
                 onWelcome = { lan -> main.post { lanReported(lan) } },
-                onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } }).also { bridge = it }
+                onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } },
+                savedLogin = { com.jrees.wowcompanion.HomeLoginStore.load(activity)?.let { it.email to it.password } }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
 

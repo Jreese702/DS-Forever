@@ -95,6 +95,8 @@ object BridgeProtocol {
 
     fun focus(): String = JSONObject().put("t", "focus").toString()
     fun bnetReady(): String = JSONObject().put("t", "bnet_ready").toString()
+    /** the saved login for WoW's login.txt on the PC: only down the pinned wss connection, never logged */
+    fun loginFile(email: String, password: String): String = JSONObject().put("t", "login_file").put("email", email).put("password", password).toString()
 
     /** "x,y" (shares) -> a point; anything else -> null */
     fun point(s: String): Pair<Float, Float>? {

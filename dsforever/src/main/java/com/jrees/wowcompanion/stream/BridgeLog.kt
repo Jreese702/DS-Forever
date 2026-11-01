@@ -35,6 +35,8 @@ class BridgeLog(
     private val onWelcome: (lan: List<String>) -> Unit = {},
     /** Desktop's answer before the saved login is typed (null = do not type) */
     private val onBnetReady: (BnetFormAt?) -> Unit = {},
+    /** the saved login (email, password), for WoW's login.txt on the PC */
+    private val savedLogin: () -> Pair<String, String>? = { null },
     /** the waits between tries (the tests pass a fake that also ends the loop) */
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
 ) : LogSource {
@@ -110,6 +112,7 @@ class BridgeLog(
                     onWow(m.wowState.ifEmpty { if (m.wowRunning) "running" else "stopped" }, m.wowWhy)
                     onPc(m.pc?.let { if (it.state.isEmpty()) it.copy(state = if (m.wowRunning) "running" else "stopped") else it }
                         ?: PcWow(state = m.wowState.ifEmpty { if (m.wowRunning) "running" else "stopped" }, why = m.wowWhy))
+                    if (tls && fingerprint.isNotEmpty()) savedLogin()?.let { c.send(BridgeProtocol.loginFile(it.first, it.second)) }
                     c.send(BridgeProtocol.focus())
                 }
                 is BridgeMsg.Doc -> emit(m)
