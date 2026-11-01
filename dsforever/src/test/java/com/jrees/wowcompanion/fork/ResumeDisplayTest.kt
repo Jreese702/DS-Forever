@@ -17,8 +17,8 @@ class ResumeDisplayTest {
     @Test fun aRunningGameBroughtBackOnTheBottomGoesToTheTopWithoutFinishing() =
         assertEquals(Move.BRING_TO_TOP, DsForeverScreen.decide(BOTTOM, gameRunning = true, sinceLastMoveMs = Long.MAX_VALUE))
 
-    @Test fun noGameGoesToTheTopInTheSameTask() =
-        assertEquals(Move.BRING_TO_TOP, DsForeverScreen.decide(BOTTOM, gameRunning = false, sinceLastMoveMs = Long.MAX_VALUE))
+    @Test fun noGameRelaunchesOnTheTop() =
+        assertEquals(Move.RELAUNCH, DsForeverScreen.decide(BOTTOM, gameRunning = false, sinceLastMoveMs = Long.MAX_VALUE))
 
     @Test fun everyResumeNotJustOnceButNeverALoop() {
         assertEquals(Move.NONE, DsForeverScreen.decide(BOTTOM, gameRunning = true, sinceLastMoveMs = 1_000))     // just moved

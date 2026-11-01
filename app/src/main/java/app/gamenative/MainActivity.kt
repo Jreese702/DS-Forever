@@ -96,9 +96,9 @@ class MainActivity : ComponentActivity() {
         // DS Forever S5: the bottom screen is DS Forever's from the launcher's start (its start screens); the game screen attaches its input
         com.jrees.wowcompanion.fork.DsForeverScreen.begin(this)
         // the start-up mode: the normal icon = the chooser, every time; a home-screen shortcut's dsf.mode = straight into its mode.
-        // A rebuilt activity (saved state: our own move to the top screen rebuilds it) keeps the mode it had
+        // A rebuilt activity (saved state) or our own move to the top screen (DsForeverScreen's relaunch) keeps the mode it had
         com.jrees.wowcompanion.ModeBridge.start(this, intent?.getStringExtra(com.jrees.wowcompanion.StartMode.EXTRA),
-            recreated = savedInstanceState != null)
+            recreated = savedInstanceState != null || intent?.getBooleanExtra("dsforever_moved_to_top", false) == true)
 
         // stale keepAlive from a prior crash/swipe — no container is actually running
         if (PluviaApp.keepAlive && PluviaApp.xEnvironment == null) {
