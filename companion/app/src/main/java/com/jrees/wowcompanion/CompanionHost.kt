@@ -590,9 +590,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             else if (SetupBridge.keyboardOpen && PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) {
                 NativeLogin.logEvent("sign-in: keyboard closed (B)"); SetupBridge.keyboard(false)
             }
+            else if (startView.menuOpen && PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) startView.menuOpen = false     // B: the menu shuts
             else if (::setupPanel.isInitialized && !loginPrompt.isOpen && setupPanel.pad(down)) Unit      // the setup's pop-up (Track C)
             // b-login-a-input: not in the game (its login screen): A goes to the game, never to our login row / form
-            else if (startView.visibility == View.VISIBLE && startView.login != StartView.Login.NONE && !loginPrompt.isOpen &&
+            else if (startView.visibility == View.VISIBLE && startView.login != StartView.Login.NONE && !loginPrompt.isOpen && !startView.menuOpen &&
                 setupView.visibility != View.VISIBLE && !LauncherHooks.gameUp()) loginPad(down)
             else if (::dialogView.isInitialized && dialogView.visibility == View.VISIBLE) dialogView.onPadHeld(m)   // Interact: the dialog's press look
             else if (::interactView.isInitialized && interactView.visibility == View.VISIBLE) interactView.onPadHeld(m)
@@ -647,6 +648,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // INSIDE THE ONE APP (the native login.txt sign-in; the user: "injecting the keys is not the way to go"): the row never types -
         // its button saves / updates the login, which the game uses by itself at its next start (NativeLogin)
         startView.onReport = { openReport() }
+        startView.autoLogin = { HomeLoginStore.autoLogin(this) }
+        startView.onAutoLogin = { on -> HomeLoginStore.setAutoLogin(this, on); if (!on) NativeLogin.clear() }
+        startView.onChangeLogin = { restartOnSave = LauncherHooks.gameUp() && HomeLoginStore.autoLogin(this); loginPrompt.open() }
+        startView.canExit = { SetupBridge.exitStream != null || LauncherHooks.gameUp() }
+        startView.onExit = { (SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
         startView.onLoginButton = { gear -> if (gear || LauncherHooks.pkg != null) loginPrompt.open() else signIn() }
         loginPrompt = HomeLoginPrompt(this) { login ->
             settingsView.invalidate()

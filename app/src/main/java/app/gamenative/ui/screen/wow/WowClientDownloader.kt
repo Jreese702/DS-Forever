@@ -197,10 +197,12 @@ object WowClientDownloader {
             ?: throw IOException("Blizzard's patch server did not answer")
         listOf("Data/data", "Data/indices", "Data/config").forEach { check(File(gameRoot, it).run { isDirectory || mkdirs() }) { "can't write to $gameRoot" } }
         WowSwitch.replace(File(gameRoot, com.jrees.wowcompanion.DataStaleness.STREAMED), ByteArray(0))
-        updateGame(gameRoot, target, onStatus, fresh = true)
+        sync(gameRoot, target, fresh = true, onStatus)
     }
 
-    fun updateGame(gameRoot: File, target: VersionCheckResult, onStatus: (String) -> Unit, fresh: Boolean = false) {
+    fun updateGame(gameRoot: File, target: VersionCheckResult, onStatus: (String) -> Unit) = sync(gameRoot, target, fresh = false, onStatus)
+
+    private fun sync(gameRoot: File, target: VersionCheckResult, fresh: Boolean, onStatus: (String) -> Unit) {
         val cdn = Cdn(
             hosts = target.remoteCdnHosts.ifEmpty { DEFAULT_CDN_HOSTS },
             path = target.remoteCdnPath.ifEmpty { DEFAULT_CDN_PATH },

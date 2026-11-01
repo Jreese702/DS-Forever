@@ -127,7 +127,7 @@ object NativeLogin {
         ShadowRepair.rootLinks(gameRoot, FLAVORS).forEach { e -> link(e, File(root, e.name)) }      // never a shared flavor folder (test57)
         File(gameRoot, flavor).listFiles()?.forEach { e -> if (e.name != FILE) link(e, File(fl, e.name)) }
         flavorDir = fl
-        val login = HomeLoginStore.load(ctx)
+        val login = HomeLoginStore.forAutoLogin(ctx)
         if (login != null) {
             val f = File(fl, FILE)
             f.writeText("${login.email}\n${login.password}\n")
@@ -240,7 +240,7 @@ object NativeLogin {
         val fl = flavorDir ?: return
         val ctx = appCtx ?: return
         outOfWorld = true
-        val login = HomeLoginStore.load(ctx) ?: run { logEvent("out of the world ($why); no saved login, nothing written"); return }
+        val login = HomeLoginStore.forAutoLogin(ctx) ?: run { logEvent("out of the world ($why); no saved login, nothing written"); return }
         try {
             val f = File(fl, FILE)
             f.writeText("${login.email}\n${login.password}\n")
@@ -274,7 +274,7 @@ object NativeLogin {
         windowArmed = true
         val ctx = appCtx ?: return@post
         val fl = flavorDir ?: return@post
-        val login = HomeLoginStore.load(ctx) ?: return@post
+        val login = HomeLoginStore.forAutoLogin(ctx) ?: return@post
         main.removeCallbacks(timeout)
         try {
             val f = File(fl, FILE)

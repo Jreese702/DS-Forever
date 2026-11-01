@@ -272,7 +272,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 onPc = { w -> main.post { pcWord(w) } },
                 onWelcome = { lan -> main.post { lanReported(lan) } },
                 onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } },
-                savedLogin = { com.jrees.wowcompanion.HomeLoginStore.load(activity)?.let { it.email to it.password } }).also { bridge = it }
+                savedLogin = { com.jrees.wowcompanion.HomeLoginStore.forAutoLogin(activity)?.let { it.email to it.password } }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
 
@@ -368,6 +368,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         DsForeverScreen.current?.attachStream(k)
         DsForeverScreen.current?.signInClose = { boardByHand = false; boardShut = true; applyCurtain() }
         SetupBridge.openPcKeyboard = { boardByHand = true; boardShut = false; applyCurtain() }
+        SetupBridge.exitStream = { main.post { stopStream("menu"); back() } }
         touchMouse = StreamTouch(MoonBridge.INPUT, view.width, view.height, w, h,
             android.view.ViewConfiguration.get(activity).scaledTouchSlop.toFloat()) { ms, r -> main.postDelayed(r, ms) }
         try { MoonBridge.sendControllerArrivalEvent(0, 1, MoonBridge.LI_CTYPE_XBOX, StreamPad.SUPPORTED,
@@ -435,6 +436,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun teardown() {
         seen = false
         SetupBridge.openPcKeyboard = null
+        SetupBridge.exitStream = null
         boardByHand = false
         board(false)
         touchMouse?.cancel(); touchMouse = null

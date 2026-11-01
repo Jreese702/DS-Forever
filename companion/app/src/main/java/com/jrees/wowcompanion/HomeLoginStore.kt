@@ -27,6 +27,15 @@ object HomeLoginStore {
 
     fun has(ctx: Context) = File(ctx.noBackupFilesDir, FILE).isFile
 
+    /** the waiting screen's Menu > Auto login (the user 2026-11-01): off, the login stays saved and the game's own login screen is used */
+    private const val PREFS = "home_login_prefs"
+    private const val KEY_AUTO = "auto_login"
+    fun autoLogin(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_AUTO, true)
+    fun setAutoLogin(ctx: Context, on: Boolean) { ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_AUTO, on).apply() }
+
+    /** the saved login for a login.txt; null while Auto login is off */
+    fun forAutoLogin(ctx: Context): Login? = if (autoLogin(ctx)) load(ctx) else null
+
     fun save(ctx: Context, login: Login): Boolean = try {
         val c = Cipher.getInstance("AES/GCM/NoPadding")
         c.init(Cipher.ENCRYPT_MODE, key())

@@ -46,8 +46,16 @@ class StartView(context: Context) : View(context) {
     var firstW = FIRST_W
         set(v) { if (field != v) { field = v; invalidate() } }
 
-    /** the Report button at the bottom left */
+    /** the Menu (the user 2026-11-01, in place of Report at the bottom left): Auto login's tick and Change login, Report issue, Exit game */
+    var menuOpen = false
+        set(v) { if (field != v) { field = v; pressed = -1; invalidate() } }
     var onReport: (() -> Unit)? = null
+    var autoLogin: () -> Boolean = { true }
+    var onAutoLogin: ((Boolean) -> Unit)? = null
+    var onChangeLogin: (() -> Unit)? = null
+    /** Exit game answers only while a game or a stream runs */
+    var canExit: () -> Boolean = { false }
+    var onExit: (() -> Unit)? = null
 
     /** a press of the row: true = the gear (touch only) or FIRST's one button (touch or A), false = Login (touch or A) */
     var onLoginButton: ((gear: Boolean) -> Unit)? = null
@@ -63,6 +71,37 @@ class StartView(context: Context) : View(context) {
         // with a document backlog decoding icons, hung the app (Map's ANR on integ-b40 + mapset; UI Art's measure). 30 fps is plenty
         LoadingScene.draw(c, area, top = false)
         postInvalidateDelayed(FRAME_MS)
+        drawRow(c)
+        if (menuOpen) drawMenu(c)
+    }
+
+    private fun drawMenu(c: Canvas) {
+        hits.clear()
+        val h = MENU_PAD * 2 + BUTTON_H * 3 + GAP * 2
+        val left = (width - MENU_W) / 2f
+        val top = (height - h) / 2f
+        val panel = RectF(left, top, left + MENU_W, top + h)
+        UiKit.module(c, panel)
+        fun state(id: Int) = if (pressed == id) UiKit.Button.DOWN else UiKit.Button.UP
+        val inL = panel.left + MENU_PAD; val inR = panel.right - MENU_PAD
+        val first = RectF(inL, panel.top + MENU_PAD, inR, panel.top + MENU_PAD + BUTTON_H)
+        val change = RectF(inR - CHANGE_W, first.top, inR, first.bottom)
+        val auto = RectF(inL, first.top, change.left - GAP, first.bottom)
+        UiKit.check(c, auto.left + CHECK / 2f, auto.centerY(), CHECK, autoLogin())
+        val words = UiKit.bodyPaint(LINE_SIZE)
+        UiKit.outlined(c, "Auto login", (auto.left + CHECK + auto.right) / 2f, auto.centerY() - (words.ascent() + words.descent()) / 2f, LINE_SIZE, Theme.text)
+        UiKit.button(c, change, "Change login", state(MENU_CHANGE))
+        hits += auto to MENU_AUTO
+        hits += change to MENU_CHANGE
+        val report = RectF(inL, first.bottom + GAP, inR, first.bottom + GAP + BUTTON_H)
+        UiKit.button(c, report, "Report issue", state(MENU_REPORT))
+        hits += report to MENU_REPORT
+        val exit = RectF(inL, report.bottom + GAP, inR, report.bottom + GAP + BUTTON_H)
+        if (canExit()) { UiKit.button(c, exit, "Exit game", state(MENU_EXIT)); hits += exit to MENU_EXIT }
+        else UiKit.button(c, exit, "Exit game", UiKit.Button.DISABLED)
+    }
+
+    private fun drawRow(c: Canvas) {
         val cx = width / 2f
         val row = login != Login.NONE
         hits.clear()
@@ -75,7 +114,7 @@ class StartView(context: Context) : View(context) {
         while (words.measureText(line) > panel.width() - LINE_PAD * 2 && words.textSize > LINE_MIN) words.textSize -= 1f
         UiKit.outlined(c, line, cx, panel.centerY() - (words.ascent() + words.descent()) / 2f, words.textSize, Theme.text)
         val report = RectF(SIDE_M, sideTop, SIDE_M + SIDE_W, sideTop + BUTTON_H)
-        UiKit.button(c, report, "Report", if (pressed == CURSOR_REPORT) UiKit.Button.DOWN else UiKit.Button.UP)
+        UiKit.button(c, report, "Menu", if (pressed == CURSOR_REPORT) UiKit.Button.DOWN else UiKit.Button.UP)
         hits += report to CURSOR_REPORT
         if (SetupBridge.openPcKeyboard != null) {
             val keys = RectF(width - SIDE_M - SIDE_W, sideTop, width - SIDE_M, sideTop + BUTTON_H)
@@ -129,8 +168,13 @@ class StartView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN -> { pressed = hit; invalidate() }
             MotionEvent.ACTION_UP -> {
                 val was = pressed; pressed = -1; invalidate()
-                if (was >= 0 && was == hit) when (hit) {
-                    CURSOR_REPORT -> onReport?.invoke()
+                if (menuOpen && was < 0 && hit < 0) menuOpen = false      // a touch outside it
+                else if (was >= 0 && was == hit) when (hit) {
+                    MENU_AUTO -> onAutoLogin?.invoke(!autoLogin())
+                    MENU_CHANGE -> { menuOpen = false; onChangeLogin?.invoke() }
+                    MENU_REPORT -> { menuOpen = false; onReport?.invoke() }
+                    MENU_EXIT -> { menuOpen = false; onExit?.invoke() }
+                    CURSOR_REPORT -> menuOpen = true
                     CURSOR_KEYS -> SetupBridge.openPcKeyboard?.invoke()
                     CURSOR_GEAR -> onLoginButton?.invoke(true)
                     else -> if (!loginBusy) onLoginButton?.invoke(false)
@@ -148,6 +192,14 @@ class StartView(context: Context) : View(context) {
         const val CURSOR_LOGIN = 1
         const val CURSOR_REPORT = 2
         const val CURSOR_KEYS = 3
+        const val MENU_AUTO = 4
+        const val MENU_CHANGE = 5
+        const val MENU_REPORT = 6
+        const val MENU_EXIT = 7
+        const val MENU_W = 760f
+        const val MENU_PAD = 32f
+        const val CHANGE_W = 300f
+        const val CHECK = 76f
         /** Report and Keyboard, in the row's line at the screen's two ends */
         const val SIDE_M = 40f
         const val SIDE_W = 220f

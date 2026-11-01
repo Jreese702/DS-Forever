@@ -31,6 +31,9 @@ object SetupBridge {
     @Volatile var openReport: (() -> Unit)? = null
     /** the keyboard / trackpad on the bottom screen; null = no game or stream to send it to */
     @Volatile var openPcKeyboard: (() -> Unit)? = null
+    /** the waiting screen's Menu > Exit game: the stream's end while one runs, else the local game's */
+    @Volatile var exitStream: (() -> Unit)? = null
+    @Volatile var exitGame: (() -> Unit)? = null
     /** the out-of-date folder's pop-up was OK'd: not again this run (the red check line stays) */
     @Volatile var staleOk = false
     /** the saved report's note > Open GitHub issue */

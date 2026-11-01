@@ -764,6 +764,12 @@ fun WoWForeverScreen(
                 play(com.jrees.wowcompanion.SetupFlow.Action.RELAUNCH)
             }
         }
+        // the waiting screen's Menu > Exit game, as the restart above: the game's own Exit Game first, the old close when it cannot
+        com.jrees.wowcompanion.SetupBridge.exitGame = {
+            val close = { CoroutineScope(Dispatchers.Main + SupervisorJob()).launch { PluviaApp.events.emit(AndroidEvent.ForceCloseApp) }; Unit }
+            val ce = com.jrees.wowcompanion.LauncherHooks.cleanExit
+            if (ce == null) close() else ce("menu") { force -> if (force) close() }
+        }
         com.jrees.wowcompanion.SetupBridge.launcherActions = { a -> scope.launch(Dispatchers.Main) { onSetupAction(a) } }
         com.jrees.wowcompanion.SetupBridge.launcherRefresh = { scope.launch(Dispatchers.Main) { onSetupRefresh() } }
         // the pad belongs to the bottom screen's buttons while this screen is up (the top shows checks only)

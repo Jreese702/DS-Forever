@@ -44,7 +44,7 @@ object GameTyping {
  *     click buttons. The controller: ZL left click, ZR right click (the user, 2026-10-16: "instead of A and X"), the D-pad
  *     nudges the pointer.
  *   * KEYBOARD: Chat's own keyboard (ChatKeyboard, its art and rules); every letter goes to the GAME's focused text box as a real key
- *     (InputSink, the launcher's X server), Start / the Enter key = Enter, Backspace = Backspace. Nothing else is ever sent.
+ *     (InputSink, the launcher's X server), Start / the Enter key = Enter, Backspace = Backspace, Tab = Tab. Nothing else is ever sent.
  * B closes it (back to Home). Nothing is bound, saved or set. [onClose] = Home takes the layer away.
  */
 class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLayout(context) {
@@ -52,8 +52,9 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
     private var typed = ""
     private val head = Head(context)
     private val pad = TrackpadView(context)
-    private val kb = ChatKeyboard(context, swap = false).apply {
-        sendWord = "Enter"
+    private val kb = ChatKeyboard(context).apply {
+        sendWord = "Enter"; swapWord = "Tab"
+        onSwap = { InputSink.signInTab() }
         text = { typed }
         onText = { new -> val ops = GameTyping.diff(typed, new); InputSink.gameKeys(ops.back, ops.type); typed = new; head.invalidate() }
         onSend = { InputSink.gameEnter(); typed = ""; head.invalidate() }
