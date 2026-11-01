@@ -79,6 +79,13 @@ namespace DsfDesktop.Wow
         public const double LoadGraceS = 25;
         /// <summary>the add-on writes a document every few seconds in the world (addons do not run before it)</summary>
         public const double WorldDocS = 90;
+        /// <summary>WoW's login form as shares of its window, measured on the PC's 2560x1440 client 2026-10-31 (centred: it scales with the height)</summary>
+        public const double LoginEmailY = 0.510, LoginPasswordY = 0.577, LoginButtonY = 0.668;
+
+        /// <summary>the login may go in: its form is up, no error, and this client has not had its one attempt</summary>
+        public static bool LoginReady(WowScreen screen, string error, int pid, int triedPid) =>
+            screen == WowScreen.Login && string.IsNullOrEmpty(error) && pid != triedPid;
+
         /// <summary>how long WoW stays after the stream ended, and how long the PC itself must have sat untouched</summary>
         public const double StreamGoneS = 300;
 

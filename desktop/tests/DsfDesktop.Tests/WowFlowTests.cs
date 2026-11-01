@@ -155,6 +155,16 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
+        public static void TheLoginGoesInOncePerClient()
+        {
+            A.True(WowFlow.LoginReady(WowScreen.Login, null, 7, 0));
+            A.True(!WowFlow.LoginReady(WowScreen.Login, null, 7, 7), "this client had its attempt");
+            A.True(!WowFlow.LoginReady(WowScreen.Login, "308", 7, 0), "an error: the player's");
+            A.True(!WowFlow.LoginReady(WowScreen.Starting, null, 7, 0), "no form yet");
+            A.True(WowFlow.LoginReady(WowScreen.Login, null, 8, 7), "a new client");
+        }
+
+        [Test]
         public static void TheControllerSettingsAreOnOnce()
         {
             var a = WowConfig.Apply("SET locale \"enUS\"\r\nSET GamePadEnable \"0\"\r\n");

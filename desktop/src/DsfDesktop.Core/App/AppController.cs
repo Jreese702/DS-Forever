@@ -573,6 +573,8 @@ namespace DsfDesktop.App
         public Dictionary<string, object> BnetReady()
         {
             var no = new Func<string, Dictionary<string, object>>(why => { Log.I("sign-in form: " + why); return new Dictionary<string, object> { ["ok"] = false, ["why"] = why }; });
+            using (var wow = WowWindow.FindAny(FlavorDirOrNull))
+                if (wow != null) return WowSignInForm(wow, no);
             var h = WowProbe.Bnet().Login;
             if (h == IntPtr.Zero) return no("no sign-in window");
             var list = SunshineDisplays();
@@ -602,6 +604,38 @@ namespace DsfDesktop.App
             if (form.Email.HasValue) d["email"] = BnetForm.Share(form.Email.Value, win, mon.Value);
             Log.I("sign-in form found (" + (form.Email.HasValue ? "email and password" : "password") + ")");
             return d;
+        }
+
+        int signInPid;
+
+        /// <summary>WoW's own login form (the user, 2026-10-31: "it needs to auto login"): in front, on the captured monitor, ONE attempt per client</summary>
+        Dictionary<string, object> WowSignInForm(System.Diagnostics.Process wow, Func<string, Dictionary<string, object>> no)
+        {
+            string err;
+            lock (loginLog) err = loginLog.Error;
+            if (!WowFlow.LoginReady(ScreenNow(), err, wow.Id, signInPid)) return no("WoW is not ready for its one sign-in");
+            var h = wow.MainWindowHandle;
+            if (h == IntPtr.Zero) return no("WoW has no window");
+            var list = SunshineDisplays();
+            var captured = list.Count > 0 ? Displays.Captured(list, Settings.CaptureDevice) : null;
+            if (captured == null) return no("no captured monitor");
+            if (!string.Equals(Displays.MonitorOf(h), captured, StringComparison.OrdinalIgnoreCase)) return no("WoW is on another monitor");
+            var focus = WowWindow.FocusHandle(h);
+            if (focus != null) return no(focus);
+            System.Threading.Thread.Sleep(150);
+            var mon = Displays.MonitorRect(captured);
+            if (!mon.HasValue || !Displays.GetRect(h, out var win)) return no("no window rectangle");
+            if (!WowWindow.IsForegroundHandle(h)) return no("another window took the front");
+            signInPid = wow.Id;
+            Func<double, System.Drawing.Point> at = y => new System.Drawing.Point(win.W / 2, (int)(win.H * y));
+            Log.I("sign-in form found (WoW)");
+            return new Dictionary<string, object>
+            {
+                ["ok"] = true,
+                ["email"] = BnetForm.Share(at(WowFlow.LoginEmailY), win, mon.Value),
+                ["password"] = BnetForm.Share(at(WowFlow.LoginPasswordY), win, mon.Value),
+                ["button"] = BnetForm.Share(at(WowFlow.LoginButtonY), win, mon.Value),
+            };
         }
 
         static DateTime SafeStart(System.Diagnostics.Process p) { try { return p.StartTime; } catch (Exception) { return DateTime.Now; } }
