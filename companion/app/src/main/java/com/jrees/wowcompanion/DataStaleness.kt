@@ -18,6 +18,8 @@ import java.security.MessageDigest
  *   hits, so only a new build or a recopy can.
  */
 object DataStaleness {
+    /** in a directly installed game folder: its Data fills as the game streams it, so a read that misses says nothing about its age */
+    const val STREAMED = ".ds-streamed"
     const val MIN_SAMPLE = 40
     const val STALE_RATIO = 0.5
 

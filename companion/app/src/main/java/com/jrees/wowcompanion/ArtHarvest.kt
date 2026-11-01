@@ -89,7 +89,8 @@ object ArtHarvest {
     }
 
     /** the app's own art folder (replaces /sdcard/WowCompanion for everything game-derived) */
-    fun root(ctx: Context): File = File(ctx.filesDir, "art").also { it.mkdirs() }
+    fun root(ctx: Context): File =
+        File(ctx.filesDir, if (DirectTest.ON && File(GameFiles.gameRoot(ctx), DataStaleness.STREAMED).exists()) "art-direct" else "art").also { it.mkdirs() }
     /** the same folder for code that has no Context at hand (set at app start by [init]) */
     @Volatile var rootDir: File? = null
         private set

@@ -390,6 +390,7 @@ fun WoWForeverScreen(
         }
     }
 
+    var directChosen by remember { mutableStateOf(GamePath.directChosen(context)) }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         val path = StorageUtils.getPathFromTreeUri(context, uri) ?: return@rememberLauncherForActivityResult
         val root = GamePath.findGameRoot(File(path))
@@ -400,12 +401,14 @@ fun WoWForeverScreen(
         errorMessage = null
         gamePath = root.absolutePath
         GamePath.save(context, gamePath)
+        directChosen = true
+        GamePath.saveDirectChosen(context)
         versionStatus = null
         val ok = checkFiles()
         if (ok) checkVersionStatus()
     }
 
-    val filesMissing = !(files.dataExists && files.buildInfoExists)
+    val filesMissing = !(files.dataExists && files.buildInfoExists) || !directChosen
 
     /** the art build, BY ITSELF once the game folder is found (the user's pick "Automatic, no button"); [retry] = the bottom's Try again */
     fun harvestArt(retry: Boolean = false, force: Boolean = false) {
@@ -510,6 +513,44 @@ fun WoWForeverScreen(
     fun setupLog(msg: String) {
         android.util.Log.i("WCSETUP", msg)
         com.jrees.wowcompanion.SetupBridge.log?.invoke(msg)
+    }
+
+    fun performInstall() {
+        if (isUpdating) return
+        val root = GamePath.installDir()
+        if (!StorageUtils.hasStoragePermission(context, root.path)) { StorageUtils.requestManageExternalStoragePermission(context); return }
+        val metered = runCatching {
+            (context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager).isActiveNetworkMetered
+        }.getOrDefault(true)
+        val refused = com.jrees.wowcompanion.SetupFlow.installRefusal(Environment.getExternalStorageDirectory().usableSpace, metered)
+        if (refused != null) { setupLog("install: refused: $refused"); errorMessage = refused; return }
+        isUpdating = true
+        updateStatusText = "Connecting to Blizzard CDN..."
+        errorMessage = null
+        setupLog("install: starting in ${root.path}")
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    root.mkdirs()
+                    WowClientDownloader.install(root) { msg -> scope.launch(Dispatchers.Main) { updateStatusText = msg } }
+                }
+                gamePath = root.absolutePath
+                GamePath.save(context, gamePath)
+                directChosen = true
+                GamePath.saveDirectChosen(context)
+                versionStatus = null
+                if (checkFiles()) checkVersionStatus()
+                isUpdating = false
+                harvestArt()
+                setupLog("install: done")
+            } catch (e: Exception) {
+                Timber.e(e, "Error installing game")
+                setupLog("install: failed: ${e.message}")
+                if (e.isPermissionDenied()) denyStorageAccess()
+                errorMessage = "Install failed: ${e.message}"
+                isUpdating = false
+            }
+        }
     }
 
     fun performUpdate() {
@@ -663,6 +704,7 @@ fun WoWForeverScreen(
     val onSetupAction by rememberUpdatedState<(com.jrees.wowcompanion.SetupFlow.Action) -> Unit> { a ->
         when (a) {
             com.jrees.wowcompanion.SetupFlow.Action.CHOOSE_FOLDER -> folderPicker.launch(null)
+            com.jrees.wowcompanion.SetupFlow.Action.INSTALL_GAME -> performInstall()
             com.jrees.wowcompanion.SetupFlow.Action.GRANT_STORAGE -> StorageUtils.requestManageExternalStoragePermission(context)
             com.jrees.wowcompanion.SetupFlow.Action.SKIP_LOGIN -> loginSkipped = true
             com.jrees.wowcompanion.SetupFlow.Action.RETRY_ART -> harvestArt(retry = true)
@@ -782,6 +824,17 @@ object GamePath {
         val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_GAME_PATH, null)?.let(::File)
         val usable = listOfNotNull(saved, defaultPath).firstOrNull { WowProduct.forCode(productOf(it)) != null }
         return (usable ?: saved ?: defaultPath).absolutePath
+    }
+
+    /** where a direct install goes */
+    fun installDir(): File = if (com.jrees.wowcompanion.DirectTest.ON)
+        File(Environment.getExternalStorageDirectory(), com.jrees.wowcompanion.DirectTest.FOLDER) else defaultPath
+
+    private const val KEY_DIRECT_CHOSEN = "direct_test_chosen"
+    fun directChosen(context: Context) = !com.jrees.wowcompanion.DirectTest.ON ||
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_DIRECT_CHOSEN, false)
+    fun saveDirectChosen(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_DIRECT_CHOSEN, true).apply()
     }
 
     fun save(context: Context, path: String) {

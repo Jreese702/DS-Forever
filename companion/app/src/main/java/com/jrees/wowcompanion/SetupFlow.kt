@@ -71,7 +71,7 @@ object SetupFlow {
     )
 
     enum class Action {
-        CHOOSE_FOLDER, GRANT_STORAGE, ENTER_LOGIN, SKIP_LOGIN, RETRY_ART, UPDATE_GAME, UPDATE_APP, LATER_APP,
+        CHOOSE_FOLDER, INSTALL_GAME, GRANT_STORAGE, ENTER_LOGIN, SKIP_LOGIN, RETRY_ART, UPDATE_GAME, UPDATE_APP, LATER_APP,
         UPDATE_LOGIN, ENTER_ON_GAME, RESTART_GAME, PLAY,
         /** Android's App info page for DS Forever (Storage > Change: move it to internal storage) */
         OPEN_APP_SETTINGS,
@@ -196,6 +196,16 @@ object SetupFlow {
     fun canPlay(i: Inputs): Boolean =
         i.folderFound && !i.wrongGame && i.storage && i.art == Art.READY && i.busy == null && !i.gameRunning && i.appUpdate == null
 
+    /** a direct install grows to about 50 GB */
+    const val INSTALL_FREE_BYTES = 60_000_000_000L
+
+    /** why a direct install can't start; null = it can */
+    fun installRefusal(freeBytes: Long, metered: Boolean): String? = when {
+        freeBytes < INSTALL_FREE_BYTES -> "Installing needs 60 GB free"
+        metered -> "Installing needs Wi-Fi"
+        else -> null
+    }
+
     fun screen(i: Inputs): Screen {
         if (i.gameRunning) return Screen(signInPrompt(i), null, "")
         // TEST8 13:24:46: during a restart the bottom's Play came back with the launcher and a launch started before the restart's own
@@ -205,10 +215,12 @@ object SetupFlow {
             // first: nothing else works from the SD card (p-sd-card-install); Play stays, a device may still cope
             i.installedExternal -> Prompt("install", InstallCheck.TITLE, InstallCheck.TEXT,
                 listOf(Button("Open app settings", Action.OPEN_APP_SETTINGS)))
+            !i.folderFound && i.busy != null -> Prompt("folder", "Installing WoW Forever", i.busy, emptyList())
             !i.folderFound || i.wrongGame -> Prompt("folder", "Where is WoW Forever?",
                 if (i.wrongGame) "The folder ${i.path} holds ${i.product.ifEmpty { "another game" }}, not WoW Forever. Choose the WoW Forever folder: the one with .build.info and Data."
-                else "It isn't in ${i.path}. Choose the folder with .build.info and Data (for example Documents/WoW Forever).",
-                listOf(Button("Choose folder", Action.CHOOSE_FOLDER)))
+                else "Install it (250 MB now, up to 50 GB as you play), or choose the folder with .build.info and Data.",
+                if (i.wrongGame) listOf(Button("Choose folder", Action.CHOOSE_FOLDER))
+                else listOf(Button("Install directly", Action.INSTALL_GAME), Button("Choose folder", Action.CHOOSE_FOLDER)))
             // issues #8 / #9 (the user's pick): an out-of-date Data folder, said plainly; Play stays (it may still start)
             i.staleData != null && i.folderFound && !i.wrongGame && i.storage -> Prompt("stale", "Your game folder is out of date",
                 i.staleData, listOf(Button("OK", Action.STALE_OK)))

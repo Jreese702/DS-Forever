@@ -25,6 +25,7 @@ object WowClientDownloader {
     private const val PLATFORM_ARCH = "arm64"
     private const val EXCLUDED_ARCH = "x86_64"
     private const val DEFAULT_CDN_PATH = "tpr/wow"
+    private const val DIRECT_BRANCH = "us"
     private val DEFAULT_CDN_HOSTS = listOf("level3.blizzard.com", "us.cdn.blizzard.com")
 
     /** a product's patch server (versions, cdns); the tests point it at a local server */
@@ -184,7 +185,22 @@ object WowClientDownloader {
         rows.firstOrNull { !region.isNullOrBlank() && it[key].equals(region, ignoreCase = true) } ?: rows.firstOrNull { it[key] == "us" }
             ?: rows.firstOrNull()
 
-    fun updateGame(gameRoot: File, target: VersionCheckResult, onStatus: (String) -> Unit) {
+    /**
+     * A DIRECT INSTALL (the user 2026-11-01: "give them the option after install to use local files or install directly"; jaredgei's
+     * v2.3.0): an empty folder gets the client and the indexes, about 250 MB, and the game streams the rest from Blizzard's CDN as it
+     * plays and keeps it. .build.info comes last, so a stopped install is simply run again.
+     */
+    fun install(gameRoot: File, onStatus: (String) -> Unit) {
+        onStatus("Checking the latest build...")
+        val target = remoteCheck(WowProduct.LAUNCH, mapOf("Branch" to DIRECT_BRANCH), "", "")
+            ?.takeIf { it.remoteBuildConfig.isNotBlank() && it.remoteCdnConfig.isNotBlank() }
+            ?: throw IOException("Blizzard's patch server did not answer")
+        listOf("Data/data", "Data/indices", "Data/config").forEach { check(File(gameRoot, it).run { isDirectory || mkdirs() }) { "can't write to $gameRoot" } }
+        WowSwitch.replace(File(gameRoot, com.jrees.wowcompanion.DataStaleness.STREAMED), ByteArray(0))
+        updateGame(gameRoot, target, onStatus, fresh = true)
+    }
+
+    fun updateGame(gameRoot: File, target: VersionCheckResult, onStatus: (String) -> Unit, fresh: Boolean = false) {
         val cdn = Cdn(
             hosts = target.remoteCdnHosts.ifEmpty { DEFAULT_CDN_HOSTS },
             path = target.remoteCdnPath.ifEmpty { DEFAULT_CDN_PATH },
@@ -209,6 +225,10 @@ object WowClientDownloader {
         cdnConfig?.let { syncIndices(gameRoot, cdn, it, onStatus) }
 
         onStatus("Updating build information...")
+        if (fresh) WowSwitch.replace(File(gameRoot, BUILD_INFO), WowSwitch.freshBuildInfo(WowSwitch.Remote(
+            version = target.remoteVersion, buildConfig = target.remoteBuildConfig, cdnConfig = target.remoteCdnConfig,
+            cdnHosts = target.remoteCdnHosts, cdnPath = target.remoteCdnPath, cdnServers = target.remoteCdnServers,
+            keyRing = target.remoteKeyRing), DIRECT_BRANCH).toByteArray())
         updateBuildInfo(gameRoot, target, buildConfig)
     }
 

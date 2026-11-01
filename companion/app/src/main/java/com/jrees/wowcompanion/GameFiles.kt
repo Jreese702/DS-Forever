@@ -16,6 +16,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
 
     /** the whole file by fileDataID, or null ([status] says why: CascNative.UNKNOWN / NOT_PRESENT / ENCRYPTED / OTHER) */
     fun read(fid: Int): ByteArray? = readAsset("file $fid") { CascNative.read(handle, fid) }
+    private val streamed = File(root, DataStaleness.STREAMED).exists()
     /** the whole file by game path, or null */
     fun readName(path: String): ByteArray? = readAsset(path) { CascNative.readName(handle, path) }
     @Volatile var status = CascNative.OK
@@ -30,10 +31,10 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             val bytes = load()
             status = CascNative.lastStatus()
             // issues #8 / #9: is this game folder's Data the build's? (the first try: read here = local, a fetch needed = from the CDN)
-            if (attempt == 0 && bytes != null) { DataStaleness.count(root, buildKey, local = true); missWindow.note(false) }
+            if (attempt == 0 && bytes != null) { if (!streamed) DataStaleness.count(root, buildKey, local = true); missWindow.note(false) }
             if (bytes != null) return@synchronized bytes
             val need = CascNative.takeNeed() ?: break
-            if (attempt == 0) { DataStaleness.count(root, buildKey, local = false); missWindow.note(true) }
+            if (attempt == 0) { if (!streamed) DataStaleness.count(root, buildKey, local = false); missWindow.note(true) }
             if (attempt == 4 || status == CascNative.ENCRYPTED) break
             if (!fetch(root, cache, File(need))) {
                 lastReadWhy = "$label: not on this device, and downloading it failed (${File(need).name}: ${lastFetchWhy ?: "no answer"})"

@@ -91,6 +91,19 @@ object WowSwitch {
         return lines.joinToString(nl) + if (trailing) nl else ""
     }
 
+    /** a new folder's .build.info: the launch client's row alone, the columns and Tags the Battle.net app writes (a direct install) */
+    fun freshBuildInfo(remote: Remote, branch: String): String {
+        val head = listOf("Branch!STRING:0", "Active!DEC:1", "Build Key!HEX:16", "CDN Key!HEX:16", "Install Key!HEX:16", "IM Size!DEC:4",
+            "CDN Path!STRING:0", "CDN Hosts!STRING:0", "CDN Servers!STRING:0", "Tags!STRING:0", "Armadillo!STRING:0",
+            "Last Activated!STRING:0", "Version!STRING:0", "KeyRing!HEX:16", "Product!STRING:0")
+        val region = branch.uppercase(java.util.Locale.ROOT)
+        val row = mapOf("Branch" to branch, "Active" to "1", "Build Key" to remote.buildConfig, "CDN Key" to remote.cdnConfig,
+            "CDN Path" to remote.cdnPath, "CDN Hosts" to remote.cdnHosts.joinToString(" "), "CDN Servers" to remote.cdnServers.orEmpty(),
+            "Tags" to "Windows arm64 $region? enUS speech?:Windows arm64 $region? enUS text?",
+            "Version" to remote.version, "KeyRing" to remote.keyRing.orEmpty(), "Product" to WowProduct.LAUNCH.code)
+        return head.joinToString("|") + "\n" + head.joinToString("|") { row[it.substringBefore('!')].orEmpty() } + "\n"
+    }
+
     /**
      * [dest] becomes [bytes] whole or not at all: written to a temp file beside it, flushed to disk, then renamed over it (a kill
      * leaves the old file and at most the temp, which the next write replaces).
