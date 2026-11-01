@@ -32,6 +32,8 @@ namespace DsfDesktop.Tests
             lock (Pins) Pins.Add(pin);
             ThreadPool.QueueUserWorkItem(_ => done(StreamPairResult));
         }
+        public void LoginFile(string email, string password) { }
+        public Dictionary<string, object> BnetReady() => new Dictionary<string, object> { ["ok"] = false, ["why"] = "no sign-in window" };
         public Dictionary<string, object> Focus() => new Dictionary<string, object> { ["ok"] = false, ["why"] = "WoW isn't running" };
         public Dictionary<string, object> AddonsStatus() => new Dictionary<string, object> { ["state"] = "current" };
         public Dictionary<string, object> AddonsInstall() => new Dictionary<string, object> { ["state"] = "current", ["result"] = "ok" };

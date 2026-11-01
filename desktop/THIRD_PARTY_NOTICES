@@ -29,6 +29,18 @@ nlohmann/json and others) under their own licences (LGPL, BSL-1.0, Apache-2.0, M
 are part of Sunshine's source tree at the tag above (its `third-party` folder and licence files). Where a component is under a
 copyleft licence, its terms apply regardless of whether it is named here.
 
+## Android SDK Platform-Tools: adb (bundled, unmodified)
+
+- Project: Android SDK Platform-Tools by Google (the Android Open Source Project)
+- Version: 37.0.1 (pinned in scripts/platform-tools.lock), from https://dl.google.com/android/repository/platform-tools-latest-windows.zip,
+  SHA-256 45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99
+- Shipped: `platform-toolsdb.exe`, `AdbWinApi.dll`, `AdbWinUsbApi.dll`, with Google's `NOTICE.txt` and `source.properties`
+  (the other platform-tools programs are left out). Used only by the "Your Thor" card to install or update DS Forever over USB.
+- Licences: adb is Android Open Source Project code under the Apache License 2.0; NOTICE.txt (shipped next to it) lists the
+  licences of everything inside the platform-tools package. Google distributes the package under the Android SDK terms that
+  apply to its download; projects such as scrcpy ship these same three files the same way.
+- Desktop prefers an adb already on the PC's PATH (so it shares the adb server other tools use) and falls back to this one.
+
 ## Not bundled, needed for the controller
 
 - ViGEmBus (Nefarius Software Solutions, BSD-3-Clause), the virtual gamepad driver Sunshine uses for the Thor's controller. It is

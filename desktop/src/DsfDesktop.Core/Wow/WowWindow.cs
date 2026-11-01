@@ -35,6 +35,40 @@ namespace DsfDesktop.Wow
 
         public static bool IsRunning() => Find() != null;
 
+        /// <summary>a WoW client process, with or without its window yet (the one in [preferDir] first); null = none</summary>
+        public static Process FindAny(string preferDir = null)
+        {
+            var all = Names.SelectMany(n => { try { return Process.GetProcessesByName(n); } catch (Exception) { return new Process[0]; } }).ToList();
+            if (all.Count == 0) return null;
+            if (preferDir != null)
+            {
+                var hit = all.FirstOrDefault(p =>
+                {
+                    try { return string.Equals(Path.GetDirectoryName(p.MainModule.FileName), preferDir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase); }
+                    catch (Exception) { return false; }
+                });
+                if (hit != null) return hit;
+            }
+            return all[0];
+        }
+
+        /// <summary>a WoW process exists (it may not have a window yet while it loads)</summary>
+        public static bool ProcessRunning()
+        {
+            foreach (var n in Names)
+            {
+                try
+                {
+                    var ps = Process.GetProcessesByName(n);
+                    bool any = ps.Length > 0;
+                    foreach (var x in ps) x.Dispose();
+                    if (any) return true;
+                }
+                catch (Exception) { }
+            }
+            return false;
+        }
+
         /// <summary>is a WoW client the foreground window (protocol status "focus")</summary>
         public static bool IsForeground()
         {
@@ -53,7 +87,13 @@ namespace DsfDesktop.Wow
         {
             var p = Find(preferDir);
             if (p == null) return "WoW isn't running";
-            var h = p.MainWindowHandle;
+            return FocusHandle(p.MainWindowHandle);
+        }
+
+        /// <summary>any top-level window to the front (WoW's, or Battle.net's sign-in window); null = it is in front, else why not</summary>
+        public static string FocusHandle(IntPtr h)
+        {
+            if (h == IntPtr.Zero) return "no window";
             if (IsIconic(h)) ShowWindow(h, 9 /* SW_RESTORE */);
             if (SetForegroundWindow(h)) return null;
             var fg = GetForegroundWindow();
@@ -69,6 +109,18 @@ namespace DsfDesktop.Wow
             finally { if (attached) AttachThreadInput(me, fgThread, false); }
             return GetForegroundWindow() == h ? null : "Windows kept another window in front";
         }
+
+        /// <summary>seconds since anyone touched the PC's own keyboard or mouse</summary>
+        public static double PcIdleSeconds()
+        {
+            var i = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf(typeof(LASTINPUTINFO)) };
+            return GetLastInputInfo(ref i) ? unchecked((uint)Environment.TickCount - i.dwTime) / 1000.0 : 0;
+        }
+
+        [StructLayout(LayoutKind.Sequential)] struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
+        [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO i);
+
+        public static bool IsForegroundHandle(IntPtr h) => h != IntPtr.Zero && GetForegroundWindow() == h;
 
         [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();

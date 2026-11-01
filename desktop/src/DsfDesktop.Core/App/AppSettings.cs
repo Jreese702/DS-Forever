@@ -19,6 +19,10 @@ namespace DsfDesktop.App
         public string HostId { get; set; }
         public bool AutoAddons { get; set; } = true;
         public bool FocusOnStream { get; set; } = true;
+        /// <summary>"Start WoW when streaming": a stream (or the Thor's focus) starts WoW Forever when it isn't running</summary>
+        public bool StartWowOnStream { get; set; } = true;
+        /// <summary>the display device id Sunshine captures (the monitor WoW was last seen on); null = the primary display</summary>
+        public string CaptureDevice { get; set; }
         /// <summary>the folder question is asked once; after that the user uses "Choose folder" themselves</summary>
         public bool AskedForFolder { get; set; }
 

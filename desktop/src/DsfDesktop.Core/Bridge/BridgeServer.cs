@@ -27,6 +27,10 @@ namespace DsfDesktop.Bridge
         /// <summary>Sunshine's half of pairing: hand it the PIN when the device's Moonlight handshake arrives; done(null) = paired</summary>
         void StreamPair(string deviceId, string name, string pin, string peerIp, Action<string> done);
         Dictionary<string, object> Focus();
+        /// <summary>Battle.net's sign-in window in front and its form found, or why not (BnetForm); keys are never read or logged here</summary>
+        Dictionary<string, object> BnetReady();
+        /// <summary>the Thor's saved login for WoW's login.txt; never logged</summary>
+        void LoginFile(string email, string password);
         Dictionary<string, object> AddonsStatus();
         Dictionary<string, object> AddonsInstall();
     }
@@ -384,6 +388,15 @@ namespace DsfDesktop.Bridge
                         case "focus":
                             var sf = s;
                             Task.Run(() => sf.Enqueue(With("focus_result", host.Focus())));
+                            break;
+                        case "bnet_ready":
+                            var sb = s;
+                            Task.Run(() => sb.Enqueue(With("bnet_ready_result", host.BnetReady())));
+                            break;
+                        case "login_file":
+                            var em = m.Str("email");
+                            var pw = m.Str("password");
+                            Task.Run(() => host.LoginFile(em, pw));
                             break;
                         case "addons_status": s.Enqueue(With("addons", host.AddonsStatus())); break;
                         case "addons_install":

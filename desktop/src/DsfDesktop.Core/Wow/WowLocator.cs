@@ -50,7 +50,7 @@ namespace DsfDesktop.Wow
     {
         public const string Beta = "_classic_beta_";
         public const string Forever = "_forever_";
-        public static readonly DateTime LaunchDate = new DateTime(2026, 11, 4);
+        public static readonly DateTime LaunchDate = new DateTime(2026, 10, 27);   // the user 2026-10-27: the beta is over, production from today
         public static readonly string[] All = { Beta, Forever };
 
         public static string[] Preferred(DateTime today) => today.Date >= LaunchDate ? new[] { Forever, Beta } : new[] { Beta, Forever };

@@ -46,6 +46,8 @@ namespace DsfDesktop.GameLog
         public long Offset => offset;
         public int Gaps => asm.Gaps;
         public bool FileExists { get; private set; }
+        /// <summary>every whole line as it is read (the sign-in lines: <see cref="DsfDesktop.Wow.LoginLog"/>), on the polling thread</summary>
+        public Action<string> RawLine;
 
         /// <summary>follow another file (LogFollow switched flavor): starts it like a fresh client, from its capped backlog</summary>
         public void SetPath(string p)
@@ -180,7 +182,9 @@ namespace DsfDesktop.GameLog
             for (int i = start; i < n; i++)
             {
                 if (all[i] != (byte)'\n') continue;
-                asm.Line(Encoding.UTF8.GetString(all, lineStart, i - lineStart), ev);
+                var text = Encoding.UTF8.GetString(all, lineStart, i - lineStart);
+                try { RawLine?.Invoke(text); } catch (Exception) { }
+                asm.Line(text, ev);
                 lineStart = i + 1;
             }
             int rest = n - lineStart;

@@ -1,0 +1,6 @@
+# Google's Android SDK platform-tools for the Thor's USB install (adb.exe, AdbWinApi.dll, AdbWinUsbApi.dll), fetched by
+# fetch_platform_tools.ps1. Google only publishes "latest" at this URL: when they update it the SHA-256 stops matching and the
+# build stops; re-pin then (download, check, update sha256 + revision here, run the tests).
+url=https://dl.google.com/android/repository/platform-tools-latest-windows.zip
+revision=37.0.1
+sha256=45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99

@@ -28,6 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw "test build failed" }
 if ($LASTEXITCODE -ne 0) { throw "app build failed" }
 
 $sunshineDir = & (Join-Path $PSScriptRoot "fetch_sunshine.ps1") -CacheDir $CacheDir -WithSource:$WithSource | Select-Object -Last 1
+$adbDir = & (Join-Path $PSScriptRoot "fetch_platform_tools.ps1") -CacheDir $CacheDir | Select-Object -Last 1
 
 $testExe = Join-Path $desktop "tests\DsfDesktop.Tests\bin\Release\DsfDesktop.Tests.exe"
 if ($LiveSunshine) { & $testExe --sunshine $sunshineDir } else { & $testExe }
@@ -35,7 +36,10 @@ if ($LASTEXITCODE -ne 0) { throw "$LASTEXITCODE test(s) failed" }
 
 $version = (Get-Item (Join-Path $desktop "src\DsfDesktop\bin\Release\DsForeverDesktop.exe")).VersionInfo.ProductVersion
 $dist = Join-Path $desktop "dist"
-$stage = Join-Path $dist "DsForeverDesktop"
+$final = Join-Path $dist "DsForeverDesktop"
+# staged beside the old folder, never over it: Desktop (and its Sunshine) may be running from dist\DsForeverDesktop, and deleting
+# it under them half-empties a live install
+$stage = Join-Path $dist "DsForeverDesktop.new"
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Force $stage | Out-Null
 
@@ -43,6 +47,8 @@ Copy-Item (Join-Path $desktop "src\DsfDesktop\bin\Release\DsForeverDesktop.exe")
           (Join-Path $desktop "src\DsfDesktop\bin\Release\DsForeverDesktop.exe.config"), `
           (Join-Path $desktop "src\DsfDesktop\bin\Release\DsfDesktop.Core.dll") $stage
 Copy-Item -Recurse $sunshineDir (Join-Path $stage "sunshine")
+# adb for the Thor's USB install (only the three files it needs, with Google's notices)
+Copy-Item -Recurse $adbDir (Join-Path $stage "platform-tools")
 # the same add-on set the APK ships
 $companion = Join-Path $repo "companion\app\src\main\assets\companion"
 New-Item -ItemType Directory -Force (Join-Path $stage "companion") | Out-Null
@@ -56,6 +62,23 @@ $zip = Join-Path $dist ("DsForeverDesktop-" + $version + "-win-x64.zip")
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip
 Write-Host "zip: $zip"
+
+# swap the new folder in, only when nothing runs from the old one (a folder with running programs in it can't be renamed)
+$old = Join-Path $dist "DsForeverDesktop.old"
+if (Test-Path $old) { Remove-Item -Recurse -Force $old -ErrorAction SilentlyContinue }
+$swapped = $true
+if (Test-Path $final) {
+    try { Rename-Item $final "DsForeverDesktop.old" -ErrorAction Stop } catch { $swapped = $false }
+}
+if ($swapped) {
+    Rename-Item $stage "DsForeverDesktop"
+    $stage = $final
+    if (Test-Path $old) { Remove-Item -Recurse -Force $old -ErrorAction SilentlyContinue }
+    Write-Host "app folder: $final"
+} else {
+    Write-Host "Desktop is running from $final, which was left alone. The new build is in ${stage}:"
+    Write-Host "quit Desktop (tray > Quit), then replace $final with it."
+}
 
 $iscc = @("$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe") |
     Where-Object { Test-Path $_ } | Select-Object -First 1

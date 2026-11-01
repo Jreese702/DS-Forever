@@ -4,3 +4,5 @@ dist/
 .cache/
 # the root .gitignore ignores docs/ everywhere; the bridge protocol lives here
 !docs/
+build-csc/
+dist-next/

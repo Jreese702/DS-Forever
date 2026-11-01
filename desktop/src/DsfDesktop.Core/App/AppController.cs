@@ -72,6 +72,11 @@ namespace DsfDesktop.App
                 Settings.SunshinePass = Crypto.Protect(Crypto.Base64Url(Crypto.RandomBytes(18)).Replace("-", "a").Replace("_", "b"));
             SaveSettings();
             Devices = new DeviceStore(paths.Devices);
+            MakeStarter();
+            MakeSupervisor();
+            var adbPath = DsfDesktop.Thor.AdbProcess.Locate(paths.AppDir);
+            this.Thor = new DsfDesktop.Thor.ThorManager(adbPath != null ? new DsfDesktop.Thor.AdbProcess(adbPath) : null, new DsfDesktop.Thor.ReleaseFeed(), Path.Combine(paths.DataDir, "apk"));
+            this.Thor.Changed += Fire;
             SunshineLayout = new SunshineLayout { ExeDir = paths.SunshineExeDir, DataDir = paths.SunshineData };
             Codes.Changed += Fire;
             Devices.Changed += Fire;
@@ -102,6 +107,7 @@ namespace DsfDesktop.App
 
         public void Dispose()
         {
+            if (loginFileAt.HasValue && FlavorDirOrNull != null) WowLoginFile.Delete(FlavorDirOrNull);
             running = false;
             slowTimer?.Dispose();
             try { mdns?.Dispose(); } catch (Exception) { }
@@ -121,8 +127,8 @@ namespace DsfDesktop.App
                 Wow = inst;
                 Flavor = WowLocator.ChooseFlavor(inst, DateTime.Now);
                 var path = inst != null && Flavor != null ? inst.LogPath(Flavor) : null;
-                if (tailer == null) tailer = new LogTailer(path);
-                else tailer.SetPath(path);
+                if (tailer == null) { tailer = new LogTailer(path); tailer.RawLine = l => { lock (loginLog) loginLog.Line(l); }; }
+                else if (tailer.Path != path) { tailer.SetPath(path); lock (loginLog) loginLog.Reset(); clientDocAt = null; }
                 Notices = inst != null && Flavor != null ? ConfigCheck.Notices(inst.FlavorDir(Flavor)) : new List<string>();
             }
             Log.I(inst == null ? "WoW Forever not found" : "WoW at " + inst.Root + " (" + string.Join(", ", inst.Flavors) + "), following " + Flavor);
@@ -159,6 +165,7 @@ namespace DsfDesktop.App
                             case LogEventKind.Doc:
                                 Interlocked.Increment(ref DocsSeen);
                                 LastDocAt = DateTime.Now;
+                                clientDocAt = DateTime.UtcNow;
                                 Bridge?.PublishDoc(e);
                                 break;
                             case LogEventKind.Gap:
@@ -167,6 +174,8 @@ namespace DsfDesktop.App
                                 changed = true;
                                 break;
                             case LogEventKind.Restart:
+                                lock (loginLog) loginLog.Reset();
+                                clientDocAt = null;
                                 Bridge?.PublishLog("restart", LogPath, Flavor);
                                 LogStatus = e.Text; Log.I(e.Text); changed = true;
                                 break;
@@ -194,6 +203,8 @@ namespace DsfDesktop.App
             {
                 Flavor = f;
                 tailer.SetPath(inst.LogPath(f));
+                lock (loginLog) loginLog.Reset();
+                clientDocAt = null;
                 Notices = ConfigCheck.Notices(inst.FlavorDir(f));
             }
             Log.I("following the game's log: " + f);
@@ -266,12 +277,19 @@ namespace DsfDesktop.App
             if (port < 0) { Log.I("sunshine: no free port set"); return; }
             if (port != Settings.SunshinePort) { Settings.SunshinePort = port; SaveSettings(); }
             SunshinePort = port;
-            SunshineConfig.Write(SunshineLayout, new SunshineOptions { Port = port, Encoder = Settings.Encoder, EventExe = Paths.Exe, HostName = Environment.MachineName, BindAddress = Loopback ? "127.0.0.1" : "" });
+            WriteSunshineConfig();
             if (!File.Exists(SunshineLayout.Credentials) && !Sunshine.SetCredentials(Settings.SunshineUser, Pass))
                 Log.I("sunshine: setting its login failed");
             api = new SunshineApi(port, Settings.SunshineUser, Pass, SunshineLayout.Cert);
             Sunshine.Start();
         }
+
+        // no prep command: the portable Sunshine can't start ours (error 5, tracking 252f5ec7); the Thor's bridge "focus" covers it
+        void WriteSunshineConfig() => SunshineConfig.Write(SunshineLayout, new SunshineOptions
+        {
+            Port = SunshinePort, Encoder = Settings.Encoder, EventExe = "", HostName = Environment.MachineName,
+            BindAddress = Loopback ? "127.0.0.1" : "", OutputName = Settings.CaptureDevice,
+        });
 
         public void RestartSunshine()
         {
@@ -303,8 +321,90 @@ namespace DsfDesktop.App
         DateTime lastEventAt = DateTime.MinValue;
 
         /// <summary>every second: the window refresh; every 2 s Sunshine's own state (BUSY = streaming) and its uniqueid</summary>
+        /// <summary>
+        /// WoW goes when the stream has (the user, 2026-10-30: "Wow should close itself when disconnecting the stream after like 5 minutes
+        /// of being disconnected"): asked once, by its window, as its X. Someone using the PC keeps it open. The Thor's bridge says the
+        /// stream has gone: Sunshine's serverinfo stays BUSY after the client leaves (measured 2026-10-30, no client and still BUSY).
+        /// </summary>
+        DateTime? streamEndedAt;
+        bool thorWasHere;
+
+        void CloseAfterStream()
+        {
+            try
+            {
+                if (Bridge != null && Bridge.Sessions().Count > 0) { thorWasHere = true; streamEndedAt = null; return; }
+                if (!thorWasHere) return;
+                if (!streamEndedAt.HasValue) streamEndedAt = DateTime.UtcNow;
+                if (!WowFlow.CloseAfterStream((DateTime.UtcNow - streamEndedAt.Value).TotalSeconds, WowWindow.PcIdleSeconds())) return;
+                thorWasHere = false; streamEndedAt = null;
+                Supervisor?.Disconnect();
+                using (var p = WowWindow.FindAny(FlavorDirOrNull))
+                {
+                    if (p == null) return;
+                    Log.I("WoW: no stream for 5 minutes, closing it (pid " + p.Id + ")");
+                    p.CloseMainWindow();
+                }
+            }
+            catch (Exception e) { Log.I("closing WoW after the stream: " + e.Message); }
+        }
+
+        DsfDesktop.Thor.DesktopUpdate update;
+        DateTime nextUpdateCheck = DateTime.UtcNow.AddSeconds(DsfDesktop.Thor.DesktopUpdate.FirstCheckS);
+
+        void UpdateTick()
+        {
+            if (DateTime.UtcNow < nextUpdateCheck) return;
+            nextUpdateCheck = DateTime.UtcNow.AddSeconds(DsfDesktop.Thor.DesktopUpdate.CheckEveryS);
+            if (update == null) update = new DsfDesktop.Thor.DesktopUpdate(Paths.DataDir);
+            var u = update;
+            Task.Run(async () =>
+            {
+                try { await u.Check(Version, CancellationToken.None).ConfigureAwait(false); }
+                catch (Exception e) { Log.I("update: " + e.Message); }
+            });
+        }
+
+        /// <summary>a verified new Desktop and no Thor connected: the swap is started and the app must quit (the tray asks, on the UI thread)</summary>
+        public bool StartPendingUpdate() => update != null && update.Ready && (Bridge == null || Bridge.Sessions().Count == 0) && update.Begin();
+
+        DateTime? loginFileAt, signInSeenAt;
+        bool loginFileSwept;
+
+        public void LoginFile(string email, string password)
+        {
+            var dir = FlavorDirOrNull;
+            if (dir == null || string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !WowFlow.LoginFileWanted(ScreenNow())) return;
+            var why = WowLoginFile.Write(dir, email, password);
+            if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; }
+            Log.I("login file: " + (why ?? "written"));
+        }
+
+        void LoginFileTick()
+        {
+            try
+            {
+                var dir = FlavorDirOrNull;
+                if (dir == null) return;
+                if (!loginFileSwept) { loginFileSwept = true; if (!loginFileAt.HasValue) WowLoginFile.Delete(dir); }   // a crash's leftover
+                if (!loginFileAt.HasValue) return;
+                var s = ScreenNow();
+                if (!signInSeenAt.HasValue && (s == WowScreen.SigningIn || SignedIn(s))) signInSeenAt = DateTime.UtcNow;
+                var now = DateTime.UtcNow;
+                if (!WowFlow.LoginFileGoes((now - loginFileAt.Value).TotalSeconds, signInSeenAt.HasValue ? (now - signInSeenAt.Value).TotalSeconds : (double?)null,
+                        Bridge != null && Bridge.Sessions().Count > 0)) return;
+                WowLoginFile.Delete(dir);
+                loginFileAt = null;
+                Log.I("login file: deleted");
+            }
+            catch (Exception e) { Log.I("login file: " + e.GetType().Name); }
+        }
+
         void SlowTick()
         {
+            LoginFileTick();
+            CloseAfterStream();
+            UpdateTick();
             try
             {
                 if (tickN++ % 2 == 0)
@@ -320,9 +420,17 @@ namespace DsfDesktop.App
                             SetStream(st.IndexOf("BUSY", StringComparison.OrdinalIgnoreCase) >= 0 ? StreamState.Streaming : StreamState.Idle);
                     }
                     else SetStream(StreamState.Unknown);
+                    CheckCapture();
                 }
             }
             catch (Exception) { }
+            try { Starter.Tick(); } catch (Exception) { }
+            try { WowTick(); } catch (Exception e) { Log.I("wow tick: " + e.Message); }
+            if (ThorWatching && DateTime.UtcNow - thorPolledAt > TimeSpan.FromSeconds(3) && !Thor.Busy)
+            {
+                thorPolledAt = DateTime.UtcNow;
+                Task.Run(async () => { await Thor.CheckRelease().ConfigureAwait(false); Thor.Refresh(); });
+            }
             Fire();
         }
 
@@ -335,7 +443,13 @@ namespace DsfDesktop.App
             Stream = s;
             Log.I("stream: " + s);
             Bridge?.Publish(new Dictionary<string, object> { ["t"] = "stream", ["state"] = StreamWord });
-            if (s == StreamState.Streaming && was != StreamState.Streaming && Settings.FocusOnStream) Task.Run(() => FocusWow());
+            if (s == StreamState.Streaming && was != StreamState.Streaming)
+                Task.Run(() =>
+                {
+                    // the stream shows the real desktop: WoW must be up, signed in and in front (the user's rules: WowFlow.Decide)
+                    if (Settings.StartWowOnStream) Want("stream started");
+                    else if (Settings.FocusOnStream) { CheckCapture(); FocusWow(); }
+                });
         }
 
         /// <summary>from Sunshine's prep commands (--event stream-start / stream-stop, through the single-instance pipe)</summary>
@@ -357,10 +471,375 @@ namespace DsfDesktop.App
 
         public Dictionary<string, object> Focus()
         {
+            if (Settings.StartWowOnStream)
+            {
+                Want("the Thor asked");
+                var s = WowInfo();
+                bool ok = SignedIn(LastScreen) && WowWindow.IsForeground();
+                s["ok"] = ok;
+                if (!ok) s["why"] = Supervisor.NeedsYou ? WowFlow.NeedsYouText : Starter.State == WowState.Starting ? "starting WoW" : (Starter.Why ?? "WoW isn't signed in yet");
+                return s;
+            }
+            CheckCapture();
             var why = FocusWow();
             var d = new Dictionary<string, object> { ["ok"] = why == null };
             if (why != null) d["why"] = why;
             return d;
+        }
+
+        // ---------------------------------------------------------------- starting WoW, and the monitor Sunshine captures
+
+        public WowStarter Starter { get; private set; }
+
+        /// <summary>the USB install of DS Forever on the Thor (the Thor card)</summary>
+        public DsfDesktop.Thor.ThorManager Thor { get; private set; }
+        /// <summary>the window is showing the Thor card: only then is adb asked for devices (every 3 s)</summary>
+        public bool ThorWatching { get; set; }
+        DateTime thorPolledAt = DateTime.MinValue;
+
+        string FlavorDirOrNull => Wow != null && Flavor != null ? Wow.FlavorDir(Flavor) : null;
+
+        /// <summary>a WoW window is up (any flavor)</summary>
+        public bool WowUp() => WowWindow.Find(FlavorDirOrNull) != null;
+
+        void MakeStarter()
+        {
+            Starter = new WowStarter(
+                windowUp: WowUp,
+                processUp: WowWindow.ProcessRunning,
+                plan: () => WowLaunch.Plan(Wow, DateTime.Now, WowLaunch.FindBattleNet()),
+                start: WowStarter.StartProcess);
+            Starter.Changed += (state, why) =>
+            {
+                if (Supervisor != null) PublishWow(force: true);
+                else
+                {
+                    var msg = new Dictionary<string, object> { ["t"] = "wow", ["state"] = WowStarter.Word(state) };
+                    if (why != null) msg["why"] = why;
+                    Bridge?.Publish(msg);
+                }
+                var text = state == WowState.Starting ? "Starting WoW on your PC…" : state == WowState.StartFailed ? "WoW didn't start: " + why
+                         : state == WowState.Running ? "WoW is running on your PC" : "WoW was closed on your PC";
+                Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = text });
+                if (state == WowState.Running)
+                    Task.Run(() =>
+                    {
+                        Thread.Sleep(2000);   // let the new window settle before it is moved or raised
+                        CheckCapture();
+                        FocusWow();
+                    });
+                Fire();
+            };
+        }
+
+
+        // ---------------------------------------------------------------- the stream wants WoW signed in (the user, 2026-10-28)
+
+        readonly LoginLog loginLog = new LoginLog();
+        DateTime? clientDocAt;
+        DateTime needsYouAt = DateTime.MinValue;
+        public WowSupervisor Supervisor { get; private set; }
+        public WowScreen LastScreen { get; private set; } = WowScreen.None;
+        public BnetState LastBnet { get; private set; } = BnetState.Unknown;
+        string lastWowKey;
+
+        static bool SignedIn(WowScreen s) => s == WowScreen.CharSelect || s == WowScreen.World;
+
+        /// <summary>where the game is now (its process, its connections, its log, the add-on's documents)</summary>
+        public WowScreen ScreenNow()
+        {
+            var p = WowWindow.FindAny(FlavorDirOrNull);
+            if (p == null) return WowScreen.None;
+            try
+            {
+                double up = 0;
+                try { up = (DateTime.Now - p.StartTime).TotalSeconds; } catch (Exception) { }
+                var (game, auth) = WowProbe.Connections(p.Id);
+                double? docAge = clientDocAt.HasValue ? (DateTime.UtcNow - clientDocAt.Value).TotalSeconds : (double?)null;
+                lock (loginLog) return WowFlow.Classify(true, up, game, auth, loginLog, docAge);
+            }
+            finally { p.Dispose(); }
+        }
+
+        public BnetState BnetNow()
+        {
+            var w = WowProbe.Bnet();
+            return WowFlow.Bnet(WowLaunch.FindBattleNet() != null, w.Running, w.UptimeS, w.Login != IntPtr.Zero, w.Any);
+        }
+
+        DateTime wantedAt = DateTime.MaxValue;
+        int crashedPid = -1;
+
+        /// <summary>
+        /// The client crashed (the user's PC 2026-10-29: "Fatal Error - Wow.exe", the client older than the game's data): its crash
+        /// window is up, or it is gone and wrote a crash report since the Thor asked for it. "update" / "crash", null = no crash.
+        /// </summary>
+        string CrashNow()
+        {
+            var p = WowWindow.FindAny(FlavorDirOrNull);
+            try
+            {
+                if (p != null && !WowProbe.FatalErrorShown(p.Id)) return null;
+                var since = p != null ? SafeStart(p).AddSeconds(-5) : wantedAt;
+                if (since == DateTime.MaxValue) return null;
+                var report = WowProbe.CrashReport(FlavorDirOrNull, since);
+                if (report == null && p == null) return null;
+                if (p != null) crashedPid = p.Id;
+                Log.I("WoW crashed: " + WowFlow.CrashLine(report));
+                return WowFlow.CrashKind(report);
+            }
+            finally { p?.Dispose(); }
+        }
+
+        DateTime lastShowMove = DateTime.MinValue;
+
+        /// <summary>
+        /// While the player has to use Battle.net through the stream (its sign-in, an update after a crash, a sign-in that needs them):
+        /// Battle.net's window on the captured monitor (moved there if it is elsewhere) as the Thor's "show" rectangle, so the Thor shows
+        /// THAT window alone, never the desktop round it. null = nothing to show.
+        /// </summary>
+        string ShowRectNow()
+        {
+            var sv = Supervisor;
+            if (sv == null) return null;
+            bool wanted = LastBnet == BnetState.SignInNeeded || sv.Crash != null || sv.NeedsYou;
+            if (!wanted) return null;
+            var b = WowProbe.Bnet();
+            var h = b.Login != IntPtr.Zero ? b.Login : WowProbe.BnetMain();
+            if (h == IntPtr.Zero) return null;
+            var list = SunshineDisplays();
+            var captured = list.Count > 0 ? Displays.Captured(list, Settings.CaptureDevice) : null;
+            if (captured == null) return null;
+            if (!string.Equals(Displays.MonitorOf(h), captured, StringComparison.OrdinalIgnoreCase) && DateTime.UtcNow - lastShowMove > TimeSpan.FromSeconds(5))
+            {
+                lastShowMove = DateTime.UtcNow;
+                Log.I("Battle.net to the captured monitor " + captured + ": " + (Displays.MoveTo(h, captured) ?? "done"));
+            }
+            var mon = Displays.MonitorRect(captured);
+            var win = Displays.Visible(h);
+            return mon.HasValue && win.HasValue ? Displays.ShowRect(win.Value, mon.Value) : null;
+        }
+
+        /// <summary>
+        /// The Thor is about to type its saved login (the user's ruling 2026-10-30): keys go to whichever window has the focus, so "ok" means
+        /// Battle.net's sign-in window is in front on the streamed monitor, NOW, and its form was found; the answer gives the Thor's clicks.
+        /// </summary>
+        public Dictionary<string, object> BnetReady()
+        {
+            var no = new Func<string, Dictionary<string, object>>(why => { Log.I("sign-in form: " + why); return new Dictionary<string, object> { ["ok"] = false, ["why"] = why }; });
+            var h = WowProbe.Bnet().Login;
+            if (h == IntPtr.Zero) return no("no sign-in window");
+            var list = SunshineDisplays();
+            var captured = list.Count > 0 ? Displays.Captured(list, Settings.CaptureDevice) : null;
+            if (captured == null) return no("no captured monitor");
+            if (!string.Equals(Displays.MonitorOf(h), captured, StringComparison.OrdinalIgnoreCase))
+            {
+                var moved = Displays.MoveTo(h, captured);
+                if (moved != null) return no(moved);
+                System.Threading.Thread.Sleep(300);
+            }
+            var focus = WowWindow.FocusHandle(h);
+            if (focus != null) return no(focus);
+            System.Threading.Thread.Sleep(150);
+            var px = BnetForm.Read(h, out int w, out int ht);
+            var form = BnetForm.Detect(px, w, ht);
+            if (form == null) return no("the form is not one we know");
+            var mon = Displays.MonitorRect(captured);
+            if (!mon.HasValue || !Displays.GetRect(h, out var win)) return no("no window rectangle");
+            if (!WowWindow.IsForegroundHandle(h)) return no("another window took the front");
+            var d = new Dictionary<string, object>
+            {
+                ["ok"] = true,
+                ["password"] = BnetForm.Share(form.Password, win, mon.Value),
+                ["button"] = BnetForm.Share(form.Button, win, mon.Value),
+            };
+            if (form.Email.HasValue) d["email"] = BnetForm.Share(form.Email.Value, win, mon.Value);
+            Log.I("sign-in form found (" + (form.Email.HasValue ? "email and password" : "password") + ")");
+            return d;
+        }
+
+        static DateTime SafeStart(System.Diagnostics.Process p) { try { return p.StartTime; } catch (Exception) { return DateTime.Now; } }
+
+        /// <summary>after a crash: the dead client (its crash window) goes, Battle.net comes to the front so the player can update WoW
+        /// through the stream (nothing is pressed for them)</summary>
+        void AfterCrash()
+        {
+            try
+            {
+                if (crashedPid > 0)
+                    using (var p = System.Diagnostics.Process.GetProcessById(crashedPid))
+                        if (WowProbe.FatalErrorShown(p.Id)) { Log.I("WoW crashed: closing its crash window (pid " + p.Id + ")"); p.Kill(); p.WaitForExit(5000); }
+            }
+            catch (Exception) { }
+            var b = WowProbe.Bnet();
+            if (!b.Running) { WowProbe.StartBattleNet(WowLaunch.FindBattleNet()); return; }
+            var h = b.Login != IntPtr.Zero ? b.Login : WowProbe.BnetMain();
+            if (h != IntPtr.Zero) Log.I("WoW crashed: Battle.net to the front: " + (WowWindow.FocusHandle(h) ?? "done"));
+        }
+
+        /// <summary>a stream (the Thor) wants WoW: start the supervisor unless it is already at work; never again for 2 minutes after
+        /// it gave up (a flaky bridge reconnecting must not loop the game)</summary>
+        void Want(string why)
+        {
+            if (Supervisor.Active) { Supervisor.Step(); return; }
+            if (Supervisor.NeedsYou && DateTime.UtcNow - needsYouAt < TimeSpan.FromMinutes(2)) return;
+            Log.I("WoW wanted: " + why);
+            wantedAt = DateTime.Now;
+            Supervisor.Connect();
+        }
+
+        /// <summary>
+        /// The old client at the login screen goes: its window is asked to close (WM_CLOSE, as its X; no keys are ever sent); after
+        /// 15 s, if it is still there AND still not signed in, it is ended. null = gone.
+        /// </summary>
+        string CloseForRestart()
+        {
+            var p = WowWindow.FindAny(FlavorDirOrNull);
+            if (p == null) return null;
+            try
+            {
+                Log.I("restart WoW: closing the client at the login screen (pid " + p.Id + ")");
+                try { p.CloseMainWindow(); } catch (Exception) { }
+                if (p.WaitForExit(15000)) return null;
+                if (SignedIn(ScreenNow())) return "WoW signed in meanwhile";
+                Log.I("restart WoW: still open after 15 s at the login screen: ending it");
+                try { p.Kill(); } catch (Exception e) { return "couldn't close WoW: " + e.Message; }
+                return p.WaitForExit(10000) ? null : "WoW didn't close";
+            }
+            finally { p.Dispose(); }
+        }
+
+        void MakeSupervisor()
+        {
+            Supervisor = new WowSupervisor(
+                screen: () => LastScreen = ScreenNow(),
+                bnet: () => LastBnet = BnetNow(),
+                startBnet: () => WowProbe.StartBattleNet(WowLaunch.FindBattleNet()),
+                showBnetSignIn: () => WowWindow.FocusHandle(WowProbe.Bnet().Login),
+                startWow: () => { Starter.Ensure(); return Starter.State == WowState.StartFailed ? Starter.Why : null; },
+                startPending: () => Starter.State == WowState.Starting,
+                closeWow: CloseForRestart,
+                focusWow: () => { CheckCapture(); return FocusWow(); },
+                crash: CrashNow);
+            Supervisor.Changed += (a, detail) =>
+            {
+                if (a == WowAction.NeedsYou) needsYouAt = DateTime.UtcNow;
+                if (a == WowAction.Crashed) { needsYouAt = DateTime.UtcNow; Task.Run(AfterCrash); }
+                var text = a == WowAction.StartBattleNet ? "Starting Battle.net on your PC…"
+                         : a == WowAction.ShowBattleNetSignIn ? "Sign in to Battle.net"
+                         : a == WowAction.RestartWow ? "WoW was at its login screen: starting it again…"
+                         : a == WowAction.NeedsYou ? WowFlow.NeedsYouText
+                         : a == WowAction.Crashed ? (detail == "update" ? WowFlow.UpdateText : WowFlow.CrashText) : null;
+                if (text != null) Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = text });
+                PublishWow(force: true);
+            };
+        }
+
+        /// <summary>the game and Battle.net for the Thor (the "wow" message, the welcome's wow): its curtain lifts on charselect / world + focused</summary>
+        public Dictionary<string, object> WowInfo()
+        {
+            string err;
+            lock (loginLog) err = loginLog.Error;
+            var d = new Dictionary<string, object>
+            {
+                ["state"] = WowStarter.Word(WowUp() ? WowState.Running : Starter.State),
+                ["screen"] = WowFlow.Word(LastScreen),
+                ["focused"] = WowWindow.IsForeground(),
+                ["bnet"] = WowFlow.Word(BnetState.Unknown),
+                ["needs_you"] = Supervisor?.NeedsYou ?? false,
+            };
+            if (Supervisor?.Crash != null) d["crash"] = Supervisor.Crash;
+            var show = ShowRectNow();
+            if (show != null) d["show"] = show;
+            if (Starter.Why != null) d["why"] = Starter.Why;
+            if (err != null) d["login_error"] = err;
+            return d;
+        }
+
+        /// <summary>every tick: the screen and Battle.net looked at, the supervisor stepped, a "wow" message when anything changed</summary>
+        void WowTick()
+        {
+            LastScreen = ScreenNow();
+            LastBnet = BnetNow();
+            // the player updated and started WoW again (a client that is not the crashed one, without a crash window)
+            if (Supervisor.Crash != null && LastScreen != WowScreen.None)
+                using (var p = WowWindow.FindAny(FlavorDirOrNull))
+                    if (p != null && p.Id != crashedPid && !WowProbe.FatalErrorShown(p.Id)) Supervisor.CrashOver();
+            if (Supervisor.Active) Supervisor.Step();
+            PublishWow(force: false);
+        }
+
+        void PublishWow(bool force)
+        {
+            var w = WowInfo();
+            var key = string.Join("|", w.OrderBy(kv => kv.Key).Select(kv => kv.Key + "=" + kv.Value));
+            if (!force && key == lastWowKey) return;
+            lastWowKey = key;
+            var msg = new Dictionary<string, object> { ["t"] = "wow" };
+            foreach (var kv in w) msg[kv.Key] = kv.Value;
+            Bridge?.Publish(msg);
+        }
+
+        public string CaptureStatus { get; private set; } = "";
+        DateTime lastRecapture = DateTime.MinValue, lastMove = DateTime.MinValue;
+        readonly object captureGate = new object();
+
+        List<SunshineDisplay> SunshineDisplays()
+        {
+            try
+            {
+                using (var fs = new FileStream(SunshineLayout.LogFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (var r = new StreamReader(fs)) return Displays.ParseSunshineLog(r.ReadToEnd());
+            }
+            catch (Exception) { return new List<SunshineDisplay>(); }
+        }
+
+        /// <summary>
+        /// Keeps the captured monitor and WoW's together: no stream running, Sunshine is pointed at WoW's monitor (output_name, a
+        /// Sunshine restart, remembered in settings); during a stream WoW's window is moved to the captured monitor instead.
+        /// </summary>
+        void CheckCapture()
+        {
+            if (!Monitor.TryEnter(captureGate)) return;
+            try
+            {
+                if (Sunshine == null || !Sunshine.Running) return;
+                var p = WowWindow.Find(FlavorDirOrNull);
+                if (p == null) return;
+                var wowDisplay = Displays.MonitorOf(p.MainWindowHandle);
+                var list = SunshineDisplays();
+                if (list.Count == 0) return;
+                var captured = Displays.Captured(list, Settings.CaptureDevice);
+                var target = list.FirstOrDefault(d => string.Equals(d.DisplayName, wowDisplay, StringComparison.OrdinalIgnoreCase));
+                switch (Displays.Decide(wowDisplay, captured, Stream == StreamState.Streaming, target?.DeviceId != null))
+                {
+                    case Displays.Fix.RecaptureSunshine:
+                        if (DateTime.UtcNow - lastRecapture < TimeSpan.FromSeconds(90)) return;
+                        lastRecapture = DateTime.UtcNow;
+                        Settings.CaptureDevice = target.DeviceId;
+                        SaveSettings();
+                        CaptureStatus = "capturing " + (target.Friendly ?? target.DisplayName) + ", the monitor WoW is on";
+                        Log.I("capture: WoW is on " + wowDisplay + ", Sunshine captured " + captured + ": now " + target.DeviceId + " (restart)");
+                        Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = "Switching the stream to the monitor WoW is on" });
+                        WriteSunshineConfig();
+                        RestartSunshine();
+                        break;
+                    case Displays.Fix.MoveWow:
+                        if (DateTime.UtcNow - lastMove < TimeSpan.FromSeconds(15)) return;
+                        lastMove = DateTime.UtcNow;
+                        var why = Displays.MoveTo(p.MainWindowHandle, captured);
+                        CaptureStatus = why == null ? "moved WoW to the streamed monitor" : "couldn't move WoW to the streamed monitor: " + why;
+                        Log.I("capture: stream running, WoW on " + wowDisplay + ", captured " + captured + ": " + CaptureStatus);
+                        FocusWow();
+                        break;
+                    default:
+                        var cap = list.FirstOrDefault(d => d.DisplayName == captured);
+                        CaptureStatus = "capturing " + (cap?.Friendly ?? captured) + (wowDisplay == captured ? ", where WoW is" : "");
+                        break;
+                }
+            }
+            catch (Exception e) { Log.I("capture: " + e.Message); }
+            finally { Monitor.Exit(captureGate); }
         }
 
         // ---------------------------------------------------------------- bridge + mDNS
@@ -412,12 +891,42 @@ namespace DsfDesktop.App
         public static string Version => typeof(AppController).Assembly.GetName().Version.ToString(3);
 
         /// <summary>/v1/info and the welcome: no secrets</summary>
+        /// <summary>the PC's up, non-loopback IPv4s on its own networks (Ethernet / Wi-Fi), Tailscale's CGNAT range left out</summary>
+        public static List<object> LanAddresses()
+        {
+            var out_ = new List<object>();
+            try
+            {
+                foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                    if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback ||
+                        ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Tunnel) continue;
+                    foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+                    {
+                        var a = ua.Address;
+                        if (a.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork || IPAddress.IsLoopback(a)) continue;
+                        if (IsLan(a.GetAddressBytes())) out_.Add(a.ToString());
+                    }
+                }
+            }
+            catch (Exception) { }
+            return out_;
+        }
+
+        /// <summary>a private home-network IPv4 (10/8, 172.16/12, 192.168/16); never Tailscale (100.64/10) or link-local</summary>
+        public static bool IsLan(byte[] b) =>
+            b.Length == 4 && (b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168));
+
         public Dictionary<string, object> Info() => new Dictionary<string, object>
         {
             ["app"] = "DS Forever Desktop",
             ["version"] = Version,
             ["host_id"] = Settings.HostId,
             ["pc_name"] = Environment.MachineName,
+            // the PC's home-network IPv4s (not loopback, not Tailscale's 100.64/10): the Thor tries these first, Tailscale after
+            // (the user, 2026-10-28: "Yes, Wi-Fi first" - with the Thor's Tailscale off it only knew the Tailscale address)
+            ["lan"] = LanAddresses(),
             ["sunshine"] = new Dictionary<string, object>
             {
                 ["running"] = Sunshine?.Running ?? false,
@@ -427,7 +936,14 @@ namespace DsfDesktop.App
                 ["uniqueid"] = SunshineId,
             },
             ["stream"] = StreamWord,
-            ["wow"] = new Dictionary<string, object> { ["found"] = Wow != null, ["flavor"] = Flavor, ["running"] = WowWindow.IsRunning(), ["focused"] = WowWindow.IsForeground() },
+            ["wow"] = new Dictionary<string, object>
+            {
+                ["found"] = Wow != null, ["flavor"] = Flavor, ["running"] = WowWindow.IsRunning(), ["focused"] = WowWindow.IsForeground(),
+                // running / starting / stopped / start_failed (+ why): "Starting WoW on your PC..." on the Thor
+                ["state"] = WowStarter.Word(WowUp() ? WowState.Running : Starter.State), ["why"] = Starter.Why,
+                // where it is and what Battle.net needs (0.2.1): the Thor keeps its curtain until charselect / world + focused
+                ["screen"] = WowFlow.Word(LastScreen), ["bnet"] = WowFlow.Word(BnetState.Unknown), ["needs_you"] = Supervisor?.NeedsYou ?? false,
+            },
             ["pairing_open"] = !Codes.Locked,
         };
 
