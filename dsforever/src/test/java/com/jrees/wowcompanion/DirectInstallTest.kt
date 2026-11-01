@@ -54,13 +54,7 @@ class DirectInstallTest {
     }
 
     @Test fun theVfsKeysAreTheEncodingKeysOnly() {
-        val config = "root = aa
-vfs-root = c0 e0
-vfs-root-size = 1 2
-vfs-1 = c1 e1
-vfs-1-size = 3 4
-vfs-583 = c2 e2
-"
+        val config = "root = aa\nvfs-root = c0 e0\nvfs-root-size = 1 2\nvfs-1 = c1 e1\r\nvfs-1-size = 3 4\nvfs-583 = c2 e2\n"
         assertEquals(listOf("e0", "e1", "e2"), GameFiles.vfsKeys(config))
     }
 
