@@ -266,7 +266,7 @@ class DsForeverScreen(private val context: Context) {
         fun moveToTop(activity: Activity, gameRunning: Boolean): Boolean {
             val d = activity.display?.displayId ?: Display.DEFAULT_DISPLAY
             val now = android.os.SystemClock.elapsedRealtime()
-            val move = decide(d, true, now - lastMoveAt)      // the same task, always: Cocoon test, does the main icon then survive a reopen?
+            val move = decide(d, gameRunning || up, now - lastMoveAt)
             Log.i(TAG, "resume: launcher on display $d (game running $gameRunning, up $up) -> $move")
             if (d == Display.DEFAULT_DISPLAY) up = true
             if (move == Move.NONE) return false
