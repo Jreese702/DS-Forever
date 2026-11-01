@@ -66,7 +66,7 @@ class DirectInstallTest {
         assertEquals(StartMode.Row.CARD, StartMode.moveShortcuts(main, StartMode.Dir.UP).row)
         assertEquals(StartMode.Press.AddMain, StartMode.pressShortcut(main))
         assertEquals(StartMode.Press.AddShortcut(StartMode.Mode.STREAM), StartMode.pressShortcut(StartMode.Cell(StartMode.Mode.STREAM, StartMode.Row.CARD)))
-        assertEquals(StartMode.Press.Report, StartMode.press(StartMode.Cell(StartMode.Mode.LOCAL, StartMode.Row.FOOT)))
+        assertEquals(StartMode.Press.OpenMenu, StartMode.press(StartMode.Cell(StartMode.Mode.LOCAL, StartMode.Row.FOOT)))
         assertEquals(StartMode.Press.OpenShortcuts, StartMode.press(StartMode.Cell(StartMode.Mode.STREAM, StartMode.Row.FOOT)))
     }
 

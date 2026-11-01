@@ -124,7 +124,7 @@ object StartMode {
     enum class Row { CARD, FOOT, MAIN }
 
     /** a place of the gold box: the column is the mode (Local left, Streaming right), the row the big card or the foot's button under it
-     *  (the chooser's Report left, Shortcuts right); on the Shortcuts page MAIN is the DS Forever card under both */
+     *  (the chooser's Menu left, Shortcuts right); on the Shortcuts page MAIN is the DS Forever card under both */
     data class Cell(val mode: Mode, val row: Row)
 
     /** where the box starts: on Local's card, every time (nothing is remembered) */
@@ -150,14 +150,14 @@ object StartMode {
         data class Pick(val mode: Mode) : Press()
         data class AddShortcut(val mode: Mode) : Press()
         object AddMain : Press()
-        object Report : Press()
+        object OpenMenu : Press()
         object OpenShortcuts : Press()
     }
 
-    /** A on the box: a card enters its mode, the foot's buttons Report and Shortcuts */
+    /** A on the box: a card enters its mode, the foot's buttons Menu and Shortcuts */
     fun press(c: Cell): Press = when {
         c.row == Row.CARD -> Press.Pick(c.mode)
-        c.mode == Mode.LOCAL -> Press.Report
+        c.mode == Mode.LOCAL -> Press.OpenMenu
         else -> Press.OpenShortcuts
     }
 

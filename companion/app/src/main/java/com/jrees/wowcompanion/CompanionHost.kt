@@ -647,18 +647,18 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         startView = StartView(this)
         // INSIDE THE ONE APP (the native login.txt sign-in; the user: "injecting the keys is not the way to go"): the row never types -
         // its button saves / updates the login, which the game uses by itself at its next start (NativeLogin)
-        startView.onReport = { openReport() }
-        startView.autoLogin = { HomeLoginStore.autoLogin(this) }
-        startView.onAutoLogin = { on -> HomeLoginStore.setAutoLogin(this, on); if (!on) NativeLogin.clear() }
-        startView.onChangeLogin = { restartOnSave = LauncherHooks.gameUp() && HomeLoginStore.autoLogin(this); loginPrompt.open() }
-        startView.canExit = { SetupBridge.exitStream != null || LauncherHooks.gameUp() }
-        startView.onExit = { (SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
-        startView.canForget = { HomeLoginStore.has(this) }
-        startView.onForgetLogin = { HomeLoginStore.clear(this); NativeLogin.clear() }
-        startView.canRestart = { LauncherHooks.gameUp() }
-        startView.onRestart = { settingsRest.onRestart() }
-        startView.canSwitch = { SetupBridge.exitStream != null || ModeBridge.canGoBack() }
-        startView.onSwitch = { if (SetupBridge.exitStream != null) SetupBridge.exitStream?.invoke() else ModeBridge.back("the Menu") }
+        StartMenu.onReport = { openReport() }
+        StartMenu.autoLogin = { HomeLoginStore.autoLogin(this) }
+        StartMenu.onAutoLogin = { on -> HomeLoginStore.setAutoLogin(this, on); if (!on) NativeLogin.clear() }
+        StartMenu.onChangeLogin = { restartOnSave = LauncherHooks.gameUp() && HomeLoginStore.autoLogin(this); loginPrompt.open() }
+        StartMenu.canExit = { SetupBridge.exitStream != null || LauncherHooks.gameUp() }
+        StartMenu.onExit = { (SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
+        StartMenu.canForget = { HomeLoginStore.has(this) }
+        StartMenu.onForgetLogin = { HomeLoginStore.clear(this); NativeLogin.clear() }
+        StartMenu.canRestart = { LauncherHooks.gameUp() }
+        StartMenu.onRestart = { settingsRest.onRestart() }
+        StartMenu.canSwitch = { SetupBridge.exitStream != null || ModeBridge.canGoBack() }
+        StartMenu.onSwitch = { if (SetupBridge.exitStream != null) SetupBridge.exitStream?.invoke() else ModeBridge.back("the Menu") }
         startView.onLoginButton = { gear -> if (gear || LauncherHooks.pkg != null) loginPrompt.open() else signIn() }
         loginPrompt = HomeLoginPrompt(this) { login ->
             settingsView.invalidate()

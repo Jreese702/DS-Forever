@@ -46,23 +46,10 @@ class StartView(context: Context) : View(context) {
     var firstW = FIRST_W
         set(v) { if (field != v) { field = v; invalidate() } }
 
-    /** the Menu (the user 2026-11-01, in place of Report at the bottom left): Auto login's tick and Change login, Report issue, Exit game */
-    var menuOpen = false
-        set(v) { if (field != v) { field = v; pressed = -1; invalidate() } }
-    var onReport: (() -> Unit)? = null
-    var autoLogin: () -> Boolean = { true }
-    var onAutoLogin: ((Boolean) -> Unit)? = null
-    var onChangeLogin: (() -> Unit)? = null
-    /** Exit game answers only while a game or a stream runs */
-    var canExit: () -> Boolean = { false }
-    var onExit: (() -> Unit)? = null
-    var canForget: () -> Boolean = { false }
-    var onForgetLogin: (() -> Unit)? = null
-    var canRestart: () -> Boolean = { false }
-    var onRestart: (() -> Unit)? = null
-    var canSwitch: () -> Boolean = { false }
-    var onSwitch: (() -> Unit)? = null
-    private var forgetArmedAt = -FORGET_ARM_MS
+    /** the Menu ([StartMenu]), in place of Report at the bottom left */
+    var menuOpen: Boolean
+        get() = StartMenu.open
+        set(v) { StartMenu.open = v; pressed = -1; invalidate() }
 
     /** a press of the row: true = the gear (touch only) or FIRST's one button (touch or A), false = Login (touch or A) */
     var onLoginButton: ((gear: Boolean) -> Unit)? = null
@@ -79,53 +66,8 @@ class StartView(context: Context) : View(context) {
         LoadingScene.draw(c, area, top = false)
         postInvalidateDelayed(FRAME_MS)
         drawRow(c)
-        if (menuOpen) drawMenu(c)
+        if (menuOpen) StartMenu.draw(c, width, height, pressed, hits)
     }
-
-    private fun drawMenu(c: Canvas) {
-        hits.clear()
-        val h = MENU_PAD * 2 + CLOSE_H + GAP + BUTTON_H * 5 + GAP * 4
-        val left = (width - MENU_W) / 2f
-        val top = (height - h) / 2f
-        val panel = RectF(left, top, left + MENU_W, top + h)
-        UiKit.module(c, panel)
-        val inL = panel.left + MENU_PAD; val inR = panel.right - MENU_PAD
-        val mid = (inL + inR) / 2f
-        fun rowTop(i: Int) = panel.top + MENU_PAD + CLOSE_H + GAP + i * (BUTTON_H + GAP)
-        fun cell(i: Int, right: Boolean) = RectF(if (right) mid + GAP / 2f else inL, rowTop(i), if (right) inR else mid - GAP / 2f, rowTop(i) + BUTTON_H)
-        fun put(r: RectF, word: String, id: Int, on: Boolean) {
-            if (!on) { UiKit.button(c, r, word, UiKit.Button.DISABLED); return }
-            UiKit.button(c, r, word, if (pressed == id) UiKit.Button.DOWN else UiKit.Button.UP)
-            hits += r to id
-        }
-        val close = RectF(inR - CLOSE_W, panel.top + MENU_PAD, inR, panel.top + MENU_PAD + CLOSE_H)
-        UiKit.button(c, close, "X", GLYPH_B, if (pressed == MENU_CLOSE) UiKit.Button.DOWN else UiKit.Button.UP)
-        hits += close to MENU_CLOSE
-        val auto = cell(0, false)
-        UiKit.check(c, auto.left + CHECK / 2f, auto.centerY(), CHECK, autoLogin())
-        val words = UiKit.bodyPaint(LINE_SIZE)
-        UiKit.outlined(c, "Auto login", (auto.left + CHECK + auto.right) / 2f, auto.centerY() - (words.ascent() + words.descent()) / 2f, LINE_SIZE, Theme.text)
-        hits += auto to MENU_AUTO
-        put(cell(0, true), "Change login", MENU_CHANGE, true)
-        val armed = android.os.SystemClock.uptimeMillis() - forgetArmedAt < FORGET_ARM_MS
-        put(cell(1, false), if (armed) "Tap again" else "Forget login", MENU_FORGET, canForget())
-        if (SetupBridge.openStreamSettings != null) put(cell(1, true), "Stream settings", MENU_STREAM, true)
-        else put(cell(1, true), "Restart game", MENU_RESTART, canRestart())
-        put(cell(2, false), "Report issue", MENU_REPORT, true)
-        put(cell(2, true), "Switch mode", MENU_SWITCH, canSwitch())
-        // the Settings room's two controller rows, a press steps to the next choice
-        put(cell(3, false), "ABXY: ${CastSettings.abxyLocation.label}", MENU_ABXY, true)
-        put(cell(3, true), "Glyphs: ${glyphName(CastSettings.buttonLayout)}", MENU_GLYPHS, true)
-        put(RectF(inL, rowTop(4), inR, rowTop(4) + BUTTON_H), "Exit game", MENU_EXIT, canExit())
-    }
-
-    private fun glyphName(l: ButtonLayout) = when (l) {
-        ButtonLayout.NINTENDO -> "Nintendo"
-        ButtonLayout.XBOX -> "Xbox"
-        ButtonLayout.PLAYSTATION -> "PlayStation"
-    }
-
-    private fun <T> next(all: Array<T>, now: T): T = all[(all.indexOf(now) + 1) % all.size]
 
     private fun drawRow(c: Canvas) {
         val cx = width / 2f
@@ -194,22 +136,11 @@ class StartView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN -> { pressed = hit; invalidate() }
             MotionEvent.ACTION_UP -> {
                 val was = pressed; pressed = -1; invalidate()
-                if (menuOpen && was < 0 && hit < 0) menuOpen = false      // a touch outside it
+                if (menuOpen) {
+                    if (was < 0 && hit < 0) menuOpen = false                  // a touch outside it
+                    else if (was >= 0 && was == hit) StartMenu.press(hit)
+                }
                 else if (was >= 0 && was == hit) when (hit) {
-                    MENU_CLOSE -> menuOpen = false
-                    MENU_ABXY -> CastSettings.abxyLocation = next(CastSettings.AbxyLocation.values(), CastSettings.abxyLocation)
-                    MENU_GLYPHS -> CastSettings.buttonLayout = next(ButtonLayout.values(), CastSettings.buttonLayout)
-                    MENU_AUTO -> onAutoLogin?.invoke(!autoLogin())
-                    MENU_CHANGE -> { menuOpen = false; onChangeLogin?.invoke() }
-                    MENU_FORGET -> {
-                        val at = android.os.SystemClock.uptimeMillis()
-                        if (at - forgetArmedAt < FORGET_ARM_MS) { forgetArmedAt = -FORGET_ARM_MS; onForgetLogin?.invoke() } else forgetArmedAt = at
-                    }
-                    MENU_STREAM -> { menuOpen = false; SetupBridge.openStreamSettings?.invoke() }
-                    MENU_RESTART -> { menuOpen = false; onRestart?.invoke() }
-                    MENU_SWITCH -> { menuOpen = false; onSwitch?.invoke() }
-                    MENU_REPORT -> { menuOpen = false; onReport?.invoke() }
-                    MENU_EXIT -> { menuOpen = false; onExit?.invoke() }
                     CURSOR_REPORT -> menuOpen = true
                     CURSOR_KEYS -> SetupBridge.openPcKeyboard?.invoke()
                     CURSOR_GEAR -> onLoginButton?.invoke(true)
@@ -229,23 +160,6 @@ class StartView(context: Context) : View(context) {
         const val CURSOR_LOGIN = 1
         const val CURSOR_REPORT = 2
         const val CURSOR_KEYS = 3
-        const val MENU_AUTO = 4
-        const val MENU_CHANGE = 5
-        const val MENU_REPORT = 6
-        const val MENU_EXIT = 7
-        const val MENU_CLOSE = 12
-        const val MENU_ABXY = 13
-        const val MENU_GLYPHS = 14
-        const val CLOSE_W = 170f
-        const val CLOSE_H = 84f
-        const val MENU_FORGET = 8
-        const val MENU_STREAM = 9
-        const val MENU_RESTART = 10
-        const val MENU_SWITCH = 11
-        const val FORGET_ARM_MS = 4000L
-        const val MENU_W = 1000f
-        const val MENU_PAD = 32f
-        const val CHECK = 76f
         /** Report and Keyboard, in the row's line at the screen's two ends */
         const val SIDE_M = 40f
         const val SIDE_W = 220f

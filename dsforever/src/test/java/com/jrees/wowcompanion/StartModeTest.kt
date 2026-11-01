@@ -146,7 +146,7 @@ class StartModeTest {
         assertEquals(Cell(Mode.STREAM, Row.FOOT), StartMode.move(Cell(Mode.LOCAL, Row.FOOT), Dir.RIGHT))
         // A
         assertEquals(Press.Pick(Mode.STREAM), StartMode.press(Cell(Mode.STREAM, Row.CARD)))
-        assertEquals(Press.Report, StartMode.press(Cell(Mode.LOCAL, Row.FOOT)))
+        assertEquals(Press.OpenMenu, StartMode.press(Cell(Mode.LOCAL, Row.FOOT)))
     }
 
     @Test fun shortcutsCarryTheirMode() {

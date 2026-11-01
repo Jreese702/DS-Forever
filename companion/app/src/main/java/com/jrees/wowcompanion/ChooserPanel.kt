@@ -37,6 +37,8 @@ class ChooserPanel(context: Context) : View(context) {
     /** what a touch can press, as last drawn: a chooser cell, or BACK on the Streaming page */
     private val hits = ArrayList<Pair<RectF, Any>>()
     private object Back
+    private val menuHits = ArrayList<Pair<RectF, Int>>()
+    private var menuPressed = -1
 
     private val refresh: () -> Unit = { post { update() } }
 
@@ -102,6 +104,7 @@ class ChooserPanel(context: Context) : View(context) {
             Page.STREAM -> drawStream(c)
             Page.NONE -> Unit
         }
+        if (StartMenu.open && page == Page.CHOOSER) StartMenu.draw(c, width, height, menuPressed, menuHits)
     }
 
     /** the foot's row: the status line in its panel, framed by the two side buttons, as on the waiting screen (StartView) */
@@ -137,7 +140,7 @@ class ChooserPanel(context: Context) : View(context) {
         }
         val report = RectF(MARGIN, footY, MARGIN + SIDE_W, footY + BUTTON_H)
         val shortcuts = RectF(width - MARGIN - SIDE_W, footY, width - MARGIN, footY + BUTTON_H)
-        footButton(c, report, "Report", StartMode.Cell(StartMode.Mode.LOCAL, StartMode.Row.FOOT), now)
+        footButton(c, report, "Menu", StartMode.Cell(StartMode.Mode.LOCAL, StartMode.Row.FOOT), now)
         footButton(c, shortcuts, "Shortcuts", StartMode.Cell(StartMode.Mode.STREAM, StartMode.Row.FOOT), now)
         // the status line ("Ready": the checks have passed; the user, 2026-10-28, a status line always)
         footPanel(c, report.right + GAP, shortcuts.left - GAP, SetupFlow.status(null, SetupBridge.checksPass(), LoadingScene.now()))
@@ -297,7 +300,7 @@ class ChooserPanel(context: Context) : View(context) {
             Back -> if (page == Page.SHORTCUTS) { shortcuts = false; update() } else ModeBridge.back("the Streaming page's Back")
             is StartMode.Cell -> when (val p = if (page == Page.SHORTCUTS) StartMode.pressShortcut(what) else StartMode.press(what)) {
                 is StartMode.Press.Pick -> ModeBridge.pick(p.mode)
-                StartMode.Press.Report -> SetupBridge.press(SetupFlow.Action.REPORT)
+                StartMode.Press.OpenMenu -> { StartMenu.open = true; invalidate() }
                 StartMode.Press.OpenShortcuts -> { shortcuts = true; update() }
                 is StartMode.Press.AddShortcut -> { note = ModeBridge.addShortcut(context, p.mode); invalidate() }
                 StartMode.Press.AddMain -> { note = ModeBridge.addMainShortcut(context); invalidate() }
@@ -310,6 +313,10 @@ class ChooserPanel(context: Context) : View(context) {
         if (visibility != VISIBLE) return false
         if (code !in KEYS) return false
         if (!down) return true
+        if (StartMenu.open && page == Page.CHOOSER) {                 // touch only, as on the waiting screen; B shuts it
+            if (code == KeyEvent.KEYCODE_BUTTON_B) { StartMenu.open = false; invalidate() }
+            return true
+        }
         when (page) {
             Page.CHOOSER -> when (code) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> cell = StartMode.move(cell, StartMode.Dir.LEFT)
@@ -337,6 +344,20 @@ class ChooserPanel(context: Context) : View(context) {
     @Suppress("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (visibility != VISIBLE) return false
+        if (StartMenu.open && page == Page.CHOOSER) {
+            val at = menuHits.firstOrNull { it.first.contains(e.x, e.y) }?.second ?: -1
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> menuPressed = at
+                MotionEvent.ACTION_UP -> {
+                    val was = menuPressed; menuPressed = -1
+                    if (was < 0 && at < 0) StartMenu.open = false
+                    else if (was >= 0 && was == at) StartMenu.press(at)
+                }
+                MotionEvent.ACTION_CANCEL -> menuPressed = -1
+            }
+            invalidate()
+            return true
+        }
         val hit = hits.firstOrNull { it.first.contains(e.x, e.y) }?.second
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> { pressed = hit; invalidate() }
