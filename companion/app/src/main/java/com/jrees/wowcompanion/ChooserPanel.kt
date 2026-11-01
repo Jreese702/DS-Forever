@@ -104,7 +104,8 @@ class ChooserPanel(context: Context) : View(context) {
         c.drawText("How do you want to play?", cx, MARGIN + 62f, title)
         val top = MARGIN + 110f
         val noteH = LINE_H
-        val btnTop = height - MARGIN - noteH - BUTTON_H
+        val mainTop = height - MARGIN - noteH - BUTTON_H
+        val btnTop = mainTop - GAP - BUTTON_H
         val colW = (width - MARGIN * 2 - GAP * 2) / 2f
         val now = android.os.SystemClock.uptimeMillis()
         if (feedback.animating(now, false)) postInvalidateDelayed(LoadingScene.FRAME_MS)
@@ -125,6 +126,13 @@ class ChooserPanel(context: Context) : View(context) {
             if (cell == btnCell) UiKit.button(c, btn, "Add home-screen shortcut", StartView.GLYPH_A, state)
             else UiKit.button(c, btn, "Add home-screen shortcut", state)
         }
+        val main = RectF(MARGIN, mainTop, width - MARGIN, mainTop + BUTTON_H)
+        val mainCell = StartMode.Cell(StartMode.Mode.LOCAL, StartMode.Row.MAIN)
+        hits += main to mainCell
+        if (cell == mainCell) box(c, main)
+        val mainState = if (pressed == mainCell || feedback.down(mainCell, now)) UiKit.Button.DOWN else UiKit.Button.UP
+        if (cell == mainCell) UiKit.button(c, main, "Add DS Forever shortcut", StartView.GLYPH_A, mainState)
+        else UiKit.button(c, main, "Add DS Forever shortcut", mainState)
         // the shortcut's line, else the status line ("Ready": the checks have passed; the user, 2026-10-28, a status line always)
         val foot = note.ifEmpty { SetupFlow.status(null, SetupBridge.checksPass(), LoadingScene.now()) }
         UiKit.outlined(c, foot, cx, height - MARGIN - 12f, 30f, Theme.text)
@@ -244,6 +252,7 @@ class ChooserPanel(context: Context) : View(context) {
             is StartMode.Cell -> when (val p = StartMode.press(what)) {
                 is StartMode.Press.Pick -> ModeBridge.pick(p.mode)
                 is StartMode.Press.AddShortcut -> { note = ModeBridge.addShortcut(context, p.mode); invalidate() }
+                StartMode.Press.AddMain -> { note = ModeBridge.addMainShortcut(context); invalidate() }
             }
         }
     }

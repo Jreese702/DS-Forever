@@ -58,6 +58,15 @@ class DirectInstallTest {
         assertEquals(listOf("e0", "e1", "e2"), GameFiles.vfsKeys(config))
     }
 
+    @Test fun theMainShortcutOpensTheChooser() {
+        assertEquals(StartMode.Route.Chooser, StartMode.resolve(StartMode.MAIN_SHORTCUT.extra))
+        val main = StartMode.Cell(StartMode.Mode.LOCAL, StartMode.Row.MAIN)
+        assertEquals(main, StartMode.move(StartMode.Cell(StartMode.Mode.STREAM, StartMode.Row.SHORTCUT), StartMode.Dir.DOWN))
+        assertEquals(main, StartMode.move(main, StartMode.Dir.RIGHT))
+        assertEquals(StartMode.Row.SHORTCUT, StartMode.move(main, StartMode.Dir.UP).row)
+        assertEquals(StartMode.Press.AddMain, StartMode.press(main))
+    }
+
     @Test fun aFreshBuildInfoIsTheLaunchClient() {
         val text = WowSwitch.freshBuildInfo(WowSwitch.Remote(version = "1.60.1.70707", buildConfig = "b", cdnConfig = "c",
             cdnHosts = listOf("h1", "h2"), cdnPath = "tpr/wow", cdnServers = "s", keyRing = "k"), "us")

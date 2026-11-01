@@ -112,10 +112,16 @@ object StartMode {
         Mode.STREAM -> Shortcut("dsf-mode-stream", "DSF Stream", "DS Forever: Streaming", mode.id)
     }
 
+    /**
+     * THE CHOOSER'S OWN SHORTCUT (the user 2026-11-01): Cocoon force-stops the plain app entry when it is reopened, its Local and Stream
+     * shortcuts it does not (tested on the Thor). This one opens the chooser: its extra names no mode, so [resolve] gives the chooser.
+     */
+    val MAIN_SHORTCUT = Shortcut("dsf-main", "DS Forever", "DS Forever", "chooser")
+
     // ------------------------------------------------------------------ the chooser's cursor
 
     enum class Dir { UP, DOWN, LEFT, RIGHT }
-    enum class Row { CARD, SHORTCUT }
+    enum class Row { CARD, SHORTCUT, MAIN }
 
     /** a place of the gold box: the column is the mode (Local left, Streaming right), the row the big card or its shortcut button */
     data class Cell(val mode: Mode, val row: Row)
@@ -125,17 +131,22 @@ object StartMode {
 
     /** the D-pad: left / right between the two columns (same row), up / down between a card and its shortcut button; no wrap */
     fun move(c: Cell, d: Dir): Cell = when (d) {
-        Dir.LEFT -> c.copy(mode = Mode.LOCAL)
-        Dir.RIGHT -> c.copy(mode = Mode.STREAM)
-        Dir.UP -> c.copy(row = Row.CARD)
-        Dir.DOWN -> c.copy(row = Row.SHORTCUT)
+        Dir.LEFT -> if (c.row == Row.MAIN) c else c.copy(mode = Mode.LOCAL)
+        Dir.RIGHT -> if (c.row == Row.MAIN) c else c.copy(mode = Mode.STREAM)
+        Dir.UP -> c.copy(row = if (c.row == Row.MAIN) Row.SHORTCUT else Row.CARD)
+        Dir.DOWN -> if (c.row == Row.CARD) c.copy(row = Row.SHORTCUT) else Cell(Mode.LOCAL, Row.MAIN)
     }
 
     sealed class Press {
         data class Pick(val mode: Mode) : Press()
         data class AddShortcut(val mode: Mode) : Press()
+        object AddMain : Press()
     }
 
     /** A on the box: a card enters its mode, a shortcut button asks the home screen to pin that mode's shortcut */
-    fun press(c: Cell): Press = if (c.row == Row.CARD) Press.Pick(c.mode) else Press.AddShortcut(c.mode)
+    fun press(c: Cell): Press = when (c.row) {
+        Row.CARD -> Press.Pick(c.mode)
+        Row.SHORTCUT -> Press.AddShortcut(c.mode)
+        Row.MAIN -> Press.AddMain
+    }
 }

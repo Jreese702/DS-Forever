@@ -103,11 +103,13 @@ object ModeBridge {
      * Asks the home screen to pin [mode]'s shortcut (Android's own confirmation follows); its intent opens the app with dsf.mode set.
      * Returns the line the chooser shows.
      */
-    fun addShortcut(ctx: Context, mode: StartMode.Mode): String {
+    fun addShortcut(ctx: Context, mode: StartMode.Mode): String = pin(ctx, StartMode.shortcut(mode), mode.title)
+    fun addMainShortcut(ctx: Context): String = pin(ctx, StartMode.MAIN_SHORTCUT, "DS Forever")
+
+    private fun pin(ctx: Context, s: StartMode.Shortcut, title: String): String {
         val c = ctx.applicationContext
         return try {
             if (!ShortcutManagerCompat.isRequestPinShortcutSupported(c)) return "This home screen can't add shortcuts"
-            val s = StartMode.shortcut(mode)
             val intent = (c.packageManager.getLaunchIntentForPackage(c.packageName) ?: Intent().setPackage(c.packageName))
                 .setAction(Intent.ACTION_MAIN)
                 .putExtra(StartMode.EXTRA, s.extra)
@@ -120,7 +122,7 @@ object ModeBridge {
                 .build()
             val ok = ShortcutManagerCompat.requestPinShortcut(c, info, null)
             Log.i(TAG, "pin shortcut ${s.id}: $ok")
-            if (ok) "${mode.title} shortcut: confirm it on the home screen" else "The home screen refused the shortcut"
+            if (ok) "$title shortcut: confirm it on the home screen" else "The home screen refused the shortcut"
         } catch (t: Throwable) {
             Log.w(TAG, "pin shortcut: ${t.message}")
             "The shortcut couldn't be added (${t.message})"
