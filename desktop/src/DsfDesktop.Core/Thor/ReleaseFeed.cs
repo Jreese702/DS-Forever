@@ -13,8 +13,8 @@ namespace DsfDesktop.Thor
 {
     public sealed class Release
     {
-        public string Tag, Version, ApkName, ApkUrl, SumsUrl;
-        public long ApkSize;
+        public string Tag, Version, ApkName, ApkUrl, SumsUrl, DesktopName, DesktopUrl;
+        public long ApkSize, DesktopSize;
     }
 
     /// <summary>
@@ -46,6 +46,10 @@ namespace DsfDesktop.Thor
                     if (Regex.IsMatch(name, @"^DS-Forever-[0-9][^/\\]*\.apk$", RegexOptions.IgnoreCase))
                     {
                         r.ApkName = name; r.ApkUrl = x.Str("browser_download_url"); r.ApkSize = x.Long("size");
+                    }
+                    else if (DesktopUpdate.ZipVersion(name) != null)
+                    {
+                        r.DesktopName = name; r.DesktopUrl = x.Str("browser_download_url"); r.DesktopSize = x.Long("size");
                     }
                     else if (name == "SHA256SUMS") r.SumsUrl = x.Str("browser_download_url");
                 }
@@ -89,31 +93,36 @@ namespace DsfDesktop.Thor
         }
 
         /// <summary>the verified APK in cacheDir (downloaded or resumed as needed); throws when it can't be verified</summary>
-        public async Task<string> EnsureApk(Release rel, string cacheDir, Action<long, long> progress, CancellationToken ct)
+        public Task<string> EnsureApk(Release rel, string cacheDir, Action<long, long> progress, CancellationToken ct) =>
+            EnsureFile(rel.ApkName, rel.ApkUrl, rel.ApkSize, rel.SumsUrl, cacheDir, "*.apk", progress, ct);
+
+        /// <summary>the verified release file in cacheDir; the only one matching [keep] left there</summary>
+        public async Task<string> EnsureFile(string name, string url, long size, string sumsUrl, string cacheDir, string keep,
+            Action<long, long> progress, CancellationToken ct)
         {
-            if (rel.SumsUrl == null) throw new InvalidOperationException("the release has no SHA256SUMS: not installing an unverified APK");
+            if (sumsUrl == null) throw new InvalidOperationException("the release has no SHA256SUMS: not installing an unverified file");
             Directory.CreateDirectory(cacheDir);
             string sums;
-            using (var r = await Http.GetAsync(rel.SumsUrl, ct).ConfigureAwait(false))
+            using (var r = await Http.GetAsync(sumsUrl, ct).ConfigureAwait(false))
             {
                 r.EnsureSuccessStatusCode();
                 sums = await r.Content.ReadAsStringAsync().ConfigureAwait(false);
             }
-            var file = Path.Combine(cacheDir, rel.ApkName);
-            if (Verify(file, sums, rel.ApkName) == null) return file;
+            var file = Path.Combine(cacheDir, name);
+            if (Verify(file, sums, name) == null) return file;
 
             var part = file + ".part";
             for (int attempt = 0; attempt < 2; attempt++)
             {
                 long have = File.Exists(part) ? new FileInfo(part).Length : 0;
-                var req = new HttpRequestMessage(HttpMethod.Get, rel.ApkUrl);
+                var req = new HttpRequestMessage(HttpMethod.Get, url);
                 if (have > 0) req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(have, null);
                 using (var r = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
                 {
                     r.EnsureSuccessStatusCode();
                     bool resumed = r.StatusCode == HttpStatusCode.PartialContent;
                     if (!resumed) have = 0;
-                    long total = rel.ApkSize > 0 ? rel.ApkSize : have + (r.Content.Headers.ContentLength ?? 0);
+                    long total = size > 0 ? size : have + (r.Content.Headers.ContentLength ?? 0);
                     using (var src = await r.Content.ReadAsStreamAsync().ConfigureAwait(false))
                     using (var dst = new FileStream(part, resumed ? FileMode.Append : FileMode.Create, FileAccess.Write))
                     {
@@ -129,18 +138,18 @@ namespace DsfDesktop.Thor
                         progress?.Invoke(done, total);
                     }
                 }
-                var why = Verify(part, sums, rel.ApkName);
+                var why = Verify(part, sums, name);
                 if (why == null)
                 {
                     if (File.Exists(file)) File.Delete(file);
                     File.Move(part, file);
-                    // keep one APK (the one just verified)
-                    foreach (var old in Directory.GetFiles(cacheDir, "*.apk").Where(f => !string.Equals(f, file, StringComparison.OrdinalIgnoreCase)))
+                    // keep one (the one just verified)
+                    foreach (var old in Directory.GetFiles(cacheDir, keep).Where(f => !string.Equals(f, file, StringComparison.OrdinalIgnoreCase)))
                         try { File.Delete(old); } catch (Exception) { }
                     return file;
                 }
                 File.Delete(part);   // a bad resume: once more from the start
-                if (attempt == 1) throw new InvalidDataException("the downloaded APK failed its SHA256SUMS check: " + why);
+                if (attempt == 1) throw new InvalidDataException("the download failed its SHA256SUMS check: " + why);
             }
             throw new InvalidDataException("download failed");
         }

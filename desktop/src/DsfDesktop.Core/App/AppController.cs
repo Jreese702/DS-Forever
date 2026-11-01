@@ -349,6 +349,25 @@ namespace DsfDesktop.App
             catch (Exception e) { Log.I("closing WoW after the stream: " + e.Message); }
         }
 
+        DsfDesktop.Thor.DesktopUpdate update;
+        DateTime nextUpdateCheck = DateTime.UtcNow.AddSeconds(DsfDesktop.Thor.DesktopUpdate.FirstCheckS);
+
+        void UpdateTick()
+        {
+            if (DateTime.UtcNow < nextUpdateCheck) return;
+            nextUpdateCheck = DateTime.UtcNow.AddSeconds(DsfDesktop.Thor.DesktopUpdate.CheckEveryS);
+            if (update == null) update = new DsfDesktop.Thor.DesktopUpdate(Paths.DataDir);
+            var u = update;
+            Task.Run(async () =>
+            {
+                try { await u.Check(Version, CancellationToken.None).ConfigureAwait(false); }
+                catch (Exception e) { Log.I("update: " + e.Message); }
+            });
+        }
+
+        /// <summary>a verified new Desktop and no Thor connected: the swap is started and the app must quit (the tray asks, on the UI thread)</summary>
+        public bool StartPendingUpdate() => update != null && update.Ready && (Bridge == null || Bridge.Sessions().Count == 0) && update.Begin();
+
         DateTime? loginFileAt, signInSeenAt;
         bool loginFileSwept;
 
@@ -385,6 +404,7 @@ namespace DsfDesktop.App
         {
             LoginFileTick();
             CloseAfterStream();
+            UpdateTick();
             try
             {
                 if (tickN++ % 2 == 0)

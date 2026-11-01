@@ -6,7 +6,7 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>10</LangVersion>
     <Nullable>disable</Nullable>
-    <Version>0.2.1</Version>
+    <Version>0.2.11</Version>
     <Product>DS Forever Desktop</Product>
     <Company>DS Forever</Company>
     <Copyright>DS Forever contributors, GPL-3.0-or-later</Copyright>

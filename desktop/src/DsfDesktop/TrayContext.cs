@@ -38,6 +38,7 @@ namespace DsfDesktop.Ui
             var hover = new Timer { Interval = 3000 };
             hover.Tick += (s, e) =>
             {
+                if (ctl.StartPendingUpdate()) { hover.Stop(); Quit(); return; }
                 var t = ctl.Stream == App.StreamState.Streaming ? "streaming to your Thor" : (ctl.Bridge?.Sessions().Count ?? 0) > 0 ? "your Thor is connected" : "ready";
                 icon.Text = "DS Forever Desktop: " + t;
             };
