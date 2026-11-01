@@ -45,8 +45,13 @@ object ModeBridge {
     /** the chooser's card pressed (A or a touch) */
     fun pick(mode: StartMode.Mode) {
         if (route != StartMode.Route.Chooser) return
+        pickedLocal = mode == StartMode.Mode.LOCAL
         go(StartMode.Route.Into(mode, StartMode.By.PICKED))
     }
+
+    /** Local was just picked: the launcher starts the game at once (the user 2026-11-01: no second Play). Read once */
+    @Volatile var pickedLocal = false
+    fun takePickedLocal(): Boolean = pickedLocal.also { pickedLocal = false }
 
     /** B / the swirl may bring the chooser back now */
     fun canGoBack(): Boolean = StartMode.canGoBack(route, LauncherHooks.gameUp(), SetupBridge.inputs?.busy != null,

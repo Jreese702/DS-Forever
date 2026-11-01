@@ -14,9 +14,9 @@ class StreamCurtainTest {
         val starting = PcWow(state = "starting", screen = "none", focused = false, bnet = "signed_in")
         assertEquals("Starting WoW on your PC", curtain(StreamCurtain.decide(true, true, starting)).line)
         val login = PcWow(state = "running", screen = "signing_in", focused = true, bnet = "signed_in")
-        assertEquals("Signing in", curtain(StreamCurtain.decide(true, true, login)).line)
+        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, login))
         val charBehind = PcWow(state = "running", screen = "charselect", focused = false, bnet = "signed_in")
-        assertEquals("Bringing WoW to the front", curtain(StreamCurtain.decide(true, true, charBehind)).line)
+        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, charBehind))
         assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, charBehind.copy(focused = true)))
         assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, charBehind.copy(screen = "world", focused = true)))
         // the stream not up yet: the curtain, whatever the PC says
@@ -24,7 +24,7 @@ class StreamCurtainTest {
     }
 
     @Test fun rowsSayWhereItIs() {
-        val c = curtain(StreamCurtain.decide(true, true, PcWow(state = "running", screen = "login", focused = true, bnet = "signed_in", loginError = "308")))
+        val c = curtain(StreamCurtain.decide(false, true, PcWow(state = "running", screen = "login", focused = true, bnet = "signed_in", loginError = "308")))
         assertEquals(listOf("PC found", "Battle.net", "WoW starting", "Signing in"), c.rows.map { it.label })
         assertEquals(SetupFlow.Mark.OK, c.rows.first().mark)
         assertEquals(listOf(SetupFlow.Mark.OK, SetupFlow.Mark.OK, SetupFlow.Mark.OK, SetupFlow.Mark.BAD), c.rows.map { it.mark })
@@ -83,7 +83,7 @@ class StreamCurtainTest {
     @Test fun olderDesktopAndSunshineOnly() {
         // Desktop 0.2.0: no screen; running and (when said) focused opens it
         assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, PcWow(state = "running")))
-        assertTrue(StreamCurtain.decide(true, true, PcWow(state = "running", focused = false)) is StreamCurtain.Shows.Curtain)
+        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, PcWow(state = "running", focused = false)))
         assertTrue(StreamCurtain.decide(true, true, PcWow(state = "starting")) is StreamCurtain.Shows.Curtain)
         // Sunshine alone says nothing about WoW: the stream as before
         assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, false, null))
@@ -127,16 +127,13 @@ class StreamCurtainTest {
         assertEquals("update", PcWow.of(org.json.JSONObject().put("state", "running").put("crash", "update"))!!.crash)
     }
 
-    @Test fun wowHoldingAtItsLoginStepsShowsOnceInFront() {
-        val rules = PcWow(state = "running", focused = true, screen = "signing_in", bnet = "signed_in")
-        assertEquals("Signing in", curtain(StreamCurtain.decide(true, true, rules)).line)
-        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, rules, atLoginLong = true))
-        assertEquals("Signing in", curtain(StreamCurtain.decide(true, true, rules.copy(focused = false), atLoginLong = true)).line)
+    @Test fun wowShowsOnceItsWindowIsOpenInFrontOrNot() {
+        val rules = PcWow(state = "running", focused = false, screen = "signing_in", bnet = "signed_in")
+        assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, rules))
     }
 
     @Test fun wowOnceShownStaysWhenItLosesTheFront() {
         val behind = PcWow(state = "running", focused = false, screen = "world", bnet = "signed_in")
-        assertEquals("Bringing WoW to the front", curtain(StreamCurtain.decide(true, true, behind)).line)
         assertEquals(StreamCurtain.Shows.Stream, StreamCurtain.decide(true, true, behind, seen = true))
         assertEquals("Starting WoW on your PC", curtain(StreamCurtain.decide(true, true, behind.copy(state = "stopped", screen = "none"), seen = true)).line)
     }

@@ -5,8 +5,8 @@ import com.jrees.wowcompanion.SetupFlow
 /**
  * THE CURTAIN OVER THE STREAM (the user, 2026-10-28: "when it starts sometimes I see my desktop, and I don't want to see any of that,
  * just the game when it loads"). While Streaming starts, the top screen keeps the loading reveal and its centred box over the picture
- * until Desktop says WoW is SIGNED IN (character select or the world) AND in front; then the stream shows. An older Desktop that does
- * not say the screen: WoW running and (when it says) focused.
+ * until Desktop says WoW's window is open (its login screen or later); then the stream shows. An older Desktop that does not say the
+ * screen: WoW running.
  *
  * The one exception (the user's ruling "Show its sign-in on the Thor"): while the PC's Battle.net is signed out, or Desktop's one retry
  * is spent and the sign-in needs the player, the curtain lifts so the player can sign in on the PC through the stream (the stream's
@@ -76,7 +76,8 @@ object StreamCurtain {
         if (bnetLine != null) return if (connected && pc.show.size == 4) Shows.SignIn(bnetLine, pc.show)
             else curtain(listOf(row(found, true), row("Battle.net", false)), bnetLine)
         val known = pc.screen.isNotEmpty()
-        val open = if (known) (pc.signedIn || (atLoginLong && atLogin(pc))) && (pc.focused == true || seen) else pc.state == "running" && pc.focused != false
+        // WoW's window is open: it shows, its login too (the user 2026-11-01: "we shouldn't hide the wow screen once its open")
+        val open = if (known) pc.signedIn || atLogin(pc) else pc.state == "running"
         if (connected && open) return Shows.Stream
         val bnetOk = pc.bnet.isEmpty() || pc.bnet == "signed_in" || pc.bnet == "unknown"
         val running = pc.state == "running"

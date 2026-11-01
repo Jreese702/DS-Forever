@@ -655,7 +655,8 @@ fun WoWForeverScreen(
         onDispose { com.jrees.wowcompanion.ModeBridge.offChange(l) }
     }
     LaunchedEffect(route, launchOnLocal) {
-        if (launchOnLocal && com.jrees.wowcompanion.StartMode.showsLocal(route)) {
+        val picked = com.jrees.wowcompanion.StartMode.showsLocal(route) && com.jrees.wowcompanion.ModeBridge.takePickedLocal()
+        if ((launchOnLocal || picked) && com.jrees.wowcompanion.StartMode.showsLocal(route)) {
             launchOnLocal = false
             if (versionStatus?.isOutdated != true) launchGame()
         }
