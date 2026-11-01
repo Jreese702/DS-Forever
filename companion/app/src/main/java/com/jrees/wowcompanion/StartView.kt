@@ -84,7 +84,7 @@ class StartView(context: Context) : View(context) {
 
     private fun drawMenu(c: Canvas) {
         hits.clear()
-        val h = MENU_PAD * 2 + CLOSE_H + GAP + BUTTON_H * 4 + GAP * 3
+        val h = MENU_PAD * 2 + CLOSE_H + GAP + BUTTON_H * 5 + GAP * 4
         val left = (width - MENU_W) / 2f
         val top = (height - h) / 2f
         val panel = RectF(left, top, left + MENU_W, top + h)
@@ -113,8 +113,19 @@ class StartView(context: Context) : View(context) {
         else put(cell(1, true), "Restart game", MENU_RESTART, canRestart())
         put(cell(2, false), "Report issue", MENU_REPORT, true)
         put(cell(2, true), "Switch mode", MENU_SWITCH, canSwitch())
-        put(RectF(inL, rowTop(3), inR, rowTop(3) + BUTTON_H), "Exit game", MENU_EXIT, canExit())
+        // the Settings room's two controller rows, a press steps to the next choice
+        put(cell(3, false), "ABXY: ${CastSettings.abxyLocation.label}", MENU_ABXY, true)
+        put(cell(3, true), "Glyphs: ${glyphName(CastSettings.buttonLayout)}", MENU_GLYPHS, true)
+        put(RectF(inL, rowTop(4), inR, rowTop(4) + BUTTON_H), "Exit game", MENU_EXIT, canExit())
     }
+
+    private fun glyphName(l: ButtonLayout) = when (l) {
+        ButtonLayout.NINTENDO -> "Nintendo"
+        ButtonLayout.XBOX -> "Xbox"
+        ButtonLayout.PLAYSTATION -> "PlayStation"
+    }
+
+    private fun <T> next(all: Array<T>, now: T): T = all[(all.indexOf(now) + 1) % all.size]
 
     private fun drawRow(c: Canvas) {
         val cx = width / 2f
@@ -186,6 +197,8 @@ class StartView(context: Context) : View(context) {
                 if (menuOpen && was < 0 && hit < 0) menuOpen = false      // a touch outside it
                 else if (was >= 0 && was == hit) when (hit) {
                     MENU_CLOSE -> menuOpen = false
+                    MENU_ABXY -> CastSettings.abxyLocation = next(CastSettings.AbxyLocation.values(), CastSettings.abxyLocation)
+                    MENU_GLYPHS -> CastSettings.buttonLayout = next(ButtonLayout.values(), CastSettings.buttonLayout)
                     MENU_AUTO -> onAutoLogin?.invoke(!autoLogin())
                     MENU_CHANGE -> { menuOpen = false; onChangeLogin?.invoke() }
                     MENU_FORGET -> {
@@ -221,6 +234,8 @@ class StartView(context: Context) : View(context) {
         const val MENU_REPORT = 6
         const val MENU_EXIT = 7
         const val MENU_CLOSE = 12
+        const val MENU_ABXY = 13
+        const val MENU_GLYPHS = 14
         const val CLOSE_W = 170f
         const val CLOSE_H = 84f
         const val MENU_FORGET = 8
