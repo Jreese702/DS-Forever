@@ -49,14 +49,10 @@ class GameLifeTest {
         assertNull(GameLife.note)
     }
 
-    @Test fun theNoteIsTouchOnly() {
+    @Test fun theGameClosingAsksNothing() {
         val s = SetupFlow.screen(SetupFlow.Inputs(path = "/g", folderFound = true, art = SetupFlow.Art.READY, loginSaved = true,
             gameClosed = "The game crashed (signal 11) after 3 min."))
-        val p = s.prompt!!
-        assertEquals("The game closed", p.title)
-        assertEquals(listOf(SetupFlow.Action.REPORT, SetupFlow.Action.GAME_CLOSED_OK), p.buttons.map { it.action })
-        assertTrue(p.buttons.none(SetupFlow::padTarget))               // neither is the cursor's
-        assertTrue(SetupFlow.padTarget(s.play!!))
+        assertNull(s.prompt)
     }
 
     @Test fun dxvksStateCacheGetsAWindowsPath() {

@@ -224,9 +224,6 @@ object SetupFlow {
             // issues #8 / #9 (the user's pick): an out-of-date Data folder, said plainly; Play stays (it may still start)
             i.staleData != null && i.folderFound && !i.wrongGame && i.storage -> Prompt("stale", "Your game folder is out of date",
                 i.staleData, listOf(Button("OK", Action.STALE_OK)))
-            // issue #12: the game ended abnormally; touch only (its buttons are never the cursor's: padTarget)
-            i.gameClosed != null && i.folderFound && !i.wrongGame && i.storage -> Prompt("closed", "The game closed", i.gameClosed,
-                listOf(Button("Send a problem report", Action.REPORT), Button("OK", Action.GAME_CLOSED_OK)))
             !i.storage -> Prompt("storage", "Allow file access",
                 "Android needs \"All files access\" so the game and DS Forever can read the game folder.",
                 listOf(Button("Open settings", Action.GRANT_STORAGE)))

@@ -883,7 +883,7 @@ object GamePath {
     fun installDir(): File = if (com.jrees.wowcompanion.DirectTest.ON)
         File(Environment.getExternalStorageDirectory(), com.jrees.wowcompanion.DirectTest.FOLDER) else defaultPath
 
-    private const val KEY_DIRECT_CHOSEN = "direct_test_chosen2"
+    private const val KEY_DIRECT_CHOSEN = "direct_test_chosen3"
     fun directChosen(context: Context) = !com.jrees.wowcompanion.DirectTest.ON ||
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_DIRECT_CHOSEN, false)
     fun saveDirectChosen(context: Context) {

@@ -295,9 +295,8 @@ fun PluviaMain(
 
             Box(modifier = Modifier.zIndex(10f)) {
                 BootingSplash(
-                    visible = state.showBootingSplash || initialSplash || app.gamenative.ui.screen.wow.WoWLauncherState.seeding,
-                    text = if (app.gamenative.ui.screen.wow.WoWLauncherState.seeding) "Preparing game files..."
-                        else if (state.showBootingSplash) state.bootingSplashText else "Booting into World of Warcraft...",
+                    visible = state.showBootingSplash || initialSplash,
+                    text = if (state.showBootingSplash) state.bootingSplashText else "Booting into World of Warcraft...",
                     onAbort = {
                         initialSplash = false
                         preLaunchJob?.cancel()
@@ -306,6 +305,21 @@ fun PluviaMain(
                         WoWLauncherState.shouldAutoLaunch = false
                         viewModel.abortBoot()
                     },
+                )
+            }
+
+            // a direct install's one run of the game, behind the same loading screen as the checks (the user 2026-11-01: it is an install step)
+            if (app.gamenative.ui.screen.wow.WoWLauncherState.seeding) {
+                androidx.compose.ui.viewinterop.AndroidView(
+                    factory = { ctx ->
+                        com.jrees.wowcompanion.LoadingTopView(ctx).apply {
+                            curtain = {
+                                val rows = com.jrees.wowcompanion.SetupBridge.inputs?.let { com.jrees.wowcompanion.SetupFlow.terse(com.jrees.wowcompanion.SetupFlow.checks(it)) }
+                                (rows ?: emptyList()) to "Preparing game files"
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize().zIndex(11f),
                 )
             }
 
