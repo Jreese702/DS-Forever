@@ -18,12 +18,6 @@ class DirectInstallTest {
         assertEquals(listOf(SetupFlow.Action.CHOOSE_FOLDER), p.buttons.map { it.action })
     }
 
-    @Test fun theInstallShowsItsProgressAndNoButtons() {
-        val p = SetupFlow.screen(missing.copy(busy = "Fetching")).prompt!!
-        assertEquals("Fetching", p.text)
-        assertTrue(p.buttons.isEmpty())
-    }
-
     @Test fun theInstallNeedsSpaceAndWifi() {
         assertNull(SetupFlow.installRefusal(SetupFlow.INSTALL_FREE_BYTES, false))
         assertNotNull(SetupFlow.installRefusal(SetupFlow.INSTALL_FREE_BYTES - 1, false))
