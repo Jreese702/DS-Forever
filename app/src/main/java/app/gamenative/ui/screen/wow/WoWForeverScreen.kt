@@ -751,6 +751,9 @@ fun WoWForeverScreen(
         // the background all-icons step (Track C, test23): ready when its stamp says so, else its count while it runs
         installedExternal = installedExternal,
         // issues #8 / #9: the game folder's Data older than its build (the art's reads say so), on the top screen's checks
+        lowSpace = if (!filesMissing && File(gamePath, com.jrees.wowcompanion.DataStaleness.STREAMED).exists())
+            com.jrees.wowcompanion.SetupFlow.lowSpaceLine(File(gamePath).usableSpace,
+                if (com.jrees.wowcompanion.DirectTest.LOW_SPACE_ALWAYS) Long.MAX_VALUE else com.jrees.wowcompanion.SetupFlow.LOW_SPACE_BYTES) else null,
         staleData = remember { com.jrees.wowcompanion.DataStaleness.init(context); 0 }.let { com.jrees.wowcompanion.DataStaleness.current() },
         iconsLine = com.jrees.wowcompanion.AllIcons.line(com.jrees.wowcompanion.ArtHarvest.state is com.jrees.wowcompanion.ArtHarvest.State.Ready),
         updating = isUpdating,

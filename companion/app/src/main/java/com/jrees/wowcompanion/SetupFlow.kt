@@ -57,6 +57,8 @@ object SetupFlow {
         val gameClosed: String? = null,
         /** the game folder's Data is older than its build (DataStaleness), null = fine or not known; its plain message */
         val staleData: String? = null,
+        /** a direct install short of room ([lowSpaceLine]); null = fine */
+        val lowSpace: String? = null,
         /** a problem report saved by itself and not opened yet (ReportFlow.noteTitle), null = none */
         val reportSaved: String? = null,
         /** DS Forever runs from the SD card / adopted storage (InstallCheck): the container can't be made there */
@@ -85,6 +87,8 @@ object SetupFlow {
         REPORT,
         /** the "The game closed" note: OK */
         GAME_CLOSED_OK,
+        /** the low storage pop-up: OK (this run) */
+        SPACE_OK,
         /** the out-of-date folder's pop-up: OK (this run) */
         STALE_OK,
         /** the saved report's note: open its GitHub issue, or dismiss it */
@@ -119,7 +123,7 @@ object SetupFlow {
      * never do. [i] = the inputs as the bottom screen sees them (an OK'd out-of-date folder no longer holds it: [SetupBridge.checksPass]).
      */
     fun checksPass(i: Inputs): Boolean =
-        !i.installedExternal && i.folderFound && !i.wrongGame && i.storage && i.staleData == null && i.art == Art.READY &&
+        !i.installedExternal && i.folderFound && !i.wrongGame && i.storage && i.staleData == null && i.lowSpace == null && i.art == Art.READY &&
             i.busy == null && i.gameOutdated == null
 
     /**
@@ -225,6 +229,14 @@ object SetupFlow {
         return "This step: ${aboutWords(left)}" to "Total: ${aboutWords(total)}"
     }
 
+    /** below this a direct install is warned: it keeps what the game streams, and a full device stops the game */
+    const val LOW_SPACE_BYTES = 5_000_000_000L
+
+    /** the low storage pop-up's words; null = room enough */
+    fun lowSpaceLine(freeBytes: Long, limit: Long = LOW_SPACE_BYTES): String? =
+        if (freeBytes >= limit) null
+        else "Only ${String.format(java.util.Locale.US, "%.1f", freeBytes / 1_000_000_000.0)} GB free. WoW needs more room as you play. Free up some storage soon."
+
     /** a direct install grows to about 50 GB */
     const val INSTALL_FREE_BYTES = 60_000_000_000L
 
@@ -253,6 +265,8 @@ object SetupFlow {
             // issues #8 / #9 (the user's pick): an out-of-date Data folder, said plainly; Play stays (it may still start)
             i.staleData != null && i.folderFound && !i.wrongGame && i.storage -> Prompt("stale", "Your game folder is out of date",
                 i.staleData, listOf(Button("OK", Action.STALE_OK)))
+            i.lowSpace != null && i.folderFound && !i.wrongGame && i.storage -> Prompt("space", "Storage is low", i.lowSpace,
+                listOf(Button("OK", Action.SPACE_OK)))
             !i.storage -> Prompt("storage", "Allow file access",
                 "Android needs \"All files access\" so the game and DS Forever can read the game folder.",
                 listOf(Button("Open settings", Action.GRANT_STORAGE)))

@@ -40,6 +40,8 @@ object SetupBridge {
     @Volatile var exitGame: (() -> Unit)? = null
     /** the out-of-date folder's pop-up was OK'd: not again this run (the red check line stays) */
     @Volatile var staleOk = false
+    /** the low storage pop-up was OK'd (this run) */
+    @Volatile var spaceOk = false
     /** the saved report's note > Open GitHub issue */
     @Volatile var openSavedReport: (() -> Unit)? = null
     /** the report page takes the launcher's keys while it is open (before Play) */
@@ -97,13 +99,14 @@ object SetupBridge {
         return SetupFlow.screen(i.copy(signIn = signIn, restartOffered = restartOffered, gameRunning = gameRunning, restarting = restarting,
             reportSaved = ReportFlow.pending?.let { ReportFlow.noteTitle(it) },
             staleData = DataStaleness.current()?.takeIf { !staleOk },
+            lowSpace = i.lowSpace?.takeIf { !spaceOk },
             gameClosed = GameLife.note))
     }
 
     /** the start-up checks have passed (the chooser may show); false while the launcher hasn't published them */
     fun checksPass(): Boolean {
         val i = inputs ?: return false
-        return SetupFlow.checksPass(i.copy(staleData = i.staleData?.takeIf { !staleOk }))
+        return SetupFlow.checksPass(i.copy(staleData = i.staleData?.takeIf { !staleOk }, lowSpace = i.lowSpace?.takeIf { !spaceOk }))
     }
 
     /** the sign-in's lean log (NativeLogin.logEvent): each sign-in button, never anything typed */
@@ -120,6 +123,7 @@ object SetupBridge {
             SetupFlow.Action.GAME_CLOSED_OK -> { GameLife.dismissNote(); changed() }
             SetupFlow.Action.REPORT_OPEN -> openSavedReport?.invoke()
             SetupFlow.Action.STALE_OK -> { staleOk = true; changed() }
+            SetupFlow.Action.SPACE_OK -> { spaceOk = true; changed() }
             SetupFlow.Action.REPORT_DISMISS -> { ReportFlow.clearPending(); changed() }
             else -> launcherActions?.invoke(a)
         }

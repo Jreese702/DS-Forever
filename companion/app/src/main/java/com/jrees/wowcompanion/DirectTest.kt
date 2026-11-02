@@ -6,5 +6,7 @@ package com.jrees.wowcompanion
  */
 object DirectTest {
     const val ON = false
+    /** the low storage warning's test build: it always shows */
+    const val LOW_SPACE_ALWAYS = true
     const val FOLDER = "WoW Forever Direct 5"
 }

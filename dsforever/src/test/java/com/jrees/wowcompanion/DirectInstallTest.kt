@@ -88,6 +88,17 @@ class DirectInstallTest {
         assertEquals("", s.line)
     }
 
+    @Test fun lowStorageWarnsAndHoldsTheChooserUntilOk() {
+        assertNull(SetupFlow.lowSpaceLine(SetupFlow.LOW_SPACE_BYTES))
+        val line = SetupFlow.lowSpaceLine(3_200_000_000L)!!
+        assertTrue(line.startsWith("Only 3.2 GB free."))
+        val i = SetupFlow.Inputs(path = "/g", folderFound = true, art = SetupFlow.Art.READY, lowSpace = line)
+        assertEquals("space", SetupFlow.screen(i).prompt!!.id)
+        assertEquals(listOf(SetupFlow.Action.SPACE_OK), SetupFlow.screen(i).prompt!!.buttons.map { it.action })
+        assertTrue(!SetupFlow.checksPass(i))
+        assertTrue(SetupFlow.checksPass(i.copy(lowSpace = null)))
+    }
+
     @Test fun aFreshBuildInfoIsTheLaunchClient() {
         val text = WowSwitch.freshBuildInfo(WowSwitch.Remote(version = "1.60.1.70707", buildConfig = "b", cdnConfig = "c",
             cdnHosts = listOf("h1", "h2"), cdnPath = "tpr/wow", cdnServers = "s", keyRing = "k"), "us")
