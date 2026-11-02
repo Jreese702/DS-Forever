@@ -5,8 +5,8 @@ import android.graphics.RectF
 
 /**
  * THE MENU (the user 2026-11-01), on the waiting screen ([StartView]) and the chooser ([ChooserPanel]): Auto login's tick and Change login,
- * Forget login, Stream settings or Restart game, Report issue, Switch mode (not on the chooser), the controller's two settings, Exit game; the Menu button turned
- * into an X, B or a touch outside shuts it. The host fills in the actions; one app, one menu. Main thread.
+ * Forget login, Report issue, the controller's two settings; on the waiting screen also Stream settings or Restart game, Switch mode and
+ * Exit game. The Menu button turned into an X, B or a touch outside shuts it. The host fills in the actions; one app, one menu. Main thread.
  */
 object StartMenu {
     var open = false
@@ -25,44 +25,81 @@ object StartMenu {
     var onSwitch: (() -> Unit)? = null
     private var forgetArmedAt = -FORGET_ARM_MS
 
-    /** the panel over [w] x [h]; [menuButton] = where the Menu button is, the X now; [hits] gets what a touch can press, [pressed] the id held down */
-    fun draw(c: Canvas, w: Int, h: Int, pressed: Int, hits: ArrayList<Pair<RectF, Int>>, menuButton: RectF, switchMode: Boolean) {
+    /**
+     * the panel over [w] x [h]; [menuButton] = where the Menu button is, the X now; [hits] gets what a touch can press, [pressed] the id held
+     * down. [game] = the waiting screen, with what acts on a running game or mode (Stream settings or Restart, Switch mode, Exit game)
+     */
+    fun draw(c: Canvas, w: Int, h: Int, pressed: Int, hits: ArrayList<Pair<RectF, Int>>, menuButton: RectF, game: Boolean) {
         hits.clear()
         val bh = StartView.BUTTON_H; val gap = StartView.GAP
-        val height = PAD * 2 + bh * 5 + gap * 4
+        val rows = if (game) 4 else 2
+        val height = PAD * 2 + bh * rows + CONTROLLER_H + gap * rows
         val left = (w - WIDTH) / 2f
         val top = (h - height) / 2f
         val panel = RectF(left, top, left + WIDTH, top + height)
         UiKit.module(c, panel)
         val inL = panel.left + PAD; val inR = panel.right - PAD
         val mid = (inL + inR) / 2f
-        fun rowTop(i: Int) = panel.top + PAD + i * (bh + gap)
-        fun cell(i: Int, right: Boolean) = RectF(if (right) mid + gap / 2f else inL, rowTop(i), if (right) inR else mid - gap / 2f, rowTop(i) + bh)
+        var y = panel.top + PAD
+        fun half(right: Boolean, h2: Float = bh) = RectF(if (right) mid + gap / 2f else inL, y, if (right) inR else mid - gap / 2f, y + h2)
+        fun down(id: Int) = if (pressed == id) UiKit.Button.DOWN else UiKit.Button.UP
         fun put(r: RectF, word: String, id: Int, on: Boolean) {
             if (!on) { UiKit.button(c, r, word, UiKit.Button.DISABLED); return }
-            UiKit.button(c, r, word, if (pressed == id) UiKit.Button.DOWN else UiKit.Button.UP)
+            UiKit.button(c, r, word, down(id))
             hits += r to id
         }
-        UiKit.button(c, menuButton, "X", StartView.GLYPH_B, if (pressed == CLOSE) UiKit.Button.DOWN else UiKit.Button.UP)
+        UiKit.button(c, menuButton, "X", StartView.GLYPH_B, down(CLOSE))
         hits += RectF(menuButton) to CLOSE
-        val auto = cell(0, false)
+        val auto = half(false)
         UiKit.check(c, auto.left + CHECK / 2f, auto.centerY(), CHECK, autoLogin())
         val words = UiKit.bodyPaint(StartView.LINE_SIZE)
         UiKit.outlined(c, "Auto login", (auto.left + CHECK + auto.right) / 2f, auto.centerY() - (words.ascent() + words.descent()) / 2f, StartView.LINE_SIZE, Theme.text)
         hits += auto to AUTO
-        put(cell(0, true), "Change login", CHANGE, true)
+        put(half(true), "Change login", CHANGE, true)
+        y += bh + gap
         val armed = android.os.SystemClock.uptimeMillis() - forgetArmedAt < FORGET_ARM_MS
-        put(cell(1, false), if (armed) "Tap again" else "Forget login", FORGET, canForget())
-        if (SetupBridge.openStreamSettings != null) put(cell(1, true), "Stream settings", STREAM, true)
-        else put(cell(1, true), "Restart game", RESTART, canRestart())
-        if (switchMode) {
-            put(cell(2, false), "Report issue", REPORT, true)
-            put(cell(2, true), "Switch mode", SWITCH, canSwitch())
-        } else put(RectF(inL, rowTop(2), inR, rowTop(2) + bh), "Report issue", REPORT, true)
-        // the Settings room's two controller rows, a press steps to the next choice
-        put(cell(3, false), "ABXY: ${CastSettings.abxyLocation.label}", ABXY, true)
-        put(cell(3, true), "Glyphs: ${CastSettings.buttonLayout.label}", GLYPHS, true)
-        put(RectF(inL, rowTop(4), inR, rowTop(4) + bh), "Exit game", EXIT, canExit())
+        put(half(false), if (armed) "Tap again" else "Forget login", FORGET, canForget())
+        if (game) {
+            if (SetupBridge.openStreamSettings != null) put(half(true), "Stream settings", STREAM, true)
+            else put(half(true), "Restart game", RESTART, canRestart())
+            y += bh + gap
+            put(half(false), "Report issue", REPORT, true)
+            put(half(true), "Switch mode", SWITCH, canSwitch())
+        } else put(half(true), "Report issue", REPORT, true)
+        y += bh + gap
+        controller(c, half(false, CONTROLLER_H), "ABXY", CastSettings.abxyLocation.label, ABXY, pressed, hits) { r -> faceDiamond(c, r) }
+        controller(c, half(true, CONTROLLER_H), "Glyphs", CastSettings.buttonLayout.label, GLYPHS, pressed, hits) { r -> glyphRow(c, r) }
+        y += CONTROLLER_H + gap
+        if (game) put(RectF(inL, y, inR, y + bh), "Exit game", EXIT, canExit())
+    }
+
+    /** a taller button: its two words on the left, its picture on the right, the words saying what a press steps through */
+    private fun controller(c: Canvas, r: RectF, title: String, value: String, id: Int, pressed: Int, hits: ArrayList<Pair<RectF, Int>>, picture: (RectF) -> Unit) {
+        UiKit.button(c, r, "", if (pressed == id) UiKit.Button.DOWN else UiKit.Button.UP)
+        hits += r to id
+        val text = RectF(r.left + 20f, r.top, r.left + r.width() * 0.48f, r.bottom)
+        UiKit.outlined(c, title, text.centerX(), r.centerY() - 12f, StartView.LINE_SIZE, Theme.text)
+        UiKit.outlined(c, value, text.centerX(), r.centerY() + 34f, StartView.LINE_MIN + 4f, Theme.text)
+        picture(RectF(text.right, r.top, r.right - 16f, r.bottom))
+    }
+
+    /** the four face buttons where they sit: Nintendo's X top and A right, Xbox's Y top and B right */
+    private fun faceDiamond(c: Canvas, r: RectF) {
+        val cx = r.centerX(); val cy = r.centerY()
+        val nintendo = CastSettings.abxyLocation == CastSettings.AbxyLocation.NINTENDO
+        UiKit.pad(c, if (nintendo) "rev_x" else "rev_y", cx, cy - ARM, FACE)
+        UiKit.pad(c, if (nintendo) "rev_a" else "rev_b", cx + ARM, cy, FACE)
+        UiKit.pad(c, if (nintendo) "rev_b" else "rev_a", cx, cy + ARM, FACE)
+        UiKit.pad(c, if (nintendo) "rev_y" else "rev_x", cx - ARM, cy, FACE)
+    }
+
+    /** the chosen set's four pictures */
+    private fun glyphRow(c: Canvas, r: RectF) {
+        val cx = r.centerX(); val cy = r.centerY()
+        UiKit.pad(c, "rev_a", cx - ARM * 0.9f, cy - ARM * 0.7f, FACE)
+        UiKit.pad(c, "rev_b", cx + ARM * 0.9f, cy - ARM * 0.7f, FACE)
+        UiKit.pad(c, "rev_x", cx - ARM * 0.9f, cy + ARM * 0.7f, FACE)
+        UiKit.pad(c, "rev_y", cx + ARM * 0.9f, cy + ARM * 0.7f, FACE)
     }
 
     private fun <T> next(all: Array<T>, now: T): T = all[(all.indexOf(now) + 1) % all.size]
@@ -101,4 +138,7 @@ object StartMenu {
     private const val WIDTH = 1000f
     private const val PAD = 32f
     private const val CHECK = 76f
+    private const val CONTROLLER_H = 170f
+    private const val FACE = 50f
+    private const val ARM = 46f
 }

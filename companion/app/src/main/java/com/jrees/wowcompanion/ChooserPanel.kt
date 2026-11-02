@@ -106,7 +106,7 @@ class ChooserPanel(context: Context) : View(context) {
         }
         if (StartMenu.open && page == Page.CHOOSER) {
             val top = footTop()
-            StartMenu.draw(c, width, height, menuPressed, menuHits, RectF(MARGIN, top, MARGIN + SIDE_W, top + BUTTON_H), switchMode = false)
+            StartMenu.draw(c, width, height, menuPressed, menuHits, RectF(MARGIN, top, MARGIN + SIDE_W, top + BUTTON_H), game = false)
         }
     }
 

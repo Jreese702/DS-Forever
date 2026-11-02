@@ -68,7 +68,7 @@ class StartView(context: Context) : View(context) {
         drawRow(c)
         if (menuOpen) {
             val top = height - ROW_DOWN - BUTTON_H
-            StartMenu.draw(c, width, height, pressed, hits, RectF(SIDE_M, top, SIDE_M + SIDE_W, top + BUTTON_H), switchMode = true)
+            StartMenu.draw(c, width, height, pressed, hits, RectF(SIDE_M, top, SIDE_M + SIDE_W, top + BUTTON_H), game = true)
         }
     }
 
