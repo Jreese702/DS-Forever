@@ -80,9 +80,18 @@ class DirectInstallTest {
     }
 
     @Test fun theTimeLeftIsPerStepAndInTotal() {
-        assertEquals("This step: about 9 min   Total: about 32 min", SetupFlow.eta(SetupFlow.Step.INSTALL, 0.0))
-        assertEquals("This step: about 10 min   Total: about 10 min", SetupFlow.eta(SetupFlow.Step.ART, 600.0, 0.5f))
-        assertEquals("This step: under a minute   Total: under a minute", SetupFlow.eta(SetupFlow.Step.ART, 600.0, 0.99f))
+        assertEquals("This step: about 9 min" to "Total: about 32 min", SetupFlow.times(SetupFlow.Step.INSTALL, 0.0))
+        assertEquals("This step: about 10 min" to "Total: about 10 min", SetupFlow.times(SetupFlow.Step.ART, 600.0, 0.5f))
+        assertEquals("This step: under a minute" to "Total: under a minute", SetupFlow.times(SetupFlow.Step.ART, 600.0, 0.99f))
+        assertEquals(0.5f, SetupFlow.timeBar(SetupFlow.Step.INSTALL, 262.5), 0.01f)
+        assertEquals(0.95f, SetupFlow.timeBar(SetupFlow.Step.INSTALL, 9999.0), 0.01f)
+    }
+
+    @Test fun aStepShowsOneCardAndNoStatusLine() {
+        val p = SetupFlow.Progress("Installing", "Fetching", "This step: 1", "Total: 2")
+        val s = SetupFlow.screen(SetupFlow.Inputs(path = "/g", folderFound = false, busy = "Fetching", progress = p))
+        assertEquals("Fetching\nThis step: 1\nTotal: 2", s.prompt!!.text)
+        assertEquals("", s.line)
     }
 
     @Test fun aFreshBuildInfoIsTheLaunchClient() {

@@ -31,8 +31,10 @@ object SetupFlow {
         val loginSkipped: Boolean = false,
         val art: Art = Art.IDLE,
         val artPercent: Int = 0,
-        /** a direct install's time left ([eta]), in place of the status line; null = none */
-        val eta: String? = null,
+        /** a direct install's step under way: the bottom screen's one card ([Progress]); null = none */
+        val progress: Progress? = null,
+        /** the install's own bar on the Game folder row, 0..1; null = none */
+        val installBar: Float? = null,
         val artWhat: String = "",
         val artWhy: String = "",
         /** our bundled add-ons are in the game's AddOns folder */
@@ -172,6 +174,7 @@ object SetupFlow {
     fun bar(c: Check, i: Inputs): Float? {
         val l = c.label
         return when {
+            l == "Game folder" -> i.installBar
             l.startsWith("Game art:") -> if (i.art == Art.RUNNING) (i.artPercent / 100f).coerceIn(0f, 1f) else null
             l.startsWith("Client build:") -> if (i.updating) fraction(i.busy) ?: BAR_MOVING else null
             l.startsWith("DS Forever") -> i.busy?.takeIf { it.startsWith("Downloading the update") }?.let { fraction(it) }
@@ -203,12 +206,23 @@ object SetupFlow {
 
     private fun aboutWords(s: Double) = if (s < 60) "under a minute" else "about ${kotlin.math.ceil(s / 60).toInt()} min"
 
+    /** the card of a direct install's step, top to bottom (the user 2026-11-01: what it does, this step's time, the total) */
+    data class Progress(val title: String, val doing: String, val thisStep: String, val total: String) {
+        val text: String get() = "$doing\n$thisStep\n$total"
+    }
+
+    /** the two times as one line, for the one-line panel of the waiting screen */
+    fun timesLine(step: Step): String = times(step, 0.0).let { "${it.first}   ${it.second}" }
+
+    /** an install has no count of its own: its share of the usual time, never quite full */
+    fun timeBar(step: Step, elapsedS: Double): Float = (elapsedS / step.typicalS).toFloat().coerceIn(0f, 0.95f)
+
     /** what is left of [step] and of the whole setup: from its own progress once [fraction] says enough, else its usual time */
-    fun eta(step: Step, elapsedS: Double, fraction: Float? = null): String {
+    fun times(step: Step, elapsedS: Double, fraction: Float? = null): Pair<String, String> {
         val left = if (fraction != null && fraction >= 0.05f) elapsedS * (1f - fraction) / fraction
             else (step.typicalS - elapsedS).coerceAtLeast(30.0)
         val total = left + Step.values().filter { it.ordinal > step.ordinal }.sumOf { it.typicalS }
-        return "This step: ${aboutWords(left)}   Total: ${aboutWords(total)}"
+        return "This step: ${aboutWords(left)}" to "Total: ${aboutWords(total)}"
     }
 
     /** a direct install grows to about 50 GB */
@@ -230,7 +244,7 @@ object SetupFlow {
             // first: nothing else works from the SD card (p-sd-card-install); Play stays, a device may still cope
             i.installedExternal -> Prompt("install", InstallCheck.TITLE, InstallCheck.TEXT,
                 listOf(Button("Open app settings", Action.OPEN_APP_SETTINGS)))
-            !i.folderFound && i.busy != null -> Prompt("folder", "Installing WoW Forever", i.eta ?: i.busy, emptyList())
+            i.progress != null -> Prompt("progress", i.progress.title, i.progress.text, emptyList())
             !i.folderFound || i.wrongGame -> Prompt("folder", "Where is WoW Forever?",
                 if (i.wrongGame) "The folder ${i.path} holds ${i.product.ifEmpty { "another game" }}, not WoW Forever. Choose the WoW Forever folder: the one with .build.info and Data."
                 else "Install it (250 MB now, up to 50 GB as you play), or choose the folder with .build.info and Data.",
@@ -265,7 +279,7 @@ object SetupFlow {
             Art.IDLE -> if (i.folderFound) "Checking the game art" else ""
             else -> ""
         }
-        return Screen(prompt, play, i.eta ?: line, Button("Report a problem", Action.REPORT))
+        return Screen(prompt, play, if (i.progress != null) "" else line, Button("Report a problem", Action.REPORT))
     }
 
     /**

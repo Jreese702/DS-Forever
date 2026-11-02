@@ -170,7 +170,7 @@ class SetupPanel(context: Context) : View(context) {
         val left = (width - w) / 2f
         val title = UiKit.titlePaint(44f)
         val body = UiKit.bodyPaint(30f)
-        val lines = wrap(p.text, body, w - PAD * 2)
+        val lines = p.text.split('\n').flatMap { wrap(it, body, w - PAD * 2) }
         val h = PAD + 52f + 16f + lines.size * 40f + GAP + p.buttons.size * (BUTTON_H + GAP) + PAD
         val card = RectF(left, (bottom - h).coerceAtLeast(MARGIN), left + w, bottom)
         cardRect.set(card)

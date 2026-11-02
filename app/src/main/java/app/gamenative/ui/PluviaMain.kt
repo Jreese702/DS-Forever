@@ -313,10 +313,9 @@ fun PluviaMain(
                 androidx.compose.ui.viewinterop.AndroidView(
                     factory = { ctx ->
                         com.jrees.wowcompanion.LoadingTopView(ctx).apply {
-                            curtain = {
-                                val rows = com.jrees.wowcompanion.SetupBridge.inputs?.let { com.jrees.wowcompanion.SetupFlow.terse(com.jrees.wowcompanion.SetupFlow.checks(it)) }
-                                (rows ?: emptyList()) to "Preparing game files"
-                            }
+                            fun rows() = com.jrees.wowcompanion.SetupBridge.inputs?.let { com.jrees.wowcompanion.SetupFlow.terse(com.jrees.wowcompanion.SetupFlow.checks(it)) }.orEmpty()
+                            curtain = { rows() + com.jrees.wowcompanion.SetupFlow.Check("Game files", com.jrees.wowcompanion.SetupFlow.Mark.WAIT) to "Preparing game files" }
+                            curtainBars = { rows().map { null as Float? } + com.jrees.wowcompanion.SetupFlow.BAR_MOVING }
                         }
                     },
                     modifier = Modifier.fillMaxSize().zIndex(11f),

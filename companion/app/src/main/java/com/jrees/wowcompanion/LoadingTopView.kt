@@ -41,13 +41,15 @@ class LoadingTopView(context: Context) : View(context) {
     /** the box's own rows and status line instead of the start-up checks (Streaming's curtain over the stream: StreamCurtain); no
      *  report button then. null = the start-up checks */
     var curtain: (() -> Pair<List<SetupFlow.Check>, String>?)? = null
+    /** the curtain's bars, row by row */
+    var curtainBars: (() -> List<Float?>)? = null
 
     override fun onDraw(c: Canvas) {
         area.set(0f, 0f, width.toFloat(), height.toFloat())
         LoadingScene.draw(c, area, top = true)
         postInvalidateDelayed(LoadingScene.FRAME_MS)
         val k = height / 1080f
-        curtain?.invoke()?.let { (rows, line) -> drawPanel(c, k, rows, line, null, false); return }
+        curtain?.invoke()?.let { (rows, line) -> drawPanel(c, k, rows, line, null, false, curtainBars?.invoke().orEmpty()); return }
         val inputs = SetupBridge.inputs
         val full = inputs?.let { SetupFlow.checks(it) } ?: emptyList()
         val rows = SetupFlow.terse(full)

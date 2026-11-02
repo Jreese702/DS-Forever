@@ -1669,7 +1669,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // the start screen waits for the game's first current word, as at every start
                     ui.postDelayed({
                         setupBusy = false; setupView.close()
-                        startView.line = if (SetupBridge.seeding) SetupFlow.eta(SetupFlow.Step.PREPARE, 0.0) else "Waiting for the game."; startView.visibility = View.VISIBLE
+                        startView.line = if (SetupBridge.seeding) SetupFlow.timesLine(SetupFlow.Step.PREPARE) else "Waiting for the game."; startView.visibility = View.VISIBLE
                     }, 4_000L)
                 }
             }

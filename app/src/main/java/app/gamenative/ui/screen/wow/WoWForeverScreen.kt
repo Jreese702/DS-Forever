@@ -722,18 +722,23 @@ fun WoWForeverScreen(
             else -> com.jrees.wowcompanion.SetupFlow.Art.IDLE
         },
         artPercent = (artProgress * 100).toInt(),
-        eta = run {
+        progress = run {
             val now = System.currentTimeMillis()
             val running = harvestState as? com.jrees.wowcompanion.ArtHarvest.State.Running
             val artFirst = running?.beforePlay == true && File(gamePath, com.jrees.wowcompanion.DataStaleness.STREAMED).exists()
             if (artFirst && artStartedAt == 0L) artStartedAt = now
             if (!artFirst) artStartedAt = 0L
             when {
-                installStartedAt != 0L -> com.jrees.wowcompanion.SetupFlow.eta(com.jrees.wowcompanion.SetupFlow.Step.INSTALL, (now - installStartedAt) / 1000.0)
-                artFirst -> com.jrees.wowcompanion.SetupFlow.eta(com.jrees.wowcompanion.SetupFlow.Step.ART, (now - artStartedAt) / 1000.0, running?.fraction)
+                installStartedAt != 0L -> com.jrees.wowcompanion.SetupFlow.times(com.jrees.wowcompanion.SetupFlow.Step.INSTALL, (now - installStartedAt) / 1000.0).let {
+                    com.jrees.wowcompanion.SetupFlow.Progress("Installing WoW Forever", updateStatusText, it.first, it.second)
+                }
+                artFirst -> com.jrees.wowcompanion.SetupFlow.times(com.jrees.wowcompanion.SetupFlow.Step.ART, (now - artStartedAt) / 1000.0, running?.fraction).let {
+                    com.jrees.wowcompanion.SetupFlow.Progress("Building game art", running?.what.orEmpty().ifBlank { "Building" }, it.first, it.second)
+                }
                 else -> null
             }
         },
+        installBar = if (installStartedAt != 0L) com.jrees.wowcompanion.SetupFlow.timeBar(com.jrees.wowcompanion.SetupFlow.Step.INSTALL, (System.currentTimeMillis() - installStartedAt) / 1000.0) else null,
         artWhat = (harvestState as? com.jrees.wowcompanion.ArtHarvest.State.Running)?.what.orEmpty(),
         artWhy = artFailed.orEmpty(),
         addonsInstalled = addonsInstalled,
@@ -901,7 +906,7 @@ object GamePath {
     fun installDir(): File = if (com.jrees.wowcompanion.DirectTest.ON)
         File(Environment.getExternalStorageDirectory(), com.jrees.wowcompanion.DirectTest.FOLDER) else defaultPath
 
-    private const val KEY_DIRECT_CHOSEN = "direct_test_chosen4"
+    private const val KEY_DIRECT_CHOSEN = "direct_test_chosen5"
     fun directChosen(context: Context) = !com.jrees.wowcompanion.DirectTest.ON ||
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_DIRECT_CHOSEN, false)
     fun saveDirectChosen(context: Context) {
