@@ -336,7 +336,7 @@ object SetupFlow {
         })
         add(Check("Add-ons: ${if (i.addonsInstalled) "installed" else "installed with the first Play"}" +
             (i.dependencies?.let { "; $it" } ?: ""), if (i.addonsInstalled) Mark.OK else Mark.WAIT))
-        i.indoor?.let { add(Check("Indoor maps (optional): $it", Mark.OPTIONAL)) }
+        i.indoor?.let { add(Check("Indoor maps (builds while playing): $it", Mark.OPTIONAL)) }
         i.client?.let { add(Check("Client build: $it", if (i.gameOutdated == null) Mark.OK else Mark.BAD)) }
         // the app's own update: optional, never a warning (an update waits for the player's press on the bottom screen)
         i.appLine?.let { add(Check(it, if (it.endsWith("up to date")) Mark.OK else Mark.OPTIONAL)) }

@@ -25,7 +25,16 @@ object WowClientDownloader {
     private const val PLATFORM_ARCH = "arm64"
     private const val EXCLUDED_ARCH = "x86_64"
     private const val DEFAULT_CDN_PATH = "tpr/wow"
-    private const val DIRECT_BRANCH = "us"
+    private val EU_COUNTRIES = setOf("AT", "BE", "BG", "CH", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FR", "GB", "GR", "HR", "HU", "IE", "IS", "IT",
+        "LT", "LU", "LV", "MT", "NL", "NO", "PL", "PT", "RO", "RU", "SE", "SI", "SK", "UA", "TR")
+
+    /** the region a direct install starts in, from the device's country (jaredgei's guess: the game's region picker can still change it) */
+    private fun directBranch() = when (java.util.Locale.getDefault().country.uppercase(java.util.Locale.ROOT)) {
+        "KR" -> "kr"
+        "TW", "HK" -> "tw"
+        in EU_COUNTRIES -> "eu"
+        else -> "us"
+    }
     private val DEFAULT_CDN_HOSTS = listOf("level3.blizzard.com", "us.cdn.blizzard.com")
 
     /** a product's patch server (versions, cdns); the tests point it at a local server */
@@ -192,7 +201,7 @@ object WowClientDownloader {
      */
     fun install(gameRoot: File, onStatus: (String) -> Unit) {
         onStatus("Checking the latest build...")
-        val target = remoteCheck(WowProduct.LAUNCH, mapOf("Branch" to DIRECT_BRANCH), "", "")
+        val target = remoteCheck(WowProduct.LAUNCH, mapOf("Branch" to directBranch()), "", "")
             ?.takeIf { it.remoteBuildConfig.isNotBlank() && it.remoteCdnConfig.isNotBlank() }
             ?: throw IOException("Blizzard's patch server did not answer")
         listOf("Data/data", "Data/indices", "Data/config").forEach { check(File(gameRoot, it).run { isDirectory || mkdirs() }) { "can't write to $gameRoot" } }
@@ -230,7 +239,7 @@ object WowClientDownloader {
         if (fresh) WowSwitch.replace(File(gameRoot, BUILD_INFO), WowSwitch.freshBuildInfo(WowSwitch.Remote(
             version = target.remoteVersion, buildConfig = target.remoteBuildConfig, cdnConfig = target.remoteCdnConfig,
             cdnHosts = target.remoteCdnHosts, cdnPath = target.remoteCdnPath, cdnServers = target.remoteCdnServers,
-            keyRing = target.remoteKeyRing), DIRECT_BRANCH).toByteArray())
+            keyRing = target.remoteKeyRing), directBranch()).toByteArray())
         updateBuildInfo(gameRoot, target, buildConfig)
     }
 

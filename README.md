@@ -24,7 +24,9 @@ Some layouts remain deferred. Whole-city/floorless/liquid coverage is incomplete
 
 ## Setup And Play
 
-Choose the folder containing `.build.info` and `Data/`, including hidden files.
+On first start choose **Install directly** (about 250 MB now; the game streams the
+rest from Blizzard as you play, up to about 50 GB; needs Wi-Fi and 60 GB free), or
+choose an existing folder containing `.build.info` and `Data/`, including hidden files.
 Thor testing used `/storage/emulated/0/Documents/WoW Forever`; every game path
 comes from the chosen root, not a hard-coded old `/sdcard` folder.
 

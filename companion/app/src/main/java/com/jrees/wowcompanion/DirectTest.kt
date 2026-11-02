@@ -5,6 +5,6 @@ package com.jrees.wowcompanion
  * its own folder [FOLDER], and that folder's art is built on its own, so the player's game and art are not touched.
  */
 object DirectTest {
-    const val ON = true
+    const val ON = false
     const val FOLDER = "WoW Forever Direct 5"
 }
