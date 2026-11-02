@@ -30,7 +30,7 @@ namespace DsfDesktop.Ui
         public string ThorProgress = "";
         public bool ThorBusy;
 
-        public bool StartWithWindows, StartWow;
+        public bool StartWithWindows, StartWow, MatchStream;
         public int BridgePort;
     }
 
@@ -44,6 +44,7 @@ namespace DsfDesktop.Ui
         string FocusWow();
         void SetStartWithWindows(bool on);
         void SetStartWow(bool on);
+        void SetMatchStream(bool on);
         Task<string> ThorInstall();
         Task<string> ThorInstallFile(string apk);
         void ThorWatching(bool on);
@@ -108,6 +109,7 @@ namespace DsfDesktop.Ui
             v.ThorBusy = c.Thor.Busy;
             try { v.StartWithWindows = AutoStart.IsOn(); } catch (Exception) { }
             v.StartWow = c.Settings.StartWowOnStream;
+            v.MatchStream = c.Settings.MatchStreamResolution;
             return v;
         }
     }
@@ -123,6 +125,7 @@ namespace DsfDesktop.Ui
         public string FocusWow() => c.FocusWow();
         public void SetStartWithWindows(bool on) => AutoStart.Set(on, c.Paths.Exe);
         public void SetStartWow(bool on) { c.Settings.StartWowOnStream = on; c.SaveSettings(); }
+        public void SetMatchStream(bool on) => c.SetMatchStream(on);
         public Task<string> ThorInstall() => c.Thor.InstallLatest();
         public Task<string> ThorInstallFile(string apk) => c.Thor.InstallLocal(apk);
         public void ThorWatching(bool on) => c.ThorWatching = on;

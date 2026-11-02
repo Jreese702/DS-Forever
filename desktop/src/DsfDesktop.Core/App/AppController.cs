@@ -288,8 +288,16 @@ namespace DsfDesktop.App
         void WriteSunshineConfig() => SunshineConfig.Write(SunshineLayout, new SunshineOptions
         {
             Port = SunshinePort, Encoder = Settings.Encoder, EventExe = "", HostName = Environment.MachineName,
-            BindAddress = Loopback ? "127.0.0.1" : "", OutputName = Settings.CaptureDevice,
+            BindAddress = Loopback ? "127.0.0.1" : "", OutputName = Settings.CaptureDevice, MatchStream = Settings.MatchStreamResolution,
         });
+
+        public void SetMatchStream(bool on)
+        {
+            Settings.MatchStreamResolution = on;
+            SaveSettings();
+            WriteSunshineConfig();
+            RestartSunshine();
+        }
 
         public void RestartSunshine()
         {
@@ -766,7 +774,24 @@ namespace DsfDesktop.App
                 using (var p = WowWindow.FindAny(FlavorDirOrNull))
                     if (p != null && p.Id != crashedPid && !WowProbe.FatalErrorShown(p.Id)) Supervisor.CrashOver();
             if (Supervisor.Active) Supervisor.Step();
+            FocusRetry();
             PublishWow(force: false);
+        }
+
+        /// <summary>Windows can refuse the one focus at the start, and nothing asked again: WoW stayed behind (5 times in the user's log).
+        /// While a Thor is connected it is asked again for a minute at most, never after that (the PC may be in use)</summary>
+        int focusTries;
+        DateTime nextFocus = DateTime.MinValue;
+        int focusBusy;
+
+        void FocusRetry()
+        {
+            if (Bridge == null || Bridge.Sessions().Count == 0 || LastScreen == WowScreen.None) { focusTries = 0; return; }
+            if (!WowFlow.FocusRetryWanted(LastScreen, WowWindow.IsForeground(), focusTries, DateTime.UtcNow >= nextFocus)) return;
+            if (Interlocked.CompareExchange(ref focusBusy, 1, 0) != 0) return;
+            focusTries++;
+            nextFocus = DateTime.UtcNow.AddSeconds(WowFlow.FocusRetryEveryS);
+            Task.Run(() => { try { FocusWow(); } finally { Interlocked.Exchange(ref focusBusy, 0); } });
         }
 
         void PublishWow(bool force)

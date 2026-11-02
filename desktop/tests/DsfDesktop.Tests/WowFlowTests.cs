@@ -253,6 +253,29 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
+        public static void WowIsAskedForwardForAMinuteAtMost()
+        {
+            A.True(WowFlow.FocusRetryWanted(WowScreen.SigningIn, false, 0, true));
+            A.True(!WowFlow.FocusRetryWanted(WowScreen.Starting, false, 0, true), "no window yet");
+            A.True(!WowFlow.FocusRetryWanted(WowScreen.World, true, 0, true), "in front");
+            A.True(!WowFlow.FocusRetryWanted(WowScreen.World, false, 0, false), "not due");
+            A.True(!WowFlow.FocusRetryWanted(WowScreen.World, false, WowFlow.FocusRetryMax, true), "the PC may be in use");
+        }
+
+        [Test]
+        public static void TheScreenMatchesTheStreamWhenAsked()
+        {
+            var l = new DsfDesktop.Sunshine.SunshineLayout { ExeDir = "a", DataDir = "b" };
+            var on = DsfDesktop.Sunshine.SunshineConfig.ConfText(l, new DsfDesktop.Sunshine.SunshineOptions { MatchStream = true });
+            A.True(on.Contains("dd_configuration_option = ensure_active"));
+            A.True(on.Contains("dd_resolution_option = auto"));
+            A.True(on.Contains("dd_config_revert_on_disconnect = enabled"), "the screen goes back");
+            var off = DsfDesktop.Sunshine.SunshineConfig.ConfText(l, new DsfDesktop.Sunshine.SunshineOptions());
+            A.True(off.Contains("dd_configuration_option = disabled"));
+            A.True(!off.Contains("dd_resolution_option"));
+        }
+
+        [Test]
         public static void TheControllerSettingsAreOnOnce()
         {
             var a = WowConfig.Apply("SET locale \"enUS\"\r\nSET GamePadEnable \"0\"\r\n");

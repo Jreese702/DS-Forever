@@ -41,7 +41,8 @@ namespace DsfDesktop.Ui
         readonly Note notices = new Note("", 9.5f, Theme.Warn);
         readonly GoldButton addonsBtn = new GoldButton("Install / update add-ons"), folderBtn = new GoldButton("Choose WoW folder...");
         // footer
-        readonly Toggle startWindows = new Toggle("Start with Windows"), startWow = new Toggle("Start WoW when streaming");
+        readonly Toggle startWindows = new Toggle("Start with Windows"), startWow = new Toggle("Start WoW when streaming"),
+            matchStream = new Toggle("Match PC screen to stream");
         readonly LinkLabel testPage = new LinkLabel();
         readonly Timer tick = new Timer { Interval = 1000 };
 
@@ -122,6 +123,7 @@ namespace DsfDesktop.Ui
             var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 46, Padding = new Padding(22, 6, 18, 0), BackColor = Theme.Ink };
             footer.Controls.Add(startWindows);
             footer.Controls.Add(startWow);
+            footer.Controls.Add(matchStream);
             testPage.Text = "Bridge test page";
             testPage.AutoSize = true;
             testPage.LinkColor = Theme.SoftGold;
@@ -188,6 +190,7 @@ namespace DsfDesktop.Ui
                 catch (Exception ex) { MessageBox.Show(this, "Couldn't change Start with Windows: " + ex.Message, Text); }
             };
             startWow.CheckedChanged += (s, e) => { if (!applying) act?.SetStartWow(startWow.Checked); };
+            matchStream.CheckedChanged += (s, e) => { if (!applying) act?.SetMatchStream(matchStream.Checked); };
             testPage.LinkClicked += (s, e) => { if (v.BridgePort > 0) Process.Start("http://localhost:" + v.BridgePort + "/test"); };
         }
 
@@ -245,6 +248,7 @@ namespace DsfDesktop.Ui
             addonsBtn.Enabled = s.AddonsAction;
             startWindows.Checked = s.StartWithWindows;
             startWow.Checked = s.StartWow;
+            matchStream.Checked = s.MatchStream;
             ResumeLayout(true);
             foreach (Control c in new Control[] { pairCard, thorCard }) c.Invalidate();
             applying = false;
