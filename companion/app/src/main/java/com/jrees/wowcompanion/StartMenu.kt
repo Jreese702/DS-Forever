@@ -35,7 +35,8 @@ object StartMenu {
         val rows = if (game) 4 else 2
         val height = PAD * 2 + bh * rows + CONTROLLER_H + gap * rows
         val left = (w - WIDTH) / 2f
-        val top = (h - height) / 2f
+        // centred, clear of the X at the foot
+        val top = minOf((h - height) / 2f, menuButton.top - gap - height).coerceAtLeast(gap)
         val panel = RectF(left, top, left + WIDTH, top + height)
         UiKit.module(c, panel)
         val inL = panel.left + PAD; val inR = panel.right - PAD
@@ -67,20 +68,16 @@ object StartMenu {
             put(half(true), "Switch mode", SWITCH, canSwitch())
         } else put(half(true), "Report issue", REPORT, true)
         y += bh + gap
-        controller(c, half(false, CONTROLLER_H), "ABXY", CastSettings.abxyLocation.label, ABXY, pressed, hits) { r -> faceDiamond(c, r) }
-        controller(c, half(true, CONTROLLER_H), "Glyphs", CastSettings.buttonLayout.label, GLYPHS, pressed, hits) { r -> glyphRow(c, r) }
+        // the controller, one object: its two buttons on the left, what they make on the right
+        val box = RectF(inL, y, inR, y + CONTROLLER_H)
+        UiKit.border(c, box)
+        val inner = RectF(box.left + INSET, box.top + INSET, box.left + box.width() * 0.62f, box.bottom - INSET)
+        val rowH = (inner.height() - gap) / 2f
+        put(RectF(inner.left, inner.top, inner.right, inner.top + rowH), "ABXY: ${CastSettings.abxyLocation.label}", ABXY, true)
+        put(RectF(inner.left, inner.bottom - rowH, inner.right, inner.bottom), "Glyphs: ${CastSettings.buttonLayout.label}", GLYPHS, true)
+        faceDiamond(c, RectF(inner.right, box.top, box.right, box.bottom))
         y += CONTROLLER_H + gap
         if (game) put(RectF(inL, y, inR, y + bh), "Exit game", EXIT, canExit())
-    }
-
-    /** a taller button: its two words on the left, its picture on the right, the words saying what a press steps through */
-    private fun controller(c: Canvas, r: RectF, title: String, value: String, id: Int, pressed: Int, hits: ArrayList<Pair<RectF, Int>>, picture: (RectF) -> Unit) {
-        UiKit.button(c, r, "", if (pressed == id) UiKit.Button.DOWN else UiKit.Button.UP)
-        hits += r to id
-        val text = RectF(r.left + 20f, r.top, r.left + r.width() * 0.48f, r.bottom)
-        UiKit.outlined(c, title, text.centerX(), r.centerY() - 12f, StartView.LINE_SIZE, Theme.text)
-        UiKit.outlined(c, value, text.centerX(), r.centerY() + 34f, StartView.LINE_MIN + 4f, Theme.text)
-        picture(RectF(text.right, r.top, r.right - 16f, r.bottom))
     }
 
     /** the four face buttons where they sit: Nintendo's X top and A right, Xbox's Y top and B right */
@@ -91,15 +88,6 @@ object StartMenu {
         UiKit.pad(c, if (nintendo) "rev_a" else "rev_b", cx + ARM, cy, FACE)
         UiKit.pad(c, if (nintendo) "rev_b" else "rev_a", cx, cy + ARM, FACE)
         UiKit.pad(c, if (nintendo) "rev_y" else "rev_x", cx - ARM, cy, FACE)
-    }
-
-    /** the chosen set's four pictures */
-    private fun glyphRow(c: Canvas, r: RectF) {
-        val cx = r.centerX(); val cy = r.centerY()
-        UiKit.pad(c, "rev_a", cx - ARM * 0.9f, cy - ARM * 0.7f, FACE)
-        UiKit.pad(c, "rev_b", cx + ARM * 0.9f, cy - ARM * 0.7f, FACE)
-        UiKit.pad(c, "rev_x", cx - ARM * 0.9f, cy + ARM * 0.7f, FACE)
-        UiKit.pad(c, "rev_y", cx + ARM * 0.9f, cy + ARM * 0.7f, FACE)
     }
 
     private fun <T> next(all: Array<T>, now: T): T = all[(all.indexOf(now) + 1) % all.size]
@@ -138,7 +126,8 @@ object StartMenu {
     private const val WIDTH = 1000f
     private const val PAD = 32f
     private const val CHECK = 76f
-    private const val CONTROLLER_H = 170f
-    private const val FACE = 50f
-    private const val ARM = 46f
+    private const val CONTROLLER_H = 270f
+    private const val INSET = 18f
+    private const val FACE = 72f
+    private const val ARM = 72f
 }
