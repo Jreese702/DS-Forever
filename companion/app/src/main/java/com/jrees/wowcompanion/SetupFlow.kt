@@ -291,7 +291,7 @@ object SetupFlow {
     fun checks(i: Inputs): List<Check> = buildList {
         if (i.installedExternal) add(Check("DS Forever: on the SD card - move it to internal storage", Mark.BAD))
         add(when {
-            !i.folderFound -> Check("Game folder: not found (${i.path})", Mark.BAD)
+            !i.folderFound -> Check("Game folder", Mark.WAIT)            // not an error: the setup asks, or is installing it (the user 2026-11-01)
             i.wrongGame -> Check("Game folder: ${i.product.ifEmpty { "another game" }}, not WoW Forever", Mark.BAD)
             !i.storage -> Check("Game folder: ${i.path} (needs file access)", Mark.BAD)
             else -> Check("Game folder: ${i.path}", Mark.OK)
