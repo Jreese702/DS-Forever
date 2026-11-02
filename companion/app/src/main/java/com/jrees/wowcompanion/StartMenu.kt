@@ -26,18 +26,16 @@ object StartMenu {
     private var forgetArmedAt = -FORGET_ARM_MS
 
     /**
-     * the panel over [w] x [h]; [menuButton] = where the Menu button is, the X now; [hits] gets what a touch can press, [pressed] the id held
-     * down. [game] = the waiting screen, with what acts on a running game or mode (Stream settings or Restart, Switch mode, Exit game)
+     * the panel centred in [area]; [menuButton] = where the Menu button is, the X now; [hits] gets what a touch or the cursor can press,
+     * [pressed] the id held down. [game] = the waiting screen, with what acts on a running game or mode (Stream settings or Restart, Switch mode, Exit game)
      */
-    fun draw(c: Canvas, w: Int, h: Int, pressed: Int, hits: ArrayList<Pair<RectF, Int>>, menuButton: RectF, game: Boolean) {
+    fun draw(c: Canvas, area: RectF, pressed: Int, hits: ArrayList<Pair<RectF, Int>>, menuButton: RectF, game: Boolean) {
         hits.clear()
         val bh = StartView.BUTTON_H; val gap = StartView.GAP
         val rows = if (game) 4 else 2
         val height = PAD * 2 + bh * rows + CONTROLLER_H + gap * rows
-        val left = (w - WIDTH) / 2f
-        // centred, clear of the X at the foot
-        val top = minOf((h - height) / 2f, menuButton.top - gap - height).coerceAtLeast(gap)
-        val panel = RectF(left, top, left + WIDTH, top + height)
+        val top = (area.centerY() - height / 2f).coerceAtLeast(area.top)
+        val panel = RectF(area.left, top, area.right, top + height)
         UiKit.module(c, panel)
         val inL = panel.left + PAD; val inR = panel.right - PAD
         val mid = (inL + inR) / 2f
@@ -90,6 +88,16 @@ object StartMenu {
         UiKit.pad(c, if (nintendo) "rev_y" else "rev_x", cx - ARM, cy, FACE)
     }
 
+    /** the cursor's next place from ([x], [y]) on a D-pad press ([dx], [dy] = its direction, one of them 0): the nearest in that direction,
+     *  off to the side counting double; null = nothing there */
+    fun nearest(places: List<Triple<Int, Float, Float>>, x: Float, y: Float, dx: Int, dy: Int): Int? = places
+        .filter { (_, px, py) -> (px - x) * dx + (py - y) * dy > 1f }
+        .minByOrNull { (_, px, py) ->
+            val along = kotlin.math.abs((px - x) * dx + (py - y) * dy)
+            val side = kotlin.math.abs((px - x) * dy) + kotlin.math.abs((py - y) * dx)
+            along + side * 2f
+        }?.first
+
     private fun <T> next(all: Array<T>, now: T): T = all[(all.indexOf(now) + 1) % all.size]
 
     fun press(id: Int) {
@@ -123,7 +131,7 @@ object StartMenu {
     private const val ABXY = 13
     private const val GLYPHS = 14
     private const val FORGET_ARM_MS = 4000L
-    private const val WIDTH = 1000f
+    const val WIDTH = 1000f
     private const val PAD = 32f
     private const val CHECK = 76f
     private const val CONTROLLER_H = 270f

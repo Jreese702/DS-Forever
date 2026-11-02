@@ -70,6 +70,15 @@ class DirectInstallTest {
         assertEquals(StartMode.Press.OpenShortcuts, StartMode.press(StartMode.Cell(StartMode.Mode.STREAM, StartMode.Row.FOOT)))
     }
 
+    @Test fun theMenuCursorGoesToTheNearestInItsDirection() {
+        val places = listOf(Triple(1, 100f, 100f), Triple(2, 500f, 100f), Triple(3, 100f, 300f), Triple(4, 500f, 300f))
+        assertEquals(2, StartMenu.nearest(places, 100f, 100f, 1, 0))
+        assertEquals(3, StartMenu.nearest(places, 100f, 100f, 0, 1))
+        assertEquals(4, StartMenu.nearest(places, 500f, 100f, 0, 1))
+        assertNull(StartMenu.nearest(places, 100f, 100f, -1, 0))
+        assertNull(StartMenu.nearest(places, 100f, 100f, 0, -1))
+    }
+
     @Test fun aFreshBuildInfoIsTheLaunchClient() {
         val text = WowSwitch.freshBuildInfo(WowSwitch.Remote(version = "1.60.1.70707", buildConfig = "b", cdnConfig = "c",
             cdnHosts = listOf("h1", "h2"), cdnPath = "tpr/wow", cdnServers = "s", keyRing = "k"), "us")

@@ -39,6 +39,7 @@ class ChooserPanel(context: Context) : View(context) {
     private object Back
     private val menuHits = ArrayList<Pair<RectF, Int>>()
     private var menuPressed = -1
+    private var menuCursor = -1
 
     private val refresh: () -> Unit = { post { update() } }
 
@@ -104,10 +105,25 @@ class ChooserPanel(context: Context) : View(context) {
             Page.STREAM -> drawStream(c)
             Page.NONE -> Unit
         }
-        if (StartMenu.open && page == Page.CHOOSER) {
-            val top = footTop()
-            StartMenu.draw(c, width, height, menuPressed, menuHits, RectF(MARGIN, top, MARGIN + SIDE_W, top + BUTTON_H), game = false)
-        }
+    }
+
+    /** the Menu in the cards' place (the user 2026-11-01), the status line at the foot, the cursor its own */
+    private fun drawMenu(c: Canvas) {
+        val title = UiKit.titlePaint(56f).apply { textAlign = Paint.Align.CENTER }
+        c.drawText("Menu", width / 2f, MARGIN + 62f, title)
+        val footY = footTop()
+        val x = RectF(MARGIN, footY, MARGIN + SIDE_W, footY + BUTTON_H)
+        footPanel(c, x.right + GAP, width - MARGIN, SetupFlow.status(null, SetupBridge.checksPass(), LoadingScene.now()))
+        StartMenu.draw(c, RectF(MARGIN, MARGIN + 110f, width - MARGIN, footY - GAP * 2), menuPressed, menuHits, x, game = false)
+        if (menuHits.none { it.second == menuCursor }) menuCursor = menuHits.getOrNull(1)?.second ?: -1
+        menuHits.firstOrNull { it.second == menuCursor }?.let { box(c, it.first) }
+    }
+
+    /** the D-pad on the Menu */
+    private fun menuMove(dx: Int, dy: Int) {
+        val at = menuHits.firstOrNull { it.second == menuCursor }?.first ?: return
+        val places = menuHits.filter { it.second != menuCursor }.map { Triple(it.second, it.first.centerX(), it.first.centerY()) }
+        StartMenu.nearest(places, at.centerX(), at.centerY(), dx, dy)?.let { menuCursor = it }
     }
 
     /** the foot's row: the status line in its panel, framed by the two side buttons, as on the waiting screen (StartView) */
@@ -129,6 +145,7 @@ class ChooserPanel(context: Context) : View(context) {
     }
 
     private fun drawChooser(c: Canvas) {
+        if (StartMenu.open) { drawMenu(c); return }
         val cx = width / 2f
         val title = UiKit.titlePaint(56f).apply { textAlign = Paint.Align.CENTER }
         c.drawText("How do you want to play?", cx, MARGIN + 62f, title)
@@ -316,8 +333,16 @@ class ChooserPanel(context: Context) : View(context) {
         if (visibility != VISIBLE) return false
         if (code !in KEYS) return false
         if (!down) return true
-        if (StartMenu.open && page == Page.CHOOSER) {                 // touch only, as on the waiting screen; B shuts it
-            if (code == KeyEvent.KEYCODE_BUTTON_B) { StartMenu.open = false; invalidate() }
+        if (StartMenu.open && page == Page.CHOOSER) {
+            when (code) {
+                KeyEvent.KEYCODE_BUTTON_B -> StartMenu.open = false
+                KeyEvent.KEYCODE_BUTTON_A -> StartMenu.press(menuCursor)
+                KeyEvent.KEYCODE_DPAD_LEFT -> menuMove(-1, 0)
+                KeyEvent.KEYCODE_DPAD_RIGHT -> menuMove(1, 0)
+                KeyEvent.KEYCODE_DPAD_UP -> menuMove(0, -1)
+                KeyEvent.KEYCODE_DPAD_DOWN -> menuMove(0, 1)
+            }
+            invalidate()
             return true
         }
         when (page) {
@@ -353,8 +378,7 @@ class ChooserPanel(context: Context) : View(context) {
                 MotionEvent.ACTION_DOWN -> menuPressed = at
                 MotionEvent.ACTION_UP -> {
                     val was = menuPressed; menuPressed = -1
-                    if (was < 0 && at < 0) StartMenu.open = false
-                    else if (was >= 0 && was == at) StartMenu.press(at)
+                    if (was >= 0 && was == at) { menuCursor = at; StartMenu.press(at) }
                 }
                 MotionEvent.ACTION_CANCEL -> menuPressed = -1
             }
