@@ -135,6 +135,8 @@ fun WoWForeverScreen(
     var versionStatus by remember { mutableStateOf<WowClientDownloader.VersionCheckResult?>(null) }
     var isCheckingVersion by remember { mutableStateOf(false) }
     var isUpdating by remember { mutableStateOf(false) }
+    var installStartedAt by remember { mutableStateOf(0L) }
+    var artStartedAt by remember { mutableStateOf(0L) }
     /** Update was pressed while an art step or a launch ran: it starts by itself when they end (SetupFlow.updateGate) */
     var updateQueued by remember { mutableStateOf(false) }
     var updateStatusText by remember { mutableStateOf("") }
@@ -567,6 +569,7 @@ fun WoWForeverScreen(
         val refused = com.jrees.wowcompanion.SetupFlow.installRefusal(Environment.getExternalStorageDirectory().usableSpace, metered)
         if (refused != null) { setupLog("install: refused: $refused"); errorMessage = refused; return }
         isUpdating = true
+        installStartedAt = System.currentTimeMillis()
         updateStatusText = "Connecting to Blizzard CDN..."
         errorMessage = null
         setupLog("install: starting in ${root.path}")
@@ -580,6 +583,8 @@ fun WoWForeverScreen(
                 GamePath.save(context, gamePath)
                 directChosen = true
                 GamePath.saveDirectChosen(context)
+                com.jrees.wowcompanion.ArtHarvest.refreshRoot(context)
+                installStartedAt = 0L
                 versionStatus = null
                 if (checkFiles()) checkVersionStatus()
                 isUpdating = false
@@ -587,6 +592,7 @@ fun WoWForeverScreen(
                 setupLog("install: done")
             } catch (e: Exception) {
                 Timber.e(e, "Error installing game")
+                installStartedAt = 0L
                 setupLog("install: failed: ${e.message}")
                 if (e.isPermissionDenied()) denyStorageAccess()
                 errorMessage = "Install failed: ${e.message}"
@@ -716,6 +722,18 @@ fun WoWForeverScreen(
             else -> com.jrees.wowcompanion.SetupFlow.Art.IDLE
         },
         artPercent = (artProgress * 100).toInt(),
+        eta = run {
+            val now = System.currentTimeMillis()
+            val running = harvestState as? com.jrees.wowcompanion.ArtHarvest.State.Running
+            val artFirst = running?.beforePlay == true && File(gamePath, com.jrees.wowcompanion.DataStaleness.STREAMED).exists()
+            if (artFirst && artStartedAt == 0L) artStartedAt = now
+            if (!artFirst) artStartedAt = 0L
+            when {
+                installStartedAt != 0L -> com.jrees.wowcompanion.SetupFlow.eta(com.jrees.wowcompanion.SetupFlow.Step.INSTALL, (now - installStartedAt) / 1000.0)
+                artFirst -> com.jrees.wowcompanion.SetupFlow.eta(com.jrees.wowcompanion.SetupFlow.Step.ART, (now - artStartedAt) / 1000.0, running?.fraction)
+                else -> null
+            }
+        },
         artWhat = (harvestState as? com.jrees.wowcompanion.ArtHarvest.State.Running)?.what.orEmpty(),
         artWhy = artFailed.orEmpty(),
         addonsInstalled = addonsInstalled,
@@ -883,7 +901,7 @@ object GamePath {
     fun installDir(): File = if (com.jrees.wowcompanion.DirectTest.ON)
         File(Environment.getExternalStorageDirectory(), com.jrees.wowcompanion.DirectTest.FOLDER) else defaultPath
 
-    private const val KEY_DIRECT_CHOSEN = "direct_test_chosen3"
+    private const val KEY_DIRECT_CHOSEN = "direct_test_chosen4"
     fun directChosen(context: Context) = !com.jrees.wowcompanion.DirectTest.ON ||
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_DIRECT_CHOSEN, false)
     fun saveDirectChosen(context: Context) {

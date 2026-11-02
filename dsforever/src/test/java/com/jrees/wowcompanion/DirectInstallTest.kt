@@ -79,6 +79,12 @@ class DirectInstallTest {
         assertNull(StartMenu.nearest(places, 100f, 100f, 0, -1))
     }
 
+    @Test fun theTimeLeftIsPerStepAndInTotal() {
+        assertEquals("This step: about 9 min   Total: about 32 min", SetupFlow.eta(SetupFlow.Step.INSTALL, 0.0))
+        assertEquals("This step: about 10 min   Total: about 10 min", SetupFlow.eta(SetupFlow.Step.ART, 600.0, 0.5f))
+        assertEquals("This step: under a minute   Total: under a minute", SetupFlow.eta(SetupFlow.Step.ART, 600.0, 0.99f))
+    }
+
     @Test fun aFreshBuildInfoIsTheLaunchClient() {
         val text = WowSwitch.freshBuildInfo(WowSwitch.Remote(version = "1.60.1.70707", buildConfig = "b", cdnConfig = "c",
             cdnHosts = listOf("h1", "h2"), cdnPath = "tpr/wow", cdnServers = "s", keyRing = "k"), "us")

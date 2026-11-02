@@ -31,6 +31,8 @@ object SetupFlow {
         val loginSkipped: Boolean = false,
         val art: Art = Art.IDLE,
         val artPercent: Int = 0,
+        /** a direct install's time left ([eta]), in place of the status line; null = none */
+        val eta: String? = null,
         val artWhat: String = "",
         val artWhy: String = "",
         /** our bundled add-ons are in the game's AddOns folder */
@@ -196,6 +198,19 @@ object SetupFlow {
     fun canPlay(i: Inputs): Boolean =
         i.folderFound && !i.wrongGame && i.storage && i.art == Art.READY && i.busy == null && !i.gameRunning && i.appUpdate == null
 
+    /** A DIRECT INSTALL'S STEPS, their times as measured on the Thor on home Wi-Fi (2026-11-01, 1.60.1.70707) */
+    enum class Step(val typicalS: Int) { INSTALL(525), PREPARE(80), ART(1280) }
+
+    private fun aboutWords(s: Double) = if (s < 60) "under a minute" else "about ${kotlin.math.ceil(s / 60).toInt()} min"
+
+    /** what is left of [step] and of the whole setup: from its own progress once [fraction] says enough, else its usual time */
+    fun eta(step: Step, elapsedS: Double, fraction: Float? = null): String {
+        val left = if (fraction != null && fraction >= 0.05f) elapsedS * (1f - fraction) / fraction
+            else (step.typicalS - elapsedS).coerceAtLeast(30.0)
+        val total = left + Step.values().filter { it.ordinal > step.ordinal }.sumOf { it.typicalS }
+        return "This step: ${aboutWords(left)}   Total: ${aboutWords(total)}"
+    }
+
     /** a direct install grows to about 50 GB */
     const val INSTALL_FREE_BYTES = 60_000_000_000L
 
@@ -215,7 +230,7 @@ object SetupFlow {
             // first: nothing else works from the SD card (p-sd-card-install); Play stays, a device may still cope
             i.installedExternal -> Prompt("install", InstallCheck.TITLE, InstallCheck.TEXT,
                 listOf(Button("Open app settings", Action.OPEN_APP_SETTINGS)))
-            !i.folderFound && i.busy != null -> Prompt("folder", "Installing WoW Forever", i.busy, emptyList())
+            !i.folderFound && i.busy != null -> Prompt("folder", "Installing WoW Forever", i.eta ?: i.busy, emptyList())
             !i.folderFound || i.wrongGame -> Prompt("folder", "Where is WoW Forever?",
                 if (i.wrongGame) "The folder ${i.path} holds ${i.product.ifEmpty { "another game" }}, not WoW Forever. Choose the WoW Forever folder: the one with .build.info and Data."
                 else "Install it (250 MB now, up to 50 GB as you play), or choose the folder with .build.info and Data.",
@@ -250,7 +265,7 @@ object SetupFlow {
             Art.IDLE -> if (i.folderFound) "Checking the game art" else ""
             else -> ""
         }
-        return Screen(prompt, play, line, Button("Report a problem", Action.REPORT))
+        return Screen(prompt, play, i.eta ?: line, Button("Report a problem", Action.REPORT))
     }
 
     /**
