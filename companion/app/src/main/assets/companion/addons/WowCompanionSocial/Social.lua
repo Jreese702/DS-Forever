@@ -88,7 +88,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local SOV = "so12"   -- bump on every change; the app shows it, so a stale build is visible
+local SOV = "so13"   -- so13: a Battle.net friend is invited by their game account (C_BattleNet.InviteFriend); bump on every change; the app shows it, so a stale build is visible
 
 local MAX_GROUP = 40        -- a raid
 local MAX_FRIENDS = 100     -- the game's cap on character friends
@@ -436,6 +436,7 @@ local function bnRow(a)
         r.on = TB(function() return g.isOnline end) or false
         r.char = TS(function() return g.characterName end)
         r.realm = TS(function() return g.realmName end)
+        r.gid = TN(function() return g.gameAccountID end)
         r.lvl = TN(function() return g.characterLevel end)
         if r.lvl == 0 then r.lvl = nil end
         r.cls = TS(function() return g.classFilename end) or classFile(TS(function() return g.className end))
@@ -449,7 +450,8 @@ local function bnRow(a)
     -- a Battle.net friend can be invited or ignored only through the character they are playing
     if r.tag then
         local who = r.char and ((r.realm and (r.char .. "-" .. r.realm)) or r.char) or nil
-        r._c = { n = who, tag = r.tag, bn = true }
+        r._c = { n = who, tag = r.tag, bn = true, gid = r.gid }
+        r.gid = nil                                            -- the action's own, never sent
     end
     return r
 end
@@ -697,7 +699,15 @@ end
 
 -- player actions: fn(ctx) -> ok, why. `ok` = the call went through; the game answers on its own.
 local ACT = {}
-ACT.invite = function(c) CALL(function() C_PartyInfo.InviteUnit(c.n) end) return true end
+-- so13 (the user, 2026-11-04: "Cannot find player 'Hyila Featherlight-CAMWOWUS1Realm3PvE'"): a Battle.net friend is invited the
+-- game's own way (FriendsFrame_InviteOrRequestToJoin: C_BattleNet.InviteFriend(gameAccountID)); the realm name the friend list
+-- gives on Forever is the server's internal one, which InviteUnit cannot find. A character friend by name, as the game does.
+ACT.invite = function(c)
+    if c.gid and C_BattleNet and C_BattleNet.InviteFriend then
+        CALL(function() C_BattleNet.InviteFriend(c.gid) end) return true, nil, { via = "bnet" }
+    end
+    CALL(function() C_PartyInfo.InviteUnit(c.n) end) return true
+end
 ACT.uninvite = function(c) CALL(function() C_PartyInfo.UninviteUnit(c.n) end) return true end
 ACT.leader = function(c) CALL(function() C_PartyInfo.PromoteToLeader(c.n) end) return true end
 ACT.assist = function(c) CALL(function() C_PartyInfo.PromoteToAssistant(c.n) end) return true end

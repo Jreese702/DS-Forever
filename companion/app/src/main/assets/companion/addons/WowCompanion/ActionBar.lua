@@ -1466,12 +1466,15 @@ end
 
 local blockedN = 0
 local function onBlocked(event, who, fn)
-    if SV(who) ~= ADDON then return end
+    -- every DS Forever add-on's (2026-11-04: "WowCompanionSpells has been blocked" named no function): the app logs it (WCBLOCK)
+    local w = SV(who)
+    if type(w) ~= "string" or w:sub(1, #ADDON) ~= ADDON then return end
     blockedN = blockedN + 1
     if blockedN > 20 then return end            -- a storm must not become a flush storm
     WC.emit({ type = "cap", hudBlocked = {
         ev = (event == "ADDON_ACTION_BLOCKED") and "blocked" or "forbidden",
         fn = realStr(SV(fn)),
+        who = w,
         n = blockedN,
     } })
 end

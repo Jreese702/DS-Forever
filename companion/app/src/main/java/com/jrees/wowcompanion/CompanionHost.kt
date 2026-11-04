@@ -1708,6 +1708,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             (ArtHarvest.state !is ArtHarvest.State.Failed || LauncherHooks.gameUp())) startView.visibility = View.GONE
         // where the character stands chooses the scene behind every waiting screen (UI Art's Scene)
         msg.optJSONObject("map")?.let { if (it.has("inst")) Scene.note(it.optInt("inst", -1)) }
+        // the game's "has been blocked from an action" pop-up names no function: the add-on's report does (ActionBar onBlocked)
+        msg.optJSONObject("hudBlocked")?.let { Log.w("WCBLOCK", "${it.optString("who")} ${it.optString("ev")}: ${it.optString("fn")} (#${it.optInt("n")})") }
         when (msg.optString("type")) {
             "full" -> {
                 msg.optJSONObject("map")?.let {
