@@ -427,5 +427,46 @@ check(on() is True, "turned on for this character: on", "")
 S2.execute('WHO = "Alt-Realm"')
 check(on() is False, "another character: still off (per character)", "")
 
+# ---------------------------------------------------------------- m78: Manners on Smart Y (its prompt's lines, after your own)
+
+
+def press_manners(text, conds=()):
+    L.execute('TRUE = {}')
+    for c in conds:
+        L.execute('TRUE["%s"] = true' % c)
+    attrs = L.table_from({"wc-n-top": 1, "wc-dest-top-1": "ForeverInspectButton", "wc-pos": 6, "wc-state": "idle",
+                          "wc-smarty": "manners", "wc-smarty-t": "manners"})
+    if text is not None:
+        attrs["wc-manners-text"] = text
+    mk = L.eval('mkframe')
+    btn = mk(attrs, L.table_from({"wc-hdr": mk(L.table_from({})), "wc-bar-top-1": mk(L.table_from({}))}))
+    run(btn, "LeftButton", True)
+    return btn.a["wc-kind"], btn.a["type"], btn.a["macrotext"], btn.a["unit"]
+
+
+MT = "/target Bob\n/cast Arcane Intellect\n/cleartarget"
+k = press_manners(MT)
+check(k[0] == "smarty" and k[1] == "macro" and k[2] == MT and k[3] is None, "Manners armed: Y runs its prompt's lines (no self unit)", k)
+k = press_manners(None)
+check(k[0] == "smarty" and k[1] is None, "Manners with nothing for this press: Y casts nothing", k)
+for name, conds in [("a target", ["@target,exists"]), ("in combat", ["combat"])]:
+    k = press_manners(MT, conds)
+    check(k[0] == "native", "Manners with " + name + ": Forever's Inspect, as all of Smart Y", k[0])
+
+mr = re.search(r'-- MANNERS-READ-BEGIN[^\n]*\n(.*?)-- MANNERS-READ-END', SRC, re.S).group(1)
+MR = lupa.LuaRuntime(unpack_returned_tuples=True)
+MR.execute('OV = {}\n' + mr)
+rd = MR.eval('OV.mannersRead')
+check(tuple(rd(MT)) == ("Arcane Intellect", "Bob"), "the lines read: the spell and the player", tuple(rd(MT)))
+check(tuple(rd("/cast [@player] Mark of the Wild(Rank 2)\n"))[0] == "Mark of the Wild(Rank 2)", "a conditional is dropped",
+      tuple(rd("/cast [@player] Mark of the Wild(Rank 2)\n")))
+check(tuple(rd("/use item:1234")) == ("item:1234", None), "a scroll: the item use", tuple(rd("/use item:1234")))
+check(rd("") is None and rd(None) is None and rd("/targetlasttarget") is None, "nothing armed: nil", "")
+
+# m78: the order in smartApply - Manners only when nothing of your own (food / water, a buff row) is due
+sa = SRC[SRC.index('function OV.smartApply()'):SRC.index('OV.smartF = CreateFrame("Frame")')]
+check(sa.index('OV.sbStep') < sa.index('OV.mannersArmed()') and 'if not val then' in sa[sa.index('OV.sbStep'):sa.index('OV.mannersArmed()')],
+      "Manners comes after food / water and the buff rows", "")
+
 print('ALL PASS' if fails == 0 else '%d FAILED' % fails)
 sys.exit(1 if fails else 0)

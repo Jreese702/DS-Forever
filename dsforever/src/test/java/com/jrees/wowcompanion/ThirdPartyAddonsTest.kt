@@ -78,7 +78,7 @@ class ThirdPartyAddonsTest {
 
     @After fun down() {
         server.close(); tmp.deleteRecursively(); DependencyAddons.api = "https://api.github.com"
-        ThirdPartyAddons.ALL = listOf(ThirdPartyAddons.SPOKEN, ThirdPartyAddons.POLESTAR, ThirdPartyAddons.QUESTTRAIL)
+        ThirdPartyAddons.ALL = listOf(ThirdPartyAddons.SPOKEN, ThirdPartyAddons.POLESTAR, ThirdPartyAddons.QUESTTRAIL, ThirdPartyAddons.MANNERS)
     }
 
     private val game get() = File(tmp, "_classic_beta_")
@@ -215,11 +215,13 @@ class ThirdPartyAddonsTest {
     }
 
     @Test fun spokenAndPolestarArePinned() {
-        for (a in listOf(ThirdPartyAddons.SPOKEN, ThirdPartyAddons.POLESTAR, ThirdPartyAddons.QUESTTRAIL)) for ((_, p) in a.pkgs()) {
+        for (a in listOf(ThirdPartyAddons.SPOKEN, ThirdPartyAddons.POLESTAR, ThirdPartyAddons.QUESTTRAIL, ThirdPartyAddons.MANNERS)) for ((_, p) in a.pkgs()) {
             assertTrue(p.asset, p.sha256.matches(Regex("[0-9a-f]{64}")) && p.bytes > 0 && p.folders.isNotEmpty())
         }
         assertEquals(1540, ThirdPartyAddons.SPOKEN.modules.first { it.id == "quests" }.pkg.mb)
         assertEquals("3.2.1", ThirdPartyAddons.QUESTTRAIL.core.tag)
         assertEquals(7_656_314L, ThirdPartyAddons.QUESTTRAIL.core.bytes)
+        assertEquals(listOf("Manners"), ThirdPartyAddons.MANNERS.core.folders)
+        assertEquals(3_654_185L, ThirdPartyAddons.MANNERS.core.bytes)
     }
 }

@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m77"                -- bump on every change; m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m78"                -- bump on every change; m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -1060,6 +1060,11 @@ local PRE = [=[
                 self:SetAttribute("type", "spell"); self:SetAttribute("spell", smart); self:SetAttribute("unit", "player")
             elseif st == "or" then
                 self:SetAttribute("type", "macro"); self:SetAttribute("macrotext", "/click WowCompanionPadSmartyOr")
+            elseif st == "manners" then
+                -- m78: Manners' own lines for this press (OV.mannersPre copied them off its prompt, after its own PreClick armed them);
+                -- none = nothing to cast this press (Manners says why in its chat line)
+                local mt = self:GetAttribute("wc-manners-text")
+                self:SetAttribute("type", mt and "macro" or nil); self:SetAttribute("macrotext", mt)
             else
                 self:SetAttribute("type", "item"); self:SetAttribute("item", smart)
             end
@@ -1826,6 +1831,14 @@ faceSetup = function()
                     if okB and type(nb) == "table" then
                         b = nb; face.buttons[pos] = b; b:RegisterForClicks("AnyUp", "AnyDown")
                         local p = pos
+                        -- m78: a Smart Y press of Manners runs Manners' own PreClick first (it arms its prompt for the press) and
+                        -- its PostClick after (its ledger, its hand-back); insecure, out of combat only, on the key-down edge
+                        if p == 6 then
+                            pcall(function()
+                                b:HookScript("PreClick", function(self, _, down) if down then pcall(OV.mannersPre, self) end end)
+                                b:HookScript("PostClick", function(self, _, down) if down then pcall(OV.mannersPost, self) end end)
+                            end)
+                        end
                         -- a press that REACHES our button says so (a post-hook on our own button: runs after the secure click, changes nothing)
                         pcall(function()
                             b:HookScript("PostClick", function(_, button, down)
@@ -3674,16 +3687,26 @@ function OV.smartApply()
         val, typ = bv, bt
         OV.smarty = { id = be.id, n = be.n, i = be.i, k = bt == "or" and "or" or "buff" }
     end
+    -- m78 MANNERS (the user: "add this addon to the default smart Y stack"; picks: after your own, its prompt hidden): nothing of
+    -- your own due, and Manners' prompt has somebody to buff -> Y presses it (OV.mannersPre / Post)
+    if not val then
+        local ms, mw = OV.mannersArmed()
+        if ms then
+            val, typ = "manners", "manners"
+            OV.smarty = { id = 0, n = mw and (ms .. " on " .. mw) or ms, i = OV.mannersIcon(ms), k = "manners" }
+        end
+    end
     if not OV.smartOn() then val, typ, OV.smarty = nil, nil, nil end    -- m76: off = nothing armed, Y as before Smart Y
+    pcall(OV.mannersLook)
     local b = face.buttons[6]
     if b then pcall(b.SetAttribute, b, "wc-smarty", val); pcall(b.SetAttribute, b, "wc-smarty-t", typ) end
     OV.smartTyp = typ
     local hasTarget = T(function() return UnitExists("target") end) == true
-    local shown = (OV.smarty and not hasTarget) and (OV.smarty.k .. OV.smarty.id) or nil
+    local shown = (OV.smarty and not hasTarget) and (OV.smarty.k .. tostring(OV.smarty.id) .. (OV.smarty.k == "manners" and OV.smarty.n or "")) or nil
     OV.smartyShown = shown and OV.smarty or nil
     if val ~= OV.smartVal or shown ~= OV.smartShownId then
         if val ~= OV.smartVal then
-            pcall(function() WC.send(WC.encode({ type = "cap", padmap = PV, smarty = OV.smarty and (OV.smarty.k .. " " .. OV.smarty.id) or "off" })) end)
+            pcall(function() WC.send(WC.encode({ type = "cap", padmap = PV, smarty = OV.smarty and (OV.smarty.k .. " " .. tostring(OV.smarty.id)) or "off" })) end)
         end
         OV.smartVal, OV.smartShownId = val, shown
         pcall(emit, true); WC.push()
@@ -3703,6 +3726,98 @@ OV.smartF:SetScript("OnEvent", function(_, e, unit)
     OV.smartSoon = true
     C_Timer.After(0.3, function() OV.smartSoon = nil; pcall(OV.smartApply) end)
 end)
+-- m78 MANNERS ON SMART Y (the user: "I want to add this addon to the default smart Y stack", Manners by Sacha, MIT, an optional
+-- download in Settings > Add-ons; picks: after your own food / water and buffs, its prompt hidden while Smart Y is on). Manners decides
+-- who and what (its own scan, never-list, cooldowns, speech); its prompt is the secure button MannersPrompt, armed out of combat with a
+-- macro. Y cannot /click it (the client refuses a macro that clicks a macro button) and a "click" delegate would fire on the wrong edge
+-- (its pressAndHoldAction), so a Y press does what a press of the prompt does: Manners' PreClick (it arms), its macrotext copied onto
+-- Y for this press ("wc-manners-text"), Manners' PostClick (its ledger, its hand-back). Out of combat only, like all of Smart Y. Nothing
+-- of Manners is changed but its prompt's alpha and mouse while Smart Y is on (hidden: Y is the way in); its binding, bar macro and
+-- options stay its own. No Manners installed: nothing here runs.
+-- MANNERS-READ-BEGIN (pure: tools/test_smarty.py) the prompt's macrotext -> the spell (or item use), the player it targets; nil = nothing
+OV.mannersRead = function(text)
+    if type(text) ~= "string" or text == "" then return nil end
+    local spell = text:match("/cast%s+([^\n]+)") or text:match("/use%s+([^\n]+)")
+    if not spell then return nil end
+    spell = spell:gsub("^%[[^%]]*%]%s*", ""):gsub("%s+$", "")
+    if spell == "" then return nil end
+    local who = text:match("/target%s+([^\n]+)")
+    if who then who = who:gsub("%s+$", ""); if who == "" then who = nil end end
+    return spell, who
+end
+-- MANNERS-READ-END
+function OV.mannersLater()
+    if OV.smartSoon then return end
+    OV.smartSoon = true
+    C_Timer.After(0.3, function() OV.smartSoon = nil; pcall(OV.smartApply) end)
+end
+-- once per session: Smart Y hears the prompt arm, show and hide; Manners' own alpha is remembered (it fades the prompt itself)
+function OV.mannersHook(mp)
+    if OV.mannersHooked then return end
+    OV.mannersHooked = true
+    hooksecurefunc(mp, "SetAttribute", function(_, k) if k == "macrotext" or k == "type" then OV.mannersLater() end end)
+    mp:HookScript("OnShow", OV.mannersLater)
+    mp:HookScript("OnHide", OV.mannersLater)
+    hooksecurefunc(mp, "SetAlpha", function(self, a)
+        if OV.mannersOwnAlpha then return end
+        OV.mannersAlpha = a
+        if OV.mannersHidden and a ~= 0 then OV.mannersOwnAlpha = true; pcall(self.SetAlpha, self, 0); OV.mannersOwnAlpha = nil end
+    end)
+end
+-- the prompt hidden while Smart Y is on (Y is the way in), Manners' own look while it is off; its mouse follows, out of combat
+function OV.mannersLook()
+    local mp = _G.MannersPrompt
+    if not mp then return end
+    pcall(OV.mannersHook, mp)
+    local hide = OV.smartOn() == true
+    if hide == OV.mannersHidden and (inCombat() or OV.mannersMouse == not hide) then return end
+    OV.mannersHidden = hide
+    OV.mannersOwnAlpha = true
+    pcall(mp.SetAlpha, mp, hide and 0 or (OV.mannersAlpha or 1))
+    OV.mannersOwnAlpha = nil
+    if not inCombat() and pcall(mp.EnableMouse, mp, not hide) then OV.mannersMouse = not hide end
+end
+-- what the prompt would cast now: the spell and the player (nil = nobody to buff, no Manners)
+function OV.mannersArmed()
+    local mp = _G.MannersPrompt
+    if not mp then return nil end
+    pcall(OV.mannersHook, mp)
+    if T(function() return mp:IsShown() end) ~= true then return nil end
+    if T(function() return mp:GetAttribute("type") end) ~= "macro" then return nil end
+    return OV.mannersRead(T(function() return mp:GetAttribute("macrotext") end))
+end
+function OV.mannersIcon(spell)
+    local n = type(spell) == "string" and spell:gsub("%s*%(.-%)$", "") or nil
+    if not n then return 0 end
+    return T(function() return C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(n) end)
+        or T(function() return GetSpellTexture and GetSpellTexture(n) end) or 0
+end
+-- Y's PreClick (key-down, before the secure snippet): a Manners press gets Manners' own PreClick, then its lines for this press
+function OV.mannersPre(b)
+    OV.mannersPressed = nil
+    if inCombat() then return end
+    local mp = _G.MannersPrompt
+    if b:GetAttribute("wc-smarty-t") ~= "manners" or not mp then b:SetAttribute("wc-manners-text", nil); return end
+    -- the snippet's own gate (a target or a soft-interact target: Y is not Smart Y's), so Manners hears only its own presses
+    if T(function() return UnitExists("target") end) == true
+        or (SecureCmdOptionParse and SecureCmdOptionParse("[@softinteract,exists] 1") == "1") then
+        b:SetAttribute("wc-manners-text", nil); return
+    end
+    local pre = mp:GetScript("PreClick")
+    if pre then pcall(pre, mp, "LeftButton", true) end
+    local mt = mp:IsShown() and mp:GetAttribute("type") == "macro" and mp:GetAttribute("macrotext") or nil
+    b:SetAttribute("wc-manners-text", mt)
+    OV.mannersPressed = mt ~= nil
+end
+-- Y's PostClick: Manners' own, for the press it armed (its ledger, its hand-back); then Smart Y looks again
+function OV.mannersPost(b)
+    if not OV.mannersPressed then return end
+    OV.mannersPressed = nil
+    local mp = _G.MannersPrompt
+    local post = mp and mp:GetScript("PostClick")
+    if post and b:GetAttribute("wc-kind") == "smarty" then pcall(post, mp, "LeftButton", true) end
+    OV.mannersLater()
+end
 -- m62 SMART BUFFS (the user: "this setting will need its own section in the settings so taht I can also layer in smart buffs. I ant to
 -- basically be able to set a buff priority following water and food ... logic rows, with the bottom row being an Add button ... on a
 -- single row I need to be able to add an "or" which would basically open a radial menu for those selected buffs and as long as one is

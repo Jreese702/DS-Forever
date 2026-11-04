@@ -117,7 +117,20 @@ object ThirdPartyAddons {
         // mirrored on the bottom screen (Interact's QuestTrail mirror, browsable by its steps)
         settings = "QuestTrail settings")
 
-    var ALL: List<Addon> = listOf(SPOKEN, POLESTAR, QUESTTRAIL)
+    /**
+     * MANNERS (Sacha / fpsacha, MIT; CurseForge project 1705364; the user: "add this addon to the default smart Y stack ... one of
+     * the optional addon downloads"): buffs back whoever buffed you, and nearby players missing your buff. One folder, Manners (its
+     * .toc Manners_Camelot.toc, Interface 16001). v1.11.0 (file 9408996, 2026-11-02), CurseForge's file CDN, our pinned size and
+     * sha256. Its prompt is hidden and Smart Y presses it (PadMap m78): after your own food / water and buffs, with Manners' own
+     * pre- and post-click (its ledger and hand-back are its own). Its key binding, its bar macro and its options stay Manners'.
+     */
+    val MANNERS = Addon(
+        id = "manners", title = "Manners", what = "Y buffs back whoever buffed you, and nearby players missing your buff",
+        by = "Sacha", license = "MIT", repo = "", version = "1.11.0",
+        core = Pkg("1.11.0", "Manners-v1.11.0.zip", 3_654_185L, "20dc080b26687fd2de4a457283fd27f09c1096a6d45df2b41f8d290a1b6a03ef",
+            listOf("Manners"), url = "https://mediafilez.forgecdn.net/files/9408/996/Manners-v1.11.0.zip"))
+
+    var ALL: List<Addon> = listOf(SPOKEN, POLESTAR, QUESTTRAIL, MANNERS)
         internal set                                            // the off-device test swaps in its own
 
     /** "1.5 GB" / "447 MB" */
