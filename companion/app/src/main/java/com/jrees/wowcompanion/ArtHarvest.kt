@@ -236,6 +236,27 @@ object ArtHarvest {
     private val waiters = ArrayList<(Boolean) -> Unit>()
 
     /**
+     * THE GAME UPDATE GOES FIRST (the user, 2026-11-04, on "Update starts after the art step: 2%" under a ticked Game art: "turbo shit
+     * and confusing if I was an end user"): the art built for the old build is built again for the new one, so Update never waits for
+     * it. [stopForUpdate] ends the run at its next progress report or step (a step's own [Job.progress] throws [StoppedForUpdate]), the
+     * detached steps are asked to stop, and the state goes Idle; the launcher starts the art again once the update is in.
+     */
+    class StoppedForUpdate : InterruptedException("stopped for the game update")
+    @Volatile private var stopping = false
+    private fun checkStop() { if (stopping) throw StoppedForUpdate() }
+
+    /** true = no art run is left reading the game files (it ended within [waitMs]); false = it is still ending (it stops at its next report) */
+    fun stopForUpdate(waitMs: Long = 30_000L): Boolean {
+        for (s in STEPS) if (s.detached) runCatching { s.stopDetached() }
+        val w = synchronized(waiters) { worker }
+        if (w?.isAlive != true) { set(State.Idle); return true }
+        stopping = true
+        Log.i(TAG, "harvest: stopping for the game update (step ${currentStep ?: "-"})")
+        runCatching { w.join(waitMs) }
+        return !w.isAlive
+    }
+
+    /**
      * Runs what is pending on one worker thread: the before-Play steps first ([State.Running] with beforePlay = true until they are all
      * done, then [onBeforePlayDone] on that thread), then the background steps. A call while it runs only waits for the same result.
      */
@@ -253,6 +274,13 @@ object ArtHarvest {
                 while (true) {
                     try {
                         work(app) { r -> beforePlayDone(r) }
+                    } catch (e: StoppedForUpdate) {
+                        // the game update goes first: nothing failed, this run is only over (its waiters wait for the next run)
+                        Log.i(TAG, "harvest: stopped for the game update")
+                        synchronized(waiters) { firstResult = null; rerun = false }
+                        currentStep = null; stopping = false
+                        set(State.Idle)
+                        break
                     } catch (e: Exception) {
                         Log.w(TAG, "harvest failed", e)
                         val requiredReady = runCatching {
@@ -304,13 +332,14 @@ object ArtHarvest {
         }
         // a CDN hiccup while it fetches the build's tables passes: tried again (HarvestRetry) before the art says it failed
         // after a game update the open downloads the build's tables (about 180 MB): the launcher shows how far (b-art-progress)
-        GameFiles.onTables = { line -> set(State.Running(first.isNotEmpty(), 0f, line)) }
+        GameFiles.onTables = { line -> checkStop(); set(State.Running(first.isNotEmpty(), 0f, line)) }
         val game = try {
             HarvestRetry.run(onRetry = { n, d, why -> Log.w(TAG, "harvest: open failed ($why), try ${n + 1} in ${d / 1000} s") }) {
                 GameFiles.open(ctx) ?: throw java.io.IOException(GameFiles.lastWhy ?: "the game files could not be read")
             }.getOrNull()
         } finally { GameFiles.onTables = null }
         if (game == null) {
+            checkStop()                                            // an open the update stopped is not a failure
             val why = GameFiles.lastWhy ?: "the game files could not be read"
             Log.w(TAG, "harvest: $why")
             set(State.Failed(why, beforePlay = first.isNotEmpty()))
@@ -339,19 +368,20 @@ object ArtHarvest {
         val total = steps.sumOf { it.weight.coerceAtLeast(1) }.toFloat()
         var before = 0f
         for (s in steps) {
+            checkStop()
             val w = s.weight.coerceAtLeast(1)
             val base = before
             set(State.Running(beforePlay, base / total, s.id))
             val t0 = System.currentTimeMillis()
             currentStep = s.id; stepLog[s.id] = "running (started ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date(t0))})"
-            var job = Job(ctx, g, root(ctx), s.id) { f, what -> set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
+            var job = Job(ctx, g, root(ctx), s.id) { f, what -> checkStop(); set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
             // a failure (often a CDN hiccup on a table) is tried again before the art says so (HarvestRetry); the last reason is shown
             val result = HarvestRetry.run(onRetry = { n, d, why ->
                 Log.w(TAG, "harvest step ${s.id} failed ($why), try ${n + 1} in ${d / 1000} s")
                 stepLog[s.id] = "retry ${n + 1} after: $why"
                 set(State.Running(beforePlay, base / total, "${s.id}: trying again in ${d / 1000} s"))
             }) {
-                job = Job(ctx, g, root(ctx), s.id) { f, what -> set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
+                job = Job(ctx, g, root(ctx), s.id) { f, what -> checkStop(); set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
                 s.run(job)
             }.onFailure { Log.w(TAG, "harvest step ${s.id} failed", it) }
             if (result.isFailure) {

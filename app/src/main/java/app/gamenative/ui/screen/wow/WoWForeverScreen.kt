@@ -139,6 +139,8 @@ fun WoWForeverScreen(
     var artStartedAt by remember { mutableStateOf(0L) }
     /** Update was pressed while an art step or a launch ran: it starts by itself when they end (SetupFlow.updateGate) */
     var updateQueued by remember { mutableStateOf(false) }
+    // the art is being built again for the build an update just brought (the Game art row says so until it is ready)
+    var artRebuild by remember { mutableStateOf(false) }
     var updateStatusText by remember { mutableStateOf("") }
     // DS Forever's self-update (Track C): the startup check's answer; the release when one is newer
     var appCheck by remember { mutableStateOf<com.jrees.wowcompanion.AppUpdate.Check?>(null) }
@@ -604,11 +606,24 @@ fun WoWForeverScreen(
     fun performUpdate() {
         // never silent (the user, 2026-10-28: A on Update did nothing while a background art step ran): go, queue, or say why not
         val gate = com.jrees.wowcompanion.SetupFlow.updateGate(versionStatus != null, isUpdating, isLaunching, isHarvesting, files.hasStorageAccess)
-        val pct = (com.jrees.wowcompanion.ArtHarvest.state as? com.jrees.wowcompanion.ArtHarvest.State.Running)?.let { (it.fraction * 100).toInt() } ?: -1
-        val line = com.jrees.wowcompanion.SetupFlow.updateGateLine(gate, pct)
+        val line = com.jrees.wowcompanion.SetupFlow.updateGateLine(gate, -1)
         when (gate) {
             com.jrees.wowcompanion.SetupFlow.UpdateGate.GO -> { updateQueued = false; setupLog("update: starting") }
-            com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_ART, com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_LAUNCH -> {
+            com.jrees.wowcompanion.SetupFlow.UpdateGate.STOP_ART -> {
+                // 2026-11-04: the art is built again for the new build anyway, so the update never waits for it: stopped, then Update
+                setupLog("update: stopping the art run first")
+                isUpdating = true
+                updateStatusText = line
+                errorMessage = null
+                scope.launch {
+                    val stopped = withContext(Dispatchers.IO) { com.jrees.wowcompanion.ArtHarvest.stopForUpdate() }
+                    isUpdating = false
+                    if (stopped) { isHarvesting = false; artFailed = null; artProgress = 0f; performUpdate() }
+                    else { setupLog("update: the art run is still ending; queued"); updateQueued = true }
+                }
+                return
+            }
+            com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_LAUNCH -> {
                 if (!updateQueued) setupLog("update: waiting (${gate.name.lowercase()}): $line")
                 updateQueued = true
                 return
@@ -632,7 +647,8 @@ fun WoWForeverScreen(
                 isUpdating = false
                 // a new game build needs its art built again (it is keyed by the build): start the check now, not at the next app
                 // start (13 Oct, 70338 -> 70374: Play stayed on "Game art: checking" until the app was restarted)
-                harvestArt()
+                artRebuild = true
+                harvestArt(retry = true)
                 setupLog("update: done (${target.remoteVersion})")
                 // only in Local: in the start-up chooser's route the chooser comes once the checks pass (the user's order, 2026-10-28)
                 if (com.jrees.wowcompanion.StartMode.showsLocal(com.jrees.wowcompanion.ModeBridge.route)) launchGame()
@@ -722,6 +738,7 @@ fun WoWForeverScreen(
             else -> com.jrees.wowcompanion.SetupFlow.Art.IDLE
         },
         artPercent = (artProgress * 100).toInt(),
+        artRebuild = artRebuild && !artReady,
         progress = run {
             val now = System.currentTimeMillis()
             val running = harvestState as? com.jrees.wowcompanion.ArtHarvest.State.Running
@@ -760,8 +777,7 @@ fun WoWForeverScreen(
         busy = when {
             isUpdating -> updateStatusText
             updateQueued -> com.jrees.wowcompanion.SetupFlow.updateGateLine(
-                if (isHarvesting) com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_ART else com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_LAUNCH,
-                (harvestState as? com.jrees.wowcompanion.ArtHarvest.State.Running)?.let { (it.fraction * 100).toInt() } ?: -1)
+                if (isHarvesting) com.jrees.wowcompanion.SetupFlow.UpdateGate.STOP_ART else com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_LAUNCH, -1)
             isDownloadingAppUpdate -> "Downloading the update: ${(appUpdateProgress * 100).toInt()}%"
             isLaunching -> statusText
             else -> null

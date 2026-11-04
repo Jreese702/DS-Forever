@@ -16,14 +16,15 @@ class StartPressTest {
 
     @Test fun updateIsNeverSilent() {
         // the device that day: a background art step ran (isHarvesting) -> the press waits, it doesn't vanish
-        assertEquals(SetupFlow.UpdateGate.WAIT_ART, SetupFlow.updateGate(hasVersion = true, updating = false, launching = false, harvesting = true, storage = true))
+        assertEquals(SetupFlow.UpdateGate.STOP_ART, SetupFlow.updateGate(hasVersion = true, updating = false, launching = false, harvesting = true, storage = true))
+        // a launch under way still waits (its art is the launch's); only then is an art run stopped
+        assertEquals(SetupFlow.UpdateGate.WAIT_LAUNCH, SetupFlow.updateGate(hasVersion = true, updating = false, launching = true, harvesting = true, storage = true))
         assertEquals(SetupFlow.UpdateGate.GO, SetupFlow.updateGate(true, false, false, false, true))
         assertEquals(SetupFlow.UpdateGate.WAIT_LAUNCH, SetupFlow.updateGate(true, false, true, false, true))
         assertEquals(SetupFlow.UpdateGate.BUSY, SetupFlow.updateGate(true, true, true, true, true))
         assertEquals(SetupFlow.UpdateGate.NO_STORAGE, SetupFlow.updateGate(true, false, false, true, false))
         assertEquals(SetupFlow.UpdateGate.NO_VERSION, SetupFlow.updateGate(false, false, false, false, true))
-        assertEquals("Update starts after the art step: 63%", SetupFlow.updateGateLine(SetupFlow.UpdateGate.WAIT_ART, 63))
-        assertEquals("Update starts after the art step", SetupFlow.updateGateLine(SetupFlow.UpdateGate.WAIT_ART, -1))
+        assertEquals("Getting ready to update", SetupFlow.updateGateLine(SetupFlow.UpdateGate.STOP_ART, 63))
         // every gate has words (a refusal is said, never silent)
         for (g in G.enumConstants) assertTrue(g.name, SetupFlow.updateGateLine(g, 10).isNotEmpty())
     }

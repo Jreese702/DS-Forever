@@ -31,6 +31,8 @@ object SetupFlow {
         val loginSkipped: Boolean = false,
         val art: Art = Art.IDLE,
         val artPercent: Int = 0,
+        /** the art is being built again for a new game version (after an update): its row says so */
+        val artRebuild: Boolean = false,
         /** a direct install's step under way: the bottom screen's one card ([Progress]); null = none */
         val progress: Progress? = null,
         /** the install's own bar on the Game folder row, 0..1; null = none */
@@ -131,21 +133,22 @@ object SetupFlow {
      * the press reached the launcher, which returned without a word while a background art step ran). Never silent: [GO] starts it,
      * the WAIT_ ones queue it (it starts by itself when the step ends; the status line says so), the rest are refusals said plainly.
      */
-    enum class UpdateGate { GO, WAIT_ART, WAIT_LAUNCH, BUSY, NO_STORAGE, NO_VERSION }
+    /** STOP_ART (2026-11-04, was WAIT_ART): an art run is stopped and the update goes at once (the art is built again after it) */
+    enum class UpdateGate { GO, STOP_ART, WAIT_LAUNCH, BUSY, NO_STORAGE, NO_VERSION }
 
     fun updateGate(hasVersion: Boolean, updating: Boolean, launching: Boolean, harvesting: Boolean, storage: Boolean): UpdateGate = when {
         updating -> UpdateGate.BUSY
         !hasVersion -> UpdateGate.NO_VERSION
         !storage -> UpdateGate.NO_STORAGE
-        harvesting -> UpdateGate.WAIT_ART
         launching -> UpdateGate.WAIT_LAUNCH
+        harvesting -> UpdateGate.STOP_ART
         else -> UpdateGate.GO
     }
 
     /** the status line / log words for a gate ([artPercent] = the running art step's %, < 0 = unknown) */
     fun updateGateLine(g: UpdateGate, artPercent: Int): String = when (g) {
         UpdateGate.GO -> "Updating the game"
-        UpdateGate.WAIT_ART -> "Update starts after the art step" + if (artPercent >= 0) ": $artPercent%" else ""
+        UpdateGate.STOP_ART -> "Getting ready to update"
         UpdateGate.WAIT_LAUNCH -> "Update starts when the launch is done"
         UpdateGate.BUSY -> "Already updating"
         UpdateGate.NO_STORAGE -> "Update needs access to the game folder"
@@ -343,7 +346,8 @@ object SetupFlow {
         add(if (i.loginSaved) Check("Battle.net login: saved", Mark.OK) else Check("Battle.net login: not saved", Mark.WAIT))
         add(when (i.art) {
             Art.IDLE -> Check(if (i.folderFound) "Game art: checking" else "Game art: waits for the game folder", Mark.WAIT)
-            Art.RUNNING -> Check(if (i.artWhat.startsWith(TablesProgress.PREFIX)) "Game art: ${i.artWhat}"
+            Art.RUNNING -> Check(if (i.artRebuild) "Game art: updating for the new game version: ${i.artPercent}%"
+                else if (i.artWhat.startsWith(TablesProgress.PREFIX)) "Game art: ${i.artWhat}"
                 else "Game art: ${i.artPercent}%${if (i.artWhat.isBlank()) "" else " (${i.artWhat})"}", Mark.WAIT)
             Art.READY -> Check("Game art: ready", Mark.OK)
             Art.FAILED -> Check("Game art: failed - ${i.artWhy.ifEmpty { "unknown reason" }}", Mark.BAD)
