@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat30"     -- chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
+local CHATV = "chat31"     -- chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -870,7 +870,9 @@ end
 -- the Bags room and broke that room (the user: "the Bag room now opens the bags again and bugs out"), the pattern of a tainted
 -- controller UI, the risk this file's rule above was written for. Until the device's `blocked` reports say otherwise, the box is
 -- never written again; the `boxes` report still says which box stands on its own. true = hide it (chat23's behaviour).
-local BOX_HIDE = false
+-- chat31 (the user's pick 2026-11-05, "Try it again": the probe named ChatFrame1EditBox as the bottom-left bar; the chat style does not
+-- move it on Forever): ON again; if the Bags room breaks as in 1.0.8, it goes back to false
+local BOX_HIDE = true
 local boxes = { saved = {} }
 function boxes.each(fn)
     for _, n in ipairs(chatNames()) do
