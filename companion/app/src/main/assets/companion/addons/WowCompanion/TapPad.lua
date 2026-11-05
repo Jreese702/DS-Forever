@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad15"     -- pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad16"     -- pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -804,5 +804,83 @@ do
                 WC.push()
             end
         end)
+    end)
+end
+
+-- ---------------------------------------------------------------- pad16 THE HEALTH PROBE (the user, 2026-11-05: "let's keep on trying to find
+-- a way to make this work": since the game's update to 70790 every UNIT_COMBAT amount is hidden (80 of 80), and the unit, its percent and
+-- the player frame's bar were already). Read only. On a change of the player's health (UNIT_HEALTH), at most every 2 s and 40 times a
+-- session, every reader we know of is asked and the answer's KIND is reported (cap probe "hpprobe", the app logs it as WCHP):
+-- "p:<value>" plain, "S" secret, "-" nil / absent, "E" an error. Nothing is changed and no value is compared before it is known plain.
+do
+    local function kind(ok, v)
+        if not ok then return "E" end
+        if v == nil then return "-" end
+        if type(issecretvalue) == "function" then local okS, sec = pcall(issecretvalue, v); if not okS or sec then return "S" end end
+        if type(WC.isPlain) == "function" and not WC.isPlain(v) then return "S" end
+        if type(v) == "number" then return string.format("p:%.3f", v) end
+        if type(v) == "string" then return "p:" .. v:sub(1, 24) end
+        return "p:" .. tostring(v)
+    end
+    local function ask(fn) local ok, v = pcall(fn); return kind(ok, v) end
+    local function path(...)
+        local t = _G
+        for _, k in ipairs({ ... }) do if type(t) ~= "table" then return nil end; t = t[k] end
+        return t
+    end
+    local function bars()
+        return {
+            pf = path("PlayerFrame", "PlayerFrameContent", "PlayerFrameContentMain", "HealthBarsContainer", "HealthBar")
+                 or path("PlayerFrame", "healthbar") or _G.PlayerFrameHealthBar,
+            prd = path("PersonalResourceDisplayFrame", "HealthBarsContainer", "healthBar") or path("PersonalResourceDisplayFrame", "healthbar"),
+            cpf = _G.CompactPartyFrameMember1 and _G.CompactPartyFrameMember1.healthBar or nil,
+        }
+    end
+    local function readBar(out, tag, b)
+        if type(b) ~= "table" then out[tag] = "absent"; return end
+        out[tag .. ".val"] = ask(function() return b:GetValue() end)
+        out[tag .. ".max"] = ask(function() return select(2, b:GetMinMaxValues()) end)
+        out[tag .. ".w"] = ask(function() return b:GetWidth() end)
+        out[tag .. ".texW"] = ask(function() return b:GetStatusBarTexture():GetWidth() end)
+        out[tag .. ".texR"] = ask(function() return b:GetStatusBarTexture():GetRight() end)
+        out[tag .. ".barR"] = ask(function() return b:GetRight() end)
+        out[tag .. ".texRight"] = ask(function() local _, _, _, _, ulx = b:GetStatusBarTexture():GetTexCoord(); return ulx end)
+        out[tag .. ".texCoordR"] = ask(function() local a, b2, c, d, e, f, g, h = b:GetStatusBarTexture():GetTexCoord(); return g end)
+        out[tag .. ".fill"] = ask(function() return b.GetFillAmount and b:GetFillAmount() end)
+        out[tag .. ".text"] = ask(function() local t = b.TextString or b.RightText or b.LeftText; return t and t:GetText() end)
+    end
+    local sent, last = 0, 0
+    local function probe(why, a)
+        local now = GetTime()
+        if sent >= 40 or now - last < 2 then return end
+        last = now; sent = sent + 1
+        local out = { why = why }
+        out.uh = ask(function() return UnitHealth("player") end)
+        out.uhm = ask(function() return UnitHealthMax("player") end)
+        out.uhp = ask(function() return UnitHealthPercent("player") end)
+        out.uhp2 = ask(function() return UnitHealthPercent("player", true) end)
+        out.uhp3 = ask(function() return UnitHealthPercent("player", false, CurveConstants and CurveConstants.ScaleTo100) end)
+        out.uhmiss = ask(function() return UnitHealthMissing and UnitHealthMissing("player") end)
+        out.absorb = ask(function() return UnitGetTotalAbsorbs("player") end)
+        out.guidpct = ask(function() return UnitPercentHealthFromGUID and UnitPercentHealthFromGUID(UnitGUID("player")) end)
+        out.np = ask(function() local p = C_NamePlate.GetNamePlateForUnit("player"); return p and p.UnitFrame and p.UnitFrame.healthBar:GetValue() end)
+        if a then for i = 1, 6 do out["a" .. i] = kind(true, a[i]) end end
+        local b = bars()
+        readBar(out, "pf", b.pf); readBar(out, "prd", b.prd); readBar(out, "cpf", b.cpf)
+        pcall(function() WC.send(WC.encode({ type = "cap", probe = "hpprobe", v = PADV, n = sent, r = out })); WC.push() end)
+    end
+    local hp = CreateFrame("Frame")
+    pcall(function() hp:RegisterUnitEvent("UNIT_HEALTH", "player") end)
+    pcall(function() hp:RegisterUnitEvent("UNIT_COMBAT", "player") end)
+    pcall(function() hp:RegisterEvent("COMBAT_TEXT_UPDATE") end)
+    hp:SetScript("OnEvent", function(_, e, ...)
+        local a = { ... }
+        if e == "COMBAT_TEXT_UPDATE" then
+            pcall(function()
+                local info = { GetCurrentCombatTextEventInfo and GetCurrentCombatTextEventInfo() }
+                probe("ctext:" .. kind(true, a[1]), info)
+            end)
+        elseif e == "UNIT_COMBAT" then pcall(probe, "combat", a)
+        else pcall(probe, "health", nil) end
     end)
 end
