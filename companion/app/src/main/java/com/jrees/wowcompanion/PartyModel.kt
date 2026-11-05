@@ -316,7 +316,9 @@ object PartyModel {
             if (!live) return false
             val wanted = when (why) {
                 Ask.FIRST_DOC -> !firstAskDone && !currentParty
-                Ask.HOME_SHOWN -> true
+                // 2026-11-04 (the cursor: every ask is a click on the top screen): Home's return asks only while no CURRENT party
+                // document came this session (the add-on sends every change itself, and its heartbeat re-sends)
+                Ask.HOME_SHOWN -> !currentParty
                 Ask.PARTY_ON -> !currentCfg
             }
             if (!wanted || now - askedAt < RESEND_MS) return false

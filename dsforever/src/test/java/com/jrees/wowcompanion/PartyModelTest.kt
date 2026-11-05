@@ -182,5 +182,7 @@ class PartyModelTest {
         // a current party first: no FIRST_DOC ask
         val t = PartyModel.State(); t.onParty(party(), current = true, now = 0L)
         assertFalse(t.shouldAsk(PartyModel.Ask.FIRST_DOC, live = true, now = 0L))
+        // 2026-11-04: with a current party document, Home's return asks nothing (each ask is a click)
+        assertFalse(t.shouldAsk(PartyModel.Ask.HOME_SHOWN, live = true, now = 60_000L))
     }
 }

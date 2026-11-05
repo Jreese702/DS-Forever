@@ -513,8 +513,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         chatView.onLeave = { guestTap(GuestPad.leaveB(questsPad)); strip.homePressed(); show(Room.HOME) }
         // only while a chat guest shows (the Chat room, or Home's chat module): the ChatView's scene also changes when it is given
         // back, and a bnext then reached the addon after the free ("no guest holds", batch 12's touch test)
+        // 2026-11-04 (the cursor: each is a click): sent only when the answer CHANGES (the scene changes far more often than B's place)
         chatView.onBackChanged = { home ->
-            if (room == Room.CHAT || (room == Room.HOME && homeView.chatModuleOn)) guestTap(GuestPad.bnext(questsPad, home))
+            if ((room == Room.CHAT || (room == Room.HOME && homeView.chatModuleOn)) && home != chatBSaid && guestTap(GuestPad.bnext(questsPad, home)))
+                chatBSaid = home
         }
         mapView.onLeave = { show(Room.HOME) }
         mapView.offMapSpots = { qid -> worldMapRoom.questWorldSpots(qid) }      // Map: the arrow to a quest in another zone
@@ -1422,12 +1424,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (attempt == 0) chatAsk.shown()
         if (!chatAsk.due()) return
         val sent = guestTap(GuestPad.cells(questsPad, "chat", hold = true))
+        chatBSaid = null                                             // a new hold: B's place said again once
         Log.i("WCHOME", "chat room: hold${if (attempt > 0) " again ($attempt)" else ""} ${if (sent) "sent" else "NOT sent (no pad, or the game is not live)"}")
         val mine = ++chatHoldTry
         if (chatAsk.asked(sent)) ui.postDelayed({ if (mine == chatHoldTry && room == Room.CHAT) chatHold(attempt + 1) }, HoldAsk.EVERY_MS)
     }
     private val chatAsk = HoldAsk()
     private var chatHoldTry = 0
+    /** the chat guest's B place last sent (null = not since its hold): repeats are not clicked again */
+    private var chatBSaid: Boolean? = null
 
     /** the shared capture's holder as last known (the interact document's `holder`, or a guest's own hold / free answer) */
     private var capHolder = ""
