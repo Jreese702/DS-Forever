@@ -1434,6 +1434,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
     private val chatAsk = HoldAsk()
     private var chatHoldTry = 0
+    /** pad15: the one reload for add-ons switched back on (this app run) */
+    private var addonsReloaded = false
     /** the chat guest's B place last sent (null = not since its hold): repeats are not clicked again */
     private var chatBSaid: Boolean? = null
 
@@ -1723,6 +1725,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the game's "has been blocked from an action" pop-up names no function: the add-on's report does (ActionBar onBlocked)
         msg.optJSONObject("hudBlocked")?.let { Log.w("WCBLOCK", "${it.optString("who")} ${it.optString("ev")}: ${it.optString("fn")} (#${it.optInt("n")})") }
         // m85: Party mode's own errors (a member it could not read, or the whole document), once each
+        // pad15: DS Forever add-ons the game had switched off (the "blocked" pop-up's Disable) were switched back on: one reload loads them
+        if (msg.optString("probe") == "addonsoff" && current) {
+            Log.w("WCSETUP", "add-ons the game had switched off, on again: ${msg.optJSONArray("list")}${if (addonsReloaded) " (reloaded once already)" else ": reloading"}")
+            if (!addonsReloaded) { addonsReloaded = true; if (GameInput.reload()) reloadStarted() }
+        }
         // pad14: WoW's hardware cursor setting before / after DS Forever's one switch to the software cursor
         if (msg.optString("probe") == "cursorsoft") Log.i("WCCURSOR", "gxCursor before ${msg.optString("before")} set ${msg.optString("set")} after ${msg.optString("after")}")
         if (msg.optString("probe") == "partyerr") Log.w("WCPARTY", "party error (${msg.optString("u")}): ${msg.optString("err")}")

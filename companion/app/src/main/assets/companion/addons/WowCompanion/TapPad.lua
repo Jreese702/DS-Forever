@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad14"     -- pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad15"     -- pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -773,5 +773,36 @@ do
             pcall(ResetCursor)
             hidden = false
         end
+    end)
+end
+
+-- ---------------------------------------------------------------- pad15 OUR ADD-ONS SWITCHED BACK ON (the Thor's log, 2026-11-04: on a
+-- character where the game's "WowCompanionSpells has been blocked ..." pop-up was answered with Disable, Spells never loaded again - no
+-- Smart Y, no Party mode, its settings gone - and the app's install does not touch the game's per-character add-on list). At each login
+-- every DS Forever add-on the game has OFF is switched ON (for every character), and the app is told (cap probe "addonsoff"); it reloads
+-- the game's interface once so they load. Never another add-on's state.
+do
+    local OURS = { "WowCompanionSpells", "WowCompanionHub", "WowCompanionQuests", "WowCompanionInteract", "WowCompanionCharacter",
+                   "WowCompanionSocial", "WowCompanionCalendar", "WowCompanionGroupFinder", "WowCompanionProfessions", "WowCompanionPvp" }
+    local ev = CreateFrame("Frame")
+    ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+    ev:SetScript("OnEvent", function()
+        ev:UnregisterEvent("PLAYER_ENTERING_WORLD")
+        pcall(function()
+            if type(C_AddOns) ~= "table" or type(C_AddOns.EnableAddOn) ~= "function" then return end
+            local me = UnitName("player")
+            local off = {}
+            for _, a in ipairs(OURS) do
+                local okS, st = pcall(C_AddOns.GetAddOnEnableState, a, me)
+                if okS and type(st) == "number" and (type(WC.isPlain) ~= "function" or WC.isPlain(st)) and st == 0 then
+                    if pcall(C_AddOns.EnableAddOn, a) then off[#off + 1] = a end
+                end
+            end
+            if #off > 0 then
+                pcall(function() if type(C_AddOns.SaveAddOns) == "function" then C_AddOns.SaveAddOns() end end)
+                WC.send(WC.encode({ type = "cap", probe = "addonsoff", v = PADV, list = off }))
+                WC.push()
+            end
+        end)
     end)
 end
