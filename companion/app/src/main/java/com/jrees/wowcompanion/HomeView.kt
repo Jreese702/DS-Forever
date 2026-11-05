@@ -1096,6 +1096,9 @@ class HomeView(
 
     /** Party mode on and routing, while Home's rest page shows (a full module = the add-on suspends it; drawn as off) */
     private fun partyOnHere(): Boolean = party.party?.onLive == true
+    /** Party mode holds the D-pad here (its box moves on it): the game's D-pad layout must not also open the bar cursor (2026-11-04,
+     *  the user: "pushing down on the Dpad makes the cursor also appear on the bottom bar menu") */
+    fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && isShown && !typeWanted
     /** Party mode on with Home's rest page shown (no module full screen): the disc's touch = Party mode off */
     fun partyOnRest(): Boolean = partyOnHere() && flow.full == null
 

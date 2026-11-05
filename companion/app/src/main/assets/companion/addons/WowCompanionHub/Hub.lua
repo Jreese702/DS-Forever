@@ -301,7 +301,9 @@ hub.cbCheck = cbCheck
 -- HUD_HIDE. The game shows / fades them itself (a new target, Edit Mode's opacity): an OnShow hook, the opacity post-hook and the
 -- heartbeat put the 0 back. Shown again = alpha 1 (or Edit Mode's own opacity). Nothing saved; the app keeps the choice per character.
 -- An invisible frame still takes a mouse click where it stands (a touch there on the top screen would still target yourself).
-local HUD_FRAMES = { "PlayerFrame", "TargetFrame", "TargetFrameToT", "PetFrame" }
+-- hub19 (the user, 2026-11-04: "the party frames need to be hidden with a menu toggle like other UI"): the game's party frames
+-- (PartyFrame, and the raid-style CompactPartyFrame when that option is on), alpha only, their own switch PARTY_SHOW / PARTY_HIDE
+local HUD_FRAMES = { "PlayerFrame", "TargetFrame", "TargetFrameToT", "PetFrame", "PartyFrame", "CompactPartyFrame" }
 local HUD_SHOW, HUD_HIDE = 34, 35
 local hm = { hidden = false, hooked = {}, fix = 0 }
 -- hub17 (the user: "we need to split out the HUD mode into the visible things that should be in the top menu, like the cast bar and the
@@ -315,13 +317,15 @@ local hm = { hidden = false, hooked = {}, fix = 0 }
 -- A switch once set wins over the bundle's columns 34 / 35 for its own part; those still move every part for an older app.
 local SW_ROW = "uisw"
 --   SW.WM_OFF / SW.WM_ON              hub18: the world markers (Trail.lua's compass: WC.npWant.wm; the user: "off by default")
-local SW = { PLAYER_SHOW = 0, PLAYER_HIDE = 1, TARGET_SHOW = 2, TARGET_HIDE = 3, NP_OFF = 4, NP_ON = 5, PRD_OFF = 6, PRD_ON = 7, WM_OFF = 8, WM_ON = 9 }
-local GROUP = { PlayerFrame = "player", PetFrame = "player", TargetFrame = "target", TargetFrameToT = "target" }
-hm.g = { player = nil, target = nil }       -- per group: true hidden / false shown / nil as the bundle says
+local SW = { PLAYER_SHOW = 0, PLAYER_HIDE = 1, TARGET_SHOW = 2, TARGET_HIDE = 3, NP_OFF = 4, NP_ON = 5, PRD_OFF = 6, PRD_ON = 7, WM_OFF = 8, WM_ON = 9,
+             PARTY_SHOW = 10, PARTY_HIDE = 11 }
+local GROUP = { PlayerFrame = "player", PetFrame = "player", TargetFrame = "target", TargetFrameToT = "target",
+                PartyFrame = "party", CompactPartyFrame = "party" }
+hm.g = { player = nil, target = nil, party = nil }  -- per group: true hidden / false shown / nil as the bundle says (party: shown)
 hub.SW = SW
 local function groupHidden(name)
     local g = hm.g[GROUP[name]]
-    if g == nil then return hm.hidden end
+    if g == nil then return GROUP[name] ~= "party" and hm.hidden end      -- the old HUD bundle never covered the party frames
     return g
 end
 local function hmZero(fr) pcall(fr.SetAlpha, fr, 0) end
@@ -360,6 +364,7 @@ function hub.swTap(col)
     WC.npWant = type(WC.npWant) == "table" and WC.npWant or {}
     if col == SW.PLAYER_SHOW or col == SW.PLAYER_HIDE then hm.g.player = (col == SW.PLAYER_HIDE); hub.hmApply()
     elseif col == SW.TARGET_SHOW or col == SW.TARGET_HIDE then hm.g.target = (col == SW.TARGET_HIDE); hub.hmApply()
+    elseif col == SW.PARTY_SHOW or col == SW.PARTY_HIDE then hm.g.party = (col == SW.PARTY_HIDE); hub.hmApply()
     elseif col == SW.NP_OFF or col == SW.NP_ON then WC.npWant.np = (col == SW.NP_ON)
     elseif col == SW.PRD_OFF or col == SW.PRD_ON then WC.npWant.prd = (col == SW.PRD_ON)
     elseif col == SW.WM_OFF or col == SW.WM_ON then WC.npWant.wm = (col == SW.WM_ON)
@@ -408,8 +413,9 @@ local function swDoc()
     return { row = hub.swRow and SW_ROW or nil, cols = SW,
              player = either(hm.g.player, hm.hidden) and "hidden" or "shown",
              target = either(hm.g.target, hm.hidden) and "hidden" or "shown",
+             party = hm.g.party == true and "hidden" or "shown",
              np = either(np.np, np.hud), prd = either(np.prd, np.hud), wm = np.wm == true,
-             set = { player = hm.g.player ~= nil or nil, target = hm.g.target ~= nil or nil, np = np.np ~= nil or nil, prd = np.prd ~= nil or nil, wm = np.wm ~= nil or nil } }
+             set = { player = hm.g.player ~= nil or nil, target = hm.g.target ~= nil or nil, party = hm.g.party ~= nil or nil, np = np.np ~= nil or nil, prd = np.prd ~= nil or nil, wm = np.wm ~= nil or nil } }
 end
 
 local function cbDoc()

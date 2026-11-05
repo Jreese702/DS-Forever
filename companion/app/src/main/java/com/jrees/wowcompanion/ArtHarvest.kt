@@ -85,7 +85,8 @@ object ArtHarvest {
 
     /** every step, in the order they run (owners add theirs here) */
     val STEPS: List<Step> by lazy {
-        listOf<Step>(KitSteps.Kit, KitSteps.Cast, KitSteps.Icons) + MapHarvestSteps.STEPS + IndoorSchedulerStep + AllIconsStep
+        // AllIconsStep before Play, right after the kit's own icons (2026-11-04: every icon ready before the game starts)
+        listOf<Step>(KitSteps.Kit, KitSteps.Cast, KitSteps.Icons, AllIconsStep) + MapHarvestSteps.STEPS + IndoorSchedulerStep
     }
 
     /** the app's own art folder (replaces /sdcard/WowCompanion for everything game-derived) */

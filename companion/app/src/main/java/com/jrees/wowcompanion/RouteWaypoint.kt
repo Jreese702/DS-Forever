@@ -61,10 +61,13 @@ class RouteWaypoint {
         if (nowMs < refusedUntil) return routeKeep()
         val further = more.take(MORE_MAX)
         val moved = !active || abs(want[0] - sentX) > MOVE || abs(want[1] - sentY) > MOVE
+        // 2026-11-04 (the user: "my mouse is constantly appearing and spazzing to the top of the screen"): every send is up to 21 clicks
+        // on the top screen, so a re-plan that only nudges the pin is not sent at all, and a real one waits [SET_EVERY_MS]
+        val bigMove = !active || abs(want[0] - sentX) > REPLAN_MOVE || abs(want[1] - sentY) > REPLAN_MOVE
         // A PASS (cp26, the user's "always show the next two markers"): the new pin stands where the first further flag stood - the
         // player walked past a checkpoint and the route advanced; it moves at once (the pace is against churn and re-plans only)
         val advance = active && sentMore.isNotEmpty() && abs(want[0] - sentMore[0][0]) <= MOVE && abs(want[1] - sentMore[0][1]) <= MOVE
-        if (moved && (switched || advance || nowMs - setAt >= SET_EVERY_MS)) {
+        if (moved && (switched || advance || (bigMove && nowMs - setAt >= SET_EVERY_MS))) {
             switched = false
             active = true; sentX = want[0]; sentY = want[1]; setAt = nowMs; keepAt = nowMs
             sentMore = further; moreAt = nowMs; moreRetries = 0
@@ -107,9 +110,11 @@ class RouteWaypoint {
         const val MORE_JUMP_YD = 300.0
         const val ROW = "uwp"
         const val MOVE = 0.004               // of the map: a smaller change is not worth a new pin
-        const val SET_EVERY_MS = 5_000L      // test48: a pin moves at most every 5 s (it was 2: it churned)
+        /** a re-plan's pin move smaller than this is not sent (2026-11-04: each send moves the mouse) */
+        const val REPLAN_MOVE = 0.012
+        const val SET_EVERY_MS = 15_000L     // 2026-11-04: 15 s (test48 had 5; it was 2: it churned); a passed checkpoint is at once
         const val CLEAR_GRACE_MS = 8_000L    // no target this long before the pin is cleared
-        const val KEEP_EVERY_MS = 20_000L    // well inside Map.lua's 60 s KEEP_S
+        const val KEEP_EVERY_MS = 45_000L    // inside Map.lua's 60 s KEEP_S (2026-11-04: was 20 s; each KEEP is a click)
         const val REFUSED_MS = 60_000L
 
         /** the step of a further flag's height (yards) and the offset that makes 0 the player's own height: n = dz / Z_STEP + Z_ZERO */

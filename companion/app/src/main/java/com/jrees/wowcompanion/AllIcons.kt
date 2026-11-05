@@ -39,7 +39,7 @@ object AllIcons {
     /** the top screen's line: null before the step is known; never blocks Play */
     fun line(readyBefore: Boolean): String? = when {
         finished || readyBefore -> "Icons: all icons ready"
-        total > 0 -> "Icons: $done / $total (background)"
+        total > 0 -> "Icons: $done / $total"
         else -> null
     }
 

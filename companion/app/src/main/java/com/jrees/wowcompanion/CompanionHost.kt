@@ -2015,7 +2015,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE || startView.visibility == View.VISIBLE)
             // the bar commands (Hub.lua hub4; Spells' macros "DS Bar Left / Right / Open"): the bar cursor without holding the controller
             "barcmd" -> if (current) barSelect.onCommand(msg, room, blocked = interactView.visibility == View.VISIBLE ||
-                    dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE || startView.visibility == View.VISIBLE)
+                    dialogView.visibility == View.VISIBLE || spellsOverlay.visibility == View.VISIBLE || startView.visibility == View.VISIBLE ||
+                    (room == Room.HOME && homeView.partyHoldsDpad()))
             "interactack" -> {
                 if (msg.optString("cmd") == "release npc" && !msg.optBoolean("ok", true)) {
                     val now = SystemClock.uptimeMillis()

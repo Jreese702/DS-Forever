@@ -11,14 +11,15 @@ class RouteWaypointTest {
         val tram = doubleArrayOf(0.690, 0.310)
         assertEquals(listOf(36, 24, 30, 11, 5, 35, 35), w.tick(tram, 0L))      // 894 = 24*36+30, 401 = 11*36+5; z unknown
         assertTrue(w.tick(tram, 1_000L).isEmpty())                               // unchanged: nothing
-        assertTrue(w.tick(doubleArrayOf(0.70, 0.31), 1_500L).isEmpty())          // moved, but within the 5 s pace (test48: it churned)
-        assertEquals(36, w.tick(doubleArrayOf(0.70, 0.31), 5_500L).first())      // moved: a new pin
-        assertEquals(listOf(37), w.tick(doubleArrayOf(0.70, 0.31), 25_500L))      // unchanged for 20 s: the keep-alive
-        assertTrue(w.tick(null, 26_000L).isEmpty())                               // none for a moment: kept (test48)
-        assertTrue(w.tick(doubleArrayOf(0.70, 0.31), 28_000L).isEmpty())         // back: nothing to tap
-        assertTrue(w.tick(null, 29_000L).isEmpty())
-        assertEquals(listOf(39), w.tick(null, 37_500L))                           // none for 8 s: cleared
-        assertTrue(w.tick(null, 38_000L).isEmpty())
+        assertTrue(w.tick(doubleArrayOf(0.71, 0.31), 1_500L).isEmpty())          // moved, but within the 15 s pace (test48: it churned)
+        assertTrue(w.tick(doubleArrayOf(0.70, 0.31), 15_500L).isEmpty())         // 2026-11-04: a nudge under REPLAN_MOVE is never sent
+        assertEquals(36, w.tick(doubleArrayOf(0.71, 0.31), 15_500L).first())     // moved: a new pin
+        assertEquals(listOf(37), w.tick(doubleArrayOf(0.71, 0.31), 60_500L))      // unchanged for 45 s: the keep-alive
+        assertTrue(w.tick(null, 61_000L).isEmpty())                               // none for a moment: kept (test48)
+        assertTrue(w.tick(doubleArrayOf(0.71, 0.31), 63_000L).isEmpty())         // back: nothing to tap
+        assertTrue(w.tick(null, 64_000L).isEmpty())
+        assertEquals(listOf(39), w.tick(null, 72_500L))                           // none for 8 s: cleared
+        assertTrue(w.tick(null, 73_000L).isEmpty())
     }
 
     @Test fun aRefusedPinWaitsAMinute() {
@@ -51,13 +52,13 @@ class RouteWaypointTest {
         assertEquals(36, w.tick(pin, 0L, listOf(a, b)).first())
         w.onAnswer("more", false, 500L)
         assertTrue("at the pin's pace", w.tick(pin, 1_000L, listOf(a, b)).isEmpty())
-        assertEquals(listOf(38, 38, 38, 25, 0, 12, 0, 35, 35, 38, 26, 0, 13, 0, 35, 35), w.tick(pin, 5_000L, listOf(a, b)))
-        w.onAnswer("more", false, 5_500L)
-        assertEquals(listOf(38, 38), w.tick(pin, 10_000L, listOf(a, b)).take(2))
-        w.onAnswer("more", false, 10_500L)
-        assertTrue("twice at most", w.tick(pin, 15_000L, listOf(a, b)).none { it == 38 })
+        assertEquals(listOf(38, 38, 38, 25, 0, 12, 0, 35, 35, 38, 26, 0, 13, 0, 35, 35), w.tick(pin, 15_000L, listOf(a, b)))
+        w.onAnswer("more", false, 15_500L)
+        assertEquals(listOf(38, 38), w.tick(pin, 30_000L, listOf(a, b)).take(2))
+        w.onAnswer("more", false, 30_500L)
+        assertTrue("twice at most", w.tick(pin, 45_000L, listOf(a, b)).none { it == 38 })
         // a refused SET is no flag's matter
-        w.onAnswer("more", true, 16_000L)
+        w.onAnswer("more", true, 46_000L)
     }
 
     @Test fun furtherCheckpointsRideTheSetAndFollowANewLeg() {
@@ -68,26 +69,26 @@ class RouteWaypointTest {
         // (no height given: z 1295 = unknown, 35 35)
         assertEquals(listOf(36, 24, 30, 11, 5, 35, 35, 38, 25, 0, 12, 0, 35, 35, 38, 26, 0, 13, 0, 35, 35), w.tick(pin, 0L, listOf(a, b, c)))
         assertTrue(w.tick(pin, 1_000L, listOf(a, b, c)).isEmpty())                // unchanged: nothing
-        assertTrue(w.tick(pin, 2_000L, listOf(b)).isEmpty())                     // the leg changed, within the 5 s pace
-        assertEquals(listOf(38, 38, 38, 26, 0, 13, 0, 35, 35), w.tick(pin, 5_000L, listOf(b)))   // dropped and sent again
-        assertEquals(listOf(38, 38), w.tick(pin, 10_000L, emptyList()))           // none after the pin now
-        assertTrue(w.tick(pin, 16_000L, emptyList()).isEmpty())
-        assertEquals(listOf(37), w.tick(pin, 30_000L, emptyList()))               // the keep-alive as ever
+        assertTrue(w.tick(pin, 2_000L, listOf(b)).isEmpty())                     // the leg changed, within the 15 s pace
+        assertEquals(listOf(38, 38, 38, 26, 0, 13, 0, 35, 35), w.tick(pin, 15_000L, listOf(b)))   // dropped and sent again
+        assertEquals(listOf(38, 38), w.tick(pin, 30_000L, emptyList()))           // none after the pin now
+        assertTrue(w.tick(pin, 36_000L, emptyList()).isEmpty())
+        assertEquals(listOf(37), w.tick(pin, 75_000L, emptyList()))               // the keep-alive, every 45 s
     }
 
     @Test fun routingWithNoPinKeepsTheAddonsWordAlive() {
         val w = RouteWaypoint()
-        // ag5: a direct route (no pin): the KEEP at once, then every 20 s; the route gone: one CLEAR
+        // ag5: a direct route (no pin): the KEEP at once, then every 45 s; the route gone: one CLEAR
         assertEquals(listOf(37), w.tick(null, 0L, routing = true))
         assertTrue(w.tick(null, 10_000L, routing = true).isEmpty())
-        assertEquals(listOf(37), w.tick(null, 20_000L, routing = true))
-        assertEquals(listOf(39), w.tick(null, 21_000L, routing = false))
-        assertTrue(w.tick(null, 50_000L, routing = false).isEmpty())
+        assertEquals(listOf(37), w.tick(null, 45_000L, routing = true))
+        assertEquals(listOf(39), w.tick(null, 46_000L, routing = false))
+        assertTrue(w.tick(null, 80_000L, routing = false).isEmpty())
         // a pin, then the route turns direct: after the grace the pin's CLEAR and the KEEP right behind it
-        assertEquals(36, w.tick(doubleArrayOf(0.5, 0.5), 60_000L, routing = true).first())
-        assertTrue(w.tick(null, 61_000L, routing = true).isEmpty())
-        assertEquals(listOf(39, 37), w.tick(null, 69_500L, routing = true))
-        assertTrue(w.tick(null, 70_000L, routing = true).isEmpty())
+        assertEquals(36, w.tick(doubleArrayOf(0.5, 0.5), 90_000L, routing = true).first())
+        assertTrue(w.tick(null, 91_000L, routing = true).isEmpty())
+        assertEquals(listOf(39, 37), w.tick(null, 99_500L, routing = true))
+        assertTrue(w.tick(null, 100_000L, routing = true).isEmpty())
     }
 
     @Test fun aSwitchToAnotherQuestMovesThePinAtOnce() {
@@ -97,7 +98,9 @@ class RouteWaypointTest {
         assertTrue(w.tick(doubleArrayOf(0.6, 0.6), 1_000L, quest = 92703).isEmpty())          // the same quest: the pace holds
         assertEquals(36, w.tick(doubleArrayOf(0.2, 0.8), 1_200L, quest = 94896).first())     // another quest: at once
         assertTrue(w.tick(doubleArrayOf(0.25, 0.8), 1_400L, quest = 94896).isEmpty())        // and the pace again after it
-        assertEquals(36, w.tick(doubleArrayOf(0.25, 0.8), 6_200L, quest = 94896).first())
+        assertEquals(36, w.tick(doubleArrayOf(0.25, 0.8), 16_200L, quest = 94896).first())
+        // 2026-11-04: a re-plan that only nudges the pin is never sent (each send moves the mouse)
+        assertTrue(w.tick(doubleArrayOf(0.255, 0.805), 40_000L, quest = 94896).isEmpty())
     }
 
     @Test fun aSwitchToAQuestWithADirectRouteClearsAtOnce() {
@@ -108,8 +111,8 @@ class RouteWaypointTest {
         assertEquals(listOf(39), w.tick(null, 1_500L, quest = 92860))
         assertTrue(w.tick(null, 2_000L, quest = 92860).isEmpty())
         // a switch with no pin up owes nothing later: the next pin keeps its pace rules
-        assertTrue(w.tick(doubleArrayOf(0.3, 0.3), 3_000L, quest = 92860).isEmpty())          // 5 s from the last SET, as ever
-        assertEquals(36, w.tick(doubleArrayOf(0.3, 0.3), 5_000L, quest = 92860).first())
+        assertTrue(w.tick(doubleArrayOf(0.3, 0.3), 3_000L, quest = 92860).isEmpty())          // 15 s from the last SET
+        assertEquals(36, w.tick(doubleArrayOf(0.3, 0.3), 15_000L, quest = 92860).first())
     }
 
     @Test fun theFirstQuestSeenIsNoSwitch() {

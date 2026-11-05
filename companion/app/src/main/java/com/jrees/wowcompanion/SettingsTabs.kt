@@ -49,7 +49,7 @@ object SettingsTabs {
         GAME_UI(Tab.TOP, "Game UI on the top screen", listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window",
             "NPC windows", "Loot window",
             // hub17 (the HUD-mode split): the game's own frames and nameplates, the cast bar and the tooltips, as switches
-            "Player frame", "Target frame", "Cast bar", "Enemy nameplates", "Hide game tooltips")),
+            "Player frame", "Target frame", "Party frames", "Cast bar", "Enemy nameplates", "Hide game tooltips")),
         MAP(Tab.HOME, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "Quest tracking", "World map")),
         CHAT(Tab.HOME, "Chat", listOf("Message input")),
         // 1.0.9 (the user, on Spoken: "make an addon section of our settings"): one block per third-party add-on (ThirdPartyAddons)

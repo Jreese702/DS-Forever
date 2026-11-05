@@ -53,7 +53,7 @@ object SetupFlow {
         val appUpdate: String? = null,
         /** the app's own update line (AppUpdate.line: "DS Forever <ver>: up to date / update <ver> available / ... skipped (...)") */
         val appLine: String? = null,
-        /** the background all-icons step's line (AllIcons.line): optional, never gates Play */
+        /** the all-icons step's line (AllIcons.line): before Play since 2026-11-04 (the art's READY covers it) */
         val iconsLine: String? = null,
         /** the game ended abnormally (GameLife.note): the touch-only "The game closed" note; null = none */
         val gameClosed: String? = null,
@@ -358,6 +358,7 @@ object SetupFlow {
         i.client?.let { add(Check("Client build: $it", if (i.gameOutdated == null) Mark.OK else Mark.BAD)) }
         // the app's own update: optional, never a warning (an update waits for the player's press on the bottom screen)
         i.appLine?.let { add(Check(it, if (it.endsWith("up to date")) Mark.OK else Mark.OPTIONAL)) }
-        i.iconsLine?.let { add(Check(it, if (it.endsWith("all icons ready")) Mark.OK else Mark.OPTIONAL)) }
+        // 2026-11-04: the icons are part of the art Play waits for (AllIconsStep before Play): their row waits, never "optional"
+        i.iconsLine?.let { add(Check(it, if (it.endsWith("all icons ready")) Mark.OK else Mark.WAIT)) }
     }
 }

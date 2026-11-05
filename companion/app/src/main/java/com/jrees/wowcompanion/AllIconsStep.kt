@@ -5,11 +5,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/** [AllIcons]' harvest step on the device (registered in ArtHarvest.STEPS): every icon pack, resumable, in the background */
+/** [AllIcons]' harvest step on the device (registered in ArtHarvest.STEPS): every icon pack, resumable. Before Play since 2026-11-04
+ *  (the user: "I shouldn't be able to start the game before my Icons have finished loading") */
 object AllIconsStep : ArtHarvest.Step {
     override val id = "allicons"
     override val version = 1
-    override val beforePlay = false
+    override val beforePlay = true
     override val weight = 3000
     override fun run(job: ArtHarvest.Job) {
         val table = job.game.db2(AllIcons.MANIFEST) ?: error(job.game.lastReadWhy ?: "the game's interface manifest could not be read")

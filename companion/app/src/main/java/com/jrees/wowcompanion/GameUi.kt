@@ -96,13 +96,17 @@ object GameUi {
     data class Sw(val row: String, val cols: Map<String, Int>, val player: Boolean?, val target: Boolean?, val np: Boolean?, val prd: Boolean?,
                   val set: Map<String, Boolean>,
                   /** the world markers shown (the user: "the world markers should be a toggle, off by default"); null = an add-on without */
-                  val wm: Boolean? = null)
+                  val wm: Boolean? = null,
+                  /** hub19: the game's party frames shown; null = an add-on without the switch */
+                  val party: Boolean? = null)
     @Volatile private var sw: Sw? = null
     private var swTapAt = 0L
     private var swTapN = -1
     /** parts: "player" / "target" shown (true) or hidden; "np" nameplates on; "prd" the resource bar on */
     const val SW_PLAYER = "player"; const val SW_TARGET = "target"; const val SW_NP = "np"; const val SW_PRD = "prd"; const val SW_WM = "wm"
-    private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true, SW_WM to false)
+    const val SW_PARTY = "party"
+    // hub19: the party frames hidden by default, as the player's and the target's (the bottom screen's party strip shows the party)
+    private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true, SW_WM to false, SW_PARTY to false)
     /** this character's choice for [part] (its default until one is made); the resource bar's old "HUD mode" choice carries over */
     fun swWant(part: String): Boolean {
         val who = character ?: return SW_DEFAULT[part] ?: false
@@ -116,19 +120,20 @@ object GameUi {
         changed()
     }
     /** the game's word for [part] now (null = not said / no add-on with it) */
-    fun swNow(part: String): Boolean? = sw?.let { when (part) { SW_PLAYER -> it.player; SW_TARGET -> it.target; SW_NP -> it.np; SW_WM -> it.wm; else -> it.prd } }
+    fun swNow(part: String): Boolean? = sw?.let { when (part) { SW_PLAYER -> it.player; SW_TARGET -> it.target; SW_NP -> it.np; SW_WM -> it.wm; SW_PARTY -> it.party; else -> it.prd } }
     /** the absolute column that makes [part] [on] */
     fun swCol(s: Sw, part: String, on: Boolean): Int? = s.cols[when (part) {
         SW_PLAYER -> if (on) "PLAYER_SHOW" else "PLAYER_HIDE"
         SW_TARGET -> if (on) "TARGET_SHOW" else "TARGET_HIDE"
         SW_NP -> if (on) "NP_ON" else "NP_OFF"
         SW_WM -> if (on) "WM_ON" else "WM_OFF"
+        SW_PARTY -> if (on) "PARTY_SHOW" else "PARTY_HIDE"
         else -> if (on) "PRD_ON" else "PRD_OFF"
     }]
     /** the switch to tap now: the first whose game word differs from the choice, or which the game has not had since its /reload */
     fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? =
-        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM).firstOrNull { p ->
-            val now = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; else -> s.prd }
+        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY).firstOrNull { p ->
+            val now = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; SW_PARTY -> s.party; else -> s.prd }
             now != null && (now != want(p) || s.set[p] != true)
         }?.let { it to want(it) }
     private fun swRow(id: String, part: String, label: String, onWord: String, offWord: String): Row? {
@@ -140,6 +145,8 @@ object GameUi {
     }
     fun playerRow(): Row? = swRow(PLAYER_ID, SW_PLAYER, "Player frame", "Shown on the top screen", "Hidden: the resource bar and the HUD instead")
     fun targetRow(): Row? = swRow(TARGET_ID, SW_TARGET, "Target frame", "Shown on the top screen", "Hidden: the bars over the mobs instead")
+    fun partyRow(): Row? = swRow(PARTY_ID, SW_PARTY, "Party frames", "Shown on the top screen", "Hidden: the party strip below instead")
+    const val PARTY_ID = "partyframes"
     fun nameplatesRow(): Row? = swRow(NP_ID, SW_NP, "Enemy nameplates", "On: the bars over hostile mobs", "The game's own setting")
     /** QOL > Navigation: the world markers (off by default), Interact's switch on "uisw" */
     fun worldMarkersRow(): Row? = swRow(WM_ID, SW_WM, "World markers", "On: the markers in the 3D world", "Off: no markers in the world")
@@ -270,7 +277,7 @@ object GameUi {
             o.optJSONObject("set")?.let { c -> for (k in c.keys()) set[k] = c.optBoolean(k, false) }
             fun shown(k: String) = if (o.has(k)) o.optString(k) == "shown" else null
             fun flag(k: String) = if (o.has(k)) o.optBoolean(k) else null
-            Sw(o.optString("row", "uisw"), cols, shown("player"), shown("target"), flag("np"), flag("prd"), set, flag("wm"))
+            Sw(o.optString("row", "uisw"), cols, shown("player"), shown("target"), flag("np"), flag("prd"), set, flag("wm"), shown("party"))
         }
         val prd = h.optJSONObject("prd")
         prdY = prd?.let { if (it.has("y")) it.optInt("y") else null }
