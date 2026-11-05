@@ -1434,6 +1434,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
     private val chatAsk = HoldAsk()
     private var chatHoldTry = 0
+    /** the login screen's sign-in prompts and their keyboard (off since 2026-11-05, the user's ruling) */
+    private val SIGN_IN_PROMPTS = false
     /** pad15: the one reload for add-ons switched back on (this app run) */
     private var addonsReloaded = false
     /** the chat guest's B place last sent (null = not since its hold): repeats are not clicked again */
@@ -2327,6 +2329,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the simulation (adb only: a file in the app's own external folder): the authenticator's state with the game at its login
         // screen, through the same pop-up and the same keyboard path (no write into the game's log)
         if (LauncherHooks.gameUp() && simulateAuth()) st = SetupFlow.SignIn.AUTH
+        // 2026-11-05 (the user: the checks "are actually making things harder if someone just isnt paying attention on an account
+        // select. now that we added the menu and keyboard functions to the loading screen ... we can remove those"; picked "All the
+        // sign-in prompts"): no verdict, no pop-up, no keyboard opened by itself; the waiting screen's Menu and Keyboard are the way.
+        // The check still runs (its "signed in" feeds NativeLogin's pastLogin); a keyboard the player opened is never closed from here.
+        if (!SIGN_IN_PROMPTS) {
+            if (SetupBridge.signIn != SetupFlow.SignIn.NONE) SetupBridge.signIn(SetupFlow.SignIn.NONE, false)
+            return
+        }
         val restart = st != SetupFlow.SignIn.NONE && signInCheck.restartOffered
         if (st != SetupBridge.signIn || restart != SetupBridge.restartOffered) {
             NativeLogin.logEvent("sign-in: $st${if (restart) " (restart offered)" else ""}" +
