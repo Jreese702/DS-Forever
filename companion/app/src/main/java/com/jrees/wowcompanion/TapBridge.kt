@@ -34,6 +34,26 @@ import kotlin.math.roundToInt
  * Thor lock allows ("one touch = one game action; a no-action pick tap may come first").
  */
 object TapBridge {
+    // ---------------------------------------------------------------- the tap history (2026-11-04: "my mouse cursor is still on screen
+    // visibly flashing around"; every batch is a mouse click on the top screen, and logcat rotates within a minute here): one line per
+    // batch, its rows and cells, in /sdcard/WowCompanion/logs/taps.log, capped like login.log (past 1500 lines the last 800 stay)
+    private var tapWrites = 0
+    private fun tapHistory(what: String) {
+        try {
+            val f = java.io.File("/sdcard/WowCompanion/logs/taps.log")
+            f.parentFile?.mkdirs()
+            f.appendText("${java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())} $what\n")
+            if (++tapWrites % 50 == 0) {
+                val lines = f.readLines()
+                if (lines.size > 1500) {
+                    val tmp = java.io.File(f.path + ".part")
+                    tmp.writeText(lines.takeLast(800).joinToString("\n", postfix = "\n"))
+                    if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+                }
+            }
+        } catch (_: Throwable) {}
+    }
+
     /** the L1 key channel: OFF since the Alt+F4 closes (2026-10-09), see the batch send below */
     private const val KEYS_ON = false
 
@@ -252,6 +272,7 @@ object TapBridge {
             // one line per batch (Quests, after the 23:00 focus padstray): which cells, how long the quiet pad held them, and whether
             // a button was down when they were asked for, so a stray or a missing answer can be traced from ONE log read
             Log.i(TAG, "quiet pad: $what waited $waited ms (held at queue $heldAtQueue)" + (keysOff?.let { " keys off: $it" } ?: ""))
+            tapHistory(what)
             RootShell.run(script) { r ->
                 if (r.exit != 0) onFail(if (r.exit == -1) "no root shell (refused, or it died)" else "tap was refused (exit ${r.exit})")
             }

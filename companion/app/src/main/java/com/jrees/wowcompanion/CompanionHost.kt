@@ -1467,7 +1467,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             if (k == "PAD2" && down) bPressed()
             if (down && k == "PADDDOWN" && room == Room.HOME && capHolder.isEmpty() && !DirectPad.sideHeld()
                 && interactView.visibility != View.VISIBLE && dialogView.visibility != View.VISIBLE
-                && spellsOverlay.visibility != View.VISIBLE && startView.visibility != View.VISIBLE) barSelect.openEarly(room)
+                && spellsOverlay.visibility != View.VISIBLE && startView.visibility != View.VISIBLE
+                && !homeView.partyHoldsDpad()) barSelect.openEarly(room)       // Party mode's D-pad: no early bar either (2026-11-04)
         }
         DirectPad.register(DirectPad.Reg("home", DirectPadKeys.EIGHT + lr + setOf("PADBACK"), active = live("home"),
             onKey = synth("home") { if (setupPad) setupView.padKey(it.optString("k")) else homeView.auraPad(it) }))
