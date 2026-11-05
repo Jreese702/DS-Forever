@@ -264,9 +264,9 @@ object SpellsModel {
     /** b23 THE RANK FAMILY of [e] (the user 2026-10-07 picked "B: a rank picker on each spell"): the line's known spells of its name,
      *  the lower ranks too (shown or not), highest first; empty when it has no other rank. Book.lua's `ranks` alike. */
     fun ranksOf(book: Book, e: Entry): List<Entry> {
-        if (e.pet || e.kind != Kind.SPELL || e.passive || e.flyoutMember || e.prof != null) return emptyList()
+        if (e.pet || e.kind != Kind.SPELL || e.passive || e.prof != null) return emptyList()
         val f = book.items.filter {
-            it.line == e.line && it.name == e.name && it.kind == Kind.SPELL && !it.passive && !it.flyoutMember && it.prof == null
+            it.line == e.line && it.name == e.name && it.kind == Kind.SPELL && !it.passive && it.prof == null
         }
         if (f.size < 2) return emptyList()
         return f.sortedWith(compareByDescending<Entry> { rankNo(it.rank) ?: 0 }.thenByDescending { it.slot })
@@ -276,7 +276,9 @@ object SpellsModel {
     fun visible(book: Book, e: Entry): Boolean {
         if (book.hidePassives && e.passive) return false
         if (!book.showAllRanks && e.lowRank) return false
-        if (e.flyoutMember) return false
+        // 2026-11-04 (the user: "it just says Aspect and I cant bind the skill"; picked "List each spell"): a fly-out group is not shown,
+        // its members are, each a spell of its own (Book.lua b48 lists the same)
+        if (e.kind == Kind.FLYOUT) return false
         return true
     }
 

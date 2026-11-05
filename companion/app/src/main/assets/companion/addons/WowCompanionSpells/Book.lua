@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b47"                -- bump on every change; b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
+local BV = "b48"                -- bump on every change; b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -92,10 +92,13 @@ local function cvar(name)
 end
 
 -- a spell that can go on a button: known (not a future spell), not passive, a spell (not a flyout)
-local T_SPELL = 1
+local T_SPELL, T_FLYOUT = 1, 4
 do
     local ok, kinds = CALL(function() return Enum.SpellBookItemType end)
-    if ok and type(kinds) == "table" then T_SPELL = SN(function() return kinds.Spell end) or T_SPELL end
+    if ok and type(kinds) == "table" then
+        T_SPELL = SN(function() return kinds.Spell end) or T_SPELL
+        T_FLYOUT = SN(function() return kinds.Flyout end) or T_FLYOUT
+    end
 end
 
 -- b23 the rank number in a sub-name ("Rank 3"), nil without one
@@ -125,9 +128,12 @@ local function tabs()
                         local fm = TB(function() return C_SpellBook.IsSpellBookItemLooseFlyoutMember(slot, BOOK_BANK) end)
                         local e = { slot = slot, id = TN(function() return info.spellID end), a = TN(function() return info.actionID end),
                                     t = TN(function() return info.itemType end), pas = pas }
-                        if not (hidePas and pas) and not (not allRanks and low) and not fm then list[#list + 1] = e end
+                        -- b48 (the user, 2026-11-04: "my spell book ... just says Aspect and I cant bind the skill"; picked "List each
+                        -- spell"): a FLYOUT group is not listed, its loose members are (each its own bindable spell); the app's
+                        -- SpellsModel.visible says the same
+                        if not (hidePas and pas) and not (not allRanks and low) and e.t ~= T_FLYOUT then list[#list + 1] = e end
                         local name = TS(function() return info.name end)
-                        if name and e.t == T_SPELL and not pas and not fm then
+                        if name and e.t == T_SPELL and not pas then
                             local sub = TS(function() return info.subName end)
                             if (not sub or sub == "") and e.id then sub = TS(function() return C_Spell.GetSpellSubtext(e.id) end) end
                             e.rn = rankNo(sub)
