@@ -94,6 +94,9 @@ object BridgeProtocol {
     }
 
     fun focus(): String = JSONObject().put("t", "focus").toString()
+    /** 2026-11-04 (the stream test: the PC ran add-on set 239 against the Thor's 251, "a TOOON of Lua errors"): Desktop installs its
+     *  bundled add-on set into the PC game (it only did at its own start or a button); it answers {"t":"addons", ..., "result"} */
+    fun addonsInstall(): String = JSONObject().put("t", "addons_install").toString()
     fun bnetReady(): String = JSONObject().put("t", "bnet_ready").toString()
     /** the saved login for WoW's login.txt on the PC: only down the pinned wss connection, never logged */
     fun loginFile(email: String, password: String): String = JSONObject().put("t", "login_file").put("email", email).put("password", password).toString()
@@ -123,6 +126,8 @@ object BridgeProtocol {
             "lines" -> BridgeMsg.Lines((o.optJSONArray("l") ?: JSONArray()).let { a -> List(a.length()) { a.optString(it) } })
             "gap" -> BridgeMsg.Gap(o.optInt("seq", -1), o.optInt("expected", -1))
             "status" -> BridgeMsg.Status(o.optString("text"))
+            // Desktop's add-on answer: its words, as a status line
+            "addons" -> BridgeMsg.Status("add-ons: " + o.optString("result").ifEmpty { o.optString("text") })
             "log" -> BridgeMsg.Log(o.optString("event"))
             "reset" -> BridgeMsg.Log("restart")
             "backlog_end" -> BridgeMsg.BacklogEnd(o.optInt("count", 0))

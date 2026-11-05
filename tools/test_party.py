@@ -408,7 +408,7 @@ for k in ("tappad", "quests", "book", "padmap", "padtabctl"):
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
 
 # ================================================================ 10. TapPad pad11
-check('local PADV = "pad12"' in SRC["tappad"], "TapPad says pad12 (pad11's party row + the parked cursor)")
+check('local PADV = "pad13"' in SRC["tappad"], "TapPad says pad13 (pad11's party row + the resting cursor hidden)")
 check(re.search(r'local ROWS_MAX = 56\b', SRC["tappad"]) is not None, "TapPad ROWS_MAX = 56")
 
 
@@ -431,7 +431,7 @@ L10, d, rows = pad_at(126.6)
 check(abs(float(d['popupTop']) - 126.6) < 0.06 and rows == list(range(56)), "pad11 at popupTop 126.6: rows 0..55 placed and described",
       (d['popupTop'], rows[-3:], len(rows)))
 check(L10.eval('rawget(_G, "X57")') is None, "a 57th row does not register (ROWS_MAX 56)")
-check(d['v'] == 'pad12', "describe() says pad12", d['v'])
+check(d['v'] == 'pad13', "describe() says pad13", d['v'])
 L10, d, rows = pad_at(121.5)
 check(abs(float(d['popupTop']) - 121.5) < 0.06 and rows == list(range(54)), "pad11 at popupTop 121.5 (smallest scale): rows 0..53 only",
       (d['popupTop'], rows[-3:], len(rows)))

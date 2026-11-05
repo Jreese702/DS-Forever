@@ -113,6 +113,8 @@ class BridgeLog(
                     onPc(m.pc?.let { if (it.state.isEmpty()) it.copy(state = if (m.wowRunning) "running" else "stopped") else it }
                         ?: PcWow(state = m.wowState.ifEmpty { if (m.wowRunning) "running" else "stopped" }, why = m.wowWhy))
                     if (tls && fingerprint.isNotEmpty()) savedLogin()?.let { c.send(BridgeProtocol.loginFile(it.first, it.second)) }
+                    // the PC game gets Desktop's add-on set BEFORE it is started (never while it runs: its files are read at the start)
+                    if (!m.wowRunning) c.send(BridgeProtocol.addonsInstall())
                     c.send(BridgeProtocol.focus())
                 }
                 is BridgeMsg.Doc -> emit(m)
