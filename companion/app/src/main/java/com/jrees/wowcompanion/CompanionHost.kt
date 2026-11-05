@@ -3288,6 +3288,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val routeWp = RouteWaypoint()
     private fun routePinTick() {
         polestarTick()
+        // 2026-11-04 (the user: "it happens immidiatly when I track a quest thats exactly the cause", then "No pin at all"): every pin
+        // move is up to 21 mouse clicks on the top screen, and each one shows the game's cursor. The app never moves the game's pin;
+        // the game's own super-track points at the quest, the bottom screen's map still draws the route
+        if (!RouteWaypoint.PIN_ON) return pinState("none: off (the game's pin is never moved: each move is mouse clicks)")
         val pad = questsPad ?: return pinState("none: no quests pad yet")
         if (pad.optJSONObject("rows")?.has(RouteWaypoint.ROW) != true) return pinState("none: the add-on has no \"${RouteWaypoint.ROW}\" row (an older add-on, or the pad's row budget full)")
         val want = mapView.routePin(); pinState(mapView.pinWhy)

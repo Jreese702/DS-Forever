@@ -102,6 +102,8 @@ class RouteWaypoint {
     }
 
     companion object {
+        /** the user's ruling 2026-11-04 ("No pin at all"): the app never taps the row; [RouteWaypoint] itself stays, tested, for a later channel */
+        const val PIN_ON = false
         const val SET = 36; const val KEEP = 37; const val CLEAR = 39
         const val MORE = 38                  // cp19: a further checkpoint (4 digits after it); MORE, MORE drops them
         const val MORE_MAX = 2
