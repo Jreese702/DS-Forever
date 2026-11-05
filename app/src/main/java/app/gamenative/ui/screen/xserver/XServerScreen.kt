@@ -549,7 +549,10 @@ fun XServerScreen(
     }
     fun shouldShowMouseCursor(): Boolean {
         return !container.isDisableMouseInput &&
-            (!container.isTouchscreenMode || currentGestureConfig.showCursorInTouchscreenMode)
+            (!container.isTouchscreenMode || currentGestureConfig.showCursorInTouchscreenMode) &&
+            // DS Forever (the user, 2026-11-04): the game's cursor only for a moment after a REAL top-screen touch (CursorPolicy); the
+            // Track Pad draws its own arrow (setForceCursor) whatever this says
+            android.os.SystemClock.uptimeMillis() < com.jrees.wowcompanion.CursorPolicy.showUntil
     }
     fun applyMouseCursorVisibility() {
         xServerView?.renderer?.setCursorVisible(shouldShowMouseCursor())
@@ -1925,6 +1928,16 @@ fun XServerScreen(
                 getxServer().renderer = renderer
                 PluviaApp.touchpadView = TouchpadView(context, getxServer(), PrefManager.getBoolean("capture_pointer_on_external_mouse", true))
                 PluviaApp.touchpadView?.setMoveCursorToTouchpoint(PrefManager.getBoolean("move_cursor_to_touchpoint", false))
+                // DS Forever (CursorPolicy): a real touch shows the cursor for SHOW_MS; the app's own taps (TapBridge) never do
+                TouchpadView.onTouchDown = Runnable {
+                    val now = android.os.SystemClock.uptimeMillis()
+                    if (com.jrees.wowcompanion.CursorPolicy.realTouch(now)) {
+                        com.jrees.wowcompanion.CursorPolicy.showUntil = now + com.jrees.wowcompanion.CursorPolicy.SHOW_MS
+                        val h = android.os.Handler(android.os.Looper.getMainLooper())
+                        h.post { applyMouseCursorVisibility() }
+                        h.postDelayed({ applyMouseCursorVisibility() }, com.jrees.wowcompanion.CursorPolicy.SHOW_MS + 50L)
+                    }
+                }
 
                 // Wire keyboard toggle callback for gesture "Show Keyboard" action.
                 // Mirrors the QuickMenuAction.KEYBOARD external-display routing
@@ -2091,7 +2104,7 @@ fun XServerScreen(
 
                         override fun onUpdateWindowContent(window: Window) {
                             if (!xServerState.value.winStarted && window.isApplicationWindow()) {
-                                if (shouldShowMouseCursor()) renderer?.setCursorVisible(true)
+                                renderer?.setCursorVisible(shouldShowMouseCursor())      // DS Forever: hidden from the start
                                 xServerState.value.winStarted = true
                             }
                             if (!getxServer().isFlatPresentationEnabled) return

@@ -350,8 +350,12 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
         }
     }
 
+    /** DS Forever (CursorPolicy): told of every touch-down on the top screen; the launcher decides whether it was the player's */
+    public static volatile Runnable onTouchDown = null;
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) { Runnable r = onTouchDown; if (r != null) r.run(); }
         boolean isStylus = isEventTriggeredByStylus(event);
         if (touchscreenMouseDisabled
                 && !isStylus

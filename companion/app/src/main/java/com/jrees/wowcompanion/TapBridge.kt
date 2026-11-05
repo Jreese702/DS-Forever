@@ -273,6 +273,7 @@ object TapBridge {
             // a button was down when they were asked for, so a stray or a missing answer can be traced from ONE log read
             Log.i(TAG, "quiet pad: $what waited $waited ms (held at queue $heldAtQueue)" + (keysOff?.let { " keys off: $it" } ?: ""))
             tapHistory(what)
+            CursorPolicy.tapping(SystemClock.uptimeMillis(), pts.size)       // these touches are ours: the cursor stays hidden
             RootShell.run(script) { r ->
                 if (r.exit != 0) onFail(if (r.exit == -1) "no root shell (refused, or it died)" else "tap was refused (exit ${r.exit})")
             }
