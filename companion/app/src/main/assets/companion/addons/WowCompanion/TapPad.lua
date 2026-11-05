@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad16"     -- pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad17"     -- pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -883,4 +883,58 @@ do
         elseif e == "UNIT_COMBAT" then pcall(probe, "combat", a)
         else pcall(probe, "health", nil) end
     end)
+end
+
+-- ---------------------------------------------------------------- pad17 THE HEALTH STRIPS (the user, 2026-11-05: "Is there a way for us to do the
+-- screen read for all party members subtly without having unit frames?"). Since the game's update every health number is hidden from add-ons
+-- (pad16's probe: the unit, its percent, every bar's value and fill, every hit's amount), but a hidden value may still be SHOWN: a status
+-- bar takes it (SetValue) and the game draws the fill. Five hair-thin strips in the screen's top-left corner, you then party1..4, each a
+-- plain green fill on black, are filled by the game; the app (which draws the top screen) measures them. The strips' place and size are
+-- published (cap probe "strips") so the app knows where to look. Nothing is read back here; nothing of the game's is changed.
+do
+    local N, W, H, GAP = 5, 120, 2, 1
+    local UNITS = { "player", "party1", "party2", "party3", "party4" }
+    local root = CreateFrame("Frame", "WowCompanionHealthStrips", UIParent)
+    root:SetFrameStrata("TOOLTIP")
+    root:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+    root:SetSize(W, N * (H + GAP))
+    local bars = {}
+    for i = 1, N do
+        local bg = root:CreateTexture(nil, "BACKGROUND")
+        bg:SetColorTexture(0, 0, 0, 1)
+        bg:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -(i - 1) * (H + GAP))
+        bg:SetSize(W, H)
+        local b = CreateFrame("StatusBar", nil, root)
+        b:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -(i - 1) * (H + GAP))
+        b:SetSize(W, H)
+        b:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        b:SetStatusBarColor(0, 1, 0, 1)
+        b:SetMinMaxValues(0, 1)
+        b:SetValue(0)
+        bars[i] = b
+    end
+    local function fill(i)
+        local u, b = UNITS[i], bars[i]
+        pcall(function()
+            local mx = UnitHealthMax(u)
+            b:SetMinMaxValues(0, mx)
+            b:SetValue(UnitHealth(u))        -- hidden or not: the game draws it
+        end)
+    end
+    local function all() for i = 1, N do pcall(fill, i) end end
+    local ev = CreateFrame("Frame")
+    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "GROUP_ROSTER_UPDATE" }) do pcall(function() ev:RegisterEvent(e) end) end
+    pcall(function() ev:RegisterEvent("UNIT_HEALTH") end)          -- any unit (RegisterUnitEvent takes two at most)
+    pcall(function() ev:RegisterEvent("UNIT_MAXHEALTH") end)
+    ev:SetScript("OnEvent", function(_, e)
+        all()
+        if e == "PLAYER_ENTERING_WORLD" then
+            pcall(function()
+                local sc = root:GetEffectiveScale()
+                WC.send(WC.encode({ type = "cap", probe = "strips", v = PADV, n = N, w = W, h = H, gap = GAP, scale = sc,
+                                    sw = UIParent:GetWidth() * UIParent:GetEffectiveScale(), sh = UIParent:GetHeight() * UIParent:GetEffectiveScale() }))
+            end)
+        end
+    end)
+    if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(0.5, all) end
 end
