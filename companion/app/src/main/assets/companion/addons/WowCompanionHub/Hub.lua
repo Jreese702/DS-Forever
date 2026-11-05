@@ -645,6 +645,7 @@ do
     pf:RegisterEvent("PLAYER_ENTERING_WORLD")
     pf:SetScript("OnEvent", function()
         pf:UnregisterEvent("PLAYER_ENTERING_WORLD")
+        if type(C_Timer) ~= "table" or type(EnumerateFrames) ~= "function" then return end
         C_Timer.After(6, function()
             pcall(function()
                 local W, H = UIParent:GetWidth(), UIParent:GetHeight()

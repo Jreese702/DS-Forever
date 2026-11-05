@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m85"                -- bump on every change; m85: a party member's error no longer drops the party document (reported once, probe partyerr); Manners' prompt always hidden; m84: your own party cell takes a plain reading before the vitals' estimate (hs vit:<src>); m83: party members found by the party count / name too (UnitExists may be secret); m82: the party roster looked at again 2 / 5 / 10 s after a login (tokens come late); m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m86"                -- bump on every change; m86: health read from the DRAWN bar fill (texture width / bar width) when the value is secret; your own cell from the player frame first; m85: a party member's error no longer drops the party document (reported once, probe partyerr); Manners' prompt always hidden; m84: your own party cell takes a plain reading before the vitals' estimate (hs vit:<src>); m83: party members found by the party count / name too (UnitExists may be secret); m82: the party roster looked at again 2 / 5 / 10 s after a login (tokens come late); m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -5311,19 +5311,34 @@ local function partyMode()
             local lo, hi = call(function() return fr:GetMinMaxValues() end)
             lo, hi = P(lo), P(hi)
             if v and lo and hi and hi > lo then return math.floor((v - lo) * 100 / (hi - lo) + 0.5) end
+            -- m86 (the user: "taking damage repeatedly from a wolf and my Healthbar in the party frame is not dropping at all"; the
+            -- value and the combat amounts are secret): the DRAWN fill - the bar's own texture's width against the bar's - as a percent
+            local tw = P(call(function() local t = fr:GetStatusBarTexture(); return t and t:GetWidth() end))
+            local fw = P(call(function() return fr:GetWidth() end))
+            if tw and fw and fw > 0 then return math.max(0, math.min(100, math.floor(tw * 100 / fw + 0.5))), true end
         end
         local function unitOf(fr) local v = T(function() return fr.unit or (fr.GetAttribute and fr:GetAttribute("unit")) end); return v end
+        -- m86: your own cell from the player frame's health bar (shown or hidden by alpha, it is drawn either way)
+        if u == "player" then
+            for _, path in ipairs({ { "PlayerFrame", "PlayerFrameContent", "PlayerFrameContentMain", "HealthBarsContainer", "HealthBar" },
+                                    { "PlayerFrameHealthBar" }, { "PlayerFrame", "healthbar" } }) do
+                local t = _G
+                for _, k in ipairs(path) do if type(t) ~= "table" then t = nil break end; t = t[k] end
+                local p, drawn = bar(t)
+                if p then return p, drawn and "pframe-draw" or "pframe" end
+            end
+        end
         local pf = _G.PartyFrame
         for i = 1, 4 do
             local fr = (type(pf) == "table" and pf["MemberFrame" .. i]) or _G["PartyMemberFrame" .. i]
             if type(fr) == "table" and unitOf(fr) == u then
                 local hb = fr.HealthBar or fr.healthbar or (fr.HealthBarContainer and fr.HealthBarContainer.HealthBar)
-                local p = bar(hb); if p then return p, "frame" end
+                local p, drawn = bar(hb); if p then return p, drawn and "frame-draw" or "frame" end
             end
         end
         for i = 1, 5 do
             local fr = _G["CompactPartyFrameMember" .. i]
-            if type(fr) == "table" and unitOf(fr) == u then local p = bar(fr.healthBar); if p then return p, "compact" end end
+            if type(fr) == "table" and unitOf(fr) == u then local p, drawn = bar(fr.healthBar); if p then return p, drawn and "compact-draw" or "compact" end end
         end
         return nil
     end
