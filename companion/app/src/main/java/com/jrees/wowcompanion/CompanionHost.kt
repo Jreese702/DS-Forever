@@ -1287,6 +1287,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     private var partyHsLast = ""
     private fun partyDoc(p: PartyModel.Party, current: Boolean) {
+        // 2026-11-04 (the user: logged in on another character, "it showed my hunter as myself in the party"): a party document from the
+        // log's history may be another character's; only a CURRENT one is shown (the add-on sends its own within seconds of a login)
+        if (!current) return
         val live = PartyModel.live
         // m79: which reader each member's health came from, logged when it changes (2026-11-04: "staying at full health for everyone")
         p.m.joinToString(" ") { "${it.u}=${it.hs ?: "?"}" }.let { if (it != partyHsLast) { partyHsLast = it; Log.i("WCPARTY", "health sources: $it") } }
@@ -1720,6 +1723,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the game's "has been blocked from an action" pop-up names no function: the add-on's report does (ActionBar onBlocked)
         msg.optJSONObject("hudBlocked")?.let { Log.w("WCBLOCK", "${it.optString("who")} ${it.optString("ev")}: ${it.optString("fn")} (#${it.optInt("n")})") }
         // m85: Party mode's own errors (a member it could not read, or the whole document), once each
+        // pad14: WoW's hardware cursor setting before / after DS Forever's one switch to the software cursor
+        if (msg.optString("probe") == "cursorsoft") Log.i("WCCURSOR", "gxCursor before ${msg.optString("before")} set ${msg.optString("set")} after ${msg.optString("after")}")
         if (msg.optString("probe") == "partyerr") Log.w("WCPARTY", "party error (${msg.optString("u")}): ${msg.optString("err")}")
         // chat29: what the game says its chat style is, and what the switch did (the chat bar on the top screen, 2026-11-04)
         if (msg.optString("probe") == "chatstyle") Log.i("WCCHAT", "chat style: now ${msg.optString("now")} default ${msg.optString("default")} " +

@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad13"     -- pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad14"     -- pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -734,12 +734,38 @@ do
         elseif type(GetMouseFocus) == "function" then focus = GetMouseFocus() end
         return focus == nil or focus == WorldFrame
     end
+    -- pad14 (the user's test14: the blank cursor "is showing a big black box": the HARDWARE cursor ignores its alpha; the user's pick
+    -- "Yes, try software cursor"): WoW's own Hardware Cursor setting (gxCursor) is switched OFF ONCE (WowCompanionDB.cursorSoftSet,
+    -- never again, so the player's later choice stays), and the cursor is hidden only while the game draws it itself (gxCursor "0"),
+    -- where the picture's alpha works. What the game says is reported (cap probe "cursorsoft"; the app logs it as WCCURSOR).
+    local function soft()
+        local ok, v = pcall(function() return C_CVar.GetCVar("gxCursor") end)
+        return ok and type(v) == "string" and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) and v == "0"
+    end
+    local cv = CreateFrame("Frame")
+    cv:RegisterEvent("PLAYER_ENTERING_WORLD")
+    cv:SetScript("OnEvent", function()
+        cv:UnregisterEvent("PLAYER_ENTERING_WORLD")
+        pcall(function()
+            if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+            local before = C_CVar.GetCVar("gxCursor")
+            local out = { type = "cap", probe = "cursorsoft", v = PADV, before = before }
+            if not WowCompanionDB.cursorSoftSet and not InCombatLockdown() then
+                WowCompanionDB.cursorSoftSet = true
+                if before ~= nil and before ~= "0" then
+                    out.set = pcall(C_CVar.SetCVar, "gxCursor", "0") and "0" or "refused"
+                    out.after = C_CVar.GetCVar("gxCursor")
+                end
+            end
+            WC.send(WC.encode(out))
+        end)
+    end)
     f:SetScript("OnUpdate", function(_, el)
         acc = acc + el
         if acc < 0.1 then return end
         acc = 0
         local ok, p = pcall(parked)
-        p = ok and p == true
+        p = ok and p == true and soft()
         if p then
             pcall(SetCursor, BLANK)                                    -- again each look: the game resets it over a unit or an object
             hidden = true

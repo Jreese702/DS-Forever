@@ -408,7 +408,7 @@ for k in ("tappad", "quests", "book", "padmap", "padtabctl"):
     check(e is None, "Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
 
 # ================================================================ 10. TapPad pad11
-check('local PADV = "pad13"' in SRC["tappad"], "TapPad says pad13 (pad11's party row + the resting cursor hidden)")
+check('local PADV = "pad14"' in SRC["tappad"], "TapPad says pad14 (pad11's party row + the resting cursor hidden under the software cursor)")
 check(re.search(r'local ROWS_MAX = 56\b', SRC["tappad"]) is not None, "TapPad ROWS_MAX = 56")
 
 
@@ -431,7 +431,7 @@ L10, d, rows = pad_at(126.6)
 check(abs(float(d['popupTop']) - 126.6) < 0.06 and rows == list(range(56)), "pad11 at popupTop 126.6: rows 0..55 placed and described",
       (d['popupTop'], rows[-3:], len(rows)))
 check(L10.eval('rawget(_G, "X57")') is None, "a 57th row does not register (ROWS_MAX 56)")
-check(d['v'] == 'pad13', "describe() says pad13", d['v'])
+check(d['v'] == 'pad14', "describe() says pad14", d['v'])
 L10, d, rows = pad_at(121.5)
 check(abs(float(d['popupTop']) - 121.5) < 0.06 and rows == list(range(54)), "pad11 at popupTop 121.5 (smallest scale): rows 0..53 only",
       (d['popupTop'], rows[-3:], len(rows)))
@@ -1559,7 +1559,8 @@ BAD = [r'\bSetBinding\s*\(', r'\bSaveBindings\b', r'\bCreateMacro\b', r'\bEditMa
        r'\bSetOverrideBinding\s*\(']
 hits = [(p, ln.strip()) for ln in code for p in BAD if re.search(p, ln)]
 # the user's one exception (2026-11-04, "Let DS Forever set it"): Chat.lua chat27 sets the chat style to Classic once
-hits = [(p, ln) for (p, ln) in hits if not (p == r'\bSetCVar\b' and ('STYLE_CVAR' in ln or 'C_CVar.SetCVar) == "function"' in ln))]
+hits = [(p, ln) for (p, ln) in hits if not (p == r'\bSetCVar\b' and ('STYLE_CVAR' in ln or 'C_CVar.SetCVar) == "function"' in ln or '"gxCursor"' in ln))]
+# (and pad14's software cursor: the user's "Yes, try software cursor", 2026-11-04, gxCursor once)
 check(not hits, "no trace in the new add-on code: no SetBinding / SaveBindings / macros / CVars / bar writes / Blizzard window code",
       hits[:3])
 check(not any('SetOverrideBindingClick' in ln and 'hdr' not in ln and 'owner' not in ln for ln in code),
