@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad11"     -- pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad12"     -- pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -703,3 +703,45 @@ end)
 -- SetPreferredGamepadInteractTarget (Blizzard's gamepad action bar) in 3 minutes and froze the game
 -- until a restart. It had no other use, so it is gone (user ruling 11:35). Do not add a command
 -- here; if the cells must be seen, set pad.visible from code under a test, never from chat.
+
+-- ---------------------------------------------------------------- pad12 THE PARKED CURSOR (the user, 2026-11-04: "cursor is still
+-- sitting in the middle being annoying as hell. can we like hide it"): every tap of the app is a mouse click, and after one the game
+-- parks its cursor at the screen's centre in controller mode, where it stays. While the cursor RESTS there (within 4 px of the centre),
+-- over the 3D world (nothing under it but WorldFrame), with nothing held and no spell aiming, it is drawn as a blank picture
+-- (SetCursor, Media/cursor_blank.tga, fully transparent); anywhere else, or anything held / aimed, it is the game's own again
+-- (ResetCursor). A real mouse moved away gets its cursor back at once. Nothing saved, no setting changed. If this client refuses the
+-- picture, nothing changes (every call guarded).
+do
+    local BLANK = "Interface\\AddOns\\WowCompanion\\Media\\cursor_blank"
+    local f = CreateFrame("Frame")
+    local hidden, acc = false, 0
+    local function plainNum(v) return type(v) == "number" and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) and v or nil end
+    local function parked()
+        local x, y = GetCursorPosition()
+        x, y = plainNum(x), plainNum(y)
+        if not x or not y then return false end
+        local sc = UIParent:GetEffectiveScale()
+        local cx, cy = UIParent:GetWidth() * sc / 2, UIParent:GetHeight() * sc / 2
+        if math.abs(x - cx) > 4 or math.abs(y - cy) > 4 then return false end
+        if type(GetCursorInfo) == "function" and GetCursorInfo() ~= nil then return false end
+        if type(SpellIsTargeting) == "function" and SpellIsTargeting() then return false end
+        local focus = nil
+        if type(GetMouseFoci) == "function" then local t = GetMouseFoci(); focus = type(t) == "table" and t[1] or nil
+        elseif type(GetMouseFocus) == "function" then focus = GetMouseFocus() end
+        return focus == nil or focus == WorldFrame
+    end
+    f:SetScript("OnUpdate", function(_, el)
+        acc = acc + el
+        if acc < 0.1 then return end
+        acc = 0
+        local ok, p = pcall(parked)
+        p = ok and p == true
+        if p then
+            pcall(SetCursor, BLANK)                                    -- again each look: the game resets it over a unit or an object
+            hidden = true
+        elseif hidden then
+            pcall(ResetCursor)
+            hidden = false
+        end
+    end)
+end

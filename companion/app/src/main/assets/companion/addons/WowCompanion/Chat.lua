@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat28"     -- chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
+local CHATV = "chat30"     -- chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -681,10 +681,14 @@ local function reportStyle()
         -- the game's chat box on the top screen; it is switched to Classic ONCE (WowCompanionDB.chatStyleSet), out of combat, and
         -- never again, so a player who sets IM back keeps it
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
-        if not WowCompanionDB.chatStyleSet and not InCombatLockdown() then
-            WowCompanionDB.chatStyleSet = true
-            if info.value == "im" and type(C_CVar.SetCVar) == "function" then
+        -- chat29: chat27 set nothing on the Thor (its flag set, no chatStyle saved): any value but "classic" is switched (once, by a
+        -- new flag), and what the game then says is reported (now2)
+        if not WowCompanionDB.chatStyleSet2 and not InCombatLockdown() then
+            WowCompanionDB.chatStyleSet2 = true
+            if type(info.value) == "string" and info.value:lower() ~= "classic" and type(C_CVar.SetCVar) == "function" then
                 out.set = pcall(C_CVar.SetCVar, STYLE_CVAR, "classic") and "classic" or "refused"
+                local after = styleInfo()
+                out.now2 = after and after.value or nil
             end
         end
     end
@@ -1478,7 +1482,38 @@ local function typedPick(op, col)
     end
     local body = typed.body
     if not body:find("%S") then return tack("send", "chq", col, false, "nothing to send", true) end
-    if body:sub(1, 1) == "/" then return tack("send", "chq", col, false, "commands cannot be sent from here", true) end
+    if body:sub(1, 1) == "/" then
+        -- chat30 (the user, 2026-11-04: "im trying to send /sit and its stopping me"): the chat's own prefixes go to their channel
+        -- (/s /p /g /y /ra /i /e /me, /w name text); any other word is tried as the game's emote (C_ChatInfo.PerformEmote, the
+        -- radial's own call: /sit, /dance, /wave ...); anything else is still refused
+        local cmd, rest = body:match("^/(%S+)%s*(.-)%s*$")
+        cmd = (cmd or ""):lower()
+        local CH = { s = "SAY", say = "SAY", p = "PARTY", party = "PARTY", g = "GUILD", guild = "GUILD", y = "YELL", yell = "YELL",
+                     ra = "RAID", raid = "RAID", i = "INSTANCE_CHAT", instance = "INSTANCE_CHAT", e = "EMOTE", em = "EMOTE",
+                     me = "EMOTE", emote = "EMOTE" }
+        local ok, why
+        if CH[cmd] and rest ~= "" then
+            ok, why = sendLine(rest, CH[cmd])
+        elseif (cmd == "w" or cmd == "whisper" or cmd == "t" or cmd == "tell") and rest:find("%S") then
+            local who, text = rest:match("^(%S+)%s+(.+)$")
+            if not who then ok, why = false, "write: /w name message"
+            else local keep = typed.tgt; typed.tgt = who; ok, why = sendLine(text, "WHISPER"); typed.tgt = keep end
+        elseif rest == "" and cmd ~= "" and type(C_ChatInfo) == "table" and type(C_ChatInfo.PerformEmote) == "function" then
+            local token = cmd:upper()
+            local okE, res = pcall(C_ChatInfo.PerformEmote, token)
+            ok = okE and res ~= false
+            if not ok then
+                local title = cmd:sub(1, 1):upper() .. cmd:sub(2)
+                okE, res = pcall(C_ChatInfo.PerformEmote, title)
+                ok = okE and res ~= false
+            end
+            why = (not ok) and ("/" .. cmd .. " is not an emote this can send") or nil
+        else
+            ok, why = false, "only chat (/s /p /g /y /w ...) and emotes (/sit, /dance ...) can be sent from here"
+        end
+        if ok then typed.body = "" end
+        return tack("send", "chq", col, ok, why, true)
+    end
     local ok, why = sendLine(body, qtype)
     if ok then typed.body = "" end
     tack("send", "chq", col, ok, why, true)
