@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat26"     -- chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
+local CHATV = "chat28"     -- chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -46,6 +46,10 @@ local CHANNELS = {
     CHAT_MSG_OFFICER = "officer",
     CHAT_MSG_WHISPER = "whisper",
     CHAT_MSG_WHISPER_INFORM = "whisper",
+    -- chat28 (the user, 2026-11-04: "someone whispered me and I cant see it at all"): Forever's friends are Battle.net / title friends,
+    -- whose whispers come as BN whispers, never registered before
+    CHAT_MSG_BN_WHISPER = "whisper",
+    CHAT_MSG_BN_WHISPER_INFORM = "whisper",
     CHAT_MSG_CHANNEL = "channel",
     CHAT_MSG_EMOTE = "emote",
     CHAT_MSG_TEXT_EMOTE = "emote",
@@ -421,6 +425,21 @@ local function onChatEvent(event, ...)
     if not text then return end
     local who = str(a[2])
     if who == "" then who = nil end
+    -- chat28: a BN whisper's sender is the account's protected name (a |K escape the bottom screen cannot show): the character they
+    -- play, else their BattleTag's name, from the sender's id (arg 13)
+    local bnChar = nil
+    if event == "CHAT_MSG_BN_WHISPER" or event == "CHAT_MSG_BN_WHISPER_INFORM" then
+        local id = SN(function() return a[13] end)
+        local ok, info = pcall(function() return id and C_BattleNet.GetAccountInfoByID(id) end)
+        if ok and type(info) == "table" then
+            bnChar = str(type(info.gameAccountInfo) == "table" and info.gameAccountInfo.characterName or nil)
+            if bnChar == "" then bnChar = nil end
+            local tag = str(info.battleTag)
+            if tag then tag = tag:match("^[^#]+") end
+            who = bnChar or tag or who
+        end
+        if type(who) == "string" and who:find("|K", 1, true) then who = "Battle.net friend" end
+    end
     local chan = str(a[4])
     if chan == "" then chan = nil end
 
@@ -442,8 +461,9 @@ local function onChatEvent(event, ...)
         links = links,
         lc = lc,
     }
-    if event == "CHAT_MSG_WHISPER_INFORM" then row.dir = "out" end      -- "who" is the recipient
+    if event == "CHAT_MSG_WHISPER_INFORM" or event == "CHAT_MSG_BN_WHISPER_INFORM" then row.dir = "out" end      -- "who" is the recipient
     if event == "CHAT_MSG_WHISPER" and who then WC.chatLastTell = who end   -- quick chat's Reply goes here
+    if event == "CHAT_MSG_BN_WHISPER" and bnChar then WC.chatLastTell = bnChar end   -- chat28: Reply goes to the character they play
     if guid then
         row.cls = classFor(guid)
         if row.dir ~= "out" and isMe(guid) then row.me = true end
@@ -657,6 +677,16 @@ local function reportStyle()
         out.why = "the game did not say what it is"
     else
         out.now, out.default = info.value, info.default
+        -- chat27 (the user's ruling 2026-11-04, "Let DS Forever set it", an exception to the 10-09 no-change rule): the IM style keeps
+        -- the game's chat box on the top screen; it is switched to Classic ONCE (WowCompanionDB.chatStyleSet), out of combat, and
+        -- never again, so a player who sets IM back keeps it
+        if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+        if not WowCompanionDB.chatStyleSet and not InCombatLockdown() then
+            WowCompanionDB.chatStyleSet = true
+            if info.value == "im" and type(C_CVar.SetCVar) == "function" then
+                out.set = pcall(C_CVar.SetCVar, STYLE_CVAR, "classic") and "classic" or "refused"
+            end
+        end
     end
     WC.emit(out)
 end

@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m79"                -- bump on every change; m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m81"                -- bump on every change; m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -1962,9 +1962,15 @@ function OV.fightAt(pos)
 end
 -- a spell's tooltip cooldown, read once per spell (the fight faces keep theirs as tcd)
 OV.tcd = {}
+OV.tcdAt = {}
 function OV.tcdOf(id)
     if type(id) ~= "number" then return nil end
-    if OV.tcd[id] == nil then OV.tcd[id] = (tooltipCd and tooltipCd(id)) or false end
+    -- m81: a failed read is tried again after 30 s (it was kept as "none" for good: a first read before the tooltip loaded hid a
+    -- spell's cooldown for the session)
+    if OV.tcd[id] == nil or (OV.tcd[id] == false and GetTime() - (OV.tcdAt[id] or 0) > 30) then
+        OV.tcd[id] = (tooltipCd and tooltipCd(id)) or false
+        OV.tcdAt[id] = GetTime()
+    end
     return OV.tcd[id] or nil
 end
 -- SPELL_UPDATE_COOLDOWN: read each fight spell's cooldown flags NOW (the only time isOnGCD is trusted)
@@ -1982,7 +1988,11 @@ local function faceCooldowns()
             local ok, info = pcall(C_Spell.GetSpellCooldown, c.id or c.n)
             local active = ok and type(info) == "table" and TB(function() return info.isActive end) == true
             local gcd = ok and type(info) == "table" and TB(function() return info.isOnGCD end) == true
-            if not active then
+            -- m81: a cooldown started by its cast landing (OV.cdCast: Raptor Strike's swing) stands until it runs out; a read that says
+            -- "not active" (the server not there yet) or "the GCD" in the meantime does not wipe or shorten it
+            local held = cur and cur.cast and now < cur.t0 + cur.d - 0.2 and (not active or gcd)
+            if held then
+            elseif not active then
                 if cur then cdNow[pos] = nil; changed = true end
             else
                 local dur = SN(function() return info.duration end)
@@ -2011,6 +2021,28 @@ local function faceCooldowns()
     end
     if changed then cdSend() end
 end
+-- m81 (the user, 2026-11-04: "about 60% of the time my CD on raptor strike is not showing"): an on-next-swing spell's cooldown starts
+-- when the swing LANDS, often inside another spell's GCD, so the one SPELL_UPDATE_COOLDOWN look above missed it or took it for the GCD.
+-- The cast landing (UNIT_SPELLCAST_SUCCEEDED, the player) starts the face's cooldown itself, by the spell's NAME (any rank), with its
+-- learned / tooltip length; only a real cooldown (over 1.5 s), so a spell without one never gets a made-up timer.
+OV.cdCast = CreateFrame("Frame")
+pcall(function() OV.cdCast:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") end)
+OV.cdCast:SetScript("OnEvent", function(_, _, _, _, spellID)
+    pcall(function()
+        local id = SN(function() return spellID end)
+        local n = id and TS(function() return C_Spell.GetSpellName(id) end)
+        if not n then return end
+        local now, learned, hit = GetTime(), cdLearned(), false
+        for _, pos in ipairs({ 1, 2, 3, 4, 5, 6, 8 }) do
+            local c = OV.fightAt(pos)
+            if type(c) == "table" and c.n == n then
+                local d = learned[n] or c.tcd or OV.tcdOf(c.id)
+                if d and d > 1.5 then cdNow[pos] = { d = d, t0 = now, e = true, n = n, cast = true }; hit = true end
+            end
+        end
+        if hit then cdSend() end
+    end)
+end)
 
 -- THE TRIGGER (the user 2026-10-01, after batch 24: "follow the exact same logic as the controller expanding, using the start attack"):
 -- Home's controller grows while the AUTO-ATTACK runs (PLAYER_ENTER_COMBAT / PLAYER_LEAVE_COMBAT) or an AUTO-REPEAT (START / STOP_
@@ -5316,6 +5348,12 @@ local function partyMode()
         if aName then
             local r = T(function() return C_Spell.IsSpellInRange(aName, u) end)
             if type(r) == "boolean" and WC.isPlain(r) then m.rng = r end
+        end
+        -- m80 (the user, 2026-11-04: "when party members are not nearby, their frame should be dimmed out like it is in game"): no
+        -- spell's answer -> the game's own party range (UnitInRange, as its party frames dim), only when it says it checked, plainly
+        if m.rng == nil and u ~= "player" then
+            local ok, inR, checked = pcall(UnitInRange, u)
+            if ok and checked == true and WC.isPlain(checked) and type(inR) == "boolean" and WC.isPlain(inR) then m.rng = inR end
         end
         return m
     end

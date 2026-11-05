@@ -11,7 +11,8 @@ import org.junit.Test
 /** every number of PARTY_BUILD.md 4.2 for n = 1..5 x {rest, fight on, fight off}; the tag's two places; NAV = 3.4 */
 class PartyLayoutTest {
     private fun b(l: Int, t: Int, r: Int, bb: Int) = Box(l.toFloat(), t.toFloat(), r.toFloat(), bb.toFloat())
-    private fun mod(mode: Mode, n: Int) = PartyLayout.module(mode, n)
+    // the cells' own geometry, Party mode on (no side tab); theTag checks the tab and the shift it makes
+    private fun mod(mode: Mode, n: Int) = PartyLayout.module(mode, n, tagShown = false)
 
     @Test fun atRest() {
         mod(Mode.REST, 1).let { assertEquals(listOf(b(20, 228, 603, 330)), it.cells); assertEquals(b(8, 216, 615, 342), it.well) }
@@ -59,13 +60,16 @@ class PartyLayoutTest {
     }
 
     @Test fun theTag() {
-        assertEquals(b(392, 194, 600, 236), mod(Mode.REST, 3).tag)
-        // in a fight: 208 x 42 with its foot 20 under the well's top edge (APP DEVIATIONS: the contract's 378..418 is 40 high)
-        assertEquals(b(392, 376, 600, 418), mod(Mode.FIGHT_OFF, 5).tag)
-        assertNull(PartyLayout.module(Mode.REST, 3, tagShown = false).tag)
-        val p = PartyLayout.tagParts(mod(Mode.REST, 1).tag!!)
-        assertEquals(420f, p.glyphCx); assertEquals(446f, p.textX); assertEquals(36f, p.glyph)
-        assertTrue(PartyLayout.hitTag(mod(Mode.REST, 2), 500f, 200f))
+        // 2026-11-04: the side tab down the well's left inside edge, the cells after it; Party mode on: no tab, the cells as before
+        val withTab = PartyLayout.module(Mode.REST, 3)
+        assertEquals(b(20, 228, 56, 467), withTab.tag)
+        assertEquals(64f, withTab.cells[0].l); assertEquals(603f, withTab.cells[0].r)
+        assertEquals(b(8, 216, 615, 479), withTab.well)
+        assertNull(mod(Mode.REST, 3).tag)
+        val p = PartyLayout.tagParts(withTab.tag!!)
+        assertEquals(38f, p.glyphCx); assertEquals(32f, p.glyph)
+        assertTrue(PartyLayout.hitTag(withTab, 30f, 300f))
+        assertTrue(!PartyLayout.hitTag(withTab, 300f, 300f))
     }
 
     @Test fun cellParts() {
@@ -75,11 +79,11 @@ class PartyLayoutTest {
         assertEquals(b(26, 236, 72, 282), PartyLayout.role(c))
         assertEquals(b(30, 242, 64, 276), PartyLayout.skull(c))
         val half = PartyLayout.hpFill(c, 50, full = false)
-        assertEquals(312f, half.box!!.r); assertEquals(272f, half.fadeFrom)
+        assertEquals(312f, half.box!!.r); assertNull(half.fadeFrom)          // a hard line, never a fade
         assertNull(PartyLayout.hpFill(c, 100, full = true).fadeFrom)
         assertNull(PartyLayout.hpFill(c, 0, full = false).box)
         assertEquals(0x0000FF, PartyLayout.powerRgb("MANA")); assertEquals(0x808080, PartyLayout.powerRgb("RUNIC_POWER"))
-        assertEquals("~72%", PartyLayout.pctText(72, false)); assertEquals("Offline", PartyLayout.pctText(72, true))
+        assertEquals("72%", PartyLayout.pctText(72, false)); assertEquals("Offline", PartyLayout.pctText(72, true))
         assertEquals(2, PartyLayout.hit(mod(Mode.REST, 3), 400f, 400f)); assertEquals(-1, PartyLayout.hit(mod(Mode.REST, 3), 700f, 400f))
     }
 

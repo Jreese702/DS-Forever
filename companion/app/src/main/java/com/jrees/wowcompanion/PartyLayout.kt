@@ -42,6 +42,11 @@ object PartyLayout {
     const val TAG_RIGHT_IN = 15f
     /** the tag's foot, under the well's top edge */
     const val TAG_BELOW = 20f
+    /** 2026-11-04 (the user: "that side panel that we just hid from the top screen with the select button on the left side of the frames
+     *  instead of ... Party Mode"; "when in party mode, hide it"): the tag is the game's raid-manager side tab, down the well's left
+     *  inside edge; the cells start after it while it shows */
+    const val SIDE_W = 36f
+    const val SIDE_GAP = 8f
 
     /** the default top for [mode] (the caller passes its own: the left column's top after the bars / the focused quest's card) */
     fun defaultTop(mode: Mode) = if (mode == Mode.FIGHT_OFF) FIGHT_TOP else REST_TOP
@@ -52,7 +57,7 @@ object PartyLayout {
     /** the module for [n] members (1..5) in [mode], its well's top at [top]; [tagShown] = Party mode off or suspended */
     fun module(mode: Mode, n: Int, top: Float = defaultTop(mode), tagShown: Boolean = true, left: Float = LEFT, right: Float = RIGHT): Module {
         val m = n.coerceIn(1, 5)
-        val cl = left + IN; val cr = right - IN; val cw = cr - cl
+        val cl = left + IN + (if (tagShown) SIDE_W + SIDE_GAP else 0f); val cr = right - IN; val cw = cr - cl
         val youH = when (mode) {
             Mode.REST -> if (m >= 3) 128f else 102f
             Mode.FIGHT_ON -> 150f
@@ -86,16 +91,16 @@ object PartyLayout {
             y += otherH
         }
         val well = Box(left, top, right, y + IN)
-        return Module(well, cells, if (tagShown) tag(top, right) else null, well.b + CHAT_GAP)
+        return Module(well, cells, if (tagShown) side(well) else null, well.b + CHAT_GAP)
     }
 
-    /** the (-) tag: 208 x 42 standing on the well's top edge at its right end (at rest x 392..600, y 194..236) */
-    fun tag(wellTop: Float, wellRight: Float = RIGHT) =
-        Box(wellRight - TAG_RIGHT_IN - TAG_W, wellTop + TAG_BELOW - TAG_H, wellRight - TAG_RIGHT_IN, wellTop + TAG_BELOW)
+    /** the side tab: [SIDE_W] wide, inside the well's left edge, the cells' full height */
+    fun side(well: Box) = Box(well.l + IN, well.t + IN, well.l + IN + SIDE_W, well.b - IN)
 
     /** the tag's parts: the `rev_minus` glyph's centre and size, the words' left x and baseline-centre y */
     data class TagParts(val glyphCx: Float, val glyphCy: Float, val glyph: Float, val textX: Float, val textCy: Float, val textSize: Float)
-    fun tagParts(t: Box) = TagParts(t.l + 28f, t.cy, 36f, t.l + 54f, t.cy, 26f)
+    /** the side tab's parts: the Select glyph centred (no words) */
+    fun tagParts(t: Box) = TagParts(t.cx, t.cy, minOf(32f, t.w - 4f), t.cx, t.cy, 0f)
 
     // ------------------------------------------------------------------------------------------------ the cell's parts
 
@@ -114,7 +119,7 @@ object PartyLayout {
         if (p == 0) return Fill(null, null)
         val r = bar.l + bar.w * p / 100f
         val f = Box(bar.l, bar.t, r, bar.b)
-        return Fill(f, if (full || p >= 100) null else maxOf(bar.l, r - FADE))
+        return Fill(f, null)               // 2026-11-04 (the user): a hard line where the health ends, never a fade to black
     }
 
     /** the power line: 6 px at y h-7..h-1, the full width (the type's colour only: no amount is ever sent) */
@@ -192,7 +197,7 @@ object PartyLayout {
     }
 
     /** the health text: "~NN%" (always an estimate), "Offline" for a disconnected member */
-    fun pctText(hp: Int, off: Boolean) = if (off) "Offline" else "~${hp.coerceIn(0, 100)}%"
+    fun pctText(hp: Int, off: Boolean) = if (off) "Offline" else "${hp.coerceIn(0, 100)}%"     // no "~" (the user, 2026-11-04)
 
     /** the cell index under ([x], [y]), else -1 */
     fun hit(m: Module, x: Float, y: Float): Int = m.cells.indexOfFirst { it.contains(x, y) }

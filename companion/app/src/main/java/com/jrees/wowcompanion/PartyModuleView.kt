@@ -60,7 +60,9 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         for ((k, cell) in m.cells.withIndex()) {
             val mem = p.m.getOrNull(k) ?: continue
             val big = k == 0 && p.n >= 3 && mode != PartyLayout.Mode.FIGHT_OFF
-            val save = if (mem.off) c.saveLayerAlpha(cell.l, cell.t, cell.r, cell.b, 128) else -1
+            // offline, or out of range (2026-11-04, the user: "dimmed out like it is in game"; the game's own 55 % look)
+            val save = if (mem.off) c.saveLayerAlpha(cell.l, cell.t, cell.r, cell.b, 128)
+                else if (mem.rng == false && mem.u != "player") c.saveLayerAlpha(cell.l, cell.t, cell.r, cell.b, 140) else -1
             drawBars(c, cell, mem)
             if (k == boxed) UiKit.focus(c, RectF().of(cell))            // bars, then the box, then the words
             drawWords(c, cell, mem, big)
@@ -122,16 +124,15 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         c.drawText(s, x, y, p)
     }
 
+    /** the side tab (the game's raid-manager tab: a dark panel, a gold edge) with the Select glyph; tapped = Party mode on */
     private fun drawTag(c: Canvas, t: Box) {
-        pFill.shader = null; pFill.style = Paint.Style.FILL; pFill.color = Color.rgb(27, 22, 16)
-        c.drawRoundRect(r.of(t), 8f, 8f, pFill)
-        pFill.style = Paint.Style.STROKE; pFill.strokeWidth = 2f; pFill.color = Color.rgb(74, 58, 28)
-        c.drawRoundRect(RectF(t.l + 1f, t.t + 1f, t.r - 1f, t.b - 1f), 8f, 8f, pFill)
+        pFill.shader = null; pFill.style = Paint.Style.FILL; pFill.color = Color.rgb(20, 17, 13)
+        c.drawRoundRect(r.of(t), 6f, 6f, pFill)
+        pFill.style = Paint.Style.STROKE; pFill.strokeWidth = 2f; pFill.color = Color.rgb(140, 110, 52)
+        c.drawRoundRect(RectF(t.l + 1f, t.t + 1f, t.r - 1f, t.b - 1f), 6f, 6f, pFill)
         pFill.style = Paint.Style.FILL
         val tp = PartyLayout.tagParts(t)
         UiKit.pad(c, "rev_minus", tp.glyphCx, tp.glyphCy, tp.glyph)
-        val wp = UiKit.bodyPaint(tp.textSize, Theme.gold)
-        c.drawText("Party mode", tp.textX, tp.textCy - (wp.ascent() + wp.descent()) / 2f, wp)
     }
 
     // ------------------------------------------------------------------------------------------------ touch
