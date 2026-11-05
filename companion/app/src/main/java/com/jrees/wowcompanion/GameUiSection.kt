@@ -385,7 +385,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         if (r.id == GameUi.PLAYER_ID) return if (r.mode == UiMode.ON) "The game's player frame stays on the top screen. For this character."
             else "The game's player frame (and its pet frame) is hidden. For this character."
         if (r.id == GameUi.PARTY_ID) return if (r.mode == UiMode.ON) "The game's party frames stay on the top screen. For this character."
-            else "The game's party frames are hidden; the party strip on this screen shows your party. For this character."
+            else "The game's party frames are hidden. For this character."
         if (r.id == GameUi.TARGET_ID) return if (r.mode == UiMode.ON) "The game's target frame stays on the top screen. For this character."
             else "The game's target frame (and the target's target) is hidden. For this character."
         if (r.id == GameUi.NP_ID) return if (r.mode == UiMode.ON) "The bars over hostile mobs are on. Off gives the game's own setting back."

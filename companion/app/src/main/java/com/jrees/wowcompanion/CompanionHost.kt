@@ -1730,9 +1730,6 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Log.w("WCSETUP", "add-ons the game had switched off, on again: ${msg.optJSONArray("list")}${if (addonsReloaded) " (reloaded once already)" else ": reloading"}")
             if (!addonsReloaded) { addonsReloaded = true; if (GameInput.reload()) reloadStarted() }
         }
-        // pad16: the health probe (every reader's kind on a health change)
-        if (msg.optString("probe") == "strips") Log.i("WCHP", "health strips: $msg")
-        if (msg.optString("probe") == "hpprobe") Log.i("WCHP", "hp probe #${msg.optInt("n")}: ${msg.optJSONObject("r")}")
         // hub21: the frames standing where the bottom-left bar is (one probe per login)
         if (msg.optString("probe") == "barprobe") Log.i("WCHUB", "bar probe (${msg.optInt("scanned")} frames): ${msg.optJSONArray("frames")}")
         // pad14: WoW's hardware cursor setting before / after DS Forever's one switch to the software cursor

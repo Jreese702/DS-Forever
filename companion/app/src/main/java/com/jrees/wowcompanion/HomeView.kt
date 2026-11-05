@@ -1096,6 +1096,8 @@ class HomeView(
 
     /** Party mode on and routing, while Home's rest page shows (a full module = the add-on suspends it; drawn as off) */
     private fun partyOnHere(): Boolean = party.party?.onLive == true
+    /** the bottom screen's party module (off since 2026-11-05: the game's own party frames show health on the top screen) */
+    private val PARTY_MODULE = false
     /** Party mode holds the D-pad here (its box moves on it): the game's D-pad layout must not also open the bar cursor (2026-11-04,
      *  the user: "pushing down on the Dpad makes the cursor also appear on the bottom bar menu") */
     fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && isShown && !typeWanted
@@ -1160,6 +1162,9 @@ class HomeView(
 
     /** places [base] with the party module: it takes the top of the chat's place (under the card when the card is above chat) */
     private fun withParty(base: Map<Part, RectF>, s: HomeScreen, w: Float): Map<Part, RectF> {
+        // 2026-11-05 (the user: "scrap the party mode showing from the bottom screen but keep the party mode toolbar settings for when
+        // party is being targeted on the top screen"; the game hides every health number, so the module could only guess): no module
+        if (!PARTY_MODULE) return base
         val p = party.party ?: return base
         val chat = base[Part.CHAT] ?: return base
         val mode = partyModeNow(s)
