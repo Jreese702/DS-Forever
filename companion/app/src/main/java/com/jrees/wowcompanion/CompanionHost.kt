@@ -1719,6 +1719,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         msg.optJSONObject("map")?.let { if (it.has("inst")) Scene.note(it.optInt("inst", -1)) }
         // the game's "has been blocked from an action" pop-up names no function: the add-on's report does (ActionBar onBlocked)
         msg.optJSONObject("hudBlocked")?.let { Log.w("WCBLOCK", "${it.optString("who")} ${it.optString("ev")}: ${it.optString("fn")} (#${it.optInt("n")})") }
+        // m85: Party mode's own errors (a member it could not read, or the whole document), once each
+        if (msg.optString("probe") == "partyerr") Log.w("WCPARTY", "party error (${msg.optString("u")}): ${msg.optString("err")}")
         // chat29: what the game says its chat style is, and what the switch did (the chat bar on the top screen, 2026-11-04)
         if (msg.optString("probe") == "chatstyle") Log.i("WCCHAT", "chat style: now ${msg.optString("now")} default ${msg.optString("default")} " +
             "set ${msg.optString("set")} after ${msg.optString("now2")} ${msg.optString("why")}")
