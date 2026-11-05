@@ -26,6 +26,8 @@ object PartyModel {
         val dead: Boolean, val off: Boolean, val pt: String, val hpMax: Int?, val pmMax: Int?,
         /** the health ESTIMATE, 0..100 (the app always prints "~") */
         val hp: Int, val full: Boolean, val rng: Boolean?,
+        /** m79: where [hp] came from: "unit" / "pct" / "frame" / "compact" (read) or "est" (the estimate); null = an older add-on */
+        val hs: String? = null,
     )
 
     data class Party(
@@ -79,7 +81,7 @@ object PartyModel {
             m.add(Member(
                 u, o.int("i") ?: unitIndex(u) ?: k, o.str("n") ?: "?", o.str("c") ?: "", o.str("col"), o.str("role") ?: "NONE",
                 o.bool("dead") ?: false, o.bool("off") ?: false, o.str("pt") ?: "", o.int("hpMax"), o.int("pmMax"),
-                (o.int("hp") ?: 100).coerceIn(0, 100), o.bool("full") ?: false, o.bool("rng"),
+                (o.int("hp") ?: 100).coerceIn(0, 100), o.bool("full") ?: false, o.bool("rng"), o.str("hs"),
             ))
         }
         if (m.isEmpty()) return null

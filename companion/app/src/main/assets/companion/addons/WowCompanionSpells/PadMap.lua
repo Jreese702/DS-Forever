@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m78"                -- bump on every change; m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m79"                -- bump on every change; m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -5248,6 +5248,41 @@ local function partyMode()
         end
         return m
     end
+    -- m79 (the user, 2026-11-04: "the HP shown in party mode is not correct at all, its staying at full health for everyone"): the
+    -- estimate only moves on UNIT_COMBAT, so each member is read FIRST through whatever this client leaves plain, as Smart Y's vitals
+    -- are: the unit's numbers, its percent reader, then the game's own party health bar for that unit (PartyFrame's member frame, the
+    -- raid-style CompactPartyFrame's). -> percent 0..100 and the source, or nil (the estimate then; "est" in the document)
+    function PM.readHp(u)
+        local P = OV.hmPlain
+        local function call(f) local ok, a, b = pcall(f); if ok then return a, b end end
+        local cur, max = P(call(function() return UnitHealth(u) end)), P(call(function() return UnitHealthMax(u) end))
+        if cur and max and max > 0 then return math.floor(cur * 100 / max + 0.5), "unit" end
+        if type(UnitHealthPercent) == "function" then
+            local p = P(call(function() return UnitHealthPercent(u) end))
+            if p then return math.floor((p <= 1 and p * 100 or p) + 0.5), "pct" end
+        end
+        local function bar(fr)
+            if type(fr) ~= "table" or type(fr.GetValue) ~= "function" then return nil end
+            local v = P(call(function() return fr:GetValue() end))
+            local lo, hi = call(function() return fr:GetMinMaxValues() end)
+            lo, hi = P(lo), P(hi)
+            if v and lo and hi and hi > lo then return math.floor((v - lo) * 100 / (hi - lo) + 0.5) end
+        end
+        local function unitOf(fr) local v = T(function() return fr.unit or (fr.GetAttribute and fr:GetAttribute("unit")) end); return v end
+        local pf = _G.PartyFrame
+        for i = 1, 4 do
+            local fr = (type(pf) == "table" and pf["MemberFrame" .. i]) or _G["PartyMemberFrame" .. i]
+            if type(fr) == "table" and unitOf(fr) == u then
+                local hb = fr.HealthBar or fr.healthbar or (fr.HealthBarContainer and fr.HealthBarContainer.HealthBar)
+                local p = bar(hb); if p then return p, "frame" end
+            end
+        end
+        for i = 1, 5 do
+            local fr = _G["CompactPartyFrameMember" .. i]
+            if type(fr) == "table" and unitOf(fr) == u then local p = bar(fr.healthBar); if p then return p, "compact" end end
+        end
+        return nil
+    end
     function PM.member(u, aName)
         local idx = u == "player" and 0 or tonumber(u:match("%d+"))
         local n = TS(function() return UnitName(u) end)
@@ -5266,6 +5301,9 @@ local function partyMode()
         OV.peTick(e, GetTime(), fighting(), m.dead)
         OV.peMax(e, m.hpMax)
         local pct, full = OV.pePct(e), e.full
+        local rp, rs = PM.readHp(u)
+        if rp then pct, full = math.max(0, math.min(100, rp)), rp >= 100 end
+        m.hs = rs or "est"
         if u == "player" and type(WC.vitals) == "function" then            -- your own cell: the vitals' value when it has one
             local okv, v = pcall(WC.vitals)
             if okv and type(v) == "table" and type(v.hp) == "number" and type(v.hpMax) == "number" and v.hpMax > 0 then

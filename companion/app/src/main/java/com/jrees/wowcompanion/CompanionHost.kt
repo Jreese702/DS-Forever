@@ -1283,8 +1283,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settingsView.partyChanged()
     }
 
+    private var partyHsLast = ""
     private fun partyDoc(p: PartyModel.Party, current: Boolean) {
         val live = PartyModel.live
+        // m79: which reader each member's health came from, logged when it changes (2026-11-04: "staying at full health for everyone")
+        p.m.joinToString(" ") { "${it.u}=${it.hs ?: "?"}" }.let { if (it != partyHsLast) { partyHsLast = it; Log.i("WCPARTY", "health sources: $it") } }
         val wasOn = live.party?.on == true
         if (live.onParty(p, current, SystemClock.uptimeMillis())) partyRedraw()
         if (current && p.on && !wasOn) partyAsk(PartyModel.Ask.PARTY_ON)

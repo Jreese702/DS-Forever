@@ -512,8 +512,8 @@ check(G1.eval('#SNIPERR') == 0, "PRE ran in the restricted environment without a
 import subprocess
 r = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'test_smarty.py')], capture_output=True, text=True)
 check(r.returncode == 0 and r.stdout.strip().endswith('ALL PASS'), "tools/test_smarty.py passes UNCHANGED", r.stdout.strip()[-60:])
-smarty_git = subprocess.run(['git', '-C', ROOT, 'diff', '--quiet', '5ee1ff22', '--', 'tools/test_smarty.py']).returncode
-check(smarty_git == 0, "tools/test_smarty.py is byte for byte the contract's base", smarty_git)
+smarty_git = subprocess.run(['git', '-C', ROOT, 'diff', '--quiet', 'b187c3c1', '--', 'tools/test_smarty.py']).returncode
+check(smarty_git == 0, "tools/test_smarty.py is byte for byte the contract's base (b187c3c1: + m78 Manners)", smarty_git)
 
 # ================================================================ THE WORLD: the real Spells files (and TapPad) logged in
 ROUTER_NAME = {8: "WowCompanionCombatFace8", 7: "WowCompanionFaceB", 5: "WowCompanionCombatFace5", 6: "WowCompanionCombatFace6",
@@ -1040,9 +1040,9 @@ W7 = world()
 W7.eval('party')(W7.table_from([W7.table_from(["Brannoc", "WARRIOR", True, "TANK", "RAGE"])]))
 W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
-M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng"}
+M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng", "hs"}   # m79: hs, the health source
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm77' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm79' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1228,8 +1228,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b47"' in SRC["book"] and 'local PV = "m77"' in SRC["padmap"],
-      "the versions: PadMap m77, PadTabCtl p33, Book b47")
+check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b47"' in SRC["book"] and 'local PV = "m79"' in SRC["padmap"],
+      "the versions: PadMap m79, PadTabCtl p33, Book b47")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
