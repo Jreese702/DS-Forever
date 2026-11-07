@@ -964,6 +964,7 @@ for col in range(40):
     elif col == 11: want = ("click", None, None, "WowCompanionPartyOff")
     elif col <= 16: want = ("focus", None, U[col - 12], None)
     elif col == 35: want = ("click", None, None, "WowCompanionPartyMenuDone")
+    elif col == 36: want = ("macro", None, None, None)          # m91: Hub's /startattack cell (WC.atkCell)
     else: want = (None, None, None, None)
     got = (t, sp, un, cb._name if cb is not None else None)
     if got != want:
@@ -1042,7 +1043,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng", "hs"}   # m79: hs, the health source
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm90' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm91' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1228,8 +1229,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m90"' in SRC["padmap"],
-      "the versions: PadMap m90, PadTabCtl p33, Book b48")
+check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m91"' in SRC["padmap"],
+      "the versions: PadMap m91, PadTabCtl p33, Book b48")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
@@ -1559,7 +1560,9 @@ BAD = [r'\bSetBinding\s*\(', r'\bSaveBindings\b', r'\bCreateMacro\b', r'\bEditMa
        r'\bSetOverrideBinding\s*\(']
 hits = [(p, ln.strip()) for ln in code for p in BAD if re.search(p, ln)]
 # the user's one exception (2026-11-04, "Let DS Forever set it"): Chat.lua chat27 sets the chat style to Classic once
-hits = [(p, ln) for (p, ln) in hits if not (p == r'\bSetCVar\b' and ('STYLE_CVAR' in ln or 'C_CVar.SetCVar) == "function"' in ln or '"gxCursor"' in ln))]
+hits = [(p, ln) for (p, ln) in hits if not (p == r'\bSetCVar\b' and ('STYLE_CVAR' in ln or 'C_CVar.SetCVar) == "function"' in ln or '"gxCursor"' in ln
+                                                                  # hub22 (the user, 2026-11-07): the hunter's own Combat Auto Shot option, asked for by name
+                                                                  or 'autoRangedCombat' in ln or ln == 'local set = (C_CVar and C_CVar.SetCVar) or _G.SetCVar'))]
 # (and pad14's software cursor: the user's "Yes, try software cursor", 2026-11-04, gxCursor once)
 check(not hits, "no trace in the new add-on code: no SetBinding / SaveBindings / macros / CVars / bar writes / Blizzard window code",
       hits[:3])

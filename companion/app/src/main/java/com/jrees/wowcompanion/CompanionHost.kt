@@ -2061,6 +2061,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "dialogpad" -> if (current) android.util.Log.w("WCDLG", "the dialogs have NO tap row: ${msg.optString("why")} (rows ${msg.optInt("rows", -1)})")
             "pvp" -> PvpModel.update(msg)   // the PvP rank (Character room tab 4) + the battleground queues (pvp session)
             "hub" -> GameUi.onHub(msg, current)
+            // hub22: a new hostile target with Start attack on: the secure /startattack cell (a live document only, never a replay)
+            "atkgo" -> if (current) GameUi.startAttack(msg.optString("row", "party"), msg.optInt("col", 36))
             "poi" -> msg.optJSONObject("poi")?.let { if (PoiHarvest.ingest(it)) refreshServices() }
             "qg" -> if (PoiHarvest.ingestQg(msg)) refreshServices()
             "character" -> {   // the bars + the Character room (character session)

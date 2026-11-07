@@ -29,7 +29,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S = WC.S
 
-local HV = "hub21"          -- hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub22"          -- hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -319,7 +319,50 @@ local hm = { hidden = false, hooked = {}, fix = 0 }
 local SW_ROW = "uisw"
 --   SW.WM_OFF / SW.WM_ON              hub18: the world markers (Trail.lua's compass: WC.npWant.wm; the user: "off by default")
 local SW = { PLAYER_SHOW = 0, PLAYER_HIDE = 1, TARGET_SHOW = 2, TARGET_HIDE = 3, NP_OFF = 4, NP_ON = 5, PRD_OFF = 6, PRD_ON = 7, WM_OFF = 8, WM_ON = 9,
-             PARTY_SHOW = 10, PARTY_HIDE = 11 }
+             PARTY_SHOW = 10, PARTY_HIDE = 11, ATK_OFF = 12, ATK_ON = 13, SHOT_OFF = 14, SHOT_ON = 15 }
+-- hub22 (the user, 2026-11-07: "a QOL setting for Start attack on Hostile targeting, so that when I press RB to target a hostile target it
+-- starts the attack, and then under that ... for hunters ... the 'Combat Auto Shot'"):
+--   ATK: a NEW hostile target starts the auto attack. The game lets no add-on start it on an event (StartAttack is protected), so the
+--     add-on only SAYS so (one "atkgo" document) and the app taps the secure /startattack cell (Spells' party row, column 36: WC.atkCell;
+--     a new row might not fit above the pop-ups): a real click, as the game's own button would be. Not when the attack already runs, the target is dead, or not attackable.
+--   SHOT: the game's own option "autoRangedCombat" (its words: "your character will automatically switch between auto attack and auto
+--     shot"), hunters only; the user asked for the game's setting by name, so this one CVar is written (out of a fight) - the switch
+--     reads it back, so the app's choice and the game's agree
+local hubAtk = { on = nil, sent = 0 }
+local function isHunter()
+    local ok, _, cls = pcall(UnitClass, "player")
+    return ok and cls == "HUNTER"
+end
+local function shotNow()
+    if not isHunter() then return nil end
+    local get = (C_CVar and C_CVar.GetCVarBool) or _G.GetCVarBool
+    if type(get) ~= "function" then return nil end
+    local ok, v = pcall(get, "autoRangedCombat")
+    if not ok or v == nil then return nil end
+    return v == true
+end
+local function shotSet(on)
+    if not isHunter() or InCombatLockdown() then return false end
+    local set = (C_CVar and C_CVar.SetCVar) or _G.SetCVar
+    if type(set) ~= "function" then return false end
+    hubAtk.shotSet = true
+    return pcall(set, "autoRangedCombat", on and "1" or "0")
+end
+local function plainTrue(f, ...)
+    local ok, v = pcall(f, ...)
+    if not ok then return false end
+    if type(WC.isPlain) == "function" and not WC.isPlain(v) then return false end
+    return v == true or v == 1
+end
+-- a new target: worth starting the attack on?
+local function atkWanted()
+    if hubAtk.on ~= true then return false end
+    if not plainTrue(UnitExists, "target") then return false end
+    if not plainTrue(UnitCanAttack, "player", "target") then return false end
+    if plainTrue(UnitIsDeadOrGhost, "target") then return false end
+    if type(IsCurrentSpell) == "function" and (plainTrue(IsCurrentSpell, 6603) or plainTrue(IsCurrentSpell, 75)) then return false end
+    return true
+end
 local GROUP = { PlayerFrame = "player", PetFrame = "player", TargetFrame = "target", TargetFrameToT = "target",
                 PartyFrame = "party", CompactPartyFrame = "party", CompactRaidFrameManager = "party" }
 hm.g = { player = nil, target = nil, party = nil }  -- per group: true hidden / false shown / nil as the bundle says (party: shown)
@@ -369,6 +412,8 @@ function hub.swTap(col)
     elseif col == SW.NP_OFF or col == SW.NP_ON then WC.npWant.np = (col == SW.NP_ON)
     elseif col == SW.PRD_OFF or col == SW.PRD_ON then WC.npWant.prd = (col == SW.PRD_ON)
     elseif col == SW.WM_OFF or col == SW.WM_ON then WC.npWant.wm = (col == SW.WM_ON)
+    elseif col == SW.ATK_OFF or col == SW.ATK_ON then hubAtk.on = (col == SW.ATK_ON)
+    elseif col == SW.SHOT_OFF or col == SW.SHOT_ON then shotSet(col == SW.SHOT_ON)
     else return false end
     return true
 end
@@ -416,7 +461,9 @@ local function swDoc()
              target = either(hm.g.target, hm.hidden) and "hidden" or "shown",
              party = hm.g.party == true and "hidden" or "shown",
              np = either(np.np, np.hud), prd = either(np.prd, np.hud), wm = np.wm == true,
-             set = { player = hm.g.player ~= nil or nil, target = hm.g.target ~= nil or nil, party = hm.g.party ~= nil or nil, np = np.np ~= nil or nil, prd = np.prd ~= nil or nil, wm = np.wm ~= nil or nil } }
+             atk = type(WC.atkCell) == "table" and (hubAtk.on == true) or nil, shot = shotNow(),
+             set = { player = hm.g.player ~= nil or nil, target = hm.g.target ~= nil or nil, party = hm.g.party ~= nil or nil, np = np.np ~= nil or nil, prd = np.prd ~= nil or nil, wm = np.wm ~= nil or nil,
+                     atk = hubAtk.on ~= nil or nil, shot = hubAtk.shotSet or nil } }
 end
 
 local function cbDoc()
@@ -536,6 +583,17 @@ local f = CreateFrame("Frame")
 local missing = {}
 -- hub3: the XP / level / rest events are where the game redraws the status-tracking bars (ridersCheck)
 local RECHECK = { PLAYER_LEVEL_UP = true, PLAYER_XP_UPDATE = true, UPDATE_EXHAUSTION = true, PLAYER_UPDATE_RESTING = true }
+-- hub22: a new target, on its own frame (nothing else of the hub runs for it)
+local atkFrame = CreateFrame("Frame")
+if pcall(function() return atkFrame:RegisterEvent("PLAYER_TARGET_CHANGED") end) then
+    atkFrame:SetScript("OnEvent", function()
+        local cell = WC.atkCell
+        if type(cell) ~= "table" or not atkWanted() then return end
+        hubAtk.sent = hubAtk.sent + 1
+        pcall(function() WC.send(WC.encode({ type = "atkgo", n = hubAtk.sent, row = cell.row, col = cell.col, v = HV })) end)
+        if type(WC.flush) == "function" then pcall(WC.flush) else WC.push() end
+    end)
+end
 for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
                      "PLAYER_LEVEL_UP", "PLAYER_XP_UPDATE", "UPDATE_EXHAUSTION", "PLAYER_UPDATE_RESTING" }) do
     local ok, registered = pcall(function() return f:RegisterEvent(e) end)
