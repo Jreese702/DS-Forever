@@ -10,8 +10,8 @@ import java.io.File
  */
 object GameConfigWtf {
     /** Config.wtf's defaults for [product]: its portal (the beta's "test", else the install's region) and agentUID, then the rest */
-    fun configDefaults(product: WowProduct, row: Map<String, String>?): Map<String, String> =
-        linkedMapOf("portal" to "\"${product.portalFor(row)}\"", "agentUID" to "\"${product.code}\"") + CONFIG_DEFAULTS
+    fun configDefaults(product: WowProduct, row: Map<String, String>?, region: String? = null): Map<String, String> =
+        linkedMapOf("portal" to "\"${region ?: product.portalFor(row)}\"", "agentUID" to "\"${product.code}\"") + CONFIG_DEFAULTS
 
     private val CONFIG_DEFAULTS = linkedMapOf(
         "gxApi" to "\"D3D11\"",
@@ -62,8 +62,9 @@ object GameConfigWtf {
      * gets the forced keys, the old defaults' new values and the missing keys. For the launch client a beta portal ("test") or another
      * client's agentUID is set right too (a _forever_ folder made from a beta copy would otherwise sign in to the closed beta).
      */
-    fun ensure(root: File, product: WowProduct, row: Map<String, String>?) {
-        val defaults = configDefaults(product, row)
+    fun ensure(root: File, product: WowProduct, row: Map<String, String>?, region: String? = null) {
+        // [region]: the player's choice (GameRegion; 2026-11-07, an EU account on a US-set device): it replaces any portal but the beta's
+        val defaults = configDefaults(product, row, if (product.portal == null) region else null)
         val flavorDir = File(root, product.flavorDir)
         flavorDir.mkdirs()
         val flavorInfo = File(flavorDir, ".flavor.info")
@@ -90,6 +91,8 @@ object GameConfigWtf {
                 forcedKey != null && value != defaults.getValue(forcedKey) -> "SET $forcedKey ${defaults.getValue(forcedKey)}"
                 LEGACY_CONFIG_VALUES[key] == value -> "SET $key ${defaults.getValue(key)}"
                 key.equals("portal", ignoreCase = true) && product.portal == null && value in betaPortal -> "SET portal ${defaults.getValue("portal")}"
+                key.equals("portal", ignoreCase = true) && product.portal == null && region != null &&
+                    !value.trim('"').equals(region, ignoreCase = true) -> "SET portal ${defaults.getValue("portal")}"
                 key.equals("agentUID", ignoreCase = true) && value in otherAgents -> "SET agentUID ${defaults.getValue("agentUID")}"
                 else -> line
             }

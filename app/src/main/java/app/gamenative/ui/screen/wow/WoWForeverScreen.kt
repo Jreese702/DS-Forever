@@ -1023,7 +1023,8 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
     val choice = WowProduct.choose(gameRoot)
     val product = choice?.product ?: WowProduct.of(gameRoot)
     try {
-        com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row)
+        // 2026-11-07: the player's region (the login prompt's Region row) is the portal the game signs in to
+        com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row, com.jrees.wowcompanion.GameRegion.chosen(context))
     } catch (e: Exception) {
         if (e.isPermissionDenied()) throw StorageAccessDeniedException(e)
         throw e

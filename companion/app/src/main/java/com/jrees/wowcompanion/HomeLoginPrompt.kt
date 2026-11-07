@@ -31,6 +31,8 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
     private val password: EditText = field(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD, "Password")
     private var shown = false
     private var error = ""
+    /** 2026-11-07 (the user: "a region select prompt with the login credentials ... to let people from EU log in"): the region row */
+    private var region = "us"
     private val panel = Panel(ctx)
 
     init {
@@ -54,6 +56,7 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
 
     fun open() {
         email.setText(""); password.setText(""); error = ""; shown = false
+        region = runCatching { GameRegion.current(context, GameFiles.gameRoot(context)) }.getOrDefault("us")
         password.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         password.typeface = UiKit.body                    // setting the input type resets it to monospace
         // NO SCREENSHOTS while it is open (and no frame of it in Recents): the review - captures of the bottom screen are routine
@@ -91,6 +94,7 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
         if (why != null) { error = why; panel.invalidate(); return }
         val login = HomeLoginStore.Login(e, p)
         if (!HomeLoginStore.save(context, login)) { error = "The login could not be saved on this device"; panel.invalidate(); return }
+        GameRegion.choose(context, region)            // the game's portal at its next start (GameConfigWtf.ensure)
         close()
         onSaved(login)
     }
@@ -139,10 +143,20 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
             val eyeR = RectF((FIELD_X + FIELD_W - EYE_W).toFloat(), PASS_Y.toFloat(), (FIELD_X + FIELD_W).toFloat(), (PASS_Y + FIELD_H).toFloat())
             UiKit.button(c, eyeR, if (shown) "Hide" else "Show", if (pressed == "eye") UiKit.Button.DOWN else UiKit.Button.UP)
             hits += eyeR to "eye"
-            val note = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = android.graphics.Paint.Align.CENTER }
-            c.drawText("Kept on this device only, encrypted.", cx, NOTE_Y, note)
+            // the region: the account's own (US, EU, Korea, Taiwan); the game signs in there
+            c.drawText("Region", FIELD_X.toFloat(), REGION_Y + REGION_H / 2f + 10f, UiKit.bodyPaint(30f, Theme.gold))
+            val rx0 = FIELD_X + 150f
+            val rw = (FIELD_X + FIELD_W - rx0 - 3 * 12f) / GameRegion.ALL.size
+            for ((i, rg) in GameRegion.ALL.withIndex()) {
+                val rr = RectF(rx0 + i * (rw + 12f), REGION_Y, rx0 + i * (rw + 12f) + rw, REGION_Y + REGION_H)
+                UiKit.button(c, rr, rg.label, if (region == rg.code || pressed == "rg:${rg.code}") UiKit.Button.DOWN else UiKit.Button.UP)
+                if (region == rg.code) UiKit.focus(c, rr)
+                hits += rr to "rg:${rg.code}"
+            }
             if (error.isNotEmpty())
-                c.drawText(error, cx, NOTE_Y + 36f, UiKit.bodyPaint(28f, Theme.warn).apply { textAlign = android.graphics.Paint.Align.CENTER })
+                c.drawText(error, cx, NOTE_Y, UiKit.bodyPaint(28f, Theme.warn).apply { textAlign = android.graphics.Paint.Align.CENTER })
+            else c.drawText("Kept on this device only, encrypted.", cx, NOTE_Y,
+                UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = android.graphics.Paint.Align.CENTER })
             val save = RectF(cx - 20f - SAVE_W, BUTTONS_Y, cx - 20f, BUTTONS_Y + 111f)
             val cancel = RectF(cx + 20f, BUTTONS_Y, cx + 20f + CANCEL_W, BUTTONS_Y + 111f)
             UiKit.button(c, save, "Save and log in", if (pressed == "save") UiKit.Button.DOWN else UiKit.Button.UP)
@@ -157,7 +171,10 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
                 MotionEvent.ACTION_DOWN -> { pressed = hit; invalidate() }
                 MotionEvent.ACTION_UP -> {
                     val was = pressed; pressed = null; invalidate()
-                    if (was != null && was == hit) when (hit) { "save" -> save(); "cancel" -> close(); "eye" -> eye() }
+                    if (was != null && was == hit) when {
+                        hit == "save" -> save(); hit == "cancel" -> close(); hit == "eye" -> eye()
+                        hit.startsWith("rg:") -> { region = hit.substring(3); invalidate() }
+                    }
                 }
                 MotionEvent.ACTION_CANCEL -> { pressed = null; invalidate() }
             }
@@ -172,8 +189,9 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
         const val FIELD_X = 60; const val FIELD_W = 820; const val FIELD_H = 111
         const val EMAIL_Y = 96; const val PASS_Y = 222
         const val EYE_W = 170
-        const val NOTE_Y = 380f
-        const val BUTTONS_Y = 440f
+        const val REGION_Y = 346f; const val REGION_H = 80f
+        const val NOTE_Y = 458f
+        const val BUTTONS_Y = 468f
         const val SAVE_W = 400f; const val CANCEL_W = 300f
     }
 }
