@@ -30,6 +30,8 @@ object PartyModel {
         val hs: String? = null,
         /** m92: the member's GUID, for the combat log's health (CombatHealth); null = an older add-on / not plain */
         val g: String? = null,
+        /** m96: the live hit counts since the add-on loaded (wounds, crits among them, heals); null = an older add-on */
+        val cw: Int? = null, val cc: Int? = null, val ch: Int? = null,
     ) {
         /** the health to show: the combat log's while fresh, else the add-on's */
         fun hpNow(): Int = CombatHealth.pct(g) ?: hp
@@ -87,7 +89,7 @@ object PartyModel {
             m.add(Member(
                 u, o.int("i") ?: unitIndex(u) ?: k, o.str("n") ?: "?", o.str("c") ?: "", o.str("col"), o.str("role") ?: "NONE",
                 o.bool("dead") ?: false, o.bool("off") ?: false, o.str("pt") ?: "", o.int("hpMax"), o.int("pmMax"),
-                (o.int("hp") ?: 100).coerceIn(0, 100), o.bool("full") ?: false, o.bool("rng"), o.str("hs"), o.str("g"),
+                (o.int("hp") ?: 100).coerceIn(0, 100), o.bool("full") ?: false, o.bool("rng"), o.str("hs"), o.str("g"), o.int("cw"), o.int("cc"), o.int("ch"),
             ))
         }
         if (m.isEmpty()) return null

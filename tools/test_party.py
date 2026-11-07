@@ -1049,9 +1049,9 @@ W7 = world()
 W7.eval('party')(W7.table_from([W7.table_from(["Brannoc", "WARRIOR", True, "TANK", "RAGE"])]))
 W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
-M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng", "hs", "g"}   # m79: hs, the health source; m92: g, the GUID (combat log)
+M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng", "hs", "g", "cw", "cc", "ch"}   # m79: hs, the health source; m92: g, the GUID (combat log)
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm95' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm96' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1080,8 +1080,12 @@ d_later = docs(W7, n0, 'party')
 check(len(d_now) == 0 and len(d_later) == 1 and d_later[0]['p']['m'][1]['hp'] == 75 and d_later[0]['p']['m'][1]['full'] is False,
       "ten plain wounds (10 each of 400): no document per event; ONE after 0.5 s, hp 75, not full", (len(d_now), len(d_later)))
 n0 = nsent(W7)
+cw0 = d_later[0]['p']['m'][1].get('cw') if d_later else None
 W7.execute('fire("UNIT_COMBAT", "party1", "WOUND", "", SECRETV, 1); advance(0.6)')
-check(docs(W7, n0, 'party') == [], "a SECRET amount: nothing moves, nothing sent")
+# m96: a hidden amount moves no health, but the hit is COUNTED (the app's calibrated estimate spends the count)
+d_sec = docs(W7, n0, 'party')
+check(len(d_sec) == 1 and d_sec[0]['p']['m'][1]['hp'] == 75 and cw0 is not None and d_sec[0]['p']['m'][1].get('cw') == cw0 + 1,
+      "a SECRET amount: health stays (75), the wound count goes up by one (m96)", (len(d_sec), cw0, d_sec and d_sec[0]['p']['m'][1].get('cw')))
 W7.execute('fire("PLAYER_REGEN_ENABLED"); NOW = NOW + 7; tick(1); advance(0.6)')
 d = docs(W7, 0, 'party')[-1]
 check(d['p']['m'][1]['hp'] == 100 and d['p']['m'][1]['full'] is True, "out of combat, 6 s quiet: back to full (the anchor)", d['p']['m'][1]['hp'])
@@ -1237,8 +1241,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m95"' in SRC["padmap"],
-      "the versions: PadMap m95, PadTabCtl p33, Book b48")
+check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m96"' in SRC["padmap"],
+      "the versions: PadMap m96, PadTabCtl p33, Book b48")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl

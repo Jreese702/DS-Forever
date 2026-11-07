@@ -81,10 +81,23 @@ object CombatLog {
      *  map, facing, level - measured: 19 fields in version 22) */
     const val ADV = 19
 
+    /** THE CALIBRATION (the user picked it, 2026-11-07): how big a unit's hits, crits and heals are, learned from every one the log
+     *  shows (a moving mean); the app spends it on the add-on's live COUNTS, whose amounts the game hides. 0 = not seen yet */
+    data class Cal(val hit: Double = 0.0, val hitN: Int = 0, val crit: Double = 0.0, val critN: Int = 0, val heal: Double = 0.0, val healN: Int = 0) {
+        fun withHit(a: Long, crit: Boolean): Cal = if (crit) copy(crit = mean(this.crit, critN, a), critN = critN + 1)
+            else copy(hit = mean(hit, hitN, a), hitN = hitN + 1)
+        fun withHeal(a: Long): Cal = copy(heal = mean(heal, healN, a), healN = healN + 1)
+        private fun mean(old: Double, n: Int, a: Long): Double = if (n == 0) a.toDouble() else old + (a - old) * (if (n < 10) 1.0 / (n + 1) else CAL_ALPHA)
+    }
+    /** past the first ten, each new hit moves the mean by this share (newer fights count more: the mobs change as you level) */
+    const val CAL_ALPHA = 0.1
+
     class Health {
         private val map = HashMap<String, Hp>()
+        private val cals = HashMap<String, Cal>()
         @Synchronized fun get(guid: String): Hp? = map[guid]
-        @Synchronized fun clear() = map.clear()
+        @Synchronized fun cal(guid: String): Cal? = cals[guid]
+        @Synchronized fun clear() { map.clear() }
         @Synchronized fun size() = map.size
 
         /** one line; [now] = when it was read (used when the line has no time); true = a unit's health changed */
@@ -122,8 +135,17 @@ object CombatLog {
                 }
                 map[info] = Hp(now, max, t, t, old?.hurtAt ?: 0, rate); changed = true
             }
-            if (dst == info || dst == "0000000000000000") return changed
+            if (dst == "0000000000000000") return changed
             val s = a + ADV + (if (ev.startsWith("ENVIRONMENTAL_")) 1 else 0)
+            // the calibration sees every hit / heal on [dst] (the add-on counts the same ones live, UNIT_COMBAT)
+            val isDmg = ev.endsWith("_DAMAGE") || ev == "DAMAGE_SPLIT" || ev == "DAMAGE_SHIELD"
+            val isHeal = ev.endsWith("_HEAL")
+            if (isDmg || isHeal) f.getOrNull(s)?.toLongOrNull()?.let { amt ->
+                val c = cals[dst] ?: Cal()
+                cals[dst] = if (isDmg) c.withHit(amt, f.getOrNull(s + 7) == "1")
+                    else c.withHeal((amt - (f.getOrNull(s + 2)?.toLongOrNull()?.coerceAtLeast(0) ?: 0)).coerceAtLeast(0))
+            }
+            if (dst == info) return changed
             val old = map[dst] ?: return changed
             when {
                 ev.endsWith("_DAMAGE") || ev == "DAMAGE_SPLIT" || ev == "DAMAGE_SHIELD" -> {
@@ -138,5 +160,84 @@ object CombatLog {
             }
             return changed
         }
+    }
+}
+
+/**
+ * THE HEALTH TO SHOW (the party module), from the combat log and the add-on's live counts:
+ *  - the ANCHOR = the log's last word on the unit (exact, or moved by a logged hit / heal), CombatLog.Health;
+ *  - the add-on's live WOUND / CRIT / HEAL counts (PadMap m96: UNIT_COMBAT, amounts hidden) since the anchor, each spent at the unit's
+ *    calibrated size (CombatLog.Cal; until one is seen, DEFAULT_* of its max) - the game writes the log only at a fight's end (measured,
+ *    test11), so in a fight these counts are all there is;
+ *  - its learned regen out of a fight, from REGEN_AFTER_MS after the last hit (logged or live).
+ * The fight's end writes the log: the exact value replaces the estimate.
+ */
+object CombatHealth {
+    val store = CombatLog.Health()
+    @Volatile var lastDelay: String = ""
+    /** an anchor with nothing newer (no line, no live count) for this long gives way to the add-on's own value, unless a regen is known */
+    const val FRESH_MS = 60_000L
+    /** a live count reaches the app up to this long after the hit (the add-on's 0.5 s throttle, the log's flush): one taken within it
+     *  after the anchor is the anchor's own hit, not a new one */
+    const val LIVE_LAG_MS = 1_200L
+    /** the sizes used before the log has shown one (share of the unit's max) */
+    const val DEFAULT_HIT = 0.02; const val DEFAULT_CRIT = 0.04; const val DEFAULT_HEAL = 0.05
+    private const val KEEP_MS = 15 * 60_000L
+
+    /** the live counts as one series per GUID: (when received, wounds, crits, heals), made monotonic over a /reload's reset */
+    private data class Snap(val t: Long, val w: Int, val c: Int, val h: Int, val hurtAt: Long)
+    private class Series { val snaps = ArrayDeque<Snap>(); var offW = 0; var offC = 0; var offH = 0; var rawW = -1; var rawC = 0; var rawH = 0 }
+    private val live = HashMap<String, Series>()
+
+    /** a party document's counts ([w] wounds, [c] crits of them, [h] heals; cumulative in the add-on), received at [now] */
+    @Synchronized fun counts(guid: String?, w: Int?, c: Int?, h: Int?, now: Long) {
+        if (guid.isNullOrEmpty() || w == null) return
+        val s = live.getOrPut(guid) { Series() }
+        val cc = c ?: 0; val hh = h ?: 0
+        if (s.rawW >= 0 && (w < s.rawW || cc < s.rawC || hh < s.rawH)) { s.offW += s.rawW; s.offC += s.rawC; s.offH += s.rawH }  // a /reload
+        s.rawW = w; s.rawC = cc; s.rawH = hh
+        val mw = w + s.offW; val mc = cc + s.offC; val mh = hh + s.offH
+        val last = s.snaps.lastOrNull()
+        if (last != null && last.w == mw && last.c == mc && last.h == mh) return
+        s.snaps.addLast(Snap(now, mw, mc, mh, if (last != null && mw > last.w) now else last?.hurtAt ?: 0L))
+        while (s.snaps.size > 2 && now - s.snaps.first().t > KEEP_MS) s.snaps.removeFirst()
+    }
+
+    @Synchronized fun clear() { store.clear(); live.clear() }
+
+    /** [guid]'s health in percent, null = nothing fresh enough (the add-on's own value then) */
+    @Synchronized fun pct(guid: String?, now: Long = System.currentTimeMillis()): Int? {
+        val hp = hp(guid, now) ?: return null
+        val e = store.get(guid!!) ?: return null
+        return ((hp * 100 + e.max / 2) / e.max).toInt().coerceIn(0, 100)
+    }
+
+    /** [guid]'s health in points, as above */
+    @Synchronized fun hp(guid: String?, now: Long = System.currentTimeMillis()): Long? {
+        if (guid.isNullOrEmpty()) return null
+        val e = store.get(guid) ?: return null
+        if (e.max <= 0) return null
+        var v = e.hp.toDouble()
+        var hurtAt = e.hurtAt
+        var newest = e.at
+        live[guid]?.snaps?.let { snaps ->
+            val cur = snaps.lastOrNull() ?: return@let
+            // the counts at the anchor: the last series point received by its time (+ the live lag)
+            val base = snaps.lastOrNull { it.t <= e.at + LIVE_LAG_MS } ?: snaps.first().takeIf { it.t > e.at + LIVE_LAG_MS }?.let {
+                Snap(e.at, it.w, it.c, it.h, 0L) } ?: return@let
+            val dw = (cur.w - base.w).coerceAtLeast(0); val dc = (cur.c - base.c).coerceIn(0, dw); val dh = (cur.h - base.h).coerceAtLeast(0)
+            val cal = store.cal(guid)
+            val hit = cal?.takeIf { it.hitN > 0 }?.hit ?: (e.max * DEFAULT_HIT)
+            val crit = cal?.takeIf { it.critN > 0 }?.crit ?: if (cal != null && cal.hitN > 0) hit * 2.0 else e.max * DEFAULT_CRIT
+            val heal = cal?.takeIf { it.healN > 0 }?.heal ?: (e.max * DEFAULT_HEAL)
+            v = v - (dw - dc) * hit - dc * crit + dh * heal
+            if (dw > 0) hurtAt = maxOf(hurtAt, cur.hurtAt)
+            newest = maxOf(newest, cur.t)
+        }
+        if (now - newest > FRESH_MS && e.rate <= 0.0) return null
+        // the learned regen, from REGEN_AFTER_MS after the last hit (logged or live)
+        val from = maxOf(e.at, hurtAt + CombatLog.REGEN_AFTER_MS)
+        if (e.rate > 0.0 && now > from) v += e.rate * (now - from) / 1000.0
+        return v.toLong().coerceIn(0, e.max)
     }
 }

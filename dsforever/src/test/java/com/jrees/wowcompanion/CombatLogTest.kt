@@ -64,6 +64,37 @@ class CombatLogTest {
         assertTrue(hit.hpAt(hit.hurtAt + 10_000) > hit.hp)
     }
 
+    /** the calibration: the log's hits on a unit teach their size (crits apart) */
+    @Test fun hitsAreCalibrated() {
+        val h = CombatLog.Health()
+        h.line(swing("11:20:00.000", wolf, "Mangy Wolf", me, "Me-Realm", adv(wolf, 102, 102)).replace(",26,28,-1,1,", ",4,4,-1,1,"), 0)
+        h.line(swing("11:20:02.000", wolf, "Mangy Wolf", me, "Me-Realm", adv(wolf, 102, 102)).replace(",26,28,-1,1,", ",6,6,-1,1,"), 0)
+        h.line(swing("11:20:04.000", wolf, "Mangy Wolf", me, "Me-Realm", adv(wolf, 102, 102))
+            .replace(",26,28,-1,1,0,0,0,nil,", ",10,10,-1,1,0,0,0,1,"), 0)               // a crit
+        val c = h.cal(me)!!
+        assertEquals(5.0, c.hit, 0.001); assertEquals(2, c.hitN)
+        assertEquals(10.0, c.crit, 0.001); assertEquals(1, c.critN)
+    }
+
+    /** the estimate: the anchor, minus the live counts since it at the calibrated sizes; the next exact value replaces it */
+    @Test fun liveCountsSpendTheCalibration() {
+        CombatHealth.clear()
+        val h = CombatHealth.store
+        val t0 = CombatLog.stamp("11/7/2026 11:30:00.000-7")!!
+        // the calibration: two logged hits of 4 on me (an earlier fight)
+        h.line(swing("11:29:00.000", wolf, "Mangy Wolf", me, "Me-Realm", adv(wolf, 102, 102)).replace(",26,28,-1,1,", ",4,4,-1,1,"), 0)
+        h.line(swing("11:29:02.000", wolf, "Mangy Wolf", me, "Me-Realm", adv(wolf, 102, 102)).replace(",26,28,-1,1,", ",4,4,-1,1,"), 0)
+        // the anchor: my own swing at t0, 290 / 290
+        h.line(swing("11:30:00.000", me, "Me-Realm", wolf, "Mangy Wolf", adv(me, 290, 290)), 0)
+        CombatHealth.counts(me, 10, 0, 0, t0 + 300)                                    // the counts as they stood at the anchor
+        CombatHealth.counts(me, 13, 1, 0, t0 + 5_000)                                  // a fight: 3 more wounds, one a crit
+        // 290 - 2 x 4 - 1 x 8 (a crit before any logged crit = 2 x the hit)
+        assertEquals(274L, CombatHealth.hp(me, t0 + 5_500))
+        // the fight's end: the log's exact value replaces it
+        h.line(swing("11:30:06.000", me, "Me-Realm", wolf, "Mangy Wolf", adv(me, 271, 290)), 0)
+        assertEquals(271L, CombatHealth.hp(me, t0 + 6_500))
+    }
+
     @Test fun theStampReadsTheOffset() {
         // 11:10:42.622 at UTC-7 = 18:10:42.622 UTC
         assertEquals(java.time.Instant.parse("2026-11-07T18:10:42.622Z").toEpochMilli(), CombatLog.stamp("11/7/2026 11:10:42.622-7"))

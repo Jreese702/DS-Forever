@@ -133,22 +133,3 @@ class CombatLogTail(private val logsDir: File, private val onChange: () -> Unit)
         const val LAG_EVERY_MS = 30_000L
     }
 }
-
-/** the combat log's health, for the party module (and anything else that wants it): GUID -> percent while the reading is fresh */
-object CombatHealth {
-    val store = CombatLog.Health()
-    @Volatile var lastDelay: String = ""
-    /** a reading older than this (no line about the unit) gives way to the add-on's own value */
-    const val FRESH_MS = 60_000L
-
-    /** [guid]'s health in percent, null = the log has nothing fresh on it */
-    fun pct(guid: String?, now: Long = System.currentTimeMillis()): Int? {
-        if (guid.isNullOrEmpty()) return null
-        val e = store.get(guid) ?: return null
-        if (e.max <= 0) return null
-        // a learned regen keeps the value true out of a fight (CombatLog.Hp.hpAt); without one a quiet reading gives way after FRESH_MS
-        if (now - e.at > FRESH_MS && e.rate <= 0.0) return null
-        val hp = e.hpAt(now)
-        return ((hp * 100 + e.max / 2) / e.max).toInt().coerceIn(0, 100)
-    }
-}

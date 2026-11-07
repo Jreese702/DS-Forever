@@ -1292,6 +1292,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // 2026-11-04 (the user: logged in on another character, "it showed my hunter as myself in the party"): a party document from the
         // log's history may be another character's; only a CURRENT one is shown (the add-on sends its own within seconds of a login)
         if (!current) return
+        // m96: the live hit counts feed the combat-log estimate (CombatHealth)
+        val at = System.currentTimeMillis()
+        for (m in p.m) CombatHealth.counts(m.g, m.cw, m.cc, m.ch, at)
         val live = PartyModel.live
         // m79: which reader each member's health came from, logged when it changes (2026-11-04: "staying at full health for everyone")
         p.m.joinToString(" ") { "${it.u}=${it.hs ?: "?"}" }.let { if (it != partyHsLast) { partyHsLast = it; Log.i("WCPARTY", "health sources: $it") } }
@@ -2427,7 +2430,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // 2026-11-07: the combat log sits in the same Logs folder as the game's own log
         clogTail?.stop(); clogTail = null
         if (!streaming) java.io.File(log).parentFile?.let { dir ->
-            CombatHealth.store.clear()
+            CombatHealth.clear()
             clogTail = CombatLogTail(dir) { ui.post { if (!shell.hostGone()) partyRedraw() } }.also { it.start() }
         }
         PlayModes.onChanged = sourceChanged
