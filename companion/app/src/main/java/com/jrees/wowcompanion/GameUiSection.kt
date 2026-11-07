@@ -389,7 +389,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             else "The game's player frame (and its pet frame) is hidden. For this character."
         if (r.id == GameUi.ATK_ID) return if (r.mode == UiMode.ON) "Targeting an enemy (RB) starts your auto attack. For this character."
             else "Targeting an enemy only targets it. For this character."
-        if (r.id == GameUi.SHOT_ID) return if (r.mode == UiMode.ON) "The game's own option: Auto Shot at range, auto attack up close. Hunters."
+        if (r.id == GameUi.SHOT_ID) return if (r.mode == UiMode.ON) "The game's own option: Auto Shot (bows, guns, wands) at range, auto attack up close."
             else "The game's own option, off: no switching between Auto Shot and auto attack."
         if (r.id == GameUi.PARTY_ID) return if (r.mode == UiMode.ON) "The game's party frames stay on the top screen. For this character."
             else "The game's party frames are hidden. For this character."

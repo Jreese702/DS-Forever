@@ -101,7 +101,7 @@ object GameUi {
                   val party: Boolean? = null,
                   /** hub22: a new hostile target starts the attack; null = an add-on without the switch */
                   val atk: Boolean? = null,
-                  /** hub22: the game's Auto Shot switching (autoRangedCombat); null = not a hunter / an add-on without it */
+                  /** hub22: the game's Auto Shot switching (autoRangedCombat), any class since hub23; null = an add-on without it */
                   val shot: Boolean? = null)
     @Volatile private var sw: Sw? = null
     private var swTapAt = 0L
