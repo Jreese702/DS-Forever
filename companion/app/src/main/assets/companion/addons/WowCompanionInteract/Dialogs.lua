@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d23"         -- bump on every change
+local DV = "d24"         -- bump on every change
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -211,6 +211,9 @@ local function read(i, f)
     elseif shown(f.MoneyInputFrame) then why = "money"
     elseif shown(f.Dropdown) then why = "list"
     elseif type(f.insertedFrame) == "table" then why = "frame" end
+    -- d24 (the user on test15: the trade's "are you sure you want to accept" showed only on the top screen): a TRADE dialog is
+    -- mirrored even with a frame inserted (its buttons are what matters); a text box or money input still stays on top
+    if why == "frame" and type(d.which) == "string" and d.which:find("TRADE") then d.topWas = why; why = nil end
     d.top = why
     return d
 end
@@ -683,6 +686,7 @@ local function offerTouch()
         -- the proof a tap landed; the click itself already ran, in the game's own code
         if col == TRADE_COL or col == TRADE_COL + 1 then
             if type(WC.interactPoke) == "function" then pcall(WC.interactPoke) end      -- d23: the trade window looks again
+            if col == TRADE_COL and type(WC.tradeProbe) == "function" then pcall(WC.tradeProbe) end       -- d24
             return
         end
         if col >= PET_COL and col <= PET_COL + 2 then
@@ -751,6 +755,10 @@ local function tradeAim()
         end
         local b = _G[e.name]
         if b and type(t) == "table" then pcall(function() b:SetAttribute("clickbutton", t) end) end
+        if b and k == 1 and not D.tHooked then
+            D.tHooked = true
+            pcall(function() b:HookScript("OnClick", function() if type(WC.tradeProbe) == "function" then pcall(WC.tradeProbe) end end) end)
+        end
         local c = D.tCell and D.tCell[k]
         if c and type(t) == "table" then pcall(function() c:SetAttribute("clickbutton", t) end) end
     end

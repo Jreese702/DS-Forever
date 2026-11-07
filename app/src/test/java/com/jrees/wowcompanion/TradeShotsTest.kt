@@ -78,7 +78,7 @@ class TradeShotsTest {
     @Test fun shots() {
         artRoot()
         shot("trade_1_open.png", doc("tslot p 3", acc = false, tacc = false))
-        shot("trade_2_they_accepted.png", doc("tradeaccept", acc = false, tacc = true))
+        shot("trade_2_they_accepted.png", doc("tslot t 1", acc = false, tacc = true))
         shot("trade_3_bags_cursor.png", doc("tradein 0 2 1001", acc = false, tacc = false))
         shot("trade_4_money_stepper.png", doc("tmoney", acc = false, tacc = false, edit = JSONObject().put("g", 1).put("s", 25).put("c", 50).put("sel", 2)))
     }

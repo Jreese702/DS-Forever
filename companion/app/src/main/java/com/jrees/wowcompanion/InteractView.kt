@@ -215,9 +215,16 @@ class InteractView(context: Context) : View(context) {
     private var navSel: String? = null          // the add-on's last vendor selection, as last taken
 
     /** the addon's controller state: draw its highlight; take its picks when a press changed them */
+    // i138: the trade's right stick (nav.bs: its steps, counted by the add-on) and the cursor last kept in view
+    private var tradeBs = 0
+    private var tradeBsSeen = 0
+    private var tradeCurSeen: String? = null
+
     private fun takeNav(nav: JSONObject?, k: Kind) {
         val was = cur
         cur = if (nav != null && nav.optBoolean("on") && nav.has("cur")) nav.optString("cur") else null
+        tradeBs = nav?.optInt("bs", 0) ?: 0
+        if (k != Kind.TRADE) tradeBsSeen = tradeBs
         if (nav == null || k == Kind.NONE) { navN = -1; return }
         // THE VENDOR'S SELECTION follows the add-on's on EVERY document (the user, b139: "when I sell an Item it still shows the
         // grey sell button after on the new item that takes its spot"): a sale's result comes in a document AFTER the press's
@@ -2178,152 +2185,174 @@ class InteractView(context: Context) : View(context) {
             Theme.gold, closeDown = pressed == "x", closeB = closeB())
     }
 
-    // ---- THE TRADE WINDOW (Interact i137; the user, 2026-11-07: "We really need to make a good trade window", picked layout A: the
-    // game's TradeFrame rebuilt on the left - your six slots and the partner's, the seventh "Will not be traded" slot each, the money
-    // of each side, green behind a side that has accepted, Trade and Cancel - and your bags on the right; the gold / silver / copper
-    // stepper over it while the money is being set). Touch = the controller's A on the same thing: a bag item goes in, your slot comes
-    // back, the partner's item shows its tooltip, the money opens the stepper. Trade / Cancel are the game's own buttons pressed by
-    // the dialogs' secure cells (Dialogs d23, "pet:" taps on the idlg row)
+    // ---- THE TRADE WINDOW (Interact i137 / i138; the user, 2026-11-07: "We really need to make a good trade window", layout A: the
+    // game's TradeFrame on the left, your bags on the right; then on test15: "Make the whole thing look more like its in the wow UI
+    // instead of floating Icons all over", the Cancel button "is redundant with the X", "Make a button accept the trade like x with the
+    // glyph", "put the y glyph on the gold menu", the right stick scrolls the bags). Built from the game's own pieces: each slot an
+    // item with its name plate (the game's ItemButton + NameFrame, UiKit.itemPlate) on the list pane, the "Will not be traded" slot
+    // under the game's divider, the money in the game's money-input boxes (Y), green behind a side that has accepted; the bags on the
+    // bank's stone in the game's slot frames. TRADE = the square beside the X (X glyph), CANCEL = the X (B glyph); both press the
+    // game's own buttons through the dialogs' secure cells ("pet:" taps on the idlg row)
     private fun tradeWindow(c: Canvas, r: RectF, td: JSONObject, now: Long) {
         val inner = UiKit.windowGround(c, r, marble = true)
-        val strip = UiKit.strip(c, inner)
+        val strip = UiKit.strip(c, inner, 96f)
         val act = td.optJSONObject("act")
         val cells = td.optJSONObject("cells")
         fun col(k: String) = act?.let { slotOf(it, k) } ?: -1
-        val top = r.top + 100f
-        val bottom = strip.top - 8f
-        val leftW = inner.width() * 0.6f
-        val lx0 = inner.left + 12f; val lx1 = inner.left + leftW
-        val gapC = 18f
-        val colW = (lx1 - lx0 - gapC) / 2f
+        val top = r.top + 104f
+        val bottom = strip.top - 10f
+        val lx0 = inner.left + 4f; val lx1 = inner.left + inner.width() * 0.6f
         val mine = arr(td, "mine"); val theirs = arr(td, "theirs")
         val n = max(1, td.optInt("slots", 7))
-        // rows: a header, six slots, the "Will not be traded" label and slot, the money
-        val headH = 46f; val moneyH = 74f; val labH = 30f
-        val rowH = ((bottom - top - headH - moneyH - labH - 10f) / n).coerceIn(56f, 96f)
-        val sz = rowH - 12f
         val who = td.optString("who", "").ifEmpty { "Trade" }
         val lvl = td.optInt("lvl", 0)
+        val acc = td.optBoolean("acc"); val tacc = td.optBoolean("tacc")
+        // ---- the trade's pane: the game's list ground, its divider between the two sides
+        val pane = RectF(lx0, top, lx1, bottom)
+        UiKit.pane(c, pane)
+        val mid = pane.centerX()
+        UiKit.paneDivider(c, mid, pane.top + 4f, pane.bottom - 4f)
+        val headH = 54f; val moneyH = 78f; val labH = 34f
+        val rowH = ((pane.height() - headH - moneyH - labH - 16f) / n).coerceIn(70f, 100f)
         for (side in 0..1) {
-            val x0 = lx0 + side * (colW + gapC); val x1 = x0 + colW
+            val x0 = if (side == 0) pane.left + 10f else mid + 14f
+            val x1 = if (side == 0) mid - 14f else pane.right - 10f
             val list = if (side == 0) mine else theirs
-            val accepted = td.optBoolean(if (side == 0) "acc" else "tacc")
+            val accepted = if (side == 0) acc else tacc
+            val colR = RectF(x0 - 6f, pane.top + 4f, x1 + 6f, pane.bottom - 4f)
             // the game's green behind a side that has accepted (TradeHighlightPlayer / -Recipient)
             if (accepted) {
-                pFill.style = Paint.Style.FILL; pFill.color = Color.argb(70, 40, 170, 60)
-                c.drawRect(x0 - 6f, top - 4f, x1 + 6f, bottom - moneyH + 64f, pFill)
+                UiKit.glow(c, colR, Color.rgb(60, 200, 80), 0.45f)
                 pFill.style = Paint.Style.STROKE; pFill.strokeWidth = 3f; pFill.color = Color.rgb(70, 200, 90)
-                c.drawRect(x0 - 6f, top - 4f, x1 + 6f, bottom - moneyH + 64f, pFill)
+                c.drawRect(colR, pFill)
                 pFill.style = Paint.Style.FILL
             }
-            // the partner's level only while there is room beside "Accepted"
-            val head = if (side == 0) "You" else if (lvl > 0 && !accepted) "$who  (level $lvl)" else who
-            // your heading starts right of the frame's portrait ring; "Accepted" keeps its own room at the right
-            val hx = if (side == 0) x0 + 140f else x0
+            // the heading: you (right of the frame's portrait ring); the partner with the class's icon, as the game's portrait would show
+            var hx = if (side == 0) max(x0, r.left + 160f) else x0
+            if (side == 1) td.optString("cls", "").takeIf { it.isNotEmpty() }?.let { cls ->
+                UiKit.tex("classicon_" + cls.lowercase())?.let { ic ->
+                    c.drawBitmap(ic, null, RectF(x0, pane.top + 10f, x0 + 38f, pane.top + 48f), pArt); hx = x0 + 46f
+                }
+            }
             val accP = UiKit.bodyPaint(22f, Color.rgb(110, 230, 120)).apply { textAlign = Paint.Align.RIGHT }
-            val accW = if (accepted) accP.measureText("Accepted") + 28f else 0f
-            c.drawText(fit(UiKit.bodyPaint(28f, Theme.gold), head, x1 - hx - accW), hx, top + 32f, UiKit.bodyPaint(28f, Theme.gold))
-            if (accepted) c.drawText("Accepted", x1, top + 32f, accP)
+            val accW = if (accepted) accP.measureText("Accepted") + 24f else 0f
+            val head = if (side == 0) "You" else if (lvl > 0 && !accepted) "$who  (level $lvl)" else who
+            val hp = UiKit.bodyPaint(27f, Theme.gold)
+            c.drawText(fit(hp, head, x1 - hx - accW), hx, pane.top + 38f, hp)
+            if (accepted) c.drawText("Accepted", x1, pane.top + 38f, accP)
             for (k in 0 until n) {
-                val extra = if (k == n - 1) labH + 8f else 0f
-                val y = top + headH + k * rowH + extra
-                if (k == n - 1) {
-                    c.drawText("Will not be traded", x0, y - 10f, UiKit.bodyPaint(21f, Theme.dim))
+                val last = k == n - 1
+                val y = pane.top + headH + k * rowH + (if (last) labH + 8f else 0f)
+                if (last) {
+                    UiKit.bankDivider(c, x0, x1, y - labH / 2f - 2f)
+                    val lp = UiKit.bodyPaint(20f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
+                    c.drawText("Will not be traded", (x0 + x1) / 2f, y - 6f, lp)
                 }
                 val it = list.getOrNull(k)
                 val has = it != null && it.has("name")
-                val box = RectF(x0, y, x1, y + sz)
-                if (has) UiKit.slot(c, itemIcon(it!!), x0, y, sz, count = it.optInt("count", 0))
-                else UiKit.slot(c, null, x0, y, sz)
-                if (has) {
-                    val q = it!!.optInt("q", 1)
-                    val p = UiKit.bodyPaint(25f, Theme.quality(q))
-                    c.drawText(fit(p, it.optString("name"), colW - sz - 16f), x0 + sz + 14f, y + sz / 2f + 9f, p)
-                }
+                val row = RectF(x0, y, x1, y + rowH - 4f)
+                if (has) UiKit.itemPlate(c, row, itemIcon(it!!), it.optString("name"), Theme.quality(it.optInt("q", 1)), it.optInt("count", 0))
+                else UiKit.itemPlate(c, row, null, "")
                 val id = "tslot ${if (side == 0) "p" else "t"} ${k + 1}"
                 if (side == 0) {
                     val sl = it?.let { slotOf(it) } ?: -1
                     val cmd = if (has) "tradeout ${k + 1}" else "tradepick ${k + 1}"
-                    hits.add(box to (if (sl >= 0) "act:$cmd|$sl" else "why:The game gave this no tap cell"))
-                    if (!has && k == n - 1 && td.optInt("dest", 0) == n) UiKit.focus(c, RectF(x0, y, x0 + sz, y + sz))
+                    hits.add(row to (if (sl >= 0) "act:$cmd|$sl" else "why:The game gave this no tap cell"))
+                    if (!has && last && td.optInt("dest", 0) == n) UiKit.rewardPicked(c, row)
                 } else if (has) {
                     val sl = slotOf(it!!)
-                    hits.add(box to (if (sl >= 0) "act:look tslot t ${k + 1}|$sl" else "why:The game gave this no tap cell"))
+                    hits.add(row to (if (sl >= 0) "act:look tslot t ${k + 1}|$sl" else "why:The game gave this no tap cell"))
                 }
-                if (cur == id) UiKit.focus(c, box)
+                if (cur == id) UiKit.focus(c, row)
             }
-            // the money of this side: yours opens the stepper
-            val my = bottom - moneyH + 6f
-            val mbox = RectF(x0, my, x1, my + 56f)
-            pFill.style = Paint.Style.FILL; pFill.color = Color.argb(150, 0, 0, 0)
-            c.drawRect(mbox, pFill)
+            // the money: yours in the game's three money boxes (Y opens the stepper), theirs as the game shows it
+            val my = pane.bottom - moneyH + 8f
+            val mrow = RectF(x0, my, x1, my + 58f)
             val money = td.optLong(if (side == 0) "money" else "tmoney", 0)
-            UiKit.money(c, money, x1 - 12f, mbox.centerY(), 28f, fromRight = true)
-            c.drawText(if (side == 0) "Your gold" else "Their gold", x0 + 12f, mbox.centerY() + 9f, UiKit.bodyPaint(22f, Theme.dim))
             if (side == 0) {
+                val gw = (mrow.width() - 70f - 2f * 8f) / 3f
+                val parts = listOf(money / 10000 to "gold", (money / 100) % 100 to "silver", money % 100 to "copper")
+                for ((i, pr) in parts.withIndex()) {
+                    val b = RectF(mrow.left + i * (gw + 8f), mrow.top, mrow.left + i * (gw + 8f) + gw, mrow.bottom)
+                    tradeMoneyBox(c, b, pr.first, pr.second)
+                }
+                UiKit.pad(c, yGlyph(), mrow.right - 30f, mrow.centerY(), 46f)
                 val ec = col("edit")
-                hits.add(mbox to (if (ec >= 0) "act:trademoney edit|$ec" else "why:The game gave this no tap cell"))
-                if (cur == "tmoney") UiKit.focus(c, mbox)
+                hits.add(mrow to (if (ec >= 0) "act:trademoney edit|$ec" else "why:The game gave this no tap cell"))
+                if (cur == "tmoney") UiKit.focus(c, mrow)
+            } else {
+                pFill.style = Paint.Style.FILL; pFill.color = Color.argb(170, 0, 0, 0)
+                c.drawRect(mrow, pFill)
+                pFill.style = Paint.Style.STROKE; pFill.strokeWidth = 2f; pFill.color = Theme.bronzeDim
+                c.drawRect(mrow, pFill)
+                pFill.style = Paint.Style.FILL
+                UiKit.money(c, money, mrow.right - 12f, mrow.centerY(), 28f, fromRight = true)
             }
         }
-        // ---- your bags, on the right (the add-on's grid: TRADE_BAG_COLS to a row)
-        val bx0 = lx1 + 26f; val bx1 = inner.right - 12f
-        val purse = td.optLong("purse", 0)
-        c.drawText("Your bags", bx0, top + 32f, UiKit.bodyPaint(28f, Theme.gold))
-        UiKit.money(c, purse, bx1, top + 22f, 24f, fromRight = true)
-        val dest7 = td.optInt("dest", 0) == n
-        if (dest7) c.drawText(fit(UiKit.bodyPaint(21f, Theme.gold), "Next item: Will not be traded", bx1 - bx0), bx0, top + 64f, UiKit.bodyPaint(21f, Theme.gold))
+        // ---- your bags: the bank's stone, the game's slot frames (TRADE_BAG_COLS to a row); the right stick scrolls them
         val bags = arr(td, "bags")
+        val bagR = RectF(lx1 + 16f, top, inner.right - 4f, bottom)
+        UiKit.bankGround(c, bagR)
+        val purse = td.optLong("purse", 0)
+        c.drawText("Backpack", bagR.left + 14f, bagR.top + 38f, UiKit.bodyPaint(27f, Theme.gold))
+        UiKit.money(c, purse, bagR.right - 12f, bagR.top + 28f, 24f, fromRight = true)
+        val dest7 = td.optInt("dest", 0) == n
+        if (dest7) c.drawText(fit(UiKit.bodyPaint(20f, Theme.gold), "Next item: Will not be traded", bagR.width() - 28f),
+            bagR.left + 14f, bagR.top + 66f, UiKit.bodyPaint(20f, Theme.gold))
         val per = max(1, td.optInt("cols", TRADE_BAG_COLS))
-        val bgap = 10f
-        val bsz = ((bx1 - bx0 - (per - 1) * bgap) / per).coerceAtMost(96f)
-        val view = RectF(bx0 - 8f, top + 70f, bx1 + 8f, bottom)
+        val bgap = 6f
+        val view = RectF(bagR.left + 8f, bagR.top + (if (dest7) 76f else 54f), bagR.right - 8f, bagR.bottom - 8f)
+        val bsz = ((view.width() - 8f - (per - 1) * bgap) / per).coerceAtMost(96f)
         val brows = (bags.size + per - 1) / per
-        viewB = view; contentB = brows * (bsz + bgap) + 16f
+        viewB = view; contentB = brows * (bsz + bgap) + 8f
+        // the right stick's steps (nav.bs), one row each; the cursor kept in view when it moves
+        if (tradeBs != tradeBsSeen) { scrollB += (tradeBs - tradeBsSeen) * (bsz + bgap); tradeBsSeen = tradeBs }
         val ci = bags.indexOfFirst { "tradein ${it.optInt("bag")} ${it.optInt("s")} ${it.optInt("id")}" == cur }
-        if (ci >= 0) {
+        if (ci >= 0 && cur != tradeCurSeen) {
             val y = (ci / per) * (bsz + bgap)
-            if (y < scrollB) scrollB = y else if (y + bsz > scrollB + view.height()) scrollB = y + bsz - view.height()
+            if (y < scrollB) scrollB = y else if (y + bsz > scrollB + view.height() - 8f) scrollB = y + bsz - view.height() + 8f
         }
+        tradeCurSeen = cur
         scrollB = scrollB.coerceIn(0f, max(0f, contentB - view.height()))
         c.save(); c.clipRect(view)
         var curBox: RectF? = null
         for ((k, b) in bags.withIndex()) {
-            val x = bx0 + (k % per) * (bsz + bgap)
-            val y = view.top + 8f + (k / per) * (bsz + bgap) - scrollB
+            val x = view.left + 4f + (k % per) * (bsz + bgap)
+            val y = view.top + 4f + (k / per) * (bsz + bgap) - scrollB
             if (y + bsz < view.top || y > view.bottom) continue
             val cmd = "tradein ${b.optInt("bag")} ${b.optInt("s")} ${b.optInt("id")}"
             val locked = b.optBoolean("locked")
-            UiKit.slot(c, itemIcon(b), x, y, bsz, count = b.optInt("n", 0), dim = locked || b.optBoolean("bound"))
+            val sr = RectF(x, y, x + bsz, y + bsz)
+            UiKit.bankSlot(c, sr, itemIcon(b), b.optInt("q", 1), b.optInt("n", 0))
+            if (locked) { pFill.style = Paint.Style.FILL; pFill.color = Color.argb(140, 0, 0, 0); c.drawRect(sr, pFill) }
             val rr = RectF(x, max(y, view.top), x + bsz, min(y + bsz, view.bottom))
             val sl = slotOf(b)
             hits.add(rr to when { locked -> "why:That item is locked"; sl >= 0 -> "act:$cmd|$sl"; else -> "why:The game gave this no tap cell" })
-            if (cur == cmd) { UiKit.focus(c, RectF(x, y, x + bsz, y + bsz)); curBox = RectF(x, y, x + bsz, y + bsz) }
+            if (cur == cmd) { UiKit.focus(c, sr); curBox = sr }
         }
         c.restore()
-        if (bags.isEmpty()) c.drawText("Your bags are empty", bx0, view.top + 40f, UiKit.bodyPaint(24f, Theme.dim))
-        // ---- the strip: what the game answered, Cancel, Trade
+        if (bags.isEmpty()) c.drawText("Your bags are empty", view.left + 10f, view.top + 40f, UiKit.bodyPaint(24f, Theme.dim))
+        // ---- the strip: who has accepted, or what the game answered
         val cy = strip.centerY() + 2f
-        val bx = inner.right - 8f
-        val tradeB = RectF(bx - 250f, cy - 55f, bx, cy + 56f)
-        val cancelB = RectF(bx - 520f, cy - 55f, bx - 270f, cy + 56f)
-        val aCell = cells?.optInt("accept", -1) ?: -1
-        val cCell = cells?.optInt("cancel", -1) ?: -1
-        val acc = td.optBoolean("acc")
-        stripButton(c, tradeB, if (acc) "Accepted" else "Trade", if (aCell >= 0) "pet:$aCell" else "why:Press Trade with the controller",
-            aCell >= 0, false, "rev_a".takeIf { cur == "tradeaccept" }, id = "tradeaccept")
-        stripButton(c, cancelB, "Cancel", if (cCell >= 0) "pet:$cCell" else "why:Press Cancel with the controller", cCell >= 0, false,
-            UiKit.backGlyph(), id = "tradecancel")
-        if (!resultLine(c, inner.left + 24f, cancelB.left - 20f, cy, now)) {
+        if (!resultLine(c, inner.left + 24f, inner.right - 24f, cy, now)) {
             val words = when {
-                td.optBoolean("tacc") && !acc -> "$who has accepted. Check the trade, then press Trade."
-                acc && !td.optBoolean("tacc") -> "Waiting for $who to accept"
+                tacc && !acc -> "$who has accepted"
+                acc && !tacc -> "Waiting for $who"
+                acc && tacc -> "Both accepted"
                 else -> ""
             }
-            if (words.isNotEmpty()) c.drawText(fit(UiKit.bodyPaint(24f, Theme.gold), words, cancelB.left - 40f - inner.left), inner.left + 24f, cy + 8f, UiKit.bodyPaint(24f, Theme.gold))
+            if (words.isNotEmpty()) c.drawText(fit(UiKit.bodyPaint(25f, Theme.gold), words, inner.width() - 48f), inner.left + 24f, cy + 9f, UiKit.bodyPaint(25f, Theme.gold))
         }
-        UiKit.windowFrame(c, r, "Trade", UiKit.tex("portrait_quest"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
-        // ---- the tooltip of what the cursor (or a finger) is on: beside it, on the other half of the screen
+        // ---- the frame, its X (= Cancel, B), and Trade beside it (X glyph): the game's own two buttons
+        UiKit.windowFrame(c, r, "Trade", UiKit.tex("portrait_quest"), Theme.gold, closeDown = pressed == "x", closeB = 1)
+        val band = r.top - 16f + 57f * UiKit.FRAME
+        val aCell = cells?.optInt("accept", -1) ?: -1
+        val sq = 92f
+        val acx = r.right - 70f - sq - 18f; val acy = band + 2f
+        val aR = RectF(acx - sq / 2f, acy - sq / 2f, acx + sq / 2f, acy + sq / 2f)
+        tradeAcceptSquare(c, aR, acc, aCell >= 0, pressed == "pet:$aCell")
+        hits.add(RectF(aR.left - 8f, aR.top - 8f, aR.right + 8f, aR.bottom + 8f) to (if (aCell >= 0) "pet:$aCell" else "why:Press Trade with the controller"))
+        // ---- the tooltip of what the cursor (or a finger) is on: on the other half of the screen
         val tipKey = cur ?: lookedAt
         tipFor(tipKey)?.let { t ->
             val onBags = tipKey?.startsWith("tradein ") == true
@@ -2335,12 +2364,44 @@ class InteractView(context: Context) : View(context) {
                 else -> null
             }
             val tw = 540f
-            val tx = if (onBags) lx0 else max(bx0 - 10f, inner.right - tw - 10f)
-            val ty = curBox?.top ?: (top + 80f)
+            val tx = if (onBags) lx0 + 10f else max(bagR.left, inner.right - tw - 10f)
+            val ty = curBox?.top ?: (top + 60f)
             drawTip(c, tx, ty, tw, o?.optString("name", "Item") ?: "Item", o?.optInt("q", 1) ?: 1, t, top, bottom, tx + tw + 12f)
         }
         // ---- the money stepper over the window
         td.optJSONObject("edit")?.let { tradeStepper(c, r, it, act, purse) }
+    }
+
+    /** one of the game's money boxes (MoneyInputFrame): the amount on dark, its coin at the right */
+    private fun tradeMoneyBox(c: Canvas, b: RectF, v: Long, coin: String) {
+        pFill.style = Paint.Style.FILL; pFill.color = Color.argb(185, 0, 0, 0)
+        c.drawRect(b, pFill)
+        pFill.style = Paint.Style.STROKE; pFill.strokeWidth = 2f; pFill.color = Theme.bronzeDim
+        c.drawRect(b, pFill)
+        pFill.style = Paint.Style.FILL
+        val p = UiKit.numberPaint(28f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
+        c.drawText(v.toString(), b.right - 40f, b.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        UiKit.tex("coin_$coin")?.let { c.drawBitmap(it, null, RectF(b.right - 32f, b.centerY() - 13f, b.right - 6f, b.centerY() + 13f), pArt) }
+    }
+
+    /** TRADE beside the X (the user: "Make a button accept the trade like x with the glyph"): the game's red square, the check on
+     *  it, the X glyph on its corner as the B is on the close X; green round it once you have accepted */
+    private fun tradeAcceptSquare(c: Canvas, r: RectF, accepted: Boolean, enabled: Boolean, down: Boolean) {
+        if (accepted) UiKit.glow(c, RectF(r.left - 10f, r.top - 10f, r.right + 10f, r.bottom + 10f), Color.rgb(60, 200, 80), 0.7f)
+        UiKit.button(c, RectF(r.left + 6f, r.top + 6f, r.right - 6f, r.bottom - 6f), "",
+            when { !enabled -> UiKit.Button.DISABLED; down -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
+        val ic = UiKit.tex("icon_check")
+        val s = r.width() * 0.5f
+        if (ic != null) c.drawBitmap(ic, null, RectF(r.centerX() - s / 2f, r.centerY() - s / 2f - 2f, r.centerX() + s / 2f, r.centerY() + s / 2f - 2f), pArt)
+        else c.drawText("OK", r.centerX(), r.centerY() + 10f, UiKit.bodyPaint(28f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+        UiKit.pad(c, UiKit.xGlyph(), r.centerX() - r.width() * 0.42f, r.centerY() + r.height() * 0.36f, r.width() * 0.52f, if (enabled) 255 else 90)
+    }
+
+    /** the Y glyph in the layout the Settings chose (Nintendo's Y, Xbox's Y, PlayStation's triangle) */
+    private fun yGlyph(): String = when (CastSettings.buttonLayout) {
+        CastSettings.ButtonLayout.XBOX -> "ltr_y"
+        CastSettings.ButtonLayout.PLAYSTATION -> "shp_triangle"
+        else -> "rev_y"
     }
 
     /** the stepper: gold / silver / copper, each with its arrows (touch: +1 / -1, the outer ones 10); Set and Cancel; the controller's
@@ -2389,7 +2450,7 @@ class InteractView(context: Context) : View(context) {
         val setB = RectF(box.right - 300f, box.bottom - 110f, box.right - 40f, box.bottom - 24f)
         val offB = RectF(box.right - 580f, box.bottom - 110f, box.right - 320f, box.bottom - 24f)
         val sc = col("set"); val oc = col("off")
-        stripButton(c, setB, "Set", if (sc >= 0) "act:trademoney set|$sc" else "why:No cell", sc >= 0, false, "rev_a", always = true)
+        stripButton(c, setB, "Set", if (sc >= 0) "act:trademoney set|$sc" else "why:No cell", sc >= 0, false, UiKit.okGlyph(), always = true)
         stripButton(c, offB, "Cancel", if (oc >= 0) "act:trademoney off|$oc" else "why:No cell", oc >= 0, false, UiKit.backGlyph(), always = true)
     }
 

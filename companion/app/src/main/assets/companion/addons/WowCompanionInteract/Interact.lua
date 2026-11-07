@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i137"     -- bump on every change; the app shows it, so a stale addon is visible. i137: THE TRADE WINDOW (N.trd)
+local IV = "i138"     -- bump on every change; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1721,11 +1721,11 @@ function N.trd.zones(td)
     end
     local zm = navZone("tmoney", 1)
     navAdd(zm, "tmoney")
-    local zb = navZone("tbtn", 2)
-    navAdd(zb, "tradeaccept"); navAdd(zb, "tradecancel")
     local zg = navZone("tbags", N.trd.BAG_COLS)
     for _, b in ipairs(td.bags or {}) do navAdd(zg, "tradein " .. b.bag .. " " .. b.s .. " " .. b.id, not b.locked) end
-    return { zs, zm, zb, zg }
+    -- i138 (the user on test15: the Cancel button "is redundant with the X"; "Make a button accept the trade like x with the
+    -- glyph"): Trade and Cancel are no stops of the cursor; X and B press them (the secure buttons, through their bindings)
+    return { zs, zm, zg }
 end
 function N.trd.move(z, ii, dir)
     local name = z.name
@@ -1758,15 +1758,7 @@ function N.trd.move(z, ii, dir)
     end
     if name == "tmoney" then
         if dir == "up" then local zs = navZoneNamed("tslots"); if zs then N.cur = zs.items[#zs.items - 1].id end
-        elseif dir == "down" then N.cur = "tradeaccept"
         elseif dir == "right" then local zg = navZoneNamed("tbags"); N.cur = (zg and navFirst(zg)) or N.cur end
-        return true
-    end
-    if name == "tbtn" then
-        if dir == "left" and ii == 2 then N.cur = "tradeaccept"
-        elseif dir == "right" and ii == 1 then N.cur = "tradecancel"
-        elseif dir == "right" then local zg = navZoneNamed("tbags"); N.cur = (zg and navFirst(zg)) or N.cur
-        elseif dir == "up" then N.cur = "tmoney" end
         return true
     end
     if name == "tbags" then
@@ -2193,12 +2185,15 @@ function N.build(doc)
         local nm = ({ petsign = "WowCompanionPetSign", petoffer = "WowCompanionPetOffer", petrename = "WowCompanionPetRename" })[N.cur or ""]
         if nm and type(_G[nm]) == "table" then petA = nm end
     end
-    -- i137: the trade's Trade / Cancel the same way (Dialogs d23's secure buttons press the game's own)
-    local petB = nil
+    -- i137 / i138: the trade's Trade = X, Cancel = B, each a binding click of Dialogs d23's secure button (the game's own button)
+    local petB, petX = nil, nil
     if doc.trade and not N.trd.edit then
-        local nm = ({ tradeaccept = "WowCompanionTradeAccept", tradecancel = "WowCompanionTradeCancel" })[N.cur or ""]
-        if nm and type(_G[nm]) == "table" then petA = nm end
         if type(_G.WowCompanionTradeCancel) == "table" then petB = "WowCompanionTradeCancel" end
+        if type(_G.WowCompanionTradeAccept) == "table" then petX = "WowCompanionTradeAccept" end
+    end
+    if petX ~= N.petX then
+        N.petX = petX
+        if N.holding and N.padBind and TB(function() return InCombatLockdown() end) ~= true then N.padBind("PAD3") end
     end
     if petA ~= N.petA then
         N.petA = petA
@@ -2228,6 +2223,7 @@ function N.build(doc)
              from = N.petFrom, armed = N.armAt and true or nil, xh = N.xHold or nil, box = N.stableBox or nil,
              folds = N.trFoldList and N.trFoldList() or nil, menu = N.trMenu or nil,
              qty = (m and N.sel) and N.qty or nil, most = (m and N.sel) and N.most or nil,
+             bs = (doc.trade and N.trd.bs ~= 0) and N.trd.bs or nil,                   -- i138: the right stick's bag scroll
              pick = N.pick, scroll = N.scroll > 0 and N.scroll or nil }
 end
 
@@ -2468,7 +2464,7 @@ local ON = {
     PET_STABLE_CLOSED = function() mark("stable", false) end,
     MAIL_SHOW = function() MAIL.open = nil; MAIL.tab, MAIL.pick = "inbox", false; mark("mail", true) end,
     -- i137: the trade window; TRADE_ACCEPT_UPDATE says who has accepted (1 / 0), any change in the trade sets both back to 0
-    TRADE_SHOW = function() N.trd.acc, N.trd.tacc, N.trd.edit, N.trd.dest = 0, 0, nil, nil; mark("trade", true) end,
+    TRADE_SHOW = function() N.trd.acc, N.trd.tacc, N.trd.edit, N.trd.dest, N.trd.probed, N.trd.bs = 0, 0, nil, nil, nil, 0; mark("trade", true) end,
     TRADE_CLOSED = function() N.trd.acc, N.trd.tacc, N.trd.edit, N.trd.dest = 0, 0, nil, nil; mark("trade", false) end,
     TRADE_ACCEPT_UPDATE = function(p, t) N.trd.acc, N.trd.tacc = tonumber(p) or 0, tonumber(t) or 0 end,
     MAIL_CLOSED = function()
@@ -3796,6 +3792,36 @@ function ACT.tradeadj(a, b)
     if N.trd.edit then for i, cn in ipairs(N.trd.COINS) do if cn == a then N.trd.edit.sel = i end end end
     return true
 end
+-- i138: AFTER TRADE IS PRESSED (the user on test15: "there is an are you sure you want to accept trade that pops up on the top
+-- screen"): once per trade, a read-only look at what the game shows then - its dialogs (which / top) and any shown global frame
+-- named like a popup or a confirm - in one cap line, so the next build can mirror it
+function N.trd.probe()
+    if N.trd.probed or not isOpen("trade") then return end
+    N.trd.probed = true
+    local pops, frames = {}, {}
+    for i = 1, 4 do
+        local f = _G["StaticPopup" .. i]
+        if type(f) == "table" and TB(function() return f:IsShown() end) == true then
+            pops[#pops + 1] = { i = i, which = TS(function() return f.which end),
+                                text = TS(function() return f.text and f.text:GetText() end) or TS(function() return f.Text and f.Text:GetText() end),
+                                edit = TB(function() return f.EditBox and f.EditBox:IsShown() end) or nil,
+                                money = TB(function() return f.MoneyInputFrame and f.MoneyInputFrame:IsShown() end) or nil,
+                                inserted = (type(f.insertedFrame) == "table") or nil }
+        end
+    end
+    local n = 0
+    for k, v in pairs(_G) do
+        if n >= 12 then break end
+        if type(k) == "string" and type(v) == "table" and (k:find("Popup") or k:find("Confirm") or k:find("Dialog")) and not k:find("^StaticPopup%d")
+           and type(v.IsShown) == "function" and type(v.GetObjectType) == "function" then
+            local ok, sh = pcall(v.IsShown, v)
+            if ok and sh == true then n = n + 1; frames[#frames + 1] = k end
+        end
+    end
+    pcall(function() WC.send(WC.encode({ type = "cap", probe = "tradeconfirm", v = IV, pops = pops, frames = frames })); WC.push() end)
+end
+WC.tradeProbe = function() if C_Timer and C_Timer.After then C_Timer.After(0.6, function() pcall(N.trd.probe) end) end end
+
 -- Trade and Cancel are the dialogs' secure buttons (Dialogs d23); with none built there is nothing safe to call from here
 function ACT.tradeaccept() return false, "the Trade button is not ready: press it on the top screen" end
 function ACT.tradecancel() return false, "the Cancel button is not ready: press it on the top screen" end
@@ -5846,8 +5872,9 @@ local function wantOf(k)
     end
     -- the charter (i108): A on one of its buttons is a binding click of the secure button that presses the game's own
     if k == "PAD1" and not G.holder and N.petA then return N.petA, "LeftButton" end
-    -- i137: B in a trade = a click of the secure Cancel (the game closes its trade in its own code)
+    -- i137 / i138: B in a trade = a click of the secure Cancel, X = of the secure Trade (the game's code answers)
     if k == "PAD2" and not G.holder and N.petB then return N.petB, "LeftButton" end
+    if k == "PAD3" and not G.holder and N.petX then return N.petX, "LeftButton" end
     -- the key's own name rides along as the "mouse button", so one sink serves all eight
     return "WowCompanionInteractPad", k
 end
@@ -5864,6 +5891,8 @@ N.padBind = function(k) return padBind(k) end      -- for N.build (declared abov
 -- does the frame keep this key of the eight for us right now?
 local function keeps(k)
     local sp = G.holder and G.spec
+    -- i138: in a trade, X and B go on to their bindings (the secure Trade / Cancel); the frame keeps the rest
+    if not sp and ((k == "PAD3" and N.petX) or (k == "PAD2" and N.petB)) then return false end
     if not sp then return true end
     if sp.pass and sp.pass[k] then return false end
     -- an armed chord comes before `back`: B is its cancel
@@ -6714,8 +6743,8 @@ function N.back()
         return
     end
     if isOpen("trade") then
-        -- i137: the money stepper first; else the cursor goes to Cancel (B itself is the secure Cancel when it is there: wantOf)
-        if N.trd.edit then N.trd.edit = nil else N.cur = "tradecancel" end
+        -- i137 / i138: the money stepper first (B itself is the secure Cancel otherwise: wantOf, keeps)
+        if N.trd.edit then N.trd.edit = nil end
         emitSoon()
         return
     end
@@ -6851,6 +6880,12 @@ local function padPress(key, down, via)
                 N.n = N.n + 1
                 emitSoon()
             end
+        elseif key == "PAD4" and isOpen("trade") and not G.holder then
+            -- i138 (the user: "put the y glyph on the gold menu"): Y opens the gold stepper; in it, Y sets the amount as A does
+            if down then return end
+            navRun(N.trd.edit and "trademoney set" or "trademoney edit")
+        elseif key == "PAD3" and isOpen("trade") and not G.holder then
+            return                                   -- X is the secure Trade's binding (N.petX); in the stepper it does nothing
         elseif (key == "PAD3" or key == "PAD4") and isOpen("merchant") and not G.holder
                and tostring(N.cur or ""):match("^tab %a+$") then
             -- on the Buy / Sell / Buyback tabs (no item under the cursor, so no quantity and no compare): X = Repair All,
@@ -7001,8 +7036,52 @@ end
 -- Returns true = UNHANDLED: the game gets that stick (Blizzard's own inputBindingAxisListener does the same, in
 -- blizzard_gamepadsharedutility/inputbindingstack/inputaxisbinding.lua). So the LEFT stick ("Movement") always walks,
 -- even with an NPC window open, as in the game; only the right stick is kept, for the tooltip scroll.
+-- i138 (the user on test15: "the right side with all of the items should scroll with the right stick, the left stick should also
+-- cover the cursor"): in a TRADE the left stick is the D-pad (a step past half way, then one every TRADE_STICK_EVERY while held; the
+-- character does not walk while it is), the right stick scrolls the bags (`nav.bs` counts its steps; the app scrolls by rows)
+N.trd.STICK_EVERY = 0.18            -- (on N.trd: the file's main chunk is at Lua's 200-local limit)
+N.trd.bs, N.trd.lDir = 0, nil
+function N.trd.stick(stick, x, y)
+    local left = stick:find("Left") or stick:find("Move")
+    if left then
+        local dir = nil
+        if type(x) == "number" and type(y) == "number" then
+            if math.abs(x) >= math.abs(y) then
+                if x > 0.5 then dir = "right" elseif x < -0.5 then dir = "left" end
+            else
+                if y > 0.5 then dir = "up" elseif y < -0.5 then dir = "down" end
+            end
+        end
+        if dir == N.trd.lDir then return false end
+        N.trd.lDir = dir
+        if not dir then return false end
+        local function step() if N.trd.lDir == dir and N.holding and isOpen("trade") then N.move(dir); N.n = N.n + 1; emitSoon() end end
+        step()
+        local function again()
+            if N.trd.lDir ~= dir or not N.holding then return end
+            step()
+            pcall(C_Timer.After, N.trd.STICK_EVERY, again)
+        end
+        pcall(C_Timer.After, N.trd.STICK_EVERY * 2, again)
+        return false
+    end
+    local d = (type(y) == "number" and y > 0.5) and -1 or ((type(y) == "number" and y < -0.5) and 1 or 0)
+    if d == N.stickDir then return false end
+    N.stickDir = d
+    if d == 0 then return false end
+    local function bstep() N.trd.bs = N.trd.bs + d; N.n = N.n + 1; emitSoon() end
+    bstep()
+    local function again()
+        if N.stickDir ~= d or not N.holding then return end
+        bstep()
+        pcall(C_Timer.After, STICK_EVERY, again)
+    end
+    pcall(C_Timer.After, STICK_EVERY * 2, again)
+    return false
+end
 local function onStick(_, stick, x, y)
     if not N.holding or G.holder then return true end
+    if type(stick) == "string" and isOpen("trade") then return N.trd.stick(stick, x, y) end
     if type(stick) ~= "string" or not (stick:find("Right") or stick:find("Camera") or stick:find("Look")) then return true end
     local d = (type(y) == "number" and y > 0.5) and -1 or ((type(y) == "number" and y < -0.5) and 1 or 0)
     if d == N.stickDir then return false end

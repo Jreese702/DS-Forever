@@ -92,7 +92,7 @@ local zones = N.trd.zones(d.trade)
 N.zones = zones
 local names = {}
 for _, z in ipairs(zones) do names[#names + 1] = z.name end
-chk("zones: tslots, tmoney, tbtn, tbags", table.concat(names, ",") == "tslots,tmoney,tbtn,tbags", table.concat(names, ","))
+chk("zones (i138: no Trade / Cancel stops): tslots, tmoney, tbags", table.concat(names, ",") == "tslots,tmoney,tbags", table.concat(names, ","))
 local function at(id) for zi, z in ipairs(N.zones) do for ii, it in ipairs(z.items) do if it.id == id then return z, ii end end end end
 local function move(dir) local z, ii = at(N.cur); return N.trd.move(z, ii, dir) end
 N.cur = "tslot p 1"; move("right")
@@ -102,11 +102,20 @@ chk("Right from your slot 2 (their 2 is empty): the bags", N.cur:match("^tradein
 N.cur = "tslot p 7"; move("down")
 chk("Down from slot 7: the money", N.cur == "tmoney", N.cur)
 move("down")
-chk("Down from the money: Trade", N.cur == "tradeaccept", N.cur)
-move("right")
-chk("Right on Trade: Cancel", N.cur == "tradecancel", N.cur)
+chk("Down from the money: stays (no buttons to stop on)", N.cur == "tmoney", N.cur)
 move("up")
-chk("Up from the buttons: the money", N.cur == "tmoney", N.cur)
+chk("Up from the money: your slot 7", N.cur == "tslot p 7", N.cur)
+-- i138: the left stick is the D-pad here; the right stick counts the bags' scroll steps
+isOpen_was = true
+N.holding = true
+N.cur = "tslot p 1"
+local okL = pcall(N.trd.stick, "Left", 0.9, 0.1)
+chk("the left stick right (past half way): one step right (their slot 1)", okL and N.cur == "tslot t 1", N.cur)
+N.trd.stick("Left", 0, 0)
+local bs0 = N.trd.bs
+N.trd.stick("Right", 0, -0.9)
+chk("the right stick down: one bag-scroll step", N.trd.bs == bs0 + 1, N.trd.bs)
+N.trd.stick("Right", 0, 0)
 N.trd.editStart()
 N.cur = "tmoney"; move("right"); move("up"); move("up")
 chk("in the stepper (opened at the 1g 50s offered): Right picks silver, Up twice = 52s", N.trd.edit.sel == 2 and N.trd.edit.s == 52, N.trd.edit.sel .. " " .. N.trd.edit.s)
