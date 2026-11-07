@@ -541,7 +541,8 @@ fun WoWForeverScreen(
         if (System.currentTimeMillis() - artRecheckAt < 60_000L) return@LaunchedEffect
         artRecheckAt = System.currentTimeMillis()
         val left = runCatching { com.jrees.wowcompanion.ArtHarvest.pending(context, beforePlay = true).joinToString { it.id } }.getOrDefault("?")
-        setupLog("art: ready, but before Play still pending: $left; checking again")
+        val line = "art: ready, but before Play still pending: $left; checking again"
+        android.util.Log.i("WCSETUP", line); com.jrees.wowcompanion.SetupBridge.log?.invoke(line)   // = setupLog (declared below)
         harvestArt(retry = true)
     }
 
