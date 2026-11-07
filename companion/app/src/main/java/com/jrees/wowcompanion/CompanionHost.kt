@@ -2911,12 +2911,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private fun nativeRow(s: HomeLogin.State): Pair<StartView.Login, String>? = when {
         s.realm || NativeLogin.pastLogin -> null
-        s.phase == HomeLogin.Phase.AUTH -> StartView.Login.NONE to "Enter the authenticator code on the game screen."
-        s.phase == HomeLogin.Phase.FAILED -> StartView.Login.NONE to "Sign-in failed. Enter it on the game screen."
+        // 2026-11-07 (the user: "the sign in prompts are still appearing ... if I dont push anything fast enough"): no authenticator,
+        // failure or "not signed in yet" lines either - account select read as "not signed in"; the Menu and Keyboard are the way
         !HomeLoginStore.has(this) -> StartView.Login.FIRST to "Save it once and the game signs in by itself."
         NativeLogin.firstReadAt > 0L && NativeLogin.active -> StartView.Login.NONE to "Signing in…"
-        // the file's 20 s are up and character select has not come: a code asked, or the sign-in failed
-        NativeLogin.firstReadAt > 0L -> StartView.Login.NONE to "Not signed in yet? Enter it on the game screen."
         else -> null
     }
     private var loginRevealed = false
