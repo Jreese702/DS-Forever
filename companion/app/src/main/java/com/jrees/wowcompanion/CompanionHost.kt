@@ -1294,7 +1294,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!current) return
         // m96: the live hit counts feed the combat-log estimate (CombatHealth)
         val at = System.currentTimeMillis()
-        for (m in p.m) CombatHealth.counts(m.g, m.cw, m.cc, m.ch, at)
+        for (m in p.m) CombatHealth.counts(m.g, m.cw, m.cc, m.ch, at, m.cs)
         val live = PartyModel.live
         // m79: which reader each member's health came from, logged when it changes (2026-11-04: "staying at full health for everyone")
         p.m.joinToString(" ") { "${it.u}=${it.hs ?: "?"}" }.let { if (it != partyHsLast) { partyHsLast = it; Log.i("WCPARTY", "health sources: $it") } }

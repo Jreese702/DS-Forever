@@ -88,7 +88,12 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         c.drawRect(r.of(bar), pFill)
         val fill = PartyLayout.hpFill(cell, mem.hpNow(), mem.fullNow())
         fill.box?.let { PartyArt.hpFill(c, it, classColour(mem), fill.fadeFrom) }
-        PartyArt.powerFill(c, pw, Color.rgb(0, 0, 0) or PartyLayout.powerRgb(mem.pt))
+        // 2026-11-07 (the user: "The mana bars always show 100%"): filled to the combat log's value; the rest drawn as the empty bar
+        val share = mem.powerNow()
+        val pwFill = Box(pw.l, pw.t, pw.l + (pw.r - pw.l) * share, pw.b)
+        pFill.color = Color.rgb(26, 26, 26)
+        c.drawRect(r.of(pw), pFill)
+        if (share > 0f) PartyArt.powerFill(c, pwFill, Color.rgb(0, 0, 0) or PartyLayout.powerRgb(mem.pt))
         if (PartyLayout.fullWidth(cell, 0f, width.toFloat())) PartyArt.role(c, PartyLayout.role(cell), mem.role)
     }
 

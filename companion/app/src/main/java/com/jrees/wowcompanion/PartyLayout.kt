@@ -122,7 +122,7 @@ object PartyLayout {
         return Fill(f, null)               // 2026-11-04 (the user): a hard line where the health ends, never a fade to black
     }
 
-    /** the power line: 6 px at y h-7..h-1, the full width (the type's colour only: no amount is ever sent) */
+    /** the power line: 6 px at y h-7..h-1, the full width (filled to the combat log's share: PartyModel.Member.powerNow) */
     fun power(c: Box) = Box(c.l + 2f, c.b - 7f, c.r - 1f, c.b - 1f)
 
     /** the role icon (46 px at (6, 8)) on full-width cells; the dead skull (34 px at (10, 14)) in its place */

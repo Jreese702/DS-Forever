@@ -106,6 +106,24 @@ class CombatLogTest {
         assertTrue(CombatLogTail.stampOf("WoWCombatLog-010127_000001.txt") > started)          // a new year still sorts after
     }
 
+    /** mana: a cast's line gives the value and the cost; live casts since it spend the mean cost */
+    @Test fun manaFromCastsAndCounts() {
+        CombatHealth.clear()
+        val h = CombatHealth.store
+        fun adv2(pcur: Int, cost: Int) = "$me,0000000000000000,290,290,112,0,242,0,0,0,0,$pcur,345,$cost,-9222.82,446.73,1429,2.6844,4"
+        fun cast(t: String, pcur: Int, cost: Int) = "11/7/2026 $t-7  SPELL_CAST_SUCCESS,$me,\"Me-Realm\",0x511,0x80000000,0000000000000000,nil," +
+            "0x80000000,0x80000000,403,\"Lightning Bolt\",0x8,${adv2(pcur, cost)}"
+        val t0 = CombatLog.stamp("11/7/2026 11:40:00.000-7")!!
+        h.line(cast("11:40:00.000", 300, 45), 0)
+        val e = h.get(me)!!
+        assertEquals(0, e.pt); assertEquals(300L, e.pw); assertEquals(345L, e.pwMax); assertEquals(t0, e.castAt)
+        assertEquals(45.0, h.cal(me)!!.cost, 0.001)
+        CombatHealth.counts(me, 0, 0, 0, t0 + 300, sc = 5)                               // the counts at that cast
+        CombatHealth.counts(me, 0, 0, 0, t0 + 3_000, sc = 7)                             // two more casts in the fight
+        assertEquals(210f / 345f, CombatHealth.powerFrac(me, t0 + 3_500)!!, 0.001f)
+        assertNull(CombatHealth.powerFrac("Player-1-0000000B", t0))                       // nothing seen: no bar value
+    }
+
     @Test fun theStampReadsTheOffset() {
         // 11:10:42.622 at UTC-7 = 18:10:42.622 UTC
         assertEquals(java.time.Instant.parse("2026-11-07T18:10:42.622Z").toEpochMilli(), CombatLog.stamp("11/7/2026 11:10:42.622-7"))
