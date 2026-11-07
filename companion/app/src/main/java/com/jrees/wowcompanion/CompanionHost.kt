@@ -156,6 +156,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private lateinit var barSelect: HomeBarSelect
 
     private var tail: LogSource? = null
+    /** the game's combat log (CombatLogTail: party health), beside the game's own log; none while Streaming */
+    private var clogTail: CombatLogTail? = null
     /** WoW Forever as GameLocator found it on this device (the log, the setup's folders); set once at start */
     @Volatile private var game: GameLocator.Found? = null
         set(v) { field = v; if (::setupRunner.isInitialized) setupRunner.wowForever = v }
@@ -2422,6 +2424,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         tail = PlayModes.pick(PlayModes.current, PlayModes.bridgeLog, onMessage, onStatus) {
             LogTail(follow.first(), onMessage = onMessage, onStatus = onStatus, follow = follow)
         }.also { it.start() }
+        // 2026-11-07: the combat log sits in the same Logs folder as the game's own log
+        clogTail?.stop(); clogTail = null
+        if (!streaming) java.io.File(log).parentFile?.let { dir ->
+            CombatHealth.store.clear()
+            clogTail = CombatLogTail(dir) { ui.post { if (!shell.hostGone()) partyRedraw() } }.also { it.start() }
+        }
         PlayModes.onChanged = sourceChanged
     }
 

@@ -86,7 +86,7 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         }
         pFill.color = Color.rgb(26, 26, 26)
         c.drawRect(r.of(bar), pFill)
-        val fill = PartyLayout.hpFill(cell, mem.hp, mem.full)
+        val fill = PartyLayout.hpFill(cell, mem.hpNow(), mem.fullNow())
         fill.box?.let { PartyArt.hpFill(c, it, classColour(mem), fill.fadeFrom) }
         PartyArt.powerFill(c, pw, Color.rgb(0, 0, 0) or PartyLayout.powerRgb(mem.pt))
         if (PartyLayout.fullWidth(cell, 0f, width.toFloat())) PartyArt.role(c, PartyLayout.role(cell), mem.role)
@@ -103,7 +103,7 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     private fun measure(s: String, size: Float): Float { nameP.textSize = size; return nameP.measureText(s) }
 
     private fun drawWords(c: Canvas, cell: Box, mem: PartyModel.Member, big: Boolean) {
-        val pct = PartyLayout.pctText(mem.hp, mem.off)
+        val pct = PartyLayout.pctText(mem.hpNow(), mem.off)
         val w = PartyLayout.words(cell, mem.n, pct, mem.dead, big, ::measure, 0f, width.toFloat())
         val nameColour = if (mem.dead) Color.rgb(200, 200, 200) else Color.WHITE
         for ((i, line) in w.lines.withIndex()) edged(c, line, w.x, w.ys[i], w.size, nameColour, nameP, Paint.Align.LEFT)

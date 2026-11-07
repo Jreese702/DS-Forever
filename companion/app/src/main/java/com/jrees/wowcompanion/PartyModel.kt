@@ -28,7 +28,13 @@ object PartyModel {
         val hp: Int, val full: Boolean, val rng: Boolean?,
         /** m79: where [hp] came from: "unit" / "pct" / "frame" / "compact" (read) or "est" (the estimate); null = an older add-on */
         val hs: String? = null,
-    )
+        /** m92: the member's GUID, for the combat log's health (CombatHealth); null = an older add-on / not plain */
+        val g: String? = null,
+    ) {
+        /** the health to show: the combat log's while fresh, else the add-on's */
+        fun hpNow(): Int = CombatHealth.pct(g) ?: hp
+        fun fullNow(): Boolean = CombatHealth.pct(g)?.let { it >= 100 } ?: full
+    }
 
     data class Party(
         val v: String, val rs: Int, val on: Boolean, val aside: String?, val box: Int?, val fight: Boolean, val grp: Boolean,
@@ -81,7 +87,7 @@ object PartyModel {
             m.add(Member(
                 u, o.int("i") ?: unitIndex(u) ?: k, o.str("n") ?: "?", o.str("c") ?: "", o.str("col"), o.str("role") ?: "NONE",
                 o.bool("dead") ?: false, o.bool("off") ?: false, o.str("pt") ?: "", o.int("hpMax"), o.int("pmMax"),
-                (o.int("hp") ?: 100).coerceIn(0, 100), o.bool("full") ?: false, o.bool("rng"), o.str("hs"),
+                (o.int("hp") ?: 100).coerceIn(0, 100), o.bool("full") ?: false, o.bool("rng"), o.str("hs"), o.str("g"),
             ))
         }
         if (m.isEmpty()) return null
