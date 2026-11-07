@@ -75,7 +75,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
         val total = needs.size
         val done = java.util.concurrent.atomic.AtomicInteger()
         val ok = java.util.concurrent.atomic.AtomicInteger()
-        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(PARALLEL, total))
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(PARALLEL, total), BgThreads.factory("art-fetch"))
         try {
             for (n in needs) pool.execute {
                 if (runCatching { fetch(root, cache, File(n)) }.getOrDefault(false)) ok.incrementAndGet()
@@ -242,7 +242,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             if (missing.isEmpty()) return
             onTables?.invoke("Downloading the game's tables")
             android.util.Log.i("WCHARVEST", "vfs: fetching ${missing.size} files")
-            val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL)
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL, BgThreads.factory("art-vfs"))
             val bad = java.util.concurrent.atomic.AtomicInteger()
             missing.forEach { f -> pool.execute { if (!runCatching { fetch(root, cache, f) }.getOrDefault(false)) bad.incrementAndGet() } }
             pool.shutdown()

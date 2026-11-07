@@ -296,6 +296,7 @@ object ArtHarvest {
             firstResult = null
             waiters.add(onBeforePlayDone)
             worker = Thread({
+                BgThreads.lower()                                  // the screen first (BgThreads)
                 while (true) {
                     try {
                         work(app) { r -> beforePlayDone(r) }

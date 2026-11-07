@@ -368,7 +368,7 @@ class KitBuild(
         val ids = ArrayList<Int>(fids.size); val lens = ArrayList<Int>(fids.size)
         var miss = 0; var bad = 0
         // decoded and encoded on a few threads (the reads queue on the game's one handle), packed in fileDataID order
-        val pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors().coerceIn(1, 4))
+        val pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors().coerceIn(1, 4), BgThreads.factory("kit-pack"))
         try {
             blobs.outputStream().buffered(1 shl 16).use { o ->
                 var done = 0

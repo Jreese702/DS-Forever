@@ -638,8 +638,11 @@ fun WoWForeverScreen(
         scope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    WowClientDownloader.updateGame(File(gamePath), target) { msg ->
-                        scope.launch(Dispatchers.Main) { updateStatusText = msg }
+                    // the screen first (BgThreads, 2026-11-07): the update's downloads and decodes yield to the loading animations
+                    com.jrees.wowcompanion.BgThreads.lowered {
+                        WowClientDownloader.updateGame(File(gamePath), target) { msg ->
+                            scope.launch(Dispatchers.Main) { updateStatusText = msg }
+                        }
                     }
                 }
                 checkFiles()
