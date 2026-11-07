@@ -12,8 +12,23 @@ package com.jrees.wowcompanion
  * Pure: lines in, [Health] out; [CombatLogTail] feeds it from the file.
  */
 object CombatLog {
-    /** one unit's health as the log last said it; [exactAt] = the last time the log gave it outright (not by an amount) */
-    data class Hp(val hp: Long, val max: Long, val at: Long, val exactAt: Long)
+    /** one unit's health as the log last said it; [exactAt] = the last time the log gave it outright (not by an amount); [hurtAt] = its
+     *  last hit; [rate] = its own regen out of a fight, health per second, learned (0 = not yet) */
+    data class Hp(val hp: Long, val max: Long, val at: Long, val exactAt: Long, val hurtAt: Long = 0, val rate: Double = 0.0) {
+        /** THE REGEN TRUE-UP (the user, 2026-11-07: "out of combat my HP is showing stuck at 90%" - natural regen is never logged;
+         *  picked "Learn my regen", with the old model's idea of combining): [REGEN_AFTER_MS] after the last hit, the value climbs from
+         *  the last reading at the unit's own learned rate, to its max; the next exact reading replaces it */
+        fun hpAt(now: Long): Long {
+            if (rate <= 0.0 || hp >= max) return hp
+            val from = maxOf(at, hurtAt + REGEN_AFTER_MS)
+            if (now <= from) return hp
+            return minOf(max, hp + (rate * (now - from) / 1000.0).toLong())
+        }
+    }
+    /** out of a fight the game regenerates health only a few seconds after the last hit */
+    const val REGEN_AFTER_MS = 6_000L
+    /** a learned rate needs two exact readings this far apart with no hit or heal between */
+    const val LEARN_MIN_MS = 4_000L
 
     /** the fields of one line after its timestamp, split on commas outside quotes (names and spells are quoted) */
     fun fields(s: String): List<String> {
@@ -95,7 +110,17 @@ object CombatLog {
             val dst = f[5]
             val hp = f[a + 2].toLongOrNull(); val max = f[a + 3].toLongOrNull()
             if (info != "0000000000000000" && hp != null && max != null && max > 0) {
-                map[info] = Hp(hp.coerceIn(0, max), max, t, t); changed = true
+                val old = map[info]
+                val now = hp.coerceIn(0, max)
+                // learn the regen: two exact readings, nothing between (at == exactAt), out of a fight (no hit since REGEN_AFTER_MS
+                // before the first), health went up and was not full
+                var rate = old?.rate ?: 0.0
+                if (old != null && old.at == old.exactAt && t - old.exactAt >= LEARN_MIN_MS && now > old.hp && old.hp < old.max &&
+                    old.exactAt - old.hurtAt >= REGEN_AFTER_MS) {
+                    val sample = (now - old.hp) * 1000.0 / (t - old.exactAt)
+                    rate = if (rate <= 0.0) sample else rate * 0.6 + sample * 0.4
+                }
+                map[info] = Hp(now, max, t, t, old?.hurtAt ?: 0, rate); changed = true
             }
             if (dst == info || dst == "0000000000000000") return changed
             val s = a + ADV + (if (ev.startsWith("ENVIRONMENTAL_")) 1 else 0)
@@ -103,12 +128,12 @@ object CombatLog {
             when {
                 ev.endsWith("_DAMAGE") || ev == "DAMAGE_SPLIT" || ev == "DAMAGE_SHIELD" -> {
                     val amt = f.getOrNull(s)?.toLongOrNull() ?: return changed
-                    map[dst] = old.copy(hp = (old.hp - amt).coerceIn(0, old.max), at = t); changed = true
+                    map[dst] = old.copy(hp = (old.hpAt(t) - amt).coerceIn(0, old.max), at = t, hurtAt = t); changed = true
                 }
                 ev.endsWith("_HEAL") -> {
                     val amt = f.getOrNull(s)?.toLongOrNull() ?: return changed
                     val over = f.getOrNull(s + 2)?.toLongOrNull()?.coerceAtLeast(0) ?: 0
-                    map[dst] = old.copy(hp = (old.hp + amt - over).coerceIn(0, old.max), at = t); changed = true
+                    map[dst] = old.copy(hp = (old.hpAt(t) + amt - over).coerceIn(0, old.max), at = t); changed = true
                 }
             }
             return changed

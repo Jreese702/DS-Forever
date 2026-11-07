@@ -80,6 +80,8 @@ class CombatLogTail(private val logsDir: File, private val onChange: () -> Unit)
             }
             if (changed) { pending = true }
         }
+        // the regen true-up moves with no new line: a redraw every 2 s while the log is followed
+        if (now - lastNotify >= TICK_MS) pending = true
         if (pending && now - lastNotify >= NOTIFY_MS) { pending = false; lastNotify = now; onChange() }
         if (now - lagAt >= LAG_EVERY_MS) { lagAt = now; sayLag() }
     }
@@ -99,6 +101,7 @@ class CombatLogTail(private val logsDir: File, private val onChange: () -> Unit)
         const val PICK_MS = 3_000L
         const val MAX_READ = 128L * 1024
         const val NOTIFY_MS = 200L
+        const val TICK_MS = 2_000L
         const val LAG_EVERY_MS = 30_000L
     }
 }
@@ -114,7 +117,10 @@ object CombatHealth {
     fun pct(guid: String?, now: Long = System.currentTimeMillis()): Int? {
         if (guid.isNullOrEmpty()) return null
         val e = store.get(guid) ?: return null
-        if (now - e.at > FRESH_MS || e.max <= 0) return null
-        return ((e.hp * 100 + e.max / 2) / e.max).toInt().coerceIn(0, 100)
+        if (e.max <= 0) return null
+        // a learned regen keeps the value true out of a fight (CombatLog.Hp.hpAt); without one a quiet reading gives way after FRESH_MS
+        if (now - e.at > FRESH_MS && e.rate <= 0.0) return null
+        val hp = e.hpAt(now)
+        return ((hp * 100 + e.max / 2) / e.max).toInt().coerceIn(0, 100)
     }
 }

@@ -48,6 +48,22 @@ class CombatLogTest {
         assertNull(h.get(me))
     }
 
+    /** the regen true-up: two quiet exact readings teach the rate; the value then climbs on its own, never past the max */
+    @Test fun regenIsLearnedAndApplied() {
+        val h = CombatLog.Health()
+        h.line(swing("11:20:00.000", me, "Me-Realm", wolf, "Mangy Wolf", adv(me, 200, 290)), 0)
+        h.line(swing("11:20:10.000", me, "Me-Realm", wolf, "Mangy Wolf", adv(me, 220, 290)), 0)
+        val e = h.get(me)!!
+        assertEquals(2.0, e.rate, 0.001)
+        assertEquals(240L, e.hpAt(e.at + 10_000))
+        assertEquals(290L, e.hpAt(e.at + 600_000))
+        // a hit: no regen until REGEN_AFTER_MS after it
+        h.line(swing("11:20:12.000", wolf, "Mangy Wolf", me, "Me-Realm", adv(wolf, 50, 102)), 0)
+        val hit = h.get(me)!!
+        assertEquals(hit.hp, hit.hpAt(hit.hurtAt + 5_000))
+        assertTrue(hit.hpAt(hit.hurtAt + 10_000) > hit.hp)
+    }
+
     @Test fun theStampReadsTheOffset() {
         // 11:10:42.622 at UTC-7 = 18:10:42.622 UTC
         assertEquals(java.time.Instant.parse("2026-11-07T18:10:42.622Z").toEpochMilli(), CombatLog.stamp("11/7/2026 11:10:42.622-7"))
