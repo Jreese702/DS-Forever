@@ -238,7 +238,11 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         }
 
         override fun busy(): Boolean {
-            if (!LauncherHooks.gameUp()) return false            // no game: the device is ours
+            // 2026-11-07 (the user: the app "is sluggish as fuck before I ever press update"; the Thor's CPU: interiors-bake 74 % on the
+            // start screen): no game = the player is on DS Forever's own screens, so the bake waits; it builds while the game runs
+            if (!LauncherHooks.gameUp()) return true
+            // the same day (the user: "the map builder should only be running when nothing else is"): an art run (icons too) goes first
+            if (ArtHarvest.state is ArtHarvest.State.Running) return true
             val start = LauncherHooks.gameStartSec
             val loading = start != 0L && quietSince != start && now() < start * 1000 + STARTING_MS
             return busy || loading

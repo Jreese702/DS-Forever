@@ -47,10 +47,12 @@ class TablesProgressTest {
         assertEquals("Preparing the game art: 40%", SetupFlow.screen(steps).line)
     }
 
-    @Test fun theUpdatePopUpSaysWiFi() {
+    /** 2026-11-07: the update starts by itself; the line says so, and the only button is Try again (no "Play anyway") */
+    @Test fun theUpdateLineHasNoChoice() {
         val p = SetupFlow.screen(SetupFlow.Inputs(path = "/g", folderFound = true, loginSaved = true, art = SetupFlow.Art.READY,
             gameOutdated = "1.60.1.70400")).prompt!!
         assertEquals("client", p.id)
-        assertTrue(p.text.contains("Update on Wi-Fi"))
+        assertTrue(p.title.contains("Updating the game"))
+        assertEquals(listOf(SetupFlow.Action.UPDATE_GAME), p.buttons.map { it.action })
     }
 }

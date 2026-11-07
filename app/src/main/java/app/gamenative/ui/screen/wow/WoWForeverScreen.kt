@@ -662,6 +662,17 @@ fun WoWForeverScreen(
         }
     }
 
+    // 2026-11-07 (the user: "they cant play without it just start the update and remove the prompt"): an out-of-date game updates by
+    // itself, once per new build (a failed one waits for Try again, never a loop)
+    var autoUpdatedFor by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(versionStatus?.isOutdated, versionStatus?.remoteVersion) {
+        val v = versionStatus ?: return@LaunchedEffect
+        if (!v.isOutdated || autoUpdatedFor == v.remoteVersion || isUpdating) return@LaunchedEffect
+        autoUpdatedFor = v.remoteVersion
+        setupLog("update: starting by itself (${v.remoteVersion})")
+        performUpdate()
+    }
+
     // the queued Update goes as soon as nothing holds it (an art step's end, a launch's end)
     LaunchedEffect(updateQueued, isHarvesting, isLaunching) {
         if (updateQueued && !isHarvesting && !isLaunching) performUpdate()

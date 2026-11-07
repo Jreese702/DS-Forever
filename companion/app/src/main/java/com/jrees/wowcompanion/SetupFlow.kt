@@ -278,9 +278,10 @@ object SetupFlow {
             // before the client's pop-up: its "Play anyway" waits for this choice (canPlay)
             i.appUpdate != null -> Prompt("app", "DS Forever ${i.appUpdate} is out", "Update now, or later from this screen.",
                 listOf(Button("Update", Action.UPDATE_APP, i.busy == null), Button("Later", Action.LATER_APP)))
-            i.gameOutdated != null -> Prompt("client", "Game update needed",
-                "The servers need build ${i.gameOutdated}. Signing in may fail with these files. Update on Wi-Fi: the game art then fetches about 180 MB of the game's tables.",
-                listOf(Button("Update", Action.UPDATE_GAME, i.busy == null), Button("Play anyway", Action.PLAY, canPlay(i))))
+            // 2026-11-07 (the user: "why are we even asking them if they want to update? they cant play without it just start the
+            // update and remove the prompt"): the launcher starts it by itself (WoWForeverScreen); this only shows if it stopped
+            i.gameOutdated != null -> Prompt("client", "Updating the game to ${i.gameOutdated}", "",
+                listOf(Button("Try again", Action.UPDATE_GAME, i.busy == null)))
             i.reportSaved != null && (i.loginSaved || i.loginSkipped) -> Prompt("report", i.reportSaved,
                 if ("was sent" in i.reportSaved) "Open the issue to see it." else "It is in Documents/DS Forever/reports. Open the GitHub issue to post it.",
                 listOf(Button("Open GitHub issue", Action.REPORT_OPEN), Button("Dismiss", Action.REPORT_DISMISS)))

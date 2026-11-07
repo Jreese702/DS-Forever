@@ -330,7 +330,9 @@ class LogTail(
     private fun feed(buf: ByteArray, n: Int) {
         // A read straddling the edge of a reclaimed hole starts with NULs, and a NUL run has no
         // newline, so without this it would glue itself onto the first real line.
-        val text = carry + String(buf, 0, n, Charsets.UTF_8).replace("\u0000", "")
+        var s = String(buf, 0, n, Charsets.UTF_8)
+        if (s.indexOf('\u0000') >= 0) s = s.replace("\u0000", "")       // only a read at a reclaimed hole has NULs
+        val text = if (carry.isEmpty()) s else carry + s
         val lines = text.split('\n')
         // the last element is a partial line unless the chunk ended on a newline
         carry = if (text.endsWith("\n")) "" else lines.last()
@@ -351,7 +353,10 @@ class LogTail(
         // shorter poll bought nothing. A quiet poll is now one stat (~11 ms) and a flush-sized
         // read ~44 ms, so halving this takes up to 50 ms off the arrow's lag for free.
         const val POLL_MS = 50L
-        const val MAX_READ = 8L * 1024 * 1024
+        // 2026-11-07 (the Thor: "Waiting for a blocking GC" every poll, logtail 74 % CPU on the start screen): an 8 MB read made an 8 MB
+        // buffer, a 16 MB string and more copies per poll; every GC froze the screen. 1 MB a poll (50 ms polls still read 20 MB/s), and
+        // the start's backlog is the log's last 1 MB
+        const val MAX_READ = 1L * 1024 * 1024
         /** a root read longer than this is a hang: the shell is killed and re-opened (an 8 MB read takes well under a second) */
         const val READ_TIMEOUT_MS = 3_000L
         // The install lives INSIDE the container's private storage, not on /sdcard. It was moved
