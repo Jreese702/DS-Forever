@@ -60,6 +60,8 @@ object SettingsTabs {
         FRAMES(Tab.PERFORMANCE, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game")),
         INDOOR(Tab.PERFORMANCE, "Indoor maps", listOf("Build in the background", "Progress", "Route data")),
+        // 2026-11-07 (the user: Spanish and French, "Start screen + login first", the Thor's language or an override here)
+        LANGUAGE(Tab.SYSTEM, "Language", listOf("Language")),
         GAME(Tab.SYSTEM, "Game", listOf("Reload game UI", "Battle.net login", "Problem report")),
         STREAMING(Tab.SYSTEM, "Streaming", listOf("Stream settings")),
         COMPANION(Tab.SYSTEM, "Companion", listOf("Status")),
@@ -69,7 +71,7 @@ object SettingsTabs {
     const val HOME_MODULES = "Home module settings"
 
     /** the blocks SettingsView draws itself (the others are Home's section and the two GameUiSection parts) */
-    val VIEW_BLOCKS = setOf(Block.GAME, Block.STREAMING, Block.MAP, Block.INDOOR, Block.CONTROLLER, Block.PAUSE_WHEEL, Block.ITEM_WHEEL, Block.SPELL_WHEEL,
+    val VIEW_BLOCKS = setOf(Block.LANGUAGE, Block.GAME, Block.STREAMING, Block.MAP, Block.INDOOR, Block.CONTROLLER, Block.PAUSE_WHEEL, Block.ITEM_WHEEL, Block.SPELL_WHEEL,
         Block.CLASS_LEFT, Block.CLASS_RIGHT, Block.SMART_Y,
         Block.CHAT, Block.FRAMES, Block.ADDON_SPOKEN, Block.ADDON_POLESTAR, Block.ADDON_QUESTTRAIL,
         Block.ADDON_MANNERS)

@@ -56,6 +56,7 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
 
     fun open() {
         email.setText(""); password.setText(""); error = ""; shown = false
+        email.hint = Tr.t("Email"); password.hint = Tr.t("Password")              // the language may have changed since
         region = runCatching { GameRegion.current(context, GameFiles.gameRoot(context)) }.getOrDefault("us")
         password.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         password.typeface = UiKit.body                    // setting the input type resets it to monospace
@@ -139,12 +140,12 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
             hits.clear()
             UiKit.dialog(c, RectF(0f, 0f, width.toFloat(), height.toFloat()))
             val cx = width / 2f
-            c.drawText("Battle.net login", cx, 70f, UiKit.titlePaint(46f).apply { textAlign = android.graphics.Paint.Align.CENTER })
+            c.drawText(Tr.t("Battle.net login"), cx, 70f, UiKit.titlePaint(46f).apply { textAlign = android.graphics.Paint.Align.CENTER })
             val eyeR = RectF((FIELD_X + FIELD_W - EYE_W).toFloat(), PASS_Y.toFloat(), (FIELD_X + FIELD_W).toFloat(), (PASS_Y + FIELD_H).toFloat())
             UiKit.button(c, eyeR, if (shown) "Hide" else "Show", if (pressed == "eye") UiKit.Button.DOWN else UiKit.Button.UP)
             hits += eyeR to "eye"
             // the region: the account's own (US, EU, Korea, Taiwan); the game signs in there
-            c.drawText("Region", FIELD_X.toFloat(), REGION_Y + REGION_H / 2f + 10f, UiKit.bodyPaint(30f, Theme.gold))
+            c.drawText(Tr.t("Region"), FIELD_X.toFloat(), REGION_Y + REGION_H / 2f + 10f, UiKit.bodyPaint(30f, Theme.gold))
             val rx0 = FIELD_X + 150f
             val rw = (FIELD_X + FIELD_W - rx0 - 3 * 12f) / GameRegion.ALL.size
             for ((i, rg) in GameRegion.ALL.withIndex()) {
@@ -154,8 +155,8 @@ class HomeLoginPrompt(ctx: Context, private val onSaved: (HomeLoginStore.Login) 
                 hits += rr to "rg:${rg.code}"
             }
             if (error.isNotEmpty())
-                c.drawText(error, cx, NOTE_Y, UiKit.bodyPaint(28f, Theme.warn).apply { textAlign = android.graphics.Paint.Align.CENTER })
-            else c.drawText("Kept on this device only, encrypted.", cx, NOTE_Y,
+                c.drawText(Tr.t(error), cx, NOTE_Y, UiKit.bodyPaint(28f, Theme.warn).apply { textAlign = android.graphics.Paint.Align.CENTER })
+            else c.drawText(Tr.t("Kept on this device only, encrypted."), cx, NOTE_Y,
                 UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = android.graphics.Paint.Align.CENTER })
             val save = RectF(cx - 20f - SAVE_W, BUTTONS_Y, cx - 20f, BUTTONS_Y + 111f)
             val cancel = RectF(cx + 20f, BUTTONS_Y, cx + 20f + CANCEL_W, BUTTONS_Y + 111f)

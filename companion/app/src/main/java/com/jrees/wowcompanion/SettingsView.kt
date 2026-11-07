@@ -75,6 +75,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segQt = Array(4) { RectF() }
     private val segDanger = Array(3) { RectF() }
     private val segFog = Array(2) { RectF() }
+    private val segLang = Array(Tr.LANGS.size) { RectF() }          // 2026-11-07: Settings > System > Language
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
     private val segIndoor = Array(2) { RectF() }
     /**
@@ -206,7 +207,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segDanger.toList() + segFog.toList() + segChat.toList() +
-            segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
+            segLang.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
             segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
@@ -240,7 +241,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segDanger, segFog,
+                         segClassROpen, segClassRPick, segChat, segQt, segDanger, segFog, segLang,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -258,6 +259,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
 
     /** a block's height from its heading's y to its last row's bottom, laid out exactly as its draw function lays it out */
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
+        SettingsTabs.Block.LANGUAGE -> 16f + ROW_H
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
         SettingsTabs.Block.STREAMING -> 16f + ROW_H
@@ -389,6 +391,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 val qi = segQt.indexOfFirst { it.contains(x, y) }
                 val di = segDanger.indexOfFirst { it.contains(x, y) }
                 val fi = segFog.indexOfFirst { it.contains(x, y) }
+                val lgi = segLang.indexOfFirst { it.contains(x, y) }
+                if (lgi >= 0) { Tr.setChoice(context, Tr.LANGS[lgi].code); invalidate(); return }
                 if (fi >= 0) { Settings.worldMapFog = if (fi == 0) "all" else "explored"; invalidate(); return }
                 if (di >= 0) { if (Settings.questTracking == "safepath") Settings.avoidDanger = Settings.AVOID_DANGER[di]; invalidate(); return }
                 if (qi >= 0 && !Settings.ROUTE_MODES_ON && qi != 0) { invalidate(); return }   // held back for 1.0.9
@@ -436,6 +440,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             c.drawText(b.heading, PAD_X, y + 4f, if (modules) pSubHead else pSection)
             y += 16f
             y = when (b) {
+                SettingsTabs.Block.LANGUAGE -> drawLanguage(c, y)
                 SettingsTabs.Block.GAME -> drawGame(c, y)
                 SettingsTabs.Block.STREAMING -> drawStreaming(c, y)
                 SettingsTabs.Block.MAP -> drawMap(c, y)
@@ -486,6 +491,18 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     }
 
     // ---- GAME (System): Reload, the saved login, the problem report
+    /** 2026-11-07: Automatic (the Thor's language), English, Español, Français - the start screen and the login first */
+    private fun drawLanguage(c: Canvas, top: Float): Float {
+        val segW = segW()
+        row(c, top, Tr.t("Language"), Tr.t("The language of DS Forever's screens"), enabled = true) { box ->
+            val n = Tr.LANGS.size
+            val b = RectF(box.right - 16f - segW * n, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, Tr.LANGS.map { if (it.code == "auto") Tr.t("Automatic") else it.label }, Tr.LANGS.indexOfFirst { it.code == Tr.choice() }, segLang)
+            b
+        }
+        return top + ROW_H
+    }
+
     private fun drawGame(c: Canvas, top: Float): Float {
         var y = top
         val now = SystemClock.elapsedRealtime()

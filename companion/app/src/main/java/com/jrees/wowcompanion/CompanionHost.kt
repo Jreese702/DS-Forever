@@ -377,6 +377,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     fun onCreate(savedInstanceState: Bundle?) {
         // the problem report's own log (board f-problem-report): DS Forever's events, never a login, names only to hide them
         DiagLog.init(this)
+        Tr.init(this)                              // 2026-11-07: Spanish / French (the Thor's language, or Settings > System > Language)
         DataStaleness.init(this)                   // issues #8 / #9: is the game folder's Data the build's?
         if (LauncherHooks.pkg != null && !LauncherHooks.gameUp()) GameLife.launcherBack()     // issue #12
         DiagLog.event("app", "bottom screen up (inside the launcher: ${LauncherHooks.pkg != null})")

@@ -148,7 +148,7 @@ object UiKit {
                textSize: Float = r.height() * 0.34f, waiting: Boolean = false, words: Int? = null) {
         pressed(c, r, state == Button.DOWN || waiting) {
             buttonPlate(c, r, state)
-            buttonLabel(c, r, label, state, textSize, r.left + 24f, if (waiting) r.right - r.height() * 0.9f else r.right - 24f, words)
+            buttonLabel(c, r, Tr.t(label), state, textSize, r.left + 24f, if (waiting) r.right - r.height() * 0.9f else r.right - 24f, words)
         }
         if (waiting) waitOnButton(c, r)
     }
@@ -234,7 +234,7 @@ object UiKit {
      * however narrow the button. On a DISABLED button the glyph is faint.
      */
     fun button(c: Canvas, r: RectF, label: String, glyph: String, state: Button = Button.UP, waiting: Boolean = false) {
-        buttonG(c, r, label, glyph, state, waiting)
+        buttonG(c, r, Tr.t(label), glyph, state, waiting)
         if (waiting) waitOnButton(c, r)
     }
 
@@ -6219,7 +6219,8 @@ object UiKit {
     private val heavy: Typeface by lazy { Typeface.create("sans-serif-black", Typeface.BOLD_ITALIC) }
 
     /** words with a dark edge round them, centred on ([cx], [cy]): they stand on a picture */
-    fun outlined(c: Canvas, words: String, cx: Float, cy: Float, size: Float, colour: Int, edge: Float = 3f) {
+    fun outlined(c: Canvas, words0: String, cx: Float, cy: Float, size: Float, colour: Int, edge: Float = 3f) {
+        val words = Tr.t(words0)                    // 2026-11-07: Spanish / French where there are words for it
         val p = bodyPaint(size, colour, shadow = false).apply { textAlign = Paint.Align.CENTER }
         val y = cy - (p.ascent() + p.descent()) / 2f
         p.style = Paint.Style.STROKE; p.strokeWidth = edge * 2f; p.strokeJoin = Paint.Join.ROUND; p.color = Color.rgb(10, 8, 6)

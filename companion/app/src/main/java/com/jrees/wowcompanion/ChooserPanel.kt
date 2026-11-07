@@ -110,7 +110,7 @@ class ChooserPanel(context: Context) : View(context) {
     /** the Menu in the cards' place (the user 2026-11-01), the status line at the foot, the cursor its own */
     private fun drawMenu(c: Canvas) {
         val title = UiKit.titlePaint(56f).apply { textAlign = Paint.Align.CENTER }
-        c.drawText("Menu", width / 2f, MARGIN + 62f, title)
+        c.drawText(Tr.t("Menu"), width / 2f, MARGIN + 62f, title)
         val footY = footTop()
         val x = RectF(MARGIN, footY, MARGIN + SIDE_W, footY + BUTTON_H)
         footPanel(c, x.right + GAP, width - MARGIN, SetupFlow.status(null, SetupBridge.checksPass(), LoadingScene.now()))
@@ -148,7 +148,7 @@ class ChooserPanel(context: Context) : View(context) {
         if (StartMenu.open) { drawMenu(c); return }
         val cx = width / 2f
         val title = UiKit.titlePaint(56f).apply { textAlign = Paint.Align.CENTER }
-        c.drawText("How do you want to play?", cx, MARGIN + 62f, title)
+        c.drawText(Tr.t("How do you want to play?"), cx, MARGIN + 62f, title)
         val top = MARGIN + 110f
         val footY = footTop()
         val colW = (width - MARGIN * 2 - GAP * 2) / 2f
@@ -178,7 +178,7 @@ class ChooserPanel(context: Context) : View(context) {
     /** Shortcuts (the user 2026-11-01): the big cards, Local left, Streaming right, DS Forever under both; a press pins that shortcut */
     private fun drawShortcuts(c: Canvas) {
         val title = UiKit.titlePaint(56f).apply { textAlign = Paint.Align.CENTER }
-        c.drawText("Add a shortcut", width / 2f, MARGIN + 62f, title)
+        c.drawText(Tr.t("Add a shortcut"), width / 2f, MARGIN + 62f, title)
         val top = MARGIN + 110f
         val footY = footTop()
         val mainTop = footY - GAP * 2 - MAIN_H
@@ -216,7 +216,7 @@ class ChooserPanel(context: Context) : View(context) {
         c.drawRoundRect(d, 14f, 14f, pFill)
         UiKit.border(c, d)
         val title = UiKit.titlePaint(64f).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(mode.title, d.centerX(), d.top + 96f, title)
+        c.drawText(Tr.t(mode.title), d.centerX(), d.top + 96f, title)
         // the picture, in the middle of what is left
         val body = UiKit.bodyPaint(30f).apply { textAlign = Paint.Align.CENTER }
         val lines = SetupPanel.wrap(blurb(mode), body, d.width() - PAD * 2)
@@ -229,10 +229,10 @@ class ChooserPanel(context: Context) : View(context) {
         for (l in lines) { c.drawText(l, d.centerX(), y, body); y += 40f }
     }
 
-    private fun blurb(mode: StartMode.Mode) = when (mode) {
+    private fun blurb(mode: StartMode.Mode) = Tr.t(when (mode) {
         StartMode.Mode.LOCAL -> "WoW Forever runs on this device."
         StartMode.Mode.STREAM -> "WoW runs on your PC. DS Forever Desktop streams it here."
-    }
+    })
 
     /** our own vectors in the kit's gold: LOCAL = this two-screen handheld, STREAMING = a PC screen sending its picture */
     private fun picture(c: Canvas, mode: StartMode.Mode, cx: Float, cy: Float, s: Float) {
@@ -275,10 +275,10 @@ class ChooserPanel(context: Context) : View(context) {
         c.drawRoundRect(card, 14f, 14f, pFill)
         UiKit.border(c, card)
         val title = UiKit.titlePaint(56f).apply { textAlign = Paint.Align.CENTER }
-        c.drawText("Streaming", card.centerX(), card.top + PAD + 52f, title)
+        c.drawText(Tr.t("Streaming"), card.centerX(), card.top + PAD + 52f, title)
         val body = UiKit.bodyPaint(30f).apply { textAlign = Paint.Align.CENTER }
         var y = card.top + PAD + 120f
-        val text = "Connect to DS Forever Desktop. Type the code it shows on your PC on the top screen."
+        val text = Tr.t("Connect to DS Forever Desktop. Type the code it shows on your PC on the top screen.")
         for (l in SetupPanel.wrap(text, body, card.width() - PAD * 2)) { c.drawText(l, card.centerX(), y, body); y += 40f }
         if (ModeBridge.streamNote.isNotEmpty()) {
             y += 20f
