@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i136"     -- bump on every change; the app shows it, so a stale addon is visible
+local IV = "i137"     -- bump on every change; the app shows it, so a stale addon is visible. i137: THE TRADE WINDOW (N.trd)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -364,7 +364,7 @@ end
 -- A window is taken over (hidden on top, the controller taken, its document sent) only once its app half
 -- ships: an addon on the Thor ahead of its app must never hide a window with nothing on the bottom screen.
 -- Switch one on in the same build as its app view.
-local WINDOWS = { trainer = true, stable = true, mail = true, auction = true, taxi = true, bank = true, loot = true, petition = true, book = true }
+local WINDOWS = { trainer = true, stable = true, mail = true, auction = true, taxi = true, bank = true, loot = true, petition = true, book = true, trade = true }
 WC.interactWindows = WINDOWS     -- the harness switches a dormant window on (never the game)
 WC.interactWindows = WINDOWS      -- the harness switches them on
 
@@ -1137,6 +1137,7 @@ local shownAt = { gossip = 0, quest = 0, merchant = 0, trainer = 0, stable = 0, 
 local hiddenAt = { gossip = 0, quest = 0, merchant = 0, trainer = 0, stable = 0, mail = 0, auction = 0, taxi = 0, bank = 0, loot = 0, petition = 0, book = 0 }
 -- 1.0.9: QuestTrail's setup assistant and its Shared Trail intro (N.qt below): windows like the game's, opened by hooks on their frames
 FRAME.qtsetup, FRAME.qtintro = "QuestTrailSetup", "QuestTrailSharedIntro"
+FRAME.trade, shownAt.trade, hiddenAt.trade = "TradeFrame", 0, 0           -- i137: the trade window
 shownAt.qtsetup, shownAt.qtintro, hiddenAt.qtsetup, hiddenAt.qtintro = 0, 0, 0, 0
 local frameSeen = {}        -- slot -> true once its Blizzard frame has been seen shown
 local disagreed = false
@@ -1483,6 +1484,22 @@ local function assignSlots(doc)
         end
     end
     if doc.petition then any = true end
+    local td = doc.trade
+    if td then
+        -- i137: every slot, bag item and the stepper's parts are one cell (touch = the controller's A on them); Trade / Cancel are the
+        -- dialogs' secure cells (td.cells)
+        any = true
+        for _, it in ipairs(td.mine) do it.slot = slot("isell", it.name and ("tradeout " .. it.i) or ("tradepick " .. it.i)) end
+        for _, b in ipairs(td.bags) do b.slot = slot("ibuy", "tradein " .. b.bag .. " " .. b.s .. " " .. b.id) end
+        td.act = { edit = slot("iact", "trademoney edit"), set = slot("iact", "trademoney set"), off = slot("iact", "trademoney off") }
+        for _, cn in ipairs({ "g", "s", "c" }) do         -- (N is declared below this function: nothing of N.trd here)
+            td.act[cn .. "+"] = slot("iact", "tradeadj " .. cn .. " 1"); td.act[cn .. "-"] = slot("iact", "tradeadj " .. cn .. " -1")
+            td.act[cn .. "++"] = slot("iact", "tradeadj " .. cn .. " 10"); td.act[cn .. "--"] = slot("iact", "tradeadj " .. cn .. " -10")
+        end
+        for k = 1, td.slots or 7 do
+            if td.theirs[k] and td.theirs[k].name then td.theirs[k].slot = slot("ipick", "look tslot t " .. k) end
+        end
+    end
     if doc.book then
         any = true
         doc.book.act = { prev = slot("iact", "bookprev"), ["next"] = slot("iact", "booknext") }
@@ -1623,13 +1640,159 @@ function N.msZone(sp)
     return z
 end
 
+
+-- ---------------------------------------------------------------- the TRADE window (i137)
+-- THE GAME'S TRADE WINDOW, MIRRORED (the user, 2026-11-07: "We really need to make a good trade window"; picked layout A - the game's
+-- window with the bags beside it -, a gold / silver / copper stepper, and Trade from the player menus). The game's TradeFrame: your
+-- six slots and the partner's six, the seventh "Will not be traded" slot each (an enchant goes there), the money on each side, the
+-- green of a side that has accepted, Trade and Cancel. Everything is the game's own call, inside the press: an item goes in with
+-- C_Container.PickupContainerItem + ClickTradeButton (the game's right-click), comes back with ClickTradeButton + ClearCursor (the
+-- game's click on its slot), the money with C_TradeInfo.SetTradeMoney. TRADE and CANCEL are SECURE CLICKS of the game's own two
+-- buttons (Dialogs d23: WowCompanionTradeAccept / -Cancel, and their touch cells): the game's code accepts or closes, never ours (a
+-- close called from a press tainted the controller code once - the lesson of 2026-09-28 in the guest contract below). B is a
+-- binding click of that Cancel too. Hidden by alpha on the top screen like every window (HIDE.trade).
+N.trd = { acc = 0, tacc = 0, edit = nil, dest = nil }
+N.trd.SLOTS = 7          -- the game's MAX_TRADE_ITEMS: six traded, the seventh "Will not be traded"
+N.trd.BAG_COLS = 5       -- the bag grid beside the window: the app draws exactly this many (InteractView.TRADE_BAG_COLS)
+N.trd.COINS = { "g", "s", "c" }
+function N.trd.item(side, k)
+    local r = R(function() if side == "p" then return GetTradePlayerItemInfo(k) end return GetTradeTargetItemInfo(k) end)
+    local it = { i = k }
+    local name = r and PS(r[1])
+    if name then
+        it.name, it.icon, it.count, it.q = name, PN(r[2]), PN(r[3]), PN(r[4])
+        local link = TS(function() if side == "p" then return GetTradePlayerItemLink(k) end return GetTradeTargetItemLink(k) end)
+        if link then it.id = TN(function() return (C_Item.GetItemInfoInstant(link)) end) end
+    end
+    return it
+end
+-- the first of your six traded slots that is empty (the seventh is only ever chosen: "tradepick 7")
+function N.trd.free()
+    for k = 1, N.trd.SLOTS - 1 do
+        local r = R(function() return GetTradePlayerItemInfo(k) end)
+        if not (r and PS(r[1])) then return k end
+    end
+end
+function N.trd.split(v)
+    v = math.max(0, math.floor(tonumber(v) or 0))
+    return math.floor(v / 10000), math.floor(v / 100) % 100, v % 100
+end
+function N.trd.copper(e) return (e.g or 0) * 10000 + (e.s or 0) * 100 + (e.c or 0) end
+function N.trd.editStart()
+    local g, s, c = N.trd.split(TN(function() return GetPlayerTradeMoney() end) or 0)
+    N.trd.edit = { g = g, s = s, c = c, sel = 1 }
+end
+-- one step of the stepper: silver and copper 0..99, gold from 0, the whole never past the purse (it stops at the purse)
+function N.trd.adj(coin, d)
+    if not N.trd.edit then N.trd.editStart() end
+    local e = N.trd.edit
+    e[coin] = math.max(0, (e[coin] or 0) + d)
+    if coin ~= "g" then e[coin] = math.min(99, e[coin]) end
+    local purse = TN(function() return GetMoney() end) or 0
+    if N.trd.copper(e) > purse then e.g, e.s, e.c = N.trd.split(purse) end
+end
+function N.trd.collect()
+    local t = { who = TS(function() return (UnitName("NPC")) end), mine = {}, theirs = {}, slots = N.trd.SLOTS, cols = N.trd.BAG_COLS }
+    t.lvl = TN(function() return UnitLevel("NPC") end)
+    t.cls = TS(function() return select(2, UnitClass("NPC")) end)
+    for k = 1, N.trd.SLOTS do t.mine[k] = N.trd.item("p", k); t.theirs[k] = N.trd.item("t", k) end
+    t.money = TN(function() return GetPlayerTradeMoney() end) or 0
+    t.tmoney = TN(function() return GetTargetTradeMoney() end) or 0
+    t.purse = TN(function() return GetMoney() end)
+    t.acc = (N.trd.acc == 1) or nil
+    t.tacc = (N.trd.tacc == 1) or nil
+    t.dest = N.trd.dest
+    t.bags = MAIL.bags()
+    local e = N.trd.edit
+    if e then t.edit = { g = e.g, s = e.s, c = e.c, sel = e.sel } end
+    if type(WC.dialogs) == "table" and type(WC.dialogs.tradeCells) == "function" then
+        local ok, c = pcall(WC.dialogs.tradeCells)
+        if ok and type(c) == "table" then t.cells = c end
+    end
+    return t
+end
+-- the controller in the window: the slots (yours left, theirs right, seven rows), the money under them, Trade / Cancel under that;
+-- the bags to the right. In the money stepper (N.trd.edit): Left / Right pick the coin, Up / Down change it, A sets it, B leaves it
+function N.trd.zones(td)
+    local zs = navZone("tslots", 2)
+    for k = 1, N.trd.SLOTS do
+        navAdd(zs, "tslot p " .. k)
+        navAdd(zs, "tslot t " .. k, td.theirs[k] and td.theirs[k].name ~= nil)
+    end
+    local zm = navZone("tmoney", 1)
+    navAdd(zm, "tmoney")
+    local zb = navZone("tbtn", 2)
+    navAdd(zb, "tradeaccept"); navAdd(zb, "tradecancel")
+    local zg = navZone("tbags", N.trd.BAG_COLS)
+    for _, b in ipairs(td.bags or {}) do navAdd(zg, "tradein " .. b.bag .. " " .. b.s .. " " .. b.id, not b.locked) end
+    return { zs, zm, zb, zg }
+end
+function N.trd.move(z, ii, dir)
+    local name = z.name
+    if N.trd.edit then
+        local e = N.trd.edit
+        if dir == "left" then e.sel = math.max(1, e.sel - 1)
+        elseif dir == "right" then e.sel = math.min(3, e.sel + 1)
+        else N.trd.adj(N.trd.COINS[e.sel], dir == "up" and 1 or -1) end
+        return true
+    end
+    if name == "tslots" then
+        local col = (ii - 1) % 2
+        local row = math.floor((ii - 1) / 2)
+        if dir == "left" and col == 1 then N.cur = z.items[ii - 1].id
+        elseif dir == "right" and col == 0 then
+            if z.items[ii + 1] and z.items[ii + 1].ok then N.cur = z.items[ii + 1].id
+            else local zg = navZoneNamed("tbags"); N.cur = (zg and navFirst(zg)) or N.cur end
+        elseif dir == "right" then
+            local zg = navZoneNamed("tbags"); N.cur = (zg and navFirst(zg)) or N.cur
+        elseif dir == "up" then
+            local j = ii - 2
+            while z.items[j] and not z.items[j].ok do j = j - 2 end
+            if z.items[j] then N.cur = z.items[j].id end
+        elseif dir == "down" then
+            local j = ii + 2
+            while z.items[j] and not z.items[j].ok do j = j + 2 end
+            if z.items[j] then N.cur = z.items[j].id else N.cur = "tmoney" end
+        end
+        return true
+    end
+    if name == "tmoney" then
+        if dir == "up" then local zs = navZoneNamed("tslots"); if zs then N.cur = zs.items[#zs.items - 1].id end
+        elseif dir == "down" then N.cur = "tradeaccept"
+        elseif dir == "right" then local zg = navZoneNamed("tbags"); N.cur = (zg and navFirst(zg)) or N.cur end
+        return true
+    end
+    if name == "tbtn" then
+        if dir == "left" and ii == 2 then N.cur = "tradeaccept"
+        elseif dir == "right" and ii == 1 then N.cur = "tradecancel"
+        elseif dir == "right" then local zg = navZoneNamed("tbags"); N.cur = (zg and navFirst(zg)) or N.cur
+        elseif dir == "up" then N.cur = "tmoney" end
+        return true
+    end
+    if name == "tbags" then
+        local c = z.cols
+        local col = (ii - 1) % c
+        if dir == "left" and col == 0 then
+            N.cur = N.trd.dest == 7 and "tslot p 7" or ("tslot p " .. (N.trd.free() or 1))
+            return true
+        end
+        return false            -- the rest of the grid: the vendor's grid moves
+    end
+    return false
+end
+
 function N.build(doc)
     local g, q, m = doc.gossip, doc.quest, doc.merchant
     local tr = doc.trainer
     local sig, first
     N.zones = {}
     N.offer = nil
-    if q and q.space then
+    if doc.trade then
+        -- i137: the trade window (N.trd.zones); a window with the same partner keeps the cursor
+        sig = "tr|" .. tostring(doc.trade.who)
+        N.zones = N.trd.zones(doc.trade)
+        first = "tslot p " .. (N.trd.free() or 1)
+    elseif q and q.space then
         -- MAKE SPACE for the quest: the same grid as the loot's
         sig = "lts"
         N.zones = { N.msZone(q.space) }
@@ -2030,9 +2193,20 @@ function N.build(doc)
         local nm = ({ petsign = "WowCompanionPetSign", petoffer = "WowCompanionPetOffer", petrename = "WowCompanionPetRename" })[N.cur or ""]
         if nm and type(_G[nm]) == "table" then petA = nm end
     end
+    -- i137: the trade's Trade / Cancel the same way (Dialogs d23's secure buttons press the game's own)
+    local petB = nil
+    if doc.trade and not N.trd.edit then
+        local nm = ({ tradeaccept = "WowCompanionTradeAccept", tradecancel = "WowCompanionTradeCancel" })[N.cur or ""]
+        if nm and type(_G[nm]) == "table" then petA = nm end
+        if type(_G.WowCompanionTradeCancel) == "table" then petB = "WowCompanionTradeCancel" end
+    end
     if petA ~= N.petA then
         N.petA = petA
         if N.holding and N.padBind and TB(function() return InCombatLockdown() end) ~= true then N.padBind("PAD1") end      -- (padBind: declared further down)
+    end
+    if petB ~= N.petB then
+        N.petB = petB
+        if N.holding and N.padBind and TB(function() return InCombatLockdown() end) ~= true then N.padBind("PAD2") end
     end
     -- the vendor's highlighted item IS the one A acts on (sel, for the app's strip)
     local c = type(N.cur) == "string" and N.cur or ""
@@ -2087,6 +2261,7 @@ local function buildDoc()
     end
     N.lastStable = doc.stable
     if WINDOWS.mail and isOpen("mail") then doc.mail = collectMail() end
+    if WINDOWS.trade and isOpen("trade") then doc.trade = N.trd.collect() end      -- i137
     if WINDOWS.auction and isOpen("auction") then doc.auction = collectAuction() end
     if N.spk.on() then doc.spoken = { close = N.spk.close, accept = N.spk.accept } end     -- 1.0.9: Spoken is loaded
     if WINDOWS.taxi and isOpen("taxi") then doc.taxi = collectTaxi() end
@@ -2108,7 +2283,7 @@ local function buildDoc()
     assignSlots(doc)
     -- The controller takes the buttons only while a window is open and the companion is in charge.
     -- sync() binds or lets go BEFORE the document is built, so `nav.on` is what is true now.
-    local open = (doc.gossip or doc.quest or doc.merchant or doc.trainer or doc.stable or doc.mail or doc.auction or doc.taxi or doc.bank or doc.loot or doc.petition or doc.book or doc.qtsetup) and true or false
+    local open = (doc.gossip or doc.quest or doc.merchant or doc.trainer or doc.stable or doc.mail or doc.auction or doc.taxi or doc.bank or doc.loot or doc.petition or doc.book or doc.qtsetup or doc.trade) and true or false
     if N.sync then N.sync(open, doc) end
     if N.grantWait then N.grantWait() end       -- v11: the queued take, once nobody holds
     doc.rel = N.rel
@@ -2168,7 +2343,7 @@ local function buildDoc()
     end
     -- THE TOOLTIP (after the nav: the highlight of THIS window). The controller's highlight wins; else
     -- the finger's selection (N.look), for as long as its window is open.
-    if doc.merchant or doc.quest or doc.trainer or doc.auction or doc.loot then
+    if doc.merchant or doc.quest or doc.trainer or doc.auction or doc.loot or doc.trade then
         local key = (N.holding and N.mode and N.cur and N.canLook(N.cur)) and N.cur or N.look
         -- the auction house: an item opened shows its tooltip without a cursor too (a finger opens it at once)
         if not key and doc.auction and AH.key then key = "ahbuy" end
@@ -2292,6 +2467,10 @@ local ON = {
     ITEM_TEXT_CLOSED = function() mark("book", false) end,
     PET_STABLE_CLOSED = function() mark("stable", false) end,
     MAIL_SHOW = function() MAIL.open = nil; MAIL.tab, MAIL.pick = "inbox", false; mark("mail", true) end,
+    -- i137: the trade window; TRADE_ACCEPT_UPDATE says who has accepted (1 / 0), any change in the trade sets both back to 0
+    TRADE_SHOW = function() N.trd.acc, N.trd.tacc, N.trd.edit, N.trd.dest = 0, 0, nil, nil; mark("trade", true) end,
+    TRADE_CLOSED = function() N.trd.acc, N.trd.tacc, N.trd.edit, N.trd.dest = 0, 0, nil, nil; mark("trade", false) end,
+    TRADE_ACCEPT_UPDATE = function(p, t) N.trd.acc, N.trd.tacc = tonumber(p) or 0, tonumber(t) or 0 end,
     MAIL_CLOSED = function()
         MAIL.open, MAIL.pick = nil, false
         if N.kbd and N.kbd:match("^mail") then N.kbdClose() end
@@ -2402,12 +2581,14 @@ local REFRESH = {
     "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED", "COMMODITY_SEARCH_RESULTS_UPDATED",
     "PLAYERBANKSLOTS_CHANGED", "BANK_TABS_CHANGED", "LOOT_SLOT_CLEARED", "LOOT_SLOT_CHANGED", "MAIL_SEND_INFO_UPDATE",
     "ITEM_SEARCH_RESULTS_UPDATED", "OWNED_AUCTIONS_UPDATED", "ITEM_KEY_ITEM_INFO_RECEIVED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
+    "TRADE_PLAYER_ITEM_CHANGED", "TRADE_TARGET_ITEM_CHANGED", "TRADE_MONEY_CHANGED", "PLAYER_TRADE_MONEY", "TRADE_UPDATE",
 }
 
 local OPENS = {
     GOSSIP_SHOW = "gossip", QUEST_GREETING = "quest", QUEST_DETAIL = "quest", QUEST_PROGRESS = "quest",
     QUEST_COMPLETE = "quest", MERCHANT_SHOW = "merchant", TRAINER_SHOW = "trainer", PET_STABLE_SHOW = "stable", MAIL_SHOW = "mail", AUCTION_HOUSE_SHOW = "auction",
     TAXIMAP_OPENED = "taxi", BANKFRAME_OPENED = "bank", LOOT_OPENED = "loot", PETITION_SHOW = "petition", ITEM_TEXT_BEGIN = "book",
+    TRADE_SHOW = "trade",
 }
 
 local f = CreateFrame("Frame")
@@ -3555,6 +3736,78 @@ function ACT.close()
     return true
 end
 
+-- ---------------------------------------------------------------- trade actions (i137; N.trd above)
+-- "tradein <bag> <slot> <itemID>": a bag item into the first empty traded slot (or the seventh, when it was picked: "tradepick 7")
+function ACT.tradein(a, b, c)
+    if not isOpen("trade") then return false, "no trade open" end
+    local bag, sl, id = tonumber(a), tonumber(b), tonumber(c)
+    if not (bag and sl) then return false, "no bag slot" end
+    local ok, info = CALL(function() return C_Container.GetContainerItemInfo(bag, sl) end)
+    if not ok or type(info) ~= "table" or (id and TN(function() return info.itemID end) ~= id) then return false, "that item moved" end
+    if TB(function() return info.isLocked end) then return false, "that item is locked" end
+    local k = N.trd.dest or N.trd.free()
+    if not k then return false, "the trade is full" end
+    N.trd.dest = nil
+    return run(function()
+        if CursorHasItem() then ClearCursor() end
+        C_Container.PickupContainerItem(bag, sl)
+        ClickTradeButton(k)
+    end)
+end
+-- "tradeout <k>": your item in slot k back to your bags
+function ACT.tradeout(a)
+    local k = tonumber(a)
+    if not (isOpen("trade") and k) then return false, "no trade open" end
+    local r = R(function() return GetTradePlayerItemInfo(k) end)
+    if not (r and PS(r[1])) then return false, "that slot is empty" end
+    return run(function()
+        if CursorHasItem() then ClearCursor() end
+        ClickTradeButton(k)          -- the game's click on its slot: the item to the cursor
+        ClearCursor()                -- and back to where it came from
+    end)
+end
+-- "tradepick <k>": an empty slot chosen; the seventh ("Will not be traded") takes the next item put in, the others need nothing
+function ACT.tradepick(a)
+    if not isOpen("trade") then return false, "no trade open" end
+    local k = tonumber(a)
+    N.trd.dest = (k == N.trd.SLOTS) and k or nil
+    return true
+end
+-- "trademoney edit|set|off": the stepper opened (with what is offered now), its amount offered (the game's own call), or left
+function ACT.trademoney(a)
+    if not isOpen("trade") then return false, "no trade open" end
+    if a == "edit" then N.trd.editStart(); return true end
+    if a == "off" then N.trd.edit = nil; return true end
+    if a ~= "set" then return false, "edit, set or off" end
+    local e = N.trd.edit
+    if not e then return false, "the stepper is not open" end
+    local v = N.trd.copper(e)
+    N.trd.edit = nil
+    return run(function()
+        if C_TradeInfo and type(C_TradeInfo.SetTradeMoney) == "function" then C_TradeInfo.SetTradeMoney(v) else SetTradeMoney(v) end
+    end)
+end
+-- "tradeadj <g|s|c> <step>": the stepper's coin moved (touch: its arrows; the controller: Up / Down)
+function ACT.tradeadj(a, b)
+    if not isOpen("trade") then return false, "no trade open" end
+    local d = tonumber(b)
+    if not (a == "g" or a == "s" or a == "c") or not d then return false, "a coin and a step" end
+    N.trd.adj(a, d)
+    if N.trd.edit then for i, cn in ipairs(N.trd.COINS) do if cn == a then N.trd.edit.sel = i end end end
+    return true
+end
+-- Trade and Cancel are the dialogs' secure buttons (Dialogs d23); with none built there is nothing safe to call from here
+function ACT.tradeaccept() return false, "the Trade button is not ready: press it on the top screen" end
+function ACT.tradecancel() return false, "the Cancel button is not ready: press it on the top screen" end
+-- "tradestart <unit>": the game's InitiateTrade with that player (this build takes the player's GUID; the unit on an older one)
+function ACT.tradestart(a)
+    local u = (type(a) == "string" and a ~= "") and a or "target"
+    if TB(function() return UnitIsPlayer(u) end) ~= true then return false, "not a player" end
+    local g = TS(function() return UnitGUID(u) end)
+    if not g then return false, "nobody to trade with" end
+    return run(function() if not pcall(InitiateTrade, g) then InitiateTrade(u) end end)
+end
+
 -- ---------------------------------------------------------------- tooltips (LATER 1 + 2, user 2026-09-30)
 -- "when I am buying something its not really clear what I am buying, like what does this water do, or
 -- what are the stats on this armor" / "on quest rewards, I need a tooltip to see what my reward choices
@@ -3625,6 +3878,15 @@ local function lookSource(key)
             if C_TooltipInfo.GetBuybackItem then return C_TooltipInfo.GetBuybackItem(a) end
             return C_TooltipInfo.GetMerchantBuybackItem(a)
         end
+    elseif w[1] == "tslot" and b then
+        -- i137: a trade slot, "tslot p|t <k>": yours or the partner's
+        local side = w[2]
+        return nil, function()
+            if side == "p" then return C_TooltipInfo.GetTradePlayerItem(b) end
+            return C_TooltipInfo.GetTradeTargetItem(b)
+        end
+    elseif w[1] == "tradein" and a and b then
+        return c, function() return C_TooltipInfo.GetBagItem(a, b) end
     elseif (w[1] == "sell" or w[1] == "bag") and a and b then
         -- "bag <bag> <slot> <itemID>": any item in the player's bags (the Bags room's cursor, via WC.tipOf)
         return c, function() return C_TooltipInfo.GetBagItem(a, b) end
@@ -4912,6 +5174,7 @@ local HIDE = {
     taxi = { "FlightMapFrame", "TaxiFrame" },
     bank = { "BankFrame", "ContainerFrameCombinedBags", "GamepadBagBar" },
     loot = { "LootFrame" },
+    trade = { "TradeFrame", "ContainerFrameCombinedBags", "GamepadBagBar" },      -- i137
     -- 1.0.9: QuestTrail's setup assistant / Shared Trail intro, and its own dropdown menu while it is mirrored
     qtsetup = { "QuestTrailSetup", "QuestTrailSharedIntro", "QuestTrailMenuFrame" },
 }
@@ -5583,6 +5846,8 @@ local function wantOf(k)
     end
     -- the charter (i108): A on one of its buttons is a binding click of the secure button that presses the game's own
     if k == "PAD1" and not G.holder and N.petA then return N.petA, "LeftButton" end
+    -- i137: B in a trade = a click of the secure Cancel (the game closes its trade in its own code)
+    if k == "PAD2" and not G.holder and N.petB then return N.petB, "LeftButton" end
     -- the key's own name rides along as the "mouse button", so one sink serves all eight
     return "WowCompanionInteractPad", k
 end
@@ -6008,6 +6273,7 @@ end
 
 function N.move(dir)
     local zi, ii = navFind(N.cur)
+    if zi and isOpen("trade") and N.trd.move(N.zones[zi], ii, dir) then return end        -- i137
     if not zi then return end
     local z = N.zones[zi]
     local name = z.name
@@ -6321,9 +6587,38 @@ function N.act()
         return
     end
     if N.offer then navRun("accept " .. N.offer) return end
+    -- i137: the trade's money stepper: A sets the amount
+    if N.trd.edit and isOpen("trade") then navRun("trademoney set") return end
     local zi, ii = navFind(N.cur)
     if not zi then return end
     local name, id = N.zones[zi].name, N.cur
+    if isOpen("trade") and type(id) == "string" then
+        -- i137: A on your filled slot takes it back; on an empty one goes to the bags (the seventh: the next item goes THERE); on the
+        -- money opens the stepper; on a bag item puts it in (guarded against the A that opened the trade and a doubled press)
+        local side, k = id:match("^tslot (%a) (%d+)$")
+        if side == "p" then
+            k = tonumber(k)
+            local r = R(function() return GetTradePlayerItemInfo(k) end)
+            if r and PS(r[1]) then navRun("tradeout " .. k)
+            else
+                navRun("tradepick " .. k)
+                local zg = navZoneNamed("tbags")
+                N.cur = (zg and navFirst(zg)) or N.cur
+            end
+            return
+        elseif side == "t" then
+            return                                   -- the partner's item: its tooltip shows; nothing to do
+        elseif id == "tmoney" then
+            navRun("trademoney edit")
+            return
+        elseif id:match("^tradein ") then
+            local t = TN(function() return GetTime() end) or 0
+            if t - (N.openAt or -1e9) < GUARD or t - (N.actAt or -1e9) < GUARD then return end
+            N.actAt = t
+            navRun(id)
+            return
+        end
+    end
     if not N.zones[zi].items[ii].ok then return end
     if name == "tabs" then
         local t = id:match("^tab (%a+)$")
@@ -6416,6 +6711,12 @@ function N.back()
     if N.qt.open() and not N.qt.top then
         -- 1.0.9 QuestTrail's setup: B closes its menu first, else goes Back a step (the user's pick; the X closes it)
         if N.qt.menu then N.qt.menu = nil; emitSoon() else navRun("qtgo back") end
+        return
+    end
+    if isOpen("trade") then
+        -- i137: the money stepper first; else the cursor goes to Cancel (B itself is the secure Cancel when it is there: wantOf)
+        if N.trd.edit then N.trd.edit = nil else N.cur = "tradecancel" end
+        emitSoon()
         return
     end
     if N.trMenu and isOpen("trainer") then

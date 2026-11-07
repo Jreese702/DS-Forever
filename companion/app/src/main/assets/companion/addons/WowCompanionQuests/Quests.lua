@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q49"    -- bump on every change; the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
+local QV = "q50"    -- bump on every change; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2156,7 +2156,12 @@ function WC.pmenu.actFor(key, text, unit, src)
         if k:find("whisper") then
             return { fn = function() WC.chatLastTell = nm end, ap = "whisper" }
         end
-        if k:find("trade") then return { fn = function() InitiateTrade(unit) end } end
+        -- q50 (the trade window, Interact i137): this build's InitiateTrade takes the player's GUID ("Usage: InitiateTrade(guid)");
+        -- the unit on a build that still takes one
+        if k:find("trade") then return { fn = function()
+                                     local g = UnitGUID(unit)
+                                     if not (g and pcall(InitiateTrade, g)) then InitiateTrade(unit) end
+                                 end } end
         if k:find("follow") then return { fn = function() FollowUnit(unit) end } end
         if k:find("promote") then return { fn = function() PromoteToLeader(unit) end, cf = (text or "Promote to Party Leader") .. "?" } end
         if k:find("uninvite") or k:find("removefromgroup") or k == "kick" then

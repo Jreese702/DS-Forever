@@ -90,7 +90,7 @@ class LoadingV8ShotsTest {
             render(setup, 1240, 1080)
             SetupBridge.launcherActions = { a ->
                 // the launcher queues it behind the background art step and says so (WoWForeverScreen.performUpdate)
-                if (a == SetupFlow.Action.UPDATE_GAME) SetupBridge.publish(outdated.copy(busy = SetupFlow.updateGateLine(SetupFlow.UpdateGate.WAIT_ART, 61)))
+                if (a == SetupFlow.Action.UPDATE_GAME) SetupBridge.publish(outdated.copy(busy = SetupFlow.updateGateLine(SetupFlow.UpdateGate.STOP_ART, 61)))
             }
             pad(KeyEvent.KEYCODE_BUTTON_A)
             device(render(LoadingTopView(ctx), 1920, 1080), render(setup, 1240, 1080), "V3_update_pressed_down")

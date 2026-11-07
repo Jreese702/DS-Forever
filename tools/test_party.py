@@ -1370,7 +1370,7 @@ check(ctlDoc(W8)['view'] == 'normal' and 'ppos' not in ctlDoc(W8), "padtab 0: ba
 check(W8.eval('#SPY') == 0 and W8.eval('#VIOL') == 0 and list(W8.eval('ERRS').values()) == [], "no spied call, no lockdown breach, no error")
 
 # ================================================================ 11. QUESTS: THE PLAYER MENU FOR A PARTY UNIT (q49)
-check('local QV = "q49"' in SRC["quests"], "Quests says q49")
+check('local QV = "q50"' in SRC["quests"], "Quests says q50")
 MENU = r'''
 CALLS, CLICKED = {}, {}
 local function mixin(name, text, enabled)
@@ -1397,7 +1397,7 @@ n0 = nsent(Q)
 Q.eval('WowCompanion.pmenu.read')("party2", "party")
 pm = docs(Q, n0, 'pmenu')
 check(len(pm) == 1 and pm[0]['unit'] == 'party2' and pm[0]['which'] == 'PARTY' and pm[0]['src'] == 'party' and pm[0]['nm'] == 'Iselle'
-      and pm[0]['v'] == 'q49' and Q.eval('MENUWHICH') == 'PARTY', "read(\"party2\", \"party\"): the PARTY menu; doc unit, which PARTY, nm, src party",
+      and pm[0]['v'] == 'q50' and Q.eval('MENUWHICH') == 'PARTY', "read(\"party2\", \"party\"): the PARTY menu; doc unit, which PARTY, nm, src party",
       pm and {k: pm[0].get(k) for k in ('unit', 'which', 'nm', 'src')})
 items = {x['t']: x for x in pm[0]['items']}
 check(items['Set Focus'].get('sc') == 14 and items['Set Focus'].get('scr') == 'party', "Set Focus = the PARTY row's focus cell for party2 (col 12 + 2)",
@@ -1408,7 +1408,8 @@ check(items['Duel']['en'] == 0, "an entry not known (Duel) is greyed", items['Du
 check(items['Whisper'].get('ap') == 'whisper' and 'i' in items['Whisper'], "Whisper: ap whisper (and runnable: it sets the reply target)", items['Whisper'])
 Q.eval('WowCompanion.pmenu.run')(items['Whisper']['i'])
 check(Q.eval('WowCompanion.chatLastTell') == 'Iselle', "running Whisper sets WC.chatLastTell = the member", Q.eval('WowCompanion.chatLastTell'))
-for t, want in (("Trade", ["InitiateTrade", "party2"]), ("Follow", ["FollowUnit", "party2"]), ("Skull", ["SetRaidTarget", "party2", 8])):
+# q50: this build's InitiateTrade takes the member's GUID (the unit only on a build that refuses it)
+for t, want in (("Trade", ["InitiateTrade", "Player-1-Iselle"]), ("Follow", ["FollowUnit", "party2"]), ("Skull", ["SetRaidTarget", "party2", 8])):
     c0 = int(Q.eval('#CALLS'))
     Q.eval('WowCompanion.pmenu.run')(items[t]['i'])
     got = list(Q.eval('CALLS[#CALLS]').values()) if int(Q.eval('#CALLS')) > c0 else None

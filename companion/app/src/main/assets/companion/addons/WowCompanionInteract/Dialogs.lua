@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d22"         -- bump on every change
+local DV = "d23"         -- bump on every change
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -58,6 +58,11 @@ local PET_COL = POOL * CELLS + 4        -- Sign, Request Signature, Rename: PET_
 local PET = { { key = "sign", name = "WowCompanionPetSign", target = "PetitionFrameSignButton" },
               { key = "offer", name = "WowCompanionPetOffer", target = "PetitionFrameRequestButton" },
               { key = "rename", name = "WowCompanionPetRename", target = "PetitionFrameRenameButton" } }
+-- d23: THE TRADE WINDOW's Trade and Cancel (Interact i137): SECURE clicks of the game's own two buttons, so the game accepts and closes
+-- its trade in its own code. Two named secure buttons (A's and B's binding clicks, Interact's wantOf) and two touch cells
+local TRADE_COL = POOL * CELLS + 7      -- Trade (the game's TradeFrameTradeButton); TRADE_COL + 1 = Cancel (TradeFrameCancelButton)
+local TRADE = { { name = "WowCompanionTradeAccept", target = "TradeFrameTradeButton" },
+                { name = "WowCompanionTradeCancel", target = "TradeFrameCancelButton" } }
 local POLL = 0.25
 local GRACE = 1.5       -- seconds a new dialog may be invisible before the app has said it shows it
 local LIFE_EVERY = 5    -- the app's sign of life while it shows a dialog, in seconds
@@ -631,7 +636,15 @@ local function offerTouch()
         local ok, d = pcall(WC.pad.describe)
         if ok and type(d) == "table" and type(d.ch) == "number" and d.ch >= 6 then D.touch = false; return end
     end
-    local got, row = pcall(WC.pad.secureRow, ROW, POOL * CELLS + 7, function(btn, col)
+    local got, row = pcall(WC.pad.secureRow, ROW, POOL * CELLS + 9, function(btn, col)
+        if col == TRADE_COL or col == TRADE_COL + 1 then
+            btn:SetAttribute("type", "click")       -- d23: aimed at the trade window's own button (again on TRADE_SHOW: tradeAim)
+            D.tCell = D.tCell or {}
+            D.tCell[col - TRADE_COL + 1] = btn
+            local t = _G[TRADE[col - TRADE_COL + 1].target]
+            if type(t) == "table" then btn:SetAttribute("clickbutton", t) end
+            return
+        end
         if col >= PET_COL and col <= PET_COL + 2 then
             btn:SetAttribute("type", "click")       -- aimed at the charter's own button (again on PETITION_SHOW)
             D.pCell = D.pCell or {}
@@ -668,6 +681,10 @@ local function offerTouch()
             return
         end
         -- the proof a tap landed; the click itself already ran, in the game's own code
+        if col == TRADE_COL or col == TRADE_COL + 1 then
+            if type(WC.interactPoke) == "function" then pcall(WC.interactPoke) end      -- d23: the trade window looks again
+            return
+        end
         if col >= PET_COL and col <= PET_COL + 2 then
             if type(WC.interactPoke) == "function" then pcall(WC.interactPoke) end      -- the charter's window looks again
             return
@@ -721,6 +738,29 @@ local function petAim()
         if c and type(t) == "table" then pcall(function() c:SetAttribute("clickbutton", t) end) end
     end
 end
+-- d23: the trade's two secure buttons, made and aimed out of combat (a trade never opens in a fight)
+local function tradeAim()
+    if TB(function() return InCombatLockdown() end) == true then return end
+    for k, e in ipairs(TRADE) do
+        local t = _G[e.target]
+        if not _G[e.name] then
+            pcall(function()
+                local b = CreateFrame("Button", e.name, UIParent, "SecureActionButtonTemplate")
+                b:SetAttribute("type", "click")
+            end)
+        end
+        local b = _G[e.name]
+        if b and type(t) == "table" then pcall(function() b:SetAttribute("clickbutton", t) end) end
+        local c = D.tCell and D.tCell[k]
+        if c and type(t) == "table" then pcall(function() c:SetAttribute("clickbutton", t) end) end
+    end
+end
+do
+    local tf = CreateFrame("Frame")
+    tf:SetScript("OnEvent", function() tradeAim() end)
+    pcall(function() tf:RegisterEvent("PLAYER_LOGIN") end)
+    pcall(function() tf:RegisterEvent("TRADE_SHOW") end)
+end
 do
     local pf = CreateFrame("Frame")
     pf:SetScript("OnEvent", function() petAim() end)
@@ -767,6 +807,8 @@ end
 WC.dialogs = { version = DV, setMode = setMode, look = look,
                -- d18: the charter's touch cells (Interact's petition window), nil while the row is not built
                petCells = function() if D.pCell then return { sign = PET_COL, offer = PET_COL + 1, rename = PET_COL + 2 } end end,
+               -- d23: the trade window's touch cells (Interact's trade window), nil while the row is not built
+               tradeCells = function() if D.tCell then return { accept = TRADE_COL, cancel = TRADE_COL + 1 } end end,
                -- the fight-close cell: its button (to aim, out of combat), its row and column; nil while the row is not built
                closeCell = function() if D.closeBtn then return D.closeBtn, ROW, CLOSE_COL end end,
                enterCell = function() if D.enterBtn then return D.enterBtn, ROW, ENTER_COL end end,
