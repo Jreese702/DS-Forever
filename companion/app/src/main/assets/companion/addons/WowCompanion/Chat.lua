@@ -22,7 +22,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 local S, SN, isPlain = WC.S, WC.SN, WC.isPlain
 
-local CHATV = "chat31"     -- chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
+local CHATV = "chat32"     -- chat32: any /command from the composer runs (the secure cell chcmd, armed at the check); chat31: the stand-alone edit box hidden again (BOX_HIDE, the user's pick); chat30: slash commands from the composer (chat prefixes, /w, the game's emotes); chat29: the chat style switch tried again (any value but classic), what it then is reported; chat28: Battle.net whispers mirrored (CHAT_MSG_BN_WHISPER / _INFORM), the sender by character or BattleTag; chat27: the chat style set to Classic once (the user's ruling 2026-11-04); chat26: that only with QuestTrail mode on (WC.qtMode, test61); chat25: "No player named ... is currently playing" kept out while QuestTrail is loaded (WC.notFound); chat24: the edit box's hiding OFF again (BOX_HIDE), its report kept; chat23: it hid the edit box that stands on its own (b-top-chat-bar)
 local MAX_KEEP = 60          -- ring buffer depth; every document re-sends the whole ring
 local ring, ringN = {}, 0
 local dirty = false
@@ -1371,11 +1371,16 @@ end
 local LETTER_REST = 1.5
 local letterGen = 0
 local field = nil          -- chat22: a typed field another add-on borrows (WC.chatField below)
+-- chat32 (the user, 2026-11-07: "why on EARTH does our chat not let me send /commands ... just let it send"): ANY /command typed in the
+-- composer runs as the game's own chat box would run it - a secure cell ("chcmd") whose macrotext is the typed line, armed at the
+-- send's check (out of combat only: a secure attribute cannot change in a fight) and pressed by the app instead of Send
+local cmdBtn, cmdArmed = nil, false
 local function tack(op, row, col, ok, why, now)
     tn = tn + 1
     WC.send(WC.encode({ type = "chatt", v = CHATV, op = op, row = row, col = col, ok = ok and true or false, why = why,
                         len = #typed.body, h = hashOf(typed.body), tlen = #typed.tgt, th = hashOf(typed.tgt),
-                        into = typed.into, ty = field and "FIELD" or qtype, field = field and field.name or nil, top = topOn(), n = tn }))
+                        into = typed.into, ty = field and "FIELD" or qtype, field = field and field.name or nil, top = topOn(), n = tn,
+                        cmd = (op == "body" and cmdArmed) or nil }))
     letterGen = letterGen + 1
     if now then return WC.push() end
     local g = letterGen
@@ -1474,6 +1479,11 @@ local function typedPick(op, col)
         return tack("clear", "chq", col, true, nil, true)
     elseif op == "tgt" or op == "body" then
         typed.into = op
+        -- chat32: the send's check (15) arms the command cell with the typed /command (out of combat; never a borrowed field's text)
+        cmdArmed = false
+        if op == "body" and not field and typed.body:sub(1, 1) == "/" and cmdBtn and not InCombatLockdown() then
+            cmdArmed = pcall(cmdBtn.SetAttribute, cmdBtn, "macrotext", typed.body) and true or false
+        end
         return tack(op, "chq", col, true, nil, true)
     end
     -- SEND: only what THIS addon holds; a borrowed field's text goes to its owner (chat22)
@@ -1581,6 +1591,19 @@ local function joinPad()
             local ok, row = pcall(WC.pad.op, r[1], "chat", r[2])
             padRows[r[1]] = ok and row or nil
         end
+    end
+    -- chat32: the /command cell (one secure cell, type macro); its press is the send: the line is spent, Send's answer goes back
+    if not padRows.chcmd and type(WC.pad.secureRow) == "function" then
+        local ok, row = pcall(WC.pad.secureRow, "chcmd", 1,
+            function(btn) cmdBtn = btn; btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", nil) end,
+            function()
+                local ran = cmdArmed
+                cmdArmed = false
+                if ran then typed.body = "" end
+                if not InCombatLockdown() and cmdBtn then pcall(cmdBtn.SetAttribute, cmdBtn, "macrotext", nil) end
+                tack("send", "chq", 23, ran, (not ran) and "the command was not ready" or nil, true)
+            end)
+        padRows.chcmd = ok and row or nil
     end
 end
 joinPad()

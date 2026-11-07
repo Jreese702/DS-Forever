@@ -839,7 +839,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             "chatt", "chatq" -> stream.heard(ChatStream.Heard(t, msg.optString("op"), msg.optBoolean("ok"),
                 if (msg.has("why")) msg.optString("why") else null, msg.optString("ty", "SAY"),
                 msg.optInt("len", -1), msg.optInt("h", -1), msg.optInt("tlen", -1), msg.optInt("th", -1), msg.optString("into"),
-                if (msg.has("top")) msg.optBoolean("top") else null))
+                if (msg.has("top")) msg.optBoolean("top") else null, msg.optBoolean("cmd", false)))
             "chatlink" -> {
                 val key = msg.optString("key")
                 val tip = msg.optJSONObject("tip") ?: return

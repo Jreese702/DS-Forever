@@ -70,7 +70,9 @@ class ChatStream(
     /** one answer of the add-on's: {"type":"chatt"} (typed) or {"type":"chatq"} (presets, types) */
     data class Heard(val kind: String, val op: String, val ok: Boolean, val why: String?, val ty: String,
                      val len: Int = -1, val h: Int = -1, val tlen: Int = -1, val th: Int = -1, val into: String = "",
-                     val top: Boolean? = null)
+                     val top: Boolean? = null,
+                     /** chat32: the add-on armed its /command cell with this body (the check's answer) */
+                     val cmd: Boolean = false)
 
     sealed class Event {
         object Sent : Event() { override fun toString() = "Sent" }
@@ -276,8 +278,11 @@ class ChatStream(
             step == Step.CHECK && h.op == "body" && pendingBody > 0 -> {}       // an earlier 15's answer: the check's is still coming
             step == Step.CHECK && h.op == "body" -> {
                 if (matches(h)) {
+                    // chat32: a /command runs from the add-on's command cell (as the game's chat box would run it), never Send
+                    val command = !field && body.startsWith("/")
+                    if (command && !h.cmd) { step = Step.NONE; onEvent(Event.Refused("Commands can't be sent during a fight")); return }
                     step = Step.SEND; stepAt = now()
-                    if (!go(listOf("chq" to SEND))) { step = Step.NONE; onEvent(Event.Refused("The game is not ready")) }
+                    if (!go(listOf(if (command) "chcmd" to 0 else "chq" to SEND))) { step = Step.NONE; onEvent(Event.Refused("The game is not ready")) }
                 } else if (++tries > 2) {
                     step = Step.NONE
                     onEvent(Event.Refused("The add-on did not get all the letters"))
