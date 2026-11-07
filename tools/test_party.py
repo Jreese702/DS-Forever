@@ -441,6 +441,14 @@ check(hidden is True, "rows 54-55 are hidden at the smallest scale (never inside
 
 # ================================================================ 1. PRE + Party mode (the router's real snippet, restricted)
 PRE = re.search(r'local PRE = \[=\[(.*?)\]=\]', SRC["padmap"], re.S).group(1)
+# m94 (test9, 2026-11-07: every A / X / Y / B / D-pad press dead): the game's secure checker refuses the word "function" ANYWHERE in a
+# snippet, comments included ("The function keyword is not permitted"); no secure snippet of any add-on may hold it
+_snip_bad = []
+for _k, _src in SRC.items():
+    for _m in re.finditer(r'\[=*\[(.*?)\]=*\]', _src, re.S):
+        if re.search(r'\bfunction\b', _m.group(1)) and ('SetAttribute' in _m.group(1) or 'self:' in _m.group(1)):
+            _snip_bad.append((_k, _src[:_m.start()].count('\n') + 1))
+check(not _snip_bad, "no secure snippet holds the word 'function' (the game refuses the whole snippet, comments too)", _snip_bad)
 G1 = boot([])
 prefn = G1.eval('function(body) return compileSnippet(body, "self, button, down") end')(PRE)
 G1.globals().PREFN = prefn
@@ -1043,7 +1051,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng", "hs", "g"}   # m79: hs, the health source; m92: g, the GUID (combat log)
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm93' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm94' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1229,8 +1237,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m93"' in SRC["padmap"],
-      "the versions: PadMap m93, PadTabCtl p33, Book b48")
+check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m94"' in SRC["padmap"],
+      "the versions: PadMap m94, PadTabCtl p33, Book b48")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
