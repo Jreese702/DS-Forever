@@ -28,7 +28,7 @@ object AllIcons {
 
     fun chunks(ids: List<Int>): List<List<Int>> = ids.chunked(CHUNK)
 
-    /** a pack's name: its place, and a hash of the game build and its ids (a new build or another list = a new name) */
+    /** a pack's name: its place, and a hash of [key] (since 2026-11-07 its icons' content-key digest; was the game build) and its ids */
     fun chunkName(build: String, index: Int, ids: List<Int>): String {
         var h = 1125899906842597L
         for (c in build) h = 31 * h + c.code

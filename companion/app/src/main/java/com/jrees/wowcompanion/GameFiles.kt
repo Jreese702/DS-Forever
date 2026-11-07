@@ -15,10 +15,12 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
                                     private val cache: File) : Closeable {
 
     /** the whole file by fileDataID, or null ([status] says why: CascNative.UNKNOWN / NOT_PRESENT / ENCRYPTED / OTHER) */
-    fun read(fid: Int): ByteArray? = readAsset("file $fid") { CascNative.read(handle, fid) }
+    fun read(fid: Int): ByteArray? { log?.fids?.add(fid); return readAsset("file $fid") { CascNative.read(handle, fid) } }
+    /** ArtFingerprint: while an art step runs, every file it reads is recorded here (null = not recording) */
+    @Volatile var log: ArtFingerprint.Log? = null
     private val streamed = File(root, DataStaleness.STREAMED).exists()
     /** the whole file by game path, or null */
-    fun readName(path: String): ByteArray? = readAsset(path) { CascNative.readName(handle, path) }
+    fun readName(path: String): ByteArray? { log?.names?.add(path); return readAsset(path) { CascNative.readName(handle, path) } }
     @Volatile var status = CascNative.OK
         private set
     @Volatile var lastReadWhy: String? = null
@@ -93,7 +95,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
     fun blp(fid: Int): Bitmap? = read(fid)?.let { toBitmap(Blp.decode(it)) }
     fun blpName(path: String): Bitmap? = readName(path)?.let { toBitmap(Blp.decode(it)) }
     /** a DB2 table, or null (a layout the reader does not know throws inside and comes back null) */
-    fun db2(fid: Int): Db2? = readAsset("table $fid") { CascNative.readDb2(handle, fid) }?.let {
+    fun db2(fid: Int): Db2? = run { log?.fids?.add(fid); readAsset("table $fid") { CascNative.readDb2(handle, fid) } }?.let {
         runCatching { Db2(it, "fid $fid") }.onFailure { error ->
             lastReadWhy = "table $fid: ${error.message ?: error.javaClass.simpleName}"
             android.util.Log.w("WCHARVEST", lastReadWhy, error)
