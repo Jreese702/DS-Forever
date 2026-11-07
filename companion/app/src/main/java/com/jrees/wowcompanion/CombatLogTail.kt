@@ -57,10 +57,22 @@ class CombatLogTail(private val logsDir: File, private val onChange: () -> Unit)
         }
     }
     private var switches = 0L
+    /** THE CLEAN-UP (the user's pick, 2026-11-07: "App deletes finished ones"): the add-on's stop / start every 5 s makes the game start
+     *  a new file each time; a file is deleted once it was read to its end and a newer one is being written - only a WoWCombatLog file
+     *  the game STARTED while this follow runs (its name's time at or after [startedStamp]), never the current one, nothing else */
+    private val startedStamp: Long = java.time.LocalDateTime.now().let {
+        "%02d%02d%02d%02d%02d%02d".format(it.year % 100, it.monthValue, it.dayOfMonth, it.hour, it.minute, it.second).toLong() }
+    private var deleted = 0L
+    private fun cleanUp(f: File) {
+        if (!canDelete(f.name, startedStamp, file?.name)) return
+        if (runCatching { f.delete() }.getOrDefault(false)) {
+            deleted++
+            if (deleted == 1L || deleted % 100 == 0L) Log.i(TAG, "deleted ${f.name} (finished; $deleted so far)")
+        }
+    }
     /** a file's start from its name (WoWCombatLog-MMDDYY_HHMMSS.txt) as YYMMDDHHMMSS: the stopped file is written AFTER the new one
      *  appears, so its modified time cannot say which is newest; a name that does not read sorts first */
-    private fun stampOf(n: String): Long = Regex("""(\d{2})(\d{2})(\d{2})_(\d{6})""").find(n)?.destructured?.let { (mm, dd, yy, t) ->
-        "$yy$mm$dd$t".toLongOrNull() } ?: 0L
+    private fun stampOf(n: String): Long = Companion.stampOf(n)
 
     /** reads [f] from [from]; returns the new offset and the carried partial line; true in [out] = a unit's health changed */
     private fun readFrom(f: File, from: Long, carryIn: String, now: Long, out: BooleanArray): Pair<Long, String> {
@@ -101,7 +113,9 @@ class CombatLogTail(private val logsDir: File, private val onChange: () -> Unit)
         while (it.hasNext()) {
             val d = it.next()
             val (o, c) = readFrom(d.f, d.offset, d.carry, now, out); d.offset = o; d.carry = c
-            if (now > d.until) it.remove()
+            // done: past its drain time and read to its end (a big one keeps draining, up to a minute more)
+            val done = now > d.until && d.offset >= d.f.length()
+            if (done || now > d.until + 60_000L) { it.remove(); if (done) cleanUp(d.f) }
         }
         val f = file ?: return
         val (o, c) = readFrom(f, offset, carry, now, out); offset = o; carry = c
@@ -126,7 +140,15 @@ class CombatLogTail(private val logsDir: File, private val onChange: () -> Unit)
         const val POLL_MS = 100L
         const val PICK_MS = 400L
         /** how long a stopped file is still read after the switch */
-        const val DRAIN_MS = 3_000L
+        const val DRAIN_MS = 4_000L
+        /** the game's own combat log name, the only kind the clean-up touches */
+        val NAME = Regex("""WoWCombatLog-\d{6}_\d{6}\.txt""")
+        /** a name's start time (MMDDYY_HHMMSS) as YYMMDDHHMMSS; 0 = not one */
+        fun stampOf(n: String): Long = Regex("""(\d{2})(\d{2})(\d{2})_(\d{6})""").find(n)?.destructured?.let { (mm, dd, yy, t) ->
+            "$yy$mm$dd$t".toLongOrNull() } ?: 0L
+        /** the clean-up's whole rule: the game's own combat log name, started at or after [startedStamp], not the one being written */
+        fun canDelete(name: String, startedStamp: Long, current: String?): Boolean =
+            name != current && NAME.matches(name) && stampOf(name) >= startedStamp
         const val MAX_READ = 128L * 1024
         const val NOTIFY_MS = 200L
         const val TICK_MS = 2_000L

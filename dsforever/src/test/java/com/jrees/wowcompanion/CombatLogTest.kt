@@ -95,6 +95,17 @@ class CombatLogTest {
         assertEquals(271L, CombatHealth.hp(me, t0 + 6_500))
     }
 
+    /** the clean-up's rule (the user's pick): only the game's combat log files started since the follow began, never the current one */
+    @Test fun theCleanUpTouchesOnlyFinishedSessionFiles() {
+        val started = CombatLogTail.stampOf("WoWCombatLog-110726_143000.txt")              // the follow began 2026-11-07 14:30:00
+        assertTrue(CombatLogTail.canDelete("WoWCombatLog-110726_143005.txt", started, "WoWCombatLog-110726_143010.txt"))
+        assertFalse(CombatLogTail.canDelete("WoWCombatLog-110726_143010.txt", started, "WoWCombatLog-110726_143010.txt"))  // being written
+        assertFalse(CombatLogTail.canDelete("WoWCombatLog-110726_110825.txt", started, null))                              // before: kept
+        assertFalse(CombatLogTail.canDelete("General.log", started, null))
+        assertFalse(CombatLogTail.canDelete("WoWCombatLog-110726_143005.txt.bak", started, null))
+        assertTrue(CombatLogTail.stampOf("WoWCombatLog-010127_000001.txt") > started)          // a new year still sorts after
+    }
+
     @Test fun theStampReadsTheOffset() {
         // 11:10:42.622 at UTC-7 = 18:10:42.622 UTC
         assertEquals(java.time.Instant.parse("2026-11-07T18:10:42.622Z").toEpochMilli(), CombatLog.stamp("11/7/2026 11:10:42.622-7"))
