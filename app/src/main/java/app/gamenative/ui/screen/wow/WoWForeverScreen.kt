@@ -140,6 +140,7 @@ fun WoWForeverScreen(
     /** Update was pressed while an art step or a launch ran: it starts by itself when they end (SetupFlow.updateGate) */
     var updateQueued by remember { mutableStateOf(false) }
     var artRecheckAt by remember { mutableStateOf(0L) }          // the stuck-"Checking" guard (2026-11-07)
+    var artRecheckN by remember { mutableStateOf(0) }
     // the art is being built again for the build an update just brought (the Game art row says so until it is ready)
     var artRebuild by remember { mutableStateOf(false) }
     var updateStatusText by remember { mutableStateOf("") }
@@ -363,15 +364,7 @@ fun WoWForeverScreen(
                         artFailed = null
                         checkFiles()
                         artStatusText = "Game art is ready"
-                        // 2026-11-07 (the user: "now its stuck on 'Checking the game art'"): the run said Ready but a before-Play step is
-                        // still pending - nothing would start it again, so the screen sat. Named in the log, and the check runs again
-                        // (at most once a minute: never a loop)
-                        if (!artReady && System.currentTimeMillis() - artRecheckAt > 60_000L) {
-                            artRecheckAt = System.currentTimeMillis()
-                            val left = runCatching { com.jrees.wowcompanion.ArtHarvest.pending(context, beforePlay = true).joinToString { it.id } }.getOrDefault("?")
-                            setupLog("art: ready, but before Play still pending: $left; checking again")
-                            harvestArt(retry = true)
-                        }
+                        artRecheckN++                               // the stuck-"Checking" guard below looks again
                     }
                     is com.jrees.wowcompanion.ArtHarvest.State.Failed -> {
                         isHarvesting = false
@@ -541,6 +534,16 @@ fun WoWForeverScreen(
 
     // the art starts BY ITSELF as soon as the game folder is usable (and re-checks silently at every start: nothing pending = Ready)
     LaunchedEffect(gamePath, files.dataExists, files.buildInfoExists, files.hasStorageAccess, files.isWrongGame) { harvestArt() }
+    // 2026-11-07 (the user: "now its stuck on 'Checking the game art'"): a run said Ready but a before-Play step is still pending -
+    // nothing would start it again, so the screen sat. Named in the log, and the check runs again (at most once a minute: never a loop)
+    LaunchedEffect(artRecheckN) {
+        if (artRecheckN == 0 || artReady || isHarvesting || artFailed != null) return@LaunchedEffect
+        if (System.currentTimeMillis() - artRecheckAt < 60_000L) return@LaunchedEffect
+        artRecheckAt = System.currentTimeMillis()
+        val left = runCatching { com.jrees.wowcompanion.ArtHarvest.pending(context, beforePlay = true).joinToString { it.id } }.getOrDefault("?")
+        setupLog("art: ready, but before Play still pending: $left; checking again")
+        harvestArt(retry = true)
+    }
 
     // RIGHT AFTER THE ART CHECK: the dependency add-ons (QuestieDB from its own GitHub releases; the user's approval 2026-10-12).
     // Background, once per launcher run; it never blocks Play and says what it did on the top screen
