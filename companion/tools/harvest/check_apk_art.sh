@@ -26,6 +26,7 @@ PICS=$(printf '%s\n' "$LIST" | grep -E '^assets/.*\.(png|webp|jpg|jpeg|tga|ktx|d
     | grep -v -E '^assets/inputcontrols/' \
     | grep -v -E '^assets/harvest/[a-z0-9_]+\.json$|^assets/harvest/(orig|own)/|^assets/own/' \
     | grep -v -E '^assets/ui/npc_kinds\.json$' \
+    | grep -v -E '^assets/companion/i18n/[a-z]{2}\.json$' \
     | grep -v -E '^assets/[a-z_]+_download\.json$|^assets/(common_dlls|gpu_cards)\.json$' \
     | grep -v -E '^assets/(lsfg_vk|wincomponents)/' || true)          # GameNative's runtime component manifests
 # what is already listed as game-derived is not repeated
