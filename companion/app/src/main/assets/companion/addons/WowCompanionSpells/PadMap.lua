@@ -21,7 +21,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "m98"                -- bump on every change; m98: each member's live CAST count (cs, UNIT_SPELLCAST_SUCCEEDED) for the app's mana estimate (the user: "The mana bars always show 100%"); m97: the combat log's stop and start a moment APART (in the same instant the game wrote nothing - test12 measured 2.5 min late again), a "clog" tick report every 12 stops; m96: each member's live HIT COUNTS (cw wounds, cc crits, ch heals: UNIT_COMBAT, amounts hidden) for the app's calibrated estimate; the combat log written out every 5 s OUT of a fight (in a fight the game ignores it - measured); m95: in a fight the combat log is stopped and started every 3 s (the game writes it only every ~5 min otherwise; the user picked "Try the restart trick"), its chat lines hidden; m94: m93's snippet comment held the word f-u-n-c-t-i-o-n, which the game's secure checker refuses even in a comment - every A / X / Y / B / D-pad press did nothing (the user, test9); m93: SMART Y IN A FIGHT - with no fight spell on Y (or given back by B), Y casts the top buff of your Smart buff list (wc-smarty-cb, armed out of combat); m92: each party member's GUID (g) for the app's combat-log health; Advanced Combat Logging and the combat log switched on at login (the user's ruling 2026-11-07); m91: the party row's column 36 is a secure /startattack cell (WC.atkCell: Hub's Start attack on hostile target); m90: after a fight with hits taken, food is due (90 s, until eating) - the game's eating rule; m89: a hit with a hidden amount counts as 6 % of the max health (Smart Y food by hits taken); m88: UNIT_COMBAT seen / hidden-amount counts in the why line (uc); m87: Y is routed while Smart Y is on, even with no In-combat spell on Y (Smart Y never heard a bare Y before); m86: health read from the DRAWN bar fill (texture width / bar width) when the value is secret; your own cell from the player frame first; m85: a party member's error no longer drops the party document (reported once, probe partyerr); Manners' prompt always hidden; m84: your own party cell takes a plain reading before the vitals' estimate (hs vit:<src>); m83: party members found by the party count / name too (UnitExists may be secret); m82: the party roster looked at again 2 / 5 / 10 s after a login (tokens come late); m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
+local PV = "m99"                -- bump on every change; m99: B in a fight - the first press gives the bars back AND stops the attack (the target kept), the next one clears the target; Smart Y's fight buff only when it was missing at the fight's start, once a fight; m98: each member's live CAST count (cs, UNIT_SPELLCAST_SUCCEEDED) for the app's mana estimate (the user: "The mana bars always show 100%"); m97: the combat log's stop and start a moment APART (in the same instant the game wrote nothing - test12 measured 2.5 min late again), a "clog" tick report every 12 stops; m96: each member's live HIT COUNTS (cw wounds, cc crits, ch heals: UNIT_COMBAT, amounts hidden) for the app's calibrated estimate; the combat log written out every 5 s OUT of a fight (in a fight the game ignores it - measured); m95: in a fight the combat log is stopped and started every 3 s (the game writes it only every ~5 min otherwise; the user picked "Try the restart trick"), its chat lines hidden; m94: m93's snippet comment held the word f-u-n-c-t-i-o-n, which the game's secure checker refuses even in a comment - every A / X / Y / B / D-pad press did nothing (the user, test9); m93: SMART Y IN A FIGHT - with no fight spell on Y (or given back by B), Y casts the top buff of your Smart buff list (wc-smarty-cb, armed out of combat); m92: each party member's GUID (g) for the app's combat-log health; Advanced Combat Logging and the combat log switched on at login (the user's ruling 2026-11-07); m91: the party row's column 36 is a secure /startattack cell (WC.atkCell: Hub's Start attack on hostile target); m90: after a fight with hits taken, food is due (90 s, until eating) - the game's eating rule; m89: a hit with a hidden amount counts as 6 % of the max health (Smart Y food by hits taken); m88: UNIT_COMBAT seen / hidden-amount counts in the why line (uc); m87: Y is routed while Smart Y is on, even with no In-combat spell on Y (Smart Y never heard a bare Y before); m86: health read from the DRAWN bar fill (texture width / bar width) when the value is secret; your own cell from the player frame first; m85: a party member's error no longer drops the party document (reported once, probe partyerr); Manners' prompt always hidden; m84: your own party cell takes a plain reading before the vitals' estimate (hs vit:<src>); m83: party members found by the party count / name too (UnitExists may be secret); m82: the party roster looked at again 2 / 5 / 10 s after a login (tokens come late); m81: a fight spell's cooldown starts when its cast lands (UNIT_SPELLCAST_SUCCEEDED: Raptor Strike's swing) and stands against GCD / inactive reads; a failed tooltip cooldown read is tried again; m80: a party member out of range by the game's UnitInRange when no spell answers (rng); m79: party health read through any plain reader (the unit, its percent, the game's party bars) before the estimate, its source in the document (hs); m78: MANNERS ON SMART Y (after food / water and your buffs; its prompt hidden); m77: PARTY MODE (PARTY_BUILD.md: the party pad, Select, the party row and documents); m76: Smart Y On / Off per character (off by default: Y as before Smart Y); m75: Smart Y's buff before food / drink when the mana covers it; every fight spell's cooldown; m74: Smart Y uses a quest's item on its objective target; m73: WC.vitals() for other add-ons (HUD mode's resource bar); m72: the vitals diagnostic removed (its secure snippet errored on every load); m71: the not-enough-mana set for the app's spell pictures; m70: Smart Y's health / mana MODEL where every reader is secret (UNIT_COMBAT, cast costs, regen); m69: the diagnostic round 5 (events: regen rate, UNIT_COMBAT, the combat log, food auras); m68: the diagnostic round 4 (GUID percent, the calculator by name, the secure env); m67: the diagnostic round 3 (heal prediction, curves, a status bar); m66: the diagnostic in short lines, the queries with arguments; m65: the vitals DIAGNOSTIC (one read-only cap line per load: what is secret and why); m64: Smart Y reads health / mana through whatever this client leaves plain (secret values); m63: Smart Y's food / drink found by the item's class too, and why nothing was picked; m62: Smart buffs (the player's buff rows after food / water, OR rows by a wheel); m61: Smart Y (food / drink from the bags out of combat, nothing targeted); m60: a pole in hand, X still interacts when there is something to interact with; m59: a fishing pole in the main hand makes a bare X Fishing / Interact; m58: the forms' own In-combat spells get their state too (mana / range tint)
 -- m40 S0, THE HOTFIX (the user's ruling 2026-10-09: "everything with the controller settings (outside of changing spells on the normal
 -- toolbars) should kind of be an accessory to the addon and not affect peoples normal set up on their charactors"; their pick "stage it
 -- now"): NOTHING here creates or edits a macro, or writes a key binding, any more. Start attack on cast and the commands / fight spells
@@ -951,13 +951,24 @@ local PRE = [=[
         local bare = anchor == "top" and (at == 1 or self:GetAttribute("wc-stance-top-" .. at) == true)
         local role = self:GetAttribute("wc-role")
         local rearmed = false
+        local bmacro = nil
         if role == "back" then
             -- B (SPEC item 2, the user: "when I push b it goes back to the non combat layout even if im in combat"): a bare B in the
             -- fight state gives A / X / Y back (their attributes, through frame refs), then does Forever's own Back
+            -- m99 (the user, 2026-11-07: "when pressing B in combat the auto attack is still on. It should stop the auto attack as well
+            -- as leaving combat mode. Keeping that enemy targeted, pressing B again would drop the target"): the first B in a fight
+            -- gives back AND stops the attack (the target stays); a B with the bars already given back clears the target
             if bare and on and mode ~= "room" then
+                local f1 = self:GetFrameRef("wc-face-8") or self:GetFrameRef("wc-face-5")
+                local already = f1 and f1:GetAttribute("wc-given")
                 for _, p in ipairs(newtable(1, 2, 3, 4, 5, 6, 8)) do
                     local f = self:GetFrameRef("wc-face-" .. p)
                     if f then f:SetAttribute("wc-given", true) end
+                end
+                if already then
+                    if SecureCmdOptionParse and SecureCmdOptionParse("[@target,exists] 1") == "1" then bmacro = "/stopattack\n/cleartarget" end
+                else
+                    bmacro = "/stopattack"
                 end
             end
         elseif on and self:GetAttribute("wc-given") and mode ~= "room" and SecureCmdOptionParse
@@ -1032,7 +1043,10 @@ local PRE = [=[
         if not smart and bare and mode ~= "room" and role ~= "back" and not sw and not qi and SecureCmdOptionParse
             and SecureCmdOptionParse("[combat] 1") == "1" then
             cbuff = self:GetAttribute("wc-smarty-cb")
-            if cbuff then smart = cbuff end
+            if cbuff then
+                smart = cbuff
+                self:SetAttribute("wc-smarty-cb", nil)          -- m99: once a fight (the buff is up after it)
+            end
         end
         local mb = "LeftButton"
         self:SetAttribute("unit", nil)                                  -- m62: only Smart Y's buff casts on yourself
@@ -1040,7 +1054,13 @@ local PRE = [=[
             dest = pdest or self:GetAttribute("wc-room-dest"); mb = self:GetAttribute("wc-key") or mb; fight = false
         end
         self:SetAttribute("wc-mb", mb)
-        if qi then
+        if bmacro then
+            self:SetAttribute("wc-kind", "bstop")
+            self:SetAttribute("pressAndHoldAction", nil)
+            self:SetAttribute("typerelease", nil)
+            self:SetAttribute("type", "macro")
+            self:SetAttribute("macrotext", bmacro)
+        elseif qi then
             self:SetAttribute("wc-kind", "qitem")
             self:SetAttribute("pressAndHoldAction", nil)
             self:SetAttribute("typerelease", nil)
@@ -3753,12 +3773,15 @@ function OV.smartApply()
     local b = face.buttons[6]
     if b then pcall(b.SetAttribute, b, "wc-smarty", val); pcall(b.SetAttribute, b, "wc-smarty-t", typ) end
     OV.smartTyp = typ
-    -- m93: the fight-time buff = the list's top buff you know, whether or not it is up now (no auras = every row due)
+    -- m93 / m99 (the user, 2026-11-07: Y "casts my first spell, in this case earthbound weapon, when I dont even require it"): the
+    -- fight-time buff = the first buff of the list that is MISSING now (the real auras and the weapon's enchant); every one up = none,
+    -- and Y in the fight stays what it shows
     local cb = nil
     if OV.smartOn() then
         local okc, r2, m2 = pcall(function()
             local _, byName = OV.sbKnown()
-            return OV.sbFirst(OV.sbdb().rows, byName, OV.sbName, {}, false)
+            local mh = T(function() return (GetWeaponEnchantInfo()) end) == true
+            return OV.sbFirst(OV.sbdb().rows, byName, OV.sbName, OV.sbAuras(), mh)
         end)
         if okc and r2 and type(m2) == "table" and m2[1] and type(m2[1].n) == "string" then cb = m2[1].n end
     end

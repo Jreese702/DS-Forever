@@ -664,6 +664,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         StartMenu.onRestart = { settingsRest.onRestart() }
         StartMenu.canSwitch = { SetupBridge.exitStream != null || ModeBridge.canGoBack() }
         StartMenu.onSwitch = { if (SetupBridge.exitStream != null) SetupBridge.exitStream?.invoke() else ModeBridge.back("the Menu") }
+        // the Menu's Region: read once (Config.wtf on disk), then the choice; GameConfigWtf.ensure writes it as the portal at the next start
+        var regionNow: String? = null
+        StartMenu.region = { GameRegion.chosen(this) ?: regionNow ?: runCatching { GameRegion.current(this, GameFiles.gameRoot(this)) }.getOrDefault("us").also { regionNow = it } }
+        StartMenu.onRegion = { code -> GameRegion.choose(this, code); regionNow = code }
         startView.onLoginButton = { gear -> if (gear || LauncherHooks.pkg != null) loginPrompt.open() else signIn() }
         loginPrompt = HomeLoginPrompt(this) { login ->
             settingsView.invalidate()

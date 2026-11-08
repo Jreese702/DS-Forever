@@ -23,6 +23,10 @@ object StartMenu {
     var onRestart: (() -> Unit)? = null
     var canSwitch: () -> Boolean = { false }
     var onSwitch: (() -> Unit)? = null
+    /** the game's region (GameRegion's code) and its change (the user, 2026-11-07: "There should be a change region option in the menu
+     *  when starting the app"): the bottom row's Region button steps US, EU, Korea, Taiwan; the portal is written at the game's next start */
+    var region: () -> String = { "us" }
+    var onRegion: ((String) -> Unit)? = null
     private var forgetArmedAt = -FORGET_ARM_MS
 
     /**
@@ -32,7 +36,7 @@ object StartMenu {
     fun draw(c: Canvas, area: RectF, pressed: Int, hits: ArrayList<Pair<RectF, Int>>, menuButton: RectF, game: Boolean) {
         hits.clear()
         val bh = StartView.BUTTON_H; val gap = StartView.GAP
-        val rows = if (game) 4 else 2
+        val rows = if (game) 4 else 3
         val height = PAD * 2 + bh * rows + CONTROLLER_H + gap * rows
         val top = (area.centerY() - height / 2f).coerceAtLeast(area.top)
         val panel = RectF(area.left, top, area.right, top + height)
@@ -75,7 +79,13 @@ object StartMenu {
         put(RectF(inner.left, inner.bottom - rowH, inner.right, inner.bottom), "Glyphs: ${CastSettings.buttonLayout.label}", GLYPHS, true)
         faceDiamond(c, RectF(inner.right, box.top, box.right, box.bottom))
         y += CONTROLLER_H + gap
-        if (game) put(RectF(inL, y, inR, y + bh), "Exit game", EXIT, canExit())
+        // the bottom row: Region (both screens), and Exit game beside it on the waiting screen
+        val rg = GameRegion.ALL.firstOrNull { it.code == region() } ?: GameRegion.ALL[0]
+        val rWord = "${Tr.t("Region")}: ${Tr.t(rg.label)}"
+        if (game) {
+            put(half(false), rWord, REGION, true)
+            put(half(true), "Exit game", EXIT, canExit())
+        } else put(RectF(inL, y, inR, y + bh), rWord, REGION, true)
     }
 
     /** the four face buttons where they sit: Nintendo's X top and A right, Xbox's Y top and B right */
@@ -116,6 +126,10 @@ object StartMenu {
             SWITCH -> { open = false; onSwitch?.invoke() }
             REPORT -> { open = false; onReport?.invoke() }
             EXIT -> { open = false; onExit?.invoke() }
+            REGION -> {
+                val all = GameRegion.ALL.map { it.code }
+                onRegion?.invoke(all[(all.indexOf(region()).coerceAtLeast(0) + 1) % all.size])
+            }
         }
     }
 
@@ -130,6 +144,7 @@ object StartMenu {
     private const val CLOSE = 12
     private const val ABXY = 13
     private const val GLYPHS = 14
+    private const val REGION = 15
     private const val FORGET_ARM_MS = 4000L
     const val WIDTH = 1000f
     private const val PAD = 32f

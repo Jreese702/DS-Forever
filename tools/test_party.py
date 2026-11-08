@@ -507,6 +507,10 @@ f = G1.eval('routerBtn')(7, "PAD2", None, False)
 k = G1.eval('pressPre')(f, True)
 given = G1.eval('function(f) return f.refs["wc-face-5"].a["wc-given"] end')(f)
 check(given is True, "PRE without wc-party: B in a fight gives A / X / Y back, as today", given)
+# m99 (the user: "pressing B in combat ... should stop the auto attack ... Keeping that enemy targeted, pressing B again would drop the target")
+check(k[0] == "bstop" and k[1] == "macro" and k[2] == "/stopattack", "m99: the first B in a fight stops the attack (the target kept)", k[:3])
+k = G1.eval('pressPre')(f, True)
+check(k[0] == "bstop" and k[2] == "/stopattack\n/cleartarget", "m99: B again (already given back) clears the target", k[:3])
 G1.execute('COMBAT = false')
 f = G1.eval('routerBtn')(2, "PADDUP", None, False)
 f.a["wc-state"] = "idle"; f.a["wc-qitem"] = None
@@ -1051,7 +1055,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng", "hs", "g", "cw", "cc", "ch", "cs"}   # m79: hs, the health source; m92: g, the GUID (combat log)
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm98' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm99' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1247,8 +1251,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m98"' in SRC["padmap"],
-      "the versions: PadMap m98, PadTabCtl p33, Book b48")
+check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m99"' in SRC["padmap"],
+      "the versions: PadMap m99, PadTabCtl p33, Book b48")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
