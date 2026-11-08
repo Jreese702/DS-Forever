@@ -73,18 +73,18 @@ class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean
         val box = RectF(4f, 8f, width - 12f, height - 12f)
         pFill.color = Theme.field; c.drawRoundRect(box, 10f, 10f, pFill)
         pStroke.color = Theme.bronze; c.drawRoundRect(box, 10f, 10f, pStroke)
-        c.drawText("WHAT IT DOES", box.left + 18f, box.top + 30f, pLabel)
+        c.drawText(Tr.t("WHAT IT DOES"), box.left + 18f, box.top + 30f, pLabel)
         val row = id
         if (row == null || !SettingsPreview.has(row)) {
             pCap.color = Theme.dim
-            c.drawText("Pick a setting to see what it does.", box.left + 18f, box.top + 70f, pCap)
+            c.drawText(Tr.t("Pick a setting to see what it does."), box.left + 18f, box.top + 70f, pCap)
             return
         }
         val now = SystemClock.uptimeMillis()
         val s = state()
         if (last != null && s != last) { prev = last; changedAt = now }
         last = s
-        c.drawText(fit(pTitle, SettingsPreview.title(row, s), box.width() - 36f), box.left + 18f, box.top + 64f, pTitle)
+        c.drawText(Tr.t(fit(pTitle, SettingsPreview.title(row, s), box.width() - 36f)), box.left + 18f, box.top + 64f, pTitle)
         val caps = SettingsPreview.caption(row, s)
         val capTop = box.bottom - 20f - caps.size * 28f
         val pic = RectF(box.left + 8f, box.top + 84f, box.right - 8f, capTop - 8f)
@@ -92,7 +92,7 @@ class SettingsPreviewView(context: Context, private val toolbarOn: () -> Boolean
         SettingsPreview.draw(c, pic, row, s, now - t0, glyph, prev, now - changedAt, live)
         c.restore()
         pCap.color = Theme.textDim
-        for ((i, line) in caps.withIndex()) c.drawText(fit(pCap, line, box.width() - 36f), box.left + 18f, capTop + 22f + i * 28f, pCap)
+        for ((i, line) in caps.withIndex()) c.drawText(Tr.t(fit(pCap, line, box.width() - 36f)), box.left + 18f, capTop + 22f + i * 28f, pCap)
         if ((SettingsPreview.animated(row) || now - changedAt < 600L) && isShown) postInvalidateOnAnimation()
     }
 

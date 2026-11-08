@@ -110,7 +110,7 @@ class TypeToolView(context: Context, private val onClose: () -> Unit) : FrameLay
             UiKit.pad(c, "${TrackpadView.glyphSet()}_rshoulder", tabRect(1).right - 40f, tabRect(1).centerY(), 44f)
             val p = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
             // the user (1.0.8): "remove the text on it" - the trackpad has no words; the keyboard keeps what it typed
-            if (tab == 1) c.drawText(if (typed.isEmpty()) "Typing into the game's text box" else "Typed: $typed", width / 2f, 140f, p)
+            if (tab == 1) c.drawText(Tr.t(if (typed.isEmpty()) "Typing into the game's text box" else "Typed: $typed"), width / 2f, 140f, p)
         }
         override fun onTouchEvent(e: MotionEvent): Boolean {
             if (e.actionMasked == MotionEvent.ACTION_UP) for (i in 0..1) if (tabRect(i).contains(e.x, e.y)) { showTab(i); break }

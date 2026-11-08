@@ -171,13 +171,13 @@ class PartyTabPage(
             val subLines = wrap(wd.line, room, pl, 22f, 20f, splitAt = ':')
             val all = nameLines.size + subLines.size
             var y = cy - (all - 1) * 14f + 4f
-            pn.textSize = nameSize; for (t in nameLines) { c.drawText(t, nx, y, pn); y += 28f }
-            for (t in subLines) { c.drawText(t, nx, y, pl); y += 25f }
+            pn.textSize = nameSize; for (t in nameLines) { c.drawText(Tr.t(t), nx, y, pn); y += 28f }
+            for (t in subLines) { c.drawText(Tr.t(t), nx, y, pl); y += 25f }
         }
         drawRight(c, w, h, ctl, cfg, chosen)
         flash?.takeIf { SystemClock.uptimeMillis() < flashUntil }?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-            c.drawText(it, act.centerX(), act.top - 24f, pw)
+            c.drawText(Tr.t(it), act.centerX(), act.top - 24f, pw)
         }
     }
 
@@ -198,31 +198,31 @@ class PartyTabPage(
         p.textSize = min
         while (p.textSize > 14f && (p.measureText(a) > room || p.measureText(b) > room)) p.textSize -= 1f
         wrapSize = p.textSize
-        return listOf(a, TextUtils.ellipsize(b, p, room, TextUtils.TruncateAt.END).toString())
+        return listOf(a, TextUtils.ellipsize(Tr.t(b), p, room, TextUtils.TruncateAt.END).toString())
     }
 
     private fun fitLine(c: Canvas, s: String, x: Float, y: Float, room: Float, p: TextPaint, size: Float, min: Float) {
         p.textSize = size
         while (p.textSize > min && p.measureText(s) > room) p.textSize -= 1f
-        c.drawText(TextUtils.ellipsize(s, p, room, TextUtils.TruncateAt.END).toString(), x, y, p)
+        c.drawText(Tr.t(TextUtils.ellipsize(s, p, room, TextUtils.TruncateAt.END).toString()), x, y, p)
     }
 
     private fun title(c: Canvas, iconArt: () -> Unit, name: String, sub: String) {
         iconArt()
         val pt = TextPaint(UiKit.inkPaint(46f, heading = true))
         fitLine(c, name, 940f, 244f, 1192f - 940f, pt, 46f, 30f)
-        c.drawText(sub, 942f, 290f, UiKit.inkPaint(25f).apply { color = Theme.parchmentInkDim })
+        c.drawText(Tr.t(sub), 942f, 290f, UiKit.inkPaint(25f).apply { color = Theme.parchmentInkDim })
         UiKit.tex("book_divider")?.let { c.drawBitmap(it, null, RectF(782f, 337f, 1192f, 348f), null) }
     }
 
-    private fun section(c: Canvas, s: String, y: Float) = c.drawText(s, 790f, y, UiKit.inkPaint(32f, heading = true))
+    private fun section(c: Canvas, s: String, y: Float) = c.drawText(Tr.t(s), 790f, y, UiKit.inkPaint(32f, heading = true))
 
     private fun drawRight(c: Canvas, w: Float, h: Float, ctl: PadMapModel.Ctl?, cfg: PartyModel.Cfg?, pos: Int) {
         // the chooser (a finger's, or the controller's list "party" / "pbuff") stands over the right page
         val ctlCh = ctl?.chooser?.takeIf { it.list in PartyModel.CTL_LISTS && ctl.on }
         if (chooser != null || ctlCh != null) { drawChooser(c, ctlCh, cfg); return }
         if (cfg == null) {
-            c.drawText("Waiting for the game", 790f, 400f, UiKit.inkPaint(27f).apply { color = Theme.parchmentInkDim })
+            c.drawText(Tr.t("Waiting for the game"), 790f, 400f, UiKit.inkPaint(27f).apply { color = Theme.parchmentInkDim })
             return
         }
         val wd = words(pos, cfg) ?: return
@@ -242,19 +242,19 @@ class PartyTabPage(
                 // P4Y (v9 trim): Out of combat = Inspect; In combat = the chosen spell (crossed swords); ONE red Change (the In combat action)
                 section(c, "Out of combat", 380f)
                 UiKit.spell(c, UiKit.tex("fixed_inspect"), 838f, 422f, 58f, UiKit.Spell.KNOWN)
-                c.drawText("Inspect", 910f, 461f, ink)
+                c.drawText(Tr.t("Inspect"), 910f, 461f, ink)
                 section(c, "In combat", 556f)
                 UiKit.spell(c, icon(cfg.yc) ?: UiKit.tex("fixed_inspect"), 838f, 598f, 58f, UiKit.Spell.KNOWN)
                 UiKit.tex("combat_swords")?.let { c.drawBitmap(it, null, RectF(880f, 580f, 918f, 618f), null) }
-                c.drawText(cfg.yc?.n ?: "Inspect", 910f, 637f, ink)
+                c.drawText(Tr.t(cfg.yc?.n ?: "Inspect"), 910f, 637f, ink)
                 button(c, "Change", live().cfg?.pad?.slot0 != null)
             }
             5 -> {
                 section(c, "Now", 380f)
                 UiKit.spell(c, icon(cfg.touch), 838f, 422f, 58f, UiKit.Spell.KNOWN)
                 if (cfg.touch == null) PartyArt.targetRing(c, 867f, 451f, 21f)
-                c.drawText(cfg.touch?.n ?: "Target", 910f, 451f, ink)
-                if (cfg.touch == null) c.drawText("Makes them your target", 910f, 480f, dim)
+                c.drawText(Tr.t(cfg.touch?.n ?: "Target"), 910f, 451f, ink)
+                if (cfg.touch == null) c.drawText(Tr.t("Makes them your target"), 910f, 480f, dim)
                 button(c, "Change", true)
             }
             else -> button(c, "Change", true)
@@ -290,13 +290,13 @@ class PartyTabPage(
                     val b = cfg.sy.list[k]
                     UiKit.spell(c, icon(b), 838f, cy - 29f, 58f, if (b.k) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL)
                     fitLine(c, "${k + 1}. ${b.n}", 910f, cy - 6f, r.right - 916f, ink, 27f, 20f)
-                    c.drawText("When it is not up", 910f, cy + 26f, dim)
+                    c.drawText(Tr.t("When it is not up"), 910f, cy + 26f, dim)
                 }
                 "add" -> {
                     UiKit.spell(c, null, 838f, cy - 29f, 58f, UiKit.Spell.KNOWN)
                     UiKit.pad(c, "${padSet()}_plus", 867f, cy, 30f)
-                    c.drawText("Add a party buff", 910f, cy - 6f, ink)
-                    c.drawText("Yours, cast on others", 910f, cy + 26f, dim)
+                    c.drawText(Tr.t("Add a party buff"), 910f, cy - 6f, ink)
+                    c.drawText(Tr.t("Yours, cast on others"), 910f, cy + 26f, dim)
                 }
                 else -> {
                     UiKit.spell(c, icon(cfg.yc) ?: UiKit.tex("fixed_inspect"), 838f, cy - 29f, 58f, UiKit.Spell.KNOWN)

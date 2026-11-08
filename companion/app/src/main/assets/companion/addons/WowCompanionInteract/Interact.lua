@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i138"     -- bump on every change; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
+local IV = "i139"     -- bump on every change; i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1499,6 +1499,12 @@ local function assignSlots(doc)
         for k = 1, td.slots or 7 do
             if td.theirs[k] and td.theirs[k].name then td.theirs[k].slot = slot("ipick", "look tslot t " .. k) end
         end
+        if td.enchant then
+            for _, e in ipairs(td.enchant) do
+                e.slot = slot("ibuy", (e.src == "inv") and ("tradeench inv " .. e.slot .. " " .. e.id) or ("tradeench bag " .. e.bag .. " " .. e.s .. " " .. e.id))
+            end
+            td.act.encoff = slot("iact", "tradeench off")
+        end
     end
     if doc.book then
         any = true
@@ -1702,7 +1708,10 @@ function N.trd.collect()
     t.acc = (N.trd.acc == 1) or nil
     t.tacc = (N.trd.tacc == 1) or nil
     t.dest = N.trd.dest
-    t.bags = MAIL.bags()
+    -- i139 (the user on test16: "The trade screen should exclude soulbound Items"): the bags beside the trade, the tradeable ones only
+    t.bags = {}
+    for _, b in ipairs(MAIL.bags()) do if not b.bound then t.bags[#t.bags + 1] = b end end
+    if N.trd.pick7 then t.enchant = N.trd.enchantList() end
     local e = N.trd.edit
     if e then t.edit = { g = e.g, s = e.s, c = e.c, sel = e.sel } end
     if type(WC.dialogs) == "table" and type(WC.dialogs.tradeCells) == "function" then
@@ -1713,7 +1722,35 @@ function N.trd.collect()
 end
 -- the controller in the window: the slots (yours left, theirs right, seven rows), the money under them, Trade / Cancel under that;
 -- the bags to the right. In the money stepper (N.trd.edit): Left / Right pick the coin, Up / Down change it, A sets it, B leaves it
+-- i139 (the user on test16: "Make the not to be traded box into a button that opens soul bound items organized by currently equipped to
+-- allow for them to be enchanted"): the seventh slot opens a list of YOUR SOULBOUND ITEMS - what you wear first, in the character
+-- sheet's order, then the soulbound items in your bags - and the one chosen goes into that slot (the game's own pickup and click)
+function N.trd.enchantList()
+    local out = {}
+    for s = 1, 19 do
+        local id = TN(function() return GetInventoryItemID("player", s) end)
+        if id then
+            local link = TS(function() return GetInventoryItemLink("player", s) end)
+            out[#out + 1] = { src = "inv", slot = s, id = id, icon = TN(function() return GetInventoryItemTexture("player", s) end),
+                              q = TN(function() return GetInventoryItemQuality("player", s) end), name = link and link:match("%[(.-)%]") or nil,
+                              worn = true }
+        end
+    end
+    for _, b in ipairs(MAIL.bags()) do
+        if b.bound then out[#out + 1] = { src = "bag", bag = b.bag, s = b.s, id = b.id, icon = b.icon, q = b.q, name = b.name, n = b.n } end
+    end
+    return out
+end
+function N.trd.enchantCmd(e)
+    if e.src == "inv" then return "tradeench inv " .. e.slot .. " " .. e.id end
+    return "tradeench bag " .. e.bag .. " " .. e.s .. " " .. e.id
+end
 function N.trd.zones(td)
+    if td.enchant then
+        local ze = navZone("tench", 1)
+        for _, e in ipairs(td.enchant) do navAdd(ze, N.trd.enchantCmd(e)) end
+        return { ze }
+    end
     local zs = navZone("tslots", 2)
     for k = 1, N.trd.SLOTS do
         navAdd(zs, "tslot p " .. k)
@@ -1729,6 +1766,11 @@ function N.trd.zones(td)
 end
 function N.trd.move(z, ii, dir)
     local name = z.name
+    if name == "tench" then
+        local j = ii + ((dir == "up") and -1 or ((dir == "down") and 1 or 0))
+        if z.items[j] and j ~= ii then N.cur = z.items[j].id end
+        return true
+    end
     if N.trd.edit then
         local e = N.trd.edit
         if dir == "left" then e.sel = math.max(1, e.sel - 1)
@@ -1781,9 +1823,9 @@ function N.build(doc)
     N.offer = nil
     if doc.trade then
         -- i137: the trade window (N.trd.zones); a window with the same partner keeps the cursor
-        sig = "tr|" .. tostring(doc.trade.who)
+        sig = "tr|" .. tostring(doc.trade.who) .. (doc.trade.enchant and "|ench" or "")
         N.zones = N.trd.zones(doc.trade)
-        first = "tslot p " .. (N.trd.free() or 1)
+        first = doc.trade.enchant and (N.zones[1].items[1] and N.zones[1].items[1].id or "none") or ("tslot p " .. (N.trd.free() or 1))
     elseif q and q.space then
         -- MAKE SPACE for the quest: the same grid as the loot's
         sig = "lts"
@@ -2464,8 +2506,8 @@ local ON = {
     PET_STABLE_CLOSED = function() mark("stable", false) end,
     MAIL_SHOW = function() MAIL.open = nil; MAIL.tab, MAIL.pick = "inbox", false; mark("mail", true) end,
     -- i137: the trade window; TRADE_ACCEPT_UPDATE says who has accepted (1 / 0), any change in the trade sets both back to 0
-    TRADE_SHOW = function() N.trd.acc, N.trd.tacc, N.trd.edit, N.trd.dest, N.trd.probed, N.trd.bs = 0, 0, nil, nil, nil, 0; mark("trade", true) end,
-    TRADE_CLOSED = function() N.trd.acc, N.trd.tacc, N.trd.edit, N.trd.dest = 0, 0, nil, nil; mark("trade", false) end,
+    TRADE_SHOW = function() N.trd.acc, N.trd.tacc, N.trd.edit, N.trd.dest, N.trd.probed, N.trd.bs, N.trd.pick7 = 0, 0, nil, nil, nil, 0, nil; mark("trade", true) end,
+    TRADE_CLOSED = function() N.trd.acc, N.trd.tacc, N.trd.edit, N.trd.dest, N.trd.pick7 = 0, 0, nil, nil, nil; mark("trade", false) end,
     TRADE_ACCEPT_UPDATE = function(p, t) N.trd.acc, N.trd.tacc = tonumber(p) or 0, tonumber(t) or 0 end,
     MAIL_CLOSED = function()
         MAIL.open, MAIL.pick = nil, false
@@ -3766,8 +3808,36 @@ end
 function ACT.tradepick(a)
     if not isOpen("trade") then return false, "no trade open" end
     local k = tonumber(a)
-    N.trd.dest = (k == N.trd.SLOTS) and k or nil
+    N.trd.dest = nil
+    N.trd.pick7 = (k == N.trd.SLOTS) or nil          -- i139: the seventh: the list of your soulbound items
     return true
+end
+-- "tradeench inv <slot> <itemID>" / "tradeench bag <bag> <slot> <itemID>" / "tradeench off": a soulbound item into the seventh slot
+function ACT.tradeench(a, b, c, d)
+    if not isOpen("trade") then return false, "no trade open" end
+    if a == "off" then N.trd.pick7 = nil; return true end
+    local k = N.trd.SLOTS
+    if a == "inv" then
+        local sl, id = tonumber(b), tonumber(c)
+        if not sl or TN(function() return GetInventoryItemID("player", sl) end) ~= id then return false, "that item moved" end
+        N.trd.pick7 = nil
+        return run(function()
+            if CursorHasItem() then ClearCursor() end
+            PickupInventoryItem(sl)
+            ClickTradeButton(k)
+        end)
+    elseif a == "bag" then
+        local bag, sl, id = tonumber(b), tonumber(c), tonumber(d)
+        local ok, info = CALL(function() return C_Container.GetContainerItemInfo(bag, sl) end)
+        if not ok or type(info) ~= "table" or TN(function() return info.itemID end) ~= id then return false, "that item moved" end
+        N.trd.pick7 = nil
+        return run(function()
+            if CursorHasItem() then ClearCursor() end
+            C_Container.PickupContainerItem(bag, sl)
+            ClickTradeButton(k)
+        end)
+    end
+    return false, "inv, bag or off"
 end
 -- "trademoney edit|set|off": the stepper opened (with what is offered now), its amount offered (the game's own call), or left
 function ACT.trademoney(a)
@@ -3913,6 +3983,10 @@ local function lookSource(key)
         end
     elseif w[1] == "tradein" and a and b then
         return c, function() return C_TooltipInfo.GetBagItem(a, b) end
+    elseif w[1] == "tradeench" and w[2] == "inv" and b then
+        return c, function() return C_TooltipInfo.GetInventoryItem("player", b) end
+    elseif w[1] == "tradeench" and w[2] == "bag" and b and c then
+        return d, function() return C_TooltipInfo.GetBagItem(b, c) end
     elseif (w[1] == "sell" or w[1] == "bag") and a and b then
         -- "bag <bag> <slot> <itemID>": any item in the player's bags (the Bags room's cursor, via WC.tipOf)
         return c, function() return C_TooltipInfo.GetBagItem(a, b) end
@@ -6629,8 +6703,9 @@ function N.act()
             k = tonumber(k)
             local r = R(function() return GetTradePlayerItemInfo(k) end)
             if r and PS(r[1]) then navRun("tradeout " .. k)
+            elseif k == N.trd.SLOTS then
+                navRun("tradepick " .. k)            -- i139: the seventh opens the list of your soulbound items
             else
-                navRun("tradepick " .. k)
                 local zg = navZoneNamed("tbags")
                 N.cur = (zg and navFirst(zg)) or N.cur
             end
@@ -6639,6 +6714,9 @@ function N.act()
             return                                   -- the partner's item: its tooltip shows; nothing to do
         elseif id == "tmoney" then
             navRun("trademoney edit")
+            return
+        elseif id:match("^tradeench ") then
+            navRun(id)
             return
         elseif id:match("^tradein ") then
             local t = TN(function() return GetTime() end) or 0
@@ -6744,7 +6822,8 @@ function N.back()
     end
     if isOpen("trade") then
         -- i137 / i138: the money stepper first (B itself is the secure Cancel otherwise: wantOf, keeps)
-        if N.trd.edit then N.trd.edit = nil end
+        if N.trd.pick7 then N.trd.pick7 = nil                 -- i139: the soulbound list closes first
+        elseif N.trd.edit then N.trd.edit = nil end
         emitSoon()
         return
     end

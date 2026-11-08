@@ -80,6 +80,16 @@ class TradeShotsTest {
         shot("trade_1_open.png", doc("tslot p 3", acc = false, tacc = false))
         shot("trade_2_they_accepted.png", doc("tslot t 1", acc = false, tacc = true))
         shot("trade_3_bags_cursor.png", doc("tradein 0 2 1001", acc = false, tacc = false))
+        shot("trade_5_enchant_list.png", doc("tradeench inv 16 1001", acc = false, tacc = false).also { d ->
+            val ench = org.json.JSONArray()
+            ench.put(JSONObject().put("src", "inv").put("slot", 16).put("id", 1001).put("icon", 135274).put("q", 2).put("name", "Gnarled Ash Staff").put("worn", true).put("slot", 16))
+            ench.put(JSONObject().put("src", "inv").put("slot", 5).put("id", 1002).put("icon", 132624).put("q", 1).put("name", "Raptor Hide Harness").put("worn", true))
+            ench.put(JSONObject().put("src", "bag").put("bag", 0).put("s", 4).put("id", 1003).put("icon", 133076).put("q", 3).put("name", "Feet of the Lynx"))
+            d.getJSONObject("trade").put("enchant", ench) })
+        Tr.load("es", java.io.File("../companion/app/src/main/assets/companion/i18n/es.json").readText())
+        val c0 = Tr::class.java.getDeclaredField("choice"); c0.isAccessible = true; c0.set(Tr, "es")
+        shot("trade_6_spanish.png", doc("tslot p 3", acc = false, tacc = true))
+        c0.set(Tr, "auto")
         shot("trade_4_money_stepper.png", doc("tmoney", acc = false, tacc = false, edit = JSONObject().put("g", 1).put("s", 25).put("c", 50).put("sel", 2)))
     }
 }

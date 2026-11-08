@@ -259,11 +259,11 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         var y = 0f
         if (hasUi) {
         if (part == Part.QOL) y = QOL_TOP
-        else { c.drawText("Game UI on the top screen", 28f, HEAD_TEXT + 4f, pSection); y = HEAD_H }
+        else { c.drawText(Tr.t("Game UI on the top screen"), 28f, HEAD_TEXT + 4f, pSection); y = HEAD_H }
         for (r in rows) {
             if (r.id.startsWith("#")) {
                 // a QOL group's heading (the page's block headings' look)
-                c.drawText(r.label, 28f, y + SUBHEAD_TEXT, pSection)
+                c.drawText(Tr.t(r.label), 28f, y + SUBHEAD_TEXT, pSection)
                 y += SUBHEAD_H
                 continue
             }
@@ -278,12 +278,12 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             pStroke.color = if (r.known) Theme.gold else Theme.dim; pStroke.strokeWidth = 2.4f
             elementIcon(c, r.id, box.left + 58f, box.centerY(), 1.7f)
             pLabel.color = if (r.known) Theme.text else Theme.dim
-            c.drawText(r.label, box.left + 116f, box.top + 41f, pLabel)
+            c.drawText(Tr.t(r.label), box.left + 116f, box.top + 41f, pLabel)
             pSub.color = if (r.known) Theme.textDim else Theme.dim
-            c.drawText(r.note, box.left + 116f, box.top + 75f, pSub)
+            c.drawText(Tr.t(r.note), box.left + 116f, box.top + 75f, pSub)
             pMode.color = if (r.known) Theme.gold else Theme.dim
-            c.drawText(if (r.id == GameUi.HUD_H_ID || r.id == GameUi.HUD_W_ID || r.id == GameUi.HUD_S_ID) GameUi.hudValue(r.id)
-                else if (r.id == DANGER_ID) Settings.avoidDanger.replaceFirstChar { it.uppercase() } else word(r.mode),
+            c.drawText(Tr.t(if (r.id == GameUi.HUD_H_ID || r.id == GameUi.HUD_W_ID || r.id == GameUi.HUD_S_ID) GameUi.hudValue(r.id)
+                else if (r.id == DANGER_ID) Settings.avoidDanger.replaceFirstChar { it.uppercase() } else word(r.mode)),
                 box.right - 24f, box.centerY() + 10f, pMode)
             rowBoxes.add(box to r.id)
             y += ROW_H + GAP
@@ -295,16 +295,16 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
 
         // ---- what the status line under the strip used to say (user, 2026-09-28: it lives here now)
         y += COMPANION_TOP                 // the page's 90 px seam above a heading (Map's measure 2026-10-06: it was 52)
-        c.drawText("Companion", 28f, y + HEAD_TEXT + 12f, pSection)
+        c.drawText(Tr.t("Companion"), 28f, y + HEAD_TEXT + 12f, pSection)
         val box = RectF(16f, y + HEAD_H + 8f, width - 16f, y + HEAD_H + 8f + ROW_H)
         pFill.color = Theme.raised
         c.drawRoundRect(box, 8f, 8f, pFill)
         pLabel.color = Theme.text
-        c.drawText("Status", box.left + 22f, box.top + 41f, pLabel)
+        c.drawText(Tr.t("Status"), box.left + 22f, box.top + 41f, pLabel)
         pSub.color = Theme.textDim
         val say = StatusLine.text.ifEmpty { "Nothing to report" }
         val cut = pSub.breakText(say, true, box.width() - 44f, null)
-        c.drawText(if (cut < say.length) say.substring(0, cut) else say, box.left + 22f, box.top + 75f, pSub)
+        c.drawText(Tr.t(if (cut < say.length) say.substring(0, cut) else say), box.left + 22f, box.top + 75f, pSub)
     }
 
     /** the ONE contextual control: the selected row's modes (three; the minimap's four with "While tracking", LATER 25) */
@@ -321,7 +321,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                 stepBoxes.add(b to (DANGER_ID to k))
             }
             pSub.color = Theme.textDim
-            c.drawText("How hard SafePath's line bends round hostile mobs.", left + 6f, top + SEG_H + 34f, pSub)
+            c.drawText(Tr.t("How hard SafePath's line bends round hostile mobs."), left + 6f, top + SEG_H + 34f, pSub)
             return
         }
         if (r.id == GameUi.HUD_H_ID || r.id == GameUi.HUD_W_ID || r.id == GameUi.HUD_S_ID) {
@@ -338,7 +338,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                 stepBoxes.add(b to (r.id to d))
             }
             pSub.color = Theme.textDim
-            c.drawText(hint, left + 6f, top + SEG_H + 34f, pSub)
+            c.drawText(Tr.t(hint), left + 6f, top + SEG_H + 34f, pSub)
             return
         }
         val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == TIPS_ID || r.id == RINGS_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.HUD_ID ||
@@ -358,12 +358,12 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             val ix = b.centerX() - total / 2f + 22f
             pStroke.color = col; pStroke.strokeWidth = 2.4f
             modeIcon(c, m, ix, b.centerY())
-            c.drawText(word(m), ix + 22f + 14f, b.centerY() + 10f, pSeg)
+            c.drawText(Tr.t(word(m)), ix + 22f + 14f, b.centerY() + 10f, pSeg)
             segBoxes.add(b to m)
             x += sw + gap
         }
         pSub.color = Theme.textDim
-        c.drawText(explain(r), left + 6f, top + SEG_H + 34f, pSub)
+        c.drawText(Tr.t(explain(r)), left + 6f, top + SEG_H + 34f, pSub)
     }
 
     private fun word(m: UiMode) = when (m) {

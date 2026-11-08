@@ -123,10 +123,10 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         val y = cy - (p.ascent() + p.descent()) / 2f
         p.style = Paint.Style.STROKE; p.strokeWidth = 2f; p.strokeJoin = Paint.Join.ROUND; p.color = Color.rgb(8, 6, 4)
         p.setShadowLayer(1f, size / 18f, size / 18f, Color.BLACK)
-        c.drawText(s, x, y, p)
+        c.drawText(Tr.t(s), x, y, p)
         p.clearShadowLayer()
         p.style = Paint.Style.FILL; p.color = colour
-        c.drawText(s, x, y, p)
+        c.drawText(Tr.t(s), x, y, p)
     }
 
     /** the side tab (the game's raid-manager tab: a dark panel, a gold edge) with the Select glyph; tapped = Party mode on */

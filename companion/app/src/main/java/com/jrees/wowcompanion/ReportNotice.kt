@@ -107,10 +107,10 @@ class ReportNotice(c: Context) : View(c) {
         UiKit.cover(c, r, 0.92f)
         UiKit.border(c, r)
         val title = UiKit.titlePaint(36f).apply { textAlign = android.graphics.Paint.Align.CENTER }
-        c.drawText(card.title, r.centerX(), r.top + 56f, title)
+        c.drawText(Tr.t(card.title), r.centerX(), r.top + 56f, title)
         val body = UiKit.bodyPaint(24f, Theme.textDim).apply { textAlign = android.graphics.Paint.Align.CENTER }
         var y = r.top + 96f
-        for (line in SetupPanel.wrap(card.text, body, cw - 60f).take(2)) { c.drawText(line, r.centerX(), y, body); y += 32f }
+        for (line in SetupPanel.wrap(card.text, body, cw - 60f).take(2)) { c.drawText(Tr.t(line), r.centerX(), y, body); y += 32f }
         boxes.clear()
         if (card.buttons.isNotEmpty()) {
             val bw = 260f; val gap = 24f

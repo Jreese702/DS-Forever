@@ -337,10 +337,10 @@ class ReportPage(c: Context) : FrameLayout(c) {
         val boxTop = lerp(110f, upBoxTop, k)
         val boxBottom = lerp(110f + BOX_H, upBoxBottom, k)
         val buttonsTop = lerp(110f + BOX_H + 30f, upButtonsTop, k)
-        if (boxTop > 80f) c.drawText("Send a problem report", PAD, 70f, UiKit.titlePaint(44f))
+        if (boxTop > 80f) c.drawText(Tr.t("Send a problem report"), PAD, 70f, UiKit.titlePaint(44f))
         drawBack(c)
         if (preview.visibility == View.VISIBLE) {
-            UiKit.bodyPaint(24f, Theme.textDim).let { c.drawText("Everything the report holds. B goes back.", PAD, 100f, it) }
+            UiKit.bodyPaint(24f, Theme.textDim).let { c.drawText(Tr.t("Everything the report holds. B goes back."), PAD, 100f, it) }
             drawBack(c)
             return
         }
@@ -356,7 +356,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
         var y = box.top + 46f
         val fits = ((box.height() - 20f) / LINE_H).toInt().coerceAtLeast(1)
         if (words.isEmpty()) {
-            for (line in SetupPanel.wrap(shown, body, box.width() - 40f).takeLast(fits)) { c.drawText(line, box.left + 20f, y, body); y += LINE_H }
+            for (line in SetupPanel.wrap(shown, body, box.width() - 40f).takeLast(fits)) { c.drawText(Tr.t(line), box.left + 20f, y, body); y += LINE_H }
             shownLines = emptyList()
         } else {
             // the lines around the caret, and the caret itself while typing (issue #11)
@@ -367,7 +367,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
             shownLines = lines.subList(from, minOf(lines.size, from + fits)); shownFrom = from
             lineX = box.left + 20f; lineTop = box.top + 46f - 32f
             for ((idx, line) in shownLines.withIndex()) {
-                c.drawText(line.second, lineX, y, body)
+                c.drawText(Tr.t(line.second), lineX, y, body)
                 if (k > 0f && from + idx == cl) {
                     val cx = lineX + body.measureText(line.second.substring(0, (caret - line.first).coerceIn(0, line.second.length)))
                     pCaret.color = Theme.gold
@@ -377,7 +377,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
             }
             if (k > 0f) UiKit.bodyPaint(18f, Theme.textDim).let { hint ->
                 hint.textAlign = Paint.Align.RIGHT
-                c.drawText("LB / RB move the cursor, or tap", box.right - 14f, box.bottom - 10f, hint)
+                c.drawText(Tr.t("LB / RB move the cursor, or tap"), box.right - 14f, box.bottom - 10f, hint)
             }
         }
         // Record and Send: above the keyboard while it is up (the user: "push up a bit above the keyboard")
@@ -396,7 +396,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
         top = rec.bottom + 46f
         // the small link
         val link = UiKit.bodyPaint(26f, Theme.gold).apply { isUnderlineText = true }
-        c.drawText("Show what's included", PAD, top, link)
+        c.drawText(Tr.t("Show what's included"), PAD, top, link)
         boxes[Model.Target.INCLUDED] = RectF(PAD - 8f, top - 34f, PAD + link.measureText("Show what's included") + 8f, top + 12f)
         // the line under it: what happened, or why the buttons wait
         val note = status.ifEmpty {
@@ -408,7 +408,7 @@ class ReportPage(c: Context) : FrameLayout(c) {
         }
         val small = UiKit.bodyPaint(24f, Theme.textDim)
         var ny = top + 54f
-        for (part in note.split('\n')) for (line in SetupPanel.wrap(part, small, w - PAD * 2)) { c.drawText(line, PAD, ny, small); ny += 34f }
+        for (part in note.split('\n')) for (line in SetupPanel.wrap(part, small, w - PAD * 2)) { c.drawText(Tr.t(line), PAD, ny, small); ny += 34f }
         boxes[focus]?.let { UiKit.focus(c, inset(it)) }
     }
 

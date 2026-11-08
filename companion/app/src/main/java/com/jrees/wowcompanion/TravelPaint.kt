@@ -108,7 +108,7 @@ object TravelPaint {
                 labelled.add(floatArrayOf(x, y))
                 pText.color = if (p.lit) 0xFFF2E6C8.toInt() else 0xFFA09A8E.toInt()
                 pText.setShadowLayer(3f, 0f, 0f, Color.BLACK)
-                c.drawText(p.name, x, y + R + 20f, pText)
+                c.drawText(Tr.t(p.name), x, y + R + 20f, pText)
             }
             out.add(p to floatArrayOf(x, y))
         }

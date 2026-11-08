@@ -394,15 +394,15 @@ class SocialView(context: Context) : View(context), BLeadsHome {
 
     private fun centred(c: Canvas, text: String, cx: Float, cy: Float, p: Paint) {
         p.textAlign = Paint.Align.CENTER
-        c.drawText(text, cx, cy - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(text), cx, cy - (p.ascent() + p.descent()) / 2f, p)
     }
 
     private fun head(c: Canvas, r: RectF, left: String, right: String?) {
         val pt = UiKit.titlePaint(38f)
-        c.drawText(left, 24f, r.top + 28f - (pt.ascent() + pt.descent()) / 2f, pt)
+        c.drawText(Tr.t(left), 24f, r.top + 28f - (pt.ascent() + pt.descent()) / 2f, pt)
         if (right != null) {
             val pc = UiKit.bodyPaint(23f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(right, r.right - 20f, r.top + 30f - (pc.ascent() + pc.descent()) / 2f, pc)
+            c.drawText(Tr.t(right), r.right - 20f, r.top + 30f - (pc.ascent() + pc.descent()) / 2f, pc)
         }
     }
 
@@ -448,7 +448,7 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         // own so that nothing overlaps (reported in AGENT_LOG)
         val online = model.rows(Tab.FRIENDS).count { it.online }
         val pc = UiKit.bodyPaint(25f, Theme.dim)
-        c.drawText("$online online", 24f, r.top + 32f - (pc.ascent() + pc.descent()) / 2f, pc)
+        c.drawText(Tr.t("$online online"), 24f, r.top + 32f - (pc.ascent() + pc.descent()) / 2f, pc)
         menuButton(c, r, Fk.IgnoreBtn, false) { ignoreOpen = true; chosen.remove(Tab.IGNORE); focus = Fk.IgnoreBtn; sendView(); invalidate() }
         // a favourite (the game's accountInfo.isFavorite) wears the game's own star RIGHT AFTER THE NAME, as the game's friends list
         // draws it (UI Art's kit: atlas friendslist-favorite -> mark_favourite; UiKit.playerLine nameMark). No picture yet = no star.
@@ -471,7 +471,7 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         }
         head(c, r, g, "${model.guildMembers} members   ${model.guildOnline} online")
         model.guildMotd?.let { motd ->
-            val sl = StaticLayout.Builder.obtain(motd, 0, motd.length, TextPaint(UiKit.bodyPaint(23f, Theme.motd)), (r.width() - 60f).toInt())
+            val sl = StaticLayout.Builder.obtain(Tr.t(motd), 0, Tr.t(motd).length, TextPaint(UiKit.bodyPaint(23f, Theme.motd)), (r.width() - 60f).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(2)
                 .setEllipsize(android.text.TextUtils.TruncateAt.END).build()
             c.save(); c.translate(24f, r.top + 54f); sl.draw(c); c.restore()
@@ -558,7 +558,7 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         raidDrop = drops
         dragging?.let { d -> drops.firstOrNull { it.second.contains(dragX, dragY) }?.let { UiKit.focus(c, it.second) }
             val p = UiKit.bodyPaint(26f, Theme.gold)
-            c.drawText(d, dragX + 20f, dragY - 20f, p) }
+            c.drawText(Tr.t(d), dragX + 20f, dragY - 20f, p) }
         // the class-only line (the game's class buttons with counts, then Pets): left out with no pets and nobody marked
         val marked = rows.any { it.mainTank || it.mainAssist }
         if (model.pets > 0 || marked) {
@@ -567,17 +567,17 @@ class SocialView(context: Context) : View(context), BLeadsHome {
             val p = UiKit.bodyPaint(22f, Theme.dim)
             for ((cls, n) in rows.groupingBy { it.cls ?: "" }.eachCount().filterKeys { it.isNotEmpty() }) {
                 UiKit.classIcon(cls)?.let { c.drawBitmap(it, null, RectF(x, cy - 15f, x + 30f, cy + 15f), Paint(Paint.FILTER_BITMAP_FLAG)); x += 36f }
-                c.drawText("$n", x, cy - (p.ascent() + p.descent()) / 2f, p); x += p.measureText("$n") + 22f
+                c.drawText(Tr.t("$n"), x, cy - (p.ascent() + p.descent()) / 2f, p); x += p.measureText("$n") + 22f
             }
-            if (model.pets > 0) c.drawText("Pets ${model.pets}", x, cy - (p.ascent() + p.descent()) / 2f, p)
+            if (model.pets > 0) c.drawText(Tr.t("Pets ${model.pets}"), x, cy - (p.ascent() + p.descent()) / 2f, p)
         }
         UiKit.divider(c, 0f, foot, right, foot)
         val r = chosenRow() ?: return
         r.cls?.let { cls -> UiKit.classIcon(cls)?.let { c.drawBitmap(it, null, RectF(24f, foot + 22f, 108f, foot + 106f), Paint(Paint.FILTER_BITMAP_FLAG)) } }
         val pn = UiKit.bodyPaint(32f, Theme.classColourOf(r.cls))
-        c.drawText(r.label, 124f, foot + 46f - (pn.ascent() + pn.descent()) / 2f, pn)
+        c.drawText(Tr.t(r.label), 124f, foot + 46f - (pn.ascent() + pn.descent()) / 2f, pn)
         val p2 = UiKit.bodyPaint(23f, Theme.dim)
-        c.drawText(listOfNotNull(levelClassNoRace(r), r.group?.let { "Group $it" }).joinToString("   "), 124f,
+        c.drawText(Tr.t(listOfNotNull(levelClassNoRace(r), r.group?.let { "Group $it" }).joinToString("   ")), 124f,
             foot + 86f - (p2.ascent() + p2.descent()) / 2f, p2)
         if (!r.me) {
             val more = RectF(right - 588f, foot + 10f, right - 338f, foot + 121f)
@@ -613,10 +613,10 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         r.cls?.let { cls -> UiKit.classIcon(cls)?.let { c.drawBitmap(it, null, RectF(box.left + 24f, box.top + 18f, box.left + 88f, box.top + 82f), Paint(Paint.FILTER_BITMAP_FLAG)) } }
         val pn = UiKit.bodyPaint(32f, nameColour(r))
         while (pn.textSize > 24f && pn.measureText(r.label) > box.right - 20f - (box.left + 104f)) pn.textSize -= 1f
-        c.drawText(android.text.TextUtils.ellipsize(r.label, TextPaint(pn), box.right - 20f - (box.left + 104f), android.text.TextUtils.TruncateAt.END).toString(),
+        c.drawText(Tr.t(android.text.TextUtils.ellipsize(r.label, TextPaint(pn), box.right - 20f - (box.left + 104f), android.text.TextUtils.TruncateAt.END).toString()),
             box.left + 104f, box.top + 38f - (pn.ascent() + pn.descent()) / 2f, pn)
         val p2 = UiKit.bodyPaint(23f, Theme.dim)
-        c.drawText(levelClassNoRace(r) ?: "", box.left + 104f, box.top + 72f - (p2.ascent() + p2.descent()) / 2f, p2)
+        c.drawText(Tr.t(levelClassNoRace(r) ?: ""), box.left + 104f, box.top + 72f - (p2.ascent() + p2.descent()) / 2f, p2)
         UiKit.divider(c, box.left + 20f, box.top + 95f, box.right - 20f, box.top + 95f)
         for ((i, act) in acts.withIndex()) {
             val row = RectF(inner.left, box.top + 102f + i * 112f, inner.right, box.top + 102f + (i + 1) * 112f)
@@ -644,7 +644,7 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         UiKit.cover(c, RectF(0f, 0f, w, h))
         val text = confirmText(act, name)
         val tp = TextPaint(UiKit.bodyPaint(42f, Color.WHITE))
-        val sl = StaticLayout.Builder.obtain(text, 0, text.length, tp, (1040f - 140f).toInt()).setAlignment(Layout.Alignment.ALIGN_CENTER)
+        val sl = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, tp, (1040f - 140f).toInt()).setAlignment(Layout.Alignment.ALIGN_CENTER)
             .setLineSpacing(14f, 1f).build()
         val boxH = sl.height + 40f + 111f + 2 * 50f + 36f
         val box = RectF(w / 2f - 520f, maxOf(30f, h / 2f - boxH / 2f), w / 2f + 520f, maxOf(30f, h / 2f - boxH / 2f) + boxH)

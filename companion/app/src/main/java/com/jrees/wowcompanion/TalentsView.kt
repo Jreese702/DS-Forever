@@ -221,11 +221,11 @@ class TalentsView(
         val p = UiKit.bodyPaint(34f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
         while (p.measureText(line) > w - 120f && p.textSize > 24f) p.textSize -= 1f
         UiKit.tex("talent_lock")?.let { c.drawBitmap(it, null, RectF(w / 2f - 27f, h / 2f - 120f, w / 2f + 27f, h / 2f - 42f), Paint(Paint.FILTER_BITMAP_FLAG)) }
-        c.drawText(line, w / 2f, h / 2f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(line), w / 2f, h / 2f - (p.ascent() + p.descent()) / 2f, p)
     }
 
     private fun text(c: Canvas, s: String, x: Float, y: Float, width: Float, p: Paint): Float {
-        val sl = StaticLayout.Builder.obtain(s, 0, s.length, TextPaint(p), width.toInt().coerceAtLeast(1))
+        val sl = StaticLayout.Builder.obtain(Tr.t(s), 0, Tr.t(s).length, TextPaint(p), width.toInt().coerceAtLeast(1))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         c.save(); c.translate(x, y); sl.draw(c); c.restore()
         return y + sl.height
@@ -238,12 +238,12 @@ class TalentsView(
         if (d == null || d.id == null || n == null) return
         Icons.get(n.icon)?.let { c.drawBitmap(it, null, RectF(x0, 178f, x0 + 80f, 258f), Paint(Paint.FILTER_BITMAP_FLAG)) }
         val pn = UiKit.bodyPaint(30f, Color.WHITE)
-        val name = TextUtils.ellipsize(n.name ?: "", pn, x1 - x0 - 100f, TextUtils.TruncateAt.END).toString()
-        c.drawText(name, x0 + 100f, 200f - (pn.ascent() + pn.descent()) / 2f, pn)
+        val name = TextUtils.ellipsize(Tr.t(n.name ?: ""), pn, x1 - x0 - 100f, TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(name), x0 + 100f, 200f - (pn.ascent() + pn.descent()) / 2f, pn)
         val notApplied = if (n.pending == '+') n.rank - (n.active ?: 0) else 0
         val pr = UiKit.bodyPaint(22f, if (notApplied > 0) Color.rgb(30, 255, 0) else Theme.gold)
         val rank = "Rank ${n.rank}/${n.max}" + if (notApplied > 0) "  ($notApplied not applied yet)" else ""
-        c.drawText(rank, x0 + 100f, 236f - (pr.ascent() + pr.descent()) / 2f, pr)
+        c.drawText(Tr.t(rank), x0 + 100f, 236f - (pr.ascent() + pr.descent()) / 2f, pr)
         // the texts are the selected talent's, from the addon's echo: shown once it is THIS talent's
         if (d.id == n.id) {
             var y = 288f
@@ -260,7 +260,7 @@ class TalentsView(
         UiKit.button(c, removeRect(), "Remove", glyph(6), press.state("remove", canRemove()))
         if (tree?.combat == true) {
             val p = UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("Not in combat", (x0 + x1) / 2f, 748f, p)
+            c.drawText(Tr.t("Not in combat"), (x0 + x1) / 2f, 748f, p)
         }
     }
 
@@ -292,24 +292,24 @@ class TalentsView(
         val r = applyBoxRect(lines)
         UiKit.dialog(c, r)
         val pt = UiKit.bodyPaint(36f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-        c.drawText("Apply these talent changes?", w / 2f, r.top + 100f, pt)
+        c.drawText(Tr.t("Apply these talent changes?"), w / 2f, r.top + 100f, pt)
         var y = r.top + 170f
         val pl = UiKit.bodyPaint(28f, Theme.text)
         val pv = UiKit.numberPaint(28f, Color.rgb(30, 255, 0)).apply { textAlign = Paint.Align.RIGHT }
         for (ch in shown) {
-            val name = TextUtils.ellipsize(ch.name, pl, r.width() - 340f - 160f, TextUtils.TruncateAt.END).toString()
-            c.drawText(name, r.left + 170f, y - (pl.ascent() + pl.descent()) / 2f, pl)
-            c.drawText("${ch.from}  >  ${ch.to}", r.right - 170f, y - (pv.ascent() + pv.descent()) / 2f, pv)
+            val name = TextUtils.ellipsize(Tr.t(ch.name), pl, r.width() - 340f - 160f, TextUtils.TruncateAt.END).toString()
+            c.drawText(Tr.t(name), r.left + 170f, y - (pl.ascent() + pl.descent()) / 2f, pl)
+            c.drawText(Tr.t("${ch.from}  >  ${ch.to}"), r.right - 170f, y - (pv.ascent() + pv.descent()) / 2f, pv)
             y += 52f
         }
         if (all.size > 6) {
-            c.drawText("and ${all.size - 6} more", r.left + 170f, y - (pl.ascent() + pl.descent()) / 2f, pl)
+            c.drawText(Tr.t("and ${all.size - 6} more"), r.left + 170f, y - (pl.ascent() + pl.descent()) / 2f, pl)
             y += 52f
         }
         val spent = all.sumOf { it.to - it.from }.coerceAtLeast(0)
         val left = t.pool?.have ?: 0
         val pd = UiKit.bodyPaint(24f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-        c.drawText("$spent ${if (spent == 1) "point" else "points"} spent, $left left unspent", w / 2f, y + 18f, pd)
+        c.drawText(Tr.t("$spent ${if (spent == 1) "point" else "points"} spent, $left left unspent"), w / 2f, y + 18f, pd)
         val (a, b) = boxButtons(r)
         UiKit.button(c, a, "Apply", glyph(8), press.state("boxA"))
         UiKit.button(c, b, "Cancel", glyph(7), press.state("boxB"))
@@ -322,10 +322,10 @@ class TalentsView(
         val r = undoBoxRect()
         UiKit.dialog(c, r)
         val pt = UiKit.bodyPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-        c.drawText("You will lose any pending changes if you continue.", w / 2f, r.top + 110f, pt)
+        c.drawText(Tr.t("You will lose any pending changes if you continue."), w / 2f, r.top + 110f, pt)
         val names = t.nodes.filter { it.pending != null }.mapNotNull { it.name }.joinToString(", ")
         val pd = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(TextUtils.ellipsize(names, pd, r.width() - 120f, TextUtils.TruncateAt.END).toString(), w / 2f, r.top + 168f, pd)
+        c.drawText(Tr.t(TextUtils.ellipsize(names, pd, r.width() - 120f, TextUtils.TruncateAt.END).toString()), w / 2f, r.top + 168f, pd)
         val (a, b) = boxButtons(r)
         UiKit.button(c, a, "Continue", glyph(8), press.state("boxA"))
         UiKit.button(c, b, "Cancel", glyph(7), press.state("boxB"))

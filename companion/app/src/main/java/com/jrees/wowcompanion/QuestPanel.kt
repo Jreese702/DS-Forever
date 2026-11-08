@@ -122,7 +122,7 @@ class QuestPanel(private val host: Host) {
     }
 
     private fun wrap(text: String, p: Paint, w: Float): android.text.StaticLayout =
-        android.text.StaticLayout.Builder.obtain(text, 0, text.length, android.text.TextPaint(p), w.toInt().coerceAtLeast(10)).setLineSpacing(0f, 1.05f).build()
+        android.text.StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, android.text.TextPaint(p), w.toInt().coerceAtLeast(10)).setLineSpacing(0f, 1.05f).build()
 
     fun draw(c: Canvas, x: Float, y0: Float, yMax: Float, maxW: Float) {
         hits.clear()
@@ -150,10 +150,10 @@ class QuestPanel(private val host: Host) {
         val meta = listOfNotNull(if (q.has("lv")) "Level ${q.optInt("lv")}" else null, q.optString("zone", "").ifEmpty { null },
             if (q.optInt("grp", 0) > 1) "Group ${q.optInt("grp")}" else null,
             if (host.tracked(id)) "Tracked" else "Not tracked").joinToString("  ·  ")
-        c.drawText(ellipsize(UiKit.bodyPaint(22f, cDim), meta, tw), 0f, y + 22f, UiKit.bodyPaint(22f, cDim)); y += 38f
+        c.drawText(Tr.t(ellipsize(UiKit.bodyPaint(22f, cDim), meta, tw)), 0f, y + 22f, UiKit.bodyPaint(22f, cDim)); y += 38f
         when {
-            q.optBoolean("failed") -> { c.drawText("Failed", 0f, y + 24f, UiKit.bodyPaint(25f, Color.rgb(230, 70, 50))); y += 38f }
-            q.optBoolean("ready") || q.optBoolean("done") -> { c.drawText("Ready to turn in", 0f, y + 24f, UiKit.bodyPaint(25f, Theme.ok)); y += 38f }
+            q.optBoolean("failed") -> { c.drawText(Tr.t("Failed"), 0f, y + 24f, UiKit.bodyPaint(25f, Color.rgb(230, 70, 50))); y += 38f }
+            q.optBoolean("ready") || q.optBoolean("done") -> { c.drawText(Tr.t("Ready to turn in"), 0f, y + 24f, UiKit.bodyPaint(25f, Theme.ok)); y += 38f }
         }
         q.optString("wp", "").takeIf { it.isNotEmpty() }?.let {
             val l = wrap("Next: $it", UiKit.bodyPaint(24f, Theme.text), tw); c.save(); c.translate(0f, y); l.draw(c); c.restore(); y += l.height + 10f
@@ -161,7 +161,7 @@ class QuestPanel(private val host: Host) {
         val objs = q.optJSONArray("obj")
         if (objs != null && objs.length() > 0) {
             y += 6f
-            c.drawText("Objectives", 0f, y + 26f, UiKit.bodyPaint(27f, cGold)); y += 42f
+            c.drawText(Tr.t("Objectives"), 0f, y + 26f, UiKit.bodyPaint(27f, cGold)); y += 42f
             for (i in 0 until objs.length()) {
                 val o = objs.optJSONObject(i) ?: continue
                 val fin = o.optBoolean("f")
@@ -178,7 +178,7 @@ class QuestPanel(private val host: Host) {
             val l = wrap(desc, UiKit.bodyPaint(23f, Color.rgb(48, 32, 16)), tw + 16f - edge * 2.4f)
             val box = RectF(-8f, y, tw + 8f, y + l.height + 44f + edge * 2.2f + 8f)
             val pin = UiKit.parchment(c, box, edge)
-            c.drawText("Description", pin.left, pin.top + 26f, UiKit.bodyPaint(26f, Color.rgb(64, 40, 16)))
+            c.drawText(Tr.t("Description"), pin.left, pin.top + 26f, UiKit.bodyPaint(26f, Color.rgb(64, 40, 16)))
             c.save(); c.translate(pin.left, pin.top + 44f); l.draw(c); c.restore()
             y = box.bottom + 12f
         }
@@ -197,7 +197,7 @@ class QuestPanel(private val host: Host) {
         val b3 = RectF(b2.right + gap, b1.top, b2.right + gap + bw, b1.bottom)
         if (armed) {
             val qp = UiKit.bodyPaint(25f, Theme.text)
-            c.drawText(ellipsize(qp, "Abandon \"$armedTitle\"?", tw), inner.left + pad, b1.top - 16f, qp)
+            c.drawText(Tr.t(ellipsize(qp, "Abandon \"$armedTitle\"?", tw)), inner.left + pad, b1.top - 16f, qp)
             UiKit.button(c, b1, "Cancel")
             UiKit.button(c, b2, "Abandon")
             hits.add(RectF(b1) to "cancel"); hits.add(RectF(b2) to "abandon!")

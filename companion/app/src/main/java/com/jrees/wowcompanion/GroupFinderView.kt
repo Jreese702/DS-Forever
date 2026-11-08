@@ -439,7 +439,7 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
     private val rule = Paint().apply { color = Color.rgb(74, 58, 28) }
 
     private fun text(c: Canvas, s: String, x: Float, cy: Float, p: Paint) {
-        c.drawText(s, x, cy - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(s), x, cy - (p.ascent() + p.descent()) / 2f, p)
     }
 
     private fun add(key: Fk, r: RectF, act: () -> Unit) {
@@ -668,7 +668,7 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
 
     private fun layoutOf(words: String, size: Float, width: Float, colour: Int = Theme.dim,
                          align: Layout.Alignment = Layout.Alignment.ALIGN_NORMAL): StaticLayout =
-        StaticLayout.Builder.obtain(words, 0, words.length, TextPaint(UiKit.bodyPaint(size, colour)), width.toInt())
+        StaticLayout.Builder.obtain(Tr.t(words), 0, Tr.t(words).length, TextPaint(UiKit.bodyPaint(size, colour)), width.toInt())
             .setAlignment(align).setLineSpacing(6f, 1f).build()
 
     private fun say(c: Canvas, r: RectF, words: String) {
@@ -685,7 +685,7 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
 
     private fun nothing(c: Canvas, d: RectF) {
         val p = UiKit.bodyPaint(25f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-        c.drawText("Nothing chosen", d.centerX(), d.top + 348f, p)
+        c.drawText(Tr.t("Nothing chosen"), d.centerX(), d.top + 348f, p)
     }
 
     // ---------------------------------------------------------------- the chosen entry (SPEC 5)
@@ -1127,7 +1127,7 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
 
     private fun sayCentred(c: Canvas, list: RectF, words: String) {
         val p = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(words, list.centerX(), list.top + 380f, p)
+        c.drawText(Tr.t(words), list.centerX(), list.top + 380f, p)
     }
 
     private fun whoLine2(p: WhoPlayer): String =

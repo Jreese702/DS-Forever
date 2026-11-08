@@ -555,7 +555,7 @@ class HomePauseView(
             // the Game Menu's line alone, where the game's red line stands (UiKit.pauseRadial's y), then gone
             if (!menuHint()) { if (hintAt != 0L) { hintAt = 0L; visibility = GONE }; return }
             UiKit.asBody(pHint)
-            c.drawText(hintText, width / 2f, HINT_Y, pHint)
+            c.drawText(Tr.t(hintText), width / 2f, HINT_Y, pHint)
             postInvalidateDelayed(250L)
             return
         }
@@ -576,12 +576,12 @@ class HomePauseView(
                     val box = RectF(width / 2f - bw / 2f, height - 24f - bh, width / 2f + bw / 2f, height - 24f)
                     UiKit.dialog(c, box)
                     val tp = UiKit.bodyPaint(34f, android.graphics.Color.WHITE).apply { textAlign = android.graphics.Paint.Align.CENTER }
-                    c.drawText(if (asking == "quit") "Exit the game?" else "Log out now?", box.centerX(), box.top + 78f, tp)
+                    c.drawText(Tr.t(if (asking == "quit") "Exit the game?" else "Log out now?"), box.centerX(), box.top + 78f, tp)
                     UiKit.hints(c, box.centerX() + 150f, box.bottom - 56f, UiKit.okGlyph() to "Yes", UiKit.backGlyph() to "No")
                     postInvalidateDelayed(250L)
                 } else {
                     val ask = m.askLine(SystemClock.uptimeMillis()) ?: line
-                    if (ask != null) { UiKit.asBody(pHint); c.drawText(ask, width / 2f, height - ASK_Y_UP, pHint); postInvalidateDelayed(250L) }
+                    if (ask != null) { UiKit.asBody(pHint); c.drawText(Tr.t(ask), width / 2f, height - ASK_Y_UP, pHint); postInvalidateDelayed(250L) }
                 }
             }
             return

@@ -256,7 +256,7 @@ class SpellbookView(
         UiKit.header(c, w, "Spellbook")
         if (SystemClock.uptimeMillis() < busyUntil) {
             val pb = UiKit.bodyPaint(24f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText("The controller is with another room. Touch still works.", w - 24f, 31f - (pb.ascent() + pb.descent()) / 2f, pb)
+            c.drawText(Tr.t("The controller is with another room. Touch still works."), w - 24f, 31f - (pb.ascent() + pb.descent()) / 2f, pb)
         }
         val b = book
         val tabs = b?.let { SpellsModel.tabs(it) } ?: emptyList()
@@ -282,7 +282,7 @@ class SpellbookView(
 
         if (b == null || tab == null) {
             val p = UiKit.inkPaint(28f).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("Open the game to fill the book", SPLIT / 2f, 420f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t("Open the game to fill the book"), SPLIT / 2f, 420f - (p.ascent() + p.descent()) / 2f, p)
             return
         }
 
@@ -316,10 +316,10 @@ class SpellbookView(
         val nameLeft = x0 + 158f
         val pn = UiKit.inkPaint(42f, heading = true)
         while (pn.textSize > 26f && pn.measureText(tab.name) > x1 - nameLeft) pn.textSize -= 1f
-        c.drawText(tab.name, nameLeft, top + 30f - pn.ascent() - 4f, pn)
+        c.drawText(Tr.t(tab.name), nameLeft, top + 30f - pn.ascent() - 4f, pn)
         val n = tab.entries.size
         val pDim = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
-        c.drawText(if (n == 1) "1 spell" else "$n spells", x0 + 160f, top + 30f + pn.textSize + 24f, pDim)
+        c.drawText(Tr.t(if (n == 1) "1 spell" else "$n spells"), x0 + 160f, top + 30f + pn.textSize + 24f, pDim)
 
         // the button line: the known spells on no button (the game's gold glow), or all on one
         val st = tab.entries.map { SpellsModel.status(b, it) }
@@ -330,8 +330,8 @@ class SpellbookView(
         val textY = cy - 2f - (pOn.ascent() + pOn.descent()) / 2f
         when {
             bindable.isEmpty() -> {}
-            off == 0 -> c.drawText("All on a button", x0 + 8f, textY, pOn.apply { color = Theme.parchmentInkDim })
-            else -> c.drawText(if (off == 1) "1 not on a button" else "$off not on a button", x0 + 8f, textY,
+            off == 0 -> c.drawText(Tr.t("All on a button"), x0 + 8f, textY, pOn.apply { color = Theme.parchmentInkDim })
+            else -> c.drawText(Tr.t(if (off == 1) "1 not on a button" else "$off not on a button"), x0 + 8f, textY,
                 pOn.apply { color = Theme.notOnBarInk })
         }
 
@@ -348,7 +348,7 @@ class SpellbookView(
             later.mapNotNull { it.levelLearned }.minOrNull()?.let { "The next at level $it" })
         val pf = UiKit.inkPaint(24f)
         for ((i, s) in lines.withIndex())
-            c.drawText(TextUtils.ellipsize(s, android.text.TextPaint(pf), x1 - x0 - 16f, TextUtils.TruncateAt.END).toString(),
+            c.drawText(Tr.t(TextUtils.ellipsize(s, android.text.TextPaint(pf), x1 - x0 - 16f, TextUtils.TruncateAt.END).toString()),
                 x0 + 8f, top + 228f + i * 36f - pf.ascent(), pf)
     }
 
@@ -371,7 +371,7 @@ class SpellbookView(
         while (pn.textSize > 30f && pn.measureText(e.name) > nameW) pn.textSize -= 1f
         var nameBottom: Float
         if (pn.measureText(e.name) <= nameW) {
-            c.drawText(e.name, nameLeft, top + 30f - pn.ascent() - 4f, pn)
+            c.drawText(Tr.t(e.name), nameLeft, top + 30f - pn.ascent() - 4f, pn)
             nameBottom = top + 30f + pn.textSize
         } else {
             val lay = StaticLayout.Builder.obtain(e.name, 0, e.name.length, android.text.TextPaint(pn), nameW.toInt())
@@ -381,7 +381,7 @@ class SpellbookView(
         }
         // under the name: the rank (a spell not known yet has one too), or "Passive"
         val sub = e.rank ?: if (e.passive) "Passive" else null
-        if (sub != null) c.drawText(sub, x0 + 160f, nameBottom + 24f, UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim })
+        if (sub != null) c.drawText(Tr.t(sub), x0 + 160f, nameBottom + 24f, UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim })
 
         // its button (or why there is none)
         // with a form's line under it the button line stands 12 px higher, so that both fit above the rule at top + 204
@@ -392,12 +392,12 @@ class SpellbookView(
         when {
             // a pet's spell: in place of the button line "Casts itself" while its auto-cast is on, nothing otherwise (UI Art, cf8b5db;
             // the game has no words for the state, only "Toggle Auto Cast", so these are the room's own)
-            e.pet -> if (SpellsModel.autoCast(e) == 2) c.drawText("Casts itself", x0 + 8f, textY, pOn)
+            e.pet -> if (SpellsModel.autoCast(e) == 2) c.drawText(Tr.t("Casts itself"), x0 + 8f, textY, pOn)
             // a passive stands on no bar; a flyout is not bound (not in the first build)
             e.passive || e.kind == SpellsModel.Kind.FLYOUT -> {}
-            st != SpellsModel.Status.KNOWN -> c.drawText(SpellsModel.sub(b, e) ?: "", x0 + 8f, textY, pOn)
+            st != SpellsModel.Status.KNOWN -> c.drawText(Tr.t(SpellsModel.sub(b, e) ?: ""), x0 + 8f, textY, pOn)
             e.pad.isNotEmpty() -> {
-                c.drawText("On", x0 + 8f, textY, pOn)
+                c.drawText(Tr.t("On"), x0 + 8f, textY, pOn)
                 val combo = SpellsModel.combo(e.pad.first(), style())
                 var x = x0 + 66f
                 val size = 56f
@@ -409,15 +409,15 @@ class SpellbookView(
                 val end = UiKit.padCombo(c, trigger, combo.button, x, cy, size, Theme.parchmentInk, shadow = false)
                 if (e.pad.size > 1) {
                     val pp = UiKit.numberPaint(26f, Theme.parchmentInkDim, shadow = false)
-                    c.drawText("+${e.pad.size - 1}", end + 10f, cy - (pp.ascent() + pp.descent()) / 2f, pp)
+                    c.drawText(Tr.t("+${e.pad.size - 1}"), end + 10f, cy - (pp.ascent() + pp.descent()) / 2f, pp)
                 }
                 // a form's bar: under the button line, 22 px, dim, "in Cat Form" (UI Art, 5445458)
                 e.pad.first().form?.let { f ->
                     val pf = UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }
-                    c.drawText("in $f", x0 + 66f, top + 199f, pf)
+                    c.drawText(Tr.t("in $f"), x0 + 66f, top + 199f, pf)
                 }
             }
-            e.bars.isEmpty() -> c.drawText("Not on a button", x0 + 8f, textY, pOn.apply { color = Theme.notOnBarInk })
+            e.bars.isEmpty() -> c.drawText(Tr.t("Not on a button"), x0 + 8f, textY, pOn.apply { color = Theme.notOnBarInk })
             else -> {}   // on a keyboard-only slot: on a bar, no controller button to show
         }
 
@@ -425,14 +425,14 @@ class SpellbookView(
         val facts = SpellsModel.facts(e)
         facts?.let {
             val pf = UiKit.inkPaint(23f).apply { color = Theme.parchmentInkDim }
-            c.drawText(it, x0 + 8f, top + 228f - pf.ascent(), pf)
+            c.drawText(Tr.t(it), x0 + 8f, top + 228f - pf.ascent(), pf)
         }
         // reagents and tools, as the game's tooltip writes them: one line each under the facts, dim ink, red ink when missing
         var needsH = 0f
         for (n in listOfNotNull(e.reagents, e.tools)) {
             val pn = UiKit.inkPaint(23f).apply { color = if (n.missing) Color.rgb(150, 30, 20) else Theme.parchmentInkDim }
             val y = top + (if (facts != null) 228f + 32f else 228f) + needsH
-            c.drawText(TextUtils.ellipsize(n.text, android.text.TextPaint(pn), x1 - x0 - 16f, TextUtils.TruncateAt.END).toString(),
+            c.drawText(Tr.t(TextUtils.ellipsize(n.text, android.text.TextPaint(pn), x1 - x0 - 16f, TextUtils.TruncateAt.END).toString()),
                 x0 + 8f, y - pn.ascent(), pn)
             needsH += 32f
         }
@@ -455,7 +455,7 @@ class SpellbookView(
             val k = ctl?.takeIf { it.on && !fingerSinceCtl && !it.talentsPage && !it.onTabs && it.mode == "book" && it.selected == idOf(e) }
             val pr = UiKit.inkPaint(26f).apply { textAlign = Paint.Align.CENTER }
             val words = "Rank ${SpellsModel.rankNo(e.rank) ?: (fam.size - at)} of ${fam.size}"
-            c.drawText(words, rx, ry - 2f - (pr.ascent() + pr.descent()) / 2f, pr)
+            c.drawText(Tr.t(words), rx, ry - 2f - (pr.ascent() + pr.descent()) / 2f, pr)
             // the controller's keys while its cursor stands on this spell: X by the lower arrow, Y by the higher one
             if (k != null) {
                 UiKit.pad(c, glyph(5), rx - 96f, ry, 36f)
@@ -473,7 +473,7 @@ class SpellbookView(
             if (b.combat) {
                 UiKit.button(c, bind, "Bind", glyph, UiKit.Button.DISABLED)
                 val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-                c.drawText("Not while in combat", bind.centerX(), bind.top - 22f, pw)
+                c.drawText(Tr.t("Not while in combat"), bind.centerX(), bind.top - 22f, pw)
             } else UiKit.button(c, bind, "Bind", glyph, if (bindDown || press.isDown("bind")) UiKit.Button.DOWN else UiKit.Button.UP)
         }
         // the controller's A works Bind right now (the addon's book page, its glow on a spell): its press pushes the button in at once
@@ -485,7 +485,7 @@ class SpellbookView(
         val descTop = top + (if (facts == null) 228f else 268f) + needsH + rankH
         val descBottom = (if (canBind) bind.top - 8f else h - 40f) - (if (canBind && b.combat) 40f else 0f)
         val pd = android.text.TextPaint(UiKit.inkPaint(24f))
-        val lay = StaticLayout.Builder.obtain(text, 0, text.length, pd, 388)
+        val lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, pd, 388)
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         descMax = maxOf(0f, lay.height - (descBottom - descTop))
         descScroll = descScroll.coerceIn(0f, descMax)

@@ -50,7 +50,7 @@ object GroupMembers {
         pDot.style = android.graphics.Paint.Style.FILL
         if (named) {
             pText.color = col; pText.setShadowLayer(3f, 0f, 0f, android.graphics.Color.BLACK)
-            c.drawText(if (m.dead) "${m.name} (dead)" else m.name, x, y - 17f, pText)
+            c.drawText(Tr.t(if (m.dead) "${m.name} (dead)" else m.name), x, y - 17f, pText)
         }
     }
 

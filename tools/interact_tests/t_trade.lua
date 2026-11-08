@@ -48,10 +48,19 @@ chk("the next item into slot 2", ok and TRADE.p[2] and TRADE.p[2].name == "Strin
 ok, why = ACT.tradein("0", "1", "2589")
 chk("a bag slot that is now empty is refused (that item moved)", not ok and why == "that item moved", why)
 
--- the "Will not be traded" slot: picked first, then the next item goes there
+-- i139: a soulbound item is not in the trade's bags; the seventh slot opens the list of soulbound items (worn first), which puts it there
+GAME.bags[3].bound = true
+local d7 = build()
+local inBags = false
+for _, bg in ipairs(d7.trade.bags) do if bg.id == 774 then inBags = true end end
+chk("the soulbound Malachite is not in the trade's bags", not inBags)
 ok = ACT.tradepick("7")
-ok = ACT.tradein("0", "3", "774")
-chk("tradepick 7 then tradein: Malachite in the seventh slot", ok and TRADE.p[7] and TRADE.p[7].name == "Malachite" and N.trd.dest == nil)
+d7 = build()
+local listed = nil
+for _, e in ipairs(d7.trade.enchant or {}) do if e.id == 774 then listed = e end end
+chk("tradepick 7: the soulbound list, Malachite in it (from the bags)", N.trd.pick7 and listed ~= nil and listed.src == "bag" and listed.slot ~= nil)
+ok = ACT.tradeench("bag", "0", "3", "774")
+chk("tradeench bag 0 3 774: Malachite in the seventh slot, the list closed", ok and TRADE.p[7] and TRADE.p[7].name == "Malachite" and not N.trd.pick7)
 
 -- an item back
 ok, why = ACT.tradeout("1")

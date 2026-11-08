@@ -743,12 +743,12 @@ class HomeRadialView(
         // the secure row is not built yet (Spells r2's nopad): the items show, and the wheel says why none can be used
         if (doc?.noPad == true && t >= UiKit.CR_OPEN_MS * 0.7f) {
             UiKit.asBody(pNote)
-            c.drawText("Using items from here comes with the next add-on update", width / 2f, 64f, pNote)
+            c.drawText(Tr.t("Using items from here comes with the next add-on update"), width / 2f, 64f, pNote)
         }
         // an EMPTY spell radial (a fresh character: nothing placed yet) says where it is filled, instead of looking broken (Track C)
         if (source == "sradial" && doc?.items.isNullOrEmpty() && !choosing && t >= UiKit.CR_OPEN_MS * 0.7f) {
             UiKit.asBody(pNote)
-            c.drawText("No spells yet: add them in Controller, Spell radial", width / 2f, 64f, pNote)
+            c.drawText(Tr.t("No spells yet: add them in Controller, Spell radial"), width / 2f, 64f, pNote)
         }
         return moving || closingFrom >= 0f || hubPressAt != 0L || aHeldAt != 0L || slot != null
     }

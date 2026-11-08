@@ -1377,7 +1377,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         c.drawColor(Color.rgb(16, 12, 9))
         if (!artReady || model.maps.isEmpty()) {
             val p = UiKit.bodyPaint(30f, Theme.text).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(artNote ?: "Opening the map", width / 2f, height / 2f, p)
+            c.drawText(Tr.t(artNote ?: "Opening the map"), width / 2f, height / 2f, p)
             return
         }
         if (canvas == 0) jumpTo(startMap())
@@ -1735,9 +1735,9 @@ class WorldMapRoomView(context: Context) : View(context) {
         val id = if (isZoneView()) (if (region == MapRoomKeys.Region.MAP) hoverCity ?: hoverNear else null) else cursor
         if (id == null) return
         val mid = (canvasR.left + min(canvasR.right, drawerLeft())) / 2f
-        c.drawText(model.name(id), mid, canvasR.top + 56f, UiKit.titlePaint(40f).apply { textAlign = Paint.Align.CENTER })
+        c.drawText(Tr.t(model.name(id)), mid, canvasR.top + 56f, UiKit.titlePaint(40f).apply { textAlign = Paint.Align.CENTER })
         model.levelsOf(id)?.takeIf { it[1] > 0 }?.let {
-            c.drawText("(${it[0]} - ${it[1]})", mid, canvasR.top + 88f, UiKit.bodyPaint(24f, Theme.text).apply { textAlign = Paint.Align.CENTER })
+            c.drawText(Tr.t("(${it[0]} - ${it[1]})"), mid, canvasR.top + 88f, UiKit.bodyPaint(24f, Theme.text).apply { textAlign = Paint.Align.CENTER })
         }
     }
 
@@ -1911,13 +1911,13 @@ class WorldMapRoomView(context: Context) : View(context) {
         // the game's quest-log panel (UI Art's kit: qlog_bg the book, qlog_divider under the title), else our window
         UiKit.tex("qlog_bg")?.let { c.drawBitmap(it, null, panelR, pBmp) } ?: UiKit.windowGround(c, panelR)
         val title = UiKit.titlePaint(34f).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(model.name(shown), panelR.centerX(), panelR.top + 46f, title)
+        c.drawText(Tr.t(model.name(shown)), panelR.centerX(), panelR.top + 46f, title)
         UiKit.tex("qlog_divider")?.let { dst.set(panelR.left + 24f, panelR.top + 56f, panelR.right - 24f, panelR.top + 72f); c.drawBitmap(it, null, dst, pBmp) }
             ?: UiKit.divider(c, panelR.left + 24f, panelR.top + 64f, panelR.right - 24f, panelR.top + 64f)
         rowHits.clear(); checkHits.clear(); visibleRowQuests.clear(); optAnchor = null
         val rows = listRows()
         val top = panelR.top + 84f; val bottom = panelR.bottom - 8f
-        if (rows.isEmpty()) { c.drawText("No quests", panelR.left + 24f, top + 24f, UiKit.bodyPaint(20f, Theme.text)); return }
+        if (rows.isEmpty()) { c.drawText(Tr.t("No quests"), panelR.left + 24f, top + 24f, UiKit.bodyPaint(20f, Theme.text)); return }
         val hs = rows.map { rowHeight(it) }
         // the cursor's row stays in view
         val total = hs.sum() + ROW_GAP * (hs.size - 1)
@@ -1972,7 +1972,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         val bar = UiKit.tex("list_heading")
         if (bar != null) threeSlice(c, bar, r, HEAD_CAP) else { pFill.color = Color.argb(200, 40, 30, 20); c.drawRect(r, pFill) }
         val tp = UiKit.bodyPaint(24f, Color.rgb(230, 222, 200)).apply { setShadowLayer(2f, 1f, 1f, Color.BLACK) }
-        c.drawText(ellipsize(tp, h.zone, r.width() - 90f), r.left + 20f, r.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+        c.drawText(Tr.t(ellipsize(tp, h.zone, r.width() - 90f)), r.left + 20f, r.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
         // the game's +/- at their own aspect (UI Art: list_minus is 26x8, not a square), centred where the plus's centre sits, at the
         // plus's scale
         UiKit.tex(if (h.open) "list_minus" else "list_plus")?.let { b ->
@@ -2032,11 +2032,11 @@ class WorldMapRoomView(context: Context) : View(context) {
         var oy = row.top + 12f + max(CHECK_PX, tl.height.toFloat()) + 18f
         val objP = UiKit.bodyPaint(20f, Theme.text)
         val doneP = UiKit.bodyPaint(20f, Color.rgb(120, 200, 110))
-        if (ready) c.drawText("Ready for turn-in", row.left + 60f, oy, doneP)
+        if (ready) c.drawText(Tr.t("Ready for turn-in"), row.left + 60f, oy, doneP)
         else q?.optJSONArray("obj")?.let { objs ->
             for (j in 0 until objs.length()) {
                 val o = objs.optJSONObject(j) ?: continue
-                c.drawText(ellipsize(objP, "- " + o.optString("t"), row.width() - 70f), row.left + 60f, oy, if (o.optBoolean("f")) doneP else objP)
+                c.drawText(Tr.t(ellipsize(objP, "- " + o.optString("t"), row.width() - 70f)), row.left + 60f, oy, if (o.optBoolean("f")) doneP else objP)
                 oy += 26f
             }
         }
@@ -2062,7 +2062,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             val tp = UiKit.numberPaint(24f, Theme.text)
             pFill.color = Color.argb(200, 8, 6, 4)
             c.drawRoundRect(16f, y0 + 10f, 32f + tp.measureText(t), y0 + 50f, 6f, 6f, pFill)
-            c.drawText(t, 24f, y0 + 38f, tp)
+            c.drawText(Tr.t(t), 24f, y0 + 38f, tp)
         }
         // THE GAME'S LEGEND (the user after b107: "make the legendjust like how forver does it"): its map footer's look (UI Art), centred
         // in the band, kept inside the room
@@ -2073,10 +2073,10 @@ class WorldMapRoomView(context: Context) : View(context) {
         val n = note ?: pinNote
         if (n != null && (note == null || System.currentTimeMillis() - noteAt < 4000L)) {
             val tp = UiKit.bodyPaint(22f, Theme.text)
-            val t = ellipsize(tp, n, canvasR.width() - 60f)
+            val t = ellipsize(tp, Tr.t(n), canvasR.width() - 60f)
             pFill.color = Color.argb(200, 8, 6, 4)
             c.drawRoundRect(canvasR.left + 16f, canvasR.bottom - 50f, canvasR.left + 36f + tp.measureText(t), canvasR.bottom - 14f, 6f, 6f, pFill)
-            c.drawText(t, canvasR.left + 26f, canvasR.bottom - 24f, tp)
+            c.drawText(Tr.t(t), canvasR.left + 26f, canvasR.bottom - 24f, tp)
         }
     }
 
@@ -2158,14 +2158,14 @@ class WorldMapRoomView(context: Context) : View(context) {
                     if (slash != null) {
                         dst.set(x, mid - LEG_SLASH_H / 2f - 2f, x + LEG_SLASH_W, mid + LEG_SLASH_H / 2f - 2f)
                         c.drawBitmap(slash, null, dst, pBmp)
-                    } else c.drawText("/", x + 4f, mid - (tp.ascent() + tp.descent()) / 2f, tp)
+                    } else c.drawText(Tr.t("/"), x + 4f, mid - (tp.ascent() + tp.descent()) / 2f, tp)
                     x += LEG_SLASH_W + 4f
                 }
                 UiKit.pad(c, g, x + LEG_ICON / 2f, mid, LEG_ICON)
                 x += LEG_ICON
             }
             x += LEG_TEXT_GAP
-            c.drawText(p.text, x, mid - (tp.ascent() + tp.descent()) / 2f, tp)
+            c.drawText(Tr.t(p.text), x, mid - (tp.ascent() + tp.descent()) / 2f, tp)
             x += tp.measureText(p.text) + LEG_GAP
         }
     }
@@ -2271,7 +2271,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         val inner = UiKit.dialog(c, r)
         val tp = TextPaint(UiKit.bodyPaint(30f, Theme.gold))
         val text = "Abandon \"$confirmTitle\"?"
-        val sl = StaticLayout.Builder.obtain(text, 0, text.length, tp, max(10, inner.width().toInt()))
+        val sl = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, tp, max(10, inner.width().toInt()))
             .setAlignment(Layout.Alignment.ALIGN_CENTER).setMaxLines(3).setEllipsize(TextUtils.TruncateAt.END).build()
         c.save(); c.translate(inner.left, inner.top + 6f); sl.draw(c); c.restore()
         val bw = (inner.width() - 24f) / 2f
@@ -2287,7 +2287,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         val h = 70f + filters.size * rowH + 20f
         menuBox.set(funnelR.left - 380f, funnelR.top, funnelR.left - 12f, funnelR.top + h)
         UiKit.menu(c, menuBox)
-        c.drawText("Show:", menuBox.left + 22f, menuBox.top + 44f, UiKit.titlePaint(28f))
+        c.drawText(Tr.t("Show:"), menuBox.left + 22f, menuBox.top + 44f, UiKit.titlePaint(28f))
         var y = menuBox.top + 62f
         for ((i, f) in filters.withIndex()) {
             if (i > 0 && f.ours && !filters[i - 1].ours) {
@@ -2296,7 +2296,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             val r = RectF(menuBox.left + 10f, y, menuBox.right - 10f, y + rowH)
             if (i == menuSel) UiKit.selectedRow(c, r)
             UiKit.check(c, r.left + 28f, r.centerY(), 34f, on(f.key))
-            c.drawText(f.label, r.left + 58f, r.centerY() + 9f, UiKit.bodyPaint(24f, Theme.text))
+            c.drawText(Tr.t(f.label), r.left + 58f, r.centerY() + 9f, UiKit.bodyPaint(24f, Theme.text))
             menuHits.add(r to i)
             y += rowH
         }

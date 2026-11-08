@@ -52,7 +52,7 @@ class SettingsTabBar(context: Context, private val onPick: (SettingsTabs.Tab) ->
     override fun onDraw(c: Canvas) {
         UiKit.asTitle(pTitle)
         c.drawColor(Theme.ink)
-        c.drawText("Settings", 28f, TITLE_BASE, pTitle)
+        c.drawText(Tr.t("Settings"), 28f, TITLE_BASE, pTitle)
         val all = SettingsTabs.visible
         val room = UiKit.TAB_END_W
         val left = 16f + room; val right = width - 16f - room

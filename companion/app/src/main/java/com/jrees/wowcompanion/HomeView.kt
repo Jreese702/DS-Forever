@@ -354,7 +354,7 @@ class HomeView(
             if (hint != null) {
                 c.drawColor(Color.argb(166, 0, 0, 0))
                 val p = UiKit.bodyPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-                c.drawText(hint, width / 2f, height / 2f, p)
+                c.drawText(Tr.t(hint), width / 2f, height / 2f, p)
                 return
             }
             // closing (classOpen false while it still shows): the slide-back draws the last radial (the chord is already let go)
@@ -1785,14 +1785,14 @@ class HomeView(
             val n = noteText
             if (n != null && System.currentTimeMillis() < noteUntil) {
                 val p = UiKit.bodyPaint(24f, Theme.warn)
-                c.drawText(TextUtils.ellipsize(n, p, w - 36f, TextUtils.TruncateAt.END).toString(), 18f, h - 16f, p)
+                c.drawText(Tr.t(TextUtils.ellipsize(n, p, w - 36f, TextUtils.TruncateAt.END).toString()), 18f, h - 16f, p)
                 postInvalidateDelayed(NOTE_MS)
             } else noteText = null
         }
 
         private fun line(c: Canvas, w: Float, h: Float, s: String) {
             val p = UiKit.bodyPaint(27f, Theme.dim)
-            c.drawText(s, 24f, h / 2f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(s), 24f, h / 2f - (p.ascent() + p.descent()) / 2f, p)
         }
 
         private fun list(c: Canvas, w: Float, h: Float, top: Float, right: Float, rowH: Float, gap: Float, inset: Float) {
@@ -1891,7 +1891,7 @@ class HomeView(
             val lines = (room / lineH).toInt()
             if (lines < 1) return null
             val s = format(l)
-            return StaticLayout.Builder.obtain(s, 0, s.length, tp, width)
+            return StaticLayout.Builder.obtain(Tr.t(s), 0, Tr.t(s).length, tp, width)
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false)
                 .setLineSpacing(0f, 1.12f)
                 .setMaxLines(lines).setEllipsize(TextUtils.TruncateAt.END).build()
@@ -1901,7 +1901,7 @@ class HomeView(
             val key = width * 100 + tp.textSize.toInt()
             cache[l]?.let { if (it.first == key) return it.second }
             val s = format(l)
-            val lay = StaticLayout.Builder.obtain(s, 0, s.length, tp, width)
+            val lay = StaticLayout.Builder.obtain(Tr.t(s), 0, Tr.t(s).length, tp, width)
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false)
                 .setLineSpacing(0f, 1.12f).build()           // spec: line spacing 1.12
             cache[l] = key to lay
@@ -2258,7 +2258,7 @@ class HomeView(
                 rects?.add(RectF(r))
                 if (k >= shown.size) {
                     val pm = UiKit.numberPaint(26f, Theme.text).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha }
-                    c.drawText("+$more", r.centerX(), r.centerY() - (pm.ascent() + pm.descent()) / 2f, pm)
+                    c.drawText(Tr.t("+$more"), r.centerX(), r.centerY() - (pm.ascent() + pm.descent()) / 2f, pm)
                     continue
                 }
                 val a = shown[k]
@@ -2272,12 +2272,12 @@ class HomeView(
                 if (frame != 0) { pEdge.color = frame; pEdge.alpha = alpha; c.drawRect(r, pEdge) }
                 if (a.stacks > 1) {
                     val ps = UiKit.numberPaint(22f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT; this.alpha = alpha }
-                    c.drawText(a.stacks.toString(), r.right - 3f, r.bottom - 4f, ps)
+                    c.drawText(Tr.t(a.stacks.toString()), r.right - 3f, r.bottom - 4f, ps)
                 }
                 // the time left under the icon as the game's buff frame writes it: yellow, white in the last minute
                 auras.leftAt(a, now)?.toInt()?.let { left ->
                     val pt = UiKit.numberPaint(19f, if (left < 60) Color.WHITE else Theme.gold).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha }
-                    c.drawText(shortTime(left), r.centerX(), r.bottom + timeH - 5f, pt)
+                    c.drawText(Tr.t(shortTime(left)), r.centerX(), r.bottom + timeH - 5f, pt)
                 }
                 if (greyed) c.restore()
             }
@@ -2339,10 +2339,10 @@ class HomeView(
             val shown = if (debuff) auras.shownDebuffs else auras.shownBuffs
             val greyed = auras.greyed
             val pt = UiKit.titlePaint(30f)
-            c.drawText(if (debuff) "Debuffs" else "Buffs", inner.left + 12f, inner.top + 36f, pt)
+            c.drawText(Tr.t(if (debuff) "Debuffs" else "Buffs"), inner.left + 12f, inner.top + 36f, pt)
             if (greyed) {
                 val pn = UiKit.bodyPaint(21f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-                c.drawText("Before the fight", inner.right - 12f, inner.top + 34f, pn)
+                c.drawText(Tr.t("Before the fight"), inner.right - 12f, inner.top + 34f, pn)
             }
             val selected = shown.firstOrNull { it.id == sel }
             if (selected == null) sel = null
@@ -2378,7 +2378,7 @@ class HomeView(
             val n = noteText
             if (n != null && System.currentTimeMillis() < noteUntil) {
                 val p = UiKit.bodyPaint(22f, Theme.warn)
-                c.drawText(TextUtils.ellipsize(n, p, inner.width() - 24f, TextUtils.TruncateAt.END).toString(),
+                c.drawText(Tr.t(TextUtils.ellipsize(n, p, inner.width() - 24f, TextUtils.TruncateAt.END).toString()),
                     inner.left + 12f, rowsBottom - 10f, p)
                 postInvalidateDelayed(NOTE_MS)
             } else noteText = null
@@ -2396,7 +2396,7 @@ class HomeView(
                 else -> ""
             }
             if (text.isNotEmpty()) {
-                val lay = StaticLayout.Builder.obtain(text, 0, text.length, tp, (textRight - r.left - 24f).toInt().coerceAtLeast(10))
+                val lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, tp, (textRight - r.left - 24f).toInt().coerceAtLeast(10))
                     .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(0f, 1.08f)
                     .setMaxLines(((r.height() - 20f) / 27f).toInt().coerceAtLeast(1)).setEllipsize(TextUtils.TruncateAt.END).build()
                 c.save(); c.translate(r.left + 12f, r.top + 12f); lay.draw(c); c.restore()

@@ -22,40 +22,99 @@ object Tr {
     private const val KEY = "lang"
     @Volatile private var choice: String = "auto"
 
-    /** read the saved choice once (the app's start) */
+    /** read the saved choice once (the app's start), and the whole app's words (assets companion/i18n/<lang>.json) */
     fun init(ctx: Context) {
         choice = runCatching { ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, "auto") }.getOrNull() ?: "auto"
+        for (l in listOf("es", "fr")) runCatching {
+            ctx.assets.open("companion/i18n/$l.json").use { load(l, it.readBytes().toString(Charsets.UTF_8)) }
+        }
     }
+
+    // THE REST OF THE APP (the user, 2026-11-07: "Translate the rest"): every room's words, from the assets' JSON
+    // ({"plain": {en: words}, "templates": {"en with %s": "words with %s"}}); the start screen's own words above win over them
+    private val filePlain = HashMap<String, HashMap<String, String>>()
+    private val fileTemplates = HashMap<String, List<Pair<Regex, String>>>()
+
+    /** [lang]'s words from a JSON text (the assets' file, or the test's) */
+    fun load(lang: String, json: String) {
+        val o = org.json.JSONObject(json)
+        val plain = HashMap<String, String>()
+        o.optJSONObject("plain")?.let { p -> for (k in p.keys()) plain[k] = p.getString(k) }
+        val tm = ArrayList<Pair<Regex, String>>()
+        o.optJSONObject("templates")?.let { t ->
+            for (k in t.keys()) tm += Regex(k.split("%s").joinToString("(.+?)") { Regex.escape(it) }) to t.getString(k)
+        }
+        synchronized(this) { filePlain[lang] = plain; fileTemplates[lang] = tm; cache.clear() }
+    }
+
+    /** what [t] answered, per language, by the words: drawing asks every frame, so a lookup makes nothing new (bounded) */
+    private val cache = HashMap<String, HashMap<String, String>>()
+    private const val CACHE_MAX = 6000
 
     fun setChoice(ctx: Context, code: String) {
         if (LANGS.none { it.code == code }) return
         choice = code
+        synchronized(this) { cache.clear() }
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, code).apply()
     }
 
     fun choice(): String = choice
 
-    /** the language in use: the choice, else the Thor's ("es" / "fr"), else English */
-    fun lang(): String = when (val c = choice) {
-        "auto" -> Locale.getDefault().language.lowercase(Locale.ROOT).takeIf { it == "es" || it == "fr" } ?: "en"
-        else -> c
+    /** the language in use: the choice, else the Thor's ("es" / "fr"), else English (remembered per device locale: asked per draw) */
+    @Volatile private var memoLocale: Locale? = null
+    @Volatile private var memoChoice: String? = null
+    @Volatile private var memoLang = "en"
+    fun lang(): String {
+        val loc = Locale.getDefault(); val c = choice
+        if (loc === memoLocale && c == memoChoice) return memoLang
+        val l = when (c) {
+            "auto" -> loc.language.lowercase(Locale.ROOT).takeIf { it == "es" || it == "fr" } ?: "en"
+            else -> c
+        }
+        memoLocale = loc; memoChoice = c; memoLang = l
+        return l
     }
 
     /** [s] in the language in use (the English when there is none) */
     fun t(s: String): String = t(s, lang())
 
+    /** any text a view draws (a CharSequence too) */
+    fun t(s: CharSequence): String = t(s.toString(), lang())
+
     fun t(s: String, lang: String): String {
-        if (lang == "en" || s.isEmpty()) return s
+        if (lang == "en" || s.length < 2) return s
+        synchronized(this) { cache[lang]?.get(s)?.let { return it } }
+        val r = look(s, lang)
+        synchronized(this) {
+            val m = cache.getOrPut(lang) { HashMap() }
+            if (m.size >= CACHE_MAX) m.clear()
+            m[s] = r
+        }
+        return r
+    }
+
+    private fun look(s: String, lang: String): String {
         val words = when (lang) { "es" -> ES; "fr" -> FR; else -> return s }
         words[s]?.let { return it }
+        filePlain[lang]?.get(s)?.let { return it }
         for ((re, keys) in compiled) {
             val m = re.matchEntire(s) ?: continue
             val out = keys[lang] ?: continue
-            var r = out
-            for (g in m.groupValues.drop(1)) r = r.replaceFirst("%s", g)
-            return r
+            return fill(out, m.groupValues.drop(1))
+        }
+        fileTemplates[lang]?.let { list ->
+            for ((re, out) in list) {
+                val m = re.matchEntire(s) ?: continue
+                return fill(out, m.groupValues.drop(1))
+            }
         }
         return s
+    }
+
+    private fun fill(out: String, values: List<String>): String {
+        var r = out
+        for (g in values) r = r.replaceFirst("%s", g)        // (Kotlin: a literal replace)
+        return r
     }
 
     // ---------------------------------------------------------------- the words
@@ -114,6 +173,10 @@ object Tr {
         "Kept on this device only, encrypted." to "Solo en este dispositivo, cifrada.", "Save and log in" to "Guardar e iniciar sesión",
         "Cancel" to "Cancelar", "Region" to "Región", "Korea" to "Corea", "Taiwan" to "Taiwán",
         "The login could not be saved on this device" to "No se pudo guardar la cuenta en este dispositivo",
+        // the trade window (i139)
+        "Choose an item to enchant" to "Elige un objeto para encantar", "Equipped" to "Equipado", "In your bags" to "En tus bolsas",
+        "No soulbound items" to "No hay objetos ligados", "Trade" to "Comerciar", "Accepted" to "Aceptado", "Will not be traded" to "No se comerciará",
+        "Backpack" to "Mochila", "You" to "Tú",
         // Settings > System > Language
         "Language" to "Idioma", "The language of DS Forever's screens" to "El idioma de las pantallas de DS Forever", "Automatic" to "Automático",
     )
@@ -170,6 +233,9 @@ object Tr {
         "Kept on this device only, encrypted." to "Conservé uniquement sur cet appareil, chiffré.", "Save and log in" to "Enregistrer et se connecter",
         "Cancel" to "Annuler", "Region" to "Région", "Korea" to "Corée", "Taiwan" to "Taïwan",
         "The login could not be saved on this device" to "Le compte n'a pas pu être enregistré sur cet appareil",
+        "Choose an item to enchant" to "Choisissez un objet à enchanter", "Equipped" to "Équipé", "In your bags" to "Dans vos sacs",
+        "No soulbound items" to "Aucun objet lié", "Trade" to "Échanger", "Accepted" to "Accepté", "Will not be traded" to "Ne sera pas échangé",
+        "Backpack" to "Sac à dos", "You" to "Vous",
         "Language" to "Langue", "The language of DS Forever's screens" to "La langue des écrans de DS Forever", "Automatic" to "Automatique",
     )
 

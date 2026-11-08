@@ -476,7 +476,7 @@ class HomeSettingsSection(context: Context) : View(context) {
         // THE PAGE'S ROW LOOK (the user's signed-off picture, 2026-10-06; Map's emulator check: this section had no row boxes and
         // bigger buttons): a raised row, its label and sub-line on the left, its choices as one compact pair on the right. A row is
         // ROW tall (48 dp) and each choice's touch area spans the whole row, though the button is drawn the page's compact size
-        c?.drawText("Home", 28f, 48f, pSection)
+        c?.drawText(Tr.t("Home"), 28f, 48f, pSection)
         var y = 60f
         y = row(c, y, "Controller on Home", listOf("Out of combat. In combat the diamonds always take over."),
             listOf("Thin row", "Diamonds"), HomeRest.values().indexOf(HomeSettings.rest),
@@ -543,8 +543,8 @@ class HomeSettingsSection(context: Context) : View(context) {
                 enabled = acts != null, textSize = SEG_TEXT)
             acts?.getOrNull(k)?.let { boxes.add(hit to it) }
         }
-        c?.drawText(label, box.left + 22f, box.top + 41f, pLabel)
-        for ((i, line) in subs.withIndex()) c?.drawText(fit(pSub, line, left - 20f - (box.left + 22f)), box.left + 22f, box.top + 75f + i * SUB_H, pSub)
+        c?.drawText(Tr.t(label), box.left + 22f, box.top + 41f, pLabel)
+        for ((i, line) in subs.withIndex()) c?.drawText(Tr.t(fit(pSub, line, left - 20f - (box.left + 22f))), box.left + 22f, box.top + 75f + i * SUB_H, pSub)
         return box.bottom
     }
 

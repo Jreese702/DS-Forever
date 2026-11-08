@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d24"         -- bump on every change
+local DV = "d25"         -- bump on every change
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -734,9 +734,11 @@ local function petAim()
             pcall(function()
                 local b = CreateFrame("Button", e.name, UIParent, "SecureActionButtonTemplate")
                 b:SetAttribute("type", "click")
+                b:RegisterForClicks("AnyDown", "AnyUp")         -- d25: the charter's A too (a binding click)
             end)
         end
         local b = _G[e.name]
+        if b then pcall(b.RegisterForClicks, b, "AnyDown", "AnyUp") end
         if b and type(t) == "table" then pcall(function() b:SetAttribute("clickbutton", t) end) end
         local c = D.pCell and D.pCell[k]
         if c and type(t) == "table" then pcall(function() c:SetAttribute("clickbutton", t) end) end
@@ -751,9 +753,13 @@ local function tradeAim()
             pcall(function()
                 local b = CreateFrame("Button", e.name, UIParent, "SecureActionButtonTemplate")
                 b:SetAttribute("type", "click")
+                -- d25 (the user on test16: "the x button didn't work to accept and b didn't close"): a binding click fires a secure
+                -- button only when it is registered for the press too (Map.lua: "a binding click fires it once per press")
+                b:RegisterForClicks("AnyDown", "AnyUp")
             end)
         end
         local b = _G[e.name]
+        if b then pcall(b.RegisterForClicks, b, "AnyDown", "AnyUp") end
         if b and type(t) == "table" then pcall(function() b:SetAttribute("clickbutton", t) end) end
         if b and k == 1 and not D.tHooked then
             D.tHooked = true

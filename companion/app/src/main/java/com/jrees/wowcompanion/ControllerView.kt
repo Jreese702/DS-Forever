@@ -287,7 +287,7 @@ class ControllerView(
             val pb = UiKit.bodyPaint(24f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
             val room = w - 24f - 300f                                 // right of the "Controller" title
             while (pb.textSize > 17f && pb.measureText(it) > room) pb.textSize -= 1f
-            c.drawText(it, w - 24f, 31f - (pb.ascent() + pb.descent()) / 2f, pb)
+            c.drawText(Tr.t(it), w - 24f, 31f - (pb.ascent() + pb.descent()) / 2f, pb)
         }
         // THE TABS (p9), the game's tab look, LB / RB in the chosen tab's gaps
         val cur = PadMapModel.tabOf(tab())
@@ -298,7 +298,7 @@ class ControllerView(
             UiKit.tab(c, r, "", i + 1 == cur, cursor = k != null && k.focus == "tabs" && k.tcur == i + 1)
             val p = UiKit.bodyPaint(28f, if (i + 1 == cur) android.graphics.Color.WHITE else Theme.gold).apply { textAlign = Paint.Align.CENTER }
             while (p.textSize > 20f && p.measureText(TAB_NAMES[i]) > r.width() - 24f) p.textSize -= 1f
-            c.drawText(TAB_NAMES[i], r.centerX(), r.centerY() + 8f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(TAB_NAMES[i]), r.centerX(), r.centerY() + 8f - (p.ascent() + p.descent()) / 2f, p)
         }
         // the In combat tab carries the game's gold crossed swords (UI Art's sheet): the fight set at a glance, where the narrower four-tab
         // row leaves it room beside the word
@@ -333,7 +333,7 @@ class ControllerView(
             val p = UiKit.bodyPaint(26f, if (t.col != null) Theme.text else Theme.dim)
             UiKit.check(c, r.right - 42f, r.centerY(), 58f, t.on == true, enabled = t.col != null)
             while (p.textSize > 18f && 20f + p.measureText(t.label) + 84f > r.width()) p.textSize -= 1f
-            c.drawText(t.label, r.left + 20f, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(t.label), r.left + 20f, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
         }
         if (k != null && k.focus == "switches") sw.indices.firstOrNull { it == k.sw - 1 }?.let { UiKit.focus(c, swRect(it, sw.size), onPaper = true) }
     }
@@ -350,7 +350,7 @@ class ControllerView(
         val line = if (on) "On: the plain D-pad opens these and Start the pause wheel, in fights too."
                    else "Off: the plain D-pad and Start are the game's own (WoW Defaults)."
         val pl = TextPaint(UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim })
-        val lineLay = StaticLayout.Builder.obtain(line, 0, line.length, pl, (SPLIT - 64f).toInt())
+        val lineLay = StaticLayout.Builder.obtain(Tr.t(line), 0, Tr.t(line).length, pl, (SPLIT - 64f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(0f, 1f)
             .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).build()
         c.save(); c.translate(40f, 300f + pl.ascent()); lineLay.draw(c); c.restore()
@@ -361,8 +361,8 @@ class ControllerView(
             val art = artOf(d)
             UiKit.spell(c, art, r.left, r.top, r.width(), if (on) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL)
             if (d.wheel) UiKit.miniWheel(c, r.centerX(), r.centerY(), r.width() * 0.4f)
-            else if (art == null) c.drawText(d.word.take(1), r.centerX(), r.centerY() + 10f, pw)
-            c.drawText(d.word, r.centerX(), r.bottom + 58f, pw)
+            else if (art == null) c.drawText(Tr.t(d.word.take(1)), r.centerX(), r.centerY() + 10f, pw)
+            c.drawText(Tr.t(d.word), r.centerX(), r.bottom + 58f, pw)
         }
         if (k == null || k.focus == "dpad") UiKit.slotFocus(c, dsSquare(sel))
         val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
@@ -373,7 +373,7 @@ class ControllerView(
             val said = "$n ${if (n == 1) "thing" else "things"} an older DS build left here"
             val pt = TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim })
             // the line clear of the Home bar's frame (the button's width less its side next to it)
-            val sl = StaticLayout.Builder.obtain(said, 0, said.length, pt, (r.width() - TEXT_INSET).toInt())
+            val sl = StaticLayout.Builder.obtain(Tr.t(said), 0, Tr.t(said).length, pt, (r.width() - TEXT_INSET).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setLineSpacing(0f, 1f).setMaxLines(2)
                 .setEllipsize(TextUtils.TruncateAt.END).build()
             c.save(); c.translate(r.left + TEXT_INSET, r.top - 8f - sl.height); sl.draw(c); c.restore()
@@ -386,7 +386,7 @@ class ControllerView(
             val cnt = clean?.shared?.names?.size ?: 0
             val said = "$cnt shared DS ${if (cnt == 1) "macro" else "macros"} no character uses"
             val pt = TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim })
-            val sl = StaticLayout.Builder.obtain(said, 0, said.length, pt, (r.width() - TEXT_INSET).toInt())
+            val sl = StaticLayout.Builder.obtain(Tr.t(said), 0, Tr.t(said).length, pt, (r.width() - TEXT_INSET).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setLineSpacing(0f, 1f).setMaxLines(2)
                 .setEllipsize(TextUtils.TruncateAt.END).build()
             c.save(); c.translate(r.left, r.top - 8f - sl.height); sl.draw(c); c.restore()
@@ -396,11 +396,11 @@ class ControllerView(
         if (sharedOk() && k != null && k.focus == "shared") {
             val sh = clean!!.shared
             val pn = UiKit.inkPaint(40f, heading = true)
-            c.drawText("Shared macros", x0 + 8f, top + 30f - pn.ascent() - 4f, pn)
+            c.drawText(Tr.t("Shared macros"), x0 + 8f, top + 30f - pn.ascent() - 4f, pn)
             val text = "${sh.names.joinToString(", ")}: an older DS Forever build made ${if (sh.names.size == 1) "it" else "them"} in your General " +
                 "Macros, shared by all your characters. No checked character has one on a button now. Delete removes only these; a box " +
                 "names them first."
-            val lay = StaticLayout.Builder.obtain(text, 0, text.length, TextPaint(UiKit.inkPaint(24f)), (x1 - x0 - 16f).toInt())
+            val lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, TextPaint(UiKit.inkPaint(24f)), (x1 - x0 - 16f).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
             c.save(); c.translate(x0 + 8f, top + 100f); lay.draw(c); c.restore()
             return
@@ -408,10 +408,10 @@ class ControllerView(
         if (n > 0 && k != null && k.focus == "cleanup") {
             // the right page: what the clean-up is (the box names every button and macro before the yes)
             val pn = UiKit.inkPaint(40f, heading = true)
-            c.drawText("Clean up", x0 + 8f, top + 30f - pn.ascent() - 4f, pn)
+            c.drawText(Tr.t("Clean up"), x0 + 8f, top + 30f - pn.ascent() - 4f, pn)
             val text = "An older DS Forever build put macros on ${who()}'s buttons. Clean up puts your spells back, keeps a DS command as one " +
                 "without a macro, and deletes only DS Forever's own macros. A box names everything first."
-            val lay = StaticLayout.Builder.obtain(text, 0, text.length, TextPaint(UiKit.inkPaint(24f)), (x1 - x0 - 16f).toInt())
+            val lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, TextPaint(UiKit.inkPaint(24f)), (x1 - x0 - 16f).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
             c.save(); c.translate(x0 + 8f, top + 100f); lay.draw(c); c.restore()
             return
@@ -421,11 +421,11 @@ class ControllerView(
         UiKit.spell(c, artOf(d), x0 + 36f, top + 16f, 96f, if (on) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL)
         if (d.wheel) UiKit.miniWheel(c, x0 + 36f + 48f, top + 16f + 48f, 96f * 0.4f)
         val pn = UiKit.inkPaint(40f, heading = true)
-        c.drawText(d.word, x0 + 158f, top + 30f - pn.ascent() - 4f, pn)
-        c.drawText("D-pad " + arrayOf("Left", "Up", "Right", "Down")[sel - 1], x0 + 160f, top + 120f, pi)
+        c.drawText(Tr.t(d.word), x0 + 158f, top + 30f - pn.ascent() - 4f, pn)
+        c.drawText(Tr.t("D-pad " + arrayOf("Left", "Up", "Right", "Down")[sel - 1]), x0 + 160f, top + 120f, pi)
         val text = d.what + if (!on) " The toolbar is off now." else ""
         val pd = TextPaint(UiKit.inkPaint(24f))
-        val lay = StaticLayout.Builder.obtain(text, 0, text.length, pd, (x1 - x0 - 16f).toInt())
+        val lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, pd, (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         c.save(); c.translate(x0 + 8f, top + 170f); lay.draw(c); c.restore()
         if (sel == 2) {
@@ -436,14 +436,14 @@ class ControllerView(
             val pickA = HomeSettings.radialPickA
             val ph = UiKit.inkPaint(26f, heading = true)
             val note = "The pause menu and the spell wheel have their own pairs in Settings > Controller."
-            val nl = StaticLayout.Builder.obtain(note, 0, note.length, TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }),
+            val nl = StaticLayout.Builder.obtain(Tr.t(note), 0, Tr.t(note).length, TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }),
                 (x1 - x0 - 16f).toInt()).setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(2f, 1f).setMaxLines(2).build()
             c.save(); c.translate(x0 + 8f, h - 392f - nl.height); nl.draw(c); c.restore()
-            c.drawText("Item wheel (D-pad Up)", x0 + 8f, h - 352f, ph)
-            c.drawText("Wheels: open", x0 + 8f, h - 312f, pi)
+            c.drawText(Tr.t("Item wheel (D-pad Up)"), x0 + 8f, h - 352f, ph)
+            c.drawText(Tr.t("Wheels: open"), x0 + 8f, h - 312f, pi)
             UiKit.choice(c, openRect(0, w, h), "Tap", tap)
             UiKit.choice(c, openRect(1, w, h), "Hold", !tap)
-            c.drawText("Wheels: pick", x0 + 8f, h - 153f, pi)
+            c.drawText(Tr.t("Wheels: pick"), x0 + 8f, h - 153f, pi)
             UiKit.choice(c, pickRect(0, w, h), "Press ${Glyphs.name("a")}", pickA)                 // UI Art: a lone "A" reads as a glyph
             UiKit.choice(c, pickRect(1, w, h), "Release", !pickA)
             if (k != null && k.focus == "dpad") {
@@ -457,7 +457,7 @@ class ControllerView(
     private fun inkHint(c: Canvas, right: Float, cy: Float, glyph: String, word: String) {
         val p = UiKit.inkPaint(24f)
         val x = right - p.measureText(word)
-        c.drawText(word, x, cy - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(word), x, cy - (p.ascent() + p.descent()) / 2f, p)
         UiKit.pad(c, glyph, x - 30f, cy, 40f)
     }
 
@@ -628,7 +628,7 @@ class ControllerView(
         val inner = UiKit.dialog(c, r)
         val pt = UiKit.bodyPaint(34f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
         val shared = boxKind() == "cleanshared"
-        c.drawText(if (shared) "Delete the shared DS macros?" else "Clean up ${who()}?", w / 2f, inner.top + 40f, pt)
+        c.drawText(Tr.t(if (shared) "Delete the shared DS macros?" else "Clean up ${who()}?"), w / 2f, inner.top + 40f, pt)
         val yes = cleanYesRect(w, r)
         val textTop = inner.top + 76f; val textBottom = yes.top - 24f
         val text = if (shared) sharedText(clean) else cleanText(clean)
@@ -636,7 +636,7 @@ class ControllerView(
         var lay: StaticLayout
         while (true) {
             // smaller to fit, down to 24 px (UI Art: every name readable), never past the box
-            lay = StaticLayout.Builder.obtain(text, 0, text.length, TextPaint(UiKit.bodyPaint(size, Theme.text)), (inner.width() - 40f).toInt())
+            lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, TextPaint(UiKit.bodyPaint(size, Theme.text)), (inner.width() - 40f).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
             if (lay.height <= textBottom - textTop || size <= 24f) break
             size -= 1f

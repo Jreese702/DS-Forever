@@ -125,7 +125,7 @@ class QuestsView(
         if (s == null) {
             pMark.textSize = size * 0.9f
             pMark.alpha = alpha
-            c.drawText(if (idx == 19) "?" else "!", cx, cy - (pMark.ascent() + pMark.descent()) / 2f, pMark)
+            c.drawText(Tr.t(if (idx == 19) "?" else "!"), cx, cy - (pMark.ascent() + pMark.descent()) / 2f, pMark)
             return
         }
         val cell = s.height
@@ -344,10 +344,10 @@ class QuestsView(
     }
 
     private fun fit(p: TextPaint, s: String, w: Float): String =
-        TextUtils.ellipsize(s, p, max(w, 10f), TextUtils.TruncateAt.END).toString()
+        TextUtils.ellipsize(Tr.t(s), p, max(w, 10f), TextUtils.TruncateAt.END).toString()
 
     private fun layout(s: String, p: TextPaint, w: Int): StaticLayout =
-        StaticLayout.Builder.obtain(s, 0, s.length, p, max(w, 10))
+        StaticLayout.Builder.obtain(Tr.t(s), 0, Tr.t(s).length, p, max(w, 10))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(3f, 1f).build()
 
     // ---------------------------------------------------------------- touch
@@ -463,7 +463,7 @@ class QuestsView(
         val box = RectF(right - w, bottom - h, right, bottom)
         val inner = UiKit.menu(c, box, solid = true)
         val np = TextPaint(UiKit.bodyPaint(26f, Color.WHITE))
-        c.drawText(fit(np, q.optString("title"), inner.width() - 32f), inner.left + 16f, inner.top + 34f, np)
+        c.drawText(Tr.t(fit(np, q.optString("title"), inner.width() - 32f)), inner.left + 16f, inner.top + 34f, np)
         for ((i, item) in items.withIndex()) {
             val r = RectF(inner.left, inner.top + 56f + i * 96f, inner.right, inner.top + 56f + i * 96f + 92f)
             UiKit.pressed(c, r, item.enabled && pressed == "menu$i") {
@@ -766,7 +766,7 @@ class QuestsView(
         }
         status?.let { (s, col) ->
             pHead.color = col
-            c.drawText(s, w - 20f - pHead.measureText(s), 42f, pHead)
+            c.drawText(Tr.t(s), w - 20f - pHead.measureText(s), 42f, pHead)
             pHead.color = Theme.dim
         }
 
@@ -774,13 +774,13 @@ class QuestsView(
         splitX = floor(w * 0.57f)
         if (d == null) {
             pRowSub.color = Theme.dim
-            c.drawText("Waiting for quests. The WowCompanionQuests addon starts on the next /reload.",
+            c.drawText(Tr.t("Waiting for quests. The WowCompanionQuests addon starts on the next /reload."),
                 20f, HEADER + 48f, pRowSub)
             return
         }
         if (quests.isEmpty()) {
             pRowSub.color = Theme.dim
-            c.drawText("Your quest log is empty.", 20f, HEADER + 48f, pRowSub)
+            c.drawText(Tr.t("Your quest log is empty."), 20f, HEADER + 48f, pRowSub)
             return
         }
 
@@ -804,7 +804,7 @@ class QuestsView(
             if (z != zone) {
                 zone = z
                 if (z.isNotEmpty()) {
-                    c.drawText(z, x0 + 22f, y + 30f, pZone)
+                    c.drawText(Tr.t(z), x0 + 22f, y + 30f, pZone)
                     y += ZONE_H
                 }
             }
@@ -853,7 +853,7 @@ class QuestsView(
         var right = inset.right - 14f
         if (dl.isNotEmpty()) {
             val dw = pDist.measureText(dl)
-            c.drawText(dl, right - dw, inset.top + 38f, pDist)
+            c.drawText(Tr.t(dl), right - dw, inset.top + 38f, pDist)
             right -= dw + 8f
             if (rel != null) { arrow(c, right - 10f, inset.top + 31f, rel, Theme.gold); right -= 28f }
         }
@@ -865,12 +865,12 @@ class QuestsView(
         // test27 (the user: "the Level number in front of the quests text is confusing, trim that from the quests"): no "[level]";
         // its colour (diffColour) keeps the difficulty
         pRow.color = col
-        c.drawText(fit(pRow, q.optString("title", "Quest ${q.optInt("id")}"), right - tx - 8f),
+        c.drawText(Tr.t(fit(pRow, q.optString("title", "Quest ${q.optInt("id")}"), right - tx - 8f)),
             tx, inset.top + 38f, pRow)
 
         val (sub, subCol) = summary(q)
         pRowSub.color = subCol
-        c.drawText(fit(pRowSub, sub, inset.right - 14f - tx), tx, inset.top + 70f, pRowSub)
+        c.drawText(Tr.t(fit(pRowSub, sub, inset.right - 14f - tx)), tx, inset.top + 70f, pRowSub)
 
         // progress hairline
         progress(q)?.let { f ->
@@ -910,7 +910,7 @@ class QuestsView(
             add(if (tracked(q)) "Tracked" else "Not tracked")
             if (q.optBoolean("focus")) add("Focused")
         }.joinToString("  ·  ")
-        c.drawText(fit(pMeta, meta, tw.toFloat()), 0f, y + 20f, pMeta); y += 34f
+        c.drawText(Tr.t(fit(pMeta, meta, tw.toFloat())), 0f, y + 20f, pMeta); y += 34f
 
         val (st, stCol) = when {
             q.optBoolean("failed") -> "Failed" to RED
@@ -918,7 +918,7 @@ class QuestsView(
             else -> null to 0
         }
         if (st != null) {
-            pObj.color = stCol; c.drawText(st, 0f, y + 24f, pObj); pObj.color = Theme.text
+            pObj.color = stCol; c.drawText(Tr.t(st), 0f, y + 24f, pObj); pObj.color = Theme.text
             y += 38f
         }
 
@@ -938,11 +938,11 @@ class QuestsView(
             rel?.let { arrow(c, 11f, y + 16f, it, Theme.textDim, outline = true); tx = 32f }
             pDist.color = Theme.textDim
             val label = "Turn in: "
-            c.drawText(label, tx, y + 24f, pDist); tx += pDist.measureText(label)
+            c.drawText(Tr.t(label), tx, y + 24f, pDist); tx += pDist.measureText(label)
             val name = who.removePrefix(label)
-            pDist.color = Theme.text; c.drawText(name, tx, y + 24f, pDist); tx += pDist.measureText(name)
+            pDist.color = Theme.text; c.drawText(Tr.t(name), tx, y + 24f, pDist); tx += pDist.measureText(name)
             pDist.color = Theme.textDim
-            tail?.let { c.drawText(fit(pDist, "  ·  $it", tw - tx), tx, y + 24f, pDist) }
+            tail?.let { c.drawText(Tr.t(fit(pDist, "  ·  $it", tw - tx)), tx, y + 24f, pDist) }
             y += 38f
         }
 
@@ -951,7 +951,7 @@ class QuestsView(
         if (dl.isNotEmpty()) {
             if (rel != null) arrow(c, 11f, y + 16f, rel, Theme.gold)
             pDist.color = Theme.text
-            c.drawText(if (rel != null) dl else "$dl (not on this map)", if (rel != null) 32f else 0f, y + 24f, pDist)
+            c.drawText(Tr.t(if (rel != null) dl else "$dl (not on this map)"), if (rel != null) 32f else 0f, y + 24f, pDist)
             pDist.color = Theme.textDim
             y += 38f
         }
@@ -966,7 +966,7 @@ class QuestsView(
         val objs = q.optJSONArray("obj")
         if (objs != null && objs.length() > 0) {
             y += 6f
-            c.drawText("Objectives", 0f, y + 24f, pSection); y += 40f
+            c.drawText(Tr.t("Objectives"), 0f, y + 24f, pSection); y += 40f
             for (i in 0 until objs.length()) {
                 val o = objs.optJSONObject(i) ?: continue
                 val fin = o.optBoolean("f")
@@ -994,7 +994,7 @@ class QuestsView(
                         qdbShown = true
                         var sx = 34f
                         d?.second?.let { arrow(c, sx + 9f, y + 4f, it, Theme.textDim, outline = true); sx += 26f }
-                        c.drawText(words, sx, y + 11f, pMeta)
+                        c.drawText(Tr.t(words), sx, y + 11f, pMeta)
                         y += 26f
                     }
                 }
@@ -1002,7 +1002,7 @@ class QuestsView(
             pObj.color = Theme.text
         }
         if (qdbShown) {
-            c.drawText("From QuestieDB", 0f, y + 16f, pMeta)
+            c.drawText(Tr.t("From QuestieDB"), 0f, y + 16f, pMeta)
             y += 30f
         }
 
@@ -1013,7 +1013,7 @@ class QuestsView(
             val dl2 = layout(desc, pInk, (tw + 16f - edge * 2.4f).toInt())
             val box = RectF(-8f, y, tw + 8f, y + dl2.height + 44f + edge * 2.2f + 8f)
             val inner = UiKit.parchment(c, box, edge)
-            c.drawText("Description", inner.left, inner.top + 26f, pInkHead)
+            c.drawText(Tr.t("Description"), inner.left, inner.top + 26f, pInkHead)
             c.save(); c.translate(inner.left, inner.top + 44f); dl2.draw(c); c.restore()
             y = box.bottom + 12f
         }
@@ -1037,7 +1037,7 @@ class QuestsView(
             pFill.color = Theme.ink; c.drawRect(x0, textBottom, x1, actTop, pFill)
             // the question in the button type, the reason in red 20 px (UI Art's v5)
             val p = if (above.second) pBtn.also { it.color = Theme.text } else pRowSub.also { it.color = Color.rgb(255, 60, 40) }
-            c.drawText(fit(p, above.first, x1 - x0 - pad * 2), x0 + pad, actTop - 10f, p)
+            c.drawText(Tr.t(fit(p, above.first, x1 - x0 - pad * 2)), x0 + pad, actTop - 10f, p)
         }
         pFill.color = Theme.panel; c.drawRect(x0, actTop, x1, y1, pFill)
         pFill.color = Theme.bronzeDim; c.drawRect(x0, actTop, x1, actTop + 1f, pFill)

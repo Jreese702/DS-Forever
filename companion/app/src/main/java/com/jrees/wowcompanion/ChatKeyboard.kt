@@ -160,7 +160,7 @@ class ChatKeyboard(c: Context, swap: Boolean = true, signIn: Boolean = false) : 
         rim.color = Theme.gold
         c.drawRoundRect(bub, h * 0.14f, h * 0.14f, rim)
         val p = UiKit.bodyPaint(h * 0.52f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(popLabel, bub.centerX(), bub.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(popLabel), bub.centerX(), bub.centerY() - (p.ascent() + p.descent()) / 2f, p)
         if (!popHeld) postInvalidateDelayed(popUpAt - now)
     }
     private val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }

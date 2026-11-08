@@ -350,7 +350,7 @@ object UiKit {
         val w = p.measureText(label)
         if (w > x1 - x0 && w > 0f) p.textSize = maxOf(textSize * 0.6f, textSize * (x1 - x0) / w)
         val nudge = if (state == Button.DOWN) r.height() * 0.03f else 0f
-        c.drawText(label, (x0 + x1) / 2f + nudge, r.centerY() + nudge - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), (x0 + x1) / 2f + nudge, r.centerY() + nudge - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /**
@@ -434,8 +434,8 @@ object UiKit {
             pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Theme.bronzeDim; c.drawRect(r, pFlat)
         }
         val p = bodyPaint(r.height() * 0.5f, colour).apply { textAlign = Paint.Align.CENTER }
-        val shown = TextUtils.ellipsize(zone, p, r.width() - 40f, TextUtils.TruncateAt.END).toString()
-        c.drawText(shown, r.centerX(), r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        val shown = TextUtils.ellipsize(Tr.t(zone), p, r.width() - 40f, TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(shown), r.centerX(), r.centerY() - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /**
@@ -451,7 +451,7 @@ object UiKit {
         if (t != null) c.drawBitmap(t, null, plate, pBmp)
         else { pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(20, 18, 14); c.drawRect(plate, pFlat) }
         val pt = numberPaint(26f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(time, cx, plate.centerY() - (pt.ascent() + pt.descent()) / 2f, pt)
+        c.drawText(Tr.t(time), cx, plate.centerY() - (pt.ascent() + pt.descent()) / 2f, pt)
         // the battery: a bronze case with its nub, the charge inside, the percentage beside it
         val by = plate.bottom + 8f
         val pp = numberPaint(20f, Theme.text)
@@ -475,7 +475,7 @@ object UiKit {
             }
             pFlat.color = Color.WHITE; c.drawPath(bolt, pFlat)
         }
-        c.drawText(label, case.right + 10f, case.centerY() - (pp.ascent() + pp.descent()) / 2f, pp)
+        c.drawText(Tr.t(label), case.right + 10f, case.centerY() - (pp.ascent() + pp.descent()) / 2f, pp)
         return RectF(minOf(plate.left, bx), top, maxOf(plate.right, bx + total), by + bh)
     }
 
@@ -515,7 +515,7 @@ object UiKit {
         pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Color.argb((200 * alpha / 255f).toInt(), 140, 30, 20)
         c.drawRoundRect(plate, 10f, 10f, pFlat); pFlat.style = Paint.Style.FILL
         tex("combat_swords")?.let { pBmp.alpha = alpha; c.drawBitmap(it, null, RectF(plate.left + 10f, plate.centerY() - 14f, plate.left + 40f, plate.centerY() + 14f), pBmp); pBmp.alpha = 255 }
-        c.drawText(label, plate.left + 46f, plate.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), plate.left + 46f, plate.centerY() - (p.ascent() + p.descent()) / 2f, p)
         return plate
     }
 
@@ -617,7 +617,7 @@ object UiKit {
         pBmp.alpha = 255
         if (count > 0) {
             val pn = numberPaint(r.height() * 0.36f, Color.argb(maxOf(alpha, 200), 255, 255, 255)).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(count.toString(), r.right - 5f, r.bottom - 6f, pn)
+            c.drawText(Tr.t(count.toString()), r.right - 5f, r.bottom - 6f, pn)
         }
     }
 
@@ -656,10 +656,10 @@ object UiKit {
             else -> "$timeLeft s"
         }
         val tw = if (left.isEmpty()) 0f else pt.measureText(left) + 20f
-        if (left.isNotEmpty()) c.drawText(left, r.right - 16f, r.centerY() - (pt.ascent() + pt.descent()) / 2f, pt)
+        if (left.isNotEmpty()) c.drawText(Tr.t(left), r.right - 16f, r.centerY() - (pt.ascent() + pt.descent()) / 2f, pt)
         val pn = bodyPaint(28f, if (debuff) lighter(debuffColour(type)) else if (cursor) Theme.gold else Theme.text)
-        val shown = TextUtils.ellipsize(name, pn, r.right - 16f - tw - tx, TextUtils.TruncateAt.END).toString()
-        c.drawText(shown, tx, r.centerY() - (pn.ascent() + pn.descent()) / 2f, pn)
+        val shown = TextUtils.ellipsize(Tr.t(name), pn, r.right - 16f - tw - tx, TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(shown), tx, r.centerY() - (pn.ascent() + pn.descent()) / 2f, pn)
     }
 
     /**
@@ -723,9 +723,9 @@ object UiKit {
         pFlat.color = Theme.bronzeDim
         c.drawRect(0f, height - 1.5f, width, height, pFlat)
         val pt = titlePaint(height * 0.8f)
-        c.drawText(title, 24f, height * 0.8f, pt)
+        c.drawText(Tr.t(title), 24f, height * 0.8f, pt)
         if (note != null)
-            c.drawText(note, 24f + pt.measureText(title) + 22f, height * 0.74f, bodyPaint(height * 0.4f, Theme.dim))
+            c.drawText(Tr.t(note), 24f + pt.measureText(title) + 22f, height * 0.74f, bodyPaint(height * 0.4f, Theme.dim))
     }
 
     /** the hairline between two panes or two sections */
@@ -819,7 +819,7 @@ object UiKit {
         // [close] false (the user, 2026-09-30: "re add the goodbye button and remove the x for those ... the decline button is enough
         // the x button can be removed there as well"): no X and no corner B; the title centres between the ring and the frame's end
         val p = bodyPaint(32f, titleColour).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(title, (r.left + 170f + r.right - (if (close) 120f else 40f)) / 2f, band - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(title), (r.left + 170f + r.right - (if (close) 120f else 40f)) / 2f, band - (p.ascent() + p.descent()) / 2f, p)
         if (close) closeX(c, r.right - 70f, band + 2f, 92f, closeDown, closeB)
     }
 
@@ -904,8 +904,8 @@ object UiKit {
         val p = bodyPaint(28f, if (active) Color.WHITE else Theme.gold).apply { textAlign = Paint.Align.CENTER }
         val ty = r.centerY() + (if (onTop) 8f else -6f) - (p.ascent() + p.descent()) / 2f
         val tx = r.centerX() - (if (count > 0) 14f else 0f)
-        c.drawText(label, tx, ty, p)
-        if (count > 0) c.drawText(count.toString(), tx + p.measureText(label) / 2f + 12f, ty, numberPaint(27f, Theme.dim))
+        c.drawText(Tr.t(label), tx, ty, p)
+        if (count > 0) c.drawText(Tr.t(count.toString()), tx + p.measureText(label) / 2f + 12f, ty, numberPaint(27f, Theme.dim))
     }
 
     /**
@@ -942,14 +942,14 @@ object UiKit {
         val room = r.right - 22f - tx
         val p = bodyPaint(27f, when { !available -> Theme.dim; unusable -> Theme.unusable; else -> colour })
         if (price >= 0) {
-            val shown = TextUtils.ellipsize(name, p, room, TextUtils.TruncateAt.END).toString()
-            c.drawText(shown, tx, r.top + 24f - p.ascent() * 0.78f, p)
+            val shown = TextUtils.ellipsize(Tr.t(name), p, room, TextUtils.TruncateAt.END).toString()
+            c.drawText(Tr.t(shown), tx, r.top + 24f - p.ascent() * 0.78f, p)
             money(c, price, tx, r.bottom - 38f, 27f,
                 when { !available -> Theme.dim; affordable -> Theme.text; else -> Theme.unusable })
         } else if (p.measureText(name) <= room) {
-            c.drawText(name, tx, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(name), tx, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
         } else {
-            val l = StaticLayout.Builder.obtain(name, 0, name.length, p, room.toInt())
+            val l = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, p, room.toInt())
                 .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(0f, 0.95f).build()
             c.save(); c.translate(tx, r.centerY() - l.height / 2f); l.draw(c); c.restore()
         }
@@ -963,7 +963,7 @@ object UiKit {
             square(c, "minus", lessX, cy, QTY_SQUARE, if (canLess) Button.UP else Button.DISABLED, lessGlyph)
             square(c, "plus", moreX, cy, QTY_SQUARE, if (canMore) Button.UP else Button.DISABLED, moreGlyph, glyphRight = true)
             val pn = numberPaint(30f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(qty.toString(), (lessX + moreX) / 2f, cy - (pn.ascent() + pn.descent()) / 2f, pn)
+            c.drawText(Tr.t(qty.toString()), (lessX + moreX) / 2f, cy - (pn.ascent() + pn.descent()) / 2f, pn)
         }
     }
 
@@ -1024,12 +1024,12 @@ object UiKit {
             c.drawRoundRect(r, 8f, 8f, pFlat)
         }
         val p = bodyPaint(28f, Theme.gold, shadow = false)
-        c.drawText(label, r.left + 26f, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), r.left + 26f, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
         val sign = tex(if (collapsed) "recipe_head_expand" else "recipe_head_collapse")
         val sh = r.height() * 0.62f; val sw = sh * 22f / 16f          // the sign half again as big as the game's: it must read here
         val sr = RectF(r.right - 24f - sw, r.centerY() - sh / 2f, r.right - 24f, r.centerY() + sh / 2f)
         if (sign != null) c.drawBitmap(sign, null, sr, pBmp)
-        else c.drawText(if (collapsed) "+" else "-", sr.centerX(), r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        else c.drawText(Tr.t(if (collapsed) "+" else "-"), sr.centerX(), r.centerY() - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /** one requirement on a trainer's row, as the game writes it: [before] [value] [after] ("Level " "12"; "Mining (" "75" ")"),
@@ -1067,21 +1067,21 @@ object UiKit {
         val rk = if (rank.isNullOrEmpty()) "" else "($rank)"
         val rp = bodyPaint(22f, if (unavailable) Theme.dim else Theme.gold)
         val rkW = if (rk.isEmpty()) 0f else rp.measureText(rk) + 10f
-        val shown = TextUtils.ellipsize(name, p, nameRoom - rkW, TextUtils.TruncateAt.END).toString()
-        c.drawText(shown, tx, base, p)
-        if (rk.isNotEmpty()) c.drawText(rk, tx + p.measureText(shown) + 10f, base, rp)
+        val shown = TextUtils.ellipsize(Tr.t(name), p, nameRoom - rkW, TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(shown), tx, base, p)
+        if (rk.isNotEmpty()) c.drawText(Tr.t(rk), tx + p.measureText(shown) + 10f, base, rp)
         // the requirement line
         val lp = bodyPaint(23f, if (unavailable) Theme.dim else Theme.text)
         val ly = r.bottom - 38f - (lp.ascent() + lp.descent()) / 2f
-        if (known) { lp.color = Theme.dim; c.drawText("Already known", tx, ly, lp); return }
+        if (known) { lp.color = Theme.dim; c.drawText(Tr.t("Already known"), tx, ly, lp); return }
         if (needs.isEmpty()) return
         val right = r.right - 18f
         var x = tx
         fun put(t: String, colour: Int) {
             if (x >= right || t.isEmpty()) return
             lp.color = colour
-            val fit = TextUtils.ellipsize(t, lp, right - x, TextUtils.TruncateAt.END).toString()
-            c.drawText(fit, x, ly, lp); x += lp.measureText(fit)
+            val fit = TextUtils.ellipsize(Tr.t(t), lp, right - x, TextUtils.TruncateAt.END).toString()
+            c.drawText(Tr.t(fit), x, ly, lp); x += lp.measureText(fit)
         }
         val word = if (unavailable) Theme.dim else Theme.text
         put("Requires ", word)
@@ -1128,7 +1128,7 @@ object UiKit {
         if (ring != null) c.drawBitmap(ring, null, RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f), pBmp)
         else { pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = size * 0.08f; pFlat.color = Theme.gold; c.drawCircle(cx, cy, size * 0.42f, pFlat) }
         val p = numberPaint(size * 0.46f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(level.toString(), cx, cy - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(level.toString()), cx, cy - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /**
@@ -1183,14 +1183,14 @@ object UiKit {
         if (icon != null) c.drawBitmap(icon, null, ir, if (read) pGrey else pBmp)
         if (count > 1) {
             val p = numberPaint(s * 0.34f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(count.toString(), ir.right - 5f, ir.bottom - 6f, p)
+            c.drawText(Tr.t(count.toString()), ir.right - 5f, ir.bottom - 6f, p)
         }
         if (cod) {
             // over the icon's top, as the game's: the count keeps its corner
             pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(200, 0, 0, 0)
             c.drawRect(ir.left, ir.top, ir.right, ir.top + s * 0.30f, pFlat)
             val p = bodyPaint(s * 0.21f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("C.O.D.", ir.centerX(), ir.top + s * 0.15f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t("C.O.D."), ir.centerX(), ir.top + s * 0.15f - (p.ascent() + p.descent()) / 2f, p)
         }
         if (opened) tex("focus_gold")?.let { c.drawBitmap(it, null, RectF(ir.left - 4f, ir.top - 4f, ir.right + 4f, ir.bottom + 4f), pGlow) }
         val tx = r.left + s + 18f
@@ -1201,11 +1201,11 @@ object UiKit {
         val top = r.top + 24f
         val np = bodyPaint(27f, if (read) Color.rgb(191, 191, 191) else Theme.gold)
         val base = top - np.ascent() * 0.78f
-        c.drawText(dl, r.right - 18f, base, dp)
+        c.drawText(Tr.t(dl), r.right - 18f, base, dp)
         val room = r.right - 18f - dp.measureText(dl) - 16f - tx
-        c.drawText(TextUtils.ellipsize(sender, np, room, TextUtils.TruncateAt.END).toString(), tx, base, np)
+        c.drawText(Tr.t(TextUtils.ellipsize(sender, np, room, TextUtils.TruncateAt.END).toString()), tx, base, np)
         val sp = bodyPaint(24f, if (read) Color.rgb(191, 191, 191) else Color.WHITE)
-        c.drawText(TextUtils.ellipsize(subject, sp, r.right - 18f - tx, TextUtils.TruncateAt.END).toString(), tx,
+        c.drawText(Tr.t(TextUtils.ellipsize(subject, sp, r.right - 18f - tx, TextUtils.TruncateAt.END).toString()), tx,
             r.bottom - 38f - (sp.ascent() + sp.descent()) / 2f, sp)
     }
 
@@ -1238,13 +1238,13 @@ object UiKit {
         c.drawRect(ir, pFlat)
         if (count > 1) {
             val p = numberPaint(ir.height() * 0.34f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(count.toString(), ir.right - 4f, ir.bottom - 5f, p)
+            c.drawText(Tr.t(count.toString()), ir.right - 4f, ir.bottom - 5f, p)
         }
         if (cod) {
             pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(200, 120, 0, 0)
             c.drawRect(ir.left, ir.top, ir.right, ir.top + ir.height() * 0.32f, pFlat)
             val p = bodyPaint(ir.height() * 0.22f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("COD", ir.centerX(), ir.top + ir.height() * 0.16f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t("COD"), ir.centerX(), ir.top + ir.height() * 0.16f - (p.ascent() + p.descent()) / 2f, p)
         }
         if (opened) tex("focus_gold")?.let { c.drawBitmap(it, null, RectF(ir.left - 5f, ir.top - 5f, ir.right + 5f, ir.bottom + 5f), pGlow) }
         val tx = r.left + cellW + 12f
@@ -1254,11 +1254,11 @@ object UiKit {
         val dp = bodyPaint(r.height() * 0.24f, if (daysLeft >= 1f) Color.rgb(32, 255, 32) else Color.rgb(255, 32, 32)).apply { textAlign = Paint.Align.RIGHT }
         val np = bodyPaint(r.height() * 0.30f, if (read) Color.rgb(191, 191, 191) else Theme.gold)
         val base = r.top + r.height() * 0.40f
-        c.drawText(dl, r.right - 10f, base, dp)
+        c.drawText(Tr.t(dl), r.right - 10f, base, dp)
         val room = r.right - 10f - dp.measureText(dl) - 14f - tx
-        c.drawText(TextUtils.ellipsize(sender, np, room, TextUtils.TruncateAt.END).toString(), tx, base, np)
+        c.drawText(Tr.t(TextUtils.ellipsize(sender, np, room, TextUtils.TruncateAt.END).toString()), tx, base, np)
         val sp = bodyPaint(r.height() * 0.26f, if (read) Color.rgb(191, 191, 191) else Color.WHITE)
-        c.drawText(TextUtils.ellipsize(subject, sp, r.right - 10f - tx, TextUtils.TruncateAt.END).toString(), tx, r.top + r.height() * 0.80f, sp)
+        c.drawText(Tr.t(TextUtils.ellipsize(subject, sp, r.right - 10f - tx, TextUtils.TruncateAt.END).toString()), tx, r.top + r.height() * 0.80f, sp)
     }
 
     /** the inbox's parchment (the game's UI-MailFrameBG is a darker sheet than the quest parchment the kit holds: it is toned down to
@@ -1323,7 +1323,7 @@ object UiKit {
         val ty = r.centerY() - (p.ascent() + p.descent()) / 2f
         if (level >= 2) {
             tex("ah_nav3_line")?.let { c.drawBitmap(it, null, RectF(r.left + 22f, r.centerY() - 11f, r.left + 32f, r.centerY() + 11f), pBmp) }
-            c.drawText(TextUtils.ellipsize(label, p, r.width() - 54f, TextUtils.TruncateAt.END).toString(), r.left + 44f, ty, p)
+            c.drawText(Tr.t(TextUtils.ellipsize(label, p, r.width() - 54f, TextUtils.TruncateAt.END).toString()), r.left + 44f, ty, p)
             return
         }
         val b = tex(if (level == 0) "ah_nav" else "ah_nav2")
@@ -1331,7 +1331,7 @@ object UiKit {
         if (b != null) slice3(c, b, if (level == 0) 4 else 18, if (level == 0) 268 else 262, 0, 42, 22, r)
         else { pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(34, 30, 26); c.drawRoundRect(r, 6f, 6f, pFlat) }
         if (selected) tex(if (level == 0) "ah_nav_select" else "ah_nav2_select")?.let { slice3(c, it, 0, it.width, 0, it.height, 22, r) }
-        c.drawText(TextUtils.ellipsize(label, p, r.width() - 40f, TextUtils.TruncateAt.END).toString(), r.left + 22f, ty, p)
+        c.drawText(Tr.t(TextUtils.ellipsize(label, p, r.width() - 40f, TextUtils.TruncateAt.END).toString()), r.left + 22f, ty, p)
     }
 
     /** a panel's ground: the game's picture for it ("ah_bg_categories", "ah_bg_index", "ah_bg_commodities", "ah_bg_market",
@@ -1347,7 +1347,7 @@ object UiKit {
         val p = bodyPaint(22f, Theme.gold)
         for ((w, x) in cols) {
             p.textAlign = if (x < 0f) Paint.Align.RIGHT else Paint.Align.LEFT
-            c.drawText(w, if (x < 0f) -x else x, cy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(w), if (x < 0f) -x else x, cy - (p.ascent() + p.descent()) / 2f, p)
         }
         pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(160, 96, 80, 50)
         c.drawRect(left, cy + 20f, right, cy + 22f, pFlat)
@@ -1370,7 +1370,7 @@ object UiKit {
         val s = r.height() - 40f
         slot(c, icon, r.left + 24f, r.top + 20f, s, count = count)
         val p = bodyPaint(32f, colour)
-        c.drawText(TextUtils.ellipsize(name, p, r.width() - s - 70f, TextUtils.TruncateAt.END).toString(), r.left + s + 52f,
+        c.drawText(Tr.t(TextUtils.ellipsize(name, p, r.width() - s - 70f, TextUtils.TruncateAt.END).toString()), r.left + s + 52f,
             r.centerY() - (p.ascent() + p.descent()) / 2f, p)
     }
 
@@ -1469,7 +1469,7 @@ object UiKit {
         if (locked) tex("bank_lock")?.let { val s = r.width() * 0.5f; c.drawBitmap(it, null, RectF(r.centerX() - s / 2f, r.centerY() - s / 2f, r.centerX() + s / 2f, r.centerY() + s / 2f), pBmp) }
         if (count > 1 && !locked) {
             val p = numberPaint(r.width() * 0.27f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(count.toString(), inset.right - 2f, inset.bottom - 3f, p)
+            c.drawText(Tr.t(count.toString()), inset.right - 2f, inset.bottom - 3f, p)
         }
     }
 
@@ -1526,11 +1526,11 @@ object UiKit {
         tex(lootBorder(quality))?.let { val b = 21f * k; c.drawBitmap(it, null, RectF(ir.centerX() - b, ir.centerY() - b + 2f * k, ir.centerX() + b, ir.centerY() + b + 2f * k), pBmp) }
         if (count > 1) {
             val p = numberPaint(13f * k, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(count.toString(), ir.right - 3f * k, ir.bottom - 2f * k, p)
+            c.drawText(Tr.t(count.toString()), ir.right - 3f * k, ir.bottom - 2f * k, p)
         }
         // the name: the game's 125 x 30 box at (60, 15), two lines at most
         val np = TextPaint(bodyPaint(12.5f * k, colour))
-        val lay = StaticLayout.Builder.obtain(name, 0, name.length, np, (125f * k).toInt()).setMaxLines(2)
+        val lay = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, np, (125f * k).toInt()).setMaxLines(2)
             .setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(0f, 0.92f).build()
         c.save(); c.translate(r.left + 60f * k, r.top + 30f * k - lay.height / 2f); lay.draw(c); c.restore()
         // the roll icons: right of the name (x 188 .. the card's end)
@@ -1562,7 +1562,7 @@ object UiKit {
         if (glyph != null) pad(c, glyph, r.left + size * 0.10f, r.bottom - size * 0.24f, size * 0.44f, if (enabled) 255 else 90)
         if (label != null) {
             val p = bodyPaint(22f, if (enabled) Theme.gold else Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(label, cx, r.bottom + 6f - p.ascent(), p)
+            c.drawText(Tr.t(label), cx, r.bottom + 6f - p.ascent(), p)
         }
     }
 
@@ -1599,7 +1599,7 @@ object UiKit {
         }
         if (count > 1) {
             val p = numberPaint(size * 0.34f, if (dim) Theme.dim else Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(count.toString(), r.right - 5f, r.bottom - 6f, p)
+            c.drawText(Tr.t(count.toString()), r.right - 5f, r.bottom - 6f, p)
         }
     }
 
@@ -1620,7 +1620,7 @@ object UiKit {
         var px = if (fromRight) x - w else x
         val base = cy - (p.ascent() + p.descent()) / 2f
         for ((v, name) in parts) {
-            c.drawText(v.toString(), px, base, p)
+            c.drawText(Tr.t(v.toString()), px, base, p)
             px += p.measureText(v.toString()) + 4f
             val b = tex(name)
             if (b != null) c.drawBitmap(b, null, RectF(px, cy - coin / 2f, px + coin, cy + coin / 2f), pBmp)
@@ -2097,7 +2097,7 @@ object UiKit {
             pArrowWord.textSize = h * if (word.length > 1) 0.32f else 0.42f
             pArrowWord.alpha = alpha
             val wx = if (toRight) base + w / 3f else base - w / 3f
-            c.drawText(word, wx, cy - (pArrowWord.ascent() + pArrowWord.descent()) / 2f, pArrowWord)
+            c.drawText(Tr.t(word), wx, cy - (pArrowWord.ascent() + pArrowWord.descent()) / 2f, pArrowWord)
         }
     }
 
@@ -2169,13 +2169,13 @@ object UiKit {
         if (quest > 0) tex(if (quest == 2) "loot_quest_bang" else "loot_quest_border")?.let { c.drawBitmap(it, null, ic, pBmp) }
         if (count > 1) {
             val pc = numberPaint(14f * k, Color.WHITE).apply { textAlign = Paint.Align.RIGHT; this.alpha = alpha }
-            c.drawText(count.toString(), ic.right - 2f * k, ic.bottom - 3f * k, pc)
+            c.drawText(Tr.t(count.toString()), ic.right - 2f * k, ic.bottom - 3f * k, pc)
         }
         pBmp.alpha = 255
         val tx = ic.right + 8f * k
         if (money) {
             val pm = bodyPaint(13f * k, Color.WHITE).apply { this.alpha = alpha }
-            c.drawText(name, tx, ic.centerY() - (pm.ascent() + pm.descent()) / 2f, pm)
+            c.drawText(Tr.t(name), tx, ic.centerY() - (pm.ascent() + pm.descent()) / 2f, pm)
             return
         }
         // the quality tag: 100 x 13 at the top right, its word right-aligned in the game's tiny white
@@ -2184,10 +2184,10 @@ object UiKit {
             c.drawBitmap(t, null, RectF(r.right - 100f * k, r.top, r.right, r.top + 13f * k), pBmp); pBmp.alpha = 255
         }
         val pq = bodyPaint(8.5f * k, Color.WHITE).apply { textAlign = Paint.Align.RIGHT; this.alpha = alpha }
-        c.drawText(qualityName(quality), r.right - 4f * k, r.top + 6.5f * k - (pq.ascent() + pq.descent()) / 2f, pq)
+        c.drawText(Tr.t(qualityName(quality)), r.right - 4f * k, r.top + 6.5f * k - (pq.ascent() + pq.descent()) / 2f, pq)
         // the name: GameFontNormal in the quality colour, from 8 px right of the icon and 8 down, two lines at most
         val pn = TextPaint(bodyPaint(12.5f * k, colour)).apply { this.alpha = alpha }
-        val lay = StaticLayout.Builder.obtain(name, 0, name.length, pn, (r.right - 6f * k - tx).toInt().coerceAtLeast(10))
+        val lay = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, pn, (r.right - 6f * k - tx).toInt().coerceAtLeast(10))
             .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(0f, 0.95f).build()
         c.save(); c.translate(tx, if (lay.lineCount > 1) r.top + 13f * k else ic.centerY() - lay.height / 2f + 3f * k); lay.draw(c); c.restore()
     }
@@ -2389,10 +2389,10 @@ object UiKit {
         val tx = box.left + pad + 54f * s
         if (q == null) {
             val pt = bodyPaint(26f * s, Theme.dim)
-            c.drawText("No focused quest", box.left + pad + 10f * s, titleMid - (pt.ascent() + pt.descent()) / 2f, pt)
+            c.drawText(Tr.t("No focused quest"), box.left + pad + 10f * s, titleMid - (pt.ascent() + pt.descent()) / 2f, pt)
             val po = bodyPaint(22f * s, Theme.dim)
             val oy = titleMid + CARD_TITLE * s / 2f + CARD_LINE * s / 2f
-            c.drawText("Choose one in the Quests room", box.left + pad + 10f * s, oy - (po.ascent() + po.descent()) / 2f, po)
+            c.drawText(Tr.t("Choose one in the Quests room"), box.left + pad + 10f * s, oy - (po.ascent() + po.descent()) / 2f, po)
             c.restore(); if (layer) c.restore(); return
         }
         if (q.focused) {
@@ -2403,7 +2403,7 @@ object UiKit {
             if (q.turnIn) null else q.number)
         val pt = bodyPaint(27f * s, q.colour)
         val title = q.title                             // test27 (the user: "the Level number in front of the quests text is confusing, trim that from the quests"): no "[level]"; its colour keeps the difficulty
-        c.drawText(TextUtils.ellipsize(title, pt, box.right - pad - tx, TextUtils.TruncateAt.END).toString(), tx,
+        c.drawText(Tr.t(TextUtils.ellipsize(title, pt, box.right - pad - tx, TextUtils.TruncateAt.END).toString()), tx,
             titleMid - (pt.ascent() + pt.descent()) / 2f, pt)
         var y = box.top + pad + CARD_TITLE * s
         // [collapsed] = the title row only (the user: "Minimize the focused quest down to see more of the minimap"): no objective, no
@@ -2416,14 +2416,14 @@ object UiKit {
         else if (q.turnIn) {
             val po = bodyPaint(23f * s, Color.rgb(120, 220, 120)).apply { setAlpha(lineAlpha(y)) }
             val cy = y + CARD_LINE * s / 2f
-            c.drawText("Ready for turn-in", tx, cy - (po.ascent() + po.descent()) / 2f, po)
+            c.drawText(Tr.t("Ready for turn-in"), tx, cy - (po.ascent() + po.descent()) / 2f, po)
         } else for ((line, done) in q.objectives) {
             val la = lineAlpha(y)
             if (la <= 0) break
             val cy = y + CARD_LINE * s / 2f
             if (la >= 255) objectiveMark(c, tx + 9f * s, cy, 20f * s, done)
             val po = bodyPaint(23f * s, if (done) Theme.dim else Color.rgb(204, 204, 204)).apply { setAlpha(la) }
-            c.drawText(TextUtils.ellipsize(line, po, box.right - pad - tx - 26f * s, TextUtils.TruncateAt.END).toString(), tx + 26f * s,
+            c.drawText(Tr.t(TextUtils.ellipsize(line, po, box.right - pad - tx - 26f * s, TextUtils.TruncateAt.END).toString()), tx + 26f * s,
                 cy - (po.ascent() + po.descent()) / 2f, po)
             y += CARD_LINE * s
         }
@@ -2445,7 +2445,7 @@ object UiKit {
         val row = bw + 3f + 9f + pp.measureText(label)
         val w = maxOf(pt.measureText(time), row) + 2f * 20f
         val r = RectF(cx - w / 2f, top, cx + w / 2f, top + 84f)
-        c.drawText(time, cx, top + 31f - (pt.ascent() + pt.descent()) / 2f, pt)
+        c.drawText(Tr.t(time), cx, top + 31f - (pt.ascent() + pt.descent()) / 2f, pt)
         val bx = cx - row / 2f; val by = top + 62f - bh / 2f
         val case = RectF(bx, by, bx + bw, by + bh)
         pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Theme.bronze; pFlat.alpha = alpha
@@ -2463,7 +2463,7 @@ object UiKit {
             pFlat.color = Theme.gold; pFlat.alpha = alpha; c.drawPath(bolt, pFlat)
         }
         pFlat.alpha = 255
-        c.drawText(label, case.right + 12f, case.centerY() - (pp.ascent() + pp.descent()) / 2f, pp)
+        c.drawText(Tr.t(label), case.right + 12f, case.centerY() - (pp.ascent() + pp.descent()) / 2f, pp)
         return r
     }
 
@@ -2566,7 +2566,7 @@ object UiKit {
             c.drawBitmap(l, null, RectF(r.left, r.top, r.left + cw, r.bottom), pBmp)
             c.drawBitmap(rr, null, RectF(r.right - cw, r.top, r.right, r.bottom), pBmp)
         }
-        c.drawText(label, cx, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), cx, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
         return r
     }
 
@@ -2603,8 +2603,8 @@ object UiKit {
         val layer = c.saveLayerAlpha(r.left - 2f, r.top - 2f, r.right + 2f, r.bottom + 2f, 128)
         dialog(c, r, 0.5f)
         val p = bodyPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-        val line = TextUtils.ellipsize(text.replace('\n', ' '), p, r.width() - 160f, TextUtils.TruncateAt.END).toString()
-        c.drawText(line, r.centerX(), r.centerY() - 2f - (p.ascent() + p.descent()) / 2f, p)
+        val line = TextUtils.ellipsize(Tr.t(text.replace('\n', ' ')), p, r.width() - 160f, TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(line), r.centerX(), r.centerY() - 2f - (p.ascent() + p.descent()) / 2f, p)
         c.restoreToCount(layer)
     }
 
@@ -2648,7 +2648,7 @@ object UiKit {
         c.drawRect(r.left - 2.5f, r.top - 2.5f, r.right + 2.5f, r.bottom + 2.5f, pFlat)
         if (count > 1) {
             val p = numberPaint(s * 0.38f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(count.toString(), r.right - 5f, r.bottom - 6f, p)
+            c.drawText(Tr.t(count.toString()), r.right - 5f, r.bottom - 6f, p)
         }
     }
 
@@ -2689,13 +2689,13 @@ object UiKit {
         val room = r.right - (if (mark != null) 66f else 16f) - (r.left + 100f)
         while (p.measureText(label) > room && p.textSize > 28f) p.textSize -= 1f
         if (p.measureText(label) > room && r.height() >= 92f) {
-            val l = StaticLayout.Builder.obtain(label, 0, label.length, TextPaint(p), room.toInt()).setMaxLines(2)
+            val l = StaticLayout.Builder.obtain(Tr.t(label), 0, Tr.t(label).length, TextPaint(p), room.toInt()).setMaxLines(2)
                 .setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(0f, 0.92f).build()
             c.save(); c.translate(r.left + 100f, cy - l.height / 2f); l.draw(c); c.restore()
             return
         }
-        val line = TextUtils.ellipsize(label, p, room, TextUtils.TruncateAt.END).toString()
-        c.drawText(line, r.left + 100f, cy - 2f - (p.ascent() + p.descent()) / 2f, p)
+        val line = TextUtils.ellipsize(Tr.t(label), p, room, TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(line), r.left + 100f, cy - 2f - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /**
@@ -2707,7 +2707,7 @@ object UiKit {
         var x = right
         for ((glyph, word) in pairs.reversed()) {
             x -= p.measureText(word)
-            c.drawText(word, x, cy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(word), x, cy - (p.ascent() + p.descent()) / 2f, p)
             x -= 34f
             pad(c, glyph, x, cy, 48f)
             x -= 24f + 34f
@@ -2728,8 +2728,8 @@ object UiKit {
             if (mark == 2) Color.rgb(60, 255, 60) else Color.rgb(255, 60, 60), 0.6f)
         pad(c, glyph, r.left + 64f, r.centerY(), 76f, if (free || mark != 0) 255 else 128)
         val p = bodyPaint(30f, if (mark == 2) Theme.questGreen else if (free) Theme.gold else Theme.dim)
-        val line = TextUtils.ellipsize(label, p, r.right - 16f - (r.left + 124f), TextUtils.TruncateAt.END).toString()
-        c.drawText(line, r.left + 124f, r.centerY() - 2f - (p.ascent() + p.descent()) / 2f, p)
+        val line = TextUtils.ellipsize(Tr.t(label), p, r.right - 16f - (r.left + 124f), TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(line), r.left + 124f, r.centerY() - 2f - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /**
@@ -2774,7 +2774,7 @@ object UiKit {
             .apply { textAlign = Paint.Align.CENTER }
         var s = size
         while (p.measureText(label) > r.width() - r.height() * 0.5f && s > 16f) { s -= 1f; p.textSize = s }
-        c.drawText(label, r.centerX(), r.centerY() - 2f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), r.centerX(), r.centerY() - 2f - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /**
@@ -2852,7 +2852,7 @@ object UiKit {
             pFlat.strokeCap = Paint.Cap.BUTT; pFlat.strokeJoin = Paint.Join.MITER
             if (label.isNotEmpty()) {
                 val lp = bodyPaint(r.height() * 0.20f, ink, shadow = false).apply { textAlign = Paint.Align.CENTER }
-                c.drawText(label, k.centerX(), k.bottom - r.height() * 0.10f, lp)
+                c.drawText(Tr.t(label), k.centerX(), k.bottom - r.height() * 0.10f, lp)
             }
             return
         }
@@ -2862,7 +2862,7 @@ object UiKit {
         val tw = p.measureText(label) + if (glyph != null) gw + 8f else 0f
         val x0 = k.centerX() - tw / 2f
         if (glyph != null) pad(c, glyph, x0 + gw / 2f, cy, gw)
-        c.drawText(label, x0 + (if (glyph != null) gw + 8f else 0f) + p.measureText(label) / 2f, cy - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), x0 + (if (glyph != null) gw + 8f else 0f) + p.measureText(label) / 2f, cy - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /**
@@ -2932,7 +2932,7 @@ object UiKit {
             }
             c.drawBitmap(d, null, r, pBmp)
             val p = numberPaint(size * 0.46f, MarkerArt.DISC_NUMBER, shadow = false).apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
-            c.drawText(number?.toString() ?: "!", cx, cy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(number?.toString() ?: "!"), cx, cy - (p.ascent() + p.descent()) / 2f, p)
             return
         }
         val disc = tex(if (focus) "poi_disc_focus" else "poi_disc")
@@ -2944,7 +2944,7 @@ object UiKit {
             if (number != null) {
                 val p = numberPaint(size * 0.4f, if (focus) Color.rgb(34, 22, 6) else Theme.gold, shadow = !focus)
                     .apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
-                c.drawText(number.toString(), cx, cy - (p.ascent() + p.descent()) / 2f, p)
+                c.drawText(Tr.t(number.toString()), cx, cy - (p.ascent() + p.descent()) / 2f, p)
             }
             return
         }
@@ -2958,7 +2958,7 @@ object UiKit {
         if (number != null) {
             val p = numberPaint(size * 0.46f, if (focus) Color.rgb(34, 22, 6) else Theme.gold, shadow = !focus)
                 .apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
-            c.drawText(number.toString(), cx, cy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(number.toString()), cx, cy - (p.ascent() + p.descent()) / 2f, p)
             return
         }
         val mark = tex(when {
@@ -2986,7 +2986,7 @@ object UiKit {
         val ink = Color.argb(if (focus) 235 else 205, 232, 214, 168)
         if (number != null) {
             val p = numberPaint(size * 0.46f, ink, shadow = true).apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
-            c.drawText(number.toString(), cx, cy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(number.toString()), cx, cy - (p.ascent() + p.descent()) / 2f, p)
             return
         }
         val mark = tex(if (state == Quest.TURN_IN) "poi_turnin" else "poi_progress") ?: return
@@ -3078,10 +3078,10 @@ object UiKit {
         if (line != null) c.drawBitmap(line, null, RectF(left, top - 4f, right, top + 60f), pBmp)
         else divider(c, left + 16f, top + 58f, right - 16f, top + 58f)
         val p = bodyPaint(32f, Theme.gold)
-        c.drawText(label, left + 22f, top + 26f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), left + 22f, top + 26f - (p.ascent() + p.descent()) / 2f, p)
         if (count != null) {
             val n = numberPaint(28f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(count, right - 24f, top + 28f - (n.ascent() + n.descent()) / 2f, n)
+            c.drawText(Tr.t(count), right - 24f, top + 28f - (n.ascent() + n.descent()) / 2f, n)
         }
         return top + 62f
     }
@@ -3110,16 +3110,16 @@ object UiKit {
         val pt = bodyPaint(32f, colour)
         val tx = if (disc) r.left + 104f else r.left + 22f
         val room = r.right - 12f - tx
-        c.drawText(TextUtils.ellipsize(title, pt, room, TextUtils.TruncateAt.END).toString(), tx,
+        c.drawText(Tr.t(TextUtils.ellipsize(title, pt, room, TextUtils.TruncateAt.END).toString()), tx,
             r.top + 32f - (pt.ascent() + pt.descent()) / 2f, pt)
         val po = bodyPaint(27f, Color.rgb(204, 204, 204))
         val oy = r.top + 74f
         if (state == Quest.TURN_IN) {
-            c.drawText("Ready for turn-in", tx, oy - (po.ascent() + po.descent()) / 2f, po)
+            c.drawText(Tr.t("Ready for turn-in"), tx, oy - (po.ascent() + po.descent()) / 2f, po)
         } else {
             objectiveMark(c, tx + 12f, oy, 24f, objectiveDone)
             if (objectiveDone) po.color = Theme.dim
-            c.drawText(TextUtils.ellipsize(objective, po, room - 32f, TextUtils.TruncateAt.END).toString(), tx + 32f,
+            c.drawText(Tr.t(TextUtils.ellipsize(objective, po, room - 32f, TextUtils.TruncateAt.END).toString()), tx + 32f,
                 oy - (po.ascent() + po.descent()) / 2f, po)
         }
     }
@@ -3140,10 +3140,10 @@ object UiKit {
         val show = if (state == Quest.TURN_IN) "Ready for turn-in" else progress
         val po = bodyPaint(25f, Color.rgb(204, 204, 204)).apply { textAlign = Paint.Align.RIGHT }
         val least = minOf(po.measureText(show), 120f)                 // the numbers always fit
-        val t = TextUtils.ellipsize(title, pt, r.right - 16f - least - 20f - tx, TextUtils.TruncateAt.END).toString()
-        c.drawText(t, tx, cy - 2f - (pt.ascent() + pt.descent()) / 2f, pt)
+        val t = TextUtils.ellipsize(Tr.t(title), pt, r.right - 16f - least - 20f - tx, TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(t), tx, cy - 2f - (pt.ascent() + pt.descent()) / 2f, pt)
         val room = r.right - 16f - (tx + pt.measureText(t) + 20f)
-        c.drawText(TextUtils.ellipsize(show, po, room, TextUtils.TruncateAt.END).toString(), r.right - 16f,
+        c.drawText(Tr.t(TextUtils.ellipsize(show, po, room, TextUtils.TruncateAt.END).toString()), r.right - 16f,
             cy - (po.ascent() + po.descent()) / 2f, po)
     }
 
@@ -3365,8 +3365,8 @@ object UiKit {
         val lines = twoLines(name, pn, room)
         val lh = 31f
         var ty = r.centerY() - (lines.size * lh + (if (under) 26f else 0f)) / 2f - 2f
-        for (ln in lines) { c.drawText(ln, tx, ty - pn.ascent() - 3f, pn); ty += lh }
-        if (under) c.drawText(sub!!, tx, ty + 2f - ps.ascent() - 3f, ps)
+        for (ln in lines) { c.drawText(Tr.t(ln), tx, ty - pn.ascent() - 3f, pn); ty += lh }
+        if (under) c.drawText(Tr.t(sub!!), tx, ty + 2f - ps.ascent() - 3f, ps)
     }
 
     /** [s] on at most two lines of [room] px; what does not fit on the second is cut with "..." */
@@ -3382,13 +3382,13 @@ object UiKit {
         }
         val rest = words.drop(n).joinToString(" ")
         if (rest.isEmpty()) return listOf(first)
-        return listOf(first, TextUtils.ellipsize(rest, p, room, TextUtils.TruncateAt.END).toString())
+        return listOf(first, TextUtils.ellipsize(Tr.t(rest), p, room, TextUtils.TruncateAt.END).toString())
     }
 
     /** the name of the open line at the head of a page (Morpheus, in ink) and the book's own rule under it */
     fun bookHeading(c: Canvas, left: Float, cy: Float, width: Float, name: String) {
         val p = inkPaint(42f, heading = true)
-        c.drawText(name, left, cy - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(name), left, cy - (p.ascent() + p.descent()) / 2f, p)
         val d = tex("book_divider")
         if (d != null) c.drawBitmap(d, null, RectF(left, cy + 30f, left + width, cy + 41f), pBmp)
         else {
@@ -3407,7 +3407,7 @@ object UiKit {
         arrow(c, "right", cx + 150f, cy, 72f, if (page < pages) Button.UP else Button.DISABLED)
         val p = if (onPaper) inkPaint(26f) else bodyPaint(26f)
         p.textAlign = Paint.Align.CENTER
-        c.drawText("Page $page / $pages", cx, cy - 2f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t("Page $page / $pages"), cx, cy - 2f - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /**
@@ -3422,7 +3422,7 @@ object UiKit {
             pad(c, trigger, px + size / 2f, cy, size)
             px += size + 6f
             val p = numberPaint(size * 0.6f, colour, shadow).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("+", px + 8f, cy - 2f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t("+"), px + 8f, cy - 2f - (p.ascent() + p.descent()) / 2f, p)
             px += 22f
         }
         pad(c, glyph, px + size / 2f, cy, size)
@@ -3541,7 +3541,7 @@ object UiKit {
         if (b != null) c.drawBitmap(b, null, r, pBmp)
         else { pFlat.style = Paint.Style.FILL; pFlat.color = Theme.raised; c.drawRect(r, pFlat) }
         val p = bodyPaint(27f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(label, r.centerX(), r.centerY() - 1f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), r.centerX(), r.centerY() - 1f - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /**
@@ -3563,10 +3563,10 @@ object UiKit {
         }
         val pv = bodyPaint(26f, when (state) { 1 -> Theme.buffed; 2 -> Theme.debuffed; 3 -> Theme.notOnBar; else -> Color.WHITE })
         pv.textAlign = Paint.Align.RIGHT
-        c.drawText(value, r.right - 16f, r.centerY() - 1f - (pv.ascent() + pv.descent()) / 2f, pv)
+        c.drawText(Tr.t(value), r.right - 16f, r.centerY() - 1f - (pv.ascent() + pv.descent()) / 2f, pv)
         val pl = bodyPaint(26f, Theme.gold)
         val room = r.right - 16f - pv.measureText(value) - 18f - x
-        c.drawText(TextUtils.ellipsize(label, pl, room, TextUtils.TruncateAt.END).toString(), x,
+        c.drawText(Tr.t(TextUtils.ellipsize(label, pl, room, TextUtils.TruncateAt.END).toString()), x,
             r.centerY() - 1f - (pl.ascent() + pl.descent()) / 2f, pl)
     }
 
@@ -3600,7 +3600,7 @@ object UiKit {
         tex("set_frame")?.let { c.drawBitmap(it, null, ir, pBmp) }
         val p = bodyPaint(27f, if (chosen) Theme.gold else Color.WHITE)
         val room = r.right - (if (worn) 78f else 18f) - (ir.right + 16f)
-        c.drawText(TextUtils.ellipsize(name, p, room, TextUtils.TruncateAt.END).toString(), ir.right + 16f,
+        c.drawText(Tr.t(TextUtils.ellipsize(name, p, room, TextUtils.TruncateAt.END).toString()), ir.right + 16f,
             r.centerY() - 1f - (p.ascent() + p.descent()) / 2f, p)
         if (worn) tex("set_tick")?.let { c.drawBitmap(it, null, RectF(r.right - 70f, r.centerY() - 23f, r.right - 20f, r.centerY() + 23f), pBmp) }
     }
@@ -3627,7 +3627,7 @@ object UiKit {
         val p = bodyPaint(28f, Theme.gold)
         val left = if (signRight) r.left + 36f else r.left + 76f
         val room = (if (signRight) sx - 16f else plate.right - 20f) - left
-        c.drawText(TextUtils.ellipsize(label, p, room, TextUtils.TruncateAt.END).toString(),
+        c.drawText(Tr.t(TextUtils.ellipsize(label, p, room, TextUtils.TruncateAt.END).toString()),
             left, r.centerY() - 2f - (p.ascent() + p.descent()) / 2f, p)
     }
 
@@ -3673,7 +3673,7 @@ object UiKit {
             }
         }
         val p = bodyPaint(textSize, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(TextUtils.ellipsize(label, p, r.width() - 24f, TextUtils.TruncateAt.END).toString(), r.centerX(),
+        c.drawText(Tr.t(TextUtils.ellipsize(label, p, r.width() - 24f, TextUtils.TruncateAt.END).toString()), r.centerX(),
             r.centerY() - 1f - (p.ascent() + p.descent()) / 2f, p)
     }
 
@@ -3736,7 +3736,7 @@ object UiKit {
             val ny = cy + 150f * k
             tex("rank_number")?.let { c.drawBitmap(it, null, RectF(cx - n, ny - n, cx + n, ny + n), pBmp) }
             val p = numberPaint(44f * k * 1.5f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(rank.toString(), cx, ny - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(rank.toString()), cx, ny - (p.ascent() + p.descent()) / 2f, p)
         }
     }
 
@@ -3806,7 +3806,7 @@ object UiKit {
         if (label != null && pointed >= 0) {
             val p = bodyPaint(30f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
             while (p.textSize > 22f && p.measureText(label) > 190f) p.textSize -= 1f
-            c.drawText(label, cx, cy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(label), cx, cy - (p.ascent() + p.descent()) / 2f, p)
         }
     }
 
@@ -4233,9 +4233,9 @@ object UiKit {
                 val bx = r.right - 4f; val by = r.bottom - 2f - counts.descent()
                 counts.style = Paint.Style.STROKE; counts.strokeWidth = 5f * g.k; counts.strokeJoin = Paint.Join.ROUND
                 counts.color = Color.BLACK; counts.alpha = (255 * fade).toInt()
-                c.drawText(it.count.toString(), bx, by, counts)
+                c.drawText(Tr.t(it.count.toString()), bx, by, counts)
                 counts.style = Paint.Style.FILL; counts.color = Color.WHITE; counts.alpha = (255 * fade).toInt()
-                c.drawText(it.count.toString(), bx, by, counts)
+                c.drawText(Tr.t(it.count.toString()), bx, by, counts)
             }
             if (it.pinned || it.ranOut) {
                 // the pin: the Friends list's gold pin over the icon's top-right corner (grey when its item ran out)
@@ -4314,9 +4314,9 @@ object UiKit {
         while (p.textSize > size * 0.6f && p.measureText(words) > maxW) p.textSize -= 1f
         val y = cy - (p.ascent() + p.descent()) / 2f
         p.style = Paint.Style.STROKE; p.strokeWidth = edge * 2f; p.strokeJoin = Paint.Join.ROUND; p.color = Color.rgb(10, 8, 6); p.alpha = alpha
-        c.drawText(words, cx, y, p)
+        c.drawText(Tr.t(words), cx, y, p)
         p.style = Paint.Style.FILL; p.color = colour; p.alpha = alpha
-        c.drawText(words, cx, y, p)
+        c.drawText(Tr.t(words), cx, y, p)
     }
 
     // ---------------------------------------------------------------- the PAUSE RADIAL (Home's Start)
@@ -4577,7 +4577,7 @@ object UiKit {
         }
         var t = text
         while (p.measureText(t) > maxW && t.length > 2) t = t.dropLast(2) + "\u2026"
-        c.drawText(t, x, y - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(t), x, y - (p.ascent() + p.descent()) / 2f, p)
     }
 
     fun pauseRadial(c: Canvas, screen: RectF, disc: android.graphics.PointF, discSize: Float, slices: List<PauseSlice?>, page: Int,
@@ -4811,7 +4811,7 @@ object UiKit {
         var x = frame.centerX() - (prompts.sumOf { (gs + gap + p.measureText(it.second)).toDouble() }.toFloat() + between) / 2f
         for ((glyph, word) in prompts) {
             pad(c, glyph, x + gs / 2f, fy, gs)
-            c.drawText(word, x + gs + gap, fy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(word), x + gs + gap, fy - (p.ascent() + p.descent()) / 2f, p)
             x += gs + gap + p.measureText(word) + between
         }
     }
@@ -4857,7 +4857,7 @@ object UiKit {
         val (box, buttons) = gcLayout(screen, exit && exitNow)
         val inner = dialog(c, box, 0.5f * k)
         val p = bodyPaint(34f * k, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(gameCountdownText(exit, secondsLeft), box.centerX(), inner.top + 40f * k - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(gameCountdownText(exit, secondsLeft)), box.centerX(), inner.top + 40f * k - (p.ascent() + p.descent()) / 2f, p)
         val labels = if (exit && exitNow) listOf("Exit now" to okGlyph(), "Cancel" to backGlyph()) else listOf("Cancel" to backGlyph())
         for ((i, r) in buttons.withIndex()) {
             button(c, r, labels[i].first, labels[i].second, if (i == pressed) Button.DOWN else Button.UP)
@@ -4906,7 +4906,7 @@ object UiKit {
         for ((i, line) in listOf(l1, l2).withIndex()) {
             val p = bodyPaint(25f * s, if (i == 1 && urgent) PAUSE_RED else NOTICE_YELLOW)
             while (p.textSize > 19f * s && p.measureText(line) > room) p.textSize -= 1f
-            c.drawText(TextUtils.ellipsize(line, TextPaint(p), room, TextUtils.TruncateAt.END).toString(), tx,
+            c.drawText(Tr.t(TextUtils.ellipsize(line, TextPaint(p), room, TextUtils.TruncateAt.END).toString()), tx,
                 y0 + (4f + 32f * i) * s - p.ascent(), p)
         }
         pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(110, 90, 50)
@@ -4938,7 +4938,7 @@ object UiKit {
                   tipLines: List<TipLine> = emptyList(), firstRow: Int = 0, down: Int = -1): PickerHits {
         val inner = windowGround(c, r)
         val strip = strip(c, inner)
-        c.drawText("Usable items in your bags", inner.left + 150f, inner.top + 42f, bodyPaint(24f, Theme.textDim))
+        c.drawText(Tr.t("Usable items in your bags"), inner.left + 150f, inner.top + 42f, bodyPaint(24f, Theme.textDim))
         val s = 104f; val gap = 26f; val rowH = s + gap + 8f
         val gx = inner.left + 150f; val gy = inner.top + 76f
         val rows = maxOf(1, ((strip.top - 20f - gy) / rowH).toInt())
@@ -4957,7 +4957,7 @@ object UiKit {
         // the rows past the window: a small mark at the grid's foot that more follow (the cursor scrolls them in)
         if ((firstRow + rows) * PICK_COLS < items.size) {
             val p = bodyPaint(22f, Theme.textDim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("more below", gx + (PICK_COLS * (s + gap) - gap) / 2f, gy + rows * rowH - 4f, p)
+            c.drawText(Tr.t("more below"), gx + (PICK_COLS * (s + gap) - gap) / 2f, gy + rows * rowH - 4f, p)
         }
         cur?.let { focus(c, it) }
         if (cur != null && tipName != null) tooltip(c, inner.right - 400f, cur.top - 6f, 380f, tipName, tipColour, tipLines)
@@ -5000,7 +5000,7 @@ object UiKit {
         var right = r.right - 24f
         if (word != null && word.isNotEmpty()) {
             val pw = bodyPaint(23f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(word, right, r.centerY() - (pw.ascent() + pw.descent()) / 2f, pw)
+            c.drawText(Tr.t(word), right, r.centerY() - (pw.ascent() + pw.descent()) / 2f, pw)
             right -= pw.measureText(word) + 18f
         }
         for (m in listOf(mark, mark2)) if (m != null) tex(m)?.let {
@@ -5012,14 +5012,14 @@ object UiKit {
         // [nameMark] = a mark RIGHT AFTER THE NAME, where the game puts its favourite-friend star (FriendsFrame camelot: parentKey
         // Favorite, anchored to the name's right): 30 px (the game's 17 at our scale), 8 px after the name; the name gives up its room
         val nm = nameMark?.let { tex(it) }
-        val shown = TextUtils.ellipsize(name, pn, if (nm != null) room - 38f else room, TextUtils.TruncateAt.END).toString()
-        c.drawText(shown, r.left + 68f, r.top + 34f - (pn.ascent() + pn.descent()) / 2f, pn)
+        val shown = TextUtils.ellipsize(Tr.t(name), pn, if (nm != null) room - 38f else room, TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(shown), r.left + 68f, r.top + 34f - (pn.ascent() + pn.descent()) / 2f, pn)
         if (nm != null) {
             val x = r.left + 68f + pn.measureText(shown) + 8f
             c.drawBitmap(nm, null, RectF(x, r.top + 34f - 15f, x + 30f, r.top + 34f + 15f), pBmp)
         }
         val p2 = bodyPaint(22f, Theme.dim)
-        c.drawText(TextUtils.ellipsize(line2, p2, room, TextUtils.TruncateAt.END).toString(), r.left + 68f,
+        c.drawText(Tr.t(TextUtils.ellipsize(line2, p2, room, TextUtils.TruncateAt.END).toString()), r.left + 68f,
             r.top + 68f - (p2.ascent() + p2.descent()) / 2f, p2)
     }
 
@@ -5031,7 +5031,7 @@ object UiKit {
         classIcon(classFile)?.let { c.drawBitmap(it, null, RectF(r.centerX() - 48f, r.top + 18f, r.centerX() + 48f, r.top + 114f), pBmp) }
         val p = bodyPaint(36f, colour).apply { textAlign = Paint.Align.CENTER }
         while (p.textSize > 26f && p.measureText(name) > r.width() - 12f) p.textSize -= 1f
-        c.drawText(name, r.centerX(), r.top + 146f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(name), r.centerX(), r.top + 146f - (p.ascent() + p.descent()) / 2f, p)
         paneRule(c, r.left, r.top + 176f, r.right)
         return r.top + 216f
     }
@@ -5042,9 +5042,9 @@ object UiKit {
      */
     fun detailRow(c: Canvas, left: Float, y: Float, right: Float, label: String, value: String): Float {
         val pl = bodyPaint(25f, Theme.gold)
-        c.drawText(label, left + 8f, y - (pl.ascent() + pl.descent()) / 2f, pl)
+        c.drawText(Tr.t(label), left + 8f, y - (pl.ascent() + pl.descent()) / 2f, pl)
         val pv = TextPaint(bodyPaint(25f, Color.WHITE))
-        val sl = StaticLayout.Builder.obtain(value, 0, value.length, pv, (right - left - 140f).toInt()).setLineSpacing(2f, 1f).build()
+        val sl = StaticLayout.Builder.obtain(Tr.t(value), 0, Tr.t(value).length, pv, (right - left - 140f).toInt()).setLineSpacing(2f, 1f).build()
         c.save(); c.translate(left + 140f, y - 16f); sl.draw(c); c.restore()
         return y + 12f + maxOf(32f, sl.height.toFloat())
     }
@@ -5056,7 +5056,7 @@ object UiKit {
         pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 1.5f; pFlat.color = Color.rgb(70, 56, 30)
         c.drawRect(r.left + 4f, r.top + 4f, r.right - 4f, r.bottom - 4f, pFlat)
         val p = bodyPaint(23f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(label, r.centerX(), r.top + 26f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), r.centerX(), r.top + 26f - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /** one place of a raid group, [r] about 68 px high: empty ([name] null), or a member in the class's colour */
@@ -5075,7 +5075,7 @@ object UiKit {
             right -= 38f
         }
         val p = bodyPaint(25f, colour)
-        c.drawText(TextUtils.ellipsize(name, p, right - (r.left + 12f), TextUtils.TruncateAt.END).toString(), r.left + 12f,
+        c.drawText(Tr.t(TextUtils.ellipsize(name, p, right - (r.left + 12f), TextUtils.TruncateAt.END).toString()), r.left + 12f,
             r.centerY() - 1f - (p.ascent() + p.descent()) / 2f, p)
     }
 
@@ -5134,7 +5134,7 @@ object UiKit {
         if (f != null) c.drawBitmap(f, null, r, pBmp)
         else { pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Theme.bronzeDim; c.drawRect(r, pFlat) }
         val p = bodyPaint(textSize, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(label, r.centerX(), r.centerY() - 1f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), r.centerX(), r.centerY() - 1f - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /** a picture in the professions' own square frame (a profession, what a recipe makes); [size] = the frame's side */
@@ -5162,7 +5162,7 @@ object UiKit {
         if (chosen && !inert) slotFocus(c, sq)
         val tx = x + s + 14f
         val p = TextPaint(bodyPaint(26f, if (inert) Theme.dim else Theme.gold))
-        val l = StaticLayout.Builder.obtain(name, 0, name.length, p, (r.right - tx).toInt().coerceAtLeast(1)).setMaxLines(2)
+        val l = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, p, (r.right - tx).toInt().coerceAtLeast(1)).setMaxLines(2)
             .setEllipsize(TextUtils.TruncateAt.END).build()
         c.save(); c.translate(tx, r.centerY() - l.height / 2f); l.draw(c); c.restore()
     }
@@ -5184,7 +5184,7 @@ object UiKit {
         tex("search_glass")?.let { c.drawBitmap(it, null, RectF(r.left + 16f, r.centerY() - 20f, r.left + 56f, r.centerY() + 20f), pBmp) }
         val shown = text.isNotEmpty()
         val p = bodyPaint(26f, if (shown) Theme.text else Theme.dim)
-        c.drawText(TextUtils.ellipsize(if (shown) text else hint, p, r.width() - 90f, TextUtils.TruncateAt.END).toString(), r.left + 70f,
+        c.drawText(Tr.t(TextUtils.ellipsize(if (shown) text else hint, p, r.width() - 90f, TextUtils.TruncateAt.END).toString()), r.left + 70f,
             r.centerY() - 1f - (p.ascent() + p.descent()) / 2f, p)
     }
 
@@ -5201,7 +5201,7 @@ object UiKit {
         c.drawRect(box.left + 6f, box.top + 6f, box.right - 6f, box.bottom - 6f, pFlat)
         border(c, box, "border_tooltip", 18f, Theme.bronzeDim)
         val p = numberPaint(56f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(count.toString(), cx, cy - 2f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(count.toString()), cx, cy - 2f - (p.ascent() + p.descent()) / 2f, p)
         if (focus) focus(c, box)
     }
 
@@ -5241,7 +5241,7 @@ object UiKit {
         val p = bodyPaint(26f, if (enabled) Color.WHITE else Theme.dim)
         val room = r.width() - 64f - 40f
         while (p.measureText(label) > room && p.textSize > 20f) p.textSize -= 1f
-        c.drawText(TextUtils.ellipsize(label, p, room, TextUtils.TruncateAt.END).toString(), r.left + 30f,
+        c.drawText(Tr.t(TextUtils.ellipsize(label, p, room, TextUtils.TruncateAt.END).toString()), r.left + 30f,
             r.centerY() - 3f - (p.ascent() + p.descent()) / 2f, p)
     }
 
@@ -5293,7 +5293,7 @@ object UiKit {
 
     private fun finderActivity(c: Canvas, r: RectF, activity: String, tone: Int, room: Float) {
         val p = bodyPaint(22f, tone)
-        c.drawText(TextUtils.ellipsize(activity, p, room, TextUtils.TruncateAt.END).toString(), r.left + 28f,
+        c.drawText(Tr.t(TextUtils.ellipsize(activity, p, room, TextUtils.TruncateAt.END).toString()), r.left + 28f,
             r.top + 70f - (p.ascent() + p.descent()) / 2f, p)
     }
 
@@ -5323,14 +5323,14 @@ object UiKit {
         if (roles.isNotEmpty()) {
             right = roles(c, right, r.centerY(), roles, 46f, small = true, off = off)
             if (withWord) {
-                c.drawText("Roles:", right - 10f, r.centerY() - 1f - (pr.ascent() + pr.descent()) / 2f, pr)
+                c.drawText(Tr.t("Roles:"), right - 10f, r.centerY() - 1f - (pr.ascent() + pr.descent()) / 2f, pr)
                 right -= word
             } else right -= 12f
         }
-        val shown = TextUtils.ellipsize(name, pn, right - after - (r.left + 28f), TextUtils.TruncateAt.END).toString()
-        c.drawText(shown, r.left + 28f, r.top + 34f - (pn.ascent() + pn.descent()) / 2f, pn)
+        val shown = TextUtils.ellipsize(Tr.t(name), pn, right - after - (r.left + 28f), TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(shown), r.left + 28f, r.top + 34f - (pn.ascent() + pn.descent()) / 2f, pn)
         var x = r.left + 28f + pn.measureText(shown) + 12f
-        c.drawText(lvl, x, r.top + 36f - (pl.ascent() + pl.descent()) / 2f, pl)
+        c.drawText(Tr.t(lvl), x, r.top + 36f - (pl.ascent() + pl.descent()) / 2f, pl)
         x += pl.measureText(lvl) + 10f
         role("class_$classFile")?.let { c.drawBitmap(it, null, RectF(x, r.top + 12f, x + 44f, r.top + 56f), if (off) pGrey else pBmp) }
         x += 50f
@@ -5355,22 +5355,22 @@ object UiKit {
             val pc = numberPaint(28f, if (off) Theme.finderOff else Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
             for ((i, what) in listOf("dps", "heal", "tank").withIndex()) {
                 val n = counts[2 - i].toString()
-                c.drawText(n, right, r.centerY() - (pc.ascent() + pc.descent()) / 2f, pc)
+                c.drawText(Tr.t(n), right, r.centerY() - (pc.ascent() + pc.descent()) / 2f, pc)
                 right -= pc.measureText(n) + 6f
                 role(what)?.let { c.drawBitmap(it, null, RectF(right - 44f, r.centerY() - 22f, right, r.centerY() + 22f), if (off) pGrey else pBmp) }
                 right -= 44f + 18f
             }
         } else if (word != null) {
             val pw = bodyPaint(23f, if (off) Theme.finderOff else Theme.note).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(word, right, r.centerY() - (pw.ascent() + pw.descent()) / 2f, pw)
+            c.drawText(Tr.t(word), right, r.centerY() - (pw.ascent() + pw.descent()) / 2f, pw)
             right -= pw.measureText(word) + 18f
         }
         tex("finder_leader")?.let { c.drawBitmap(it, null, RectF(r.left + 22f, r.top + 16f, r.left + 68f, r.top + 52f), if (off) pGrey else pBmp) }
         val pn = bodyPaint(29f, if (off) Theme.finderOff else colour)
         val room = right - (if (friendly) 46f else 0f) - (r.left + 78f)
         while (pn.measureText(leader) > room && pn.textSize > 23f) pn.textSize -= 1f       // smaller before it is cut
-        val shown = TextUtils.ellipsize(leader, pn, room, TextUtils.TruncateAt.END).toString()
-        c.drawText(shown, r.left + 78f, r.top + 34f - (pn.ascent() + pn.descent()) / 2f, pn)
+        val shown = TextUtils.ellipsize(Tr.t(leader), pn, room, TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(shown), r.left + 78f, r.top + 34f - (pn.ascent() + pn.descent()) / 2f, pn)
         if (friendly) tex("finder_newcomer")?.let {
             val x = r.left + 78f + pn.measureText(shown) + 10f
             c.drawBitmap(it, null, RectF(x, r.top + 16f, x + 36f, r.top + 52f), if (off) pGrey else pBmp)
@@ -5396,10 +5396,10 @@ object UiKit {
             val pn = bodyPaint(26f, colour)
             val room = right - 66f - (left + 46f)
             while (pn.measureText(name) > room && pn.textSize > 21f) pn.textSize -= 1f
-            c.drawText(TextUtils.ellipsize(name, pn, room, TextUtils.TruncateAt.END).toString(), left + 46f,
+            c.drawText(Tr.t(TextUtils.ellipsize(name, pn, room, TextUtils.TruncateAt.END).toString()), left + 46f,
                 y - (pn.ascent() + pn.descent()) / 2f, pn)
             val p2 = bodyPaint(21f, Theme.finderPlain)
-            c.drawText(TextUtils.ellipsize("Lvl $level $classWord", p2, room, TextUtils.TruncateAt.END).toString(), left + 46f,
+            c.drawText(Tr.t(TextUtils.ellipsize("Lvl $level $classWord", p2, room, TextUtils.TruncateAt.END).toString()), left + 46f,
                 y + 28f - (p2.ascent() + p2.descent()) / 2f, p2)
             return y + 66f
         }
@@ -5407,9 +5407,9 @@ object UiKit {
         if (role != null) role(role)?.let { c.drawBitmap(it, null, RectF(right - 52f, y - 20f, right - 12f, y + 20f), pBmp) }
         val pl = bodyPaint(22f, Theme.finderPlain).apply { textAlign = Paint.Align.RIGHT }
         val lvl = "Lvl $level"
-        c.drawText(lvl, right - 70f, y + 1f - (pl.ascent() + pl.descent()) / 2f, pl)
+        c.drawText(Tr.t(lvl), right - 70f, y + 1f - (pl.ascent() + pl.descent()) / 2f, pl)
         val pn = bodyPaint(26f, colour)
-        c.drawText(TextUtils.ellipsize(name, pn, right - 70f - pl.measureText(lvl) - 14f - (left + 46f), TextUtils.TruncateAt.END).toString(),
+        c.drawText(Tr.t(TextUtils.ellipsize(name, pn, right - 70f - pl.measureText(lvl) - 14f - (left + 46f), TextUtils.TruncateAt.END).toString()),
             left + 46f, y - (pn.ascent() + pn.descent()) / 2f, pn)
         return y + 44f
     }
@@ -5418,14 +5418,14 @@ object UiKit {
     fun finderWelcome(c: Canvas, left: Float, y: Float, label: String): Float {
         tex("finder_newcomer")?.let { c.drawBitmap(it, null, RectF(left + 6f, y - 18f, left + 42f, y + 18f), pBmp) }
         val p = bodyPaint(25f, Theme.welcome)
-        c.drawText(label, left + 50f, y - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), left + 50f, y - (p.ascent() + p.descent()) / 2f, p)
         return y + 50f
     }
 
     /** a search that runs: the game's word ([label], "Searching...") and its eye under it, centred on [cx]; [top] is the word's centre */
     fun searching(c: Canvas, cx: Float, top: Float, label: String) {
         val p = bodyPaint(34f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(label, cx, top - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), cx, top - (p.ascent() + p.descent()) / 2f, p)
         tex("finder_eye")?.let { c.drawBitmap(it, null, RectF(cx - 75f, top + 50f, cx + 75f, top + 200f), pBmp) }
     }
 
@@ -5444,7 +5444,7 @@ object UiKit {
         val p = bodyPaint(32f, if (!enabled) Theme.dim else if (selected) Theme.gold else Theme.text)
         val room = r.right - (if (more) 66f else 16f) - (r.left + 100f)
         while (p.measureText(label) > room && p.textSize > 24f) p.textSize -= 1f
-        c.drawText(TextUtils.ellipsize(label, p, room, TextUtils.TruncateAt.END).toString(), r.left + 100f,
+        c.drawText(Tr.t(TextUtils.ellipsize(label, p, room, TextUtils.TruncateAt.END).toString()), r.left + 100f,
             cy - 2f - (p.ascent() + p.descent()) / 2f, p)
         if (!mark) Unit
         else if (radio) {
@@ -5482,7 +5482,7 @@ object UiKit {
         else { pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(150, 70, 10); c.drawRect(r, pFlat) }
         val p = bodyPaint(19f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
         while (p.measureText(name) > r.width() - 6f && p.textSize > 15f) p.textSize -= 1f
-        c.drawText(name, r.centerX(), r.centerY() - 1f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(name), r.centerX(), r.centerY() - 1f - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /**
@@ -5520,7 +5520,7 @@ object UiKit {
         pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(140, 0, 0, 0)
         c.drawRect(r.left + 6f, r.top + 6f, r.left + 46f, r.top + 38f, pFlat)
         val p = bodyPaint(24f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(day.toString(), r.left + 26f, r.top + 21f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(day.toString()), r.left + 26f, r.top + 21f - (p.ascent() + p.descent()) / 2f, p)
         if (other) { pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(158, 0, 0, 0); c.drawRect(r, pFlat) }
         pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 1f; pFlat.color = Color.rgb(28, 20, 10)
         c.drawRect(r.left + 0.5f, r.top + 0.5f, r.right - 0.5f, r.bottom - 0.5f, pFlat)
@@ -5550,12 +5550,12 @@ object UiKit {
         val room = (r.right - 18f - left).toInt()
         val pt = TextPaint(bodyPaint(25f, colour))
         while (pt.measureText(title) > room && pt.textSize > 21f) pt.textSize -= 1f
-        val sl = StaticLayout.Builder.obtain(title, 0, title.length, pt, room).setMaxLines(2)
+        val sl = StaticLayout.Builder.obtain(Tr.t(title), 0, Tr.t(title).length, pt, room).setMaxLines(2)
             .setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(0f, 0.95f).build()
         val two = sl.lineCount > 1
         c.save(); c.translate(left, r.top + (if (two) 8f else 22f)); sl.draw(c); c.restore()
         val pu = bodyPaint(21f, Theme.dim)
-        c.drawText(TextUtils.ellipsize(under, pu, room.toFloat(), TextUtils.TruncateAt.END).toString(), left,
+        c.drawText(Tr.t(TextUtils.ellipsize(under, pu, room.toFloat(), TextUtils.TruncateAt.END).toString()), left,
             r.top + (if (two) 80f else 70f) - (pu.ascent() + pu.descent()) / 2f, pu)
     }
 
@@ -5623,7 +5623,7 @@ object UiKit {
             val bx = cx + size / 2f - 6f; val by = cy + size / 2f - 6f
             pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(230, 12, 10, 8)
             c.drawRect(bx - size * 0.52f, by - size * 0.3f, bx + 4f, by + 2f, pFlat)
-            c.drawText("$rank/$max", bx - size * 0.24f, by - size * 0.14f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t("$rank/$max"), bx - size * 0.24f, by - size * 0.14f - (p.ascent() + p.descent()) / 2f, p)
         }
         if (chosen) {
             val g = box(1f).apply { inset(-8f, -8f) }
@@ -5672,10 +5672,10 @@ object UiKit {
         }
         val tx = r.left + 12f + s + 14f
         val pn = bodyPaint(25f, if (active) Color.WHITE else Theme.gold)
-        c.drawText(TextUtils.ellipsize(name, pn, r.right - 12f - tx, TextUtils.TruncateAt.END).toString(), tx,
+        c.drawText(Tr.t(TextUtils.ellipsize(name, pn, r.right - 12f - tx, TextUtils.TruncateAt.END).toString()), tx,
             r.centerY() - 12f - (pn.ascent() + pn.descent()) / 2f, pn)
         val pp = bodyPaint(19f, Theme.dim)
-        c.drawText(if (points == 1) "1 point" else "$points points", tx, r.centerY() + 16f - (pp.ascent() + pp.descent()) / 2f, pp)
+        c.drawText(Tr.t(if (points == 1) "1 point" else "$points points"), tx, r.centerY() + 16f - (pp.ascent() + pp.descent()) / 2f, pp)
     }
 
     /** a dual-spec tab over [r] ("Primary" / "Secondary"): lit, with the game's check mark, when [active]; a [locked] one is dim and
@@ -5690,16 +5690,16 @@ object UiKit {
             x += 30f
         }
         val p = bodyPaint(21f, if (active) Color.WHITE else Theme.dim)
-        c.drawText(if (locked) "$word  (Locked)" else word, x, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(if (locked) "$word  (Locked)" else word), x, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /** "Unspent Talents" and the number, ending at [right], centred on [cy]; returns where the words begin */
     fun talentPool(c: Canvas, right: Float, cy: Float, have: Int, label: String = "Unspent Talents"): Float {
         val pn = numberPaint(34f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-        c.drawText(have.toString(), right, cy - (pn.ascent() + pn.descent()) / 2f, pn)
+        c.drawText(Tr.t(have.toString()), right, cy - (pn.ascent() + pn.descent()) / 2f, pn)
         val pl = bodyPaint(24f, Theme.gold).apply { textAlign = Paint.Align.RIGHT }
         val x = right - pn.measureText(have.toString()) - 16f
-        c.drawText(label, x, cy - (pl.ascent() + pl.descent()) / 2f, pl)
+        c.drawText(Tr.t(label), x, cy - (pl.ascent() + pl.descent()) / 2f, pl)
         return x - pl.measureText(label)
     }
 
@@ -5742,10 +5742,10 @@ object UiKit {
         if (chosen) focus(c, RectF(r.left + 4f, r.top + 4f, r.right - 4f, r.bottom - 4f))   // THE one highlight (LATER 19)
         val two = off && reason != null
         val pn = bodyPaint(30f, when { off -> Theme.dim; chosen -> Color.WHITE; else -> Theme.gold })
-        c.drawText(name, r.left + 28f, r.centerY() - (if (two) 12f else 0f) - (pn.ascent() + pn.descent()) / 2f, pn)
+        c.drawText(Tr.t(name), r.left + 28f, r.centerY() - (if (two) 12f else 0f) - (pn.ascent() + pn.descent()) / 2f, pn)
         if (two) {
             val pr = bodyPaint(20f, Theme.dim)
-            c.drawText(TextUtils.ellipsize(reason, pr, r.width() - 56f, TextUtils.TruncateAt.END).toString(), r.left + 28f,
+            c.drawText(Tr.t(TextUtils.ellipsize(reason, pr, r.width() - 56f, TextUtils.TruncateAt.END).toString()), r.left + 28f,
                 r.centerY() + 22f - (pr.ascent() + pr.descent()) / 2f, pr)
         }
     }
@@ -5761,7 +5761,7 @@ object UiKit {
         check(c, x + 15f, y + size - 15f, 46f, on, enabled)
         if (label != null) {
             val p = bodyPaint(23f, if (on && enabled) Theme.gold else Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(label, x + size / 2f, y + size + 22f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(label), x + size / 2f, y + size + 22f - (p.ascent() + p.descent()) / 2f, p)
         }
     }
 
@@ -5780,7 +5780,7 @@ object UiKit {
         }
         check(c, x + 15f, y + size - 15f, 46f, on)
         val p = bodyPaint(23f, if (on) Theme.gold else Theme.dim)
-        c.drawText(label, x + size + 20f, y + size / 2f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(label), x + size + 20f, y + size / 2f - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /**
@@ -5799,18 +5799,18 @@ object UiKit {
             }
             check(c, r.left + 71f, cy, 46f, on)
             val p = bodyPaint(27f, Theme.gold)
-            c.drawText(name, r.left + 108f, cy - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(name), r.left + 108f, cy - (p.ascent() + p.descent()) / 2f, p)
             return
         }
         if (on) { pFlat.style = Paint.Style.FILL; pFlat.color = Theme.selected; c.drawRect(r.left + 40f, r.top + 4f, r.right, r.bottom - 4f, pFlat) }
         check(c, r.left + 81f, cy, 46f, on)
         val pl = bodyPaint(23f, if (on) Theme.gold else Theme.dim).apply { textAlign = Paint.Align.RIGHT }
         val lw = if (level != null) pl.measureText(level) + 24f else 0f
-        if (level != null) c.drawText(level, r.right - 16f, cy - (pl.ascent() + pl.descent()) / 2f, pl)
+        if (level != null) c.drawText(Tr.t(level), r.right - 16f, cy - (pl.ascent() + pl.descent()) / 2f, pl)
         val pn = bodyPaint(26f, if (on) Color.WHITE else Theme.text)
         val room = r.right - 16f - lw - (r.left + 118f) - (if (saved) 30f else 0f)
-        val shown = TextUtils.ellipsize(name, pn, room, TextUtils.TruncateAt.END).toString()
-        c.drawText(shown, r.left + 118f, cy - (pn.ascent() + pn.descent()) / 2f, pn)
+        val shown = TextUtils.ellipsize(Tr.t(name), pn, room, TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(shown), r.left + 118f, cy - (pn.ascent() + pn.descent()) / 2f, pn)
         if (saved) tex("finder_saved")?.let {
             val x = r.left + 118f + pn.measureText(shown) + 10f
             c.drawBitmap(it, null, RectF(x, cy - 11f, x + 22f, cy + 11f), pBmp)
@@ -5825,12 +5825,12 @@ object UiKit {
     fun descriptionBox(c: Canvas, r: RectF, label: String?, typed: Boolean?, empty: String = "Written in the game's own window") {
         if (label != null) {
             val pl = bodyPaint(21f, Theme.dim)
-            c.drawText(label, r.left, r.top - 22f - (pl.ascent() + pl.descent()) / 2f, pl)
+            c.drawText(Tr.t(label), r.left, r.top - 22f - (pl.ascent() + pl.descent()) / 2f, pl)
         }
         noteBox(c, r)
         val word = if (typed == true) "Written in the game" else empty
         val p = bodyPaint(21f, if (typed == true) Theme.gold else Color.rgb(110, 100, 84)).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(word, r.centerX(), r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(word), r.centerX(), r.centerY() - (p.ascent() + p.descent()) / 2f, p)
     }
 
     // ---------------------------------------------------------------- the later list (the user picked them 2026-09-30)
@@ -5887,7 +5887,7 @@ object UiKit {
         val pn = TextPaint(bodyPaint(30f * scale, nameColour))
         val pl = TextPaint(bodyPaint(24f * scale))
         // measure first: the box is as tall as what it holds
-        val nameL = StaticLayout.Builder.obtain(name, 0, name.length, pn, tw).setLineSpacing(2f, 1f).build()
+        val nameL = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, pn, tw).setLineSpacing(2f, 1f).build()
         val lays = lines.map { l ->
             pl.color = l.c
             val room = if (l.r != null) tw - pl.measureText(l.r).toInt() - 16 else tw
@@ -5904,14 +5904,14 @@ object UiKit {
         c.drawRect(box.left + 4f, box.top + 4f, box.right - 4f, box.bottom - 4f, pFlat)
         border(c, box, "border_tooltip", 18f, Color.rgb(120, 120, 120))
         var ty = y + pad
-        if (header != null) { c.drawText(header, x + pad, ty + 18f * scale - (ph.ascent() + ph.descent()) / 2f - 4f * scale, ph); ty += headH }
+        if (header != null) { c.drawText(Tr.t(header), x + pad, ty + 18f * scale - (ph.ascent() + ph.descent()) / 2f - 4f * scale, ph); ty += headH }
         c.save(); c.translate(x + pad, ty); nameL.draw(c); c.restore(); ty += nameL.height + 8f
         for ((i, l) in lines.withIndex()) {
             val lay = lays[i]
             c.save(); c.translate(x + pad, ty); lay.draw(c); c.restore()
             if (l.r != null) {
                 val pr = bodyPaint(24f * scale, l.rc).apply { textAlign = Paint.Align.RIGHT }
-                c.drawText(l.r, box.right - pad, ty - pr.ascent(), pr)
+                c.drawText(Tr.t(l.r), box.right - pad, ty - pr.ascent(), pr)
             }
             if (l.money >= 0) money(c, l.money, x + pad + pl.measureText(l.t) + 10f * scale, ty + lay.height / 2f, 24f * scale)
             ty += lay.height + 4f
@@ -5963,7 +5963,7 @@ object UiKit {
         val tw = 44f + 10f + p.measureText(text)
         val x0 = r.centerX() - tw / 2f
         pad(c, glyph, x0 + 22f, r.centerY() + 2f, 44f)
-        c.drawText(text, x0 + 54f, r.centerY() + 2f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(text), x0 + 54f, r.centerY() + 2f - (p.ascent() + p.descent()) / 2f, p)
         if (layer) c.restore()
         return r
     }
@@ -5996,7 +5996,7 @@ object UiKit {
             val x0 = cell.centerX() - tw / 2f
             if (a.first != null) pad(c, a.first!!, x0 + 21f, cell.centerY() + 2f, 42f)
             if (i == holdAt && a.first != null) holdRing(c, x0 + 21f, cell.centerY() + 2f, 25f, hold)
-            c.drawText(a.second, x0 + (if (a.first != null) 50f else 0f), cell.centerY() + 2f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(a.second), x0 + (if (a.first != null) 50f else 0f), cell.centerY() + 2f - (p.ascent() + p.descent()) / 2f, p)
         }
         if (layer) c.restore()
         return cells
@@ -6205,7 +6205,7 @@ object UiKit {
         val tw = glyphs.size * 42f + 8f + p.measureText("More")
         var x = (left + right) / 2f - tw / 2f
         for (g in glyphs) { pad(c, g, x + 20f, bottom - 26f, 40f, alpha); x += 42f }
-        c.drawText("More", x + 8f, bottom - 26f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t("More"), x + 8f, bottom - 26f - (p.ascent() + p.descent()) / 2f, p)
     }
 
     // ---------------------------------------------------------------- the app's own face
@@ -6224,9 +6224,9 @@ object UiKit {
         val p = bodyPaint(size, colour, shadow = false).apply { textAlign = Paint.Align.CENTER }
         val y = cy - (p.ascent() + p.descent()) / 2f
         p.style = Paint.Style.STROKE; p.strokeWidth = edge * 2f; p.strokeJoin = Paint.Join.ROUND; p.color = Color.rgb(10, 8, 6)
-        c.drawText(words, cx, y, p)
+        c.drawText(Tr.t(words), cx, y, p)
         p.style = Paint.Style.FILL; p.color = colour
-        c.drawText(words, cx, y, p)
+        c.drawText(Tr.t(words), cx, y, p)
     }
 
     /**
@@ -6244,9 +6244,9 @@ object UiKit {
         val y = base + 50f * k
         for ((p, words, at, colour) in listOf(Quad(pa, "DS", x, Color.rgb(214, 222, 232)), Quad(pb, "Forever", x + wa + gap, Theme.gold))) {
             p.style = Paint.Style.STROKE; p.strokeWidth = 14f * k; p.strokeJoin = Paint.Join.ROUND; p.color = Color.rgb(10, 8, 6)
-            c.drawText(words, at, y, p)
+            c.drawText(Tr.t(words), at, y, p)
             p.style = Paint.Style.FILL; p.color = colour
-            c.drawText(words, at, y, p)
+            c.drawText(Tr.t(words), at, y, p)
         }
         val sx = x + wa / 2f
         val y0 = y + 22f * k

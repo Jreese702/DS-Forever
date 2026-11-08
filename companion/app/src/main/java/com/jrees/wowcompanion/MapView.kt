@@ -1543,7 +1543,7 @@ class MapView(context: Context) : View(context) {
         pRing.color = cGold; c.drawCircle(x, y, 17f, pRing)
         if (zoom >= 2.5f && name.isNotEmpty()) {
             val lp = UiKit.bodyPaint(20f, Color.rgb(220, 200, 255)).apply { textAlign = Paint.Align.CENTER; setShadowLayer(3f, 0f, 0f, Color.BLACK) }
-            c.drawText(name, x, y + 40f, lp)
+            c.drawText(Tr.t(name), x, y + 40f, lp)
         }
     }
 
@@ -2096,7 +2096,7 @@ class MapView(context: Context) : View(context) {
             textSize = 52f; textAlign = Paint.Align.CENTER
             color = fade(if (active) cGold else cDim, a)
         }
-        c.drawText(glyph, r.centerX(), r.centerY() + 19f, t)
+        c.drawText(Tr.t(glyph), r.centerX(), r.centerY() + 19f, t)
     }
 
     private val cGold = Color.parseColor("#FFD100")
@@ -3807,11 +3807,11 @@ class MapView(context: Context) : View(context) {
         val inner = UiKit.menu(c, pmenuBox, solid = true)
         val hp = UiKit.bodyPaint(28f, cGold)
         val heading = (if (pmenu.depth > 0) "< " else "") + (pmenu.heading() ?: portrait?.optString("n", "") ?: "")
-        c.drawText(ellipsize(hp, heading, inner.width() - 32f), inner.left + 16f, inner.top + 40f, hp)
+        c.drawText(Tr.t(ellipsize(hp, heading, inner.width() - 32f)), inner.left + 16f, inner.top + 40f, hp)
         val top0 = inner.top + head
         if (pmenu.loading || pmenu.empty) {
             val dp = UiKit.bodyPaint(24f, cDim)
-            c.drawText(if (pmenu.loading) "Asking the game..." else "The game's menu could not be read here", inner.left + 16f, top0 + 46f, dp)
+            c.drawText(Tr.t(if (pmenu.loading) "Asking the game..." else "The game's menu could not be read here"), inner.left + 16f, top0 + 46f, dp)
             return
         }
         // the game's own title row is the heading already: not twice
@@ -3824,7 +3824,7 @@ class MapView(context: Context) : View(context) {
             val r = RectF(inner.left, top0 + (k - first) * rowH, inner.right, top0 + (k - first + 1) * rowH)
             if (e.title) {
                 val tp = UiKit.bodyPaint(22f, cDim)
-                c.drawText(ellipsize(tp, e.text, r.width() - 32f), r.left + 16f, r.centerY() + 8f, tp)
+                c.drawText(Tr.t(ellipsize(tp, e.text, r.width() - 32f)), r.left + 16f, r.centerY() + 8f, tp)
                 continue
             }
             UiKit.menuRow(c, r, e.text + (if (e.sub != null) "  >" else ""), i == pmenu.sel, enabled = e.enabled,
@@ -5002,7 +5002,7 @@ class MapView(context: Context) : View(context) {
             val cy = (ey - uy * back + 8f).coerceIn(ft + 30f, fb - 12f)
             labelBox.set(cx - tw / 2f - 10f, cy - 22f, cx + tw / 2f + 10f, cy + 8f)
             pLabelBack.color = Color.argb((190 * a).toInt(), 10, 8, 6); c.drawRoundRect(labelBox, 8f, 8f, pLabelBack)
-            c.drawText(words, cx - tw / 2f, cy, tp)
+            c.drawText(Tr.t(words), cx - tw / 2f, cy, tp)
         }
         // the dots keep moving while the map shows: about 30 frames a second is plenty for 24 px a second
         if (isShown) postInvalidateDelayed(33)
@@ -5483,10 +5483,10 @@ class MapView(context: Context) : View(context) {
         pRing.color = cGold; c.drawCircle(cx, cy, rad, pRing)
         val tx = cx + rad + 16f; val tw = box.right - 12f - tx
         val np = UiKit.bodyPaint(27f, cGold)
-        c.drawText(ellipsize(np, who.optString("n", ""), tw), tx, cy - 6f, np)
+        c.drawText(Tr.t(ellipsize(np, who.optString("n", ""), tw)), tx, cy - 6f, np)
         val lp = UiKit.bodyPaint(21f, cDim)
         val line = listOfNotNull(questsPlv?.let { "Level $it" }, who.optString("cl", "").ifEmpty { null }).joinToString(" ")
-        c.drawText(ellipsize(lp, line, tw), tx, cy + 24f, lp)
+        c.drawText(Tr.t(ellipsize(lp, line, tw)), tx, cy + 24f, lp)
     }
 
     /** an untracked tab: the quest book's header bar, the zone, its count and the game's + / - */
@@ -5501,7 +5501,7 @@ class MapView(context: Context) : View(context) {
         } else { pFill.color = Color.argb(200, 40, 30, 20); c.drawRect(r, pFill) }
         val tp = UiKit.bodyPaint(22f, Color.rgb(230, 222, 200)).apply { setShadowLayer(2f, 1f, 1f, Color.BLACK) }
         val label = "${g.zone} (${g.count})"
-        c.drawText(ellipsize(tp, label, r.width() - 80f), r.left + 18f, r.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+        c.drawText(Tr.t(ellipsize(tp, label, r.width() - 80f)), r.left + 18f, r.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
         UiKit.tex(if (g.open) "list_minus" else "list_plus")?.let { b ->
             val sc = 26f / 26f
             val bw = b.width * sc; val bh = b.height * sc
@@ -5603,7 +5603,7 @@ class MapView(context: Context) : View(context) {
         trackerRect.set(x, y0, x + w, y0 + gh)
         val winTop = y0 + (if (above > 0) lineO else 0f)
         val winBot = y0 + gh - (if (more > 0) lineO else 0f)
-        if (above > 0) c.drawText("$above more above", x + ROW_PAD_X, y0 + lineO - 10f, dp)
+        if (above > 0) c.drawText(Tr.t("$above more above"), x + ROW_PAD_X, y0 + lineO - 10f, dp)
         // THE TOP SPOT, where Home's flying card lands (see [morph]): the first tracked quest's row as the list puts it once settled
         val ti = list.indexOfFirst { it is MapList.Item.Tracked }
         if (ti >= listFirst && ti >= 0) {
@@ -5645,7 +5645,7 @@ class MapView(context: Context) : View(context) {
             }
         }
         c.restore()
-        if (more > 0) c.drawText("$more more below", x + ROW_PAD_X, y0 + gh - 10f, dp)
+        if (more > 0) c.drawText(Tr.t("$more more below"), x + ROW_PAD_X, y0 + gh - 10f, dp)
         if (moving) postInvalidateOnAnimation()
     }
 
@@ -5974,17 +5974,17 @@ class MapView(context: Context) : View(context) {
 
         val m = map
         if (m == null || !m.optBoolean("ok", false)) {
-            if (compact) c.drawText("Waiting for the game", 12f, 30f, pSmall)
-            else c.drawText("Waiting for the game", 24f, if (header) 48f else 56f, pTitle)
+            if (compact) c.drawText(Tr.t("Waiting for the game"), 12f, 30f, pSmall)
+            else c.drawText(Tr.t("Waiting for the game"), 24f, if (header) 48f else 56f, pTitle)
             return
         }
 
         if (header) {
             val zone = m.optString("zone", "Unknown")
-            c.drawText(zone, 24f, 48f, pTitle)
+            c.drawText(Tr.t(zone), 24f, 48f, pTitle)
             val sub = m.optString("subzone", "")
             if (sub.isNotEmpty() && sub != zone) {
-                c.drawText(sub, 24f + pTitle.measureText(zone) + 18f, 48f, pSmall)
+                c.drawText(Tr.t(sub), 24f + pTitle.measureText(zone) + 18f, 48f, pSmall)
             }
         }
 
@@ -6001,11 +6001,11 @@ class MapView(context: Context) : View(context) {
         if (header) {
             val coord = if (px.isNaN()) "--" else String.format("%.1f, %.1f", px * 100, py * 100)
             pSmall.color = cText
-            c.drawText(coord, w - headerRightInset - pSmall.measureText(coord) - 22f, 46f, pSmall)
+            c.drawText(Tr.t(coord), w - headerRightInset - pSmall.measureText(coord) - 22f, 46f, pSmall)
             if (staleMs > 5000) {
                 val s = "${staleMs / 1000}s old"
                 pSmall.color = Color.parseColor("#D99A4E")
-                c.drawText(s, w - headerRightInset - pSmall.measureText(s) - 22f, 68f, pSmall)
+                c.drawText(Tr.t(s), w - headerRightInset - pSmall.measureText(s) - 22f, 68f, pSmall)
             }
         }
         pSmall.color = cDim
@@ -6301,7 +6301,7 @@ class MapView(context: Context) : View(context) {
         val lineA = pLine.alpha; val smallA = pSmall.alpha
         if (mf < 1f) { pLine.alpha = (lineA * mf).toInt(); pSmall.alpha = (smallA * mf).toInt() }
         c.drawRect(left, top, left + fw, top + fh, pLine)
-        c.drawText("N", left + fw / 2f - 8f, top + 26f, pSmall)
+        c.drawText(Tr.t("N"), left + fw / 2f - 8f, top + 26f, pSmall)
         pLine.alpha = lineA; pSmall.alpha = smallA
 
         // THE BOTTOM-RIGHT GROUP (see ROOM_EDGE): minus in the corner, plus above it
@@ -6515,7 +6515,7 @@ class MapView(context: Context) : View(context) {
             pathFor = 0
             if (!compact && questTrailLive() == null) {
                 val np = UiKit.bodyPaint(18f, Color.rgb(230, 210, 160)).apply { setShadowLayer(3f, 0f, 0f, Color.BLACK) }
-                c.drawText("QuestTrail's arrow is not showing", left + 16f, top + 30f, np)
+                c.drawText(Tr.t("QuestTrail's arrow is not showing"), left + 16f, top + 30f, np)
             }
         } else if ((poleOn || qtOn) && route != null && cursor.sel == qtOrGameFocus() && run {
                 val fb = top + fh - (if (hintsOn()) HINT_BAND else 0f)
@@ -6532,12 +6532,12 @@ class MapView(context: Context) : View(context) {
             // Polestar chosen but not routing: the app's own route, and why
             if (poleOn) polestar.why?.let { w ->
                 val np = UiKit.bodyPaint(18f, Color.rgb(230, 210, 160)).apply { setShadowLayer(3f, 0f, 0f, Color.BLACK) }
-                c.drawText("$w: DS Forever's route", left + 16f, top + 30f, np)
+                c.drawText(Tr.t("$w: DS Forever's route"), left + 16f, top + 30f, np)
             }
             // QuestTrail chosen, its arrow not showing (not installed, off, or nothing planned): the app's own route, said so
             if (qtOn && questTrailLive() == null) {
                 val np = UiKit.bodyPaint(18f, Color.rgb(230, 210, 160)).apply { setShadowLayer(3f, 0f, 0f, Color.BLACK) }
-                c.drawText("QuestTrail's arrow is not showing: DS Forever's route", left + 16f, top + 30f, np)
+                c.drawText(Tr.t("QuestTrail's arrow is not showing: DS Forever's route"), left + 16f, top + 30f, np)
             }
             val fb = top + fh - (if (hintsOn()) HINT_BAND else 0f)
             val save = c.save()
@@ -6649,7 +6649,7 @@ class MapView(context: Context) : View(context) {
         }
         dangerNote?.let { n ->
             val np = UiKit.bodyPaint(18f, Color.rgb(255, 170, 150)).apply { setShadowLayer(3f, 0f, 0f, Color.BLACK) }
-            c.drawText(n, left + 16f, top + fh - 48f - (if (hintsOn()) HINT_BAND else 0f), np)
+            c.drawText(Tr.t(n), left + 16f, top + fh - 48f - (if (hintsOn()) HINT_BAND else 0f), np)
         }
 
         // ---- live markers, as icons, in the game's own vocabulary so nothing needs learning:
@@ -6960,7 +6960,7 @@ class MapView(context: Context) : View(context) {
             pFill.color = Color.argb(170, 0, 0, 0)
             val nx0 = left + fw / 2f - tw / 2f - 8f       // top centre: the top left is the filter's now
             c.drawRect(nx0, top + 8f, nx0 + tw + 16f, top + 40f, pFill)
-            c.drawText(note, nx0 + 8f, top + 31f, pSmall)
+            c.drawText(Tr.t(note), nx0 + 8f, top + 31f, pSmall)
             pSmall.color = cDim
         }
 
@@ -6974,7 +6974,7 @@ class MapView(context: Context) : View(context) {
                 val nx = left + trackPx + (fw - trackPx) / 2f - tw / 2f
                 pFill.color = Color.argb(200, 8, 6, 4)
                 c.drawRoundRect(nx - 16f, top + 44f, nx + tw + 16f, top + 84f, 10f, 10f, pFill)
-                c.drawText(t, nx, top + 72f, np)
+                c.drawText(Tr.t(t), nx, top + 72f, np)
             }
         }
 
@@ -7018,9 +7018,8 @@ class MapView(context: Context) : View(context) {
                          else String.format("%.1fx%s", zoom, if (autoZoom) " auto" else "")
             pSmall.color = cDim
             val lift = if (hintsOn()) HINT_BAND else 0f
-            c.drawText(zlabel, left + 10f, top + fh - 12f - lift, pSmall)
-            if (!followPlayer) c.drawText(
-                if (recentreFrom != null) "recentring" else "panned - walk to recentre",
+            c.drawText(Tr.t(zlabel), left + 10f, top + fh - 12f - lift, pSmall)
+            if (!followPlayer) c.drawText(Tr.t(if (recentreFrom != null) "recentring" else "panned - walk to recentre"),
                 left + 10f, top + fh - 34f - lift, pSmall)
             if (hintsOn()) drawPadHints(c, left, top, fw, fh)
             if (fade >= 0) c.restoreToCount(fade)
@@ -7095,7 +7094,7 @@ class MapView(context: Context) : View(context) {
                 val box = RectF(tx, ty - 30f, tx + tw, ty + 30f)
                 if (i == filterTab) { UiKit.focus(c, box) }
                 tp.color = if (i == filterTab) cGold else cDim
-                c.drawText(t, tx + 24f, ty - (tp.ascent() + tp.descent()) / 2f, tp)
+                c.drawText(Tr.t(t), tx + 24f, ty - (tp.ascent() + tp.descent()) / 2f, tp)
                 filterHits[FILTER_TAB0 - i] = RectF(box)
                 tx += tw + 14f
             }
@@ -7138,10 +7137,10 @@ class MapView(context: Context) : View(context) {
             UiKit.check(c, cx0 + 44f, cy, 64f, on)
             drawPin(c, kindOf(NpcIcons.icon(NpcKind.key(bit, null), bit)), cx0 + 116f, cy, 56f)
             val n = (counts[bit] ?: 0).toString()
-            c.drawText(n, cx0 + cw - 16f, cy - (num.ascent() + num.descent()) / 2f, num)
+            c.drawText(Tr.t(n), cx0 + cw - 16f, cy - (num.ascent() + num.descent()) / 2f, num)
             name.textSize = labelSize
             name.color = if (on) roleColour(bit) else cDim
-            c.drawText(label, cx0 + 156f, cy - 2f - (name.ascent() + name.descent()) / 2f, name)
+            c.drawText(Tr.t(label), cx0 + 156f, cy - 2f - (name.ascent() + name.descent()) / 2f, name)
         }
         // QUESTIEDB'S CHESTS AND RARES (the user, 2026-10-06: "Shown, with a filter switch" for each), two more cells of the grid:
         // the game's picture, the count of spots on THIS map. Herbs and ore have no switch: they follow the game's own tracking.
@@ -7182,10 +7181,10 @@ class MapView(context: Context) : View(context) {
                 }
             }
             val n = if (key == FILTER_SWITCH || key == FILTER_SPARKLES) "" else count.toString()
-            c.drawText(n, cx0 + cw - 16f, cy - (num.ascent() + num.descent()) / 2f, num)
+            c.drawText(Tr.t(n), cx0 + cw - 16f, cy - (num.ascent() + num.descent()) / 2f, num)
             name.textSize = labelSize
             name.color = if (on) cGold else cDim
-            c.drawText(label, cx0 + 156f, cy - 2f - (name.ascent() + name.descent()) / 2f, name)
+            c.drawText(Tr.t(label), cx0 + 156f, cy - 2f - (name.ascent() + name.descent()) / 2f, name)
         }
     }
 
@@ -7224,9 +7223,9 @@ class MapView(context: Context) : View(context) {
             }
             name.color = if (on) cGold else cDim
             val hasSub = l.sub.isNotEmpty() && rowH >= 84f
-            c.drawText(l.label, x0 + 156f, (if (hasSub) cy - 12f else cy) - (name.ascent() + name.descent()) / 2f, name)
-            if (hasSub) c.drawText(ellipsize(sub, l.sub, filterBox.width() - 300f), x0 + 156f, cy + 26f, sub)
-            counts[l]?.let { c.drawText(it.toString(), filterBox.right - 28f, cy - (num.ascent() + num.descent()) / 2f, num) }
+            c.drawText(Tr.t(l.label), x0 + 156f, (if (hasSub) cy - 12f else cy) - (name.ascent() + name.descent()) / 2f, name)
+            if (hasSub) c.drawText(Tr.t(ellipsize(sub, l.sub, filterBox.width() - 300f)), x0 + 156f, cy + 26f, sub)
+            counts[l]?.let { c.drawText(Tr.t(it.toString()), filterBox.right - 28f, cy - (num.ascent() + num.descent()) / 2f, num) }
         }
     }
 

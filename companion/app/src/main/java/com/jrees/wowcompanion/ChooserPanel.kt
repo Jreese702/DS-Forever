@@ -199,7 +199,7 @@ class ChooserPanel(context: Context) : View(context) {
         c.drawRoundRect(main, 14f, 14f, pFill)
         UiKit.border(c, main)
         val name = UiKit.titlePaint(64f).apply { textAlign = Paint.Align.CENTER }
-        c.drawText("DS Forever", main.centerX(), main.centerY() + 22f, name)
+        c.drawText(Tr.t("DS Forever"), main.centerX(), main.centerY() + 22f, name)
         if (cell == mainCell) UiKit.pad(c, StartView.GLYPH_A, main.left + 58f, main.top + 58f, 76f)
         val back = RectF(MARGIN, footY, MARGIN + SIDE_W, footY + BUTTON_H)
         hits += back to Back
@@ -226,7 +226,7 @@ class ChooserPanel(context: Context) : View(context) {
         val s = minOf(d.width() - PAD * 2, picBottom - picTop) * 0.8f
         if (s > 40f) picture(c, mode, d.centerX(), (picTop + picBottom) / 2f, s)
         var y = d.bottom - PAD - textH + 30f
-        for (l in lines) { c.drawText(l, d.centerX(), y, body); y += 40f }
+        for (l in lines) { c.drawText(Tr.t(l), d.centerX(), y, body); y += 40f }
     }
 
     private fun blurb(mode: StartMode.Mode) = Tr.t(when (mode) {
@@ -279,11 +279,11 @@ class ChooserPanel(context: Context) : View(context) {
         val body = UiKit.bodyPaint(30f).apply { textAlign = Paint.Align.CENTER }
         var y = card.top + PAD + 120f
         val text = Tr.t("Connect to DS Forever Desktop. Type the code it shows on your PC on the top screen.")
-        for (l in SetupPanel.wrap(text, body, card.width() - PAD * 2)) { c.drawText(l, card.centerX(), y, body); y += 40f }
+        for (l in SetupPanel.wrap(text, body, card.width() - PAD * 2)) { c.drawText(Tr.t(l), card.centerX(), y, body); y += 40f }
         if (ModeBridge.streamNote.isNotEmpty()) {
             y += 20f
             val dim = UiKit.bodyPaint(28f, Theme.textDim).apply { textAlign = Paint.Align.CENTER }
-            for (l in SetupPanel.wrap(ModeBridge.streamNote, dim, card.width() - PAD * 2)) { c.drawText(l, card.centerX(), y, dim); y += 38f }
+            for (l in SetupPanel.wrap(ModeBridge.streamNote, dim, card.width() - PAD * 2)) { c.drawText(Tr.t(l), card.centerX(), y, dim); y += 38f }
         }
         picture(c, StartMode.Mode.STREAM, card.centerX(), (y + card.bottom - PAD - BUTTON_H) / 2f + 20f,
             minOf(card.width() * 0.5f, (card.bottom - PAD - BUTTON_H - y) * 0.8f).coerceAtLeast(0f))

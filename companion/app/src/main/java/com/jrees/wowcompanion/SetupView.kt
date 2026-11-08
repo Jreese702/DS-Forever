@@ -124,17 +124,17 @@ class SetupView(context: Context) : View(context) {
             UiKit.slot(c, iconBmp, cx - ICON_SZ / 2f, y - 42f, ICON_SZ)
             y += ICON_SZ + 20f
         }
-        for (l in tl) { c.drawText(l, cx, y, tp); y += 56f }
+        for (l in tl) { c.drawText(Tr.t(l), cx, y, tp); y += 56f }
         y += 20f
         val left = box.left + 70f
         for (lines in bl) {
-            c.drawText("•", left, y, dp)
-            for (l in lines) { c.drawText(l, left + BULLET_IN, y, lp); y += 44f }
+            c.drawText(Tr.t("•"), left, y, dp)
+            for (l in lines) { c.drawText(Tr.t(l), left + BULLET_IN, y, lp); y += 44f }
             y += 6f
         }
         y += 18f
-        for (l in fl) { c.drawText(l, cx, y, fp); y += 38f }
-        if (nl.isNotEmpty()) { y += 16f; for (l in nl) { c.drawText(l, cx, y, np); y += 42f } }
+        for (l in fl) { c.drawText(Tr.t(l), cx, y, fp); y += 38f }
+        if (nl.isNotEmpty()) { y += 16f; for (l in nl) { c.drawText(Tr.t(l), cx, y, np); y += 42f } }
         val by = box.bottom - 50f - 111f
         button(c, RectF(cx - 20f - 300f, by, cx - 20f, by + 111f), yesLabel, "setup")
         button(c, RectF(cx + 20f, by, cx + 20f + 300f, by + 111f), noLabel, "later")

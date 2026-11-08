@@ -80,7 +80,7 @@ class LoadingTopView(context: Context) : View(context) {
         c.drawRoundRect(RectF(box.left + 6f * k, box.top + 6f * k, box.right - 6f * k, box.bottom - 6f * k), 10f * k, 10f * k, pFill)
         UiKit.border(c, box, "border_gold", 34f * k)
         val title = UiKit.titlePaint(52f * k).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(TITLE, box.centerX(), box.top + 92f * k, title)
+        c.drawText(Tr.t(TITLE), box.centerX(), box.top + 92f * k, title)
         UiKit.divider(c, box.left + 70f * k, box.top + 124f * k, box.right - 70f * k, box.top + 124f * k)
         var y = box.top + 186f * k
         val x = box.left + ROW_X * k
@@ -92,15 +92,15 @@ class LoadingTopView(context: Context) : View(context) {
                 SetupFlow.Mark.BAD -> BAD
                 else -> Theme.textDim
             })
-            for (l in lines) { c.drawText(l, x + 64f * k, y, p); y += ROW_H * k }
+            for (l in lines) { c.drawText(Tr.t(l), x + 64f * k, y, p); y += ROW_H * k }
             bars.getOrNull(n)?.let { f ->
                 bar(c, RectF(x + 64f * k, y - ROW_H * k + 18f * k, box.right - 90f * k, y - ROW_H * k + 30f * k), f)
                 y += BAR_ROW * k
             }
         }
-        for (l in errLines) { c.drawText(l, x + 64f * k, y, UiKit.bodyPaint(32f * k, BAD)); y += ROW_H * k }
+        for (l in errLines) { c.drawText(Tr.t(l), x + 64f * k, y, UiKit.bodyPaint(32f * k, BAD)); y += ROW_H * k }
         val lp = UiKit.bodyPaint(28f * k, Theme.gold).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(line, box.centerX(), y + 10f * k, lp)
+        c.drawText(Tr.t(line), box.centerX(), y + 10f * k, lp)
         reportRect.setEmpty()
         if (report) {
             UiKit.divider(c, box.left + 70f * k, box.bottom - 150f * k, box.right - 70f * k, box.bottom - 150f * k)

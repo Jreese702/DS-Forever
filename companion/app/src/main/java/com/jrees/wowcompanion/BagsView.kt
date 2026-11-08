@@ -726,7 +726,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             val box = RectF(x, r.bottom + 22f, x + w, r.bottom + 22f + h)
             val inner = UiKit.menu(c, box, solid = true)
             val name = st.bags.firstOrNull { b -> b.id == id }?.name ?: "Bag"
-            c.drawText(name, inner.left + 16f, inner.top + 34f, UiKit.bodyPaint(26f, Color.WHITE))
+            c.drawText(Tr.t(name), inner.left + 16f, inner.top + 34f, UiKit.bodyPaint(26f, Color.WHITE))
             val sel = bm.optInt("at", 1)
             for ((i, label) in labels.withIndex()) {
                 val rr = RectF(inner.left, inner.top + 56f + i * 96f, inner.right, inner.top + 56f + i * 96f + 92f)
@@ -787,9 +787,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             val inner = UiKit.menu(c, box, solid = true)
             val it = curItem()
             val np = UiKit.bodyPaint(26f, colourOf(it))
-            val shown = android.text.TextUtils.ellipsize(it?.optString("name") ?: "", android.text.TextPaint(np), inner.width() - 32f,
+            val shown = android.text.TextUtils.ellipsize(Tr.t(it?.optString("name") ?: ""), android.text.TextPaint(np), inner.width() - 32f,
                 android.text.TextUtils.TruncateAt.END).toString()
-            c.drawText(shown, inner.left + 16f, inner.top + 34f, np)
+            c.drawText(Tr.t(shown), inner.left + 16f, inner.top + 34f, np)
             val usable = st.ctl?.optJSONArray("usable")
             val sel = st.ctl?.optString("menu")
             for ((i, row) in rows.withIndex()) {
@@ -821,9 +821,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             UiKit.tex("alert")?.let { c.drawBitmap(it, null, RectF(r.left + 66f, r.top + 60f, r.left + 186f, r.top + 180f), null) }
             val text = UiKit.bodyPaint(if (rare) 36f else 42f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
             if (rare) {
-                c.drawText("This item cannot be destroyed", cx + 70f, r.top + 104f, text)
-                c.drawText("with the controller.", cx + 70f, r.top + 152f, text)
-            } else c.drawText("Do you want to destroy", cx + 70f, r.top + 118f, text)
+                c.drawText(Tr.t("This item cannot be destroyed"), cx + 70f, r.top + 104f, text)
+                c.drawText(Tr.t("with the controller."), cx + 70f, r.top + 152f, text)
+            } else c.drawText(Tr.t("Do you want to destroy"), cx + 70f, r.top + 118f, text)
             val py = r.top + if (rare) 184f else 150f
             UiKit.itemPlate(c, RectF(cx - 200f, py, cx + 340f, py + 108f),
                 iconOf(it), it?.optString("name") ?: "", colourOf(it), count = it?.optInt("count", 1) ?: 0)
@@ -850,14 +850,14 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             UiKit.dialog(c, r)
             UiKit.dialogHeader(c, cx, r.top - 34f, "Split Stack")
             UiKit.slot(c, iconOf(it), cx - 190f, r.top + 76f, 84f)
-            c.drawText(it?.optString("name") ?: "", cx - 86f, r.top + 130f, UiKit.bodyPaint(36f, colourOf(it)))
-            c.drawText("a stack of $n", cx - 86f, r.top + 170f, UiKit.bodyPaint(26f, Theme.dim))
+            c.drawText(Tr.t(it?.optString("name") ?: ""), cx - 86f, r.top + 130f, UiKit.bodyPaint(36f, colourOf(it)))
+            c.drawText(Tr.t("a stack of $n"), cx - 86f, r.top + 170f, UiKit.bodyPaint(26f, Theme.dim))
             val ny = r.top + 262f
             val field = RectF(cx - 128f, ny - 66f, cx + 128f, ny + 66f)
             c.drawRect(field.left + 8f, field.top + 8f, field.right - 8f, field.bottom - 8f, Paint().apply { color = Color.BLACK })
             UiKit.border(c, field, "border_tooltip", 20f, Theme.bronzeDim)
             val num = UiKit.numberPaint(96f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(amount.toString(), cx, ny - (num.ascent() + num.descent()) / 2f, num)
+            c.drawText(Tr.t(amount.toString()), cx, ny - (num.ascent() + num.descent()) / 2f, num)
             UiKit.arrow(c, "left", cx - 208f, ny, 116f, if (amount <= 1) UiKit.Button.DISABLED else UiKit.Button.UP)
             UiKit.arrow(c, "right", cx + 208f, ny, 116f, if (amount >= n - 1) UiKit.Button.DISABLED else UiKit.Button.UP)
             // a tap on an arrow is -1 / +1 (the SPEC); its touch box is its 116 px square
@@ -866,13 +866,13 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             if (st.ctl?.optString("note") == "no-space") {
                 // in the D-pad row's place: no amount helps, and the SPEC's y 440 falls on the buttons
                 val p = UiKit.bodyPaint(30f, Theme.unusable).apply { textAlign = Paint.Align.CENTER }
-                c.drawText("There is no empty slot for the new stack", cx, ny + 104f - (p.ascent() + p.descent()) / 2f, p)
+                c.drawText(Tr.t("There is no empty slot for the new stack"), cx, ny + 104f - (p.ascent() + p.descent()) / 2f, p)
             } else {
                 var x = cx - 250f
                 val hint = UiKit.numberPaint(32f, Theme.dim)
                 for ((glyph, wd) in listOf("gen_left" to "-1", "gen_right" to "+1", "gen_down" to "-10", "gen_up" to "+10")) {
                     UiKit.pad(c, glyph, x + 26f, ny + 104f, 52f)
-                    c.drawText(wd, x + 60f, ny + 104f - (hint.ascent() + hint.descent()) / 2f, hint)
+                    c.drawText(Tr.t(wd), x + 60f, ny + 104f - (hint.ascent() + hint.descent()) / 2f, hint)
                     x += 130f
                 }
             }
@@ -891,9 +891,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             c.save(); c.translate(0f, top + 60f)                  // everything below is drawn at its resting place
             val r = RectF(cx - 550f, -60f, cx + 550f, 740f)
             UiKit.dialog(c, r)
-            c.drawText("Bind a Button", cx, 56f, UiKit.titlePaint(46f).apply { textAlign = Paint.Align.CENTER })
+            c.drawText(Tr.t("Bind a Button"), cx, 56f, UiKit.titlePaint(46f).apply { textAlign = Paint.Align.CENTER })
             UiKit.slot(c, iconOf(it), cx - 170f, 94f, 84f)
-            c.drawText(it?.optString("name") ?: "", cx - 66f, 150f, UiKit.bodyPaint(38f, colourOf(it)))
+            c.drawText(Tr.t(it?.optString("name") ?: ""), cx - 66f, 150f, UiKit.bodyPaint(38f, colourOf(it)))
             val note = ctl.optString("note").takeIf { n -> n.isNotEmpty() }
             val chord = ctl.optString("chord").takeIf { n -> n.isNotEmpty() }
             val keyName = chord?.let { k -> bindKeyName(k) ?: k }
@@ -906,7 +906,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 else -> "Press the button you want for this item"
             }
             val colour = when (note) { null -> Color.WHITE; "bound" -> Theme.questGreen; else -> Theme.unusable }
-            c.drawText(line, cx, 232f, UiKit.bodyPaint(36f, colour).apply { textAlign = Paint.Align.CENTER })
+            c.drawText(Tr.t(line), cx, 232f, UiKit.bodyPaint(36f, colour).apply { textAlign = Paint.Align.CENTER })
             val keys = ctl.optJSONArray("keys")
             val bound = ctl.optString("bound")
             for (i in 0 until (keys?.length() ?: 0)) {
@@ -923,7 +923,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 }
                 UiKit.keyChip(c, RectF(x, y, x + 500f, y + 104f), KEY_GLYPH[name] ?: "gen_rstickin", label, a == null, mark)
             }
-            c.drawText("A, B, X and Y cannot be bound.", cx, 660f, UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER })
+            c.drawText(Tr.t("A, B, X and Y cannot be bound."), cx, 660f, UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER })
             val hs = UiKit.hints(c, r.right - 70f, 654f, "rev_b" to if (note == "bound") "Close" else "Cancel")
             c.restore()
             if (f >= 1f) hits.add(RectF(hs - 20f, 654f - 44f + top + 60f, r.right - 50f, 654f + 44f + top + 60f) to 33)
@@ -1257,9 +1257,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             p.count.textSize = box.width() * 0.28f
             val tx = box.right - 7f; val ty = box.bottom - 9f
             p.count.style = Paint.Style.STROKE; p.count.strokeWidth = 6f; p.count.color = Color.BLACK
-            cv.drawText(n.toString(), tx, ty, p.count)
+            cv.drawText(Tr.t(n.toString()), tx, ty, p.count)
             p.count.style = Paint.Style.FILL; p.count.color = Color.WHITE
-            cv.drawText(n.toString(), tx, ty, p.count)
+            cv.drawText(Tr.t(n.toString()), tx, ty, p.count)
         }
     }
 
@@ -1504,8 +1504,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             fonts()
             cv.drawColor(Theme.panel)
             val mid = height / 2f
-            cv.drawText("Bags", 22f, mid + 17f, pTitle)
-            cv.drawText("$free free of $total", 22f + pTitle.measureText("Bags") + 36f, mid + 12f, pSub)
+            cv.drawText(Tr.t("Bags"), 22f, mid + 17f, pTitle)
+            cv.drawText(Tr.t("$free free of $total"), 22f + pTitle.measureText("Bags") + 36f, mid + 12f, pSub)
             // money the way the game writes it: 2 [silver] 6 [copper], with the game's coins
             val m = money ?: return
             val parts = ArrayList<Pair<Long, String>>()
@@ -1520,10 +1520,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                     x -= 34f; cv.drawBitmap(bmp, null, RectF(x, mid - 17f, x + 34f, mid + 17f), bmpPaint)
                     x -= 8f
                 } else {
-                    pMoney.color = Theme.dim; cv.drawText(coin.substring(3, 4), x, mid + 12f, pMoney)
+                    pMoney.color = Theme.dim; cv.drawText(Tr.t(coin.substring(3, 4)), x, mid + 12f, pMoney)
                     x -= 24f; pMoney.color = Theme.text
                 }
-                cv.drawText(amt.toString(), x, mid + 13f, pMoney)
+                cv.drawText(Tr.t(amt.toString()), x, mid + 13f, pMoney)
                 x -= pMoney.measureText(amt.toString()) + 18f
             }
         }
@@ -1702,10 +1702,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             var y = 12f
             var selBox: RectF? = null
             val groups = st.merged()
-            if (groups.isEmpty()) { cv.drawText("nothing in the open bags", M, y + 50f, pLabel); return }
+            if (groups.isEmpty()) { cv.drawText(Tr.t("nothing in the open bags"), M, y + 50f, pLabel); return }
             for ((name, list) in groups) {
                 // a group needs a word: without one the grouping is invisible
-                cv.drawText(name, M, y + 30f, pGroup)
+                cv.drawText(Tr.t(name), M, y + 30f, pGroup)
                 val lx = M + pGroup.measureText(name) + 16f
                 cv.drawLine(lx, y + 21f, width - MR, y + 21f, pRule)
                 y += GROUP_H
@@ -1738,10 +1738,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             var curBox: RectF? = null
             val t = tileSize(width)
             var y = 12f
-            if (st.bags.isEmpty()) { cv.drawText("waiting for your bags", M, y + 50f, pLabel); return }
+            if (st.bags.isEmpty()) { cv.drawText(Tr.t("waiting for your bags"), M, y + 50f, pLabel); return }
             if (st.viewClean) { drawClean(cv, t); return }
             val open = openBags()
-            if (open.isEmpty()) { cv.drawText("all bags closed", M, y + 50f, pLabel); return }
+            if (open.isEmpty()) { cv.drawText(Tr.t("all bags closed"), M, y + 50f, pLabel); return }
             for ((i, b) in open.withIndex()) {
                 if (i > 0) {                                    // a line between bags, not a label
                     cv.drawLine(M, y + RULE_H / 2 - GAP / 2, width - MR, y + RULE_H / 2 - GAP / 2, pRule)

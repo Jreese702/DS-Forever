@@ -433,11 +433,11 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         var y = TOP_PAD - scroll       // everything below is laid out in screen coordinates
         // on Home, the modules' blocks stand under one heading of their own, below Home's rows (each block then a sub-heading)
         val modules = tab == SettingsTabs.Tab.HOME && SettingsTabs.viewBlocks(tab).isNotEmpty()
-        if (modules) { c.drawText(SettingsTabs.HOME_MODULES, PAD_X, y + 4f, pSection); y += MODULES_HEAD }
+        if (modules) { c.drawText(Tr.t(SettingsTabs.HOME_MODULES), PAD_X, y + 4f, pSection); y += MODULES_HEAD }
         for ((i, b) in SettingsTabs.viewBlocks(tab).withIndex()) {
             if (i > 0) y += SECTION_GAP
             // the block's heading (its words are the tab data's), then its rows; each draw returns its last row's bottom
-            c.drawText(b.heading, PAD_X, y + 4f, if (modules) pSubHead else pSection)
+            c.drawText(Tr.t(b.heading), PAD_X, y + 4f, if (modules) pSubHead else pSection)
             y += 16f
             y = when (b) {
                 SettingsTabs.Block.LANGUAGE -> drawLanguage(c, y)
@@ -670,7 +670,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             c.drawRoundRect(lb, 8f, 8f, pFill)
             pSub.color = Theme.textDim
             for ((i, line) in prog.list.withIndex())
-                c.drawText(fit(pSub, line, lb.width() - 44f), lb.left + 22f, lb.top + 8f + (i + 1) * LIST_LINE - 10f, pSub)
+                c.drawText(Tr.t(fit(pSub, line, lb.width() - 44f)), lb.left + 22f, lb.top + 8f + (i + 1) * LIST_LINE - 10f, pSub)
             y += deferredListH()
         }
         // the route's data from the game files (b-route-data-all: terrain and buildings for every zone, made before Play)
@@ -836,7 +836,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                     acts += "Remove" to { sbSend(SmartYModel.rowTaps(d, r, "remove"), "Removed.") }
                     pFill.color = Theme.raised; c.drawRoundRect(box, 8f, 8f, pFill)
                     pLabel.color = Theme.textDim
-                    c.drawText("Row ${r + 3}:", box.left + 22f, box.centerY() + 10f, pLabel)
+                    c.drawText(Tr.t("Row ${r + 3}:"), box.left + 22f, box.centerY() + 10f, pLabel)
                     val bw = 150f
                     var x = box.right - 16f - bw * acts.size
                     for ((label, act) in acts) { sbButton(c, RectF(x, box.centerY() - 30f, x + bw - 6f, box.centerY() + 30f), label, act); x += bw }
@@ -920,8 +920,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private fun drawPartyBuffs(c: Canvas, top: Float): Float {
         val cfg = PartyModel.live.cfg ?: return top
         // the sub-heading (Morpheus 27 gold) and its one line (Friz 22 dim), then the rows
-        c.drawText("Party mode (the boxed member)", 28f, top + 46f, UiKit.titlePaint(27f, Theme.gold))
-        c.drawText("Out of combat, on the boxed member.", 28f, top + 76f, UiKit.bodyPaint(22f, Theme.textDim))
+        c.drawText(Tr.t("Party mode (the boxed member)"), 28f, top + 46f, UiKit.titlePaint(27f, Theme.gold))
+        c.drawText(Tr.t("Out of combat, on the boxed member."), 28f, top + 76f, UiKit.bodyPaint(22f, Theme.textDim))
         var y = top + PB_HEAD
         for ((i, line) in pbLines().withIndex()) {
             if (i > 0) y += ROW_H + 10f
@@ -942,7 +942,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                     acts += "Remove" to { pbSend(PartyTaps.pbOp(cfg, k + 1, PartyTaps.PbOp.REMOVE), "Removed.") }
                     pFill.color = Theme.raised; c.drawRoundRect(box, 8f, 8f, pFill)
                     pLabel.color = Theme.textDim
-                    c.drawText("Row ${k + 1}:", box.left + 22f, box.centerY() + 10f, pLabel)
+                    c.drawText(Tr.t("Row ${k + 1}:"), box.left + 22f, box.centerY() + 10f, pLabel)
                     val bw = 150f
                     var x = box.right - 16f - bw * acts.size
                     for ((label, act) in acts) { sbButton(c, RectF(x, box.centerY() - 30f, x + bw - 6f, box.centerY() + 30f), label, act); x += bw }
@@ -1055,7 +1055,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                     UiKit.square(c, "plus", btnFlowPlus.centerX(), btnFlowPlus.centerY(), 84f,
                         if (on && f < FrameGen.FLOW_MAX) UiKit.Button.UP else UiKit.Button.DISABLED)
                     pValue.color = if (on) Theme.text else Theme.dim
-                    c.drawText(FrameGen.flowLabel(f), (btnFlowMinus.right + btnFlowPlus.left) / 2f, cy + 11f, pValue)
+                    c.drawText(Tr.t(FrameGen.flowLabel(f)), (btnFlowMinus.right + btnFlowPlus.left) / 2f, cy + 11f, pValue)
                     btnFlowMinus
                 }
                 FrameGen.Row.PERFORMANCE -> row(c, y, "Performance mode", "The lighter model: less heat, a little less smooth", enabled = on) { box ->
@@ -1176,7 +1176,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         if (k > 0f) c.drawRoundRect(RectF(r.left + 3f, r.top + 3f, r.left + 3f + (r.width() - 6f) * k, r.bottom - 3f), 4f, 4f, pFill)
         pStroke.color = Theme.bronze; c.drawRoundRect(r, 6f, 6f, pStroke)
         pValue.color = Theme.text
-        c.drawText(if (pct >= 0) "$pct%" else "...", r.centerX(), r.centerY() + 10f, pValue)
+        c.drawText(Tr.t(if (pct >= 0) "$pct%" else "..."), r.centerX(), r.centerY() + 10f, pValue)
     }
 
     private val addonCoreBtn = HashMap<String, RectF>()
@@ -1229,9 +1229,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         val hit = control(box)
         pLabel.color = if (enabled) Theme.text else Theme.dim
         pSub.color = if (enabled) Theme.textDim else Theme.dim
-        c.drawText(label, box.left + 22f, box.top + 41f, pLabel)
+        c.drawText(Tr.t(label), box.left + 22f, box.top + 41f, pLabel)
         // the subtitle never runs under the control, whatever the device font measures
-        c.drawText(fit(pSub, sub, hit.left - 20f - (box.left + 22f)), box.left + 22f, box.top + 75f, pSub)
+        c.drawText(Tr.t(fit(pSub, sub, hit.left - 20f - (box.left + 22f))), box.left + 22f, box.top + 75f, pSub)
         return hit
     }
 
@@ -1250,7 +1250,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             UiKit.square(c, "minus", minus.centerX(), minus.centerY(), 84f, stMinus)
             UiKit.square(c, "plus", plus.centerX(), plus.centerY(), 84f, stPlus)
             pValue.color = if (enabled) Theme.text else Theme.dim
-            c.drawText("$yd yd", (minus.right + plus.left) / 2f, cy + 11f, pValue)
+            c.drawText(Tr.t("$yd yd"), (minus.right + plus.left) / 2f, cy + 11f, pValue)
             minus
         }
         return Pair(minus, plus)
@@ -1298,8 +1298,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             UiKit.choice(c, r, "", i == sel, enabled = i == sel, textSize = SEG_TEXT)
             val p1 = UiKit.bodyPaint(SEG_TEXT - 2f, if (i == sel) Theme.text else Theme.dim).apply { textAlign = Paint.Align.CENTER }
             val p2 = UiKit.bodyPaint(15f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(QT_LABELS[i], r.centerX(), r.centerY() - 2f, p1)
-            c.drawText(if (asked) "installing" else "not installed", r.centerX(), r.centerY() + 20f, p2)
+            c.drawText(Tr.t(QT_LABELS[i]), r.centerX(), r.centerY() - 2f, p1)
+            c.drawText(Tr.t(if (asked) "installing" else "not installed"), r.centerX(), r.centerY() + 20f, p2)
         }
     }
 

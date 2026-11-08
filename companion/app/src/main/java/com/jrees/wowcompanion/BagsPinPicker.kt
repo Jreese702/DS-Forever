@@ -240,7 +240,7 @@ class BagsPinPicker(c: Context) : View(c) {
         val r = RectF(0f, 0f, width.toFloat(), height.toFloat())
         val inner = UiKit.windowGround(c, r)
         val strip = UiKit.strip(c, inner)
-        c.drawText("Usable items in your bags", inner.left + 150f, inner.top + 42f, UiKit.bodyPaint(24f, Theme.textDim))
+        c.drawText(Tr.t("Usable items in your bags"), inner.left + 150f, inner.top + 42f, UiKit.bodyPaint(24f, Theme.textDim))
         val gx = inner.left + 150f; val gy = inner.top + 76f
         val gBottom = strip.top - 12f
         gridR = RectF(gx - 20f, gy - 20f, gx + COLS * S + (COLS - 1) * GAP + 20f, gBottom)
@@ -253,7 +253,7 @@ class BagsPinPicker(c: Context) : View(c) {
 
         var cursor: RectF? = null
         if (entries.isEmpty()) {
-            c.drawText("No usable items in your bags", gx, gy + 50f, UiKit.bodyPaint(28f, Theme.dim))
+            c.drawText(Tr.t("No usable items in your bags"), gx, gy + 50f, UiKit.bodyPaint(28f, Theme.dim))
         } else {
             c.save(); c.clipRect(gridR)
             for ((k, e) in entries.withIndex()) {
@@ -312,9 +312,9 @@ class BagsPinPicker(c: Context) : View(c) {
         val box = RectF(x, y0, x + TIP_W, y0 + h)
         val inner = UiKit.menu(c, box, solid = true)
         val np = UiKit.bodyPaint(26f, Theme.quality(qualityOf(e)))
-        val title = android.text.TextUtils.ellipsize(nameOf(e), android.text.TextPaint(np), inner.width() - 32f,
+        val title = android.text.TextUtils.ellipsize(Tr.t(nameOf(e)), android.text.TextPaint(np), inner.width() - 32f,
             android.text.TextUtils.TruncateAt.END).toString()
-        c.drawText(title, inner.left + 16f, inner.top + 34f, np)
+        c.drawText(Tr.t(title), inner.left + 16f, inner.top + 34f, np)
         for ((i, label) in listOf("Move", "Unpin").withIndex()) {
             val rr = RectF(inner.left, inner.top + 56f + i * 96f, inner.right, inner.top + 56f + i * 96f + 92f)
             UiKit.menuRow(c, rr, label, menu == i, size = 28f)

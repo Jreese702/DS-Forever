@@ -772,7 +772,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         var shown = typed
         if (room > 0 && typed.isNotEmpty()) {
             val p = android.text.TextPaint(input.paint)
-            fun fits(s: String) = android.text.StaticLayout.Builder.obtain(s, 0, s.length, p, room).build().lineCount <= lines
+            fun fits(s: String) = android.text.StaticLayout.Builder.obtain(Tr.t(s), 0, Tr.t(s).length, p, room).build().lineCount <= lines
             if (!fits(typed)) {
                 var lo = 0; var hi = typed.length          // the longest end that fits behind "…"
                 while (lo < hi) { val mid = (lo + hi + 1) / 2; if (fits("\u2026" + typed.takeLast(mid))) lo = mid else hi = mid - 1 }
@@ -1208,7 +1208,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         val r = RectF(log.centerX() - tw / 2f - 24f, log.bottom - 64f, log.centerX() + tw / 2f + 24f, log.bottom - 14f)
         noticePaint.color = Color.argb(230, 9, 8, 8)
         c.drawRoundRect(r, 10f, 10f, noticePaint)
-        c.drawText(notice, r.centerX(), r.centerY() + 10f, p)
+        c.drawText(Tr.t(notice), r.centerX(), r.centerY() + 10f, p)
     }
 
     /** a finger on the menu or a view's action; anywhere else with the menu open closes it */
@@ -1282,9 +1282,9 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
                 // the chosen one at the SAME size (UI Art: the kit's tabs do; the lit tab, its gaps and the arrows mark it, and a
                 // label that grows and shrinks as the choice moves jumps most in a crowded row)
                 val p = UiKit.bodyPaint(rowSize, col).apply { textAlign = Paint.Align.CENTER }
-                val label = android.text.TextUtils.ellipsize(k.label, android.text.TextPaint(p), fitW,
+                val label = android.text.TextUtils.ellipsize(Tr.t(k.label), android.text.TextPaint(p), fitW,
                     android.text.TextUtils.TruncateAt.END).toString()
-                c.drawText(label, boxes[i].centerX(), boxes[i].centerY() + 10f, p)
+                c.drawText(Tr.t(label), boxes[i].centerX(), boxes[i].centerY() + 10f, p)
             }
             val canL = ks.take(chosen).any { it.usable }
             val canR = ks.drop(chosen + 1).any { it.usable }

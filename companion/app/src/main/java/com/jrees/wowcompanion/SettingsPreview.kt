@@ -197,7 +197,7 @@ object SettingsPreview {
 
     private fun text(c: Canvas, s: String, x: Float, y: Float, size: Float = 20f, col: Int = DIMC, align: Paint.Align = Paint.Align.CENTER) {
         pText.textSize = size; pText.color = col; pText.textAlign = align
-        c.drawText(s, x, y, pText)
+        c.drawText(Tr.t(s), x, y, pText)
     }
 
     /** one controller button: a bronze ring round a spell square */
@@ -770,7 +770,7 @@ object SettingsPreview {
         val p = when (kind) { 0 -> pTitle; 2 -> pNum; else -> pBody }
         p.textSize = size; p.color = col; p.textAlign = align
         when (kind) { 0 -> UiKit.asTitle(p); 2 -> UiKit.asNumber(p); else -> UiKit.asBody(p) }
-        c.drawText(s, x, y, p)
+        c.drawText(Tr.t(s), x, y, p)
     }
 
     /** the thing that moves across a lane: one of the player's own spell icons (or item icons), a gold orb until there is one */

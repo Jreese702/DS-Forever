@@ -85,11 +85,11 @@ class PartyMenuView(context: Context) : View(context) {
         val inner = UiKit.menu(c, box, solid = true)
         val hp = UiKit.bodyPaint(28f, Theme.gold)
         val heading = (if (menu.depth > 0) "< " else "") + (menu.heading() ?: name)
-        c.drawText(TextUtils.ellipsize(heading, hp, inner.width() - 32f, TextUtils.TruncateAt.END).toString(), inner.left + 16f, inner.top + 40f, hp)
+        c.drawText(Tr.t(TextUtils.ellipsize(heading, hp, inner.width() - 32f, TextUtils.TruncateAt.END).toString()), inner.left + 16f, inner.top + 40f, hp)
         val top0 = inner.top + HEAD
         if (menu.loading || menu.empty) {
             // the portrait menu's words (MapView.drawPlayerMenu)
-            c.drawText(if (menu.loading) "Asking the game..." else "The game's menu could not be read here", inner.left + 16f, top0 + 46f,
+            c.drawText(Tr.t(if (menu.loading) "Asking the game..." else "The game's menu could not be read here"), inner.left + 16f, top0 + 46f,
                 UiKit.bodyPaint(24f, Theme.textDim))
             return
         }
@@ -103,7 +103,7 @@ class PartyMenuView(context: Context) : View(context) {
             val r = RectF(inner.left, top0 + (k - first) * ROW, inner.right, top0 + (k - first + 1) * ROW)
             if (e.title) {
                 val tp = UiKit.bodyPaint(22f, Theme.textDim)
-                c.drawText(e.text, r.left + 16f, r.centerY() + 8f, tp)
+                c.drawText(Tr.t(e.text), r.left + 16f, r.centerY() + 8f, tp)
                 continue
             }
             UiKit.menuRow(c, r, e.text + (if (e.sub != null) "  >" else ""), i == menu.sel, enabled = e.enabled,

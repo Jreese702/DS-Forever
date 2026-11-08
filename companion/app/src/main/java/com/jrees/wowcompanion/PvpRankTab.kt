@@ -134,7 +134,7 @@ object PvpRankTab {
     /** The game's text wrapped to [width], each run in its own colour ([p]'s colour for the rest). */
     private fun layout(text: String, p: Paint, width: Float, maxLines: Int = Int.MAX_VALUE,
                        align: Layout.Alignment = Layout.Alignment.ALIGN_NORMAL): StaticLayout =
-        spanned(text).let { sb -> StaticLayout.Builder.obtain(sb, 0, sb.length, TextPaint(p), width.toInt().coerceAtLeast(1)) }
+        spanned(text).let { sb -> StaticLayout.Builder.obtain(Tr.t(sb), 0, Tr.t(sb).length, TextPaint(p), width.toInt().coerceAtLeast(1)) }
             .setAlignment(align).setLineSpacing(6f, 1f)
             .setMaxLines(maxLines).setEllipsize(if (maxLines == Int.MAX_VALUE) null else TextUtils.TruncateAt.END)
             .build()
@@ -158,7 +158,7 @@ object PvpRankTab {
         var cx = when (align) { Paint.Align.CENTER -> x - w / 2f; Paint.Align.RIGHT -> x - w; else -> x }
         for (r in runs) {
             p.color = r.colour ?: base
-            c.drawText(r.text, cx, y, p)
+            c.drawText(Tr.t(r.text), cx, y, p)
             cx += p.measureText(r.text)
         }
         p.color = base

@@ -377,7 +377,7 @@ class PadTabPage(
         if (view == "normal" && fo != null && !fo.bar) {
             val p = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
             p.textAlign = Paint.Align.CENTER
-            c.drawText("Shift into ${fo.name} once: the game then shows its bar here", SPLIT / 2f, 806f, p)
+            c.drawText(Tr.t("Shift into ${fo.name} once: the game then shows its bar here"), SPLIT / 2f, 806f, p)
         }
     }
     private fun page(): Int {
@@ -566,7 +566,7 @@ class PadTabPage(
         val m = map
         if (m == null) {
             val p = UiKit.inkPaint(28f).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("Waiting for the game's buttons", SPLIT / 2f, 520f, p)
+            c.drawText(Tr.t("Waiting for the game's buttons"), SPLIT / 2f, 520f, p)
             return
         }
         if (view == "radial") { drawRadial(c, m, w, h, book); return }
@@ -670,9 +670,9 @@ class PadTabPage(
         val nameLeft = x0 + 158f; val nameW = x1 - nameLeft
         val pn = UiKit.inkPaint(40f, heading = true)
         while (pn.textSize > 28f && pn.measureText(name) > nameW) pn.textSize -= 1f
-        c.drawText(TextUtils.ellipsize(name, TextPaint(pn), nameW, TextUtils.TruncateAt.END).toString(), nameLeft, top + 30f - pn.ascent() - 4f, pn)
+        c.drawText(Tr.t(TextUtils.ellipsize(name, TextPaint(pn), nameW, TextUtils.TruncateAt.END).toString()), nameLeft, top + 30f - pn.ascent() - 4f, pn)
         val dim = UiKit.inkPaint(26f).apply { color = Theme.parchmentInkDim }
-        c.drawText(sliceWord(pos, rpage), nameLeft + 2f, top + 30f + pn.textSize + 34f, dim)
+        c.drawText(Tr.t(sliceWord(pos, rpage)), nameLeft + 2f, top + 30f + pn.textSize + 34f, dim)
         UiKit.tex("book_divider")?.let { c.drawBitmap(it, null, RectF(x0, top + 150f, x1, top + 161f), PBMP) }
         // the wheels' behaviour is Home's one pair for every wheel (Home 2026-10-09: open Tap / Hold, pick A / Release; the DS tab mirrors it)
         val way = when {
@@ -684,7 +684,7 @@ class PadTabPage(
         val help = (if (id == 0) "Choose a spell for this slice. " else "") +
             "Put the Spell Radial command on a button (WoW Defaults: Change, Extra). $way"
         val pd = TextPaint(UiKit.inkPaint(24f))
-        val lay = StaticLayout.Builder.obtain(help, 0, help.length, pd, (x1 - x0 - 16f).toInt())
+        val lay = StaticLayout.Builder.obtain(Tr.t(help), 0, Tr.t(help).length, pd, (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(5).build()
         c.save(); c.translate(x0 + 8f, top + 186f); lay.draw(c); c.restore()
         val act = actRect(w, h)
@@ -693,7 +693,7 @@ class PadTabPage(
         val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat) COMBAT else null
         note?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-            c.drawText(it, act.centerX(), above - 30f, pw)
+            c.drawText(Tr.t(it), act.centerX(), above - 30f, pw)
         }
         if (filled) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
             m.combat -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
@@ -705,7 +705,7 @@ class PadTabPage(
     private fun drawRadialMove(c: Canvas, m: PadMapModel.Map, carry: PadMapModel.Carry, w: Float, h: Float, book: SpellsModel.Book?) {
         val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
         val pt = UiKit.inkPaint(40f, heading = true)
-        c.drawText("Move", x0 + 8f, top + 30f - pt.ascent() - 4f, pt)
+        c.drawText(Tr.t("Move"), x0 + 8f, top + 30f - pt.ascent() - 4f, pt)
         val same = carry.page == rpage && carry.pos == pos
         val under = if (same) 0 else radId(pos)
         val pl = UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }
@@ -715,16 +715,16 @@ class PadTabPage(
         for ((i, row) in rows.withIndex()) {
             val y = top + 96f + i * 100f
             UiKit.spell(c, row.first, x0 + 8f, y + 8f, 72f, UiKit.Spell.KNOWN)
-            c.drawText(TextUtils.ellipsize(row.second, TextPaint(ps), x1 - x0 - 110f, TextUtils.TruncateAt.END).toString(), x0 + 100f, y + 38f, ps)
-            c.drawText(row.third, x0 + 100f, y + 70f, pl)
+            c.drawText(Tr.t(TextUtils.ellipsize(row.second, TextPaint(ps), x1 - x0 - 110f, TextUtils.TruncateAt.END).toString()), x0 + 100f, y + 38f, ps)
+            c.drawText(Tr.t(row.third), x0 + 100f, y + 70f, pl)
         }
         val help = when { same -> "Choose the slice it goes on (Up: another page)."; under != 0 -> "The two swap places."; else -> "On an empty slice it just moves." }
-        val lay = StaticLayout.Builder.obtain(help, 0, help.length, TextPaint(UiKit.inkPaint(23f)), (x1 - x0 - 16f).toInt())
+        val lay = StaticLayout.Builder.obtain(Tr.t(help), 0, Tr.t(help).length, TextPaint(UiKit.inkPaint(23f)), (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(3).build()
         c.save(); c.translate(x0 + 8f, top + 316f); lay.draw(c); c.restore()
         flash?.takeIf { SystemClock.uptimeMillis() < flashUntil }?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-            c.drawText(it, actRect(w, h).centerX(), moveRect(w, h).top - 26f, pw)
+            c.drawText(Tr.t(it), actRect(w, h).centerX(), moveRect(w, h).top - 26f, pw)
         }
         UiKit.button(c, moveRect(w, h), "Cancel", glyph(7), if (isDown(DOWN_CANCEL)) UiKit.Button.DOWN else UiKit.Button.UP)
         UiKit.button(c, actRect(w, h), if (under != 0) "Swap" else "Place", glyph(8), when {
@@ -824,10 +824,10 @@ class PadTabPage(
         while (pn.textSize > 28f && pn.measureText(name) > nameW) pn.textSize -= 1f
         val nameBottom: Float
         if (pn.measureText(name) <= nameW) {
-            c.drawText(name, nameLeft, top + 30f - pn.ascent() - 4f, pn)
+            c.drawText(Tr.t(name), nameLeft, top + 30f - pn.ascent() - 4f, pn)
             nameBottom = top + 30f + pn.textSize
         } else {
-            val lay = StaticLayout.Builder.obtain(name, 0, name.length, TextPaint(pn), nameW.toInt())
+            val lay = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, TextPaint(pn), nameW.toInt())
                 .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).build()
             c.save(); c.translate(nameLeft, top + 30f - 4f); lay.draw(c); c.restore()
             nameBottom = top + 30f - 4f + lay.height
@@ -845,12 +845,12 @@ class PadTabPage(
         val dim = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
         // smaller to fit the page ("Spell, starts the attack", a command's line): never past the page's edge
         kind?.let { while (dim.measureText(it) > x1 - x0 - 160f && dim.textSize > 18f) dim.textSize -= 1f }
-        kind?.let { c.drawText(TextUtils.ellipsize(it, TextPaint(dim), x1 - x0 - 160f, TextUtils.TruncateAt.END).toString(), x0 + 160f, nameBottom + 28f, dim) }
+        kind?.let { c.drawText(Tr.t(TextUtils.ellipsize(it, TextPaint(dim), x1 - x0 - 160f, TextUtils.TruncateAt.END).toString()), x0 + 160f, nameBottom + 28f, dim) }
 
         // On: the set's trigger(s) + the button, as the game names it
         val cy = top + 166f
         val pOn = UiKit.inkPaint(28f).apply { color = Theme.parchmentInkDim }
-        c.drawText("On", x0 + 8f, cy - 2f - (pOn.ascent() + pOn.descent()) / 2f, pOn)
+        c.drawText(Tr.t("On"), x0 + 8f, cy - 2f - (pOn.ascent() + pOn.descent()) / 2f, pOn)
         val combo = SpellsModel.combo(SpellsModel.PadSlot(0, 1, s, pos), style())
         var x = x0 + 66f
         val trigger = when (combo.triggers.size) {
@@ -870,7 +870,7 @@ class PadTabPage(
             else -> "Change puts a spell from your book, or one of the game's commands, on this button."
         }
         val pd = TextPaint(UiKit.inkPaint(24f))
-        val lay = StaticLayout.Builder.obtain(help, 0, help.length, pd, (x1 - x0 - 16f).toInt())
+        val lay = StaticLayout.Builder.obtain(Tr.t(help), 0, Tr.t(help).length, pd, (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         c.save(); c.translate(x0 + 8f, top + 236f); lay.draw(c); c.restore()
 
@@ -882,7 +882,7 @@ class PadTabPage(
         val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && !fixed) COMBAT else null
         note?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-            c.drawText(it, act.centerX(), above - 64f, pw)
+            c.drawText(Tr.t(it), act.centerX(), above - 64f, pw)
         }
         val off = m.combat || sl?.storage == null
         val moveOff = off || sl?.kind == PadMapModel.Kind.BIND                              // m34: a binding rides the key, not the bar
@@ -899,7 +899,7 @@ class PadTabPage(
     private fun drawMoveRight(c: Canvas, m: PadMapModel.Map, s: Int, carry: PadMapModel.Carry, w: Float, h: Float) {
         val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
         val pt = UiKit.inkPaint(40f, heading = true)
-        c.drawText("Move", x0 + 8f, top + 30f - pt.ascent() - 4f, pt)
+        c.drawText(Tr.t("Move"), x0 + 8f, top + 30f - pt.ascent() - 4f, pt)
         val src = PadMapModel.slot(m, carry.set, carry.pos)
         val under = PadMapModel.slot(m, s, pos)
         val same = carry.set == s && carry.pos == pos
@@ -911,8 +911,8 @@ class PadTabPage(
         for ((k, row) in rows.withIndex()) {
             val y = top + 96f + k * 100f
             UiKit.spell(c, row.first, x0 + 8f, y + 8f, 72f, UiKit.Spell.KNOWN)
-            c.drawText(TextUtils.ellipsize(row.second, TextPaint(ps), x1 - x0 - 110f, TextUtils.TruncateAt.END).toString(), x0 + 100f, y + 38f, ps)
-            c.drawText(row.third, x0 + 100f, y + 70f, pl)
+            c.drawText(Tr.t(TextUtils.ellipsize(row.second, TextPaint(ps), x1 - x0 - 110f, TextUtils.TruncateAt.END).toString()), x0 + 100f, y + 38f, ps)
+            c.drawText(Tr.t(row.third), x0 + 100f, y + 70f, pl)
         }
         val help = when {
             same -> "Choose the button it goes on."
@@ -921,12 +921,12 @@ class PadTabPage(
             else -> "On an empty button it just moves."
         }
         val pd = TextPaint(UiKit.inkPaint(23f))
-        val lay = StaticLayout.Builder.obtain(help, 0, help.length, pd, (x1 - x0 - 16f).toInt())
+        val lay = StaticLayout.Builder.obtain(Tr.t(help), 0, Tr.t(help).length, pd, (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(3).build()
         c.save(); c.translate(x0 + 8f, top + 316f); lay.draw(c); c.restore()
         flash?.takeIf { SystemClock.uptimeMillis() < flashUntil }?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-            c.drawText(it, actRect(w, h).centerX(), moveRect(w, h).top - 26f, pw)
+            c.drawText(Tr.t(it), actRect(w, h).centerX(), moveRect(w, h).top - 26f, pw)
         }
         UiKit.button(c, moveRect(w, h), "Cancel", glyph(7), if (isDown(DOWN_CANCEL)) UiKit.Button.DOWN else UiKit.Button.UP)
         UiKit.button(c, actRect(w, h), if (swap) "Swap" else "Place", glyph(8), when {
@@ -953,9 +953,9 @@ class PadTabPage(
         while (pn.textSize > 28f && pn.measureText(name) > nameW) pn.textSize -= 1f
         // one line when it fits; else two (the game's long words, "Interact With Target"), as the normal page does
         var nameH = pn.textSize
-        if (pn.measureText(name) <= nameW) c.drawText(name, nameLeft, top + 30f - pn.ascent() - 4f, pn)
+        if (pn.measureText(name) <= nameW) c.drawText(Tr.t(name), nameLeft, top + 30f - pn.ascent() - 4f, pn)
         else {
-            val lay = StaticLayout.Builder.obtain(name, 0, name.length, TextPaint(pn), nameW.toInt())
+            val lay = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, TextPaint(pn), nameW.toInt())
                 .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).build()
             c.save(); c.translate(nameLeft, top + 30f - 4f); lay.draw(c); c.restore()
             nameH = lay.height - 4f
@@ -965,7 +965,7 @@ class PadTabPage(
         val shortButton = if (pos <= 4) arrayOf("Left", "Up", "Right", "Down")[pos - 1] else buttonWord(pos)
         val sub = (if (s == 1) "" else setWord(s) + " + ") + shortButton + ", " + (if (inCombat) "in combat" else "out of combat")
         while (dim.measureText(sub) > nameW && dim.textSize > 18f) dim.textSize -= 1f
-        c.drawText(TextUtils.ellipsize(sub, TextPaint(dim), nameW, TextUtils.TruncateAt.END).toString(), x0 + 160f, top + 34f + nameH + 24f, dim)
+        c.drawText(Tr.t(TextUtils.ellipsize(sub, TextPaint(dim), nameW, TextUtils.TruncateAt.END).toString()), x0 + 160f, top + 34f + nameH + 24f, dim)
         UiKit.tex("book_divider")?.let { c.drawBitmap(it, null, RectF(x0, top + 150f, x1, top + 161f), PBMP) }
         val pd = TextPaint(UiKit.inkPaint(23f))
         if (face && fight != null) {
@@ -977,10 +977,10 @@ class PadTabPage(
                 val label = if (k == 0) "In combat" else "Otherwise"
                 UiKit.spell(c, if (k == 0) Icons.get(fight.icon) else iconOf(m, sl, pos), x0 + 8f, y + 8f, 64f,
                     if (k == 0) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL)
-                c.drawText(label, x0 + 92f, y + 28f, pl)
+                c.drawText(Tr.t(label), x0 + 92f, y + 28f, pl)
                 if (k == 0) swords(c, x0 + 92f + pl.measureText(label) + 22f, y + 20f, 28f)
                 val word = if (k == 0) fight.name else nameOf(m, sl)
-                c.drawText(TextUtils.ellipsize(word, TextPaint(ps), x1 - x0 - 100f, TextUtils.TruncateAt.END).toString(), x0 + 92f, y + 66f, ps)
+                c.drawText(Tr.t(TextUtils.ellipsize(word, TextPaint(ps), x1 - x0 - 100f, TextUtils.TruncateAt.END).toString()), x0 + 92f, y + 66f, ps)
             }
             // m43 (the user 2026-10-09: "the description under the spell in the combat tab feels unnecessary and confusing"): no
             // description; only a real problem is said (m16: the game refusing key changes; no key on the button)
@@ -990,7 +990,7 @@ class PadTabPage(
                 else -> null
             }
             why?.let {
-                val prose = StaticLayout.Builder.obtain(it, 0, it.length, pd, (x1 - x0 - 16f).toInt())
+                val prose = StaticLayout.Builder.obtain(Tr.t(it), 0, Tr.t(it).length, pd, (x1 - x0 - 16f).toInt())
                     .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(3).build()
                 c.save(); c.translate(x0 + 8f, top + 386f); prose.draw(c); c.restore()
             }
@@ -1001,9 +1001,9 @@ class PadTabPage(
             for ((k, row) in listOf("In combat" to sl!!.combat, "Otherwise" to sl.otherwise).withIndex()) {
                 val y = top + 186f + k * 96f
                 UiKit.spell(c, row.second?.let { Icons.get(it.icon) }, x0 + 8f, y + 8f, 64f, UiKit.Spell.KNOWN)
-                c.drawText(row.first, x0 + 92f, y + 28f, pl)
+                c.drawText(Tr.t(row.first), x0 + 92f, y + 28f, pl)
                 if (k == 0) swords(c, x0 + 92f + pl.measureText(row.first) + 22f, y + 20f, 28f)
-                c.drawText(TextUtils.ellipsize(row.second?.name ?: "Nothing", TextPaint(ps), x1 - x0 - 100f, TextUtils.TruncateAt.END).toString(),
+                c.drawText(Tr.t(TextUtils.ellipsize(row.second?.name ?: "Nothing", TextPaint(ps), x1 - x0 - 100f, TextUtils.TruncateAt.END).toString()),
                     x0 + 92f, y + 66f, ps)
             }
             // m43: the two rows say it all (no description); the plain D-pad under the DS toolbar is refused when chosen
@@ -1015,7 +1015,7 @@ class PadTabPage(
         val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && (!fixed || face)) COMBAT else null
         note?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-            c.drawText(it, act.centerX(), above - 64f, pw)
+            c.drawText(Tr.t(it), act.centerX(), above - 64f, pw)
         }
         // m32: any button takes a combat spell (no "spell first" gate any more)
         val canChange = if (face) inCombat && !m.combat else !fixed && sl?.storage != null && !m.combat && !m.paused   // m40
@@ -1077,7 +1077,7 @@ class PadTabPage(
             if (t is Thing.Header) {
                 if (y + ROW_H >= top && y <= bottom) {
                     val ph = UiKit.bodyPaint(26f, Theme.gold)
-                    c.drawText(t.text, inner.left + 24f, y + ROW_H - 26f - (ph.ascent() + ph.descent()) / 2f, ph)
+                    c.drawText(Tr.t(t.text), inner.left + 24f, y + ROW_H - 26f - (ph.ascent() + ph.descent()) / 2f, ph)
                     UiKit.divider(c, inner.left + 16f, y + ROW_H - 8f, inner.right - 16f, y + ROW_H - 8f)
                 }
                 y += ROW_H
@@ -1103,7 +1103,7 @@ class PadTabPage(
         c.restore()
         if (rows.isEmpty()) {
             val p = UiKit.bodyPaint(28f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(if (list != "extra") "No spell to put on a button yet" else "No commands", box.centerX(), top + 60f, p)
+            c.drawText(Tr.t(if (list != "extra") "No spell to put on a button yet" else "No commands"), box.centerX(), top + 60f, p)
         }
         if (withClear) {
             val ct = clearTop(box)
@@ -1117,7 +1117,7 @@ class PadTabPage(
         rows.firstOrNull { it is Thing.Binding && sel != null && idOf(it) == sel }?.let { t ->
             bindShort(m)?.let { why ->
                 val pw = UiKit.bodyPaint(22f, Theme.dim)
-                c.drawText(TextUtils.ellipsize("${thingName(t)} $why", TextPaint(pw), inner.width() - 48f, TextUtils.TruncateAt.END).toString(),
+                c.drawText(Tr.t(TextUtils.ellipsize("${thingName(t)} $why", TextPaint(pw), inner.width() - 48f, TextUtils.TruncateAt.END).toString()),
                     inner.left + 24f, box.bottom - 84f, pw)
             }
         }
@@ -1163,10 +1163,10 @@ class PadTabPage(
         UiKit.dialog(c, r)
         val p1 = UiKit.bodyPaint(28f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
         while (p1.measureText(line1) > r.width() - 80f && p1.textSize > 20f) p1.textSize -= 1f
-        c.drawText(line1, w / 2f, r.top + 100f, p1)
+        c.drawText(Tr.t(line1), w / 2f, r.top + 100f, p1)
         val p2 = UiKit.bodyPaint(34f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
         while (p2.measureText(line2) > r.width() - 80f && p2.textSize > 24f) p2.textSize -= 1f
-        c.drawText(line2, w / 2f, r.top + 160f, p2)
+        c.drawText(Tr.t(line2), w / 2f, r.top + 160f, p2)
         val single = kind == "full" || kind == "cfull"
         UiKit.button(c, yesRect(w, r, single), yes, glyph(8), if (isDown(DOWN_YES)) UiKit.Button.DOWN else UiKit.Button.UP)
         if (!single) UiKit.button(c, noRect(w, r), "Cancel", glyph(7), if (isDown(DOWN_NO)) UiKit.Button.DOWN else UiKit.Button.UP)

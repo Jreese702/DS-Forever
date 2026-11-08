@@ -362,11 +362,11 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
             UiKit.professionCard(c, r, p.id)
             val bar = RectF(r.right - 560f, r.top + 28f, r.right - 40f, r.top + 74f)
             val pt = fitted(p.name, UiKit.titlePaint(46f), bar.left - 24f - (r.left + 28f), 36f)
-            c.drawText(p.name, r.left + 28f, r.top + 50f - (pt.ascent() + pt.descent()) / 2f, pt)
+            c.drawText(Tr.t(p.name), r.left + 28f, r.top + 50f - (pt.ascent() + pt.descent()) / 2f, pt)
             UiKit.skillBar(c, bar, fill(p.rank, p.max), skillLabel(p.rank, p.max, p.mod))
             val (note, colour) = noteOf(p)
             val pn = UiKit.bodyPaint(26f, colour).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(note, r.right - 40f, r.top + 148f - (pn.ascent() + pn.descent()) / 2f, pn)
+            c.drawText(Tr.t(note), r.right - 40f, r.top + 148f - (pn.ascent() + pn.descent()) / 2f, pn)
             for ((i, b) in p.btn.withIndex()) {
                 spellButton(c, RectF(r.left + 20f + i * 330f, r.top + 92f, r.left + 20f + i * 330f + 316f, r.top + 203f), p, i, b)
             }
@@ -375,12 +375,12 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         private fun smallCard(c: Canvas, r: RectF, p: M.Profession) {
             UiKit.professionCard(c, r, p.id, small = true)
             val pt = fitted(p.name, UiKit.titlePaint(36f), r.width() - 24f, 28f).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(p.name, r.centerX(), r.top + 44f - (pt.ascent() + pt.descent()) / 2f, pt)
+            c.drawText(Tr.t(p.name), r.centerX(), r.top + 44f - (pt.ascent() + pt.descent()) / 2f, pt)
             UiKit.skillBar(c, RectF(r.left + 30f, r.top + 78f, r.right - 30f, r.top + 120f), fill(p.rank, p.max), skillLabel(p.rank, p.max, p.mod), 24f)
             val (note, colour) = noteOf(p)
             val pn = UiKit.bodyPaint(26f, colour).apply { textAlign = Paint.Align.CENTER }
             val two = p.btn.size >= 2
-            c.drawText(note, r.centerX(), r.top + (if (two) 140f else 152f) - (pn.ascent() + pn.descent()) / 2f, pn)
+            c.drawText(Tr.t(note), r.centerX(), r.top + (if (two) 140f else 152f) - (pn.ascent() + pn.descent()) / 2f, pn)
             val low = RectF(r.left + 14f, r.bottom - 125f, r.right - 14f, r.bottom - 14f)
             if (two) {
                 spellButton(c, RectF(r.left + 14f, r.bottom - 236f, r.right - 14f, r.bottom - 125f), p, 0, p.btn[0])
@@ -417,18 +417,18 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 val key = when (pos) { 3 -> "faid"; 4 -> "fish"; else -> "cook" }        // GetProfessions: 3 First Aid, 4 Fishing, 5 Cooking
                 val name = ov?.str?.get(key + "Name") ?: return
                 val pt = fitted(name, UiKit.titlePaint(36f), r.width() - 24f, 28f).apply { textAlign = Paint.Align.CENTER }
-                c.drawText(name, r.centerX(), r.top + 44f - (pt.ascent() + pt.descent()) / 2f, pt)
+                c.drawText(Tr.t(name), r.centerX(), r.top + 44f - (pt.ascent() + pt.descent()) / 2f, pt)
                 val line = ov.str[key + "Missing"] ?: return
                 val pl = UiKit.bodyPaint(22f, Theme.text).apply { textAlign = Paint.Align.CENTER }
                 var y = r.top + 84f - pl.ascent()
-                for (l in wrap(line, pl, r.width() - 56f, 8)) { c.drawText(l, r.centerX(), y, pl); y += pl.fontSpacing }
+                for (l in wrap(line, pl, r.width() - 56f, 8)) { c.drawText(Tr.t(l), r.centerX(), y, pl); y += pl.fontSpacing }
                 return
             }
             val head = ov?.str?.get(if (pos == 1) "first" else "second") ?: return
             val line = ov?.str?.get("missing")
             val p = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(head, r.centerX(), r.centerY() - (if (line != null) 18f else 0f) - (p.ascent() + p.descent()) / 2f, p)
-            if (line != null) c.drawText(fit(line, p, r.width() - 60f), r.centerX(), r.centerY() + 18f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(head), r.centerX(), r.centerY() - (if (line != null) 18f else 0f) - (p.ascent() + p.descent()) / 2f, p)
+            if (line != null) c.drawText(Tr.t(fit(line, p, r.width() - 60f)), r.centerX(), r.centerY() + 18f - (p.ascent() + p.descent()) / 2f, p)
         }
 
         // ---- a crafting page (SPEC 4)
@@ -447,8 +447,8 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 drawList(c, book, rows, recipe, foot)
             } else {
                 val p = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-                c.drawText("${prof.name}'s recipes show here", SPLIT / 2f, 380f, p)       // UI Art's SPEC (2026-09-30: no Open button)
-                c.drawText("once it is open in the game", SPLIT / 2f, 416f, p)
+                c.drawText(Tr.t("${prof.name}'s recipes show here"), SPLIT / 2f, 380f, p)       // UI Art's SPEC (2026-09-30: no Open button)
+                c.drawText(Tr.t("once it is open in the game"), SPLIT / 2f, 416f, p)
             }
             if (recipe != null && book != null) drawDetail(c, ov, book, recipe, right, foot)
             drawFoot(c, ov, prof, book, recipe, right, foot)
@@ -482,7 +482,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                     if (row.canMake > 0) {
                         val pc = UiKit.numberPaint(28f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
                         val s = "[${row.canMake}]"
-                        c.drawText(s, box.right - 20f, box.centerY() - 1f - (pc.ascent() + pc.descent()) / 2f, pc)
+                        c.drawText(Tr.t(s), box.right - 20f, box.centerY() - 1f - (pc.ascent() + pc.descent()) / 2f, pc)
                         nameRight -= pc.measureText(s) + 16f
                     }
                     val colour = diffColour(r.diff)
@@ -492,8 +492,8 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                     val pn = fitted(r.name, UiKit.bodyPaint(27f, colour), nameRight - (box.left + 98f) - upsW, 21f)
                     val name = fit(r.name, pn, nameRight - (box.left + 98f) - upsW)
                     val cy = box.centerY() - 1f - (pn.ascent() + pn.descent()) / 2f
-                    c.drawText(name, box.left + 98f, cy, pn)
-                    if (ups != null) c.drawText(ups, box.left + 98f + pn.measureText(name) + 8f, cy, pu)
+                    c.drawText(Tr.t(name), box.left + 98f, cy, pn)
+                    if (ups != null) c.drawText(Tr.t(ups), box.left + 98f + pn.measureText(name) + 8f, cy, pu)
                     val id = r.id
                     addListHit(box) { choose(book, id) }
                     nav(Fk.Rec(id), box, { choose(book, id) }, y + listScroll - 160f, 96f)
@@ -504,7 +504,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
             listHeight = y + listScroll - 160f
             if (rows.isEmpty()) {
                 val p = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-                c.drawText(if (book.recipes.isEmpty()) "No recipes" else "Nothing matches", SPLIT / 2f, 380f, p)
+                c.drawText(Tr.t(if (book.recipes.isEmpty()) "No recipes" else "Nothing matches"), SPLIT / 2f, 380f, p)
             }
         }
 
@@ -522,18 +522,18 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
             UiKit.framed(c, Icons.get(out?.let { if (it.icon > 0) it.icon else null } ?: r.icon), x0, 84f, 116f)
             if (out != null && out.min > 1) {
                 val pq = UiKit.numberPaint(28f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-                c.drawText(if (out.max > out.min) "${out.min}-${out.max}" else "${out.min}", x0 + 116f - 12f, 84f + 116f - 14f, pq)
+                c.drawText(Tr.t(if (out.max > out.min) "${out.min}-${out.max}" else "${out.min}"), x0 + 116f - 12f, 84f + 116f - 14f, pq)
             }
             val nameColour = Theme.quality(out?.quality)
             val nameText = out?.name ?: r.name
             val pn = UiKit.bodyPaint(34f, nameColour)
             val lines = wrap(nameText, pn, x1 - (x0 + 136f), 2)
-            if (lines.size == 1) c.drawText(lines[0], x0 + 136f, 120f - (pn.ascent() + pn.descent()) / 2f, pn)
-            else { c.drawText(lines[0], x0 + 136f, 104f - (pn.ascent() + pn.descent()) / 2f, pn)
-                   c.drawText(lines[1], x0 + 136f, 140f - (pn.ascent() + pn.descent()) / 2f, pn) }
+            if (lines.size == 1) c.drawText(Tr.t(lines[0]), x0 + 136f, 120f - (pn.ascent() + pn.descent()) / 2f, pn)
+            else { c.drawText(Tr.t(lines[0]), x0 + 136f, 104f - (pn.ascent() + pn.descent()) / 2f, pn)
+                   c.drawText(Tr.t(lines[1]), x0 + 136f, 140f - (pn.ascent() + pn.descent()) / 2f, pn) }
             val pm = UiKit.bodyPaint(24f, Theme.dim)
             val makes = out?.let { if (it.max > it.min) "Makes ${it.min}-${it.max}" else "Makes ${maxOf(it.min, 1)}" } ?: "Makes 1"
-            c.drawText(makes, x0 + 136f, 164f - (pm.ascent() + pm.descent()) / 2f, pm)
+            c.drawText(Tr.t(makes), x0 + 136f, 164f - (pm.ascent() + pm.descent()) / 2f, pm)
             UiKit.paneRule(c, x0, 214f, x1)
             var shift = 0f
             var y = 236f
@@ -547,16 +547,16 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                     val pl = UiKit.bodyPaint(23f, hexColour(l.c, Color.WHITE))
                     if (l.r != null) {
                         val pr = UiKit.bodyPaint(23f, hexColour(l.rc, Color.WHITE)).apply { textAlign = Paint.Align.RIGHT }
-                        c.drawText(fit(l.t, pl, x1 - x0 - pr.measureText(l.r) - 16f), x0, y - pl.ascent(), pl)
-                        c.drawText(l.r, x1, y - pr.ascent(), pr)
+                        c.drawText(Tr.t(fit(l.t, pl, x1 - x0 - pr.measureText(l.r) - 16f)), x0, y - pl.ascent(), pl)
+                        c.drawText(Tr.t(l.r), x1, y - pr.ascent(), pr)
                         y += pl.fontSpacing
-                    } else for (s in wrap(l.t, pl, x1 - x0, 4)) { c.drawText(s, x0, y - pl.ascent(), pl); y += pl.fontSpacing }
+                    } else for (s in wrap(l.t, pl, x1 - x0, 4)) { c.drawText(Tr.t(s), x0, y - pl.ascent(), pl); y += pl.fontSpacing }
                 }
                 shift += (y - 236f) + 12f
             } else r.desc?.let { d ->
                 val pd = UiKit.bodyPaint(23f, Theme.text)
                 val dl = wrap(d.replace('\n', ' '), pd, x1 - x0, 4)
-                for (l in dl) { c.drawText(l, x0, y - pd.ascent(), pd); y += pd.fontSpacing }
+                for (l in dl) { c.drawText(Tr.t(l), x0, y - pd.ascent(), pd); y += pd.fontSpacing }
                 shift += (y - 236f) + 12f
             }
             y = 236f + shift
@@ -566,32 +566,32 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 var x = x0
                 val pr = UiKit.bodyPaint(24f, Theme.dim)
                 val base = y - pr.ascent()
-                c.drawText(head, x, base, pr); x += pr.measureText(head)
+                c.drawText(Tr.t(head), x, base, pr); x += pr.measureText(head)
                 for ((i, q) in r.req.withIndex()) {
                     val pq = UiKit.bodyPaint(24f, if (q.met) Theme.text else Theme.unusable)
                     val s = q.name + if (i < r.req.size - 1) ", " else ""
-                    c.drawText(s, x, base, pq); x += pq.measureText(s)
+                    c.drawText(Tr.t(s), x, base, pq); x += pq.measureText(s)
                 }
                 y += pr.fontSpacing + 8f; shift = y - 236f + 12f
             }
             if (r.cooldown > 0) {
                 val pc = UiKit.bodyPaint(24f, Theme.unusable)
                 val words = (ov?.word("cooldown", "Cooldown remaining:") ?: "Cooldown remaining:") + " " + M.duration(r.cooldown)
-                c.drawText(words, x0, y - pc.ascent(), pc)
+                c.drawText(Tr.t(words), x0, y - pc.ascent(), pc)
                 y += pc.fontSpacing + 8f; shift = y - 236f + 12f
             }
             val pr = UiKit.bodyPaint(28f, Theme.gold)
             val reagWord = (ov?.word("reagents", "Reagents") ?: "Reagents").trimEnd(':', ' ')
-            c.drawText(reagWord, x0, 252f + shift - (pr.ascent() + pr.descent()) / 2f, pr)
+            c.drawText(Tr.t(reagWord), x0, 252f + shift - (pr.ascent() + pr.descent()) / 2f, pr)
             y = 284f + shift
             val n = countOf(r, book)
             for (line in M.lines(r, n, ProfessionsStore.counts)) {
                 val g = line.reagent
                 UiKit.slot(c, Icons.get(g.icon), x0 + 4f, y + 4f, 72f)
                 val p1 = UiKit.bodyPaint(27f, Color.WHITE)
-                c.drawText(fit(g.name ?: "…", p1, x1 - (x0 + 96f)), x0 + 96f, y + 26f - (p1.ascent() + p1.descent()) / 2f, p1)
+                c.drawText(Tr.t(fit(g.name ?: "…", p1, x1 - (x0 + 96f))), x0 + 96f, y + 26f - (p1.ascent() + p1.descent()) / 2f, p1)
                 val p2 = UiKit.numberPaint(28f, if (line.short > 0) Theme.unusable else Theme.text)
-                c.drawText("${line.have} / ${line.need}", x0 + 96f, y + 60f - (p2.ascent() + p2.descent()) / 2f, p2)
+                c.drawText(Tr.t("${line.have} / ${line.need}"), x0 + 96f, y + 60f - (p2.ascent() + p2.descent()) / 2f, p2)
                 y += 92f
             }
             // Track: the game's check box; ONE game action, only on the live page (the addon must hold this recipe)
@@ -601,7 +601,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 UiKit.check(c, x0 + 32f, y + 49f, 56f, r.tracked, canTrack)
             }
             val pt = UiKit.bodyPaint(25f, if (canTrack) Theme.text else Theme.dim)
-            c.drawText(ov?.word("track", "Track") ?: "Track", x0 + 74f, y + 49f - (pt.ascent() + pt.descent()) / 2f, pt)
+            c.drawText(Tr.t(ov?.word("track", "Track") ?: "Track"), x0 + 74f, y + 49f - (pt.ascent() + pt.descent()) / 2f, pt)
             val row = RectF(x0, y + 49f - 55.5f - detailScroll, x1, y + 49f + 55.5f - detailScroll)
             trackTop = y + 49f - 55.5f
             nav(Fk.Track, row, if (canTrack) ({ track(r, !r.tracked) }) else null)
@@ -626,7 +626,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 val waiting = opening == prof.id
                 val line = msg ?: when { waiting -> "Opening…"; !act.enabled && act.why != null -> act.why; else -> M.notOpenLine(prof) }
                 val pl = UiKit.bodyPaint(26f, if (msg != null) Theme.unusable else Theme.dim)
-                c.drawText(fit(line, pl, right - 60f), 28f, by + 55f - (pl.ascent() + pl.descent()) / 2f, pl)
+                c.drawText(Tr.t(fit(line, pl, right - 60f)), 28f, by + 55f - (pl.ascent() + pl.descent()) / 2f, pl)
                 return
             }
             val busy = ov?.busy
@@ -635,7 +635,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 // controller bar says it, a glyph and the game's word
                 val done = busy.made.coerceIn(0, busy.n)
                 val pl = UiKit.bodyPaint(26f, Theme.text)
-                c.drawText("Making ${minOf(done + 1, busy.n)} of ${busy.n}", 28f, by + 30f - (pl.ascent() + pl.descent()) / 2f, pl)
+                c.drawText(Tr.t("Making ${minOf(done + 1, busy.n)} of ${busy.n}"), 28f, by + 30f - (pl.ascent() + pl.descent()) / 2f, pl)
                 if (ov?.bstop == true) UiKit.hints(c, 560f, by + 28f, "rev_b" to (ov.word("cancel", "Cancel")))
                 // the game's cast timer, like its own cast bar: redrawn while the current item's cast runs
                 UiKit.progress(c, RectF(28f, by + 56f, 560f, by + 96f), M.craftFill(busy, System.currentTimeMillis() - ProfessionsStore.overviewAt))
@@ -681,7 +681,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
             val over = msg
             if (over != null) {
                 val po = UiKit.bodyPaint(24f, Theme.unusable).apply { textAlign = Paint.Align.CENTER }
-                c.drawText(fit(over, po, 900f), createBox.centerX() - 200f, by - 22f - (po.ascent() + po.descent()) / 2f, po)
+                c.drawText(Tr.t(fit(over, po, 900f)), createBox.centerX() - 200f, by - 22f - (po.ascent() + po.descent()) / 2f, po)
             }
         }
 
@@ -698,7 +698,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 val r = RectF(inner.left, inner.top + i * 111f, inner.right, inner.top + (i + 1) * 111f)
                 UiKit.check(c, r.left + 44f, r.centerY(), 56f, l.second)
                 val p = UiKit.bodyPaint(27f, Theme.text)
-                c.drawText(l.first, r.left + 92f, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+                c.drawText(Tr.t(l.first), r.left + 92f, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
                 hits.add(Hit(r) { l.third(); listScroll = 0f; invalidate() })
             }
         }
@@ -1013,7 +1013,7 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
             if (hex != null && hex.length == 6) runCatching { Color.parseColor("#$hex") }.getOrDefault(def) else def
 
         fun fit(text: String, p: Paint, width: Float): String =
-            TextUtils.ellipsize(text, android.text.TextPaint(p), maxOf(width, 10f), TextUtils.TruncateAt.END).toString()
+            TextUtils.ellipsize(Tr.t(text), android.text.TextPaint(p), maxOf(width, 10f), TextUtils.TruncateAt.END).toString()
 
         /** words into at most [max] lines of [width]; the last one ellipsized */
         fun wrap(text: String, p: Paint, width: Float, max: Int): List<String> {

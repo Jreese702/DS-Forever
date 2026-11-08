@@ -946,10 +946,10 @@ class InteractView(context: Context) : View(context) {
     // list with the tabs on top and rows built like the game's. No state is decided down here.
 
     private fun fit(p: TextPaint, s: String, w: Float): String =
-        TextUtils.ellipsize(s, p, max(w, 10f), TextUtils.TruncateAt.END).toString()
+        TextUtils.ellipsize(Tr.t(s), p, max(w, 10f), TextUtils.TruncateAt.END).toString()
 
     private fun layout(s: String, p: TextPaint, w: Int, gap: Float = 5f): StaticLayout =
-        StaticLayout.Builder.obtain(s, 0, s.length, p, max(w, 10))
+        StaticLayout.Builder.obtain(Tr.t(s), 0, Tr.t(s).length, p, max(w, 10))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(gap, 1f).build()
 
     /** the game writes "\r\n" and a player-name token into its prose */
@@ -1108,7 +1108,7 @@ class InteractView(context: Context) : View(context) {
         if (right - left < 60f) return false
         val l = layout(s, p, (right - left).toInt(), 2f)
         if (l.lineCount <= 2) drawLayout(c, l, left, cy - l.height / 2f)
-        else c.drawText(fit(p, s, right - left), left, cy + 8f, p)
+        else c.drawText(Tr.t(fit(p, s, right - left)), left, cy + 8f, p)
         return true
     }
 
@@ -1255,11 +1255,11 @@ class InteractView(context: Context) : View(context) {
         val w = minOf(r.width() - 40f, lp.measureText(lab) + tp.measureText(text) + 90f)
         val box = RectF(r.centerX() - w / 2f, r.top + 10f, r.centerX() + w / 2f, r.top + 66f)
         UiKit.menu(c, box, solid = true)
-        c.drawText(lab, box.left + 24f, box.centerY() + 9f, lp)
+        c.drawText(Tr.t(lab), box.left + 24f, box.centerY() + 9f, lp)
         val x = box.left + 48f + lp.measureText(lab)
         val maxW = box.right - 20f - x
         val drawn = if (tp.measureText(text) > maxW) text.take(tp.breakText(text, true, maxW - 24f, null)) + "…" else text
-        c.drawText(drawn, x, box.centerY() + 9f, tp)
+        c.drawText(Tr.t(drawn), x, box.centerY() + 9f, tp)
     }
 
     /** the field each keyboard field types, by the add-on's name: its words over the keyboard */
@@ -1278,12 +1278,12 @@ class InteractView(context: Context) : View(context) {
         UiKit.menu(c, box, solid = true)
         val lab = (fieldWords[field] ?: "Text") + ":"
         val lp = UiKit.bodyPaint(26f, Theme.gold)
-        c.drawText(lab, box.left + 22f, box.centerY() + 9f, lp)
+        c.drawText(Tr.t(lab), box.left + 22f, box.centerY() + 9f, lp)
         val x = box.left + 40f + lp.measureText(lab)
         val tp = UiKit.bodyPaint(28f, Color.WHITE)
         val maxW = box.right - 24f - x
         val drawn = if (tp.measureText(kbText) > maxW) "…" + kbText.takeLast(tp.breakText(kbText.reversed(), true, maxW - 24f, null)) else kbText
-        c.drawText(drawn, x, box.centerY() + 10f, tp)
+        c.drawText(Tr.t(drawn), x, box.centerY() + 10f, tp)
         if ((now / 500L) % 2L == 0L) {
             val cx = x + tp.measureText(drawn) + 3f
             pFill.color = Theme.gold
@@ -1363,7 +1363,7 @@ class InteractView(context: Context) : View(context) {
             val p = UiKit.inkPaint(31f)
             if (!usable) p.color = Theme.parchmentInkDim
             val label = if (e.kind == K_OPTION) e.o.optString("name", "...") else e.o.optString("title", "Quest")
-            c.drawText(fit(p, label, line.right - 12f - (x + 84f)), x + 84f, ry + 55f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(fit(p, label, line.right - 12f - (x + 84f))), x + 84f, ry + 55f - (p.ascent() + p.descent()) / 2f, p)
             val clip = RectF(line.left, max(line.top, viewA.top), line.right, min(line.bottom, viewA.bottom))
             if (clip.height() > 0f) hits.add(clip to hit)
         }
@@ -1408,7 +1408,7 @@ class InteractView(context: Context) : View(context) {
         if (body.isNotEmpty()) y = drawLayout(c, layout(body, ink, lw.toInt()), lx, y) + 20f
         val obj = prose(q.optString("objectives", ""))
         if (obj.isNotEmpty()) {
-            c.drawText("Quest Objectives", lx, y + 32f, UiKit.inkPaint(36f, heading = true)); y += 48f
+            c.drawText(Tr.t("Quest Objectives"), lx, y + 32f, UiKit.inkPaint(36f, heading = true)); y += 48f
             y = drawLayout(c, layout(obj, ink, lw.toInt()), lx, y) + 14f
         }
         contentA = y - y0 + 16f
@@ -1447,7 +1447,7 @@ class InteractView(context: Context) : View(context) {
             val req = arr(q, "required")
             val cost = q.optLong("money", 0)
             if (req.isNotEmpty() || cost > 0) {
-                c.drawText("Required", rx, ry + 32f, UiKit.inkPaint(36f, heading = true)); ry += 50f
+                c.drawText(Tr.t("Required"), rx, ry + 32f, UiKit.inkPaint(36f, heading = true)); ry += 50f
                 for (o in req) plate(o, null, false, null)
                 if (cost > 0) { UiKit.money(c, cost, rx, ry + 18f, 28f, Theme.parchmentInk, shadow = false); ry += 46f }
             }
@@ -1459,7 +1459,7 @@ class InteractView(context: Context) : View(context) {
             val coin = rew?.optLong("money", 0) ?: 0
             val xp = rew?.optInt("xp", 0) ?: 0
             if (choices.isNotEmpty() || items.isNotEmpty() || coin > 0 || xp > 0) {
-                c.drawText("Rewards", rx, ry + 32f, UiKit.inkPaint(36f, heading = true)); ry += 50f
+                c.drawText(Tr.t("Rewards"), rx, ry + 32f, UiKit.inkPaint(36f, heading = true)); ry += 50f
             }
             if (choices.isNotEmpty()) {
                 val pick = stage == "complete" && choices.size > 1
@@ -1476,13 +1476,13 @@ class InteractView(context: Context) : View(context) {
                 ry += 8f
             }
             if (items.isNotEmpty()) {
-                c.drawText(if (choices.isNotEmpty()) "You will also receive:" else "You will receive:", rx, ry + 20f, dim); ry += 36f
+                c.drawText(Tr.t(if (choices.isNotEmpty()) "You will also receive:" else "You will receive:"), rx, ry + 20f, dim); ry += 36f
                 for (o in items) plate(o, null, false, null)
             }
             if (xp > 0 || coin > 0) {
                 if (xp > 0) {
-                    c.drawText("Experience:", rx, ry + 32f, UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim })
-                    c.drawText(xp.toString(), rx + 140f, ry + 34f, UiKit.numberPaint(28f, Theme.parchmentInk, false))
+                    c.drawText(Tr.t("Experience:"), rx, ry + 32f, UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim })
+                    c.drawText(Tr.t(xp.toString()), rx + 140f, ry + 34f, UiKit.numberPaint(28f, Theme.parchmentInk, false))
                 }
                 if (coin > 0) UiKit.money(c, coin, inner.right - 40f, ry + 26f, 28f, Theme.parchmentInk, fromRight = true, shadow = false)
                 ry += 50f
@@ -1616,7 +1616,7 @@ class InteractView(context: Context) : View(context) {
         fun rectOf(rw: TRow) = RectF(inner.left + 4f + rw.x, ly0 + rw.y - scrollA,
                                      inner.left + 4f + rw.x + rw.w, ly0 + rw.y - scrollA + if (rw.head) 62f else 124f)
         c.save(); c.clipRect(viewA)
-        if (rows.isEmpty()) c.drawText("This trainer has nothing to teach you.", inner.left + 24f, ly0 + 56f, UiKit.bodyPaint(27f, Theme.dim))
+        if (rows.isEmpty()) c.drawText(Tr.t("This trainer has nothing to teach you."), inner.left + 24f, ly0 + 56f, UiKit.bodyPaint(27f, Theme.dim))
         for (rw in rows) {
             val rr = rectOf(rw)
             if (rr.bottom < ly0 || rr.top > ly1) continue
@@ -1665,7 +1665,7 @@ class InteractView(context: Context) : View(context) {
         // ---- the strip: your money; A Train; Y Spellbook
         val strip = UiKit.strip(c, inner)
         val cy = strip.centerY() + 2f
-        c.drawText("Your money", inner.left + 24f, cy - 14f, UiKit.bodyPaint(22f, Theme.dim))
+        c.drawText(Tr.t("Your money"), inner.left + 24f, cy - 14f, UiKit.bodyPaint(22f, Theme.dim))
         UiKit.money(c, purse, inner.left + 24f, cy + 20f, 30f)
         val bx = inner.right - 8f
         val e = entries().firstOrNull { it.cmd == shownCmd }
@@ -1698,7 +1698,7 @@ class InteractView(context: Context) : View(context) {
                 Triple("used", "Already Known", Color.rgb(160, 160, 160)))
             val mh = 60f + rowsM.size * 64f + 18f + 64f + 16f
             val m = UiKit.menu(c, RectF(dd.right - 440f, dd.bottom + 4f, dd.right, dd.bottom + 4f + mh), solid = true)
-            c.drawText("Filters", m.left + 28f, m.top + 42f, UiKit.bodyPaint(24f, Theme.gold))
+            c.drawText(Tr.t("Filters"), m.left + 28f, m.top + 42f, UiKit.bodyPaint(24f, Theme.gold))
             var my = m.top + 60f
             for ((k, label, colour) in rowsM) {
                 val row = RectF(m.left + 6f, my, m.right - 6f, my + 64f)
@@ -1780,7 +1780,7 @@ class InteractView(context: Context) : View(context) {
         val x0 = inner.left + 24f; val x1 = inner.right - 24f
         var y = r.top + UiKit.WINDOW_UNDER_RING
         // the step's title and its words
-        c.drawText(q.optString("title", ""), (x0 + x1) / 2f, y + 44f, UiKit.bodyPaint(40f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+        c.drawText(Tr.t(q.optString("title", "")), (x0 + x1) / 2f, y + 44f, UiKit.bodyPaint(40f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
         y += 66f
         val about = q.optString("about", "")
         if (about.isNotEmpty()) {
@@ -1844,11 +1844,11 @@ class InteractView(context: Context) : View(context) {
                 var focusBox = box
                 when (it.optString("k")) {
                     "head" -> {
-                        c.drawText(it.optString("t"), box.left + 4f, box.top + 38f, UiKit.bodyPaint(30f, Theme.gold))
+                        c.drawText(Tr.t(it.optString("t")), box.left + 4f, box.top + 38f, UiKit.bodyPaint(30f, Theme.gold))
                         if (it.has("on")) {
                             val on = it.optBoolean("on")
                             UiKit.check(c, box.right - 30f, box.top + 26f, 50f, on)
-                            c.drawText(if (on) "On" else "Off", box.right - 64f, box.top + 36f, UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT })
+                            c.drawText(Tr.t(if (on) "On" else "Off"), box.right - 64f, box.top + 36f, UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT })
                             focusBox = RectF(box.right - 130f, box.top, box.right, box.top + 54f)
                             hits.add(focusBox to hitOf("qt ${it.optString("id")}", sl))
                         } else focusBox = RectF()
@@ -1856,11 +1856,11 @@ class InteractView(context: Context) : View(context) {
                     }
                     "check" -> {
                         UiKit.check(c, box.left + 28f, box.centerY(), 50f, it.optBoolean("on"), enabled = en)
-                        c.drawText(fit(lp, it.optString("t"), box.width() - 70f), box.left + 66f, ty, lp)
+                        c.drawText(Tr.t(fit(lp, it.optString("t"), box.width() - 70f)), box.left + 66f, ty, lp)
                         hits.add(box to if (en) hitOf("qt ${it.optString("id")}", sl) else "why:Turn its group on first")
                     }
                     "slider", "num" -> {
-                        c.drawText(fit(lp, it.optString("t"), box.width() * 0.42f), box.left + 4f, ty, lp)
+                        c.drawText(Tr.t(fit(lp, it.optString("t"), box.width() * 0.42f)), box.left + 4f, ty, lp)
                         val lo = it.optDouble("min", 0.0); val hi = it.optDouble("max", 1.0); val v = it.optDouble("v", lo)
                         val sx0 = box.left + box.width() * 0.46f; val sx1 = box.right - 8f
                         val bm = RectF(sx0, box.centerY() - 30f, sx0 + 60f, box.centerY() + 30f)
@@ -1872,29 +1872,29 @@ class InteractView(context: Context) : View(context) {
                         val k2 = if (hi > lo) ((v - lo) / (hi - lo)).toFloat().coerceIn(0f, 1f) else 0f
                         pFill.color = if (en) Theme.gold else Theme.dim
                         c.drawRoundRect(RectF(tr.left, tr.top, tr.left + tr.width() * k2, tr.bottom), 9f, 9f, pFill)
-                        c.drawText(it.optString("txt", v.toString()), tr.centerX(), tr.top - 8f, UiKit.numberPaint(24f, if (en) Color.WHITE else Theme.dim).apply { textAlign = Paint.Align.CENTER })
+                        c.drawText(Tr.t(it.optString("txt", v.toString())), tr.centerX(), tr.top - 8f, UiKit.numberPaint(24f, if (en) Color.WHITE else Theme.dim).apply { textAlign = Paint.Align.CENTER })
                         val cm = slotOf(it, "minus"); val cp = slotOf(it, "plus")
                         if (en) { hits.add(bm to hitOf("qt ${it.optString("id")} -", cm)); hits.add(bp to hitOf("qt ${it.optString("id")} +", cp)) }
                     }
                     "color" -> {
-                        c.drawText(fit(lp, it.optString("t"), box.width() * 0.5f), box.left + 4f, ty, lp)
+                        c.drawText(Tr.t(fit(lp, it.optString("t"), box.width() * 0.5f)), box.left + 4f, ty, lp)
                         val rgb = it.optJSONArray("rgb")
                         val sw = RectF(box.left + box.width() * 0.52f, box.centerY() - 18f, box.left + box.width() * 0.52f + 90f, box.centerY() + 18f)
                         pFill.color = Color.BLACK; c.drawRect(RectF(sw.left - 2f, sw.top - 2f, sw.right + 2f, sw.bottom + 2f), pFill)
                         pFill.color = if (rgb != null) Color.rgb((rgb.optDouble(0) * 255).toInt(), (rgb.optDouble(1) * 255).toInt(), (rgb.optDouble(2) * 255).toInt()) else Color.GRAY
                         c.drawRect(sw, pFill)
-                        c.drawText("Colours: on the top screen", sw.right + 20f, ty, UiKit.bodyPaint(21f, Theme.dim))
+                        c.drawText(Tr.t("Colours: on the top screen"), sw.right + 20f, ty, UiKit.bodyPaint(21f, Theme.dim))
                         hits.add(box to "why:Colours are chosen on the top screen (On the top screen, below)")
                     }
                     "drop" -> {
-                        c.drawText(fit(lp, it.optString("t"), box.width() * 0.42f), box.left + 4f, ty, lp)
+                        c.drawText(Tr.t(fit(lp, it.optString("t"), box.width() * 0.42f)), box.left + 4f, ty, lp)
                         val dd = RectF(box.left + box.width() * 0.46f, box.centerY() - 30f, box.right - 8f, box.centerY() + 30f)
                         UiKit.choice(c, dd, fit(UiKit.bodyPaint(24f, Color.WHITE), it.optString("v") + "  v", dd.width() - 30f), false, en, textSize = 24f)
                         focusBox = dd
                         if (en) hits.add(dd to hitOf("qt ${it.optString("id")}", sl))
                     }
                     "edit" -> {
-                        c.drawText(fit(lp, it.optString("t"), box.width() * 0.5f), box.left + 4f, ty, lp)
+                        c.drawText(Tr.t(fit(lp, it.optString("t"), box.width() * 0.5f)), box.left + 4f, ty, lp)
                         val eb = RectF(box.left + box.width() * 0.52f, box.centerY() - 28f, box.right - 8f, box.centerY() + 28f)
                         formBox(c, eb, it.optString("v"), "", "qt ${it.optString("id")}", if (en) sl else -1, "qt${it.optString("id")}", size = 24f, digits = true)
                         focusBox = RectF()
@@ -1951,7 +1951,7 @@ class InteractView(context: Context) : View(context) {
             val canB = q.optBoolean("back")
             stripButton(c, RectF(mid - 60f - bw, cy - bh / 2f, mid - 60f, cy + bh / 2f), "Back", if (canB) hitOf("qtgo back", col("back"))
                 else "why:This is the first step", canB, false, UiKit.backGlyph(), id = "qtgo back")
-            c.drawText("$i / $n", mid, cy + 11f, UiKit.numberPaint(28f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
+            c.drawText(Tr.t("$i / $n"), mid, cy + 11f, UiKit.numberPaint(28f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
         }
         val nx = if (setup) RectF(mid + 60f, cy - bh / 2f, mid + 60f + bw, cy + bh / 2f) else RectF(mid - bw / 2f, cy - bh / 2f, mid + bw / 2f, cy + bh / 2f)
         if (q.optBoolean("finish")) {
@@ -1979,7 +1979,7 @@ class InteractView(context: Context) : View(context) {
             val w = 640f; val rowH = 76f
             val d = RectF(r.centerX() - w / 2f, r.centerY() - (ch.size * rowH + 120f) / 2f, r.centerX() + w / 2f, r.centerY() + (ch.size * rowH + 120f) / 2f)
             val inn = UiKit.dialog(c, d)
-            c.drawText(m.optString("t", ""), inn.centerX(), inn.top + 40f, UiKit.bodyPaint(30f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+            c.drawText(Tr.t(m.optString("t", "")), inn.centerX(), inn.top + 40f, UiKit.bodyPaint(30f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
             for ((k, it) in ch.withIndex()) {
                 val rr = RectF(inn.left + 20f, inn.top + 64f + k * rowH, inn.right - 20f, inn.top + 64f + k * rowH + rowH - 10f)
                 UiKit.choice(c, rr, it.optString("t"), it.optBoolean("on"), true, textSize = 26f)
@@ -1998,16 +1998,16 @@ class InteractView(context: Context) : View(context) {
         val guild = p.optString("kind", "guild") == "guild"
         val lx = inner.left + 44f
         var y = r.top + UiKit.WINDOW_UNDER_RING
-        c.drawText(if (guild) "Guild Charter" else "Charter", lx, y + 46f, UiKit.inkPaint(48f, heading = true)); y += 74f
-        c.drawText((if (guild) "Guild Name: " else "") + p.optString("title", ""), lx, y + 30f, ink); y += 44f
-        c.drawText((if (guild) "Guild Master: " else "") + p.optString("master", ""), lx, y + 30f, ink); y += 62f
+        c.drawText(Tr.t(if (guild) "Guild Charter" else "Charter"), lx, y + 46f, UiKit.inkPaint(48f, heading = true)); y += 74f
+        c.drawText(Tr.t((if (guild) "Guild Name: " else "") + p.optString("title", "")), lx, y + 30f, ink); y += 44f
+        c.drawText(Tr.t((if (guild) "Guild Master: " else "") + p.optString("master", "")), lx, y + 30f, ink); y += 62f
         val names = p.optJSONArray("names")
         val n = names?.length() ?: 0
-        c.drawText("Signatures  ${p.optInt("signed")} / ${max(p.optInt("min", n), n)}", lx, y + 30f, UiKit.inkPaint(32f, heading = true)); y += 50f
+        c.drawText(Tr.t("Signatures  ${p.optInt("signed")} / ${max(p.optInt("min", n), n)}"), lx, y + 30f, UiKit.inkPaint(32f, heading = true)); y += 50f
         val colW = (inner.width() - 120f) / 2f
         for (i in 0 until n) {
             val nm = names!!.optString(i, "")
-            c.drawText("${i + 1}.  " + nm.ifEmpty { "Not yet signed" }, lx + (i % 2) * colW, y + (i / 2) * 40f + 30f, if (nm.isEmpty()) dim else ink)
+            c.drawText(Tr.t("${i + 1}.  " + nm.ifEmpty { "Not yet signed" }), lx + (i % 2) * colW, y + (i / 2) * 40f + 30f, if (nm.isEmpty()) dim else ink)
         }
         y += ((n + 1) / 2) * 40f + 26f
         val instr = p.optString("instructions", "")
@@ -2045,7 +2045,7 @@ class InteractView(context: Context) : View(context) {
         val w = (inner.width() - 88f).toInt()
         var y = r.top + UiKit.WINDOW_UNDER_RING
         val title = b.optString("title", "")
-        c.drawText(fit(UiKit.inkPaint(44f, heading = true), title, w.toFloat()), lx, y + 44f, UiKit.inkPaint(44f, heading = true)); y += 74f
+        c.drawText(Tr.t(fit(UiKit.inkPaint(44f, heading = true), title, w.toFloat())), lx, y + 44f, UiKit.inkPaint(44f, heading = true)); y += 74f
         val by = b.optString("by", "")
         val bottom = strip.top - 60f
         val text = b.optString("text", "")
@@ -2058,11 +2058,11 @@ class InteractView(context: Context) : View(context) {
         l?.let { drawLayout(c, it, lx, y) }
         c.restore()
         val dim = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
-        if (by.isNotEmpty()) c.drawText("Written by $by", lx, strip.top - 22f, dim)
+        if (by.isNotEmpty()) c.drawText(Tr.t("Written by $by"), lx, strip.top - 22f, dim)
         val pg = b.optInt("page", 1)
         if (pg > 1 || b.optBoolean("more")) {
             val pp = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim; textAlign = Paint.Align.RIGHT }
-            c.drawText("Page $pg", inner.right - 44f, strip.top - 22f, pp)
+            c.drawText(Tr.t("Page $pg"), inner.right - 44f, strip.top - 22f, pp)
         }
         // the strip: Prev Page on the left, Next Page on the right (the game's own buttons' places)
         val act = b.optJSONObject("act")
@@ -2100,8 +2100,8 @@ class InteractView(context: Context) : View(context) {
             val name = pet.optString("name"); val fam = pet.optString("family")
             val head = (if (name == fam) "" else "$name ") + "Level ${pet.optInt("level")} $fam"
             val hp = UiKit.bodyPaint(32f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(head, stage.centerX(), stage.top + 52f, hp)
-            str(pet, "loyalty")?.let { c.drawText(it, stage.centerX(), stage.top + 92f, UiKit.bodyPaint(24f, Theme.gold).apply { textAlign = Paint.Align.CENTER }) }
+            c.drawText(Tr.t(head), stage.centerX(), stage.top + 52f, hp)
+            str(pet, "loyalty")?.let { c.drawText(Tr.t(it), stage.centerX(), stage.top + 92f, UiKit.bodyPaint(24f, Theme.gold).apply { textAlign = Paint.Align.CENTER }) }
             UiKit.loyaltyRing(c, stage.right - 70f, stage.top + 66f, 92f, pet.optInt("loyaltyLevel", 0))
             val need = pet.optInt("xpNeed", 0)
             if (need > 0) {
@@ -2119,8 +2119,8 @@ class InteractView(context: Context) : View(context) {
         val x0 = stage.centerX() - groupW / 2f
         fun xOf(i: Int) = if (i == 0) x0 else x0 + sz + 150f + (i - 1) * (sz + 38f)
         val lp = UiKit.bodyPaint(24f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
-        c.drawText("Current Pet", x0 + sz / 2f, sy - 26f, lp)
-        if (stabled > 0) c.drawText("Stabled Pets", (xOf(1) + xOf(n - 1) + sz) / 2f, sy - 26f, lp)
+        c.drawText(Tr.t("Current Pet"), x0 + sz / 2f, sy - 26f, lp)
+        if (stabled > 0) c.drawText(Tr.t("Stabled Pets"), (xOf(1) + xOf(n - 1) + sz) / 2f, sy - 26f, lp)
         var dragRect: RectF? = null
         for ((k, pt) in pets.withIndex()) {
             val x = xOf(k)
@@ -2142,15 +2142,15 @@ class InteractView(context: Context) : View(context) {
         // ---- the strip: money; purchase a slot; the hints
         val strip = UiKit.strip(c, inner)
         val cy = strip.centerY() + 2f
-        c.drawText("Your money", inner.left + 24f, cy - 14f, UiKit.bodyPaint(22f, Theme.dim))
+        c.drawText(Tr.t("Your money"), inner.left + 24f, cy - 14f, UiKit.bodyPaint(22f, Theme.dim))
         UiKit.money(c, purse, inner.left + 24f, cy + 20f, 30f)
         val bx = inner.right - 8f
         val slots = st.optInt("slots", 0); val maxSlots = st.optInt("maxSlots", 99)
         val cost = st.optLong("cost", 0)
         val canBuyMore = slots < maxSlots
         if (canBuyMore) {
-            c.drawText("Do you wish to purchase another stable slot?", inner.left + 250f, cy - 14f, UiKit.bodyPaint(22f, Theme.text))
-            c.drawText("Cost:", inner.left + 250f, cy + 28f, UiKit.bodyPaint(26f, Theme.gold))
+            c.drawText(Tr.t("Do you wish to purchase another stable slot?"), inner.left + 250f, cy - 14f, UiKit.bodyPaint(22f, Theme.text))
+            c.drawText(Tr.t("Cost:"), inner.left + 250f, cy + 28f, UiKit.bodyPaint(26f, Theme.gold))
             UiKit.money(c, cost, inner.left + 330f, cy + 20f, 28f, if (cost <= purse) Theme.text else Theme.unusable)
             val pb = RectF(bx - 290f, cy - 55f, bx, cy + 56f)
             UiKit.button(c, pb, "Purchase", "rev_x", if (cost <= purse) UiKit.Button.UP else UiKit.Button.DISABLED)
@@ -2167,7 +2167,7 @@ class InteractView(context: Context) : View(context) {
             val ib = UiKit.dialog(c, box)
             val words = "Are you sure you wish to purchase a new stable slot for the following amount?"
             val tp = TextPaint(UiKit.bodyPaint(30f, Color.WHITE))
-            val lay = StaticLayout.Builder.obtain(words, 0, words.length, tp, (ib.width() - 80f).toInt())
+            val lay = StaticLayout.Builder.obtain(Tr.t(words), 0, Tr.t(words).length, tp, (ib.width() - 80f).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_CENTER).build()
             c.save(); c.translate(ib.left + 40f, ib.top + 30f); lay.draw(c); c.restore()
             val mw = UiKit.moneyWidth(cost, 34f)
@@ -2195,7 +2195,7 @@ class InteractView(context: Context) : View(context) {
     // game's own buttons through the dialogs' secure cells ("pet:" taps on the idlg row)
     private fun tradeWindow(c: Canvas, r: RectF, td: JSONObject, now: Long) {
         val inner = UiKit.windowGround(c, r, marble = true)
-        val strip = UiKit.strip(c, inner, 96f)
+        val strip = UiKit.strip(c, inner, 120f)
         val act = td.optJSONObject("act")
         val cells = td.optJSONObject("cells")
         fun col(k: String) = act?.let { slotOf(it, k) } ?: -1
@@ -2238,27 +2238,29 @@ class InteractView(context: Context) : View(context) {
             val accW = if (accepted) accP.measureText("Accepted") + 24f else 0f
             val head = if (side == 0) "You" else if (lvl > 0 && !accepted) "$who  (level $lvl)" else who
             val hp = UiKit.bodyPaint(27f, Theme.gold)
-            c.drawText(fit(hp, head, x1 - hx - accW), hx, pane.top + 38f, hp)
-            if (accepted) c.drawText("Accepted", x1, pane.top + 38f, accP)
+            c.drawText(Tr.t(fit(hp, head, x1 - hx - accW)), hx, pane.top + 38f, hp)
+            if (accepted) c.drawText(Tr.t("Accepted"), x1, pane.top + 38f, accP)
             for (k in 0 until n) {
                 val last = k == n - 1
                 val y = pane.top + headH + k * rowH + (if (last) labH + 8f else 0f)
                 if (last) {
                     UiKit.bankDivider(c, x0, x1, y - labH / 2f - 2f)
                     val lp = UiKit.bodyPaint(20f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-                    c.drawText("Will not be traded", (x0 + x1) / 2f, y - 6f, lp)
+                    c.drawText(Tr.t("Will not be traded"), (x0 + x1) / 2f, y - 6f, lp)
                 }
                 val it = list.getOrNull(k)
                 val has = it != null && it.has("name")
                 val row = RectF(x0, y, x1, y + rowH - 4f)
                 if (has) UiKit.itemPlate(c, row, itemIcon(it!!), it.optString("name"), Theme.quality(it.optInt("q", 1)), it.optInt("count", 0))
+                // i139 (the user: "Make the not to be traded box into a button that opens soul bound items"): yours, empty, says so
+                else if (side == 0 && last) UiKit.itemPlate(c, row, null, "Choose an item to enchant", Theme.dim)
                 else UiKit.itemPlate(c, row, null, "")
                 val id = "tslot ${if (side == 0) "p" else "t"} ${k + 1}"
                 if (side == 0) {
                     val sl = it?.let { slotOf(it) } ?: -1
                     val cmd = if (has) "tradeout ${k + 1}" else "tradepick ${k + 1}"
                     hits.add(row to (if (sl >= 0) "act:$cmd|$sl" else "why:The game gave this no tap cell"))
-                    if (!has && last && td.optInt("dest", 0) == n) UiKit.rewardPicked(c, row)
+
                 } else if (has) {
                     val sl = slotOf(it!!)
                     hits.add(row to (if (sl >= 0) "act:look tslot t ${k + 1}|$sl" else "why:The game gave this no tap cell"))
@@ -2294,10 +2296,10 @@ class InteractView(context: Context) : View(context) {
         val bagR = RectF(lx1 + 16f, top, inner.right - 4f, bottom)
         UiKit.bankGround(c, bagR)
         val purse = td.optLong("purse", 0)
-        c.drawText("Backpack", bagR.left + 14f, bagR.top + 38f, UiKit.bodyPaint(27f, Theme.gold))
+        c.drawText(Tr.t("Backpack"), bagR.left + 14f, bagR.top + 38f, UiKit.bodyPaint(27f, Theme.gold))
         UiKit.money(c, purse, bagR.right - 12f, bagR.top + 28f, 24f, fromRight = true)
         val dest7 = td.optInt("dest", 0) == n
-        if (dest7) c.drawText(fit(UiKit.bodyPaint(20f, Theme.gold), "Next item: Will not be traded", bagR.width() - 28f),
+        if (dest7) c.drawText(Tr.t(fit(UiKit.bodyPaint(20f, Theme.gold), "Next item: Will not be traded", bagR.width() - 28f)),
             bagR.left + 14f, bagR.top + 66f, UiKit.bodyPaint(20f, Theme.gold))
         val per = max(1, td.optInt("cols", TRADE_BAG_COLS))
         val bgap = 6f
@@ -2331,27 +2333,25 @@ class InteractView(context: Context) : View(context) {
             if (cur == cmd) { UiKit.focus(c, sr); curBox = sr }
         }
         c.restore()
-        if (bags.isEmpty()) c.drawText("Your bags are empty", view.left + 10f, view.top + 40f, UiKit.bodyPaint(24f, Theme.dim))
-        // ---- the strip: who has accepted, or what the game answered
+        if (bags.isEmpty()) c.drawText(Tr.t("Your bags are empty"), view.left + 10f, view.top + 40f, UiKit.bodyPaint(24f, Theme.dim))
+        // ---- the strip: who has accepted, or what the game answered; TRADE at the right with the X glyph (the user on test16: "I want
+        // them to be the accept button and x"): the game's own Trade, pressed by the dialogs' secure cell; the frame's X is Cancel (B)
         val cy = strip.centerY() + 2f
-        if (!resultLine(c, inner.left + 24f, inner.right - 24f, cy, now)) {
+        val aCell0 = cells?.optInt("accept", -1) ?: -1
+        val tradeB = RectF(inner.right - 8f - 300f, cy - 50f, inner.right - 8f, cy + 50f)
+        stripButton(c, tradeB, if (acc) "Accepted" else "Trade", if (aCell0 >= 0) "pet:$aCell0" else "why:Press Trade with the controller",
+            aCell0 >= 0, false, UiKit.xGlyph(), always = true)
+        if (!resultLine(c, inner.left + 24f, tradeB.left - 24f, cy, now)) {
             val words = when {
                 tacc && !acc -> "$who has accepted"
                 acc && !tacc -> "Waiting for $who"
                 acc && tacc -> "Both accepted"
                 else -> ""
             }
-            if (words.isNotEmpty()) c.drawText(fit(UiKit.bodyPaint(25f, Theme.gold), words, inner.width() - 48f), inner.left + 24f, cy + 9f, UiKit.bodyPaint(25f, Theme.gold))
+            if (words.isNotEmpty()) c.drawText(Tr.t(fit(UiKit.bodyPaint(25f, Theme.gold), Tr.t(words), tradeB.left - 48f - inner.left)), inner.left + 24f, cy + 9f, UiKit.bodyPaint(25f, Theme.gold))
         }
         // ---- the frame, its X (= Cancel, B), and Trade beside it (X glyph): the game's own two buttons
         UiKit.windowFrame(c, r, "Trade", UiKit.tex("portrait_quest"), Theme.gold, closeDown = pressed == "x", closeB = 1)
-        val band = r.top - 16f + 57f * UiKit.FRAME
-        val aCell = cells?.optInt("accept", -1) ?: -1
-        val sq = 92f
-        val acx = r.right - 70f - sq - 18f; val acy = band + 2f
-        val aR = RectF(acx - sq / 2f, acy - sq / 2f, acx + sq / 2f, acy + sq / 2f)
-        tradeAcceptSquare(c, aR, acc, aCell >= 0, pressed == "pet:$aCell")
-        hits.add(RectF(aR.left - 8f, aR.top - 8f, aR.right + 8f, aR.bottom + 8f) to (if (aCell >= 0) "pet:$aCell" else "why:Press Trade with the controller"))
         // ---- the tooltip of what the cursor (or a finger) is on: on the other half of the screen
         val tipKey = cur ?: lookedAt
         tipFor(tipKey)?.let { t ->
@@ -2368,8 +2368,57 @@ class InteractView(context: Context) : View(context) {
             val ty = curBox?.top ?: (top + 60f)
             drawTip(c, tx, ty, tw, o?.optString("name", "Item") ?: "Item", o?.optInt("q", 1) ?: 1, t, top, bottom, tx + tw + 12f)
         }
-        // ---- the money stepper over the window
+        // ---- the money stepper over the window; the soulbound list (the seventh slot) over it
         td.optJSONObject("edit")?.let { tradeStepper(c, r, it, act, purse) }
+        td.optJSONArray("enchant")?.let { tradeEnchantList(c, r, td, act) }
+    }
+
+    /** i139: YOUR SOULBOUND ITEMS for the "Will not be traded" slot (to be enchanted): what you wear first, then your bags' */
+    private fun tradeEnchantList(c: Canvas, r: RectF, td: JSONObject, act: JSONObject?) {
+        hits.clear()
+        UiKit.cover(c, r)
+        val items = arr(td, "enchant")
+        val w = 860f; val h = r.height() - 120f
+        val box = RectF(r.centerX() - w / 2f, r.top + 60f, r.centerX() + w / 2f, r.top + 60f + h)
+        val inn = UiKit.dialog(c, box)
+        c.drawText(Tr.t("Choose an item to enchant"), inn.left + 10f, inn.top + 40f, UiKit.bodyPaint(30f, Theme.gold))
+        val view = RectF(inn.left, inn.top + 64f, inn.right, box.bottom - 130f)
+        val rowH = 96f; val headH = 44f
+        // the rows with their headings: Equipped, then In your bags
+        data class Line(val head: String?, val o: JSONObject?)
+        val lines = ArrayList<Line>()
+        val worn = items.filter { it.optBoolean("worn") }; val bagged = items.filter { !it.optBoolean("worn") }
+        if (worn.isNotEmpty()) { lines += Line("Equipped", null); worn.forEach { lines += Line(null, it) } }
+        if (bagged.isNotEmpty()) { lines += Line("In your bags", null); bagged.forEach { lines += Line(null, it) } }
+        fun cmdOf(o: JSONObject) = if (o.optString("src") == "inv") "tradeench inv ${o.optInt("slot")} ${o.optInt("id")}"
+            else "tradeench bag ${o.optInt("bag")} ${o.optInt("s")} ${o.optInt("id")}"
+        var total = 0f
+        val tops = lines.map { l -> val t = total; total += if (l.head != null) headH else rowH; t }
+        viewB = view; contentB = total
+        val ci = lines.indexOfFirst { it.o != null && cmdOf(it.o) == cur }
+        if (ci >= 0) {
+            val y = tops[ci]
+            if (y < scrollB) scrollB = y else if (y + rowH > scrollB + view.height()) scrollB = y + rowH - view.height()
+        }
+        scrollB = scrollB.coerceIn(0f, max(0f, contentB - view.height()))
+        c.save(); c.clipRect(view)
+        for ((k, l) in lines.withIndex()) {
+            val y = view.top + tops[k] - scrollB
+            if (y + rowH < view.top || y > view.bottom) continue
+            if (l.head != null) { c.drawText(Tr.t(l.head), view.left + 14f, y + 32f, UiKit.bodyPaint(25f, Theme.dim)); continue }
+            val o = l.o!!
+            val row = RectF(view.left + 10f, y, view.right - 10f, y + rowH - 6f)
+            UiKit.itemPlate(c, row, itemIcon(o), o.optString("name", "?"), Theme.quality(o.optInt("q", 1)), o.optInt("n", 0))
+            val sl = slotOf(o)
+            hits.add(RectF(row.left, max(row.top, view.top), row.right, min(row.bottom, view.bottom)) to
+                (if (sl >= 0) "act:${cmdOf(o)}|$sl" else "why:The game gave this no tap cell"))
+            if (cur == cmdOf(o)) UiKit.focus(c, row)
+        }
+        c.restore()
+        if (items.isEmpty()) c.drawText(Tr.t("No soulbound items"), view.left + 14f, view.top + 40f, UiKit.bodyPaint(26f, Theme.dim))
+        val off = act?.let { slotOf(it, "encoff") } ?: -1
+        val cb = RectF(box.centerX() - 190f, box.bottom - 110f, box.centerX() + 190f, box.bottom - 20f)
+        stripButton(c, cb, "Close", if (off >= 0) "act:tradeench off|$off" else "why:Press ${Glyphs.name("b")}", true, false, UiKit.backGlyph(), always = true)
     }
 
     /** one of the game's money boxes (MoneyInputFrame): the amount on dark, its coin at the right */
@@ -2380,7 +2429,7 @@ class InteractView(context: Context) : View(context) {
         c.drawRect(b, pFill)
         pFill.style = Paint.Style.FILL
         val p = UiKit.numberPaint(28f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-        c.drawText(v.toString(), b.right - 40f, b.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(v.toString()), b.right - 40f, b.centerY() - (p.ascent() + p.descent()) / 2f, p)
         UiKit.tex("coin_$coin")?.let { c.drawBitmap(it, null, RectF(b.right - 32f, b.centerY() - 13f, b.right - 6f, b.centerY() + 13f), pArt) }
     }
 
@@ -2393,7 +2442,7 @@ class InteractView(context: Context) : View(context) {
         val ic = UiKit.tex("icon_check")
         val s = r.width() * 0.5f
         if (ic != null) c.drawBitmap(ic, null, RectF(r.centerX() - s / 2f, r.centerY() - s / 2f - 2f, r.centerX() + s / 2f, r.centerY() + s / 2f - 2f), pArt)
-        else c.drawText("OK", r.centerX(), r.centerY() + 10f, UiKit.bodyPaint(28f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+        else c.drawText(Tr.t("OK"), r.centerX(), r.centerY() + 10f, UiKit.bodyPaint(28f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
         UiKit.pad(c, UiKit.xGlyph(), r.centerX() - r.width() * 0.42f, r.centerY() + r.height() * 0.36f, r.width() * 0.52f, if (enabled) 255 else 90)
     }
 
@@ -2412,9 +2461,9 @@ class InteractView(context: Context) : View(context) {
         val w = 820f; val h = 560f
         val box = RectF(r.centerX() - w / 2f, r.centerY() - h / 2f, r.centerX() + w / 2f, r.centerY() + h / 2f)
         val inn = UiKit.dialog(c, box)
-        c.drawText("Your gold", inn.left + 10f, inn.top + 40f, UiKit.bodyPaint(30f, Theme.gold))
+        c.drawText(Tr.t("Your gold"), inn.left + 10f, inn.top + 40f, UiKit.bodyPaint(30f, Theme.gold))
         val pp = UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-        c.drawText("In your bags", inn.right - 10f - UiKit.moneyWidth(purse, 24f) - 10f, inn.top + 38f, pp)
+        c.drawText(Tr.t("In your bags"), inn.right - 10f - UiKit.moneyWidth(purse, 24f) - 10f, inn.top + 38f, pp)
         UiKit.money(c, purse, inn.right - 10f, inn.top + 30f, 24f, fromRight = true)
         val sel = e.optInt("sel", 1)
         val coins = listOf("g" to "gold", "s" to "silver", "c" to "copper")
@@ -2427,7 +2476,7 @@ class InteractView(context: Context) : View(context) {
             pFill.style = Paint.Style.FILL; pFill.color = Color.argb(170, 0, 0, 0)
             c.drawRect(vbox, pFill)
             val v = e.optInt(k, 0)
-            c.drawText(v.toString(), vbox.centerX() - 20f, vbox.centerY() + 16f, UiKit.numberPaint(46f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
+            c.drawText(Tr.t(v.toString()), vbox.centerX() - 20f, vbox.centerY() + 16f, UiKit.numberPaint(46f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
             UiKit.tex("coin_$name")?.let { coin -> c.drawBitmap(coin, null, RectF(vbox.right - 54f, vbox.centerY() - 18f, vbox.right - 18f, vbox.centerY() + 18f), pArt) }
             if (sel == i + 1) { UiKit.focus(c, vbox); UiKit.moveArrowsUpDown(c, vbox, x = vbox.left + 26f) }
             // the arrows: +10 / +1 over the value, -1 / -10 under it
@@ -2445,7 +2494,7 @@ class InteractView(context: Context) : View(context) {
             }
         }
         val total = e.optInt("g", 0) * 10000L + e.optInt("s", 0) * 100L + e.optInt("c", 0)
-        c.drawText("Offer", inn.left + 20f, box.bottom - 150f, UiKit.bodyPaint(26f, Theme.dim))
+        c.drawText(Tr.t("Offer"), inn.left + 20f, box.bottom - 150f, UiKit.bodyPaint(26f, Theme.dim))
         UiKit.money(c, total, inn.left + 110f, box.bottom - 158f, 32f)
         val setB = RectF(box.right - 300f, box.bottom - 110f, box.right - 40f, box.bottom - 24f)
         val offB = RectF(box.right - 580f, box.bottom - 110f, box.right - 320f, box.bottom - 24f)
@@ -2488,7 +2537,7 @@ class InteractView(context: Context) : View(context) {
         c.drawRect(inner.left - 6f, ty + th, inner.right + 6f, ty + th + 2f, pFill)
         // the purse, right of the tabs (the words before the coins, never over them)
         val mw = UiKit.moneyWidth(purse, 30f)
-        c.drawText("Your money", inner.right - 16f - mw - 14f, ty + th / 2f + 14f,
+        c.drawText(Tr.t("Your money"), inner.right - 16f - mw - 14f, ty + th / 2f + 14f,
             UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT })
         UiKit.money(c, purse, inner.right - 16f, ty + th / 2f + 6f, 30f, fromRight = true)
         if (sendTab) {
@@ -2529,7 +2578,7 @@ class InteractView(context: Context) : View(context) {
             hits.add(row to "sel:mail $i")
             if (cur == "mail $i" || (cur == null && selected == "mail $i")) UiKit.focus(c, row)
         }
-        if (letters.isEmpty()) c.drawText("No mail", sheet.centerX(), sheet.top + 80f,
+        if (letters.isEmpty()) c.drawText(Tr.t("No mail"), sheet.centerX(), sheet.top + 80f,
             UiKit.bodyPaint(30f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
         // Prev / Next and the page: the game's own arrows
         val py = sheet.bottom - pagerH / 2f - 6f
@@ -2538,13 +2587,13 @@ class InteractView(context: Context) : View(context) {
         UiKit.tex(if (mailPage > 0) "page_prev" else "page_prev_off")?.let { c.drawBitmap(it, null, prev, pArt) }
         UiKit.tex(if (mailPage < pages - 1) "page_next" else "page_next_off")?.let { c.drawBitmap(it, null, next, pArt) }
         val pp = UiKit.bodyPaint(24f, Theme.gold)
-        c.drawText("Prev", prev.right + 8f, py + 9f, pp)
-        c.drawText("Next", next.left - 8f, py + 9f, UiKit.bodyPaint(24f, Theme.gold).apply { textAlign = Paint.Align.RIGHT })
-        c.drawText("Page ${mailPage + 1} of $pages", sheet.centerX(), py + 9f, UiKit.bodyPaint(24f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+        c.drawText(Tr.t("Prev"), prev.right + 8f, py + 9f, pp)
+        c.drawText(Tr.t("Next"), next.left - 8f, py + 9f, UiKit.bodyPaint(24f, Theme.gold).apply { textAlign = Paint.Align.RIGHT })
+        c.drawText(Tr.t("Page ${mailPage + 1} of $pages"), sheet.centerX(), py + 9f, UiKit.bodyPaint(24f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
         if (mailPage > 0) hits.add(prev to "mp:-")
         if (mailPage < pages - 1) hits.add(next to "mp:+")
         ml.optInt("more", 0).takeIf { it > 0 }?.let {
-            c.drawText("$it more in the game", sheet.centerX(), sheet.bottom - 6f, UiKit.bodyPaint(20f, Color.rgb(60, 40, 20)).apply { textAlign = Paint.Align.CENTER })
+            c.drawText(Tr.t("$it more in the game"), sheet.centerX(), sheet.bottom - 6f, UiKit.bodyPaint(20f, Color.rgb(60, 40, 20)).apply { textAlign = Paint.Align.CENTER })
         }
 
         // ---- the letter: the game's paper beside the inbox
@@ -2559,10 +2608,10 @@ class InteractView(context: Context) : View(context) {
             val lab = UiKit.inkPaint(26f)
             val gold = UiKit.inkPaint(26f).apply { color = Color.rgb(120, 66, 10) }
             val lw = w.width() - lab.measureText("Subject:") - 14f
-            c.drawText("From:", w.left, w.top + 30f, lab)
-            c.drawText(fit(gold, hdr.optString("sender", ""), lw), w.left + lab.measureText("From:") + 14f, w.top + 30f, gold)
-            c.drawText("Subject:", w.left, w.top + 70f, lab)
-            c.drawText(fit(gold, hdr.optString("subject", ""), lw), w.left + lab.measureText("Subject:") + 14f, w.top + 70f, gold)
+            c.drawText(Tr.t("From:"), w.left, w.top + 30f, lab)
+            c.drawText(Tr.t(fit(gold, hdr.optString("sender", ""), lw)), w.left + lab.measureText("From:") + 14f, w.top + 30f, gold)
+            c.drawText(Tr.t("Subject:"), w.left, w.top + 70f, lab)
+            c.drawText(Tr.t(fit(gold, hdr.optString("subject", ""), lw)), w.left + lab.measureText("Subject:") + 14f, w.top + 70f, gold)
             UiKit.divider(c, w.left, w.top + 92f, w.right, w.top + 92f)
         }
         val cod = (hdr?.optLong("cod", 0) ?: 0L)
@@ -2571,7 +2620,7 @@ class InteractView(context: Context) : View(context) {
             val text = prose(open.optString("body", ""))
             var ay = w.top + 110f
             if (text.isNotEmpty()) {
-                val lay = StaticLayout.Builder.obtain(text, 0, text.length, TextPaint(UiKit.inkPaint(26f)), w.width().toInt())
+                val lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, TextPaint(UiKit.inkPaint(26f)), w.width().toInt())
                     .setLineSpacing(4f, 1f).build()
                 c.save(); c.clipRect(w.left, ay, w.right, w.bottom - 260f)
                 drawLayout(c, lay, w.left, ay); c.restore()
@@ -2581,7 +2630,7 @@ class InteractView(context: Context) : View(context) {
             val money = hdr.optLong("money", 0)
             if (items.isNotEmpty() || money > 0) {
                 ay += 34f
-                c.drawText("Take Attachments:", w.left, ay, UiKit.inkPaint(24f))
+                c.drawText(Tr.t("Take Attachments:"), w.left, ay, UiKit.inkPaint(24f))
                 ay += 16f
                 val sz = 96f
                 var ax = w.left + 18f
@@ -2605,7 +2654,7 @@ class InteractView(context: Context) : View(context) {
                 if (cod > 0) {
                     val cp = UiKit.inkPaint(24f)
                     val cyy = ay + 18f + sz + 70f
-                    c.drawText("Cash on Delivery Amount:", w.left, cyy, cp)
+                    c.drawText(Tr.t("Cash on Delivery Amount:"), w.left, cyy, cp)
                     UiKit.money(c, cod, w.left + cp.measureText("Cash on Delivery Amount:") + 12f, cyy - 8f, 24f, Theme.parchmentInk, shadow = false)
                 }
             }
@@ -2615,7 +2664,7 @@ class InteractView(context: Context) : View(context) {
                 ?: if (money > 0) "mailmoney $openI" else null
             val tb = RectF(bx - 250f, cy - 55f, bx, cy + 56f)
             if (cod > 0) {
-                c.drawText("Pay C.O.D. in the game", bx - 520f, cy + 9f, UiKit.bodyPaint(24f, Theme.dim))
+                c.drawText(Tr.t("Pay C.O.D. in the game"), bx - 520f, cy + 9f, UiKit.bodyPaint(24f, Theme.dim))
                 UiKit.button(c, tb, "Take", "rev_a", UiKit.Button.DISABLED)
             } else {
                 val te = takeCmd?.let { entry(it) }
@@ -2637,7 +2686,7 @@ class InteractView(context: Context) : View(context) {
                 stripButton(c, ob, "Open", "go", oe != null && oe.slot >= 0, busy && pendingCmd == oe?.cmd, "rev_a")
                 goCmd = oe
             } else {
-                c.drawText("No mail", w.left, w.top + 30f, UiKit.inkPaint(26f))
+                c.drawText(Tr.t("No mail"), w.left, w.top + 30f, UiKit.inkPaint(26f))
             }
             resultLine(c, inner.left + 24f, bx - 280f, cy, now)
         }
@@ -2666,7 +2715,7 @@ class InteractView(context: Context) : View(context) {
         // the end of what is typed stays in view (the game's own box scrolls with the caret)
         val drawn = if (typing && p.measureText(words) > maxW) "…" + words.takeLast(p.breakText(words.reversed(), true, maxW - 24f, null)) else fit(p, words, maxW)
         val by = box.centerY() - (p.ascent() + p.descent()) / 2f
-        c.drawText(drawn, x, by, p)
+        c.drawText(Tr.t(drawn), x, by, p)
         if (typing) {
             if ((System.currentTimeMillis() / 500L) % 2L == 0L) {
                 val cx = x + (if (shown.isEmpty()) 0f else p.measureText(drawn)) + 2f
@@ -2694,7 +2743,7 @@ class InteractView(context: Context) : View(context) {
         val labW = 130f
         val rowH = 62f
         // ---- To, and the Postage
-        c.drawText("To:", x0, top + 8f + rowH / 2f + 9f, lab)
+        c.drawText(Tr.t("To:"), x0, top + 8f + rowH / 2f + 9f, lab)
         val toBox = RectF(x0 + labW, top + 8f, x0 + labW + 430f, top + 8f + rowH)
         formBox(c, toBox, sd.optString("to"), "Name", "mailedit to", col("edit_to"), "mailto")
         val price = sd.optLong("price", 0)
@@ -2702,10 +2751,10 @@ class InteractView(context: Context) : View(context) {
         val dear = price + (if (cod) 0L else sd.optLong("money", 0)) > purse
         val pw = UiKit.moneyWidth(price, 28f)
         UiKit.money(c, price, x1, toBox.centerY(), 28f, if (dear) Theme.unusable else Theme.text, fromRight = true)
-        c.drawText("Postage:", x1 - pw - 14f, toBox.centerY() + 9f, UiKit.bodyPaint(26f, Theme.gold).apply { textAlign = Paint.Align.RIGHT })
+        c.drawText(Tr.t("Postage:"), x1 - pw - 14f, toBox.centerY() + 9f, UiKit.bodyPaint(26f, Theme.gold).apply { textAlign = Paint.Align.RIGHT })
         // ---- Subject
         val sy = top + 8f + rowH + 10f
-        c.drawText("Subject:", x0, sy + rowH / 2f + 9f, lab)
+        c.drawText(Tr.t("Subject:"), x0, sy + rowH / 2f + 9f, lab)
         val auto = sd.optString("autoSubject", "")
         formBox(c, RectF(x0 + labW, sy, x1, sy + rowH), sd.optString("subject"), auto.ifEmpty { "Subject" },
             "mailedit subject", col("edit_subject"), "mailsubject")
@@ -2721,9 +2770,9 @@ class InteractView(context: Context) : View(context) {
         val paper = RectF(x0, sy + rowH + 14f, x1, ruleY - 10f)
         val w = UiKit.letterPaper(c, paper)
         val body = typedOr("mailbody", sd.optString("body"))
-        if (body.isEmpty()) c.drawText("Write your letter here", w.left, w.top + 30f, UiKit.inkPaint(26f).apply { color = Color.argb(140, 60, 40, 20) })
+        if (body.isEmpty()) c.drawText(Tr.t("Write your letter here"), w.left, w.top + 30f, UiKit.inkPaint(26f).apply { color = Color.argb(140, 60, 40, 20) })
         else {
-            val lay = StaticLayout.Builder.obtain(body, 0, body.length, TextPaint(UiKit.inkPaint(26f)), w.width().toInt()).setLineSpacing(4f, 1f).build()
+            val lay = StaticLayout.Builder.obtain(Tr.t(body), 0, Tr.t(body).length, TextPaint(UiKit.inkPaint(26f)), w.width().toInt()).setLineSpacing(4f, 1f).build()
             c.save(); c.clipRect(w); drawLayout(c, lay, w.left, w.top + 4f); c.restore()
         }
         if (kbField == "mailbody") postInvalidateDelayed(500L)
@@ -2750,7 +2799,7 @@ class InteractView(context: Context) : View(context) {
                 hits.add(rr to (if (pc >= 0) "act:mailpick on|$pc" else "why:The game gave this no tap cell"))
                 if (!placedPick) {
                     placedPick = true
-                    c.drawText("+", rr.centerX(), rr.centerY() + 15f, UiKit.bodyPaint(44f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+                    c.drawText(Tr.t("+"), rr.centerX(), rr.centerY() + 15f, UiKit.bodyPaint(44f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
                     if (cur == "mailpick on") UiKit.focus(c, rr)
                 }
             }
@@ -2762,15 +2811,15 @@ class InteractView(context: Context) : View(context) {
         val rSend = RectF(mx, radioY - 26f, mx + 210f, radioY + 26f)
         val rCod = RectF(mx + 220f, radioY - 26f, x1, radioY + 26f)
         UiKit.radio(c, rSend.left + 22f, radioY, 40f, !cod)
-        c.drawText("Send Money", rSend.left + 50f, radioY + 9f, UiKit.bodyPaint(25f, Theme.gold))
+        c.drawText(Tr.t("Send Money"), rSend.left + 50f, radioY + 9f, UiKit.bodyPaint(25f, Theme.gold))
         UiKit.radio(c, rCod.left + 22f, radioY, 40f, cod)
-        c.drawText("C.O.D.", rCod.left + 50f, radioY + 9f, UiKit.bodyPaint(25f, if (hasItems) Theme.gold else Theme.dim))
+        c.drawText(Tr.t("C.O.D."), rCod.left + 50f, radioY + 9f, UiKit.bodyPaint(25f, if (hasItems) Theme.gold else Theme.dim))
         col("money").takeIf { it >= 0 }?.let { hits.add(rSend to "act:mailcod off|$it") }
         if (hasItems) col("cod").takeIf { it >= 0 }?.let { hits.add(rCod to "act:mailcod on|$it") } else hits.add(rCod to "why:C.O.D. needs an attachment")
         if (cur == "mailcod off") UiKit.focus(c, rSend)
         if (cur == "mailcod on") UiKit.focus(c, rCod)
         val boxY = gy + gridH - 64f
-        c.drawText(if (cod) "C.O.D. Amount:" else "Amount to Send:", mx, boxY - 14f, UiKit.bodyPaint(24f, Theme.gold))
+        c.drawText(Tr.t(if (cod) "C.O.D. Amount:" else "Amount to Send:"), mx, boxY - 14f, UiKit.bodyPaint(24f, Theme.gold))
         val coinW = (x1 - mx - 2f * 10f) / 3f
         for ((i, f) in listOf("gold", "silver", "copper").withIndex()) {
             val b = RectF(mx + i * (coinW + 10f), boxY, mx + i * (coinW + 10f) + coinW, boxY + 60f)
@@ -2798,7 +2847,7 @@ class InteractView(context: Context) : View(context) {
                 "failed" -> (sd.optString("err").ifEmpty { "The game did not send it" }) to Theme.unusable
                 else -> (why ?: "") to Theme.dim
             }
-            if (words2.isNotEmpty()) c.drawText(fit(UiKit.bodyPaint(24f, colour), words2, bx - 560f - inner.left - 24f), inner.left + 24f, cy + 8f, UiKit.bodyPaint(24f, colour))
+            if (words2.isNotEmpty()) c.drawText(Tr.t(fit(UiKit.bodyPaint(24f, colour), words2, bx - 560f - inner.left - 24f)), inner.left + 24f, cy + 8f, UiKit.bodyPaint(24f, colour))
         }
     }
 
@@ -2813,7 +2862,7 @@ class InteractView(context: Context) : View(context) {
         val h = min(r.height() - 120f, 150f + rows * (sz + gap) + 150f)
         val box = RectF(r.centerX() - w / 2f, r.top + 60f, r.centerX() + w / 2f, r.top + 60f + h)
         val inn = UiKit.dialog(c, box)
-        c.drawText("Choose an attachment", inn.left + 10f, inn.top + 40f, UiKit.bodyPaint(30f, Theme.gold))
+        c.drawText(Tr.t("Choose an attachment"), inn.left + 10f, inn.top + 40f, UiKit.bodyPaint(30f, Theme.gold))
         val gridTop = inn.top + 70f
         val view = RectF(inn.left, gridTop, inn.right, box.bottom - 150f)
         viewB = view; contentB = rows * (sz + gap)
@@ -2838,9 +2887,9 @@ class InteractView(context: Context) : View(context) {
             if (cur == cmd) UiKit.focus(c, RectF(x, y, x + sz, y + sz))
         }
         c.restore()
-        if (bags.isEmpty()) c.drawText("Your bags are empty", inn.left + 30f, gridTop + 50f, UiKit.bodyPaint(26f, Theme.dim))
+        if (bags.isEmpty()) c.drawText(Tr.t("Your bags are empty"), inn.left + 30f, gridTop + 50f, UiKit.bodyPaint(26f, Theme.dim))
         val cur0 = bags.firstOrNull { "mailattach ${it.optInt("bag")} ${it.optInt("s")} ${it.optInt("id")}" == cur }
-        cur0?.let { c.drawText(fit(UiKit.bodyPaint(26f, Theme.quality(it.optInt("q", 1))), it.optString("name", ""), inn.width() - 40f),
+        cur0?.let { c.drawText(Tr.t(fit(UiKit.bodyPaint(26f, Theme.quality(it.optInt("q", 1))), it.optString("name", ""), inn.width() - 40f)),
             inn.left + 20f, box.bottom - 120f, UiKit.bodyPaint(26f, Theme.quality(it.optInt("q", 1)))) }
         val off = act?.let { slotOf(it, "unpick") } ?: -1
         val cb = RectF(box.centerX() - 190f, box.bottom - 100f, box.centerX() + 190f, box.bottom - 10f)
@@ -2858,7 +2907,7 @@ class InteractView(context: Context) : View(context) {
         val box = RectF(r.centerX() - 520f, 200f, r.centerX() + 520f, 200f + 430f)
         val inn = UiKit.dialog(c, box)
         val tp = UiKit.bodyPaint(34f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
-        c.drawText("Confirm on the top screen", inn.centerX(), inn.top + 50f, tp)
+        c.drawText(Tr.t("Confirm on the top screen"), inn.centerX(), inn.top + 50f, tp)
         val words = "The game asks before sending money or items to someone who is not on your friends list or in your guild. " +
             "Use the controller or touch on the top screen to confirm or cancel."
         val lay = layout(words, UiKit.bodyPaint(26f, Color.WHITE), (inn.width() - 40f).toInt(), 4f)
@@ -2885,15 +2934,15 @@ class InteractView(context: Context) : View(context) {
         val d = RectF(r.centerX() - w / 2f, r.top + max(150f, (r.height() - h) / 2f - 60f), r.centerX() + w / 2f, 0f)
         d.bottom = d.top + h
         val inn = UiKit.dialog(c, d)
-        c.drawText(title, inn.centerX(), inn.top + 46f, UiKit.bodyPaint(34f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
+        c.drawText(Tr.t(title), inn.centerX(), inn.top + 46f, UiKit.bodyPaint(34f, Theme.gold).apply { textAlign = Paint.Align.CENTER })
         var y = inn.top + 104f
         for ((t, colour) in lines) {
             val p = UiKit.bodyPaint(28f, colour).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(fit(p, t, inn.width() - 40f), inn.centerX(), y, p); y += 46f
+            c.drawText(Tr.t(fit(p, t, inn.width() - 40f)), inn.centerX(), y, p); y += 46f
         }
         y += 6f
         for ((label, v) in money) {
-            c.drawText("$label:", inn.centerX() - 20f, y + 10f, UiKit.bodyPaint(27f, Theme.gold).apply { textAlign = Paint.Align.RIGHT })
+            c.drawText(Tr.t("$label:"), inn.centerX() - 20f, y + 10f, UiKit.bodyPaint(27f, Theme.gold).apply { textAlign = Paint.Align.RIGHT })
             UiKit.money(c, v, inn.centerX() + 10f, y, 30f)
             y += 52f
         }
@@ -2922,7 +2971,7 @@ class InteractView(context: Context) : View(context) {
         // ---- your bags, down the left
         val left = RectF(inner.left + 4f, by0, inner.left + 334f, by1)
         UiKit.ahPanel(c, left, "ah_bg_categories")
-        c.drawText("Your bags", left.left + 18f, left.top + 36f, UiKit.bodyPaint(24f, Theme.gold))
+        c.drawText(Tr.t("Your bags"), left.left + 18f, left.top + 36f, UiKit.bodyPaint(24f, Theme.gold))
         val bags = arr(sl, "bags")
         val view = RectF(left.left, left.top + 52f, left.right, left.bottom - 4f)
         val rowH = 72f
@@ -2946,7 +2995,7 @@ class InteractView(context: Context) : View(context) {
             if (cmd == chosen) { pFill.color = Color.argb(70, Color.red(Theme.gold), Color.green(Theme.gold), Color.blue(Theme.gold)); c.drawRect(rr, pFill) }
             UiKit.slot(c, itemIcon(b), rr.left + 6f, rr.top + 5f, rr.height() - 10f, count = b.optInt("n", 0), dim = b.optBoolean("locked"))
             val np = UiKit.bodyPaint(23f, Theme.quality(b.optInt("q", 1)))
-            c.drawText(fit(np, b.optString("name", ""), rr.width() - rr.height() - 16f), rr.left + rr.height() + 6f,
+            c.drawText(Tr.t(fit(np, b.optString("name", ""), rr.width() - rr.height() - 16f)), rr.left + rr.height() + 6f,
                 rr.centerY() - (np.ascent() + np.descent()) / 2f, np)
             val s0 = slotOf(b)
             hits.add(RectF(rr.left, max(rr.top, view.top), rr.right, min(rr.bottom, view.bottom)) to when {
@@ -2981,14 +3030,14 @@ class InteractView(context: Context) : View(context) {
             val q = sl.optInt("qty", 1); val mx = sl.optInt("max", 1)
             if (mx > 1) {
                 val qy = y + 40f
-                c.drawText("Quantity", f.left + 24f, qy + 10f, lab)
+                c.drawText(Tr.t("Quantity"), f.left + 24f, qy + 10f, lab)
                 UiKit.square(c, "minus", f.left + 236f, qy, 72f, if (q > 1) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_x".takeIf { gl })
-                c.drawText(q.toString(), f.left + 313f, qy + 12f, UiKit.numberPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
+                c.drawText(Tr.t(q.toString()), f.left + 313f, qy + 12f, UiKit.numberPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
                 UiKit.square(c, "plus", f.left + 390f, qy, 72f, if (q < mx) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_y".takeIf { gl }, glyphRight = true)
                 if (q > 1) hits.add(RectF(f.left + 192f, qy - 44f, f.left + 280f, qy + 44f) to hitOf("ahsqty less", "sq_less"))
                 if (q < mx) hits.add(RectF(f.left + 346f, qy - 44f, f.left + 434f, qy + 44f) to hitOf("ahsqty more", "sq_more"))
                 hits.add(RectF(f.left + 282f, qy - 40f, f.left + 344f, qy + 40f) to hitOf("ahsqty max", "sq_max"))
-                c.drawText("of $mx", f.left + 313f, qy + 50f, UiKit.bodyPaint(18f, Theme.dim).apply { textAlign = Paint.Align.CENTER })
+                c.drawText(Tr.t("of $mx"), f.left + 313f, qy + 50f, UiKit.bodyPaint(18f, Theme.dim).apply { textAlign = Paint.Align.CENTER })
                 if (cur == "ahsq") UiKit.focus(c, RectF(f.left + 12f, qy - 46f, f.right - 12f, qy + 52f))
                 y += 104f
             }
@@ -2997,7 +3046,7 @@ class InteractView(context: Context) : View(context) {
             if (!commodity) {
                 val ry = y + 28f
                 UiKit.check(c, f.left + 44f, ry, 40f, !bidOn)
-                c.drawText(sl.optString("boWord", "Buyout only"), f.left + 76f, ry + 9f, lab)
+                c.drawText(Tr.t(sl.optString("boWord", "Buyout only")), f.left + 76f, ry + 9f, lab)
                 val rr = RectF(f.left + 12f, ry - 28f, f.right - 12f, ry + 28f)
                 hits.add(rr to hitOf("ahsbo", "sbo"))
                 if (cur == "ahsbo") UiKit.focus(c, rr)
@@ -3005,7 +3054,7 @@ class InteractView(context: Context) : View(context) {
             }
             val copper = sl.optBoolean("copper")
             fun moneyRow(label: String, v: Long, pre: String) {
-                c.drawText(label, f.left + 24f, y + 22f, lab)
+                c.drawText(Tr.t(label), f.left + 24f, y + 22f, lab)
                 val parts = listOf("g" to (v / 10000), "s" to ((v / 100) % 100), "c" to (v % 100)).filter { it.first != "c" || copper }
                 val x0 = f.left + 24f; val x1 = f.right - 20f
                 val w = (x1 - x0 - (parts.size - 1) * 10f) / parts.size
@@ -3024,12 +3073,12 @@ class InteractView(context: Context) : View(context) {
             // the duration: the game's three
             val durs = sl.optJSONArray("durs")
             val dur = sl.optInt("dur", 2)
-            c.drawText("Duration", f.left + 24f, y + 22f, lab)
+            c.drawText(Tr.t("Duration"), f.left + 24f, y + 22f, lab)
             val dw = (f.width() - 40f) / 3f
             for (k in 1..3) {
                 val rr = RectF(f.left + 20f + (k - 1) * dw, y + 36f, f.left + 20f + k * dw, y + 84f)
                 UiKit.radio(c, rr.left + 22f, rr.centerY(), 36f, dur == k)
-                c.drawText(fit(UiKit.bodyPaint(22f, Color.WHITE), durs?.optString(k - 1) ?: "${12 * (1 shl (k - 1))} Hours", dw - 50f),
+                c.drawText(Tr.t(fit(UiKit.bodyPaint(22f, Color.WHITE), durs?.optString(k - 1) ?: "${12 * (1 shl (k - 1))} Hours", dw - 50f)),
                     rr.left + 46f, rr.centerY() + 8f, UiKit.bodyPaint(22f, Color.WHITE))
                 hits.add(rr to hitOf("ahsdur $k", "sd_$k"))
                 if (cur == "ahsdur $k") UiKit.focus(c, rr)
@@ -3037,10 +3086,10 @@ class InteractView(context: Context) : View(context) {
             y += 100f
             // the deposit and the total, the game's two lines
             val dep = sl.optLong("deposit", 0)
-            c.drawText("Deposit", f.left + 24f, y + 10f, lab)
+            c.drawText(Tr.t("Deposit"), f.left + 24f, y + 10f, lab)
             UiKit.money(c, dep, f.right - 24f, y, 28f, if (dep <= au.optLong("money", 0)) Theme.text else Theme.unusable, fromRight = true)
             y += 48f
-            c.drawText("Total Price", f.left + 24f, y + 10f, lab)
+            c.drawText(Tr.t("Total Price"), f.left + 24f, y + 10f, lab)
             UiKit.money(c, sl.optLong("total", 0), f.right - 24f, y, 30f, fromRight = true)
             val canPost = why == null && st != "posting" && st != "warn"
             stripButton(c, postB, "Post", if (canPost) hitOf("ahspost", "spost") else "why:${why ?: "One moment"}", canPost,
@@ -3056,9 +3105,9 @@ class InteractView(context: Context) : View(context) {
                 UiKit.ahRowGround(c, rr, k % 2 == 1)
                 val pr = row.optLong("price", 0)
                 if (pr > 0) UiKit.money(c, pr, rr.left + 14f, rr.centerY(), 25f)
-                else c.drawText("Bid only", rr.left + 14f, rr.centerY() + 8f, UiKit.bodyPaint(22f, Theme.dim))
+                else c.drawText(Tr.t("Bid only"), rr.left + 14f, rr.centerY() + 8f, UiKit.bodyPaint(22f, Theme.dim))
                 val cp = UiKit.numberPaint(24f, if (row.optBoolean("mine")) Theme.gold else Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-                c.drawText((if (row.optBoolean("mine")) "Yours  " else "") + row.optInt("count", 0), rr.right - 14f, rr.centerY() + 9f, cp)
+                c.drawText(Tr.t((if (row.optBoolean("mine")) "Yours  " else "") + row.optInt("count", 0)), rr.right - 14f, rr.centerY() + 9f, cp)
                 ly += 58f
             }
             if (rows.isEmpty()) {
@@ -3078,7 +3127,7 @@ class InteractView(context: Context) : View(context) {
                 item != null && why != null -> why to Theme.dim
                 else -> "" to Theme.dim
             }
-            if (words.isNotEmpty()) c.drawText(fit(UiKit.bodyPaint(24f, colour), words, postB.left - 220f - inner.left), inner.left + 24f, cy + 8f,
+            if (words.isNotEmpty()) c.drawText(Tr.t(fit(UiKit.bodyPaint(24f, colour), words, postB.left - 220f - inner.left)), inner.left + 24f, cy + 8f,
                 UiKit.bodyPaint(24f, colour))
         }
         UiKit.windowFrame(c, r, name, UiKit.tex("mm_auctioneer"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
@@ -3127,7 +3176,7 @@ class InteractView(context: Context) : View(context) {
         c.drawRect(inner.left - 6f, ty + th, inner.right + 6f, ty + th + 2f, pFill)
         val pm = UiKit.bodyPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
         val wordsR = inner.right - 16f - UiKit.moneyWidth(purse, 30f) - 14f        // the words before the coins, measured
-        if (wordsR - UiKit.bodyPaint(22f, Theme.dim).measureText("Your money") > ta.right + e + 8f) c.drawText("Your money", wordsR, ty + th / 2f + 14f, pm)
+        if (wordsR - UiKit.bodyPaint(22f, Theme.dim).measureText("Your money") > ta.right + e + 8f) c.drawText(Tr.t("Your money"), wordsR, ty + th / 2f + 14f, pm)
         UiKit.money(c, purse, inner.right - 16f, ty + th / 2f + 6f, 30f, fromRight = true)
         val by0 = ty + th + 10f; val by1 = inner.bottom - UiKit.STRIP - 6f
         val strip = UiKit.strip(c, inner)
@@ -3155,12 +3204,12 @@ class InteractView(context: Context) : View(context) {
                 UiKit.ahRowGround(c, row, k % 2 == 1)
                 UiKit.slot(c, itemIcon(o), row.left + 14f, row.top + 10f, 58f, count = o.optInt("count", 0))
                 val np = UiKit.bodyPaint(26f, Theme.quality(o.optInt("q", 1)))
-                c.drawText(fit(np, o.optString("name", ""), row.width() - 600f), row.left + 92f, row.centerY() - (np.ascent() + np.descent()) / 2f, np)
+                c.drawText(Tr.t(fit(np, o.optString("name", ""), row.width() - 600f)), row.left + 92f, row.centerY() - (np.ascent() + np.descent()) / 2f, np)
                 o.optLong("bid", 0).takeIf { it > 0 }?.let { UiKit.money(c, it, row.right - 470f, row.centerY(), 25f, Theme.dim, fromRight = true) }
                 o.optLong("price", 0).takeIf { it > 0 }?.let { UiKit.money(c, it, row.right - 250f, row.centerY(), 25f, fromRight = true) }
                 val sold = o.optInt("status", 0) == 1
                 val tp = UiKit.bodyPaint(24f, if (sold) Color.rgb(32, 255, 32) else Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-                c.drawText(if (sold) "Sold" else timeWord(o.optInt("left", -1)), row.right - 16f, row.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+                c.drawText(Tr.t(if (sold) "Sold" else timeWord(o.optInt("left", -1))), row.right - 16f, row.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
                 // 1.0.9: a touch on one of yours cancels it (armed first: the game's confirm), as A does
                 val sl = slotOf(o)
                 val hr = RectF(row.left, max(row.top, view.top), row.right, min(row.bottom, view.bottom))
@@ -3169,7 +3218,7 @@ class InteractView(context: Context) : View(context) {
                 if (cur == "ahown ${o.optInt("i")}") UiKit.focus(c, row)
             }
             c.restore()
-            if (rows.isEmpty()) c.drawText("You have no auctions", t.left + 24f, t.top + 100f, UiKit.bodyPaint(26f, Theme.dim))
+            if (rows.isEmpty()) c.drawText(Tr.t("You have no auctions"), t.left + 24f, t.top + 100f, UiKit.bodyPaint(26f, Theme.dim))
             UiKit.hints(c, inner.right - 16f, cy, UiKit.backGlyph() to "Back", "rev_a" to "Cancel Auction")
             resultLine(c, inner.left + 24f, bx - 520f, cy, now)
             UiKit.windowFrame(c, r, name, UiKit.tex("mm_auctioneer"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
@@ -3237,17 +3286,17 @@ class InteractView(context: Context) : View(context) {
             val unit = rows.firstOrNull { !it.optBoolean("mine") }?.optLong("price", 0) ?: 0L
             val lp = UiKit.bodyPaint(26f, Theme.gold)
             val qy = bf.top + 200f
-            c.drawText("Quantity", bf.left + 30f, qy + 10f, lp)
+            c.drawText(Tr.t("Quantity"), bf.left + 30f, qy + 10f, lp)
             val canLess = q > 1; val canMore = q < avail
             val gl = cur != null
             UiKit.square(c, "minus", bf.left + 236f, qy, 76f, if (canLess) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_x".takeIf { gl })
-            c.drawText(q.toString(), bf.left + 313f, qy + 12f, UiKit.numberPaint(34f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
+            c.drawText(Tr.t(q.toString()), bf.left + 313f, qy + 12f, UiKit.numberPaint(34f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
             UiKit.square(c, "plus", bf.left + 390f, qy, 76f, if (canMore) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_y".takeIf { gl }, glyphRight = true)
             act?.let { slotOf(it, "less") }?.let { if (it >= 0 && canLess) hits.add(RectF(bf.left + 190f, qy - 46f, bf.left + 282f, qy + 46f) to "act:ahqty less|$it") }
             act?.let { slotOf(it, "more") }?.let { if (it >= 0 && canMore) hits.add(RectF(bf.left + 344f, qy - 46f, bf.left + 436f, qy + 46f) to "act:ahqty more|$it") }
-            c.drawText("Unit Price", bf.left + 30f, qy + 110f, lp)
+            c.drawText(Tr.t("Unit Price"), bf.left + 30f, qy + 110f, lp)
             UiKit.money(c, unit, bf.right - 30f, qy + 100f, 28f, fromRight = true)
-            c.drawText("Total Price", bf.left + 30f, qy + 180f, lp)
+            c.drawText(Tr.t("Total Price"), bf.left + 30f, qy + 180f, lp)
             UiKit.money(c, total, bf.right - 30f, qy + 170f, 32f, if (total <= purse) Theme.text else Theme.unusable, fromRight = true)
             val mk = RectF(bf.right + 12f, ry0, rx1, by1)
             UiKit.ahPanel(c, mk, "ah_bg_market")
@@ -3262,8 +3311,8 @@ class InteractView(context: Context) : View(context) {
                 UiKit.ahRowGround(c, row, k % 2 == 1)
                 UiKit.money(c, t.optLong("price", 0), row.left + 16f, row.centerY(), 26f, if (mine) Theme.dim else Theme.text)
                 val np = UiKit.numberPaint(26f, if (mine) Theme.dim else Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-                c.drawText(t.optInt("count", 0).toString(), row.right - 16f, row.centerY() - (np.ascent() + np.descent()) / 2f, np)
-                if (mine) c.drawText("yours", row.centerX() + 10f, row.centerY() + 8f, UiKit.bodyPaint(20f, Theme.dim))
+                c.drawText(Tr.t(t.optInt("count", 0).toString()), row.right - 16f, row.centerY() - (np.ascent() + np.descent()) / 2f, np)
+                if (mine) c.drawText(Tr.t("yours"), row.centerX() + 10f, row.centerY() + 8f, UiKit.bodyPaint(20f, Theme.dim))
                 // the cursor: the tier the quantity starts from (the cheapest that is not yours)
                 if (!mine && !focused) { UiKit.focus(c, row); focused = true }
             }
@@ -3300,7 +3349,7 @@ class InteractView(context: Context) : View(context) {
                 if (t.optLong("price", 0) > 0) UiKit.money(c, t.optLong("price", 0), row.left + 16f, row.centerY(), 26f, col)
                 if (t.optLong("bid", 0) > 0) UiKit.money(c, t.optLong("bid", 0), row.left + 322f, row.centerY(), 26f, Theme.dim)
                 val tp = UiKit.bodyPaint(24f, if (mine) Theme.dim else Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-                c.drawText(if (mine) "yours" else timeWord(t.optInt("left", -1)), row.right - 16f, row.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+                c.drawText(Tr.t(if (mine) "yours" else timeWord(t.optInt("left", -1))), row.right - 16f, row.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
                 hits.add(RectF(row.left, max(row.top, view.top), row.right, min(row.bottom, view.bottom)) to "sel:ahrow ${t.optInt("i")}")
                 if (pick == "ahrow ${t.optInt("i")}") { UiKit.focus(c, row); tipRowY = row.top }
             }
@@ -3345,14 +3394,14 @@ class InteractView(context: Context) : View(context) {
                 UiKit.ahRowGround(c, row, k % 2 == 1)
                 UiKit.slot(c, itemIcon(l), row.left + 14f, row.top + 10f, 58f)
                 val np = UiKit.bodyPaint(26f, Theme.quality(l.optInt("q", 1)))
-                c.drawText(fit(np, l.optString("name", ""), row.width() - (if (lvlWord != null) 560f else 400f)), row.left + 92f, row.centerY() - (np.ascent() + np.descent()) / 2f, np)
+                c.drawText(Tr.t(fit(np, l.optString("name", ""), row.width() - (if (lvlWord != null) 560f else 400f))), row.left + 92f, row.centerY() - (np.ascent() + np.descent()) / 2f, np)
                 if (lvlWord != null && l.optInt("lvl", 0) > 0) {
                     val lp = UiKit.numberPaint(26f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-                    c.drawText(l.optInt("lvl").toString(), row.right - 400f, row.centerY() - (lp.ascent() + lp.descent()) / 2f, lp)
+                    c.drawText(Tr.t(l.optInt("lvl").toString()), row.right - 400f, row.centerY() - (lp.ascent() + lp.descent()) / 2f, lp)
                 }
                 UiKit.money(c, l.optLong("price", 0), row.right - 182f, row.centerY(), 25f, fromRight = true)
                 val ap = UiKit.numberPaint(26f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
-                c.drawText(l.optInt("count", 0).toString(), row.right - 16f, row.centerY() - (ap.ascent() + ap.descent()) / 2f, ap)
+                c.drawText(Tr.t(l.optInt("count", 0).toString()), row.right - 16f, row.centerY() - (ap.ascent() + ap.descent()) / 2f, ap)
                 hits.add(RectF(row.left, max(row.top, view.top), row.right, min(row.bottom, view.bottom)) to "do:ahres ${l.optInt("i")}")
                 if (cur == "ahres ${l.optInt("i")}") { UiKit.focus(c, row); tipRowY = row.top }
             }
@@ -3360,7 +3409,7 @@ class InteractView(context: Context) : View(context) {
             if (rows.isEmpty()) {
                 val searched = (au.optJSONArray("path")?.length() ?: 0) > 0 || au.optJSONObject("search")?.optString("text").orEmpty().isNotEmpty()
                 val words = if (searched) "Nothing found" else "Choose a category, or search"
-                c.drawText(words, res.left + 30f, view.top + 50f, UiKit.bodyPaint(26f, Theme.dim))
+                c.drawText(Tr.t(words), res.left + 30f, view.top + 50f, UiKit.bodyPaint(26f, Theme.dim))
             }
             resultLine(c, inner.left + 24f, bx - 300f, cy, now)
             UiKit.hints(c, inner.right - 16f, cy, "rev_a" to "Open", UiKit.backGlyph() to "Back")
@@ -3397,7 +3446,7 @@ class InteractView(context: Context) : View(context) {
         for (h in heads) {
             p.textAlign = if (h.x < 0f) Paint.Align.RIGHT else Paint.Align.LEFT
             val ax = abs(h.x)
-            c.drawText(h.label, ax, cy + 8f, p)
+            c.drawText(Tr.t(h.label), ax, cy + 8f, p)
             val w = p.measureText(h.label)
             val l = if (h.x < 0f) ax - w else ax
             val rr = RectF(l - 14f, cy - 26f, l + w + 34f, cy + 22f)
@@ -3451,12 +3500,12 @@ class InteractView(context: Context) : View(context) {
         val box = RectF(r.centerX() - w / 2f, r.top + 40f, r.centerX() + w / 2f, r.top + 40f + h)
         val inn = UiKit.dialog(c, box)
         val lab = UiKit.bodyPaint(26f, Theme.gold)
-        c.drawText("Level Range", inn.left + 10f, inn.top + 50f, lab)
+        c.drawText(Tr.t("Level Range"), inn.left + 10f, inn.top + 50f, lab)
         val bw = 140f
         val minB = RectF(inn.left + 220f, inn.top + 8f, inn.left + 220f + bw, inn.top + 76f)
         val maxB = RectF(minB.right + 60f, inn.top + 8f, minB.right + 60f + bw, inn.top + 76f)
         formBox(c, minB, sr.optString("min"), "", "ahedit min", col("edit_min"), "ahmin", digits = true)
-        c.drawText("-", minB.right + 24f, minB.centerY() + 10f, UiKit.bodyPaint(28f, Color.WHITE))
+        c.drawText(Tr.t("-"), minB.right + 24f, minB.centerY() + 10f, UiKit.bodyPaint(28f, Color.WHITE))
         formBox(c, maxB, sr.optString("max"), "", "ahedit max", col("edit_max"), "ahmax", digits = true)
         val view = RectF(inn.left, inn.top + 96f, inn.right, box.bottom - 130f)
         viewB = view
@@ -3465,14 +3514,14 @@ class InteractView(context: Context) : View(context) {
         c.save(); c.clipRect(view)
         for (g in groups) {
             val gn = g.optString("name")
-            if (gn.isNotEmpty()) { c.drawText(gn, inn.left + 10f, y + 40f, UiKit.bodyPaint(24f, Theme.dim)); y += rowH; total += rowH }
+            if (gn.isNotEmpty()) { c.drawText(Tr.t(gn), inn.left + 10f, y + 40f, UiKit.bodyPaint(24f, Theme.dim)); y += rowH; total += rowH }
             for (f in arr(g, "filters")) {
                 val row = RectF(inn.left + 10f, y, inn.right - 10f, y + rowH - 6f)
                 val on = f.optBoolean("on")
                 UiKit.check(c, row.left + 36f, row.centerY(), 52f, on)
                 val q = if (f.has("q")) f.optInt("q") else -1
                 val tp = UiKit.bodyPaint(26f, if (q >= 0) Theme.quality(q) else Color.WHITE)
-                c.drawText(f.optString("name"), row.left + 84f, row.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+                c.drawText(Tr.t(f.optString("name")), row.left + 84f, row.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
                 val cmd = "ahfilter ${f.optInt("f")}"
                 val sl = slotOf(f)
                 if (row.bottom > view.top && row.top < view.bottom)
@@ -4158,7 +4207,7 @@ class InteractView(context: Context) : View(context) {
         questWindow(c, r, q, npc, now)
         val strip = qStrip
         val ra = ((t - 120L) / 150f).coerceIn(0f, 1f)
-        if (ra > 0f) c.drawText("Inventory is full.", strip.centerX(), strip.top + 79f,
+        if (ra > 0f) c.drawText(Tr.t("Inventory is full."), strip.centerX(), strip.top + 79f,
             UiKit.bodyPaint(32f, Color.argb((255 * ra).toInt(), 255, 26, 26)).apply { textAlign = Paint.Align.CENTER })
         c.restoreToCount(sv)
         hits.clear()                                     // no touches while the page turns into Make Space
@@ -4175,10 +4224,10 @@ class InteractView(context: Context) : View(context) {
         if (wq.isNotEmpty()) {
             // LOOTWIN 8: "For the quest" over the quest's name, then ONE card: the quest's item
             // right of the window's portrait ring, in the cards' text column (UI Art's check)
-            c.drawText("For the quest", inner.left + 144f, top - 44f, UiKit.bodyPaint(22f, Theme.textDim))
-            c.drawText(fit(UiKit.bodyPaint(26f, Theme.gold), TipStack.strip(wq), cw - 130f), inner.left + 144f, top - 12f,
+            c.drawText(Tr.t("For the quest"), inner.left + 144f, top - 44f, UiKit.bodyPaint(22f, Theme.textDim))
+            c.drawText(Tr.t(fit(UiKit.bodyPaint(26f, Theme.gold), TipStack.strip(wq), cw - 130f)), inner.left + 144f, top - 12f,
                 UiKit.bodyPaint(26f, Theme.gold))
-        } else c.drawText("Still in the loot", inner.left + 144f, top - 10f, UiKit.bodyPaint(24f, Theme.textDim))
+        } else c.drawText(Tr.t("Still in the loot"), inner.left + 144f, top - 10f, UiKit.bodyPaint(24f, Theme.textDim))
         msCards.clear(); msTiles.clear()
         // LOOTWIN 9 (several rewards): how many slots the rewards need, and how many are free now
         val wantQ = if (wq.isNotEmpty()) sp.optJSONObject("want") else null
@@ -4202,14 +4251,14 @@ class InteractView(context: Context) : View(context) {
         if (multi) {
             var ly = top + 8f + shown.size * (ch + 10f)
             val more = arr(lt, "items").size - shown.size
-            if (more > 0) { c.drawText("+$more more", x0 + 6f, ly + 22f, UiKit.bodyPaint(24f, Theme.textDim)); ly += 32f }
+            if (more > 0) { c.drawText(Tr.t("+$more more"), x0 + 6f, ly + 22f, UiKit.bodyPaint(24f, Theme.textDim)); ly += 32f }
             val col = when {
                 free <= 0 -> Color.rgb(255, 64, 64)
                 free >= need -> Color.rgb(30, 255, 0)
                 else -> Theme.gold
             }
-            c.drawText("$free of $need slots free", x0 + 6f, ly + 32f, UiKit.bodyPaint(28f, col))
-            if (free < need) c.drawText("Each item needs a slot of its own", x0 + 6f, ly + 64f, UiKit.bodyPaint(21f, Theme.textDim))
+            c.drawText(Tr.t("$free of $need slots free"), x0 + 6f, ly + 32f, UiKit.bodyPaint(28f, col))
+            if (free < need) c.drawText(Tr.t("Each item needs a slot of its own"), x0 + 6f, ly + 64f, UiKit.bodyPaint(21f, Theme.textDim))
         }
         // the tiles deleted for the quest keep a thin gold rim until a reward lands in them
         val freedKeys = if (multi && msStripText == null)
@@ -4277,7 +4326,7 @@ class InteractView(context: Context) : View(context) {
         UiKit.asNumber(bagPaints.count, shadow = false)
         for (e in arr(sp, "bags")) {
             val b = e.optInt("bag")
-            c.drawText(e.optString("name", "Bag"), gx + 2f, y + 24f, UiKit.bodyPaint(22f, Theme.textDim))
+            c.drawText(Tr.t(e.optString("name", "Bag")), gx + 2f, y + 24f, UiKit.bodyPaint(22f, Theme.textDim))
             y += 32f
             val byS = HashMap<Int, JSONObject>()
             for (it in arr(e, "items")) byS[it.optInt("slot")] = it
@@ -4322,7 +4371,7 @@ class InteractView(context: Context) : View(context) {
         }
         val skipped = arr(sp, "skipped").let { a -> (0 until (sp.optJSONArray("skipped")?.length() ?: 0)).mapNotNull { sp.optJSONArray("skipped")?.optString(it) } }
         if (skipped.isNotEmpty())
-            c.drawText("Not shown: your " + skipped.joinToString(" and ") { it.lowercase() } + " (they can't hold this loot)",
+            c.drawText(Tr.t("Not shown: your " + skipped.joinToString(" and ") { it.lowercase() } + " (they can't hold this loot)"),
                 gx + 2f, y + 22f, UiKit.bodyPaint(20f, Theme.dim))
         chosenBox?.let { UiKit.focus(c, it) }
         c.restoreToCount(sc0)
@@ -4387,7 +4436,7 @@ class InteractView(context: Context) : View(context) {
         val canDel = chosenItem != null
         // the landing: the strip's buttons are gone, its line says what landed
         msStripText?.let { line ->
-            if (line.isNotEmpty()) c.drawText(line, strip.left + 20f, strip.centerY() + 10f,
+            if (line.isNotEmpty()) c.drawText(Tr.t(line), strip.left + 20f, strip.centerY() + 10f,
                 if (msStripGreen) UiKit.bodyPaint(26f, Color.rgb(30, 255, 0)) else UiKit.bodyPaint(28f, Theme.gold))
             UiKit.windowFrame(c, r, "Inventory is full.", Icons.get(133639), Color.rgb(255, 32, 32), close = false)
             return
@@ -4407,7 +4456,7 @@ class InteractView(context: Context) : View(context) {
         if (held in 0.001f..0.999f) postInvalidateOnAnimation()
         // what the game / the addon answered takes the words' place for its 4 s
         if (!resultLine(c, strip.left + 20f, del.left - 20f, strip.centerY() + 2f, now))
-            c.drawText("Choose what to delete to make space", strip.left + 20f, strip.centerY() + 10f, UiKit.bodyPaint(26f, Theme.textDim))
+            c.drawText(Tr.t("Choose what to delete to make space"), strip.left + 20f, strip.centerY() + 10f, UiKit.bodyPaint(26f, Theme.textDim))
         UiKit.windowFrame(c, r, "Inventory is full.", Icons.get(133639), Color.rgb(255, 32, 32), close = false)
 
         // BLUE / PURPLE: one plain Yes / No after the hold
@@ -4418,13 +4467,13 @@ class InteractView(context: Context) : View(context) {
             val d = RectF((w - 1000f) / 2f, 270f, (w + 1000f) / 2f, 690f)
             UiKit.dialog(c, d)
             val q = rr.optInt("q", 3)
-            c.drawText("Delete this " + (if (q >= 4) "Epic" else "Rare") + " item?", w / 2f, d.top + 100f,
+            c.drawText(Tr.t("Delete this " + (if (q >= 4) "Epic" else "Rare") + " item?"), w / 2f, d.top + 100f,
                 UiKit.bodyPaint(28f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
             // the name in its quality colour; never a blank line (the tooltip's first line when the addon could not read it)
             val rname = rr.optString("name", "").ifEmpty { doc?.optJSONObject("tip")?.optJSONArray("lines")?.optJSONObject(0)?.optString("t", "") ?: "" }
                 .ifEmpty { "this item" }
-            c.drawText(TipStack.strip(rname), w / 2f, d.top + 156f, UiKit.bodyPaint(38f, Theme.quality(q)).apply { textAlign = Paint.Align.CENTER })
-            c.drawText("This cannot be undone.", w / 2f, d.top + 202f, UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER })
+            c.drawText(Tr.t(TipStack.strip(rname)), w / 2f, d.top + 156f, UiKit.bodyPaint(38f, Theme.quality(q)).apply { textAlign = Paint.Align.CENTER })
+            c.drawText(Tr.t("This cannot be undone."), w / 2f, d.top + 202f, UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER })
             val yes = RectF(w / 2f - 14f - 380f, d.bottom - 72f - 111f, w / 2f - 14f, d.bottom - 72f)
             val no = RectF(w / 2f + 14f, yes.top, w / 2f + 14f + 380f, yes.bottom)
             UiKit.button(c, yes, "Yes", "rev_a", kitState("lt:yes"))
@@ -4529,7 +4578,7 @@ class InteractView(context: Context) : View(context) {
             }
         }
         val head = if (acct) "Account Bank" else "Bank"
-        c.drawText(if (pages > 1) "$head: page $page" else head, bkr.left + 22f, bkr.top + 38f, UiKit.bodyPaint(28f, Theme.gold))
+        c.drawText(Tr.t(if (pages > 1) "$head: page $page" else head), bkr.left + 22f, bkr.top + 38f, UiKit.bodyPaint(28f, Theme.gold))
         val sz = if (pages > 1) 68f else 72f
         val gx0 = bkr.left + 16f; val gw = bkr.right - 16f - tabW - gx0
         val cellW = gw / 7f
@@ -4571,7 +4620,7 @@ class InteractView(context: Context) : View(context) {
         c.restore()
         UiKit.bankDivider(c, bkr.left + 14f, bkr.right - 14f - tabW, rowsBottom + 14f)
         val gold24 = UiKit.bodyPaint(24f, Theme.gold)
-        c.drawText("Bag Slots:", bkr.left + 22f, rowsBottom + 14f + 42f, gold24)
+        c.drawText(Tr.t("Bag Slots:"), bkr.left + 22f, rowsBottom + 14f + 42f, gold24)
         val tabs = arr(bk, "tabs")
         val maxTabs = bk.optInt("maxTabs", tabs.size)
         val bagRowY = rowsBottom + 14f + 58f
@@ -4585,7 +4634,7 @@ class InteractView(context: Context) : View(context) {
         val cost = bk.optLong("cost", -1)
         if (cost >= 0 && tabs.size < maxTabs) {
             val cy0 = bagRowY + 64f + 34f
-            c.drawText("Cost:", bkr.left + 22f, cy0 + 8f, gold24)
+            c.drawText(Tr.t("Cost:"), bkr.left + 22f, cy0 + 8f, gold24)
             UiKit.money(c, cost, bkr.left + 100f, cy0, 26f, if (cost <= purse) Theme.text else Theme.unusable)
             val pb = RectF(bkr.right - tabW - 250f, cy0 - 40f, bkr.right - tabW - 16f, cy0 + 40f)
             UiKit.button(c, pb, "Purchase", "rev_x", if (cost <= purse) UiKit.Button.UP else UiKit.Button.DISABLED)
@@ -4594,7 +4643,7 @@ class InteractView(context: Context) : View(context) {
 
         // ---- right: your bags, in the Bags room's own tiles (BagsView.drawSlot), 7 to a row; they scroll with the cursor
         val br = RectF(half + 8f, top, inner.right - 4f, bot)
-        c.drawText("Your Bags", br.left + 22f, br.top + 38f, UiKit.bodyPaint(28f, Theme.gold))
+        c.drawText(Tr.t("Your Bags"), br.left + 22f, br.top + 38f, UiKit.bodyPaint(28f, Theme.gold))
         val view = RectF(br.left, br.top + 52f, br.right, br.bottom)
         val bcw = (br.width() - 32f) / 7f
         val list = ArrayList<Pair<String, JSONObject?>>()
@@ -4638,7 +4687,7 @@ class InteractView(context: Context) : View(context) {
         // ---- the strip: your money; Deposit / Withdraw by the side the cursor is on; Y Move (the hand: A Put here, B Cancel)
         val cy = strip.centerY() + 2f
         val bx = inner.right - 8f
-        c.drawText("Your money", inner.left + 24f, cy - 14f, UiKit.bodyPaint(22f, Theme.dim))
+        c.drawText(Tr.t("Your money"), inner.left + 24f, cy - 14f, UiKit.bodyPaint(22f, Theme.dim))
         UiKit.money(c, purse, inner.left + 24f, cy + 20f, 30f)
         if (hand != null) {
             val hx = UiKit.hints(c, bx - 16f, cy, "rev_a" to "Put here", UiKit.backGlyph() to "Cancel")
@@ -4665,7 +4714,7 @@ class InteractView(context: Context) : View(context) {
             // the game's own words (CONFIRM_BUY_CHARACTER_BANK_TAB / CONFIRM_BUY_ACCOUNT_BANK_TAB), then the cost
             val words = if (acct) "Do you want to purchase an Account Bank tab for:" else "Do you want to purchase a Bank tab for:"
             val tp = TextPaint(UiKit.bodyPaint(30f, Color.WHITE))
-            val lay = StaticLayout.Builder.obtain(words, 0, words.length, tp, (ib.width() - 80f).toInt()).setAlignment(Layout.Alignment.ALIGN_CENTER).build()
+            val lay = StaticLayout.Builder.obtain(Tr.t(words), 0, Tr.t(words).length, tp, (ib.width() - 80f).toInt()).setAlignment(Layout.Alignment.ALIGN_CENTER).build()
             c.save(); c.translate(ib.left + 40f, ib.top + 30f); lay.draw(c); c.restore()
             val mw = UiKit.moneyWidth(max(0L, cost), 34f)
             UiKit.money(c, max(0L, cost), ib.centerX() - mw / 2f, ib.top + 60f + lay.height + 20f, 34f, Color.WHITE)
@@ -4740,7 +4789,7 @@ class InteractView(context: Context) : View(context) {
         val strip = UiKit.strip(c, inner)
         val cy = strip.centerY() + 2f
         val bx = inner.right - 8f
-        c.drawText("Your money", inner.left + 24f, cy - 14f, UiKit.bodyPaint(22f, Theme.dim))
+        c.drawText(Tr.t("Your money"), inner.left + 24f, cy - 14f, UiKit.bodyPaint(22f, Theme.dim))
         UiKit.money(c, purse, inner.left + 24f, cy + 20f, 30f)
         val e = pick?.let { p -> entries().firstOrNull { it.cmd == p } }
         val cost = chosen?.optLong("cost", 0) ?: 0L
@@ -4787,7 +4836,7 @@ class InteractView(context: Context) : View(context) {
         val ww = 64f + 18f + np.measureText(words)
         val x0 = inn.centerX() - ww / 2f
         UiKit.slot(c, itemIcon(item), x0, inn.top + 14f, 64f)
-        c.drawText(words, x0 + 82f, inn.top + 46f - (np.ascent() + np.descent()) / 2f, np)
+        c.drawText(Tr.t(words), x0 + 82f, inn.top + 46f - (np.ascent() + np.descent()) / 2f, np)
         val mw = UiKit.moneyWidth(total, 36f)
         UiKit.money(c, total, inn.centerX() - mw / 2f, inn.top + 130f, 36f)
         val by = box.bottom - 70f - 111f
@@ -4849,7 +4898,7 @@ class InteractView(context: Context) : View(context) {
         val purseX = UiKit.money(c, purse, inner.right - 16f, ty + th / 2f + 6f, 30f, fromRight = true)
         // the words before the coins, measured; left out when they would reach the R glyph (the coins say it alone)
         val wordsR = inner.right - 16f - UiKit.moneyWidth(purse, 30f) - 14f
-        if (wordsR - pm.measureText("Your money") > 798f + 2f * te + 8f) c.drawText("Your money", wordsR, ty + th / 2f + 14f, pm)
+        if (wordsR - pm.measureText("Your money") > 798f + 2f * te + 8f) c.drawText(Tr.t("Your money"), wordsR, ty + th / 2f + 14f, pm)
 
         // ---- the list: two columns, row-major, dragged; the last row is cut by the strip
         val list = entries()
@@ -4863,11 +4912,11 @@ class InteractView(context: Context) : View(context) {
         follow(if (at < 0) -1 else at / 2, VROW, viewA.height())
         scrollA = scrollA.coerceIn(0f, max(0f, contentA - viewA.height()))
         c.save(); c.clipRect(viewA)
-        if (list.isEmpty()) c.drawText(when (tab) {
+        if (list.isEmpty()) c.drawText(Tr.t(when (tab) {
             Tab.BUY -> "This vendor has nothing for sale."
             Tab.SELL -> "Nothing in your bags that this vendor will buy."
             Tab.BACK -> "Nothing to buy back."
-        }, inner.left + 24f, ly0 + 56f, UiKit.bodyPaint(27f, Theme.dim))
+        }), inner.left + 24f, ly0 + 56f, UiKit.bodyPaint(27f, Theme.dim))
         for ((i, e) in list.withIndex()) {
             val x = inner.left + 4f + (i % 2) * (cw + 14f)
             val y = ly0 + 4f + (i / 2) * VROW - scrollA
@@ -4972,7 +5021,7 @@ class InteractView(context: Context) : View(context) {
                 val slot = act?.let { slotOf(it, "repair") } ?: -1
                 val box = RectF(x, cy - 54f, x + 280f, cy + 54f)
                 UiKit.tex("icon_repair")?.let { c.drawBitmap(it, null, RectF(x, cy - 52f, x + 104f, cy + 52f), UiKit.pixel) }
-                c.drawText("Repair all", x + 118f, cy - 10f, UiKit.bodyPaint(24f))
+                c.drawText(Tr.t("Repair all"), x + 118f, cy - 10f, UiKit.bodyPaint(24f))
                 if (onTab) UiKit.pad(c, "rev_x", x + 14f, cy - 38f, 40f)
                 UiKit.money(c, cost, x + 118f, cy + 18f, 25f, if (cost <= purse) Theme.text else Theme.unusable)
                 if (pendingCmd == "repair" || pressed.startsWith("act:repair")) UiKit.glow(c, box, Theme.gold, 0.4f)
@@ -4990,7 +5039,7 @@ class InteractView(context: Context) : View(context) {
                 val slot = act?.let { slotOf(it, "junk") } ?: -1
                 val box = RectF(x, cy - 54f, x + 270f, cy + 54f)
                 UiKit.slot(c, UiKit.tex("icon_junk"), x + 8f, cy - 44f, 88f)
-                c.drawText("Sell junk", x + 112f, cy - 10f, UiKit.bodyPaint(24f))
+                c.drawText(Tr.t("Sell junk"), x + 112f, cy - 10f, UiKit.bodyPaint(24f))
                 if (onTab) UiKit.pad(c, "rev_y", x + 22f, cy - 30f, 40f)
                 UiKit.money(c, m.optLong("junkValue", 0), x + 112f, cy + 18f, 25f)
                 if (pendingCmd == "junk" || pressed.startsWith("act:junk")) UiKit.glow(c, box, Theme.gold, 0.4f)

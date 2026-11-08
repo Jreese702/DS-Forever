@@ -211,7 +211,7 @@ class SpellsOverlay(
         // the line: the instruction, or the answer
         if (r != null && r.ok && r.pad != null) {
             val p = UiKit.bodyPaint(32f, Color.rgb(30, 255, 0)).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(if (r.fight) "In combat on" else "Bound to", w / 2f - 60f, ly - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(if (r.fight) "In combat on" else "Bound to"), w / 2f - 60f, ly - (p.ascent() + p.descent()) / 2f, p)
             drawCombo(c, SpellsModel.combo(r.pad, st), w / 2f - 40f, ly, 64f, Theme.text, true)
         } else if (r != null && !r.ok) {
             val (text, colour) = when (r.why) {
@@ -224,11 +224,11 @@ class SpellsOverlay(
                 else -> "That did not work" to Theme.unusable
             }
             val p = UiKit.bodyPaint(30f, colour).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(text, w / 2f, ly - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(text), w / 2f, ly - (p.ascent() + p.descent()) / 2f, p)
         } else if (now - undoneAt < SHOW_MS) {
             // b42: B put back what was there: the box waits for a button again
             val p = UiKit.bodyPaint(30f, Theme.warn).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("Put back what was there. Press another button", w / 2f, ly - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t("Put back what was there. Press another button"), w / 2f, ly - (p.ascent() + p.descent()) / 2f, p)
         }
 
         // the spell
@@ -236,7 +236,7 @@ class SpellsOverlay(
             val pn = UiKit.bodyPaint(40f, Theme.gold)
             val bx = w / 2f - (pn.measureText(e.name) + 104f) / 2f
             UiKit.slot(c, Icons.get(e.icon), bx, spellTop, 84f)
-            c.drawText(e.name, bx + 104f, spellTop + 42f - (pn.ascent() + pn.descent()) / 2f, pn)
+            c.drawText(Tr.t(e.name), bx + 104f, spellTop + 42f - (pn.ascent() + pn.descent()) / 2f, pn)
         }
 
         // which set: the triggers held now (the app's own read-only controller reader, as the Cast room's)
@@ -300,7 +300,7 @@ class SpellsOverlay(
             val qp = UiKit.bodyPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
             val failed = undoFail?.takeIf { now - undoFailAt < SHOW_MS }
             val q = when (failed) { null -> "Keep this binding?"; "combat" -> "Can't undo in combat. Keep it?"; else -> "That couldn't be undone. Keep it?" }
-            c.drawText(q, qb.centerX(), qb.top + 64f, qp)
+            c.drawText(Tr.t(q), qb.centerX(), qb.top + 64f, qp)
             UiKit.hints(c, qb.centerX() + 180f, qb.bottom - 46f, UiKit.okGlyph() to "Keep", back to "Undo")
             if (failed != null) postInvalidateDelayed(250L)
             return
@@ -415,13 +415,13 @@ class SpellsOverlay(
         UiKit.card(c, r, queue.size)
         UiKit.spell(c, Icons.get(e.icon), r.left + 58f, r.top + 26f, 88f, onDark = true)
         val pt = UiKit.bodyPaint(24f, Theme.gold)
-        c.drawText("New spell", r.left + 176f, r.top + 36f - (pt.ascent() + pt.descent()) / 2f, pt)
+        c.drawText(Tr.t("New spell"), r.left + 176f, r.top + 36f - (pt.ascent() + pt.descent()) / 2f, pt)
         val pn = UiKit.bodyPaint(34f, Color.WHITE)
-        val name = TextUtils.ellipsize(e.name, android.text.TextPaint(pn), r.right - 250f - (r.left + 176f), TextUtils.TruncateAt.END).toString()
-        c.drawText(name, r.left + 176f, r.top + 74f - (pn.ascent() + pn.descent()) / 2f, pn)
+        val name = TextUtils.ellipsize(Tr.t(e.name), android.text.TextPaint(pn), r.right - 250f - (r.left + 176f), TextUtils.TruncateAt.END).toString()
+        c.drawText(Tr.t(name), r.left + 176f, r.top + 74f - (pn.ascent() + pn.descent()) / 2f, pn)
         e.rank?.let {
             val pr = UiKit.bodyPaint(22f, Theme.dim)
-            c.drawText(it, r.left + 176f, r.top + 110f - (pr.ascent() + pr.descent()) / 2f, pr)
+            c.drawText(Tr.t(it), r.left + 176f, r.top + 110f - (pr.ascent() + pr.descent()) / 2f, pr)
         }
         // where the game put it: the controller button that holds it now (read at every frame: the fly-in may land during the 4 s)
         val slot = e.pad.firstOrNull()
@@ -433,11 +433,11 @@ class SpellsOverlay(
             drawCombo(c, combo, r.right - 44f - wide, r.centerY(), n, Theme.text, true)
         } else {
             val pb = UiKit.bodyPaint(26f, Theme.notOnBar).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText("Not on a button", r.right - 40f, r.centerY() - 2f - (pb.ascent() + pb.descent()) / 2f, pb)
+            c.drawText(Tr.t("Not on a button"), r.right - 40f, r.centerY() - 2f - (pb.ascent() + pb.descent()) / 2f, pb)
         }
         if (queue.isNotEmpty()) {
             val pc = UiKit.numberPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText("1 of ${queue.size + 1}", r.right - 40f, r.bottom - 22f - (pc.ascent() + pc.descent()) / 2f, pc)
+            c.drawText(Tr.t("1 of ${queue.size + 1}"), r.right - 40f, r.bottom - 22f - (pc.ascent() + pc.descent()) / 2f, pc)
         }
         c.restoreToCount(layer)
     }

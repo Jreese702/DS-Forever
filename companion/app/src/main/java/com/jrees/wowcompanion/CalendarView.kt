@@ -321,7 +321,7 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         if (focus == Fk.Arrow(false)) UiKit.focus(c, RectF(24f, 58f, 88f, 122f))
         if (focus == Fk.Arrow(true)) UiKit.focus(c, RectF(gx - 88f, 58f, gx - 24f, 122f))
         val pt = UiKit.titlePaint(40f).apply { textAlign = Paint.Align.CENTER }
-        c.drawText("${st.monthName(m.m)} ${m.y}", gx / 2f, 88f - (pt.ascent() + pt.descent()) / 2f, pt)
+        c.drawText(Tr.t("${st.monthName(m.m)} ${m.y}"), gx / 2f, 88f - (pt.ascent() + pt.descent()) / 2f, pt)
         val bar = CalendarModel.weekdayBar(st)
         for (k in 0 until 7) UiKit.calendarWeekday(c, RectF(k * DAY_W, 118f, (k + 1) * DAY_W, 154f), bar[k])
 
@@ -377,7 +377,7 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         val day = chosenDay
         if (day == null) { nothing(c, r, "Choose a day"); return }
         val pd = UiKit.bodyPaint(26f, Color.WHITE)
-        c.drawText(TextUtils.ellipsize(CalendarModel.fullDate(st, m.y, m.m, day), TextPaint(pd), r.width() - 16f, TextUtils.TruncateAt.END).toString(),
+        c.drawText(Tr.t(TextUtils.ellipsize(CalendarModel.fullDate(st, m.y, m.m, day), TextPaint(pd), r.width() - 16f, TextUtils.TruncateAt.END).toString()),
             r.left + 8f, r.top + 26f - (pd.ascent() + pd.descent()) / 2f, pd)
         UiKit.paneRule(c, r.left, r.top + 52f, r.right)
         val (entries, ongoing) = CalendarModel.dayNote(st, m, day)
@@ -397,7 +397,7 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         }
         if (ongoing.isNotEmpty()) {
             val po = UiKit.bodyPaint(25f, Color.WHITE)
-            c.drawText(st.word("CALENDAR_TOOLTIP_ONGOING"), r.left + 8f, y + 26f - (po.ascent() + po.descent()) / 2f, po)
+            c.drawText(Tr.t(st.word("CALENDAR_TOOLTIP_ONGOING")), r.left + 8f, y + 26f - (po.ascent() + po.descent()) / 2f, po)
             y += 52f
             for (l in ongoing) {
                 val box = RectF(listBox.left, y, listBox.right, y + 104f)
@@ -430,10 +430,10 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         val pt = TextPaint(UiKit.bodyPaint(32f, colourOf(CalendarModel.tone(e), e)))
         val title = CalendarModel.pageTitle(st, e)
         while (pt.measureText(title) > titleRight - r.left - 100f && pt.textSize > 22f) pt.textSize -= 1f
-        c.drawText(TextUtils.ellipsize(title, pt, titleRight - r.left - 100f, TextUtils.TruncateAt.END).toString(),
+        c.drawText(Tr.t(TextUtils.ellipsize(title, pt, titleRight - r.left - 100f, TextUtils.TruncateAt.END).toString()),
             r.left + 100f, r.top + 30f - (pt.ascent() + pt.descent()) / 2f, pt)
         val pk = UiKit.bodyPaint(23f, Theme.dim)
-        c.drawText(TextUtils.ellipsize(CalendarModel.kind(st, e, page), TextPaint(pk), titleRight - r.left - 100f, TextUtils.TruncateAt.END).toString(),
+        c.drawText(Tr.t(TextUtils.ellipsize(CalendarModel.kind(st, e, page), TextPaint(pk), titleRight - r.left - 100f, TextUtils.TruncateAt.END).toString()),
             r.left + 100f, r.top + 68f - (pk.ascent() + pk.descent()) / 2f, pk)
         if (removeCol != null) {
             UiKit.trackerButton(c, "filter", r.right - 38f, r.top + 48f, 76f, down = moreOpen)
@@ -448,14 +448,14 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         if (start != null) {
             val date = CalendarModel.fullDate(st, start.y, start.m, start.d)
             while (pw.measureText(date) > r.width() - 16f && pw.textSize > 19f) pw.textSize -= 1f
-            c.drawText(date, r.left + 8f, y - (pw.ascent() + pw.descent()) / 2f, pw); y += 34f
+            c.drawText(Tr.t(date), r.left + 8f, y - (pw.ascent() + pw.descent()) / 2f, pw); y += 34f
             val pt2 = UiKit.bodyPaint(25f, Color.WHITE)
-            c.drawText(CalendarModel.clock(st, start.h, start.mi), r.left + 8f, y - (pt2.ascent() + pt2.descent()) / 2f, pt2)
+            c.drawText(Tr.t(CalendarModel.clock(st, start.h, start.mi)), r.left + 8f, y - (pt2.ascent() + pt2.descent()) / 2f, pt2)
         }
         y += 46f
         val pg = UiKit.bodyPaint(23f, Theme.gold)
         CalendarModel.goldLine(st, e)?.let {
-            c.drawText(TextUtils.ellipsize(it, TextPaint(pg), r.width() - 16f, TextUtils.TruncateAt.END).toString(),
+            c.drawText(Tr.t(TextUtils.ellipsize(it, TextPaint(pg), r.width() - 16f, TextUtils.TruncateAt.END).toString()),
                 r.left + 8f, y - (pg.ascent() + pg.descent()) / 2f, pg)
         }
         y += 30f
@@ -465,10 +465,10 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         val status = if (answers.isEmpty()) r.bottom - 22f else r.bottom - 111f - (answers.size - 1) * 119f - 30f
         drawColumn(c, st, e, page, RectF(r.left, y, r.right, status - 26f))
         if (e.inv != null && e.ct != "GUILD_ANNOUNCEMENT") {
-            c.drawText(st.word("CALENDAR_VIEW_EVENT_SETSTATUS"), r.left + 8f, status - (pg.ascent() + pg.descent()) / 2f, pg)
+            c.drawText(Tr.t(st.word("CALENDAR_VIEW_EVENT_SETSTATUS")), r.left + 8f, status - (pg.ascent() + pg.descent()) / 2f, pg)
             // my status in its own colour (SPEC 5: Theme.invite(inv)); the light blue of an event I made is for its NAME only
             val ps = UiKit.bodyPaint(23f, Theme.invite(e.inv)).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(st.statusName(e.inv), r.right - 8f, status - (ps.ascent() + ps.descent()) / 2f, ps)
+            c.drawText(Tr.t(st.statusName(e.inv)), r.right - 8f, status - (ps.ascent() + ps.descent()) / 2f, ps)
         }
         // the answers, ONE UNDER ANOTHER, the last at the pane's foot (user pick); the game disables my status already
         for ((k, a) in answers.withIndex()) {
@@ -500,7 +500,7 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         noteBox = RectF(band)
         if (band.height() <= 0f) return
         val desc = page?.desc ?: ""
-        val sl = StaticLayout.Builder.obtain(desc, 0, desc.length, TextPaint(UiKit.bodyPaint(23f, Theme.text)), maxOf(1, (band.width() - 40f).toInt()))
+        val sl = StaticLayout.Builder.obtain(Tr.t(desc), 0, Tr.t(desc).length, TextPaint(UiKit.bodyPaint(23f, Theme.text)), maxOf(1, (band.width() - 40f).toInt()))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         val boxH = if (desc.isNotEmpty()) sl.height + 36f else 0f
         val listTop = if (desc.isNotEmpty()) boxH + 30f else 0f
@@ -518,13 +518,13 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         var y = top + listTop + 20f
         if (retrieving) {
             val pr = UiKit.bodyPaint(23f, Theme.dim)
-            c.drawText(st.word("RETRIEVING_INVITE_LIST"), band.left + 8f, y - (pr.ascent() + pr.descent()) / 2f, pr)
+            c.drawText(Tr.t(st.word("RETRIEVING_INVITE_LIST")), band.left + 8f, y - (pr.ascent() + pr.descent()) / 2f, pr)
         } else for (inv in invitees) {
             val pn = UiKit.bodyPaint(23f, Theme.classColourOf(inv.cls))
-            c.drawText(TextUtils.ellipsize(CalendarModel.inviteeName(st, inv), TextPaint(pn), band.width() * 0.62f, TextUtils.TruncateAt.END).toString(),
+            c.drawText(Tr.t(TextUtils.ellipsize(CalendarModel.inviteeName(st, inv), TextPaint(pn), band.width() * 0.62f, TextUtils.TruncateAt.END).toString()),
                 band.left + 8f, y - (pn.ascent() + pn.descent()) / 2f, pn)
             val ps = UiKit.bodyPaint(21f, Theme.invite(inv.status ?: 0)).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(st.statusName(inv.status), band.right - 8f, y - (ps.ascent() + ps.descent()) / 2f, ps)
+            c.drawText(Tr.t(st.statusName(inv.status)), band.right - 8f, y - (ps.ascent() + ps.descent()) / 2f, ps)
             y += 40f
         }
         c.restore()
@@ -541,14 +541,14 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         val left = if (startPic != null) r.left + 138f else r.left + 8f
         val name = hol?.name ?: e.title
         val tp = TextPaint(UiKit.bodyPaint(32f, Theme.gold))
-        val nl = StaticLayout.Builder.obtain(name, 0, name.length, tp, (r.right - left).toInt()).setMaxLines(2)
+        val nl = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, tp, (r.right - left).toInt()).setMaxLines(2)
             .setEllipsize(TextUtils.TruncateAt.END).setAlignment(Layout.Alignment.ALIGN_NORMAL).build()
         c.save(); c.translate(left, r.top + 66f - nl.height / 2f); nl.draw(c); c.restore()
         UiKit.paneRule(c, r.left, r.top + 140f, r.right)
         val box = RectF(r.left + 8f, r.top + 156f, r.right - 8f, r.bottom - 190f)
         noteBox = box
         val words = hol?.desc ?: ""
-        val sl = StaticLayout.Builder.obtain(words, 0, words.length, TextPaint(UiKit.bodyPaint(23f, Theme.text)), box.width().toInt())
+        val sl = StaticLayout.Builder.obtain(Tr.t(words), 0, Tr.t(words).length, TextPaint(UiKit.bodyPaint(23f, Theme.text)), box.width().toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         noteContent = sl.height.toFloat()
         noteScroll = noteScroll.coerceIn(0f, maxOf(0f, noteContent - box.height()))
@@ -565,7 +565,7 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         val name = if (e.diff != null) CalendarModel.format(st.word("DUNGEON_NAME_WITH_DIFFICULTY"), e.title, e.diff) else e.title
         val pt = TextPaint(UiKit.bodyPaint(32f, Theme.gold))
         while (pt.measureText(name) > r.width() - 16f && pt.textSize > 22f) pt.textSize -= 1f
-        c.drawText(TextUtils.ellipsize(name, pt, r.width() - 16f, TextUtils.TruncateAt.END).toString(),
+        c.drawText(Tr.t(TextUtils.ellipsize(name, pt, r.width() - 16f, TextUtils.TruncateAt.END).toString()),
             r.left + 8f, r.top + 46f - (pt.ascent() + pt.descent()) / 2f, pt)
         UiKit.paneRule(c, r.left, r.top + 104f, r.right)
         say(c, r.left + 8f, r.top + 124f, r.width() - 16f, CalendarModel.raidSentence(st, e), 23f, Theme.text)
@@ -578,7 +578,7 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         val box = RectF(gx + 20f, 70f, w - 6f, 70f + 100f + CalendarModel.FILTERS.size * 100f + 80f)
         UiKit.menu(c, box, solid = true)
         val p = UiKit.bodyPaint(30f, Theme.gold)
-        c.drawText(st.word("CALENDAR_FILTERS"), box.left + 36f, box.top + 52f - (p.ascent() + p.descent()) / 2f, p)
+        c.drawText(Tr.t(st.word("CALENDAR_FILTERS")), box.left + 36f, box.top + 52f - (p.ascent() + p.descent()) / 2f, p)
         UiKit.divider(c, box.left + 20f, box.top + 91f, box.right - 20f, box.top + 91f)
         var y = box.top + 100f
         for ((i, f) in CalendarModel.FILTERS.withIndex()) {
@@ -602,7 +602,7 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         val box = RectF(w / 2f - 330f, h / 2f - 170f, w / 2f + 330f, h / 2f + 150f)
         val inner = UiKit.dialog(c, box)
         val words = "Remove ${e.title} from your calendar?"
-        val sl = StaticLayout.Builder.obtain(words, 0, words.length, TextPaint(UiKit.bodyPaint(27f, Theme.text)), inner.width().toInt())
+        val sl = StaticLayout.Builder.obtain(Tr.t(words), 0, Tr.t(words).length, TextPaint(UiKit.bodyPaint(27f, Theme.text)), inner.width().toInt())
             .setAlignment(Layout.Alignment.ALIGN_CENTER).setMaxLines(3).setEllipsize(TextUtils.TruncateAt.END).build()
         c.save(); c.translate(inner.left, inner.top + 20f); sl.draw(c); c.restore()
         val bw = (inner.width() - 30f) / 2f
@@ -618,14 +618,14 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
     }
 
     private fun say(c: Canvas, x: Float, y: Float, width: Float, words: String, size: Float, colour: Int = Theme.dim) {
-        val sl = StaticLayout.Builder.obtain(words, 0, words.length, TextPaint(UiKit.bodyPaint(size, colour)), maxOf(1, width.toInt()))
+        val sl = StaticLayout.Builder.obtain(Tr.t(words), 0, Tr.t(words).length, TextPaint(UiKit.bodyPaint(size, colour)), maxOf(1, width.toInt()))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(6f, 1f).build()
         c.save(); c.translate(x, y); sl.draw(c); c.restore()
     }
 
     private fun nothing(c: Canvas, r: RectF, words: String) {
         val p = UiKit.bodyPaint(25f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(words, r.centerX(), r.top + 300f, p)
+        c.drawText(Tr.t(words), r.centerX(), r.top + 300f, p)
     }
 
     private fun add(key: Fk, r: RectF, act: () -> Unit) {

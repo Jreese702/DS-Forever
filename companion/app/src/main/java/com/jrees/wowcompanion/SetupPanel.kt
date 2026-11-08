@@ -182,7 +182,7 @@ class SetupPanel(context: Context) : View(context) {
         c.drawText(Tr.t(p.title), card.centerX(), y, title)
         y += 16f
         body.textAlign = Paint.Align.CENTER
-        for (l in lines) { y += 40f; c.drawText(l, card.centerX(), y, body) }
+        for (l in lines) { y += 40f; c.drawText(Tr.t(l), card.centerX(), y, body) }
         y += GAP + 8f
         for (b in p.buttons) {
             val r = RectF(card.left + PAD, y, card.right - PAD, y + BUTTON_H)

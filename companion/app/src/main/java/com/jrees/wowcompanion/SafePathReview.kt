@@ -357,17 +357,17 @@ class SafePathReview(context: Context) : View(context) {
             pFill.color = Color.argb(220, 8, 6, 4)
             val r = RectF(width / 2f - w / 2f, height - BOTTOM - 70f, width / 2f + w / 2f, height - BOTTOM - 22f)
             c.drawRoundRect(r, 8f, 8f, pFill)
-            c.drawText(n, r.left + 20f, r.bottom - 15f, tp)
+            c.drawText(Tr.t(n), r.left + 20f, r.bottom - 15f, tp)
             postInvalidateDelayed(500)
         }
     }
 
     private fun drawList(c: Canvas) {
-        c.drawText("SafePath: review the zones", 32f, 54f, UiKit.titlePaint(38f))
+        c.drawText(Tr.t("SafePath: review the zones"), 32f, 54f, UiKit.titlePaint(38f))
         rowHits.clear()
-        if (loading) { c.drawText("Reading the drafts", 32f, 130f, UiKit.bodyPaint(28f, Theme.textDim)); return }
+        if (loading) { c.drawText(Tr.t("Reading the drafts"), 32f, 130f, UiKit.bodyPaint(28f, Theme.textDim)); return }
         if (rows.isEmpty()) {
-            c.drawText("No zone has a draft yet: the drafts are made as you walk (the route's data and your learned roads).", 32f, 130f,
+            c.drawText(Tr.t("No zone has a draft yet: the drafts are made as you walk (the route's data and your learned roads)."), 32f, 130f,
                 UiKit.bodyPaint(26f, Theme.textDim))
             return
         }
@@ -381,7 +381,7 @@ class SafePathReview(context: Context) : View(context) {
             val r = RectF(box.left + 8f, y, box.right - 8f, y + rowH)
             UiKit.menuRow(c, r, rows[i].name, i == listSel, size = 32f)
             val sp = UiKit.bodyPaint(24f, Theme.textDim).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(rows[i].state, r.right - 24f, r.centerY() + 9f, sp)
+            c.drawText(Tr.t(rows[i].state), r.right - 24f, r.centerY() + 9f, sp)
             while (rowHits.size < i) rowHits.add(RectF())
             rowHits.add(r)
             y += rowH
@@ -430,7 +430,7 @@ class SafePathReview(context: Context) : View(context) {
         fun label(t: String, x: Float, y: Float) {
             var yy = y; val w = tp.measureText(t); var r = RectF(x, yy - 22f, x + w, yy + 6f); var g = 0
             while (taken.any { RectF.intersects(it, r) } && g++ < 10) { yy += 28f; r = RectF(x, yy - 22f, x + w, yy + 6f) }
-            taken.add(r); c.drawText(t, x, yy, tp)
+            taken.add(r); c.drawText(Tr.t(t), x, yy, tp)
         }
         for (n in e.nodes) {
             val x = sx(u(n.wy)); val y = sy(v(n.wx))
@@ -462,9 +462,9 @@ class SafePathReview(context: Context) : View(context) {
         c.restore()
         // the bar: the zone, its progress
         val ok = e.edges.count { it.state != SafePath.DRAFT }
-        c.drawText("SafePath review: $zoneName", 32f, 50f, UiKit.titlePaint(36f))
+        c.drawText(Tr.t("SafePath review: $zoneName"), 32f, 50f, UiKit.titlePaint(36f))
         val sp = UiKit.bodyPaint(24f, Theme.textDim).apply { textAlign = Paint.Align.RIGHT }
-        c.drawText("$ok of ${e.edges.size} ways checked, ${e.exits.size} exits" + (if (e.reviewed) "  -  Reviewed" else ""), width - 32f, 50f, sp)
+        c.drawText(Tr.t("$ok of ${e.edges.size} ways checked, ${e.exits.size} exits" + (if (e.reviewed) "  -  Reviewed" else "")), width - 32f, 50f, sp)
         drawMenu(c)
     }
 
@@ -478,7 +478,7 @@ class SafePathReview(context: Context) : View(context) {
         val y = (sy(curY) - h / 2f).coerceIn(TOP + 8f, height - BOTTOM - h - 8f)
         val box = RectF(x, y, x + w, y + h)
         UiKit.menu(c, box, solid = true)
-        c.drawText(ellipsize(menuTitle, w - 44f), box.left + 22f, box.top + 46f, UiKit.titlePaint(28f))
+        c.drawText(Tr.t(ellipsize(menuTitle, w - 44f)), box.left + 22f, box.top + 46f, UiKit.titlePaint(28f))
         for ((i, it) in m.withIndex()) {
             val r = RectF(box.left + 8f, box.top + 62f + i * rowH, box.right - 8f, box.top + 62f + (i + 1) * rowH)
             UiKit.menuRow(c, r, it.label, i == menuSel, size = 28f)
@@ -521,7 +521,7 @@ class SafePathReview(context: Context) : View(context) {
         for ((g, t) in prompts) {
             for (k in g) { UiKit.pad(c, glyph(k), x + icon / 2f, cy, icon); x += icon + 6f }
             x += 8f
-            c.drawText(t, x, cy + 9f, tp)
+            c.drawText(Tr.t(t), x, cy + 9f, tp)
             x += tp.measureText(t) + 30f
         }
     }

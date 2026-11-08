@@ -13,6 +13,25 @@ class TrTest {
         assertTrue(es.size > 80)
     }
 
+    /** the whole app's words (assets companion/i18n): they load, every value keeps the English's %s count, a room's words translate */
+    @Test fun theAppsWordFiles() {
+        val dir = listOf("../companion/app/src/main/assets/companion/i18n", "companion/app/src/main/assets/companion/i18n")
+            .map { java.io.File(it) }.first { it.isDirectory }
+        for (l in listOf("es", "fr")) {
+            val text = java.io.File(dir, "$l.json").readText()
+            Tr.load(l, text)
+            val o = org.json.JSONObject(text)
+            for (sec in listOf("plain", "templates")) {
+                val m = o.getJSONObject(sec)
+                for (k in m.keys()) assertEquals("$l: $k", k.split("%s").size, m.getString(k).split("%s").size)
+            }
+            assertTrue("$l has the rooms' words", o.getJSONObject("plain").length() > 1300)
+        }
+        assertEquals("Aceptar", Tr.t("OK", "es"))                       // the start screen's own words still win
+        assertTrue(Tr.t("Nothing in your bags that this vendor will buy.", "fr") != "Nothing in your bags that this vendor will buy.")
+        assertTrue(Tr.t("Remove Brannoc from your calendar?", "es").contains("Brannoc"))
+    }
+
     @Test fun wordsAndTemplates() {
         assertEquals("Jugar", Tr.t("Play", "es"))
         assertEquals("Jouer", Tr.t("Play", "fr"))

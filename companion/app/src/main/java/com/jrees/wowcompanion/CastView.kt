@@ -1729,7 +1729,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             if (legacy.isEmpty()) {
                 pLabel.textAlign = Paint.Align.CENTER
                 pLabel.color = Theme.dim
-                c.drawText("Waiting", width / 2f, height / 2f, pLabel)
+                c.drawText(Tr.t("Waiting"), width / 2f, height / 2f, pLabel)
                 pLabel.textAlign = Paint.Align.LEFT
                 pLabel.color = Theme.gold
                 return
@@ -1923,7 +1923,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
     private fun drawLabel(c: Canvas, text: String) {
         pLabel.color = Theme.gold
-        c.drawText(text, margin, margin - pLabel.ascent(), pLabel)
+        c.drawText(Tr.t(text), margin, margin - pLabel.ascent(), pLabel)
     }
 
     /**
@@ -2165,8 +2165,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             st.countText?.let { t ->
                 val x = cx + half - 5f * k
                 val y = cy + half - 5f * k
-                c.drawText(t, x, y, pCountEdge)
-                c.drawText(t, x, y, pCount)
+                c.drawText(Tr.t(t), x, y, pCountEdge)
+                c.drawText(Tr.t(t), x, y, pCount)
             }
         }
 
@@ -2225,7 +2225,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             pGlyph.color = ink
             val ts = pGlyph.textSize
             if (keyText.length > 1) pGlyph.textSize = ts * 0.75f
-            c.drawText(keyText, gx, gy - (pGlyph.ascent() + pGlyph.descent()) / 2f, pGlyph)
+            c.drawText(Tr.t(keyText), gx, gy - (pGlyph.ascent() + pGlyph.descent()) / 2f, pGlyph)
             pGlyph.textSize = ts
             return
         }
@@ -2260,7 +2260,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             return
         }
         pGlyph.color = ink
-        c.drawText(faceLetters[face], gx, gy - (pGlyph.ascent() + pGlyph.descent()) / 2f, pGlyph)
+        c.drawText(Tr.t(faceLetters[face]), gx, gy - (pGlyph.ascent() + pGlyph.descent()) / 2f, pGlyph)
     }
 
     /** code-drawn stand-ins for atlas art we cannot load; r = the icon's half size */
@@ -2426,7 +2426,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (pointed in 0..7) {
             val p = radialName ?: UiKit.bodyPaint(30f, Color.WHITE).also { it.textAlign = Paint.Align.CENTER; radialName = it }
             p.textSize = 30f * sc
-            c.drawText(r.names[pointed] ?: "", cx, cy + p.textSize / 3f, p)
+            c.drawText(Tr.t(r.names[pointed] ?: ""), cx, cy + p.textSize / 3f, p)
         }
     }
 
@@ -2820,7 +2820,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val tb = aBarTextBox
             if (tb != null) drawBox(c, tb, pg[0], pg[1], pg[2], pg[3], ai)
             else { pSwing.color = Color.argb((200 * a).toInt(), 0, 0, 0); c.drawRoundRect(pg[0], pg[1], pg[2], pg[3], 8f * s, 8f * s, pSwing) }
-            c.drawText(text, (pg[0] + pg[2]) / 2f, (pg[1] + pg[3]) / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
+            c.drawText(Tr.t(text), (pg[0] + pg[2]) / 2f, (pg[1] + pg[3]) / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
         } else if (restGap(s)) {
             // the user (test42): "when casting out of combat could we make the spell text appear above the bar with the same font size as in
             // combat?": the fight's TextBox plate and type, standing on the bar, centred in the free gap between the two button groups
@@ -2835,12 +2835,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val tb = aBarTextBox
             if (tb != null) drawBox(c, tb, mx - pw / 2f, t0, mx + pw / 2f, b0, ai)
             else { pSwing.color = Color.argb((200 * a).toInt(), 0, 0, 0); c.drawRoundRect(mx - pw / 2f, t0, mx + pw / 2f, b0, 8f * s, 8f * s, pSwing) }
-            c.drawText(text, mx, (t0 + b0) / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
+            c.drawText(Tr.t(text), mx, (t0 + b0) / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
         } else {
             tp.textSize = bh * CastFx.NAME_SIZE
             tp.setShadowLayer(1.5f * u, u, u, Color.BLACK); tp.alpha = ai
             val text = CastFx.fit(name, w - 2f * CastFx.NAME_PAD * s) { tp.measureText(it) }
-            c.drawText(text, w / 2f, height - bh / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
+            c.drawText(Tr.t(text), w / 2f, height - bh / 2f - (tp.ascent() + tp.descent()) / 2f, tp)
         }
         return next
     }
@@ -3282,7 +3282,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                     pLabel.textSize = 16f * k
                     pLabel.textAlign = Paint.Align.CENTER
                     pLabel.color = if (current) Theme.gold else Color.WHITE
-                    c.drawText(PAGE_TEXT[i], cx, cy - (pLabel.ascent() + pLabel.descent()) / 2f, pLabel)
+                    c.drawText(Tr.t(PAGE_TEXT[i]), cx, cy - (pLabel.ascent() + pLabel.descent()) / 2f, pLabel)
                     pLabel.textAlign = Paint.Align.LEFT
                     pLabel.textSize = 9f * k
                     continue
@@ -3295,7 +3295,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             pStroke.color = when { current -> Theme.gold; filled -> Theme.bronzeDim; else -> CHIP_EMPTY_EDGE }
             c.drawRoundRect(cx - half, cy - half, cx + half, cy + half, 3f * k, 3f * k, pStroke)
             pGlyph.color = when { current -> Theme.gold; filled -> Theme.textDim; else -> CHIP_EMPTY_TEXT }
-            c.drawText(PAGE_TEXT[i], cx, cy - (pGlyph.ascent() + pGlyph.descent()) / 2f, pGlyph)
+            c.drawText(Tr.t(PAGE_TEXT[i]), cx, cy - (pGlyph.ascent() + pGlyph.descent()) / 2f, pGlyph)
             pGlyph.textSize = 10f * k
         }
     }
@@ -3311,7 +3311,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         c.drawRoundRect(cx - w / 2f, cy - ph / 2f, cx + w / 2f, cy + ph / 2f, ph / 2f, ph / 2f, pStroke)
         pText.color = GLYPH_INK
         pText.textAlign = Paint.Align.CENTER
-        c.drawText(text, cx, cy - (pText.ascent() + pText.descent()) / 2f, pText)
+        c.drawText(Tr.t(text), cx, cy - (pText.ascent() + pText.descent()) / 2f, pText)
         pText.textAlign = Paint.Align.LEFT
         return w
     }
@@ -3362,7 +3362,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
         if (word != null) {
             pLabel.color = Theme.gold
-            c.drawText(word, x + 4f * k, cy - (pLabel.ascent() + pLabel.descent()) / 2f, pLabel)
+            c.drawText(Tr.t(word), x + 4f * k, cy - (pLabel.ascent() + pLabel.descent()) / 2f, pLabel)
         }
     }
 
@@ -3397,7 +3397,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             pText.textSize = 7f * k
             pText.color = Theme.text
             val tx = x + gw + 3f * k
-            c.drawText(word, tx, cy - (pText.ascent() + pText.descent()) / 2f, pText)
+            c.drawText(Tr.t(word), tx, cy - (pText.ascent() + pText.descent()) / 2f, pText)
             x = tx + pText.measureText(word) + 10f * k
         }
     }

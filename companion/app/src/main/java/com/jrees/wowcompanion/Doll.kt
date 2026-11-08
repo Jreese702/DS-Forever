@@ -114,9 +114,9 @@ object Doll {
                     UiKit.asNumber(pCount, shadow = false)
                     val tx = box.right - 3f; val ty = box.bottom - 3f
                     pCount.style = Paint.Style.STROKE; pCount.strokeWidth = 4f; pCount.color = Color.BLACK
-                    c.drawText(n.toString(), tx, ty, pCount)
+                    c.drawText(Tr.t(n.toString()), tx, ty, pCount)
                     pCount.style = Paint.Style.FILL; pCount.color = Color.WHITE
-                    c.drawText(n.toString(), tx, ty, pCount)
+                    c.drawText(Tr.t(n.toString()), tx, ty, pCount)
                 }
             } else {
                 val name = if (slot == 18 && relic) "relic" else (EMPTY_ART[slot] ?: "generic")

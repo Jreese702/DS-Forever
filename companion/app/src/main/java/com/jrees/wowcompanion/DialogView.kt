@@ -498,7 +498,7 @@ class DialogView(context: Context) : View(context) {
             val total = l.sumOf { p.measureText(it.s).toDouble() }.toFloat()
             var x = cx - total / 2f
             val base = y + lineH / 2f - (p.ascent() + p.descent()) / 2f
-            for (r in l) { p.color = r.colour; c.drawText(r.s, x, base, p); x += p.measureText(r.s) }
+            for (r in l) { p.color = r.colour; c.drawText(Tr.t(r.s), x, base, p); x += p.measureText(r.s) }
             y += lineH
         }
         return y
@@ -630,7 +630,7 @@ class DialogView(context: Context) : View(context) {
         if (d.left > 0) {
             y += 22f
             val p = UiKit.bodyPaint(30f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText("Answers itself in " + clock(left), cx, y + 20f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t("Answers itself in " + clock(left)), cx, y + 20f - (p.ascent() + p.descent()) / 2f, p)
             y += 40f
         }
         if (d.bar) {
@@ -649,7 +649,7 @@ class DialogView(context: Context) : View(context) {
             val tw = p.measureText(words)
             val x0 = cx - (g + 14f + tw) / 2f
             UiKit.pad(c, fg, x0 + g / 2f, y + g / 2f, g, 255)
-            c.drawText(words, x0 + g + 14f, y + g / 2f - (p.ascent() + p.descent()) / 2f, p)
+            c.drawText(Tr.t(words), x0 + g + 14f, y + g / 2f - (p.ascent() + p.descent()) / 2f, p)
             y += 56f
         }
 
@@ -695,7 +695,7 @@ class DialogView(context: Context) : View(context) {
         val nt = noteText
         if (nt != null && System.currentTimeMillis() - noteAt < 2500) {
             val p = UiKit.bodyPaint(28f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(nt, cx, h - 28f, p)
+            c.drawText(Tr.t(nt), cx, h - 28f, p)
         }
         signOfLife()
     }
@@ -754,7 +754,7 @@ class DialogView(context: Context) : View(context) {
         val w = p.measureText(text) + 60f
         rollsPill = RectF(16f, height - 86f, 16f + w, height - 22f)
         UiKit.menu(c, rollsPill, solid = true)
-        c.drawText(text, rollsPill.left + 30f, rollsPill.centerY() + 9f, p)
+        c.drawText(Tr.t(text), rollsPill.left + 30f, rollsPill.centerY() + 9f, p)
         hits.add(rollsPill to "rolls:open")
     }
 
@@ -781,7 +781,7 @@ class DialogView(context: Context) : View(context) {
             if (rl === shown) UiKit.focus(c, RectF(card.left - 4f, card.top - 6f, card.right + 4f, card.bottom + 6f))
             hits.add(card to "card:${rl.optInt("id")}")
         }
-        if (rollsMore > 0) c.drawText("+$rollsMore more", cx0 + 12f, top + 4 * (ch + 26f) + 18f, UiKit.bodyPaint(24f, Theme.dim))
+        if (rollsMore > 0) c.drawText(Tr.t("+$rollsMore more"), cx0 + 12f, top + 4 * (ch + 26f) + 18f, UiKit.bodyPaint(24f, Theme.dim))
         // the chosen roll's tooltip; gear with a worn item in that slot: Currently Equipped beside it (two worn: one under the other)
         if (shown != null) {
             val tx = cx0 + cw + 26f
@@ -822,7 +822,7 @@ class DialogView(context: Context) : View(context) {
             val reason = (if (!canNeed) why?.let { str(it, "need") } else null) ?: (if (!canGreed && !tm) why?.let { str(it, "greed") } else null)
             if (reason != null) {
                 val p = android.text.TextPaint(UiKit.bodyPaint(22f, Theme.unusable))
-                val lay = android.text.StaticLayout.Builder.obtain(reason, 0, reason.length, p, (bx - 470f - inner.left - 24f).toInt())
+                val lay = android.text.StaticLayout.Builder.obtain(Tr.t(reason), 0, Tr.t(reason).length, p, (bx - 470f - inner.left - 24f).toInt())
                     .setMaxLines(3).build()
                 c.save(); c.translate(inner.left + 20f, cy - lay.height / 2f); lay.draw(c); c.restore()
             }
@@ -840,7 +840,7 @@ class DialogView(context: Context) : View(context) {
         val nt = noteText ?: return
         if (System.currentTimeMillis() - noteAt >= 2500) return
         val p = UiKit.bodyPaint(26f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(nt, width / 2f, height - 150f, p)
+        c.drawText(Tr.t(nt), width / 2f, height - 150f, p)
     }
 
     companion object {
