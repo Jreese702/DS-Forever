@@ -97,6 +97,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private lateinit var pauseView: HomePauseView
     /** the TARGET radial (Y out of a fight with a target; PadMap m101 / Quests q51) */
     private lateinit var targetRadial: TargetRadialView
+    /** 1.0.18: LB held on Home pictures the game's party targeting (LbPartyView) */
+    private lateinit var lbView: LbPartyView
     private fun tradOpen() = ::targetRadial.isInitialized && targetRadial.isOpen
     /** Bags' pin picker (the radial's "+"), hung over the room; Home's radial drives it */
     private lateinit var pinPicker: BagsPinPicker
@@ -871,6 +873,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         pauseView.onPick = { s -> pausePick(s) }
         // THE TARGET RADIAL: the pause wheel's slide, close and place; a pick runs as the party menu's entries do
         targetRadial = TargetRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
+        // 1.0.18 (the user: "When holding LB i want the bottom screen to shift around like when opening a radial ... the players bar with
+        // the A button glyph ... a cross layout of the other 4 party members with the dpad glyphs ... We are just visualizing it"): on
+        // Home, LB alone held (CastView's reader) slides Home's panels aside - Party mode's view with them - and shows the targeting
+        lbView = LbPartyView(this)
+        lbView.onSlide = { t -> if (room == Room.HOME && !pauseView.isOpen && !tradOpen()) pauseSlideAll(t) }
+        castView.onShoulders = { lb, rb ->
+            val free = room == Room.HOME && !pauseView.isOpen && !tradOpen() && !(::radialView.isInitialized && radialView.isOpen)
+            lbView.lb(lb && !rb && free)
+        }
+        castView.onButtonsAlso = { m -> lbView.buttons(m) }
         // the context menus' icons (the raid markers too) asked for early, so the phone's icon harvest has them before a wheel opens
         ui.postDelayed({ runCatching { MenuIcons.prefetch() } }, 8_000L)
         targetRadial.onSlide = { t -> pauseSlideAll(t) }
@@ -925,6 +937,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             addView(pauseView, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(targetRadial, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(lbView, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             // the radial's pin picker: over the room only (the bar stays below it)
             addView(pinPicker, FrameLayout.LayoutParams(
@@ -1877,6 +1891,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // ... and Party mode's menu for a party member (q49 src = "party"): its own view over Home's left column
             // Bags.lua: the game's "pick an item" (an armor kit / stone / enchant) started or ended: a kit used from the Character room
             "itarget" -> if (current) characterView.onItarget(msg.optBoolean("on"))
+            // PadMap m104: which LB button targets whom, from the game's own bindings (the LB picture)
+            "lbmap" -> LbMap.update(msg)
             "pmenu" -> if (current) {
                 when (msg.optString("src")) {
                     "party" -> if (partyWheelOpen()) targetRadial.fill(msg) else homeView.partyMenu.onDoc(msg)

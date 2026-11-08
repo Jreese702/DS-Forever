@@ -1089,7 +1089,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng", "hs", "g", "cw", "cc", "ch", "cs"}   # m79: hs, the health source; m92: g, the GUID (combat log)
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm103' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm104' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1285,8 +1285,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m103"' in SRC["padmap"],
-      "the versions: PadMap m103, PadTabCtl p33, Book b48")
+check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m104"' in SRC["padmap"],
+      "the versions: PadMap m104, PadTabCtl p33, Book b48")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
@@ -1712,6 +1712,22 @@ check(party_on_all(WX) == [True] * 9 and WX.eval('#VIOL') == 0, "m100: switched 
       list(WX.eval('VIOL').values()))
 WX.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); NOW = NOW + 2; tick(0.1)')
 check(party_on_all(WX) == [None] * 9, "m100: ... it ends at the fight's end", party_on_all(WX))
+
+# ================================================================ m104: the LB party-target map, read from the game's own bindings
+# (the user, 2026-11-08: "Not sure: read it from the game")
+WL = world(pre='CVARS = { GamePadEmulateCtrl = "PADLSHOULDER", GamePadEmulateShift = "PADLTRIGGER" }; '
+               'function GetCVar(n) return CVARS[n] end; '
+               'LBKEYS = { TARGETSELF = { "CTRL-PAD1" }, TARGETPARTYMEMBER1 = { "F2", "CTRL-PADDUP" }, TARGETPARTYMEMBER2 = { "CTRL-PADDRIGHT" }, '
+               'TARGETPARTYMEMBER3 = { "CTRL-PADDDOWN" }, TARGETPARTYMEMBER4 = { "CTRL-PADDLEFT" } }; '
+               'function GetBindingKey(b) local t = LBKEYS[b]; if t then return unpack(t) end; return KEYOF and KEYOF[b] end')
+n0 = nsent(WL)
+WL.execute('fire("PLAYER_ENTERING_WORLD", false, true); advance(3)')
+lm = docs(WL, n0, 'lbmap')
+d = lm[-1] if lm else {}
+check(bool(lm) and d.get('mod') == 'CTRL' and d.get('self') == 'PAD1' and d.get('p1') == 'PADDUP' and d.get('p2') == 'PADDRIGHT'
+      and d.get('p3') == 'PADDDOWN' and d.get('p4') == 'PADDLEFT',
+      "m104: lbmap from the game's bindings: LB = Ctrl, A = you, D-pad = party1..4", {k: d.get(k) for k in ('mod', 'self', 'p1', 'p2', 'p3', 'p4')})
+check(d.get('keys', {}).get('p1') == ['F2', 'CTRL-PADDUP'], "m104: every key found is in the document (a keyboard key is not LB's)", d.get('keys', {}).get('p1'))
 
 print('ALL PASS (%d checks)' % passes if fails == 0 else '%d FAILED (of %d)' % (fails, fails + passes))
 sys.exit(1 if fails else 0)

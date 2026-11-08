@@ -1246,8 +1246,14 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
     // =================================================================== controller -> layer
 
+    /** 1.0.18: LB / RB held, for Home's LB party picture (LbPartyView) */
+    var onShoulders: ((lb: Boolean, rb: Boolean) -> Unit)? = null
+    /** 1.0.18: a second listener on the held buttons (the LB picture's press feedback) */
+    var onButtonsAlso: ((held: Int) -> Unit)? = null
+
     private fun onPad(lt: Boolean, rt: Boolean, lb: Boolean, rb: Boolean) {
         padLt = lt; padRt = rt; padLb = lb; padRb = rb
+        onShoulders?.invoke(lb, rb)
         noteClassRadial()                                                  // f-class-radial: Home's mirror
         noteJoin(SystemClock.elapsedRealtime())
         setLayer(computeLayer())
@@ -1280,6 +1286,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
     private fun onButtons(mask: Int) {
         onPadButtons?.invoke(mask)
+        onButtonsAlso?.invoke(mask)
         val down = mask and held.inv()
         // b-class-takeover: A / B while the class wheel is open are the wheel's (the guest keeps them from the game)
         if (chordSide != ClassChord.NONE && down != 0) {
