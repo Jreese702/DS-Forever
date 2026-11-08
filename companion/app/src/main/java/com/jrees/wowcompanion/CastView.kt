@@ -2173,7 +2173,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         // ---- glyph badge, 15 units, top-right (squares (+11.5,+11.5), circles (+11.5,+8.5))
         val gx = cx + 11.5f * k
         val gy = cy - (if (circle) 8.5f else 11.5f) * k
-        val outOfRange = st != null && st.r == 0 && !empty
+        // RED GLYPH (the user, 2026-11-07: "When something is out of range or there's not enough mana the glyph text should be red"):
+        // out of range (r 0) OR not enough mana / power (m 1)
+        val outOfRange = st != null && !empty && (st.r == 0 || st.m == 1)
         // a collapsed bar hides its prompts (mainactionbarframe.lua HideButtonIcons)
         if (!(drawCollapsed && keyText == null) && b?.noBadge != true) drawGlyphBadge(c, gx, gy, pos, keyText, outOfRange, pressed)
         // the companion mark: a small gold "two screens" tag in the lower-left corner (the slot drives the bottom screen)
@@ -2204,12 +2206,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         // the preset's real glyph tile, its disc BADGE_INK units across: pressed art while held,
         // Blizzard's Disabled art while out of range (the red tint only stands in until that art
         // is on the device)
+        // the user's red (2026-11-07) over Blizzard's grey Disabled art: the slot's own glyph, tinted red while it cannot reach / be paid for
         if (keyText == null && pos < 8) {
-            val dis = if (outOfRange && !pressed) aGlyphD[pos] else null
-            val a = dis ?: (if (pressed) aGlyphP[pos] else null) ?: aGlyph[pos]
+            val a = (if (pressed) aGlyphP[pos] else null) ?: aGlyph[pos]
             if (a != null) {
-                val tint = outOfRange && dis == null && aGlyphD[pos] == null
-                drawInk(c, a, gx, gy, BADGE_INK, 255, if (tint) cfRange else null)
+                drawInk(c, a, gx, gy, BADGE_INK, 255, if (outOfRange && !pressed) cfRange else null)
                 return
             }
         }
@@ -2222,7 +2223,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val ink = GLYPH_INK
         if (keyText != null) {
             if (keyText.isEmpty()) return
-            pGlyph.color = ink
+            pGlyph.color = if (outOfRange) GLYPH_RED else ink
             val ts = pGlyph.textSize
             if (keyText.length > 1) pGlyph.textSize = ts * 0.75f
             c.drawText(Tr.t(keyText), gx, gy - (pGlyph.ascent() + pGlyph.descent()) / 2f, pGlyph)
@@ -3581,6 +3582,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private val BADGE = Color.rgb(30, 27, 24)
         private val BADGE_EDGE = Color.rgb(150, 140, 120)
         private val BADGE_RED = Color.rgb(160, 28, 22)
+        /** a key name's letters when the slot is out of range / short of mana (the game's red hotkey text) */
+        private val GLYPH_RED = Color.rgb(255, 72, 56)
         private val BADGE_RED_EDGE = Color.rgb(255, 120, 100)
         private val GLYPH_INK = Color.rgb(230, 225, 215)
         private val BADGE_BG = Color.rgb(28, 22, 15)
