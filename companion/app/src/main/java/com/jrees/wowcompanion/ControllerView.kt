@@ -350,7 +350,7 @@ class ControllerView(
         val line = if (on) "On: the plain D-pad opens these and Start the pause wheel, in fights too."
                    else "Off: the plain D-pad and Start are the game's own (WoW Defaults)."
         val pl = TextPaint(UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim })
-        val lineLay = StaticLayout.Builder.obtain(Tr.t(line), 0, Tr.t(line).length, pl, (SPLIT - 64f).toInt())
+        val lineLay = StaticLayout.Builder.obtain(Tr.span(line), 0, Tr.span(line).length, pl, (SPLIT - 64f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(0f, 1f)
             .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).build()
         c.save(); c.translate(40f, 300f + pl.ascent()); lineLay.draw(c); c.restore()
@@ -373,7 +373,7 @@ class ControllerView(
             val said = "$n ${if (n == 1) "thing" else "things"} an older DS build left here"
             val pt = TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim })
             // the line clear of the Home bar's frame (the button's width less its side next to it)
-            val sl = StaticLayout.Builder.obtain(Tr.t(said), 0, Tr.t(said).length, pt, (r.width() - TEXT_INSET).toInt())
+            val sl = StaticLayout.Builder.obtain(Tr.span(said), 0, Tr.span(said).length, pt, (r.width() - TEXT_INSET).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setLineSpacing(0f, 1f).setMaxLines(2)
                 .setEllipsize(TextUtils.TruncateAt.END).build()
             c.save(); c.translate(r.left + TEXT_INSET, r.top - 8f - sl.height); sl.draw(c); c.restore()
@@ -386,7 +386,7 @@ class ControllerView(
             val cnt = clean?.shared?.names?.size ?: 0
             val said = "$cnt shared DS ${if (cnt == 1) "macro" else "macros"} no character uses"
             val pt = TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim })
-            val sl = StaticLayout.Builder.obtain(Tr.t(said), 0, Tr.t(said).length, pt, (r.width() - TEXT_INSET).toInt())
+            val sl = StaticLayout.Builder.obtain(Tr.span(said), 0, Tr.span(said).length, pt, (r.width() - TEXT_INSET).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setLineSpacing(0f, 1f).setMaxLines(2)
                 .setEllipsize(TextUtils.TruncateAt.END).build()
             c.save(); c.translate(r.left, r.top - 8f - sl.height); sl.draw(c); c.restore()
@@ -400,7 +400,7 @@ class ControllerView(
             val text = "${sh.names.joinToString(", ")}: an older DS Forever build made ${if (sh.names.size == 1) "it" else "them"} in your General " +
                 "Macros, shared by all your characters. No checked character has one on a button now. Delete removes only these; a box " +
                 "names them first."
-            val lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, TextPaint(UiKit.inkPaint(24f)), (x1 - x0 - 16f).toInt())
+            val lay = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, TextPaint(UiKit.inkPaint(24f)), (x1 - x0 - 16f).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
             c.save(); c.translate(x0 + 8f, top + 100f); lay.draw(c); c.restore()
             return
@@ -411,7 +411,7 @@ class ControllerView(
             c.drawText(Tr.t("Clean up"), x0 + 8f, top + 30f - pn.ascent() - 4f, pn)
             val text = "An older DS Forever build put macros on ${who()}'s buttons. Clean up puts your spells back, keeps a DS command as one " +
                 "without a macro, and deletes only DS Forever's own macros. A box names everything first."
-            val lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, TextPaint(UiKit.inkPaint(24f)), (x1 - x0 - 16f).toInt())
+            val lay = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, TextPaint(UiKit.inkPaint(24f)), (x1 - x0 - 16f).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
             c.save(); c.translate(x0 + 8f, top + 100f); lay.draw(c); c.restore()
             return
@@ -425,7 +425,7 @@ class ControllerView(
         c.drawText(Tr.t("D-pad " + arrayOf("Left", "Up", "Right", "Down")[sel - 1]), x0 + 160f, top + 120f, pi)
         val text = d.what + if (!on) " The toolbar is off now." else ""
         val pd = TextPaint(UiKit.inkPaint(24f))
-        val lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, pd, (x1 - x0 - 16f).toInt())
+        val lay = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, pd, (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         c.save(); c.translate(x0 + 8f, top + 170f); lay.draw(c); c.restore()
         if (sel == 2) {
@@ -436,7 +436,7 @@ class ControllerView(
             val pickA = HomeSettings.radialPickA
             val ph = UiKit.inkPaint(26f, heading = true)
             val note = "The pause menu and the spell wheel have their own pairs in Settings > Controller."
-            val nl = StaticLayout.Builder.obtain(Tr.t(note), 0, Tr.t(note).length, TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }),
+            val nl = StaticLayout.Builder.obtain(Tr.span(note), 0, Tr.span(note).length, TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }),
                 (x1 - x0 - 16f).toInt()).setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(2f, 1f).setMaxLines(2).build()
             c.save(); c.translate(x0 + 8f, h - 392f - nl.height); nl.draw(c); c.restore()
             c.drawText(Tr.t("Item wheel (D-pad Up)"), x0 + 8f, h - 352f, ph)
@@ -636,7 +636,7 @@ class ControllerView(
         var lay: StaticLayout
         while (true) {
             // smaller to fit, down to 24 px (UI Art: every name readable), never past the box
-            lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, TextPaint(UiKit.bodyPaint(size, Theme.text)), (inner.width() - 40f).toInt())
+            lay = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, TextPaint(UiKit.bodyPaint(size, Theme.text)), (inner.width() - 40f).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
             if (lay.height <= textBottom - textTop || size <= 24f) break
             size -= 1f

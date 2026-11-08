@@ -122,7 +122,7 @@ class QuestPanel(private val host: Host) {
     }
 
     private fun wrap(text: String, p: Paint, w: Float): android.text.StaticLayout =
-        android.text.StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, android.text.TextPaint(p), w.toInt().coerceAtLeast(10)).setLineSpacing(0f, 1.05f).build()
+        android.text.StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, android.text.TextPaint(p), w.toInt().coerceAtLeast(10)).setLineSpacing(0f, 1.05f).build()
 
     fun draw(c: Canvas, x: Float, y0: Float, yMax: Float, maxW: Float) {
         hits.clear()

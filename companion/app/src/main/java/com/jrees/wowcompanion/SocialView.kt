@@ -471,7 +471,7 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         }
         head(c, r, g, "${model.guildMembers} members   ${model.guildOnline} online")
         model.guildMotd?.let { motd ->
-            val sl = StaticLayout.Builder.obtain(Tr.t(motd), 0, Tr.t(motd).length, TextPaint(UiKit.bodyPaint(23f, Theme.motd)), (r.width() - 60f).toInt())
+            val sl = StaticLayout.Builder.obtain(Tr.span(motd), 0, Tr.span(motd).length, TextPaint(UiKit.bodyPaint(23f, Theme.motd)), (r.width() - 60f).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(2)
                 .setEllipsize(android.text.TextUtils.TruncateAt.END).build()
             c.save(); c.translate(24f, r.top + 54f); sl.draw(c); c.restore()
@@ -644,7 +644,7 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         UiKit.cover(c, RectF(0f, 0f, w, h))
         val text = confirmText(act, name)
         val tp = TextPaint(UiKit.bodyPaint(42f, Color.WHITE))
-        val sl = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, tp, (1040f - 140f).toInt()).setAlignment(Layout.Alignment.ALIGN_CENTER)
+        val sl = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, tp, (1040f - 140f).toInt()).setAlignment(Layout.Alignment.ALIGN_CENTER)
             .setLineSpacing(14f, 1f).build()
         val boxH = sl.height + 40f + 111f + 2 * 50f + 36f
         val box = RectF(w / 2f - 520f, maxOf(30f, h / 2f - boxH / 2f), w / 2f + 520f, maxOf(30f, h / 2f - boxH / 2f) + boxH)

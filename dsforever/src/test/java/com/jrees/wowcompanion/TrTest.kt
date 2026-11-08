@@ -6,6 +6,22 @@ import org.junit.Test
 
 /** 2026-11-07: Spanish and French for the start screen and the login (Tr) */
 class TrTest {
+    /** the user on test23: "Why is my chat text white in the home screen for everything?" - a coloured line keeps its spans */
+    @Test fun aColouredLineKeepsItsColours() {
+        val words = "[Party] Brannoc: OK"
+        val coloured = object : android.text.Spanned, CharSequence by words {
+            override fun <T : Any?> getSpans(start: Int, end: Int, type: Class<T>?): Array<T> =
+                @Suppress("UNCHECKED_CAST") (java.lang.reflect.Array.newInstance(type ?: Any::class.java, 1) as Array<T>)
+            override fun getSpanStart(tag: Any?) = 0
+            override fun getSpanEnd(tag: Any?) = words.length
+            override fun getSpanFlags(tag: Any?) = 0
+            override fun nextSpanTransition(start: Int, limit: Int, type: Class<*>?) = limit
+            override fun toString() = words
+        }
+        assertTrue("the same object, spans and all", Tr.span(coloured) === coloured)
+        assertEquals("OK", Tr.span("OK").toString())                  // plain text: as Tr.t
+    }
+
     @Test fun spanishAndFrenchCoverTheSameWords() {
         val es = Tr.keys("es"); val fr = Tr.keys("fr")
         assertEquals("in Spanish only: ${es - fr}", emptySet<String>(), es - fr)

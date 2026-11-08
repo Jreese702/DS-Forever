@@ -822,7 +822,7 @@ class DialogView(context: Context) : View(context) {
             val reason = (if (!canNeed) why?.let { str(it, "need") } else null) ?: (if (!canGreed && !tm) why?.let { str(it, "greed") } else null)
             if (reason != null) {
                 val p = android.text.TextPaint(UiKit.bodyPaint(22f, Theme.unusable))
-                val lay = android.text.StaticLayout.Builder.obtain(Tr.t(reason), 0, Tr.t(reason).length, p, (bx - 470f - inner.left - 24f).toInt())
+                val lay = android.text.StaticLayout.Builder.obtain(Tr.span(reason), 0, Tr.span(reason).length, p, (bx - 470f - inner.left - 24f).toInt())
                     .setMaxLines(3).build()
                 c.save(); c.translate(inner.left + 20f, cy - lay.height / 2f); lay.draw(c); c.restore()
             }

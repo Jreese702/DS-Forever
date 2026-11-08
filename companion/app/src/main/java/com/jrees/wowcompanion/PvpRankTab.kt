@@ -134,7 +134,7 @@ object PvpRankTab {
     /** The game's text wrapped to [width], each run in its own colour ([p]'s colour for the rest). */
     private fun layout(text: String, p: Paint, width: Float, maxLines: Int = Int.MAX_VALUE,
                        align: Layout.Alignment = Layout.Alignment.ALIGN_NORMAL): StaticLayout =
-        spanned(text).let { sb -> StaticLayout.Builder.obtain(Tr.t(sb), 0, Tr.t(sb).length, TextPaint(p), width.toInt().coerceAtLeast(1)) }
+        spanned(text).let { sb -> StaticLayout.Builder.obtain(Tr.span(sb), 0, Tr.span(sb).length, TextPaint(p), width.toInt().coerceAtLeast(1)) }
             .setAlignment(align).setLineSpacing(6f, 1f)
             .setMaxLines(maxLines).setEllipsize(if (maxLines == Int.MAX_VALUE) null else TextUtils.TruncateAt.END)
             .build()

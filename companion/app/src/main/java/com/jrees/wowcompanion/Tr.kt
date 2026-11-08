@@ -81,6 +81,14 @@ object Tr {
     /** any text a view draws (a CharSequence too) */
     fun t(s: CharSequence): String = t(s.toString(), lang())
 
+    /**
+     * a text LAYOUT's words (StaticLayout): text with spans (the chat's channel / name / class colours, links) comes back AS IT IS - its
+     * colours kept, a player's own words never translated; plain text is translated as [t]. (The user on test23: "Why is my chat text
+     * white in the home screen for everything?" - test18's wrap passed Home's coloured chat lines through [t], which returns a String.)
+     */
+    fun span(s: CharSequence): CharSequence =
+        if (s is android.text.Spanned && s.getSpans(0, s.length, Any::class.java).isNotEmpty()) s else t(s.toString(), lang())
+
     fun t(s: String, lang: String): String {
         if (lang == "en" || s.length < 2) return s
         synchronized(this) { cache[lang]?.get(s)?.let { return it } }

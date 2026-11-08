@@ -668,7 +668,7 @@ class GroupFinderView(context: Context) : View(context), BLeadsHome {
 
     private fun layoutOf(words: String, size: Float, width: Float, colour: Int = Theme.dim,
                          align: Layout.Alignment = Layout.Alignment.ALIGN_NORMAL): StaticLayout =
-        StaticLayout.Builder.obtain(Tr.t(words), 0, Tr.t(words).length, TextPaint(UiKit.bodyPaint(size, colour)), width.toInt())
+        StaticLayout.Builder.obtain(Tr.span(words), 0, Tr.span(words).length, TextPaint(UiKit.bodyPaint(size, colour)), width.toInt())
             .setAlignment(align).setLineSpacing(6f, 1f).build()
 
     private fun say(c: Canvas, r: RectF, words: String) {

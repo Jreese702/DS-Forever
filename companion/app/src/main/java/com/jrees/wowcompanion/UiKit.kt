@@ -949,7 +949,7 @@ object UiKit {
         } else if (p.measureText(name) <= room) {
             c.drawText(Tr.t(name), tx, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
         } else {
-            val l = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, p, room.toInt())
+            val l = StaticLayout.Builder.obtain(Tr.span(name), 0, Tr.span(name).length, p, room.toInt())
                 .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(0f, 0.95f).build()
             c.save(); c.translate(tx, r.centerY() - l.height / 2f); l.draw(c); c.restore()
         }
@@ -1530,7 +1530,7 @@ object UiKit {
         }
         // the name: the game's 125 x 30 box at (60, 15), two lines at most
         val np = TextPaint(bodyPaint(12.5f * k, colour))
-        val lay = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, np, (125f * k).toInt()).setMaxLines(2)
+        val lay = StaticLayout.Builder.obtain(Tr.span(name), 0, Tr.span(name).length, np, (125f * k).toInt()).setMaxLines(2)
             .setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(0f, 0.92f).build()
         c.save(); c.translate(r.left + 60f * k, r.top + 30f * k - lay.height / 2f); lay.draw(c); c.restore()
         // the roll icons: right of the name (x 188 .. the card's end)
@@ -2187,7 +2187,7 @@ object UiKit {
         c.drawText(Tr.t(qualityName(quality)), r.right - 4f * k, r.top + 6.5f * k - (pq.ascent() + pq.descent()) / 2f, pq)
         // the name: GameFontNormal in the quality colour, from 8 px right of the icon and 8 down, two lines at most
         val pn = TextPaint(bodyPaint(12.5f * k, colour)).apply { this.alpha = alpha }
-        val lay = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, pn, (r.right - 6f * k - tx).toInt().coerceAtLeast(10))
+        val lay = StaticLayout.Builder.obtain(Tr.span(name), 0, Tr.span(name).length, pn, (r.right - 6f * k - tx).toInt().coerceAtLeast(10))
             .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(0f, 0.95f).build()
         c.save(); c.translate(tx, if (lay.lineCount > 1) r.top + 13f * k else ic.centerY() - lay.height / 2f + 3f * k); lay.draw(c); c.restore()
     }
@@ -2689,7 +2689,7 @@ object UiKit {
         val room = r.right - (if (mark != null) 66f else 16f) - (r.left + 100f)
         while (p.measureText(label) > room && p.textSize > 28f) p.textSize -= 1f
         if (p.measureText(label) > room && r.height() >= 92f) {
-            val l = StaticLayout.Builder.obtain(Tr.t(label), 0, Tr.t(label).length, TextPaint(p), room.toInt()).setMaxLines(2)
+            val l = StaticLayout.Builder.obtain(Tr.span(label), 0, Tr.span(label).length, TextPaint(p), room.toInt()).setMaxLines(2)
                 .setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(0f, 0.92f).build()
             c.save(); c.translate(r.left + 100f, cy - l.height / 2f); l.draw(c); c.restore()
             return
@@ -5046,7 +5046,7 @@ object UiKit {
         val pl = bodyPaint(25f, Theme.gold)
         c.drawText(Tr.t(label), left + 8f, y - (pl.ascent() + pl.descent()) / 2f, pl)
         val pv = TextPaint(bodyPaint(25f, Color.WHITE))
-        val sl = StaticLayout.Builder.obtain(Tr.t(value), 0, Tr.t(value).length, pv, (right - left - 140f).toInt()).setLineSpacing(2f, 1f).build()
+        val sl = StaticLayout.Builder.obtain(Tr.span(value), 0, Tr.span(value).length, pv, (right - left - 140f).toInt()).setLineSpacing(2f, 1f).build()
         c.save(); c.translate(left + 140f, y - 16f); sl.draw(c); c.restore()
         return y + 12f + maxOf(32f, sl.height.toFloat())
     }
@@ -5164,7 +5164,7 @@ object UiKit {
         if (chosen && !inert) slotFocus(c, sq)
         val tx = x + s + 14f
         val p = TextPaint(bodyPaint(26f, if (inert) Theme.dim else Theme.gold))
-        val l = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, p, (r.right - tx).toInt().coerceAtLeast(1)).setMaxLines(2)
+        val l = StaticLayout.Builder.obtain(Tr.span(name), 0, Tr.span(name).length, p, (r.right - tx).toInt().coerceAtLeast(1)).setMaxLines(2)
             .setEllipsize(TextUtils.TruncateAt.END).build()
         c.save(); c.translate(tx, r.centerY() - l.height / 2f); l.draw(c); c.restore()
     }
@@ -5552,7 +5552,7 @@ object UiKit {
         val room = (r.right - 18f - left).toInt()
         val pt = TextPaint(bodyPaint(25f, colour))
         while (pt.measureText(title) > room && pt.textSize > 21f) pt.textSize -= 1f
-        val sl = StaticLayout.Builder.obtain(Tr.t(title), 0, Tr.t(title).length, pt, room).setMaxLines(2)
+        val sl = StaticLayout.Builder.obtain(Tr.span(title), 0, Tr.span(title).length, pt, room).setMaxLines(2)
             .setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(0f, 0.95f).build()
         val two = sl.lineCount > 1
         c.save(); c.translate(left, r.top + (if (two) 8f else 22f)); sl.draw(c); c.restore()
@@ -5889,7 +5889,7 @@ object UiKit {
         val pn = TextPaint(bodyPaint(30f * scale, nameColour))
         val pl = TextPaint(bodyPaint(24f * scale))
         // measure first: the box is as tall as what it holds
-        val nameL = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, pn, tw).setLineSpacing(2f, 1f).build()
+        val nameL = StaticLayout.Builder.obtain(Tr.span(name), 0, Tr.span(name).length, pn, tw).setLineSpacing(2f, 1f).build()
         val lays = lines.map { l ->
             pl.color = l.c
             val room = if (l.r != null) tw - pl.measureText(l.r).toInt() - 16 else tw

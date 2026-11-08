@@ -500,7 +500,7 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         noteBox = RectF(band)
         if (band.height() <= 0f) return
         val desc = page?.desc ?: ""
-        val sl = StaticLayout.Builder.obtain(Tr.t(desc), 0, Tr.t(desc).length, TextPaint(UiKit.bodyPaint(23f, Theme.text)), maxOf(1, (band.width() - 40f).toInt()))
+        val sl = StaticLayout.Builder.obtain(Tr.span(desc), 0, Tr.span(desc).length, TextPaint(UiKit.bodyPaint(23f, Theme.text)), maxOf(1, (band.width() - 40f).toInt()))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         val boxH = if (desc.isNotEmpty()) sl.height + 36f else 0f
         val listTop = if (desc.isNotEmpty()) boxH + 30f else 0f
@@ -541,14 +541,14 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         val left = if (startPic != null) r.left + 138f else r.left + 8f
         val name = hol?.name ?: e.title
         val tp = TextPaint(UiKit.bodyPaint(32f, Theme.gold))
-        val nl = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, tp, (r.right - left).toInt()).setMaxLines(2)
+        val nl = StaticLayout.Builder.obtain(Tr.span(name), 0, Tr.span(name).length, tp, (r.right - left).toInt()).setMaxLines(2)
             .setEllipsize(TextUtils.TruncateAt.END).setAlignment(Layout.Alignment.ALIGN_NORMAL).build()
         c.save(); c.translate(left, r.top + 66f - nl.height / 2f); nl.draw(c); c.restore()
         UiKit.paneRule(c, r.left, r.top + 140f, r.right)
         val box = RectF(r.left + 8f, r.top + 156f, r.right - 8f, r.bottom - 190f)
         noteBox = box
         val words = hol?.desc ?: ""
-        val sl = StaticLayout.Builder.obtain(Tr.t(words), 0, Tr.t(words).length, TextPaint(UiKit.bodyPaint(23f, Theme.text)), box.width().toInt())
+        val sl = StaticLayout.Builder.obtain(Tr.span(words), 0, Tr.span(words).length, TextPaint(UiKit.bodyPaint(23f, Theme.text)), box.width().toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         noteContent = sl.height.toFloat()
         noteScroll = noteScroll.coerceIn(0f, maxOf(0f, noteContent - box.height()))
@@ -602,7 +602,7 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
         val box = RectF(w / 2f - 330f, h / 2f - 170f, w / 2f + 330f, h / 2f + 150f)
         val inner = UiKit.dialog(c, box)
         val words = "Remove ${e.title} from your calendar?"
-        val sl = StaticLayout.Builder.obtain(Tr.t(words), 0, Tr.t(words).length, TextPaint(UiKit.bodyPaint(27f, Theme.text)), inner.width().toInt())
+        val sl = StaticLayout.Builder.obtain(Tr.span(words), 0, Tr.span(words).length, TextPaint(UiKit.bodyPaint(27f, Theme.text)), inner.width().toInt())
             .setAlignment(Layout.Alignment.ALIGN_CENTER).setMaxLines(3).setEllipsize(TextUtils.TruncateAt.END).build()
         c.save(); c.translate(inner.left, inner.top + 20f); sl.draw(c); c.restore()
         val bw = (inner.width() - 30f) / 2f
@@ -618,7 +618,7 @@ class CalendarView(context: Context) : View(context), BLeadsHome {
     }
 
     private fun say(c: Canvas, x: Float, y: Float, width: Float, words: String, size: Float, colour: Int = Theme.dim) {
-        val sl = StaticLayout.Builder.obtain(Tr.t(words), 0, Tr.t(words).length, TextPaint(UiKit.bodyPaint(size, colour)), maxOf(1, width.toInt()))
+        val sl = StaticLayout.Builder.obtain(Tr.span(words), 0, Tr.span(words).length, TextPaint(UiKit.bodyPaint(size, colour)), maxOf(1, width.toInt()))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(6f, 1f).build()
         c.save(); c.translate(x, y); sl.draw(c); c.restore()
     }

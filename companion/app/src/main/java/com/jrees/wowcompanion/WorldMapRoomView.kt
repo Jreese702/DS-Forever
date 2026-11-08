@@ -2271,7 +2271,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         val inner = UiKit.dialog(c, r)
         val tp = TextPaint(UiKit.bodyPaint(30f, Theme.gold))
         val text = "Abandon \"$confirmTitle\"?"
-        val sl = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, tp, max(10, inner.width().toInt()))
+        val sl = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, tp, max(10, inner.width().toInt()))
             .setAlignment(Layout.Alignment.ALIGN_CENTER).setMaxLines(3).setEllipsize(TextUtils.TruncateAt.END).build()
         c.save(); c.translate(inner.left, inner.top + 6f); sl.draw(c); c.restore()
         val bw = (inner.width() - 24f) / 2f

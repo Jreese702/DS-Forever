@@ -347,7 +347,7 @@ class QuestsView(
         TextUtils.ellipsize(Tr.t(s), p, max(w, 10f), TextUtils.TruncateAt.END).toString()
 
     private fun layout(s: String, p: TextPaint, w: Int): StaticLayout =
-        StaticLayout.Builder.obtain(Tr.t(s), 0, Tr.t(s).length, p, max(w, 10))
+        StaticLayout.Builder.obtain(Tr.span(s), 0, Tr.span(s).length, p, max(w, 10))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(3f, 1f).build()
 
     // ---------------------------------------------------------------- touch

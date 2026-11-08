@@ -684,7 +684,7 @@ class PadTabPage(
         val help = (if (id == 0) "Choose a spell for this slice. " else "") +
             "Put the Spell Radial command on a button (WoW Defaults: Change, Extra). $way"
         val pd = TextPaint(UiKit.inkPaint(24f))
-        val lay = StaticLayout.Builder.obtain(Tr.t(help), 0, Tr.t(help).length, pd, (x1 - x0 - 16f).toInt())
+        val lay = StaticLayout.Builder.obtain(Tr.span(help), 0, Tr.span(help).length, pd, (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(5).build()
         c.save(); c.translate(x0 + 8f, top + 186f); lay.draw(c); c.restore()
         val act = actRect(w, h)
@@ -719,7 +719,7 @@ class PadTabPage(
             c.drawText(Tr.t(row.third), x0 + 100f, y + 70f, pl)
         }
         val help = when { same -> "Choose the slice it goes on (Up: another page)."; under != 0 -> "The two swap places."; else -> "On an empty slice it just moves." }
-        val lay = StaticLayout.Builder.obtain(Tr.t(help), 0, Tr.t(help).length, TextPaint(UiKit.inkPaint(23f)), (x1 - x0 - 16f).toInt())
+        val lay = StaticLayout.Builder.obtain(Tr.span(help), 0, Tr.span(help).length, TextPaint(UiKit.inkPaint(23f)), (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(3).build()
         c.save(); c.translate(x0 + 8f, top + 316f); lay.draw(c); c.restore()
         flash?.takeIf { SystemClock.uptimeMillis() < flashUntil }?.let {
@@ -827,7 +827,7 @@ class PadTabPage(
             c.drawText(Tr.t(name), nameLeft, top + 30f - pn.ascent() - 4f, pn)
             nameBottom = top + 30f + pn.textSize
         } else {
-            val lay = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, TextPaint(pn), nameW.toInt())
+            val lay = StaticLayout.Builder.obtain(Tr.span(name), 0, Tr.span(name).length, TextPaint(pn), nameW.toInt())
                 .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).build()
             c.save(); c.translate(nameLeft, top + 30f - 4f); lay.draw(c); c.restore()
             nameBottom = top + 30f - 4f + lay.height
@@ -870,7 +870,7 @@ class PadTabPage(
             else -> "Change puts a spell from your book, or one of the game's commands, on this button."
         }
         val pd = TextPaint(UiKit.inkPaint(24f))
-        val lay = StaticLayout.Builder.obtain(Tr.t(help), 0, Tr.t(help).length, pd, (x1 - x0 - 16f).toInt())
+        val lay = StaticLayout.Builder.obtain(Tr.span(help), 0, Tr.span(help).length, pd, (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         c.save(); c.translate(x0 + 8f, top + 236f); lay.draw(c); c.restore()
 
@@ -921,7 +921,7 @@ class PadTabPage(
             else -> "On an empty button it just moves."
         }
         val pd = TextPaint(UiKit.inkPaint(23f))
-        val lay = StaticLayout.Builder.obtain(Tr.t(help), 0, Tr.t(help).length, pd, (x1 - x0 - 16f).toInt())
+        val lay = StaticLayout.Builder.obtain(Tr.span(help), 0, Tr.span(help).length, pd, (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(3).build()
         c.save(); c.translate(x0 + 8f, top + 316f); lay.draw(c); c.restore()
         flash?.takeIf { SystemClock.uptimeMillis() < flashUntil }?.let {
@@ -955,7 +955,7 @@ class PadTabPage(
         var nameH = pn.textSize
         if (pn.measureText(name) <= nameW) c.drawText(Tr.t(name), nameLeft, top + 30f - pn.ascent() - 4f, pn)
         else {
-            val lay = StaticLayout.Builder.obtain(Tr.t(name), 0, Tr.t(name).length, TextPaint(pn), nameW.toInt())
+            val lay = StaticLayout.Builder.obtain(Tr.span(name), 0, Tr.span(name).length, TextPaint(pn), nameW.toInt())
                 .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).build()
             c.save(); c.translate(nameLeft, top + 30f - 4f); lay.draw(c); c.restore()
             nameH = lay.height - 4f
@@ -990,7 +990,7 @@ class PadTabPage(
                 else -> null
             }
             why?.let {
-                val prose = StaticLayout.Builder.obtain(Tr.t(it), 0, Tr.t(it).length, pd, (x1 - x0 - 16f).toInt())
+                val prose = StaticLayout.Builder.obtain(Tr.span(it), 0, Tr.span(it).length, pd, (x1 - x0 - 16f).toInt())
                     .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(3).build()
                 c.save(); c.translate(x0 + 8f, top + 386f); prose.draw(c); c.restore()
             }

@@ -710,7 +710,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     private fun prompt(c: Canvas, r: RectF, word: String, fallback: String) {
         val t = model.word(word, fallback)
         if (t.isEmpty()) return
-        val sl = StaticLayout.Builder.obtain(Tr.t(t), 0, Tr.t(t).length, TextPaint(UiKit.bodyPaint(25f, Theme.dim)), max(1, (r.width() - 48f).toInt()))
+        val sl = StaticLayout.Builder.obtain(Tr.span(t), 0, Tr.span(t).length, TextPaint(UiKit.bodyPaint(25f, Theme.dim)), max(1, (r.width() - 48f).toInt()))
             .setAlignment(Layout.Alignment.ALIGN_CENTER).setLineSpacing(4f, 1f).build()
         c.save(); c.translate(r.left + 24f, r.top + 300f - sl.height / 2f); sl.draw(c); c.restore()
     }
@@ -886,7 +886,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     }
 
     private fun layout(t: String, p: Paint, width: Int, spacing: Float): StaticLayout =
-        StaticLayout.Builder.obtain(Tr.t(t), 0, Tr.t(t).length, TextPaint(p), max(1, width))
+        StaticLayout.Builder.obtain(Tr.span(t), 0, Tr.span(t).length, TextPaint(p), max(1, width))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(spacing, 1f).build()
 
     private fun parseColour(hex: String, fallback: Int): Int =

@@ -1903,7 +1903,7 @@ class HomeView(
             val lines = (room / lineH).toInt()
             if (lines < 1) return null
             val s = format(l)
-            return StaticLayout.Builder.obtain(Tr.t(s), 0, Tr.t(s).length, tp, width)
+            return StaticLayout.Builder.obtain(Tr.span(s), 0, Tr.span(s).length, tp, width)
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false)
                 .setLineSpacing(0f, 1.12f)
                 .setMaxLines(lines).setEllipsize(TextUtils.TruncateAt.END).build()
@@ -1913,7 +1913,7 @@ class HomeView(
             val key = width * 100 + tp.textSize.toInt()
             cache[l]?.let { if (it.first == key) return it.second }
             val s = format(l)
-            val lay = StaticLayout.Builder.obtain(Tr.t(s), 0, Tr.t(s).length, tp, width)
+            val lay = StaticLayout.Builder.obtain(Tr.span(s), 0, Tr.span(s).length, tp, width)
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false)
                 .setLineSpacing(0f, 1.12f).build()           // spec: line spacing 1.12
             cache[l] = key to lay
@@ -2408,7 +2408,7 @@ class HomeView(
                 else -> ""
             }
             if (text.isNotEmpty()) {
-                val lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, tp, (textRight - r.left - 24f).toInt().coerceAtLeast(10))
+                val lay = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, tp, (textRight - r.left - 24f).toInt().coerceAtLeast(10))
                     .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(0f, 1.08f)
                     .setMaxLines(((r.height() - 20f) / 27f).toInt().coerceAtLeast(1)).setEllipsize(TextUtils.TruncateAt.END).build()
                 c.save(); c.translate(r.left + 12f, r.top + 12f); lay.draw(c); c.restore()

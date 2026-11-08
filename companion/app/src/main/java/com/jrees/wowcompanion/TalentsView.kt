@@ -225,7 +225,7 @@ class TalentsView(
     }
 
     private fun text(c: Canvas, s: String, x: Float, y: Float, width: Float, p: Paint): Float {
-        val sl = StaticLayout.Builder.obtain(Tr.t(s), 0, Tr.t(s).length, TextPaint(p), width.toInt().coerceAtLeast(1))
+        val sl = StaticLayout.Builder.obtain(Tr.span(s), 0, Tr.span(s).length, TextPaint(p), width.toInt().coerceAtLeast(1))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         c.save(); c.translate(x, y); sl.draw(c); c.restore()
         return y + sl.height

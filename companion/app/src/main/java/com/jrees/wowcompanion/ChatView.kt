@@ -772,7 +772,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         var shown = typed
         if (room > 0 && typed.isNotEmpty()) {
             val p = android.text.TextPaint(input.paint)
-            fun fits(s: String) = android.text.StaticLayout.Builder.obtain(Tr.t(s), 0, Tr.t(s).length, p, room).build().lineCount <= lines
+            fun fits(s: String) = android.text.StaticLayout.Builder.obtain(Tr.span(s), 0, Tr.span(s).length, p, room).build().lineCount <= lines
             if (!fits(typed)) {
                 var lo = 0; var hi = typed.length          // the longest end that fits behind "…"
                 while (lo < hi) { val mid = (lo + hi + 1) / 2; if (fits("\u2026" + typed.takeLast(mid))) lo = mid else hi = mid - 1 }

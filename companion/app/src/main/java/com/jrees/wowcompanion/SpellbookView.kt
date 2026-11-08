@@ -485,7 +485,7 @@ class SpellbookView(
         val descTop = top + (if (facts == null) 228f else 268f) + needsH + rankH
         val descBottom = (if (canBind) bind.top - 8f else h - 40f) - (if (canBind && b.combat) 40f else 0f)
         val pd = android.text.TextPaint(UiKit.inkPaint(24f))
-        val lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, pd, 388)
+        val lay = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, pd, 388)
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
         descMax = maxOf(0f, lay.height - (descBottom - descTop))
         descScroll = descScroll.coerceIn(0f, descMax)

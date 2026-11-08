@@ -949,7 +949,7 @@ class InteractView(context: Context) : View(context) {
         TextUtils.ellipsize(Tr.t(s), p, max(w, 10f), TextUtils.TruncateAt.END).toString()
 
     private fun layout(s: String, p: TextPaint, w: Int, gap: Float = 5f): StaticLayout =
-        StaticLayout.Builder.obtain(Tr.t(s), 0, Tr.t(s).length, p, max(w, 10))
+        StaticLayout.Builder.obtain(Tr.span(s), 0, Tr.span(s).length, p, max(w, 10))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(gap, 1f).build()
 
     /** the game writes "\r\n" and a player-name token into its prose */
@@ -2167,7 +2167,7 @@ class InteractView(context: Context) : View(context) {
             val ib = UiKit.dialog(c, box)
             val words = "Are you sure you wish to purchase a new stable slot for the following amount?"
             val tp = TextPaint(UiKit.bodyPaint(30f, Color.WHITE))
-            val lay = StaticLayout.Builder.obtain(Tr.t(words), 0, Tr.t(words).length, tp, (ib.width() - 80f).toInt())
+            val lay = StaticLayout.Builder.obtain(Tr.span(words), 0, Tr.span(words).length, tp, (ib.width() - 80f).toInt())
                 .setAlignment(Layout.Alignment.ALIGN_CENTER).build()
             c.save(); c.translate(ib.left + 40f, ib.top + 30f); lay.draw(c); c.restore()
             val mw = UiKit.moneyWidth(cost, 34f)
@@ -2620,7 +2620,7 @@ class InteractView(context: Context) : View(context) {
             val text = prose(open.optString("body", ""))
             var ay = w.top + 110f
             if (text.isNotEmpty()) {
-                val lay = StaticLayout.Builder.obtain(Tr.t(text), 0, Tr.t(text).length, TextPaint(UiKit.inkPaint(26f)), w.width().toInt())
+                val lay = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, TextPaint(UiKit.inkPaint(26f)), w.width().toInt())
                     .setLineSpacing(4f, 1f).build()
                 c.save(); c.clipRect(w.left, ay, w.right, w.bottom - 260f)
                 drawLayout(c, lay, w.left, ay); c.restore()
@@ -2772,7 +2772,7 @@ class InteractView(context: Context) : View(context) {
         val body = typedOr("mailbody", sd.optString("body"))
         if (body.isEmpty()) c.drawText(Tr.t("Write your letter here"), w.left, w.top + 30f, UiKit.inkPaint(26f).apply { color = Color.argb(140, 60, 40, 20) })
         else {
-            val lay = StaticLayout.Builder.obtain(Tr.t(body), 0, Tr.t(body).length, TextPaint(UiKit.inkPaint(26f)), w.width().toInt()).setLineSpacing(4f, 1f).build()
+            val lay = StaticLayout.Builder.obtain(Tr.span(body), 0, Tr.span(body).length, TextPaint(UiKit.inkPaint(26f)), w.width().toInt()).setLineSpacing(4f, 1f).build()
             c.save(); c.clipRect(w); drawLayout(c, lay, w.left, w.top + 4f); c.restore()
         }
         if (kbField == "mailbody") postInvalidateDelayed(500L)
@@ -4714,7 +4714,7 @@ class InteractView(context: Context) : View(context) {
             // the game's own words (CONFIRM_BUY_CHARACTER_BANK_TAB / CONFIRM_BUY_ACCOUNT_BANK_TAB), then the cost
             val words = if (acct) "Do you want to purchase an Account Bank tab for:" else "Do you want to purchase a Bank tab for:"
             val tp = TextPaint(UiKit.bodyPaint(30f, Color.WHITE))
-            val lay = StaticLayout.Builder.obtain(Tr.t(words), 0, Tr.t(words).length, tp, (ib.width() - 80f).toInt()).setAlignment(Layout.Alignment.ALIGN_CENTER).build()
+            val lay = StaticLayout.Builder.obtain(Tr.span(words), 0, Tr.span(words).length, tp, (ib.width() - 80f).toInt()).setAlignment(Layout.Alignment.ALIGN_CENTER).build()
             c.save(); c.translate(ib.left + 40f, ib.top + 30f); lay.draw(c); c.restore()
             val mw = UiKit.moneyWidth(max(0L, cost), 34f)
             UiKit.money(c, max(0L, cost), ib.centerX() - mw / 2f, ib.top + 60f + lay.height + 20f, 34f, Color.WHITE)
