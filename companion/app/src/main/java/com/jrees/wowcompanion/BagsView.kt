@@ -72,6 +72,11 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         UiKit.asBody(search)             // the game's type (UI Art's fonts step)
     }
     private val state = State()
+    /** the bags' armor kits / stones / enchants (Bags.lua's `kit` flag): (bag, slot, row), for the Character room's Apply */
+    fun kitItems(): List<Triple<Int, Int, JSONObject>> = state.items.entries
+        .filter { it.value.optBoolean("kit") }
+        .map { Triple((it.key shr 16).toInt(), (it.key and 0xFFFF).toInt(), it.value) }
+        .sortedWith(compareBy({ it.first }, { it.second }))
     private val bar = BagBar(c, state)
     private val grid = Grid(c, state)
     private val gridScroll = ScrollView(c).apply { addView(grid); isFillViewport = true }
@@ -206,6 +211,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             const val MORE = -3          // a finger's More: the cursor to the shown slot, then Y
             const val EQUIP = -4         // a finger's Equip on a BAG: the cursor to the shown slot, then bmvq 22 (= X: into the hand)
             const val EQUIP_OFF = -5     // the same cell, faint (a fight): nothing
+            const val KIT_CANCEL = -6    // "Choose an item": Cancel (the plain op kitstop)
+            const val KIT_ROW = -100     // "Choose an item": row i = KIT_ROW - i (its item's secure cell)
             const val MIN_CMP_W = 300f                          // Currently Equipped narrowed to a side's room, never under this
             const val PRESS_MIN_MS = 160L                       // a press stays visibly in at least this long (Interact's recipe)
             val PRESS_KEYS = setOf("PAD1", "PAD2", "PAD3", "PAD4")
@@ -280,7 +287,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         override fun onTouchEvent(e: MotionEvent): Boolean {
             val m = mode()
             if (e.actionMasked == MotionEvent.ACTION_DOWN) {
-                val blocking = m == "destroy" || m == "split" || m == "bind" || unbindAt >= 0
+                val blocking = m == "destroy" || m == "split" || m == "bind" || m == "target" || unbindAt >= 0
                 owning = blocking || zones.any { it.contains(e.x, e.y) }
                 if (owning) { pressX = e.x; pressY = e.y; invalidate() }
             }
@@ -312,7 +319,14 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 MORE -> st.onCard(32)
                 EQUIP -> st.onCard(22)
                 EQUIP_OFF -> {}
-                else -> GameInput.tap(context, st.pad, "bmvq", what)
+                KIT_CANCEL -> GameInput.tap(context, st.pad, "kitstop", 0)
+                else -> if (what <= KIT_ROW) {
+                    // a finger on a row of "Choose an item": that item, at once (its secure cell: the pick's target)
+                    val e = st.ctl?.optJSONObject("target")?.optJSONArray("list")?.optJSONObject(KIT_ROW - what) ?: return
+                    if (!e.optBoolean("ok")) return
+                    if (e.optString("src") == "inv") GameInput.tap(context, st.pad, "binv", e.optInt("slot") - 1)
+                    else GameInput.tap(context, st.pad, "bag${e.optInt("bag")}", e.optInt("s") - 1)
+                } else GameInput.tap(context, st.pad, "bmvq", what)
             }
         }
 
@@ -345,6 +359,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 "barmenu" -> barMenu(c)
                 "destroy" -> destroy(c, screen)
                 "split" -> split(c, screen)
+                "target" -> target(c, screen)
             }
             val f = when {
                 bindAt >= 0 -> { val t = ((now - bindAt) / OPEN_MS.toFloat()).coerceIn(0f, 1f); 1f - (1f - t) * (1f - t) * (1f - t) }
@@ -809,6 +824,68 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             hits.add(back to 33); zones.add(back)
         }
 
+        /**
+         * "CHOOSE AN ITEM" (Bags.lua's target mode: an armor kit / stone / enchant was used and the game asks what it goes on; the user's
+         * pick, the game-style list): what you wear first, then your bags' gear; the add-on's cursor (up / down) is the gold row; A uses
+         * it, B stops the pick. A row the game says cannot take it (enchanting) is grey. A finger: a row = that item, Cancel = B.
+         */
+        private fun target(c: Canvas, screen: RectF) {
+            val t = st.ctl?.optJSONObject("target") ?: return
+            val list = t.optJSONArray("list") ?: org.json.JSONArray()
+            val sel = t.optInt("sel", 1) - 1
+            val w = minOf(820f, screen.width() - 80f)
+            val box = RectF(screen.centerX() - w / 2f, 40f, screen.centerX() + w / 2f, screen.height() - 110f)
+            val inner = UiKit.menu(c, box, solid = true)
+            val kit = t.optJSONObject("kit")
+            val hp = UiKit.bodyPaint(30f, Theme.gold)
+            c.drawText(Tr.t("Choose an item"), inner.left + 16f, inner.top + 40f, hp)
+            kit?.optString("name")?.takeIf { it.isNotEmpty() }?.let { n ->
+                val kp = UiKit.bodyPaint(24f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
+                c.drawText(android.text.TextUtils.ellipsize(n, android.text.TextPaint(kp), inner.width() / 2f, android.text.TextUtils.TruncateAt.END).toString(),
+                    inner.right - 16f, inner.top + 40f, kp)
+            }
+            // the rows with their headings (Equipped, In your bags), a window that keeps the gold row in sight
+            data class Line(val head: String?, val i: Int)
+            val lines = ArrayList<Line>()
+            var lastSrc = ""
+            for (i in 0 until list.length()) {
+                val src = list.optJSONObject(i)?.optString("src") ?: continue
+                if (src != lastSrc) { lines += Line(if (src == "inv") "Equipped" else "In your bags", -1); lastSrc = src }
+                lines += Line(null, i)
+            }
+            val rowH = 84f; val headH = 42f
+            val top0 = inner.top + 64f; val bottom0 = inner.bottom - 8f
+            val heights = lines.map { if (it.head != null) headH else rowH }
+            val selLine = lines.indexOfFirst { it.i == sel }.coerceAtLeast(0)
+            var first = 0
+            fun spanFrom(a: Int, b: Int) = (a..b).sumOf { heights[it].toDouble() }.toFloat()
+            while (first < selLine && spanFrom(first, selLine) > bottom0 - top0) first++
+            var y = top0
+            for (k in first until lines.size) {
+                val l = lines[k]
+                val h = heights[k]
+                if (y + h > bottom0) break
+                if (l.head != null) {
+                    c.drawText(Tr.t(l.head), inner.left + 16f, y + 30f, UiKit.bodyPaint(23f, Theme.dim))
+                } else {
+                    val o = list.optJSONObject(l.i)
+                    val r = RectF(inner.left + 8f, y, inner.right - 8f, y + rowH - 6f)
+                    val ok = o.optBoolean("ok")
+                    val icon = Icons.getOrUnknown(if (o.has("icon")) o.optInt("icon") else null)
+                    UiKit.itemPlate(c, r, icon, o.optString("name", "?"), if (ok) Theme.quality(o.optInt("q", 1)) else Theme.dim, 0)
+                    if (l.i == sel) UiKit.focus(c, r)
+                    if (ok) hits.add(RectF(r) to (KIT_ROW - l.i))
+                }
+                y += h
+            }
+            if (list.length() == 0) c.drawText(Tr.t("Nothing here can take it"), inner.left + 16f, top0 + 40f, UiKit.bodyPaint(26f, Theme.dim))
+            zones.add(RectF(box))
+            val hy = box.bottom + 46f
+            val hs = UiKit.hints(c, box.right - 16f, hy, "rev_a" to "Apply", UiKit.backGlyph() to "Cancel")
+            val back = RectF((hs + box.right) / 2f, hy - 36f, box.right, hy + 36f)
+            hits.add(back to KIT_CANCEL); zones.add(back)
+        }
+
         /** THE game dialog: Yes (A) left, No (B) right, as the game has it; for rare and better, why not, and Okay */
         private fun destroy(c: Canvas, screen: RectF) {
             UiKit.cover(c, screen)
@@ -1163,6 +1240,9 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         if (kbOpen && (!on || c?.optString("mode") != "search")) closeKeyboard(false)
         if (!on || u == null || key == useSeen) return
         useSeen = key
+        // "Choose an item" (an armor kit / stone / enchant picking its target): worn gear is the secure row binv (the game's /use <slot>)
+        val inv = u.optInt("inv", 0)
+        if (inv >= 1) { GameInput.tap(context, state.pad, "binv", inv - 1); return }
         val bag = u.optInt("bag", -1); val slot = u.optInt("slot", 0)
         if (bag >= 0 && slot >= 1) GameInput.tap(context, state.pad, "bag$bag", slot - 1)
     }

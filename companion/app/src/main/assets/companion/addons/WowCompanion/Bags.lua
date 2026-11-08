@@ -607,6 +607,9 @@ function WC.collectBags()
                     -- does it have a "Use:" effect? (the pop-up offers USE only when it does)
                     local okSp, spName = CALL(function() return C_Item.GetItemSpell(id) end)
                     if okSp and type(spName) == "string" then row.use = true end
+                    -- an item that enhances another (Item Enhancement: armor kits, stones, oils, enchant scrolls), or seen to start the
+                    -- game's "pick an item" (WC._kitLearned): the Character room lists these under a gear slot's Apply
+                    if row.use and (row.cls == 8 or (row.cls == 0 and row.sub == 6) or (WC._kitLearned and WC._kitLearned[id])) then row.kit = true end
                     -- a quest item or a quest starter, as the game marks it in this slot (sent only when true)
                     local okQ, qi = CALL(function() return C_Container.GetContainerItemQuestInfo(bag, slot) end)
                     if okQ and type(qi) == "table" then
@@ -1061,6 +1064,7 @@ function WC._bagsCtlDoc()
         bar = (ctl.zone == "bar" and ctl.mode == "grid") and BAR.items()[ctl.barAt or 1] or nil,
         act = ctl.act,
         barmenu = BAR.menuDoc(),
+        target = (ctl.mode == "target" and WC._kit) and { kit = WC._kit.kitDoc(), list = WC._kit.list(), sel = ctl.tsel or 1 } or nil,
     }
 end
 
@@ -1156,6 +1160,105 @@ local function leave(why)
 end
 
 local function toGrid(note) ctl.mode = "grid"; ctl.bound = nil; ctl.rare = nil; report(note) end
+
+-- ---------------------------------------------------------------- ARMOR KITS, STONES, ENCHANTS: "CHOOSE AN ITEM" (the user, 2026-11-07: "there
+-- is no way to apply my light armor kits ... enchants, and sharpening stones ... We need to make a way to use them from both the bags room as
+-- well as the charactor room"; pick: the game-style pick list). The game's own flow, untouched: USING such an item (X on it here, the game's
+-- right-click) puts the game in "pick an item" (SpellCanTargetItem). While it is, the room's cursor is a list of what it can go on - what you
+-- wear first, then your bags' gear - and A USES that item: a bag item through its own secure bag cell (the game's right-click on it while
+-- picking = target it), worn gear through the secure row "binv" (type item, item = the slot: the game's /use <slot>, its target). B stops
+-- the pick (SpellStopTargeting). No macro, no binding: two secure clicks of the game's own, as with the mouse.
+local KIT = { was = false, last = nil }
+WC._kit = KIT                                   -- the room's document (above) reads it
+WC._kitLearned = WC._kitLearned or {}           -- item ids seen to start a pick (the bag rows' `kit` flag: the Character room's list)
+-- a pick is on now
+function KIT.on()
+    local ok, v = CALL(function() return SpellCanTargetItem() end)
+    if ok and v == true then return true end
+    ok, v = CALL(function() return SpellCanTargetItemID() end)
+    return ok and v == true
+end
+-- the game's own check while ENCHANTING (C_Item.DoesItemMatchTargetEnchantingSpell; paperdollframe.lua's CanApplyItemEnchant); other
+-- picks (armor kits, stones) the game checks on the click itself
+function KIT.fits(loc)
+    local okE, ench = CALL(function() return C_Spell.TargetSpellIsEnchanting() end)
+    if not (okE and ench == true) or not loc then return true end
+    local okM, m = CALL(function() return C_Item.DoesItemMatchTargetEnchantingSpell(loc) end)
+    if okM and type(m) == "boolean" then return m end
+    return true
+end
+local INV_ORDER = { 5, 7, 10, 8, 6, 3, 1, 9, 16, 17, 18, 15, 2, 11, 12, 13, 14, 4, 19 }   -- chest, legs, hands, feet first (kits)
+function KIT.list()
+    local out = {}
+    for _, slot in ipairs(INV_ORDER) do
+        local id = SN(function() return GetInventoryItemID("player", slot) end)
+        if id then
+            local loc = CALL(function() return ItemLocation end) and select(2, CALL(function() return ItemLocation:CreateFromEquipmentSlot(slot) end)) or nil
+            out[#out + 1] = { src = "inv", slot = slot, id = id,
+                name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
+                icon = SN(function() return GetInventoryItemTexture("player", slot) end),
+                q = SN(function() return GetInventoryItemQuality("player", slot) end), ok = KIT.fits(loc) or nil }
+        end
+    end
+    for _, e in ipairs(layout()) do
+        local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
+        for s = 1, n do
+            if #out >= 40 then break end
+            local id = bagItemID(e.bag, s)
+            if id then
+                local okI, _, _, _, loc = CALL(function() return C_Item.GetItemInfoInstant(id) end)
+                loc = okI and S(function() return loc end) or nil
+                if type(loc) == "string" and loc ~= "" and loc:byte(1) > 3 and not NOT_WORN[loc] then
+                    local info = infoAt(e.bag, s)
+                    local il = select(2, CALL(function() return ItemLocation:CreateFromBagAndSlot(e.bag, s) end))
+                    out[#out + 1] = { src = "bag", bag = e.bag, s = s, id = id,
+                        name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
+                        icon = info and SN(function() return info.iconFileID end) or nil,
+                        q = info and SN(function() return info.quality end) or nil, ok = KIT.fits(il) or nil }
+                end
+            end
+        end
+    end
+    return out
+end
+-- what is being applied (the last item used from the bags, if it was just now)
+function KIT.kitDoc()
+    local l = KIT.last
+    if not l or GetTime() - l.t > 30 then return nil end
+    return { id = l.id, name = S(function() return (C_Item.GetItemNameByID(l.id)) end) or S(function() return (GetItemInfo(l.id)) end),
+             icon = SN(function() return C_Item.GetItemIconByID(l.id) end) }
+end
+-- a bag item was used (X, or the app's tap on its cell): remembered so a pick that starts now names it, and learns it as a kit
+function KIT.used(bag, slot)
+    local id = bagItemID(bag, slot)
+    if id then KIT.last = { id = id, t = GetTime() } end
+end
+-- the pick started / ended: the room's cursor follows; any route says it (an "itarget" document: the Character room waits for it)
+function KIT.step()
+    local on = KIT.on()
+    if on == KIT.was then return end
+    KIT.was = on
+    if on and KIT.last and GetTime() - KIT.last.t < 2 then WC._kitLearned[KIT.last.id] = true end
+    WC.emit({ type = "itarget", on = on, kit = on and KIT.kitDoc() or nil })
+    if ctl.on then
+        if on and ctl.mode == "grid" and not ctl.pick then ctl.mode = "target"; ctl.tsel = 1; report("pick-item")
+        elseif not on and ctl.mode == "target" then toGrid(ctl.applied and "applied" or "pick-ended"); ctl.applied = nil end
+    end
+end
+C_Timer.NewTicker(0.25, function() pcall(KIT.step) end)
+-- worn gear as a pick's target: the secure row "binv", one cell per slot (type item, item = the slot: the game's /use <slot>)
+if WC.pad and WC.pad.secureRow then
+    pcall(WC.pad.secureRow, "binv", 19, function(btn, col)
+        btn:SetAttribute("type", "item")
+        btn:SetAttribute("item", tostring(col + 1))
+    end, function(col)
+        WC.emit({ type = "cap", kitTap = { slot = col + 1, combat = InCombatLockdown() and true or false } })
+    end)
+end
+-- B / the Character room's cancel: stop the pick (the game's own SpellStopTargeting; framecontrolsmanager.lua calls it too)
+if WC.pad and WC.pad.op then
+    pcall(WC.pad.op, "kitstop", nil, function() CALL(function() return SpellStopTargeting() end) end)
+end
 
 -- ---------------------------------------------------------------- THE ROOM'S TOP STRIP (the user, 2026-10-09: "in bags, I am not able to move my
 -- cursor up to the actual bags to open or close them, same with the cleanup button and search bar")
@@ -1681,6 +1784,7 @@ local function onPress(key)
             -- a BAG: into the hand, and the cursor up to the bag bar to choose its slot (EQ, the user 2026-10-06)
             if EQ.slotsFor(id) then EQ.begin(id); return end
             -- USE is protected: the app taps this slot's secure cell once per new use.seq
+            KIT.used(ctl.bag, ctl.slot)                       -- an armor kit / stone starts the game's "pick an item"
             ctl.use = { bag = ctl.bag, slot = ctl.slot, seq = ctl.seq + 1 }; report("use"); return
         elseif Y then
             if ctl.pick then return end
@@ -1746,6 +1850,22 @@ local function onPress(key)
         -- the log, and pass again (the next report runs syncPass afresh), so the player's next press answers the game
         if A or B then ctl.passing = false; report("bindask-" .. key) end
         -- "equipping": the game is working: nothing here
+    elseif ctl.mode == "target" then
+        -- "Choose an item": up / down walk the list, A uses the chosen item (the pick's target), B stops the pick
+        local list = KIT.list()
+        if key == "PADDUP" or key == "PADDDOWN" then
+            ctl.tsel = math.max(1, math.min(#list, (ctl.tsel or 1) + (key == "PADDUP" and -1 or 1))); report(nil)
+        elseif B then
+            CALL(function() return SpellStopTargeting() end); toGrid("cancelled")
+        elseif A then
+            local e = list[ctl.tsel or 1]
+            if not e then report("empty"); return end
+            if e.ok == nil then report("pick-cannot"); return end
+            ctl.applied = true
+            if e.src == "inv" then ctl.use = { inv = e.slot, seq = ctl.seq + 1 }
+            else ctl.use = { bag = e.bag, slot = e.s, seq = ctl.seq + 1 } end
+            report("apply")
+        end
     elseif ctl.mode == "split" then
         local info = infoAt(ctl.bag, ctl.slot)
         local n = info and SN(function() return info.stackCount end) or 1

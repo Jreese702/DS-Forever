@@ -444,6 +444,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         characterView = CharacterView(this)
         // B leaves the cursor -> Home (user ruling, every room)
         characterView.onLeave = { roomLeft(Room.CHARACTER) }
+        characterView.kits = { if (::bagsView.isInitialized) bagsView.kitItems() else emptyList() }
         // tab 4 (PvP): the PVP session's page inside the room's frame (its PvpRankTab, UI Art's SPEC 6)
         characterView.pvpDrawer = PvpRankTab::draw
         PvpRankTab.onChange = { characterView.invalidate() }
@@ -1842,6 +1843,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // a flight master's map (Map.lua taxinet): which known nodes connect (b-route-unknown-taxi); replays too (they stay true)
             // the game's player menu, read for the map module's bottom-screen copy (Quests q41): only a current one is the game's now
             // ... and Party mode's menu for a party member (q49 src = "party"): its own view over Home's left column
+            // Bags.lua: the game's "pick an item" (an armor kit / stone / enchant) started or ended: a kit used from the Character room
+            "itarget" -> if (current) characterView.onItarget(msg.optBoolean("on"))
             "pmenu" -> if (current) {
                 when (msg.optString("src")) {
                     "party" -> homeView.partyMenu.onDoc(msg)
