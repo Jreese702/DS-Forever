@@ -2268,7 +2268,10 @@ do
     -- target's plate, so (the user, same day: "I was meaning a name plate for ONLY my target") nameplateNotSelectedAlpha goes to 0 with
     -- them: every plate but the target's is drawn invisible (still there: our Y glyph and the layers keep their anchors). Put back at log
     -- out too. A value of theirs stands.
-    A.NP_FRIEND_CVARS = { { "nameplateShowFriends", "1" }, { "nameplateShowFriendlyNPCs", "1" }, { "nameplateNotSelectedAlpha", "0" } }
+    -- the user on test31: "there's no name plates on players": this client has no nameplateShowFriends; its friendly PLAYERS' option is
+    -- nameplateShowFriendlyPlayers (the game's own strings). An option the client does not have reads nil and is skipped.
+    A.NP_FRIEND_CVARS = { { "nameplateShowFriendlyPlayers", "1" }, { "nameplateShowFriends", "1" }, { "nameplateShowFriendlyNPCs", "1" },
+                          { "nameplateNotSelectedAlpha", "0" } }
     local function cvGet(name)
         local ok, v = pcall(function() return C_CVar.GetCVar(name) end)
         if ok and v ~= nil and not (type(issecretvalue) == "function" and issecretvalue(v)) then return tostring(v) end
