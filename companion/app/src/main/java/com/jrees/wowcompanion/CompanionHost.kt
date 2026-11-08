@@ -868,6 +868,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         pauseView.onPick = { s -> pausePick(s) }
         // THE TARGET RADIAL: the pause wheel's slide, close and place; a pick runs as the party menu's entries do
         targetRadial = TargetRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
+        // the context menus' icons (the raid markers too) asked for early, so the phone's icon harvest has them before a wheel opens
+        ui.postDelayed({ runCatching { MenuIcons.prefetch() } }, 8_000L)
         targetRadial.onSlide = { t -> pauseSlideAll(t) }
         targetRadial.onClose = { from -> pauseView.onClose(from) }
         targetRadial.barsBottom = { pauseView.barsBottom?.invoke() ?: 0f }

@@ -113,6 +113,7 @@ class TargetRadialView(
         doAct = onDo; closed = onClosed
         doc = null; items = emptyList(); pages.clear(); slices = emptyList()
         Log.i("WCLOG", "context radial: OPEN ($opener, $name, ${input.name})")
+        MenuIcons.prefetch()
         UiKit.pauseBarsBottom = barsBottom?.invoke() ?: 0f
         UiKit.pauseStripTop = run {
             val a = IntArray(2); val b = IntArray(2)

@@ -62,6 +62,18 @@ object MenuIcons {
     }
 
     // lazy: [keyOf] / [SPECS] stay usable off-device (the JVM tests), the paints come with the first draw
+    /**
+     * every icon these menus use, asked for once (the user, 2026-11-07: "The raid target Icons should use the actual raid target icon
+     * shapes"): Icons.get puts any the phone has not harvested yet on the required list, so the next icon harvest brings the game's own
+     * raid markers (and the rest) before a wheel first shows them, instead of the stand-in until then
+     */
+    @Volatile private var asked = false
+    fun prefetch() {
+        if (asked) return
+        asked = true
+        for (s in SPECS.values) { Icons.get(s.base); s.badgeIcon?.let { Icons.get(it) } }
+    }
+
     private val pBmp by lazy { Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG) }
     private val pRim by lazy { Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = RIM } }
     private val pFill by lazy { Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = BADGE_FILL } }
