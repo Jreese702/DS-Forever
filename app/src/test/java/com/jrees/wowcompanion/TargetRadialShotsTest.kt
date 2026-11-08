@@ -31,22 +31,23 @@ class TargetRadialShotsTest {
         f.set(null, File(root))
     }
 
-    private fun shot(name: String, title: String, items: List<PlayerMenu.Entry>, pointed: Int) {
+    private fun shot(name: String, title: String, items: List<PlayerMenu.Entry>, pointed: Int, page: TargetRadial.Page = TargetRadial.ROOT) {
         val o = out ?: return
         val b = Bitmap.createBitmap(1240, 1080, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
         c.drawColor(Color.rgb(20, 24, 32))
         val screen = RectF(0f, 0f, 1240f, 1080f)
         val hub = UiKit.consumableRadialHub(screen)
-        val slices = TargetRadial.slices(items).map { it?.let { s -> UiKit.PauseSlice(s.icon, s.label, s.enabled) } }
+        val slices = TargetRadial.slices(items, page)!!.map { it?.let { s -> UiKit.PauseSlice(s.icon, s.label, s.enabled, menu = s.menu) } }
         UiKit.pauseRadial(c, screen, PointF(hub.x, hub.y), 150f, slices, -1, pointed, -1, UiKit.PAUSE_OPEN_MS, 0f, null,
             pickGlyph = true, up = null, down = null, left = null, right = null, title = title)
         o.mkdirs()
         File(o, "$name.png").outputStream().use { s -> b.compress(Bitmap.CompressFormat.PNG, 100, s) }
     }
 
-    private fun e(t: String, k: String, on: Boolean = true, sub: Boolean = false) =
-        PlayerMenu.Entry(t, if (sub) null else 1, on, null, false, if (sub) emptyList() else null, key = k)
+    private fun e(t: String, k: String, on: Boolean = true, sub: List<PlayerMenu.Entry>? = null) =
+        PlayerMenu.Entry(t, if (sub != null) null else 1, on, null, false, sub, key = k)
+    private val raid = listOf("Star", "Circle", "Diamond", "Triangle", "Moon", "Square", "Cross", "Skull").mapIndexed { i, n -> e(n, "RaidTarget${i + 1}") }
 
     @Test
     fun designs() {
@@ -54,10 +55,13 @@ class TargetRadialShotsTest {
         // a friendly PLAYER targeted (the game's PLAYER menu, Quests q51)
         val player = listOf(PlayerMenu.Entry("Brannoc", null, true, null, true, null), e("Set Focus", "SetFocus"), e("Whisper", "Whisper"),
             e("Inspect", "Inspect"), e("Invite", "Invite"), e("Trade", "Trade"), e("Follow", "Follow"), e("Duel", "Duel"),
-            e("Add Friend", "AddFriend"), e("Raid Target Icon", "RaidTarget", sub = true), e("Report Player", "ReportPlayer", on = false))
+            e("Add Friend", "AddFriend"), e("Raid Target Icon", "RaidTarget", sub = raid), e("Report Player", "ReportPlayer", on = false),
+            e("Promote to Party Leader", "PromoteToLeader"), e("Uninvite", "Uninvite"))
         shot("target_player", "Brannoc", player, 3)
+        shot("target_player_more", "Brannoc", player, 0, TargetRadial.Page(more = true))
+        shot("target_player_raid", "Raid Target Icon", player, -1, TargetRadial.Page(sub = "Raid Target Icon"))
         // an NPC targeted (the TARGET menu)
-        val npc = listOf(e("Set Focus", "SetFocus"), e("Raid Target Icon", "RaidTarget", sub = true))
+        val npc = listOf(e("Set Focus", "SetFocus"), e("Raid Target Icon", "RaidTarget", sub = raid))
         shot("target_npc", "Kobold Tunneler", npc, -1)
     }
 }

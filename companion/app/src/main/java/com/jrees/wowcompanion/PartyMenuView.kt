@@ -108,7 +108,7 @@ class PartyMenuView(context: Context, grey: Set<String> = PlayerMenu.PARTY_GREY)
                 continue
             }
             UiKit.menuRow(c, r, e.text + (if (e.sub != null) "  >" else ""), i == menu.sel, enabled = e.enabled,
-                mark = if (e.checked == true) "icon_check" else null, size = 28f)
+                mark = if (e.checked == true) "icon_check" else null, size = 28f, menuIcon = MenuIcons.keyOf(e.key, e.text))
             hits.add(r to i)
         }
         // more rows below: the game's gold arrow at the foot

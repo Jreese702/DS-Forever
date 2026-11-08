@@ -3767,8 +3767,14 @@ class MapView(context: Context) : View(context) {
     private val pmenuHits = ArrayList<Pair<RectF, Int>>()
     private val pmenuBox = RectF()
 
+    /** the context radial instead of the list (the user, 2026-11-07: "no more drop down menus"): the host opens its wheel (the name) */
+    var onPortraitRadial: ((String) -> Unit)? = null
+    /** the wheel is open over the map module: its keys are the wheel's (it reads the controller itself) */
+    var radialOpen: () -> Boolean = { false }
+
     private fun openPlayerMenu() {
         val ask = onPlayerMenu ?: run { note("The player menu is not on the tap pad yet"); return }
+        onPortraitRadial?.let { wheel -> wheel(portrait?.optString("n", "") ?: ""); ask(); return }
         pmenu.openReading()
         ask()
         syncB(); invalidate()
@@ -3828,7 +3834,7 @@ class MapView(context: Context) : View(context) {
                 continue
             }
             UiKit.menuRow(c, r, e.text + (if (e.sub != null) "  >" else ""), i == pmenu.sel, enabled = e.enabled,
-                mark = if (e.checked == true) "icon_check" else null, size = 28f)
+                mark = if (e.checked == true) "icon_check" else null, size = 28f, menuIcon = MenuIcons.keyOf(e.key, e.text))
             pmenuHits.add(RectF(r) to i)
         }
     }
@@ -5236,6 +5242,7 @@ class MapView(context: Context) : View(context) {
 
     /** apply one key; everything but leaving (returned as [MapCursor.Do.Leave] for the caller) */
     private fun applyKey(k: String): MapCursor.Do {
+        if (radialOpen()) return MapCursor.Do.Nothing                                 // the context radial reads the controller itself
         if (pmenu.open) { pmenuDid(pmenu.key(k)); return MapCursor.Do.Nothing }      // every key is the open player menu's
         if (panelId != 0 && panelKey(k)) return MapCursor.Do.Nothing                  // ... and the open quest panel's, when it takes it
         // the Filter's tabs with LB / RB (zoom is not in use while it is open)

@@ -872,13 +872,19 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         targetRadial.onClose = { from -> pauseView.onClose(from) }
         targetRadial.barsBottom = { pauseView.barsBottom?.invoke() ?: 0f }
         targetRadial.onDo = { d, name -> targetDo(d, name) }
-        targetRadial.onList = { doc, name ->
-            if (room != Room.HOME) show(Room.HOME)
-            homeView.targetMenu.open(-1, name, byPad = true)
-            homeView.targetMenu.onDoc(doc)
+        // Home's portrait menu: the context radial (the user: "no more drop down menus in any of those places"); the map module holds the
+        // controller, so the wheel reads it (READ) and the map ignores its keys meanwhile
+        mapView.radialOpen = { tradOpen() && targetRadial.opener == "portrait" }
+        mapView.onPortraitRadial = { name ->
+            targetRadial.open("portrait", TargetRadialView.Input.READ, name, { d, _ ->
+                when (d) {
+                    is PlayerMenu.Do.Run -> mapView.onPlayerMenuRun?.invoke(d.id)
+                    is PlayerMenu.Do.Secure -> mapView.onPlayerMenuSecure?.invoke(d.col)
+                    is PlayerMenu.Do.Refused -> mapView.note(d.why)
+                    else -> {}
+                }
+            }, {})
         }
-        targetRadial.listKey = { k -> homeView.targetMenu.key(k); homeView.targetMenu.isOpen }
-        homeView.targetMenu.onDo = { d, _ -> targetDo(d, homeView.targetMenu.name) }
         pauseView.inFight = { homeView.inFight() }
         pauseView.barsBottom = {
             if (room != Room.HOME || !homeView.isShown || homeView.barsBottom() <= 0f) 0f else {
@@ -1275,7 +1281,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         homeView.onPartyLong = { i ->
             val cells = PartyTaps.menu(live.cfg, i)
             if (cells != null && live.tapsAllowed(SystemClock.uptimeMillis()) && TapBridge.taps(this, questsPad, cells) { }) {
-                homeView.partyMenu.open(i, live.party?.m?.firstOrNull { it.i == i }?.n ?: "", byPad = false)
+                partyWheel(i, byPad = false)
             } else Log.i("WCHOME", "party: hold on $i: the menu was not asked")
         }
         homeView.onPartyTag = {
@@ -1311,6 +1317,27 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             PlayerMenu.Do.Close, PlayerMenu.Do.None -> {}
         }
     }
+
+    /** Party mode's member menu as the context radial (the user: "no more drop down menus"): the PartyPad's presses drive it ([byPad]:
+     *  its Y opened it; the wheel's close taps MENU DONE), or a finger (a long press) */
+    private fun partyWheel(i: Int, byPad: Boolean) {
+        val live = PartyModel.live
+        val name = live.party?.m?.firstOrNull { it.i == i }?.n ?: ""
+        targetRadial.open("party", TargetRadialView.Input.KEYS, name, { d, who ->
+            when (d) {
+                is PlayerMenu.Do.Run -> {
+                    if (d.id >= 0) GuestPad.playerMenuRun(questsPad, d.id)?.let { TapBridge.taps(this, questsPad, it) { } }
+                    if (d.app == "whisper" && who.isNotEmpty()) ui.post { show(Room.CHAT); chatView.whisperTo(who) }
+                }
+                is PlayerMenu.Do.Secure -> TapBridge.taps(this, questsPad, listOf((if (d.row == "party") PartyModel.live.cfg?.pad?.row ?: "party" else d.row) to d.col)) { }
+                is PlayerMenu.Do.Refused -> Log.i("WCHOME", "party wheel: ${d.why}")
+                else -> {}
+            }
+        }, {
+            if (byPad) PartyTaps.menuDone(live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } }
+        })
+    }
+    private fun partyWheelOpen() = tradOpen() && targetRadial.opener == "party"
 
     /** 1.1's re-ask (party row col 22): only with a known column, live, at most once per 10 s */
     private fun partyAsk(why: PartyModel.Ask) {
@@ -1352,14 +1379,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val menu = homeView.partyMenu
         when (b.k) {
             // Y opened the player menu for b.u: the PartyPad's next presses are the menu's
-            "menu" -> PartyModel.unitIndex(b.u)?.let { i ->
-                menu.open(i, live.party?.m?.firstOrNull { it.i == i }?.n ?: "", byPad = true)
-            }
-            "key" -> if (menu.isOpen && menu.byPad) b.key?.let { menu.key(it) }
-            "off" -> if (menu.isOpen && menu.byPad) menu.close()
+            "menu" -> PartyModel.unitIndex(b.u)?.let { i -> partyWheel(i, byPad = true) }
+            "key" -> if (partyWheelOpen()) b.key?.let { targetRadial.key(it) } else if (menu.isOpen && menu.byPad) b.key?.let { menu.key(it) }
+            "off" -> { if (partyWheelOpen()) targetRadial.close("Party mode off"); if (menu.isOpen && menu.byPad) menu.close() }
         }
         // the pad's menu sub-state with no menu of ours driving it (a lost k=menu, an app restart): MENU DONE frees the presses
-        if (PartyModel.strandedMenu(b, menu.isOpen && menu.byPad)) {
+        if (PartyModel.strandedMenu(b, partyWheelOpen() || (menu.isOpen && menu.byPad))) {
             val sent = PartyTaps.menuDone(live.cfg)?.let { TapBridge.taps(this, questsPad, it) { } } == true
             Log.i("WCHOME", "party: the pad's menu sub-state with no menu here: menu done ${if (sent) "tapped" else "not sent"}")
         }
@@ -1383,12 +1408,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun partyTaker(holder: String) {
         if (!PartyModel.live.takerSeen(holder, SystemClock.uptimeMillis())) return
         if (homeView.partyMenu.isOpen) homeView.partyMenu.close()
+        if (partyWheelOpen()) targetRadial.close("Party mode left")
         val sent = PartyTaps.off(PartyModel.live.cfg)?.let { TapBridge.taps(this, questsPad, it) { w -> Log.i("WCHOME", "party: off not sent: $w") } } == true
         Log.i("WCHOME", "party: $holder took the controller: off ${if (sent) "tapped" else "not sent"}")
     }
 
     private fun partyLeaveHome(why: String) {
         if (homeView.partyMenu.isOpen) homeView.partyMenu.close()
+        if (partyWheelOpen()) targetRadial.close("Party mode left")
         if (!PartyModel.offOnLeave(PartyModel.live.party)) return
         val sent = PartyTaps.off(PartyModel.live.cfg)?.let { TapBridge.taps(this, questsPad, it) { w -> Log.i("WCHOME", "party: off not sent: $w") } } == true
         Log.i("WCHOME", "party: left Home ($why): off ${if (sent) "tapped" else "not sent"}")
@@ -1847,13 +1874,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "itarget" -> if (current) characterView.onItarget(msg.optBoolean("on"))
             "pmenu" -> if (current) {
                 when (msg.optString("src")) {
-                    "party" -> homeView.partyMenu.onDoc(msg)
+                    "party" -> if (partyWheelOpen()) targetRadial.fill(msg) else homeView.partyMenu.onDoc(msg)
                     // q51: the target radial (a bare Y out of a fight with a target): opens it, or refreshes it / its list
-                    "radial" -> if (!(::pauseView.isInitialized && pauseView.isOpen) && !(::radialView.isInitialized && radialView.isOpen)) {
-                        targetRadial.onDoc(msg)
-                        if (homeView.targetMenu.isOpen) homeView.targetMenu.onDoc(msg)
-                    }
-                    else -> mapView.onPlayerMenuDoc(msg)
+                    "radial" -> if (!(::pauseView.isInitialized && pauseView.isOpen) && !(::radialView.isInitialized && radialView.isOpen) &&
+                        !(tradOpen() && targetRadial.opener != "target")) targetRadial.onDoc(msg)
+                    else -> if (tradOpen() && targetRadial.opener == "portrait") targetRadial.fill(msg) else mapView.onPlayerMenuDoc(msg)
                 }
             }
             // PARTY MODE (PARTY_BUILD.md 1, 4.7): the roster and the settings may be SHOWN from a replay; a box press and an answer only

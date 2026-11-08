@@ -11,23 +11,26 @@ import android.view.View
 import org.json.JSONObject
 
 /**
- * THE TARGET RADIAL ON SCREEN (the user, 2026-11-07: "When targeting something while not in the combat state, I want the Y glyph to
+ * THE CONTEXT RADIAL ON SCREEN (the user, 2026-11-07: "When targeting something while not in the combat state, I want the Y glyph to
  * appear over them for the inspect menu. Instead of that menu opening a drop down I want to design a radial for it"; picks: the BOTTOM
- * screen, TAP Y / aim / A picks, the 8 most used + More). The pause wheel's look (UiKit.pauseRadial: the game's GamepadRadial, Home's
- * disc rising into the hub) with the target's menu on its slices ([TargetRadial]) and the target's name as its title.
+ * screen, TAP Y / aim / A picks, the 8 most used + More; then "I want to use these context radicals for everything, no more drop down
+ * menus in any of those places, including when selecting more make another radial"). The pause wheel's look (UiKit.pauseRadial: the
+ * game's GamepadRadial, Home's disc rising into the hub) with the game's own menu on its slices ([TargetRadial]), the name as its title,
+ * the context icons mixed from game art ([MenuIcons]).
  *
- * OPENED BY the target's menu itself: a bare Y out of a fight with a target (Spells' router, PadMap m101) does no game action and reads
- * the target's menu (Quests q51, `pmenu` src "radial"); that document opens the wheel.
+ * WHERE IT OPENS (one view, three openers, each with its own [Input]):
+ *  - the TARGET's menu: a bare Y with a target out of the controller's grow (PadMap m101 / m102) reads it (Quests q51, `pmenu` src
+ *    "radial"); that document opens the wheel. [Input.HOLD]: it holds the guest "radial" and reads the controller itself.
+ *  - Home's PORTRAIT menu (the map module's): [Input.READ]: the map module already holds the controller; the wheel reads it, the map
+ *    ignores its keys meanwhile.
+ *  - Party mode's MEMBER menu (the PartyPad's Y, a long press on a cell): [Input.KEYS]: the PartyPad's own presses come in by [key] (a
+ *    hold of ours would end Party mode); a finger works too.
  *
- * INPUT while open (its own PadInput, as the pause wheel): either stick or the D-pad (Left / Right step round the ring) aims; A picks;
- * B, Y or the hub closes. A finger works too. MORE = the whole menu as a list ([onList]: Home's menu view over the left column); the
- * wheel's reader drives it (D-pad Up / Down, A, B) and keeps the controller until it closes.
+ * INPUT: either stick (READ / HOLD) or the D-pad (Left / Right round the ring, Up the top, Down the bottom) aims; A picks; B goes back a
+ * wheel, and from the first closes; Y or the hub closes. MORE and a SUB-MENU open the next wheel ([TargetRadial.Page]).
  *
- * THE CONTROLLER: while open it holds the guest "radial" (the pause wheel's and the consumables wheel's: the router sends nothing to
- * them while it holds), so the game acts on none of it; let go once the sticks are back in the middle, as the pause wheel.
- *
- * A PICK ([onDo]): a menu entry runs as the portrait menu's (its digit taps, or its secure cell: Inspect = the game's /inspect, Set
- * Focus); one with a question (Promote, Uninvite) asks by a second pick; a sub-menu (Raid Target Icon) opens the list.
+ * A PICK ([open]'s onDo): a menu entry runs as the opener's menu ran it (digit taps or a secure cell); one with a question (Promote,
+ * Uninvite) asks by a second pick.
  */
 class TargetRadialView(
     context: Context,
@@ -35,22 +38,27 @@ class TargetRadialView(
     private val questsPad: () -> JSONObject?,
     private val guestTap: (List<Pair<String, Int>>?) -> Boolean,
 ) : View(context) {
-    /** what a pick does (the host's taps; Whisper opens the Chat room) */
-    var onDo: (PlayerMenu.Do, String) -> Unit = { _, _ -> }
-    /** More: open the whole menu as a list (the document, the target's name) */
-    var onList: (JSONObject, String) -> Unit = { _, _ -> }
-    /** the list's own press (PlayerMenu keys: PADDUP / PADDDOWN / PAD1 / PAD2); returns false once the list has closed */
-    var listKey: (String) -> Boolean = { false }
+    enum class Input { HOLD, READ, KEYS }
+
     var onSlide: (Float) -> Unit = {}
     var onClose: (Float) -> Unit = { onSlide(0f) }
     var barsBottom: (() -> Float)? = null
+    /** the target's picks (the host's taps; Whisper opens the Chat room): the TARGET opener's */
+    var onDo: (PlayerMenu.Do, String) -> Unit = { _, _ -> }
 
+    private var input = Input.HOLD
+    /** who opened it: "target" / "portrait" / "party" (the host routes `pmenu` documents by it) */
+    var opener = ""
+        private set
+    private var doAct: (PlayerMenu.Do, String) -> Unit = { _, _ -> }
+    private var closed: () -> Unit = {}
     private var doc: JSONObject? = null
+    private var items: List<PlayerMenu.Entry> = emptyList()
     private var name = ""
+    private val pages = ArrayList<TargetRadial.Page>()
     private var slices: List<TargetRadial.Slice?> = emptyList()
     private var pointed = -1
     private var openedAt = 0L
-    private var listing = false
     private var reader: PadInput? = null
     private var held = 0
     private var seeded = false
@@ -72,16 +80,39 @@ class TargetRadialView(
 
     init { visibility = GONE; isClickable = true }
 
-    /** Quests q51's `pmenu` src "radial" (current): opens the wheel, or refreshes it (the checks after a run) */
+    /** Quests q51's `pmenu` src "radial" (current): the TARGET's wheel opens, or refreshes (the checks after a run) */
     fun onDoc(d: JSONObject) {
-        doc = d
-        name = TargetRadial.name(d)
-        slices = TargetRadial.slices(PlayerMenu.parse(d.optJSONArray("items")))
-        if (!isOpen) open() else invalidate()
+        if (!isOpen) { open("target", Input.HOLD, TargetRadial.name(d), onDo, {}) }
+        fill(d)
     }
 
-    private fun open() {
-        Log.i("WCLOG", "target radial: OPEN ($name, ${slices.count { it?.entry != null }} entries)")
+    /** the menu's document for the wheel that is open (any opener): its entries, page by page */
+    fun fill(d: JSONObject) {
+        doc = d
+        TargetRadial.name(d).takeIf { it.isNotEmpty() }?.let { name = it }
+        items = PlayerMenu.parse(d.optJSONArray("items"), if (opener == "party") PlayerMenu.PARTY_GREY else emptySet())
+        relayout()
+        invalidate()
+    }
+
+    private fun relayout() {
+        // a page that is gone after the game's re-read (a sub-menu emptied): back to the root
+        var s = TargetRadial.slices(items, pages.lastOrNull() ?: TargetRadial.ROOT)
+        if (s == null) { pages.clear(); s = TargetRadial.slices(items) }
+        slices = s ?: emptyList()
+        if (pointed >= 0 && slices.getOrNull(pointed) == null) pointed = -1
+    }
+
+    /**
+     * open the wheel for [opener] ("target" / "portrait" / "party"), its [name] until the document comes (Asking the game...);
+     * [onDo] = what a pick does, [onClosed] = after it closes (by any route)
+     */
+    fun open(opener: String, input: Input, name: String, onDo: (PlayerMenu.Do, String) -> Unit, onClosed: () -> Unit) {
+        if (isOpen) close("another opener")
+        this.opener = opener; this.input = input; this.name = name
+        doAct = onDo; closed = onClosed
+        doc = null; items = emptyList(); pages.clear(); slices = emptyList()
+        Log.i("WCLOG", "context radial: OPEN ($opener, $name, ${input.name})")
         UiKit.pauseBarsBottom = barsBottom?.invoke() ?: 0f
         UiKit.pauseStripTop = run {
             val a = IntArray(2); val b = IntArray(2)
@@ -89,36 +120,37 @@ class TargetRadialView(
             if (strip.height > 0) (a[1] - b[1]).toFloat() - strip.translationY else 0f
         }
         openedAt = SystemClock.uptimeMillis()
-        owning = true
-        pointed = -1; line = null; armedKey = null; aimStick = -1; listing = false
+        pointed = -1; line = null; armedKey = null; aimStick = -1
         held = 0; seeded = false
         strip.homeLifted = true
         visibility = VISIBLE
         bringToFront()
-        hold(0)
-        reader?.stop()
-        reader = PadInput(
+        if (input == Input.HOLD) { owning = true; hold(0) }
+        reader?.stop(); reader = null
+        if (input != Input.KEYS) reader = PadInput(
             onPad = { _, _, _, _ -> },
-            onStatus = { ok, m -> if (!ok) Log.i(TAG, "target radial: controller reader: $m") },
+            onStatus = { ok, m -> if (!ok) Log.i(TAG, "context radial: controller reader: $m") },
             onButtons = { h -> post { buttons(h) } },
             onStickVector = { st, x, y -> post {
                 mag[st.coerceIn(0, 1)] = kotlin.math.hypot(x.toDouble(), y.toDouble())
-                if (isOpen && !listing) vector(st, x.toDouble(), -y.toDouble()) else stickCheck()
+                if (isOpen) vector(st, x.toDouble(), -y.toDouble()) else stickCheck()
             } },
         ).also { it.start() }
         invalidate()
     }
 
-    /** gone at once (the pause wheel's rule); the controller let go once the sticks are back */
+    /** gone at once (the pause wheel's rule); a hold is let go once the sticks are back */
     fun close(why: String) {
         if (!isOpen) return
-        Log.i("WCLOG", "target radial: CLOSED ($why)")
-        openedAt = 0L; listing = false
+        Log.i("WCLOG", "context radial: CLOSED ($opener, $why)")
+        openedAt = 0L
         val from = slidT; slidT = 0f
         strip.homeLifted = false
         visibility = GONE
         onClose(from)
-        stickLater()
+        if (input == Input.HOLD) stickLater() else { reader?.stop(); reader = null }
+        val cb = closed; closed = {}
+        cb()
     }
 
     /** the app leaves the screen: gone, the hold freed */
@@ -135,7 +167,7 @@ class TargetRadialView(
         heldOk = false
         val mine = ++holdTry
         val sent = guestTap(GuestPad.cells(questsPad(), GUEST, hold = true))
-        Log.i(TAG, "target radial: hold${if (attempt > 0) " again ($attempt)" else ""} ${if (sent) "sent" else "NOT sent"}")
+        Log.i(TAG, "context radial: hold${if (attempt > 0) " again ($attempt)" else ""} ${if (sent) "sent" else "NOT sent"}")
         postDelayed({ if (mine == holdTry && !heldOk && isOpen && attempt < 2) hold(attempt + 1) }, HomeRadialView.HOLD_CHECK_MS)
     }
 
@@ -145,7 +177,7 @@ class TargetRadialView(
         freed = false
         val mine = ++freeTry
         val sent = guestTap(GuestPad.cells(questsPad(), GUEST, hold = false))
-        Log.i(TAG, "target radial: free${if (attempt > 0) " again ($attempt)" else ""} ${if (sent) "sent" else "NOT sent"}")
+        Log.i(TAG, "context radial: free${if (attempt > 0) " again ($attempt)" else ""} ${if (sent) "sent" else "NOT sent"}")
         postDelayed({
             if (mine != freeTry || isOpen) return@postDelayed
             if (!freed && attempt < 4) free(attempt + 1) else owning = false
@@ -179,34 +211,51 @@ class TargetRadialView(
 
     private fun buttons(h: Int) {
         if (!isOpen) { held = h; return }
-        // the first report is the state found: Y still down from the press that opened the wheel is no press
+        // the first report is the state found: the button still down from the press that opened the wheel is no press
         if (!seeded) { seeded = true; held = h; return }
-        if (listing) {
-            val k = when {
-                pressed(PadInput.SLOT_DPAD_UP, h) -> "PADDUP"
-                pressed(PadInput.SLOT_DPAD_DOWN, h) -> "PADDDOWN"
-                pressed(PadInput.SLOT_FACE_BOTTOM, h) -> "PAD1"
-                pressed(PadInput.SLOT_FACE_RIGHT, h) -> "PAD2"
-                else -> null
-            }
-            held = h
-            if (k != null) { lastActAt = SystemClock.uptimeMillis(); if (!listKey(k)) close("the list closed") }
-            return
-        }
-        when {
-            pressed(PadInput.SLOT_FACE_RIGHT, h) -> { held = h; close("B"); return }
-            pressed(PadInput.SLOT_FACE_TOP, h) -> { held = h; close("Y"); return }
-            pressed(PadInput.SLOT_FACE_BOTTOM, h) -> { held = h; if (pointed in 0..7) pick(pointed) else say("Point at a slice"); return }
-            pressed(PadInput.SLOT_DPAD_RIGHT, h) -> step(+1)
-            pressed(PadInput.SLOT_DPAD_LEFT, h) -> step(-1)
-            pressed(PadInput.SLOT_DPAD_UP, h) -> { pointed = 0; invalidate() }
-            pressed(PadInput.SLOT_DPAD_DOWN, h) -> { pointed = 4; invalidate() }
+        val k = when {
+            pressed(PadInput.SLOT_FACE_RIGHT, h) -> "PAD2"
+            pressed(PadInput.SLOT_FACE_TOP, h) -> "PAD4"
+            pressed(PadInput.SLOT_FACE_BOTTOM, h) -> "PAD1"
+            pressed(PadInput.SLOT_DPAD_RIGHT, h) -> "PADDRIGHT"
+            pressed(PadInput.SLOT_DPAD_LEFT, h) -> "PADDLEFT"
+            pressed(PadInput.SLOT_DPAD_UP, h) -> "PADDUP"
+            pressed(PadInput.SLOT_DPAD_DOWN, h) -> "PADDDOWN"
+            else -> null
         }
         held = h
+        if (k != null) key(k)
+    }
+
+    /** one press, the game's key names (the reader's, or the PartyPad's `key` for Party mode) */
+    fun key(k: String) {
+        if (!isOpen) return
+        when (k) {
+            "PAD2" -> back()
+            "PAD4" -> close("Y")
+            "PAD1" -> if (pointed in 0..7) pick(pointed) else say("Point at a slice")
+            "PADDRIGHT" -> step(+1)
+            "PADDLEFT" -> step(-1)
+            "PADDUP" -> { pointed = 0; invalidate() }
+            "PADDDOWN" -> { pointed = 4; invalidate() }
+        }
+    }
+
+    /** B: the wheel before (More / a sub-menu), or closed from the first */
+    private fun back() {
+        if (pages.isEmpty()) { close("B"); return }
+        pages.removeAt(pages.size - 1)
+        pointed = -1; line = null
+        relayout(); invalidate()
     }
 
     private fun step(d: Int) {
-        pointed = if (pointed < 0) (if (d > 0) 0 else 7) else (pointed + d + 8) % 8
+        var p = pointed
+        for (n in 0 until 8) {
+            p = if (p < 0) (if (d > 0) 0 else 7) else (p + d + 8) % 8
+            if (slices.getOrNull(p) != null) break
+        }
+        pointed = p
         line = null
         invalidate()
     }
@@ -225,15 +274,12 @@ class TargetRadialView(
 
     private fun pick(i: Int) {
         val s = slices.getOrNull(i) ?: return
-        val d = doc ?: return
-        Log.i(TAG, "target radial: pick ${s.label}")
-        if (s.more || s.entry?.sub != null) {
-            // the whole menu as a list (a sub-menu's entries are in it); the wheel keeps the controller and drives it
-            listing = true
-            strip.homeLifted = false
-            onSlide(0f)                                               // Home's columns back: the list stands in the left one
-            onList(d, name)
-            invalidate()
+        Log.i(TAG, "context radial: pick ${s.label}")
+        s.next?.let { p ->
+            // More / a sub-menu: the next wheel (B comes back)
+            if (!s.enabled) { say("Not available here"); return }
+            pages += p; pointed = -1; line = null; armedKey = null
+            relayout(); invalidate()
             return
         }
         val e = s.entry ?: return
@@ -250,8 +296,9 @@ class TargetRadialView(
         }
         if (act == null) { say("Not available here"); return }
         lastActAt = SystemClock.uptimeMillis()
+        val run = doAct; val who = name
         close("picked ${s.label}")
-        onDo(act, name)
+        run(act, who)
     }
 
     // ------------------------------------------------------------------------------------------------ paint
@@ -263,30 +310,37 @@ class TargetRadialView(
         return PointF(r.centerX() + a[0] - b[0], r.centerY() + a[1] - b[1] - strip.translationY) to r.width()
     }
 
-    private fun kitSlices(): List<UiKit.PauseSlice?> = slices.map { it?.let { s -> UiKit.PauseSlice(s.icon, s.label, s.enabled) } }
+    private fun kitSlices(): List<UiKit.PauseSlice?> = slices.map { it?.let { s -> UiKit.PauseSlice(s.icon, s.label, s.enabled, menu = s.menu) } }
+
+    /** the title: the name, and the wheel it is on (More, a sub-menu's words) */
+    private fun title(): String {
+        val n = name.ifEmpty { "Target" }
+        val p = pages.lastOrNull() ?: return n
+        return p.sub ?: "$n: ${Tr.t("More")}"
+    }
 
     override fun onDraw(c: Canvas) {
         if (!isOpen) return
-        if (listing) return                                          // the list over the left column; the wheel steps aside
         val t = ((SystemClock.uptimeMillis() - openedAt) * HomePauseView.SPEED).coerceIn(0f, UiKit.PAUSE_OPEN_MS)
         onSlide(t); slidT = t
+        if (doc == null && line == null) say("Asking the game...")
         val lineFor = SystemClock.uptimeMillis() - lineAt
         if (line != null && lineFor > HomePauseView.LINE_MS + HomePauseView.LINE_FADE_MS) line = null
         val lineAlpha = if (lineFor <= HomePauseView.LINE_MS) 1f else (1f - (lineFor - HomePauseView.LINE_MS).toFloat() / HomePauseView.LINE_FADE_MS).coerceIn(0f, 1f)
         val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
         val (disc, size) = discHere()
         val moving = UiKit.pauseRadial(c, screen, disc, size, kitSlices(), -1, pointed, -1, t, 0f, line, lineAlpha = lineAlpha,
-            pickGlyph = true, up = null, down = null, left = null, right = null, title = name.ifEmpty { "Target" })
+            pickGlyph = true, up = null, down = null, left = null, right = null, title = title())
         if (moving || t < UiKit.PAUSE_OPEN_MS || line != null) postInvalidateOnAnimation()
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (!isOpen) return false
-        if (listing) return false                                     // the list takes its own touches
         if (e.action == MotionEvent.ACTION_UP) {
             val s = UiKit.pauseRadialHit(RectF(0f, 0f, width.toFloat(), height.toFloat()), e.x, e.y)
             when {
-                s == UiKit.PAUSE_HUB || s < 0 -> close("the hub / outside")
+                s == UiKit.PAUSE_HUB -> back()                    // the hub = B (a wheel back, or closed)
+                s < 0 -> close("outside")
                 else -> { pointed = s; pick(s) }
             }
         }

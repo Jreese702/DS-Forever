@@ -3,22 +3,32 @@ package com.jrees.wowcompanion
 import org.json.JSONObject
 
 /**
- * THE TARGET RADIAL'S SLICES (the user, 2026-11-07: "When targeting something while not in the combat state, I want the Y glyph to
- * appear over them for the inspect menu. Instead of that menu opening a drop down I want to design a radial for it"; picks: the bottom
- * screen, tap Y / aim / A picks, the 8 most used + More). Pure: the game's own menu for the target (Quests q51, `pmenu` src "radial",
- * parsed by [PlayerMenu.parse]) laid on the pause wheel's eight slices.
+ * THE CONTEXT RADIAL'S SLICES (the user, 2026-11-07: "When targeting something while not in the combat state, I want the Y glyph to
+ * appear over them for the inspect menu. Instead of that menu opening a drop down I want to design a radial for it"; then "I want to use
+ * these context radicals for everything, no more drop down menus in any of those places, including when selecting more make another
+ * radial"). Pure: the game's own menu (Quests' `pmenu`, parsed by [PlayerMenu.parse]) laid on the pause wheel's eight slices, page by page.
  *
- * THE RING (the kit's order, 0 = the top, clockwise): Whisper, Invite, Trade, Inspect, Follow, Duel, Add Friend where the target's menu
- * has them, in those places; a place the menu does not fill takes the menu's next entry (an NPC: Set Focus, Raid Target Icon ...);
- * slice 7 is always More (the whole menu as a list). Titles are no slices; a greyed entry stays greyed.
+ * THE ROOT RING (the kit's order, 0 = the top, clockwise): Whisper, Invite, Trade, Inspect, Follow, Duel, Add Friend where the menu has
+ * them, in those places; a place the menu does not fill takes the menu's next entry; slice 7 is More when two or more entries are left
+ * (one left goes there itself). MORE = another wheel of the rest, seven at a time with More again while more are left. A SUB-MENU (Raid
+ * Target Icon) = a wheel of its own entries. Titles are no slices; a greyed entry stays greyed.
  */
 object TargetRadial {
-    /** one slice: the menu [entry] it runs, or More ([entry] null, [more] true) */
-    data class Slice(val label: String, val icon: String, val entry: PlayerMenu.Entry?, val more: Boolean = false) {
-        val enabled: Boolean get() = more || entry?.enabled == true
+    /** which wheel: the root, More's page [offset] (into what the root does not show), or the sub-menu named [sub] from [offset] */
+    data class Page(val sub: String? = null, val more: Boolean = false, val offset: Int = 0) {
+        val root get() = sub == null && !more
+    }
+    val ROOT = Page()
+
+    /** one slice: the menu [entry] it runs, or a wheel to open ([next]: More / a sub-menu) */
+    data class Slice(val label: String, val icon: String, val entry: PlayerMenu.Entry?, val next: Page? = null) {
+        val more get() = next != null && entry == null
+        val enabled: Boolean get() = next != null || entry?.enabled == true
+        /** the context menu's icon mixed from game art (MenuIcons), when it has one */
+        val menu: String? get() = if (more) "more" else entry?.let { MenuIcons.keyOf(it.key, it.text) }
     }
 
-    /** the preferred places: the entry key's words (the mixin's name, lower case) and the slice's picture (the wheel's ricon_*) */
+    /** the preferred places: the entry key's words (the mixin's name, lower case) and the slice's kit picture (the wheel's ricon_*) */
     private val PREFERRED = listOf(
         listOf("whisper") to "chat",
         listOf("invite") to "groupfinder",
@@ -38,25 +48,54 @@ object TargetRadial {
         return words.any { k.contains(it) }
     }
 
-    /** the eight slices for a target's menu ([items] = PlayerMenu.parse of the document's items) */
-    fun slices(items: List<PlayerMenu.Entry>): List<Slice?> {
-        val usable = items.filter { !it.title }
+    private fun sliceOf(e: PlayerMenu.Entry, icon: String = "quests") =
+        Slice(e.text, icon, e, if (e.sub != null) Page(sub = e.text) else null)
+
+    /** the root ring and what it leaves for More */
+    private fun root(usable: List<PlayerMenu.Entry>): Pair<Array<Slice?>, List<PlayerMenu.Entry>> {
         val out = arrayOfNulls<Slice>(8)
         val used = HashSet<PlayerMenu.Entry>()
         for ((i, p) in PREFERRED.withIndex()) {
             val e = usable.firstOrNull { it !in used && matches(it, p.first) } ?: continue
-            out[i] = Slice(e.text, p.second, e); used += e
+            out[i] = sliceOf(e, p.second); used += e
         }
-        // the places left: the menu's next entries, in its order
-        val rest = usable.filter { it !in used }.iterator()
-        for (i in 0 until MORE) if (out[i] == null && rest.hasNext()) {
-            val e = rest.next()
-            out[i] = Slice(e.text, "quests", e)
-        }
-        out[MORE] = Slice("More", "settings", null, more = true)
-        return out.toList()
+        val rest = ArrayList(usable.filter { it !in used })
+        for (i in 0 until MORE) if (out[i] == null && rest.isNotEmpty()) out[i] = sliceOf(rest.removeAt(0))
+        return out to rest
     }
 
-    /** the document's target name (nm), or "" */
+    /** [list] from [offset]: up to eight, or seven and More ([more] = that More's page) */
+    private fun chunk(list: List<PlayerMenu.Entry>, offset: Int, more: (Int) -> Page): List<Slice?> {
+        val rest = list.drop(offset)
+        if (rest.size <= 8) return List(8) { i -> rest.getOrNull(i)?.let { sliceOf(it) } }
+        return List(8) { i -> if (i < MORE) sliceOf(rest[i]) else Slice("More", "settings", null, more(offset + MORE)) }
+    }
+
+    private fun findSub(es: List<PlayerMenu.Entry>, text: String): PlayerMenu.Entry? {
+        for (e in es) {
+            if (e.sub != null && e.text == text) return e
+            e.sub?.let { s -> findSub(s, text)?.let { return it } }
+        }
+        return null
+    }
+
+    /** the eight slices of [page] for a menu's [items] (PlayerMenu.parse of the document's items); null = that page is gone */
+    fun slices(items: List<PlayerMenu.Entry>, page: Page = ROOT): List<Slice?>? {
+        val usable = items.filter { !it.title }
+        val (ring, rest) = root(usable)
+        return when {
+            page.root -> {
+                if (rest.size == 1) ring[MORE] = sliceOf(rest[0])
+                else if (rest.size >= 2) ring[MORE] = Slice("More", "settings", null, Page(more = true))
+                ring.toList()
+            }
+            page.more -> if (rest.size < 2) null else chunk(rest, page.offset) { o -> Page(more = true, offset = o) }
+            else -> findSub(usable, page.sub!!)?.sub?.filter { !it.title }?.let { s ->
+                chunk(s, page.offset) { o -> Page(sub = page.sub, offset = o) }
+            }
+        }
+    }
+
+    /** the document's name (nm), or "" */
     fun name(d: JSONObject): String = d.optString("nm", "")
 }

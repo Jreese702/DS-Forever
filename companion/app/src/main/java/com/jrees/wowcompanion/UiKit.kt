@@ -2673,10 +2673,14 @@ object UiKit {
      */
     fun menuRow(c: Canvas, r: RectF, label: String, selected: Boolean, colour: Int = Theme.text,
                 glyph: String? = null, art: String? = null, enabled: Boolean = true, mark: String? = null,
-                size: Float = 36f) {
+                size: Float = 36f, menuIcon: String? = null) {
         if (selected) focus(c, RectF(r.left + 6f, r.top + 8f, r.right - 6f, r.bottom - 8f))   // THE one highlight (LATER 19)
         val cy = r.centerY()
         if (glyph != null) pad(c, glyph, r.left + 48f, cy, 56f, if (enabled) 255 else 110)
+        else if (menuIcon != null && MenuIcons.SPECS.containsKey(menuIcon)) {
+            val h = minOf(68f, r.height() - 8f)
+            MenuIcons.draw(c, RectF(r.left + 48f - h / 2f, cy - h / 2f, r.left + 48f + h / 2f, cy + h / 2f), menuIcon, if (enabled) 255 else 140, dim = !enabled)
+        }
         else if (art != null) tex(art)?.let {
             pBmp.alpha = if (enabled) 255 else 110
             c.drawBitmap(it, null, RectF(r.left + 18f, cy - 30f, r.left + 78f, cy + 30f), pBmp)
@@ -4337,7 +4341,8 @@ object UiKit {
      * game's word; [enabled] false = the game's unavailable look (its grey wedge, the picture's _off art, a grey label); [note] = small
      * grey words on the label's outer side (optional; the "Coming later" of a greyed slice can instead be the red line, pauseRadial's line)
      */
-    class PauseSlice(val key: String, val label: String, val enabled: Boolean = true, val note: String? = null)
+    /** [menu]: a context-menu icon (MenuIcons: game art mixed on the phone) drawn instead of the kit picture [key] */
+    class PauseSlice(val key: String, val label: String, val enabled: Boolean = true, val note: String? = null, val menu: String? = null)
 
     /** the disc: its middle and width, how red its swirl is (0..1), how far its B has come in (0..1), its halo (0..1) */
     class PauseDisc(val cx: Float, val cy: Float, val size: Float, val red: Float, val b: Float, val glow: Float)
@@ -4656,14 +4661,25 @@ object UiKit {
             val pull = 12f                                        // the icon on its segment's centre, the label under it (the game's)
             val ri = (150f - pull) * g.s
             val ix = g.cx + ri * Math.cos(a).toFloat(); val iy = g.cy - ri * Math.sin(a).toFloat()
-            if (art != null) {
+            val menuIcon = sl.menu != null && MenuIcons.SPECS.containsKey(sl.menu)
+            if (art != null || menuIcon) {
                 val fit = (if (plain) 38f else 57f) * g.s * (0.6f + 0.4f * k)
-                val sc = fit / maxOf(art.width, art.height)
-                val aw = art.width * sc; val ah = art.height * sc
-                pCrGrey.colorFilter = if (!sl.enabled && off == null) crGreyFilter(0f, 0.6f) else null
-                pCrGrey.alpha = (255 * k).toInt()
-                c.drawBitmap(art, null, RectF(ix - aw / 2f, iy - ah / 2f, ix + aw / 2f, iy + ah / 2f), pCrGrey)
-                pCrGrey.colorFilter = null; pCrGrey.alpha = 255
+                val aw: Float; val ah: Float
+                if (menuIcon) {
+                    // the context menu's own icon (the user's pick 2026-11-07), a little larger than an atlas picture: it is a full medallion
+                    // its label under it: the medallion a little smaller and 10 units up, so the words clear it (the renders, 2026-11-07)
+                    aw = fit * 0.95f; ah = aw
+                    val my = iy - 10f * g.s
+                    MenuIcons.draw(c, RectF(ix - aw / 2f, my - ah / 2f, ix + aw / 2f, my + ah / 2f), sl.menu!!, (255 * k).toInt(), dim = !sl.enabled)
+                } else {
+                    val a0 = art!!
+                    val sc = fit / maxOf(a0.width, a0.height)
+                    aw = a0.width * sc; ah = a0.height * sc
+                    pCrGrey.colorFilter = if (!sl.enabled && off == null) crGreyFilter(0f, 0.6f) else null
+                    pCrGrey.alpha = (255 * k).toInt()
+                    c.drawBitmap(a0, null, RectF(ix - aw / 2f, iy - ah / 2f, ix + aw / 2f, iy + ah / 2f), pCrGrey)
+                    pCrGrey.colorFilter = null; pCrGrey.alpha = 255
+                }
                 // THE A ON THE LIT SLICE while A picks (RC4, the user on RC3: "The pause menu is missing the button glyphs"): as the
                 // consumables wheel marks its pointed item, the A half over the icon's top-left corner
                 // (UI Art on 98a70ded: on the small plain emote icons the full-size A hid half the face: 0.7 of it there, centred on the corner)
