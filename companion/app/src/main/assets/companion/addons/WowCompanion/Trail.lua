@@ -2259,6 +2259,32 @@ do
         WowCompanionDB.npEnemies = nil
         A.np.state, A.np.why = "restored", why
     end
+    -- ---------------------------------------------------------------- FRIENDLY NAMEPLATES ON, ONCE (the user, 2026-11-07, asked why the target radial's
+    -- Y glyph sat on the right instead of over the target, and picked "Turn on friendly nameplates"): the game gives an add-on a unit's
+    -- place on screen only through its nameplate, and friendly players / NPCs have none unless the game's friendly nameplates are on.
+    -- nameplateShowFriends and nameplateShowFriendlyNPCs are set to 1 ONCE (WowCompanionDB.npFriendsSet), out of combat (refused in a
+    -- fight), and never again: the player switching them off afterwards is their choice and stands. A probe says what was found.
+    A.NP_FRIEND_CVARS = { "nameplateShowFriends", "nameplateShowFriendlyNPCs" }
+    function A.friendsStep()
+        if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+        if WowCompanionDB.npFriendsSet then return end
+        if pv(InCombatLockdown) == true then return end
+        local found = {}
+        for _, name in ipairs(A.NP_FRIEND_CVARS) do
+            local ok, v = pcall(function() return C_CVar.GetCVar(name) end)
+            if ok and v ~= nil and not (type(issecretvalue) == "function" and issecretvalue(v)) then
+                found[name] = tostring(v)
+                if tostring(v) ~= "1" then
+                    pcall(function()
+                        if C_CVar and C_CVar.SetCVar then C_CVar.SetCVar(name, "1") else SetCVar(name, "1") end   -- npFriends (the user's ruling)
+                    end)
+                end
+            end
+        end
+        WowCompanionDB.npFriendsSet = true
+        pcall(function() WC.send(WC.encode({ type = "cap", probe = "npfriends", found = found })) end)
+    end
+
     function A.npStep()
         local t = now()
         -- ag4: or HUD mode (Hub hub14, the user's "Yes, force them on"): ONE owner here, two reasons (WC.npWant.hud); restored only when
@@ -2537,6 +2563,7 @@ do
             if A.covAt and t >= A.covAt then A.covAt = nil; A.coverage() end
             if A.covDirty and not A.covAt then A.covAt = t + 0.5 end
             A.npStep()
+            A.friendsStep()
             A.scan()
             -- the picks' iact cells come with the layer: Interact's document rebuilt when that changes (ag3)
             local tw = A.tapsWanted()
