@@ -211,7 +211,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             const val MORE = -3          // a finger's More: the cursor to the shown slot, then Y
             const val EQUIP = -4         // a finger's Equip on a BAG: the cursor to the shown slot, then bmvq 22 (= X: into the hand)
             const val EQUIP_OFF = -5     // the same cell, faint (a fight): nothing
-            const val KIT_CANCEL = -6    // "Choose an item": Cancel (the plain op kitstop)
+            const val KIT_CANCEL = -6    // "Choose an item": Cancel (binv 19: the game's /stopspelltarget)
+            const val KIT_STOP_COL = 19
             const val KIT_ROW = -100     // "Choose an item": row i = KIT_ROW - i (its item's secure cell)
             const val MIN_CMP_W = 300f                          // Currently Equipped narrowed to a side's room, never under this
             const val PRESS_MIN_MS = 160L                       // a press stays visibly in at least this long (Interact's recipe)
@@ -319,7 +320,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
                 MORE -> st.onCard(32)
                 EQUIP -> st.onCard(22)
                 EQUIP_OFF -> {}
-                KIT_CANCEL -> GameInput.tap(context, st.pad, "kitstop", 0)
+                KIT_CANCEL -> GameInput.tap(context, st.pad, "binv", KIT_STOP_COL)
                 else -> if (what <= KIT_ROW) {
                     // a finger on a row of "Choose an item": that item, at once (its secure cell: the pick's target)
                     val e = st.ctl?.optJSONObject("target")?.optJSONArray("list")?.optJSONObject(KIT_ROW - what) ?: return
@@ -1243,6 +1244,8 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         // "Choose an item" (an armor kit / stone / enchant picking its target): worn gear is the secure row binv (the game's /use <slot>)
         val inv = u.optInt("inv", 0)
         if (inv >= 1) { GameInput.tap(context, state.pad, "binv", inv - 1); return }
+        // B in "Choose an item": the game's own cancel (binv 19 = /stopspelltarget; SpellStopTargeting is forbidden to add-ons)
+        if (u.optBoolean("stop")) { GameInput.tap(context, state.pad, "binv", CtlLayer.KIT_STOP_COL); return }
         val bag = u.optInt("bag", -1); val slot = u.optInt("slot", 0)
         if (bag >= 0 && slot >= 1) GameInput.tap(context, state.pad, "bag$bag", slot - 1)
     }

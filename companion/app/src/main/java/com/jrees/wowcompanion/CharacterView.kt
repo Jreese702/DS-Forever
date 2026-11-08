@@ -224,7 +224,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         kitWait = slot to since
         kitSay("Applying ${row.optString("name")}")
         postDelayed({
-            if (kitWait?.second == since) { kitWait = null; tapPad("kitstop", 0); kitSay("The game did not ask for an item") }
+            if (kitWait?.second == since) { kitWait = null; tapPad("binv", 19); kitSay("The game did not ask for an item") }   // /stopspelltarget
         }, KIT_WAIT_MS)
     }
 

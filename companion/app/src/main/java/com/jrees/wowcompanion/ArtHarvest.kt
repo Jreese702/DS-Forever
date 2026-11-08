@@ -100,6 +100,8 @@ object ArtHarvest {
 
     fun init(ctx: Context) {
         IconRequirements.init(ctx)
+        DeviceTier.init(ctx)
+        runCatching { MapHarvestSteps.loadNear(ctx) }           // 1.0.17: the background maps start at the player's last zone
         if (rootDir != null) return
         val app = ctx.applicationContext
         rootDir = root(app)
@@ -268,7 +270,26 @@ object ArtHarvest {
      */
     class StoppedForUpdate : InterruptedException("stopped for the game update")
     @Volatile private var stopping = false
-    private fun checkStop() { if (stopping) throw StoppedForUpdate() }
+    /** 1.0.17: a before-Play step became due while the worker runs the background ones: they give way at their next report */
+    class YieldToRequired : InterruptedException("a required step is due")
+    @Volatile private var yieldBg = false
+    @Volatile private var bgPhase = false
+    private fun checkStop() {
+        if (stopping) throw StoppedForUpdate()
+        if (yieldBg && bgPhase) throw YieldToRequired()
+        // 1.0.17 (the user's pick for the 8 / 12 GB Thors: "Pause while playing, always"): the background art waits while the game runs
+        if (bgPhase && DeviceTier.lowMemory() && LauncherHooks.gameUp()) {
+            Log.i(TAG, "harvest: paused while the game runs (${DeviceTier.model()})")
+            while (DeviceTier.lowMemory() && LauncherHooks.gameUp() && !stopping && !yieldBg) Thread.sleep(3_000)
+            Log.i(TAG, "harvest: the game is closed, the background art goes on")
+            if (stopping) throw StoppedForUpdate()
+            if (yieldBg) throw YieldToRequired()
+        }
+    }
+
+    /** the background art not finished yet (the notice before Play on the 8 / 12 GB models) */
+    fun backgroundLeft(ctx: Context): Boolean =
+        runCatching { pending(ctx, beforePlay = false).any { !it.detached } }.getOrDefault(false)
 
     /** true = no art run is left reading the game files (it ended within [waitMs]); false = it is still ending (it stops at its next report) */
     fun stopForUpdate(waitMs: Long = 30_000L): Boolean {
@@ -290,6 +311,12 @@ object ArtHarvest {
         init(app)
         synchronized(waiters) {
             if (worker?.isAlive == true) {
+                // 1.0.17 ("stuck on checking the game art"): the worker is in its background steps and a before-Play one is due now (a new
+                // icon asked for, a new build): the background step gives way, the worker runs the required ones first, then goes on
+                if (bgPhase && runCatching { needsBeforePlay(app) }.getOrDefault(false)) {
+                    yieldBg = true; firstResult = null
+                    waiters.add(onBeforePlayDone); return
+                }
                 if (!rerun) firstResult?.let { r -> onBeforePlayDone(r); return }
                 waiters.add(onBeforePlayDone); return
             }
@@ -300,6 +327,10 @@ object ArtHarvest {
                 while (true) {
                     try {
                         work(app) { r -> beforePlayDone(r) }
+                    } catch (e: YieldToRequired) {
+                        Log.i(TAG, "harvest: a background step gave way to a required one")
+                        yieldBg = false; bgPhase = false; currentStep = null
+                        continue
                     } catch (e: StoppedForUpdate) {
                         // the game update goes first: nothing failed, this run is only over (its waiters wait for the next run)
                         Log.i(TAG, "harvest: stopped for the game update")
@@ -379,7 +410,10 @@ object ArtHarvest {
             onBeforePlayDone(okFirst)
             if (!okFirst) return
             startDetached(ctx, detached)
-            if (later.isNotEmpty() && runAll(ctx, g, later, beforePlay = false)) set(State.Ready)
+            bgPhase = true
+            try {
+                if (later.isNotEmpty() && runAll(ctx, g, later, beforePlay = false)) set(State.Ready)
+            } finally { bgPhase = false }
         }
     }
 

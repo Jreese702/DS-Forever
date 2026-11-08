@@ -47,6 +47,7 @@ object GameLife {
     fun started(now: Long = System.currentTimeMillis()) {
         startedAt = now; worldSeen = false; ended = false; note = null
         DiagLog.event("game", "started")
+        LastRun.gameStarted(now)                                   // 1.0.17: kept across the app's own death
     }
 
     /** the first CURRENT document from the add-on: the game is in the world */
@@ -54,12 +55,14 @@ object GameLife {
         if (worldSeen || startedAt == 0L) return
         worldSeen = true
         DiagLog.event("game", "in the world after ${minutes(now - startedAt)}")
+        LastRun.gameInWorld()
     }
 
     /** the guest program ended with [status] (XServerScreen's termination callback) */
     fun ended(status: Int, now: Long = System.currentTimeMillis()) {
         if (ended) return
         ended = true
+        LastRun.gameEnded()
         val ran = if (startedAt == 0L) 0L else now - startedAt
         val mem = memAvailableMiB()?.let { "$it MiB" } ?: "unknown"
         val indoor = runCatching { IndoorSchedulerStep.status?.let { "${it.phase.name.lowercase()} ${it.ready}/${it.total}" } }.getOrNull() ?: "not running"

@@ -9,7 +9,9 @@ package com.jrees.wowcompanion
 object Redact {
     private val EMAIL = Regex("""[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}""")
     private val BATTLETAG = Regex("""(?<![\p{L}\p{N}])[\p{L}][\p{L}\p{N}]{1,11}#\d{4,6}(?!\d)""")
-    private val IPV4 = Regex("""(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])""")
+    // 1.0.17 (the player reports: the Thor's firmware "Thor_V1.x.x.x_..." came out as "Thor_V<ip>_..."): not right after a letter, digit,
+    // dot or underscore (a version), only an address standing on its own
+    private val IPV4 = Regex("""(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])""")
     private val IPV6 = Regex("""(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{1,4}:){3,7}[0-9A-Fa-f]{1,4}(?![0-9A-Fa-f:])""")
     private val SECRET = Regex("""(?i)\b(password|passwd|pwd|pass|token|auth|authorization|secret|session|cookie|ticket|account|login|email)(\s*[=:]\s*)((?i:bearer|basic)\s+\S+|"[^"]*"|'[^']*'|\S+)""")
     /** chat and other typed text, as our logs and the add-on's documents name it */

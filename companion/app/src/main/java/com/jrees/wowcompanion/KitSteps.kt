@@ -5,6 +5,7 @@ import android.os.Build
 import android.util.Log
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 /**
  * UI ART'S HARVEST STEPS (2026-10-09; the user picked the kit, the icons and the world maps BEFORE Play): [KitBuild] wired to the harvest's
@@ -59,7 +60,8 @@ object KitSteps {
     object Icons : ArtHarvest.Step {
         override val id = "icons"
         override val version = 5
-        override val beforePlay = true
+        // 1.0.17: before Play only while no icons.pak exists (a first install); a newly asked icon rebuilds it in the background
+        override val beforePlay: Boolean get() = !File(ArtHarvest.dir("."), "icons.pak").isFile
         override val weight = 1200
         override fun run(job: ArtHarvest.Job) {
             Log.i(TAG, "icons: registered ${job.game.loadClientKeys()} keys from this game's own tables")

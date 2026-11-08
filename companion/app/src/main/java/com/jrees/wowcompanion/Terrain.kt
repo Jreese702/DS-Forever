@@ -401,7 +401,7 @@ object Terrain {
     val STEP = object : ArtHarvest.Step {
         override val id = "terrain"
         override val version = 4                    // v4: the heights too (terrain/<uiMap>.hgt: the ghost's drops)
-        override val beforePlay = true
+        override val beforePlay = false        // 1.0.17: the background, the player's zone first (the user's pick "Core only, rest in game")
         override val weight = 60
         override fun run(job: ArtHarvest.Job) {
             val g = job.game

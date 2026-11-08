@@ -12,8 +12,9 @@ object AllIconsStep : ArtHarvest.Step {
     override val version = 2                 // 2: packs named by their icons' content keys (ArtFingerprint)
     // 2026-11-07 (the user stuck on "Preparing components" after a game update: every update rebuilt all ~30,000 icons before Play):
     // before Play only while NO pack exists (a first install); after that a rebuild runs in the background on the packs already there
-    override val beforePlay: Boolean
-        get() = ArtHarvest.dir(AllIcons.DIR).listFiles()?.none { it.name.endsWith(".pak") } ?: true
+    // 1.0.17 (the player reports: art "5 hours and only 54%" - this step was 40 % of the first bar; the user's pick "Core only, rest in
+    // game"): always in the background; an icon not packed yet is asked for (IconRequirements) and blank until then
+    override val beforePlay: Boolean get() = false
     override val weight = 3000
     override fun run(job: ArtHarvest.Job) {
         val table = job.game.db2(AllIcons.MANIFEST) ?: error(job.game.lastReadWhy ?: "the game's interface manifest could not be read")
@@ -32,6 +33,8 @@ object AllIconsStep : ArtHarvest.Step {
             val f = File(dir, names[i])
             if (!f.isFile) {
                 while (AllIcons.busy()) Thread.sleep(2_000)
+                // the pack's missing game files fetched several at once first (a partial / streamed Data folder: one by one was minutes)
+                runCatching { job.game.prefetch(c) }
                 val n = kit.icons(JSONObject().put("fids", JSONArray(c)), f, lenient = true, encode = KitSteps::webp)
                 Log.i("WCHARVEST", "all icons: pack ${i + 1} / ${parts.size}: $n of ${c.size}")
                 Icons.refresh()                                     // the new pack is read at once (and blank toolbar icons ask again)

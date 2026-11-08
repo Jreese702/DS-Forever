@@ -118,6 +118,12 @@ object Settings {
      * INDOOR MAPS IN THE BACKGROUND (board b-interiors-stutter; the user's pick: "a Settings switch to turn background building off").
      * On (the default) = built only while the player stands still and the CPU is cool; Off = no building at all (ready maps still show).
      */
+    /** 1.0.17 (the user's pick, "A setting, off by default"): LIGHTER MODE - no background art and no indoor-map bake while the game
+     *  runs, on any Thor (the 8 / 12 GB models do this anyway: DeviceTier.lowMemory) */
+    var lighterMode: Boolean
+        get() = prefs?.getBoolean("lighterMode", false) ?: false
+        set(v) { if (v != lighterMode) { prefs?.edit()?.putBoolean("lighterMode", v)?.apply(); changed() } }
+
     var indoorBuild: Boolean
         get() = prefs?.getBoolean("indoorBuild", true) ?: true
         set(v) { if (v != indoorBuild) { prefs?.edit()?.putBoolean("indoorBuild", v)?.apply(); changed() } }

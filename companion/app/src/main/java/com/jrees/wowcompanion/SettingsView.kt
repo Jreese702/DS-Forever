@@ -76,6 +76,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segDanger = Array(3) { RectF() }
     private val segFog = Array(2) { RectF() }
     private val segLang = Array(Tr.LANGS.size) { RectF() }          // 2026-11-07: Settings > System > Language
+    private val segLight = Array(2) { RectF() }                       // 1.0.17: Settings > Performance > Lighter mode
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
     private val segIndoor = Array(2) { RectF() }
     /**
@@ -207,7 +208,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
             listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segDanger.toList() + segFog.toList() + segChat.toList() +
-            segLang.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
+            segLang.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
             segSpellOpen.toList() + segSpellPick.toList() + segClassLOpen.toList() + segClassLPick.toList() + segClassROpen.toList() +
@@ -241,7 +242,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segDanger, segFog, segLang,
+                         segClassROpen, segClassRPick, segChat, segQt, segDanger, segFog, segLang, segLight,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -260,6 +261,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** a block's height from its heading's y to its last row's bottom, laid out exactly as its draw function lays it out */
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.LANGUAGE -> 16f + ROW_H
+        SettingsTabs.Block.LIGHTER -> 16f + ROW_H
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
         SettingsTabs.Block.STREAMING -> 16f + ROW_H
@@ -391,6 +393,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 val qi = segQt.indexOfFirst { it.contains(x, y) }
                 val di = segDanger.indexOfFirst { it.contains(x, y) }
                 val fi = segFog.indexOfFirst { it.contains(x, y) }
+                val lti = segLight.indexOfFirst { it.contains(x, y) }
+                if (lti >= 0) { Settings.lighterMode = lti == 0; invalidate(); return }
                 val lgi = segLang.indexOfFirst { it.contains(x, y) }
                 if (lgi >= 0) { Tr.setChoice(context, Tr.LANGS[lgi].code); invalidate(); return }
                 if (fi >= 0) { Settings.worldMapFog = if (fi == 0) "all" else "explored"; invalidate(); return }
@@ -441,6 +445,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             y += 16f
             y = when (b) {
                 SettingsTabs.Block.LANGUAGE -> drawLanguage(c, y)
+                SettingsTabs.Block.LIGHTER -> drawLighter(c, y)
                 SettingsTabs.Block.GAME -> drawGame(c, y)
                 SettingsTabs.Block.STREAMING -> drawStreaming(c, y)
                 SettingsTabs.Block.MAP -> drawMap(c, y)
@@ -500,6 +505,21 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             segmented(c, b, Tr.LANGS.map { if (it.code == "auto") Tr.t("Automatic") else it.label }, Tr.LANGS.indexOfFirst { it.code == Tr.choice() }, segLang)
             b
         }
+        return top + ROW_H
+    }
+
+    /** 1.0.17: Lighter mode On / Off (off by default; the 8 / 12 GB Thors are always lighter: DeviceTier) */
+    private fun drawLighter(c: Canvas, top: Float): Float {
+        val segW = segW()
+        val small = DeviceTier.smallModel()
+        val words = if (small) "Always on for this Thor model: art and indoor maps build while the game is closed"
+                    else "Art and indoor maps build only while the game is closed (more memory for the game)"
+        row(c, top, Tr.t("Lighter mode"), Tr.t(words), enabled = !small) { box ->
+            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, listOf(Tr.t("On"), Tr.t("Off")), if (small || Settings.lighterMode) 0 else 1, segLight)
+            b
+        }
+        if (small) for (r in segLight) r.setEmpty()                       // nothing to change: the model decides
         return top + ROW_H
     }
 

@@ -2,7 +2,7 @@
 sharpening stones ... from both the bags room as well as the charactor room"). Loads the real WowCompanion/Bags.lua in Lua 5.1 with
 stand-in game functions (anything not given is a harmless stub) and checks the pieces the app relies on:
   - the secure row "binv": 19 cells, type item, item = the slot (the game's /use <slot>: a pick's target)
-  - the plain op "kitstop" stops the pick (SpellStopTargeting)
+  - binv col 19 stops the pick with the game's own /stopspelltarget (SpellStopTargeting is FORBIDDEN to add-ons: the user's error)
   - the pick watcher: an "itarget" document when the game starts / ends "pick an item", the used item named and learned
   - the list: worn gear first (chest, legs, hands, feet first), then the bags' gear; while ENCHANTING the game's own check greys
 Run: python -B tools/test_kits.py
@@ -85,11 +85,16 @@ check(kit is not None, "WC._kit is published (the room's document reads it)")
 
 # the secure row and the op
 b = L.eval('SECURE.binv')
-check(b is not None and b.n == 19, "the secure row binv: 19 cells", b and b.n)
+check(b is not None and b.n == 20, "the secure row binv: 19 slots + the stop cell", b and b.n)
 L.execute('BTN = { a = {} }; function BTN:SetAttribute(k, v) self.a[k] = v end; SECURE.binv.init(BTN, 4)')
 check(L.eval('BTN.a.type') == 'item' and L.eval('BTN.a.item') == '5', "binv col 4 = type item, item \"5\" (the chest: the game's /use 5)",
       (L.eval('BTN.a.type'), L.eval('BTN.a.item')))
-check(L.eval('OPS.kitstop') is not None, "the plain op kitstop is registered")
+L.execute('BTN2 = { a = {} }; function BTN2:SetAttribute(k, v) self.a[k] = v end; SECURE.binv.init(BTN2, 19)')
+check(L.eval('BTN2.a.type') == 'macro' and L.eval('BTN2.a.macrotext') == '/stopspelltarget',
+      "binv col 19 = the game's /stopspelltarget (a secure macro attribute)", (L.eval('BTN2.a.type'), L.eval('BTN2.a.macrotext')))
+import re
+CODE = chr(10).join(re.sub(r'--.*$', '', ln) for ln in SRC.splitlines())
+check('SpellStopTargeting(' not in CODE, "Bags.lua never calls SpellStopTargeting (forbidden to add-ons: 'WowCompanion forbidden')")
 
 # the pick watcher
 step = L.eval('WowCompanion._kit.step')
@@ -119,8 +124,7 @@ check([r.ok for r in rows] == [None, True, None], "enchanting: only what the gam
 L.execute('ENCHANTING = false')
 
 # the end of the pick, and the stop
-L.eval('OPS.kitstop')()
-check(L.eval('STOPPED') == 1 and L.eval('PICKING') is False, "kitstop stops the pick")
+L.execute('PICKING = false')                                       # the game's /stopspelltarget ran (binv 19)
 step()
 e = L.eval('EMITS[#EMITS]')
 check(e.type == 'itarget' and e.on is False, "the pick ended: itarget off", dict(e))

@@ -76,11 +76,19 @@ object SetupFlow {
         val gameRunning: Boolean = false,
         /** a "Restart the game to sign in" is between the close and the new game (no Play meanwhile: one launch path only) */
         val restarting: Boolean = false,
+        /** the 8 / 12 GB notice is up (Play was pressed with background art left) */
+        val artNotice: Boolean = false,
+        /** the last session ended badly (LastRun.pending): what ended it, in words; null = it did not */
+        val lastCrash: String? = null,
     )
 
     enum class Action {
         CHOOSE_FOLDER, INSTALL_GAME, GRANT_STORAGE, ENTER_LOGIN, SKIP_LOGIN, RETRY_ART, UPDATE_GAME, UPDATE_APP, LATER_APP,
         UPDATE_LOGIN, ENTER_ON_GAME, RESTART_GAME, PLAY,
+        /** the 8 / 12 GB notice: Play now (the art finishes while the game is closed) / wait here */
+        ART_NOTICE_PLAY, ART_NOTICE_WAIT,
+        /** 1.0.17: the last session ended badly (LastRun): send the report now / not now */
+        CRASH_SEND, CRASH_DISMISS,
         /** Android's App info page for DS Forever (Storage > Change: move it to internal storage) */
         OPEN_APP_SETTINGS,
         /** the restart's own Play (never a button): it launches the same way and says so in the log */
@@ -259,6 +267,12 @@ object SetupFlow {
             // first: nothing else works from the SD card (p-sd-card-install); Play stays, a device may still cope
             i.installedExternal -> Prompt("install", InstallCheck.TITLE, InstallCheck.TEXT,
                 listOf(Button("Open app settings", Action.OPEN_APP_SETTINGS)))
+            // 1.0.17 (the user: "some kind of notice for Lower model Thors that the art will not build in the background if they proceed")
+            i.artNotice -> Prompt("artnotice", DeviceTier.ART_NOTICE_TITLE, DeviceTier.ART_NOTICE_TEXT,
+                listOf(Button("Play now", Action.ART_NOTICE_PLAY), Button("Wait for the art", Action.ART_NOTICE_WAIT)))
+            // 1.0.17 (the user: "if their last run crashed, then it submits a log"; pick "Ask: one-tap Send")
+            i.lastCrash != null -> Prompt("lastcrash", LastRun.TITLE, LastRun.text(i.lastCrash),
+                listOf(Button("Send report", Action.CRASH_SEND), Button("Not now", Action.CRASH_DISMISS)))
             i.progress != null -> Prompt("progress", i.progress.title, i.progress.text, emptyList())
             !i.folderFound || i.wrongGame -> Prompt("folder", "Where is WoW Forever?",
                 if (i.wrongGame) "The folder ${i.path} holds ${i.product.ifEmpty { "another game" }}, not WoW Forever. Choose the WoW Forever folder: the one with .build.info and Data."

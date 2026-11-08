@@ -27,6 +27,26 @@ object MapHarvestSteps {
      */
     @Volatile var near: Triple<Int, Double, Double>? = null
 
+    // 1.0.17 (the user's pick "Core only, rest in game": the maps build in the background, the player's zone first): the last place is
+    // kept across a restart, so a build that starts before the game is up already knows where to begin
+    private const val NEAR_PREFS = "dsf_art_near"
+    /** the minimap's tiles per batch of missing-file fetches */
+    const val PREFETCH_TILES = 60
+    @Volatile private var nearSavedAt = 0L
+    fun noteNear(ctx: android.content.Context, t: Triple<Int, Double, Double>) {
+        near = t
+        val now = System.currentTimeMillis()
+        if (now - nearSavedAt < 60_000L) return
+        nearSavedAt = now
+        ctx.getSharedPreferences(NEAR_PREFS, android.content.Context.MODE_PRIVATE).edit().putString("near", "${t.first},${t.second},${t.third}").apply()
+    }
+    fun loadNear(ctx: android.content.Context) {
+        if (near != null) return
+        val s = ctx.getSharedPreferences(NEAR_PREFS, android.content.Context.MODE_PRIVATE).getString("near", null) ?: return
+        val p = s.split(',')
+        if (p.size == 3) runCatching { near = Triple(p[0].toInt(), p[1].toDouble(), p[2].toDouble()) }
+    }
+
     /** the worldmap recipe's map rects (zones and continents; the terrain step keeps the zone-sized ones) */
     fun zoneRects(job: ArtHarvest.Job): Map<Int, MapHarvest.Rect> = rects(job)
 
@@ -70,7 +90,7 @@ object MapHarvestSteps {
     val WORLD_MAP = object : ArtHarvest.Step {
         override val id = "worldmap"
         override val version = 1
-        override val beforePlay = true
+        override val beforePlay = false        // 1.0.17: the background (the user's pick "Core only, rest in game")
         override val weight = 700                       // ~60 maps, ~600 overlays, ~45 highlights
         override fun run(job: ArtHarvest.Job) {
             val g = job.game
@@ -270,7 +290,7 @@ object MapHarvestSteps {
     val MINIMAP = object : ArtHarvest.Step {
         override val id = "minimap"
         override val version = 2
-        override val beforePlay = true
+        override val beforePlay = false        // 1.0.17: the background (the user's pick "Core only, rest in game")
         override val weight = 1500
         private val main = Handler(Looper.getMainLooper())
 
@@ -309,6 +329,12 @@ object MapHarvestSteps {
                 val (c, k) = ck
                 val col = MapHarvest.colOf(k); val row = MapHarvest.rowOf(k)
                 val name = "$c/${col}_$row"
+                // 1.0.17: the next tiles' missing game files fetched several at once (a partial Data folder fetched them one by one)
+                if (i % PREFETCH_TILES == 0) runCatching {
+                    g.prefetch(order.subList(i, minOf(order.size, i + PREFETCH_TILES)).mapNotNull { (cc, kk) ->
+                        if ("$cc/${MapHarvest.colOf(kk)}_${MapHarvest.rowOf(kk)}" in done) null else maid[cc]?.get(kk)
+                    })
+                }
                 if (name !in done) {
                     val b = g.blp(maid[c]!![k]!!)
                     if (b != null) {
@@ -331,7 +357,9 @@ object MapHarvestSteps {
             job.writeBytes("minimap/index.json", JSONObject().put("about", "minimap tiles, 512 px per ADT (533.333 yd), <continentId>/<col>_<row>.webp")
                 .put("px", 512).put("adt", MapHarvest.ADT_YD).put("continents", conts).toString().toByteArray())
             main.post { MinimapTiles.refresh() }
-            check(missing == 0) { "$missing minimap tiles could not be read; retry to resume" }
+            // 1.0.17 (issue #45: "1 minimap tiles could not be read; retry or resume" - one tile failed the whole step, every time): a
+            // tile the game files do not give is left out (no picture there) and named in the log; the step is done
+            if (missing > 0) android.util.Log.w("WCHARVEST", "minimap: $missing tiles could not be read; left out (the map shows none there)")
             job.progress(order.size, order.size)
         }
 

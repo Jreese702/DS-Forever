@@ -100,7 +100,7 @@ object SetupBridge {
             reportSaved = ReportFlow.pending?.let { ReportFlow.noteTitle(it) },
             staleData = DataStaleness.current()?.takeIf { !staleOk },
             lowSpace = i.lowSpace?.takeIf { !spaceOk },
-            gameClosed = GameLife.note))
+            gameClosed = GameLife.note, lastCrash = LastRun.pending))
     }
 
     /** the start-up checks have passed (the chooser may show); false while the launcher hasn't published them */
@@ -108,6 +108,9 @@ object SetupBridge {
         val i = inputs ?: return false
         return SetupFlow.checksPass(i.copy(staleData = i.staleData?.takeIf { !staleOk }, lowSpace = i.lowSpace?.takeIf { !spaceOk }))
     }
+
+    /** 1.0.17: the crash question's Send: the host builds and sends the problem report with these words */
+    @Volatile var sendCrash: ((String) -> Unit)? = null
 
     /** the sign-in's lean log (NativeLogin.logEvent): each sign-in button, never anything typed */
     @Volatile var log: ((String) -> Unit)? = null
@@ -121,6 +124,8 @@ object SetupBridge {
             SetupFlow.Action.RESTART_GAME -> { signIn(SetupFlow.SignIn.NONE); restartGame?.invoke() }
             SetupFlow.Action.REPORT -> { GameLife.dismissNote(); openReport?.invoke() }
             SetupFlow.Action.GAME_CLOSED_OK -> { GameLife.dismissNote(); changed() }
+            SetupFlow.Action.CRASH_SEND -> { val why = LastRun.pending; LastRun.dismiss(); changed(); why?.let { w -> sendCrash?.invoke(w) } }
+            SetupFlow.Action.CRASH_DISMISS -> { LastRun.dismiss(); changed() }
             SetupFlow.Action.REPORT_OPEN -> openSavedReport?.invoke()
             SetupFlow.Action.STALE_OK -> { staleOk = true; changed() }
             SetupFlow.Action.SPACE_OK -> { spaceOk = true; changed() }

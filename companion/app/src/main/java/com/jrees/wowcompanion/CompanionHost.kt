@@ -658,6 +658,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // INSIDE THE ONE APP (the native login.txt sign-in; the user: "injecting the keys is not the way to go"): the row never types -
         // its button saves / updates the login, which the game uses by itself at its next start (NativeLogin)
         StartMenu.onReport = { openReport() }
+        // 1.0.17: did the last session end badly? (LastRun; the start screen asks, Send = the ordinary report, no typing)
+        LastRun.init(this)
+        SetupBridge.sendCrash = { why -> ui.post { sendReport("Automatic crash report: $why") } }
         StartMenu.autoLogin = { HomeLoginStore.autoLogin(this) }
         StartMenu.onAutoLogin = { on -> HomeLoginStore.setAutoLogin(this, on); if (!on) NativeLogin.clear() }
         StartMenu.onChangeLogin = { restartOnSave = LauncherHooks.gameUp() && HomeLoginStore.autoLogin(this); loginPrompt.open() }
@@ -1841,7 +1844,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (current) mapView.learnNow()                     // the last place on a map before a crossing is the tick's, not a stale doc's
                 if (current) routePinTick()
                 // the background minimap step builds the player's own zone first (Map's nearest-first hook)
-                if (it.has("mapID") && it.has("wx")) MapHarvestSteps.near = Triple(it.optInt("mapID"), it.optDouble("wx"), it.optDouble("wy"))
+                if (it.has("mapID") && it.has("wx")) MapHarvestSteps.noteNear(this, Triple(it.optInt("mapID"), it.optDouble("wx"), it.optDouble("wy")))
                 // ... and the interiors bake its building first
                 IndoorSchedulerStep.notePosition(it)
                 lastMapAt = System.currentTimeMillis()

@@ -39,6 +39,9 @@ object StartupDiag {
     private val DROP = Regex("""(?i)login\.txt|\bpassword\b|\bpasswd\b|\bbearer\b|authorization:|x-dsf-key|github_token|refresh_token|access_token""")
 
     /** the privacy pass for the block: [Redact] (with the known [names]), and credential lines dropped whole */
+    /** a removable card's mount (/storage/XXXX-XXXX/...), not the internal /storage/emulated/... (1.0.17: the SD-card reports) */
+    fun sdCard(path: String): Boolean = Regex("""^/storage/(?!emulated/|self/)[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}(/|$)""").containsMatchIn(path)
+
     fun sanitize(text: String, names: Collection<String> = Redact.names()): String {
         val pattern = Redact.namePattern(names)
         return text.lineSequence().filterNot { DROP.containsMatchIn(it) }.joinToString("\n") { Redact.text(it, pattern) }
@@ -146,7 +149,7 @@ object StartupDiag {
     private fun gameFolder(ctx: Context): List<String> {
         val root = GameFiles.gameRoot(ctx)
         val out = ArrayList<String>()
-        out += "Path: ${root.path} (exists ${root.isDirectory})"
+        out += "Path: ${root.path} (exists ${root.isDirectory}; ${if (sdCard(root.path)) "on an SD card" else "internal storage"})"
         val info = File(root, WowProduct.BUILD_INFO)
         if (!info.isFile) out += ".build.info: missing"
         else {
@@ -234,6 +237,7 @@ object StartupDiag {
         "Readiness: ${runCatching { IndoorSchedulerStep.readiness(ctx).let { "${it.label} (done ${it.done})" } }.getOrDefault("?")}",
         "Status: ${runCatching { IndoorSchedulerStep.status(ctx)?.toString()?.take(600) }.getOrNull() ?: "(none)"}",
         "Indoor maps in the background: ${runCatching { Settings.init(ctx); Settings.indoorBuild }.getOrDefault("?")}",
+        "Thor model: ${runCatching { DeviceTier.init(ctx); DeviceTier.model() }.getOrDefault("?")}; lighter mode ${runCatching { DeviceTier.lowMemory() }.getOrDefault(false)}",
     )
 
     private fun crashes(ctx: Context, now: Long): List<String> {

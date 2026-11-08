@@ -117,6 +117,9 @@ fun WoWForeverScreen(
     var loginSaved by remember { mutableStateOf(com.jrees.wowcompanion.HomeLoginStore.has(context)) }
     var loginSkipped by remember { mutableStateOf(false) }
     var appUpdateLater by remember { mutableStateOf(false) }
+    // 1.0.17: the 8 / 12 GB Thors' notice before Play (the remaining art builds only while the game is closed); once a run of the app
+    var artNotice by remember { mutableStateOf(false) }
+    var artNoticeSeen by remember { mutableStateOf(false) }
     // DS Forever on the SD card / adopted storage (p-sd-card-install): the setup says so first; checked once per screen
     val installedExternal = remember {
         runCatching {
@@ -795,6 +798,7 @@ fun WoWForeverScreen(
         appLine = AppUpdater.line(appCheck),
         // the background all-icons step (Track C, test23): ready when its stamp says so, else its count while it runs
         installedExternal = installedExternal,
+        artNotice = artNotice,
         // issues #8 / #9: the game folder's Data older than its build (the art's reads say so), on the top screen's checks
         lowSpace = if (!filesMissing && File(gamePath, com.jrees.wowcompanion.DataStaleness.STREAMED).exists())
             com.jrees.wowcompanion.SetupFlow.lowSpaceLine(File(gamePath).usableSpace,
@@ -827,7 +831,14 @@ fun WoWForeverScreen(
                 appUpdateLater = true
                 if (launchAfterAppChoice) { launchAfterAppChoice = false; launchGame() }
             }
-            com.jrees.wowcompanion.SetupFlow.Action.PLAY -> launchGame()
+            com.jrees.wowcompanion.SetupFlow.Action.PLAY -> {
+                com.jrees.wowcompanion.DeviceTier.init(context)
+                if (!artNoticeSeen && com.jrees.wowcompanion.DeviceTier.lowMemory() &&
+                    com.jrees.wowcompanion.ArtHarvest.backgroundLeft(context)) artNotice = true
+                else launchGame()
+            }
+            com.jrees.wowcompanion.SetupFlow.Action.ART_NOTICE_PLAY -> { artNotice = false; artNoticeSeen = true; launchGame() }
+            com.jrees.wowcompanion.SetupFlow.Action.ART_NOTICE_WAIT -> { artNotice = false }
             com.jrees.wowcompanion.SetupFlow.Action.OPEN_APP_SETTINGS -> runCatching {
                 context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                     android.net.Uri.parse("package:${context.packageName}")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -989,9 +1000,16 @@ private data class GpuProfile(val driver: String, val tuDebug: String, val scree
     companion object {
         fun detect(context: Context) = if (isAdreno8xxDevice(context)) {
             GpuProfile(ADRENO_8XX_DRIVER, "noconform,sysmem", "1280x720", "Adreno 8xx", "Snapdragon 8 Elite / Adreno 8xx")
+        } else if (isThorLite(context)) {
+            // 1.0.17 (the user: "there are 4 different versions of the ayn thor"; pick "Add a Lite profile now"): the Thor Lite's
+            // Snapdragon 865 / Adreno 650 got the Adreno 740's 1080p. Turnip drives the a6xx family; 720p, conservative. UNTESTED on a Lite
+            GpuProfile(DEFAULT_DRIVER, "noconform", "1280x720", "Adreno 650", "Thor Lite: Snapdragon 865 / Adreno 650 (untested)")
         } else {
             GpuProfile(DEFAULT_DRIVER, "noconform", "1920x1080", "Adreno 740", "Snapdragon 8 Series / Adreno 740")
         }
+
+        private fun isThorLite(context: Context): Boolean =
+            runCatching { GPUInformation.isAdreno6xx(context) }.getOrDefault(false) || com.jrees.wowcompanion.DeviceTier.isLite()
 
         private fun isAdreno8xxDevice(context: Context): Boolean {
             if (GPUInformation.isAdreno8Elite(context)) return true

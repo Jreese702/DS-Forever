@@ -279,7 +279,9 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             val archiveFirst = looseMissing
             if (archiveFirst && archive()) return true
             if (download(hosts, path, rel, to, missingIsFinal = true)) return true
-            if (lastFetchWhy?.startsWith("HTTP 404") == true) looseMissing = true
+            // 1.0.17 (the player reports #17 / #22 / #23 / #25 / #32: "5 hours and only 54%"): level3.blizzard.com answers a loose file
+            // it keeps only inside an archive with 403, not 404 - every file then cost ~7 s (every host, twice) before the archive
+            if (lastFetchWhy?.let { looseRefusal(it) } == true) looseMissing = true
             return !archiveFirst && archive()
         }
 
@@ -289,7 +291,10 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
         /** the last reads' misses (prefetch only pays when many files are missing: a complete folder never pays twice) */
         internal val missWindow = MissWindow()
 
-        /** a loose game file has answered 404 (the CDN keeps them inside archives): the next ones try the archives first */
+        /** the CDN's "not here as a loose file" (404, or 403 from level3): final for that file, and the archives first from then on */
+        internal fun looseRefusal(why: String): Boolean = why.startsWith("HTTP 404") || why.startsWith("HTTP 403")
+
+        /** a loose game file has answered 404 / 403 (the CDN keeps them inside archives): the next ones try the archives first */
         @Volatile private var looseMissing = false
 
         /** why the last CDN fetch failed (HTTP 503 from <host>, timed out...): the art's message keeps the real reason */
@@ -300,7 +305,7 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
         private fun download(hosts: List<String>, path: String, rel: String, to: File, missingIsFinal: Boolean = false): Boolean {
             to.parentFile?.mkdirs()
             val tmp = File(to.path + ".part")
-            val why = CdnRetry.run(hosts, final = { missingIsFinal && it == "HTTP 404" }) { host ->
+            val why = CdnRetry.run(hosts, final = { missingIsFinal && looseRefusal(it) }) { host ->
                 val c = java.net.URL("https://$host/$path/$rel").openConnection() as java.net.HttpURLConnection
                 c.connectTimeout = 15_000; c.readTimeout = 60_000
                 try {

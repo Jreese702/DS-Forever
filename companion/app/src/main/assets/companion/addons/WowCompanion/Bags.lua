@@ -1167,7 +1167,9 @@ local function toGrid(note) ctl.mode = "grid"; ctl.bound = nil; ctl.rare = nil; 
 -- right-click) puts the game in "pick an item" (SpellCanTargetItem). While it is, the room's cursor is a list of what it can go on - what you
 -- wear first, then your bags' gear - and A USES that item: a bag item through its own secure bag cell (the game's right-click on it while
 -- picking = target it), worn gear through the secure row "binv" (type item, item = the slot: the game's /use <slot>, its target). B stops
--- the pick (SpellStopTargeting). No macro, no binding: two secure clicks of the game's own, as with the mouse.
+-- the pick: the secure cell binv 19 (type macro "/stopspelltarget", the game's own slash command - SpellStopTargeting from add-on code is
+-- FORBIDDEN, measured on the Thor 2026-11-08: "WowCompanion forbidden: SpellStopTargeting()", the user's error applying a leg kit).
+-- No binding: secure clicks of the game's own, as with the mouse.
 local KIT = { was = false, last = nil }
 WC._kit = KIT                                   -- the room's document (above) reads it
 WC._kitLearned = WC._kitLearned or {}           -- item ids seen to start a pick (the bag rows' `kit` flag: the Character room's list)
@@ -1247,17 +1249,17 @@ function KIT.step()
 end
 C_Timer.NewTicker(0.25, function() pcall(KIT.step) end)
 -- worn gear as a pick's target: the secure row "binv", one cell per slot (type item, item = the slot: the game's /use <slot>)
+-- col 19 = STOP THE PICK: the game's own /stopspelltarget (a secure macro attribute, the cancel the add-on itself may not make)
+KIT.STOP_COL = 19
 if WC.pad and WC.pad.secureRow then
-    pcall(WC.pad.secureRow, "binv", 19, function(btn, col)
+    pcall(WC.pad.secureRow, "binv", 20, function(btn, col)
+        if col == KIT.STOP_COL then btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", "/stopspelltarget"); return end
         btn:SetAttribute("type", "item")
         btn:SetAttribute("item", tostring(col + 1))
     end, function(col)
+        if col == KIT.STOP_COL then WC.emit({ type = "cap", kitStop = true }); return end
         WC.emit({ type = "cap", kitTap = { slot = col + 1, combat = InCombatLockdown() and true or false } })
     end)
-end
--- B / the Character room's cancel: stop the pick (the game's own SpellStopTargeting; framecontrolsmanager.lua calls it too)
-if WC.pad and WC.pad.op then
-    pcall(WC.pad.op, "kitstop", nil, function() CALL(function() return SpellStopTargeting() end) end)
 end
 
 -- ---------------------------------------------------------------- THE ROOM'S TOP STRIP (the user, 2026-10-09: "in bags, I am not able to move my
@@ -1856,7 +1858,8 @@ local function onPress(key)
         if key == "PADDUP" or key == "PADDDOWN" then
             ctl.tsel = math.max(1, math.min(#list, (ctl.tsel or 1) + (key == "PADDUP" and -1 or 1))); report(nil)
         elseif B then
-            CALL(function() return SpellStopTargeting() end); toGrid("cancelled")
+            -- B: the app taps binv 19 (/stopspelltarget) for this use.seq; the list closes now
+            ctl.use = { stop = true, seq = ctl.seq + 1 }; toGrid("cancelled")
         elseif A then
             local e = list[ctl.tsel or 1]
             if not e then report("empty"); return end
