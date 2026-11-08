@@ -1504,6 +1504,7 @@ Q.execute('function UnitInParty() return false end; function UnitIsUnit(a, b) re
 # q53 (the user on test25: "so many options are still not showing up things like trade"): the menu read as the game opens it -
 # AssembleMenuEntries first, and the context the entries test (playerLocation, accountInfo, isMobile, name by UnitNameUnmodified)
 Q.execute(r'''
+ORIGMGR = UnitPopupManager
 local function mk(name, text) local m = { GetText = function() return text end, CanShow = function() return true end,
     IsEnabled = function() return true end, OnClick = function() CLICKED[#CLICKED + 1] = name end }
     rawset(_G, "UnitPopup" .. name .. "ButtonMixin", m); return m end
@@ -1525,6 +1526,7 @@ check(ts == ['Whisper', 'Trade', 'Add Friend'], "q53: the entries come from Asse
 check(Q.eval('ASSEMBLED.unit') == 'target' and Q.eval('ASSEMBLED.fromTargetFrame') is True and Q.eval('ASSEMBLED.name') == 'Brannoc',
       "q53: the context the game builds: unit, fromTargetFrame, name by UnitNameUnmodified, playerLocation",
       (Q.eval('ASSEMBLED.unit'), Q.eval('ASSEMBLED.fromTargetFrame'), Q.eval('ASSEMBLED.name')))
+Q.execute('UnitPopupManager = ORIGMGR; UnitPopupSharedUtil = nil; UnitNameUnmodified = nil')     # the fixtures below read the plain menu
 # the party pad's Y and the party row's MENU cells read the menu for the unit, src "party"
 W11 = world()
 W11.execute('PMREADS = {}; WowCompanion.pmenu = { read = function(u, s) PMREADS[#PMREADS + 1] = { u, s } end }')
