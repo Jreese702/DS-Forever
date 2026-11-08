@@ -1408,7 +1408,7 @@ check(ctlDoc(W8)['view'] == 'normal' and 'ppos' not in ctlDoc(W8), "padtab 0: ba
 check(W8.eval('#SPY') == 0 and W8.eval('#VIOL') == 0 and list(W8.eval('ERRS').values()) == [], "no spied call, no lockdown breach, no error")
 
 # ================================================================ 11. QUESTS: THE PLAYER MENU FOR A PARTY UNIT (q49)
-check('local QV = "q53"' in SRC["quests"], "Quests says q53")
+check('local QV = "q54"' in SRC["quests"], "Quests says q54")
 MENU = r'''
 CALLS, CLICKED = {}, {}
 local function mixin(name, text, enabled)
@@ -1435,7 +1435,7 @@ n0 = nsent(Q)
 Q.eval('WowCompanion.pmenu.read')("party2", "party")
 pm = docs(Q, n0, 'pmenu')
 check(len(pm) == 1 and pm[0]['unit'] == 'party2' and pm[0]['which'] == 'PARTY' and pm[0]['src'] == 'party' and pm[0]['nm'] == 'Iselle'
-      and pm[0]['v'] == 'q53' and Q.eval('MENUWHICH') == 'PARTY', "read(\"party2\", \"party\"): the PARTY menu; doc unit, which PARTY, nm, src party",
+      and pm[0]['v'] == 'q54' and Q.eval('MENUWHICH') == 'PARTY', "read(\"party2\", \"party\"): the PARTY menu; doc unit, which PARTY, nm, src party",
       pm and {k: pm[0].get(k) for k in ('unit', 'which', 'nm', 'src')})
 items = {x['t']: x for x in pm[0]['items']}
 check(items['Set Focus'].get('sc') == 14 and items['Set Focus'].get('scr') == 'party', "Set Focus = the PARTY row's focus cell for party2 (col 12 + 2)",
@@ -1457,6 +1457,7 @@ check(int(Q.eval('#CLICKED')) == 0, "no Blizzard menu code (an entry's OnClick) 
 Q.execute('advance(1)')
 pm2 = docs(Q, n0, 'pmenu')
 check(len(pm2) >= 2 and pm2[-1]['unit'] == 'party2', "after a run the SAME unit's menu is read again", pm2[-1].get('unit'))
+check(pm2[-1].get('again') == 1 and 'again' not in pm2[0], "q54: that re-read says again = 1 (the app never opens a wheel for it)", pm2[-1].get('again'))
 n0 = nsent(Q)
 Q.eval('WowCompanion.pmenu.read')()
 pm = docs(Q, n0, 'pmenu')[0]

@@ -36,7 +36,7 @@ local WC = WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" then return end
 local S = WC.S
 
-local DV = "d25"         -- bump on every change
+local DV = "d26"         -- bump on every change; d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -214,6 +214,10 @@ local function read(i, f)
     -- d24 (the user on test15: the trade's "are you sure you want to accept" showed only on the top screen): a TRADE dialog is
     -- mirrored even with a frame inserted (its buttons are what matters); a text box or money input still stays on top
     if why == "frame" and type(d.which) == "string" and d.which:find("TRADE") then d.topWas = why; why = nil end
+    -- d26 (the user, 2026-11-08: "There was also a trade where I traded a green and it gave an are you sure prompt on the top screen. We
+    -- need to make that for the bottom"): while the game's trade window is open, ANY dialog whose extra is a shown frame (the item it asks
+    -- about) is mirrored too, whatever its name; a text box, a money input or a list still stays on top
+    if why == "frame" and TB(function() return _G.TradeFrame and _G.TradeFrame:IsShown() end) == true then d.topWas = why; why = nil end
     d.top = why
     return d
 end

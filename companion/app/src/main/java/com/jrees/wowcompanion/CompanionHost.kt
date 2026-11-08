@@ -1897,7 +1897,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 when (msg.optString("src")) {
                     "party" -> if (partyWheelOpen()) targetRadial.fill(msg) else homeView.partyMenu.onDoc(msg)
                     // q51: the target radial (a bare Y out of a fight with a target): opens it, or refreshes it / its list
-                    "radial" -> if (!(::pauseView.isInitialized && pauseView.isOpen) && !(::radialView.isInitialized && radialView.isOpen) &&
+                    // q54: a re-read after a run (again = 1) only refreshes an open wheel; it never opens one (the user: Trade "doesn't work":
+                    // the wheel came back by itself and the next B closed it)
+                    "radial" -> if (msg.optInt("again") == 1) { if (tradOpen() && targetRadial.opener == "target") targetRadial.fill(msg) }
+                        else if (!(::pauseView.isInitialized && pauseView.isOpen) && !(::radialView.isInitialized && radialView.isOpen) &&
                         !(tradOpen() && targetRadial.opener != "target")) targetRadial.onDoc(msg)
                     else -> if (tradOpen() && targetRadial.opener == "portrait") targetRadial.fill(msg) else mapView.onPlayerMenuDoc(msg)
                 }
@@ -2038,7 +2041,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // counts as shown (the map module: freed at 18:29:17 / 18:29:47, then re-held by the app). Look again after a short grace
                 if (current && msg.optString("op") == "hold" && msg.optBoolean("ok") && !guestShown(gid))
                     strip.postDelayed({ if (!guestShown(gid)) refree(gid, "hold ok") }, 400L)
-                if (op == "pmenurun") mapView.onPlayerMenuRan(msg)
+                if (op == "pmenurun") {
+                    // every menu run's answer in the log (the user: Trade "doesn't work" - its answer was nowhere to be read)
+                    Log.i("WCHOME", "menu run: ${if (msg.optBoolean("ok")) "done" else "refused (${msg.optString("why")})"}")
+                    mapView.onPlayerMenuRan(msg)
+                }
                 when (gid) {
                     "settings" -> settings.pad.onGuestAck(msg)
                     "quests" -> questsView.onGuestAck(msg)

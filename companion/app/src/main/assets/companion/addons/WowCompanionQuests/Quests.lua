@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q53"    -- bump on every change; q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
+local QV = "q54"    -- bump on every change; q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2234,7 +2234,7 @@ function WC.pmenu.actFor(key, text, unit, src)
     end
     return nil
 end
-function WC.pmenu.read(unit, src)
+function WC.pmenu.read(unit, src, again)
     local P = WC.pmenu
     P.list = {}; P.d1 = nil
     local ctx = P.ctx(unit)
@@ -2289,7 +2289,7 @@ function WC.pmenu.read(unit, src)
         if es then shape = how; items = walk(es, 0) end
     end
     pcall(function() WC.send(WC.encode({ type = "pmenu", v = QV, shape = shape, items = items, focus = WC.pmenu.focusRow and 1 or nil,
-                                         unit = ctx.unit, which = ctx.which, nm = ctx.name, src = src })); WC.push() end)
+                                         unit = ctx.unit, which = ctx.which, nm = ctx.name, src = src, again = again and 1 or nil })); WC.push() end)
 end
 -- an entry the app chose: its plain engine call (never Blizzard's menu code)
 function WC.pmenu.run(id)
@@ -2298,7 +2298,7 @@ function WC.pmenu.run(id)
     if type(a) ~= "table" or type(a.fn) ~= "function" then return gack(nil, "pmenurun", false, "the menu changed") end
     local ok, err = pcall(a.fn)
     gack(nil, "pmenurun", ok and true or false, (not ok) and tostring(err):sub(1, 120) or nil)
-    C_Timer.After(0.3, function() pcall(P.read, P.lastUnit, P.lastSrc) end)      -- the checks follow what it did (q49: that unit's menu)
+    C_Timer.After(0.3, function() pcall(P.read, P.lastUnit, P.lastSrc, true) end)  -- the checks follow what it did (q49: that unit's menu; q54: again)
 end
 -- Set / Clear Focus: FocusUnit is protected, so a SECURE cell does it (the click on it is the hardware event), static attributes
 if WC.pad and type(WC.pad.secureRow) == "function" then
