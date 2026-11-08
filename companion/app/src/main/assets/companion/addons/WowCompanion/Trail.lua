@@ -2259,30 +2259,58 @@ do
         WowCompanionDB.npEnemies = nil
         A.np.state, A.np.why = "restored", why
     end
-    -- ---------------------------------------------------------------- FRIENDLY NAMEPLATES ON, ONCE (the user, 2026-11-07, asked why the target radial's
-    -- Y glyph sat on the right instead of over the target, and picked "Turn on friendly nameplates"): the game gives an add-on a unit's
-    -- place on screen only through its nameplate, and friendly players / NPCs have none unless the game's friendly nameplates are on.
-    -- nameplateShowFriends and nameplateShowFriendlyNPCs are set to 1 ONCE (WowCompanionDB.npFriendsSet), out of combat (refused in a
-    -- fight), and never again: the player switching them off afterwards is their choice and stands. A probe says what was found.
+    -- ---------------------------------------------------------------- FRIENDLY NAMEPLATES WHILE A FRIEND IS TARGETED (the user, 2026-11-07: the
+    -- target radial's Y glyph "on the right side of my screen instead of over my target" -> "Turn on friendly nameplates", then "Is it
+    -- possible to only show friendly name plates when I am targeting someone?"): the game gives an add-on a unit's place on screen only
+    -- through its nameplate, and friendly players / NPCs have none unless the game's friendly nameplates are on. So, out of combat (the
+    -- nameplate options are refused in a fight): a FRIENDLY target -> nameplateShowFriends / nameplateShowFriendlyNPCs 1, the player's
+    -- own values kept in OUR saved data (WowCompanionDB.npFriends.orig); no friendly target -> put back. No option shows only the
+    -- target's plate: every friendly plate shows while a friend is targeted. Put back at log out too. A value of theirs stands.
     A.NP_FRIEND_CVARS = { "nameplateShowFriends", "nameplateShowFriendlyNPCs" }
+    local function cvGet(name)
+        local ok, v = pcall(function() return C_CVar.GetCVar(name) end)
+        if ok and v ~= nil and not (type(issecretvalue) == "function" and issecretvalue(v)) then return tostring(v) end
+    end
+    local function cvSet(name, v)
+        return pcall(function()
+            if C_CVar and C_CVar.SetCVar then C_CVar.SetCVar(name, v) else SetCVar(name, v) end    -- npFriends (the user's ruling)
+        end)
+    end
+    function A.friendsRestore(why)
+        local saved = type(WowCompanionDB) == "table" and WowCompanionDB.npFriends or nil
+        if type(saved) ~= "table" then return end
+        if pv(InCombatLockdown) == true and why ~= "logout" then return end
+        for name, orig in pairs(saved.orig or {}) do
+            if cvGet(name) == "1" and orig ~= "1" then cvSet(name, orig) end
+        end
+        WowCompanionDB.npFriends = nil
+    end
     function A.friendsStep()
         if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
-        if WowCompanionDB.npFriendsSet then return end
+        -- test30 set them on once (npFriendsSet): from now they follow the target, so test30's on is ours to put back (off)
+        if WowCompanionDB.npFriendsSet then
+            WowCompanionDB.npFriendsSet = nil
+            WowCompanionDB.npFriends = WowCompanionDB.npFriends or { orig = { nameplateShowFriends = "0", nameplateShowFriendlyNPCs = "0" } }
+        end
         if pv(InCombatLockdown) == true then return end
-        local found = {}
-        for _, name in ipairs(A.NP_FRIEND_CVARS) do
-            local ok, v = pcall(function() return C_CVar.GetCVar(name) end)
-            if ok and v ~= nil and not (type(issecretvalue) == "function" and issecretvalue(v)) then
-                found[name] = tostring(v)
-                if tostring(v) ~= "1" then
-                    pcall(function()
-                        if C_CVar and C_CVar.SetCVar then C_CVar.SetCVar(name, "1") else SetCVar(name, "1") end   -- npFriends (the user's ruling)
-                    end)
+        local friend = pv(function() return UnitExists("target") end) == true and pv(function() return UnitIsFriend("player", "target") end) == true
+            and pv(function() return UnitIsUnit("target", "player") end) ~= true
+        if friend == A.friendWas then return end
+        A.friendWas = friend
+        if friend then
+            local saved = WowCompanionDB.npFriends
+            for _, name in ipairs(A.NP_FRIEND_CVARS) do
+                local cur = cvGet(name)
+                if cur and cur ~= "1" then
+                    saved = saved or { orig = {} }
+                    if saved.orig[name] == nil then saved.orig[name] = cur end
+                    cvSet(name, "1")
                 end
             end
+            WowCompanionDB.npFriends = saved
+        else
+            A.friendsRestore("no friendly target")
         end
-        WowCompanionDB.npFriendsSet = true
-        pcall(function() WC.send(WC.encode({ type = "cap", probe = "npfriends", found = found })) end)
     end
 
     function A.npStep()
@@ -2529,7 +2557,7 @@ do
         local ok, err = pcall(function()
             if e == "NAME_PLATE_UNIT_ADDED" then A.onAdded(a1)
             elseif e == "NAME_PLATE_UNIT_REMOVED" then A.onRemoved(a1)
-            elseif e == "PLAYER_LOGOUT" then A.npRestore("logout")
+            elseif e == "PLAYER_LOGOUT" then A.npRestore("logout"); pcall(A.friendsRestore, "logout")
             elseif e == "PLAYER_ENTERING_WORLD" then
                 -- a value of ours left from before (a crash): back to the player's once the route is not running (npStep's grace)
                 if A.npSaved() then A.np.offSince = now() - A.NP_OFF_S + 3 end
