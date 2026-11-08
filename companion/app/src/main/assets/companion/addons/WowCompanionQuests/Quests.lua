@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q50"    -- bump on every change; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
+local QV = "q51"    -- bump on every change; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2085,7 +2085,16 @@ end
 WC.pmenu = { list = {}, d1 = nil, d1at = 0, mix = nil }
 function WC.pmenu.ctx(unit)
     unit = (type(unit) == "string" and unit ~= "") and unit or "player"
-    return { unit = unit, which = unit == "player" and "SELF" or "PARTY", name = TS(function() return (UnitName(unit)) end),
+    local which = unit == "player" and "SELF" or "PARTY"
+    -- q51: the target's own menu, as the game picks it for the target frame (you; a party member; a player, friend or foe; an NPC)
+    if unit == "target" then
+        if T(function() return UnitIsUnit("target", "player") end) == true then which = "SELF"
+        elseif T(function() return UnitInParty("target") end) == true then which = "PARTY"
+        elseif T(function() return UnitIsPlayer("target") end) == true then
+            which = (T(function() return UnitCanCooperate("player", "target") end) == true) and "PLAYER" or "ENEMY_PLAYER"
+        else which = "TARGET" end
+    end
+    return { unit = unit, which = which, name = TS(function() return (UnitName(unit)) end),
              guid = TS(function() return UnitGUID(unit) end) }
 end
 function WC.pmenu.entries(obj, ctx)
@@ -2132,7 +2141,9 @@ function WC.pmenu.actFor(key, text, unit, src)
         return { fn = function() set(not get()) end, ck = function() return get() == true end }
     end
     if k:find("selfhighlight") or k:find("findyourself") then return "hide" end
-    if k:find("inspect") then return nil end                -- q49: InspectUnit is Blizzard Lua that taints: always greyed
+    -- q51: the TARGET's Inspect = the game's own "/inspect" (InspectUnit("target")) on a secure cell: the click is the hardware event and
+    -- the slash command runs untainted; everywhere else greyed as before (q49: InspectUnit from add-on code taints)
+    if k:find("inspect") then if unit == "target" and not isSelf then return { sc = 2 } end return nil end
     local n = k:match("raidtarget(%d)") or k:match("raidtargeticon(%d)")
     if n then
         n = tonumber(n)
@@ -2140,6 +2151,7 @@ function WC.pmenu.actFor(key, text, unit, src)
     end
     if k:find("raidtarget") and k:find("none") then return { fn = function() SetRaidTarget(unit, 0) end } end
     if k:find("clearfocus") then return { sc = 1 } end
+    if (k:find("setfocus") or k == "focus") and unit == "target" and src ~= "party" then return { sc = 3 } end   -- q51: focus the target
     if k:find("setfocus") or k == "focus" then
         -- q49: on a party unit (or read for Party mode) the PARTY row's focus cell for that unit (PadMap m77's; FocusUnit is protected)
         if not isSelf or src == "party" then
@@ -2163,6 +2175,14 @@ function WC.pmenu.actFor(key, text, unit, src)
                                      if not (g and pcall(InitiateTrade, g)) then InitiateTrade(unit) end
                                  end } end
         if k:find("follow") then return { fn = function() FollowUnit(unit) end } end
+        -- q51 (the target radial): invite, duel, add friend - the game's plain calls with that unit / name
+        if k:find("invite") and not k:find("uninvite") then return { fn = function()
+                                     if C_PartyInfo and type(C_PartyInfo.InviteUnit) == "function" then C_PartyInfo.InviteUnit(nm or unit) else InviteUnit(nm or unit) end
+                                 end } end
+        if k:find("duel") then return { fn = function() StartDuel(unit) end } end
+        if k:find("addfriend") then return { fn = function()
+                                     if C_FriendList and type(C_FriendList.AddFriend) == "function" then C_FriendList.AddFriend(nm) else AddFriend(nm) end
+                                 end } end
         if k:find("promote") then return { fn = function() PromoteToLeader(unit) end, cf = (text or "Promote to Party Leader") .. "?" } end
         if k:find("uninvite") or k:find("removefromgroup") or k == "kick" then
             return { fn = function()
@@ -2200,7 +2220,7 @@ function WC.pmenu.read(unit, src)
     local P = WC.pmenu
     P.list = {}; P.d1 = nil
     local ctx = P.ctx(unit)
-    src = (src == "party") and "party" or nil
+    src = (src == "party" or src == "radial") and src or nil       -- q51: "radial" = the app's target radial
     P.lastUnit, P.lastSrc = ctx.unit, src                    -- q49: a run / a focus re-reads THIS menu
     local menu, shape = nil, "none"
     local mgr = _G.UnitPopupManager
@@ -2264,9 +2284,11 @@ function WC.pmenu.run(id)
 end
 -- Set / Clear Focus: FocusUnit is protected, so a SECURE cell does it (the click on it is the hardware event), static attributes
 if WC.pad and type(WC.pad.secureRow) == "function" then
-    WC.pmenu.focusRow = WC.pad.secureRow("pfocus", 2, function(btn, col)
-        btn:SetAttribute("type", col == 0 and "focus" or "clearfocus")
-        btn:SetAttribute("unit", "player")
+    -- q51: col 2 = the target's Inspect (the game's own /inspect), col 3 = Set Focus on the target
+    WC.pmenu.focusRow = WC.pad.secureRow("pfocus", 4, function(btn, col)
+        if col == 2 then btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", "/inspect"); return end
+        btn:SetAttribute("type", (col == 0 or col == 3) and "focus" or "clearfocus")
+        btn:SetAttribute("unit", col == 3 and "target" or "player")
     end, function(col) C_Timer.After(0.3, function() pcall(WC.pmenu.read, WC.pmenu.lastUnit, WC.pmenu.lastSrc) end) end)
 end
 GACT[G_PLAYER_MENU] = function() WC.pmenu.read() end

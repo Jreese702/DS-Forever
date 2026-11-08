@@ -84,6 +84,8 @@ class HomeView(
     private val partyView = PartyModuleView(context, party)
     /** the player menu for a party member (PARTY_BUILD.md 4.6), over the left column; the host drives it */
     val partyMenu = PartyMenuView(context)
+    /** the target radial's More: the target's whole menu as a list, in the party menu's place (TargetRadialView drives it) */
+    val targetMenu = PartyMenuView(context, emptySet())
     /**
      * THE CHAT'S GLIDE (b-chat-slide; the user's pick: chat going full screen should move like the map's morph). The full chat is laid
      * out ONCE at its full size and its box glides between the chat pane's place and the frame, as the map's does: a rounded window
@@ -121,6 +123,7 @@ class HomeView(
         setWillNotDraw(false)
         for ((_, v) in views) { addView(v); v.visibility = View.GONE }
         addView(partyMenu); partyMenu.visibility = View.GONE; partyMenu.translationZ = PARTY_MENU_Z
+        addView(targetMenu); targetMenu.visibility = View.GONE; targetMenu.translationZ = PARTY_MENU_Z
         mapView.onCompactTap = { if (flow.tapMap()) changed() }
         partyView.onCellTap = { i -> onPartyCell?.invoke(i) }
         partyView.onCellLong = { i -> onPartyLong?.invoke(i) }
@@ -1577,6 +1580,7 @@ class HomeView(
         if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
         wheelLayer?.layout(0, 0, r - l, b - t)                              // f-radial-behind: the whole page, under the columns
         PartyMenuView.PLACE.let { m -> partyMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
+        PartyMenuView.PLACE.let { m -> targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
             val f = now[p] ?: continue

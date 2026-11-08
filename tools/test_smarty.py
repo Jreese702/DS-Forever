@@ -63,9 +63,12 @@ def press(conds=(), smart=True, fight=False):
 
 k = press()
 check(k[0] == "smarty" and k[1] == "item" and k[2] == "item:4540", "Y, nothing targeted, out of combat: uses the pick", k)
-for name, conds in [("a target", ["@target,exists"]), ("a soft-interact target", ["@softinteract,exists"]), ("in combat", ["combat"])]:
+for name, conds in [("a target", ["@target,exists"]), ("in combat", ["combat"])]:
     k = press(conds)
     check(k[0] == "native", "Y with " + name + ": Forever's Inspect", k[0])
+# m101 (the user, 2026-11-07: "When there is something soft targeted to loot, smart y does not work. I press the button and nothing happens")
+k = press(["@softinteract,exists"])
+check(k[0] == "smarty" and k[2] == "item:4540", "m101: Y with a soft-interact target (a corpse to loot): still uses the pick", k)
 k = press(smart=False)
 check(k[0] == "native", "Y with no pick: Forever's Inspect", k[0])
 k = press(fight=True)

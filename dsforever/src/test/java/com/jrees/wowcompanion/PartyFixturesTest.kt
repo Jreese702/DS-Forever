@@ -178,7 +178,7 @@ class PartyFixturesTest {
         assertEquals(PlayerMenu.Do.None, m.key("PAD1"))
         assertEquals("Uninvite?", m.heading())
         m.key("PADDUP")
-        assertEquals(PlayerMenu.Do.Run(4, "Uninvite"), m.key("PAD1"))
+        assertEquals(PlayerMenu.Do.Run(5, "Uninvite"), m.key("PAD1"))
     }
 
     /** THE USER'S RULING: leaving Home (a room, a Home module full screen) turns Party mode off; the add-on's off then reads back */

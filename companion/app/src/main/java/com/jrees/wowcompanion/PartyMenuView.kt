@@ -20,8 +20,9 @@ import org.json.JSONObject
  * drive it, and its close taps MENU DONE). With Party mode off the controller stays the game's: touch only.
  */
 @SuppressLint("ViewConstructor")
-class PartyMenuView(context: Context) : View(context) {
-    val menu = PlayerMenu(greyKeys = PlayerMenu.PARTY_GREY)
+class PartyMenuView(context: Context, grey: Set<String> = PlayerMenu.PARTY_GREY) : View(context) {
+    /** [grey]: the party menu greys Inspect (InspectUnit taints); the TARGET radial's list (q51: Inspect = the game's /inspect) greys none */
+    val menu = PlayerMenu(greyKeys = grey)
     /** the member's name (the heading until the game's own title row comes) */
     var name: String = ""
         private set

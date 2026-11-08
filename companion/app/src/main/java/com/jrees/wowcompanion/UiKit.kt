@@ -4583,7 +4583,8 @@ object UiKit {
     fun pauseRadial(c: Canvas, screen: RectF, disc: android.graphics.PointF, discSize: Float, slices: List<PauseSlice?>, page: Int,
                     pointed: Int, heldOption: Int = -1, t: Float = PAUSE_OPEN_MS, hubDown: Float = 0f, line: String? = null,
                     lineAlpha: Float = 1f, glyphs: Boolean = true, up: String? = "Emotes", down: String? = "Sit / Stand",
-                    pickGlyph: Boolean = false, left: String? = null, right: String? = null, hubGold: Float = 0f): Boolean {
+                    pickGlyph: Boolean = false, left: String? = null, right: String? = null, hubGold: Float = 0f,
+                    title: String? = null): Boolean {
         val g = pauseGeo(screen)
         val tt = t.coerceIn(0f, PAUSE_OPEN_MS)
         // the game's order from here on
@@ -4607,7 +4608,7 @@ object UiKit {
         val d = pauseDisc(screen, disc, discSize, tt)
         pauseHubAt(c, g, d.cx, d.cy, d.size, d.red, if (glyphs) d.b else 0f, hubDown, hubGold)
         val b = pSpan(tt, 440f, 600f)
-        if (b > 0f) pauseBands(c, g, page, crEaseOut(b), 24f * g.k * (1f - crEaseOut(b)))
+        if (b > 0f) pauseBands(c, g, page, crEaseOut(b), 24f * g.k * (1f - crEaseOut(b)), title)
         if (line != null && lineAlpha > 0f)
             crWords(c, line, g.cx, screen.top + 26f * g.k, 28f * g.k, PAUSE_RED, 2f * g.k, (255 * lineAlpha.coerceIn(0f, 1f)).toInt(),
                 screen.width() - 40f * g.k)
@@ -4686,15 +4687,16 @@ object UiKit {
     }
 
     /** the slim top row (LB, the title and its page dots, RB) and the D-pad with its four words at its arms */
-    private fun pauseBands(c: Canvas, g: PauseGeo, page: Int, k: Float, slide: Float) {
+    /** [title]: the target radial's own heading (the target's name; no page dots, no LB / RB) instead of "Main Menu" / "Emotes" */
+    private fun pauseBands(c: Canvas, g: PauseGeo, page: Int, k: Float, slide: Float, title: String? = null) {
         val l = c.saveLayerAlpha(null, (255 * k).toInt())
         val ty = g.topY - slide
-        val paging = page >= 0
+        val paging = page >= 0 && title == null
         tex("rwheel_band")?.let {
             val bw = 520f * g.k; val bh = P_TOP_H * g.k
             c.drawBitmap(it, null, RectF(g.cx - bw / 2f, ty - bh / 2f, g.cx + bw / 2f, ty + bh / 2f), pBmp)
         }
-        gameWords(c, if (paging) "Main Menu" else "Emotes", g.cx, ty - (if (paging) 8f else 0f) * g.k, 32f * g.k, Color.WHITE, 255, 340f * g.k)
+        gameWords(c, title ?: if (paging) "Main Menu" else "Emotes", g.cx, ty - (if (paging) 8f else 0f) * g.k, 32f * g.k, Color.WHITE, 255, 340f * g.k)
         if (paging) {
             val ds = 12f * g.k; val dy = ty + 20f * g.k
             for (n in 0..2) {
