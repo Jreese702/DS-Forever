@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q54"    -- bump on every change; q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
+local QV = "q55"    -- bump on every change; q55: the target wheel's Trade = the game's own /trade on a secure cell (pfocus col 4; the user: "opening trade still not working" - InitiateTrade(guid) from add-on code answered nothing); q54: the re-read after a run says again = 1 (the user: Trade "doesn't work" - the app took the re-read for a new Y press and opened the wheel again); q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2162,6 +2162,9 @@ function WC.pmenu.actFor(key, text, unit, src)
     -- q51: the TARGET's Inspect = the game's own "/inspect" (InspectUnit("target")) on a secure cell: the click is the hardware event and
     -- the slash command runs untainted; everywhere else greyed as before (q49: InspectUnit from add-on code taints)
     if k:find("inspect") then if src == "radial" and not isSelf then return { sc = 2 } end return nil end   -- q52: the radial's own target
+    -- q55 (the user on 1.0.18-test2: "opening trade still not working"; the log: the run "done", no trade): the radial's Trade is the
+    -- game's own /trade (InitiateTrade("target") in the slash command, a secure click) - the wheel is always about the target
+    if k:find("trade") and src == "radial" and not isSelf then return { sc = 4 } end
     local n = k:match("raidtarget(%d)") or k:match("raidtargeticon(%d)")
     if n then
         n = tonumber(n)
@@ -2303,8 +2306,9 @@ end
 -- Set / Clear Focus: FocusUnit is protected, so a SECURE cell does it (the click on it is the hardware event), static attributes
 if WC.pad and type(WC.pad.secureRow) == "function" then
     -- q51: col 2 = the target's Inspect (the game's own /inspect), col 3 = Set Focus on the target
-    WC.pmenu.focusRow = WC.pad.secureRow("pfocus", 4, function(btn, col)
+    WC.pmenu.focusRow = WC.pad.secureRow("pfocus", 5, function(btn, col)
         if col == 2 then btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", "/inspect"); return end
+        if col == 4 then btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", "/trade"); return end     -- q55
         btn:SetAttribute("type", (col == 0 or col == 3) and "focus" or "clearfocus")
         btn:SetAttribute("unit", col == 3 and "target" or "player")
     end, function(col) C_Timer.After(0.3, function() pcall(WC.pmenu.read, WC.pmenu.lastUnit, WC.pmenu.lastSrc) end) end)

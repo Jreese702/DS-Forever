@@ -1408,7 +1408,7 @@ check(ctlDoc(W8)['view'] == 'normal' and 'ppos' not in ctlDoc(W8), "padtab 0: ba
 check(W8.eval('#SPY') == 0 and W8.eval('#VIOL') == 0 and list(W8.eval('ERRS').values()) == [], "no spied call, no lockdown breach, no error")
 
 # ================================================================ 11. QUESTS: THE PLAYER MENU FOR A PARTY UNIT (q49)
-check('local QV = "q54"' in SRC["quests"], "Quests says q54")
+check('local QV = "q55"' in SRC["quests"], "Quests says q55")
 MENU = r'''
 CALLS, CLICKED = {}, {}
 local function mixin(name, text, enabled)
@@ -1435,7 +1435,7 @@ n0 = nsent(Q)
 Q.eval('WowCompanion.pmenu.read')("party2", "party")
 pm = docs(Q, n0, 'pmenu')
 check(len(pm) == 1 and pm[0]['unit'] == 'party2' and pm[0]['which'] == 'PARTY' and pm[0]['src'] == 'party' and pm[0]['nm'] == 'Iselle'
-      and pm[0]['v'] == 'q54' and Q.eval('MENUWHICH') == 'PARTY', "read(\"party2\", \"party\"): the PARTY menu; doc unit, which PARTY, nm, src party",
+      and pm[0]['v'] == 'q55' and Q.eval('MENUWHICH') == 'PARTY', "read(\"party2\", \"party\"): the PARTY menu; doc unit, which PARTY, nm, src party",
       pm and {k: pm[0].get(k) for k in ('unit', 'which', 'nm', 'src')})
 items = {x['t']: x for x in pm[0]['items']}
 check(items['Set Focus'].get('sc') == 14 and items['Set Focus'].get('scr') == 'party', "Set Focus = the PARTY row's focus cell for party2 (col 12 + 2)",
@@ -1480,6 +1480,7 @@ check(pm['unit'] == 'target' and pm['which'] == 'PLAYER' and pm['src'] == 'radia
       "q51: read(\"target\", \"radial\"): a friendly player = the PLAYER menu, src radial", {k: pm.get(k) for k in ('unit', 'which', 'src')})
 check(items['Inspect'].get('sc') == 2 and items['Inspect']['en'] == 1, "q51: the target's Inspect = pfocus col 2 (the game's /inspect)", items['Inspect'])
 check(items['Set Focus'].get('sc') == 3 and 'scr' not in items['Set Focus'], "q51: Set Focus on the target = pfocus col 3", items['Set Focus'])
+check(items['Trade'].get('sc') == 4 and 'i' not in items['Trade'], "q55: the target wheel's Trade = pfocus col 4 (the game's /trade)", items['Trade'])
 c0 = int(Q.eval('#CALLS'))
 Q.eval('WowCompanion.pmenu.run')(items['Duel']['i'])
 got = list(Q.eval('CALLS[#CALLS]').values()) if int(Q.eval('#CALLS')) > c0 else None
