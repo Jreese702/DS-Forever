@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q52"    -- bump on every change; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
+local QV = "q53"    -- bump on every change; q53: the menu is read AS THE GAME OPENS IT (UnitPopupManager:OpenMenu): its entries by menu:AssembleMenuEntries(contextData), and the contextData the entries test (name / surname by UnitNameUnmodified, playerLocation, accountInfo, isMobile, fromTargetFrame) - the user on test25: "so many options are still not showing up things like trade"; an entry whose test needed a missing field hid itself; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2099,11 +2099,24 @@ function WC.pmenu.ctx(unit)
             which = (T(function() return UnitCanCooperate("player", "target") end) == true) and "PLAYER" or "ENEMY_PLAYER"
         else which = "TARGET" end
     end
-    return { unit = unit, which = which, name = TS(function() return (UnitName(unit)) end),
-             guid = TS(function() return UnitGUID(unit) end) }
+    local c = { unit = unit, which = which, name = TS(function() return (UnitName(unit)) end),
+                guid = TS(function() return UnitGUID(unit) end), fromTargetFrame = (unit == "target") or nil }
+    -- q53: the fields the game's own OpenMenu adds before the entries test themselves (unitpopupshared.lua): without them an entry
+    -- that reads one (Whisper's playerLocation, Add Friend's accountInfo ...) errored, and an error read as "not shown"
+    local okN, nm, sur = pcall(UnitNameUnmodified, unit)
+    if okN and type(nm) == "string" and nm ~= "" and WC.isPlain(nm) then c.name = nm; c.surname = sur end
+    local U = _G.UnitPopupSharedUtil
+    if type(U) == "table" then
+        if type(U.TryCreatePlayerLocation) == "function" then local ok, v = pcall(U.TryCreatePlayerLocation, c); if ok then c.playerLocation = v end end
+        if type(U.GetBNetAccountInfo) == "function" then local ok, v = pcall(U.GetBNetAccountInfo, c); if ok then c.accountInfo = v end end
+        if type(U.GetIsMobile) == "function" then local ok, v = pcall(U.GetIsMobile, c); if ok then c.isMobile = v end end
+    end
+    return c
 end
 function WC.pmenu.entries(obj, ctx)
-    for _, fn in ipairs({ "GetEntries", "GetMenuButtons" }) do
+    -- q53: the game assembles a menu's entries for its context (AssembleMenuEntries: the PLAYER menu's sections); an entry's own list
+    -- is GetEntries
+    for _, fn in ipairs({ "AssembleMenuEntries", "GetEntries", "GetMenuButtons" }) do
         if type(obj) == "table" and type(obj[fn]) == "function" then
             local ok, r = pcall(obj[fn], obj, ctx)
             if ok and type(r) == "table" then return r, fn end
