@@ -2265,8 +2265,10 @@ do
     -- through its nameplate, and friendly players / NPCs have none unless the game's friendly nameplates are on. So, out of combat (the
     -- nameplate options are refused in a fight): a FRIENDLY target -> nameplateShowFriends / nameplateShowFriendlyNPCs 1, the player's
     -- own values kept in OUR saved data (WowCompanionDB.npFriends.orig); no friendly target -> put back. No option shows only the
-    -- target's plate: every friendly plate shows while a friend is targeted. Put back at log out too. A value of theirs stands.
-    A.NP_FRIEND_CVARS = { "nameplateShowFriends", "nameplateShowFriendlyNPCs" }
+    -- target's plate, so (the user, same day: "I was meaning a name plate for ONLY my target") nameplateNotSelectedAlpha goes to 0 with
+    -- them: every plate but the target's is drawn invisible (still there: our Y glyph and the layers keep their anchors). Put back at log
+    -- out too. A value of theirs stands.
+    A.NP_FRIEND_CVARS = { { "nameplateShowFriends", "1" }, { "nameplateShowFriendlyNPCs", "1" }, { "nameplateNotSelectedAlpha", "0" } }
     local function cvGet(name)
         local ok, v = pcall(function() return C_CVar.GetCVar(name) end)
         if ok and v ~= nil and not (type(issecretvalue) == "function" and issecretvalue(v)) then return tostring(v) end
@@ -2280,8 +2282,10 @@ do
         local saved = type(WowCompanionDB) == "table" and WowCompanionDB.npFriends or nil
         if type(saved) ~= "table" then return end
         if pv(InCombatLockdown) == true and why ~= "logout" then return end
-        for name, orig in pairs(saved.orig or {}) do
-            if cvGet(name) == "1" and orig ~= "1" then cvSet(name, orig) end
+        for _, cv in ipairs(A.NP_FRIEND_CVARS) do
+            local name, want = cv[1], cv[2]
+            local orig = (saved.orig or {})[name]
+            if orig ~= nil and tonumber(cvGet(name)) == tonumber(want) and tonumber(orig) ~= tonumber(want) then cvSet(name, orig) end
         end
         WowCompanionDB.npFriends = nil
     end
@@ -2299,12 +2303,13 @@ do
         A.friendWas = friend
         if friend then
             local saved = WowCompanionDB.npFriends
-            for _, name in ipairs(A.NP_FRIEND_CVARS) do
+            for _, cv in ipairs(A.NP_FRIEND_CVARS) do
+                local name, want = cv[1], cv[2]
                 local cur = cvGet(name)
-                if cur and cur ~= "1" then
+                if cur and tonumber(cur) ~= tonumber(want) then
                     saved = saved or { orig = {} }
                     if saved.orig[name] == nil then saved.orig[name] = cur end
-                    cvSet(name, "1")
+                    cvSet(name, want)
                 end
             end
             WowCompanionDB.npFriends = saved
