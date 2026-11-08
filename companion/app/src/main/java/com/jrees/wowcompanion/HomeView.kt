@@ -1098,7 +1098,8 @@ class HomeView(
     private fun partyOnHere(): Boolean = party.party?.onLive == true
     /** the bottom screen's party module (off 2026-11-05 - the game hid every health number; ON again 2026-11-07, the user: "bring back
      *  the party mode built off of it": the health now comes from the game's combat log, CombatHealth) */
-    private val PARTY_MODULE = true
+    // 2026-11-07 (the user: "Make the party mode an experimental toggle that is off by default"): QOL > Experimental > Party mode
+    private val PARTY_MODULE get() = GameUi.partyModeOn()
     /** Party mode holds the D-pad here (its box moves on it): the game's D-pad layout must not also open the bar cursor (2026-11-04,
      *  the user: "pushing down on the Dpad makes the cursor also appear on the bottom bar menu") */
     fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && isShown && !typeWanted
@@ -1114,6 +1115,11 @@ class HomeView(
     private var laidPartyMode = PartyLayout.Mode.REST
     private var laidPartyN = 0
     private var laidPartyOn = false
+    private var laidPartyModule = false
+    init {
+        // QOL > Experimental > Party mode flipped: the module comes or goes at once
+        GameUi.onChange { post { if (PARTY_MODULE != laidPartyModule) partyChanged() } }
+    }
 
     /** a party document (or a box) changed what Home draws: re-placed when the module's size changed, else redrawn */
     fun partyChanged() {
@@ -1125,7 +1131,8 @@ class HomeView(
         val combat = flow.combat(grow.shown(now) && !partyOnHere())
         if (combat && flow.takeover) grewAt = now
         val placed = flow.full == null || flow.takeover
-        if (shown != null && (combat || placed && (n != laidPartyN || on != laidPartyOn || partyModeNow(flow.screen) != laidPartyMode))) changed()
+        if (shown != null && (combat || placed && (n != laidPartyN || on != laidPartyOn || partyModeNow(flow.screen) != laidPartyMode
+                || PARTY_MODULE != laidPartyModule))) changed()
         partyView.invalidate()
         shown?.let { partyStripSync(it) }
         onStateChanged?.invoke()                                          // the disc's red B follows
@@ -1165,7 +1172,8 @@ class HomeView(
     private fun withParty(base: Map<Part, RectF>, s: HomeScreen, w: Float): Map<Part, RectF> {
         // 2026-11-05 (the user: "scrap the party mode showing from the bottom screen but keep the party mode toolbar settings for when
         // party is being targeted on the top screen"; the game hides every health number, so the module could only guess): no module
-        if (!PARTY_MODULE) return base
+        laidPartyModule = PARTY_MODULE
+        if (!laidPartyModule) return base
         val p = party.party ?: return base
         val chat = base[Part.CHAT] ?: return base
         val mode = partyModeNow(s)

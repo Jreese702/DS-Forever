@@ -102,7 +102,9 @@ object GameUi {
                   /** hub22: a new hostile target starts the attack; null = an add-on without the switch */
                   val atk: Boolean? = null,
                   /** hub22: the game's Auto Shot switching (autoRangedCombat), any class since hub23; null = an add-on without it */
-                  val shot: Boolean? = null)
+                  val shot: Boolean? = null,
+                  /** hub25: Party mode allowed (the experimental switch); null = an add-on without it */
+                  val pmode: Boolean? = null)
     @Volatile private var sw: Sw? = null
     private var swTapAt = 0L
     private var swTapN = -1
@@ -110,24 +112,29 @@ object GameUi {
     const val SW_PLAYER = "player"; const val SW_TARGET = "target"; const val SW_NP = "np"; const val SW_PRD = "prd"; const val SW_WM = "wm"
     const val SW_PARTY = "party"
     const val SW_ATK = "atk"; const val SW_SHOT = "shot"
+    /** hub25: Party mode, EXPERIMENTAL (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"):
+     *  one choice for the whole app (not per character), off until turned on */
+    const val SW_PMODE = "pmode"
     // hub19: the party frames; ON by default since 2026-11-05 (the game hides health from add-ons: its own frames are the real health)
     private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true, SW_WM to false, SW_PARTY to true,
         // hub22: start attack off until chosen; Auto Shot follows the game's own default (on) unless chosen
-        SW_ATK to false, SW_SHOT to true)
+        SW_ATK to false, SW_SHOT to true, SW_PMODE to false)
     /** this character's choice for [part] (its default until one is made); the resource bar's old "HUD mode" choice carries over */
     fun swWant(part: String): Boolean {
+        if (part == SW_PMODE) return prefs?.getBoolean("sw.$SW_PMODE", false) ?: false
         val who = character ?: return SW_DEFAULT[part] ?: false
         val def = if (part == SW_PRD) prefs?.getBoolean("hud.$who", true) ?: true else SW_DEFAULT[part] ?: false
         return prefs?.getBoolean("sw.$part.$who", def) ?: def
     }
     fun setSwitch(part: String, on: Boolean) {
+        if (part == SW_PMODE) { prefs?.edit()?.putBoolean("sw.$SW_PMODE", on)?.apply(); reconcile(); changed(); return }
         val who = character ?: return
         prefs?.edit()?.putBoolean("sw.$part.$who", on)?.apply()
         reconcile()
         changed()
     }
     /** the game's word for [part] now (null = not said / no add-on with it) */
-    fun swNow(part: String): Boolean? = sw?.let { when (part) { SW_PLAYER -> it.player; SW_TARGET -> it.target; SW_NP -> it.np; SW_WM -> it.wm; SW_PARTY -> it.party; SW_ATK -> it.atk; SW_SHOT -> it.shot; else -> it.prd } }
+    fun swNow(part: String): Boolean? = sw?.let { when (part) { SW_PLAYER -> it.player; SW_TARGET -> it.target; SW_NP -> it.np; SW_WM -> it.wm; SW_PARTY -> it.party; SW_ATK -> it.atk; SW_SHOT -> it.shot; SW_PMODE -> it.pmode; else -> it.prd } }
     /** the absolute column that makes [part] [on] */
     fun swCol(s: Sw, part: String, on: Boolean): Int? = s.cols[when (part) {
         SW_PLAYER -> if (on) "PLAYER_SHOW" else "PLAYER_HIDE"
@@ -137,13 +144,14 @@ object GameUi {
         SW_PARTY -> if (on) "PARTY_SHOW" else "PARTY_HIDE"
         SW_ATK -> if (on) "ATK_ON" else "ATK_OFF"
         SW_SHOT -> if (on) "SHOT_ON" else "SHOT_OFF"
+        SW_PMODE -> if (on) "PMODE_ON" else "PMODE_OFF"
         else -> if (on) "PRD_ON" else "PRD_OFF"
     }]
     /** the switch to tap now: the first whose game word differs from the choice, or which the game has not had since its /reload */
     fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? =
-        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOT).firstOrNull { p ->
+        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOT, SW_PMODE).firstOrNull { p ->
             val now = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; SW_PARTY -> s.party
-                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; else -> s.prd }
+                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_PMODE -> s.pmode; else -> s.prd }
             // hub22: Auto Shot is the game's own saved option: only a CHOICE made here is sent (never the default over the game's)
             val chosen = p != SW_SHOT || character?.let { prefs?.contains("sw.$p.$it") } == true
             now != null && chosen && (now != want(p) || (p != SW_SHOT && s.set[p] != true))
@@ -166,6 +174,11 @@ object GameUi {
     /** QOL > Combat (hub22): a new hostile target starts the attack; the hunter's Auto Shot under it */
     fun attackRow(): Row? = swRow(ATK_ID, SW_ATK, "Start attack on hostile target", "On: targeting an enemy starts your attack", "Off")
     const val ATK_ID = "startattack"
+    /** QOL > Experimental (hub25): Party mode, off by default */
+    fun partyModeRow(): Row? = swRow(PMODE_ID, SW_PMODE, "Party mode", "On: Select turns Party mode on", "Off")
+    const val PMODE_ID = "partymode"
+    /** Party mode allowed: Home draws its party module only then */
+    fun partyModeOn(): Boolean = swWant(SW_PMODE)
     fun autoShotRow(): Row? {
         val now = swNow(SW_SHOT) ?: return null
         val who = character ?: return null
@@ -309,7 +322,7 @@ object GameUi {
             o.optJSONObject("set")?.let { c -> for (k in c.keys()) set[k] = c.optBoolean(k, false) }
             fun shown(k: String) = if (o.has(k)) o.optString(k) == "shown" else null
             fun flag(k: String) = if (o.has(k)) o.optBoolean(k) else null
-            Sw(o.optString("row", "uisw"), cols, shown("player"), shown("target"), flag("np"), flag("prd"), set, flag("wm"), shown("party"), flag("atk"), flag("shot"))
+            Sw(o.optString("row", "uisw"), cols, shown("player"), shown("target"), flag("np"), flag("prd"), set, flag("wm"), shown("party"), flag("atk"), flag("shot"), flag("pmode"))
         }
         val prd = h.optJSONObject("prd")
         prdY = prd?.let { if (it.has("y")) it.optInt("y") else null }

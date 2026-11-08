@@ -119,7 +119,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         // QOL: three groups, each under its heading (a "#" row); the rows, their ids and taps are the ones Top screen had
         Part.QOL -> group("HUD", listOfNotNull(GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow())) +
             group("Navigation", listOfNotNull(compassRow(), GameUi.worldMarkersRow(), compassCamRow(), dangerRow())) +
-            group("Combat", listOfNotNull(GameUi.attackRow(), GameUi.autoShotRow(), ringsRow()))
+            group("Combat", listOfNotNull(GameUi.attackRow(), GameUi.autoShotRow(), ringsRow())) +
+            group("Experimental", listOfNotNull(GameUi.partyModeRow()))
         else -> GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
     }
     /** a heading row ("#" + its words) over [rows], none when the group is empty */
@@ -229,6 +230,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                             GameUi.WM_ID -> GameUi.setSwitch(GameUi.SW_WM, m == UiMode.ON)
                             GameUi.ATK_ID -> GameUi.setSwitch(GameUi.SW_ATK, m == UiMode.ON)
                             GameUi.SHOT_ID -> GameUi.setSwitch(GameUi.SW_SHOT, m == UiMode.ON)
+                            GameUi.PMODE_ID -> GameUi.setSwitch(GameUi.SW_PMODE, m == UiMode.ON)
                             else -> GameUi.setMode(it, m)
                         }
                     }

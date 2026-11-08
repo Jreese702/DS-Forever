@@ -558,8 +558,9 @@ WowCompanion.spellsBookSlotOf = function(id) for i, x in ipairs(BOOK) do if x ==
 '''
 
 
-def world(pre='', files=("safety", "tappad", "book", "padmap", "padtabctl")):
-    L = boot(list(files), pre=pre)
+def world(pre='', files=("safety", "tappad", "book", "padmap", "padtabctl"), ok=True):
+    # m100: Party mode is an experimental switch (Hub's "uisw" 16 / 17 -> WowCompanion.partyOk); the worlds here have it ON unless ok=False
+    L = boot(list(files), pre=('WowCompanion.partyOk = true; ' if ok else '') + pre)
     L.execute(WORLD_HELPERS)
     L.execute('fire("PLAYER_LOGIN"); fire("PLAYER_ENTERING_WORLD", true, false); runTimers(NOW + 10)')
     return L
@@ -1055,7 +1056,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng", "hs", "g", "cw", "cc", "ch", "cs"}   # m79: hs, the health source; m92: g, the GUID (combat log)
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm99' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm100' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1251,8 +1252,8 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m99"' in SRC["padmap"],
-      "the versions: PadMap m99, PadTabCtl p33, Book b48")
+check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m100"' in SRC["padmap"],
+      "the versions: PadMap m100, PadTabCtl p33, Book b48")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
 local ctl = WowCompanion._spellsBook.ctl
@@ -1591,6 +1592,32 @@ check(not hits, "no trace in the new add-on code: no SetBinding / SaveBindings /
       hits[:3])
 check(not any('SetOverrideBindingClick' in ln and 'hdr' not in ln and 'owner' not in ln for ln in code),
       "every new key binding is an override on our own owner frame")
+
+# ================================================================ m100: the experimental switch (the user, 2026-11-07: "Make the party
+# mode an experimental toggle that is off by default")
+WX = world(ok=False)
+WX.execute('NOW = NOW + 2; tick(0.1)')
+sel = WX.eval('BIND["PADBACK"]')
+check(sel != 'CLICK WowCompanionPartyToggle:LeftButton' and WX.eval('WowCompanion.partyOk') is None,
+      "m100: switch never set (off by default): Select is NOT Party mode's toggle", sel)
+check(party_on_all(WX) == [None] * 9, "m100: switch off: Party mode off")
+WX.execute('WowCompanion.partyOk = true; WowCompanion.partyAllow(true); NOW = NOW + 2; tick(0.1)')
+sel = WX.eval('BIND["PADBACK"]')
+check(sel == 'CLICK WowCompanionPartyToggle:LeftButton', "m100: switch on: Select toggles Party mode", sel)
+flip(WX, "WowCompanionPartyOn")
+check(party_on_all(WX) == [True] * 9, "m100: switch on: Party mode can turn on")
+WX.execute('WowCompanion.partyOk = false; WowCompanion.partyAllow(false)')
+check(party_on_all(WX) == [None] * 9, "m100: switch turned off out of a fight: Party mode ends at once", party_on_all(WX))
+WX.execute('NOW = NOW + 2; tick(0.1)')
+check(WX.eval('BIND["PADBACK"]') != 'CLICK WowCompanionPartyToggle:LeftButton', "m100: ... and Select is the game's again",
+      WX.eval('BIND["PADBACK"]'))
+WX.execute('WowCompanion.partyOk = true; WowCompanion.partyAllow(true); NOW = NOW + 2; tick(0.1)')
+flip(WX, "WowCompanionPartyOn")
+WX.execute('COMBAT = true; WowCompanion.partyOk = false; WowCompanion.partyAllow(false)')
+check(party_on_all(WX) == [True] * 9 and WX.eval('#VIOL') == 0, "m100: switched off in a fight: no secure write in the lockdown (still on)",
+      list(WX.eval('VIOL').values()))
+WX.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED"); NOW = NOW + 2; tick(0.1)')
+check(party_on_all(WX) == [None] * 9, "m100: ... it ends at the fight's end", party_on_all(WX))
 
 print('ALL PASS (%d checks)' % passes if fails == 0 else '%d FAILED (of %d)' % (fails, fails + passes))
 sys.exit(1 if fails else 0)
