@@ -215,8 +215,10 @@ class TargetRadialView(
         val m = kotlin.math.hypot(x, y)
         if (aimStick != st) { if (m < RadialModel.DEAD_IN) return; aimStick = st }
         if (m < RadialModel.DEAD_OUT) { aimStick = -1; return }
-        val s = UiKit.pauseRadialAim(x.toFloat(), y.toFloat())
-        if (s in 0..7 && s != pointed) { pointed = s; line = null; invalidate() }
+        // the user on test24: "the wheel direction is ... reacting the wrong way" - [y] is already up-positive here (open()'s -y), and
+        // UiKit.pauseRadialAim flips it again; the pause wheel's own aim (RadialModel.aimOf: up-positive, with its hold on a slice)
+        val s = RadialModel.aimOf(x, y, pointed)
+        if (s in 0..7 && s != pointed && slices.getOrNull(s) != null) { pointed = s; line = null; invalidate() }
     }
 
     // ------------------------------------------------------------------------------------------------ a pick

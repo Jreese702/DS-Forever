@@ -5,7 +5,7 @@
 ## Group: WowCompanion
 ## Notes: Feeds the Calendar room on the Thor's bottom screen (months, holidays, invitations); reads only
 ## Author: DS Forever
-## Version: Set 279
+## Version: Set 280
 ## DefaultState: enabled
 ## Dependencies: WowCompanion
 Calendar.lua

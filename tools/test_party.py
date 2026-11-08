@@ -1408,7 +1408,7 @@ check(ctlDoc(W8)['view'] == 'normal' and 'ppos' not in ctlDoc(W8), "padtab 0: ba
 check(W8.eval('#SPY') == 0 and W8.eval('#VIOL') == 0 and list(W8.eval('ERRS').values()) == [], "no spied call, no lockdown breach, no error")
 
 # ================================================================ 11. QUESTS: THE PLAYER MENU FOR A PARTY UNIT (q49)
-check('local QV = "q51"' in SRC["quests"], "Quests says q51")
+check('local QV = "q52"' in SRC["quests"], "Quests says q52")
 MENU = r'''
 CALLS, CLICKED = {}, {}
 local function mixin(name, text, enabled)
@@ -1435,7 +1435,7 @@ n0 = nsent(Q)
 Q.eval('WowCompanion.pmenu.read')("party2", "party")
 pm = docs(Q, n0, 'pmenu')
 check(len(pm) == 1 and pm[0]['unit'] == 'party2' and pm[0]['which'] == 'PARTY' and pm[0]['src'] == 'party' and pm[0]['nm'] == 'Iselle'
-      and pm[0]['v'] == 'q51' and Q.eval('MENUWHICH') == 'PARTY', "read(\"party2\", \"party\"): the PARTY menu; doc unit, which PARTY, nm, src party",
+      and pm[0]['v'] == 'q52' and Q.eval('MENUWHICH') == 'PARTY', "read(\"party2\", \"party\"): the PARTY menu; doc unit, which PARTY, nm, src party",
       pm and {k: pm[0].get(k) for k in ('unit', 'which', 'nm', 'src')})
 items = {x['t']: x for x in pm[0]['items']}
 check(items['Set Focus'].get('sc') == 14 and items['Set Focus'].get('scr') == 'party', "Set Focus = the PARTY row's focus cell for party2 (col 12 + 2)",
@@ -1489,6 +1489,18 @@ Q.eval('WowCompanion.pmenu.read')("target", "radial")
 pm = docs(Q, n0, 'pmenu')[0]
 check(pm['which'] == 'TARGET' and Q.eval('MENUWHICH') == 'TARGET', "q51: an NPC target = the TARGET menu", pm.get('which'))
 check(int(Q.eval('#CLICKED')) == 0, "q51: still no Blizzard menu code ran")
+# q52 (the user on test24: "showing half of it blank for my party members"): a party member targeted = that member's own menu
+Q.execute('TPLAYER = true; function UnitInParty() return true end; '
+          'function UnitIsUnit(a, b) return a == b or (a == "target" and b == "party2") end')
+n0 = nsent(Q)
+Q.eval('WowCompanion.pmenu.read')("target", "radial")
+pm = docs(Q, n0, 'pmenu')[0]
+items = {x['t']: x for x in pm['items']}
+check(pm['unit'] == 'party2' and pm['which'] == 'PARTY' and pm['src'] == 'radial' and Q.eval('MENUWHICH') == 'PARTY',
+      "q52: a party member targeted: the PARTY menu for party2, src radial", {k: pm.get(k) for k in ('unit', 'which', 'src')})
+check(items['Inspect'].get('sc') == 2 and items['Set Focus'].get('sc') == 3 and 'scr' not in items['Set Focus'],
+      "q52: the radial's Inspect / Set Focus act on the target (pfocus 2 / 3)", (items['Inspect'], items['Set Focus']))
+Q.execute('function UnitInParty() return false end; function UnitIsUnit(a, b) return a == b end')
 # the party pad's Y and the party row's MENU cells read the menu for the unit, src "party"
 W11 = world()
 W11.execute('PMREADS = {}; WowCompanion.pmenu = { read = function(u, s) PMREADS[#PMREADS + 1] = { u, s } end }')

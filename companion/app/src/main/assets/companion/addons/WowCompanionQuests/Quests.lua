@@ -24,7 +24,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local QV = "q51"    -- bump on every change; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
+local QV = "q52"    -- bump on every change; q52: the target radial on a PARTY member reads that member's own menu (party1..4: the game's party entries want the party unit; the user on test24: "showing half of it blank for my party members"); Inspect / Set Focus in the radial always act on the target; q51: the TARGET's menu for the app's target radial (src "radial"; the user, 2026-11-07: "Instead of that menu opening a drop down I want to design a radial for it"): which = SELF / PARTY / PLAYER / ENEMY_PLAYER / TARGET by the unit; Invite, Duel, Add Friend as plain calls; Inspect = the secure "/inspect" (pfocus col 2: the game's own slash command, no taint); Set Focus on the target = pfocus col 3; q50: the party menu's Trade passes the member's GUID (this build's InitiateTrade); the app shows it, so a stale build is visible. q49: the player menu for a PARTY unit (Party mode, PARTY_BUILD.md 1.6)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2089,7 +2089,12 @@ function WC.pmenu.ctx(unit)
     -- q51: the target's own menu, as the game picks it for the target frame (you; a party member; a player, friend or foe; an NPC)
     if unit == "target" then
         if T(function() return UnitIsUnit("target", "player") end) == true then which = "SELF"
-        elseif T(function() return UnitInParty("target") end) == true then which = "PARTY"
+        elseif T(function() return UnitInParty("target") end) == true then
+            which = "PARTY"
+            -- q52: the member's own party unit (the game's PARTY entries are written for party1..4; read as "target" half of them hid)
+            for i = 1, 4 do
+                if T(function() return UnitIsUnit("target", "party" .. i) end) == true then unit = "party" .. i break end
+            end
         elseif T(function() return UnitIsPlayer("target") end) == true then
             which = (T(function() return UnitCanCooperate("player", "target") end) == true) and "PLAYER" or "ENEMY_PLAYER"
         else which = "TARGET" end
@@ -2143,7 +2148,7 @@ function WC.pmenu.actFor(key, text, unit, src)
     if k:find("selfhighlight") or k:find("findyourself") then return "hide" end
     -- q51: the TARGET's Inspect = the game's own "/inspect" (InspectUnit("target")) on a secure cell: the click is the hardware event and
     -- the slash command runs untainted; everywhere else greyed as before (q49: InspectUnit from add-on code taints)
-    if k:find("inspect") then if unit == "target" and not isSelf then return { sc = 2 } end return nil end
+    if k:find("inspect") then if src == "radial" and not isSelf then return { sc = 2 } end return nil end   -- q52: the radial's own target
     local n = k:match("raidtarget(%d)") or k:match("raidtargeticon(%d)")
     if n then
         n = tonumber(n)
@@ -2151,7 +2156,7 @@ function WC.pmenu.actFor(key, text, unit, src)
     end
     if k:find("raidtarget") and k:find("none") then return { fn = function() SetRaidTarget(unit, 0) end } end
     if k:find("clearfocus") then return { sc = 1 } end
-    if (k:find("setfocus") or k == "focus") and unit == "target" and src ~= "party" then return { sc = 3 } end   -- q51: focus the target
+    if (k:find("setfocus") or k == "focus") and src == "radial" and not isSelf then return { sc = 3 } end   -- q51 / q52: focus the target
     if k:find("setfocus") or k == "focus" then
         -- q49: on a party unit (or read for Party mode) the PARTY row's focus cell for that unit (PadMap m77's; FocusUnit is protected)
         if not isSelf or src == "party" then
