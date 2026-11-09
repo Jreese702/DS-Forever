@@ -594,6 +594,7 @@ class HomeView(
         val d = HomeFightFace.dpadIcons(map, fightNow)
         castView.fightDpad = d
         castView.fightIds = HomeFightFace.ids(map, fightNow)            // b-combat-bar-states: their state by spell id
+        castView.trigFights = HomeFightFace.trigFights(map, fightNow)   // the LT / RT / LT+RT In-combat spells, in fights only
         // test22 (the user: "I actually hate the form mark. Remove that."): no form mark on the bars, in a fight or otherwise
         // ONE line per change, so one approved log read proves what the toolbar's D-pad was given (Tracking's ask after test18)
         if (d != dpadSaid) { dpadSaid = d; Log.i("WCLOG", "dpad draw: fight=$fightNow dpad=$d") }

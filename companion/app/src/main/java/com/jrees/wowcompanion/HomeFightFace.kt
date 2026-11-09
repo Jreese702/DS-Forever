@@ -70,6 +70,20 @@ object HomeFightFace {
 
     fun cmdKey(set: Int, pos: Int) = (set - 1) * 8 + (pos - 1)
 
+    /**
+     * THE TRIGGER SETS' IN-COMBAT SPELLS (the user on 1.0.18-test4: "some of my combat skills aren't appearing in combat. Pressing the button
+     * still works though. Specifically happening on my left trigger abilities"): IN A FIGHT, an LT / RT / LT+RT button with an In-combat
+     * spell (PadMap m43's overlay: a COMBAT slot with `ov`) is cast by the router, so the game's slot under it is what the player keeps
+     * there (often empty). [cmdKey] -> (icon, spell id) for each; none out of a fight. The bare set's are [icons] / [dpadIcons].
+     */
+    fun trigFights(map: PadMapModel.Map, fight: Boolean = map.fight): Map<Int, Pair<Int, Int>> = if (!fight) emptyMap() else
+        map.sets.filter { it.set in 2..4 }.flatMap { st ->
+            st.slots.filter { it.kind == PadMapModel.Kind.COMBAT && it.ov && it.pos in 1..8 }.mapNotNull { sl ->
+                val r = sl.combat ?: return@mapNotNull null
+                r.icon.takeIf { it != 0 }?.let { cmdKey(st.set, sl.pos) to (it to (r.id ?: 0)) }
+            }
+        }.toMap()
+
     /** the pictures may show: proven, and at least one base face is armed with a fight spell */
     fun on(map: PadMapModel.Map, proven: Boolean = PROVEN): Boolean = proven && icons(map).isNotEmpty()
 

@@ -441,6 +441,26 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         set(v) { if (field != v) { field = v; cmdBtns.fill(null); invalidate() } }
     private val cmdBtns = arrayOfNulls<Btn>(32)
 
+    /** [HomeFightFace.trigFights]: in a fight, the trigger sets' In-combat spells by [HomeFightFace.cmdKey] -> (icon, spell id) */
+    var trigFights: Map<Int, Pair<Int, Int>>? = null
+        set(v) { if (field != v) { field = v; trigBtns.fill(null); invalidate() } }
+    private val trigBtns = arrayOfNulls<Btn>(32)
+
+    private fun trigFightOverride(li: Int, src: Int): Btn? {
+        if (li !in 1 until STATE_LAYERS) return null
+        val at = li * 8 + src
+        val icon = trigFights?.get(at)?.first?.takeIf { it > 0 } ?: return null
+        val cached = trigBtns[at]
+        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, src >= 4); return cached }
+        val b = Btn().apply { p = src + 1; k = "spell"; this.icon = icon; e = true }
+        classify(b)
+        resolve(b, src >= 4)
+        trigBtns[at] = b
+        return b
+    }
+
+    private fun isTrigFight(fb: Btn?) = fb != null && trigBtns.any { it === fb }
+
     private fun commandOverride(li: Int, src: Int): Btn? {
         if (li !in 0 until STATE_LAYERS) return null
         val at = li * 8 + src
@@ -467,6 +487,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private val fightCt = HashMap<Int, Int>()
     private fun fightStateOf(fb: Btn?, src: Int): St? {
         if (fb == null || fb.k != "spell") return null
+        val ti = trigBtns.indexOfFirst { it === fb }
+        if (ti >= 0) return trigFights?.get(ti)?.second?.takeIf { it > 0 }?.let { fightStates[it] }
         if (fb !== fightBtns.getOrNull(src) && fb !== dpadFightBtns.getOrNull(src)) return null
         val id = fightIds?.get(src + 1) ?: return null
         return fightStates[id]
@@ -1211,7 +1233,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                         if (bmp != null) { iconReady[ids[i]] = bmp; any = true }
                         else if (Icons.ready()) iconAbsent.add(ids[i])   // the pack is up and lacks it
                     }
-                    if (any) { resolveIcons(); fightBtns.fill(null); roomBtns.fill(null); cmdBtns.fill(null); dpadFightBtns.fill(null); invalidate() }
+                    if (any) { resolveIcons(); fightBtns.fill(null); roomBtns.fill(null); cmdBtns.fill(null); dpadFightBtns.fill(null); trigBtns.fill(null); invalidate() }
                 }
             }
         }
@@ -1680,6 +1702,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         hud?.let { h2 -> for (l in h2.layers) for (b in l) b?.shader = null }
         for (b in legacy) b.shader = null
         for (b in fightBtns) b?.shader = null
+        for (b in trigBtns) b?.shader = null
         for (b in cmdBtns) b?.shader = null           // the host-driven faces / toolbar carry the old matrix too
         for (b in dpadFightBtns) b?.shader = null
         for (b in roomBtns) b?.shader = null
@@ -1801,7 +1824,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         var flashing = false
         for (pos in 0 until 8) {
             val src = srcOf[pos]                 // drawn at slot pos, taken from Blizzard position src
-            val fb = dpadFightOverride(li, src) ?: fightOverride(li, src) ?: commandOverride(li, src) ?: fishOverride(li, src)
+            val fb = dpadFightOverride(li, src) ?: fightOverride(li, src) ?: trigFightOverride(li, src) ?: commandOverride(li, src) ?: fishOverride(li, src)
             val b = fb ?: h.layers[li][src]
             val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else fightStateOf(fb, src)
             // pushed: a touch on the replica, or the PHYSICAL button at this position held
@@ -2640,7 +2663,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             val src = srcOf[pos]
             // in a fight a D-pad In-combat spell beats DS Forever's layout picture (that press casts it)
             // PARTY MODE first (PARTY_BUILD.md 4.3): its pictures beat every other override while it is on
-            val fb = partyOverride(h, src) ?: dpadFightOverride(li, src) ?: roomOverride(li, src) ?: fightOverride(li, src) ?: commandOverride(li, src) ?: fishOverride(li, src)
+            val fb = partyOverride(h, src) ?: dpadFightOverride(li, src) ?: roomOverride(li, src) ?: fightOverride(li, src) ?: trigFightOverride(li, src) ?: commandOverride(li, src) ?: fishOverride(li, src)
             if (fb != null && fb.icon > 0 && fb.shader == null) resolve(fb, pos >= 4)   // built now, at this frame's scale
             val b = fb ?: h.layers[li][src]
             val st = if (fb == null && li < STATE_LAYERS && hasState) state[li][h.indexOfPos[li][src]] else fightStateOf(fb, src)
@@ -2657,7 +2680,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             if (fb != null && fb.drawAlpha < 255) c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, fb.drawAlpha)
             next = min(next, drawSlot(c, pos, 0f, 0f, circle, b, st,
                 if (li < STATE_LAYERS) li * 8 + src else -1, now, pressed, flash, null,
-                if (fb != null && fb.k == "spell") fightCdLeft(src, now) else -1f))
+                if (fb != null && fb.k == "spell" && !isTrigFight(fb)) fightCdLeft(src, now) else -1f))
             c.restoreToCount(slotSave)
         }
         val t = bandT()
