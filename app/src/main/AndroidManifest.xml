@@ -49,9 +49,6 @@
         android:allowAudioPlaybackCapture="true"
         android:appCategory="game"
         tools:targetApi="29">
-        <!-- 2026-11-08: the memory hunt (the 1.0.17 low-memory kills): adb's native heap profiler (perfetto heapprofd) may attach;
-             it gives nothing to other apps and changes nothing for players -->
-        <profileable android:shell="true" />
         <!--
          android:windowSoftInputMode must always be in the activity block.
          IME padding with composables like 'Scaffold' will have terrible resizing consequences, if in the activity tag.

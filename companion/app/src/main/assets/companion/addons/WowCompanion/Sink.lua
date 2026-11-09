@@ -193,25 +193,3 @@ end
 
 function WC.seqNow() return seq end
 
--- ==================================================================== THE TAINT PROBE (temporary; the user's YES 2026-11-08, "Taint log")
--- The user on 1.0.18-test6: "I'm getting a ton of lua errors" = ADDON_ACTION_FORBIDDEN on SetPreferredGamepadInteractTarget() blamed on
--- WowCompanionSpells, from the end of a fight on (Blizzard's gamepad bar tainted until a reload); no change in the code read explains it.
--- The game's own taint log names the line that tainted it: its CVar taintLog goes to 1 at login (the user's approved, temporary
--- exception to the no-trace rule) and back to what it was at logout. REMOVE with the fix.
-do
-    local probe = CreateFrame("Frame")
-    local was = nil
-    probe:RegisterEvent("PLAYER_LOGIN")
-    probe:RegisterEvent("PLAYER_LOGOUT")
-    probe:SetScript("OnEvent", function(_, e)
-        pcall(function()
-            if e == "PLAYER_LOGIN" then
-                -- level 2 (test10): the log also names WHERE each tainted value was written, not only who read it later
-                was = C_CVar.GetCVar("taintLog")
-                if was ~= "2" then C_CVar.SetCVar("taintLog", "2") end
-            elseif e == "PLAYER_LOGOUT" and was ~= nil and was ~= "2" then
-                C_CVar.SetCVar("taintLog", was)
-            end
-        end)
-    end)
-end
