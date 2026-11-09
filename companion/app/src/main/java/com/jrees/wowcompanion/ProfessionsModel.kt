@@ -478,6 +478,14 @@ object ProfessionsModel {
     fun freeTap(ov: Overview?): Tap? = if (ov != null) ctlTap(ov, "free") else null
 
     /**
+     * FORGET (add-on p23; the user, 2026-11-09: "buttons to forget professions", the pick "Forget, then Tap again"): the tap that
+     * forgets the MAIN profession [p] (the game's own Unlearn exists only on the two main cards). Null: not a main profession, or an
+     * add-on without the key. The room asks twice before it sends it.
+     */
+    fun forgetTap(ov: Overview?, p: Profession?): Tap? =
+        if (ov != null && p != null && p.main && p.pos in 1..2) ctlTap(ov, "forget:${p.pos}") else null
+
+    /**
      * Entering the room on its book (addon p19, the order every room uses since R1): the `enter` key, with which the addon answers
      * "open now" and takes the controller one frame after the game's window has shown. An older addon without the key: the old
      * hold (`book`). Nothing while the room already holds on its book.

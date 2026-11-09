@@ -56,6 +56,8 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
     // what the room is waiting for from the game
     private var opening = 0; private var openingAt = 0L
     private var pendingTap = 0L                               // a Create / Create All / Track tap in flight: no second one
+    /** FORGET's ask (the user's pick "Forget, then Tap again"): the profession whose button said "Tap again", and when */
+    private var forgetAsk = 0; private var forgetAskAt = 0L
     private var selSentFor = 0; private var selSentAt = 0L
     private var message: String? = null; private var messageAt = 0L
     private var closingAt = 0L                                // the close cell was tapped on leaving; its answer is awaited
@@ -76,6 +78,8 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         data class Head(val cat: Int) : Fk()
         data class Rec(val id: Int) : Fk()
         object Track : Fk(); object All : Fk(); object Count : Fk(); object Create : Fk()
+        /** a main card's Forget button (add-on p23) */
+        data class Forget(val id: Int) : Fk()
     }
     private var focus: Fk? = null
     private var lastRow: Fk? = null
@@ -195,6 +199,19 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
      * button do exactly that). Never a second cast while one is in flight: a cast of the open profession would close it.
      * 0 = the book (the game's Overview tab): no game action.
      */
+    /** Forget's two presses: the first asks (3 s), the second sends the add-on's forget tap */
+    private fun forgetPress(p: M.Profession) {
+        val now = SystemClock.uptimeMillis()
+        if (forgetAsk == p.id && now - forgetAskAt < FORGET_ASK_MS) {
+            forgetAsk = 0
+            send(M.forgetTap(ProfessionsStore.overview, p))
+        } else {
+            forgetAsk = p.id; forgetAskAt = now
+            board.postInvalidateDelayed(FORGET_ASK_MS + 50)
+        }
+        board.invalidate()
+    }
+
     private fun select(id: Int) {
         goTo(id)
         if (id == 0) return
@@ -370,6 +387,26 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
             for ((i, b) in p.btn.withIndex()) {
                 spellButton(c, RectF(r.left + 20f + i * 330f, r.top + 92f, r.left + 20f + i * 330f + 316f, r.top + 203f), p, i, b)
             }
+            forgetButton(c, RectF(r.right - 400f, r.top + 88f, r.right - 40f, r.top + 132f), p)
+        }
+
+        /**
+         * FORGET (add-on p23; the user, 2026-11-09): the game's own book has an Unlearn button on each MAIN card only. The first press
+         * turns it red, "Tap again to forget"; a second within [FORGET_ASK_MS] forgets the profession (the add-on calls the game's own
+         * C_SkillInfo.AbandonSkill). It cannot be undone. Absent when the add-on has no key for it.
+         */
+        private fun forgetButton(c: Canvas, box: RectF, p: M.Profession) {
+            val ov = ProfessionsStore.overview
+            if (M.forgetTap(ov, p) == null) return
+            val now = SystemClock.uptimeMillis()
+            val asking = forgetAsk == p.id && now - forgetAskAt < FORGET_ASK_MS
+            val key = Fk.Forget(p.id)
+            val label = if (asking) "Tap again to forget" else "Forget"
+            UiKit.button(c, box, Tr.t(label), if (isDown(key)) UiKit.Button.DOWN else UiKit.Button.UP, textSize = 26f)
+            if (asking) c.drawRoundRect(box, 10f, 10f, FORGET_RED)
+            if (ov?.held == true && focus == key) UiKit.focus(c, box)
+            hits.add(Hit(RectF(box), key) { forgetPress(p) })
+            nav(key, box, { forgetPress(p) })
         }
 
         private fun smallCard(c: Canvas, r: RectF, p: M.Profession) {
@@ -906,9 +943,19 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
                 val i = btns.indexOfFirst { it.key == f }
                 val next = btns.getOrNull(i + 1)?.key as? Fk.Btn
                 when {
-                    dx > 0 -> focus = if (next != null && next.id == f.id) next else Fk.Tab(viewed)   // right: its neighbour, else the tabs
+                    // right: its neighbour, else the card's Forget (p23), else the tabs
+                    dx > 0 -> focus = if (next != null && next.id == f.id) next else Fk.Forget(f.id).takeIf { has(it) } ?: Fk.Tab(viewed)
                     dy > 0 -> btns.getOrNull(i + 1)?.let { focus = it.key }
                     else -> btns.getOrNull(i - 1)?.let { focus = it.key }
+                }
+            }
+            is Fk.Forget -> {                                  // p23: a main card's Forget - left its card's buttons, right the tabs
+                val forgets = nav.filter { it.key is Fk.Forget }
+                val i = forgets.indexOfFirst { it.key == f }
+                when {
+                    dx < 0 -> focus = nav.lastOrNull { (it.key as? Fk.Btn)?.id == f.id }?.key ?: f
+                    dx > 0 -> focus = Fk.Tab(viewed)
+                    dy != 0 -> forgets.getOrNull(i + dy)?.let { focus = it.key }
                 }
             }
             is Fk.Tab -> {                                     // the glow walks the tabs; landing opens the tab (moveOpen, b117)
@@ -989,6 +1036,9 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         const val SPLIT = 600f
         private const val TAG = "WCPROF"
         private const val MESSAGE_MS = 3000L
+        /** Forget's "Tap again" window, and its red over the button (add-on p23) */
+        private const val FORGET_ASK_MS = 3000L
+        private val FORGET_RED = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(110, 200, 30, 20) }
         private const val OPEN_WAIT = 6000L
         private const val TAP_WAIT = 3000L
         private const val CLOSE_WAIT = 1200L       // the close cell's answer; after it the controller is handed back anyway

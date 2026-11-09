@@ -1459,7 +1459,9 @@
 "New radial": "Nouvelle roue",
 "No spell radials: make one with +": "Aucune roue de sorts : créez-en une avec +",
 "Opening": "Ouverture",
-"The game's icons are not on the device yet": "Les icônes du jeu ne sont pas encore sur l’appareil"
+"The game's icons are not on the device yet": "Les icônes du jeu ne sont pas encore sur l’appareil",
+"Forget": "Oublier",
+"Tap again to forget": "Touchez encore pour oublier"
 },
 "templates": {
 "Abandon \"%s\"?": "Abandonner « %s » ?",

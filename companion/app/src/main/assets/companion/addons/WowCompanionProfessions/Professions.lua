@@ -48,7 +48,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "p22"          -- bump on every change; the app shows it, so a stale build is visible
+local PV = "p23"          -- bump on every change; the app shows it, so a stale build is visible; p23: FORGET a main profession (ctl forget:1 / forget:2)
 local MAKE_MAX = 26      -- make:1 .. make:26 on the control row; more than that is Create All
 local SEL_COLS = 40      -- columns of the "profsel" row (TapPad's COLS)
 local BASIC = 1          -- Enum.CraftingReagentType.Basic (profession constants documentation)
@@ -130,6 +130,8 @@ local st = {
 local CTL_STATIC = {}
 for n = 1, MAKE_MAX do CTL_STATIC[#CTL_STATIC + 1] = "make:" .. n end
 for _, k in ipairs({ "all", "track", "untrack", "book", "page", "free", "enter" }) do CTL_STATIC[#CTL_STATIC + 1] = k end
+-- p23: forget the main profession in place 1 / 2 (appended: the columns before keep theirs)
+for _, k in ipairs({ "forget:1", "forget:2" }) do CTL_STATIC[#CTL_STATIC + 1] = k end
 
 -- the secure "profopen" row: a stable column per profession for the session, and the spell each column casts
 local openCols, openSpell, openLine, openDirty = {}, {}, {}, false
@@ -1135,6 +1137,23 @@ for n = 1, MAKE_MAX do
 end
 CTL.all = function()
     local rid = target("all"); if rid then craft("all", rid, nil) end
+end
+-- p23 FORGET (the user, 2026-11-09: "buttons to forget professions"; the pick "Forget, then Tap again": the app asks twice before it
+-- taps). The game's own Unlearn (the camelot book's UnlearnButton, MAIN professions only) ends in its UNLEARN_SKILL pop-up's accept,
+-- C_SkillInfo.AbandonSkill(skillLine): this calls that same API with the skill line of the main profession in place n. The game's
+-- pop-up and window are never opened or called (no Blizzard UI code runs as ours). Out of combat only.
+for n = 1, 2 do
+    CTL["forget:" .. n] = function()
+        if InCombatLockdown() then return ack("forget", nil, false, "not in combat") end
+        local okP, p1, p2 = CALL(GetProfessions)
+        local i = okP and VN(n == 1 and p1 or p2) or nil
+        local okI, name, _, _, _, _, _, skillLine = false, nil, nil, nil, nil, nil, nil, nil
+        if i then okI, name, _, _, _, _, _, skillLine = CALL(GetProfessionInfo, i) end
+        local id = okI and VN(skillLine) or nil
+        if not id then return ack("forget", nil, false, "no profession there") end
+        local okA = CALL(function() C_SkillInfo.AbandonSkill(id) end)
+        ack("forget", id, okA, (not okA) and "the game refused" or nil, { name = VS(name), pos = n })
+    end
 end
 local function setTrack(op, want)
     local rid = target(op); if not rid then return end

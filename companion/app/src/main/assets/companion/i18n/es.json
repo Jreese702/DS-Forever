@@ -1485,7 +1485,9 @@
 "New radial": "Nueva rueda",
 "No spell radials: make one with +": "No hay ruedas de hechizos: crea una con +",
 "Opening": "Abriendo",
-"The game's icons are not on the device yet": "Los iconos del juego aún no están en el dispositivo"
+"The game's icons are not on the device yet": "Los iconos del juego aún no están en el dispositivo",
+"Forget": "Olvidar",
+"Tap again to forget": "Toca de nuevo para olvidar"
 },
 "templates": {
 "Abandon \"%s\"?": "¿Abandonar \"%s\"?",
