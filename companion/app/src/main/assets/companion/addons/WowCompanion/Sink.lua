@@ -206,9 +206,10 @@ do
     probe:SetScript("OnEvent", function(_, e)
         pcall(function()
             if e == "PLAYER_LOGIN" then
+                -- level 2 (test10): the log also names WHERE each tainted value was written, not only who read it later
                 was = C_CVar.GetCVar("taintLog")
-                if was ~= "1" then C_CVar.SetCVar("taintLog", "1") end
-            elseif e == "PLAYER_LOGOUT" and was ~= nil and was ~= "1" then
+                if was ~= "2" then C_CVar.SetCVar("taintLog", "2") end
+            elseif e == "PLAYER_LOGOUT" and was ~= nil and was ~= "2" then
                 C_CVar.SetCVar("taintLog", was)
             end
         end)

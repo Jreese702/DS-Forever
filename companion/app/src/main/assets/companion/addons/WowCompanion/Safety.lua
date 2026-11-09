@@ -31,7 +31,17 @@ WC.SECRET, WC.ABSENT, WC.THREW = S_SECRET, S_ABSENT, S_THREW
 -- Is this value safe to put in an output string?
 -- tostring(secret) -> secret string; indexing a secret string throws. So "can I index its
 -- tostring" is the one universal test that works for numbers, strings and booleans alike.
+-- k4 (the game's taint log on 1.0.18-test9, 2026-11-08): on this client a secret value's index is a BLOCKED action, logged and put on
+-- the chat frame AS OURS ("An attempt to index a secret value was blocked because of taint from WowCompanion"), hundreds a minute; the
+-- chat frame's own fields then read tainted. The client's own test answers first, with no blocked action; the old probe only where the
+-- client has none.
+local hasIsSecret = type(issecretvalue) == "function"
 local function isPlain(v)
+    if hasIsSecret then
+        local ok, q = pcall(issecretvalue, v)
+        if ok and q == true then return false end
+        if ok and q == false then return true end
+    end
     return pcall(function()
         local s = tostring(v)
         return s:sub(1, 1)
@@ -216,7 +226,7 @@ WC.encode = encode
 --
 -- It is also the early warning for a patch that moves the secrecy map: `specimen` turns
 -- "plain", or `S` / `encode` turn false.
-WC.KERNEL = "k3"
+WC.KERNEL = "k4"
 
 local function blocked(f)
     return not pcall(f)
@@ -265,6 +275,8 @@ local function selfTest(r)
         end
     end
     if plain then return end
+    -- k4: the client says which values are secret: no blocked operation is tried on one to find out (each is a blocked action, ours)
+    if r.hasIsSecret then return end
 
     -- which operations the client really blocks on it (true = it threw)
     r.eqNil   = blocked(function() return hp == nil end)
