@@ -785,7 +785,7 @@ end
 -- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar), UFTOT_OFF / UFTOT_ON (the bar's target of
 -- target, uf8: off by default); the app keeps each per character.
 do
-    local UF = { party = true, target = true, tot = false, V = "uf9" }
+    local UF = { party = true, target = true, tot = false, V = "uf10" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
@@ -1132,26 +1132,18 @@ do
         f.cls = f:CreateTexture(nil, "BACKGROUND", nil, -5); f.cls:SetSize(u(48), u(48)); f.cls:SetPoint("CENTER", f.shield, "CENTER", -u(4), u(2)); f.cls:Hide()
         f.mark = f:CreateTexture(nil, "OVERLAY"); f.mark:SetSize(u(22), u(22)); f.mark:SetPoint("LEFT", f.hp, "RIGHT", u(7), 0)
         f.mark:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons"); f.mark:Hide()
-        -- uf9 (the user: "it needs to be to the right with our custom Icon"; the pick "A: right of the bar"): OUR inspect prompt - a round
-        -- button with the face letter that opens the target's wheel and the game's spyglass icon, in the level box's frame, right of the bar
+        -- uf9 / uf10 (the user's pick "3: Both in the box", "it needs to be a bit bigger"): the inspect prompt right of the bar - the GAME'S
+        -- own button glyph (the one over the nameplates: its atlas on our texture, m106's rule) and the spyglass, in the level box's frame
         local pr = CreateFrame("Frame", nil, f)
-        pr:SetSize(u(50), u(TB.HP)); pr:SetPoint("LEFT", f.hp, "RIGHT", u(14), 0); pr:Hide()
+        pr:SetSize(u(62), u(30)); pr:SetPoint("LEFT", f.hp, "RIGHT", u(14), 0); pr:Hide()
         if not hudBox(pr, TB.HP) then
             local pg = pr:CreateTexture(nil, "BACKGROUND"); pg:SetAllPoints(pr); pg:SetColorTexture(0, 0, 0, 0.6)
             edgeBox(pr, pr, 1, 0.42, 0.39, 0.33, 1, "BORDER", 0)
         end
-        local MASK = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask"
-        local m1 = pr:CreateMaskTexture()
-        m1:SetTexture(MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-        m1:SetSize(u(20), u(20)); m1:SetPoint("LEFT", pr, "LEFT", u(2), 0)
-        local ring = pr:CreateTexture(nil, "ARTWORK", nil, 1); ring:SetColorTexture(0.86, 0.86, 0.86, 1); ring:SetAllPoints(m1); ring:AddMaskTexture(m1)
-        local m2 = pr:CreateMaskTexture()
-        m2:SetTexture(MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-        m2:SetSize(u(17), u(17)); m2:SetPoint("CENTER", m1, "CENTER", 0, 0)
-        local dot = pr:CreateTexture(nil, "ARTWORK", nil, 2); dot:SetColorTexture(0.07, 0.07, 0.07, 1); dot:SetAllPoints(m2); dot:AddMaskTexture(m2)
-        pr.letter = pr:CreateFontString(nil, "OVERLAY"); pr.letter:SetFont(FONT, u(12), "OUTLINE")
-        pr.letter:SetPoint("CENTER", m1, "CENTER", u(0.5), 0); pr.letter:SetText("X")
-        pr.icon = pr:CreateTexture(nil, "ARTWORK"); pr.icon:SetSize(u(20), u(20)); pr.icon:SetPoint("LEFT", m1, "RIGHT", u(5), 0)
+        pr.btn = pr:CreateTexture(nil, "ARTWORK"); pr.btn:SetSize(u(26), u(26)); pr.btn:SetPoint("LEFT", pr, "LEFT", u(3), 0)
+        pr.letter = pr:CreateFontString(nil, "OVERLAY"); pr.letter:SetFont(FONT, u(15), "OUTLINE")   -- only without the atlas
+        pr.letter:SetPoint("CENTER", pr.btn, "CENTER", 0, 0); pr.letter:Hide()
+        pr.icon = pr:CreateTexture(nil, "ARTWORK"); pr.icon:SetSize(u(24), u(24)); pr.icon:SetPoint("LEFT", pr.btn, "RIGHT", u(4), 0)
         pr.icon:SetTexture("Interface\\Icons\\INV_Misc_Spyglass_02"); pr.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
         f.prompt = pr
         -- combo points: a thin pip strip right under the bar (0..max with the gaps drawn over)
@@ -1408,7 +1400,13 @@ do
         local after = f.hp
         local letter = WC.tgPrompt
         if letter == "X" or letter == "Y" then
-            if f.prompt.lt ~= letter then f.prompt.lt = letter; f.prompt.letter:SetText(letter) end
+            if f.prompt.lt ~= letter then
+                f.prompt.lt = letter
+                -- uf10: the game's glyph for the layout (Spells' atlas rule), the plain letter only when the client lacks the atlas
+                local pa = letter == "Y" and "Gamepad_Ltr_Y_64" or "Gamepad_Rev_X_64"
+                if atlas(f.prompt.btn, pa) then f.prompt.btn:Show(); f.prompt.letter:Hide()
+                else f.prompt.btn:Hide(); f.prompt.letter:SetText(letter); f.prompt.letter:Show() end
+            end
             f.prompt:Show(); after = f.prompt
         else f.prompt:Hide() end
         f.mark:ClearAllPoints(); f.mark:SetPoint("LEFT", after, "RIGHT", u(after == f.hp and 14 or 10), 0)
