@@ -1478,7 +1478,14 @@
 "Zeppelins": "Zepelines",
 "Zone": "Zona",
 "Zone lore beside the world map": "Historia de la zona junto al mapa del mundo",
-"Zones": "Zonas"
+"Zones": "Zonas",
+"Low-memory graphics": "Gráficos de poca memoria",
+"Smaller game textures, so Android does not close the game for memory. From the next game start": "Texturas del juego más pequeñas, para que Android no cierre el juego por falta de memoria. Desde el próximo inicio del juego",
+"Name this radial": "Nombra esta rueda",
+"New radial": "Nueva rueda",
+"No spell radials: make one with +": "No hay ruedas de hechizos: crea una con +",
+"Opening": "Abriendo",
+"The game's icons are not on the device yet": "Los iconos del juego aún no están en el dispositivo"
 },
 "templates": {
 "Abandon \"%s\"?": "¿Abandonar \"%s\"?",
@@ -1646,6 +1653,7 @@
 "Your %1\\%s instance unlocks at %2\\%s": "Tu instancia %1\\%s se desbloquea a las %2\\%s",
 "Your group already has the maximum number of members (%s) for this activity.": "Tu grupo ya tiene el número máximo de miembros (%s) para esta actividad.",
 "Your problem report was saved (%s)": "Tu informe de problema se guardó (%s)",
-"Your problem report was sent (%s, issue #%s)": "Tu informe de problema se envió (%s, incidencia #%s)"
+"Your problem report was sent (%s, issue #%s)": "Tu informe de problema se envió (%s, incidencia #%s)",
+"Choose an icon for %s": "Elige un icono para %s"
 }
 }

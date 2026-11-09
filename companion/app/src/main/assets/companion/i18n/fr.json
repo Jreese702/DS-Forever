@@ -1452,7 +1452,14 @@
 "Yours, cast on others": "Les vôtres, lancés sur les autres",
 "Zeppelin Master": "Maître des zeppelins",
 "Zeppelin tower: ": "Tour des zeppelins : ",
-"Zone lore beside the world map": "Histoire de la zone à côté de la carte du monde"
+"Zone lore beside the world map": "Histoire de la zone à côté de la carte du monde",
+"Low-memory graphics": "Graphismes économes en mémoire",
+"Smaller game textures, so Android does not close the game for memory. From the next game start": "Textures du jeu plus petites, pour qu’Android ne ferme pas le jeu faute de mémoire. Dès le prochain lancement du jeu",
+"Name this radial": "Nommer cette roue",
+"New radial": "Nouvelle roue",
+"No spell radials: make one with +": "Aucune roue de sorts : créez-en une avec +",
+"Opening": "Ouverture",
+"The game's icons are not on the device yet": "Les icônes du jeu ne sont pas encore sur l’appareil"
 },
 "templates": {
 "Abandon \"%s\"?": "Abandonner « %s » ?",
@@ -1623,6 +1630,7 @@
 "Your %1\\%s instance unlocks at %2\\%s": "Votre instance %1\\%s se débloque à %2\\%s",
 "Your group already has the maximum number of members (%s) for this activity.": "Votre groupe a déjà le nombre maximum de membres (%s) pour cette activité.",
 "Your problem report was saved (%s)": "Votre rapport de problème a été enregistré (%s)",
-"Your problem report was sent (%s, issue #%s)": "Votre rapport de problème a été envoyé (%s, ticket #%s)"
+"Your problem report was sent (%s, issue #%s)": "Votre rapport de problème a été envoyé (%s, ticket #%s)",
+"Choose an icon for %s": "Choisir une icône pour %s"
 }
 }
