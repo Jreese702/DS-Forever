@@ -785,7 +785,7 @@ end
 -- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar), UFTOT_OFF / UFTOT_ON (the bar's target of
 -- target, uf8: off by default); the app keeps each per character.
 do
-    local UF = { party = true, target = true, tot = false, V = "uf8" }
+    local UF = { party = true, target = true, tot = false, V = "uf9" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
@@ -1044,21 +1044,24 @@ do
         if not info then return false end
         local k = u(kh / 8)
         local L, R, Tt, B = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
+        -- uf9 (the user: "the shadows in side of the level box on the top and bottom of the number look bad"): the art's top lip and left
+        -- side only, mirrored for the bottom and the right (an even 3-texel edge all round, none of the bar's shade rows), a FLAT ground
         local function piece(layer, c0, r0, c1, r1)
             local t = box:CreateTexture(nil, layer, nil, 1)
             t:SetTexture(info.file)
             t:SetTexCoord(L + (R - L) * c0 / BW, L + (R - L) * c1 / BW, Tt + (B - Tt) * r0 / BH, Tt + (B - Tt) * r1 / BH)
             return t
         end
-        local g = piece("BACKGROUND", 31, 3, 50, 11); g:SetAllPoints(box)
-        local tl = piece("BORDER", 0, 0, 3, 3);       tl:SetSize(3 * k, 3 * k); tl:SetPoint("BOTTOMRIGHT", box, "TOPLEFT", 0, 0)
-        local tr = piece("BORDER", 125, 0, BW, 3);    tr:SetSize(7 * k, 3 * k); tr:SetPoint("BOTTOMLEFT", box, "TOPRIGHT", 0, 0)
-        local bl = piece("BORDER", 0, 11, 3, BH);     bl:SetSize(3 * k, 8 * k); bl:SetPoint("TOPRIGHT", box, "BOTTOMLEFT", 0, 0)
-        local br = piece("BORDER", 125, 11, BW, BH);  br:SetSize(7 * k, 8 * k); br:SetPoint("TOPLEFT", box, "BOTTOMRIGHT", 0, 0)
-        local top = piece("BORDER", 31, 0, 50, 3);    top:SetPoint("BOTTOMLEFT", box, "TOPLEFT", 0, 0); top:SetPoint("BOTTOMRIGHT", box, "TOPRIGHT", 0, 0); top:SetHeight(3 * k)
-        local bot = piece("BORDER", 31, 11, 50, BH);  bot:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, 0); bot:SetPoint("TOPRIGHT", box, "BOTTOMRIGHT", 0, 0); bot:SetHeight(8 * k)
-        local lf = piece("BORDER", 0, 3, 3, 11);      lf:SetPoint("TOPRIGHT", box, "TOPLEFT", 0, 0); lf:SetPoint("BOTTOMRIGHT", box, "BOTTOMLEFT", 0, 0); lf:SetWidth(3 * k)
-        local rt = piece("BORDER", 125, 3, BW, 11);   rt:SetPoint("TOPLEFT", box, "TOPRIGHT", 0, 0); rt:SetPoint("BOTTOMLEFT", box, "BOTTOMRIGHT", 0, 0); rt:SetWidth(7 * k)
+        local g = box:CreateTexture(nil, "BACKGROUND", nil, 1); g:SetAllPoints(box); g:SetColorTexture(0.06, 0.055, 0.05, 0.94)
+        local e = 3 * k
+        local tl = piece("BORDER", 0, 0, 3, 3);   tl:SetSize(e, e); tl:SetPoint("BOTTOMRIGHT", box, "TOPLEFT", 0, 0)
+        local tr = piece("BORDER", 3, 0, 0, 3);   tr:SetSize(e, e); tr:SetPoint("BOTTOMLEFT", box, "TOPRIGHT", 0, 0)
+        local bl = piece("BORDER", 0, 3, 3, 0);   bl:SetSize(e, e); bl:SetPoint("TOPRIGHT", box, "BOTTOMLEFT", 0, 0)
+        local br = piece("BORDER", 3, 3, 0, 0);   br:SetSize(e, e); br:SetPoint("TOPLEFT", box, "BOTTOMRIGHT", 0, 0)
+        local top = piece("BORDER", 31, 0, 50, 3); top:SetPoint("BOTTOMLEFT", box, "TOPLEFT", 0, 0); top:SetPoint("BOTTOMRIGHT", box, "TOPRIGHT", 0, 0); top:SetHeight(e)
+        local bot = piece("BORDER", 31, 3, 50, 0); bot:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, 0); bot:SetPoint("TOPRIGHT", box, "BOTTOMRIGHT", 0, 0); bot:SetHeight(e)
+        local lf = piece("BORDER", 0, 3, 3, 11);  lf:SetPoint("TOPRIGHT", box, "TOPLEFT", 0, 0); lf:SetPoint("BOTTOMRIGHT", box, "BOTTOMLEFT", 0, 0); lf:SetWidth(e)
+        local rt = piece("BORDER", 3, 3, 0, 11);  rt:SetPoint("TOPLEFT", box, "TOPRIGHT", 0, 0); rt:SetPoint("BOTTOMLEFT", box, "BOTTOMRIGHT", 0, 0); rt:SetWidth(e)
         return true
     end
     local function npBar(parent, w, h, fillAtlas, rim)
@@ -1129,6 +1132,28 @@ do
         f.cls = f:CreateTexture(nil, "BACKGROUND", nil, -5); f.cls:SetSize(u(48), u(48)); f.cls:SetPoint("CENTER", f.shield, "CENTER", -u(4), u(2)); f.cls:Hide()
         f.mark = f:CreateTexture(nil, "OVERLAY"); f.mark:SetSize(u(22), u(22)); f.mark:SetPoint("LEFT", f.hp, "RIGHT", u(7), 0)
         f.mark:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons"); f.mark:Hide()
+        -- uf9 (the user: "it needs to be to the right with our custom Icon"; the pick "A: right of the bar"): OUR inspect prompt - a round
+        -- button with the face letter that opens the target's wheel and the game's spyglass icon, in the level box's frame, right of the bar
+        local pr = CreateFrame("Frame", nil, f)
+        pr:SetSize(u(50), u(TB.HP)); pr:SetPoint("LEFT", f.hp, "RIGHT", u(14), 0); pr:Hide()
+        if not hudBox(pr, TB.HP) then
+            local pg = pr:CreateTexture(nil, "BACKGROUND"); pg:SetAllPoints(pr); pg:SetColorTexture(0, 0, 0, 0.6)
+            edgeBox(pr, pr, 1, 0.42, 0.39, 0.33, 1, "BORDER", 0)
+        end
+        local MASK = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask"
+        local m1 = pr:CreateMaskTexture()
+        m1:SetTexture(MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        m1:SetSize(u(20), u(20)); m1:SetPoint("LEFT", pr, "LEFT", u(2), 0)
+        local ring = pr:CreateTexture(nil, "ARTWORK", nil, 1); ring:SetColorTexture(0.86, 0.86, 0.86, 1); ring:SetAllPoints(m1); ring:AddMaskTexture(m1)
+        local m2 = pr:CreateMaskTexture()
+        m2:SetTexture(MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        m2:SetSize(u(17), u(17)); m2:SetPoint("CENTER", m1, "CENTER", 0, 0)
+        local dot = pr:CreateTexture(nil, "ARTWORK", nil, 2); dot:SetColorTexture(0.07, 0.07, 0.07, 1); dot:SetAllPoints(m2); dot:AddMaskTexture(m2)
+        pr.letter = pr:CreateFontString(nil, "OVERLAY"); pr.letter:SetFont(FONT, u(12), "OUTLINE")
+        pr.letter:SetPoint("CENTER", m1, "CENTER", u(0.5), 0); pr.letter:SetText("X")
+        pr.icon = pr:CreateTexture(nil, "ARTWORK"); pr.icon:SetSize(u(20), u(20)); pr.icon:SetPoint("LEFT", m1, "RIGHT", u(5), 0)
+        pr.icon:SetTexture("Interface\\Icons\\INV_Misc_Spyglass_02"); pr.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        f.prompt = pr
         -- combo points: a thin pip strip right under the bar (0..max with the gaps drawn over)
         f.cp = npBar(f, TB.W * 0.4, TB.CP, "UI-HUD-CoolDownManager-Bar", false)
         f.cp:SetPoint("TOP", f.hp, "BOTTOM", 0, -u(5)); paint(f.cp, 1, 0.82, 0.1); f.cp:Hide()
@@ -1378,6 +1403,17 @@ do
         local mark = call(GetRaidTargetIndex, "target")
         local tc = plainV(mark) and RAID_ICON[mark] or nil
         if tc then f.mark:SetTexCoord(tc[1], tc[2], tc[3], tc[4]); f.mark:Show() else f.mark:Hide() end
+        -- uf9: the prompt while the button would open the target's wheel (Spells says the letter: WC.tgPrompt), then the marker and the
+        -- target's target after it
+        local after = f.hp
+        local letter = WC.tgPrompt
+        if letter == "X" or letter == "Y" then
+            if f.prompt.lt ~= letter then f.prompt.lt = letter; f.prompt.letter:SetText(letter) end
+            f.prompt:Show(); after = f.prompt
+        else f.prompt:Hide() end
+        f.mark:ClearAllPoints(); f.mark:SetPoint("LEFT", after, "RIGHT", u(after == f.hp and 14 or 10), 0)
+        if f.mark:IsShown() then after = f.mark end
+        f.tot:ClearAllPoints(); f.tot:SetPoint("LEFT", after, "RIGHT", u(after == f.hp and 36 or 14), u(4))
         comboStep(f)
         castStep(f)
         underLayout(f)
