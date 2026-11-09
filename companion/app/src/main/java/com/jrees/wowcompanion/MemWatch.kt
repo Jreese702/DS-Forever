@@ -30,7 +30,7 @@ object MemWatch {
      * own Java heap (every Bitmap object with its size and who holds it; no game data) goes to /sdcard/WowCompanion/logs/heap-<time>.hprof
      * for the PC to read. It pauses the app a few seconds once.
      */
-    private const val DUMP_AT_MB = 900L
+    private const val DUMP_AT_MB = 650L                              // test18: the 8 GB test killed it at ~750 MB: catch the ~560 MB baseline
     @Volatile private var dumped = false
     @Volatile var testBuild = false
     private fun maybeDump(pssMb: Long) {
