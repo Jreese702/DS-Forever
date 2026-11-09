@@ -20,6 +20,8 @@ internal interface IndoorGenerator : AutoCloseable {
     fun interface Yield { @Keep fun point() }  // native code calls point() by name: R8 must keep it (IndoorGeneratorNative.kt)
 
     class Stopped : RuntimeException("interiors bake stopped")
+    /** 2026-11-08: a long pause (the game busy, the player moving): the run lets the game files go and waits outside them */
+    class Released : RuntimeException("interiors bake paused long: the game files are let go")
 
     /** Bump when unchanged inputs would now give different output; it becomes [IndoorBakeStore.Work.algorithm]. */
     val algorithm: Int

@@ -272,19 +272,17 @@ object ArtHarvest {
     @Volatile private var stopping = false
     /** 1.0.17: a before-Play step became due while the worker runs the background ones: they give way at their next report */
     class YieldToRequired : InterruptedException("a required step is due")
+    /** 2026-11-08: the background art waits for the game to close OUTSIDE the open game files (~500 MB of index tables) */
+    class PausedForGame : InterruptedException("the background art waits for the game to close")
     @Volatile private var yieldBg = false
     @Volatile private var bgPhase = false
     private fun checkStop() {
         if (stopping) throw StoppedForUpdate()
         if (yieldBg && bgPhase) throw YieldToRequired()
         // 1.0.17 (the user's pick for the 8 / 12 GB Thors: "Pause while playing, always"): the background art waits while the game runs
-        if (bgPhase && DeviceTier.lowMemory() && LauncherHooks.gameUp()) {
-            Log.i(TAG, "harvest: paused while the game runs (${DeviceTier.model()})")
-            while (DeviceTier.lowMemory() && LauncherHooks.gameUp() && !stopping && !yieldBg) Thread.sleep(3_000)
-            Log.i(TAG, "harvest: the game is closed, the background art goes on")
-            if (stopping) throw StoppedForUpdate()
-            if (yieldBg) throw YieldToRequired()
-        }
+        // 2026-11-08 (the native heap profile: the open game files are ~500 MB, and this wait held them through the whole session on
+        // exactly the Thors that run out of memory): it leaves the run (the files close) and the worker waits outside them
+        if (bgPhase && DeviceTier.lowMemory() && LauncherHooks.gameUp()) throw PausedForGame()
     }
 
     /** the background art not finished yet (the notice before Play on the 8 / 12 GB models) */
@@ -327,6 +325,14 @@ object ArtHarvest {
                 while (true) {
                     try {
                         work(app) { r -> beforePlayDone(r) }
+                    } catch (e: PausedForGame) {
+                        Log.i(TAG, "harvest: paused while the game runs (${DeviceTier.model()}), the game files let go")
+                        bgPhase = false; currentStep = null
+                        while (DeviceTier.lowMemory() && LauncherHooks.gameUp() && !stopping && !yieldBg) Thread.sleep(3_000)
+                        Log.i(TAG, "harvest: the game is closed, the background art goes on")
+                        if (stopping) { stopping = false; set(State.Idle); break }
+                        yieldBg = false
+                        continue
                     } catch (e: YieldToRequired) {
                         Log.i(TAG, "harvest: a background step gave way to a required one")
                         yieldBg = false; bgPhase = false; currentStep = null

@@ -88,6 +88,8 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     /** the game start whose loading has ended (its first quiet document) */
     @Volatile private var quietSince = 0L
     @Volatile private var stopping = false
+    /** while it may not build, how often it looks again (the game files closed meanwhile) */
+    private const val WAIT_POLL_MS = 5_000L
 
     /**
      * Every live document from the add-on (it sends "pos" only while the player moves, a full snapshot every 15 s even when
@@ -169,24 +171,55 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.DEFERRED, 0, 0, note = "generator not in this build"))
             return
         }
+        // 2026-11-08 (the native heap profile on the Thor: CascNative.open from here held 499 MB for the whole session while it sat
+        // "paused (game busy)"; on the 8 / 12 GB Thors it is ALWAYS busy, so they carried it for nothing - the 1.0.17 low-memory
+        // kills): the game files are opened only when it may build, and let go again after a long pause
+        val signals = AndroidSignals(ctx)
+        while (true) {
+            if (!waitUntilItMayBuild(ctx, signals)) return
+            val outcome = runOnce(ctx, factory, signals) ?: return
+            if (outcome != IndoorScheduler.Outcome.RELEASED) return
+        }
+    }
+
+    /** holding nothing, until it may build (true) or it never will this session / it was stopped (false) */
+    private fun waitUntilItMayBuild(ctx: Context, signals: AndroidSignals): Boolean {
+        var said = false
+        while (true) {
+            if (stopping) return false
+            if (!Settings.indoorBuild) { offInSettings(ctx); return false }
+            val why = IndoorScheduler.pauseReason(signals) ?: return true
+            if (!said) {
+                said = true
+                val s = status
+                publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.PAUSED, s?.ready ?: 0, s?.total ?: 0, s?.deferred ?: 0, why))
+                Log.i(TAG, "interiors: waiting ($why), the game files not open")
+            }
+            runCatching { Thread.sleep(WAIT_POLL_MS) }
+        }
+    }
+
+    /** one run with the game files open; the outcome, or null after a failure (logged and shown) */
+    private fun runOnce(ctx: Context, factory: IndoorGenerator.Factory, signals: AndroidSignals): IndoorScheduler.Outcome? {
         try {
             val game = GameFiles.open(ctx) ?: run {
                 publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.DEFERRED, 0, 0,
                     note = GameFiles.lastWhy ?: "the game files could not be read"))
-                return
+                return null
             }
-            game.use { g ->
+            return game.use { g ->
                 factory.open(g).use { gen ->
                     val root = ArtHarvest.root(ctx)
                     // the app install a deferral is good for: a new APK (even a test build with the same version) retries once
                     val app = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).let { "${it.longVersionCode}/${it.lastUpdateTime}" } }
                         .getOrDefault("?")
-                    val scheduler = IndoorScheduler(IndoorBakeStore(root), root, g.buildKey, gen, AndroidSignals(ctx), dataDir(ctx),
+                    val scheduler = IndoorScheduler(IndoorBakeStore(root), root, g.buildKey, gen, signals, dataDir(ctx),
                         onStatus = { publishStatus(ctx, it) }, log = { Log.i(TAG, it) }, app = app)
                     val outcome = scheduler.run()
                     if (!Settings.indoorBuild) offInSettings(ctx)
                     Log.i(TAG, "interiors $outcome; ${scheduler.publishes} publications, max ${scheduler.maxPublishMs} ms")
                     if (outcome == IndoorScheduler.Outcome.COMPLETE) ArtHarvest.markDetachedDone(ctx, this, g.buildKey)
+                    outcome
                 }
             }
         } catch (e: Throwable) {
@@ -196,6 +229,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             val s = status
             publishStatus(ctx, IndoorScheduler.Status(IndoorScheduler.Phase.DEFERRED, s?.ready ?: 0, s?.total ?: 0,
                 s?.deferred ?: 0, "failed: ${e.message ?: e.javaClass.simpleName}; retried next start"))
+            return null
         }
     }
 

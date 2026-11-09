@@ -51,7 +51,7 @@ internal class IndoorScheduler(
     }
 
     enum class Phase { CATALOGUE, BAKING, PAUSED, DONE, DEFERRED, STOPPED }
-    enum class Outcome { COMPLETE, DEFERRED, STOPPED }
+    enum class Outcome { COMPLETE, DEFERRED, STOPPED, RELEASED }
     /**
      * [now]: the building being built, as Settings shows it (IndoorProgress.nowText: "one 30 yd from you"; "" = none);
      * [list]: the deferred buildings with their reasons, "key: why" (f-map-tracker, Settings > Map's progress row), at most
@@ -98,10 +98,14 @@ internal class IndoorScheduler(
             signals.memory()?.let { (heap, native) -> heapPeak = maxOf(heapPeak, heap); nativePeak = maxOf(nativePeak, native) }
         }
         var paused = false
+        var pausedAt = 0L
         while (true) {
             if (signals.stop()) throw IndoorGenerator.Stopped()
             val why = pauseReason(signals) ?: break
-            if (!paused) { paused = true; emit(status.copy(phase = Phase.PAUSED, note = why)); log("paused: $why") }
+            if (!paused) { paused = true; pausedAt = signals.now(); emit(status.copy(phase = Phase.PAUSED, note = why)); log("paused: $why") }
+            // 2026-11-08 (the native heap profile: the open game files are ~500 MB of index tables, held through every pause): a pause
+            // longer than RELEASE_AFTER_MS lets them go; the step waits without them and opens them again when it may build
+            if (signals.now() - pausedAt >= RELEASE_AFTER_MS) throw IndoorGenerator.Released()
             signals.sleep(PAUSE_POLL_MS)
         }
         if (paused) { emit(status.copy(phase = Phase.BAKING, note = "")); log("resumed") }
@@ -194,6 +198,9 @@ internal class IndoorScheduler(
             emit(status.copy(phase = Phase.STOPPED, note = "resumes next start", now = ""))
             log("stopped")
             return Outcome.STOPPED
+        } catch (e: IndoorGenerator.Released) {
+            log("paused long: the game files let go")
+            return Outcome.RELEASED
         }
     }
 
@@ -257,6 +264,8 @@ internal class IndoorScheduler(
 
         const val MEMORY_EVERY_MS = 1_000L
         const val PAUSE_POLL_MS = 2_000L
+        /** a pause this long lets the game files go (they are ~500 MB of index tables in memory) */
+        const val RELEASE_AFTER_MS = 60_000L
         const val BREATHER_MS = 250L
         const val PUBLISH_EVERY_MS = 60_000L
         const val NEAR_YD = 300.0
