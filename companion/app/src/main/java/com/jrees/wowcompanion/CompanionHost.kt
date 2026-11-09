@@ -2541,6 +2541,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!streaming) java.io.File(log).parentFile?.let { dir ->
             CombatHealth.clear()
             clogTail = CombatLogTail(dir) { ui.post { if (!shell.hostGone()) partyRedraw() } }.also { it.start() }
+            // 1.0.19 (the user's pick "Delete ours older than a day"): the combat log files (Party mode's, PadMap m92 / m95-97) piled up in
+            // the game's Logs folder (264 MB on the Thor in two days); only WoWCombatLog-*.txt older than 24 h, nothing else there
+            Thread {
+                val cut = System.currentTimeMillis() - 24 * 3600_000L
+                var n = 0; var bytes = 0L
+                dir.listFiles { f -> f.isFile && f.name.startsWith("WoWCombatLog") && f.name.endsWith(".txt") && f.lastModified() < cut }?.forEach { f ->
+                    val len = f.length()
+                    if (runCatching { f.delete() }.getOrDefault(false)) { n++; bytes += len }
+                }
+                if (n > 0) Log.i("WCLOG", "old combat logs deleted: $n files, ${bytes / (1024 * 1024)} MB")
+            }.apply { isDaemon = true; name = "clog-clean" }.start()
         }
         PlayModes.onChanged = sourceChanged
     }
