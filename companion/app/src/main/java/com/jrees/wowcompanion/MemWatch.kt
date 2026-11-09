@@ -96,6 +96,44 @@ object MemWatch {
             runCatching { IndoorSchedulerStep.status?.let { s -> add("indoor ${s.phase.name.lowercase()}${if (s.now.isNotEmpty()) " " + s.now.take(24) else ""}") } }
             add(if (LauncherHooks.gameUp()) "game up" else "game down")
         }.joinToString(", ")
-        return "pss ${mb(pss)} MB ($parts) $heap | $caches | $doing"
+        return "pss ${mb(pss)} MB ($parts) $heap | ${device()} | $caches | $doing"
+    }
+
+    /**
+     * 1.0.19 (the 1.0.18 reports: 12 GB Thors still closed for memory with DS Forever itself at ~600 MB; on the Thor the game's own process
+     * is ~4.6 GB): THE GAME'S MEMORY AND THE DEVICE'S. The game's Wine processes run under OUR uid (children of this app), so their
+     * /proc/<pid>/smaps_rollup is ours to read: their PSS summed (every [GAME_EVERY_MS]: the read walks a 4 GB process's pages). The
+     * device's MemAvailable and free swap every line (/proc/meminfo). The GPU part of the game's memory is not in smaps (memtrack): the
+     * device's free RAM covers it. "game 2850 MB (13), free 6480 MB, swap 3204/4096 MB"
+     */
+    @Volatile private var gameAt = 0L
+    @Volatile private var gameMb = -1L
+    @Volatile private var gameN = 0
+    private const val GAME_EVERY_MS = 30_000L
+    private fun device(): String {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - gameAt >= GAME_EVERY_MS || gameAt == 0L) { gameAt = now; runCatching { gameNow() } }
+        val mem = runCatching { java.io.File("/proc/meminfo").readLines() }.getOrDefault(emptyList())
+        fun kb(k: String) = mem.firstOrNull { it.startsWith("$k:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull()
+        val avail = kb("MemAvailable"); val swapT = kb("SwapTotal"); val swapF = kb("SwapFree")
+        val game = if (gameMb >= 0) "game $gameMb MB ($gameN)" else "game ?"
+        val free = avail?.let { "free ${mb(it)} MB" } ?: "free ?"
+        val swap = if (swapT != null && swapF != null) "swap ${mb(swapF)}/${mb(swapT)} MB" else "swap ?"
+        return "$game, $free, $swap"
+    }
+    private fun gameNow() {
+        val me = android.os.Process.myPid(); val uid = android.os.Process.myUid()
+        var kb = 0L; var n = 0
+        for (d in java.io.File("/proc").listFiles() ?: emptyArray()) {
+            val pid = d.name.toIntOrNull() ?: continue
+            if (pid == me) continue
+            val st = runCatching { java.io.File(d, "status").readLines() }.getOrNull() ?: continue
+            val u = st.firstOrNull { it.startsWith("Uid:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toIntOrNull()
+            if (u != uid) continue
+            val pss = runCatching { java.io.File(d, "smaps_rollup").readLines() }.getOrNull()
+                ?.firstOrNull { it.startsWith("Pss:") }?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull() ?: continue
+            kb += pss; n++
+        }
+        gameMb = mb(kb); gameN = n
     }
 }
