@@ -397,7 +397,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             else "The game's own option, off: no switching between Auto Shot and auto attack."
         if (r.id == GameUi.UFP_ID) return if (r.mode == UiMode.ON) "DS Forever's party frames: real health, Party mode's pick and LB buttons. The game's are hidden. For this character."
             else "The game's own party frames, by their switch below. For this character."
-        if (r.id == GameUi.UFT_ID) return if (r.mode == UiMode.ON) "A target bar under the compass: health, power, cast, auras, combo points, its target. The game's target frame is hidden. For this character."
+        if (r.id == GameUi.UFT_ID) return if (r.mode == UiMode.ON) "A target bar under the compass, in the nameplates' look: health, cast, auras, combo points, its target. The game's target frame is hidden. For this character."
             else "The game's own target frame, by its switch below. For this character."
         if (r.id == GameUi.PARTY_ID) return if (r.mode == UiMode.ON) "The game's party frames stay on the top screen. For this character."
             else "The game's party frames are hidden. For this character."
