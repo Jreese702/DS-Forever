@@ -18,7 +18,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local RV = "r16"                -- bump on every change; r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
+local RV = "r17"                -- bump on every change; r17: the spell radials (q2: several, 40 shared cells); r16: the gamemenu row widened to 40, cols 6-39 Smart buffs' (PadMap m62)
 local ROW, CELLS = "radial", 24 -- the secure pad row: 24 cells = 3 pages of 8
 local PLAYER_BAGS = { 0, 1, 2, 3, 4 }
 local QUARANTINE = 30           -- seconds a freed column stays unused (as the pad's own columns)
@@ -513,29 +513,29 @@ WC.radial = { version = RV, emit = function(force) return emit(force) end, colle
               colOf = colOf, frozen = frozen, catch = catch, stickSync = function() return stickSync() end,
               pinTap = function(key) return onPinTap(key) end }
 
--- ==================================================================== THE SPELL RADIAL (q1) =====
+-- ==================================================================== THE SPELL RADIALS (q2) =====
 -- r9 (Home, 2026-10-07: WoW loads a NEW file of a TOC only when the game starts, never on /reload): the spell radial rides this
 -- file, so one /reload brings it. Its own function: its own locals, nothing shared with the consumables radial above.
--- THE SPELL RADIAL (the user's picks 2026-10-07, via tracking: "A: You choose" -- up to 8 per page, 3 pages, filled in the Controller room
--- like buttons; "A: Like the consumables radial" -- hold, point, release to cast, or Tap mode, the same Hold / Tap setting). The add-on's
--- half, mirroring the consumables radial (Radial.lua):
---   1. the `sradial` document: the character's chosen spells by PLACE s 1-24 (page = ceil(s / 8); slice = (s - 1) % 8 + 1, slice 1 = up,
---      clockwise, as Home's HomeRadialView draws them), each { s, col, id, n, i, cd }; gaps allowed. Home draws it (its source switch).
---   2. ONE TAP = ONE CAST, IN FIGHTS TOO: the secure pad row "sradial" (the pad owner's YES, 45 of 48): each cell a SecureActionButton
---      type "spell", spell <id>. Casting is a PROTECTED action: only a secure click with a hardware event does it, and the app's tap is one
---      (a real touch). Cells are set OUT of combat only, so the set FREEZES at a fight's start. Columns are STABLE per spell (a freed one
---      waits 30 s), so a tap made from a slightly old document never lands on another spell. onCell only answers `sradialuse`.
---   3. The Controller room's "Spell radial" tab (PadTabCtl) fills it through WC.spellRadial: put / clear / move (out of combat).
--- Opened by Home's Hub button WowCompanionPadSpellRadial (barcmd "sradial", the radial's own guest holds the controller). No game window,
--- no Blizzard UI call, nothing written but our own cells and the character's choice.
+-- q2 SEVERAL SPELL RADIALS (the user's picks 2026-11-08: "create new radial on that tab of the controller page and then be able to select
+-- them from a list to edit each"; "Each its own button"; "Up to 8, no pages"; "The radials should not have empty slots, but instead have
+-- things evenly distributed by how many items are in it"): up to MAX (6) radials per character, in FIXED SLOTS 1..6 (slot n = the bar
+-- command DSSRADIAL / DSSRADIAL<n>, Hub's WowCompanionPadSpellRadial / ...<n>), each an ORDERED list of at most PER (8) spells, no gaps:
+-- Home spreads them evenly. A radial's name, icon and Hold / Tap are the app's (per character, per slot); the spells are here because
+-- each needs a secure cell. q1's single radial (24 places, 3 pages) moves over once: each page with spells becomes a radial, in order.
+--   1. the `sradial` document: r = { list = [{ u = slot, items = [{ id, col, n, i, cd }] }], row, cells, pad / nopad, dead, fight }.
+--   2. ONE TAP = ONE CAST, IN FIGHTS TOO: the secure pad row "sradial", CELLS (40) cells shared by every radial (a spell on two radials
+--      has one cell): each a SecureActionButton type "spell", spell <id>. Cells are set OUT of combat only (the set FREEZES at a fight's
+--      start). Columns are STABLE per spell (a freed one waits 30 s). A 41st different spell is refused ("full").
+--   3. The Controller room's "Spell radial" tab (PadTabCtl) fills them through WC.spellRadial (out of combat).
+-- No game window, no Blizzard UI call, nothing written but our own cells and the character's choice.
 local function spellRadial()
     local WC = _G.WowCompanion
     if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
     local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-    local SRV = "q1"                -- bump on every change
-    local ROW, CELLS = "sradial", 24 -- the secure pad row: 24 cells = 3 pages of 8
-    local PLACES = 24
+    local SRV = "q2"                -- bump on every change
+    local ROW, CELLS = "sradial", 40 -- the secure pad row: 40 cells, shared by every radial
+    local MAX, PER = 6, 8
     local QUARANTINE = 30           -- seconds a freed column stays unused (as the consumables radial's)
 
     local function real(v) return v ~= nil and v ~= WC.ABSENT and v ~= WC.SECRET and v ~= WC.THREW end
@@ -543,7 +543,7 @@ local function spellRadial()
     local function TN(fn) local v = S(fn); if type(v) == "number" then return v end end
     local function inCombat() return S(function() return InCombatLockdown() end) == true end
 
-    -- ---------------------------------------------------------------- the character's choice: place -> spell id
+    -- ---------------------------------------------------------------- the character's radials: slot -> { ids = { spell id, ... } }
     local function whoKey()
         local n = TS(function() return UnitName("player") end)
         local r = TS(function() return GetRealmName() end)
@@ -552,31 +552,60 @@ local function spellRadial()
     local function store()
         if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
         local db = _G.WowCompanionSpellsDB
-        if type(db.sradial) ~= "table" then db.sradial = {} end
+        if type(db.sradials) ~= "table" then db.sradials = {} end
         local k = whoKey()
         if not k then return {} end
-        if type(db.sradial[k]) ~= "table" then db.sradial[k] = {} end
-        return db.sradial[k]
+        if type(db.sradials[k]) ~= "table" then
+            -- q1 -> q2, once: each of the old radial's pages that holds spells becomes a radial (its places in order); none = one empty
+            local out, n = {}, 0
+            local old = type(db.sradial) == "table" and type(db.sradial[k]) == "table" and db.sradial[k] or {}
+            for page = 1, 3 do
+                local ids = {}
+                for p = 1, 8 do
+                    local id = old[(page - 1) * 8 + p]
+                    if type(id) == "number" and id > 0 then ids[#ids + 1] = id end
+                end
+                if #ids > 0 and n < MAX then n = n + 1; out[n] = { ids = ids } end
+            end
+            if n == 0 then out[1] = { ids = {} } end
+            db.sradials[k] = out
+        end
+        return db.sradials[k]
     end
-    local function at(s) local v = store()[s]; if type(v) == "number" then return v end end
+    local function okSlot(r) return type(r) == "number" and r >= 1 and r <= MAX and r == math.floor(r) end
+    local function rad(r) local st = store(); local v = okSlot(r) and st[r]; if type(v) == "table" then if type(v.ids) ~= "table" then v.ids = {} end return v end end
+    local function slots() local out = {}; for r = 1, MAX do if rad(r) then out[#out + 1] = r end end return out end
+    -- every spell on any radial, once
+    local function wanted()
+        local want, n = {}, 0
+        for r = 1, MAX do
+            local v = rad(r)
+            if v then for _, id in ipairs(v.ids) do if type(id) == "number" and not want[id] then want[id] = true; n = n + 1 end end end
+        end
+        return want, n
+    end
 
     -- ---------------------------------------------------------------- the stable columns
     local colOf, spellAt, freedAt = {}, {}, {}      -- spell id -> col; col -> spell id; col -> when it was freed
     local function assign()
         local now = GetTime()
-        local want, changed = {}, false
-        for s = 1, PLACES do local id = at(s); if id then want[id] = true end end
+        local want = wanted()
+        local changed = false
         for id, col in pairs(colOf) do
             if not want[id] then colOf[id] = nil; spellAt[col] = nil; freedAt[col] = now; changed = true end
         end
-        for s = 1, PLACES do
-            local id = at(s)
-            if id and colOf[id] == nil then
-                for col = 0, CELLS - 1 do
-                    if spellAt[col] == nil and (freedAt[col] == nil or now - freedAt[col] >= QUARANTINE) then
-                        colOf[id], spellAt[col], freedAt[col] = col, id, nil
-                        changed = true
-                        break
+        for r = 1, MAX do
+            local v = rad(r)
+            if v then
+                for _, id in ipairs(v.ids) do
+                    if colOf[id] == nil then
+                        for col = 0, CELLS - 1 do
+                            if spellAt[col] == nil and (freedAt[col] == nil or now - freedAt[col] >= QUARANTINE) then
+                                colOf[id], spellAt[col], freedAt[col] = col, id, nil
+                                changed = true
+                                break
+                            end
+                        end
                     end
                 end
             end
@@ -627,20 +656,29 @@ local function spellRadial()
         -- the row is built at the first document too (an empty radial still says `pad`: Home's view tells a missing row apart)
         if (assign() or cellsStale() or (padRow == nil and secureOk)) and not inCombat() then buildCells() end
         local now = GetTime()
-        local items, live = {}, {}
-        for s = 1, PLACES do
-            local id = at(s)
-            if id then
-                local d = { s = s, id = id, cd = cdOf(id, now) }
+        local list, live, info = {}, {}, {}
+        local function one(id)
+            if info[id] == nil then
+                local d = { id = id, cd = cdOf(id, now) }
                 local col = colOf[id]
                 if col ~= nil and frozen[col] == id then d.col = col end      -- no cell yet (chosen in a fight): none until it ends
-                local ok, info = CALL(function() return C_Spell.GetSpellInfo(id) end)
-                if ok and type(info) == "table" then
-                    d.n = TS(function() return info.name end)
-                    d.i = TN(function() return info.iconID end)
+                local ok, si = CALL(function() return C_Spell.GetSpellInfo(id) end)
+                if ok and type(si) == "table" then
+                    d.n = TS(function() return si.name end)
+                    d.i = TN(function() return si.iconID end)
                 end
-                items[#items + 1] = d
-                live[id] = true
+                info[id] = d
+            end
+            return info[id]
+        end
+        for r = 1, MAX do
+            local v = rad(r)
+            if v then
+                local items = {}
+                for _, id in ipairs(v.ids) do
+                    if type(id) == "number" then items[#items + 1] = one(id); live[id] = true end
+                end
+                list[#list + 1] = { u = r, items = items }
             end
         end
         local dead = {}
@@ -648,7 +686,7 @@ local function spellRadial()
             local id = frozen[col]
             if id and not live[id] then dead[#dead + 1] = col end
         end
-        return { items = items, row = ROW, cells = CELLS, pad = padRow ~= nil or nil, nopad = (padRow == nil) or nil,
+        return { list = list, max = MAX, per = PER, row = ROW, cells = CELLS, pad = padRow ~= nil or nil, nopad = (padRow == nil) or nil,
                  dead = next(dead) and dead or nil, fight = inCombat() or nil }
     end
     local lastKey = nil
@@ -668,40 +706,82 @@ local function spellRadial()
         queued = true
         C_Timer.After(0.3, function() queued = false; pcall(emit, force) end)
     end
+    -- a radial made or deleted: the padmap's commands list follows (each radial's own command shows only while it exists)
+    local function commandsChanged()
+        if type(WC.padMap) == "table" and type(WC.padMap.emit) == "function" then pcall(WC.padMap.emit, true) end
+    end
 
     -- ---------------------------------------------------------------- the Controller room's tab (PadTabCtl)
-    -- each change is out of combat only (the cells must follow it); `why` answers a refusal: "combat", "place", "spell"
-    local function okPlace(s) return type(s) == "number" and s >= 1 and s <= PLACES and s == math.floor(s) end
+    -- each change is out of combat only (the cells must follow it); `why` answers a refusal: "combat", "radial", "place", "spell",
+    -- "full" (a 41st different spell), "max" (a 7th radial)
     WC.spellRadial = {
-        version = 1,
-        places = PLACES,
-        get = function(s) return okPlace(s) and at(s) or nil end,
-        -- a spell onto place s (the one already there goes; the same spell elsewhere moves here: one place per spell)
-        put = function(s, id)
+        version = 2,
+        max = MAX, per = PER,
+        has = function(r) return rad(r) ~= nil end,
+        slots = slots,
+        count = function(r) local v = rad(r); return v and #v.ids or 0 end,
+        ids = function(r) local v = rad(r); local out = {}; if v then for i, id in ipairs(v.ids) do out[i] = id end end return out end,
+        get = function(r, i) local v = rad(r); return v and v.ids[i] or nil end,
+        -- a spell onto place i of radial r: i = count + 1 adds it at the end; the same spell elsewhere on THIS radial moves here
+        put = function(r, i, id)
             if inCombat() then return false, "combat" end
-            if not okPlace(s) then return false, "place" end
+            local v = rad(r)
+            if not v then return false, "radial" end
             if type(id) ~= "number" or id <= 0 then return false, "spell" end
-            local st = store()
-            for p = 1, PLACES do if st[p] == id then st[p] = nil end end
-            st[s] = id
+            if type(i) ~= "number" or i < 1 or i > #v.ids + 1 or i > PER or i ~= math.floor(i) then return false, "place" end
+            local want, n = wanted()
+            if not want[id] and n >= CELLS then return false, "full" end
+            local at = nil
+            for p, x in ipairs(v.ids) do if x == id then at = p end end
+            if at == i then return true end
+            if at then
+                -- already on this radial: the two places swap (one place per spell, no gap left)
+                if i <= #v.ids then v.ids[at], v.ids[i] = v.ids[i], v.ids[at] end
+            elseif i == #v.ids + 1 then v.ids[i] = id
+            else v.ids[i] = id end
             soon(true)
             return true
         end,
-        clear = function(s)
+        -- take place i off radial r: the ones after it close up (no empty slots)
+        clear = function(r, i)
             if inCombat() then return false, "combat" end
-            if not okPlace(s) then return false, "place" end
-            store()[s] = nil
+            local v = rad(r)
+            if not v then return false, "radial" end
+            if type(i) ~= "number" or not v.ids[i] then return false, "place" end
+            table.remove(v.ids, i)
             soon(true)
             return true
         end,
-        -- Move: what is on `from` goes to `to`; a taken `to` SWAPS
-        move = function(from, to)
+        -- Move: place `from` to `to` on radial r; a taken `to` SWAPS
+        move = function(r, from, to)
             if inCombat() then return false, "combat" end
-            if not (okPlace(from) and okPlace(to)) or from == to then return false, "place" end
-            local st = store()
-            if not st[from] then return false, "nothing" end
-            st[from], st[to] = st[to], st[from]
+            local v = rad(r)
+            if not v then return false, "radial" end
+            if not (v.ids[from] and v.ids[to]) or from == to then return false, "place" end
+            v.ids[from], v.ids[to] = v.ids[to], v.ids[from]
             soon(true)
+            return true
+        end,
+        -- a new, empty radial in the first free slot: its slot, or nil + why
+        new = function()
+            if inCombat() then return nil, "combat" end
+            local st = store()
+            for r = 1, MAX do
+                if type(st[r]) ~= "table" then
+                    st[r] = { ids = {} }
+                    soon(true); commandsChanged()
+                    return r
+                end
+            end
+            return nil, "max"
+        end,
+        -- delete radial r: its spells and its slot; its own command comes off every button (PadMap)
+        drop = function(r)
+            if inCombat() then return false, "combat" end
+            if not rad(r) then return false, "radial" end
+            store()[r] = nil
+            if type(WC.padMapDropCommand) == "function" then pcall(WC.padMapDropCommand, r == 1 and "DSSRADIAL" or ("DSSRADIAL" .. r)) end
+            soon(true); commandsChanged()
             return true
         end,
         emit = function(now) return emit(true, now) end,
@@ -714,7 +794,7 @@ local function spellRadial()
     end
     f:SetScript("OnEvent", function(_, e)
         if e == "SPELL_UPDATE_COOLDOWN" then
-            if next(store()) then soon() end                -- a sweep to draw only when something is on the radial
+            if next(wanted()) then soon() end                -- a sweep to draw only when something is on a radial
             return
         end
         soon(e ~= "PLAYER_REGEN_DISABLED")
@@ -725,7 +805,7 @@ local function spellRadial()
     end
 end
 spellRadial()
--- ==================================================================== end of the spell radial =====
+-- ==================================================================== end of the spell radials =====
 
 -- ==================================================================== THE PAUSE ROW (r11) =====
 -- Home's RADIAL PAUSE MENU (the user's sign-off 2026-10-08; wow-companion-pulse/RADIAL_PAUSE_MENU.md): Start on plain Home opens OUR rebuild of

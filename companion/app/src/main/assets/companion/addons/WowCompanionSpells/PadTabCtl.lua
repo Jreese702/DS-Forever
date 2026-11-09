@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p33"                -- bump on every change; p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
+local CV = "p40"                -- bump on every change; p40: SEVERAL SPELL RADIALS (Radial.lua q2): the plates = the radials + New, A on one = its settings (Name / Icon / Opening / Delete), the wheel = its spells + "+", no pages; p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -64,12 +64,27 @@ local SWITCHES = { normal = {}, ds = { "dpad" }, combat = { "cc", "sa" }, radial
 -- p32 (the user's pick A on test20): the out-of-combat tab's form row too, the GAME's own form bars (PadMap m57), while the game puts one
 local ORDER = { normal = { "tabs", "forms", "sets", "buttons" }, ds = { "tabs", "switches", "dpad" }, combat = { "tabs", "switches", "forms", "sets", "buttons" },
                 radial = { "tabs", "rpages", "buttons" }, party = { "tabs", "prows", "pright" } }
-local HOME_FOCUS = { normal = "buttons", ds = "dpad", combat = "buttons", radial = "buttons", party = "prows" }
+local HOME_FOCUS = { normal = "buttons", ds = "dpad", combat = "buttons", radial = "rpages", party = "prows" }
 local function SR() return type(WC.spellRadial) == "table" and WC.spellRadial or nil end
+-- p40 SEVERAL SPELL RADIALS (the user's picks 2026-11-08: "create new radial on that tab ... select them from a list to edit each"; "A on its
+-- plate": the settings; "no empty slots ... evenly distributed"): the plates row = the character's radials (slots, Radial.lua q2) + "New"
+-- (while fewer than 6); the cursor LANDING on a radial shows it (p10's rule); A on a radial = its settings on the right page (focus "rset":
+-- 1 Name, 2 Icon, 3 Opening (Hold / Tap), 4 Delete; Up / Down, A acts, B back to the plates); A on New makes one. The wheel = the
+-- radial's spells in order + a "+" place while fewer than 8 (Left / Right round it, Up the plates). Name, Icon and Opening are the APP's
+-- (per character, per radial): A on Name / Icon opens a box ("rname" / "ricon") whose presses go to the app as events (`rev`), until the
+-- app says it is done (touch radial op 13); A on Opening is an event the app acts on. Delete: A, then A again within DEL_S.
+local DEL_S = 3
+local function rSlots() local sr = SR(); return (sr and type(sr.slots) == "function") and sr.slots() or {} end
+local function rCount(r) local sr = SR(); return (sr and type(sr.count) == "function") and sr.count(r) or 0 end
+-- the wheel's places: its spells, then the "+" while there is room
+local function rShown(r) local n = rCount(r); return n + ((n < 8) and 1 or 0) end
+-- the plates' entries: each radial's slot, then "new" while there is room
+local function rPlates() local out = rSlots(); if #out < 6 then out[#out + 1] = "new" end return out end
 
 -- `view`: the tab ("normal" = WoW Defaults, "ds", "combat" = In combat)
 local tc = { on = false, focus = "buttons", set = 1, pos = 1, chooser = nil, box = nil, note = nil, view = "normal",
-             tcur = 1, sw = 1, scur = 2, dpos = 2, carry = nil, rpage = 1, form = 0, fcur = 0, ppos = 2, pright = 1 }
+             tcur = 1, sw = 1, scur = 2, dpos = 2, carry = nil, rpage = 1, form = 0, fcur = 0, ppos = 2, pright = 1,
+             rplate = 1, rrow = 1, revn = 0 }
 local PT = {}                   -- p33: the Party tab's functions (filled at the end of this file)
 -- p25 THE KEEP MODE (Book b36's quiet enter; test22 device: two of the restore's taps were lost, the "combat layer" pick among them, so
 -- the In-combat spell went onto the GAME's bar slot as a plain spell): while the app restores its backup, a spell is ONLY ever an
@@ -102,15 +117,29 @@ end
 
 local rows                      -- below: the chooser's rows (the report names the one under the cursor)
 local fightView     -- p26 below: the chooser's layout (p28: the tab's own; the user's pick "No flip in the chooser")
--- p16 the radial's page on show: its 8 slices' spell ids, 0 = empty
+-- p40 the radial on show (tc.rpage = its slot): its spells in order
 local function radialPage()
-    local sr = type(WC.spellRadial) == "table" and WC.spellRadial or nil
-    local out = {}
-    for i = 1, 8 do out[i] = (sr and sr.get((tc.rpage - 1) * 8 + i)) or 0 end
-    return out
+    local sr = SR()
+    return (sr and type(sr.ids) == "function" and sr.has(tc.rpage)) and sr.ids(tc.rpage) or {}
 end
+-- p40 keep the radial cursor on things that exist: the slot shown, the plate cursor, the wheel place
+local function rFix()
+    local sr = SR()
+    if not sr or type(sr.has) ~= "function" then return end
+    if not sr.has(tc.rpage) then tc.rpage = rSlots()[1] or 0 end
+    local plates = rPlates()
+    if tc.rplate < 1 or tc.rplate > #plates then
+        tc.rplate = 1
+        for i, v in ipairs(plates) do if v == tc.rpage then tc.rplate = i end end
+    end
+    if tc.rpage == 0 and (tc.focus == "buttons" or tc.focus == "rset") then tc.focus = "rpages" end
+    tc.pos = math.max(1, math.min(tc.pos, math.max(1, rShown(tc.rpage))))
+end
+-- an event for the app (`rev`: what, numbered so the same one twice is two)
+local function rEvent(what) tc.revn = (tc.revn or 0) + 1; tc.rev = what end
 local function report(note)
     tc.note = note or tc.note
+    if tc.view == "radial" then rFix() end
     local pm = PM()
     -- p32: the form chosen on the out-of-combat tab is the one whose own bar the room shows and edits (PadMap m57); else the caster's
     if pm and type(pm.formEdit) == "function" then
@@ -132,6 +161,12 @@ local function report(note)
         tcur = tc.tcur, sw = tc.sw, scur = tc.scur, dpos = tc.dpos,
         carry = tc.carry and { set = tc.carry.set, pos = tc.carry.pos, page = tc.carry.page } or nil,
         rpage = tc.view == "radial" and tc.rpage or nil, rad = tc.view == "radial" and radialPage() or nil,
+        -- p40: the radials (slots), the plate cursor, the settings row, an open Name / Icon box, the last event, a Delete waiting
+        rslots = tc.view == "radial" and rSlots() or nil, rplate = tc.view == "radial" and tc.rplate or nil,
+        rrow = tc.view == "radial" and tc.rrow or nil,
+        rbox = (tc.view == "radial" and tc.box and (tc.box.kind == "rname" or tc.box.kind == "ricon")) and tc.box.kind or nil,
+        revn = tc.view == "radial" and tc.revn or nil, rev = tc.view == "radial" and tc.rev or nil,
+        rdel = (tc.view == "radial" and tc.rdel and GetTime() - tc.rdel <= DEL_S) and true or nil,
         form = tc.form ~= 0 and tc.form or nil, fcur = tc.view == "combat" and tc.fcur or nil,
         ppos = tc.view == "party" and tc.ppos or nil, pright = tc.view == "party" and (tc.pright - 1) or nil,   -- 0-based (the app's)
         pfocus = tc.view == "party" and (tc.focus == "pright" and "right" or "rows") or nil } }))
@@ -139,11 +174,10 @@ local function report(note)
 end
 
 local function here()
-    if tc.view == "radial" then                                     -- p16: the slice (place s on the radial)
-        local s = (tc.rpage - 1) * 8 + tc.pos
+    if tc.view == "radial" then                                     -- p40: place pos on the radial shown (the "+" after its spells)
         local sr = SR()
-        local id = sr and sr.get(s)
-        return { kind = id and "spell" or "none", id = id, s = s, radial = true }
+        local id = sr and sr.has(tc.rpage) and sr.get(tc.rpage, tc.pos) or nil
+        return { kind = id and "spell" or "none", id = id, s = tc.pos, r = tc.rpage, radial = true, add = id == nil }
     end
     local pm = PM()
     if not pm then return nil end
@@ -235,9 +269,11 @@ end
 local function act(thing)
     if tc.view == "radial" then                                     -- p16: the spell radial's slice (SpellRadial.lua)
         local sr, h = SR(), here()
-        if sr and h then
-            if thing.kind == "rspell" then sr.put(h.s, thing.id)
-            elseif thing.kind == "clear" then sr.clear(h.s) end
+        if sr and h and sr.has(h.r) then
+            local ok, why = true, nil
+            if thing.kind == "rspell" then ok, why = sr.put(h.r, math.min(h.s, sr.count(h.r) + 1), thing.id)
+            elseif thing.kind == "clear" then ok, why = sr.clear(h.r, h.s) end
+            if not ok and why then tc.note = "radial-" .. tostring(why) end
         end
         tc.box, tc.chooser, tc.focus = nil, nil, "buttons"
         return
@@ -403,7 +439,7 @@ local function carryStart()
     if h and h.radial then                                          -- p16: a slice is picked up (no game action)
         if h.kind == "none" then report("nothing-to-move") return end
         if inCombat() then refusedCombat() return end
-        tc.carry = { radial = true, s = h.s, page = tc.rpage, set = 1, pos = tc.pos }
+        tc.carry = { radial = true, s = h.s, r = tc.rpage, page = tc.rpage, set = 1, pos = tc.pos }
         report("carry")
         return
     end
@@ -422,10 +458,10 @@ local function carryPlace()
     if c.radial then                                                -- p16: a slice onto another (a taken one SWAPS)
         local h, sr = here(), SR()
         if not (h and sr) then return end
-        if h.s == c.s then tc.carry = nil; report("carry-cancel") return end
+        if h.s == c.s or h.r ~= c.r or h.kind == "none" then tc.carry = nil; report("carry-cancel") return end    -- p40: onto the "+": back
         if inCombat() then refusedCombat() return end
-        local swap = h.kind ~= "none"
-        local ok = sr.move(c.s, h.s)
+        local swap = true
+        local ok = sr.move(c.r, c.s, h.s)
         tc.carry = nil
         report(ok and (swap and "swapped" or "moved") or "move-refused")
         return
@@ -467,9 +503,10 @@ local function nearest(key, n)
 end
 
 local function pressButtons(key)
-    if tc.view == "radial" and DIRS[key] then                       -- p16: round the wheel (8 slices, wrapping); Up = the page plates
+    if tc.view == "radial" and DIRS[key] then                       -- p40: round the wheel (its places, wrapping); Up = the plates
         if key == "PADDLEFT" or key == "PADDRIGHT" then
-            tc.pos = (tc.pos - 1 + (key == "PADDLEFT" and -1 or 1)) % 8 + 1
+            local n = math.max(1, rShown(tc.rpage))
+            tc.pos = (tc.pos - 1 + (key == "PADDLEFT" and -1 or 1)) % n + 1
             report("move")
         elseif key == "PADDUP" then step(-1) end
         return true
@@ -555,14 +592,71 @@ local function pressSets(key)
     return true
 end
 
--- p16 the radial's page plates: the cursor LANDING on a page shows it (p10's rule: no A needed; a carried slice goes along)
+-- p40 the radials' plates: the cursor LANDING on a radial shows it (p10's rule); A on it = its settings, A on New makes one; Down its wheel
+local function rSelect(r)
+    if tc.rpage ~= r then tc.rpage = r; tc.pos = 1 end
+end
+local function rNew()
+    local sr = SR()
+    if not sr or type(sr.new) ~= "function" then return false end
+    if tc.carry then tc.carry = nil end
+    local r, why = sr.new()
+    if not r then
+        if why == "combat" then refusedCombat() else report("radial-" .. tostring(why)) end
+        return false
+    end
+    tc.rpage, tc.pos = r, 1
+    for i, v in ipairs(rPlates()) do if v == r then tc.rplate = i end end
+    tc.focus = "buttons"
+    report("rnew")
+    return true
+end
 local function pressRpages(key)
+    local plates = rPlates()
     if key == "PADDLEFT" or key == "PADDRIGHT" then
-        local p = math.min(3, math.max(1, tc.rpage + (key == "PADDLEFT" and -1 or 1)))
-        if p ~= tc.rpage then tc.rpage = p; report("rpage") end
-    elseif key == "PADDDOWN" or key == "PAD1" then step(1)
+        local i = math.min(#plates, math.max(1, tc.rplate + (key == "PADDLEFT" and -1 or 1)))
+        if i ~= tc.rplate then
+            tc.rplate = i
+            if plates[i] ~= "new" and not tc.carry then rSelect(plates[i]) end
+            report("rplate")
+        end
+    elseif key == "PAD1" then
+        local v = plates[tc.rplate]
+        if v == "new" then rNew()
+        elseif v then rSelect(v); tc.focus, tc.rrow, tc.rdel = "rset", 1, nil; report("to-rset") end
+    elseif key == "PADDDOWN" then if tc.rpage ~= 0 then step(1) end
     elseif key == "PADDUP" then step(-1)
     elseif key == "PAD2" then return false
+    end
+    return true
+end
+-- p40 the radial's settings (the right page): 1 Name, 2 Icon, 3 Opening, 4 Delete; B back to the plates
+local function rDrop()
+    local sr = SR()
+    if inCombat() then refusedCombat() return end
+    local ok, why = false, "radial"
+    if sr then ok, why = sr.drop(tc.rpage) end
+    tc.rdel = nil
+    if not ok then report("radial-" .. tostring(why)) return end
+    tc.rpage = rSlots()[1] or 0
+    tc.rplate, tc.pos, tc.focus = 1, 1, "rpages"
+    for i, v in ipairs(rPlates()) do if v == tc.rpage then tc.rplate = i end end
+    report("rdeleted")
+end
+local function pressRset(key)
+    if key == "PADDUP" then
+        tc.rdel = nil
+        if tc.rrow > 1 then tc.rrow = tc.rrow - 1; report("rrow") else tc.focus = "rpages"; report("to-rpages") end
+    elseif key == "PADDDOWN" then
+        tc.rdel = nil
+        if tc.rrow < 4 then tc.rrow = tc.rrow + 1; report("rrow") end
+    elseif key == "PAD1" then
+        if tc.rrow == 1 then tc.box = { kind = "rname" }; rEvent("name"); report("rbox")
+        elseif tc.rrow == 2 then tc.box = { kind = "ricon" }; rEvent("icon"); report("rbox")
+        elseif tc.rrow == 3 then rEvent("mode"); report("rmode")
+        elseif tc.rdel and GetTime() - tc.rdel <= DEL_S then rDrop()
+        else tc.rdel = GetTime(); report("rdel-ask") end
+    elseif key == "PAD2" then tc.rdel = nil; tc.focus = "rpages"; report("to-rpages")
     end
     return true
 end
@@ -626,6 +720,8 @@ local function pressChooser(key)
 end
 
 local function pressBox(key)
+    -- p40: the app's Name keyboard / Icon grid: every press is the app's (an event), until it says the box is done
+    if tc.box.kind == "rname" or tc.box.kind == "ricon" then rEvent("key:" .. tostring(key)); report("rkey") return true end
     if key == "PAD1" then confirm()
     elseif key == "PAD2" then tc.box = nil; report("box-cancel") end
     return true
@@ -683,6 +779,7 @@ WC.padTabCtl = {
         if tc.focus == "sets" then return pressSets(key) end
         if tc.focus == "forms" then return pressForms(key) end
         if tc.focus == "rpages" then return pressRpages(key) end
+        if tc.focus == "rset" then return pressRset(key) end
         if tc.focus == "dpad" then return pressDpad(key) end
         if tc.focus == "prows" and PT.pressRows then return PT.pressRows(key) end      -- p33
         if tc.focus == "pright" and PT.pressRight then return PT.pressRight(key) end
@@ -717,6 +814,7 @@ WC.padTabCtl = {
         end
     end,
     touchPos = function(k)
+        if tc.view == "radial" and k > rShown(tc.rpage) then report("touch-pos-none") return end     -- p40: past the "+"
         if k >= 1 and k <= 8 then
             if keepOn() then keep.pos = true end
             tc.pos = k
@@ -725,14 +823,7 @@ WC.padTabCtl = {
         end
     end,
     touchPage = function(k)
-        if tc.view == "radial" then                                     -- p16: the radial's page (a pick)
-            if k >= 1 and k <= 3 then
-                tc.rpage = k
-                if tc.on and not tc.chooser and not tc.box then tc.focus = "rpages" end
-                report("touch-rpage")
-            end
-            return
-        end
+        if tc.view == "radial" then report("not-on-radial") return end          -- p40: no pages (the radials are radial ops)
         local pm = PM(); if pm and pm.showPage(k) then report("touch-page") end
     end,
     -- p9 (the padtab row): the tab (1-3, a pick), Move's pick-up (a pick), its PLACE / SWAP (ONE game action), its cancel (a pick)
@@ -747,6 +838,35 @@ WC.padTabCtl = {
         end
     end,
     touchCarry = function() if not tc.carry then carryStart() end end,
+    -- p40 RADIAL OPS BY TOUCH (Book b49: padtab 38 = a one-shot prefix, fresh EXTRA_PICK_S; the next padtab column c is radial op c, not its
+    -- usual): 0-5 show radial slot c + 1 (a pick), 6 New, 7 its settings (a pick), 10 DELETE the radial shown (the app asked "Tap again"
+    -- first), 11 / 12 the Name / Icon box opened by a finger (the controller's presses go to the app), 13 that box done (the controller back)
+    touchRadialPrefix = function() tc.rpre = GetTime() end,
+    radialPending = function() return tc.rpre ~= nil and GetTime() - tc.rpre <= EXTRA_PICK_S end,
+    touchRadial = function(c)
+        tc.rpre = nil
+        if tc.view ~= "radial" then report("not-radial") return end
+        local sr = SR()
+        if not sr then return end
+        if c >= 0 and c <= 5 then
+            if sr.has(c + 1) then
+                rSelect(c + 1)
+                for i, v in ipairs(rPlates()) do if v == c + 1 then tc.rplate = i end end
+                if tc.on and not tc.chooser and not tc.box then tc.focus = "rpages" end
+                report("touch-rplate")
+            end
+        elseif c == 6 then rNew()
+        elseif c == 7 then
+            if sr.has(tc.rpage) then tc.focus, tc.rrow, tc.rdel = "rset", 1, nil; report("touch-rset") end
+        elseif c == 10 then
+            if sr.has(tc.rpage) then rDrop() end
+        elseif c == 11 or c == 12 then
+            tc.box = { kind = c == 11 and "rname" or "ricon" }; tc.focus = "rset"; tc.rrow = c == 11 and 1 or 2; report("rbox")
+        elseif c == 13 then
+            if tc.box and (tc.box.kind == "rname" or tc.box.kind == "ricon") then tc.box = nil end
+            report("rbox-done")
+        end
+    end,
     touchPlace = function() carryPlace() end,
     -- p20: a finger's Cancel also closes the controller's clean-up box (the room draws that box over the DS tab; nothing done)
     touchCancel = function()

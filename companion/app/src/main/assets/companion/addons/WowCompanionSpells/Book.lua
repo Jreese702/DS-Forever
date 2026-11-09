@@ -27,7 +27,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local BV = "b48"                -- bump on every change; b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
+local BV = "b49"                -- bump on every change; b49: padtab 38 = the spell radials' one-shot prefix (PadTabCtl p40); b48: fly-out groups not listed, their members are (Aspect of the Monkey ...); b47: padtab 26-37, the Controller room's Party mode tab by touch (PARTY_BUILD.md 2.3); b46: a spell picked for Smart buffs (PadMap m62) goes there; b45: a finger picks the Bind box's form (a lone "vo<k>" while the box waits)
 local COLS, ROWS = 2, 5         -- arrangement B: the left page holds two columns of five
 local PER_PAGE = COLS * ROWS
 
@@ -1347,6 +1347,10 @@ for k = 1, 10 do PADTAB[15 + k] = function(pt) if type(pt.touchForm) == "functio
 PADTAB[26] = function(pt) pt.touchTab(5) end
 for k = 1, 10 do PADTAB[26 + k] = function(pt) if type(pt.touchPartySlot) == "function" then pt.touchPartySlot(k) end end end
 PADTAB[37] = function(pt) if type(pt.touchPartyNone) == "function" then pt.touchPartyNone() end end
+-- b49 SEVERAL SPELL RADIALS (PadTabCtl p40): 38 = a one-shot PREFIX (no action; fresh 2 s): the NEXT padtab column c is radial op c
+-- (0-5 show radial c + 1, 6 New, 7 its settings, 10 delete it, 11 / 12 the Name / Icon box opened by a finger, 13 that box done), not its
+-- usual meaning. A lost prefix lets the next tap be its plain self; a lost op lets the prefix expire. 39 refused
+PADTAB[38] = function(pt) if type(pt.touchRadialPrefix) == "function" then pt.touchRadialPrefix() end end
 if type(pad) == "table" and type(pad.op) == "function" then
     pcall(pad.op, "padtab", "padtab", function(_, col)
         local fn = type(col) == "number" and PADTAB[col]
@@ -1371,6 +1375,8 @@ if type(pad) == "table" and type(pad.op) == "function" then
             WC.push()
             return
         end
+        -- b49: right after the radial prefix (38) the column is a radial op
+        if col ~= 38 and type(pt.radialPending) == "function" and pt.radialPending() then pcall(pt.touchRadial, col) return end
         pcall(fn, pt)
     end)
     -- b26 THE "extra" ROW (the pad owner's YES 2026-10-07: plain, 40 fixed columns, 44 of 48): the Controller room's Extra tab by touch, the
