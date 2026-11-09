@@ -114,7 +114,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     }
     private fun allRows(): List<GameUi.Row> = when (part) {
         // Top screen: the game's own windows only (the housekeeping pass)
-        Part.GAME_UI -> GameUi.rows() + listOfNotNull(lootRow(), GameUi.playerRow(), GameUi.ufTargetRow(), GameUi.targetRow(), GameUi.ufPartyRow(), GameUi.partyRow(), GameUi.castBarRow(),
+        Part.GAME_UI -> GameUi.rows() + listOfNotNull(lootRow(), GameUi.playerRow(), GameUi.ufTargetRow(), GameUi.ufTotRow(), GameUi.targetRow(), GameUi.ufPartyRow(), GameUi.partyRow(), GameUi.castBarRow(),
             GameUi.nameplatesRow(), tipsRow())
         // QOL: three groups, each under its heading (a "#" row); the rows, their ids and taps are the ones Top screen had
         Part.QOL -> group("HUD", listOfNotNull(GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow())) +
@@ -228,6 +228,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                             GameUi.PARTY_ID -> GameUi.setSwitch(GameUi.SW_PARTY, m == UiMode.ON)
                             GameUi.UFP_ID -> GameUi.setSwitch(GameUi.SW_UFP, m == UiMode.ON)
                             GameUi.UFT_ID -> GameUi.setSwitch(GameUi.SW_UFT, m == UiMode.ON)
+                            GameUi.UFTOT_ID -> GameUi.setSwitch(GameUi.SW_UFTOT, m == UiMode.ON)
                             GameUi.NP_ID -> GameUi.setSwitch(GameUi.SW_NP, m == UiMode.ON)
                             GameUi.WM_ID -> GameUi.setSwitch(GameUi.SW_WM, m == UiMode.ON)
                             GameUi.ATK_ID -> GameUi.setSwitch(GameUi.SW_ATK, m == UiMode.ON)
@@ -347,7 +348,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         }
         val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == TIPS_ID || r.id == RINGS_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.HUD_ID ||
             r.id == GameUi.PLAYER_ID || r.id == GameUi.TARGET_ID || r.id == GameUi.PARTY_ID || r.id == GameUi.NP_ID || r.id == GameUi.WM_ID ||
-            r.id == GameUi.ATK_ID || r.id == GameUi.SHOT_ID || r.id == GameUi.UFP_ID || r.id == GameUi.UFT_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
+            r.id == GameUi.ATK_ID || r.id == GameUi.SHOT_ID || r.id == GameUi.UFP_ID || r.id == GameUi.UFT_ID || r.id == GameUi.UFTOT_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
         val sw = (right - left - gap * (modes.size - 1)) / modes.size
         var x = left
         for (m in modes) {
@@ -399,6 +400,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             else "The game's own party frames, by their switch below. For this character."
         if (r.id == GameUi.UFT_ID) return if (r.mode == UiMode.ON) "A target bar under the compass, in the nameplates' look: health, cast, auras, combo points, its target. The game's target frame is hidden. For this character."
             else "The game's own target frame, by its switch below. For this character."
+        if (r.id == GameUi.UFTOT_ID) return if (r.mode == UiMode.ON) "The target's target beside the target bar, in its nameplate colour. For this character."
+            else "The target bar alone. For this character."
         if (r.id == GameUi.PARTY_ID) return if (r.mode == UiMode.ON) "The game's party frames stay on the top screen. For this character."
             else "The game's party frames are hidden. For this character."
         if (r.id == GameUi.TARGET_ID) return if (r.mode == UiMode.ON) "The game's target frame stays on the top screen. For this character."

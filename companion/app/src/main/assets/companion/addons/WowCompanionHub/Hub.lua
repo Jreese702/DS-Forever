@@ -322,7 +322,9 @@ local SW = { PLAYER_SHOW = 0, PLAYER_HIDE = 1, TARGET_SHOW = 2, TARGET_HIDE = 3,
              PARTY_SHOW = 10, PARTY_HIDE = 11, ATK_OFF = 12, ATK_ON = 13, SHOT_OFF = 14, SHOT_ON = 15,
              PMODE_OFF = 16, PMODE_ON = 17,
              -- hub26: DS Forever's own party frames / target bar (WC.uf below)
-             UFP_OFF = 18, UFP_ON = 19, UFT_OFF = 20, UFT_ON = 21 }
+             UFP_OFF = 18, UFP_ON = 19, UFT_OFF = 20, UFT_ON = 21,
+             -- uf8 (the user, 2026-11-09: "I want the target of target to be a toggle for this and turned off by default")
+             UFTOT_OFF = 22, UFTOT_ON = 23 }
 -- hub22 (the user, 2026-11-07: "a QOL setting for Start attack on Hostile targeting, so that when I press RB to target a hostile target it
 -- starts the attack, and then under that ... for hunters ... the 'Combat Auto Shot'"):
 --   ATK: a NEW hostile target starts the auto attack. The game lets no add-on start it on an event (StartAttack is protected), so the
@@ -426,6 +428,13 @@ function hub.swTap(col)
             WC.uf.chosen[(col == SW.UFP_OFF or col == SW.UFP_ON) and "party" or "target"] = true
         end
         hub.hmApply()
+    elseif col == SW.UFTOT_OFF or col == SW.UFTOT_ON then
+        -- uf8: the target bar's target of target on / off (off by default)
+        if type(WC.uf) == "table" and type(WC.uf.set) == "function" then
+            WC.uf.set("tot", col == SW.UFTOT_ON)
+            WC.uf.chosen = WC.uf.chosen or {}
+            WC.uf.chosen.tot = true
+        end
     elseif col == SW.PMODE_OFF or col == SW.PMODE_ON then
         -- hub25: Party mode allowed (PadMap's PM.allowed); turned off, PadMap ends a Party mode that is on (out of combat)
         WC.partyOk = (col == SW.PMODE_ON)
@@ -490,11 +499,12 @@ local function swDoc()
              np = either(np.np, np.hud), prd = either(np.prd, np.hud), wm = np.wm == true,
              atk = atkv, shot = shotNow(), pmode = WC.partyOk == true,
              -- hub26: our own party frames / target bar on
-             ufp = hub.ufFlag("party"), uft = hub.ufFlag("target"),
+             ufp = hub.ufFlag("party"), uft = hub.ufFlag("target"), uftot = hub.ufFlag("tot"),
              set = { player = hm.g.player ~= nil or nil, target = hm.g.target ~= nil or nil, party = hm.g.party ~= nil or nil, np = np.np ~= nil or nil, prd = np.prd ~= nil or nil, wm = np.wm ~= nil or nil,
                      atk = hubAtk.on ~= nil or nil, shot = hubAtk.shotSet or nil, pmode = WC.partyOk ~= nil or nil,
                      ufp = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.party) or nil,
-                     uft = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.target) or nil } }
+                     uft = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.target) or nil,
+                     uftot = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.tot) or nil } }
 end
 
 local function cbDoc()
@@ -772,9 +782,10 @@ end
 -- straight from the game's call into OUR StatusBar / FontString / Cooldown (the HUD mode bar's way, Trail.lua's WC.prd): no arithmetic,
 -- no comparison, nothing read back. Our own frames only: nothing of the game's is written, called or moved (the game's own frames
 -- are hidden by the switches above, alpha only). No mouse (EnableMouse false): touch goes through to the world as before.
--- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar); the app keeps each per character.
+-- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar), UFTOT_OFF / UFTOT_ON (the bar's target of
+-- target, uf8: off by default); the app keeps each per character.
 do
-    local UF = { party = true, target = true, V = "uf7" }
+    local UF = { party = true, target = true, tot = false, V = "uf8" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
@@ -1194,11 +1205,13 @@ do
     -- the TARGET'S nameplate health bar hidden while it is targeted (alpha only; our bar shows it), the previous one given back
     TB.hidPlate = nil
     local function plateBarAlpha(hbc, a) if type(hbc) == "table" then pcall(hbc.SetAlpha, hbc, a) end end
+    -- uf8 (the user: "when hiding the name plates, the name and level are still showing"): the WHOLE plate (its UnitFrame: the bars, the
+    -- name, the level), alpha only; never your own (the personal bar)
     local function plateHide(on)
         local hbc = nil
-        if on then
+        if on and bool(UnitIsUnit, "target", "player") ~= true then
             local plate = plateOf("target")
-            hbc = plate and call(function() return plate.UnitFrame and plate.UnitFrame.HealthBarsContainer end) or nil
+            hbc = plate and call(function() return plate.UnitFrame end) or nil
             if type(hbc) ~= "table" then hbc = nil end
         end
         if TB.hidPlate and TB.hidPlate ~= hbc then plateBarAlpha(TB.hidPlate, 1) end
@@ -1212,6 +1225,15 @@ do
         if bool(IsCurrentSpell, 6603) or bool(IsCurrentSpell, 75) then return true end
         return bool(UnitCanAttack, "player", "target") == true and bool(UnitAffectingCombat, "player") == true
             and bool(UnitAffectingCombat, "target") == true
+    end
+    -- uf8 (the user: "the hide name plate needs to have the same rules as the hide glyph"): Spells' GROW rule (a fight or an attack on, not
+    -- given back by B: WC.tgGrown); attacking() only without Spells' Y binding to read
+    local function plateRule()
+        if type(WC.tgGrown) == "function" then
+            local ok, g = pcall(WC.tgGrown)
+            if ok and g ~= nil then return g == true end
+        end
+        return attacking()
     end
     -- the combo points' gaps for [max] points (the bar is cut into that many pips)
     local function cpGaps(f, max)
@@ -1363,13 +1385,13 @@ do
         -- the target of target, in its nameplate colour too
         local tt = bool(UnitExists, "targettarget")
         if tt == nil then tt = call(UnitName, "targettarget") ~= nil end
-        if tt then
+        if tt and UF.tot then                                                -- uf8: only while its switch is on
             setText(f.totName, call(UnitName, "targettarget") or "")
             paint(f.totHp, plateRGB("targettarget"))
             feed(f.totHp, nil, "targettarget")
             f.tot:Show()
         else f.tot:Hide() end
-        plateHide(attacking())
+        plateHide(plateRule())
         f:Show()
     end
 

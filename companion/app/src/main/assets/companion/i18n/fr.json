@@ -1471,6 +1471,10 @@
 "DS Forever's party frames: real health, Party mode's pick and LB buttons. The game's are hidden. For this character.": "Cadres de groupe de DS Forever : vraie santé, la sélection du mode groupe et les boutons LB. Ceux du jeu sont masqués. Pour ce personnage.",
 "The game's own party frames, by their switch below. For this character.": "Les cadres de groupe du jeu, selon leur interrupteur ci-dessous. Pour ce personnage.",
 "A target bar under the compass, in the nameplates' look: health, cast, auras, combo points, its target. The game's target frame is hidden. For this character.": "Une barre de cible sous la boussole, avec l’aspect des barres de nom : santé, incantation, auras, points de combo et sa cible. Le cadre de cible du jeu est masqué. Pour ce personnage.",
+"Target of target": "Cible de la cible",
+"On: beside the target bar": "Activé : à côté de la barre de cible",
+"The target's target beside the target bar, in its nameplate colour. For this character.": "La cible de votre cible à côté de la barre de cible, avec la couleur de sa barre de nom. Pour ce personnage.",
+"The target bar alone. For this character.": "La barre de cible seule. Pour ce personnage.",
 "The game's own target frame, by its switch below. For this character.": "Le cadre de cible du jeu, selon son interrupteur ci-dessous. Pour ce personnage."
 },
 "templates": {
