@@ -29,7 +29,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S = WC.S
 
-local HV = "hub25"          -- hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub26"          -- hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -320,7 +320,9 @@ local SW_ROW = "uisw"
 --   SW.WM_OFF / SW.WM_ON              hub18: the world markers (Trail.lua's compass: WC.npWant.wm; the user: "off by default")
 local SW = { PLAYER_SHOW = 0, PLAYER_HIDE = 1, TARGET_SHOW = 2, TARGET_HIDE = 3, NP_OFF = 4, NP_ON = 5, PRD_OFF = 6, PRD_ON = 7, WM_OFF = 8, WM_ON = 9,
              PARTY_SHOW = 10, PARTY_HIDE = 11, ATK_OFF = 12, ATK_ON = 13, SHOT_OFF = 14, SHOT_ON = 15,
-             PMODE_OFF = 16, PMODE_ON = 17 }
+             PMODE_OFF = 16, PMODE_ON = 17,
+             -- hub26: DS Forever's own party frames / target bar (WC.uf below)
+             UFP_OFF = 18, UFP_ON = 19, UFT_OFF = 20, UFT_ON = 21 }
 -- hub22 (the user, 2026-11-07: "a QOL setting for Start attack on Hostile targeting, so that when I press RB to target a hostile target it
 -- starts the attack, and then under that ... for hunters ... the 'Combat Auto Shot'"):
 --   ATK: a NEW hostile target starts the auto attack. The game lets no add-on start it on an event (StartAttack is protected), so the
@@ -364,6 +366,12 @@ local GROUP = { PlayerFrame = "player", PetFrame = "player", TargetFrame = "targ
 hm.g = { player = nil, target = nil, party = nil }  -- per group: true hidden / false shown / nil as the bundle says (party: shown)
 hub.SW = SW
 local function groupHidden(name)
+    -- hub26: our own party frames / target bar replace the game's while on (the party only out of a raid: the raid frames stay the game's)
+    local uf = WC.uf
+    if type(uf) == "table" then
+        if GROUP[name] == "party" and uf.party and not (type(IsInRaid) == "function" and IsInRaid() == true) then return true end
+        if GROUP[name] == "target" and uf.target then return true end
+    end
     local g = hm.g[GROUP[name]]
     if g == nil then return GROUP[name] ~= "party" and hm.hidden end      -- the old HUD bundle never covered the party frames
     return g
@@ -410,6 +418,14 @@ function hub.swTap(col)
     elseif col == SW.WM_OFF or col == SW.WM_ON then WC.npWant.wm = (col == SW.WM_ON)
     elseif col == SW.ATK_OFF or col == SW.ATK_ON then hubAtk.on = (col == SW.ATK_ON)
     elseif col == SW.SHOT_OFF or col == SW.SHOT_ON then shotSet(col == SW.SHOT_ON)
+    elseif col == SW.UFP_OFF or col == SW.UFP_ON or col == SW.UFT_OFF or col == SW.UFT_ON then
+        -- hub26: our own frames on / off; the game's of that group follow (hidden while ours show)
+        if type(WC.uf) == "table" and type(WC.uf.set) == "function" then
+            if col == SW.UFP_OFF or col == SW.UFP_ON then WC.uf.set("party", col == SW.UFP_ON) else WC.uf.set("target", col == SW.UFT_ON) end
+            WC.uf.chosen = WC.uf.chosen or {}
+            WC.uf.chosen[(col == SW.UFP_OFF or col == SW.UFP_ON) and "party" or "target"] = true
+        end
+        hub.hmApply()
     elseif col == SW.PMODE_OFF or col == SW.PMODE_ON then
         -- hub25: Party mode allowed (PadMap's PM.allowed); turned off, PadMap ends a Party mode that is on (out of combat)
         WC.partyOk = (col == SW.PMODE_ON)
@@ -452,6 +468,11 @@ local function hmDoc()
     for _, name in ipairs(HUD_FRAMES) do if riderFrame(name) then have[#have + 1] = name end end
     return { hidden = hm.hidden, have = #have > 0 and have or nil, fix = hm.fix > 0 and hm.fix or nil }
 end
+-- hub26: our own frames' switch as it stands: true / false (never nil while the module is loaded: nil reads as "no switch", hub24's lesson)
+function hub.ufFlag(part)
+    if type(WC.uf) ~= "table" then return nil end
+    return WC.uf[part] == true
+end
 -- hub17: the switches as they stand (each: what it does NOW, the bundle's answer where the switch was never set), the row's name
 local function swDoc()
     local np = type(WC.npWant) == "table" and WC.npWant or {}
@@ -465,8 +486,12 @@ local function swDoc()
              party = hm.g.party == true and "hidden" or "shown",
              np = either(np.np, np.hud), prd = either(np.prd, np.hud), wm = np.wm == true,
              atk = atkv, shot = shotNow(), pmode = WC.partyOk == true,
+             -- hub26: our own party frames / target bar on
+             ufp = hub.ufFlag("party"), uft = hub.ufFlag("target"),
              set = { player = hm.g.player ~= nil or nil, target = hm.g.target ~= nil or nil, party = hm.g.party ~= nil or nil, np = np.np ~= nil or nil, prd = np.prd ~= nil or nil, wm = np.wm ~= nil or nil,
-                     atk = hubAtk.on ~= nil or nil, shot = hubAtk.shotSet or nil, pmode = WC.partyOk ~= nil or nil } }
+                     atk = hubAtk.on ~= nil or nil, shot = hubAtk.shotSet or nil, pmode = WC.partyOk ~= nil or nil,
+                     ufp = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.party) or nil,
+                     uft = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.target) or nil } }
 end
 
 local function cbDoc()
@@ -732,4 +757,431 @@ do
             end)
         end)
     end)
+end
+
+-- ==================================================================== hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (top screen)
+-- The user, 2026-11-09: "we need our own Party UI that ties a little closer to the party mode features that shows on the top screen
+-- since we cant seem to sync up the hp right on the bottom screen. Along with that a under the compass centered target bar ... (Including
+-- all normal target ui and combo points for rogues)". Picks: the party frames a LEFT COLUMN that REPLACES the game's (Party mode adds
+-- the picked member's highlight and each member's LB glyph); the target bar with the power bar, the cast bar, buffs and debuffs and the
+-- target of target; the game's target frame hidden while ours is on.
+-- THE HEALTH IS REAL: the game hides health NUMBERS from add-ons (secret values), but its widgets take them - every value here goes
+-- straight from the game's call into OUR StatusBar / FontString / Cooldown (the HUD mode bar's way, Trail.lua's WC.prd): no arithmetic,
+-- no comparison, nothing read back. Our own frames only: nothing of the game's is written, called or moved (the game's own frames
+-- are hidden by the switches above, alpha only). No mouse (EnableMouse false): touch goes through to the world as before.
+-- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar); the app keeps each per character.
+do
+    local UF = { party = true, target = true, V = "uf1" }
+    WC.uf = UF
+    local PRD = type(WC.prd) == "table" and WC.prd or {}
+    local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
+    local function call(f, ...) local ok, a, b, c, d, e, g, h, i = pcall(f, ...); if ok then return a, b, c, d, e, g, h, i end end
+    local function bool(f, ...) local v = call(f, ...); if plainV(v) then return v == true end return nil end
+    local function scaleK()
+        local okH, uh = pcall(function() return UIParent:GetHeight() end)
+        return (okH and type(uh) == "number" and uh > 0) and (uh / 1080) or (768 / 1080)
+    end
+    local K = scaleK()
+    local function u(px) return px * K end
+    local FONT = "Fonts\\FRIZQT__.TTF"
+
+    -- ---------------------------------------------------------------- pieces
+    local function text(parent, size, layer)
+        local fs = parent:CreateFontString(nil, layer or "OVERLAY")
+        fs:SetFont(FONT, u(size), "OUTLINE")
+        fs:SetShadowOffset(1, -1)
+        return fs
+    end
+    local function bar(parent, w, h)
+        local b = CreateFrame("StatusBar", nil, parent)
+        b:SetSize(u(w), u(h))
+        local edge = b:CreateTexture(nil, "BACKGROUND", nil, -2)
+        edge:SetPoint("TOPLEFT", b, "TOPLEFT", -1, 1); edge:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 1, -1)
+        edge:SetColorTexture(0, 0, 0, 0.85)
+        local bg = b:CreateTexture(nil, "BACKGROUND", nil, -1)
+        bg:SetAllPoints(b); bg:SetColorTexture(0.06, 0.06, 0.06, 0.75)
+        local fill = b:CreateTexture(nil, "ARTWORK")
+        b.fill = fill
+        if type(PRD.setFill) == "function" then pcall(PRD.setFill, b) else fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar") end
+        b:SetStatusBarTexture(fill)
+        local okT, real = pcall(function() return b:GetStatusBarTexture() end)
+        if okT and type(real) == "table" then b.fill = real end
+        b:SetMinMaxValues(0, 1); b:SetValue(1)
+        return b
+    end
+    local function paint(b, r, g, bl)
+        if b.rgb and b.rgb[1] == r and b.rgb[2] == g and b.rgb[3] == bl then return end
+        b.rgb = { r, g, bl }
+        pcall(function() b:SetStatusBarColor(r, g, bl) end)
+        pcall(function() b.fill:SetVertexColor(r, g, bl) end)
+    end
+    -- a unit's health / power straight into its bars (secret values pass through the widget setters)
+    local function feed(hp, pw, unit)
+        pcall(function() hp:SetMinMaxValues(0, UnitHealthMax(unit)) end)
+        pcall(function() hp:SetValue(UnitHealth(unit)) end)
+        if pw then
+            local pt, tok = call(UnitPowerType, unit)
+            if not plainV(pt) then pt, tok = 0, "MANA" end
+            local c = (type(PRD.POWER) == "table" and PRD.POWER[tok]) or (type(PowerBarColor) == "table" and PowerBarColor[tok]) or nil
+            if type(c) == "table" then
+                local r, g, bl = c[1] or c.r, c[2] or c.g, c[3] or c.b
+                if type(r) == "number" then paint(pw, r, g, bl) end
+            end
+            pcall(function() pw:SetMinMaxValues(0, UnitPowerMax(unit, pt)) end)
+            pcall(function() pw:SetValue(UnitPower(unit, pt)) end)
+        end
+    end
+    local function classRGB(unit)
+        local _, cls = call(UnitClass, unit)
+        if not plainV(cls) or type(cls) ~= "string" then return nil end
+        local c = (C_ClassColor and call(C_ClassColor.GetClassColor, cls)) or (type(RAID_CLASS_COLORS) == "table" and RAID_CLASS_COLORS[cls])
+        if type(c) == "table" and type(c.r) == "number" then return c.r, c.g, c.b end
+    end
+    local function setText(fs, v) if not pcall(fs.SetText, fs, v) then fs:SetText("") end end
+
+    -- the game's controller glyph for a button (the layout the Y glyph uses: PadMap's padLayout), else its word
+    local GLYPH_WORD = { PAD1 = "A", PAD2 = "B", PAD3 = "X", PAD4 = "Y", PADDUP = "Up", PADDDOWN = "Down", PADDLEFT = "Left", PADDRIGHT = "Right" }
+    local function glyphAtlas(key)
+        local db = _G.WowCompanionSpellsDB
+        local plain = type(db) == "table" and db.padLayout == "plain"
+        local face = plain and { PAD1 = "Ltr_A", PAD2 = "Ltr_B", PAD3 = "Ltr_X", PAD4 = "Ltr_Y" }
+                           or { PAD1 = "Rev_B", PAD2 = "Rev_A", PAD3 = "Rev_Y", PAD4 = "Rev_X" }
+        if face[key] then return { "Gamepad_" .. face[key] .. "_64" } end
+        local d = ({ PADDUP = "Up", PADDDOWN = "Down", PADDLEFT = "Left", PADDRIGHT = "Right" })[key]
+        if d then return { "Gamepad_Gen_" .. d .. "_64", "Gamepad_Gen_DPad" .. d .. "_64", "Gamepad_Ltr_" .. d .. "_64" } end
+        return {}
+    end
+    local function setGlyph(tex, fs, key)
+        if tex.key == key then return end
+        tex.key = key
+        if not key then tex:Hide(); fs:SetText(""); return end
+        for _, a in ipairs(glyphAtlas(key)) do
+            if type(PRD.atlasOn) == "function" and PRD.atlasOn(tex, a) then tex:Show(); fs:SetText("LB"); return end
+        end
+        tex:Hide()
+        fs:SetText("LB " .. (GLYPH_WORD[key] or key))
+    end
+
+    -- ---------------------------------------------------------------- THE PARTY FRAMES (a left column, party1..4)
+    local PF = { W = 250, NAME = 20, HP = 20, MP = 9, GAP = 14, X = 24, Y = 250, frames = {} }
+    UF.pf = PF
+    local function partyFrame(i)
+        if PF.frames[i] then return PF.frames[i] end
+        local unit = "party" .. i
+        local f = CreateFrame("Frame", "WowCompanionUFParty" .. i, UIParent)
+        local h = PF.NAME + PF.HP + PF.MP + 6
+        f:SetSize(u(PF.W), u(h))
+        f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", u(PF.X), -u(PF.Y + (i - 1) * (h + PF.GAP)))
+        f:SetFrameStrata("LOW"); f:EnableMouse(false); f:Hide()
+        f.unit = unit
+        f.glyph = f:CreateTexture(nil, "OVERLAY"); f.glyph:SetSize(u(18), u(18)); f.glyph:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0); f.glyph:Hide()
+        f.lb = text(f, 11); f.lb:SetPoint("LEFT", f.glyph, "RIGHT", u(2), 0)
+        f.name = text(f, 15); f.name:SetPoint("TOPLEFT", f, "TOPLEFT", u(2), -u(1)); f.name:SetJustifyH("LEFT")
+        f.lvl = text(f, 13); f.lvl:SetPoint("TOPRIGHT", f, "TOPRIGHT", -u(2), -u(2)); f.lvl:SetJustifyH("RIGHT")
+        f.hp = bar(f, PF.W, PF.HP); f.hp:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -u(PF.NAME + 2))
+        paint(f.hp, 0.1, 0.8, 0.1)
+        f.mp = bar(f, PF.W, PF.MP); f.mp:SetPoint("TOPLEFT", f.hp, "BOTTOMLEFT", 0, -u(3))
+        f.state = text(f.hp, 13); f.state:SetPoint("CENTER", f.hp, "CENTER", 0, 0)
+        -- the picked member (Party mode) in gold, your target in white: a ring round the bars
+        f.ring = f:CreateTexture(nil, "BACKGROUND", nil, -3)
+        f.ring:SetPoint("TOPLEFT", f.hp, "TOPLEFT", -u(3), u(3)); f.ring:SetPoint("BOTTOMRIGHT", f.mp, "BOTTOMRIGHT", u(3), -u(3))
+        f.ring:SetColorTexture(1, 0.82, 0, 0.9); f.ring:Hide()
+        PF.frames[i] = f
+        return f
+    end
+    -- Party mode's word (PadMap's exports): on, the picked unit, the LB button of each unit
+    local function partyMode()
+        local p = type(WC.padMap) == "table" and WC.padMap.party
+        if type(p) ~= "table" then return false, nil, {} end
+        local on = type(p.on) == "function" and bool(p.on) or false
+        local box = type(p.box) == "function" and call(p.box) or nil
+        local lb = type(p.lb) == "function" and call(p.lb) or nil
+        return on == true, type(box) == "table" and box.u or nil, type(lb) == "table" and lb or {}
+    end
+    function UF.partyCount()
+        if bool(IsInRaid) then return 0 end
+        local n = call(GetNumSubgroupMembers)
+        return plainV(n) and type(n) == "number" and math.min(4, n) or 0
+    end
+    function UF.partyStep()
+        local n = UF.party and UF.partyCount() or 0
+        local pmOn, pick, lb = partyMode()
+        for i = 1, 4 do
+            local f = (i <= n) and partyFrame(i) or PF.frames[i]
+            if f then
+                if i > n then f:Hide()
+                else
+                    local unit = f.unit
+                    setText(f.name, call(UnitName, unit) or "")
+                    local r, g, b = classRGB(unit)
+                    if r then f.name:SetTextColor(r, g, b) else f.name:SetTextColor(1, 0.82, 0) end
+                    local lv = call(UnitLevel, unit)
+                    if plainV(lv) and type(lv) == "number" and lv < 0 then f.lvl:SetText("??") else setText(f.lvl, lv) end
+                    feed(f.hp, f.mp, unit)
+                    local online = bool(UnitIsConnected, unit)
+                    local dead = bool(UnitIsDeadOrGhost, unit)
+                    local ghost = bool(UnitIsGhost, unit)
+                    f.state:SetText(online == false and "Offline" or (ghost and "Ghost") or (dead and "Dead") or "")
+                    local near = bool(UnitInRange, unit)
+                    f:SetAlpha((online == false or near == false) and 0.45 or 1)
+                    -- Party mode: the LB glyph of this member, the picked member's ring; else your target's ring (white)
+                    local key = pmOn and (lb["p" .. i]) or nil
+                    setGlyph(f.glyph, f.lb, key)
+                    if key then f.name:SetPoint("TOPLEFT", f, "TOPLEFT", u(48), -u(1)) else f.name:SetPoint("TOPLEFT", f, "TOPLEFT", u(2), -u(1)) end
+                    local isTarget = bool(UnitIsUnit, unit, "target")
+                    if pmOn and pick == unit then f.ring:SetColorTexture(1, 0.82, 0, 0.9); f.ring:Show()
+                    elseif isTarget then f.ring:SetColorTexture(1, 1, 1, 0.75); f.ring:Show()
+                    else f.ring:Hide() end
+                    f:Show()
+                end
+            end
+        end
+    end
+
+    -- ---------------------------------------------------------------- THE TARGET BAR (centred under the compass)
+    local TB = { W = 440, NAME = 22, HP = 24, PW = 11, CP = 8, CAST = 16, ICON = 26, IGAP = 3, DEBUFF_MAX = 8, BUFF_MAX = 8,
+                 TOT_W = 150, TOT_HP = 12, AURA_S = 0.25 }
+    UF.tb = TB
+    local function auraIcon(parent)
+        local o = { f = CreateFrame("Frame", nil, parent) }
+        o.f:SetSize(u(TB.ICON), u(TB.ICON))
+        o.tx = o.f:CreateTexture(nil, "ARTWORK"); o.tx:SetAllPoints(o.f); o.tx:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        o.bd = o.f:CreateTexture(nil, "OVERLAY"); o.bd:SetPoint("TOPLEFT", o.f, "TOPLEFT", -u(1), u(1)); o.bd:SetPoint("BOTTOMRIGHT", o.f, "BOTTOMRIGHT", u(1), -u(1))
+        o.bd:Hide()
+        o.cd = CreateFrame("Cooldown", nil, o.f, "CooldownFrameTemplate")
+        o.cd:SetAllPoints(o.f); o.cd:SetReverse(true)
+        pcall(function() o.cd:SetHideCountdownNumbers(false) end)       -- the game draws the seconds itself (secret-safe)
+        o.n = text(o.f, 11); o.n:SetPoint("BOTTOMRIGHT", o.f, "BOTTOMRIGHT", u(2), -u(1))
+        o.f:Hide()
+        return o
+    end
+    local function buildTarget()
+        if TB.f then return TB.f end
+        local f = CreateFrame("Frame", "WowCompanionUFTarget", UIParent)
+        f:SetSize(u(TB.W), u(TB.NAME + TB.HP + TB.PW + TB.CP + 12))
+        f:SetFrameStrata("LOW"); f:EnableMouse(false); f:Hide()
+        TB.f = f
+        f.mark = f:CreateTexture(nil, "OVERLAY"); f.mark:SetSize(u(20), u(20)); f.mark:SetPoint("RIGHT", f, "TOPLEFT", -u(4), -u(TB.NAME / 2))
+        f.mark:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons"); f.mark:Hide()
+        f.name = text(f, 17); f.name:SetPoint("TOPLEFT", f, "TOPLEFT", u(2), 0); f.name:SetJustifyH("LEFT")
+        f.lvl = text(f, 14); f.lvl:SetPoint("TOPRIGHT", f, "TOPRIGHT", -u(2), -u(2)); f.lvl:SetJustifyH("RIGHT")
+        f.hp = bar(f, TB.W, TB.HP); f.hp:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -u(TB.NAME + 2))
+        f.pct = text(f.hp, 14); f.pct:SetPoint("CENTER", f.hp, "CENTER", 0, 0)
+        f.pw = bar(f, TB.W, TB.PW); f.pw:SetPoint("TOPLEFT", f.hp, "BOTTOMLEFT", 0, -u(3))
+        -- combo points: a bar of 0..max with the gaps drawn over it (a secret count fills it as well as a plain one)
+        f.cp = bar(f, TB.W * 0.5, TB.CP); f.cp:SetPoint("TOP", f.pw, "BOTTOM", 0, -u(4)); paint(f.cp, 1, 0.82, 0.1); f.cp:Hide()
+        f.cpGaps = {}
+        -- the cast bar under it
+        f.cast = bar(f, TB.W - TB.CAST - 4, TB.CAST); f.cast:SetPoint("TOPRIGHT", f.pw, "BOTTOMRIGHT", 0, -u(TB.CP + 10)); f.cast:Hide()
+        f.castIcon = f.cast:CreateTexture(nil, "OVERLAY"); f.castIcon:SetSize(u(TB.CAST), u(TB.CAST))
+        f.castIcon:SetPoint("RIGHT", f.cast, "LEFT", -u(4), 0); f.castIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        f.castName = text(f.cast, 12); f.castName:SetPoint("CENTER", f.cast, "CENTER", 0, 0)
+        -- the auras: debuffs (yours first) on the left of a row under it all, buffs on the right
+        f.deb, f.buf = {}, {}
+        for i = 1, TB.DEBUFF_MAX do f.deb[i] = auraIcon(f) end
+        for i = 1, TB.BUFF_MAX do f.buf[i] = auraIcon(f) end
+        -- the target of target, to the right
+        f.tot = CreateFrame("Frame", nil, f)
+        f.tot:SetSize(u(TB.TOT_W), u(16 + TB.TOT_HP)); f.tot:SetPoint("TOPLEFT", f, "TOPRIGHT", u(14), -u(TB.NAME - 4))
+        f.totName = text(f.tot, 12); f.totName:SetPoint("TOPLEFT", f.tot, "TOPLEFT", 0, 0); f.totName:SetJustifyH("LEFT")
+        f.totHp = bar(f.tot, TB.TOT_W, TB.TOT_HP); f.totHp:SetPoint("TOPLEFT", f.tot, "TOPLEFT", 0, -u(15)); paint(f.totHp, 0.1, 0.8, 0.1)
+        f.tot:Hide()
+        UF.placeTarget()
+        return f
+    end
+    -- centred under the compass bar (Trail.lua's WC.compass.frame), else where it would be
+    function UF.placeTarget()
+        local f = TB.f
+        if not f then return end
+        f:ClearAllPoints()
+        local c = type(WC.compass) == "table" and WC.compass.frame or nil
+        if c then f:SetPoint("TOP", c, "BOTTOM", 0, -u(6)) else f:SetPoint("TOP", UIParent, "TOP", 0, -u(90)) end
+    end
+    local RAID_ICON = { [1] = { 0, 0.25, 0, 0.25 }, [2] = { 0.25, 0.5, 0, 0.25 }, [3] = { 0.5, 0.75, 0, 0.25 }, [4] = { 0.75, 1, 0, 0.25 },
+                        [5] = { 0, 0.25, 0.25, 0.5 }, [6] = { 0.25, 0.5, 0.25, 0.5 }, [7] = { 0.5, 0.75, 0.25, 0.5 }, [8] = { 0.75, 1, 0.25, 0.5 } }
+    local CLASSIFY = { elite = "Elite", rare = "Rare", rareelite = "Rare Elite", worldboss = "Boss" }
+    -- the target's colour: tapped grey, a player of your side its class, else the game's reaction (hostile red, neutral yellow, friendly green)
+    local function targetRGB()
+        if bool(UnitIsTapDenied, "target") then return 0.5, 0.5, 0.5 end
+        if bool(UnitIsPlayer, "target") and bool(UnitIsFriend, "player", "target") then
+            local r, g, b = classRGB("target"); if r then return r, g, b end
+        end
+        local re = call(UnitReaction, "target", "player")
+        if plainV(re) and type(re) == "number" then
+            if re <= 2 then return 0.9, 0.12, 0.1 elseif re <= 4 then return 0.95, 0.8, 0.1 end
+            return 0.1, 0.8, 0.1
+        end
+        return 0.1, 0.8, 0.1
+    end
+    -- the combo points' gaps for [max] points (the bar is cut into that many pips)
+    local function cpGaps(f, max)
+        if f.cpMax == max then return end
+        f.cpMax = max
+        for _, g in ipairs(f.cpGaps) do g:Hide() end
+        for k = 1, max - 1 do
+            local g = f.cpGaps[k] or f.cp:CreateTexture(nil, "OVERLAY")
+            f.cpGaps[k] = g
+            g:SetColorTexture(0, 0, 0, 1); g:SetSize(u(3), u(TB.CP))
+            g:ClearAllPoints(); g:SetPoint("LEFT", f.cp, "LEFT", u(TB.W * 0.5) * k / max - u(1.5), 0); g:Show()
+        end
+    end
+    local function comboStep(f)
+        local _, cls = call(UnitClass, "player")
+        local pt = call(UnitPowerType, "player")
+        local energy = Enum and Enum.PowerType and Enum.PowerType.Energy or 3
+        local want = cls == "ROGUE" or (cls == "DRUID" and plainV(pt) and pt == energy)
+        if not want then f.cp:Hide(); return end
+        local CP = Enum and Enum.PowerType and Enum.PowerType.ComboPoints or 4
+        local max = call(UnitPowerMax, "player", CP)
+        max = (plainV(max) and type(max) == "number" and max > 0) and max or 5
+        cpGaps(f, max)
+        pcall(function() f.cp:SetMinMaxValues(0, max) end)
+        local v = nil
+        if type(GetComboPoints) == "function" then v = call(GetComboPoints, "player", "target") end
+        if v == nil then v = call(UnitPower, "player", CP) end
+        if not pcall(function() f.cp:SetValue(v or 0) end) then f.cp:SetValue(0) end
+        f.cp:Show()
+    end
+    -- the cast: the game's own times straight to the bar (min = start, max = end, value = now), the bar moved every frame while it casts
+    local function castStep(f)
+        local name, txt, tex, st, en = call(UnitCastingInfo, "target")
+        local chan = false
+        if name == nil then name, txt, tex, st, en = call(UnitChannelInfo, "target"); chan = name ~= nil end
+        if name == nil then f.cast:Hide(); f.casting = nil; return end
+        pcall(function() f.cast:SetMinMaxValues(st, en) end)
+        if chan then paint(f.cast, 0.3, 0.85, 0.3) else paint(f.cast, 1, 0.7, 0) end
+        pcall(function() f.castIcon:SetTexture(tex) end)
+        setText(f.castName, txt or name)
+        -- a channel drains: only when its times are plain (no arithmetic on a secret); else it fills like a cast
+        f.chan = (chan and plainV(st) and plainV(en) and type(st) == "number" and type(en) == "number") and { st, en } or nil
+        f.casting = true
+        f.cast:Show()
+    end
+    local function auraList(filter, max, skip)
+        local out = {}
+        for i = 1, 40 do
+            if #out >= max then break end
+            local a = C_UnitAuras and call(C_UnitAuras.GetAuraDataByIndex, "target", i, filter)
+            if type(a) ~= "table" then break end
+            local id = a.auraInstanceID
+            if not (skip and plainV(id) and skip[id]) then out[#out + 1] = a end
+        end
+        return out
+    end
+    local function putAuras(objs, list, fromRight, y)
+        local step = u(TB.ICON + TB.IGAP)
+        for i, o in ipairs(objs) do
+            local a = list[i]
+            if not a then o.f:Hide()
+            else
+                o.f:ClearAllPoints()
+                if fromRight then o.f:SetPoint("TOPRIGHT", TB.f, "BOTTOMRIGHT", -(i - 1) * step, y)
+                else o.f:SetPoint("TOPLEFT", TB.f, "BOTTOMLEFT", (i - 1) * step, y) end
+                pcall(function() o.tx:SetTexture(a.icon) end)
+                if not pcall(function() o.cd:SetCooldownFromExpirationTime(a.expirationTime, a.duration) end) then
+                    if not pcall(function() o.cd:SetCooldown(a.expirationTime - a.duration, a.duration) end) then o.cd:Clear() end
+                end
+                local n = a.applications
+                if plainV(n) and type(n) == "number" and n > 1 then o.n:SetText(n) else o.n:SetText("") end
+                if objs == TB.f.deb then
+                    local kind = (plainV(a.dispelName) and type(a.dispelName) == "string" and a.dispelName ~= "") and a.dispelName or "none"
+                    local atl = "UI-Debuff-Border-" .. ((type(PRD.DEBUFF_ATLAS) == "table" and PRD.DEBUFF_ATLAS[kind]) or "default") .. "-NoIcon"
+                    if o.bdAtlas ~= atl then
+                        o.bdAtlas = atl
+                        if not pcall(function() o.bd:SetAtlas(atl) end) then
+                            local c = (type(PRD.DEBUFF) == "table" and PRD.DEBUFF[kind]) or { 0.8, 0, 0 }
+                            o.bd:SetColorTexture(c[1], c[2], c[3], 0.9)
+                        end
+                    end
+                    o.bd:Show()
+                else o.bd:Hide() end
+                o.f:Show()
+            end
+        end
+    end
+    local function aurasStep(f)
+        if TB.auraAt and GetTime() - TB.auraAt < TB.AURA_S and not TB.auraDirty then return end
+        TB.auraAt, TB.auraDirty = GetTime(), false
+        -- debuffs: yours first (the "PLAYER" filter), then the others (not repeated, by the game's own aura id where it is plain)
+        local mine = auraList("HARMFUL|PLAYER", TB.DEBUFF_MAX)
+        local seen = {}
+        for _, a in ipairs(mine) do if plainV(a.auraInstanceID) then seen[a.auraInstanceID] = true end end
+        local others = auraList("HARMFUL", TB.DEBUFF_MAX, seen)
+        local deb = {}
+        for _, a in ipairs(mine) do deb[#deb + 1] = a end
+        for _, a in ipairs(others) do if #deb < TB.DEBUFF_MAX then deb[#deb + 1] = a end end
+        local buf = auraList("HELPFUL", TB.BUFF_MAX)
+        local y = -u(f.casting and (TB.CAST + 8) or 4)
+        putAuras(f.deb, deb, false, y)
+        putAuras(f.buf, buf, true, y)
+    end
+    function UF.targetStep()
+        local has = UF.target and bool(UnitExists, "target")
+        if has == nil and UF.target then has = call(UnitName, "target") ~= nil end
+        if not has then if TB.f then TB.f:Hide() end; return end
+        local f = buildTarget()
+        setText(f.name, call(UnitName, "target") or "")
+        local r, g, b = targetRGB()
+        paint(f.hp, r, g, b)
+        f.name:SetTextColor(r, g, b)
+        local lv = call(UnitLevel, "target")
+        local cl = call(UnitClassification, "target")
+        local tag = (plainV(cl) and CLASSIFY[cl]) or nil
+        if plainV(lv) and type(lv) == "number" then
+            f.lvl:SetText((lv < 0 and "??" or tostring(lv)) .. (tag and (" " .. tag) or ""))
+        else setText(f.lvl, lv) end
+        feed(f.hp, f.pw, "target")
+        if not pcall(function()
+            f.pct:SetFormattedText("%d%%", UnitHealthPercent("target", true, CurveConstants and CurveConstants.ScaleTo100))
+        end) then f.pct:SetText("") end
+        local mark = call(GetRaidTargetIndex, "target")
+        local tc = plainV(mark) and RAID_ICON[mark] or nil
+        if tc then f.mark:SetTexCoord(tc[1], tc[2], tc[3], tc[4]); f.mark:Show() else f.mark:Hide() end
+        comboStep(f)
+        castStep(f)
+        aurasStep(f)
+        -- the target of target
+        local tt = bool(UnitExists, "targettarget")
+        if tt == nil then tt = call(UnitName, "targettarget") ~= nil end
+        if tt then
+            setText(f.totName, call(UnitName, "targettarget") or "")
+            feed(f.totHp, nil, "targettarget")
+            f.tot:Show()
+        else f.tot:Hide() end
+        f:Show()
+    end
+
+    -- ---------------------------------------------------------------- the driver: events mark dirty, a 0.1 s step draws
+    local drv = CreateFrame("Frame")
+    local acc = 0
+    local function stepAll()
+        pcall(UF.partyStep)
+        pcall(UF.targetStep)
+    end
+    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "GROUP_ROSTER_UPDATE", "PLAYER_TARGET_CHANGED", "UNIT_AURA", "UNIT_SPELLCAST_START",
+                         "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_CHANNEL_START",
+                         "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_DELAYED", "UNIT_SPELLCAST_CHANNEL_UPDATE", "RAID_TARGET_UPDATE" }) do
+        pcall(drv.RegisterEvent, drv, e)
+    end
+    drv:SetScript("OnEvent", function(_, e, unit)
+        if e == "UNIT_AURA" then if unit == "target" then TB.auraDirty = true end return end
+        if e == "PLAYER_ENTERING_WORLD" then K = scaleK() end
+        if e == "PLAYER_TARGET_CHANGED" then TB.auraDirty = true end
+        stepAll()
+    end)
+    drv:SetScript("OnUpdate", function(_, el)
+        -- the cast moves every frame; the rest every 0.1 s
+        if TB.f and TB.f.casting then
+            local now, c = GetTime() * 1000, TB.f.chan
+            pcall(function() TB.f.cast:SetValue(c and (c[1] + c[2] - now) or now) end)
+        end
+        acc = acc + (el or 0)
+        if acc < 0.1 then return end
+        acc = 0
+        stepAll()
+    end)
+    function UF.set(part, on)
+        UF[part] = on
+        stepAll()
+    end
 end

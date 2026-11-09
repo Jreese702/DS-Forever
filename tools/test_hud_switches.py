@@ -99,6 +99,12 @@ def main():
     sw(None, SW.PLAYER_SHOW)
     chk("the player frame alone: shown (%s, pet %s), the target still hidden (%s)" % (a("PlayerFrame"), a("PetFrame"), a("TargetFrame")),
         a("PlayerFrame") == 1 and a("PetFrame") == 1 and a("TargetFrame") == 0 and a("TargetFrameToT") == 0)
+    # hub26: while OUR target bar is on (its default) the game's target frame stays hidden, whatever its own switch says
+    sw(None, SW.TARGET_SHOW)
+    chk("hub26: our target bar on: the game's target frame stays hidden (%s, its target %s)" % (a("TargetFrame"), a("TargetFrameToT")),
+        a("TargetFrame") == 0 and a("TargetFrameToT") == 0 and doc().sw.uft is True)
+    sw(None, SW.UFT_OFF)                                   # the player picks the game's frame instead
+    chk("hub26: our target bar off: the switch reads false, not absent (%s)" % doc().sw.uft, doc().sw.uft is False)
     sw(None, SW.TARGET_SHOW); sw(None, SW.PLAYER_HIDE)
     chk("the target frame alone: shown (%s, its target %s), the player hidden again (%s)" % (a("TargetFrame"), a("TargetFrameToT"), a("PlayerFrame")),
         a("TargetFrame") == 1 and a("TargetFrameToT") == 1 and a("PlayerFrame") == 0 and a("PetFrame") == 0)
@@ -131,6 +137,7 @@ def main():
     G3.ROWS.ui(None, 35)
     chk("an older app's HUD mode (column 35): every frame hidden, the nameplates and the bar wanted (as hub16)",
         G3.PlayerFrame.alpha == 0 and G3.TargetFrame.alpha == 0 and G3.WowCompanion.npWant.hud is True)
+    G3.ROWS.uisw(None, G3.WowCompanion.hub.SW.UFT_OFF)        # hub26: the game's target frame chosen (our bar off)
     G3.ROWS.uisw(None, G3.WowCompanion.hub.SW.TARGET_SHOW)
     G3.ROWS.ui(None, 35)
     chk("a switch once set wins over the bundle: the target shown (%s) while HUD mode hides the player (%s)"

@@ -1487,7 +1487,17 @@
 "Opening": "Abriendo",
 "The game's icons are not on the device yet": "Los iconos del juego aún no están en el dispositivo",
 "Forget": "Olvidar",
-"Tap again to forget": "Toca de nuevo para olvidar"
+"Tap again to forget": "Toca de nuevo para olvidar",
+"DS party frames": "Marcos de grupo DS",
+"Target bar": "Barra de objetivo",
+"On: a column on the left": "Activado: una columna a la izquierda",
+"On: under the compass": "Activado: bajo la brújula",
+"Hidden: the target bar replaces it": "Oculto: la barra de objetivo lo reemplaza",
+"Hidden: DS party frames replace them": "Ocultos: los marcos de grupo DS los reemplazan",
+"DS Forever's party frames: real health, Party mode's pick and LB buttons. The game's are hidden. For this character.": "Marcos de grupo de DS Forever: salud real, la selección del modo grupo y los botones LB. Los del juego se ocultan. Para este personaje.",
+"The game's own party frames, by their switch below. For this character.": "Los marcos de grupo del juego, según su interruptor de abajo. Para este personaje.",
+"A target bar under the compass: health, power, cast, auras, combo points, its target. The game's target frame is hidden. For this character.": "Una barra de objetivo bajo la brújula: salud, poder, lanzamiento, auras, puntos de combo y su objetivo. El marco de objetivo del juego se oculta. Para este personaje.",
+"The game's own target frame, by its switch below. For this character.": "El marco de objetivo del juego, según su interruptor de abajo. Para este personaje."
 },
 "templates": {
 "Abandon \"%s\"?": "¿Abandonar \"%s\"?",

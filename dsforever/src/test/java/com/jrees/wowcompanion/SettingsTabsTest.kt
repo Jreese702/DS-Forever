@@ -61,7 +61,7 @@ class SettingsTabsTest {
         assertEquals(listOf(B.SMART_Y), SettingsTabs.viewBlocks(T.QOL))   // Smart Y by SettingsView, the groups by GameUiSection's QOL part
         // Top screen keeps only the game's own windows
         assertEquals(listOf("Minimap", "Controller bars, buffs and XP", "Quest tracker", "Chat window", "NPC windows", "Loot window",
-            "Player frame", "Target frame", "Party frames", "Cast bar", "Enemy nameplates", "Hide game tooltips"), B.GAME_UI.rows)    // + hub17's split
+            "Player frame", "Target bar", "Target frame", "DS party frames", "Party frames", "Cast bar", "Enemy nameplates", "Hide game tooltips"), B.GAME_UI.rows)    // + hub17's split, hub26's own frames
         assertTrue("Avoid dangerous areas" !in B.MAP.rows)
     }
 
