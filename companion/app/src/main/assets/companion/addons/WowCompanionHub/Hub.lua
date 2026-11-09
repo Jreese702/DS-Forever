@@ -774,7 +774,7 @@ end
 -- are hidden by the switches above, alpha only). No mouse (EnableMouse false): touch goes through to the world as before.
 -- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar); the app keeps each per character.
 do
-    local UF = { party = true, target = true, V = "uf3" }
+    local UF = { party = true, target = true, V = "uf4" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
@@ -1123,6 +1123,13 @@ do
         if hbc then plateBarAlpha(hbc, 0) end
     end
     UF.plateHide = plateHide
+    -- uf4 (the user: "only hide the targets name plate if I am attacking it actually"): your auto attack or Auto Shot on, or both of you in a
+    -- fight with a target you can attack (plain readings only)
+    local function attacking()
+        if bool(IsCurrentSpell, 6603) or bool(IsCurrentSpell, 75) then return true end
+        return bool(UnitCanAttack, "player", "target") == true and bool(UnitAffectingCombat, "player") == true
+            and bool(UnitAffectingCombat, "target") == true
+    end
     -- the combo points' gaps for [max] points (the bar is cut into that many pips)
     local function cpGaps(f, max)
         if f.cpMax == max then return end
@@ -1279,7 +1286,7 @@ do
             feed(f.totHp, nil, "targettarget")
             f.tot:Show()
         else f.tot:Hide() end
-        plateHide(true)
+        plateHide(attacking())
         f:Show()
     end
 
