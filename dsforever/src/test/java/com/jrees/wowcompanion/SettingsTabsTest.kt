@@ -39,19 +39,17 @@ class SettingsTabsTest {
     }
 
     /** test40: the Rooms tab is gone (the user: "move those settings to the home tab and put them under home module settings") */
-    @Test fun sixTabsInTheApprovedOrder() =
-        // the housekeeping pass: QOL after Controller; Performance hidden (still a tab of data: its settings keep their values)
-        assertEquals(listOf("Home", "Controller", "QOL", "Top screen", "Add-ons", "System"), SettingsTabs.visible.map { it.label })
+    @Test fun sevenTabsInTheApprovedOrder() =
+        // the housekeeping pass: QOL after Controller; 2026-11-09: Performance back on the row (the user's "Unhide the Performance tab")
+        assertEquals(listOf("Home", "Controller", "QOL", "Top screen", "Add-ons", "Performance", "System"), SettingsTabs.visible.map { it.label })
 
-    /** "Hide it all": Performance is never on the row and never stepped onto, whichever way and from wherever */
-    @Test fun performanceIsNeverReachable() {
-        assertTrue(T.PERFORMANCE.hidden)
-        assertTrue(T.PERFORMANCE !in SettingsTabs.visible)
-        for (start in SettingsTabs.visible) for (dir in listOf(-1, 1)) {
-            var t = start
-            repeat(10) { t = SettingsTabs.step(t, dir); assertTrue("$start $dir reached $t", t != T.PERFORMANCE) }
-        }
-        assertEquals(listOf(B.FRAMES, B.INDOOR), SettingsTabs.blocks(T.PERFORMANCE))     // its rows are kept, as data
+    /** 2026-11-09: Performance is back on the row (Lossless frame generation), between Add-ons and System, with its two blocks */
+    @Test fun performanceIsBackOnTheRow() {
+        assertTrue(!T.PERFORMANCE.hidden)
+        assertTrue(T.PERFORMANCE in SettingsTabs.visible)
+        assertEquals(T.PERFORMANCE, SettingsTabs.step(T.ADDONS, 1))
+        assertEquals(T.SYSTEM, SettingsTabs.step(T.PERFORMANCE, 1))
+        assertEquals(listOf(B.FRAMES, B.INDOOR), SettingsTabs.blocks(T.PERFORMANCE))
     }
 
     /** QOL "Build it": Smart Y, then HUD / Navigation / Combat, each row in the approved order (the D-pad walks them in this order) */
@@ -136,7 +134,7 @@ class SettingsTabsTest {
         assertEquals(T.CONTROLLER, SettingsTabs.step(T.HOME, 1))
         var t = T.HOME
         assertEquals(T.QOL, SettingsTabs.step(T.CONTROLLER, 1))
-        assertEquals(T.SYSTEM, SettingsTabs.step(T.ADDONS, 1))           // over the hidden Performance
+        assertEquals(T.PERFORMANCE, SettingsTabs.step(T.ADDONS, 1))      // Performance is on the row again (2026-11-09)
         repeat(SettingsTabs.visible.size) { t = SettingsTabs.step(t, 1) }
         assertEquals(T.HOME, t)
     }
@@ -176,14 +174,14 @@ class SettingsTabBarLayoutTest {
     private val w: (String) -> Float = { it.length * 15f }          // a stand-in font: 15 px a letter
 
     @Test fun everyLabelFitsItsTab() {
-        val labels = SettingsTabs.visible.map { it.label }             // the tabs the bar draws (Performance hidden)
+        val labels = SettingsTabs.visible.map { it.label }             // the tabs the bar draws
         val lay = SettingsTabBar.layout(labels, 1080f, 0, w)
         for ((i, l) in labels.withIndex()) {
             val (x0, x1) = lay.xs[i]
             assertTrue(l, x1 - x0 >= w(l) + 2f * SettingsTabBar.TAB_PAD)
             if (i > 0) assertEquals(SettingsTabBar.TAB_GAP, x0 - lay.xs[i - 1].second, 1e-3f)
         }
-        assertTrue(lay.total <= 1080f + 1e-3f); assertEquals(0f, lay.offset)
+        assertEquals(0f, lay.offset)                                    // seven tabs may scroll (2026-11-09: Performance back); the first opens unscrolled
     }
 
     @Test fun tooWideScrollsToTheChosenTab() {
