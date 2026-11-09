@@ -774,7 +774,7 @@ end
 -- are hidden by the switches above, alpha only). No mouse (EnableMouse false): touch goes through to the world as before.
 -- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar); the app keeps each per character.
 do
-    local UF = { party = true, target = true, V = "uf4" }
+    local UF = { party = true, target = true, V = "uf6" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
@@ -973,24 +973,69 @@ do
             t:SetWidth(px)
         end
     end
+    -- uf6 (the user: "the healthbar border is inconsistent with the HUD ui as well, I wanted it too match the HUD and name plates with the
+    -- borders"): the HUD bar's own frame (Trail.lua's P.frameFor, the same art and cut, scaled to this bar's height): the BG art's dark
+    -- middle as the track under the bar, its top and bottom rows as the lip (end caps + a mark-free middle), its sides, the inner shade
+    local function hudFrame(b, h)
+        local BG, BW, BH = PRD.BG, tonumber(PRD.BG_W), tonumber(PRD.BG_H)
+        if type(BG) ~= "table" or not BW or not BH or not (C_Texture and C_Texture.GetAtlasInfo) then return false end
+        local info
+        for _, a in ipairs(BG) do
+            local ok, i = pcall(C_Texture.GetAtlasInfo, a)
+            if ok and type(i) == "table" and i.file and type(i.leftTexCoord) == "number" then info = i; break end
+        end
+        if not info then return false end
+        local k = u(h / 8)
+        local L, R, Tt, B = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
+        local host = b:GetParent()
+        local lip = CreateFrame("Frame", nil, host)
+        lip:SetAllPoints(b); lip:SetFrameLevel(b:GetFrameLevel() + 2); lip:EnableMouse(false)
+        local function sub(parent, layer, level, c0, r0, c1, r1)
+            local t = parent:CreateTexture(nil, layer, nil, level)
+            t:SetTexture(info.file)
+            t:SetTexCoord(L + (R - L) * c0 / BW, L + (R - L) * c1 / BW, Tt + (B - Tt) * r0 / BH, Tt + (B - Tt) * r1 / BH)
+            return t
+        end
+        local tr = sub(host, "BACKGROUND", -4, 0, 3, BW, 11)
+        tr:SetPoint("TOPLEFT", b, "TOPLEFT", -3 * k, 0); tr:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 7 * k, 0)
+        local function rim(r0, r1, hh, edge, sideL, sideR)
+            local l = sub(lip, "ARTWORK", 1, 0, r0, 11, r1)
+            l:SetPoint(edge == "top" and "BOTTOMLEFT" or "TOPLEFT", b, sideL, -3 * k, 0); l:SetSize(11 * k, hh)
+            local r = sub(lip, "ARTWORK", 1, 118, r0, BW, r1)
+            r:SetPoint(edge == "top" and "BOTTOMRIGHT" or "TOPRIGHT", b, sideR, 7 * k, 0); r:SetSize(14 * k, hh)
+            local m = sub(lip, "ARTWORK", 1, 31, r0, 50, r1)
+            m:SetPoint(edge == "top" and "BOTTOMLEFT" or "TOPLEFT", l, edge == "top" and "BOTTOMRIGHT" or "TOPRIGHT", 0, 0)
+            m:SetPoint(edge == "top" and "BOTTOMRIGHT" or "TOPRIGHT", r, edge == "top" and "BOTTOMLEFT" or "TOPLEFT", 0, 0)
+            m:SetHeight(hh)
+        end
+        rim(0, 3, 3 * k, "top", "TOPLEFT", "TOPRIGHT")
+        rim(11, BH, 8 * k, "bottom", "BOTTOMLEFT", "BOTTOMRIGHT")
+        local lf = sub(lip, "ARTWORK", 1, 0, 3, 3, 11)
+        lf:SetPoint("TOPRIGHT", b, "TOPLEFT", 0, 0); lf:SetPoint("BOTTOMRIGHT", b, "BOTTOMLEFT", 0, 0); lf:SetWidth(3 * k)
+        local rt = sub(lip, "ARTWORK", 1, 125, 3, BW, 11)
+        rt:SetPoint("TOPLEFT", b, "TOPRIGHT", 0, 0); rt:SetPoint("BOTTOMLEFT", b, "BOTTOMRIGHT", 0, 0); rt:SetWidth(7 * k)
+        local sh = lip:CreateTexture(nil, "ARTWORK", nil, 0)
+        sh:SetColorTexture(0, 0, 0, 1)
+        sh:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0); sh:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0); sh:SetHeight(u(h) * 0.45)
+        if not pcall(function() sh:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.47)) end) then sh:SetAlpha(0.2) end
+        return true
+    end
     local function npBar(parent, w, h, fillAtlas, rim)
         local b = CreateFrame("StatusBar", nil, parent)
         b:SetSize(u(w), u(h))
         local bg = b:CreateTexture(nil, "BACKGROUND", nil, -1)
         bg:SetAllPoints(b); bg:SetColorTexture(0.07, 0.07, 0.07, 0.9)
         local fill = b:CreateTexture(nil, "ARTWORK")
-        b.atlasFill = atlas(fill, fillAtlas)
-        if not b.atlasFill then fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar") end
-        b:SetStatusBarTexture(fill)
+        b.fill = fill
+        if rim and type(PRD.setFill) == "function" then b.atlasFill = PRD.setFill(b)            -- the HUD bar's own fill
+        else b.atlasFill = atlas(fill, fillAtlas) end
+        if not b.atlasFill and not rim then fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar") end
+        b:SetStatusBarTexture(b.fill)
         local okT, real = pcall(function() return b:GetStatusBarTexture() end)
-        b.fill = (okT and type(real) == "table") and real or fill
-        -- the frame OUTSIDE the bar: 2 px black, and (the main bar) a 1 px dark-gold rim beyond it
-        edgeBox(b, b, 2, 0, 0, 0, 1, "BACKGROUND", -8)
-        if rim then
-            local f2 = CreateFrame("Frame", nil, b)
-            f2:SetPoint("TOPLEFT", b, "TOPLEFT", -2, 2); f2:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 2, -2)
-            edgeBox(b, f2, 1, 0.42, 0.39, 0.33, 1, "BACKGROUND", -7)
-        end
+        b.fill = (okT and type(real) == "table") and real or b.fill
+        -- uf6: the main bars wear the HUD bar's frame (its track is their ground); the others a thin black edge
+        if rim and hudFrame(b, h) then bg:SetColorTexture(0, 0, 0, 0)
+        else edgeBox(b, b, rim and 2 or 1, 0, 0, 0, 1, "BACKGROUND", -8) end
         b:SetMinMaxValues(0, 1); b:SetValue(1)
         return b
     end
@@ -1055,7 +1100,7 @@ do
         f.tot = CreateFrame("Frame", nil, f)
         f.tot:SetSize(u(TB.TOT_W), u(14 + TB.TOT_HP)); f.tot:SetPoint("LEFT", f.hp, "RIGHT", u(36), u(4))
         f.totName = text(f.tot, 11); f.totName:SetPoint("TOPLEFT", f.tot, "TOPLEFT", 0, 0); f.totName:SetJustifyH("LEFT")
-        f.totHp = npBar(f.tot, TB.TOT_W, TB.TOT_HP, "UI-HUD-CoolDownManager-Bar", false)
+        f.totHp = npBar(f.tot, TB.TOT_W, TB.TOT_HP, "UI-HUD-CoolDownManager-Bar", true)
         f.totHp:SetPoint("TOPLEFT", f.tot, "TOPLEFT", 0, -u(13)); paint(f.totHp, 0.1, 0.8, 0.1)
         f.tot:Hide()
         UF.placeTarget()
