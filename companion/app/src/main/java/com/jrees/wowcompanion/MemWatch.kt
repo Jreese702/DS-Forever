@@ -14,12 +14,37 @@ import android.util.Log
  */
 object MemWatch {
     private const val TAG = "WCMEM"
-    private const val EVERY_MS = 30_000L
+    // 2026-11-08 (the 8 GB test on test16: +550 MB native in under 30 s, then the kill): every 5 s, so a burst is seen while it happens
+    private const val EVERY_MS = 5_000L
     private val sources = LinkedHashMap<String, () -> Long>()
     @Volatile private var thread: HandlerThread? = null
 
     /** a picture cache (or anything holding memory) reports its bytes under [name]; the last registration of a name wins */
     @Synchronized fun source(name: String, bytes: () -> Long) { sources[name] = bytes }
+
+    /** what DS Forever shows now (the host's room), for the line */
+    @Volatile var room: String = "-"
+
+    /**
+     * ONE HEAP DUMP per app run, test builds only (the user's yes 2026-11-08): the first time the PSS passes [DUMP_AT_MB], DS Forever's
+     * own Java heap (every Bitmap object with its size and who holds it; no game data) goes to /sdcard/WowCompanion/logs/heap-<time>.hprof
+     * for the PC to read. It pauses the app a few seconds once.
+     */
+    private const val DUMP_AT_MB = 900L
+    @Volatile private var dumped = false
+    @Volatile var testBuild = false
+    private fun maybeDump(pssMb: Long) {
+        if (!testBuild || dumped || pssMb < DUMP_AT_MB) return
+        dumped = true
+        val stamp = java.text.SimpleDateFormat("MMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+        val f = java.io.File("/sdcard/WowCompanion/logs/heap-$stamp.hprof")
+        runCatching {
+            f.parentFile?.mkdirs()
+            Log.i(TAG, "heap dump at pss $pssMb MB -> ${f.path}")
+            Debug.dumpHprofData(f.path)
+            Log.i(TAG, "heap dump written (${f.length() / (1024 * 1024)} MB)")
+        }.onFailure { Log.i(TAG, "heap dump failed: ${it.javaClass.simpleName}: ${it.message}") }
+    }
 
     fun start() {
         if (thread != null) return
@@ -29,6 +54,7 @@ object MemWatch {
         val tick = object : Runnable {
             override fun run() {
                 runCatching { val l = line(); Log.i(TAG, l); keep(l) }
+                runCatching { maybeDump(lastPssMb) }
                 h.postDelayed(this, EVERY_MS)
             }
         }
@@ -37,7 +63,7 @@ object MemWatch {
 
     /** the history in its own file (the 8 GB test, 2026-11-08: the low-memory killer's thousands of log lines pushed WCMEM out of the
      *  log), newest last, at most [KEEP] lines; crash reports attach it (ProblemReport's memory.txt) */
-    private const val KEEP = 240
+    private const val KEEP = 720                                    // an hour at 5 s
     val file = java.io.File("/sdcard/WowCompanion/logs/mem.log")
     private fun keep(l: String) = runCatching {
         file.parentFile?.mkdirs()
@@ -47,6 +73,7 @@ object MemWatch {
     }
     fun history(): String = runCatching { if (file.isFile) file.readText() else "" }.getOrDefault("")
 
+    @Volatile private var lastPssMb = 0L
     private fun mb(kb: Long) = (kb + 512) / 1024
     private fun mbB(b: Long) = (b + 512 * 1024) / (1024 * 1024)
 
@@ -56,6 +83,7 @@ object MemWatch {
         Debug.getMemoryInfo(mi)
         fun stat(k: String) = mi.getMemoryStat(k)?.toLongOrNull() ?: 0L
         val pss = mi.totalPss.toLong()
+        lastPssMb = mb(pss)
         val parts = "java ${mb(stat("summary.java-heap"))}, native ${mb(stat("summary.native-heap"))}, gfx ${mb(stat("summary.graphics"))}, " +
             "code ${mb(stat("summary.code"))}"
         val heap = "heap ${mbB(Debug.getNativeHeapAllocatedSize())}/${mbB(Debug.getNativeHeapSize())} MB"
@@ -63,7 +91,9 @@ object MemWatch {
             "$n ${runCatching { mbB(f()) }.getOrDefault(-1)}"
         }
         val doing = buildList {
+            add("room $room")
             ArtHarvest.currentStep?.let { add("art $it") }
+            runCatching { IndoorSchedulerStep.status?.let { s -> add("indoor ${s.phase.name.lowercase()}${if (s.now.isNotEmpty()) " " + s.now.take(24) else ""}") } }
             add(if (LauncherHooks.gameUp()) "game up" else "game down")
         }.joinToString(", ")
         return "pss ${mb(pss)} MB ($parts) $heap | $caches | $doing"

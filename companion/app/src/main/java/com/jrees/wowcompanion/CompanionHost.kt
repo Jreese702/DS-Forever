@@ -590,6 +590,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         homeView.onStateChanged = { discB("Home's state") }
         homeView.onBHome = { strip.homePressed() }
         partyWire()
+        MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
         MemWatch.start()                                                  // WCMEM: where the memory goes (the 1.0.17 low-memory kills)
         // the spell radials' own names / icons (RadialMeta): the bars and the Controller room show a change at once
         RadialMeta.init(this)
@@ -1069,6 +1070,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     private fun show(r: Room, byB: Boolean = false, motion: Boolean = true) {
+        MemWatch.room = r.name.lowercase()                                // WCMEM: what is on show
         flushBLeave()
         // PARTY MODE (1.1, 4.2): Home shown again re-asks the add-on's documents; leaving Home turns Party mode off only by the switch
         if (r == Room.HOME && room != Room.HOME) partyAsk(PartyModel.Ask.HOME_SHOWN)
