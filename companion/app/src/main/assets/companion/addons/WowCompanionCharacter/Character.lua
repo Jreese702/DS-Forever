@@ -51,7 +51,7 @@ local format = string.format
 -- and the core's heartbeat. Set to false when the Character room itself goes to the device.
 local BARS_ONLY = false
 
-local CV = BARS_ONLY and "c12b" or "c12"     -- bump on every change; the app shows it, so a stale build is visible
+local CV = BARS_ONLY and "c13b" or "c13"     -- bump on every change; c13: the stat pane's Blizzard code runs only while the game's stat values are plain (the user on 1.0.18-test11: errors "basically after I loot"; the taint log: PaperDollFrame's updateFuncs hit secret values as ours), else the last stats are sent again; the app shows it, so a stale build is visible
 
 -- ---------------------------------------------------------------- safe reads
 
@@ -233,8 +233,57 @@ local RESIST = {
     { "DAMAGE_SCHOOL6", "Shadow", "shadow" },
 }
 
+-- c13 (the game's taint log on 1.0.18-test11, 2026-11-08; the user: the errors start "basically after I loot"): the stat pane's rows
+-- are Blizzard's own PAPERDOLL_STATINFO updateFuncs, run here as OUR code. Around a fight (and the loot right after it) this client
+-- makes the values they read SECRET, and each of their arithmetic / compares on one is a blocked action blamed on this add-on: an
+-- error pop-up per row. So they run only while the game says the values they read are plain; else the last stats go again, and a
+-- re-check follows a little later (the inventory / stat events also ask again).
+local lastStats = {}
+local function statsHidden(unit)
+    local okc, fight = pcall(InCombatLockdown)
+    if okc and fight == true then return true end
+    if type(issecretvalue) ~= "function" then return false end
+    local probes = {
+        function() return UnitStat(unit, 1) end, function() return UnitStat(unit, 3) end, function() return UnitArmor(unit) end,
+        function() return UnitHealthMax(unit) end, function() return UnitAttackPower(unit) end,
+        function() return UnitLevel(unit) end,
+    }
+    for _, fn in ipairs(probes) do
+        local ok, v = pcall(fn)
+        if ok and v ~= nil then
+            local okq, q = pcall(issecretvalue, v)
+            if not okq or q ~= false then return true end
+        end
+    end
+    return false
+end
+-- the movement speed row reads GetUnitSpeed, which may stay secret (never run its updateFunc then: the row is left out)
+local function speedHidden(unit)
+    if type(issecretvalue) ~= "function" then return false end
+    local ok, v = pcall(GetUnitSpeed, unit)
+    if not ok or v == nil then return false end
+    local okq, q = pcall(issecretvalue, v)
+    return not okq or q ~= false
+end
+local statsRetry = false
+local function statsLater(fn)
+    if statsRetry or type(C_Timer) ~= "table" then return end
+    statsRetry = true
+    C_Timer.After(3, function() statsRetry = false; pcall(fn) end)
+end
+
 -- CharacterStatsPaneScrollBoxMixin:UpdateStats, as data.
+local collectStatsNow
 local function collectStats(unit)
+    if statsHidden(unit) then
+        statsLater(function() if type(WC.characterStatsAgain) == "function" then WC.characterStatsAgain() end end)
+        return lastStats[unit] or false
+    end
+    local r = collectStatsNow(unit)
+    if r then lastStats[unit] = r end
+    return r
+end
+collectStatsNow = function(unit)
     local cats, info = _G.PAPERDOLL_STATCATEGORIES, _G.PAPERDOLL_STATINFO
     if type(cats) ~= "table" or type(info) ~= "table" then return false end
     local out = {}
@@ -251,6 +300,7 @@ local function collectStats(unit)
                     show = ok and isPlain(r) and r and true or false
                 end
                 local entry = info[st.stat]
+                if show and st.stat == "MOVESPEED" and speedHidden(unit) then show = false end      -- c13
                 if show and type(entry) == "table" and type(entry.updateFunc) == "function" then
                     pick[#pick + 1] = st
                 end
@@ -952,6 +1002,9 @@ local UNIT_EVENT = {
     UNIT_DAMAGE = true, UNIT_ATTACK_SPEED = true, UNIT_MAXHEALTH = true, UNIT_AURA = true,
     UNIT_MAXPOWER = true, UNIT_DISPLAYPOWER = true, UNIT_PET = true, PLAYER_XP_UPDATE = true,
 }
+
+-- c13: the stats again once the game's values are plain (collectStats' re-check)
+WC.characterStatsAgain = function() mark({ "st", "pet" }) end
 
 local f = CreateFrame("Frame")
 f:SetScript("OnEvent", function(_, e, unit)
