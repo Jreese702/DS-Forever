@@ -1051,13 +1051,15 @@ OV.tg.make2 = function()
     local t = f:CreateTexture(nil, "OVERLAY")
     t:SetAllPoints(f)
     f.wcTex = t
-    f:SetSize(24, 24); f:SetFrameStrata("HIGH"); f:EnableMouse(false); f:Hide()
+    f:SetSize(22, 22); f:SetFrameStrata("HIGH"); f:EnableMouse(false); f:Hide()
     OV.tg.f2 = f
     return f
 end
 OV.tg.update = function()
     local f = OV.tg.make()
     local where, rel, bar2 = OV.tg.want()
+    -- no nameplate: the bar's small glyph alone (never the big one beside the bar's name)
+    if where == "bar" then bar2 = rel; where = nil end
     local g2 = OV.tg.make2()
     if bar2 then
         OV.tg.look(g2)
