@@ -39,6 +39,10 @@ object MinimapTiles {
     private val small = object : LinkedHashMap<Long, Bitmap>(SMALL_MAX + 4, 0.75f, true) {
         override fun removeEldestEntry(e: MutableMap.MutableEntry<Long, Bitmap>?) = size > SMALL_MAX
     }
+    init {
+        // WCMEM: the tiles held (full and small)
+        MemWatch.source("minimap") { synchronized(this) { cache.values.sumOf { it.byteCount.toLong() } + small.values.sumOf { it.byteCount.toLong() } } }
+    }
     private val pending = HashSet<Long>()
     private val missing = HashSet<Long>()
     private val contOk = HashMap<Int, Boolean>()

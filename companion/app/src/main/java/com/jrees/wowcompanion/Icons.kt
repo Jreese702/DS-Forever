@@ -35,6 +35,7 @@ object Icons {
     private var lastTry = 0L
     // ~16 KB per 64 px ARGB bitmap: 600 icons = ~10 MB, a full bag plus both action bars
     private val cache = LruCache<Int, Bitmap>(600)
+    init { MemWatch.source("icons") { cache.snapshot().values.sumOf { it.byteCount.toLong() } + uiCache.values.sumOf { it.byteCount.toLong() } } }
 
     /** true once a pack is mapped (callers can skip icon layout work until then) */
     fun ready(): Boolean = open() != null

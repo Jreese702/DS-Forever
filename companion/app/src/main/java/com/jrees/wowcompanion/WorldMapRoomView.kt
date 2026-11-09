@@ -61,6 +61,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
     private val inFlight = HashSet<String>()
+    init { MemWatch.source("worldroom") { bmps.size().toLong() } }
     @Volatile private var artReady = false
     private var artNote: String? = null
     private fun artDir() = ArtHarvest.dir("worldmap")

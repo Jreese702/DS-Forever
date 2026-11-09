@@ -26,7 +26,7 @@ object LogSieve {
     }
 
     private val CRASH_TAGS = setOf("AndroidRuntime", "libc", "DEBUG", "crash_dump64", "crash_dump32", "tombstoned")
-    private val SETUP_TAGS = setOf("WCSETUP", "WCLOGIN", "DSFORK", "WCREPORT")
+    private val SETUP_TAGS = setOf("WCSETUP", "WCLOGIN", "DSFORK", "WCREPORT", "WCMEM")      // WCMEM: the memory watch, never trimmed
     private val IMPORTANT_WORDS = Regex("""(?i)terminated|crash|fatal|exception|\banr\b|exit(ed)?\b|killed|died|error status|out of memory|failed to launch""")
 
     /** the launcher's own Timber lines in release: no tag, the message starts with its level ("I: …", ReleaseTree) */

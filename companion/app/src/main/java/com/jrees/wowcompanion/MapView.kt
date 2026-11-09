@@ -766,6 +766,7 @@ class MapView(context: Context) : View(context) {
     // fourteen of them at once. Counting entries says "8" and means 47 MB, and this device's
     // lowmemorykiller has already taken the game once.
     private var planBytes = 0L
+    init { MemWatch.source("plans") { planBytes } }
     private val PLAN_BUDGET = 24L * 1024 * 1024
 
     // DECODED OFF THE UI THREAD (D's full-catalogue report, 2026-10-13): a district's plan is 1400x1047, and decoding it inside

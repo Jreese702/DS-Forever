@@ -590,6 +590,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         homeView.onStateChanged = { discB("Home's state") }
         homeView.onBHome = { strip.homePressed() }
         partyWire()
+        MemWatch.start()                                                  // WCMEM: where the memory goes (the 1.0.17 low-memory kills)
         // the spell radials' own names / icons (RadialMeta): the bars and the Controller room show a change at once
         RadialMeta.init(this)
         RadialMeta.onChange { lastPadMap?.let { m -> homeView.onPadMap(m); controllerView.onPadMap(m); spellbookView.onPadMap(m) } }

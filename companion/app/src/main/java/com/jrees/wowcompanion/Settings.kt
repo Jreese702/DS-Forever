@@ -124,6 +124,15 @@ object Settings {
         get() = prefs?.getBoolean("lighterMode", false) ?: false
         set(v) { if (v != lighterMode) { prefs?.edit()?.putBoolean("lighterMode", v)?.apply(); changed() } }
 
+    /**
+     * LOW-MEMORY GRAPHICS (the user's pick 2026-11-08, "Automatic, with a toggle", after every 1.0.17 crash report was an Android
+     * low-memory kill while the game ran): the game's textures at the older, smaller level (Config.wtf at each start: GameConfigWtf's
+     * LOW_MEMORY_GRAPHICS). Unset = on for the 8 GB and 12 GB Thors and with Lighter mode (DeviceTier.lowMemory), off otherwise.
+     */
+    var lowMemGraphics: Boolean
+        get() = prefs?.takeIf { it.contains("lowMemGraphics") }?.getBoolean("lowMemGraphics", false) ?: DeviceTier.lowMemory()
+        set(v) { prefs?.edit()?.putBoolean("lowMemGraphics", v)?.apply(); changed() }
+
     var indoorBuild: Boolean
         get() = prefs?.getBoolean("indoorBuild", true) ?: true
         set(v) { if (v != indoorBuild) { prefs?.edit()?.putBoolean("indoorBuild", v)?.apply(); changed() } }

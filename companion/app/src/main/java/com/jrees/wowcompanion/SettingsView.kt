@@ -76,7 +76,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     private val segDanger = Array(3) { RectF() }
     private val segFog = Array(2) { RectF() }
     private val segLang = Array(Tr.LANGS.size) { RectF() }          // 2026-11-07: Settings > System > Language
-    private val segLight = Array(2) { RectF() }                       // 1.0.17: Settings > Performance > Lighter mode
+    private val segLight = Array(2) { RectF() }
+    private val segLowGfx = Array(2) { RectF() }                      // 2026-11-08: Settings > System > Low-memory graphics                       // 1.0.17: Settings > Performance > Lighter mode
     /** Map > Indoor maps: build in the background On / Off (Settings.indoorBuild; b-interiors-stutter) */
     private val segIndoor = Array(2) { RectF() }
     /**
@@ -261,7 +262,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** a block's height from its heading's y to its last row's bottom, laid out exactly as its draw function lays it out */
     private fun blockHeight(b: SettingsTabs.Block): Float = when (b) {
         SettingsTabs.Block.LANGUAGE -> 16f + ROW_H
-        SettingsTabs.Block.LIGHTER -> 16f + ROW_H
+        SettingsTabs.Block.LIGHTER -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
         SettingsTabs.Block.STREAMING -> 16f + ROW_H
@@ -395,6 +396,8 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 val fi = segFog.indexOfFirst { it.contains(x, y) }
                 val lti = segLight.indexOfFirst { it.contains(x, y) }
                 if (lti >= 0) { Settings.lighterMode = lti == 0; invalidate(); return }
+                val lgx = segLowGfx.indexOfFirst { it.contains(x, y) }
+                if (lgx >= 0) { Settings.lowMemGraphics = lgx == 0; invalidate(); return }
                 val lgi = segLang.indexOfFirst { it.contains(x, y) }
                 if (lgi >= 0) { Tr.setChoice(context, Tr.LANGS[lgi].code); invalidate(); return }
                 if (fi >= 0) { Settings.worldMapFog = if (fi == 0) "all" else "explored"; invalidate(); return }
@@ -520,7 +523,14 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             b
         }
         if (small) for (r in segLight) r.setEmpty()                       // nothing to change: the model decides
-        return top + ROW_H
+        // Low-memory graphics: the game's smaller textures (on by default for this model / with Lighter mode); next game start
+        val t2 = top + ROW_H + 10f
+        row(c, t2, Tr.t("Low-memory graphics"), Tr.t("Smaller game textures, so Android does not close the game for memory. From the next game start"), enabled = true) { box ->
+            val b = RectF(box.right - 16f - segW * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+            segmented(c, b, listOf(Tr.t("On"), Tr.t("Off")), if (Settings.lowMemGraphics) 0 else 1, segLowGfx)
+            b
+        }
+        return t2 + ROW_H
     }
 
     private fun drawGame(c: Canvas, top: Float): Float {

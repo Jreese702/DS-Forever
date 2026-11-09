@@ -987,6 +987,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         return out
     }
     private val swirlCache = HashMap<String, Bitmap>()
+    init { MemWatch.source("cast") { swirlCache.values.sumOf { it.byteCount.toLong() } + iconReady.values.sumOf { it.byteCount.toLong() } } }
 
     /** the companion mark on a "DS Bar" slot: a dark gold-rimmed disc with two small stacked screens in it */
     private fun drawDsMark(c: Canvas, cx: Float, cy: Float, r: Float) {

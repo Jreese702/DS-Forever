@@ -64,7 +64,7 @@ object SettingsTabs {
         LANGUAGE(Tab.SYSTEM, "Language", listOf("Language")),
         GAME(Tab.SYSTEM, "Game", listOf("Reload game UI", "Battle.net login", "Problem report")),
         // 1.0.17 (the user's pick "A setting, off by default"): the lighter behaviour on any Thor (System: Performance is hidden)
-        LIGHTER(Tab.SYSTEM, "Lighter mode", listOf("Lighter mode")),
+        LIGHTER(Tab.SYSTEM, "Lighter mode", listOf("Lighter mode", "Low-memory graphics")),
         STREAMING(Tab.SYSTEM, "Streaming", listOf("Stream settings")),
         COMPANION(Tab.SYSTEM, "Companion", listOf("Status")),
     }

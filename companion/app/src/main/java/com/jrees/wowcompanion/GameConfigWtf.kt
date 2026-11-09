@@ -42,6 +42,20 @@ object GameConfigWtf {
         "InputDeviceInterfaceStyle" to "\"1\"",
     )
 
+    /**
+     * LOW-MEMORY GRAPHICS (Settings.lowMemGraphics): the textures at the older, smaller defaults (the LEGACY values: the game's own
+     * texture memory sits in the Thor's shared RAM, and the 8 / 12 GB Thors were being killed for memory while the game ran). Written at
+     * every start while the setting is on; off, the legacy rule below puts the current defaults back.
+     */
+    val LOW_MEMORY_GRAPHICS = linkedMapOf(
+        "worldBaseMip" to "\"2\"",
+        "RAIDworldBaseMip" to "\"2\"",
+        "graphicsTextureResolution" to "\"0\"",
+        "raidGraphicsTextureResolution" to "\"0\"",
+        "componentTextureLevel" to "\"1\"",
+        "RAIDcomponentTextureLevel" to "\"1\"",
+    )
+
     private val FORCED_CONFIG_KEYS = listOf("gxApi", "RenderScale", "ResampleQuality", "GamePadEnable", "InputDeviceInterfaceStyle")
 
     private val LEGACY_CONFIG_VALUES = mapOf(
@@ -62,9 +76,12 @@ object GameConfigWtf {
      * gets the forced keys, the old defaults' new values and the missing keys. For the launch client a beta portal ("test") or another
      * client's agentUID is set right too (a _forever_ folder made from a beta copy would otherwise sign in to the closed beta).
      */
-    fun ensure(root: File, product: WowProduct, row: Map<String, String>?, region: String? = null) {
+    fun ensure(root: File, product: WowProduct, row: Map<String, String>?, region: String? = null, lowMemory: Boolean = false) {
         // [region]: the player's choice (GameRegion; 2026-11-07, an EU account on a US-set device): it replaces any portal but the beta's
-        val defaults = configDefaults(product, row, if (product.portal == null) region else null)
+        // [lowMemory]: Settings.lowMemGraphics - the smaller textures over the defaults
+        val defaults = configDefaults(product, row, if (product.portal == null) region else null).let { d ->
+            if (lowMemory) LinkedHashMap(d).apply { putAll(LOW_MEMORY_GRAPHICS) } else d
+        }
         val flavorDir = File(root, product.flavorDir)
         flavorDir.mkdirs()
         val flavorInfo = File(flavorDir, ".flavor.info")
@@ -87,8 +104,10 @@ object GameConfigWtf {
             val (key, value) = parts
             existingKeys.add(key)
             val forcedKey = FORCED_CONFIG_KEYS.firstOrNull { it.equals(key, ignoreCase = true) }
+            val lowKey = if (lowMemory) LOW_MEMORY_GRAPHICS.keys.firstOrNull { it.equals(key, ignoreCase = true) } else null
             when {
                 forcedKey != null && value != defaults.getValue(forcedKey) -> "SET $forcedKey ${defaults.getValue(forcedKey)}"
+                lowKey != null -> "SET $lowKey ${LOW_MEMORY_GRAPHICS.getValue(lowKey)}"
                 LEGACY_CONFIG_VALUES[key] == value -> "SET $key ${defaults.getValue(key)}"
                 key.equals("portal", ignoreCase = true) && product.portal == null && value in betaPortal -> "SET portal ${defaults.getValue("portal")}"
                 key.equals("portal", ignoreCase = true) && product.portal == null && region != null &&

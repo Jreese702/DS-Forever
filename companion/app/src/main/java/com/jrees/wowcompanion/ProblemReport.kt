@@ -47,7 +47,9 @@ object ProblemReport {
               crashes: List<Pair<String, String>>, recorded: Boolean, names: Collection<String>, dxvk: String = "",
               gameCrashes: List<Pair<String, String>> = emptyList(),
               /** the start-up diagnostics ([StartupDiag]: already sanitized and capped), "" = none */
-              startup: String = ""): Report {
+              startup: String = "",
+              /** the memory watch's history (MemWatch: mem.log), "" = none */
+              memory: String = ""): Report {
         val pattern = Redact.namePattern(names)                       // compiled once for the whole report
         val r = { s: String -> Redact.text(s, pattern) }
         val head = buildString {
@@ -79,6 +81,7 @@ object ProblemReport {
         for ((n, t) in gameCrashes.take(MAX_GAME_CRASHES)) files += "game-crashes/$n" to r(LogSieve.gameCrashHead(t))
         // DXVK's own log, this run's and the previous one's (b-dxvk-load-crash)
         if (dxvk.isNotBlank()) files += "dxvk.txt" to r(dxvk)
+        if (memory.isNotBlank()) files += "memory.txt" to memory
         return Report("ds-forever-report-${stamp(now)}", files)
     }
 
@@ -130,7 +133,8 @@ object ProblemReport {
         return build(now, description, facts(ctx), DiagLog.lines(WINDOW_MS, now), logcat(now - WINDOW_MS), crashes,
             DiagLog.recording(now) || DiagLog.lines(WINDOW_MS, now).any { it.contains("report: recording started") }, Redact.names(),
             runCatching { DxvkLogs.forReport(DxvkLogs.dir(ctx.dataDir)) }.getOrDefault(""), gameCrashes(ctx, now),
-            runCatching { StartupDiag.text(ctx) }.getOrElse { "(the diagnostics could not be made: ${it.message})" })
+            runCatching { StartupDiag.text(ctx) }.getOrElse { "(the diagnostics could not be made: ${it.message})" },
+            MemWatch.history())
     }
 
     /** the game's newest crash reports (the "Crash" .txt files in <game>/<flavor>/Errors, the last 7 days): issue #9 had none of them */

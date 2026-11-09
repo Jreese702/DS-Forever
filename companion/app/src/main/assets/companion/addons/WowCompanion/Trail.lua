@@ -3640,12 +3640,7 @@ end
 -- scale, so the 9 out matches the bar's units) in the plate's own strata, one frame level UNDER the plate's UnitFrame - so under its
 -- name, level and health bar fill. Only our own frame is parented / levelled (legal in combat); the plate's level and strata are
 -- READ (no taint), nothing of it is written; forbidden plates (enemies in instances) never reach us (GetNamePlateForUnit).
--- at5 (the user on 1.0.18-test4, again: "The aggro tint is appearing in front of the mob text name and it looks bad"; the Thor's screenshot
--- showed the outline's top edge drawn OVER the name's letters): one level under the UnitFrame did not hold on this client (its plates'
--- levels are re-sorted by depth, the name's frame among them). Now the tint goes into the STRATA BELOW the plate's (BACKGROUND
--- only when the plate is already there, then level 0): under everything the plate draws, whatever its levels. Its top edge also comes
--- TOP_IN in (the outline hugs the bar's top, clear of the name's letters). R.layers says what was read (the tint's diag, "lay").
-WC.rings = { V = "at5", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
+WC.rings = { V = "at6", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
              ALPHA = 0.95, OUTSET = 6, PAD = 9, TOP_IN = 4, TEX_V = 53 / 64, list = {}, est = {}, react = {}, why = {}, n = 0,
              COL = { far = { 0.32, 0.86, 0.36 }, approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
              TEX = "Interface\\AddOns\\WowCompanion\\Media\\tint_glow" }
@@ -3697,11 +3692,8 @@ do
         local parts = {}
         for s2, w in pairs(R.why) do parts[#parts + 1] = s2 .. ":" .. w end
         table.sort(parts)
-        if R.layers then parts[#parts + 1] = "lay:" .. R.layers end
         return #parts > 0 and table.concat(parts, ",") or nil
     end
-    local STRATA = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG", "FULLSCREEN", "FULLSCREEN_DIALOG", "TOOLTIP" }
-    local function below(strata) for i, n in ipairs(STRATA) do if n == strata then return STRATA[math.max(1, i - 1)] end end return "BACKGROUND" end
 
     local function tint(s)
         local o = R.list[s]
@@ -3762,30 +3754,23 @@ do
                         local okB, bar = pcall(function() return plate.UnitFrame and plate.UnitFrame.HealthBarsContainer end)
                         bar = okB and type(bar) == "table" and bar or nil
                         local to, pad = bar or plate, bar and R.PAD or R.OUTSET
-                        o.f:SetPoint("TOPLEFT", to, "TOPLEFT", -pad, bar and (pad - R.TOP_IN) or pad)    -- at5: the top clear of the name
+                        -- at6: the top TOP_IN in, clear of the name's letters (at5's layering below the plate's strata is GONE: the
+                        -- user's bisect 2026-11-08 found it behind test6's ADDON_ACTION_FORBIDDEN errors; at4's layering is back)
+                        o.f:SetPoint("TOPLEFT", to, "TOPLEFT", -pad, bar and (pad - R.TOP_IN) or pad)
                         o.f:SetPoint("BOTTOMRIGHT", to, "BOTTOMRIGHT", pad, -pad)
                         o.plate, o.bar = plate, bar
                     end
                     -- at4: under the plate's UnitFrame (its name, level, bar fill): its strata, one level below (re-read each
                     -- tick: a targeted plate is raised)
-                    -- at5: the strata BELOW the plate's (under all it draws); in BACKGROUND already: level 0 there
                     local okU, uf = pcall(function() return plate.UnitFrame end)
-                    uf = okU and type(uf) == "table" and uf or nil
-                    local okS, strata = pcall(function() return plate:GetFrameStrata() end)
+                    local ref = (okU and type(uf) == "table" and uf) or plate
+                    local okS, strata = pcall(function() return ref:GetFrameStrata() end)
+                    local okL, lvl = pcall(function() return ref:GetFrameLevel() end)
                     strata = okS and type(strata) == "string" and strata or "BACKGROUND"
-                    local okP, plv = pcall(function() return plate:GetFrameLevel() end)
-                    local okL, ulv = pcall(function() return uf and uf:GetFrameLevel() end)
-                    local okN, nlv = pcall(function() return uf and uf.name and uf.name:GetParent():GetFrameLevel() end)
-                    local mine = below(strata)
-                    local want = 0
-                    if mine == strata then
-                        local lo = math.min(okP and num(plv) or 1, okL and num(ulv) or 1, okN and num(nlv) or 1)
-                        want = math.max(0, lo - 1)
-                    end
-                    if o.strata ~= mine then o.f:SetFrameStrata(mine); o.strata = mine; o.lvl = nil end
+                    lvl = okL and num(lvl) or 1
+                    if o.strata ~= strata then o.f:SetFrameStrata(strata); o.strata = strata end
+                    local want = math.max(0, lvl - 1)
                     if o.lvl ~= want then o.f:SetFrameLevel(want); o.lvl = want end
-                    R.layers = strata .. "/" .. tostring(okP and num(plv)) .. "/" .. tostring(okL and num(ulv)) .. "/" ..
-                        tostring(okN and num(nlv)) .. ">" .. mine .. "/" .. want
                     local c = R.COL[e.st]
                     if c then o.t:SetVertexColor(c[1], c[2], c[3]); o.col = e.st end
                     -- the alpha: up in a tinted state out of combat, down far away or in combat

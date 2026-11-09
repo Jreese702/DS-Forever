@@ -1042,7 +1042,10 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
     val product = choice?.product ?: WowProduct.of(gameRoot)
     try {
         // 2026-11-07: the player's region (the login prompt's Region row) is the portal the game signs in to
-        com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row, com.jrees.wowcompanion.GameRegion.chosen(context))
+        com.jrees.wowcompanion.DeviceTier.init(context); com.jrees.wowcompanion.Settings.init(context)
+        // Low-memory graphics (Settings > System; on by default for the 8 / 12 GB Thors): the smaller textures in Config.wtf
+        com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row, com.jrees.wowcompanion.GameRegion.chosen(context),
+            lowMemory = com.jrees.wowcompanion.Settings.lowMemGraphics)
     } catch (e: Exception) {
         if (e.isPermissionDenied()) throw StorageAccessDeniedException(e)
         throw e

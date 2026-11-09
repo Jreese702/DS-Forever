@@ -6523,6 +6523,7 @@ object UiKit {
 
     private val fonts = HashMap<String, Typeface>()
     private val texCache = HashMap<String, Bitmap>()
+    init { MemWatch.source("kit") { texCache.values.sumOf { it.byteCount.toLong() } + castCache.values.sumOf { it.byteCount.toLong() } } }
     private val tileCache = HashMap<String, Array<Bitmap>>()
     private val missing = HashMap<String, Long>()
 
