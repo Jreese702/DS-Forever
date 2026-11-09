@@ -774,7 +774,7 @@ end
 -- are hidden by the switches above, alpha only). No mouse (EnableMouse false): touch goes through to the world as before.
 -- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar); the app keeps each per character.
 do
-    local UF = { party = true, target = true, V = "uf2" }
+    local UF = { party = true, target = true, V = "uf3" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
@@ -942,40 +942,54 @@ do
     end
 
     -- ---------------------------------------------------------------- THE TARGET BAR (centred under the compass)
-    -- uf2 (the user, 2026-11-09: "on the Target bar, I want it too look more like the nameplates, and not include the energy bar"): the
-    -- game's own nameplate look, bigger - its health bar art (UI-HUD-CoolDownManager-Bar on -Bar-BG) inside a 1 px black edge, the name
-    -- above, the level badge (ui-hud-nameplates-levelindicator / -skull) and the elite / rare icon on the left, the raid marker on the
-    -- right, the cast bar in the game's casting bar art under it, the auras above the name; no power bar
-    local TB = { W = 360, NAME = 20, HP = 22, CP = 7, CAST = 16, LV = 24, ICON = 24, IGAP = 3, DEBUFF_MAX = 8, BUFF_MAX = 6,
+    -- uf3 (the user's sign-off 2026-11-09, layout "A: big level shield"; "the buffs/debuffs need to appear under the bar, and timers should
+    -- be small inside of them", "the healthbar frame is like tiny behind the actual colored health bar", "the box for level is too small",
+    -- "when targetting their nameplate healthbar should not be visible", "instead of class colors, make sure it actually matchs the name
+    -- plate colors"): the nameplate's own bar art in a black frame that wraps it whole; a gold-rimmed level shield on the left (the elite /
+    -- rare dragon behind it); the raid marker on the right; combo pips, the cast bar, then the auras UNDER it, their seconds small in a
+    -- corner; the colour READ from the target's nameplate (else the game's own nameplate rule, UnitSelectionColor); the target's nameplate
+    -- health bar hidden (alpha) while it is targeted. No power bar.
+    local TB = { W = 340, NAME = 20, HP = 24, CP = 6, CAST = 15, LV = 30, ICON = 26, IGAP = 3, DEBUFF_MAX = 8, BUFF_MAX = 6,
                  TOT_W = 140, TOT_HP = 10, AURA_S = 0.25 }
     UF.tb = TB
     local function atlas(tex, name)
         if type(PRD.atlasOn) == "function" then return PRD.atlasOn(tex, name) end
         return pcall(function() tex:SetAtlas(name) end)
     end
-    -- the nameplate's bar: its fill and background art, a 1 px black edge all round (NamePlateFullBorderTemplate)
-    local function npBar(parent, w, h, fillAtlas, bgAtlas)
+    -- a black frame (2 px) with a thin dark-gold rim round the bar, a plain dark ground: nothing of it sits inside the bar's own edge
+    local function edgeBox(parent, target, px, r, g, b, a, layer, sub)
+        for _, e in ipairs({ { "TOPLEFT", "TOPRIGHT", 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", -1 } }) do
+            local t = parent:CreateTexture(nil, layer, nil, sub)
+            t:SetColorTexture(r, g, b, a)
+            t:SetPoint(e[1], target, e[1], e[1] == "TOPLEFT" and -px or -px, e[3] * px)
+            t:SetPoint(e[2], target, e[2], px, e[3] * px)
+            t:SetHeight(px)
+        end
+        for _, side in ipairs({ "LEFT", "RIGHT" }) do
+            local t = parent:CreateTexture(nil, layer, nil, sub)
+            t:SetColorTexture(r, g, b, a)
+            t:SetPoint("TOP" .. side, target, "TOP" .. side, side == "LEFT" and -px or px, px)
+            t:SetPoint("BOTTOM" .. side, target, "BOTTOM" .. side, side == "LEFT" and -px or px, -px)
+            t:SetWidth(px)
+        end
+    end
+    local function npBar(parent, w, h, fillAtlas, rim)
         local b = CreateFrame("StatusBar", nil, parent)
         b:SetSize(u(w), u(h))
         local bg = b:CreateTexture(nil, "BACKGROUND", nil, -1)
-        bg:SetAllPoints(b)
-        if not atlas(bg, bgAtlas) then bg:SetColorTexture(0.06, 0.06, 0.06, 0.8) end
+        bg:SetAllPoints(b); bg:SetColorTexture(0.07, 0.07, 0.07, 0.9)
         local fill = b:CreateTexture(nil, "ARTWORK")
         b.atlasFill = atlas(fill, fillAtlas)
         if not b.atlasFill then fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar") end
         b:SetStatusBarTexture(fill)
         local okT, real = pcall(function() return b:GetStatusBarTexture() end)
         b.fill = (okT and type(real) == "table") and real or fill
-        for _, e in ipairs({ { "TOPLEFT", "TOPRIGHT", 0, 1, nil, 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", 0, -1, nil, 1 } }) do
-            local t = b:CreateTexture(nil, "BACKGROUND", nil, -8)
-            t:SetColorTexture(0, 0, 0, 1)
-            t:SetPoint(e[1], b, e[1], -1, e[4]); t:SetPoint(e[2], b, e[2], 1, e[4]); t:SetHeight(1)
-        end
-        for _, side in ipairs({ "LEFT", "RIGHT" }) do
-            local t = b:CreateTexture(nil, "BACKGROUND", nil, -8)
-            t:SetColorTexture(0, 0, 0, 1)
-            t:SetPoint("TOP", b, "TOP" .. side, side == "LEFT" and -0.5 or 0.5, 1); t:SetPoint("BOTTOM", b, "BOTTOM" .. side, side == "LEFT" and -0.5 or 0.5, -1)
-            t:SetWidth(1)
+        -- the frame OUTSIDE the bar: 2 px black, and (the main bar) a 1 px dark-gold rim beyond it
+        edgeBox(b, b, 2, 0, 0, 0, 1, "BACKGROUND", -8)
+        if rim then
+            local f2 = CreateFrame("Frame", nil, b)
+            f2:SetPoint("TOPLEFT", b, "TOPLEFT", -2, 2); f2:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 2, -2)
+            edgeBox(b, f2, 1, 0.42, 0.39, 0.33, 1, "BACKGROUND", -7)
         end
         b:SetMinMaxValues(0, 1); b:SetValue(1)
         return b
@@ -988,47 +1002,60 @@ do
         o.bd:Hide()
         o.cd = CreateFrame("Cooldown", nil, o.f, "CooldownFrameTemplate")
         o.cd:SetAllPoints(o.f); o.cd:SetReverse(true)
-        pcall(function() o.cd:SetHideCountdownNumbers(false) end)       -- the game draws the seconds itself (secret-safe)
-        o.n = text(o.f, 11); o.n:SetPoint("BOTTOMRIGHT", o.f, "BOTTOMRIGHT", u(2), -u(1))
+        -- the game draws the seconds itself (secret-safe); small, in the icon's lower right corner
+        pcall(function() o.cd:SetHideCountdownNumbers(false) end)
+        pcall(function()
+            for _, rg in ipairs({ o.cd:GetRegions() }) do
+                if rg and rg.GetObjectType and rg:GetObjectType() == "FontString" then
+                    rg:SetFont(FONT, u(10), "OUTLINE"); rg:ClearAllPoints(); rg:SetPoint("BOTTOMRIGHT", o.f, "BOTTOMRIGHT", u(1), -u(1))
+                end
+            end
+        end)
+        o.n = text(o.f, 10); o.n:SetPoint("TOPLEFT", o.f, "TOPLEFT", -u(1), u(1))
         o.f:Hide()
         return o
     end
     local function buildTarget()
         if TB.f then return TB.f end
         local f = CreateFrame("Frame", "WowCompanionUFTarget", UIParent)
-        f:SetSize(u(TB.W), u(TB.NAME + 2 + TB.HP + TB.CP + 8 + TB.CAST))
+        f:SetSize(u(TB.W), u(TB.NAME + 2 + TB.HP))
         f:SetFrameStrata("LOW"); f:EnableMouse(false); f:Hide()
         TB.f = f
-        -- the name above the bar, centred (the nameplate's)
+        -- the name above the bar, centred
         f.name = text(f, 16); f.name:SetPoint("BOTTOM", f, "TOP", 0, -u(TB.NAME - 2)); f.name:SetJustifyH("CENTER")
-        f.hp = npBar(f, TB.W, TB.HP, "UI-HUD-CoolDownManager-Bar", "UI-HUD-CoolDownManager-Bar-BG")
+        f.hp = npBar(f, TB.W, TB.HP, "UI-HUD-CoolDownManager-Bar", true)
         f.hp:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -u(TB.NAME + 2))
-        f.pct = text(f.hp, 12); f.pct:SetPoint("RIGHT", f.hp, "RIGHT", -u(5), 0)
-        -- the level badge and the elite / rare icon on the left (the nameplate's LevelFrame / ClassificationFrame), the marker on the right
-        f.badge = f:CreateTexture(nil, "ARTWORK"); f.badge:SetSize(u(TB.LV), u(TB.LV)); f.badge:SetPoint("RIGHT", f.hp, "LEFT", -u(5), 0)
-        f.lvl = text(f, 12); f.lvl:SetPoint("CENTER", f.badge, "CENTER", 0, 0)
-        f.cls = f:CreateTexture(nil, "ARTWORK"); f.cls:SetSize(u(22), u(22)); f.cls:SetPoint("RIGHT", f.badge, "LEFT", -u(2), 0); f.cls:Hide()
-        f.mark = f:CreateTexture(nil, "OVERLAY"); f.mark:SetSize(u(22), u(22)); f.mark:SetPoint("LEFT", f.hp, "RIGHT", u(6), 0)
+        f.pct = text(f.hp, 12); f.pct:SetPoint("RIGHT", f.hp, "RIGHT", -u(6), 0)
+        -- the level shield on the left: its own dark box in a gold rim, the level in gold (the skull for ??); the elite / rare dragon behind
+        f.shield = CreateFrame("Frame", nil, f)
+        f.shield:SetSize(u(TB.LV), u(TB.LV)); f.shield:SetPoint("RIGHT", f.hp, "LEFT", -u(7), 0)
+        local sg = f.shield:CreateTexture(nil, "BACKGROUND"); sg:SetAllPoints(f.shield); sg:SetColorTexture(0.17, 0.13, 0.09, 0.95)
+        edgeBox(f.shield, f.shield, 2, 0.72, 0.58, 0.35, 1, "BORDER", 0)
+        f.lvl = text(f.shield, 14); f.lvl:SetPoint("CENTER", f.shield, "CENTER", 0, 0); f.lvl:SetTextColor(1, 0.83, 0.42)
+        f.skull = f.shield:CreateTexture(nil, "ARTWORK"); f.skull:SetSize(u(20), u(20)); f.skull:SetPoint("CENTER", f.shield, "CENTER", 0, 0); f.skull:Hide()
+        if not atlas(f.skull, "ui-hud-nameplates-levelindicator-skull") then f.skull:SetTexture("Interface\\TargetingFrame\\UI-TargetingFrame-Skull") end
+        f.cls = f:CreateTexture(nil, "BACKGROUND", nil, -5); f.cls:SetSize(u(48), u(48)); f.cls:SetPoint("CENTER", f.shield, "CENTER", -u(4), u(2)); f.cls:Hide()
+        f.mark = f:CreateTexture(nil, "OVERLAY"); f.mark:SetSize(u(22), u(22)); f.mark:SetPoint("LEFT", f.hp, "RIGHT", u(7), 0)
         f.mark:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons"); f.mark:Hide()
-        -- combo points: pips under the bar (0..max with the gaps drawn over; a secret count fills it as well as a plain one)
-        f.cp = npBar(f, TB.W * 0.4, TB.CP, "UI-HUD-CoolDownManager-Bar", "UI-HUD-CoolDownManager-Bar-BG")
-        f.cp:SetPoint("TOP", f.hp, "BOTTOM", 0, -u(4)); paint(f.cp, 1, 0.82, 0.1); f.cp:Hide()
+        -- combo points: a thin pip strip right under the bar (0..max with the gaps drawn over)
+        f.cp = npBar(f, TB.W * 0.4, TB.CP, "UI-HUD-CoolDownManager-Bar", false)
+        f.cp:SetPoint("TOP", f.hp, "BOTTOM", 0, -u(5)); paint(f.cp, 1, 0.82, 0.1); f.cp:Hide()
         f.cpGaps = {}
-        -- the cast bar in the game's casting bar art
-        f.cast = npBar(f, TB.W - TB.CAST - 4, TB.CAST, "ui-castingbar-filling-standard", "ui-castingbar-background")
-        f.cast:SetPoint("TOPRIGHT", f.hp, "BOTTOMRIGHT", 0, -u(TB.CP + 8)); f.cast:Hide()
+        -- the cast bar under it, in the game's casting bar fill
+        f.cast = npBar(f, TB.W - TB.CAST - 8, TB.CAST, "ui-castingbar-filling-standard", false)
+        f.cast:Hide()
         f.castIcon = f.cast:CreateTexture(nil, "OVERLAY"); f.castIcon:SetSize(u(TB.CAST), u(TB.CAST))
-        f.castIcon:SetPoint("RIGHT", f.cast, "LEFT", -u(4), 0); f.castIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        f.castIcon:SetPoint("RIGHT", f.cast, "LEFT", -u(5), 0); f.castIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
         f.castName = text(f.cast, 11); f.castName:SetPoint("CENTER", f.cast, "CENTER", 0, 0)
-        -- the auras above the name: debuffs (yours first) from the left, buffs from the right
+        -- the auras under it all: debuffs (yours first) from the left, buffs from the right
         f.deb, f.buf = {}, {}
         for i = 1, TB.DEBUFF_MAX do f.deb[i] = auraIcon(f) end
         for i = 1, TB.BUFF_MAX do f.buf[i] = auraIcon(f) end
         -- the target of target, beyond the marker
         f.tot = CreateFrame("Frame", nil, f)
-        f.tot:SetSize(u(TB.TOT_W), u(14 + TB.TOT_HP)); f.tot:SetPoint("LEFT", f.hp, "RIGHT", u(34), u(4))
+        f.tot:SetSize(u(TB.TOT_W), u(14 + TB.TOT_HP)); f.tot:SetPoint("LEFT", f.hp, "RIGHT", u(36), u(4))
         f.totName = text(f.tot, 11); f.totName:SetPoint("TOPLEFT", f.tot, "TOPLEFT", 0, 0); f.totName:SetJustifyH("LEFT")
-        f.totHp = npBar(f.tot, TB.TOT_W, TB.TOT_HP, "UI-HUD-CoolDownManager-Bar", "UI-HUD-CoolDownManager-Bar-BG")
+        f.totHp = npBar(f.tot, TB.TOT_W, TB.TOT_HP, "UI-HUD-CoolDownManager-Bar", false)
         f.totHp:SetPoint("TOPLEFT", f.tot, "TOPLEFT", 0, -u(13)); paint(f.totHp, 0.1, 0.8, 0.1)
         f.tot:Hide()
         UF.placeTarget()
@@ -1047,19 +1074,55 @@ do
     -- the nameplate's own classification icons (Blizzard_NamePlateClassificationFrame)
     local CLASS_ATLAS = { elite = "nameplates-icon-elite-gold", worldboss = "nameplates-icon-elite-gold",
                           rareelite = "nameplates-icon-elite-silver", rare = "UI-HUD-UnitFrame-Target-PortraitOn-Boss-Rare-Star" }
-    -- the target's colour: tapped grey, a player of your side its class, else the game's reaction (hostile red, neutral yellow, friendly green)
-    local function targetRGB()
-        if bool(UnitIsTapDenied, "target") then return 0.5, 0.5, 0.5 end
-        if bool(UnitIsPlayer, "target") and bool(UnitIsFriend, "player", "target") then
-            local r, g, b = classRGB("target"); if r then return r, g, b end
+    -- [unit]'s nameplate, when the game gives one (never a forbidden one: GetNamePlateForUnit hides those)
+    local function plateOf(unit)
+        local plate = C_NamePlate and call(C_NamePlate.GetNamePlateForUnit, unit)
+        return type(plate) == "table" and plate or nil
+    end
+    -- THE NAMEPLATE'S COLOUR, read from its health bar (what the player sees over the mob); without a plate the game's own nameplate
+    -- rule (UnitSelectionColor, the colour the plate would take), then the reaction. Plain values only.
+    local function plateRGB(unit)
+        local plate = plateOf(unit)
+        local hb = plate and call(function() return plate.UnitFrame and plate.UnitFrame.healthBar end)
+        if type(hb) == "table" then
+            local r, g, b = call(hb.GetStatusBarColor, hb)
+            if plainV(r) and plainV(g) and plainV(b) and type(r) == "number" then return r, g, b end
         end
-        local re = call(UnitReaction, "target", "player")
+        if type(UnitSelectionColor) == "function" then
+            local r, g, b = call(UnitSelectionColor, unit, true)
+            if plainV(r) and plainV(g) and plainV(b) and type(r) == "number" then return r, g, b end
+        end
+        local re = call(UnitReaction, unit, "player")
         if plainV(re) and type(re) == "number" then
             if re <= 2 then return 0.9, 0.12, 0.1 elseif re <= 4 then return 0.95, 0.8, 0.1 end
-            return 0.1, 0.8, 0.1
         end
         return 0.1, 0.8, 0.1
     end
+    -- the name's colour as the nameplate writes it, else white
+    local function plateNameRGB(unit)
+        local plate = plateOf(unit)
+        local fs = plate and call(function() return plate.UnitFrame and plate.UnitFrame.name end)
+        if type(fs) == "table" then
+            local r, g, b = call(fs.GetTextColor, fs)
+            if plainV(r) and plainV(g) and plainV(b) and type(r) == "number" then return r, g, b end
+        end
+        return 1, 1, 1
+    end
+    -- the TARGET'S nameplate health bar hidden while it is targeted (alpha only; our bar shows it), the previous one given back
+    TB.hidPlate = nil
+    local function plateBarAlpha(hbc, a) if type(hbc) == "table" then pcall(hbc.SetAlpha, hbc, a) end end
+    local function plateHide(on)
+        local hbc = nil
+        if on then
+            local plate = plateOf("target")
+            hbc = plate and call(function() return plate.UnitFrame and plate.UnitFrame.HealthBarsContainer end) or nil
+            if type(hbc) ~= "table" then hbc = nil end
+        end
+        if TB.hidPlate and TB.hidPlate ~= hbc then plateBarAlpha(TB.hidPlate, 1) end
+        TB.hidPlate = hbc
+        if hbc then plateBarAlpha(hbc, 0) end
+    end
+    UF.plateHide = plateHide
     -- the combo points' gaps for [max] points (the bar is cut into that many pips)
     local function cpGaps(f, max)
         if f.cpMax == max then return end
@@ -1089,7 +1152,7 @@ do
         if not pcall(function() f.cp:SetValue(v or 0) end) then f.cp:SetValue(0) end
         f.cp:Show()
     end
-    -- the cast: the game's own times straight to the bar (min = start, max = end, value = now), the bar moved every frame while it casts;
+    -- the cast: the game's own times straight to the bar (min = start, max = end, value = now), moved every frame while it casts;
     -- the game's casting bar fills (standard / channel), else the plain bar in the cast's colour
     local function castStep(f)
         local name, txt, tex, st, en = call(UnitCastingInfo, "target")
@@ -1121,17 +1184,24 @@ do
         end
         return out
     end
-    -- the auras ABOVE the name, as the nameplate's: debuffs from the left, buffs from the right
+    -- below the bar: the combo pips, the cast bar, then the auras (the stack closes up when a part is not shown)
+    local function underLayout(f)
+        local y = TB.HP + 5
+        if f.cp:IsShown() then y = y + TB.CP + 5 end
+        f.cast:ClearAllPoints(); f.cast:SetPoint("TOPRIGHT", f.hp, "TOPRIGHT", 0, -u(y))
+        if f.casting then y = y + TB.CAST + 6 end
+        f.auraY = -u(y)
+    end
     local function putAuras(objs, list, fromRight)
         local step = u(TB.ICON + TB.IGAP)
-        local y = u(4)
+        local y = TB.f.auraY or -u(TB.HP + 5)
         for i, o in ipairs(objs) do
             local a = list[i]
             if not a then o.f:Hide()
             else
                 o.f:ClearAllPoints()
-                if fromRight then o.f:SetPoint("BOTTOMRIGHT", TB.f, "TOPRIGHT", -(i - 1) * step, y)
-                else o.f:SetPoint("BOTTOMLEFT", TB.f, "TOPLEFT", (i - 1) * step, y) end
+                if fromRight then o.f:SetPoint("TOPRIGHT", TB.f.hp, "TOPRIGHT", -(i - 1) * step, y)
+                else o.f:SetPoint("TOPLEFT", TB.f.hp, "TOPLEFT", (i - 1) * step, y) end
                 pcall(function() o.tx:SetTexture(a.icon) end)
                 if not pcall(function() o.cd:SetCooldownFromExpirationTime(a.expirationTime, a.duration) end) then
                     if not pcall(function() o.cd:SetCooldown(a.expirationTime - a.duration, a.duration) end) then o.cd:Clear() end
@@ -1155,7 +1225,9 @@ do
         end
     end
     local function aurasStep(f)
-        if TB.auraAt and GetTime() - TB.auraAt < TB.AURA_S and not TB.auraDirty then return end
+        local moved = f.lastAuraY ~= f.auraY
+        if not moved and TB.auraAt and GetTime() - TB.auraAt < TB.AURA_S and not TB.auraDirty then return end
+        f.lastAuraY = f.auraY
         TB.auraAt, TB.auraDirty = GetTime(), false
         -- debuffs: yours first (the "PLAYER" filter), then the others (not repeated, by the game's own aura id where it is plain)
         local mine = auraList("HARMFUL|PLAYER", TB.DEBUFF_MAX)
@@ -1172,21 +1244,15 @@ do
     function UF.targetStep()
         local has = UF.target and bool(UnitExists, "target")
         if has == nil and UF.target then has = call(UnitName, "target") ~= nil end
-        if not has then if TB.f then TB.f:Hide() end; return end
+        if not has then if TB.f then TB.f:Hide() end; plateHide(false); return end
         local f = buildTarget()
         setText(f.name, call(UnitName, "target") or "")
-        local r, g, b = targetRGB()
-        paint(f.hp, r, g, b)
-        f.name:SetTextColor(1, 1, 1)
-        -- the level badge (the skull for "??"), the elite / rare icon beside it
+        paint(f.hp, plateRGB("target"))
+        f.name:SetTextColor(plateNameRGB("target"))
+        -- the level in the shield (the skull for ??), the elite / rare dragon behind it
         local lv = call(UnitLevel, "target")
-        if plainV(lv) and type(lv) == "number" and lv < 0 then
-            if f.badgeA ~= "skull" then f.badgeA = "skull"; atlas(f.badge, "ui-hud-nameplates-levelindicator-skull") end
-            f.lvl:SetText("")
-        else
-            if f.badgeA ~= "lv" then f.badgeA = "lv"; atlas(f.badge, "ui-hud-nameplates-levelindicator") end
-            setText(f.lvl, lv)
-        end
+        if plainV(lv) and type(lv) == "number" and lv < 0 then f.lvl:SetText(""); f.skull:Show()
+        else f.skull:Hide(); setText(f.lvl, lv) end
         local cl = call(UnitClassification, "target")
         local ca = plainV(cl) and CLASS_ATLAS[cl] or nil
         if ca then
@@ -1202,15 +1268,18 @@ do
         if tc then f.mark:SetTexCoord(tc[1], tc[2], tc[3], tc[4]); f.mark:Show() else f.mark:Hide() end
         comboStep(f)
         castStep(f)
+        underLayout(f)
         aurasStep(f)
-        -- the target of target
+        -- the target of target, in its nameplate colour too
         local tt = bool(UnitExists, "targettarget")
         if tt == nil then tt = call(UnitName, "targettarget") ~= nil end
         if tt then
             setText(f.totName, call(UnitName, "targettarget") or "")
+            paint(f.totHp, plateRGB("targettarget"))
             feed(f.totHp, nil, "targettarget")
             f.tot:Show()
         else f.tot:Hide() end
+        plateHide(true)
         f:Show()
     end
 
