@@ -88,7 +88,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local SOV = "so13"   -- so13: a Battle.net friend is invited by their game account (C_BattleNet.InviteFriend); bump on every change; the app shows it, so a stale build is visible
+local SOV = "so14"   -- so14: the guild MOTD is not read during a fight or a chat messaging lockdown (this client BLOCKS GetMOTD then: ADDON_ACTION_BLOCKED, the user on 1.0.18-test6: "a ton of lua errors"); the last one read is kept; so13: a Battle.net friend is invited by their game account (C_BattleNet.InviteFriend); bump on every change; the app shows it, so a stale build is visible
 
 local MAX_GROUP = 40        -- a raid
 local MAX_FRIENDS = 100     -- the game's cap on character friends
@@ -527,6 +527,16 @@ local function agoHours(i)
     return ((y * 12 + mo) * 30 + d) * 24 + h
 end
 
+-- so14: the MOTD only out of a fight and out of the chat messaging lockdown (both refuse it on this client); else the last one read
+local lastMotd = nil
+local function guildMotd()
+    local fight = TB(function() return InCombatLockdown() end) == true
+    local lock = TB(function() return C_ChatInfo.InChatMessagingLockdown() end) == true
+    if fight or lock then return lastMotd end
+    lastMotd = cut(TS(function() return C_GuildInfo.GetMOTD() end), MAX_MOTD)
+    return lastMotd
+end
+
 local function collectGuild()
     if not TB(function() return IsInGuild() end) then return { inGuild = false } end
     local okG, gname, grank = CT(function() return GetGuildInfo("player") end)
@@ -535,7 +545,7 @@ local function collectGuild()
         name = okG and pl(gname, "string") or nil,
         rank = okG and pl(grank, "string") or nil,
         lock = TB(function() return C_ChatInfo.InChatMessagingLockdown() end) or nil,
-        motd = cut(TS(function() return C_GuildInfo.GetMOTD() end), MAX_MOTD),
+        motd = guildMotd(),
         can = {
             invite = TB(function() return CanGuildInvite() end),
             remove = TB(function() return CanGuildRemove() end),

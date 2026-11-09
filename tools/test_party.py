@@ -1682,7 +1682,9 @@ hits = [(p, ln) for (p, ln) in hits if not (p == r'\bSetCVar\b' and ('STYLE_CVAR
                                                                   # hub22 (the user, 2026-11-07): the hunter's own Combat Auto Shot option, asked for by name
                                                                   or 'autoRangedCombat' in ln or ln == 'local set = (C_CVar and C_CVar.SetCVar) or _G.SetCVar'
                                                                   # Trail ag (the user, 2026-11-07, "Turn on friendly nameplates"): the friendly nameplate options once
-                                                                  or 'SetCVar(name, "1")' in ln or 'SetCVar(name, v)' in ln))]
+                                                                  or 'SetCVar(name, "1")' in ln or 'SetCVar(name, v)' in ln
+                                                                  # Sink.lua's TAINT PROBE (the user, 2026-11-08, "Taint log"): taintLog on at login, back at logout; temporary
+                                                                  or 'C_CVar.SetCVar("taintLog"' in ln))]
 # (and pad14's software cursor: the user's "Yes, try software cursor", 2026-11-04, gxCursor once)
 check(not hits, "no trace in the new add-on code: no SetBinding / SaveBindings / macros / CVars / bar writes / Blizzard window code",
       hits[:3])
