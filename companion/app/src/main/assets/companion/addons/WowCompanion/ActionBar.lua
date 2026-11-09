@@ -747,6 +747,8 @@ local autoAttack = false      -- PLAYER_ENTER_COMBAT / PLAYER_LEAVE_COMBAT (the 
 local autoRepeat = false      -- START_ / STOP_AUTOREPEAT_SPELL: Auto Shot, Shoot, wands (hudS.ar; Home's big controller)
 local glowing = {}            -- spellID -> true, from SPELL_ACTIVATION_OVERLAY_GLOW_SHOW / _HIDE
 local stateSlots = {}         -- action slots of the 4 state layers, for the range poll and the GCD sample
+local statePets = {}          -- pet-bar slots of the state layers, for the range poll (the user, 2026-11-08: "some of my spells disregard the range")
+local stateFight = {}         -- the in-combat spells' ids (hudS.fs), for the range poll
 local loggedIn = false
 
 -- The GCD flag is SAMPLED INSIDE the SPELL_UPDATE_COOLDOWN handler. isOnGCD is Nilable and documented
@@ -989,7 +991,7 @@ local function buildState()
     local combat = S(InCombatLockdown) == true
     local hasTarget = S(UnitExists, "target") == true
     local layers = resolveAll(pageUnit())
-    local L, slots = {}, {}
+    local L, slots, pets = {}, {}, {}
     for _, key in ipairs(STATE_LAYERS) do
         local list = {}
         for p = 1, 8 do
@@ -997,11 +999,14 @@ local function buildState()
             list[p] = buttonState(d, combat, hasTarget)
             if d.k ~= "" and d.k ~= "fixed" and d.k ~= "pet" and (d.s or 0) > 0 then
                 slots[#slots + 1] = d.s
+            elseif d.k == "pet" and (d.s or 0) > 0 then
+                pets[#pets + 1] = d.s
             end
         end
         L[key] = list
     end
     stateSlots = slots
+    statePets = pets
     local st = { c = combat, aa = autoAttack == true, ar = autoRepeat == true, L = L }
     if castNow then st.cs = castNow
     elseif castEnd and (SN(GetTime) or 0) - castEnd.t < 2 then
@@ -1021,6 +1026,9 @@ local function buildState()
         local fs = {}
         for _, id in ipairs(fspells) do fs[#fs + 1] = spellState(id, hasTarget) end
         st.fs = fs
+        stateFight = fspells
+    else
+        stateFight = {}
     end
     -- hudS.F: the live look of the LIVE scripted buttons, keyed "<layer><p>" (n5, n6, fr6, fr7, ho6, ho7,
     -- sc6): e = enabled 0/1 (0 = draw it as the disabled / empty slot), i = the icon it shows now.
@@ -1293,6 +1301,19 @@ local function pollRange()
             rangeSeen[s] = r
             changed = true
         end
+    end
+    -- the pet bar's slots and the in-combat spells drawn over the bars in a fight: their range moves with you too
+    for _, s in ipairs(statePets) do
+        local r = PCALL(_G.GetPetActionInfo, s)
+        local v = -1
+        if r[1] and SV(r[9]) == true then v = (SV(r[10]) == true) and 1 or 0 end
+        if rangeSeen["p" .. s] ~= v then rangeSeen["p" .. s] = v; changed = true end
+    end
+    local fr = api("C_Spell", "IsSpellInRange") or _G.IsSpellInRange
+    for _, id in ipairs(stateFight) do
+        local v = S(fr, id, "target")
+        local r = ((v == true or v == 1) and 1) or ((v == false or v == 0) and 0) or -1
+        if rangeSeen["f" .. id] ~= r then rangeSeen["f" .. id] = r; changed = true end
     end
     if changed then requestState() end
 end

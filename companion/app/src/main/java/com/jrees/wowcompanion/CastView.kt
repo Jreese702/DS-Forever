@@ -659,7 +659,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
         val inkW get() = inkR - inkL
         val inkH get() = inkB - inkT
+        /** the same tile with only its LETTER red (the user, 2026-11-08: "I also only wanted the letter part of the glyph to show red"):
+         *  the glyph's symbol is the bright neutral (white / grey) ink; the gold ring, the dark disc and the shadow keep their colours */
+        val letterRed: Art by lazy { Art(redLetter(bmp)) }
     }
+
 
     /** a button shape's rings and shadows (ActionBarButton.lua SetShapeToSquare / SetShapeToCircle) */
     private class FrameArt {
@@ -767,7 +771,6 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * out of range with no Disabled glyph art loaded: the glyph goes red. An app stand-in; the HUD
      * itself switches the glyph to its Disabled art (drawn instead whenever it is on the device).
      */
-    private val cfRange = LightingColorFilter(0xFF5A48, 0x200000)
 
     private val rect = RectF()
     private val shaderMatrix = Matrix()
@@ -2217,20 +2220,21 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (keyText == null && pos < 8) {
             val a = (if (pressed) aGlyphP[pos] else null) ?: aGlyph[pos]
             if (a != null) {
-                drawInk(c, a, gx, gy, BADGE_INK, 255, if (outOfRange && !pressed) cfRange else null)
+                drawInk(c, if (outOfRange && !pressed) a.letterRed else a, gx, gy, BADGE_INK, 255)
                 return
             }
         }
         val r = 7.5f * k
-        pFill.color = if (outOfRange) BADGE_RED else BADGE
+        // red is the letter's alone (the disc and its edge stay)
+        pFill.color = BADGE
         c.drawCircle(gx, gy, r, pFill)
-        pStroke.color = if (outOfRange) BADGE_RED_EDGE else BADGE_EDGE
+        pStroke.color = BADGE_EDGE
         pStroke.strokeWidth = 0.6f * k
         c.drawCircle(gx, gy, r, pStroke)
-        val ink = GLYPH_INK
+        val ink = if (outOfRange) GLYPH_RED else GLYPH_INK
         if (keyText != null) {
             if (keyText.isEmpty()) return
-            pGlyph.color = if (outOfRange) GLYPH_RED else ink
+            pGlyph.color = ink
             val ts = pGlyph.textSize
             if (keyText.length > 1) pGlyph.textSize = ts * 0.75f
             c.drawText(Tr.t(keyText), gx, gy - (pGlyph.ascent() + pGlyph.descent()) / 2f, pGlyph)
@@ -3483,6 +3487,25 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
 
     companion object {
+        /** bright, unsaturated pixels -> red (by their brightness); everything else as it was */
+        fun redLetter(src: Bitmap): Bitmap {
+            val w = src.width; val h = src.height
+            val px = IntArray(w * h)
+            src.getPixels(px, 0, w, 0, 0, w, h)
+            for (i in px.indices) {
+                val c = px[i]
+                val r = (c shr 16) and 255; val g = (c shr 8) and 255; val b = c and 255
+                val mx = maxOf(r, g, b); val mn = minOf(r, g, b)
+                val bright = ((mn - 70) / 70f).coerceIn(0f, 1f)
+                val neutral = (1f - (mx - mn - 12) / 30f).coerceIn(0f, 1f)
+                val wgt = bright * neutral
+                if (wgt <= 0f) continue
+                val tr = minOf(255, mx + 20); val tg = (mx * 0.22f).toInt(); val tb = (mx * 0.18f).toInt()
+                px[i] = (c and 0xFF000000.toInt()) or
+                    ((r + (tr - r) * wgt).toInt() shl 16) or ((g + (tg - g) * wgt).toInt() shl 8) or (b + (tb - b) * wgt).toInt()
+            }
+            return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
+        }
         /** b-class-takeover: the stick counts as back in the middle under this; a closed wheel lets the controller go then, or after [CLASS_FREE_MS] */
         const val CLASS_NEUTRAL = 0.3f
         const val CLASS_FREE_MS = 1_500L
@@ -3588,10 +3611,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private val ESTIMATE = Color.argb(230, 170, 205, 255)
         private val BADGE = Color.rgb(30, 27, 24)
         private val BADGE_EDGE = Color.rgb(150, 140, 120)
-        private val BADGE_RED = Color.rgb(160, 28, 22)
         /** a key name's letters when the slot is out of range / short of mana (the game's red hotkey text) */
         private val GLYPH_RED = Color.rgb(255, 72, 56)
-        private val BADGE_RED_EDGE = Color.rgb(255, 120, 100)
         private val GLYPH_INK = Color.rgb(230, 225, 215)
         private val BADGE_BG = Color.rgb(28, 22, 15)
         private val BADGE_BG_HELD = Color.rgb(58, 46, 26)

@@ -3802,6 +3802,13 @@ class MapView(context: Context) : View(context) {
         if (!msg.optBoolean("ok")) note(msg.optString("why", "").ifEmpty { "The game did not do it" })
     }
 
+    /**
+     * [v] kept in [lo]..[hi], and no crash when the range is empty: while the map module opens or closes its field can be squeezed to
+     * nothing for a frame (hi < lo) - Kotlin's coerceIn throws then (the user on 1.0.18-test3: "the game just closed for no reason";
+     * the log: "Cannot coerce value to an empty range: maximum 396.0 is less than minimum 399.2798" in onDraw, the whole app down)
+     */
+    private fun clampSafe(v: Float, lo: Float, hi: Float): Float = if (hi >= lo) v.coerceIn(lo, hi) else (lo + hi) / 2f
+
     private fun drawPlayerMenu(c: Canvas, x: Float, y0: Float, yMax: Float, maxW: Float) {
         pmenuHits.clear()
         val rows = pmenu.rows()
@@ -4676,7 +4683,7 @@ class MapView(context: Context) : View(context) {
 
     /** where the way from ([x0], [y0]) to ([x1], [y1]) meets the box l..r x t..b (the start clamped into it first), or null */
     private fun rimPoint(x0: Float, y0: Float, x1: Float, y1: Float, l: Float, t: Float, r: Float, b: Float): FloatArray? {
-        val ox = x0.coerceIn(l, r); val oy = y0.coerceIn(t, b)
+        val ox = clampSafe(x0, l, r); val oy = clampSafe(y0, t, b)
         val dx = x1 - ox; val dy = y1 - oy
         var k = Float.MAX_VALUE
         if (dx > 0f) k = min(k, (r - ox) / dx) else if (dx < 0f) k = min(k, (l - ox) / dx)
@@ -4967,7 +4974,7 @@ class MapView(context: Context) : View(context) {
         var ex = x1; var ey = y1
         if (!inside) {
             // where the line leaves the field (the player clamped in first: a panned map may have the player off it too)
-            val ox = x0.coerceIn(l, r); val oy = y0.coerceIn(t, b)
+            val ox = clampSafe(x0, l, r); val oy = clampSafe(y0, t, b)
             val dx = x1 - ox; val dy = y1 - oy
             var k = 1f
             if (dx > 0f) k = min(k, (r - ox) / dx) else if (dx < 0f) k = min(k, (l - ox) / dx)
@@ -5004,8 +5011,8 @@ class MapView(context: Context) : View(context) {
             // set back from the end toward the player, kept inside the field
             val ux = if (len > 1f) (ex - x0) / len else 0f; val uy = if (len > 1f) (ey - y0) / len else 0f
             val back = if (inside) 46f else 96f                        // clear of the edge arrow
-            val cx = (ex - ux * back).coerceIn(fl + tw / 2f + 12f, fr - tw / 2f - 12f)
-            val cy = (ey - uy * back + 8f).coerceIn(ft + 30f, fb - 12f)
+            val cx = clampSafe(ex - ux * back, fl + tw / 2f + 12f, fr - tw / 2f - 12f)
+            val cy = clampSafe(ey - uy * back + 8f, ft + 30f, fb - 12f)
             labelBox.set(cx - tw / 2f - 10f, cy - 22f, cx + tw / 2f + 10f, cy + 8f)
             pLabelBack.color = Color.argb((190 * a).toInt(), 10, 8, 6); c.drawRoundRect(labelBox, 8f, 8f, pLabelBack)
             c.drawText(Tr.t(words), cx - tw / 2f, cy, tp)
@@ -6870,7 +6877,7 @@ class MapView(context: Context) : View(context) {
             // test23 (the user: "the red arrow ... is inconsistent and I want to change that to the red version of the quest arrow"):
             // the corpse's arrow is the quest arrow's own shape, tinted red. test27 (the user: "When the objective is visible on the
             // minimap the arrow should go away. (for both quests and corpse)"): either arrow only while its target is OFF the field
-            val ox = sx(px).coerceIn(l0, r0); val oy = sy(py).coerceIn(t0, b0)
+            val ox = clampSafe(sx(px), l0, r0); val oy = clampSafe(sy(py), t0, b0)
             val dx = tx - ox; val dy = ty - oy
             if (r0 > l0 && b0 > t0 && !seen && (abs(dx) > 0.5f || abs(dy) > 0.5f)) {
                 var k = Float.MAX_VALUE                    // the ray to the edge, however near the target is
@@ -6916,7 +6923,7 @@ class MapView(context: Context) : View(context) {
                 val gx = sx(r.nx(gm.wy)); val gy = sy(r.ny(gm.wx))
                 if (gx in l0..r0 && gy in t0..b0) GroupMembers.draw(c, gm, gx, gy, named = !compact)
                 else if (!px.isNaN()) {
-                    val ox = sx(px).coerceIn(l0, r0); val oy = sy(py).coerceIn(t0, b0)
+                    val ox = clampSafe(sx(px), l0, r0); val oy = clampSafe(sy(py), t0, b0)
                     val dx = gx - ox; val dy = gy - oy
                     var k = Float.MAX_VALUE
                     if (dx > 0f) k = min(k, (r0 - ox) / dx) else if (dx < 0f) k = min(k, (l0 - ox) / dx)

@@ -2284,7 +2284,9 @@ do
     function A.friendsRestore(why)
         local saved = type(WowCompanionDB) == "table" and WowCompanionDB.npFriends or nil
         if type(saved) ~= "table" then return end
-        if pv(InCombatLockdown) == true and why ~= "logout" then return end
+        -- "combat": PLAYER_REGEN_DISABLED, the last moment before the fight's lock (the user, 2026-11-08: "the enemy plates turned off on
+        -- me": a fight begun with a friend targeted kept nameplateNotSelectedAlpha 0, every enemy plate but the target's invisible)
+        if pv(InCombatLockdown) == true and why ~= "logout" and why ~= "combat" then return end
         for _, cv in ipairs(A.NP_FRIEND_CVARS) do
             local name, want = cv[1], cv[2]
             local orig = (saved.orig or {})[name]
@@ -2558,7 +2560,7 @@ do
     local ev = CreateFrame("Frame")
     for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "SPELLS_CHANGED",
                          "ITEM_DATA_LOAD_RESULT", "CVAR_UPDATE", "ENCOUNTER_START", "ENCOUNTER_END", "UNIT_SPELLCAST_SENT",
-                         "PLAYER_ENTER_COMBAT", "START_AUTOREPEAT_SPELL", "UNIT_THREAT_LIST_UPDATE", "PLAYER_LOGOUT" }) do
+                         "PLAYER_ENTER_COMBAT", "START_AUTOREPEAT_SPELL", "UNIT_THREAT_LIST_UPDATE", "PLAYER_LOGOUT", "PLAYER_REGEN_DISABLED" }) do
         pcall(function() ev:RegisterEvent(e) end)
     end
     ev:SetScript("OnEvent", function(_, e, a1)
@@ -2566,6 +2568,9 @@ do
             if e == "NAME_PLATE_UNIT_ADDED" then A.onAdded(a1)
             elseif e == "NAME_PLATE_UNIT_REMOVED" then A.onRemoved(a1)
             elseif e == "PLAYER_LOGOUT" then A.npRestore("logout"); pcall(A.friendsRestore, "logout")
+            elseif e == "PLAYER_REGEN_DISABLED" then
+                -- a fight: the player's plate values back now (no friendly-target change sticks through a fight); re-decided after it
+                pcall(A.friendsRestore, "combat"); A.friendWas = nil
             elseif e == "PLAYER_ENTERING_WORLD" then
                 -- a value of ours left from before (a crash): back to the player's once the route is not running (npStep's grace)
                 if A.npSaved() then A.np.offSince = now() - A.NP_OFF_S + 3 end

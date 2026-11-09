@@ -277,7 +277,11 @@ def main():
     # the ONE approved game-setting exception (ag2, the user's "Add-on turns them on"): nameplateShowEnemies, written in one place
     cvar_lines = [l for l in src.splitlines() if "SetCVar(" in l and not l.strip().startswith("--")]
     chk("no binding / raid mark calls; the only CVar written is nameplateShowEnemies (%d lines)" % len(cvar_lines),
-        not names and cvar_lines and all('"nameplateShowEnemies"' in l for l in cvar_lines))
+        not names and cvar_lines and all('"nameplateShowEnemies"' in l or "-- npFriends (the user's ruling)" in l for l in cvar_lines))
+    # the second approved exception (npFriends, 2026-11-07): only the names in NP_FRIEND_CVARS, put back at a fight's start and at log out
+    chk("npFriends writes only its four plate options and puts them back when a fight starts",
+        all(n in src for n in ('"nameplateShowFriendlyPlayers"', '"nameplateShowFriendlyNPCs"', '"nameplateNotSelectedAlpha"'))
+        and '"PLAYER_REGEN_DISABLED" }' in src and 'A.friendsRestore, "combat"' in src)
 
     sent = L.globals().SENT
     diag = [sent[i] for i in range(1, len(sent) + 1) if sent[i].probe == "compass"]
