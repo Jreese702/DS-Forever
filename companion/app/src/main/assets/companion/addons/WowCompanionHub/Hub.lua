@@ -774,7 +774,7 @@ end
 -- are hidden by the switches above, alpha only). No mouse (EnableMouse false): touch goes through to the world as before.
 -- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar); the app keeps each per character.
 do
-    local UF = { party = true, target = true, V = "uf6" }
+    local UF = { party = true, target = true, V = "uf7" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
@@ -1020,6 +1020,36 @@ do
         if not pcall(function() sh:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.47)) end) then sh:SetAlpha(0.2) end
         return true
     end
+    -- uf7 (the user: "The level part also needs the border"): the same HUD art as a NINE-SLICE for a small box - its corners, its lip
+    -- edges at the bar's thickness (3 texels left / top, 7 right, 8 bottom: the art's own shade side) and its dark track as the ground
+    local function hudBox(box, kh)
+        local BG, BW, BH = PRD.BG, tonumber(PRD.BG_W), tonumber(PRD.BG_H)
+        if type(BG) ~= "table" or not BW or not BH or not (C_Texture and C_Texture.GetAtlasInfo) then return false end
+        local info
+        for _, a in ipairs(BG) do
+            local ok, i = pcall(C_Texture.GetAtlasInfo, a)
+            if ok and type(i) == "table" and i.file and type(i.leftTexCoord) == "number" then info = i; break end
+        end
+        if not info then return false end
+        local k = u(kh / 8)
+        local L, R, Tt, B = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
+        local function piece(layer, c0, r0, c1, r1)
+            local t = box:CreateTexture(nil, layer, nil, 1)
+            t:SetTexture(info.file)
+            t:SetTexCoord(L + (R - L) * c0 / BW, L + (R - L) * c1 / BW, Tt + (B - Tt) * r0 / BH, Tt + (B - Tt) * r1 / BH)
+            return t
+        end
+        local g = piece("BACKGROUND", 31, 3, 50, 11); g:SetAllPoints(box)
+        local tl = piece("BORDER", 0, 0, 3, 3);       tl:SetSize(3 * k, 3 * k); tl:SetPoint("BOTTOMRIGHT", box, "TOPLEFT", 0, 0)
+        local tr = piece("BORDER", 125, 0, BW, 3);    tr:SetSize(7 * k, 3 * k); tr:SetPoint("BOTTOMLEFT", box, "TOPRIGHT", 0, 0)
+        local bl = piece("BORDER", 0, 11, 3, BH);     bl:SetSize(3 * k, 8 * k); bl:SetPoint("TOPRIGHT", box, "BOTTOMLEFT", 0, 0)
+        local br = piece("BORDER", 125, 11, BW, BH);  br:SetSize(7 * k, 8 * k); br:SetPoint("TOPLEFT", box, "BOTTOMRIGHT", 0, 0)
+        local top = piece("BORDER", 31, 0, 50, 3);    top:SetPoint("BOTTOMLEFT", box, "TOPLEFT", 0, 0); top:SetPoint("BOTTOMRIGHT", box, "TOPRIGHT", 0, 0); top:SetHeight(3 * k)
+        local bot = piece("BORDER", 31, 11, 50, BH);  bot:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, 0); bot:SetPoint("TOPRIGHT", box, "BOTTOMRIGHT", 0, 0); bot:SetHeight(8 * k)
+        local lf = piece("BORDER", 0, 3, 3, 11);      lf:SetPoint("TOPRIGHT", box, "TOPLEFT", 0, 0); lf:SetPoint("BOTTOMRIGHT", box, "BOTTOMLEFT", 0, 0); lf:SetWidth(3 * k)
+        local rt = piece("BORDER", 125, 3, BW, 11);   rt:SetPoint("TOPLEFT", box, "TOPRIGHT", 0, 0); rt:SetPoint("BOTTOMLEFT", box, "BOTTOMRIGHT", 0, 0); rt:SetWidth(7 * k)
+        return true
+    end
     local function npBar(parent, w, h, fillAtlas, rim)
         local b = CreateFrame("StatusBar", nil, parent)
         b:SetSize(u(w), u(h))
@@ -1067,16 +1097,22 @@ do
         f:SetFrameStrata("LOW"); f:EnableMouse(false); f:Hide()
         TB.f = f
         -- the name above the bar, centred
-        f.name = text(f, 16); f.name:SetPoint("BOTTOM", f, "TOP", 0, -u(TB.NAME - 2)); f.name:SetJustifyH("CENTER")
+        f.name = text(f, 16); f.name:SetJustifyH("CENTER")
         f.hp = npBar(f, TB.W, TB.HP, "UI-HUD-CoolDownManager-Bar", true)
         f.hp:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -u(TB.NAME + 2))
+        -- uf7 (the user: "The name shouldn't sit behind the border"): the name above the bar's lip (3 texels of the HUD art over the bar)
+        f.name:SetPoint("BOTTOM", f.hp, "TOP", 0, u(TB.HP / 8) * 3 + u(3))
         f.pct = text(f.hp, 12); f.pct:SetPoint("RIGHT", f.hp, "RIGHT", -u(6), 0)
         -- the level shield on the left: its own dark box in a gold rim, the level in gold (the skull for ??); the elite / rare dragon behind
         f.shield = CreateFrame("Frame", nil, f)
-        f.shield:SetSize(u(TB.LV), u(TB.LV)); f.shield:SetPoint("RIGHT", f.hp, "LEFT", -u(7), 0)
-        local sg = f.shield:CreateTexture(nil, "BACKGROUND"); sg:SetAllPoints(f.shield); sg:SetColorTexture(0.17, 0.13, 0.09, 0.95)
-        edgeBox(f.shield, f.shield, 2, 0.72, 0.58, 0.35, 1, "BORDER", 0)
-        f.lvl = text(f.shield, 14); f.lvl:SetPoint("CENTER", f.shield, "CENTER", 0, 0); f.lvl:SetTextColor(1, 0.83, 0.42)
+        f.shield:SetSize(u(TB.LV), u(TB.LV)); f.shield:SetPoint("RIGHT", f.hp, "LEFT", -u(14), 0)
+        f.shield:SetSize(u(TB.HP + 6), u(TB.HP))                           -- uf7: the bar's height, so its frame lines up with the bar's
+        if not hudBox(f.shield, TB.HP) then
+            local sg = f.shield:CreateTexture(nil, "BACKGROUND"); sg:SetAllPoints(f.shield); sg:SetColorTexture(0.17, 0.13, 0.09, 0.95)
+            edgeBox(f.shield, f.shield, 2, 0.72, 0.58, 0.35, 1, "BORDER", 0)
+        end
+        f.lvl = text(f.shield, 14); f.lvl:SetShadowOffset(0, 0)
+        f.lvl:SetAllPoints(f.shield); f.lvl:SetJustifyH("CENTER"); f.lvl:SetJustifyV("MIDDLE"); f.lvl:SetTextColor(1, 0.83, 0.42)
         f.skull = f.shield:CreateTexture(nil, "ARTWORK"); f.skull:SetSize(u(20), u(20)); f.skull:SetPoint("CENTER", f.shield, "CENTER", 0, 0); f.skull:Hide()
         if not atlas(f.skull, "ui-hud-nameplates-levelindicator-skull") then f.skull:SetTexture("Interface\\TargetingFrame\\UI-TargetingFrame-Skull") end
         f.cls = f:CreateTexture(nil, "BACKGROUND", nil, -5); f.cls:SetSize(u(48), u(48)); f.cls:SetPoint("CENTER", f.shield, "CENTER", -u(4), u(2)); f.cls:Hide()
@@ -1098,10 +1134,12 @@ do
         for i = 1, TB.BUFF_MAX do f.buf[i] = auraIcon(f) end
         -- the target of target, beyond the marker
         f.tot = CreateFrame("Frame", nil, f)
-        f.tot:SetSize(u(TB.TOT_W), u(14 + TB.TOT_HP)); f.tot:SetPoint("LEFT", f.hp, "RIGHT", u(36), u(4))
-        f.totName = text(f.tot, 11); f.totName:SetPoint("TOPLEFT", f.tot, "TOPLEFT", 0, 0); f.totName:SetJustifyH("LEFT")
+        f.tot:SetSize(u(TB.TOT_W), u(18 + TB.TOT_HP)); f.tot:SetPoint("LEFT", f.hp, "RIGHT", u(36), u(4))
+        f.totName = text(f.tot, 13); f.totName:SetJustifyH("LEFT")
+        pcall(function() f.totName:SetFont(FONT, u(13), "THICKOUTLINE") end)       -- uf7 ("I cant read the name on the target of target")
         f.totHp = npBar(f.tot, TB.TOT_W, TB.TOT_HP, "UI-HUD-CoolDownManager-Bar", true)
-        f.totHp:SetPoint("TOPLEFT", f.tot, "TOPLEFT", 0, -u(13)); paint(f.totHp, 0.1, 0.8, 0.1)
+        f.totHp:SetPoint("TOPLEFT", f.tot, "TOPLEFT", 0, -u(17)); paint(f.totHp, 0.1, 0.8, 0.1)
+        f.totName:SetPoint("BOTTOMLEFT", f.totHp, "TOPLEFT", 0, u(TB.TOT_HP / 8) * 3 + u(2))
         f.tot:Hide()
         UF.placeTarget()
         return f
