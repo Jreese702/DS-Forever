@@ -443,7 +443,9 @@ local hubHooked = false
 local stickSync
 -- r8: the SPELL RADIAL's button (Hub hub8, SpellRadial.lua) arms it too: the same guest "radial" holds both wheels
 -- r11: the PAUSE wheel's button too (Hub hub9, Home's radial pause menu: Start on plain Home): every wheel shares the guest
-local EXTRA_ARM = { "WowCompanionPadSpellRadial", "WowCompanionPadPause" }
+-- r17: the other spell radials' buttons too (Hub hub26, q2: WowCompanionPadSpellRadial2..6)
+local EXTRA_ARM = { "WowCompanionPadSpellRadial", "WowCompanionPadPause", "WowCompanionPadSpellRadial2", "WowCompanionPadSpellRadial3",
+                    "WowCompanionPadSpellRadial4", "WowCompanionPadSpellRadial5", "WowCompanionPadSpellRadial6" }
 local extraHooked = {}
 local function allHooked() for _, n in ipairs(EXTRA_ARM) do if not extraHooked[n] then return false end end return true end
 local function hookHub()
