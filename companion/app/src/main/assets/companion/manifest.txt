@@ -19,7 +19,7 @@ a88192aba1d1a1cb5e7cc45129345020  WowCompanion/Media/cursor_blank.tga
 fa5b3efbf9e4c9b07402d2b38ec1d3ae  WowCompanion/Safety.lua
 44ae1dec75f38135c1a84e858055ba68  WowCompanion/Sink.lua
 af840730fd9890fe23719490dd7d42e3  WowCompanion/TapPad.lua
-27ab890a08bdcd31c79e1237f69e0072  WowCompanion/Trail.lua
+82f4ba924299e779348e40a37b27a070  WowCompanion/Trail.lua
 7a8b21a7ff87b881e0dac11d10608c12  WowCompanion/WowCompanion.toc
 a3db18cc0cc8bccdfff4df1f6c67311e  WowCompanionCalendar/Calendar.lua
 d98fcfbf4266826253c013c8579d3612  WowCompanionCalendar/WowCompanionCalendar.toc
