@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i139"     -- bump on every change; i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
+local IV = "i140"     -- bump on every change; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -2241,6 +2241,11 @@ function N.build(doc)
         N.petA = petA
         if N.holding and N.padBind and TB(function() return InCombatLockdown() end) ~= true then N.padBind("PAD1") end      -- (padBind: declared further down)
     end
+    -- i140 (2026-11-09, the taint hunt: test3's probe caught B -> N.back -> navRun("close") -> ACT.close -> CloseMail(): the game's
+    -- whole close chain ran as OUR code and tainted the controller, so the next loot window's close had SetPreferredGamepadInteractTarget
+    -- forbidden): B's LAST step on an NPC window is a binding click of a secure button aimed at the window's OWN close button (N.closeAim
+    -- below); the game closes it in its own code, as the trade's Cancel above
+    if not petB and type(N.closeAim) == "function" then petB = N.closeAim() end
     if petB ~= N.petB then
         N.petB = petB
         if N.holding and N.padBind and TB(function() return InCombatLockdown() end) ~= true then N.padBind("PAD2") end
@@ -6857,6 +6862,65 @@ function N.back()
     else
         N.backAt = TN(function() return GetTime() end)
         navRun("close")
+    end
+end
+
+-- i140 THE NPC WINDOW'S SECURE CLOSE (see the doc build). N.bOwn: B has a step of its own first (N.back's order, before its "close");
+-- N.closeAim (out of combat): the window open now -> its own close button -> our secure "click" button aimed at it; nil = B stays
+-- ours (a step of our own, no NPC window, no close button found: N.back as before). In a fight the router's leave takes B (i81).
+do
+    local ORDER = { "quest", "merchant", "gossip", "trainer", "stable", "petition", "book", "mail", "auction", "taxi", "loot", "bank" }
+    local function closeOf(slot)
+        local f = FRAME[slot] and _G[FRAME[slot]]
+        if type(f) ~= "table" then return nil end
+        for _, get in ipairs({ function() return f.CloseButton end, function() return f.ClosePanelButton end,
+                               function() return f.BorderFrame and f.BorderFrame.CloseButton end,
+                               function() return _G[FRAME[slot] .. "CloseButton"] end }) do
+            local b = T(get)
+            if type(b) == "table" and type(b.GetObjectType) == "function" then return b end
+        end
+    end
+    function N.bOwn()
+        if N.qt.open() and not N.qt.top then return true end
+        if isOpen("trade") then return true end
+        if N.trMenu and isOpen("trainer") then return true end
+        if isOpen("auction") and (AH.filtersOpen or AH.buy or AH.key or AH.tab ~= "browse" or AH.cancel or #AH.path > 0) then return true end
+        if isOpen("mail") and ((MAIL.open and MAIL.tab ~= "send") or MAIL.pick or MAIL.tab == "send") then return true end
+        if LOOT.on() then return true end
+        if isOpen("bank") and (BANK.box or BANK.hand) then return true end
+        if N.stableBox or N.petFrom or N.offer then return true end
+        return false
+    end
+    function N.closeAim()
+        if inCombat() then return N.petB end                 -- a fight: nothing changes (no attribute, no binding)
+        if G.holder or N.bOwn() then return nil end
+        local btn
+        for _, slot in ipairs(ORDER) do
+            if isOpen(slot) then btn = closeOf(slot); break end
+        end
+        if not btn then return nil end
+        if not N.closeBtn then
+            pcall(function()
+                local b = CreateFrame("Button", "WowCompanionNpcClose", UIParent, "SecureActionButtonTemplate")
+                b:SetAttribute("type", "click")
+                -- (Dialogs d21: a binding click reaches a secure button on the press or the release, by the game's key-down option)
+                b:RegisterForClicks("AnyDown", "AnyUp")
+                b:HookScript("PostClick", function(_, _, down) if down ~= false then pcall(N.closeClicked) end end)
+                N.closeBtn = b
+            end)
+        end
+        if not N.closeBtn then return nil end
+        if N.closeAt ~= btn then
+            if not pcall(function() N.closeBtn:SetAttribute("clickbutton", btn) end) then return nil end
+            N.closeAt = btn
+        end
+        return "WowCompanionNpcClose"
+    end
+    -- what ACT.close did besides the game's call: the voice stops, B's time noted, the room told
+    function N.closeClicked()
+        pcall(function() N.spk.stop("close") end)
+        N.backAt = TN(function() return GetTime() end)
+        emitSoon()
     end
 end
 
