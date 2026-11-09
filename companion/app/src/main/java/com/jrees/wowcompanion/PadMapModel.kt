@@ -308,10 +308,7 @@ object PadMapModel {
     /** What a put would REPLACE on that button (the Replace box names it); null when the button is empty. */
     fun replaces(map: Map, set: Int, pos: Int): Slot? = slot(map, set, pos)?.takeIf { it.kind != Kind.NONE && it.kind != Kind.FIXED }
 
-    /** a command as the room shows it: the spell radials' wear their radial's own name and icon (RadialMeta installs it) */
-    @Volatile var dress: (Command) -> Command = { it }
-
-    fun command(map: Map, key: String): Command? = map.commands.firstOrNull { it.key == key }?.let(dress)
+    fun command(map: Map, key: String): Command? = map.commands.firstOrNull { it.key == key }
 
     /** Putting this command makes a NEW macro (one of the user's General Macros; the room says so and asks first). */
     fun needsMacro(map: Map, key: String): Boolean = command(map, key)?.made == false
@@ -349,7 +346,7 @@ object PadMapModel {
             ?: slot.key?.let { Command(it, slot.name ?: it, slot.icon, true, null) }                // m41: the overlay's own words
         slot.kind != Kind.MACRO || slot.id == null -> null
         else -> map.commands.firstOrNull { it.macroIndex == slot.id }
-    }?.let(dress)
+    }
 
     // ---------------------------------------------------------------- m41 S1: THE CLEAN-UP (`padclean`)
 
@@ -425,17 +422,6 @@ object PadMapModel {
          *  clockwise, as Home's wheel */
         val rpage: Int = 1,
         val rad: List<Int> = emptyList(),
-        /** p40 SEVERAL SPELL RADIALS (Radial.lua q2; the user's picks 2026-11-08): [rpage] = the radial on show (its slot 1..6, 0 = none),
-         *  [rad] its spells in order; the radials that exist ([rslots]), the plates' cursor ([rplate], 1-based over the radials + New), the
-         *  settings row ([rrow]: 1 Name, 2 Icon, 3 Opening, 4 Delete), an open Name / Icon box ([rbox] "rname" / "ricon"), the add-on's
-         *  last event ([rev], numbered [revn]: "name", "icon", "mode", "key:<PAD...>"), a Delete waiting for its second A ([rdel]) */
-        val rslots: List<Int> = emptyList(),
-        val rplate: Int = 1,
-        val rrow: Int = 1,
-        val rbox: String? = null,
-        val revn: Int = 0,
-        val rev: String? = null,
-        val rdel: Boolean = false,
         /** p29 (f-combat-forms): the In combat tab's chosen form (its spell id; null = Caster) and the form row's cursor (0 = Caster) */
         val form: Int? = null,
         val fcur: Int? = null,
@@ -472,21 +458,14 @@ object PadMapModel {
             scur = c.optInt("scur", 2).coerceIn(2, 4),
             dpos = c.optInt("dpos", 2).coerceIn(1, 4),
             carry = c.optJSONObject("carry")?.let { Carry(it.optInt("set", 1).coerceIn(1, 4), it.optInt("pos", 1).coerceIn(1, 8),
-                                                         it.optInt("page", 1).coerceIn(1, 6)) },
-            rpage = c.optInt("rpage", 1).coerceIn(0, 6),
+                                                         it.optInt("page", 1).coerceIn(1, 3)) },
+            rpage = c.optInt("rpage", 1).coerceIn(1, 3),
             rad = c.optJSONArray("rad")?.let { a -> List(minOf(8, a.length())) { i -> a.optInt(i, 0) } } ?: emptyList(),
             form = intOrNull(c, "form")?.takeIf { it > 0 },
             fcur = intOrNull(c, "fcur"),
             ppos = c.optInt("ppos", 2).coerceIn(1, 12),
             pfocus = c.optString("pfocus", "rows").ifEmpty { "rows" },
             pright = c.optInt("pright", 0).coerceAtLeast(0),
-            rslots = c.optJSONArray("rslots")?.let { a -> List(a.length()) { i -> a.optInt(i, 0) }.filter { it in 1..6 } } ?: emptyList(),
-            rplate = c.optInt("rplate", 1).coerceIn(1, 7),
-            rrow = c.optInt("rrow", 1).coerceIn(1, 4),
-            rbox = textOrNull(c, "rbox"),
-            revn = c.optInt("revn", 0),
-            rev = textOrNull(c, "rev"),
-            rdel = c.optBoolean("rdel", false),
         )
     }
 

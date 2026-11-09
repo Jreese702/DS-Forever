@@ -67,13 +67,6 @@ class HomeRadialView(
     private var source = "radial"
     private val docs = HashMap<String, RadialModel.Doc>()
     private val trustedOf = HashSet<String>()
-    /**
-     * THE SPELL RADIALS (Spells' Radial.lua q2; the user's picks 2026-11-08: several, "Each its own button", up to 8 evenly spread, each
-     * its own Hold / Tap): every radial's wheel by its slot; [spellSlot] = the one on show (the barcmd's r). docs["sradial"] is its wheel.
-     */
-    private var spellRadials: RadialModel.SpellRadials? = null
-    private var spellSlot = 1
-    private fun spellDoc(slot: Int): RadialModel.Doc? = spellRadials?.of(slot)
     /** a use asked for on the kept list, waiting for the game's (the item, asked at uptime ms) */
     private var waiting: RadialModel.Act.Use? = null
     private var waitingAt = 0L
@@ -167,13 +160,7 @@ class HomeRadialView(
     init {
         visibility = GONE; isClickable = true
         try { prefs.getString("doc", null)?.let { RadialModel.parse(JSONObject(it))?.let { d -> docs["radial"] = d } } } catch (_: Throwable) {}
-        try {
-            prefs.getString("sdoc", null)?.let { m ->
-                val j = JSONObject(m)
-                spellRadials = RadialModel.parseSpellRadials(j)
-                (spellDoc(spellSlot) ?: RadialModel.parse(j))?.let { d -> docs["sradial"] = d }
-            }
-        } catch (_: Throwable) {}
+        try { prefs.getString("sdoc", null)?.let { RadialModel.parse(JSONObject(it))?.let { d -> docs["sradial"] = d } } } catch (_: Throwable) {}
         doc = docs["radial"]
     }
 
@@ -189,7 +176,6 @@ class HomeRadialView(
         if (key == who) return
         Log.i(TAG, "radial: character $key (kept lists were ${who ?: "unknown"}'s): kept lists dropped")
         for (k in listOf("radial", "sradial")) if (k !in trustedOf) docs.remove(k)
-        if ("sradial" !in trustedOf) spellRadials = null
         if (source !in trustedOf) { doc = docs[source]; if (isOpen) invalidate() }
         who = key
         prefs.edit().remove("doc").remove("sdoc").putString("who", key).apply()
@@ -200,12 +186,8 @@ class HomeRadialView(
 
     /** every `radial` document (MainActivity's route): the items now; an open wheel redraws */
     fun onDoc(msg: JSONObject) {
-        // q2: the spell radials, all of them; the one on show is docs["sradial"]
-        val sr = RadialModel.parseSpellRadials(msg)
-        if (sr != null) spellRadials = sr
-        val d = (if (sr != null) sr.of(spellSlot) ?: RadialModel.Doc(emptyList(), 0, emptySet(), false, "sradial", cells = false,
-            noPad = false, even = true) else RadialModel.parse(msg)) ?: return
-        val kind = if (msg.optString("type") == "smartor") "smartor" else if (d.places != null || d.even) "sradial" else "radial"
+        val d = RadialModel.parse(msg) ?: return
+        val kind = if (msg.optString("type") == "smartor") "smartor" else if (d.places != null) "sradial" else "radial"
         docs[kind] = d; trustedOf += kind
         if (kind == "smartor") { if (source == kind) { doc = d; trusted = true; if (isOpen) invalidate() }; return }   // never kept: the game's word is current
         docsMsg[kind] = msg.toString()
@@ -231,23 +213,14 @@ class HomeRadialView(
         Log.i(TAG, "radial: used ${msg.optInt("id")} (cell ${msg.optInt("col")}, fight ${msg.optBoolean("fight")})") }
 
     /** D-pad UP (Hub's barcmd "radial"), or Spells' spell radial (barcmd "sradial"): open, or close when already open */
-    fun toggle(src: String = "radial", r: Int = 1) {
-        if (isOpen && closingFrom < 0f) close() else if (!isOpen) open(src, r)
-    }
+    fun toggle(src: String = "radial") { if (isOpen && closingFrom < 0f) close() else if (!isOpen) open(src) }
 
-    /** [r]: which spell radial (1..6, the barcmd's; Spells' Radial.lua q2) when [src] is "sradial" */
-    fun open(src: String = "radial", r: Int = 1) {
-        if (src == "sradial") {
-            spellSlot = r.coerceIn(1, 6)
-            (spellDoc(spellSlot) ?: spellRadials?.let { RadialModel.Doc(emptyList(), 0, emptySet(), false, "sradial", cells = false,
-                noPad = false, even = true) })?.let { docs["sradial"] = it }
-        }
+    fun open(src: String = "radial") {
         source = src; doc = docs[src]; trusted = src in trustedOf
         flow.reset(); heldOk = false; aimStick = -1; bnextHome = true
         // each wheel its own pair (f-radial-settings: the item wheel's, the spell wheel's)
         val spell = src == "sradial"
-        // each spell radial its own Hold / Tap (RadialMeta; unset = the spell wheel's Open setting)
-        flow.holdOpen = !(if (spell) RadialMeta.tap(spellSlot) else HomeSettings.radialTap)
+        flow.holdOpen = !(if (spell) HomeSettings.spellTap else HomeSettings.radialTap)
         flow.pickA = if (spell) HomeSettings.spellPickA else HomeSettings.radialPickA
         // m62: Smart buffs' OR wheel opens on a Y press and stays until a pick or B; A picks (one buff, cast on yourself)
         if (src == "smartor") { flow.holdOpen = false; flow.pickA = true }
@@ -277,7 +250,7 @@ class HomeRadialView(
         Log.i(TAG, "radial: open $source (${doc?.items?.size ?: 0} items, ${RadialModel.pages(doc)} page(s))")
         // test24 (the user: "nothing on press"): one WCLOG line per open with everything that decides whether it can be SEEN
         firstFrame = true
-        Log.i("WCLOG", "radial: open (mode=${if (flow.holdOpen) "hold" else "tap"}, src=$source${if (spell) " #$spellSlot" else ""}, items=${doc?.items?.size ?: 0}, " +
+        Log.i("WCLOG", "radial: open (mode=${if (flow.holdOpen) "hold" else "tap"}, src=$source, items=${doc?.items?.size ?: 0}, " +
             "trusted=$trusted, view=${width}x$height shown=$isShown attached=$isAttachedToWindow, held=0x${rawHeld.toString(16)})")
         invalidate()
     }
@@ -401,12 +374,9 @@ class HomeRadialView(
         val plus = if (RadialModel.plusOn(doc) && flow.page == 0) UiKit.CR_PLUS else -1
         UiKit.consumableRadial(c, screen, disc, size, itemsOf(RadialModel.slices(doc, flow.page)), flow.pointed, flow.page,
             RadialModel.pages(doc), UiKit.CR_OPEN_MS * (1f - leaveCurve.getInterpolation(p)), glyphs = flow.pickA, plusSlot = plus,
-            slot = s, part = part, even = evenN())
+            slot = s, part = part)
         if (part == UiKit.CR_TOP) postInvalidateOnAnimation()
     }
-
-    /** an even wheel's slice count (a spell radial of q2; at least one, so an empty one still draws its ring), 0 = the classic 8 */
-    private fun evenN(): Int = if (doc?.even == true) maxOf(1, doc?.items?.size ?: 0) else 0
 
     /** f-radial-behind: the wheel without its band, in THIS view's coordinates (Home's layer under its columns draws it) */
     fun drawUnder(c: Canvas) {
@@ -497,8 +467,8 @@ class HomeRadialView(
             pressed(PadInput.SLOT_FACE_BOTTOM) -> act(flow.a(doc))
             // TAP: Up pressed again closes (HOLD never sees an Up press while open: Up is the held key)
             !flow.holdOpen && pressed(PadInput.SLOT_DPAD_UP) -> act(flow.upPressed())
-            pressed(PadInput.SLOT_DPAD_UP) || pressed(PadInput.SLOT_DPAD_RIGHT) -> { flow.step(+1, RadialModel.sliceCount(doc)); invalidate() }
-            pressed(PadInput.SLOT_DPAD_DOWN) || pressed(PadInput.SLOT_DPAD_LEFT) -> { flow.step(-1, RadialModel.sliceCount(doc)); invalidate() }
+            pressed(PadInput.SLOT_DPAD_UP) || pressed(PadInput.SLOT_DPAD_RIGHT) -> { flow.step(+1); invalidate() }
+            pressed(PadInput.SLOT_DPAD_DOWN) || pressed(PadInput.SLOT_DPAD_LEFT) -> { flow.step(-1); invalidate() }
         }
     }
 
@@ -768,7 +738,7 @@ class HomeRadialView(
         val plus = if (RadialModel.plusOn(doc) && (choosing || flow.page == 0)) UiKit.CR_PLUS else -1
         val moving = UiKit.consumableRadial(c, screen, disc, size, items, flow.pointed, if (choosing) 0 else flow.page,
             if (choosing) 1 else RadialModel.pages(doc), t, glyphs = flow.pickA, plusSlot = plus, choose = ch, hubDown = hubDown(), slot = slot,
-            part = part, even = evenN())
+            part = part)
         if (part == UiKit.CR_WHEEL) return moving
         // the secure row is not built yet (Spells r2's nopad): the items show, and the wheel says why none can be used
         if (doc?.noPad == true && t >= UiKit.CR_OPEN_MS * 0.7f) {
@@ -795,7 +765,7 @@ class HomeRadialView(
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (!isOpen) return false                                           // the slide back down takes no touch
         if (closingFrom >= 0f || mode == Mode.PICK) return true
-        val slice = UiKit.consumableRadialHit(RectF(0f, 0f, width.toFloat(), height.toFloat()), e.x, e.y, slot, evenN())
+        val slice = UiKit.consumableRadialHit(RectF(0f, 0f, width.toFloat(), height.toFloat()), e.x, e.y, slot)
         if (mode == Mode.CHOOSE) {
             // a finger: an empty slice pins at the touch; a pinned one is held down (the same 1 s as A); the hub goes back
             when (e.action) {

@@ -72,24 +72,6 @@ object Icons {
         return (dir.listFiles { f -> f.name.endsWith(".pak") }?.sortedBy { it.name }?.mapNotNull { load(it) } ?: emptyList()).also { extraPaks = it }
     }
 
-    /** the icon if it is decoded already (no pack read): a grid of thousands draws what it has and asks for the rest a few at a time */
-    fun peek(fileID: Int): Bitmap? = cache.get(fileID)
-
-    /**
-     * EVERY ICON ON THE DEVICE (the spell radials' icon grid; the user's pick 2026-11-08 "Game's macro icon grid"): the fileDataIDs of the
-     * required pack and the all-icons step's packs, ascending, each once. Empty until a pack is there.
-     */
-    @Synchronized fun allIds(): IntArray {
-        val parts = listOfNotNull(open()?.ids) + extras().map { it.ids }
-        val key = parts.sumOf { it.size }
-        allIdsCache?.takeIf { allIdsKey == key }?.let { return it }
-        val out = java.util.TreeSet<Int>()
-        for (p in parts) for (id in p) out += id
-        return out.toIntArray().also { allIdsCache = it; allIdsKey = key }
-    }
-    private var allIdsCache: IntArray? = null
-    private var allIdsKey = -1
-
     /** [get], falling back to the game's question-mark icon the way the game itself does */
     fun getOrUnknown(fileID: Int?): Bitmap? = get(fileID) ?: get(QUESTION_MARK)
 

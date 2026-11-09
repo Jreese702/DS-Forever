@@ -567,7 +567,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // ("The full Chat room": one way into chat), up = the consumables radial (batch b; nothing yet). Down is the bar's own
         barSelect.onDpad = dpad@{ k ->
             // while the radial shows, its own reader moves round the ring; the router's map / chat / home words wait
-            if (::radialView.isInitialized && radialView.isOpen && k != "radial" && !k.startsWith("sradial") && k != "smartor") return@dpad
+            if (::radialView.isInitialized && radialView.isOpen && k != "radial" && k != "sradial" && k != "smartor") return@dpad
             // the pause menu reads its own controller while it shows: only another Start ("pause") reaches it
             if (::pauseView.isInitialized && pauseView.isOpen && k != "pause") return@dpad
             if (tradOpen()) return@dpad                               // the target radial reads its own controller
@@ -579,10 +579,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 "map" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openMapModule() } }
                 "chat" -> if (room != Room.CHAT) show(Room.CHAT)
                 "radial" -> radialView.toggle()
-                // Spells' spell radials (Hub's WowCompanionPadSpellRadial / ...<n>; hub26: "sradial:<n>", Radial.lua q2)
-                "sradial" -> radialView.toggle("sradial", 1)
+                "sradial" -> radialView.toggle("sradial")     // Spells' spell radial (Hub's WowCompanionPadSpellRadial)
                 "smartor" -> radialView.toggle("smartor")     // m62: Smart buffs' OR row (Y with none of its buffs up; Hub's WowCompanionPadSmartyOr)
-                else -> if (k.startsWith("sradial:")) radialView.toggle("sradial", k.substringAfter(':').toIntOrNull() ?: 1)
             }
         }
         barSelect.roomNow = { room }        // Select's cursor starts on the room on screen (never on Home: the user's skip-Home rule)
@@ -592,9 +590,6 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         partyWire()
         MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
         MemWatch.start()                                                  // WCMEM: where the memory goes (the 1.0.17 low-memory kills)
-        // the spell radials' own names / icons (RadialMeta): the bars and the Controller room show a change at once
-        RadialMeta.init(this)
-        RadialMeta.onChange { lastPadMap?.let { m -> homeView.onPadMap(m); controllerView.onPadMap(m); spellbookView.onPadMap(m) } }
         homeView.onPartyLeaveRest = { partyLeaveHome("a Home module full screen") }
         // Home's controller reader passes each held mask to Interact's pop-up while it shows: its Make Space ring follows the real A
         // press (display only; one getevent). In a room no reader of Home's runs: the ring falls back to Interact's document
@@ -2315,7 +2310,6 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 it.dpad?.let { d ->
                     // the character now: the wheels' kept lists of another character go (the per-character ruling)
                     if (current && !d.name.isNullOrEmpty() && ::radialView.isInitialized) radialView.character("${d.name}-${d.realm ?: ""}")
-                    if (current && !d.name.isNullOrEmpty()) RadialMeta.who = "${d.name}-${d.realm ?: ""}"     // the spell radials' own settings
                     if (current && !d.name.isNullOrEmpty()) QuestWatchKeep.character("${d.name}-${d.realm ?: ""}")
                     if (!d.name.isNullOrEmpty()) TaxiNet.character("${d.name}-${d.realm ?: ""}")
                     if (current && !d.name.isNullOrEmpty()) GameUi.character = "${d.name}-${d.realm ?: ""}"     // hub13: HUD mode per character

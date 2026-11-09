@@ -3897,20 +3897,13 @@ object UiKit {
     fun consumableRadialHub(screen: RectF): android.graphics.PointF = crGeo(screen).let { android.graphics.PointF(it.hx, it.hy) }
 
     /** a finger at ([x], [y]): slice 0..7 (0 = the top, clockwise), [CR_HUB] = the hub (B: close), -1 = outside the wheel */
-    fun consumableRadialHit(screen: RectF, x: Float, y: Float, slot: RectF? = null, even: Int = 0): Int {
+    fun consumableRadialHit(screen: RectF, x: Float, y: Float, slot: RectF? = null): Int {
         val g = crGeo(screen, slot)
         val dx = x - g.hx; val dy = y - g.hy
         val r = kotlin.math.hypot(dx, dy)
         if (r <= 87f * g.k) return CR_HUB                    // inside the hub ring's outer edge
         if (r > g.rim) return -1
-        return if (even > 0) evenAim(dx, dy, even) else consumableRadialAim(dx, dy, 0f)
-    }
-
-    /** a finger's offset ([dx], [dy] with y DOWN) -> slice 0..n-1 of an EVEN wheel of [n] (RadialModel.evenCenter) */
-    fun evenAim(dx: Float, dy: Float, n: Int): Int {
-        var a = Math.toDegrees(kotlin.math.atan2(dx.toDouble(), (-dy).toDouble()))
-        if (a < 0) a += 360.0
-        return RadialModel.evenSliceAt(a, -1, n)
+        return consumableRadialAim(dx, dy, 0f)
     }
 
     /**
@@ -3920,21 +3913,20 @@ object UiKit {
      * So the editor IS the wheel the player opens. [items]: up to 8 (null = an empty slice), slice 0 at the top, clockwise. Returns the
      * slice under ([x], [y]) through [radialPreviewHit].
      */
-    fun radialPreview(c: Canvas, cx: Float, cy: Float, d: Float, items: List<RadialItem?>, pointed: Int, even: Int = 0, plusSlot: Int = -1) {
+    fun radialPreview(c: Canvas, cx: Float, cy: Float, d: Float, items: List<RadialItem?>, pointed: Int) {
         val k = d / 540f
         val g = CrGeo(d / WHEEL_D, k, d, cx, cy, 236f * k)
-        val n = if (even > 0) even else 8
-        crWheel(c, g, items, if (pointed in 0 until n) pointed else -1, 1f, 1f, false, plusSlot, null, even)
+        crWheel(c, g, items, if (pointed in 0..7) pointed else -1, 1f, 1f, false, -1, null)
         val hub = g.hub
         crDisc(c, RectF(cx - hub / 2f, cy - hub / 2f, cx + hub / 2f, cy + hub / 2f), false, 255)
     }
 
     /** a finger at ([x], [y]) on a [radialPreview] at ([cx], [cy]), [d] across: slice 0..7, or -1 (the hub or outside) */
-    fun radialPreviewHit(cx: Float, cy: Float, d: Float, x: Float, y: Float, even: Int = 0): Int {
+    fun radialPreviewHit(cx: Float, cy: Float, d: Float, x: Float, y: Float): Int {
         val k = d / 540f
         val r = kotlin.math.hypot(x - cx, y - cy)
         if (r <= 87f * k || r > 236f * k) return -1
-        return if (even > 0) evenAim(x - cx, y - cy, even) else consumableRadialAim(x - cx, y - cy, 0f)
+        return consumableRadialAim(x - cx, y - cy, 0f)
     }
 
     /** a stick's deflection ([dx], [dy] with y DOWN, 0..1) -> slice 0..7 (45 deg each, 0 = up, clockwise); -1 inside [dead] */
@@ -3994,7 +3986,7 @@ object UiKit {
     fun consumableRadial(c: Canvas, screen: RectF, disc: android.graphics.PointF, discSize: Float, items: List<RadialItem?>,
                          pointed: Int, page: Int = 0, pages: Int = 1, t: Float = CR_OPEN_MS, glyphs: Boolean = true,
                          plusSlot: Int = -1, choose: RadialChoice? = null, hubDown: Float = 0f, slot: RectF? = null,
-                         part: Int = CR_ALL, even: Int = 0): Boolean {
+                         part: Int = CR_ALL): Boolean {
         val g = crGeo(screen, slot)
         val tt = t.coerceIn(0f, CR_OPEN_MS)
         // the cover: the room 0.65, the bar 0.45 (in Home's middle slot none: the columns part for it, as the class wheel's did)
@@ -4006,7 +3998,7 @@ object UiKit {
         pFlat.color = Color.argb((255 * 0.45f * dim).toInt(), 0, 0, 0)
         c.drawRect(screen.left, barTop, screen.right, screen.bottom, pFlat)
         // an EMPTY slice lights too when pointed at (the user after the device test, 2026-10-06: "even if its blank I want it to highlight")
-        val pt = if (pointed in 0 until (if (even > 0) even else 8)) pointed else -1
+        val pt = if (pointed in 0..7) pointed else -1
         val selK = crEaseOut((tt - 320f) / 120f)
         run {
         // the disc: from the bar to the hub
@@ -4032,7 +4024,7 @@ object UiKit {
             c.translate(cx, cy); c.scale(sc, sc); c.translate(-g.hx, -g.hy)
             val half = g.d / 2f + 4f
             val l = c.saveLayerAlpha(RectF(g.hx - half, g.hy - half, g.hx + half, g.hy + half), (255 * minOf(1f, openK * 1.8f)).toInt())
-            crWheel(c, g, items, pt, selK, ((tt - 150f) / 190f).coerceIn(0f, 1f), glyphs, plusSlot, choose, even)
+            crWheel(c, g, items, pt, selK, ((tt - 150f) / 190f).coerceIn(0f, 1f), glyphs, plusSlot, choose)
             c.restoreToCount(l)
             c.restoreToCount(save)
         }
@@ -4162,16 +4154,12 @@ object UiKit {
 
     /** the wheel, its lit wedge, the items (their counts, the A on the pointed one), centred on the hub at scale 1 */
     private fun crWheel(c: Canvas, g: CrGeo, items: List<RadialItem?>, pt: Int, selK: Float, reveal: Float, glyphs: Boolean = true,
-                        plusSlot: Int = -1, choose: RadialChoice? = null, even: Int = 0) {
-        // the spell radials (q2): [even] slices spread evenly (RadialModel.evenCenter), the wheel drawn in the art's bronze
-        val n = if (even > 0) even else 8
-        fun ang(i: Int): Double = if (even > 0) -90.0 + RadialModel.evenCenter(i, even) else -90.0 + 45.0 * i
+                        plusSlot: Int = -1, choose: RadialChoice? = null) {
         // a dark ground inside the rim: the game's slices are see-through, and Home's words would read as clutter through them
         pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(225, 6, 6, 8)
         c.drawCircle(g.hx, g.hy, 228f * g.k, pFlat)
-        val bg = if (even > 0) null else tex("rwheel_bg")
-        if (even > 0) crEvenWheel(c, g, even)
-        else if (bg != null) c.drawBitmap(bg, null, RectF(g.hx - g.d / 2f, g.hy - g.d / 2f, g.hx + g.d / 2f, g.hy - g.d / 2f + g.d * 541f / 540f), pBmp)
+        val bg = tex("rwheel_bg")
+        if (bg != null) c.drawBitmap(bg, null, RectF(g.hx - g.d / 2f, g.hy - g.d / 2f, g.hx + g.d / 2f, g.hy - g.d / 2f + g.d * 541f / 540f), pBmp)
         else {
             pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 10f * g.s; pFlat.color = Theme.bronze
             c.drawCircle(g.hx, g.hy, 229f * g.k, pFlat); c.drawCircle(g.hx, g.hy, 69f * g.k, pFlat)
@@ -4182,8 +4170,7 @@ object UiKit {
                     g.hx + 224f * g.k * Math.cos(a).toFloat(), g.hy + 224f * g.k * Math.sin(a).toFloat(), pFlat)
             }
         }
-        if (even > 0 && pt >= 0 && selK > 0f) crEvenWedge(c, g, even, pt, selK)
-        else if (pt >= 0 && selK > 0f) {
+        if (pt >= 0 && selK > 0f) {
             // the game's lit wedge, drawn as the BOTTOM slice (narrow end up): turned to the slice, its outer edge on the rim
             val on = tex("rwheel_on")
             val save = c.save()
@@ -4198,9 +4185,9 @@ object UiKit {
             c.restoreToCount(save)
         }
         val hold = if (choose != null && pt >= 0 && pt != plusSlot && items.getOrNull(pt) != null) choose.hold.coerceIn(0f, 1f) else 0f
-        if (plusSlot in 0 until n) {
+        if (plusSlot in 0..7) {
             // the "+": the game's gold plus (character select's), a soft gold glow when pointed at; dimmed while choosing a slice
-            val a = Math.toRadians(ang(plusSlot))
+            val a = Math.toRadians(-90.0 + 45.0 * plusSlot)
             val px = g.hx + g.slotR * Math.cos(a).toFloat(); val py = g.hy + g.slotR * Math.sin(a).toFloat()
             val lit = pt == plusSlot && choose == null
             if (lit && selK > 0f) {
@@ -4219,12 +4206,12 @@ object UiKit {
             }
         }
         val counts = numberPaint(27f * g.k, Color.WHITE, shadow = false).apply { textAlign = Paint.Align.RIGHT }
-        for (i in 0 until n) {
+        for (i in 0 until 8) {
             if (i == plusSlot) continue
             val it = items.getOrNull(i) ?: continue
             val k = if (reveal < 1f) crEaseOut((reveal * 8f - i * 0.6f) / 1.6f) else 1f
             if (k <= 0.01f) continue
-            val a = Math.toRadians(ang(i))
+            val a = Math.toRadians(-90.0 + 45.0 * i)
             val x = g.hx + g.slotR * Math.cos(a).toFloat(); val y = g.hy + g.slotR * Math.sin(a).toFloat()
             val on = i == pt
             val sz = g.icon * (0.6f + 0.4f * k) * (if (on) 1f + 0.08f * selK else 1f)
@@ -4271,63 +4258,14 @@ object UiKit {
             // THE HOLD'S CLOCK: the slice's own bronze rim fills gold along its arc, left edge to right, a bright head at its end
             val rr = 229f * g.k
             val o = RectF(g.hx - rr, g.hy - rr, g.hx + rr, g.hy + rr)
-            val span = 360f / n - 3f
-            val start = ang(pt).toFloat() - span / 2f
+            val start = -90f + 45f * pt - 21f
             pFlat.style = Paint.Style.STROKE; pFlat.strokeCap = Paint.Cap.ROUND
-            pFlat.strokeWidth = 16f * g.k; pFlat.color = Color.argb(70, 255, 190, 60); c.drawArc(o, start, span * hold, false, pFlat)
-            pFlat.strokeWidth = 6.5f * g.k; pFlat.color = Theme.gold; c.drawArc(o, start, span * hold, false, pFlat)
+            pFlat.strokeWidth = 16f * g.k; pFlat.color = Color.argb(70, 255, 190, 60); c.drawArc(o, start, 42f * hold, false, pFlat)
+            pFlat.strokeWidth = 6.5f * g.k; pFlat.color = Theme.gold; c.drawArc(o, start, 42f * hold, false, pFlat)
             pFlat.strokeCap = Paint.Cap.BUTT; pFlat.style = Paint.Style.FILL
-            val ea = Math.toRadians((start + span * hold).toDouble())
+            val ea = Math.toRadians((start + 42f * hold).toDouble())
             crHead(c, g.hx + rr * Math.cos(ea).toFloat(), g.hy + rr * Math.sin(ea).toFloat(), 16f * g.k)
         }
-    }
-
-    /**
-     * AN EVEN WHEEL OF [n] (the spell radials, q2; the user: "evenly distributed by how many items are in it"): the game's art has its
-     * eight spokes drawn in, so this draws the same bronze wheel itself: the rim (a bronze band with a dark inner line), the hub's ring,
-     * and one spoke between each two slices (RadialModel.evenCenter's half-way lines); a wheel of one has none.
-     */
-    private fun crEvenWheel(c: Canvas, g: CrGeo, n: Int) {
-        val k = g.k
-        pFlat.style = Paint.Style.STROKE
-        pFlat.color = Theme.bronze; pFlat.strokeWidth = 9f * k; c.drawCircle(g.hx, g.hy, 229f * k, pFlat)
-        pFlat.color = Color.argb(200, 20, 16, 10); pFlat.strokeWidth = 2.2f * k; c.drawCircle(g.hx, g.hy, 223f * k, pFlat)
-        pFlat.color = Theme.bronze; pFlat.strokeWidth = 7f * k; c.drawCircle(g.hx, g.hy, 72f * k, pFlat)
-        pFlat.color = Color.argb(200, 20, 16, 10); pFlat.strokeWidth = 2f * k; c.drawCircle(g.hx, g.hy, 77f * k, pFlat)
-        if (n > 1) for (i in 0 until n) {
-            val a = Math.toRadians(-90.0 + RadialModel.evenCenter(i, n) + 180.0 / n)
-            val ca = Math.cos(a).toFloat(); val sa = Math.sin(a).toFloat()
-            pFlat.color = Theme.bronze; pFlat.strokeWidth = 7f * k
-            c.drawLine(g.hx + 76f * k * ca, g.hy + 76f * k * sa, g.hx + 225f * k * ca, g.hy + 225f * k * sa, pFlat)
-            pFlat.color = Color.argb(200, 20, 16, 10); pFlat.strokeWidth = 1.8f * k
-            c.drawLine(g.hx + 78f * k * ca, g.hy + 78f * k * sa, g.hx + 222f * k * ca, g.hy + 222f * k * sa, pFlat)
-        }
-        pFlat.style = Paint.Style.FILL
-    }
-
-    /** the lit slice [pt] of an even wheel of [n]: the game's lit wedge's gold, fading toward the hub, a gold edge ([selK] its strength) */
-    private fun crEvenWedge(c: Canvas, g: CrGeo, n: Int, pt: Int, selK: Float) {
-        val k = g.k
-        val half = if (n > 1) 180f / n - 1.5f else 180f
-        val mid = (-90.0 + RadialModel.evenCenter(pt, n)).toFloat()
-        val outer = RectF(g.hx - 222f * k, g.hy - 222f * k, g.hx + 222f * k, g.hy + 222f * k)
-        val inner = RectF(g.hx - 80f * k, g.hy - 80f * k, g.hx + 80f * k, g.hy + 80f * k)
-        val path = android.graphics.Path()
-        if (n > 1) {
-            path.arcTo(outer, mid - half, half * 2f, true)
-            path.arcTo(inner, mid + half, -half * 2f, false)
-            path.close()
-        } else {
-            path.addCircle(g.hx, g.hy, 222f * k, android.graphics.Path.Direction.CW)
-            path.addCircle(g.hx, g.hy, 80f * k, android.graphics.Path.Direction.CCW)
-        }
-        pCrGlow.shader = RadialGradient(g.hx, g.hy, 222f * k, intArrayOf(Color.argb(0, 120, 80, 30), Color.argb((90 * selK).toInt(), 150, 105, 45),
-            Color.argb((235 * selK).toInt(), 214, 166, 92)), floatArrayOf(0.34f, 0.62f, 1f), Shader.TileMode.CLAMP)
-        c.drawPath(path, pCrGlow)
-        pCrGlow.shader = null
-        pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3.2f * k; pFlat.color = Theme.gold; pFlat.alpha = (255 * selK).toInt()
-        c.drawPath(path, pFlat)
-        pFlat.alpha = 255; pFlat.style = Paint.Style.FILL
     }
 
     /** a soft gold glow at a filling line's head */

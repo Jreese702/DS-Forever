@@ -208,7 +208,6 @@ class PadTabPage(
             val cr = c.carry
             if (cr == null) radCarryId = 0
             else if (radCarryId == 0 && cr.page == c.rpage) radCarryId = c.rad.getOrNull(cr.pos - 1) ?: 0
-            radialEvents(c, was)
         }
         if (!PadMapModel.touchNote(c.note)) { tChooser = null; tBox = null }
         // the tab is the addon's (p9); a finger's own pick wins until its echo
@@ -286,11 +285,6 @@ class PadTabPage(
     fun setActive(on: Boolean) {
         if (on && reader == null && !otherReader()) {
             reader = PadInput(onPad = { l, r, lb, _ ->
-                // p40: ZL / ZR are the game's Shift / Ctrl (never the add-on's presses): the keyboard's Backspace / Shift, the grid's page
-                if (editorOpen() && view == "radial") {
-                    if (l && !lt) host.post { editorKey(if (edName != 0) "PADLTRIGGER" else "PAD4") }
-                    if (r && !rt) host.post { editorKey(if (edName != 0) "PADRTRIGGER" else "PAD3") }
-                }
                 if (l != lt || r != rt) { lt = l; rt = r; host.invalidate() }
                 lbEdge(lb)
             }, onStatus = { _, _ -> }, onButtons = { m -> press.onHeld(m); padFirst(m) }).also {
@@ -472,7 +466,7 @@ class PadTabPage(
         }
         // p12 (the user's picks 2026-10-07: the ready-made commands, "Any Item from a bag (mount hearthstone etc)"): the commands, then the mounts, then the bags'
         // items, each group under its heading once there is more than one group
-        val cmds = m.commands.mapIndexed { i, c -> Thing.Command(PadMapModel.dress(c), i + 1) }
+        val cmds = m.commands.mapIndexed { i, c -> Thing.Command(c, i + 1) }
         if (m.binds.isEmpty() && m.mounts.isEmpty() && m.items.isEmpty()) return cmds
         val out = ArrayList<Thing>()
         if (cmds.isNotEmpty()) { out += Thing.Header("Commands"); out += cmds }             // m40: none while paused
@@ -527,7 +521,7 @@ class PadTabPage(
         "uncombat" -> Thing.Uncombat
         "uncface" -> Thing.Unface
         "combat", "otherwise", "cface" -> book?.let { bk -> SpellsModel.tabSpells(bk).firstOrNull { idOf(Thing.Spell(it)) == b.what } }?.let { Thing.Spell(it) }
-        "command" -> m.commands.indexOfFirst { it.key == b.what }.takeIf { it >= 0 }?.let { Thing.Command(PadMapModel.dress(m.commands[it]), it + 1) }
+        "command" -> m.commands.indexOfFirst { it.key == b.what }.takeIf { it >= 0 }?.let { Thing.Command(m.commands[it], it + 1) }
         "mount", "item", "bind" -> rowsOf("extra", book, m).firstOrNull { idOf(it) == b.what }
         "spell", "rspell" -> book?.let { bk -> SpellsModel.tabSpells(bk).firstOrNull { idOf(Thing.Spell(it)) == b.what } }?.let { Thing.Spell(it) }
         else -> null
@@ -547,14 +541,13 @@ class PadTabPage(
     private fun moveRect(w: Float, h: Float) = RectF(SPLIT + 40f, h - 252f, w - 56f, h - 160f)
     private fun chooserBox(w: Float, h: Float) = RectF(SPLIT + 10f, 166f, w - 16f, h - 12f)
     /** p16 the radial's page plates (where the switches / set plates stand) and its wheel under them, as large as the page allows (UI Art: 540) */
-    /** p40: the radials' plates (up to 6 + New) where the set plates are */
-    private fun plateRect(i: Int) = RectF(40f + i * 98f, 192f, 40f + i * 98f + 88f, 272f)
+    private fun plateRect(i: Int) = RectF(40f + i * 222f, 196f, 40f + i * 222f + 208f, 266f)
     private fun wheelD(h: Float) = minOf(540f, h - 300f - 24f)
     private fun wheelCy(h: Float) = 296f + wheelD(h) / 2f
     /** where slice [p] (1-8) stands on the wheel: a button-sized square on its picture (the carried spell rides it) */
     private fun sliceRect(p: Int, h: Float): RectF {
         val d = wheelD(h); val r = 161.5f * d / 540f; val half = 40f * d / 540f
-        val a = Math.toRadians(RadialModel.evenCenter(p - 1, radShown()))
+        val a = Math.toRadians((p - 1) * 45.0)
         val x = WHEEL_CX + r * kotlin.math.sin(a).toFloat(); val y = wheelCy(h) - r * kotlin.math.cos(a).toFloat()
         return RectF(x - half, y - half, x + half, y + half)
     }
@@ -645,392 +638,27 @@ class PadTabPage(
     }
     private fun radIcon(book: SpellsModel.Book?, id: Int) = radEntry(book, id)?.let { Icons.get(it.icon) }
     private fun radName(book: SpellsModel.Book?, id: Int) = radEntry(book, id)?.name ?: if (id == 0) "Empty" else "A spell not in the book now"
-    private fun sliceWord(p: Int, pg: Int) = "Place $p"
+    private fun sliceWord(p: Int, pg: Int) = "Slice $p, page $pg"
 
-    // ---------------------------------------------------------------- p40 SEVERAL SPELL RADIALS (Radial.lua q2; the user's picks 2026-11-08)
-    // The plates = the character's radials (each its own picture) + New; the wheel = the shown radial's spells, evenly spread, + a "+"
-    // while it has fewer than 8; the right page = its SETTINGS (Name / Icon / Opening / Delete) while the cursor is off the wheel, the
-    // place's spell while on it. Name and Icon open the app's own keyboard and icon grid over the page (the controller's presses come as
-    // the add-on's events while its box is open); Opening flips RadialMeta's Hold / Tap; Delete asks once more ("Tap again").
-
-    /** the radials that exist (the add-on's slots), the radial on show */
-    private fun rSlots(): List<Int> = ctl?.takeIf { it.view == "radial" }?.rslots ?: emptyList()
-    /** its spells now: a touch's choice at once, else the add-on's (no gaps) */
-    private fun radIds(): List<Int> {
-        val out = (ctl?.takeIf { it.view == "radial" && it.rpage == rpage }?.rad ?: emptyList()).toMutableList()
-        radWant?.takeIf { SystemClock.uptimeMillis() < radWantUntil && it.first == rpage }?.let { (_, wp, wid) ->
-            if (wid == 0) { if (wp in 1..out.size) out.removeAt(wp - 1) }
-            else { out.remove(wid); if (wp - 1 in 0..out.size) out.add(minOf(wp - 1, out.size), wid) else out += wid }
-        }
-        return out.take(8)
-    }
-    /** the wheel's places: the spells + the "+" while there is room */
-    private fun radShown(): Int = radIds().size.let { n -> n + if (n < 8) 1 else 0 }
-    /** a radial's picture: its own icon, else its first spell's, else the spell radial command's */
-    private fun radialPicture(book: SpellsModel.Book?, slot: Int): Bitmap? {
-        RadialMeta.icon(slot).takeIf { it > 0 }?.let { return Icons.get(it) }
-        if (slot == rpage) radIds().firstOrNull()?.let { id -> radIcon(book, id)?.let { return it } }
-        return Icons.get(RADIAL_ICON)
-    }
-    /** the plates' entries: each radial's slot, then 0 = New while fewer than 6 */
-    private fun plates(): List<Int> = rSlots().let { if (it.size < 6) it + 0 else it }
-    private fun plateAt(x: Float, y: Float): Int = plates().indices.firstOrNull { plateRect(it).contains(x, y) } ?: -1
-
-    /** the right page shows the radial's settings (the cursor off the wheel), not the place's spell */
-    private var radRight = "settings"
-    private fun settingsShown(): Boolean = view == "radial" && carryNow() == null && radRight == "settings"
-
-    /** UI Art's MOCK_radial_editor: the radials' plates, the wheel itself (the cursor's place lit), the settings / the place on the right */
+    /** UI Art's MOCK_radial_editor: the page plates, the wheel itself (the cursor's slice lit), the slice's page on the right */
     private fun drawRadial(c: Canvas, m: PadMapModel.Map, w: Float, h: Float, book: SpellsModel.Book?) {
         val k = ctl?.takeIf { it.on }
         val open = chooserList() != null || tBox != null || ctlBox() != null
-        val pl = plates()
-        for ((i, slot) in pl.withIndex()) {
-            val r = plateRect(i)
-            val shownHere = slot == rpage && slot != 0
-            UiKit.button(c, r, "", if (shownHere) UiKit.Button.UP else UiKit.Button.DOWN)
-            if (slot == 0) {
-                val pp = UiKit.bodyPaint(56f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
-                c.drawText("+", r.centerX(), r.centerY() - (pp.ascent() + pp.descent()) / 2f, pp)
-            } else radialPicture(book, slot)?.let { b ->
-                val s2 = 52f
-                c.drawBitmap(b, null, RectF(r.centerX() - s2 / 2f, r.centerY() - s2 / 2f, r.centerX() + s2 / 2f, r.centerY() + s2 / 2f), PBMP)
-            }
-            // the radial on show: a gold bar under its plate
-            if (shownHere) { pShownBar.color = Theme.gold; c.drawRoundRect(RectF(r.left + 10f, r.bottom + 6f, r.right - 10f, r.bottom + 12f), 3f, 3f, pShownBar) }
-        }
+        for (i in 0..2) UiKit.button(c, plateRect(i), "Page ${i + 1}", if (i + 1 == rpage) UiKit.Button.UP else UiKit.Button.DOWN)
         val carry = carryNow()
         val onPlates = k != null && k.focus == "rpages" && !open
-        val offWheel = onPlates || (k != null && (k.focus == "tabs" || k.focus == "switches" || k.focus == "rset") && !open)
-        if (rpage != 0) {
-            val ids = radIds()
-            val n = radShown()
-            val items = (1..n).map { p ->
-                val id = ids.getOrNull(p - 1) ?: 0
-                // the carried place rides the cursor: its own place shows empty
-                if (id == 0 || (carry != null && carry.page == rpage && carry.pos == p)) null else UiKit.RadialItem(radIcon(book, id), radName(book, id), -1)
-            }
-            UiKit.radialPreview(c, WHEEL_CX, wheelCy(h), wheelD(h), items, if (offWheel) -1 else pos - 1, even = n,
-                plusSlot = if (ids.size < 8) ids.size else -1)
-        } else {
-            val pp = UiKit.inkPaint(28f).apply { textAlign = Paint.Align.CENTER; color = Theme.parchmentInkDim }
-            c.drawText(Tr.t("No spell radials: make one with +"), WHEEL_CX, wheelCy(h), pp)
+        val offWheel = onPlates || (k != null && (k.focus == "tabs" || k.focus == "switches") && !open)
+        val items = (1..8).map { p ->
+            val id = radId(p)
+            // the carried slice rides the cursor: its own place shows empty
+            if (id == 0 || (carry != null && carry.page == rpage && carry.pos == p)) null else UiKit.RadialItem(radIcon(book, id), radName(book, id), -1)
         }
-        if (onPlates) UiKit.focus(c, plateRect((k?.rplate ?: 1) - 1), onPaper = true)
+        UiKit.radialPreview(c, WHEEL_CX, wheelCy(h), wheelD(h), items, if (offWheel) -1 else pos - 1)
+        if (onPlates) UiKit.focus(c, plateRect(rpage - 1), onPaper = true)
         if (carry != null && !offWheel) UiKit.carried(c, radIcon(book, radCarryId), sliceRect(pos, h))
-        when {
-            carry != null -> drawRadialMove(c, m, carry, w, h, book)
-            settingsShown() -> drawRadialSettings(c, m, w, h, book)
-            else -> drawRadialRight(c, m, w, h, book)
-        }
+        if (carry != null) drawRadialMove(c, m, carry, w, h, book) else drawRadialRight(c, m, w, h, book)
         chooserList()?.let { drawChooser(c, m, book, 1, it, w, h) }
         drawBox(c, m, book, 1, w)
-        drawEditor(c, w, h, book)
-    }
-
-    private val pShownBar = Paint(Paint.ANTI_ALIAS_FLAG)
-    private fun settingRect(i: Int, w: Float) = RectF(SPLIT + 40f, 330f + (i - 1) * 96f, w - 56f, 330f + (i - 1) * 96f + 80f)
-
-    /** the right page off the wheel: the radial's picture and name, then Name / Icon / Opening / Delete (the cursor on the add-on's row) */
-    private fun drawRadialSettings(c: Canvas, m: PadMapModel.Map, w: Float, h: Float, book: SpellsModel.Book?) {
-        val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
-        val k = ctl?.takeIf { it.on }
-        val onNew = k != null && k.focus == "rpages" && plates().getOrNull(k.rplate - 1) == 0
-        if (rpage == 0 || onNew) {
-            val pn = UiKit.inkPaint(40f, heading = true)
-            c.drawText(Tr.t("New radial"), x0 + 8f, top + 30f - pn.ascent() - 4f, pn)
-            val help = if (rSlots().size >= 6) "Six radials is the most: delete one to make another." else
-                "${Glyphs.name("a")} or a tap on + makes one. Each radial is its own button: put it on your bars (WoW Defaults: Change, Extra)."
-            drawHelp(c, help, x0, x1, top + 110f)
-            return
-        }
-        UiKit.spell(c, radialPicture(book, rpage), x0 + 8f, top + 4f, 96f, UiKit.Spell.KNOWN)
-        val name = RadialMeta.name(rpage)
-        val pn = UiKit.inkPaint(40f, heading = true)
-        while (pn.textSize > 28f && pn.measureText(name) > x1 - x0 - 140f) pn.textSize -= 1f
-        c.drawText(Tr.t(TextUtils.ellipsize(name, TextPaint(pn), x1 - x0 - 140f, TextUtils.TruncateAt.END).toString()), x0 + 130f, top + 30f - pn.ascent() - 4f, pn)
-        val dim = UiKit.inkPaint(26f).apply { color = Theme.parchmentInkDim }
-        val n = radIds().size
-        c.drawText(Tr.t(if (n == 1) "1 spell" else "$n spells"), x0 + 132f, top + 30f + pn.textSize + 34f, dim)
-        val rows = listOf("Name" to name, "Icon" to "", "Opening" to (if (RadialMeta.tap(rpage)) "Tap" else "Hold"), "Delete" to "")
-        val cur = if (k != null && k.focus == "rset") k.rrow else -1
-        val delAsk = (k?.rdel == true) || SystemClock.uptimeMillis() < delAskUntil
-        for ((i, row) in rows.withIndex()) {
-            val r = settingRect(i + 1, w)
-            // the button's own words: the setting, and its value after a colon (the icon row shows the picture at its right end)
-            val label = when {
-                i == 3 && delAsk -> "Tap again to delete"
-                i == 0 -> "${Tr.t("Name")}: ${TextUtils.ellipsize(row.second, TextPaint(UiKit.bodyPaint(28f)), r.width() * 0.6f, TextUtils.TruncateAt.END)}"
-                i == 2 -> "${Tr.t("Opening")}: ${Tr.t(row.second)}"
-                else -> row.first
-            }
-            UiKit.button(c, r, label, if (isDown(DOWN_RSET + i + 1)) UiKit.Button.DOWN else UiKit.Button.UP, textSize = 30f)
-            if (i == 1) radialPicture(book, rpage)?.let { b -> c.drawBitmap(b, null, RectF(r.right - 84f, r.top + 12f, r.right - 28f, r.bottom - 12f), PBMP) }
-            if (i + 1 == cur) UiKit.focus(c, r, onPaper = true)
-        }
-        flash?.takeIf { SystemClock.uptimeMillis() < flashUntil }?.let {
-            val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-            c.drawText(Tr.t(it), (x0 + x1) / 2f, settingRect(4, w).bottom + 44f, pw)
-        }
-        drawHelp(c, "\"$name\" is its own button: put it on your bars (WoW Defaults: Change, Extra).", x0, x1, settingRect(4, w).bottom + 70f)
-    }
-
-    private fun drawHelp(c: Canvas, help: String, x0: Float, x1: Float, y: Float) {
-        val pd = TextPaint(UiKit.inkPaint(24f))
-        val sp = Tr.span(help)
-        val lay = StaticLayout.Builder.obtain(sp, 0, sp.length, pd, (x1 - x0 - 16f).toInt())
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(4).build()
-        c.save(); c.translate(x0 + 8f, y); lay.draw(c); c.restore()
-    }
-
-    /** a settings row tapped (the right page off the wheel): Name / Icon open the editors, Opening flips, Delete asks once more */
-    private fun radialSettingsTap(x: Float, y: Float, w: Float, m: PadMapModel.Map): Boolean {
-        if (rpage == 0) return false
-        val i = (1..4).firstOrNull { settingRect(it, w).contains(x, y) } ?: return false
-        when (i) {
-            1 -> openName(rpage, byTouch = true)
-            2 -> openIcon(rpage, byTouch = true)
-            3 -> { RadialMeta.setTap(rpage, !RadialMeta.tap(rpage)); say(if (RadialMeta.tap(rpage)) "Tap to open, it stays" else "Hold to keep it open") }
-            4 -> when {
-                m.combat -> say(COMBAT)
-                SystemClock.uptimeMillis() < delAskUntil -> { delAskUntil = 0L; RadialMeta.forget(rpage); radialOp(10) }
-                else -> { delAskUntil = SystemClock.uptimeMillis() + DEL_ASK_MS; host.postDelayed({ host.invalidate() }, DEL_ASK_MS + 50) }
-            }
-        }
-        press.finger(null)
-        host.invalidate()
-        return true
-    }
-    private var delAskUntil = 0L
-
-    /** a radial op by touch (PadTabCtl p40 / Book b49): the one-shot prefix (padtab 38) and the op's column, in one touch */
-    private fun radialOp(op: Int) = tap(listOf(PadMapModel.ROW_PADTAB to RADIAL_PREFIX, PadMapModel.ROW_PADTAB to op))
-
-    /** the add-on's events (numbered: each acted on once) and the radials that still exist (their settings kept, the rest forgotten) */
-    private var lastRevn = -1
-    private fun radialEvents(c: PadMapModel.Ctl, was: PadMapModel.Ctl?) {
-        if (c.rslots.isNotEmpty() || c.note == "rdeleted") RadialMeta.keepOnly(c.rslots)
-        // the right page follows the add-on's cursor: on the wheel = the place, off it = the settings
-        if (c.on && (was == null || was.focus != c.focus || was.view != "radial")) radRight = if (c.focus == "buttons") "slice" else "settings"
-        if (lastRevn < 0) { lastRevn = c.revn; return }                       // the first word: an old event is not acted on
-        if (c.revn == lastRevn) {
-            // the add-on's box went (its leave, a reset) while ours shows: ours goes too, nothing saved
-            if (c.rbox == null && editorOpen() && SystemClock.uptimeMillis() > edOpenedAt + ECHO_MS) closeEditor(false, tell = false)
-            return
-        }
-        lastRevn = c.revn
-        val ev = c.rev ?: return
-        when {
-            ev == "name" -> openName(c.rpage, byTouch = false)
-            ev == "icon" -> openIcon(c.rpage, byTouch = false)
-            ev == "mode" -> if (c.rpage != 0) {
-                RadialMeta.setTap(c.rpage, !RadialMeta.tap(c.rpage))
-                say(if (RadialMeta.tap(c.rpage)) "Tap to open, it stays" else "Hold to keep it open")
-            }
-            ev.startsWith("key:") -> editorKey(ev.removePrefix("key:"))
-        }
-    }
-
-    // ---------------------------------------------------------------- the Name keyboard and the Icon grid (over the whole page)
-    private var edName = 0
-    private var edText = ""
-    private var edIcon = 0
-    private var edOpenedAt = 0L
-    private var icList: IntArray = IntArray(0)
-    private var icCur = 0
-    private var icTop = 0
-    private fun editorOpen() = edName != 0 || edIcon != 0
-    private val kb by lazy {
-        ChatKeyboard(host.context, swap = false).apply {
-            sendWord = "Save"
-            text = { edText }
-            onText = { t -> edText = t.take(RadialMeta.NAME_MAX); host.invalidate() }
-            onSend = { closeEditor(true) }
-            onClose = { closeEditor(false) }
-        }
-    }
-
-    private fun openName(slot: Int, byTouch: Boolean) {
-        if (slot == 0) return
-        edIcon = 0; edName = slot; edText = RadialMeta.get(slot).name ?: ""
-        edOpenedAt = SystemClock.uptimeMillis()
-        kb.open()
-        if (byTouch) radialOp(11)
-        host.invalidate()
-    }
-
-    private fun openIcon(slot: Int, byTouch: Boolean) {
-        if (slot == 0) return
-        edName = 0; edIcon = slot
-        edOpenedAt = SystemClock.uptimeMillis()
-        val first = LinkedHashSet<Int>()
-        RadialMeta.icon(slot).takeIf { it > 0 }?.let { first += it }
-        val book = lastBook
-        for (id in radIds()) radEntry(book, id)?.icon?.takeIf { it > 0 }?.let { first += it }
-        book?.let { b -> for (e in SpellsModel.tabSpells(b)) e.icon.takeIf { it > 0 }?.let { first += it } }
-        val all = Icons.allIds()
-        icList = (first.toList() + all.filter { it !in first }).toIntArray()
-        icCur = 0; icTop = 0
-        if (byTouch) radialOp(12)
-        host.invalidate()
-    }
-
-    /** the editor closes: [save] = the typed name / nothing more for the icon (a pick saves itself); the add-on's box is told it is done */
-    private fun closeEditor(save: Boolean, tell: Boolean = true) {
-        if (edName != 0 && save) RadialMeta.setName(edName, edText)
-        val was = editorOpen()
-        edName = 0; edIcon = 0
-        if (was && tell) radialOp(13)
-        host.invalidate()
-    }
-
-    // the grid's geometry over a page w x h
-    private fun icCols(w: Float) = ((w - 80f) / IC_STEP).toInt().coerceAtLeast(1)
-    private fun icRows(h: Float) = ((h - IC_TOP - 30f) / IC_STEP).toInt().coerceAtLeast(1)
-    private fun icX0(w: Float) = (w - icCols(w) * IC_STEP + (IC_STEP - IC_CELL)) / 2f
-    private fun icRect(i: Int, w: Float): RectF {
-        val cols = icCols(w)
-        val r = i / cols - icTop; val col = i % cols
-        val x = icX0(w) + col * IC_STEP; val y = IC_TOP + r * IC_STEP
-        return RectF(x, y, x + IC_CELL, y + IC_CELL)
-    }
-    private var lastW = 1240f
-    private var lastH = 1080f
-    private var lastBook: SpellsModel.Book? = null
-    private fun icShow(w: Float, h: Float) {
-        val cols = icCols(w); val rows = icRows(h)
-        val r = icCur / cols
-        if (r < icTop) icTop = r
-        if (r >= icTop + rows) icTop = r - rows + 1
-        val maxTop = ((icList.size + cols - 1) / cols - rows).coerceAtLeast(0)
-        icTop = icTop.coerceIn(0, maxTop)
-    }
-    private fun icPick(i: Int) {
-        val id = icList.getOrNull(i) ?: return
-        RadialMeta.setIcon(edIcon, id)
-        closeEditor(true)
-    }
-
-    /** one controller press while an editor shows (the add-on's event): the keyboard's, or the grid's (D-pad / A pick / B back / X Y page) */
-    private fun editorKey(key: String) {
-        if (edName != 0) {
-            kb.press(key)
-            host.invalidate(); host.postDelayed({ host.invalidate() }, 420)
-            return
-        }
-        if (edIcon == 0) return
-        val cols = icCols(lastW); val rows = icRows(lastH)
-        val n = icList.size
-        when (key) {
-            "PADDLEFT" -> icCur = (icCur - 1).coerceAtLeast(0)
-            "PADDRIGHT" -> icCur = (icCur + 1).coerceAtMost(n - 1)
-            "PADDUP" -> icCur = (icCur - cols).coerceAtLeast(icCur % cols)
-            "PADDDOWN" -> icCur = (icCur + cols).coerceAtMost(n - 1)
-            "PAD4" -> icCur = (icCur - cols * rows).coerceAtLeast(0)
-            "PAD3" -> icCur = (icCur + cols * rows).coerceAtMost(n - 1)
-            "PAD1" -> { icPick(icCur); return }
-            "PAD2" -> { closeEditor(false); return }
-        }
-        icShow(lastW, lastH)
-        host.invalidate()
-    }
-
-    private val pDim = Paint().apply { color = Color.argb(236, 12, 10, 8) }
-    private fun drawEditor(c: Canvas, w: Float, h: Float, book: SpellsModel.Book?) {
-        lastW = w; lastH = h; lastBook = book
-        if (!editorOpen()) return
-        c.drawRect(0f, 0f, w, h, pDim)
-        val title = UiKit.bodyPaint(36f, Theme.gold)
-        val hint = UiKit.bodyPaint(24f, Theme.dim)
-        if (edName != 0) {
-            c.drawText(Tr.t("Name this radial"), 48f, 92f, title)
-            val box = RectF(48f, 130f, w - 48f, 230f)
-            UiKit.menu(c, box, solid = true)
-            val pt = UiKit.bodyPaint(40f, Color.WHITE)
-            val shown = if (edText.isEmpty()) RadialMeta.defaultName(edName) else edText
-            pt.alpha = if (edText.isEmpty()) 110 else 255
-            val tx = box.left + 28f; val ty = box.centerY() - (pt.ascent() + pt.descent()) / 2f
-            c.drawText(shown, tx, ty, pt)
-            if ((SystemClock.uptimeMillis() / 500) % 2 == 0L) {
-                val cx = tx + if (edText.isEmpty()) 0f else pt.measureText(edText) + 4f
-                pt.alpha = 255; c.drawRect(cx, ty + pt.ascent(), cx + 3f, ty + pt.descent(), pt)
-            }
-            c.drawText(Tr.t("${Glyphs.name("a")} types · Start saves · ${Glyphs.name("b")} cancels"), 48f, 270f, hint)
-            kb.measure(View.MeasureSpec.makeMeasureSpec(w.toInt(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-            val kh = kb.measuredHeight
-            kb.layout(0, 0, w.toInt(), kh)
-            c.save(); c.translate(0f, h - kh); c.clipRect(0f, 0f, w, kh.toFloat()); kb.draw(c); c.restore()
-            host.postInvalidateDelayed(250)
-            return
-        }
-        c.drawText(Tr.t("Choose an icon for ${RadialMeta.name(edIcon)}"), 48f, 72f, title)
-        c.drawText(Tr.t("${Glyphs.name("a")} chooses · ${Glyphs.name("b")} back · ${Glyphs.name("x")} / ${Glyphs.name("y")} a page down / up"), 48f, 112f, hint)
-        if (icList.isEmpty()) {
-            c.drawText(Tr.t("The game's icons are not on the device yet"), 48f, IC_TOP + 60f, UiKit.bodyPaint(28f, Color.WHITE))
-            return
-        }
-        icShow(w, h)
-        val cols = icCols(w); val rows = icRows(h)
-        val chosen = RadialMeta.icon(edIcon)
-        var decoded = 0
-        var missing = false
-        val from = icTop * cols
-        val to = minOf(icList.size, from + cols * rows)
-        for (i in from until to) {
-            val r = icRect(i, w)
-            val id = icList[i]
-            val b = Icons.peek(id) ?: if (decoded < IC_DECODES) { decoded++; Icons.get(id) } else { missing = true; null }
-            pIc.color = Color.argb(255, 30, 26, 20); c.drawRect(r, pIc)
-            b?.let { c.drawBitmap(it, null, r, PBMP) }
-            if (id == chosen) { pIcEdge.color = Theme.gold; c.drawRect(r, pIcEdge) }
-        }
-        if (missing || decoded >= IC_DECODES) host.postInvalidateOnAnimation()
-        if (icCur in from until to) UiKit.focus(c, icRect(icCur, w))
-    }
-    private val pIc = Paint()
-    private val pIcEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 4f }
-
-    /** a finger while an editor shows: the keyboard's keys; the grid scrolls (a drag) and a tap chooses; outside the board nothing */
-    private var edDownY = 0f
-    private var edLastY = 0f
-    private var edDrag = false
-    private var edAcc = 0f
-    private fun editorTouch(ev: MotionEvent, w: Float, h: Float) {
-        if (edName != 0) {
-            val kh = kb.measuredHeight.toFloat()
-            val top = h - kh
-            if (ev.y >= top || ev.actionMasked != MotionEvent.ACTION_DOWN) {
-                val e2 = MotionEvent.obtain(ev); e2.offsetLocation(0f, -top)
-                kb.dispatchTouchEvent(e2); e2.recycle()
-            }
-            host.invalidate(); host.postDelayed({ host.invalidate() }, 420)
-            return
-        }
-        when (ev.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { edDownY = ev.y; edLastY = ev.y; edDrag = false; edAcc = 0f }
-            MotionEvent.ACTION_MOVE -> {
-                if (!edDrag && abs(ev.y - edDownY) > SLOP) edDrag = true
-                if (edDrag) {
-                    edAcc += edLastY - ev.y; edLastY = ev.y
-                    val steps = (edAcc / IC_STEP).toInt()
-                    if (steps != 0) {
-                        edAcc -= steps * IC_STEP
-                        val cols = icCols(w)
-                        val maxTop = ((icList.size + cols - 1) / cols - icRows(h)).coerceAtLeast(0)
-                        icTop = (icTop + steps).coerceIn(0, maxTop)
-                        icCur = icCur.coerceIn(icTop * cols, minOf(icList.size - 1, (icTop + icRows(h)) * cols - 1))
-                        host.invalidate()
-                    }
-                }
-            }
-            MotionEvent.ACTION_UP -> if (!edDrag) {
-                if (ev.y < IC_TOP - 20f) { closeEditor(false); return }               // the header: back
-                val cols = icCols(w)
-                val from = icTop * cols
-                val to = minOf(icList.size, from + cols * icRows(h))
-                (from until to).firstOrNull { icRect(it, w).contains(ev.x, ev.y) }?.let { icPick(it) }
-            }
-        }
     }
 
     /** the right page: the slice's spell, "Slice 3, page 1", X Move, A Change ("Choose a spell for this slice." when empty) */
@@ -1046,15 +674,15 @@ class PadTabPage(
         val dim = UiKit.inkPaint(26f).apply { color = Theme.parchmentInkDim }
         c.drawText(Tr.t(sliceWord(pos, rpage)), nameLeft + 2f, top + 30f + pn.textSize + 34f, dim)
         UiKit.tex("book_divider")?.let { c.drawBitmap(it, null, RectF(x0, top + 150f, x1, top + 161f), PBMP) }
-        // p40: each radial its own Opening (RadialMeta: Tap / Hold); the pick (A / Release) is the spell wheel's (Settings)
-        val tapOpen = RadialMeta.tap(rpage)
+        // the wheels' behaviour is Home's one pair for every wheel (Home 2026-10-09: open Tap / Hold, pick A / Release; the DS tab mirrors it)
         val way = when {
-            tapOpen && HomeSettings.spellPickA -> "Tap its button to open it; A casts."
-            tapOpen -> "Tap its button to open it; point, then let the stick go to cast."
-            HomeSettings.spellPickA -> "Hold its button to keep it open; A casts."
-            else -> "Hold its button to keep it open; point, then let the stick go to cast."
+            HomeSettings.radialTap && HomeSettings.radialPickA -> "Tap it to open the wheel; A casts."
+            HomeSettings.radialTap -> "Tap it to open the wheel; point, then let the stick go to cast."
+            HomeSettings.radialPickA -> "Hold it to keep the wheel open; A casts."
+            else -> "Hold it to keep the wheel open; point, then let the stick go to cast."
         }
-        val help = (if (id == 0) "Choose a spell to add. " else "") + "\"${RadialMeta.name(rpage)}\" is its own button. $way"
+        val help = (if (id == 0) "Choose a spell for this slice. " else "") +
+            "Put the Spell Radial command on a button (WoW Defaults: Change, Extra). $way"
         val pd = TextPaint(UiKit.inkPaint(24f))
         val lay = StaticLayout.Builder.obtain(Tr.span(help), 0, Tr.span(help).length, pd, (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(5).build()
@@ -1552,7 +1180,6 @@ class PadTabPage(
 
     /** a touch on the tab's pages (the tab row is SpellbookView's) */
     fun onTouch(ev: MotionEvent, w: Float, h: Float, book: SpellsModel.Book?): Boolean {
-        if (view == "radial" && editorOpen()) { editorTouch(ev, w, h); return true }     // p40: the keyboard / the icon grid
         val m = map
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -1599,9 +1226,6 @@ class PadTabPage(
                 !single && noRect(w, r).contains(x, y) -> DOWN_NO
                 else -> DOWN_NONE
             }
-        }
-        if (view == "radial" && settingsShown() && chooserList() == null) {
-            return (1..4).firstOrNull { settingRect(it, w).contains(x, y) }?.let { DOWN_RSET + it } ?: DOWN_NONE
         }
         if (chooserList() == null) {
             val carrying = carryNow() != null
@@ -1652,7 +1276,6 @@ class PadTabPage(
             return
         }
         if (x < SPLIT) { tapLeft(x, y, h, m); return }
-        if (view == "radial" && settingsShown()) { radialSettingsTap(x, y, w, m); return }      // p40: the settings rows
         // p9 carrying: Place / Swap (the ONE game action, on the addon's chosen button = this one) or Cancel (a pick)
         if (was == DOWN_PLACE && actRect(w, h).contains(x, y)) {
             if (m.combat) say(COMBAT) else tap(listOf(PadMapModel.ROW_PADTAB to PadMapModel.COL_PLACE))
@@ -1692,17 +1315,13 @@ class PadTabPage(
     /** the left page: a set, a button, the page arrows (picks: no game action) */
     private fun tapLeft(x: Float, y: Float, h: Float, m: PadMapModel.Map) {
         if (view == "radial") {
-            // p40: a radial's plate (a pick: it shows; the right page its settings), + (New: ONE action), a place on the wheel (a pick)
-            val pi = plateAt(x, y)
-            if (pi >= 0) {
-                val slot = plates()[pi]
-                if (slot == 0) { if (m.combat) say(COMBAT) else radialOp(6) }
-                else { rpage = slot; rpageUntil = SystemClock.uptimeMillis() + ECHO_MS; radRight = "settings"; radialOp(slot - 1) }
-                host.invalidate(); return
+            // p16: a page plate (the bar page's pick: the addon opens that radial page), a slice of the wheel (the button's pick)
+            for (i in 0..2) if (plateRect(i).contains(x, y)) {
+                rpage = i + 1; rpageUntil = SystemClock.uptimeMillis() + ECHO_MS
+                tap(listOf(PadMapModel.ROW to PadMapModel.colPage(i + 1))); host.invalidate(); return
             }
-            if (rpage == 0) return
-            val sl = UiKit.radialPreviewHit(WHEEL_CX, wheelCy(h), wheelD(h), x, y, even = radShown())
-            if (sl >= 0) { fingerOnButton = true; radRight = "slice"; pick(set, sl + 1); tap(listOf(PadMapModel.ROW to PadMapModel.colPos(sl + 1))) }
+            val sl = UiKit.radialPreviewHit(WHEEL_CX, wheelCy(h), wheelD(h), x, y)
+            if (sl >= 0) { fingerOnButton = true; pick(set, sl + 1); tap(listOf(PadMapModel.ROW to PadMapModel.colPos(sl + 1))) }
             return
         }
         // p29: the form row (In combat): Caster, then the forms; a pick (padtab 15 + k)
@@ -1854,17 +1473,6 @@ class PadTabPage(
         private const val ROW_TEXT = 30f
         private const val SLOP = 18f
         private const val ECHO_MS = 1500L
-        /** p40: padtab's one-shot prefix for the radial ops (Book b49), a settings row's press id base, Delete's "Tap again" time */
-        private const val RADIAL_PREFIX = 38
-        private const val DOWN_RSET = 900
-        private const val DEL_ASK_MS = 3000L
-        /** the spell radial command's own icon (PadMap's DSSRADIAL) */
-        private const val RADIAL_ICON = 133741
-        /** the icon grid: a cell, its step, the grid's top, at most this many icons decoded per frame (the rest the next frames) */
-        private const val IC_CELL = 76f
-        private const val IC_STEP = 88f
-        private const val IC_TOP = 150f
-        private const val IC_DECODES = 14
         private const val LB_TAP_MS = 180L
         /** the addon's notes that say what became of a carry (PadTabCtl p9 / p10): each ends a Move / Cancel shown at the press */
         private val CARRY_NOTES = setOf("carry", "carry-cancel", "moved", "swapped", "move-refused", "nothing-to-move", "nothing-carried",
