@@ -114,7 +114,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
     }
     private fun allRows(): List<GameUi.Row> = when (part) {
         // Top screen: the game's own windows only (the housekeeping pass)
-        Part.GAME_UI -> GameUi.rows() + listOfNotNull(lootRow(), GameUi.playerRow(), GameUi.ufTargetRow(), GameUi.ufTotRow(), GameUi.targetRow(), GameUi.ufPartyRow(), GameUi.partyRow(), GameUi.castBarRow(),
+        Part.GAME_UI -> GameUi.rows() + listOfNotNull(lootRow(), GameUi.playerRow(), GameUi.ufTargetRow(), GameUi.ufHpRow(), GameUi.ufTotRow(), GameUi.targetRow(), GameUi.ufPartyRow(), GameUi.partyRow(), GameUi.castBarRow(),
             GameUi.nameplatesRow(), tipsRow())
         // QOL: three groups, each under its heading (a "#" row); the rows, their ids and taps are the ones Top screen had
         Part.QOL -> group("HUD", listOfNotNull(GameUi.hudRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow())) +
@@ -207,6 +207,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                         // QOL > Navigation: the same Settings.avoidDanger Home > Map set (SafePath only)
                         DANGER_ID -> if (Settings.ROUTE_MODES_ON && Settings.questTracking == "safepath")
                             Settings.avoidDanger = Settings.AVOID_DANGER[sd.second]
+                        GameUi.UFHP_ID -> GameUi.setHpText(sd.second)
                         GameUi.HUD_W_ID -> GameUi.stepHudWidth(sd.second)
                         GameUi.HUD_S_ID -> GameUi.stepHudScale(sd.second)
                         else -> GameUi.stepHudHeight(sd.second)
@@ -288,7 +289,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             c.drawText(Tr.t(r.note), box.left + 116f, box.top + 75f, pSub)
             pMode.color = if (r.known) Theme.gold else Theme.dim
             c.drawText(Tr.t(if (r.id == GameUi.HUD_H_ID || r.id == GameUi.HUD_W_ID || r.id == GameUi.HUD_S_ID) GameUi.hudValue(r.id)
-                else if (r.id == DANGER_ID) Settings.avoidDanger.replaceFirstChar { it.uppercase() } else word(r.mode)),
+                else if (r.id == DANGER_ID) Settings.avoidDanger.replaceFirstChar { it.uppercase() }
+                else if (r.id == GameUi.UFHP_ID) GameUi.HP_WORDS[GameUi.hpText()] else word(r.mode)),
                 box.right - 24f, box.centerY() + 10f, pMode)
             rowBoxes.add(box to r.id)
             y += ROW_H + GAP
@@ -327,6 +329,19 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             }
             pSub.color = Theme.textDim
             c.drawText(Tr.t("How hard SafePath's line bends round hostile mobs."), left + 6f, top + SEG_H + 34f, pSub)
+            return
+        }
+        if (r.id == GameUi.UFHP_ID) {
+            // uf11: Off / Percent / Total, the chosen one lit
+            val sw = (right - left - 2f * gap) / 3f
+            val sel = GameUi.hpText()
+            for ((k, w) in GameUi.HP_WORDS.withIndex()) {
+                val b = RectF(left + k * (sw + gap), top, left + k * (sw + gap) + sw, top + SEG_H)
+                UiKit.choice(c, b, w, k == sel)
+                stepBoxes.add(b to (GameUi.UFHP_ID to k))
+            }
+            pSub.color = Theme.textDim
+            c.drawText(Tr.t("What the target bar writes on its health. For this character."), left + 6f, top + SEG_H + 34f, pSub)
             return
         }
         if (r.id == GameUi.HUD_H_ID || r.id == GameUi.HUD_W_ID || r.id == GameUi.HUD_S_ID) {

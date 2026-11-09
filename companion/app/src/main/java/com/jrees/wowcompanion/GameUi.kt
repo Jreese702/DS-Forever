@@ -108,7 +108,9 @@ object GameUi {
                   /** hub26: DS Forever's own party frames / target bar on (the game's of that group hidden meanwhile); null = without */
                   val ufp: Boolean? = null, val uft: Boolean? = null,
                   /** uf8: the target bar's target of target on; null = without */
-                  val uftot: Boolean? = null)
+                  val uftot: Boolean? = null,
+                  /** uf11: the target bar's health text, percent / total (both off = blank); null = without */
+                  val ufhpp: Boolean? = null, val ufhpt: Boolean? = null)
     @Volatile private var sw: Sw? = null
     private var swTapAt = 0L
     private var swTapN = -1
@@ -123,10 +125,12 @@ object GameUi {
     const val SW_UFP = "ufp"; const val SW_UFT = "uft"
     /** uf8 (the user, 2026-11-09: "I want the target of target to be a toggle for this and turned off by default") */
     const val SW_UFTOT = "uftot"
+    /** uf11 (the user: "toggles for health total, Percentage and blank with blank as the default"): one row of three, kept as two switches */
+    const val SW_UFHPP = "ufhpp"; const val SW_UFHPT = "ufhpt"
     // hub19: the party frames; ON by default since 2026-11-05 (the game hides health from add-ons: its own frames are the real health)
     private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true, SW_WM to false, SW_PARTY to true,
         // hub22: start attack off until chosen; Auto Shot follows the game's own default (on) unless chosen
-        SW_ATK to false, SW_SHOT to true, SW_PMODE to false, SW_UFP to true, SW_UFT to true, SW_UFTOT to false)
+        SW_ATK to false, SW_SHOT to true, SW_PMODE to false, SW_UFP to true, SW_UFT to true, SW_UFTOT to false, SW_UFHPP to false, SW_UFHPT to false)
     /** this character's choice for [part] (its default until one is made); the resource bar's old "HUD mode" choice carries over */
     fun swWant(part: String): Boolean {
         if (part == SW_PMODE) return prefs?.getBoolean("sw.$SW_PMODE", false) ?: false
@@ -143,7 +147,7 @@ object GameUi {
     }
     /** the game's word for [part] now (null = not said / no add-on with it) */
     fun swNow(part: String): Boolean? = sw?.let { when (part) { SW_PLAYER -> it.player; SW_TARGET -> it.target; SW_NP -> it.np; SW_WM -> it.wm; SW_PARTY -> it.party; SW_ATK -> it.atk; SW_SHOT -> it.shot; SW_PMODE -> it.pmode
-        SW_UFP -> it.ufp; SW_UFT -> it.uft; SW_UFTOT -> it.uftot; else -> it.prd } }
+        SW_UFP -> it.ufp; SW_UFT -> it.uft; SW_UFTOT -> it.uftot; SW_UFHPP -> it.ufhpp; SW_UFHPT -> it.ufhpt; else -> it.prd } }
     /** the absolute column that makes [part] [on] */
     fun swCol(s: Sw, part: String, on: Boolean): Int? = s.cols[when (part) {
         SW_PLAYER -> if (on) "PLAYER_SHOW" else "PLAYER_HIDE"
@@ -157,13 +161,15 @@ object GameUi {
         SW_UFP -> if (on) "UFP_ON" else "UFP_OFF"
         SW_UFT -> if (on) "UFT_ON" else "UFT_OFF"
         SW_UFTOT -> if (on) "UFTOT_ON" else "UFTOT_OFF"
+        SW_UFHPP -> if (on) "UFHPP_ON" else "UFHPP_OFF"
+        SW_UFHPT -> if (on) "UFHPT_ON" else "UFHPT_OFF"
         else -> if (on) "PRD_ON" else "PRD_OFF"
     }]
     /** the switch to tap now: the first whose game word differs from the choice, or which the game has not had since its /reload */
     fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? =
-        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT).firstOrNull { p ->
+        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT).firstOrNull { p ->
             val now = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; SW_PARTY -> s.party
-                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; else -> s.prd }
+                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; else -> s.prd }
             // hub22: Auto Shot is the game's own saved option: only a CHOICE made here is sent (never the default over the game's)
             val chosen = p != SW_SHOT || character?.let { prefs?.contains("sw.$p.$it") } == true
             now != null && chosen && (now != want(p) || (p != SW_SHOT && s.set[p] != true))
@@ -187,6 +193,25 @@ object GameUi {
     /** uf8: the target bar's target of target, off by default */
     fun ufTotRow(): Row? = swRow(UFTOT_ID, SW_UFTOT, "Target of target", "On: beside the target bar", "Off")
     const val UFTOT_ID = "uftot"
+    /** uf11: the target bar's health text: 0 Off (blank, the default), 1 Percent, 2 Total */
+    val HP_WORDS = listOf("Off", "Percent", "Total")
+    fun hpText(): Int = if (swWant(SW_UFHPT)) 2 else if (swWant(SW_UFHPP)) 1 else 0
+    fun setHpText(k: Int) {
+        val who = character ?: return
+        prefs?.edit()?.putBoolean("sw.$SW_UFHPP.$who", k == 1)?.putBoolean("sw.$SW_UFHPT.$who", k == 2)?.apply()
+        reconcile()
+        changed()
+    }
+    fun ufHpRow(): Row? {
+        if (character == null) return null
+        val p = swNow(SW_UFHPP) ?: return null
+        val t = swNow(SW_UFHPT) ?: return null
+        val k = hpText()
+        val now = if (t) 2 else if (p) 1 else 0
+        return Row(UFHP_ID, "Target health text", null, if (k == 0) UiMode.OFF else UiMode.ON, true, k == 0,
+            if (now != k) "Sent" else listOf("Off: the bar alone", "Percent of health", "Health and its maximum")[k])
+    }
+    const val UFHP_ID = "ufhp"
     const val UFP_ID = "ufparty"
     const val UFT_ID = "uftarget"
     const val PARTY_ID = "partyframes"
@@ -346,7 +371,7 @@ object GameUi {
             fun shown(k: String) = if (o.has(k)) o.optString(k) == "shown" else null
             fun flag(k: String) = if (o.has(k)) o.optBoolean(k) else null
             Sw(o.optString("row", "uisw"), cols, shown("player"), shown("target"), flag("np"), flag("prd"), set, flag("wm"), shown("party"), flag("atk"), flag("shot"), flag("pmode"),
-               flag("ufp"), flag("uft"), flag("uftot"))
+               flag("ufp"), flag("uft"), flag("uftot"), flag("ufhpp"), flag("ufhpt"))
         }
         val prd = h.optJSONObject("prd")
         prdY = prd?.let { if (it.has("y")) it.optInt("y") else null }

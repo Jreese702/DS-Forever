@@ -324,7 +324,10 @@ local SW = { PLAYER_SHOW = 0, PLAYER_HIDE = 1, TARGET_SHOW = 2, TARGET_HIDE = 3,
              -- hub26: DS Forever's own party frames / target bar (WC.uf below)
              UFP_OFF = 18, UFP_ON = 19, UFT_OFF = 20, UFT_ON = 21,
              -- uf8 (the user, 2026-11-09: "I want the target of target to be a toggle for this and turned off by default")
-             UFTOT_OFF = 22, UFTOT_ON = 23 }
+             UFTOT_OFF = 22, UFTOT_ON = 23,
+             -- uf11 (the user: "I dont like the percentage on the health bar but I want toggles for health total, Percentage and blank with
+             -- blank as the default"): the bar's text - Total wins over Percent, neither = blank
+             UFHPP_OFF = 24, UFHPP_ON = 25, UFHPT_OFF = 26, UFHPT_ON = 27 }
 -- hub22 (the user, 2026-11-07: "a QOL setting for Start attack on Hostile targeting, so that when I press RB to target a hostile target it
 -- starts the attack, and then under that ... for hunters ... the 'Combat Auto Shot'"):
 --   ATK: a NEW hostile target starts the auto attack. The game lets no add-on start it on an event (StartAttack is protected), so the
@@ -435,6 +438,14 @@ function hub.swTap(col)
             WC.uf.chosen = WC.uf.chosen or {}
             WC.uf.chosen.tot = true
         end
+    elseif col == SW.UFHPP_OFF or col == SW.UFHPP_ON or col == SW.UFHPT_OFF or col == SW.UFHPT_ON then
+        -- uf11: the target bar's health text (percent / total)
+        if type(WC.uf) == "table" and type(WC.uf.set) == "function" then
+            local part = (col == SW.UFHPP_OFF or col == SW.UFHPP_ON) and "hpp" or "hpt"
+            WC.uf.set(part, col == SW.UFHPP_ON or col == SW.UFHPT_ON)
+            WC.uf.chosen = WC.uf.chosen or {}
+            WC.uf.chosen[part] = true
+        end
     elseif col == SW.PMODE_OFF or col == SW.PMODE_ON then
         -- hub25: Party mode allowed (PadMap's PM.allowed); turned off, PadMap ends a Party mode that is on (out of combat)
         WC.partyOk = (col == SW.PMODE_ON)
@@ -499,12 +510,14 @@ local function swDoc()
              np = either(np.np, np.hud), prd = either(np.prd, np.hud), wm = np.wm == true,
              atk = atkv, shot = shotNow(), pmode = WC.partyOk == true,
              -- hub26: our own party frames / target bar on
-             ufp = hub.ufFlag("party"), uft = hub.ufFlag("target"), uftot = hub.ufFlag("tot"),
+             ufp = hub.ufFlag("party"), uft = hub.ufFlag("target"), uftot = hub.ufFlag("tot"), ufhpp = hub.ufFlag("hpp"), ufhpt = hub.ufFlag("hpt"),
              set = { player = hm.g.player ~= nil or nil, target = hm.g.target ~= nil or nil, party = hm.g.party ~= nil or nil, np = np.np ~= nil or nil, prd = np.prd ~= nil or nil, wm = np.wm ~= nil or nil,
                      atk = hubAtk.on ~= nil or nil, shot = hubAtk.shotSet or nil, pmode = WC.partyOk ~= nil or nil,
                      ufp = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.party) or nil,
                      uft = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.target) or nil,
-                     uftot = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.tot) or nil } }
+                     uftot = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.tot) or nil,
+                     ufhpp = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.hpp) or nil,
+                     ufhpt = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.hpt) or nil } }
 end
 
 local function cbDoc()
@@ -785,7 +798,7 @@ end
 -- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar), UFTOT_OFF / UFTOT_ON (the bar's target of
 -- target, uf8: off by default); the app keeps each per character.
 do
-    local UF = { party = true, target = true, tot = false, V = "uf10" }
+    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf11" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
@@ -1389,9 +1402,19 @@ do
             if f.clsA then f.cls:Show() else f.cls:Hide() end
         else f.cls:Hide() end
         feed(f.hp, nil, "target")
-        if not pcall(function()
-            f.pct:SetFormattedText("%d%%", UnitHealthPercent("target", true, CurveConstants and CurveConstants.ScaleTo100))
-        end) then f.pct:SetText("") end
+        -- uf11: blank by default; Total = health / max (the game's short form, else whole numbers), Percent = the percent. Secret values
+        -- only go straight into the setter
+        if UF.hpt then
+            if not pcall(function()
+                f.pct:SetFormattedText("%s / %s", AbbreviateLargeNumbers(UnitHealth("target")), AbbreviateLargeNumbers(UnitHealthMax("target")))
+            end) and not pcall(function()
+                f.pct:SetFormattedText("%d / %d", UnitHealth("target"), UnitHealthMax("target"))
+            end) then f.pct:SetText("") end
+        elseif UF.hpp then
+            if not pcall(function()
+                f.pct:SetFormattedText("%d%%", UnitHealthPercent("target", true, CurveConstants and CurveConstants.ScaleTo100))
+            end) then f.pct:SetText("") end
+        else f.pct:SetText("") end
         local mark = call(GetRaidTargetIndex, "target")
         local tc = plainV(mark) and RAID_ICON[mark] or nil
         if tc then f.mark:SetTexCoord(tc[1], tc[2], tc[3], tc[4]); f.mark:Show() else f.mark:Hide() end

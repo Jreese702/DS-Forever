@@ -1475,6 +1475,13 @@
 "On: beside the target bar": "Activé : à côté de la barre de cible",
 "The target's target beside the target bar, in its nameplate colour. For this character.": "La cible de votre cible à côté de la barre de cible, avec la couleur de sa barre de nom. Pour ce personnage.",
 "The target bar alone. For this character.": "La barre de cible seule. Pour ce personnage.",
+"Target health text": "Texte de santé de la cible",
+"Percent": "Pourcentage",
+"Total": "Total",
+"Off: the bar alone": "Désactivé : la barre seule",
+"Percent of health": "Pourcentage de santé",
+"Health and its maximum": "Santé et son maximum",
+"What the target bar writes on its health. For this character.": "Ce que la barre de cible écrit sur sa santé. Pour ce personnage.",
 "The game's own target frame, by its switch below. For this character.": "Le cadre de cible du jeu, selon son interrupteur ci-dessous. Pour ce personnage."
 },
 "templates": {
