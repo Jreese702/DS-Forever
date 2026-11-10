@@ -3593,7 +3593,12 @@ end
 -- tooltip not in the list (the buff's) drew in full. Now EVERY tooltip of the game's tooltip type is held at 0: post-hooks on the type's
 -- shared Show and SetAlpha (hooksecurefunc: the game's call runs as it was, then ours), each tooltip zeroed remembered so the switch's off
 -- gives it its alpha back.
-WC.tips = { V = "tt2", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ItemRefShoppingTooltip1",
+-- tt3 (the user on tt2: "equiped tooltip is flashing"; a 60 fps recording of the top screen at a vendor: the "Equipped" comparison drew for
+-- 1-2 frames about once a second): the game refreshes a tooltip by filling it again (SetOwner, SetMerchantItem, SetUnitAura ...), and that
+-- puts its alpha back INSIDE the engine - no SetAlpha call to hook - so only the next frame's OnUpdate caught it. Now every filler is
+-- post-hooked too: every method of the tooltip type named Set... (not SetAlpha: that one has its own rule), Show, ClearLines, AddLine,
+-- AddDoubleLine, AppendText - each tooltip is held at 0 the moment it is (re)filled, before the frame draws.
+WC.tips = { V = "tt3", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ItemRefShoppingTooltip1",
                                   "ItemRefShoppingTooltip2", "EmbeddedItemTooltip", "NamePlateTooltip", "GameNoHeaderTooltip" },
             hooked = {}, on = false, zeroed = setmetatable({}, { __mode = "k" }), busy = false, typeHooked = false }
 do
@@ -3619,6 +3624,9 @@ do
     local function hold(fr, a)
         if not T.on or T.busy then return end
         if a ~= nil and (type(a) ~= "number" or a <= 0) then return end
+        -- only a TOOLTIP (the hooked methods are its type's; a shared table must never dim any other frame)
+        local okT, ty = pcall(fr.GetObjectType, fr)
+        if not okT or ty ~= "GameTooltip" then return end
         T.busy = true
         if pcall(fr.SetAlpha, fr, 0) then T.zeroed[fr] = true end
         T.busy = false
@@ -3629,8 +3637,14 @@ do
         local idx = type(mt) == "table" and mt.__index
         if type(idx) ~= "table" or type(hooksecurefunc) ~= "function" then return end
         T.typeHooked = true
-        pcall(hooksecurefunc, idx, "Show", function(fr) hold(fr) end)
         pcall(hooksecurefunc, idx, "SetAlpha", function(fr, a) hold(fr, a) end)
+        local names = { Show = true, ClearLines = true, AddLine = true, AddDoubleLine = true, AppendText = true }
+        for k, v in pairs(idx) do
+            if type(k) == "string" and type(v) == "function" and k:sub(1, 3) == "Set" and k ~= "SetAlpha" then names[k] = true end
+        end
+        for k in pairs(names) do
+            if type(idx[k]) == "function" then pcall(hooksecurefunc, idx, k, function(fr) hold(fr) end) end
+        end
     end
     function T.apply()
         T.on = T.wanted()
