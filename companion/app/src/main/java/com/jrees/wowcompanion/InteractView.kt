@@ -131,6 +131,7 @@ class InteractView(context: Context) : View(context) {
         if (current) spokenSync(msg)
         if (current) qtModeSync(msg)
         if (current) takeLootGone(msg, doc?.optJSONObject("loot"))
+        petTrainSync(msg, current)
         prevLoot = doc?.optJSONObject("loot")
         docCurrent = current
         doc = msg
@@ -737,6 +738,24 @@ class InteractView(context: Context) : View(context) {
 
     // ---- QUESTTRAIL MODE (test61): the add-on touches QuestTrail only while the app says "Quest tracking: QuestTrail" (Interact i126,
     // doc.questtrail.on); a difference is put right with its cell, at most every SPK_EVERY_MS. Held back in 1.0.9: never on.
+    /**
+     * Interact i141 (issue 90, the player: "Pet training causes an addon error and requires a restart"): at a PET trainer the add-on only
+     * SELECTS the service (its own buy is forbidden there) and counts each select in `trainer.ptc`, a finger's or the controller's A; each
+     * new count here is ONE tap on the secure "itrain" cell, which presses the game's own Train button a moment later (the game's
+     * selection event lands first). The first count seen (a replay, a new window) is only remembered.
+     */
+    private var petTrainSeen: Int? = null
+    private fun petTrainSync(msg: JSONObject, current: Boolean) {
+        val tr = msg.optJSONObject("trainer")
+        if (tr == null) { petTrainSeen = null; return }
+        val n = tr.optInt("ptc", 0)
+        val was = petTrainSeen
+        petTrainSeen = n
+        if (!current || was == null || n <= was || !tr.optBoolean("pet") || dryRun) return
+        val pad = msg.optJSONObject("pad")
+        postDelayed({ TapBridge.tap(context, pad, "itrain", 0) { why -> post { note(why, false) } } }, PET_TRAIN_MS)
+    }
+
     private var qtModeTapAt = 0L
     private fun qtModeSync(msg: JSONObject) {
         val q = msg.optJSONObject("questtrail") ?: return
@@ -5088,6 +5107,8 @@ class InteractView(context: Context) : View(context) {
 
         private const val K_OPTION = 0; private const val K_AVAIL = 1; private const val K_ACTIVE = 2
         private const val K_CHOICE = 3; private const val K_BUY = 4; private const val K_SELL = 5
+        /** i141: the pet trainer's secure Train click waits this long after the select */
+        private const val PET_TRAIN_MS = 300L
         private const val K_BACK = 6; private const val K_TRAIN = 7; private const val K_PET = 8; private const val K_MAIL = 9; private const val K_AH = 10; private const val K_TAXI = 11; private const val K_LOOT = 12
 
         private val DAYS_BEFORE = intArrayOf(0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)

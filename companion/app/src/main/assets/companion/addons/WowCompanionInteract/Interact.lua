@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i140"     -- bump on every change; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
+local IV = "i141"     -- bump on every change; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -390,8 +390,13 @@ local function trProfession()
     local rv = R(function() return GetTrainerTradeskillRankValues() end)
     return (rv and real(rv[1]) and (PN(rv[3]) or 0) > 0) and true or false
 end
+-- i141 A PET TRAINER (the player's report 2026-11-10, issue 90: "Pet training causes an addon error and requires a restart after use"; the
+-- log: "WowCompanionInteract forbidden: BuyTrainerService()"): there the purchase is the game's to make. Class and profession trainers
+-- keep their direct buy (it works: the user trains their characters with it)
+-- (inline below: this file is at Lua's 200-local limit)
 local function collectTrainer()
     local t = { npc = npc(), services = {} }
+    t.pet = TB(function() return C_Trainer.GetTrainerType() == Enum.TrainerType.Pet end) or nil                   -- i141: the app's Train is a select, then the secure "itrain" cell
     t.money = TN(function() return GetMoney() end)
     t.greeting = TS(function() return GetTrainerGreetingText() end)
     t.kind = TN(function() return C_Trainer.GetTrainerType() end)
@@ -2294,7 +2299,7 @@ local function buildDoc()
     if isOpen("quest") and questStage then doc.quest = collectQuest() end
     if doc.quest and LOOT.ms == "quest" and LOOT.full then doc.quest.space = LOOT.buildSpace() end
     if isOpen("merchant") then doc.merchant = collectMerchant() end
-    if WINDOWS.trainer and isOpen("trainer") then doc.trainer = collectTrainer() end
+    if WINDOWS.trainer and isOpen("trainer") then doc.trainer = collectTrainer(); doc.trainer.ptc = N.ptc end   -- i141: the pet selects
     if WINDOWS.stable and isOpen("stable") then doc.stable = collectStable() end
     if WINDOWS.petition and isOpen("petition") then doc.petition = LOOT.collectPetition() end
     if WINDOWS.book and isOpen("book") then doc.book = LOOT.collectBook() end
@@ -4946,8 +4951,24 @@ function ACT.train(a)
     local c = R(function() return GetTrainerServiceCost(i) end)
     local cost = c and PN(c[1]) or 0
     if (TN(function() return GetMoney() end) or 0) < cost then return false, "not enough money" end
+    -- i141: at a PET trainer our code never buys (forbidden there): it only SELECTS the service (the game's own selection call; the
+    -- game's TRAINER_DESCRIPTION_UPDATE then sets its frame's choice from its own code), and the app's next tap, the secure "itrain"
+    -- cell, presses the game's Train button, whose own code buys what is selected
+    if TB(function() return C_Trainer.GetTrainerType() == Enum.TrainerType.Pet end) == true then
+        -- the count of selects (touch AND the controller's A): each new one asks the app for ONE tap on "itrain"
+        local done, err = run(function() SelectTrainerService(i) end)
+        if done then N.ptc = (N.ptc or 0) + 1; emitSoon() end
+        return done, err
+    end
     local done, err = run(function() BuyTrainerService(i) end)
     return done, err
+end
+-- i141 the secure "itrain" cell: a click of the game's own Train button (a /click at click time: the trainer UI loads on demand)
+if WC.pad and type(WC.pad.secureRow) == "function" then
+    pcall(WC.pad.secureRow, "itrain", 1, function(btn)
+        btn:SetAttribute("type", "macro")
+        btn:SetAttribute("macrotext", "/click ClassTrainerTrainButton")
+    end, function() emitSoon() end)
 end
 
 -- ---------------------------------------------------------------- vendor actions
