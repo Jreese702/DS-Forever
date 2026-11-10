@@ -1281,8 +1281,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
 
     private fun onPad(lt: Boolean, rt: Boolean, lb: Boolean, rb: Boolean) {
         padLt = lt; padRt = rt; padLb = lb; padRb = rb
-        onShoulders?.invoke(lb, rb)
         noteClassRadial()                                                  // f-class-radial: Home's mirror
+        // 1.0.20 (the user: "the LB and class radial on L and L2 are conflicting and overlapping"): LB + a trigger is the class radial's
+        // chord, so the LB picture shows for LB ALONE - never with LT / RT held or a class radial open
+        onShoulders?.invoke(lb && !lt && !rt && !classOpen, rb)
         noteJoin(SystemClock.elapsedRealtime())
         setLayer(computeLayer())
         invalidate()
