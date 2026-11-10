@@ -126,6 +126,35 @@ def main():
         dw0.sw.wm is False and dw1.sw.wm is True and dw2.sw.wm is False and dw2.sw.set.wm is True
         and dw2.sw.cols.WM_OFF == 8 and dw2.sw.cols.WM_ON == 9)
     chk("alpha only: no Show / Hide on any game frame (%d / %d)" % (G.CALLS.show, G.CALLS.hide), G.CALLS.show == 0 and G.CALLS.hide == 0)
+    # hub28: COMBAT AUTO SHOT "IN COMBAT" (the user, 2026-11-10: "only turn it on during combat")
+    L2.execute(r'''
+        CV = { autoRangedCombat = "1" }; FIGHT = false; REFUSE = false
+        C_CVar = { GetCVarBool = function(k) return CV[k] == "1" end,
+                   SetCVar = function(k, v) if FIGHT and REFUSE then error("blocked") end; CV[k] = v end }
+        function InCombatLockdown() return FIGHT end
+        function FIRE(e) for i = 1, #MADE do local f = MADE[i]; if f.OnEvent then pcall(f.OnEvent, f, e) end end end
+    ''')
+    cv = lambda: G.CV.autoRangedCombat
+    sw(None, SW.SHOTF_ON)
+    ds0 = doc()
+    chk("hub28: In combat chosen out of a fight: the option off at once (%s), the doc's shotf (%s, set %s), cols 28 / 29"
+        % (cv(), ds0.sw.shotf, ds0.sw.set.shotf), cv() == "0" and ds0.sw.shotf is True and ds0.sw.set.shotf is True
+        and ds0.sw.cols.SHOTF_OFF == 28 and ds0.sw.cols.SHOTF_ON == 29)
+    G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED")
+    ds1 = doc()
+    chk("hub28: a fight starts: the option on (%s), the write took (shotfk %s)" % (cv(), ds1.sw.shotfk), cv() == "1" and ds1.sw.shotfk is True)
+    G.FIGHT = False; G.FIRE("PLAYER_REGEN_ENABLED")
+    chk("hub28: the fight ends: the option off again (%s)" % cv(), cv() == "0")
+    G.REFUSE = True; G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED")
+    ds2 = doc()
+    chk("hub28: the game refuses the write in a fight: no error, the doc says so (shotfk %s, option %s)" % (ds2.sw.shotfk, cv()),
+        ds2.sw.shotfk is False and cv() == "0")
+    G.FIGHT = False; G.REFUSE = False; G.FIRE("PLAYER_REGEN_ENABLED")
+    sw(None, SW.SHOTF_OFF); sw(None, SW.SHOT_ON)
+    G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); G.FIGHT = False; G.FIRE("PLAYER_REGEN_ENABLED")
+    ds3 = doc()
+    chk("hub28: In combat off, On chosen: the option stays on through a fight's end (%s, shotf %s)" % (cv(), ds3.sw.shotf),
+        cv() == "1" and ds3.sw.shotf is False)
     # THE BUNDLE (an older app's columns 34 / 35): moves every part a switch never set; a set switch wins
     L3 = tc.lupa.LuaRuntime()
     L3.execute(STUB + "MADE = {}; local base = CreateFrame; function CreateFrame(...) local f = base(...); MADE[#MADE + 1] = f; return f end")

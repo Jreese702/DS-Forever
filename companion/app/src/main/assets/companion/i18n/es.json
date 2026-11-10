@@ -1,5 +1,11 @@
 {
 "plain": {
+"In combat only": "Solo en combate",
+"In combat: the game refused it in the last fight": "En combate: el juego lo rechazó en el último combate",
+"The game's switching between Auto Shot and auto attack, off.": "El cambio del juego entre Disparo automático y ataque automático, desactivado.",
+"Auto Shot at range, auto attack up close.": "Disparo automático a distancia, ataque automático de cerca.",
+"The switching only while you are in a fight.": "El cambio solo mientras estás en combate.",
+"The game's own option, on only in fights: on as a fight starts, off when it ends. For this character.": "La opción propia del juego, activa solo en combate: se activa al empezar un combate y se desactiva al terminar. Para este personaje.",
 "Game tooltips": "Consejos del juego",
 "Off: the game's tooltips are hidden on the top screen": "Desactivado: los consejos del juego se ocultan en la pantalla superior",
 "The game's tooltips on the top screen": "Los consejos del juego en la pantalla superior",

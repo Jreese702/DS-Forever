@@ -110,7 +110,10 @@ object GameUi {
                   /** uf8: the target bar's target of target on; null = without */
                   val uftot: Boolean? = null,
                   /** uf11: the target bar's health text, percent / total (both off = blank); null = without */
-                  val ufhpp: Boolean? = null, val ufhpt: Boolean? = null)
+                  val ufhpp: Boolean? = null, val ufhpt: Boolean? = null,
+                  /** hub28: Combat Auto Shot only in fights; null = an add-on without it. [shotfk]: the last fight's write took (false =
+                   *  the game refused it in the fight), null = no fight yet */
+                  val shotf: Boolean? = null, val shotfk: Boolean? = null)
     @Volatile private var sw: Sw? = null
     private var swTapAt = 0L
     private var swTapN = -1
@@ -118,6 +121,10 @@ object GameUi {
     const val SW_PLAYER = "player"; const val SW_TARGET = "target"; const val SW_NP = "np"; const val SW_PRD = "prd"; const val SW_WM = "wm"
     const val SW_PARTY = "party"
     const val SW_ATK = "atk"; const val SW_SHOT = "shot"
+    /** hub28 (the user, 2026-11-10: "add a third toggle to the hunter option to basically only turn it on during combat"): Combat Auto
+     *  Shot's third choice, kept as its own switch (off by default): while on, the add-on turns the game's option on as a fight starts
+     *  and off when it ends, and SW_SHOT is not reconciled (the game's word flips with each fight) */
+    const val SW_SHOTF = "shotf"
     /** hub25: Party mode, EXPERIMENTAL (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"):
      *  one choice for the whole app (not per character), off until turned on */
     const val SW_PMODE = "pmode"
@@ -130,7 +137,7 @@ object GameUi {
     // hub19: the party frames; ON by default since 2026-11-05 (the game hides health from add-ons: its own frames are the real health)
     private val SW_DEFAULT = mapOf(SW_PLAYER to false, SW_TARGET to false, SW_NP to true, SW_PRD to true, SW_WM to false, SW_PARTY to true,
         // hub22: start attack off until chosen; Auto Shot follows the game's own default (on) unless chosen
-        SW_ATK to false, SW_SHOT to true, SW_PMODE to false, SW_UFP to true, SW_UFT to true, SW_UFTOT to false, SW_UFHPP to false, SW_UFHPT to false)
+        SW_ATK to false, SW_SHOT to true, SW_PMODE to false, SW_UFP to true, SW_UFT to true, SW_UFTOT to false, SW_UFHPP to false, SW_UFHPT to false, SW_SHOTF to false)
     /** this character's choice for [part] (its default until one is made); the resource bar's old "HUD mode" choice carries over */
     fun swWant(part: String): Boolean {
         if (part == SW_PMODE) return prefs?.getBoolean("sw.$SW_PMODE", false) ?: false
@@ -146,7 +153,7 @@ object GameUi {
         changed()
     }
     /** the game's word for [part] now (null = not said / no add-on with it) */
-    fun swNow(part: String): Boolean? = sw?.let { when (part) { SW_PLAYER -> it.player; SW_TARGET -> it.target; SW_NP -> it.np; SW_WM -> it.wm; SW_PARTY -> it.party; SW_ATK -> it.atk; SW_SHOT -> it.shot; SW_PMODE -> it.pmode
+    fun swNow(part: String): Boolean? = sw?.let { when (part) { SW_PLAYER -> it.player; SW_TARGET -> it.target; SW_NP -> it.np; SW_WM -> it.wm; SW_PARTY -> it.party; SW_ATK -> it.atk; SW_SHOT -> it.shot; SW_SHOTF -> it.shotf; SW_PMODE -> it.pmode
         SW_UFP -> it.ufp; SW_UFT -> it.uft; SW_UFTOT -> it.uftot; SW_UFHPP -> it.ufhpp; SW_UFHPT -> it.ufhpt; else -> it.prd } }
     /** the absolute column that makes [part] [on] */
     fun swCol(s: Sw, part: String, on: Boolean): Int? = s.cols[when (part) {
@@ -157,6 +164,7 @@ object GameUi {
         SW_PARTY -> if (on) "PARTY_SHOW" else "PARTY_HIDE"
         SW_ATK -> if (on) "ATK_ON" else "ATK_OFF"
         SW_SHOT -> if (on) "SHOT_ON" else "SHOT_OFF"
+        SW_SHOTF -> if (on) "SHOTF_ON" else "SHOTF_OFF"
         SW_PMODE -> if (on) "PMODE_ON" else "PMODE_OFF"
         SW_UFP -> if (on) "UFP_ON" else "UFP_OFF"
         SW_UFT -> if (on) "UFT_ON" else "UFT_OFF"
@@ -167,11 +175,13 @@ object GameUi {
     }]
     /** the switch to tap now: the first whose game word differs from the choice, or which the game has not had since its /reload */
     fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? =
-        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT).firstOrNull { p ->
+        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOTF, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT).firstOrNull { p ->
             val now = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; SW_PARTY -> s.party
-                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; else -> s.prd }
+                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; else -> s.prd }
             // hub22: Auto Shot is the game's own saved option: only a CHOICE made here is sent (never the default over the game's)
             val chosen = p != SW_SHOT || character?.let { prefs?.contains("sw.$p.$it") } == true
+            // hub28: while "In combat" is wanted (and the add-on knows it), the game's option follows the fight: not tapped
+            if (p == SW_SHOT && s.shotf != null && want(SW_SHOTF)) return@firstOrNull false
             now != null && chosen && (now != want(p) || (p != SW_SHOT && s.set[p] != true))
         }?.let { it to want(it) }
     private fun swRow(id: String, part: String, label: String, onWord: String, offWord: String): Row? {
@@ -230,9 +240,32 @@ object GameUi {
     fun autoShotRow(): Row? {
         val now = swNow(SW_SHOT) ?: return null
         val who = character ?: return null
+        if (shotMode() == 2) {
+            val f = swNow(SW_SHOTF)
+            return Row(SHOT_ID, "Combat Auto Shot", null, UiMode.ON, true, false,
+                if (f != true) "Sent" else if (sw?.shotfk == false) "In combat: the game refused it in the last fight" else "In combat only")
+        }
         val want = if (prefs?.contains("sw.$SW_SHOT.$who") == true) swWant(SW_SHOT) else now
         return Row(SHOT_ID, "Combat Auto Shot", null, if (want) UiMode.ON else UiMode.OFF, true, !now,
             if (now == want) (if (now) "On: Auto Shot at range, auto attack up close" else "Off") else "Sent")
+    }
+    /** hub28: Combat Auto Shot's three choices (Off / On / In combat); "In combat" only with an add-on that has it */
+    val SHOT_WORDS = listOf("Off", "On", "In combat")
+    fun shotThree(): Boolean = swNow(SW_SHOTF) != null
+    fun shotMode(): Int {
+        if (shotThree() && swWant(SW_SHOTF)) return 2
+        val who = character ?: return 0
+        val want = if (prefs?.contains("sw.$SW_SHOT.$who") == true) swWant(SW_SHOT) else swNow(SW_SHOT) == true
+        return if (want) 1 else 0
+    }
+    fun setShotMode(k: Int) {
+        val who = character ?: return
+        val e = prefs?.edit() ?: return
+        e.putBoolean("sw.$SW_SHOTF.$who", k == 2)
+        if (k != 2) e.putBoolean("sw.$SW_SHOT.$who", k == 1)
+        e.apply()
+        reconcile()
+        changed()
     }
     const val SHOT_ID = "autoshot"
     /** hub22: the add-on's "atkgo" (a new hostile target): tap the secure /startattack cell it names (Spells' party row 36), at most every 300 ms */
@@ -371,7 +404,7 @@ object GameUi {
             fun shown(k: String) = if (o.has(k)) o.optString(k) == "shown" else null
             fun flag(k: String) = if (o.has(k)) o.optBoolean(k) else null
             Sw(o.optString("row", "uisw"), cols, shown("player"), shown("target"), flag("np"), flag("prd"), set, flag("wm"), shown("party"), flag("atk"), flag("shot"), flag("pmode"),
-               flag("ufp"), flag("uft"), flag("uftot"), flag("ufhpp"), flag("ufhpt"))
+               flag("ufp"), flag("uft"), flag("uftot"), flag("ufhpp"), flag("ufhpt"), flag("shotf"), flag("shotfk"))
         }
         val prd = h.optJSONObject("prd")
         prdY = prd?.let { if (it.has("y")) it.optInt("y") else null }

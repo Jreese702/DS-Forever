@@ -210,6 +210,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                         DANGER_ID -> if (Settings.ROUTE_MODES_ON && Settings.questTracking == "safepath")
                             Settings.avoidDanger = Settings.AVOID_DANGER[sd.second]
                         GameUi.UFHP_ID -> GameUi.setHpText(sd.second)
+                        GameUi.SHOT_ID -> GameUi.setShotMode(sd.second)
                         GameUi.HUD_W_ID -> GameUi.stepHudWidth(sd.second)
                         GameUi.HUD_S_ID -> GameUi.stepHudScale(sd.second)
                         else -> GameUi.stepHudHeight(sd.second)
@@ -292,7 +293,8 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             pMode.color = if (r.known) Theme.gold else Theme.dim
             c.drawText(Tr.t(if (r.id == GameUi.HUD_H_ID || r.id == GameUi.HUD_W_ID || r.id == GameUi.HUD_S_ID) GameUi.hudValue(r.id)
                 else if (r.id == DANGER_ID) Settings.avoidDanger.replaceFirstChar { it.uppercase() }
-                else if (r.id == GameUi.UFHP_ID) GameUi.HP_WORDS[GameUi.hpText()] else word(r.mode)),
+                else if (r.id == GameUi.UFHP_ID) GameUi.HP_WORDS[GameUi.hpText()]
+                else if (r.id == GameUi.SHOT_ID && GameUi.shotThree()) GameUi.SHOT_WORDS[GameUi.shotMode()] else word(r.mode)),
                 box.right - 24f, box.centerY() + 10f, pMode)
             rowBoxes.add(box to r.id)
             y += ROW_H + GAP
@@ -344,6 +346,20 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             }
             pSub.color = Theme.textDim
             c.drawText(Tr.t("What the target bar writes on its health. For this character."), left + 6f, top + SEG_H + 34f, pSub)
+            return
+        }
+        if (r.id == GameUi.SHOT_ID && GameUi.shotThree()) {
+            // hub28: Off / On / In combat, the chosen one lit
+            val sw = (right - left - 2f * gap) / 3f
+            val sel = GameUi.shotMode()
+            for ((k, w) in GameUi.SHOT_WORDS.withIndex()) {
+                val b = RectF(left + k * (sw + gap), top, left + k * (sw + gap) + sw, top + SEG_H)
+                UiKit.choice(c, b, w, k == sel)
+                stepBoxes.add(b to (GameUi.SHOT_ID to k))
+            }
+            pSub.color = Theme.textDim
+            c.drawText(Tr.t(listOf("The game's switching between Auto Shot and auto attack, off.",
+                "Auto Shot at range, auto attack up close.", "The switching only while you are in a fight.")[sel]), left + 6f, top + SEG_H + 34f, pSub)
             return
         }
         if (r.id == GameUi.HUD_H_ID || r.id == GameUi.HUD_W_ID || r.id == GameUi.HUD_S_ID) {
@@ -411,6 +427,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             else "The game's player frame (and its pet frame) is hidden. For this character."
         if (r.id == GameUi.ATK_ID) return if (r.mode == UiMode.ON) "Targeting an enemy (RB) starts your auto attack. For this character."
             else "Targeting an enemy only targets it. For this character."
+        if (r.id == GameUi.SHOT_ID && GameUi.shotMode() == 2) return "The game's own option, on only in fights: on as a fight starts, off when it ends. For this character."
         if (r.id == GameUi.SHOT_ID) return if (r.mode == UiMode.ON) "The game's own option: Auto Shot (bows, guns, wands) at range, auto attack up close."
             else "The game's own option, off: no switching between Auto Shot and auto attack."
         if (r.id == GameUi.UFP_ID) return if (r.mode == UiMode.ON) "DS Forever's party frames: real health, Party mode's pick and LB buttons. The game's are hidden. For this character."

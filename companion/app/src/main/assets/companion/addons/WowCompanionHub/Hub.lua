@@ -29,7 +29,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S = WC.S
 
-local HV = "hub27"          -- hub27: the Party mode switch also starts / stops the combat log (PadMap m112); hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub28"          -- hub28: COMBAT AUTO SHOT "In combat" (the user, 2026-11-10: "add a third toggle to the hunter option to basically only turn it on during combat"): "uisw" 28 / 29 - while on, the game's autoRangedCombat is written 1 as a fight starts and 0 when it ends (and 0 at once out of a fight); the doc's sw.shotf, sw.shotfk = whether the fight's write took; hub27: the Party mode switch also starts / stops the combat log (PadMap m112); hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -327,7 +327,9 @@ local SW = { PLAYER_SHOW = 0, PLAYER_HIDE = 1, TARGET_SHOW = 2, TARGET_HIDE = 3,
              UFTOT_OFF = 22, UFTOT_ON = 23,
              -- uf11 (the user: "I dont like the percentage on the health bar but I want toggles for health total, Percentage and blank with
              -- blank as the default"): the bar's text - Total wins over Percent, neither = blank
-             UFHPP_OFF = 24, UFHPP_ON = 25, UFHPT_OFF = 26, UFHPT_ON = 27 }
+             UFHPP_OFF = 24, UFHPP_ON = 25, UFHPT_OFF = 26, UFHPT_ON = 27,
+             -- hub28: Combat Auto Shot only in fights
+             SHOTF_OFF = 28, SHOTF_ON = 29 }
 -- hub22 (the user, 2026-11-07: "a QOL setting for Start attack on Hostile targeting, so that when I press RB to target a hostile target it
 -- starts the attack, and then under that ... for hunters ... the 'Combat Auto Shot'"):
 --   ATK: a NEW hostile target starts the auto attack. The game lets no add-on start it on an event (StartAttack is protected), so the
@@ -351,6 +353,21 @@ local function shotSet(on)
     hubAtk.shotSet = true
     return pcall(set, "autoRangedCombat", on and "1" or "0")
 end
+-- hub28 "IN COMBAT": the game's Auto Shot switching only while a fight is on. The write at the fight's start is made inside the fight
+-- (PLAYER_REGEN_DISABLED comes with the lockdown already on): pcall'd and read back, the answer kept for the doc (shotfk) so the app
+-- can say when the game refused it. Out of a fight the option is 0.
+local function shotWrite(on)
+    local set = (C_CVar and C_CVar.SetCVar) or _G.SetCVar
+    if type(set) ~= "function" then return false end
+    pcall(set, "autoRangedCombat", on and "1" or "0")
+    return shotNow() == on
+end
+local function shotFightSync(fight)
+    if hubAtk.shotFight ~= true then return end
+    local ok = shotWrite(fight == true)
+    if fight == true then hubAtk.shotFightOk = ok end
+end
+WC.shotFightSync = shotFightSync
 local function plainTrue(f, ...)
     local ok, v = pcall(f, ...)
     if not ok then return false end
@@ -423,6 +440,10 @@ function hub.swTap(col)
     elseif col == SW.WM_OFF or col == SW.WM_ON then WC.npWant.wm = (col == SW.WM_ON)
     elseif col == SW.ATK_OFF or col == SW.ATK_ON then hubAtk.on = (col == SW.ATK_ON)
     elseif col == SW.SHOT_OFF or col == SW.SHOT_ON then shotSet(col == SW.SHOT_ON)
+    elseif col == SW.SHOTF_OFF or col == SW.SHOTF_ON then
+        -- hub28: "In combat" on / off; on: the option follows the fight from now (0 at once out of one)
+        hubAtk.shotFight = (col == SW.SHOTF_ON)
+        if hubAtk.shotFight then shotFightSync(InCombatLockdown()) end
     elseif col == SW.UFP_OFF or col == SW.UFP_ON or col == SW.UFT_OFF or col == SW.UFT_ON then
         -- hub26: our own frames on / off; the game's of that group follow (hidden while ours show)
         if type(WC.uf) == "table" and type(WC.uf.set) == "function" then
@@ -509,10 +530,12 @@ local function swDoc()
              party = hm.g.party == true and "hidden" or "shown",
              np = either(np.np, np.hud), prd = either(np.prd, np.hud), wm = np.wm == true,
              atk = atkv, shot = shotNow(), pmode = WC.partyOk == true,
+             shotf = hubAtk.shotFight == true, shotfk = hubAtk.shotFightOk,
              -- hub26: our own party frames / target bar on
              ufp = hub.ufFlag("party"), uft = hub.ufFlag("target"), uftot = hub.ufFlag("tot"), ufhpp = hub.ufFlag("hpp"), ufhpt = hub.ufFlag("hpt"),
              set = { player = hm.g.player ~= nil or nil, target = hm.g.target ~= nil or nil, party = hm.g.party ~= nil or nil, np = np.np ~= nil or nil, prd = np.prd ~= nil or nil, wm = np.wm ~= nil or nil,
                      atk = hubAtk.on ~= nil or nil, shot = hubAtk.shotSet or nil, pmode = WC.partyOk ~= nil or nil,
+                     shotf = hubAtk.shotFight ~= nil or nil,
                      ufp = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.party) or nil,
                      uft = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.target) or nil,
                      uftot = (type(WC.uf) == "table" and type(WC.uf.chosen) == "table" and WC.uf.chosen.tot) or nil,
@@ -675,6 +698,8 @@ end
 f:SetScript("OnEvent", function(_, event)
     setup()
     if event == "PLAYER_REGEN_ENABLED" and hub.pending then apply() end
+    -- hub28: Combat Auto Shot "In combat" follows the fight
+    if event == "PLAYER_REGEN_DISABLED" then pcall(shotFightSync, true) elseif event == "PLAYER_REGEN_ENABLED" then pcall(shotFightSync, false) end
     if RECHECK[event] then
         ridersCheck()
         -- the bars may be rebuilt a moment after the event (a level-up's flash): look once more
