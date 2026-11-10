@@ -64,7 +64,9 @@ object HomeFightFace {
     fun commandIcons(map: PadMapModel.Map): Map<Int, Int> =
         map.sets.flatMap { st ->
             st.slots.filter { it.kind == PadMapModel.Kind.COMMAND && st.set in 1..4 && it.pos in 1..8 }.mapNotNull { sl ->
-                (PadMapModel.commandOn(map, sl)?.icon?.takeIf { it != 0 } ?: sl.icon.takeIf { it != 0 })?.let { cmdKey(st.set, sl.pos) to it }
+                // p35: Home Bar draws the bar's swirl ([CastView.HOME_SWIRL]), not its file icon
+                (if (sl.key == PadMapModel.HOME_KEY) CastView.HOME_SWIRL
+                 else PadMapModel.commandOn(map, sl)?.icon?.takeIf { it != 0 } ?: sl.icon.takeIf { it != 0 })?.let { cmdKey(st.set, sl.pos) to it }
             }
         }.toMap()
 

@@ -554,7 +554,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // that to open the pause menu"; "Wheel everywhere"); B still goes Home from a room, a room slice switches rooms
         barSelect = HomeBarSelect(this, strip, { questsPad }) { r -> if (r == Room.HOME) openPause("the bar's swirl", byStart = false) else pickRoom(r) }
         // LATER item 23a (the user: "the buttons at the top still show their presses, and that's confusing"): quiet while the cursor is up
-        barSelect.onOpenChanged = { open -> castView.quietPresses = open }
+        // p35: while the bar holds the controller its D-pad Left / Right move it: Cast shows the bar's arrows there
+        barSelect.onOpenChanged = { open -> castView.quietPresses = open; castView.barArrows = open }
         // b-cast-predict-menus (the user: "the predictive cast is triggering when I am navigating menus"): the predicted bar starts only
         // for a press that goes to the game's bars - the router's own holder (the add-on's capture), Home's guests, the menus on screen
         castView.pressesReachGame = {
@@ -1573,7 +1574,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             if (::interactView.isInitialized) interactView.onPadKey(k, down)     // 1.0.8: its keyboard, only while it is up
             if (k == "PADFORWARD" && down) startPressed()
             if (k == "PAD2" && down) bPressed()
-            if (down && k == "PADDDOWN" && room == Room.HOME && capHolder.isEmpty() && !DirectPad.sideHeld()
+            // p35 (the user 2026-11-10: "When pressing down on the Dpad without the DS toolbar enabled the home button is lighting up for
+            // a half second"): only while the bare Down IS the Home bar - the toolbar on, or the Home Bar command put on it
+            if (down && k == "PADDDOWN" && room == Room.HOME && capHolder.isEmpty() && !DirectPad.sideHeld() && downIsHomeBar()
                 && interactView.visibility != View.VISIBLE && dialogView.visibility != View.VISIBLE
                 && spellsOverlay.visibility != View.VISIBLE && startView.visibility != View.VISIBLE
                 && !homeView.partyHoldsDpad()) barSelect.openEarly(room)       // Party mode's D-pad: no early bar either (2026-11-04)
@@ -3220,6 +3223,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** Spells' last word on the D-pad room bar (null = an older add-on) */
     private var lastDpad: PadMapModel.Dpad? = null
+    /** p35: the bare D-pad Down opens Home's room bar: the DS WoW toolbar is on, or the Home Bar command (DSHOME) is on that button */
+    private fun downIsHomeBar(): Boolean =
+        lastDpad?.want == true || lastPadMap?.let { m -> PadMapModel.slot(m, 1, 4)?.key == PadMapModel.HOME_KEY } == true
 
     // ---------------------------------------------------------------- f-new-spell-prompt: learned spells, one prompt at a time on Home
     /** the user (1.0.9): "After learning new spells when I return home they should have a prompt 1 at a time a to bind or b to dismiss" */

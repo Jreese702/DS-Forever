@@ -507,6 +507,8 @@ object PadMapModel {
     // p9 THE PADTAB ROW (the pad owner's YES 2026-10-07, Book b22): the Controller room's tabs and Move by touch. Plain; 4 is the ONE
     // game action (refused in a fight with an ack), the rest are no-action picks
     const val ROW_PADTAB = "padtab"
+    /** p35: the Home Bar command (Spells' DSHOME): drawn with the bar's own swirl everywhere */
+    const val HOME_KEY = "DSHOME"
     /** 0-2: WoW Defaults, DS, In combat; p16 / b29: 10 = the 4th tab, the spell radial (the pad owner's YES: 11-39 stay refused) */
     fun colTab(tab: Int) = if (tab >= 5) COL_PARTY_TAB else if (tab >= 4) 10 else tab.coerceIn(1, 3) - 1
     /** PARTY MODE (Book b47, PARTY_BUILD.md 2.3): padtab 26 shows the Party mode tab (the app taps partycfg.pad.ptab.tab when it has it) */

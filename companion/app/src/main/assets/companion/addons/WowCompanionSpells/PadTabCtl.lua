@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p34"                -- bump on every change; p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
+local CV = "p35"                -- bump on every change; p35: the room bar's Left / Right / Open in no picker (the user 2026-11-10: "the home bar right left and open should be removed"; a button that has one keeps it); p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -198,6 +198,8 @@ local function isFace(slot) return slot and slot.kind == "fixed" and slot.face =
 -- commands by the same "extra" row (the app counts them in the padmap doc's own order), so only the lists split
 local CTABS = { "spells", "general", "professions", "extra", "dstool" }
 local function dsKey(k) return type(k) == "string" and k:sub(1, 2) == "DS" end
+-- p35: the room bar's own three (the Home Bar command opens the bar and the D-pad moves it, as the toolbar's Down does)
+local function barKey(k) return type(k) == "string" and k:sub(1, 5) == "DSBAR" end
 local function ctabs() if onlySpells() or tc.view == "radial" then return { "spells", "general", "professions" } end return CTABS end
 local function ctabIndex(list)
     for i, v in ipairs(ctabs()) do if v == list then return i end end
@@ -243,7 +245,7 @@ rows = function()
         local want = tc.chooser and tc.chooser.list or "extra"
         for _, x in ipairs(list) do
             local ds = x.kind == "command" and dsKey(x.key)                 -- p34: the DS tab's, else Extra's
-            if (want == "dstool") ~= (ds == true) then
+            if (want == "dstool") ~= (ds == true) or (x.kind == "command" and barKey(x.key)) then
             elseif x.kind == "command" or x.kind == "bind" then out[#out + 1] = { kind = x.kind, key = x.key }     -- p15: the game's bindings
             else out[#out + 1] = { kind = x.kind, id = x.id, key = (x.kind == "mount" and "m:" or "i:") .. tostring(x.id), n = x.n } end
         end

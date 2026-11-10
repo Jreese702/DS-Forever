@@ -108,7 +108,9 @@ class PadTabPage(
     /** b-bind-hold-triggers (the user 2026-10-13): the set a finger's chooser was opened on (a trigger held then), kept until it is done */
     private var tLock: Int? = null
     /** p11 the chooser's tabs, the gaps (and LB / RB) round the open one (UI Art's TabGaps) */
-    private val cGaps = UiKit.TabGaps(vertical = false, gap = 46f)          // the menu is narrow: a slimmer gap, the tabs keep their words
+    // p35 (the user 2026-11-10: "the choosers tabs are all squished narrow"): the gap only as wide as the gold arrow it holds, and none of
+    // the row's end room for L / R badges (the chooser draws none: LB / RB are the room's tabs) - five tabs about 64 px wide, not 37
+    private val cGaps = UiKit.TabGaps(vertical = false, gap = 40f, rest = 8f)
     private var tBox: Box? = null
     private var scroll = 0f
     private var scrollMax = 0f
@@ -486,7 +488,7 @@ class PadTabPage(
         sl == null || sl.kind == PadMapModel.Kind.NONE -> null
         sl.kind == PadMapModel.Kind.BIND -> bindIcon(sl.key, sl.icon)
         sl.kind == PadMapModel.Kind.FIXED -> UiKit.tex(FIXED_ART[(p - 5).coerceIn(0, 3)])
-        else -> PadMapModel.commandOn(m, sl)?.let { Icons.get(it.icon) } ?: Icons.get(sl.icon)
+        else -> PadMapModel.commandOn(m, sl)?.let { cmdIcon(it) } ?: Icons.get(sl.icon)
     }
 
     private fun nameOf(m: PadMapModel.Map, sl: PadMapModel.Slot?): String = when {
@@ -506,8 +508,11 @@ class PadTabPage(
      *  Forever's own commands (keys "DS..."), the chooser's DS tab, out of Extra; each keeps its place in the padmap doc's list (the
      *  "extra" pad row counts by it) */
     private fun dsCommand(c: PadMapModel.Command) = c.key.startsWith("DS")
+    /** p35 (the user 2026-11-10): the room bar's Left / Right / Open are in no picker (Home Bar opens it; the D-pad moves it) */
     private fun commandRows(m: PadMapModel.Map, ds: Boolean) =
-        m.commands.mapIndexed { i, c -> Thing.Command(c, i + 1) }.filter { dsCommand(it.c) == ds }
+        m.commands.mapIndexed { i, c -> Thing.Command(c, i + 1) }.filter { dsCommand(it.c) == ds && !it.c.key.startsWith("DSBAR") }
+    /** p35 (the user: "the Home bar button should have the normal swirl Icon"): a command's picture; Home Bar wears the bar's own swirl */
+    private fun cmdIcon(c: PadMapModel.Command?) = if (c?.key == PadMapModel.HOME_KEY) UiKit.tex("home_live_base") else c?.let { Icons.get(it.icon) }
 
     private fun rowsOf(list: String, book: SpellsModel.Book?, m: PadMapModel.Map): List<Thing> {
         if ((list != "extra" && list != "dstool") || onlySpells(m)) {
@@ -1103,7 +1108,7 @@ class PadTabPage(
         val cur = keys.indexOf(shownList).coerceAtLeast(0)
         val ccTabs = ctlChooser()?.tabs == true
         val classIcon = book?.lines?.firstOrNull { it.index == 1 }?.let { Icons.get(it.icon) }
-        val tr = cGaps.row(keys.size, inner.left + 8f, inner.right - 8f, box.top + TABS_TOP, 84f, 84f, cur, host)
+        val tr = cGaps.row(keys.size, inner.left + 8f - UiKit.TAB_END_W, inner.right - 8f + UiKit.TAB_END_W, box.top + TABS_TOP, 84f, 84f, cur, host)
         for (i in keys.indices) {
             val icon = when (keys[i]) {
                 "spells" -> UiKit.tex("ricon_spellbook"); "general" -> classIcon
@@ -1152,7 +1157,7 @@ class PadTabPage(
                 val made = t is Thing.Command && t.c.made
                 UiKit.menuRow(c, rr, thingName(t), sel != null && idOf(t) == sel, enabled = !m.combat && (t !is Thing.Binding || bindWhy(m) == null),
                     mark = if (made) "icon_check" else null, size = ROW_TEXT)
-                val icon = when (t) { is Thing.Spell -> Icons.get(t.e.icon); is Thing.Command -> Icons.get(t.c.icon)
+                val icon = when (t) { is Thing.Spell -> Icons.get(t.e.icon); is Thing.Command -> cmdIcon(t.c)
                     is Thing.Mount -> Icons.get(t.x.icon); is Thing.Item -> Icons.get(t.x.icon)
                     is Thing.Binding -> bindIcon(t.b.key, t.b.icon)
                     else -> null }

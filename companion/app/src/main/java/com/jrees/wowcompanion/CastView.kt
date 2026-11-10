@@ -361,7 +361,21 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         set(v) { if (field != v) { field = v; invalidate() } }
     private val roomBtns = arrayOfNulls<Btn>(4)
 
+    /**
+     * p35 (the user 2026-11-10: "change the left and right D-pad button Icons to move the bar left or right. until the home bar is
+     * closed"): while Home's room bar is open (the toolbar's Down, or the Home Bar command on any button), the bare D-pad's Left / Right
+     * show the bar's arrows (the bar holds the controller then: they move it)
+     */
+    var barArrows = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+    private val barBtns = arrayOfNulls<Btn>(2)
+
     private fun roomOverride(li: Int, src: Int): Btn? {
+        if (barArrows && li == N && (src == 0 || src == 2)) {
+            val i = src / 2
+            return barBtns[i] ?: Btn().apply { p = src + 1; k = "fixed"; e = true; special = if (i == 0) SP_ARROW_L else SP_ARROW_R }
+                .also { barBtns[i] = it }
+        }
         if (!roomBarOn || li != N || src > 3) return null
         val what = roomBar?.get(src + 1) ?: return null
         roomBtns[src]?.let { if (it.icon > 0 && it.shader == null) resolve(it, false); return it }
@@ -465,8 +479,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private fun commandOverride(li: Int, src: Int): Btn? {
         if (li !in 0 until STATE_LAYERS) return null
         val at = li * 8 + src
-        val icon = commands?.get(at)?.takeIf { it > 0 } ?: return null
+        val icon = commands?.get(at)?.takeIf { it > 0 || it == HOME_SWIRL } ?: return null
         val cached = cmdBtns[at]
+        if (icon == HOME_SWIRL) {                                          // p35: the Home Bar command, the bar Home button's own face
+            return cached?.takeIf { it.kit == "home_stone_rough" } ?: Btn().apply { p = src + 1; k = "command"; e = true; kit = "home_stone_rough"; kitCut = true; kitScale = 0.95f }
+                .also { cmdBtns[at] = it }
+        }
         if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, src >= 4); return cached }
         val b = Btn().apply { p = src + 1; k = "command"; this.icon = icon; e = true }
         classify(b)
@@ -3609,6 +3627,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private const val SP_JUMP = 3
         private const val SP_HAND = 4
         private const val SP_LOOT = 5
+        /** p35: [commands]' picture for the Home Bar command (HomeFightFace): the bar Home button's own face */
+        const val HOME_SWIRL = -2
         private const val SP_ARROW_L = 6        // L, U, R, D must stay consecutive
         private const val SP_ARROW_U = 7
         private const val SP_ARROW_R = 8

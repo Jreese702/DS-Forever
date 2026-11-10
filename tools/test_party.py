@@ -1285,7 +1285,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p34"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m122"' in SRC["padmap"],
+check('local CV = "p35"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m122"' in SRC["padmap"],
       "the versions: PadMap m107, PadTabCtl p40, Book b49")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
@@ -1821,6 +1821,7 @@ ctl_dump('padmap_off', WT, 'padmap'); ctl_dump('ctl_dstool', WT, 'padtabctl')
 ds = walk(WT)
 check({'DSCHAT', 'DSRADIAL', 'DSMAP', 'DSHOME', 'DSSRADIAL'} <= set(ds) and all(isinstance(i, str) and i.startswith('DS') for i in ds),
       "p34: the DS tab: Chat, Radial, Map, Home bar, Spell Radial (DS Forever's own only)", ds)
+check(not any(i.startswith('DSBAR') for i in ds), "p35: the room bar's Left / Right / Open are in no picker", ds)
 WT.execute('pp("PADDRIGHT")')
 check(ctlDoc(WT)['chooser']['list'] == 'dstool', "p34: the DS tab is the last (no wrap)", ctlDoc(WT)['chooser'])
 WT.execute('for i = 1, 80 do pp("PADDUP") end; pp("PADDDOWN")')
