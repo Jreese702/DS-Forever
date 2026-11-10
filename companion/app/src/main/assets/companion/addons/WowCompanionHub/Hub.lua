@@ -798,7 +798,7 @@ end
 -- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar), UFTOT_OFF / UFTOT_ON (the bar's target of
 -- target, uf8: off by default); the app keeps each per character.
 do
-    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf11" }
+    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf12" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
@@ -1421,14 +1421,13 @@ do
         -- uf9: the prompt while the button would open the target's wheel (Spells says the letter: WC.tgPrompt), then the marker and the
         -- target's target after it
         local after = f.hp
-        local letter = WC.tgPrompt
-        if letter == "X" or letter == "Y" then
-            if f.prompt.lt ~= letter then
-                f.prompt.lt = letter
-                -- uf10: the game's glyph for the layout (Spells' atlas rule), the plain letter only when the client lacks the atlas
-                local pa = letter == "Y" and "Gamepad_Ltr_Y_64" or "Gamepad_Rev_X_64"
+        local pa = WC.tgPrompt
+        if type(pa) == "string" and pa ~= "" then
+            if f.prompt.lt ~= pa then
+                f.prompt.lt = pa
+                -- uf10 / uf12: the same glyph as over the nameplate (Spells' atlas for the layout), the letter only without the atlas
                 if atlas(f.prompt.btn, pa) then f.prompt.btn:Show(); f.prompt.letter:Hide()
-                else f.prompt.btn:Hide(); f.prompt.letter:SetText(letter); f.prompt.letter:Show() end
+                else f.prompt.btn:Hide(); f.prompt.letter:SetText("Y"); f.prompt.letter:Show() end
             end
             f.prompt:Show(); after = f.prompt
         else f.prompt:Hide() end
