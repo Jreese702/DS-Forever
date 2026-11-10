@@ -2758,7 +2758,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  screens), and only once the class wheel is closed and covered (1.0.20: they take turns, HomeView.classBusy) */
     private fun lbEval() {
         val free = room == Room.HOME && !pauseView.isOpen && !tradOpen() && !(::radialView.isInitialized && radialView.isOpen) &&
-            GameLife.worldNow && (!::chooserPanel.isInitialized || chooserPanel.visibility != View.VISIBLE) && !homeView.classBusy()
+            // 1.0.21 (the user, streaming: "when I press L it didnt show the party member targetor"): GameLife only knows the Thor's own
+            // game; a live add-on stream (Local or Streaming) counts too
+            (GameLife.worldNow || GameInput.live(System.currentTimeMillis())) && (!::chooserPanel.isInitialized || chooserPanel.visibility != View.VISIBLE) && !homeView.classBusy()
         lbView.lb(lbAloneNow && free)
     }
 

@@ -744,7 +744,7 @@ local function pauseRow()
     if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
     local pad = WC.pad
     if type(pad) ~= "table" or type(pad.op) ~= "function" then return end
-    local PRV = "pr1"
+    local PRV = "pr2"
     local EMOTES = { [2] = "Dance", [3] = "Point", [4] = "Wave", [5] = "Kneel", [6] = "Train", [7] = "Chicken", [8] = "Angry", [9] = "Cheer" }
     local CMDS = { [0] = "sit", [1] = "pvp", [10] = "menu" }
     for c, t in pairs(EMOTES) do CMDS[c] = "emote_" .. t:lower() end
@@ -791,16 +791,11 @@ local function pauseRow()
     end
     local function act(col)
         if col == 0 then
-            if db().sitMode == "emote" then
-                local ok, token = sitEmote()
-                ack(col, { ok = ok, via = token, restricted = (not ok) or nil })
-                return
-            end
-            guarded(col, function() ToggleSit() end, function()
-                db().sitMode = "emote"                                   -- this client blocks it: the emotes from now on
-                local ok, token = sitEmote()
-                ack(col, { ok = ok, via = token, why = "blocked", restricted = (not ok) or nil })
-            end)
+            -- pr2 (the user, streaming 2026-11-10: "I got a lua error when logging out" = ADDON_ACTION_FORBIDDEN ToggleSit() from this
+            -- cell): this client forbids ToggleSit from add-on code, and a fresh saved file (a new PC, a new character) tried it once
+            -- before falling back. The game's Sit / Stand emotes always; ToggleSit is never called
+            local ok, token = sitEmote()
+            ack(col, { ok = ok, via = token, restricted = (not ok) or nil })
         elseif col == 1 then
             guarded(col, function() C_PvP.TogglePVP() end)
         elseif EMOTES[col] then
