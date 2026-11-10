@@ -798,7 +798,7 @@ end
 -- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar), UFTOT_OFF / UFTOT_ON (the bar's target of
 -- target, uf8: off by default); the app keeps each per character.
 do
-    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf13" }
+    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf14" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
@@ -1385,10 +1385,76 @@ do
         putAuras(f.deb, deb, false)
         putAuras(f.buf, buf, true)
     end
+    -- uf14 THE FLY (the user, 2026-11-09: "When targetting an enemy I want their nameplate to animate up into the target space centered at
+    -- the top of the screen and vise versa"): a new ENEMY target's nameplate bar flies up into the target bar (our own copy: the plate is
+    -- only read for where it is on screen, never moved), the bar shows when it lands; losing the target, the bar flies back down onto the
+    -- plate it came from while that plate still shows. Our own frame, alpha / place only; read-only geometry of the plate.
+    local FLY_S = 0.24
+    local FLY = { host = nil, bar = nil, t0 = 0, from = nil, to = nil, dir = nil }
+    local function rectOf(r)
+        if type(r) ~= "table" then return nil end
+        local ok, l, b, w, h, k = pcall(function()
+            return r:GetLeft(), r:GetBottom(), r:GetWidth(), r:GetHeight(), r:GetEffectiveScale() / UIParent:GetEffectiveScale()
+        end)
+        if not ok then return nil end
+        for _, v in ipairs({ l, b, w, h, k }) do if type(v) ~= "number" or not plainV(v) then return nil end end
+        if w <= 0 or h <= 0 then return nil end
+        return { l * k, b * k, w * k, h * k }
+    end
+    local function plateBarOf(plate)
+        local hb = plate and call(function() return plate.UnitFrame and (plate.UnitFrame.HealthBarsContainer or plate.UnitFrame.healthBar) end)
+        return type(hb) == "table" and hb or nil
+    end
+    local function flyMake()
+        if FLY.host then return end
+        local host = CreateFrame("Frame", nil, UIParent)
+        host:SetFrameStrata("LOW"); host:EnableMouse(false); host:Hide()
+        FLY.bar = bar(host, 10, 4)
+        FLY.bar:ClearAllPoints(); FLY.bar:SetAllPoints(host)
+        host:SetScript("OnUpdate", function()
+            local p = (GetTime() - FLY.t0) / FLY_S
+            if p >= 1 or not FLY.from or not FLY.to then
+                host:Hide()
+                if FLY.dir == "up" and TB.f then TB.f:SetAlpha(1) end
+                FLY.dir = nil
+                return
+            end
+            local e = 1 - (1 - p) ^ 3
+            local a, z = FLY.from, FLY.to
+            host:ClearAllPoints()
+            host:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", a[1] + (z[1] - a[1]) * e, a[2] + (z[2] - a[2]) * e)
+            host:SetSize(a[3] + (z[3] - a[3]) * e, a[4] + (z[4] - a[4]) * e)
+        end)
+        FLY.host = host
+    end
+    local function flyGo(dir, from, to)
+        if not from or not to then return false end
+        flyMake()
+        FLY.dir, FLY.from, FLY.to, FLY.t0 = dir, from, to, GetTime()
+        FLY.host:ClearAllPoints()
+        FLY.host:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", from[1], from[2]); FLY.host:SetSize(from[3], from[4])
+        FLY.host:Show()
+        return true
+    end
+
     function UF.targetStep()
         local has = UF.target and bool(UnitExists, "target")
         if has == nil and UF.target then has = call(UnitName, "target") ~= nil end
-        if not has then if TB.f then TB.f:Hide() end; plateHide(false); return end
+        if not has then
+            -- uf14: the bar flies back down onto the plate it came from (while that plate still shows)
+            if TB.f and TB.f:IsShown() and TB.enemy and TB.lastPlate and TB.lastRect then
+                local okS, shown = pcall(function() return TB.lastPlate:IsVisible() end)
+                if okS and shown == true then
+                    flyMake()
+                    if TB.lastRGB then paint(FLY.bar, TB.lastRGB[1], TB.lastRGB[2], TB.lastRGB[3]) end
+                    flyGo("down", TB.lastRect, rectOf(plateBarOf(TB.lastPlate)))
+                end
+            end
+            TB.enemy, TB.lastPlate, TB.lastRect, TB.changed = nil, nil, nil, nil
+            if TB.f then TB.f:Hide(); TB.f:SetAlpha(1) end
+            plateHide(false)
+            return
+        end
         local f = buildTarget()
         setText(f.name, call(UnitName, "target") or "")
         paint(f.hp, plateRGB("target"))
@@ -1451,6 +1517,26 @@ do
         else f.tot:Hide() end
         plateHide(plateRule())
         f:Show()
+        -- uf14: a NEW enemy target: its plate's bar flies up into the bar (the bar shows when it lands); the fly copy follows the health
+        local rgb = { plateRGB("target") }
+        if TB.changed then
+            TB.changed = nil
+            TB.enemy = bool(UnitCanAttack, "player", "target") == true
+            local plate = TB.enemy and plateOf("target") or nil
+            TB.lastPlate = plate
+            if plate then
+                flyMake()
+                paint(FLY.bar, rgb[1], rgb[2], rgb[3])
+                feed(FLY.bar, nil, "target")
+                if flyGo("up", rectOf(plateBarOf(plate)), rectOf(f.hp)) then f:SetAlpha(0) end
+            elseif FLY.dir == "up" then FLY.host:Hide(); FLY.dir = nil; f:SetAlpha(1) end
+        end
+        if TB.enemy then
+            TB.lastRect = rectOf(f.hp) or TB.lastRect
+            TB.lastRGB = rgb
+            if FLY.bar then feed(FLY.bar, nil, "target"); paint(FLY.bar, rgb[1], rgb[2], rgb[3]) end
+        end
+        if FLY.dir ~= "up" then f:SetAlpha(1) end
     end
 
     -- ---------------------------------------------------------------- the driver: events mark dirty, a 0.1 s step draws
@@ -1468,7 +1554,7 @@ do
     drv:SetScript("OnEvent", function(_, e, unit)
         if e == "UNIT_AURA" then if unit == "target" then TB.auraDirty = true end return end
         if e == "PLAYER_ENTERING_WORLD" then K = scaleK() end
-        if e == "PLAYER_TARGET_CHANGED" then TB.auraDirty = true end
+        if e == "PLAYER_TARGET_CHANGED" then TB.auraDirty = true; TB.changed = true end      -- uf14: the fly
         stepAll()
     end)
     drv:SetScript("OnUpdate", function(_, el)
