@@ -395,7 +395,17 @@ class HomeView(
      */
     private val classRect = android.graphics.Rect()
     private var classOpen = false
+    /** 1.0.20 (the user: holding LB, then LT "flash[es] the chat before showing the class radial instead of closing the space to hide the
+     *  party select and then sliding out"; LT let go with LB held: "the text to slide back in to cover it, and then slide out to show the
+     *  party selecter"): the class wheel and the LB picture take turns - an open waits while the LB picture's sides are out
+     *  ([classPending], opened when they are back: pauseSlide), and the host opens the LB picture only once the class wheel is closed
+     *  and covered ([classBusy], [onClassIdle]) */
+    private var classPending = false
+    var onClassIdle: (() -> Unit)? = null
+    fun classBusy(): Boolean = classOpen || classPending || (classLayer.parent != null && classLayer.visibility == View.VISIBLE)
     private fun classLayerShow(open: Boolean) {
+        if (!open && classPending) { classPending = false; if (!classOpen) { post { onClassIdle?.invoke() }; return } }
+        if (open && classHint == null && pauseSide > 0f && pauseT > 0f) { classPending = true; return }
         if (classLayer.parent == null) { if (!open) return; addView(classLayer) }   // added on first use: over everything
         val hint = classHint != null
         if (hint || !open) {
@@ -454,6 +464,7 @@ class HomeView(
             if (!classOpen) {
                 classLayer.visibility = View.GONE
                 for ((p, v) in views) v.translationZ = restZ(p)                   // back to the page's own order (the card over the map)
+                onClassIdle?.invoke()                                             // 1.0.20: the LB picture's turn
             }
         }
         if (!open) {
@@ -1692,6 +1703,8 @@ class HomeView(
             }
         }
         invalidate()
+        // 1.0.20: the class wheel that waited for the LB picture's sides opens now they are back
+        if (classPending && sidePx > 0f && t <= 0f) { classPending = false; classLayerShow(true) }
     }
 
     override fun dispatchDraw(c: Canvas) {

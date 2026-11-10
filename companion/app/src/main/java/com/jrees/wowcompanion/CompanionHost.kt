@@ -881,12 +881,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         lbView = LbPartyView(this)
         // 1.0.19: Home's sides move only far enough for the picture (LbPartyView.SIDE_PX)
         lbView.onSlide = { t -> if (room == Room.HOME && !pauseView.isOpen && !tradOpen()) homeView.pauseSlide(t, LbPartyView.SIDE_PX) }
-        castView.onShoulders = { lb, rb ->
-            // 1.0.19: only in the world (never over the start-up screens: the user, "The LB menu is also appearing in the app startup screen")
-            val free = room == Room.HOME && !pauseView.isOpen && !tradOpen() && !(::radialView.isInitialized && radialView.isOpen) &&
-                GameLife.worldNow && (!::chooserPanel.isInitialized || chooserPanel.visibility != View.VISIBLE)
-            lbView.lb(lb && !rb && free)
-        }
+        castView.onShoulders = { lb, rb -> lbAloneNow = lb && !rb; lbEval() }
+        // 1.0.20: the class wheel's close done (its column back over it): the LB picture's turn
+        homeView.onClassIdle = { lbEval() }
         castView.onButtonsAlso = { m -> lbView.buttons(m) }
         // 1.0.19: a touch on a controller button presses the game's own action (ActionBar.lua's "tcast" row)
         castView.onTouchCast = { cell -> TapBridge.tap(this, questsPad, "tcast", cell) { why -> Log.i("WCLOG", "touch cast refused ($why)") } }
@@ -2755,6 +2752,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var slideT = 0f
 
     /** Home's panels, the bar and the room on show, at [t] of the pause wheel's open (0 = at rest) */
+    /** LB alone held now (CastView's reader) */
+    private var lbAloneNow = false
+    /** the LB picture shows while LB alone is held and nothing else has the screen: only in the world (1.0.19: never over the start-up
+     *  screens), and only once the class wheel is closed and covered (1.0.20: they take turns, HomeView.classBusy) */
+    private fun lbEval() {
+        val free = room == Room.HOME && !pauseView.isOpen && !tradOpen() && !(::radialView.isInitialized && radialView.isOpen) &&
+            GameLife.worldNow && (!::chooserPanel.isInitialized || chooserPanel.visibility != View.VISIBLE) && !homeView.classBusy()
+        lbView.lb(lbAloneNow && free)
+    }
+
     private fun pauseSlideAll(t: Float) {
         homeView.pauseSlide(t)
         // THE ROOM STEPS BACK (the user 2026-10-09: "the Pause screen needs to be pushing the other menus off screen"; UI Art's motion:
