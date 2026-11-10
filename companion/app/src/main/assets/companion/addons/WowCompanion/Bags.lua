@@ -1202,6 +1202,36 @@ function KIT.list()
                 q = SN(function() return GetInventoryItemQuality("player", slot) end), ok = KIT.fits(loc) or nil }
         end
     end
+    -- (the player's report, 2026-11-10, issue 90: "feed pet brings up item select, but doesnt show consumables"): a pick a SPELL started
+    -- (Feed Pet, not an armor kit or stone used from the bags just now) and not an enchant lists the bags' consumables too, food and
+    -- drink first; the game itself says no on the click to anything the spell cannot take
+    local spellPick = not (KIT.last and GetTime() - KIT.last.t < 2)
+    local okE, ench = CALL(function() return C_Spell.TargetSpellIsEnchanting() end)
+    if spellPick and not (okE and ench == true) then
+        local food, other = {}, {}
+        for _, e in ipairs(layout()) do
+            local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
+            for s = 1, n do
+                local id = bagItemID(e.bag, s)
+                if id then
+                    local okI, _, _, _, _, _, cls, sub = CALL(function() return C_Item.GetItemInfoInstant(id) end)
+                    cls, sub = okI and SN(function() return cls end) or nil, okI and SN(function() return sub end) or nil
+                    if cls == 0 then
+                        local info = infoAt(e.bag, s)
+                        local row = { src = "bag", bag = e.bag, s = s, id = id,
+                            name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
+                            icon = info and SN(function() return info.iconFileID end) or nil,
+                            q = info and SN(function() return info.quality end) or nil, ok = true }
+                        if sub == 5 then food[#food + 1] = row else other[#other + 1] = row end
+                    end
+                end
+            end
+        end
+        local front = {}
+        for _, r in ipairs(food) do front[#front + 1] = r end
+        for _, r in ipairs(other) do front[#front + 1] = r end
+        for i = #front, 1, -1 do table.insert(out, 1, front[i]) end
+    end
     for _, e in ipairs(layout()) do
         local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
         for s = 1, n do

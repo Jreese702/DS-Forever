@@ -51,9 +51,11 @@ WowCompanion = {
 }
 -- the game: worn chest (5) and hands (10); bag 0 slot 2 = a belt (gear), slot 1 = the kit
 WORN = { [5] = 2580, [10] = 2584 }
-BAG = { [0] = { [1] = 2304, [2] = 4239 } }
+BAG = { [0] = { [1] = 2304, [2] = 4239, [3] = 117, [4] = 118 } }   -- 3 = jerky (food), 4 = a potion
 EQUIP = { [2580] = "INVTYPE_CHEST", [2584] = "INVTYPE_HAND", [4239] = "INVTYPE_WAIST", [2304] = "" }
-NAMES = { [2580] = "Rugged Leather Vest", [2584] = "Handstitched Gloves", [4239] = "Embossed Leather Belt", [2304] = "Light Armor Kit" }
+NAMES = { [2580] = "Rugged Leather Vest", [2584] = "Handstitched Gloves", [4239] = "Embossed Leather Belt", [2304] = "Light Armor Kit",
+          [117] = "Tough Jerky", [118] = "Minor Healing Potion" }
+CLS = { [117] = { 0, 5 }, [118] = { 0, 1 }, [2304] = { 0, 6 } }        -- consumables: food & drink, potion, item enhancement
 PICKING, ENCHANTING, STOPPED = false, false, 0
 FITS = {}
 function GetInventoryItemID(_, slot) return WORN[slot] end
@@ -64,7 +66,7 @@ function SpellCanTargetItemID() return false end
 function SpellStopTargeting() STOPPED = STOPPED + 1; PICKING = false end
 function InCombatLockdown() return false end
 C_Item = { GetItemNameByID = function(id) return NAMES[id] end, GetItemIconByID = function() return 1 end,
-           GetItemInfoInstant = function(id) return id, "Armor", "Leather", EQUIP[id] or "" end,
+           GetItemInfoInstant = function(id) local c = CLS[id] or { 4, 2 }; return id, "Armor", "Leather", EQUIP[id] or "", 1, c[1], c[2] end,
            DoesItemMatchTargetEnchantingSpell = function(loc) return FITS[loc.k] == true end }
 C_Spell = { TargetSpellIsEnchanting = function() return ENCHANTING end }
 ItemLocation = { CreateFromEquipmentSlot = function(_, s) return { k = "inv" .. s } end,
@@ -122,6 +124,20 @@ lst = L.eval('WowCompanion._kit.list()')
 rows = [lst[i + 1] for i in range(len(lst))]
 check([r.ok for r in rows] == [None, True, None], "enchanting: only what the game's own check allows (the gloves)", [r.ok for r in rows])
 L.execute('ENCHANTING = false')
+
+# (issue 90, the player: "feed pet brings up item select, but doesnt show consumables"): a pick a SPELL started (Feed Pet: no bag item
+# used just now) lists the bags' consumables first, food and drink before the rest, then the gear as before
+L.execute('NOW = NOW + 30')
+lst = L.eval('WowCompanion._kit.list()')
+rows = [lst[i + 1] for i in range(len(lst))]
+got = [(r.src, r.slot if r.src == 'inv' else r.s) for r in rows]
+check(got[:3] == [('bag', 3), ('bag', 1), ('bag', 4)] and rows[0].name == 'Tough Jerky' and rows[0].ok is True,
+      "Feed Pet (a spell's pick): the food first, then the other consumables in bag order", got)
+check(got[3:] == [('inv', 5), ('inv', 10), ('bag', 2)], "... then the gear as for a kit", got)
+L.execute('ENCHANTING = true')
+lst = L.eval('WowCompanion._kit.list()')
+check(all(lst[i + 1].src == 'inv' or lst[i + 1].s == 2 for i in range(len(lst))), "an enchant's pick: gear only (no consumables)")
+L.execute('ENCHANTING = false; NOW = 100')
 
 # the end of the pick, and the stop
 L.execute('PICKING = false')                                       # the game's /stopspelltarget ran (binv 19)
