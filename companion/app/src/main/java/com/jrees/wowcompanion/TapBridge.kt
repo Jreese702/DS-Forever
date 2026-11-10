@@ -2,6 +2,7 @@ package com.jrees.wowcompanion
 
 import android.content.Context
 import android.graphics.Point
+import android.graphics.PointF
 import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
@@ -136,7 +137,7 @@ object TapBridge {
     }
 
     /** display-pixel centre of cell [op, col], or null when the pad does not describe it */
-    fun cellCentre(ctx: Context, pad: JSONObject?, op: String, col: Int): Point? {
+    fun cellCentre(ctx: Context, pad: JSONObject?, op: String, col: Int): PointF? {
         if (pad == null) return null
         val rows = pad.optJSONObject("rows") ?: return null
         if (!rows.has(op)) return null
@@ -144,11 +145,13 @@ object TapBridge {
         val cw = pad.optDouble("cw", 0.0); val ch = pad.optDouble("ch", 0.0)
         if (row < 0 || cw <= 0 || ch <= 0) return null
         if (col < 0 || col >= pad.optInt("cols", 0)) return null
-        return gamePoint(ctx, pad, pad.optDouble("x", 0.0) + (col + 0.5) * cw, pad.optDouble("y", 0.0) + (row + 0.5) * ch)
+        // 1.0.21 (streaming, measured on the PC: a row's centre is a PIXEL BOUNDARY - 2-game-px rows - and Windows' absolute mouse maps
+        // over 0..height-1, so the click fell on the row above): half a game pixel past the centre, inside the cell's lower pixel
+        return gamePoint(ctx, pad, pad.optDouble("x", 0.0) + (col + 0.5) * cw + 0.5, pad.optDouble("y", 0.0) + (row + 0.5) * ch + 0.5)
     }
 
     /** display pixel of game px ([gx], [gy]) (the pad's px: its pw x ph, top-left), or null (no trusted geometry) */
-    private fun gamePoint(ctx: Context, pad: JSONObject?, gx: Double, gy: Double): Point? {
+    private fun gamePoint(ctx: Context, pad: JSONObject?, gx: Double, gy: Double): PointF? {
         if (pad == null) return null
         val pw = pad.optDouble("pw", 0.0); val ph = pad.optDouble("ph", 0.0)
         if (pw <= 0 || ph <= 0 || gx < 0 || gy < 0 || gx > pw || gy > ph) return null
@@ -160,7 +163,9 @@ object TapBridge {
             Log.w(TAG, "refused: display ${d.x}x${d.y} does not match the game's ${pw.toInt()}x${ph.toInt()}")
             return null
         }
-        return Point((gx * d.x / pw).roundToInt(), (gy * d.y / ph).roundToInt())
+        // 1.0.21: not rounded to a whole display pixel (a 1080p Thor pixel is 1.33 game px on a 1440p PC: rows were lost); the tap line
+        // carries 2 decimals and InputSink makes a fraction of it
+        return PointF((gx * d.x / pw).toFloat(), (gy * d.y / ph).toFloat())
     }
 
     /**
@@ -252,14 +257,14 @@ object TapBridge {
     }
 
     /** the taps at display points [pts], in one batch on the worker, after the quiet pad */
-    private fun clicks(pts: List<Point>, gapMs: Long, what: String, keysOff: String?, onFail: (String) -> Unit): Boolean {
+    private fun clicks(pts: List<PointF>, gapMs: Long, what: String, keysOff: String?, onFail: (String) -> Unit): Boolean {
         // -d 0: the top screen. The companion holds focus on display 4, and a bare input command would deliver to itself.
         // ONE root shell for every tap (RootShell, 2026-10-06: a new su per tap was a Magisk toast per tap); the taps of one action
         // are one batch, so nothing else lands between them
         // and a short rest after the action: the game takes one touch per frame, and two actions' taps close together lost one
         // (b61: a wheel's hold right behind another tap never reached the game)
         val gap = if (gapMs > 0L) "\nsleep ${"%.3f".format(java.util.Locale.ROOT, gapMs / 1000.0)}\n" else "\n"
-        val script = pts.joinToString(gap) { c -> "input -d 0 tap ${c.x} ${c.y}" } + "\nsleep 0.08"
+        val script = pts.joinToString(gap) { c -> "input -d 0 tap ${"%.2f".format(java.util.Locale.ROOT, c.x)} ${"%.2f".format(java.util.Locale.ROOT, c.y)}" } + "\nsleep 0.08"
         val queuedAt = SystemClock.uptimeMillis()
         watchPad()
         // b90 (23:00:18 padstray, Home's focus): a press handled INSIDE the controller reader's own dispatch (DirectPad: Home's map
