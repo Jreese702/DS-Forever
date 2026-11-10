@@ -383,7 +383,16 @@ class HomePauseView(
 
     /** one tap on Spells' "pause" row; [stay] = the wheel stays open (Sit / Stand, as the game's). The Game Menu: OUR menu */
     private fun game(cmd: String, stay: Boolean) {
-        if (cmd == "menu") { openMenu(); return }
+        if (cmd == "menu") {
+            // 1.0.21 (the user: "showing the escape menu on the bottom screen was a mistake since we have to reopen it on the top screen for
+            // most things anyways"; the pick "Open game's menu on top"): no copy below - the wheel goes and the game's own Game Menu opens
+            // on the top screen (its Escape, as the copy's other entries already did)
+            Log.i(TAG, "pause: Game Menu -> the game's own menu (Escape)")
+            menuPending = true
+            close("Game Menu: the game's own menu")
+            postDelayed({ menuEscape("no answer to the free in $MENU_ESC_MS ms") }, MENU_ESC_MS)
+            return
+        }
         val col = HomePauseModel.col(cmd)
         val sent = col >= 0 && TapBridge.tap(context, questsPad(), HomePauseModel.ROW, col) { why -> Log.i(TAG, "pause: tap refused ($why)") }
         Log.i(TAG, "pause: $cmd ${if (sent) "sent" else "NOT sent (no pause row yet?)"}")
