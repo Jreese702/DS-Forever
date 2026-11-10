@@ -211,8 +211,10 @@ object IndoorSchedulerStep : ArtHarvest.Step {
                 factory.open(g).use { gen ->
                     val root = ArtHarvest.root(ctx)
                     // the app install a deferral is good for: a new APK (even a test build with the same version) retries once
-                    val app = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).let { "${it.longVersionCode}/${it.lastUpdateTime}" } }
-                        .getOrDefault("?")
+                    // 1.0.22 (the user: "the indoor maps are just not completing ... it does not progress" - 1616/1837, all 221 left DEFERRED by
+                    // the generator's own rules, and every new APK re-tried them all: ~10 min of full CPU a start for nothing): a deferral now
+                    // holds until the GAME build or the GENERATOR (its algorithm number, part of each deferral's identity) changes
+                    val app = "gen"
                     val scheduler = IndoorScheduler(IndoorBakeStore(root), root, g.buildKey, gen, signals, dataDir(ctx),
                         onStatus = { publishStatus(ctx, it) }, log = { Log.i(TAG, it) }, app = app)
                     val outcome = scheduler.run()
