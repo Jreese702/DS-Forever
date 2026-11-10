@@ -296,7 +296,15 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (isOpen && host != null && (screen == Screen.CONNECTING || screen == Screen.PROBLEM)) connect()
     }
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
-    override fun surfaceDestroyed(holder: SurfaceHolder) { surfaceReady = false; stopStream("surface gone") }
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        surfaceReady = false
+        val wasStreaming = screen == Screen.STREAMING || session != null
+        stopStream("surface gone")
+        // 1.0.22 (the user: "when I press the home button while using streaming mode, going back into the game just results in a black
+        // screen"): the surface went with Home and the stream with it, but the screen stayed STREAMING, which surfaceCreated never
+        // reconnects. Back to CONNECTING (the curtain), so the stream resumes on the PC's same session when the surface returns
+        if (wasStreaming) show(Screen.CONNECTING)
+    }
 
     /**
      * Wi-Fi first (the user, 2026-10-28): the PC's addresses in [Route]'s order, each tried briefly; the first that answers is dialled
