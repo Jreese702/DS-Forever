@@ -1285,7 +1285,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p33"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m122"' in SRC["padmap"],
+check('local CV = "p34"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m122"' in SRC["padmap"],
       "the versions: PadMap m107, PadTabCtl p40, Book b49")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
@@ -1730,6 +1730,112 @@ check(bool(lm) and d.get('mod') == 'CTRL' and d.get('self') == 'PAD1' and d.get(
       and d.get('p3') == 'PADDDOWN' and d.get('p4') == 'PADDLEFT',
       "m104: lbmap from the game's bindings: LB = Ctrl, A = you, D-pad = party1..4", {k: d.get(k) for k in ('mod', 'self', 'p1', 'p2', 'p3', 'p4')})
 check(d.get('keys', {}).get('p1') == ['F2', 'CTRL-PADDUP'], "m104: every key found is in the document (a keyboard key is not LB's)", d.get('keys', {}).get('p1'))
+
+
+# p34 render aids: CTL_DUMP=<dir> writes the documents the app's ControllerShotsTest draws (never committed fixtures)
+def ctl_dump(name, L, typ):
+    d = os.environ.get("CTL_DUMP")
+    if not d:
+        return
+    r = raw(L, 0, typ)
+    if r:
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, name + ".json"), 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(r[-1])
+
+# ================================================================ p34: the DS tab folded into WoW Defaults; the chooser's DS tab
+# (the user, 2026-11-10: "move the DS wow toolbar check box to the Wow defaults tab ... add a 4th skill assignment category where we can
+# add the DS toolbar buttons to any button slot")
+WT = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
+WT.execute('''
+local ctl = WowCompanion._spellsBook.ctl
+ctl.croom, ctl.ctrlTab, ctl.onTabs = true, true, true
+WowCompanion.padTabCtl.enter("tabs")
+function ptab(col) WowCompanion.pad.rows.padtab.handler(nil, col); NOW = NOW + 0.05 end
+function pp(key) return WowCompanion.padTabCtl.press(key) end
+function want() return WowCompanion.padMap.dpadState().want end
+''')
+c = ctlDoc(WT)
+check(c['view'] == 'normal' and c['focus'] == 'tabs', "p34: the room opens on WoW Defaults, the cursor on the tabs", c)
+WT.execute('pp("PADDRIGHT")')
+check(ctlDoc(WT)['view'] == 'combat' and ctlDoc(WT)['tcur'] == 3, "p34: Right on the tab row steps over the DS tab (In combat, tab 3)", ctlDoc(WT))
+WT.execute('pp("PADLSHOULDER")')
+check(ctlDoc(WT)['view'] == 'normal', "p34: LB from In combat: WoW Defaults", ctlDoc(WT)['view'])
+WT.execute('pp("PADRSHOULDER")')
+check(ctlDoc(WT)['view'] == 'combat', "p34: RB from WoW Defaults: In combat", ctlDoc(WT)['view'])
+WT.execute('ptab(1)')
+check(ctlDoc(WT)['view'] == 'normal', "p34: padtab 1 (the old DS tab's column) opens WoW Defaults", ctlDoc(WT)['view'])
+WT.execute('ptab(0); pp("PADDUP")')
+WT.execute('pp("PADDUP"); pp("PADDUP"); pp("PADDUP"); pp("PADDUP")')
+check(ctlDoc(WT)['focus'] == 'tabs', "p34: Up to the tab row", ctlDoc(WT)['focus'])
+WT.execute('pp("PADDDOWN")')
+c = ctlDoc(WT)
+check(c['focus'] == 'switches' and c['sw'] == 1, "p34: Down from the tabs: WoW Defaults' own switch (the DS WoW toolbar)", c)
+w0 = WT.eval('want()')
+WT.execute('pp("PAD1")')
+check(WT.eval('want()') == (not w0), "p34: A on it flips the DS WoW toolbar", (w0, WT.eval('want()')))
+if WT.eval('want()') is not True:
+    WT.execute('pp("PAD1")')
+check(WT.eval('want()') is True, "p34: the toolbar on", WT.eval('want()'))
+WT.execute('pp("PADDDOWN"); pp("PADDDOWN"); pp("PADDDOWN")')
+c = ctlDoc(WT)
+check(c['focus'] == 'buttons', "p34: down to the buttons", c['focus'])
+# to the D-pad's Left (position 1), the bare set
+for _ in range(6):
+    WT.execute('pp("PADDLEFT")')
+c = ctlDoc(WT)
+check(c['pos'] == 1 and c['shown'] == 1, "p34: the bare D-pad Left", c)
+WT.execute('WowCompanion.padMap.emit(true)')
+ctl_dump('padmap_on', WT, 'padmap'); ctl_dump('ctl_dleft', WT, 'padtabctl')
+WT.execute('pp("PAD1")')
+c = ctlDoc(WT)
+check(c['note'] == 'dpad-bar' and c.get('chooser') is None, "p34: A on the toolbar's own button: refused (dpad-bar), no chooser", c)
+WT.execute('pp("PAD3")')
+check(ctlDoc(WT)['note'] == 'dpad-bar' and ctlDoc(WT).get('carry') is None, "p34: X there: refused too", ctlDoc(WT))
+# the toolbar off: the button is the player's again, and the chooser has the DS tab
+WT.execute('WowCompanion.padMap.dpadBar(false); pp("PAD1")')
+c = ctlDoc(WT)
+check(WT.eval('want()') is False and c.get('chooser') and c['chooser']['list'] == 'spells', "p34: toolbar off: A opens the chooser", c.get('chooser'))
+
+
+def walk(L):
+    ids = []
+    for _ in range(80):
+        r = ctlDoc(L)['chooser']
+        if ids and ids[-1] == r['id']:
+            break
+        ids.append(r['id'])
+        L.execute('pp("PADDDOWN")')
+    L.execute('for i = 1, 80 do pp("PADDUP") end; pp("PADDDOWN")')
+    return ids
+
+
+WT.execute('pp("PADDRIGHT"); pp("PADDRIGHT"); pp("PADDRIGHT")')
+check(ctlDoc(WT)['chooser']['list'] == 'extra', "p34: the 4th chooser tab is Extra", ctlDoc(WT)['chooser'])
+extra = walk(WT)
+check(extra and not any(isinstance(i, str) and i.startswith('DS') for i in extra), "p34: Extra holds no DS Forever command now", extra)
+WT.execute('pp("PADDRIGHT")')
+check(ctlDoc(WT)['chooser']['list'] == 'dstool', "p34: Right again: the DS tab (dstool)", ctlDoc(WT)['chooser'])
+WT.execute('WowCompanion.padMap.emit(true)')
+ctl_dump('padmap_off', WT, 'padmap'); ctl_dump('ctl_dstool', WT, 'padtabctl')
+ds = walk(WT)
+check({'DSCHAT', 'DSRADIAL', 'DSMAP', 'DSHOME', 'DSSRADIAL'} <= set(ds) and all(isinstance(i, str) and i.startswith('DS') for i in ds),
+      "p34: the DS tab: Chat, Radial, Map, Home bar, Spell Radial (DS Forever's own only)", ds)
+WT.execute('pp("PADDRIGHT")')
+check(ctlDoc(WT)['chooser']['list'] == 'dstool', "p34: the DS tab is the last (no wrap)", ctlDoc(WT)['chooser'])
+WT.execute('for i = 1, 80 do pp("PADDUP") end; pp("PADDDOWN")')
+while ctlDoc(WT)['chooser']['id'] != 'DSMAP':
+    WT.execute('pp("PADDDOWN")')
+# (this world has no game bars to write: the put itself is what PadTabCtl hands PadMap)
+WT.execute('PUTS = {}; local pm = WowCompanion.padMap; local f = pm.putCommand; '
+           'pm.putCommand = function(pg, st, ps, k) PUTS[#PUTS + 1] = st .. ":" .. ps .. ":" .. k; return f(pg, st, ps, k) end')
+WT.execute('pp("PAD1")')
+for _ in range(3):
+    if ctlDoc(WT).get('box'):
+        WT.execute('pp("PAD1")')
+puts = [WT.eval('PUTS[%d]' % (i + 1)) for i in range(int(WT.eval('#PUTS')))]
+check(puts == ['1:1:DSMAP'], "p34: Open Map from the DS tab is put on the bare D-pad Left (PadMap.putCommand)", puts)
+check(WT.eval('#SPY') == 0 and WT.eval('#VIOL') == 0, "p34: no spied call, no lockdown breach")
 
 print('ALL PASS (%d checks)' % passes if fails == 0 else '%d FAILED (of %d)' % (fails, fails + passes))
 sys.exit(1 if fails else 0)

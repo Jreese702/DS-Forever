@@ -33,7 +33,7 @@ local ADDON = ...
 local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.send) ~= "function" or type(WC.encode) ~= "function" then return end
 
-local CV = "p33"                -- bump on every change; p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
+local CV = "p34"                -- bump on every change; p34: the DS tab folded into WoW Defaults (its switch there, the toolbar's four on the bare D-pad; the tab kept for its padtab numbers, never shown) and the chooser's DS tab ("dstool": DS Forever's own commands, out of Extra); p33: the 5th tab, PARTY MODE (PARTY_BUILD.md 4.4: its cursor, chooser and puts); p32: the form row on the out-of-combat tab too (the game's own form bars)
 -- the eight on a grid for the D-pad (the SPEC's two diamonds side by side): column, row; positions 1-4 the D-pad's left / up / right / down
 local GRIDS = {
     plain = { { 0, 1 }, { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 1 }, { 4, 0 }, { 5, 1 }, { 4, 2 } },   -- 5-8 left / top / right / bottom
@@ -54,7 +54,10 @@ local DIRS = { PADDUP = { 0, -1 }, PADDDOWN = { 0, 1 }, PADDLEFT = { -1, 0 }, PA
 -- p33 PARTY MODE (PARTY_BUILD.md 4.4): the 5th tab, "party" (PadMap m77's slots, Y's In combat action, Touch, Smart Y's party list)
 local TABS = { "normal", "ds", "combat", "radial", "party" }
 -- each tab's switches ("as drawn"); "rmode" (the radial's Hold / Tap) is A on the DS tab's Up
-local SWITCHES = { normal = {}, ds = { "dpad" }, combat = { "cc", "sa" }, radial = {}, party = {} }
+-- p34 (the user 2026-11-10: "consolidate the Controller menu. move the DS wow toolbar check box to the Wow defaults tab, when its
+-- selected replace those buttons with the DS WoW toolbar buttons, when uncheck it goes back to the normal D-pad skills"): the switch is
+-- WoW Defaults' own; "ds" stays in TABS (every padtab column keeps its number) but is never shown or stepped onto
+local SWITCHES = { normal = { "dpad" }, ds = { "dpad" }, combat = { "cc", "sa" }, radial = {}, party = {} }
 -- the rows from the top, per tab
 -- p19: the DS tab's "cleanup" row (PadMap m41 S1, the user's pick 2026-10-09: "a 'Clean up this character' button in the Controller
 -- room's DS tab lists exactly what goes; one yes per character"): under the D-pad, only while the plan has something
@@ -62,7 +65,7 @@ local SWITCHES = { normal = {}, ds = { "dpad" }, combat = { "cc", "sa" }, radial
 -- the left page's bottom (shared left, cleanup right); Left / Right between the two, Up back to the D-pad
 -- p29 (f-combat-forms): the In combat tab's "forms" row (Caster | the character's forms / stances), only while it has forms
 -- p32 (the user's pick A on test20): the out-of-combat tab's form row too, the GAME's own form bars (PadMap m57), while the game puts one
-local ORDER = { normal = { "tabs", "forms", "sets", "buttons" }, ds = { "tabs", "switches", "dpad" }, combat = { "tabs", "switches", "forms", "sets", "buttons" },
+local ORDER = { normal = { "tabs", "switches", "forms", "sets", "buttons" }, ds = { "tabs", "switches", "dpad" }, combat = { "tabs", "switches", "forms", "sets", "buttons" },
                 radial = { "tabs", "rpages", "buttons" }, party = { "tabs", "prows", "pright" } }
 local HOME_FOCUS = { normal = "buttons", ds = "dpad", combat = "buttons", radial = "buttons", party = "prows" }
 local function SR() return type(WC.spellRadial) == "table" and WC.spellRadial or nil end
@@ -86,12 +89,27 @@ local function inCombat()
     return ok and v == true
 end
 local function tabIndex(v) for i, t in ipairs(TABS) do if t == v then return i end end return 1 end
+-- p34: the tabs the room shows; LB / RB / the tab row step over the hidden one
+local HIDDEN = { ds = true }
+local shownSet                  -- below
+local function tabStep(i, d)
+    local j = i + d
+    while TABS[j] and HIDDEN[TABS[j]] do j = j + d end
+    return TABS[j] and j or nil
+end
+-- p34: the bare D-pad is the DS WoW toolbar's while it is on (WoW Defaults and In combat show its four there): nothing goes on it
+local function toolbarHas(pos)
+    if (tc.view ~= "normal" and tc.view ~= "combat") or pos > 4 or shownSet() ~= 1 then return false end
+    local pm = PM()
+    local ok, st = pcall(function() return pm and type(pm.dpadState) == "function" and pm.dpadState() end)
+    return ok and type(st) == "table" and st.want == true
+end
 
 -- the set a press is in: a held trigger's (the game's active set) wins over the one chosen by touch or the set buttons
 -- p26 (b-bind-hold-triggers, the user 2026-10-13: "after choosing Bind while holding ZL / ZR, the layer should stay held until the bind
 -- completes, even if the triggers are released"): the set is LATCHED when the chooser opens (tc.lock) and kept while the chooser or its
 -- box is up; releasing the trigger no longer drops the spell onto the base set
-local function shownSet()
+shownSet = function()
     if tc.lock and (tc.chooser or tc.box) then return tc.lock end
     if type(WC.spellsActiveSet) == "function" then
         local ok, a = pcall(WC.spellsActiveSet)
@@ -175,7 +193,11 @@ local function isFace(slot) return slot and slot.kind == "fixed" and slot.face =
 -- LB / RB, or its tab row (Up from the first row; Left / Right OPEN the tab the cursor lands on, p10's rule; Down / A back to the rows). A
 -- fight spell's chooser has no Extra: a command is no fight spell.
 -- p14 (the user 2026-10-07: "instead of putting professions on a second page of general, give those buttons their own tab"): Professions is a tab of the chooser too
-local CTABS = { "spells", "general", "professions", "extra" }
+-- p34 (the user 2026-11-10: "add a 4th skill assignment category where we can add the DS toolbar buttons to any button slot"): "dstool",
+-- DS Forever's own commands (the toolbar's Chat / Radial / Map / Home bar, the spell radial, the room bar's), out of Extra; the same
+-- commands by the same "extra" row (the app counts them in the padmap doc's own order), so only the lists split
+local CTABS = { "spells", "general", "professions", "extra", "dstool" }
+local function dsKey(k) return type(k) == "string" and k:sub(1, 2) == "DS" end
 local function ctabs() if onlySpells() or tc.view == "radial" then return { "spells", "general", "professions" } end return CTABS end
 local function ctabIndex(list)
     for i, v in ipairs(ctabs()) do if v == list then return i end end
@@ -202,8 +224,8 @@ rows = function()
     end
     -- (p24: p8's class "suggestion" row is gone - the user: nothing is ever suggested; the chooser is the player's own spells only)
     local list = tc.chooser and tc.chooser.list or "spells"
-    if list == "extra" and (onlySpells() or tc.view == "radial") then list = "spells" end
-    if list ~= "extra" then
+    if (list == "extra" or list == "dstool") and (onlySpells() or tc.view == "radial") then list = "spells" end
+    if list ~= "extra" and list ~= "dstool" then
         if type(WC.spellsBindableList) == "function" then
             for _, e in ipairs(WC.spellsBindableList()) do
                 local tab = e.prof and "professions" or e.gen and "general" or "spells"
@@ -218,8 +240,11 @@ rows = function()
         local pm = PM()
         local list = pm and type(pm.extraList) == "function" and pm.extraList() or {}
         if #list == 0 then for _, c in ipairs(pm and pm.commands() or {}) do list[#list + 1] = { kind = "command", key = c.key } end end
+        local want = tc.chooser and tc.chooser.list or "extra"
         for _, x in ipairs(list) do
-            if x.kind == "command" or x.kind == "bind" then out[#out + 1] = { kind = x.kind, key = x.key }     -- p15: the game's bindings
+            local ds = x.kind == "command" and dsKey(x.key)                 -- p34: the DS tab's, else Extra's
+            if (want == "dstool") ~= (ds == true) then
+            elseif x.kind == "command" or x.kind == "bind" then out[#out + 1] = { kind = x.kind, key = x.key }     -- p15: the game's bindings
             else out[#out + 1] = { kind = x.kind, id = x.id, key = (x.kind == "mount" and "m:" or "i:") .. tostring(x.id), n = x.n } end
         end
     end
@@ -344,6 +369,7 @@ end
 -- ---------------------------------------------------------------- p9: tabs, switches, Move
 
 local function setTab(v)
+    if HIDDEN[v] then v = "normal" end                                   -- p34: an old padtab 1 (the DS tab) opens WoW Defaults
     tc.view = v
     tc.carry, tc.chooser, tc.box = nil, nil, nil
     tc.tcur, tc.sw = tabIndex(v), 1
@@ -480,6 +506,7 @@ local function pressButtons(key)
         elseif key == "PADDUP" then step(-1) end
         return true
     end
+    if (key == "PAD1" or key == "PAD3") and toolbarHas(tc.pos) then report("dpad-bar") return true end   -- p34
     if key == "PAD1" then                               -- A: carrying -> place / swap; else choose / Change (the ONE action's chooser)
         if tc.carry then carryPlace() return true end
         local h = here()
@@ -508,8 +535,8 @@ local function pressTabs(key)
     -- tabs consistent with this behavior"): the cursor LANDING on a tab opens it at once and stays on it (once per landing: the wall opens
     -- nothing; no game action: the room's own page). LB / RB as before.
     if key == "PADDLEFT" or key == "PADDRIGHT" then
-        local i = math.min(#TABS, math.max(1, tc.tcur + (key == "PADDLEFT" and -1 or 1)))
-        if i ~= tc.tcur then setTab(TABS[i]) end
+        local i = tabStep(tc.tcur, key == "PADDLEFT" and -1 or 1)       -- p34: over the hidden tab
+        if i and i ~= tc.tcur then setTab(TABS[i]) end
     elseif key == "PAD1" then
         if TABS[tc.tcur] ~= tc.view then setTab(TABS[tc.tcur]) end      -- open already (the landing did it)
     elseif key == "PADDDOWN" then step(1)
@@ -601,8 +628,8 @@ local function pressChooser(key)
     -- they should stay that way. Instead they should have the arrows side to side"): LB / RB are the ROOM's tabs, chooser or not (the
     -- chooser closes with the tab it was on, as a tap on a room tab does); the chooser's own tabs page with D-pad Left / Right
     if key == "PADLSHOULDER" or key == "PADRSHOULDER" then
-        local i = tabIndex(tc.view) + (key == "PADLSHOULDER" and -1 or 1)
-        if i >= 1 and i <= #TABS then setTab(TABS[i]) end
+        local i = tabStep(tabIndex(tc.view), key == "PADLSHOULDER" and -1 or 1)     -- p34: over the hidden tab
+        if i then setTab(TABS[i]) end
         return true
     end
     if tc.view == "party" and PT.pressChooser then return PT.pressChooser(key) end   -- p33: the party chooser (one list, no tabs)
@@ -661,8 +688,8 @@ WC.padTabCtl = {
         if tc.box then return pressBox(key) end
         if tc.chooser then return pressChooser(key) end
         if key == "PADLSHOULDER" or key == "PADRSHOULDER" then                    -- p9: LB / RB = the tabs
-            local i = tabIndex(tc.view) + (key == "PADLSHOULDER" and -1 or 1)
-            if i >= 1 and i <= #TABS then setTab(TABS[i]) end
+            local i = tabStep(tabIndex(tc.view), key == "PADLSHOULDER" and -1 or 1)     -- p34: over the hidden tab
+            if i then setTab(TABS[i]) end
             return true
         end
         if tc.carry and key == "PAD2" then tc.carry = nil; report("carry-cancel") return true end
@@ -831,8 +858,8 @@ WC.padTabCtl = {
         if not tc.on or tc.box then return end
         local key = d < 0 and "PADLSHOULDER" or "PADRSHOULDER"
         if tc.chooser then pressChooser(key) return end
-        local i = tabIndex(tc.view) + (d < 0 and -1 or 1)
-        if i >= 1 and i <= #TABS then setTab(TABS[i]) end
+        local i = tabStep(tabIndex(tc.view), d < 0 and -1 or 1)            -- p34: over the hidden tab
+        if i then setTab(TABS[i]) end
     end,
     touchExtraPage = function(base) tc.xpage = { base = base, at = GetTime() } end,
     touchExtra = function(col)
@@ -917,8 +944,8 @@ local function partyTab()
     PT.pressChooser = function(key)
         local list = PT.rows()
         if key == "PADLSHOULDER" or key == "PADRSHOULDER" then
-            local i = tabIndex(tc.view) + (key == "PADLSHOULDER" and -1 or 1)
-            if i >= 1 and i <= #TABS then setTab(TABS[i]) end
+            local i = tabStep(tabIndex(tc.view), key == "PADLSHOULDER" and -1 or 1)     -- p34: over the hidden tab
+            if i then setTab(TABS[i]) end
             return true
         end
         if key == "PADDUP" then tc.chooser.row = math.max(1, tc.chooser.row - 1); report("row")

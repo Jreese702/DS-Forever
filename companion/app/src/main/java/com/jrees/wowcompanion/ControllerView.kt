@@ -29,6 +29,11 @@ import android.view.View
  * p17 (the user 2026-10-07: "the tabs at the top of the controller menu should have the arrows side to side when highlighted, and be changed by the Dpad. when opening the room the cursor should start on the top left tab"): the room opens with the cursor on the tab row, on WoW Defaults (PadTabCtl p17); the
  * highlighted tab wears the game's gold arrows on both sides (UiKit.moveArrows, no words) in place of the L / R glyphs; LB / RB still work.
  *
+ * p34 (the user 2026-11-10: "consolidate the Controller menu. move the DS wow toolbar check box to the Wow defaults tab, when its selected
+ * replace those buttons with the DS WoW toolbar buttons, when uncheck it goes back to the normal D-pad skills"): FOUR tabs; the DS tab is
+ * gone (PadTabCtl p34 keeps it in its TABS, never shown, so the padtab numbers stay); WoW Defaults carries the "DS WoW toolbar" switch and,
+ * while it is on, [PadTabPage] draws the toolbar's Chat / Radial / Map / Home bar on the bare D-pad. The Item wheel's Tap / Hold and
+ * A / Release rows live in Settings > Controller (they were mirrored here).
  * THE ADDON'S SIDE (Book b17 / b22): [enterRoom] taps the `spells` row's "croom" column: the addon takes the controller by touch (no game
  * window: the game has none for this page) and the room's half (PadTabCtl) gets every press; B at the top leaves to Home. A on the DS tab's
  * Up counts in `spellsctl.tn` (the app flips the radial's way once per count).
@@ -57,8 +62,6 @@ class ControllerView(
     private var flashUntil = 0L
     private var downSw = -1
     private var downTab = -1
-    /** the DS tab's place a finger chose (1-4); the controller's (`dpos`) wins while the room holds */
-    private var dsSel = 2
     /** m41 S1: the clean-up's plan for this character (PadMap's `padclean`); its button shows only while there is something */
     private var clean: PadMapModel.Clean? = null
     /** the box a finger opened: "cleanup" / "cleanshared" (the controller's own is [tabCtl]'s box of that kind) */
@@ -74,7 +77,9 @@ class ControllerView(
     }
 
     private val page = PadTabPage(this, { cells -> onPadCells(cells) }, { e -> onBind(e) }, otherReader, cursorOnTabs = { false },
-        cellsOf = { e -> book?.let { SpellsModel.bindCells(it, e) } })       // b-druid-forms-bind: Book b38's two taps
+        cellsOf = { e -> book?.let { SpellsModel.bindCells(it, e) } },       // b-druid-forms-bind: Book b38's two taps
+        // p34: the toolbar's four show on the bare D-pad as the switch SHOWS (a finger's flip at the tap)
+        toolbarShown = { map?.dpad?.let { swShown("dpad", it.want == true) } == true })
     /** PARTY MODE's tab (PARTY_BUILD.md 4.4): the 5th tab, its own page */
     private val partyPage = PartyTabPage(this, { cells -> onPadCells(cells) }, { id ->
         book?.let { b -> SpellsModel.tabSpells(b).firstOrNull { it.spellId == id }?.let { SpellsModel.bindCells(b, it) } } })
@@ -151,7 +156,7 @@ class ControllerView(
     }
 
     fun onPadMap(m: PadMapModel.Map) { map = m; page.onMap(m); invalidate() }
-    fun onPadTabCtl(c: PadMapModel.Ctl) { tabCtl = c; if (c.on) dsSel = c.dpos; page.onCtl(c); partyPage.onCtl(c); invalidate() }
+    fun onPadTabCtl(c: PadMapModel.Ctl) { tabCtl = c; page.onCtl(c); partyPage.onCtl(c); invalidate() }
     /** m41 S1: the clean-up's plan (at login, on the box's request, after a run) */
     fun onClean(c: PadMapModel.Clean) {
         clean = c
@@ -185,7 +190,11 @@ class ControllerView(
      *  UI Art art-kit 494b1830). Party mode (the 5th tab): the row from the screen edges (the row keeps its L / R room itself) */
     private val gaps = UiKit.TabGaps(vertical = false)
     private fun tabRect(i: Int, w: Float): RectF =
-        gaps.row(TAB_NAMES.size, 0f, w, 76f, 70f, 260f, PadMapModel.tabOf(tab()) - 1, this)[i]     // UI Art: four fit as words
+        gaps.row(TAB_NAMES.size, 0f, w, 76f, 70f, 260f, shownTab(tab()), this)[i]     // UI Art: four fit as words
+    /** p34: a tab's place in the row the room SHOWS (the DS tab is gone: an old "ds" shows as WoW Defaults) */
+    private fun shownTab(view: String): Int = TAB_VIEWS.indexOf(view).coerceAtLeast(0)
+    /** p34: the add-on's tab number (PadTabCtl's TABS, 1-based, the DS tab still counted) as a place in the shown row */
+    private fun shownTcur(tcur: Int): Int = shownTab(PadMapModel.TABS.getOrElse(tcur - 1) { "normal" })
 
     /** a switch: label, state as SHOWN (null = this addon cannot switch it yet), the column that sets the OTHER state, its key */
     private class Sw(val label: String, val on: Boolean?, val col: Int?, val key: String,
@@ -204,7 +213,8 @@ class ControllerView(
     private fun switches(): List<Sw> {
         val m = map
         return when (tab()) {
-            "ds" -> {
+            // p34 (the user 2026-11-10: "move the DS wow toolbar check box to the Wow defaults tab"): WoW Defaults' own switch
+            "normal", "ds" -> {
                 val d = m?.dpad
                 val dOn = d?.let { swShown("dpad", it.want == true) }
                 listOf(Sw("DS WoW toolbar", dOn, d?.let { if (dOn == true) it.colOff else it.colOn }, "dpad"))
@@ -232,26 +242,8 @@ class ControllerView(
 
     private fun say(s: String) { flash = s; flashUntil = SystemClock.uptimeMillis() + 2500L; postDelayed({ invalidate() }, 2550L); invalidate() }
 
-    // ---------------------------------------------------------------- the DS tab's places
+    // ---------------------------------------------------------------- the old DS tab's clean-up (m45 / p24: never shown; p34: no DS tab)
 
-    private class DsPlace(val word: String, val art: String?, val what: String, val wheel: Boolean = false)
-    private val dsPlaces = listOf(
-        DsPlace("Chat", "ricon_chat", "Opens the Chat room."),
-        // b-radial-icon: the toolbar's own mini wheel (CastView's D-pad Up), not a potion
-        DsPlace("Radial", null, "Opens the radial of the consumables in your bags.", wheel = true),
-        DsPlace("Map", "ricon_map", "Opens Home's map."),
-        DsPlace("Home bar", "home_live_base", "Puts the bar's cursor on the Home swirl: pick a room, ${Glyphs.name("a")} opens it."),
-    )
-    private fun dsCentre(p: Int): Pair<Float, Float> {
-        val cx = SPLIT / 2f; val cy = 560f
-        return when (p) { 1 -> cx - 150f to cy; 2 -> cx to cy - 150f; 3 -> cx + 150f to cy; else -> cx to cy + 150f }
-    }
-    private fun dsSquare(p: Int) = dsCentre(p).let { (x, y) -> RectF(x - 52f, y - 52f, x + 52f, y + 52f) }
-    /** the wheels' two settings on the Radial's page (Home 2026-10-09): open Tap | Hold above, pick A | Release below; [i] 0 left, 1 right */
-    private fun openRect(i: Int, w: Float, h: Float) = choiceRect(i, w, h - 300f, h - 189f)
-    private fun pickRect(i: Int, w: Float, h: Float) = choiceRect(i, w, h - 141f, h - 30f)
-    private fun choiceRect(i: Int, w: Float, t: Float, b: Float) =
-        if (i == 0) RectF(SPLIT + 40f, t, (SPLIT + w) / 2f - 8f, b) else RectF((SPLIT + w) / 2f + 8f, t, w - 56f, b)
     /** m41 S1: the Clean up button, the left page's bottom row under Map (UI Art: the shared one's twin, mirrored round the D-pad) */
     private fun cleanRect(h: Float) = RectF(450f, h - 128f, 700f, h - 16f)
     private fun cleanBoxRect(w: Float, h: Float) = RectF(70f, 172f, w - 70f, h - 12f)
@@ -290,34 +282,34 @@ class ControllerView(
             c.drawText(Tr.t(it), w - 24f, 31f - (pb.ascent() + pb.descent()) / 2f, pb)
         }
         // THE TABS (p9), the game's tab look, LB / RB in the chosen tab's gaps
-        val cur = PadMapModel.tabOf(tab())
+        val cur = shownTab(tab())
         val k = tabCtl?.takeIf { it.on }
-        // five tabs (Party mode, the 5th): each label set smaller to fit its tab (UI Art: "WoW Defaults" about 26), drawn as UiKit.tab does
+        // p34: four tabs (the DS tab folded into WoW Defaults): each label set smaller to fit its tab (UI Art: "WoW Defaults" about 26)
         for (i in TAB_NAMES.indices) {
             val r = tabRect(i, w)
-            UiKit.tab(c, r, "", i + 1 == cur, cursor = k != null && k.focus == "tabs" && k.tcur == i + 1)
-            val p = UiKit.bodyPaint(28f, if (i + 1 == cur) android.graphics.Color.WHITE else Theme.gold).apply { textAlign = Paint.Align.CENTER }
+            UiKit.tab(c, r, "", i == cur, cursor = k != null && k.focus == "tabs" && shownTcur(k.tcur) == i)
+            val p = UiKit.bodyPaint(28f, if (i == cur) android.graphics.Color.WHITE else Theme.gold).apply { textAlign = Paint.Align.CENTER }
             while (p.textSize > 20f && p.measureText(TAB_NAMES[i]) > r.width() - 24f) p.textSize -= 1f
             c.drawText(Tr.t(TAB_NAMES[i]), r.centerX(), r.centerY() + 8f - (p.ascent() + p.descent()) / 2f, p)
         }
         // the In combat tab carries the game's gold crossed swords (UI Art's sheet): the fight set at a glance, where the narrower four-tab
         // row leaves it room beside the word
         UiKit.tex("combat_swords")?.let { sw ->
-            val r = tabRect(2, w)
-            if ((r.width() - PTABW.measureText(TAB_NAMES[2])) / 2f >= 64f)
+            val ci = TAB_VIEWS.indexOf("combat")
+            val r = tabRect(ci, w)
+            if ((r.width() - PTABW.measureText(TAB_NAMES[ci])) / 2f >= 64f)
                 c.drawBitmap(sw, null, RectF(r.left + 20f, r.centerY() - 16f, r.left + 56f, r.centerY() + 18f), PBMP)
         }
         // L and R on the row's outsides, always (the user, 15 Oct), the chooser open too (PadTabCtl p30: LB / RB stay the room's tabs)
         gaps.badges(c)
         // p17: the cursor on the tab row: the game's gold arrows on both sides of its tab (no wrap: none past the ends), in the gaps
         if (k != null && k.focus == "tabs" && !page.chooserOpen() && !partyPage.chooserOpen(k))
-            UiKit.moveArrows(c, tabRect(k.tcur - 1, w), left = k.tcur > 1, right = k.tcur < TAB_NAMES.size, words = false)
+            shownTcur(k.tcur).let { t -> UiKit.moveArrows(c, tabRect(t, w), left = t > 0, right = t < TAB_NAMES.size - 1, words = false) }
 
         UiKit.bookPage(c, RectF(8f, 158f, SPLIT, h - 4f))
         UiKit.bookPage(c, RectF(SPLIT, 158f, w - 8f, h - 4f), right = true)
         UiKit.bookFold(c, SPLIT, 166f, h - 12f)
         when (tab()) {
-            "ds" -> drawDs(c, w, h)
             "party" -> partyPage.draw(c, w, h, tabCtl)
             else -> page.draw(c, w, h, book)
         }
@@ -337,131 +329,6 @@ class ControllerView(
         }
         if (k != null && k.focus == "switches") sw.indices.firstOrNull { it == k.sw - 1 }?.let { UiKit.focus(c, swRect(it, sw.size), onPaper = true) }
     }
-
-    /** the DS tab: the plain D-pad's four places on the left page; the chosen one on the right (the Radial: its Hold / Tap) */
-    private fun drawDs(c: Canvas, w: Float, h: Float) {
-        val on = map?.dpad?.let { swShown("dpad", it.want == true) } == true
-        val k = tabCtl?.takeIf { it.on }
-        val sel = (if (k != null) k.dpos else dsSel).coerceIn(1, 4)
-        val pi = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
-        // m38 (the user 2026-10-08, Q7: Start follows this switch): the line names Start too. UI Art: wrapped onto TWO lines at 24 px (dim ink
-        // smaller than that reads poorly on the Thor), as menuRow wraps a long label; the first baseline a little higher so the second
-        // clears the D-pad's Up square
-        val line = if (on) "On: the plain D-pad opens these and Start the pause wheel, in fights too."
-                   else "Off: the plain D-pad and Start are the game's own (WoW Defaults)."
-        val pl = TextPaint(UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim })
-        val lineLay = StaticLayout.Builder.obtain(Tr.span(line), 0, Tr.span(line).length, pl, (SPLIT - 64f).toInt())
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(0f, 1f)
-            .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).build()
-        c.save(); c.translate(40f, 300f + pl.ascent()); lineLay.draw(c); c.restore()
-        val pw = UiKit.inkPaint(26f).apply { textAlign = Paint.Align.CENTER }
-        for (p in 1..4) {
-            val r = dsSquare(p)
-            val d = dsPlaces[p - 1]
-            val art = artOf(d)
-            UiKit.spell(c, art, r.left, r.top, r.width(), if (on) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL)
-            if (d.wheel) UiKit.miniWheel(c, r.centerX(), r.centerY(), r.width() * 0.4f)
-            else if (art == null) c.drawText(Tr.t(d.word.take(1)), r.centerX(), r.centerY() + 10f, pw)
-            c.drawText(Tr.t(d.word), r.centerX(), r.bottom + 58f, pw)
-        }
-        if (k == null || k.focus == "dpad") UiKit.slotFocus(c, dsSquare(sel))
-        val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
-        // m41 S1: the clean-up button, only while an older build's things are left on this character
-        val n = cleanN()
-        if (n > 0) {
-            val r = cleanRect(h)
-            val said = "$n ${if (n == 1) "thing" else "things"} an older DS build left here"
-            val pt = TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim })
-            // the line clear of the Home bar's frame (the button's width less its side next to it)
-            val sl = StaticLayout.Builder.obtain(Tr.span(said), 0, Tr.span(said).length, pt, (r.width() - TEXT_INSET).toInt())
-                .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setLineSpacing(0f, 1f).setMaxLines(2)
-                .setEllipsize(TextUtils.TruncateAt.END).build()
-            c.save(); c.translate(r.left + TEXT_INSET, r.top - 8f - sl.height); sl.draw(c); c.restore()
-            UiKit.button(c, r, "Clean up", glyph(8), if (downClean == 1) UiKit.Button.DOWN else UiKit.Button.UP)
-            if (k != null && k.focus == "cleanup") UiKit.focus(c, r, onPaper = true)
-        }
-        if (sharedOk()) {
-            // m42: the shared DS macros' own button, once no checked character holds one
-            val r = sharedRect(h)
-            val cnt = clean?.shared?.names?.size ?: 0
-            val said = "$cnt shared DS ${if (cnt == 1) "macro" else "macros"} no character uses"
-            val pt = TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim })
-            val sl = StaticLayout.Builder.obtain(Tr.span(said), 0, Tr.span(said).length, pt, (r.width() - TEXT_INSET).toInt())
-                .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setLineSpacing(0f, 1f).setMaxLines(2)
-                .setEllipsize(TextUtils.TruncateAt.END).build()
-            c.save(); c.translate(r.left, r.top - 8f - sl.height); sl.draw(c); c.restore()
-            UiKit.button(c, r, "Delete", glyph(8), if (downClean == 4) UiKit.Button.DOWN else UiKit.Button.UP)
-            if (k != null && k.focus == "shared") UiKit.focus(c, r, onPaper = true)
-        }
-        if (sharedOk() && k != null && k.focus == "shared") {
-            val sh = clean!!.shared
-            val pn = UiKit.inkPaint(40f, heading = true)
-            c.drawText(Tr.t("Shared macros"), x0 + 8f, top + 30f - pn.ascent() - 4f, pn)
-            val text = "${sh.names.joinToString(", ")}: an older DS Forever build made ${if (sh.names.size == 1) "it" else "them"} in your General " +
-                "Macros, shared by all your characters. No checked character has one on a button now. Delete removes only these; a box " +
-                "names them first."
-            val lay = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, TextPaint(UiKit.inkPaint(24f)), (x1 - x0 - 16f).toInt())
-                .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
-            c.save(); c.translate(x0 + 8f, top + 100f); lay.draw(c); c.restore()
-            return
-        }
-        if (n > 0 && k != null && k.focus == "cleanup") {
-            // the right page: what the clean-up is (the box names every button and macro before the yes)
-            val pn = UiKit.inkPaint(40f, heading = true)
-            c.drawText(Tr.t("Clean up"), x0 + 8f, top + 30f - pn.ascent() - 4f, pn)
-            val text = "An older DS Forever build put macros on ${who()}'s buttons. Clean up puts your spells back, keeps a DS command as one " +
-                "without a macro, and deletes only DS Forever's own macros. A box names everything first."
-            val lay = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, TextPaint(UiKit.inkPaint(24f)), (x1 - x0 - 16f).toInt())
-                .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
-            c.save(); c.translate(x0 + 8f, top + 100f); lay.draw(c); c.restore()
-            return
-        }
-        // the right page: the chosen place
-        val d = dsPlaces[sel - 1]
-        UiKit.spell(c, artOf(d), x0 + 36f, top + 16f, 96f, if (on) UiKit.Spell.KNOWN else UiKit.Spell.LEVEL)
-        if (d.wheel) UiKit.miniWheel(c, x0 + 36f + 48f, top + 16f + 48f, 96f * 0.4f)
-        val pn = UiKit.inkPaint(40f, heading = true)
-        c.drawText(Tr.t(d.word), x0 + 158f, top + 30f - pn.ascent() - 4f, pn)
-        c.drawText(Tr.t("D-pad " + arrayOf("Left", "Up", "Right", "Down")[sel - 1]), x0 + 160f, top + 120f, pi)
-        val text = d.what + if (!on) " The toolbar is off now." else ""
-        val pd = TextPaint(UiKit.inkPaint(24f))
-        val lay = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, pd, (x1 - x0 - 16f).toInt())
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
-        c.save(); c.translate(x0 + 8f, top + 170f); lay.draw(c); c.restore()
-        if (sel == 2) {
-            // THE ITEM & SPELL WHEELS' BEHAVIOUR (Home 2026-10-09: open Tap / Hold + pick A / Release, defaults Tap + A; Settings > Controller
-            // has the same two rows). The controller: A flips open, X flips pick. The pause wheel (Start) has its OWN pair (HomeSettings.pauseTap /
-            // pausePickA): the user's pick 2026-10-09 "Settings only" -- said in one line here, not mirrored
-            val tap = HomeSettings.radialTap
-            val pickA = HomeSettings.radialPickA
-            val ph = UiKit.inkPaint(26f, heading = true)
-            val note = "The pause menu and the spell wheel have their own pairs in Settings > Controller."
-            val nl = StaticLayout.Builder.obtain(Tr.span(note), 0, Tr.span(note).length, TextPaint(UiKit.inkPaint(22f).apply { color = Theme.parchmentInkDim }),
-                (x1 - x0 - 16f).toInt()).setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(2f, 1f).setMaxLines(2).build()
-            c.save(); c.translate(x0 + 8f, h - 392f - nl.height); nl.draw(c); c.restore()
-            c.drawText(Tr.t("Item wheel (D-pad Up)"), x0 + 8f, h - 352f, ph)
-            c.drawText(Tr.t("Wheels: open"), x0 + 8f, h - 312f, pi)
-            UiKit.choice(c, openRect(0, w, h), "Tap", tap)
-            UiKit.choice(c, openRect(1, w, h), "Hold", !tap)
-            c.drawText(Tr.t("Wheels: pick"), x0 + 8f, h - 153f, pi)
-            UiKit.choice(c, pickRect(0, w, h), "Press ${Glyphs.name("a")}", pickA)                 // UI Art: a lone "A" reads as a glyph
-            UiKit.choice(c, pickRect(1, w, h), "Release", !pickA)
-            if (k != null && k.focus == "dpad") {
-                inkHint(c, x1, h - 320f, glyph(8), "Change")
-                inkHint(c, x1, h - 161f, glyph(5), "Change")
-            }
-        }
-    }
-
-    /** a controller hint on the parchment (UI Art: the page's ink for the word, never the dark ground's white; the glyph as the kit draws it) */
-    private fun inkHint(c: Canvas, right: Float, cy: Float, glyph: String, word: String) {
-        val p = UiKit.inkPaint(24f)
-        val x = right - p.measureText(word)
-        c.drawText(Tr.t(word), x, cy - (p.ascent() + p.descent()) / 2f, p)
-        UiKit.pad(c, glyph, x - 30f, cy, 40f)
-    }
-
-    private fun artOf(d: DsPlace) = d.art?.let { UiKit.tex(it) }
 
     private fun padStyle(): SpellsModel.PadStyle = when (CastSettings.buttonLayout) {
         CastSettings.ButtonLayout.XBOX -> SpellsModel.PadStyle.LTR
@@ -504,7 +371,7 @@ class ControllerView(
             downTab = TAB_NAMES.indices.firstOrNull { tabRect(it, w).let { r -> RectF(r.left, 62f, r.right, 158f) }.contains(ev.x, ev.y) } ?: -1
             val sw = switches()
             downSw = sw.indices.firstOrNull { swRect(it, sw.size).let { r -> RectF(r.left, r.top - 8f, r.right, r.bottom + 8f) }.contains(ev.x, ev.y) } ?: -1
-            padDown = downTab < 0 && downSw < 0 && ev.y > 173f && tab() != "ds"
+            padDown = downTab < 0 && downSw < 0 && ev.y > 173f
         }
         if (padDown && tab() == "party") {
             partyPage.onTouch(ev, tabCtl)
@@ -519,13 +386,14 @@ class ControllerView(
         if (ev.actionMasked != MotionEvent.ACTION_UP) return true
         // a tab: shown at once, the addon told (one padtab pick)
         if (downTab >= 0 && tabRect(downTab, w).let { r -> RectF(r.left, 62f, r.right, 158f) }.contains(ev.x, ev.y)) {
-            val v = PadMapModel.TABS[downTab]
+            val v = TAB_VIEWS[downTab]
+            val n = PadMapModel.tabOf(v)                                    // p34: the add-on's tab number (the DS tab still counted)
             page.showTabLocal(v)
             // the Party mode tab: partycfg's own column when it came (PartyTaps.tab), else Book b47's padtab 26
             val cells = (if (v == "party") PartyTaps.tab(PartyModel.live.cfg) else null)
-                ?: listOf(PadMapModel.ROW_PADTAB to PadMapModel.colTab(downTab + 1))
+                ?: listOf(PadMapModel.ROW_PADTAB to PadMapModel.colTab(n))
             val sent = onPadCells(cells)
-            Log.i(TAG, "tab '$v': padtab ${PadMapModel.colTab(downTab + 1)} ${if (sent) "tapped" else "not sent"}")
+            Log.i(TAG, "tab '$v': padtab ${PadMapModel.colTab(n)} ${if (sent) "tapped" else "not sent"}")
             downTab = -1; invalidate(); return true
         }
         // a switch: ONE tap on its own column
@@ -555,21 +423,6 @@ class ControllerView(
                 }
             }
             invalidate(); return true
-        }
-        // the DS tab: a place (the app's own pick), the Radial's Hold / Tap (the app's setting)
-        if (tab() == "ds") {
-            (1..4).firstOrNull { dsSquare(it).let { r -> RectF(r.left - 12f, r.top - 12f, r.right + 12f, r.bottom + 40f) }.contains(ev.x, ev.y) }?.let {
-                dsSel = it; invalidate(); return true
-            }
-            val sel = (tabCtl?.takeIf { it.on }?.dpos ?: dsSel)
-            if (sel == 2) {
-                when {
-                    openRect(0, w, h).contains(ev.x, ev.y) -> { HomeSettings.radialTap = true; invalidate() }
-                    openRect(1, w, h).contains(ev.x, ev.y) -> { HomeSettings.radialTap = false; invalidate() }
-                    pickRect(0, w, h).contains(ev.x, ev.y) -> { HomeSettings.radialPickA = true; invalidate() }
-                    pickRect(1, w, h).contains(ev.x, ev.y) -> { HomeSettings.radialPickA = false; invalidate() }
-                }
-            }
         }
         return true
     }
@@ -666,8 +519,10 @@ class ControllerView(
         private const val PAUSED_SAY = "Start attack on cast is coming back later"
         private val TOGGLE_OPS = setOf("dpad-on", "dpad-off", "cc-on", "cc-off", "attack")
         private val PBMP = Paint(Paint.FILTER_BITMAP_FLAG)
-        /** p16 the room's tabs, in PadTabCtl's order */
-        private val TAB_NAMES = listOf("WoW Defaults", "DS", "In combat", "Spell radial", "Party mode")
+        /** p16 the room's tabs, in PadTabCtl's order; p34 (the user 2026-11-10: "consolidate the Controller menu"): the DS tab is gone (its
+         *  switch on WoW Defaults, its four places on WoW Defaults' bare D-pad; the Item wheel's Tap / Hold in Settings > Controller) */
+        private val TAB_VIEWS = listOf("normal", "combat", "radial", "party")
+        private val TAB_NAMES = listOf("WoW Defaults", "In combat", "Spell radial", "Party mode")
         /** the tab's word, measured for the swords' room (UiKit.tab's size) */
         private val PTABW = UiKit.bodyPaint(28f, Theme.text)
         /** the clean-up buttons' small lines stay this far from the Home bar's frame */

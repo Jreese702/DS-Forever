@@ -66,6 +66,8 @@ class PadTabPage(
     private val cursorOnTabs: () -> Boolean = { false },
     /** b-druid-forms-bind: a spell's Bind taps on the `spells` row (Book b38: its group, then its offset); null = no touch way */
     private val cellsOf: (SpellsModel.Entry) -> List<Pair<String, Int>>? = { e -> e.padColumn?.let { listOf("spells" to it) } },
+    /** p34: the DS WoW toolbar's switch as the room SHOWS it (a finger's flip at the tap); null = the add-on's own word */
+    private val toolbarShown: (() -> Boolean)? = null,
 ) {
     private sealed class Thing {
         class Spell(val e: SpellsModel.Entry) : Thing()
@@ -167,6 +169,7 @@ class PadTabPage(
         if (chooserList() != null || view == "ds") return null
         if (carryNow() != null) return when (key) { "PAD1" -> DOWN_PLACE; "PAD2" -> DOWN_CANCEL; else -> null }
         if (k.focus != "buttons" || m.combat) return null
+        if (toolAt(shown(), pos) != null) return null                                       // p34: the toolbar's
         if (view == "radial") return when (key) { "PAD1" -> DOWN_CHANGE; "PAD3" -> if (radId(pos) != 0) DOWN_MOVE else null; else -> null }   // p16
         val sl = slotOf(m, shown(), pos) ?: return null
         val fixed = sl.kind == PadMapModel.Kind.FIXED
@@ -178,6 +181,50 @@ class PadTabPage(
         }
     }
 
+
+    // ---------------------------------------------------------------- p34 THE DS WOW TOOLBAR ON THE BARE D-PAD
+    // (the user 2026-11-10: "when its selected replace those buttons with the DS WoW toolbar buttons, when uncheck it goes back to the
+    // normal D-pad skills"): while the toolbar is on, WoW Defaults' (and In combat's) bare D-pad shows what the toolbar does there; the
+    // player's own buttons stay underneath and come back when it is off. Nothing goes on them meanwhile (PadTabCtl p34 / PadMap refuse it).
+    private class Tool(val word: String, val art: String?, val what: String, val wheel: Boolean = false)
+    private val tools = listOf(
+        Tool("Chat", "ricon_chat", "Opens the Chat room."),
+        Tool("Radial", null, "Opens the radial of the consumables in your bags.", wheel = true),   // the toolbar's own mini wheel
+        Tool("Map", "ricon_map", "Opens Home's map."),
+        Tool("Home bar", "home_live_base", "Puts the bar's cursor on the Home swirl: pick a room, ${Glyphs.name("a")} opens it."),
+    )
+    private fun toolbarOn(): Boolean = toolbarShown?.invoke() ?: (map?.dpad?.want == true)
+    /** the toolbar's place on button [p] of set [s] in the tab on show, or null (the player's own button) */
+    private fun toolAt(s: Int, p: Int): Tool? =
+        if (s == 1 && p in 1..4 && (view == "normal" || view == "combat") && toolbarOn()) tools[p - 1] else null
+    private fun toolArt(t: Tool) = t.art?.let { UiKit.tex(it) }
+    private fun drawTool(c: Canvas, t: Tool, l: Float, tp: Float, size: Float) {
+        UiKit.spell(c, toolArt(t), l, tp, size, UiKit.Spell.KNOWN)
+        if (t.wheel) UiKit.miniWheel(c, l + size / 2f, tp + size / 2f, size * 0.4f)
+    }
+    /** the right page for a toolbar button: what it does, and how to have the button back */
+    private fun drawToolRight(c: Canvas, t: Tool, w: Float, h: Float) {
+        val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
+        drawTool(c, t, x0 + 36f, top + 16f, 96f)
+        val pn = UiKit.inkPaint(40f, heading = true)
+        c.drawText(Tr.t(t.word), x0 + 158f, top + 30f - pn.ascent() - 4f, pn)
+        val dim = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
+        c.drawText(Tr.t("DS WoW toolbar"), x0 + 160f, top + 30f + pn.textSize + 28f, dim)
+        val cy = top + 166f
+        val pOn = UiKit.inkPaint(28f).apply { color = Theme.parchmentInkDim }
+        c.drawText(Tr.t("On"), x0 + 8f, cy - 2f - (pOn.ascent() + pOn.descent()) / 2f, pOn)
+        UiKit.padCombo(c, null, SpellsModel.combo(SpellsModel.PadSlot(0, 1, 1, pos), style()).button, x0 + 66f, cy, 56f, Theme.parchmentInk, shadow = false)
+        UiKit.tex("book_divider")?.let { c.drawBitmap(it, null, RectF(x0, top + 204f, x1, top + 215f), PBMP) }
+        // two sentences, each its own words (a joined line has no translation of its own)
+        val help = Tr.t(t.what) + " " + Tr.t("Turn the DS WoW toolbar off (WoW Defaults) to put your own spell here; it comes back as you left it.")
+        val lay = StaticLayout.Builder.obtain(Tr.span(help), 0, Tr.span(help).length, TextPaint(UiKit.inkPaint(24f)), (x1 - x0 - 16f).toInt())
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).build()
+        c.save(); c.translate(x0 + 8f, top + 236f); lay.draw(c); c.restore()
+        flash?.takeIf { SystemClock.uptimeMillis() < flashUntil }?.let {
+            val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
+            c.drawText(Tr.t(it), actRect(w, h).centerX(), actRect(w, h).top - 64f, pw)
+        }
+    }
 
     /** the tab on show, for [ControllerView] */
     fun currentView(): String = view
@@ -221,6 +268,7 @@ class PadTabPage(
         // m34 / p15: a binding where the router cannot reach, and a binding never moves
         if (c.note == "bind-layer") say("Only on a button with no trigger, or with ${setWord(2)}")
         if (c.note == "bind-dpad bar") say("The DS WoW toolbar has the plain D-pad")
+        if (c.note == "dpad-bar") say("The DS WoW toolbar has this button: turn it off to use it")    // p34
         if (c.note == "bind-fixed") say("The game keeps that button for itself")
         if (c.note == "bind-move") say("It rides the key, not the bar: clear it and choose it where you want it")
         if (c.note == "move-refused") say("The game did not move it")
@@ -452,11 +500,18 @@ class PadTabPage(
 
     /** p11 the chooser's tabs (the user 2026-10-07: "in the controller menu, when assigning a spell, the spell menu needs some tabs. start on spells, then general (including professions), then extra"); a fight spell's chooser has no Extra */
     private fun chooserTabs(m: PadMapModel.Map) =
-        if (onlySpells(m)) listOf("spells", "general", "professions") else listOf("spells", "general", "professions", "extra")   // p14
+        if (onlySpells(m)) listOf("spells", "general", "professions")
+        else listOf("spells", "general", "professions", "extra", "dstool")   // p14; p34: the DS tab (PadTabCtl p34's "dstool")
+    /** p34 (the user 2026-11-10: "add a 4th skill assignment category where we can add the DS toolbar buttons to any button slot"): DS
+     *  Forever's own commands (keys "DS..."), the chooser's DS tab, out of Extra; each keeps its place in the padmap doc's list (the
+     *  "extra" pad row counts by it) */
+    private fun dsCommand(c: PadMapModel.Command) = c.key.startsWith("DS")
+    private fun commandRows(m: PadMapModel.Map, ds: Boolean) =
+        m.commands.mapIndexed { i, c -> Thing.Command(c, i + 1) }.filter { dsCommand(it.c) == ds }
 
     private fun rowsOf(list: String, book: SpellsModel.Book?, m: PadMapModel.Map): List<Thing> {
-        if (list != "extra" || onlySpells(m)) {
-            val which = if (list == "extra") "spells" else list
+        if ((list != "extra" && list != "dstool") || onlySpells(m)) {
+            val which = if (list == "extra" || list == "dstool") "spells" else list
             // the combat view leaves out the spells already on the button (the same spell in and out of a fight only spends a macro)
             val skip = if (fight()) PadMapModel.onButton(slotOf(m, shown(), pos)) else emptySet()
             val spells = book?.let { b -> SpellsModel.tabSpells(b, which).filter { (it.spellId ?: it.actionId) !in skip }.map { Thing.Spell(it) } }
@@ -466,7 +521,8 @@ class PadTabPage(
         }
         // p12 (the user's picks 2026-10-07: the ready-made commands, "Any Item from a bag (mount hearthstone etc)"): the commands, then the mounts, then the bags'
         // items, each group under its heading once there is more than one group
-        val cmds = m.commands.mapIndexed { i, c -> Thing.Command(c, i + 1) }
+        if (list == "dstool") return commandRows(m, true)                  // p34: the DS tab, its commands only
+        val cmds = commandRows(m, false)
         if (m.binds.isEmpty() && m.mounts.isEmpty() && m.items.isEmpty()) return cmds
         val out = ArrayList<Thing>()
         if (cmds.isNotEmpty()) { out += Thing.Header("Commands"); out += cmds }             // m40: none while paused
@@ -682,7 +738,7 @@ class PadTabPage(
             else -> "Hold it to keep the wheel open; point, then let the stick go to cast."
         }
         val help = (if (id == 0) "Choose a spell for this slice. " else "") +
-            "Put the Spell Radial command on a button (WoW Defaults: Change, Extra). $way"
+            "Put the Spell Radial command on a button (WoW Defaults: Change, DS). $way"
         val pd = TextPaint(UiKit.inkPaint(24f))
         val lay = StaticLayout.Builder.obtain(Tr.span(help), 0, Tr.span(help).length, pd, (x1 - x0 - 16f).toInt())
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(4f, 1f).setMaxLines(5).build()
@@ -749,8 +805,13 @@ class PadTabPage(
     private fun changesInFight(sl: PadMapModel.Slot?) = (sl?.kind == PadMapModel.Kind.COMBAT && sl.ov) || (PadMapModel.isFace(sl) && sl!!.fight != null)
 
     private fun drawButton(c: Canvas, m: PadMapModel.Map, s: Int, p: Int) {
-        val sl = slotOf(m, s, p)
         val r = square(p)
+        toolAt(s, p)?.let { t ->                                            // p34: the toolbar's own picture
+            drawTool(c, t, r.left, r.top, 80f)
+            if (p == pos && chooserList() != null) UiKit.checkedGlow(c, RectF(r.left, r.top, r.left + 80f, r.top + 80f))
+            return
+        }
+        val sl = slotOf(m, s, p)
         val fixed = sl?.kind == PadMapModel.Kind.FIXED
         val changes = changesInFight(sl)
         // the base X / Y / A can change in the combat view: no lock there (B keeps it: it stays the game's Back)
@@ -810,6 +871,7 @@ class PadTabPage(
     private fun drawRight(c: Canvas, m: PadMapModel.Map, s: Int, w: Float, h: Float) {
         val slc = slotOf(m, s, pos)
         carryNow()?.let { drawMoveRight(c, m, s, it, w, h); return }
+        toolAt(s, pos)?.let { drawToolRight(c, it, w, h); return }         // p34
         if (view == "combat" || slc?.kind == PadMapModel.Kind.COMBAT) { drawCombatRight(c, m, s, slc, w, h); return }
         val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
         val sl = slc
@@ -930,7 +992,7 @@ class PadTabPage(
         }
         UiKit.button(c, moveRect(w, h), "Cancel", glyph(7), if (isDown(DOWN_CANCEL)) UiKit.Button.DOWN else UiKit.Button.UP)
         UiKit.button(c, actRect(w, h), if (swap) "Swap" else "Place", glyph(8), when {
-            m.combat || same || under?.kind == PadMapModel.Kind.FIXED -> UiKit.Button.DISABLED
+            m.combat || same || under?.kind == PadMapModel.Kind.FIXED || toolAt(s, pos) != null -> UiKit.Button.DISABLED   // p34
             isDown(DOWN_PLACE) -> UiKit.Button.DOWN
             else -> UiKit.Button.UP
         })
@@ -1032,7 +1094,7 @@ class PadTabPage(
         c.drawRect(SPLIT + 2f, 158f, w - 8f, h - 4f, PFILL)
         val box = chooserBox(w, h)
         val inner = UiKit.menu(c, box, solid = true)
-        val shownList = if (list == "extra" && onlySpells(m)) "spells" else list
+        val shownList = if ((list == "extra" || list == "dstool") && onlySpells(m)) "spells" else list
         // p17 (the user 2026-10-07: "the "Combat spells" text and glyph at the top can be removed"): no header line in any chooser; the
         // icon tabs say which list is open
         // p11 / p14: the tabs, Spells | General | Professions | Extra, the game's SMALL ICON tabs (UI Art: the book's own language; the
@@ -1045,7 +1107,9 @@ class PadTabPage(
         for (i in keys.indices) {
             val icon = when (keys[i]) {
                 "spells" -> UiKit.tex("ricon_spellbook"); "general" -> classIcon
-                "professions" -> UiKit.tex("ricon_professions"); else -> UiKit.tex("ricon_controller")
+                "professions" -> UiKit.tex("ricon_professions")
+                "dstool" -> UiKit.tex("home_live_base")                     // p34: the DS swirl (the Home bar's own)
+                else -> UiKit.tex("ricon_controller")
             }
             UiKit.smallTab(c, tr[i], icon, i == cur, cursor = ccTabs && i == cur)
         }
@@ -1103,7 +1167,7 @@ class PadTabPage(
         c.restore()
         if (rows.isEmpty()) {
             val p = UiKit.bodyPaint(28f, Theme.dim).apply { textAlign = Paint.Align.CENTER }
-            c.drawText(Tr.t(if (list != "extra") "No spell to put on a button yet" else "No commands"), box.centerX(), top + 60f, p)
+            c.drawText(Tr.t(if (list != "extra" && list != "dstool") "No spell to put on a button yet" else "No commands"), box.centerX(), top + 60f, p)
         }
         if (withClear) {
             val ct = clearTop(box)
@@ -1229,6 +1293,13 @@ class PadTabPage(
         }
         if (chooserList() == null) {
             val carrying = carryNow() != null
+            if (toolAt(shown(), pos) != null) {                             // p34: the toolbar's button takes nothing
+                if (actRect(w, h).contains(x, y) || moveRect(w, h).contains(x, y)) {
+                    if (carrying && moveRect(w, h).contains(x, y)) return DOWN_CANCEL
+                    say("The DS WoW toolbar has this button: turn it off to use it")
+                }
+                return DOWN_NONE
+            }
             if (actRect(w, h).contains(x, y)) return if (carrying) DOWN_PLACE else if (changeHere()) DOWN_CHANGE else DOWN_NONE
             if (moveRect(w, h).contains(x, y)) return if (carrying) DOWN_CANCEL else DOWN_MOVE
         }

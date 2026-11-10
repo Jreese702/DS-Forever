@@ -1,5 +1,8 @@
 {
 "plain": {
+"Radial": "Radial",
+"The DS WoW toolbar has this button: turn it off to use it": "Ce bouton est à la barre d'outils DS WoW : désactivez-la pour l'utiliser",
+"Turn the DS WoW toolbar off (WoW Defaults) to put your own spell here; it comes back as you left it.": "Désactivez la barre d'outils DS WoW (WoW Defaults) pour mettre votre propre sort ici ; il revient tel que vous l'avez laissé.",
 "Experimental": "Expérimental",
 "On: Select turns Party mode on": "Activé : Select active le mode groupe",
 "A acts on the game's selection": "A agit sur la sélection du jeu",
@@ -1486,6 +1489,7 @@
 "The game's own target frame, by its switch below. For this character.": "Le cadre de cible du jeu, selon son interrupteur ci-dessous. Pour ce personnage."
 },
 "templates": {
+"Put the Spell Radial command on a button (WoW Defaults: Change, DS). %s": "Placez la commande Radial de sorts sur un bouton (WoW Defaults : Changer, DS). %s",
 "Abandon \"%s\"?": "Abandonner « %s » ?",
 "Add-ons: %s": "Add-ons : %s",
 "Aim with the stick, %s": "Visez avec le stick, %s",
