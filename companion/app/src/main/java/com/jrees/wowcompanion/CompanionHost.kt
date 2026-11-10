@@ -879,9 +879,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the A button glyph ... a cross layout of the other 4 party members with the dpad glyphs ... We are just visualizing it"): on
         // Home, LB alone held (CastView's reader) slides Home's panels aside - Party mode's view with them - and shows the targeting
         lbView = LbPartyView(this)
-        lbView.onSlide = { t -> if (room == Room.HOME && !pauseView.isOpen && !tradOpen()) pauseSlideAll(t) }
+        // 1.0.19: Home's sides move only far enough for the picture (LbPartyView.SIDE_PX)
+        lbView.onSlide = { t -> if (room == Room.HOME && !pauseView.isOpen && !tradOpen()) homeView.pauseSlide(t, LbPartyView.SIDE_PX) }
         castView.onShoulders = { lb, rb ->
-            val free = room == Room.HOME && !pauseView.isOpen && !tradOpen() && !(::radialView.isInitialized && radialView.isOpen)
+            // 1.0.19: only in the world (never over the start-up screens: the user, "The LB menu is also appearing in the app startup screen")
+            val free = room == Room.HOME && !pauseView.isOpen && !tradOpen() && !(::radialView.isInitialized && radialView.isOpen) &&
+                GameLife.worldNow && (!::chooserPanel.isInitialized || chooserPanel.visibility != View.VISIBLE)
             lbView.lb(lb && !rb && free)
         }
         castView.onButtonsAlso = { m -> lbView.buttons(m) }
@@ -1896,6 +1899,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "itarget" -> if (current) characterView.onItarget(msg.optBoolean("on"))
             // PadMap m104: which LB button targets whom, from the game's own bindings (the LB picture)
             "lbmap" -> LbMap.update(msg)
+            // PadMap m121: the soft targets' names (the LB picture's top line)
+            "soft" -> { SoftNow.update(msg); if (lbView.isShown2) lbView.invalidate() }
             "pmenu" -> if (current) {
                 when (msg.optString("src")) {
                     "party" -> if (partyWheelOpen()) targetRadial.fill(msg) else homeView.partyMenu.onDoc(msg)

@@ -50,6 +50,10 @@ object GameLife {
         LastRun.gameStarted(now)                                   // 1.0.17: kept across the app's own death
     }
 
+    /** 1.0.19: the game has reached the world and not ended (the LB picture only then: the user, "The LB menu is also appearing in the app
+     *  startup screen before the game starts") */
+    val worldNow: Boolean get() = worldSeen && !ended
+
     /** the first CURRENT document from the add-on: the game is in the world */
     fun inWorld(now: Long = System.currentTimeMillis()) {
         if (worldSeen || startedAt == 0L) return

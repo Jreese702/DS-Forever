@@ -3640,7 +3640,7 @@ end
 -- scale, so the 9 out matches the bar's units) in the plate's own strata, one frame level UNDER the plate's UnitFrame - so under its
 -- name, level and health bar fill. Only our own frame is parented / levelled (legal in combat); the plate's level and strata are
 -- READ (no taint), nothing of it is written; forbidden plates (enemies in instances) never reach us (GetNamePlateForUnit).
-WC.rings = { V = "at6", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
+WC.rings = { V = "at7", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
              ALPHA = 0.95, OUTSET = 6, PAD = 9, TOP_IN = 4, TEX_V = 53 / 64, list = {}, est = {}, react = {}, why = {}, n = 0,
              COL = { far = { 0.32, 0.86, 0.36 }, approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
              TEX = "Interface\\AddOns\\WowCompanion\\Media\\tint_glow" }
@@ -3747,7 +3747,37 @@ do
                     local r = R.radius(num(m.lv), plv)
                     e.st = R.state(e.d, r, e.st)
                     local o = tint(m.s)
-                    if o.plate ~= plate then
+                    -- at7 (the user: "The aggro tint is still showing hovering over targeted mobs instead of on the target frame"): the
+                    -- TARGET's tint goes round Hub's target bar while it shows (the same HUD bar outline), never over its plate
+                    local okT, isT = pcall(function() return UnitIsUnit(st.tok, "target") == true end)
+                    local tbHp = nil
+                    if okT and isT then
+                        local okH, hp = pcall(function()
+                            local uf = WC.uf
+                            return type(uf) == "table" and uf.target and uf.tb and uf.tb.f and uf.tb.f:IsShown() and uf.tb.f.hp or nil
+                        end)
+                        tbHp = okH and type(hp) == "table" and hp or nil
+                    end
+                    if tbHp then
+                        if o.plate ~= tbHp then
+                            o.f:ClearAllPoints()
+                            o.f:SetParent(UIParent)
+                            -- round the bar's HUD frame (its lip: 3 texels left / top, 7 right, 8 bottom of an 8-texel-high bar)
+                            local h = tbHp:GetHeight() or 17
+                            local k = h / 8
+                            o.f:SetPoint("TOPLEFT", tbHp, "TOPLEFT", -3 * k - 7, 3 * k + 7)
+                            o.f:SetPoint("BOTTOMRIGHT", tbHp, "BOTTOMRIGHT", 7 * k + 7, -8 * k - 7)
+                            o.plate, o.bar, o.onBar = tbHp, nil, true
+                            o.strata, o.lvl = nil, nil
+                        end
+                        plate = nil
+                    elseif o.onBar then
+                        o.f:ClearAllPoints()
+                        o.f:SetParent((type(WorldFrame) == "table" and WorldFrame) or UIParent)
+                        o.plate, o.onBar = nil, nil
+                        o.strata, o.lvl = nil, nil
+                    end
+                    if plate and o.plate ~= plate then
                         o.f:ClearAllPoints()
                         -- at3: anchored to the plate's health bar, PAD out (only anchored to: never read or written); a plate
                         -- without one (another style, another add-on's plates): the plate itself, OUTSET out, as before
@@ -3762,8 +3792,9 @@ do
                     end
                     -- at4: under the plate's UnitFrame (its name, level, bar fill): its strata, one level below (re-read each
                     -- tick: a targeted plate is raised)
-                    local okU, uf = pcall(function() return plate.UnitFrame end)
-                    local ref = (okU and type(uf) == "table" and uf) or plate
+                    -- at7: on the target bar, under the bar's own frame (its strata, one level below)
+                    local okU, uf = pcall(function() return plate and plate.UnitFrame end)
+                    local ref = (o.onBar and tbHp:GetParent()) or (okU and type(uf) == "table" and uf) or plate
                     local okS, strata = pcall(function() return ref:GetFrameStrata() end)
                     local okL, lvl = pcall(function() return ref:GetFrameLevel() end)
                     strata = okS and type(strata) == "string" and strata or "BACKGROUND"

@@ -19,6 +19,10 @@ import org.json.JSONObject
  * The game does the targeting (its own LB + A / D-pad bindings); nothing here presses anything. Which button is whose comes from the
  * game's own bindings ([LbMap], PadMap m104's "lbmap"; the user: "read it from the game"). Shown while LB alone is held on Home (CastView's
  * controller reader); Home's panels slide aside as for a wheel (the host's [onSlide]); a press of a mapped button lights its bar.
+ * 1.0.19 (the user: "the "L target" text needs to be removed ... at the very top above the player it should show what I am currently soft
+ * targeting and what LB will target if I release with no buttons ... I dont like the way everything fits together ... just enough to make
+ * space for the selections"): no title; the top line = your soft target | LB alone's target; one centred column ([COL_W] bars: you, Up,
+ * Left + Right side by side, Down), Home's sides moving only [SIDE_PX].
  */
 class LbPartyView(context: Context) : View(context) {
     /** Home's panels' slide (the pause wheel's): 0 = at rest .. UiKit.PAUSE_OPEN_MS = out of the way */
@@ -72,30 +76,68 @@ class LbPartyView(context: Context) : View(context) {
         val a = (255 * k).toInt()
         val w = width.toFloat(); val cx = w / 2f
         val s = minOf(w / 1240f, height / 1080f)
-        // the title: LB, "Target"
-        val ty = 70f * s
-        UiKit.pad(c, UiKit.shoulderGlyph(false), cx - 110f * s, ty, 56f * s, a)
-        c.drawText(Tr.t("Target"), cx - 70f * s, ty + 12f * s, UiKit.bodyPaint(36f * s, Theme.gold).apply { alpha = a })
         val party = PartyModel.live.party
         val members = party?.m.orEmpty()
         fun member(unit: String) = members.firstOrNull { it.u == unit }
         val now = SystemClock.uptimeMillis()
-        val bw = 500f * s; val bh = 104f * s
-        // YOU: the top of the middle, with the A glyph
-        val you = RectF(cx - bw / 2f, 140f * s, cx + bw / 2f, 140f * s + bh)
+        val bw = COL_W * s; val bh = 100f * s; val g = 16f * s
+        // THE TOP LINE: your soft target | what LB alone would target
+        val top = RectF(cx - bw - g / 2f, 112f * s, cx + bw + g / 2f, 196f * s)
+        topLine(c, top, a, s) { u -> member(u)?.n }
+        // YOU, with the A glyph, then the four as the game binds them: Up, Left + Right side by side, Down
+        val you = RectF(cx - bw / 2f, top.bottom + 22f * s, cx + bw / 2f, top.bottom + 22f * s + bh)
         bar(c, you, member("player"), "player", LbMap.keyOf("player") ?: "PAD1", a, now, s)
-        // THE CROSS of the four: up / right / down / left as the game binds them
-        val mid = 560f * s
-        val gapY = 150f * s; val gapX = 330f * s
-        val spots = mapOf("PADDUP" to RectF(cx - bw / 2f, mid - gapY - bh / 2f, cx + bw / 2f, mid - gapY + bh / 2f),
-            "PADDDOWN" to RectF(cx - bw / 2f, mid + gapY - bh / 2f, cx + bw / 2f, mid + gapY + bh / 2f),
-            "PADDLEFT" to RectF(cx - gapX - bw / 2f, mid - bh / 2f, cx - gapX + bw / 2f, mid + bh / 2f),
-            "PADDRIGHT" to RectF(cx + gapX - bw / 2f, mid - bh / 2f, cx + gapX + bw / 2f, mid + bh / 2f))
+        val upT = you.bottom + 30f * s
+        val midT = upT + bh + g
+        val downT = midT + bh + g
+        val spots = mapOf("PADDUP" to RectF(cx - bw / 2f, upT, cx + bw / 2f, upT + bh),
+            "PADDLEFT" to RectF(cx - g / 2f - bw, midT, cx - g / 2f, midT + bh),
+            "PADDRIGHT" to RectF(cx + g / 2f, midT, cx + g / 2f + bw, midT + bh),
+            "PADDDOWN" to RectF(cx - bw / 2f, downT, cx + bw / 2f, downT + bh))
         for ((key, r) in spots) {
             val unit = LbMap.unitOf(key)
             bar(c, r, unit?.let { member(it) }, unit, key, a, now, s)
         }
         if (held && t < UiKit.PAUSE_OPEN_MS || !held || pressedAt.values.any { now - it < PRESS_MS }) postInvalidateOnAnimation()
+    }
+
+    /** the top line: the soft target (enemy, else friend, else interact; in its kind's colour) | the LB glyph and whom LB alone targets */
+    private fun topLine(c: Canvas, r: RectF, a: Int, s: Float, nameOf: (String) -> String?) {
+        UiKit.module(c, r, a)
+        val half = r.centerX()
+        pBar.style = Paint.Style.FILL; pBar.color = Theme.dim; pBar.alpha = a / 3
+        c.drawRect(half - 1f, r.top + 14f * s, half + 1f, r.bottom - 14f * s, pBar)
+        val x0 = r.left + 22f * s
+        pSmall.textSize = 20f * s; pSmall.color = Theme.dim; pSmall.alpha = a
+        c.drawText(Tr.t("Soft target"), x0, r.top + 30f * s, pSmall)
+        val (soft, col) = SoftNow.e?.let { it to SOFT_ENEMY } ?: SoftNow.f?.let { it to SOFT_FRIEND } ?: SoftNow.i?.let { it to SOFT_INTERACT }
+            ?: (null to Theme.dim)
+        pText.textSize = 28f * s; pText.color = col; pText.alpha = if (soft == null) a / 2 else a
+        c.drawText(fit(soft ?: Tr.t("None"), half - x0 - 16f * s), x0, r.top + 66f * s, pText)
+        // LB alone
+        val gx = half + 44f * s
+        UiKit.pad(c, UiKit.shoulderGlyph(false), gx, r.centerY(), 52f * s, a)
+        val who = releaseName(nameOf)
+        val tx = gx + 40f * s
+        pText.textSize = 28f * s; pText.color = if (who == null) Theme.dim else Theme.gold; pText.alpha = if (who == null) a / 2 else a
+        c.drawText(fit(who ?: Tr.t("None"), r.right - 18f * s - tx), tx, r.centerY() + 10f * s, pText)
+    }
+
+    private fun fit(t: String, w: Float): String =
+        android.text.TextUtils.ellipsize(t, android.text.TextPaint(pText), w, android.text.TextUtils.TruncateAt.END).toString()
+
+    /** whom LB tapped alone would target: by the game's own binding for it ([LbMap.tap]), the soft target of that kind; else its name */
+    private fun releaseName(nameOf: (String) -> String?): String? {
+        val act = LbMap.tap ?: return null
+        val up = act.uppercase()
+        return when {
+            up.contains("INTERACT") -> SoftNow.i
+            up.contains("FRIEND") -> SoftNow.f
+            up.contains("ENEMY") -> SoftNow.e
+            up == "TARGETSELF" -> nameOf("player")
+            up.startsWith("TARGETPARTYMEMBER") -> nameOf("party" + up.removePrefix("TARGETPARTYMEMBER"))
+            else -> LbMap.tapName ?: act
+        }
     }
 
     /** one member's bar: the button's glyph at its left, the name in the class colour, health and power; lit while its press shows */
@@ -138,6 +180,12 @@ class LbPartyView(context: Context) : View(context) {
 
     companion object {
         const val PRESS_MS = 220L
+        /** 1.0.19: the column's bar width, and how far Home's sides move for it (the column with a margin, half each side) */
+        const val COL_W = 300f
+        const val SIDE_PX = 340f
+        private val SOFT_ENEMY = Color.rgb(230, 70, 60)
+        private val SOFT_FRIEND = Color.rgb(80, 210, 90)
+        private val SOFT_INTERACT = Color.rgb(240, 200, 90)
         private val HEALTH = Color.rgb(32, 180, 40)
         private val SLOT_KEY = listOf(PadInput.SLOT_FACE_BOTTOM to "PAD1", PadInput.SLOT_DPAD_UP to "PADDUP", PadInput.SLOT_DPAD_RIGHT to "PADDRIGHT",
             PadInput.SLOT_DPAD_DOWN to "PADDDOWN", PadInput.SLOT_DPAD_LEFT to "PADDLEFT", PadInput.SLOT_FACE_RIGHT to "PAD2",
@@ -168,7 +216,15 @@ object LbMap {
     @Volatile var fromGame = false
         private set
 
+    /** m121: what LB tapped alone does (the game's binding for the modifier button by itself) and the game's name for it */
+    @Volatile var tap: String? = null
+        private set
+    @Volatile var tapName: String? = null
+        private set
+
     fun update(d: JSONObject) {
+        tap = d.optString("tap", "").ifEmpty { null }
+        tapName = d.optString("tapn", "").ifEmpty { null }
         val m = HashMap<String, String>()
         fun put(field: String, unit: String) = d.optString(field, "").takeIf { it.startsWith("PAD") }?.let { m[unit] = it }
         put("self", "player"); put("p1", "party1"); put("p2", "party2"); put("p3", "party3"); put("p4", "party4")
@@ -178,4 +234,20 @@ object LbMap {
 
     fun keyOf(unit: String): String? = byUnit[unit]
     fun unitOf(key: String): String? = byUnit.entries.firstOrNull { it.value == key }?.key
+}
+
+/** PadMap m121's "soft": the names of the game's soft enemy / friend / interact units now (null = none, or not readable). Pure. */
+object SoftNow {
+    @Volatile var e: String? = null
+        private set
+    @Volatile var f: String? = null
+        private set
+    @Volatile var i: String? = null
+        private set
+
+    fun update(d: JSONObject) {
+        e = d.optString("e", "").ifEmpty { null }
+        f = d.optString("f", "").ifEmpty { null }
+        i = d.optString("i", "").ifEmpty { null }
+    }
 }

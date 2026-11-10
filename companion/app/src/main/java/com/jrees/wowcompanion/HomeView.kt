@@ -1649,9 +1649,12 @@ class HomeView(
      * card over it and the auras) right, each on UiKit.pauseOut's curve; [t] = 0 puts them all back. Only Home's own parts move (the
      * bar is the pause view's); a move of Home's own state never runs meanwhile (the wheel holds the controller and covers the touch).
      */
-    fun pauseSlide(t: Float) {
-        if (t == pauseT) return
-        pauseT = t
+    /** [sidePx] > 0 (1.0.19, the LB picture; the user: "I donw want the sides to slide ALL of the way out, just enough to make space for
+     *  the selections"): the side parts move only that far, eased, a little dimmed; the controller bars as the pause has them */
+    private var pauseSide = 0f
+    fun pauseSlide(t: Float, sidePx: Float = 0f) {
+        if (t == pauseT && sidePx == pauseSide) return
+        pauseT = t; pauseSide = sidePx
         val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
         // f-pause-bars (the user: "I dont think I want the controller top part to slide off screen"): over Home the controller stays,
         // only stepping back to [pauseBarsDim] (the title row lies over its lower half); elsewhere its old slide
@@ -1679,6 +1682,12 @@ class HomeView(
             v.translationX = o[0] * kx; v.translationY = o[1] * ky
             // the state's own fades leave every shown part at 1 when settled: the pause's alpha is the only one meanwhile
             if (v.visibility == View.VISIBLE) v.alpha = o[2]
+            if (sidePx > 0f && p != Part.BARS) {
+                val e = (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
+                val ee = 1f - (1f - e) * (1f - e)
+                v.translationX = (if (o === left) -1f else 1f) * sidePx * ee; v.translationY = 0f
+                if (v.visibility == View.VISIBLE) v.alpha = 1f - 0.35f * ee
+            }
         }
         invalidate()
     }

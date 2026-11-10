@@ -798,7 +798,7 @@ end
 -- The switches: "uisw" UFP_OFF / UFP_ON (our party frames), UFT_OFF / UFT_ON (our target bar), UFTOT_OFF / UFTOT_ON (the bar's target of
 -- target, uf8: off by default); the app keeps each per character.
 do
-    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf12" }
+    local UF = { party = true, target = true, tot = false, hpp = false, hpt = false, V = "uf13" }
     WC.uf = UF
     local PRD = type(WC.prd) == "table" and WC.prd or {}
     local function plainV(v) return v ~= nil and (type(WC.isPlain) ~= "function" or WC.isPlain(v)) end
@@ -973,7 +973,7 @@ do
     -- rare dragon behind it); the raid marker on the right; combo pips, the cast bar, then the auras UNDER it, their seconds small in a
     -- corner; the colour READ from the target's nameplate (else the game's own nameplate rule, UnitSelectionColor); the target's nameplate
     -- health bar hidden (alpha) while it is targeted. No power bar.
-    local TB = { W = 340, NAME = 20, HP = 24, CP = 6, CAST = 15, LV = 30, ICON = 26, IGAP = 3, DEBUFF_MAX = 8, BUFF_MAX = 6,
+    local TB = { W = 372, SHIFT = 16, NAME = 20, HP = 24, CP = 6, CAST = 15, LV = 30, ICON = 26, IGAP = 3, DEBUFF_MAX = 8, BUFF_MAX = 6,
                  TOT_W = 140, TOT_HP = 10, AURA_S = 0.25 }
     UF.tb = TB
     local function atlas(tex, name)
@@ -1191,7 +1191,9 @@ do
         if not f then return end
         f:ClearAllPoints()
         local c = type(WC.compass) == "table" and WC.compass.frame or nil
-        if c then f:SetPoint("TOP", c, "BOTTOM", 0, -u(6)) else f:SetPoint("TOP", UIParent, "TOP", 0, -u(90)) end
+        -- uf13 (the user: "extend it a bit more right so that it looks more centered when the Y disappears"): the bar 32 wider and its
+        -- middle SHIFT right, so the level box + the bar sit centred under the compass (the prompt adds to the right when it shows)
+        if c then f:SetPoint("TOP", c, "BOTTOM", u(TB.SHIFT), -u(6)) else f:SetPoint("TOP", UIParent, "TOP", u(TB.SHIFT), -u(90)) end
     end
     local RAID_ICON = { [1] = { 0, 0.25, 0, 0.25 }, [2] = { 0.25, 0.5, 0, 0.25 }, [3] = { 0.5, 0.75, 0, 0.25 }, [4] = { 0.75, 1, 0, 0.25 },
                         [5] = { 0, 0.25, 0.25, 0.5 }, [6] = { 0.25, 0.5, 0.25, 0.5 }, [7] = { 0.5, 0.75, 0.25, 0.5 }, [8] = { 0.75, 1, 0.25, 0.5 } }
