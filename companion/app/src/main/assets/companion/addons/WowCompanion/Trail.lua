@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp33" }
+WC.compass = { V = "cp34" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -424,6 +424,21 @@ do
         if x then C.cam.extX, C.cam.extAt = math.max(-1, math.min(1, x)), ((type(GetTime) == "function" and GetTime()) or 0) end
     end
 
+    -- cp34 (the user: "The compass is spinning if I use my right stick even when my camera is locked in place" - a room of ours held
+    -- the stick): while one of OUR stick catches is up (the Map room's, the radials', an NPC window's grab: EnableGamePadStick frames
+    -- that keep the stick from the game) the camera cannot turn, so the stick counts as idle. Read only.
+    C.CATCH = { "WowCompanionMapStickCatch", "WowCompanionRadialStickCatch", "WowCompanionInteractGrab" }
+    function C.stickCaught()
+        for _, n in ipairs(C.CATCH) do
+            local f = _G[n]
+            if type(f) == "table" then
+                local ok, on = pcall(function() return f:IsVisible() and f:IsGamePadStickEnabled() end)
+                if ok and on == true then return true end
+            end
+        end
+        return false
+    end
+
     -- the camera stick's x: the game's mapped state, its "Camera" stick by the game's own names (inputaxisbinding.lua)
     function C.stickX(now)
         local K = C.cam
@@ -445,8 +460,10 @@ do
                     K.ry = okX and num(y) or nil                    -- cp20: a tilt moves the pitch
                 end
             end
+            if camX and C.stickCaught() then K.from = "caught"; return 0 end
             if camX then K.from = "pad"; return camX end
         end
+        if C.stickCaught() then K.from = "caught"; return 0 end
         if K.extX and now - K.extAt < 0.3 then K.from = "app"; return K.extX end
         K.from = "none"
         return 0
