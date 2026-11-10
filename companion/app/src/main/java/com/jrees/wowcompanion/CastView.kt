@@ -1298,8 +1298,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     var onButtonsAlso: ((held: Int) -> Unit)? = null
 
     private fun onPad(lt: Boolean, rt: Boolean, lb: Boolean, rb: Boolean) {
+        if (lt != padLt || rt != padRt || lb != padLb || rb != padRb) shoulderAt = SystemClock.elapsedRealtime()   // b-class-free-gap
         padLt = lt; padRt = rt; padLb = lb; padRb = rb
-        noteClassRadial()                                                  // f-class-radial: Home's mirror
+        noteClassRadial()                                                 // f-class-radial: Home's mirror
         // 1.0.20 (the user: "the LB and class radial on L and L2 are conflicting and overlapping"): LB + a trigger is the class radial's
         // chord, so the LB picture shows for LB ALONE - never with LT / RT held or a class radial open
         onShoulders?.invoke(lb && !lt && !rt && !classOpen, rb)
@@ -2559,7 +2560,22 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     var onClassPick: ((Int) -> Unit)? = null
     private var classHeld = false
     private var classLastPointed = -1
-    private val freeLater = Runnable { if (classHeld && chordSide == ClassChord.NONE) { classHeld = false; onClassHold?.invoke(false) } }
+    private val freeLater = Runnable { freeClass() }
+    /** the last change of LB / LT / RB / RT (elapsedRealtime) */
+    private var shoulderAt = 0L
+    /** b-class-free-gap (the user 2026-11-10: "when opening my left class radial its locking up my right stick inputs until I press the
+     *  radial open again"): the left chord is LB + LT, the game's Ctrl + Shift here, and the free went out the moment the chord was let
+     *  go - inside the tap-timing rule's window (no tap within ~150 ms of a controller change), where the click can be lost; nothing
+     *  sent it again, so the add-on's stick catch kept the right stick until the next open + close. Now the free waits out the gap
+     *  (the host also checks it landed: [classHolding]) */
+    private fun freeClass() {
+        if (!classHeld || chordSide != ClassChord.NONE) return
+        val wait = CLASS_TAP_GAP_MS - (SystemClock.elapsedRealtime() - shoulderAt)
+        if (wait > 0) { removeCallbacks(freeLater); postDelayed(freeLater, wait); return }
+        classHeld = false; onClassHold?.invoke(false)
+    }
+    /** the app holds the controller for a class wheel now (its free not sent yet) */
+    fun classHolding(): Boolean = classHeld
     private fun tapOf(side: Int) = if (side == ClassChord.LEFT) HomeSettings.classTapL else HomeSettings.classTapR
     private fun pickAOf(side: Int) = if (side == ClassChord.LEFT) HomeSettings.classPickAL else HomeSettings.classPickAR
     /** the open side's radial and the place the stick points at in it now */
@@ -3585,6 +3601,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         /** b-class-takeover: the stick counts as back in the middle under this; a closed wheel lets the controller go then, or after [CLASS_FREE_MS] */
         const val CLASS_NEUTRAL = 0.3f
         const val CLASS_FREE_MS = 1_500L
+        /** b-class-free-gap: the free's tap waits this long after the last bumper / trigger change (the tap-timing rule, as LB's 180) */
+        const val CLASS_TAP_GAP_MS = 180L
         // layers: the four trigger layers carry state, the three shoulder layers do not
         private const val N = 0; private const val LT = 1; private const val RT = 2; private const val LR = 3
         private const val FR = 4; private const val HO = 5; private const val SC = 6

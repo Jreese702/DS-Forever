@@ -829,8 +829,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // radials"): one overlay at a time
         // b-class-takeover: the class wheel holds the controller (the guest "class") and casts through the "classr" row
         castView.onClassHold = { hold ->
+            classFreeTry++
             val sent = guestTap(GuestPad.cells(questsPad, "class", hold))
             Log.i("WCLOG", "class radial: ${if (hold) "hold" else "free"} ${if (sent) "sent" else "not sent (no qact row)"}")
+            if (!hold) { val mine = classFreeTry; ui.postDelayed({ classFreeCheck(mine, 1) }, CLASS_FREE_CHECK_MS) }
         }
         castView.onClassPick = { col -> TapBridge.tap(this, questsPad, "classr", col) { why -> Log.i("WCLOG", "class radial: cast refused ($why)") } }
         castView.onClassChordLog = { what ->
@@ -1539,6 +1541,18 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var chatBSaid: Boolean? = null
 
     /** the shared capture's holder as last known (the interact document's `holder`, or a guest's own hold / free answer) */
+    /** b-class-free-gap: the class wheel's free is checked [CLASS_FREE_CHECK_MS] later and sent again (up to [CLASS_FREE_TRIES]) while the
+     *  capture still names "pad:class" and no class wheel holds: a lost click left the right stick caught until the next open + close.
+     *  A spare free is harmless (Quests' freeGuest answers ok when nothing is held) */
+    private var classFreeTry = 0
+    private fun classFreeCheck(mine: Int, n: Int) {
+        if (mine != classFreeTry || castView.classHolding() || capHolder != "pad:class") return
+        val sent = guestTap(GuestPad.cells(questsPad, "class", false))
+        Log.i("WCLOG", "class radial: free once more ($n, the capture still names pad:class) ${if (sent) "sent" else "not sent"}")
+        if (n < CLASS_FREE_TRIES) ui.postDelayed({ classFreeCheck(mine, n + 1) }, CLASS_FREE_CHECK_MS)
+    }
+    private val CLASS_FREE_CHECK_MS = 700L
+    private val CLASS_FREE_TRIES = 3
     private var capHolder = ""
     /** b97: when the interact doc's holder last changed (uptime ms): Professions' book tap waits for the hand-over to settle */
     private var capHolderAt = 0L
