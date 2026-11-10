@@ -888,6 +888,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             lbView.lb(lb && !rb && free)
         }
         castView.onButtonsAlso = { m -> lbView.buttons(m) }
+        // 1.0.19: a touch on a controller button presses the game's own action (ActionBar.lua's "tcast" row)
+        castView.onTouchCast = { cell -> TapBridge.tap(this, questsPad, "tcast", cell) { why -> Log.i("WCLOG", "touch cast refused ($why)") } }
         // the context menus' icons (the raid markers too) asked for early, so the phone's icon harvest has them before a wheel opens
         ui.postDelayed({ runCatching { MenuIcons.prefetch() } }, 8_000L)
         targetRadial.onSlide = { t -> pauseSlideAll(t) }

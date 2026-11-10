@@ -81,11 +81,17 @@ class LbPartyView(context: Context) : View(context) {
         fun member(unit: String) = members.firstOrNull { it.u == unit }
         val now = SystemClock.uptimeMillis()
         val bw = COL_W * s; val bh = 100f * s; val g = 16f * s
-        // THE TOP LINE: your soft target | what LB alone would target
-        val top = RectF(cx - bw - g / 2f, 112f * s, cx + bw + g / 2f, 196f * s)
-        topLine(c, top, a, s) { u -> member(u)?.n }
+        // under the controller (it stays where it is: the user, "don't make the top controller part shift away"); the soft target
+        // line is gone (the user: "Scrap the soft target bit"); what LB alone would target, when LB alone does anything
+        val y0 = maxOf(236f * s, UiKit.pauseBarsBottom + 16f * s)
+        var yy = y0
+        releaseName { u -> member(u)?.n }?.let { who ->
+            val r = RectF(cx - bw / 2f, y0, cx + bw / 2f, y0 + 60f * s)
+            releaseLine(c, r, who, a, s)
+            yy = r.bottom + 18f * s
+        }
         // YOU, with the A glyph, then the four as the game binds them: Up, Left + Right side by side, Down
-        val you = RectF(cx - bw / 2f, top.bottom + 22f * s, cx + bw / 2f, top.bottom + 22f * s + bh)
+        val you = RectF(cx - bw / 2f, yy, cx + bw / 2f, yy + bh)
         bar(c, you, member("player"), "player", LbMap.keyOf("player") ?: "PAD1", a, now, s)
         val upT = you.bottom + 30f * s
         val midT = upT + bh + g
@@ -101,26 +107,14 @@ class LbPartyView(context: Context) : View(context) {
         if (held && t < UiKit.PAUSE_OPEN_MS || !held || pressedAt.values.any { now - it < PRESS_MS }) postInvalidateOnAnimation()
     }
 
-    /** the top line: the soft target (enemy, else friend, else interact; in its kind's colour) | the LB glyph and whom LB alone targets */
-    private fun topLine(c: Canvas, r: RectF, a: Int, s: Float, nameOf: (String) -> String?) {
+    /** the line over you: the LB glyph and whom LB tapped alone would target */
+    private fun releaseLine(c: Canvas, r: RectF, who: String, a: Int, s: Float) {
         UiKit.module(c, r, a)
-        val half = r.centerX()
-        pBar.style = Paint.Style.FILL; pBar.color = Theme.dim; pBar.alpha = a / 3
-        c.drawRect(half - 1f, r.top + 14f * s, half + 1f, r.bottom - 14f * s, pBar)
-        val x0 = r.left + 22f * s
-        pSmall.textSize = 20f * s; pSmall.color = Theme.dim; pSmall.alpha = a
-        c.drawText(Tr.t("Soft target"), x0, r.top + 30f * s, pSmall)
-        val (soft, col) = SoftNow.e?.let { it to SOFT_ENEMY } ?: SoftNow.f?.let { it to SOFT_FRIEND } ?: SoftNow.i?.let { it to SOFT_INTERACT }
-            ?: (null to Theme.dim)
-        pText.textSize = 28f * s; pText.color = col; pText.alpha = if (soft == null) a / 2 else a
-        c.drawText(fit(soft ?: Tr.t("None"), half - x0 - 16f * s), x0, r.top + 66f * s, pText)
-        // LB alone
-        val gx = half + 44f * s
-        UiKit.pad(c, UiKit.shoulderGlyph(false), gx, r.centerY(), 52f * s, a)
-        val who = releaseName(nameOf)
+        val gx = r.left + 44f * s
+        UiKit.pad(c, UiKit.shoulderGlyph(false), gx, r.centerY(), 48f * s, a)
         val tx = gx + 40f * s
-        pText.textSize = 28f * s; pText.color = if (who == null) Theme.dim else Theme.gold; pText.alpha = if (who == null) a / 2 else a
-        c.drawText(fit(who ?: Tr.t("None"), r.right - 18f * s - tx), tx, r.centerY() + 10f * s, pText)
+        pText.textSize = 26f * s; pText.color = Theme.gold; pText.alpha = a
+        c.drawText(fit(who, r.right - 18f * s - tx), tx, r.centerY() + 9f * s, pText)
     }
 
     private fun fit(t: String, w: Float): String =
@@ -183,9 +177,7 @@ class LbPartyView(context: Context) : View(context) {
         /** 1.0.19: the column's bar width, and how far Home's sides move for it (the column with a margin, half each side) */
         const val COL_W = 300f
         const val SIDE_PX = 340f
-        private val SOFT_ENEMY = Color.rgb(230, 70, 60)
-        private val SOFT_FRIEND = Color.rgb(80, 210, 90)
-        private val SOFT_INTERACT = Color.rgb(240, 200, 90)
+
         private val HEALTH = Color.rgb(32, 180, 40)
         private val SLOT_KEY = listOf(PadInput.SLOT_FACE_BOTTOM to "PAD1", PadInput.SLOT_DPAD_UP to "PADDUP", PadInput.SLOT_DPAD_RIGHT to "PADDRIGHT",
             PadInput.SLOT_DPAD_DOWN to "PADDDOWN", PadInput.SLOT_DPAD_LEFT to "PADDLEFT", PadInput.SLOT_FACE_RIGHT to "PAD2",

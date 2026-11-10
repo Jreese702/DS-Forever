@@ -680,6 +680,46 @@ local function crSync(ca)
     if ca and not CR.row then ca.nopad = 1 end
 end
 
+-- 1.0.19 TOUCH CAST (the user, 2026-11-09: "When touching the top controller stuff I don't want it to open the old controller room.
+-- Its time to retire that. Instead the buttons should touch cast the skills"): one secure pad row "tcast" (32 cells = the 4 state
+-- layers n / lt / rt / lr x the 8 places; set OUT of combat, frozen in a fight, as every secure cell). A place holding an action is the
+-- game's own action (type action: the slot the button fires); a pet-bar place the game's pet action (type pet). Scripted buttons (jump,
+-- interact, the targeting bars) get no cell. Each layout button carries its cell (`c`) only while the built cell is what it shows.
+local TC = { want = {}, frozen = {}, row = nil, sig = nil }
+local TC_LAYER = { n = 1, lt = 2, rt = 3, lr = 4 }
+local function tcInit(btn, col)
+    local w = TC.want[col]
+    btn:SetAttribute("type", w and w.type or nil)
+    btn:SetAttribute("action", w and w.action or nil)
+    TC.frozen[col] = w and w.sig or nil
+end
+local function tcSync(layers)
+    local want, parts = {}, {}
+    for key, li in pairs(TC_LAYER) do
+        local lay = layers[key]
+        for p = 1, 8 do
+            local d = lay and lay.d and lay.d[p]
+            local s = d and num(d.s)
+            if d and s and s > 0 and d.k ~= "" and d.k ~= "fixed" then
+                local col = (li - 1) * 8 + p - 1
+                local w = (d.k == "pet") and { type = "pet", action = s, sig = "p" .. s } or { type = "action", action = s, sig = "a" .. s }
+                want[col] = w
+            end
+        end
+    end
+    for col = 0, 31 do if want[col] then parts[#parts + 1] = col .. "=" .. want[col].sig end end
+    local sig = table.concat(parts, ",")
+    local pad = WC.pad
+    if sig ~= TC.sig and S(InCombatLockdown) == false and type(pad) == "table" and type(pad.secureRow) == "function" then
+        TC.want = want
+        local ok, row = pcall(pad.secureRow, "tcast", 32, tcInit, nil)
+        TC.row = (ok and type(row) == "number") and row or nil
+        TC.sig = TC.row and sig or nil
+        if not TC.row then TC.frozen = {} end
+    end
+    return want
+end
+
 local function classActions()
     local okc, cls = CALL(UnitClassBase, "player")
     cls = okc and realStr(cls) or nil
@@ -726,11 +766,21 @@ local function buildHud()
     local okca, ca = pcall(classActions)            -- class-only radials; absent for every other class
     if okca and ca then hud.ca = ca end
     local layers = resolveAll(pu)
+    local okT, tcw = pcall(tcSync, layers)           -- 1.0.19: the touch-cast cells
+    if not okT then tcw = {} end
     local ov = {}
     for _, key in ipairs(LAYERS) do
         local lay = layers[key]
         local list = {}
-        for p = 1, 8 do list[p] = layoutButton(lay.d[p]) end
+        for p = 1, 8 do
+            list[p] = layoutButton(lay.d[p])
+            local li = TC_LAYER[key]
+            if li then
+                local col = (li - 1) * 8 + p - 1
+                local w = tcw[col]
+                if w and TC.frozen[col] == w.sig then list[p].c = col end
+            end
+        end
         hud.L[key] = list
         if lay.ov then ov[key] = lay.ov end
     end

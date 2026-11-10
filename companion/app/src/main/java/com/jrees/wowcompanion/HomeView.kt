@@ -1682,6 +1682,8 @@ class HomeView(
             v.translationX = o[0] * kx; v.translationY = o[1] * ky
             // the state's own fades leave every shown part at 1 when settled: the pause's alpha is the only one meanwhile
             if (v.visibility == View.VISIBLE) v.alpha = o[2]
+            // the LB picture (the user: "don't make the top controller part shift away"): the controller stays as it is
+            if (sidePx > 0f && p == Part.BARS) { v.translationX = 0f; v.translationY = 0f; if (v.visibility == View.VISIBLE) v.alpha = 1f }
             if (sidePx > 0f && p != Part.BARS) {
                 val e = (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
                 val ee = 1f - (1f - e) * (1f - e)
@@ -1748,9 +1750,15 @@ class HomeView(
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (!barsDown) return false
-        if (e.actionMasked == MotionEvent.ACTION_UP) {
-            barsDown = false
-            if (inBars(e) && flow.tapBars()) changed()
+        // 1.0.19 (the user: "When touching the top controller stuff I don't want it to open the old controller room. Its time to retire
+        // that. Instead the buttons should touch cast the skills"): the touch goes to the controller's buttons (CastView.touchDown / Up)
+        val cv = castView.takeIf { it.parent === barsSlot }
+        val lx = e.x - barsSlot.left - barsSlot.translationX - (cv?.left ?: 0) - (cv?.translationX ?: 0f)
+        val ly = e.y - barsSlot.top - barsSlot.translationY - (cv?.top ?: 0) - (cv?.translationY ?: 0f)
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> cv?.touchDown(lx, ly)
+            MotionEvent.ACTION_UP -> { barsDown = false; if (inBars(e)) cv?.touchUp(lx, ly) }
+            MotionEvent.ACTION_CANCEL -> barsDown = false
         }
         return true
     }

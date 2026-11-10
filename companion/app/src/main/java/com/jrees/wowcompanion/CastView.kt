@@ -89,6 +89,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         var key: String? = null    // legacy slots only: the keybind shown in the glyph
         var special = SP_NONE      // vector stand-in when there is no loadable icon
         var unable = false         // an "Unable..." cursor / crosshair: drawn faded
+        var c = -1                 // 1.0.19: the add-on's touch-cast cell on row "tcast" (-1 = none)
         var ds = false             // holds one of the companion's "DS Bar ..." macros (drives the bottom screen)
         var kit: String? = null    // a UiKit picture drawn in the slot (the D-pad toolbar's map / chat / Home swirl)
         var kitScale = 0.62f       // ... its size inside the slot
@@ -955,6 +956,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
         b.fx = str(o.opt("fx"))
         b.ct = ji(o.opt("ct"), -1)
+        b.c = ji(o.opt("c"), -1)
         b.e = jb(o.opt("e"), true)
         // the companion's own D-pad commands (Spellbook places "DS Bar Left / Open / Right" in EMPTY LT+RT slots,
         // user pick 2026-10-02): marked so the player sees which buttons drive the bottom screen
@@ -1617,6 +1619,36 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
 
     override fun performClick(): Boolean = super.performClick()
+
+    // =================================================================== touch cast (1.0.19)
+    // The user, 2026-11-09: "When touching the top controller stuff I don't want it to open the old controller room ... the buttons
+    // should touch cast the skills". Home hands its touches on the bars here (view coordinates): the press shows, and a release on the
+    // same button presses the game's own action through the add-on's "tcast" cell ([onTouchCast]). Only what the game's bar itself
+    // holds: a button showing one of our pictures over it (Party mode, an In-combat spell, a room's own command...) does nothing.
+    var onTouchCast: ((cell: Int) -> Unit)? = null
+    private var touchPos = -1
+    fun touchDown(x: Float, y: Float) {
+        touchPos = hitTest(x, y)
+        if (touchPos >= 0) {
+            pressedPos = touchPos
+            pressedUntilMs = SystemClock.elapsedRealtime() + PRESS_MS
+            invalidate()
+        }
+    }
+    fun touchUp(x: Float, y: Float) {
+        val pos = hitTest(x, y)
+        if (pos >= 0 && pos == touchPos) touchCellAt(pos).takeIf { it >= 0 }?.let { onTouchCast?.invoke(it) }
+        touchPos = -1
+    }
+    private fun touchCellAt(pos: Int): Int {
+        val h = hud ?: return -1
+        val li = layer
+        if (li >= STATE_LAYERS || pos !in 0 until 8) return -1
+        val src = srcOf[pos]
+        val fb = partyOverride(h, src) ?: dpadFightOverride(li, src) ?: roomOverride(li, src) ?: fightOverride(li, src) ?: trigFightOverride(li, src) ?: commandOverride(li, src) ?: fishOverride(li, src)
+        if (fb != null) return -1
+        return h.layers[li][src]?.c ?: -1
+    }
 
     private fun hitTest(x: Float, y: Float): Int {
         if (k <= 0f) return -1
