@@ -102,10 +102,12 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
         GameUi.Row(COMPASS_CAM_ID, "Compass follows the camera", null, if (s.cam == true) UiMode.ON else UiMode.OFF, true, s.cam != true,
             if (s.cam == true) "Experiment: while the quest's marker is on screen" else "Off: it follows your character")
     }
-    /** tt1: "Hide game tooltips" (default off), shown once the add-on set has the switch */
+    /** tt1: the game's tooltips, shown once the add-on set has the switch. tt2 (the user, 2026-11-10: "the wording for the tooltips being
+     *  on or off is inconsistent with the other settings"): named for the thing as every other row is, On = they show (the default),
+     *  Off = hidden (the add-on's "hide") */
     private fun tipsRow(): GameUi.Row? = TipsSwitch.state?.let { s ->
-        GameUi.Row(TIPS_ID, "Hide game tooltips", null, if (s.hide) UiMode.ON else UiMode.OFF, true, s.hide,
-            if (s.hide) "Hidden: the game's tooltips are invisible on the top screen" else "Off: the game's tooltips show as usual")
+        GameUi.Row(TIPS_ID, "Game tooltips", null, if (s.hide) UiMode.OFF else UiMode.ON, true, s.hide,
+            if (s.hide) "Off: the game's tooltips are hidden on the top screen" else "The game's tooltips on the top screen")
     }
     /** at1: "Aggro tint" (default on; ar1's "Aggro rings" switch), shown once the add-on set has it */
     private fun ringsRow(): GameUi.Row? = RingsSwitch.state?.let { s ->
@@ -220,7 +222,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
                             LOOT_ID -> HomeLootSwitch.turn(context, m == UiMode.ON)
                             COMPASS_ID -> CompassSwitch.turn(context, m == UiMode.ON)
                             COMPASS_CAM_ID -> CompassSwitch.turnCam(context, m == UiMode.ON)
-                            TIPS_ID -> TipsSwitch.turn(context, m == UiMode.ON)
+                            TIPS_ID -> TipsSwitch.turn(context, m != UiMode.ON)          // tt2: On = they show (turn() takes "hide")
                             RINGS_ID -> RingsSwitch.turn(context, m == UiMode.ON)
                             GameUi.CASTBAR_ID -> GameUi.setCastBar(m == UiMode.ON)
                             GameUi.HUD_ID -> GameUi.setHud(m == UiMode.ON)

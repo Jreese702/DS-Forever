@@ -1,5 +1,8 @@
 {
 "plain": {
+"Game tooltips": "Consejos del juego",
+"Off: the game's tooltips are hidden on the top screen": "Desactivado: los consejos del juego se ocultan en la pantalla superior",
+"The game's tooltips on the top screen": "Los consejos del juego en la pantalla superior",
 "Radial": "Radial",
 "The DS WoW toolbar has this button: turn it off to use it": "Este botón es de la barra DS WoW: desactívala para usarlo",
 "Turn the DS WoW toolbar off (WoW Defaults) to put your own spell here; it comes back as you left it.": "Desactiva la barra DS WoW (WoW Defaults) para poner aquí tu propio hechizo; vuelve tal como lo dejaste.",

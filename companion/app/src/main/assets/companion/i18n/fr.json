@@ -1,5 +1,8 @@
 {
 "plain": {
+"Game tooltips": "Infobulles du jeu",
+"Off: the game's tooltips are hidden on the top screen": "Désactivé : les infobulles du jeu sont masquées sur l'écran du haut",
+"The game's tooltips on the top screen": "Les infobulles du jeu sur l'écran du haut",
 "Radial": "Radial",
 "The DS WoW toolbar has this button: turn it off to use it": "Ce bouton est à la barre d'outils DS WoW : désactivez-la pour l'utiliser",
 "Turn the DS WoW toolbar off (WoW Defaults) to put your own spell here; it comes back as you left it.": "Désactivez la barre d'outils DS WoW (WoW Defaults) pour mettre votre propre sort ici ; il revient tel que vous l'avez laissé.",
