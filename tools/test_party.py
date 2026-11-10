@@ -531,11 +531,16 @@ G1.execute('UNITS.target = { alive = true, foe = true }')
 # m102 (the user: "go away when I /startattack, same rules as the button grow animation"): the controller grown = no radial
 f.a["wc-pre"] = True
 k = G1.eval('pressPre')(f, True)
-check(k[0] != "tradial", "m102: an attack started (wc-pre, out of combat): no radial", k[:3])
+check(k[0] == "fight", "m102 / m123: an attack started (wc-pre) with a fight spell on Y: the fight spell", k[:3])
 f.a["wc-pre"] = None
 G1.execute('COMBAT = true'); f.a["wc-state"] = "fight"
 k = G1.eval('pressPre')(f, True)
-check(k[0] != "tradial", "m102: in a fight (grown): no radial", k[:3])
+check(k[0] == "fight", "m123: in a fight (grown) with a fight spell on Y: the fight spell, not the radial", k[:3])
+# m123 (the user, 2026-11-10: "pressing y in combat is opening the context menu on the top screen. this should open on the bottom screen")
+ft = f.a["wc-fight-type"]; f.a["wc-fight-type"] = None
+k = G1.eval('pressPre')(f, True)
+check(k[0] == "tradial" and k[1] is None, "m123: in a fight (grown), NO fight spell on Y: the radial, no game action (not the game's menu)", k[:3])
+f.a["wc-fight-type"] = ft
 f.a["wc-given"] = True
 k = G1.eval('pressPre')(f, True)
 check(k[0] == "tradial", "m102: in a fight after B (given back): the radial again", k[:3])
@@ -1089,7 +1094,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng", "hs", "g", "cw", "cc", "ch", "cs"}   # m79: hs, the health source; m92: g, the GUID (combat log)
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm122' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm123' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1285,7 +1290,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p35"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m122"' in SRC["padmap"],
+check('local CV = "p35"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m123"' in SRC["padmap"],
       "the versions: PadMap m107, PadTabCtl p40, Book b49")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
