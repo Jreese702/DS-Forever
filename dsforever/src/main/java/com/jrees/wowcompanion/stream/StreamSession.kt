@@ -19,9 +19,11 @@ object LaunchPlan {
     /** resume when that app already runs on the PC (a stream that dropped), else launch */
     fun verb(currentGame: Int, appId: Int): String = if (currentGame != 0 && currentGame == appId) "resume" else "launch"
 
-    /** launch / resume's query, as moonlight-android's NvHTTP.launchApp builds it (no HDR, no SOPS on a Sunshine PC) */
+    /** launch / resume's query, as moonlight-android's NvHTTP.launchApp builds it (no HDR). 1.0.22: sops=1 ("Optimize game settings"):
+     *  without it Sunshine never applies Desktop's "Match PC screen to stream" (its log: "the 'Optimize game settings' is not set in the
+     *  client! Resolution will not be changed") and the game came up at the PC's own resolution, everything tiny on the Thor */
     fun query(appId: Int, q: StreamQuality, riKey: ByteArray, riKeyId: Int, coreParams: String): String =
-        "appid=$appId&mode=${q.width}x${q.height}x${q.fps}&additionalStates=1&sops=0" +
+        "appid=$appId&mode=${q.width}x${q.height}x${q.fps}&additionalStates=1&sops=1" +
             "&rikey=${Hex.of(riKey)}&rikeyid=$riKeyId" +
             "&localAudioPlayMode=${if (q.audioOnThor) 0 else 1}" +
             "&surroundAudioInfo=$SURROUND_INFO_STEREO" +
