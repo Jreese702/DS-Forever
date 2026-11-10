@@ -274,6 +274,9 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         override fun busy(): Boolean {
             // 2026-11-07 (the user: the app "is sluggish as fuck before I ever press update"; the Thor's CPU: interiors-bake 74 % on the
             // start screen): no game = the player is on DS Forever's own screens, so the bake waits; it builds while the game runs
+            // 1.0.22 (the user: "My indoor maps are not completing for some reason they have been stuck"): while STREAMING the game runs
+            // on the PC and the Thor only shows video, so it builds then too (it waited for a local game that never came); an art run first
+            if ((InputSink.sink as? TapSink)?.route == "stream") return ArtHarvest.state is ArtHarvest.State.Running
             if (!LauncherHooks.gameUp()) return true
             // 1.0.17 (the user's pick for the 8 / 12 GB Thors, "Pause while playing, always"): it only builds while the game runs, which
             // is exactly when those models run out of memory (#37: Android killed DS Forever) - so it never bakes there
