@@ -3587,9 +3587,15 @@ end
 -- on the top screen are INVISIBLE - alpha 0 only, held there by hooks on their OnShow and OnUpdate (the game fades them itself) -
 -- never hidden, cleared or moved: whatever reads a tooltip's text still reads it (Map's minimap probe uses C_TooltipInfo, Interact's
 -- own dimTip only sets alpha too). The choice lives only in our saved data (WowCompanionDB.hideTips); off, the alpha is 1 again. No CVar.
-WC.tips = { V = "tt1", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ItemRefShoppingTooltip1",
+-- tt2 (the user, 2026-11-10: "when tooltips are off, there are some places that they noticably still appear ... when talking to a vendor the
+-- 'Equiped Item' tooltip kind of flashes and rehides ... when getting a buff, the tooltip for it opens breifly"): the named list's OnShow /
+-- OnUpdate zeroing let a tooltip the game set visible AGAIN (SetAlpha 1 after its show: the comparison's "Equipped") draw for a frame, and a
+-- tooltip not in the list (the buff's) drew in full. Now EVERY tooltip of the game's tooltip type is held at 0: post-hooks on the type's
+-- shared Show and SetAlpha (hooksecurefunc: the game's call runs as it was, then ours), each tooltip zeroed remembered so the switch's off
+-- gives it its alpha back.
+WC.tips = { V = "tt2", FRAMES = { "GameTooltip", "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2", "ItemRefShoppingTooltip1",
                                   "ItemRefShoppingTooltip2", "EmbeddedItemTooltip", "NamePlateTooltip", "GameNoHeaderTooltip" },
-            hooked = {}, on = false }
+            hooked = {}, on = false, zeroed = setmetatable({}, { __mode = "k" }), busy = false, typeHooked = false }
 do
     local T = WC.tips
     function T.wanted() return type(WowCompanionDB) == "table" and WowCompanionDB.hideTips == true end
@@ -3609,9 +3615,31 @@ do
             end
         end
     end
+    -- tt2: every GameTooltip-type frame, at its Show and at any SetAlpha above 0 (a guard: our own SetAlpha(0) comes back through the hook)
+    local function hold(fr, a)
+        if not T.on or T.busy then return end
+        if a ~= nil and (type(a) ~= "number" or a <= 0) then return end
+        T.busy = true
+        if pcall(fr.SetAlpha, fr, 0) then T.zeroed[fr] = true end
+        T.busy = false
+    end
+    function T.hookType()
+        if T.typeHooked or type(GameTooltip) ~= "table" then return end
+        local mt = getmetatable(GameTooltip)
+        local idx = type(mt) == "table" and mt.__index
+        if type(idx) ~= "table" or type(hooksecurefunc) ~= "function" then return end
+        T.typeHooked = true
+        pcall(hooksecurefunc, idx, "Show", function(fr) hold(fr) end)
+        pcall(hooksecurefunc, idx, "SetAlpha", function(fr, a) hold(fr, a) end)
+    end
     function T.apply()
         T.on = T.wanted()
         T.hook()
+        T.hookType()
+        if not T.on then                                                 -- tt2: off - every tooltip zeroed gets its alpha back
+            for fr in pairs(T.zeroed) do pcall(fr.SetAlpha, fr, 1) end
+            T.zeroed = setmetatable({}, { __mode = "k" })
+        end
         for _, n in ipairs(T.FRAMES) do
             local fr = _G[n]
             if type(fr) == "table" and type(fr.SetAlpha) == "function" then pcall(fr.SetAlpha, fr, T.on and 0 or 1) end
