@@ -1901,8 +1901,6 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "itarget" -> if (current) characterView.onItarget(msg.optBoolean("on"))
             // PadMap m104: which LB button targets whom, from the game's own bindings (the LB picture)
             "lbmap" -> LbMap.update(msg)
-            // PadMap m121: the soft targets' names (the LB picture's top line)
-            "soft" -> { SoftNow.update(msg); if (lbView.isShown2) lbView.invalidate() }
             "pmenu" -> if (current) {
                 when (msg.optString("src")) {
                     "party" -> if (partyWheelOpen()) targetRadial.fill(msg) else homeView.partyMenu.onDoc(msg)

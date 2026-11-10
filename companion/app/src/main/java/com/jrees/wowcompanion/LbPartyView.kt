@@ -81,15 +81,9 @@ class LbPartyView(context: Context) : View(context) {
         fun member(unit: String) = members.firstOrNull { it.u == unit }
         val now = SystemClock.uptimeMillis()
         val bw = COL_W * s; val bh = 100f * s; val g = 16f * s
-        // under the controller (it stays where it is: the user, "don't make the top controller part shift away"); the soft target
-        // line is gone (the user: "Scrap the soft target bit"); what LB alone would target, when LB alone does anything
-        val y0 = maxOf(236f * s, UiKit.pauseBarsBottom + 16f * s)
-        var yy = y0
-        releaseName { u -> member(u)?.n }?.let { who ->
-            val r = RectF(cx - bw / 2f, y0, cx + bw / 2f, y0 + 60f * s)
-            releaseLine(c, r, who, a, s)
-            yy = r.bottom + 18f * s
-        }
+        // under the controller (it stays where it is: the user, "don't make the top controller part shift away"); no line over you
+        // (the user: "Scrap the soft target bit" ... "no remove the L target from that")
+        val yy = maxOf(236f * s, UiKit.pauseBarsBottom + 16f * s)
         // YOU, with the A glyph, then the four as the game binds them: Up, Left + Right side by side, Down
         val you = RectF(cx - bw / 2f, yy, cx + bw / 2f, yy + bh)
         bar(c, you, member("player"), "player", LbMap.keyOf("player") ?: "PAD1", a, now, s)
@@ -105,33 +99,6 @@ class LbPartyView(context: Context) : View(context) {
             bar(c, r, unit?.let { member(it) }, unit, key, a, now, s)
         }
         if (held && t < UiKit.PAUSE_OPEN_MS || !held || pressedAt.values.any { now - it < PRESS_MS }) postInvalidateOnAnimation()
-    }
-
-    /** the line over you: the LB glyph and whom LB tapped alone would target */
-    private fun releaseLine(c: Canvas, r: RectF, who: String, a: Int, s: Float) {
-        UiKit.module(c, r, a)
-        val gx = r.left + 44f * s
-        UiKit.pad(c, UiKit.shoulderGlyph(false), gx, r.centerY(), 48f * s, a)
-        val tx = gx + 40f * s
-        pText.textSize = 26f * s; pText.color = Theme.gold; pText.alpha = a
-        c.drawText(fit(who, r.right - 18f * s - tx), tx, r.centerY() + 9f * s, pText)
-    }
-
-    private fun fit(t: String, w: Float): String =
-        android.text.TextUtils.ellipsize(t, android.text.TextPaint(pText), w, android.text.TextUtils.TruncateAt.END).toString()
-
-    /** whom LB tapped alone would target: by the game's own binding for it ([LbMap.tap]), the soft target of that kind; else its name */
-    private fun releaseName(nameOf: (String) -> String?): String? {
-        val act = LbMap.tap ?: return null
-        val up = act.uppercase()
-        return when {
-            up.contains("INTERACT") -> SoftNow.i
-            up.contains("FRIEND") -> SoftNow.f
-            up.contains("ENEMY") -> SoftNow.e
-            up == "TARGETSELF" -> nameOf("player")
-            up.startsWith("TARGETPARTYMEMBER") -> nameOf("party" + up.removePrefix("TARGETPARTYMEMBER"))
-            else -> LbMap.tapName ?: act
-        }
     }
 
     /** one member's bar: the button's glyph at its left, the name in the class colour, health and power; lit while its press shows */
@@ -226,20 +193,4 @@ object LbMap {
 
     fun keyOf(unit: String): String? = byUnit[unit]
     fun unitOf(key: String): String? = byUnit.entries.firstOrNull { it.value == key }?.key
-}
-
-/** PadMap m121's "soft": the names of the game's soft enemy / friend / interact units now (null = none, or not readable). Pure. */
-object SoftNow {
-    @Volatile var e: String? = null
-        private set
-    @Volatile var f: String? = null
-        private set
-    @Volatile var i: String? = null
-        private set
-
-    fun update(d: JSONObject) {
-        e = d.optString("e", "").ifEmpty { null }
-        f = d.optString("f", "").ifEmpty { null }
-        i = d.optString("i", "").ifEmpty { null }
-    }
 }

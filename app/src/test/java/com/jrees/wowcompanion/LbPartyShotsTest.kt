@@ -53,7 +53,6 @@ class LbPartyShotsTest {
         val p = PartyModel.parseParty(doc)!!
         PartyModel.live.onParty(p, true, System.currentTimeMillis())
         LbMap.update(JSONObject("""{"type":"lbmap","mod":"CTRL","self":"PAD1","p1":"PADDUP","p2":"PADDRIGHT","p3":"PADDDOWN","p4":"PADDLEFT","tap":"TARGETNEARESTFRIEND","tapn":"Target Nearest Friend"}"""))
-        SoftNow.update(JSONObject("""{"type":"soft","e":"Defias Footpad","f":"Brannoc"}"""))
         val v = LbPartyView(RuntimeEnvironment.getApplication())
         v.measure(View.MeasureSpec.makeMeasureSpec(1240, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY))
         v.layout(0, 0, 1240, 1080)
