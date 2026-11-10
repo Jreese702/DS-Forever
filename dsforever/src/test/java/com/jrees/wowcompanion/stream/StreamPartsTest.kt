@@ -97,10 +97,10 @@ class StreamPartsTest {
     @Test fun aTapIsAnAbsoluteClickOnTheStream() {
         val r = Rec(); val k = StreamKeys(r, 1920, 1080) {}
         k.tap(0.5f, 0.25f)
-        assertArrayEquals(intArrayOf(959, 269, 1920, 1080), r.pos.single())
+        assertArrayEquals(intArrayOf(15000, 7500, StreamKeys.REF, StreamKeys.REF), r.pos.single())
         assertEquals(listOf(true to StreamKeys.BUTTON_LEFT, false to StreamKeys.BUTTON_LEFT), r.buttons)
         k.tap(2f, -1f)                                                                       // clamped to the screen
-        assertArrayEquals(intArrayOf(1919, 0, 1920, 1080), r.pos.last())
+        assertArrayEquals(intArrayOf(StreamKeys.REF, 0, StreamKeys.REF, StreamKeys.REF), r.pos.last())
         k.button(true, true)
         assertEquals(true to StreamKeys.BUTTON_RIGHT, r.buttons.last())
     }

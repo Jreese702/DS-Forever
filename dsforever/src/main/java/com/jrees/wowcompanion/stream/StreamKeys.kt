@@ -67,7 +67,10 @@ class StreamKeys(
     override fun moveTo(fx: Float, fy: Float) {
         val w = streamW.coerceAtLeast(1); val h = streamH.coerceAtLeast(1)
         px = (fx.coerceIn(0f, 1f) * (w - 1)).toInt(); py = (fy.coerceIn(0f, 1f) * (h - 1)).toInt()
-        input.mousePosition(px, py, w, h)
+        // 1.0.21 (streaming taps missed the tap pad: the PC's cursor measured at 1169,101 for the uisw cell at 1169,103): the position
+        // goes out on a FINE reference, not in stream pixels - Sunshine scales it to the PC's screen in floating point, so a 1080p
+        // stream no longer rounds a click off the pad's 2-game-pixel rows on a 1440p PC
+        input.mousePosition(Math.round(fx.coerceIn(0f, 1f) * REF), Math.round(fy.coerceIn(0f, 1f) * REF), REF, REF)
     }
 
     override fun moveBy(dx: Int, dy: Int) {
@@ -100,6 +103,8 @@ class StreamKeys(
         const val BUTTON_RIGHT = 0x03
         /** a click's press and release this far apart (the PC's game sees two separate events, as the X server's do) */
         const val CLICK_MS = 16L
+        /** the mouse position's reference size (Moonlight sends shorts: at most 32767) */
+        const val REF = 30000
     }
 }
 
