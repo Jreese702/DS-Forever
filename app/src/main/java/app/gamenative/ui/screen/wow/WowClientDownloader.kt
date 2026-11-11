@@ -78,7 +78,7 @@ object WowClientDownloader {
     /**
      * [region]: the player's pick (GameRegion.chosen; the user, 2026-11-11: regions fix): the build checked, and then updated, is that
      * region's (regions patch on different days: a US-made install played on EU needs EU's build or its realms are not listed). null =
-     * the install's own (.build.info Branch).
+     * the install's own (.build.info Branch). Adapted from YoruDev-Ryland's WoWForeverywhere ab115f8 / 22a2ab9 (GPL-3.0).
      */
     fun checkVersion(gameRoot: File, region: String? = null): VersionCheckResult? {
         val choice = runCatching { activeBuild(gameRoot) }.getOrElse {
