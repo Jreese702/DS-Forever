@@ -11,6 +11,10 @@ import java.security.DigestOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import java.util.zip.Inflater
+import java.util.zip.InflaterInputStream
+import java.io.DataInputStream
+import java.io.InputStream
+import com.jrees.wowcompanion.CdnStream
 import com.jrees.wowcompanion.GameRegion
 import com.jrees.wowcompanion.WowProduct
 import com.jrees.wowcompanion.WowSwitch
@@ -328,7 +332,15 @@ object WowClientDownloader {
         archives: Lazy<ArchiveLocator?>,
         onStatus: (String) -> Unit,
     ) {
-        val files = parseInstall(blteDecode(cdn.require("data", buildConfig.getValue("install")[1]))).filter { it.isClientBinary() }
+        // the install manifest through a file too (issue #70): only its decoded table is held, to be parsed
+        val installEncoded = File(gameRoot, "Data/.install.blte")
+        val install = try {
+            if (!cdn.fetchTo("data", buildConfig.getValue("install")[1], installEncoded)) throw IOException("CDN is missing the install manifest")
+            ByteArrayOutputStream().also { out -> installEncoded.inputStream().buffered(CdnStream.BUF).use { blteDecode(it, out) } }.toByteArray()
+        } finally {
+            installEncoded.delete()
+        }
+        val files = parseInstall(install).filter { it.isClientBinary() }
         check(files.isNotEmpty()) { "No Windows ARM64 client files in this build" }
 
         val clientDir = File(gameRoot, product.flavorDir)
@@ -358,16 +370,29 @@ object WowClientDownloader {
         pending.forEachIndexed { index, entry ->
             onStatus("Downloading ${entry.name} (${index + 1}/${pending.size})...")
             val ekey = ekeys[entry.ckey] ?: throw IOException("${entry.name} is missing from the encoding table")
-            val encoded = cdn.fetch("data", ekey) ?: archives.value?.read(ekey) ?: throw IOException("${entry.name} not found on the CDN")
-            writeVerified(File(clientDir, entry.relativePath), entry, encoded)
+            // issue #70 (2026-11-11): the encoded client file (the exe is ~68 MB) streams to a file beside it and is decoded
+            // from there, never one byte array (the OOM at ResponseBody.bytes() <- Cdn.fetch <- syncClient, Java heap 507/512 MB)
+            val dest = File(clientDir, entry.relativePath)
+            dest.parentFile?.mkdirs()
+            val encoded = File(dest.parentFile, "${dest.name}.blte")
+            try {
+                if (!cdn.fetchTo("data", ekey, encoded) && archives.value?.readTo(ekey, encoded) != true) {
+                    throw IOException("${entry.name} not found on the CDN")
+                }
+                writeVerified(dest, entry, encoded)
+            } finally {
+                encoded.delete()
+            }
         }
     }
 
-    private fun writeVerified(dest: File, entry: InstallEntry, encoded: ByteArray) {
+    private fun writeVerified(dest: File, entry: InstallEntry, encoded: File) {
         dest.parentFile?.mkdirs()
         val temp = File(dest.parentFile, "${dest.name}.download")
         val digest = MessageDigest.getInstance("MD5")
-        DigestOutputStream(temp.outputStream().buffered(), digest).use { blteDecode(encoded, it) }
+        encoded.inputStream().buffered(CdnStream.BUF).use { input ->
+            DigestOutputStream(temp.outputStream().buffered(), digest).use { blteDecode(input, it) }
+        }
         if (hex(digest.digest(), 0, 16) != entry.ckey) {
             temp.delete()
             throw IOException("Checksum mismatch for ${entry.name}")
@@ -388,7 +413,7 @@ object WowClientDownloader {
         val missing = required.distinct().filter { !indexFileOk(File(indicesDir, "$it.index"), it) }
         missing.forEachIndexed { index, hash ->
             onStatus("Syncing index archive (${index + 1}/${missing.size})...")
-            cdn.index(hash)?.let { WowSwitch.replace(File(indicesDir, "$hash.index"), it) }
+            cdn.indexTo(hash, File(indicesDir, "$hash.index"))
         }
     }
 
@@ -463,14 +488,65 @@ object WowClientDownloader {
      * (build config / CDN config) must hash to its own key ([configOk]); an archive index to its name ([indexOk]). A host whose answer
      * fails goes on to the next one, and a network failure is never reported as "missing" (a 403/404 elsewhere no longer hides it).
      */
-    private class Cdn(val hosts: List<String>, val path: String) {
+    internal class Cdn(val hosts: List<String>, val path: String) {
         fun require(kind: String, key: String) =
             fetch(kind, key, verify = if (kind == "config") ({ b -> configOk(b, key) }) else null) ?: throw IOException("CDN is missing $kind/$key")
 
-        /** an archive index ("<hash>.index"), checked against its name */
-        fun index(hash: String) = fetch("data", "$hash.index", verify = { b -> indexOk(b, hash) })
+        /**
+         * an archive index ("<hash>.index") streamed to [dest] whole or not at all, checked against its name by its footer (issue #70:
+         * an archive-group index is tens of MB); false = missing
+         */
+        fun indexTo(hash: String, dest: File) = fetchTo("data", "$hash.index", dest, verify = { b -> indexOk(b.tail, hash) })
 
-        fun fetch(kind: String, key: String, range: LongRange? = null, verify: ((ByteArray) -> Boolean)? = null): ByteArray? {
+        /**
+         * a small body (a config, the install manifest, an encoding-table range) in memory, streamed into an array of its own length
+         * (okio's bytes() held it twice). One above [CdnStream.IN_MEMORY_MAX] is refused: those go to [fetchTo] (issue #70)
+         */
+        fun fetch(kind: String, key: String, range: LongRange? = null, verify: ((ByteArray) -> Boolean)? = null): ByteArray? =
+            each(kind, key, range) { response, host ->
+                val body = response.body ?: throw IOException("an empty answer from $host")
+                val said = body.contentLength()
+                // a range holds what the caller asked for (an encoding-table chunk); a whole body at most IN_MEMORY_MAX
+                val cap = range?.let { it.last - it.first + 1 } ?: CdnStream.IN_MEMORY_MAX
+                if (said > cap) throw IOException("$kind/$key from $host is $said B: too big to hold in memory")
+                val out = ByteArrayOutputStream(if (said > 0) said.toInt() else 8192)
+                val got = body.byteStream().use { CdnStream.copy(it, out, cap) }
+                bodyProblem(response.code, response.header("Content-Length"), response.header("Content-Range"), range, got)
+                    ?.let { throw IOException("$it from $host") }
+                val bytes = out.toByteArray()
+                if (verify != null && !verify(bytes)) throw IOException("$kind/$key from $host is not that file")
+                bytes
+            }
+
+        /**
+         * ANY BODY TO A FILE (issue #70, 2026-11-11: the Java heap OOM during a game update): the body streams to "<dest>.part"
+         * with its length and MD5 counted on the way ([CdnStream]), is checked (8838e9e9's 206 + exact length, then [verify]) and only
+         * then renamed over [dest]. true = there; false = missing on every host that answered; a failure throws (a retry, not a skip).
+         */
+        fun fetchTo(kind: String, key: String, dest: File, range: LongRange? = null, verify: ((CdnStream.Body) -> Boolean)? = null): Boolean =
+            each(kind, key, range) { response, host ->
+                val body = response.body ?: throw IOException("an empty answer from $host")
+                dest.absoluteFile.parentFile?.mkdirs()
+                val part = File(dest.absoluteFile.parentFile, "${dest.name}.part")
+                try {
+                    // never more than it said (or than the range asked): a body that runs on is stopped, not written on
+                    val limit = range?.let { it.last - it.first + 1 } ?: body.contentLength().takeIf { it >= 0 } ?: Long.MAX_VALUE
+                    val got = body.byteStream().use { input -> part.outputStream().buffered(CdnStream.BUF).use { CdnStream.copy(input, it, limit) } }
+                    bodyProblem(response.code, response.header("Content-Length"), response.header("Content-Range"), range, got)
+                        ?.let { throw IOException("$it from $host") }
+                    if (verify != null && !verify(got)) throw IOException("$kind/$key from $host is not that file")
+                    WowSwitch.move(part, dest)
+                    true
+                } finally {
+                    part.delete()
+                }
+            } ?: false
+
+        /**
+         * every host in turn: [take] reads a successful answer (it throws an IOException when the answer fails its checks, and the
+         * next host is tried). "missing" (null) only when every host that answered said so: a failed one is a network error to retry
+         */
+        private fun <T> each(kind: String, key: String, range: LongRange?, take: (okhttp3.Response, String) -> T): T? {
             var failure: IOException? = null
             var missing = false
             for (host in hosts) {
@@ -481,18 +557,7 @@ object WowClientDownloader {
                 try {
                     Net.http.newCall(request).execute().use { response ->
                         when {
-                            response.isSuccessful -> {
-                                val bytes = response.body!!.bytes()
-                                val length = response.header("Content-Length")?.toLongOrNull()
-                                when {
-                                    range != null && !rangedOk(response.code, bytes.size.toLong(), range, response.header("Content-Range")) ->
-                                        failure = IOException("not the asked range from $host (HTTP ${response.code}, ${bytes.size} B)")
-                                    length != null && length != bytes.size.toLong() ->
-                                        failure = IOException("a short answer from $host (${bytes.size} of $length B)")
-                                    verify != null && !verify(bytes) -> failure = IOException("$kind/$key from $host is not that file")
-                                    else -> return bytes
-                                }
-                            }
+                            response.isSuccessful -> return take(response, host)
                             response.code == 403 || response.code == 404 -> missing = true
                             else -> failure = IOException("HTTP ${response.code} from $host")
                         }
@@ -501,9 +566,21 @@ object WowClientDownloader {
                     failure = e
                 }
             }
-            // "missing" only when every host that answered said so: a failed one is a network error to retry, not a missing file
             if (missing && failure == null) return null
             throw failure ?: IOException("No CDN hosts in $BUILD_INFO")
+        }
+    }
+
+    /**
+     * pure (issue #70, 2026-11-11): 8838e9e9's checks on a streamed body, by its counted length: a Range answer is a 206 of
+     * exactly the asked length ([rangedOk]); any body is as long as its Content-Length says. null = fine, else why not
+     */
+    internal fun bodyProblem(code: Int, contentLength: String?, contentRange: String?, range: LongRange?, body: CdnStream.Body): String? {
+        val length = contentLength?.toLongOrNull()
+        return when {
+            range != null && !rangedOk(code, body.size, range, contentRange) -> "not the asked range (HTTP $code, ${body.size} B)"
+            length != null && length != body.size -> "a short answer (${body.size} of $length B)"
+            else -> null
         }
     }
 
@@ -615,15 +692,15 @@ object WowClientDownloader {
     }
 
     private class ArchiveLocator(private val cdn: Cdn, private val gameRoot: File, private val archives: List<String>) {
-        fun read(ekey: String): ByteArray? {
+        /** [ekey]'s range of the archive that holds it, streamed to [dest] (issue #70); false = in none / missing */
+        fun readTo(ekey: String, dest: File): Boolean {
             for (archive in archives) {
                 val local = File(gameRoot, "Data/indices/$archive.index")
                 val index = if (indexFileOk(local, archive)) {
                     local.readBytes()
                 } else {
-                    val fetched = cdn.index(archive) ?: continue
-                    WowSwitch.replace(local, fetched)
-                    fetched
+                    if (!cdn.indexTo(archive, local)) continue
+                    local.readBytes()
                 }
                 val buffer = ByteBuffer.wrap(index)
                 for (block in 0 until index.size / 4096 * 4096 step 4096) {
@@ -632,13 +709,13 @@ object WowClientDownloader {
                         if (hex(index, pos, 16) == ekey) {
                             val size = buffer.getInt(pos + 16).toLong() and 0xFFFFFFFFL
                             val offset = buffer.getInt(pos + 20).toLong() and 0xFFFFFFFFL
-                            return cdn.fetch("data", archive, offset until offset + size)
+                            return cdn.fetchTo("data", archive, dest, offset until offset + size)
                         }
                         pos += 24
                     }
                 }
             }
-            return null
+            return false
         }
     }
 
@@ -696,50 +773,59 @@ object WowClientDownloader {
         }
     }
 
-    private fun blteDecode(data: ByteArray) = ByteArrayOutputStream(data.size).also { blteDecode(data, it) }.toByteArray()
 
-    private fun blteDecode(data: ByteArray, out: OutputStream) {
-        check(String(data, 0, 4) == "BLTE") { "Not BLTE data" }
-        val buffer = ByteBuffer.wrap(data)
-        val headerSize = buffer.getInt(4)
+    /**
+     * BLTE STREAMED (issue #70, 2026-11-11): [input] (an encoded file on disk, a whole body) decoded to [out] one chunk at a
+     * time, a 'Z' chunk through an inflater stream, so a 68 MB client file never sits in the heap. The chunk table's sizes bound each
+     * chunk; a cut stream or a truncated zlib chunk is an IOException.
+     */
+    internal fun blteDecode(input: InputStream, out: OutputStream) {
+        val d = DataInputStream(input)
+        val magic = ByteArray(4).also { d.readFully(it) }
+        check(String(magic) == "BLTE") { "Not BLTE data" }
+        val headerSize = d.readInt()
         if (headerSize == 0) {
-            out.write(decodeChunk(data.copyOfRange(8, data.size)))
+            decodeChunk(d, out)
             return
         }
-        val count = buffer.getInt(8) and 0xFFFFFF
-        var offset = headerSize
-        for (i in 0 until count) {
-            val compressedSize = buffer.getInt(12 + i * 24)
-            out.write(decodeChunk(data.copyOfRange(offset, offset + compressedSize)))
-            offset += compressedSize
+        val count = d.readInt() and 0xFFFFFF
+        val entry = ByteArray(24)
+        val sizes = LongArray(count) { d.readFully(entry); ByteBuffer.wrap(entry).getInt(0).toLong() and 0xFFFFFFFFL }
+        // the header as it says (12 + 24 per chunk; anything more is skipped, as the offset-based reader did)
+        CdnStream.Limited(d, (headerSize - 12 - 24L * count).coerceAtLeast(0)).drain()
+        for (size in sizes) CdnStream.Limited(d, size).also { decodeChunk(it, out) }.drain()
+    }
+
+    private fun decodeChunk(chunk: ByteArray): ByteArray =
+        ByteArrayOutputStream(chunk.size * 2).also { decodeChunk(chunk.inputStream(), it) }.toByteArray()
+
+    /** one chunk (its mode byte, then its body: the rest of [input]) decoded to [out] */
+    private fun decodeChunk(input: InputStream, out: OutputStream) {
+        val mode = input.read()
+        if (mode < 0) throw IOException("Empty BLTE chunk")
+        when (mode.toChar()) {
+            'N' -> input.copyTo(out, CdnStream.BUF)
+            'Z' -> inflate(input, out)
+            'F' -> blteDecode(input, out)
+            else -> throw IOException("Unsupported BLTE chunk mode ${mode.toChar()}")
         }
     }
 
-    private fun decodeChunk(chunk: ByteArray): ByteArray {
-        val body = chunk.copyOfRange(1, chunk.size)
-        return when (chunk[0].toInt().toChar()) {
-            'N' -> body
-            'Z' -> inflate(body)
-            'F' -> blteDecode(body)
-            else -> throw IOException("Unsupported BLTE chunk mode ${chunk[0].toInt().toChar()}")
-        }
-    }
-
-    private fun inflate(body: ByteArray): ByteArray {
+    private fun inflate(input: InputStream, out: OutputStream) {
         val inflater = Inflater()
-        inflater.setInput(body)
-        val out = ByteArrayOutputStream(body.size * 2)
-        val buffer = ByteArray(64 * 1024)
         try {
-            while (!inflater.finished()) {
-                val n = inflater.inflate(buffer)
-                if (n == 0 && (inflater.needsInput() || inflater.needsDictionary())) throw IOException("Truncated zlib chunk")
+            // InflaterInputStream: "Unexpected end of ZLIB input stream" (an EOFException) when the chunk is cut
+            val z = InflaterInputStream(input, inflater, CdnStream.BUF)
+            val buffer = ByteArray(CdnStream.BUF)
+            while (true) {
+                val n = z.read(buffer)
+                if (n < 0) break
                 out.write(buffer, 0, n)
             }
+            if (!inflater.finished()) throw IOException("Truncated zlib chunk")
         } finally {
             inflater.end()
         }
-        return out.toByteArray()
     }
 
     private fun md5Hex(file: File): String? {
