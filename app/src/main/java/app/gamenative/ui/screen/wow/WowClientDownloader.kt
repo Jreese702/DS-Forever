@@ -362,10 +362,11 @@ object WowClientDownloader {
         indicesDir.mkdirs()
         val required = listOf("archives", "patch-archives").flatMap { cdnConfig[it].orEmpty() } +
             listOf("file-index", "patch-file-index", "archive-group", "patch-archive-group").mapNotNull { cdnConfig[it]?.firstOrNull() }
-        val missing = required.distinct().filter { !File(indicesDir, "$it.index").isFile }
+        // a kept index that is not its name's (a sign-in page saved by an older build, a cut file) is fetched again
+        val missing = required.distinct().filter { !indexFileOk(File(indicesDir, "$it.index"), it) }
         missing.forEachIndexed { index, hash ->
             onStatus("Syncing index archive (${index + 1}/${missing.size})...")
-            cdn.fetch("data", "$hash.index")?.let { WowSwitch.replace(File(indicesDir, "$hash.index"), it) }
+            cdn.index(hash)?.let { WowSwitch.replace(File(indicesDir, "$hash.index"), it) }
         }
     }
 
@@ -413,10 +414,20 @@ object WowClientDownloader {
         }
     }
 
+    /**
+     * CDN INTEGRITY (the user, 2026-11-11: updates on slow links; jaredgei PR #54, the HughGrant patch): a hotel sign-in page or a
+     * proxy answering "200 OK" is never game data. A Range request needs a 206 with exactly the asked length ([rangedOk]); a config
+     * (build config / CDN config) must hash to its own key ([configOk]); an archive index to its name ([indexOk]). A host whose answer
+     * fails goes on to the next one, and a network failure is never reported as "missing" (a 403/404 elsewhere no longer hides it).
+     */
     private class Cdn(val hosts: List<String>, val path: String) {
-        fun require(kind: String, key: String) = fetch(kind, key) ?: throw IOException("CDN is missing $kind/$key")
+        fun require(kind: String, key: String) =
+            fetch(kind, key, verify = if (kind == "config") ({ b -> configOk(b, key) }) else null) ?: throw IOException("CDN is missing $kind/$key")
 
-        fun fetch(kind: String, key: String, range: LongRange? = null): ByteArray? {
+        /** an archive index ("<hash>.index"), checked against its name */
+        fun index(hash: String) = fetch("data", "$hash.index", verify = { b -> indexOk(b, hash) })
+
+        fun fetch(kind: String, key: String, range: LongRange? = null, verify: ((ByteArray) -> Boolean)? = null): ByteArray? {
             var failure: IOException? = null
             var missing = false
             for (host in hosts) {
@@ -427,7 +438,18 @@ object WowClientDownloader {
                 try {
                     Net.http.newCall(request).execute().use { response ->
                         when {
-                            response.isSuccessful -> return response.body!!.bytes()
+                            response.isSuccessful -> {
+                                val bytes = response.body!!.bytes()
+                                val length = response.header("Content-Length")?.toLongOrNull()
+                                when {
+                                    range != null && !rangedOk(response.code, bytes.size.toLong(), range, response.header("Content-Range")) ->
+                                        failure = IOException("not the asked range from $host (HTTP ${response.code}, ${bytes.size} B)")
+                                    length != null && length != bytes.size.toLong() ->
+                                        failure = IOException("a short answer from $host (${bytes.size} of $length B)")
+                                    verify != null && !verify(bytes) -> failure = IOException("$kind/$key from $host is not that file")
+                                    else -> return bytes
+                                }
+                            }
                             response.code == 403 || response.code == 404 -> missing = true
                             else -> failure = IOException("HTTP ${response.code} from $host")
                         }
@@ -436,10 +458,34 @@ object WowClientDownloader {
                     failure = e
                 }
             }
-            if (missing) return null
+            // "missing" only when every host that answered said so: a failed one is a network error to retry, not a missing file
+            if (missing && failure == null) return null
             throw failure ?: IOException("No CDN hosts in $BUILD_INFO")
         }
     }
+
+    /** pure: a ranged answer is a 206 with exactly [range]'s length (and, when it says, a Content-Range starting at its first byte) */
+    internal fun rangedOk(code: Int, size: Long, range: LongRange, contentRange: String? = null): Boolean {
+        if (code != 206 || size != range.last - range.first + 1) return false
+        val start = contentRange?.let { Regex("""^\s*bytes\s+(\d+)-""").find(it)?.groupValues?.get(1)?.toLongOrNull() }
+        return start == null || start == range.first
+    }
+
+    /** pure: a CDN config file (build config, CDN config) is named by the MD5 of its bytes */
+    internal fun configOk(bytes: ByteArray, key: String): Boolean = hex(MessageDigest.getInstance("MD5").digest(bytes), 0, 16) == key.lowercase()
+
+    /**
+     * Pure: an archive index is named by the MD5 of its 28-byte footer (checksum size 8, the byte 13 from the end; checked against
+     * all 1,485 .index files of the PC's install, 2026-11-11). Anything else (a sign-in page, a cut file) is not that index.
+     */
+    internal fun indexOk(bytes: ByteArray, name: String): Boolean =
+        bytes.size >= 28 && bytes[bytes.size - 13].toInt() == 8 &&
+            hex(MessageDigest.getInstance("MD5").digest(bytes.copyOfRange(bytes.size - 28, bytes.size)), 0, 16) == name.lowercase()
+
+    /** [indexOk] for a file on disk (only its footer is read) */
+    private fun indexFileOk(f: File, name: String): Boolean = f.isFile && f.length() >= 28 && runCatching {
+        java.io.RandomAccessFile(f, "r").use { r -> ByteArray(28).also { r.seek(f.length() - 28); r.readFully(it) } }.let { indexOk(it, name) }
+    }.getOrDefault(false)
 
     private class EncodingLookup(private val cdn: Cdn, private val ekey: String) {
         private data class Chunk(val encodedOffset: Long, val encodedSize: Int, val decodedOffset: Long, val decodedSize: Int)
@@ -529,10 +575,10 @@ object WowClientDownloader {
         fun read(ekey: String): ByteArray? {
             for (archive in archives) {
                 val local = File(gameRoot, "Data/indices/$archive.index")
-                val index = if (local.isFile) {
+                val index = if (indexFileOk(local, archive)) {
                     local.readBytes()
                 } else {
-                    val fetched = cdn.fetch("data", "$archive.index") ?: continue
+                    val fetched = cdn.index(archive) ?: continue
                     WowSwitch.replace(local, fetched)
                     fetched
                 }

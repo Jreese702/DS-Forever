@@ -23,6 +23,36 @@ class WowClientDownloaderTest {
         assertNull(WowClientDownloader.remoteRow(emptyList(), "Region", "us"))
     }
 
+    private fun md5(b: ByteArray) = java.security.MessageDigest.getInstance("MD5").digest(b).joinToString("") { "%02x".format(it.toInt() and 255) }
+
+    // CDN integrity (the user, 2026-11-11: updates on slow links): a sign-in page is never game data
+    @Test fun aRangedAnswerMustBeA206OfTheAskedLength() {
+        assertTrue(WowClientDownloader.rangedOk(206, 100, 0L until 100L))
+        assertTrue(WowClientDownloader.rangedOk(206, 8, 40L until 48L, "bytes 40-47/9999"))
+        assertFalse(WowClientDownloader.rangedOk(200, 100, 0L until 100L))           // a whole body (a portal, a proxy dropping Range)
+        assertFalse(WowClientDownloader.rangedOk(206, 99, 0L until 100L))            // cut short
+        assertFalse(WowClientDownloader.rangedOk(206, 8, 40L until 48L, "bytes 0-7/9999"))
+    }
+
+    @Test fun aConfigIsNamedByItsMd5() {
+        val config = "# Build Configuration\n\nroot = 0123\n".toByteArray()
+        assertTrue(WowClientDownloader.configOk(config, md5(config)))
+        assertTrue(WowClientDownloader.configOk(config, md5(config).uppercase()))
+        assertFalse(WowClientDownloader.configOk("<html>Sign in to the hotel Wi-Fi</html>".toByteArray(), md5(config)))
+    }
+
+    @Test fun anIndexIsNamedByItsFootersMd5() {
+        // a 4 KB block + the 28-byte footer: toc hash (8), version, 2 x unknown, block KB, offset / size / key bytes, checksum size 8, count, checksum
+        val footer = ByteArray(8) { it.toByte() } + byteArrayOf(1, 0, 0, 4, 4, 4, 16, 8) + byteArrayOf(0, 0, 0, 1) + ByteArray(8) { 9 }
+        val index = ByteArray(4096) + footer
+        val name = md5(footer)
+        assertTrue(WowClientDownloader.indexOk(index, name))
+        assertFalse(WowClientDownloader.indexOk(index.copyOf(index.size - 1), name))                  // cut
+        assertFalse(WowClientDownloader.indexOk("<html>portal</html>".toByteArray(), name))
+        val other = index.copyOf().also { it[it.size - 13] = 16 }                                      // not the checksum size we know
+        assertFalse(WowClientDownloader.indexOk(other, md5(other.copyOfRange(other.size - 28, other.size))))
+    }
+
     @Test fun emptyCdnFieldsAreRepairedBeforePlay() {
         val root = Files.createTempDirectory("dsf-repair").toFile()
         val saved = WowClientDownloader.patchUrlFor
