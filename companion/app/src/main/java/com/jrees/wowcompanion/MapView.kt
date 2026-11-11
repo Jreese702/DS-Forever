@@ -6532,7 +6532,9 @@ class MapView(context: Context) : View(context) {
                 val np = UiKit.bodyPaint(18f, Color.rgb(230, 210, 160)).apply { setShadowLayer(3f, 0f, 0f, Color.BLACK) }
                 c.drawText(Tr.t("QuestTrail's arrow is not showing"), left + 16f, top + 30f, np)
             }
-        } else if ((poleOn || qtOn) && route != null && cursor.sel == qtOrGameFocus() && run {
+        } else if (poleOn && !compact && !morphOn && !px.isNaN() && !py.isNaN() && (route == null || cursor.sel == qtOrGameFocus()) && run {
+                // the user, 2026-11-11 ("the polestar option ... should also show the path on the bottom map"): Polestar's own path
+                // stands alone - it was drawn only while DS Forever's own route existed too, so with none of ours it never showed
                 val fb = top + fh - (if (hintsOn()) HINT_BAND else 0f)
                 val save = c.save()
                 c.clipRect(left, top, left + fw, fb)
@@ -6630,6 +6632,16 @@ class MapView(context: Context) : View(context) {
                     c.restoreToCount(save)
                 }
             }
+        }
+        // ---- HOME'S SMALL MAP, POLESTAR (the user, 2026-11-11: "the polestar option in quest tracking in home should also show the path
+        // on the bottom map sort of like safe path does"): Polestar's own walking path, its gold dots, in the small field as SafePath's
+        // checkpoints are above
+        if (compact && !morphOn && !corpseKnown() && !px.isNaN() && !py.isNaN() && Settings.questTracking == "polestar") {
+            val nb = top + compactTop()
+            val save = c.save()
+            c.clipRect(left, nb, left + fw, top + fh)
+            drawPolestarRoute(c, sx(px), sy(py), ::sx, ::sy)
+            c.restoreToCount(save)
         }
         // ---- THE CORPSE RUN's way (CorpseRoute): while a ghost, the leg's checkpoint flags, the stretch to the next one and faint dots
         // past it (the quest line's look), on the full map and Home's small one; the red rim arrow leads to its next checkpoint
