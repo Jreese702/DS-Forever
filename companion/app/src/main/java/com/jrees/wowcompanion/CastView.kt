@@ -106,13 +106,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
 
     private class St {
-        var u = 1; var m = 0; var r = -1; var cd = 0
+        var u = 1; var m = 0; var r = -1; var cd = 0; var g = 0     // g: b-bar-gcd, this slot is on the GCD
         var st = Double.NaN; var du = Double.NaN
         var ch = -1; var cnt = -1
         var gl = 0; var chk = 0; var eq = 0
         var countText: String? = null
         fun reset() {
-            u = 1; m = 0; r = -1; cd = 0; st = Double.NaN; du = Double.NaN
+            u = 1; m = 0; r = -1; cd = 0; g = 0; st = Double.NaN; du = Double.NaN
             ch = -1; cnt = -1; gl = 0; chk = 0; eq = 0; countText = null
         }
     }
@@ -418,6 +418,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     var fightCdDashed = false
         set(v) { if (field != v) { field = v; invalidate() } }
     private val fightCdStart = LongArray(8)
+    /** b-bar-gcd: the running GCD (app seconds) the bar slots flagged g = 1 sweep with */
+    private var gcdStartS = Double.NaN
+    private var gcdDurS = Double.NaN
     private val fightCdDur = LongArray(8)
 
     /** remaining fraction of fight face [src]'s cooldown, or -1 */
@@ -1113,6 +1116,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (bu != barsUsable) { barsUsable = bu; setLayer(computeLayer()) }
         liveF = o.optJSONObject("F")
         if (hud != null) { applyLive(); resolveIcons() }
+        // b-bar-gcd (the user, 2026-11-10: the GCD on every button): the running GCD, one start / length for every flagged slot
+        val gdo = o.optJSONObject("gd")
+        if (gdo != null) {
+            val gs = toApp(jd(gdo.opt("s"))); val gdu = jd(gdo.opt("d"))
+            if (!gs.isNaN() && !gdu.isNaN() && gdu > 0.0) { gcdStartS = gs; gcdDurS = gdu }
+        }
         val l = o.optJSONObject("L")
         val h = hud
         for (li in 0 until STATE_LAYERS) {
@@ -1125,6 +1134,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 st.m = ji(so.opt("m"), 0)
                 st.r = ji(so.opt("r"), -1)
                 st.cd = ji(so.opt("cd"), 0)
+                st.g = ji(so.opt("g"), 0)
                 st.st = jd(so.opt("st"))
                 st.du = jd(so.opt("du"))
                 st.ch = ji(so.opt("ch"), -1)
@@ -2096,6 +2106,15 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             }
         }
 
+        // b-bar-gcd: a bar slot on the GCD with no cooldown of its own drawn: the GCD's sweep (a run-out one draws nothing)
+        if (sweep < 0f && est < 0f && fightCd <= 0f && st != null && st.g == 1 && !empty && !gcdStartS.isNaN()) {
+            val nowS = now / 1000.0
+            val endS = gcdStartS + gcdDurS
+            if (nowS < endS && gcdDurS > 0.0) {
+                sweep = ((endS - nowS) / gcdDurS).toFloat().coerceIn(0f, 1f)
+                next = min(next, 33L)
+            }
+        }
         // a fight face's cooldown (fightCooldown): the chosen look, and the icon dimmed as a cooling spell
         if (fightCd > 0f) {
             if (fightCdDashed) est = fightCd else sweep = fightCd
