@@ -28,6 +28,8 @@ class KitBuild(
     private val log: (String) -> Unit = {},
     /** why the last [read] came back null (GameFiles.lastReadWhy), shown in the error so a player can see the cause */
     private val why: () -> String? = { null },
+    /** why [read] of one fid came back null, kept per fid (the icons read on several threads: [why] is the last read's, any thread's) */
+    private val whyFor: (Int) -> String? = { null },
 ) {
     /** Missing recipe outputs; required steps call [requireComplete] before accepting their stamp. */
     val missing = ArrayList<String>()
@@ -48,8 +50,20 @@ class KitBuild(
     internal fun lost(name: String, what: String, fid: Int? = null) {
         val reason = if (fid == null) "" else " (fid $fid: ${why() ?: "read, but not a picture the kit can decode"})"
         if (name in CORE) { missing.add("$what$reason"); log("CORE piece $name missing: $what$reason") }
-        else { degraded.add("$what$reason"); log("placeholder for $name: $what$reason") }
+        else {
+            degraded.add("$what$reason"); log("placeholder for $name: $what$reason")
+            if (transient("$what$reason")) fetchLost++
+        }
     }
+
+    /**
+     * A LOST DOWNLOAD IS NOT A LOST PICTURE (review of #35 #36 #38, 2026-11-11: a few seconds of network trouble on a streamed or half
+     * copied Data folder must not leave the stand-ins until the next game patch): of [degraded], how many failed only because the
+     * game file could not be downloaded ([FETCH_FAILED] in GameFiles.lastReadWhy). The steps try again in the same launch
+     * (HarvestRetry) while any are left, and a degraded stamp with such losses is due again in the background (KitSteps.retryDue).
+     */
+    var fetchLost = 0
+        private set
 
     /** after a build of [outputs] pictures: too many lost is a broken game folder, not one bad texture (the step fails as before) */
     internal fun judge(outputs: Int) {
@@ -401,7 +415,7 @@ class KitBuild(
      * build_pak.py: every icon in the recipe, at [tile] px, through [encode] (WebP on the phone), into [out] (icons.pak, WCI1), written
      * to out.part first and renamed when whole. Returns the number of icons packed.
      */
-    fun icons(recipe: JSONObject, out: File, lenient: Boolean = false, encode: (KitImage, Int) -> ByteArray?): Int {
+    fun icons(recipe: JSONObject, out: File, lenient: Boolean = false, tolerant: Boolean = false, encode: (KitImage, Int) -> ByteArray?): Int {
         val tile = recipe.optInt("tile", 64); val q = recipe.optInt("quality", 80)
         val arr = recipe.optJSONArray("fids") ?: JSONArray()
         val fids = IntArray(arr.length()) { arr.optInt(it) }.sorted()
@@ -424,7 +438,12 @@ class KitBuild(
                     }
                     for ((k, j) in jobs.withIndex()) {
                         when (val r = j.get()) {
-                            null -> { miss++; missing.add("icon ${chunk[k]} not readable") }
+                            null -> {
+                                miss++
+                                val why = whyFor(chunk[k])
+                                missing.add("icon ${chunk[k]} not readable" + (why?.let { " ($it)" } ?: ""))
+                                if (why != null && transient(why)) fetchLost++
+                            }
                             is ByteArray -> { o.write(r); ids.add(chunk[k]); lens.add(r.size) }
                             else -> { bad++; missing.add("icon ${chunk[k]} undecodable") }
                         }
@@ -439,6 +458,14 @@ class KitBuild(
             if (missing.isEmpty()) "" else ": ${missing.joinToString("; ")}")
         // [lenient] (Track C, the background all-icons step): an icon the game lacks or cannot decode is left out, never a failure
         if (missing.isNotEmpty() && lenient) missing.clear()
+        // [tolerant] (#35 #36 #38 review, 2026-11-11: the before-Play icons step on a first install failed for ONE unreadable icon, the
+        // same CascLib 95 that locked Play through the kit): the icons that did not read are left out (the app falls back to the
+        // all-icons packs, then the game's question mark) and listed in [degraded]; only an empty pack or more than [TOO_MANY] of the
+        // icons lost (a broken game folder) still fails
+        if (missing.isNotEmpty() && tolerant && count > 0 && missing.size <= fids.size * TOO_MANY) {
+            for (m in missing) log("placeholder for $m")
+            degraded.addAll(missing); missing.clear()
+        }
         if (missing.isNotEmpty()) {
             blobs.delete()
             requireComplete("icons")
@@ -474,6 +501,12 @@ class KitBuild(
 
         /** more than this share of the pictures lost = the game's files are broken (a wrong or half-copied Data folder), not one texture */
         const val TOO_MANY = 0.5
+
+        /** GameFiles.lastReadWhy's words for a game file that is not on the device and could not be downloaded (a temporary loss) */
+        const val FETCH_FAILED = "downloading it failed"
+
+        /** a lost picture's reason says the download failed: the network, not the game's files (worth trying again) */
+        fun transient(reason: String): Boolean = reason.contains(FETCH_FAILED)
 
         fun withHolidays(recipe: JSONObject, table: Db2): JSONObject {
             check(table.layoutHash == 0x432931C0 && table.fieldCount == 12) { "unsupported Holidays table layout" }

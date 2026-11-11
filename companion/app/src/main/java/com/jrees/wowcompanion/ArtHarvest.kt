@@ -50,6 +50,8 @@ object ArtHarvest {
     class Job internal constructor(val ctx: Context, val game: GameFiles, val out: File, private val stepId: String,
                                    private val onProgress: (Float, String) -> Unit) {
         var inputKey: String? = null
+        /** #35 #36 #38 review (2026-11-11): this is the step's last try in this run (HarvestRetry): a failed download is kept degraded now */
+        var lastTry: Boolean = true
         /** this step's recipe (assets/harvest/<id>.json), or an empty object */
         fun recipe(name: String = stepId): JSONObject = runCatching {
             ctx.assets.open("harvest/$name.json").use { JSONObject(it.readBytes().toString(Charsets.UTF_8)) }
@@ -199,12 +201,22 @@ object ArtHarvest {
     fun pending(ctx: Context, beforePlay: Boolean? = null): List<Step> {
         val build = GameFiles.activeBuild(GameFiles.gameRoot(ctx))?.second ?: return emptyList()
         val st = stamp(ctx)
+        val now = System.currentTimeMillis()
         return STEPS.filter { s ->
-            (beforePlay == null || s.beforePlay == beforePlay) &&
-                st.optJSONObject(s.id)?.let { it.optString("build") != build || it.optInt("v") != s.version ||
-                    (s.id == "icons" && it.optString("inputs") != IconRequirements.inputKey(ctx, build)) } != false
+            val o = st.optJSONObject(s.id)
+            val stale = o?.let { it.optString("build") != build || it.optInt("v") != s.version ||
+                (s.id == "icons" && it.optString("inputs") != IconRequirements.inputKey(ctx, build)) } != false
+            queued(s.beforePlay, beforePlay, stale, !stale && KitSteps.retryDue(o?.optString("inputs"), o?.optLong("at") ?: 0L, now))
         }
     }
+
+    /**
+     * Is a step in the [query] queue (true = before Play, false = the background, null = any)? [stale]: not built for this build and
+     * version. [retryDue] (review of #35 #36 #38, 2026-11-11): built, but degraded by failed downloads and due to try them again: that
+     * is background work for every step, a before-Play one too, so a network hiccup never puts the wait before Play back.
+     */
+    internal fun queued(stepBeforePlay: Boolean, query: Boolean?, stale: Boolean, retryDue: Boolean): Boolean =
+        if (stale) query == null || stepBeforePlay == query else retryDue && query != true
 
     /** true = Play has to wait for the before-Play steps (the launcher shows the progress screen) */
     fun needsBeforePlay(ctx: Context): Boolean = pending(ctx, beforePlay = true).isNotEmpty()
@@ -390,7 +402,8 @@ object ArtHarvest {
         }
         val first = pending(ctx, beforePlay = true)
         val all = pending(ctx, beforePlay = false)
-        val later = all.filter { !it.detached }
+        // a before-Play step here is a degraded one trying its failed downloads again (queued): last, so it never holds the others up
+        val later = all.filter { !it.detached }.sortedBy { it.beforePlay }
         val detached = all.filter { it.detached }
         if (first.isEmpty() && later.isEmpty()) {
             set(State.Ready); onBeforePlayDone(true); startDetached(ctx, detached); return
@@ -452,6 +465,7 @@ object ArtHarvest {
             g.log = ArtFingerprint.Log()
             currentStep = s.id; stepLog[s.id] = "running (started ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date(t0))})"
             var job = Job(ctx, g, root(ctx), s.id) { f, what -> checkStop(); set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
+            var tries = 0
             // a failure (often a CDN hiccup on a table) is tried again before the art says so (HarvestRetry); the last reason is shown
             val result = HarvestRetry.run(onRetry = { n, d, why ->
                 Log.w(TAG, "harvest step ${s.id} failed ($why), try ${n + 1} in ${d / 1000} s")
@@ -459,6 +473,7 @@ object ArtHarvest {
                 set(State.Running(beforePlay, base / total, "${s.id}: trying again in ${d / 1000} s"))
             }) {
                 job = Job(ctx, g, root(ctx), s.id) { f, what -> checkStop(); set(State.Running(beforePlay, (base + f.coerceIn(0f, 1f) * w) / total, what)) }
+                job.lastTry = ++tries > HarvestRetry.DELAYS_MS.size
                 s.run(job)
             }.onFailure { Log.w(TAG, "harvest step ${s.id} failed", it) }
             val reads = g.log; g.log = null
