@@ -48,6 +48,29 @@ object LastRun {
         else -> null
     }
 
+    /** below this a process holds next to nothing (an empty cached process: #106 pss 13 MB, #111 pss 0 / 11 MB) */
+    const val TINY_PSS_KB = 50L * 1024
+    /** ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED: Android's "in the background, kept only in case it is wanted" */
+    const val IMPORTANCE_CACHED = 400
+
+    /**
+     * IS THIS EXIT WORTH A REPORT? (issue triage 2026-11-11, cluster "not a bug": #111, #106 and others were "Automatic crash report:
+     * Android closed DS Forever because the device ran low on memory" from a CACHED process (importance 400, pss 0-13 MB) with no game
+     * running: Android tidying the background, which every app gets and no report can fix.) A low-memory kill is offered only when it
+     * hit DS Forever in front (importance below cached) or holding real memory while the game ran; a cached AND tiny process is skipped
+     * even under a "game running" mark (#106's mark was 2638 min old: a stale one). Every other bad reason is always offered.
+     * [pssKb] = ApplicationExitInfo.pss (KB); [gameRunning] = the "running" mark was still set.
+     */
+    fun offer(reason: Int, importance: Int, pssKb: Long, gameRunning: Boolean): Boolean {
+        if (badReason(reason) == null) return false
+        if (reason != ApplicationExitInfo.REASON_LOW_MEMORY) return true
+        val cached = importance >= IMPORTANCE_CACHED
+        val tiny = pssKb < TINY_PSS_KB
+        if (cached && tiny) return false
+        if (!gameRunning && (cached || tiny)) return false
+        return true
+    }
+
     /** the question's words from the witnesses ([exit] = Android's reason in words, null = a normal end; [wasRunning] = the mark) */
     fun words(exit: String?, wasRunning: Boolean, inWorld: Boolean, ranMs: Long): String? {
         if (exit == null && !wasRunning) return null
@@ -73,8 +96,10 @@ object LastRun {
                 .filter { it.processName == ctx.packageName }.maxByOrNull { it.timestamp }
             if (last != null && last.timestamp > seen) {
                 p.edit().putLong("exitSeen", last.timestamp).apply()
-                exit = badReason(last.reason)
-                android.util.Log.i("WCLASTRUN", "last exit: reason ${last.reason} (${last.description ?: "-"}), pss ${last.pss / 1024} MB; game running $runningAt")
+                val worth = offer(last.reason, last.importance, last.pss, runningAt > 0L)
+                exit = if (worth) badReason(last.reason) else null
+                android.util.Log.i("WCLASTRUN", "last exit: reason ${last.reason} (${last.description ?: "-"}), importance ${last.importance}, " +
+                    "pss ${last.pss / 1024} MB; game running $runningAt${if (worth) "" else "; no report (a background clean-up)"}")
             }
         }
         pending = words(exit, runningAt > 0L, world, if (runningAt > 0L) System.currentTimeMillis() - runningAt else 0L)

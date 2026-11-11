@@ -895,6 +895,8 @@ fun WoWForeverScreen(
         com.jrees.wowcompanion.SetupBridge.restartGame = {
             val log = com.jrees.wowcompanion.SetupBridge.log
             com.jrees.wowcompanion.SetupBridge.restarting = true
+            // issue triage 2026-11-11: the old game's signal 9 is ours, not Android's: said so in the report
+            com.jrees.wowcompanion.GameLife.closer = "the restart from Settings"
             WoWLauncherState.shouldAutoLaunch = false
             log?.invoke("restart: close requested")
             CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
@@ -928,6 +930,7 @@ fun WoWForeverScreen(
         }
         // the waiting screen's Menu > Exit game, as the restart above: the game's own Exit Game first, the old close when it cannot
         com.jrees.wowcompanion.SetupBridge.exitGame = {
+            com.jrees.wowcompanion.GameLife.closer = "Exit game from the menu"     // issue triage 2026-11-11: ours, not Android's
             val close = { CoroutineScope(Dispatchers.Main + SupervisorJob()).launch { PluviaApp.events.emit(AndroidEvent.ForceCloseApp) }; Unit }
             val ce = com.jrees.wowcompanion.LauncherHooks.cleanExit
             if (ce == null) close() else ce("menu") { force -> if (force) close() }
