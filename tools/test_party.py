@@ -1094,7 +1094,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng", "hs", "g", "cw", "cc", "ch", "cs"}   # m79: hs, the health source; m92: g, the GUID (combat log)
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm124' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm125' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1290,7 +1290,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p36"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m124"' in SRC["padmap"],
+check('local CV = "p36"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m125"' in SRC["padmap"],
       "the versions: PadMap m107, PadTabCtl p40, Book b49")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
@@ -1872,6 +1872,23 @@ ss = WR.eval('WowCompanionSpellsDB.fightBy[WHO .. "-" .. REALM][61].id')
 lb = WR.eval('WowCompanionSpellsDB.fightBy[WHO .. "-" .. REALM][62].id')
 check(ss == 13549 and lb == 403, "m124: SPELLS_CHANGED moves Serpent Sting from Rank 1 (1978) to the rank its name casts (13549); Lightning Bolt stays", (ss, lb))
 check(WR.eval('WowCompanionSpellsDB.fightBy[WHO .. "-" .. REALM][61].i') == 132204, "m124: and its icon", WR.eval('WowCompanionSpellsDB.fightBy[WHO .. "-" .. REALM][61].i'))
+
+# ================================================================ m125: a run-out GCD is gone; the next press sends a fresh one
+WG = world()
+WG.execute('''
+local k = WHO .. "-" .. REALM
+WowCompanionSpellsDB.faceBy = { [k] = { [5] = { id = 3044, n = "Arcane Shot", i = 1 } } }
+CDINFO = { isActive = true, isOnGCD = true }
+C_Spell.GetSpellCooldown = function(x) return CDINFO end
+fire("SPELL_UPDATE_COOLDOWN")
+''')
+d1 = [d for d in docs(WG, 0, 'facecd') if d.get('k')]
+check(len(d1) >= 1 and d1[-1]['k'].get('5', {}).get('g') is True, "m125: the first GCD is sent on X", d1[-1:] )
+n1 = int(WG.eval('#SENT'))
+WG.execute('advance(2); fire("SPELL_UPDATE_COOLDOWN")')      # the game never said "not active" in between
+d2 = [d for d in docs(WG, n1, 'facecd') if d.get('k')]
+check(len(d2) >= 1 and d2[-1]['k'].get('5', {}).get('g') is True and d2[-1]['k']['5'].get('l', 0) > 1.0,
+      "m125: 2 s later (no 'not active' read), the next GCD is sent fresh", d2[-1:])
 
 print('ALL PASS (%d checks)' % passes if fails == 0 else '%d FAILED (of %d)' % (fails, fails + passes))
 sys.exit(1 if fails else 0)
