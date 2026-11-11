@@ -29,7 +29,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S = WC.S
 
-local HV = "hub29"          -- hub29: "In combat" turns the option on AT THE PULL (the user, 2026-11-10: "I pull with arcane shot and then when they get close, my auto attack melee is not on"): a spell you cast, Auto Shot or a melee swing starting out of a fight writes 1 right then (allowed: no lockdown yet), and 0 again 8 s later if no fight came of it; hub28: COMBAT AUTO SHOT "In combat" (the user, 2026-11-10: "add a third toggle to the hunter option to basically only turn it on during combat"): "uisw" 28 / 29 - while on, the game's autoRangedCombat is written 1 as a fight starts and 0 when it ends (and 0 at once out of a fight); the doc's sw.shotf, sw.shotfk = whether the fight's write took; hub27: the Party mode switch also starts / stops the combat log (PadMap m112); hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
+local HV = "hub30"          -- hub30: the third choice's RULES (the user, 2026-11-10: "it would be better if it stay on out of combat incase someone else pulls me into combat, and it should turn off when I target something out of combat AND start attack and then swap back when an ability is used before that ability fires" ... "make sure hunters mark does not trigger it to swap back on"): on by default and after every fight; OFF when an attack starts out of a fight with a target (PLAYER_ENTER_COMBAT); back ON at an ability's send (UNIT_SPELLCAST_SENT, before it fires) - never for Hunter's Mark, Auto Shot or Attack; hub29 (replaced by hub30): "In combat" turns the option on AT THE PULL (the user, 2026-11-10: "I pull with arcane shot and then when they get close, my auto attack melee is not on"): a spell you cast, Auto Shot or a melee swing starting out of a fight writes 1 right then (allowed: no lockdown yet), and 0 again 8 s later if no fight came of it; hub28: COMBAT AUTO SHOT "In combat" (the user, 2026-11-10: "add a third toggle to the hunter option to basically only turn it on during combat"): "uisw" 28 / 29 - while on, the game's autoRangedCombat is written 1 as a fight starts and 0 when it ends (and 0 at once out of a fight); the doc's sw.shotf, sw.shotfk = whether the fight's write took; hub27: the Party mode switch also starts / stops the combat log (PadMap m112); hub26: DS FOREVER'S OWN PARTY FRAMES AND TARGET BAR (WC.uf, at the end of this file; "uisw" 18 / 19 our party frames, 20 / 21 our target bar; while one is on, the game's own frames of that group stay hidden); hub25: PARTY MODE is an EXPERIMENTAL switch, off by default (the user, 2026-11-07: "Make the party mode an experimental toggle that is off by default"): "uisw" 16 / 17 -> WC.partyOk, which PadMap reads (Select toggles Party mode only while it is true); hub24: the Start attack switch reported while OFF (it read as absent: no QOL row); hub23: Combat Auto Shot for EVERY class (the user: "other classes use a bow"); hub22: START ATTACK ON A HOSTILE TARGET ("uisw" 12 / 13, the secure cell "atkgo") and the hunter's AUTO SHOT (the game's own autoRangedCombat, "uisw" 14 / 15); hub21: a one-time probe of the frames in the bottom-left bar's spot (probe "barprobe"); hub20: the raid / party manager tab with the Party frames switch; hub19: the PARTY FRAMES switch on "uisw" 10 / 11; hub18: the WORLD MARKERS' switch on "uisw" 8 / 9 (Trail.lua's WC.npWant.wm; the doc's sw.wm); hub17: HUD mode SPLIT into its own switches on the row "uisw" (the player frame, the target frame, the enemy nameplates, the personal bar; columns 34 / 35 still the whole bundle for an older app; the doc's sw); hub16: HUD mode's bar WIDTH and SCALE too (column 39 selects which setting columns 36 / 37 / 38 step; the doc's prd carries w / s / sel); hub15: HUD mode's bar height (Interact's WC.prd: columns 36 down / 37 up / 38 default; the doc's prd); hub14: HUD mode wants the enemy nameplates on (ag2 / Trail.lua owns that CVar: WC.npWant.hud); hub13: HUD mode (the player and target frames hidden, alpha only, columns 34 / 35); hub12: Smart buffs' OR wheel (barcmd "smartor", PadMap m62); hub11: the game's CAST BAR on the top screen, Show / Hide by its own two columns of the row (f-top-castbar-toggle); hub10: the game's durability figure rides the "hud" element (f-durability); hub9: the PAUSE wheel's button (Spells, Home's radial pause menu); hub8: the SPELL RADIAL's button (Spells, the user's pick 2026-10-07; Home's yes); hub7: a D-pad room command takes its room's controller in the same click (Quests q16), its guestack right behind the barcmd; hub6: the "bye" document at logout (the app's waiting screen at once); hub5: the D-pad layout's four commands (map / chat / home / radial); hub2: the "hud" element carries the game's buffs, debuffs and XP bar (LATER item 20); hub3: re-checked
 local ROW = "ui"
 local MAX_BITS = 5          -- 2^5 = 32 layouts; a pad row has 40 columns
 
@@ -362,32 +362,51 @@ local function shotWrite(on)
     pcall(set, "autoRangedCombat", on and "1" or "0")
     return shotNow() == on
 end
-local function shotFightSync(fight)
+local function shotFightSync(on)
     if hubAtk.shotFight ~= true then return end
-    local ok = shotWrite(fight == true)
-    if fight == true then hubAtk.shotFightOk = ok end
+    local ok = shotWrite(on == true)
+    if InCombatLockdown() then hubAtk.shotFightOk = ok end     -- the doc's shotfk: did a write inside a fight take
 end
 WC.shotFightSync = shotFightSync
--- hub29 THE PULL: the fight's own start (PLAYER_REGEN_DISABLED) comes after the opening shot, and inside the lockdown; the option is
--- written at the attack's start instead (UNIT_SPELLCAST_SENT by you, START_AUTOREPEAT_SPELL = Auto Shot, PLAYER_ENTER_COMBAT = a melee
--- swing), still out of the fight. No fight within PULL_S: written back to 0 (a heal or a hearth started it)
-local PULL_S = 8
-local function shotPull()
-    if hubAtk.shotFight ~= true or InCombatLockdown() then return end
-    hubAtk.pullN = (hubAtk.pullN or 0) + 1
-    local mine = hubAtk.pullN
-    shotFightSync(true)
-    if C_Timer and C_Timer.After then
-        C_Timer.After(PULL_S, function()
-            if mine == hubAtk.pullN and hubAtk.shotFight == true and not InCombatLockdown() then pcall(shotFightSync, false) end
-        end)
+-- hub30 THE RULES: on by default (someone else's pull finds it on); a plain attack started OUT of a fight with a target turns it off
+-- (PLAYER_ENTER_COMBAT: the auto attack began); an ability turns it back on at its SEND, before it fires - except Hunter's Mark (every
+-- rank, by its spell IDs and by its name), Auto Shot and Attack themselves; the fight's end turns it on again
+local SHOT_KEEP = { [1130] = true, [14323] = true, [14324] = true, [14325] = true, [53338] = true, [257284] = true,   -- Hunter's Mark
+                    [75] = true, [6603] = true }                                                                      -- Auto Shot, Attack
+local function markName()
+    local get = (C_Spell and C_Spell.GetSpellName) or nil
+    local ok, n = false, nil
+    if type(get) == "function" then ok, n = pcall(get, 1130) end
+    if (not ok or type(n) ~= "string") and type(GetSpellInfo) == "function" then ok, n = pcall(GetSpellInfo, 1130) end
+    return ok and type(n) == "string" and n ~= "" and n or nil
+end
+local function shotEvent(event, ...)
+    if hubAtk.shotFight ~= true then return end
+    if event == "PLAYER_ENTER_COMBAT" then
+        if not InCombatLockdown() and type(UnitExists) == "function" and UnitExists("target") then shotFightSync(false) end
+    elseif event == "UNIT_SPELLCAST_SENT" then
+        local unit, _, _, spellID = ...
+        if unit ~= "player" then return end
+        local id = tonumber(spellID)
+        if id and SHOT_KEEP[id] then return end
+        local mn = markName()
+        if mn and id then
+            local get = (C_Spell and C_Spell.GetSpellName) or nil
+            local okN, n = false, nil
+            if type(get) == "function" then okN, n = pcall(get, id) end
+            if okN and n == mn then return end
+        end
+        shotFightSync(true)
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        shotFightSync(true)
     end
 end
-local pullFrame = CreateFrame("Frame")
-for _, e in ipairs({ "START_AUTOREPEAT_SPELL", "PLAYER_ENTER_COMBAT" }) do pcall(function() pullFrame:RegisterEvent(e) end) end
-pcall(function() pullFrame:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player") end)
-pullFrame:SetScript("OnEvent", function() pcall(shotPull) end)
-WC.shotPull = shotPull
+local shotFrame = CreateFrame("Frame")
+pcall(function() shotFrame:RegisterEvent("PLAYER_ENTER_COMBAT") end)
+pcall(function() shotFrame:RegisterEvent("PLAYER_REGEN_ENABLED") end)
+pcall(function() shotFrame:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player") end)
+shotFrame:SetScript("OnEvent", function(_, event, ...) pcall(shotEvent, event, ...) end)
+WC.shotEvent = shotEvent
 local function plainTrue(f, ...)
     local ok, v = pcall(f, ...)
     if not ok then return false end
@@ -463,7 +482,7 @@ function hub.swTap(col)
     elseif col == SW.SHOTF_OFF or col == SW.SHOTF_ON then
         -- hub28: "In combat" on / off; on: the option follows the fight from now (0 at once out of one)
         hubAtk.shotFight = (col == SW.SHOTF_ON)
-        if hubAtk.shotFight then shotFightSync(InCombatLockdown()) end
+        if hubAtk.shotFight and not InCombatLockdown() then shotFightSync(true) end     -- hub30: on by default
     elseif col == SW.UFP_OFF or col == SW.UFP_ON or col == SW.UFT_OFF or col == SW.UFT_ON then
         -- hub26: our own frames on / off; the game's of that group follow (hidden while ours show)
         if type(WC.uf) == "table" and type(WC.uf.set) == "function" then
@@ -718,8 +737,6 @@ end
 f:SetScript("OnEvent", function(_, event)
     setup()
     if event == "PLAYER_REGEN_ENABLED" and hub.pending then apply() end
-    -- hub28: Combat Auto Shot "In combat" follows the fight
-    if event == "PLAYER_REGEN_DISABLED" then pcall(shotFightSync, true) elseif event == "PLAYER_REGEN_ENABLED" then pcall(shotFightSync, false) end
     if RECHECK[event] then
         ridersCheck()
         -- the bars may be rebuilt a moment after the event (a level-up's flash): look once more

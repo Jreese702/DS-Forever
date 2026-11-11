@@ -243,14 +243,14 @@ object GameUi {
         if (shotMode() == 2) {
             val f = swNow(SW_SHOTF)
             return Row(SHOT_ID, "Combat Auto Shot", null, UiMode.ON, true, false,
-                if (f != true) "Sent" else if (sw?.shotfk == false) "In combat: the game refused it in the last fight" else "In combat only")
+                if (f != true) "Sent" else if (sw?.shotfk == false) "Smart: the game refused a change in the last fight" else "Smart: off for a plain attack you start")
         }
         val want = if (prefs?.contains("sw.$SW_SHOT.$who") == true) swWant(SW_SHOT) else now
         return Row(SHOT_ID, "Combat Auto Shot", null, if (want) UiMode.ON else UiMode.OFF, true, !now,
             if (now == want) (if (now) "On: Auto Shot at range, auto attack up close" else "Off") else "Sent")
     }
     /** hub28: Combat Auto Shot's three choices (Off / On / In combat); "In combat" only with an add-on that has it */
-    val SHOT_WORDS = listOf("Off", "On", "In combat")
+    val SHOT_WORDS = listOf("Off", "On", "Smart")
     fun shotThree(): Boolean = swNow(SW_SHOTF) != null
     fun shotMode(): Int {
         if (shotThree() && swWant(SW_SHOTF)) return 2

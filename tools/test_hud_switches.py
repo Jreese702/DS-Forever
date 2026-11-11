@@ -126,44 +126,51 @@ def main():
         dw0.sw.wm is False and dw1.sw.wm is True and dw2.sw.wm is False and dw2.sw.set.wm is True
         and dw2.sw.cols.WM_OFF == 8 and dw2.sw.cols.WM_ON == 9)
     chk("alpha only: no Show / Hide on any game frame (%d / %d)" % (G.CALLS.show, G.CALLS.hide), G.CALLS.show == 0 and G.CALLS.hide == 0)
-    # hub28: COMBAT AUTO SHOT "IN COMBAT" (the user, 2026-11-10: "only turn it on during combat")
-    L2.execute(r'''
-        CV = { autoRangedCombat = "1" }; FIGHT = false; REFUSE = false
+    # hub28 / hub30: COMBAT AUTO SHOT'S THIRD CHOICE (the user, 2026-11-10: on by default "incase someone else pulls me into combat", off
+    # when "I target something out of combat AND start attack", back on "when an ability is used before that ability fires", never for
+    # Hunter's Mark)
+    L2.execute(r"""
+        CV = { autoRangedCombat = "0" }; FIGHT = false; REFUSE = false; HASTGT = true
         C_CVar = { GetCVarBool = function(k) return CV[k] == "1" end,
                    SetCVar = function(k, v) if FIGHT and REFUSE then error("blocked") end; CV[k] = v end }
+        C_Spell = { GetSpellName = function(id) if id == 1130 or id == 14325 then return "Hunter's Mark" end return "Spell" .. id end }
         function InCombatLockdown() return FIGHT end
-        function FIRE(e) for i = 1, #MADE do local f = MADE[i]; if f.OnEvent then pcall(f.OnEvent, f, e) end end end
-    ''')
+        function UnitExists(u) return u == "target" and HASTGT end
+        function FIRE(e, ...) for i = 1, #MADE do local f = MADE[i]; if f.OnEvent then pcall(f.OnEvent, f, e, ...) end end end
+    """)
     cv = lambda: G.CV.autoRangedCombat
     sw(None, SW.SHOTF_ON)
     ds0 = doc()
-    chk("hub28: In combat chosen out of a fight: the option off at once (%s), the doc's shotf (%s, set %s), cols 28 / 29"
-        % (cv(), ds0.sw.shotf, ds0.sw.set.shotf), cv() == "0" and ds0.sw.shotf is True and ds0.sw.set.shotf is True
+    chk("hub30: the third choice chosen: on at once, out of a fight too (%s), the doc's shotf (%s, set %s), cols 28 / 29"
+        % (cv(), ds0.sw.shotf, ds0.sw.set.shotf), cv() == "1" and ds0.sw.shotf is True and ds0.sw.set.shotf is True
         and ds0.sw.cols.SHOTF_OFF == 28 and ds0.sw.cols.SHOTF_ON == 29)
+    G.FIRE("PLAYER_ENTER_COMBAT")
+    chk("hub30: an attack started out of a fight with a target: off (%s)" % cv(), cv() == "0")
+    G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g1", 1130)
+    G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g2", 14325)
+    chk("hub30: Hunter's Mark (any rank) does not turn it back on (%s)" % cv(), cv() == "0")
+    G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g3", 75)
+    G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g4", 6603)
+    chk("hub30: Auto Shot / Attack themselves do not either (%s)" % cv(), cv() == "0")
+    G.FIRE("UNIT_SPELLCAST_SENT", "party1", "", "g5", 3044)
+    chk("hub30: someone else's cast changes nothing (%s)" % cv(), cv() == "0")
+    G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g6", 3044)
+    chk("hub30: an ability (Arcane Shot) turns it back on at its send (%s)" % cv(), cv() == "1")
     G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED")
-    ds1 = doc()
-    chk("hub28: a fight starts: the option on (%s), the write took (shotfk %s)" % (cv(), ds1.sw.shotfk), cv() == "1" and ds1.sw.shotfk is True)
-    G.FIGHT = False; G.FIRE("PLAYER_REGEN_ENABLED")
-    chk("hub28: the fight ends: the option off again (%s)" % cv(), cv() == "0")
-    G.REFUSE = True; G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED")
+    G.FIRE("PLAYER_ENTER_COMBAT")
+    chk("hub30: an attack started INSIDE a fight leaves it on (%s)" % cv(), cv() == "1")
+    G.FIGHT = False; G.FIRE("PLAYER_ENTER_COMBAT")
+    G.FIGHT = True; G.REFUSE = True; G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g7", 3044)
     ds2 = doc()
-    chk("hub28: the game refuses the write in a fight: no error, the doc says so (shotfk %s, option %s)" % (ds2.sw.shotfk, cv()),
-        ds2.sw.shotfk is False and cv() == "0")
+    chk("hub30: the game refusing a write inside a fight: no error, the doc says so (shotfk %s)" % ds2.sw.shotfk, ds2.sw.shotfk is False)
     G.FIGHT = False; G.REFUSE = False; G.FIRE("PLAYER_REGEN_ENABLED")
-    # hub29: THE PULL - the opening shot is cast out of the fight: the option goes on right then (and the game refusing in-fight
-    # writes no longer matters)
-    G.REFUSE = True
-    G.FIRE("UNIT_SPELLCAST_SENT")
-    chk("hub29: a spell cast out of a fight (the pull) turns the option on before the fight (%s)" % cv(), cv() == "1")
-    G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED")
-    chk("hub29: ... and it stays on into the fight even when the game refuses in-fight writes (%s)" % cv(), cv() == "1")
-    G.FIGHT = False; G.REFUSE = False; G.FIRE("PLAYER_REGEN_ENABLED")
-    chk("hub29: the fight's end turns it off (%s)" % cv(), cv() == "0")
-    sw(None, SW.SHOTF_OFF); sw(None, SW.SHOT_ON)
-    G.FIGHT = True; G.FIRE("PLAYER_REGEN_DISABLED"); G.FIGHT = False; G.FIRE("PLAYER_REGEN_ENABLED")
+    chk("hub30: the fight's end turns it on again (%s)" % cv(), cv() == "1")
+    G.HASTGT = False; G.FIRE("PLAYER_ENTER_COMBAT")
+    chk("hub30: no target: an attack start changes nothing (%s)" % cv(), cv() == "1")
+    sw(None, SW.SHOTF_OFF); sw(None, SW.SHOT_OFF)
+    G.HASTGT = True; G.FIRE("UNIT_SPELLCAST_SENT", "player", "", "g8", 3044)
     ds3 = doc()
-    chk("hub28: In combat off, On chosen: the option stays on through a fight's end (%s, shotf %s)" % (cv(), ds3.sw.shotf),
-        cv() == "1" and ds3.sw.shotf is False)
+    chk("hub30: the third choice off, Off chosen: the rules stop (%s, shotf %s)" % (cv(), ds3.sw.shotf), cv() == "0" and ds3.sw.shotf is False)
     # THE BUNDLE (an older app's columns 34 / 35): moves every part a switch never set; a set switch wins
     L3 = tc.lupa.LuaRuntime()
     L3.execute(STUB + "MADE = {}; local base = CreateFrame; function CreateFrame(...) local f = base(...); MADE[#MADE + 1] = f; return f end")

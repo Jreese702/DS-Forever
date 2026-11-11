@@ -359,7 +359,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             }
             pSub.color = Theme.textDim
             c.drawText(Tr.t(listOf("The game's switching between Auto Shot and auto attack, off.",
-                "Auto Shot at range, auto attack up close.", "The switching only while you are in a fight.")[sel]), left + 6f, top + SEG_H + 34f, pSub)
+                "Auto Shot at range, auto attack up close.", "On; a plain attack you start turns it off, an ability back on.")[sel]), left + 6f, top + SEG_H + 34f, pSub)
             return
         }
         if (r.id == GameUi.HUD_H_ID || r.id == GameUi.HUD_W_ID || r.id == GameUi.HUD_S_ID) {
@@ -427,7 +427,7 @@ class GameUiSection(context: Context, private val part: Part = Part.ALL) : View(
             else "The game's player frame (and its pet frame) is hidden. For this character."
         if (r.id == GameUi.ATK_ID) return if (r.mode == UiMode.ON) "Targeting an enemy (RB) starts your auto attack. For this character."
             else "Targeting an enemy only targets it. For this character."
-        if (r.id == GameUi.SHOT_ID && GameUi.shotMode() == 2) return "The game's own option, on only in fights: on as a fight starts, off when it ends. For this character."
+        if (r.id == GameUi.SHOT_ID && GameUi.shotMode() == 2) return "The game's own option, Smart: on by default; a plain attack you start out of a fight turns it off, your next ability (not Hunter's Mark) turns it back on. For this character."
         if (r.id == GameUi.SHOT_ID) return if (r.mode == UiMode.ON) "The game's own option: Auto Shot (bows, guns, wands) at range, auto attack up close."
             else "The game's own option, off: no switching between Auto Shot and auto attack."
         if (r.id == GameUi.UFP_ID) return if (r.mode == UiMode.ON) "DS Forever's party frames: real health, Party mode's pick and LB buttons. The game's are hidden. For this character."

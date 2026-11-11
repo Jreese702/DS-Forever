@@ -1,5 +1,10 @@
 {
 "plain": {
+"Smart": "Inteligente",
+"Smart: the game refused a change in the last fight": "Inteligente: el juego rechazó un cambio en el último combate",
+"Smart: off for a plain attack you start": "Inteligente: desactivado al iniciar un ataque simple",
+"On; a plain attack you start turns it off, an ability back on.": "Activado; un ataque simple lo desactiva, una habilidad lo reactiva.",
+"The game's own option, Smart: on by default; a plain attack you start out of a fight turns it off, your next ability (not Hunter's Mark) turns it back on. For this character.": "La opción propia del juego, Inteligente: activada por defecto; un ataque simple que inicias fuera de combate la desactiva y tu siguiente habilidad (no Marca del cazador) la reactiva. Para este personaje.",
 "In combat only": "Solo en combate",
 "In combat: the game refused it in the last fight": "En combate: el juego lo rechazó en el último combate",
 "The game's switching between Auto Shot and auto attack, off.": "El cambio del juego entre Disparo automático y ataque automático, desactivado.",
