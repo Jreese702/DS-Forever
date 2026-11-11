@@ -1170,15 +1170,63 @@ local function toGrid(note) ctl.mode = "grid"; ctl.bound = nil; ctl.rare = nil; 
 -- the pick: the secure cell binv 19 (type macro "/stopspelltarget", the game's own slash command - SpellStopTargeting from add-on code is
 -- FORBIDDEN, measured on the Thor 2026-11-08: "WowCompanion forbidden: SpellStopTargeting()", the user's error applying a leg kit).
 -- No binding: secure clicks of the game's own, as with the mouse.
-local KIT = { was = false, last = nil }
+-- DISENCHANT (issues #126 / #39, the player 2026-11-11: "disenchantment of items not possible. Game tries to equip instead. Items
+-- specifically for disenchanting don't get listed at all"). Two causes, both in this file: (1) a bag row of the pick was answered by the
+-- bag's own secure cell, type "item": the game's secure "item" action EQUIPS any equippable item not worn (securetemplates.lua: IsEquippable
+-- and not IsEquipped -> EquipItemByName) before it ever uses it, so a pick's bag gear - Disenchant's whole list, and an armor kit on bag gear
+-- - was equipped instead of targeted. Now each bag GEAR row of the pick has its own secure cell, binv 20..39 (KIT.CELL0), type macro
+-- "/use <bag> <slot>": the game's own /use, which is the right-click's UseContainerItem(bag, slot), and while a spell is targeting
+-- (SpellIsTargeting) that is the item-target click. The macrotext is set out of combat only (a cell that would need a change in a fight
+-- greys its row: never a plain use). (2) the list put worn gear and every consumable first and checked its 40-row cap only for bag gear,
+-- so Disenchant's items were crowded out: a Disenchant pick (SpellIsTargeting while Disenchant, 13262, is the current spell) lists ONLY
+-- the bags' weapons and armour of quality 2 (green) or better.
+-- (review 2026-11-11) a cell is held per (bag, slot) for the whole pick (KIT.byKey "/use <bag> <slot>" -> col): the list is built again on
+-- every report and press, and a cell picked by the row's place would move to another item when the bags change mid-pick (loot), so a
+-- tap on the list the app last had could disenchant a different item. New pairs take free cells; the hold ends when the pick does.
+local KIT = { was = false, last = nil, DE = 13262, CELL0 = 20, CELLS = 40, MAX = 40, cells = {}, mt = {}, byKey = {}, STOP_HOLD = 1.5 }
 WC._kit = KIT                                   -- the room's document (above) reads it
 WC._kitLearned = WC._kitLearned or {}           -- item ids seen to start a pick (the bag rows' `kit` flag: the Character room's list)
+-- Disenchant is waiting for its item (issue #126): the game is targeting and Disenchant is the current spell
+function KIT.de()
+    local okT, t = CALL(function() return SpellIsTargeting() end)
+    if not (okT and t == true) then return false end
+    local okC, c = CALL(function() return IsCurrentSpell(KIT.DE) end)
+    if okC and c == true then return true end
+    local okN, name = CALL(function() return GetSpellInfo(KIT.DE) end)
+    if not (okN and type(name) == "string" and WC.isPlain(name)) then return false end
+    okC, c = CALL(function() return IsCurrentSpell(name) end)
+    return okC and c == true
+end
 -- a pick is on now
 function KIT.on()
     local ok, v = CALL(function() return SpellCanTargetItem() end)
     if ok and v == true then return true end
     ok, v = CALL(function() return SpellCanTargetItemID() end)
-    return ok and v == true
+    if ok and v == true then return true end
+    return KIT.de()
+end
+-- a bag gear row's target cell (issue #126): the cell this pick holds for (bag, slot), else a free one of binv CELL0..CELLS-1 with its
+-- macrotext "/use <bag> <slot>" set now (out of combat only); nil when every cell is held or the fight keeps it from being set
+function KIT.cellFor(bag, slot)
+    local text = "/use " .. bag .. " " .. slot
+    local col = KIT.byKey[text]
+    if col and KIT.mt[col] == text then return col end
+    if InCombatLockdown() then return nil end
+    local held = {}
+    for _, c in pairs(KIT.byKey) do held[c] = true end
+    for c = KIT.CELL0, KIT.CELLS - 1 do
+        local btn = KIT.cells[c]
+        if btn and not held[c] then
+            if KIT.mt[c] ~= text and not pcall(btn.SetAttribute, btn, "macrotext", text) then return nil end
+            KIT.mt[c] = text; KIT.byKey[text] = c
+            return c
+        end
+    end
+    return nil
+end
+-- the place of the bag item (bag, slot) in the pick's list (the grid's X while a pick is on goes to it; review 2026-11-11)
+function KIT.rowOf(bag, slot)
+    for i, e in ipairs(KIT.list()) do if e.src == "bag" and e.bag == bag and e.s == slot then return i end end
 end
 -- the game's own check while ENCHANTING (C_Item.DoesItemMatchTargetEnchantingSpell; paperdollframe.lua's CanApplyItemEnchant); other
 -- picks (armor kits, stones) the game checks on the click itself
@@ -1192,7 +1240,8 @@ end
 local INV_ORDER = { 5, 7, 10, 8, 6, 3, 1, 9, 16, 17, 18, 15, 2, 11, 12, 13, 14, 4, 19 }   -- chest, legs, hands, feet first (kits)
 function KIT.list()
     local out = {}
-    for _, slot in ipairs(INV_ORDER) do
+    local de = KIT.de()
+    for _, slot in ipairs(de and {} or INV_ORDER) do                -- Disenchant: never worn gear (the game takes bag items only)
         local id = SN(function() return GetInventoryItemID("player", slot) end)
         if id then
             local loc = CALL(function() return ItemLocation end) and select(2, CALL(function() return ItemLocation:CreateFromEquipmentSlot(slot) end)) or nil
@@ -1207,7 +1256,7 @@ function KIT.list()
     -- drink first; the game itself says no on the click to anything the spell cannot take
     local spellPick = not (KIT.last and GetTime() - KIT.last.t < 2)
     local okE, ench = CALL(function() return C_Spell.TargetSpellIsEnchanting() end)
-    if spellPick and not (okE and ench == true) then
+    if spellPick and not (okE and ench == true) and not de then
         local food, other = {}, {}
         for _, e in ipairs(layout()) do
             local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
@@ -1230,23 +1279,31 @@ function KIT.list()
         local front = {}
         for _, r in ipairs(food) do front[#front + 1] = r end
         for _, r in ipairs(other) do front[#front + 1] = r end
-        for i = #front, 1, -1 do table.insert(out, 1, front[i]) end
+        -- (issue #126) the consumables before the worn gear, never past the cap: 10 rows are left for the bags' gear
+        local room = math.max(0, KIT.MAX - #out - 10)
+        for i = math.min(#front, room), 1, -1 do table.insert(out, 1, front[i]) end
     end
     for _, e in ipairs(layout()) do
         local n = SN(function() return C_Container.GetContainerNumSlots(e.bag) end) or 0
         for s = 1, n do
-            if #out >= 40 then break end
+            if #out >= KIT.MAX then break end
             local id = bagItemID(e.bag, s)
             if id then
-                local okI, _, _, _, loc = CALL(function() return C_Item.GetItemInfoInstant(id) end)
+                local okI, _, _, _, loc, _, cls = CALL(function() return C_Item.GetItemInfoInstant(id) end)
                 loc = okI and S(function() return loc end) or nil
+                cls = okI and SN(function() return cls end) or nil
                 if type(loc) == "string" and loc ~= "" and loc:byte(1) > 3 and not NOT_WORN[loc] then
                     local info = infoAt(e.bag, s)
-                    local il = select(2, CALL(function() return ItemLocation:CreateFromBagAndSlot(e.bag, s) end))
-                    out[#out + 1] = { src = "bag", bag = e.bag, s = s, id = id,
-                        name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
-                        icon = info and SN(function() return info.iconFileID end) or nil,
-                        q = info and SN(function() return info.quality end) or nil, ok = KIT.fits(il) or nil }
+                    local q = info and SN(function() return info.quality end) or nil
+                    -- Disenchant: weapons (2) and armour (4) of quality 2 or better only
+                    if not de or ((cls == 2 or cls == 4) and type(q) == "number" and q >= 2) then
+                        local il = select(2, CALL(function() return ItemLocation:CreateFromBagAndSlot(e.bag, s) end))
+                        local cell = KIT.cellFor(e.bag, s)          -- its /use cell: the item-target click, never the bag cell's equip
+                        out[#out + 1] = { src = "bag", bag = e.bag, s = s, id = id, cell = cell,
+                            name = S(function() return (C_Item.GetItemNameByID(id)) end) or S(function() return (GetItemInfo(id)) end),
+                            icon = info and SN(function() return info.iconFileID end) or nil,
+                            q = q, ok = (cell and (de or KIT.fits(il))) and true or nil }
+                    end
                 end
             end
         end
@@ -1255,6 +1312,10 @@ function KIT.list()
 end
 -- what is being applied (the last item used from the bags, if it was just now)
 function KIT.kitDoc()
+    if KIT.de() then                                                 -- issue #126: the spell's own name over the list
+        local ok, name, _, icon = CALL(function() return GetSpellInfo(KIT.DE) end)
+        if ok and type(name) == "string" and WC.isPlain(name) then return { spell = KIT.DE, name = name, icon = SN(function() return icon end) } end
+    end
     local l = KIT.last
     if not l or GetTime() - l.t > 30 then return nil end
     return { id = l.id, name = S(function() return (C_Item.GetItemNameByID(l.id)) end) or S(function() return (GetItemInfo(l.id)) end),
@@ -1268,26 +1329,38 @@ end
 -- the pick started / ended: the room's cursor follows; any route says it (an "itarget" document: the Character room waits for it)
 function KIT.step()
     local on = KIT.on()
-    if on == KIT.was then return end
-    KIT.was = on
-    if on and KIT.last and GetTime() - KIT.last.t < 2 then WC._kitLearned[KIT.last.id] = true end
-    WC.emit({ type = "itarget", on = on, kit = on and KIT.kitDoc() or nil })
-    if ctl.on then
-        if on and ctl.mode == "grid" and not ctl.pick then ctl.mode = "target"; ctl.tsel = 1; report("pick-item")
-        elseif not on and ctl.mode == "target" then toGrid(ctl.applied and "applied" or "pick-ended"); ctl.applied = nil end
+    if not on and next(KIT.byKey) ~= nil and not InCombatLockdown() then KIT.byKey = {} end    -- the pick's cells free again
+    if on ~= KIT.was then
+        KIT.was = on
+        if on and KIT.last and GetTime() - KIT.last.t < 2 then WC._kitLearned[KIT.last.id] = true end
+        WC.emit({ type = "itarget", on = on, kit = on and KIT.kitDoc() or nil })
+        if ctl.on and not on and ctl.mode == "target" then toGrid(ctl.applied and "applied" or "pick-ended"); ctl.applied = nil end
+    end
+    -- (review 2026-11-11, issue #126) the room's grid while a pick is on goes to the list on EVERY step, not only as the pick starts: a
+    -- room taken mid-pick (Disenchant cast from the bar, then the Bags room) stayed on the grid, and its X / Use tapped the bag's own
+    -- cell, which EQUIPS gear. Not in the moments after B's /stopspelltarget (the pick is ending)
+    if ctl.on and on and ctl.mode == "grid" and not ctl.pick and not (KIT.stopT and GetTime() - KIT.stopT < KIT.STOP_HOLD) then
+        ctl.mode = "target"; ctl.tsel = 1; report("pick-item")
     end
 end
 C_Timer.NewTicker(0.25, function() pcall(KIT.step) end)
 -- worn gear as a pick's target: the secure row "binv", one cell per slot (type item, item = the slot: the game's /use <slot>)
 -- col 19 = STOP THE PICK: the game's own /stopspelltarget (a secure macro attribute, the cancel the add-on itself may not make)
+-- cols 20..39 = the pick's BAG GEAR rows (issue #126): type macro, "/use <bag> <slot>" set out of combat by KIT.cellFor
 KIT.STOP_COL = 19
 if WC.pad and WC.pad.secureRow then
-    pcall(WC.pad.secureRow, "binv", 20, function(btn, col)
+    pcall(WC.pad.secureRow, "binv", KIT.CELLS, function(btn, col)
         if col == KIT.STOP_COL then btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", "/stopspelltarget"); return end
+        if col >= KIT.CELL0 then
+            KIT.cells[col] = btn
+            btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", KIT.mt[col] or "")
+            return
+        end
         btn:SetAttribute("type", "item")
         btn:SetAttribute("item", tostring(col + 1))
     end, function(col)
         if col == KIT.STOP_COL then WC.emit({ type = "cap", kitStop = true }); return end
+        if col >= KIT.CELL0 then WC.emit({ type = "cap", kitTap = { cell = col, use = KIT.mt[col], combat = InCombatLockdown() and true or false } }); return end
         WC.emit({ type = "cap", kitTap = { slot = col + 1, combat = InCombatLockdown() and true or false } })
     end)
 end
@@ -1813,6 +1886,8 @@ local function onPress(key)
         elseif X then
             if ctl.pick then return end                       -- in the hand: only A / B
             if not id then report("empty"); return end
+            -- (review 2026-11-11, issue #126) a pick is on: never the bag cell (it EQUIPS gear); the list, on this item's row
+            if KIT.on() then ctl.mode = "target"; ctl.tsel = KIT.rowOf(ctl.bag, ctl.slot) or 1; report("pick-item"); return end
             -- a BAG: into the hand, and the cursor up to the bag bar to choose its slot (EQ, the user 2026-10-06)
             if EQ.slotsFor(id) then EQ.begin(id); return end
             -- USE is protected: the app taps this slot's secure cell once per new use.seq
@@ -1889,13 +1964,14 @@ local function onPress(key)
             ctl.tsel = math.max(1, math.min(#list, (ctl.tsel or 1) + (key == "PADDUP" and -1 or 1))); report(nil)
         elseif B then
             -- B: the app taps binv 19 (/stopspelltarget) for this use.seq; the list closes now
-            ctl.use = { stop = true, seq = ctl.seq + 1 }; toGrid("cancelled")
+            ctl.use = { stop = true, seq = ctl.seq + 1 }; KIT.stopT = GetTime(); toGrid("cancelled")
         elseif A then
             local e = list[ctl.tsel or 1]
             if not e then report("empty"); return end
             if e.ok == nil then report("pick-cannot"); return end
             ctl.applied = true
             if e.src == "inv" then ctl.use = { inv = e.slot, seq = ctl.seq + 1 }
+            elseif e.cell then ctl.use = { cell = e.cell, seq = ctl.seq + 1 }     -- bag gear: its /use cell (issue #126), never the bag cell
             else ctl.use = { bag = e.bag, slot = e.s, seq = ctl.seq + 1 } end
             report("apply")
         end
@@ -1989,6 +2065,8 @@ local function tryTake(viaWindow)
     local ok, got, why = pcall(cap.take, "bags", ctl.spec)
     if ok and got then
         ctl.on = true; ctl.mode = "grid"; ctl.pick = nil; ctl.left = nil
+        -- (review 2026-11-11, issue #126) taken while a pick is on (Disenchant cast from the bar): straight to its list, never the grid
+        if KIT.on() then ctl.mode = "target"; ctl.tsel = 1 end
         -- capture v11 (Interact i82): a take that finds another holder is QUEUED (ok, "queued"), granted when that holder
         -- lets go; no presses before the hand-over. Bags shows the room meanwhile and says so in its note
         ctl.pending = (why == "pending" or why == "queued") or nil

@@ -12,6 +12,17 @@ object GroupMembers {
     class Member(val name: String, val cls: String?, val color: Int, val wx: Double, val wy: Double, val cont: Int?, val dead: Boolean,
                  val offline: Boolean)
 
+    /**
+     * (issue #30, the player 2026-11-06: "after leaving a party, the player dot stayed on the map at their last location"; 2026-11-11)
+     * Map.lua sends the group once a second while grouped (and grpN = 0 for 5 s after it goes): members whose last read is older than
+     * this are gone, so one lost "no group" document (or a stream that stopped) can never keep a dot on the map.
+     */
+    const val STALE_MS = 3000L
+
+    /** the members still drawn at [nowMs] when [members] came at [atMs] (both on one clock, e.g. SystemClock.uptimeMillis) */
+    fun live(members: List<Member>, atMs: Long, nowMs: Long): List<Member> =
+        if (members.isEmpty() || nowMs - atMs > STALE_MS) emptyList() else members
+
     /** the members of a position document's `grp` (null / empty = no group) */
     fun parse(a: JSONArray?): List<Member> {
         if (a == null) return emptyList()

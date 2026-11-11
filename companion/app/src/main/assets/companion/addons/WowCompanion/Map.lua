@@ -1239,7 +1239,7 @@ function WC.collectPos()
     -- QuestTrail's arrow, read (b-route-questtrail; absent = QuestTrail not there or its arrow hidden)
     local okT, qt = pcall(WC.qtrailRead)
     if okT and qt then out.qtrail = qt end
-    -- the group's members (b-group-map), once a second at most: absent between, grpN = 0 once on leaving the group
+    -- the group's members (b-group-map), once a second at most: absent between, grpN = 0 for 5 reads on leaving the group (issue #30)
     local okG, grp, grpN = pcall(WC.grpRead)
     if okG and grpN then out.grpN = grpN; out.grp = grp end
     -- NO HEIGHT IS AVAILABLE. Measured: UnitPosition returns 4 values here and the third
@@ -3269,9 +3269,14 @@ end
 -- The user: party / raid members on the Map room, the map module and Home's small map, in their class colours (names in the module and
 -- the room). Read only: per member (party1-4 / raid1-40, never the player) UnitPosition (world yards and its instance / continent: the
 -- game gives nothing inside instances, so such members are left out), the name, the class and its colour as the game's own
--- RAID_CLASS_COLORS has it (so the app keeps no colour table), dead / offline. At most once a second; nothing while ungrouped except a
--- single grpN = 0 when the group goes.
-WC.grp = { at = 0, had = false, EVERY = 1.0 }
+-- RAID_CLASS_COLORS has it (so the app keeps no colour table), dead / offline. At most once a second; nothing while ungrouped except
+-- grpN = 0 for ZERO_TICKS reads when the group goes.
+-- (issue #30, the player 2026-11-06: "after leaving a party, the player dot stayed on the map at their last location"; 2026-11-11) the
+-- single grpN = 0 was lost whenever the player stood still as the group went: Core's ticker sends a position document only when its
+-- key changes, so the one read that said "no group" was built and dropped, and the app kept the last members for good. Now every read
+-- bumps G.seq (Core's key carries it, so the document goes out standing too), and the "no group" read repeats ZERO_TICKS times, one a
+-- second, so one lost document cannot keep a dot; the app also ages members out (GroupMembers.STALE_MS).
+WC.grp = { at = 0, had = false, EVERY = 1.0, ZERO_TICKS = 5, zero = 0, seq = 0 }
 function WC.grpRead()
     local G = WC.grp
     local now = GetTime()
@@ -3280,10 +3285,11 @@ function WC.grpRead()
     local okN, n = pcall(function() return GetNumGroupMembers and GetNumGroupMembers() or 0 end)
     n = (okN and type(n) == "number" and WC.isPlain(n)) and n or 0
     if n <= 0 then
-        if G.had then G.had = false; return {}, 0 end
+        if G.had then G.had = false; G.zero = G.ZERO_TICKS end
+        if G.zero > 0 then G.zero = G.zero - 1; G.seq = G.seq + 1; return {}, 0 end
         return nil
     end
-    G.had = true
+    G.had = true; G.zero = 0; G.seq = G.seq + 1
     local okR, raid = pcall(function() return IsInRaid and IsInRaid() end)
     local prefix = (okR and raid) and "raid" or "party"
     local count = (okR and raid) and n or (n - 1)

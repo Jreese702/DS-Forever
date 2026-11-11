@@ -490,10 +490,15 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (mid != playerMap) { playerMap = mid; mapDoc?.put("mapID", mid) }
         px = pos.optDouble("x", Double.NaN).toFloat(); py = pos.optDouble("y", Double.NaN).toFloat()
         facing = pos.optDouble("facing", facing.toDouble()).toFloat()
-        if (pos.has("grpN")) group = GroupMembers.parse(pos.optJSONArray("grp"))   // the group (b-group-map)
+        if (pos.has("grpN")) {                                                       // the group (b-group-map)
+            group = GroupMembers.parse(pos.optJSONArray("grp")); groupAt = SystemClock.uptimeMillis()
+            // (issue #30, 2026-11-11) a redraw just after the members would age out, so a group nobody re-sends leaves the map
+            if (group.isNotEmpty()) postInvalidateDelayed(GroupMembers.STALE_MS + 100L)
+        }
         if (isShown) invalidate()
     }
     private var group: List<GroupMembers.Member> = emptyList()
+    private var groupAt = 0L                    // when [group] came (uptimeMillis; issue #30: members older than STALE_MS are not drawn)
 
     // ---- TRAVEL (b-travel-layer): the map module's scene (its "Travel" filter), on the zone or the continent shown; a zone names its
     // points; the cursor on one (a tap, the stick) shows its name and where it goes
@@ -553,7 +558,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun drawGroup(c: Canvas) {
         val w = model.maps[shown]?.world ?: return
         val world = model.assignsOf(shown).isNotEmpty()
-        for (gm in group) {
+        for (gm in GroupMembers.live(group, groupAt, SystemClock.uptimeMillis())) {      // issue #30: stale members gone
             if (!world && gm.cont != null && gm.cont != w.continent) continue
             // a world map: the member's continent through its own assignment (b-world-zoom)
             val uv = if (world) gm.cont?.let { model.project(shown, it, gm.wx, gm.wy) } ?: continue
