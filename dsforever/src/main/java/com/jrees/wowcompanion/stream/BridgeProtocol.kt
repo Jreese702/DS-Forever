@@ -43,7 +43,10 @@ sealed class BridgeMsg {
     data class Welcome(val hostId: String, val pcName: String, val wowRunning: Boolean, val httpPort: Int, val httpsPort: Int,
                        val wowState: String = "", val wowWhy: String = "", val pc: PcWow? = null,
                        /** the PC's home-network IPv4s (Desktop 0.2.1+: "Wi-Fi first"); empty from an older Desktop */
-                       val lan: List<String> = emptyList()) : BridgeMsg()
+                       val lan: List<String> = emptyList(),
+                       /** the PC's Tailscale addresses (100.64/10, fd7a:115c:a1e0::/48; the user, 2026-11-11: streaming away fixes); empty
+                        *  from an older Desktop */
+                       val tailscale: List<String> = emptyList()) : BridgeMsg()
     /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed"; [pc] = all of it (0.2.1) */
     data class Wow(val state: String, val why: String, val pc: PcWow? = null) : BridgeMsg()
     data class Error(val code: String, val detail: String = "") : BridgeMsg()
@@ -108,6 +111,8 @@ object BridgeProtocol {
     }
     fun unpair(): String = JSONObject().put("t", "unpair").toString()
 
+    private fun strings(a: JSONArray?): List<String> = a?.let { (0 until it.length()).map { i -> it.optString(i) }.filter { s -> s.isNotEmpty() } } ?: emptyList()
+
     private fun JSONObject.err() = optString("error", optString("code", "error"))
 
     /** one frame from the bridge; null = not a JSON object (ignored, as unknown types are) */
@@ -119,7 +124,7 @@ object BridgeProtocol {
                 o.optJSONObject("wow")?.optBoolean("running") ?: false, sun?.optInt("http_port", 0) ?: 0, sun?.optInt("https_port", 0) ?: 0,
                 o.optJSONObject("wow")?.optString("state").orEmpty(), o.optJSONObject("wow")?.optString("why").orEmpty(),
                 PcWow.of(o.optJSONObject("wow")),
-                o.optJSONArray("lan")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() } } ?: emptyList())
+                strings(o.optJSONArray("lan")), strings(o.optJSONArray("tailscale")))
             "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"), PcWow.of(o))
             "error" -> BridgeMsg.Error(o.err(), o.optString("detail"))
             "doc" -> BridgeMsg.Doc(o.optInt("seq", -1), o.optLong("gt", -1L), o.optString("doc"))

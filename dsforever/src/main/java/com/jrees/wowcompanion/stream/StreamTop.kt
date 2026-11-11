@@ -271,17 +271,19 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 onAuthLost = { why -> main.post { authLost(why) } },
                 onWow = { state, why -> main.post { wowState(state, why) } },
                 onPc = { w -> main.post { pcWord(w) } },
-                onWelcome = { lan -> main.post { lanReported(lan) } },
+                onWelcome = { w -> main.post { welcomed(w) } },
                 onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } },
                 savedLogin = { com.jrees.wowcompanion.HomeLoginStore.forAutoLogin(activity)?.let { it.email to it.password } }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
 
-    /** Desktop listed the PC's home-network addresses: the one on this Wi-Fi is tried first next time (Route) */
-    private fun lanReported(lan: List<String>) {
+    /** Desktop listed the PC's home-network addresses: the one on this Wi-Fi is tried first next time (Route); its Tailscale ones are
+     *  remembered for away from home, and Sunshine's ports it chose (the user, 2026-11-11: streaming away fixes) */
+    private fun welcomed(w: BridgeMsg.Welcome) {
         val h = host ?: return
-        val n = Route.reported(h, lan, NetProbe.subnet(activity))
-        if (n != h) { host = n; store.save(n); Log.i(TAG, "${h.name}: home address ${n.lanAddress}") }
+        var n = Route.reported(h, w.lan, NetProbe.subnet(activity), w.tailscale)
+        if (w.httpPort > 0 && w.httpsPort > 0 && (w.httpPort != n.httpPort || w.httpsPort != n.httpsPort)) n = n.copy(httpPort = w.httpPort, httpsPort = w.httpsPort)
+        if (n != h) { host = n; store.save(n); Log.i(TAG, "${h.name}: home address ${n.lanAddress}, Tailscale ${n.tailnet}, ports ${n.httpPort}/${n.httpsPort}") }
     }
 
     private fun authLost(why: String) {
@@ -332,11 +334,19 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 if (ok == null) {
                     route = null
                     reachProblem = Route.unreachable(cands, vpn)
-                    Log.i(TAG, "route: nothing answered (tried ${cands.joinToString()}, vpn $vpn)")
+                    reachFails++
+                    val wait = ReachBackoff.delayMs(reachFails)
+                    Log.i(TAG, "route: nothing answered (tried ${cands.joinToString()}, vpn $vpn; try $reachFails, next in ${wait / 1000} s)")
+                    // backs off, then offers Retry (the user, 2026-11-11: streaming away fixes - it retried every 3 s for ever)
+                    if (ReachBackoff.manual(reachFails)) {
+                        problem("Can't reach your PC", reachProblem.orEmpty(), auto = true, waitMs = wait)
+                        return@post
+                    }
                     applyCurtain()
-                    main.postDelayed(retryRoute, policy.nextDelayMs(Diagnosis.Reason.PC_OFF).coerceAtLeast(3_000L))
+                    main.postDelayed(retryRoute, wait)
                     return@post
                 }
+                reachFails = 0
                 reachProblem = null
                 route = Route.kind(ok, thorNet)
                 val n = Route.after(h, ok, thorNet)
@@ -344,21 +354,24 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 if (n != h) { host = n; store.save(n) }
                 if (n.address != h.address) applyMode()          // the bridge dials the address that answered (same pin)
                 applyCurtain()
-                startSession(n)
+                startSession(n, StreamMode.choose(ok, thorNet, vpn))
             }
         }
     }
 
     private val retryRoute = Runnable { if (isOpen && session == null && screen == Screen.CONNECTING) connect() }
+    /** no address answered, this many tries in a row ([ReachBackoff]) */
+    private var reachFails = 0
 
-    private fun startSession(h: PairedHost) {
+    private fun startSession(h: PairedHost, mode: StreamMode.Choice) {
         val q = quality
         worker.execute {
             val id = store.identity()
             main.post {
                 if (session != null || !surfaceReady || !isOpen) return@post
                 val video = VideoDecoder(surface.holder.surface)
-                session = StreamSession(h, id, q, video, AudioOut(q.audioOnThor), events).also { it.start() }
+                session = StreamSession(h, id, q, video, AudioOut(q.audioOnThor), events, mode = mode,
+                    httpPort = { host?.httpPort ?: h.httpPort }).also { it.start() }
             }
         }
     }
@@ -415,10 +428,11 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     private var retryAt = 0L
-    private fun problem(title: String, detail: String, note: String = "", auto: Boolean) {
+    /** [waitMs] = the wait before the next try when the caller has its own schedule ([ReachBackoff]); null = [policy]'s */
+    private fun problem(title: String, detail: String, note: String = "", auto: Boolean, waitMs: Long? = null) {
         show(Screen.PROBLEM)
         main.removeCallbacks(retryTick)
-        val wait = if (auto) policy.nextDelayMs(Diagnosis.Reason.PC_OFF) else -1
+        val wait = if (!auto) -1 else waitMs ?: policy.nextDelayMs(Diagnosis.Reason.PC_OFF)
         retryAt = if (wait >= 0) System.currentTimeMillis() + wait else 0L
         problemText = Triple(title, detail, note)
         if (wait >= 0) main.post(retryTick) else status.show(title, detail, note)
@@ -436,7 +450,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         }
     }
 
-    private fun retryNow() { policy.reset(); retryAt = 0; if (host == null) show(Screen.PAIRING) else connect() }
+    private fun retryNow() { policy.reset(); reachFails = 0; retryAt = 0; if (host == null) show(Screen.PAIRING) else connect() }
 
     private fun stopStream(why: String) {
         session?.let { Log.i(TAG, "stopping the stream: $why"); it.stop() }
@@ -730,7 +744,9 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun watchNetwork() {
         val cm = activity.getSystemService(ConnectivityManager::class.java) ?: return
         val cb = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) { main.postDelayed({ if (screen == Screen.PROBLEM) retryNow() }, 1_500) }
+            // also on the curtain while no address answers (Tailscale just turned on: try at once, not after the backoff's wait)
+            override fun onAvailable(network: Network) { main.postDelayed({
+                if (screen == Screen.PROBLEM || (screen == Screen.CONNECTING && session == null && !routing && reachFails > 0)) retryNow() }, 1_500) }
         }
         try { cm.registerDefaultNetworkCallback(cb); netCallback = cb } catch (t: Throwable) { Log.w(TAG, "network watch: ${t.message}") }
     }

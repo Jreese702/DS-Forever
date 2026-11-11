@@ -35,6 +35,39 @@ object LaunchPlan {
 }
 
 /**
+ * LOCAL OR REMOTE STREAMING (the user, 2026-11-11: streaming away fixes - every stream went in Moonlight's "local network" mode with
+ * 1392-byte packets, over Tailscale's ~1280-byte tunnel too). As moonlight-android does (Game.java asks STREAM_CFG_AUTO, NvConnection
+ * forces remote on a VPN; moonlight-common-c's Connection.c caps a remote stream's packets at 1024 for IPv4, 1184 for IPv6): the
+ * home Wi-Fi (the PC on the Thor's own /24) stays LOCAL; a Tailscale address, or any address off Wi-Fi or through a VPN, is REMOTE
+ * with the capped size; anything else is AUTO (the core decides by the address). Pure.
+ */
+object StreamMode {
+    /** moonlight-common-c's Limelight.h */
+    const val LOCAL = 0
+    const val REMOTE = 1
+    const val AUTO = 2
+    const val REMOTE_V4 = 1024
+    const val REMOTE_V6 = 1184
+
+    data class Choice(val config: Int, val packetSize: Int) {
+        val label get() = when (config) { LOCAL -> "local"; REMOTE -> "remote"; else -> "auto" } + " $packetSize"
+    }
+
+    val HOME = Choice(LOCAL, StreamSession.PACKET_SIZE)
+
+    /** [address] = the PC's address dialled; [thorSubnet] = the Thor's Wi-Fi /24 ("" = not on Wi-Fi); [vpnUp] = a VPN is up */
+    fun choose(address: String, thorSubnet: String, vpnUp: Boolean): Choice {
+        val remote = Choice(REMOTE, if (address.contains(':')) REMOTE_V6 else REMOTE_V4)
+        return when {
+            Route.tailscale(address) -> remote
+            thorSubnet.isNotEmpty() && PairedHost.subnetOf(address) == thorSubnet -> HOME
+            thorSubnet.isEmpty() || vpnUp -> remote
+            else -> Choice(AUTO, StreamSession.PACKET_SIZE)
+        }
+    }
+}
+
+/**
  * ONE STREAM to the paired PC, on its own thread: serverinfo over the pinned https (are we still paired?), the app list, launch or
  * resume with the stream quality, then Moonlight's core (RTSP, video, audio, input) via [MoonBridge.startConnection]. Follows
  * moonlight-android's NvConnection.start. Its life is reported to [events]; [stop] ends it (also from a lost connection).
@@ -47,6 +80,10 @@ class StreamSession(
     private val audio: MoonBridge.Audio,
     private val events: Events,
     private val decoders: (String) -> Boolean = { VideoDecoder.hasDecoder(it) },
+    /** local / remote and the packet size ([StreamMode]) */
+    private val mode: StreamMode.Choice = StreamMode.HOME,
+    /** Sunshine's base (http) port as Desktop last reported it, for the "no video" line's ports */
+    private val httpPort: () -> Int = { host.httpPort },
 ) {
     interface Events {
         fun stage(text: String)
@@ -104,10 +141,10 @@ class StreamSession(
 
             val formats = quality.videoFormats(decoders("video/hevc"), decoders("video/av01"))
             MoonBridge.setup(video, audio, listener)
-            Log.i(TAG, "stream: ${host.address} app ${app.second} ($verb) ${quality.label} formats 0x${Integer.toHexString(formats)}")
+            Log.i(TAG, "stream: ${host.address} app ${app.second} ($verb) ${quality.label} formats 0x${Integer.toHexString(formats)} ${mode.label}")
             val ret = synchronized(MoonBridge::class.java) {
                 MoonBridge.startConnection(host.address, appVersion, gfe, rtsp, codecSupport, quality.width, quality.height, quality.fps,
-                    quality.bitrateKbps, PACKET_SIZE, 0 /* local network */, MoonBridge.AUDIO_CONFIGURATION_STEREO, formats,
+                    quality.bitrateKbps, mode.packetSize, mode.config, MoonBridge.AUDIO_CONFIGURATION_STEREO, formats,
                     quality.fps * 100, riKey, LaunchPlan.riIv(riKeyId), MoonBridge.CAPABILITY_DIRECT_SUBMIT,
                     MoonBridge.COLORSPACE_REC_709, MoonBridge.COLOR_RANGE_LIMITED)
             }
@@ -130,7 +167,7 @@ class StreamSession(
         override fun connectionStarted() {}
         override fun connectionTerminated(errorCode: Int) {
             // Moonlight's rule: stop the connection from another thread than its callback
-            Thread({ stopCore(); events.ended(errorCode, false, terminationText(errorCode)) }, "dsf-stream-end").start()
+            Thread({ stopCore(); events.ended(errorCode, false, terminationText(errorCode, httpPort())) }, "dsf-stream-end").start()
         }
         override fun rumble(controller: Int, lowFreq: Int, highFreq: Int) = events.rumble(lowFreq, highFreq)
         override fun connectionStatus(status: Int) = events.poorConnection(status == MoonBridge.CONN_STATUS_POOR)
@@ -159,9 +196,17 @@ class StreamSession(
         /** Moonlight's LAN packet size (moonlight-android's Game.java) */
         const val PACKET_SIZE = 1392
 
-        fun terminationText(code: Int): String = when (code) {
+        /** Sunshine's stream ports from its base (http) port: video, control and audio are UDP base+9..base+11 (SunshineOptions.Port) */
+        fun udpPorts(httpPort: Int): String {
+            val base = if (httpPort > 0) httpPort else 47989
+            return "UDP ${base + 9}-${base + 11}"
+        }
+
+        /** [httpPort] = the base port Desktop reported (it may pick 52989 and up, not Moonlight's 47989: the user, 2026-11-11: streaming
+         *  away fixes) */
+        fun terminationText(code: Int, httpPort: Int = 47989): String = when (code) {
             MoonBridge.ML_ERROR_GRACEFUL_TERMINATION -> "The PC ended the stream."
-            MoonBridge.ML_ERROR_NO_VIDEO_TRAFFIC -> "No video arrived: the PC's firewall may block the stream (UDP 47998-48000)."
+            MoonBridge.ML_ERROR_NO_VIDEO_TRAFFIC -> "No video arrived: the PC's firewall may block the stream (${udpPorts(httpPort)})."
             MoonBridge.ML_ERROR_NO_VIDEO_FRAME -> "The stream stopped sending pictures."
             else -> "The connection to the PC was lost (error $code)."
         }

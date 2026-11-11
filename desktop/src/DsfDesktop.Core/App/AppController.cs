@@ -943,6 +943,37 @@ namespace DsfDesktop.App
         public static bool IsLan(byte[] b) =>
             b.Length == 4 && (b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168));
 
+        /// <summary>the PC's Tailscale addresses (IPv4 first): the Thor remembers them, so a Thor that only ever paired at home can
+        /// still reach the PC away when Tailscale is on (the user, 2026-11-11: streaming away fixes)</summary>
+        public static List<object> TailscaleAddresses()
+        {
+            var v4 = new List<object>(); var v6 = new List<object>();
+            try
+            {
+                foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                    if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+                    foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+                    {
+                        var b = ua.Address.GetAddressBytes();
+                        if (!IsTailscale(b)) continue;
+                        var s = new IPAddress(b).ToString();     // an IPv6 without its %scope
+                        var to = b.Length == 4 ? v4 : v6;
+                        if (!to.Contains(s)) to.Add(s);
+                    }
+                }
+            }
+            catch (Exception) { }
+            v4.AddRange(v6);
+            return v4;
+        }
+
+        /// <summary>Tailscale's ranges: 100.64.0.0/10 and fd7a:115c:a1e0::/48</summary>
+        public static bool IsTailscale(byte[] b) =>
+            (b.Length == 4 && b[0] == 100 && b[1] >= 64 && b[1] <= 127) ||
+            (b.Length == 16 && b[0] == 0xfd && b[1] == 0x7a && b[2] == 0x11 && b[3] == 0x5c && b[4] == 0xa1 && b[5] == 0xe0);
+
         public Dictionary<string, object> Info() => new Dictionary<string, object>
         {
             ["app"] = "DS Forever Desktop",
@@ -952,6 +983,8 @@ namespace DsfDesktop.App
             // the PC's home-network IPv4s (not loopback, not Tailscale's 100.64/10): the Thor tries these first, Tailscale after
             // (the user, 2026-10-28: "Yes, Wi-Fi first" - with the Thor's Tailscale off it only knew the Tailscale address)
             ["lan"] = LanAddresses(),
+            // and its Tailscale ones, for away from home (an older Thor ignores the field)
+            ["tailscale"] = TailscaleAddresses(),
             ["sunshine"] = new Dictionary<string, object>
             {
                 ["running"] = Sunshine?.Running ?? false,

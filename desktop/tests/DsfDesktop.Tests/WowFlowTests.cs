@@ -348,5 +348,24 @@ namespace DsfDesktop.Tests
             A.False(DsfDesktop.App.AppController.IsLan(new byte[] { 8, 8, 8, 8 }));
             foreach (var a in DsfDesktop.App.AppController.LanAddresses()) A.True(a is string, "plain strings in the welcome");
         }
+
+        /// <summary>the welcome's "tailscale": Tailscale's two ranges only (the user, 2026-11-11: streaming away fixes)</summary>
+        [Test]
+        public static void TailscaleAddressesAreTailscaleOnly()
+        {
+            A.True(DsfDesktop.App.AppController.IsTailscale(new byte[] { 100, 69, 36, 86 }));
+            A.True(DsfDesktop.App.AppController.IsTailscale(new byte[] { 100, 64, 0, 1 }));
+            A.True(DsfDesktop.App.AppController.IsTailscale(new byte[] { 100, 127, 255, 254 }));
+            A.False(DsfDesktop.App.AppController.IsTailscale(new byte[] { 100, 128, 0, 1 }), "past 100.64/10");
+            A.False(DsfDesktop.App.AppController.IsTailscale(new byte[] { 100, 63, 0, 1 }));
+            A.False(DsfDesktop.App.AppController.IsTailscale(new byte[] { 192, 168, 1, 11 }), "home network");
+            A.True(DsfDesktop.App.AppController.IsTailscale(System.Net.IPAddress.Parse("fd7a:115c:a1e0::1234").GetAddressBytes()));
+            A.False(DsfDesktop.App.AppController.IsTailscale(System.Net.IPAddress.Parse("fd7a:115c:a1e1::1").GetAddressBytes()), "past the /48");
+            A.False(DsfDesktop.App.AppController.IsTailscale(System.Net.IPAddress.Parse("fe80::1").GetAddressBytes()));
+            var all = DsfDesktop.App.AppController.TailscaleAddresses();
+            foreach (var a in all) A.True(a is string s && !s.Contains("%"), "plain strings, no scope");
+            var firstV6 = all.FindIndex(a => ((string)a).Contains(":"));
+            if (firstV6 >= 0) A.True(System.Linq.Enumerable.All(System.Linq.Enumerable.Skip(all, firstV6), a => ((string)a).Contains(":")), "IPv4 first");
+        }
     }
 }
