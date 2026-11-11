@@ -1,5 +1,8 @@
 {
 "plain": {
+"Training points": "Puntos de adiestramiento",
+"Training points ": "Puntos de adiestramiento ",
+"Not enough training points": "No hay suficientes puntos de adiestramiento",
 "Smart": "Inteligente",
 "Smart: the game refused a change in the last fight": "Inteligente: el juego rechazó un cambio en el último combate",
 "Smart: off for a plain attack you start": "Inteligente: desactivado al iniciar un ataque simple",

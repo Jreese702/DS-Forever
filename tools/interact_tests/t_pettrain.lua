@@ -12,7 +12,13 @@ local FrameMT = { __index = {
     GetEffectiveScale = function() return 1 end, GetChildren = function() end, GetRegions = function() end,
     GetParent = function() return nil end,
 } }
-rawset(_G, "ClassTrainerFrame", setmetatable({ alpha = 1 }, FrameMT))
+local ROWS = {}
+for k = 1, 2 do ROWS[k] = { sk = k, IsShown = function() return true end, GetElementData = function(self) return { data = { skillIndex = self.sk } } end } end
+rawset(_G, "ClassTrainerFrame", setmetatable({ alpha = 1, ScrollBox = { GetFrames = function() return ROWS end } }, FrameMT))
+local ATTR = {}
+N.itSel = { SetAttribute = function(_, k, v) ATTR[k] = v end }
+PTS_TOTAL, PTS_USED = 200, 0
+C_PetInfo = { GetPetTrainingPoints = function() return PTS_TOTAL, PTS_USED end }
 GAME.t = 3000
 TYPE_NOW = 1
 Enum = { TrainerType = { Class = 0, Pet = 1 } }
@@ -29,12 +35,20 @@ if ON.TRAINER_SHOW then pcall(ON.TRAINER_SHOW) end
 local ok, why = ACT.train("1")
 chk("pet trainer: train 1 answers ok (" .. tostring(why) .. ")", ok == true)
 chk("pet trainer: never BuyTrainerService from our code", #BOUGHT == 0)
-chk("pet trainer: the service is selected (SelectTrainerService 1)", SELECTED[1] == 1)
+chk("i142: the game's own row for service 1 is the row cell's click target (type click, ptr 1)", ATTR.type == "click" and ATTR.clickbutton == ROWS[1] and N.ptr == 1)
+chk("i142: with the row found, no add-on select call", #SELECTED == 0)
 chk("pet trainer: the select is counted for the app (N.ptc 1)", N.ptc == 1)
 ACT.train("2")
-chk("each select counted (N.ptc 2)", N.ptc == 2 and SELECTED[2] == 2 and #BOUGHT == 0)
+chk("each select counted (N.ptc 2), its row the target", N.ptc == 2 and ATTR.clickbutton == ROWS[2] and #BOUGHT == 0)
+PTS_USED = 150
+local okp, whyp = ACT.train("1")
+chk("i142: a skill costing more training points than the pet has left is refused (" .. tostring(whyp) .. ")", okp == false and N.ptc == 2)
+PTS_USED = 0
+ROWS[1].IsShown = function() return false end
+ACT.train("1")
+chk("i142: no shown row: the old select, flagged (ptr 0)", N.ptr == 0 and SELECTED[1] == 1 and N.ptc == 3)
 
 TYPE_NOW = 0
 ok = ACT.train("1")
-chk("class trainer: the direct buy as before", ok == true and BOUGHT[1] == 1 and N.ptc == 2)
+chk("class trainer: the direct buy as before", ok == true and BOUGHT[1] == 1 and N.ptc == 3)
 return table.concat(out, "\n")

@@ -1,5 +1,8 @@
 {
 "plain": {
+"Training points": "Points de dressage",
+"Training points ": "Points de dressage ",
+"Not enough training points": "Pas assez de points de dressage",
 "Smart": "Intelligent",
 "Smart: the game refused a change in the last fight": "Intelligent : le jeu a refusé un changement lors du dernier combat",
 "Smart: off for a plain attack you start": "Intelligent : désactivé quand vous lancez une attaque simple",

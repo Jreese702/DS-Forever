@@ -753,7 +753,11 @@ class InteractView(context: Context) : View(context) {
         petTrainSeen = n
         if (!current || was == null || n <= was || !tr.optBoolean("pet") || dryRun) return
         val pad = msg.optJSONObject("pad")
-        postDelayed({ TapBridge.tap(context, pad, "itrain", 0) { why -> post { note(why, false) } } }, PET_TRAIN_MS)
+        if (tr.optInt("ptr", 0) == 1) {
+            // i142: the game's own row click first (its selection, by its own code), then its Train button
+            postDelayed({ TapBridge.tap(context, pad, "itrain", 1) { why -> post { note(why, false) } } }, PET_TRAIN_MS)
+            postDelayed({ TapBridge.tap(context, pad, "itrain", 0) { why -> post { note(why, false) } } }, PET_TRAIN_MS + PET_ROW_MS)
+        } else postDelayed({ TapBridge.tap(context, pad, "itrain", 0) { why -> post { note(why, false) } } }, PET_TRAIN_MS)
     }
 
     private var qtModeTapAt = 0L
@@ -1582,6 +1586,9 @@ class InteractView(context: Context) : View(context) {
         val block = blocked(now)
         val act = t.optJSONObject("act")
         val purse = t.optLong("money", 0)
+        // i142: a PET trainer's costs are the pet's training points (the doc's tp), not money
+        val petTr = t.optBoolean("pet")
+        val tp = if (t.has("tp")) t.optLong("tp", 0) else -1L
         val ty = r.top + 94f; val th = 108f
         // a profession trainer: its rank bar
         val maxRank = t.optInt("maxRank", 0)
@@ -1652,13 +1659,14 @@ class InteractView(context: Context) : View(context) {
                 val lvl = o.optInt("lvl", 0)
                 // met: the player's level when known; without it, a learnable ("available") row meets every need
                 if (lvl > 1) needs.add(UiKit.Need("Level ", "$lvl", met = if (level > 0) level >= lvl else cat != "unavailable"))
+                if (petTr && cost > 0) needs.add(UiKit.Need("Training points ", "$cost", met = tp < 0 || cost <= tp))
                 str(o, "skill")?.let { needs.add(UiKit.Need("$it (", "${o.optInt("rank")}", ")", met = o.optBoolean("skillOk", true))) }
                 o.optJSONArray("abil")?.let { a ->
                     for (n in 0 until a.length()) a.optJSONObject(n)?.let { needs.add(UiKit.Need("", it.optString("n"), met = it.optBoolean("ok", true))) }
                 }
                 UiKit.servicePlate(c, rr, Icons.get(o.optInt("icon", 0).takeIf { it > 0 }), o.optString("name", ""),
-                    str(o, "sub")?.takeIf { it.isNotBlank() }, needs, known = cat == "used", cost = cost,
-                    affordable = cost <= purse, unavailable = cat == "unavailable")
+                    str(o, "sub")?.takeIf { it.isNotBlank() }, needs, known = cat == "used", cost = if (petTr) 0L else cost,
+                    affordable = if (petTr) true else cost <= purse, unavailable = cat == "unavailable")
                 if (clip.height() > 0f) hits.add(clip to "sel:${rw.id}")
             }
             if (cur == rw.id || (cur == null && selected == rw.id)) UiKit.focus(c, rr)
@@ -1684,17 +1692,24 @@ class InteractView(context: Context) : View(context) {
         // ---- the strip: your money; A Train; Y Spellbook
         val strip = UiKit.strip(c, inner)
         val cy = strip.centerY() + 2f
-        c.drawText(Tr.t("Your money"), inner.left + 24f, cy - 14f, UiKit.bodyPaint(22f, Theme.dim))
-        UiKit.money(c, purse, inner.left + 24f, cy + 20f, 30f)
         val bx = inner.right - 8f
         val e = entries().firstOrNull { it.cmd == shownCmd }
+        if (petTr) {
+            c.drawText(Tr.t("Training points"), inner.left + 24f, cy - 14f, UiKit.bodyPaint(22f, Theme.dim))
+            c.drawText(if (tp >= 0) "$tp" else "?", inner.left + 24f, cy + 26f, UiKit.bodyPaint(30f, Theme.gold))
+        } else {
+            c.drawText(Tr.t("Your money"), inner.left + 24f, cy - 14f, UiKit.bodyPaint(22f, Theme.dim))
+            UiKit.money(c, purse, inner.left + 24f, cy + 20f, 30f)
+        }
         val cat = e?.o?.optString("cat")
-        val trainable = e != null && cat == "available" && e.o.optLong("cost", 0) <= purse && e.slot >= 0
+        val ecost = e?.o?.optLong("cost", 0) ?: 0L
+        val trainable = e != null && cat == "available" && (if (petTr) tp < 0 || ecost <= tp else ecost <= purse) && e.slot >= 0
         if (trainable) goCmd = e else goWhy = when {
             e == null -> "Choose a skill first"
             cat == "used" -> "Already known"
             cat == "unavailable" -> "Not yet: see what it requires"
             e.slot < 0 -> "The game gave this no tap cell"
+            petTr -> "Not enough training points"
             else -> "Not enough money"
         }
         stripButton(c, RectF(bx - 250f, cy - 55f, bx, cy + 56f), "Train", "go",
@@ -5109,6 +5124,8 @@ class InteractView(context: Context) : View(context) {
         private const val K_CHOICE = 3; private const val K_BUY = 4; private const val K_SELL = 5
         /** i141: the pet trainer's secure Train click waits this long after the select */
         private const val PET_TRAIN_MS = 300L
+        /** i142: the gap between the game's row click and its Train button (the selection lands in between) */
+        private const val PET_ROW_MS = 350L
         private const val K_BACK = 6; private const val K_TRAIN = 7; private const val K_PET = 8; private const val K_MAIL = 9; private const val K_AH = 10; private const val K_TAXI = 11; private const val K_LOOT = 12
 
         private val DAYS_BEFORE = intArrayOf(0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)
