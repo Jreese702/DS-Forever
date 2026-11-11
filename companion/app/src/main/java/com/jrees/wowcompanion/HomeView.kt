@@ -956,26 +956,32 @@ class HomeView(
         UiKit.combatGlow(c, redBox, RED_STRENGTH, 40f)
     }
 
-    private fun focus(id: Int) = focusQuest(id) { questPane.note(it) }
+    // ps3 (the user, 2026-11-11): a quest picked on Home is the player's choice: the Polestar row lets go until the next login
+    private fun focus(id: Int) { mapView.psRelease(); focusQuest(id) { questPane.note(it) } }
 
     /**
      * ONE FOCUS PATH for every room (Home's quest list; the Map room's numbered bubbles and its left list, LATER item 10): make quest
      * [id] the game's focused (super-tracked) quest through quests' QuestPad pair, with Home's checks (live, fresh quest list, not in
      * combat, not while waiting, a pad row, a tap column) and Home's WCHOME logging. [note] shows a refusal where the tap was made.
-     * Focusing the quest that is already focused does nothing (the user's 09-29 ruling).
+     * Focusing the quest that is already focused does nothing (the user's 09-29 ruling). True = the taps went out, or the game already
+     * had it (ps3: the Polestar sync counts only a send that went out, PolestarFocusSync.sent).
      */
-    fun focusQuest(id: Int, note: (String) -> Unit) {
-        when (val t = quests.tapDisc(id, GameInput.live(), System.currentTimeMillis())) {
+    fun focusQuest(id: Int, note: (String) -> Unit): Boolean {
+        val ok = when (val t = quests.tapDisc(id, GameInput.live(), System.currentTimeMillis())) {
             is FocusTap.Send -> {
                 focusNote = note
                 sendFocus(id, t.slot, "send", note)
             }
             // every refusal goes to logcat too (tag WCHOME): the note is only drawn, so a test could not be read afterwards
-            is FocusTap.Refused -> { Log.i(TAG, "focus $id: refused: ${t.why}"); note(t.why) }
-            FocusTap.Already -> Log.i(TAG, "focus $id: already focused, nothing sent")
+            is FocusTap.Refused -> { Log.i(TAG, "focus $id: refused: ${t.why}"); note(t.why); false }
+            FocusTap.Already -> { Log.i(TAG, "focus $id: already focused, nothing sent"); true }
         }
         questPane.invalidate()
+        return ok
     }
+
+    /** ps3: Polestar's step moved on from quest [id] (the sync pushed it): its focus check stops retrying it */
+    fun cancelFocusWant(id: Int) { quests.cancelWant(id) }
 
     /** where the waiting focus's give-up is shown (the room its tap came from) */
     private var focusNote: (String) -> Unit = { questPane.note(it) }
@@ -985,15 +991,16 @@ class HomeView(
      * session through quests' TapBridge.taps, all or nothing; [what] names it in the WCHOME line. The focus check looks again
      * [HomeQuests.CHECK_MS] later.
      */
-    private fun sendFocus(id: Int, slot: Int, what: String, note: (String) -> Unit) {
+    private fun sendFocus(id: Int, slot: Int, what: String, note: (String) -> Unit): Boolean {
         val cells = QuestPad.cells(pad, QuestPad.Act.FOCUS, slot)
         Log.i(TAG, "focus $id: $what ${cells ?: "no cells"}")
         val ok = cells != null && TapBridge.taps(context, pad, cells) { why ->
             Log.i(TAG, "focus $id: tap failed: $why")
             post { quests.sendFailed(); note(why) }
         }
-        if (!ok) { quests.sendFailed(); note("The game has not published its tap pad"); return }
+        if (!ok) { quests.sendFailed(); note("The game has not published its tap pad"); return false }
         postDelayed({ focusCheck() }, HomeQuests.CHECK_MS + 50L)
+        return true
     }
 
     /**
@@ -1078,12 +1085,13 @@ class HomeView(
     }
 
     /** UNFOCUS quest [id] (the Map room's A on the focused quest; Quests.lua q9 qact 39): the game drops its focus, only if [id] still has it */
-    fun unfocusQuest(id: Int, note: (String) -> Unit) =
+    fun unfocusQuest(id: Int, note: (String) -> Unit): Boolean =
         questAct(id, "unfocus", QuestPad.Act.UNFOCUS, quests.tapUnfocus(id, GameInput.live(), System.currentTimeMillis()), note)
 
-    /** one quest action from the Map room: the model's verdict [t], then the pick + act cells in one shell session, logged as [what] */
-    private fun questAct(id: Int, what: String, act: QuestPad.Act, t: FocusTap, note: (String) -> Unit) {
-        when (t) {
+    /** one quest action from the Map room: the model's verdict [t], then the pick + act cells in one shell session, logged as [what];
+     *  true = the taps went out (or nothing was needed) */
+    private fun questAct(id: Int, what: String, act: QuestPad.Act, t: FocusTap, note: (String) -> Unit): Boolean {
+        val sent = when (t) {
             is FocusTap.Send -> {
                 val cells = QuestPad.cells(pad, act, t.slot)
                 Log.i(TAG, "$what $id: send ${cells ?: "no cells"}")
@@ -1092,11 +1100,13 @@ class HomeView(
                     post { quests.sendFailed(); note(why) }
                 }
                 if (!ok) { quests.sendFailed(); note("The game has not published its tap pad") }
+                ok
             }
-            is FocusTap.Refused -> { Log.i(TAG, "$what $id: refused: ${t.why}"); note(t.why) }
-            FocusTap.Already -> {}
+            is FocusTap.Refused -> { Log.i(TAG, "$what $id: refused: ${t.why}"); note(t.why); false }
+            FocusTap.Already -> true
         }
         questPane.invalidate()
+        return sent
     }
 
     // ================================================================ states -> places (spec parts 1, 2, 3, 6)

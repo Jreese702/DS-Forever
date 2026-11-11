@@ -502,6 +502,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // Home's ONE focus path (its checks and WCHOME logging); a refusal shows on the map
         mapView.onFocusQuest = { id -> homeView.focusQuest(id) { mapView.note(it) } }
         mapView.onPushFocus = { id -> homeView.focusQuest(id) { Log.i("WCMAP", "default focus $id: $it") } }
+        // ps3 (the user, 2026-11-11): the Polestar row clears the game's focus for a step with no quest in the log (logged only: a
+        // refusal such as "In combat" draws no note), and stops a focus check still retrying the step it moved on from
+        mapView.onPushUnfocus = { id -> homeView.unfocusQuest(id) { Log.i("WCMAP", "polestar unfocus $id: $it") } }
+        mapView.onCancelFocus = { id -> homeView.cancelFocusWant(id) }
         // the Map room's X on its list (map session, the user's quest-list feedback): untrack through Home's one quest-action path
         mapView.onUntrackQuest = { id -> homeView.untrackQuest(id) { mapView.note(it) } }
         // A on the focused quest clears the focus (Quests q9, qact 39)
@@ -510,7 +514,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the game's player menu (Quests q38)
         mapView.onTrackQuest = { id -> homeView.watchQuest(id) { mapView.note(it) } }
         // the Untracked rows (the user, 2026-10-16): A tracks and focuses; Y's panel shares and abandons (Abandon asks first)
-        mapView.onTrackFocusQuest = { id -> homeView.trackAndFocus(id) { mapView.note(it) } }
+        mapView.onTrackFocusQuest = { id -> mapView.psRelease(); homeView.trackAndFocus(id) { mapView.note(it) } }   // ps3: a pick
         mapView.onShareQuest = { id -> homeView.shareQuest(id) { mapView.note(it) } }
         mapView.onAbandonArm = { id -> homeView.armAbandon(id) { mapView.note(it) } }
         mapView.onAbandonConfirm = { id -> homeView.confirmAbandon(id) { mapView.note(it) } }
@@ -547,9 +551,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         Roads.files.onLoaded { mapView.postInvalidate() }
         mapView.onProbeOptions = { bits -> worldMapRoom.sendProbeOptions(bits) }   // Map: the minimap probe's options to the add-on
         worldMapRoom.onLeave = { show(Room.HOME) }
-        worldMapRoom.onFocusQuest = { id -> homeView.focusQuest(id) { } }
+        worldMapRoom.onFocusQuest = { id -> mapView.psRelease(); homeView.focusQuest(id) { } }
         worldMapRoom.onUntrackQuest = { id -> homeView.untrackQuest(id) { } }
-        worldMapRoom.onUnfocusQuest = { id -> homeView.unfocusQuest(id) { } }
+        worldMapRoom.onUnfocusQuest = { id -> mapView.psRelease(); mapView.focusCleared(id); homeView.unfocusQuest(id) { } }
+        // ps3 (the user, 2026-11-11): the World map's and the Quests room's own Focus / Remove Focus (QuestPad, sent by the rooms
+        // themselves) are the player's picks too: the Polestar row lets go (on Remove Focus as well, or the sync would re-focus the
+        // step quest), a cleared focus is not pushed back as the default
+        worldMapRoom.onFocusPicked = { id, on -> mapView.psRelease(); if (!on) mapView.focusCleared(id) }
+        questsView.onFocusPicked = { id, on -> mapView.psRelease(); if (!on) mapView.focusCleared(id) }
         // LATER item 7: Select opens a cursor on the bar; A on a room is what a touch on its picture does
         // the swirl (Home) picked on the bar = the pause wheel, on Home and in rooms (the user 2026-10-09: "if I select the spiral I want
         // that to open the pause menu"; "Wheel everywhere"); B still goes Home from a room, a room slice switches rooms

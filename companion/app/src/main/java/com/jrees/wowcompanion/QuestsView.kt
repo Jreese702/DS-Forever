@@ -475,6 +475,8 @@ class QuestsView(
     }
 
     private fun selectedQuest(): JSONObject? = quests.firstOrNull { it.optInt("id") == selectedId }
+    /** ps3 (the user, 2026-11-11): More > Focus ([on] true) / Remove Focus on quest id, told to the Map (MapView.psRelease / focusCleared) */
+    var onFocusPicked: ((id: Int, on: Boolean) -> Unit)? = null
 
     private fun action(act: String) {
         val q = selectedQuest() ?: return
@@ -493,7 +495,11 @@ class QuestsView(
                     "track" -> send(if (tracked(q)) QuestPad.Act.UNWATCH else QuestPad.Act.WATCH, slot, id)
                     "share" -> shareReason(q)?.let { note(it, false) } ?: send(QuestPad.Act.SHARE, slot, id)
                     // the More menu's Focus / Remove Focus: the game's super-tracking (the waypoint), never the tracker
-                    "focus" -> send(if (q.optBoolean("focus")) QuestPad.Act.UNFOCUS else QuestPad.Act.FOCUS, slot, id)
+                    "focus" -> {
+                        val on = !q.optBoolean("focus")
+                        onFocusPicked?.invoke(id, on)          // ps3: the player's pick (the Polestar row lets go)
+                        send(if (on) QuestPad.Act.FOCUS else QuestPad.Act.UNFOCUS, slot, id)
+                    }
                     // first press: ARM only -- the confirm bar appears when the addon names the quest
                     "abandon" -> send(QuestPad.Act.ARM, slot, id)
                     "abandon!" -> if (confirmAbandonId == id) {

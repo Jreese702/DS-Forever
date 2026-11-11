@@ -82,7 +82,7 @@ end
 -- ships), no secure template, nothing of the game's written, no CVar, no binding. Hidden in instances, when the facing is unknown,
 -- while the world map is open, and when the player turned it off (WowCompanionDB.compass == false; the app's Settings > Top screen >
 -- "Compass bar", through Interact's two iact cells, ACT.compass).
-WC.compass = { V = "cp34" }
+WC.compass = { V = "cp35" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -229,6 +229,20 @@ do
             C.qsrc = C.qsrc or "none"
         end
         C.qid = qid
+        -- cp35 (ps3; the user, 2026-11-11: "also the compass is still tracking my focused wow quest"): while the app's Polestar row
+        -- holds - the GO it sent IS Polestar's own step (Map.lua WC.pnav, WC.pstep.last) - the compass follows Polestar's waypoint, held
+        -- 5 s over a moving goal's re-sent GO and dropped at once by a newer GO for something else. t.stq keeps the game's own
+        -- super-tracked spot: the engine's point (the yaw / pitch reads) is that one, whatever the compass shows.
+        t.stq = t.quest
+        local PN, PS = WC.pnav, type(WC.pstep) == "table" and WC.pstep.last or nil
+        local psOn = type(PN) == "table" and PN.active and num(PN.m) and num(PN.x) and num(PN.y) and type(PS) == "table"
+            and not PS.none and num(PS.m) and num(PS.x) and num(PS.y)
+        if psOn and PS.m == PN.m and math.abs(PS.x - PN.x) < 0.002 and math.abs(PS.y - PN.y) < 0.002 then C.psAt = GetTime()
+        elseif C.psAt and (not psOn or (num(PN.goAt) and PN.goAt > C.psAt)) then C.psAt = nil end
+        if psOn and C.psAt and GetTime() - C.psAt < 5 then
+            local w = C.world(PS.m, PS.x, PS.y)
+            if w then t.quest, C.qsrc, C.qid = w, "polestar", num(PS.q) end      -- (an accept / go-to step: no quest, C.qid nil)
+        end
         -- the corpse, while dead or a ghost
         local okD, dead = pcall(UnitIsDeadOrGhost, "player")
         if okD and dead == true and me and me.map then
@@ -676,7 +690,7 @@ do
         local okF, nav = pcall(function() return C_Navigation.GetFrame() end)
         local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
         local tg = C.tg_ or {}
-        local w = (okP and onPin == true) and tg.pin or tg.quest
+        local w = (okP and onPin == true) and tg.pin or tg.stq       -- (cp35: the engine's own point, not Polestar's)
         local b, dd
         if C.me_ and w then b, dd = C.bearing(C.me_, w) end
         if okF and nav then
@@ -1085,7 +1099,7 @@ do
             -- (our pin, else the super-tracked quest's spot - the compass's own reads), for the yaw and the pitch, and a marker is put
             -- on it only when it is one of the two. The pitch keeps until the camera stick tilts (PITCH_S 60: only a tilt moves it).
             local tg = C.tg_ or {}
-            local engW = (onPin and tg.pin) or ((not onPin) and tg.quest) or nil
+            local engW = (onPin and tg.pin) or ((not onPin) and tg.stq) or nil        -- (cp35: the engine's own, not Polestar's)
             if onPin then                                  -- (our pin read NOW: the engine's point moves with it the same frame)
                 local okW, wp = pcall(C_Map.GetUserWaypoint)
                 if okW and type(wp) == "table" and wp.position then
@@ -1320,7 +1334,7 @@ do
                 end
                 if c.w and tg.quest and math.sqrt((c.w.x - tg.quest.x) ^ 2 + (c.w.y - tg.quest.y) ^ 2) < RT.GOAL_ON then
                     if not dup(tg.quest, RT.GOAL_NEAR) then
-                        items[#items + 1] = { id = "goal:" .. tostring(C.qid), w = tg.quest, kind = "goal", why = "on" .. src .. i }
+                        items[#items + 1] = { id = C.goalId(), w = tg.quest, kind = "goal", why = "on" .. src .. i }
                     end
                     break                                                    -- (the objective ends the route)
                 elseif c.w and not dup(c.w, RT.SAME_YD) then
@@ -1332,7 +1346,7 @@ do
             if okP and onPin == true and tg.pin then
                 items[1] = { id = "cp:" .. rtAt(tg.pin), w = tg.pin, kind = "pin", pin = true, why = "ownpin" }   -- (the same id as in a route)
             elseif tg.quest then
-                items[1] = { id = "goal:" .. tostring(C.qid), w = tg.quest, kind = "goal", why = "noroute" }
+                items[1] = { id = C.goalId(), w = tg.quest, kind = "goal", why = "noroute" }
             end
         end
         return items
@@ -1560,6 +1574,12 @@ do
         o.st, o.kind = st, st.kind
     end
 
+    -- the goal marker's id: its quest's, or "goal:ps" for a Polestar step with no quest (cp35: it keeps its identity)
+    function C.goalId()
+        if C.qsrc == "polestar" and not C.qid then return "goal:ps" end
+        return "goal:" .. tostring(C.qid)
+    end
+
     -- the focused quest's NUMBER as the app counts it (MapView's trackedNo): its place among the WATCHED quests, in quest-log order
     -- (headers and hidden ones skipped, as the Quests add-on's document lists them); nil when the focus is not watched. Once a second.
     C.qnAt = -10
@@ -1572,6 +1592,7 @@ do
         local focus = okQ and num(st) or nil
         local R = WC.routeWp
         if R and R.active and R.qid and R.qid > 0 then focus = R.qid end   -- (the route's pin stands for it, as the app's focus)
+        if C.qsrc == "polestar" then focus = C.qid end                     -- (cp35: the Polestar step's quest; none for an accept step)
         if not focus or focus <= 0 then return nil end
         local okN, n = pcall(function() return C_QuestLog.GetNumQuestLogEntries() end)
         n = okN and num(n) or 0
@@ -1745,7 +1766,7 @@ do
         local me = C.me()
         local tg = C.targets(me)
         local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
-        local w = (okP and onPin == true) and tg.pin or tg.quest
+        local w = (okP and onPin == true) and tg.pin or tg.stq
         local b, d
         if me and w then b, d = C.bearing(me, w) end
         local function r3(v) v = num(v); return v and math.floor(v * 1000 + 0.5) / 1000 end
@@ -2713,7 +2734,7 @@ do
         local me = C.me()
         local tg = C.targets(me)
         local okP, onPin = pcall(function() return C_SuperTrack.IsSuperTrackingUserWaypoint() end)
-        local w = (okP and onPin == true) and tg.pin or tg.quest
+        local w = (okP and onPin == true) and tg.pin or tg.stq
         local b, d
         if me and w then b, d = C.bearing(me, w) end
         local okR, fps = pcall(GetFramerate)

@@ -2860,14 +2860,17 @@ function WC.pnav.go(m, x, y)
     if not api then return WC.pnav.say("go", false, "no Polestar") end
     local okN, res = pcall(api.Navigate, WC.pnav.OWNER, m, x, y, "DS Forever")
     if not okN or res == false then return WC.pnav.say("go", false, okN and "refused" or tostring(res):sub(1, 120)) end
+    -- ps3 (the user, 2026-11-11: "also the compass is still tracking my focused wow quest"): the GO kept (m, x, y, goAt), so the
+    -- top-screen compass (Trail.lua C.targets) can tell when it IS Polestar's own step
     WC.pnav.active, WC.pnav.keepAt, WC.pnav.sig = true, GetTime(), nil
+    WC.pnav.m, WC.pnav.x, WC.pnav.y, WC.pnav.goAt = m, x, y, GetTime()
     WC.pnav.say("go", true)
 end
 function WC.pnav.cancel(why)
     if not WC.pnav.active then return end
     local api = WC.pnav.api()
     if api and type(api.Cancel) == "function" then pcall(api.Cancel, WC.pnav.OWNER) end
-    WC.pnav.active, WC.pnav.sig = false, nil
+    WC.pnav.active, WC.pnav.sig, WC.pnav.m = false, nil, nil
     WC.pnav.say("cancel", true, why)
 end
 -- the route Polestar is guiding now, as legs of world points (only while the guidance is ours)
@@ -3045,7 +3048,10 @@ end
 -- title) and its waypoint (Engine.GetWaypoint: the goal the arrow leads to, its words, kind, map and point on Polestar's 0-100 scale)
 -- go to the app as {"type":"pstep", t, g, k, q, m, x, y} (x / y 0..1), or {"type":"pstep", none = true} when Polestar has no step;
 -- sent when it changes and every 15 s. Nothing of Polestar or the game is changed.
-WC.pstep = { sig = nil, sentAt = 0 }
+-- ps2 (the user, 2026-11-11: "should probably be the default selection if its enabled when logging in"): every pstep carries b, this
+-- login's stamp (time() when this file loaded: a new one at each login and /reload; not part of sig), so the app picks the light blue
+-- row again at each login. The last read is kept (WC.pstep.last, every second) for the compass (Trail.lua C.targets).
+WC.pstep = { sig = nil, sentAt = 0, boot = (type(time) == "function" and time()) or 0 }
 function WC.pstep.read()
     local P = _G.Polestar
     local E = type(P) == "table" and type(P.Engine) == "table" and P.Engine or nil
@@ -3071,11 +3077,13 @@ end
 C_Timer.NewTicker(1, function()
     local P = WC.pstep
     local okR, d = pcall(P.read)
-    if not okR or not d then return end
+    if not okR or not d then P.last = nil; return end
+    P.last = d
     local sig = d.none and "none" or table.concat({ d.t or "", d.g or "", d.k or "", tostring(d.q or 0), d.m, d.x, d.y }, "|")
     if sig ~= P.sig or GetTime() - P.sentAt > 15 then
         P.sig, P.sentAt = sig, GetTime()
-        d.type, d.v = "pstep", "ps1"
+        d.type, d.v = "pstep", "ps2"
+        if P.boot ~= 0 then d.b = P.boot end
         pcall(function() WC.send(WC.encode(d)); WC.push() end)
     end
 end)

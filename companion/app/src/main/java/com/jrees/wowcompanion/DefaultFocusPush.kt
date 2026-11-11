@@ -24,6 +24,13 @@ class DefaultFocusPush {
         return defaultQid
     }
 
+    /**
+     * ps3 (the user, 2026-11-11: "the game really aggressivly did not want to stop trying to stay on my currently focused wow quest"):
+     * the player cleared quest [id]'s focus through the app (Unfocus, Remove Focus, the Polestar row off): never pushed back this
+     * session, whether or not this push had sent it (a quest the player focused was re-pushed as the nearest at once).
+     */
+    fun cleared(id: Int) { if (id > 0) took.add(id) }
+
     companion object {
         const val RETRY_MS = 30_000L
     }

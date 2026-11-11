@@ -86,6 +86,11 @@ object Settings {
             if (!ROUTE_MODES_ON) return                     // held back for 1.0.9: the stored choice is kept for when they return
             prefs?.edit()?.putString("questTracking", if (v in QUEST_TRACKING) v else "safepath")?.apply(); changed()
         }
+    /** ps3 (the user, 2026-11-11): the Polestar row was turned off in the login with this pstep stamp ("b"); any other stamp = picked,
+     *  the default at each login. Not keyed by character: a new login has a new stamp anyway */
+    var polestarOffBoot: Long
+        get() = prefs?.getLong("polestarOffBoot", 0L) ?: 0L
+        set(v) { prefs?.edit()?.putLong("polestarOffBoot", v)?.apply() }   // no changed(): nothing else listens for it
     /** the user (1.0.9 release): "Disable the safe path, quest trail and polestar buttons for now" - Vanilla only until this is true */
     const val ROUTE_MODES_ON = true
     /** VANILLA: the game's own way, the line straight at the quest, no route, no pin; SAFEPATH: DS Forever's route (the default) */

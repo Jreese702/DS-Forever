@@ -577,6 +577,9 @@ class HomeQuests(private val pendingMs: Long = 8_000L, private val freshMs: Long
         want = null
     }
 
+    /** ps3 (the user, 2026-11-11): Polestar's step moved on from quest [id] the sync pushed: its focus check stops retrying it */
+    fun cancelWant(id: Int) { if (want == id) endWant() }
+
     /**
      * UNTRACK from the Map room's quest list (X; map session, the user's quest-list feedback 2026-09-30): the game's objective
      * tracker drops the quest (QuestPad UNWATCH; the quest stays in the log). The same gates as a focus; one tap waits at a time.

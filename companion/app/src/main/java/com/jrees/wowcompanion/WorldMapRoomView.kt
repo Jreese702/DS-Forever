@@ -685,6 +685,8 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     var onFocusQuest: ((Int) -> Unit)? = null
     var onUnfocusQuest: ((Int) -> Unit)? = null
+    /** ps3 (the user, 2026-11-11): this room's own Focus ([on] true) / Stop Focusing on quest id, told to the Map (the Polestar row) */
+    var onFocusPicked: ((id: Int, on: Boolean) -> Unit)? = null
     var onUntrackQuest: ((Int) -> Unit)? = null
     var onLeave: (() -> Unit)? = null
 
@@ -1032,7 +1034,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (sendQuestActs(id, acts)) {
             val now = System.currentTimeMillis()
             if (QuestPad.Act.WATCH in acts) trackPending[id] = Pending(true, now)
-            if (QuestPad.Act.FOCUS in acts) focusPending = id to now
+            if (QuestPad.Act.FOCUS in acts) { focusPending = id to now; onFocusPicked?.invoke(id, true) }
             expireLater()
         }
     }
@@ -1091,8 +1093,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         val now = System.currentTimeMillis()
         when (o) {
             MapRoomKeys.Opt.TRACK, MapRoomKeys.Opt.UNTRACK -> toggleTrack(id)
-            MapRoomKeys.Opt.FOCUS -> if (sendQuestActs(id, listOf(QuestPad.Act.FOCUS))) { focusPending = id to now; expireLater() }
-            MapRoomKeys.Opt.STOP_FOCUS -> if (sendQuestActs(id, listOf(QuestPad.Act.UNFOCUS))) { focusPending = 0 to now; expireLater() }
+            MapRoomKeys.Opt.FOCUS -> if (sendQuestActs(id, listOf(QuestPad.Act.FOCUS))) { focusPending = id to now; onFocusPicked?.invoke(id, true); expireLater() }
+            MapRoomKeys.Opt.STOP_FOCUS -> if (sendQuestActs(id, listOf(QuestPad.Act.UNFOCUS))) { focusPending = 0 to now; onFocusPicked?.invoke(id, false); expireLater() }
             MapRoomKeys.Opt.SHARE -> sendOp(QuestPad.Act.SHARE, id)
             MapRoomKeys.Opt.ABANDON -> sendOp(QuestPad.Act.ARM, id)
         }
