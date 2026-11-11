@@ -11,6 +11,7 @@ import java.security.DigestOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import java.util.zip.Inflater
+import com.jrees.wowcompanion.GameRegion
 import com.jrees.wowcompanion.WowProduct
 import com.jrees.wowcompanion.WowSwitch
 import java.time.LocalDate
@@ -25,16 +26,12 @@ object WowClientDownloader {
     private const val PLATFORM_ARCH = "arm64"
     private const val EXCLUDED_ARCH = "x86_64"
     private const val DEFAULT_CDN_PATH = "tpr/wow"
-    private val EU_COUNTRIES = setOf("AT", "BE", "BG", "CH", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FR", "GB", "GR", "HR", "HU", "IE", "IS", "IT",
-        "LT", "LU", "LV", "MT", "NL", "NO", "PL", "PT", "RO", "RU", "SE", "SI", "SK", "UA", "TR")
 
-    /** the region a direct install starts in, from the device's country (jaredgei's guess: the game's region picker can still change it) */
-    private fun directBranch() = when (java.util.Locale.getDefault().country.uppercase(java.util.Locale.ROOT)) {
-        "KR" -> "kr"
-        "TW", "HK" -> "tw"
-        in EU_COUNTRIES -> "eu"
-        else -> "us"
-    }
+    /**
+     * the region a direct install starts in: the player's pick, else the device's country (the user, 2026-11-11: regions fix - the one
+     * country table is GameRegion.guess, no second copy here)
+     */
+    private fun directBranch(region: String?) = region ?: GameRegion.guess(java.util.Locale.getDefault().country)
     private val DEFAULT_CDN_HOSTS = listOf("level3.blizzard.com", "us.cdn.blizzard.com")
 
     /** a product's patch server (versions, cdns); the tests point it at a local server */
@@ -61,6 +58,8 @@ object WowClientDownloader {
         /** the cdns row's Servers and the versions row's KeyRing (the launch row's columns at the switch) */
         val remoteCdnServers: String? = null,
         val remoteKeyRing: String? = null,
+        /** the region whose versions row this is (lowercase): .build.info's Branch / Tags after an update; null = not known */
+        val region: String? = null,
     )
 
     /** the client the game folder [gameRoot] runs ([WowProduct.of]) */
@@ -76,7 +75,12 @@ object WowClientDownloader {
     fun readBuildInfo(buildInfo: File): Map<String, String>? =
         runCatching { activeBuild(buildInfo.absoluteFile.parentFile).row }.getOrNull()
 
-    fun checkVersion(gameRoot: File): VersionCheckResult? {
+    /**
+     * [region]: the player's pick (GameRegion.chosen; the user, 2026-11-11: regions fix): the build checked, and then updated, is that
+     * region's (regions patch on different days: a US-made install played on EU needs EU's build or its realms are not listed). null =
+     * the install's own (.build.info Branch). Adapted from YoruDev-Ryland's WoWForeverywhere ab115f8 / 22a2ab9 (GPL-3.0).
+     */
+    fun checkVersion(gameRoot: File, region: String? = null): VersionCheckResult? {
         val choice = runCatching { activeBuild(gameRoot) }.getOrElse {
             Timber.w(it, "checkVersion: no readable $BUILD_INFO in $gameRoot")
             return null
@@ -95,11 +99,13 @@ object WowClientDownloader {
             return null
         }
 
-        return remoteCheck(product, row, localVersion, localBuildKey)
+        return remoteCheck(product, row, localVersion, localBuildKey, region)
     }
 
-    /** [product]'s build on its patch server for the install whose .build.info row is [row]; null = no answer */
-    private fun remoteCheck(product: WowProduct, row: Map<String, String>, localVersion: String, localBuildKey: String): VersionCheckResult? {
+    /** [product]'s build on its patch server for the install whose .build.info row is [row] and the region [region]; null = no answer */
+    private fun remoteCheck(
+        product: WowProduct, row: Map<String, String>, localVersion: String, localBuildKey: String, region: String? = null,
+    ): VersionCheckResult? {
         val versions = runCatching { fetchText("${patchUrlFor(product)}/versions") }.getOrElse {
             Timber.w(it, "checkVersion: http call failed")
             return null
@@ -107,7 +113,7 @@ object WowClientDownloader {
             Timber.w("checkVersion: response body is null or unsuccessful")
             return null
         }
-        val remoteRow = remoteRow(parsePsv(versions), "Region", row["Branch"])
+        val remoteRow = remoteRow(parsePsv(versions), "Region", region, row["Branch"])
             ?: run {
                 Timber.w("checkVersion: no remote row in $versions")
                 return null
@@ -119,11 +125,18 @@ object WowClientDownloader {
             }
         val remoteBuildKey = remoteRow["BuildConfig"].orEmpty()
 
+        // the region the row is for (the pick's, else the install's own when the pick has no row: never a hard failure)
+        val rowRegion = remoteRow["Region"]?.lowercase()?.takeIf { it.isNotBlank() }
+        if (region != null && !region.equals(rowRegion, ignoreCase = true)) {
+            Timber.w("checkVersion: no '$region' row; using '${rowRegion ?: "?"}' (the install's ${row["Branch"]})")
+        }
+
         val cdns = runCatching { fetchText("${patchUrlFor(product)}/cdns") }.getOrNull()?.let(::parsePsv).orEmpty()
-        val cdnsRow = remoteRow(cdns, "Name", row["Branch"])
+        val cdnsRow = remoteRow(cdns, "Name", rowRegion, row["Branch"])
 
         val isOutdated = localVersion != remoteVersion || (remoteBuildKey.isNotBlank() && localBuildKey != remoteBuildKey)
-        Timber.i("checkVersion: ${product.code} localVersion=$localVersion, remoteVersion=$remoteVersion, isOutdated=$isOutdated")
+        Timber.i("checkVersion: ${product.code} region=$rowRegion (Branch ${row["Branch"]}) localVersion=$localVersion, " +
+            "remoteVersion=$remoteVersion, isOutdated=$isOutdated")
         return VersionCheckResult(
             localVersion = localVersion,
             remoteVersion = remoteVersion,
@@ -135,6 +148,7 @@ object WowClientDownloader {
             product = product,
             remoteCdnServers = cdnsRow?.get("Servers"),
             remoteKeyRing = remoteRow["KeyRing"],
+            region = rowRegion,
         )
     }
 
@@ -195,13 +209,21 @@ object WowClientDownloader {
             ?: rows.firstOrNull()
 
     /**
+     * the row for the player's pick [picked], else the install's own region [own], else us's, else the first (the user, 2026-11-11:
+     * regions fix; a pick with no row falls back rather than failing: the research found a strict hard failure did not hold up)
+     */
+    internal fun remoteRow(rows: List<Map<String, String>>, key: String, picked: String?, own: String?): Map<String, String>? =
+        rows.firstOrNull { !picked.isNullOrBlank() && it[key].equals(picked, ignoreCase = true) } ?: remoteRow(rows, key, own)
+
+    /**
      * A DIRECT INSTALL (the user 2026-11-01: "give them the option after install to use local files or install directly"; jaredgei's
      * v2.3.0): an empty folder gets the client and the indexes, about 250 MB, and the game streams the rest from Blizzard's CDN as it
      * plays and keeps it. .build.info comes last, so a stopped install is simply run again.
      */
-    fun install(gameRoot: File, onStatus: (String) -> Unit) {
+    fun install(gameRoot: File, region: String? = null, onStatus: (String) -> Unit) {
         onStatus("Checking the latest build...")
-        val target = remoteCheck(WowProduct.LAUNCH, mapOf("Branch" to directBranch()), "", "")
+        // [region]: the player's pick (regions fix), else the device's country's region
+        val target = remoteCheck(WowProduct.LAUNCH, mapOf("Branch" to directBranch(region)), "", "")
             ?.takeIf { it.remoteBuildConfig.isNotBlank() && it.remoteCdnConfig.isNotBlank() }
             ?: throw IOException("Blizzard's patch server did not answer")
         listOf("Data/data", "Data/indices", "Data/config").forEach { check(File(gameRoot, it).run { isDirectory || mkdirs() }) { "can't write to $gameRoot" } }
@@ -239,17 +261,17 @@ object WowClientDownloader {
         if (fresh) WowSwitch.replace(File(gameRoot, BUILD_INFO), WowSwitch.freshBuildInfo(WowSwitch.Remote(
             version = target.remoteVersion, buildConfig = target.remoteBuildConfig, cdnConfig = target.remoteCdnConfig,
             cdnHosts = target.remoteCdnHosts, cdnPath = target.remoteCdnPath, cdnServers = target.remoteCdnServers,
-            keyRing = target.remoteKeyRing), directBranch()).toByteArray())
+            keyRing = target.remoteKeyRing), target.region ?: directBranch(null)).toByteArray())
         updateBuildInfo(gameRoot, target, buildConfig)
     }
 
-    fun download(gameRoot: File, onStatus: (String) -> Unit) {
+    fun download(gameRoot: File, region: String? = null, onStatus: (String) -> Unit) {
         val choice = activeBuild(gameRoot)
         val row = choice.row
         val product = checkNotNull(choice.product) {
             "Incompatible game product: ${row["Product"]}. Expected ${WowProduct.values().joinToString(" or ") { it.code }}."
         }
-        val latest = checkVersion(gameRoot)
+        val latest = checkVersion(gameRoot, region)
         if (latest != null && latest.remoteBuildConfig.isNotBlank()) return updateGame(gameRoot, latest, onStatus)
 
         val cdn = Cdn(hosts = splitHosts(row.getValue("CDN Hosts")), path = row.getValue("CDN Path"))
@@ -341,17 +363,32 @@ object WowClientDownloader {
         val buildInfo = File(gameRoot, BUILD_INFO)
         if (!buildInfo.isFile) return
         val raw = buildInfo.readText()
+        val updated = withBuild(raw, target, buildConfig)
+        // whole or not at all, the other rows and the line ending as they were
+        if (updated != raw) WowSwitch.replace(buildInfo, updated.toByteArray())
+    }
+
+    /**
+     * .build.info [raw] with [target]'s build in the active row of its product. When [target] is another region's build (the player's
+     * pick, the user 2026-11-11: regions fix) the row's Branch, the region tag in its Tags ("US?" -> "EU?") and its CDN Servers / Hosts
+     * become that region's too, so the client downloads that region's build. A blank value never replaces one (an empty CDN Servers
+     * crashes the client at start). The other rows and the line ending stay as they were.
+     */
+    internal fun withBuild(raw: String, target: VersionCheckResult, buildConfig: Map<String, List<String>> = emptyMap()): String {
         val nl = if (raw.contains("\r\n")) "\r\n" else "\n"
         val lines = raw.split(nl).dropLastWhile { it.isEmpty() }
-        if (lines.isEmpty()) return
+        if (lines.isEmpty()) return raw
         val header = psvHeader(lines.first())
         val productIdx = header.indexOf("Product")
         val activeIdx = header.indexOf("Active")
+        val tagsIdx = header.indexOf("Tags")
         val updates = mapOf(
+            "Branch" to target.region.orEmpty(),
             "Version" to target.remoteVersion,
             "Build Key" to target.remoteBuildConfig,
             "CDN Key" to target.remoteCdnConfig,
             "CDN Hosts" to target.remoteCdnHosts.joinToString(" "),
+            "CDN Servers" to target.remoteCdnServers.orEmpty(),
             "CDN Path" to target.remoteCdnPath,
             "Install Key" to buildConfig["install"]?.getOrNull(1).orEmpty(),
             "IM Size" to buildConfig["install-size"]?.getOrNull(1).orEmpty(),
@@ -362,12 +399,19 @@ object WowClientDownloader {
             val cols = line.split("|").toMutableList()
             val matchesProduct = productIdx < 0 || cols.getOrNull(productIdx) == target.product.code
             val isActive = activeIdx < 0 || cols.getOrNull(activeIdx) == "1"
-            if (matchesProduct && isActive) updates.forEach { (i, value) -> if (i in cols.indices) cols[i] = value }
+            if (matchesProduct && isActive) {
+                updates.forEach { (i, value) -> if (i in cols.indices) cols[i] = value }
+                target.region?.takeIf { it.isNotBlank() }?.let { r -> if (tagsIdx in cols.indices) cols[tagsIdx] = regionTags(cols[tagsIdx], r) }
+            }
             cols.joinToString("|")
         }
-        // whole or not at all, the other rows and the line ending as they were
-        if (updated != lines) WowSwitch.replace(buildInfo, (updated.joinToString(nl) + nl).toByteArray())
+        if (updated == lines) return raw
+        return updated.joinToString(nl) + nl
     }
+
+    /** .build.info Tags with its region tag ("US?", "EU?", "KR?", "TW?", "CN?") made [region]'s; Tags without one stay as they are */
+    internal fun regionTags(tags: String, region: String): String =
+        Regex("""(?<=^|[ :])(US|EU|KR|TW|CN)\?(?=$|[ :])""").replace(tags, "${region.uppercase(java.util.Locale.ROOT)}?")
 
     private data class InstallEntry(val name: String, val ckey: String, val tags: Set<String>) {
         val relativePath get() = name.replace('\\', '/')

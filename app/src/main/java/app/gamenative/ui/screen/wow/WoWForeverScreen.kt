@@ -218,7 +218,9 @@ fun WoWForeverScreen(
     suspend fun fetchVersionStatus() {
         switchFn?.invoke()
         isCheckingVersion = true
-        versionStatus = withContext(Dispatchers.IO) { WowClientDownloader.checkVersion(File(gamePath)) }
+        // the region the player picked decides the build checked (the user, 2026-11-11: regions fix), else the install's own
+        val region = com.jrees.wowcompanion.GameRegion.chosen(context)
+        versionStatus = withContext(Dispatchers.IO) { WowClientDownloader.checkVersion(File(gamePath), region) }
         isCheckingVersion = false
     }
 
@@ -596,7 +598,9 @@ fun WoWForeverScreen(
             try {
                 withContext(Dispatchers.IO) {
                     root.mkdirs()
-                    WowClientDownloader.install(root) { msg -> scope.launch(Dispatchers.Main) { updateStatusText = msg } }
+                    WowClientDownloader.install(root, com.jrees.wowcompanion.GameRegion.chosen(context)) { msg ->
+                        scope.launch(Dispatchers.Main) { updateStatusText = msg }
+                    }
                 }
                 gamePath = root.absolutePath
                 GamePath.save(context, gamePath)
@@ -685,12 +689,28 @@ fun WoWForeverScreen(
     // 2026-11-07 (the user: "they cant play without it just start the update and remove the prompt"): an out-of-date game updates by
     // itself, once per new build (a failed one waits for Try again, never a loop)
     var autoUpdatedFor by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(versionStatus?.isOutdated, versionStatus?.remoteVersion) {
+    LaunchedEffect(versionStatus?.isOutdated, versionStatus?.remoteVersion, versionStatus?.remoteBuildConfig) {
         val v = versionStatus ?: return@LaunchedEffect
-        if (!v.isOutdated || autoUpdatedFor == v.remoteVersion || isUpdating) return@LaunchedEffect
-        autoUpdatedFor = v.remoteVersion
+        // keyed by the build too (regions fix): another region's build can carry the same version name
+        val build = "${v.remoteVersion} ${v.remoteBuildConfig}"
+        if (!v.isOutdated || autoUpdatedFor == build || isUpdating) return@LaunchedEffect
+        autoUpdatedFor = build
         setupLog("update: starting by itself (${v.remoteVersion})")
         performUpdate()
+    }
+
+    // A NEW REGION, A NEW CHECK (the user, 2026-11-11: regions fix): regions patch on different days, so the picked region's build is
+    // checked at once (and then updated by itself as any new build is); during an update the check waits for its end
+    var regionRecheck by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        val l: (String) -> Unit = { code ->
+            scope.launch(Dispatchers.Main) { setupLog("region: $code picked; checking its build"); regionRecheck = true }
+        }
+        com.jrees.wowcompanion.GameRegion.listeners.add(l)
+        onDispose { com.jrees.wowcompanion.GameRegion.listeners.remove(l) }
+    }
+    LaunchedEffect(regionRecheck, isUpdating) {
+        if (regionRecheck && !isUpdating) { regionRecheck = false; checkVersionStatus() }
     }
 
     // the queued Update goes as soon as nothing holds it (an art step's end, a launch's end)
@@ -1059,7 +1079,7 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
     onStatus(com.jrees.wowcompanion.LauncherSetup.run(context, File(gameRoot, product.flavorDir)))
     if (!arm64Exe.exists()) {
         try {
-            WowClientDownloader.download(gameRoot, onStatus)
+            WowClientDownloader.download(gameRoot, com.jrees.wowcompanion.GameRegion.chosen(context), onStatus)
         } catch (e: Exception) {
             if (!product.exe(gameRoot).exists()) throw IllegalStateException("Couldn't download ${product.exeName}: ${e.message}", e)
             Timber.w(e, "Client update check failed, launching the existing ${product.exeName}")
