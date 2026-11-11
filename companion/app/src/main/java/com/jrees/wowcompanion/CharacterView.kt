@@ -1017,8 +1017,11 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             MotionEvent.ACTION_MOVE -> {
                 if (!moved && abs(e.y - downY) > SLOP) moved = true
                 val k = dragKey
-                if (moved && k != null) {
-                    val r = drags.last { it.second == k }.first
+                // issues #91 / #85 / #77 (2026-11-11): a redraw between the down and this move can drop the dragged box (a new
+                // tab, a list that emptied): drags.last { } threw NoSuchElementException. Gone = the drag ends, nothing scrolls.
+                val r = if (moved && k != null) dragBox(drags, k) else null
+                if (moved && k != null && r == null) dragKey = null
+                if (r != null && k != null) {
                     val maxOff = max(0f, (content[k] ?: 0f) - r.height())
                     scroll[k] = ((scroll[k] ?: 0f) - (e.y - lastY)).coerceIn(0f, maxOff)
                     invalidate()
@@ -1044,6 +1047,9 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
 
     companion object {
         private const val TAG = "CharacterView"
+        /** the box last drawn for drag [key], or null when this frame drew none (issues #91 / #85 / #77, 2026-11-11: was .last { }) */
+        internal fun <B> dragBox(drags: List<Pair<B, String>>, key: String?): B? =
+            if (key == null) null else drags.lastOrNull { it.second == key }?.first
         /** the hold unconfirmed this long (no CURRENT `win` with ctl) = asked again (Group Finder's / Social's 700 ms) */
         private const val HOLD_CHECK_MS = 700L
         private const val SLOP = 14f
