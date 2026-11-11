@@ -60,13 +60,16 @@ object NetProbe {
     /** everything [Diagnosis.reason] needs for [host] (network calls: a worker thread) */
     fun probe(ctx: Context, host: PairedHost, seen: List<FoundPc>, notPaired: Boolean = false): Diagnosis.Probe {
         val wifi = onWifi(ctx)
+        // off Wi-Fi a VPN (Tailscale) may still reach the PC: measure it then too (the user, 2026-11-11: streaming away fixes)
+        val vpn = vpnUp(ctx)
+        val dial = wifi || vpn
         val here = seen.firstOrNull { it.address == host.address || (host.desktopId.isNotEmpty() && it.desktopId == host.desktopId) }
         return Diagnosis.Probe(
             onWifi = wifi, thorSubnet = subnet(ctx), pcSubnet = host.subnet.ifEmpty { PairedHost.subnetOf(host.address) },
-            sunshine = if (wifi) port(host.address, host.httpPort) else Diagnosis.Port.NOT_TRIED,
-            bridge = if (wifi && host.hasBridge) port(host.address, host.bridgePort) else Diagnosis.Port.NOT_TRIED,
+            sunshine = if (dial) port(host.address, host.httpPort) else Diagnosis.Port.NOT_TRIED,
+            bridge = if (dial && host.hasBridge) port(host.address, host.bridgePort) else Diagnosis.Port.NOT_TRIED,
             seenSunshine = here?.hasSunshine == true, seenBridge = here?.hasBridge == true,
-            expectsBridge = host.hasBridge, notPaired = notPaired,
+            expectsBridge = host.hasBridge, notPaired = notPaired, vpnUp = vpn, pcTailscale = Route.tailscale(host.address),
         )
     }
 }

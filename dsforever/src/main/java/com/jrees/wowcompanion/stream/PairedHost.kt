@@ -31,6 +31,9 @@ data class PairedHost(
     val lanAddress: String = "",
     /** its last Tailscale / other address that worked ("" = none): tried after the home network */
     val vpnAddress: String = "",
+    /** the PC's Tailscale addresses as Desktop's welcome last listed them (the user, 2026-11-11: streaming away fixes - a Thor that
+     *  only ever paired at home still has a Tailscale address to dial away); empty = none reported (an older Desktop) */
+    val tailnet: List<String> = emptyList(),
 ) {
     val hasBridge: Boolean get() = bridgePort > 0 && bridgeToken.isNotEmpty() && (!bridgeTls || bridgeFingerprint.isNotEmpty())
 
@@ -39,6 +42,7 @@ data class PairedHost(
         put("uuid", uuid); put("serverCert", serverCertPem); put("bridgePort", bridgePort); put("bridgeTls", bridgeTls); put("bridgeFp", bridgeFingerprint)
         put("bridgeToken", bridgeToken); put("desktopId", desktopId); put("subnet", subnet); put("lastSeen", lastSeenMs)
         put("lan", lanAddress); put("vpn", vpnAddress)
+        if (tailnet.isNotEmpty()) put("ts", org.json.JSONArray(tailnet))
     }
 
     companion object {
@@ -53,6 +57,7 @@ data class PairedHost(
                 bridgeToken = o.optString("bridgeToken"), desktopId = o.optString("desktopId"),
                 subnet = o.optString("subnet"), lastSeenMs = o.optLong("lastSeen", 0L),
                 lanAddress = o.optString("lan"), vpnAddress = o.optString("vpn"),
+                tailnet = o.optJSONArray("ts")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() } } ?: emptyList(),
             )
         }
 
@@ -128,8 +133,9 @@ object Route {
 
     const val PROBE_MS = 1_500
 
-    /** Tailscale's CGNAT range 100.64.0.0/10 */
+    /** Tailscale's CGNAT range 100.64.0.0/10, or its IPv6 range fd7a:115c:a1e0::/48 (the user, 2026-11-11: streaming away fixes) */
     fun tailscale(a: String): Boolean {
+        if (a.contains(':')) return a.lowercase().startsWith("fd7a:115c:a1e0:")
         val p = a.split('.').mapNotNull { it.toIntOrNull() }
         return p.size == 4 && p[0] == 100 && p[1] in 64..127
     }
@@ -150,10 +156,12 @@ object Route {
 
     /**
      * The addresses to try for [h], in order: [seen] = this PC's addresses mDNS sees now, [reported] = the home addresses Desktop's
-     * welcome listed. Home-network ones first (seen, then the remembered / reported ones, then the stored address), the others after.
+     * welcome listed. Home-network ones first (seen, then the remembered / reported ones, then the stored address), the others after;
+     * the Tailscale addresses Desktop reported ([PairedHost.tailnet], IPv4 before IPv6) after the one that last worked.
      */
     fun candidates(h: PairedHost, seen: List<String>, reported: List<String>, thorSubnet: String): List<String> {
-        val all = (seen + listOf(h.lanAddress) + reported + listOf(h.address, h.vpnAddress)).filter { it.isNotEmpty() }.distinct()
+        val ts = h.tailnet.sortedBy { it.contains(':') }
+        val all = (seen + listOf(h.lanAddress) + reported + listOf(h.address, h.vpnAddress) + ts).filter { it.isNotEmpty() }.distinct()
         val home = all.filter { kind(it, thorSubnet) == Kind.HOME }
         // a home address of ANOTHER /24 than the Thor's can't be reached from here; it stays last (a DHCP change is seen by mDNS)
         val vpn = all.filter { kind(it, thorSubnet) == Kind.TAILSCALE }
@@ -178,10 +186,13 @@ object Route {
         )
     }
 
-    /** Desktop's welcome listed [lan]: remember the one on the Thor's Wi-Fi (else the first) as the home address */
-    fun reported(h: PairedHost, lan: List<String>, thorSubnet: String): PairedHost {
-        val best = lan.firstOrNull { thorSubnet.isNotEmpty() && PairedHost.subnetOf(it) == thorSubnet } ?: lan.firstOrNull() ?: return h
-        return if (best == h.lanAddress) h else h.copy(lanAddress = best)
+    /** Desktop's welcome listed [lan]: remember the one on the Thor's Wi-Fi (else the first) as the home address; and its Tailscale
+     *  addresses [tailscale] (a newer Desktop; empty from an older one = the remembered list stays) */
+    fun reported(h: PairedHost, lan: List<String>, thorSubnet: String, tailscale: List<String> = emptyList()): PairedHost {
+        val ts = tailscale.filter(::tailscale).distinct()
+        val withTs = if (ts.isEmpty() || ts == h.tailnet) h else h.copy(tailnet = ts)
+        val best = lan.firstOrNull { thorSubnet.isNotEmpty() && PairedHost.subnetOf(it) == thorSubnet } ?: lan.firstOrNull() ?: return withTs
+        return if (best == withTs.lanAddress) withTs else withTs.copy(lanAddress = best)
     }
 
     /** the curtain's line when no address answered ([vpnUp] = the Thor's Tailscale is on; [tried] = what was dialled) */
