@@ -75,15 +75,11 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
         val total = needs.size
         val done = java.util.concurrent.atomic.AtomicInteger()
         val ok = java.util.concurrent.atomic.AtomicInteger()
-        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(PARALLEL, total), BgThreads.factory("art-fetch"))
-        try {
-            for (n in needs) pool.execute {
-                if (runCatching { fetch(root, cache, File(n)) }.getOrDefault(false)) ok.incrementAndGet()
-                onProgress(done.incrementAndGet(), total)
-            }
-        } finally {
-            pool.shutdown()
-            pool.awaitTermination(10, java.util.concurrent.TimeUnit.MINUTES)
+        // issues #138 / #112 (2026-11-11): [onProgress] is the art run's Job.progress, which throws PausedForGame (and the update's /
+        // yield stops) when the game comes up; on a pool thread that killed the app. [inPool] hands it back to this thread instead
+        inPool(needs, minOf(PARALLEL, total), "art-fetch", 10) { n ->
+            if (runCatching { fetch(root, cache, File(n)) }.getOrDefault(false)) ok.incrementAndGet()
+            onProgress(done.incrementAndGet(), total)
         }
         android.util.Log.i("WCHARVEST", "prefetch: ${ok.get()} of $total missing game files fetched ($PARALLEL at a time)")
         return ok.get()
@@ -242,12 +238,35 @@ class GameFiles private constructor(private val handle: Long, val root: File, va
             if (missing.isEmpty()) return
             onTables?.invoke("Downloading the game's tables")
             android.util.Log.i("WCHARVEST", "vfs: fetching ${missing.size} files")
-            val pool = java.util.concurrent.Executors.newFixedThreadPool(PARALLEL, BgThreads.factory("art-vfs"))
             val bad = java.util.concurrent.atomic.AtomicInteger()
-            missing.forEach { f -> pool.execute { if (!runCatching { fetch(root, cache, f) }.getOrDefault(false)) bad.incrementAndGet() } }
-            pool.shutdown()
-            pool.awaitTermination(30, java.util.concurrent.TimeUnit.MINUTES)
+            inPool(missing, PARALLEL, "art-vfs", 30) { f -> if (!runCatching { fetch(root, cache, f) }.getOrDefault(false)) bad.incrementAndGet() }
             android.util.Log.i("WCHARVEST", "vfs: done, ${bad.get()} failed")
+        }
+
+        /**
+         * THE ART'S POOLS CARRY THEIR FAILURES HOME (issues #138 / #112, 2026-11-11: "ArtHarvest$PausedForGame" uncaught on art-fetch-N,
+         * from Job.progress inside prefetch's onProgress, when the game came up mid-fetch: the whole app died). Runs [task] for each of
+         * [items] on [threads] pool threads, waits up to [waitMin] minutes, and rethrows the first throw on the CALLING thread (the art
+         * run's worker, where ArtHarvest's pause / yield / update handling catches it). After a throw the items not started yet are skipped;
+         * the ones in flight finish (and any later throws are added to the first as suppressed).
+         */
+        internal fun <T> inPool(items: Collection<T>, threads: Int, name: String, waitMin: Long, task: (T) -> Unit) {
+            if (items.isEmpty()) return
+            val failed = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(threads.coerceIn(1, items.size), BgThreads.factory(name))
+            try {
+                for (item in items) pool.execute {
+                    if (failed.get() == null) {
+                        try { task(item) } catch (t: Throwable) {
+                            if (!failed.compareAndSet(null, t)) failed.get()?.takeIf { it !== t }?.let { f -> synchronized(f) { f.addSuppressed(t) } }
+                        }
+                    }
+                }
+            } finally {
+                pool.shutdown()
+                pool.awaitTermination(waitMin, java.util.concurrent.TimeUnit.MINUTES)
+            }
+            failed.get()?.let { throw it }
         }
 
         /** the encoding keys of a build config's vfs-root / vfs-N lines (each "content key, encoding key"; the -size lines are not keys) */
