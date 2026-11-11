@@ -71,7 +71,7 @@ class ThirdPartyAddonsTest {
         DependencyAddons.api = base()
         DependencyAddons.gameRunning = { false }
         ThirdPartyAddons.settleMs = 200
-        ThirdPartyAddons.renameDir = realRename
+        ThirdPartyAddons.renameDir = realRename; ThirdPartyAddons.fileRename = realFileRename
         ThirdPartyAddons.start(object : ThirdPartyAddons.Store {
             override fun get(k: String, d: Boolean) = choices[k] ?: d
             override fun put(k: String, v: Boolean) { choices[k] = v }
@@ -81,10 +81,11 @@ class ThirdPartyAddonsTest {
     @After fun down() {
         server.close(); tmp.deleteRecursively(); DependencyAddons.api = "https://api.github.com"
         ThirdPartyAddons.ALL = listOf(ThirdPartyAddons.SPOKEN, ThirdPartyAddons.POLESTAR, ThirdPartyAddons.QUESTTRAIL, ThirdPartyAddons.MANNERS)
-        ThirdPartyAddons.renameDir = realRename; ThirdPartyAddons.settleMs = 5_000L
+        ThirdPartyAddons.renameDir = realRename; ThirdPartyAddons.fileRename = realFileRename; ThirdPartyAddons.settleMs = 5_000L
     }
 
     private val realRename = ThirdPartyAddons.renameDir
+    private val realFileRename = ThirdPartyAddons.fileRename
 
     private val game get() = File(tmp, "_classic_beta_")
     private val addons get() = File(game, "Interface/AddOns")
@@ -359,5 +360,84 @@ class ThirdPartyAddonsTest {
         choices["t.core"] = false
         steps.clear(); ThirdPartyAddons.applyAtStart(game, onStep = { steps.add(it) })
         assertEquals(listOf("Removing add-ons: Test..."), steps)
+    }
+
+    // ---------------------------------------------------------------- the review of the #135 fix (2026-11-11)
+    private fun oldTestA() {
+        File(addons, "TestA/sub").mkdirs(); File(addons, "TestA/TestA.toc").writeText("## Version: 0.9\n")
+        File(addons, "TestA/old1.lua").writeText("one"); File(addons, "TestA/sub/old2.lua").writeText("two")
+    }
+    private fun assertOldTestAWhole() {
+        assertEquals("0.9", DependencyAddons.installedVersion(File(addons, "TestA")))
+        assertEquals("one", File(addons, "TestA/old1.lua").readText()); assertEquals("two", File(addons, "TestA/sub/old2.lua").readText())
+        assertFalse("nothing of the new copy", File(addons, "TestA/a.lua").exists())
+        assertFalse("no other folder of the package left in", File(addons, "TestB").exists())
+        assertFalse("no half copy in the backup", backupDir.listFiles()?.any { it.name.startsWith("TestA-") && it.walk().any { f -> f.isFile } } ?: false)
+    }
+    private val sep = File.separator
+
+    /** the new folder's file-by-file move fails on its 2nd file: AddOns gets the WHOLE old copy back, nothing half new */
+    @Test fun aMoveInFailingPartWayPutsTheOldCopyBack() {
+        val a = downloaded(); oldTestA()
+        ThirdPartyAddons.renameDir = { _, _ -> "refused" }
+        var n = 0
+        ThirdPartyAddons.fileRename = { s, d ->
+            if (s.path.contains("t-core${sep}TestA${sep}") && ++n == 2) throw java.io.IOException("refused") else s.renameTo(d)
+        }
+        val line = ThirdPartyAddons.applyAtStart(game)
+        assertTrue(line, line.contains("Test skipped (the new TestA could not be moved in"))
+        assertOldTestAWhole()
+        assertFalse(ThirdPartyAddons.coreInstalled(a)); assertTrue(ThirdPartyAddons.anyFailed(a))
+        assertFalse("no staging left behind", staging.exists())
+    }
+
+    /** the old folder's move to the backup fails on its 2nd file: the old copy stays whole in AddOns, the new one not in */
+    @Test fun aBackupFailingPartWayLeavesTheOldCopyWhole() {
+        val a = downloaded(); oldTestA()
+        ThirdPartyAddons.renameDir = { _, _ -> "refused" }
+        var n = 0
+        ThirdPartyAddons.fileRename = { s, d ->
+            if (s.path.contains("AddOns${sep}TestA${sep}") && ++n == 2) throw java.io.IOException("refused") else s.renameTo(d)
+        }
+        val line = ThirdPartyAddons.applyAtStart(game)
+        assertTrue(line, line.contains("Test skipped (the old TestA could not be moved to the backup"))
+        assertOldTestAWhole()
+        assertFalse(ThirdPartyAddons.coreInstalled(a))
+    }
+
+    /** the mark goes before the first folder leaves staging; a marked copy missing a folder (a move cut short) is unpacked again */
+    @Test fun aStagedCopyCutShortIsUnpackedAgain() {
+        val a = downloaded()
+        var calls = 0
+        DependencyAddons.gameRunning = { ++calls >= 3 }               // the game started after the unpack: the copy is kept, marked
+        ThirdPartyAddons.applyAtStart(game)
+        assertTrue(File(staging, "t-core/.dsf-staged").isFile)
+        File(staging, "t-core/TestB").deleteRecursively()               // as if TestB had already gone in when the process died
+        File(staging, "t-core/TestA/a.lua").writeText("staged")
+        DependencyAddons.gameRunning = { false }
+        var markDuringMove: Boolean? = null
+        ThirdPartyAddons.renameDir = { s, d -> if (markDuringMove == null) markDuringMove = File(staging, "t-core/.dsf-staged").exists(); realRename(s, d) }
+        val line = ThirdPartyAddons.applyAtStart(game)
+        assertTrue(line, line.contains("Test 1.0 installed"))
+        assertEquals("unpacked again", "x=1", File(addons, "TestA/a.lua").readText())
+        assertTrue("the whole package in", File(addons, "TestB/TestB.toc").isFile)
+        assertEquals("no mark while folders leave staging", false, markDuringMove)
+        assertTrue(ThirdPartyAddons.coreInstalled(a))
+    }
+
+    /** the launcher's own start step holds the run (no status line): a Play waiting for it shows that run's step */
+    @Test fun aWaitingPlayShowsTheRunningStep() {
+        downloaded()
+        val entered = java.util.concurrent.CountDownLatch(1); val release = java.util.concurrent.CountDownLatch(1)
+        ThirdPartyAddons.renameDir = { s, d -> entered.countDown(); release.await(5, java.util.concurrent.TimeUnit.SECONDS); realRename(s, d) }
+        val first = Thread { ThirdPartyAddons.applyAtStart(game) }.apply { start() }
+        assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        val steps = java.util.Collections.synchronizedList(ArrayList<String>())
+        val second = Thread { ThirdPartyAddons.applyAtStart(game, onStep = { steps.add(it) }) }.apply { start() }
+        val until = System.currentTimeMillis() + 3_000
+        while (steps.isEmpty() && System.currentTimeMillis() < until) Thread.sleep(20)
+        release.countDown(); first.join(5_000); second.join(5_000)
+        assertEquals(listOf("Installing add-ons: Test..."), steps.toList())
+        assertEquals(null, ThirdPartyAddons.currentStep)
     }
 }

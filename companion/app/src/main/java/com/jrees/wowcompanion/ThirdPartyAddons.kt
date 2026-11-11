@@ -393,9 +393,21 @@ object ThirdPartyAddons {
      */
     fun applyAtStart(flavorRoot: File, fetchSmall: Boolean = true, by: String = "the start step", onStep: (String) -> Unit = {}): String {
         if (dir == null) { log("add-ons ($by): not started (no folder)"); return "" }
-        synchronized(applyLock) { return applyLocked(flavorRoot, fetchSmall, by, onStep) }
+        // review of #117 #135 (2026-11-11): the launcher screen's own start step (no status line) can hold the lock for the whole
+        // Spoken Quests unpack and move when Play comes right after the art: the waiting Play shows THAT run's step, never a bare
+        // "Checking add-ons..." for minutes
+        var shown: String? = null
+        while (!applyLock.tryLock(200, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+            val now = currentStep
+            if (now != null && now != shown) { shown = now; onStep(now) }
+        }
+        try {
+            return applyLocked(flavorRoot, fetchSmall, by) { msg -> currentStep = msg; onStep(msg) }
+        } finally { currentStep = null; applyLock.unlock() }
     }
-    private val applyLock = Any()
+    private val applyLock = java.util.concurrent.locks.ReentrantLock()
+    /** the running step's status text ("Installing add-ons: Spoken Quests..."), null between runs: a waiting caller shows it */
+    @Volatile internal var currentStep: String? = null
 
     /** #139 (2026-11-11): the game just ended, its screen not gone yet: up to this long for the game-up state to settle */
     @Volatile internal var settleMs = 5_000L
@@ -481,7 +493,9 @@ object ThirdPartyAddons {
         val mark = File(staging, STAGED)
         // #135 (2026-11-11): a complete staged copy of this very package (the game started last time, after the unpack) is used as it
         // is: a 1.54 GB pack is never unpacked twice for the same content
-        val staged = runCatching { mark.readText() }.getOrNull() == sig(p)
+        // (review, 2026-11-11) and still whole: every folder the package brings is there with its .toc
+        val staged = runCatching { mark.readText() }.getOrNull() == sig(p) &&
+            p.folders.all { DependencyAddons.installedVersion(File(staging, it)) != null }
         if (!staged && flavorRoot.usableSpace < p.bytes + SPACE_MARGIN)
             throw Later("needs ${size(((p.bytes + SPACE_MARGIN) / 1_000_000).toInt())} free for the game")
         var keep = false
@@ -494,12 +508,19 @@ object ThirdPartyAddons {
             val folders = staging.listFiles()?.filter { d -> d.isDirectory && DependencyAddons.installedVersion(d) != null } ?: emptyList()
             require(folders.isNotEmpty()) { "the package has no add-on in it" }
             if (DependencyAddons.gameRunning()) { keep = true; throw Later("the game started: at the next start") }
+            // (review, 2026-11-11) the mark goes BEFORE the first folder leaves staging: a move cut short (a low-memory kill, #99 #93)
+            // leaves an unmarked copy that the next start clears and unpacks again, never a part of it taken as the whole package
+            if (mark.exists() && !mark.delete()) throw IOException("the staged copy's mark could not be cleared")
             val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
-            for (d in folders) {
-                val target = File(addons, d.name)
-                if (target.exists()) backup(iface, target, stamp)
-                moveDir(d, target, "the new ${d.name} could not be moved in")
-            }
+            val done = ArrayList<Pair<File, File?>>()                       // each folder in so far, with its old copy's backup
+            try {
+                for (d in folders) {
+                    val target = File(addons, d.name)
+                    val old = if (target.exists()) backup(iface, target, stamp) else null
+                    done.add(target to old)
+                    moveDir(d, target, "the new ${d.name} could not be moved in")
+                }
+            } catch (t: Throwable) { putBack(done); throw t }
             putState(a, key, JSONObject().put("in", p.tag).put("folders", JSONArray(folders.map { it.name })))
             zipOf(p).delete()                                              // in: the download's room back
         } finally {
@@ -523,13 +544,28 @@ object ThirdPartyAddons {
         if (key == "core") for (m in a.modules) if (installed(a, m.id)) moveOut(a, m.id, flavorRoot)
     }
 
-    private fun backup(iface: File, target: File, stamp: String) {
+    /**
+     * (review of #135 #83, 2026-11-11) a move in that failed part way: every folder this run put in goes and its old copy comes back
+     * from the backup, so AddOns ends as it was (the old copy whole, or nothing where there was nothing), never half new. The new
+     * copy is still in its download (kept on a failure).
+     */
+    private fun putBack(done: List<Pair<File, File?>>) {
+        for ((target, old) in done.asReversed()) {
+            target.deleteRecursively()
+            if (old != null) runCatching { moveDir(old, target, "the old ${target.name} could not be put back") }
+                .onFailure { log("add-ons: ${target.name}: ${it.message}: the old copy stays in the backup (${old.name})") }
+        }
+        if (done.isNotEmpty()) log("add-ons: the move in failed: ${done.joinToString { it.first.name }} put back as before")
+    }
+
+    private fun backup(iface: File, target: File, stamp: String): File {
         val base = "${target.name}-${DependencyAddons.installedVersion(target) ?: "unknown"}-$stamp"
         var b = File(iface, "${DependencyAddons.BACKUP}/$base")
         var n = 2
         while (b.exists()) b = File(b.parentFile, "$base~${n++}")         // #135: never into an older backup of the same second
         b.parentFile?.mkdirs()
         moveDir(target, b, "the old ${target.name} could not be moved to the backup")
+        return b
     }
 
     /**
@@ -553,17 +589,49 @@ object ThirdPartyAddons {
             .getOrElse { it.message ?: it.javaClass.simpleName }
     }
 
+    /**
+     * File by file, AS ONE STEP (review of #135, 2026-11-11): a failure part way moves every file already moved back where it was
+     * and takes away the folders it made, so the folder is whole at [src] again (as a refused rename left it), never split in two.
+     */
     private fun moveByFiles(src: File, dst: File) {
-        if (!dst.isDirectory && !dst.mkdirs()) throw IOException("${dst.name} could not be made")
+        val moved = ArrayList<Pair<File, File>>()                         // (from, to), in order
+        val made = ArrayList<File>()                                      // the folders made at dst, parents first
+        try { moveFiles(src, dst, moved, made) } catch (t: IOException) {
+            val left = undoFiles(moved, made)
+            throw IOException(if (left == 0) "${t.message}; put back as it was" else "${t.message}; $left file(s) could not be put back", t)
+        }
+    }
+
+    private fun moveFiles(src: File, dst: File, moved: MutableList<Pair<File, File>>, made: MutableList<File>) {
+        if (!dst.isDirectory) { if (!dst.mkdirs()) throw IOException("${dst.name} could not be made"); made.add(dst) }
         for (c in src.listFiles() ?: throw IOException("${src.name} could not be read")) {
             val t = File(dst, c.name)
-            if (c.isDirectory) { moveByFiles(c, t); continue }
+            if (c.isDirectory) { moveFiles(c, t, moved, made); continue }
             if (t.exists()) throw IOException("${c.name} is already in ${dst.name}")
-            if (c.renameTo(t)) continue
-            c.copyTo(t)
+            if (fileRename(c, t)) { moved.add(c to t); continue }
+            try { c.copyTo(t) } catch (e: Exception) { t.delete(); throw IOException("${c.name} could not be copied (${e.message})", e) }
             if (t.length() != c.length()) { t.delete(); throw IOException("${c.name} could not be copied") }
-            if (!c.delete()) throw IOException("${c.name} could not be removed after its copy")
+            if (!c.delete()) { t.delete(); throw IOException("${c.name} could not be removed after its copy") }
+            moved.add(c to t)
         }
         if (!src.delete()) throw IOException("${src.name} could not be removed once empty")
     }
+
+    /** the moved files back, last first (each one's rename, else a checked copy); the folders made go once empty. Returns the files left */
+    private fun undoFiles(moved: List<Pair<File, File>>, made: List<File>): Int {
+        var left = 0
+        for ((from, to) in moved.asReversed()) {
+            from.parentFile?.mkdirs()
+            val back = !from.exists() && (to.renameTo(from) || runCatching {
+                to.copyTo(from); if (from.length() == to.length()) to.delete() else { from.delete(); false }
+            }.getOrDefault(false))
+            if (!back) left++
+        }
+        for (d in made.asReversed()) d.delete()                           // only when empty
+        if (left > 0) log("add-ons: $left file(s) could not be put back")
+        return left
+    }
+
+    /** one file's own rename (the off-device test makes the Nth fail) */
+    @Volatile internal var fileRename: (File, File) -> Boolean = { s, d -> s.renameTo(d) }
 }
