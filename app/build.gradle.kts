@@ -55,7 +55,7 @@ android {
         manifestPlaceholders["screenOrientation"] = "unspecified"
         buildConfigField("boolean", "XR_BUILD", "false")
 
-        versionCode = 1412
+        versionCode = 1413
         versionName = "1.0.23"
 
         buildConfigField("boolean", "GOLD", "false")

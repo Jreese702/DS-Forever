@@ -2283,8 +2283,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val gx = cx + 11.5f * k
         val gy = cy - (if (circle) 8.5f else 11.5f) * k
         // RED GLYPH (the user, 2026-11-07: "When something is out of range or there's not enough mana the glyph text should be red"):
-        // out of range (r 0) OR not enough mana / power (m 1)
-        val outOfRange = st != null && !empty && (st.r == 0 || st.m == 1)
+        // out of range (r 0) only: the user's ruling 2026-11-10 ("Red for range only") - not enough mana shows the game's blue icon tint alone
+        val outOfRange = st != null && !empty && st.r == 0
         // a collapsed bar hides its prompts (mainactionbarframe.lua HideButtonIcons)
         if (!(drawCollapsed && keyText == null) && b?.noBadge != true) drawGlyphBadge(c, gx, gy, pos, keyText, outOfRange, pressed)
         // the companion mark: a small gold "two screens" tag in the lower-left corner (the slot drives the bottom screen)
