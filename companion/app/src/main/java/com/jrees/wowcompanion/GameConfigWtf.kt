@@ -11,7 +11,11 @@ import java.io.File
 object GameConfigWtf {
     /** Config.wtf's defaults for [product]: its portal (the beta's "test", else the install's region) and agentUID, then the rest */
     fun configDefaults(product: WowProduct, row: Map<String, String>?, region: String? = null): Map<String, String> =
-        linkedMapOf("portal" to "\"${region ?: product.portalFor(row)}\"", "agentUID" to "\"${product.code}\"") + CONFIG_DEFAULTS
+        linkedMapOf("portal" to "\"${portalOf(product, row, region)}\"", "agentUID" to "\"${product.code}\"") + CONFIG_DEFAULTS
+
+    /** the portal for [product]: the beta's own, else the login portal of the region (the choice, else the install's Branch; Taiwan -> kr) */
+    private fun portalOf(product: WowProduct, row: Map<String, String>?, region: String?): String =
+        product.portal ?: GameRegion.portal(region ?: product.portalFor(row))
 
     private val CONFIG_DEFAULTS = linkedMapOf(
         "gxApi" to "\"D3D11\"",
@@ -111,7 +115,10 @@ object GameConfigWtf {
                 LEGACY_CONFIG_VALUES[key] == value -> "SET $key ${defaults.getValue(key)}"
                 key.equals("portal", ignoreCase = true) && product.portal == null && value in betaPortal -> "SET portal ${defaults.getValue("portal")}"
                 key.equals("portal", ignoreCase = true) && product.portal == null && region != null &&
-                    !value.trim('"').equals(region, ignoreCase = true) -> "SET portal ${defaults.getValue("portal")}"
+                    !value.trim('"').equals(GameRegion.portal(region), ignoreCase = true) -> "SET portal ${defaults.getValue("portal")}"
+                // a "tw" portal does not exist (the user, 2026-11-11: regions fix): Taiwan signs in through kr, choice or not
+                key.equals("portal", ignoreCase = true) && product.portal == null &&
+                    value.trim('"').lowercase() in GameRegion.DEAD_PORTALS -> "SET portal ${defaults.getValue("portal")}"
                 key.equals("agentUID", ignoreCase = true) && value in otherAgents -> "SET agentUID ${defaults.getValue("agentUID")}"
                 else -> line
             }
