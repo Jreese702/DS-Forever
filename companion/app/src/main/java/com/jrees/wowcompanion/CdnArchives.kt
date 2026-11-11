@@ -157,6 +157,10 @@ object CdnArchives {
 
     private fun be(b: ByteArray, at: Int, n: Int): Long { var v = 0L; for (i in 0 until n) v = (v shl 8) or (b[at + i].toLong() and 0xff); return v }
 
+    /** pure (issue #70 pattern, 2026-11-11): a streamed archive range is exactly the asked size and starts with BLTE; else why not */
+    internal fun rangeProblem(body: CdnStream.Body, size: Int): String? =
+        if (body.size != size.toLong() || !body.head.contentEquals("BLTE".toByteArray())) "a damaged range (${body.size} bytes)" else null
+
     /** downloads [hit]'s byte range from the first of [hosts] that serves it, to [to] whole or not at all; checks the BLTE header */
     fun fetch(hosts: List<String>, cdnPath: String, hit: Hit, to: File, log: (String) -> Unit = {}): Boolean {
         val rel = cdnRel("data", hit.archive)
@@ -167,11 +171,14 @@ object CdnArchives {
             c.setRequestProperty("Range", "bytes=${hit.offset}-${hit.offset + hit.size - 1}")
             try {
                 if (c.responseCode != 206) return@run "HTTP ${c.responseCode}"
-                val bytes = c.inputStream.use { it.readBytes() }
-                if (bytes.size != hit.size || !bytes.copyOf(4).contentEquals("BLTE".toByteArray())) return@run "a damaged range (${bytes.size} bytes)"
+                // defensive, the issue #70 pattern (2026-11-11; no crash was seen here): the range streams to the temp file (CdnStream),
+                // never one byte array (GameFiles runs PARALLEL = 6 of these at once); one byte past the asked size stops it
                 to.parentFile?.mkdirs()
                 val tmp = File(to.path + ".part")
-                tmp.writeBytes(bytes)
+                val body = try {
+                    c.inputStream.use { i -> tmp.outputStream().buffered().use { o -> CdnStream.copy(i, o, hit.size.toLong()) } }
+                } catch (e: Throwable) { tmp.delete(); throw e }
+                rangeProblem(body, hit.size)?.let { tmp.delete(); return@run it }
                 if (!tmp.renameTo(to)) { to.delete(); if (!tmp.renameTo(to)) { tmp.delete(); return@run "could not save it" } }
                 log("cdn archives: fetched ${to.name} (${hit.size} bytes) from archive ${hit.archive} on $host")
                 null

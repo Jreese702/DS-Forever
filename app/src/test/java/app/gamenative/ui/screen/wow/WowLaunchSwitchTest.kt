@@ -145,6 +145,24 @@ class WowLaunchSwitchTest {
         assertEquals(WowClientDownloader.Switch.NotDue, switch())
     }
 
+    // issue #70 (2026-11-11): the client file streams to disk (a zlib, many-chunk BLTE like the CDN's), is decoded from
+    // there, and leaves no temp file behind; an index too
+    @Test fun aClientFileStreamsThroughAFileAndLeavesNothingBehind() {
+        val half = exe.size / 2
+        val zipped = { b: ByteArray -> byteArrayOf('Z'.code.toByte()) +
+            ByteArrayOutputStream().also { o -> java.util.zip.DeflaterOutputStream(o).use { it.write(b) } }.toByteArray() }
+        val c1 = zipped(exe.copyOfRange(0, half)); val c2 = zipped(exe.copyOfRange(half, exe.size))
+        val b = ByteBuffer.allocate(12 + 48 + c1.size + c2.size)
+        b.put("BLTE".toByteArray()).putInt(12 + 48).putInt(0x0F000002)
+        for (c in listOf(c1, c2)) b.putInt(c.size).putInt(0).put(ByteArray(16))
+        b.put(c1).put(c2)
+        serve("data", exeEkey, b.array())
+        assertEquals(WowClientDownloader.Switch.Done("1.60.1.70532"), switch())
+        assertEquals("the wowf exe", File(root, "_forever_/Wow-arm64.exe").readText())
+        assertTrue(File(root, "Data/indices/$archive.index").readBytes().contentEquals(archiveIndex))
+        assertTrue(root.walkTopDown().none { it.name.endsWith(".part") || it.name.endsWith(".blte") || it.name.endsWith(".download") })
+    }
+
     @Test fun beforeTheDateNothingHappens() {
         val before = File(root, ".build.info").readText()
         assertEquals(WowClientDownloader.Switch.NotDue, switch(LocalDate.of(2026, 10, 26)))

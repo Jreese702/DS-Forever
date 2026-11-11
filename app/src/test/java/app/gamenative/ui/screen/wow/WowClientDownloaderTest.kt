@@ -90,4 +90,91 @@ class WowClientDownloaderTest {
             root.deleteRecursively()
         }
     }
+
+    // ---- issue #70 (2026-11-11): CDN bodies streamed, never one byte array (the 68 MB OOM at ResponseBody.bytes()) ----
+
+    private fun body(b: ByteArray) = com.jrees.wowcompanion.CdnStream.copy(b.inputStream(), java.io.OutputStream.nullOutputStream())
+
+    @Test fun aStreamedBodyKeeps8838e9e9sChecks() {
+        val ten = body(ByteArray(10))
+        assertNull(WowClientDownloader.bodyProblem(206, "10", "bytes 40-49/999", 40L until 50L, ten))
+        assertNull(WowClientDownloader.bodyProblem(200, "10", null, null, ten))
+        assertNull(WowClientDownloader.bodyProblem(200, null, null, null, ten))                    // chunked: no length said
+        assertTrue(WowClientDownloader.bodyProblem(200, "10", null, 40L until 50L, ten)!!.startsWith("not the asked range"))  // a 200 to a Range
+        assertTrue(WowClientDownloader.bodyProblem(206, "10", null, 40L until 51L, ten)!!.startsWith("not the asked range"))  // cut short
+        assertTrue(WowClientDownloader.bodyProblem(206, null, "bytes 0-9/999", 40L until 50L, ten)!!.startsWith("not the asked range"))
+        assertTrue(WowClientDownloader.bodyProblem(200, "12", null, null, ten)!!.startsWith("a short answer"))
+    }
+
+    @Test fun anIndexIsCheckedByTheStreamedTail() {
+        val footer = ByteArray(8) { it.toByte() } + byteArrayOf(1, 0, 0, 4, 4, 4, 16, 8) + byteArrayOf(0, 0, 0, 1) + ByteArray(8) { 9 }
+        val index = ByteArray(300_000) { (it * 7).toByte() } + footer                              // many pieces: the tail is the last 28 B
+        assertTrue(WowClientDownloader.indexOk(body(index).tail, md5(footer)))
+        assertFalse(WowClientDownloader.indexOk(body(index.copyOf(index.size - 1)).tail, md5(footer)))
+        assertFalse(WowClientDownloader.indexOk(body("<html>portal</html>".toByteArray()).tail, md5(footer)))
+    }
+
+    private fun z(b: ByteArray): ByteArray = java.io.ByteArrayOutputStream().also { o -> java.util.zip.DeflaterOutputStream(o).use { it.write(b) } }.toByteArray()
+
+    /** a BLTE with a chunk table: each chunk its mode byte + body */
+    private fun blte(vararg chunks: ByteArray): ByteArray {
+        val headerSize = 12 + 24 * chunks.size
+        val b = java.nio.ByteBuffer.allocate(headerSize + chunks.sumOf { it.size })
+        b.put("BLTE".toByteArray()).putInt(headerSize).putInt(0x0F000000 or chunks.size)
+        for (c in chunks) b.putInt(c.size).putInt(0).put(ByteArray(16))
+        for (c in chunks) b.put(c)
+        return b.array()
+    }
+
+    private fun decode(b: ByteArray) = java.io.ByteArrayOutputStream().also { WowClientDownloader.blteDecode(b.inputStream(), it) }.toByteArray()
+
+    @Test fun blteDecodesChunkByChunkFromAStream() {
+        val a = ByteArray(200_000) { (it % 251).toByte() }
+        val b = "second chunk".toByteArray()
+        val c = ByteArray(70_000) { (it % 13).toByte() }
+        val nested = blte(byteArrayOf('N'.code.toByte()) + "inner".toByteArray())
+        val data = blte(byteArrayOf('Z'.code.toByte()) + z(a), byteArrayOf('N'.code.toByte()) + b,
+            byteArrayOf('Z'.code.toByte()) + z(c), byteArrayOf('F'.code.toByte()) + nested)
+        assertTrue(decode(data).contentEquals(a + b + c + "inner".toByteArray()))
+        // no chunk table: one chunk, the rest of the stream
+        val bare = "BLTE".toByteArray() + ByteArray(4) + byteArrayOf('Z'.code.toByte()) + z(a)
+        assertTrue(decode(bare).contentEquals(a))
+    }
+
+    @Test fun aCutBlteStreamIsAnError() {
+        val a = ByteArray(100_000) { (it % 97).toByte() }
+        val data = blte(byteArrayOf('Z'.code.toByte()) + z(a), byteArrayOf('N'.code.toByte()) + "tail".toByteArray())
+        for (cut in listOf(data.size - 2, data.size / 2, 30)) {
+            try { decode(data.copyOf(cut)); org.junit.Assert.fail("cut at $cut decoded") } catch (_: java.io.IOException) {}
+        }
+        try { decode("<html>sign in</html>".toByteArray()); org.junit.Assert.fail("a portal decoded") } catch (_: IllegalStateException) {}
+    }
+
+    @Test fun aBigClientFileDecodesWithoutBeingHeld() {
+        // 3 x 8 MB 'N' chunks (24 MB, bigger than any byte array the old reader could take next to the game) from a stream made on the
+        // fly: decoded straight into an MD5, nothing held
+        val chunk = 8L shl 20
+        val header = java.nio.ByteBuffer.allocate(12 + 24 * 3).apply {
+            put("BLTE".toByteArray()).putInt(12 + 24 * 3).putInt(0x0F000003)
+            repeat(3) { putInt((chunk + 1).toInt()).putInt(chunk.toInt()).put(ByteArray(16)) }
+        }.array()
+        fun piece() = java.io.SequenceInputStream(byteArrayOf('N'.code.toByte()).inputStream(), Zeros(chunk))
+        val input = java.io.SequenceInputStream(java.util.Collections.enumeration(listOf(header.inputStream(), piece(), piece(), piece())))
+        var n = 0L
+        val count = object : java.io.OutputStream() {
+            override fun write(b: Int) { n++ }
+            override fun write(b: ByteArray, off: Int, len: Int) { n += len }
+        }
+        WowClientDownloader.blteDecode(input, count)
+        assertEquals(3 * chunk, n)
+    }
+
+    /** [n] zero bytes, made as they are read */
+    private class Zeros(private var n: Long) : java.io.InputStream() {
+        override fun read(): Int = if (n-- > 0) 0 else -1
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (n <= 0) return -1
+            val k = minOf(len.toLong(), n).toInt(); java.util.Arrays.fill(b, off, off + k, 0); n -= k; return k
+        }
+    }
 }
