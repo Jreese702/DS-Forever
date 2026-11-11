@@ -1534,6 +1534,7 @@
 "templates": {
 "Put the Spell Radial command on a button (WoW Defaults: Change, DS). %s": "Pon el comando Radial de hechizos en un botón (WoW Defaults: Cambiar, DS). %s",
 "Abandon \"%s\"?": "¿Abandonar \"%s\"?",
+"The update download stopped (%s). Update resumes it.": "La descarga de la actualización se detuvo (%s). Actualizar la reanuda.",
 "Add-ons: %s": "Accesorios: %s",
 "Aim with the stick, %s": "Apunta con el stick, %s",
 "All %s Character Macros are in use.": "Las %s macros de personaje están en uso.",

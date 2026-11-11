@@ -36,19 +36,22 @@ object AppUpdater {
 
     private fun dir(context: Context) = File(context.cacheDir, "updates")
 
-    /** the startup check (IO); never throws. The auto-launch waits for it a few seconds at most (WoWForeverScreen) */
-    suspend fun check(): AppUpdate.Check = withContext(Dispatchers.IO) {
-        AppUpdate.check(repo, BuildConfig.VERSION_NAME, userAgent, ::log)
+    /** the startup check (IO); never throws. The auto-launch waits for it a few seconds at most (WoWForeverScreen). [context]: the
+     *  last found update is kept a day for a check that cannot reach GitHub (the user, 2026-11-11: updates on slow links) */
+    suspend fun check(context: Context? = null): AppUpdate.Check = withContext(Dispatchers.IO) {
+        AppUpdate.check(repo, BuildConfig.VERSION_NAME, userAgent, ::log, cache = context?.let { File(it.cacheDir, "update-check.json") })
     }
 
     /** the top screen's line */
     fun line(c: AppUpdate.Check?): String = AppUpdate.line(BuildConfig.VERSION_NAME, c)
 
-    /** download, then verify it is ours and newer; the APK ready for [install], or an exception with the reason (the file deleted) */
+    /** download, then verify it is ours and newer; the APK ready for [install], or an exception with the reason. A stopped download
+     *  (an IOException: a stall, offline) KEEPS its partial file for the next Update to resume (the user, 2026-11-11: updates on slow
+     *  links); AppUpdate.download already deleted a bad one (wrong checksum, not an APK); anything else clears the cache */
     suspend fun download(context: Context, release: AppUpdate.Release, onProgress: (Float) -> Unit): File = withContext(Dispatchers.IO) {
         val apk = try {
             AppUpdate.download(release, dir(context), userAgent, log = ::log, onProgress = onProgress)
-        } catch (t: Throwable) { AppUpdate.clear(dir(context)); throw t }
+        } catch (t: Throwable) { if (t !is java.io.IOException) AppUpdate.clear(dir(context)); throw t }
         val why = verify(context, apk)
         if (why != null) {
             log("update: REFUSED ${apk.name}: $why")
@@ -127,7 +130,8 @@ object AppUpdater {
     }
 
     /** at startup, ONCE per process: an update file left from an earlier run (installed, or abandoned) goes (a later screen entry keeps
-     *  a file this run downloaded, e.g. one waiting for the player's "Install unknown apps") */
+     *  a file this run downloaded, e.g. one waiting for the player's "Install unknown apps"); a stopped download's .part stays for the
+     *  next Update to resume (the user, 2026-11-11: updates on slow links) */
     @Volatile private var cleared = false
-    fun clearCacheOnce(context: Context) { if (!cleared) { cleared = true; AppUpdate.clear(dir(context)) } }
+    fun clearCacheOnce(context: Context) { if (!cleared) { cleared = true; AppUpdate.clear(dir(context), keepPartial = true) } }
 }
