@@ -17,8 +17,9 @@ import java.io.File
  *
  * Feeds (CompanionHost): [noteAlive] from every live document (with whether the game is busy: a fight, a loading or setup
  * screen), [notePosition] from every "pos" map document (the add-on's inst / wx / wy); [companionUp] / [stop] with the companion.
- * The game itself ([LauncherHooks]): busy from its start until its first quiet document (at most [STARTING_MS]); the bake stops
- * when a game that was up goes away. Before Play (no game) the device is idle, so it bakes.
+ * The game itself ([LauncherHooks], [PlayGate]; issue #108 cluster, 2026-11-11): NEVER beside the game on any Thor - a run lets the game
+ * files go the moment the game is up or launching, waits without them, and bakes again once the game has closed (not before the first
+ * game of the run: the user's 2026-11-07 "sluggish before I ever press update"). While streaming it bakes (the game is on the PC).
  */
 object IndoorSchedulerStep : ArtHarvest.Step {
     private const val TAG = "WCINTERIORS"
@@ -31,8 +32,6 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     /** Track B's generator; null until it lands (the step then waits, "generator not in this build") */
     @Volatile internal var factory: IndoorGenerator.Factory? = null
 
-    /** busy until the first quiet position after the game starts, but no longer than this */
-    private const val STARTING_MS = 5 * 60_000L
     private const val SAVE_POSITION_MS = 30_000L
     private const val HOT_EVERY_MS = 2_000L
 
@@ -84,9 +83,9 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     // ------------------------------------------------------------------ feeds
 
     @Volatile private var live: IndoorBakeQueue.Position? = null
-    @Volatile private var busy = false
-    /** the game start whose loading has ended (its first quiet document) */
-    @Volatile private var quietSince = 0L
+    /** the add-on's last word on a fight / loading / setup screen (the bake no longer runs beside the game: kept for the feed's shape) */
+    @Volatile internal var gameBusy = false
+        private set
     @Volatile private var stopping = false
     /** while it may not build, how often it looks again (the game files closed meanwhile) */
     private const val WAIT_POLL_MS = 5_000L
@@ -95,10 +94,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
      * Every live document from the add-on (it sends "pos" only while the player moves, a full snapshot every 15 s even when
      * standing still): the game is there, and whether it is busy (a fight, a loading or setup screen).
      */
-    fun noteAlive(gameBusy: Boolean) {
-        busy = gameBusy
-        if (!gameBusy) quietSince = LauncherHooks.gameStartSec
-    }
+    fun noteAlive(gameBusy: Boolean) { this.gameBusy = gameBusy }
 
     /** standing still or moving (b-interiors-stutter): fed by every position, asked by the bake's gate */
     private val motion = IndoorIdle.Motion()
@@ -273,21 +269,29 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             return p
         }
 
+        private fun streaming() = PlayGate.streamingNow()
+
+        /** the game up or launching (never while streaming: the game is on the PC): the run lets the game files go at once */
+        override fun gameRunning(): Boolean = PlayGate.gameActiveNow()
+
+        /**
+         * Review of this fix (2026-11-11): after a game, nobody is looking at DS Forever's launcher screen - the device screen is off, or
+         * the launcher is not the window in front (the user went to the home screen). The 2026-11-07 ruling's sluggishness was on that
+         * very screen, so the bake builds there only then
+         */
+        private fun quiet(): Boolean = power?.isInteractive == false || !LauncherHooks.inFront()
+
         override fun busy(): Boolean {
             // 2026-11-07 (the user: the app "is sluggish as fuck before I ever press update"; the Thor's CPU: interiors-bake 74 % on the
-            // start screen): no game = the player is on DS Forever's own screens, so the bake waits; it builds while the game runs
+            // start screen): no game yet = the player is on DS Forever's own screens before Play, so the bake waits
             // 1.0.22 (the user: "My indoor maps are not completing for some reason they have been stuck"): while STREAMING the game runs
-            // on the PC and the Thor only shows video, so it builds then too (it waited for a local game that never came); an art run first
-            if ((InputSink.sink as? TapSink)?.route == "stream") return ArtHarvest.state is ArtHarvest.State.Running
-            if (!LauncherHooks.gameUp()) return true
-            // 1.0.17 (the user's pick for the 8 / 12 GB Thors, "Pause while playing, always"): it only builds while the game runs, which
-            // is exactly when those models run out of memory (#37: Android killed DS Forever) - so it never bakes there
-            if (DeviceTier.lowMemory()) return true
-            // the same day (the user: "the map builder should only be running when nothing else is"): an art run (icons too) goes first
-            if (ArtHarvest.state is ArtHarvest.State.Running) return true
-            val start = LauncherHooks.gameStartSec
-            val loading = start != 0L && quietSince != start && now() < start * 1000 + STARTING_MS
-            return busy || loading
+            // on the PC and the Thor only shows video, so it builds then too; an art run first
+            // 2026-11-11 (issues #108 #109 #100 #92 #128: CascNative.open and the bake beside the game on the 16 GB Thor Max, +630 MB native
+            // in 5 s, then Android's kill): never while the game is up or launching on ANY model (it was only the 8 / 12 GB ones, 1.0.17's
+            // "Pause while playing, always"); it builds once the game has closed, while nobody looks at the launcher screen ([quiet]).
+            // An art run (icons too) still goes first - one that really works, not one parked for the game ([ArtHarvest.workingNow])
+            return PlayGate.indoorWait(streaming(), ArtHarvest.workingNow(), PlayGate.gameActiveNow(),
+                playedThisRun = LauncherHooks.gameStartSec != 0L, quiet = quiet()) != null
         }
 
         /** the player moved in the last few seconds while the game runs (before Play there is no player: never "moving") */
@@ -320,13 +324,8 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             return (rt.totalMemory() - rt.freeMemory()) to android.os.Debug.getNativeHeapAllocatedSize()
         }
 
-        /** a game that was up during this run has gone: stop (the next companionUp / harvest start resumes) */
-        private var sawGame = false
-        override fun stop(): Boolean {
-            val up = LauncherHooks.gameUp()
-            if (up) sawGame = true
-            return stopping || (sawGame && !up) || !Settings.indoorBuild      // Off in Settings: ends at the next yield point
-        }
+        /** 2026-11-11: a game that closed no longer stops the bake: that is when it builds now ([gameRunning] lets the files go) */
+        override fun stop(): Boolean = stopping || !Settings.indoorBuild      // Off in Settings: ends at the next yield point
         override fun now(): Long = System.currentTimeMillis()
         override fun sleep(ms: Long) = Thread.sleep(ms)
     }

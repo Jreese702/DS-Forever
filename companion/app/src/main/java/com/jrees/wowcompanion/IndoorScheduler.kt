@@ -38,6 +38,11 @@ internal class IndoorScheduler(
         fun position(): IndoorBakeQueue.Position?
         /** the game is fighting / loading / starting: wait */
         fun busy(): Boolean
+        /**
+         * The game is up or being launched ([PlayGate], issue #108 cluster, 2026-11-11: the bake opened and held the game files beside
+         * the game on the 16 GB Thor and Android killed DS Forever): the run lets the game files go AT ONCE, not after a long pause
+         */
+        fun gameRunning(): Boolean = false
         /** the player moved within the last few seconds (the user's "only when standing still"): wait */
         fun moving(): Boolean = false
         /** the device is warm (thermal status or headroom) or in battery saver: wait */
@@ -101,6 +106,7 @@ internal class IndoorScheduler(
         var pausedAt = 0L
         while (true) {
             if (signals.stop()) throw IndoorGenerator.Stopped()
+            if (signals.gameRunning()) { log("the game is running: the game files let go at once"); throw IndoorGenerator.Released() }
             val why = pauseReason(signals) ?: break
             if (!paused) { paused = true; pausedAt = signals.now(); emit(status.copy(phase = Phase.PAUSED, note = why)); log("paused: $why") }
             // 2026-11-08 (the native heap profile: the open game files are ~500 MB of index tables, held through every pause): a pause
@@ -165,7 +171,8 @@ internal class IndoorScheduler(
                     val t0 = signals.now()
                     val done = runCatching { queue.runOne(here, publish = false) { w, dir -> generator.produce(w, dir, yieldPoint) } }
                     done.exceptionOrNull()?.let { e ->
-                        if (e is IndoorGenerator.Stopped) throw e
+                        // 2026-11-11: a release mid-building is not that building's failure (it was deferred for good, "paused long")
+                        if (e is IndoorGenerator.Stopped || e is IndoorGenerator.Released) throw e
                         log("deferred ${pick.key}: ${e.message}")
                         deferrals.defer(pick, e.message ?: e.javaClass.simpleName, signals.now())
                         list = deferredList()
@@ -256,6 +263,7 @@ internal class IndoorScheduler(
     companion object {
         /** why the bake waits now, the cheapest test first; null = it may go on */
         internal fun pauseReason(s: Signals): String? = when {
+            s.gameRunning() -> PlayGate.GAME_RUNNING
             s.busy() -> "game busy"
             s.moving() -> "player moving"
             s.hot() -> "device warm"

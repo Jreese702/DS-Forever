@@ -51,6 +51,7 @@ object DeviceTier {
     /** the notice before Play on the 8 / 12 GB models (the user: "some kind of notice for Lower model Thors that the art will not build
      *  in the background if they proceed") */
     const val ART_NOTICE_TITLE = "The rest of the game art builds while the game is closed"
-    const val ART_NOTICE_TEXT = "On this Thor model, the maps, icons and terrain that are not built yet only build while the game is " +
+    // 2026-11-11 (issue #108 cluster): every Thor model now holds the background art while the game runs ([PlayGate])
+    const val ART_NOTICE_TEXT = "The maps, icons and terrain that are not built yet only build while the game is " +
         "closed, so the game has the memory it needs. Play now and they finish later, or wait here."
 }

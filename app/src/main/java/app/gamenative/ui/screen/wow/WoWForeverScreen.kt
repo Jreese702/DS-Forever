@@ -283,6 +283,9 @@ fun WoWForeverScreen(
         // refusing - test55: after the launch switch Play said "Game art is required before Play" and no harvest ran
         if (!artReady) Timber.i("WoWForeverScreen: Play by $by waits for the game art (not ready)")
         if (!files.hasStorageAccess) return                // the bottom asks for it
+        // 2026-11-11 (review of the issue #108-cluster fix): a new Play = any earlier launch is over; its window must not hold back the
+        // art before Play (PlayGate.artMayOpen), or Play would sit at "Preparing your game art..."
+        com.jrees.wowcompanion.LauncherHooks.endLaunchWindow()
         isLaunching = true
         errorMessage = null
         statusText = "Preparing components..."
@@ -345,6 +348,9 @@ fun WoWForeverScreen(
 
     LifecycleResumeEffect(gamePath) {
         checkFiles()
+        // 2026-11-11 (review of the issue #108-cluster fix): the launcher screen in front again = no launch under way (the game screen
+        // went, or never attached); a launch job is cancelled on pause, so none runs here either
+        com.jrees.wowcompanion.LauncherHooks.endLaunchWindow()
         isLaunching = false
         statusText = READY_STATUS
         if (versionStatus == null && !WoWLauncherState.shouldAutoLaunch) {
@@ -864,8 +870,9 @@ fun WoWForeverScreen(
             }
             com.jrees.wowcompanion.SetupFlow.Action.PLAY -> {
                 com.jrees.wowcompanion.DeviceTier.init(context)
-                if (!artNoticeSeen && com.jrees.wowcompanion.DeviceTier.lowMemory() &&
-                    com.jrees.wowcompanion.ArtHarvest.backgroundLeft(context)) artNotice = true
+                // 2026-11-11 (issue #108 cluster): the background art waits for the game to close on EVERY model now (PlayGate),
+                // so the notice is for every model too
+                if (!artNoticeSeen && com.jrees.wowcompanion.ArtHarvest.backgroundLeft(context)) artNotice = true
                 else launchGame()
             }
             com.jrees.wowcompanion.SetupFlow.Action.ART_NOTICE_PLAY -> { artNotice = false; artNoticeSeen = true; launchGame() }
