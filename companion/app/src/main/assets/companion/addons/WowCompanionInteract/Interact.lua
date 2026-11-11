@@ -90,7 +90,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, CALL = WC.S, WC.CALL
 
-local IV = "i142"     -- bump on every change; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
+local IV = "i143"     -- bump on every change; i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -1158,8 +1158,23 @@ local function frameShown(slot)
     if ok and type(v) == "boolean" then return v end
 end
 
+-- i143: the game has no quest window's content now (read only): a detail / progress / complete with no quest id and no title, a greeting
+-- that offers nothing and says nothing. Then the window is closed, whatever order the events came in (another add-on - Polestar - accepts
+-- inside the game's QUEST_DETAIL, and its nested QUEST_FINISHED reaches us BEFORE our own QUEST_DETAIL).
+LOOT.questGone = function()
+    if questStage == "greeting" then
+        local n = (TN(function() return GetNumAvailableQuests() end) or 0) + (TN(function() return GetNumActiveQuests() end) or 0)
+        return n == 0 and (TS(function() return GetGreetingText() end) or "") == ""          -- ("" is true in Lua: compared, not negated)
+    end
+    return (TN(function() return GetQuestID() end) or 0) == 0 and (TS(function() return GetTitleText() end) or "") == ""
+end
+
 local function isOpen(slot)
     if slot == "loot" and LOOT.top() then return false end      -- r-loot-on-top: the game keeps its loot window
+    if slot == "quest" and shownAt.quest > hiddenAt.quest and frameShown("quest") ~= true and LOOT.questGone() then
+        ev = ev + 1; hiddenAt.quest = ev; questStage = nil          -- i143: nothing there: closed (the hold goes with it)
+        if LOOT.ms == "quest" then LOOT.full, LOOT.ms, LOOT.retry, LOOT.hold, LOOT.rare = false, nil, nil, nil, nil end
+    end
     local byEvent = shownAt[slot] > hiddenAt[slot]
     local vis = frameShown(slot)
     if vis and byEvent then frameSeen[slot] = true end
@@ -2500,10 +2515,11 @@ end
 local ON = {
     GOSSIP_SHOW = function() mark("gossip", true) end,
     GOSSIP_CLOSED = function() mark("gossip", false) end,
-    QUEST_GREETING = function() questStage = "greeting"; mark("quest", true) end,
-    QUEST_DETAIL = function() questStage = "detail"; mark("quest", true) end,
-    QUEST_PROGRESS = function() questStage = "progress"; mark("quest", true) end,
-    QUEST_COMPLETE = function() questStage = "complete"; mark("quest", true) end,
+    -- i143: a window another add-on already closed (inside this same event) is not opened
+    QUEST_GREETING = function() questStage = "greeting"; if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
+    QUEST_DETAIL = function() questStage = "detail"; if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
+    QUEST_PROGRESS = function() questStage = "progress"; if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
+    QUEST_COMPLETE = function() questStage = "complete"; if frameShown("quest") ~= false or not LOOT.questGone() then mark("quest", true) end end,
     QUEST_FINISHED = function()
         if LOOT.ms == "quest" then LOOT.full, LOOT.ms, LOOT.retry, LOOT.hold, LOOT.rare = false, nil, nil, nil, nil end
         mark("quest", false)

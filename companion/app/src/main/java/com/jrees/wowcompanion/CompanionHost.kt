@@ -405,6 +405,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (RuntimeArt.needed(this)) { unpacking = true; unpackFirst(); return }
         Settings.init(this)
         GameUi.init(this)
+        PolestarQol.init(this)
         GameInput.onStatus = { s -> ui.post { status.text = s.take(110) } }
         // NOTE: do NOT set FLAG_NOT_FOCUSABLE. It leaves display 4 with no focused window, so
         // the first touch waits 5 s for a focus target and the system ANRs us at 0% CPU. This
@@ -1949,6 +1950,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 mapView.invalidate()
             }
             "pnavroute" -> if (current) { mapView.polestar.onRoute(msg, SystemClock.elapsedRealtime()); mapView.invalidate() }
+            "pqol" -> if (current) { PolestarQol.onDoc(msg); if (::settingsView.isInitialized) settingsView.postInvalidate() }     // pq1: Polestar's automation
             "pstep" -> if (current) mapView.onPolestarStep(msg)          // ps1: Polestar's own objective, the light blue row
             "routewp" -> if (current) {
                 routeWp.onAnswer(msg.optString("op"), msg.optBoolean("ok"), SystemClock.elapsedRealtime())
@@ -3524,7 +3526,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val pad = questsPad ?: return
         if (pad.optJSONObject("rows")?.has(PolestarNav.ROW) != true) return          // an older add-on: no Polestar bridge
         val cols = mapView.polestar.tick(mapView.polestarGoal(), SystemClock.elapsedRealtime())
-        if (cols.isEmpty()) return
+        if (cols.isEmpty()) {
+            // pq1: Polestar's automation, when our choice differs from the one the add-on holds (its own batch: never inside a GO's digits)
+            val q = PolestarQol.taps(GameUi.character, SystemClock.elapsedRealtime())
+            if (q.isNotEmpty()) {
+                Log.i("WCMAP", "polestar automation: tap $q")
+                TapBridge.tapsSpaced(this, pad, q.map { PolestarNav.ROW to it }, 120L) { why -> Log.i("WCMAP", "polestar automation: tap failed: $why") }
+            }
+            return
+        }
         Log.i("WCMAP", "polestar: tap $cols")
         // spaced (the user, 2026-11-11: the Polestar path never showed): a cell swallows a second press within 0.25 s, so a target like
         // "1, 34, 1" lost its second digit, the add-on never had all seven and never asked Polestar (RouteWaypoint spaces its digits too)

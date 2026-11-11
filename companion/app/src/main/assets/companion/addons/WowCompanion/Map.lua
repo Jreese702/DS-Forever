@@ -2918,6 +2918,10 @@ if WC.pad and type(WC.pad.op) == "function" then
     WC.pad.op("pnav", "pnav", function(_, col)
         if type(col) ~= "number" then return end
         local P = WC.pnav
+        -- pq1: 38 = Polestar's automation mask follows (WC.pqol), the next tap 0-7 within 2 s is it
+        if col == 38 then P.digits = nil; P.qolAt = GetTime(); return end
+        if P.qolAt and col <= 7 and GetTime() - P.qolAt <= 2 then P.qolAt = nil; return pcall(WC.pqol.choose, col) end
+        P.qolAt = nil
         if col == 39 then P.digits = nil; return P.cancel("asked") end
         if col == 37 then P.keepAt = GetTime(); return end
         if col == 36 then P.digits = {}; P.digitsAt = GetTime(); return end
@@ -2947,6 +2951,91 @@ do
             P.sig, P.sentAt = sig, GetTime()
             pcall(function() WC.send(WC.encode({ type = "pnavroute", v = "pn2", legs = legs })); WC.push() end)
         end
+    end)
+end
+
+-- ---------------------------------------------------------------- POLESTAR'S AUTOMATION, OFF BY DEFAULT (pq1)
+-- The user (2026-11-11): "there needs to be a polestar setting added that is off by default for auto quest accept and auto vendor ...
+-- and auto repair"; the picks: one switch for accepting AND turning in guide quests, "auto vendor" = selling greys and buying what a
+-- step needs, Polestar keeps what DS Forever set (nothing put back at log out). Polestar's own options (its public namespace, Polestar
+-- = ns: Get / Set, read live by its handlers): bit 1 quest = behavior.autoAccept + behavior.autoTurnin, bit 2 vendor = qol.sellJunk +
+-- qol.buyGoals, bit 4 repair = qol.autoRepair. The choice is this character's (WowCompanionDB.pqol[name-realm], 0 = all off until the
+-- app says otherwise) and written into Polestar at every log in and every choice, out of combat. Pad row "pnav": 38, then the mask.
+-- Answers {"type":"pqol", have, m = what Polestar does now, w = the choice}.
+WC.pqol = { PATHS = { { 1, "behavior.autoAccept" }, { 1, "behavior.autoTurnin" }, { 2, "qol.sellJunk" }, { 2, "qol.buyGoals" }, { 4, "qol.autoRepair" } } }
+function WC.pqol.ns()
+    local P = _G.Polestar
+    if type(P) == "table" and type(P.Get) == "function" and type(P.Set) == "function" then return P end
+end
+function WC.pqol.key()
+    local okN, n = pcall(UnitName, "player")
+    local okR, r = pcall(GetRealmName)
+    if not okN or not okR then return nil end
+    if type(n) ~= "string" or type(r) ~= "string" then return nil end
+    return n .. "-" .. r
+end
+function WC.pqol.want()
+    local db = type(WowCompanionDB) == "table" and type(WowCompanionDB.pqol) == "table" and WowCompanionDB.pqol or nil
+    local k = WC.pqol.key()
+    local v = db and k and db[k]
+    return type(v) == "number" and v or 0
+end
+-- what Polestar does now, as the mask (a bit is on only when every option of it is on)
+function WC.pqol.now()
+    local P = WC.pqol.ns()
+    if not P then return nil end
+    local m = 0
+    for _, bit in ipairs({ 1, 2, 4 }) do
+        local all = true
+        for _, e in ipairs(WC.pqol.PATHS) do
+            if e[1] == bit then
+                local ok, v = pcall(P.Get, e[2])
+                if not ok or v ~= true then all = false end
+            end
+        end
+        if all then m = m + bit end
+    end
+    return m
+end
+function WC.pqol.apply()
+    local P = WC.pqol.ns()
+    if not P then return end
+    if InCombatLockdown() then WC.pqol.pending = true; return end      -- Polestar's own listeners may touch its secure step button
+    WC.pqol.pending = nil
+    local w = WC.pqol.want()
+    for _, e in ipairs(WC.pqol.PATHS) do
+        local on = (math.floor(w / e[1]) % 2) == 1
+        local ok, v = pcall(P.Get, e[2])
+        if not ok or v ~= on then pcall(P.Set, e[2], on) end
+    end
+end
+function WC.pqol.say()
+    pcall(function()
+        WC.send(WC.encode({ type = "pqol", v = "pq1", have = WC.pqol.ns() ~= nil, m = WC.pqol.now(), w = WC.pqol.want() }))
+        WC.push()
+    end)
+end
+function WC.pqol.choose(mask)
+    if type(WowCompanionDB) ~= "table" then WowCompanionDB = {} end
+    if type(WowCompanionDB.pqol) ~= "table" then WowCompanionDB.pqol = {} end
+    local k = WC.pqol.key()
+    if k then WowCompanionDB.pqol[k] = mask end
+    WC.pqol.apply()
+    WC.pqol.say()
+end
+do
+    local f = CreateFrame("Frame")
+    pcall(function() f:RegisterEvent("PLAYER_ENTERING_WORLD") end)
+    pcall(function() f:RegisterEvent("PLAYER_REGEN_ENABLED") end)
+    f:SetScript("OnEvent", function(_, e)
+        if e == "PLAYER_REGEN_ENABLED" and not WC.pqol.pending then return end
+        pcall(WC.pqol.apply); WC.pqol.say()
+    end)
+    -- the state every 15 s (an app that connected later learns it); Polestar's own panel changed: ours again (it is the one switch)
+    C_Timer.NewTicker(15, function()
+        local n, w = WC.pqol.now(), WC.pqol.want()
+        if n ~= nil and n ~= w and not InCombatLockdown() then pcall(WC.pqol.apply) end
+        WC.pqol.say()
     end)
 end
 

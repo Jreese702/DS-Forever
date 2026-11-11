@@ -209,7 +209,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
      */
     fun focusTargets(): List<RectF> =
         (listOf(btnReload) + (if (loginRow) listOf(btnLogin) else emptyList()) + listOf(btnReport, btnReportDismiss, btnStream) +
-            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPsTop.toList() + segDanger.toList() + segFog.toList() + segChat.toList() +
+            listOf(btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus) + segQt.toList() + segPsTop.toList() + segPq.flatMap { it.toList() } + segDanger.toList() + segFog.toList() + segChat.toList() +
             segLang.toList() + segLight.toList() + segLocation.toList() + segLayout.toList() + segPauseOpen.toList() + segPausePick.toList() + segOpen.toList() + segPick.toList() +
             // test40 ("I can't press down ... even though it appears like there are options below"): the spell wheel's and the class
             // radials' segments were drawn but never listed, so the cursor stopped at the item wheel
@@ -244,7 +244,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         for (r in listOf(btnReload, btnLogin, btnReport, btnReportDismiss, btnStream, btnMiniMinus, btnMiniPlus, btnMiniInMinus, btnMiniInPlus,
                          btnDeferred, btnRouteReview, btnDll, btnFlowMinus, btnFlowPlus, btnRestart)) r.setEmpty()
         for (a in listOf(segIndoor, segLocation, segLayout, segPauseOpen, segPausePick, segOpen, segPick, segSpellOpen, segSpellPick, segClassLOpen, segClassLPick,
-                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segDanger, segFog, segLang, segLight,
+                         segClassROpen, segClassRPick, segChat, segQt, segPsTop, segPq[0], segPq[1], segPq[2], segDanger, segFog, segLang, segLight,
                          segLimit, segFg, segMult, segPerf))
             for (r in a) r.setEmpty()
     }
@@ -271,8 +271,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         SettingsTabs.Block.GAME -> 16f + ROW_H + (if (loginRow) 10f + ROW_H else 0f) + 10f + ROW_H
         // four rows (the two zooms, Quest tracking, Avoid dangerous areas): it said two, and the page's last row was cut short
         SettingsTabs.Block.STREAMING -> 16f + ROW_H
-        // zoom out, zoom in, Quest tracking, (Polestar on the top screen,) World map, SafePath network
-        SettingsTabs.Block.MAP -> 16f + 5 * ROW_H + 4 * 10f + (if (psTopRow()) ROW_H + 10f else 0f)
+        SettingsTabs.Block.MAP -> 16f + 5 * ROW_H + 4 * 10f     // zoom out, zoom in, Quest tracking, World map, SafePath network
         SettingsTabs.Block.INDOOR -> 16f + ROW_H + 10f + ROW_H + deferredListH() + 10f + ROW_H
         SettingsTabs.Block.CONTROLLER -> 16f + ROW_H + 10f + ROW_H
         SettingsTabs.Block.PAUSE_WHEEL, SettingsTabs.Block.ITEM_WHEEL, SettingsTabs.Block.SPELL_WHEEL,
@@ -402,6 +401,10 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
                 val fi = segFog.indexOfFirst { it.contains(x, y) }
                 val psi = segPsTop.indexOfFirst { it.contains(x, y) }
                 if (psi >= 0) { GameUi.setSwitch(GameUi.SW_PS, psi == 1); invalidate(); return }
+                for ((k, segs) in segPq.withIndex()) {
+                    val pi = segs.indexOfFirst { it.contains(x, y) }
+                    if (pi >= 0) { PolestarQol.set(GameUi.character, listOf(PolestarQol.QUEST, PolestarQol.VENDOR, PolestarQol.REPAIR)[k], pi == 0); invalidate(); return }
+                }
                 val lti = segLight.indexOfFirst { it.contains(x, y) }
                 if (lti >= 0) { Settings.lighterMode = lti == 0; invalidate(); return }
                 val lgx = segLowGfx.indexOfFirst { it.contains(x, y) }
@@ -607,19 +610,9 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
         return y + ROW_H
     }
 
-    private fun drawMap(c: Canvas, top: Float): Float {
-        var y = top
-        // the map always frames itself now (the user, 2026-10-02: "remove the dynamic map toggle, as I REALLY love the way that it
-        // currently works"; the greyed-out Indoor / Outdoor widths went with it); the small map's width is split in two ("split
-        // the minimap default zoom toggle into an indoor and outdoor"), the +/- on the small map step the one in use
-        var boxes = stepperRow(c, y, "Minimap zoom outdoors", "Width of the small map on Home outside",
-                               Settings.minimapYd, true)
-        btnMiniMinus = boxes.first; btnMiniPlus = boxes.second
-        y += ROW_H + 10f
-        boxes = stepperRow(c, y, "Minimap zoom indoors", "Width of the small map on Home inside buildings",
-                           Settings.minimapIndoorYd, true)
-        btnMiniInMinus = boxes.first; btnMiniInPlus = boxes.second
-        y += ROW_H + 10f
+    /** the Quest tracking row at [y] (Settings > Map, and the Polestar block on Add-ons: the user, 2026-11-11, "the quest tracking can
+     *  share a link between these two spots"): one setting, one segmented control (the two are on different tabs, so one set of boxes) */
+    private fun drawQuestTrackingRow(c: Canvas, y: Float) {
         // QUEST TRACKING (the user, 2026-10-17): what the map's line, arrows and pin follow
         pBtn.textSize = SEG_TEXT
         var qtW = SEG_MIN_W
@@ -649,19 +642,22 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             qtSegmented(c, b, Settings.QUEST_TRACKING.indexOf(Settings.questTracking))
             b
         }
-        // POLESTAR ON THE TOP SCREEN (hub31; the user, 2026-11-11: "one other setting to hide the polestar UI from the top"): only while
-        // Polestar is installed and the add-on has the switch; per character, off by default
-        if (psTopRow()) {
-            y += ROW_H + 10f
-            val hide = GameUi.swWant(GameUi.SW_PS)
-            val sent = GameUi.swNow(GameUi.SW_PS) != hide
-            row(c, y, "Polestar on the top screen", if (sent) "Sent" else if (hide) "Hidden" else "Shown", enabled = true) { box ->
-                val bw = minOf(segW() * 2.6f, box.width() * 0.5f)
-                val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
-                segmented(c, b, listOf("Show", "Hide"), if (hide) 1 else 0, segPsTop)
-                b
-            }
-        }
+    }
+
+    private fun drawMap(c: Canvas, top: Float): Float {
+        var y = top
+        // the map always frames itself now (the user, 2026-10-02: "remove the dynamic map toggle, as I REALLY love the way that it
+        // currently works"; the greyed-out Indoor / Outdoor widths went with it); the small map's width is split in two ("split
+        // the minimap default zoom toggle into an indoor and outdoor"), the +/- on the small map step the one in use
+        var boxes = stepperRow(c, y, "Minimap zoom outdoors", "Width of the small map on Home outside",
+                               Settings.minimapYd, true)
+        btnMiniMinus = boxes.first; btnMiniPlus = boxes.second
+        y += ROW_H + 10f
+        boxes = stepperRow(c, y, "Minimap zoom indoors", "Width of the small map on Home inside buildings",
+                           Settings.minimapIndoorYd, true)
+        btnMiniInMinus = boxes.first; btnMiniInPlus = boxes.second
+        y += ROW_H + 10f
+        drawQuestTrackingRow(c, y)
         // AVOID DANGEROUS AREAS moved to QOL > Navigation (the housekeeping pass; GameUiSection's QOL part, the same Settings.avoidDanger)
         y += ROW_H + 10f
         val safe = Settings.questTracking == "safepath"
@@ -1132,7 +1128,45 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
     /** the rows an add-on's block shows now: its own row; its modules and options only once it is installed (the user, test40:
      *  "The settings under spoken shouldn't show until after it's installed") */
     private fun addonRows(a: ThirdPartyAddons.Addon): Int =
-        1 + (if (ThirdPartyAddons.coreInstalled(a)) a.modules.size + a.options.size + (if (a.settings != null) 1 else 0) else 0)
+        1 + (if (ThirdPartyAddons.coreInstalled(a)) a.modules.size + a.options.size + (if (a.settings != null) 1 else 0) +
+            (if (a.id == ThirdPartyAddons.POLESTAR.id) polestarRows() else 0) else 0)
+
+    /** pq1 / hub31 (the user, 2026-11-11: the Polestar settings "under the polestar addons tab"): Quest tracking (shared with Map), the
+     *  top screen, then the three automation switches (off by default) */
+    private fun polestarRows(): Int = 1 + (if (psTopRow()) 1 else 0) + 3
+    private val segPq = Array(3) { Array(2) { RectF() } }
+
+    private fun drawPolestarRows(c: Canvas, top: Float): Float {
+        var y = top
+        y += ROW_H + 10f
+        drawQuestTrackingRow(c, y)
+        if (psTopRow()) {
+            y += ROW_H + 10f
+            val hide = GameUi.swWant(GameUi.SW_PS)
+            val sent = GameUi.swNow(GameUi.SW_PS) != hide
+            row(c, y, "Polestar on the top screen", if (sent) "Sent" else if (hide) "Hidden" else "Shown", enabled = true) { box ->
+                val bw = minOf(segW() * 2.6f, box.width() * 0.5f)
+                val b = RectF(box.right - 16f - bw, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                segmented(c, b, listOf("Show", "Hide"), if (hide) 1 else 0, segPsTop)
+                b
+            }
+        }
+        val who = GameUi.character
+        val rows = listOf(
+            Triple(PolestarQol.QUEST, "Auto quest", "Polestar accepts and turns in guide quests" to "You accept and turn in quests yourself"),
+            Triple(PolestarQol.VENDOR, "Auto vendor", "Polestar sells grey items and buys what a step needs" to "You sell and buy yourself"),
+            Triple(PolestarQol.REPAIR, "Auto repair", "Polestar repairs at vendors" to "You repair yourself"))
+        for ((i, r) in rows.withIndex()) {
+            y += ROW_H + 10f
+            val on = PolestarQol.on(who, r.first)
+            row(c, y, r.second, PolestarQol.line(who, r.first, r.third.first, r.third.second), enabled = who != null) { box ->
+                val b = RectF(box.right - 16f - segW() * 2, box.centerY() - 34f, box.right - 16f, box.centerY() + 34f)
+                segmented(c, b, listOf("On", "Off"), if (on) 0 else 1, segPq[i])
+                b
+            }
+        }
+        return y
+    }
 
     /** an add-on's own settings, on the bottom screen (QuestTrail's): the host leaves Settings and asks the game to open them */
     var onAddonSettings: (ThirdPartyAddons.Addon) -> Unit = {}
@@ -1205,6 +1239,7 @@ class SettingsView(context: Context, private val onReload: () -> Unit) : View(co
             }
             addonOptionSegs["${a.id}.${o.id}"] = segs
         }
+        if (a.id == ThirdPartyAddons.POLESTAR.id) y = drawPolestarRows(c, y)
         // its own settings view (QuestTrail's options pages, mirrored), only with the game up
         a.settings?.let { label ->
             y += ROW_H + 10f
