@@ -1111,13 +1111,34 @@ local function noteCast(event)
     end
 end
 
+-- b-melee-range (the user, 2026-11-10: Raptor Strike "shouldn't be showing in range when im 40 yards away"; the Thor's log: its state
+-- never once said out of range, Arcane Shot's did): a spell with NO range of its own (a next-swing melee attack: maxRange 0) is answered
+-- "in range" by the game at any distance. For a harmful one the game's close-distance check stands in (CheckInteractDistance index 3, the
+-- duel distance: a few yards, as Forever Range uses it); a spell with a range, or no plain answer, keeps the game's own reading.
+WC.meleeNoRange = WC.meleeNoRange or {}
+function WC.spellRange(id, unit)
+    local fr = api("C_Spell", "IsSpellInRange") or _G.IsSpellInRange
+    local m = WC.meleeNoRange[id]
+    if m == nil then
+        local ok, si = CALL(function() return C_Spell.GetSpellInfo(id) end)
+        local mx = ok and type(si) == "table" and num(tfield(si, "maxRange")) or nil
+        local harm = S(api("C_Spell", "IsSpellHarmful"), id) == true
+        m = (mx ~= nil and mx <= 0 and harm) and true or false
+        WC.meleeNoRange[id] = m
+    end
+    if m and type(_G.CheckInteractDistance) == "function" then
+        local v = S(_G.CheckInteractDistance, unit, 3)
+        if v == true or v == false then return v end
+    end
+    return S(fr, id, unit)
+end
 -- b-combat-bar-states: one SPELL's state, by id (an In-combat spell has no bar slot): the same fields a bar slot's state carries
 local function spellState(id, hasTarget)
     local o = { i = id, ct = castMs(id) }
     local r = PCALL(api("C_Spell", "IsSpellUsable") or _G.IsUsableSpell, id)          -- isUsable, insufficientPower
     if r[1] then usableMana(o, SV(r[2]), SV(r[3]), id) end
     if hasTarget then
-        local v = S(api("C_Spell", "IsSpellInRange") or _G.IsSpellInRange, id, "target")
+        local v = WC.spellRange(id, "target")                  -- b-melee-range
         if v == true or v == 1 then o.r = 1 elseif v == false or v == 0 then o.r = 0 end
     end
     o.chk = bit01(S(api("C_Spell", "IsCurrentSpell") or _G.IsCurrentSpell, id) == true
@@ -1447,9 +1468,8 @@ local function pollRange()
         if r[1] and SV(r[9]) == true then v = (SV(r[10]) == true) and 1 or 0 end
         if rangeSeen["p" .. s] ~= v then rangeSeen["p" .. s] = v; changed = true end
     end
-    local fr = api("C_Spell", "IsSpellInRange") or _G.IsSpellInRange
     for _, id in ipairs(stateFight) do
-        local v = S(fr, id, "target")
+        local v = WC.spellRange(id, "target")                         -- b-melee-range
         local r = ((v == true or v == 1) and 1) or ((v == false or v == 0) and 0) or -1
         if rangeSeen["f" .. id] ~= r then rangeSeen["f" .. id] = r; changed = true end
     end
