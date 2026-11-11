@@ -1289,7 +1289,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         Filter("chest", "Chests", false, true),
         Filter("rare", "Rares", false, true),
         Filter("guess", "QuestieDB guesses", false, true))
-    private fun on(key: String): Boolean = prefs.getBoolean(key, filters.first { it.key == key }.default)
+    // issues #91 / #85 / #77 sweep (2026-11-11): a key no filter has reads false, never NoSuchElementException from a tap
+    private fun on(key: String): Boolean = prefs.getBoolean(key, filters.firstOrNull { it.key == key }?.default ?: false)
     private fun toggle(key: String) { prefs.edit().putBoolean(key, !on(key)).apply(); invalidate() }
     private var menuOpen = false
     private var menuSel = 0

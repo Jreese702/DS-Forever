@@ -700,7 +700,7 @@ class SocialView(context: Context) : View(context), BLeadsHome {
                 }
                 if (dragging != null) { dragX = e.x; dragY = e.y; invalidate() }
                 else if (moved && scrollKey != null) {
-                    val k = scrollKey!!
+                    val k = scrollKey ?: return true      // issues #91 / #85 / #77 sweep (2026-11-11): no !! in a touch handler
                     val view = listBox.height() - 80f
                     scroll[k] = ((scroll[k] ?: 0f) + (lastY - e.y)).coerceIn(0f, maxOf(0f, (content[k] ?: 0f) - view))
                     invalidate()
