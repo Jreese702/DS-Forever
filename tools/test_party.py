@@ -1094,7 +1094,7 @@ W7.execute('fire("GROUP_ROSTER_UPDATE")')
 P_KEYS = {"on", "aside", "box", "fight", "grp", "sel", "m"}
 M_KEYS = {"u", "i", "n", "c", "col", "role", "dead", "off", "pt", "hpMax", "pmMax", "hp", "full", "rng", "hs", "g", "cw", "cc", "ch", "cs"}   # m79: hs, the health source; m92: g, the GUID (combat log)
 d = docs(W7, 0, 'party')[-1]
-check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm123' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
+check(set(d) == {"type", "v", "rs", "p"} and d['v'] == 'm124' and set(d['p']) <= P_KEYS and {"on", "fight", "grp", "sel", "m"} <= set(d['p']),
       "party: type v rs p{on aside? box? fight grp sel m}", sorted(d['p']))
 check('box' not in d['p'] and d['p']['on'] is False and d['p']['grp'] is True and d['p']['sel'] == 'bound',
       "Party mode off: no box; grp true; sel bound (Select toggles)", (d['p']['on'], d['p'].get('box'), d['p']['sel']))
@@ -1290,7 +1290,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p36"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m123"' in SRC["padmap"],
+check('local CV = "p36"' in SRC["padtabctl"] and 'local BV = "b48"' in SRC["book"] and 'local PV = "m124"' in SRC["padmap"],
       "the versions: PadMap m107, PadTabCtl p40, Book b49")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
@@ -1854,6 +1854,24 @@ for _ in range(3):
 puts = [WT.eval('PUTS[%d]' % (i + 1)) for i in range(int(WT.eval('#PUTS')))]
 check(puts == ['1:1:DSMAP'], "p34: Open Map from the DS tab is put on the bare D-pad Left (PadMap.putCommand)", puts)
 check(WT.eval('#SPY') == 0 and WT.eval('#VIOL') == 0, "p34: no spied call, no lockdown breach")
+
+# ================================================================ m124: the In-combat spells follow the rank that casts
+WR = world()
+WR.execute('''
+local db = WowCompanionSpellsDB.fightBy or {}; WowCompanionSpellsDB.fightBy = db
+local k = WHO .. "-" .. REALM
+db[k] = { [61] = { id = 1978, n = "Serpent Sting", i = 1, page = 1, set = 1, pos = 1 }, [62] = { id = 403, n = "Lightning Bolt", i = 2, page = 1, set = 1, pos = 2 } }
+C_Spell.GetSpellInfo = function(x)
+    if x == "Serpent Sting" then return { spellID = 13549, name = "Serpent Sting", iconID = 132204 } end
+    if x == "Lightning Bolt" then return { spellID = 403, name = "Lightning Bolt", iconID = 136048 } end
+end
+fire("SPELLS_CHANGED")
+''')
+k = WR.eval('WHO .. "-" .. REALM')
+ss = WR.eval('WowCompanionSpellsDB.fightBy[WHO .. "-" .. REALM][61].id')
+lb = WR.eval('WowCompanionSpellsDB.fightBy[WHO .. "-" .. REALM][62].id')
+check(ss == 13549 and lb == 403, "m124: SPELLS_CHANGED moves Serpent Sting from Rank 1 (1978) to the rank its name casts (13549); Lightning Bolt stays", (ss, lb))
+check(WR.eval('WowCompanionSpellsDB.fightBy[WHO .. "-" .. REALM][61].i') == 132204, "m124: and its icon", WR.eval('WowCompanionSpellsDB.fightBy[WHO .. "-" .. REALM][61].i'))
 
 print('ALL PASS (%d checks)' % passes if fails == 0 else '%d FAILED (of %d)' % (fails, fails + passes))
 sys.exit(1 if fails else 0)
