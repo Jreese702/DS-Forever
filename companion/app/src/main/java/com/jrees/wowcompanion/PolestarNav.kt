@@ -23,7 +23,7 @@ class PolestarNav {
     fun tick(want: DoubleArray?, nowMs: Long): List<Int> {
         if (want == null) {
             if (!active) return emptyList()
-            active = false; sent = null; route = emptyList()
+            active = false; sent = null; route = emptyList(); liveFrom = 1
             return listOf(CANCEL)
         }
         if (nowMs < refusedUntil) return emptyList()
@@ -47,7 +47,7 @@ class PolestarNav {
                 this.why = if (!have) "Polestar is not running" else "Polestar refused${why?.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: ""}"
             }
         }
-        if (op == "cancel") { active = false; sent = null; route = emptyList() }
+        if (op == "cancel") { active = false; sent = null; route = emptyList(); liveFrom = 1 }
     }
 
     /** one leg of Polestar's route: its kind ("walk", "flight", ...), its continent (null = unknown), world points (x, y pairs) */
@@ -68,13 +68,62 @@ class PolestarNav {
             out.add(Leg(l.optString("k", "walk"), if (l.has("c")) l.optInt("c") else null, pts))
         }
         if (!active) return                  // a late route after a cancel: not ours any more
+        // a new plan starts the progress again; the 10 s resends of the same plan keep it
+        val same = route.size == out.size && route.zip(out).all { (a, b) -> a.kind == b.kind && a.pts.contentEquals(b.pts) }
+        if (!same) liveFrom = 1
         route = out; routeAt = nowMs
+    }
+
+    // ---- THE PATH STARTS AT THE PLAYER (ps2; the user, 2026-11-11: "the polestar path tends to be very slow to update and so very often
+    // it looks like I have to back track once I start following the path"). Polestar plans a path ONCE from where the player stood and
+    // only moves its own private index as they walk (Walk.lua), so its geometry's first point stays behind them; its own maps cut the
+    // walk being walked at the player (RouteStrokes.lua Strokes.Live, RouteLines LIVE_REACH 60). The same here: the first leg starts
+    // at the nearest point of it ahead of the player, and that progress only moves forward until a new plan comes.
+    private var liveFrom = 1
+
+    /** [liveRoute] with its first leg starting at the nearest point ahead of the player ([wx], [wy]: world yards, [cont] continent) */
+    fun liveRouteFrom(nowMs: Long, wx: Double, wy: Double, cont: Int?): List<Leg>? {
+        val legs = liveRoute(nowMs) ?: return null
+        val f = legs[0]
+        if (wx.isNaN() || wy.isNaN() || (f.cont != null && cont != null && f.cont != cont)) return legs
+        val hit = trimAt(f.pts, liveFrom, wx, wy, LIVE_REACH_YD)?.also { liveFrom = it.first }
+            ?: trimAt(f.pts, liveFrom, wx, wy, Double.MAX_VALUE)        // off the path: its nearest point ahead (Polestar re-plans past 25 yd)
+            ?: return legs
+        return listOf(Leg(f.kind, f.cont, hit.second)) + legs.drop(1)
     }
 
     /** the route when it is current: Polestar sends it every 10 s at least while guiding */
     fun liveRoute(nowMs: Long): List<Leg>? = route.takeIf { active && it.isNotEmpty() && nowMs - routeAt <= STALE_MS }
 
     companion object {
+        /** Polestar's own LIVE_REACH (RouteLines.lua): progress along the path moves only while the player is this near it */
+        const val LIVE_REACH_YD = 60.0
+
+        /**
+         * Pure: [pts] (x, y pairs) cut at the nearest point to ([wx], [wy]) on its segments from segment [from] (1 = the first) on,
+         * within [reach] yards: (the segment's index, the points from that nearest point on), or null when none is that near
+         */
+        fun trimAt(pts: DoubleArray, from: Int, wx: Double, wy: Double, reach: Double): Pair<Int, DoubleArray>? {
+            val n = pts.size / 2
+            if (n < 2) return null
+            var best = if (reach == Double.MAX_VALUE) Double.MAX_VALUE else reach * reach
+            var bi = -1; var bx = 0.0; var by = 0.0
+            for (i in maxOf(1, from) until n) {
+                val ax = pts[2 * i - 2]; val ay = pts[2 * i - 1]
+                val dx = pts[2 * i] - ax; val dy = pts[2 * i + 1] - ay
+                val l2 = dx * dx + dy * dy
+                val t = if (l2 > 0) (((wx - ax) * dx + (wy - ay) * dy) / l2).coerceIn(0.0, 1.0) else 0.0
+                val nx = ax + t * dx; val ny = ay + t * dy
+                val d2 = (wx - nx) * (wx - nx) + (wy - ny) * (wy - ny)
+                if (d2 <= best) { best = d2; bi = i; bx = nx; by = ny }
+            }
+            if (bi < 0) return null
+            val out = DoubleArray((n - bi + 1) * 2)
+            out[0] = bx; out[1] = by
+            System.arraycopy(pts, bi * 2, out, 2, (n - bi) * 2)
+            return bi to out
+        }
+
         const val GO = 36; const val KEEP = 37; const val CANCEL = 39
         const val ROW = "pnav"
         const val MOVE = 0.004

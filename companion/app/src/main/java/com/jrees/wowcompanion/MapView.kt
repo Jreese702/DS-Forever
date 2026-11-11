@@ -4171,6 +4171,9 @@ class MapView(context: Context) : View(context) {
     /** the zone spots of a quest ([map, x, y, continent, wx, wy] each): the Map room's kept mapquests */
     var zoneSpots: ((Int) -> List<DoubleArray>)? = null
 
+    /** ps2: the goal [polestarGoal] picked last (map, x, y, quest) and how much nearer another must be to take over */
+    private var psGoalLast: DoubleArray? = null
+    private val PS_GOAL_STICK = 1.25
     /** Polestar's goal: the focused quest's nearest still-needed goal here, else its nearest zone spot - (uiMapID, x, y), or null */
     fun polestarGoal(): DoubleArray? {
         if (Settings.questTracking != "polestar") return null
@@ -4186,8 +4189,15 @@ class MapView(context: Context) : View(context) {
         val r = rect
         if (goals.isNotEmpty() && mapId != 0 && !px.isNaN()) {
             val ax = r?.width ?: 1.0; val ay = r?.height ?: 1.0
-            val g = goals.minByOrNull { hypot((it[0] - px) * ax, (it[1] - py) * ay) }!!
-            return doubleArrayOf(mapId.toDouble(), g[0], g[1])
+            fun d(g: DoubleArray) = hypot((g[0] - px) * ax, (g[1] - py) * ay)
+            val g = goals.minByOrNull { d(it) }!!
+            // ps2: the goal sent last is kept while it is still one of the quest's goals and none is clearly nearer, so walking between
+            // two goals does not make Polestar plan again and again (each new goal = a new plan from where the player stands)
+            val last = psGoalLast?.takeIf { it[0] == mapId.toDouble() && it[3] == q.toDouble() }
+            val kept = last?.let { l -> goals.firstOrNull { abs(it[0] - l[1]) < 1e-6 && abs(it[1] - l[2]) < 1e-6 } }
+            val pick = if (kept != null && d(g) * PS_GOAL_STICK >= d(kept)) kept else g
+            psGoalLast = doubleArrayOf(mapId.toDouble(), pick[0], pick[1], q.toDouble())
+            return doubleArrayOf(mapId.toDouble(), pick[0], pick[1])
         }
         val spots = zoneSpots?.invoke(q)?.filter { it.size >= 6 } ?: return null
         if (spots.isEmpty()) return null
@@ -4202,8 +4212,8 @@ class MapView(context: Context) : View(context) {
     // navigating into ... hostile mobs"; their picks: neutrals ignored, High by default, the tint only with the "Danger areas" filter,
     // elites x3). QuestieDB's hostile spawns on this map (DangerStore) as a DangerGrid for this character (level, faction); in
     // Vanilla the leg to the route's next point bends round it (A* + string-pull, kept while it costs at most [DANGER_STICK] more than
-    // a new one, worked out again after [DANGER_MOVE_YD] of walking); under Polestar / QuestTrail their route is kept and its
-    // dangerous stretches are drawn red with a note.
+    // a new one, worked out again after [DANGER_MOVE_YD] of walking); under QuestTrail its route is kept and its dangerous stretches
+    // are drawn red with a note (Polestar's path: none since ps2, the user's "I dont like the red dots").
     private var dGrid: DangerGrid? = null
     private var dGridMap = 0
     private var dGridKey = ""                              // the key of the grid built, or being built on the route thread
@@ -4882,7 +4892,9 @@ class MapView(context: Context) : View(context) {
     /** Polestar's live route on this continent, drawn as the line's dots (true = drawn) */
     private fun drawPolestarRoute(c: Canvas, x0: Float, y0: Float, sx: (Double) -> Float, sy: (Double) -> Float): Boolean {
         val r = rect ?: return false
-        val legs = polestar.liveRoute(android.os.SystemClock.elapsedRealtime()) ?: return false
+        // ps2: the walk being walked starts at the player (PolestarNav.liveRouteFrom), never back at where Polestar planned it
+        val legs = polestar.liveRouteFrom(android.os.SystemClock.elapsedRealtime(), map?.optDouble("wx", Double.NaN) ?: Double.NaN,
+            map?.optDouble("wy", Double.NaN) ?: Double.NaN, r.continent) ?: return false
         pathTmp.reset()
         var any = false
         for (leg in legs) {
@@ -4902,15 +4914,8 @@ class MapView(context: Context) : View(context) {
         pPath.strokeWidth = 9f; pPath.color = Color.argb(160, 0, 0, 0); c.drawPath(pathTmp, pPath)
         pPath.strokeWidth = 6f; pPath.color = cGold; c.drawPath(pathTmp, pPath)
         pPath.pathEffect = null
-        // its dangerous stretches (b-danger-layer: Polestar keeps its route; we warn)
-        map?.let { m ->
-            val pts = arrayListOf(doubleArrayOf(m.optDouble("x"), m.optDouble("y")))
-            for (leg in legs) if (leg.cont == null || leg.cont == r.continent) {
-                var i = 0
-                while (i + 1 < leg.pts.size) { pts.add(doubleArrayOf(r.nx(leg.pts[i + 1]), r.ny(leg.pts[i]))); i += 2 }
-            }
-            dangerWarn(c, pts, "Polestar", sx, sy)
-        }
+        // ps2 (the user, 2026-11-11: "I dont like the red dots"): no red danger dots and no "crosses hostile ground" note on Polestar's
+        // path any more; the Map room's opt-in "Danger areas" filter still shows hostile ground
         postInvalidateOnAnimation()
         return true
     }
